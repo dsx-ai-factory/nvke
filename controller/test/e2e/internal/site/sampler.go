@@ -32,7 +32,7 @@ func samplerUnit() string {
 		"\n" +
 		"[Service]\n" +
 		"Type=simple\n" +
-		"ExecStart=/bin/sh " + samplerScriptPath + " " + bundleDir + "\n" +
+		"ExecStart=/bin/sh " + samplerScriptPath + " " + timelineDir + "\n" +
 		"Restart=on-failure\n" +
 		"RestartSec=5\n" +
 		"\n" +
@@ -59,7 +59,7 @@ func StartSampler(ctx context.Context, s infra.Session) error {
 
 // StopSampler stops and removes the unit. Every step is tolerated: a node
 // that never had the sampler, or lost it to a reboot, reports nothing here.
-// The timeline it wrote stays in bundleDir for the collector.
+// The timeline it wrote stays in timelineDir for the collector to copy.
 func StopSampler(ctx context.Context, s infra.Session) error {
 	cmd := "systemctl disable --now " + samplerUnitName + " >/dev/null 2>&1 || true; " +
 		"rm -f " + shellQuote(samplerUnitPath) + "; systemctl daemon-reload || true"

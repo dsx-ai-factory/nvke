@@ -930,16 +930,17 @@ func removeStaleBundles() {
 // collectSiteBundle writes dest from the node. Best effort and never fails
 // the spec, like the two collectors above.
 //
-// Only while the spec's own context is alive: a spec that died on its timeout
-// has Ginkgo moving on after a grace period, and a nine-minute collection here
-// would run into the next spec. The teardown takes that case on its own clock,
-// which is why it passes a context of its own.
+// Bounded by the budget and by the caller's context, both: a spec that dies
+// on its timeout has Ginkgo moving on after a grace period, and a collection
+// that kept running would overlap the teardown's own on the same node. The
+// teardown passes a context of its own, detached from the specs', so its
+// collection runs on its own clock.
 func collectSiteBundle(ctx context.Context, session infra.Session, dest string, budget time.Duration, secrets ...string) {
 	if ctx.Err() != nil {
 		GinkgoLogr.Info("not collecting the site bundle from a spec whose time is up; the teardown will", "path", dest)
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), budget)
+	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	report, err := site.CollectBundle(ctx, session, dest, budget, secrets...)
 	if err != nil {

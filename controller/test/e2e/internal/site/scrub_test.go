@@ -4,6 +4,7 @@
 package site
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 )
@@ -22,6 +23,9 @@ func TestScrubPatterns(t *testing.T) {
 	fakeJoinToken := "00000000-0000-4000-8000-" + strings.Repeat("0", 12)
 	fakeJWTPayload := "eyJ" + strings.Repeat("p", 12)
 	fakeJWT := "eyJ" + strings.Repeat("h", 12) + "." + fakeJWTPayload + "." + strings.Repeat("s", 12)
+	// base64(user:password), which is not the password and not its base64,
+	// so no known-value needle holds it.
+	fakeBasic := base64.StdEncoding.EncodeToString([]byte("nvke:" + strings.Repeat("p", 12)))
 	cases := []struct {
 		name, in, gone string
 	}{
@@ -43,6 +47,14 @@ func TestScrubPatterns(t *testing.T) {
 		{name: "jwt", in: "id_token=" + fakeJWT, gone: fakeJWTPayload},
 		{name: "spire join token flag", in: "spire-agent run -joinToken " + fakeJoinToken + " -config /etc/spire-agent/agent.conf", gone: fakeJoinToken},
 		{name: "spire join token key", in: "SPIRE_JOIN_TOKEN=" + fakeJoinToken, gone: fakeJoinToken},
+		{name: "hosts.toml header table", in: "[host.\"https://registry\".header]\n  Authorization = [\"Basic " + fakeBasic + "\"]\n", gone: fakeBasic},
+		{name: "hosts.toml inline header", in: "header = {Authorization = \"Basic " + fakeBasic + "\"}\n", gone: fakeBasic},
+		{name: "http basic header", in: "Authorization: Basic " + fakeBasic + "\n", gone: fakeBasic},
+		{name: "proxy basic header", in: "Proxy-Authorization: Basic " + fakeBasic, gone: fakeBasic},
+		{name: "basic credential without its header", in: "auth header was Basic " + fakeBasic + " for the pull", gone: fakeBasic},
+		{name: "containerd auth", in: "  auth = \"" + fakeBasic + "\"\n", gone: fakeBasic},
+		{name: "containerd identitytoken", in: "  identitytoken = \"" + fakeToken + "\"\n", gone: fakeToken},
+		{name: "registry token", in: "registrytoken: " + fakeToken + "\n", gone: fakeToken},
 		{
 			name: "pem private key",
 			in:   "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0Z3VS5JJcds3xfn\n-----END RSA PRIVATE KEY-----\n",
@@ -71,6 +83,10 @@ func TestScrubPatterns(t *testing.T) {
 		"users:\n- name: admin\n  user:\n    token: t\n",
 		"tokenRequest: enabled\n",
 		"Kubernetes config: {BootstrapKubeconfig: CACertData: Token: TokenFile:/var/run/secrets/kubernetes.io/serviceaccount/token CertDir:}\n",
+		"[plugins.\"io.containerd.grpc.v1.cri\".registry.configs.\"registry\".auth]\n  username = \"nvke\"\n",
+		"capabilities = [\"pull\", \"resolve\"]\n",
+		"oauth: enabled12\nauthentication: webhook\nauth: none\n",
+		"a basic configuration with basic authentication\n",
 	} {
 		if out := string(scrubBytes([]byte(keep), patterns)); out != keep {
 			t.Errorf("harmless text was changed:\nbefore: %q\nafter:  %q", keep, out)
@@ -79,11 +95,16 @@ func TestScrubPatterns(t *testing.T) {
 }
 
 func TestRedactBundleRemovesKnownValuesAndShapes(t *testing.T) {
+	// The registry password is a known value; its Basic form is not, and the
+	// shape has to catch it.
+	basic := base64.StdEncoding.EncodeToString([]byte("nvke:s3cretpassw0rd"))
 	archive := tarGz(t, map[string]string{
 		"site-bundle/node/journal/units/kubelet.log": "the key is FORGEKEY0123456789 and the token is abcdef.0123456789abcdef\n",
 		"site-bundle/cluster/configmaps.yaml":        "data:\n  password: s3cretpassw0rd\n",
+		"site-bundle/node/config/containerd-certs.d.txt": "== /etc/containerd/certs.d/registry/hosts.toml\n[host.\"https://registry\".header]\n" +
+			"  Authorization = [\"Basic " + basic + "\"]\n",
 	})
-	out, findings, err := redactBundle(archive, []string{"FORGEKEY0123456789", "short"})
+	out, findings, err := redactBundle(archive, []string{"FORGEKEY0123456789", "short", "s3cretpassw0rd"})
 	if err != nil {
 		t.Fatalf("redactBundle: %v", err)
 	}
@@ -92,8 +113,9 @@ func TestRedactBundleRemovesKnownValuesAndShapes(t *testing.T) {
 	}
 	members := readArchive(t, out)
 	for member, gone := range map[string]string{
-		"site-bundle/node/journal/units/kubelet.log": "FORGEKEY0123456789",
-		"site-bundle/cluster/configmaps.yaml":        "s3cretpassw0rd",
+		"site-bundle/node/journal/units/kubelet.log":     "FORGEKEY0123456789",
+		"site-bundle/cluster/configmaps.yaml":            "s3cretpassw0rd",
+		"site-bundle/node/config/containerd-certs.d.txt": basic,
 	} {
 		if strings.Contains(members[member], gone) {
 			t.Errorf("%s still carries %q:\n%s", member, gone, members[member])

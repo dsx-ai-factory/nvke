@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"os"
@@ -36,20 +37,40 @@ func scriptLines(script string) []string {
 // so it has to be one line; and the script's own deadline has to leave room
 // in the budget for the fetch and the redaction after it.
 func TestBundleCommandIsOneLineAndBounded(t *testing.T) {
-	cmd := bundleCommand(9 * time.Minute)
+	dir, archive := bundlePaths("site-bundle.tar.gz")
+	cmd := bundleCommand(9*time.Minute, dir, archive)
 	if strings.Contains(cmd, "\n") {
 		t.Errorf("the invocation spans lines:\n%s", cmd)
 	}
-	for _, want := range []string{"timeout -k 30 450 sh ", bundleScriptPath, bundleDir, bundleArchive, "SITE_BUNDLE_DEADLINE_SECONDS=450"} {
+	for _, want := range []string{"timeout -k 30 450 sh ", bundleScriptPath, dir, archive, timelineDir, "SITE_BUNDLE_DEADLINE_SECONDS=450"} {
 		if !strings.Contains(cmd, want) {
 			t.Errorf("the invocation lacks %q:\n%s", want, cmd)
 		}
 	}
-	if short := bundleCommand(30 * time.Second); !strings.Contains(short, " 60 sh ") {
+	if short := bundleCommand(30*time.Second, dir, archive); !strings.Contains(short, " 60 sh ") {
 		t.Errorf("a budget below the margin should still give the script a minute:\n%s", short)
 	}
 	if root := asRoot(cmd); !strings.HasPrefix(root, "sudo -n -i sh -c ") {
 		t.Errorf("the collector must run as root:\n%s", root)
+	}
+}
+
+// Two collections never share a directory or an archive on the node: a spec's
+// collection that outlives its session must not be overwritten by, or tar the
+// half-written files of, the teardown's.
+func TestBundlePathsAreDistinctPerDestination(t *testing.T) {
+	specDir, specArchive := bundlePaths("/tmp/run/site-bundle.tar.gz")
+	finalDir, finalArchive := bundlePaths("/tmp/run/site-bundle-final.tar.gz")
+	if specDir != workDir+"/site-bundle" || specArchive != workDir+"/site-bundle.tar.gz" {
+		t.Errorf("spec collection paths = %s, %s", specDir, specArchive)
+	}
+	if finalDir != workDir+"/site-bundle-final" || finalArchive != workDir+"/site-bundle-final.tar.gz" {
+		t.Errorf("final collection paths = %s, %s", finalDir, finalArchive)
+	}
+	for _, p := range []string{specDir, specArchive, finalDir, finalArchive} {
+		if p == timelineDir {
+			t.Errorf("%s is the sampler's directory", p)
+		}
 	}
 }
 
@@ -192,14 +213,27 @@ func hostFixture(t *testing.T) string {
 		"var/log/cloud-init-output.log":                "done\n",
 		"var/lib/nvke/state.json": `{"status":"ready","joinInfo":{"controlPlaneJoinString":"kubeadm join 10.0.0.5:6443 --token abcdef.0123456789abcdef ` +
 			`--discovery-token-ca-cert-hash sha256:` + sixtyFour + ` --certificate-key ` + sixtyFour + `","workerJoinString":"kubeadm join 10.0.0.5:6443 --token abcdef.0123456789abcdef"}}`,
-		"root/.local/state/nvke/diagnostics/a.txt": "deploy state\n",
-		"root/.local/state/nvke/site.kubeconfig":   "apiVersion: v1\nusers: []\n",
+		"root/.local/state/nvke/diagnostics/a.txt":            "deploy state\n",
+		"root/.local/state/nvke/site.kubeconfig":              "apiVersion: v1\nusers: []\n",
+		"var/lib/nke-e2e/site-timeline/timeline/timeline.log": "=== 2026-10-20T04:00:00Z\n--- /etc/cni/net.d\n",
+		// A registry credential block, which the collector strips on the node.
+		"etc/containerd/config.toml": "[plugins.\"io.containerd.grpc.v1.cri\".registry.configs.\"registry.example\".auth]\n" +
+			"  username = \"nvke\"\n  password = \"" + fixtureRegistryPassword + "\"\n  auth = \"" + fixtureRegistryBasic + "\"\n",
+		"etc/containerd/certs.d/registry.example/hosts.toml": "server = \"https://registry.example\"\n[host.\"https://registry.example\"]\n" +
+			"  capabilities = [\"pull\", \"resolve\"]\n  [host.\"https://registry.example\".header]\n    Authorization = [\"Basic " + fixtureRegistryBasic + "\"]\n",
 	}
 	for p, content := range files {
 		writeFile(t, filepath.Join(root, p), content)
 	}
 	return root
 }
+
+// A registry credential for the fixture, built at run time: a literal
+// `Basic <base64>` in a test file reads as a leak to the Secrets gate.
+var (
+	fixtureRegistryPassword = strings.Repeat("p", 12)
+	fixtureRegistryBasic    = base64.StdEncoding.EncodeToString([]byte("nvke:" + fixtureRegistryPassword))
+)
 
 // readArchive returns the members of a gzipped tar by name.
 func readArchive(t *testing.T, data []byte) map[string]string {
@@ -296,6 +330,10 @@ func TestBundleScriptUnderStubbedTools(t *testing.T) {
 		"node/runtime/crictl-logs/kube-system_coredns-abc_coredns.log":   {"0", ""},
 		"node/seed/nvkectl-bootstrap-control-plane-crictl-ps.txt":        {"0", ""},
 		"node/config/nvke-state.json":                                    {"0", ""},
+		"cluster/pods.logs/kube-system_coredns-abc_coredns.log":          {"0", ""},
+		"timeline/timeline.log":                                          {"0", ""},
+		"node/config/containerd-config.toml":                             {"0", ""},
+		"node/config/containerd-certs.d.txt":                             {"0", ""},
 	} {
 		row, ok := rows[section]
 		if !ok {
@@ -327,7 +365,19 @@ func TestBundleScriptUnderStubbedTools(t *testing.T) {
 	if _, ok := members["site-bundle/node/logs/deploy-state/diagnostics_a.txt"]; !ok {
 		t.Error("the deploy path's state was not copied")
 	}
+	if got := members["site-bundle/timeline/timeline.log"]; !strings.Contains(got, "/etc/cni/net.d") {
+		t.Errorf("the sampler's timeline was not copied in: %q", got)
+	}
+	for _, member := range []string{"site-bundle/node/config/containerd-config.toml", "site-bundle/node/config/containerd-certs.d.txt"} {
+		got := members[member]
+		if strings.Contains(got, fixtureRegistryBasic) || strings.Contains(got, fixtureRegistryPassword) || !strings.Contains(got, "[stripped]") {
+			t.Errorf("%s still carries the registry credential, or was not stripped:\n%s", member, got)
+		}
+	}
 	for name := range members {
+		if strings.Contains(name, "cluster-info/") {
+			t.Errorf("the collector still writes a cluster-info dump, which no cap reaches: %s", name)
+		}
 		if strings.Contains(name, "kubeconfig") {
 			t.Errorf("a kubeconfig is in the archive: %s", name)
 		}
@@ -349,12 +399,12 @@ const bundleIndexFixture = "section\texit\tbytes\tseconds\tcommand\n" +
 
 func TestCollectBundle(t *testing.T) {
 	s := newFakeSession()
-	s.fetch[bundleArchive] = tarGz(t, map[string]string{
+	dest := filepath.Join(t.TempDir(), "site-bundle.tar.gz")
+	s.fetch[archiveFor(dest)] = tarGz(t, map[string]string{
 		"site-bundle/index.tsv":                      bundleIndexFixture,
 		"site-bundle/manifest.txt":                   "started: x\ninterrupted: no\n",
 		"site-bundle/node/journal/units/kubelet.log": "joined with abcdef.0123456789abcdef as SECRETVALUE1234\n",
 	})
-	dest := filepath.Join(t.TempDir(), "site-bundle.tar.gz")
 
 	report, err := CollectBundle(t.Context(), s, dest, 9*time.Minute, "SECRETVALUE1234")
 	if err != nil {
@@ -395,14 +445,14 @@ func TestCollectBundle(t *testing.T) {
 // archive, so a failed Run is a partial bundle, not no bundle.
 func TestCollectBundleKeepsAPartialArchive(t *testing.T) {
 	s := newFakeSession()
-	s.fetch[bundleArchive] = tarGz(t, map[string]string{"site-bundle/index.tsv": bundleIndexFixture, "site-bundle/manifest.txt": "interrupted: deadline\n"})
+	dest := filepath.Join(t.TempDir(), "site-bundle.tar.gz")
+	s.fetch[archiveFor(dest)] = tarGz(t, map[string]string{"site-bundle/index.tsv": bundleIndexFixture, "site-bundle/manifest.txt": "interrupted: deadline\n"})
 	s.fail = func(cmd string) (string, error) {
 		if strings.Contains(cmd, "collect-site-bundle.sh") {
 			return "", errors.New("Process exited with status 124")
 		}
 		return "", nil
 	}
-	dest := filepath.Join(t.TempDir(), "site-bundle.tar.gz")
 	report, err := CollectBundle(t.Context(), s, dest, 9*time.Minute)
 	if err != nil {
 		t.Fatalf("CollectBundle: %v", err)
@@ -412,6 +462,57 @@ func TestCollectBundleKeepsAPartialArchive(t *testing.T) {
 	}
 	if _, statErr := os.Stat(dest); statErr != nil {
 		t.Errorf("the partial bundle was not written: %v", statErr)
+	}
+}
+
+// archiveFor is the node-side archive a collection to dest fetches.
+func archiveFor(dest string) string {
+	_, archive := bundlePaths(dest)
+	return archive
+}
+
+// A caller whose context is done gets nothing started on the node: no script
+// run, no fetch, no file. The detached context inside collectBundle is for
+// the fetch after a run that did start, not a way around the caller's.
+func TestCollectBundleStopsOnACanceledContext(t *testing.T) {
+	s := newFakeSession()
+	dest := filepath.Join(t.TempDir(), "site-bundle.tar.gz")
+	s.fetch[archiveFor(dest)] = tarGz(t, map[string]string{"site-bundle/index.tsv": bundleIndexFixture})
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := CollectBundle(ctx, s, dest, 9*time.Minute)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("want the cancellation to surface, got %v", err)
+	}
+	for _, run := range s.runs {
+		if strings.Contains(run, "collect-site-bundle.sh") {
+			t.Errorf("the collector ran on a canceled context: %s", run)
+		}
+	}
+	if _, statErr := os.Stat(dest); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("wrote a bundle anyway: %v", statErr)
+	}
+}
+
+// Status 73 is the script finding another collector on its directory. The
+// archive there is that collector's, so nothing is fetched and the caller gets
+// ErrBundleBusy rather than a bundle that describes a different moment.
+func TestCollectBundleReportsABusyDirectory(t *testing.T) {
+	s := newFakeSession()
+	dest := filepath.Join(t.TempDir(), "site-bundle.tar.gz")
+	s.fetch[archiveFor(dest)] = tarGz(t, map[string]string{"site-bundle/index.tsv": bundleIndexFixture})
+	s.fail = func(cmd string) (string, error) {
+		if strings.Contains(cmd, "collect-site-bundle.sh") {
+			return "another collector holds /var/lib/nke-e2e/site-bundle", errors.New("Process exited with status 73")
+		}
+		return "", nil
+	}
+	_, err := CollectBundle(t.Context(), s, dest, 9*time.Minute)
+	if !errors.Is(err, ErrBundleBusy) {
+		t.Fatalf("want ErrBundleBusy, got %v", err)
+	}
+	if _, statErr := os.Stat(dest); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("wrote the other collector's archive: %v", statErr)
 	}
 }
 
@@ -432,11 +533,11 @@ func TestCollectBundleWhenTheSessionIsGone(t *testing.T) {
 func TestCollectBundleFailsClosed(t *testing.T) {
 	t.Run("denied member", func(t *testing.T) {
 		s := newFakeSession()
-		s.fetch[bundleArchive] = tarGz(t, map[string]string{
+		dest := filepath.Join(t.TempDir(), "site-bundle.tar.gz")
+		s.fetch[archiveFor(dest)] = tarGz(t, map[string]string{
 			"site-bundle/index.tsv":              bundleIndexFixture,
 			"site-bundle/node/config/admin.conf": "apiVersion: v1\n",
 		})
-		dest := filepath.Join(t.TempDir(), "site-bundle.tar.gz")
 		_, err := CollectBundle(t.Context(), s, dest, 9*time.Minute)
 		if !errors.Is(err, ErrBundleRedaction) {
 			t.Fatalf("want ErrBundleRedaction, got %v", err)
@@ -454,8 +555,8 @@ func TestCollectBundleFailsClosed(t *testing.T) {
 	})
 	t.Run("not an archive", func(t *testing.T) {
 		s := newFakeSession()
-		s.fetch[bundleArchive] = []byte("not a tarball")
 		dest := filepath.Join(t.TempDir(), "site-bundle.tar.gz")
+		s.fetch[archiveFor(dest)] = []byte("not a tarball")
 		_, err := CollectBundle(t.Context(), s, dest, 9*time.Minute)
 		if !errors.Is(err, ErrBundleRedaction) {
 			t.Fatalf("want ErrBundleRedaction, got %v", err)
@@ -468,8 +569,8 @@ func TestCollectBundleFailsClosed(t *testing.T) {
 
 func TestCollectBundleRefusesAHugeArchive(t *testing.T) {
 	s := newFakeSession()
-	s.fetch[bundleArchive] = tarGz(t, map[string]string{"site-bundle/index.tsv": bundleIndexFixture})
 	dest := filepath.Join(t.TempDir(), "site-bundle.tar.gz")
+	s.fetch[archiveFor(dest)] = tarGz(t, map[string]string{"site-bundle/index.tsv": bundleIndexFixture})
 	_, err := collectBundle(t.Context(), s, dest, 9*time.Minute, 16, nil)
 	if !errors.Is(err, ErrBundleTooLarge) {
 		t.Fatalf("want ErrBundleTooLarge, got %v", err)

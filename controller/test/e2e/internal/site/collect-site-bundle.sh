@@ -16,11 +16,15 @@
 #   - the deny list in the suite's scrub.go is never read: no kubeconfig
 #     contents, no Secret objects, no helm values or manifests, no key material;
 #   - the EXIT trap always writes the archive, so a deadline leaves a partial
-#     bundle rather than none.
+#     bundle rather than none;
+#   - one collector per OUT: the script takes a lock on it and exits 73 when
+#     another run holds it, because a dropped SSH session does not kill the
+#     sudo'd script on the node and two runs on one directory would overlap.
 #
 # Environment:
 #   SITE_KUBECONFIG              admin kubeconfig on the node (default /var/lib/nke-e2e/site.kubeconfig)
 #   SITE_CONTROLLER_NAMESPACE    where the NVKE controller is deployed (default nke-controller)
+#   SITE_BUNDLE_TIMELINE_DIR     where site-sampler.sh writes (default /var/lib/nke-e2e/site-timeline)
 #   SITE_BUNDLE_DEADLINE_SECONDS the outer timeout, recorded in the manifest
 #   SITE_BUNDLE_HOST_ROOT        test hook: prefix for every file the script reads
 set -u
@@ -29,8 +33,21 @@ OUT=${1:?usage: collect-site-bundle.sh OUT ARCHIVE}
 ARCHIVE=${2:?usage: collect-site-bundle.sh OUT ARCHIVE}
 KUBECONFIG_PATH=${SITE_KUBECONFIG:-/var/lib/nke-e2e/site.kubeconfig}
 CONTROLLER_NAMESPACE=${SITE_CONTROLLER_NAMESPACE:-nke-controller}
+TIMELINE_DIR=${SITE_BUNDLE_TIMELINE_DIR:-/var/lib/nke-e2e/site-timeline}
 DEADLINE_SECONDS=${SITE_BUNDLE_DEADLINE_SECONDS:-0}
 HOST_ROOT=${SITE_BUNDLE_HOST_ROOT:-}
+
+# The lock lives beside OUT, not in it, so it is not in the archive. Taken
+# before the EXIT trap is set: a run that leaves here must not tar the other
+# run's directory. A node without flock runs unlocked, as before.
+mkdir -p "${OUT%/*}"
+if command -v flock >/dev/null 2>&1; then
+	exec 9>"$OUT.lock"
+	if ! flock -n 9; then
+		echo "another collector holds $OUT" >&2
+		exit 73
+	fi
+fi
 
 K=1024
 M=1048576
@@ -43,9 +60,9 @@ INTERRUPTED=no
 API_REACHABLE=unknown
 KUBECTL_TIMEOUT=20
 
-# The timeline directory is the sampler's and is kept; node/ and cluster/ are
-# this run's and are replaced.
-rm -rf "$OUT/node" "$OUT/cluster" "$TMP"
+# OUT is this run's alone; the sampler's timeline lives in TIMELINE_DIR and
+# is copied in below.
+rm -rf "$OUT"
 mkdir -p "$OUT/node" "$OUT/cluster" "$TMP"
 printf 'section\texit\tbytes\tseconds\tcommand\n' >"$INDEX"
 
@@ -161,6 +178,11 @@ finish() {
 trap finish EXIT
 trap 'INTERRUPTED=signal; exit 124' TERM INT HUP
 
+# The sampler's timeline: which network each pod landed on, and when. Local
+# and cheap, so it goes first; the sampler rotates at 8 MiB and keeps one
+# older file, and the copy keeps the tail of each.
+copydir timeline $((8 * M)) "$TIMELINE_DIR/timeline" 4
+
 # ---------------------------------------------------------------- cluster ---
 # Cheapest and highest-value first, so a deadline still leaves the evidence
 # that decides a failure.
@@ -245,12 +267,23 @@ if [ "$API_REACHABLE" = yes ]; then
 		skip cluster/ovn "no ovnkube-node pod"
 	fi
 
-	# Last of the cluster group and the broadest: pods, services, workloads,
-	# events and current logs for every namespace, as kubectl writes them.
-	kube cluster/cluster-info/dump.txt 180 $((1 * M)) cluster-info dump --all-namespaces --output-directory="$OUT/cluster/cluster-info"
-	find "$OUT/cluster/cluster-info" -type f -name '*.log' -size +1M -exec sh -c 'tail -c 1048576 "$1" >"$1.tail" && mv -f "$1.tail" "$1"' _ {} \; 2>/dev/null
+	# Last of the cluster group and the broadest: the current log of every
+	# container, init containers included, each through kube's cap, at most
+	# this many of them and for at most this long. Not `cluster-info dump`:
+	# its --output-directory writes past every cap this script has.
+	timeout 30 kubectl --kubeconfig "$KUBECONFIG_PATH" --request-timeout=20s get pods -A -o go-template='{{range .items}}{{$ns := .metadata.namespace}}{{$pod := .metadata.name}}{{range .spec.initContainers}}{{$ns}} {{$pod}} {{.name}}{{"\n"}}{{end}}{{range .spec.containers}}{{$ns}} {{$pod}} {{.name}}{{"\n"}}{{end}}{{end}}' 2>/dev/null |
+		head -n 120 >"$TMP/containers" || true
+	logs_t0=$(date +%s)
+	while read -r ns pod container; do
+		[ -n "$container" ] || continue
+		if [ $(($(date +%s) - logs_t0)) -ge 150 ]; then
+			skip cluster/pods.logs/... "capped at 150 seconds"
+			break
+		fi
+		kube "cluster/pods.logs/${ns}_${pod}_${container}.log" 10 $((512 * K)) -n "$ns" logs "$pod" -c "$container" --tail=2000 --ignore-errors
+	done <"$TMP/containers"
 else
-	skip cluster/heavy "API server not reachable: describe, configmaps, CAPI objects, previous logs, helm, OVN and cluster-info dump not attempted"
+	skip cluster/heavy "API server not reachable: describe, configmaps, CAPI objects, previous logs, helm, OVN and pod logs not attempted"
 fi
 
 # ------------------------------------------------------------------- node ---
@@ -372,8 +405,11 @@ run node/packages/nvke-debs.txt 10 $((256 * K)) ls -la "${HOST_ROOT}/usr/lib/nvk
 copydir node/config/manifests $((256 * K)) /etc/kubernetes/manifests
 copy node/config/kubelet-config.yaml $((256 * K)) /var/lib/kubelet/config.yaml
 copy node/config/kubeadm-flags.env $((64 * K)) /var/lib/kubelet/kubeadm-flags.env
-copy node/config/containerd-config.toml $((256 * K)) /etc/containerd/config.toml
-run node/config/containerd-certs.d.txt 10 $((256 * K)) sh -c 'for f in "$1"/etc/containerd/certs.d/*/hosts.toml; do [ -f "$f" ] || continue; echo "== $f"; cat "$f"; done' _ "$HOST_ROOT"
+# Registry credentials stay on the node: config.toml's auth block and
+# hosts.toml's Authorization header lose their values here, and the suite's
+# scrub runs over the result again.
+run node/config/containerd-config.toml 10 $((256 * K)) sh -c 'sed -E "s/^([[:space:]]*(auth|identitytoken|password|username)[[:space:]]*=[[:space:]]*).*/\1[stripped]/" "$1" 2>&1' _ "${HOST_ROOT}/etc/containerd/config.toml"
+run node/config/containerd-certs.d.txt 10 $((256 * K)) sh -c 'for f in "$1"/etc/containerd/certs.d/*/hosts.toml; do [ -f "$f" ] || continue; echo "== $f"; sed -E "s/([Aa]uthorization\"?[[:space:]]*=[[:space:]]*)[^}]*/\1[stripped]/g" "$f"; done' _ "$HOST_ROOT"
 copy node/config/crictl.yaml $((64 * K)) /etc/crictl.yaml
 copy node/config/default/nke-agent $((64 * K)) /etc/default/nke-agent
 copy node/config/default/nvke-agent $((64 * K)) /etc/default/nvke-agent

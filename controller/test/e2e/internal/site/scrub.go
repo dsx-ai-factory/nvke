@@ -52,9 +52,25 @@ func scrubPatterns() []scrubPattern {
 		{
 			name: "keyed-value",
 			re: regexp.MustCompile(`(?i)((?:password|passwd|pwd|api[_-]?key|access[_-]?key|client[_-]?secret|join[_-]?token|spireJoinToken|` +
-				`certificate[_-]?key|api[_-]?encryption[_-]?key|client-key-data|client-certificate-data)["']?[ \t]*[:=][ \t]*["']?)[^"'[:space:],]{8,}`),
+				`certificate[_-]?key|api[_-]?encryption[_-]?key|client-key-data|client-certificate-data|identitytoken|registrytoken|` +
+				// `auth` only at the start of a word: containerd's registry
+				// `auth = "<base64>"`, not the tail of `oauth`.
+				`(?:^|[^a-z])auth)["']?[ \t]*[:=][ \t]*["']?)[^"'[:space:],]{8,}`),
 			replacement: keepKey,
 		},
+		// A registry's HTTP Basic credential: containerd's hosts.toml carries
+		// it as `Authorization = ["Basic <base64>"]` under a [header] table or
+		// inline, a request log as `Authorization: Basic <base64>`. The value
+		// is base64(user:password), which the known-value needles do not
+		// hold even when the password is one of them.
+		{
+			name:        "basic-auth",
+			re:          regexp.MustCompile(`(?i)((?:proxy-)?authorization["']?[ \t]*[:=][ \t]*\[?[ \t]*["']?basic[ \t]+)[A-Za-z0-9+/=]{8,}`),
+			replacement: keepKey,
+		},
+		// The same credential with its header name out of sight: a long
+		// base64 run after the word is a credential far more often than prose.
+		{name: "basic-credential", re: regexp.MustCompile(`(?i)(\bbasic[ \t]+)[A-Za-z0-9+/=]{16,}`), replacement: keepKey},
 		// No colon in the value: a token never has one, and an empty `Token:`
 		// field in a struct dump is followed by the next `Key:value`, which is
 		// not the token.

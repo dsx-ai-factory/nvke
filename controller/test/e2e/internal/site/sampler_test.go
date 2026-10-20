@@ -22,7 +22,7 @@ func TestStartSamplerInstallsAUnit(t *testing.T) {
 		t.Fatalf("the unit was not staged at %s", samplerUnitPath)
 	}
 	for _, want := range []string{
-		"ExecStart=/bin/sh /var/lib/nke-e2e/site-sampler.sh /var/lib/nke-e2e/site-bundle",
+		"ExecStart=/bin/sh /var/lib/nke-e2e/site-sampler.sh /var/lib/nke-e2e/site-timeline",
 		"Restart=on-failure",
 		"WantedBy=multi-user.target",
 	} {

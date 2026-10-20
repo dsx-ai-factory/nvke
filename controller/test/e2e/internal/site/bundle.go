@@ -14,21 +14,31 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
 )
 
-// Paths on the node for the failure bundle. The script and the archive sit in
-// workDir beside the other staged files; the directory is the collector's and
-// the sampler's, and the archive is beside it so it does not contain itself.
+// Paths on the node for the failure bundle. The script sits in workDir beside
+// the other staged files. Each collection gets a directory and an archive of
+// its own, named after the file it writes locally (bundlePaths), so a spec's
+// collection and the teardown's never share a path; the sampler writes its
+// timeline to a directory of its own, which every collection copies in.
 const (
 	bundleScriptPath = workDir + "/collect-site-bundle.sh"
-	bundleDir        = workDir + "/site-bundle"
-	bundleArchive    = workDir + "/site-bundle.tar.gz"
+	timelineDir      = workDir + "/site-timeline"
+
+	// bundleBusyStatus is the script's own exit status when another
+	// collector holds its output directory. A dropped session does not kill
+	// the sudo'd script on the node, so a second run on the same paths would
+	// otherwise overlap it; the script takes a lock and leaves instead.
+	bundleBusyStatus = 73
 
 	// bundleMaxBytes is the largest archive Fetch is allowed to bring back.
 	// Fetch holds the whole file in memory, and the script caps every
@@ -57,6 +67,9 @@ var (
 	ErrBundleRedaction = errors.New("the site bundle could not be redacted")
 	// ErrBundleTooLarge means the archive exceeded bundleMaxBytes.
 	ErrBundleTooLarge = errors.New("the site bundle is too large")
+	// ErrBundleBusy means another collector still holds the directory on the
+	// node, so nothing was collected or fetched.
+	ErrBundleBusy = errors.New("another collector holds the site bundle directory")
 )
 
 // BundleReport is what CollectBundle says about the archive it wrote.
@@ -87,18 +100,24 @@ func CollectBundle(ctx context.Context, s infra.Session, dest string, budget tim
 
 func collectBundle(ctx context.Context, s infra.Session, dest string, budget time.Duration, maxBytes int, secrets []string) (BundleReport, error) {
 	var report BundleReport
+	dir, archive := bundlePaths(dest)
 	if err := s.Put(ctx, bundleScriptPath, []byte(collectSiteBundleScript), 0o755); err != nil {
 		return report, fmt.Errorf("stage the bundle collector on the node: %w", err)
 	}
 	// A non-zero status is the deadline (124) or the session going away. The
 	// script's EXIT trap has already written the archive from whatever
-	// finished, so the run continues to the fetch.
-	if _, err := s.Run(ctx, asRoot(bundleCommand(budget))); err != nil {
+	// finished, so the run continues to the fetch. The one exception is the
+	// script leaving because another collector holds the directory: that
+	// archive is the other collector's, so it is not fetched here.
+	if _, err := s.Run(ctx, asRoot(bundleCommand(budget, dir, archive))); err != nil {
+		if exitedWith(err, bundleBusyStatus) {
+			return report, fmt.Errorf("%w: %s", ErrBundleBusy, dir)
+		}
 		report.Partial = true
 	}
 	fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), bundleFetchBudget)
 	defer cancel()
-	data, err := s.Fetch(fetchCtx, bundleArchive)
+	data, err := s.Fetch(fetchCtx, archive)
 	if err != nil {
 		return report, fmt.Errorf("fetch the site bundle: %w", err)
 	}
@@ -122,6 +141,16 @@ func collectBundle(ctx context.Context, s infra.Session, dest string, budget tim
 	return report, nil
 }
 
+// bundlePaths is where one collection works on the node: the directory, then
+// the archive, both under workDir and named after dest's base name, so the
+// archive written locally as site-bundle-final.tar.gz was collected in
+// site-bundle-final/ and never shares a path with the collection that wrote
+// site-bundle.tar.gz.
+func bundlePaths(dest string) (string, string) {
+	stem := strings.TrimSuffix(filepath.Base(dest), ".tar.gz")
+	return workDir + "/" + stem, workDir + "/" + stem + ".tar.gz"
+}
+
 // bundleCommand is the one line that runs the staged script as root. One line
 // because it goes through sudo's argument joining, which is what eats
 // newlines; the script itself traveled by Put and keeps its own.
@@ -129,13 +158,27 @@ func collectBundle(ctx context.Context, s infra.Session, dest string, budget tim
 // `timeout` without --foreground signals its whole process group, so the
 // script's children get the deadline too; the script traps it, and the kill
 // grace is for its EXIT trap to tar what finished.
-func bundleCommand(budget time.Duration) string {
+func bundleCommand(budget time.Duration, dir, archive string) string {
 	deadline := max(budget-bundleDeadlineMargin, bundleMinDeadline)
 	seconds := int(deadline / time.Second)
-	return fmt.Sprintf("SITE_KUBECONFIG=%s SITE_CONTROLLER_NAMESPACE=%s SITE_BUNDLE_DEADLINE_SECONDS=%d timeout -k %d %d sh %s %s %s",
-		shellQuote(kubeconfigPath), shellQuote(controller.Namespace()), seconds,
+	return fmt.Sprintf("SITE_KUBECONFIG=%s SITE_CONTROLLER_NAMESPACE=%s SITE_BUNDLE_TIMELINE_DIR=%s SITE_BUNDLE_DEADLINE_SECONDS=%d timeout -k %d %d sh %s %s %s",
+		shellQuote(kubeconfigPath), shellQuote(controller.Namespace()), shellQuote(timelineDir), seconds,
 		int(bundleKillGrace/time.Second), seconds,
-		shellQuote(bundleScriptPath), shellQuote(bundleDir), shellQuote(bundleArchive))
+		shellQuote(bundleScriptPath), shellQuote(dir), shellQuote(archive))
+}
+
+// exitedWith reports whether err is the remote command ending with status.
+// The ssh package's exit error carries the status; a session that wraps it in
+// text, as the fake in the tests does, still prints "exited with status N".
+func exitedWith(err error, status int) bool {
+	if err == nil {
+		return false
+	}
+	var exitErr *ssh.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitStatus() == status
+	}
+	return strings.Contains(err.Error(), fmt.Sprintf("exited with status %d", status))
 }
 
 // writeNote leaves a file in the bundle's place saying why there is none.
