@@ -112,7 +112,8 @@ mutation using the site's backup process.
 
 ## Scheduled checks
 
-`certRenewal.controllerEnabled: true` in `nke-controller-config` enables
+`certRenewal.controllerEnabled: true` in the controller ConfigMap
+(`controllerConfig.name`, default `nvke-controller-config`) enables
 scheduling. Defaults are a twelve-hour `certRenewal.interval` and thirty-day
 `certRenewal.thresholdDays`. Use the
 [validated configuration table](../../controller/docs/credential-monitoring.md#configuration)
@@ -136,7 +137,7 @@ is a basic fallback; it must use this tenant's explicit kubeconfig/context.
 ## Forced renewal and terminal observation
 
 Start the workflow in the namespace and task queue the controller's workers
-poll: `temporal.namespace` and `temporal.taskQueue` in `nke-controller-config`
+poll: `temporal.namespace` and `temporal.taskQueue` in the controller ConfigMap
 (defaults `cloud-workflow-engine` and `cloud-workflow-engine-tasks`). A wrong
 queue starts a workflow no worker polls. Pass the Temporal CLI's address and TLS
 flags for the site's Temporal frontend; see the
