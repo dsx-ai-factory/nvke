@@ -560,7 +560,7 @@ func newInfraProvider(cfg config.Config) (infra.Provider, error) {
 //
 // Checked here because the cost is the point. Without it a full run takes a
 // machine, provisions it and installs the whole stack --- forty minutes, and
-// on redstone-dev1-dh2 the only CPU machine there is, so nothing else can run
+// on the DSX datahall the only CPU machine there is, so nothing else can run
 // meanwhile --- to reach a failure that was certain before it started.
 //
 // Not Forge rather than is-DSX: the limitation is that the tenant spec speaks

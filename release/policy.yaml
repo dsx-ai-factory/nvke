@@ -7,7 +7,7 @@
 # component resolves to a version is in registry.yaml.
 #
 # The streams below are the ones that exist: the Forge lanes on GB200 and L40S
-# capacity, and the DSX lane on the redstone-dev1-dh2 datahall's CPU hardware.
+# capacity, and the DSX lane on the the DSX datahall datahall's CPU hardware.
 # A policy naming capabilities no runner has produces plans that nothing can
 # schedule, so a stream is added with the runner that backs it.
 
@@ -78,7 +78,7 @@ spec:
     - name: forge-l40s-amd64-ubuntu-26.04-kube-1.36
       capabilities: {provider: forge, gpu: l40s, arch: amd64, ubuntu: "26.04", kube: "1.36"}
 
-    # The DSX datahall, redstone-dev1-dh2, which is aarch64 throughout. No gpu:
+    # The DSX datahall, the DSX datahall, which is aarch64 throughout. No gpu:
     # it places both halves of a run on CPU machines, so a stream asking for an
     # accelerator here resolves to nothing.
     #

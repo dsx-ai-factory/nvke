@@ -213,23 +213,26 @@ infrastructure:
   org:
     id: "${DSX_ORG_ID:-ncx}"          # a name, where Forge's is numeric
   sites:
-    redstone-dev1-dh2:                # the key IS the API host
-      id:          "${DSX_REDSTONE_DEV1_DH2_SITE_ID:-}"
-      tenantID:    "${DSX_REDSTONE_DEV1_DH2_TENANT_ID:-}"   # no Forge equivalent
-      vpcPrefixID: "${DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID:-}"
+    datahall-1:                       # generic; `api` carries the host
+      api:         "${DSX_DATAHALL_1_API:-}"
+      id:          "${DSX_DATAHALL_1_SITE_ID:-}"
+      tenantID:    "${DSX_DATAHALL_1_TENANT_ID:-}"   # no Forge equivalent
+      vpcPrefixID: "${DSX_DATAHALL_1_VPC_PREFIX_ID:-}"
       instanceTypes:
-        - name: redstone-dev1-dh2-nvke-tenant
-          id: "${DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID:-}"
+        - name: datahall-1-nvke-tenant
+          id: "${DSX_DATAHALL_1_INSTANCE_TYPE_ID:-}"
           provides: {machineType: cpu, arch: arm64}
 ```
 
 Three differences are load-bearing rather than cosmetic.
 
-**The key is the API host.** A request goes to
-`carbide-rest-api-<key>.dev.dsx.nvidia.com`, so there is no site-lookup call
-the way Forge needs one. Two datahalls at one site hold completely disjoint
-UUIDs for the same kinds of object, and nothing in a response says which one an
-id came from — so a second datahall is a second key, never a reused one.
+**Each datahall declares its own API host.** `api` is required and there is no
+site-lookup call the way Forge needs one — the host addresses the datahall
+directly. The key itself is generic, as `forge.yaml`'s `site-1` and `site-2`
+are, so which datahall this is stays in a variable. Two datahalls at one site
+hold completely disjoint UUIDs for the same kinds of object, and nothing in a
+response says which one an id came from — so a second datahall is a second key,
+never a reused one.
 
 **Credentials are per datahall.** The names are derived from the key:
 `DSX_<DATAHALL>_SSA_CLIENT_ID` and `_SECRET`, exchanged for a bearer token at

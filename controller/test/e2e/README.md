@@ -833,12 +833,12 @@ filed under in `environments/dsx.yaml`:
 
 ```bash
 export SSA_ISSUER=…                                  # issuer BASE url; the
-export DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID=…         # suite appends /token
-export DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_SECRET=…     # 15-minute TTL
-export DSX_REDSTONE_DEV1_DH2_JUMP_HOST=…             # the rest are identifiers
-export DSX_REDSTONE_DEV1_DH2_SITE_ID=… DSX_REDSTONE_DEV1_DH2_TENANT_ID=…
-export DSX_REDSTONE_DEV1_DH2_VPC_ID=… DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID=…
-export DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID=… DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID=…
+export DSX_DATAHALL_1_SSA_CLIENT_ID=…         # suite appends /token
+export DSX_DATAHALL_1_SSA_CLIENT_SECRET=…     # 15-minute TTL
+export DSX_DATAHALL_1_JUMP_HOST=…             # the rest are identifiers
+export DSX_DATAHALL_1_SITE_ID=… DSX_DATAHALL_1_TENANT_ID=…
+export DSX_DATAHALL_1_VPC_ID=… DSX_DATAHALL_1_VPC_PREFIX_ID=…
+export DSX_DATAHALL_1_SSH_KEY_GROUP_ID=… DSX_DATAHALL_1_INSTANCE_TYPE_ID=…
 ```
 
 There is no cluster fallback: an unset client fails the run naming both
@@ -849,7 +849,7 @@ Use `-e2e.site-stage=provision` or `bootstrap`. `full` is refused before a
 machine is taken: its tenant half decodes the environment as a Forge
 declaration, which a DSX one is not.
 
-redstone-dev1-dh2 is **arm64 only**, and an absent `arch` capability defaults
+the DSX datahall is **arm64 only**, and an absent `arch` capability defaults
 to amd64, so a hand-run has to ask for arm64 and stage arm64 OS images --- the
 command above passes no `-e2e.capabilities` and would fail in `Resolve` with
 "no declared site offers a amd64 CPU shape":

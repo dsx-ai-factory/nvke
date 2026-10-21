@@ -49,7 +49,7 @@ var nonAlphanumeric = regexp.MustCompile(`[^A-Z0-9]+`)
 // derived from the datahall's own name.
 //
 // Per datahall, not global, because the client is: each site keeps its own, and
-// one scoped to az51-dev2-dh2 means nothing at redstone-dev1-dh2. Deriving the
+// one scoped to one datahall means nothing at another. Deriving the
 // name from the key rather than declaring it also means a second datahall needs
 // no code and no new convention to remember.
 //

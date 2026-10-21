@@ -14,7 +14,7 @@ import (
 // A full run's tenant half speaks Forge and only Forge, so any other provider
 // fails at the tenant however healthy its hardware is. The check is worth
 // having because of what the failure costs: a machine held through provision,
-// bootstrap and deploy first, and on redstone-dev1-dh2 that is the only CPU
+// bootstrap and deploy first, and on the DSX datahall that is the only CPU
 // machine the datahall has.
 func TestFullStageSupported(t *testing.T) {
 	if err := fullStageSupported(forge.ProviderName); err != nil {
@@ -46,7 +46,7 @@ func TestFullStageSupported(t *testing.T) {
 // writes, raw and without the trailing slash the workflow also strips.
 func TestWithheldFromEnvironment(t *testing.T) {
 	t.Setenv("FORGE_JUMP_HOST", "jump.example.test/")
-	t.Setenv("DSX_REDSTONE_DEV1_DH2_JUMP_HOST", "10.1.2.3")
+	t.Setenv("DSX_DATAHALL_1_JUMP_HOST", "10.1.2.3")
 	t.Setenv("SSA_ISSUER", "https://issuer.example.test/")
 	t.Setenv("JUMP_HOST_PASSWORD", "hunter2hunter2")
 	t.Setenv("FORGE_API_KEY", "not-withheld-by-this-list")

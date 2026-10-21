@@ -27,16 +27,6 @@ import (
 const (
 	// ProviderName is the provider name environments/dsx.yaml declares.
 	ProviderName = "dsx"
-
-	// endpointPrefix and endpointSuffix bracket a datahall's name in the API
-	// hostname. Unlike Forge, which resolves a site name to an id through
-	// GET /site, DSX puts the datahall in DNS --- so the key a site is filed
-	// under is also what addresses it, and there is no site lookup at all.
-	//
-	// Site.API overrides this for a datahall on another domain, rather than
-	// teaching the derivation about domains.
-	endpointPrefix = "https://carbide-rest-api-"
-	endpointSuffix = ".dev.dsx.nvidia.com"
 )
 
 // Environment is DSX's dialect of an infrastructure declaration.
@@ -66,8 +56,9 @@ type Site struct {
 	// alongside. Endpoint derives the API host from it.
 	Key string `json:"-"`
 
-	// API overrides the endpoint Endpoint would derive from Key. Empty is the
-	// derived one.
+	// API is the carbide host this datahall answers on. Required: the key is
+	// deliberately generic, so nothing derives a host from it, and an unset one
+	// would dial a name that does not resolve.
 	API string `json:"api"`
 
 	// ID is the site id. Recorded, not sent: the host derived from Key already
@@ -141,10 +132,7 @@ type Site struct {
 
 // Endpoint is the API base for this datahall.
 func (s Site) Endpoint() string {
-	if api := strings.TrimSpace(s.API); api != "" {
-		return strings.TrimSuffix(api, "/")
-	}
-	return endpointPrefix + s.Key + endpointSuffix
+	return strings.TrimSuffix(strings.TrimSpace(s.API), "/")
 }
 
 // Machine is one host a site controller can be built on.
@@ -241,6 +229,7 @@ func (d *Environment) Site(name string) (Site, error) {
 func (s Site) validate() error {
 	missing := make([]string, 0, 8)
 	for _, field := range []struct{ name, value string }{
+		{"api", s.API},
 		{"tenantID", s.TenantID},
 		{"vpcID", s.VpcID},
 		{"vpcPrefixID", s.VpcPrefixID},
