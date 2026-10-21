@@ -36,9 +36,9 @@ const (
 	//
 	// SSH is the long one. After the imager writes the disk and reboots, the
 	// firmware loops UEFI HTTP boot across every NIC before falling through to
-	// disk -- ten, fifteen and twenty-seven minutes were all measured on the
-	// az51 exercise. Slow rather than broken, so WaitReachable carries the
-	// budget.
+	// disk -- ten, fifteen and twenty-seven minutes were all measured during
+	// an earlier bring-up. Slow rather than broken, so WaitReachable carries
+	// the budget.
 	//
 	// Together they are 50 minutes, matching Forge's 30 + 20, and both sit
 	// under the same governor: the provision spec's own NodeTimeout, which is

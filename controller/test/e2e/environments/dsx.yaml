@@ -39,8 +39,9 @@ infrastructure:
     # Every identifier below belongs to one datahall and only that one. Two
     # datahalls at one site hold completely disjoint UUIDs for the same kinds of
     # object, and nothing in an API response says which one an id came from --
-    # the az51 run log is itself named for dh1 while recording a dh2 run, which
-    # is how close that mistake sits. A second datahall is a second key here,
+    # a recorded run log is itself named for one datahall while describing a run
+    # in another, which is how close that mistake sits. A second datahall is a
+    # second key here,
     # and the resolver picks between them on capabilities.
     #
     # Every machine this datahall owns is aarch64 --- the GPU trays and both
@@ -59,7 +60,7 @@ infrastructure:
       # for a control-plane VIP.
       vpcPrefixID: "${DSX_DATAHALL_1_VPC_PREFIX_ID:-}"
 
-      # SOL console only, as at az51-dev2-dh2. The group this datahall uses
+      # SOL console only, as at every datahall so far. The group this one uses
       # was created with the datahall and is already associated with the site.
       sshKeyGroupID: "${DSX_DATAHALL_1_SSH_KEY_GROUP_ID:-}"
 

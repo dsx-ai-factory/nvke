@@ -15,9 +15,9 @@ import (
 // under. Spelled out rather than computed, so a change to the derivation shows
 // up here as a failure rather than agreeing with itself.
 const (
-	testSite            = "az51-dev2-dh2"
-	testClientIDVar     = "DSX_AZ51_DEV2_DH2_SSA_CLIENT_ID"
-	testClientSecretVar = "DSX_AZ51_DEV2_DH2_SSA_CLIENT_SECRET" // #nosec G101 -- a variable name
+	testSite            = "datahall-1"
+	testClientIDVar     = "DSX_DATAHALL_1_SSA_CLIENT_ID"
+	testClientSecretVar = "DSX_DATAHALL_1_SSA_CLIENT_SECRET" // #nosec G101 -- a variable name
 )
 
 // issuerStub answers the token endpoint, recording what it was presented.
@@ -96,7 +96,7 @@ func TestClientEnvNamesFollowTheDatahall(t *testing.T) {
 		}
 	}
 	// And it is nothing a LaunchLayer credential would be found under.
-	id, _ := ClientEnvNames("az51-dev2-dh2")
+	id, _ := ClientEnvNames("datahall-1")
 	if id == "SSA_CLIENT_ID" {
 		t.Error("the derived name collides with ll-check-creds.sh's bare variable")
 	}

@@ -46,8 +46,8 @@ type Org struct {
 // and the machines it can offer.
 //
 // THE KEY IS THE DATAHALL, and every identifier below belongs to it. Two
-// datahalls at one site --- az51-dev2-dh2 and az51-dev3-dh1 --- hold
-// completely disjoint UUIDs for the same kinds of object, and nothing in an
+// datahalls at one site --- dh2 and dh3 of the same one --- hold completely
+// disjoint UUIDs for the same kinds of object, and nothing in an
 // API response says which datahall an id came from. Nesting them under the key
 // is what stops a VPC from one being paired with a prefix from the other.
 type Site struct {
@@ -425,7 +425,7 @@ func (d *Environment) Resolve(capabilities map[string]string) (Selection, error)
 // is for a person standing up a datahall by hand, where choosing the host is
 // the point -- and it is a liability in CI, because a pinned machine that is
 // held or in Error blocks every run while the rest of the datahall sits idle.
-// That cost a full day on az51-dev2-dh2 on 2026-10-12.
+// That cost a full day on 2026-10-12.
 type Placement struct {
 	// MachineID is set only when the site pins one. It needs the tenant's
 	// targetedInstanceCreation capability; InstanceTypeID does not.
