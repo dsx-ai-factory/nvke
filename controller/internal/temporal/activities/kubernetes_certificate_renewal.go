@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	// CertificateRenewalLegacyRequired selects the legacy executor before any typed work was accepted.
+	// CertificateRenewalLegacyRequired selects the legacy executor after a definitive typed Start rejection.
 	CertificateRenewalLegacyRequired = "CertificateRenewalLegacyRequired"
 
 	// CertificateRenewalNotDispatched proves the first attempt sent no Start RPC
@@ -77,8 +77,8 @@ type KubernetesCertificateRenewalResult struct {
 // KubernetesCertificateRenewalCheckResult selects whether a node needs renewal
 // dispatch. Legacy reports pending legacy-runbook intent, which only the legacy
 // executor can resume: the typed agent operation never reads its phase file.
-// Typed, set only with Legacy, reports that the agent also holds pending intent,
-// so the typed executor must run after the legacy one in the same cycle.
+// Typed reports pending agent intent, which only the typed executor can resume.
+// When both are set, the typed executor must follow legacy in the same cycle.
 type KubernetesCertificateRenewalCheckResult struct {
 	Required bool `json:"Required"`
 	Legacy   bool `json:"Legacy"`
@@ -121,7 +121,7 @@ func (a *Activities) CheckKubernetesCertificateRenewalRequired(
 		return KubernetesCertificateRenewalCheckResult{}, err
 	}
 	script, err = runbook.InjectEnvironment(map[string]string{
-		"CHECK_ONLY": "true", "THRESHOLD_DAYS": fmt.Sprint(input.ThresholdDays),
+		"CHECK_ONLY": "true", "THRESHOLD_DAYS": fmt.Sprint(input.ThresholdDays), "FORCE": fmt.Sprint(input.Force),
 	}, script)
 	if err != nil {
 		return KubernetesCertificateRenewalCheckResult{}, fmt.Errorf("failed to inject certificate expiry check environment: %w", err)
@@ -133,26 +133,49 @@ func (a *Activities) CheckKubernetesCertificateRenewalRequired(
 	if response == nil || response.GetExitCode() != 0 {
 		return KubernetesCertificateRenewalCheckResult{}, errors.New("certificate expiry check failed")
 	}
-	switch strings.TrimSpace(response.GetOutput()) {
-	case "RENEWAL_REQUIRED=false":
-		return KubernetesCertificateRenewalCheckResult{}, nil
-	case "RENEWAL_REQUIRED=true":
-		return KubernetesCertificateRenewalCheckResult{Required: true}, nil
-	case "RENEWAL_REQUIRED=legacy":
-		return KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true}, nil
-	case "RENEWAL_REQUIRED=legacy_then_typed":
-		return KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true, Typed: true}, nil
-	default:
+	return certificateRenewalCheckResult(response.GetOutput())
+}
+
+// certificateRenewalCheckResult requires one full marker line amid the agent's
+// combined stdout/stderr diagnostics. Unlike STATUS_ONLY receipts, CHECK_ONLY
+// may warn about unreadable agent state while selecting pending legacy intent.
+func certificateRenewalCheckResult(output string) (KubernetesCertificateRenewalCheckResult, error) {
+	var result KubernetesCertificateRenewalCheckResult
+	found := false
+	for line := range strings.SplitSeq(output, "\n") {
+		if !strings.HasPrefix(line, "RENEWAL_REQUIRED=") {
+			continue
+		}
+		if found {
+			return KubernetesCertificateRenewalCheckResult{}, errors.New("certificate expiry check has multiple results")
+		}
+		found = true
+		switch line {
+		case "RENEWAL_REQUIRED=false":
+		case "RENEWAL_REQUIRED=true":
+			result.Required = true
+		case "RENEWAL_REQUIRED=legacy":
+			result = KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true}
+		case "RENEWAL_REQUIRED=typed":
+			result = KubernetesCertificateRenewalCheckResult{Required: true, Typed: true}
+		case "RENEWAL_REQUIRED=legacy_then_typed":
+			result = KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true, Typed: true}
+		default:
+			return KubernetesCertificateRenewalCheckResult{}, errors.New("certificate expiry check has an unknown result")
+		}
+	}
+	if !found {
 		return KubernetesCertificateRenewalCheckResult{}, errors.New("certificate expiry check has no recognized result")
 	}
+	return result, nil
 }
 
 // RenewKubernetesCertificates renews certificates through the typed node-agent
 // operation, polling it to a terminal state. Inputs without an expected etcd
 // member count retain the V1 RPC for existing workflow histories; hardened
-// inputs use the capability-distinct V2 RPC. V2 reports a definitive first-attempt
-// Unimplemented to the workflow so it can durably select the legacy executor.
-// Later V2 attempts and status errors never change execution mechanisms.
+// inputs use the capability-distinct V2 RPC. On every attempt, V2 reports a
+// definitive Start Unimplemented to the workflow so it can durably select the
+// legacy executor. Status errors never change execution mechanisms.
 // Cancellation stops this activity's observation, not accepted node work; the
 // workflow must resolve the selected operation before releasing ownership.
 func (a *Activities) RenewKubernetesCertificates(
@@ -221,11 +244,10 @@ func (a *Activities) RenewKubernetesCertificates(
 			return KubernetesCertificateRenewalResult{}, startErr
 		}
 		if input.ExpectedEtcdMembers > 0 {
-			// A prior attempt may have accepted work but lost its response. Even
-			// Unimplemented cannot safely select a different executor on retry.
-			if activity.GetInfo(ctx).Attempt != 1 {
-				return KubernetesCertificateRenewalResult{}, fmt.Errorf("cannot select legacy renewal after an ambiguous typed attempt: %w", err)
-			}
+			// Controller-managed agent installation is fenced by the reservation,
+			// so Start Unimplemented proves lack of V2 support on every attempt,
+			// even after a transient lookup, reservation or Start failure.
+			// Release the matching node reservation before workflow executor selection.
 			if releaseErr := a.releaseCertificateRenewal(ctx, node, input.OperationID); releaseErr != nil {
 				return KubernetesCertificateRenewalResult{}, releaseErr
 			}

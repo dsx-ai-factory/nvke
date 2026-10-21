@@ -133,15 +133,18 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
 
    With API authentication on, `nvkectl` must use an OIDC kubeconfig for this and the next two steps; with the management cluster's admin kubeconfig every NVKE API call fails.
 
-   A healthy cluster's `STATUS` is `Provisioned`. `Provisioning`, `Updating`, `Upgrading`, `Recycling` and `Deleting` mean an operation is running. `Updating` can also mean that a failed certificate renewal kept the cluster mutation lock. A failed certificate renewal whose node work was not confirmed terminal keeps `conditions.updateInProgress.type=certificate_renewal` (`conditions.certificateRenewal.state` is `failed`) until an operator clears it; see [Status and failure handling](../../controller/docs/certificate-renewal.md#status-and-failure-handling). `ProvisioningFailed` and `UpdateFailed` mean the last operation failed. [Create a workload cluster](../workload-clusters/create.md) describes each status.
+   `Provisioned` records provisioning state, not certificate-maintenance health. `Provisioning`, `Updating`, `Upgrading`, `Recycling` and `Deleting` mean an operation is running, except that `Updating` can also mean a failed certificate renewal retained the cluster mutation lock and needs operator recovery. `ProvisioningFailed` and `UpdateFailed` mean the last operation failed. [Create a workload cluster](../workload-clusters/create.md) describes each status.
 
-2. Read the conditions of a cluster whose status is not `Provisioned`.
+2. Read the cluster's conditions, including on clusters whose status is `Provisioned`.
 
    ```bash
    nvkectl get clusters <WORKLOAD_CLUSTER> -o yaml
    ```
 
-   `<WORKLOAD_CLUSTER>` is the workload cluster's name. Each entry under `conditions` has a `status`, a `lastTransitionTime` and a `message`. The `message` of the condition that last changed usually names the cause.
+   `<WORKLOAD_CLUSTER>` is the workload cluster's name. Provisioning conditions have a `status`, a `lastTransitionTime` and a `message`; the message usually names the cause of a provisioning failure. For certificate maintenance, inspect `conditions.certificateRenewal.state`, its `phase` and `message`, and the top-level `nextCertRenewalDue`, even when `STATUS` is `Provisioned`:
+
+   - A failed renewal that released its mutation lock can leave `STATUS` as `Provisioned`. Fix the reported cause; automatic retry waits until both `nextCertRenewalDue` and the one-hour backoff after `conditions.certificateRenewal.completedAt` have passed. A `two-control-plane-voters` refusal additionally waits for `controlPlaneConfig.desiredCount` to be at least `3`; scale to three or more, not down to one.
+   - If `conditions.updateInProgress.type=certificate_renewal` remains set with renewal state `failed`, the lock is retained. `STATUS` can show `Updating`, but a higher-priority condition such as `UpdateFailed` can mask it; identify retained ownership from these conditions regardless of the displayed status. Waiting does not release it. Follow the [ownership-checked recovery procedure](../../controller/docs/certificate-renewal.md#status-and-failure-handling) after confirming that the node operation and all its attempts have stopped. Cluster health or workflow completion alone is not enough to clear it.
 
 3. List the cluster's node pools.
 

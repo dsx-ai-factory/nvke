@@ -564,6 +564,11 @@ main() {
       return 0
     fi
     if [[ -n "$agent_state" ]]; then
+      echo "RENEWAL_REQUIRED=typed"
+      return 0
+    fi
+    # Force bypasses expiry, not the executor that owns persisted intent.
+    if [[ "$FORCE" == "true" ]]; then
       echo "RENEWAL_REQUIRED=true"
       return 0
     fi

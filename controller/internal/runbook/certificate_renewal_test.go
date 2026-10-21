@@ -1243,69 +1243,74 @@ func TestCertificateRenewalRunbookCheckOnlyIsReadOnly(t *testing.T) {
 	for runbookName, runbookState := range runbookStates {
 		for agentName, agentState := range agentStates {
 			for _, residual := range []string{"365d", "1d", "unknown"} {
-				t.Run(fmt.Sprintf("runbook=%s/agent=%s/%s", runbookName, agentName, residual), func(t *testing.T) {
-					harness := newCertificateRenewalHarness(t)
-					harness.setEnv("CHECK_ONLY", "true")
-					harness.setEnv("FORCE", "true")
-					harness.setEnv("FAKE_RESIDUAL", residual)
-					statePath := filepath.Join(harness.stateDir, "state")
-					state := []byte(runbookState + harness.caFingerprints(t) + "\n")
-					if runbookState != "" {
-						require.NoError(t, os.WriteFile(statePath, state, 0o600))
-					} else {
-						require.NoError(t, os.RemoveAll(harness.stateDir))
-					}
-					if runbookName == "restart_pending" {
-						require.NoError(t, os.Rename(filepath.Join(harness.manifestsDir, "etcd.yaml"), filepath.Join(harness.stagingDir, "etcd.yaml")))
-					} else {
-						require.NoError(t, os.RemoveAll(harness.stagingDir))
-					}
-					if agentState != "" {
-						require.NoError(t, os.WriteFile(harness.agentState, []byte(agentState), 0o600))
-					}
-					legacyIntent := runbookName == "renewing" || runbookName == "restart_pending"
-					pendingIntent := legacyIntent || agentName == "renewing" || agentName == "restart_pending"
-					output, err := harness.run(t)
-					switch {
-					case legacyIntent && (agentName == "renewing" || agentName == "restart_pending"):
-						require.NoError(t, err, output)
-						require.Equal(t, "RENEWAL_REQUIRED=legacy_then_typed\n", output)
-					case legacyIntent:
-						require.NoError(t, err, output)
-						require.Equal(t, "RENEWAL_REQUIRED=legacy\n", output)
-					case !pendingIntent && residual == "unknown":
-						require.Error(t, err, output)
-						require.NotContains(t, output, "RENEWAL_REQUIRED=")
-					default:
-						require.NoError(t, err, output)
-						require.Equal(t, fmt.Sprintf("RENEWAL_REQUIRED=%t\n", pendingIntent || residual == "1d"), output)
-					}
-					require.NoFileExists(t, filepath.Join(harness.runtimeDir, "renewed"))
-					require.NoFileExists(t, filepath.Join(harness.runtimeDir, "restarts"))
-					require.NoFileExists(t, filepath.Join(filepath.Dir(harness.scriptPath), "renewal.log"))
-					require.NoFileExists(t, filepath.Join(harness.stateDir, "lock"))
-					require.NoDirExists(t, filepath.Join(harness.stateDir, "completed"))
-					if runbookState != "" {
-						after, err := os.ReadFile(statePath)
-						require.NoError(t, err)
-						require.Equal(t, state, after)
-					} else {
-						require.NoDirExists(t, harness.stateDir)
-					}
-					if runbookName == "restart_pending" {
-						require.FileExists(t, filepath.Join(harness.stagingDir, "etcd.yaml"))
-						require.NoFileExists(t, filepath.Join(harness.manifestsDir, "etcd.yaml"))
-					} else {
-						require.NoDirExists(t, harness.stagingDir)
-					}
-					if agentState != "" {
-						after, err := os.ReadFile(harness.agentState)
-						require.NoError(t, err)
-						require.Equal(t, agentState, string(after))
-					} else {
-						require.NoFileExists(t, harness.agentState)
-					}
-				})
+				for _, force := range []bool{false, true} {
+					t.Run(fmt.Sprintf("runbook=%s/agent=%s/%s/force=%t", runbookName, agentName, residual, force), func(t *testing.T) {
+						harness := newCertificateRenewalHarness(t)
+						harness.setEnv("CHECK_ONLY", "true")
+						harness.setEnv("FORCE", fmt.Sprint(force))
+						harness.setEnv("FAKE_RESIDUAL", residual)
+						statePath := filepath.Join(harness.stateDir, "state")
+						state := []byte(runbookState + harness.caFingerprints(t) + "\n")
+						if runbookState != "" {
+							require.NoError(t, os.WriteFile(statePath, state, 0o600))
+						} else {
+							require.NoError(t, os.RemoveAll(harness.stateDir))
+						}
+						if runbookName == "restart_pending" {
+							require.NoError(t, os.Rename(filepath.Join(harness.manifestsDir, "etcd.yaml"), filepath.Join(harness.stagingDir, "etcd.yaml")))
+						} else {
+							require.NoError(t, os.RemoveAll(harness.stagingDir))
+						}
+						if agentState != "" {
+							require.NoError(t, os.WriteFile(harness.agentState, []byte(agentState), 0o600))
+						}
+						legacyIntent := runbookName == "renewing" || runbookName == "restart_pending"
+						pendingIntent := legacyIntent || agentName == "renewing" || agentName == "restart_pending"
+						output, err := harness.run(t)
+						switch {
+						case legacyIntent && (agentName == "renewing" || agentName == "restart_pending"):
+							require.NoError(t, err, output)
+							require.Equal(t, "RENEWAL_REQUIRED=legacy_then_typed\n", output)
+						case legacyIntent:
+							require.NoError(t, err, output)
+							require.Equal(t, "RENEWAL_REQUIRED=legacy\n", output)
+						case pendingIntent:
+							require.NoError(t, err, output)
+							require.Equal(t, "RENEWAL_REQUIRED=typed\n", output)
+						case !force && residual == "unknown":
+							require.Error(t, err, output)
+							require.NotContains(t, output, "RENEWAL_REQUIRED=")
+						default:
+							require.NoError(t, err, output)
+							require.Equal(t, fmt.Sprintf("RENEWAL_REQUIRED=%t\n", force || residual == "1d"), output)
+						}
+						require.NoFileExists(t, filepath.Join(harness.runtimeDir, "renewed"))
+						require.NoFileExists(t, filepath.Join(harness.runtimeDir, "restarts"))
+						require.NoFileExists(t, filepath.Join(filepath.Dir(harness.scriptPath), "renewal.log"))
+						require.NoFileExists(t, filepath.Join(harness.stateDir, "lock"))
+						require.NoDirExists(t, filepath.Join(harness.stateDir, "completed"))
+						if runbookState != "" {
+							after, err := os.ReadFile(statePath)
+							require.NoError(t, err)
+							require.Equal(t, state, after)
+						} else {
+							require.NoDirExists(t, harness.stateDir)
+						}
+						if runbookName == "restart_pending" {
+							require.FileExists(t, filepath.Join(harness.stagingDir, "etcd.yaml"))
+							require.NoFileExists(t, filepath.Join(harness.manifestsDir, "etcd.yaml"))
+						} else {
+							require.NoDirExists(t, harness.stagingDir)
+						}
+						if agentState != "" {
+							after, err := os.ReadFile(harness.agentState)
+							require.NoError(t, err)
+							require.Equal(t, agentState, string(after))
+						} else {
+							require.NoFileExists(t, harness.agentState)
+						}
+					})
+				}
 			}
 		}
 	}
@@ -1314,7 +1319,8 @@ func TestCertificateRenewalRunbookCheckOnlyIsReadOnly(t *testing.T) {
 // Check-only selection fails closed on agent state it cannot interpret, as the
 // agent itself refuses an unknown persisted certificate-renewal state, unless
 // this runbook has pending intent: then only the legacy executor is selected so
-// its restarts still finish, and stdout carries only the marker line.
+// its restarts still finish. Diagnostics share the agent's combined output with
+// the result marker.
 func TestCertificateRenewalRunbookCheckOnlyRejectsInvalidAgentState(t *testing.T) {
 	for _, test := range []struct {
 		name         string
@@ -1337,18 +1343,26 @@ func TestCertificateRenewalRunbookCheckOnlyRejectsInvalidAgentState(t *testing.T
 				state := "pending-cycle\n" + test.runbookPhase + "\nrenewed\n" + harness.caFingerprints(t) + "\n"
 				require.NoError(t, os.WriteFile(filepath.Join(harness.stateDir, "state"), []byte(state), 0o600))
 			}
-			var stdout, stderr bytes.Buffer
-			cmd := exec.CommandContext(t.Context(), "bash", harness.scriptPath)
-			cmd.Env = harness.env
-			cmd.Stdout, cmd.Stderr = &stdout, &stderr
-			err := cmd.Run()
+			output, err := harness.run(t)
 			if test.wantOutput == "" {
-				require.Error(t, err, stdout.String()+stderr.String())
-				require.NotContains(t, stdout.String()+stderr.String(), "RENEWAL_REQUIRED=")
+				require.Error(t, err, output)
+				require.NotContains(t, output, "RENEWAL_REQUIRED=")
 				return
 			}
-			require.NoError(t, err, stderr.String())
-			require.Equal(t, test.wantOutput, stdout.String())
+			require.NoError(t, err, output)
+			var markers []string
+			for line := range strings.SplitSeq(output, "\n") {
+				if strings.HasPrefix(line, "RENEWAL_REQUIRED=") {
+					markers = append(markers, line)
+				}
+			}
+			require.Equal(t, []string{strings.TrimSuffix(test.wantOutput, "\n")}, markers)
+			if !strings.Contains(test.name, "valid agent intent") {
+				require.Contains(t, output, "WARNING:")
+			}
+			if strings.HasPrefix(test.name, "malformed") {
+				require.Contains(t, output, "parse error")
+			}
 		})
 	}
 }

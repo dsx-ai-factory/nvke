@@ -926,7 +926,7 @@ func TestRenewK8sCertsLegacyAdmissionRefusalReleasesMutationLock(t *testing.T) {
 }
 
 // All unchanged scheduled nodes skip both guards and dispatch. Forced cycles
-// bypass read-only selection and still drain each node before restarting it.
+// check intent without expiry selection and still drain each node before restarting it.
 func TestRenewK8sCertsUnchangedThreeNodeCycleNeverDrainsUnlessForced(t *testing.T) {
 	for _, forced := range []bool{false, true} {
 		t.Run(fmt.Sprintf("forced=%t", forced), func(t *testing.T) {
@@ -949,6 +949,9 @@ func TestRenewK8sCertsUnchangedThreeNodeCycleNeverDrainsUnlessForced(t *testing.
 			outcome := db.CertificateRenewalOutcomeUnchanged
 			if forced {
 				outcome = db.CertificateRenewalOutcomeRenewed
+				env.OnActivity(a.CheckKubernetesCertificateRenewalRequired, mock.Anything, mock.MatchedBy(func(input activities.KubernetesCertificateRenewalInput) bool {
+					return input.Force && input.ThresholdDays == 14
+				})).Return(activities.KubernetesCertificateRenewalCheckResult{Required: true}, nil).Times(3)
 				env.OnActivity(a.RenewKubernetesCertificates, mock.Anything, mock.MatchedBy(func(input activities.KubernetesCertificateRenewalInput) bool {
 					return input.Force && input.ExpectedEtcdMembers == 3
 				})).Return(activities.KubernetesCertificateRenewalResult{Outcome: outcome}, nil).Times(3)
@@ -983,7 +986,7 @@ func TestRenewK8sCertsUnchangedThreeNodeCycleNeverDrainsUnlessForced(t *testing.
 			}
 			if forced {
 				require.Len(t, events.postApply, 3)
-				env.AssertNotCalled(t, "CheckKubernetesCertificateRenewalRequired", mock.Anything, mock.Anything)
+				env.AssertNumberOfCalls(t, "CheckKubernetesCertificateRenewalRequired", 3)
 			} else {
 				require.Empty(t, events.snapshot())
 				env.AssertNotCalled(t, rollouttemporal.ActivityNodeGuardPreApply, mock.Anything, mock.Anything)

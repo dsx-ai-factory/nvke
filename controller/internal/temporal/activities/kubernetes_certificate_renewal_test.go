@@ -111,7 +111,7 @@ func TestRenewKubernetesCertificatesV1HistoryUsesV1RPC(t *testing.T) {
 }
 
 // TestRenewKubernetesCertificatesFallbackBoundary allows workflow-level executor
-// selection only for definitive first-start Unimplemented, never a status failure
+// selection only for definitive Start Unimplemented, never a status failure
 // after acceptance that could leave typed work running beside the runbook.
 func TestRenewKubernetesCertificatesFallbackBoundary(t *testing.T) {
 	tests := []struct {
@@ -573,43 +573,70 @@ func TestRenewalAdmissionAndRecovery(t *testing.T) {
 	}
 }
 
-// TestRenewKubernetesCertificatesDoesNotSelectFallbackAfterAmbiguousAttempt models
-// a lost acceptance response followed by a capability change. Retrying the same
-// typed operation must not authorize a second executor.
-func TestRenewKubernetesCertificatesDoesNotSelectFallbackAfterAmbiguousAttempt(t *testing.T) {
-	node := pooledCertificateRenewalTestNode()
-	database := &testutil.MockDB{}
-	database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Twice()
-	attempts := 0
-	fakeAgent := &agenttest.FakeClient{
-		StartKubernetesCertificateRenewalV2Hook: func(_ db.Node, req *nvkeproto.StartKubernetesCertificateRenewalV2Request) (*nvkeproto.StartKubernetesCertificateRenewalV2Response, error) {
-			require.Equal(t, "stable-operation", req.GetOperationId())
-			attempts++
-			if attempts == 1 {
-				return nil, status.Error(codes.Unavailable, "accepted but response lost")
+// TestRenewKubernetesCertificatesSelectsFallbackOnRetry requires Start
+// Unimplemented to select legacy on every attempt, but only after releasing the
+// matching reservation. Status errors after acceptance remain a separate boundary.
+func TestRenewKubernetesCertificatesSelectsFallbackOnRetry(t *testing.T) {
+	for _, test := range []struct {
+		name             string
+		firstStartFails  bool
+		failedTx         map[int]bool
+		wantStarts       int
+		wantTransactions int
+		wantLegacy       bool
+	}{
+		{name: "transient Start then unsupported", firstStartFails: true, wantStarts: 2, wantTransactions: 3, wantLegacy: true},
+		{name: "reservation fails before Start", failedTx: map[int]bool{1: true}, wantStarts: 1, wantTransactions: 3, wantLegacy: true},
+		{name: "release succeeds on retry", failedTx: map[int]bool{2: true}, wantStarts: 2, wantTransactions: 4, wantLegacy: true},
+		{name: "release errors propagate", failedTx: map[int]bool{2: true, 4: true}, wantStarts: 2, wantTransactions: 4},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			node := certificateRenewalTestNode()
+			admission := &agentAdmissionDatabase{node: node, cluster: db.Cluster{ID: node.ClusterID}}
+			database := &flakyReleaseDatabase{legacyAdmissionDatabase: legacyAdmissionDatabase{admission}, fail: test.failedTx}
+			starts := 0
+			fakeAgent := &agenttest.FakeClient{
+				StartKubernetesCertificateRenewalV2Hook: func(_ db.Node, req *nvkeproto.StartKubernetesCertificateRenewalV2Request) (*nvkeproto.StartKubernetesCertificateRenewalV2Response, error) {
+					require.Equal(t, "stable-operation", req.GetOperationId())
+					require.Equal(t, &db.NodeAgentCertificateRenewal{
+						NodeID: node.ID, OperationID: req.GetOperationId(), Fenced: true,
+					}, admission.cluster.CertificateRenewal)
+					starts++
+					if test.firstStartFails && starts == 1 {
+						return nil, status.Error(codes.Unavailable, "connection reset")
+					}
+					return nil, fmt.Errorf("wrapped: %w", status.Error(codes.Unimplemented, "unknown method"))
+				},
 			}
-			return nil, status.Error(codes.Unimplemented, "agent capability changed")
-		},
-	}
-	a := &Activities{db: database, nodeAgentClient: fakeAgent}
-	suite := &testsuite.WorkflowTestSuite{}
-	env := suite.NewTestWorkflowEnvironment()
-	env.RegisterActivity(a.RenewKubernetesCertificates)
-	env.ExecuteWorkflow(func(ctx workflow.Context) error {
-		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-			StartToCloseTimeout: time.Minute, RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: 2},
+			a := &Activities{db: database, nodeAgentClient: fakeAgent}
+			env := (&testsuite.WorkflowTestSuite{}).NewTestWorkflowEnvironment()
+			env.RegisterActivity(a.RenewKubernetesCertificates)
+			env.ExecuteWorkflow(func(ctx workflow.Context) error {
+				ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+					StartToCloseTimeout: time.Minute, RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: 2},
+				})
+				return workflow.ExecuteActivity(ctx, a.RenewKubernetesCertificates, KubernetesCertificateRenewalInput{
+					NodeID: node.ID, OperationID: "stable-operation", ThresholdDays: 14, ExpectedEtcdMembers: 3,
+				}).Get(ctx, nil)
+			})
+
+			var applicationErr *temporal.ApplicationError
+			require.ErrorAs(t, env.GetWorkflowError(), &applicationErr)
+			require.Equal(t, test.wantLegacy, applicationErr.Type() == CertificateRenewalLegacyRequired)
+			if test.wantLegacy {
+				require.True(t, applicationErr.NonRetryable())
+				require.Nil(t, admission.cluster.CertificateRenewal)
+			} else {
+				require.ErrorContains(t, env.GetWorkflowError(), "connection reset")
+				require.NotNil(t, admission.cluster.CertificateRenewal)
+			}
+			require.Empty(t, fakeAgent.ExecuteScriptNames)
+			require.Empty(t, fakeAgent.StartKubernetesCertificateRenewalCalls)
+			require.Empty(t, fakeAgent.GetKubernetesCertificateRenewalCalls)
+			require.Equal(t, test.wantStarts, starts)
+			require.Equal(t, test.wantTransactions, database.calls)
 		})
-		return workflow.ExecuteActivity(ctx, a.RenewKubernetesCertificates, KubernetesCertificateRenewalInput{
-			NodeID: node.ID, OperationID: "stable-operation", ThresholdDays: 14, ExpectedEtcdMembers: 3,
-		}).Get(ctx, nil)
-	})
-	require.ErrorContains(t, env.GetWorkflowError(), "ambiguous typed attempt")
-	var applicationErr *temporal.ApplicationError
-	require.ErrorAs(t, env.GetWorkflowError(), &applicationErr)
-	require.NotEqual(t, CertificateRenewalLegacyRequired, applicationErr.Type())
-	require.Empty(t, fakeAgent.ExecuteScriptNames)
-	require.Equal(t, 2, attempts)
-	database.AssertExpectations(t)
+	}
 }
 
 // TestResolveKubernetesCertificateRenewalRequiresMatchingTerminalStatus separates
@@ -1056,9 +1083,11 @@ func TestCheckKubernetesCertificateRenewalRequiredUsesEmbeddedReadOnlyMode(t *te
 		rpcErr   error
 		want     KubernetesCertificateRenewalCheckResult
 		wantErr  bool
+		force    bool
 	}{
 		{name: "unchanged", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=false\n"}},
 		{name: "due", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=true\n"}, want: KubernetesCertificateRenewalCheckResult{Required: true}},
+		{name: "forced check", force: true, response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=true\n"}, want: KubernetesCertificateRenewalCheckResult{Required: true}},
 		{
 			name:     "pending legacy intent",
 			response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=legacy\n"},
@@ -1069,6 +1098,25 @@ func TestCheckKubernetesCertificateRenewalRequiredUsesEmbeddedReadOnlyMode(t *te
 			response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=legacy_then_typed\n"},
 			want:     KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true, Typed: true},
 		},
+		{
+			name:     "pending typed intent",
+			response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=typed\n"},
+			want:     KubernetesCertificateRenewalCheckResult{Required: true, Typed: true},
+		},
+		{
+			name:     "combined diagnostics with legacy marker",
+			response: &nvkeproto.ExecuteScriptResponse{Output: "jq: parse error: Unfinished JSON term at EOF\nWARNING: Unable to parse the node-agent state file. Resuming the pending legacy renewal only.\nRENEWAL_REQUIRED=legacy\n"},
+			want:     KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true},
+		},
+		{
+			name:     "diagnostics before and after marker",
+			response: &nvkeproto.ExecuteScriptResponse{Output: "diagnostic\nRENEWAL_REQUIRED=false\nwarning\n"},
+		},
+		{name: "duplicate", response: &nvkeproto.ExecuteScriptResponse{Output: strings.Repeat("RENEWAL_REQUIRED=true\n", 2)}, wantErr: true},
+		{name: "conflicting", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=legacy\nRENEWAL_REQUIRED=typed\n"}, wantErr: true},
+		{name: "unknown with valid", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=unknown\nRENEWAL_REQUIRED=true\n"}, wantErr: true},
+		{name: "partial line", response: &nvkeproto.ExecuteScriptResponse{Output: "warning: RENEWAL_REQUIRED=true\n"}, wantErr: true},
+		{name: "trailing text", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=true warning\n"}, wantErr: true},
 		{name: "unknown", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=unknown\n"}, wantErr: true},
 		{name: "normal renewal marker is insufficient", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_OUTCOME=unchanged\n"}, wantErr: true},
 		{name: "failed check", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=false\n", ExitCode: 1}, wantErr: true},
@@ -1084,12 +1132,13 @@ func TestCheckKubernetesCertificateRenewalRequiredUsesEmbeddedReadOnlyMode(t *te
 			fake := &agenttest.FakeClient{ExecuteScriptHook: func(_ db.Node, name, script string) (*nvkeproto.ExecuteScriptResponse, error) {
 				require.Equal(t, legacyKubernetesCertificateRenewalRunbook, name)
 				require.Contains(t, script, "export CHECK_ONLY='true'")
+				require.Contains(t, script, fmt.Sprintf("export FORCE='%t'", test.force))
 				require.Contains(t, script, "export THRESHOLD_DAYS='14'")
 				require.NotContains(t, script, "unsafe override")
 				return test.response, test.rpcErr
 			}}
 			a := &Activities{cfg: config.Config{RunbooksDir: overrides}, db: database, nodeAgentClient: fake}
-			result, err := a.CheckKubernetesCertificateRenewalRequired(t.Context(), KubernetesCertificateRenewalInput{NodeID: node.ID, ThresholdDays: 14})
+			result, err := a.CheckKubernetesCertificateRenewalRequired(t.Context(), KubernetesCertificateRenewalInput{NodeID: node.ID, ThresholdDays: 14, Force: test.force})
 			require.Equal(t, test.wantErr, err != nil)
 			require.Equal(t, test.want, result)
 			require.Empty(t, fake.StartKubernetesCertificateRenewalCalls)
@@ -1110,6 +1159,8 @@ func TestKubernetesCertificateRenewalCheckResultDecodesRecordedResults(t *testin
 	}{
 		{name: "legacy bool true", recorded: true, want: KubernetesCertificateRenewalCheckResult{Required: true}},
 		{name: "legacy bool false", recorded: false},
+		{name: "old object", recorded: map[string]bool{"Required": true, "Legacy": true}, want: KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true}},
+		{name: "typed only", recorded: KubernetesCertificateRenewalCheckResult{Required: true, Typed: true}, want: KubernetesCertificateRenewalCheckResult{Required: true, Typed: true}},
 		{
 			name:     "struct",
 			recorded: KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true, Typed: true},
