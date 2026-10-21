@@ -10,8 +10,8 @@ controller. The [release process](https://github.com/dsx-ai-factory/nvke/blob/ma
 means. This document says which parts of the CLI those increments apply to.
 
 `cmd/nvkectl/contract_test.go` enforces the promises below at the command
-boundary — it builds the binary and runs it as a process, so it sees the exit
-code, the stream each byte lands on, and what a signal does. A change that
+boundary — it runs a supplied binary (or builds one for source tests), so it sees
+the exit code, the stream each byte lands on, and what a signal does. A change that
 breaks one of these promises fails that test. Changing the test to match the new
 behaviour, without the deprecation below, is the thing this policy exists to
 prevent.

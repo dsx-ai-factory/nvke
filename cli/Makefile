@@ -78,7 +78,7 @@ NVKECTL_LDFLAGS := \
 	-X 'github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/controllerdeploy.capiVersion=$(CAPI_VERSION)' \
 	$(RELEASE_LDFLAGS)
 
-.PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check check-no-docker \
+.PHONY: build build-cross test test-artifact test-e2e-bootstrap fmt lint license file-license-check check-no-docker \
 	ensure-capd-image ensure-provisioned-provider-image images \
 	nodes-up nodes-down nodes-status nodes-hosts nodes-attested
 
@@ -149,6 +149,17 @@ GO_TEST_FLAGS ?=
 test: ## Run this module's tests. (run by the merge gate)
 	@$(COVERAGE_MKDIR)
 	$(GO) test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) ./...
+
+# Compile only the existing process-level test suite, never the supplied CLI.
+test-artifact: export NVKECTL := $(NVKECTL)
+test-artifact: export NVKECTL_EXPECTED_VERSION := $(NVKECTL_EXPECTED_VERSION)
+test-artifact: ## Test a supplied NVKECTL binary; requires NVKECTL_EXPECTED_VERSION.
+	@test -n "$$NVKECTL" || { echo "NVKECTL is required" >&2; exit 1; }
+	@test -n "$$NVKECTL_EXPECTED_VERSION" || { echo "NVKECTL_EXPECTED_VERSION is required" >&2; exit 1; }
+	@binary="$$NVKECTL"; \
+	case "$$binary" in /*) ;; *) binary="$$PWD/$$binary" ;; esac; \
+	NVKECTL="$$binary" NVKECTL_EXPECTED_VERSION="$$NVKECTL_EXPECTED_VERSION" \
+		$(GO) test $(GO_TEST_FLAGS) -count=1 -timeout=10m ./cmd/nvkectl/contract_test.go
 
 # e2e coverage for "nvkectl bootstrap site" specifically -- e2e/bootstrap/ is
 # one of what may become several e2e/<command>/ suites as nvkectl grows more
