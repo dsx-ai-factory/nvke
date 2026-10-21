@@ -405,6 +405,16 @@ jobs:
             grep -q "<testcase name=\"[^\"]*${group}" "${RUNNER_TEMP}/artifacts/junit-test-report.xml" \
               || { echo "::error::the JUnit report selected no '${group}' spec"; exit 1; }
           done
+          ! grep -q '<testcase name="[^"]*tenant validation' "${RUNNER_TEMP}/artifacts/junit-test-report.xml" \
+            || { echo "::error::the image's default run selected tenant specs"; exit 1; }
+
+          # The tenant switch adds the tenant specs.
+          mkdir -p "${RUNNER_TEMP}/tenant-artifacts"
+          chmod 0777 "${RUNNER_TEMP}/tenant-artifacts"
+          docker run --rm -e NVKE_TENANT_VALIDATE=true -v "${RUNNER_TEMP}/tenant-artifacts:/artifacts" \
+            nvke/nvke-validate:ci -ginkgo.dry-run
+          grep -q '<testcase name="[^"]*tenant validation' "${RUNNER_TEMP}/tenant-artifacts/junit-test-report.xml" \
+            || { echo "::error::NVKE_TENANT_VALIDATE=true selected no tenant spec"; exit 1; }
 
 # Not built here: controller/hack/Dockerfile.controller.tilt — it only copies a
 # prebuilt binary, so it has nothing to verify without a preceding build.

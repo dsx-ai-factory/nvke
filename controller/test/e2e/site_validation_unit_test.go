@@ -84,9 +84,20 @@ func TestUnit_SiteNodeProblems(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, nodeProblems(tt.nodes))
+			require.Equal(t, tt.want, nodeProblems(tt.nodes, true))
 		})
 	}
+
+	gpuPool := corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "gpu-1"},
+		Spec:       corev1.NodeSpec{Taints: []corev1.Taint{{Key: "nvidia.com/gpu", Effect: corev1.TaintEffectNoSchedule}}},
+		Status:     corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}},
+	}
+	require.Equal(t, []string{"gpu-1: tainted nvidia.com/gpu:NoSchedule"}, nodeProblems([]corev1.Node{gpuPool}, true))
+	require.Empty(t, nodeProblems([]corev1.Node{gpuPool}, false), "a tenant's pool taints are the pool check's to judge")
+	cordoned := gpuPool
+	cordoned.Spec.Unschedulable = true
+	require.Equal(t, []string{"gpu-1: cordoned"}, nodeProblems([]corev1.Node{cordoned}, false))
 }
 
 func TestUnit_SiteWorkloadProblems(t *testing.T) {

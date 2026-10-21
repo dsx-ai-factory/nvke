@@ -43,6 +43,13 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 )
 
+// sitePrefix and tenantPrefix begin the names a site's and a tenant's
+// expectations are read from: a tenant's components are NVKE_TENANT_COMPONENTS.
+const (
+	sitePrefix   = "NVKE_SITE_"
+	tenantPrefix = "NVKE_TENANT_"
+)
+
 // What a site is expected to have beyond what every NVKE site has. Each is
 // an input because sites differ in it; a check whose input is unset skips.
 const (
@@ -80,16 +87,24 @@ const (
 	componentCNPG     = "cnpg"
 	componentTeleport = "teleport"
 	componentKubeVIP  = "kube-vip"
+	// componentCertManager is listed only for a tenant: every site runs
+	// cert-manager, and the site checks require it.
+	componentCertManager = "cert-manager"
 )
 
 // siteComponentNamespaces are the optional components and the namespace each
 // is looked for in unless the run names another.
 var siteComponentNamespaces = map[string]string{
-	componentArgoCD:   "argocd",
-	componentCNPG:     "cnpg-system",
-	componentTeleport: "teleport-agent",
-	componentKubeVIP:  kubeSystemNamespace,
+	componentArgoCD:      "argocd",
+	componentCNPG:        "cnpg-system",
+	componentTeleport:    "teleport-agent",
+	componentKubeVIP:     kubeSystemNamespace,
+	componentCertManager: "cert-manager",
 }
+
+// certManagerWorkloads are parts of a workload name every cert-manager
+// install has.
+var certManagerWorkloads = []string{"cainjector", "webhook"}
 
 // argoCDWorkloads are parts of a workload name every Argo CD install has,
 // whatever its release prefix.
@@ -124,6 +139,8 @@ type workloadRef struct {
 }
 
 type siteExpectations struct {
+	// prefix begins the names the expectations were read from.
+	prefix           string
 	components       map[string]string
 	storageClasses   []string
 	pvcStorageClass  string
@@ -134,15 +151,16 @@ type siteExpectations struct {
 	reservedMemory   *resource.Quantity
 }
 
-func siteExpectationsFromEnv(getenv func(string) string) (siteExpectations, error) {
-	var expect siteExpectations
+func siteExpectationsFromEnv(getenv func(string) string, prefix string) (siteExpectations, error) {
+	expect := siteExpectations{prefix: prefix}
+	env := expect.env
 
-	for _, entry := range splitList(getenv(siteComponentsEnv), ",") {
+	for _, entry := range splitList(getenv(env(siteComponentsEnv)), ",") {
 		name, namespace, _ := strings.Cut(entry, "=")
 		name, namespace = strings.TrimSpace(name), strings.TrimSpace(namespace)
 		defaultNamespace, known := siteComponentNamespaces[name]
 		if !known {
-			return siteExpectations{}, fmt.Errorf("%s: unknown component %q (known: %s)", siteComponentsEnv, name, strings.Join(slices.Sorted(maps.Keys(siteComponentNamespaces)), ", "))
+			return siteExpectations{}, fmt.Errorf("%s: unknown component %q (known: %s)", env(siteComponentsEnv), name, strings.Join(slices.Sorted(maps.Keys(siteComponentNamespaces)), ", "))
 		}
 		if namespace == "" {
 			namespace = defaultNamespace
@@ -153,33 +171,33 @@ func siteExpectationsFromEnv(getenv func(string) string) (siteExpectations, erro
 		expect.components[name] = namespace
 	}
 
-	expect.storageClasses = splitList(getenv(siteStorageClassesEnv), ",")
-	expect.pvcStorageClass = strings.TrimSpace(getenv(sitePVCStorageClassEnv))
+	expect.storageClasses = splitList(getenv(env(siteStorageClassesEnv)), ",")
+	expect.pvcStorageClass = strings.TrimSpace(getenv(env(sitePVCStorageClassEnv)))
 
-	for _, entry := range splitList(getenv(siteWorkloadVersionsEnv), ",") {
+	for _, entry := range splitList(getenv(env(siteWorkloadVersionsEnv)), ",") {
 		workload, version, _ := strings.Cut(entry, "=")
 		namespace, name, _ := strings.Cut(strings.TrimSpace(workload), "/")
 		version = strings.TrimSpace(version)
 		if namespace == "" || name == "" || version == "" {
-			return siteExpectations{}, fmt.Errorf("%s: %q is not namespace/workload=version", siteWorkloadVersionsEnv, entry)
+			return siteExpectations{}, fmt.Errorf("%s: %q is not namespace/workload=version", env(siteWorkloadVersionsEnv), entry)
 		}
 		expect.workloadVersions = append(expect.workloadVersions, workloadVersion{namespace: namespace, name: name, version: version})
 	}
 
-	for _, entry := range splitList(getenv(siteRequiredWorkloadsEnv), ",") {
+	for _, entry := range splitList(getenv(env(siteRequiredWorkloadsEnv)), ",") {
 		namespace, name, _ := strings.Cut(entry, "/")
 		namespace, name = strings.TrimSpace(namespace), strings.TrimSpace(name)
 		if namespace == "" || name == "" || strings.Contains(name, "/") {
-			return siteExpectations{}, fmt.Errorf("%s: %q is not namespace/workload", siteRequiredWorkloadsEnv, entry)
+			return siteExpectations{}, fmt.Errorf("%s: %q is not namespace/workload", env(siteRequiredWorkloadsEnv), entry)
 		}
 		expect.workloads = append(expect.workloads, workloadRef{namespace: namespace, name: name})
 	}
 
-	for _, entry := range splitList(getenv(siteAPIServerFlagsEnv), ";") {
+	for _, entry := range splitList(getenv(env(siteAPIServerFlagsEnv)), ";") {
 		name, value, ok := strings.Cut(entry, "=")
 		name = strings.TrimPrefix(strings.TrimSpace(name), "--")
 		if !ok || name == "" {
-			return siteExpectations{}, fmt.Errorf("%s: %q is not name=value", siteAPIServerFlagsEnv, entry)
+			return siteExpectations{}, fmt.Errorf("%s: %q is not name=value", env(siteAPIServerFlagsEnv), entry)
 		}
 		if expect.apiServerFlags == nil {
 			expect.apiServerFlags = map[string]string{}
@@ -187,20 +205,29 @@ func siteExpectationsFromEnv(getenv func(string) string) (siteExpectations, erro
 		expect.apiServerFlags[name] = strings.TrimSpace(value)
 	}
 
-	encrypted, err := parseRequireEnv(siteEtcdEncryptedEnv, getenv(siteEtcdEncryptedEnv))
+	encrypted, err := parseRequireEnv(env(siteEtcdEncryptedEnv), getenv(env(siteEtcdEncryptedEnv)))
 	if err != nil {
 		return siteExpectations{}, err
 	}
 	expect.etcdEncrypted = encrypted
 
-	if raw := strings.TrimSpace(getenv(siteReservedMemoryEnv)); raw != "" {
+	if raw := strings.TrimSpace(getenv(env(siteReservedMemoryEnv))); raw != "" {
 		quantity, err := resource.ParseQuantity(raw)
 		if err != nil {
-			return siteExpectations{}, fmt.Errorf("%s=%q: %w", siteReservedMemoryEnv, raw, err)
+			return siteExpectations{}, fmt.Errorf("%s=%q: %w", env(siteReservedMemoryEnv), raw, err)
 		}
 		expect.reservedMemory = &quantity
 	}
 	return expect, nil
+}
+
+// env names the variable an expectation is read from: name, which begins
+// with sitePrefix, under the expectations' own prefix.
+func (e siteExpectations) env(name string) string {
+	if e.prefix == "" {
+		return name
+	}
+	return e.prefix + strings.TrimPrefix(name, sitePrefix)
 }
 
 // splitList splits raw on sep, trimming each entry and dropping empty ones.
@@ -236,7 +263,11 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	connect := func() siteExpectations {
 		settings = resolve()
 		if c == nil {
-			restConfig = expectSucceed(kube.RESTConfigWithInClusterFallback("", ""))
+			if settings.checks.restConfig != nil {
+				restConfig = expectSucceed(settings.checks.restConfig())
+			} else {
+				restConfig = expectSucceed(kube.RESTConfigWithInClusterFallback("", ""))
+			}
 			clientset = expectSucceed(kubernetes.NewForConfig(restConfig))
 			c = expectSucceed(siteBehaviorClient(restConfig))
 		}
@@ -245,7 +276,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	component := func(name string) string {
 		namespace, ok := connect().components[name]
 		if !ok {
-			Skip(fmt.Sprintf("%s does not list %s", siteComponentsEnv, name))
+			Skip(fmt.Sprintf("%s does not list %s", settings.expect.env(siteComponentsEnv), name))
 		}
 		return namespace
 	}
@@ -260,7 +291,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("runs Argo CD", func(ctx SpecContext) {
 		namespace := component(componentArgoCD)
 		Eventually(func(ctx context.Context) error {
-			return componentWorkloadProblems(ctx, c, componentArgoCD, namespace, argoCDWorkloads)
+			return componentWorkloadProblems(ctx, c, settings.expect.env(siteComponentsEnv), componentArgoCD, namespace, argoCDWorkloads)
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
 	}, Label("site-software", "component"), NodeTimeout(siteCheck+time.Minute))
 
@@ -279,7 +310,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("runs the CloudNativePG operator with every database cluster healthy", func(ctx SpecContext) {
 		namespace := component(componentCNPG)
 		Eventually(func(ctx context.Context) error {
-			if err := componentWorkloadProblems(ctx, c, componentCNPG, namespace, nil); err != nil {
+			if err := componentWorkloadProblems(ctx, c, settings.expect.env(siteComponentsEnv), componentCNPG, namespace, nil); err != nil {
 				return err
 			}
 			clusters := &unstructured.UnstructuredList{}
@@ -294,7 +325,14 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("runs the Teleport agent", func(ctx SpecContext) {
 		namespace := component(componentTeleport)
 		Eventually(func(ctx context.Context) error {
-			return componentWorkloadProblems(ctx, c, componentTeleport, namespace, nil)
+			return componentWorkloadProblems(ctx, c, settings.expect.env(siteComponentsEnv), componentTeleport, namespace, nil)
+		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
+	}, Label("site-software", "component"), NodeTimeout(siteCheck+time.Minute))
+
+	It("runs cert-manager", func(ctx SpecContext) {
+		namespace := component(componentCertManager)
+		Eventually(func(ctx context.Context) error {
+			return componentWorkloadProblems(ctx, c, settings.expect.env(siteComponentsEnv), componentCertManager, namespace, certManagerWorkloads)
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
 	}, Label("site-software", "component"), NodeTimeout(siteCheck+time.Minute))
 
@@ -318,7 +356,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("runs every workload the run requires", func(ctx SpecContext) {
 		expect := connect()
 		if len(expect.workloads) == 0 {
-			Skip(siteRequiredWorkloadsEnv + " is unset")
+			Skip(settings.expect.env(siteRequiredWorkloadsEnv) + " is unset")
 		}
 		Eventually(func(ctx context.Context) error {
 			var (
@@ -338,7 +376,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("runs the workload versions the run expects", func(ctx SpecContext) {
 		expect := connect()
 		if len(expect.workloadVersions) == 0 {
-			Skip(siteWorkloadVersionsEnv + " is unset")
+			Skip(settings.expect.env(siteWorkloadVersionsEnv) + " is unset")
 		}
 		var (
 			deployments  appsv1.DeploymentList
@@ -357,7 +395,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		kubeadmFlags := expectSucceed(kubeadmAPIServerExtraArgs(configuration))
 		var pods corev1.PodList
 		Expect(c.List(ctx, &pods, client.InNamespace(kubeSystemNamespace), client.MatchingLabels{"component": "kube-apiserver"})).To(Succeed())
-		Expect(joinProblems("API server flags", apiServerFlagProblems(kubeadmFlags, expect.apiServerFlags, pods.Items))).To(Succeed())
+		Expect(joinProblems("API server flags", apiServerFlagProblems(kubeadmFlags, expect.apiServerFlags, expect.env(siteAPIServerFlagsEnv), pods.Items))).To(Succeed())
 	}, Label("site-distro"), NodeTimeout(2*time.Minute))
 
 	// Only that a config is given: which provider it writes with is in a file
@@ -365,7 +403,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	// first provider is identity stores Secrets in plain text and passes.
 	It("runs every API server with an encryption provider config", func(ctx SpecContext) {
 		if !connect().etcdEncrypted {
-			Skip(siteEtcdEncryptedEnv + " is not true")
+			Skip(settings.expect.env(siteEtcdEncryptedEnv) + " is not true")
 		}
 		var pods corev1.PodList
 		Expect(c.List(ctx, &pods, client.InNamespace(kubeSystemNamespace), client.MatchingLabels{"component": "kube-apiserver"})).To(Succeed())
@@ -387,7 +425,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("reserves the memory the run expects on every node", func(ctx SpecContext) {
 		want := connect().reservedMemory
 		if want == nil {
-			Skip(siteReservedMemoryEnv + " is unset")
+			Skip(settings.expect.env(siteReservedMemoryEnv) + " is unset")
 		}
 		var nodes corev1.NodeList
 		Expect(c.List(ctx, &nodes)).To(Succeed())
@@ -397,7 +435,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("has every StorageClass the run expects", func(ctx SpecContext) {
 		expect := connect()
 		if len(expect.storageClasses) == 0 {
-			Skip(siteStorageClassesEnv + " is unset")
+			Skip(settings.expect.env(siteStorageClassesEnv) + " is unset")
 		}
 		var classes storagev1.StorageClassList
 		Expect(c.List(ctx, &classes)).To(Succeed())
@@ -607,7 +645,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		Expect(c.List(ctx, &classes)).To(Succeed())
 		class := pvcStorageClass(settings.expect.pvcStorageClass, classes.Items)
 		if class == "" {
-			Skip(sitePVCStorageClassEnv + " is unset and the site has no default StorageClass")
+			Skip(settings.expect.env(sitePVCStorageClassEnv) + " is unset and the site has no default StorageClass")
 		}
 		claim := sitePVC(namespace, labels, class)
 		Expect(c.Create(ctx, claim)).To(Succeed())
@@ -623,6 +661,9 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 
 	It("issues a certificate from a new cert-manager Issuer", func(ctx SpecContext) {
 		namespace, _, labels := work()
+		if !settings.checks.certManager {
+			Skip("the cluster is not expected to run cert-manager")
+		}
 		name := "nvke-validate-" + labels[siteRunLabel]
 		issuer, certificate := siteCertificate(namespace, name, labels)
 		Expect(c.Create(ctx, issuer)).To(Succeed())
@@ -672,7 +713,7 @@ func deleteOnExit(ctx context.Context, c client.Client, objects ...client.Object
 // componentWorkloadProblems requires a component's namespace to run at least
 // one ready pod, every workload in it to be available, and a workload whose
 // name holds each of required.
-func componentWorkloadProblems(ctx context.Context, c client.Client, component, namespace string, required []string) error {
+func componentWorkloadProblems(ctx context.Context, c client.Client, source, component, namespace string, required []string) error {
 	var (
 		deployments  appsv1.DeploymentList
 		statefulSets appsv1.StatefulSetList
@@ -683,7 +724,7 @@ func componentWorkloadProblems(ctx context.Context, c client.Client, component, 
 			return err
 		}
 	}
-	problems := workloadProblems([]siteNamespace{{name: namespace, source: siteComponentsEnv + " " + component}}, deployments.Items, statefulSets.Items, daemonSets.Items)
+	problems := workloadProblems([]siteNamespace{{name: namespace, source: source + " " + component}}, deployments.Items, statefulSets.Items, daemonSets.Items)
 	var names []string
 	for _, d := range deployments.Items {
 		names = append(names, d.Name)
@@ -950,7 +991,7 @@ func controlPlaneEndpoint(configuration string) (string, error) {
 
 // apiServerFlagProblems requires at least one API server, and each to run
 // every flag kubeadm and the run set, with their values.
-func apiServerFlagProblems(kubeadmFlags, runFlags map[string]string, pods []corev1.Pod) []string {
+func apiServerFlagProblems(kubeadmFlags, runFlags map[string]string, runSource string, pods []corev1.Pod) []string {
 	if len(pods) == 0 {
 		return []string{"no kube-apiserver pod in " + kubeSystemNamespace}
 	}
@@ -962,10 +1003,10 @@ func apiServerFlagProblems(kubeadmFlags, runFlags map[string]string, pods []core
 	var problems []string
 	for name, value := range runFlags {
 		if kubeadm, ok := want[name]; ok && kubeadm != value {
-			problems = append(problems, fmt.Sprintf("--%s: kubeadm-config sets %q, %s wants %q", name, kubeadm, siteAPIServerFlagsEnv, value))
+			problems = append(problems, fmt.Sprintf("--%s: kubeadm-config sets %q, %s wants %q", name, kubeadm, runSource, value))
 			continue
 		}
-		want[name], sources[name] = value, siteAPIServerFlagsEnv
+		want[name], sources[name] = value, runSource
 	}
 	for _, pod := range pods {
 		for _, name := range slices.Sorted(maps.Keys(want)) {
@@ -1202,7 +1243,7 @@ func webhookProblems(services []webhookService, endpointSlices []discoveryv1.End
 func probeNodes(nodes []corev1.Node) []corev1.Node {
 	var usable []corev1.Node
 	for _, node := range nodes {
-		if !nodeConditionTrue(node, corev1.NodeReady) || node.Spec.Unschedulable || node.Labels[corev1.LabelHostname] == "" {
+		if !nodeReady(node) || node.Spec.Unschedulable || node.Labels[corev1.LabelHostname] == "" {
 			continue
 		}
 		if slices.ContainsFunc(node.Spec.Taints, func(t corev1.Taint) bool {

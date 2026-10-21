@@ -328,7 +328,7 @@ Configure it with the [health spec variables](#health-specs) and these:
 | `NVKE_SITE_PROBE_NAMESPACE` | Where the probe pods and every `creates` object go. | The pod's own namespace, else `default` |
 | `NVKE_SITE_PROBE_IMAGE` | The probe and server pods' image, which needs `sh`, `nslookup`, `wget`, `curl` and `nc`. Point it at a mirror on a site without internet access. | The suite's kubectl image |
 | `NVKE_SITE_PROBE_PULL_SECRETS` | Comma-separated Secrets in the probe namespace that the probe and server pods pull their image with. They run as the namespace's `default` service account, not the runner's, so a pull Secret on the runner's account does not reach them. | Unset |
-| `NVKE_SITE_COMPONENTS` | Optional components the site runs, comma-separated, each `name` or `name=namespace`: `argocd` (default namespace `argocd`), `cnpg` (`cnpg-system`), `teleport` (`teleport-agent`), `kube-vip` (`kube-system`). | Unset |
+| `NVKE_SITE_COMPONENTS` | Optional components the site runs, comma-separated, each `name` or `name=namespace`: `argocd` (default namespace `argocd`), `cnpg` (`cnpg-system`), `teleport` (`teleport-agent`), `kube-vip` (`kube-system`), and `cert-manager` (`cert-manager`), which every site runs and only a tenant need list. | Unset |
 | `NVKE_SITE_REQUIRED_WORKLOADS` | `namespace/workload`, comma-separated: a Deployment, StatefulSet or DaemonSet that must exist and run a ready pod. | Unset |
 | `NVKE_SITE_WORKLOAD_VERSIONS` | `namespace/workload=version`, comma-separated: a Deployment, StatefulSet or DaemonSet one of whose containers runs an image tagged `version`, with or without a leading `v`. | Unset |
 | `NVKE_SITE_APISERVER_FLAGS` | Flags every API server runs, `name=value` separated by semicolons, because values hold commas. Added to those kubeadm-config sets; a conflict between the two fails. | Unset |
@@ -347,6 +347,71 @@ both to one the site's controller authorizes to list clusters.
 named that. Set `NVKE_CONTROLLER_EXPECTED_VERSION` and
 `NVKE_SITE_KUBERNETES_VERSION`: the image sets
 `NVKE_E2E_REQUIRE_EXPECTED_VERSION=true`, so a run without either fails.
+
+### Tenant checks
+
+With `NVKE_TENANT_VALIDATE=true`, the image also validates the tenant
+`NVKE_TENANT_CLUSTER` names, found by name through the controller API. Turning
+the tenant checks on without naming a tenant fails the run rather than
+skipping them. The tenant specs are labeled `tenant-validate`. They are the
+site checks that hold on any Kubernetes cluster, run against the tenant, with
+these differences:
+
+- the namespaces that must run a ready pod are `kube-system` unless
+  `NVKE_TENANT_NAMESPACES` names others
+- the Kubernetes version is the one the controller records for the tenant's
+  control plane, unless `NVKE_TENANT_KUBERNETES_VERSION` overrides it
+- encryption at rest is required where the controller records it, and
+  kube-vip where it records a control-plane VIP
+- the cert-manager checks run only where `NVKE_TENANT_COMPONENTS` lists
+  `cert-manager`; the controller API check does not run
+- every conditional check reads its `NVKE_TENANT_*` counterpart:
+  `NVKE_TENANT_COMPONENTS`, `NVKE_TENANT_REQUIRED_WORKLOADS`,
+  `NVKE_TENANT_WORKLOAD_VERSIONS`, `NVKE_TENANT_APISERVER_FLAGS`,
+  `NVKE_TENANT_ETCD_ENCRYPTED`, `NVKE_TENANT_RESERVED_MEMORY`,
+  `NVKE_TENANT_STORAGE_CLASSES` and `NVKE_TENANT_PVC_STORAGE_CLASS`
+
+and these besides, which compare the tenant with the controller's record of
+it:
+
+- the tenant's nodes and the controller's are the same set, in the same
+  roles, each joined, Ready and running a healthy node agent
+- every node carries its node pool's labels and taints
+- every node holds back at least its pool's system and kube reserved memory;
+  skipped where no pool reserves any
+- NodeLocal DNS running on every Ready node
+- `NVKE_TENANT_GPU_NODES` nodes advertising `nvidia.com/gpu`, and none labeled
+  `nvidia.com/gpu.present` advertising none; skipped when unset
+- a pod given one GPU listing it with `nvidia-smi -L`; labeled `creates`, and
+  skipped when `NVKE_TENANT_GPU_NODES` is unset or `0`
+
+The suite reaches the tenant as a ServiceAccount the runner provisions in it,
+NVKE's [tenant automation](../../../docs/tenant-clusters/kubernetes-api-access.md)
+path, and never reads the kubeconfig the controller publishes, which with OIDC
+off is an admin credential. In the tenant, that ServiceAccount needs:
+
+- the cluster-wide reads the site checks need, listed above, without the
+  controller's namespace or the token request
+- in `NVKE_TENANT_NAMESPACE`, the rights the probe namespace needs on the site
+
+On the site, the suite's own account also needs `get` on the Secret named by
+`NVKE_TENANT_TOKEN_SECRET`, in its own namespace. The runner writes the
+ServiceAccount's token to it under `token` and the tenant's CA under `ca.crt`,
+as a `kubernetes.io/service-account-token` Secret in the tenant carries them,
+and the API server URL under `server` where the tenant has no control-plane
+VIP or is reached some other way. Without `server`, the suite uses
+`https://<control-plane VIP>:6443`.
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `NVKE_TENANT_CLUSTER` | The tenant to validate, by name. Required when `NVKE_TENANT_VALIDATE` is true. | Unset |
+| `NVKE_TENANT_TOKEN_SECRET` | The Secret, in the suite's namespace on the site, that holds the tenant credential. | `nvke-validate-<cluster>` |
+| `NVKE_TENANT_NAMESPACE` | The tenant namespace the probe pods and every `creates` object go in. Its pods are left out of the pod check. | `nvke-validate` |
+| `NVKE_TENANT_KUBERNETES_VERSION` | Overrides the version the controller records. | The record's |
+| `NVKE_TENANT_NAMESPACES` | Comma-separated namespaces that must each run a ready pod. | `kube-system` |
+| `NVKE_TENANT_PROBE_IMAGE` | As `NVKE_SITE_PROBE_IMAGE`, in the tenant. | The suite's kubectl image |
+| `NVKE_TENANT_GPU_NODES` | How many nodes must advertise GPUs. | Unset |
+| `NVKE_TENANT_GPU_IMAGE` | The GPU pod's image, which needs `sh`; the NVIDIA container runtime supplies `nvidia-smi`. | `nvcr.io/nvidia/cuda:12.9.1-base-ubuntu24.04` |
 
 Each controller release publishes the image built from the same commit, as
 `nvke-validate:v<version>` beside `nvke-controller` (see
