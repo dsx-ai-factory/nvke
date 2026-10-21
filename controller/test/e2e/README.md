@@ -192,10 +192,64 @@ no Go at all.
 
 `Dockerfile` packages the suite as an image that validates a running site from
 a pod inside its cluster, as an in-cluster test runner runs it. The image carries
-every spec and runs those its two switches select: specs that create, change
-and install nothing on the site. Today that is the health specs. The
-authentication specs are not, because they mint tokens for the scaffolding
-identities in `deploy/k8s/nvke-auth-dev.yaml`.
+every spec and runs those its two switches select, shown in the table below:
+specs that install and change nothing lasting on the site. The site's are the
+[health specs](#health-specs) and the site checks:
+
+- every node Ready and uncordoned, with no taint that keeps pods off it
+  (kubeadm's control-plane taint is allowed where another node takes the work)
+- every Deployment, StatefulSet and DaemonSet in the cluster fully available,
+  and every required namespace running at least one ready pod
+- no pod failing in any namespace but the probe namespace, the runner's own,
+  where an earlier run's pods may be left; and staying that way for 30 seconds
+- every cert-manager Certificate Ready
+- the controller API lists clusters
+- every API server `/readyz` and `/livez` check passing, etcd's included
+- `kube-scheduler` and `kube-controller-manager` Ready on every control-plane
+  node
+- CoreDNS available
+- the API server and every kubelet at the site's Kubernetes version
+- a pod resolving a cluster DNS name
+- every API server running the flags kubeadm-config sets, and etcd its quota
+- the suite's own identity unable to read Secrets or bind roles, and an
+  anonymous request refused
+- a ready endpoint behind every admission webhook Service
+
+Some checks apply only where the run says so, and skip otherwise:
+
+| Check | Runs when |
+| --- | --- |
+| Argo CD running, every Application Synced and Healthy | `NVKE_SITE_COMPONENTS` lists `argocd` |
+| The CloudNativePG operator running, every database cluster healthy | it lists `cnpg` |
+| The Teleport agent running | it lists `teleport` |
+| kube-vip Ready on every control-plane node | it lists `kube-vip` |
+| Named workloads, such as SPIRE's, the CNI's and the telemetry stack's, present with a ready pod | `NVKE_SITE_REQUIRED_WORKLOADS` is set |
+| Named workloads, the CNI's among them, at their versions | `NVKE_SITE_WORKLOAD_VERSIONS` is set |
+| Every API server running the flags the run names | `NVKE_SITE_APISERVER_FLAGS` is set |
+| Every API server encrypting Secrets at rest | `NVKE_SITE_ETCD_ENCRYPTED=true` |
+| Every node holding back at least the memory the run names | `NVKE_SITE_RESERVED_MEMORY` is set |
+| Every StorageClass the run names present | `NVKE_SITE_STORAGE_CLASSES` is set |
+
+Specs labeled `creates` try what workloads rely on, with short-lived objects
+in the probe namespace that they delete whether they pass or fail; a runner
+that may create nothing adds `-ginkgo.label-filter='site-validate && !creates'`.
+Each object carries an `e2e.nvidia.com/site-run` label naming its run.
+
+- the API server's `/readyz` at kubeadm's `controlPlaneEndpoint`, from a node
+  other than the one kube-vip's lease says holds it; skipped on a site with
+  no such node
+- traffic between pods, through a Service by name and by ClusterIP, across two
+  nodes where there are two
+- a NetworkPolicy denying a source it does not allow, while a pod it does not
+  select stays reachable and a source it allows gets through
+- a StatefulSet pod resolved and reached by its headless Service name
+- a PersistentVolumeClaim bound and written from a pod, from
+  `NVKE_SITE_PVC_STORAGE_CLASS` or the default class; skipped without either
+- a certificate issued by a new self-signed cert-manager Issuer
+
+The DNS probe also creates a pod, and is not labeled `creates`. The
+authentication specs are not included, because they mint tokens for the
+scaffolding identities in `deploy/k8s/nvke-auth-dev.yaml`.
 
 | Run | `NVKE_SITE_VALIDATE` | `NVKE_TENANT_VALIDATE` | Specs labelled |
 | --- | --- | --- | --- |
@@ -212,15 +266,59 @@ make -C controller/test/e2e validate-image   # VALIDATE_IMAGE, VALIDATE_PLATFORM
 ```
 
 The pod needs no kubeconfig: with `KUBECONFIG` unset the suite uses its service
-account. In the controller's namespace that account needs `get` on Services,
-`list` on Pods and both `get` and `create` on `pods/portforward`, and nothing
-else: the port-forward tries websockets first, a `get`, and falls back to SPDY,
-a `create`. Configure it with
-the [health spec variables](#health-specs); `NVKE_CONTROLLER_NAMESPACE` matters
-wherever the controller is not installed in `nke-controller`, and
-`NVKE_CONTROLLER_SERVICE` wherever its release is not named that. Set
-`NVKE_CONTROLLER_EXPECTED_VERSION`: the image sets
-`NVKE_E2E_REQUIRE_EXPECTED_VERSION=true`, so a run without it fails.
+account. That account needs:
+
+- cluster-wide `get` and `list` on Nodes, Pods, Deployments, StatefulSets,
+  DaemonSets, Jobs, StorageClasses, EndpointSlices, Validating and Mutating
+  WebhookConfigurations, `cert-manager.io` Certificates, and, where the run
+  lists their components, `argoproj.io` Applications and `postgresql.cnpg.io`
+  Clusters; and `get` on the non-resource URLs `/readyz`, `/livez` and
+  `/version`
+- in `kube-system`, `get` on ConfigMaps (`kubeadm-config`) and
+  `coordination.k8s.io` Leases (kube-vip's)
+- in the controller's namespace, `get` on Services and ConfigMaps (the
+  authentication ConfigMap) and both `get` and `create` on
+  `pods/portforward`: the port-forward tries websockets first, a `get`, and
+  falls back to SPDY, a `create`
+- `create` on `serviceaccounts/token` for the identity it presents to the
+  controller API, `NKE_E2E_TOKEN_NAMESPACE`/`NKE_E2E_TOKEN_SERVICE_ACCOUNT`
+- in the probe namespace, by default the pod's own, `create`, `get` and
+  `delete` on Pods; and for the `creates` specs, the same on Services,
+  StatefulSets, PersistentVolumeClaims, NetworkPolicies and `cert-manager.io`
+  Issuers and Certificates, `get` on `pods/log` and `get` and `delete` on
+  Secrets (the issued certificate's)
+
+It needs nothing more, and should be given nothing more: the RBAC check fails
+an identity that can read Secrets across the cluster or bind roles.
+
+Configure it with the [health spec variables](#health-specs) and these:
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `NVKE_SITE_VALIDATE` | Turns the site checks on. The image sets it; elsewhere they skip. | Unset |
+| `NVKE_SITE_KUBERNETES_VERSION` | The Kubernetes version the site was built with. Unset fails the version check. | Unset |
+| `NVKE_SITE_NAMESPACES` | Comma-separated namespaces that must each run a ready pod, replacing the default list: `kube-system`, `cert-manager`, `capi-system` and those `deploy/nico` installs into. | The `deploy/nico` list |
+| `NVKE_SITE_PROBE_NAMESPACE` | Where the probe pods and every `creates` object go. | The pod's own namespace, else `default` |
+| `NVKE_SITE_PROBE_IMAGE` | The probe and server pods' image, which needs `sh`, `nslookup`, `wget`, `curl` and `nc`. Point it at a mirror on a site without internet access. | The suite's kubectl image |
+| `NVKE_SITE_COMPONENTS` | Optional components the site runs, comma-separated, each `name` or `name=namespace`: `argocd` (default namespace `argocd`), `cnpg` (`cnpg-system`), `teleport` (`teleport-agent`), `kube-vip` (`kube-system`). | Unset |
+| `NVKE_SITE_REQUIRED_WORKLOADS` | `namespace/workload`, comma-separated: a Deployment, StatefulSet or DaemonSet that must exist and run a ready pod. | Unset |
+| `NVKE_SITE_WORKLOAD_VERSIONS` | `namespace/workload=version`, comma-separated: a Deployment, StatefulSet or DaemonSet one of whose containers runs an image tagged `version`, with or without a leading `v`. | Unset |
+| `NVKE_SITE_APISERVER_FLAGS` | Flags every API server runs, `name=value` separated by semicolons, because values hold commas. Added to those kubeadm-config sets; a conflict between the two fails. | Unset |
+| `NVKE_SITE_ETCD_ENCRYPTED` | `true` requires `--encryption-provider-config` on every API server. | Unset |
+| `NVKE_SITE_RESERVED_MEMORY` | The least memory every node holds back from pods (capacity less allocatable), such as `2Gi`. | Unset |
+| `NVKE_SITE_STORAGE_CLASSES` | Comma-separated StorageClasses that must exist. | Unset |
+| `NVKE_SITE_PVC_STORAGE_CLASS` | The class the PVC check binds from. | The default class |
+
+The controller API check authenticates as `NKE_E2E_TOKEN_NAMESPACE`/
+`NKE_E2E_TOKEN_SERVICE_ACCOUNT`, whose defaults are the development identity in
+`deploy/k8s/nvke-auth-dev.yaml`. A production site has no such identity: set
+both to one the site's controller authorizes to list clusters.
+
+`NVKE_CONTROLLER_NAMESPACE` matters wherever the controller is not installed in
+`nke-controller`, and `NVKE_CONTROLLER_SERVICE` wherever its release is not
+named that. Set `NVKE_CONTROLLER_EXPECTED_VERSION` and
+`NVKE_SITE_KUBERNETES_VERSION`: the image sets
+`NVKE_E2E_REQUIRE_EXPECTED_VERSION=true`, so a run without either fails.
 
 Each controller release publishes the image built from the same commit, as
 `nvke-validate:v<version>` beside `nvke-controller` (see
@@ -241,7 +339,8 @@ container can read your kubeconfig and write `artifacts/`:
 mkdir -p artifacts
 docker run --rm --user "$(id -u):$(id -g)" \
   -v "$PWD/artifacts:/artifacts" -v "$HOME/.kube/config:/kube/config:ro" \
-  -e KUBECONFIG=/kube/config -e NVKE_CONTROLLER_EXPECTED_VERSION=v0.1.1 nvke-validate:local
+  -e KUBECONFIG=/kube/config -e NVKE_CONTROLLER_EXPECTED_VERSION=v0.1.1 \
+  -e NVKE_SITE_KUBERNETES_VERSION=v1.34.2 nvke-validate:local
 ```
 
 ### Building the image yourself

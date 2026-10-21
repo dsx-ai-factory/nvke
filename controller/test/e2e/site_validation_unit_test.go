@@ -45,6 +45,38 @@ func TestUnit_SiteNodeProblems(t *testing.T) {
 			want: []string{"n: tainted node-role.kubernetes.io/control-plane:NoSchedule"},
 		},
 		{
+			name: "control-plane taint with a worker to take the work",
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "cp"}, Status: ready,
+					Spec: corev1.NodeSpec{Taints: []corev1.Taint{{Key: controlPlaneTaint, Effect: corev1.TaintEffectNoSchedule}}},
+				},
+				{ObjectMeta: metav1.ObjectMeta{Name: "worker"}, Status: ready},
+			},
+		},
+		{
+			name: "control-plane taint when the only other node is cordoned",
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "cp"}, Status: ready,
+					Spec: corev1.NodeSpec{Taints: []corev1.Taint{{Key: controlPlaneTaint, Effect: corev1.TaintEffectNoSchedule}}},
+				},
+				{ObjectMeta: metav1.ObjectMeta{Name: "worker"}, Status: ready, Spec: corev1.NodeSpec{Unschedulable: true}},
+			},
+			want: []string{"cp: tainted node-role.kubernetes.io/control-plane:NoSchedule", "worker: cordoned"},
+		},
+		{
+			name: "another taint is not excused by a worker",
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "cp"}, Status: ready,
+					Spec: corev1.NodeSpec{Taints: []corev1.Taint{{Key: "node.kubernetes.io/disk-pressure", Effect: corev1.TaintEffectNoSchedule}}},
+				},
+				{ObjectMeta: metav1.ObjectMeta{Name: "worker"}, Status: ready},
+			},
+			want: []string{"cp: tainted node.kubernetes.io/disk-pressure:NoSchedule"},
+		},
+		{
 			name:  "not ready and cordoned",
 			nodes: []corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "n"}, Spec: corev1.NodeSpec{Unschedulable: true}}},
 			want:  []string{"n: not Ready", "n: cordoned"},
@@ -68,26 +100,32 @@ func TestUnit_SiteWorkloadProblems(t *testing.T) {
 		Status:     appsv1.DeploymentStatus{ObservedGeneration: 2, UpdatedReplicas: 2, AvailableReplicas: 2},
 	}
 	// Nothing to schedule is healthy: a DaemonSet selecting no node on the
-	// site wants zero pods and has them.
+	// site wants zero pods and has them. It does not run anything, though.
 	idle := appsv1.DaemonSet{ObjectMeta: meta("b", "idle"), Status: appsv1.DaemonSetStatus{ObservedGeneration: 2}}
+	agent := appsv1.DaemonSet{ObjectMeta: meta("b", "agent"), Status: appsv1.DaemonSetStatus{ObservedGeneration: 2, DesiredNumberScheduled: 1, NumberReady: 1, NumberAvailable: 1}}
 
 	t.Run("healthy", func(t *testing.T) {
-		require.Empty(t, workloadProblems(required, []appsv1.Deployment{available}, nil, []appsv1.DaemonSet{idle}))
+		require.Empty(t, workloadProblems(required, []appsv1.Deployment{available}, nil, []appsv1.DaemonSet{idle, agent}))
 	})
 	t.Run("a required namespace with nothing in it", func(t *testing.T) {
-		require.Equal(t, []string{"namespace b: no workloads (expected from item b)"},
+		require.Equal(t, []string{"namespace b: no workload running (expected from item b)"},
 			workloadProblems(required, []appsv1.Deployment{available}, nil, nil))
+	})
+	t.Run("a required namespace whose only workloads run nothing", func(t *testing.T) {
+		scaledDown := appsv1.Deployment{ObjectMeta: meta("b", "off"), Spec: appsv1.DeploymentSpec{Replicas: ptr.To[int32](0)}, Status: appsv1.DeploymentStatus{ObservedGeneration: 2}}
+		require.Equal(t, []string{"namespace b: no workload running (expected from item b)"},
+			workloadProblems(required, []appsv1.Deployment{available, scaledDown}, nil, []appsv1.DaemonSet{idle}))
 	})
 	t.Run("unset replicas default to one", func(t *testing.T) {
 		d := appsv1.Deployment{ObjectMeta: meta("a", "d"), Status: appsv1.DeploymentStatus{ObservedGeneration: 2}}
-		require.Equal(t, []string{"Deployment a/d: 0 of 1 available, 0 updated"},
-			workloadProblems(required, []appsv1.Deployment{d}, nil, []appsv1.DaemonSet{idle}))
+		require.Equal(t, []string{"Deployment a/d: 0 of 1 available, 0 updated", "namespace a: no workload running (expected from item a)"},
+			workloadProblems(required, []appsv1.Deployment{d}, nil, []appsv1.DaemonSet{agent}))
 	})
 	t.Run("status from an older generation is not trusted", func(t *testing.T) {
 		stale := available
 		stale.Status.ObservedGeneration = 1
 		require.Equal(t, []string{"Deployment a/ok: 2 of 2 available, 2 updated"},
-			workloadProblems(required, []appsv1.Deployment{stale}, nil, []appsv1.DaemonSet{idle}))
+			workloadProblems(required, []appsv1.Deployment{stale}, nil, []appsv1.DaemonSet{agent}))
 	})
 	t.Run("an unready StatefulSet and DaemonSet outside the required namespaces", func(t *testing.T) {
 		st := appsv1.StatefulSet{ObjectMeta: meta("other", "db"), Spec: appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)}, Status: appsv1.StatefulSetStatus{ObservedGeneration: 2}}
@@ -95,7 +133,61 @@ func TestUnit_SiteWorkloadProblems(t *testing.T) {
 		require.Equal(t, []string{
 			"DaemonSet cni/ovnkube-node: 0 of 1 ready, 0 available",
 			"StatefulSet other/db: 0 of 1 ready",
-		}, workloadProblems(required, []appsv1.Deployment{available}, []appsv1.StatefulSet{st}, []appsv1.DaemonSet{idle, ds}))
+		}, workloadProblems(required, []appsv1.Deployment{available}, []appsv1.StatefulSet{st}, []appsv1.DaemonSet{agent, ds}))
+	})
+}
+
+func TestUnit_SiteExcuseNamespace(t *testing.T) {
+	pods := []corev1.Pod{
+		{ObjectMeta: metav1.ObjectMeta{Namespace: "runner", Name: "earlier-run"}},
+		{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "etcd"}},
+	}
+	kept, excused := excuseNamespace(pods, "runner")
+	require.Equal(t, 1, excused)
+	require.Len(t, kept, 1)
+	require.Equal(t, "etcd", kept[0].Name)
+	require.Len(t, pods, 2, "the caller's list is not changed")
+	kept, excused = excuseNamespace(pods, "")
+	require.Zero(t, excused)
+	require.Len(t, kept, 2)
+}
+
+func TestUnit_SiteControlPlaneProblems(t *testing.T) {
+	cp := func(name string) corev1.Node {
+		return corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{controlPlaneTaint: ""}}}
+	}
+	worker := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker"}}
+	static := func(name string, phase corev1.PodPhase, ready bool) corev1.Pod {
+		status := corev1.ConditionFalse
+		if ready {
+			status = corev1.ConditionTrue
+		}
+		return corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Namespace: kubeSystemNamespace, Name: name},
+			Status:     corev1.PodStatus{Phase: phase, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: status}}},
+		}
+	}
+	healthy := []corev1.Pod{
+		static("kube-scheduler-cp1", corev1.PodRunning, true),
+		static("kube-controller-manager-cp1", corev1.PodRunning, true),
+	}
+
+	t.Run("healthy, workers ignored", func(t *testing.T) {
+		require.Empty(t, controlPlaneProblems([]corev1.Node{cp("cp1"), worker}, healthy))
+	})
+	t.Run("a component missing on a second control plane", func(t *testing.T) {
+		pods := append(slices.Clone(healthy), static("kube-scheduler-cp2", corev1.PodRunning, true))
+		require.Equal(t, []string{"cp2: no kube-controller-manager pod"},
+			controlPlaneProblems([]corev1.Node{cp("cp1"), cp("cp2")}, pods))
+	})
+	t.Run("a component not Ready", func(t *testing.T) {
+		pods := []corev1.Pod{healthy[0], static("kube-controller-manager-cp1", corev1.PodRunning, false)}
+		require.Equal(t, []string{"cp1: kube-controller-manager not Ready (phase Running)"},
+			controlPlaneProblems([]corev1.Node{cp("cp1")}, pods))
+	})
+	t.Run("no control-plane node", func(t *testing.T) {
+		require.Equal(t, []string{"no node is labeled " + controlPlaneTaint},
+			controlPlaneProblems([]corev1.Node{worker}, nil))
 	})
 }
 

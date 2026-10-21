@@ -4,7 +4,9 @@
 # The E2E suite as an image, for validating a running site from inside its
 # cluster, under an in-cluster test runner. It carries the whole suite and runs
 # the specs NVKE_SITE_VALIDATE and NVKE_TENANT_VALIDATE select, the site's by
-# default: specs that change nothing on the site.
+# default: specs that install and change nothing lasting on the site. Those
+# labeled creates, and the DNS probe, make short-lived objects in the probe
+# namespace and delete them.
 #
 # Build from the REPOSITORY ROOT, so the context includes controller/api,
 # which go.mod replaces with a relative path:
