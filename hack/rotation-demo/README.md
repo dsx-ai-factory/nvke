@@ -35,7 +35,9 @@ Replace every example value with the approved site's values. `KUBECONFIG`
 selects the kubeconfig; `context` must select the exact tenant and `api_server`
 must equal that context's HTTPS server (the VIP for HA traffic). Record the actual
 `kube-system` namespace UID, the controller's cluster UUID/name and complete joined node
-UUID/name/role inventory. The collector rejects mismatches, added/missing nodes,
+UUID/name/role inventory. Continuous API traffic is pinned to `api_server` and
+must keep observing that `kube-system` UID; any target drift fails the run with
+`traffic_target_mismatch`, independent of the API outage budget. The collector rejects mismatches, added/missing nodes,
 unsupported control-plane counts and unhealthy endpoints before starting work.
 
 Set `deployment_source_revision` to the clean checkout HEAD used to build the
@@ -318,7 +320,8 @@ hack/rotation-demo/demo.sh aggregate --output /operator/private/release.json \
 
 The index records evidence digests and missing/failed scenarios. It exits
 nonzero with `incomplete` if any required scenario is absent, failed, synthetic,
-or collected from a dirty checkout. All T2 reports must identify the same source,
+or collected from a dirty checkout. Reports without a Boolean `source_dirty`, or
+passed reports without well-formed hashed deployed versions, are rejected. All T2 reports must identify the same source,
 cluster UID/UUID and profile, and the same observed deployed versions (passed
 reports); a redeploy between lanes fails with `release_deployed_versions_mismatch`.
 A passed index covers these specified scenarios;

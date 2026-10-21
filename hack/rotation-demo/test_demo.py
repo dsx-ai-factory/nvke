@@ -58,7 +58,7 @@ class FakeLive:
         key = "after" if self.started and self.c["scenario"] != "etcd-key" else "before"
         return {"members": ["1", "2", "3"], "components": {(n["name"], component): key for n in self.c["nodes"] for component in demo.COMPONENTS}}
     def versions(self, _manual=False):
-        return [{"component": "controller", "reported_version_sha256": "a" * 64}]
+        return [{"component": "controller", "node_id": None, "reported_version_sha256": "a" * 64}]
     def certificates(self, after=0, manual=False):
         if self.failure == "freshness" and after:
             raise demo.CheckError("certificate_inspection_stale")
@@ -95,7 +95,7 @@ class FakeTraffic:
     def start(self):
         pass
     def finish(self):
-        return {"samples": 10, "errors": 0, "max_latency_seconds": 0.1}
+        return {"samples": 10, "errors": 0, "target_mismatches": 0, "max_latency_seconds": 0.1}
 
 
 class SampledPrometheus:
@@ -255,7 +255,7 @@ class DemoTests(unittest.TestCase):
     def test_traffic_error_budget_is_required(self):
         class BadTraffic(FakeTraffic):
             def finish(self):
-                return {"samples": 10, "errors": 1, "max_latency_seconds": 0.1}
+                return {"samples": 10, "errors": 1, "target_mismatches": 0, "max_latency_seconds": 0.1}
         c = config()
         FakeLive.failure = None
         with patch.object(demo, "Traffic", BadTraffic), patch.object(demo, "wait_for", lambda check, _deadline: check()):
@@ -340,7 +340,9 @@ class DemoTests(unittest.TestCase):
                     path = Path(tmp) / (scenario + ".json")
                     path.write_text(json.dumps({"schema": "nke.rotation-evidence.v1", "scenario": scenario, "status": "passed", "live": True,
                                                 "source_dirty": False, "source_revision": "rev", "cluster_id": "cluster", "kube_system_uid": "uid",
-                                                "profile": "profile", "checks": sorted(checks)}))
+                                                "profile": "profile", "checks": sorted(checks),
+                                                "deployed_versions_before": [{"component": "controller", "node_id": None,
+                                                                              "reported_version_sha256": "a" * 64}]}))
                     paths.append(path)
                 return demo.aggregate(paths)
         self.assertEqual(set(demo.SCENARIOS), set(expected))
@@ -373,6 +375,47 @@ class DemoTests(unittest.TestCase):
             self.assertEqual("passed", aggregate_with("manual-t1")["status"])
             with self.assertRaisesRegex(demo.CheckError, "release_deployed_versions_mismatch"):
                 aggregate_with("etcd-key")
+
+    def test_release_requires_boolean_source_cleanliness(self):
+        fake = self.run_fake()
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, value in (("missing", None), ("null", None), ("zero", 0), ("string", "false")):
+                with self.subTest(name=name):
+                    report = {**fake, "scenario": "forced-renewal", "live": True, "checks": sorted(demo.required_checks("forced-renewal"))}
+                    if name == "missing":
+                        report.pop("source_dirty")
+                    else:
+                        report["source_dirty"] = value
+                    path = Path(tmp) / (name + ".json")
+                    path.write_text(json.dumps(report))
+                    with self.assertRaisesRegex(demo.CheckError, "invalid_evidence"):
+                        demo.aggregate([path])
+
+    def test_release_requires_well_formed_deployed_versions_for_passed_reports(self):
+        fake = self.run_fake()
+        valid = [{"component": "controller", "node_id": None, "reported_version_sha256": "a" * 64}]
+        invalid = {
+            "missing": None, "null": None, "empty": [], "missing fields": [{"component": "controller"}],
+            "extra field": [{**valid[0], "version": "v1"}], "non-hex digest": [{**valid[0], "reported_version_sha256": "z" * 64}],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, versions in invalid.items():
+                with self.subTest(name=name):
+                    report = {**fake, "scenario": "forced-renewal", "status": "passed", "live": True, "source_dirty": False,
+                              "checks": sorted(demo.required_checks("forced-renewal"))}
+                    if name == "missing":
+                        report.pop("deployed_versions_before", None)
+                    else:
+                        report["deployed_versions_before"] = versions
+                    path = Path(tmp) / (name.replace(" ", "-") + ".json")
+                    path.write_text(json.dumps(report))
+                    with self.assertRaisesRegex(demo.CheckError, "evidence_deployed_versions_invalid"):
+                        demo.aggregate([path])
+            failed = {**fake, "scenario": "forced-renewal", "status": "failed", "live": True, "source_dirty": False}
+            failed.pop("deployed_versions_before", None)
+            path = Path(tmp) / "failed.json"
+            path.write_text(json.dumps(failed))
+            self.assertEqual("incomplete", demo.aggregate([path])["status"])
 
     def test_evidence_file_exclusive_and_private(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -484,7 +527,7 @@ class DemoTests(unittest.TestCase):
 
     def test_continuous_secret_failure_is_distinct_from_allowed_api_outage(self):
         class LocalLive:
-            c = {"traffic_interval_seconds": 0.001}
+            c = {"traffic_interval_seconds": 0.001, "api_server": "https://approved.example", "kube_system_uid": "uid"}
             def kubectl(self, *_args):
                 raise demo.CheckError("api_unavailable")
         class CorruptProof:
@@ -519,7 +562,7 @@ class DemoTests(unittest.TestCase):
                 return demo.digest("new" if old else "old")
         class CorruptTraffic(FakeTraffic):
             def finish(self):
-                return {"samples": 10, "errors": 1, "secret_read_errors": 1, "max_latency_seconds": 0.1}
+                return {"samples": 10, "errors": 1, "secret_read_errors": 1, "target_mismatches": 0, "max_latency_seconds": 0.1}
         c = config()
         c["max_api_error_fraction"] = 1
         FakeLive.failure = None
@@ -529,17 +572,51 @@ class DemoTests(unittest.TestCase):
         self.assertEqual("failed", report["status"])
         self.assertEqual("continuous_secret_read_or_payload_failed", report["reason"])
 
+    def test_traffic_pins_approved_server_and_counts_target_drift(self):
+        class LocalLive:
+            c = {"traffic_interval_seconds": 0.001, "api_server": "https://approved.example", "kube_system_uid": "approved-uid"}
+            def __init__(self):
+                self.calls = []
+            def kubectl(self, *args):
+                self.calls.append(args)
+                if len(self.calls) == 2:
+                    traffic.stop.set()
+                    return json.dumps({"metadata": {"uid": "other-uid"}}).encode()
+                return json.dumps({"metadata": {"uid": "approved-uid"}}).encode()
+        live = LocalLive()
+        traffic = demo.Traffic(live)
+        traffic.thread.start()
+        traffic.thread.join(5)
+        summary = traffic.finish()
+        self.assertEqual(2, summary["samples"])
+        self.assertEqual(0, summary["errors"])
+        self.assertEqual(1, summary["target_mismatches"])
+        self.assertEqual([("--server=https://approved.example", "get", "--raw=/api/v1/namespaces/kube-system")] * 2, live.calls)
+
+    def test_traffic_target_drift_fails_even_with_full_outage_budget(self):
+        class DriftTraffic(FakeTraffic):
+            def finish(self):
+                return {"samples": 10, "errors": 0, "target_mismatches": 1, "max_latency_seconds": 0.1}
+        c = config()
+        c["max_api_error_fraction"] = 1
+        FakeLive.failure = None
+        with patch.object(demo, "Traffic", DriftTraffic), patch.object(demo, "wait_for", lambda check, _deadline: check()):
+            report = demo.run(c, "forced-renewal", c["cluster_id"], FakeLive)
+        self.assertEqual("failed", report["status"])
+        self.assertEqual("traffic_target_mismatch", report["reason"])
+
     def test_traffic_finish_waits_for_in_flight_observation_batch(self):
         reached, release = threading.Event(), threading.Event()
         class LocalLive:
-            c = {"traffic_interval_seconds": 0.001, "nodes": [{"name": "cp-0", "control_plane": True}]}
+            c = {"traffic_interval_seconds": 0.001, "nodes": [{"name": "cp-0", "control_plane": True}],
+                 "api_server": "https://approved.example", "kube_system_uid": "uid"}
             def __init__(self):
                 self.requests, self.reads = 0, []
             def kubectl(self, *_args):
                 self.requests += 1
                 if self.requests == 2:
                     traffic.stop.set()
-                return b"{}"
+                return b'{"metadata":{"uid":"uid"}}'
             def kubejson(self, *args):
                 if args[0] == "get":
                     return {"items": [{"spec": {"nodeName": "cp-0"}, "status": {"podIP": "192.0.2.1"}}]}

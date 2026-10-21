@@ -505,15 +505,21 @@ class Traffic:
         self.proof = proof
         self.samples, self.errors, self.max_latency = 0, 0, 0.0
         self.secret_errors = 0
+        self.target_mismatches = 0
         self.thread = threading.Thread(target=self.run, daemon=True)
 
     def run(self):
         while not self.stop.is_set():
             start = time.monotonic()
             try:
-                self.live.kubectl("get", "--raw=/api/v1/namespaces?limit=1")
+                # Kubectl may refresh credentials from the context, but every sample stays on the approved cluster.
+                raw = self.live.kubectl("--server=" + self.live.c["api_server"], "get", "--raw=/api/v1/namespaces/kube-system")
+                uid = json.loads(raw)["metadata"]["uid"]
             except Exception:
                 self.errors += 1
+            else:
+                if uid != self.live.c["kube_system_uid"]:
+                    self.target_mismatches += 1
             if self.proof:
                 try:
                     self.proof.read_all()
@@ -529,7 +535,7 @@ class Traffic:
         self.thread.join()
         require(self.samples >= 2, "traffic_observation_incomplete")
         return {"samples": self.samples, "errors": self.errors, "secret_read_errors": self.secret_errors,
-                "max_latency_seconds": round(self.max_latency, 3)}
+                "target_mismatches": self.target_mismatches, "max_latency_seconds": round(self.max_latency, 3)}
 
 
 NODE_UNIQUE = ("apiserver", "etcd-server", "etcd-peer")
@@ -768,6 +774,7 @@ def run(c, scenario, approve, live_factory=Live):
         traffic = None
         evidence["traffic"] = summary
         require(not proof or summary.get("secret_read_errors", 0) == 0, "continuous_secret_read_or_payload_failed")
+        require(summary["target_mismatches"] == 0, "traffic_target_mismatch")
         require(summary["errors"] / summary["samples"] <= c.get("max_api_error_fraction", 0) and
                 summary["max_latency_seconds"] <= c.get("max_api_latency_seconds", 10), "api_traffic_budget_exceeded")
         if proof:
@@ -871,13 +878,19 @@ def aggregate(paths):
     selected = {}
     for report in reports:
         require(report.get("schema") == "nke.rotation-evidence.v1" and report.get("scenario") in SCENARIOS, "invalid_evidence")
+        require(isinstance(report.get("source_dirty"), bool), "invalid_evidence")
         require(report.get("status") in {"passed", "failed"}, "invalid_evidence_status")
         if report["status"] == "passed":
             require(required_checks(report["scenario"]) <= set(report.get("checks", [])), "evidence_checks_missing")
+            versions = report.get("deployed_versions_before")
+            require(isinstance(versions, list) and versions and all(
+                isinstance(v, dict) and set(v) == {"component", "node_id", "reported_version_sha256"} and
+                isinstance(v["reported_version_sha256"], str) and HEX.fullmatch(v["reported_version_sha256"])
+                for v in versions), "evidence_deployed_versions_invalid")
         require(report["scenario"] not in selected, "duplicate_scenario")
         selected[report["scenario"]] = report
     missing = sorted(set(SCENARIOS) - selected.keys())
-    passed = all(r.get("status") == "passed" and r.get("live") is True and not r.get("source_dirty") for r in reports)
+    passed = all(r.get("status") == "passed" and r.get("live") is True and not r["source_dirty"] for r in reports)
     # T1 is a different cluster; T2 scenarios must identify the same source, cluster and profile.
     t2 = [r for r in reports if r["scenario"] != "manual-t1"]
     require(len({(r["source_revision"], r["cluster_id"], r["kube_system_uid"], r["profile"]) for r in t2}) <= 1, "release_target_or_revision_mismatch")
