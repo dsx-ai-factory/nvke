@@ -164,6 +164,9 @@ func TestRetireLostEtcdRotationNodeRefusesUnsafeRequests(t *testing.T) {
 		{"agent answers live probe", func(_ *lostNodeStore, _ *db.Node, _ *activities.RetireLostEtcdRotationNodeInput, agent *agenttest.FakeClient) {
 			agent.AgentVersionErr = nil
 		}, "not lost"},
+		{"no agent address to probe", func(s *lostNodeStore, _ *db.Node, _ *activities.RetireLostEtcdRotationNodeInput, _ *agenttest.FakeClient) {
+			s.nodes[1].IP = ""
+		}, "agent address"},
 		{"worker node", func(s *lostNodeStore, _ *db.Node, _ *activities.RetireLostEtcdRotationNodeInput, _ *agenttest.FakeClient) {
 			s.nodes[1].ControlPlane = false
 		}, "control-plane node"},
@@ -248,6 +251,57 @@ func TestRetiredNodeTeardownActivitiesPassFenceOnlyForThatNode(t *testing.T) {
 // commitFailingLostNodeStore runs the transaction body, then fails the commit.
 type commitFailingLostNodeStore struct {
 	*lostNodeStore
+}
+
+// lookupFailingLostNodeStore fails the preliminary probe lookup while leaving
+// transaction reads available.
+type lookupFailingLostNodeStore struct {
+	*lostNodeStore
+}
+
+func (s *lookupFailingLostNodeStore) GetNode(context.Context, uuid.UUID) (db.Node, error) {
+	return db.Node{}, errors.New("database unavailable")
+}
+
+// TestRetireLostEtcdRotationNodeRefusesWithoutLiveProbe keeps a failed probe
+// lookup from being treated as proof that the agent did not answer.
+func TestRetireLostEtcdRotationNodeRefusesWithoutLiveProbe(t *testing.T) {
+	t.Run("new retirement", func(t *testing.T) {
+		store, lost := failedRotationWithLostNode(db.EtcdKeyRotationPhaseRewrite)
+		agent := &agenttest.FakeClient{}
+		a := activities.NewActivities(config.Config{}, &lookupFailingLostNodeStore{lostNodeStore: store}, nil, agent, "", nil, "")
+
+		var suite testsuite.WorkflowTestSuite
+		env := suite.NewTestActivityEnvironment()
+		env.RegisterActivity(a.RetireLostEtcdRotationNode)
+		_, err := env.ExecuteActivity(a.RetireLostEtcdRotationNode, retireInput(store, lost))
+
+		require.ErrorContains(t, err, "live agent probe")
+		var appErr *temporal.ApplicationError
+		require.ErrorAs(t, err, &appErr)
+		require.False(t, appErr.NonRetryable())
+		require.Zero(t, store.writes)
+		require.Empty(t, store.cluster.Conditions.EtcdKeyRotation.RetiredNodes)
+		require.NotEqual(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Deleting.Status)
+		require.Len(t, store.auditEvents, 1)
+		require.Equal(t, credentialaudit.OutcomeFailure, store.auditEvents[0].Outcome)
+	})
+
+	t.Run("already retired", func(t *testing.T) {
+		store, lost := failedRotationWithLostNode(db.EtcdKeyRotationPhaseRewrite)
+		_, err := lostNodeActivities(store, unreachableAgent()).RetireLostEtcdRotationNode(t.Context(), retireInput(store, lost))
+		require.NoError(t, err)
+		writes := store.writes
+		a := activities.NewActivities(config.Config{}, &lookupFailingLostNodeStore{lostNodeStore: store}, nil, &agenttest.FakeClient{}, "", nil, "")
+
+		result, err := a.RetireLostEtcdRotationNode(t.Context(), retireInput(store, lost))
+
+		require.NoError(t, err)
+		require.True(t, result.TeardownRequired)
+		require.Equal(t, writes, store.writes)
+		require.Len(t, store.auditEvents, 2)
+		require.Equal(t, credentialaudit.OutcomeNoop, store.auditEvents[1].Outcome)
+	})
 }
 
 func (s *commitFailingLostNodeStore) RunInTx(ctx context.Context, fn func(context.Context, db.Tx) error) error {
