@@ -48,15 +48,21 @@ components are running, etcd has the exact expected voting membership, its
 local endpoint is healthy, and the local kube-apiserver is ready immediately
 before and after renewal.
 
-For nonforced cycles, an embedded read-only runbook checks each node's leaf
-certificate expiry before any drain or renewal dispatch. It also reads either
+Before any drain or renewal dispatch, an embedded read-only runbook reads each
 executor's persisted renewal state (the runbook's phase file and the node agent's
-`k8sCertRenewalState`): a renewal left `renewing` or `restart_pending` by an
-earlier attempt counts as due even with fresh certificates, so the next attempt
-resumes and finishes its restarts. A node with nothing inside
-`certRenewal.thresholdDays` and no pending renewal records `unchanged` without
-either operation; check failures, including a corrupt state file, stop the cycle
-without dispatch. Forced cycles bypass this check.
+`k8sCertRenewalState`). A renewal left `renewing` or `restart_pending` by an
+earlier attempt must finish its restarts, even with fresh certificates. Pending
+typed-only intent requires typed executor success, with no legacy fallback;
+legacy-only intent resumes on the legacy executor. If both are pending, the
+legacy executor runs first, then the typed executor must succeed.
+
+For nonforced cycles, the check also reads each node's leaf certificate expiry.
+A node with nothing inside `certRenewal.thresholdDays` and no pending renewal
+records `unchanged` without either operation. Check failures stop the cycle
+without dispatch. An unreadable or unknown agent state is fatal unless legacy
+intent is pending; in that case, the check warns and selects only legacy so its
+pending restarts can finish. Forced cycles bypass expiry checks, not
+pending-intent checks or executor requirements.
 
 With more than one control-plane node, a selected node's renewal is bracketed by the
 rollout framework's kube-vip drain/restore node guard, as in the
@@ -101,9 +107,12 @@ restores the active manifest, and an interrupted operation resumes by
 restarting all four pods again. A Temporal activity retry reattaches to the
 stable operation ID instead of starting a second renewal. The hardened workflow calls the capability-distinct V2 start RPC, so
 agents that implement only the V1 operation return `Unimplemented` before
-accepting node-side work. The controller then uses the embedded runbook, whose
-persistent state, bounded lock, and CA fingerprint checks add mixed-fleet
-safety. Both executors restart the same pods one at a time in the same order,
+accepting node-side work. When there is no pending typed intent, any definitive
+V2 Start `Unimplemented` response, including on an activity retry, allows the
+controller to use the embedded runbook. Pending typed intent forbids that
+fallback: legacy success cannot complete the typed executor's pending restarts.
+The runbook's persistent state, bounded lock, and CA fingerprint checks add
+mixed-fleet safety. Both executors restart the same pods one at a time in the same order,
 gated on local control-plane health; they differ in resume granularity (the
 runbook resumes at the persisted component, the node agent restarts all four
 pods again) and in the runbook's additional lock and CA fingerprint checks.
@@ -154,6 +163,13 @@ A successful forced cycle also resets `nextCertRenewalDue`, preventing an
 immediate duplicate scheduled run.
 
 ## Status and failure handling
+
+`Provisioned` describes provisioning, not certificate-maintenance health. A
+failed renewal that released its mutation lock can still show `Provisioned`;
+a failed renewal that retained the lock requires operator recovery. Its status
+can be `Updating`, but higher-priority conditions such as `UpdateFailed` can mask
+it. Inspect `conditions.updateInProgress` and `conditions.certificateRenewal`
+regardless of the displayed status.
 
 `GET /api/clusters/{id}` exposes:
 

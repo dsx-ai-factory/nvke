@@ -28,6 +28,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [workload-clusters/access.md](workload-clusters/access.md) | Getting a workload cluster's admin kubeconfig, giving the customer access, and connecting with `kubectl` |
 | [workload-clusters/oidc.md](workload-clusters/oidc.md) | Making workload clusters accept tokens from the management plane and from your own OpenID Connect (OIDC) identity providers, and the identities they may not claim |
 | [workload-clusters/node-pools.md](workload-clusters/node-pools.md) | Adding, scaling and removing node pools |
+| [Workload cluster Kubernetes certificate renewal](../controller/docs/certificate-renewal.md) | Scheduled and forced leaf certificate renewal, failure diagnostics and ownership-checked recovery |
 | [operate/observe.md](operate/observe.md) | Metrics, dashboards, logs and status for NVKE and its clusters |
 | [operate/troubleshoot.md](operate/troubleshoot.md) | Symptoms, causes and fixes for common failures |
 

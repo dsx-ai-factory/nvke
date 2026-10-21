@@ -36,6 +36,9 @@ const (
 	// follows a successful legacy run in one cycle. Histories recorded before it
 	// returned the legacy result alone.
 	certificateRenewalTypedAfterLegacyChangeID = "certificate-renewal-typed-after-legacy"
+	// certificateRenewalExecutorIntentChangeID preserves histories that skipped
+	// forced intent checks or allowed typed intent to fall back to legacy.
+	certificateRenewalExecutorIntentChangeID = "certificate-renewal-executor-intent"
 )
 
 // RenewK8sCertsInput selects a threshold-based or forced cycle. V2 requires a
@@ -136,9 +139,10 @@ func RenewK8sCerts(ctx workflow.Context, input RenewK8sCertsInput) (RenewK8sCert
 // kube-vip drain and restore guard used by the other apiserver-restarting
 // rollouts, so worker kubelets pinned to that node fail over before its
 // kube-apiserver restarts; a single control-plane node is renewed without the
-// drain, because there is no other node to fail over to. Nonforced cycles check
-// expiry first and skip both dispatch and drain when nothing is due. Restore runs on a disconnected
-// context after success, failure or cancellation, and a failed drain or restore
+// drain, because there is no other node to fail over to. Cycles inspect persisted
+// executor intent before dispatch; nonforced cycles also check expiry and skip
+// dispatch and drain when nothing is due. Restore runs on a disconnected context
+// after success, failure or cancellation, and a failed drain or restore
 // fails the cycle. Acceptance owns the cluster mutation lock; successful node
 // results and health gates are required before advancing the due time. Failure
 // cleanup observes the
@@ -271,6 +275,7 @@ func renewK8sCerts(
 	}
 	// Existing V2 histories retain their original guard/dispatch command sequence.
 	checkExpiry := workflow.GetVersion(ctx, certificateRenewalExpiryCheckChangeID, workflow.DefaultVersion, 1) >= 1
+	checkExecutorIntent := workflow.GetVersion(ctx, certificateRenewalExecutorIntentChangeID, workflow.DefaultVersion, 1) >= 1
 	for _, node := range controlPlaneNodes {
 		nodeID := node.ID
 		nodeInput := activities.KubernetesCertificateRenewalInput{
@@ -280,7 +285,7 @@ func renewK8sCerts(
 			Force:               input.Force,
 			ExpectedEtcdMembers: len(controlPlaneNodes),
 		}
-		renewalResult, unresolved, err := renewCertificatesOnNodeForCycle(ctx, rolloutCluster, node, nodeInput, checkExpiry)
+		renewalResult, unresolved, err := renewCertificatesOnNodeForCycle(ctx, rolloutCluster, node, nodeInput, checkExpiry, checkExecutorIntent)
 		if err != nil {
 			renewErr := fmt.Errorf("failed to renew certificates on node %s: %w", node.ID, err)
 			diagnosticCtx, _ := workflow.NewDisconnectedContext(ctx)
@@ -315,9 +320,10 @@ func renewK8sCerts(
 }
 
 // renewCertificatesOnNodeForCycle selects only due nodes before any guard or
-// mutating dispatch. The read-only result is recorded as unchanged; Force skips
-// selection. Pending legacy-runbook intent goes straight to the legacy executor,
-// the only one that can finish its restarts; when the agent also holds pending
+// mutating dispatch. The read-only result is recorded as unchanged. Force bypasses
+// expiry but still checks executor ownership. Pending legacy-runbook intent goes
+// straight to the legacy executor, the only one that can finish its restarts;
+// when the agent also holds pending
 // intent, the typed executor follows in the same cycle so neither restart waits
 // for the next due time. A single control-plane node never drains, even when forced.
 func renewCertificatesOnNodeForCycle(
@@ -326,9 +332,10 @@ func renewCertificatesOnNodeForCycle(
 	node db.Node,
 	input activities.KubernetesCertificateRenewalInput,
 	checkExpiry bool,
+	checkExecutorIntent bool,
 ) (activities.KubernetesCertificateRenewalResult, *activities.ResolveKubernetesCertificateRenewalInput, error) {
-	legacy, thenTyped := false, false
-	if checkExpiry && !input.Force {
+	legacy, thenTyped, typedRequired := false, false, false
+	if checkExpiry && (!input.Force || checkExecutorIntent) {
 		var a *activities.Activities
 		var check activities.KubernetesCertificateRenewalCheckResult
 		if err := workflow.ExecuteActivity(certificateRenewalHealthOptions(ctx), a.CheckKubernetesCertificateRenewalRequired, input).Get(ctx, &check); err != nil {
@@ -338,11 +345,12 @@ func renewCertificatesOnNodeForCycle(
 			return activities.KubernetesCertificateRenewalResult{Outcome: db.CertificateRenewalOutcomeUnchanged}, nil, nil
 		}
 		legacy, thenTyped = check.Legacy, check.Legacy && check.Typed
+		typedRequired = checkExecutorIntent && check.Typed
 	}
 	if input.ExpectedEtcdMembers == 1 {
-		return renewCertificatesOnNodeWithExecutors(ctx, input, legacy, thenTyped)
+		return renewCertificatesOnNodeWithExecutors(ctx, input, legacy, thenTyped, typedRequired)
 	}
-	return renewCertificatesOnNodeBehindKubeVipDrain(ctx, cluster, adaptercontroller.NewNode(node, ""), input, legacy, thenTyped)
+	return renewCertificatesOnNodeBehindKubeVipDrain(ctx, cluster, adaptercontroller.NewNode(node, ""), input, legacy, thenTyped, typedRequired)
 }
 
 // renewCertificatesOnNodeWithExecutors runs the selected executor and, when
@@ -353,8 +361,9 @@ func renewCertificatesOnNodeWithExecutors(
 	input activities.KubernetesCertificateRenewalInput,
 	legacy bool,
 	thenTyped bool,
+	typedRequired bool,
 ) (activities.KubernetesCertificateRenewalResult, *activities.ResolveKubernetesCertificateRenewalInput, error) {
-	result, unresolved, err := renewCertificatesOnNode(ctx, input, legacy)
+	result, unresolved, err := renewCertificatesOnNode(ctx, input, legacy, typedRequired)
 	if err != nil || !legacy || !thenTyped {
 		return result, unresolved, err
 	}
@@ -362,7 +371,7 @@ func renewCertificatesOnNodeWithExecutors(
 	if workflow.GetVersion(ctx, certificateRenewalTypedAfterLegacyChangeID, workflow.DefaultVersion, 1) == workflow.DefaultVersion {
 		return result, unresolved, nil
 	}
-	typedResult, unresolved, err := renewCertificatesOnNode(ctx, input, false)
+	typedResult, unresolved, err := renewCertificatesOnNode(ctx, input, false, typedRequired)
 	if err != nil {
 		return typedResult, unresolved, err
 	}
@@ -388,6 +397,7 @@ func renewCertificatesOnNodeBehindKubeVipDrain(
 	input activities.KubernetesCertificateRenewalInput,
 	legacy bool,
 	thenTyped bool,
+	typedRequired bool,
 ) (activities.KubernetesCertificateRenewalResult, *activities.ResolveKubernetesCertificateRenewalInput, error) {
 	var result activities.KubernetesCertificateRenewalResult
 	var unresolved *activities.ResolveKubernetesCertificateRenewalInput
@@ -401,7 +411,7 @@ func renewCertificatesOnNodeBehindKubeVipDrain(
 		[]rollout.NodeGuardRef{{Name: rolloutkubevip.GuardNameKubeVipDrainRestore}},
 		func() error {
 			var renewErr error
-			result, unresolved, renewErr = renewCertificatesOnNodeWithExecutors(ctx, input, legacy, thenTyped)
+			result, unresolved, renewErr = renewCertificatesOnNodeWithExecutors(ctx, input, legacy, thenTyped, typedRequired)
 			return renewErr
 		},
 	)
@@ -410,6 +420,7 @@ func renewCertificatesOnNodeBehindKubeVipDrain(
 
 // renewCertificatesOnNode records executor selection in workflow history before
 // dispatching legacy work. Legacy selects that executor without a typed attempt.
+// Typed intent forbids fallback: a legacy receipt cannot finish agent restarts.
 // A canceled or failed activity can leave remote work running; a non-nil
 // resolution input identifies what cleanup must observe, including dispatches
 // whose acceptance is unknown.
@@ -417,6 +428,7 @@ func renewCertificatesOnNode(
 	ctx workflow.Context,
 	input activities.KubernetesCertificateRenewalInput,
 	legacy bool,
+	typedRequired bool,
 ) (activities.KubernetesCertificateRenewalResult, *activities.ResolveKubernetesCertificateRenewalInput, error) {
 	var a *activities.Activities
 	var result activities.KubernetesCertificateRenewalResult
@@ -432,7 +444,7 @@ func renewCertificatesOnNode(
 	if errors.As(err, &applicationErr) && applicationErr.Type() == activities.CertificateRenewalNotDispatched {
 		return result, nil, err
 	}
-	if legacy || errors.As(err, &applicationErr) && applicationErr.Type() == activities.CertificateRenewalLegacyRequired {
+	if legacy || !typedRequired && errors.As(err, &applicationErr) && applicationErr.Type() == activities.CertificateRenewalLegacyRequired {
 		if err := ctx.Err(); err != nil {
 			return result, nil, err // Typed work was rejected and legacy work has not been dispatched.
 		}
