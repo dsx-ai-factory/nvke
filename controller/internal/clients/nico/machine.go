@@ -130,7 +130,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 	// Image-verification pre-flight: refuse (or warn about) an image with no
 	// passing validation verdict before any object is applied. Off by
 	// default; see imageverify.go for the modes and the fail-closed rule.
-	if err := verifyImage(ctx, deps.Config.ImageVerificationMode, c.ImageVerifier, resolved.image); err != nil {
+	if err := verifyImage(ctx, deps.Config.ImageVerificationMode, deps.ImageVerifier, resolved.image); err != nil {
 		return err
 	}
 

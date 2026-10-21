@@ -45,16 +45,12 @@ var (
 	ErrVerdictRejected = errors.New("image validation verdict rejected")
 )
 
-// ImageVerifier reports whether the resolved machine image carries a passing
-// validation verdict. The verifying implementation — checking a signed verdict
-// attestation against the image the node boots — ships with the validate
-// module's verify library; this interface is the seam it plugs into. A nil
-// verifier means no verdict source is configured, which warn mode reports and
-// enforce mode refuses. Implementations wrap definitive rejections in
-// ErrVerdictRejected; anything else reads as a retryable operational failure.
-type ImageVerifier interface {
-	VerifyImage(ctx context.Context, image *enginev1.MachineImage) error
-}
+// ImageVerifier is the verdict-source seam, defined in shared so Activities
+// can thread one through MachineCreateDeps (its injection path into this
+// pre-flight) without importing a provider package. A nil verifier means no
+// verdict source is configured, which warn mode reports and enforce mode
+// refuses.
+type ImageVerifier = shared.ImageVerifier
 
 // verifyImage applies the configured image-verification mode. Behavior is
 // pinned by imageverify_test.go; off must stay a true no-op so the default

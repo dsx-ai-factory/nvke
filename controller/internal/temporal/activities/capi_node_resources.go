@@ -89,6 +89,7 @@ func (a *Activities) CreateCAPIInfraMachineForNode(ctx context.Context, input Cr
 		NodeAgentBootstrapFiles:      a.nodeAgentBootstrapFiles,
 		CreateSpireJoinToken:         a.createCAPISpireJoinToken,
 		SeedControlPlaneInstanceType: a.seedControlPlaneInstanceType,
+		ImageVerifier:                a.imageVerifier,
 	}
 
 	if err := machineClient.CreateMachine(ctx, deps, node, nodeSet, nodePool, cluster); err != nil {
