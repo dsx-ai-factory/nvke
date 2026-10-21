@@ -90,6 +90,7 @@ func checkDpkgMatchesSBOM(_ context.Context, _ checks.Target, in checks.Inputs) 
 	if in.SBOMPackages == nil {
 		return checks.Outcome{
 			Status:   checks.StatusSkip,
+			Reason:   checks.SkipInputMissing,
 			Evidence: "no SBOM available for this artifact in the bundle",
 		}, nil
 	}

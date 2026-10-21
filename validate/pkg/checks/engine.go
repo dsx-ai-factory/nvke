@@ -91,7 +91,10 @@ type EvidenceStatus struct {
 // Outcome is what a check implementation reports; the engine folds in the
 // registry's ID and severity.
 type Outcome struct {
-	Status   Status
+	Status Status
+	// Reason is required when Status is skip; the engine rejects a
+	// reasonless skip so it can never read as coverage.
+	Reason   SkipReason
 	Evidence string
 }
 
@@ -120,29 +123,71 @@ func (e *Engine) Run(ctx context.Context, reg *Registry, t Target, in Inputs) []
 		switch impl, ok := e.impls[def.ID]; {
 		case !def.AppliesTo.Matches(t):
 			res.Status = StatusSkip
+			res.Reason = SkipNotApplicable
 			res.Evidence = "target outside appliesTo"
 		case def.Method == MethodGuestfs && in.FS == nil:
 			res.Status = StatusSkip
+			res.Reason = SkipTierOff
 			res.Evidence = "guestfs tier not enabled for this run"
 		case def.Method == MethodBoot && in.Boot == nil:
 			res.Status = StatusSkip
+			res.Reason = SkipTierOff
 			res.Evidence = "boot tier not enabled for this run"
 		case !ok:
 			res.Status = StatusError
 			res.Evidence = fmt.Sprintf("no implementation bound for %s", def.ID)
 		default:
 			out, err := impl(ctx, t, in)
-			if err != nil {
+			switch {
+			case err != nil:
 				res.Status = StatusError
 				res.Evidence = err.Error()
-			} else {
+			case !validStatus(out.Status):
+				// A status outside the vocabulary must never flow into a
+				// report (and from there into a signed verdict) as if it were
+				// a word consumers know: downstream policy matches on exact
+				// strings, and an unknown one would match nothing — including
+				// the checks that treat non-fail as acceptable.
+				res.Status = StatusError
+				res.Evidence = fmt.Sprintf("check %s returned unknown status %q: %s", def.ID, out.Status, out.Evidence)
+			case out.Status == StatusSkip && out.Reason == "":
+				// An unexplained skip cannot be policy-evaluated.
+				res.Status = StatusError
+				res.Evidence = fmt.Sprintf("check %s skipped without a reason: %s", def.ID, out.Evidence)
+			case out.Status == StatusSkip && !validSkipReason(out.Reason):
+				// Same contract for the reason taxonomy: consumers decide
+				// whether a skip satisfies a profile by exact reason, so an
+				// invented one is an engine error, not a new category.
+				res.Status = StatusError
+				res.Evidence = fmt.Sprintf("check %s skipped with unknown reason %q: %s", def.ID, out.Reason, out.Evidence)
+			default:
 				res.Status = out.Status
+				res.Reason = out.Reason
 				res.Evidence = out.Evidence
 			}
 		}
 		results = append(results, res)
 	}
 	return results
+}
+
+// validStatus reports whether s is a word of the report vocabulary. The enum
+// lives in types.go; a new status is added there and here together.
+func validStatus(s Status) bool {
+	switch s {
+	case StatusPass, StatusFail, StatusSkip, StatusError:
+		return true
+	}
+	return false
+}
+
+// validSkipReason reports whether r is a word of the skip-reason taxonomy.
+func validSkipReason(r SkipReason) bool {
+	switch r {
+	case SkipNotApplicable, SkipTierOff, SkipInputMissing:
+		return true
+	}
+	return false
 }
 
 // newBytesReader exists so registry.go needs no direct bytes import juggling.

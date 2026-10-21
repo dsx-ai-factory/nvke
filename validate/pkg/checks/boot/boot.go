@@ -147,6 +147,7 @@ func checkBOMBooted(ctx context.Context, _ checks.Target, in checks.Inputs) (che
 	if in.BOM == nil {
 		return checks.Outcome{
 			Status:   checks.StatusSkip,
+			Reason:   checks.SkipInputMissing,
 			Evidence: "no target BOM supplied (--target-bom)",
 		}, nil
 	}

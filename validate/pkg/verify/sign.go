@@ -17,13 +17,11 @@ import (
 	"fmt"
 )
 
-// Sign wraps an in-toto statement (as JSON) in a DSSE envelope signed with the
-// operator's key: Ed25519 over the pre-authentication encoding, or ECDSA P-256
-// over its SHA-256 (ASN.1 DER signature — the encoding cosign verifies). The
-// signature carries no keyid: DSSE calls it advisory, but real verifiers
-// (cosign among them) skip signatures whose keyid does not match their own
-// derivation, so emitting one would break cross-verification; Verify tries
-// every accepted key instead.
+// Sign wraps an in-toto statement (as JSON) in a DSSE envelope: Ed25519 over
+// the PAE, or ECDSA P-256 over its SHA-256 (ASN.1 DER — what cosign
+// verifies). No keyid is emitted: verifiers such as cosign skip signatures
+// whose keyid mismatches their own derivation; Verify tries every accepted
+// key instead.
 func Sign(statementJSON []byte, signer crypto.Signer) ([]byte, error) {
 	message := pae(PayloadType, statementJSON)
 	var sig []byte

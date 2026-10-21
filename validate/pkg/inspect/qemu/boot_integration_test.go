@@ -105,6 +105,12 @@ func TestBootAndProbe(t *testing.T) {
 	res, err = vm.Probe(context.Background(), "touch /tmp/scratch && echo wrote")
 	require.NoError(t, err)
 	assert.Equal(t, 0, res.ExitCode)
+
+	// restrict=on: guest egress to a public address must fail while the
+	// loopback probe channel keeps working.
+	res, err = vm.Probe(context.Background(), "timeout 5 bash -c 'echo > /dev/tcp/1.1.1.1/80'")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, res.ExitCode, "guest egress to 1.1.1.1:80 must be blocked by restrict=on")
 }
 
 // TestNVKEChecksFailHonestlyOnForeignImage runs the real check

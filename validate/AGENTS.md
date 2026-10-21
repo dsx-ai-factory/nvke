@@ -39,6 +39,8 @@ pkg/checks/                  # registry loader + engine; implementations per tie
 pkg/inspect/guestfs/         # libguestfs session (read-only, LUKS-aware)
 pkg/inspect/qemu/            # throwaway QEMU boot + SSH probe channel
 pkg/report/                  # report.json schema v1, human renderer, exit policy
+pkg/runner/                  # the full run loop, shared by this module's CLI
+                             # and `nvkectl validate image`
 pkg/verify/                  # verdict DSSE sign/verify; self-contained so
                              # consumers vendor only this package
 docs/decisions.md            # design decisions and their reasons
@@ -48,8 +50,9 @@ hack/                        # fixture generator + containerized Linux test runn
 ## Constraints
 
 - **Offline is a contract.** No package in this module may open a network
-  connection; air-gapped operator pipelines are the primary environment. Trust
-  roots travel in the evidence bundle. Tests run hermetically from generated
+  connection; air-gapped operator pipelines are the primary environment. The
+  trusted root is pinned out-of-band (`--trusted-root`) — never read from the
+  evidence directory it authenticates. Tests run hermetically from generated
   or vendored fixtures.
 - **Exit codes are API**: 0 pass, 1 blocking-check fail, 2 could-not-evaluate
   (usage errors included). Error always outranks fail — "could not evaluate"
@@ -61,9 +64,10 @@ hack/                        # fixture generator + containerized Linux test runn
 - **Both unit-name generations are valid.** The nke→nvke rename (#1548, #1565)
   lands after os-image v0.2.0; name-sensitive checks resolve which generation
   the image carries and must keep passing on both.
-- `--bundle` verifies the evidence (attestation, pinned trusted root, signer
-  identity) before any check runs; `--checksums` is digest-only mode and
-  reports the unverified evidence as a visible skip, never a pass.
+- `--bundle` verifies the evidence (attestation, signer identity) against the
+  operator-pinned `--trusted-root` before any check runs; `--checksums` is
+  digest-only mode and reports the unverified evidence as a visible skip,
+  never a pass.
 
 ## Commands
 

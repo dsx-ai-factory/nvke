@@ -69,6 +69,16 @@ type Subject struct {
 	Digest map[string]string `json:"digest"`
 }
 
+// Evidence modes a verdict records: how the release evidence reached the run.
+const (
+	// EvidenceModeBundle: the evidence bundle was verified offline against a
+	// pinned trusted root before any check ran.
+	EvidenceModeBundle = "bundle"
+	// EvidenceModeDigestOnly: a bare checksums file the caller trusted; the
+	// evidence itself was never authenticated.
+	EvidenceModeDigestOnly = "digest-only"
+)
+
 // Predicate is the image-validation verdict: who validated what against which
 // check set, with what outcome. The types mirror the report document but are
 // defined here so a consumer vendors only this package.
@@ -81,6 +91,19 @@ type Predicate struct {
 	Summary             Summary       `json:"summary"`
 	Results             []CheckResult `json:"results"`
 	FinishedAt          time.Time     `json:"finishedAt"`
+	// EvidenceMode says how the release evidence was supplied (bundle |
+	// digest-only). Older verdicts predate the field and carry "".
+	EvidenceMode string `json:"evidenceMode,omitempty"`
+	// CheckSetSHA256 is the sha256 of the checks.yaml that judged the run —
+	// the version string names the policy, this pins its content.
+	CheckSetSHA256 string `json:"checkSetSha256,omitempty"`
+	// BOMSHA256 is the sha256 of the target BOM file; empty when none was
+	// supplied.
+	BOMSHA256 string `json:"bomSha256,omitempty"`
+	// TrustedRootSHA256 is the sha256 of the operator-pinned trusted root the
+	// run verified the release evidence against; empty on digest-only runs
+	// (no evidence was verified) and on verdicts that predate the field.
+	TrustedRootSHA256 string `json:"trustedRootSha256,omitempty"`
 }
 
 // Tool identifies the validator build that produced the verdict.
@@ -106,13 +129,25 @@ type Summary struct {
 	Error        int `json:"error"`
 }
 
-// CheckResult is one check's outcome as the verdict records it.
+// CheckResult is one check's outcome as the verdict records it. Reason is
+// set on skips and distinguishes genuine non-applicability from omitted
+// validation (tier-off, input-missing).
 type CheckResult struct {
 	ID       string `json:"id"`
 	Status   string `json:"status"`
 	Severity string `json:"severity"`
+	Reason   string `json:"reason,omitempty"`
 	Evidence string `json:"evidence,omitempty"`
 }
+
+// SkipNotApplicable is the one skip reason that satisfies a required check;
+// every other skip is omitted validation.
+const SkipNotApplicable = "not-applicable"
+
+// MaxClockSkew is how far in the future a verdict's finishedAt may sit before
+// verification rejects it outright: enough for ordinary clock drift between
+// signer and verifier, far too little to matter against MaxAge.
+const MaxClockSkew = 5 * time.Minute
 
 // Policy is what a consumer requires of a verdict beyond a valid signature.
 type Policy struct {
@@ -126,8 +161,26 @@ type Policy struct {
 	// (dotted-numeric compare); empty means no floor.
 	MinCheckSetVersion string
 	// MaxAge rejects verdicts whose FinishedAt is older than now-MaxAge;
-	// zero means no age limit.
+	// zero means no age limit. FinishedAt is asserted by the signer, so this
+	// bounds staleness only under an honest signer clock: it is freshness
+	// hygiene, not revocation. A compromised signing key is withdrawn by
+	// removing it from Keys, never by trusting the ages its verdicts claim.
 	MaxAge time.Duration
+	// RequiredChecks is the qualification profile: each listed ID must have
+	// passed or be skipped not-applicable. A missing result, disabled tier or
+	// missing input is omitted validation and fails verification.
+	RequiredChecks []string
+	// CheckSetSHA256 pins approved registry contents (bare hex, any match).
+	// Without it, applicability belongs to the producer's registry, and every
+	// required check can be satisfied by a not-applicable skip.
+	CheckSetSHA256 []string
+	// ExpectedTarget: non-empty fields must equal the verdict's target.
+	ExpectedTarget Target
+	// TrustedRootSHA256 pins the trusted root(s) the run may have verified
+	// evidence against (bare hex, any match). A verdict that records no
+	// trusted root — a digest-only run, or one predating the field — fails
+	// the pin: the consumer asked for authenticated evidence provenance.
+	TrustedRootSHA256 []string
 }
 
 // Verify checks a verdict envelope against the policy and the image digest
@@ -186,6 +239,14 @@ func Verify(envelopeJSON []byte, imageSHA256 string, pol Policy, now time.Time) 
 			return nil, fmt.Errorf("check-set version %s is below the required minimum %s", st.Predicate.CheckSetVersion, pol.MinCheckSetVersion)
 		}
 	}
+	if !st.Predicate.FinishedAt.IsZero() && st.Predicate.FinishedAt.After(now.Add(MaxClockSkew)) {
+		// Rejected regardless of MaxAge: a forward-dated verdict would carry
+		// a negative age past any maximum, forever. The signer controls
+		// FinishedAt, so this closes only the clumsy forgery — see MaxAge's
+		// honest-clock caveat for what age checks can and cannot promise.
+		return nil, fmt.Errorf("verdict finishedAt %s is in the future (now %s, allowed skew %s)",
+			st.Predicate.FinishedAt.UTC().Format(time.RFC3339), now.UTC().Format(time.RFC3339), MaxClockSkew)
+	}
 	if pol.MaxAge > 0 {
 		if st.Predicate.FinishedAt.IsZero() {
 			return nil, fmt.Errorf("verdict carries no finishedAt but the policy sets a maximum age")
@@ -194,7 +255,114 @@ func Verify(envelopeJSON []byte, imageSHA256 string, pol Policy, now time.Time) 
 			return nil, fmt.Errorf("verdict is %s old, policy maximum is %s", age.Round(time.Second), pol.MaxAge)
 		}
 	}
+	if err := approvedDigest("check set", st.Predicate.CheckSetSHA256, pol.CheckSetSHA256); err != nil {
+		return nil, err
+	}
+	if err := approvedDigest("trusted root", st.Predicate.TrustedRootSHA256, pol.TrustedRootSHA256); err != nil {
+		return nil, err
+	}
+	if err := matchTarget(st.Predicate.Target, pol.ExpectedTarget); err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool, len(st.Predicate.Results))
+	for _, r := range st.Predicate.Results {
+		// Structural, not profile-dependent: a well-formed verdict never
+		// repeats an ID, and last-write-wins would let fail-then-pass read
+		// as pass.
+		if seen[r.ID] {
+			return nil, fmt.Errorf("the verdict carries duplicate results for check %s", r.ID)
+		}
+		seen[r.ID] = true
+	}
+	if err := requireChecks(st.Predicate.Results, pol.RequiredChecks); err != nil {
+		return nil, err
+	}
 	return &st, nil
+}
+
+// approvedDigest enforces a content pin: with no pins it is inert, and with
+// pins the verdict's recorded digest must match one of them. A verdict that
+// records nothing fails a given pin — absence never satisfies a content
+// requirement.
+func approvedDigest(what, got string, pins []string) error {
+	if len(pins) == 0 {
+		return nil
+	}
+	got = strings.ToLower(got)
+	approved := false
+	for _, want := range pins {
+		want = strings.ToLower(want)
+		if !isSHA256Hex(want) {
+			// A pin that can never match is a policy defect, not a
+			// silently inert entry.
+			return fmt.Errorf("policy pin %q is not a bare-hex sha256", want)
+		}
+		if got == want {
+			approved = true
+		}
+	}
+	if !approved {
+		return fmt.Errorf("the verdict's %s (sha256 %q) is not an approved one", what, got)
+	}
+	return nil
+}
+
+func isSHA256Hex(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// matchTarget enforces every non-empty expectation exactly.
+func matchTarget(got, want Target) error {
+	for _, f := range []struct{ name, got, want string }{
+		{"variant", got.Variant, want.Variant},
+		{"arch", got.Arch, want.Arch},
+		{"ubuntu", got.Ubuntu, want.Ubuntu},
+	} {
+		if f.want != "" && f.got != f.want {
+			return fmt.Errorf("verdict target %s is %q, policy expects %q", f.name, f.got, f.want)
+		}
+	}
+	return nil
+}
+
+// requireChecks enforces the qualification profile. The list is the
+// consumer's, independent of the verdict's contents, so a signer cannot
+// shrink it by omitting results.
+func requireChecks(results []CheckResult, required []string) error {
+	if len(required) == 0 {
+		return nil
+	}
+	byID := make(map[string]CheckResult, len(results))
+	for _, r := range results {
+		byID[r.ID] = r // duplicates already rejected structurally in Verify
+	}
+	for _, id := range required {
+		r, ok := byID[id]
+		if !ok {
+			return fmt.Errorf("required check %s: the verdict carries no result for it", id)
+		}
+		switch {
+		case r.Status == "pass":
+		case r.Status == "skip" && r.Reason == SkipNotApplicable:
+		case r.Status == "skip":
+			reason := r.Reason
+			if reason == "" {
+				reason = "no reason recorded"
+			}
+			return fmt.Errorf("required check %s was skipped (%s): omitted validation does not satisfy the profile", id, reason)
+		default:
+			return fmt.Errorf("required check %s: status %s (%s)", id, r.Status, r.Evidence)
+		}
+	}
+	return nil
 }
 
 // verifyAnySignature accepts the envelope when any (signature, key) pair

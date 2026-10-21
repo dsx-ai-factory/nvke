@@ -167,7 +167,9 @@ func Boot(ctx context.Context, imagePath string, opts Options) (*VM, error) {
 		"-bios", opts.FirmwarePath,
 		"-drive", "if=virtio,format=qcow2,file=" + imagePath,
 		"-drive", "if=virtio,format=raw,readonly=on,file=" + opts.SeedISO,
-		"-netdev", fmt.Sprintf("user,id=n0,hostfwd=tcp:127.0.0.1:%d-:22", port),
+		// restrict=on: no guest egress even on a connected host; slirp DHCP
+		// and the host-initiated hostfwd probe channel keep working.
+		"-netdev", fmt.Sprintf("user,id=n0,restrict=on,hostfwd=tcp:127.0.0.1:%d-:22", port),
 		"-device", "virtio-net-pci,netdev=n0",
 		"-display", "none", "-serial", "none", "-monitor", "none",
 	}

@@ -99,3 +99,16 @@ func TestTextRenderer(t *testing.T) {
 	assert.Contains(t, text, "PASS")
 	assert.Contains(t, text, "INT-001")
 }
+
+func TestNewRunError(t *testing.T) {
+	rep := NewRunError(assertableErr{}, time.Now())
+	assert.Equal(t, ExitError, rep.ExitCode())
+	out, err := rep.JSON()
+	require.NoError(t, err)
+	assert.Contains(t, string(out), `"runError": "boom"`)
+	assert.Contains(t, string(out), `"schemaVersion": "1"`)
+}
+
+type assertableErr struct{}
+
+func (assertableErr) Error() string { return "boom" }

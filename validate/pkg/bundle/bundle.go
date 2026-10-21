@@ -3,10 +3,12 @@
 
 // Package bundle loads a release evidence bundle and verifies its provenance
 // attestation, entirely offline: the sigstore bundle is checked against a
-// trusted root supplied as a local file, never fetched. The evidence layout is
-// what the os-image release workflow publishes — a checksums.txt naming every
-// artifact's sha256, a sigstore bundle whose in-toto subject is that
-// checksums.txt, and the trusted root the verifying side pinned.
+// trusted root the operator pins out-of-band, never fetched and never read
+// from the evidence directory — a root that travels with the evidence it
+// authenticates could be replaced along with it. The evidence layout is what
+// the os-image release workflow publishes: a checksums.txt naming every
+// artifact's sha256 and a sigstore bundle whose in-toto subject is that
+// checksums.txt. The trusted root arrives separately through PinTrustedRoot.
 package bundle
 
 import (
@@ -26,12 +28,12 @@ import (
 )
 
 // Default member names inside a bundle directory, matching what the release
-// publishes (checksums + its sigstore bundle) and what the operator pins
-// (the trusted root).
+// publishes (checksums + its sigstore bundle). The trusted root has no member
+// name here on purpose: it is pinned out-of-band, never discovered in the
+// directory it authenticates.
 const (
 	ChecksumsName   = "checksums.txt"
 	AttestationName = "checksums.txt.sigstore.json"
-	TrustedRootName = "trusted-root.json"
 )
 
 // Identity is the certificate identity the attestation's signer must satisfy.
@@ -57,38 +59,37 @@ type Bundle struct {
 	trusted      root.TrustedMaterial
 }
 
-// Load reads a bundle directory: checksums.txt (required), its sigstore
-// attestation and the trusted root (both required for VerifyEvidence, and
-// their absence is reported there, not here, so digest-only runs still work).
+// Load reads a bundle directory: checksums.txt (required) and its sigstore
+// attestation (required for VerifyEvidence; its absence is reported there,
+// not here, so digest-only runs still work). The trusted root is not read
+// here: pin it with PinTrustedRoot from an operator-supplied source.
 func Load(dir string) (*Bundle, error) {
 	checksumsPath := filepath.Join(dir, ChecksumsName)
 	raw, err := os.ReadFile(checksumsPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading bundle checksums: %w", err)
 	}
-	sums, err := static.ParseChecksums(checksumsPath)
+	// Parse the same byte snapshot VerifyEvidence authenticates: a second
+	// read could hand the checks a map the attestation never covered.
+	sums, err := static.ParseChecksumsBytes(raw)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("checksums %s: %w", checksumsPath, err)
 	}
 	b := &Bundle{Dir: dir, Checksums: sums, checksumsRaw: raw}
 
 	if att, err := sgbundle.LoadJSONFromPath(filepath.Join(dir, AttestationName)); err == nil {
 		b.attestation = att
 	}
-	if trusted, err := loadTrustedRoots(filepath.Join(dir, TrustedRootName)); err == nil {
-		b.trusted = trusted
-	}
 	return b, nil
 }
 
-// loadTrustedRoots parses a trusted-root file: one JSON trusted root per line,
-// the format `gh attestation trusted-root` emits. Several lines become a
-// collection that accepts material trusted by any of them.
-func loadTrustedRoots(path string) (root.TrustedMaterial, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading trusted root: %w", err)
-	}
+// PinTrustedRoot parses and pins the trusted root VerifyEvidence verifies
+// against: one JSON trusted root per line, the format
+// `gh attestation trusted-root` emits. Several lines become a collection that
+// accepts material trusted by any of them. The caller supplies the bytes from
+// an operator-pinned location — never from the evidence directory, whose
+// contents are exactly what the root is needed to authenticate.
+func (b *Bundle) PinTrustedRoot(raw []byte) error {
 	var collection root.TrustedMaterialCollection
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
 	scanner.Buffer(make([]byte, 0, 1<<20), 1<<20)
@@ -99,17 +100,18 @@ func loadTrustedRoots(path string) (root.TrustedMaterial, error) {
 		}
 		tr, err := root.NewTrustedRootFromJSON(line)
 		if err != nil {
-			return nil, fmt.Errorf("parsing trusted root %s: %w", path, err)
+			return fmt.Errorf("parsing trusted root: %w", err)
 		}
 		collection = append(collection, tr)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("reading trusted root %s: %w", path, err)
+		return fmt.Errorf("reading trusted root: %w", err)
 	}
 	if len(collection) == 0 {
-		return nil, fmt.Errorf("trusted root %s holds no roots", path)
+		return fmt.Errorf("the trusted root holds no roots")
 	}
-	return collection, nil
+	b.trusted = collection
+	return nil
 }
 
 // Evidence is a successful verification: the attestation is signed by
@@ -131,7 +133,7 @@ func (b *Bundle) VerifyEvidence(id Identity) (*Evidence, error) {
 		return nil, fmt.Errorf("bundle %s: no readable attestation %s", b.Dir, AttestationName)
 	}
 	if b.trusted == nil {
-		return nil, fmt.Errorf("bundle %s: no readable trusted root %s", b.Dir, TrustedRootName)
+		return nil, fmt.Errorf("bundle %s: no trusted root pinned — supply the operator-pinned root (--trusted-root); the root never travels with the evidence it authenticates", b.Dir)
 	}
 	verifier, err := verify.NewVerifier(b.trusted, verify.WithObserverTimestamps(1))
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"os"
@@ -134,7 +135,12 @@ func TestRunJSONFormat(t *testing.T) {
 	assert.Contains(t, string(data), `"INT-001"`)
 }
 
-const realBundle = "../../testdata/release-v0.2.0-rc.1"
+const (
+	realBundle = "../../testdata/release-v0.2.0-rc.1"
+	// realTrustedRoot is the test's out-of-band pin; production never
+	// discovers it inside the evidence directory.
+	realTrustedRoot = realBundle + "/trusted-root.json"
+)
 
 // TestRunBundleMode exercises the evidence-verifying path against the vendored
 // real release bundle: the evidence verifies (INT-002 pass), while a wrong
@@ -149,6 +155,7 @@ func TestRunBundleMode(t *testing.T) {
 	code := run([]string{
 		"--image", image,
 		"--bundle", realBundle,
+		"--trusted-root", realTrustedRoot,
 		"--checks", filepath.Join("..", "..", "checks.yaml"),
 		"--target-variant", "fde", "--target-arch", "amd64", "--target-ubuntu", "24.04.5",
 		"--format", "json",
@@ -177,6 +184,23 @@ func TestRunRequiresExactlyOneEvidenceSource(t *testing.T) {
 	assert.Equal(t, report.ExitError, run(neither, sink, sink))
 }
 
+// TestRunBundleModeRequiresTrustedRoot pins the out-of-band contract: bundle
+// mode without an operator-pinned root is a usage error before any work, and
+// the root is never discovered inside the evidence directory (the vendored
+// fixture dir contains a trusted-root.json that must NOT satisfy this).
+func TestRunBundleModeRequiresTrustedRoot(t *testing.T) {
+	image := filepath.Join(t.TempDir(), artifact)
+	require.NoError(t, os.WriteFile(image, []byte("wrong bytes"), 0o644))
+	sink := devNull(t)
+	code := run([]string{
+		"--image", image,
+		"--bundle", realBundle,
+		"--checks", filepath.Join("..", "..", "checks.yaml"),
+		"--target-variant", "fde", "--target-arch", "amd64", "--target-ubuntu", "24.04.5",
+	}, sink, sink)
+	assert.Equal(t, report.ExitError, code)
+}
+
 // TestRunTargetBOM exercises --target-bom against the vendored real SBOM:
 // COMPAT-002 passes when the BOM names the versions the release SBOM records
 // and fails naming the drifted component otherwise — without any image
@@ -199,6 +223,7 @@ func TestRunTargetBOM(t *testing.T) {
 			code := run([]string{
 				"--image", image,
 				"--bundle", realBundle,
+				"--trusted-root", realTrustedRoot,
 				"--checks", filepath.Join("..", "..", "checks.yaml"),
 				"--target-variant", "fde", "--target-arch", "amd64", "--target-ubuntu", "24.04.5",
 				"--target-bom", bomPath,
@@ -256,8 +281,52 @@ func TestRunEmitsSignedVerdict(t *testing.T) {
 			assert.Equal(t, tt.wantOutcome, st.Predicate.Outcome)
 			assert.NotEmpty(t, st.Predicate.CheckSetVersion)
 			assert.NotEmpty(t, st.Predicate.Results)
+
+			// The verdict binds its policy inputs and names its evidence mode.
+			assert.Equal(t, verify.EvidenceModeDigestOnly, st.Predicate.EvidenceMode, "a --checksums run must say so in the verdict")
+			assert.Len(t, st.Predicate.CheckSetSHA256, 64)
+
+			// Omitted validation is machine-readable: this digest-only run
+			// skipped INT-002 for a missing input, and a consumer profile that
+			// requires INT-002 must therefore reject the verdict even though
+			// its outcome is signed and authentic.
+			var int002 verify.CheckResult
+			for _, r := range st.Predicate.Results {
+				if r.ID == "INT-002" {
+					int002 = r
+				}
+			}
+			assert.Equal(t, "skip", int002.Status)
+			assert.Equal(t, "input-missing", int002.Reason)
+			_, err = verify.Verify(envelope, sum, verify.Policy{
+				Keys:           []crypto.PublicKey{&key.PublicKey},
+				RequiredChecks: []string{"INT-001", "INT-002"},
+			}, time.Now())
+			wantProfileErr := "omitted validation" // the pass verdict still skipped INT-002
+			if tt.tampered {
+				wantProfileErr = "status fail" // the fail verdict is rejected for the failed check
+			}
+			require.ErrorContains(t, err, wantProfileErr,
+				"an authentic verdict must not satisfy a qualification profile it does not meet")
 		})
 	}
+}
+
+// TestRunSetupErrorEmitsStructuredReport pins that a run dying before any
+// check still answers the pipeline in the report schema on stdout.
+func TestRunSetupErrorEmitsStructuredReport(t *testing.T) {
+	args := fixture(t, false)
+	args[1] = filepath.Join(t.TempDir(), "missing.qcow2")
+	out := filepath.Join(t.TempDir(), "out.json")
+	f, err := os.Create(out)
+	require.NoError(t, err)
+	assert.Equal(t, report.ExitError, run(append(args, "--format", "json"), f, devNull(t)))
+	require.NoError(t, f.Close())
+	data, err := os.ReadFile(out)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"schemaVersion": "1"`)
+	assert.Contains(t, string(data), `"runError"`)
+	assert.Regexp(t, `"error": 1`, string(data))
 }
 
 func TestRunVerdictFlagsAreRequiredTogether(t *testing.T) {
@@ -266,4 +335,26 @@ func TestRunVerdictFlagsAreRequiredTogether(t *testing.T) {
 	assert.Equal(t, report.ExitError, run(args, sink, sink))
 	args = append(fixture(t, false), "--sign-key", filepath.Join(t.TempDir(), "missing.key"))
 	assert.Equal(t, report.ExitError, run(args, sink, sink))
+}
+
+// TestRunEmissionFailureIsOneDocument pins the pipeline contract: a run whose
+// checks completed but whose verdict could not be signed emits exactly one
+// JSON document carrying both the results and the operational error, exit 2.
+func TestRunEmissionFailureIsOneDocument(t *testing.T) {
+	args := append(fixture(t, false),
+		"--format", "json",
+		"--emit-verdict", filepath.Join(t.TempDir(), "v.json"),
+		"--sign-key", filepath.Join(t.TempDir(), "missing.key"))
+	out := filepath.Join(t.TempDir(), "out.json")
+	f, err := os.Create(out)
+	require.NoError(t, err)
+	assert.Equal(t, report.ExitError, run(args, f, devNull(t)))
+	require.NoError(t, f.Close())
+	data, err := os.ReadFile(out)
+	require.NoError(t, err)
+	var rep report.Report
+	require.NoError(t, json.Unmarshal(data, &rep), "stdout must be exactly one JSON document")
+	assert.NotEmpty(t, rep.Results, "the completed check results must survive the emission failure")
+	assert.Contains(t, rep.RunError, "emitting verdict")
+	assert.Equal(t, report.ExitError, rep.ExitCode())
 }

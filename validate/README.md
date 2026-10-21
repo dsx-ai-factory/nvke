@@ -59,9 +59,15 @@ verified: nvke-node-fde-ubuntu-26.04.1-amd64.qcow2 sha256:49647c…
 ```
 
 `nvke-verdict` exits 0 (authentic and passing), 1 (authentic, not passing) or
-2 (could not verify — never read as a pass). In-process consumers use
-`pkg/verify`, which is self-contained by design. The envelopes are standard:
-cosign verifies them (`hack/cross-verify-cosign.sh`).
+2 (could not verify — never read as a pass). `--required-checks` is the
+consumer's qualification profile: each listed check must have passed or be
+skipped as not-applicable — a disabled tier or a missing input is omitted
+validation and fails verification, so an authentic signature over a
+skip-heavy run cannot satisfy a gate that expected full validation. Skips
+carry machine-readable reasons, and verdicts record their evidence mode and
+the sha256 of the checks.yaml (and BOM) that judged the run. In-process
+consumers use `pkg/verify`, which is self-contained by design. The envelopes
+are standard: cosign verifies them (`hack/cross-verify-cosign.sh`).
 
 A check that cannot run never silently passes: an entry with no bound
 implementation is an error, and a tier that is off (or missing its inputs)

@@ -123,11 +123,28 @@ func (c CheckDef) validate() error {
 	return nil
 }
 
+// SkipReason says why a skipped check did not evaluate: not-applicable
+// satisfies a consumer policy, tier-off and input-missing are omitted
+// validation and never count as coverage.
+type SkipReason string
+
+const (
+	// SkipNotApplicable: the target falls outside the check's appliesTo.
+	SkipNotApplicable SkipReason = "not-applicable"
+	// SkipTierOff: the check's inspection tier was not enabled for this run.
+	SkipTierOff SkipReason = "tier-off"
+	// SkipInputMissing: an input the check needs (evidence bundle, target
+	// BOM, SBOM) was not supplied to this run.
+	SkipInputMissing SkipReason = "input-missing"
+)
+
 // Result is the outcome of one check against one target.
 type Result struct {
 	ID       string   `json:"id"`
 	Status   Status   `json:"status"`
 	Severity Severity `json:"severity"`
+	// Reason is set when Status is skip and says why, machine-readably.
+	Reason SkipReason `json:"reason,omitempty"`
 	// Evidence is one machine-grepable line saying what was observed.
 	Evidence string `json:"evidence,omitempty"`
 }
