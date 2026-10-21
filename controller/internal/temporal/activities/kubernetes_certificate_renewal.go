@@ -319,7 +319,8 @@ func (a *Activities) RenewKubernetesCertificates(
 // V2 workflow (or reached by V1's inline fallback). V2 success requires both an
 // outcome marker and a durable receipt verified under the runbook lock, because
 // output alone cannot prevent delayed attempts from mutating a later cycle.
-// Receipt-unaware overrides cannot satisfy that contract. V2 dispatch passes the
+// V2 therefore dispatches only the embedded runbook; configured overrides apply
+// only to V1. V2 dispatch passes the
 // same node admission as typed work and releases its reservation once the receipt
 // confirms termination. V1 retains its older output-only result without receipt
 // validation; its caller already holds the reservation.
@@ -342,11 +343,18 @@ func (a *Activities) RenewLegacyKubernetesCertificates(ctx context.Context, inpu
 	if input.ExpectedEtcdMembers > 0 {
 		runbookEnv["EXPECTED_ETCD_MEMBERS"] = fmt.Sprintf("%d", input.ExpectedEtcdMembers)
 	}
-	legacy, legacyErr := a.ExecuteHostRunbook(ctx, ExecuteHostRunbookInput{
+	legacyInput := ExecuteHostRunbookInput{
 		HostID:      input.NodeID,
 		RunbookName: legacyKubernetesCertificateRenewalRunbook,
 		RunbookEnv:  runbookEnv,
-	})
+	}
+	var legacy ExecuteHostRunbookResult
+	var legacyErr error
+	if input.ExpectedEtcdMembers > 0 {
+		legacy, legacyErr = a.runHostRunbook(ctx, legacyInput, "")
+	} else {
+		legacy, legacyErr = a.ExecuteHostRunbook(ctx, legacyInput)
+	}
 	if legacyErr != nil {
 		return KubernetesCertificateRenewalResult{}, fmt.Errorf("failed to execute legacy certificate renewal on node %s: %w", input.NodeID, legacyErr)
 	}
