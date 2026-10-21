@@ -32,7 +32,9 @@ def management_up(sim, provider_chart):
         "stringData": {"endpoint": sim.config["nico_endpoint"], "orgID": "novxwn552ssc", "apiName": "forge", "token": "example-token"}}))
     ns = {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "nvke-nais-dpu-sim"}}
     sim.mgmt("apply", "-f", "-", input=yaml.safe_dump(ns))
-    sim.mgmt("apply", "-f", "-", input=yaml.safe_dump({"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "nke-system"}}))
+    controller_config = yaml.safe_load((REPO / "controller/hack/local-controller-config.yaml").read_text())
+    sim.mgmt("apply", "-f", "-", input=yaml.safe_dump({"apiVersion": "v1", "kind": "Namespace",
+        "metadata": {"name": controller_config["managementNamespace"]}}))
     password = secrets.token_urlsafe(32)
     db_secret = {"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "nvke-nais-dpu-sim-db", "namespace": "nvke-nais-dpu-sim"},
                  "stringData": {"password": password}}
@@ -56,7 +58,6 @@ def management_up(sim, provider_chart):
     # as a non-root user and needs a writable SQLite directory.
     sim.exec(manager, "mkdir", "-p", "/var/local/nvke-nais-dpu-sim/temporal")
     sim.exec(manager, "chown", "1000:1000", "/var/local/nvke-nais-dpu-sim/temporal")
-    controller_config = yaml.safe_load((REPO / "controller/hack/local-controller-config.yaml").read_text())
     controller_config.update(installCNIAfterInit=True, supportedInfraProviders=["infra"], nicoControllersEnabled=False,
                              profilesDir="/profiles", runbooksDir="")
     controller_config["temporal"].update(hostPort="temporal:7233", namespace="default")
