@@ -85,7 +85,7 @@ are ready; certificates should show `READY=True`.
 
 ```text
 NAMESPACE   NAME                  MODE          VERSION   READY   AGE   IMAGE                                      MANAGEMENT
-nktp        nktp-cluster-events   statefulset   0.159.0   2/2     23h   otel/opentelemetry-collector-k8s:0.162.0   managed
+nktp        nktp-cluster-events   statefulset   0.161.0   2/2     23h   otel/opentelemetry-collector-k8s:0.162.0   managed
 ...
 ```
 

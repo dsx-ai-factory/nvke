@@ -19,7 +19,7 @@ Provide the following before installing NKTP.
 - **Kubernetes 1.29+.** Every Collector Pod runs its self-telemetry sidecar as
   a native sidecar, an init container with `restartPolicy: Always`, which
   Kubernetes enables by default from 1.29. The bundled OpenTelemetry Operator
-  0.159.0 itself supports 1.25+.
+  0.161.0 itself supports 1.25+.
 - **Helm 4.** The repository pins the version in `make/tool-versions.mk`.
 - **cert-manager.** Required with default values; install it separately.
   NKTP does not bundle or install it. It issues certificates for internal
@@ -196,7 +196,7 @@ When `global.clusterName` is empty, the value is `unknown`.
 
 | Chart | Version | Installs | Enabled by default | Values key |
 | --- | --- | --- | --- | --- |
-| opentelemetry-kube-stack | 0.22.0 | OpenTelemetry Operator chart 0.123.0, Operator 0.159.0, and CRDs | Yes | `opentelemetry-kube-stack` |
+| opentelemetry-kube-stack | 0.25.1 | OpenTelemetry Operator chart 0.126.0, Operator 0.161.0, and CRDs | Yes | `opentelemetry-kube-stack` |
 | prometheus-node-exporter | 4.56.1 | node-exporter | Yes | `node-exporter` |
 | metrics-server | 3.13.1 | metrics-server 0.8.1 | No | `metrics-server` |
 

@@ -56,7 +56,7 @@ otelcol_image:
 targetallocator_image:
   registry: ghcr.io
   repository: open-telemetry/opentelemetry-operator/target-allocator
-  tag: 0.159.0
+  tag: 0.161.0
 
 # OTel workloads. Each workload uses the same structure:
 #   kubernetes:     Standard Kubernetes settings (resources, affinity, selectors, labels, ...).

@@ -45,7 +45,7 @@ exposure vary between Kubernetes distributions, so a rendered ServiceMonitor
 does not by itself guarantee a reachable target. The large-target Collector's
 service account has read-only authorization for the `/metrics` non-resource URL.
 
-The ServiceMonitors from opentelemetry-kube-stack 0.22.0 reference bearer-token
+The ServiceMonitors from opentelemetry-kube-stack 0.25.1 reference bearer-token
 and, for secure endpoints, CA files in the Collector container. The large-target
 Target Allocator therefore sets `denyFSAccessThroughSMs: false`. Setting it to
 `true` causes these ServiceMonitor endpoints to be dropped, as described in
