@@ -12,6 +12,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
@@ -34,7 +35,7 @@ func NodeReconfigureKubeletServer(
 
 	logger.Info("Reconfiguring kubelet server", "nodeID", nodeID, "server", input.Server)
 
-	taintKey := constants.TaintKeyMaintenance
+	taintKey := keys.MaintenanceTaint.String()
 	taintValue := kubeVIPMaintenanceTaintValue
 	taintEffect := constants.TaintEffectNoSchedule
 

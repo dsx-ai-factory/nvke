@@ -491,7 +491,7 @@ func createOrConsolidateEquivalentNewNodePool(nodePoolMigrations []*nodePoolMigr
 		OSProfile:             existingNodePool.OSProfile,
 		ConfigProfile:         existingNodePool.ConfigProfile,
 		ControlPlane:          existingNodePool.ControlPlane,
-		NodeLabels:            []string{}, // NodeLabels are no longer used as this is set from config profile; there was a single node pool in az61 that had values, but they can be cleared out.
+		NodeLabels:            []string{}, // NodeLabels are no longer used as this is set from config profile; there was a single node pool in site-1 that had values, but they can be cleared out.
 		Conditions:            existingNodePool.Conditions,
 		CreatedAt:             existingNodePool.CreatedAt,
 		UpdatedAt:             existingNodePool.UpdatedAt,

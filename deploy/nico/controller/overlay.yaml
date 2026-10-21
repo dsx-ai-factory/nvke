@@ -3,7 +3,7 @@
 
 # What this target changes about controller, applied over values.yaml.
 
-# OFF, matching a NICo site controller that provisioned a real tenant.
+# OFF, matching an NVKE management cluster on NICo that provisioned a real tenant.
 #
 # Not a recommendation for a production site -- a deliberate choice for the
 # first run on this path, which is already changing one thing that has never
@@ -12,7 +12,7 @@
 # once means a failure could be either.
 #
 # It also cannot simply be flipped true here. The chart defaults
-# apiAuth.configMap.create to false and mounts `nke-auth-config`, which on the
+# apiAuth.configMap.create to false and mounts `nvke-auth-config`, which on the
 # e2e lanes comes from the nke-auth-dev item -- and that item is test
 # scaffolding (it creates nke-client, nke-outsider and nke-e2e ServiceAccounts)
 # that a site has no business installing. The controller treats a configured-but-unreadable
@@ -273,7 +273,7 @@ profiles:
 
 # apiAuth is not set here. The Tiltfile drives it from NKE_AUTH_ENABLED and
 # NKE_PERMISSIVE_MODE, and the chart's default ConfigMap name already matches
-# the one deploy/k8s/nke-auth-dev.yaml applies.
+# the one deploy/k8s/nvke-auth-dev.yaml applies.
 
 spiffe:
   enabled: true

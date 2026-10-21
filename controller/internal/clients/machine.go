@@ -10,6 +10,7 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/launchlayer"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
@@ -44,6 +45,8 @@ func GetMachineMaterialization(cluster db.Cluster) (MachineMaterialization, erro
 		return capi.New(), nil
 	case db.ProviderTypeNico:
 		return nico.New(), nil
+	case db.ProviderTypeLaunchLayer:
+		return launchlayer.New(), nil
 	default:
 		return nil, fmt.Errorf("unsupported provider type %q for cluster %s", cluster.ProviderType, cluster.ID)
 	}

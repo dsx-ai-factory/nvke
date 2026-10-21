@@ -23,7 +23,7 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
 )
 
@@ -95,13 +95,86 @@ func TestNicoProviderIDControllerReconcilePatchesTenantNodeTopologyLabels(t *tes
 
 	node := getTenantNodeForProviderIDTest(t, tenantClient)
 	require.Equal(t, map[string]string{
-		"example.com/keep":             "value",
-		constants.LabelKeyMachineID:    "machine-123",
-		constants.LabelKeyNodeSiteID:   "site-123",
-		constants.LabelKeyNodeSiteName: "new-york-a",
-		constants.LabelKeyNodeVPCID:    "vpc-123",
-		constants.LabelKeyNodeVPCName:  "production-vpc",
+		"example.com/keep":         "value",
+		keys.MachineID.String():    "machine-123",
+		keys.NodeSiteID.String():   "site-123",
+		keys.NodeSiteName.String(): "new-york-a",
+		keys.NodeVPCID.String():    "vpc-123",
+		keys.NodeVPCName.String():  "production-vpc",
 	}, node.Labels)
+}
+
+// A Node labeled by a build that wrote nke.nvidia.com/* is moved onto
+// nvke.nvidia.com/* rather than ending up carrying both.
+func TestNicoProviderIDControllerReconcileMigratesLegacyTopologyLabels(t *testing.T) {
+	nicoMachine := newNicoMachineForProviderIDTest("nico://instance-1", providerIDTestNodeName)
+	nicoMachine.Status = nicov1.NicoMachineStatus{
+		MachineID: "machine-123",
+		SiteID:    "site-123",
+		SiteName:  "New York / A",
+		VPCID:     "vpc-123",
+		VPCName:   "Production VPC",
+	}
+	controller, tenantClient := newNicoProviderIDControllerForTest(
+		t,
+		[]client.Object{
+			newCAPIClusterForProviderIDTest(),
+			newMachineForProviderIDTest(),
+			nicoMachine,
+		},
+		[]client.Object{
+			newTenantNodeForProviderIDTest("nico://instance-1", map[string]string{
+				"example.com/keep":         "value",
+				keys.MachineID.Legacy():    "machine-123",
+				keys.NodeSiteID.Legacy():   "site-123",
+				keys.NodeSiteName.Legacy(): "new-york-a",
+				keys.NodeVPCID.Legacy():    "vpc-123",
+				keys.NodeVPCName.Legacy():  "production-vpc",
+			}),
+		},
+	)
+
+	_, err := controller.Reconcile(context.Background(), providerIDReconcileRequest())
+	require.NoError(t, err)
+
+	node := getTenantNodeForProviderIDTest(t, tenantClient)
+	require.Equal(t, map[string]string{
+		"example.com/keep":         "value",
+		keys.MachineID.String():    "machine-123",
+		keys.NodeSiteID.String():   "site-123",
+		keys.NodeSiteName.String(): "new-york-a",
+		keys.NodeVPCID.String():    "vpc-123",
+		keys.NodeVPCName.String():  "production-vpc",
+	}, node.Labels)
+}
+
+// Clearing a topology label has to clear it in both domains; removing only the
+// current one would leave a stale legacy copy that nothing else sweeps up.
+func TestNicoProviderIDControllerReconcileRemovesLegacyTopologyLabels(t *testing.T) {
+	controller, tenantClient := newNicoProviderIDControllerForTest(
+		t,
+		[]client.Object{
+			newCAPIClusterForProviderIDTest(),
+			newMachineForProviderIDTest(),
+			newNicoMachineForProviderIDTest("nico://instance-1", providerIDTestNodeName),
+		},
+		[]client.Object{
+			newTenantNodeForProviderIDTest("nico://instance-1", map[string]string{
+				"example.com/keep":         "value",
+				keys.MachineID.Legacy():    "stale-machine",
+				keys.NodeSiteID.Legacy():   "stale-site",
+				keys.NodeSiteName.Legacy(): "stale-site-name",
+				keys.NodeVPCID.Legacy():    "stale-vpc",
+				keys.NodeVPCName.Legacy():  "stale-vpc-name",
+			}),
+		},
+	)
+
+	_, err := controller.Reconcile(context.Background(), providerIDReconcileRequest())
+	require.NoError(t, err)
+
+	node := getTenantNodeForProviderIDTest(t, tenantClient)
+	require.Equal(t, map[string]string{"example.com/keep": "value"}, node.Labels)
 }
 
 func TestNicoProviderIDControllerReconcileRemovesMissingTopologyLabels(t *testing.T) {
@@ -114,12 +187,12 @@ func TestNicoProviderIDControllerReconcileRemovesMissingTopologyLabels(t *testin
 		},
 		[]client.Object{
 			newTenantNodeForProviderIDTest("nico://instance-1", map[string]string{
-				"example.com/keep":             "value",
-				constants.LabelKeyMachineID:    "stale-machine",
-				constants.LabelKeyNodeSiteID:   "stale-site",
-				constants.LabelKeyNodeSiteName: "stale-site-name",
-				constants.LabelKeyNodeVPCID:    "stale-vpc",
-				constants.LabelKeyNodeVPCName:  "stale-vpc-name",
+				"example.com/keep":         "value",
+				keys.MachineID.String():    "stale-machine",
+				keys.NodeSiteID.String():   "stale-site",
+				keys.NodeSiteName.String(): "stale-site-name",
+				keys.NodeVPCID.String():    "stale-vpc",
+				keys.NodeVPCName.String():  "stale-vpc-name",
 			}),
 		},
 	)

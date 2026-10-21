@@ -43,7 +43,7 @@ absent() {
 # reads its settings. A list compares as its items joined with commas.
 setting() {
   local got
-  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nke-controller-config") | .data["config.yaml"]' <<<"$4" |
+  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nvke-controller-config") | .data["config.yaml"]' <<<"$4" |
     yq ".$2 | (select(tag == \"!!seq\") | join(\",\")) // .")"
   if [[ "${got}" == "$3" ]]; then
     printf '  ok    %s\n' "$1"
@@ -100,14 +100,14 @@ out="$(render)"
 # Absent, not empty: NVKE reads an empty AUTH_CONFIG_PATH as unset.
 absent "AUTH_CONFIG_PATH is not set at all"   'AUTH_CONFIG_PATH'                     "${out}"
 setting "permissiveMode is false"            permissiveMode false                   "${out}"
-absent "no config volume"                     'name: nke-auth-config'                "${out}"
+absent "no config volume"                     'name: nvke-auth-config'                "${out}"
 absent "no issuer-discovery binding"          'system:service-account-issuer-discovery' "${out}"
 
 echo "apiAuth enabled, enforcing:"
 out="$(render --set apiAuth.enabled=true)"
 want   "AUTH_CONFIG_PATH points at the mount" 'value: "/etc/nke/auth/auth.yaml"'     "${out}"
 setting "permissiveMode is false"           permissiveMode false                   "${out}"
-want   "ConfigMap volume"                     'name: nke-auth-config'                "${out}"
+want   "ConfigMap volume"                     'name: nvke-auth-config'                "${out}"
 want   "mounted where the path says"          'mountPath: "/etc/nke/auth"'           "${out}"
 want   "issuer-discovery binding"             'system:service-account-issuer-discovery' "${out}"
 
@@ -133,10 +133,10 @@ echo "configMap.create=false (the default) mounts a ConfigMap it does not create
 out="$(render --set apiAuth.enabled=true)"
 # By source template, not kind: the chart renders other ConfigMaps regardless.
 absent "renders no ConfigMap of its own"      '^# Source: .*/templates/configmap-auth\.yaml$' "${out}"
-want   "still mounts the named one"           'name: nke-auth-config'                "${out}"
+want   "still mounts the named one"           'name: nvke-auth-config'                "${out}"
 # auth.Load runs once at startup, so a configuration edit that does not restart
 # the pods does nothing at all. Reloader is what restarts them, here and below.
-want   "Reloader watches it"                  'configmap.reloader.stakater.com/reload: "nke-auth-config,nke-controller-config"' "${out}"
+want   "Reloader watches it"                  'configmap.reloader.stakater.com/reload: "nvke-auth-config,nvke-controller-config"' "${out}"
 
 echo "configMap.create=true renders the configuration:"
 out="$(render -f "${values}")"
@@ -153,15 +153,20 @@ want   "the nested admit rule keeps its name" '^        - name: forge-console'  
 want   "and its namespace"                    '^          namespace: cloud-workflow-engine' "${out}"
 # Rendering the ConfigMap does not change how it gets applied: Reloader watches
 # it either way, so there is one mechanism to reason about rather than two.
-want   "Reloader watches it here too"         'configmap.reloader.stakater.com/reload: "nke-auth-config,nke-controller-config"' "${out}"
+want   "Reloader watches it here too"         'configmap.reloader.stakater.com/reload: "nvke-auth-config,nvke-controller-config"' "${out}"
+
+echo "an install that predates the rename pins the old name and keeps it:"
+out="$(render --set apiAuth.enabled=true --set apiAuth.configMap.name=nke-auth-config)"
+want   "the pinned ConfigMap is mounted"      'name: nke-auth-config'                "${out}"
+want   "and it is the watched one"            'configmap.reloader.stakater.com/reload: "nke-auth-config,nvke-controller-config"' "${out}"
 
 echo "the Reloader annotation names whatever configMap.name says:"
 out="$(render --set apiAuth.enabled=true --set apiAuth.configMap.name=my-auth)"
-want   "the named ConfigMap is the watched one" 'configmap.reloader.stakater.com/reload: "my-auth,nke-controller-config"' "${out}"
+want   "the named ConfigMap is the watched one" 'configmap.reloader.stakater.com/reload: "my-auth,nvke-controller-config"' "${out}"
 
-echo "only nke-controller-config is watched while authentication is off:"
+echo "only nvke-controller-config is watched while authentication is off:"
 out="$(render)"
-want   "no auth ConfigMap in the reload annotation" 'configmap.reloader.stakater.com/reload: "nke-controller-config"' "${out}"
+want   "no auth ConfigMap in the reload annotation" 'configmap.reloader.stakater.com/reload: "nvke-controller-config"' "${out}"
 
 echo "an operator override of the reload annotation is left alone:"
 out="$(render --set apiAuth.enabled=true \

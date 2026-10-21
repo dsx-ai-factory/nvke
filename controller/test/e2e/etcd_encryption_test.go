@@ -25,6 +25,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
@@ -32,6 +33,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/mgmtns"
 )
 
 func validateEtcdEncryption(test *tenantTest) {
@@ -82,7 +84,7 @@ func validateEtcdEncryptionConfiguration(test *tenantTest) {
 		Expect(validateKubeadmEncryptionConfig(ctx, tenantClient)).To(Succeed())
 
 		By("Verifying a Secret is encrypted in raw etcd")
-		Expect(runEtcdEncryptionVerifier(ctx, test.k8sClient, adminKubeconfigSecret(ctx, test))).To(Succeed())
+		Expect(runEtcdEncryptionVerifier(ctx, test.k8sClient, test.k8sClientset, adminKubeconfigSecret(ctx, test))).To(Succeed())
 	}, Label("lifecycle", "encryption"), NodeTimeout(15*time.Minute))
 }
 
@@ -118,7 +120,7 @@ func validateEtcdEncryptionKeyRotation(test *tenantTest) {
 		Expect(test.assertDesiredNodesReady(ctx)).To(Succeed())
 
 		By("Verifying Secrets remain encrypted in raw etcd after rotation")
-		Expect(runEtcdEncryptionVerifier(ctx, test.k8sClient, adminKubeconfigSecret(ctx, test))).To(Succeed())
+		Expect(runEtcdEncryptionVerifier(ctx, test.k8sClient, test.k8sClientset, adminKubeconfigSecret(ctx, test))).To(Succeed())
 	}, Label("encryption", "etcd-key-rotation"), NodeTimeout(20*time.Minute))
 }
 
@@ -186,7 +188,7 @@ func readEtcdEncryptionKeyState(
 }
 
 func readKubeAPIServerRestartCounts(ctx context.Context, c client.Client, kubeconfigSecret string) (string, error) {
-	namespace := "nke-system"
+	namespace := mgmtns.Namespace()
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "e2e-kube-apiserver-restarts-",
@@ -375,7 +377,7 @@ func adminKubeconfigSecret(ctx context.Context, test *tenantTest) string {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "e2e-admin-kubeconfig-",
-			Namespace:    "nke-system",
+			Namespace:    mgmtns.Namespace(),
 		},
 		Data: map[string][]byte{"value": kubeconfig},
 	}
@@ -386,8 +388,12 @@ func adminKubeconfigSecret(ctx context.Context, test *tenantTest) string {
 	return secret.Name
 }
 
-func runEtcdEncryptionVerifier(ctx context.Context, c client.Client, kubeconfigSecret string) error {
-	namespace := "nke-system"
+// runEtcdEncryptionVerifier runs the verifier script as a pod on the management
+// cluster. The script retries each call through the tenant's control-plane
+// endpoint for up to about a minute before it fails and runs its diagnostics,
+// so the pod gets well over two minutes. A failure carries the pod's log tail.
+func runEtcdEncryptionVerifier(ctx context.Context, c client.Client, clientset kubernetes.Interface, kubeconfigSecret string) error {
+	namespace := mgmtns.Namespace()
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "e2e-etcd-encryption-",
@@ -413,7 +419,7 @@ func runEtcdEncryptionVerifier(ctx context.Context, c client.Client, kubeconfigS
 			}},
 		},
 	}
-	if _, _, err := kube.RunPod(ctx, c, pod, "verify", 2*time.Minute); err != nil {
+	if _, _, err := kube.RunPodWithLogs(ctx, c, clientset, pod, "verify", 5*time.Minute); err != nil {
 		return fmt.Errorf("running etcd encryption verifier pod: %w", err)
 	}
 	return nil
@@ -533,6 +539,17 @@ func TestEtcdEncryptionVerifyScript(t *testing.T) {
 			wantLogContains: []string{"raw etcd Secret encryption verified"},
 		},
 		{
+			name:            "verifier Secret create succeeds on a retry",
+			environment:     []string{"FAKE_CREATE_FAILURES=1"},
+			wantSuccess:     true,
+			wantLogContains: []string{"raw etcd Secret encryption verified"},
+		},
+		{
+			name:            "verifier Secret create fails on every attempt",
+			environment:     []string{"FAKE_CREATE_FAILURES=99"},
+			wantLogContains: []string{"failed to create the verifier Secret", "kubectl error: Unable to connect to the server: fake connection reset by peer"},
+		},
+		{
 			name:            "etcd pod list fails",
 			environment:     []string{"FAKE_ETCD_LIST_STATUS=1"},
 			wantLogContains: []string{"failed to list etcd pods"},
@@ -604,6 +621,7 @@ func TestEtcdEncryptionVerifyScript(t *testing.T) {
 				"PATH="+binDir+":"+os.Getenv("PATH"),
 				"E2E_KUBECONFIG_PATH="+filepath.Join(tempDir, "kubeconfig"),
 				"E2E_TERMINATION_LOG="+terminationLogPath,
+				"E2E_KUBECTL_RETRY_DELAY=0",
 				"TMPDIR="+tempDir,
 				"FAKE_STATE_DIR="+tempDir,
 				"FAKE_SECRETBOX_METRICS="+secretboxMetricsFixture,

@@ -70,7 +70,7 @@ spire_apply_cluster_static_entry() {
     local entry_name=$(spire_cluster_static_entry_name)
     local service_account
     service_account=$(spire_controller_service_account) || return 1
-    local spiffe_id="spiffe://${trust_domain}/nke-service/${service_account}"
+    local spiffe_id="spiffe://${trust_domain}/nvke-service/${service_account}"
     local parent_id="spiffe://${trust_domain}/agent/local-dev/$(hostname)"
 
     local crd_yaml

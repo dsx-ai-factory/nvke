@@ -426,11 +426,12 @@ log "staged nvke-agent for the tenant nodes: $(git -C "${WORKSPACE_ROOT}" descri
 # copyLocal in nico-sim/internal/ipxe/imagecache.go, whose own comment gives
 # the reason -- an image built in the same job is already on disk.
 # The newest tag GHCR holds for this architecture, built from a commit on the
-# branch under test. Registry tag order is not chronological and sha-<hex>
-# carries no ordering, so this reads updated_at from the packages API. PR
-# builds publish here too, so a tag counts only if its commit is an ancestor
-# of HEAD (the checkout has fetch-depth 0). Flavor tags (-ubuntu24.04-) are
-# skipped. The -<arch> suffix comes off, because image_ref adds it back.
+# branch under test: sha-<hex> from a tag or a dispatch, main-sha-<hex> from a
+# run on main. Registry tag order is not chronological and the hex carries no
+# ordering, so this reads updated_at from the packages API. PR builds publish
+# here too, so a tag counts only if its commit is an ancestor of HEAD (the
+# checkout has fetch-depth 0). Flavor tags (-ubuntu24.04-) are skipped. The
+# -<arch> suffix comes off, because image_ref adds it back.
 newest_os_image_tag() {
   local arch="$1" repo path org pkg tag sha
   # Keep this in step with image_repo below: both lanes booted an LVM image
@@ -440,7 +441,8 @@ newest_os_image_tag() {
   org="${path%%/*}"
   pkg="${path#*/}"
   while read -r tag; do
-    sha="${tag#sha-}"
+    sha="${tag#main-}"
+    sha="${sha#sha-}"
     sha="${sha%%-*}"
     if ! git -C "${WORKSPACE_ROOT}" merge-base --is-ancestor "${sha}" HEAD 2>/dev/null; then
       log "skipping os-image ${tag}: commit ${sha:0:9} is not on this branch" >&2
@@ -452,7 +454,7 @@ newest_os_image_tag() {
       "/orgs/${org}/packages/container/${pkg//\//%2F}/versions?per_page=100" \
       --jq '(if type == "array" then . else [] end)[] | {u: .updated_at, t: (.metadata.container.tags // [])[]}' 2>/dev/null |
     jq -rs --arg a "-${arch}" \
-      'map(select(.t | startswith("sha-") and endswith($a) and (contains("-ubuntu") | not)))
+      'map(select(.t | (startswith("sha-") or startswith("main-sha-")) and endswith($a) and (contains("-ubuntu") | not)))
        | sort_by(.u) | reverse | .[].t')
   return 1
 }
@@ -595,10 +597,10 @@ else
 fi
 jq -n \
   --arg capnico "${CAPNICO_SOURCE_DIR}" \
-  --arg cwe_image "${NKE_CONTROLLER_IMAGE}" \
+  --arg nvke_controller_image "${NKE_CONTROLLER_IMAGE}" \
   '{
     providers: ["capi_core", "nico"],
-    cwe_image: $cwe_image,
+    nvke_controller_image: $nvke_controller_image,
     capnico_source_dir: $capnico,
     nico_sim_backends: ["vm"],
     nico_vms_observability: false

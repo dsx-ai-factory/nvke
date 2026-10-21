@@ -42,10 +42,10 @@ After bootstrap completes:
 - Each node has an available NVMe device for local storage (non-root, unpartitioned, not in use)
 - NGC API key (required for pulling NVKE container images)
 - On the **init node**: `kind` binary and `nerdctl` with containerd installed — `nvkectl` uses these to create the ephemeral bootstrap Kind cluster. Docker is not supported. kind states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the version CI exercises
-- The two images `nvkectl` side-loads: `make -C cli images` builds them on the init node. To use images from a registry instead, pass `--controller-image` and `--provisioned-provider-image`, or set `NKECTL_CONTROLLER_IMAGE` (e.g. `nvcr.io/<org>/nvke-controller:edge`) and `NKECTL_CAPI_PROVISIONED_IMAGE` (e.g. `nvcr.io/<org>/cluster-api-provider-provisioned:edge`)
+- The two images `nvkectl` side-loads: `make -C cli images` builds them on the init node. To use images from a registry instead, pass `--nvke-controller-image` and `--provisioned-provider-image`, or set `NVKECTL_NVKE_CONTROLLER_IMAGE` (e.g. `nvcr.io/<org>/nvke-controller:edge`) and `NVKECTL_CAPI_PROVISIONED_IMAGE` (e.g. `nvcr.io/<org>/cluster-api-provider-provisioned:edge`)
 - On the **init node**, also on `PATH`: `helm`, `kubectl`, and `clusterctl`. `nvkectl`
   shells out to all three during bootstrap — Helm for the Postgres, Temporal, SPIRE
-  and CWE releases, `kubectl` for the manifests, and `clusterctl init` for the
+  and NVKE controller releases, `kubectl` for the manifests, and `clusterctl init` for the
   Cluster API providers. Only nerdctl is checked before the run starts; a
   missing `kind` fails in the pre-flight check for a leftover bootstrap cluster,
   before anything is created; a missing `helm`, `kubectl` or `clusterctl`
@@ -167,7 +167,7 @@ curl -fsSL "https://github.com/containernetworking/plugins/releases/download/${C
 > **Not published yet — the commands below do not work.**
 > `packages.nvidia.com/nvke` serves neither the key nor the suite: the `curl`
 > returns HTTP 404 (`NoSuchKey`), so `apt-get install nvke-agent` fails after it.
-> Until the repository exists there is no package install. To prepare a node in
+> Until the repository exists there is no apt install. To prepare a node in
 > the meantime, build the agent from this repository: `make -C agent package`
 > cross-compiles it to `agent/bin/linux_<arch>/nvke-agent` and bundles it with
 > `agent/scripts/agent-installer.sh`, which lays down the binary, the systemd
@@ -175,8 +175,11 @@ curl -fsSL "https://github.com/containernetworking/plugins/releases/download/${C
 > [`controller/hack/capd-kindest-node/`](https://github.com/dsx-ai-factory/nvke/tree/main/controller/hack/capd-kindest-node)
 > installs the agent that way for the bootstrap e2e's nodes and is the closest
 > worked example.
-> **TODO:** replace this note with the repository URL and GPG key location once
-> they exist, and drop the workaround.
+> **Known limitation at preview:** the apt repository and its signing key are
+> not published. From `agent/v0.3.0-rc.2`, each `agent/` release at
+> https://github.com/dsx-ai-factory/nvke/releases also attaches
+> `nvke-agent_<version>_<arch>.deb`, which `apt-get install` can install from a
+> local path.
 
 ```bash
 # Configure the NVKE apt repository
@@ -201,7 +204,7 @@ sudo systemctl status nvke-agent
 > **Warning:** Use `nvke-agent` **0.1.12 or later**. Older agents do not implement kubeadm preflight checks, so configuration problems only surface mid-bootstrap.
 
 > **Plaintext mode.** `--disable-mtls` on the agent turns SPIFFE off, so
-> `nvkectl bootstrap site` has to be run with `--disable-mtls` as well — CWE
+> `nvkectl bootstrap site` has to be run with `--disable-mtls` as well — the controller
 > otherwise dials the agents over mTLS and never connects. `nvkectl` labels this
 > mode development only. For the attested path — `spire-agent` on every node, a
 > TPM EK thumbprint per host in the CSV, and a SPIRE CA from
@@ -249,8 +252,8 @@ reaches `Ready`.
 nvkectl bootstrap site -f sitespec.yaml --dry-run
 
 # Run bootstrap. --disable-mtls matches the plaintext agents from Step 1.
-NKECTL_CONTROLLER_IMAGE="nvcr.io/<org>/nvke-controller:edge" \
-NKECTL_CAPI_PROVISIONED_IMAGE="nvcr.io/<org>/cluster-api-provider-provisioned:edge" \
+NVKECTL_NVKE_CONTROLLER_IMAGE="nvcr.io/<org>/nvke-controller:edge" \
+NVKECTL_CAPI_PROVISIONED_IMAGE="nvcr.io/<org>/cluster-api-provider-provisioned:edge" \
   nvkectl bootstrap site -f sitespec.yaml --disable-mtls
 ```
 
@@ -262,7 +265,7 @@ local build from `make -C cli images` needs no login.
 
 `nvkectl` creates a temporary Kind cluster on the init node, deploys Postgres,
 Temporal and the Cluster API providers onto it — and SPIRE, unless `--disable-mtls`
-is set — then CWE, waits for CWE to be healthy, and dispatches the kubeadm init and
+is set — then the controller, waits for it to be healthy, and dispatches the kubeadm init and
 join work to your nodes through Cluster API and `nvke-agent` gRPC. No SSH required.
 
 The ephemeral Kind cluster is torn down when bootstrap succeeds. It is **kept** if you
@@ -279,7 +282,7 @@ Useful flags:
 | `--keep-bootstrap-cluster` | off | Leave the ephemeral Kind cluster running for debugging. |
 | `--kubeconfig-out` | `<clusterName>.kubeconfig` | Where to write the finished cluster's breakglass admin kubeconfig. |
 | `--encryption-key-out` | `<clusterName>-etcd-encryption-key.json` | Where to write the cluster's etcd encryption key, as a Secret manifest. |
-| `--disable-mtls` | off | Stand the site up with no SPIRE, CWE dialling agents in plaintext. **Development only.** This guide uses it because the agents in Step 1 run with `--disable-mtls`; the two sides must agree. Drop it only when every node runs `spire-agent` and has a thumbprint in the CSV. |
+| `--disable-mtls` | off | Stand the site up with no SPIRE, the controller dialling agents in plaintext. **Development only.** This guide uses it because the agents in Step 1 run with `--disable-mtls`; the two sides must agree. Drop it only when every node runs `spire-agent` and has a thumbprint in the CSV. |
 
 When bootstrap finishes it writes two files into the working directory: `<clusterName>.kubeconfig`, a breakglass admin kubeconfig, and `<clusterName>-etcd-encryption-key.json`, the key that encrypts the cluster's etcd data. Both are secrets. The cluster does not depend on the key file: every control-plane node holds the key at `/etc/kubernetes/kube-api-encryption/encryption-config.yaml`, and that is what kube-apiserver reads. The file is for two things the nodes cannot do. It is what a controller installed later is given, so nobody has to pull the key off a node by hand, and it is the copy that restores etcd onto new hosts when no control-plane node survives. **Move it off this host** — this host is one of the nodes it protects — and keep it with the cluster's other credentials. Use `--kubeconfig-out` and `--encryption-key-out` to write the files elsewhere.
 
@@ -306,7 +309,7 @@ All nodes should show `Ready` status.
 1. Ensure your NICo site is set up and healthy before proceeding. See the [NICo documentation](https://docs.nvidia.com/infra-controller/documentation/home) for site setup and networking requirements.
 2. Install your environment SBOM so NVKE can drive day-2 operations through NICo.
 3. Wait until the SBOM is fully deployed and healthy.
-4. Complete NVKE and NICo host ingestion with the NVKE team. Keep the etcd encryption key file until this step succeeds: ingestion applies it to the controller, which needs it to join control-plane nodes and rotate the key. **TODO:** Publish NVKE-specific ingestion runbook here once it exists.
+4. Complete NVKE and NICo host ingestion with the NVKE team. Keep the etcd encryption key file until this step succeeds: ingestion applies it to the controller, which needs it to join control-plane nodes and rotate the key. Known limitation at preview: no ingestion runbook is published.
 5. Operate the site through NVKE day-2 workflows.
 
 **Unmanaged sites:** Deploy workloads with whatever tooling fits your environment. No NVKE site-controller installation is required. Note that without NICo, no NVKE day-2 operations (tenant cluster creation, node add/remove, upgrades) are available.
@@ -315,7 +318,7 @@ All nodes should show `Ready` status.
 
 - **Join nodes don't need `nvkectl`** — only the init node runs it
 - **`nvke-agent` must be running on all nodes** — verify `systemctl status nvke-agent` before starting bootstrap
-- **Network connectivity** — CWE must reach each node on **15005** (nvke-agent gRPC) and **6443** (API server); nodes with a TPM EK thumbprint must reach the init node on **30081** (SPIRE) for attestation
+- **Network connectivity** — the controller must reach each node on **15005** (nvke-agent gRPC) and **6443** (API server); nodes with a TPM EK thumbprint must reach the init node on **30081** (SPIRE) for attestation
 - **Hostnames and IPs** — use actual hostnames and IPs that nodes use to communicate with each other
 - **User permissions** — commands must run with `sudo` or as root
 

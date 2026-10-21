@@ -9,11 +9,15 @@ NodePoolCreateConfig.infra.preKubeadmCommands.
 The package versions are inputs for the same reason the OS image is: a
 qualification run exists to pin them.
 
-The apt suite is one too. NVKE publishes a suite per Ubuntu release, and a node
-booted from a 26.04 image cannot install from the 24.04 one, so hardcoding
-either suite pins which OS images the lane can qualify. See
-docs/site-bootstrap/pre-provisioned-nodes.md and
-agent/scripts/upload-s3-apt-intake.sh, which publishes both.
+Every NVKE package installed here comes from the image's own apt repository,
+the flat file: repo that os-image/packer/scripts/provision.sh stages under
+/usr/lib/nvke/debs and indexes at bake time. No NVKE apt source is configured
+on the node, so what it installs is what the image carries, and the versions
+below have to be ones that image locks. A version it does not carry resolves to
+no candidate and fails here. That is the intended answer: a node reaching a
+repository for these would install whichever build the suite currently holds,
+which is a different build than the one under qualification, and nothing in the
+run would say so.
 
 Both OVN packages, not just -images. The agent resolves the charts package
 name and requires it to already be installed: chartsDebPresenceCheck returns
@@ -24,53 +28,20 @@ for the same reason — OVN runs Open vSwitch on the host, and the agent checks
 for ovs-vsctl before helm. Both were observed on real Forge hardware before
 they were read out of the agent source.
 
-nke-agent is deliberately absent, for the reason spire-agent is. The image
-builds it as a .deb from this checkout's agent/ source at bake time and
-installs it with dpkg, so its version is the checkout's `git describe` and it
-is the build under qualification (os-image/AGENTS.md). The apt repository
-publishes its own nke-agent, and installing that unpinned would swap the
-component being qualified for whichever one the suite currently holds, without
-the run saying so. Today dpkg keeps the baked build because a bake version
-sorts above a release tag, so the install was a no-op that would have stopped
-being one at the next publish.
+openvswitch-switch comes from the autoinstall package list rather than the
+local repo, so its install is a no-op that asserts it is there. --no-upgrade
+keeps it one: without it an install can pull a newer Open vSwitch than the one
+the image was baked and smoke-tested with, which is the same defect this file
+fixes for the NVKE packages.
 
-spire-agent is deliberately absent too. The NVKE OS image pre-installs it, from a
-.deb built at bake time by os-image/packages/spire-agent/ which also owns the
+nke-agent and spire-agent are deliberately absent. The image builds both as
+.debs from this checkout's source at bake time and installs them with dpkg, so
+their versions are the checkout's `git describe` and they are the builds under
+qualification (os-image/AGENTS.md, os-image/SPEC.md). spire-agent also owns the
 systemd units, the first-boot renderer and the TPM plugin checksum that
-agent.conf resolves against (os-image/SPEC.md). Installing the apt repository's
-build over it swaps a package the image owns for a generic one, and because
-the repository publishes 1.14.1+tpm1.9.0 against the image's
-1.14.1+tpm1.9.0-1, doing so is a downgrade to an identical build of itself.
-A node without a baked agent is the bring-your-own-Ubuntu path, which
-bootstraps with --disable-mtls and is out of scope here.
-
-The apt source is fetched by name, so the node must be able to resolve one
-before the curl below. A default IPv4 route is not that: the route guard in
-RenderUserData returns as soon as one appears, and systemd-resolved can still
-be coming up -- on a node whose clock is at 1970, NTP has not run either. The
-curl then fails with "Could not resolve host", set -e kills the block, and the
-node ends up with no kubeadm, no CNI and no agent args, failing much later with
-nothing pointing back here. Observed on three consecutive az61 runs and
-reproduced by hand. Waiting for the name costs nothing when it already
-resolves.
-
-The apt coordinates are nvke-, and the packages are split. Both halves are
-measured against the live repository, not inferred, because the rename landed
-in three pieces that completed at different times.
-
-nvke-apt-public.key and nvke-apt-<codename> serving suite nvke-<codename> are
-published and answer 200. nke/packages/apt-publisher now mirrors into both, so
-the nvke suite is a superset: it carries the renamed packages AND the ones
-still spelled the old way. Pointing at it is therefore strictly better than the
-old repo, which has only the old names.
-
-nvke-kubeadm-distro-<ver> is published there -- 1.36.3 confirmed in both noble
-and resolute on 2026-10-14 -- so it moved with the coordinates.
-
-nvke-cni-ovn-images and nvke-cni-ovn-charts are published by #1560. Until that
-lands the suite serves only nke-cni-ovn-*, and asking for a name it does not
-serve is a "no candidate" that terminates ProvisionCluster through
-InstallCNIPreconditionFailed, which does not retry.
+agent.conf resolves against. A node without a baked agent is the
+bring-your-own-Ubuntu path, which bootstraps with --disable-mtls and is out of
+scope here.
 
 The unit and its environment file stay nke-, permanently. nvke-agent.service
 declares Alias=nke-agent.service and reads both environment files, so the old
@@ -87,28 +58,28 @@ budget on KubernetesReady=Unknown ("Node data not available") with nothing
 saying why. set -u is safe because every command below is fully rendered
 before it is sent: none of them reads a shell variable.
 
-The route wait comes straight after it, before the first command that needs
-the network. Forge hosts race cloud-init for the network, so on a node whose
-default route is not up yet the curl below fails at once, set -eu stops the
-script there, and cloud-init reports status: error with nothing installed.
-The amd64 kernel line in nico_forge_ipxe.tmpl does not carry ip=dhcp the way
-the arm64 one does, so amd64 nodes reach this point earlier relative to their
-network. Run 37873467928 is that case: an amd64 control plane failed
-cloud-init while an arm64 worker running these same commands passed, and the
-amd64 site node beside them passed only because its own user data waits for
-a route first. Bounded, so a node that never gets a route fails here with a
-line saying so rather than hanging the boot.
+There is no apt-get update. os-image/packer/scripts/provision.sh indexes the
+local repo at bake time and clears the Ubuntu archive lists, precisely so
+"cluster create needs no apt-get update of its own". Running one here would
+refresh the archive again and let the openvswitch-switch install upgrade past
+the baked build, which is the defect this file fixes for the NVKE packages.
+
+The route wait stays, because nke-agent.service is restarted at the end of
+this script and has to reach the controller. Forge hosts race cloud-init for
+the network, so on a node whose default route is not up yet that restart comes
+before the node can phone home. The amd64 kernel line in nico_forge_ipxe.tmpl
+does not carry ip=dhcp the way the arm64 one does, so amd64 nodes reach this
+point earlier relative to their network. Observed as an amd64 control plane
+failing cloud-init while an arm64 worker running these same commands passed,
+and the amd64 site node beside them passed only because its own user data
+waits for a route first. Bounded, so a node that never gets a route fails here
+with a line saying so rather than hanging the boot.
 */ -}}
 set -eu
 timeout 300s sh -c 'until ip -4 route list default | grep -q .; do echo "waiting for an IPv4 default route"; sleep 5; done'
-install -d -m 0755 /etc/apt/keyrings
-timeout 300s sh -c 'until getent hosts nke-prod-assets.s3.us-west-2.amazonaws.com >/dev/null 2>&1; do echo "waiting for name resolution"; sleep 5; done'
-curl -fsSL -o /etc/apt/keyrings/nvke.asc https://nke-prod-assets.s3.us-west-2.amazonaws.com/nvke-apt-public.key
-echo 'deb [signed-by=/etc/apt/keyrings/nvke.asc] https://nke-prod-assets.s3.us-west-2.amazonaws.com/nvke-apt-{{ .AptSuite }} nvke-{{ .AptSuite }} main' > /etc/apt/sources.list.d/nvke-apt.list
-apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-kubeadm-distro-{{ .KubernetesVersion }}
 DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-cni-ovn-images-{{ .CNIVersion }} nvke-cni-ovn-charts-{{ .CNIVersion }}
-DEBIAN_FRONTEND=noninteractive apt-get install -y openvswitch-switch
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-upgrade openvswitch-switch
 printf 'AGENT_ARGS="{{ .AgentArgs }}"\n' > /etc/default/nke-agent
 sysctl --system
 systemctl daemon-reload

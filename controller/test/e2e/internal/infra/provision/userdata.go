@@ -142,7 +142,7 @@ func RenderUserData(in UserDataInputs) (string, error) {
 	run = append(run,
 		// The site node runs a kind cluster and then the whole NVKE stack on
 		// one machine, and Ubuntu's default of 128 inotify instances is not
-		// enough for that many controllers: the 2026-09-29 ytl bootstrap had
+		// enough for that many controllers: the 2026-09-29 site-2 bootstrap had
 		// to be raised to 1024 by hand before it would complete. Written as a
 		// drop-in rather than set live, so it survives the reboots the
 		// bootstrap performs.
@@ -167,6 +167,16 @@ func RenderUserData(in UserDataInputs) (string, error) {
 		// flags as every other pinned-tool download in this repository.
 		fmt.Sprintf("curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 -o /tmp/nerdctl.tgz https://github.com/containerd/nerdctl/releases/download/v%[1]s/nerdctl-full-%[1]s-linux-%[2]s.tar.gz", in.Tools.NerdctlVersion, in.Arch),
 		"tar -C /usr/local -xzf /tmp/nerdctl.tgz",
+
+		// Keep nerdctl's CNI config out of /etc/cni/net.d, which is also the
+		// site containerd's conf_dir. Left there, the bootstrap bridge is the
+		// only CNI config on the node between kubeadm init and ovn-kubernetes
+		// writing its own, so the first pods (coredns, node-local-dns) bind to
+		// 10.4.0.x, keep that address, and nothing on the OVN network can reach
+		// DNS. See docs/site-bootstrap/installation.md. Before the first
+		// nerdctl command below, or the conflist is already written.
+		"mkdir -p /etc/nerdctl",
+		"printf 'cni_netconfpath = \"/etc/containerd-nerdctl/net.d\"\\n' > /etc/nerdctl/nerdctl.toml",
 		"systemctl enable --now buildkit || true",
 
 		fmt.Sprintf("curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 -o /usr/local/bin/kind https://kind.sigs.k8s.io/dl/%s/kind-linux-%s", in.Tools.KindVersion, in.Arch),

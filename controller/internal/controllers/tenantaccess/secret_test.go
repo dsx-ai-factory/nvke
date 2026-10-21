@@ -24,6 +24,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 func TestUpsertOwnedSecretUpdatesMatchingTypeInPlace(t *testing.T) {
@@ -34,7 +35,7 @@ func TestUpsertOwnedSecretUpdatesMatchingTypeInPlace(t *testing.T) {
 	existing := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      KubeconfigSecretName(cluster.Name),
-			Namespace: SecretsNamespace,
+			Namespace: constants.LegacyManagementNamespace,
 			UID:       types.UID("existing-uid"),
 			Labels: map[string]string{
 				"owner.nke.nvidia.com/cluster": cluster.ID.String(),
@@ -53,8 +54,8 @@ func TestUpsertOwnedSecretUpdatesMatchingTypeInPlace(t *testing.T) {
 	assert.Equal(t, types.UID("existing-uid"), got.UID)
 	assert.Equal(t, []byte("new"), got.Data[KubeconfigSecretKey])
 	assert.Equal(t, cluster.ID.String(), got.Labels["owner.nke.nvidia.com/cluster"])
-	assert.Equal(t, "cloud-workflow-engine", got.Labels[constants.LabelKeyNvkeManagedBy])
-	assert.Equal(t, cluster.ID.String(), got.Labels[constants.LabelKeyClusterID])
+	assert.Equal(t, "cloud-workflow-engine", got.Labels[keys.ManagedBy.String()])
+	assert.Equal(t, cluster.ID.String(), got.Labels[keys.ClusterID.String()])
 	assert.Equal(t, cluster.Name, got.Labels[clusterv1.ClusterNameLabel])
 }
 
@@ -83,7 +84,7 @@ func TestUpsertOwnedSecretReplacesIncompatibleType(t *testing.T) {
 	assert.NotEqual(t, types.UID("existing-uid"), got.UID)
 	assert.Equal(t, corev1.SecretTypeOpaque, got.Type)
 	assert.Equal(t, []byte("new"), got.Data[KubeconfigSecretKey])
-	assert.Equal(t, "cloud-workflow-engine", got.Labels[constants.LabelKeyNvkeManagedBy])
+	assert.Equal(t, "cloud-workflow-engine", got.Labels[keys.ManagedBy.String()])
 	assert.Equal(t, cluster.Name, got.Labels[clusterv1.ClusterNameLabel])
 }
 
@@ -129,7 +130,7 @@ func TestUpsertOwnedSecretDoesNotDeleteWrongOwner(t *testing.T) {
 	ctx := context.Background()
 	cluster := db.Cluster{ID: uuid.New(), Name: "wrong-owner"}
 	existing := desiredKubeconfigSecret(cluster, clusterv1.ClusterSecretType, "old")
-	existing.Labels[constants.LabelKeyClusterID] = uuid.New().String()
+	existing.Labels[keys.ClusterID.String()] = uuid.New().String()
 	baseClient := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(existing).Build()
 	k8sClient := &recordingClient{Client: baseClient}
 
@@ -187,7 +188,7 @@ func desiredKubeconfigSecret(cluster db.Cluster, secretType corev1.SecretType, v
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      KubeconfigSecretName(cluster.Name),
-			Namespace: SecretsNamespace,
+			Namespace: constants.LegacyManagementNamespace,
 			Labels: map[string]string{
 				clusterv1.ClusterNameLabel: cluster.Name,
 			},

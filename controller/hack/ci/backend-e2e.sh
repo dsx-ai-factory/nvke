@@ -530,6 +530,15 @@ collect_diagnostics() {
           clusters,machinedeployments,machinesets,machines,kubeadmcontrolplanes,kubeadmconfigs,dockerclusters,dockermachines \
           -A \
           >"${STATE_DIR}/capi-describe.txt" 2>&1
+        # The NICo lane's provider view. A lost instance's IDs, conditions and
+        # retry schedule live in the NicoMachine objects and the CAPNICo
+        # controller log, which capi-resources.yaml and cwe.log do not carry.
+        if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
+          runner_exec kubectl -n capnico-system logs deployment/controller-manager --all-containers --tail=-1 \
+            >"${STATE_DIR}/capnico-controller.log" 2>&1
+          runner_exec kubectl get nicoclusters,nicomachines,nicomachinetemplates -A -o yaml \
+            >"${STATE_DIR}/capnico-resources.yaml" 2>&1
+        fi
         for artifact in tilt.log tilt-snapshot.json nico-sim.log e2e.log junit.xml; do
           docker cp "${RUNNER_NAME}:/state/${artifact}" "${STATE_DIR}/${artifact}" >/dev/null 2>&1 || true
         done

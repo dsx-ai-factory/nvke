@@ -23,6 +23,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // Controller is responsible for reconciling the tpm-pubhashes configmap.
@@ -88,33 +89,39 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 func (c *Controller) reconcileTpmPubhashesCm(ctx context.Context) error {
 	// List ClusterStaticEntries managed by the controller's machine-spire-entry-controller.
-	clusterStaticEntries := &spirev1alpha1.ClusterStaticEntryList{}
-	err := c.k8sClient.List(ctx, clusterStaticEntries, client.MatchingLabels{
-		constants.LabelKeyNvkeManagedBy: constants.FieldManagerMachineSpireEntry,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to list cluster static entries: %w", err)
-	}
-
+	//
+	// A label selector matches one key, so both domains need their own List:
+	// an entry applied before the nvke.nvidia.com rename carries the legacy
+	// label until its Machine is reconciled again, and missing it here would
+	// drop that node's pubhash out of the ConfigMap and break its attestation.
 	desiredPubHashes := make(map[string]struct{})
-	for _, clusterStaticEntry := range clusterStaticEntries.Items {
-		// Only process entries for our SPIRE installation.
-		if clusterStaticEntry.Spec.ClassName != c.cfg.SpireClassName {
-			continue
+	for _, managedBy := range keys.ManagedBy.All() {
+		clusterStaticEntries := &spirev1alpha1.ClusterStaticEntryList{}
+		if err := c.k8sClient.List(ctx, clusterStaticEntries, client.MatchingLabels{
+			managedBy: constants.FieldManagerMachineSpireEntry,
+		}); err != nil {
+			return fmt.Errorf("failed to list cluster static entries by %s: %w", managedBy, err)
 		}
 
-		pubHash := extractTPMPubHash(clusterStaticEntry.Spec.ParentID)
-		if pubHash == "" {
-			continue
+		for _, clusterStaticEntry := range clusterStaticEntries.Items {
+			// Only process entries for our SPIRE installation.
+			if clusterStaticEntry.Spec.ClassName != c.cfg.SpireClassName {
+				continue
+			}
+
+			pubHash := extractTPMPubHash(clusterStaticEntry.Spec.ParentID)
+			if pubHash == "" {
+				continue
+			}
+			desiredPubHashes[pubHash] = struct{}{}
 		}
-		desiredPubHashes[pubHash] = struct{}{}
 	}
 
 	data := make(map[string]string, len(desiredPubHashes))
 	for pubHash := range desiredPubHashes {
 		// A data value is added for each pubhash, it is not currently used, but will allow more granular control in the future, if necessary.
-		// e.g. "<pubhash>": "nke.nvidia.com/managed-by=machine-spire-entry-controller"
-		value := fmt.Sprintf("%s=%s", constants.LabelKeyNvkeManagedBy, constants.FieldManagerMachineSpireEntry)
+		// e.g. "<pubhash>": "nvke.nvidia.com/managed-by=machine-spire-entry-controller"
+		value := keys.ManagedBy.Selector(constants.FieldManagerMachineSpireEntry)
 		data[pubHash] = value
 	}
 

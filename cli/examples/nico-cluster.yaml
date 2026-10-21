@@ -6,7 +6,7 @@
 # Usage: nvkectl create cluster -f examples/nico-cluster.yaml
 #
 # Prerequisites:
-#   - CAPNICo installed on the site controller: nvkectl get providers reports
+#   - CAPNICo installed on the management cluster: nvkectl get providers reports
 #     nico as CONFIGURED
 #   - A NICo site, VPC, VPC prefix, instance type, SSH key group, and an
 #     allocation against the instance type. An instance type with no allocation

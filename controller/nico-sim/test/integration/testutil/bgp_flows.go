@@ -185,7 +185,7 @@ func (f *bgpECMPTest) createNode(name, userData string) bgpTestNode {
 		TenantId:       "d282929f-49d5-4dec-8d27-21ceb30ade19",
 		InstanceTypeId: *forgesdk.NewNullableString(forgesdk.PtrString("itype-mock-001")),
 		VpcId:          "vpc-mock-001",
-		Labels:         map[string]string{"nke.nvidia.com/node-id": name},
+		Labels:         map[string]string{"nvke.nvidia.com/node-id": name},
 		Interfaces: []forgesdk.InterfaceCreateRequest{
 			{SubnetId: forgesdk.PtrString("subnet-mock-001")},
 		},

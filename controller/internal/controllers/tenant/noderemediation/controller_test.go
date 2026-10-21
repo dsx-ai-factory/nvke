@@ -26,6 +26,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/workflows"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
@@ -46,15 +47,25 @@ func TestUnit_RemediationNodePredicateOnlyMatchesRequestChanges(t *testing.T) {
 	oldNode := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
 		Name: "worker-1",
 		Labels: map[string]string{
-			constants.LabelKeyNodeLabelReboot: "codex-smoke",
+			keys.Reboot.String(): "codex-smoke",
 		},
 	}}
 	statusOnlyNode := oldNode.DeepCopy()
-	statusOnlyNode.Labels[constants.LabelKeyNodeLabelRebootStatus] = "InProgress"
+	statusOnlyNode.Labels[keys.RebootStatus.String()] = "InProgress"
 	requestChangedNode := oldNode.DeepCopy()
-	requestChangedNode.Labels[constants.LabelKeyNodeLabelReboot] = "operator-request"
+	requestChangedNode.Labels[keys.Reboot.String()] = "operator-request"
+
+	legacyRequestNode := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+		Name:   "worker-1",
+		Labels: map[string]string{keys.Reboot.Legacy(): "operator-request"},
+	}}
 
 	require.True(t, p.Update(event.UpdateEvent{ObjectOld: oldNode, ObjectNew: requestChangedNode}))
+	// A request arriving under the legacy domain is still a request.
+	require.True(t, p.Update(event.UpdateEvent{
+		ObjectOld: &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-1"}},
+		ObjectNew: legacyRequestNode,
+	}))
 	require.False(t, p.Update(event.UpdateEvent{ObjectOld: oldNode, ObjectNew: statusOnlyNode}))
 	require.False(t, p.Update(event.UpdateEvent{ObjectOld: oldNode, ObjectNew: &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-1"}}}))
 }
@@ -67,7 +78,7 @@ func TestUnit_ReconcileStartsNodeRemediationWorkflows(t *testing.T) {
 		wantInput   func(t *testing.T, arg interface{}, nodeID uuid.UUID)
 	}{
 		"reboot label starts reboot workflow": {
-			labels:     map[string]string{constants.LabelKeyNodeLabelReboot: "operator-request"},
+			labels:     map[string]string{keys.Reboot.String(): "operator-request"},
 			wantPrefix: constants.RebootNodeWorkflowPrefix,
 			wantInput: func(t *testing.T, arg interface{}, nodeID uuid.UUID) {
 				t.Helper()
@@ -82,7 +93,7 @@ func TestUnit_ReconcileStartsNodeRemediationWorkflows(t *testing.T) {
 			},
 		},
 		"terminate label starts teardown workflow": {
-			labels:     map[string]string{constants.LabelKeyNodeLabelTerminate: "replace-node"},
+			labels:     map[string]string{keys.Terminate.String(): "replace-node"},
 			wantPrefix: constants.TeardownNodeWorkflowPrefix,
 			wantInput: func(t *testing.T, arg interface{}, nodeID uuid.UUID) {
 				t.Helper()
@@ -95,9 +106,9 @@ func TestUnit_ReconcileStartsNodeRemediationWorkflows(t *testing.T) {
 			},
 		},
 		"terminate label includes machine health issue": {
-			labels: map[string]string{constants.LabelKeyNodeLabelTerminate: "replace-node"},
+			labels: map[string]string{keys.Terminate.String(): "replace-node"},
 			annotations: map[string]string{
-				constants.NodeAnnotationKeyMachineHealthIssue: `{"category":"Hardware","summary":"GPU failure","details":"xid errors"}`,
+				keys.NodeMachineHealthIssue.String(): `{"category":"Hardware","summary":"GPU failure","details":"xid errors"}`,
 			},
 			wantPrefix: constants.TeardownNodeWorkflowPrefix,
 			wantInput: func(t *testing.T, arg interface{}, nodeID uuid.UUID) {
@@ -113,10 +124,40 @@ func TestUnit_ReconcileStartsNodeRemediationWorkflows(t *testing.T) {
 				require.Equal(t, "xid errors", *input.MachineHealthIssue.Details)
 			},
 		},
+		// A reboot or terminate request is applied by hand or by an external
+		// automation, so it keeps arriving under the legacy domain long after
+		// the controller stops writing it.
+		"legacy-domain reboot label starts reboot workflow": {
+			labels:     map[string]string{keys.Reboot.Legacy(): "operator-request"},
+			wantPrefix: constants.RebootNodeWorkflowPrefix,
+			wantInput: func(t *testing.T, arg interface{}, nodeID uuid.UUID) {
+				t.Helper()
+				input, ok := arg.(workflows.RebootNodeInput)
+				require.True(t, ok)
+				require.Equal(t, nodeID, input.NodeID)
+				require.Equal(t, "operator-request", input.Reason)
+			},
+		},
+		"legacy-domain terminate label starts teardown workflow": {
+			labels: map[string]string{keys.Terminate.Legacy(): "replace-node"},
+			annotations: map[string]string{
+				keys.NodeMachineHealthIssue.Legacy(): `{"category":"Hardware","summary":"GPU failure"}`,
+			},
+			wantPrefix: constants.TeardownNodeWorkflowPrefix,
+			wantInput: func(t *testing.T, arg interface{}, nodeID uuid.UUID) {
+				t.Helper()
+				input, ok := arg.(workflows.TeardownNodeInput)
+				require.True(t, ok)
+				require.Equal(t, nodeID, input.NodeID)
+				require.Equal(t, "replace-node", input.Reason)
+				require.NotNil(t, input.MachineHealthIssue)
+				require.Equal(t, "Hardware", input.MachineHealthIssue.Category)
+			},
+		},
 		"terminate label wins over reboot label": {
 			labels: map[string]string{
-				constants.LabelKeyNodeLabelReboot:    "operator-request",
-				constants.LabelKeyNodeLabelTerminate: "replace-node",
+				keys.Reboot.String():    "operator-request",
+				keys.Terminate.String(): "replace-node",
 			},
 			wantPrefix: constants.TeardownNodeWorkflowPrefix,
 			wantInput: func(t *testing.T, arg interface{}, nodeID uuid.UUID) {

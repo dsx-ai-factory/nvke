@@ -109,7 +109,7 @@ func (s *Service) firstContainerIPAddress(inspectResult *dockerInspect) string {
 
 func (s *Service) removeNodeContainer(ctx context.Context, containerID string) error {
 	_, _ = s.runDocker(ctx, "stop", "--time", "10", containerID)
-	if _, err := s.runDocker(ctx, "rm", "--force", containerID); err != nil {
+	if _, err := s.runDocker(ctx, "rm", "--force", "--volumes", containerID); err != nil {
 		return fmt.Errorf("remove node container: %w", err)
 	}
 	return nil

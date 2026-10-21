@@ -12,8 +12,8 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 func TestClient_renderInfraMachine(t *testing.T) {
@@ -56,7 +56,7 @@ func TestClient_renderInfraMachine(t *testing.T) {
 		assert.Equal(t, vpcID.String(), nicoMachine.Spec.VPCID)
 		assert.Equal(t, instanceTypeID.String(), nicoMachine.Spec.InstanceTypeID)
 		assert.Equal(t, "#!ipxe\nlargest", nicoMachine.Spec.IpxeScript)
-		assert.Equal(t, node.ID.String(), nicoMachine.Spec.Labels[constants.LabelKeyNodeID])
+		assert.Equal(t, node.ID.String(), nicoMachine.Spec.Labels[keys.NodeID.String()])
 	})
 
 	t.Run("missing provider payload errors", func(t *testing.T) {
@@ -219,8 +219,8 @@ func TestBuildInstanceLabels(t *testing.T) {
 	)
 
 	assert.Equal(t, map[string]string{
-		constants.LabelKeyNodeID:     nodeID.String(),
-		constants.LabelKeyClusterID:  clusterID.String(),
-		constants.LabelKeyNodePoolID: nodePoolID.String(),
+		keys.NodeID.String():     nodeID.String(),
+		keys.ClusterID.String():  clusterID.String(),
+		keys.NodePoolID.String(): nodePoolID.String(),
 	}, labels)
 }

@@ -186,7 +186,6 @@ done
 systemctl cat nvke-agent.service | grep -Fx 'ExecStartPre=/usr/lib/nvke/wait-spiffe-socket.sh'
 test -x /usr/local/bin/spire-agent
 test -x /usr/local/lib/spire-agent/tpm_attestor_agent
-test -x /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent
 test -x /usr/local/bin/get_tpm_pubhash
 test -x /usr/lib/nvke/spire-configure.sh
 test -x /usr/lib/nvke/wait-spiffe-socket.sh
@@ -199,16 +198,17 @@ test "$(dpkg-query -S /usr/local/bin/spire-agent | cut -d: -f1)" = spire-agent
 test ! -e /etc/systemd/system/spire-agent.service
 id -u spire >/dev/null
 # A profile's agent.conf carries plugin_checksum = "${TPM_PLUGIN_CHECKSUM}"
-# or "${DSX_IMDS_PLUGIN_CHECKSUM}" verbatim. Without both halves of this, SPIRE
-# compares the plugin against that literal string, refuses to load it, and the
-# node never attests.
+# verbatim. Without both halves of this, SPIRE compares the plugin against that
+# literal string, refuses to load it, and the node never attests.
 test "$(. /etc/spire-agent/spire-agent.env; echo "${TPM_PLUGIN_CHECKSUM}")" \
     = "$(sha256sum /usr/local/lib/spire-agent/tpm_attestor_agent | cut -d' ' -f1)"
-test "$(. /etc/spire-agent/spire-agent.env; echo "${DSX_IMDS_PLUGIN_CHECKSUM}")" \
-    = "$(sha256sum /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent | cut -d' ' -f1)"
 grep -Fq -- -expandEnv /lib/systemd/system/spire-agent.service
 # Persistent upload scratch must not remain in the golden image.
 test ! -e /var/tmp/nke-image
+
+# OVN runs Open vSwitch on the host, and the pre-kubeadm commands no longer
+# reach a repository that could supply it, so the image has to carry it.
+command -v ovs-vsctl >/dev/null
 
 # The local apt repo has to offer what a node installs at cluster create.
 # These are staged rather than installed, so nothing above would notice them
@@ -222,6 +222,12 @@ have_in_local_repo() {
 }
 have_in_local_repo nvke-kubeadm-distro
 have_in_local_repo nvke-cni-calico-images
+# The OVN pair as well, and the charts half especially: the pre-kubeadm
+# commands install both from this repo and nothing else offers them, and the
+# agent refuses to run helm without the charts deb already registered in dpkg
+# (errCNIChartsDebNotInstalled), which terminates provisioning without a retry.
+have_in_local_repo nvke-cni-ovn-images
+have_in_local_repo nvke-cni-ovn-charts
 # The package Provides its previous name, so a node that asks apt for
 # nke-kubeadm-distro-<ver> or nke-cni-*-images-<ver> still installs it.
 # showpkg lists that provider under Reverse Provides.

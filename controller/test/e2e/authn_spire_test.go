@@ -82,7 +82,7 @@ var _ = Describe("NVKE API authentication with a SPIRE JWT-SVID", Label("authn",
 			Get(tctx, spireProbeServiceAccount, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
 			Skip(fmt.Sprintf(
-				"ServiceAccount %s/%s does not exist: apply deploy/k8s/nke-spire-client.yaml, or run tilt up, so SPIRE has an identity to attest",
+				"ServiceAccount %s/%s does not exist: apply deploy/k8s/nvke-spire-client.yaml, or run tilt up, so SPIRE has an identity to attest",
 				spireProbeNamespace, spireProbeServiceAccount,
 			))
 		}
@@ -123,7 +123,7 @@ var _ = Describe("NVKE API authentication with a SPIRE JWT-SVID", Label("authn",
 	})
 })
 
-// The probe scaffolding, mirroring deploy/k8s/nke-spire-client.yaml.
+// The probe scaffolding, mirroring deploy/k8s/nvke-spire-client.yaml.
 const (
 	spireProbeNamespace      = "nke-spire-clients"
 	spireProbeServiceAccount = "nke-spire-client"
@@ -154,7 +154,7 @@ type spireAdmission struct {
 	PathPrefixes []string
 }
 
-// spireAdmissionFromCluster reads the SPIRE issuer out of the nke-auth-config
+// spireAdmissionFromCluster reads the SPIRE issuer out of the nvke-auth-config
 // ConfigMap; found is false, with a nil error, when there is none.
 func spireAdmissionFromCluster(ctx context.Context, clientset kubernetes.Interface) (spireAdmission, bool, error) {
 	raw, found, err := authtoken.RawConfig(ctx, clientset)
@@ -396,7 +396,7 @@ issuers:
 	})
 }
 
-// The wire format between deploy/k8s/nke-spire-client.yaml and the assertions.
+// The wire format between deploy/k8s/nvke-spire-client.yaml and the assertions.
 func TestParseProbeReport(t *testing.T) {
 	report := parseProbeReport("spiffe_id=spiffe://controller-capi.nvke.local/nke-e2e/nke-spire-client admitted=200 wrong_audience=401\n")
 	for key, want := range map[string]string{

@@ -35,7 +35,7 @@ func (c *Controller) upsertSecret(ctx context.Context, cluster db.Cluster, desir
 	}
 
 	capiCluster := &clusterv1.Cluster{}
-	key := types.NamespacedName{Namespace: SecretsNamespace, Name: live.Name}
+	key := types.NamespacedName{Namespace: c.secretsNamespace(), Name: live.Name}
 	if err := c.k8sClient.Get(ctx, key, capiCluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			c.logger.Debug("CAPI cluster no longer exists; skipping tenant-access publish", "clusterID", live.ID, "clusterName", live.Name)

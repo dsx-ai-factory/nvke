@@ -16,16 +16,13 @@ PACKAGE="spire-agent"
 id -u spire >/dev/null 2>&1 || useradd -r -s /bin/false -d /var/lib/spire-agent spire
 install -d -m 0750 -o spire -g spire /var/lib/spire-agent
 
-# Cloud-init writes an agent.conf whose plugin_checksum is the literal
-# ${TPM_PLUGIN_CHECKSUM} or ${DSX_IMDS_PLUGIN_CHECKSUM}, and spire-agent.service
-# resolves those from here with -expandEnv. Hash the plugins dpkg just
-# unpacked, so a package upgrade cannot leave a stale value behind.
-{
-  printf 'TPM_PLUGIN_CHECKSUM=%s\n' \
-    "$(sha256sum /usr/local/lib/spire-agent/tpm_attestor_agent | cut -d' ' -f1)"
-  printf 'DSX_IMDS_PLUGIN_CHECKSUM=%s\n' \
-    "$(sha256sum /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent | cut -d' ' -f1)"
-} > /etc/spire-agent/spire-agent.env
+# An OS profile's cloud-init writes an agent.conf whose plugin_checksum is the
+# literal ${TPM_PLUGIN_CHECKSUM}, and spire-agent.service resolves it from here
+# with -expandEnv. Hash the plugin dpkg just unpacked, so a version bump cannot
+# leave a stale value behind.
+printf 'TPM_PLUGIN_CHECKSUM=%s\n' \
+  "$(sha256sum /usr/local/lib/spire-agent/tpm_attestor_agent | cut -d' ' -f1)" \
+  > /etc/spire-agent/spire-agent.env
 chmod 0644 /etc/spire-agent/spire-agent.env
 
 # The TPM node attestor opens /dev/tpmrm0, which udev owns tss:tss. Without

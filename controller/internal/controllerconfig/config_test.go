@@ -358,6 +358,24 @@ nodeAgent:
 	assert.Contains(t, err.Error(), "metricsListenAddress must not be empty")
 }
 
+func TestValidateManagementNamespace(t *testing.T) {
+	t.Parallel()
+
+	// An invalid namespace has to be rejected at load rather than at the first
+	// API call: every read and write of the Secret plane addresses it, and the
+	// apiserver rejection names only the request, not the setting behind it.
+	_, err := controllerconfig.Load(writeConfig(t, `
+metricsListenAddress: 127.0.0.1:9090
+managementNamespace: Not A Namespace
+spire:
+  joinTokenTTL: 1h
+nodeAgent:
+  spireAttestationMethod: tpm
+`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "managementNamespace")
+}
+
 func TestValidateSpireJoinTokenTTL(t *testing.T) {
 	t.Parallel()
 

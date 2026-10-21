@@ -18,28 +18,41 @@ navigation:
             path: overview/supported-platforms.md
           - page: Preview status and known limitations
             path: overview/preview-status.md
+          - link: NVKR documentation
+            href: https://docs.nvidia.com/nvke/nvkr
 
       - section: Get started
         contents:
           - page: "Quickstart: evaluate locally with mock-NICo"
             path: get-started/quickstart-local.md
+          - page: Run NVKE end to end on one machine
+            path: get-started/local-site.md
 
       - section: Install NVKE
         contents:
           - page: Plan your installation
             path: operate/plan-installation.md
-          - page: Get NVKE artifacts from NVKR and write release manifests
+          - page: Build and host node OS images
             path: operate/build-node-images.md
+          - page: Build and verify your own node image
+            path: operate/build-and-verify-node-image.md
+          # Absolute URL: NVKR is a separate Fern instance, served under
+          # docs.nvidia.com/nvke/nvkr alongside this site.
+          - link: NVKR documentation
+            href: https://docs.nvidia.com/nvke/nvkr
           - page: Prepare nodes
             path: operate/prepare-nodes.md
           - page: Bootstrap the management cluster
             path: operate/bootstrap-management-cluster.md
-          - page: Install management-plane services
-            path: operate/install-management-plane-services.md
           - page: "Configure an infrastructure provider: NICo"
             path: operate/provider-nico.md
           - page: Secure the NVKE API
             path: operate/api-authentication.md
+
+      - section: Networking
+        contents:
+          - page: Configure OVN-Kubernetes networking
+            path: workload-clusters/ovn-kubernetes.md
 
       - section: Run workload clusters
         contents:
@@ -60,8 +73,12 @@ navigation:
             path: operate/troubleshoot.md
           - page: Migrating CRs to the internal.nvke.nvidia.com group
             path: operations/crd-group-migration.md
+          - page: The NVKE label and annotation domain
+            path: operations/label-domain-migration.md
+          - page: Site Certificate Renewal
+            path: site-operations/certificate-renewal.md
 
-      - section: Telemetry (NKTP)
+      - section: NVKE telemetry pipeline (NKTP)
         contents:
           - page: Getting started with NKTP
             path: nktp/getting-started.md
@@ -113,19 +130,18 @@ navigation:
                 path: nktp/designs/target-allocation.md
               - page: kube-state-metrics
                 path: nktp/designs/kube-state-metrics.md
-
-      - section: Site Telemetry (NKTP)
-        contents:
-          - page: "Telemetry on a site controller: getting started"
-            path: nktp/site-telemetry/getting-started.md
-          - page: "Telemetry on a site controller: configuration"
-            path: nktp/site-telemetry/configuration.md
-          - page: "Telemetry on a site controller: monitoring your service"
-            path: nktp/site-telemetry/monitoring-a-service.md
-          - page: "Telemetry on a site controller: verification"
-            path: nktp/site-telemetry/verification.md
-          - page: "Telemetry on a site controller: troubleshooting"
-            path: nktp/site-telemetry/troubleshooting.md
+          - section: Management cluster telemetry
+            contents:
+              - page: "Management cluster telemetry: getting started"
+                path: nktp/site-telemetry/getting-started.md
+              - page: "Management cluster telemetry: configuration"
+                path: nktp/site-telemetry/configuration.md
+              - page: "Management cluster telemetry: monitoring your service"
+                path: nktp/site-telemetry/monitoring-a-service.md
+              - page: "Management cluster telemetry: verification"
+                path: nktp/site-telemetry/verification.md
+              - page: "Management cluster telemetry: troubleshooting"
+                path: nktp/site-telemetry/troubleshooting.md
 
       - section: Reference
         contents:
@@ -151,11 +167,11 @@ navigation:
         # this the URL repeats it.
         skip-slug: true
         # Sections in reading order rather than in order of first appearance
-        # in openapi.yaml, which would put Catalog first.
+        # in openapi.yaml. Catalog is absent on purpose: both of its operations
+        # carry x-fern-ignore, so Fern has no group to place.
         layout:
           - clusters
           - controlPlane
           - nodePools
           - nodeSets
           - nodes
-          - catalog

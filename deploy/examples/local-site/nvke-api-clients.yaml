@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+# Admits the operator's networks to the NVKE API. The controller chart admits
+# its API from pods in the cluster only; this policy adds the host the
+# operator runs nvkectl on and the tenant network. Replace the two CIDRs
+# before applying: REPLACE_HOST_CIDR is the node network (the bootstrap
+# e2e's default is 172.26.0.0/24), REPLACE_TENANT_CIDR the network the
+# tenant nodes come up on (the `kind` network's subnet).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nvke-api-clients
+  namespace: nke-controller
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: nke-controller
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: REPLACE_HOST_CIDR
+        - ipBlock:
+            cidr: REPLACE_TENANT_CIDR
+      ports:
+        - port: 8080
+          protocol: TCP

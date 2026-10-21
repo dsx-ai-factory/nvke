@@ -6,6 +6,7 @@
 |---|---|
 | [GitHub Issues](https://github.com/dsx-ai-factory/nvke/issues) | Bug reports, feature requests, and documentation gaps |
 | [GitHub Discussions](https://github.com/dsx-ai-factory/nvke/discussions/categories/q-a) | Questions, design proposals, and general Q&A |
+| [`#nvke` on the DSX AI Factory Slack](https://inviter.co/dsx-ai-factory) | Chat and quick questions; the link is an invite |
 
 ## Before opening an issue
 

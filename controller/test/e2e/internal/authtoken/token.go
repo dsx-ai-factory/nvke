@@ -29,12 +29,17 @@ import (
 )
 
 // Where the authentication configuration lives, in controller.Namespace().
+// LegacyConfigMapName is the name a site keeps by pinning
+// apiAuth.configMap.name; RawConfig searches ConfigMapName first, and
+// ConfigMapName stays the one the suite names in its diagnostics, since it is
+// what a run is expected to find.
 const (
-	ConfigMapName = "nke-auth-config"
-	ConfigMapKey  = "auth.yaml"
+	ConfigMapName       = "nvke-auth-config"
+	LegacyConfigMapName = "nke-auth-config"
+	ConfigMapKey        = "auth.yaml"
 )
 
-// The identity the suite presents; deploy/k8s/nke-auth-dev.yaml creates it.
+// The identity the suite presents; deploy/k8s/nvke-auth-dev.yaml creates it.
 const (
 	DefaultNamespace      = "nke-clients"
 	DefaultServiceAccount = "nke-client"
@@ -180,28 +185,46 @@ func discover(ctx context.Context, client kubernetes.Interface) (*Source, bool, 
 	return source, true, nil
 }
 
-// RawConfig returns the auth.yaml the NVKE pod mounts, out of the
-// nke-auth-config ConfigMap; found is false, with a nil error, when it does not
-// exist. It stops at the bytes, and each caller decodes what it asserts on.
+// RawConfig returns the auth.yaml the NVKE pod mounts, out of the authentication
+// ConfigMap; found is false, with a nil error, only when neither name exists. It
+// stops at the bytes, and each caller decodes what it asserts on.
+//
+// Both names are searched so a run against a site pinned to the legacy name reads
+// its configuration rather than concluding authentication is off, which would
+// quietly turn the authn specs into assertions about an unauthenticated NVKE and
+// skip the SPIRE one.
 func RawConfig(ctx context.Context, client kubernetes.Interface) ([]byte, bool, error) {
 	namespace := controller.Namespace()
-	cm, err := client.CoreV1().ConfigMaps(namespace).Get(ctx, ConfigMapName, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, fmt.Errorf("authtoken: reading ConfigMap %s/%s: %w", namespace, ConfigMapName, err)
-	}
+	// As in cli/internal/auth: RBAC scoped to resourceNames denies the names it
+	// does not grant, so a run whose kubeconfig may read only the pinned name
+	// must not stop at the denial of the other. The denial is returned only if
+	// no candidate is readable, never reported as authentication being absent.
+	var denied error
+	for _, name := range [...]string{ConfigMapName, LegacyConfigMapName} {
+		cm, err := client.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
+		switch {
+		case apierrors.IsNotFound(err):
+			continue
+		case apierrors.IsForbidden(err):
+			if denied == nil {
+				denied = fmt.Errorf("authtoken: reading ConfigMap %s/%s: %w", namespace, name, err)
+			}
+			continue
+		case err != nil:
+			return nil, false, fmt.Errorf("authtoken: reading ConfigMap %s/%s: %w", namespace, name, err)
+		}
 
-	raw, ok := cm.Data[ConfigMapKey]
-	if !ok {
-		return nil, false, fmt.Errorf("authtoken: ConfigMap %s/%s has no %q key", namespace, ConfigMapName, ConfigMapKey)
+		raw, ok := cm.Data[ConfigMapKey]
+		if !ok {
+			return nil, false, fmt.Errorf("authtoken: ConfigMap %s/%s has no %q key", namespace, name, ConfigMapKey)
+		}
+		return []byte(raw), true, nil
 	}
-	return []byte(raw), true, nil
+	return nil, false, denied
 }
 
 // AudienceFromCluster reads one deployment-wide audience out of the
-// nke-auth-config ConfigMap. Only the top-level "audiences" list is read, since
+// nvke-auth-config ConfigMap. Only the top-level "audiences" list is read, since
 // nothing shipped overrides it for the Kubernetes issuer; any entry would do,
 // as NVKE matches any-of.
 func AudienceFromCluster(ctx context.Context, client kubernetes.Interface) (string, bool, error) {

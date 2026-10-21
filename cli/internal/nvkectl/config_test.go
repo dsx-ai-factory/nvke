@@ -12,7 +12,7 @@ import (
 func TestSetSiteRequiresKubeconfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	root := newRootCmd("test", "test", "test", "test")
+	root := NewRootCmd("test", "test", "test", "test")
 	root.SetArgs([]string{"config", "set-site", "--url", "http://localhost:8080"})
 	if err := root.Execute(); err == nil {
 		t.Fatal("expected error when --kubeconfig is omitted, got nil")
@@ -22,7 +22,7 @@ func TestSetSiteRequiresKubeconfig(t *testing.T) {
 func TestSetSitePersistsConnectionDetailsAndCurrentSite(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	root := newRootCmd("test", "test", "test", "test")
+	root := NewRootCmd("test", "test", "test", "test")
 	root.SetArgs([]string{
 		"config", "set-site",
 		"--url", "http://localhost:8080",
@@ -72,7 +72,7 @@ func TestSetSiteRequiresClientCertificateAndKeyTogether(t *testing.T) {
 			}
 			args = append(args, flags...)
 
-			root := newRootCmd("test", "test", "test", "test")
+			root := NewRootCmd("test", "test", "test", "test")
 			root.SetArgs(args)
 			if err := root.Execute(); err == nil {
 				t.Fatal("expected an error for an incomplete client certificate pair")
@@ -95,7 +95,7 @@ func TestUseSiteSwitchesCurrentSite(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	root := newRootCmd("test", "test", "test", "test")
+	root := NewRootCmd("test", "test", "test", "test")
 	root.SetArgs([]string{"config", "use-site", "prod"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("use-site: %v", err)
@@ -121,7 +121,7 @@ func TestUseSiteUnknownNameErrors(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	root := newRootCmd("test", "test", "test", "test")
+	root := NewRootCmd("test", "test", "test", "test")
 	root.SetArgs([]string{"config", "use-site", "staging"})
 	if err := root.Execute(); err == nil {
 		t.Fatal("expected error for unknown site name, got nil")

@@ -17,7 +17,7 @@ name: Chart Publish NVCR
 #
 # The chart is pushed to nvcr.io/<destination>/nvke-controller-chart, so the
 # chart is REPACKAGED under the name nvke-controller-chart below. On GHCR the
-# same chart publishes as charts/nke-controller; the NVCR and GHCR paths
+# same chart publishes as charts/nvke-controller; the NVCR and GHCR paths
 # deliberately differ.
 #
 # NVCR cannot take the `charts/` path segment GHCR uses. An NGC reference is
@@ -163,7 +163,7 @@ jobs:
           # helm push takes the destination's last path segment from `name:` in
           # Chart.yaml, not from the push argument. Keep this explicit so image
           # and chart repositories do not accidentally collide in NVCR.
-          sed -i -e "s#^name: nke-controller\$#name: ${CHART_NAME}#" \
+          sed -i -e "s#^name: nvke-controller\$#name: ${CHART_NAME}#" \
             "${CHART}/Chart.yaml"
           grep -q "^name: ${CHART_NAME}\$" "${CHART}/Chart.yaml" \
             || { echo "::error::chart rename did not apply"; exit 1; }

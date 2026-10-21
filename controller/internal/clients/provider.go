@@ -12,6 +12,8 @@ import (
 // Resolve it once, as early in a request flow as the cluster is known, and
 // pass the result through to whatever needs a capability from it — not a
 // fresh GetXxx call at each spot that needs one.
+//
+//nolint:interfacebloat // One accessor per provider capability, as in client-go's Clientset.
 type ProviderClient interface {
 	ClusterScaffold() ClusterScaffold
 	MachineMaterialization() MachineMaterialization
@@ -23,6 +25,9 @@ type ProviderClient interface {
 	ControlPlaneConfigPayloadValidator() ControlPlaneConfigPayloadValidator
 	TenantAPIAccess() TenantAPIAccess
 	NodeMachineIDLabel() NodeMachineIDLabel
+	RebootAnnotationProvider() RebootAnnotationProvider
+	NodeAgentProfileValidator() NodeAgentProfileValidator
+	SpireAgentPathProvider() SpireAgentPathProvider
 }
 
 type providerClient struct {
@@ -36,6 +41,9 @@ type providerClient struct {
 	controlPlaneValidator ControlPlaneConfigPayloadValidator
 	tenantAPIAccess       TenantAPIAccess
 	nodeMachineIDLabel    NodeMachineIDLabel
+	rebootAnnotation      RebootAnnotationProvider
+	nodeAgentProfile      NodeAgentProfileValidator
+	spireAgentPath        SpireAgentPathProvider
 }
 
 func (p *providerClient) ClusterScaffold() ClusterScaffold               { return p.scaffold }
@@ -57,6 +65,17 @@ func (p *providerClient) ControlPlaneConfigPayloadValidator() ControlPlaneConfig
 func (p *providerClient) TenantAPIAccess() TenantAPIAccess { return p.tenantAPIAccess }
 
 func (p *providerClient) NodeMachineIDLabel() NodeMachineIDLabel { return p.nodeMachineIDLabel }
+func (p *providerClient) RebootAnnotationProvider() RebootAnnotationProvider {
+	return p.rebootAnnotation
+}
+
+func (p *providerClient) NodeAgentProfileValidator() NodeAgentProfileValidator {
+	return p.nodeAgentProfile
+}
+
+func (p *providerClient) SpireAgentPathProvider() SpireAgentPathProvider {
+	return p.spireAgentPath
+}
 
 // GetProviderClient resolves every settled capability for cluster's
 // provider type by calling each capability's own factory. Adding a provider
@@ -103,6 +122,18 @@ func GetProviderClient(cluster db.Cluster) (ProviderClient, error) {
 	if err != nil {
 		return nil, err
 	}
+	rebootAnnotation, err := GetRebootAnnotationProvider(cluster)
+	if err != nil {
+		return nil, err
+	}
+	nodeAgentProfile, err := GetNodeAgentProfileValidator(cluster)
+	if err != nil {
+		return nil, err
+	}
+	spireAgentPath, err := GetSpireAgentPathProvider(cluster)
+	if err != nil {
+		return nil, err
+	}
 	return &providerClient{
 		scaffold:              scaffold,
 		machine:               machine,
@@ -114,5 +145,8 @@ func GetProviderClient(cluster db.Cluster) (ProviderClient, error) {
 		controlPlaneValidator: controlPlaneValidator,
 		tenantAPIAccess:       tenantAPIAccess,
 		nodeMachineIDLabel:    nodeMachineIDLabel,
+		rebootAnnotation:      rebootAnnotation,
+		nodeAgentProfile:      nodeAgentProfile,
+		spireAgentPath:        spireAgentPath,
 	}, nil
 }

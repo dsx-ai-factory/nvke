@@ -14,8 +14,11 @@
 # Environment:
 #   KUBE_CONTEXT               kube context (default: kubeconfig current-context)
 #   NKE_CONTROLLER_NAMESPACE   NVKE's namespace (default nke-controller when it
-#                              holds nke-auth-config or Deployment nke-controller,
+#                              holds NVKE_AUTH_CONFIGMAP or Deployment nke-controller,
 #                              else cloud-workflow-engine)
+#   NVKE_AUTH_CONFIGMAP         authentication ConfigMap (default nvke-auth-config;
+#                              a site that pinned apiAuth.configMap.name sets
+#                              this to nke-auth-config)
 #   NKE_DEPLOYMENT             NVKE's Deployment (default nke-controller when it
 #                              exists in NKE_CONTROLLER_NAMESPACE, else cloud-workflow-engine)
 #   NKE_TOKEN_NAMESPACE        service account namespace (default nke-clients)
@@ -30,6 +33,7 @@ KUBE_CONTEXT="${KUBE_CONTEXT:-}"
 # CWE_NAMESPACE is a deprecated alias for NKE_CONTROLLER_NAMESPACE; #1399 removes it.
 NKE_CONTROLLER_NAMESPACE="${NKE_CONTROLLER_NAMESPACE:-${CWE_NAMESPACE:-}}"
 NKE_DEPLOYMENT="${NKE_DEPLOYMENT:-}"
+NVKE_AUTH_CONFIGMAP="${NVKE_AUTH_CONFIGMAP:-nvke-auth-config}"
 NKE_TOKEN_NAMESPACE="${NKE_TOKEN_NAMESPACE:-nke-clients}"
 NKE_TOKEN_SERVICE_ACCOUNT="${NKE_TOKEN_SERVICE_ACCOUNT:-nke-client}"
 NKE_TOKEN_TTL="${NKE_TOKEN_TTL:-30m}"
@@ -53,11 +57,11 @@ if [[ -z "${NKE_CONTROLLER_NAMESPACE}" ]]; then
   # has no ConfigMap, so its Deployment also selects the greenfield namespace.
   # Only a confirmed absence of both falls back.
   found="$(
-    "${KUBECTL[@]}" get configmap/nke-auth-config deploy/nke-controller -n nke-controller \
+    "${KUBECTL[@]}" get "configmap/${NVKE_AUTH_CONFIGMAP}" deploy/nke-controller -n nke-controller \
       --ignore-not-found -o name 2>&1
   )" || die "cannot look up configmap and deploy nke-controller/nke-controller: ${found}"
   NKE_CONTROLLER_NAMESPACE="cloud-workflow-engine"
-  grep -qxE "configmap/nke-auth-config|deployment.apps/nke-controller" <<<"${found}" \
+  grep -qxE "configmap/${NVKE_AUTH_CONFIGMAP}|deployment.apps/nke-controller" <<<"${found}" \
     && NKE_CONTROLLER_NAMESPACE="nke-controller"
 fi
 
@@ -69,7 +73,7 @@ fi
 # Matching is any-of, so the first entry will do. Handles the flow and block
 # forms, and strips quotes that would otherwise land in the token's "aud".
 cwe_discover_audience() {
-  "${KUBECTL[@]}" get configmap nke-auth-config -n "${NKE_CONTROLLER_NAMESPACE}" \
+  "${KUBECTL[@]}" get configmap "${NVKE_AUTH_CONFIGMAP}" -n "${NKE_CONTROLLER_NAMESPACE}" \
     -o jsonpath='{.data.auth\.yaml}' 2>/dev/null \
     | awk '
         /^[[:space:]]*audiences:[[:space:]]*\[/ {
@@ -96,7 +100,7 @@ if [[ "${1:-}" == "--audience" ]]; then
   # Checked before use: a command substitution inside an argument list does not
   # trip set -e, so an empty result would pass through silently.
   audience="${NKE_AUDIENCE:-$(cwe_discover_audience)}"
-  [[ -n "${audience}" ]] || die "no audience in configmap ${NKE_CONTROLLER_NAMESPACE}/nke-auth-config; set NKE_AUDIENCE to override"
+  [[ -n "${audience}" ]] || die "no audience in configmap ${NKE_CONTROLLER_NAMESPACE}/${NVKE_AUTH_CONFIGMAP}; set NKE_AUDIENCE to override"
   printf '%s' "${audience}"
   exit 0
 fi
@@ -146,14 +150,14 @@ fi
 AUDIENCE="${NKE_AUDIENCE:-$(cwe_discover_audience)}"
 if [[ -z "${AUDIENCE}" ]]; then
   die "NVKE is authenticating (AUTH_CONFIG_PATH=${auth_config_path}) but no audience could be read
-  from configmap ${NKE_CONTROLLER_NAMESPACE}/nke-auth-config. Set NKE_AUDIENCE to override."
+  from configmap ${NKE_CONTROLLER_NAMESPACE}/${NVKE_AUTH_CONFIGMAP}. Set NKE_AUDIENCE to override."
 fi
 
 # --- mint -------------------------------------------------------------------
 
 # Uses TokenRequest: NVKE accepts only audience-scoped tokens, and a legacy
 # Secret carries no audience. Needs `create` on serviceaccounts/token, granted
-# by deploy/k8s/nke-auth-dev.yaml.
+# by deploy/k8s/nvke-auth-dev.yaml.
 token="$(
   "${KUBECTL[@]}" create token "${NKE_TOKEN_SERVICE_ACCOUNT}" \
     -n "${NKE_TOKEN_NAMESPACE}" \
@@ -161,7 +165,7 @@ token="$(
     --duration="${NKE_TOKEN_TTL}" 2>&1
 )" || die "minting a token for ${NKE_TOKEN_NAMESPACE}/${NKE_TOKEN_SERVICE_ACCOUNT} failed:
   ${token}
-  Apply deploy/k8s/nke-auth-dev.yaml, or run tilt up, so the service account and
+  Apply deploy/k8s/nvke-auth-dev.yaml, or run tilt up, so the service account and
   its token-minter RoleBinding exist."
 
 [[ -n "${token}" ]] || die "kubectl create token produced no token"

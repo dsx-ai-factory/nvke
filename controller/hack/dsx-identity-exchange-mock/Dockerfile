@@ -3,7 +3,7 @@
 
 ARG BASE_REGISTRY=docker.io
 
-FROM ${BASE_REGISTRY}/golang:1.27.2 AS builder
+FROM ${BASE_REGISTRY}/golang:1.27.3 AS builder
 ENV GOPROXY=https://proxy.golang.org|direct
 ARG TARGETOS
 ARG TARGETARCH

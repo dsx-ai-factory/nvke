@@ -5,8 +5,8 @@
 # with the control-plane machines allocated from a NICo site by CAPNICo,
 # instead of taken from a hardcoded list of hosts (examples/sitespec.yaml).
 #
-# The NICo described here is used ONLY to bootstrap the site controller's own
-# nodes. The NICo the finished site controller uses for tenant clusters is
+# The NICo described here is used ONLY to bootstrap the management cluster's own
+# nodes. The NICo the finished management cluster uses for tenant clusters is
 # configured in the stack config the controller stack install reads
 # (deploy/examples/stack-config.json), and may be a different one.
 #

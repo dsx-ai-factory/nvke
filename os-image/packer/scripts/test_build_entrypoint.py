@@ -12,6 +12,7 @@ import tempfile
 import unittest
 
 PACKER_DIR = Path(__file__).resolve().parents[1]
+REPO_ROOT = PACKER_DIR.parents[1]
 
 
 class BuildEntrypointTest(unittest.TestCase):
@@ -23,6 +24,12 @@ class BuildEntrypointTest(unittest.TestCase):
         self.packer_dir.mkdir(parents=True)
         shutil.copy(PACKER_DIR / "Makefile", self.packer_dir)
         shutil.copytree(PACKER_DIR / "scripts", self.packer_dir / "scripts")
+        # The Makefile includes ../../make/tool-versions.mk for the committed
+        # installer digests. Copy the real file rather than a stub so the
+        # fixture resolves ISO_CHECKSUM exactly as a real checkout does.
+        make_dir = self.root / "make"
+        make_dir.mkdir()
+        shutil.copy(REPO_ROOT / "make/tool-versions.mk", make_dir)
         self.env = os.environ.copy()
         self.env.update(
             PATH=f"{self.root}:{self.env['PATH']}",

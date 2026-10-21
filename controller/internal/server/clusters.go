@@ -19,6 +19,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	capiclient "github.com/dsx-ai-factory/nvke/controller/internal/clients/capi"
 	nicoclient "github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
@@ -89,6 +90,9 @@ type clusterService struct {
 	allowlistedLabelKeys             []string
 	machineAllowlistedLabelKeys      []string
 	machineAllowlistedAnnotationKeys []string
+	// nodeAgentProfile carries the node-agent settings nodes.PinAgentProfile
+	// stamps on every node this deployment creates.
+	nodeAgentProfile db.Node
 }
 
 func NewClusterService(
@@ -320,6 +324,33 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 	return network, nil
 }
 
+// validateNodeAgentProfile rejects new nodes of nodePool that could never
+// join under this deployment's node-agent settings, profile.
+func validateNodeAgentProfile(profile db.Node, cluster db.Cluster, nodePool db.NodePool) error {
+	validator, err := clients.GetNodeAgentProfileValidator(cluster)
+	if err != nil {
+		return err
+	}
+	if err := validator.ValidateNodeAgentProfile(profile, nodePool); err != nil {
+		return fmt.Errorf("this deployment's node-agent settings do not support the %s provider: %w", cluster.ProviderType, err)
+	}
+	return nil
+}
+
+// validateControlPlaneNodeAgentProfile is validateNodeAgentProfile for the
+// control plane, whose nodes belong to the node pool the provider builds from
+// spec.
+func validateControlPlaneNodeAgentProfile(profile db.Node, cluster db.Cluster, spec db.ControlPlaneConfigSpec) error {
+	nodeProvider, err := clients.GetControlPlaneConfigNodeProvider(cluster)
+	if err != nil {
+		return err
+	}
+	var nodeSet db.NodeSet
+	var nodePool db.NodePool
+	nodeProvider.ApplyControlPlaneConfigPayloads(db.Node{}, spec, &nodeSet, &nodePool)
+	return validateNodeAgentProfile(profile, cluster, nodePool)
+}
+
 func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClusterRequest) error {
 	if err := naming.ValidateClusterNameForNodeNaming(req.Name); err != nil {
 		return err
@@ -335,7 +366,7 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 
 	var providerType db.ProviderType
 	switch {
-	case req.Infra != nil && req.Nico != nil:
+	case req.Infra != nil && req.Nico != nil, req.Infra != nil && req.LaunchLayer != nil, req.Nico != nil && req.LaunchLayer != nil:
 		return fmt.Errorf("exactly one provider must be set")
 	case req.Infra != nil:
 		if err := s.providers.require(config.InfraProviderInfra); err != nil {
@@ -353,6 +384,14 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 			return err
 		}
 		providerType = db.ProviderTypeNico
+	case req.LaunchLayer != nil:
+		if err := s.providers.require(config.InfraProviderLaunchLayer); err != nil {
+			return err
+		}
+		if err := validateCreateLaunchLayerClusterProvider(req); err != nil {
+			return err
+		}
+		providerType = db.ProviderTypeLaunchLayer
 	default:
 		return fmt.Errorf("exactly one provider must be set")
 	}
@@ -368,6 +407,10 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 		req.ControlPlaneConfig.NodeAgentConfig.Version = &version
 	}
 	if err := validateCreateClusterLevelControlPlane(req, nodePools, providerType, s.allowlistedLabelKeys); err != nil {
+		return err
+	}
+	controlPlaneSpec := controlPlaneConfigSpecFromCreateAPI(req.ControlPlaneConfig, req.ControlPlaneKubernetesVersion, false, providerType)
+	if err := validateControlPlaneNodeAgentProfile(s.nodeAgentProfile, db.Cluster{ProviderType: providerType}, controlPlaneSpec); err != nil {
 		return err
 	}
 	if req.ControlPlaneConfig == nil {
@@ -443,6 +486,47 @@ func validateCreateNicoClusterProvider(req *api.CreateClusterRequest) error {
 	return nil
 }
 
+func validateCreateLaunchLayerClusterProvider(req *api.CreateClusterRequest) error {
+	if req.LaunchLayer.VpcID == "" && req.LaunchLayer.OrgID == "" {
+		return fmt.Errorf("exactly one of launchLayer.vpcID or launchLayer.orgID must be provided")
+	}
+	if req.LaunchLayer.VpcID != "" && req.LaunchLayer.OrgID != "" {
+		return fmt.Errorf("exactly one of launchLayer.vpcID or launchLayer.orgID must be provided")
+	}
+	if req.LaunchLayer.SiteID == "" {
+		return fmt.Errorf("launchLayer.siteID is required to create a launchLayer cluster")
+	}
+	if req.LaunchLayer.CloudProviderEnabled {
+		return fmt.Errorf("launchLayer.cloudProviderEnabled must not be true: NVKE runs no cloud controller manager")
+	}
+	return validateLaunchLayerSecurityGroups(req.LaunchLayer)
+}
+
+// validateLaunchLayerSecurityGroups applies the security-group rules CAPLL's
+// CRD enforces, so a bad group gets 400 rather than a cluster whose
+// LaunchLayerCluster apply is retried forever.
+func validateLaunchLayerSecurityGroups(provider *api.LaunchLayerClusterProvider) error {
+	if provider.SecurityGroups == nil {
+		return nil
+	}
+	names := make(map[string]struct{}, len(*provider.SecurityGroups))
+	for _, group := range *provider.SecurityGroups {
+		if _, exists := names[group.Name]; exists {
+			return fmt.Errorf("duplicate launchLayer.securityGroups name %q", group.Name)
+		}
+		names[group.Name] = struct{}{}
+		virtualized := group.Type == api.LaunchLayerSecurityGroupTypeVIRTUALIZED
+		if virtualized != (group.NetworkType != nil) {
+			return fmt.Errorf("launchLayer.securityGroups %q: networkType is required for a VIRTUALIZED group and forbidden for a BARE_METAL group", group.Name)
+		}
+		// CAPLL treats an unset vpcType as VIRTUALIZED.
+		if virtualized && provider.VpcType != nil && *provider.VpcType != api.LaunchLayerClusterProviderVpcTypeVIRTUALIZED {
+			return fmt.Errorf("launchLayer.securityGroups %q: a VIRTUALIZED group requires a VIRTUALIZED vpcType", group.Name)
+		}
+	}
+	return nil
+}
+
 func (s *clusterService) createInitialNodePools(ctx context.Context, tx db.Tx, cluster db.Cluster, nodePools []api.NodePoolCreateConfig) error {
 	for _, nodePoolConfig := range nodePools {
 		//exhaustruct:enforce
@@ -466,6 +550,7 @@ func (s *clusterService) createInitialNodePools(ctx context.Context, tx db.Tx, c
 			Infra:                       nodePoolConfig.Infra,
 			MachineAnnotations:          nodePoolConfig.MachineAnnotations,
 			MachineLabels:               nodePoolConfig.MachineLabels,
+			LaunchLayer:                 nodePoolConfig.LaunchLayer,
 		}
 
 		if err := s.nodePoolService.validateCreateNodePoolRequest(cluster, &nodePoolReq); err != nil {
@@ -560,13 +645,8 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 		}
 		// Reject a controlPlaneConfig provider block that doesn't match the cluster before
 		// any field is touched.
-		if cpConfig := req.Body.ControlPlaneConfig; cpConfig != nil {
-			if dbCluster.ProviderType == db.ProviderTypeNico && cpConfig.Infra != nil {
-				return newBadRequestErrorf("controlPlaneConfig.infra is not supported, please provide controlPlaneConfig.nico")
-			}
-			if dbCluster.ProviderType == db.ProviderTypeCAPI && cpConfig.Nico != nil {
-				return newBadRequestErrorf("controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.infra")
-			}
+		if err := validateUpdateControlPlaneConfigProviderMatch(dbCluster.ProviderType, req.Body.ControlPlaneConfig); err != nil {
+			return err
 		}
 		// Update fields from request
 		if req.Body.EnableCPNodeRecycling != nil {
@@ -673,6 +753,36 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 		"response", response,
 	)
 	return response, nil
+}
+
+// validateUpdateControlPlaneConfigProviderMatch rejects a controlPlaneConfig
+// provider block that doesn't match providerType, before any field is
+// touched.
+func validateUpdateControlPlaneConfigProviderMatch(providerType db.ProviderType, cpConfig *api.UpdateClusterControlPlaneConfig) error {
+	if cpConfig == nil {
+		return nil
+	}
+	var providerField, providerName string
+	switch providerType {
+	case db.ProviderTypeNico:
+		providerField, providerName = "nico", "controlPlaneConfig.nico"
+	case db.ProviderTypeCAPI:
+		providerField, providerName = "infra", "controlPlaneConfig.infra"
+	case db.ProviderTypeLaunchLayer:
+		providerField, providerName = "launchLayer", "controlPlaneConfig.launchLayer"
+	default:
+		return newBadRequestErrorf("unsupported cluster provider %q", providerType)
+	}
+	if providerField != "nico" && cpConfig.Nico != nil {
+		return newBadRequestErrorf("controlPlaneConfig.nico is not supported, please provide %s", providerName)
+	}
+	if providerField != "infra" && cpConfig.Infra != nil {
+		return newBadRequestErrorf("controlPlaneConfig.infra is not supported, please provide %s", providerName)
+	}
+	if providerField != "launchLayer" && cpConfig.LaunchLayer != nil {
+		return newBadRequestErrorf("controlPlaneConfig.launchLayer is not supported, please provide %s", providerName)
+	}
+	return nil
 }
 
 // validateOIDCUpdateRequest rejects unsupported OIDC-toggle requests up front:
@@ -900,6 +1010,11 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 		); err != nil {
 			return err
 		}
+		if *req.DesiredCount > cluster.ControlPlaneConfig.DesiredCount {
+			if err := validateControlPlaneNodeAgentProfile(s.nodeAgentProfile, *cluster, *spec); err != nil {
+				return newBadRequestErrorf("%s", err)
+			}
+		}
 		cluster.ControlPlaneConfig.DesiredCount = *req.DesiredCount
 	}
 
@@ -981,6 +1096,12 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 			}
 		}
 		spec.SetCapi(capi)
+	case req.LaunchLayer != nil:
+		// No-op: every LaunchLayer control-plane field is fixed at creation,
+		// so launchLayer has no updatable fields (see
+		// LaunchLayerControlPlaneProviderUpdate in openapi.yaml) —
+		// req.LaunchLayer being non-nil just means the caller sent an empty
+		// launchLayer object, which changes nothing.
 	}
 	return nil
 }
@@ -1024,6 +1145,7 @@ func apiControlPlaneConfigFromDB(cfg db.ControlPlaneConfig) *api.ControlPlaneCon
 		NodeAgentConfig:             apiNodeAgentConfigFromDB(cfg.NodeAgentConfig),
 		MachineAnnotations:          maps.Clone(cfg.MachineAnnotations),
 		MachineLabels:               maps.Clone(cfg.MachineLabels),
+		LaunchLayer:                 apiLaunchLayerControlPlaneProviderFromDB(cfg.LaunchLayer),
 	}
 }
 
@@ -1202,12 +1324,48 @@ func APIClusterFromDB(dbCluster *db.Cluster) api.Cluster {
 		},
 		CreatedAt: dbCluster.CreatedAt,
 
-		Nico:  apiNicoClusterProviderFromDB(dbCluster.Nico),
-		Infra: apiInfraClusterProviderFromDB(dbCluster.Capi),
+		Nico:        apiNicoClusterProviderFromDB(dbCluster.Nico),
+		Infra:       apiInfraClusterProviderFromDB(dbCluster.Capi),
+		LaunchLayer: apiLaunchLayerClusterProviderFromDB(dbCluster.LaunchLayer),
 
 		Conditions:       conditions,
 		NodeAgentUpgrade: apiNodeAgentUpgradeFromDB(dbCluster.NodeAgentUpgrade),
 	}
+}
+
+func apiLaunchLayerClusterProviderFromDB(provider *db.LaunchLayerClusterProvider) *api.LaunchLayerClusterProvider {
+	if provider == nil {
+		return nil
+	}
+	out := &api.LaunchLayerClusterProvider{
+		VpcID:                provider.VpcID,
+		OrgID:                provider.OrgID,
+		SiteID:               provider.SiteID,
+		CloudProviderEnabled: provider.CloudProviderEnabled,
+	}
+	if provider.VpcType != "" {
+		vpcType := api.LaunchLayerClusterProviderVpcType(provider.VpcType)
+		out.VpcType = &vpcType
+	}
+	if provider.Owner.UserID != "" || provider.Owner.Username != "" {
+		out.Owner = &api.LaunchLayerClusterOwner{
+			UserID:   provider.Owner.UserID,
+			Username: provider.Owner.Username,
+		}
+	}
+	if len(provider.SecurityGroups) > 0 {
+		groups := make([]api.LaunchLayerSecurityGroup, 0, len(provider.SecurityGroups))
+		for _, g := range provider.SecurityGroups {
+			group := api.LaunchLayerSecurityGroup{Name: g.Name, Type: api.LaunchLayerSecurityGroupType(g.Type)}
+			if g.NetworkType != "" {
+				networkType := api.LaunchLayerSecurityGroupNetworkType(g.NetworkType)
+				group.NetworkType = &networkType
+			}
+			groups = append(groups, group)
+		}
+		out.SecurityGroups = &groups
+	}
+	return out
 }
 
 func apiNicoClusterProviderFromDB(nicoClusterProvider *db.NicoClusterProvider) *api.NicoClusterProvider {
@@ -1274,9 +1432,41 @@ func DBClusterFromAPI(req *api.CreateClusterRequest) (db.Cluster, error) {
 			return db.Cluster{}, err
 		}
 		cluster.SetCAPIProvider(db.CAPIClusterProvider{InfraCluster: capiCluster})
+	case req.LaunchLayer != nil:
+		cluster.SetLaunchLayerProvider(dbLaunchLayerClusterProviderFromAPI(*req.LaunchLayer))
 	}
 
 	return cluster, nil
+}
+
+func dbLaunchLayerClusterProviderFromAPI(provider api.LaunchLayerClusterProvider) db.LaunchLayerClusterProvider {
+	out := db.LaunchLayerClusterProvider{
+		VpcID:                provider.VpcID,
+		OrgID:                provider.OrgID,
+		SiteID:               provider.SiteID,
+		CloudProviderEnabled: provider.CloudProviderEnabled,
+	}
+	if provider.VpcType != nil {
+		out.VpcType = string(*provider.VpcType)
+	}
+	if provider.Owner != nil {
+		out.Owner = db.LaunchLayerClusterOwner{
+			UserID:   provider.Owner.UserID,
+			Username: provider.Owner.Username,
+		}
+	}
+	if provider.SecurityGroups != nil {
+		groups := make([]db.LaunchLayerSecurityGroup, 0, len(*provider.SecurityGroups))
+		for _, g := range *provider.SecurityGroups {
+			group := db.LaunchLayerSecurityGroup{Name: g.Name, Type: string(g.Type)}
+			if g.NetworkType != nil {
+				group.NetworkType = string(*g.NetworkType)
+			}
+			groups = append(groups, group)
+		}
+		out.SecurityGroups = groups
+	}
+	return out
 }
 
 func ValidateKubernetesVersionSkewWithControlPlane(currentVersion, newVersion string) error {

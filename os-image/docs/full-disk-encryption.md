@@ -62,7 +62,7 @@ cloud-init, user-data, or the genesis medium. This design satisfies that:
   secret, and not TPM-derived material.
 - The build-time keyfile used to survive the unattended post-install reboot
   lives only on the build VM's own disk and is deleted by `configure-fde.sh`
-  before the qcow2 is published.
+  before the image is finalized.
 - The host-side QCOW2 compression and collection paths only replace or copy
   the verified disk bytes and do not serialize the process environment.
 - The TPM binding itself happens entirely on-node, driven by the local TPM;
@@ -129,9 +129,12 @@ sudo clevis luks list -d "${LUKS_DEV}"
 ## Building and testing locally
 
 ```bash
-cd packer
-make os-image-fde NKE_AGENT_VERSION=edge
+make -C os-image image-native VARIANT=fde
 ```
+
+Use `make -C os-image image VARIANT=fde` where native KVM is unavailable (it
+allows `ACCELERATOR=tcg`). The agent .deb is built from the checkout's
+`agent/`, and the checkout must be clean.
 
 then run `../demo-fde.sh` (see its `--help`) to exercise the acceptance
 scenarios against the built image under QEMU with `swtpm`. Requires

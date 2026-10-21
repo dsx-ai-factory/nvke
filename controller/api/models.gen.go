@@ -42,6 +42,45 @@ const (
 	DiskSelectionStrategyCreateSmallest DiskSelectionStrategyCreate = "smallest"
 )
 
+// Defines values for LaunchLayerClusterProviderVpcType.
+const (
+	LaunchLayerClusterProviderVpcTypeBAREMETAL   LaunchLayerClusterProviderVpcType = "BARE_METAL"
+	LaunchLayerClusterProviderVpcTypeVIRTUALIZED LaunchLayerClusterProviderVpcType = "VIRTUALIZED"
+)
+
+// Defines values for LaunchLayerControlPlaneProviderFulfillmentStrategy.
+const (
+	LaunchLayerControlPlaneProviderFulfillmentStrategyALLORNOTHING    LaunchLayerControlPlaneProviderFulfillmentStrategy = "ALL_OR_NOTHING"
+	LaunchLayerControlPlaneProviderFulfillmentStrategyBESTEFFORT      LaunchLayerControlPlaneProviderFulfillmentStrategy = "BEST_EFFORT"
+	LaunchLayerControlPlaneProviderFulfillmentStrategyWAITFORRESOURCE LaunchLayerControlPlaneProviderFulfillmentStrategy = "WAIT_FOR_RESOURCE"
+)
+
+// Defines values for LaunchLayerNodePoolProviderFulfillmentStrategy.
+const (
+	LaunchLayerNodePoolProviderFulfillmentStrategyALLORNOTHING    LaunchLayerNodePoolProviderFulfillmentStrategy = "ALL_OR_NOTHING"
+	LaunchLayerNodePoolProviderFulfillmentStrategyBESTEFFORT      LaunchLayerNodePoolProviderFulfillmentStrategy = "BEST_EFFORT"
+	LaunchLayerNodePoolProviderFulfillmentStrategyWAITFORRESOURCE LaunchLayerNodePoolProviderFulfillmentStrategy = "WAIT_FOR_RESOURCE"
+)
+
+// Defines values for LaunchLayerNodeSetProviderFulfillmentStrategy.
+const (
+	LaunchLayerNodeSetProviderFulfillmentStrategyALLORNOTHING    LaunchLayerNodeSetProviderFulfillmentStrategy = "ALL_OR_NOTHING"
+	LaunchLayerNodeSetProviderFulfillmentStrategyBESTEFFORT      LaunchLayerNodeSetProviderFulfillmentStrategy = "BEST_EFFORT"
+	LaunchLayerNodeSetProviderFulfillmentStrategyWAITFORRESOURCE LaunchLayerNodeSetProviderFulfillmentStrategy = "WAIT_FOR_RESOURCE"
+)
+
+// Defines values for LaunchLayerSecurityGroupNetworkType.
+const (
+	LaunchLayerSecurityGroupNetworkTypePrimary   LaunchLayerSecurityGroupNetworkType = "primary"
+	LaunchLayerSecurityGroupNetworkTypeSecondary LaunchLayerSecurityGroupNetworkType = "secondary"
+)
+
+// Defines values for LaunchLayerSecurityGroupType.
+const (
+	LaunchLayerSecurityGroupTypeBAREMETAL   LaunchLayerSecurityGroupType = "BARE_METAL"
+	LaunchLayerSecurityGroupTypeVIRTUALIZED LaunchLayerSecurityGroupType = "VIRTUALIZED"
+)
+
 // Defines values for NodeAgentUpgradeStatusPhase.
 const (
 	NodeAgentUpgradeStatusPhasePending NodeAgentUpgradeStatusPhase = "Pending"
@@ -121,6 +160,9 @@ type Cluster struct {
 
 	// Infra Infra provider fields.
 	Infra *InfraClusterProvider `json:"infra,omitempty"`
+
+	// LaunchLayer LaunchLayer identifiers.
+	LaunchLayer *LaunchLayerClusterProvider `json:"launchLayer,omitempty"`
 
 	// Network Pod and service network.
 	Network ClusterNetwork `json:"network"`
@@ -217,6 +259,9 @@ type ControlPlaneConfig struct {
 
 	// Infra Infra provider control plane fields.
 	Infra *InfraControlPlaneProvider `json:"infra,omitempty"`
+
+	// LaunchLayer LaunchLayer settings for control-plane nodes.
+	LaunchLayer *LaunchLayerControlPlaneProvider `json:"launchLayer,omitempty"`
 
 	// MachineAnnotations Annotations applied to control-plane CAPI Machines at creation, including scale-out and replacement Machines. Fixed at cluster creation and not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
 	MachineAnnotations map[string]string `json:"machineAnnotations,omitempty"`
@@ -370,13 +415,18 @@ type ControlPlaneStatus struct {
 // CreateClusterControlPlaneConfig Writable cluster-level control plane configuration supplied at cluster creation.
 // Required when you create a cluster.
 // `nico` carries the NICo settings for the control-plane nodes; it is required
-// for a NICo cluster.
+// for a NICo cluster. `launchLayer` is required for a LaunchLayer cluster.
 type CreateClusterControlPlaneConfig struct {
 	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1. Values above 1 require controlPlaneVIP on the cluster.
 	DesiredCount int `json:"desiredCount"`
 
 	// Infra Infra provider fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
 	Infra *InfraControlPlaneProvider `json:"infra,omitempty"`
+
+	// LaunchLayer LaunchLayer settings for the control-plane nodes. Same shape as
+	// LaunchLayerNodePoolProvider — control-plane nodes are still
+	// LaunchLayer machines. Fixed at creation.
+	LaunchLayer *LaunchLayerControlPlaneProvider `json:"launchLayer,omitempty"`
 
 	// MachineAnnotations Annotations applied to control-plane CAPI Machines at creation, including scale-out and replacement Machines. Fixed at cluster creation and not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
 	MachineAnnotations map[string]string `json:"machineAnnotations,omitempty"`
@@ -437,10 +487,13 @@ type CreateClusterRequest struct {
 	// TeleportEnabled Enable Teleport SSH enrollment for nodes in this cluster. When omitted, the server-side default for the site is applied.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
 
+	// NodePools Initial worker node pools.
+	NodePools *[]NodePoolCreateConfig `json:"nodePools,omitempty"`
+
 	// ControlPlaneConfig Writable cluster-level control plane configuration supplied at cluster creation.
 	// Required when you create a cluster.
 	// `nico` carries the NICo settings for the control-plane nodes; it is required
-	// for a NICo cluster.
+	// for a NICo cluster. `launchLayer` is required for a LaunchLayer cluster.
 	ControlPlaneConfig *CreateClusterControlPlaneConfig `json:"controlPlaneConfig,omitempty"`
 
 	// Infra CAPI infrastructure fields for a cluster: the caller supplies the CAPI manifests
@@ -448,14 +501,15 @@ type CreateClusterRequest struct {
 	// `nico` clusters may be too. Mutually exclusive with `nico`.
 	Infra *InfraClusterProvider `json:"infra,omitempty"`
 
+	// LaunchLayer LaunchLayer identifiers for the cluster. Exactly one of vpcID or orgID
+	// must be set, and siteID is required. All fields are fixed at creation.
+	LaunchLayer *LaunchLayerClusterProvider `json:"launchLayer,omitempty"`
+
 	// Network Pod and service network. Immutable after creation. Defaults apply when omitted.
 	Network *ClusterNetworkCreateConfig `json:"network,omitempty"`
 
 	// Nico NICo identifiers for the cluster. Fixed at creation.
 	Nico *NicoClusterProvider `json:"nico,omitempty"`
-
-	// NodePools Initial worker node pools.
-	NodePools *[]NodePoolCreateConfig `json:"nodePools,omitempty"`
 }
 
 // CreateClusterRequestCniPlugin CNI plugin. Defaults to ovn-kubernetes when omitted. calico is a disabled-by-default legacy override.
@@ -496,8 +550,15 @@ type CreateNodePoolRequest struct {
 	// AutoModeDisabled Disables auto-mode (automatic node recycling).
 	AutoModeDisabled *bool `json:"autoModeDisabled,omitempty"`
 
+	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not recycled automatically.
+	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
+
 	// Infra Infra provider fields for a node pool. Mutually exclusive with `nico`.
 	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
+
+	// LaunchLayer LaunchLayer settings for a node pool. instanceType is required, and
+	// at most one of hostOSProfile and vmProfile may be set.
+	LaunchLayer *LaunchLayerNodePoolProvider `json:"launchLayer,omitempty"`
 
 	// MachineAnnotations Annotations set on CAPI Machines only when they are created, including Machines created during scale-out or replacement. Fixed at node-pool creation. Not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
 	MachineAnnotations map[string]string `json:"machineAnnotations,omitempty"`
@@ -514,9 +575,6 @@ type CreateNodePoolRequest struct {
 	// Generated names must fit within 63 characters (Kubernetes Node name limit).
 	// Maximum prefix length depends on cluster name length.
 	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
-
-	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not recycled automatically.
-	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
 
 	// RecycleBudget Maximum number of nodes recycled at once.
 	RecycleBudget *int `json:"recycleBudget,omitempty"`
@@ -620,6 +678,201 @@ type InfraNodeSetProvider struct {
 	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
 }
 
+// LaunchLayerClusterOwner The LaunchLayer identity requests are attributed to.
+type LaunchLayerClusterOwner struct {
+	// UserID LaunchLayer user ID.
+	UserID string `json:"userID,omitempty"`
+
+	// Username LaunchLayer username.
+	Username string `json:"username,omitempty"`
+}
+
+// LaunchLayerClusterProvider LaunchLayer identifiers for the cluster. Exactly one of vpcID or orgID
+// must be set, and siteID is required. All fields are fixed at creation.
+type LaunchLayerClusterProvider struct {
+	// CloudProviderEnabled Set true where a cloud controller manager runs, so CAPLL leaves the
+	// Node's provider ID to it. NVKE runs no CCM, so true is rejected.
+	CloudProviderEnabled bool `json:"cloudProviderEnabled,omitempty"`
+
+	// OrgID Organization in which CAPLL creates a VPC when vpcID is omitted.
+	OrgID string `json:"orgID,omitempty"`
+
+	// Owner The LaunchLayer identity requests are attributed to.
+	Owner *LaunchLayerClusterOwner `json:"owner,omitempty"`
+
+	// SecurityGroups Security groups CAPLL creates with the cluster and deletes with it.
+	SecurityGroups *[]LaunchLayerSecurityGroup `json:"securityGroups,omitempty"`
+
+	// SiteID Names the LaunchLayer datahall this cluster's machines come from.
+	SiteID string `json:"siteID"`
+
+	// VpcID An existing LaunchLayer VPC that CAPLL observes but never deletes.
+	VpcID string `json:"vpcID,omitempty"`
+
+	// VpcType Network type for a managed or existing VPC. When omitted, CAPLL
+	// treats the VPC as VIRTUALIZED. A VIRTUALIZED security group needs a
+	// VIRTUALIZED VPC.
+	VpcType *LaunchLayerClusterProviderVpcType `json:"vpcType,omitempty"`
+}
+
+// LaunchLayerClusterProviderVpcType Network type for a managed or existing VPC. When omitted, CAPLL
+// treats the VPC as VIRTUALIZED. A VIRTUALIZED security group needs a
+// VIRTUALIZED VPC.
+type LaunchLayerClusterProviderVpcType string
+
+// LaunchLayerControlPlaneProvider LaunchLayer settings for the control-plane nodes. Same shape as
+// LaunchLayerNodePoolProvider — control-plane nodes are still
+// LaunchLayer machines. Fixed at creation.
+type LaunchLayerControlPlaneProvider struct {
+	// FulfillmentStrategy Controls how the Compute Allocation Operator places the request.
+	FulfillmentStrategy *LaunchLayerControlPlaneProviderFulfillmentStrategy `json:"fulfillmentStrategy,omitempty"`
+
+	// HostOSProfile Bare-metal profile, as "<name>" or "<name>:<version>". Mutually exclusive with vmProfile.
+	HostOSProfile string `json:"hostOSProfile,omitempty"`
+
+	// InstanceType Requests capacity of a given shape, for example "vm200".
+	InstanceType string `json:"instanceType"`
+
+	// SecurityGroupRefs Names of the owning cluster's managed security groups to attach, per
+	// network interface. Mutually exclusive with securityGroups (existing
+	// group IDs) per interface.
+	SecurityGroupRefs *LaunchLayerSecurityGroupRefs `json:"securityGroupRefs,omitempty"`
+
+	// SecurityGroups Existing LaunchLayer security group IDs to attach, per network interface.
+	// Mutually exclusive with securityGroupRefs on the same interface. These
+	// groups remain externally managed and are not deleted with the cluster.
+	SecurityGroups *LaunchLayerSecurityGroups `json:"securityGroups,omitempty"`
+
+	// VMProfile Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with hostOSProfile.
+	VMProfile string `json:"vmProfile,omitempty"`
+}
+
+// LaunchLayerControlPlaneProviderFulfillmentStrategy Controls how the Compute Allocation Operator places the request.
+type LaunchLayerControlPlaneProviderFulfillmentStrategy string
+
+// LaunchLayerControlPlaneProviderUpdate All LaunchLayer control-plane fields are fixed at creation: a request
+// carrying one is rejected with 400. A body echoed from GET must have
+// them stripped.
+type LaunchLayerControlPlaneProviderUpdate = map[string]interface{}
+
+// LaunchLayerNodePoolProvider LaunchLayer settings for a node pool. instanceType is required, and
+// at most one of hostOSProfile and vmProfile may be set.
+type LaunchLayerNodePoolProvider struct {
+	// FulfillmentStrategy Controls how the Compute Allocation Operator places the request.
+	FulfillmentStrategy *LaunchLayerNodePoolProviderFulfillmentStrategy `json:"fulfillmentStrategy,omitempty"`
+
+	// HostOSProfile Bare-metal profile, as "<name>" or "<name>:<version>". Mutually exclusive with vmProfile.
+	HostOSProfile string `json:"hostOSProfile,omitempty"`
+
+	// InstanceType Requests capacity of a given shape, for example "vm200".
+	InstanceType string `json:"instanceType"`
+
+	// SecurityGroupRefs Names of the owning cluster's managed security groups to attach, per
+	// network interface. Mutually exclusive with securityGroups (existing
+	// group IDs) per interface.
+	SecurityGroupRefs *LaunchLayerSecurityGroupRefs `json:"securityGroupRefs,omitempty"`
+
+	// SecurityGroups Existing LaunchLayer security group IDs to attach, per network interface.
+	// Mutually exclusive with securityGroupRefs on the same interface. These
+	// groups remain externally managed and are not deleted with the cluster.
+	SecurityGroups *LaunchLayerSecurityGroups `json:"securityGroups,omitempty"`
+
+	// VMProfile Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with hostOSProfile.
+	VMProfile string `json:"vmProfile,omitempty"`
+}
+
+// LaunchLayerNodePoolProviderFulfillmentStrategy Controls how the Compute Allocation Operator places the request.
+type LaunchLayerNodePoolProviderFulfillmentStrategy string
+
+// LaunchLayerNodePoolProviderUpdate All LaunchLayer node-pool fields (instanceType, hostOSProfile, vmProfile,
+// fulfillmentStrategy, securityGroupRefs, securityGroups) are fixed at creation: a request
+// carrying one is rejected with 400. A body echoed from GET must have them
+// stripped.
+type LaunchLayerNodePoolProviderUpdate = map[string]interface{}
+
+// LaunchLayerNodeProvider LaunchLayer identifiers of the instance behind a node, reported by
+// CAPLL on LaunchLayerMachine.status. Omitted when none of its fields
+// are set — a node not yet provisioned has none of them.
+type LaunchLayerNodeProvider struct {
+	// InstanceID LaunchLayer Compute instance ID.
+	InstanceID string `json:"instanceID,omitempty"`
+
+	// MachineID Physical machine the instance landed on. Empty for a virtual instance.
+	MachineID string `json:"machineID,omitempty"`
+
+	// RackID Rack the instance landed in. Populated for both virtual and physical instances.
+	RackID string `json:"rackID,omitempty"`
+}
+
+// LaunchLayerNodeSetProvider LaunchLayer settings in a node set (read-only snapshot).
+type LaunchLayerNodeSetProvider struct {
+	// FulfillmentStrategy Controls how the Compute Allocation Operator places the request.
+	FulfillmentStrategy *LaunchLayerNodeSetProviderFulfillmentStrategy `json:"fulfillmentStrategy,omitempty"`
+
+	// HostOSProfile Bare-metal profile, as "<name>" or "<name>:<version>". Mutually exclusive with vmProfile.
+	HostOSProfile string `json:"hostOSProfile,omitempty"`
+
+	// InstanceType Requests capacity of a given shape, for example "vm200".
+	InstanceType string `json:"instanceType,omitempty"`
+
+	// SecurityGroupRefs Names of the owning cluster's managed security groups to attach, per
+	// network interface. Mutually exclusive with securityGroups (existing
+	// group IDs) per interface.
+	SecurityGroupRefs *LaunchLayerSecurityGroupRefs `json:"securityGroupRefs,omitempty"`
+
+	// SecurityGroups Existing LaunchLayer security group IDs to attach, per network interface.
+	// Mutually exclusive with securityGroupRefs on the same interface. These
+	// groups remain externally managed and are not deleted with the cluster.
+	SecurityGroups *LaunchLayerSecurityGroups `json:"securityGroups,omitempty"`
+
+	// VMProfile Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with hostOSProfile.
+	VMProfile string `json:"vmProfile,omitempty"`
+}
+
+// LaunchLayerNodeSetProviderFulfillmentStrategy Controls how the Compute Allocation Operator places the request.
+type LaunchLayerNodeSetProviderFulfillmentStrategy string
+
+// LaunchLayerSecurityGroup A security group LaunchLayer creates with the cluster and deletes with it.
+type LaunchLayerSecurityGroup struct {
+	// Name Security group name, referenced by node pools via securityGroupRefs.
+	// A DNS label of at most 24 characters, unique within the cluster.
+	Name string `json:"name"`
+
+	// NetworkType Required for a VIRTUALIZED group and rejected for a BARE_METAL group.
+	NetworkType *LaunchLayerSecurityGroupNetworkType `json:"networkType,omitempty"`
+
+	// Type Immutable. A virtual VPC can contain both kinds of groups.
+	Type LaunchLayerSecurityGroupType `json:"type"`
+}
+
+// LaunchLayerSecurityGroupNetworkType Required for a VIRTUALIZED group and rejected for a BARE_METAL group.
+type LaunchLayerSecurityGroupNetworkType string
+
+// LaunchLayerSecurityGroupType Immutable. A virtual VPC can contain both kinds of groups.
+type LaunchLayerSecurityGroupType string
+
+// LaunchLayerSecurityGroupRefs Names of the owning cluster's managed security groups to attach, per
+// network interface. Mutually exclusive with securityGroups (existing
+// group IDs) per interface.
+type LaunchLayerSecurityGroupRefs struct {
+	// GpuNetworkInterface Managed security group names to attach to the GPU network interface.
+	GpuNetworkInterface []string `json:"gpuNetworkInterface,omitempty"`
+
+	// PrimaryNetworkInterface Managed security group names to attach to the primary network interface.
+	PrimaryNetworkInterface []string `json:"primaryNetworkInterface,omitempty"`
+}
+
+// LaunchLayerSecurityGroups Existing LaunchLayer security group IDs to attach, per network interface.
+// Mutually exclusive with securityGroupRefs on the same interface. These
+// groups remain externally managed and are not deleted with the cluster.
+type LaunchLayerSecurityGroups struct {
+	// GpuNetworkInterface Existing security group IDs to attach to the GPU network interface.
+	GpuNetworkInterface []string `json:"gpuNetworkInterface,omitempty"`
+
+	// PrimaryNetworkInterface Existing security group IDs to attach to the primary network interface.
+	PrimaryNetworkInterface []string `json:"primaryNetworkInterface,omitempty"`
+}
+
 // ListClustersResponse A list of clusters.
 type ListClustersResponse struct {
 	// Clusters Clusters.
@@ -709,7 +962,7 @@ type NicoControlPlaneProvider struct {
 // NicoControlPlaneProviderCreate NICo settings for control-plane nodes at creation. release is required,
 // and exactly one of subnetIDs and vpcPrefixIDs is required.
 type NicoControlPlaneProviderCreate struct {
-	// ConfigProfile Deprecated: Config profile name for the control-plane nodes. Optional; when omitted the nodes run no config profile hooks or labels.
+	// ConfigProfile Deprecated: Config profile name for the control-plane nodes. Optional; when omitted, no config profile hooks run on the nodes.
 	ConfigProfile string `json:"configProfile,omitempty"`
 
 	// InstanceTypePreference Ordered list of acceptable NICo instance types; index 0 is the highest priority.
@@ -753,7 +1006,7 @@ type NicoControlPlaneProviderUpdate struct {
 // NicoNodePoolProvider NICo settings for a node pool. instanceTypeID and release are required,
 // and exactly one of subnetIDs and vpcPrefixIDs is required.
 type NicoNodePoolProvider struct {
-	// ConfigProfile Deprecated: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks or labels.
+	// ConfigProfile Deprecated: Config profile name for the pool's nodes. Optional; when omitted, no config profile hooks run on the nodes.
 	ConfigProfile string `json:"configProfile,omitempty"`
 
 	// DiskSelectionStrategy Which disk the OS is installed on. Default smallest.
@@ -817,7 +1070,7 @@ type NicoNodeProvider struct {
 
 // NicoNodeSetProvider NICo settings in a node set (read-only snapshot).
 type NicoNodeSetProvider struct {
-	// ConfigProfile Deprecated: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks or labels.
+	// ConfigProfile Deprecated: Config profile name for the pool's nodes. Optional; when omitted, no config profile hooks run on the nodes.
 	ConfigProfile string `json:"configProfile,omitempty"`
 
 	// DiskSelectionStrategy Which disk the OS is installed on. Default smallest.
@@ -850,14 +1103,17 @@ type Node struct {
 	// IP Node IP address.
 	IP string `json:"ip,omitempty"`
 
-	// Conditions Lifecycle and health conditions.
-	Conditions NodeConditions `json:"conditions"`
-
 	// ControlPlane Whether the node is a control-plane node.
 	ControlPlane bool `json:"controlPlane"`
 
+	// Conditions Lifecycle and health conditions.
+	Conditions NodeConditions `json:"conditions"`
+
 	// ControlPlaneRollout Control-plane nodes only.
 	ControlPlaneRollout *ControlPlaneRolloutStatus `json:"controlPlaneRollout,omitempty"`
+
+	// LaunchLayer LaunchLayer instanceID, machineID and rackID. Omitted when none are set.
+	LaunchLayer *LaunchLayerNodeProvider `json:"launchLayer,omitempty"`
 
 	// Nico NICo instanceID, machineID and instanceTypeID. Omitted when none are set.
 	Nico *NicoNodeProvider `json:"nico,omitempty"`
@@ -995,11 +1251,17 @@ type NodePool struct {
 	// AutoModeDisabled Disables auto-mode (automatic node recycling).
 	AutoModeDisabled bool `json:"autoModeDisabled"`
 
+	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not recycled automatically.
+	ProvisioningMonitorDisabled bool `json:"provisioningMonitorDisabled"`
+
 	// Conditions Lifecycle conditions: provisioning, provisioned, deleting.
 	Conditions NodePoolConditions `json:"conditions"`
 
 	// Infra Infra provider node pool fields.
 	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
+
+	// LaunchLayer LaunchLayer settings for the pool.
+	LaunchLayer *LaunchLayerNodePoolProvider `json:"launchLayer,omitempty"`
 
 	// MachineAnnotations Annotations set on CAPI Machines only when they are created, including Machines created during scale-out or replacement. Fixed at node-pool creation. Not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
 	MachineAnnotations map[string]string `json:"machineAnnotations,omitempty"`
@@ -1012,9 +1274,6 @@ type NodePool struct {
 
 	// NodeNamePrefix Node names are `<cluster>-<prefix>-<NNNN>` (four-digit suffix), at most 63 characters in total.
 	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
-
-	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not recycled automatically.
-	ProvisioningMonitorDisabled bool `json:"provisioningMonitorDisabled"`
 
 	// RecycleBudget Maximum number of nodes recycled at once.
 	RecycleBudget int `json:"recycleBudget"`
@@ -1075,6 +1334,10 @@ type NodePoolCreateConfig struct {
 	// Infra Infra provider fields for a node pool. Mutually exclusive with `nico`.
 	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
 
+	// LaunchLayer LaunchLayer settings for a node pool. instanceType is required, and
+	// at most one of hostOSProfile and vmProfile may be set.
+	LaunchLayer *LaunchLayerNodePoolProvider `json:"launchLayer,omitempty"`
+
 	// MachineAnnotations Annotations set on CAPI Machines only when they are created, including Machines created during scale-out or replacement. Fixed at node-pool creation. Not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
 	MachineAnnotations map[string]string `json:"machineAnnotations,omitempty"`
 
@@ -1117,6 +1380,9 @@ type NodeSet struct {
 
 	// KubernetesVersion Kubernetes version in the snapshot.
 	KubernetesVersion string `json:"kubernetesVersion"`
+
+	// LaunchLayer LaunchLayer settings in the snapshot.
+	LaunchLayer *LaunchLayerNodeSetProvider `json:"launchLayer,omitempty"`
 
 	// Nico NICo settings in the snapshot.
 	Nico *NicoNodeSetProvider `json:"nico,omitempty"`
@@ -1166,6 +1432,11 @@ type UpdateClusterControlPlaneConfig struct {
 	// leaves the stored value alone, a value replaces it, and an empty value clears it.
 	// Mutually exclusive with `nico`: a request carrying both is rejected with 400.
 	Infra *InfraControlPlaneProviderUpdate `json:"infra,omitempty"`
+
+	// LaunchLayer All LaunchLayer control-plane fields are fixed at creation: a request
+	// carrying one is rejected with 400. A body echoed from GET must have
+	// them stripped.
+	LaunchLayer *LaunchLayerControlPlaneProviderUpdate `json:"launchLayer,omitempty"`
 
 	// MaxSurge Extra control-plane nodes allowed during a rollout (0 or 1).
 	MaxSurge *int `json:"maxSurge,omitempty"`
@@ -1267,6 +1538,12 @@ type UpdateNodePoolRequest struct {
 	// KubernetesVersion Desired Kubernetes version for the pool's nodes, as X.Y.Z with no leading "v".
 	// Must be newer than the current version.
 	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
+
+	// LaunchLayer All LaunchLayer node-pool fields (instanceType, hostOSProfile, vmProfile,
+	// fulfillmentStrategy, securityGroupRefs, securityGroups) are fixed at creation: a request
+	// carrying one is rejected with 400. A body echoed from GET must have them
+	// stripped.
+	LaunchLayer *LaunchLayerNodePoolProviderUpdate `json:"launchLayer,omitempty"`
 
 	// MaxSurge Nodes allowed above desiredNodeCount during a rollout. 0 means sequential: each
 	// node is torn down before its replacement is provisioned.

@@ -11,8 +11,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 const (
@@ -28,7 +28,7 @@ func ValidateSecretOwnership(secret *corev1.Secret, cluster db.Cluster) error {
 	if secret.Labels == nil {
 		return nil
 	}
-	if existing := secret.Labels[constants.LabelKeyClusterID]; existing != "" && existing != cluster.ID.String() {
+	if existing := keys.ClusterID.Value(secret.Labels); existing != "" && existing != cluster.ID.String() {
 		return fmt.Errorf("%w: %s/%s has cluster-id %s, want %s", ErrWrongSecretOwner, secret.Namespace, secret.Name, existing, cluster.ID)
 	}
 	return nil
@@ -39,9 +39,14 @@ func SetSecretOwnership(secret *corev1.Secret, cluster db.Cluster, mode, managed
 	if secret.Labels == nil {
 		secret.Labels = map[string]string{}
 	}
-	secret.Labels[constants.LabelKeyNvkeManagedBy] = managedByLabelValue
-	secret.Labels[constants.LabelKeyClusterID] = cluster.ID.String()
-	secret.Labels[constants.LabelKeyKubeconfigMode] = mode
+	// Rewriting a Secret labeled by an earlier build drops the legacy keys, so
+	// a Secret carries one domain rather than two that could drift apart.
+	keys.ManagedBy.DeleteLegacy(secret.Labels)
+	keys.ClusterID.DeleteLegacy(secret.Labels)
+	keys.KubeconfigMode.DeleteLegacy(secret.Labels)
+	secret.Labels[keys.ManagedBy.String()] = managedByLabelValue
+	secret.Labels[keys.ClusterID.String()] = cluster.ID.String()
+	secret.Labels[keys.KubeconfigMode.String()] = mode
 }
 
 // IsSPIREExecKubeconfig reports whether kubeconfigBytes is credential-free SPIRE exec-auth.

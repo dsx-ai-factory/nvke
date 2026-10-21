@@ -2,7 +2,7 @@
 
 A deploy path is a directory that lists the NVKE services in install order. It holds one `nvke-deploy.yaml` and one directory per item. An item is a Helm chart with its values, a set of plain manifests, or templates that render the site's secrets.
 
-NVKE ships one deploy path, [`deploy/nico`](https://github.com/dsx-ai-factory/nvke/tree/main/deploy/nico). `deploy/nvke-deploy.sh install` applies it, rendered for the site spec and the NVKR release, as one step of the install. See [Install management-plane services](../operate/install-management-plane-services.md) for the list and its inputs.
+NVKE ships one deploy path, [`deploy/nico`](https://github.com/dsx-ai-factory/nvke/tree/main/deploy/nico). `deploy/nvke-deploy.sh install` applies it, rendered for the site spec and the NVKR release, as one step of the install. See [Run NVKE end to end on one machine](../get-started/local-site.md) for the list and its inputs.
 
 The deploy path is the interface. The script is the reference way to apply it. An operator can apply the same items with their own tooling, or through GitOps. `deploy/nvke-deploy.sh install --dry-run` prints every kubectl and helm call the script would make, in order.
 

@@ -31,15 +31,10 @@ metadata:
   description: How each component resolves to a version and a location.
 spec:
   # Where artifacts are published. A location names a source, so each is stated
-  # once here. The apt base is the exception: the e2e pre-kubeadm commands write
-  # their own sources.list on the node, so that one string is also in
-  # controller/test/e2e/internal/nvke/nico_forge_prekubeadm.tmpl and the two
-  # move together.
+  # once here. There is no apt base: a node installs its Debian packages from
+  # the local repo the OS image bakes, so nothing resolves a remote suite.
   sources:
     - {name: artifact-cdn, base: https://d1veq6e8nuk2fy.cloudfront.net}
-    # Where the Debian packages a node installs are served from. One suite
-    # per Ubuntu release hangs below it.
-    - {name: artifact-apt, base: https://nke-prod-assets.s3.us-west-2.amazonaws.com}
     # Where the images are pulled from. It holds every build, so a commit
     # between releases has something to pull. The org names one organization's
     # registry rather than anything about NVKE, so a run supplies it and an
@@ -129,21 +124,9 @@ spec:
     - name: kube
       resolve:
         version: {strategy: lockedPackage, with: {lockDir: os-image/packages/kubeadm-distro/lock, at: os-image}}
-    # Resolved against the suites rather than against a number written beside
-    # them: the stream is part of the package name, so what is installable is
-    # exactly what is served. A pin can go on naming a package the repository
-    # stopped serving, and nothing says so until a node runs apt-get.
     - name: cni-ovn
       resolve:
-        version:
-          strategy: aptPackage
-          with:
-            source: artifact-apt
-            suites: noble,resolute
-            arches: amd64,arm64
-            # Both, because a node installs both and a stream served as one
-            # and not the other cannot be installed.
-            packages: nvke-cni-ovn-images,nvke-cni-ovn-charts
+        version: {strategy: lockedPackage, with: {lockDir: os-image/packages/cni-ovn/lock, at: os-image}}
 
     # Read from make/tool-versions.mk, which owns every tool pin.
     - {name: kind,       resolve: {version: {strategy: makeVar, with: {var: KIND_VERSION}}}}

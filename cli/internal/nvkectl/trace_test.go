@@ -66,7 +66,7 @@ func runNvkectl(t *testing.T, url string, args ...string) (stdout, stderr string
 	cfg := &config.Config{CurrentSite: "t", Sites: map[string]config.SiteConfig{"t": {URL: url}}}
 	require.NoError(t, cfg.Save())
 
-	root := newRootCmd("test", "test", "test", "test")
+	root := NewRootCmd("test", "test", "test", "test")
 	root.SetArgs(args)
 	var out, errOut bytes.Buffer
 	root.SetOut(&out)
@@ -156,7 +156,7 @@ func TestNoTraceIDForHelpAndCompletionFailures(t *testing.T) {
 // A subcommand's own PersistentPreRunE does not affect tracing.
 func TestSubcommandPreRunDoesNotDisableTracing(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	root := newRootCmd("test", "test", "test", "test")
+	root := NewRootCmd("test", "test", "test", "test")
 	childHookRan := false
 	root.AddCommand(&cobra.Command{
 		Use:               "probe",
@@ -184,7 +184,7 @@ func TestQueryCommandsPrintNoTraceIDOnSuccess(t *testing.T) {
 }
 
 func TestStateChangingCommandsPrintTraceIDOnSuccess(t *testing.T) {
-	root := newRootCmd("test", "test", "test", "test")
+	root := NewRootCmd("test", "test", "test", "test")
 	for _, path := range []string{"create cluster", "patch nodepool", "delete cluster", "deprecate", "bootstrap site"} {
 		cmd, _, err := root.Find(strings.Fields(path))
 		require.NoError(t, err, path)
@@ -210,7 +210,7 @@ func TestIsTraced(t *testing.T) {
 		"help":                   false,
 		"completion bash":        false,
 	}
-	root := newRootCmd("test", "test", "test", "test")
+	root := NewRootCmd("test", "test", "test", "test")
 	root.InitDefaultHelpCmd()
 	root.InitDefaultCompletionCmd()
 	for path, want := range tests {
@@ -223,7 +223,7 @@ func TestIsTraced(t *testing.T) {
 
 func TestBootstrapSiteReportsTraceIDOnStderr(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	root := newRootCmd("test", "test", "test", "test")
+	root := NewRootCmd("test", "test", "test", "test")
 	var stdout, stderr bytes.Buffer
 	root.SetOut(&stdout)
 	root.SetErr(&stderr)

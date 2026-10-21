@@ -162,7 +162,7 @@ provisioned so that Cluster API can bootstrap them.
 
 - `docs/go-workspace.md` — the workspace and dependency-management workflow
 - `controller/docs/authenticating-to-the-api.md` — API authentication
-- `controller/docs/byo-os.md` — bring your own OS image
+- `docs/design/byo-os.md` — proposal: bring your own OS image
 - `controller/AGENTS.md` — AI agent development guide for the controller
 - `agent/docs/DESIGN.md` — node agent architecture and API surface
 - `agent/docs/SECURITY.md` — node agent security context

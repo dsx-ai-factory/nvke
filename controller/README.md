@@ -97,9 +97,11 @@ Compatible profiles append those entries to their existing cloud-init
 `write_files` list and quote the metadata and content. CAPI serializes the same
 file model directly. In every mode, both paths replace `/etc/default/nvke-agent`
 with a plain-text configuration containing the node-agent port. External mTLS
-also writes the CA to `/etc/nke/controller-ca.crt` with `encoding: b64` and adds
-`--controller-client-ca-bundle=/etc/nke/controller-ca.crt` to the agent
-arguments. These controller files follow any provider or profile files so the
+also writes the CA with `encoding: b64` and points the agent at it. Agents
+older than 0.3.0 get `/etc/nke/controller-ca.crt` and
+`--controller-client-ca-bundle`; agents at 0.3.0 or later get
+`/etc/nvke/controller-ca.crt` and `--nvke-controller-client-ca-bundle`. These
+controller files follow any provider or profile files so the
 defaults win within `write_files`; NICo profiles and CAPI users may replace the
 agent configuration later through `runcmd` or `preKubeadmCommands`. The
 controller does not validate profile compatibility.
@@ -273,6 +275,40 @@ and `NICO_API_NAME` can override the corresponding config fields for one-off
 runs. Helm is always required; source mode additionally needs Docker, Kind, and
 BuildKit.
 
+#### LaunchLayer
+
+CAPLL has no published chart or image yet, so the `launchlayer` provider always
+builds it from a local `cluster-api-provider-launchlayer` checkout. It requires
+`capi_core`, and with SPIFFE on it needs the `dsx-imds-attestation` provider
+too (see below):
+
+```json
+{
+  "providers": ["capi_core", "launchlayer", "dsx-imds-attestation"],
+  "capll_source_dir": "../../cluster-api-provider-launchlayer",
+  "dsx_imds_attestation_source_dir": "../../dsx-identity"
+}
+```
+
+Relative paths resolve against `controller/`; `CAPLL_SOURCE_DIR` overrides the
+config for a one-off run, and Tilt fails at startup when neither is set. The
+provider builds the CAPLL manager and CAPLL's fake LaunchLayer API from the
+checkout, loads both into Kind, deploys the fake into `fake-ll-api`, and
+installs the checkout's chart into `capll-system` with a credentials Secret
+pointing at the fake. Helm and Docker are required, and Tilt watches the
+checkout so source changes retrigger the installation. Enabling the provider
+also adds `launchLayer` to the controller's `supportedInfraProviders`.
+
+Tilt runs the controller with SPIFFE enabled, and a SPIFFE-enabled LaunchLayer
+node attests to SPIRE only through DSX IMDS; with the chart's default `tpm`,
+the controller rejects LaunchLayer requests with 400. The
+`dsx-imds-attestation` provider sets everything DSX IMDS needs: the
+controller's attestation method, `nodeAgent.dsxImds.operatorTenant` and
+`nodeAgent.dsxImds.endpoint`, and the SPIRE server's `dsx_imds` node attestor.
+Setting only the attestation method is not enough: the chart refuses to render
+without `operatorTenant`. See
+[hack/dsx-imds-attestation/README.md](hack/dsx-imds-attestation/README.md).
+
 ### TPM support in Docker
 
 TPM is one of the node-attestation mechanisms CWE/NVKE uses to establish SPIRE
@@ -324,15 +360,15 @@ tilt up
   - UI: http://localhost:8080
   - Swagger: http://localhost:8080/api/docs
   - Temporal UI: http://localhost:8081
-- CWE pod logs are available in the native `cwe` Tilt resource.
+- CWE pod logs are available in the native `nvke-controller` Tilt resource.
 - Use the Tilt buttons for the common local actions below.
 
 ### Common Actions
 
-- Create a sample CAPD cluster from the `cwe` Tilt resource.
-- Create a sample local Forge cluster from the `cwe` Tilt resource when NICo is enabled.
-- Create a sample local NICo cluster from the `cwe` Tilt resource when NICo is enabled.
-- Restart CWE from the `cwe` Tilt resource.
+- Create a sample CAPD cluster from the `nvke-controller` Tilt resource.
+- Create a sample local Forge cluster from the `nvke-controller` Tilt resource when NICo is enabled.
+- Create a sample local NICo cluster from the `nvke-controller` Tilt resource when NICo is enabled.
+- Restart CWE from the `nvke-controller` Tilt resource.
 - Show SPIRE entries or list connected SPIRE agents from the `spire-server` Tilt resource.
 
 CLI equivalents if you prefer:
@@ -454,7 +490,7 @@ docker run -d --name=cwe-postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres pos
 ```
 (If you ever want to start fresh with an empty database, remove the container with `docker rm -f cwe-postgres` and then start a new one)
 
-To use remote Temporal, set up your kubeconfig and SSH tunnel for the site-controller cluster, then run a port forward to the Temporal service (using non-default ports to avoid conflicts with local Temporal):
+To use remote Temporal, set up your kubeconfig and SSH tunnel for the management cluster, then run a port forward to the Temporal service (using non-default ports to avoid conflicts with local Temporal):
 ```bash
 kubectl port-forward -n temporal svc/temporal-frontend 17233:7233
 ```
@@ -462,6 +498,23 @@ You'll probably also want the Temporal UI (open in browser at http://localhost:1
 ```bash
 kubectl port-forward -n temporal svc/temporal-web 18233:8080
 ```
+
+CWE resolves every OS image from `MachineImage`, `ClusterRelease` and
+`NodePoolRelease` resources, and exits at startup if their CRDs are not
+installed in the cluster in `KUBECONFIG`. The controller chart installs them, so
+check what the cluster already has before installing anything:
+```bash
+for resource in clusterreleases nodepoolreleases machineimages; do
+  kubectl get "${resource}.internal.nvke.nvidia.com"
+done
+```
+On a local development cluster, install the CRDs and this repository's fixture
+releases:
+```bash
+make releases-install
+```
+Those releases are test fixtures and are cluster-scoped, so do not run that
+against a shared site.
 
 And now you're ready to build and run CWE, against the forwarded Temporal port:
 ```bash
@@ -508,7 +561,7 @@ what to check when you get an unexpected 401, see
 [Authenticating to the NVKE API](docs/authenticating-to-the-api.md).
 
 `tilt up` deploys an enforcing NVKE with the config in
-`deploy/k8s/nke-auth-dev.yaml`, two client identities (one admitted, one not),
+`deploy/k8s/nvke-auth-dev.yaml`, two client identities (one admitted, one not),
 and the binding described under RBAC Prerequisite.
 
 `nvkectl` uses that admitted identity. After `nvkectl config set-site` with the
@@ -554,7 +607,7 @@ apiAuth:
   permissive: false
   configMap:
     create: false               # true to render apiAuth.config into it
-    name: nke-auth-config       # mounted either way
+    name: nvke-auth-config       # mounted either way
   clusterIssuerDiscovery: true  # see RBAC Prerequisite below
 ```
 
@@ -600,7 +653,7 @@ apiAuth:
   enabled: true
   configMap:
     create: true
-    name: nke-auth-config
+    name: nvke-auth-config
   config:
     # No apiVersion or kind: the chart supplies both, and repeating them here
     # renders duplicate keys that auth.Load refuses. The render fails if you do.
@@ -663,7 +716,7 @@ must be `auth.yaml`:
 ```bash
 # In the release namespace. The chart mounts the ConfigMap at /etc/nke/auth and
 # points AUTH_CONFIG_PATH at auth.yaml within it.
-kubectl create configmap nke-auth-config -n "${RELEASE_NAMESPACE}" \
+kubectl create configmap nvke-auth-config -n "${RELEASE_NAMESPACE}" \
   --from-file=auth.yaml=./auth.yaml
 ```
 
@@ -677,7 +730,7 @@ source, `kubectl edit` included. Set
 over; the chart leaves an annotation you set alone. Without Reloader running,
 restart the pods yourself.
 
-`deploy/k8s/nke-auth-dev.yaml` is a working example; the full schema and every
+`deploy/k8s/nvke-auth-dev.yaml` is a working example; the full schema and every
 validation rule live in `internal/auth/config.go`. The shape:
 
 ```yaml
@@ -766,7 +819,7 @@ curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} "${API_URL}/clusters"
 It reads the audience from the running Deployment and mints an audience-scoped
 token through the TokenRequest API, so the caller needs `create` on
 `serviceaccounts/token` for the service account being minted for.
-`deploy/k8s/nke-auth-dev.yaml` grants that locally.
+`deploy/k8s/nvke-auth-dev.yaml` grants that locally.
 
 Useful overrides:
 
@@ -881,10 +934,10 @@ export DB_MAX_OPEN_CONNECTIONS=12
 1. Open **Run and Debug** in Cursor/VS Code (`Cmd+Shift+D`).
 2. Select **"Launch CWE (Tilt Local Debug)"**.
 3. Start debugging.
-4. When you are done debugging, re-enable the in-cluster `cwe` Tilt resource manually in the UI or with:
+4. When you are done debugging, re-enable the in-cluster `nvke-controller` Tilt resource manually in the UI or with:
 
 ```bash
-tilt trigger cwe
+tilt trigger nvke-controller
 ```
 
 This shared debug configuration:

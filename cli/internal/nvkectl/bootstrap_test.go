@@ -42,7 +42,6 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitecluster"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
-	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
@@ -304,7 +303,7 @@ func startFakeCWEAPIWithNodes(t *testing.T, provisioned bool, total, joined int)
 	if err != nil {
 		t.Fatalf("parsing the test server address %q: %v", srv.URL, err)
 	}
-	t.Setenv("NVKECTL_CONTROLLER_PORT", port)
+	t.Setenv("NVKECTL_NVKE_CONTROLLER_PORT", port)
 }
 
 // fakeBootstrapRunner is a scripted bootstrapengine.CommandRunner so
@@ -363,7 +362,7 @@ cluster:
 // TestBootstrapSiteCommandWired verifies the command tree exposes
 // "nvkectl bootstrap site" — the runnable command required by the ticket.
 func TestBootstrapSiteCommandWired(t *testing.T) {
-	root := newRootCmd("test", "test", "test", "test")
+	root := NewRootCmd("test", "test", "test", "test")
 	cmd, _, err := root.Find([]string{"bootstrap", siteSubcommand})
 	if err != nil {
 		t.Fatalf("find bootstrap site: %v", err)
@@ -376,18 +375,20 @@ func TestBootstrapSiteCommandWired(t *testing.T) {
 // TestBootstrapSiteImageFlags pins the two image flags by name, so the
 // registration cannot drift from the help text and the docs that name them.
 func TestBootstrapSiteImageFlags(t *testing.T) {
-	root := newRootCmd("test", "test", "test", "test")
+	root := NewRootCmd("test", "test", "test", "test")
 	cmd, _, err := root.Find([]string{"bootstrap", siteSubcommand})
 	if err != nil {
 		t.Fatalf("find bootstrap site: %v", err)
 	}
-	for _, name := range []string{"controller-image", "provisioned-provider-image"} {
+	for _, name := range []string{"nvke-controller-image", "provisioned-provider-image"} {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("bootstrap site has no --%s flag", name)
 		}
 	}
-	if cmd.Flags().Lookup("cwe-image") != nil {
-		t.Error("bootstrap site still registers --cwe-image")
+	for _, name := range []string{"controller-image", "cwe-image"} {
+		if cmd.Flags().Lookup(name) != nil {
+			t.Errorf("bootstrap site still registers --%s", name)
+		}
 	}
 }
 
@@ -659,7 +660,7 @@ func runtimeOnPath(name string) (string, error) { return "/usr/local/bin/" + nam
 // about something else does not fail on one of them.
 func setBootstrapEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("NVKECTL_CONTROLLER_IMAGE", "nvcr.io/org/controller:edge")
+	t.Setenv("NVKECTL_NVKE_CONTROLLER_IMAGE", "nvcr.io/org/controller:edge")
 	t.Setenv("NVKECTL_CAPI_PROVISIONED_IMAGE", "cluster-api-provider-provisioned:latest")
 }
 
@@ -802,8 +803,7 @@ func TestBootstrapSiteRejectsBootstrapProviderFlag(t *testing.T) {
 // TestRunBootstrapSiteDefaultsImagesToTheLocalBuild confirms the bootstrap
 // side-loads the local build's tags when neither image variable is set.
 func TestRunBootstrapSiteDefaultsImagesToTheLocalBuild(t *testing.T) {
-	t.Setenv("NVKECTL_CONTROLLER_IMAGE", "")
-	t.Setenv("NKECTL_CONTROLLER_IMAGE", "")
+	t.Setenv("NVKECTL_NVKE_CONTROLLER_IMAGE", "")
 	t.Setenv("NVKECTL_CAPI_PROVISIONED_IMAGE", "")
 	startFakeCWEAPI(t, true)
 
@@ -832,7 +832,7 @@ func TestRunBootstrapSiteDefaultsImagesToTheLocalBuild(t *testing.T) {
 // TestRunBootstrapSiteUsesTheImageFlags drives the two flags through the
 // command: the images they name are the ones the bootstrap loads.
 func TestRunBootstrapSiteUsesTheImageFlags(t *testing.T) {
-	t.Setenv("NVKECTL_CONTROLLER_IMAGE", "env.example/nke-controller:env")
+	t.Setenv("NVKECTL_NVKE_CONTROLLER_IMAGE", "env.example/nke-controller:env")
 	t.Setenv("NVKECTL_CAPI_PROVISIONED_IMAGE", "env.example/provisioned:env")
 	startFakeCWEAPI(t, true)
 
@@ -884,7 +884,7 @@ func TestEnsureImageAvailableRefusesToPullAHostlessRef(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for a local build that is not in the store")
 	}
-	for _, want := range []string{"make -C cli images", "--controller-image", "NVKECTL_CONTROLLER_IMAGE", "docker.io/<org>/<name>", "no such image"} {
+	for _, want := range []string{"make -C cli images", "--nvke-controller-image", "NVKECTL_NVKE_CONTROLLER_IMAGE", "docker.io/<org>/<name>", "no such image"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
 		}
@@ -897,8 +897,7 @@ func TestEnsureImageAvailableRefusesToPullAHostlessRef(t *testing.T) {
 // TestRunBootstrapSiteRefusesMissingLocalImageBeforeCreate: with the default
 // images and no local build, the command fails before any cluster is built.
 func TestRunBootstrapSiteRefusesMissingLocalImageBeforeCreate(t *testing.T) {
-	t.Setenv("NVKECTL_CONTROLLER_IMAGE", "")
-	t.Setenv("NKECTL_CONTROLLER_IMAGE", "")
+	t.Setenv("NVKECTL_NVKE_CONTROLLER_IMAGE", "")
 	t.Setenv("NVKECTL_CAPI_PROVISIONED_IMAGE", "")
 
 	inner := runnerFunc(func(ctx context.Context, env map[string]string, name string, args ...string) (string, error) {
@@ -920,7 +919,7 @@ func TestRunBootstrapSiteRefusesMissingLocalImageBeforeCreate(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error when the default local image is not in the store")
 	}
-	for _, want := range []string{"nke-controller:latest", "make -C cli images", "--controller-image", "NVKECTL_CONTROLLER_IMAGE"} {
+	for _, want := range []string{"nke-controller:latest", "make -C cli images", "--nvke-controller-image", "NVKECTL_NVKE_CONTROLLER_IMAGE"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
 		}
@@ -1094,10 +1093,36 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 		}
 	})
 
+	t.Run("a successful bootstrap with collectDiagnostics writes a bundle", func(t *testing.T) {
+		startFakeCWEAPI(t, true)
+		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
+		err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+			siteSpec:            writeSiteSpec(t, validSiteSpec),
+			diagnosticsDir:      dir,
+			collectDiagnostics:  true,
+			bootstrapRunner:     fakeBootstrapRunner{},
+			cweRunner:           newFakeCWERunner(t),
+			kubeconfigOut:       filepath.Join(t.TempDir(), "nvke-site.kubeconfig"),
+			lookPath:            runtimeOnPath,
+			dialContext:         refuseDial,
+			untaintControlPlane: skipUntaint,
+			dumpSpireEntries: func(context.Context, string, string) (int, error) {
+				return 0, nil
+			},
+			encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+		})
+		if err != nil {
+			t.Fatalf("runBootstrapSite returned error: %v", err)
+		}
+		if _, statErr := os.Stat(dir); statErr != nil {
+			t.Errorf("no diagnostics written for a run that asked for them: %v", statErr)
+		}
+	})
+
 	t.Run("a real failure writes a bundle", func(t *testing.T) {
 		// Short, so the suite does not sit through the default five minutes
 		// waiting for a controller that will never report healthy.
-		t.Setenv("NVKECTL_CONTROLLER_READY_TIMEOUT", "1s")
+		t.Setenv("NVKECTL_NVKE_CONTROLLER_READY_TIMEOUT", "1s")
 		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
 		// The controller never reports healthy: the failure this exists for.
 		err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
@@ -1327,8 +1352,8 @@ func TestRunBootstrapSiteSavesTheEtcdEncryptionKey(t *testing.T) {
 	if secret.Metadata.Namespace != nil {
 		t.Errorf("metadata.namespace = %q, want none", *secret.Metadata.Namespace)
 	}
-	if secret.Metadata.Annotations["nke.nvidia.com/cluster-name"] != "nvke-site" {
-		t.Errorf("cluster-name annotation = %q, want %q", secret.Metadata.Annotations["nke.nvidia.com/cluster-name"], "nvke-site")
+	if secret.Metadata.Annotations["nvke.nvidia.com/cluster-name"] != "nvke-site" {
+		t.Errorf("cluster-name annotation = %q, want %q", secret.Metadata.Annotations["nvke.nvidia.com/cluster-name"], "nvke-site")
 	}
 	if string(secret.Data["active"]) != fakeEtcdKey {
 		t.Errorf("data.active is not the key the controller served")
@@ -2000,7 +2025,7 @@ func TestMakeControlPlaneSchedulableBuildsTheClientFromTheKubeconfig(t *testing.
 // TestCWEDeployConfigImagePrecedence: a flag wins over its variable, and a
 // variable wins over the manifest default.
 func TestCWEDeployConfigImagePrecedence(t *testing.T) {
-	t.Setenv("NVKECTL_CONTROLLER_IMAGE", "env.example/nke-controller:env")
+	t.Setenv("NVKECTL_NVKE_CONTROLLER_IMAGE", "env.example/nke-controller:env")
 	t.Setenv("NVKECTL_CAPI_PROVISIONED_IMAGE", "env.example/provisioned:env")
 
 	cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "c", false, "flag.example/nke-controller:flag", "")
@@ -2027,20 +2052,20 @@ func TestCWEDeployConfigImagePrecedence(t *testing.T) {
 }
 
 // TestControllerImageOrder pins the whole order for the
-// controller image: the flag, then NVKECTL_CONTROLLER_IMAGE, then the old
-// NKECTL_CONTROLLER_IMAGE, then the manifest default.
+// controller image: the flag, then NVKECTL_NVKE_CONTROLLER_IMAGE, then the
+// manifest default. The earlier NVKECTL_CONTROLLER_IMAGE is never read.
 func TestControllerImageOrder(t *testing.T) {
 	for _, tc := range []struct {
 		desc, flag, newV, oldV, want string
 	}{
 		{"flag over both settings", "flag.example/c:flag", "new.example/c:new", "old.example/c:old", "flag.example/c:flag"},
 		{"new setting over old", "", "new.example/c:new", "old.example/c:old", "new.example/c:new"},
-		{"old setting alone", "", "", "old.example/c:old", "old.example/c:old"},
+		{"old setting alone", "", "", "old.example/c:old", "nke-controller:latest"},
 		{"neither", "", "", "", "nke-controller:latest"},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			t.Setenv("NVKECTL_CONTROLLER_IMAGE", tc.newV)
-			t.Setenv("NKECTL_CONTROLLER_IMAGE", tc.oldV)
+			t.Setenv("NVKECTL_NVKE_CONTROLLER_IMAGE", tc.newV)
+			t.Setenv("NVKECTL_CONTROLLER_IMAGE", tc.oldV)
 			cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "c", false, tc.flag, "")
 			if err != nil {
 				t.Fatal(err)
@@ -2164,14 +2189,13 @@ func TestCapnicoReleaseImage(t *testing.T) {
 	}
 }
 
-// TestRunBootstrapSiteWarnsAboutOldSettingNames: an old NKECTL_CWE_* name set
-// without its replacement is logged as a warning naming the replacement, before
-// anything else runs; a setting under its new name is not.
+// TestRunBootstrapSiteWarnsAboutOldSettingNames: an NKECTL_* name set without
+// its NVKECTL_* replacement is logged as a warning naming the replacement,
+// before anything else runs; a setting under its new name is not.
 func TestRunBootstrapSiteWarnsAboutOldSettingNames(t *testing.T) {
-	t.Setenv("NVKECTL_CONTROLLER_IMAGE", "")
-	t.Setenv("NKECTL_CONTROLLER_IMAGE", "old.example/c:old")
-	t.Setenv("NVKECTL_CONTROLLER_HELM_TIMEOUT", "2m")
-	t.Setenv("NKECTL_CONTROLLER_HELM_TIMEOUT", "")
+	t.Setenv("NVKECTL_CAPI_PROVISIONED_IMAGE", "")
+	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "old.example/p:old")
+	t.Setenv("NVKECTL_NVKE_CONTROLLER_HELM_TIMEOUT", "2m")
 
 	var buf bytes.Buffer
 	prev := slog.Default()
@@ -2185,96 +2209,46 @@ func TestRunBootstrapSiteWarnsAboutOldSettingNames(t *testing.T) {
 
 	logged := buf.String()
 	if !strings.Contains(logged, "level=WARN") ||
-		!strings.Contains(logged, "NKECTL_CONTROLLER_IMAGE is deprecated and will be removed in a future release; set NVKECTL_CONTROLLER_IMAGE instead") {
-		t.Errorf("no deprecation warning for NKECTL_CONTROLLER_IMAGE in:\n%s", logged)
+		!strings.Contains(logged, "NKECTL_CAPI_PROVISIONED_IMAGE is deprecated and will be removed in a future release; set NVKECTL_CAPI_PROVISIONED_IMAGE instead") {
+		t.Errorf("no deprecation warning for NKECTL_CAPI_PROVISIONED_IMAGE in:\n%s", logged)
 	}
 	if strings.Contains(logged, "HELM_TIMEOUT") {
 		t.Errorf("warned about a setting given under its new name:\n%s", logged)
 	}
 }
 
-// TestRunBootstrapSiteStopsOnRemovedSettings: an NKECTL_CWE_* name, which
-// nvkectl does not read, stops bootstrap site before the site spec is loaded
-// when its replacement is unset, and is only a warning when the replacement is
-// set under either of its names or through its flag.
-func TestRunBootstrapSiteStopsOnRemovedSettings(t *testing.T) {
-	for _, tc := range []struct {
-		desc            string
-		env             map[string]string
-		controllerImage string
-		wantErr         string
-		notInErr        string
-		wantWarning     string
-	}{
-		{
-			desc: "replacements unset",
-			env:  map[string]string{"NKECTL_CWE_IMAGE": "old.example/c:pinned", "NKECTL_CWE_PORT": "30181"},
-			wantErr: "NKECTL_CWE_IMAGE is no longer read; set NVKECTL_CONTROLLER_IMAGE instead; " +
-				"NKECTL_CWE_PORT is no longer read; set NVKECTL_CONTROLLER_PORT instead",
-		},
-		{
-			desc:        "replacement set under its new name",
-			env:         map[string]string{"NKECTL_CWE_IMAGE": "old.example/c:pinned", "NVKECTL_CONTROLLER_IMAGE": "new.example/c:pinned"},
-			wantErr:     "missing.yaml",
-			wantWarning: "NKECTL_CWE_IMAGE is not read; NVKECTL_CONTROLLER_IMAGE is set and is used instead",
-		},
-		{
-			desc:        "replacement set under its NKECTL_ name",
-			env:         map[string]string{"NKECTL_CWE_IMAGE": "old.example/c:pinned", "NKECTL_CONTROLLER_IMAGE": "new.example/c:pinned"},
-			wantErr:     "missing.yaml",
-			wantWarning: "NKECTL_CWE_IMAGE is not read; NVKECTL_CONTROLLER_IMAGE is set and is used instead",
-		},
-		{
-			desc:            "replacement given as --controller-image",
-			env:             map[string]string{"NKECTL_CWE_IMAGE": "old.example/c:pinned"},
-			controllerImage: "flag.example/c:pinned",
-			wantErr:         "missing.yaml",
-			wantWarning:     "NKECTL_CWE_IMAGE is not read; --controller-image is set and is used instead",
-		},
-		{
-			desc:            "one replaced by its flag, one not replaced",
-			env:             map[string]string{"NKECTL_CWE_IMAGE": "old.example/c:pinned", "NKECTL_CWE_PORT": "30181"},
-			controllerImage: "flag.example/c:pinned",
-			wantErr:         "NKECTL_CWE_PORT is no longer read; set NVKECTL_CONTROLLER_PORT instead",
-			notInErr:        "NKECTL_CWE_IMAGE",
-			wantWarning:     "NKECTL_CWE_IMAGE is not read; --controller-image is set and is used instead",
-		},
-	} {
-		t.Run(tc.desc, func(t *testing.T) {
-			for _, name := range controllerdeploy.Settings {
-				t.Setenv(name, "")
-				t.Setenv(envalias.Old(name), "")
-				if suffix, ok := strings.CutPrefix(name, "NVKECTL_CONTROLLER_"); ok {
-					t.Setenv("NKECTL_CWE_"+suffix, "")
-				}
-			}
-			for k, v := range tc.env {
-				t.Setenv(k, v)
-			}
+// TestRunBootstrapSiteIgnoresEarlierControllerNames: the earlier names of the
+// NVKE controller settings (NKECTL_CWE_*, NKECTL_CONTROLLER_* and
+// NVKECTL_CONTROLLER_*) are not read, so they neither stop bootstrap site nor
+// draw a warning.
+func TestRunBootstrapSiteIgnoresEarlierControllerNames(t *testing.T) {
+	for _, name := range []string{"NKECTL_CWE_IMAGE", "NKECTL_CONTROLLER_PORT", "NVKECTL_CONTROLLER_IMAGE"} {
+		t.Setenv(name, "old.example/c:pinned")
+	}
 
-			var buf bytes.Buffer
-			prev := slog.Default()
-			slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
-			t.Cleanup(func() { slog.SetDefault(prev) })
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
 
-			err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
-				siteSpec:        filepath.Join(t.TempDir(), "missing.yaml"),
-				controllerImage: tc.controllerImage,
-			})
-			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
-				t.Fatalf("runBootstrapSite error = %v, want it to contain %q", err, tc.wantErr)
-			}
-			if tc.notInErr != "" && strings.Contains(err.Error(), tc.notInErr) {
-				t.Errorf("runBootstrapSite error = %v, want no mention of %s", err, tc.notInErr)
-			}
-			logged := buf.String()
-			if tc.wantWarning == "" && strings.Contains(logged, "NKECTL_CWE_") {
-				t.Errorf("warned instead of stopping:\n%s", logged)
-			}
-			if tc.wantWarning != "" && !strings.Contains(logged, tc.wantWarning) {
-				t.Errorf("no warning %q in:\n%s", tc.wantWarning, logged)
-			}
-		})
+	// A missing site spec is the first thing that stops the command.
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec: filepath.Join(t.TempDir(), "missing.yaml"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "missing.yaml") {
+		t.Fatalf("runBootstrapSite error = %v, want the missing site spec", err)
+	}
+	if logged := buf.String(); strings.Contains(logged, "level=WARN") {
+		t.Errorf("warned about a name nvkectl does not read:\n%s", logged)
+	}
+}
+
+// TestBootstrapSite_ControllerImageFlagIsGone: the release candidates'
+// --controller-image is not a flag of bootstrap site.
+func TestBootstrapSite_ControllerImageFlagIsGone(t *testing.T) {
+	_, _, err := runGenerate(t, "bootstrap", "site", "-f", "unused.yaml", "--controller-image", "c:1")
+	if err == nil || !strings.Contains(err.Error(), "unknown flag: --controller-image") {
+		t.Fatalf("err = %v, want --controller-image rejected as an unknown flag", err)
 	}
 }
 

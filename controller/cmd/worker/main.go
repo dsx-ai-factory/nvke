@@ -49,6 +49,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db/migrations"
 	"github.com/dsx-ai-factory/nvke/controller/internal/dbmetrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/internal/machinerelease"
 	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nvke/controller/internal/runbook"
@@ -172,7 +173,8 @@ func main() {
 	}()
 
 	// Run any new DB migrations
-	if err := migrations.Migrate(ctx, bunDB); err != nil {
+	// Note: cfg.ProfilesDir feeds the config profile label backfill (20261016120000)
+	if err := migrations.Migrate(ctx, bunDB, cfg.ProfilesDir); err != nil {
 		logger.Error("Failed to migrate database", "error", err)
 		os.Exit(1)
 	}
@@ -206,6 +208,10 @@ func main() {
 		logger.Error("Failed to create management-cluster Kubernetes client", "error", err)
 		os.Exit(1)
 	}
+	if err := machinerelease.CheckCRDs(ctx, managementK8sClient); err != nil {
+		logger.Error("Failed the release CRD startup check", "error", err)
+		os.Exit(1)
+	}
 
 	controllerRuntimeLogger := logger.With("logger", "controller-runtime")
 	k8sControllerManager, err := kube.NewRuntimeManager(
@@ -213,6 +219,7 @@ func main() {
 		kube.RuntimeManagerOptions{
 			ConfigMapCacheNamespace: cfg.SpireServerNamespace,
 			LeaderElectionNamespace: cfg.PodNamespace,
+			SecretCacheNamespace:    cfg.ManagementNamespaceOrDefault(),
 		},
 		spirev1alpha1.AddToScheme,
 		nicov1.AddToScheme,
@@ -227,6 +234,7 @@ func main() {
 		managementK8sClient,
 		nodeAgentClient,
 		cfg.TenantAccessEnabled,
+		cfg.ManagementNamespaceOrDefault(),
 	)
 
 	if cfg.SpiffeEnabled {
@@ -325,6 +333,32 @@ func main() {
 		if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
 			logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
 			os.Exit(1)
+		}
+	}
+
+	// Writes the SPIRE agent ID path MachineSpireEntryController consumes, so it
+	// is only useful alongside that controller. Gated on CAPLL's CRD rather than
+	// supportedInfraProviders: dropping launchLayer from that list stops new
+	// clusters, while existing clusters' new and replacement machines still need
+	// their agent path to join.
+	if machineCRDInstalled {
+		launchLayerCRDInstalled, err := capi.LaunchLayerMachineCRDInstalled(k8sControllerManager.GetRESTMapper())
+		if err != nil {
+			logger.Error("Failed to look up the LaunchLayerMachine CRD", "error", err)
+			os.Exit(1)
+		}
+		if !launchLayerCRDInstalled {
+			logger.Warn("LaunchLayerMachine CRD not installed; skipping the LaunchLayer SPIFFE controller")
+		} else {
+			launchLayerSpiffeController := capi.NewLaunchLayerSpiffeController(
+				dbInstance,
+				k8sControllerManager.GetClient(),
+				logger.With("logger", "launchlayer-spiffe-controller"),
+			)
+			if err := launchLayerSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
+				logger.Error("Failed to set up LaunchLayer SPIFFE controller", "error", err)
+				os.Exit(1)
+			}
 		}
 	}
 
@@ -458,6 +492,7 @@ func main() {
 		k8sControllerManager.GetClient(),
 		tenantManagerSet,
 		cfg.ManagedByLabelValue,
+		cfg.ManagementNamespaceOrDefault(),
 	)
 	if err := tenantSecretReconciler.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up tenant manager Secret reconciler", "error", err)

@@ -81,8 +81,15 @@ func clusterStateScript() string {
 	kubectl := "kubectl --kubeconfig " + shellQuote(kubeconfigPath)
 	inNamespace := kubectl + " -n " + shellQuote(controller.Namespace())
 	selector := "app.kubernetes.io/name=" + controller.Service()
+	inCNI := kubectl + " -n " + shellQuote("ovn-kubernetes")
+	// The ovn-kubernetes chart labels both ovnkube-node and
+	// ovnkube-control-plane component=network.
+	cniSelector := "component=network"
+	inCertManager := kubectl + " -n " + shellQuote("cert-manager")
+	certManagerSelector := "app.kubernetes.io/instance=cert-manager"
 
-	sections := []struct{ title, cmd string }{
+	type section struct{ title, cmd string }
+	sections := []section{
 		// First, because it is what tells a not-ready workload apart from
 		// an unreachable one.
 		{"service and endpoints", inNamespace + " get service,endpoints,endpointslice -o wide"},
@@ -92,12 +99,28 @@ func clusterStateScript() string {
 		// Sorted by time rather than the default, which groups by object and
 		// hides the order things went wrong in.
 		{"events", inNamespace + " get events --sort-by=.lastTimestamp"},
-		{"controller logs", inNamespace + " logs -l " + shellQuote(selector) + " --all-containers --tail=200 --prefix"},
+		{"controller logs", podLogs(inNamespace, selector)},
 		// The restart before this one, which is the only copy of why a
 		// crash-looping container died.
-		{"controller logs, previous", inNamespace + " logs -l " + shellQuote(selector) + " --all-containers --tail=200 --prefix --previous"},
+		{"controller logs, previous", podLogs(inNamespace, selector) + " --previous"},
 		{"nodes", kubectl + " get nodes -o wide"},
 		{"workloads, all namespaces", kubectl + " get pods -A -o wide"},
+		// Probe failures, back-offs and sandbox errors, from every namespace
+		// rather than only the controller's.
+		{"events, all namespaces", kubectl + " get events -A --sort-by=.lastTimestamp"},
+		// What clusterctl init and the deploy path wait on before the
+		// controller exists. A deploy that fails in one of these leaves every
+		// controller section reading "No resources found", so they are read by
+		// name: the workloads table shows that a pod is crash-looping, not why.
+		// Last State in the pod detail carries the exit code and, for
+		// containers whose terminationMessagePolicy is FallbackToLogsOnError,
+		// the tail of the log they died with.
+		{"cni pod detail", inCNI + " describe pods"},
+		{"cni logs", podLogs(inCNI, cniSelector)},
+		{"cni logs, previous", podLogs(inCNI, cniSelector) + " --previous"},
+		{"cert-manager pod detail", inCertManager + " describe pods"},
+		{"cert-manager logs", podLogs(inCertManager, certManagerSelector)},
+		{"cert-manager logs, previous", podLogs(inCertManager, certManagerSelector) + " --previous"},
 	}
 
 	stanzas := make([]string, 0, 2*len(sections))
@@ -108,4 +131,12 @@ func clusterStateScript() string {
 		)
 	}
 	return strings.Join(stanzas, "; ")
+}
+
+// podLogs reads every container of the pods selector matches. Without
+// --ignore-errors the first container with nothing to read, one still waiting
+// to start or, under --previous, one that never restarted, ends the read for
+// every pod after it.
+func podLogs(inNamespace, selector string) string {
+	return inNamespace + " logs -l " + shellQuote(selector) + " --all-containers --tail=200 --prefix --ignore-errors"
 }

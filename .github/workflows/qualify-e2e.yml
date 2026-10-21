@@ -132,7 +132,7 @@ on:
         type: string
         required: false
       cni-ovn-version:
-        description: "Overrides the OVN CNI version the plan resolves, e.g. 1.4.11. It selects the nvke-cni-ovn-images and -charts packages, and has to be a version the apt suites serve."
+        description: "Overrides the OVN CNI version the plan resolves, e.g. 2.4.2. It selects the nvke-cni-ovn-images and -charts packages, and has to be a version the OS image locks, because a node installs them from the image rather than over the network."
         type: string
         required: false
       controller-name:
@@ -189,7 +189,7 @@ on:
   #
   # `labeled` and nothing else. Adding `qualify-e2e` is the request to run, and adding
   # `qualify-e2e-dry-run` is the request for a dry run. `qualify-e2e-l40s` runs
-  # the l40s scope (Ubuntu 24.04 on az61) instead of golden-path.
+  # the l40s scope (Ubuntu 24.04 on site-1) instead of golden-path.
   # `synchronize` is deliberately absent so that pushing to a labelled PR
   # does not quietly take another machine. To run again, remove the label and
   # add it back, or use the re-run button.
@@ -212,7 +212,7 @@ permissions: {}
 
 concurrency:
   # Per branch, so separate branches run together and a branch cannot race
-  # itself. A run takes two CPU machines and one GPU machine, and ytl has six
+  # itself. A run takes two CPU machines and one GPU machine, and site-2 has six
   # CPU, so three concurrent runs is the ceiling. GitHub concurrency is a
   # mutex rather than a semaphore and cannot express that, so watch the CPU
   # count: a fourth run exhausts the site and every run in flight fails at
@@ -237,9 +237,16 @@ jobs:
   plan:
     name: plan
     runs-on: arc-amd64-cpu16
+    # No protection rules: ci-shared exists to scope QUALIFY_E2E_NGC_ORG off
+    # repository level, not to gate this job the way forge/forge-nightly gate
+    # qualify-run. It allows every branch, so this changes nothing about who
+    # can run plan. plan reads QUALIFY_E2E_NGC_ORG from here; qualify-run
+    # reads its own separate copy from forge/forge-nightly, since a job can
+    # only have one environment.
+    environment: ci-shared
     # The same gate as the lanes: a dispatch is deliberate, a beta tag was
     # pushed to this repository, and a pull_request run has to be asked for with
-    # the `qualify-e2e` label, the `qualify-e2e-l40s` label for the az61 L40S
+    # the `qualify-e2e` label, the `qualify-e2e-l40s` label for the site-1 L40S
     # scope, or the `qualify-e2e-dry-run` label for a dry run, from a branch in
     # this repository. The lanes need this job, so they are skipped with it.
     if: >-
@@ -293,7 +300,7 @@ jobs:
       # because a workflow_dispatch from a branch cannot reach Teleport at all:
       # the join token allows only refs/heads/main and refs/pull/*/merge. Until
       # this lands on main a label is the only way to run the DSX stream.
-      # qualify-e2e-l40s is the same for the az61 L40S stream.
+      # qualify-e2e-l40s is the same for the site-1 L40S stream.
       SCOPE: ${{ inputs.scope || (github.event.label.name == 'qualify-e2e-dsx' && 'dsx') || (github.event.label.name == 'qualify-e2e-l40s' && 'l40s') || vars.QUALIFY_E2E_SCOPE || 'golden-path' }}
       # The registry.yaml base names this, so the plan fails here when it is
       # unset rather than naming an artifact under no org. The same variable
@@ -571,6 +578,13 @@ jobs:
       # anyway, its tenant half speaking Forge only. See SCOPE in the plan job.
       SITE_STAGE: ${{ inputs.stage || (github.event.label.name == 'qualify-e2e-dsx' && 'provision') || vars.QUALIFY_E2E_STAGE || 'full' }}
       DRY_RUN: ${{ needs.plan.outputs.dry-run }}
+      # Whether this run's ref is one the nvke WIF provider in the testgrid
+      # repo actually trusts (main, or a v<digit> tag -- see wif-nvke.tf
+      # there). Only a pre-filter: GCP's own attribute mapping is the real
+      # enforcement, matching job_workflow_ref rather than github.ref. This
+      # just skips a labelled PR leg straight to "not trusted" instead of
+      # spending a step on an auth call that WIF was always going to deny.
+      QUALIFY_PUBLISH_TRUSTED: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'true' || 'false' }}
       # Reported below only -- not read by anything downstream here, since the
       # plan job already resolved and applied it. Mirrors that job's own
       # formula so the summary reports what actually happened, not a guess.
@@ -583,11 +597,11 @@ jobs:
       # names it, because nvkectl is published as one artifact per platform and
       # the cli version below names none of them.
       CLI_REF: ${{ matrix.cli_ref }}
-      SITE_CONTROLLER_VERSION: ${{ matrix.controller }}
+      SITE_NVKE_CONTROLLER_VERSION: ${{ matrix.controller }}
       # How the controller's version was resolved, and the commit a described
       # one was taken at. Together they say what the deploy path is exported
       # from, which is a tag for one and a commit for the other.
-      CONTROLLER_VERSION_STRATEGY: ${{ matrix.controller_version_strategy }}
+      NVKE_CONTROLLER_VERSION_STRATEGY: ${{ matrix.controller_version_strategy }}
       PLAN_COMMIT: ${{ needs.plan.outputs.commit }}
       CLI_VERSION: ${{ matrix.cli }}
       # The name the controller is installed under, which the deploy path
@@ -682,24 +696,24 @@ jobs:
       FORGE_SSH_KEY_GROUP_ID: ${{ vars.FORGE_SSH_KEY_GROUP_ID }}
       FORGE_INSTANCE_TYPE_CPU_ID: ${{ vars.FORGE_INSTANCE_TYPE_CPU_ID }}
       FORGE_INSTANCE_TYPE_GPU_ID: ${{ vars.FORGE_INSTANCE_TYPE_GPU_ID }}
-      # ytl, declared alongside az61 in environments/forge.yaml. Its own
-      # names so a run against az61 is unaffected; the loader accepts an
-      # unset optional one, so a repository that has not onboarded ytl still
-      # loads the file and simply cannot resolve gb200.
-      FORGE_YTL_SITE_ID: ${{ vars.FORGE_YTL_SITE_ID }}
-      FORGE_YTL_VPC_ID: ${{ vars.FORGE_YTL_VPC_ID }}
-      FORGE_YTL_VPC_PREFIX_ID: ${{ vars.FORGE_YTL_VPC_PREFIX_ID }}
-      FORGE_YTL_SSH_KEY_GROUP_ID: ${{ vars.FORGE_YTL_SSH_KEY_GROUP_ID }}
+      # site-2, declared alongside site-1 in environments/forge.yaml. Its own
+      # names so a run against site-1 is unaffected; the loader accepts an
+      # unset optional one, so a repository that has not onboarded site-2
+      # still loads the file and simply cannot resolve gb200.
+      FORGE_SITE_2_SITE_ID: ${{ vars.FORGE_SITE_2_SITE_ID }}
+      FORGE_SITE_2_VPC_ID: ${{ vars.FORGE_SITE_2_VPC_ID }}
+      FORGE_SITE_2_VPC_PREFIX_ID: ${{ vars.FORGE_SITE_2_VPC_PREFIX_ID }}
+      FORGE_SITE_2_SSH_KEY_GROUP_ID: ${{ vars.FORGE_SITE_2_SSH_KEY_GROUP_ID }}
       # A secret, like FORGE_JUMP_HOST, not a variable.
-      FORGE_YTL_JUMP_HOST: ${{ secrets.FORGE_YTL_JUMP_HOST }}
+      FORGE_SITE_2_JUMP_HOST: ${{ secrets.FORGE_SITE_2_JUMP_HOST }}
       # root for the same reason as FORGE_TELEPORT_LOGIN: the same bot reaches
       # both jump hosts through rg-k8aas-bot-ssh-root, whose only login is
       # root. Unset falls back to tsh's default, the runner's local user,
       # which Teleport denies.
-      FORGE_YTL_TELEPORT_LOGIN: root
-      FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID: ${{ vars.FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID }}
-      FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID: ${{ vars.FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID }}
-      FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID: ${{ vars.FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID }}
+      FORGE_SITE_2_TELEPORT_LOGIN: root
+      FORGE_SITE_2_INSTANCE_TYPE_CPU_AMD64_ID: ${{ vars.FORGE_SITE_2_INSTANCE_TYPE_CPU_AMD64_ID }}
+      FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID: ${{ vars.FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID }}
+      FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID: ${{ vars.FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID }}
       # DSX_, the second provider. Its identifiers follow the same split as
       # Forge's: the jump host is a secret, read by environments/dsx.yaml
       # beside the rest, and everything else is a variable naming
@@ -719,6 +733,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # Read by `qualify result` below as --started-at, for the case where
+      # Ginkgo never runs far enough to write its own StartTime (a Forge
+      # provisioning failure, a wedged runner) -- see that command's own doc.
+      - name: Record the run's start time
+        id: start-time
+        shell: bash
+        run: echo "started-at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_OUTPUT}"
 
       # Three `docker save` archives of multi-hundred-megabyte images, written
       # to the workspace and read back by dind. Reported rather than freed:
@@ -792,10 +814,10 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
-          if [ -n "${SITE_CONTROLLER_VERSION}" ]; then
-            echo "SITE_CONTROLLER_BUILD=0" >> "${GITHUB_ENV}"
-            echo "qualifying the published ${SITE_CONTROLLER_VERSION}"
-            echo "::warning::pulling a published controller, ${SITE_CONTROLLER_VERSION}; if it predates #850 the bootstrap fails at \"creating the site cluster\""
+          if [ -n "${SITE_NVKE_CONTROLLER_VERSION}" ]; then
+            echo "SITE_NVKE_CONTROLLER_BUILD=0" >> "${GITHUB_ENV}"
+            echo "qualifying the published ${SITE_NVKE_CONTROLLER_VERSION}"
+            echo "::warning::pulling a published controller, ${SITE_NVKE_CONTROLLER_VERSION}; if it predates #850 the bootstrap fails at \"creating the site cluster\""
             auth="$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 -w0)"
             echo "::add-mask::${auth}"
 
@@ -808,15 +830,15 @@ jobs:
             # abbreviated hash inside it is refused over the wire. It resolves
             # locally through that hash once the commit is here, and the full
             # hash is what the plan recorded.
-            if [ "${CONTROLLER_VERSION_STRATEGY}" = commitDescribe ]; then
+            if [ "${NVKE_CONTROLLER_VERSION_STRATEGY}" = commitDescribe ]; then
               if [ -z "${PLAN_COMMIT}" ]; then
                 echo "::error::the controller was described at a commit, but the plan records none"
                 exit 1
               fi
               want="${PLAN_COMMIT}"
-              missing="could not fetch ${PLAN_COMMIT}, the commit ${SITE_CONTROLLER_VERSION} describes"
+              missing="could not fetch ${PLAN_COMMIT}, the commit ${SITE_NVKE_CONTROLLER_VERSION} describes"
             else
-              tag="controller/${SITE_CONTROLLER_VERSION}"
+              tag="controller/${SITE_NVKE_CONTROLLER_VERSION}"
               want="refs/tags/${tag}:refs/tags/${tag}"
               missing="no ${tag} release tag; the deploy path is exported from the controller's own commit"
             fi
@@ -829,8 +851,8 @@ jobs:
           fi
           version="$(git rev-parse --short=12 HEAD)"
           {
-            echo "SITE_CONTROLLER_BUILD=1"
-            echo "SITE_CONTROLLER_VERSION=${version}"
+            echo "SITE_NVKE_CONTROLLER_BUILD=1"
+            echo "SITE_NVKE_CONTROLLER_VERSION=${version}"
           } >> "${GITHUB_ENV}"
           echo "building the controller from ${version}"
 
@@ -867,7 +889,7 @@ jobs:
           fi
 
           # Empty on a pull_request run whose QUALIFY_E2E_* variable is unset.
-          # SITE_CONTROLLER_VERSION is not here: the step above resolves it.
+          # SITE_NVKE_CONTROLLER_VERSION is not here: the step above resolves it.
           missing=()
           for name in SITE_STAGE; do
             [ -n "${!name}" ] || missing+=("${name}")
@@ -895,7 +917,7 @@ jobs:
               ;;
           esac
           echo "SITE_IMAGES=${images}" >> "${GITHUB_ENV}"
-          echo "stage=${SITE_STAGE} controller=${SITE_CONTROLLER_VERSION} images=${images}"
+          echo "stage=${SITE_STAGE} controller=${SITE_NVKE_CONTROLLER_VERSION} images=${images}"
 
       # nvkectl is a client of the controller it bootstraps, so the two have to agree
       # on the cluster API. By default both are built from this checkout,
@@ -929,12 +951,12 @@ jobs:
             amd64|arm64) ;;
             *) echo "::error::arch is ${arch}, which is neither amd64 nor arm64"; exit 1 ;;
           esac
-          # SITE_CONTROLLER_BUILD, not SITE_CONTROLLER_VERSION: the resolve
+          # SITE_NVKE_CONTROLLER_BUILD, not SITE_NVKE_CONTROLLER_VERSION: the resolve
           # step above writes a commit into the version when none was given,
           # so the version is never empty by here. The build flag is what
           # records that the image is built from this checkout, which is the
           # amd64-only path.
-          if [ "${arch}" != amd64 ] && [ "${SITE_CONTROLLER_BUILD}" = 1 ]; then
+          if [ "${arch}" != amd64 ] && [ "${SITE_NVKE_CONTROLLER_BUILD}" = 1 ]; then
             echo "::error::arch=${arch} needs controller-version set: building the controller image here is amd64-only"
             exit 1
           fi
@@ -1089,7 +1111,7 @@ jobs:
       # nvkectl for the node's architecture, the three image archives, and the
       # deploy path out of the checkout. The node has no access to this
       # repository, so everything it runs has to be built here and staged.
-      # SITE_CONTROLLER_BUILD and SITE_CLI_BUILD come from the resolve steps
+      # SITE_NVKE_CONTROLLER_BUILD and SITE_CLI_BUILD come from the resolve steps
       # and decide whether the controller archive and nvkectl are built here or were
       # published.
       - name: Build the site inputs
@@ -1101,8 +1123,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           make -C controller/test/e2e site-inputs \
-            SITE_CONTROLLER_VERSION="${SITE_CONTROLLER_VERSION}" \
-            SITE_CONTROLLER_BUILD="${SITE_CONTROLLER_BUILD}" \
+            SITE_NVKE_CONTROLLER_VERSION="${SITE_NVKE_CONTROLLER_VERSION}" \
+            SITE_NVKE_CONTROLLER_BUILD="${SITE_NVKE_CONTROLLER_BUILD}" \
             SITE_ARCH="${SITE_ARCH}" \
             SITE_CLI_BUILD="${SITE_CLI_BUILD}" \
             SITE_CLI_VERSION="${CLI_VERSION}" \
@@ -1314,13 +1336,13 @@ jobs:
           VAR_CAPI_PROVISIONED_VERSION: ${{ vars.QUALIFY_E2E_CAPI_PROVISIONED_VERSION }}
           VAR_KUBERNETES_VERSION: ${{ vars.QUALIFY_E2E_KUBERNETES_VERSION }}
           VAR_CNI_OVN_VERSION: ${{ vars.QUALIFY_E2E_CNI_OVN_VERSION }}
-          VAR_CONTROLLER_NAMESPACE: ${{ vars.NVKE_CONTROLLER_NAMESPACE }}
-          VAR_CONTROLLER_SERVICE: ${{ vars.NVKE_CONTROLLER_SERVICE }}
+          VAR_NVKE_CONTROLLER_NAMESPACE: ${{ vars.NVKE_CONTROLLER_NAMESPACE }}
+          VAR_NVKE_CONTROLLER_SERVICE: ${{ vars.NVKE_CONTROLLER_SERVICE }}
           # The names those two replaced, read separately so the summary can
           # say a deprecated one answered instead of hiding it behind the
           # value it supplied. #1399 removes them.
-          WAS_CONTROLLER_NAMESPACE: ${{ vars.CWE_NAMESPACE }}
-          WAS_CONTROLLER_SERVICE: ${{ vars.CWE_SERVICE }}
+          WAS_NVKE_CONTROLLER_NAMESPACE: ${{ vars.CWE_NAMESPACE }}
+          WAS_NVKE_CONTROLLER_SERVICE: ${{ vars.CWE_SERVICE }}
           VAR_OS_IMAGE_BOOTLOADER_AMD64: ${{ vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
           VAR_OS_IMAGE_AMD64: ${{ vars.QUALIFY_E2E_OS_IMAGE_AMD64 }}
           VAR_OS_IMAGE_BOOTLOADER_ARM64: ${{ vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
@@ -1347,7 +1369,7 @@ jobs:
           # so rather than reporting the new one it did not read.
           rows=(
             "stage|SITE_STAGE|IN_STAGE|VAR_STAGE|QUALIFY_E2E_STAGE"
-            "controller version|SITE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|QUALIFY_E2E_CONTROLLER_VERSION"
+            "controller version|SITE_NVKE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|QUALIFY_E2E_CONTROLLER_VERSION"
             "nvkectl version|CLI_VERSION|IN_CLI_VERSION|VAR_CLI_VERSION|QUALIFY_E2E_CLI_VERSION"
             "nvkectl artifact|SITE_CLI_REF|||"
             "dry run|DRY_RUN|IN_DRY_RUN||"
@@ -1370,8 +1392,8 @@ jobs:
             "kind version|KIND_VERSION|||"
             "clusterctl version|CLUSTERCTL_VERSION|||"
             "nerdctl version|NERDCTL_VERSION|||"
-            "controller namespace|NKE_CONTROLLER_NAMESPACE|IN_CONTROLLER_NAME|VAR_CONTROLLER_NAMESPACE|NKE_CONTROLLER_NAMESPACE|WAS_CONTROLLER_NAMESPACE|CWE_NAMESPACE"
-            "controller service|NKE_CONTROLLER_SERVICE|IN_CONTROLLER_NAME|VAR_CONTROLLER_SERVICE|NKE_CONTROLLER_SERVICE|WAS_CONTROLLER_SERVICE|CWE_SERVICE"
+            "controller namespace|NKE_CONTROLLER_NAMESPACE|IN_CONTROLLER_NAME|VAR_NVKE_CONTROLLER_NAMESPACE|NVKE_CONTROLLER_NAMESPACE|WAS_NVKE_CONTROLLER_NAMESPACE|CWE_NAMESPACE"
+            "controller service|NKE_CONTROLLER_SERVICE|IN_CONTROLLER_NAME|VAR_NVKE_CONTROLLER_SERVICE|NVKE_CONTROLLER_SERVICE|WAS_NVKE_CONTROLLER_SERVICE|CWE_SERVICE"
             "os-image release|OS_IMAGE_RELEASE|IN_OS_IMAGE_VERSION|VAR_OS_IMAGE_VERSION|QUALIFY_E2E_OS_IMAGE_VERSION"
             "amd64 OS image bootloader|OS_IMAGE_BOOTLOADER_AMD64|IN_OS_IMAGE_BOOTLOADER_AMD64|VAR_OS_IMAGE_BOOTLOADER_AMD64|QUALIFY_E2E_OS_IMAGE_BOOTLOADER_AMD64"
             "amd64 OS image|OS_IMAGE_AMD64|IN_OS_IMAGE_AMD64|VAR_OS_IMAGE_AMD64|QUALIFY_E2E_OS_IMAGE_AMD64"
@@ -1395,15 +1417,15 @@ jobs:
             "DSX instance type|DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID||DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID|DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID"
             "DSX Teleport login|DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN||DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN|DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN"
             "DSX node user|DSX_REDSTONE_DEV1_DH2_NODE_USER||DSX_REDSTONE_DEV1_DH2_NODE_USER|DSX_REDSTONE_DEV1_DH2_NODE_USER"
-            "ytl site|FORGE_YTL_SITE_ID||FORGE_YTL_SITE_ID|FORGE_YTL_SITE_ID"
-            "ytl VPC|FORGE_YTL_VPC_ID||FORGE_YTL_VPC_ID|FORGE_YTL_VPC_ID"
-            "ytl VPC prefix|FORGE_YTL_VPC_PREFIX_ID||FORGE_YTL_VPC_PREFIX_ID|FORGE_YTL_VPC_PREFIX_ID"
-            "ytl ssh key group|FORGE_YTL_SSH_KEY_GROUP_ID||FORGE_YTL_SSH_KEY_GROUP_ID|FORGE_YTL_SSH_KEY_GROUP_ID"
-            "ytl jump host|FORGE_YTL_JUMP_HOST|||"
-            "ytl Teleport login|FORGE_YTL_TELEPORT_LOGIN|||"
-            "ytl amd64 cpu instance type|FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID||FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID|FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID"
-            "ytl arm64 cpu instance type|FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID||FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID|FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID"
-            "ytl gb200 instance type|FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID||FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID|FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID"
+            "site-2 site|FORGE_SITE_2_SITE_ID||FORGE_SITE_2_SITE_ID|FORGE_SITE_2_SITE_ID"
+            "site-2 VPC|FORGE_SITE_2_VPC_ID||FORGE_SITE_2_VPC_ID|FORGE_SITE_2_VPC_ID"
+            "site-2 VPC prefix|FORGE_SITE_2_VPC_PREFIX_ID||FORGE_SITE_2_VPC_PREFIX_ID|FORGE_SITE_2_VPC_PREFIX_ID"
+            "site-2 ssh key group|FORGE_SITE_2_SSH_KEY_GROUP_ID||FORGE_SITE_2_SSH_KEY_GROUP_ID|FORGE_SITE_2_SSH_KEY_GROUP_ID"
+            "site-2 jump host|FORGE_SITE_2_JUMP_HOST|||"
+            "site-2 Teleport login|FORGE_SITE_2_TELEPORT_LOGIN|||"
+            "site-2 amd64 cpu instance type|FORGE_SITE_2_INSTANCE_TYPE_CPU_AMD64_ID||FORGE_SITE_2_INSTANCE_TYPE_CPU_AMD64_ID|FORGE_SITE_2_INSTANCE_TYPE_CPU_AMD64_ID"
+            "site-2 arm64 cpu instance type|FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID||FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID|FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID"
+            "site-2 gb200 instance type|FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID||FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID|FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID"
           )
 
           # A row nobody remembers to add is the whole failure mode: the
@@ -1417,7 +1439,7 @@ jobs:
           # renamed out of that prefix would have dropped out of this check
           # silently -- no failure, just less coverage, which is the one
           # thing this step exists to prevent. Every prefix in use is listed,
-          # and a new one has to be added here too. NKE_CONTROLLER_ is here
+          # and a new one has to be added here too. NVKE_CONTROLLER_ is here
           # because the name the controller is installed under is read by the
           # suite from the environment variables it already honours, so it
           # carries no QUALIFY_E2E_ prefix of its own. CWE_ is its deprecated
@@ -1427,7 +1449,7 @@ jobs:
           missing=()
           while read -r name; do
             printf '%s\n' "${rows[@]}" | cut -d'|' -f5,7 | tr '|' '\n' | grep -qx "${name}" || missing+=("vars.${name}")
-          done < <(grep -oE 'vars\.(FORGE|QUALIFY_E2E|NKE_CONTROLLER|CWE|DSX)_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
+          done < <(grep -oE 'vars\.(FORGE|QUALIFY_E2E|NVKE_CONTROLLER|CWE|DSX)_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
           while read -r name; do
             printf '%s\n' "${rows[@]}" | cut -d'|' -f3 |
               grep -qx "IN_$(printf '%s' "${name}" | tr 'a-z-' 'A-Z_')" || missing+=("inputs.${name}")
@@ -1488,7 +1510,7 @@ jobs:
               # What the plan resolved, which is where each of these comes
               # from when no override named it.
               case "${resolved}" in
-                SITE_CONTROLLER_VERSION|CLI_VERSION|SITE_CLI_REF|CAPI_PROVISIONED_VERSION|KUBERNETES_VERSION|CNI_OVN_VERSION|KIND_VERSION|CLUSTERCTL_VERSION|NERDCTL_VERSION|OS_IMAGE_*|ARCH|GPU|STREAM|COMBINATION)
+                SITE_NVKE_CONTROLLER_VERSION|CLI_VERSION|SITE_CLI_REF|CAPI_PROVISIONED_VERSION|KUBERNETES_VERSION|CNI_OVN_VERSION|KIND_VERSION|CLUSTERCTL_VERSION|NERDCTL_VERSION|OS_IMAGE_*|ARCH|GPU|STREAM|COMBINATION)
                   if [ "${source}" = "workflow default" ]; then
                     source="qualification plan"
                   fi
@@ -1510,7 +1532,7 @@ jobs:
               fi
               # The resolve steps fill these in from the checkout when no
               # published version was asked for, so neither arm above named it.
-              if { [ "${resolved}" = "SITE_CONTROLLER_VERSION" ] && [ "${SITE_CONTROLLER_BUILD}" = "1" ]; } ||
+              if { [ "${resolved}" = "SITE_NVKE_CONTROLLER_VERSION" ] && [ "${SITE_NVKE_CONTROLLER_BUILD}" = "1" ]; } ||
                  { [ "${resolved}" = "CLI_VERSION" ] && [ "${SITE_CLI_BUILD}" = "1" ]; }; then
                 source="built from this checkout"
               fi
@@ -1605,7 +1627,7 @@ jobs:
             {
               echo "dry run: ginkgo is not run. It would have run with:"
               echo "  -e2e.site-stage=${SITE_STAGE}"
-              echo "  -e2e.versions=controller=${SITE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}"
+              echo "  -e2e.versions=controller=${SITE_NVKE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}"
               echo "  -e2e.capabilities=${CAPABILITIES}"
               echo "  keep: ${keep[*]:-no}"
             } | tee qualify-e2e.log
@@ -1621,7 +1643,7 @@ jobs:
               -e2e.config=e2e-config.yaml \
               -e2e.environment="${SITE_ENVIRONMENT}" \
               -e2e.site-stage="${SITE_STAGE}" \
-              -e2e.versions="controller=${SITE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}" \
+              -e2e.versions="controller=${SITE_NVKE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}" \
               -e2e.capabilities="${CAPABILITIES}" \
               "${keep[@]}" 2>&1 | tee qualify-e2e.log
           fi
@@ -1667,6 +1689,55 @@ jobs:
             done
           done < <(compgen -v | grep -E '_JUMP_HOST$|^SSA_ISSUER$' || true)
 
+      # Writes qualify-result.json from this leg's plan entry and Ginkgo
+      # report, after credentials are scrubbed out of the report -- the result
+      # record is kept (and uploaded below) even on a dry run's or a PR leg's
+      # untrusted ref, just never published past this job. A missing report
+      # (Ginkgo never ran) still produces an errored result; see `qualify
+      # result`'s own doc.
+      - name: Record the qualification result
+        if: always() && env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          go run ./release/cmd/qualify result \
+            --plan plan.json \
+            --report controller/test/e2e/qualify-e2e.report.json \
+            --combination "${{ matrix.combination }}" \
+            --stream "${{ matrix.stream }}" \
+            --started-at "${{ steps.start-time.outputs.started-at }}" \
+            --output qualify-result.json
+
+      # Only a trusted ref (see QUALIFY_PUBLISH_TRUSTED above) ever reaches
+      # this: the WIF provider in the testgrid repo denies the token exchange
+      # for anything else, so there is no point spending a step finding that
+      # out for every labelled PR leg.
+      - name: Authenticate to GCP (TestGrid)
+        if: always() && env.DRY_RUN != 'true' && env.QUALIFY_PUBLISH_TRUSTED == 'true'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          # dsx-oss-github-<env>/dsx-oss-nvke, not aicr's own pool/provider --
+          # testgrid repo's wif-nvke.tf gives nvke its own pool so the
+          # workload_identity_provider path carries no aicr codename and the
+          # two repos share no federation resources.
+          workload_identity_provider: projects/${{ vars.TESTGRID_GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/dsx-oss-github-prod/providers/dsx-oss-nvke
+          service_account: dsx-oss-nvke-prod@${{ vars.TESTGRID_GCP_PROJECT_ID }}.iam.gserviceaccount.com
+
+      # `qualify publish` reads TESTGRID_BUCKET itself and no-ops (exit 0) for
+      # an errored result (Ginkgo never ran) -- see its own doc. Nothing
+      # here needs to branch on that.
+      - name: Publish the qualification result
+        if: always() && env.DRY_RUN != 'true' && env.QUALIFY_PUBLISH_TRUSTED == 'true'
+        shell: bash
+        env:
+          TESTGRID_BUCKET: ${{ vars.TESTGRID_BUCKET }}
+        run: |
+          set -Eeuo pipefail
+          go run ./release/cmd/qualify publish \
+            --result qualify-result.json \
+            --junit controller/test/e2e/qualify-e2e.junit.xml \
+            --stream "${{ matrix.stream }}"
+
       # The Ginkgo log carries every phase boundary, remote command and
       # failure. An hour-long run is worth more than a scroll-back in the job
       # view, and a green one is the reference for diagnosing the next red
@@ -1682,17 +1753,29 @@ jobs:
       # recorded nothing beyond "did not become healthy within 10m0s". It
       # carries the Service endpoints, so it says whether the controller was unready or
       # merely unreachable.
+      #
+      # site-bundle*.tar.gz is the failure bundle the suite collects from the
+      # node when a spec fails: the node's state and logs, the cluster's
+      # objects, events and pod logs across every namespace, and a timeline
+      # sampled from the bootstrap on. Redacted and verified on the runner
+      # before it is written; a site-bundle*.txt note in its place says why
+      # there is no tarball, because collection failed or because the
+      # redaction could not be shown clean and the suite kept the archive
+      # back. The name carries the attempt, as the other lanes' do, so a
+      # re-run's upload does not collide with the first attempt's.
       - name: Upload the run log
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: forge-site-${{ env.SITE_STAGE }}-${{ matrix.stream }}-${{ github.run_id }}
+          name: forge-site-${{ env.SITE_STAGE }}-${{ matrix.stream }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             controller/test/e2e/qualify-e2e.log
             controller/test/e2e/qualify-e2e.junit.xml
             controller/test/e2e/nvkectl-diagnostics.tar.gz
             controller/test/e2e/tenant-diagnostics.json
             controller/test/e2e/site-cluster-state.txt
+            controller/test/e2e/site-bundle*
+            qualify-result.json
             ${{ runner.temp }}/run-inputs.txt
             ${{ runner.temp }}/tbot.log
           if-no-files-found: warn

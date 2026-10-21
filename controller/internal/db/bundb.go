@@ -16,6 +16,7 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 	"github.com/uptrace/bun/extra/bunotel"
 	"github.com/uptrace/bun/extra/bunslog"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 )
@@ -48,10 +49,26 @@ func logFormat(event *bun.QueryEvent) []slog.Attr {
 	return attrs
 }
 
+// parentedTracingHook prevents background queries from becoming standalone
+// root traces. Embedding preserves Bun's Init and AfterQuery behavior, including
+// database metrics for queries that have no trace parent.
+type parentedTracingHook struct {
+	*bunotel.QueryHook
+}
+
+func (h *parentedTracingHook) BeforeQuery(ctx context.Context, event *bun.QueryEvent) context.Context {
+	if !trace.SpanContextFromContext(ctx).IsValid() {
+		return ctx
+	}
+	return h.QueryHook.BeforeQuery(ctx, event)
+}
+
 // newTracingHook labels spans with the database actually connected to, so
 // sites that set a different appDb.dbName are not reported as cloud-workflow.
-func newTracingHook(connector *pgdriver.Connector, opts ...bunotel.Option) *bunotel.QueryHook {
-	return bunotel.NewQueryHook(append([]bunotel.Option{bunotel.WithDBName(connector.Config().Database)}, opts...)...)
+func newTracingHook(connector *pgdriver.Connector, opts ...bunotel.Option) *parentedTracingHook {
+	return &parentedTracingHook{
+		QueryHook: bunotel.NewQueryHook(append([]bunotel.Option{bunotel.WithDBName(connector.Config().Database)}, opts...)...),
+	}
 }
 
 // NewBunDB creates bun database object based on configuration.

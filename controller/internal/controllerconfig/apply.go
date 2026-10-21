@@ -38,6 +38,7 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.FieldManagerRebootMachineName = c.FieldManager.RebootMachineName
 	cfg.FieldManagerMachineHealthIssueName = c.FieldManager.MachineHealthIssueName
 	cfg.ManagedByLabelValue = c.ManagedByLabelValue
+	cfg.ManagementNamespace = c.ManagementNamespace
 	cfg.MetricsListenAddress = c.MetricsListenAddress
 	cfg.SupportedInfraProviders = slices.Clone(c.SupportedInfraProviders)
 	cfg.NodeMetadataAllowlistedLabelKeys = slices.Clone(c.NodeMetadataAllowlistedLabelKeys)
@@ -105,6 +106,7 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.Teleport.ProxyAddress = c.Teleport.ProxyAddress
 	cfg.Teleport.Environment = c.Teleport.Environment
 	cfg.Teleport.ManagedByLabelValue = c.Teleport.ManagedByLabelValue
+	cfg.Teleport.AcceptedManagedByLabelValues = c.Teleport.AcceptedManagedByLabelValues
 	cfg.Teleport.TokenNamePrefix = c.Teleport.TokenNamePrefix
 	cfg.Teleport.ResourceGroupLabelValue = c.Teleport.ResourceGroupLabelValue
 

@@ -133,14 +133,14 @@ e2e_write_tilt_config() {
   local out="$1" providers="$2" cwe_image="$3" vip="$4" bgp_container="$5"
   local dsx_identity_exchange_image="${6:-}"
   jq -n \
-    --arg cwe_image "${cwe_image}" \
+    --arg nvke_controller_image "${cwe_image}" \
     --arg site_controller_vip "${vip}" \
     --arg bgp_container_name "${bgp_container}" \
     --arg dsx_identity_exchange_image "${dsx_identity_exchange_image}" \
     --argjson providers "${providers}" \
     '{
       providers: $providers,
-      cwe_image: $cwe_image,
+      nvke_controller_image: $nvke_controller_image,
       site_controller_vip: $site_controller_vip,
       bgp_containers_container_name: $bgp_container_name,
       dsx_identity_exchange_image: $dsx_identity_exchange_image
@@ -332,7 +332,7 @@ e2e_collect_node_diagnostics() {
 
 # The Tilt providers a CAPD run needs. This belongs beside the filters because
 # the two are one contract: the suite filter selects reboot_test.go, which
-# reboots a worker through the nke.nvidia.com/reboot label, and nothing acts on
+# reboots a worker through the nvke.nvidia.com/reboot label, and nothing acts on
 # that label unless capd-reboot-controller is deployed.
 # shellcheck disable=SC2034  # consumed by the scripts that source this file
 E2E_CAPD_PROVIDERS='["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]'

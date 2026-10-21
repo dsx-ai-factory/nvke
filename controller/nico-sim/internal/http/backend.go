@@ -138,6 +138,22 @@ func writeBackendError(w nethttp.ResponseWriter, err error) {
 	}
 }
 
+// writeInstanceError answers a failed instance request. Unless the client
+// caused the failure it also logs the cause, which the access log drops.
+// instance is the requested name on a create and the instance ID otherwise.
+func (s *Server) writeInstanceError(w nethttp.ResponseWriter, r *nethttp.Request, instance string, err error) {
+	if !isClientError(err) {
+		s.logger.Error("instance request failed", "method", r.Method, "path", r.URL.Path, "instance", instance, "error", err)
+	}
+	writeBackendError(w, err)
+}
+
+// isClientError reports whether err is answered with a status the client caused.
+func isClientError(err error) bool {
+	return errors.Is(err, apierr.ErrNotFound) || errors.Is(err, apierr.ErrBadRequest) ||
+		errors.Is(err, apierr.ErrConflict) || errors.Is(err, apierr.ErrOwnershipConflict)
+}
+
 // interfaceRequests converts SDK interface requests into database inputs.
 func interfaceRequests(requested []nicosdk.InterfaceCreateRequest) []state.InterfaceRequest {
 	interfaces := make([]state.InterfaceRequest, 0, len(requested))

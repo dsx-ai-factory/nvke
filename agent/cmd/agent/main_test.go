@@ -4,6 +4,7 @@
 package main
 
 import (
+	"flag"
 	"strings"
 	"testing"
 
@@ -174,5 +175,53 @@ func TestControllerAudienceCompatibility(t *testing.T) {
 	}
 	if err := validateAuthConfig(AgentConfig{ControllerAudience: "other-service", GRPCAuthMode: authModeSPIFFEMTLS}); err == nil {
 		t.Fatal("unsupported audience accepted")
+	}
+}
+
+func TestControllerClientCABundleNames(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		args []string
+		want string
+	}{
+		{name: "unset", want: ""},
+		{name: "nvke flag", args: []string{"--nvke-controller-client-ca-bundle=/nvke.crt"}, want: "/nvke.crt"},
+		{name: "nvke env", env: map[string]string{"NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nvke.crt"}, want: "/nvke.crt"},
+		{name: "earlier flag", args: []string{"--controller-client-ca-bundle=/earlier.crt"}, want: "/earlier.crt"},
+		{name: "earlier env", env: map[string]string{"NKE_CONTROLLER_CLIENT_CA_BUNDLE": "/earlier.crt"}, want: "/earlier.crt"},
+		{
+			name: "both flags: nvke wins",
+			args: []string{"--controller-client-ca-bundle=/earlier.crt", "--nvke-controller-client-ca-bundle=/nvke.crt"},
+			want: "/nvke.crt",
+		},
+		{
+			name: "both env: nvke wins",
+			env:  map[string]string{"NKE_CONTROLLER_CLIENT_CA_BUNDLE": "/earlier.crt", "NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nvke.crt"},
+			want: "/nvke.crt",
+		},
+		{
+			name: "nvke env and earlier flag: nvke wins",
+			env:  map[string]string{"NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nvke.crt"},
+			args: []string{"--controller-client-ca-bundle=/earlier.crt"},
+			want: "/nvke.crt",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("NVKE_CONTROLLER_CLIENT_CA_BUNDLE", "")
+			t.Setenv("NKE_CONTROLLER_CLIENT_CA_BUNDLE", "")
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			fs := flag.NewFlagSet("agent", flag.ContinueOnError)
+			bundle := registerControllerClientCABundleFlags(fs)
+			if err := fs.Parse(tc.args); err != nil {
+				t.Fatalf("Parse(%v) = %v", tc.args, err)
+			}
+			if got := bundle(); got != tc.want {
+				t.Fatalf("controller client CA bundle = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

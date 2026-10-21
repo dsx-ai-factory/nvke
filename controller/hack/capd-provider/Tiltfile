@@ -8,7 +8,7 @@
 CAPD_CWE_RBAC_RESOURCE = "capd-cwe-rbac"
 
 def register(ctx):
-    _cwe_resource_deps = []
+    _controller_resource_deps = []
     _capd_cwe_rbac_manifest = os.path.join(ctx.provider_dir, "controller-rbac.yaml")
 
     k8s_yaml(_capd_cwe_rbac_manifest)
@@ -22,11 +22,11 @@ def register(ctx):
         resource_deps=["check-management-cluster"],
         pod_readiness="ignore",
     )
-    _cwe_resource_deps.append(CAPD_CWE_RBAC_RESOURCE)
+    _controller_resource_deps.append(CAPD_CWE_RBAC_RESOURCE)
 
     return struct(
-        cwe_resource_deps = _cwe_resource_deps,
-        cwe_env_overrides = {},
+        controller_resource_deps = _controller_resource_deps,
+        controller_env_overrides = {},
         preflight_script = """
       kubectl get deployment -n capd-system capd-controller-manager >/dev/null 2>&1 || {
         echo "CAPD controllers are not installed in the current cluster. Run 'make capd-up' first." >&2

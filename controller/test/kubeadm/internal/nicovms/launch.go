@@ -310,7 +310,7 @@ func (p *Process) CreateNode(ctx context.Context, name, userData string, phoneHo
 		TenantID:       DefaultTenantID,
 		InstanceTypeID: DefaultInstanceTypeID,
 		VPCID:          DefaultVpcID,
-		Labels:         map[string]string{"nke.nvidia.com/test-role": "cluster-bringup"},
+		Labels:         map[string]string{"nvke.nvidia.com/test-role": "cluster-bringup"},
 		Interfaces: []interfaceCreateRequest{
 			{SubnetID: DefaultSubnetID},
 		},

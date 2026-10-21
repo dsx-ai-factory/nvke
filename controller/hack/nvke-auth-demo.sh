@@ -31,14 +31,14 @@ Permissive (NKE_PERMISSIVE_MODE=true tilt up):
   produces. That counter check is the extra case in a permissive run.
 
 The mode is read from the live Deployment's AUTH_CONFIG_PATH and the
-permissiveMode key of its nke-controller-config, so the same script covers both
+permissiveMode key of its controller config ConfigMap, so the same script covers both
 deployments. Override it with --mode.
 
-Scaffolding lives in deploy/k8s/nke-auth-dev.yaml (namespaces, service accounts,
-token-minter RBAC, nke-auth-config). The chart mounts the config and binds the
+Scaffolding lives in deploy/k8s/nvke-auth-dev.yaml (namespaces, service accounts,
+token-minter RBAC, the auth ConfigMap). The chart mounts the config and binds the
 JWKS read permission.
 
-Environment: KUBE_CONTEXT, NKE_CONTROLLER_NAMESPACE, NKE_DEPLOYMENT, NKE_CONTROLLER_HTTP_PORT,
+Environment: KUBE_CONTEXT, NKE_CONTROLLER_NAMESPACE, NVKE_AUTH_CONFIGMAP, NKE_DEPLOYMENT, NKE_CONTROLLER_HTTP_PORT,
 NKE_HTTP_URL, NKE_METRICS_PORT, NKE_METRICS_LOCAL_PORT, PROBE_PATH, TOKEN_TTL.
 EOF
 }
@@ -46,6 +46,9 @@ EOF
 KUBE_CONTEXT="${KUBE_CONTEXT:-kind-controller-capi}"
 # CWE_NAMESPACE and CWE_HTTP_PORT are deprecated aliases for the NKE_CONTROLLER_ names; #1399 removes them.
 NKE_CONTROLLER_NAMESPACE="${NKE_CONTROLLER_NAMESPACE:-${CWE_NAMESPACE:-}}"
+# controllerConfig.name in the chart; an install that pins the old name sets this to nke-controller-config.
+NVKE_CONTROLLER_CONFIGMAP="${NVKE_CONTROLLER_CONFIGMAP:-nvke-controller-config}"
+NVKE_AUTH_CONFIGMAP="${NVKE_AUTH_CONFIGMAP:-nvke-auth-config}"
 NKE_DEPLOYMENT="${NKE_DEPLOYMENT:-}"
 NKE_CONTROLLER_HTTP_PORT="${NKE_CONTROLLER_HTTP_PORT:-${CWE_HTTP_PORT:-8080}}"
 NKE_HTTP_URL="${NKE_HTTP_URL:-http://127.0.0.1:${NKE_CONTROLLER_HTTP_PORT}}"
@@ -60,7 +63,7 @@ TOKEN_TTL="${TOKEN_TTL:-10m}"
 # Exported because nvke-token.sh runs as a child process and reads them from the
 # environment. Without this it would use the kubeconfig's current context while
 # this script targets KUBE_CONTEXT.
-export KUBE_CONTEXT NKE_CONTROLLER_NAMESPACE NKE_DEPLOYMENT
+export KUBE_CONTEXT NKE_CONTROLLER_NAMESPACE NVKE_AUTH_CONFIGMAP NKE_DEPLOYMENT
 
 ADMITTED_NS="nke-clients"
 ADMITTED_SA="nke-client"
@@ -97,11 +100,11 @@ if [[ -z "${NKE_CONTROLLER_NAMESPACE}" ]]; then
   # Same order nvkectl uses: the greenfield namespace if it holds the auth
   # ConfigMap, else the legacy one. Only a confirmed absence falls back.
   found="$(
-    "${KUBECTL[@]}" get configmap nke-auth-config -n nke-controller \
+    "${KUBECTL[@]}" get configmap "${NVKE_AUTH_CONFIGMAP}" -n nke-controller \
       --ignore-not-found -o name 2>&1
-  )" || die "cannot look up configmap nke-controller/nke-auth-config: ${found}"
+  )" || die "cannot look up configmap nke-controller/${NVKE_AUTH_CONFIGMAP}: ${found}"
   NKE_CONTROLLER_NAMESPACE="cloud-workflow-engine"
-  grep -qx "configmap/nke-auth-config" <<<"${found}" && NKE_CONTROLLER_NAMESPACE="nke-controller"
+  grep -qx "configmap/${NVKE_AUTH_CONFIGMAP}" <<<"${found}" && NKE_CONTROLLER_NAMESPACE="nke-controller"
   export NKE_CONTROLLER_NAMESPACE
 fi
 
@@ -115,12 +118,12 @@ missing=()
   || missing+=("serviceaccount ${ADMITTED_NS}/${ADMITTED_SA}")
 "${KUBECTL[@]}" get sa "${OUTSIDER_SA}" -n "${OUTSIDER_NS}" >/dev/null 2>&1 \
   || missing+=("serviceaccount ${OUTSIDER_NS}/${OUTSIDER_SA}")
-"${KUBECTL[@]}" get configmap nke-auth-config -n "${NKE_CONTROLLER_NAMESPACE}" >/dev/null 2>&1 \
-  || missing+=("configmap ${NKE_CONTROLLER_NAMESPACE}/nke-auth-config")
+"${KUBECTL[@]}" get configmap "${NVKE_AUTH_CONFIGMAP}" -n "${NKE_CONTROLLER_NAMESPACE}" >/dev/null 2>&1 \
+  || missing+=("configmap ${NKE_CONTROLLER_NAMESPACE}/${NVKE_AUTH_CONFIGMAP}")
 if [[ ${#missing[@]} -gt 0 ]]; then
   printf 'FATAL: missing scaffolding:\n' >&2
   printf '  - %s\n' "${missing[@]}" >&2
-  echo "  apply deploy/k8s/nke-auth-dev.yaml, or run tilt up" >&2
+  echo "  apply deploy/k8s/nvke-auth-dev.yaml, or run tilt up" >&2
   exit 2
 fi
 
@@ -130,7 +133,7 @@ NKE_DEPLOYMENT="$("${SCRIPT_DIR}/nvke-token.sh" --deployment)"
 
 # The audience comes from the live deployment, via nvke-token.sh.
 AUDIENCE="$("${SCRIPT_DIR}/nvke-token.sh" --audience)"
-[[ -n "${AUDIENCE}" ]] || die "could not read the audience from configmap ${NKE_CONTROLLER_NAMESPACE}/nke-auth-config"
+[[ -n "${AUDIENCE}" ]] || die "could not read the audience from configmap ${NKE_CONTROLLER_NAMESPACE}/${NVKE_AUTH_CONFIGMAP}"
 
 # --- mode detection -------------------------------------------------------
 
@@ -142,7 +145,7 @@ if [[ -z "${MODE}" ]]; then
       -o jsonpath="{.spec.template.spec.containers[?(@.name=='${NKE_DEPLOYMENT}')].env[?(@.name=='$1')].value}" 2>/dev/null
   }
   auth_path="$(container_env AUTH_CONFIG_PATH)"
-  permissive="$("${KUBECTL[@]}" get configmap nke-controller-config -n "${NKE_CONTROLLER_NAMESPACE}" \
+  permissive="$("${KUBECTL[@]}" get configmap "${NVKE_CONTROLLER_CONFIGMAP}" -n "${NKE_CONTROLLER_NAMESPACE}" \
     -o jsonpath='{.data.config\.yaml}' 2>/dev/null | yq '.permissiveMode')"
   if [[ -z "${auth_path}" ]]; then
     MODE="disabled"

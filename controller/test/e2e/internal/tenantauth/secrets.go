@@ -13,10 +13,14 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/mgmtns"
 )
 
+// The tenant-access controller publishes and deletes per-cluster Secrets in
+// the site's management namespace, which mgmtns.Namespace resolves -- it is
+// per-site configurable, so it is never assumed here.
 const (
-	secretsNamespace     = "nke-system"
 	kubeconfigSecretKey  = "value"
 	trustBundleSecretKey = "ca.crt"
 )
@@ -25,13 +29,13 @@ const (
 func spireRejectionKubeconfig(ctx context.Context, c client.Client, clusterName string) ([]byte, error) {
 	var secret corev1.Secret
 	secretName := adminKubeconfigSecretName(clusterName)
-	if err := c.Get(ctx, client.ObjectKey{Namespace: secretsNamespace, Name: secretName}, &secret); err != nil {
-		return nil, fmt.Errorf("getting admin kubeconfig secret %s/%s: %w", secretsNamespace, secretName, err)
+	if err := c.Get(ctx, client.ObjectKey{Namespace: mgmtns.Namespace(), Name: secretName}, &secret); err != nil {
+		return nil, fmt.Errorf("getting admin kubeconfig secret %s/%s: %w", mgmtns.Namespace(), secretName, err)
 	}
 	config, err := clientcmd.Load(secret.Data[kubeconfigSecretKey])
 	if err != nil {
 		// Parser errors can quote admin credentials, so omit them from probe errors.
-		return nil, fmt.Errorf("parsing admin kubeconfig from secret %s/%s", secretsNamespace, secretName)
+		return nil, fmt.Errorf("parsing admin kubeconfig from secret %s/%s", mgmtns.Namespace(), secretName)
 	}
 	current := config.Contexts[config.CurrentContext]
 	if current == nil {
@@ -70,13 +74,13 @@ func AssertKubeconfigAndTrustBundle(ctx context.Context, c client.Client, cluste
 func AssertSPIREKubeconfigHasNoFallback(ctx context.Context, c client.Client, clusterName string) error {
 	var secret corev1.Secret
 	secretName := kubeconfigSecretName(clusterName)
-	if err := c.Get(ctx, client.ObjectKey{Namespace: secretsNamespace, Name: secretName}, &secret); err != nil {
-		return fmt.Errorf("getting secret %s/%s: %w", secretsNamespace, secretName, err)
+	if err := c.Get(ctx, client.ObjectKey{Namespace: mgmtns.Namespace(), Name: secretName}, &secret); err != nil {
+		return fmt.Errorf("getting secret %s/%s: %w", mgmtns.Namespace(), secretName, err)
 	}
 	config, err := clientcmd.Load(secret.Data[kubeconfigSecretKey])
 	if err != nil {
 		// Parser errors can quote credentials, so report only the secret location.
-		return fmt.Errorf("parsing kubeconfig from secret %s/%s", secretsNamespace, secretName)
+		return fmt.Errorf("parsing kubeconfig from secret %s/%s", mgmtns.Namespace(), secretName)
 	}
 	if len(config.Contexts) != 1 || len(config.Clusters) != 1 || len(config.AuthInfos) != 1 {
 		return fmt.Errorf("published SPIRE kubeconfig must contain exactly one context, cluster, and user")
@@ -107,17 +111,17 @@ func AssertSPIREKubeconfigHasNoFallback(ctx context.Context, c client.Client, cl
 func KubeconfigExecEnv(ctx context.Context, c client.Client, clusterName, name string) (string, error) {
 	var secret corev1.Secret
 	secretName := kubeconfigSecretName(clusterName)
-	if err := c.Get(ctx, client.ObjectKey{Namespace: secretsNamespace, Name: secretName}, &secret); err != nil {
-		return "", fmt.Errorf("getting secret %s/%s: %w", secretsNamespace, secretName, err)
+	if err := c.Get(ctx, client.ObjectKey{Namespace: mgmtns.Namespace(), Name: secretName}, &secret); err != nil {
+		return "", fmt.Errorf("getting secret %s/%s: %w", mgmtns.Namespace(), secretName, err)
 	}
 	raw, ok := secret.Data[kubeconfigSecretKey]
 	if !ok {
-		return "", fmt.Errorf("secret %s/%s is missing key %q", secretsNamespace, secretName, kubeconfigSecretKey)
+		return "", fmt.Errorf("secret %s/%s is missing key %q", mgmtns.Namespace(), secretName, kubeconfigSecretKey)
 	}
 	config, err := clientcmd.Load(raw)
 	if err != nil {
 		// Parser errors can quote credentials, so report only the secret location.
-		return "", fmt.Errorf("parsing kubeconfig from secret %s/%s", secretsNamespace, secretName)
+		return "", fmt.Errorf("parsing kubeconfig from secret %s/%s", mgmtns.Namespace(), secretName)
 	}
 	contextConfig, ok := config.Contexts[config.CurrentContext]
 	if !ok {
@@ -160,24 +164,24 @@ func AssertAdminKubeconfigDeleted(ctx context.Context, c client.Client, clusterN
 
 func assertSecretKey(ctx context.Context, c client.Client, name, key string) error {
 	var secret corev1.Secret
-	if err := c.Get(ctx, client.ObjectKey{Namespace: secretsNamespace, Name: name}, &secret); err != nil {
-		return fmt.Errorf("getting secret %s/%s: %w", secretsNamespace, name, err)
+	if err := c.Get(ctx, client.ObjectKey{Namespace: mgmtns.Namespace(), Name: name}, &secret); err != nil {
+		return fmt.Errorf("getting secret %s/%s: %w", mgmtns.Namespace(), name, err)
 	}
 	if _, ok := secret.Data[key]; !ok {
-		return fmt.Errorf("secret %s/%s is missing key %q", secretsNamespace, name, key)
+		return fmt.Errorf("secret %s/%s is missing key %q", mgmtns.Namespace(), name, key)
 	}
 	return nil
 }
 
 func assertSecretAbsent(ctx context.Context, c client.Client, name string) error {
-	err := c.Get(ctx, client.ObjectKey{Namespace: secretsNamespace, Name: name}, &corev1.Secret{})
+	err := c.Get(ctx, client.ObjectKey{Namespace: mgmtns.Namespace(), Name: name}, &corev1.Secret{})
 	switch {
 	case apierrors.IsNotFound(err):
 		return nil
 	case err != nil:
-		return fmt.Errorf("getting secret %s/%s: %w", secretsNamespace, name, err)
+		return fmt.Errorf("getting secret %s/%s: %w", mgmtns.Namespace(), name, err)
 	default:
-		return fmt.Errorf("secret %s/%s still exists", secretsNamespace, name)
+		return fmt.Errorf("secret %s/%s still exists", mgmtns.Namespace(), name)
 	}
 }
 

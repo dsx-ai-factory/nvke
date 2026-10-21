@@ -80,7 +80,7 @@ def register(ctx):
               --from-file=ca.crt="${ca_file}" --dry-run=client -o yaml | kubectl apply -f -
           done
         """ % (os.path.join(ctx.main_dir, ".local/dsx-identity-exchange/ca.crt"), DSX_IDENTITY_EXCHANGE_CA_CONFIG_MAP)],
-        resource_deps=["oidc-upstream-ca-ready", "nke-auth-dev"],
+        resource_deps=["oidc-upstream-ca-ready", "nvke-auth-dev"],
     )
 
     local_resource(
@@ -107,15 +107,15 @@ def register(ctx):
 
     exchange_endpoint = "https://%s:30444/v1/exchange" % site_address
     return struct(
-        cwe_resource_deps=[
+        controller_resource_deps=[
             "dsx-identity-exchange-mock",
             "dsx-identity-exchange-ca",
             "capi-dsx-identity-exchange-ca",
         ],
-        cwe_env_overrides={
-            "SSL_CERT_FILE": "/etc/nke/dsx-identity/ca.crt",
+        controller_env_overrides={
+            "SSL_CERT_FILE": "/etc/nvke/dsx-identity/ca.crt",
         },
-        cwe_chart_flags=[
+        controller_chart_flags=[
             "--set-string", "spiffe.jwtExchangeEndpoint=%s" % exchange_endpoint,
             "--set-string", "spiffe.controllerSubject=spiffe://nke.capd.nke-controller.nvid.id/bm/cwe",
             "--set-string", "spiffe.capiManagerSubject=spiffe://nke.capd.capi-manager.nvid.id/bm/cwe",
@@ -125,7 +125,7 @@ def register(ctx):
             "--set-string", "nvkeOIDCAuth.issuerURL=https://capd.dsx.nvid.id",
             "--set-string", "nvkeOIDCAuth.discoveryURL=https://%s:30444/.well-known/openid-configuration" % site_address,
             "--set-json", 'volumes=[{"name":"dsx-identity-exchange-ca","configMap":{"name":"%s"}}]' % DSX_IDENTITY_EXCHANGE_CA_CONFIG_MAP,
-            "--set-json", 'volumeMounts=[{"name":"dsx-identity-exchange-ca","mountPath":"/etc/nke/dsx-identity/ca.crt","subPath":"ca.crt","readOnly":true}]',
+            "--set-json", 'volumeMounts=[{"name":"dsx-identity-exchange-ca","mountPath":"/etc/nvke/dsx-identity/ca.crt","subPath":"ca.crt","readOnly":true}]',
         ],
     )
 

@@ -25,11 +25,12 @@ func NewPatchCmd(clientFn ControllerClientFn) *cobra.Command {
 		Use:     "cluster <name>",
 		Aliases: []string{"clusters"},
 		Short:   "Patch a tenant cluster",
-		Long: `Patch a tenant cluster on the site controller.
+		Long: `Patch a tenant cluster on the management plane.
 
 PATCH semantics apply: only the fields in the patch document are changed;
 everything else on the cluster is left as it is. Pass the patch inline with
---patch, or from a file (or stdin via -) with --patch-file.
+--patch, or from a file (or stdin via -) with --patch-file. Exactly one of
+the two is required.
 
 Example — bump the Kubernetes version:
   nvkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: 1.31.0'
@@ -41,7 +42,7 @@ Example — set the control-plane node count:
   nvkectl patch cluster my-cluster --patch 'controlPlaneConfig: {desiredCount: 3}'
 
 The patch document's fields must match the controller UpdateClusterRequest schema
-exactly. See /api/docs on your site controller.`,
+exactly. See /api/docs on your management plane.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if patch == "" && patchFile == "" {

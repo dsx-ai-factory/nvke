@@ -41,9 +41,23 @@ node holds one stream per CNI. They depend on `containerd | nvke-kubeadm-distro`
 the distro package ships its own containerd and conflicts with Ubuntu's.
 
 Set `CNI_DOCKERHUB_MIRROR` to a registry host when Docker Hub reads must use a
-pull-through mirror. The mirror changes only Crane's transport reference and,
-for `cni-ovn`, where the image build pulls its pinned `ubuntu` base. The
-committed lock and the image names imported on the node remain `docker.io/...`.
-A build uses the mirror when it serves the locked digest, and the canonical
-`docker.io` reference otherwise; `make lock` resolves the tag through the mirror
-first and falls back the same way. Either route transfers the same digest.
+pull-through mirror. The mirror changes Crane's transport reference and, for
+`cni-ovn`, every Docker Hub image the container build reads: the pinned `ubuntu`
+base, which travels as a `--build-arg`, and the recipe's own digest-pinned
+`FROM` lines, which are rewritten in place because no build-arg can reach them.
+The committed lock and the image names imported on the node remain
+`docker.io/...`. For the images Crane fetches, a build uses the mirror when it
+serves the locked digest and the canonical `docker.io` reference otherwise;
+`make lock` resolves the tag through the mirror first and falls back the same
+way. Either route transfers the same digest.
+
+A rewritten `FROM` has no such fallback. The builder resolves that line itself,
+so a mirror that does not serve the locked digest fails the build rather than
+reverting to `docker.io` -- which is the trade for reaching a `FROM` no
+`--build-arg` can redirect.
+
+Only the registry host moves — each rewritten `FROM` keeps its `@sha256` digest,
+so the bytes the build consumes are identical and the lock's `source` pin still
+covers them. A `FROM` that resolves to Docker Hub but carries no digest cannot
+be rewritten safely, so the build fails and names it rather than silently
+pulling it from `registry-1.docker.io` and hitting the rate limit in CI.

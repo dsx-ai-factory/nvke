@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/mgmtns"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
@@ -81,7 +82,7 @@ func assertCAPDControlPlaneFailureDomains(ctx context.Context, test *tenantTest,
 func capdControlPlaneFailureDomainsAt(ctx context.Context, test *tenantTest, desired int, want map[string]int) (map[string]string, error) {
 	cluster := &unstructured.Unstructured{}
 	cluster.SetGroupVersionKind(schema.GroupVersionKind{Group: "cluster.x-k8s.io", Version: "v1beta2", Kind: "Cluster"})
-	if err := test.k8sClient.Get(ctx, client.ObjectKey{Namespace: "nke-system", Name: test.cluster.Name}, cluster); err != nil {
+	if err := test.k8sClient.Get(ctx, client.ObjectKey{Namespace: mgmtns.Namespace(), Name: test.cluster.Name}, cluster); err != nil {
 		return nil, fmt.Errorf("getting CAPI Cluster: %w", err)
 	}
 	published, found, err := unstructured.NestedSlice(cluster.Object, "status", "failureDomains")
@@ -122,7 +123,7 @@ func capdControlPlaneFailureDomainsAt(ctx context.Context, test *tenantTest, des
 	}
 	machines := &unstructured.UnstructuredList{}
 	machines.SetGroupVersionKind(schema.GroupVersionKind{Group: "cluster.x-k8s.io", Version: "v1beta2", Kind: "MachineList"})
-	if err = test.k8sClient.List(ctx, machines, client.InNamespace("nke-system"),
+	if err = test.k8sClient.List(ctx, machines, client.InNamespace(mgmtns.Namespace()),
 		client.MatchingLabels{"cluster.x-k8s.io/cluster-name": test.cluster.Name}); err != nil {
 		return nil, fmt.Errorf("listing CAPI Machines: %w", err)
 	}

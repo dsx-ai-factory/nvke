@@ -11,7 +11,7 @@ import (
 )
 
 func TestValidateNodeNamePrefix(t *testing.T) {
-	clusterName := "runtime-dgxc-k8s-forge-ytl-dev1"
+	clusterName := "runtime-dgxc-k8s-forge-site-2-dev1"
 	maxPrefix := strings.Repeat("a", MaxNodeNamePrefixLen(clusterName))
 
 	t.Run("accepts prefix at limit", func(t *testing.T) {

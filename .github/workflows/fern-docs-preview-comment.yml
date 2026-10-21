@@ -51,10 +51,9 @@ jobs:
           echo "head_ref=$(cat preview-metadata/head_ref)" >> "$GITHUB_OUTPUT"
 
       # The docs link to files all over the repo, so build from the whole trusted tree.
-      - name: Checkout trusted tree from base branch
+      - name: Checkout trusted tree from the default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.base_branch }}
           persist-credentials: false
           path: trusted
 

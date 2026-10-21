@@ -1,0 +1,42 @@
+agent {
+    data_dir = "/var/lib/spire-agent"
+    log_level = "DEBUG"
+
+    server_address = "{{ .ServerAddress }}"
+    server_port = "{{ .ServerPort }}"
+
+    trust_domain = "{{ .TrustDomain }}"
+    trust_bundle_path = "{{ .TrustBundlePath }}"
+}
+
+plugins {
+    KeyManager "disk" {
+        plugin_data {
+            directory = "/var/lib/spire-agent"
+        }
+    }
+
+{{- if eq .AttestationMethod "tpm" }}
+    NodeAttestor "tpm" {
+        plugin_cmd = "/usr/local/lib/spire-agent/tpm_attestor_agent"
+        plugin_checksum = "${TPM_PLUGIN_CHECKSUM}"
+        plugin_data {}
+    }
+{{- else if eq .AttestationMethod "dsxImds" }}
+    # The DSX node image provides this external plugin and its checksum through
+    # the SPIRE agent environment file. The audience identifies this trust
+    # domain's SPIRE server and must match the server plugin configuration.
+    NodeAttestor "dsx_imds" {
+        plugin_cmd = "/usr/local/lib/spire-agent/dsx-imds-node-attestor-agent"
+        plugin_checksum = {{ printf "%q" .DSXIMDSPluginChecksum }}
+        plugin_data {
+            endpoint = {{ printf "%q" .DSXIMDSEndpoint }}
+            audience = "spiffe://{{ .TrustDomain }}/spire/server"
+        }
+    }
+{{- end }}
+
+    WorkloadAttestor "unix" {
+        plugin_data {}
+    }
+}

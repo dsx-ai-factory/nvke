@@ -22,7 +22,7 @@
 # still matters here:
 #
 #  1. the manager's args. Upstream defaults the reboot and repair annotations
-#     to nico.nvidia.com/*; the controller writes nke.nvidia.com/*. A mismatch is not an
+#     to nico.nvidia.com/*; the controller writes nvke.nvidia.com/*. A mismatch is not an
 #     error anywhere -- every reboot and repair request is silently ignored.
 #  2. nothing else: the image is pulled from ghcr.io, whose package is public
 #     (an anonymous token fetches the manifest), or comes from a release by
@@ -1601,8 +1601,8 @@ spec:
       containers:
       - args:
         - --leader-elect
-        - --reboot-annotation=nke.nvidia.com/reboot
-        - --repair-annotation=nke.nvidia.com/machine-health-issue
+        - --reboot-annotation=nvke.nvidia.com/reboot
+        - --repair-annotation=nvke.nvidia.com/machine-health-issue
         command:
         - /manager
         env:

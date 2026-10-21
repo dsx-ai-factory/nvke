@@ -172,9 +172,11 @@ class OSImageWorkflowTest(unittest.TestCase):
         )
 
     @unittest.skipUnless(shutil.which("jq"), "the matrix step needs jq")
-    def test_beta_tag_bakes_only_the_golden_path(self):
-        # A beta is qualified on Ubuntu 24.04 non-FDE alone, so baking the rest
-        # of the matrix would hold KVM runners for images nothing reads.
+    def test_beta_tag_bakes_every_flavor_non_fde_only(self):
+        # A beta is qualified on non-FDE images alone, so baking FDE would hold
+        # KVM runners for images nothing reads. It is qualified on the 26.04
+        # streams as well as the 24.04 golden path, so a flavor dropped here is
+        # a stream whose disk is never published.
         pick = self.step("      - name: Pick\n", "\n  validate-packer:")
         script = textwrap.dedent(pick.split("run: |\n", 1)[1])
         with tempfile.NamedTemporaryFile() as output:
@@ -185,19 +187,75 @@ class OSImageWorkflowTest(unittest.TestCase):
                 capture_output=True,
             )
             legs = json.loads(Path(output.name).read_text().split("=", 1)[1])
+        key = lambda leg: (leg["arch"], leg["ubuntu_release"])
         self.assertEqual(
-            sorted(legs, key=lambda leg: leg["arch"]),
-            [
-                {
-                    "arch": arch,
-                    "ubuntu_release": "24.04.5",
-                    "tag_suffix": "-ubuntu24.04",
-                    "variant": "non-fde",
-                    "timeout_minutes": 90,
-                }
-                for arch in ("amd64", "arm64")
-            ],
+            sorted(legs, key=key),
+            sorted(
+                (
+                    {
+                        "arch": arch,
+                        "ubuntu_release": release,
+                        "tag_suffix": suffix,
+                        "variant": "non-fde",
+                        "timeout_minutes": 90,
+                    }
+                    for arch in ("amd64", "arm64")
+                    for release, suffix in (("26.04.1", ""), ("24.04.5", "-ubuntu24.04"))
+                ),
+                key=key,
+            ),
         )
+
+    def test_s3_publish_takes_the_checker_only_from_the_leg_that_builds_it(self):
+        # Only the default flavor's amd64 non-FDE leg builds nvke-os-image-check.
+        # nullglob drops an unmatched pattern but not a literal path, so every
+        # other leg failed its upload, after its disk had already landed.
+        upload = self.step("      - name: Upload to S3\n", "\n      - name: Verify upload")
+        verify = self.step("      - name: Verify upload\n", "\n  release:")
+        disk = "nvke-node-non-fde-ubuntu-24.04.5-arm64.qcow2"
+        assets = [
+            f"dist/{disk}",
+            f"expected/{disk.replace('.qcow2', '.spdx.json')}",
+            "expected/checksums-arm64-ubuntu24.04-non-fde.txt",
+        ]
+        for checker in (False, True):
+            with self.subTest(checker=checker), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                files = assets + (["expected/nvke-os-image-check"] if checker else [])
+                for name in files:
+                    (root / name).parent.mkdir(parents=True, exist_ok=True)
+                    (root / name).touch()
+                stubs = {
+                    "scripts/upload-s3-flat.sh": 'basename "$1" >> "${LOG}"',
+                    "bin/aws": 'while [ $# -gt 0 ]; do [ "$1" = --key ] && basename "$2" >> "${LOG}"; shift; done',
+                }
+                for name, body in stubs.items():
+                    (root / name).parent.mkdir(parents=True, exist_ok=True)
+                    (root / name).write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+                    (root / name).chmod(0o755)
+                for step, block in (("upload", upload), ("verify", verify)):
+                    log = root / f"{step}.log"
+                    result = subprocess.run(
+                        ["bash", "-c", textwrap.dedent(block.split("run: |\n", 1)[1])],
+                        cwd=root,
+                        env={
+                            **os.environ,
+                            "PATH": f"{root / 'bin'}{os.pathsep}{os.environ['PATH']}",
+                            "LOG": str(log),
+                            "S3_URI": "s3://example-bucket/prefix",
+                            "RELEASE": "v0.0.0",
+                            "ARCH": "arm64",
+                            "CF_DOMAIN": "cdn.example.com",
+                        },
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(result.returncode, 0, f"{step}: {result.stderr}")
+                    self.assertEqual(
+                        sorted(log.read_text(encoding="utf-8").split()),
+                        sorted(Path(name).name for name in files),
+                        step,
+                    )
 
     def test_pushed_beta_tag_publishes_to_the_prod_bucket(self):
         # Qualification reads a beta from the prod CDN. Losing the beta clause

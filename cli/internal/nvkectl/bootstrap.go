@@ -58,14 +58,17 @@ func newBootstrapCmd() *cobra.Command {
 type bootstrapSiteOptions struct {
 	siteSpec string
 	dryRun   bool
-	// controllerImage and provisionedProviderImage are the --controller-image and
+	// controllerImage and provisionedProviderImage are the --nvke-controller-image and
 	// --provisioned-provider-image flags. A flag wins over its variable.
 	controllerImage          string
 	provisionedProviderImage string
 	// diagnosticsDir is where a failed bootstrap writes what the cluster had
 	// to say for itself, before it is torn down.
-	diagnosticsDir    string
-	keepBootstrapKind bool
+	diagnosticsDir string
+	// collectDiagnostics also collects them when the bootstrap succeeds. It is
+	// set by -v/--verbose.
+	collectDiagnostics bool
+	keepBootstrapKind  bool
 
 	// release is an NVKR release description. With infra.provider nico its
 	// capnico-controller artifact replaces the CAPNICo image, as the deploy
@@ -139,7 +142,7 @@ func newBootstrapSiteCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   siteSubcommand,
-		Short: "Bootstrap a new NVKE site controller from a site spec file",
+		Short: "Bootstrap a new NVKE management cluster from a site spec file",
 		Long: `Bootstrap a vanilla Kubernetes cluster from the nodes described by the site
 spec file passed with -f/--sitespec: pre-provisioned hosts it lists
 (infra.provider provisioned, the default), or machines CAPNICo allocates from a
@@ -152,8 +155,8 @@ dispatched or any node is touched.
 The bootstrap side-loads the images this repository builds, nke-controller:latest
 and, with the provisioned provider, cluster-api-provider-provisioned:latest,
 which "make -C cli images" builds. With nico, CAPNICo's image is public and
-pulled by the cluster; --release pins it to an NVKR release's artifact. --controller-image and --provisioned-provider-image, or
-NVKECTL_CONTROLLER_IMAGE and NVKECTL_CAPI_PROVISIONED_IMAGE, name other images, such as
+pulled by the cluster; --release pins it to an NVKR release's artifact. --nvke-controller-image and --provisioned-provider-image, or
+NVKECTL_NVKE_CONTROLLER_IMAGE and NVKECTL_CAPI_PROVISIONED_IMAGE, name other images, such as
 ones pushed to a registry; a flag wins over its variable. cli/README.md lists
 every NVKECTL_* variable.
 
@@ -178,7 +181,7 @@ site spec file format.`,
 
   # Deploy images you pushed to a registry instead of the local build
   nvkectl bootstrap site -f sitespec.yaml \
-    --controller-image nvcr.io/<org>/nvke-controller:edge \
+    --nvke-controller-image nvcr.io/<org>/nvke-controller:edge \
     --provisioned-provider-image nvcr.io/<org>/cluster-api-provider-provisioned:edge`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
@@ -186,6 +189,9 @@ site spec file format.`,
 			if id := telemetry.RunFrom(cmd.Context()).TraceID(); id != "" {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Trace ID: %s\n", id)
 			}
+			// A debug run is one somebody wants evidence from, so it keeps the
+			// bundle whether or not the bootstrap succeeds.
+			opts.collectDiagnostics = verbose
 			// arch has a default, so only Changed tells an explicit value from none.
 			if cmd.Flags().Changed("arch") && opts.release == "" {
 				return errors.New("--arch selects the architecture of a --release artifact; pass --release too, or drop --arch")
@@ -199,13 +205,13 @@ site spec file format.`,
 	_ = cmd.MarkFlagRequired("sitespec")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false,
 		"Load and validate the site spec and print it, but do not dispatch any workflow")
-	cmd.Flags().StringVar(&opts.controllerImage, "controller-image", "",
-		"Controller image to deploy (overrides NVKECTL_CONTROLLER_IMAGE and the manifest default)")
+	cmd.Flags().StringVar(&opts.controllerImage, "nvke-controller-image", "",
+		"NVKE controller image to deploy (overrides NVKECTL_NVKE_CONTROLLER_IMAGE and the manifest default)")
 	cmd.Flags().StringVar(&opts.provisionedProviderImage, "provisioned-provider-image", "",
 		"Provisioned-provider image to deploy (overrides NVKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)")
 	cmd.Flags().StringVar(&opts.release, "release", "",
 		"NVKR release description whose "+controllerdeploy.CAPNICoArtifact+" artifact replaces the bootstrap CAPNICo image "+
-			"with its pinned digest, as \"render deploy-path --release\" does for the site controller's CAPNICo. "+
+			"with its pinned digest, as \"render deploy-path --release\" does for the management cluster's CAPNICo. "+
 			"The release description is not verified: run \"nvkr release verify\" on the same reference first. "+
 			"Only with infra.provider nico.")
 	cmd.Flags().StringVar(&opts.arch, "arch", "linux/"+runtime.GOARCH,
@@ -214,6 +220,7 @@ site spec file format.`,
 	cmd.Flags().StringVar(&opts.diagnosticsDir, "diagnostics-dir",
 		envOrDefault("NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR", "cluster-diagnostics"),
 		"Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. "+
+			"With --verbose a successful bootstrap writes them too. "+
 			"Overrides NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR.")
 	cmd.Flags().BoolVar(&opts.disableMTLS, "disable-mtls", false,
 		"Stand the site up without SPIFFE: no SPIRE, and the controller dials node agents in plaintext. "+
@@ -245,35 +252,6 @@ func bootstrapSettings() []string {
 	return names
 }
 
-// checkRemovedSettings returns an error naming every NKECTL_CWE_* variable that
-// is set while its replacement is not, and logs a warning for each one whose
-// replacement is set, as a variable or as the flag that overrides it.
-// bootstrap site does not read those names, so without this a value set for
-// nkectl cli/v0.1.x would be dropped without a word.
-func checkRemovedSettings(logger *slog.Logger, opts *bootstrapSiteOptions) error {
-	flags := map[string]struct{ name, value string }{
-		"NVKECTL_CONTROLLER_IMAGE": {"--controller-image", opts.controllerImage},
-	}
-	var unreplaced []string
-	for _, s := range controllerdeploy.RemovedSettings() {
-		replacement := ""
-		if f := flags[s.New]; f.value != "" {
-			replacement = f.name
-		} else if envalias.Get(s.New) != "" {
-			replacement = s.New
-		}
-		if replacement != "" {
-			logger.Warn(s.Old+" is not read; "+replacement+" is set and is used instead", "ignored", s.Old, "replacement", replacement)
-			continue
-		}
-		unreplaced = append(unreplaced, s.Old+" is no longer read; set "+s.New+" instead")
-	}
-	if len(unreplaced) > 0 {
-		return errors.New(strings.Join(unreplaced, "; "))
-	}
-	return nil
-}
-
 // cleanupTimeout bounds each post-failure cleanup step. The steps run on a
 // context detached from the command's, so they need a stop of their own.
 const cleanupTimeout = 2 * time.Minute
@@ -302,9 +280,6 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	logger := slog.Default().With("component", "bootstrap-site")
 	for _, s := range envalias.Deprecated(bootstrapSettings()...) {
 		logger.Warn(s.Warning(), "deprecated", s.Old, "replacement", s.New)
-	}
-	if err := checkRemovedSettings(logger, opts); err != nil {
-		return err
 	}
 
 	// Step 1: load and validate the sitespec. Fail fast on any problem.
@@ -435,26 +410,30 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	siteClusterCreated := false
 	// handedOver is set once the site cluster and every artifact the operator
 	// needs are on disk. A failure after that is about the site cluster, so
-	// the bootstrap cluster's diagnostics are not collected and it is torn
-	// down.
+	// without -v the bootstrap cluster's diagnostics are not collected and it
+	// is torn down.
 	handedOver := false
 	defer func() {
 		// Collect diagnostics before anything is torn down: this cluster is
 		// removed on every exit path, so this is the only moment the evidence
-		// still exists. Only on failure — a successful bootstrap has nothing
-		// to explain.
+		// still exists. Only on failure, or on any outcome under -v: a
+		// successful bootstrap has nothing to explain unless asked.
 		// Cleanup runs on the cancellation path too: a SIGINT during the
 		// deploy cancels ctx, and both runners exec through
 		// exec.CommandContext, so reusing ctx here would skip the diagnostics
 		// and leave the Kind cluster standing to block the next bootstrap.
 		// Each step gets its own bounded context detached from ctx, so slow
 		// diagnostics cannot eat the deletion's budget.
-		if err != nil && !handedOver {
+		if opts.collectDiagnostics || (err != nil && !handedOver) {
 			diagnosticsCtx, cancelDiagnostics := context.WithTimeout(
 				context.WithoutCancel(ctx), cleanupTimeout,
 			)
 			dir := opts.diagnosticsDir
-			logger.Info("bootstrap failed; collecting cluster diagnostics", "dir", dir)
+			if err != nil {
+				logger.Info("bootstrap failed; collecting cluster diagnostics", "dir", dir)
+			} else {
+				logger.Info("collecting cluster diagnostics (--verbose)", "dir", dir)
+			}
 			controllerdeploy.New(opts.cweRunner, logger).
 				DumpDiagnostics(diagnosticsCtx, cluster.KubeconfigPath, dir)
 			cancelDiagnostics()
@@ -1068,7 +1047,7 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 	// Both images default to the local build's tag from the bootstrap
 	// manifest, so an empty value means the manifest lacks the entry.
 	if cfg.CWEImage == "" {
-		return cfg, errors.New("--controller-image and NVKECTL_CONTROLLER_IMAGE are not set and the bootstrap manifest carries no default controller image")
+		return cfg, errors.New("--nvke-controller-image and NVKECTL_NVKE_CONTROLLER_IMAGE are not set and the bootstrap manifest carries no default controller image")
 	}
 	cfg.NicoInfrastructure = inv.IsNico()
 	access, err := capnicoAccess(inv)
@@ -1349,7 +1328,7 @@ func requireLocalImages(ctx context.Context, engine *bootstrapengine.Engine, ima
 func missingLocalImageError(image string, err error, out string) error {
 	return fmt.Errorf("image %s is not in the local image store (%w\n%s) and names no registry to pull it from; "+
 		"build it with `make -C cli images`, or name an image the runtime can pull with "+
-		"--controller-image / --provisioned-provider-image or NVKECTL_CONTROLLER_IMAGE / NVKECTL_CAPI_PROVISIONED_IMAGE "+
+		"--nvke-controller-image / --provisioned-provider-image or NVKECTL_NVKE_CONTROLLER_IMAGE / NVKECTL_CAPI_PROVISIONED_IMAGE "+
 		"(for Docker Hub, write docker.io/<org>/<name>)",
 		image, err, strings.TrimSpace(out))
 }

@@ -8,10 +8,13 @@ import (
 	"net"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v11"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 )
 
 const (
@@ -19,20 +22,22 @@ const (
 	InfraProviderNico = "nico"
 	// InfraProviderInfra is the API-facing name for the generic CAPI provider block.
 	InfraProviderInfra = "infra"
+	// InfraProviderLaunchLayer is the API-facing name for the LaunchLayer provider block.
+	InfraProviderLaunchLayer = "launchLayer"
 
 	SpireAttestationMethodTPM       SpireAttestationMethod = "tpm"
 	SpireAttestationMethodJoinToken SpireAttestationMethod = "joinToken"
 	SpireAttestationMethodDSXIMDS   SpireAttestationMethod = "dsxImds"
 
-	NodeAgentExternalTLSCertPath = "/etc/nke/node-agent-client-tls/tls.crt"
-	NodeAgentExternalTLSKeyPath  = "/etc/nke/node-agent-client-tls/tls.key"
-	NodeAgentExternalTLSCAPath   = "/etc/nke/node-agent-client-tls/ca.crt"
+	NodeAgentExternalTLSCertPath = "/etc/nvke/node-agent-client-tls/tls.crt"
+	NodeAgentExternalTLSKeyPath  = "/etc/nvke/node-agent-client-tls/tls.key"
+	NodeAgentExternalTLSCAPath   = "/etc/nvke/node-agent-client-tls/ca.crt"
 	// NodeAgentExternalTLSNVKECertPath and ...KeyPath are an optional second client
 	// identity whose URI SAN is the new-form controller URN. When present, nodes whose
 	// agent speaks the new form are dialed with it; otherwise the first identity is
 	// used for every node.
-	NodeAgentExternalTLSNVKECertPath = "/etc/nke/node-agent-client-tls/nvke-tls.crt"
-	NodeAgentExternalTLSNVKEKeyPath  = "/etc/nke/node-agent-client-tls/nvke-tls.key"
+	NodeAgentExternalTLSNVKECertPath = "/etc/nvke/node-agent-client-tls/nvke-tls.crt"
+	NodeAgentExternalTLSNVKEKeyPath  = "/etc/nvke/node-agent-client-tls/nvke-tls.key"
 	NodeAgentConfigPath              = "/etc/default/nke-agent"
 	NodeAgentControllerCAPath        = "/etc/nke/controller-ca.crt"
 )
@@ -253,10 +258,19 @@ type Config struct {
 	FieldManagerMachineHealthIssueName string `controllerconfig:"fieldManager.machineHealthIssueName"`
 
 	// ManagedByLabelValue is the value written under the
-	// nke.nvidia.com/managed-by label key on objects this controller owns,
+	// nvke.nvidia.com/managed-by label key on objects this controller owns,
 	// and the value the tenant Secret reconciler filters incoming Secret
 	// events on. Both sides must agree, so this is read from one place.
 	ManagedByLabelValue string `controllerconfig:"managedByLabelValue"`
+
+	// ManagementNamespace is the shared management-plane namespace holding the
+	// tenant-access Secrets, the nke-rbac ConfigMap and the OIDC-mode CAPI
+	// objects. Empty means constants.LegacyManagementNamespace, so a config.yaml
+	// written before this key existed keeps today's behavior exactly. Read it
+	// through ManagementNamespaceOrDefault rather than directly: unlike the
+	// label keys, the old namespace is not also read, so an empty value reaching
+	// a client would address the wrong namespace rather than fall back.
+	ManagementNamespace string `controllerconfig:"managementNamespace"`
 
 	// SpiffeEnabled is a feature flag to enable SPIFFE support.
 	SpiffeEnabled bool `controllerconfig:"spire.spiffeEnabled"`
@@ -392,7 +406,7 @@ type Config struct {
 
 // TracingConfig configures OpenTelemetry span export.
 type TracingConfig struct {
-	// Enabled turns on span export and per-query database spans.
+	// Enabled turns on span export and database spans for queries with a trace parent.
 	Enabled bool `controllerconfig:"tracing.enabled"`
 	// Endpoint is the OTLP gRPC collector host:port (scheme optional) that
 	// spans are exported to. When empty, the OTEL_EXPORTER_OTLP_* variables the
@@ -449,11 +463,19 @@ type TeleportConfig struct {
 	DefaultWorkerPoolEnabled bool `env:"DEFAULT_WORKER_POOL_ENABLED" default:"false"`
 
 	// ManagedByLabelValue is the value of the Teleport "managed-by" label this
-	// controller stamps on tokens it creates, and the value ownership checks
-	// (IsOwnedByController) compare incoming tokens against. The chart default
-	// is for new sites; a site that exists pins its old value
-	// ("nke-cloud-workflow-engine"), or stops recognizing the tokens it owns.
+	// controller stamps on tokens it creates. It is the written value only;
+	// ownership checks go through OwnershipManagedByValues, which also accepts
+	// AcceptedManagedByLabelValues.
 	ManagedByLabelValue string `controllerconfig:"teleport.managedByLabelValue"`
+
+	// AcceptedManagedByLabelValues are additional "managed-by" values this
+	// controller still owns without writing: the spellings its own earlier
+	// releases stamped. Moving ManagedByLabelValue does not relabel the tokens
+	// and nodes already carrying the old one -- a Teleport token's labels are
+	// fixed at mint, a node's at join -- so without this the move disowns every
+	// one of them, and nothing reaps what nothing owns. List the previous value
+	// here for as long as any resource may still carry it.
+	AcceptedManagedByLabelValues []string `controllerconfig:"teleport.acceptedManagedByLabelValues"`
 
 	// TokenNamePrefix prefixes the deterministic Teleport TPM join token name
 	// this controller mints for a node.
@@ -462,6 +484,21 @@ type TeleportConfig struct {
 	// ResourceGroupLabelValue is the value of the Teleport "resource-group"
 	// label stamped on tokens and node userdata. Existing sites pin "nke".
 	ResourceGroupLabelValue string `controllerconfig:"teleport.resourceGroupLabelValue"`
+}
+
+// OwnershipManagedByValues returns every "managed-by" value this controller
+// owns: the one it writes first, then the ones it only accepts. Duplicates and
+// blanks are dropped, so a deployment that lists its current value among the
+// accepted ones gets the same answer as one that does not.
+func (c TeleportConfig) OwnershipManagedByValues() []string {
+	values := make([]string, 0, len(c.AcceptedManagedByLabelValues)+1)
+	for _, v := range append([]string{c.ManagedByLabelValue}, c.AcceptedManagedByLabelValues...) {
+		v = strings.TrimSpace(v)
+		if v != "" && !slices.Contains(values, v) {
+			values = append(values, v)
+		}
+	}
+	return values
 }
 
 // NodePoolTeleportDefault returns the teleport default for a node pool based on its role.
@@ -521,6 +558,19 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// ManagementNamespaceOrDefault returns the shared management-plane namespace,
+// falling back to constants.LegacyManagementNamespace when ManagementNamespace is
+// unset. The chart renders the key on every install, so the fallback is for a
+// config.yaml written before it existed and for a zero Config in tests; it is
+// deliberately the legacy name, because a site that has not pinned a namespace
+// must not be moved to a new one by a binary upgrade alone.
+func (c Config) ManagementNamespaceOrDefault() string {
+	if c.ManagementNamespace == "" {
+		return constants.LegacyManagementNamespace
+	}
+	return c.ManagementNamespace
 }
 
 // Validate checks the settings the environment supplies. nke-controller-config

@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/spiffe/go-spiffe/v2/svid/x509svid"
 	sqids "github.com/sqids/sqids-go"
 
 	"google.golang.org/grpc/codes"
@@ -207,6 +208,14 @@ type NodeAgentServer struct {
 	kubeletConfigAtomicWrite func(string, []byte, os.FileMode) error
 	kubeVipFetchASN          func(context.Context, string) (uint32, error)
 	staticPodMutationMu      sync.Mutex // serializes agent-owned static-pod manifest transactions
+
+	// SPIFFESocketPath is the SPIFFE workload API address used to read this
+	// node's X.509 SVID.
+	SPIFFESocketPath       string
+	spireAgentMu           sync.Mutex    // serializes SPIRE agent reconfiguration
+	spireAgentPollInterval time.Duration // overrides the SVID poll interval in tests
+	spireAgentWaitTimeout  time.Duration // overrides the SVID wait timeout in tests
+	fetchX509SVID          func(context.Context, string) (*x509svid.SVID, error)
 }
 
 // Real implementations
@@ -2022,26 +2031,6 @@ func errStatus(err error) string {
 		return ErrorStatus
 	}
 	return SuccessStatus
-}
-
-func (s *NodeAgentServer) SetUnsetIsMaster(
-	ctx context.Context,
-	req *pb.SetUnsetIsMasterRequest,
-) (*pb.SetUnsetIsMasterResponse, error) {
-	defer logRPCSpan(ctx, "SetUnsetIsMaster")()
-	if s.NodeStatus.Role != ControlPlaneRole {
-		slog.Error("IsMaster can only be set to true on controlplane nodes")
-		return nil, errors.New("unable to set ismaster on non-controlplane node")
-	}
-
-	s.mu.Lock()
-	s.NodeStatus.IsMaster = req.IsMaster
-	statusCopy := *s.NodeStatus
-	s.mu.Unlock()
-	s.Persister.Persist(&statusCopy) //nolint:all
-
-	slog.Info("IsMaster set", "value", s.NodeStatus.IsMaster)
-	return &pb.SetUnsetIsMasterResponse{}, nil
 }
 
 // bundleIndexUnconfiguredMessage explains an empty BundleIndexFile. The two

@@ -96,7 +96,7 @@ func TestSiteAppliesAndRestoresExactOwnedFields(t *testing.T) {
 		t.Fatalf("Apply() error = %v", err)
 	}
 
-	updatedConfig, err := client.CoreV1().ConfigMaps("controller").Get(context.Background(), "nke-controller-config", metav1.GetOptions{})
+	updatedConfig, err := client.CoreV1().ConfigMaps("controller").Get(context.Background(), "nvke-controller-config", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("get updated ConfigMap: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestSiteAppliesAndRestoresExactOwnedFields(t *testing.T) {
 		t.Fatalf("Restore() error = %v", err)
 	}
 
-	restoredConfig, err := client.CoreV1().ConfigMaps("controller").Get(context.Background(), "nke-controller-config", metav1.GetOptions{})
+	restoredConfig, err := client.CoreV1().ConfigMaps("controller").Get(context.Background(), "nvke-controller-config", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("get restored ConfigMap: %v", err)
 	}
@@ -368,7 +368,7 @@ func TestSiteRefusesConcurrentOwnedMutation(t *testing.T) {
 	if _, err = site.Snapshot(context.Background()); err != nil {
 		t.Fatalf("Snapshot() error = %v", err)
 	}
-	mutated, err := client.CoreV1().ConfigMaps("controller").Get(context.Background(), "nke-controller-config", metav1.GetOptions{})
+	mutated, err := client.CoreV1().ConfigMaps("controller").Get(context.Background(), "nvke-controller-config", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("get ConfigMap: %v", err)
 	}
@@ -534,9 +534,9 @@ func TestStartupProviderCountReadsBoundedPodLogs(t *testing.T) {
 			}
 			responses := map[string][]byte{}
 			for path, object := range map[string]any{
-				"/api/v1/namespaces/controller/configmaps/nke-controller-config": configMap,
-				"/apis/apps/v1/namespaces/controller/deployments/controller":     deployment,
-				"/api/v1/namespaces/controller/pods":                             pods,
+				"/api/v1/namespaces/controller/configmaps/nvke-controller-config": configMap,
+				"/apis/apps/v1/namespaces/controller/deployments/controller":      deployment,
+				"/api/v1/namespaces/controller/pods":                              pods,
 			} {
 				body, err := json.Marshal(object)
 				require.NoError(t, err)
@@ -627,8 +627,77 @@ func siteTestObjects() (*appsv1.Deployment, *corev1.ConfigMap) {
 		Status: appsv1.DeploymentStatus{ObservedGeneration: 4, Replicas: 1, UpdatedReplicas: 1, ReadyReplicas: 1, AvailableReplicas: 1},
 	}
 	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "controller", Name: "nke-controller-config"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "controller", Name: "nvke-controller-config"},
 		Data:       map[string]string{"config.yaml": siteTestConfig, "unrelated": "same"},
 	}
 	return deployment, configMap
+}
+
+func TestSiteSharedIssuerReadsTheConfiguredCASecret(t *testing.T) {
+	t.Parallel()
+	const withCA = `oidc:
+  managementOIDCAuth:
+    enabled: true
+    issuerURL: https://shared.example.test
+    discoveryURL: https://192.0.2.10:30443/.well-known/openid-configuration
+    caBundleSecretRef:
+      namespace: spire-server
+      name: shared-ca
+      key: ca.crt
+  providers: []
+`
+	tests := []struct {
+		name      string
+		config    string
+		secret    *corev1.Secret
+		wantCA    string
+		wantError string
+	}{
+		{
+			name:   "reads the URLs and the CA Secret the configuration names",
+			config: withCA,
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "spire-server", Name: "shared-ca"},
+				Data:       map[string][]byte{"ca.crt": []byte("PEM\n")},
+			},
+			wantCA: "PEM\n",
+		},
+		{
+			name:   "an empty Secret reference leaves the bundle empty",
+			config: strings.Replace(withCA, "      namespace: spire-server\n      name: shared-ca\n      key: ca.crt\n", "      namespace: \"\"\n      name: \"\"\n      key: \"\"\n", 1),
+		},
+		{name: "a missing Secret fails", config: withCA, wantError: "get shared CA Secret spire-server/shared-ca"},
+		{
+			name:   "an empty bundle fails",
+			config: withCA,
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "spire-server", Name: "shared-ca"},
+				Data:       map[string][]byte{"ca.crt": []byte("  ")},
+			},
+			wantError: `has no "ca.crt" bundle`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			deployment, configMap := siteTestObjects()
+			configMap.Data[chartConfigKey] = tt.config
+			objects := []runtime.Object{deployment, configMap}
+			if tt.secret != nil {
+				objects = append(objects, tt.secret)
+			}
+			site, err := NewSite(fake.NewClientset(objects...), SiteConfig{Namespace: "controller", Deployment: "controller", Container: "controller"})
+			require.NoError(t, err)
+			issuer, err := site.SharedIssuer(t.Context())
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "https://shared.example.test", issuer.URL)
+			require.NotNil(t, issuer.DiscoveryURL)
+			require.Equal(t, "https://192.0.2.10:30443/.well-known/openid-configuration", *issuer.DiscoveryURL)
+			require.Equal(t, tt.wantCA, issuer.CertificateAuthority)
+		})
+	}
 }

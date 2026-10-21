@@ -37,7 +37,7 @@
 set -euo pipefail
 
 ISO_URL="${ISO_URL:?ISO_URL is required}"
-ISO_CHECKSUM="${ISO_CHECKSUM:?ISO_CHECKSUM is required}" # file:<url to a SHA256SUMS-style manifest>
+ISO_CHECKSUM="${ISO_CHECKSUM:?ISO_CHECKSUM is required}" # sha256:<hex>, or file:<url to a SHA256SUMS-style manifest>
 OUT_DIR="${OUT_DIR:?OUT_DIR is required}"
 
 command -v xorriso >/dev/null 2>&1 || { echo "prepare-installer-iso: xorriso is required" >&2; exit 1; }
@@ -48,10 +48,31 @@ ISO_NAME="$(basename "${ISO_URL}")"
 ISO_PATH="${OUT_DIR}/${ISO_NAME}"
 PATCHED_PATH="${ISO_PATH}.patched.iso"
 
-CHECKSUM_URL="${ISO_CHECKSUM#file:}"
-EXPECTED_SHA256="$(curl -fsSL "${CHECKSUM_URL}" | grep -E " \*?${ISO_NAME}\$" | awk '{print $1}' | head -1)"
+# sha256:<hex> is the committed pin from make/tool-versions.mk and is the
+# default. file:<url> fetches a SHA256SUMS-style manifest and looks the ISO up
+# by name; it is only as trustworthy as the host serving it, so it stays an
+# opt-in override for a locally served or non-Canonical ISO.
+case "${ISO_CHECKSUM}" in
+  sha256:*)
+    EXPECTED_SHA256="${ISO_CHECKSUM#sha256:}"
+    CHECKSUM_SOURCE="the committed digest"
+    if [[ ! "${EXPECTED_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+      echo "prepare-installer-iso: ISO_CHECKSUM is not a sha256 digest: ${ISO_CHECKSUM}" >&2
+      exit 1
+    fi
+    ;;
+  file:*)
+    CHECKSUM_URL="${ISO_CHECKSUM#file:}"
+    CHECKSUM_SOURCE="${CHECKSUM_URL}"
+    EXPECTED_SHA256="$(curl -fsSL "${CHECKSUM_URL}" | grep -E " \*?${ISO_NAME}\$" | awk '{print $1}' | head -1)"
+    ;;
+  *)
+    echo "prepare-installer-iso: ISO_CHECKSUM must be sha256:<hex> or file:<url>, got: ${ISO_CHECKSUM}" >&2
+    exit 1
+    ;;
+esac
 if [[ -z "${EXPECTED_SHA256}" ]]; then
-  echo "prepare-installer-iso: no checksum for ${ISO_NAME} found in ${CHECKSUM_URL}" >&2
+  echo "prepare-installer-iso: no checksum for ${ISO_NAME} found in ${CHECKSUM_SOURCE}" >&2
   exit 1
 fi
 

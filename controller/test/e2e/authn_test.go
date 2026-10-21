@@ -201,7 +201,7 @@ const (
 	authnModeEnforcing  = "enforcing"
 )
 
-// From deploy/k8s/nke-auth-dev.yaml; .invalid is reserved and cannot collide.
+// From deploy/k8s/nvke-auth-dev.yaml; .invalid is reserved and cannot collide.
 const (
 	authnOutsiderNamespace      = "nke-outsiders"
 	authnOutsiderServiceAccount = "nke-outsider"

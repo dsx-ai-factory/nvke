@@ -13,8 +13,8 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 func TestValidateNodeLabels(t *testing.T) {
@@ -274,10 +274,19 @@ func TestValidateMachineMetadata_Inputs(t *testing.T) {
 		}
 	}
 
+	// Both domains of each owned annotation: the controller still reads the
+	// legacy form, so a caller setting that one would be just as damaging as
+	// setting the current one.
+	for _, key := range []keys.Key{
+		keys.MachineHostID, keys.MachineReboot, keys.MachineRebootCompleteTimestamp,
+		keys.MachineHealthIssue, keys.MachineSpireAgentSpiffeIDPath,
+	} {
+		for _, name := range key.All() {
+			tests["reserved annotation "+name] = parameters{annotations: map[string]string{name: "value"}, wantErr: "must be explicitly allowlisted"}
+		}
+	}
 	for _, key := range []string{
-		constants.MachineAnnotationKeyHostID, constants.MachineAnnotationKeyReboot,
-		constants.MachineAnnotationKeyRebootCompleteTimestamp, constants.MachineAnnotationKeyMachineHealthIssue,
-		constants.MachineAnnotationKeySpireAgentSpiffeIDPath, clusterv1.ExcludeNodeDrainingAnnotation,
+		clusterv1.ExcludeNodeDrainingAnnotation,
 		clusterv1.ExcludeWaitForNodeVolumeDetachAnnotation,
 	} {
 		tests["reserved annotation "+key] = parameters{annotations: map[string]string{key: "value"}, wantErr: "must be explicitly allowlisted"}

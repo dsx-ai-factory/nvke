@@ -36,7 +36,8 @@ Every page is exactly one type. Do not mix them.
 
 ### How-to template
 
-```markdown
+<!-- Four backticks on purpose: the template holds ``` blocks, which would close a three-backtick fence early. -->
+````markdown
 # <Verb phrase: Bootstrap the management cluster>
 
 This page describes how to <task>. <When you do it: after which page, before which page.>
@@ -63,9 +64,9 @@ This page describes how to <task>. <When you do it: after which page, before whi
 ## Next steps
 
 - <One to four links, in the order the reader needs them.>
-```
+````
 
-A how-to may include one short "What happens during <task>" section (a
+A how-to may include one short "What happens during `<task>`" section (a
 diagram and a paragraph) when later steps, failure handling or verification
 depend on the reader understanding the sequence. Keep it after the main steps
 and before failure handling. Anything longer belongs on an explanation page.
@@ -86,9 +87,10 @@ Explanation and reference pages follow the model page.
 - No metaphors where a literal word works.
 - Use at most one em dash in a paragraph, and none in headings.
 - Number of list items matches the content, not a rhythm of three.
-- Spell out an acronym on its first use on each page, with the acronym in
-  parentheses: "virtual IP address (VIP)". Well-known terms (API, CLI, IP,
-  CPU, GPU, TPM, YAML) need no expansion.
+- Spell out NVIDIA, product and project-specific acronyms on their first use
+  on each page, with the acronym in parentheses: "NVIDIA Infra Controller
+  (NICo)". Industry-standard terms (API, CLI, IP, VIP, CPU, GPU, TPM, YAML,
+  mTLS, KVM, QEMU, LVM, UEFI) need no expansion.
 - The page is not the actor. Write "This page describes how to..." or address
   the reader, not "This page turns...".
 - No "we" except in the preview statement on the model page.
@@ -109,7 +111,7 @@ Explanation and reference pages follow the model page.
 | seed cluster | bootstrap cluster, kind cluster | The temporary cluster during bootstrap. |
 | workload cluster | tenant cluster | A cluster NVKE creates for a customer. "NVKE cluster" is acceptable in overview prose. |
 | node pool | node set, machine deployment | |
-| infrastructure provider | infra provider, backend | NICo is the only one at preview. |
+| infrastructure provider | infra provider, backend | NICo by default; LaunchLayer when a deployment enables it. |
 | NVIDIA Infra Controller (NICo) | Forge, Carbide | |
 
 **Code literals keep their real names.** Commands, binaries, packages, flags,

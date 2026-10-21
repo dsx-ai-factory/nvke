@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
@@ -104,6 +105,21 @@ func FreeLocalhostAddress(t testing.TB) string {
 		require.NoError(t, ln.Close())
 	}()
 	return ln.Addr().String()
+}
+
+// ManagementNamespace returns the management-plane namespace the worker started
+// by StartControllerWorkerBinary reads and writes CAPI objects in. It comes from
+// the same local controller config the worker is handed, so a test that seeds a
+// Machine puts it where the worker looks for it.
+func ManagementNamespace(t testing.TB) string {
+	t.Helper()
+
+	settings, err := controllerconfig.Load(filepath.Join(RepoRoot(t), "hack", "local-controller-config.yaml"))
+	require.NoError(t, err)
+	if settings.ManagementNamespace == "" {
+		return constants.LegacyManagementNamespace
+	}
+	return settings.ManagementNamespace
 }
 
 // StartControllerWorkerBinary starts the production controller command against e2e-owned dependencies.

@@ -33,11 +33,11 @@ the controller sets it on first reconcile.
 
 - Take a backup of the old resources. Step 2 writes one, and it is the only copy
   once step 6 deletes the originals.
-- `jq` and a `kubectl` that can reach the site controller.
+- `jq` and a `kubectl` that can reach the management cluster.
 - Know your NVKECluster namespaces. The examples use `--all-namespaces`.
 
 > **Status matters.** `NVKECluster.status.provisioning` pins a cluster to the
-> CWE cluster it created: `endpoint` is the service that provisioned it and `id`
+> NVKE controller cluster it created: `endpoint` is the service that provisioned it and `id`
 > is its UUID. The reconciler falls back to a lookup by name when the status is
 > absent, so a lost status does not by itself double-provision — but `id` is
 > also what stops a *deleted* cluster being silently replaced by a new one at

@@ -21,6 +21,7 @@ type NodeProvisioningContext struct {
 	ManagedByNodePool     bool // True when the node is managed by a node pool (has a non-nil node pool ID).
 	NodeAgentVersion      string
 	NodeAgentUpdateMethod string
+	ControlPlane          bool
 }
 
 func (a *Activities) GetNodeProvisioningContext(ctx context.Context, nodeID uuid.UUID) (NodeProvisioningContext, error) {
@@ -57,6 +58,7 @@ func (a *Activities) GetNodeProvisioningContext(ctx context.Context, nodeID uuid
 		ManagedByNodePool:     node.IsManagedByNodePool(),
 		NodeAgentVersion:      snapshot.Version,
 		NodeAgentUpdateMethod: snapshot.Method,
+		ControlPlane:          node.ControlPlane,
 	}, nil
 }
 

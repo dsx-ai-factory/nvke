@@ -22,7 +22,7 @@ spec:
     # it.
     golden-path:
       selector: {ubuntu: "24.04", gpu: gb200}
-    # Ubuntu 24.04 on L40S. One stream, amd64, and the only GPU shape az61
+    # Ubuntu 24.04 on L40S. One stream, amd64, and the only GPU shape site-1
     # offers. The qualify-e2e-l40s label selects this instead of golden-path.
     l40s:
       selector: {ubuntu: "24.04", gpu: l40s}

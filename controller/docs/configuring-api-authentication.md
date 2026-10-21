@@ -4,7 +4,7 @@ How to make NVKE require a token on its API, using an identity provider you
 already run.
 
 This is the operator's side. For getting a token and making a call once it is
-on, see [Authenticating to the NVKE API](authenticating-to-the-api.md).
+on, see [Call the API](../../docs/operate/api-authentication.md#call-the-api) in Secure the NVKE API.
 
 ## What you are setting up
 
@@ -92,11 +92,17 @@ kubectl -n nke-clients create serviceaccount nke-client
 ```
 
 `nvkectl` mints this pair and no other. The names `nke-clients` /
-`nke-client` and ConfigMap `nke-auth-config` are fixed in the CLI. It reads
-that ConfigMap from namespace `nke-controller`, or from `cloud-workflow-engine`
-when `nke-controller` has none. Any other error reading it, such as a
-permission denial, stops the command. In any other namespace, `nvkectl` finds
-no ConfigMap and sends no token.
+`nke-client` are fixed in the CLI, and it looks for the authentication ConfigMap
+under two fixed names: `nvke-auth-config`, then `nke-auth-config` for a site
+that keeps the older name by pinning `apiAuth.configMap.name`. It searches both
+in namespace `nke-controller`, then both in `cloud-workflow-engine`, and uses
+the first it can read.
+
+A ConfigMap it is not permitted to read does not stop the command: the search
+moves to the next candidate, so a kubeconfig scoped to the pinned name alone
+still works. The denial is reported only if no candidate turns out to be
+readable. Any other error reading a ConfigMap stops the command. In any other
+namespace, `nvkectl` finds no ConfigMap and sends no token.
 Other names work for `curl` and `hack/nvke-token.sh` if you override
 them; they will not work for `nvkectl`. One account per caller is still easier
 to revoke when those callers are not the CLI.
@@ -164,7 +170,7 @@ apiAuth:
   permissive: true
   configMap:
     create: true
-    name: nke-auth-config
+    name: nvke-auth-config
   config:
     # the YAML from step 3 goes here
     audiences: ["https://nke.example.com"]
@@ -180,7 +186,7 @@ existing GitOps pipeline, leave `create` at its default of `false` and put the d
 in a ConfigMap named by `configMap.name`, under the key `auth.yaml`:
 
 ```bash
-kubectl -n "$NS" create configmap nke-auth-config \
+kubectl -n "$NS" create configmap nvke-auth-config \
   --from-file=auth.yaml=auth.yaml \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
@@ -275,7 +281,7 @@ at below. A CA bundle is a public certificate, not a secret.
 If you manage the ConfigMap yourself instead, put the file in it directly:
 
 ```bash
-kubectl -n "$NS" create configmap nke-auth-config \
+kubectl -n "$NS" create configmap nvke-auth-config \
   --from-file=auth.yaml=auth.yaml \
   --from-file=spire-ca.crt=spire-ca.crt \
   --dry-run=client -o yaml | kubectl apply -f -
@@ -389,8 +395,7 @@ a warning.
 | `issuers[].algorithms` | yes | `RS256` and `ES256` cover most issuers. Asymmetric only. |
 | `issuers[].admit` | yes | One of `serviceAccounts`, `spiffe`, or `groups`. |
 
-The file is read once at startup. The chart restarts NVKE when the config
-changes; if yours does not, restart it yourself:
+The file is read once at startup, so restart NVKE after you change it:
 
 ```bash
 kubectl -n "$NS" rollout restart deploy/nke-controller
@@ -405,7 +410,7 @@ something NVKE trims.
 |---|---|---|
 | `apiAuth.enabled` | `false` | |
 | `apiAuth.permissive` | `false` | |
-| `apiAuth.configMap.name` | `nke-auth-config` | Mounted either way. |
+| `apiAuth.configMap.name` | `nvke-auth-config` | Mounted either way. |
 | `apiAuth.configMap.create` | `false` | Build the ConfigMap from `apiAuth.config`. |
 | `apiAuth.configMap.extraFiles` | empty | Files to place beside `auth.yaml`, keyed by filename. A CA bundle goes here. |
 | `apiAuth.config` | empty | The document, `audiences` and `issuers` only. |
@@ -474,4 +479,4 @@ kubectl -n "$NS" get deploy nke-controller \
 
 ## See also
 
-- [Authenticating to the NVKE API](authenticating-to-the-api.md): the caller's side, including `nvkectl`.
+- [Secure the NVKE API](../../docs/operate/api-authentication.md): the operator path, and the caller's side including `nvkectl`.

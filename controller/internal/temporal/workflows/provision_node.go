@@ -16,6 +16,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
@@ -286,7 +287,6 @@ func joinProvisionedNode(ctx workflow.Context, nodeID uuid.UUID, nodeCtx activit
 		}
 	}
 
-	hasConfigProfile := nodeCtx.ConfigProfile != ""
 	configProfile, err := getConfigProfile(ctx, nodeID)
 	if err != nil {
 		return fmt.Errorf("failed to get config profile: %w", err)
@@ -331,9 +331,26 @@ func joinProvisionedNode(ctx workflow.Context, nodeID uuid.UUID, nodeCtx activit
 	postJoinStart := workflow.Now(ctx)
 	endPostJoin := func() { recordPhase("post_join", postJoinStart, workflow.Now(ctx)) }
 
-	if err := labelNode(ctx, nodeID, hasConfigProfile); err != nil {
+	if err := labelNode(ctx, nodeID); err != nil {
 		endPostJoin()
 		return fmt.Errorf("failed to label node: %w", err)
+	}
+
+	// Runs after labelNode so labels requested through the API win over computed labels,
+	// and before the provisioning taint is removed so requested labels and taints are in place before workloads can schedule.
+	if err := applyNodeMetadata(ctx, nodeID); err != nil {
+		endPostJoin()
+		return fmt.Errorf("failed to apply node labels and taints: %w", err)
+	}
+
+	// Config profiles no longer supply labels, and the API rejects the control-plane role label,
+	// so kubeadm's join is the only source that can be relied on. Internal components such as the node agent rely
+	// on this label, so this is a precautionary check to avoid a node becoming schedulable without it.
+	if nodeCtx.ControlPlane {
+		if err := verifyControlPlaneRoleLabel(ctx, nodeID); err != nil {
+			endPostJoin()
+			return fmt.Errorf("failed to verify control-plane role label: %w", err)
+		}
 	}
 
 	if err := runHooks(ctx, nodeID, AfterJoinNode, configProfile); err != nil {
@@ -350,7 +367,7 @@ func joinProvisionedNode(ctx workflow.Context, nodeID uuid.UUID, nodeCtx activit
 		}
 	}
 
-	// Remove taint (nke.nvidia.com/provisioning=true:NoSchedule-)
+	// Remove taint (nvke.nvidia.com/provisioning=true:NoSchedule-)
 	// This taint is added via kubeadm join config.
 	// Hyphen at the end of the taint effect removes the taint
 	taintToRemove := constants.NodeTaintProvisioning()
@@ -751,7 +768,7 @@ func cleanBeforeControlPlaneRejoin(ctx workflow.Context, nodeID uuid.UUID) {
 	}
 }
 
-func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bool) error {
+func labelNode(ctx workflow.Context, nodeID uuid.UUID) error {
 	var a *activities.Activities
 
 	activityOptions := workflow.ActivityOptions{
@@ -788,7 +805,7 @@ func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bo
 		return err
 	}
 	if machineID != "" {
-		labels = append(labels, constants.LabelKeyMachineID+"="+machineID)
+		labels = append(labels, keys.MachineID.Selector(machineID))
 	}
 
 	// If the cluster is using ovn cni, add zone-name label 'k8s.ovn.org/zone-name=<node-name>'
@@ -801,7 +818,7 @@ func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bo
 		labels = append(labels, "k8s.ovn.org/dpu-host=")
 	}
 
-	if !addConfigProfileLabels && len(labels) == 0 {
+	if len(labels) == 0 {
 		return nil
 	}
 
@@ -809,7 +826,6 @@ func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bo
 		workflow.WithActivityOptions(ctx, activityOptions),
 		a.LabelNode,
 		activities.LabelNodeInput{
-			AddConfigProfileLabels:           addConfigProfileLabels,
 			Labels:                           labels,
 			NodeID:                           nodeID,
 			NodeProvisioningConditionMessage: "Labeling node",
@@ -819,6 +835,50 @@ func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bo
 	}
 
 	return nil
+}
+
+func applyNodeMetadata(ctx workflow.Context, nodeID uuid.UUID) error {
+	// GetVersion checks workflow history. Workflows started before this step existed must replay without it.
+	if workflow.GetVersion(ctx, "apply-node-metadata", workflow.DefaultVersion, 1) == workflow.DefaultVersion {
+		return nil
+	}
+
+	var a *activities.Activities
+	activityOptions := workflow.ActivityOptions{
+		StartToCloseTimeout: 1 * time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval: 1 * time.Minute,
+			MaximumInterval: 5 * time.Minute,
+			MaximumAttempts: 0, // Retry indefinitely; invalid stored labels or taints fail as non-retryable.
+		},
+	}
+
+	return workflow.ExecuteActivity(
+		workflow.WithActivityOptions(ctx, activityOptions),
+		a.ApplyNodeMetadata,
+		activities.ApplyNodeMetadataInput{
+			NodeID:                           nodeID,
+			NodeProvisioningConditionMessage: "Applying node labels and taints",
+		},
+	).Get(ctx, nil)
+}
+
+func verifyControlPlaneRoleLabel(ctx workflow.Context, nodeID uuid.UUID) error {
+	if workflow.GetVersion(ctx, "apply-node-metadata", workflow.DefaultVersion, 1) == workflow.DefaultVersion {
+		return nil
+	}
+
+	var a *activities.Activities
+	activityOptions := workflow.ActivityOptions{
+		StartToCloseTimeout: 1 * time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    10 * time.Second,
+			BackoffCoefficient: 1,
+			MaximumAttempts:    3, // kubeadm writes the label during join, so a miss after join is a fault, not a delay.
+		},
+	}
+
+	return workflow.ExecuteActivity(workflow.WithActivityOptions(ctx, activityOptions), a.VerifyControlPlaneRoleLabel, nodeID).Get(ctx, nil)
 }
 
 func configureKubeVip(ctx workflow.Context, nodeID uuid.UUID) error {

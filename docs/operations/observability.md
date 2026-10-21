@@ -1,14 +1,14 @@
 # Observability
 
-NVKE's operational surface spans three layers: the site controller services, the Cluster API infrastructure provider, and the tenant cluster nodes. Observability tooling for each is covered here.
+NVKE's operational surface spans three layers: the management plane services, the Cluster API infrastructure provider, and the tenant cluster nodes. Observability tooling for each is covered here.
 
-## Site Controller Services
+## Management plane services
 
 ### Temporal Web UI
 
 The Temporal Web UI is the primary window into what NVKE is doing. Every cluster provisioning, upgrade, or node replacement runs as a Temporal workflow. When an operation stalls or fails, the Temporal UI shows the current workflow state and the last activity that ran.
 
-Port-forward the Temporal Web UI from the site controller cluster:
+Port-forward the Temporal Web UI from the management cluster:
 
 ```bash
 kubectl port-forward -n temporal svc/temporal-web 8233:8080 \
@@ -24,7 +24,7 @@ Then open http://localhost:8233 in a browser. Workflows are organized by namespa
 
 ### Controller Logs
 
-The NVKE controller emits structured JSON logs. Fetch them from the site controller cluster:
+The NVKE controller emits structured JSON logs. Fetch them from the management cluster:
 
 ```bash
 kubectl logs -n nke-controller deploy/nke-controller \

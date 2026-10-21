@@ -45,7 +45,7 @@ PACKAGING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Checked here so a partial `make bundle` fails with a message that says what
 # to do about it, rather than with nfpm's missing-file error.
-for required in spire-agent tpm_attestor_agent get_tpm_pubhash dsx-imds-node-attestor-agent; do
+for required in spire-agent tpm_attestor_agent get_tpm_pubhash; do
   [[ -f "${SRC}/${required}" ]] || {
     echo "build-deb.sh: missing staged binary ${SRC}/${required}; run 'make bundle' first" >&2
     exit 1

@@ -6,9 +6,12 @@ package kube
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -16,11 +19,23 @@ const (
 	// KubectlImage is an alpine-based kubectl image carrying sh, wget (TLS),
 	// tar, sha256sum and kubectl.
 	KubectlImage = "alpine/k8s:1.34.1@sha256:ec714df3813b5405292860f8a1c55c5727bf8c33c88992f1e981efad8065547f"
+
+	// PodLogTailLines is how many lines of a failed container's log
+	// RunPodWithLogs appends to its error.
+	PodLogTailLines = 40
 )
 
 // RunPod creates a one-shot verifier pod, waits for it to finish, and deletes it
 // after success. Failed pods are left behind for inspection.
 func RunPod(ctx context.Context, c client.Client, pod *corev1.Pod, containerName string, timeout time.Duration) (*corev1.Pod, string, error) {
+	return RunPodWithLogs(ctx, c, nil, pod, containerName, timeout)
+}
+
+// RunPodWithLogs is RunPod for a caller that also has a clientset: when the pod
+// fails, the last PodLogTailLines lines of the container's log follow the
+// termination message in the error, so a script that wrote the reason only to
+// stderr still says why. A nil clientset reads no log.
+func RunPodWithLogs(ctx context.Context, c client.Client, clientset kubernetes.Interface, pod *corev1.Pod, containerName string, timeout time.Duration) (*corev1.Pod, string, error) {
 	if err := c.Create(ctx, pod); err != nil {
 		return nil, "", fmt.Errorf("creating verifier pod in %s: %w", pod.Namespace, err)
 	}
@@ -42,7 +57,11 @@ func RunPod(ctx context.Context, c client.Client, pod *corev1.Pod, containerName
 
 	message := TerminatedMessage(finished, containerName)
 	if finished.Status.Phase == corev1.PodFailed {
-		return finished, message, fmt.Errorf("verifier pod %s/%s failed: %s", finished.Namespace, finished.Name, containerFailureSummary(finished, containerName, message))
+		summary := containerFailureSummary(finished, containerName, message)
+		if tail := podLogTail(ctx, clientset, finished, containerName); tail != "" {
+			summary += "; log tail:\n" + tail
+		}
+		return finished, message, fmt.Errorf("verifier pod %s/%s failed: %s", finished.Namespace, finished.Name, summary)
 	}
 
 	keep = false
@@ -101,4 +120,20 @@ func containerFailureSummary(pod *corev1.Pod, container, message string) string 
 		return message
 	}
 	return "container did not report termination details"
+}
+
+// podLogTail returns the last PodLogTailLines lines of the container's log, or
+// what stopped them from being read. It is "" without a clientset.
+func podLogTail(ctx context.Context, clientset kubernetes.Interface, pod *corev1.Pod, container string) string {
+	if clientset == nil {
+		return ""
+	}
+	logCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	options := &corev1.PodLogOptions{Container: container, TailLines: ptr.To[int64](PodLogTailLines)}
+	raw, err := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, options).DoRaw(logCtx)
+	if err != nil {
+		return fmt.Sprintf("(reading the %s container log: %v)", container, err)
+	}
+	return strings.TrimSpace(string(raw))
 }

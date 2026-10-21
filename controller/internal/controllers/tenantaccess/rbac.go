@@ -94,7 +94,7 @@ func pruneLegacyRBAC(ctx context.Context, c ctrlclient.Client, manifest []byte) 
 // readRBACManifest reads the operator-managed nke-rbac ConfigMap from the
 // management cluster and returns the multi-document tenant RBAC manifest.
 func (c *Controller) readRBACManifest(ctx context.Context) ([]byte, error) {
-	return nvkerbac.ReadManifest(ctx, c.k8sClient)
+	return nvkerbac.ReadManifest(ctx, c.k8sClient, c.secretsNamespace())
 }
 
 // applyManifestSSA splits a multi-document YAML manifest and Server-Side-Applies

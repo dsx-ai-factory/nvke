@@ -185,16 +185,16 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-            - name: nke-controller-config
+            - name: nvke-controller-config
               mountPath: {{ include "controller.controllerConfig.mountPath" . | quote }}
               readOnly: true
             {{- if .Values.nodeAgent.externalMTLS.enabled }}
             - name: node-agent-client-tls
-              mountPath: /etc/nke/node-agent-client-tls
+              mountPath: /etc/nvke/node-agent-client-tls
               readOnly: true
             {{- end }}
             {{- if .Values.apiAuth.enabled }}
-            - name: nke-auth-config
+            - name: nvke-auth-config
               mountPath: {{ include "controller.apiAuth.mountPath" . | quote }}
               readOnly: true
             {{- end }}
@@ -237,7 +237,7 @@ spec:
             - name: DB_CONNECTION_STRING
               value: {{ printf "postgres://%s:%s@%s/%s?sslmode=%s" .Values.appDb.postgresUser (default "placeholder" .Values.appDb.postgresPassword) .Values.appDb.url .Values.appDb.dbName (default "disable" .Values.appDb.sslMode) | quote }}
             {{- end }}
-            # Not in nke-controller-config: its default comes from the downward API.
+            # Not in nvke-controller-config: its default comes from the downward API.
             - name: SPIRE_SERVER_ADDRESS
               {{- if .Values.spiffe.spire.serverAddress }}
               value: {{ .Values.spiffe.spire.serverAddress | quote }}
@@ -299,8 +299,8 @@ spec:
               value: {{ .value | quote }}
             {{- end }}
       volumes:
-        # Not optional, like nke-auth-config below.
-        - name: nke-controller-config
+        # Not optional, like nvke-auth-config below.
+        - name: nvke-controller-config
           configMap:
             name: {{ include "controller.controllerConfig.name" . }}
         {{- if .Values.nodeAgent.externalMTLS.enabled }}
@@ -344,7 +344,7 @@ spec:
         {{- if .Values.apiAuth.enabled }}
         # Not optional: a missing ConfigMap holds the pod in ContainerCreating
         # with the name in its events, rather than starting it unconfigured.
-        - name: nke-auth-config
+        - name: nvke-auth-config
           configMap:
             name: {{ required "apiAuth.configMap.name is required when apiAuth.enabled=true" .Values.apiAuth.configMap.name }}
         {{- end }}

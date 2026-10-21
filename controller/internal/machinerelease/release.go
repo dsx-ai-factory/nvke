@@ -26,6 +26,9 @@ const (
 	kindClusterRelease  = "ClusterRelease"
 	kindNodePoolRelease = "NodePoolRelease"
 	kindMachineImage    = "MachineImage"
+
+	// crdProbeName is fetched only to learn whether the kind is installed.
+	crdProbeName = "nvke-release-crd-probe"
 )
 
 // GetClusterRelease reads the ClusterRelease with the given name.
@@ -107,6 +110,30 @@ func ParseKubernetesVersionAnnotations(release metav1.Object) (string, bool, err
 		return "", false, fmt.Errorf("%w: release %q is missing annotation %s", ErrInvalidRelease, name, enginev1.MachineInitKubernetesVersionAnnotation)
 	}
 	return version, injected, nil
+}
+
+// CheckCRDs reports whether MachineImage, ClusterRelease, and NodePoolRelease
+// are installed. A missing object is success; a missing kind is not.
+func CheckCRDs(ctx context.Context, reader client.Reader) error {
+	probes := []struct {
+		obj  client.Object
+		kind string
+	}{
+		{&enginev1.MachineImage{}, kindMachineImage},
+		{&enginev1.ClusterRelease{}, kindClusterRelease},
+		{&enginev1.NodePoolRelease{}, kindNodePoolRelease},
+	}
+	for _, probe := range probes {
+		err := reader.Get(ctx, client.ObjectKey{Name: crdProbeName}, probe.obj)
+		if err == nil || apierrors.IsNotFound(err) {
+			continue
+		}
+		if meta.IsNoMatchError(err) {
+			return fmt.Errorf("%s CRD is not installed: %w", probe.kind, err)
+		}
+		return fmt.Errorf("checking %s: %w", probe.kind, err)
+	}
+	return nil
 }
 
 func get(ctx context.Context, reader client.Reader, name string, obj client.Object, kind string) error {

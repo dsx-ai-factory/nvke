@@ -20,6 +20,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 const (
@@ -39,8 +40,30 @@ func TestController_ReconcileRendersManagedClusterStaticEntries(t *testing.T) {
 	require.NoError(t, err)
 
 	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
-		"hash-a": constants.LabelKeyNvkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
-		"hash-b": constants.LabelKeyNvkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-a": keys.ManagedBy.String() + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-b": keys.ManagedBy.String() + "=" + constants.FieldManagerMachineSpireEntry,
+	})
+}
+
+// An entry applied before the nvke.nvidia.com rename carries the legacy
+// managed-by label until its Machine reconciles again. A label selector
+// matches one key, so missing it would drop that node's pubhash and break its
+// TPM attestation.
+func TestController_ReconcileRendersLegacyLabelledClusterStaticEntries(t *testing.T) {
+	legacy := newTPMClusterStaticEntryForTest("host-legacy", constants.FieldManagerMachineSpireEntry, "hash-legacy")
+	legacy.Labels = map[string]string{keys.ManagedBy.Legacy(): constants.FieldManagerMachineSpireEntry}
+
+	controller := newControllerForTest(t,
+		newTPMClusterStaticEntryForTest("host-a", constants.FieldManagerMachineSpireEntry, "hash-a"),
+		legacy,
+	)
+
+	_, err := controller.Reconcile(context.Background(), ctrl.Request{})
+	require.NoError(t, err)
+
+	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
+		"hash-a":      keys.ManagedBy.String() + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-legacy": keys.ManagedBy.String() + "=" + constants.FieldManagerMachineSpireEntry,
 	})
 }
 
@@ -56,7 +79,7 @@ func TestController_ReconcileFiltersClusterStaticEntries(t *testing.T) {
 	require.NoError(t, err)
 
 	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
-		"hash-valid": constants.LabelKeyNvkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-valid": keys.ManagedBy.String() + "=" + constants.FieldManagerMachineSpireEntry,
 	})
 }
 
@@ -74,7 +97,7 @@ func TestController_ReconcileUpdatesConfigMapOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
-		"hash-new": constants.LabelKeyNvkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-new": keys.ManagedBy.String() + "=" + constants.FieldManagerMachineSpireEntry,
 	})
 }
 
@@ -111,7 +134,7 @@ func TestController_ReconcilePreservesExternallyManagedConfigMapData(t *testing.
 	require.NoError(t, err)
 
 	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
-		"hash-a": constants.LabelKeyNvkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-a": keys.ManagedBy.String() + "=" + constants.FieldManagerMachineSpireEntry,
 		"bogus":  "bad",
 	})
 }
@@ -174,7 +197,7 @@ func newClusterStaticEntryForTest(name, manager, className, parentID string) *sp
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
-				constants.LabelKeyNvkeManagedBy: manager,
+				keys.ManagedBy.String(): manager,
 			},
 		},
 		Spec: spirev1alpha1.ClusterStaticEntrySpec{

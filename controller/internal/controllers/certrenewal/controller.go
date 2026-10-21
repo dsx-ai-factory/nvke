@@ -68,7 +68,16 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 	}
 
 	now := time.Now()
-	if !maintenanceDue(cluster.NextCertRenewalDue, now) {
+	// The first look at a cluster schedules the check instead of running it: a new cluster's certificates
+	// are fresh and its nodes may still be joining, so a renewal pass there only collides with other work.
+	if cluster.NextCertRenewalDue == nil {
+		nextDue := now.Add(c.cfg.CertRenewalInterval)
+		if err := c.db.UpdateClusterNextCertRenewalDue(ctx, cluster.ID, nextDue); err != nil {
+			return reconcile.Result{}, fmt.Errorf("schedule the first cert renewal check for cluster %s: %w", cluster.ID, err)
+		}
+		return reconcile.Result{RequeueAfter: c.cfg.CertRenewalInterval}, nil
+	}
+	if !maintenanceDue(*cluster.NextCertRenewalDue, now) {
 		return reconcile.Result{RequeueAfter: cluster.NextCertRenewalDue.Sub(now)}, nil
 	}
 
@@ -102,6 +111,6 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 	return reconcile.Result{RequeueAfter: c.cfg.CertRenewalInterval}, nil
 }
 
-func maintenanceDue(nextDue *time.Time, now time.Time) bool {
-	return nextDue == nil || !nextDue.After(now)
+func maintenanceDue(nextDue, now time.Time) bool {
+	return !nextDue.After(now)
 }

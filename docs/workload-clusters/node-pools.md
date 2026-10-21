@@ -65,9 +65,15 @@ A node pool is a group of worker nodes that share an NVIDIA Infra Controller (NI
    - `<WORKER_INSTANCE_TYPE_ID>`: the NICo instance type. It is fixed at creation; to change machine type, add a new pool.
    - `<WORKER_RELEASE>`: the name of a node pool release.
    - `<VPC_PREFIX_ID>`: a NICo virtual private cloud (VPC) prefix. Give exactly one of `vpcPrefixIDs` (sites with native networking) or `subnetIDs`.
-   - `recycleBudget`: how many nodes auto mode may replace at once. See [Control automatic node replacement](#control-automatic-node-replacement).
+   - `recycleBudget`: how many nodes auto mode may mark for replacement at once. See [Control automatic node replacement](#control-automatic-node-replacement).
 
-   Optional fields include `configProfile`, `sshKeyGroupIDs`, `systemReservedMemory` (default `16Gi`), `kubeReservedMemory` (default `2Gi`), `nodeLabels` and `nodeTaints`. Labels and taints are fixed at creation. At preview, NVKE stores `nodeLabels` and `nodeTaints` on the pool but does not apply them to the Kubernetes nodes; see [Preview status and known limitations](../overview/preview-status.md).
+   Optional fields include `configProfile`, `sshKeyGroupIDs`, `systemReservedMemory` (default `16Gi`), `kubeReservedMemory` (default `2Gi`), `nodeLabels` and `nodeTaints`.
+
+   - `nodeLabels` is a map of label keys to values, and `nodeTaints` a list of taints, each with a `key`, an optional `value` and an `effect` of `NoSchedule`, `PreferNoSchedule` or `NoExecute`. Both are fixed at creation.
+   - They are applied to each node after it joins, before workloads can schedule on it. NVKE does not correct changes made to them outside NVKE afterwards, such as a label removed with `kubectl`.
+   - Keys under `kubernetes.io`, `k8s.io`, `nvke.nvidia.com`, `nke.nvidia.com` and `nke.io`, and their subdomains, are reserved. An operator can allow specific label keys under `kubernetes.io` and `k8s.io` with the controller chart value `nodeMetadata.allowlistedLabelKeys`; no taint key under them can be allowed, and `node-role.kubernetes.io/control-plane` can never be set.
+
+   > **Warning:** A `NoExecute` taint also evicts pods already running on the node that do not tolerate it, including DaemonSet pods that started on the node before NVKE applied the taint. Give the DaemonSets every node needs a matching toleration.
 
 3. Create the pool.
 
@@ -184,11 +190,11 @@ Before it removes a worker, NVKE cordons the node and evicts its pods through th
 
 ## Control automatic node replacement
 
-Auto mode moves a pool onto a new node configuration by marking outdated nodes for replacement, a few at a time. A node becomes outdated when you change the pool's node configuration, such as its release or Kubernetes version, after the node was built. Upgrading a pool's Kubernetes version is not covered on this page.
+Auto mode marks a pool's outdated nodes for replacement, a few at a time. It does not replace them. A node becomes outdated when you change the pool's node configuration, such as its release or Kubernetes version, after the node was built. Only nodes created after the change use the new configuration: NVKE does not replace a running node because its configuration is outdated. Upgrading a pool's Kubernetes version is not covered on this page.
 
 Auto mode works as follows:
 
-- **NVKE marks, something else deletes.** NVKE sets the condition `nke.nvidia.com/NeedsRecycle` on the Kubernetes node of each outdated node it selects, oldest first, and reports it as `markedForRecycling` in the node list. NVKE does not delete marked nodes itself. NVSentinel, or your own process, drains and deletes them when the customer's maintenance policy allows, and NVKE then provisions replacements on the current configuration. Without NVSentinel, delete marked nodes yourself as in [Replace a node](#replace-a-node).
+- **NVKE marks, you delete.** NVKE sets the condition `nvke.nvidia.com/NeedsRecycle` on the Kubernetes node of each outdated node it selects, oldest first, and reports it as `markedForRecycling` in the node list. NVKE does not cordon, drain or delete marked nodes. Delete each marked node when the customer's maintenance policy allows, as in [Replace a node](#replace-a-node), or configure a break-fix system to act on the condition. NVKE then provisions a replacement on the current configuration.
 - **`recycleBudget` limits how many nodes are out at once.** NVKE marks at most `recycleBudget` minus the pool's shortfall, where the shortfall is `desiredNodeCount` minus the number of available nodes. A node is unavailable when it is not `Ready`, is cordoned, is being deleted, or is marked for replacement or repair, and a node the pool is still waiting for adds to the shortfall. With `desiredNodeCount: 4`, `recycleBudget: 2` and one node `NotReady`, NVKE marks at most one node.
 - **Auto mode is inactive until you set a budget.** `recycleBudget` defaults to `0`, and with `0` NVKE marks nothing.
 

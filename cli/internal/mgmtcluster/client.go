@@ -18,9 +18,15 @@ import (
 )
 
 const (
-	// secretsNamespace is the management-cluster namespace where the
-	// tenantaccess controller publishes per-cluster kubeconfig Secrets.
-	secretsNamespace = "nke-system"
+	// DefaultSecretsNamespace is the management-cluster namespace where the
+	// tenantaccess controller publishes per-cluster kubeconfig Secrets on a site
+	// installed with the chart's defaults.
+	DefaultSecretsNamespace = "nvke-system"
+
+	// LegacySecretsNamespace is the namespace a site installed before
+	// nvkeSystemNamespace.name existed publishes into. A site that pinned the
+	// old name keeps using it indefinitely, so reads fall back to it.
+	LegacySecretsNamespace = "nke-system"
 
 	// adminKubeconfigSecretSuffix names the Secret that holds the
 	// nvke:breakglass admin kubeconfig, regardless of OIDC mode (mirrors
@@ -80,24 +86,47 @@ func newWithClient(kube kubernetes.Interface) *Client {
 }
 
 // GetClusterKubeconfig returns the admin kubeconfig for the named tenant
-// cluster by reading the Secret that the tenantaccess controller publishes
-// into nke-system/<cluster-name>-admin-kubeconfig.
-func (c *Client) GetClusterKubeconfig(ctx context.Context, clusterName string) ([]byte, error) {
+// cluster by reading the Secret that the tenantaccess controller publishes into
+// <namespace>/<cluster-name>-admin-kubeconfig.
+//
+// namespaces are tried in order, and a Secret missing from one is not an error
+// until every one has been tried; the error then names the last tried, unless
+// one of the namespaces was unreadable, in which case it reports that. The
+// caller passes more than one so a site that pinned the legacy management
+// namespace is still found without the operator having to know which one the
+// site was installed with. An empty slice means DefaultSecretsNamespace alone.
+func (c *Client) GetClusterKubeconfig(ctx context.Context, clusterName string, namespaces []string) ([]byte, error) {
+	if len(namespaces) == 0 {
+		namespaces = []string{DefaultSecretsNamespace}
+	}
 	secretName := clusterName + adminKubeconfigSecretSuffix
-	secret, err := c.kube.CoreV1().Secrets(secretsNamespace).Get(ctx, secretName, metav1.GetOptions{})
-	if err != nil {
+
+	// A Forbidden outranks a later NotFound: "the Secret is not there" is only
+	// true of a namespace we were allowed to look in, so reporting the NotFound
+	// would send the operator after a cluster name that may be perfectly good.
+	var lastErr, forbiddenErr error
+	for _, namespace := range namespaces {
+		secret, err := c.kube.CoreV1().Secrets(namespace).Get(ctx, secretName, metav1.GetOptions{})
 		switch {
+		case err == nil:
+			data, ok := secret.Data[kubeconfigSecretKey]
+			if !ok || len(data) == 0 {
+				return nil, fmt.Errorf("admin kubeconfig secret %s/%s has no %q key", namespace, secretName, kubeconfigSecretKey)
+			}
+			return data, nil
 		case apierrors.IsNotFound(err):
-			return nil, fmt.Errorf("admin kubeconfig secret nke-system/%s not found -- check the cluster name, or the cluster may not be provisioned yet: %w", secretName, err)
+			lastErr = fmt.Errorf("admin kubeconfig secret %s/%s not found -- check the cluster name, or the cluster may not be provisioned yet: %w", namespace, secretName, err)
 		case apierrors.IsForbidden(err):
-			return nil, fmt.Errorf("not allowed to read secret nke-system/%s -- the site kubeconfig identity needs 'get' on secrets in nke-system: %w", secretName, err)
+			lastErr = fmt.Errorf("not allowed to read secret %s/%s -- the site kubeconfig identity needs 'get' on secrets in %s: %w", namespace, secretName, namespace, err)
+			if forbiddenErr == nil {
+				forbiddenErr = lastErr
+			}
 		default:
-			return nil, fmt.Errorf("reading admin kubeconfig secret nke-system/%s: %w", secretName, err)
+			return nil, fmt.Errorf("reading admin kubeconfig secret %s/%s: %w", namespace, secretName, err)
 		}
 	}
-	data, ok := secret.Data[kubeconfigSecretKey]
-	if !ok || len(data) == 0 {
-		return nil, fmt.Errorf("admin kubeconfig secret nke-system/%s has no %q key", secretName, kubeconfigSecretKey)
+	if forbiddenErr != nil {
+		return nil, forbiddenErr
 	}
-	return data, nil
+	return nil, lastErr
 }

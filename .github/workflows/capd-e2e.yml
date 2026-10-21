@@ -112,8 +112,6 @@ jobs:
     uses: ./.github/workflows/backend-e2e.yml
     permissions:
       contents: read
-    secrets:
-      OVN_KUBERNETES_RO_TOKEN: ${{ secrets.OVN_KUBERNETES_RO_TOKEN }}
     with:
       backend: capd
       arch: ${{ matrix.arch }}

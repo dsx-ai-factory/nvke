@@ -1,11 +1,10 @@
-# Telemetry on a site controller: getting started
+# Management cluster telemetry: getting started
 
-NKTP, the NVIDIA Kubernetes Telemetry Pipeline, collects a site controller's
-metrics, logs and traces and exports them over OTLP. On a site controller it is
-installed by the `deploy/nico` deploy path, the same way as the rest of the
+NVKE telemetry pipeline (NKTP) collects the management cluster's
+metrics, logs and traces and exports them over OTLP. It is installed by the `deploy/nico` deploy path, the same way as the rest of the
 management plane. There is nothing to install by hand.
 
-This guide covers what NKTP gives a site controller, what the deploy path needs
+This guide covers what NKTP gives the management cluster, what the deploy path needs
 from you, and how to take a first look. The other guides in this directory
 cover [configuration](configuration.md), [verification](verification.md) and
 [troubleshooting](troubleshooting.md).
@@ -78,19 +77,19 @@ plus:
   ```
 - **Egress from the node running the install:**
   - to `open-telemetry.github.io`, `prometheus-community.github.io` and
-    `kubernetes-sigs.github.io`, because `deploy/nvke-deploy.sh` builds the
+    `kubernetes-sigs.github.io`, because the install builds the
     chart's dependencies from its `Chart.lock` before installing
   - to `docker.io`, `ghcr.io`, `quay.io` and `registry.k8s.io`, for the images
-- **Room on the nodes.** The site values size NKTP for the smaller clusters a
-  site controller runs on. Its Pods request about 1.6 CPU and 3.9Gi of memory
+- **Room on the nodes.** The site values size NKTP for a small management
+  cluster. Its Pods request about 1.6 CPU and 3.9Gi of memory
   in total, plus about 125m and 320Mi for each node beyond the first: the node
   Collector and kube-state-metrics' node Pod run on every node. The development
   backend sets no requests but used about 1.2Gi at idle.
 
 Nothing else. The deploy path creates the `nktp` namespace with the
 `privileged` Pod Security level the node Collector needs, and every setting a
-site controller needs is in
-[`nktp/values.yaml`](../../../deploy/nico/nktp/values.yaml).
+management cluster needs is in
+[`nktp/values.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/nktp/values.yaml).
 
 ## Install order
 
@@ -111,7 +110,7 @@ nvke-base-config -> spire-tpm-pubhashes -> spire-server-nodeport
 
 ## First look
 
-On the site controller, with its kubeconfig:
+On the management cluster, with its kubeconfig:
 
 ```bash
 export KUBECONFIG=<site-kubeconfig>
@@ -142,7 +141,7 @@ its metric is not scraped.
 
 To use these dashboards, open Grafana **Dashboards → New → Import**, upload its
 JSON file (or paste the JSON), and select a Prometheus datasource when prompted.
-The files are not installed automatically with the site controller. You can
+The files are not installed automatically on the management cluster. You can
 import them into the bundled `lgtm` Grafana while developing, but import them
 into your [real telemetry backend](configuration.md#connecting-a-real-backend)
 for site operations: `lgtm` keeps data in memory and has no authentication.
@@ -158,7 +157,7 @@ For the full checklist, see [verification](verification.md).
 - [Monitoring your service](monitoring-a-service.md): how a service gets its
   own metrics scraped.
 - [Verification](verification.md): checking every signal end to end.
-- [Troubleshooting](troubleshooting.md): the failures seen on real site
-  controllers, and their fixes.
+- [Troubleshooting](troubleshooting.md): the failures seen on real management
+  clusters, and their fixes.
 - [Observe NVKE and its clusters](../../operate/observe.md): health checks,
   controller logs and metrics, which NKTP complements rather than replaces.

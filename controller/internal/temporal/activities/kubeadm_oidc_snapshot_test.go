@@ -211,7 +211,7 @@ func snapshotActivities(database *testutil.MockDB, agent *snapshotWiringAgent, c
 
 func nvkeRBACConfigMap(subject string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: constants.NamespaceNVKESystem, Name: nvkerbac.ConfigMapName},
+		ObjectMeta: metav1.ObjectMeta{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.ConfigMapName},
 		Data: map[string]string{nvkerbac.ConfigMapKey: `apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:

@@ -1,10 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# What a site controller changes about nktp, over the chart's defaults.
+# What a management cluster changes about nktp, over the chart's defaults.
 #
-# Everything a site controller needs differently lives here instead:
-# sizing for the smaller clusters a site controller runs on and the Operator
+# Everything a management cluster needs differently lives here instead:
+# sizing for a small management cluster and the Operator
 # permission NVKE's API server requires.
 #
 # The exporters stay pointed at the bundled development backend, which keeps
@@ -16,10 +16,21 @@
 # therefore complete: the env lists restate the chart's entries alongside ours.
 # Recheck them whenever the chart changes.
 
-# Nothing else on a site controller serves metrics.k8s.io, and the Collector
+# Nothing else on a management cluster serves metrics.k8s.io, and the Collector
 # autoscalers read it.
 metrics-server:
   enabled: true
+
+# node_exporter's cpufreq collector hangs on arm64 nodes that use the
+# cppc_cpufreq driver. A read of cpuinfo_avg_freq never returns, so scrapes of
+# the exporter hang and time out (prometheus/node_exporter#3791). The fix,
+# prometheus/procfs#879, is in no node_exporter release yet. Remove this once
+# the chart's node_exporter has it. Without the collector there are no
+# node_cpu_frequency_* or node_cpu_scaling_* series, and nothing in nktp reads
+# them.
+node-exporter:
+  extraArgs:
+    - --no-collector.cpufreq
 
 opentelemetry-kube-stack:
   # NVKE binds the scheduler and the controller manager to 127.0.0.1
@@ -70,8 +81,7 @@ opentelemetry-kube-stack:
 
 # ---------------------------------------------------------------------------
 # Sizing. One replica of everything, autoscaling up from one, and requests the
-# smaller clusters a site controller runs on can hold, as the first site
-# controller ran with.
+# small management cluster can hold, as the first one ran with.
 
 # The four Collectors that export to the backend -- the watchdog and the three
 # gateways -- and the watchdog's sidecar label what they send with the site's

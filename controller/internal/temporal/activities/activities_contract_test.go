@@ -13,8 +13,8 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
-// The env file path and the controller CA bundle path follow the node's agent
-// version: the empty version and anything below the cutover get the old paths.
+// The env file path, the controller CA bundle path and its agent flag follow the
+// node's agent version: the empty version and anything below the cutover get the old forms.
 func TestNodeAgentBootstrapFilesGatedOnAgentVersion(t *testing.T) {
 	t.Parallel()
 
@@ -22,12 +22,13 @@ func TestNodeAgentBootstrapFilesGatedOnAgentVersion(t *testing.T) {
 		agentVersion string
 		wantCAPath   string
 		wantEnvPath  string
+		wantCAFlag   string
 	}{
-		"empty version is old":          {"", "/etc/nke/controller-ca.crt", "/etc/default/nke-agent"},
-		"below the cutover is old":      {"v0.2.0", "/etc/nke/controller-ca.crt", "/etc/default/nke-agent"},
-		"at the cutover is new":         {"v0.3.0", "/etc/nvke/controller-ca.crt", "/etc/default/nvke-agent"},
-		"cutover git describe is new":   {"v0.3.0-3-gabc1234", "/etc/nvke/controller-ca.crt", "/etc/default/nvke-agent"},
-		"unparseable version stays old": {"garbage", "/etc/nke/controller-ca.crt", "/etc/default/nke-agent"},
+		"empty version is old":          {"", "/etc/nke/controller-ca.crt", "/etc/default/nke-agent", "--controller-client-ca-bundle"},
+		"below the cutover is old":      {"v0.2.0", "/etc/nke/controller-ca.crt", "/etc/default/nke-agent", "--controller-client-ca-bundle"},
+		"at the cutover is new":         {"v0.3.0", "/etc/nvke/controller-ca.crt", "/etc/default/nvke-agent", "--nvke-controller-client-ca-bundle"},
+		"cutover git describe is new":   {"v0.3.0-3-gabc1234", "/etc/nvke/controller-ca.crt", "/etc/default/nvke-agent", "--nvke-controller-client-ca-bundle"},
+		"unparseable version stays old": {"garbage", "/etc/nke/controller-ca.crt", "/etc/default/nke-agent", "--controller-client-ca-bundle"},
 	}
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -47,7 +48,7 @@ func TestNodeAgentBootstrapFilesGatedOnAgentVersion(t *testing.T) {
 			require.Len(t, files, 2)
 			assert.Equal(t, params.wantCAPath, files[0].Path)
 			assert.Equal(t, params.wantEnvPath, files[1].Path)
-			assert.Contains(t, files[1].Content, "--controller-client-ca-bundle="+params.wantCAPath)
+			assert.Contains(t, files[1].Content, " "+params.wantCAFlag+"="+params.wantCAPath)
 		})
 	}
 }

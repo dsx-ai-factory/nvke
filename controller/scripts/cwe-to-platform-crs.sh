@@ -267,7 +267,7 @@ ${cluster_spec}
         np_name=$(echo "$np" | jq -r '.name // empty')
         np_prefix=$(echo "$np" | jq -r '.nodeNamePrefix // empty')
         np_instance_type=$(uuid_from_json "$(echo "$np" | jq -c '.nico.instanceTypeID // empty')")
-        np_os_profile=$(echo "$np" | jq -r '.nico.release // empty')
+        np_release=$(echo "$np" | jq -r '.nico.release // empty')
         np_config_profile=$(echo "$np" | jq -r '.nico.configProfile // empty')
         np_desired=$(echo "$np" | jq -r '.desiredNodeCount // 1')
         np_control_plane=$(echo "$np" | jq -r '.controlPlane // false')
@@ -279,7 +279,7 @@ ${cluster_spec}
         np_recycle_budget=$(echo "$np" | jq -r '.recycleBudget // 0')
         np_max_surge=$(echo "$np" | jq -r '.maxSurge // 0')
         # Validate required fields; skip node pools with missing or zero UUIDs (controller data issue)
-        if [[ -z "$np_name" ]] || [[ -z "$np_prefix" ]] || [[ -z "$np_os_profile" ]]; then
+        if [[ -z "$np_name" ]] || [[ -z "$np_prefix" ]] || [[ -z "$np_release" ]]; then
             echo "  Warning: skipping node pool (missing name, nodeNamePrefix, or release): $np"
             continue
         fi
@@ -326,7 +326,7 @@ spec:
   nodeType: ${np_node_type}
   nodeNamePrefix: ${np_prefix}
   instanceTypeID: ${np_instance_type}
-  osProfile: ${np_os_profile}
+  release: ${np_release}
   desiredNodeCount: ${np_desired}
   systemReservedMemory: ${np_system_mem}
 ${extra_spec}"

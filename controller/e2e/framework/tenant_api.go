@@ -34,7 +34,7 @@ const (
 	kubeDNSServicePath      = "/api/v1/namespaces/kube-system/services/kube-dns"
 	kubeSystemNamespacePath = "/api/v1/namespaces/kube-system"
 	nodeLocalDNSPath        = "/apis/apps/v1/namespaces/kube-system/daemonsets/node-local-dns"
-	secretCollectionPath    = "/api/v1/namespaces/nke-system/secrets"
+	secretCollectionPath    = "/api/v1/namespaces/nvke-system/secrets"
 
 	// fixtureResourceVersion is shared by every stored object. The fixture never
 	// replays incremental watch events, so a single version is enough for
@@ -311,7 +311,7 @@ func (s *TenantAPIServer) createSecret(w http.ResponseWriter, r *http.Request) {
 			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "cwe-gofail-cluster-kubeconfig",
-				Namespace: "nke-system",
+				Namespace: "nvke-system",
 			},
 		}
 	}

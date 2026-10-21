@@ -67,6 +67,32 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
+// registerControllerClientCABundleFlags registers the controller client CA
+// bundle under its NVKE name and its earlier name, which nodes already pass.
+// The returned function, called after parsing, gives the NVKE name's value when
+// it is set (flag or environment) and the earlier name's value otherwise.
+func registerControllerClientCABundleFlags(fs *flag.FlagSet) func() string {
+	nvke := fs.String(
+		"nvke-controller-client-ca-bundle",
+		envOr("NVKE_CONTROLLER_CLIENT_CA_BUNDLE", ""),
+		fmt.Sprintf("PEM CA bundle verifying the controller's client certificate. Setting it selects external mTLS "+
+			"instead of SPIFFE mTLS and requires --grpc-auth-mode=%s. The controller's certificate must also carry "+
+			"the URI SAN %s. Also set via NVKE_CONTROLLER_CLIENT_CA_BUNDLE", authModeTLSJWT, externalmtls.ControllerURI),
+	)
+	legacy := fs.String(
+		"controller-client-ca-bundle",
+		envOr("NKE_CONTROLLER_CLIENT_CA_BUNDLE", ""),
+		"Earlier name for --nvke-controller-client-ca-bundle. When both are set, --nvke-controller-client-ca-bundle wins. "+
+			"Also set via NKE_CONTROLLER_CLIENT_CA_BUNDLE",
+	)
+	return func() string {
+		if *nvke != "" {
+			return *nvke
+		}
+		return *legacy
+	}
+}
+
 // AgentConfig centralizes configuration previously stored in globals.
 // It is passed explicitly to functions instead of relying on package-level state.
 // TODO:  May want to move this and define it in the agent package, and just
@@ -349,6 +375,8 @@ func initializeNodeServer(cfg AgentConfig) *server.NodeAgentServer {
 		cfg)
 	agentServer := server.NewNodeAgentServer(cfg.MLX5Rescan, cfg.BundleServerURL, cfg.IndexFileURL, cfg.CniImageRegistry)
 	agentServer.ScriptExecutionLogger = cfg.ScriptExecutionLogger
+	// The SPIRE RPCs read SVIDs from the socket whether or not the gRPC server uses mTLS.
+	agentServer.SPIFFESocketPath = cfg.SPIFFESocketPath
 	agentServer.NodeStatus.ListenStatus = "pending"
 	if err := agentServer.Persister.Persist(agentServer.NodeStatus); err != nil {
 		slog.Error("failed to persist initial status", "err", err)
@@ -373,7 +401,7 @@ func RunNodeStartup(cfg AgentConfig) (*server.NodeAgentServer, error) {
 func main() {
 	disableMLX5Rescan := flag.Bool("disable-mlx5-rescan", false, "Disable mlx5 rescan (disables the init routine mlx5 reset proc)")
 	disableMTLS := flag.Bool("disable-mtls", false, "Disable mTLS / use plaintext gRPC (development only)")
-	spiffeSocketPath := flag.String("spiffe-socket-path", "unix:///tmp/spire-agent/public/api.sock", "Path to the SPIFFE workload API socket (--disable-mtls ignores this)")
+	spiffeSocketPath := flag.String("spiffe-socket-path", "unix:///tmp/spire-agent/public/api.sock", "Path to the SPIFFE workload API socket, used for the gRPC server's mTLS unless --disable-mtls is set and always for the SPIRE agent RPCs")
 	grpcAuthMode := flag.String(
 		"grpc-auth-mode",
 		authModeSPIFFEMTLS,
@@ -397,13 +425,7 @@ func main() {
 		defaultDSXIdentityTimeout,
 		"Timeout for one DSX Identity token-exchange request",
 	)
-	controllerClientCABundle := flag.String(
-		"controller-client-ca-bundle",
-		envOr("NKE_CONTROLLER_CLIENT_CA_BUNDLE", ""),
-		fmt.Sprintf("PEM CA bundle verifying the controller's client certificate. Setting it selects external mTLS "+
-			"instead of SPIFFE mTLS and requires --grpc-auth-mode=%s. The controller's certificate must also carry "+
-			"the URI SAN %s. Also set via NKE_CONTROLLER_CLIENT_CA_BUNDLE", authModeTLSJWT, externalmtls.ControllerURI),
-	)
+	controllerClientCABundle := registerControllerClientCABundleFlags(flag.CommandLine)
 	versionFlag := flag.Bool("version", false, "Print the version and exit")
 	auditLogFileName := flag.String(
 		"audit-log-file",
@@ -464,7 +486,7 @@ func main() {
 		DSXIdentityExchangeURL:   *dsxIdentityExchangeURL,
 		DSXIdentityCABundle:      *dsxIdentityCABundle,
 		DSXIdentityTimeout:       *dsxIdentityTimeout,
-		ControllerClientCABundle: *controllerClientCABundle,
+		ControllerClientCABundle: controllerClientCABundle(),
 		ControllerAudience:       *controllerAudience,
 	}
 

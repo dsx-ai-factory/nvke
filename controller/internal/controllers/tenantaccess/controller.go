@@ -40,13 +40,6 @@ import (
 const (
 	// KubeconfigSecretKey is the data key inside the per-cluster kubeconfig Secret.
 	KubeconfigSecretKey = "value"
-
-	// SecretsNamespace is the management-cluster namespace that holds the
-	// per-cluster Secrets this controller owns (kubeconfig + trust bundle). It is
-	// exported because the teardown activity deletes those Secrets on cluster
-	// removal. The chart creates the namespace and scopes the controller's Secret grant to
-	// it, so this is a constant rather than a config knob.
-	SecretsNamespace = constants.NamespaceNVKESystem
 )
 
 // KubeconfigSecretName returns the Secret name that holds the per-cluster
@@ -106,6 +99,14 @@ func NewController(
 	return c
 }
 
+// secretsNamespace is the management-cluster namespace that holds the
+// per-cluster Secrets this controller owns (kubeconfig + trust bundle) and the
+// nke-rbac ConfigMap it reads. The chart creates the namespace and scopes the
+// controller's Secret grant to it, so the two must be configured together.
+func (c *Controller) secretsNamespace() string {
+	return c.cfg.ManagementNamespaceOrDefault()
+}
+
 // SetupWithManager registers the CAPI-Cluster-scoped tenant-access
 // reconciler. Existence of the CAPI Cluster is the publish gate; a joined
 // control-plane node write and a DB cluster row change (e.g. EnableOIDC) are
@@ -119,7 +120,7 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		Deleting:     ptr.To(false),
 	}, c.nodeClusterRequest)
 
-	clusterSource := dbwrapper.NewMappedClusterSource(c.db, dbfilters.Cluster{}, dbClusterRequest)
+	clusterSource := dbwrapper.NewMappedClusterSource(c.db, dbfilters.Cluster{}, c.dbClusterRequest)
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&clusterv1.Cluster{}).
@@ -142,19 +143,19 @@ func (c *Controller) nodeClusterRequest(ctx context.Context, node db.Node) ([]re
 	if err != nil {
 		return nil, fmt.Errorf("getting cluster %s for node %s: %w", node.ClusterID, node.ID, err)
 	}
-	return []reconcile.Request{clusterRequest(cluster.Name)}, nil
+	return []reconcile.Request{c.clusterRequest(cluster.Name)}, nil
 }
 
 // dbClusterRequest maps a DB cluster row change to its tenant-access request.
-func dbClusterRequest(_ context.Context, cluster db.Cluster) ([]reconcile.Request, error) {
+func (c *Controller) dbClusterRequest(_ context.Context, cluster db.Cluster) ([]reconcile.Request, error) {
 	if cluster.Name == "" {
 		return nil, nil
 	}
-	return []reconcile.Request{clusterRequest(cluster.Name)}, nil
+	return []reconcile.Request{c.clusterRequest(cluster.Name)}, nil
 }
 
-func clusterRequest(clusterName string) reconcile.Request {
-	return reconcile.Request{NamespacedName: types.NamespacedName{Namespace: SecretsNamespace, Name: clusterName}}
+func (c *Controller) clusterRequest(clusterName string) reconcile.Request {
+	return reconcile.Request{NamespacedName: types.NamespacedName{Namespace: c.secretsNamespace(), Name: clusterName}}
 }
 
 // Reconcile publishes access material for one cluster. Existence of the CAPI
@@ -257,7 +258,7 @@ func (c *Controller) currentAdminKubeconfig(ctx context.Context, clusterName str
 	secret := &corev1.Secret{}
 	err := c.k8sClient.Get(ctx, types.NamespacedName{
 		Name:      AdminKubeconfigSecretName(clusterName),
-		Namespace: SecretsNamespace,
+		Namespace: c.secretsNamespace(),
 	}, secret)
 	if apierrors.IsNotFound(err) {
 		return nil, nil
@@ -268,7 +269,7 @@ func (c *Controller) currentAdminKubeconfig(ctx context.Context, clusterName str
 	return secret.Data[KubeconfigSecretKey], nil
 }
 
-// upsertKubeconfigSecret upserts one Opaque kubeconfig Secret in SecretsNamespace.
+// upsertKubeconfigSecret upserts one Opaque kubeconfig Secret in c.secretsNamespace().
 //
 // Opaque, not clusterv1.ClusterSecretType: nothing reads the type — CAPI resolves
 // a kubeconfig by name and data key — and Opaque is CAPI's marker for a Secret
@@ -280,7 +281,7 @@ func (c *Controller) upsertKubeconfigSecret(ctx context.Context, cluster db.Clus
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: SecretsNamespace,
+			Namespace: c.secretsNamespace(),
 			Labels: map[string]string{
 				clusterv1.ClusterNameLabel: cluster.Name,
 			},
@@ -345,7 +346,7 @@ func (c *Controller) publishSPIRE(ctx context.Context, cluster db.Cluster, admin
 	trustBundleSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      TrustBundleSecretName(cluster.Name),
-			Namespace: SecretsNamespace,
+			Namespace: c.secretsNamespace(),
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{TrustBundleSecretKey: ca},

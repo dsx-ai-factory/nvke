@@ -46,6 +46,12 @@ func WithTrustDomain(trustDomain string) Option {
 	return func(op *EnableOIDCOperation) { op.trustDomain = trustDomain }
 }
 
+// WithManagementNamespace injects the shared management-plane namespace, where
+// the nke-rbac ConfigMap lives (config.Config.ManagementNamespaceOrDefault).
+func WithManagementNamespace(namespace string) Option {
+	return func(op *EnableOIDCOperation) { op.managementNamespace = namespace }
+}
+
 // WithMethodSupportChecker injects the reusable agent capability check
 // (gRPC reflection) that Validate uses to confirm every control-plane agent
 // implements the PatchAPIServerManifest RPC before any node is touched — in place

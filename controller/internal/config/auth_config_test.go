@@ -18,7 +18,7 @@ import (
 func setMinimumEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("CNPG_SUPERUSER_PASSWORD", "not-the-dev-default")
-	t.Setenv("CONTROLLER_CONFIG_PATH", "/etc/nke/controller-config/config.yaml")
+	t.Setenv("CONTROLLER_CONFIG_PATH", "/etc/nvke/controller-config/config.yaml")
 }
 
 // Unset AUTH_CONFIG_PATH parses as the disabled state. Permissive mode comes

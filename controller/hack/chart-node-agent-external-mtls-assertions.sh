@@ -32,7 +32,7 @@ absent() {
 # reads its settings. A list compares as its items joined with commas.
 setting() {
   local got
-  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nke-controller-config") | .data["config.yaml"]' <<<"$4" |
+  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nvke-controller-config") | .data["config.yaml"]' <<<"$4" |
     yq ".$2 | (select(tag == \"!!seq\") | join(\",\")) // .")"
   if [[ "${got}" == "$3" ]]; then
     printf '  ok    %s\n' "$1"
@@ -61,7 +61,7 @@ want "CA bundle Secret key" 'key: trust.pem' "${enabled}"
 want "certificate target path" 'path: tls.crt' "${enabled}"
 want "private-key target path" 'path: tls.key' "${enabled}"
 want "CA bundle target path" 'path: ca.crt' "${enabled}"
-want "certificate mount" 'mountPath: /etc/nke/node-agent-client-tls' "${enabled}"
+want "certificate mount" 'mountPath: /etc/nvke/node-agent-client-tls' "${enabled}"
 want "certificate mount read-only" 'readOnly: true' "${enabled}"
 want "certificate reload annotation" 'secret.reloader.stakater.com/reload: "dsx-controller-client"' "${enabled}"
 absent "authentication ConfigMap" 'name: nke-node-agent-auth' "${enabled}"

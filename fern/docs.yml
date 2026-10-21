@@ -32,3 +32,9 @@ products:
   - display-name: NVIDIA Kubernetes Engine
     path: ../docs/index.yml
     slug: /
+    # Product level, not top level: the nvidia global theme owns the top-level
+    # announcement and overwrites it on publish. Readers can dismiss the banner;
+    # it reappears when the message changes. Keep the text in step with the
+    # blockquote at the top of docs/overview/what-is-nvke.md.
+    announcement:
+      message: '<strong>Preview:</strong> NVKE is available as a preview. APIs, configuration and behavior can change between releases, and we do not recommend NVKE for production workloads. See <a href="/nvke/documentation/overview/preview-status-and-known-limitations">Preview status and known limitations</a>.'

@@ -5,7 +5,7 @@
 This document describes the normal lifecycle controls for worker nodes in NVKE tenant clusters:
 
 - **Auto-provisioning** keeps a node pool converged toward its desired count.
-- **Auto-mode** marks nodes in deprecated NodeSets for recycle.
+- **Auto-mode** marks nodes in deprecated NodeSets for recycle. It does not replace them.
 - **External break-fix systems** decide when workload-aware cordon, drain, and termination can happen.
 - **Operators** can manually reboot or terminate individual nodes when needed.
 
@@ -29,17 +29,21 @@ Use desired count when the intended steady-state size of the node pool changes. 
 
 ### Increasing the Desired Count
 
-1. Open the controller UI.
-2. Find the NodePool and click **Edit Node Pool**.
-3. Increase the desired node count and save.
+Set the higher count with `nvkectl`:
 
-Nodes are automatically provisioned when capacity becomes available. Pending nodes in the UI represent desired capacity waiting for matching resources.
+```bash
+nvkectl patch nodepool <POOL_NAME> --cluster <WORKLOAD_CLUSTER> --patch 'desiredNodeCount: <COUNT>'
+```
+
+Nodes are automatically provisioned when capacity becomes available. Pending nodes in the node list (`GET /api/nodes?nodePoolID=<NODE_POOL_ID>`) represent desired capacity waiting for matching resources.
 
 ### Decreasing the Desired Count
 
-1. Open the controller UI.
-2. Find the NodePool and click **Edit Node Pool**.
-3. Lower the desired node count and save.
+Set the lower count with `nvkectl`:
+
+```bash
+nvkectl patch nodepool <POOL_NAME> --cluster <WORKLOAD_CLUSTER> --patch 'desiredNodeCount: <COUNT>'
+```
 
 NVKE does not automatically terminate healthy in-service nodes only because desired count was reduced. This can leave the pool with more nodes than desired. To complete the scale-down, terminate selected nodes using [Terminating a Node](#terminating-a-node).
 
@@ -47,15 +51,14 @@ NVKE does not automatically terminate healthy in-service nodes only because desi
 
 ## Auto-mode Recycling
 
-Auto-mode gradually replaces worker nodes in deprecated NodeSets. The controller marks eligible nodes with `nke.nvidia.com/NeedsRecycle`, and [NVSentinel](https://github.com/NVIDIA/NVSentinel) (or your break-fix system) decides when those nodes can be cordoned, drained, and terminated.
+Auto-mode marks worker nodes in deprecated NodeSets with the condition `nvke.nvidia.com/NeedsRecycle`, a few at a time. NVKE does not cordon, drain or terminate marked nodes. An operator, or a break-fix system configured to act on the condition, decides when each node can be drained and terminated, and NVKE then provisions its replacement.
 
 ## Rebooting a Node
 
 If rebooting a node is required, use one of the following approaches:
 
 1. **Via [NVSentinel](https://github.com/NVIDIA/NVSentinel)** — preferred when the node is being recycled or repaired, as this gives NVSentinel the opportunity to apply workload-aware cordon and drain policy before the reboot.
-2. **Via the controller UI** — find the node and use the reboot action.
-3. **Via `nvkectl`** — `nvkectl` provides cluster and node-level operations.
+2. **Via the NVKE API or `nvkectl`** — not available at preview.
 
 For new label-driven worker reboots, the controller first requests a soft reboot through
 the node agent. It polls for a boot change every 10 seconds, or faster if configured.
@@ -81,11 +84,7 @@ After the upgrade, start new reboot workflows for nodes that still need recovery
 
 Manual node termination should be the exception. Prefer the [NVSentinel](https://github.com/NVIDIA/NVSentinel) break-fix flow when the node is being recycled or repaired — that path applies workload-aware policy before termination.
 
-Two approaches:
-
-1. **Via the controller UI** — find the problematic node and click **Delete Node**. If the NodePool desired count remains unchanged, terminated nodes are automatically replaced when matching capacity becomes available.
-
-2. **Via `nvkectl`** — connect to the cluster and use the node termination command.
+To terminate a node yourself, delete it through the NVKE API with `curl -X DELETE "<API_URL>/api/nodes/<NODE_ID>"`, as described in [Replace a node](../workload-clusters/node-pools.md#replace-a-node). If the NodePool desired count remains unchanged, terminated nodes are automatically replaced when matching capacity becomes available. `nvkectl` has no command for this.
 
 If the node is still present in Kubernetes but is already gone from the controller, it is a Kubernetes-only zombie node. Remove it manually:
 
@@ -99,15 +98,15 @@ kubectl delete node <node-name>
 
 - Check the controller logs for capacity allocation errors.
 - Verify the configured subnet has available IP space.
-- Confirm the infrastructure provider (NICo/Forge) has matching capacity.
+- Confirm the infrastructure provider (NICo) has matching capacity.
 
 **Node not joining after provisioning:**
 
 - Check `nvke-agent` on the node: `systemctl status nvke-agent`
-- Verify network connectivity from the site controller to the node on port 15005 (gRPC)
-- Check the controller's workflow logs in the Temporal UI (port-forward `temporal-web` in the site controller cluster)
+- Verify network connectivity from the management cluster to the node on port 15005 (gRPC)
+- Check the controller's workflow logs in the Temporal UI (port-forward `temporal-web` in the management cluster)
 
 **Node shows Ready in Kubernetes but NVKE considers it unhealthy:**
 
-- NVKE tracks node state in its own database. Check the controller UI for the node's recorded state.
+- NVKE tracks node state in its own database. Check the node's recorded state with `GET /api/nodes/<NODE_ID>`.
 - The controller reconciles the node's Kubernetes state with NVKE's records; check the controller logs if there's a discrepancy.

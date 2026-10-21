@@ -35,7 +35,7 @@ NVKE is a management plane for GPU Kubernetes on bare metal. A seed cluster
 stands up a highly available control plane, which then creates GPU tenant
 clusters on demand. The main components are:
 
-- **`controller/`** — the Cloud Workflow Engine (CWE). Orchestrates cluster
+- **`controller/`** — the NVKE controller (formerly CWE). Orchestrates cluster
   lifecycle through Temporal workflows, backed by PostgreSQL, with an OpenAPI
   REST surface.
 - **`agent/`** — the node agent. A gRPC server running as a systemd service on
@@ -43,6 +43,29 @@ clusters on demand. The main components are:
   through SPIFFE/SPIRE mTLS.
 - **`cluster-api-provider-provisioned/`** — the Cluster API infrastructure
   provider for hosts that NVKE provisions before CAPI bootstraps them.
+
+## Naming the NVKE controller
+
+`controller/` is a service named the **NVKE controller** (`nvke-controller`).
+"Controller" on its own is the generic word for a reconciler: management-engine's
+NVKECluster reconciler, the controller's own `controller/internal/controllers`,
+and every `controller-manager` Deployment. Where another component refers to the
+service, use its full name so it cannot be mistaken for one of those:
+
+| Where | Write |
+|---|---|
+| Prose | NVKE controller; later mentions on the same page can say "the controller" |
+| Flags, Kubernetes object names, files, Tilt resources | `nvke-controller` |
+| Environment settings | `NVKE_CONTROLLER_*` |
+| Go package | `nvkecontroller` |
+| Go identifiers | `NVKEController…` |
+
+Code inside `controller/` refers to itself, so a plain "controller" is fine there.
+The `controller/` directory and its Go module path keep their names: they are code
+layout, not a name another component refers to. Existing names such as the
+`NKE_CONTROLLER_*` settings and nvkectl's controller flags change in their own
+pull requests, with their own compatibility steps; do not rename them as a side
+effect of other work.
 
 ## Read this before you try to build
 
@@ -77,7 +100,7 @@ checkout, and do not stub a dependency to make the build pass.
 | `agent/cmd/`, `agent/internal/`, `agent/pkg/` | Node agent implementation | Yes |
 | `cli/` | nvkectl CLI implementation and e2e fixtures | Yes |
 | `cluster-api-provider-provisioned/` | Provisioned Cluster API infrastructure provider | Yes |
-| `controller/internal/` | CWE server, controllers, Temporal workflows and activities, database layer | Yes |
+| `controller/internal/` | Controller server, controllers, Temporal workflows and activities, database layer | Yes |
 | `controller/api/openapi.yaml` | OpenAPI 3.0 spec — **the source of truth for the REST API** | Yes |
 | `controller/profiles/` | Config profiles and the runbooks their hooks reference | Ask first — being moved out of this repo |
 | `build/` | Build scripts (`agent.sh`) | Yes |
@@ -152,6 +175,14 @@ Keep the controller chart's `version`, `appVersion`, and README version badge at
 - **Do not change the release or CI workflows** in `.github/workflows/` as part
   of an unrelated change. They gate every merge.
 - Do not add a new dependency without saying why in the pull request.
+- **Do not add agent attribution to commits or pull requests.** No
+  `Co-Authored-By` trailer naming an agent, and no "Generated with …" or
+  "Created with …" footer in the PR description. Commits are authored and
+  signed off by the human contributor. Disclosure of AI assistance is the
+  human-written note that [CONTRIBUTING.md](CONTRIBUTING.md#ai-assisted-contributions)
+  asks for, not an agent footer. This matches the NVKR and AICR repositories.
+  The committed `.claude/settings.json` turns Claude Code's default
+  attribution off; other harnesses must be configured the same way.
 
 ## Coding conventions
 
@@ -358,8 +389,8 @@ those tasks.
 - [docs/architecture.md](docs/architecture.md) — the design to understand before
   changing how the controller and the agent talk to each other: the provisioning
   data flow from `POST /api/clusters` through Temporal and Forge to a node
-  registering itself over SPIFFE mTLS, and the site-controller deployment model
-- [controller/AGENTS.md](controller/AGENTS.md) — the full CWE loop: Flox, Temporal
+  registering itself over SPIFFE mTLS, and the management cluster deployment model
+- [controller/AGENTS.md](controller/AGENTS.md) — the full controller loop: Flox, Temporal
   workflows, the Bun/PostgreSQL layer, environment variables, and the local stack
 - [agent/AGENTS.md](agent/AGENTS.md) — proto generation, the state file, Debian
   packaging, gRPC reflection, and the mTLS story

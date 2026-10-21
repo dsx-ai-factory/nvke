@@ -335,7 +335,11 @@ jobs:
   # sharing one OCI repository.
   promote-ghcr:
     name: Promote to GHCR
-    if: startsWith(github.ref, 'refs/tags/cluster-api-provider-provisioned/v')
+    # NVKE_GITHUB_PUBLISH names the components whose releases go to GitHub;
+    # see docs/artifact-publication.md. Unset means every component but os-image.
+    if: >-
+      startsWith(github.ref, 'refs/tags/cluster-api-provider-provisioned/v') &&
+      contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',cluster-api-provider-provisioned,')
     runs-on: linux-amd64-cpu8
     needs: [manifest]
     environment: nvcr

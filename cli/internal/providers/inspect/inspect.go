@@ -483,7 +483,7 @@ func clusterError(what, out string, err error) error {
 		return fmt.Errorf("%s: the site kubeconfig may not list CRDs and Deployments cluster-wide, "+
 			"which this command needs: %w\n%s", what, err, strings.TrimSpace(out))
 	case strings.Contains(lower, "executable file not found"):
-		return fmt.Errorf("%s: kubectl was not found on PATH; nvkectl needs it to read the site controller: %w", what, err)
+		return fmt.Errorf("%s: kubectl was not found on PATH; nvkectl needs it to read the management cluster: %w", what, err)
 	default:
 		return fmt.Errorf("%s: %w\n%s", what, err, strings.TrimSpace(out))
 	}

@@ -35,7 +35,7 @@ this document.
 
 ### Trace ID
 
-Every command except `help` and `completion` runs under one trace ID. nvkectl sends it to the site controller in the `traceparent` header, and every log line of the run carries it as `trace_id`. How it is reported depends on the kind of command:
+Every command except `help` and `completion` runs under one trace ID. nvkectl sends it to the management plane in the `traceparent` header, and every log line of the run carries it as `trace_id`. How it is reported depends on the kind of command:
 
 | Kind | On success | On failure |
 |---|---|---|
@@ -68,7 +68,7 @@ Depend on these and a patch release may break you.
 | Code | Meaning |
 |---|---|
 | `0` | The command succeeded. |
-| `1` | The command failed. Invalid input, a usage error, an unreachable or erroring site controller, and a failed operation all report `1` — nvkectl does not distinguish them by code. The reason is on stderr. |
+| `1` | The command failed. Invalid input, a usage error, an unreachable or erroring management plane, and a failed operation all report `1` — nvkectl does not distinguish them by code. The reason is on stderr. |
 | `130` | The command was interrupted by `SIGINT` and stopped before finishing. `128 + SIGINT`, following shell convention. |
 | `143` | The command was interrupted by `SIGTERM` and stopped before finishing. `128 + SIGTERM`. |
 

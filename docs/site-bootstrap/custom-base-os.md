@@ -7,7 +7,7 @@ Before proceeding, write your [site spec file](configuration.md) so it can be pl
 The bootstrap host additionally needs `nerdctl` with containerd, `kind`, `helm`,
 `kubectl` and `clusterctl` on `PATH` — see
 [Installation](installation.md#additional-prerequisites-for-bootstrap). The two
-images `nvkectl` deploys come from a registry here, named with `--controller-image`
+images `nvkectl` deploys come from a registry here, named with `--nvke-controller-image`
 and `--provisioned-provider-image`, because a freshly installed host has no local
 build to side-load. The example marks where the tool installs go rather than
 scripting them; the right commands depend on your image.
@@ -85,7 +85,10 @@ autoinstall:
       - [sh, -c, "apt-get install -y kubelet kubeadm kubectl"]
       - [sh, -c, "apt-mark hold kubelet kubeadm kubectl"]
 
-      # TODO: Replace apt repo URL with confirmed public URL before publishing.
+      # Known limitation at preview: the NVKE apt repository is not published, so
+      # the key download and apt-get commands below fail. Instead, install the
+      # nvke-agent_<version>_<arch>.deb attached to an agent/ release from
+      # agent/v0.3.0-rc.2 on, at https://github.com/dsx-ai-factory/nvke/releases.
       # Install nvke-agent from the NVKE apt repository
       - [sh, -c, "curl -fsSL -o /etc/apt/keyrings/nke.asc https://packages.nvidia.com/nvke/nvke-apt-public.key"]
       - [sh, -c, "echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://packages.nvidia.com/nvke/apt nvke-noble main' | tee /etc/apt/sources.list.d/nke-apt.list"]
@@ -98,15 +101,16 @@ autoinstall:
       # clusterctl here. nvkectl checks for nerdctl before it starts; a missing kind
       # fails pre-flight, and helm, kubectl or clusterctl fail mid-bootstrap.
 
-      # TODO: Replace with real release URL once the repo is public.
-      # Download and install nvkectl (bootstrap host only)
-      - [sh, -c, "curl -fsSL -o /usr/local/bin/nvkectl https://github.com/dsx-ai-factory/nvke/releases/latest/download/nvkectl-linux-amd64 && chmod +x /usr/local/bin/nvkectl"]
+      # Download and install nvkectl (bootstrap host only). Replace cli/vX.Y.Z
+      # with a cli/ tag listed at https://github.com/dsx-ai-factory/nvke/releases,
+      # cli/v0.2.0 or later; earlier releases do not take --nvke-controller-image.
+      - [sh, -c, "curl -fsSL -o /usr/local/bin/nvkectl https://github.com/dsx-ai-factory/nvke/releases/download/cli/vX.Y.Z/nvkectl-linux-amd64 && chmod +x /usr/local/bin/nvkectl"]
 
       # Run bootstrap (bootstrap host only). --disable-mtls matches the plaintext
       # agents configured above; this is the development-only mode, not a
       # production path. The two images are named by flag because this host has
       # no local build to side-load; nvkectl pulls them with nerdctl.
-      - [sh, -c, "nvkectl bootstrap site -f /etc/nvkectl/sitespec.yaml --controller-image <controller-image> --provisioned-provider-image <provisioned-provider-image> --disable-mtls --encryption-key-out /root/nvke-site-etcd-encryption-key.json >> /var/log/nvkectl-bootstrap.log 2>&1"]
+      - [sh, -c, "nvkectl bootstrap site -f /etc/nvkectl/sitespec.yaml --nvke-controller-image <controller-image> --provisioned-provider-image <provisioned-provider-image> --disable-mtls --encryption-key-out /root/nvke-site-etcd-encryption-key.json >> /var/log/nvkectl-bootstrap.log 2>&1"]
 ```
 
 The bootstrap writes the cluster's etcd encryption key to the path given by

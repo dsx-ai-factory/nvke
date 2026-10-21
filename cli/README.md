@@ -1,6 +1,6 @@
 # nvkectl
 
-NVKE control-plane CLI. Bootstraps site controllers and manages tenant cluster lifecycle.
+NVKE control-plane CLI. Bootstraps management clusters and manages tenant cluster lifecycle.
 
 **Module:** `github.com/dsx-ai-factory/nvke/cli`  
 **Binary:** `nvkectl`  
@@ -11,7 +11,7 @@ NVKE control-plane CLI. Bootstraps site controllers and manages tenant cluster l
 - **Site bootstrap** — `nvkectl bootstrap site` creates an ephemeral Kind cluster on nerdctl/containerd, deploys Postgres, Temporal, SPIRE (skipped with `--disable-mtls`, which dials the agents in plaintext), Cluster API and CWE onto it, then drives kubeadm init/join across pre-provisioned nodes, or machines CAPNICo allocates with `infra.provider: nico`, via `nvke-agent` gRPC; no SSH required, and Docker is not supported
 - **Cluster lifecycle** — `nvkectl get/create/patch/delete clusters` manages tenant clusters through the CWE API
 - **Site spec** — `nvkectl generate sitespec` writes a site spec from a node CSV; `nvkectl bootstrap site --dry-run` validates one without touching a node
-- **Config** — `nvkectl config set-site` points the CLI at a site controller.
+- **Config** — `nvkectl config set-site` points the CLI at an NVKE management plane.
 
 ## Installation
 
@@ -31,17 +31,23 @@ chmod +x nvkectl && sudo mv nvkectl /usr/local/bin/
 nvkectl version
 ```
 
+## Command reference
+
+[**Every command and flag**](docs/reference/README.md), one page per command,
+generated from the command tree this binary runs. The quick reference below is
+the short list of what operators reach for most.
+
 ## Quick reference
 
 ```bash
-# Write a site spec from a node CSV, then bootstrap a new site controller with
+# Write a site spec from a node CSV, then bootstrap a new management cluster with
 # the images `make -C cli images` built. Needs nerdctl+containerd, kind, helm,
 # kubectl and clusterctl on PATH.
 nvkectl generate sitespec my-site --nodes hosts.csv > sitespec.yaml
 nvkectl bootstrap site -f sitespec.yaml
 # ... or with images you pushed to a registry
 nvkectl bootstrap site -f sitespec.yaml \
-  --controller-image nvcr.io/<org>/nvke-controller:edge \
+  --nvke-controller-image nvcr.io/<org>/nvke-controller:edge \
   --provisioned-provider-image nvcr.io/<org>/cluster-api-provider-provisioned:edge
 nvkectl bootstrap site -f sitespec.yaml --dry-run                 # validate only
 nvkectl bootstrap site -f sitespec.yaml --keep-bootstrap-cluster  # leave the Kind cluster for debugging
@@ -49,7 +55,7 @@ nvkectl bootstrap site -f sitespec.yaml --timeout 45m \
   --kubeconfig-out ./my-site.kubeconfig                          # longer provisioning wait; pick the output path
 nvkectl bootstrap site -f sitespec.yaml --disable-mtls            # no SPIRE, plaintext agents; development only
 
-# Point the CLI at a site controller
+# Point the CLI at a management plane
 nvkectl config set-site --url https://cwe.example.com --name default \
   --kubeconfig ~/.kube/site.kubeconfig
 nvkectl config use-site <name>          # switch between configured sites
@@ -98,19 +104,30 @@ are aliases on `get`, `create`, `patch` and `delete`.
 
 `nvkectl config set-site` command configures the management-cluster kubeconfig with the site.
 nvkectl commands use it to mint an audience-scoped token for the admitted
-identity `nke-clients/nke-client`. The audience comes from ConfigMap
-`nke-auth-config`, looked up in namespace `nke-controller` first and then
-`cloud-workflow-engine`.
+identity `nke-clients/nke-client`. The audience comes from the authentication
+ConfigMap, looked up in namespace `nke-controller` first and then
+`cloud-workflow-engine`, and under two names in each: `nvke-auth-config`, then
+`nke-auth-config` for a site that keeps the older name by pinning
+`apiAuth.configMap.name`.
 
-If neither namespace holds that ConfigMap, the CLI treats authentication as off and sends no
-`Authorization` header — the same as a CWE that was installed with
-`apiAuth.enabled` unset.
+The first *readable* candidate is used: a site whose RBAC grants `get` on its
+pinned name alone answers Forbidden for the other name, and the search moves
+past that denial rather than stopping at it.
+
+Only when neither name is found in either namespace does the CLI treat
+authentication as off and send no `Authorization` header — the same as a CWE
+that was installed with `apiAuth.enabled` unset. A denial is not that: it is
+kept, and reported only if no candidate turns out to be readable, so an RBAC
+problem never arrives as an unexplained 401.
 
 The kubeconfig identity needs:
 
 - `create` on `serviceaccounts/token` for `nke-client` in `nke-clients`
-- `get` on `secrets` in `nke-system`, for `nvkectl get kubeconfig`, which reads
-  the `<cluster>-admin-kubeconfig` Secret there directly rather than through CWE
+- `get` on `secrets` in the site's management namespace (`nvke-system`, or
+  `nke-system` on a site installed before it was configurable), for
+  `nvkectl get kubeconfig`, which reads the `<cluster>-admin-kubeconfig` Secret
+  there directly rather than through CWE. The command tries both and takes
+  `--namespace` for anything else
 - `list` on `customresourcedefinitions`, `list` on `deployments` across
   namespaces, and `get` on `secrets` in each provider manager's namespace
   (`capnico-system` and `capll-system` by default), for `nvkectl get providers`
@@ -282,23 +299,22 @@ through `KIND_EXPERIMENTAL_PROVIDER=nerdctl`, which `nvkectl` sets itself.
 | `NVKECTL_NODE_USER`, `NVKECTL_NODE_PASSWORD` | unset | The login rendered into the cloud-init of every node CAPNICo creates. Required with `infra.provider: nico` by `bootstrap site` and `validate sitespec --bootstrap-only`; the stack install reads the same variables. |
 | `NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT` | unset | Set to `1` to let `infra.nico.remote.endpoint` be an http URL. The bootstrap sends the NICo token there, so without it `bootstrap site` and `validate sitespec --bootstrap-only` require https; it is for a local or simulated NICo. |
 | `NVKECTL_BOOTSTRAP_CLUSTER_TIMEOUT` | `30m` | How long to wait for the site cluster to finish provisioning (`--timeout`) |
-| `NVKECTL_CONTROLLER_IMAGE` | `nke-controller:latest` | Controller image to deploy. A reference without a registry is side-loaded from the local image store; `make -C cli images` builds the default with nerdctl. A reference with a registry host is pulled with `nerdctl pull` when it is not already in containerd's image store, then loaded into the ephemeral cluster; log in to the registry first (`nerdctl login`). For Docker Hub, write `docker.io/<org>/<name>`. `--controller-image` overrides it for one run. |
+| `NVKECTL_NVKE_CONTROLLER_IMAGE` | `nke-controller:latest` | Controller image to deploy. A reference without a registry is side-loaded from the local image store; `make -C cli images` builds the default with nerdctl. A reference with a registry host is pulled with `nerdctl pull` when it is not already in containerd's image store, then loaded into the ephemeral cluster; log in to the registry first (`nerdctl login`). For Docker Hub, write `docker.io/<org>/<name>`. `--nvke-controller-image` overrides it for one run. |
 | `NVKECTL_CAPI_PROVISIONED_IMAGE` | `cluster-api-provider-provisioned:latest` | Provisioned-provider image, same semantics; unused with `infra.provider: nico`. `--provisioned-provider-image` overrides it for one run. |
-| `NVKECTL_CONTROLLER_PORT` | `30080` | Port of the controller API: its Service, NodePort, Kind host mapping and the address `nvkectl` calls |
-| `NVKECTL_CONTROLLER_TEMPORAL_CHART` | `temporal` from `https://go.temporal.io/helm-charts` | Temporal chart, as an OCI reference or a local path. Set, it replaces the repo lookup. |
-| `NVKECTL_CONTROLLER_SPIRE_CHART` | `spire` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE chart, same semantics |
-| `NVKECTL_CONTROLLER_SPIRE_CRDS_CHART` | `spire-crds` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE CRDs chart, same semantics |
-| `NVKECTL_CONTROLLER_HELM_TIMEOUT` | `5m` | Bounds each `helm upgrade --install --wait` |
-| `NVKECTL_CONTROLLER_READY_TIMEOUT` | `5m` | Bounds the wait for the controller's `/readyz` |
+| `NVKECTL_NVKE_CONTROLLER_PORT` | `30080` | Port of the controller API: its Service, NodePort, Kind host mapping and the address `nvkectl` calls |
+| `NVKECTL_NVKE_CONTROLLER_TEMPORAL_CHART` | `temporal` from `https://go.temporal.io/helm-charts` | Temporal chart, as an OCI reference or a local path. Set, it replaces the repo lookup. |
+| `NVKECTL_NVKE_CONTROLLER_SPIRE_CHART` | `spire` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE chart, same semantics |
+| `NVKECTL_NVKE_CONTROLLER_SPIRE_CRDS_CHART` | `spire-crds` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE CRDs chart, same semantics |
+| `NVKECTL_NVKE_CONTROLLER_HELM_TIMEOUT` | `5m` | Bounds each `helm upgrade --install --wait` |
+| `NVKECTL_NVKE_CONTROLLER_READY_TIMEOUT` | `5m` | Bounds the wait for the controller's `/readyz` |
 | `NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR` | `cluster-diagnostics` | Where a failed bootstrap writes a cluster dump before tearing the cluster down (`--diagnostics-dir`) |
 
 Every `NVKECTL_*` variable above except `NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT`,
-which turns a safety check off and so answers only to its own name, was named
+which turns a safety check off and so answers only to its own name, and the
+`NVKECTL_NVKE_CONTROLLER_*` settings, was named
 `NKECTL_*` while the binary was called `nkectl`. The old names still work for one release: when only the old
 name is set, `nvkectl` uses it and logs a warning naming the replacement. When
-both are set, the new name wins. nvkectl does not read the `NKECTL_CWE_*`
-names of cli/v0.1.x: `nvkectl bootstrap site` stops when one is set without
-its replacement, and warns when the replacement is set too. Likewise
+both are set, the new name wins. Likewise
 `make -C cli images` reads
 `CONTROLLER_IMAGE`, and still reads `CWE_IMAGE` with a warning until
 [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes it.
@@ -375,8 +391,9 @@ in a patch release. Match on the exit code, not on error text.
 
 ## Related docs
 
+- [Command reference](docs/reference/README.md) — every public command and flag
 - [Compatibility and deprecation policy](docs/compatibility.md)
-- [Site Controller Bootstrap](../docs/site-bootstrap/overview.md)
+- [Management cluster bootstrap](../docs/site-bootstrap/overview.md)
 - [Architecture](../docs/architecture.md)
 - [Authenticating to the NVKE API](../controller/docs/authenticating-to-the-api.md)
 - [Configuring NVKE API Authentication](../controller/docs/configuring-api-authentication.md)

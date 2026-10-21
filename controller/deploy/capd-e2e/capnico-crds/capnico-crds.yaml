@@ -3,9 +3,10 @@
 
 # CAPNICo's CRDs, and only its CRDs -- not its controller.
 #
-# The controller watches nicoclusters and nicomachines whatever the backend: the chart's
-# rbac-capi.yaml grants them unconditionally, so on a CAPD lane the kinds have
-# to exist or its controllers log against a kind the API server does not know.
+# The controller watches nicoclusters and nicomachines whatever the backend while
+# controllers.nico.enabled is true, and the chart's rbac-nico.yaml grants them
+# by default (capi.rbac.nico), so on a CAPD lane the kinds have to exist or its
+# controllers log against a kind the API server does not know.
 # The nico lane gets them from CAPNICo's own install instead, which is why the
 # lane applied these only when the NICo provider was off.
 #

@@ -22,6 +22,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	dbfilters "github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/workflows"
 )
@@ -168,7 +169,7 @@ func (c *Controller) reconcileAutoMode(ctx context.Context, tx db.Tx, nodePool d
 		_, err = tx.CreateWorkflowOutboxEntry(workflowCtx, workflows.ApplyK8sNodeConditionWorkflowType, workflowID, workflows.ApplyK8sNodeConditionInput{
 			NodeID: lockedNode.ID,
 			NodeCondition: corev1.NodeCondition{
-				Type:               constants.NodeConditionTypeNeedsRecycle,
+				Type:               corev1.NodeConditionType(keys.NeedsRecycle.String()),
 				Status:             corev1.ConditionTrue,
 				Reason:             "Deprecated",
 				Message:            "NVKE auto-mode recycling deprecated node",

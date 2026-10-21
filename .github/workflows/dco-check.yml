@@ -1,0 +1,159 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Labels open pull requests whose head commit fails the DCO check.
+#
+# Advisory, not a gate: `DCO` is a required check and already blocks a merge.
+# This makes the pull requests that only need a sign-off findable in the list
+# view with `label:needs-dco`, apart from `needs-ci-fix`, whose remedy is
+# different. `ci-failure-check.yml` skips the DCO app's `action_required`
+# conclusion on purpose; this workflow is where it is read.
+#
+# WHY A SWEEP AND NOT `check_run`
+#
+# The DCO app reports through a check run, so `check_run: completed` would
+# fire within seconds of its verdict. But that payload names no pull request
+# for a head pushed from a fork, so the job would still have to find the pull
+# request by SHA, and a base retarget would pass it by. A sweep starts from the
+# open pull requests and reads the check on each head. The cost is latency,
+# which does not matter for a label nobody blocks on.
+#
+# The fix is in CONTRIBUTING.md: `git commit --amend -s` and a push, or the
+# remediation commit the failing check prints, which .github/dco.yml allows.
+
+name: PR DCO Check
+
+on:
+  schedule:
+    # Twenty past and twenty to: off the hour, where the daily E2E crons sit,
+    # and five minutes behind the CI failure sweep so the two never queue together.
+    - cron: '20,50 * * * *'
+  # A new head has no DCO verdict yet, so the label from the old one is wrong
+  # until the next sweep. No checkout here, so the write token never meets fork code.
+  pull_request_target:
+    types: [synchronize]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || 'sweep' }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  clear-on-push:
+    name: Clear the label on a new head
+    if: github.repository_id == '1323115536' && github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    timeout-minutes: 5
+    steps:
+      - name: Remove needs-dco
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            try {
+              await github.rest.issues.removeLabel({
+                ...context.repo,
+                issue_number: context.payload.pull_request.number,
+                name: 'needs-dco',
+              });
+            } catch (error) {
+              // 404 means the label was not on the pull request.
+              if (error.status !== 404) throw error;
+            }
+
+  dco:
+    name: Check open PRs for a missing sign-off
+    if: github.repository_id == '1323115536' && github.event_name != 'pull_request_target'
+    runs-on: ubuntu-latest
+    permissions:
+      checks: read
+      pull-requests: write
+    timeout-minutes: 10
+    steps:
+      - name: Label pull requests that need a DCO sign-off
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            // Label exists already; recreate as #e11d21 if it is ever deleted,
+            // since addLabels would otherwise invent a colour.
+            const LABEL = 'needs-dco';
+            // The DCO app (https://github.com/dcoapp/app) names its check run
+            // `DCO`. It concludes `action_required` when a commit lacks the
+            // trailer and `success` once every commit carries it, or a
+            // remediation commit covers it.
+            const CHECK = 'DCO';
+            const APP = 'dco';
+
+            const open = await github.paginate(github.rest.pulls.list, {
+              ...context.repo,
+              state: 'open',
+              per_page: 100,
+            });
+
+            let labelled = 0;
+            let cleared = 0;
+            let undetermined = 0;
+
+            for (const pr of open) {
+              // State is recomputed from the head rather than tracked, so a
+              // sign-off push clears the label on its own sweep.
+              const runs = await github.paginate(github.rest.checks.listForRef, {
+                ...context.repo,
+                ref: pr.head.sha,
+                check_name: CHECK,
+                filter: 'latest',
+                per_page: 100,
+              });
+
+              // Only the app's own run counts: a workflow could name a job DCO.
+              // Keep the newest, as the CI failure sweep does, in case the app
+              // ever reports twice for one head.
+              const own = runs
+                .filter((r) => r.app?.slug === APP)
+                .sort((a, b) => (a.started_at ?? '').localeCompare(b.started_at ?? '') || a.id - b.id);
+              const run = own.at(-1);
+
+              const hasLabel = pr.labels.some((l) => l.name === LABEL);
+
+              // No verdict yet, or one still in flight: acting would raise a
+              // false alarm or clear a true one.
+              if (!run || run.status !== 'completed') {
+                undetermined += 1;
+                core.info(`#${pr.number}: no completed DCO run, left unchanged`);
+                continue;
+              }
+
+              const missing = ['action_required', 'failure'].includes(run.conclusion);
+              const signed = run.conclusion === 'success';
+
+              if (missing && !hasLabel) {
+                await github.rest.issues.addLabels({
+                  ...context.repo,
+                  issue_number: pr.number,
+                  labels: [LABEL],
+                });
+                labelled += 1;
+                core.info(`#${pr.number}: labelled (${run.conclusion})`);
+              } else if (signed && hasLabel) {
+                try {
+                  await github.rest.issues.removeLabel({
+                    ...context.repo,
+                    issue_number: pr.number,
+                    name: LABEL,
+                  });
+                  cleared += 1;
+                  core.info(`#${pr.number}: cleared`);
+                } catch (error) {
+                  // 404 means someone removed it by hand first.
+                  if (error.status !== 404) {
+                    throw error;
+                  }
+                }
+              }
+              // `neutral`, `skipped` and `cancelled` change nothing either way.
+            }
+
+            core.info(`${open.length} checked: ${labelled} labelled, ${cleared} cleared, ${undetermined} undetermined`);

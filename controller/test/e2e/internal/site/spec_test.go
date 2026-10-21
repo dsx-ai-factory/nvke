@@ -62,7 +62,11 @@ func newFakeSession() *fakeSession {
 	}
 }
 
-func (f *fakeSession) Run(_ context.Context, cmd string) (string, error) {
+func (f *fakeSession) Run(ctx context.Context, cmd string) (string, error) {
+	// A real session does not start a command on a context that is done.
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.runs = append(f.runs, cmd)
@@ -72,7 +76,10 @@ func (f *fakeSession) Run(_ context.Context, cmd string) (string, error) {
 	return "", nil
 }
 
-func (f *fakeSession) Put(_ context.Context, p string, data []byte, mode uint32) error {
+func (f *fakeSession) Put(ctx context.Context, p string, data []byte, mode uint32) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.puts[p] = put{data: data, mode: mode}
@@ -279,7 +286,7 @@ func TestBootstrap(t *testing.T) {
 		}
 	}
 	boot := s.cmd(t, "bootstrap site")
-	for _, want := range []string{"sudo -n -i sh -c ", "--disable-mtls", "--kubeconfig-out", "NVKECTL_CONTROLLER_IMAGE=nvcr.io/nvke/cwe:v1.2.3", "NVKECTL_CAPI_PROVISIONED_IMAGE="} {
+	for _, want := range []string{"sudo -n -i sh -c ", "--disable-mtls", "--kubeconfig-out", "NVKECTL_NVKE_CONTROLLER_IMAGE=nvcr.io/nvke/cwe:v1.2.3", "NVKECTL_CONTROLLER_IMAGE=nvcr.io/nvke/cwe:v1.2.3", "NVKECTL_CAPI_PROVISIONED_IMAGE="} {
 		if !strings.Contains(boot, want) {
 			t.Errorf("bootstrap site lacks %s: %s", want, boot)
 		}

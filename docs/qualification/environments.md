@@ -30,7 +30,7 @@ infrastructure:          # opaque to the loader; the forge provider decodes it
   org:
     id: "${FORGE_ORG_ID}"
   sites:                 # named for the site, not the role: capabilities choose
-    az61:
+    site-1:
       id:            "${FORGE_SITE_ID}"
       vpcID:         "${FORGE_VPC_ID}"
       subnetID:      "${FORGE_SUBNET_ID}"      # this fabric attaches by subnet
@@ -42,17 +42,17 @@ infrastructure:          # opaque to the loader; the forge provider decodes it
         - name: gpu.l40sx8
           id: "${FORGE_INSTANCE_TYPE_GPU_ID}"
           provides: {machineType: gpu, arch: amd64, gpu: l40s}
-    ytl:
-      id:            "${FORGE_YTL_SITE_ID:-}"
-      vpcID:         "${FORGE_YTL_VPC_ID:-}"
-      vpcPrefixID:   "${FORGE_YTL_VPC_PREFIX_ID:-}"   # this one attaches by prefix
-      sshKeyGroupID: "${FORGE_YTL_SSH_KEY_GROUP_ID:-}"
+    site-2:
+      id:            "${FORGE_SITE_2_SITE_ID:-}"
+      vpcID:         "${FORGE_SITE_2_VPC_ID:-}"
+      vpcPrefixID:   "${FORGE_SITE_2_VPC_PREFIX_ID:-}"   # this one attaches by prefix
+      sshKeyGroupID: "${FORGE_SITE_2_SSH_KEY_GROUP_ID:-}"
       instanceTypes:
         - name: cpu.arm
-          id: "${FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID:-}"
+          id: "${FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID:-}"
           provides: {machineType: cpu, arch: arm64}
         - name: gpu.gb200.h05.ibx4.dpux2
-          id: "${FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID:-}"
+          id: "${FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID:-}"
           provides: {machineType: gpu, arch: arm64, gpu: gb200}
 ```
 
@@ -113,10 +113,10 @@ when the environment loads.
 
 A plain `${NAME}` is required: unset or empty fails the run before anything is
 created, and every missing name is reported at once. `${NAME:-}` defaults to
-empty instead, which is why ytl's identifiers take that form. A site missing
+empty instead, which is why site-2's identifiers take that form. A site missing
 any of them does not validate, and `Resolve` skips it rather than failing, so a
-repository that has not onboarded ytl still runs against az61. Set them to
-qualify at ytl.
+repository that has not onboarded site-2 still runs against site-1. Set them to
+qualify at site-2.
 
 CI supplies them from repository variables, which is the same route
 `FORGE_TELEPORT_PROXY` and `FORGE_TELEPORT_JOIN_TOKEN` take -- the latter
@@ -124,7 +124,7 @@ names a Teleport provision-token resource rather than being a credential
 itself, so a variable is enough. `FORGE_JUMP_HOST` is a secret instead, so
 the job log masks it, and it is scoped to the `forge` GitHub environment
 rather than the repository, alongside `FORGE_API_KEY` and
-`FORGE_YTL_JUMP_HOST`.
+`FORGE_SITE_2_JUMP_HOST`.
 
 The split is between engineering and account. Which sites exist, which machine
 shapes they offer, and what those shapes `provides` is engineering: it is
@@ -188,8 +188,8 @@ One thing will stop you, and it is worth knowing before you start.
 **Network attachment differs by site.** A fabric attaches an interface by
 subnet or by **VPC prefix**, never both, and which one is a property of the
 fabric rather than a choice. A site declares `subnetID` or `vpcPrefixID`
-accordingly, and declaring both is rejected on lookup. az61 attaches by
-subnet, ytl by prefix.
+accordingly, and declaring both is rejected on lookup. site-1 attaches by
+subnet, site-2 by prefix.
 
 **Enumerating instance types is awkward.** A Forge instance-type list caps at
 twenty rows and ignores every filter, so discovering the rest means reading

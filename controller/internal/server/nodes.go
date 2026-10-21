@@ -164,8 +164,25 @@ func apiNodeFromDB(dbNode *db.Node) api.Node {
 		Name:         dbNode.Name,
 		IP:           dbNode.IP,
 		Nico:         apiNicoNodeProviderFromDB(dbNode.Nico),
+		LaunchLayer:  apiLaunchLayerNodeProviderFromDB(dbNode.LaunchLayer),
 		ControlPlane: dbNode.ControlPlane,
 		Conditions:   nodeConditions,
+	}
+}
+
+func apiLaunchLayerNodeProviderFromDB(provider *db.LaunchLayerNodeProvider) *api.LaunchLayerNodeProvider {
+	if provider == nil {
+		return nil
+	}
+	// An all-zero payload means the node is not LaunchLayer-backed (or not yet
+	// stamped) — matches the Nico equivalent's behavior.
+	if provider.InstanceID == "" && provider.MachineID == "" && provider.RackID == "" {
+		return nil
+	}
+	return &api.LaunchLayerNodeProvider{
+		InstanceID: provider.InstanceID,
+		MachineID:  provider.MachineID,
+		RackID:     provider.RackID,
 	}
 }
 

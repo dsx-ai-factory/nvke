@@ -15,13 +15,15 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [overview/supported-platforms.md](overview/supported-platforms.md) | The Kubernetes versions, networking, infrastructure providers, node OS and tools this release supports |
 | [overview/preview-status.md](overview/preview-status.md) | What the preview supports and its known limitations |
 | [get-started/quickstart-local.md](get-started/quickstart-local.md) | Evaluate NVKE on one Linux host with mock-NICo |
+| [get-started/local-site.md](get-started/local-site.md) | The operator flow end to end on one machine: bootstrap a container node, install the management plane, create a workload cluster on simulated NICo |
 | [operate/plan-installation.md](operate/plan-installation.md) | What to decide and gather before installing |
-| [operate/build-node-images.md](operate/build-node-images.md) | Where NVKE's artifacts come from in NVKR, and writing the OS release resources |
+| [operate/build-node-images.md](operate/build-node-images.md) | Building node OS images, hosting their boot files over HTTP(S), checking downloads, and registering them for provisioning |
+| [operate/build-and-verify-node-image.md](operate/build-and-verify-node-image.md) | Building the reference node image from `os-image/`, booting it, and checking it with `nvke-os-image-check` |
 | [operate/prepare-nodes.md](operate/prepare-nodes.md) | Bringing the management cluster's nodes from first boot to what `nvkectl bootstrap site` requires |
 | [operate/bootstrap-management-cluster.md](operate/bootstrap-management-cluster.md) | Writing the site spec and running `nvkectl bootstrap site` |
-| [operate/install-management-plane-services.md](operate/install-management-plane-services.md) | Installing Cluster API, CAPNICo and the NVKE API and controllers |
 | [operate/provider-nico.md](operate/provider-nico.md) | Confirming the management plane can request machines from NICo, its credentials, and the NICo IDs a cluster request needs |
 | [operate/api-authentication.md](operate/api-authentication.md) | Turning on OIDC authentication for the NVKE API |
+| [workload-clusters/ovn-kubernetes.md](workload-clusters/ovn-kubernetes.md) | Building, self-hosting and deploying OVN-Kubernetes artifacts |
 | [workload-clusters/create.md](workload-clusters/create.md) | Creating a workload cluster |
 | [workload-clusters/access.md](workload-clusters/access.md) | Getting a workload cluster's admin kubeconfig, giving the customer access, and connecting with `kubectl` |
 | [workload-clusters/oidc.md](workload-clusters/oidc.md) | Making workload clusters accept tokens from the management plane and from your own OpenID Connect (OIDC) identity providers, and the identities they may not claim |
@@ -33,7 +35,6 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 
 | Document | Contents |
 |---|---|
-| [overview.md](overview.md) | What NVKE is and the problem it solves |
 | [dsx-stack.md](dsx-stack.md) | Where NVKE sits in the DSX component ecosystem (NICo, AICR, CRE, Nodewright, NVSentinel) |
 | [concepts.md](concepts.md) | The terms the rest of the documentation uses |
 | [first-cluster.md](first-cluster.md) | Three paths to a running cluster, driven by `nvkectl` |
@@ -48,6 +49,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [development.md](development.md) | The checks to run before opening a pull request, and which ones a laptop cannot reproduce |
 | [go-workspace.md](go-workspace.md) | The Go workspace, which modules are in it, and how to keep `go.work.sum` current |
 | [coverage-policy.md](coverage-policy.md) | What coverage is collected, what CI does with it, and why no threshold gates a merge |
+| [issue-triage.md](issue-triage.md) | How issues are triaged: the `needs-triage` and `priority/*` labels, who sets them, and what the automation does |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | How to get a change reviewed and merged |
 | [../.github/workflows/README.md](../.github/workflows/README.md) | How CI is wired, and the invariants a new workflow has to hold to |
 
@@ -63,6 +65,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [site-bootstrap/deploy-repository.md](site-bootstrap/deploy-repository.md) | The deploy repository and what it holds |
 | [site-bootstrap/infrastructure-providers.md](site-bootstrap/infrastructure-providers.md) | Installing Cluster API and an infrastructure provider on a site cluster |
 | [../cli/docs/sitespec.md](../cli/docs/sitespec.md) | Every field of the site spec file, with its type |
+| [../cli/docs/reference/README.md](../cli/docs/reference/README.md) | Every `nvkectl` command and flag, generated from the CLI itself |
 | [../cli/docs/bootstrap-troubleshooting.md](../cli/docs/bootstrap-troubleshooting.md) | Where a failed bootstrap leaves its evidence, how to read the error, common failures and when to re-run |
 
 ## Running tenant clusters
@@ -73,23 +76,27 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [tenant-clusters/kubernetes-api-access.md](tenant-clusters/kubernetes-api-access.md) | How operators, automation and Site Controller services reach and authenticate to tenant Kubernetes APIs |
 | [../controller/docs/authenticating-to-the-api.md](../controller/docs/authenticating-to-the-api.md) | Authenticating to the API |
 | [../controller/docs/configuring-api-authentication.md](../controller/docs/configuring-api-authentication.md) | Turning API authentication on, including RBAC for `nvkectl` |
-| [../controller/docs/byo-os.md](../controller/docs/byo-os.md) | Bringing your own OS image |
+| [design/README.md](design/README.md) | Design records and proposals; status is stated at the top of each |
+| [design/byo-os.md](design/byo-os.md) | Proposal: bringing your own OS image |
+| [design/multi-oidc-provider-support-design.md](design/multi-oidc-provider-support-design.md) | Design: multiple OIDC providers |
 
 ## Operating a site
 
 | Document | Contents |
 |---|---|
-| [operations/upgrade.md](operations/upgrade.md) | Upgrading NVKE and tenant cluster Kubernetes versions |
+| [operations/upgrade.md](operations/upgrade.md) | Pointer to the upgrade limitations in preview status |
 | [operations/crd-group-migration.md](operations/crd-group-migration.md) | Copying existing CRs to the `internal.nvke.nvidia.com` group on an existing site |
+| [operations/label-domain-migration.md](operations/label-domain-migration.md) | What the move to the `nvke.nvidia.com` label and annotation domain means for an existing site |
+| [site-operations/certificate-renewal.md](site-operations/certificate-renewal.md) | Site-management certificate renewal for NVKE fleet operators |
 | [operations/observability.md](operations/observability.md) | Temporal UI, CWE logs, database health, and CAPNICo diagnostics |
 | [operations/faq.md](operations/faq.md) | Common bootstrap and tenant cluster failure modes |
-| [nktp/site-telemetry/getting-started.md](nktp/site-telemetry/getting-started.md) | Telemetry on a site controller: what NKTP collects and what the deploy path needs |
+| [nktp/site-telemetry/getting-started.md](nktp/site-telemetry/getting-started.md) | Management cluster telemetry: what NKTP collects and what the deploy path needs |
 | [nktp/site-telemetry/configuration.md](nktp/site-telemetry/configuration.md) | What the site's NKTP values change, connecting a real backend, and overriding values safely |
 | [nktp/site-telemetry/monitoring-a-service.md](nktp/site-telemetry/monitoring-a-service.md) | How a service owner gets a service's metrics scraped by NKTP |
 | [nktp/site-telemetry/verification.md](nktp/site-telemetry/verification.md) | Checking every telemetry signal end to end after an install |
-| [nktp/site-telemetry/troubleshooting.md](nktp/site-telemetry/troubleshooting.md) | Telemetry failures seen on site controllers, and their fixes |
+| [nktp/site-telemetry/troubleshooting.md](nktp/site-telemetry/troubleshooting.md) | Telemetry failures seen on management clusters, and their fixes |
 
-## Running the telemetry pipeline (NKTP)
+## Running NVKE telemetry pipeline (NKTP)
 
 | Document | Contents |
 |---|---|

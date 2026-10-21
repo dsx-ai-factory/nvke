@@ -127,7 +127,7 @@ cp "${HERE}/stack-config.json.tmpl" "${WORK}/site/stack-config.json"
 "${NVKECTL}" validate sitespec -f "${WORK}/site/sitespec.yaml"
 "${NVKECTL}" inspect stack-config "${WORK}/site/stack-config.json" >/dev/null
 
-# 4. The site runbook, in the order docs/operate/install-management-plane-services.md
+# 4. The site runbook, in the order docs/get-started/local-site.md
 # gives it. nvkectl bootstrap site untaints a real site's nodes; kind does
 # not, so the lane does it here. kind ships a default StorageClass.
 kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true
@@ -183,7 +183,7 @@ for target in deployment/nke-controller:nke-controller deployment/controller-man
 done
 not_ready() {
   local ns
-  for ns in nke-system capnico-system nktp postgres spire-server spire-system temporal nke-controller cert-manager capi-system; do
+  for ns in nvke-system capnico-system nktp postgres spire-server spire-system temporal nke-controller cert-manager capi-system; do
     kubectl -n "${ns}" get pods -o jsonpath='{range .items[?(@.status.phase!="Succeeded")]}{.metadata.namespace}/{.metadata.name}{"\t"}{.status.phase}{"\t"}{range .status.containerStatuses[*]}{.ready}{" "}{end}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' || die "cannot list pods in ${ns}"
   done | awk -F'\t' '$2 != "Running" || $3 ~ /false/ || $4 != "True"'
 }

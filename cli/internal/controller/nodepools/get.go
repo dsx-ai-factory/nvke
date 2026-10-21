@@ -29,8 +29,8 @@ func NewGetCmd(clientFn ControllerClientFn) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "nodepools [name ...]",
 		Aliases: []string{"nodepool"},
-		Short:   "List node pools on the site controller",
-		Long: `List node pools on the site controller.
+		Short:   "List node pools on the management plane",
+		Long: `List node pools on the management plane.
 
 Naming pools narrows the listing to them, in the order given. Node pool names
 are unique within a cluster, so a name on its own can match a pool in every

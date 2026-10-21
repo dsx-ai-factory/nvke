@@ -70,10 +70,13 @@ token:nke-cloud-workflow-engine|nke-stack
 # the nkeOIDCAuth values key.
 token:nke-system|nkeSystemNamespace|NkeOIDCAuth
 
-# Label, annotation, taint and condition keys, and the *.nke.nvidia.com trust
-# domains of existing sites. The management-engine CRD group is now
-# internal.nvke.nvidia.com and no longer needs this entry.
-token:(^|[./])nke\.nvidia\.com|\.labels\.nke$
+# The legacy label, annotation, taint and condition domain, which the
+# controller still reads (controller/internal/keys), and the *.nke.nvidia.com
+# trust domains of existing sites. The Prometheus-mangled spelling appears in
+# the migration guide's example query, where naming the old series is the
+# point. The management-engine CRD group is now internal.nvke.nvidia.com and
+# no longer needs this entry.
+token:(^|[./])nke\.nvidia\.com|^label_nke_nvidia_com_|\.labels\.nke$
 
 # The NKECluster, NKENodePool and nkeClusterRef names of the DGXC platform API
 # (compute.private.x-dgxc.nvidia.com), which this repository emits CRs for in
@@ -84,9 +87,12 @@ token:(^|[./])nke\.nvidia\.com|\.labels\.nke$
 # and no longer need this entry.
 token:NKECluster|nkecluster|NKENodePool|nkenodepool|nkeClusterRef|NKEValidatedNodeIdentity
 
-# The nke-rbac ConfigMap, the nke: ClusterRole prefix the tenant apiserver
-# reserves, and the legacy filenames in controller/internal/nvkerbac/.
-token:nke-rbac|^nke:|nkerbac
+# The nke-rbac ConfigMap, whose name is still a compiled constant
+# (controller/internal/nvkerbac) and so has to become a chart value before it
+# can move, and the nke: ClusterRole prefix the tenant apiserver reserves.
+# The nvkerbac package's own filenames have been renamed and no longer need
+# an entry.
+token:nke-rbac|^nke:
 
 # SPIFFE caller paths and the ClusterSPIFFEID, the client identities, and the
 # e2e and Tilt probe identities.

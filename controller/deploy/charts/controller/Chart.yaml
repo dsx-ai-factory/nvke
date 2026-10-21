@@ -1,12 +1,13 @@
 ---
 apiVersion: v2
-name: nke-controller
+name: nvke-controller
 
 # The chart name is the last path segment of the OCI repository it is pushed
-# to, so this is what puts the chart at <registry>/nke/charts/nke-controller.
-# The service it deploys is still the cloud-workflow-engine binary; nameOverride
-# in values.yaml pins the rendered resource names and labels to that older name
-# so the rename is an artifact-location change only.
+# to, so this is what puts the chart at <registry>/nvke/charts/nvke-controller.
+# It names the artifact's location only: what an install renders is governed by
+# nameOverride, which an install that predates the nvke rename pins to the name
+# it already runs. chart-publish-nvcr.yml rewrites this line, so its anchor
+# moves with it.
 description: A Helm chart to deploy the NVKE controller service
 
 # A chart can be either an 'application' or a 'library' chart.

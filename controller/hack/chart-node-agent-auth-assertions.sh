@@ -30,7 +30,7 @@ absent() {
 # reads its settings. A list compares as its items joined with commas.
 setting() {
   local got
-  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nke-controller-config") | .data["config.yaml"]' <<<"$4" |
+  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nvke-controller-config") | .data["config.yaml"]' <<<"$4" |
     yq ".$2 | (select(tag == \"!!seq\") | join(\",\")) // .")"
   if [[ "${got}" == "$3" ]]; then
     printf '  ok    %s\n' "$1"
@@ -79,7 +79,7 @@ else
   want "whitespace-only identity exchange URL is rejected" 'nodeAgent.tlsJwt.dsxIdentityExchangeURL is required' "${whitespace_out}"
 fi
 absent "no certificate Secret reload" 'secret.reloader.stakater.com/reload: "nke-controller-agent-client-tls"' "${out}"
-absent "no certificate mount" 'mountPath: /etc/nke/node-agent-tls' "${out}"
+absent "no certificate mount" 'mountPath: /etc/nvke/node-agent-client-tls' "${out}"
 
 if ((failures > 0)); then
   printf '%d node-agent TLS/JWT chart assertion(s) failed\n' "${failures}" >&2

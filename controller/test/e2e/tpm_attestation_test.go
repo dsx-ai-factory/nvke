@@ -4,6 +4,7 @@
 package e2e
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -16,17 +17,23 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/mgmtns"
 )
 
 // The controller's names for a Machine's SPIRE agent identity. They must match
-// constants.MachineAnnotationKeySpireAgentSpiffeIDPath, constants.TPMSpireAgentPath
-// and constants.NamespaceNVKESystem in controller/internal/constants, which this
-// module does not import.
+// keys.MachineSpireAgentSpiffeIDPath and constants.TPMSpireAgentPath in
+// controller/internal/constants, which this module does not import.
 const (
-	spireAgentIDPathAnnotation = "nke.nvidia.com/spire-agent-spiffe-id-path"
-	tpmSpireAgentPath          = "/spire/agent/tpm/"
-	tenantMachineNamespace     = "nke-system"
+	spireAgentIDPathAnnotation = "nvke.nvidia.com/spire-agent-spiffe-id-path"
+	// Machines annotated before the nvke.nvidia.com rename carry the legacy key.
+	legacySpireAgentIDPathAnnotation = "nke.nvidia.com/spire-agent-spiffe-id-path"
+	tpmSpireAgentPath                = "/spire/agent/tpm/"
 )
+
+// The CAPI Machines live in the site's management namespace, which
+// mgmtns.Namespace resolves -- it is per-site configurable, so it is never
+// assumed here.
 
 // validateTPMAttestationPostCreate asserts that every node of the tenant
 // joined with an identity its TPM proved.
@@ -49,7 +56,7 @@ func validateTPMAttestationPostCreate(test *tenantTest) {
 		Eventually(func(ctx context.Context) error {
 			machines := &unstructured.UnstructuredList{}
 			machines.SetGroupVersionKind(schema.GroupVersionKind{Group: "cluster.x-k8s.io", Version: "v1beta2", Kind: "MachineList"})
-			if err := test.k8sClient.List(ctx, machines, client.InNamespace(tenantMachineNamespace),
+			if err := test.k8sClient.List(ctx, machines, client.InNamespace(mgmtns.Namespace()),
 				client.MatchingLabels{"cluster.x-k8s.io/cluster-name": test.cluster.Name}); err != nil {
 				return fmt.Errorf("listing CAPI Machines: %w", err)
 			}
@@ -85,7 +92,8 @@ func tpmAgentIDs(trustDomain string, machines []unstructured.Unstructured, want 
 		owners   = map[string]string{}
 	)
 	for _, machine := range machines {
-		path := machine.GetAnnotations()[spireAgentIDPathAnnotation]
+		annotations := machine.GetAnnotations()
+		path := cmp.Or(annotations[spireAgentIDPathAnnotation], annotations[legacySpireAgentIDPathAnnotation])
 		if !strings.HasPrefix(path, tpmSpireAgentPath) || path == tpmSpireAgentPath {
 			problems = append(problems, fmt.Sprintf("Machine %s has agent path %q, not a TPM identity", machine.GetName(), path))
 			continue

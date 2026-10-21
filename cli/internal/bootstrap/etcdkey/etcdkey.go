@@ -38,7 +38,12 @@ const (
 	// ClusterNameAnnotation records the site spec cluster the key belongs to.
 	// The Secret is named for the cluster's UUID, which the operator never
 	// sees; this is how a file on disk is matched back to a cluster.
-	ClusterNameAnnotation = "nke.nvidia.com/cluster-name"
+	ClusterNameAnnotation = "nvke.nvidia.com/cluster-name"
+
+	// LegacyClusterNameAnnotation is ClusterNameAnnotation under the domain
+	// used before the nvke.nvidia.com rename. Key files written by an earlier
+	// nvkectl carry it, so it is read, never written.
+	LegacyClusterNameAnnotation = "nke.nvidia.com/cluster-name"
 )
 
 // ErrExists is returned by Write when path already holds a file.

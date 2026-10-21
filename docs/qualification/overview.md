@@ -68,7 +68,7 @@ A beta tag is cut once a night, so it adds one run rather than a stream of them.
 | label | what it runs |
 |---|---|
 | `qualify-e2e` | `QUALIFY_E2E_SCOPE`, or `golden-path` when that is unset: Ubuntu 24.04 on GB200, both arches |
-| `qualify-e2e-l40s` | the `l40s` scope: Ubuntu 24.04 on L40S at az61, amd64 |
+| `qualify-e2e-l40s` | the `l40s` scope: Ubuntu 24.04 on L40S at site-1, amd64 |
 | `qualify-e2e-dsx` | the `dsx` scope: the redstone-dev1-dh2 datahall, at stage `provision` |
 | `qualify-e2e-dry-run` | everything except joining Teleport and running the suite |
 
@@ -145,6 +145,9 @@ Every run uploads the same artifacts whether it passed or failed:
 | `qualify-e2e.junit.xml` | the same result, machine-readable |
 | `run-inputs.txt` | which versions and settings the run actually resolved, and which were overridden |
 | `nvkectl-diagnostics.tar.gz` | what `nvkectl` collected on the node — present only when it failed |
+| `site-cluster-state.txt` | the controller namespace and every pod, read on the node — present after a failure past the bootstrap |
+| `site-bundle*.tar.gz` | the failure bundle: the node's state and logs, the cluster's objects, events and pod logs, and a timeline — present after a failure; a `site-bundle*.txt` note in its place says why there is none |
+| `tenant-diagnostics.json` | the tenant's nodes as the controller API reports them — present when a tenant failed |
 | `tbot.log` | the Teleport bot, for when nothing could be reached at all |
 
 A red run is as likely to be the site as the code. [triage.md](triage.md) is how
@@ -170,9 +173,9 @@ through create, node readiness, and delete.
   lane does not.
 - **Site controller upgrade and scale.** The site is a single node, and the
   upgrade specs act on a tenant cluster's control plane.
-- **A second provider.** Two sites are declared, az61 and ytl, and the lane
+- **A second provider.** Two sites are declared, site-1 and site-2, and the lane
   resolves between them by capability. Forge is still the only provider.
-- **GPU software.** A GB200 tenant has been qualified at ytl, but only to the
+- **GPU software.** A GB200 tenant has been qualified at site-2, but only to the
   point of its nodes going Ready. Nothing checks the driver, the device plugin
   or the `nvidia.com/gpu` resource.
 

@@ -41,10 +41,10 @@ func TestStoreUsesVersionAndMethodForIdempotenceAndSerialAdmission(t *testing.T)
 }
 
 func TestValidateRequestKey(t *testing.T) {
-	for _, key := range []string{"v0.1.2_apt", "v0.1.2_bundle"} {
+	for _, key := range []string{"v0.1.2_apt", "v0.1.2_bundle", "v0.3.0-rc.2_apt", "v0.3.0-rc.2_bundle"} {
 		require.NoError(t, ValidateRequestKey(key))
 	}
-	for _, key := range []string{"", "../escape", "v0.1.2@apt", "v01.1.2_apt", "v0.1.2_other"} {
+	for _, key := range []string{"", "../escape", "v0.1.2@apt", "v01.1.2_apt", "v0.1.2_other", "v0.3.0-rc/2_apt", "v0.3.0-rc.2+build_apt"} {
 		require.Error(t, ValidateRequestKey(key))
 	}
 }

@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: nvke-service
+spec:
+  className: spire-mgmt-spire
+  spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nvke-service/{{.PodSpec.ServiceAccountName}}"
+  namespaceSelector:
+    matchExpressions:
+    - key: kubernetes.io/metadata.name
+      operator: In
+      values:
+      - nke-controller
+      - capi-system
+      - capi-kubeadm-control-plane-system
+      - capi-kubeadm-bootstrap-system
+      - capd-system

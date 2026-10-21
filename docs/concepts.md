@@ -12,7 +12,7 @@ Kubernetes (K8s) is the orchestration system NVKE is built on. It schedules cont
 
 In the NVKE context, there are two kinds of Kubernetes clusters:
 
-- **Site controller cluster** — a small, HA three-node K8s cluster that runs NVKE's own management services (workflow engines, databases, security). Operators manage this cluster; tenants don't see it.
+- **Management cluster** — a small, HA three-node K8s cluster that runs NVKE's own management services (workflow engines, databases, security). Operators manage this cluster; tenants don't see it.
 - **Tenant clusters** — GPU-accelerated K8s clusters provisioned by NVKE for tenants to run AI workloads on.
 
 **Learn more:** https://kubernetes.io/docs/concepts/overview/
@@ -21,7 +21,7 @@ In the NVKE context, there are two kinds of Kubernetes clusters:
 
 ## kubeadm
 
-`kubeadm` is the upstream tool for bootstrapping Kubernetes clusters — it initializes the control plane, generates certificates, and joins nodes. NVKE uses `kubeadm` under the hood via `nvke-agent` to bring up both the site controller and tenant clusters.
+`kubeadm` is the upstream tool for bootstrapping Kubernetes clusters — it initializes the control plane, generates certificates, and joins nodes. NVKE uses `kubeadm` under the hood via `nvke-agent` to bring up both the management cluster and tenant clusters.
 
 You don't run `kubeadm` directly. NVKE runs it for you. But understanding what it does helps when reading bootstrap logs or troubleshooting a failed node join.
 
@@ -31,9 +31,9 @@ You don't run `kubeadm` directly. NVKE runs it for you. But understanding what i
 
 ## Helm
 
-Helm is the package manager for Kubernetes. Applications are packaged as *charts* — versioned bundles of Kubernetes manifests with templated configuration. NVKE's own services (the controller, Temporal, Postgres, SPIRE, NKTP) are installed as Helm charts, from the NVKR release or their public repositories.
+Helm is the package manager for Kubernetes. Applications are packaged as *charts* — versioned bundles of Kubernetes manifests with templated configuration. NVKE's own services (the NVKE controller, Temporal, Postgres, SPIRE, NVKE telemetry pipeline (NKTP)) are installed as Helm charts, from the NVKR release or their public repositories.
 
-After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh` installs them from the `deploy/nico` deploy path, one step of a short list of commands: each item is a chart with its values, or plain manifests. See [Install management-plane services](operate/install-management-plane-services.md).
+After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh` installs them from the `deploy/nico` deploy path, one step of a short list of commands: each item is a chart with its values, or plain manifests. See [Run NVKE end to end on one machine](get-started/local-site.md).
 
 **Learn more:** https://helm.sh/docs/intro/using_helm/
 
@@ -53,7 +53,7 @@ NVKE does not require ArgoCD. The deploy path is Helm charts with values and pla
 
 Temporal is a durable workflow orchestration platform. It executes long-running, fault-tolerant workflows — like "provision a three-node cluster" or "upgrade 200 worker nodes one at a time" — and automatically retries failed steps without losing progress.
 
-NVKE's Cloud Workflow Engine (CWE) is a Temporal worker. When you provision a tenant cluster through NVKE, CWE submits a workflow to Temporal that drives the full lifecycle. If a step fails mid-way, Temporal resumes from that point rather than starting over.
+The NVKE controller is a Temporal worker. When you provision a tenant cluster through NVKE, the controller submits a workflow to Temporal that drives the full lifecycle. If a step fails mid-way, Temporal resumes from that point rather than starting over.
 
 Operators can port-forward Temporal's web UI to inspect running workflows or diagnose failures.
 
@@ -95,7 +95,7 @@ In NVKE, every node and every workload gets a SPIFFE identity backed by TPM atte
 
 GitOps is the practice of using a git repository as the single source of truth for infrastructure state. You declare what you want in git; a controller makes the cluster match it.
 
-NVKE ships a **deploy path**, `deploy/nico`: a directory that lists the NVKE services in install order, each as a Helm chart with values or as plain manifests. After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh` applies it, one step of a short list of commands. A GitOps tool such as ArgoCD can deliver the same items and own ongoing reconciliation. See [Deploy Path](site-bootstrap/deploy-repository.md) for the format and [Install management-plane services](operate/install-management-plane-services.md) for the install.
+NVKE ships a **deploy path**, `deploy/nico`: a directory that lists the NVKE services in install order, each as a Helm chart with values or as plain manifests. After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh` applies it, one step of a short list of commands. A GitOps tool such as ArgoCD can deliver the same items and own ongoing reconciliation. See [Deploy Path](site-bootstrap/deploy-repository.md) for the format and [Run NVKE end to end on one machine](get-started/local-site.md) for the install.
 
 ---
 
@@ -106,8 +106,8 @@ NVKE handles the following for you — you don't need deep expertise in these to
 - **kubeadm internals** — NVKE drives these via `nvke-agent`
 - **Certificate lifecycle** — managed by `cert-manager` and `nvke-agent`
 - **etcd operations** — managed by NVKE with built-in encryption and `etcd-manager` for compaction and snapshots
-- **CNI configuration** — NVKE configures OVN-Kubernetes during site-controller bootstrap
+- **CNI configuration** — NVKE configures OVN-Kubernetes during management cluster bootstrap
 
 ---
 
-Ready to continue? Start with [Architecture](architecture.md) for the component overview, or go straight to [Site Controller Bootstrap](site-bootstrap/overview.md) to stand up a site controller.
+Ready to continue? Start with [Architecture](architecture.md) for the component overview, or go straight to [Management cluster bootstrap](site-bootstrap/overview.md) to stand up a management cluster.

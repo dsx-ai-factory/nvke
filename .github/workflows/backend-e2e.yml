@@ -21,10 +21,6 @@ name: Backend E2E
 
 on:
   workflow_call:
-    secrets:
-      OVN_KUBERNETES_RO_TOKEN:
-        description: Reads the dsx-ai-factory/ovn-kubernetes source while that repository is not public.
-        required: false
     inputs:
       backend:
         description: Backend name, used for the run id, artifact name and logs.
@@ -253,8 +249,6 @@ jobs:
           raise_minimum fs.inotify.max_user_watches 1048576
 
       - name: Run the ${{ inputs.backend }} E2E suite
-        env:
-          OVN_KUBERNETES_TOKEN: ${{ secrets.OVN_KUBERNETES_RO_TOKEN }}
         run: make test-e2e-backend-ci
 
       - name: Check whether diagnostics are safe to upload

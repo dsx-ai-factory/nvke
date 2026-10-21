@@ -1,4 +1,4 @@
 # nvke-cni-ovn lock for 2.4.2 (amd64). Regenerate with `make lock`; review the diff before committing.
 ovn 2.4.2
 source dsx-ai-factory/ovn-kubernetes 8af51273d52dfa07454435d18d37230e582d797a
-artifact ovn-kubernetes-src-8af51273d52dfa07454435d18d37230e582d797a.tar.gz 03270a38dd12378ac585b4af1d0da94dbbcd26ff01bd35a68986f2c5de2cdbb6 https://api.github.com/repos/dsx-ai-factory/ovn-kubernetes/tarball/8af51273d52dfa07454435d18d37230e582d797a
+tree dsx-ai-factory/ovn-kubernetes c4a54b0b3b615e5bd6df2d591451d7ab03dffc08

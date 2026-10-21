@@ -1,6 +1,6 @@
 # CAPD reboot controller (dev)
 
-Small **dev-only** controller that reconciles CAPD `DockerMachine` objects and watches their owner CAPI `Machine` objects for the reboot annotation (`nke.nvidia.com/reboot`). When it sees a new reboot request on the `Machine`, it simulates a reboot by waiting for a configured duration and then signals completion to CWE via the `nke.nvidia.com/reboot-complete-timestamp` annotation on that same CAPI `Machine`.
+Small **dev-only** controller that reconciles CAPD `DockerMachine` objects and watches their owner CAPI `Machine` objects for the reboot annotation (`nvke.nvidia.com/reboot`, or the legacy `nke.nvidia.com/reboot`). When it sees a new reboot request on the `Machine`, it simulates a reboot by waiting for a configured duration and then signals completion to CWE via the `nvke.nvidia.com/reboot-complete-timestamp` annotation on that same CAPI `Machine`.
 
 ## Enable in Tilt
 
@@ -56,7 +56,7 @@ Uses `KUBECONFIG` if set; otherwise `~/.kube/config`.
 
 - Watches `DockerMachine` (`infrastructure.cluster.x-k8s.io/v1beta2`) in all namespaces.
 - For each object, loads the owning CAPI **Machine**.
-- If the owning `Machine` has `metadata.annotations["nke.nvidia.com/reboot"]`, waits for the configured sleep duration and then server-side applies `nke.nvidia.com/reboot-complete-timestamp` to that `Machine`.
+- If the owning `Machine` has `metadata.annotations["nvke.nvidia.com/reboot"]` (or the legacy `nke.nvidia.com/reboot`), waits for the configured sleep duration and then server-side applies `nvke.nvidia.com/reboot-complete-timestamp` to that `Machine`.
 - If the completion annotation is already at or after the requested reboot timestamp, skips the duplicate reconcile for that reboot request.
 
 This module is **not** part of the main CWE `go.mod`; it is a standalone helper under `hack/`.

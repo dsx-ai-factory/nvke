@@ -16,6 +16,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/workflows"
 )
@@ -44,10 +45,10 @@ func newNodeRemediator(cfg config.Config, logger *slog.Logger, controllerTempora
 func (r *nodeRemediator) startWorkflowsIfNecessary(ctx context.Context, node db.Node, kubeNode *corev1.Node) error {
 	labels := kubeNode.GetLabels()
 
-	if reason, terminateLabelPresent := labels[constants.LabelKeyNodeLabelTerminate]; terminateLabelPresent {
+	if reason, terminateLabelPresent := keys.Terminate.Get(labels); terminateLabelPresent {
 		return r.startTeardownNodeWorkflow(ctx, node, kubeNode, reason)
 	}
-	if reason, rebootLabelPresent := labels[constants.LabelKeyNodeLabelReboot]; rebootLabelPresent {
+	if reason, rebootLabelPresent := keys.Reboot.Get(labels); rebootLabelPresent {
 		return r.startNodeRebootWorkflow(ctx, node, kubeNode, reason)
 	}
 
@@ -65,7 +66,7 @@ func (r *nodeRemediator) startTeardownNodeWorkflow(ctx context.Context, node db.
 	}
 
 	var machineHealthIssue *workflows.MachineHealthIssue
-	if annotation, ok := kubeNode.GetAnnotations()[constants.NodeAnnotationKeyMachineHealthIssue]; ok {
+	if annotation, ok := keys.NodeMachineHealthIssue.Get(kubeNode.GetAnnotations()); ok {
 		var err error
 		machineHealthIssue, err = workflows.NewMachineHealthIssueFromJSON([]byte(annotation))
 		if err != nil {

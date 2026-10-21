@@ -29,6 +29,8 @@ const (
 	NodeAgent_ExecuteKubeadmJoin_FullMethodName                           = "/proto.NodeAgent/ExecuteKubeadmJoin"
 	NodeAgent_ExecuteKubeadmReset_FullMethodName                          = "/proto.NodeAgent/ExecuteKubeadmReset"
 	NodeAgent_ReconfigureKubeletAPIServer_FullMethodName                  = "/proto.NodeAgent/ReconfigureKubeletAPIServer"
+	NodeAgent_ReconfigureSpireAgent_FullMethodName                        = "/proto.NodeAgent/ReconfigureSpireAgent"
+	NodeAgent_GetSpireAgentStatus_FullMethodName                          = "/proto.NodeAgent/GetSpireAgentStatus"
 	NodeAgent_StartOpenVSwitchReconciliation_FullMethodName               = "/proto.NodeAgent/StartOpenVSwitchReconciliation"
 	NodeAgent_GetOpenVSwitchReconciliationStatus_FullMethodName           = "/proto.NodeAgent/GetOpenVSwitchReconciliationStatus"
 	NodeAgent_KubeadmUpgradeApply_FullMethodName                          = "/proto.NodeAgent/KubeadmUpgradeApply"
@@ -53,7 +55,6 @@ const (
 	NodeAgent_UploadFileBundle_FullMethodName                             = "/proto.NodeAgent/UploadFileBundle"
 	NodeAgent_WriteNodeAgentConfig_FullMethodName                         = "/proto.NodeAgent/WriteNodeAgentConfig"
 	NodeAgent_StreamExecuteScript_FullMethodName                          = "/proto.NodeAgent/StreamExecuteScript"
-	NodeAgent_SetUnsetIsMaster_FullMethodName                             = "/proto.NodeAgent/SetUnsetIsMaster"
 	NodeAgent_InstallBundle_FullMethodName                                = "/proto.NodeAgent/InstallBundle"
 	NodeAgent_GetBundleStatus_FullMethodName                              = "/proto.NodeAgent/GetBundleStatus"
 	NodeAgent_InstallCollection_FullMethodName                            = "/proto.NodeAgent/InstallCollection"
@@ -90,6 +91,16 @@ type NodeAgentClient interface {
 	// after a config change, the agent restores the original config and tries to
 	// restore the service before returning a structured failure outcome.
 	ReconfigureKubeletAPIServer(ctx context.Context, in *ReconfigureKubeletAPIServerRequest, opts ...grpc.CallOption) (*ReconfigureKubeletAPIServerResponse, error)
+	// ReconfigureSpireAgent points the node's SPIRE agent at a new SPIRE server.
+	// It rewrites server_address and server_port in the agent config and in the
+	// boot-time SPIRE environment file, restarts spire-agent, and waits until the
+	// agent serves an X.509 SVID issued after the restart. The agent may exit
+	// once while it re-attests to the new server; systemd restarts it. Repeating
+	// the call with the same server is safe.
+	ReconfigureSpireAgent(ctx context.Context, in *ReconfigureSpireAgentRequest, opts ...grpc.CallOption) (*ReconfigureSpireAgentResponse, error)
+	// GetSpireAgentStatus reports the SPIRE server the node's agent config points
+	// at and whether the agent holds a valid X.509 SVID from that server.
+	GetSpireAgentStatus(ctx context.Context, in *GetSpireAgentStatusRequest, opts ...grpc.CallOption) (*GetSpireAgentStatusResponse, error)
 	// StartOpenVSwitchReconciliation durably accepts an asynchronous host-network
 	// reconciliation that moves the default-route interface's existing network
 	// configuration onto an Open vSwitch bridge named br<interface>. The
@@ -194,7 +205,6 @@ type NodeAgentClient interface {
 	// (NodeSpec) using an atomic write and serializes concurrent callers on this agent.
 	WriteNodeAgentConfig(ctx context.Context, in *WriteNodeAgentConfigRequest, opts ...grpc.CallOption) (*WriteNodeAgentConfigResponse, error)
 	StreamExecuteScript(ctx context.Context, in *ExecuteScriptRequest, opts ...grpc.CallOption) (NodeAgent_StreamExecuteScriptClient, error)
-	SetUnsetIsMaster(ctx context.Context, in *SetUnsetIsMasterRequest, opts ...grpc.CallOption) (*SetUnsetIsMasterResponse, error)
 	InstallBundle(ctx context.Context, in *InstallBundleRequest, opts ...grpc.CallOption) (*InstallBundleResponse, error)
 	GetBundleStatus(ctx context.Context, in *GetBundleStatusRequest, opts ...grpc.CallOption) (*GetBundleStatusResponse, error)
 	InstallCollection(ctx context.Context, in *InstallCollectionRequest, opts ...grpc.CallOption) (*InstallCollectionResponse, error)
@@ -324,6 +334,26 @@ func (c *nodeAgentClient) ReconfigureKubeletAPIServer(ctx context.Context, in *R
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReconfigureKubeletAPIServerResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_ReconfigureKubeletAPIServer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) ReconfigureSpireAgent(ctx context.Context, in *ReconfigureSpireAgentRequest, opts ...grpc.CallOption) (*ReconfigureSpireAgentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReconfigureSpireAgentResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_ReconfigureSpireAgent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) GetSpireAgentStatus(ctx context.Context, in *GetSpireAgentStatusRequest, opts ...grpc.CallOption) (*GetSpireAgentStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSpireAgentStatusResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_GetSpireAgentStatus_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -618,16 +648,6 @@ func (x *nodeAgentStreamExecuteScriptClient) Recv() (*ScriptOutputChunk, error) 
 	return m, nil
 }
 
-func (c *nodeAgentClient) SetUnsetIsMaster(ctx context.Context, in *SetUnsetIsMasterRequest, opts ...grpc.CallOption) (*SetUnsetIsMasterResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SetUnsetIsMasterResponse)
-	err := c.cc.Invoke(ctx, NodeAgent_SetUnsetIsMaster_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *nodeAgentClient) InstallBundle(ctx context.Context, in *InstallBundleRequest, opts ...grpc.CallOption) (*InstallBundleResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(InstallBundleResponse)
@@ -788,6 +808,16 @@ type NodeAgentServer interface {
 	// after a config change, the agent restores the original config and tries to
 	// restore the service before returning a structured failure outcome.
 	ReconfigureKubeletAPIServer(context.Context, *ReconfigureKubeletAPIServerRequest) (*ReconfigureKubeletAPIServerResponse, error)
+	// ReconfigureSpireAgent points the node's SPIRE agent at a new SPIRE server.
+	// It rewrites server_address and server_port in the agent config and in the
+	// boot-time SPIRE environment file, restarts spire-agent, and waits until the
+	// agent serves an X.509 SVID issued after the restart. The agent may exit
+	// once while it re-attests to the new server; systemd restarts it. Repeating
+	// the call with the same server is safe.
+	ReconfigureSpireAgent(context.Context, *ReconfigureSpireAgentRequest) (*ReconfigureSpireAgentResponse, error)
+	// GetSpireAgentStatus reports the SPIRE server the node's agent config points
+	// at and whether the agent holds a valid X.509 SVID from that server.
+	GetSpireAgentStatus(context.Context, *GetSpireAgentStatusRequest) (*GetSpireAgentStatusResponse, error)
 	// StartOpenVSwitchReconciliation durably accepts an asynchronous host-network
 	// reconciliation that moves the default-route interface's existing network
 	// configuration onto an Open vSwitch bridge named br<interface>. The
@@ -892,7 +922,6 @@ type NodeAgentServer interface {
 	// (NodeSpec) using an atomic write and serializes concurrent callers on this agent.
 	WriteNodeAgentConfig(context.Context, *WriteNodeAgentConfigRequest) (*WriteNodeAgentConfigResponse, error)
 	StreamExecuteScript(*ExecuteScriptRequest, NodeAgent_StreamExecuteScriptServer) error
-	SetUnsetIsMaster(context.Context, *SetUnsetIsMasterRequest) (*SetUnsetIsMasterResponse, error)
 	InstallBundle(context.Context, *InstallBundleRequest) (*InstallBundleResponse, error)
 	GetBundleStatus(context.Context, *GetBundleStatusRequest) (*GetBundleStatusResponse, error)
 	InstallCollection(context.Context, *InstallCollectionRequest) (*InstallCollectionResponse, error)
@@ -976,6 +1005,12 @@ func (UnimplementedNodeAgentServer) ExecuteKubeadmReset(context.Context, *Kubead
 func (UnimplementedNodeAgentServer) ReconfigureKubeletAPIServer(context.Context, *ReconfigureKubeletAPIServerRequest) (*ReconfigureKubeletAPIServerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReconfigureKubeletAPIServer not implemented")
 }
+func (UnimplementedNodeAgentServer) ReconfigureSpireAgent(context.Context, *ReconfigureSpireAgentRequest) (*ReconfigureSpireAgentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReconfigureSpireAgent not implemented")
+}
+func (UnimplementedNodeAgentServer) GetSpireAgentStatus(context.Context, *GetSpireAgentStatusRequest) (*GetSpireAgentStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSpireAgentStatus not implemented")
+}
 func (UnimplementedNodeAgentServer) StartOpenVSwitchReconciliation(context.Context, *StartOpenVSwitchReconciliationRequest) (*StartOpenVSwitchReconciliationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartOpenVSwitchReconciliation not implemented")
 }
@@ -1047,9 +1082,6 @@ func (UnimplementedNodeAgentServer) WriteNodeAgentConfig(context.Context, *Write
 }
 func (UnimplementedNodeAgentServer) StreamExecuteScript(*ExecuteScriptRequest, NodeAgent_StreamExecuteScriptServer) error {
 	return status.Errorf(codes.Unimplemented, "method StreamExecuteScript not implemented")
-}
-func (UnimplementedNodeAgentServer) SetUnsetIsMaster(context.Context, *SetUnsetIsMasterRequest) (*SetUnsetIsMasterResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SetUnsetIsMaster not implemented")
 }
 func (UnimplementedNodeAgentServer) InstallBundle(context.Context, *InstallBundleRequest) (*InstallBundleResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InstallBundle not implemented")
@@ -1228,6 +1260,42 @@ func _NodeAgent_ReconfigureKubeletAPIServer_Handler(srv interface{}, ctx context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodeAgentServer).ReconfigureKubeletAPIServer(ctx, req.(*ReconfigureKubeletAPIServerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_ReconfigureSpireAgent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReconfigureSpireAgentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).ReconfigureSpireAgent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_ReconfigureSpireAgent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).ReconfigureSpireAgent(ctx, req.(*ReconfigureSpireAgentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_GetSpireAgentStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSpireAgentStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).GetSpireAgentStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_GetSpireAgentStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).GetSpireAgentStatus(ctx, req.(*GetSpireAgentStatusRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1675,24 +1743,6 @@ func (x *nodeAgentStreamExecuteScriptServer) Send(m *ScriptOutputChunk) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func _NodeAgent_SetUnsetIsMaster_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SetUnsetIsMasterRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAgentServer).SetUnsetIsMaster(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAgent_SetUnsetIsMaster_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAgentServer).SetUnsetIsMaster(ctx, req.(*SetUnsetIsMasterRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _NodeAgent_InstallBundle_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(InstallBundleRequest)
 	if err := dec(in); err != nil {
@@ -1981,6 +2031,14 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _NodeAgent_ReconfigureKubeletAPIServer_Handler,
 		},
 		{
+			MethodName: "ReconfigureSpireAgent",
+			Handler:    _NodeAgent_ReconfigureSpireAgent_Handler,
+		},
+		{
+			MethodName: "GetSpireAgentStatus",
+			Handler:    _NodeAgent_GetSpireAgentStatus_Handler,
+		},
+		{
 			MethodName: "StartOpenVSwitchReconciliation",
 			Handler:    _NodeAgent_StartOpenVSwitchReconciliation_Handler,
 		},
@@ -2067,10 +2125,6 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "WriteNodeAgentConfig",
 			Handler:    _NodeAgent_WriteNodeAgentConfig_Handler,
-		},
-		{
-			MethodName: "SetUnsetIsMaster",
-			Handler:    _NodeAgent_SetUnsetIsMaster_Handler,
 		},
 		{
 			MethodName: "InstallBundle",

@@ -87,7 +87,7 @@ func provisionCluster(ctx workflow.Context, input ProvisionClusterInput) error {
 
 	// All necessary daemonsets we need running from the get-go - kube-proxy; node-local-dns; cni - [calico, ovn-kube] by default have generic
 	// tolerations that can tolerate most taints. Hence, currently we don't explicitly patch tolerations
-	// Future: Patch tolerations here to other components as needed for nke.nvidia.com/provisioning=true:NoSchedule taint (added during kubeadmjoin)
+	// Future: Patch tolerations here to other components as needed for nvke.nvidia.com/provisioning=true:NoSchedule taint (added during kubeadmjoin)
 
 	if err := markClusterAsProvisioned(ctx, input.ClusterID); err != nil {
 		return fmt.Errorf("failed to mark cluster as provisioned: %w", err)

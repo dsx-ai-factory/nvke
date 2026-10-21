@@ -109,9 +109,12 @@ jobs:
         with:
           go-version-file: ${{ matrix.goversion }}
           cache: true
+          # The module's go.mod makes the key its own: one shared key let the first job to finish save
+          # the cache for all twelve, and a 1.8 GB save by a heavy one filled the controller/api job's disk.
           cache-dependency-path: |
             go.work.sum
             **/go.sum
+            ${{ matrix.dir }}/go.mod
 
       - name: Run golangci-lint
         working-directory: ${{ matrix.dir }}

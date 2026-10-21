@@ -96,6 +96,9 @@ controller/test/e2e/qualify-e2e.log
 controller/test/e2e/qualify-e2e.junit.xml
 controller/test/e2e/qualify-e2e.report.json
 controller/test/e2e/nvkectl-diagnostics.tar.gz
+controller/test/e2e/site-cluster-state.txt
+controller/test/e2e/tenant-diagnostics.json
+controller/test/e2e/site-bundle*
 
 # Coverage profiles. make/coverage.mk points every module's `go test` here, and
 # hack/coverage.sh reads the directory. Nothing in it is committed: a profile

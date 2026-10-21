@@ -4,15 +4,23 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	nethttp "net/http"
 	"strings"
+	"time"
 
 	nicosdk "github.com/NVIDIA/infra-controller/rest-api/sdk/standard"
 
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/state"
 )
+
+// instanceCreateTimeout bounds a create once it stops following the client's
+// context. The provider's client gives up after 30 s and a create under load
+// can take longer; cancelling with it killed the docker command, removed the
+// half-made container and rolled back a row the provider had already adopted.
+const instanceCreateTimeout = 10 * time.Minute
 
 func (s *Server) handleGetInstance(w nethttp.ResponseWriter, r *nethttp.Request) {
 	instanceID := r.PathValue("instanceId")
@@ -99,22 +107,25 @@ func (s *Server) handleCreateInstance(w nethttp.ResponseWriter, r *nethttp.Reque
 
 	site, err := s.resolveCreateSite(r.Context(), orgIDFromRequest(r), req)
 	if err != nil {
-		writeBackendError(w, err)
+		s.writeInstanceError(w, r, req.GetName(), err)
 		return
 	}
 	backend, err := s.backendFor(site)
 	if err != nil {
-		writeBackendError(w, err)
+		s.writeInstanceError(w, r, req.GetName(), err)
 		return
 	}
-	record, err := backend.Create(r.Context(), site, req)
+	// The create, and the response read back from it, outlive the client.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), instanceCreateTimeout)
+	defer cancel()
+	record, err := backend.Create(ctx, site, req)
 	if err != nil {
-		writeBackendError(w, err)
+		s.writeInstanceError(w, r, req.GetName(), err)
 		return
 	}
-	instance, err := backend.ConvertToAPI(r, record)
+	instance, err := backend.ConvertToAPI(r.WithContext(ctx), record)
 	if err != nil {
-		writeBackendError(w, err)
+		s.writeInstanceError(w, r, req.GetName(), err)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, instance)
@@ -124,7 +135,7 @@ func (s *Server) handlePatchInstance(w nethttp.ResponseWriter, r *nethttp.Reques
 	instanceID := r.PathValue("instanceId")
 	record, backend, err := s.ownedInstance(r, instanceID)
 	if err != nil {
-		writeBackendError(w, err)
+		s.writeInstanceError(w, r, instanceID, err)
 		return
 	}
 	r.Body = nethttp.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
@@ -135,12 +146,12 @@ func (s *Server) handlePatchInstance(w nethttp.ResponseWriter, r *nethttp.Reques
 	}
 	record, err = backend.Update(r.Context(), record, req)
 	if err != nil {
-		writeBackendError(w, err)
+		s.writeInstanceError(w, r, instanceID, err)
 		return
 	}
 	instance, err := backend.ConvertToAPI(r, record)
 	if err != nil {
-		writeBackendError(w, err)
+		s.writeInstanceError(w, r, instanceID, err)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, instance)
