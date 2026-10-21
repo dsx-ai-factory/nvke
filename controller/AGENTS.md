@@ -202,6 +202,7 @@ environment.
 |----------|---------|-------------|
 | `CONTROLLER_CONFIG_PATH` | (required) | The `nke-controller-config` file. The chart sets it to the mounted ConfigMap; `make run` sets it to `hack/local-controller-config.yaml`. Unset, missing or invalid is a startup failure. |
 | `LOG_LEVEL` | `info` | Log level (debug/info/warn/error) |
+| `DB_QUERY_LOG_VALUES` | `false` | Log each database query with its values, and PostgreSQL error messages. Off, a query is logged with a `?` for each value and an error by its code, because a query can carry operator-supplied content. |
 | `DB_CONNECTION_STRING` | `postgres://...` | PostgreSQL connection string |
 | `AUTH_CONFIG_PATH` | (unset) | API authentication config file. Unset disables authentication entirely, which is what `make run` gets. Set but unreadable is a startup failure, never "disabled". |
 

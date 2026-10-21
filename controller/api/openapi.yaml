@@ -469,6 +469,81 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /clusters/{clusterID}/spire-server:
+    parameters:
+      - name: clusterID
+        in: path
+        required: true
+        description: Cluster ID.
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Clusters]
+      summary: Get the SPIRE server the cluster's nodes point at
+      operationId: getClusterSpireServer
+      description: |
+        Returns the SPIRE server last requested through
+        `PATCH /clusters/{clusterID}/spire-server`, and for each node the
+        server its SPIRE agent points at and whether the agent holds a valid
+        X.509 SVID from it. Node status is read live from each node agent on
+        every call; an unreachable node is reported with `reachable: false`.
+      responses:
+        "200":
+          description: Requested server and live per-node SPIRE agent status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterSpireServerStatus"
+        "404":
+          description: Cluster not found. No body is returned.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    patch:
+      tags: [Clusters]
+      summary: Point the cluster's nodes at a SPIRE server
+      operationId: updateClusterSpireServer
+      description: |
+        Starts a `spire_server_update` operation that points the SPIRE agent on
+        every node of the cluster at the given server and waits for each agent
+        to hold an SVID from it. Track it through `conditions.updateInProgress`
+        and `conditions.updateFailed` on the cluster, and per node through
+        `GET /clusters/{clusterID}/spire-server`. Repeating the request with
+        the same server is safe, including while it is in progress.
+      requestBody:
+        description: The SPIRE server the cluster's nodes should point at.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpireServer"
+      responses:
+        "202":
+          description: Update started
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "404":
+          description: Cluster not found. No body is returned.
+        "409":
+          description: |
+            Another cluster operation is in progress, or a SPIRE server update
+            to a different server is in progress. The message names the
+            operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /nodePools:
     get:
       tags: [Node pools]
@@ -2423,6 +2498,7 @@ components:
             - k8s_upgrade
             - cp_nodes_recycling
             - oidc_enable
+            - spire_server_update
           description: Operation in progress.
           x-order: 1
         message:
@@ -2545,6 +2621,91 @@ components:
             teardown. At most one of deleting and deleteRequested is True.
           allOf:
             - $ref: "#/components/schemas/Condition"
+
+    SpireServer:
+      description: A SPIRE server address the cluster's SPIRE agents dial.
+      type: object
+      required:
+        - address
+        - port
+      properties:
+        address:
+          type: string
+          minLength: 1
+          description: Host name or IP address of the SPIRE server.
+          example: 192.168.150.100
+          x-order: 1
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          description: SPIRE server port.
+          example: 30440
+          x-order: 2
+
+    ClusterSpireServerStatus:
+      description: Requested SPIRE server and live per-node SPIRE agent status.
+      type: object
+      required:
+        - nodes
+      properties:
+        requested:
+          description: The server last requested. Absent if none was requested.
+          allOf:
+            - $ref: "#/components/schemas/SpireServer"
+          x-order: 1
+        nodes:
+          type: array
+          description: Every node of the cluster.
+          items:
+            $ref: "#/components/schemas/NodeSpireAgentStatus"
+          x-order: 2
+
+    NodeSpireAgentStatus:
+      description: One node's SPIRE agent, as reported live by its node agent.
+      type: object
+      required:
+        - nodeID
+        - name
+        - reachable
+        - hasValidSVID
+      properties:
+        nodeID:
+          type: string
+          format: uuid
+          description: Node ID.
+          x-order: 1
+        name:
+          type: string
+          description: Node name.
+          x-order: 2
+        reachable:
+          type: boolean
+          description: The node agent answered. When false, only `message` is set.
+          x-order: 3
+        serverAddress:
+          type: string
+          description: SPIRE server address in the node's agent config.
+          x-order: 4
+        serverPort:
+          type: integer
+          description: SPIRE server port in the node's agent config.
+          x-order: 5
+        hasValidSVID:
+          type: boolean
+          description: |
+            The running SPIRE agent uses the config above and serves an
+            unexpired X.509 SVID, so it holds a certificate from that server.
+          x-order: 6
+        svidExpiresAt:
+          type: string
+          format: date-time
+          description: Expiry of that SVID.
+          x-order: 7
+        message:
+          type: string
+          description: Why the node is unreachable or has no valid SVID.
+          x-order: 8
 
     GenericError:
       description: Error response body.

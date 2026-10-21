@@ -31,7 +31,7 @@ kubectl logs -n nke-controller deploy/nke-controller \
   --kubeconfig <sitename>.kubeconfig -f
 ```
 
-Logs include workflow and activity identifiers so a failure in the Temporal UI can be correlated to a controller log line. Set `LOG_LEVEL=debug` in the controller deployment environment to increase verbosity.
+Logs include workflow and activity identifiers so a failure in the Temporal UI can be correlated to a controller log line. Set `LOG_LEVEL=debug` in the controller deployment environment to increase verbosity. By default the logs leave out the values of every database query and the message of a PostgreSQL error; [Observe NVKE and its clusters](../operate/observe.md#read-the-management-plane-logs) describes how to include them.
 
 ### Controller REST API Health
 

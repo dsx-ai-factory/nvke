@@ -16,37 +16,77 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 	"github.com/uptrace/bun/extra/bunotel"
 	"github.com/uptrace/bun/extra/bunslog"
+	"github.com/uptrace/bun/schema"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 )
 
-// logFormat creates slog attributes for query events, including PostgreSQL
-// protocol fields (SQLSTATE, severity, message) when the error is a pgdriver.Error.
-func logFormat(event *bun.QueryEvent) []slog.Attr {
-	duration := time.Since(event.StartTime)
-	attrs := []slog.Attr{
-		slog.String("operation", event.Operation()),
-		slog.String("query", event.Query),
-		slog.String("duration", duration.String()),
-	}
-	if event.Err != nil {
-		attrs = append(attrs, slog.Any("error", event.Err))
-
-		// Add PostgreSQL protocol fields when err wraps pgdriver.Error
-		var pgErr pgdriver.Error
-		if errors.As(event.Err, &pgErr) {
-			if sqlstate := pgErr.Field('C'); sqlstate != "" {
-				attrs = append(attrs,
-					slog.String("pg_sqlstate", sqlstate),
-					slog.String("pg_severity", pgErr.Field('S')),
-					slog.String("pg_message", pgErr.Field('M')),
-					slog.Bool("pg_statement_timeout", pgErr.StatementTimeout()),
-				)
+// queryLogFormat returns the attribute builder for query events: the operation,
+// the query and the duration, and on failure the error with the PostgreSQL
+// SQLSTATE, severity and message when it is a pgdriver.Error. The query has a
+// "?" for each value, and a PostgreSQL error is logged without its message,
+// unless logValues is set.
+func queryLogFormat(logValues bool) func(*bun.QueryEvent) []slog.Attr {
+	return func(event *bun.QueryEvent) []slog.Attr {
+		// A statement's values can be operator-supplied content such as cloud-init
+		// files, and a failed or slow statement is logged at error or warn, so
+		// the values are logged only on request.
+		query := placeholderQuery(event)
+		if logValues {
+			query = event.Query
+		}
+		duration := time.Since(event.StartTime)
+		attrs := []slog.Attr{
+			slog.String("operation", event.Operation()),
+			slog.String("query", query),
+			slog.String("duration", duration.String()),
+		}
+		if event.Err != nil {
+			// A PostgreSQL error message can repeat the value it rejected, for
+			// example "invalid input syntax for type uuid", so unless logValues
+			// is set the error is logged by its severity and SQLSTATE alone.
+			var pgErr pgdriver.Error
+			isPG := errors.As(event.Err, &pgErr)
+			if isPG && !logValues {
+				attrs = append(attrs, slog.String("error", fmt.Sprintf("%s: (SQLSTATE=%s)", pgErr.Field('S'), pgErr.Field('C'))))
+			} else {
+				attrs = append(attrs, slog.Any("error", event.Err))
+			}
+			if isPG {
+				if sqlstate := pgErr.Field('C'); sqlstate != "" {
+					attrs = append(attrs,
+						slog.String("pg_sqlstate", sqlstate),
+						slog.String("pg_severity", pgErr.Field('S')),
+						slog.Bool("pg_statement_timeout", pgErr.StatementTimeout()),
+					)
+					if logValues {
+						attrs = append(attrs, slog.String("pg_message", pgErr.Field('M')))
+					}
+				}
 			}
 		}
+		return attrs
 	}
-	return attrs
+}
+
+// placeholderQuery returns the SQL of event with a "?" where each value was, or
+// an empty string when the SQL cannot be rebuilt.
+func placeholderQuery(event *bun.QueryEvent) string {
+	// A query run with db.ExecContext has no query object, and its template
+	// already has the placeholders.
+	if event.IQuery == nil {
+		return event.QueryTemplate
+	}
+	// For ORM queries and bun.NewRaw, bun puts the values into both Query and
+	// QueryTemplate, so rebuild the SQL from the query object without formatting
+	// its arguments, as bunotel does for the db.statement span attribute.
+	b, err := event.IQuery.AppendQuery(schema.NewNopQueryGen(), nil)
+	if err != nil {
+		// Falling back to Query or QueryTemplate would log the values.
+		return ""
+	}
+	return string(b)
 }
 
 // parentedTracingHook prevents background queries from becoming standalone
@@ -102,7 +142,7 @@ func NewBunDB(cfg config.Config, logger *slog.Logger) (*bun.DB, error) {
 		bunslog.WithErrorQueryLogLevel(slog.LevelError),
 		bunslog.WithSlowQueryThreshold(3*time.Second),
 		bunslog.WithLogger(logger),
-		bunslog.WithLogFormat(logFormat),
+		bunslog.WithLogFormat(queryLogFormat(cfg.DBQueryLogValues)),
 	))
 
 	if cfg.Tracing.Enabled {

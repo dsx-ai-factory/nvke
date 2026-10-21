@@ -189,6 +189,7 @@ func NewWorker(
 	w.RegisterWorkflow(workflows.ApplyK8sNodeCondition)
 	w.RegisterWorkflow(workflows.EnableEtcdEncryption)
 	w.RegisterWorkflow(workflows.EnableOIDC)
+	w.RegisterWorkflow(workflows.UpdateSpireServer)
 	w.RegisterWorkflow(workflows.RotateEtcdEncryptionKey)
 	w.RegisterWorkflow(workflows.UpgradeControlPlaneAddons)
 	w.RegisterWorkflow(workflows.UpdateKubeadmConfigMap)

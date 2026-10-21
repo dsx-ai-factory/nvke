@@ -81,6 +81,15 @@ env:
 
 Then run the install command from [Run NVKE end to end on one machine](../get-started/local-site.md) again, with the same flags and `--values-for controller=../controller-log.yaml` added. Your `env` list replaces the deploy path's list, which sets `NODE_AGENT_PORT`, so keep that entry. `LOG_LEVEL` accepts `debug`, `info`, `warn` and `error`. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md). If you passed `--values-for nktp=<FILE>` when you installed, pass it again, or NKTP goes back to the bundled development backend.
 
+Database queries appear in the `query` key with a `?` for each value, and a PostgreSQL error appears by its severity and code without its message, at every log level. The values can include content you supplied, such as cloud-init files in a cluster's `infra` settings, and an error message can repeat a rejected value. To log the values and messages while you debug a query, add this entry to the `env` list in `controller-log.yaml` and run the install command again as above:
+
+```yaml
+  - name: DB_QUERY_LOG_VALUES
+    value: "true"
+```
+
+> **Warning:** The values and messages appear in the logs in clear text. Remove the entry when you finish.
+
 ### Read the management plane metrics
 
 The management plane serves Prometheus metrics at `/metrics` on port 9090 of its pod. NVKE telemetry pipeline (NKTP) scrapes them, as described in [Find the management cluster's telemetry](#find-the-management-clusters-telemetry). To read them directly:

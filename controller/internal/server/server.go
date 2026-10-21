@@ -20,6 +20,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
@@ -39,6 +40,7 @@ type Option func(*options)
 type options struct {
 	fleetOIDC                        *controllerconfig.OIDCConfig
 	allowLegacyCalicoClusterCreation bool
+	nodeAgentClient                  agent.Client
 }
 
 // WithFleetOIDC sets the nke-controller-config OIDC section new clusters are pinned from.
@@ -50,6 +52,12 @@ func WithFleetOIDC(oidc *controllerconfig.OIDCConfig) Option {
 // Existing Calico clusters stay manageable either way. The default is false.
 func WithAllowLegacyCalicoClusterCreation(allow bool) Option {
 	return func(o *options) { o.allowLegacyCalicoClusterCreation = allow }
+}
+
+// WithNodeAgentClient sets the node-agent client handlers use to read live node
+// state. Without it, such handlers report every node unreachable.
+func WithNodeAgentClient(c agent.Client) Option {
+	return func(o *options) { o.nodeAgentClient = c }
 }
 
 // NewServer builds the API's HTTP server. A nil authn leaves the authentication
@@ -265,6 +273,7 @@ func NewServerImpl(
 	clusterService.machineAllowlistedLabelKeys = cfg.MachineMetadataAllowlistedLabelKeys
 	clusterService.machineAllowlistedAnnotationKeys = cfg.MachineMetadataAllowlistedAnnotationKeys
 	clusterService.fleetOIDC = o.fleetOIDC
+	clusterService.nodeAgentClient = o.nodeAgentClient
 	nodes.PinAgentProfile(&clusterService.nodeAgentProfile, cfg)
 	nodes.PinAgentProfile(&nodePoolService.nodeAgentProfile, cfg)
 

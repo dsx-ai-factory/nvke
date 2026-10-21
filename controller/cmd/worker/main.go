@@ -566,6 +566,7 @@ func main() {
 		managementK8sClient,
 		server.WithFleetOIDC(&controllerCfg.OIDC),
 		server.WithAllowLegacyCalicoClusterCreation(controllerCfg.AllowLegacyCalicoClusterCreation),
+		server.WithNodeAgentClient(nodeAgentClient),
 	)
 	if err != nil {
 		logger.Error("Failed to construct HTTP server", "error", err)
