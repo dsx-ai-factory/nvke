@@ -32,12 +32,12 @@ func TestUnit_NodeAgentBootstrapFiles(t *testing.T) {
 		},
 		"external mTLS without JWT": {
 			externalMTLS: true,
-			wantArgs:     "AGENT_ARGS=\"--secure-server-port 15005 --controller-client-ca-bundle=/etc/nke/controller-ca.crt\"\n",
+			wantArgs:     "AGENT_ARGS=\"--secure-server-port 15005 --nvke-controller-client-ca-bundle=/etc/nke/controller-ca.crt\"\n",
 		},
 		"external mTLS with JWT": {
 			tlsJWT:       true,
 			externalMTLS: true,
-			wantArgs:     "AGENT_ARGS=\"--secure-server-port 15005 --controller-client-ca-bundle=/etc/nke/controller-ca.crt --grpc-auth-mode=tls-jwt --dsx-identity-exchange-url=https://identity.example.test/v1/exchange\"\n",
+			wantArgs:     "AGENT_ARGS=\"--secure-server-port 15005 --nvke-controller-client-ca-bundle=/etc/nke/controller-ca.crt --grpc-auth-mode=tls-jwt --dsx-identity-exchange-url=https://identity.example.test/v1/exchange\"\n",
 		},
 	}
 

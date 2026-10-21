@@ -97,10 +97,11 @@ Compatible profiles append those entries to their existing cloud-init
 `write_files` list and quote the metadata and content. CAPI serializes the same
 file model directly. In every mode, both paths replace `/etc/default/nvke-agent`
 with a plain-text configuration containing the node-agent port. External mTLS
-also writes the CA with `encoding: b64` and points the agent at it. Agents
-older than 0.3.0 get `/etc/nke/controller-ca.crt` and
-`--controller-client-ca-bundle`; agents at 0.3.0 or later get
-`/etc/nvke/controller-ca.crt` and `--nvke-controller-client-ca-bundle`. These
+also writes the CA with `encoding: b64` and points the agent at it with
+`--nvke-controller-client-ca-bundle`, so it requires node agent 0.3.0 or later.
+The CA lands at `/etc/nvke/controller-ca.crt` on a node whose agent reports
+0.3.0 or later, and at `/etc/nke/controller-ca.crt` otherwise, including a new
+node whose agent has not reported a version yet. These
 controller files follow any provider or profile files so the
 defaults win within `write_files`; NICo profiles and CAPI users may replace the
 agent configuration later through `runcmd` or `preKubeadmCommands`. The

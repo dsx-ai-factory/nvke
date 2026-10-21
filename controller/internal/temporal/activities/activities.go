@@ -69,7 +69,7 @@ func (a *Activities) nodeAgentBootstrapFiles(node db.Node) ([]db.CloudInitFile, 
 			Encoding:    "b64",
 			Content:     base64.StdEncoding.EncodeToString([]byte(a.controllerClientCABundle)),
 		})
-		args = append(args, "--"+contracts.ControllerCABundleFlag+"="+contracts.ControllerCABundlePath)
+		args = append(args, "--nvke-controller-client-ca-bundle="+contracts.ControllerCABundlePath)
 	}
 	if node.NodeAgentTLSJWTEnabled {
 		args = append(args, "--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url="+a.cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)
