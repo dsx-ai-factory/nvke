@@ -398,10 +398,13 @@ jobs:
             nvke/nvke-validate:ci -ginkgo.dry-run
           test -s "${RUNNER_TEMP}/artifacts/junit-test-report.xml"
           test -s "${RUNNER_TEMP}/artifacts/report.json"
-          # A testcase's name carries its labels. The bare label also appears in
-          # the suite's LabelFilter property, which is there with no testcases.
-          grep -q '<testcase name="[^"]*site-validate' "${RUNNER_TEMP}/artifacts/junit-test-report.xml" \
-            || { echo "::error::the JUnit report selected no site-validate spec"; exit 1; }
+          # Matched in a testcase's name, which carries its group, so text
+          # elsewhere in the report, such as the suite's properties, cannot
+          # stand in for a selected spec.
+          for group in 'controller management-plane health' 'site validation'; do
+            grep -q "<testcase name=\"[^\"]*${group}" "${RUNNER_TEMP}/artifacts/junit-test-report.xml" \
+              || { echo "::error::the JUnit report selected no '${group}' spec"; exit 1; }
+          done
 
 # Not built here: controller/hack/Dockerfile.controller.tilt — it only copies a
 # prebuilt binary, so it has nothing to verify without a preceding build.

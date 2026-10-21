@@ -24,6 +24,7 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/site"
@@ -62,7 +63,9 @@ var siteNamespaces = []siteNamespace{
 	// agent and CSI driver here, so no deploy path file names it as a release.
 	{name: "spire-system", source: "the spire chart's layout for its agent"},
 	{name: "nktp", source: "deploy path item nktp"},
-	{name: "nke-controller", source: "deploy path item controller"},
+	// NVKE_CONTROLLER_NAMESPACE where the controller is not in nke-controller,
+	// as for every other check that finds it.
+	{name: controller.Namespace(), source: "deploy path item controller"},
 }
 
 const (
@@ -87,6 +90,30 @@ const (
 	siteStablePoll = 2 * time.Second
 )
 
+// siteChecks is what the site validation checks against and how it runs.
+type siteChecks struct {
+	// namespaces must each run at least one workload.
+	namespaces []siteNamespace
+	// failFast skips every check after the first that fails.
+	failFast bool
+	// probeNamespace and probeImage are where the DNS probe pod runs and what
+	// it runs.
+	probeNamespace string
+	probeImage     string
+	// excusedNamespace is left out of the pod check: the runner's own, where
+	// an earlier run's pods may be left Failed or not Ready. "" excuses none.
+	excusedNamespace string
+}
+
+// siteLaneChecks are the site lane's: the stack's namespaces, and fail fast
+// so that a broken site cannot spend the minutes teardown needs.
+var siteLaneChecks = siteChecks{
+	namespaces:     siteNamespaces,
+	failFast:       true,
+	probeNamespace: "default",
+	probeImage:     kube.KubectlImage,
+}
+
 // validateSitePostDeploy asserts on a site controller after the stack is
 // installed: the site's software (what the platform and the deploy path put on
 // it) and its distro (what Kubernetes itself reports).
@@ -96,10 +123,10 @@ const (
 // exists only once the bootstrap spec has run. It reports false when the
 // stack was not deployed, and every spec then skips: ContinueOnFailure
 // reaches these after a failed install, and polling a stack that is not there
-// spends minutes teardown needs. For the same
-// reason the first failing check skips the rest: each one reports every
-// problem it found, so the ones after it add time and little evidence.
-func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool)) {
+// spends minutes teardown needs. For the same reason checks.failFast skips
+// the checks after the first that fails: each one reports every problem it
+// found, so the ones after it add time and little evidence.
+func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool), checks siteChecks) {
 	var (
 		cluster    site.Cluster
 		spec       site.Spec
@@ -113,14 +140,16 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool)) {
 		if !deployed {
 			Skip("the stack was not deployed")
 		}
-		if invalid {
-			Skip("an earlier site validation failed")
+		if checks.failFast {
+			if invalid {
+				Skip("an earlier site validation failed")
+			}
+			DeferCleanup(func() { invalid = invalid || CurrentSpecReport().Failed() })
 		}
-		DeferCleanup(func() { invalid = invalid || CurrentSpecReport().Failed() })
 		if c != nil {
 			return
 		}
-		restConfig = expectSucceed(kube.RESTConfig(cluster.Kubeconfig, ""))
+		restConfig = expectSucceed(kube.RESTConfigWithInClusterFallback(cluster.Kubeconfig, ""))
 		c = expectSucceed(siteClient(restConfig))
 	}
 
@@ -148,7 +177,7 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool)) {
 					return err
 				}
 			}
-			return joinProblems("workloads", workloadProblems(siteNamespaces, deployments.Items, statefulSets.Items, daemonSets.Items))
+			return joinProblems("workloads", workloadProblems(checks.namespaces, deployments.Items, statefulSets.Items, daemonSets.Items))
 		}).WithContext(ctx).WithTimeout(siteSettle).WithPolling(sitePoll).Should(Succeed())
 	}, Label("readiness", "site-software"), NodeTimeout(siteSettle+time.Minute))
 
@@ -165,7 +194,11 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool)) {
 			if err := c.List(ctx, &jobs); err != nil {
 				return err
 			}
-			return joinProblems("pods", podProblems(pods.Items, jobs.Items))
+			checked, excused := excuseNamespace(pods.Items, checks.excusedNamespace)
+			if excused > 0 {
+				GinkgoLogr.Info("pod check leaves out the runner's namespace", "namespace", checks.excusedNamespace, "pods", excused)
+			}
+			return joinProblems("pods", podProblems(checked, jobs.Items))
 		}
 		Eventually(pods).WithContext(ctx).WithTimeout(siteSettle).WithPolling(sitePoll).Should(Succeed())
 		Consistently(pods).WithContext(ctx).WithTimeout(siteStable).WithPolling(siteStablePoll).Should(Succeed())
@@ -187,11 +220,11 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool)) {
 		connect()
 		var clusters int
 		Eventually(func(ctx context.Context) error {
-			controller, err := nvke.NewClient(ctx, restConfig, nvke.Options{Poll: sitePoll})
+			api, err := nvke.NewClient(ctx, restConfig, nvke.Options{Poll: sitePoll})
 			if err != nil {
 				return err
 			}
-			listed, err := controller.ListClusters(ctx)
+			listed, err := api.ListClusters(ctx)
 			clusters = len(listed)
 			return err
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
@@ -212,6 +245,37 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool)) {
 		}
 	}, Label("readiness", "site-distro"), NodeTimeout(2*siteCheck+time.Minute))
 
+	It("runs the scheduler and controller-manager on every control-plane node", func(ctx SpecContext) {
+		connect()
+		Eventually(func(ctx context.Context) error {
+			var (
+				nodes corev1.NodeList
+				pods  corev1.PodList
+			)
+			if err := c.List(ctx, &nodes); err != nil {
+				return err
+			}
+			if err := c.List(ctx, &pods, client.InNamespace(kubeSystemNamespace)); err != nil {
+				return err
+			}
+			return joinProblems("control-plane components", controlPlaneProblems(nodes.Items, pods.Items))
+		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
+	}, Label("readiness", "site-distro"), NodeTimeout(siteCheck+time.Minute))
+
+	It("runs CoreDNS", func(ctx SpecContext) {
+		connect()
+		Eventually(func(ctx context.Context) error {
+			var coredns appsv1.Deployment
+			if err := c.Get(ctx, client.ObjectKey{Namespace: kubeSystemNamespace, Name: "coredns"}, &coredns); err != nil {
+				return err
+			}
+			if coredns.Status.AvailableReplicas == 0 {
+				return fmt.Errorf("Deployment %s/coredns has no available replica", kubeSystemNamespace)
+			}
+			return nil
+		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
+	}, Label("readiness", "site-distro"), NodeTimeout(siteCheck+time.Minute))
+
 	It("runs the Kubernetes version it was built with", func(ctx SpecContext) {
 		connect()
 		clientset := expectSucceed(kubernetes.NewForConfig(restConfig))
@@ -230,7 +294,7 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool)) {
 	// debugging, so a retry can leave one behind in default.
 	It("resolves cluster DNS from a pod", func(ctx SpecContext) {
 		connect()
-		Eventually(runNodeLocalDNSProbe).WithContext(ctx).WithArguments(c).
+		Eventually(runDNSProbe).WithContext(ctx).WithArguments(c, checks.probeNamespace, checks.probeImage).
 			WithTimeout(siteSettle).WithPolling(sitePoll).Should(Succeed())
 	}, Label("readiness", "site-distro"), NodeTimeout(siteSettle+time.Minute))
 }
@@ -254,6 +318,9 @@ func joinProblems(what string, problems []string) error {
 	return fmt.Errorf("%d %s not healthy:\n  %s", len(problems), what, strings.Join(problems, "\n  "))
 }
 
+// controlPlaneTaint is the taint kubeadm puts on a control-plane node.
+const controlPlaneTaint = "node-role.kubernetes.io/control-plane"
+
 func nodeProblems(nodes []corev1.Node) []string {
 	if len(nodes) == 0 {
 		return []string{"the cluster has no nodes"}
@@ -266,15 +333,74 @@ func nodeProblems(nodes []corev1.Node) []string {
 		if node.Spec.Unschedulable {
 			problems = append(problems, node.Name+": cordoned")
 		}
-		// The site schedules everything onto its control plane, and
-		// nvkectl bootstrap site removes the taint that would stop it.
+		// A single-node site schedules everything onto its control plane,
+		// and nvkectl bootstrap site removes the taint that would stop it.
+		// Where another node takes the work, the taint is kubeadm's normal
+		// state.
 		for _, taint := range node.Spec.Taints {
-			if taint.Effect == corev1.TaintEffectNoSchedule || taint.Effect == corev1.TaintEffectNoExecute {
-				problems = append(problems, fmt.Sprintf("%s: tainted %s:%s", node.Name, taint.Key, taint.Effect))
+			if !hardTaint(taint) {
+				continue
 			}
+			if taint.Key == controlPlaneTaint && schedulableOtherThan(nodes, node.Name) {
+				continue
+			}
+			problems = append(problems, fmt.Sprintf("%s: tainted %s:%s", node.Name, taint.Key, taint.Effect))
 		}
 	}
 	return problems
+}
+
+// controlPlaneComponents are the kubeadm static pods every control-plane node
+// runs besides the API server and etcd, which /readyz already reports on.
+var controlPlaneComponents = []string{"kube-scheduler", "kube-controller-manager"}
+
+// controlPlaneProblems requires each control-plane component's static pod,
+// named <component>-<node> by the kubelet, Running and Ready on every node
+// labeled control-plane. A crashing one already fails the pod check; this
+// is what catches one that is missing.
+func controlPlaneProblems(nodes []corev1.Node, kubeSystemPods []corev1.Pod) []string {
+	pods := map[string]*corev1.Pod{}
+	for i := range kubeSystemPods {
+		pods[kubeSystemPods[i].Name] = &kubeSystemPods[i]
+	}
+	var problems []string
+	controlPlanes := 0
+	for _, node := range nodes {
+		if _, ok := node.Labels[controlPlaneTaint]; !ok {
+			continue
+		}
+		controlPlanes++
+		for _, component := range controlPlaneComponents {
+			pod, ok := pods[component+"-"+node.Name]
+			switch {
+			case !ok:
+				problems = append(problems, fmt.Sprintf("%s: no %s pod", node.Name, component))
+			case pod.Status.Phase != corev1.PodRunning || !podReady(pod):
+				problems = append(problems, fmt.Sprintf("%s: %s not Ready (phase %s)", node.Name, component, pod.Status.Phase))
+			}
+		}
+	}
+	if controlPlanes == 0 {
+		problems = append(problems, "no node is labeled "+controlPlaneTaint)
+	}
+	return problems
+}
+
+func hardTaint(taint corev1.Taint) bool {
+	return taint.Effect == corev1.TaintEffectNoSchedule || taint.Effect == corev1.TaintEffectNoExecute
+}
+
+// schedulableOtherThan reports whether a node other than name is Ready,
+// uncordoned and carries no taint that keeps pods off it.
+func schedulableOtherThan(nodes []corev1.Node, name string) bool {
+	for _, node := range nodes {
+		if node.Name == name || node.Spec.Unschedulable || !nodeConditionTrue(node, corev1.NodeReady) ||
+			slices.ContainsFunc(node.Spec.Taints, hardTaint) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func nodeConditionTrue(node corev1.Node, condition corev1.NodeConditionType) bool {
@@ -287,35 +413,37 @@ func nodeConditionTrue(node corev1.Node, condition corev1.NodeConditionType) boo
 }
 
 // workloadProblems reports every Deployment, StatefulSet and DaemonSet in the
-// cluster that is not fully available, and every required namespace holding
-// none of them.
+// cluster that is not fully available, and every required namespace with no
+// workload running at least one ready pod.
 //
 // Cluster-wide rather than per item, so a workload nothing here names, the
-// CNI's among them, still has to be healthy.
+// CNI's among them, still has to be healthy. A namespace counts as running
+// only on a ready pod: a Deployment scaled to zero, or a DaemonSet that
+// selects no node, is healthy but runs nothing.
 func workloadProblems(required []siteNamespace, deployments []appsv1.Deployment, statefulSets []appsv1.StatefulSet, daemonSets []appsv1.DaemonSet) []string {
 	var problems []string
 	populated := map[string]bool{}
 	for _, d := range deployments {
-		populated[d.Namespace] = true
 		want := replicas(d.Spec.Replicas)
 		s := d.Status
+		populated[d.Namespace] = populated[d.Namespace] || s.AvailableReplicas > 0
 		if s.ObservedGeneration < d.Generation || s.UpdatedReplicas < want || s.AvailableReplicas < want {
 			problems = append(problems, fmt.Sprintf("Deployment %s/%s: %d of %d available, %d updated",
 				d.Namespace, d.Name, s.AvailableReplicas, want, s.UpdatedReplicas))
 		}
 	}
 	for _, st := range statefulSets {
-		populated[st.Namespace] = true
 		want := replicas(st.Spec.Replicas)
 		s := st.Status
+		populated[st.Namespace] = populated[st.Namespace] || s.ReadyReplicas > 0
 		if s.ObservedGeneration < st.Generation || s.ReadyReplicas < want {
 			problems = append(problems, fmt.Sprintf("StatefulSet %s/%s: %d of %d ready",
 				st.Namespace, st.Name, s.ReadyReplicas, want))
 		}
 	}
 	for _, ds := range daemonSets {
-		populated[ds.Namespace] = true
 		s := ds.Status
+		populated[ds.Namespace] = populated[ds.Namespace] || s.NumberReady > 0
 		if s.ObservedGeneration < ds.Generation || s.NumberReady < s.DesiredNumberScheduled || s.NumberAvailable < s.DesiredNumberScheduled {
 			problems = append(problems, fmt.Sprintf("DaemonSet %s/%s: %d of %d ready, %d available",
 				ds.Namespace, ds.Name, s.NumberReady, s.DesiredNumberScheduled, s.NumberAvailable))
@@ -323,7 +451,7 @@ func workloadProblems(required []siteNamespace, deployments []appsv1.Deployment,
 	}
 	for _, ns := range required {
 		if !populated[ns.name] {
-			problems = append(problems, fmt.Sprintf("namespace %s: no workloads (expected from %s)", ns.name, ns.source))
+			problems = append(problems, fmt.Sprintf("namespace %s: no workload running (expected from %s)", ns.name, ns.source))
 		}
 	}
 	slices.Sort(problems)
@@ -337,6 +465,16 @@ func replicas(desired *int32) int32 {
 		return 1
 	}
 	return *desired
+}
+
+// excuseNamespace drops the pods in namespace, returning the rest and how
+// many it dropped.
+func excuseNamespace(pods []corev1.Pod, namespace string) ([]corev1.Pod, int) {
+	if namespace == "" {
+		return pods, 0
+	}
+	kept := slices.DeleteFunc(slices.Clone(pods), func(pod corev1.Pod) bool { return pod.Namespace == namespace })
+	return kept, len(pods) - len(kept)
 }
 
 // stuckReasons are the waiting reasons a container does not leave by itself.
@@ -475,6 +613,9 @@ func healthCheckProblems(endpoint, body string) error {
 // such as -vendor.1 or +abc is a packaging detail, not a different Kubernetes,
 // so it does not count as a mismatch.
 func versionProblems(want, server string, nodes []corev1.Node) []string {
+	if want == "" {
+		return []string{"no expected Kubernetes version is set (" + siteKubernetesVersionEnv + ")"}
+	}
 	wanted, err := utilversion.ParseGeneric(want)
 	if err != nil {
 		return []string{fmt.Sprintf("the site's Kubernetes version %q does not parse: %v", want, err)}

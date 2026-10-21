@@ -5,7 +5,6 @@ package e2e
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -18,7 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
@@ -81,23 +79,29 @@ func assertNodeLocalDNSAvailable(ctx context.Context, tenantClient client.Client
 }
 
 func runNodeLocalDNSProbe(ctx context.Context, tenantClient client.Client) error {
+	return runDNSProbe(ctx, tenantClient, "default", kube.KubectlImage)
+}
+
+// runDNSProbe resolves the cluster's own API Service name from a pod in
+// namespace, running image, which needs sh and nslookup.
+func runDNSProbe(ctx context.Context, c client.Client, namespace, image string) error {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "e2e-node-local-dns-",
-			Namespace:    "default",
+			Namespace:    namespace,
 		},
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyNever,
 			Containers: []corev1.Container{{
 				Name:    dnsProbeContainerName,
-				Image:   kube.KubectlImage,
+				Image:   image,
 				Command: []string{"sh", "-ec"},
 				Args: []string{`nslookup kubernetes.default.svc.cluster.local >/dev/null
 printf '%s' "` + dnsProbeSuccessMessage + `" > /dev/termination-log`},
 			}},
 		},
 	}
-	_, message, err := kube.RunPod(ctx, tenantClient, pod, dnsProbeContainerName, 2*time.Minute)
+	_, message, err := kube.RunPod(ctx, c, pod, dnsProbeContainerName, 2*time.Minute)
 	if err != nil {
 		return err
 	}
@@ -142,48 +146,19 @@ func assertEtcdQuota(ctx context.Context, tenantClient client.Client, expectedCo
 }
 
 func etcdQuotaInKubeadmConfig(ctx context.Context, tenantClient client.Client) (string, error) {
-	var configMap corev1.ConfigMap
-	if err := tenantClient.Get(ctx, client.ObjectKey{Namespace: kubeSystemNamespace, Name: kubeadmConfigMapName}, &configMap); err != nil {
-		return "", fmt.Errorf("getting kubeadm ConfigMap: %w", err)
-	}
-	clusterConfiguration := configMap.Data[kubeadmConfigDataKey]
-	if strings.TrimSpace(clusterConfiguration) == "" {
-		return "", fmt.Errorf("kubeadm ConfigMap is missing non-empty %q data", kubeadmConfigDataKey)
-	}
-
-	configJSON, err := yaml.YAMLToJSON([]byte(clusterConfiguration))
+	clusterConfiguration, err := kubeadmClusterConfiguration(ctx, tenantClient)
 	if err != nil {
-		return "", fmt.Errorf("converting kubeadm ClusterConfiguration to JSON: %w", err)
+		return "", err
 	}
-	var config struct {
-		Etcd struct {
-			Local struct {
-				ExtraArgs any `json:"extraArgs"`
-			} `json:"local"`
-		} `json:"etcd"`
-	}
-	if err := json.Unmarshal(configJSON, &config); err != nil {
-		return "", fmt.Errorf("decoding kubeadm ClusterConfiguration: %w", err)
-	}
-
 	const quotaName = "quota-backend-bytes"
-	switch extraArgs := config.Etcd.Local.ExtraArgs.(type) {
-	case map[string]any:
-		if quota, ok := kubeadmArgValue(extraArgs[quotaName]); ok && quota != "" {
-			return quota, nil
-		}
-	case []any:
-		for _, item := range extraArgs {
-			entry, ok := item.(map[string]any)
-			if !ok || entry["name"] != quotaName {
-				continue
-			}
-			if quota, ok := kubeadmArgValue(entry["value"]); ok && quota != "" {
-				return quota, nil
-			}
-		}
+	quota, _, err := kubeadmEtcdQuota(clusterConfiguration)
+	if err != nil {
+		return "", err
 	}
-	return "", fmt.Errorf("kubeadm ClusterConfiguration is missing etcd.local.extraArgs[%q]", quotaName)
+	if quota == "" {
+		return "", fmt.Errorf("kubeadm ClusterConfiguration is missing etcd.local.extraArgs[%q]", quotaName)
+	}
+	return quota, nil
 }
 
 func assertAPIServerAuditPolicy(ctx context.Context, tenantClient client.Client, expectedControlPlanes int) error {
