@@ -37,7 +37,7 @@ type RetireLostEtcdRotationNodeResult struct {
 // survivors, so a replacement joins with the finalized key. A repeat is a no-op.
 func (a *Activities) RetireLostEtcdRotationNode(ctx context.Context, input RetireLostEtcdRotationNodeInput) (RetireLostEtcdRotationNodeResult, error) {
 	// The live probe runs before the row lock; the transaction rechecks everything else.
-	agentAnswered := a.lostNodeAgentAnswers(ctx, input.NodeID)
+	agentAnswered, probeErr := a.lostNodeAgentAnswers(ctx, input.NodeID)
 	result := RetireLostEtcdRotationNodeResult{}
 	phase := ""
 	outcome, reason := credentialaudit.OutcomeFailure, credentialaudit.ReasonFailed
@@ -76,7 +76,7 @@ func (a *Activities) RetireLostEtcdRotationNode(ctx context.Context, input Retir
 		default:
 			return etcdEncryptionKeyRotationPreconditionError("invalid etcd key rotation phase")
 		}
-		node, err := lockRetirableNode(ctx, tx, cluster.ID, input.NodeID, agentAnswered)
+		node, err := lockRetirableNode(ctx, tx, cluster.ID, input.NodeID, agentAnswered, probeErr)
 		if err != nil {
 			return err
 		}
@@ -106,23 +106,25 @@ func (a *Activities) RetireLostEtcdRotationNode(ctx context.Context, input Retir
 	return result, nil
 }
 
-// lostNodeAgentAnswers reports whether the node agent still answers. Any
-// answer means the host is not lost; errors and missing rows are left to the
-// transaction to classify.
-func (a *Activities) lostNodeAgentAnswers(ctx context.Context, nodeID uuid.UUID) bool {
+// lostNodeAgentAnswers reports whether the node agent still answers. A lookup
+// failure or missing address means the required live probe did not run.
+func (a *Activities) lostNodeAgentAnswers(ctx context.Context, nodeID uuid.UUID) (bool, error) {
 	node, err := a.db.GetNode(ctx, nodeID)
-	if err != nil || node.IP == "" {
-		return false
+	if err != nil {
+		return false, errors.New("cannot look up the lost node for its live agent probe")
+	}
+	if node.IP == "" {
+		return false, etcdEncryptionKeyRotationPreconditionError("node has no agent address; the live agent probe cannot run")
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, lostNodeProbeTimeout)
 	defer cancel()
 	_, err = a.nodeAgentClient.GetAgentVersion(probeCtx, node)
-	return err == nil
+	return err == nil, nil
 }
 
 // lockRetirableNode accepts one joined, unreachable control-plane node whose
 // removal keeps a ready etcd quorum and does not overlap another removal.
-func lockRetirableNode(ctx context.Context, tx db.Tx, clusterID, nodeID uuid.UUID, agentAnswered bool) (db.Node, error) {
+func lockRetirableNode(ctx context.Context, tx db.Tx, clusterID, nodeID uuid.UUID, agentAnswered bool, probeErr error) (db.Node, error) {
 	cp := true
 	nodes, err := tx.ListNodes(ctx, db.NodeFilters{ClusterID: &clusterID, ControlPlane: &cp})
 	if err != nil {
@@ -150,6 +152,9 @@ func lockRetirableNode(ctx context.Context, tx db.Tx, clusterID, nodeID uuid.UUI
 	}
 	if node.Conditions.DeleteRequested.Status == db.ConditionStatusTrue || node.Conditions.Deleting.Status == db.ConditionStatusTrue {
 		return db.Node{}, etcdEncryptionKeyRotationPreconditionError("another control-plane removal is in flight; wait for it to finish")
+	}
+	if probeErr != nil {
+		return db.Node{}, probeErr
 	}
 	if agentAnswered || node.Conditions.NodeAgentReady.Status == db.ConditionStatusTrue ||
 		node.Conditions.KubernetesReady.Status == db.ConditionStatusTrue {
