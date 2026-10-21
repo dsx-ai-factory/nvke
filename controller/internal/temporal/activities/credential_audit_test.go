@@ -154,7 +154,10 @@ func TestCertificateExpiryCheckAuditsOnlyUnchangedNodes(t *testing.T) {
 		wantAudit    bool
 	}{
 		{name: "unchanged", output: "RENEWAL_REQUIRED=false\n", wantAudit: true},
+		{name: "unchanged with diagnostics", output: "diagnostic\nRENEWAL_REQUIRED=false\nwarning\n", wantAudit: true},
 		{name: "due", output: "RENEWAL_REQUIRED=true\n", wantRequired: true},
+		{name: "typed intent with diagnostics", output: "diagnostic\nRENEWAL_REQUIRED=typed\n", wantRequired: true},
+		{name: "conflicting markers", output: "RENEWAL_REQUIRED=false\nRENEWAL_REQUIRED=typed\n", wantErr: true},
 		{name: "failed", output: "RENEWAL_REQUIRED=false\n", exitCode: 1, wantErr: true},
 		{name: "malformed", output: "REDACTED", wantErr: true},
 	} {
