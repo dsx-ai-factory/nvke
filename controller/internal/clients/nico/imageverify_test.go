@@ -62,7 +62,7 @@ func TestVerifyImage(t *testing.T) {
 			if tt.verifier != nil {
 				verifier = tt.verifier
 			}
-			err := verifyImage(context.Background(), tt.mode, verifier, image)
+			err := verifyImage(context.Background(), tt.mode, verifier, image, "node-test-id", "cluster-test-id")
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -87,7 +87,7 @@ func TestVerifyImage(t *testing.T) {
 func TestVerifyImageWrapsTheVerdict(t *testing.T) {
 	image := &enginev1.MachineImage{ObjectMeta: metav1.ObjectMeta{Name: "img"}}
 	verdictErr := errors.New("checksum mismatch")
-	err := verifyImage(context.Background(), ImageVerificationEnforce, &stubVerifier{err: verdictErr}, image)
+	err := verifyImage(context.Background(), ImageVerificationEnforce, &stubVerifier{err: verdictErr}, image, "node-test-id", "cluster-test-id")
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrImageVerificationFailed)
 	require.ErrorIs(t, err, verdictErr)
@@ -101,18 +101,18 @@ func TestEnforceDistinguishesRejectionFromOutage(t *testing.T) {
 	image := &enginev1.MachineImage{ObjectMeta: metav1.ObjectMeta{Name: "img-1"}}
 
 	rejection := fmt.Errorf("no passing verdict for digest: %w", ErrVerdictRejected)
-	err := verifyImage(context.Background(), ImageVerificationEnforce, &stubVerifier{err: rejection}, image)
+	err := verifyImage(context.Background(), ImageVerificationEnforce, &stubVerifier{err: rejection}, image, "node-test-id", "cluster-test-id")
 	require.ErrorIs(t, err, ErrImageVerificationFailed)
 	_, terminal := shared.AsTerminal(err)
 	assert.True(t, terminal, "a definitive rejection must be permanent")
 
-	err = verifyImage(context.Background(), ImageVerificationEnforce, nil, image)
+	err = verifyImage(context.Background(), ImageVerificationEnforce, nil, image, "node-test-id", "cluster-test-id")
 	require.ErrorIs(t, err, ErrImageVerificationFailed)
 	_, terminal = shared.AsTerminal(err)
 	assert.True(t, terminal, "a nil verifier is static configuration; retrying cannot help")
 
 	outage := errors.New("verdict store: connection refused")
-	err = verifyImage(context.Background(), ImageVerificationEnforce, &stubVerifier{err: outage}, image)
+	err = verifyImage(context.Background(), ImageVerificationEnforce, &stubVerifier{err: outage}, image, "node-test-id", "cluster-test-id")
 	require.ErrorIs(t, err, ErrImageVerificationFailed, "an outage still refuses fail-closed")
 	_, terminal = shared.AsTerminal(err)
 	assert.False(t, terminal, "an operational failure must stay retryable")

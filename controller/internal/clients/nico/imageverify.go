@@ -12,6 +12,7 @@ import (
 	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
+	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 )
 
 // Image-verification modes for config.Config.ImageVerificationMode. The
@@ -54,8 +55,9 @@ type ImageVerifier = shared.ImageVerifier
 
 // verifyImage applies the configured image-verification mode. Behavior is
 // pinned by imageverify_test.go; off must stay a true no-op so the default
-// configuration is byte-for-byte today's behavior.
-func verifyImage(ctx context.Context, mode string, verifier ImageVerifier, image *enginev1.MachineImage) error {
+// configuration is byte-for-byte today's behavior. nodeID and clusterID only
+// identify the attempt in the warn log and carry no behavior.
+func verifyImage(ctx context.Context, mode string, verifier ImageVerifier, image *enginev1.MachineImage, nodeID, clusterID string) error {
 	switch mode {
 	case "", ImageVerificationOff:
 		return nil
@@ -68,12 +70,20 @@ func verifyImage(ctx context.Context, mode string, verifier ImageVerifier, image
 	}
 
 	err := verdict(ctx, verifier, image)
+	result := "pass"
+	if err != nil {
+		result = "fail"
+	}
+	// Counted for every evaluated pre-flight (never in mode off): the fail
+	// rate at mode=warn is the measurement the warn-to-enforce graduation
+	// decision reads.
+	metrics.RecordImageVerification(mode, result)
 	if err == nil {
 		return nil
 	}
 	if mode == ImageVerificationWarn {
 		slog.Warn("node image verification failed; proceeding (mode=warn)",
-			"image", image.Name, "err", err)
+			"image", image.Name, "node_id", nodeID, "cluster_id", clusterID, "err", err)
 		return nil
 	}
 	refusal := fmt.Errorf("%w: image %s: %w", ErrImageVerificationFailed, image.Name, err)
