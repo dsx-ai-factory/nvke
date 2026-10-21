@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+FROM cwe-capd-kindest-node:local
+COPY images.tar multus-oci.tar multus-image /var/lib/nvke-nais-dpu-sim/
+COPY --chmod=755 preload-images.sh /usr/local/bin/nvke-nais-dpu-sim-preload
+COPY agent.deb charts.deb /tmp/
+RUN dpkg --remove nke-agent nke-cni-ovn-charts-1.4.0 \
+    && rm -f /etc/systemd/system/nke-agent.service /etc/systemd/system/multi-user.target.wants/nke-agent.service \
+    && SYSTEMD_OFFLINE=1 NVKE_AGENT_SKIP_START=1 dpkg -i /tmp/agent.deb /tmp/charts.deb \
+    && rm /tmp/agent.deb /tmp/charts.deb \
+    && rm -f /etc/systemd/system/ovs-vswitchd.service.d/userspace.conf \
+    && printf 'net.ipv6.conf.all.disable_ipv6 = 0\nnet.ipv6.conf.default.disable_ipv6 = 0\nnet.ipv6.conf.lo.disable_ipv6 = 0\n' > /etc/sysctl.d/99-nvke-dpu-ipv6.conf \
+    && SYSTEMD_OFFLINE=1 systemctl disable spire-agent.service openvswitch-switch.service
+RUN printf '[Unit]\nDescription=Load the pinned upstream nvke-nais-dpu-sim images\nRequires=containerd.service\nAfter=containerd.service\nBefore=nvke-agent.service\n[Service]\nType=oneshot\nExecStart=/usr/local/bin/nvke-nais-dpu-sim-preload\nRemainAfterExit=yes\nTimeoutStartSec=600\n' > /etc/systemd/system/nvke-nais-dpu-sim-preload.service \
+    && mkdir -p /etc/systemd/system/nvke-agent.service.d \
+    && printf '[Service]\nEnvironment=NKE_LOCAL_DEV=true NKE_OVS_DATAPATH_TYPE=system\nExecStart=\nExecStart=/usr/local/bin/nvke-agent --disable-mtls --disable-mlx5-rescan --secure-server-port 15005\n' > /etc/systemd/system/nvke-agent.service.d/local-dev.conf \
+    && printf '[Unit]\nRequires=nvke-nais-dpu-sim-preload.service\nAfter=nvke-nais-dpu-sim-preload.service\n' > /etc/systemd/system/nvke-agent.service.d/preload.conf \
+    && SYSTEMD_OFFLINE=1 systemctl enable nvke-agent.service

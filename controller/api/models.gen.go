@@ -25,8 +25,9 @@ const (
 
 // Defines values for CreateClusterRequestCniPlugin.
 const (
-	CreateClusterRequestCniPluginCalico        CreateClusterRequestCniPlugin = "calico"
-	CreateClusterRequestCniPluginOvnKubernetes CreateClusterRequestCniPlugin = "ovn-kubernetes"
+	CreateClusterRequestCniPluginCalico               CreateClusterRequestCniPlugin = "calico"
+	CreateClusterRequestCniPluginOvnKubernetes        CreateClusterRequestCniPlugin = "ovn-kubernetes"
+	CreateClusterRequestCniPluginOvnKubernetesDpuHost CreateClusterRequestCniPlugin = "ovn-kubernetes-dpu-host"
 )
 
 // Defines values for DiskSelectionStrategy.

@@ -64,6 +64,9 @@ EXEMPT=(
 	controller/hack/dsx-imds-attestation/Dockerfile.mock # Tilt-only IMDS fixture
 	controller/hack/dsx-imds-attestation/Dockerfile.server # Tilt-only SPIRE plugin fixture
 	controller/hack/dsx-identity-exchange-mock/Dockerfile # e2e mock identity service
+	controller/hack/nais-dpu-sim/images/Dockerfile.helpers # local simulation helpers, never released
+	controller/hack/nais-dpu-sim/images/Dockerfile.managed-node # local simulation node, built from the CAPD development image
+	controller/hack/nais-dpu-sim/images/Dockerfile.managed-runtime # local simulation management tools, never released
 	controller/profiles/example/Dockerfile             # documentation example, never built by CI
 	controller/test/fixtures/Dockerfile                # unit/e2e test fixture
 )

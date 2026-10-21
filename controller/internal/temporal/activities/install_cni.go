@@ -38,7 +38,7 @@ func postInitCNIVariant(plugin db.CniPlugin) (nvkeproto.CniVariant, bool) {
 	switch plugin {
 	case db.CNICalico:
 		return nvkeproto.CniVariant_CNI_VARIANT_CALICO, true
-	case db.CNIOvnKubernetes:
+	case db.CNIOvnKubernetes, db.CNIOvnKubernetesDPUHost:
 		return nvkeproto.CniVariant_CNI_VARIANT_OVN, true
 	default:
 		return nvkeproto.CniVariant_CNI_VARIANT_UNSPECIFIED, false
@@ -136,6 +136,9 @@ func installCNIError(nodeName string, err error) error {
 // 3.30.1-2 does not match a 3.30.1 pin.
 func postInitCNIVersion(cluster db.Cluster) string {
 	version := strings.TrimSpace(cluster.CniVersion)
+	if cluster.CniPlugin == db.CNIOvnKubernetesDPUHost {
+		return db.EffectiveCNIVersion(cluster.CniPlugin, version)
+	}
 	if defaultVersion, ok := db.DefaultCNIVersion(cluster.CniPlugin); ok && version == defaultVersion {
 		return ""
 	}
@@ -153,6 +156,12 @@ func installCNIRequest(cluster db.Cluster, cniImageRegistry string) (*nvkeproto.
 	var cniConfig map[string]string
 	if cniImageRegistry != "" {
 		cniConfig = map[string]string{cniRegistryHelmValue: cniImageRegistry}
+	}
+	if cluster.CniPlugin == db.CNIOvnKubernetesDPUHost {
+		if cniConfig == nil {
+			cniConfig = make(map[string]string)
+		}
+		cniConfig["nvke.ovnDpuHost"] = "true"
 	}
 
 	return &nvkeproto.InstallCNIRequest{

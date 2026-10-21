@@ -1,0 +1,39 @@
+{
+  "ovn": {
+    "revision": "d6a3812d1bc1c36bf24c7eda0e86e9b13d84907d",
+    "source_sha256": "8cbe33e0200380f007d1135ae44a95fd879c949cc68b4f25f51678256f6606fd",
+    "version": "1.4.0",
+    "image": "ghcr.io/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu:release-1.4",
+    "digest": "sha256:45183985676c4eee9721d8be0e112690c357bbc59147cba0ec3762d2c432518b",
+    "config_digest": "sha256:e4f93541678232a1c3d946a3aa75d62d0896a4b0c1c3a9fe0bbca6447106e768"
+  },
+  "device_plugin": {
+    "revision": "a99c4111eb1b3db7241f666662906f2cc8b0e42a",
+    "image": "nvke-nais-dpu-sim-device-plugin:a99c4111",
+    "source_sha256": "6d95ae69c1603765cad650dc41ea39439757763d726a28ddf935bdd538c53dbc"
+  },
+  "frr_k8s": {
+    "revision": "b43efcb206be36a361401a233908b74b8e8b077e",
+    "image": "nvke-nais-dpu-sim-frr-k8s:b43efcb2",
+    "source_sha256": "83f716e700db4c87293a5c6bb9ce97387d94f00a32500c6b41adf955026bc52f"
+  },
+  "frr": {
+    "image": "quay.io/frrouting/frr:10.6.0",
+    "digest": "sha256:eae3340ca578bb588d92ab3d1e77deb806f80d1da2bc0053cb1dfcfef2aa236f"
+  },
+  "ipamclaims": {
+    "url": "https://raw.githubusercontent.com/k8snetworkplumbingwg/ipamclaims/v0.5.1-alpha/artifacts/k8s.cni.cncf.io_ipamclaims.yaml",
+    "sha256": "dd0051719004514c16eb24414e4e93757b7c485e2c1e626abce2c8cb13477ad3"
+  },
+  "multi_network_policy": {
+    "url": "https://raw.githubusercontent.com/k8snetworkplumbingwg/multi-networkpolicy/refs/tags/v1.0.1/scheme.yml",
+    "sha256": "7bbdf3419c3dadd12ac1af8c4ce7ff1997623f822fd618e027b232d6967836f0"
+  },
+  "multus": {
+    "config_digest": "sha256:34432c1198661bd95ef909fb1337ffda84ed4c8585090c6da8f2d59013fbaa45",
+    "version": "v4.2.2",
+    "image": "ghcr.io/k8snetworkplumbingwg/multus-cni",
+    "digest": "sha256:452e64da925fbe2fc78749b20a67659d840780ca8e1ad21cfdb63672542f10c2",
+    "manifest_sha256": "5ae5d2b0d63e0f058ab42dcd0a611479a271d850899c1e8369999901943f56cc"
+  }
+}

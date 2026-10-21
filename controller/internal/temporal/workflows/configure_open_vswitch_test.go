@@ -79,16 +79,20 @@ func TestConfigureCNIPrerequisitesRetriesOpenVSwitchAfterFiveSeconds(t *testing.
 }
 
 func TestConfigureCNIPrerequisitesSkipsOpenVSwitchForOtherCNI(t *testing.T) {
-	nodeID := uuid.New()
-	testSuite := &testsuite.WorkflowTestSuite{}
-	env := testSuite.NewTestWorkflowEnvironment()
-	var a *activities.Activities
-	env.OnActivity(a.GetClusterForNode, mock.Anything, nodeID).
-		Return(db.Cluster{CniPlugin: db.CNICalico}, nil).Once()
+	for _, plugin := range []db.CniPlugin{db.CNICalico, db.CNIOvnKubernetesDPUHost} {
+		t.Run(string(plugin), func(t *testing.T) {
+			nodeID := uuid.New()
+			testSuite := &testsuite.WorkflowTestSuite{}
+			env := testSuite.NewTestWorkflowEnvironment()
+			var a *activities.Activities
+			env.OnActivity(a.GetClusterForNode, mock.Anything, nodeID).
+				Return(db.Cluster{CniPlugin: plugin}, nil).Once()
 
-	env.ExecuteWorkflow(configureOpenVSwitchTestWorkflow, nodeID)
+			env.ExecuteWorkflow(configureOpenVSwitchTestWorkflow, nodeID)
 
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
-	env.AssertExpectations(t)
+			require.True(t, env.IsWorkflowCompleted())
+			require.NoError(t, env.GetWorkflowError())
+			env.AssertExpectations(t)
+		})
+	}
 }

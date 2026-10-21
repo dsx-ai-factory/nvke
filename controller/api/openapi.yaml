@@ -979,7 +979,7 @@ components:
         cniPlugin:
           x-fern-ignore: true
           type: string
-          enum: [calico, ovn-kubernetes]
+          enum: [calico, ovn-kubernetes, ovn-kubernetes-dpu-host]
           example: "ovn-kubernetes"
           description: CNI plugin. Defaults to ovn-kubernetes when omitted. calico is a disabled-by-default legacy override.
           x-go-type-skip-optional-pointer: true

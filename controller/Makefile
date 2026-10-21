@@ -267,6 +267,18 @@ test-e2e-core-capd: ## Run the bounded CAPD create, readiness, and delete lifecy
 test-e2e-core-nico-containers: ## Run the bounded NICo containers create, readiness, and delete lifecycle.
 	make test-e2e ARGS='--fail-on-empty --label-filter="core-nico"'
 
+NAIS_DPU_SIM_DIR := hack/nais-dpu-sim
+
+.PHONY: prepare-nais-dpu-sim test-nais-dpu-sim-chart test-nais-dpu-sim-traffic
+prepare-nais-dpu-sim: ## Build nvke-nais-dpu-sim from pinned upstream OVN inputs.
+	$(MAKE) -C $(NAIS_DPU_SIM_DIR) build
+
+test-nais-dpu-sim-chart: ## Render the host, DPU, and primary OVN roles for nvke-nais-dpu-sim.
+	$(MAKE) -C $(NAIS_DPU_SIM_DIR) chart-check
+
+test-nais-dpu-sim-traffic: ## Provision both clusters through NVKE and test routed upstream OVN traffic.
+	$(MAKE) -C $(NAIS_DPU_SIM_DIR) create CAPNICO_CHART="$(CAPNICO_CHART)"
+
 test-e2e-happy-path: ## Run CAPD and NICo VMs happy-path e2e tests
 	make test-e2e ARGS='--label-filter="happy-path && (lifecycle || readiness) && !scale && !upgrade && !reboot"'
 

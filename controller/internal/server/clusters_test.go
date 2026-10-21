@@ -2094,9 +2094,9 @@ func TestValidateCreateClusterRequestFields_LegacyCalicoCreationGate(t *testing.
 		{name: "omitted CNI defaults to OVN"},
 		{name: "explicit OVN", cni: api.CreateClusterRequestCniPluginOvnKubernetes},
 		{
-			name:    "unknown CNI only advertises OVN",
+			name:    "unknown CNI advertises supported OVN modes",
 			cni:     "flannel",
-			wantErr: "invalid CNI plugin: flannel, valid plugins: [ovn-kubernetes]",
+			wantErr: "invalid CNI plugin: flannel, valid plugins: [ovn-kubernetes ovn-kubernetes-dpu-host]",
 		},
 		{
 			name:    "Calico disabled by default",

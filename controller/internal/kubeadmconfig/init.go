@@ -25,6 +25,8 @@ const (
 
 // InitConfig represents the configuration for kubeadm init.
 type InitConfig struct {
+	// Labels are kubelet labels applied when the node first registers.
+	Labels                string
 	NodeIP                string
 	APIServerEndpoint     string
 	NodeName              string
@@ -180,6 +182,9 @@ func initConfiguration(config *InitConfig) (kubeadmv1beta3.InitConfiguration, er
 	// kindest container has no /lib/modules/$(uname -r) to probe against.
 	if config.KubeadmContainerMode {
 		cfg.NodeRegistration.IgnorePreflightErrors = []string{"SystemVerification"}
+	}
+	if config.Labels != "" {
+		cfg.NodeRegistration.KubeletExtraArgs["node-labels"] = config.Labels
 	}
 
 	if config.Token != "" {

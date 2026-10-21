@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+FROM scratch AS device-plugin
+COPY dpu-sim-dp /dpu-sim-dp
+ENTRYPOINT ["/dpu-sim-dp"]
+
+FROM docker:29.1.3-cli AS frr
+RUN apk add --no-cache iproute2
+COPY frr-k8s frr-metrics frr-status statuscleaner frr-reloader.sh LICENSE /

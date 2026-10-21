@@ -814,6 +814,9 @@ func labelNode(ctx workflow.Context, nodeID uuid.UUID) error {
 	if cluster.CniPlugin == db.CNIOvnKubernetes {
 		labels = append(labels, "k8s.ovn.org/zone-name="+node.Name)
 	}
+	if cluster.CniPlugin == db.CNIOvnKubernetesDPUHost {
+		labels = append(labels, "k8s.ovn.org/dpu-host=")
+	}
 
 	if len(labels) == 0 {
 		return nil

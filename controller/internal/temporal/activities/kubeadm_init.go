@@ -100,8 +100,9 @@ func (a *Activities) kubeadmInit(ctx context.Context, input KubeadmInitInput) er
 		PodSubnet:             cluster.PodCIDR,
 		ServiceSubnet:         cluster.ServiceCIDR,
 		EtcdQuotaBackendBytes: kubeadmconfig.EtcdQuotaBackendBytes,
+		Labels:                nodeLabelsForCNI(nodePool.NodeLabels, cluster.CniPlugin),
 		ImageRepository:       a.cfg.KubeadmImageRepository,
-		SkipKubeProxy:         cluster.CniPlugin == db.CNIOvnKubernetes,
+		SkipKubeProxy:         cluster.CniPlugin == db.CNIOvnKubernetes || cluster.CniPlugin == db.CNIOvnKubernetesDPUHost,
 		EnableEncryption:      cluster.EtcdEncrypted,
 		KubeadmContainerMode:  kubeadmContainerMode,
 		SystemReservedMemory:  nodePool.SystemReservedMemory,
@@ -147,10 +148,16 @@ func (a *Activities) kubeadmInit(ctx context.Context, input KubeadmInitInput) er
 	// db.EffectiveCNIVersion and getUserData's CNIImagePackage.
 	cniVersion := db.EffectiveCNIVersion(cluster.CniPlugin, strings.TrimSpace(cluster.CniVersion))
 	switch cluster.CniPlugin {
-	case db.CNIOvnKubernetes:
+	case db.CNIOvnKubernetes, db.CNIOvnKubernetesDPUHost:
 		req.UseOvnK8SCni = true     //nolint:staticcheck // Deprecated agent in-init CNI path still consumes legacy fields.
 		req.CniPluginName = "ovn"   //nolint:staticcheck // Legacy in-init CNI install still switches on this deprecated agent field.
 		req.OvnVersion = cniVersion //nolint:staticcheck // Legacy in-init CNI install still consumes deprecated version fields.
+		if cluster.CniPlugin == db.CNIOvnKubernetesDPUHost {
+			if req.CniConfig == nil { //nolint:staticcheck // Legacy in-init CNI configuration remains supported.
+				req.CniConfig = make(map[string]string) //nolint:staticcheck // Legacy in-init CNI configuration remains supported.
+			}
+			req.CniConfig["nvke.ovnDpuHost"] = "true" //nolint:staticcheck // Legacy in-init CNI configuration remains supported.
+		}
 	case db.CNICalico:
 		req.CniPluginName = "calico"   //nolint:staticcheck // Legacy in-init CNI install still switches on this deprecated agent field.
 		req.TigeraVersion = cniVersion //nolint:staticcheck // Legacy in-init CNI install still consumes deprecated version fields.
