@@ -766,9 +766,16 @@ nodes_before="$(sim_node_count)"
 rerun_args=(bootstrap site -f "${RENDERED_SITESPEC}" --timeout 2m
   --kubeconfig-out "${SIM_STATE_DIR}/rerun.kubeconfig" --encryption-key-out "${SIM_STATE_DIR}/rerun-key.json")
 expect_refusal "a re-run with the first bootstrap cluster still there" "do not re-run" "${NVKECTL}" "${rerun_args[@]}"
+# A regression that stops refusing would create this cluster, and the assertion
+# below would then fail the run before anything else removed it.
+RERUN_KIND_CLUSTER=nvkectl-e2e-rerun
+teardown_rerun_cluster() {
+  KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name "${RERUN_KIND_CLUSTER}" >/dev/null 2>&1 || true
+}
+defer teardown_rerun_cluster
 expect_refusal "a re-run over a site whose VIP answers" "another set of NICo machines" \
-  env NVKECTL_BOOTSTRAP_CLUSTER_NAME=nvkectl-e2e-rerun "${NVKECTL}" "${rerun_args[@]}"
-if KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get clusters 2>/dev/null | grep -qx nvkectl-e2e-rerun; then
+  env NVKECTL_BOOTSTRAP_CLUSTER_NAME="${RERUN_KIND_CLUSTER}" "${NVKECTL}" "${rerun_args[@]}"
+if KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get clusters 2>/dev/null | grep -qx "${RERUN_KIND_CLUSTER}"; then
   fail "the refused re-run created a bootstrap cluster"
 fi
 [ ! -e "${SIM_STATE_DIR}/rerun-key.json" ] && [ ! -e "${SIM_STATE_DIR}/rerun.kubeconfig" ] ||
