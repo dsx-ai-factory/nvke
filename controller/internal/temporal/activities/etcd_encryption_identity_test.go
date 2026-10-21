@@ -109,6 +109,10 @@ func TestRotationAdoptsLegacyPendingNameAndFinalizesIt(t *testing.T) {
 		}
 		return "", nil // Interrupted old rollout distributed only to the first node.
 	})
+	a.db.(*testutil.MockDB).On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
+		ID: clusterID, EtcdEncrypted: true,
+		Conditions: db.ClusterConditions{UpdateInProgress: &db.UpdateInProgress{Type: db.OperationTypeEtcdKeyRotation}},
+	}, nil).Once()
 	pending, err := a.ensurePendingKubeAPIEncryptionRotationKey(ctx, clusterID)
 	require.NoError(t, err)
 	require.Equal(t, "pending-public-fixture-key", pending)
@@ -292,4 +296,59 @@ func TestLegacyRotationFinalizesUnnamedPendingKeyWithoutIdentityDiscovery(t *tes
 	require.NotContains(t, stored.Data, constants.EtcdEncryptionKeyFieldActiveName)
 	require.NotContains(t, stored.Data, constants.EtcdEncryptionKeyFieldPending)
 	require.NotContains(t, stored.Data, constants.EtcdEncryptionKeyFieldPendingName)
+}
+
+// TestUnnamedPendingRotationKeyRedeliveryUsesLockProtocol distinguishes a
+// legacy history that staged an unnamed key before an upgrade from an owned
+// rotation that must prove the pending key's storage identity.
+func TestUnnamedPendingRotationKeyRedeliveryUsesLockProtocol(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		operation db.OperationType
+		wantError string
+	}{
+		{name: "legacy history keeps no-discovery staging", operation: db.OperationTypeEtcdEncryption},
+		{name: "owned rotation still requires identity", operation: db.OperationTypeEtcdKeyRotation, wantError: "upgrade older node agents"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, clusterID := context.Background(), uuid.New()
+			secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "nke", Name: constants.EtcdEncryptionKeySecretName(clusterID)}, Data: map[string][]byte{
+				constants.EtcdEncryptionKeyFieldActive:  []byte("old-public-fixture-key"),
+				constants.EtcdEncryptionKeyFieldPending: []byte("pending-public-fixture-key"),
+			}}
+			a := &Activities{cfg: config.Config{PodNamespace: "nke"}, k8sClient: fake.NewClientBuilder().WithObjects(secret).Build()}
+			identityCalls := 0
+			withIdentityTestNodes(t, a, clusterID, func(node db.Node, _ string) (string, error) {
+				identityCalls++
+				return "", fmt.Errorf("node %s %w", node.Name, agent.ErrEncryptionIdentityUnsupported)
+			})
+			a.db.(*testutil.MockDB).On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
+				ID: clusterID, EtcdEncrypted: true,
+				Conditions: db.ClusterConditions{UpdateInProgress: &db.UpdateInProgress{Type: test.operation}},
+			}, nil)
+
+			err := a.EnsurePendingEtcdEncryptionRotationKey(ctx, EtcdEncryptionClusterInput{ClusterID: clusterID})
+			stored, getErr := a.getKubeAPIEncryptionKeySecret(ctx, clusterID)
+			require.NoError(t, getErr)
+			if test.wantError != "" {
+				require.ErrorContains(t, err, test.wantError)
+				require.NotZero(t, identityCalls)
+				require.NotContains(t, stored.Data, constants.EtcdEncryptionKeyFieldPendingName)
+				return
+			}
+			require.NoError(t, err)
+			require.NoError(t, a.EnsurePendingEtcdEncryptionRotationKey(ctx, EtcdEncryptionClusterInput{ClusterID: clusterID}))
+			require.Zero(t, identityCalls)
+			require.Equal(t, "pending-public-fixture-key", string(stored.Data[constants.EtcdEncryptionKeyFieldPending]))
+			require.NotContains(t, stored.Data, constants.EtcdEncryptionKeyFieldPendingName)
+			require.NotContains(t, stored.Data, constants.EtcdEncryptionKeyFieldActiveName)
+
+			require.NoError(t, a.FinalizePendingEtcdEncryptionKey(ctx, EtcdEncryptionClusterInput{ClusterID: clusterID}))
+			stored, err = a.getKubeAPIEncryptionKeySecret(ctx, clusterID)
+			require.NoError(t, err)
+			require.Zero(t, identityCalls)
+			require.Equal(t, "pending-public-fixture-key", string(stored.Data[constants.EtcdEncryptionKeyFieldActive]))
+			require.NotContains(t, stored.Data, constants.EtcdEncryptionKeyFieldActiveName)
+		})
+	}
 }

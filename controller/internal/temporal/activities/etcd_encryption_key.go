@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 func (a *Activities) ensurePendingKubeAPIEncryptionKey(ctx context.Context, clusterID uuid.UUID) (string, error) {
@@ -88,6 +89,16 @@ func (a *Activities) ensurePendingKubeAPIEncryptionRotationKey(ctx context.Conte
 			return "", etcdEncryptionKeyRotationPreconditionError(
 				fmt.Sprintf("kube-api encryption key secret %s/%s has identical active and pending keys", secret.Namespace, secret.Name),
 			)
+		}
+		if len(secret.Data[constants.EtcdEncryptionKeyFieldPendingName]) == 0 {
+			cluster, err := a.db.GetCluster(ctx, clusterID)
+			if err != nil {
+				return "", fmt.Errorf("getting cluster for pending rotation key: %w", err)
+			}
+			// Legacy histories staged unnamed keys before identity discovery existed.
+			if update := cluster.Conditions.UpdateInProgress; update != nil && update.Type == db.OperationTypeEtcdEncryption {
+				return pending, nil
+			}
 		}
 		if err := a.ensureRotationKeyNames(ctx, clusterID, secret); err != nil {
 			return "", err
