@@ -63,7 +63,7 @@ const (
 	labelStatus            = "status"
 	labelNodePoolID        = "node_pool_id"
 	labelNodePoolName      = "node_pool_name"
-	labelOSProfile         = "os_profile"
+	labelRelease           = "release"
 	labelConfigProfile     = "config_profile"
 	labelKubernetesVersion = "kubernetes_version"
 	labelTeleportEnabled   = "teleport_enabled"
@@ -142,7 +142,7 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 				"agent_version",
 				"spiffe_enabled",
 				"forge_machine_id",
-				labelOSProfile,
+				labelRelease,
 				labelConfigProfile,
 			},
 			nil,
@@ -187,7 +187,7 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 				"infiniband_partition_id",
 				"nvlink_logical_partition_id",
 				"ssh_key_group_ids",
-				labelOSProfile,
+				labelRelease,
 				labelConfigProfile,
 				"system_reserved_memory",
 				"kube_reserved_memory",
@@ -218,7 +218,7 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 				"id",
 				labelNodePoolID,
 				"desired_count",
-				labelOSProfile,
+				labelRelease,
 				labelConfigProfile,
 				labelKubernetesVersion,
 				"system_reserved_memory",

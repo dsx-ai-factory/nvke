@@ -64,8 +64,11 @@ type bootstrapSiteOptions struct {
 	provisionedProviderImage string
 	// diagnosticsDir is where a failed bootstrap writes what the cluster had
 	// to say for itself, before it is torn down.
-	diagnosticsDir    string
-	keepBootstrapKind bool
+	diagnosticsDir string
+	// collectDiagnostics also collects them when the bootstrap succeeds. It is
+	// set by -v/--verbose.
+	collectDiagnostics bool
+	keepBootstrapKind  bool
 
 	// release is an NVKR release description. With infra.provider nico its
 	// capnico-controller artifact replaces the CAPNICo image, as the deploy
@@ -186,6 +189,9 @@ site spec file format.`,
 			if id := telemetry.RunFrom(cmd.Context()).TraceID(); id != "" {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Trace ID: %s\n", id)
 			}
+			// A debug run is one somebody wants evidence from, so it keeps the
+			// bundle whether or not the bootstrap succeeds.
+			opts.collectDiagnostics = verbose
 			// arch has a default, so only Changed tells an explicit value from none.
 			if cmd.Flags().Changed("arch") && opts.release == "" {
 				return errors.New("--arch selects the architecture of a --release artifact; pass --release too, or drop --arch")
@@ -214,6 +220,7 @@ site spec file format.`,
 	cmd.Flags().StringVar(&opts.diagnosticsDir, "diagnostics-dir",
 		envOrDefault("NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR", "cluster-diagnostics"),
 		"Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. "+
+			"With --verbose a successful bootstrap writes them too. "+
 			"Overrides NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR.")
 	cmd.Flags().BoolVar(&opts.disableMTLS, "disable-mtls", false,
 		"Stand the site up without SPIFFE: no SPIRE, and the controller dials node agents in plaintext. "+
@@ -403,26 +410,30 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	siteClusterCreated := false
 	// handedOver is set once the site cluster and every artifact the operator
 	// needs are on disk. A failure after that is about the site cluster, so
-	// the bootstrap cluster's diagnostics are not collected and it is torn
-	// down.
+	// without -v the bootstrap cluster's diagnostics are not collected and it
+	// is torn down.
 	handedOver := false
 	defer func() {
 		// Collect diagnostics before anything is torn down: this cluster is
 		// removed on every exit path, so this is the only moment the evidence
-		// still exists. Only on failure — a successful bootstrap has nothing
-		// to explain.
+		// still exists. Only on failure, or on any outcome under -v: a
+		// successful bootstrap has nothing to explain unless asked.
 		// Cleanup runs on the cancellation path too: a SIGINT during the
 		// deploy cancels ctx, and both runners exec through
 		// exec.CommandContext, so reusing ctx here would skip the diagnostics
 		// and leave the Kind cluster standing to block the next bootstrap.
 		// Each step gets its own bounded context detached from ctx, so slow
 		// diagnostics cannot eat the deletion's budget.
-		if err != nil && !handedOver {
+		if opts.collectDiagnostics || (err != nil && !handedOver) {
 			diagnosticsCtx, cancelDiagnostics := context.WithTimeout(
 				context.WithoutCancel(ctx), cleanupTimeout,
 			)
 			dir := opts.diagnosticsDir
-			logger.Info("bootstrap failed; collecting cluster diagnostics", "dir", dir)
+			if err != nil {
+				logger.Info("bootstrap failed; collecting cluster diagnostics", "dir", dir)
+			} else {
+				logger.Info("collecting cluster diagnostics (--verbose)", "dir", dir)
+			}
 			controllerdeploy.New(opts.cweRunner, logger).
 				DumpDiagnostics(diagnosticsCtx, cluster.KubeconfigPath, dir)
 			cancelDiagnostics()

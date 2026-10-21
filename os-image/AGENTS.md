@@ -66,9 +66,7 @@ repository's `bin/`, and `make version-check` runs it with `--version`.
   `TPM_PLUGIN_VERSION` in `make/tool-versions.mk`, which owns them for the
   whole repository, and digests in `packages/spire-agent/lock/`. Do not float
   `latest`, and regenerate the lock with `make lock` rather than hand-editing
-  it. The DSX IMDS node attestor is pinned in that same lock. Its S3 objects
-  are unversioned and have no checksum sidecar, so the lock digest is the only
-  pin. `TPM_PLUGIN_VERSION` also selects the server-side attestor and the CAPD
+  it. `TPM_PLUGIN_VERSION` also selects the server-side attestor and the CAPD
   bundles; `controller/hack/ci/prepare-capd-bundles.sh` and
   `controller/hack/capd-kindest-node/build-image.sh` read the pin rather than
   restating it, and `make tool-version-check` fails if anything declares it a

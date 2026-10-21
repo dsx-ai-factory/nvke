@@ -1093,6 +1093,32 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 		}
 	})
 
+	t.Run("a successful bootstrap with collectDiagnostics writes a bundle", func(t *testing.T) {
+		startFakeCWEAPI(t, true)
+		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
+		err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+			siteSpec:            writeSiteSpec(t, validSiteSpec),
+			diagnosticsDir:      dir,
+			collectDiagnostics:  true,
+			bootstrapRunner:     fakeBootstrapRunner{},
+			cweRunner:           newFakeCWERunner(t),
+			kubeconfigOut:       filepath.Join(t.TempDir(), "nvke-site.kubeconfig"),
+			lookPath:            runtimeOnPath,
+			dialContext:         refuseDial,
+			untaintControlPlane: skipUntaint,
+			dumpSpireEntries: func(context.Context, string, string) (int, error) {
+				return 0, nil
+			},
+			encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+		})
+		if err != nil {
+			t.Fatalf("runBootstrapSite returned error: %v", err)
+		}
+		if _, statErr := os.Stat(dir); statErr != nil {
+			t.Errorf("no diagnostics written for a run that asked for them: %v", statErr)
+		}
+	})
+
 	t.Run("a real failure writes a bundle", func(t *testing.T) {
 		// Short, so the suite does not sit through the default five minutes
 		// waiting for a controller that will never report healthy.

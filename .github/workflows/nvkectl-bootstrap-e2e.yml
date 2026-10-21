@@ -57,6 +57,11 @@ on:
       - 'go.work'
       - 'go.work.sum'
       - '.github/workflows/nvkectl-bootstrap-e2e.yml'
+      # The scan of the run's output: the action that installs gitleaks. The rules
+      # file is under cli/, which is already listed. The pin it reads is in
+      # make/tool-versions.mk, which holds every tool's pin and is not a trigger:
+      # the schedule below surfaces a broken gitleaks pin within twelve hours.
+      - '.github/actions/setup-gitleaks/**'
   # Twice a day as well: a schedule ignores the paths above, so a break they
   # filtered out still surfaces within twelve hours.
   schedule:
@@ -342,6 +347,13 @@ jobs:
         working-directory: cli
         run: make check-no-docker
 
+      # run.sh scans the bootstrap log and the diagnostics bundle for
+      # credentials, on success and on failure, so a change that starts printing
+      # a secret turns this lane red. Pinned and checksum-verified, on both
+      # architectures; see cli/e2e/bootstrap/gitleaks.toml for the rules.
+      - name: Set up gitleaks
+        uses: ./.github/actions/setup-gitleaks
+
       # sudo -E: kind and nerdctl reach the standalone containerd's socket as
       # root, the same way every other step below that touches them does.
       - name: Run nvkectl bootstrap e2e
@@ -350,12 +362,19 @@ jobs:
           NVKECTL_NVKE_CONTROLLER_IMAGE: ${{ env.NVKE_CONTROLLER_IMAGE }}
           # Docker is removed on this lane; the OVN image builds through nerdctl.
           OCI_BIN: nerdctl
+          # Without it a runner that lost gitleaks would skip the scan and
+          # still pass, and the check would protect nothing.
+          NVKECTL_E2E_REQUIRE_SECRET_SCAN: "1"
         run: sudo -E env "PATH=$PATH" ./e2e/bootstrap/run.sh
 
-      # Written by `nvkectl bootstrap site` when a bootstrap fails: a
-      # cluster-info dump plus the object state and helm releases that explain
-      # a pod which never started, collected before the cluster goes away.
-      # if-no-files-found: ignore, since a successful run writes nothing.
+      # Written by `nvkectl bootstrap site`: a cluster-info dump plus the object
+      # state and helm releases that explain a pod which never started,
+      # collected before the cluster goes away. run.sh passes -v, so a passing
+      # run writes it too, for the credential scan; it is uploaded only when the
+      # job fails. run.sh deletes it when the scan reports a credential or cannot
+      # run, so a leaked secret is not published.
+      # if-no-files-found: ignore, since a run that stops before the bootstrap
+      # cluster exists writes nothing.
       - name: Upload bootstrap cluster diagnostics
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -24,6 +24,13 @@
 #   5. Traefik serves a whoami Deployment on that cluster: hosts that already
 #      existed now serve traffic like any other cluster.
 #
+# The EXIT trap also scans what the run printed and saved, the bootstrap log and
+# the diagnostics bundle, for credentials with gitleaks and gitleaks.toml. It
+# runs on success and on failure, so a change that starts printing a secret turns
+# the run red. CI sets NVKECTL_E2E_REQUIRE_SECRET_SCAN=1, which makes a missing
+# gitleaks a failure; a developer running this locally without it only sees a
+# warning.
+#
 # Everything created is registered for teardown as it is created, and the EXIT
 # trap runs those registrations in reverse, whatever the exit. A failing exit
 # first collects diagnostics into NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR.
@@ -147,6 +154,183 @@ fail() {
   exit 1
 }
 
+# scan_output_for_secrets scans the bootstrap log and the diagnostics bundle for
+# credentials, and returns 1 if it finds one or cannot tell. It prints the
+# scanner's findings with the secret redacted and never the secret itself: this
+# output goes to a public CI log.
+#
+# It first proves the rules work, because a clean result from a scanner that
+# matches nothing means nothing. Each shape the rules target must be flagged when
+# it holds a value, and must pass when it holds nvkectl's <redacted> placeholder.
+# The sample values are plain on purpose, so the commit that adds this line does
+# not trip the Secrets workflow.
+#
+# --exit-code 2 separates a finding (2) from a scanner failure (1).
+GITLEAKS_CONFIG="${SCRIPT_DIR}/gitleaks.toml"
+gitleaks_scan() {
+  local target="$1"
+  shift
+  gitleaks dir "${target}" --config "${GITLEAKS_CONFIG}" --redact=100 --no-banner --exit-code 2 "$@"
+}
+scan_output_for_secrets() {
+  if ! command -v gitleaks >/dev/null 2>&1; then
+    if [ "${NVKECTL_E2E_REQUIRE_SECRET_SCAN:-}" = 1 ]; then
+      log "FAIL: gitleaks is not on PATH, so the bootstrap output was not scanned for credentials"
+      return 1
+    fi
+    log "gitleaks is not on PATH: skipping the scan of the bootstrap output for credentials (CI requires it)"
+    return 0
+  fi
+  if [ ! -f "${BOOTSTRAP_LOG}" ]; then
+    log "no bootstrap output to scan: bootstrap site was never started"
+    return 0
+  fi
+
+  local work rc name shape fingerprint join_token leaked plog trace_hex span_hex
+  work="$(mktemp -d)"
+
+  # The rules, proved on a sample of each shape: flagged with a value, clean with
+  # the placeholder.
+  mkdir -p "${work}/flagged" "${work}/clean"
+  for shape in \
+    'helm|helm upgrade --install demo chart --set-string auth.password=PLACEHOLDER --wait' \
+    'url|{"env":[{"name":"DATABASE_URL","value":"postgres://cloud:PLACEHOLDER@db.example:5432/cloud"}]}' \
+    'field|{"auth":{"username":"cloud","password":"PLACEHOLDER"}}' \
+    'unquoted|      POSTGRES_PASSWORD:  PLACEHOLDER' \
+    'env|{"env":[{"name":"POSTGRES_PASSWORD","value":"PLACEHOLDER"}]}'; do
+    name="${shape%%|*}"
+    printf '%s\n' "${shape#*|}" | sed 's/PLACEHOLDER/aaaa-bbbb-cccc/' >"${work}/flagged/${name}.txt"
+    printf '%s\n' "${shape#*|}" | sed 's/PLACEHOLDER/<redacted>/' >"${work}/clean/${name}.txt"
+  done
+  # Password fields that hold no credential, which the rules must not flag: a
+  # value kubectl describe prints for a Secret, a boolean, and an environment
+  # variable fed from a Secret, which has valueFrom and no value.
+  printf "      POSTGRES_PASSWORD:  <set to the key 'password' in secret 'pg'>  Optional: false\n" >"${work}/clean/describe-secret.txt"
+  printf 'spec:\n  usePassword: true\n  password: null\n' >"${work}/clean/password-state.txt"
+  printf '{"env":[{"name":"POSTGRES_PASSWORD","valueFrom":{"secretKeyRef":{"name":"pg","key":"password"}}}]}\n' >"${work}/clean/env-secretref.txt"
+  # The one line the rules allow, and the same line under another message, which
+  # they must not allow. The hash is computed here, not written in this file: a
+  # literal would trip the Secrets workflow just as it trips the default rules.
+  fingerprint="$(printf '%s' sample | sha256sum | cut -d' ' -f1)"
+  printf 'time=x level=INFO msg="wrote the etcd encryption key" component=x path=/x/.etcd-encryption-key.json sha256=%s trace_id=%032x span_id=%016x\n' \
+    "${fingerprint}" 1 1 >"${work}/clean/etcd-fingerprint.txt"
+  printf 'time=x level=INFO msg="wrote the file" component=x path=/x/.etcd-encryption-key.json sha256=%s trace_id=%032x span_id=%016x\n' \
+    "${fingerprint}" 1 1 >"${work}/flagged/etcd-other.txt"
+  # The SPIRE CA line, which holds file paths, and the same line with a field
+  # appended after the span ID, which the allowlist does not match. The
+  # IDs are derived, and random-looking: with a trivial span ID the default rule
+  # would not flag the line even without the allowlist, and the sample would
+  # prove nothing.
+  trace_hex="$(printf t | sha256sum | cut -c1-32)"
+  span_hex="$(printf s | sha256sum | cut -c1-16)"
+  printf 'time=x level=INFO msg="SPIRE upstream CA from the environment" component=x cert=/w/cli/.local/spire-ca/ca.crt key=/w/cli/.local/spire-ca/ca.key trace_id=%s span_id=%s\n' \
+    "${trace_hex}" "${span_hex}" >"${work}/clean/spire-ca-paths.txt"
+  printf 'time=x level=INFO msg="SPIRE upstream CA from the environment" component=x cert=/w/cli/.local/spire-ca/ca.crt key=/w/cli/.local/spire-ca/ca.key trace_id=%s span_id=%s extra=%s\n' \
+    "${trace_hex}" "${span_hex}" "${fingerprint}" >"${work}/flagged/spire-ca-extra.txt"
+  # The two hashes the rules allow, and a join token and certificate key beside one
+  # of them, which they must not. Computed here for the same reason as above.
+  printf '{"msg":"update","api_encryption_key_sha256":"%s"}\n' "${fingerprint}" >"${work}/clean/key-fingerprint.txt"
+  printf 'kubeadm join x:6443 --discovery-token-ca-cert-hash sha256:%s --control-plane\n' "${fingerprint}" >"${work}/clean/ca-hash.txt"
+  join_token="$(printf a | sha256sum | cut -c1-6).$(printf b | sha256sum | cut -c1-16)"
+  printf '{"args":["join","--token","%s","--discovery-token-ca-cert-hash","sha256:%s"]}\n' \
+    "${join_token}" "${fingerprint}" >"${work}/flagged/join-token.txt"
+  # The allowed etcd and SPIRE lines with a credential-shaped field added where
+  # a loose allowlist would let it ride along: between the message and the path,
+  # and before the message. The value is derived, and long enough for the default
+  # rules to flag it under these names.
+  leaked="$(printf leak | sha256sum | cut -c1-32)"
+  printf 'time=x level=INFO msg="wrote the etcd encryption key" component=x token=%s path=/x/.etcd-encryption-key.json sha256=%s\n' \
+    "${leaked}" "${fingerprint}" >"${work}/flagged/etcd-field-before-path.txt"
+  printf 'token=%s time=x level=INFO msg="wrote the etcd encryption key" component=x path=/x/.etcd-encryption-key.json sha256=%s\n' \
+    "${leaked}" "${fingerprint}" >"${work}/flagged/etcd-field-before-msg.txt"
+  printf 'time=x level=INFO msg="SPIRE upstream CA from the environment" component=x api_key=%s cert=/w/ca.crt key=/w/ca.key\n' \
+    "${leaked}" >"${work}/flagged/spire-field-before-cert.txt"
+  printf 'api_key=%s time=x level=INFO msg="SPIRE upstream CA from the environment" component=x cert=/w/ca.crt key=/w/ca.key\n' \
+    "${leaked}" >"${work}/flagged/spire-field-before-msg.txt"
+  for name in "${work}"/flagged/*; do
+    rc=0
+    gitleaks_scan "${name}" >/dev/null 2>&1 || rc=$?
+    if [ "${rc}" -ne 2 ]; then
+      log "FAIL: the secret scan's rules did not flag the sample ${name##*/} (exit ${rc}), so a clean scan proves nothing"
+      rm -rf "${work}"
+      return 1
+    fi
+  done
+  rc=0
+  gitleaks_scan "${work}/clean" >/dev/null 2>&1 || rc=$?
+  if [ "${rc}" -ne 0 ]; then
+    log "FAIL: the secret scan flagged the clean samples, the <redacted> placeholder and the fingerprint and hash lines it allows (exit ${rc}), so it would flag a clean run"
+    rm -rf "${work}"
+    return 1
+  fi
+
+  # The scan itself, driven the way it is on the real output: a secret planted
+  # in the log, in a file of the diagnostics bundle, and in a pod log inside it
+  # (the controller's, in the real bundle) must each fail it, and the same
+  # files without it must pass.
+  local planted clean_log diag where
+  planted="$(sed 's/PLACEHOLDER/aaaa-bbbb-cccc/' <<<'helm upgrade --install demo chart --set-string auth.password=PLACEHOLDER')"
+  clean_log="${work}/clean.log"
+  printf 'msg="nothing to see" trace_id=%032x\n' 1 >"${clean_log}"
+  diag="${work}/diag"
+  reset_diag() {
+    mkdir -p "${diag}/nvke/controller"
+    printf 'no secret here\n' >"${diag}/all-resources.txt"
+    printf 'no secret here\n' >"${diag}/nvke/controller/logs.txt"
+  }
+  reset_diag
+  if ! scan_run_output "${clean_log}" "${diag}" >/dev/null 2>&1; then
+    log "FAIL: the scan failed a log and diagnostics bundle with no secret in them"
+    rm -rf "${work}"
+    return 1
+  fi
+  for where in log diagnostics-file pod-log; do
+    reset_diag
+    plog="${clean_log}"
+    case "${where}" in
+      log) printf '%s\n' "${planted}" >"${work}/planted.log"; plog="${work}/planted.log" ;;
+      diagnostics-file) printf '%s\n' "${planted}" >"${diag}/all-resources.txt" ;;
+      pod-log) printf '%s\n' "${planted}" >"${diag}/nvke/controller/logs.txt" ;;
+    esac
+    if scan_run_output "${plog}" "${diag}" >/dev/null 2>&1; then
+      log "FAIL: the scan passed a secret planted in the ${where}"
+      rm -rf "${work}"
+      return 1
+    fi
+  done
+
+  rc=0
+  scan_run_output "${BOOTSTRAP_LOG}" "${DIAGNOSTICS_DIR}" || rc=$?
+  rm -rf "${work}"
+  return "${rc}"
+}
+
+# scan_run_output scans a bootstrap log and a diagnostics directory, which may
+# not exist, with gitleaks. It returns 1 on a finding or a scanner failure.
+scan_run_output() {
+  local log_file="$1" diag_dir="$2" out rc
+  out="$(mktemp -d)"
+  mkdir -p "${out}/output"
+  cp "${log_file}" "${out}/output/bootstrap.log"
+  if [ -d "${diag_dir}" ]; then
+    mkdir -p "${out}/output/diagnostics"
+    cp -R "${diag_dir}/." "${out}/output/diagnostics/" || {
+      log "FAIL: could not read ${diag_dir}, so it was not scanned for credentials"
+      rm -rf "${out}"
+      return 1
+    }
+  fi
+  rc=0
+  # --verbose names each finding: rule, file and line, with the secret redacted.
+  gitleaks_scan "${out}/output" --verbose || rc=$?
+  rm -rf "${out}"
+  case "${rc}" in
+    0) log "PASS: no credential in the bootstrap log or its diagnostics" ;;
+    2) log "FAIL: gitleaks found a credential in the bootstrap output; the findings above are redacted" ; return 1 ;;
+    *) log "FAIL: gitleaks could not scan the bootstrap output (exit ${rc})" ; return 1 ;;
+  esac
+}
+
 # defer registers a command for the EXIT trap, which runs registrations in
 # reverse order. Register the teardown *before* the operation it undoes: under
 # `set -e` an operation can fail partway and exit on the spot, so the teardown
@@ -159,6 +343,18 @@ cleanup() {
   local status=$? i
   if [ "${status}" -ne 0 ] && [ "${nodes_started}" = true ]; then
     collect_diagnostics
+  fi
+  # Before anything is removed: the log and the diagnostics are what is scanned.
+  # A leak turns a passing run red; a run that already failed stays failed.
+  local scan_failed=0
+  scan_output_for_secrets || scan_failed=1
+  # CI uploads this directory when the job fails, and a failed scan is a failed
+  # job. The bundle is redacted in the scan's output but not on disk, so it is
+  # removed rather than published with the credential the scan reported. A
+  # scan that could not run counts too: the bundle was not checked.
+  if [ "${scan_failed}" -ne 0 ] && [ -d "${DIAGNOSTICS_DIR}" ]; then
+    log "removing ${DIAGNOSTICS_DIR}: it may hold a credential, and CI uploads it"
+    rm -rf "${DIAGNOSTICS_DIR}"
   fi
   for ((i = ${#DEFERRED[@]} - 1; i >= 0; i--)); do
     eval "${DEFERRED[$i]}" || true
@@ -175,6 +371,9 @@ cleanup() {
 
   rm -f "${TENANT_KUBECONFIG}" "${ETCD_KEY_FILE}" "${BOOTSTRAP_LOG}"
   rm -rf "${KUBECONFIG_DIR}" "${CNI_BUNDLE_DIR}" "${BGP_RENDER_DIR}"
+  if [ "${scan_failed}" -ne 0 ] && [ "${status}" -eq 0 ]; then
+    exit 1
+  fi
 }
 nodes_started=false
 trap cleanup EXIT
@@ -524,7 +723,9 @@ defer teardown_bootstrap_cluster
 # setsid makes nvkectl a process-group leader so abort_bootstrap can signal the
 # kind, nerdctl and helm it drives as one group; nvkectl does not forward
 # signals to its children.
-setsid "${NVKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" --keep-bootstrap-cluster \
+# -v makes a successful run write its diagnostics bundle too, so the credential
+# scan covers the bundle on the passing path and not only after a failure.
+setsid "${NVKECTL}" bootstrap site -v -f "${RENDERED_SITESPEC}" --keep-bootstrap-cluster \
   --timeout 15m --kubeconfig-out "${TENANT_KUBECONFIG}" \
   --encryption-key-out "${ETCD_KEY_FILE}" >"${BOOTSTRAP_LOG}" 2>&1 &
 bootstrap_pid=$!
@@ -671,6 +872,32 @@ if [[ -n "${NVKECTL_SPIRE_CA_CERT_FILE:-}" ]] && ! grep -q "SPIRE upstream CA fr
   fail "a bootstrap CA was supplied but bootstrap site did not pick it up"
 fi
 log "PASS: bootstrap site created the site cluster through the controller API"
+
+# check_trace_id asserts the run's trace ID: printed first and last, the same
+# value, and on every log record nvkectl wrote. Records are the slog lines, which
+# start with time=; the output of helm, kind and the like is not nvkectl's.
+check_trace_id() {
+  local ids first last id bare
+  ids="$(grep -E '^Trace ID: ' <<<"${output}" || true)"
+  [ "$(wc -l <<<"${ids}")" -ge 2 ] ||
+    fail "expected a Trace ID line at the start and at the end of the output" "${ids}"
+  first="$(head -n1 <<<"${ids}")"
+  last="$(tail -n1 <<<"${ids}")"
+  [[ "${first}" =~ ^Trace\ ID:\ ([0-9a-f]{32})$ ]] || fail "malformed Trace ID line: ${first}"
+  id="${BASH_REMATCH[1]}"
+  [ "${first}" = "${last}" ] || fail "the first and last Trace ID lines differ" "${first}" "${last}"
+  [ "$(grep -c '^time=' <<<"${output}")" -gt 0 ] || fail "no log records in the output to carry a trace ID"
+  bare="$(grep '^time=' <<<"${output}" | grep -vc "trace_id=${id}" || true)"
+  [ "${bare}" -eq 0 ] || fail "${bare} log records do not carry trace_id=${id}"
+  log "PASS: one trace ID, first and last line, on every nvkectl log record"
+}
+check_trace_id
+
+# -v makes the run write diagnostics even on success. An empty directory would
+# make the credential scan pass over nothing.
+[ -n "$(find "${DIAGNOSTICS_DIR}" -type f 2>/dev/null | head -n1)" ] ||
+  fail "bootstrap site -v wrote no diagnostics to ${DIAGNOSTICS_DIR}"
+log "PASS: a successful run wrote its diagnostics bundle for the credential scan"
 
 # The controller reached this point by answering /readyz through its Service
 # and the host through its external NodePort. What that does not show is that

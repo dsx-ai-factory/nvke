@@ -49,14 +49,17 @@ node, run the same searches in two steps:
 Bootstrap attempts to collect diagnostics before cleaning up a failed
 bootstrap cluster. The default is `cluster-diagnostics/`; change it with
 `--diagnostics-dir` or `NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR`. Collection may be
-incomplete if the cluster is unreachable. A retry writes into the same
+incomplete if the cluster is unreachable. Pass `-v` to collect them from a
+successful bootstrap as well, for a support bundle or to check what a healthy
+run prints. A retry writes into the same
 directory, replacing files of the same name, so move it first or pass a new
 `--diagnostics-dir`.
 
-No diagnostics are collected when the failure comes after the site cluster and
-its outputs are saved, as in
+Without `-v`, no diagnostics are collected when the failure comes after the site
+cluster and its outputs are saved, as in
 [making the control-plane nodes schedulable](#finish). The bootstrap cluster is
-retained, so read its controller logs and the nodes' journals instead.
+retained, so read its controller logs and the nodes' journals instead. With `-v`
+they are collected in that case too.
 
 | Path | Use it to check |
 |---|---|
