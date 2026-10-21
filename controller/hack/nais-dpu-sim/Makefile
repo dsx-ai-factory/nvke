@@ -6,6 +6,7 @@ SHELL := /bin/bash
 .ONESHELL:
 .DEFAULT_GOAL := help
 REPO := $(abspath ../../..)
+NICO_GO_VERSION := $(shell awk '/^go /{print $$2; exit}' $(REPO)/controller/nico-sim/go.mod)
 STATE := $(CURDIR)/.state
 PYTHON ?= $(STATE)/venv/bin/python
 VENV_READY := $(STATE)/venv/.requirements-installed
@@ -98,7 +99,7 @@ runtime:
 	mkdir -p "$(STATE)/build/runtime"
 	$(MAKE) -C "$(REPO)/controller" build GOOS=linux GOARCH=arm64
 	cp "$(REPO)/controller/bin/controller" "$(STATE)/build/runtime/"
-	docker run --rm --name nvke-nais-dpu-sim-build-runtime -v "$(REPO):/src" -w /src/controller/nico-sim golang:1.27.2-alpine sh -ec 'apk add --no-cache gcc musl-dev make; make build-static BINARY=/src/controller/hack/nais-dpu-sim/.state/build/runtime/nico-sim'
+	docker run --rm --name nvke-nais-dpu-sim-build-runtime -v "$(REPO):/src" -w /src/controller/nico-sim golang:$(NICO_GO_VERSION)-alpine sh -ec 'apk add --no-cache gcc musl-dev make; make build-static BINARY=/src/controller/hack/nais-dpu-sim/.state/build/runtime/nico-sim'
 	cp "$(REPO)/LICENSE" "$(REPO)/NOTICE" "$(REPO)/controller/THIRD_PARTY_NOTICES.md" "$(STATE)/build/runtime/"
 	docker build $(DOCKER_BUILD_FLAGS) -f images/Dockerfile.managed-runtime -t nvke-nais-dpu-sim-runtime:local "$(STATE)/build/runtime"
 	docker image inspect cluster-api-provider-nico:local >/dev/null
