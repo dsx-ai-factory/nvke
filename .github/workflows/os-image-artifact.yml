@@ -144,10 +144,8 @@ jobs:
   changes:
     uses: ./.github/workflows/e2e-pr-path-filter.yml
     permissions:
+      contents: read
       pull-requests: read
-    with:
-      # Keep in step with the push paths above.
-      relevant_paths: '^os-image/|^\.github/workflows/os-image-artifact\.yml$'
 
   matrix:
     needs: changes

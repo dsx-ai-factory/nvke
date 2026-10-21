@@ -33,6 +33,10 @@ lint-workflows: ## Lint the GitHub Actions workflows. (run by the merge gate)
 		git grep -n -E 'github\.repository[[:space:]]*[!=]=' -- .github; \
 		exit 1; \
 	 fi
+	@$(call require_command,python3)
+	@$(call require_command,yq)
+	@python3 -B ./hack/test_e2e_path_filter.py
+	@python3 -B ./hack/e2e-path-filter.py check
 	@echo "  workflows: no findings"
 
 # --severity=error matches shellcheck.yml. The tree is clean at error and is not

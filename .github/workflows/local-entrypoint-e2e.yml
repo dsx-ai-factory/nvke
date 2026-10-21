@@ -61,6 +61,7 @@ jobs:
   changes:
     uses: ./.github/workflows/e2e-pr-path-filter.yml
     permissions:
+      contents: read
       pull-requests: read
 
   local-entrypoint:
