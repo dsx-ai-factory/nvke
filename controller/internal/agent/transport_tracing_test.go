@@ -72,17 +72,18 @@ func TestTransportDialPropagatesTraceContext(t *testing.T) {
 	client := healthpb.NewHealthClient(conn)
 
 	parentCtx, parent := provider.Tracer("transport-test").Start(context.Background(), "parent")
-	parentTraceID := parent.SpanContext().TraceID()
+	parentSpanContext := parent.SpanContext()
 	_, err = client.Check(parentCtx, &healthpb.HealthCheckRequest{})
 	require.NoError(t, err)
 	parent.End()
-	assert.Equal(t, parentTraceID, traceIDFromTraceparent(t, receiveTraceparent(t, traceparents)))
+	propagatedSpanContext := spanContextFromTraceparent(t, receiveTraceparent(t, traceparents))
+	assert.Equal(t, parentSpanContext.TraceID(), propagatedSpanContext.TraceID())
+	assert.NotEqual(t, parentSpanContext.SpanID(), propagatedSpanContext.SpanID())
 
 	_, err = client.Check(context.Background(), &healthpb.HealthCheckRequest{})
 	require.NoError(t, err)
-	rootTraceID := traceIDFromTraceparent(t, receiveTraceparent(t, traceparents))
-	assert.True(t, rootTraceID.IsValid())
-	assert.NotEqual(t, parentTraceID, rootTraceID)
+	rootSpanContext := spanContextFromTraceparent(t, receiveTraceparent(t, traceparents))
+	assert.NotEqual(t, parentSpanContext.TraceID(), rootSpanContext.TraceID())
 }
 
 func receiveTraceparent(t *testing.T, traceparents <-chan string) string {
@@ -96,11 +97,11 @@ func receiveTraceparent(t *testing.T, traceparents <-chan string) string {
 	}
 }
 
-func traceIDFromTraceparent(t *testing.T, traceparent string) trace.TraceID {
+func spanContextFromTraceparent(t *testing.T, traceparent string) trace.SpanContext {
 	t.Helper()
 	require.NotEmpty(t, traceparent)
 	ctx := propagation.TraceContext{}.Extract(context.Background(), propagation.MapCarrier{"traceparent": traceparent})
 	spanContext := trace.SpanContextFromContext(ctx)
 	require.True(t, spanContext.IsValid())
-	return spanContext.TraceID()
+	return spanContext
 }
