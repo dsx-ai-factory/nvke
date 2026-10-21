@@ -424,6 +424,17 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	switch c.ImageVerification.Mode {
+	// The literals mirror internal/clients/nico/imageverify.go, which owns the
+	// semantics; controllerconfig cannot import it without inverting layers.
+	case "", "off", "warn", "enforce":
+	default:
+		// Rejected at startup rather than at the first machine creation: there
+		// the unknown mode is an error on every attempt, which Temporal retries
+		// without bound — a typo would read as a silent provisioning stall.
+		return fmt.Errorf("imageVerification.mode %q is not one of off, warn or enforce (in YAML the value must be quoted — a bare off is the boolean false)", c.ImageVerification.Mode)
+	}
+
 	if c.Spire.JoinTokenTTL.Duration <= 0 {
 		return errors.New("spire.joinTokenTTL must be greater than 0")
 	}
