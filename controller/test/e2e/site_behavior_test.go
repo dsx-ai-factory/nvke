@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"net"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -228,6 +229,70 @@ func (e siteExpectations) env(name string) string {
 		return name
 	}
 	return e.prefix + strings.TrimPrefix(name, sitePrefix)
+}
+
+// describe lists what the run set, one variable a line, for the report.
+// None of it is secret.
+func (e siteExpectations) describe() []string {
+	var lines []string
+	add := func(name, value string) {
+		if value != "" {
+			lines = append(lines, e.env(name)+"="+value)
+		}
+	}
+	components := make([]string, 0, len(e.components))
+	for _, name := range slices.Sorted(maps.Keys(e.components)) {
+		components = append(components, name+"="+e.components[name])
+	}
+	add(siteComponentsEnv, strings.Join(components, ","))
+	workloads := make([]string, 0, len(e.workloads))
+	for _, w := range e.workloads {
+		workloads = append(workloads, w.namespace+"/"+w.name)
+	}
+	add(siteRequiredWorkloadsEnv, strings.Join(workloads, ","))
+	versions := make([]string, 0, len(e.workloadVersions))
+	for _, v := range e.workloadVersions {
+		versions = append(versions, v.namespace+"/"+v.name+"="+v.version)
+	}
+	add(siteWorkloadVersionsEnv, strings.Join(versions, ","))
+	flags := make([]string, 0, len(e.apiServerFlags))
+	for _, name := range slices.Sorted(maps.Keys(e.apiServerFlags)) {
+		flags = append(flags, name+"="+e.apiServerFlags[name])
+	}
+	add(siteAPIServerFlagsEnv, strings.Join(flags, ";"))
+	if e.etcdEncrypted {
+		add(siteEtcdEncryptedEnv, "true")
+	}
+	if e.reservedMemory != nil {
+		add(siteReservedMemoryEnv, e.reservedMemory.String())
+	}
+	add(siteStorageClassesEnv, strings.Join(e.storageClasses, ","))
+	add(sitePVCStorageClassEnv, e.pvcStorageClass)
+	return lines
+}
+
+// describe lists where the checks run and what with, for the report.
+func (c siteChecks) describe() []string {
+	names := make([]string, 0, len(c.namespaces))
+	for _, ns := range c.namespaces {
+		names = append(names, ns.name)
+	}
+	lines := []string{
+		"required namespaces: " + strings.Join(names, ", "),
+		"probe namespace: " + c.probeNamespace,
+		"probe image: " + c.probeImage.ref,
+	}
+	if len(c.probeImage.pullSecrets) > 0 {
+		secrets := make([]string, 0, len(c.probeImage.pullSecrets))
+		for _, secret := range c.probeImage.pullSecrets {
+			secrets = append(secrets, secret.Name)
+		}
+		lines = append(lines, "probe pull secrets: "+strings.Join(secrets, ", "))
+	}
+	if keepOnFailure() {
+		lines = append(lines, keepOnFailureEnv+"=true")
+	}
+	return lines
 }
 
 // splitList splits raw on sep, trimming each entry and dropping empty ones.
@@ -696,10 +761,29 @@ func siteBehaviorClient(restConfig *rest.Config) (client.Client, error) {
 	return client.New(restConfig, client.Options{Scheme: scheme})
 }
 
+// keepOnFailureEnv, when true, leaves a failed spec's objects in place to be
+// inspected. They stay in the probe namespace, which the pod check leaves
+// out, so they fail no later run.
+const keepOnFailureEnv = "NVKE_E2E_KEEP_ON_FAILURE"
+
+// keepOnFailure reads keepOnFailureEnv. The settings already rejected a value
+// that does not parse, so here one reads as false.
+func keepOnFailure() bool {
+	keep, err := parseRequireEnv(keepOnFailureEnv, os.Getenv(keepOnFailureEnv))
+	return err == nil && keep
+}
+
 // deleteOnExit deletes objects when the spec ends, passed or failed, in the
-// foreground so that a StatefulSet's pods go with it.
+// foreground so that a StatefulSet's pods go with it, unless the spec failed
+// and keepOnFailureEnv is set.
 func deleteOnExit(ctx context.Context, c client.Client, objects ...client.Object) {
 	DeferCleanup(func() {
+		if CurrentSpecReport().Failed() && keepOnFailure() {
+			for _, object := range objects {
+				GinkgoLogr.Info("kept for inspection", "kind", fmt.Sprintf("%T", object), "namespace", object.GetNamespace(), "name", object.GetName(), "env", keepOnFailureEnv)
+			}
+			return
+		}
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), siteCleanup)
 		defer cancel()
 		for _, object := range objects {

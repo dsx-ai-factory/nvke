@@ -386,7 +386,7 @@ func nodeProblems(nodes []corev1.Node, taints bool) []string {
 	var problems []string
 	for _, node := range nodes {
 		if !nodeReady(node) {
-			problems = append(problems, node.Name+": not Ready")
+			problems = append(problems, node.Name+": not Ready"+notReadyDetail(node))
 		}
 		if node.Spec.Unschedulable {
 			problems = append(problems, node.Name+": cordoned")
@@ -461,6 +461,16 @@ func schedulableOtherThan(nodes []corev1.Node, name string) bool {
 	return false
 }
 
+// notReadyDetail is the reason a node's Ready condition gives, as a suffix.
+func notReadyDetail(node corev1.Node) string {
+	for _, c := range node.Status.Conditions {
+		if c.Type == corev1.NodeReady {
+			return " (" + strings.TrimSpace(fmt.Sprintf("%s %s: %s", c.Status, c.Reason, c.Message)) + ")"
+		}
+	}
+	return " (no Ready condition)"
+}
+
 func nodeReady(node corev1.Node) bool {
 	for _, c := range node.Status.Conditions {
 		if c.Type == corev1.NodeReady {
@@ -486,8 +496,8 @@ func workloadProblems(required []siteNamespace, deployments []appsv1.Deployment,
 		s := d.Status
 		populated[d.Namespace] = populated[d.Namespace] || s.AvailableReplicas > 0
 		if s.ObservedGeneration < d.Generation || s.UpdatedReplicas < want || s.AvailableReplicas < want {
-			problems = append(problems, fmt.Sprintf("Deployment %s/%s: %d of %d available, %d updated",
-				d.Namespace, d.Name, s.AvailableReplicas, want, s.UpdatedReplicas))
+			problems = append(problems, fmt.Sprintf("Deployment %s/%s: %d of %d available, %d updated%s",
+				d.Namespace, d.Name, s.AvailableReplicas, want, s.UpdatedReplicas, deploymentConditions(d)))
 		}
 	}
 	for _, st := range statefulSets {
@@ -514,6 +524,24 @@ func workloadProblems(required []siteNamespace, deployments []appsv1.Deployment,
 	}
 	slices.Sort(problems)
 	return problems
+}
+
+// deploymentConditions is what a Deployment's conditions say is wrong, as a
+// suffix: Available or Progressing false, or a ReplicaFailure, which is where
+// a quota or admission refusal to create its pods shows.
+func deploymentConditions(d appsv1.Deployment) string {
+	var details []string
+	for _, c := range d.Status.Conditions {
+		failing := (c.Type == appsv1.DeploymentReplicaFailure && c.Status == corev1.ConditionTrue) ||
+			((c.Type == appsv1.DeploymentAvailable || c.Type == appsv1.DeploymentProgressing) && c.Status == corev1.ConditionFalse)
+		if failing {
+			details = append(details, strings.TrimSpace(fmt.Sprintf("%s %s: %s", c.Type, c.Reason, c.Message)))
+		}
+	}
+	if len(details) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(details, "; ") + ")"
 }
 
 // replicas is a workload's desired count, which the API defaults to one when
@@ -561,7 +589,7 @@ func podProblems(pods []corev1.Pod, jobs []batchv1.Job) []string {
 	var problems []string
 	for _, pod := range pods {
 		if reason := stuckContainer(pod); reason != "" {
-			problems = append(problems, fmt.Sprintf("%s/%s: %s", pod.Namespace, pod.Name, reason))
+			problems = append(problems, fmt.Sprintf("%s/%s: %s%s", pod.Namespace, pod.Name, reason, restartDetail(pod)))
 			continue
 		}
 		switch pod.Status.Phase {
@@ -571,7 +599,7 @@ func podProblems(pods []corev1.Pod, jobs []batchv1.Job) []string {
 			if podReady(&pod) {
 				continue
 			}
-			problems = append(problems, fmt.Sprintf("%s/%s: Running, not Ready", pod.Namespace, pod.Name))
+			problems = append(problems, fmt.Sprintf("%s/%s: Running, not Ready%s", pod.Namespace, pod.Name, notReadyContainers(pod)))
 		case corev1.PodFailed:
 			if owner := jobOwner(pod); owner != "" && completed[pod.Namespace+"/"+owner] {
 				continue
@@ -579,15 +607,50 @@ func podProblems(pods []corev1.Pod, jobs []batchv1.Job) []string {
 			if pod.Status.Reason == "Evicted" && metav1.GetControllerOf(&pod) != nil {
 				continue
 			}
-			problems = append(problems, fmt.Sprintf("%s/%s: Failed %s", pod.Namespace, pod.Name, pod.Status.Reason))
+			problems = append(problems, strings.TrimSpace(fmt.Sprintf("%s/%s: Failed %s", pod.Namespace, pod.Name, pod.Status.Reason))+podDetails(&pod))
 		case corev1.PodPending, corev1.PodUnknown:
-			problems = append(problems, fmt.Sprintf("%s/%s: %s", pod.Namespace, pod.Name, pod.Status.Phase))
+			problems = append(problems, fmt.Sprintf("%s/%s: %s%s", pod.Namespace, pod.Name, pod.Status.Phase, podDetails(&pod)))
 		default:
 			problems = append(problems, fmt.Sprintf("%s/%s: phase %q", pod.Namespace, pod.Name, pod.Status.Phase))
 		}
 	}
 	slices.Sort(problems)
 	return problems
+}
+
+// restartDetail is how often a pod's containers restarted and how each last
+// exited, as a suffix, or "" where none did.
+func restartDetail(pod corev1.Pod) string {
+	var details []string
+	for _, status := range slices.Concat(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses) {
+		if status.RestartCount == 0 {
+			continue
+		}
+		detail := fmt.Sprintf("container %s restarted %d times", status.Name, status.RestartCount)
+		if last := status.LastTerminationState.Terminated; last != nil {
+			detail += fmt.Sprintf(", last exit %d %s", last.ExitCode, last.Reason)
+		}
+		details = append(details, strings.TrimSpace(detail))
+	}
+	if len(details) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(details, "; ") + ")"
+}
+
+// notReadyContainers names a Running pod's containers that are not Ready, as
+// a suffix, with what else its containers report.
+func notReadyContainers(pod corev1.Pod) string {
+	var names []string
+	for _, status := range pod.Status.ContainerStatuses {
+		if !status.Ready {
+			names = append(names, status.Name)
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return " (containers " + strings.Join(names, ", ") + ")" + restartDetail(pod)
 }
 
 // stuckContainer names the first container, init containers included, that is

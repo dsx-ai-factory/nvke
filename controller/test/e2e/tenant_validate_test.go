@@ -161,6 +161,9 @@ func tenantValidateFromEnv(getenv func(string) string, namespaceFile string) (te
 	if err != nil {
 		return tenantValidateSettings{}, err
 	}
+	if _, err := parseRequireEnv(keepOnFailureEnv, getenv(keepOnFailureEnv)); err != nil {
+		return tenantValidateSettings{}, err
+	}
 	_, certManager := expect.components[componentCertManager]
 
 	return tenantValidateSettings{
@@ -189,6 +192,35 @@ type tenantTarget struct {
 	record     api.Cluster
 	controller *nvke.Client
 	restConfig *rest.Config
+}
+
+// describe lists the settings the run resolved, for the report. It names the
+// credential's Secret, never its contents.
+func (s tenantValidateSettings) describe() []string {
+	lines := []string{
+		tenantClusterEnv + "=" + s.cluster,
+		"credential Secret: " + s.runnerNamespace + "/" + s.tokenSecret,
+	}
+	if s.kubernetesVersion != "" {
+		lines = append(lines, tenantKubernetesVersionEnv+"="+s.kubernetesVersion)
+	}
+	if s.gpuNodes != nil {
+		lines = append(lines, fmt.Sprintf("%s=%d", tenantGPUNodesEnv, *s.gpuNodes), "GPU image: "+s.gpuImage)
+	}
+	lines = append(lines, s.checks.describe()...)
+	return append(lines, s.expect.describe()...)
+}
+
+// describe lists the tenant as found, for the report: what the controller
+// records and where the suite reaches it.
+func (t *tenantTarget) describe() []string {
+	return []string{
+		"cluster ID: " + t.record.ID.String(),
+		"API server: " + t.restConfig.Host,
+		"recorded Kubernetes version: " + t.record.ControlPlaneKubernetesVersion,
+		fmt.Sprintf("recorded etcd encryption: %t", t.record.EtcdEncrypted),
+		"recorded control-plane VIP: " + ptr.Deref(t.record.ControlPlaneVIP, "none"),
+	}
 }
 
 // connectTenant finds the tenant by name through the controller API and
@@ -309,10 +341,18 @@ var _ = Describe("tenant validation", Ordered, ContinueOnFailure, Label(tenantVa
 		if !connected {
 			connected = true
 			target, connectErr = connectTenant(context.Background(), settings)
+			if connectErr == nil {
+				AddReportEntry("tenant validation target", strings.Join(target.describe(), "\n"))
+			}
 		}
 		Expect(connectErr).NotTo(HaveOccurred(), "reaching tenant %s", settings.cluster)
 		return target
 	}
+	BeforeAll(func() {
+		if err == nil && settings.enabled {
+			AddReportEntry("tenant validation inputs", strings.Join(settings.describe(), "\n"))
+		}
+	})
 	checks := settings.checks
 	checks.restConfig = func() (*rest.Config, error) { return resolve().restConfig, nil }
 

@@ -94,6 +94,9 @@ func siteValidateFromEnv(getenv func(string) string, namespaceFile string) (site
 	if err != nil {
 		return siteValidateSettings{}, err
 	}
+	if _, err := parseRequireEnv(keepOnFailureEnv, getenv(keepOnFailureEnv)); err != nil {
+		return siteValidateSettings{}, err
+	}
 
 	return siteValidateSettings{
 		enabled:           enabled,
@@ -108,6 +111,13 @@ func siteValidateFromEnv(getenv func(string) string, namespaceFile string) (site
 		},
 		expect: expect,
 	}, nil
+}
+
+// describe lists the settings the run resolved, for the report.
+func (s siteValidateSettings) describe() []string {
+	lines := []string{siteKubernetesVersionEnv + "=" + s.kubernetesVersion}
+	lines = append(lines, s.checks.describe()...)
+	return append(lines, s.expect.describe()...)
 }
 
 // Every check runs whatever the others found, unlike the site lane's: there
@@ -126,6 +136,11 @@ var _ = Describe("site validation", Ordered, ContinueOnFailure, Label("site-vali
 		}
 		return settings
 	}
+	BeforeAll(func() {
+		if err == nil && settings.enabled {
+			AddReportEntry("site validation inputs", strings.Join(settings.describe(), "\n"))
+		}
+	})
 
 	validateSitePostDeploy(func() (site.Cluster, site.Spec, bool) {
 		resolve()

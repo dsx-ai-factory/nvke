@@ -79,7 +79,7 @@ func TestUnit_SiteNodeProblems(t *testing.T) {
 		{
 			name:  "not ready and cordoned",
 			nodes: []corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "n"}, Spec: corev1.NodeSpec{Unschedulable: true}}},
-			want:  []string{"n: not Ready", "n: cordoned"},
+			want:  []string{"n: not Ready (no Ready condition)", "n: cordoned"},
 		},
 	}
 	for _, tt := range tests {
@@ -326,6 +326,59 @@ func TestUnit_SitePodProblemsCatchStuckAndEvicted(t *testing.T) {
 		"ns/loop: container app CrashLoopBackOff",
 		"ns/pull: container init ImagePullBackOff",
 	}, podProblems([]corev1.Pod{crashLooping, initPull, evictedOwned, evictedBare}, nil))
+}
+
+func TestUnit_SiteProblemsSayWhy(t *testing.T) {
+	looping := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "loop"},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{{
+				Name:                 "app",
+				State:                corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+				RestartCount:         7,
+				LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1, Reason: "Error"}},
+			}},
+		},
+	}
+	unready := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "unready"},
+		Status: corev1.PodStatus{
+			Phase:             corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{{Name: "app", Ready: true}, {Name: "sidecar"}},
+		},
+	}
+	pending := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "pending"},
+		Status: corev1.PodStatus{
+			Phase:      corev1.PodPending,
+			Conditions: []corev1.PodCondition{{Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: "Unschedulable", Message: "0/2 nodes are available"}},
+		},
+	}
+	require.Equal(t, []string{
+		"ns/loop: container app CrashLoopBackOff (container app restarted 7 times, last exit 1 Error)",
+		"ns/pending: Pending: PodScheduled=False Unschedulable (0/2 nodes are available)",
+		"ns/unready: Running, not Ready (containers sidecar)",
+	}, podProblems([]corev1.Pod{looping, unready, pending}, nil))
+
+	node := corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "w-1"},
+		Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+			Type: corev1.NodeReady, Status: corev1.ConditionFalse, Reason: "KubeletNotReady", Message: "container runtime network not ready",
+		}}},
+	}
+	require.Equal(t, []string{"w-1: not Ready (False KubeletNotReady: container runtime network not ready)"}, nodeProblems([]corev1.Node{node}, false))
+
+	stuck := appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "api"}}
+	stuck.Status.Conditions = []appsv1.DeploymentCondition{
+		{Type: appsv1.DeploymentAvailable, Status: corev1.ConditionFalse, Reason: "MinimumReplicasUnavailable", Message: "Deployment does not have minimum availability."},
+		{Type: appsv1.DeploymentProgressing, Status: corev1.ConditionTrue, Reason: "ReplicaSetUpdated"},
+		{Type: appsv1.DeploymentReplicaFailure, Status: corev1.ConditionTrue, Reason: "FailedCreate", Message: `pods "api-1" is forbidden: violates PodSecurity "restricted:latest"`},
+	}
+	require.Equal(t, []string{
+		`Deployment ns/api: 0 of 1 available, 0 updated (Available MinimumReplicasUnavailable: Deployment does not have minimum availability.; ` +
+			`ReplicaFailure FailedCreate: pods "api-1" is forbidden: violates PodSecurity "restricted:latest")`,
+	}, workloadProblems(nil, []appsv1.Deployment{stuck}, nil, nil))
 }
 
 // The deploy path is what the required namespaces are copied from, so a

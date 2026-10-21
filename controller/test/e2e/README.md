@@ -336,6 +336,7 @@ Configure it with the [health spec variables](#health-specs) and these:
 | `NVKE_SITE_RESERVED_MEMORY` | The least memory every node holds back from pods (capacity less allocatable), such as `2Gi`. That counts the kubelet's hard eviction threshold, 100Mi by default, with its kube and system reservations: set it to their sum. | Unset |
 | `NVKE_SITE_STORAGE_CLASSES` | Comma-separated StorageClasses that must exist. | Unset |
 | `NVKE_SITE_PVC_STORAGE_CLASS` | The class the PVC check binds from. | The default class |
+| `NVKE_E2E_KEEP_ON_FAILURE` | `true` leaves a failed `creates` spec's objects in the probe namespace to be inspected, site or tenant, and logs each one kept. The pod check leaves that namespace out, so kept pods fail no later run; delete them by their `e2e.nvidia.com/site-run` label. | Unset: deleted |
 
 The controller API check authenticates as `NKE_E2E_TOKEN_NAMESPACE`/
 `NKE_E2E_TOKEN_SERVICE_ACCOUNT`, whose defaults are the development identity in
@@ -428,7 +429,15 @@ Results go to `/artifacts`, which the runner mounts:
 | File | Contents |
 | --- | --- |
 | `junit-test-report.xml` | The selected specs only (`-e2e.junit-report`). Ginkgo's own JUnit report lists every spec the filter left out as skipped. |
-| `report.json` | Ginkgo's JSON report, every spec. |
+| `report.json` | Ginkgo's JSON report, every spec. Its report entries record the inputs each validation resolved and, for a tenant, the cluster ID and API server it reached, never the credential. |
+
+A failure says why where the cluster records it: a pod that never ran gives
+its scheduling condition, each container's waiting reason and its latest
+Warning events; a workload its failing conditions; a crash-looping container
+its restarts and last exit; a node its Ready condition. Events need `list`
+on events in the probe namespace, which the RBAC above does not grant; without
+it they are left out and the rest stands. A request the API server refused
+says so and points here.
 
 To run it by hand against the current kube context, as your own user so the
 container can read your kubeconfig and write `artifacts/`:

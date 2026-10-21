@@ -6,12 +6,14 @@ package e2e
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
@@ -269,4 +271,48 @@ func TestUnit_TenantGPUPod(t *testing.T) {
 	require.Equal(t, gpuContainer, container.Name)
 	require.Equal(t, "cuda:1", container.Image)
 	require.Equal(t, int64(1), container.Resources.Limits.Name(gpuResource, resource.DecimalSI).Value())
+}
+
+func TestUnit_ValidateInputsDescribed(t *testing.T) {
+	settings, err := tenantValidateFromEnv(envMap(map[string]string{
+		tenantClusterEnv:                 "blue",
+		tenantGPUNodesEnv:                "2",
+		"NVKE_TENANT_COMPONENTS":         "kube-vip",
+		"NVKE_TENANT_APISERVER_FLAGS":    "profiling=false",
+		"NVKE_TENANT_RESERVED_MEMORY":    "1Gi",
+		"NVKE_TENANT_REQUIRED_WORKLOADS": "gpu-operator/nvidia-device-plugin-daemonset",
+	}), filepath.Join(t.TempDir(), "absent"))
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"NVKE_TENANT_CLUSTER=blue",
+		"credential Secret: default/nvke-validate-blue",
+		"NVKE_TENANT_GPU_NODES=2",
+		"GPU image: " + defaultTenantGPUImage,
+		"required namespaces: kube-system",
+		"probe namespace: " + defaultTenantNamespace,
+		"probe image: " + kube.KubectlImage,
+		"NVKE_TENANT_COMPONENTS=kube-vip=kube-system",
+		"NVKE_TENANT_REQUIRED_WORKLOADS=gpu-operator/nvidia-device-plugin-daemonset",
+		"NVKE_TENANT_APISERVER_FLAGS=profiling=false",
+		"NVKE_TENANT_RESERVED_MEMORY=1Gi",
+	}, settings.describe())
+
+	target := &tenantTarget{
+		record:     api.Cluster{Name: "blue", ControlPlaneKubernetesVersion: "v1.33.2"},
+		restConfig: &rest.Config{Host: "https://10.0.0.10:6443", BearerToken: "secret-token"},
+	}
+	described := strings.Join(target.describe(), "\n")
+	require.Contains(t, described, "API server: https://10.0.0.10:6443")
+	require.Contains(t, described, "recorded control-plane VIP: none")
+	require.NotContains(t, described, "secret-token", "the report never carries the credential")
+}
+
+func TestUnit_ValidateKeepOnFailureRejectsGarbage(t *testing.T) {
+	absent := filepath.Join(t.TempDir(), "absent")
+	_, err := tenantValidateFromEnv(envMap(map[string]string{keepOnFailureEnv: "sometimes"}), absent)
+	require.ErrorContains(t, err, keepOnFailureEnv)
+	_, err = siteValidateFromEnv(envMap(map[string]string{keepOnFailureEnv: "sometimes"}), absent)
+	require.ErrorContains(t, err, keepOnFailureEnv)
+	_, err = siteValidateFromEnv(envMap(map[string]string{keepOnFailureEnv: "true"}), absent)
+	require.NoError(t, err)
 }
