@@ -16,9 +16,10 @@ import (
 	"time"
 
 	semver "github.com/Masterminds/semver/v3"
+	yaml "gopkg.in/yaml.v2"
+
 	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 	nvkeutils "github.com/dsx-ai-factory/nvke/agent/pkg/utils"
-	yaml "gopkg.in/yaml.v2"
 )
 
 var CILIUM_VERSION semver.Version = *semver.MustParse("1.15.5")
@@ -220,12 +221,11 @@ const ovnRegistryHelmValue = "global.registry"
 // ovnImagePrefixHelmValue is the chart value every registry-less image.repository is prefixed with.
 const ovnImagePrefixHelmValue = "global.imageRepositoryPrefix"
 
-// ovnDpuHostConfigKey selects the packaged VMaaS profile without configuring host OVS.
-const ovnDpuHostConfigKey = "nke.ovnDpuHost"
+// ovnDpuHostConfigKey selects the upstream DPU-host components without configuring host OVS.
+const ovnDpuHostConfigKey = "nvke.ovnDpuHost"
 
 const (
-	cniConfigTrue  = "true"
-	helmValuesFlag = "-f"
+	cniConfigTrue = "true"
 )
 
 func ovnDpuHostMode(config map[string]string) bool {
@@ -233,15 +233,15 @@ func ovnDpuHostMode(config map[string]string) bool {
 }
 
 func ovnHelmValuesFileArgs(chartDir string, dpuHost bool) []string {
-	if !dpuHost {
-		return helmValuesFileArgs(chartDir)
+	args := helmValuesFileArgs(chartDir)
+	if dpuHost {
+		args = append(args,
+			"--set", "tags.ovnkube-node-dpu-host=true",
+			"--set", "tags.ovnkube-single-node-zone=false",
+			"--set", "tags.ovs-node=false",
+			"--set", "global.enableOvnKubeIdentity=false",
+		)
 	}
-	args := []string{helmValuesFlag, filepath.Join(chartDir, "values-images.yaml"), helmValuesFlag, filepath.Join(chartDir, "values-vmaas-nooverlay-dpu-host.yaml")}
-	if _, err := os.Stat(filepath.Join(chartDir, "values-nke.yaml")); err == nil {
-		args = append(args, helmValuesFlag, filepath.Join(chartDir, "values-nke.yaml"))
-	}
-	// Keep Helm release storage in the existing default namespace. The VMaaS
-	// chart creates and owns the ovn-kubernetes namespace as a chart resource.
 	return args
 }
 
@@ -394,11 +394,6 @@ func kubeadmPodNetworkCIDR(podNetworkCIDR string) string {
 }
 
 func (s *NodeAgentServer) runOvnKubernetesHelmInstallFromDir(chartDir, podNetworkCidr, serviceCidr string, cniConfig map[string]string) error {
-	if ovnDpuHostMode(cniConfig) {
-		if _, err := os.Stat(filepath.Join(chartDir, "values-vmaas-nooverlay-dpu-host.yaml")); err != nil {
-			return fmt.Errorf("DPU-host OVN profile is required in the charts package: %w", err)
-		}
-	}
 	apiServer, err := getKubeAPIServer(KubeConfig)
 	if err != nil {
 		return fmt.Errorf(
@@ -413,7 +408,9 @@ func (s *NodeAgentServer) runOvnKubernetesHelmInstallFromDir(chartDir, podNetwor
 			return fmt.Errorf("resolving the OVN image repository for the registry override: %w", err)
 		}
 	}
-	cniConfig = ovnKubernetesCNIConfig(cniConfig, os.Getenv(openVSwitchDatapathTypeEnv))
+	if !ovnDpuHostMode(cniConfig) {
+		cniConfig = ovnKubernetesCNIConfig(cniConfig, os.Getenv(openVSwitchDatapathTypeEnv))
+	}
 	args := buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podNetworkCidr, serviceCidr, s.CniImageRegistry, upstreamRepo, cniConfig)
 	stdout, err := s.Runner.Run("helm", args, &nvkeutils.CommandOptions{
 		Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),

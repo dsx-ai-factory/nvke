@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Runs on the DPU cluster for its own pods.
+# This primary network stays separate from the workload offload network.
+k8sAPIServer: https://192.0.2.11:6443
+podNetwork: 10.236.64.0/18/24
+serviceNetwork: 10.236.0.0/18
+mtu: 1400
+skipCallToK8s: true
+tags:
+  ovs-node: false
+  ovnkube-identity: false
+  ovnkube-node-dpu-host: false
+  ovnkube-single-node-zone-dpu: false
+  ovnkube-control-plane: true
+  ovnkube-single-node-zone: true
+global:
+  imagePullSecretName: ""
+  enableOvnKubeIdentity: false
+  simulateDpu: false
+  dummyGatewayBridge: true
+  gatewayOpts: "--gateway-interface=eth0"
+  enableInterconnect: true
+  enableNoOverlay: false
+  enableRouteAdvertisements: false
+  enableUplink: false
+  enableEgressIp: false
+  enableNetworkSegmentation: false
+  enableDynamicUDNAllocation: false
+  clusterDefaultNAD: default/dpu-cluster-network
+ovnkube-control-plane:
+  replicas: 1

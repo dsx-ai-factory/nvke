@@ -28,6 +28,8 @@ var (
 
 // JoinConfig represents the configuration for kubeadm join.
 type JoinConfig struct {
+	// Labels are kubelet labels applied when the node first registers.
+	Labels string
 	// ControlPlane indicates whether the node is a control plane node.
 	ControlPlane bool
 	// NodeIP is required for joining control plane nodes.

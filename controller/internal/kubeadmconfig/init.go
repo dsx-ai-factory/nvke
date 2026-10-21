@@ -25,6 +25,8 @@ const (
 
 // InitConfig represents the configuration for kubeadm init.
 type InitConfig struct {
+	// Labels are kubelet labels applied when the node first registers.
+	Labels                string
 	NodeIP                string
 	APIServerEndpoint     string
 	NodeName              string

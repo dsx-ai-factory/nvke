@@ -28,9 +28,10 @@ func TestLabelSystemNamespacesForPSALabelsSystemNamespacesPrivileged(t *testing.
 		cniPlugin      db.CniPlugin
 		otherNamespace []string
 	}{
-		"calico":         {cniPlugin: db.CNICalico, otherNamespace: []string{tigeraOperatorNS}},
-		"ovn-kubernetes": {cniPlugin: db.CNIOvnKubernetes, otherNamespace: []string{ovnKubernetesNamespace}},
-		"unrecognized":   {cniPlugin: db.CniPlugin("something-else")},
+		"calico":                  {cniPlugin: db.CNICalico, otherNamespace: []string{tigeraOperatorNS}},
+		"ovn-kubernetes":          {cniPlugin: db.CNIOvnKubernetes, otherNamespace: []string{ovnKubernetesNamespace}},
+		"ovn-kubernetes-dpu-host": {cniPlugin: db.CNIOvnKubernetesDPUHost, otherNamespace: []string{ovnKubernetesNamespace}},
+		"unrecognized":            {cniPlugin: db.CniPlugin("something-else")},
 	}
 
 	for name, params := range tests {

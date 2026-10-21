@@ -100,7 +100,7 @@ func (a *Activities) kubeadmInit(ctx context.Context, input KubeadmInitInput) er
 		PodSubnet:             cluster.PodCIDR,
 		ServiceSubnet:         cluster.ServiceCIDR,
 		EtcdQuotaBackendBytes: kubeadmconfig.EtcdQuotaBackendBytes,
-		Labels:                nodeLabelsForCNI(nodePool.NodeLabels, cluster.CniPlugin).String(),
+		Labels:                nodeLabelsForCNI(nodePool.NodeLabels, cluster.CniPlugin),
 		ImageRepository:       a.cfg.KubeadmImageRepository,
 		SkipKubeProxy:         cluster.CniPlugin == db.CNIOvnKubernetes || cluster.CniPlugin == db.CNIOvnKubernetesDPUHost,
 		EnableEncryption:      cluster.EtcdEncrypted,
@@ -156,7 +156,7 @@ func (a *Activities) kubeadmInit(ctx context.Context, input KubeadmInitInput) er
 			if req.CniConfig == nil { //nolint:staticcheck // Legacy in-init CNI configuration remains supported.
 				req.CniConfig = make(map[string]string) //nolint:staticcheck // Legacy in-init CNI configuration remains supported.
 			}
-			req.CniConfig["nke.ovnDpuHost"] = "true" //nolint:staticcheck // Legacy in-init CNI configuration remains supported.
+			req.CniConfig["nvke.ovnDpuHost"] = "true" //nolint:staticcheck // Legacy in-init CNI configuration remains supported.
 		}
 	case db.CNICalico:
 		req.CniPluginName = "calico"   //nolint:staticcheck // Legacy in-init CNI install still switches on this deprecated agent field.

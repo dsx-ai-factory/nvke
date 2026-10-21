@@ -90,7 +90,7 @@ func cniNamespacesForPlugin(plugin db.CniPlugin) []string {
 	switch plugin {
 	case db.CNICalico:
 		return []string{tigeraOperatorNS}
-	case db.CNIOvnKubernetes:
+	case db.CNIOvnKubernetes, db.CNIOvnKubernetesDPUHost:
 		return []string{ovnKubernetesNamespace}
 	default:
 		return nil

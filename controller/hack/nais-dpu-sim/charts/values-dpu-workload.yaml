@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Runs on the DPUs, but serves pods in the workload cluster.
+# Layer over upstream values-single-node-zone-dpu.yaml.
+k8sAPIServer: https://192.0.2.11:6443
+podNetwork: 10.236.64.0/18/24
+serviceNetwork: 10.236.0.0/18
+skipCallToK8s: true
+global:
+  mtu: 1400
+  imagePullSecretName: ""
+  enableOvnKubeIdentity: false
+  simulateDpu: true
+  gatewayOpts: "--gateway-interface=eth1"
+  dpuHostGatewayRepresentorInterface: rep0-0
+  dpuHostClusterK8sAPIServer: https://192.0.2.10:6443
+  dpuHostClusterNetworkCIDR: 10.234.64.0/18/24
+  dpuHostClusterServiceCIDR: 10.234.0.0/18
+  clusterDefaultNAD: default/cluster-network
+  enableMultiNetwork: true
+  enableNetworkSegmentation: true
+  enableDynamicUDNAllocation: true
+  enableRouteAdvertisements: true
+  enableNoOverlay: true
+  enableNoOverlaySnat: true
+  enableUplink: true
+  enableEgressIp: false
+ovnkube-single-node-zone-dpu:
+  ovnkubeNodeLogLevel: 2

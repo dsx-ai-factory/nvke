@@ -439,7 +439,7 @@ func DefaultCNIVersion(plugin CniPlugin) (string, bool) {
 	case CNIOvnKubernetes:
 		return DefaultOvnKubernetesCNIVersion, true
 	case CNIOvnKubernetesDPUHost:
-		return "1.5.18", true
+		return "1.4.0", true
 	default:
 		return "", false
 	}

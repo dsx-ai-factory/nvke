@@ -161,7 +161,7 @@ func installCNIRequest(cluster db.Cluster, cniImageRegistry string) (*nvkeproto.
 		if cniConfig == nil {
 			cniConfig = make(map[string]string)
 		}
-		cniConfig["nke.ovnDpuHost"] = "true"
+		cniConfig["nvke.ovnDpuHost"] = "true"
 	}
 
 	return &nvkeproto.InstallCNIRequest{

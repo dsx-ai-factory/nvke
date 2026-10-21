@@ -8,6 +8,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -44,24 +46,20 @@ func (a *Activities) kubeadmContainerMode(ctx context.Context, cluster db.Cluste
 	return isKubeadmContainerMode, nil
 }
 
-func nodeLabels(labels []string) kubeadmconfig.KubeLabels {
-	out := kubeadmconfig.KubeLabels{}
-	for _, label := range labels {
-		key, value, ok := strings.Cut(label, "=")
-		if !ok || key == "" {
-			continue
-		}
+func nodeLabelsForCNI(labels map[string]string, plugin db.CniPlugin) string {
+	out := make(map[string]string, len(labels)+1)
+	for key, value := range labels {
 		out[key] = value
 	}
-	return out
-}
-
-func nodeLabelsForCNI(labels []string, plugin db.CniPlugin) kubeadmconfig.KubeLabels {
-	out := nodeLabels(labels)
 	if plugin == db.CNIOvnKubernetesDPUHost {
 		out["k8s.ovn.org/dpu-host"] = ""
 	}
-	return out
+	values := make([]string, 0, len(out))
+	for key, value := range out {
+		values = append(values, key+"="+value)
+	}
+	slices.Sort(values)
+	return strings.Join(values, ",")
 }
 
 func toNodeAgentFiles(files []kubeadmconfig.File) []*nvkeproto.File {

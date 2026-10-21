@@ -14,7 +14,7 @@ import (
 func TestBootstrapNodeLabelsReachKubelet(t *testing.T) {
 	for _, tc := range []struct{ name, labels string }{
 		{name: "without labels"},
-		{name: "DPU host and existing labels", labels: "k8s.ovn.org/dpu-host=,lab=managed"},
+		{name: "DPU host and existing labels", labels: "k8s.ovn.org/dpu-host=,nvke-nais-dpu-sim=managed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			labels := tc.labels

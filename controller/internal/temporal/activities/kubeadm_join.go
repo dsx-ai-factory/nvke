@@ -102,11 +102,12 @@ func (a *Activities) kubeadmJoin(ctx context.Context, node db.Node) (KubeadmJoin
 		return KubeadmJoinResult{}, fmt.Errorf("failed to get node pool for node: %w", err)
 	}
 
-	joinConfig, err := kubeadmconfig.NewJoinConfigFromString(node.IP, node.Name, joinString, nodeLabelsForCNI(nodePool.NodeLabels, cluster.CniPlugin))
+	joinConfig, err := kubeadmconfig.NewJoinConfigFromString(node.IP, node.Name, joinString)
 	if err != nil {
 		return KubeadmJoinResult{}, fmt.Errorf("failed to create kubeadm join config: %w", err)
 	}
 
+	joinConfig.Labels = nodeLabelsForCNI(nodePool.NodeLabels, cluster.CniPlugin)
 	joinConfig.KubeadmContainerMode, err = a.kubeadmContainerMode(ctx, cluster, node)
 	if err != nil {
 		return KubeadmJoinResult{}, err

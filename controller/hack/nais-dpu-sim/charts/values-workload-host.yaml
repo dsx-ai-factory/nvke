@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Runs on workload hosts, whose pod networking is handled by paired DPUs.
+# Layer over upstream values-single-node-zone.yaml.
+k8sAPIServer: https://192.0.2.10:6443
+podNetwork: 10.234.64.0/18/24
+serviceNetwork: 10.234.0.0/18
+mtu: 1400
+skipCallToK8s: true
+tags:
+  ovs-node: false
+  ovnkube-identity: false
+  ovnkube-single-node-zone: false
+  ovnkube-single-node-zone-dpu: false
+  ovnkube-node-dpu-host: true
+  ovnkube-control-plane: true
+global:
+  imagePullSecretName: ""
+  enableOvnKubeIdentity: false
+  simulateDpu: true
+  gatewayOpts: "--gateway-interface=eth0-0"
+  dpuHostGatewayRepresentorInterface: rep0-0
+  clusterDefaultNAD: default/cluster-network
+  enableMultiNetwork: true
+  enableNetworkSegmentation: true
+  enableDynamicUDNAllocation: true
+  enableRouteAdvertisements: true
+  enableNoOverlay: true
+  enableNoOverlaySnat: true
+  enableUplink: true
+  enableEgressIp: false
+ovnkube-control-plane:
+  replicas: 1
+ovnkube-node-dpu-host:
+  logLevel: 2
+  mgmtPortVFResourceName: dpusim.io/mgmtvf
+  mgmtPortVFsCount: 2
