@@ -60,12 +60,13 @@ so those two must be positive even while monitoring is disabled. The chart
 refuses the same values when it renders, so `helm install` or `helm upgrade`
 fails with the offending setting instead of the new pod failing to start.
 
-These settings live in the `nke-controller-config` file (the chart renders them
-from `scheduledMaintenance.certRenewal.*` and `credentialMonitoring.*`). The
+These settings live in the controller ConfigMap named by `controllerConfig.name`
+(default `nvke-controller-config`); the chart renders them from
+`scheduledMaintenance.certRenewal.*` and `credentialMonitoring.*`. The
 controller no longer reads them from environment variables, and the chart
 refuses an `env` entry that names one.
 
-| `nke-controller-config` key | Chart value | Default | Supported bound or relationship |
+| Controller config key | Chart value | Default | Supported bound or relationship |
 | --- | --- | --- | --- |
 | `certRenewal.interval` | `scheduledMaintenance.certRenewal.interval` | `12h` | `1h` through `24h` |
 | `certRenewal.thresholdDays` | `scheduledMaintenance.certRenewal.thresholdDays` | `30` | `7` through `90` days; with monitoring enabled, `warningDays` must exceed it by at least two renewal intervals, so at most `44` with the default `warningDays` and `interval` |

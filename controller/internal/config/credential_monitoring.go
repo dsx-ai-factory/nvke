@@ -11,7 +11,7 @@ import (
 // validateCredentialMonitoring checks the settings of each enabled feature.
 // Out-of-range settings for a disabled feature must not stop startup, except
 // those the always-registered credential metrics collector reads.
-// The chart's nke-controller-config template refuses the same values.
+// The chart's nvke-controller-config template refuses the same values.
 func (c Config) validateCredentialMonitoring() error {
 	if c.CertificateObservationMaxAge <= 0 {
 		return fmt.Errorf("credentialMonitoring.observationMaxAge must be positive")
