@@ -28,6 +28,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,6 +45,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitecluster"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
+	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
@@ -2543,4 +2546,197 @@ func TestBootstrapControlPlaneVIPOverrideReachesController(t *testing.T) {
 	if !runner.saw("--set allowControlPlaneWithoutVIP=true") {
 		t.Fatal("bootstrap did not enable the VIP override in the temporary controller")
 	}
+}
+
+// runBootstrapDryRun runs "bootstrap site --dry-run" through execute with extra
+// flags, returning stdout, stderr and the error execute reports. These tests
+// run commands through execute, so none is parallel.
+func runBootstrapDryRun(t *testing.T, extra ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	return runBootstrapDryRunEnv(t, nil, extra...)
+}
+
+// runBootstrapDryRunEnv is runBootstrapDryRun with environment variables set
+// after the OTLP ones are cleared.
+func runBootstrapDryRunEnv(t *testing.T, env map[string]string, extra ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	// The OTLP configuration under test comes from flags alone, so a shell's own
+	// does not leak in.
+	for _, name := range []string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_HEADERS", "OTEL_EXPORTER_OTLP_INSECURE",
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_INSECURE",
+		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "OTEL_EXPORTER_OTLP_LOGS_HEADERS",
+	} {
+		t.Setenv(name, "")
+	}
+	for name, value := range env {
+		t.Setenv(name, value)
+	}
+	root := NewRootCmd("test", "test", "test", "test")
+	root.SetArgs(append([]string{"bootstrap", "site", "-f", writeSiteSpec(t, validSiteSpec), "--dry-run"}, extra...))
+	var out, errOut bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+
+	// The logger the command installs writes to the process's stderr, where the
+	// export warning goes, so capture that too.
+	r, w, pipeErr := os.Pipe()
+	require.NoError(t, pipeErr)
+	realStderr, realLogger := os.Stderr, slog.Default()
+	t.Cleanup(func() { os.Stderr = realStderr; slog.SetDefault(realLogger) })
+	os.Stderr = w
+	var logs bytes.Buffer
+	copied := make(chan struct{})
+	go func() { _, _ = io.Copy(&logs, r); close(copied) }()
+	err = execute(context.Background(), root, "test", &errOut)
+	os.Stderr = realStderr
+	slog.SetDefault(realLogger)
+	require.NoError(t, w.Close())
+	<-copied
+	require.NoError(t, r.Close())
+	return out.String(), errOut.String() + logs.String(), err
+}
+
+// exportWarning is the start of the warning a run logs, once, when it cannot
+// export telemetry.
+const exportWarning = "could not export telemetry"
+
+// A flag value nvkectl cannot use is an error that names the flag, before
+// bootstrap starts: --otlp-insecure without an endpoint, an endpoint that names
+// no host or port or cannot be parsed, or one the temporary controller cannot
+// reach.
+func TestBootstrapSiteOTLPFlagErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"insecure without an endpoint", []string{"--otlp-insecure"}, "--otlp-endpoint"},
+		{"insecure with an https endpoint", []string{"--otlp-endpoint", "https://collector.example:4317", "--otlp-insecure"}, "https"},
+		{"unparsable endpoint", []string{"--otlp-endpoint", "http://"}, "--otlp-endpoint"},
+		{"loopback", []string{"--otlp-endpoint", "localhost:4317"}, "loopback"},
+		{"zoned loopback", []string{"--otlp-endpoint", "[::1%25lo0]:4317"}, "loopback"},
+		{"no host", []string{"--otlp-endpoint", ":4317"}, "--otlp-endpoint"},
+		{"no host with a scheme", []string{"--otlp-endpoint", "http://:4317"}, "--otlp-endpoint"},
+		{"no port", []string{"--otlp-endpoint", "collector.example:"}, "--otlp-endpoint"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := runBootstrapDryRun(t, tc.args...)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "--otlp-endpoint")
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Regexp(t, `(?m)^Trace ID: [0-9a-f]{32}$`, err.Error(), "a failure still carries the trace ID")
+		})
+	}
+}
+
+// A bad endpoint in the environment is one warning that says what to do; on
+// "bootstrap site" it also offers the flag. The command runs as without it.
+func TestBootstrapSiteOTLPBadEnvironmentWarnsAndRuns(t *testing.T) {
+	baseOut, _, err := runBootstrapDryRun(t)
+	require.NoError(t, err)
+
+	stdout, stderr, err := runBootstrapDryRunEnv(t, map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://user:secret@"})
+
+	require.NoError(t, err)
+	assert.Equal(t, baseOut, stdout, "stdout is unchanged")
+	assert.Equal(t, 1, strings.Count(stderr, "nvkectl sends no telemetry"), "one warning:\n%s", stderr)
+	assert.Contains(t, stderr, "nvkectl sends no telemetry because OTEL_EXPORTER_OTLP_ENDPOINT is not a usable OTLP/gRPC endpoint; "+
+		"fix or unset the variable, or pass --otlp-endpoint to export from this command")
+	assert.NotContains(t, stderr, "secret")
+}
+
+func TestBootstrapSiteOTLPFlagUnreachableNeverFailsTheCommand(t *testing.T) {
+	lis, err := net.Listen("tcp", nonLoopbackIPv4(t, false)+":0")
+	require.NoError(t, err)
+	closed := lis.Addr().String()
+	require.NoError(t, lis.Close())
+
+	baseOut, baseErr, err := runBootstrapDryRun(t)
+	require.NoError(t, err)
+	assert.Zero(t, strings.Count(baseErr, exportWarning), "no flag, no export warning")
+
+	started := time.Now()
+	stdout, stderr, err := runBootstrapDryRun(t, "--otlp-endpoint", closed, "--otlp-insecure")
+
+	require.NoError(t, err)
+	assert.Less(t, time.Since(started), 6*time.Second, "the flush is bounded")
+	assert.Equal(t, baseOut, stdout, "stdout is unchanged")
+	assert.Regexp(t, traceIDLineRE, stderr)
+	assert.Equal(t, 1, strings.Count(stderr, exportWarning), "one warning for the unreachable endpoint:\n%s", stderr)
+}
+
+func TestBootstrapSiteOTLPFlagWinsOverEnvironment(t *testing.T) {
+	flagCollector := newOTLPCollector(t)
+	envCollector := newOTLPCollector(t)
+	// The helper clears these variables first, so they are passed through it.
+	env := map[string]string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://" + envCollector.addr,
+		"OTEL_EXPORTER_OTLP_HEADERS":  "authorization=Bearer example-token",
+	}
+
+	_, _, err := runBootstrapDryRunEnv(t, env, "--otlp-endpoint", "http://"+flagCollector.addr)
+	require.NoError(t, err)
+
+	spans, md := flagCollector.received()
+	assert.NotEmpty(t, spans, "the flag's collector receives the run's spans")
+	assert.Equal(t, []string{"Bearer example-token"}, md.Get("authorization"), "the environment's headers still apply")
+	envSpans, _ := envCollector.received()
+	assert.Empty(t, envSpans, "the environment's endpoint receives nothing")
+}
+
+// controllerTracing hands the run's OTLP endpoint and headers to the controller
+// deploy. A loopback endpoint is not handed over, and with it go no headers.
+func TestControllerTracing(t *testing.T) {
+	tests := []struct {
+		name         string
+		cfg          *telemetry.OTLPConfig
+		want         controllerdeploy.TracingConfig
+		wantWarnings int
+		wantMessage  string
+	}{
+		{name: "export off"},
+		{
+			name: "endpoint",
+			cfg:  &telemetry.OTLPConfig{Endpoint: "collector.example:4317", Insecure: true},
+			want: controllerdeploy.TracingConfig{Endpoint: "collector.example:4317", Insecure: true},
+		},
+		{
+			name: "endpoint with headers",
+			cfg:  &telemetry.OTLPConfig{Endpoint: "collector.example:4317", Headers: map[string]string{"authorization": "Bearer example-token"}},
+			want: controllerdeploy.TracingConfig{
+				Endpoint: "collector.example:4317",
+				Headers:  map[string]string{"authorization": "Bearer example-token"},
+			},
+		},
+		{
+			name:         "loopback endpoint from the environment",
+			cfg:          &telemetry.OTLPConfig{Endpoint: "127.0.0.1:4317", Insecure: true, Headers: map[string]string{"authorization": "Bearer example-token"}},
+			wantWarnings: 1,
+			wantMessage:  "the controller in the bootstrap cluster cannot reach 127.0.0.1:4317; its spans are not exported",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			run := telemetry.NewRun("test")
+			if tt.cfg != nil {
+				require.NoError(t, run.EnableOTLP(*tt.cfg))
+			}
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&buf, nil))
+
+			got := controllerTracing(telemetry.ContextWithRun(context.Background(), run), logger)
+
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantWarnings, strings.Count(buf.String(), "level=WARN"), buf.String())
+			if tt.wantWarnings > 0 {
+				assert.Contains(t, buf.String(), tt.wantMessage)
+			}
+			assert.NotContains(t, buf.String(), "example-token", "a warning never holds a header value")
+		})
+	}
+	// A context without a run, as a test or library caller has, exports nothing.
+	assert.Equal(t, controllerdeploy.TracingConfig{}, controllerTracing(context.Background(), slog.New(slog.NewTextHandler(io.Discard, nil))))
 }

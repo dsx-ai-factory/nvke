@@ -25,6 +25,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/clients"
 	"github.com/dsx-ai-factory/nvke/cli/internal/config"
 	"github.com/dsx-ai-factory/nvke/cli/internal/operator"
+	"github.com/dsx-ai-factory/nvke/cli/internal/redact"
 	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 )
 
@@ -55,13 +56,29 @@ func NewRootCmd(ver, commit, treeState, date string) *cobra.Command {
 			if !isTraced(cmd) {
 				run = nil
 			}
-			exportErr := enableOTLPFromEnv(run)
+			var exportErr error
+			var cleartextHeaders bool
+			if run != nil {
+				cfg, ok, strict, err := resolveOTLP(cmd)
+				if err == nil && ok {
+					err = run.EnableOTLP(cfg)
+					cleartextHeaders = err == nil && cfg.Insecure && len(cfg.Headers) > 0
+				}
+				// An endpoint the operator gave as a flag must work; one from the
+				// environment never fails the command.
+				if err != nil && strict {
+					return err
+				}
+				exportErr = err
+			}
 			if err := setupLogging(verbose, jsonLogs, run); err != nil {
 				return err
 			}
-			// A misconfigured endpoint never fails the command.
 			if exportErr != nil {
-				slog.Warn("OTLP log export is off", "reason", exportErr.Error())
+				warnExportOff(cmd, exportErr)
+			}
+			if cleartextHeaders {
+				slog.Warn("OTEL_EXPORTER_OTLP_HEADERS is sent to the OTLP endpoint without TLS; use an https endpoint if the headers hold a credential")
 			}
 			return nil
 		},
@@ -85,6 +102,18 @@ func NewRootCmd(ver, commit, treeState, date string) *cobra.Command {
 	root.AddCommand(newInspectCmd())
 
 	return root
+}
+
+// warnExportOff logs one warning that nvkectl sends no telemetry because the
+// endpoint in the environment is unusable, and what to do. It offers the flag
+// only on a command that has it. The reason never holds the endpoint, which may
+// hold credentials.
+func warnExportOff(cmd *cobra.Command, reason error) {
+	msg := "nvkectl sends no telemetry because OTEL_EXPORTER_OTLP_ENDPOINT is not a usable OTLP/gRPC endpoint; fix or unset the variable"
+	if cmd.Flags().Lookup(otlpEndpointFlag) != nil {
+		msg += ", or pass --" + otlpEndpointFlag + " to export from this command"
+	}
+	slog.Warn(msg, "reason", reason.Error())
 }
 
 // loadClient is the shared client factory injected into all commands backed by the controller API.
@@ -249,20 +278,6 @@ type tracedError struct {
 func (e *tracedError) Error() string { return e.err.Error() + "\nTrace ID: " + e.traceID }
 func (e *tracedError) Unwrap() error { return e.err }
 
-// enableOTLPFromEnv turns on OTLP log export for run when the standard
-// OTEL_EXPORTER_OTLP_* variables name an endpoint. It does nothing for a nil
-// run.
-func enableOTLPFromEnv(run *telemetry.Run) error {
-	if run == nil {
-		return nil
-	}
-	cfg, ok, err := telemetry.OTLPConfigFromEnv()
-	if err != nil || !ok {
-		return err
-	}
-	return run.EnableOTLP(cfg)
-}
-
 // setupLogging installs the default logger. A run that has started adds its
 // trace_id and span_id to every record.
 func setupLogging(verbose, jsonLogs bool, run *telemetry.Run) error {
@@ -270,7 +285,9 @@ func setupLogging(verbose, jsonLogs bool, run *telemetry.Run) error {
 	if verbose {
 		level = slog.LevelDebug
 	}
-	opts := &slog.HandlerOptions{Level: level}
+	// ReplaceAttr masks each value before the handler escapes it, so a credential
+	// holding a quote, a backslash or a newline is still found.
+	opts := &slog.HandlerOptions{Level: level, ReplaceAttr: redact.ReplaceAttr}
 	var h slog.Handler
 	if jsonLogs {
 		h = slog.NewJSONHandler(os.Stderr, opts)

@@ -13,10 +13,16 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 )
 
 func TestReportFailure(t *testing.T) {
 	t.Parallel()
+
+	// Registered credentials, such as an OTLP header value, are masked in the report.
+	const reportToken, canceledToken = "report-token-1b2c3d4e", "canceled-token-3c4d5e6f"
+	telemetry.RegisterHeaderSecrets(map[string]string{"authorization": "Bearer " + reportToken, "x-api-key": canceledToken})
 
 	recovery := &recoveryError{fmt.Errorf("deploy: %w; bootstrap cluster %q retained", context.Canceled, "kind-x")}
 
@@ -49,6 +55,14 @@ func TestReportFailure(t *testing.T) {
 		{
 			name: "recovery advice survives a cancellation", err: fmt.Errorf("bootstrap: %w", recovery), canceled: true, sig: syscall.SIGINT,
 			wantCode: exitSIGINT, wantOutput: []string{"nvkectl: canceled", `bootstrap cluster "kind-x" retained`},
+		},
+		{
+			name: "a credential is masked", err: errors.New("helm failed: " + reportToken),
+			wantCode: exitError, wantOutput: []string{"Error: helm failed: <redacted>"}, denyOutput: []string{reportToken},
+		},
+		{
+			name: "a credential is masked in recovery advice", err: &recoveryError{err: errors.New("keep this: " + canceledToken)}, canceled: true, sig: syscall.SIGINT,
+			wantCode: exitSIGINT, wantOutput: []string{"keep this: <redacted>"}, denyOutput: []string{canceledToken},
 		},
 	}
 	for _, tc := range tests {

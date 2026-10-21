@@ -6,8 +6,7 @@
 // every request to the site controller, and adds the trace ID to nvkectl's log
 // records.
 //
-// Log records are exported over OTLP when EnableOTLP is called; spans are not
-// exported.
+// Log records and spans are exported over OTLP when EnableOTLP is called.
 package telemetry
 
 import (
@@ -38,8 +37,8 @@ const (
 
 // Run is the trace of one nvkectl invocation. The zero value is not usable;
 // build one with NewRun. The methods that read the trace ID are safe to call
-// on a nil Run, which has no trace. EnableOTLP, LogHandler and Finish must be
-// called from one goroutine.
+// on a nil Run, which has no trace. EnableOTLP, OTLP, LogHandler and Finish must
+// be called from one goroutine.
 type Run struct {
 	providerOptions []sdktrace.TracerProviderOption
 	userAgent       string
@@ -56,6 +55,10 @@ type Run struct {
 
 	// warnLogger is where export warnings go; the exporter's goroutine reads it.
 	warnLogger atomic.Pointer[slog.Logger]
+
+	// What EnableOTLP accepted; set and read by the goroutine that runs the command.
+	otlpConfig  OTLPConfig
+	otlpEnabled bool
 
 	mu              sync.Mutex
 	tracerProvider  *sdktrace.TracerProvider
@@ -157,8 +160,8 @@ func (run *Run) SpanContext() trace.SpanContext {
 }
 
 // Finish ends the root span, recording err as its outcome when non-nil, and
-// flushes the log records to the OTLP endpoint, waiting at most two seconds.
-// It is a no-op if Start was not called.
+// flushes the spans and log records to the OTLP endpoint, waiting at most two
+// seconds for both. It is a no-op if Start was not called.
 func (run *Run) Finish(err error) {
 	run.mu.Lock()
 	span, provider := run.rootSpan, run.tracerProvider
@@ -174,8 +177,9 @@ func (run *Run) Finish(err error) {
 		span.SetStatus(codes.Error, err.Error())
 	}
 	span.End()
-	_ = provider.Shutdown(context.Background())
-	run.flushLogs()
+	logProvider := run.logProvider
+	run.logProvider = nil
+	run.shutdownProviders(provider, logProvider)
 }
 
 // checkResponseTraceID warns, once per run, when response carries an X-Trace-ID

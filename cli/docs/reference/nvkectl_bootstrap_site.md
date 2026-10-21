@@ -63,6 +63,9 @@ nvkectl bootstrap site [flags]
   nvkectl bootstrap site -f sitespec.yaml \
     --nvke-controller-image nvcr.io/<org>/nvke-controller:edge \
     --provisioned-provider-image nvcr.io/<org>/cluster-api-provider-provisioned:edge
+
+  # Export this run's spans and log records to a collector the cluster can reach
+  nvkectl bootstrap site -f sitespec.yaml --otlp-endpoint collector.example.com:4317
 ```
 
 ### Options
@@ -78,6 +81,8 @@ nvkectl bootstrap site [flags]
       --keep-bootstrap-cluster              Leave the ephemeral bootstrap Kind cluster running after the command exits, for debugging
       --kubeconfig-out string               Where to write the finished cluster's admin breakglass kubeconfig (default: <clusterName>.kubeconfig in the working directory)
       --nvke-controller-image string        NVKE controller image to deploy (overrides NVKECTL_NVKE_CONTROLLER_IMAGE and the manifest default)
+      --otlp-endpoint string                OTLP/gRPC endpoint, a host:port or an http(s):// URL (http implies --otlp-insecure), that receives this run's spans and log records. The temporary controller in the bootstrap cluster exports there too, so a loopback address is rejected
+      --otlp-insecure                       Send to --otlp-endpoint without TLS; requires --otlp-endpoint
       --provisioned-provider-image string   Provisioned-provider image to deploy (overrides NVKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)
       --release string                      NVKR release description whose capnico-controller artifact replaces the bootstrap CAPNICo image with its pinned digest, as "render deploy-path --release" does for the management cluster's CAPNICo. The release description is not verified: run "nvkr release verify" on the same reference first. Only with infra.provider nico.
   -f, --sitespec string                     Path to the site spec YAML file (required)

@@ -4,10 +4,13 @@
 package redact
 
 import (
+	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeValue stands in for a credential. It is deliberately plain.
@@ -142,6 +145,53 @@ func TestTree_ReportsARootThatIsNotADirectory(t *testing.T) {
 	for _, root := range []string{file, missing} {
 		if failed := Tree(root); len(failed) != 1 || failed[0] != root {
 			t.Errorf("Tree(%s) = %v, want just the root", root, failed)
+		}
+	}
+}
+
+// A short secret that is a substring of a long one must not split it, whatever
+// the order they were registered in.
+func TestRegisterSecretOrderDoesNotMatter(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		long := fmt.Sprintf("Zq%dLongToken9vX", i)
+		short := fmt.Sprintf("Zq%dL", i)
+		first, second := short, long
+		if i%2 == 0 {
+			first, second = long, short
+		}
+		RegisterSecret(first)
+		RegisterSecret(second)
+		if got := Text("a " + long + " b"); got != "a "+Placeholder+" b" {
+			t.Fatalf("round %d: %q", i, got)
+		}
+	}
+}
+
+// ReplaceAttr leaves slog's own time, level and source alone, and masks the
+// message and user attributes, in groups too.
+func TestReplaceAttrLeavesBuiltInKeysAlone(t *testing.T) {
+	const secret = "builtin-secret-1234"
+	RegisterSecret(secret)
+	for _, attr := range []slog.Attr{
+		slog.Time(slog.TimeKey, time.Now()),
+		slog.Any(slog.LevelKey, slog.LevelInfo),
+		slog.Any(slog.SourceKey, &slog.Source{Function: "f", File: "f.go", Line: 1}),
+	} {
+		if got := ReplaceAttr(nil, attr); !got.Equal(attr) {
+			t.Errorf("ReplaceAttr changed the built-in %s: %v", attr.Key, got)
+		}
+	}
+	for name, got := range map[string]slog.Attr{
+		"a user attribute named time":   ReplaceAttr(nil, slog.String(slog.TimeKey, secret)),
+		"a user attribute named level":  ReplaceAttr(nil, slog.String(slog.LevelKey, secret)),
+		"a user attribute named source": ReplaceAttr(nil, slog.String(slog.SourceKey, secret)),
+		"the message":                   ReplaceAttr(nil, slog.String(slog.MessageKey, secret)),
+		"an attribute in a group":       ReplaceAttr([]string{"g"}, slog.String(slog.LevelKey, secret)),
+		"an attribute":                  ReplaceAttr(nil, slog.String("attr", secret)),
+		"an attribute of a group":       ReplaceAttr(nil, slog.Group("g", slog.String("inner", secret))),
+	} {
+		if text := got.Value.String(); strings.Contains(text, secret) {
+			t.Errorf("%s is not masked: %q", name, text)
 		}
 	}
 }

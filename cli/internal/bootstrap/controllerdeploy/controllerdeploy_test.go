@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -28,6 +29,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 	"github.com/dsx-ai-factory/nvke/cli/internal/redact"
+	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 )
 
 // fakeCall records one CommandRunner.Run invocation.
@@ -2329,6 +2331,132 @@ func TestDeployControlPlaneVIPOverride(t *testing.T) {
 			want := "--set allowControlPlaneWithoutVIP=" + strconv.FormatBool(allow)
 			if !strings.Contains(joinArgs(runner.calls[i].args), want) {
 				t.Fatalf("NVKE controller Helm install did not contain %q", want)
+			}
+		})
+	}
+}
+
+// A tracing endpoint turns on the controller's own span export; without one, no
+// tracing value is set. With headers too, they reach the controller as
+// OTEL_EXPORTER_OTLP_HEADERS in a values file, never as an argument, alongside
+// its other environment settings.
+func TestDeploy_TracingValues(t *testing.T) {
+	const token = "Bearer s3cr3t,token=with%odd chars"
+	headers := map[string]string{"authorization": token}
+	encoded := telemetry.FormatHeaders(headers)
+	tests := []struct {
+		name          string
+		tracing       TracingConfig
+		nodeAgentPort string
+		want          []string
+		wantEnv       map[string]string
+	}{
+		{
+			name:    "secure endpoint",
+			tracing: TracingConfig{Endpoint: "collector.example:4317"},
+			want:    []string{"--set tracing.enabled=true", "--set-string tracing.endpoint=collector.example:4317", "--set tracing.insecure=false"},
+		},
+		{
+			name:    "insecure endpoint",
+			tracing: TracingConfig{Endpoint: "collector.example:4317", Insecure: true},
+			want:    []string{"--set tracing.enabled=true", "--set-string tracing.endpoint=collector.example:4317", "--set tracing.insecure=true"},
+		},
+		{
+			name:          "endpoint and headers",
+			tracing:       TracingConfig{Endpoint: "collector.example:4317", Headers: headers},
+			nodeAgentPort: "9444",
+			want:          []string{"--set tracing.enabled=true", "--set-string tracing.endpoint=collector.example:4317", "--set tracing.insecure=false"},
+			wantEnv:       map[string]string{"NODE_AGENT_PORT": "9444", "OTEL_EXPORTER_OTLP_HEADERS": encoded},
+		},
+		{
+			name:          "insecure endpoint and headers",
+			tracing:       TracingConfig{Endpoint: "collector.example:4317", Insecure: true, Headers: headers},
+			nodeAgentPort: "9444",
+			want:          []string{"--set tracing.enabled=true", "--set-string tracing.endpoint=collector.example:4317", "--set tracing.insecure=true"},
+			wantEnv:       map[string]string{"NODE_AGENT_PORT": "9444", "OTEL_EXPORTER_OTLP_HEADERS": encoded},
+		},
+		{
+			name:          "endpoint without headers keeps the env arguments",
+			tracing:       TracingConfig{Endpoint: "collector.example:4317"},
+			nodeAgentPort: "9444",
+			want: []string{
+				"--set tracing.enabled=true", "--set-string tracing.endpoint=collector.example:4317",
+				"--set-string env[0].name=NODE_AGENT_PORT", "--set-string env[0].value=9444",
+			},
+		},
+		{
+			name:          "headers without an endpoint keep the env arguments",
+			tracing:       TracingConfig{Headers: headers},
+			nodeAgentPort: "9444",
+			want:          []string{"--set-string env[0].name=NODE_AGENT_PORT", "--set-string env[0].value=9444"},
+		},
+		{name: "zero value", tracing: TracingConfig{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeRunner{}
+			cfg := testConfig(t)
+			cfg.Tracing = tt.tracing
+			cfg.NodeAgentPort = tt.nodeAgentPort
+
+			if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+				t.Fatalf("Deploy: %v", err)
+			}
+
+			all := strings.Join(helmCalls(runner), "\n")
+			for _, want := range tt.want {
+				if !strings.Contains(all, want) {
+					t.Errorf("calls = %q, want %q", all, want)
+				}
+			}
+			if tt.tracing.Endpoint == "" && strings.Contains(all, "tracing.") {
+				t.Errorf("calls = %q, want no tracing values", all)
+			}
+			if strings.Contains(all, token) || strings.Contains(all, encoded) {
+				t.Errorf("calls = %q, want the headers in no argument", all)
+			}
+			if tt.wantEnv == nil {
+				if strings.Contains(all, "OTEL_EXPORTER_OTLP_HEADERS") {
+					t.Errorf("calls = %q, want no headers for the controller", all)
+				}
+				for _, body := range runner.extraValuesFiles[cweReleaseName] {
+					if strings.Contains(body, "OTEL_EXPORTER_OTLP_HEADERS") || strings.Contains(body, "env:") {
+						t.Errorf("a values file sets the controller's environment without headers:\n%s", body)
+					}
+				}
+				return
+			}
+			if strings.Contains(all, "env[") {
+				t.Errorf("calls = %q, want every env entry in the values file", all)
+			}
+			got := map[string]string{}
+			for _, body := range runner.extraValuesFiles[cweReleaseName] {
+				var doc struct {
+					Env []struct{ Name, Value string } `yaml:"env"`
+				}
+				if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
+					t.Fatalf("a values file is not YAML: %v", err)
+				}
+				for _, e := range doc.Env {
+					got[e.Name] = e.Value
+				}
+			}
+			if !maps.Equal(got, tt.wantEnv) {
+				t.Errorf("env in the values file = %v, want %v", got, tt.wantEnv)
+			}
+			// Every values file of the controller install is removed once Deploy returns.
+			for _, call := range runner.calls {
+				if call.name != "helm" || !slices.Contains(call.args, cweReleaseName) {
+					continue
+				}
+				for i, arg := range call.args {
+					if arg != "--values" || i+1 >= len(call.args) {
+						continue
+					}
+					if _, err := os.Stat(call.args[i+1]); !errors.Is(err, os.ErrNotExist) {
+						t.Errorf("values file %s still exists after Deploy", call.args[i+1])
+					}
+				}
 			}
 		})
 	}

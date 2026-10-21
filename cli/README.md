@@ -54,6 +54,7 @@ nvkectl bootstrap site -f sitespec.yaml --keep-bootstrap-cluster  # leave the Ki
 nvkectl bootstrap site -f sitespec.yaml --timeout 45m \
   --kubeconfig-out ./my-site.kubeconfig                          # longer provisioning wait; pick the output path
 nvkectl bootstrap site -f sitespec.yaml --disable-mtls            # no SPIRE, plaintext agents; development only
+nvkectl bootstrap site -f sitespec.yaml --otlp-endpoint 192.0.2.10:4317 --otlp-insecure  # export spans and logs over OTLP
 
 # Point the CLI at a management plane
 nvkectl config set-site --url https://cwe.example.com --name default \

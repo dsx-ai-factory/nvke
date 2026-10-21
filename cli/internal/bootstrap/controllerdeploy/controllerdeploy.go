@@ -44,6 +44,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 	"github.com/dsx-ai-factory/nvke/cli/internal/redact"
+	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 	"github.com/dsx-ai-factory/nvke/controller/deploy/charts"
 )
 
@@ -172,6 +173,10 @@ const (
 	// into it unless Config.ProfilesImage is set, which copies that image's
 	// /profiles tree in; a site otherwise gets them from its deploy repository.
 	profilesPath = "/profiles"
+
+	// otlpHeadersEnv is the variable the controller's OpenTelemetry SDK reads
+	// the headers of its exports from.
+	otlpHeadersEnv = "OTEL_EXPORTER_OTLP_HEADERS"
 )
 
 // waitReadyPollInterval is the delay between /readyz polls. A var, not a
@@ -202,6 +207,19 @@ type oidcValues struct {
 // oidcProviders is the helm chart's oidc.providers list.
 type oidcProviders struct {
 	Providers []sitespec.OIDCProvider `yaml:"providers"`
+}
+
+// TracingConfig points the controller's own OpenTelemetry export at a collector.
+// The zero value leaves it off, which is the chart's default.
+type TracingConfig struct {
+	// Endpoint is the collector's OTLP/gRPC host:port. Empty turns export off.
+	Endpoint string
+	// Insecure sends without TLS.
+	Insecure bool
+	// Headers are sent on every export request, for instance an authorization
+	// token. They reach the controller as OTEL_EXPORTER_OTLP_HEADERS, and only
+	// when Endpoint is set.
+	Headers map[string]string
 }
 
 // Config describes a controller deployment.
@@ -343,6 +361,9 @@ type Config struct {
 
 	// AllowControlPlaneWithoutVIP permits dev control-plane lifecycle operations without a VIP.
 	AllowControlPlaneWithoutVIP bool
+
+	// Tracing exports the controller's spans to a collector the operator named.
+	Tracing TracingConfig
 }
 
 // TPMAttestorEnabled reports whether the bootstrap SPIRE server attests hosts
@@ -729,7 +750,22 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return err
 	}
 	cweArgs = append(cweArgs, profilesArgs...)
-	cweArgs = append(cweArgs, cweEnvArgs(cfg)...)
+	otlpHeaders := ""
+	if cfg.Tracing.Endpoint != "" {
+		cweArgs = append(cweArgs,
+			"--set", "tracing.enabled=true",
+			"--set-string", "tracing.endpoint="+cfg.Tracing.Endpoint,
+			"--set", fmt.Sprintf("tracing.insecure=%t", cfg.Tracing.Insecure),
+		)
+		otlpHeaders = telemetry.FormatHeaders(cfg.Tracing.Headers)
+	}
+	envArgs, removeEnvValuesFile, err := cweEnvHelmArgs(cfg, otlpHeaders)
+	if err != nil {
+		return err
+	}
+	// Removed as soon as helm returns; the defer covers an early return or a panic.
+	defer removeEnvValuesFile()
+	cweArgs = append(cweArgs, envArgs...)
 	if cfg.NicoInfrastructure {
 		cweArgs = append(cweArgs, "--set-string", "secrets.dgxcTenantCredSecretName="+dgxcTenantSecret)
 	}
@@ -737,7 +773,9 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	if oidcValues != "" {
 		cweArgs = append(cweArgs, "--values", oidcValues)
 	}
-	if _, err := e.helm(ctx, kubeconfigPath, cweArgs...); err != nil {
+	_, err = e.helm(ctx, kubeconfigPath, cweArgs...)
+	removeEnvValuesFile()
+	if err != nil {
 		return fmt.Errorf("controllerdeploy: installing the controller: %w", err)
 	}
 
@@ -852,15 +890,49 @@ func profilesImageArgs(cfg Config) ([]string, error) {
 	}, nil
 }
 
-// cweEnvArgs renders the settings the controller reads from its own environment as helm
-// arguments over the chart's generic `env` list. A setting left at its zero
-// value is omitted, leaving the controller's own default in place.
-func cweEnvArgs(cfg Config) []string {
+// cweEnvVars lists the settings the controller reads from its own environment,
+// as name and value pairs. A setting left at its zero value is omitted, leaving
+// the controller's own default in place.
+func cweEnvVars(cfg Config) [][2]string {
 	var vars [][2]string
 	if cfg.NodeAgentPort != "" {
 		vars = append(vars, [2]string{"NODE_AGENT_PORT", cfg.NodeAgentPort})
 	}
+	return vars
+}
 
+// cweEnvHelmArgs returns the helm arguments that set the controller's
+// environment, and a function that removes any file they name. Without OTLP
+// headers they are --set-string arguments. With them, every entry goes in a
+// values file, which keeps the headers off the command line.
+func cweEnvHelmArgs(cfg Config, otlpHeaders string) (args []string, removeValuesFile func(), err error) {
+	if otlpHeaders == "" {
+		return cweEnvArgs(cfg), func() {}, nil
+	}
+	// A values file's env list does not merge with --set env[i] entries, so the
+	// file carries every entry.
+	vars := append(cweEnvVars(cfg), [2]string{otlpHeadersEnv, otlpHeaders})
+	valuesFile, removeValuesFile, err := writeEnvValues(vars)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return []string{"--values", valuesFile}, removeValuesFile, nil
+}
+
+// writeEnvValues writes vars as the chart's `env` list to a values file for
+// helm's --values, as writeSecretValues does.
+func writeEnvValues(vars [][2]string) (path string, cleanup func(), err error) {
+	env := make([]map[string]string, 0, len(vars))
+	for _, v := range vars {
+		env = append(env, map[string]string{"name": v[0], "value": v[1]})
+	}
+	return writeSecretValues(map[string]any{"env": env})
+}
+
+// cweEnvArgs renders the settings the controller reads from its own environment as helm
+// arguments over the chart's generic `env` list.
+func cweEnvArgs(cfg Config) []string {
+	vars := cweEnvVars(cfg)
 	// `env` is a list, so the settings share one numbering. Numbering each on its
 	// own would put every one of them at env[0], keeping only the last.
 	args := make([]string, 0, len(vars)*4)

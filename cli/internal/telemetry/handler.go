@@ -8,6 +8,8 @@ import (
 	"log/slog"
 
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dsx-ai-factory/nvke/cli/internal/redact"
 )
 
 // logHandler adds trace_id and span_id to every record.
@@ -61,13 +63,13 @@ func (handler *teeHandler) Handle(ctx context.Context, record slog.Record) error
 	if !trace.SpanContextFromContext(ctx).IsValid() {
 		ctx = trace.ContextWithSpanContext(ctx, handler.root)
 	}
-	_ = handler.exported.Handle(ctx, record.Clone())
+	_ = handler.exported.Handle(ctx, redact.Record(record))
 	return handler.local.Handle(ctx, record)
 }
 
 // WithAttrs implements slog.Handler.
 func (handler *teeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &teeHandler{local: handler.local.WithAttrs(attrs), exported: handler.exported.WithAttrs(attrs), root: handler.root}
+	return &teeHandler{local: handler.local.WithAttrs(attrs), exported: handler.exported.WithAttrs(redact.Attrs(attrs)), root: handler.root}
 }
 
 // WithGroup implements slog.Handler.

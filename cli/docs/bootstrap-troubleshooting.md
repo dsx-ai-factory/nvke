@@ -20,9 +20,8 @@ nvkectl bootstrap site -f sitespec.yaml 2>&1 | tee bootstrap.log
 
 Each attempt has its own trace ID. Include it when reporting a failure. It
 also finds the controller's records of the site cluster request: the API call,
-the cluster and node pool workflows, and their steps. Bootstrap does not
-configure span export for the controller it installs, so these logs are the
-record.
+the cluster and node pool workflows, and their steps. Without an OTLP endpoint
+(below), the controller's logs are the record.
 
 Search the controller logs for it, in the diagnostics directory or in a
 [retained bootstrap cluster](#the-retained-bootstrap-cluster):
@@ -44,55 +43,70 @@ node, run the same searches in two steps:
 2. Search for that `workflow_id`. The matches are the node's workflow and
    activity steps, including the one that failed.
 
-#### Send nvkectl's logs to a backend
+#### Send nvkectl's telemetry to a backend
 
-To search nvkectl's logs in your own backend, point nvkectl at an
-OpenTelemetry collector before you run a command. Every log record carries the
-command's trace ID, so you can find a run in the backend by the `Trace ID:`
-that nvkectl prints. What nvkectl writes to your terminal does not change.
+nvkectl can send its spans and log records to an OpenTelemetry collector over
+OTLP/gRPC. Each carries the run's trace ID, so you can search the backend for
+the `Trace ID:` that nvkectl prints. What nvkectl writes to stderr does not
+change.
 
-1. Set the collector's address. Use its OTLP gRPC port, usually 4317:
+##### With environment variables
 
-   ```bash
-   export OTEL_EXPORTER_OTLP_ENDPOINT=https://<COLLECTOR_HOST>:4317
-   ```
+| Variable | What it does |
+|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | The collector's address, as `host:port` or an `http://` or `https://` URL, with no credentials and no path. With no scheme, nvkectl uses TLS. Every nvkectl command reads it. |
+| `OTEL_EXPORTER_OTLP_INSECURE` | With an endpoint that has no scheme, `true` sends without TLS. An `http://` URL already does. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Headers for the collector, such as a token, as `key=value` pairs separated by commas. nvkectl sends them, and `bootstrap site` also gives them to the temporary controller. |
 
-2. If the collector needs a token, set it as a header. Skip this step
-   otherwise:
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://collector.example.com:4317
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer <TOKEN>'
+nvkectl bootstrap site -f sitespec.yaml
+```
 
-   ```bash
-   export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer <TOKEN>'
-   ```
+`bootstrap site` also exports the temporary controller's spans to this endpoint,
+with these headers, so the endpoint must be reachable from inside the Kind
+cluster. A loopback endpoint (`localhost`, `127.0.0.1`, `::1`) is used by nvkectl
+only: nvkectl prints a warning and the controller's spans are not exported.
 
-3. Run the command:
+If the endpoint is wrong, nvkectl prints one warning that names the variable
+and says what to do, sends no telemetry, and runs the command.
 
-   ```bash
-   nvkectl bootstrap site -f sitespec.yaml
-   ```
+##### With flags on `bootstrap site`
 
-Replace `<COLLECTOR_HOST>` with the collector's host name or IP address and
-`<TOKEN>` with your token. Separate several headers with commas.
+`--otlp-endpoint <host:port or URL>` sets the collector's address and
+`--otlp-insecure` sends without TLS. When `--otlp-endpoint` is set, it is used
+instead of `OTEL_EXPORTER_OTLP_ENDPOINT`:
 
-The endpoint follows these rules:
+```bash
+nvkectl bootstrap site -f sitespec.yaml --otlp-endpoint 192.0.2.10:4317 --otlp-insecure
+```
 
-- Write it as `<COLLECTOR_HOST>:4317` or as an `http://` or `https://` URL,
-  with no path and no user name or password. Put credentials in
-  `OTEL_EXPORTER_OTLP_HEADERS`. Do not use the collector's HTTP address, such
-  as `https://<COLLECTOR_HOST>:4318/v1/logs`.
-- Connections use TLS. To send without TLS, use an `http://` URL, or write the
-  endpoint without a scheme and set `OTEL_EXPORTER_OTLP_INSECURE=true`. An
-  `https://` URL always uses TLS.
-- nvkectl verifies the collector's certificate against the host's trusted
-  certificate authorities. It does not use `OTEL_EXPORTER_OTLP_CERTIFICATE` or
-  the client certificate variables, so a collector with a private certificate
-  authority needs that authority in the host's trust store, and a collector
-  that requires client certificates is not supported.
-- nvkectl sends its log records only, not spans.
+The temporary controller in the bootstrap cluster exports its spans to the same
+endpoint, so the endpoint must be reachable from inside the Kind cluster. A
+loopback address (`localhost`, `127.0.0.1`, `::1`, `0.0.0.0` or `::`) is
+rejected; use the host's LAN address or a DNS name.
 
-If nvkectl prints `OTLP log export is off`, it did not accept the endpoint and
-sends no logs. The warning names the setting. Check the endpoint against the
-rules above. If the collector cannot be reached, nvkectl prints one warning
-and the command still succeeds.
+A wrong flag value is an error: the command stops before bootstrap starts and
+the error names the flag.
+
+Headers cannot be passed as a flag. Set `OTEL_EXPORTER_OTLP_HEADERS`. nvkectl
+sends them to the endpoint you set with `--otlp-endpoint` and also gives them to
+the temporary controller, so its spans reach the same backend. With an `http://`
+endpoint or `--otlp-insecure`, the headers travel without TLS and nvkectl prints
+a warning. The controller keeps them in its Deployment and Helm release until
+the bootstrap cluster is deleted.
+
+nvkectl verifies the collector's certificate against the host's trusted
+certificate authorities, for spans and for logs. It does not use
+`OTEL_EXPORTER_OTLP_CERTIFICATE` or the client certificate variables, so a
+collector with a private certificate authority needs that authority in the
+host's trust store, and a collector that requires client certificates is not
+supported. Use the collector's gRPC address, usually `:4317`, not its HTTP
+address such as `https://<COLLECTOR_HOST>:4318/v1/traces`.
+
+If the collector cannot be reached, nvkectl prints one warning and the command
+still succeeds.
 
 ### The diagnostics directory
 
@@ -138,6 +152,10 @@ available, the kubeconfig path.
 ```text
 level=WARN msg="bootstrap failed after site cluster creation; retaining the bootstrap kind cluster for recovery" cluster=nvkectl-bootstrap kubeconfig=/tmp/nvkectl-bootstrap-kubeconfig-.../config
 ```
+
+If you set `OTEL_EXPORTER_OTLP_HEADERS`, the kept cluster also holds those
+headers, typically a token, in the controller's Deployment and Helm release, so
+delete it when you are done.
 
 With `infra.provider: nico`, the kept cluster also holds the
 NICo token and the tenant password as Secrets (`nico-credentials` in
