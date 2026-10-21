@@ -37,12 +37,18 @@ type ExecuteHostRunbookResult struct {
 }
 
 func (a *Activities) ExecuteHostRunbook(ctx context.Context, input ExecuteHostRunbookInput) (ExecuteHostRunbookResult, error) {
+	return a.runHostRunbook(ctx, input, a.cfg.EffectiveRunbooksDir())
+}
+
+// runHostRunbook loads scripts from runbooksDir before embedded scripts. An
+// empty runbooksDir selects only the controller-owned embedded script.
+func (a *Activities) runHostRunbook(ctx context.Context, input ExecuteHostRunbookInput, runbooksDir string) (ExecuteHostRunbookResult, error) {
 	node, err := a.db.GetNode(ctx, input.HostID)
 	if err != nil {
 		return ExecuteHostRunbookResult{}, fmt.Errorf("failed to get node %s: %w", input.HostID, err)
 	}
 
-	res, err := a.executeHostRunbook(ctx, input, node)
+	res, err := a.executeHostRunbook(ctx, input, node, runbooksDir)
 
 	clusterName := ""
 	if cluster, clusterErr := a.db.GetCluster(ctx, node.ClusterID); clusterErr != nil {
@@ -56,8 +62,8 @@ func (a *Activities) ExecuteHostRunbook(ctx context.Context, input ExecuteHostRu
 	return res, err
 }
 
-func (a *Activities) executeHostRunbook(ctx context.Context, input ExecuteHostRunbookInput, node db.Node) (ExecuteHostRunbookResult, error) {
-	script, err := runbook.Script(a.cfg.EffectiveRunbooksDir(), input.RunbookName)
+func (a *Activities) executeHostRunbook(ctx context.Context, input ExecuteHostRunbookInput, node db.Node, runbooksDir string) (ExecuteHostRunbookResult, error) {
+	script, err := runbook.Script(runbooksDir, input.RunbookName)
 	if err != nil {
 		return ExecuteHostRunbookResult{}, err
 	}

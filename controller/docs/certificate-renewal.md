@@ -200,8 +200,9 @@ operation or interfere with a newer one. Receipts preserve the original outcome
 and must not be deleted while delayed attempts could still arrive. Only newly
 started V2 operations use the receipt-aware phase format: old five-line state
 remains readable/resumable but is never upgraded into fencing evidence.
-Normal V2 legacy success also requires this receipt verification; a successful
-outcome from a receipt-unaware override fails without retrying the override.
+Normal V2 legacy success also requires this receipt verification. V2 legacy
+dispatch always uses the controller's embedded runbook, never a configured
+override; overrides remain available to V1's inline fallback.
 
 For a legacy operation that ended without a receipt, the status-only check,
 holding the renewal lock, records an `abandoned` receipt for that operation ID.

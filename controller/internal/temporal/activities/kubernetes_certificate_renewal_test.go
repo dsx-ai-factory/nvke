@@ -859,9 +859,9 @@ func TestResolveLegacyKubernetesCertificateRenewalUsesOnlyEmbeddedStatusMode(t *
 	}
 }
 
-// TestRenewLegacyKubernetesCertificatesRejectsReceiptUnawareSuccess prevents an
-// override's success marker from bypassing V2 fencing. Missing or abandoned
-// receipt evidence fails without retrying that override and retains its original
+// TestRenewLegacyKubernetesCertificatesRejectsReceiptUnawareSuccess prevents a
+// success marker without receipt evidence from bypassing V2 fencing. Missing or
+// abandoned receipt evidence fails without retrying and retains the original
 // diagnostics.
 func TestRenewLegacyKubernetesCertificatesRejectsReceiptUnawareSuccess(t *testing.T) {
 	for name, statusResponse := range map[string]*nvkeproto.ExecuteScriptResponse{
@@ -882,11 +882,12 @@ func testRenewLegacyKubernetesCertificatesRejectsReceiptUnawareSuccess(t *testin
 	database.On("GetCluster", mock.Anything, node.ClusterID).Return(db.Cluster{ID: node.ClusterID}, nil).Once()
 	overrides := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(overrides, legacyKubernetesCertificateRenewalRunbook+".sh"),
-		[]byte("#!/bin/bash\necho RENEWAL_OUTCOME=renewed\n"), 0o600))
+		[]byte("#!/bin/bash\necho unsafe override\n"), 0o600))
 	fakeAgent := &agenttest.FakeClient{ExecuteScriptHook: func(_ db.Node, _, script string) (*nvkeproto.ExecuteScriptResponse, error) {
 		if strings.Contains(script, "export STATUS_ONLY='true'") {
 			return statusResponse, nil
 		}
+		require.NotContains(t, script, "unsafe override")
 		return &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_OUTCOME=renewed\n", ErrorMessage: "original diagnostic"}, nil
 	}}
 	a := &Activities{cfg: config.Config{RunbooksDir: overrides}, db: database, nodeAgentClient: fakeAgent}
@@ -898,11 +899,11 @@ func testRenewLegacyKubernetesCertificatesRejectsReceiptUnawareSuccess(t *testin
 		NodeID: node.ID, OperationID: "stable-operation", ThresholdDays: 14, ExpectedEtcdMembers: 3,
 	})
 
-	require.Error(t, err, "an old override's success must not bypass the fencing contract")
+	require.Error(t, err, "a success marker without receipt evidence must not bypass the fencing contract")
 	var applicationErr *temporal.ApplicationError
 	require.ErrorAs(t, err, &applicationErr)
 	require.Equal(t, "UnconfirmedLegacyCertificateRenewal", applicationErr.Type())
-	require.True(t, applicationErr.NonRetryable(), "do not rerun an override that cannot prove fencing")
+	require.True(t, applicationErr.NonRetryable(), "do not rerun a legacy attempt that cannot prove fencing")
 	var result KubernetesCertificateRenewalResult
 	require.NoError(t, applicationErr.Details(&result))
 	require.Equal(t, "RENEWAL_OUTCOME=renewed\n", result.Output)
@@ -910,6 +911,73 @@ func testRenewLegacyKubernetesCertificatesRejectsReceiptUnawareSuccess(t *testin
 	require.Equal(t, db.CertificateRenewalOutcomeRenewed, result.Outcome)
 	require.Len(t, fakeAgent.ExecuteScriptNames, 2)
 	database.AssertExpectations(t)
+}
+
+// TestLegacyKubernetesCertificateRenewalOverrideSelection keeps V2 mutation on
+// the embedded receipt-aware runbook while preserving V1's configured override.
+func TestLegacyKubernetesCertificateRenewalOverrideSelection(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		v2           bool
+		wantOverride bool
+	}{
+		{name: "v2 uses embedded runbook", v2: true},
+		{name: "v1 keeps configured override", wantOverride: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			node := pooledCertificateRenewalTestNode()
+			database := &testutil.MockDB{}
+			getNodeCalls := 2
+			if tt.v2 {
+				getNodeCalls = 3
+			}
+			database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Times(getNodeCalls)
+			database.On("GetCluster", mock.Anything, node.ClusterID).Return(db.Cluster{ID: node.ClusterID, Name: "test"}, nil).Once()
+			overrides := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(overrides, legacyKubernetesCertificateRenewalRunbook+".sh"),
+				[]byte("#!/bin/bash\necho unsafe override\n"), 0o600))
+			var mutationScript string
+			fakeAgent := &agenttest.FakeClient{
+				StartKubernetesCertificateRenewalHook: func(db.Node, *nvkeproto.StartKubernetesCertificateRenewalRequest) (*nvkeproto.StartKubernetesCertificateRenewalResponse, error) {
+					return nil, status.Error(codes.Unimplemented, "unknown method")
+				},
+				ExecuteScriptHook: func(_ db.Node, name, script string) (*nvkeproto.ExecuteScriptResponse, error) {
+					require.Equal(t, legacyKubernetesCertificateRenewalRunbook, name)
+					if strings.Contains(script, "export STATUS_ONLY='true'") {
+						require.True(t, tt.v2)
+						return &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_TERMINAL_OPERATION_ID=stable-operation\n"}, nil
+					}
+					mutationScript = script
+					return &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_OUTCOME=renewed\n"}, nil
+				},
+			}
+			a := &Activities{cfg: config.Config{RunbooksDir: overrides}, db: database, nodeAgentClient: fakeAgent}
+			input := KubernetesCertificateRenewalInput{NodeID: node.ID, OperationID: "stable-operation", ThresholdDays: 14}
+
+			var err error
+			if tt.v2 {
+				input.ExpectedEtcdMembers = 3
+				suite := &testsuite.WorkflowTestSuite{}
+				env := suite.NewTestActivityEnvironment()
+				env.RegisterActivity(a.RenewLegacyKubernetesCertificates)
+				_, err = env.ExecuteActivity(a.RenewLegacyKubernetesCertificates, input)
+			} else {
+				_, err = executeCertificateRenewalActivity(t, a, input)
+			}
+
+			require.NoError(t, err)
+			if tt.wantOverride {
+				require.Contains(t, mutationScript, "unsafe override")
+				require.Len(t, fakeAgent.ExecuteScriptNames, 1)
+			} else {
+				require.NotContains(t, mutationScript, "unsafe override")
+				require.Contains(t, mutationScript, `exec 9>"$LOCK_FILE"`)
+				require.Contains(t, mutationScript, "export EXPECTED_ETCD_MEMBERS='3'")
+				require.Len(t, fakeAgent.ExecuteScriptNames, 2)
+			}
+			database.AssertExpectations(t)
+		})
+	}
 }
 
 func TestRenewKubernetesCertificatesNotDispatchedRequiresNoPriorReservation(t *testing.T) {
