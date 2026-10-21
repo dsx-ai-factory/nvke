@@ -16,10 +16,10 @@ each component in depth.
 
 Provide the following before installing NKTP.
 
-- **Kubernetes 1.29+.** Every Collector Pod runs its self-telemetry sidecar as
-  a native sidecar, an init container with `restartPolicy: Always`, which
-  Kubernetes enables by default from 1.29. The bundled OpenTelemetry Operator
-  0.161.0 itself supports 1.25+.
+- **Kubernetes 1.31+.** The bundled metrics-server 0.8.1 supports 1.31+. Every
+  Collector Pod runs its self-telemetry sidecar as a native sidecar, an init
+  container with `restartPolicy: Always`, which Kubernetes enables by default
+  from 1.29. The bundled OpenTelemetry Operator 0.161.0 itself supports 1.25+.
 - **Helm 4.** The repository pins the version in `make/tool-versions.mk`.
 - **cert-manager.** Required with default values; install it separately.
   NKTP does not bundle or install it. It issues certificates for internal
@@ -45,9 +45,9 @@ Provide the following before installing NKTP.
   mounts host paths for pod logs, journald and `/proc`. node-exporter uses the
   host network and PID namespaces, host paths, and host port 9100. The
   `baseline` and `restricted` Pod Security levels reject these Pods.
-- **Capacity.** The defaults are sized for large clusters: about 10 CPU and
-  26 GiB of memory in requests for the cluster-wide components, plus about
-  1.1 CPU and 2.2 GiB on every node for the per-node DaemonSets.
+- **Capacity.** The defaults are sized for large clusters. Review resource
+  requests and limits for every Collector, sidecar, Target Allocator and
+  bundled dependency, and reserve capacity for autoscaling.
 
 ## Install
 
@@ -97,9 +97,9 @@ own metrics to watchdog over plaintext OTLP/gRPC on port 4320. Watchdog exports
 received telemetry to the backend without passing through the gateways; its own
 sidecar exports watchdog's telemetry to the backend.
 
-Gateways and watchdog rotate connections about every five minutes so clients
-can reach newly added replicas while limiting connection churn. Configure the
-interval under each receiver's `otelcol.config`.
+Gateways rotate connections about every minute and watchdog every five minutes
+so clients can reach newly added replicas. Configure the interval under each
+receiver's `otelcol.config`.
 
 ## Sending telemetry to NKTP
 
@@ -112,7 +112,11 @@ interval under each receiver's `otelcol.config`.
   the metrics port, admit the release namespace. If a monitor references a
   Secret or CA ConfigMap, list its namespace in
   `daemonset.kubernetes.targetAllocator.prometheusCR.secretNamespaces` so the
-  node Target Allocator can read it.
+  node Target Allocator can read it. Both the node and large-target allocators
+  default `prometheusCR.denyFSAccessThroughSMs` to `false` for compatibility
+  with monitors that reference files in Collector containers. Before setting
+  it to `true`, replace file references in the selected monitors with Secret
+  or CA ConfigMap references; otherwise, affected scrape jobs are dropped.
 - **Large scrape responses:** label the monitor
   `nktp.nvidia.io/large-target: "true"` to scrape it from the large-target pool,
   which reserves more memory per scrape, instead of the node collector.
@@ -129,8 +133,13 @@ Each Collector component has the same values structure:
 | `<component>.otelcol.image` | An image override for this component only. |
 | `<component>.kubernetes` | `OpenTelemetryCollector` settings such as replicas, resources, env, volumes, autoscaler, and Target Allocator. |
 
-The chart renders each Collector configuration exactly as written. No other value
-changes it, so to change a pipeline, change its configuration.
+The chart renders each Collector configuration exactly as written. No other
+value changes it, so to change a pipeline, change its configuration.
+
+Each gateway defaults to an approximately 0.48 GiB sending queue measured in
+serialized bytes, 12% of its 4 GiB container limit. Heap usage is larger than
+serialized size; review queue capacity and processing headroom when changing
+memory limits.
 
 Helm replaces lists in your values file as a whole. When overriding a list
 such as `kubernetes.env`, `kubernetes.volumes`, or a receiver's

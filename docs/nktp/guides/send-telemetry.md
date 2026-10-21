@@ -31,9 +31,12 @@ If a NetworkPolicy guards the metrics port, admit the NKTP release namespace.
 The node Target Allocator assigns each target to the node collector on the
 target's node. Targets without a matching collector node remain unassigned.
 
-The Target Allocator rejects ServiceMonitor and PodMonitor endpoints that
-reference local bearer-token or TLS files in the Collector container. Reference
-a Secret instead. The allocator reads Secrets and CA ConfigMaps only in the
+The node and large-target allocators default `denyFSAccessThroughSMs` to
+`false`, allowing monitors that reference local bearer-token or TLS files in
+the Collector container. Prefer Secret or CA ConfigMap references for new
+monitors. Before enabling the restriction, follow
+[Restrict monitor file access](restrict-monitor-file-access.md).
+The node allocator reads Secrets and CA ConfigMaps only in the
 namespaces the NKTP operator lists in
 `daemonset.kubernetes.targetAllocator.prometheusCR.secretNamespaces`, so ask
 them to add your namespace. See

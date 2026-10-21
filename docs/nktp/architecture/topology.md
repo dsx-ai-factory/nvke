@@ -41,9 +41,9 @@ flowchart LR
 | Collector | Values key | Runs as | Collects | Sends to |
 | --- | --- | --- | --- | --- |
 | [Node collector](../components/node-collector.md) | `daemonset` | DaemonSet on every node, including tainted nodes | OTLP from workloads on its node, pod logs, journal, host authentication and audit logs, Kubernetes API audit log, kubelet and cAdvisor metrics, and scrape targets on its node | The gateway for each signal |
-| [Large-target metrics pool](../components/large-target-metrics.md) | `large_target_metrics` | StatefulSet, 2 to 16 replicas | Monitors labeled `nktp.nvidia.io/large-target: "true"` | Metrics gateway |
+| [Large-target metrics pool](../components/large-target-metrics.md) | `large_target_metrics` | StatefulSet, 2 to 32 replicas | Monitors labeled `nktp.nvidia.io/large-target: "true"` | Metrics gateway |
 | [Cluster event reader](../components/cluster-events.md) | `cluster_events` | StatefulSet, 2 replicas, one elected reader | Kubernetes Events | Logs gateway |
-| [Logs, metrics, and traces gateways](../components/gateways.md) | `gateway_logs`, `gateway_metrics`, `gateway_traces` | One StatefulSet each, 2 to 64 replicas | OTLP over gRPC with mTLS | Backend |
+| [Logs, metrics, and traces gateways](../components/gateways.md) | `gateway_logs`, `gateway_metrics`, `gateway_traces` | One StatefulSet each, 2 to 128 replicas | OTLP over gRPC with mTLS | Backend |
 | [Watchdog](../components/watchdog.md) | `watchdog` | StatefulSet, 2 to 16 replicas | Self-telemetry from NKTP components | Backend |
 
 Each Collector's exporters name the next hop explicitly. For example, the node

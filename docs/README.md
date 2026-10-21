@@ -105,10 +105,11 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [nktp/architecture/topology.md](nktp/architecture/topology.md) | The Collectors, how each signal flows to the backend, and how scraping is allocated |
 | [nktp/architecture/backpressure.md](nktp/architecture/backpressure.md) | How queues and the memory limiter behave when a Collector is saturated |
 | [nktp/architecture/self-telemetry.md](nktp/architecture/self-telemetry.md) | The sidecar that buffers each Collector's own telemetry, and how it samples traces |
-| [nktp/guides/size-resources.md](nktp/guides/size-resources.md) | Default requests and limits, and the footprint of a three-node cluster |
+| [nktp/guides/size-resources.md](nktp/guides/size-resources.md) | Default requests and limits, runtime memory targets, and sizing guidance |
 | [nktp/guides/configure-cert-manager.md](nktp/guides/configure-cert-manager.md) | What NKTP uses cert-manager for, and installing without it |
 | [nktp/guides/secure-gateway-export.md](nktp/guides/secure-gateway-export.md) | TLS and mTLS from the gateways and the watchdog to the backend |
 | [nktp/guides/configure-kubelet-metrics.md](nktp/guides/configure-kubelet-metrics.md) | Changing the kubelet scrapes, verifying kubelet certificates, and running beside kube-prometheus-stack |
+| [nktp/guides/restrict-monitor-file-access.md](nktp/guides/restrict-monitor-file-access.md) | Migrate monitor credentials before enabling file-access restrictions |
 | [nktp/guides/enable-host-process-metrics.md](nktp/guides/enable-host-process-metrics.md) | Per-process host metrics, the privileges they need, and their cardinality |
 | [nktp/components/node-collector.md](nktp/components/node-collector.md) | The node Collector (`daemonset`): OTLP endpoint, pod logs, journal, log classification and monitor credentials |
 | [nktp/components/gateways.md](nktp/components/gateways.md) | The logs, metrics and traces gateways (`gateway_*`) and their endpoints |
@@ -119,6 +120,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [nktp/components/otel-lgtm.md](nktp/components/otel-lgtm.md) | The bundled development backend (`otel-lgtm`), its dashboards and settings |
 | [nktp/components/dependencies.md](nktp/components/dependencies.md) | The bundled Operator, CRDs, node-exporter and metrics-server |
 | [nktp/design-principles.md](nktp/design-principles.md) | Why the chart renders each Collector configuration exactly as written |
+| [nktp/designs/monitor-file-access.md](nktp/designs/monitor-file-access.md) | Why monitor file access remains enabled by default and how to restrict it |
 | [nktp/designs/target-allocation.md](nktp/designs/target-allocation.md) | Why every scraping Collector requires a Target Allocator |
 | [nktp/designs/kube-state-metrics.md](nktp/designs/kube-state-metrics.md) | The approaches considered for scaling kube-state-metrics collection |
 

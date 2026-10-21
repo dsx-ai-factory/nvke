@@ -37,7 +37,8 @@ and `/etc/machine-id`, with journals in `/var/log/journal`. The Collector uses
 selective read-only host mounts and
 the `SYS_CHROOT` capability to run the host executable. The `/lib64` host volume
 is also mounted at `/hostfs/usr/lib64` for Red Hat library paths. Collection
-starts with new entries. Journal cursors are not persisted across Collector restarts.
+starts with new entries. Journal cursors are not persisted across Collector
+restarts.
 
 Override `root_path`, `journalctl_path`, and `directory` under
 `daemonset.otelcol.config.receivers.journald` for a different host layout.
@@ -82,10 +83,18 @@ Operator manager container logs go to watchdog through `logs/operator`.
 Use `daemonset.otelcol.config` for Collector configuration and
 `daemonset.kubernetes` for Kubernetes workload configuration. The pod-log mount
 is read-only, but host file permissions require the collector to run as root.
-The file reader follows new records and does not persist offsets across restarts.
+The file reader follows new records and does not persist offsets across restarts
+by default.
 Retain `GOMEMLIMIT` and `GOGC` when replacing its environment list.
 The chart adds `NODE_NAME`, `POD_NAMESPACE`, and `OTEL_K8S_NODE_IP` if the list
 omits them.
+
+The node Collector inherits `priorityClass.name` (default
+`nktp-telemetry-critical` at `1000000000`, below system-critical Pods), including
+its sidecar but not its Target Allocator. Use an existing class with
+`priorityClass.create: false`, or override
+`daemonset.kubernetes.priorityClassName` (`""` opts out); set
+`priorityClass.preemptionPolicy: Never` to disable preemption.
 
 ## Target Allocator
 
@@ -96,8 +105,13 @@ Monitoring CRs labeled `nktp.nvidia.io/large-target: "true"` are excluded.
 Unlabeled monitors remain eligible. Targets without a matching collector node
 remain unassigned.
 
-The Target Allocator rejects ServiceMonitor and PodMonitor endpoints that reference
-local bearer-token or TLS files in the Collector container.
+The Target Allocator defaults `prometheusCR.denyFSAccessThroughSMs` to `false`
+for compatibility with existing ServiceMonitors and PodMonitors that reference
+local bearer-token or TLS files. Referenced files must exist in each scraping
+Collector container. Prefer Secret or CA ConfigMap references when authoring
+monitors. Before enabling `denyFSAccessThroughSMs`, ensure that none of the
+allocator's selected monitors reference files in the Collector container. See
+[Restrict monitor file access](../guides/restrict-monitor-file-access.md).
 
 ### Monitor credentials
 

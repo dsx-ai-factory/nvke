@@ -46,6 +46,8 @@ Use `watchdog.kubernetes` for Collector CR settings and `watchdog.otelcol.image`
 to override the global `otelcol_image`.
 Include `GOMEMLIMIT` and `GOGC` in any replacement `watchdog.kubernetes.env` list
 to retain these settings.
+The Collector Pod inherits `priorityClass.name`; override
+`watchdog.kubernetes.priorityClassName` to use another class or `""` to opt out.
 
 ## Redaction
 

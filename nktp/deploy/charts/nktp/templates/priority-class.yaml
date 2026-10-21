@@ -1,0 +1,14 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+{{- if .Values.priorityClass.create }}
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: {{ required "priorityClass.name is required when priorityClass.create is true" .Values.priorityClass.name | quote }}
+value: {{ .Values.priorityClass.value | int }}
+globalDefault: false
+preemptionPolicy: {{ .Values.priorityClass.preemptionPolicy }}
+description: {{ .Values.priorityClass.description | quote }}
+{{- end }}

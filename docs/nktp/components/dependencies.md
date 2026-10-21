@@ -52,6 +52,17 @@ node-exporter:
   enabled: false
 ```
 
+The exporter's cpufreq collector is turned off with `--no-collector.cpufreq`. In node_exporter 1.12.1,
+this collector hangs on arm64 nodes that use the `cppc_cpufreq` driver, so scrapes of the exporter time out
+([prometheus/node_exporter#3791](https://github.com/prometheus/node_exporter/issues/3791)). As a result,
+the exporter does not produce the `node_cpu_frequency_*` and `node_cpu_scaling_*` series.
+To turn the collector back on, set `extraArgs` to an empty list:
+
+```yaml
+node-exporter:
+  extraArgs: []
+```
+
 ## Metrics server
 
 [metrics-server](https://github.com/kubernetes-sigs/metrics-server) serves the Kubernetes
@@ -72,7 +83,7 @@ metrics-server:
 ```
 
 The bundled chart is pinned to metrics-server chart 3.13.1, which installs metrics-server
-0.8.1.
+0.8.1. That version supports Kubernetes 1.31+.
 
 Settings pass through under `metrics-server` using the upstream chart's own values, none
 of which NKTP overrides. See the [chart's values reference](https://github.com/kubernetes-sigs/metrics-server/blob/metrics-server-helm-chart-3.13.1/charts/metrics-server/README.md)
