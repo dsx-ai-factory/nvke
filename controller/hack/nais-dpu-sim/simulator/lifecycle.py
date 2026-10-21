@@ -85,9 +85,8 @@ def configure_workload_cluster(sim: Simulation, record_success=True):
             if sim.config.get("installed_host_ids") != host_ids:
                 wait_until("workload API initialized by node agent", lambda: sim.exec(sim.hosts[0]["container"], "test", "-s", "/etc/kubernetes/admin.conf") is not None)
                 devices.wire(sim)
-                ovn.load(sim)
+                ovn.verify_preloaded_images(sim)
                 devices.simulation_links(sim)
-                devices.load_helpers(sim)
                 node = json.loads(sim.kubectl("get", "node", sim.hosts[0]["name"], "-o", "json"))
                 if any(t["key"] == "node-role.kubernetes.io/control-plane" for t in node["spec"].get("taints", [])):
                     sim.kubectl("taint", "node", sim.hosts[0]["name"], "node-role.kubernetes.io/control-plane-")

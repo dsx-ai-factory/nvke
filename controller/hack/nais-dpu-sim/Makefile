@@ -90,6 +90,8 @@ packages: agent
 
 node:
 	docker save -o "$(STATE)/build/node/images.tar" '$(OVN_IMAGE)' '$(PLUGIN_IMAGE)' '$(FRR_CONTROLLER)' '$(FRR_IMAGE)'
+	cp images/preload-images.sh "$(STATE)/multus-oci.tar" "$(STATE)/build/node/"
+	printf '%s\n' '$(call input,multus,image)@$(call input,multus,digest)' > "$(STATE)/build/node/multus-image"
 	docker build $(DOCKER_BUILD_FLAGS) -f images/Dockerfile.managed-node -t nvke-nais-dpu-sim-node:local "$(STATE)/build/node"
 
 runtime:

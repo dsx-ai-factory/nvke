@@ -6,11 +6,8 @@ import hashlib
 import json
 
 
-from .config import STATE, INPUTS
-from .runtime import command, require
+from .runtime import command
 from .dpu_workload_network import NAMESPACE as OFFLOAD_NAMESPACE
-
-MULTUS_IMAGE = INPUTS["multus"]["image"] + "@" + INPUTS["multus"]["digest"]
 
 
 def wire(sim):
@@ -90,27 +87,3 @@ def simulation_links(sim):
         host["simulation_links_ready"] = True
         sim.save()
     print("Configured deterministic simulated MACs and reserved host uplinks", flush=True)
-
-
-def load_helpers(sim):
-    for host in sim.hosts:
-        node = host["container"]
-        try:
-            image = json.loads(sim.exec(node, "crictl", "inspecti", MULTUS_IMAGE))
-        except RuntimeError:
-            image = None
-        if image:
-            require(image["status"]["id"] == INPUTS["multus"]["config_digest"], "Unexpected Multus image identity")
-            continue
-        command("docker", "cp", str(STATE / "multus-oci.tar"), node + ":/var/lib/multus-oci.tar")
-        sim.exec(node, "ctr", "-n", "k8s.io", "images", "import", "--no-unpack", "--digests",
-                  "--base-name", "ghcr.io/k8snetworkplumbingwg/multus-cni", "/var/lib/multus-oci.tar")
-        # OCI archives add an outer index. Register the preserved ARM
-        # manifest under its own registry digest, rather than that wrapper.
-        sim.exec(node, "ctr", "-n", "k8s.io", "images", "tag", "--force",
-                  "ghcr.io/k8snetworkplumbingwg/multus-cni:multus", MULTUS_IMAGE)
-        sim.exec(node, "rm", "/var/lib/multus-oci.tar")
-        image = json.loads(sim.exec(node, "crictl", "inspecti", MULTUS_IMAGE))
-        require(image["status"]["id"] == INPUTS["multus"]["config_digest"],
-                "Unexpected Multus image identity")
-    print("Pinned Multus OCI image preloaded on all compute hosts", flush=True)

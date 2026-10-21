@@ -22,6 +22,8 @@ def management_up(sim, provider_chart):
     sim.exec(manager, "rm", "/var/lib/management-images.tar")
     command("clusterctl", "init", "--core", "cluster-api:v1.12.3", "--bootstrap", "kubeadm:v1.12.3",
             "--control-plane", "kubeadm:v1.12.3", "--kubeconfig", str(kubeconfig))
+    command("make", "-C", str(REPO / "controller"), "releases-install",
+            env={**os.environ, "KUBECONFIG": str(kubeconfig)})
     command("helm", "upgrade", "--install", "capi-provider-nico", str(provider_chart), "--kubeconfig", str(kubeconfig),
             "--namespace", "capnico-system", "--create-namespace", "--set-string", "manager.image.repository=cluster-api-provider-nico",
             "--set-string", "manager.image.tag=local", "--wait", "--timeout", "5m")

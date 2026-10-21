@@ -8,7 +8,7 @@ import time
 
 import yaml
 
-from .config import STATE, IMAGE, PLUGIN_IMAGE
+from .config import STATE, INPUTS, IMAGE, PLUGIN_IMAGE
 from .runtime import command, require, wait_until
 from .charts import render_ovn
 from .dpu_workload_network import isolate_pod, KUBE_NAMESPACE as OFFLOAD_KUBE_NAMESPACE
@@ -154,7 +154,7 @@ def configure_dns_devices(sim):
             sim.kubectl("patch", kind + "/" + name, "-n", "kube-system", "--type=strategic", "-p", json.dumps(patch))
 
 
-def load(sim):
+def verify_preloaded_images(sim):
     # Managed node images preload these before the node agent starts.
     for node in [h["container"] for h in sim.hosts] + [h["dpu"] for h in sim.hosts]:
         wait_until("managed node image preload", lambda: sim.exec(node, "systemctl", "is-active", "nvke-nais-dpu-sim-preload.service") == "active", 600)
@@ -162,4 +162,7 @@ def load(sim):
             expected = command("docker", "image", "inspect", ref, "--format", "{{.Id}}")
             actual = json.loads(sim.exec(node, "crictl", "inspecti", ref))["status"]["id"]
             require(actual == expected, "Managed node preload differs for " + ref)
+        multus = INPUTS["multus"]["image"] + "@" + INPUTS["multus"]["digest"]
+        installed = json.loads(sim.exec(node, "crictl", "inspecti", multus))
+        require(installed["status"]["id"] == INPUTS["multus"]["config_digest"], "Managed node has an unexpected Multus image")
     print("PASS simulation images preloaded by the managed node image", flush=True)
