@@ -104,6 +104,12 @@ navigation:
                 path: nktp/guides/configure-kubelet-metrics.md
               - page: Enable Host Process Metrics
                 path: nktp/guides/enable-host-process-metrics.md
+              - page: Restrict monitor file access
+                path: nktp/guides/restrict-monitor-file-access.md
+              - page: Enable auto-instrumentation
+                path: nktp/guides/enable-auto-instrumentation.md
+              - page: Enable eBPF instrumentation
+                path: nktp/guides/enable-ebpf-instrumentation.md
           - section: Components
             contents:
               - page: Node Collector
@@ -128,6 +134,8 @@ navigation:
                 path: nktp/design-principles.md
               - page: Required Target Allocation
                 path: nktp/designs/target-allocation.md
+              - page: "Monitor file-access restriction: rationale and compatibility"
+                path: nktp/designs/monitor-file-access.md
               - page: kube-state-metrics
                 path: nktp/designs/kube-state-metrics.md
           - section: Management cluster telemetry
