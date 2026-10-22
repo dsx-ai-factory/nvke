@@ -17,7 +17,10 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
-// Client is the NICo provider's capability client.
+// Client is the NICo provider's capability client. It is stateless: the
+// CreateMachine pre-flight's verdict source arrives per call on
+// shared.MachineCreateDeps.ImageVerifier, like every other dependency
+// Activities supplies.
 type Client struct{}
 
 // New returns a NICo provider Client.

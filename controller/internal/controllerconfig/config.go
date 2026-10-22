@@ -33,31 +33,32 @@ import (
 // and AUTH_CONFIG_PATH. The package tests hold the full classification and fail
 // when config.Config gains a field it does not cover.
 type Config struct {
-	AgentReadiness                           AgentReadinessConfig `json:"agentReadiness"`
-	FieldManager                             FieldManagerConfig   `json:"fieldManager"`
-	ManagedByLabelValue                      string               `json:"managedByLabelValue"`
-	ManagementNamespace                      string               `json:"managementNamespace"`
-	MetricsListenAddress                     string               `json:"metricsListenAddress"`
-	SupportedInfraProviders                  []string             `json:"supportedInfraProviders"`
-	NodeMetadataAllowlistedLabelKeys         []string             `json:"nodeMetadataAllowlistedLabelKeys"`
-	Tracing                                  TracingConfig        `json:"tracing"`
-	CertRenewal                              CertRenewalConfig    `json:"certRenewal"`
-	KubeadmImageRepository                   string               `json:"kubeadmImageRepository"`
-	CNIImageRegistry                         string               `json:"cniImageRegistry"`
-	InstallCNIAfterInit                      bool                 `json:"installCNIAfterInit"`
-	AllowLegacyCalicoClusterCreation         bool                 `json:"allowLegacyCalicoClusterCreation"`
-	NicoControllersEnabled                   bool                 `json:"nicoControllersEnabled"`
-	ProfilesDir                              string               `json:"profilesDir"`
-	RunbooksDir                              string               `json:"runbooksDir"`
-	TenantAccessEnabled                      bool                 `json:"tenantAccessEnabled"`
-	NodeAgent                                NodeAgentConfig      `json:"nodeAgent"`
-	OIDC                                     OIDCConfig           `json:"oidc"`
-	Temporal                                 TemporalConfig       `json:"temporal"`
-	Spire                                    SpireConfig          `json:"spire"`
-	Teleport                                 TeleportConfig       `json:"teleport"`
-	PermissiveMode                           bool                 `json:"permissiveMode"`
-	MachineMetadataAllowlistedLabelKeys      []string             `json:"machineMetadataAllowlistedLabelKeys"`
-	MachineMetadataAllowlistedAnnotationKeys []string             `json:"machineMetadataAllowlistedAnnotationKeys"`
+	AgentReadiness                           AgentReadinessConfig    `json:"agentReadiness"`
+	FieldManager                             FieldManagerConfig      `json:"fieldManager"`
+	ManagedByLabelValue                      string                  `json:"managedByLabelValue"`
+	ManagementNamespace                      string                  `json:"managementNamespace"`
+	MetricsListenAddress                     string                  `json:"metricsListenAddress"`
+	SupportedInfraProviders                  []string                `json:"supportedInfraProviders"`
+	NodeMetadataAllowlistedLabelKeys         []string                `json:"nodeMetadataAllowlistedLabelKeys"`
+	Tracing                                  TracingConfig           `json:"tracing"`
+	CertRenewal                              CertRenewalConfig       `json:"certRenewal"`
+	KubeadmImageRepository                   string                  `json:"kubeadmImageRepository"`
+	CNIImageRegistry                         string                  `json:"cniImageRegistry"`
+	InstallCNIAfterInit                      bool                    `json:"installCNIAfterInit"`
+	AllowLegacyCalicoClusterCreation         bool                    `json:"allowLegacyCalicoClusterCreation"`
+	NicoControllersEnabled                   bool                    `json:"nicoControllersEnabled"`
+	ProfilesDir                              string                  `json:"profilesDir"`
+	RunbooksDir                              string                  `json:"runbooksDir"`
+	TenantAccessEnabled                      bool                    `json:"tenantAccessEnabled"`
+	NodeAgent                                NodeAgentConfig         `json:"nodeAgent"`
+	OIDC                                     OIDCConfig              `json:"oidc"`
+	Temporal                                 TemporalConfig          `json:"temporal"`
+	Spire                                    SpireConfig             `json:"spire"`
+	Teleport                                 TeleportConfig          `json:"teleport"`
+	PermissiveMode                           bool                    `json:"permissiveMode"`
+	MachineMetadataAllowlistedLabelKeys      []string                `json:"machineMetadataAllowlistedLabelKeys"`
+	MachineMetadataAllowlistedAnnotationKeys []string                `json:"machineMetadataAllowlistedAnnotationKeys"`
+	ImageVerification                        ImageVerificationConfig `json:"imageVerification"`
 }
 
 // FieldManagerConfig groups the Server-Side-Apply field manager names, mirroring
@@ -314,6 +315,17 @@ func (c *Config) Validate() error {
 		if errs := validation.IsDNS1123Label(c.ManagementNamespace); len(errs) > 0 {
 			return fmt.Errorf("managementNamespace %q is not a valid namespace name: %s", c.ManagementNamespace, strings.Join(errs, "; "))
 		}
+	}
+
+	switch c.ImageVerification.Mode {
+	// The literals mirror internal/clients/nico/imageverify.go, which owns the
+	// semantics; controllerconfig cannot import it without inverting layers.
+	case "", "off", "warn", "enforce":
+	default:
+		// Rejected at startup rather than at the first machine creation: there
+		// the unknown mode is an error on every attempt, which Temporal retries
+		// without bound — a typo would read as a silent provisioning stall.
+		return fmt.Errorf("imageVerification.mode %q is not one of off, warn or enforce (in YAML the value must be quoted — a bare off is the boolean false)", c.ImageVerification.Mode)
 	}
 
 	if c.Spire.JoinTokenTTL.Duration <= 0 {
@@ -694,4 +706,14 @@ func (t *TeleportConfig) validate() error {
 		return fmt.Errorf("environment must be \"prod\" or \"non-prod\", got %q", t.Environment)
 	}
 	return nil
+}
+
+// ImageVerificationConfig governs the node-image validation pre-flight in the
+// NICo machine-materialization path.
+type ImageVerificationConfig struct {
+	// Mode is off (default), warn, or enforce; see
+	// internal/clients/nico/imageverify.go for the semantics. In YAML the
+	// value must be quoted ("off"), because a bare off is YAML's boolean
+	// false and fails to decode into this string field.
+	Mode string `json:"mode"`
 }

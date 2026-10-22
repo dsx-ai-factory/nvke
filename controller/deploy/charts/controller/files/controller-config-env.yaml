@@ -42,6 +42,8 @@ NODE_AGENT_TLS_JWT_SUBJECT_TENANT: nodeAgent.tlsJWT.subjectTenant
 NODE_AGENT_TLS_JWT_SUBJECT_SERVICE: nodeAgent.tlsJWT.subjectService
 NODE_AGENT_EXTERNAL_MTLS_ENABLED: nodeAgent.externalMTLSEnabled
 
+IMAGE_VERIFICATION_MODE: imageVerification.mode
+
 NKE_OIDC_AUTH_ENABLED: oidc.managementOIDCAuth.enabled
 NKE_OIDC_AUTH_ISSUER_URL: oidc.managementOIDCAuth.issuerURL
 NKE_OIDC_AUTH_DISCOVERY_URL: oidc.managementOIDCAuth.discoveryURL

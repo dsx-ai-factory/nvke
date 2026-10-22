@@ -75,6 +75,7 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.NodeAgent.TLSJWT.SubjectTenant = c.NodeAgent.TLSJWT.SubjectTenant
 	cfg.NodeAgent.TLSJWT.SubjectService = c.NodeAgent.TLSJWT.SubjectService
 	cfg.NodeAgentExternalMTLSEnabled = c.NodeAgent.ExternalMTLSEnabled
+	cfg.ImageVerificationMode = c.ImageVerification.Mode
 
 	shared := c.OIDC.ManagementOIDCAuth
 	cfg.NvkeOIDCAuth.Enabled = shared.Enabled

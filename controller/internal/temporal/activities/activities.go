@@ -13,6 +13,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodecontract"
@@ -30,6 +31,7 @@ type Activities struct {
 	trustDomain              string
 	controllerClientCABundle string
 	getTrustDomainBundle     trustDomainAndBundleGetter
+	imageVerifier            shared.ImageVerifier
 }
 
 func NewActivities(
@@ -51,6 +53,15 @@ func NewActivities(
 		controllerClientCABundle: controllerClientCABundle,
 		getTrustDomainBundle:     spiffe.GetTrustDomainAndBundle,
 	}
+}
+
+// WithImageVerifier sets the verdict source the nico CreateMachine pre-flight
+// consults, and returns a for chaining at the construction site. Unset, the
+// pre-flight sees a nil verifier: a no-op in mode off, reported in warn and
+// refused fail-closed in enforce (see internal/clients/nico/imageverify.go).
+func (a *Activities) WithImageVerifier(v shared.ImageVerifier) *Activities {
+	a.imageVerifier = v
+	return a
 }
 
 func (a *Activities) nodeAgentBootstrapFiles(node db.Node) ([]db.CloudInitFile, error) {

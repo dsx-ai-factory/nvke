@@ -98,6 +98,13 @@ func main() {
 		}
 	}
 
+	if mode := cfg.ImageVerificationMode; mode != "" && mode != "off" {
+		// Said once at startup because the mode changes what a machine
+		// creation can do: warn surfaces refusals it does not act on, and
+		// enforce with no verifier configured refuses every NICo machine.
+		logger.Info("node-image verification pre-flight is enabled", "mode", mode)
+	}
+
 	if _, err := maxprocs.Set(maxprocs.Logger(func(message string, args ...interface{}) {
 		logger.Info(fmt.Sprintf(message, args...))
 	})); err != nil {

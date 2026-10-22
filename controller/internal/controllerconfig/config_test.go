@@ -1177,3 +1177,27 @@ func TestMachineMetadataAllowlists_Config(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateImageVerificationMode(t *testing.T) {
+	t.Parallel()
+
+	// A typo'd mode must be a startup failure: at machine-creation time it is
+	// an error on every attempt, which Temporal retries without bound, so the
+	// misconfiguration would present as a silent provisioning stall.
+	_, err := controllerconfig.Load(writeConfig(t, minimalConfig+`imageVerification:
+  mode: enforced
+`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `imageVerification.mode "enforced"`)
+
+	// The YAML bare-off trap decodes as boolean false and fails earlier, at
+	// decode; the quoted forms and absence are the valid spellings.
+	for _, mode := range []string{`"off"`, `"warn"`, `"enforce"`, ""} {
+		doc := minimalConfig
+		if mode != "" {
+			doc += "imageVerification:\n  mode: " + mode + "\n"
+		}
+		_, err := controllerconfig.Load(writeConfig(t, doc))
+		require.NoError(t, err, "mode %s must be accepted", mode)
+	}
+}

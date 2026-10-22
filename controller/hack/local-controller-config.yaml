@@ -36,6 +36,9 @@ certRenewal:
   controllerEnabled: true
   interval: 12h
   thresholdDays: 30
+# Node-image validation pre-flight in the NICo machine path: off | warn | enforce.
+imageVerification:
+  mode: "off"
 kubeadmImageRepository: registry.k8s.io
 cniImageRegistry: ""
 installCNIAfterInit: false
