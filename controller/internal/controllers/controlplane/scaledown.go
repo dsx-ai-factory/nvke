@@ -53,10 +53,10 @@ func (r *reconciler) reconcileControlPlaneScaleDown(ctx context.Context, cluster
 	victim := selectControlPlaneNodeToScaleDown(eligible, cluster.ControlPlaneConfig.ScaleDownRanker())
 	nodeLogger := logger.With("nodeID", victim.ID, "nodeName", victim.Name)
 
-	// Record intent and let reconcileRequestedDeletes start the teardown. The
-	// quorum floor is NOT skipped -- this is a real shrink -- so the record-time
-	// floor stays authoritative. DeleteWithTx records CP nodes as intent rather
-	// than tearing them down directly.
+	// DeleteWithTx records a control-plane delete as intent, which
+	// reconcileRequestedDeletes later promotes to a teardown one node at a time.
+	// Unlike node-replacing callers, scale-down does not skip the quorum floor: a
+	// shrink has no replacement coming, so the record-time floor stays authoritative.
 	if err := nodes.DeleteWithTx(ctx, r.db, victim.ID,
 		nodes.WithReason("Control-plane scale-down: desired count decreased"),
 		nodes.WithAllowCPNode(true),
