@@ -4,6 +4,7 @@
 """Assert that the rendered tenant ClusterRole grants required permissions."""
 
 import argparse
+import copy
 import subprocess
 import sys
 
@@ -116,7 +117,13 @@ def main():
             "roleRef": {"kind": "ClusterRole", "name": "node-reader", "apiGroup": "rbac.authorization.k8s.io"},
         },
     ]
-    for additional in ([], None, additional_rbac):
+    scoped_rbac = []
+    for namespace in ("tenant-a", "tenant-b"):
+        for kind in ("Role", "RoleBinding"):
+            obj = copy.deepcopy(next(document for document in inner if document["kind"] == kind))
+            obj["metadata"]["namespace"] = namespace
+            scoped_rbac.append(obj)
+    for additional in ([], None, additional_rbac, scoped_rbac):
         result = subprocess.run(
             [*command, "--values", "-"],
             input=yaml.safe_dump({"tenantAccess": {"additionalRBAC": additional}}),
@@ -139,6 +146,30 @@ def main():
         actual_config_map["data"]["manifest.yaml"] = config_maps[0]["data"]["manifest.yaml"]
         if actual_documents != documents:
             print("ERROR: additional tenant RBAC must only change the nke-rbac manifest", file=sys.stderr)
+            return 1
+
+    collision_cases = [[document] for document in inner]
+    for obj in additional_rbac + scoped_rbac:
+        collision_cases.append([obj, obj])
+    for document in inner:
+        if document["kind"] in ("ClusterRole", "ClusterRoleBinding"):
+            obj = copy.deepcopy(document)
+            obj["metadata"]["namespace"] = "ignored-for-cluster-scoped-rbac"
+            collision_cases.append([obj])
+    for additional in collision_cases:
+        result = subprocess.run(
+            [*command, "--values", "-"],
+            input=yaml.safe_dump({"tenantAccess": {"additionalRBAC": additional}}),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        obj = additional[-1]
+        namespace = obj["metadata"].get("namespace", "") if obj["kind"] in ("Role", "RoleBinding") else ""
+        identity = f"{obj['kind']}/{namespace}/{obj['metadata']['name']}"
+        expected = f"tenantAccess.additionalRBAC[{len(additional) - 1}]: duplicate RBAC object {identity}"
+        if result.returncode == 0 or expected not in result.stderr:
+            print(f"ERROR: expected render rejection: {expected}\n{result.stderr}", file=sys.stderr)
             return 1
 
     roles = {

@@ -96,6 +96,27 @@ metadata:
 {{- $capiKubeadmBootstrapManagerSubject := .Values.spiffe.capiKubeadmBootstrapManagerSubject | default (printf "spiffe://%s/%s/capi-kubeadm-bootstrap-manager" $td $seg) }}
 {{- $capdManagerSubject := .Values.spiffe.capdManagerSubject | default (printf "spiffe://%s/%s/capd-manager" $td $seg) }}
 {{- $tenantRbacName := .Values.nvkeOIDCAuth.tenantRbacName }}
+{{- $rbacIdentities := dict }}
+{{- range $kind := list "ClusterRole" "ClusterRoleBinding" }}
+{{- $_ := set $rbacIdentities (printf "%s//%s" $kind $tenantRbacName) true }}
+{{- end }}
+{{- range $kind := list "Role" "RoleBinding" }}
+{{- range $namespace := list "kube-system" "kube-node-lease" }}
+{{- $_ := set $rbacIdentities (printf "%s/%s/%s" $kind $namespace $tenantRbacName) true }}
+{{- end }}
+{{- end }}
+{{- $_ := set $rbacIdentities "ClusterRoleBinding//nvke:capi-cluster-admin" true }}
+{{- range $index, $object := .Values.tenantAccess.additionalRBAC }}
+{{- $namespace := $object.metadata.namespace | default "" }}
+{{- if has $object.kind (list "ClusterRole" "ClusterRoleBinding") }}
+{{- $namespace = "" }}
+{{- end }}
+{{- $identity := printf "%s/%s/%s" $object.kind $namespace $object.metadata.name }}
+{{- if hasKey $rbacIdentities $identity }}
+{{- fail (printf "tenantAccess.additionalRBAC[%d]: duplicate RBAC object %s (conflicts with built-in RBAC or an earlier additional entry)" $index $identity) }}
+{{- end }}
+{{- $_ := set $rbacIdentities $identity true }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap

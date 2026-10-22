@@ -10,8 +10,13 @@ A Helm chart to deploy the NVKE controller service
 RBAC objects to append to the `nke-rbac` ConfigMap's `manifest.yaml`. The
 tenant-access controller applies these objects to OIDC tenant clusters, not
 the management cluster. Set `spiffe.trustDomain` and enable `tenantAccess`.
-Use names distinct from the built-in RBAC objects. Removing an entry from the
-list does not delete the previously applied object from tenant clusters.
+Helm rejects objects with the same kind, namespace, and name as built-in RBAC
+or another additional entry.
+
+To remove an applied object, remove its entry and deploy the updated configuration,
+then manually delete the object from each affected tenant cluster. Removing an
+entry alone does not delete it; deleting it while still configured causes the
+controller to recreate it.
 
 ## Renamed values
 
