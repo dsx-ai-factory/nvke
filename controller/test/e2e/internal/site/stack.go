@@ -119,12 +119,25 @@ type CAPIProviderConfig interface {
 	Credentials() []string
 }
 
-// Nico is where the site's CAPNICo reaches the NICo API.
+// Nico is where the site's CAPNICo reaches the NICo API, and how it
+// authenticates: either a static token or an OAuth client it mints its own
+// from. CAPNICo takes one or the other and refuses a Secret holding both.
+//
+// Every field is rendered, including the empty ones, because the credentials
+// template branches on Token and the renderer drops the branch not taken.
 type Nico struct {
 	Endpoint string `json:"Endpoint"`
 	OrgID    string `json:"OrgID"`
 	Token    string `json:"Token"`
 	APIName  string `json:"APIName"`
+
+	// The client-credentials form. A site controller outlives the run that
+	// built it, so a substrate whose tokens expire has to hand CAPNICo the
+	// client rather than a token minted once at install.
+	TokenURL     string `json:"TokenURL"`
+	ClientID     string `json:"ClientID"`
+	ClientSecret string `json:"ClientSecret"`
+	Scope        string `json:"Scope"`
 }
 
 // NewNico is the CAPNICo configuration.
@@ -138,15 +151,35 @@ func NewNico(endpoint, orgID, token, apiName string) Nico {
 	return Nico{Endpoint: endpoint, OrgID: orgID, Token: token, APIName: apiName}
 }
 
-// Credentials implements CAPIProviderConfig. The token is the whole of it:
-// the endpoint, org and API name are infrastructure, and the token is what
-// reaches the node, both in bootstrap-config.json and in the Secret the
-// credentials template renders from it.
-func (n Nico) Credentials() []string {
-	if n.Token == "" {
-		return nil
+// NewNicoClient is the CAPNICo configuration for a substrate whose tokens
+// expire, which is every substrate whose tokens are minted rather than issued.
+// CAPNICo re-mints from these for as long as the site stands.
+func NewNicoClient(endpoint, orgID, apiName, tokenURL, clientID, clientSecret, scope string) Nico {
+	return Nico{
+		Endpoint:     endpoint,
+		OrgID:        orgID,
+		APIName:      apiName,
+		TokenURL:     tokenURL,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Scope:        scope,
 	}
-	return []string{n.Token}
+}
+
+// Credentials implements CAPIProviderConfig. Whichever form is configured,
+// one field of it is a secret and reaches the node in bootstrap-config.json
+// and in the Secret the credentials template renders from it. The endpoint,
+// org, API name, token URL and client id are infrastructure: the id is named
+// in rejections on purpose, because every client here is nvssa-prd-* and
+// nothing else says which identity was presented.
+func (n Nico) Credentials() []string {
+	var secrets []string
+	for _, secret := range []string{n.Token, n.ClientSecret} {
+		if secret != "" {
+			secrets = append(secrets, secret)
+		}
+	}
+	return secrets
 }
 
 // ConfigKey implements CAPIProviderConfig. "Nico" is what
@@ -154,9 +187,24 @@ func (n Nico) Credentials() []string {
 func (n Nico) ConfigKey() string { return "Nico" }
 
 // Validate implements CAPIProviderConfig.
+//
+// The either/or is CAPNICo's own: it reads a Secret carrying both as a
+// misconfiguration rather than preferring one, so a config that would render
+// both fails here, before the deploy stages anything.
 func (n Nico) Validate() error {
-	if n.Endpoint == "" || n.OrgID == "" || n.Token == "" {
-		return errors.New("NICo endpoint, org and token are required")
+	if n.Endpoint == "" || n.OrgID == "" {
+		return errors.New("NICo endpoint and org are required")
+	}
+	hasClient := n.TokenURL != "" || n.ClientID != "" || n.ClientSecret != ""
+	switch {
+	case n.Token != "" && hasClient:
+		return errors.New("NICo takes either a token or an OAuth client, not both")
+	case n.Token != "":
+		return nil
+	case !hasClient:
+		return errors.New("NICo needs either a token or an OAuth client (token URL, client id and secret)")
+	case n.TokenURL == "" || n.ClientID == "" || n.ClientSecret == "":
+		return errors.New("a NICo OAuth client needs a token URL, a client id and a client secret")
 	}
 	return nil
 }
