@@ -1622,9 +1622,9 @@ func (s *NodeAgentServer) ExecuteScript(
 
 	slog.Info("Issuing script execution request", "requestID", requestID, "scriptName", req.ScriptName, "async", req.Async)
 	if req.Async {
-		go s.executeScript(req, requestID) //nolint:all
+		go s.executeScript(context.WithoutCancel(ctx), req, requestID) //nolint:all
 	} else {
-		resp, err = s.executeScript(req, requestID)
+		resp, err = s.executeScript(ctx, req, requestID)
 	}
 	return resp, err
 }
@@ -1648,27 +1648,37 @@ func (s *NodeAgentServer) addScript(script Script) {
 }
 
 // logScriptExecution writes call info and result to ScriptExecutionLogger when set. output is truncated for size.
-func (s *NodeAgentServer) logScriptExecution(event, requestID string, req *pb.ExecuteScriptRequest, status string, exitCode int32, errMsg, output string) {
+func (s *NodeAgentServer) logScriptExecution(
+	ctx context.Context,
+	event, requestID string,
+	req *pb.ExecuteScriptRequest,
+	status string,
+	exitCode int32,
+	errMsg, output string,
+) {
 	if s.ScriptExecutionLogger == nil {
 		return
 	}
 	if len(output) > maxScriptLogOutputBytes {
 		output = output[:maxScriptLogOutputBytes] + "...[truncated]"
 	}
-	s.ScriptExecutionLogger.Info(event,
-		"request_id", requestID,
-		"script_name", req.GetScriptName(),
-		"script_path", req.GetScriptPath(),
-		"args", req.GetArgs(),
-		"async", req.GetAsync(),
-		"status", status,
-		"exit_code", exitCode,
-		"error_message", errMsg,
-		"output", output,
-	)
+	attrs := []slog.Attr{
+		slog.String("request_id", requestID),
+		slog.String("script_name", req.GetScriptName()),
+		slog.String("script_path", req.GetScriptPath()),
+		slog.Any("args", req.GetArgs()),
+		slog.Bool("async", req.GetAsync()),
+		slog.String("status", status),
+		slog.Int64("exit_code", int64(exitCode)),
+		slog.String("error_message", errMsg),
+		slog.String("output", output),
+	}
+	attrs = append(attrs, traceLogAttrs(ctx)...)
+	s.ScriptExecutionLogger.LogAttrs(ctx, slog.LevelInfo, event, attrs...)
 }
 
 func (s *NodeAgentServer) executeScript(
+	ctx context.Context,
 	req *pb.ExecuteScriptRequest,
 	requestID string,
 ) (*pb.ExecuteScriptResponse, error) {
@@ -1698,7 +1708,7 @@ func (s *NodeAgentServer) executeScript(
 		response.Status = ErrorStatus
 		response.ErrorMessage = errMsg
 
-		s.logScriptExecution("ExecuteScript", requestID, req, ErrorStatus, 1, errMsg, "")
+		s.logScriptExecution(ctx, "ExecuteScript", requestID, req, ErrorStatus, 1, errMsg, "")
 		return response, nil
 	}
 	defer cleanup()
@@ -1721,7 +1731,7 @@ func (s *NodeAgentServer) executeScript(
 		response.ExitCode = int32(exitCode)
 		response.ErrorMessage = err.Error()
 
-		s.logScriptExecution("ExecuteScript", requestID, req, ErrorStatus, int32(exitCode), err.Error(), string(output))
+		s.logScriptExecution(ctx, "ExecuteScript", requestID, req, ErrorStatus, int32(exitCode), err.Error(), string(output))
 		return response, nil
 	}
 
@@ -1732,7 +1742,7 @@ func (s *NodeAgentServer) executeScript(
 
 	script.Status = scriptStatusSuccess
 	s.addScript(script)
-	s.logScriptExecution("ExecuteScript", requestID, req, SuccessStatus, int32(exitCode), "", string(output))
+	s.logScriptExecution(ctx, "ExecuteScript", requestID, req, SuccessStatus, int32(exitCode), "", string(output))
 	return response, nil
 }
 
@@ -1880,7 +1890,7 @@ func (s *NodeAgentServer) StreamExecuteScript(
 	}
 
 	requestID := generateRequestID()
-	s.logScriptExecution("StreamExecuteScript_start", requestID, req, "start", 0, "", "")
+	s.logScriptExecution(stream.Context(), "StreamExecuteScript_start", requestID, req, "start", 0, "", "")
 
 	scriptPath, cleanup, err := resolveScript(req, requestID)
 	if err != nil {
@@ -1897,7 +1907,7 @@ func (s *NodeAgentServer) StreamExecuteScript(
 	cmdErr := streamCommand(stream, scriptPath, req.Args...)
 
 	exitCode, errMsg := exitResult(cmdErr)
-	s.logScriptExecution("StreamExecuteScript", requestID, req, errStatus(cmdErr), int32(exitCode), errMsg, "")
+	s.logScriptExecution(stream.Context(), "StreamExecuteScript", requestID, req, errStatus(cmdErr), int32(exitCode), errMsg, "")
 	return stream.Send(&pb.ScriptOutputChunk{
 		ExitCode:   int32(exitCode),
 		IsComplete: true,
