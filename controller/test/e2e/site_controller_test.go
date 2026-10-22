@@ -557,26 +557,29 @@ func newInfraProvider(cfg config.Config) (infra.Provider, error) {
 // fullStageSupported reports whether a full run can build this provider's
 // tenant, which is what separates it from bootstrap.
 //
-// The tenant half is nicoForgeSpec, and it decodes the environment as a Forge
-// declaration with unknown fields rejected. A DSX environment carries
-// tenantID and nodeUser, which that decoder refuses, so the tenant fails every
-// time however healthy the datahall is.
+// A tenant spec decodes the environment as its own provider's declaration with
+// unknown fields rejected, so a provider without one fails every time however
+// healthy its hardware is: a DSX environment carries tenantID and nodeUser,
+// which Forge's decoder refuses, and the reverse holds too.
 //
-// Checked here because the cost is the point. Without it a full run takes a
-// machine, provisions it and installs the whole stack --- forty minutes, and
-// on the DSX datahall the only CPU machine there is, so nothing else can run
-// meanwhile --- to reach a failure that was certain before it started.
+// Checked here because the cost is the point. Without it a full run takes
+// machines, provisions them and installs the whole stack --- forty minutes,
+// and on a datahall whose every machine is a GPU tray that is capacity
+// nothing else can use meanwhile --- to reach a failure that was certain
+// before it started.
 //
-// Not Forge rather than is-DSX: the limitation is that the tenant spec speaks
-// one dialect, so a third provider meets the same wall, and naming DSX would
-// wave it through to the same deterministic failure.
+// A list rather than a not-Forge test: the limitation is that each tenant spec
+// speaks one dialect, so a provider that gains one is added here, and a
+// provider that has none meets the same wall as before.
 func fullStageSupported(provider string) error {
-	if provider == forge.ProviderName {
+	switch provider {
+	case forge.ProviderName, dsx.ProviderName:
 		return nil
 	}
-	return fmt.Errorf("-e2e.site-stage full needs a tenant spec for provider %q, and the only one is Forge's: "+
-		"the tenant half decodes the environment as a Forge declaration, which a %s environment is not. "+
-		"Run this provider at stage provision or bootstrap until a tenant spec for it exists", provider, provider)
+	return fmt.Errorf("-e2e.site-stage full needs a tenant spec for provider %q, and the ones that exist are "+
+		"Forge's and DSX's: the tenant half decodes the environment as one of those declarations, which a %s "+
+		"environment is not. Run this provider at stage provision or bootstrap until a tenant spec for it exists",
+		provider, provider)
 }
 
 // newDeployConfig builds what the Cluster API provider the stack installs
