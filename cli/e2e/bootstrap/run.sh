@@ -94,6 +94,15 @@ TRAEFIK_NODE_PORT="${NVKECTL_E2E_TRAEFIK_NODE_PORT:-30082}"
 TENANT_KUBECONFIG="${SCRIPT_DIR}/.tenant.kubeconfig"
 ETCD_KEY_FILE="${SCRIPT_DIR}/.etcd-encryption-key.json"
 BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap.log"
+# What the Go test that runs the command prints about the run itself. nvkectl's
+# own output is not in here: it goes to BOOTSTRAP_LOG, so there is one copy of
+# it and the credential scan covers that copy.
+BOOTSTRAP_GO_TEST_LOG="${SCRIPT_DIR}/.bootstrap-go-test.log"
+GO="${GO:-go}"
+# The lane runs `bootstrap site` through the Go tests in bootstraptest. Those
+# tests carry two marks: the e2e_bootstrap build tag, which keeps them out of
+# `make test` by leaving them unbuilt, and the TestE2E_ name prefix, which is
+# what -run selects once the tag is on.
 
 # Keep the VIP outside the node subnet so nodes route through the host's
 # BGP-learned /32 instead of ARPing for another node's loopback address.
@@ -688,6 +697,7 @@ fi
 rm -f "${ETCD_KEY_FILE}"
 
 log "running: nvkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 15m" \
+  "via the e2e_bootstrap TestE2E_ tests" \
   "(NVKECTL_NVKE_CONTROLLER_IMAGE=${NVKECTL_NVKE_CONTROLLER_IMAGE}," \
   "NVKECTL_CAPI_PROVISIONED_IMAGE=${NVKECTL_CAPI_PROVISIONED_IMAGE})"
 
@@ -698,24 +708,59 @@ log "running: nvkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cl
 # --keep-bootstrap-cluster: this suite's EXIT trap removes the cluster, and the
 # teardown registers here because the command can fail after creating it.
 defer teardown_bootstrap_cluster
-# setsid makes nvkectl a process-group leader so abort_bootstrap can signal the
-# kind, nerdctl and helm it drives as one group; nvkectl does not forward
-# signals to its children.
+# The command is run by TestE2E_BootstrapSite rather than invoked here, so that
+# starting it, giving it a process group and reaping that group are stated once
+# in Go instead of twice in shell. It writes nvkectl's output to BOOTSTRAP_LOG,
+# which is what the loop below and every assertion after it read, so this lane
+# is unchanged on either side of this line. The test asserts nothing: it reports
+# what the command exited with and no more.
+#
+# setsid makes `go test` a process-group leader so abort_bootstrap can signal
+# it. The test binary shares that group, so the signal reaches the test, which
+# in turn stops nvkectl and the kind, nerdctl and helm it drives -- those are in
+# a group of their own and the lane's signal does not reach them.
+#
 # -v makes a successful run write its diagnostics bundle too, so the credential
 # scan covers the bundle on the passing path and not only after a failure.
-setsid "${NVKECTL}" bootstrap site -v -f "${RENDERED_SITESPEC}" --keep-bootstrap-cluster \
-  --timeout 15m --kubeconfig-out "${TENANT_KUBECONFIG}" \
-  --encryption-key-out "${ETCD_KEY_FILE}" >"${BOOTSTRAP_LOG}" 2>&1 &
+# A -run that matches nothing exits 0, so a renamed or mistyped test would look
+# like a bootstrap that ran and passed. Assert the selector picks something up
+# before relying on it. This compiles the package too, so the run below starts
+# without a build in front of it.
+#
+# Captured rather than piped into grep: under `set -o pipefail`, a `grep -q`
+# that exits on the first match leaves `go test` writing to a closed pipe, and
+# the pipeline then fails for a reason that has nothing to do with the result.
+listed_tests="$("${GO}" test -C "${CLI_DIR}" -tags e2e_bootstrap -list '^TestE2E_' \
+  ./e2e/bootstrap/bootstraptest/)" ||
+  fail "could not list the bootstrap tests"
+case "${listed_tests}" in
+  *TestE2E_*) ;;
+  *) fail "no TestE2E_ test in the bootstrap test package: the lane would report success without bootstrapping anything" ;;
+esac
+
+setsid env \
+  NVKECTL="${NVKECTL}" \
+  NVKECTL_E2E_SITESPEC="${RENDERED_SITESPEC}" \
+  NVKECTL_E2E_BOOTSTRAP_LOG="${BOOTSTRAP_LOG}" \
+  NVKECTL_E2E_KUBECONFIG_OUT="${TENANT_KUBECONFIG}" \
+  NVKECTL_E2E_ENCRYPTION_KEY_OUT="${ETCD_KEY_FILE}" \
+  NVKECTL_E2E_BOOTSTRAP_TIMEOUT=15m \
+  NVKECTL_E2E_KEEP_BOOTSTRAP_CLUSTER=1 \
+  NVKECTL_E2E_VERBOSE=1 \
+  "${GO}" test -C "${CLI_DIR}" -tags e2e_bootstrap -timeout 0 -count=1 -v \
+  ./e2e/bootstrap/bootstraptest/ -run '^TestE2E_' \
+  >"${BOOTSTRAP_GO_TEST_LOG}" 2>&1 &
 bootstrap_pid=$!
 
-# abort_bootstrap stops the background `bootstrap site` and its children before
-# this script exits -- nvkectl runs as a process-group leader, so the whole
-# group is signalled and reaped. Otherwise the EXIT trap would delete the
-# cluster the command is still driving.
+# abort_bootstrap stops the background run and its children before this script
+# exits. Signalling the group reaches the go test, which stops nvkectl and the
+# kind, nerdctl and helm it drives before it goes. Otherwise the EXIT trap would
+# delete the cluster the command is still driving.
 abort_bootstrap() {
   kill -- "-${bootstrap_pid}" 2>/dev/null || kill "${bootstrap_pid}" 2>/dev/null || true
   wait "${bootstrap_pid}" 2>/dev/null || true
   cat "${BOOTSTRAP_LOG}" || true
+  cat "${BOOTSTRAP_GO_TEST_LOG}" || true
   exit 1
 }
 
@@ -835,7 +880,10 @@ cat "${BOOTSTRAP_LOG}"
 output="$(cat "${BOOTSTRAP_LOG}")"
 
 if [ "${status}" -ne 0 ]; then
-  fail "nvkectl bootstrap site exited ${status}"
+  # The go test exit status says only that the run failed. What nvkectl exited
+  # with, or that it could not be started at all, is in its log.
+  cat "${BOOTSTRAP_GO_TEST_LOG}" || true
+  fail "nvkectl bootstrap site failed; see ${BOOTSTRAP_GO_TEST_LOG}"
 fi
 if ! grep -q "controller deployment healthy" <<<"${output}"; then
   fail "the controller was never confirmed healthy on /readyz"

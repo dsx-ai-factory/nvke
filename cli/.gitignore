@@ -17,6 +17,11 @@ e2e/bootstrap/.sitespec.nico.rendered.yaml
 e2e/bootstrap/.bootstrap-nico.log
 e2e/bootstrap/.bgp-nico/
 
+# E2E scratch: what the Go test that runs `bootstrap site` prints about the run
+# itself. nvkectl's own output is in the bootstrap log beside it.
+e2e/bootstrap/.bootstrap-go-test.log
+e2e/bootstrap/.bootstrap-nico-go-test.log
+
 # The etcd encryption key `nvkectl bootstrap site` writes, the temporary file
 # it is assembled in, and the E2E's copy next to the site spec. The root
 # .gitignore carries the same rules for a bootstrap run from anywhere else.
