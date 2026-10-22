@@ -12,9 +12,9 @@ IFUPDOWN_DIR="${IFUPDOWN_DIR:-/etc/network/interfaces.d}"
 # SYS_CLASS_NET_DIR is overridable for tests; production always reads /sys.
 SYS_CLASS_NET_DIR="${SYS_CLASS_NET_DIR:-/sys/class/net}"
 UPLINK_MTU="${UPLINK_MTU:-}"
-# UPLINK_BRIDGE_NAME pins the OVS bridge name. The NVKE controller leaves this unset; the
-# default br<kernel-iface> derivation below matches ovn-kubernetes's
-# strip-br convention. Set this only to override the derivation.
+# UPLINK_BRIDGE_NAME pins the OVS bridge name. The NVKE controller leaves this
+# unset and resolve_bridge_name derives one. Set this only to override the
+# derivation.
 UPLINK_BRIDGE_NAME="${UPLINK_BRIDGE_NAME:-}"
 # UPLINK_INTERFACE explicitly names the kernel NIC to bridge (wins over
 # UPLINK_INTERFACE_SELECTOR). When neither is set, the default-route NIC is used.
@@ -243,13 +243,30 @@ find_netplan_config() {
   fi
 }
 
+# Substituting the leading "en" for "br" rather than prefixing it is what keeps
+# the result inside IFNAMSIZ-1. A live interface is already at most 15
+# characters and the substitution preserves length, so the bridge fits for
+# every name the kernel can hand us; prefixing needs the uplink to be two
+# short of the limit and nothing guarantees that. enP13p65s0f0np0 on a GB200
+# tray is exactly at it, and brenP13p65s0f0np0 is two over.
+#
+# Truncating would also fit and is wrong: two uplinks differing only in their
+# tail would collide on one bridge. A name with no "en" to substitute keeps the
+# prefix and fails the check below rather than being truncated into a
+# plausible but wrong interface.
 resolve_bridge_name() {
   local kernel_if="$1"
+  local bridge
   if [ -n "${UPLINK_BRIDGE_NAME:-}" ]; then
-    echo "$UPLINK_BRIDGE_NAME"
+    bridge="$UPLINK_BRIDGE_NAME"
   else
-    echo "br${kernel_if}"
+    bridge="br${kernel_if#en}"
   fi
+  if [ "${#bridge}" -gt 15 ]; then
+    echo "derived bridge name ${bridge} exceeds the Linux interface-name limit" >&2
+    return 1
+  fi
+  echo "$bridge"
 }
 
 ip_to_int() {

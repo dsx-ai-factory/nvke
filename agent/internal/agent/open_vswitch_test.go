@@ -593,3 +593,45 @@ func newOpenVSwitchTestRunner(t *testing.T, responses map[string][]openVSwitchCo
 	t.Helper()
 	return &openVSwitchTestRunner{t: t, responses: responses}
 }
+
+// The GB200 tray that found this: enP13p65s0f0np0 is 15 characters, which the
+// kernel accepts, and brenP13p65s0f0np0 is 17, which it does not.
+func TestOpenVSwitchBridgeNameFitsTheKernelLimit(t *testing.T) {
+	for name, tc := range map[string]struct {
+		uplink string
+		want   string
+	}{
+		"a NIC at the kernel's limit still yields a legal bridge": {uplink: "enP13p65s0f0np0", want: "brP13p65s0f0np0"},
+		"a MAC-derived name is the same length and also fits":     {uplink: "enxbe3af2b6059f", want: "brxbe3af2b6059f"},
+		"a short slot name is unchanged in spirit":                {uplink: "ens1np0", want: "brs1np0"},
+		"the path form seen on the dh1 site nodes":                {uplink: "enP4s4np0", want: "brP4s4np0"},
+		"a name that does not start with en keeps the prefix":     {uplink: "eth0", want: "breth0"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := openVSwitchBridgeName(tc.uplink)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+			require.LessOrEqual(t, len(got), interfaceNameMax,
+				"the kernel rejects anything longer, so a bridge this long could never be created")
+		})
+	}
+}
+
+// Distinct uplinks must stay distinct. Truncating to fit would not hold this.
+func TestOpenVSwitchBridgeNameIsInjective(t *testing.T) {
+	seen := map[string]string{}
+	for _, uplink := range []string{"enP13p65s0f0np0", "enP13p65s0f0np1", "enP4s4np0", "enP6s6f0", "ens1np0"} {
+		bridge, err := openVSwitchBridgeName(uplink)
+		require.NoError(t, err)
+		require.NotContains(t, seen, bridge, "two uplinks derived the same bridge name")
+		seen[bridge] = uplink
+	}
+}
+
+// A name with nothing to substitute, long enough that the prefix overflows,
+// fails rather than being truncated into a plausible but wrong interface.
+func TestOpenVSwitchBridgeNameRefusesAnUnsubstitutableLongName(t *testing.T) {
+	_, err := openVSwitchBridgeName("wlp0s20f0u3i14")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exceeds the Linux interface-name limit")
+}

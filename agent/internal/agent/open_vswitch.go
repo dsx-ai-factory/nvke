@@ -21,12 +21,19 @@ import (
 )
 
 const (
-	openVSwitchPackage            = "openvswitch-switch"
-	openVSwitchService            = "openvswitch-switch"
-	openVSwitchDaemonService      = "ovs-vswitchd"
-	openVSwitchSystemIDPath       = "/etc/openvswitch/system-id.conf"
-	openVSwitchInstallUUIDPath    = "/etc/openvswitch/install_uuid.conf"
-	openVSwitchBridgePrefix       = "br"
+	openVSwitchPackage         = "openvswitch-switch"
+	openVSwitchService         = "openvswitch-switch"
+	openVSwitchDaemonService   = "ovs-vswitchd"
+	openVSwitchSystemIDPath    = "/etc/openvswitch/system-id.conf"
+	openVSwitchInstallUUIDPath = "/etc/openvswitch/install_uuid.conf"
+	openVSwitchBridgePrefix    = "br"
+	// openVSwitchUplinkPrefix is what the bridge prefix replaces on a
+	// predictably-named NIC. Both are two characters, which is what keeps the
+	// derived name inside interfaceNameMax.
+	openVSwitchUplinkPrefix = "en"
+	// interfaceNameMax is IFNAMSIZ-1: the kernel's buffer is 16 bytes and
+	// includes the NUL, so 15 characters is the longest name it accepts.
+	interfaceNameMax              = 15
 	openVSwitchIPCommand          = "ip"
 	openVSwitchDeviceFlag         = "dev"
 	openVSwitchDefaultRoute       = "default"
@@ -211,9 +218,9 @@ func (s *NodeAgentServer) reconcileOpenVSwitchLocked(
 	if err != nil {
 		return nil, nil, status.Errorf(codes.FailedPrecondition, "discover default-route interface %s: %v", defaultRoute.Device, err)
 	}
-	bridgeName := openVSwitchBridgePrefix + link.Name
-	if len(bridgeName) > 15 {
-		return nil, nil, status.Errorf(codes.FailedPrecondition, "derived bridge name %q exceeds the Linux interface-name limit", bridgeName)
+	bridgeName, err := openVSwitchBridgeName(link.Name)
+	if err != nil {
+		return nil, nil, err
 	}
 	plan, err := s.buildOpenVSwitchPlan(link, defaultRoute.Gateway, bridgeName)
 	if err != nil {
@@ -395,6 +402,35 @@ func (s *NodeAgentServer) regenerateOpenVSwitchSystemID() error {
 	}
 	_, err := s.runOpenVSwitchCommand("systemctl", "restart", openVSwitchDaemonService)
 	return err
+}
+
+// openVSwitchBridgeName is the bridge that carries uplink's addresses.
+//
+// Substituting the "en" of a predictably-named NIC for "br" rather than
+// prefixing it is what keeps the result inside the kernel's limit. A live
+// interface is already at most interfaceNameMax characters, and the
+// substitution preserves length, so the bridge fits for every name the kernel
+// can hand us. Prefixing cannot: it needs the uplink to be two characters
+// short of the limit, and nothing guarantees that -- enP13p65s0f0np0 on a
+// GB200 tray is exactly at it, and brenP13p65s0f0np0 is two over.
+//
+// Truncating would also fit, and is wrong: two uplinks differing only in
+// their tail would collide on one bridge name. Substitution stays injective.
+//
+// A name that does not begin with "en" keeps the prefix, because there is
+// nothing to substitute, and is bounded by the same check. That is a kernel
+// name we have not seen rather than one we know to be safe, so it fails
+// loudly instead of being truncated into something plausible.
+func openVSwitchBridgeName(uplink string) (string, error) {
+	bridge := openVSwitchBridgePrefix + uplink
+	if after, found := strings.CutPrefix(uplink, openVSwitchUplinkPrefix); found {
+		bridge = openVSwitchBridgePrefix + after
+	}
+	if len(bridge) > interfaceNameMax {
+		return "", status.Errorf(codes.FailedPrecondition,
+			"derived bridge name %q exceeds the Linux interface-name limit", bridge)
+	}
+	return bridge, nil
 }
 
 func (s *NodeAgentServer) buildOpenVSwitchPlan(link openVSwitchLink, gateway, bridgeName string) (openVSwitchPlan, error) {
