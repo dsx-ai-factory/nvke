@@ -84,6 +84,9 @@ on:
       # workflows cover them, and a bake is eight legs for half an hour.
       - "!os-image/**/*_test.go"
       - .github/workflows/os-image-artifact.yml
+      - .github/workflows/e2e-pr-path-filter.yml
+      # The release job checks the published assets with it.
+      - .github/actions/verify-release-assets/**
   # Twice a day from main's HEAD, for what changes without an os-image/
   # commit: the agent baked from source and the apt packages. The e2e lanes
   # boot the newest published image built from a commit on their branch (see

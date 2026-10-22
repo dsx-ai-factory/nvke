@@ -45,6 +45,8 @@ on:
       # not run it.
       - .github/workflows/nico-vms-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml
+      # Installs the pinned kind and kubectl the suite runs on.
+      - .github/actions/setup-kind/**
   # Twice a day, like the other E2E lanes, half an hour after the kubeadm
   # bring-up lane's slot so the two do not queue on the same runner. A schedule
   # ignores the paths above, so these runs catch changes to the suite, the

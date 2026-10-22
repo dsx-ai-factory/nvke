@@ -26,7 +26,9 @@ which is where the e2e and integration suites keep theirs.
 
 `check` is the repository rule `make lint-workflows` enforces: a workflow that
 runs on mirror pushes, has push paths and uses a self-hosted runner gates every
-job on the filter.
+job on the filter, and its push paths list every local action and reusable
+workflow it reaches. A lane's push paths decide its pull request runs, so an
+input missing from them is a change that never runs the lane.
 
 Needs python3 and yq (preinstalled on GitHub-hosted Ubuntu runners).
 """
@@ -161,9 +163,45 @@ def runner_labels(node, key=None):
         yield node
 
 
+def step_uses(doc):
+    """The uses: values of a parsed workflow (job-level and step-level) or of a
+    composite action's steps. Text inside run: scripts and with: inputs is data,
+    so it is never read as a reference."""
+    refs = []
+    for job in (doc.get("jobs") or {}).values():
+        if isinstance(job, dict):
+            refs.append(job.get("uses"))
+            refs += [step.get("uses") for step in job.get("steps") or [] if isinstance(step, dict)]
+    runs = doc.get("runs")
+    if isinstance(runs, dict):
+        refs += [step.get("uses") for step in runs.get("steps") or [] if isinstance(step, dict)]
+    return [ref for ref in refs if isinstance(ref, str) and ref.startswith("./")]
+
+
+def local_uses(root, relpath, seen):
+    """The local actions and reusable workflows a workflow or action reaches,
+    directly or through another one: (reference, the files it consists of)."""
+    if relpath in seen or not (root / relpath).is_file():
+        return
+    seen.add(relpath)
+    for ref in step_uses(load_workflow(root / relpath)):
+        ref = ref[2:].split("@")[0].rstrip("/")
+        if ref.endswith((".yml", ".yaml")):
+            yield ref, [ref]
+            yield from local_uses(root, ref, seen)
+            continue
+        metadata = next((f"{ref}/{n}" for n in ("action.yml", "action.yaml") if (root / ref / n).is_file()), f"{ref}/action.yml")
+        # An action can run its own scripts, so every file in it is an input.
+        files = sorted(p.relative_to(root).as_posix() for p in (root / ref).rglob("*") if p.is_file()) if (root / ref).is_dir() else []
+        yield ref, files or [metadata]
+        yield from local_uses(root, metadata, seen)
+
+
 def check(args):
     problems = []
-    for path in sorted(Path(args.workflows).glob("*.y*ml")):
+    workflows = Path(args.workflows)
+    root = workflows.resolve().parent.parent
+    for path in sorted(workflows.glob("*.y*ml")):
         workflow = load_workflow(path)
         push = push_trigger(workflow)
         if MIRROR_BRANCH not in (push.get("branches") or []) or not push.get("paths"):
@@ -191,6 +229,12 @@ def check(args):
                 problems.append(f"{path}: job {name} needs {gate} but its if: does not test needs.{gate}.outputs.run_e2e == 'true'.")
             elif STATUS_OVERRIDE.search(condition):
                 problems.append(f"{path}: job {name} can run after a skipped job ({condition.strip()}), so the filter cannot stop it.")
+
+        patterns = push["paths"]
+        missing = sorted({ref for ref, files in local_uses(root, path.resolve().relative_to(root).as_posix(), set())
+                          if not all(matches(patterns, f) for f in files)})
+        for ref in missing:
+            problems.append(f"{path}: uses ./{ref}, but its push paths do not list it, so a pull request that changes only it skips this lane.")
     for problem in problems:
         print(f"ERROR: {problem}", file=sys.stderr)
     return 1 if problems else 0

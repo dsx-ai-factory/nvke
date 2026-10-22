@@ -120,21 +120,36 @@ class DecideTest(unittest.TestCase):
                 self.assertEqual(decide(WORKFLOWS / lane, skip), "false")
                 self.assertEqual(decide(WORKFLOWS / lane, ["docs/index.yml", "README.md"]), "false", "docs-only")
 
+    def test_shared_kind_action_runs_every_lane_that_uses_it(self):
+        lanes = ["nico-e2e.yml", "nico-vms-e2e.yml", "capd-e2e.yml", "capd-dsx-identity-exchange-e2e.yml",
+                 "local-entrypoint-e2e.yml", "nvkectl-bootstrap-e2e.yml", "nktp-e2e.yml"]
+        for lane in lanes:
+            with self.subTest(lane=lane):
+                self.assertEqual(decide(WORKFLOWS / lane, [".github/actions/setup-kind/action.yml"]), "true")
+
 
 class CheckTest(unittest.TestCase):
     LANE = textwrap.dedent("""\
         on:
           push:
             branches: [main, "pull-request/[0-9]+"]
-            paths: ["controller/**"]
+            paths: {paths}
         jobs:
         {jobs}""")
     FILTER = "  changes:\n    uses: ./.github/workflows/e2e-pr-path-filter.yml\n"
+    GATED = "  e2e:\n    needs: changes\n    if: needs.changes.outputs.run_e2e == 'true'\n    runs-on: arc-arm64-cpu16\n"
+    PATHS = ["controller/**", ".github/workflows/e2e-pr-path-filter.yml"]
 
-    def run_check(self, jobs):
-        directory = Path(tempfile.mkdtemp())
-        (directory / "lane.yml").write_text(self.LANE.format(jobs=jobs), encoding="utf-8")
-        return subprocess.run(["python3", "-B", str(SCRIPT), "check", "--workflows", str(directory)], capture_output=True, text=True)
+    def run_check(self, jobs, paths=None, files=None):
+        """Check a fixture repository holding .github/workflows/lane.yml and files."""
+        root = Path(tempfile.mkdtemp())
+        workflows = root / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "lane.yml").write_text(self.LANE.format(paths=paths or self.PATHS, jobs=jobs), encoding="utf-8")
+        for name, content in (files or {}).items():
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text(content, encoding="utf-8")
+        return subprocess.run(["python3", "-B", str(SCRIPT), "check", "--workflows", str(workflows)], capture_output=True, text=True)
 
     def test_repository_passes(self):
         out = subprocess.run(["python3", "-B", str(SCRIPT), "check", "--workflows", str(WORKFLOWS)], capture_output=True, text=True)
@@ -180,6 +195,44 @@ class CheckTest(unittest.TestCase):
         for jobs in forms:
             with self.subTest(jobs=jobs):
                 self.assertEqual(self.run_check(jobs).returncode, 1)
+
+    def test_unlisted_local_action_fails(self):
+        action = {".github/actions/setup-kind/action.yml": "runs:\n  using: composite\n  steps: []\n"}
+        jobs = self.FILTER + self.GATED + "    steps:\n      - uses: ./.github/actions/setup-kind\n"
+        out = self.run_check(jobs, files=action)
+        self.assertEqual(out.returncode, 1)
+        self.assertIn("uses ./.github/actions/setup-kind, but its push paths do not list it", out.stderr)
+        self.assertEqual(self.run_check(jobs, paths=self.PATHS + [".github/actions/setup-kind/**"], files=action).returncode, 0)
+
+    def test_unlisted_action_behind_a_called_workflow_fails(self):
+        files = {
+            ".github/workflows/body.yml": "on: workflow_call\njobs:\n  run:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: ./.github/actions/setup-kind\n",
+            ".github/actions/setup-kind/action.yml": "runs:\n  using: composite\n  steps: []\n",
+        }
+        jobs = self.FILTER + "  e2e:\n    needs: changes\n    if: needs.changes.outputs.run_e2e == 'true'\n    uses: ./.github/workflows/body.yml\n    with:\n      runner: arc-arm64-cpu16\n"
+        out = self.run_check(jobs, paths=self.PATHS + [".github/workflows/body.yml"], files=files)
+        self.assertEqual(out.returncode, 1)
+        self.assertIn("uses ./.github/actions/setup-kind", out.stderr)
+        self.assertNotIn("body.yml", out.stderr)
+
+    def test_references_are_read_from_parsed_yaml(self):
+        action = {".github/actions/setup-kind/action.yml": "runs:\n  using: composite\n  steps: []\n"}
+        for step in ('      - "uses": ./.github/actions/setup-kind\n', "      - {uses: ./.github/actions/setup-kind}\n"):
+            with self.subTest(step=step):
+                out = self.run_check(self.FILTER + self.GATED + "    steps:\n" + step, files=action)
+                self.assertIn("uses ./.github/actions/setup-kind", out.stderr)
+        script = self.FILTER + self.GATED + "    steps:\n      - run: |\n          echo 'uses: ./.github/actions/setup-kind'\n"
+        self.assertEqual(self.run_check(script, files=action).returncode, 0, "text in a run: script is not a reference")
+
+    def test_every_file_of_an_action_must_be_listed(self):
+        files = {
+            ".github/actions/tool/action.yml": "runs:\n  using: node24\n  main: index.js\n",
+            ".github/actions/tool/index.js": "console.log(1)\n",
+        }
+        jobs = self.FILTER + self.GATED + "    steps:\n      - uses: ./.github/actions/tool\n"
+        out = self.run_check(jobs, paths=self.PATHS + [".github/actions/tool/action.yml"], files=files)
+        self.assertIn("uses ./.github/actions/tool", out.stderr)
+        self.assertEqual(self.run_check(jobs, paths=self.PATHS + [".github/actions/tool/**"], files=files).returncode, 0)
 
     def test_github_hosted_lane_is_exempt(self):
         self.assertEqual(self.run_check("  e2e:\n    runs-on: ubuntu-latest\n").returncode, 0)
