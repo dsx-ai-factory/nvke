@@ -1308,6 +1308,11 @@ func capdControlPlaneControllerSpec(cfg config.Config, name string, shape cluste
 	spec := capdSpec(cfg, name, shape)
 	spec.ControlPlane.Pools = nil
 	spec.ControlPlane.Config = shape.controlPlaneConfig
+	if shape.controlPlaneConfig != nil {
+		cp := *shape.controlPlaneConfig
+		cp.SystemReservedMemory = cmp.Or(cp.SystemReservedMemory, "1Gi")
+		spec.ControlPlane.Config = &cp
+	}
 	// CAPD copies these simulated domains to CAPI Cluster status. The third
 	// domain proves that controlPlane: false is excluded from placement.
 	spec.CAPDFailureDomains = []nvke.CAPDFailureDomain{
