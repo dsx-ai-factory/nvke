@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The values the UPGRADE lane installs the PRE-RENAME chart with, standing in
+# for a site as it ran before the nvke rename.
+#
+# It is almost empty on purpose. The chart it is handed is the one pinned by
+# CHART_UPGRADE_FROM_REF, whose own defaults already rendered the legacy names
+# -- that is the property the lane re-checks before it upgrades anything. Add a
+# name here and the lane stops testing the defaults a site actually ran and
+# starts testing a values file nobody has.
+#
+# Do not add the keys from chart-legacy-pinned-values.yaml. Those are keys the
+# rename INTRODUCED (`nvkeSystemNamespace` among them); the pinned chart does
+# not have them, Helm ignores an unknown key silently, and the before-install
+# would quietly render something no site ran.
+#
+# The one thing set here is the trust domain, and only because it is not a
+# name: the nke-rbac ConfigMap renders whenever spiffe.trustDomain is set
+# (templates/nke-rbac.yaml), and leaving it empty would mean the ConfigMap, and
+# with it the SPIFFE subjects this lane has to compare, exists only on the
+# after side. The value matches chart-legacy-pinned-values.yaml so the two
+# renders are comparable.
+spiffe:
+  trustDomain: "example.test"

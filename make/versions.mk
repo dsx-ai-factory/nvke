@@ -43,6 +43,7 @@ show-versions: ## Print every pinned tool version.
 		"KUBECONFORM_VERSION"    "$(KUBECONFORM_VERSION)" \
 		"HELM_VERSION"           "$(HELM_VERSION)" \
 		"PROMTOOL_VERSION"       "$(PROMTOOL_VERSION)" \
+		"CHART_UPGRADE_FROM_REF" "$(CHART_UPGRADE_FROM_REF)" \
 		"KIND_VERSION"           "$(KIND_VERSION)" \
 		"KUBECTL_VERSION"        "$(KUBECTL_VERSION)" \
 		"CAPI_VERSION"           "$(CAPI_VERSION)" \
