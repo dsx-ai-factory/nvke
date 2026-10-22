@@ -67,30 +67,16 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-// registerControllerClientCABundleFlags registers the controller client CA
-// bundle under its NVKE name and its earlier name, which nodes already pass.
-// The returned function, called after parsing, gives the NVKE name's value when
-// it is set (flag or environment) and the earlier name's value otherwise.
-func registerControllerClientCABundleFlags(fs *flag.FlagSet) func() string {
-	nvke := fs.String(
+// registerControllerClientCABundleFlag registers --nvke-controller-client-ca-bundle,
+// which defaults to NVKE_CONTROLLER_CLIENT_CA_BUNDLE.
+func registerControllerClientCABundleFlag(fs *flag.FlagSet) *string {
+	return fs.String(
 		"nvke-controller-client-ca-bundle",
 		envOr("NVKE_CONTROLLER_CLIENT_CA_BUNDLE", ""),
 		fmt.Sprintf("PEM CA bundle verifying the controller's client certificate. Setting it selects external mTLS "+
 			"instead of SPIFFE mTLS and requires --grpc-auth-mode=%s. The controller's certificate must also carry "+
 			"the URI SAN %s. Also set via NVKE_CONTROLLER_CLIENT_CA_BUNDLE", authModeTLSJWT, externalmtls.ControllerURI),
 	)
-	legacy := fs.String(
-		"controller-client-ca-bundle",
-		envOr("NKE_CONTROLLER_CLIENT_CA_BUNDLE", ""),
-		"Earlier name for --nvke-controller-client-ca-bundle. When both are set, --nvke-controller-client-ca-bundle wins. "+
-			"Also set via NKE_CONTROLLER_CLIENT_CA_BUNDLE",
-	)
-	return func() string {
-		if *nvke != "" {
-			return *nvke
-		}
-		return *legacy
-	}
 }
 
 // AgentConfig centralizes configuration previously stored in globals.
@@ -125,14 +111,14 @@ func validateAuthConfig(cfg AgentConfig) error {
 	}
 	if cfg.ControllerClientCABundle != "" {
 		if cfg.DisableMTLS {
-			return errors.New("--controller-client-ca-bundle cannot be combined with --disable-mtls: " +
+			return errors.New("--nvke-controller-client-ca-bundle cannot be combined with --disable-mtls: " +
 				"there is no TLS handshake in which to verify the controller certificate")
 		}
 		// The controller does not verify the self-signed certificate the agent
 		// serves in this mode, so without the identity token nothing
 		// authenticates the agent to the controller.
 		if cfg.GRPCAuthMode != authModeTLSJWT {
-			return fmt.Errorf("--controller-client-ca-bundle requires --grpc-auth-mode=%s: "+
+			return fmt.Errorf("--nvke-controller-client-ca-bundle requires --grpc-auth-mode=%s: "+
 				"the controller cannot otherwise authenticate the agent", authModeTLSJWT)
 		}
 	}
@@ -425,7 +411,7 @@ func main() {
 		defaultDSXIdentityTimeout,
 		"Timeout for one DSX Identity token-exchange request",
 	)
-	controllerClientCABundle := registerControllerClientCABundleFlags(flag.CommandLine)
+	controllerClientCABundle := registerControllerClientCABundleFlag(flag.CommandLine)
 	versionFlag := flag.Bool("version", false, "Print the version and exit")
 	auditLogFileName := flag.String(
 		"audit-log-file",
@@ -486,7 +472,7 @@ func main() {
 		DSXIdentityExchangeURL:   *dsxIdentityExchangeURL,
 		DSXIdentityCABundle:      *dsxIdentityCABundle,
 		DSXIdentityTimeout:       *dsxIdentityTimeout,
-		ControllerClientCABundle: controllerClientCABundle(),
+		ControllerClientCABundle: *controllerClientCABundle,
 		ControllerAudience:       *controllerAudience,
 	}
 

@@ -38,8 +38,6 @@ type Contracts struct {
 	CNIPackagePrefix string
 	// ControllerCABundlePath is where the controller client CA bundle lands on the node.
 	ControllerCABundlePath string
-	// ControllerCABundleFlag is the agent flag, without dashes, that points at ControllerCABundlePath.
-	ControllerCABundleFlag string
 }
 
 func oldForm() Contracts {
@@ -49,7 +47,6 @@ func oldForm() Contracts {
 		EnvFilePath:            config.NodeAgentConfigPath,
 		CNIPackagePrefix:       "nke-cni-",
 		ControllerCABundlePath: config.NodeAgentControllerCAPath,
-		ControllerCABundleFlag: "controller-client-ca-bundle",
 	}
 }
 
@@ -60,7 +57,6 @@ func newForm() Contracts {
 		EnvFilePath:            "/etc/default/nvke-agent",
 		CNIPackagePrefix:       "nvke-cni-",
 		ControllerCABundlePath: "/etc/nvke/controller-ca.crt",
-		ControllerCABundleFlag: "nvke-controller-client-ca-bundle",
 	}
 }
 

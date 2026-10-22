@@ -138,7 +138,8 @@ nodeAgent:
   externalMTLS:
     # -- Pin an externally managed client certificate transport for newly
     # created nodes instead of the controller SPIRE X509-SVID. Keep the Secret
-    # available while nodes using this transport remain.
+    # available while nodes using this transport remain. Requires node agent
+    # 0.3.0 or later, which reads --nvke-controller-client-ca-bundle.
     enabled: false
     secret:
       # -- Name of the externally managed Secret containing the client identity.

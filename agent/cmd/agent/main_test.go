@@ -5,6 +5,7 @@ package main
 
 import (
 	"flag"
+	"io"
 	"strings"
 	"testing"
 
@@ -132,7 +133,7 @@ func TestValidateAuthConfig(t *testing.T) {
 				GRPCAuthMode:             authModeSPIFFEMTLS,
 				ControllerClientCABundle: "/etc/nke/controller-ca.crt",
 			},
-			wantErr: "--controller-client-ca-bundle requires --grpc-auth-mode=tls-jwt",
+			wantErr: "--nvke-controller-client-ca-bundle requires --grpc-auth-mode=tls-jwt",
 		},
 		{
 			name: "external mTLS cannot run on plaintext gRPC",
@@ -142,7 +143,7 @@ func TestValidateAuthConfig(t *testing.T) {
 				DSXIdentityExchangeURL:   "https://identity.example.test/v1/exchange",
 				ControllerClientCABundle: "/etc/nke/controller-ca.crt",
 			},
-			wantErr: "--controller-client-ca-bundle cannot be combined with --disable-mtls",
+			wantErr: "--nvke-controller-client-ca-bundle cannot be combined with --disable-mtls",
 		},
 	}
 
@@ -178,33 +179,39 @@ func TestControllerAudienceCompatibility(t *testing.T) {
 	}
 }
 
-func TestControllerClientCABundleNames(t *testing.T) {
+func TestControllerClientCABundleName(t *testing.T) {
 	tests := []struct {
-		name string
-		env  map[string]string
-		args []string
-		want string
+		name    string
+		env     map[string]string
+		args    []string
+		want    string
+		wantErr string
 	}{
 		{name: "unset", want: ""},
-		{name: "nvke flag", args: []string{"--nvke-controller-client-ca-bundle=/nvke.crt"}, want: "/nvke.crt"},
-		{name: "nvke env", env: map[string]string{"NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nvke.crt"}, want: "/nvke.crt"},
-		{name: "earlier flag", args: []string{"--controller-client-ca-bundle=/earlier.crt"}, want: "/earlier.crt"},
-		{name: "earlier env", env: map[string]string{"NKE_CONTROLLER_CLIENT_CA_BUNDLE": "/earlier.crt"}, want: "/earlier.crt"},
+		{name: "flag", args: []string{"--nvke-controller-client-ca-bundle=/nvke.crt"}, want: "/nvke.crt"},
+		{name: "env", env: map[string]string{"NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nvke.crt"}, want: "/nvke.crt"},
 		{
-			name: "both flags: nvke wins",
-			args: []string{"--controller-client-ca-bundle=/earlier.crt", "--nvke-controller-client-ca-bundle=/nvke.crt"},
-			want: "/nvke.crt",
+			name: "flag overrides env",
+			env:  map[string]string{"NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/env.crt"},
+			args: []string{"--nvke-controller-client-ca-bundle=/flag.crt"},
+			want: "/flag.crt",
 		},
 		{
-			name: "both env: nvke wins",
-			env:  map[string]string{"NKE_CONTROLLER_CLIENT_CA_BUNDLE": "/earlier.crt", "NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nvke.crt"},
-			want: "/nvke.crt",
+			name: "empty flag overrides env",
+			env:  map[string]string{"NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/env.crt", "NKE_CONTROLLER_CLIENT_CA_BUNDLE": "/other.crt"},
+			args: []string{"--nvke-controller-client-ca-bundle="},
+			want: "",
 		},
 		{
-			name: "nvke env and earlier flag: nvke wins",
-			env:  map[string]string{"NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nvke.crt"},
-			args: []string{"--controller-client-ca-bundle=/earlier.crt"},
-			want: "/nvke.crt",
+			name:    "--controller-client-ca-bundle is not a flag",
+			args:    []string{"--controller-client-ca-bundle=/other.crt"},
+			wantErr: "flag provided but not defined: -controller-client-ca-bundle",
+		},
+		{
+			// An unread setting leaves external mTLS off, so the agent stays on SPIFFE mTLS.
+			name: "NKE_CONTROLLER_CLIENT_CA_BUNDLE is not read",
+			env:  map[string]string{"NKE_CONTROLLER_CLIENT_CA_BUNDLE": "/other.crt"},
+			want: "",
 		},
 	}
 	for _, tc := range tests {
@@ -215,11 +222,19 @@ func TestControllerClientCABundleNames(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			fs := flag.NewFlagSet("agent", flag.ContinueOnError)
-			bundle := registerControllerClientCABundleFlags(fs)
-			if err := fs.Parse(tc.args); err != nil {
+			fs.SetOutput(io.Discard)
+			bundle := registerControllerClientCABundleFlag(fs)
+			err := fs.Parse(tc.args)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("Parse(%v) = %v, want error containing %q", tc.args, err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
 				t.Fatalf("Parse(%v) = %v", tc.args, err)
 			}
-			if got := bundle(); got != tc.want {
+			if got := *bundle; got != tc.want {
 				t.Fatalf("controller client CA bundle = %q, want %q", got, tc.want)
 			}
 		})
