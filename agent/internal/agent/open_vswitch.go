@@ -406,25 +406,26 @@ func (s *NodeAgentServer) regenerateOpenVSwitchSystemID() error {
 
 // openVSwitchBridgeName is the bridge that carries uplink's addresses.
 //
-// Substituting the "en" of a predictably-named NIC for "br" rather than
-// prefixing it is what keeps the result inside the kernel's limit. A live
-// interface is already at most interfaceNameMax characters, and the
-// substitution preserves length, so the bridge fits for every name the kernel
-// can hand us. Prefixing cannot: it needs the uplink to be two characters
-// short of the limit, and nothing guarantees that -- enP13p65s0f0np0 on a
-// GB200 tray is exactly at it, and brenP13p65s0f0np0 is two over.
+// Prefixing is kept wherever it fits, so a fleet that already runs brens1np0
+// keeps that name and nothing is renamed by an upgrade. Only when the prefix
+// would overflow is the uplink's leading "en" substituted instead: both
+// affixes are two characters, so the result is always within the limit for
+// any name the kernel can hand us. enP13p65s0f0np0 on a GB200 tray is
+// exactly at the limit, and brenP13p65s0f0np0 is two over.
 //
-// Truncating would also fit, and is wrong: two uplinks differing only in
-// their tail would collide on one bridge name. Substitution stays injective.
+// Truncating would also fit and is worse: it would map every uplink sharing a
+// prefix onto one bridge. Substitution collides far more narrowly -- only a
+// 13-character name that matches the tail of a 15-character "en" name -- and
+// callers guard the remainder by refusing a bridge already mapped elsewhere.
 //
-// A name that does not begin with "en" keeps the prefix, because there is
-// nothing to substitute, and is bounded by the same check. That is a kernel
-// name we have not seen rather than one we know to be safe, so it fails
-// loudly instead of being truncated into something plausible.
+// A name with nothing to substitute keeps the prefix and fails the same check
+// rather than being truncated into a plausible but wrong interface.
 func openVSwitchBridgeName(uplink string) (string, error) {
 	bridge := openVSwitchBridgePrefix + uplink
-	if after, found := strings.CutPrefix(uplink, openVSwitchUplinkPrefix); found {
-		bridge = openVSwitchBridgePrefix + after
+	if len(bridge) > interfaceNameMax {
+		if after, found := strings.CutPrefix(uplink, openVSwitchUplinkPrefix); found {
+			bridge = openVSwitchBridgePrefix + after
+		}
 	}
 	if len(bridge) > interfaceNameMax {
 		return "", status.Errorf(codes.FailedPrecondition,

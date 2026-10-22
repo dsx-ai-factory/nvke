@@ -243,30 +243,37 @@ find_netplan_config() {
   fi
 }
 
-# Substituting the leading "en" for "br" rather than prefixing it is what keeps
-# the result inside IFNAMSIZ-1. A live interface is already at most 15
-# characters and the substitution preserves length, so the bridge fits for
-# every name the kernel can hand us; prefixing needs the uplink to be two
-# short of the limit and nothing guarantees that. enP13p65s0f0np0 on a GB200
-# tray is exactly at it, and brenP13p65s0f0np0 is two over.
+# Prefixing is kept wherever it fits, so a fleet that already runs brens1np0
+# keeps that name and nothing is renamed by an upgrade. Only when the prefix
+# would overflow IFNAMSIZ-1 is the uplink's leading "en" substituted instead:
+# both affixes are two characters, so the result is within the limit for any
+# name the kernel can hand us. enP13p65s0f0np0 on a GB200 tray is exactly at
+# the limit, and brenP13p65s0f0np0 is two over.
 #
-# Truncating would also fit and is wrong: two uplinks differing only in their
-# tail would collide on one bridge. A name with no "en" to substitute keeps the
-# prefix and fails the check below rather than being truncated into a
-# plausible but wrong interface.
+# This derivation never fails. A name that still does not fit is caught by
+# require_bridge_name_fits, which the caller runs AFTER check_already_configured
+# -- on a rerun DEFAULT_IF is the bridge we built last time, and composing
+# br<bridge> must not be fatal before the short-circuit sees it.
 resolve_bridge_name() {
   local kernel_if="$1"
-  local bridge
   if [ -n "${UPLINK_BRIDGE_NAME:-}" ]; then
-    bridge="$UPLINK_BRIDGE_NAME"
-  else
+    echo "$UPLINK_BRIDGE_NAME"
+    return 0
+  fi
+  local bridge="br${kernel_if}"
+  if [ "${#bridge}" -gt 15 ]; then
     bridge="br${kernel_if#en}"
   fi
-  if [ "${#bridge}" -gt 15 ]; then
-    echo "derived bridge name ${bridge} exceeds the Linux interface-name limit" >&2
-    return 1
-  fi
   echo "$bridge"
+}
+
+# IFNAMSIZ is 16 including the NUL, so the kernel refuses anything longer
+# than 15 and the bridge could never be created.
+require_bridge_name_fits() {
+  local bridge="$1"
+  if [ "${#bridge}" -gt 15 ]; then
+    error_exit "derived bridge name ${bridge} exceeds the Linux interface-name limit"
+  fi
 }
 
 ip_to_int() {
@@ -645,6 +652,7 @@ configure_openvswitch() {
   local target_bridge_name
   target_bridge_name=$(resolve_bridge_name "$DEFAULT_IF")
   check_already_configured "$target_bridge_name"
+  require_bridge_name_fits "$target_bridge_name"
   regenerate_ovs_system_id
   if [ "${UPLINK_DHCP:-}" = "false" ] && [ -z "${UPLINK_ADDRESS:-}" ]; then
     error_exit "UPLINK_DHCP=false requires UPLINK_ADDRESS"

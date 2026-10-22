@@ -601,11 +601,11 @@ func TestOpenVSwitchBridgeNameFitsTheKernelLimit(t *testing.T) {
 		uplink string
 		want   string
 	}{
-		"a NIC at the kernel's limit still yields a legal bridge": {uplink: "enP13p65s0f0np0", want: "brP13p65s0f0np0"},
-		"a MAC-derived name is the same length and also fits":     {uplink: "enxbe3af2b6059f", want: "brxbe3af2b6059f"},
-		"a short slot name is unchanged in spirit":                {uplink: "ens1np0", want: "brs1np0"},
-		"the path form seen on the dh1 site nodes":                {uplink: "enP4s4np0", want: "brP4s4np0"},
-		"a name that does not start with en keeps the prefix":     {uplink: "eth0", want: "breth0"},
+		"a NIC at the kernel's limit substitutes to stay legal": {uplink: "enP13p65s0f0np0", want: "brP13p65s0f0np0"},
+		"a MAC-derived name is the same length and also fits":   {uplink: "enxbe3af2b6059f", want: "brxbe3af2b6059f"},
+		"a name that fits keeps today's prefixed form":          {uplink: "ens1np0", want: "brens1np0"},
+		"so does the path form on shorter hardware":             {uplink: "enP4s4np0", want: "brenP4s4np0"},
+		"a name that does not start with en keeps the prefix":   {uplink: "eth0", want: "breth0"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got, err := openVSwitchBridgeName(tc.uplink)
@@ -617,14 +617,30 @@ func TestOpenVSwitchBridgeNameFitsTheKernelLimit(t *testing.T) {
 	}
 }
 
-// Distinct uplinks must stay distinct. Truncating to fit would not hold this.
-func TestOpenVSwitchBridgeNameIsInjective(t *testing.T) {
+// Substituting only on overflow is what keeps names that fit distinct. The
+// naive form -- always substituting -- maps enp1 and p1 onto one bridge.
+func TestOpenVSwitchBridgeNameKeepsNamesThatFitDistinct(t *testing.T) {
 	seen := map[string]string{}
-	for _, uplink := range []string{"enP13p65s0f0np0", "enP13p65s0f0np1", "enP4s4np0", "enP6s6f0", "ens1np0"} {
+	for _, uplink := range []string{
+		"enP13p65s0f0np0", "enP13p65s0f0np1", "enP4s4np0", "enP6s6f0", "ens1np0",
+		"enp1", "p1", "eth0", "enxbe3af2b6059f",
+	} {
 		bridge, err := openVSwitchBridgeName(uplink)
 		require.NoError(t, err)
-		require.NotContains(t, seen, bridge, "two uplinks derived the same bridge name")
+		require.NotContains(t, seen, bridge,
+			"uplinks %q and %q derived the same bridge name %q", seen[bridge], uplink, bridge)
 		seen[bridge] = uplink
+	}
+}
+
+// An upgrade must not rename a bridge out from under a running fleet: every
+// name short enough to have worked before keeps exactly the name it had.
+func TestOpenVSwitchBridgeNamePreservesNamesThatAlreadyWorked(t *testing.T) {
+	for _, uplink := range []string{"ens1np0", "enP4s4np0", "enP2s2f1np1", "eth0"} {
+		bridge, err := openVSwitchBridgeName(uplink)
+		require.NoError(t, err)
+		require.Equal(t, openVSwitchBridgePrefix+uplink, bridge,
+			"a name that fit before must not change")
 	}
 }
 
