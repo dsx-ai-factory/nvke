@@ -445,3 +445,75 @@ func TestReconcileControlPlaneScaleDown_RecordsOneAtATime(t *testing.T) {
 	assert.True(t, nodes.IsDeleteRequested(written), "scale-down records intent")
 	mockTx.AssertNumberOfCalls(t, "UpdateNode", 1)
 }
+
+// TestReconcileControlPlaneScaleDown_DefersDuringSurgeBeforeRecyclingCondition
+// pins the surge window: a rollout has created a fresh (un-joined) surge node but
+// the CPNodesRecycling condition is not set True yet. The drift clause of
+// upgradeInProgress (EnableCPNodeRecycling && countNodesNeedingRollout > 0) must
+// still defer scale-down, even though there is a nominal surplus above the floor,
+// so the shrink never races the rollout's own teardown.
+func TestReconcileControlPlaneScaleDown_DefersDuringSurgeBeforeRecyclingCondition(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	base := time.Now()
+
+	// Recycling enabled, drift present, but the condition has not flipped yet.
+	cluster := db.Cluster{
+		ID:                    clusterID,
+		Name:                  "test-cluster",
+		EnableCPNodeRecycling: true,
+		ControlPlaneConfig: db.ControlPlaneConfig{
+			DesiredCount:           3,
+			ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{KubernetesVersion: "v1.34.2"},
+		},
+		// Conditions.CPNodesRecycling left unset: this is the pre-condition window.
+	}
+
+	// Four healthy, joined nodes still pinned to the old version (drifted), so a
+	// rollout is owed. Desired is 3, so there is a nominal surplus of 1.
+	driftConfig := uuid.New()
+	drifted := func(name string, t time.Time) db.Node {
+		n := healthyCPNode(clusterID, name, t)
+		n.ControlPlaneConfigurationID = driftConfig
+		return n
+	}
+	// A freshly-created surge node: not joined, not ready, so not scale-down eligible.
+	surge := db.Node{
+		ID:           uuid.New(),
+		ClusterID:    clusterID,
+		ControlPlane: true,
+		Name:         "cp-surge",
+		CreatedAt:    base,
+		Conditions:   db.NodeConditions{Pending: db.NewCondition(true, "Pending")},
+	}
+	allNodes := []db.Node{
+		drifted("cp-a", base.Add(-time.Hour)),
+		drifted("cp-b", base),
+		drifted("cp-c", base),
+		drifted("cp-d", base),
+		surge,
+	}
+
+	mockTx := &testutil.MockTx{}
+	r := &reconciler{db: mockTx, logger: slog.Default()}
+	cp := &controlPlane{
+		nodes:                     allNodes,
+		clusterControlPlaneConfig: cluster.ControlPlaneConfig,
+		nodePinnedControlPlaneConfigs: map[uuid.UUID]db.ControlPlaneConfigSpec{
+			driftConfig: {KubernetesVersion: "v1.33.6"},
+		},
+	}
+
+	// Guard the scenario's own assumptions: the drift clause is active even with
+	// the condition unset, and there really is a surplus the guard is suppressing.
+	require.True(t, cp.upgradeInProgress(cluster), "the drift clause must defer while recycling is enabled with a roll owed")
+	require.Len(t, cp.scaleDownEligible(), 4, "the un-joined surge node is not eligible; the four joined nodes are")
+
+	err := r.reconcileControlPlaneScaleDown(context.Background(), cluster, cp)
+	require.NoError(t, err)
+
+	// Nothing recorded: the surge-before-recycling-condition window does not shrink.
+	mockTx.AssertNotCalled(t, "GetNodeForUpdate", mock.Anything, mock.Anything)
+	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+}
