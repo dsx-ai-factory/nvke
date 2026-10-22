@@ -13,6 +13,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -21,6 +22,8 @@ import (
 const (
 	ConfigMapName = "nke-rbac"
 	ConfigMapKey  = "manifest.yaml"
+	// IdentitySourceAnnotation distinguishes operator-issued users from management identities.
+	IdentitySourceAnnotation = "nvke.nvidia.com/identity-source"
 )
 
 // ReadManifest returns the manifest from the ConfigMap in namespace, the
@@ -45,15 +48,17 @@ func ReadManifest(ctx context.Context, reader ctrlclient.Reader, namespace strin
 	return result, nil
 }
 
-// UserSubjects returns the User subjects of the manifest's role bindings, deduplicated.
+// UserSubjects returns management User subjects to reserve, excluding bindings
+// explicitly marked as operator-issued. Unmarked bindings preserve legacy behavior.
 func UserSubjects(manifest []byte) ([]string, error) {
 	decoder := utilyaml.NewYAMLOrJSONDecoder(bytes.NewReader(manifest), 4096)
 	seen := make(map[string]bool)
 	var users []string
 	for {
 		var doc struct {
-			Kind     string           `json:"kind"`
-			Subjects []rbacv1.Subject `json:"subjects"`
+			Kind     string            `json:"kind"`
+			Metadata metav1.ObjectMeta `json:"metadata"`
+			Subjects []rbacv1.Subject  `json:"subjects"`
 		}
 		if err := decoder.Decode(&doc); err != nil {
 			if errors.Is(err, io.EOF) {
@@ -63,6 +68,13 @@ func UserSubjects(manifest []byte) ([]string, error) {
 		}
 		if doc.Kind != "RoleBinding" && doc.Kind != "ClusterRoleBinding" {
 			continue
+		}
+		switch source := doc.Metadata.Annotations[IdentitySourceAnnotation]; source {
+		case "operator":
+			continue
+		case "", "management":
+		default:
+			return nil, fmt.Errorf("%s %s: %s must be management or operator, got %q", doc.Kind, doc.Metadata.Name, IdentitySourceAnnotation, source)
 		}
 		for _, subject := range doc.Subjects {
 			if subject.Kind == rbacv1.UserKind && subject.Name != "" && !seen[subject.Name] {

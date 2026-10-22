@@ -150,6 +150,40 @@ func TestBuildClusterAuthenticationConfig(t *testing.T) {
 	})
 }
 
+func TestAdditionalRBACIdentitySources(t *testing.T) {
+	t.Parallel()
+	cm := nvkeRBAC("spiffe://exchange.example/capi", "corp:exchanged-service")
+	cm.Data[nvkerbac.ConfigMapKey] += `
+---
+kind: ClusterRoleBinding
+metadata:
+  name: tenant-users
+  annotations:
+    nvke.nvidia.com/identity-source: operator
+subjects:
+  - {kind: User, name: corp:alice}
+  - {kind: User, name: spiffe://management.example.test/service}
+  - {kind: User, name: system:admin}
+`
+	got, err := BuildClusterAuthenticationConfig(context.Background(), clusterAuthClient(clusterAuthCASecret(), cm), ClusterAuthentication{
+		ClusterName:         "tenant-1",
+		Shared:              clusterAuthShared(),
+		SharedEnabled:       true,
+		Providers:           []controllerconfig.OIDCProvider{clusterAuthOperator()},
+		TrustDomain:         clusterAuthTrustDomain,
+		ManagementNamespace: constants.LegacyManagementNamespace,
+	})
+	require.NoError(t, err)
+	require.Len(t, got.JWT, 2)
+	assert.Empty(t, got.JWT[0].UserValidationRules)
+	operator := got.JWT[1]
+	assertUserValidation(t, operator.UserValidationRules, mapOperatorIdentity(operator, "alice", nil), true)
+	assertUserValidation(t, operator.UserValidationRules, mapOperatorIdentity(operator, "exchanged-service", nil), false)
+	for _, username := range []string{"spiffe://exchange.example/capi", "spiffe://management.example.test/service", "system:admin"} {
+		assertUserValidation(t, operator.UserValidationRules, mappedOperatorIdentity{username: username}, false)
+	}
+}
+
 func TestLoadOperatorJWTPolicy(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

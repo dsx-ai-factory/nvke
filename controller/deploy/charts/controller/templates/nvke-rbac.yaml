@@ -1,3 +1,11 @@
+{{- if .Values.tenantAccess.additionalRBAC }}
+{{- if not .Values.spiffe.trustDomain }}
+{{- fail "spiffe.trustDomain must be set when tenantAccess.additionalRBAC is non-empty" }}
+{{- end }}
+{{- if not .Values.tenantAccess.enabled }}
+{{- fail "tenantAccess.enabled must be true when tenantAccess.additionalRBAC is non-empty" }}
+{{- end }}
+{{- end }}
 # Shared management-plane namespace (nvkeSystemNamespace.name, nvke-system by
 # default) and tenant RBAC ConfigMap.
 #
@@ -108,8 +116,8 @@ metadata:
 {{- $_ := set $rbacIdentities "ClusterRoleBinding//nvke:capi-cluster-admin" true }}
 {{- range $index, $object := .Values.tenantAccess.additionalRBAC }}
 {{- $namespace := $object.metadata.namespace | default "" }}
-{{- if has $object.kind (list "ClusterRole" "ClusterRoleBinding") }}
-{{- $namespace = "" }}
+{{- if and $namespace (has $object.kind (list "ClusterRole" "ClusterRoleBinding")) }}
+{{- fail (printf "tenantAccess.additionalRBAC[%d]: %s must not set metadata.namespace" $index $object.kind) }}
 {{- end }}
 {{- $identity := printf "%s/%s/%s" $object.kind $namespace $object.metadata.name }}
 {{- if hasKey $rbacIdentities $identity }}

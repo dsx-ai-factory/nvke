@@ -122,6 +122,8 @@ def main():
         for kind in ("Role", "RoleBinding"):
             obj = copy.deepcopy(next(document for document in inner if document["kind"] == kind))
             obj["metadata"]["namespace"] = namespace
+            if kind == "RoleBinding":
+                obj["metadata"]["annotations"] = {"nvke.nvidia.com/identity-source": "operator"}
             scoped_rbac.append(obj)
     for additional in ([], None, additional_rbac, scoped_rbac):
         result = subprocess.run(
@@ -148,15 +150,35 @@ def main():
             print("ERROR: additional tenant RBAC must only change the nke-rbac manifest", file=sys.stderr)
             return 1
 
-    collision_cases = [[document] for document in inner]
+    for override, expected in (
+        ("spiffe.trustDomain=", "spiffe.trustDomain must be set when tenantAccess.additionalRBAC is non-empty"),
+        ("tenantAccess.enabled=false", "tenantAccess.enabled must be true when tenantAccess.additionalRBAC is non-empty"),
+    ):
+        for additional in ([], None, additional_rbac):
+            result = subprocess.run(
+                [*command, "--set", "nvkeOIDCAuth.enabled=false", "--set", override, "--values", "-"],
+                input=yaml.safe_dump({"tenantAccess": {"additionalRBAC": additional}}),
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if additional:
+                if result.returncode == 0 or expected not in result.stderr:
+                    print(f"ERROR: expected render rejection: {expected}\n{result.stderr}", file=sys.stderr)
+                    return 1
+            elif result.returncode != 0:
+                print(f"ERROR: empty additional RBAC must allow {override}\n{result.stderr}", file=sys.stderr)
+                return 1
+
+    invalid_cases = [[document] for document in inner]
     for obj in additional_rbac + scoped_rbac:
-        collision_cases.append([obj, obj])
-    for document in inner:
+        invalid_cases.append([obj, obj])
+    for document in inner + additional_rbac:
         if document["kind"] in ("ClusterRole", "ClusterRoleBinding"):
             obj = copy.deepcopy(document)
-            obj["metadata"]["namespace"] = "ignored-for-cluster-scoped-rbac"
-            collision_cases.append([obj])
-    for additional in collision_cases:
+            obj["metadata"]["namespace"] = "invalid-for-cluster-scoped-rbac"
+            invalid_cases.append([obj])
+    for additional in invalid_cases:
         result = subprocess.run(
             [*command, "--values", "-"],
             input=yaml.safe_dump({"tenantAccess": {"additionalRBAC": additional}}),
@@ -168,6 +190,8 @@ def main():
         namespace = obj["metadata"].get("namespace", "") if obj["kind"] in ("Role", "RoleBinding") else ""
         identity = f"{obj['kind']}/{namespace}/{obj['metadata']['name']}"
         expected = f"tenantAccess.additionalRBAC[{len(additional) - 1}]: duplicate RBAC object {identity}"
+        if obj["kind"] in ("ClusterRole", "ClusterRoleBinding") and obj["metadata"].get("namespace"):
+            expected = f"tenantAccess.additionalRBAC[0]: {obj['kind']} must not set metadata.namespace"
         if result.returncode == 0 or expected not in result.stderr:
             print(f"ERROR: expected render rejection: {expected}\n{result.stderr}", file=sys.stderr)
             return 1
