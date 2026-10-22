@@ -58,6 +58,7 @@ type Config struct {
 	PermissiveMode                           bool                 `json:"permissiveMode"`
 	MachineMetadataAllowlistedLabelKeys      []string             `json:"machineMetadataAllowlistedLabelKeys"`
 	MachineMetadataAllowlistedAnnotationKeys []string             `json:"machineMetadataAllowlistedAnnotationKeys"`
+	AllowControlPlaneWithoutVIP              bool                 `json:"allowControlPlaneWithoutVIP"`
 }
 
 // FieldManagerConfig groups the Server-Side-Apply field manager names, mirroring

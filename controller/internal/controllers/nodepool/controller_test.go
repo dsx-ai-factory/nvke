@@ -629,8 +629,10 @@ func TestUnit_NodePoolControllerControlPlaneSurgeRequiresVIP(t *testing.T) {
 		name            string
 		controlPlaneVIP string
 		wantDesired     int
+		allowWithoutVIP bool
 	}{
 		{name: "without VIP", wantDesired: 0},
+		{name: "dev override without VIP", allowWithoutVIP: true, wantDesired: 1},
 		{name: "with VIP", controlPlaneVIP: "172.31.0.10", wantDesired: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -684,7 +686,7 @@ func TestUnit_NodePoolControllerControlPlaneSurgeRequiresVIP(t *testing.T) {
 				return nodeSet.ID == currentNodeSetID && nodeSet.DesiredCount == 1
 			})).Return(updatedCurrentNodeSet, nil).Maybe()
 
-			npc := nodepool.NewController(config.Config{}, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
+			npc := nodepool.NewController(config.Config{AllowControlPlaneWithoutVIP: tc.allowWithoutVIP}, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 			_, err := npc.Reconcile(ctx, dbreconcile.NodePoolKey(poolID))
 			require.NoError(t, err)
 			mockTx.AssertNumberOfCalls(t, "UpdateNodeSet", 1+tc.wantDesired)
@@ -697,15 +699,17 @@ func TestUnit_NodePoolControllerControlPlaneSurgeRequiresVIP(t *testing.T) {
 func TestUnit_NodePoolControllerReplacementRequiresVIP(t *testing.T) {
 	for _, provider := range []string{"nico", "capi"} {
 		for _, tc := range []struct {
-			name         string
-			controlPlane bool
-			vip          string
-			bootstrap    bool
-			unchanged    bool
-			wantCreate   bool
-			clusterError error
+			name            string
+			controlPlane    bool
+			vip             string
+			bootstrap       bool
+			unchanged       bool
+			wantCreate      bool
+			clusterError    error
+			allowWithoutVIP bool
 		}{
 			{name: "control plane without VIP", controlPlane: true},
+			{name: "dev override without VIP", controlPlane: true, allowWithoutVIP: true, wantCreate: true},
 			{name: "control plane with whitespace VIP", controlPlane: true, vip: " \t\n"},
 			{name: "control plane with VIP", controlPlane: true, vip: "172.31.0.10", wantCreate: true},
 			{name: "first control plane without VIP", controlPlane: true, bootstrap: true, wantCreate: true},
@@ -778,7 +782,7 @@ func TestUnit_NodePoolControllerReplacementRequiresVIP(t *testing.T) {
 					})).Return(updated, nil).Once()
 				}
 
-				npc := nodepool.NewController(config.Config{}, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
+				npc := nodepool.NewController(config.Config{AllowControlPlaneWithoutVIP: tc.allowWithoutVIP}, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 				_, err := npc.Reconcile(context.Background(), dbreconcile.NodePoolKey(pool.ID))
 				if tc.clusterError != nil {
 					require.ErrorIs(t, err, tc.clusterError)

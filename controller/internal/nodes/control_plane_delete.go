@@ -43,7 +43,7 @@ var (
 // control-plane reconcile transaction (cluster then node), so the two cannot
 // deadlock. Callers must finish marking the node deleting before committing so
 // the cluster lock serializes concurrent live deletes.
-func guardLiveNodeDelete(ctx context.Context, tx db.Tx, nodeID uuid.UUID) (db.Node, error) {
+func guardLiveNodeDelete(ctx context.Context, tx db.Tx, nodeID uuid.UUID, allowWithoutVIP bool) (db.Node, error) {
 	// Read the node without a lock first, solely to learn its cluster so we can
 	// take the cluster lock before the node lock (global cluster-first order).
 	node, err := tx.GetNode(ctx, nodeID)
@@ -84,7 +84,7 @@ func guardLiveNodeDelete(ctx context.Context, tx db.Tx, nodeID uuid.UUID) (db.No
 	}
 
 	if dbNode.ControlPlane {
-		if strings.TrimSpace(cluster.ControlPlaneVIP) == "" {
+		if !allowWithoutVIP && strings.TrimSpace(cluster.ControlPlaneVIP) == "" {
 			return db.Node{}, ErrControlPlaneVIPRequired
 		}
 		if err := ensureSurvivingJoinedControlPlane(ctx, tx, dbNode.ClusterID, liveControlPlaneDeleteExclusion{

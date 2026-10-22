@@ -87,7 +87,7 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
 
    | Field | Default | Notes |
    |---|---|---|
-   | `controlPlaneConfig.desiredCount` | None, required | Number of control-plane nodes. Use an odd number so that etcd keeps a quorum. More than one requires `controlPlaneVIP`. |
+   | `controlPlaneConfig.desiredCount` | None, required | Number of control-plane nodes. Use an odd number so that etcd keeps a quorum. More than one requires `controlPlaneVIP` unless the controller enables the development override described below. |
    | `controlPlaneConfig.maxSurge` | `0` | Extra control-plane nodes allowed during a rollout: `0` or `1`. |
    | `controlPlaneConfig.systemReservedMemory` | `16Gi` | Memory the kubelet reserves for system daemons. |
    | `controlPlaneConfig.nodeLabels` | None | Labels applied to each control-plane node after it joins. Set at creation; updating them is not supported, see [Preview status and known limitations](../overview/preview-status.md#workload-clusters-and-node-pools). Control-plane nodes take no custom taints. |
@@ -206,7 +206,19 @@ You change three cluster settings after creation with `nvkectl patch cluster`, w
 
 `enableOidc` requires Kubernetes 1.30.0 or later and turns on the shared OIDC provider that the `nvkeOIDCAuth` chart values configure. The install in [Run NVKE end to end on one machine](../get-started/local-site.md) configures it for the management cluster's SPIRE server and sets `nvkeOIDCAuth.enabled` to `false`, so new clusters start without it and the `enableOidc` patch is accepted. Try `enableOidc` on one cluster before you rely on it. [Configure OIDC for workload clusters](oidc.md) describes the shared provider, and the fleet-wide providers that a cluster gets only at creation.
 
-The same `PATCH` also takes `controlPlaneKubernetesVersion`, to upgrade the control plane, and `controlPlaneConfig`, to change the control-plane node count or release. An upgrade, a node count above one and a release change each require `controlPlaneVIP`.
+The same `PATCH` also takes `controlPlaneKubernetesVersion`, to upgrade the control plane, and `controlPlaneConfig`, to change the control-plane node count or release. An upgrade, a node count above one and a release change each require `controlPlaneVIP` by default.
+
+A dedicated development NVKE controller can set
+`allowControlPlaneWithoutVIP: true` in its controller configuration file.
+For a Helm installation, set the chart value of the same name. This setting
+permits creation, scale-up, upgrades, rollout, remediation and node replacement
+without a VIP for every cluster the controller manages. The default is false.
+API requests and responses keep their existing format.
+
+Without a VIP, kubeadm uses the initializing node's IP as the API endpoint.
+Replacing that node can break API access and later node joins. This override
+does not provide endpoint failover. Quorum, health and deletion protections
+still apply. A supplied VIP still receives normal address validation.
 
 ## Delete a workload cluster
 

@@ -95,7 +95,8 @@ type clusterService struct {
 	// stamps on every node this deployment creates.
 	nodeAgentProfile db.Node
 	// nodeAgentClient reads live node state; nil reports nodes unreachable.
-	nodeAgentClient agent.Client
+	nodeAgentClient             agent.Client
+	allowControlPlaneWithoutVIP bool
 }
 
 func NewClusterService(
@@ -425,7 +426,7 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 	if err := validateMachineMetadata(req.ControlPlaneConfig.MachineAnnotations, req.ControlPlaneConfig.MachineLabels, s.machineAllowlistedAnnotationKeys, s.machineAllowlistedLabelKeys); err != nil {
 		return fmt.Errorf("controlPlaneConfig: %w", err)
 	}
-	if err := validateControlPlaneCapacityChange(req.ControlPlaneVIP, 0, req.ControlPlaneConfig.DesiredCount); err != nil {
+	if err := s.validateControlPlaneCapacityChange(req.ControlPlaneVIP, 0, req.ControlPlaneConfig.DesiredCount); err != nil {
 		return err
 	}
 
@@ -671,7 +672,7 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 			if err := ValidateKubernetesVersionSkewWithControlPlane(dbCluster.KubernetesVersion, *req.Body.ControlPlaneKubernetesVersion); err != nil {
 				return err
 			}
-			if err := validateControlPlaneUpgrade(dbCluster.ControlPlaneVIP); err != nil {
+			if err := s.validateControlPlaneUpgrade(dbCluster.ControlPlaneVIP); err != nil {
 				return err
 			}
 
@@ -946,7 +947,7 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 			return err
 		}
 	}
-	if err := validateControlPlaneRollout(
+	if err := s.validateControlPlaneRollout(
 		cluster.ControlPlaneVIP,
 		db.IsControlPlaneRolloutRequired(cluster.ControlPlaneConfig.ControlPlaneConfigSpec, controlPlaneConfigSpec),
 	); err != nil {
@@ -1009,7 +1010,7 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 		if *req.DesiredCount < 1 {
 			return newBadRequestErrorf("controlPlaneConfig.desiredCount must be at least 1")
 		}
-		if err := validateControlPlaneCapacityChange(
+		if err := s.validateControlPlaneCapacityChange(
 			cluster.ControlPlaneVIP,
 			cluster.ControlPlaneConfig.DesiredCount,
 			*req.DesiredCount,

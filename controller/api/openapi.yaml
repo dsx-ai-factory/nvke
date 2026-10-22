@@ -907,7 +907,7 @@ paths:
         `machineHealthIssue` is invalid. Delete the cluster to remove its last
         joined control-plane node.
         Deleting a control-plane node requires controlPlaneVIP because the controller
-        replaces it. Worker node deletion is unaffected.
+        replaces it, unless allowControlPlaneWithoutVIP is enabled for development. Worker node deletion is unaffected.
       operationId: deleteNode
       requestBody:
         required: false
@@ -1078,10 +1078,12 @@ components:
             Virtual IP for the API server through kube-vip. Omit to skip kube-vip and
             use the first control-plane node's IP as the API server endpoint. Must not
             fall inside the pod or service CIDR. An explicit empty string is rejected.
-            Without a VIP, a new cluster must have exactly one desired control-plane
-            node. Control-plane scale-up above one node, upgrades, and configuration
-            changes that replace control-plane nodes require a VIP. Recreate a no-VIP
-            cluster with controlPlaneVIP to make those operations available.
+            By default, a cluster without a VIP must have exactly one desired
+            control-plane node. Scale-up above one node, upgrades and node replacement
+            require a VIP unless the controller deployment enables the development-only
+            allowControlPlaneWithoutVIP setting. That override keeps the initializing
+            node's IP as the endpoint; replacing that node can break API access.
+            Quorum, health and deletion protections still apply.
           x-go-type-skip-optional-pointer: true
           x-order: 9
         teleportEnabled:
@@ -1158,7 +1160,7 @@ components:
         desiredCount:
           type: integer
           minimum: 1
-          description: The desired number of cluster-level control plane nodes. Creating a cluster with or increasing this count above 1 requires controlPlaneVIP on the cluster.
+          description: The desired number of cluster-level control plane nodes. Creating a cluster with or increasing this count above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
           x-go-type-skip-optional-pointer: true
         maxSurge:
           type: integer
@@ -1318,7 +1320,7 @@ components:
         desiredCount:
           type: integer
           minimum: 1
-          description: The desired number of cluster-level control plane nodes. Must be at least 1. Values above 1 require controlPlaneVIP on the cluster.
+          description: The desired number of cluster-level control plane nodes. Must be at least 1. Values above 1 require controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
           x-go-type-skip-optional-pointer: true
         maxSurge:
           type: integer
@@ -1391,7 +1393,8 @@ components:
         Changes to `release` or the Kubernetes version start a control-plane
         rollout. All fields are optional. A provider payload that does not match the
         cluster's provider is rejected with 400.
-        Rollout-triggering changes require controlPlaneVIP. maxSurge alone does not
+        Rollout-triggering changes require controlPlaneVIP unless the development-only
+        allowControlPlaneWithoutVIP setting is enabled. maxSurge alone does not
         trigger a rollout and remains mutable without a VIP.
       properties:
         desiredCount:
@@ -1399,7 +1402,7 @@ components:
           minimum: 1
           description: |
             The desired number of cluster-level control plane nodes. Must be at least 1.
-            Increasing the count above 1 requires controlPlaneVIP on the cluster.
+            Increasing the count above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
         maxSurge:
           type: integer
           minimum: 0
@@ -1532,7 +1535,8 @@ components:
             Target control-plane version, as X.Y.Z with no leading "v". Must be newer than
             the current version by at most one minor version and keep every worker pool
             within 3 minor versions.
-            The cluster must have controlPlaneVIP configured.
+            The cluster must have controlPlaneVIP configured unless the development-only
+            allowControlPlaneWithoutVIP setting is enabled.
         teleportEnabled:
           x-fern-ignore: true
           type: boolean
@@ -1787,7 +1791,7 @@ components:
         desiredNodeCount:
           type: integer
           minimum: 0
-          description: The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster.
+          description: The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
           x-order: 15
         description:
           type: string
@@ -1838,7 +1842,8 @@ components:
         All fields are optional. A provider payload that does not match the node pool's
         cluster is rejected with 400.
         Updating a control-plane pool in a way that creates a replacement node set
-        requires controlPlaneVIP. maxSurge alone does not create a replacement
+        requires controlPlaneVIP unless the development-only allowControlPlaneWithoutVIP
+        setting is enabled. maxSurge alone does not create a replacement
         and remains mutable without a VIP.
       # No required fields since all fields are optional
       properties:
@@ -1863,7 +1868,7 @@ components:
         desiredNodeCount:
           type: integer
           minimum: 0
-          description: The desired number of nodes in the pool. Increasing aggregate control-plane capacity above 1 requires controlPlaneVIP on the cluster.
+          description: The desired number of nodes in the pool. Increasing aggregate control-plane capacity above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
         recycleBudget:
           type: integer
           minimum: 0

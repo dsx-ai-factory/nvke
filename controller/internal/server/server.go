@@ -274,14 +274,18 @@ func NewServerImpl(
 	clusterService.machineAllowlistedAnnotationKeys = cfg.MachineMetadataAllowlistedAnnotationKeys
 	clusterService.fleetOIDC = o.fleetOIDC
 	clusterService.nodeAgentClient = o.nodeAgentClient
+	clusterService.allowControlPlaneWithoutVIP = cfg.AllowControlPlaneWithoutVIP
 	nodes.PinAgentProfile(&clusterService.nodeAgentProfile, cfg)
 	nodes.PinAgentProfile(&nodePoolService.nodeAgentProfile, cfg)
+
+	nodeService := NewNodeService(logger, database)
+	nodeService.allowControlPlaneWithoutVIP = cfg.AllowControlPlaneWithoutVIP
 
 	return &serverImpl{
 		clusterService:       *clusterService,
 		nodePoolService:      *nodePoolService,
 		nodeSetService:       *NewNodeSetService(logger, database, temporalClient),
-		nodeService:          *NewNodeService(logger, database),
+		nodeService:          *nodeService,
 		releaseService:       *NewReleaseService(logger, k8sReader),
 		configProfileService: *NewConfigProfileService(cfg, logger),
 	}

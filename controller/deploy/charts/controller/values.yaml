@@ -662,6 +662,11 @@ profiles:
     # -- Digest pin for the profiles content image (preferred; e.g. `sha256:…`)
     digest: ""
 
+# -- Development only: permit control-plane creation, scale-up, upgrades and replacement
+# without a VIP. The API endpoint uses the initializing node's IP; replacing that
+# node can interrupt API access. Quorum and deletion protections still apply.
+allowControlPlaneWithoutVIP: false
+
 controllerConfig:
   # -- Name of the ConfigMap that carries the controller's settings file, and
   # that the Deployment mounts and Reloader watches. An install that predates

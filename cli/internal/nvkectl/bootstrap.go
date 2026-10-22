@@ -124,7 +124,8 @@ type bootstrapSiteOptions struct {
 
 	// dialContext is how the pre-create probe reaches each site spec host.
 	// Nil uses a net.Dialer; tests substitute it so no real host is dialled.
-	dialContext func(ctx context.Context, network, address string) (net.Conn, error)
+	dialContext                 func(ctx context.Context, network, address string) (net.Conn, error)
+	allowControlPlaneWithoutVIP bool
 }
 
 const (
@@ -225,6 +226,9 @@ site spec file format.`,
 	cmd.Flags().BoolVar(&opts.disableMTLS, "disable-mtls", false,
 		"Stand the site up without SPIFFE: no SPIRE, and the controller dials node agents in plaintext. "+
 			"The agents must be running with --disable-mtls too. Development only.")
+	cmd.Flags().BoolVar(&opts.allowControlPlaneWithoutVIP, "allow-control-plane-without-vip", false,
+		"Permit a multi-node control plane without a VIP and enable the override in the temporary NVKE controller. "+
+			"Development only; replacing the initializing node can break API access.")
 	cmd.Flags().BoolVar(&opts.keepBootstrapKind, "keep-bootstrap-cluster", false,
 		"Leave the ephemeral bootstrap Kind cluster running after the command exits, for debugging")
 	cmd.Flags().DurationVar(&opts.clusterTimeout, "timeout",
@@ -283,7 +287,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	}
 
 	// Step 1: load and validate the sitespec. Fail fast on any problem.
-	inv, err := sitespec.Load(opts.siteSpec)
+	inv, err := sitespec.Load(opts.siteSpec, sitespec.WithAllowControlPlaneWithoutVIP(opts.allowControlPlaneWithoutVIP))
 	if err != nil {
 		return err
 	}
@@ -355,6 +359,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	}
 
 	cweCfg.CAPNICoImage = capnicoImage
+	cweCfg.AllowControlPlaneWithoutVIP = opts.allowControlPlaneWithoutVIP
 
 	// The controller API has to be reachable from this host: this command deploys it
 	// and then calls it. A host port mapping rather than the node container's

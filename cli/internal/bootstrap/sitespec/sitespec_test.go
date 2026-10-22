@@ -1753,3 +1753,61 @@ func TestControllerEndpoint_NicoNeedsTheVIP(t *testing.T) {
 		t.Errorf("endpoint with a VIP: %q %v", ep, err)
 	}
 }
+
+func TestLoadControlPlaneVIPOverride(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		allow     bool
+		vip       string
+		wantError string
+	}{
+		{name: "default refuses missing VIP", wantError: "controlPlaneVIP"},
+		{name: "explicit false refuses missing VIP", wantError: "controlPlaneVIP"},
+		{name: "override permits missing VIP", allow: true},
+		{name: "override validates malformed VIP", allow: true, vip: "invalid", wantError: "not a valid IP"},
+		{name: "override validates CIDR overlap", allow: true, vip: "10.100.0.10", wantError: "inside"},
+		{name: "override validates loopback VIP", allow: true, vip: "127.0.0.1", wantError: "routable unicast"},
+		{name: "override validates IPv6 VIP", allow: true, vip: "2001:db8::1", wantError: "IPv4"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := strings.Replace(validYAML, `controlPlaneVIP: "10.0.0.100"`, `controlPlaneVIP: "`+tc.vip+`"`, 1)
+			path := filepath.Join(t.TempDir(), "sitespec.yaml")
+			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			spec, err := Load(path, WithAllowControlPlaneWithoutVIP(tc.allow))
+			if tc.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+					t.Fatalf("Load error = %v, want %q", err, tc.wantError)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			} else if spec.Cluster.ControlPlaneVIP != "" {
+				t.Fatalf("override filled in a VIP: %q", spec.Cluster.ControlPlaneVIP)
+			}
+			if tc.allow && tc.vip == "" {
+				if _, err := Load(path); err == nil {
+					t.Fatal("an override load changed later default validation")
+				}
+			}
+		})
+	}
+}
+
+func TestLoadNicoControlPlaneVIPOverride(t *testing.T) {
+	body := strings.Replace(nicoYAML, "  controlPlaneVIP: \"10.0.0.100\"\n", "", 1)
+	path := writeNicoTemp(t, body)
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "controlPlaneVIP") {
+		t.Fatalf("default NICo validation = %v, want a VIP requirement", err)
+	}
+	spec, err := Load(path, WithAllowControlPlaneWithoutVIP(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.ControlPlaneCount() != 3 || spec.Cluster.ControlPlaneVIP != "" {
+		t.Fatalf("override changed NICo capacity or supplied a VIP: %+v", spec.Cluster)
+	}
+	if strings.Contains(spec.NicoVIPWarning(), "one-node") {
+		t.Fatal("the warning describes a three-node dev site as one node")
+	}
+}

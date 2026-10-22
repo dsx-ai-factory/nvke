@@ -373,23 +373,42 @@ func newInventoryViper() *viper.Viper {
 	return v
 }
 
+type loadOptions struct {
+	allowControlPlaneWithoutVIP bool
+}
+
+// LoadOption configures site-spec loading.
+type LoadOption func(*loadOptions)
+
+// WithAllowControlPlaneWithoutVIP permits a multi-node site to omit its VIP during development.
+// A configured VIP still receives normal address validation.
+func WithAllowControlPlaneWithoutVIP(allow bool) LoadOption {
+	return func(options *loadOptions) {
+		options.allowControlPlaneWithoutVIP = allow
+	}
+}
+
 // Load reads the site spec file, overlays bound environment variables, applies
 // defaults, and validates the result. It returns a fully validated SiteSpec
 // or an aggregated error describing every problem found. A nil error means the
 // site spec is safe to act on.
-func Load(path string) (*SiteSpec, error) {
-	return load(path, true)
+func Load(path string, options ...LoadOption) (*SiteSpec, error) {
+	return load(path, true, options...)
 }
 
 // LoadDescription reads the site spec as Load does but without the SPIRE CA:
 // the CA variables are not read and the files are not opened. Spire.UpstreamCA
 // still says whether the site uses one. For a caller that describes the site
 // and never acts on it, such as a render that writes no credential.
-func LoadDescription(path string) (*SiteSpec, error) {
-	return load(path, false)
+func LoadDescription(path string, options ...LoadOption) (*SiteSpec, error) {
+	return load(path, false, options...)
 }
 
-func load(path string, withCA bool) (*SiteSpec, error) {
+func load(path string, withCA bool, options ...LoadOption) (*SiteSpec, error) {
+	var opts loadOptions
+	for _, option := range options {
+		option(&opts)
+	}
 	v := newInventoryViper()
 	v.SetConfigFile(path)
 	if err := v.ReadInConfig(); err != nil {
@@ -434,7 +453,7 @@ func load(path string, withCA bool) (*SiteSpec, error) {
 
 	// Both check sets share one validator so the caller still sees every
 	// problem in one pass, as it did before the two were separated.
-	checks := &validator{}
+	checks := &validator{allowControlPlaneWithoutVIP: opts.allowControlPlaneWithoutVIP}
 	inv.appendDataChecks(checks)
 	if withCA {
 		inv.appendReferenceChecks(checks)
@@ -590,7 +609,8 @@ func (inv *SiteSpec) ValidateBootstrapReferences() error {
 // validator accumulates field-level errors so the caller sees every problem
 // in one pass rather than one-at-a-time.
 type validator struct {
-	errs []string
+	errs                        []string
+	allowControlPlaneWithoutVIP bool
 }
 
 func (v *validator) addf(format string, args ...any) {
@@ -804,7 +824,7 @@ func (v *validator) checkCIDR(path, value string, allowList bool) {
 func (v *validator) checkControlPlaneVIP(inv *SiteSpec) {
 	c := inv.Cluster
 	if c.ControlPlaneVIP == "" {
-		if inv.ControlPlaneCount() > 1 {
+		if inv.ControlPlaneCount() > 1 && !v.allowControlPlaneWithoutVIP {
 			v.addf("%s is required when the cluster has more than one control-plane node (%s or %s) because kube-vip provides "+
 				"a stable control-plane endpoint", pathControlPlaneVIP, pathNodes, pathNicoControlPlane+".count")
 		}
@@ -960,7 +980,7 @@ func (inv *SiteSpec) NicoVIPWarning() string {
 	if !inv.IsNico() || inv.Cluster.ControlPlaneVIP != "" {
 		return ""
 	}
-	return pathControlPlaneVIP + " is not set: the bootstrap can build this one-node site cluster, but the controller stack " +
+	return pathControlPlaneVIP + " is not set: the bootstrap can build this site cluster, but the controller stack " +
 		"install needs the VIP, and it cannot be added once the site cluster exists (kube-vip is set up only when the cluster " +
 		"is created with one); set it now unless this site will not get the controller stack"
 }

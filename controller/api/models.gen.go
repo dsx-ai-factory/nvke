@@ -263,7 +263,7 @@ type ControlPlaneConfig struct {
 	// ConfigurationID ID of the current configuration snapshot.
 	ConfigurationID openapi_types.UUID `json:"configurationId,omitempty"`
 
-	// DesiredCount The desired number of cluster-level control plane nodes. Creating a cluster with or increasing this count above 1 requires controlPlaneVIP on the cluster.
+	// DesiredCount The desired number of cluster-level control plane nodes. Creating a cluster with or increasing this count above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
 	DesiredCount int `json:"desiredCount,omitempty"`
 
 	// Infra Infra provider control plane fields.
@@ -426,7 +426,7 @@ type ControlPlaneStatus struct {
 // `nico` carries the NICo settings for the control-plane nodes; it is required
 // for a NICo cluster. `launchLayer` is required for a LaunchLayer cluster.
 type CreateClusterControlPlaneConfig struct {
-	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1. Values above 1 require controlPlaneVIP on the cluster.
+	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1. Values above 1 require controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
 	DesiredCount int `json:"desiredCount"`
 
 	// Infra Infra provider fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
@@ -487,10 +487,12 @@ type CreateClusterRequest struct {
 	// ControlPlaneVIP Virtual IP for the API server through kube-vip. Omit to skip kube-vip and
 	// use the first control-plane node's IP as the API server endpoint. Must not
 	// fall inside the pod or service CIDR. An explicit empty string is rejected.
-	// Without a VIP, a new cluster must have exactly one desired control-plane
-	// node. Control-plane scale-up above one node, upgrades, and configuration
-	// changes that replace control-plane nodes require a VIP. Recreate a no-VIP
-	// cluster with controlPlaneVIP to make those operations available.
+	// By default, a cluster without a VIP must have exactly one desired
+	// control-plane node. Scale-up above one node, upgrades and node replacement
+	// require a VIP unless the controller deployment enables the development-only
+	// allowControlPlaneWithoutVIP setting. That override keeps the initializing
+	// node's IP as the endpoint; replacing that node can break API access.
+	// Quorum, health and deletion protections still apply.
 	ControlPlaneVIP string `json:"controlPlaneVIP,omitempty"`
 
 	// TeleportEnabled Enable Teleport SSH enrollment for nodes in this cluster. When omitted, the server-side default for the site is applied.
@@ -547,7 +549,7 @@ type CreateNodePoolRequest struct {
 	// NodeTaints Taints applied to the pool's nodes at creation. Not allowed on control-plane pools. Keys under nvke.nvidia.com, nke.nvidia.com (legacy), nke.io (legacy), kubernetes.io, k8s.io and their subdomains are reserved. Each key and effect pair may appear only once.
 	NodeTaints []NodeTaint `json:"nodeTaints,omitempty"`
 
-	// DesiredNodeCount The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster.
+	// DesiredNodeCount The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
 	DesiredNodeCount int `json:"desiredNodeCount"`
 
 	// Description Free-text description.
@@ -1328,7 +1330,7 @@ type NodePoolCreateConfig struct {
 	// NodeTaints Taints applied to the pool's nodes at creation. Not allowed on control-plane pools. Keys under nvke.nvidia.com, nke.nvidia.com (legacy), nke.io (legacy), kubernetes.io, k8s.io and their subdomains are reserved. Each key and effect pair may appear only once.
 	NodeTaints []NodeTaint `json:"nodeTaints,omitempty"`
 
-	// DesiredNodeCount The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster.
+	// DesiredNodeCount The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
 	DesiredNodeCount int `json:"desiredNodeCount"`
 
 	// Description Free-text description.
@@ -1467,11 +1469,12 @@ type SpireServer struct {
 // UpdateClusterControlPlaneConfig Changes to `release` or the Kubernetes version start a control-plane
 // rollout. All fields are optional. A provider payload that does not match the
 // cluster's provider is rejected with 400.
-// Rollout-triggering changes require controlPlaneVIP. maxSurge alone does not
+// Rollout-triggering changes require controlPlaneVIP unless the development-only
+// allowControlPlaneWithoutVIP setting is enabled. maxSurge alone does not
 // trigger a rollout and remains mutable without a VIP.
 type UpdateClusterControlPlaneConfig struct {
 	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1.
-	// Increasing the count above 1 requires controlPlaneVIP on the cluster.
+	// Increasing the count above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
 	DesiredCount *int `json:"desiredCount,omitempty"`
 
 	// Infra The mutable infra provider control plane fields. Every field carries three states: omitted
@@ -1509,14 +1512,16 @@ type UpdateClusterRequest struct {
 	// ControlPlaneConfig Changes to `release` or the Kubernetes version start a control-plane
 	// rollout. All fields are optional. A provider payload that does not match the
 	// cluster's provider is rejected with 400.
-	// Rollout-triggering changes require controlPlaneVIP. maxSurge alone does not
+	// Rollout-triggering changes require controlPlaneVIP unless the development-only
+	// allowControlPlaneWithoutVIP setting is enabled. maxSurge alone does not
 	// trigger a rollout and remains mutable without a VIP.
 	ControlPlaneConfig *UpdateClusterControlPlaneConfig `json:"controlPlaneConfig,omitempty"`
 
 	// ControlPlaneKubernetesVersion Target control-plane version, as X.Y.Z with no leading "v". Must be newer than
 	// the current version by at most one minor version and keep every worker pool
 	// within 3 minor versions.
-	// The cluster must have controlPlaneVIP configured.
+	// The cluster must have controlPlaneVIP configured unless the development-only
+	// allowControlPlaneWithoutVIP setting is enabled.
 	ControlPlaneKubernetesVersion *string `json:"controlPlaneKubernetesVersion,omitempty"`
 
 	// EnableCPNodeRecycling Turn automatic control-plane node replacement on or off.
@@ -1558,7 +1563,8 @@ type UpdateInProgressType string
 // UpdateNodePoolRequest All fields are optional. A provider payload that does not match the node pool's
 // cluster is rejected with 400.
 // Updating a control-plane pool in a way that creates a replacement node set
-// requires controlPlaneVIP. maxSurge alone does not create a replacement
+// requires controlPlaneVIP unless the development-only allowControlPlaneWithoutVIP
+// setting is enabled. maxSurge alone does not create a replacement
 // and remains mutable without a VIP.
 type UpdateNodePoolRequest struct {
 	// AutoModeDisabled Disables auto-mode (automatic node recycling).
@@ -1570,7 +1576,7 @@ type UpdateNodePoolRequest struct {
 	// Description Free-text description.
 	Description *string `json:"description,omitempty"`
 
-	// DesiredNodeCount The desired number of nodes in the pool. Increasing aggregate control-plane capacity above 1 requires controlPlaneVIP on the cluster.
+	// DesiredNodeCount The desired number of nodes in the pool. Increasing aggregate control-plane capacity above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
 	DesiredNodeCount *int `json:"desiredNodeCount,omitempty"`
 
 	// Infra The mutable infra provider node pool fields. Every field carries three states: omitted

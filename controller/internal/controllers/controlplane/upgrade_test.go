@@ -5,6 +5,8 @@ package controlplane
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"testing"
 
@@ -90,49 +92,61 @@ func TestIsControlPlaneHealthy_WithSurgeThreshold(t *testing.T) {
 	}
 }
 
-func TestReconcileNodesNeedingRolloutWithoutControlPlaneVIPDoesNotReplaceNodes(t *testing.T) {
+func TestReconcileNodesNeedingRolloutWithoutControlPlaneVIP(t *testing.T) {
 	t.Parallel()
+	for _, allow := range []bool{false, true} {
+		t.Run(fmt.Sprintf("override=%t", allow), func(t *testing.T) {
+			t.Parallel()
+			clusterID := uuid.New()
+			oldConfigID := uuid.New()
+			desiredSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.31.0"}
+			desiredSpec.SetNico(db.NicoControlPlaneProvider{Release: "new-os"})
+			pinnedSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.31.0"}
+			pinnedSpec.SetNico(db.NicoControlPlaneProvider{Release: "old-os"})
+			cluster := db.Cluster{
+				ID:                    clusterID,
+				Name:                  "single-no-vip",
+				EnableCPNodeRecycling: true,
+				KubernetesVersion:     "1.31.0",
+				ControlPlaneConfig: db.ControlPlaneConfig{
+					ControlPlaneConfigSpec: desiredSpec,
+					DesiredCount:           1,
+					MaxSurge:               1,
+				},
+			}
+			node := db.Node{
+				ID:                          uuid.New(),
+				ClusterID:                   clusterID,
+				ControlPlane:                true,
+				ControlPlaneConfigurationID: oldConfigID,
+				Name:                        "cp-0",
+			}
+			cp := &controlPlane{
+				nodes:                     []db.Node{node},
+				clusterControlPlaneConfig: cluster.ControlPlaneConfig,
+				nodePinnedControlPlaneConfigs: map[uuid.UUID]db.ControlPlaneConfigSpec{
+					oldConfigID: pinnedSpec,
+				},
+			}
+			mockTx := &testutil.MockTx{}
+			surgeError := errors.New("surge database failure")
+			if allow {
+				mockTx.On("ListClusterNodeNames", mock.Anything, clusterID).Return([]string{}, surgeError).Once()
+			}
+			r := &reconciler{cfg: config.Config{AllowControlPlaneWithoutVIP: allow}, db: mockTx, logger: slog.Default()}
 
-	clusterID := uuid.New()
-	oldConfigID := uuid.New()
-	desiredSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.31.0"}
-	desiredSpec.SetNico(db.NicoControlPlaneProvider{Release: "new-os"})
-	pinnedSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.31.0"}
-	pinnedSpec.SetNico(db.NicoControlPlaneProvider{Release: "old-os"})
-	cluster := db.Cluster{
-		ID:                    clusterID,
-		Name:                  "single-no-vip",
-		EnableCPNodeRecycling: true,
-		KubernetesVersion:     "1.31.0",
-		ControlPlaneConfig: db.ControlPlaneConfig{
-			ControlPlaneConfigSpec: desiredSpec,
-			DesiredCount:           1,
-			MaxSurge:               1,
-		},
-	}
-	node := db.Node{
-		ID:                          uuid.New(),
-		ClusterID:                   clusterID,
-		ControlPlane:                true,
-		ControlPlaneConfigurationID: oldConfigID,
-		Name:                        "cp-0",
-	}
-	cp := &controlPlane{
-		nodes:                     []db.Node{node},
-		clusterControlPlaneConfig: cluster.ControlPlaneConfig,
-		nodePinnedControlPlaneConfigs: map[uuid.UUID]db.ControlPlaneConfigSpec{
-			oldConfigID: pinnedSpec,
-		},
-	}
-	mockTx := &testutil.MockTx{}
-	r := &reconciler{cfg: config.Config{}, db: mockTx, logger: slog.Default()}
+			err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
 
-	err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
-
-	require.NoError(t, err)
-	mockTx.AssertExpectations(t)
-	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
-	mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+			if allow {
+				require.ErrorIs(t, err, surgeError)
+			} else {
+				require.NoError(t, err)
+			}
+			mockTx.AssertExpectations(t)
+			mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+			mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+		})
+	}
 }
 
 func TestReconcileNodesNeedingRolloutWithoutControlPlaneVIPDeletesAfterSurgeExists(t *testing.T) {

@@ -456,3 +456,50 @@ func TestStartRequestedTeardownForcesDeleteWhenAgentBecomesUnavailable(t *testin
 	require.NoError(t, nodes.StartRequestedTeardown(context.Background(), mockTx, target.ID))
 	mockTx.AssertExpectations(t)
 }
+
+func TestLiveDeleteVIPOverridePreservesSafety(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		allow     bool
+		count     int
+		wantError string
+	}{
+		{name: "default rejects without VIP", count: 4, wantError: "controlPlaneVIP"},
+		{name: "override permits replacement intent", allow: true, count: 4},
+		{name: "override keeps quorum floor", allow: true, count: 3, wantError: "below the minimum of 3"},
+		{name: "override protects last joined node", allow: true, count: 1, wantError: "last joined control-plane node"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ids := cpNodeIDs(tc.count)
+			cpNodes := make([]db.Node, tc.count)
+			for i, id := range ids {
+				cpNodes[i] = joinedCPNode(id)
+			}
+			target := cpNodes[0]
+			tx := &testutil.MockTx{}
+			tx.On("GetNode", mock.Anything, target.ID).Return(target, nil).Once()
+			tx.On("GetClusterForUpdate", mock.Anything, target.ClusterID).Return(db.Cluster{ID: target.ClusterID}, nil).Once()
+			tx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil).Once()
+			if tc.allow {
+				expectControlPlaneCensus(tx, cpNodes)
+			}
+			if tc.wantError == "" {
+				tx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
+					return node.ID == target.ID && nodes.IsDeleteRequested(*node) && !nodes.IsDeleting(*node)
+				})).Return(target, nil).Once()
+			}
+			err := nodes.DeleteWithTx(context.Background(), tx, target.ID,
+				nodes.WithAllowCPNode(true), nodes.WithAllowControlPlaneWithoutVIP(tc.allow))
+			if tc.wantError != "" {
+				require.ErrorContains(t, err, tc.wantError)
+				tx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+			} else {
+				require.NoError(t, err)
+			}
+			tx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+			tx.AssertExpectations(t)
+		})
+	}
+}

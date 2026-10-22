@@ -35,6 +35,7 @@ render() {
 checksum="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 render defaults
+render dev-without-vip --set allowControlPlaneWithoutVIP=true
 render readiness-custom \
   --set nodeAgent.readiness.workers=4 \
   --set-string nodeAgent.readiness.timeout=10s \

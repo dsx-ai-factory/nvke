@@ -5,6 +5,7 @@ package controlplane
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -646,34 +647,47 @@ func TestRemediateMachinesRecordsIntentUnderTheController(t *testing.T) {
 		mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
-func TestRemediateMachinesWithoutControlPlaneVIPDoesNotReplaceNode(t *testing.T) {
+func TestRemediateMachinesWithoutControlPlaneVIP(t *testing.T) {
 	t.Parallel()
+	for _, allow := range []bool{false, true} {
+		t.Run(fmt.Sprintf("override=%t", allow), func(t *testing.T) {
+			t.Parallel()
+			cluster := db.Cluster{ID: uuid.New(), Name: "legacy-no-vip"}
+			healthy := func(name string) db.Node {
+				return db.Node{
+					ID: uuid.New(), ClusterID: cluster.ID, ControlPlane: true, Name: name,
+					Conditions: db.NodeConditions{
+						Joined:          db.NewCondition(true, "Joined"),
+						Provisioned:     db.NewCondition(true, "Provisioned"),
+						KubernetesReady: db.NewCondition(true, "Ready"),
+						NodeAgentReady:  db.NewCondition(true, "Ready"),
+					},
+				}
+			}
+			marked := healthy("cp-0")
+			marked.Conditions.MarkedForRecycling = db.NewCondition(true, "Marked")
+			cp := &controlPlane{
+				nodes:                     []db.Node{marked, healthy("cp-1"), healthy("cp-2")},
+				clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3},
+			}
+			mockTx := &testutil.MockTx{}
+			if allow {
+				mockTx.On("GetNodeForUpdate", mock.Anything, marked.ID).Return(marked, nil).Once()
+				mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
+					return node.ID == marked.ID && nodes.IsDeleteRequested(*node)
+				})).Return(marked, nil).Once()
+			}
+			r := &reconciler{cfg: config.Config{AllowControlPlaneWithoutVIP: allow}, db: mockTx, logger: slog.Default()}
 
-	cluster := db.Cluster{ID: uuid.New(), Name: "legacy-no-vip"}
-	healthy := func(name string) db.Node {
-		return db.Node{
-			ID: uuid.New(), ClusterID: cluster.ID, ControlPlane: true, Name: name,
-			Conditions: db.NodeConditions{
-				Joined:          db.NewCondition(true, "Joined"),
-				Provisioned:     db.NewCondition(true, "Provisioned"),
-				KubernetesReady: db.NewCondition(true, "Ready"),
-				NodeAgentReady:  db.NewCondition(true, "Ready"),
-			},
-		}
+			requeue, err := r.remediateMachines(context.Background(), cluster, cp)
+
+			require.NoError(t, err)
+			assert.Equal(t, allow, requeue)
+			if !allow {
+				mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+			}
+			mockTx.AssertExpectations(t)
+			mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+		})
 	}
-	marked := healthy("cp-0")
-	marked.Conditions.MarkedForRecycling = db.NewCondition(true, "Marked")
-	cp := &controlPlane{
-		nodes:                     []db.Node{marked, healthy("cp-1"), healthy("cp-2")},
-		clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3},
-	}
-	mockTx := &testutil.MockTx{}
-	r := &reconciler{db: mockTx, logger: slog.Default()}
-
-	requeue, err := r.remediateMachines(context.Background(), cluster, cp)
-
-	require.NoError(t, err)
-	assert.False(t, requeue)
-	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
-	mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }

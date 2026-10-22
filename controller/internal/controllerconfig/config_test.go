@@ -1177,3 +1177,17 @@ func TestMachineMetadataAllowlists_Config(t *testing.T) {
 		}
 	}
 }
+
+func TestControlPlaneVIPOverrideConfiguration(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{"", "allowControlPlaneWithoutVIP: false\n", "allowControlPlaneWithoutVIP: true\n"} {
+		t.Run(value, func(t *testing.T) {
+			t.Parallel()
+			file, err := controllerconfig.Load(writeConfig(t, minimalConfig+"\n"+value))
+			require.NoError(t, err)
+			var runtime config.Config
+			file.ApplyTo(&runtime)
+			require.Equal(t, strings.Contains(value, "true"), runtime.AllowControlPlaneWithoutVIP)
+		})
+	}
+}

@@ -2262,3 +2262,24 @@ func TestValidateProfilesImage(t *testing.T) {
 		})
 	}
 }
+
+func TestDeployControlPlaneVIPOverride(t *testing.T) {
+	for _, allow := range []bool{false, true} {
+		t.Run(strconv.FormatBool(allow), func(t *testing.T) {
+			cfg := testConfig(t)
+			cfg.AllowControlPlaneWithoutVIP = allow
+			runner := &fakeRunner{}
+			if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+				t.Fatal(err)
+			}
+			i := callIndex(runner, "upgrade --install "+cweReleaseName)
+			if i < 0 {
+				t.Fatal("no NVKE controller Helm install")
+			}
+			want := "--set allowControlPlaneWithoutVIP=" + strconv.FormatBool(allow)
+			if !strings.Contains(joinArgs(runner.calls[i].args), want) {
+				t.Fatalf("NVKE controller Helm install did not contain %q", want)
+			}
+		})
+	}
+}

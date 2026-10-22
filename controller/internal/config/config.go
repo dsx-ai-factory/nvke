@@ -407,6 +407,10 @@ type Config struct {
 	// Machine metadata allowlists permit exact keys under reserved domains.
 	MachineMetadataAllowlistedLabelKeys      []string `controllerconfig:"machineMetadataAllowlistedLabelKeys"`
 	MachineMetadataAllowlistedAnnotationKeys []string `controllerconfig:"machineMetadataAllowlistedAnnotationKeys"`
+
+	// AllowControlPlaneWithoutVIP permits control-plane lifecycle operations without a VIP for development.
+	// The API endpoint remains tied to the initializing node's IP.
+	AllowControlPlaneWithoutVIP bool `controllerconfig:"allowControlPlaneWithoutVIP"`
 }
 
 // TracingConfig configures OpenTelemetry span export.

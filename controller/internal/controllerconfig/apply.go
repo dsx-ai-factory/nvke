@@ -111,4 +111,5 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.Teleport.ResourceGroupLabelValue = c.Teleport.ResourceGroupLabelValue
 
 	cfg.PermissiveMode = c.PermissiveMode
+	cfg.AllowControlPlaneWithoutVIP = c.AllowControlPlaneWithoutVIP
 }

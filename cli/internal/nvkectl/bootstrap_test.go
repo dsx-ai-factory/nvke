@@ -2518,3 +2518,29 @@ func TestRequireIsolatedRuntimeCNI(t *testing.T) {
 		}
 	}
 }
+
+func TestBootstrapControlPlaneVIPOverrideReachesController(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPIWithNodes(t, true, 3, 3)
+	runner := &recordingCWERunner{next: newFakeCWERunner(t)}
+	body := strings.Replace(threeNodeSiteSpec, "  controlPlaneVIP: 10.0.0.100\n", "", 1)
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec:                    writeSiteSpec(t, body),
+		bootstrapRunner:             fakeBootstrapRunner{},
+		cweRunner:                   runner,
+		kubeconfigOut:               filepath.Join(t.TempDir(), "site.kubeconfig"),
+		lookPath:                    runtimeOnPath,
+		dialContext:                 refuseDial,
+		untaintControlPlane:         skipUntaint,
+		dumpSpireEntries:            func(context.Context, string, string) (int, error) { return 0, nil },
+		encryptionKeyOut:            filepath.Join(t.TempDir(), "key.json"),
+		allowControlPlaneWithoutVIP: true,
+		clusterTimeout:              5 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !runner.saw("--set allowControlPlaneWithoutVIP=true") {
+		t.Fatal("bootstrap did not enable the VIP override in the temporary controller")
+	}
+}

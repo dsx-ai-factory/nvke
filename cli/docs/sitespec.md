@@ -353,6 +353,16 @@ so a file it passes is one `bootstrap site` accepts on this host; pass
   `validate sitespec` as you will to `bootstrap site`, and the file is checked
   as that run would: `spire.externalAddress` is not required.
 
+For development, pass `--allow-control-plane-without-vip` to both
+`nvkectl validate sitespec` and `nvkectl bootstrap site` to permit a multi-node
+control plane without a VIP. The bootstrap also enables
+`allowControlPlaneWithoutVIP` in its temporary NVKE controller. The flag
+defaults to false and still validates a supplied VIP. kubeadm uses the
+initializing node's IP as the API endpoint, so replacing that node can break
+API access. The flag does not supply an address for `render deploy-path`.
+Enable the same controller setting in the installed management plane for
+later workload-cluster operations. Quorum and deletion protections still apply.
+
 CLI acceptance does not prove bootstrap or network reachability. The controller
 chooses the first control-plane node ready to join, which need not be the first
 node in the site spec or the node whose IP matches the VIP. It configures

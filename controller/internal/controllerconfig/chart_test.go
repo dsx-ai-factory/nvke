@@ -93,7 +93,11 @@ func TestRenderedChart(t *testing.T) {
 				}, cfg.AgentReadiness)
 			}
 
+			if filepath.Base(render) == "dev-without-vip.yaml" {
+				require.True(t, cfg.AllowControlPlaneWithoutVIP)
+			}
 			if filepath.Base(render) == "defaults.yaml" {
+				require.False(t, cfg.AllowControlPlaneWithoutVIP)
 				checkLocalAgreesWithChart(t, fromFile)
 			}
 		})
