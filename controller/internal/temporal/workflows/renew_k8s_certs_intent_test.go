@@ -26,19 +26,25 @@ import (
 // Persisted typed intent belongs to the typed executor even when V2 Start reports
 // Unsupported. In particular, a completed legacy receipt cannot stand in for the
 // second (typed) leg. Both legs stay behind one drain, including forced cycles.
+// Unsupported typed work releases the lock without resolution; histories that
+// predate the release marker keep resolving and retaining it.
 func TestRenewK8sCertsTypedIntentPreservesExecutor(t *testing.T) {
 	for _, legacy := range []bool{false, true} {
 		for _, forced := range []bool{false, true} {
-			for _, unsupported := range []bool{false, true} {
-				t.Run(fmt.Sprintf("legacy=%t/forced=%t/unsupported=%t", legacy, forced, unsupported), func(t *testing.T) {
-					testRenewK8sCertsTypedIntent(t, legacy, forced, unsupported)
-				})
-			}
+			t.Run(fmt.Sprintf("legacy=%t/forced=%t/unsupported=false", legacy, forced), func(t *testing.T) {
+				testRenewK8sCertsTypedIntent(t, legacy, forced, false, workflow.Version(1))
+			})
+			t.Run(fmt.Sprintf("legacy=%t/forced=%t/unsupported=true/release", legacy, forced), func(t *testing.T) {
+				testRenewK8sCertsTypedIntent(t, legacy, forced, true, workflow.Version(1))
+			})
+			t.Run(fmt.Sprintf("legacy=%t/forced=%t/unsupported=true/defaultVersionRetains", legacy, forced), func(t *testing.T) {
+				testRenewK8sCertsTypedIntent(t, legacy, forced, true, workflow.DefaultVersion)
+			})
 		}
 	}
 }
 
-func testRenewK8sCertsTypedIntent(t *testing.T, legacy, forced, unsupported bool) {
+func testRenewK8sCertsTypedIntent(t *testing.T, legacy, forced, unsupported bool, releaseVersion workflow.Version) {
 	t.Helper()
 	clusterID := uuid.New()
 	node := certificateRenewalWorkflowNode(clusterID, "cp-a")
@@ -75,15 +81,19 @@ func testRenewK8sCertsTypedIntent(t *testing.T, legacy, forced, unsupported bool
 		}
 		return activities.KubernetesCertificateRenewalResult{Outcome: db.CertificateRenewalOutcomeRenewed}, nil
 	}).Once()
+	retainLock := unsupported && releaseVersion == workflow.DefaultVersion
 	if unsupported {
-		env.OnActivity(a.ResolveKubernetesCertificateRenewal, mock.Anything, mock.MatchedBy(func(input activities.ResolveKubernetesCertificateRenewalInput) bool {
-			return !input.Legacy && input.NodeID == node.ID && input.OperationID == certificateRenewalOperationID(cycleID(), node.ID)
-		})).Return(func(ctx context.Context, _ activities.ResolveKubernetesCertificateRenewalInput) error {
-			require.NoError(t, ctx.Err(), "typed cleanup is disconnected")
-			return errors.New("typed termination unconfirmed")
-		}).Once()
+		env.OnGetVersion(certificateRenewalTypedUnsupportedChangeID, workflow.DefaultVersion, 1).Return(releaseVersion).Once()
+		if retainLock {
+			env.OnActivity(a.ResolveKubernetesCertificateRenewal, mock.Anything, mock.MatchedBy(func(input activities.ResolveKubernetesCertificateRenewalInput) bool {
+				return !input.Legacy && input.NodeID == node.ID && input.OperationID == certificateRenewalOperationID(cycleID(), node.ID)
+			})).Return(func(ctx context.Context, _ activities.ResolveKubernetesCertificateRenewalInput) error {
+				require.NoError(t, ctx.Err(), "typed cleanup is disconnected")
+				return errors.New("typed termination unconfirmed")
+			}).Once()
+		}
 		env.OnActivity(a.FailCertificateRenewal, mock.Anything, mock.MatchedBy(func(input activities.FailCertificateRenewalInput) bool {
-			return input.RetainMutationLock && input.FailedNodeID != nil && *input.FailedNodeID == node.ID
+			return input.RetainMutationLock == retainLock && input.FailedNodeID != nil && *input.FailedNodeID == node.ID
 		})).Return(activities.FailCertificateRenewalResult{}, nil).Once()
 	} else {
 		expectCertificateRenewalHealth(t, env, a, clusterID, expectedIDs, &peer.ID).Once()
@@ -108,6 +118,10 @@ func testRenewK8sCertsTypedIntent(t *testing.T, legacy, forced, unsupported bool
 	env.ExecuteWorkflow(RenewK8sCertsV2, input)
 	if unsupported {
 		require.ErrorContains(t, env.GetWorkflowError(), "unsupported")
+		if !retainLock {
+			require.ErrorContains(t, env.GetWorkflowError(), "upgrade the node agent")
+			env.AssertNotCalled(t, "ResolveKubernetesCertificateRenewal", mock.Anything, mock.Anything)
+		}
 		env.AssertNotCalled(t, "CompleteCertificateRenewal", mock.Anything, mock.Anything)
 		env.AssertNotCalled(t, "CheckKubernetesCertificateRenewalRequired", mock.Anything, mock.MatchedBy(func(input activities.KubernetesCertificateRenewalInput) bool {
 			return input.NodeID == peer.ID

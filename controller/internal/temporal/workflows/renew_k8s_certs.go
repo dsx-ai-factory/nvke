@@ -39,6 +39,10 @@ const (
 	// certificateRenewalExecutorIntentChangeID preserves histories that skipped
 	// forced intent checks or allowed typed intent to fall back to legacy.
 	certificateRenewalExecutorIntentChangeID = "certificate-renewal-executor-intent"
+	// certificateRenewalTypedUnsupportedChangeID marks releasing the mutation lock
+	// when a pre-V2 agent rejects required typed work. Histories recorded before it
+	// resolved the never-accepted operation and retained the lock.
+	certificateRenewalTypedUnsupportedChangeID = "certificate-renewal-typed-unsupported-release"
 )
 
 // RenewK8sCertsInput selects a threshold-based or forced cycle. V2 requires a
@@ -444,7 +448,17 @@ func renewCertificatesOnNode(
 	if errors.As(err, &applicationErr) && applicationErr.Type() == activities.CertificateRenewalNotDispatched {
 		return result, nil, err
 	}
-	if legacy || !typedRequired && errors.As(err, &applicationErr) && applicationErr.Type() == activities.CertificateRenewalLegacyRequired {
+	legacyRequired := errors.As(err, &applicationErr) && applicationErr.Type() == activities.CertificateRenewalLegacyRequired
+	// V2 Start Unimplemented proves no typed work was accepted under this ID and
+	// the activity already released the reservation. Called only on this path so
+	// histories that never reach it are unaffected.
+	if typedRequired && legacyRequired &&
+		workflow.GetVersion(ctx, certificateRenewalTypedUnsupportedChangeID, workflow.DefaultVersion, 1) >= 1 {
+		return result, nil, fmt.Errorf(
+			"node agent lacks certificate renewal V2 but holds pending typed renewal intent; upgrade the node agent: %w", err,
+		)
+	}
+	if legacy || !typedRequired && legacyRequired {
 		if err := ctx.Err(); err != nil {
 			return result, nil, err // Typed work was rejected and legacy work has not been dispatched.
 		}
