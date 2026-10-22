@@ -68,6 +68,17 @@ python3 -c 'import yaml' 2>/dev/null || die "python3 needs PyYAML (pip install p
 
 mkdir -p "${WORK}"
 
+# Snapshots are the artifact worth keeping: they are what a reader diffs when
+# this fails on a change they did not expect to touch the chart's identities.
+#
+# Exported HERE, before anything can fail, not at the end. Under `set -e` an
+# early exit -- a rejected baseline most of all, which is the one whose
+# before.json a reader needs -- would otherwise leave the workflow's
+# `env.CHART_UPGRADE_WORK != ''` guard false and upload nothing.
+if [[ -n "${GITHUB_ENV:-}" ]]; then
+  echo "CHART_UPGRADE_WORK=${WORK}" >> "${GITHUB_ENV}"
+fi
+
 # Only a cluster this run created is deleted. A cluster that was already there
 # -- the caller's, or another run's -- is used and left alone.
 CREATED_CLUSTER=false
@@ -161,12 +172,6 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     echo "Upgraded \`${RELEASE}\` in \`${NAMESPACE}\` from \`${FROM_REF}\` to this checkout."
     echo "\`helm upgrade\` exited ${UPGRADE_RC}; the comparison exited ${COMPARE_RC}."
   } >> "${GITHUB_STEP_SUMMARY}"
-fi
-
-# Snapshots are the artifact worth keeping: they are what a reader diffs when
-# this fails on a change they did not expect to touch the chart's identities.
-if [[ -n "${GITHUB_ENV:-}" ]]; then
-  echo "CHART_UPGRADE_WORK=${WORK}" >> "${GITHUB_ENV}"
 fi
 
 (( UPGRADE_RC == 0 )) || die "helm upgrade failed (exit ${UPGRADE_RC}); see the comparison above"
