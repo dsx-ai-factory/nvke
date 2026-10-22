@@ -111,6 +111,10 @@ accepting node-side work. When there is no pending typed intent, any definitive
 V2 Start `Unimplemented` response, including on an activity retry, allows the
 controller to use the embedded runbook. Pending typed intent forbids that
 fallback: legacy success cannot complete the typed executor's pending restarts.
+In that case the agent did not accept the operation, so the cycle fails with a
+message to upgrade the node agent and releases the mutation lock. Nothing blocks
+the agent upgrade, and the upgraded agent finishes the pending typed renewal on
+a later cycle.
 The runbook's persistent state, bounded lock, and CA fingerprint checks add
 mixed-fleet safety. Both executors restart the same pods one at a time in the same order,
 gated on local control-plane health; they differ in resume granularity (the
