@@ -68,6 +68,9 @@ in the `K8S_CLUSTER_NAME` environment variable, and the processor reads it
 inside an OTTL string, so names such as `42` or `true` stay strings. The name
 must not contain a double quote or a backslash.
 
+The exporter queue is in memory by default. To keep it on a PersistentVolume,
+see [Configure a persistent exporter queue](../guides/configure-persistent-queue.md).
+
 To export to a production backend, see
 [Set a backend](../getting-started.md#set-a-backend) and
 [Secure gateway export](../guides/secure-gateway-export.md).

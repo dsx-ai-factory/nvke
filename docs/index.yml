@@ -110,6 +110,10 @@ navigation:
                 path: nktp/guides/enable-auto-instrumentation.md
               - page: Enable eBPF instrumentation
                 path: nktp/guides/enable-ebpf-instrumentation.md
+              - page: Configure a persistent exporter queue
+                path: nktp/guides/configure-persistent-queue.md
+              - page: Enable log checkpoints for the node Collector
+                path: nktp/guides/enable-daemonset-log-checkpoints.md
           - section: Components
             contents:
               - page: Node Collector
