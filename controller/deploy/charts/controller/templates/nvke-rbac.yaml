@@ -125,6 +125,9 @@ metadata:
 {{- if and $namespace (has $object.kind (list "ClusterRole" "ClusterRoleBinding")) }}
 {{- fail (printf "tenantAccess.additionalRBAC[%d]: %s must not set metadata.namespace" $index $object.kind) }}
 {{- end }}
+{{- if and (not $namespace) (has $object.kind (list "Role" "RoleBinding")) }}
+{{- fail (printf "tenantAccess.additionalRBAC[%d]: %s must set metadata.namespace" $index $object.kind) }}
+{{- end }}
 {{- $identity := printf "%s/%s/%s" $object.kind $namespace $object.metadata.name }}
 {{- if hasKey $rbacIdentities $identity }}
 {{- fail (printf "tenantAccess.additionalRBAC[%d]: duplicate RBAC object %s (conflicts with built-in RBAC or an earlier additional entry)" $index $identity) }}

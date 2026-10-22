@@ -183,6 +183,8 @@ def main():
             obj["apiVersion"] = api_version
         if kind is not None:
             obj["kind"] = kind
+        if kind == "Secret":
+            obj["stringData"] = {"marker": "not-a-credential"}
         result = subprocess.run(
             [*command, "--values", "-"],
             input=yaml.safe_dump({"tenantAccess": {"additionalRBAC": [obj]}}),
@@ -203,6 +205,14 @@ def main():
             obj = copy.deepcopy(document)
             obj["metadata"]["namespace"] = "invalid-for-cluster-scoped-rbac"
             invalid_cases.append([obj])
+    for kind in ("Role", "RoleBinding"):
+        for namespace in (None, ""):
+            obj = copy.deepcopy(next(document for document in scoped_rbac if document["kind"] == kind))
+            if namespace is None:
+                obj["metadata"].pop("namespace")
+            else:
+                obj["metadata"]["namespace"] = namespace
+            invalid_cases.append([obj])
     for additional in invalid_cases:
         result = subprocess.run(
             [*command, "--values", "-"],
@@ -217,6 +227,8 @@ def main():
         expected = f"tenantAccess.additionalRBAC[{len(additional) - 1}]: duplicate RBAC object {identity}"
         if obj["kind"] in ("ClusterRole", "ClusterRoleBinding") and obj["metadata"].get("namespace"):
             expected = f"tenantAccess.additionalRBAC[0]: {obj['kind']} must not set metadata.namespace"
+        elif obj["kind"] in ("Role", "RoleBinding") and not obj["metadata"].get("namespace"):
+            expected = f"tenantAccess.additionalRBAC[0]: {obj['kind']} must set metadata.namespace"
         if result.returncode == 0 or expected not in result.stderr:
             print(f"ERROR: expected render rejection: {expected}\n{result.stderr}", file=sys.stderr)
             return 1
