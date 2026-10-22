@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("ext://helm_resource", "helm_repo", "helm_resource")
-load("ext://uibutton", "cmd_button", "choice_input", "text_input")
+load("ext://uibutton", "bool_input", "cmd_button", "choice_input", "text_input")
 
 # Pin chart versions to avoid surprise breakage from upstream releases.
 CHART_VERSION_LOKI = "6.29.0"
@@ -283,9 +283,30 @@ def register(ctx):
     elif _vm_backend_enabled:
         warn("dnsmasq not found -- VMs using DHCP will not get IPs. Install with: brew install dnsmasq")
 
+    _files_dir = os.getenv("NICO_SIM_FILES_DIR", "") or ctx.tilt_env.get("NICO_SIM_FILES_DIR", "") or os.path.join(_dev, "files")
+    if not _files_dir.startswith("/"):
+        _files_dir = os.path.abspath(os.path.join(provider_dir, _files_dir))
+    _default_os_image_destination = "images/nvke-node.qcow2"
+    _os_image_destination = os.getenv("NICO_VMS_OS_IMAGE_DESTINATION", "") or ctx.tilt_env.get("NICO_VMS_OS_IMAGE_DESTINATION", "") or _default_os_image_destination
+    _nvkr_bin = os.getenv("NVKR_BIN", "") or ctx.tilt_env.get("NVKR_BIN", "")
+    if not _nvkr_bin:
+        _nvkr_bin = str(local("command -v nvkr 2>/dev/null || true", quiet=True)).strip()
+    _nvkr_release_reference = os.getenv("NVKR_RELEASE_REFERENCE", "") or ctx.tilt_env.get("NVKR_RELEASE_REFERENCE", "")
+    _nvkr_release_output = os.getenv("NVKR_RELEASE_OUTPUT", "") or ctx.tilt_env.get("NVKR_RELEASE_OUTPUT", "")
+    if not _nvkr_release_output:
+        _host_arch = str(local("uname -m", quiet=True)).strip()
+        if _host_arch == "x86_64" or _host_arch == "amd64":
+            _nvkr_release_output = "nvke-node-fde-amd64"
+        elif _host_arch == "aarch64" or _host_arch == "arm64":
+            _nvkr_release_output = "nvke-node-fde-arm64"
+        else:
+            fail("unsupported host architecture for the default NVKR release output: %s" % _host_arch)
+    _default_pull_nvkr_release = bool(_nvkr_release_reference)
+    _default_pull_nvkr_release_env = "true" if _default_pull_nvkr_release else "false"
+
     nico_sim_env = {
         "NICO_SIM_LISTEN_ADDR": ":18080",
-        "NICO_SIM_FILES_DIR": os.getenv("NICO_SIM_FILES_DIR", os.path.join(_dev, "files")),
+        "NICO_SIM_FILES_DIR": _files_dir,
         "NICO_VMS_BRIDGE_CIDR": _bridge_cidr,
         "NICO_SIM_DB_PATH": os.path.join(_dev, "nico-sim.db"),
         "NICO_VMS_BASE_IMAGE": os.path.join(provider_dir, "images", "ubuntu-cloud.qcow2"),
@@ -315,8 +336,10 @@ def register(ctx):
             ),
         })
     _image_cache = ctx.cfg.get("nico_sim_image_cache_dir", "")
-    if _image_cache:
-        nico_sim_env["NICO_VMS_IMAGE_CACHE_DIR"] = _image_cache
+    _image_cache_dir = _image_cache or os.path.join(os.getenv("HOME", "/tmp"), ".cache", "nico-sim", "images")
+    if not _image_cache_dir.startswith("/"):
+        _image_cache_dir = os.path.abspath(os.path.join(ctx.main_dir, _image_cache_dir))
+    nico_sim_env["NICO_VMS_IMAGE_CACHE_DIR"] = _image_cache_dir
 
     local_resource(
         "nico-sim",
@@ -329,6 +352,40 @@ def register(ctx):
         links=[_ui_link(18080, "/ui/", "nico-sim UI")],
         labels=["5-nico-sim"],
     )
+
+    if _vm_backend_enabled:
+        cmd_button(
+            "0-stage-os-image",
+            argv=["bash", "-c", """
+              set -euo pipefail
+              cd %s
+              NVKR_BIN="%s" \
+              NVKR_RELEASE_REFERENCE="${NVKR_RELEASE_REFERENCE:-%s}" \
+              NVKR_RELEASE_OUTPUT="${NVKR_RELEASE_OUTPUT:-%s}" \
+              NICO_SIM_FILES_DIR="%s" \
+              NICO_VMS_IMAGE_CACHE_DIR="%s" \
+              NICO_VMS_PULL_NVKR_RELEASE="${NICO_VMS_PULL_NVKR_RELEASE:-%s}" \
+              NICO_VMS_OS_IMAGE_URL="${NICO_VMS_OS_IMAGE_URL:-}" \
+              NICO_VMS_OS_IMAGE_DESTINATION="${NICO_VMS_OS_IMAGE_DESTINATION:-%s}" \
+              ./hack/stage-nico-vms-image.sh
+            """ % (ctx.main_dir, _nvkr_bin, _nvkr_release_reference, _nvkr_release_output, _files_dir, _image_cache_dir, _default_pull_nvkr_release_env, _os_image_destination)],
+            resource="nico-sim",
+            icon_name="download",
+            text="Stage OS image",
+            inputs=[
+                bool_input(
+                    "NICO_VMS_PULL_NVKR_RELEASE",
+                    label="Pull NVKR release",
+                    default=_default_pull_nvkr_release,
+                    true_string="true",
+                    false_string="false",
+                ),
+                text_input("NVKR_RELEASE_REFERENCE", label="NVKR release reference", default=_nvkr_release_reference, placeholder="registry/repository@sha256:..."),
+                text_input("NVKR_RELEASE_OUTPUT", label="NVKR disk output", default=_nvkr_release_output),
+                text_input("NICO_VMS_OS_IMAGE_URL", label="OS image URL (used when Pull NVKR release is off)", default="", placeholder="https://... or file:///..."),
+                text_input("NICO_VMS_OS_IMAGE_DESTINATION", label="nico-sim files destination (relative to /files)", default=_os_image_destination),
+            ],
+        )
 
     _instance_backend_choices = []
     if _vm_backend_enabled:
@@ -460,6 +517,10 @@ def register(ctx):
             "5-create-sample-nico-vms-cluster",
             argv=["bash", "-c", """
               set -euo pipefail
+              if [ "$1" != "$2" ]; then
+                echo "The sample cluster requires NICO_VMS_OS_IMAGE_DESTINATION=$2; configured value is $1." >&2
+                exit 1
+              fi
               cd %s
               NVKE_CONTROLLER_HTTP_PORT="%s" \
               CLUSTER_NAME="${CLUSTER_NAME:-nico-vms}" \
@@ -468,8 +529,16 @@ def register(ctx):
               WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}" \
               CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}" \
               CNI_VERSION="${CNI_VERSION:-}" \
+              NICO_SIM_FILES_DIR="%s" \
+              NICO_VMS_IMAGE_CACHE_DIR="%s" \
+              NICO_VMS_OS_IMAGE_URL="${NICO_VMS_OS_IMAGE_URL:-}" \
               ./hack/create-nico-vms-cluster.sh
-            """ % (ctx.main_dir, _controller_port)],
+            """ % (
+                ctx.main_dir,
+                _controller_port,
+                _files_dir,
+                _image_cache_dir,
+            ), "sample-cluster", _os_image_destination, _default_os_image_destination],
             resource="nvke-controller",
             icon_name="add_box",
             text="Create sample nico-vms cluster",
@@ -480,6 +549,12 @@ def register(ctx):
                 text_input("WORKER_DESIRED_COUNT", label="Worker nodes", default="1", placeholder="Number of worker VMs"),
                 choice_input("CNI_PLUGIN", label="CNI plugin", choices=["ovn-kubernetes", "calico"]),
                 text_input("CNI_VERSION", label="CNI version (optional)", default="", placeholder="e.g. 1.4.0 (OVN) or 3.30.1 (Calico); empty = server default"),
+                text_input(
+                    "NICO_VMS_OS_IMAGE_URL",
+                    label="OS image URL (optional; blank uses /files/images/nvke-node.qcow2; stage it first)",
+                    default="",
+                    placeholder="https://... or file:///...",
+                ),
             ],
         )
 
