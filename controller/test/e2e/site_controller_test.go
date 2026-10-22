@@ -510,15 +510,19 @@ func siteCapabilities(run map[string]string) map[string]string {
 	return node
 }
 
-// requireRunCapacity asks Forge whether the shapes this full run will create
-// have usable allocations: the site node and the tenant control plane on the
-// CPU shape, and one worker on the worker shape.
+// requireRunCapacity asks the substrate whether the shapes this full run will
+// create have usable allocations: the site node and the tenant control plane on
+// the CPU shape, and one worker on the worker shape.
+//
+// Duck-typed rather than part of infra.Provider: a substrate that cannot answer
+// should not have to implement a method that lies, and one that can answers the
+// same question in its own API's terms.
 func requireRunCapacity(ctx context.Context, provider infra.Provider) error {
 	checker, ok := provider.(interface {
 		RequireCapacity(ctx context.Context, selector map[string]string, cpu, workers int) error
 	})
 	if !ok {
-		return fmt.Errorf("provider %T cannot check Forge allocation stats", provider)
+		return fmt.Errorf("provider %T cannot check allocation stats", provider)
 	}
 	capabilities, err := runCapabilities()
 	if err != nil {
