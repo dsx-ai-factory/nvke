@@ -366,3 +366,82 @@ func TestReconcileControlPlaneScaleDown_RecordsIntent(t *testing.T) {
 	assert.False(t, nodes.IsDeleting(written), "the teardown waits for the serialized delete loop")
 	mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
+
+// TestReconcileControlPlaneScaleDown_RefusedByFloorAtRecordTime covers the race
+// the in-memory pre-check cannot: the snapshot shows enough eligible nodes to
+// shed one, but the live count the record-time quorum floor reads is tighter, so
+// DeleteWithTx returns a ControlPlaneQuorumFloorError. The reconciler must treat
+// that as the guard working -- log and move on -- not as a reconcile failure.
+func TestReconcileControlPlaneScaleDown_RefusedByFloorAtRecordTime(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	base := time.Now()
+	cluster := db.Cluster{ID: clusterID, Name: "test-cluster", ControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3}}
+
+	// Snapshot: four healthy nodes, so the pre-check (4-1 >= 3) lets a victim through.
+	victim := healthyCPNode(clusterID, "cp-oldest", base.Add(-time.Hour))
+	b := healthyCPNode(clusterID, "cp-b", base)
+	c := healthyCPNode(clusterID, "cp-d", base)
+	d := healthyCPNode(clusterID, "cp-e", base)
+	snapshot := []db.Node{victim, b, c, d}
+
+	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNodeForUpdate", mock.Anything, victim.ID).Return(victim, nil)
+	mockTx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil)
+	// Live reality the floor reads is tighter: only victim + two survivors, so
+	// removing the victim would leave 2 < MinFaultTolerantControlPlaneNodes.
+	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{victim, b, c}, nil)
+
+	r := &reconciler{db: mockTx, logger: slog.Default()}
+	cp := &controlPlane{nodes: snapshot, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
+
+	err := r.reconcileControlPlaneScaleDown(context.Background(), cluster, cp)
+	require.NoError(t, err, "a record-time floor refusal is the guard working, not a reconcile error")
+
+	// The refusal happens before the row is written, so nothing is recorded.
+	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+}
+
+// TestReconcileControlPlaneScaleDown_RecordsOneAtATime: a surplus greater than
+// one still records exactly one delete per reconcile. The recorded node drops
+// out of the eligible set next pass, so the loop paces the shrink one node at a
+// time rather than tearing several down at once.
+func TestReconcileControlPlaneScaleDown_RecordsOneAtATime(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	base := time.Now()
+	cluster := db.Cluster{ID: clusterID, Name: "test-cluster", ControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3}}
+
+	// Five healthy nodes, desired 3: surplus is 2, but only one may be recorded.
+	victim := healthyCPNode(clusterID, "cp-oldest", base.Add(-time.Hour))
+	all := []db.Node{
+		victim,
+		healthyCPNode(clusterID, "cp-b", base),
+		healthyCPNode(clusterID, "cp-c", base),
+		healthyCPNode(clusterID, "cp-d", base),
+		healthyCPNode(clusterID, "cp-e", base),
+	}
+
+	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNodeForUpdate", mock.Anything, victim.ID).Return(victim, nil)
+	mockTx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil)
+	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(all, nil)
+
+	var written db.Node
+	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(n *db.Node) bool {
+		written = *n
+		return true
+	})).Return(victim, nil)
+
+	r := &reconciler{db: mockTx, logger: slog.Default()}
+	cp := &controlPlane{nodes: all, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
+
+	err := r.reconcileControlPlaneScaleDown(context.Background(), cluster, cp)
+	require.NoError(t, err)
+
+	assert.Equal(t, victim.ID, written.ID, "the oldest eligible node is shed first")
+	assert.True(t, nodes.IsDeleteRequested(written), "scale-down records intent")
+	mockTx.AssertNumberOfCalls(t, "UpdateNode", 1)
+}
