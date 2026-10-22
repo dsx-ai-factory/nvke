@@ -258,7 +258,8 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 	defer requestSpan.End()
 	wantTraceID := requestSpan.SpanContext().TraceID()
 	requestTrace := mock.MatchedBy(func(ctx context.Context) bool {
-		return trace.SpanContextFromContext(ctx).TraceID() == wantTraceID
+		spanContext := trace.SpanContextFromContext(ctx)
+		return spanContext.TraceID() == wantTraceID && spanContext.SpanID().IsValid()
 	})
 
 	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
