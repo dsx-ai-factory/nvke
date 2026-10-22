@@ -76,7 +76,7 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
    |---|---|---|
    | `cniPlugin` | `ovn-kubernetes` | `cniVersion` defaults to `2.4.2`, the version the node image carries. |
    | `etcdEncrypted` | None, required | Encrypts etcd at rest. You can turn encryption on later, but not off. |
-   | `controlPlaneVIP` | None | Without a VIP, the API endpoint is the first control-plane node's IP, `desiredCount` must be `1`, and you cannot later scale the control plane above one node, upgrade it or replace its nodes. Recreate the cluster to add a VIP. |
+   | `controlPlaneVIP` | None | Without a VIP, the API endpoint is the first control-plane node's IP. By default, `desiredCount` must be `1`, and you cannot later scale the control plane above one node, upgrade it or replace its nodes. The [development override](#change-cluster-settings-after-creation) permits those operations without a VIP. Recreate the cluster to add a VIP. |
    | `network.podCIDR` | `192.168.0.0/16` | Private IPv4 CIDRs, comma-separated, each `/12` to `/23`. Needs one `/24` for every node in the request, plus one. |
    | `network.serviceCIDR` | `10.96.0.0/12` | Private IPv4, `/12` to `/24`. |
    | `nico.orgID`, `siteID`, `vpcID` | None, required | Fixed for the life of the cluster. |

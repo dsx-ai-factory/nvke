@@ -1366,6 +1366,13 @@ func TestNicoVIPWarning(t *testing.T) {
 			if tt.want && (!strings.Contains(got, pathControlPlaneVIP) || !strings.Contains(got, "cannot be added once the site cluster exists")) {
 				t.Errorf("NicoVIPWarning() = %q; want it to name %s and say it cannot be added later", got, pathControlPlaneVIP)
 			}
+			if tt.want {
+				for _, detail := range []string{"render deploy-path", "controller endpoint", "allowControlPlaneWithoutVIP setting does not supply that endpoint"} {
+					if !strings.Contains(got, detail) {
+						t.Errorf("NicoVIPWarning() = %q; want it to explain %q", got, detail)
+					}
+				}
+			}
 		})
 	}
 }

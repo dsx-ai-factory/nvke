@@ -974,15 +974,15 @@ func (inv *SiteSpec) CheckBootstrapMode(disableMTLS bool) error {
 
 // NicoVIPWarning returns a warning for a nico site spec that leaves
 // cluster.controlPlaneVIP unset, or "" for any other site spec. The bootstrap
-// builds such a site cluster, but the controller stack install refuses the spec,
-// and the VIP cannot be added once the site cluster exists.
+// can build such a site cluster, but render deploy-path needs the VIP to determine
+// the controller endpoint. The VIP cannot be added once the site cluster exists.
 func (inv *SiteSpec) NicoVIPWarning() string {
 	if !inv.IsNico() || inv.Cluster.ControlPlaneVIP != "" {
 		return ""
 	}
-	return pathControlPlaneVIP + " is not set: the bootstrap can build this site cluster, but the controller stack " +
-		"install needs the VIP, and it cannot be added once the site cluster exists (kube-vip is set up only when the cluster " +
-		"is created with one); set it now unless this site will not get the controller stack"
+	return pathControlPlaneVIP + " is not set: the bootstrap can build this site cluster, but render deploy-path needs the VIP " +
+		"to determine the controller endpoint. The installed controller's allowControlPlaneWithoutVIP setting does not supply that endpoint. " +
+		"The VIP cannot be added once the site cluster exists; set it before bootstrap if this site will get the controller stack"
 }
 
 // checkTrustDomain validates the DNS-name form required for a SPIFFE trust
