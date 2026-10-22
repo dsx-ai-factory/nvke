@@ -409,6 +409,10 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 			// -e2e.site-stage, not the absence of a label: unset, BeforeAll
 			// skips this whole container before any machine is asked for.
 			Entry("nico-forge", Label("nico-forge"), nicoForgeTenant()),
+			// The DSX datahall's own tenant. Reached only when the site lane
+			// resolved a DSX environment, which is what -e2e.environment
+			// already decided before any of this was built.
+			Entry("nico-dsx", Label("nico-dsx"), nicoDSXTenant()),
 		)
 	}
 

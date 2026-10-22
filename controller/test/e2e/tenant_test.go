@@ -31,6 +31,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/dsx"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/forge"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
@@ -481,6 +482,20 @@ func nicoForgeTenant() testSpec {
 		// hardware is what they are for.
 		validate: validations{provisioningOnly: true, tpmAttestation: true, tenantChecks: true},
 	}
+}
+
+// nicoDSXTenant is nicoForgeTenant on a DSX datahall: one control-plane node
+// and one worker, provisioned and deleted, validating nothing that needs a
+// cluster held open.
+//
+// The shape is the same because the constraint is the same. At a datahall
+// whose every machine is a GPU tray both roles land on one, so this holds two
+// trays for the run rather than a tray and a CPU box, and the prefix it
+// draws /31s from leaves one address spare behind the site controller.
+func nicoDSXTenant() testSpec {
+	spec := nicoForgeTenant()
+	spec.buildSpec = nicoDSXSpec
+	return spec
 }
 
 // tenantSubtree is one backend's tenant lifecycle against the management
@@ -1898,6 +1913,114 @@ func nicoVMSNodePoolSpec(pool nvke.NodePoolSpec, defaultName, defaultNodeNamePre
 		ConfigProfile:         cmp.Or(pool.ConfigProfile, defaultConfigProfile),
 		DiskSelectionStrategy: cmp.Or(pool.DiskSelectionStrategy, "smallest"),
 	}
+}
+
+// nicoDSXSpec is nicoForgeSpec against a DSX datahall.
+//
+// It builds the same request: the nico-forge backend is named for the
+// provider its payloads were first written for, not for the API underneath,
+// and buildNicoForgeRequest asks only for an iPXE script and pre-kubeadm
+// commands. Both come from BuildForgeNodePayloads, which the DSX provider
+// already renders its own site node with.
+//
+// What differs is where the identifiers come from, and that a DSX fabric is
+// FNN: there is no subnet to name, only a prefix.
+//
+// The control plane takes selection.CPU as it does on Forge. At a datahall
+// with no CPU machine that is already the GPU shape -- Resolve fills it from
+// matchSiteControllerType, which falls back -- so a GB200 control plane needs
+// no special case here, and a datahall that gains CPU boxes stops producing
+// one without this file changing.
+func nicoDSXSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterSpec {
+	GinkgoHelper()
+
+	env, err := runEnvironment()
+	Expect(err).NotTo(HaveOccurred(), "should load the environment named by -e2e.environment")
+	dsxEnv, err := dsx.Decode(env.Infrastructure)
+	Expect(err).NotTo(HaveOccurred(), "should read it as a DSX declaration")
+	capabilities, err := runCapabilities()
+	Expect(err).NotTo(HaveOccurred(), "should parse -e2e.capabilities")
+	// The same resolution the site lane made, so a tenant lands on the
+	// datahall hosting it rather than on whichever other one offers a
+	// matching shape.
+	selection, err := dsxEnv.Resolve(capabilities)
+	Expect(err).NotTo(HaveOccurred(), "should resolve a datahall offering the requested shapes")
+	site := selection.Site
+	controlPlaneType, workerType := selection.CPU, selection.WorkerType()
+
+	versions, err := requireVersions(versionKube, versionCNIOVN)
+	Expect(err).NotTo(HaveOccurred(), "should name the Kubernetes and CNI versions under qualification")
+	kubernetesVersion := versions[versionKube]
+
+	payloads, err := forgeRolePayloads(roleArchs{
+		ControlPlane: controlPlaneType.Arch(),
+		Worker:       workerType.Arch(),
+	}, kubernetesVersion, versions[versionCNIOVN])
+	Expect(err).NotTo(HaveOccurred(), "should render the node payloads")
+
+	return nvke.ClusterSpec{
+		Name:              name,
+		Backend:           nvke.BackendNicoForge,
+		KubernetesVersion: kubernetesVersion,
+		CNIPlugin:         cmp.Or(shape.cniPlugin, CNIPluginOVN),
+		CNIVersion:        versions[versionCNIOVN],
+		OrgID:             dsxEnv.Org.ID,
+		SiteID:            site.ID,
+		VpcID:             site.VpcID,
+		NodePayloads:      payloads,
+		ControlPlane: nvke.ControlPlane{
+			Pools:         dsxNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", site, controlPlaneType),
+			Config:        dsxControlPlaneConfig(shape.controlPlaneConfig, site, controlPlaneType),
+			EtcdEncrypted: shape.etcdEncrypted,
+			// Empty, as on Forge, and here it is also the only option: each
+			// instance consumes a /31 and lands on the odd address, so the
+			// prefix has no spare address for a VIP to take.
+			ControlPlaneVIP: shape.controlPlaneVIP,
+		},
+		Workers: dsxNodePoolSpecs(shape.workerPools, "worker", "w", site, workerType),
+	}
+}
+
+// dsxNodePoolSpecs fills each pool from the datahall. forgeNodePoolSpecs with
+// the subnet half removed: a DSX site declares a prefix and nothing else, so
+// there is no choice to make between the two.
+func dsxNodePoolSpecs(
+	pools []nvke.NodePoolSpec,
+	defaultName, defaultNodeNamePrefix string,
+	site dsx.Site,
+	instanceType dsx.InstanceType,
+) []nvke.NodePoolSpec {
+	out := make([]nvke.NodePoolSpec, 0, len(pools))
+	for _, pool := range pools {
+		out = append(out, nvke.NodePoolSpec{
+			Name:                 cmp.Or(pool.Name, defaultName),
+			NodeNamePrefix:       cmp.Or(pool.NodeNamePrefix, defaultNodeNamePrefix),
+			DesiredNodeCount:     pool.DesiredNodeCount,
+			SystemReservedMemory: cmp.Or(pool.SystemReservedMemory, "16Gi"),
+			InstanceTypeID:       cmp.Or(pool.InstanceTypeID, instanceType.ID),
+			VpcPrefixIDs:         defaultStrings(pool.VpcPrefixIDs, site.VpcPrefixID),
+			SSHKeyGroupIDs:       defaultStrings(pool.SSHKeyGroupIDs, site.SSHKeyGroupID),
+		})
+	}
+	return out
+}
+
+// dsxControlPlaneConfig fills a cluster-level control-plane config from the
+// datahall, the same defaults dsxNodePoolSpecs applies to a pool.
+func dsxControlPlaneConfig(
+	cfg *nvke.ControlPlaneConfigSpec,
+	site dsx.Site,
+	instanceType dsx.InstanceType,
+) *nvke.ControlPlaneConfigSpec {
+	if cfg == nil {
+		return nil
+	}
+	out := *cfg
+	out.SystemReservedMemory = cmp.Or(out.SystemReservedMemory, "16Gi")
+	out.InstanceTypeID = cmp.Or(out.InstanceTypeID, instanceType.ID)
+	out.VpcPrefixIDs = defaultStrings(out.VpcPrefixIDs, site.VpcPrefixID)
+	out.SSHKeyGroupIDs = defaultStrings(out.SSHKeyGroupIDs, site.SSHKeyGroupID)
+	return &out
 }
 
 // optionalStrings is defaultStrings for a default that may legitimately be
