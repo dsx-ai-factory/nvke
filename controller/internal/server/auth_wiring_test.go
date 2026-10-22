@@ -247,6 +247,24 @@ func TestEnforcingServerAuthenticatesBeforeValidating(t *testing.T) {
 		"an unauthenticated request must be 401 even when its body would also fail validation")
 }
 
+// The authN library writes its own error body so its module doesn't depend on
+// controller/api. This holds it to the API's GenericError: an unknown field or a
+// missing message fails the decode.
+func TestAuthenticationErrorBodyIsAGenericError(t *testing.T) {
+	handler := newEnforcingTestServer(t)
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/clusters", http.NoBody))
+	require.Equal(t, http.StatusUnauthorized, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	dec := json.NewDecoder(rr.Body)
+	dec.DisallowUnknownFields()
+	var body api.GenericError
+	require.NoError(t, dec.Decode(&body))
+	assert.NotEmpty(t, body.Message)
+}
+
 // The chain order, through the real NewServer, with authentication disabled --
 // which is every deployment today. Wiring authentication in reordered the two
 // middlewares that were already there, and this is the one behavior that

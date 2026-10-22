@@ -344,7 +344,7 @@ PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
 # controller/api ships no tests of its own, so linting and testing it alone
 # compiles nothing that uses it. These are the modules that import it, and a
 # change to the API has to build them to mean anything.
-API_DEPENDENTS := auth controller cli controller/test/e2e
+API_DEPENDENTS := controller cli controller/test/e2e
 
 # The modules that import auth, so an authentication change builds what uses it.
 AUTH_DEPENDENTS := controller

@@ -9,8 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-
-	"github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 // Mode comes from permissiveMode in nke-controller-config, outside this package. Only ModePermissive
@@ -165,13 +163,21 @@ func (a *Authenticator) handleFailure(
 	if status == http.StatusUnauthorized {
 		w.Header().Set(authenticateHeader, "Bearer")
 	}
-	// The same api.GenericError body as every other error in this API;
+	// The same body as every other error in this API (errorBody);
 	// internal/server.handleError is not reusable, it depends on this package.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if encErr := json.NewEncoder(w).Encode(api.GenericError{Message: messageFor(reason)}); encErr != nil {
+	if encErr := json.NewEncoder(w).Encode(errorBody{Message: messageFor(reason)}); encErr != nil {
 		a.logger.Error("failed to encode authentication error response", "error", encErr)
 	}
+}
+
+// errorBody is the API's error shape, api.GenericError in controller/api,
+// declared here so this module doesn't depend on the controller's API module.
+// The controller's auth wiring test checks that the two stay the same.
+type errorBody struct {
+	// Message says what went wrong.
+	Message string `json:"message"`
 }
 
 // bearerToken returns the empty string for anything that is not a bearer token,
