@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package auth_test
+package authn_test
 
 // Token builders used only by the middleware tests: each returns a minted token
 // that is wrong in exactly one way. They live here rather than in

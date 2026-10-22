@@ -541,7 +541,7 @@ apiAuth:
   # supplied by the chart, which ships in lockstep with the build that accepts
   # them.
   #
-  # Not validated here beyond both keys being present. internal/auth/config.go
+  # Not validated here beyond both keys being present. auth/authn/config.go
   # is a strict loader whose errors name the offending field, and a second copy
   # of its rules in Helm would drift the first time an issuer gains a new key.
   # The cost is that a bad value fails at pod start rather than at render.

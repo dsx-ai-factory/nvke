@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package auth_test
+package authn_test
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/auth/authn"
 )
 
 func TestPrincipalContext(t *testing.T) {
@@ -19,7 +19,7 @@ func TestPrincipalContext(t *testing.T) {
 	tests := []struct {
 		name   string
 		ctx    func() context.Context
-		want   *auth.Principal
+		want   *authn.Principal
 		wantOK bool
 	}{
 		{
@@ -32,7 +32,7 @@ func TestPrincipalContext(t *testing.T) {
 			// read as present.
 			name: "a nil principal is reported as absent",
 			ctx: func() context.Context {
-				return auth.ContextWithPrincipal(context.Background(), nil)
+				return authn.ContextWithPrincipal(context.Background(), nil)
 			},
 			wantOK: false,
 		},
@@ -42,7 +42,7 @@ func TestPrincipalContext(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, ok := auth.PrincipalFromContext(tt.ctx())
+			got, ok := authn.PrincipalFromContext(tt.ctx())
 			assert.Equal(t, tt.wantOK, ok)
 			assert.Equal(t, tt.want, got)
 		})
@@ -53,11 +53,11 @@ func TestPrincipalContext(t *testing.T) {
 func TestPrincipalContextKeyIsNotAString(t *testing.T) {
 	t.Parallel()
 
-	ctx := auth.ContextWithPrincipal(context.Background(), &auth.Principal{IssuerName: "spire"})
+	ctx := authn.ContextWithPrincipal(context.Background(), &authn.Principal{IssuerName: "spire"})
 	require.Nil(t, ctx.Value("principal"))
 	require.Nil(t, ctx.Value("auth.principal"))
 
-	got, ok := auth.PrincipalFromContext(ctx)
+	got, ok := authn.PrincipalFromContext(ctx)
 	require.True(t, ok)
 	assert.Equal(t, "spire", got.IssuerName)
 }

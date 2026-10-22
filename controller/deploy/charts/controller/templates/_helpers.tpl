@@ -206,7 +206,7 @@ Called from deployment.yaml rather than from configmap-auth.yaml, because that
 template is itself gated on create and so cannot see a config set without it.
 
 Emits nothing. The shallow presence checks on audiences and issuers stop here:
-every other rule belongs to internal/auth/config.go, whose errors name the field
+every other rule belongs to auth/authn/config.go, whose errors name the field
 at fault.
 */}}
 {{- define "controller.apiAuth.validate" -}}

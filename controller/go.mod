@@ -8,6 +8,7 @@ require (
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/dsx-ai-factory/cluster-api-provider-nico v0.1.0-rc.2.0.20260929174319-72784d3eaafc
 	github.com/dsx-ai-factory/nvke/agent v0.0.0-00010101000000-000000000000
+	github.com/dsx-ai-factory/nvke/auth v0.0.0-00010101000000-000000000000
 	github.com/dsx-ai-factory/nvke/controller/api v0.0.0-00010101000000-000000000000
 	github.com/dsx-ai-factory/nvke/management-engine v0.0.0-00010101000000-000000000000
 	github.com/evanphx/json-patch/v5 v5.9.11
@@ -179,6 +180,7 @@ require (
 
 replace (
 	github.com/dsx-ai-factory/nvke/agent => ../agent
+	github.com/dsx-ai-factory/nvke/auth => ../auth
 	github.com/dsx-ai-factory/nvke/controller/api => ./api
 	github.com/dsx-ai-factory/nvke/management-engine => ../management-engine
 )

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package auth_test
+package authn_test
 
 // Fixtures shared by the admission tests and everything built on top of them.
 // Separate from synthetic_token_test.go so the admission layer can be reviewed

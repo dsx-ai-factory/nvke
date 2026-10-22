@@ -19,9 +19,10 @@ import (
 	"go.temporal.io/sdk/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	auth "github.com/dsx-ai-factory/nvke/auth/authn"
+
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"

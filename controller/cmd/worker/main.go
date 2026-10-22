@@ -23,8 +23,9 @@ import (
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 
+	"github.com/dsx-ai-factory/nvke/auth/authn"
+
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/automode"
@@ -124,7 +125,7 @@ func main() {
 
 	logger.Info("Loaded nke-controller-config", "path", cfg.ControllerConfigPath, "oidcProviders", len(controllerCfg.OIDC.Providers))
 
-	authenticator, err := auth.Setup(ctx, auth.Options{
+	authenticator, err := authn.Setup(ctx, authn.Options{
 		ConfigPath: cfg.AuthConfigPath,
 		Permissive: cfg.PermissiveMode,
 		Recorder:   metrics.RecordAuthRequest,

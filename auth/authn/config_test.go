@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package auth_test
+package authn_test
 
 import (
 	"io/fs"
@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/auth/authn"
 )
 
 // configHeader is the apiVersion/kind preamble every valid file carries.
@@ -99,7 +99,7 @@ func writeConfig(t *testing.T, contents string) string {
 func TestLoadExampleConfig(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := auth.Load(writeConfig(t, exampleConfig))
+	cfg, err := authn.Load(writeConfig(t, exampleConfig))
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 
@@ -138,24 +138,24 @@ func TestLoadPathContract(t *testing.T) {
 	t.Run("empty path returns ErrEmptyPath so the caller can disable", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := auth.Load("")
-		require.ErrorIs(t, err, auth.ErrEmptyPath)
+		_, err := authn.Load("")
+		require.ErrorIs(t, err, authn.ErrEmptyPath)
 	})
 
 	t.Run("whitespace-only path returns ErrEmptyPath", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := auth.Load("   ")
-		require.ErrorIs(t, err, auth.ErrEmptyPath)
+		_, err := authn.Load("   ")
+		require.ErrorIs(t, err, authn.ErrEmptyPath)
 	})
 
 	t.Run("missing file errors and is not ErrEmptyPath", func(t *testing.T) {
 		t.Parallel()
 
 		path := filepath.Join(t.TempDir(), "does-not-exist.yaml")
-		_, err := auth.Load(path)
+		_, err := authn.Load(path)
 		require.Error(t, err)
-		require.NotErrorIs(t, err, auth.ErrEmptyPath,
+		require.NotErrorIs(t, err, authn.ErrEmptyPath,
 			"a typo'd mountPath must be fatal, not silently disabled")
 		require.ErrorIs(t, err, fs.ErrNotExist)
 	})
@@ -168,16 +168,16 @@ func TestLoadPathContract(t *testing.T) {
 		}
 		path := writeConfig(t, exampleConfig)
 		require.NoError(t, os.Chmod(path, 0o000))
-		_, err := auth.Load(path)
+		_, err := authn.Load(path)
 		require.Error(t, err)
-		require.NotErrorIs(t, err, auth.ErrEmptyPath)
+		require.NotErrorIs(t, err, authn.ErrEmptyPath)
 		require.ErrorIs(t, err, fs.ErrPermission)
 	})
 
 	t.Run("empty file errors", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := auth.Load(writeConfig(t, ""))
+		_, err := authn.Load(writeConfig(t, ""))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "is empty")
 	})
@@ -185,7 +185,7 @@ func TestLoadPathContract(t *testing.T) {
 	t.Run("malformed YAML errors", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := auth.Load(writeConfig(t, "audience: \"unterminated\nissuers: [\n"))
+		_, err := authn.Load(writeConfig(t, "audience: \"unterminated\nissuers: [\n"))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "parse authentication config")
 	})
@@ -194,7 +194,7 @@ func TestLoadPathContract(t *testing.T) {
 		t.Parallel()
 
 		// A decoder would silently drop the second document.
-		_, err := auth.Load(writeConfig(t, exampleConfig+"\n---\naudience: \"https://elsewhere.example.com\"\n"))
+		_, err := authn.Load(writeConfig(t, exampleConfig+"\n---\naudience: \"https://elsewhere.example.com\"\n"))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "more than one YAML document")
 	})
@@ -286,7 +286,7 @@ issuers:
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := auth.Load(writeConfig(t, tt.yaml))
+			_, err := authn.Load(writeConfig(t, tt.yaml))
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErr)
 		})
@@ -326,7 +326,7 @@ func TestLoadRejectsCaseVariantKeys(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := auth.Load(writeConfig(t, tt.yaml))
+			_, err := authn.Load(writeConfig(t, tt.yaml))
 			require.Error(t, err, "a case-variant key must not load")
 			assert.Contains(t, err.Error(), "unknown field",
 				"the error has to name the key so an operator can find the typo")
@@ -339,7 +339,7 @@ func TestLoadRejectsCaseVariantKeys(t *testing.T) {
 func TestLoadRejectsDuplicateKeys(t *testing.T) {
 	t.Parallel()
 
-	_, err := auth.Load(writeConfig(t, `
+	_, err := authn.Load(writeConfig(t, `
 `+configHeader+`audiences: ["https://cwe.example.com"]
 audiences: ["https://cwe.other.example.com"]
 issuers:
@@ -381,7 +381,7 @@ func TestLoadRejectsNamesKubernetesWouldRefuse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := auth.Load(writeConfig(t, tt.yaml))
+			_, err := authn.Load(writeConfig(t, tt.yaml))
 			if tt.wantErr == "" {
 				require.NoError(t, err)
 				return
@@ -429,7 +429,7 @@ issuers:
 				content = strings.ReplaceAll(content, token, value)
 			}
 
-			_, err := auth.Load(writeConfig(t, content))
+			_, err := authn.Load(writeConfig(t, content))
 			require.Error(t, err, "a padded %s must not load", field)
 			assert.Contains(t, err.Error(), "whitespace",
 				"the error has to name the cause; a padded value is invisible in a diff")
@@ -462,7 +462,7 @@ issuers:
 		},
 		{
 			name:   "the current apiVersion loads",
-			header: "apiVersion: " + auth.ConfigAPIVersion + "\nkind: AuthenticationConfiguration\n",
+			header: "apiVersion: " + authn.ConfigAPIVersion + "\nkind: AuthenticationConfiguration\n",
 		},
 		{
 			name:    "apiVersion absent",
@@ -497,11 +497,11 @@ issuers:
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			cfg, err := auth.Load(writeConfig(t, tt.header+body))
+			cfg, err := authn.Load(writeConfig(t, tt.header+body))
 			if tt.wantErr == "" {
 				require.NoError(t, err)
-				assert.Contains(t, []string{auth.ConfigAPIVersion, auth.ConfigAPIVersionLegacy}, cfg.APIVersion)
-				assert.Equal(t, auth.ConfigKind, cfg.Kind)
+				assert.Contains(t, []string{authn.ConfigAPIVersion, authn.ConfigAPIVersionLegacy}, cfg.APIVersion)
+				assert.Equal(t, authn.ConfigKind, cfg.Kind)
 				return
 			}
 			require.Error(t, err)
@@ -518,15 +518,15 @@ issuers:
 func TestValidateDoesNotRequireTypeMeta(t *testing.T) {
 	t.Parallel()
 
-	cfg := &auth.Config{
+	cfg := &authn.Config{
 		Audiences: []string{"https://cwe.example.com"},
-		Issuers: []auth.Issuer{{
+		Issuers: []authn.Issuer{{
 			Name:       "k8s",
 			Issuer:     "https://kubernetes.default.svc.cluster.local",
-			JWKS:       &auth.JWKSKeys{URI: "https://kubernetes.default.svc/openid/v1/jwks"},
+			JWKS:       &authn.JWKSKeys{URI: "https://kubernetes.default.svc/openid/v1/jwks"},
 			Algorithms: []string{"RS256"},
-			Admit: &auth.Admit{
-				ServiceAccounts: []auth.ServiceAccountRule{{Namespace: "nke-clients"}},
+			Admit: &authn.Admit{
+				ServiceAccounts: []authn.ServiceAccountRule{{Namespace: "nke-clients"}},
 			},
 		}},
 	}
@@ -547,7 +547,7 @@ func runValidationCases(t *testing.T, tests []validationCase) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			cfg, err := auth.Load(writeConfig(t, tt.yaml))
+			cfg, err := authn.Load(writeConfig(t, tt.yaml))
 			if tt.wantErr == "" {
 				require.NoError(t, err)
 				assert.NotNil(t, cfg)
@@ -1064,13 +1064,13 @@ func TestIssuerEffectiveAudiences(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		issuer     auth.Issuer
+		issuer     authn.Issuer
 		deployment []string
 		want       []string
 	}{
 		{
 			name:       "no override falls back to the deployment-wide list",
-			issuer:     auth.Issuer{},
+			issuer:     authn.Issuer{},
 			deployment: deployment,
 			want:       deployment,
 		},
@@ -1078,13 +1078,13 @@ func TestIssuerEffectiveAudiences(t *testing.T) {
 			// Superseding is not merging: one override value does not inherit the
 			// rest of the deployment-wide list.
 			name:       "an override supersedes the deployment-wide list entirely",
-			issuer:     auth.Issuer{Audiences: override},
+			issuer:     authn.Issuer{Audiences: override},
 			deployment: deployment,
 			want:       override,
 		},
 		{
 			name:       "an override of several values supersedes as a whole",
-			issuer:     auth.Issuer{Audiences: []string{"a", "b"}},
+			issuer:     authn.Issuer{Audiences: []string{"a", "b"}},
 			deployment: deployment,
 			want:       []string{"a", "b"},
 		},
@@ -1092,7 +1092,7 @@ func TestIssuerEffectiveAudiences(t *testing.T) {
 			// Surfacing an empty override as empty is what lets Validate refuse it;
 			// falling back would make `audiences: []` a silent inherit.
 			name:       "an explicitly empty override does not fall back",
-			issuer:     auth.Issuer{Audiences: []string{}},
+			issuer:     authn.Issuer{Audiences: []string{}},
 			deployment: deployment,
 			want:       []string{},
 		},
@@ -1111,7 +1111,7 @@ func TestIssuerEffectiveAudiences(t *testing.T) {
 func TestValidateDoesNotMutate(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := auth.Load(writeConfig(t, exampleConfig))
+	cfg, err := authn.Load(writeConfig(t, exampleConfig))
 	require.NoError(t, err)
 
 	before := *cfg.Issuers[1].Admit.SPIFFE
@@ -1122,6 +1122,6 @@ func TestValidateDoesNotMutate(t *testing.T) {
 func TestValidateOnNilConfig(t *testing.T) {
 	t.Parallel()
 
-	var cfg *auth.Config
+	var cfg *authn.Config
 	require.Error(t, cfg.Validate())
 }

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package auth_test
+package authn_test
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/auth/authn"
 )
 
 // verifyCase is one token and the answer it must get. Tokens are built valid and
@@ -30,12 +30,12 @@ type verifyCase struct {
 	prepare func(f fixture)
 
 	// wantReason is empty when verification must succeed.
-	wantReason auth.FailureReason
+	wantReason authn.FailureReason
 	// wantIssuer is the configured issuer name the failure must carry. Empty means
 	// the failure was raised before any entry was matched.
 	wantIssuer string
 	wantErrIs  error
-	check      func(t *testing.T, p *auth.Principal)
+	check      func(t *testing.T, p *authn.Principal)
 }
 
 func rawCredential(s string) *string { return &s }
@@ -80,11 +80,11 @@ func runVerifyCases(t *testing.T, cases []verifyCase) {
 
 			require.Error(t, err)
 			assert.Nil(t, p)
-			reason, ok := auth.ReasonOf(err)
+			reason, ok := authn.ReasonOf(err)
 			require.True(t, ok, "every failure must carry a reason: %v", err)
 			assert.Equal(t, tt.wantReason, reason)
 
-			issuerName, hasIssuer := auth.IssuerOf(err)
+			issuerName, hasIssuer := authn.IssuerOf(err)
 			assert.Equal(t, tt.wantIssuer != "", hasIssuer,
 				"a failure carries an issuer name exactly when an entry was matched: %v", err)
 			assert.Equal(t, tt.wantIssuer, issuerName)
@@ -104,7 +104,7 @@ func TestVerifyClaims(t *testing.T) {
 	runVerifyCases(t, []verifyCase{
 		{
 			name: "a real-shaped Kubernetes token verifies",
-			check: func(t *testing.T, p *auth.Principal) {
+			check: func(t *testing.T, p *authn.Principal) {
 				t.Helper()
 				assert.Equal(t, k8sName, p.IssuerName)
 				assert.Equal(t, k8sIssuer, p.Issuer)
@@ -116,7 +116,7 @@ func TestVerifyClaims(t *testing.T) {
 		{
 			name: "a real-shaped SPIRE JWT-SVID verifies, with no nbf and its own audience",
 			base: validSPIREToken,
-			check: func(t *testing.T, p *auth.Principal) {
+			check: func(t *testing.T, p *authn.Principal) {
 				t.Helper()
 				assert.Equal(t, spireName, p.IssuerName)
 				assert.Equal(t, spireSubject, p.Subject)
@@ -125,7 +125,7 @@ func TestVerifyClaims(t *testing.T) {
 		{
 			name:       "the wrong audience is rejected",
 			spoil:      spoilAudience,
-			wantReason: auth.ReasonAudienceMismatch,
+			wantReason: authn.ReasonAudienceMismatch,
 			wantIssuer: k8sName,
 			wantErrIs:  jwt.ErrTokenInvalidAudience,
 		},
@@ -136,14 +136,14 @@ func TestVerifyClaims(t *testing.T) {
 		{
 			name:       "an empty aud array is audience_mismatch, not bad_signature",
 			spoil:      func(_ fixture, spec *TokenSpec) { spec.Audience = []any{} },
-			wantReason: auth.ReasonAudienceMismatch,
+			wantReason: authn.ReasonAudienceMismatch,
 			wantIssuer: k8sName,
 			wantErrIs:  jwt.ErrTokenRequiredClaimMissing,
 		},
 		{
 			name:       "an empty aud string is audience_mismatch, not bad_signature",
 			spoil:      func(_ fixture, spec *TokenSpec) { spec.Audience = "" },
-			wantReason: auth.ReasonAudienceMismatch,
+			wantReason: authn.ReasonAudienceMismatch,
 			wantIssuer: k8sName,
 			wantErrIs:  jwt.ErrTokenRequiredClaimMissing,
 		},
@@ -154,26 +154,26 @@ func TestVerifyClaims(t *testing.T) {
 		{
 			name:       "a token with no sub is rejected",
 			spoil:      func(_ fixture, spec *TokenSpec) { spec.Subject = "" },
-			wantReason: auth.ReasonBadSignature,
+			wantReason: authn.ReasonBadSignature,
 			wantIssuer: k8sName,
 		},
 		{
 			name:       "a token whose sub is not a string is rejected",
 			spoil:      func(_ fixture, spec *TokenSpec) { spec.Extra["sub"] = 1234 },
-			wantReason: auth.ReasonBadSignature,
+			wantReason: authn.ReasonBadSignature,
 			wantIssuer: k8sName,
 		},
 		{
 			name:       "a token with no exp is rejected: golang-jwt would accept it by default",
 			spoil:      func(_ fixture, spec *TokenSpec) { spec.ExpiresAt = nil },
-			wantReason: auth.ReasonExpired,
+			wantReason: authn.ReasonExpired,
 			wantIssuer: k8sName,
 			wantErrIs:  jwt.ErrTokenRequiredClaimMissing,
 		},
 		{
 			name:       "an expired token is rejected as expired",
 			spoil:      spoilExpiry,
-			wantReason: auth.ReasonExpired,
+			wantReason: authn.ReasonExpired,
 			wantIssuer: k8sName,
 			wantErrIs:  jwt.ErrTokenExpired,
 		},
@@ -191,7 +191,7 @@ func TestVerifyClaims(t *testing.T) {
 				spec.IssuedAt, spec.NotBefore = At(now.Add(time.Hour)), At(now.Add(time.Hour))
 				spec.ExpiresAt = At(now.Add(2 * time.Hour))
 			},
-			wantReason: auth.ReasonNotYetValid,
+			wantReason: authn.ReasonNotYetValid,
 			wantIssuer: k8sName,
 			wantErrIs:  jwt.ErrTokenNotValidYet,
 		},
@@ -206,14 +206,14 @@ func TestVerifyIssuerLookup(t *testing.T) {
 		{
 			name:       "an unknown issuer is rejected",
 			spoil:      spoilIssuer,
-			wantReason: auth.ReasonUnknownIssuer,
+			wantReason: authn.ReasonUnknownIssuer,
 		},
 		{
 			// Lookup is an exact map hit, so an issuer extending a configured one
 			// misses exactly as an absent or unrelated one does.
 			name:       "an issuer that is a prefix of a configured one is rejected: lookup is exact",
 			spoil:      func(_ fixture, spec *TokenSpec) { spec.Issuer = "https://kubernetes.default.svc" },
-			wantReason: auth.ReasonUnknownIssuer,
+			wantReason: authn.ReasonUnknownIssuer,
 		},
 		{
 			// The same failure against the other issuer, so the name is the matched
@@ -221,7 +221,7 @@ func TestVerifyIssuerLookup(t *testing.T) {
 			name:       "a failure is attributed to the issuer that was actually matched",
 			base:       validSPIREToken,
 			spoil:      func(_ fixture, spec *TokenSpec) { spec.Audience = []any{deploymentAudience} },
-			wantReason: auth.ReasonAudienceMismatch,
+			wantReason: authn.ReasonAudienceMismatch,
 			wantIssuer: spireName,
 			wantErrIs:  jwt.ErrTokenInvalidAudience,
 		},
@@ -247,7 +247,7 @@ func TestVerifySignatureAndAlgorithm(t *testing.T) {
 		{
 			name:       "an algorithm outside the issuer's list is rejected as an algorithm problem",
 			spoil:      func(f fixture, spec *TokenSpec) { spec.Key = f.elliptic },
-			wantReason: auth.ReasonAlgorithmNotAllowed,
+			wantReason: authn.ReasonAlgorithmNotAllowed,
 			wantIssuer: k8sName,
 		},
 		{
@@ -256,39 +256,39 @@ func TestVerifySignatureAndAlgorithm(t *testing.T) {
 				spec.Method = jwt.SigningMethodNone
 				spec.Key.Private = jwt.UnsafeAllowNoneSignatureType
 			},
-			wantReason: auth.ReasonAlgorithmNotAllowed,
+			wantReason: authn.ReasonAlgorithmNotAllowed,
 			wantIssuer: k8sName,
 		},
 		{
 			name:       "a signature from the wrong key is rejected",
 			spoil:      spoilSignature,
-			wantReason: auth.ReasonBadSignature,
+			wantReason: authn.ReasonBadSignature,
 			wantIssuer: k8sName,
 			wantErrIs:  jwt.ErrTokenSignatureInvalid,
 		},
 		{
 			name:       "a kid the source does not serve is rejected",
 			spoil:      func(_ fixture, spec *TokenSpec) { spec.KeyID = "no-such-kid" },
-			wantReason: auth.ReasonBadSignature,
+			wantReason: authn.ReasonBadSignature,
 			wantIssuer: k8sName,
 		},
 		{
 			name:       "a string that is not a JWT is rejected",
 			raw:        rawCredential("not-a-jwt"),
-			wantReason: auth.ReasonBadSignature,
+			wantReason: authn.ReasonBadSignature,
 			wantErrIs:  jwt.ErrTokenMalformed,
 		},
 		{
 			name:       "an empty token is no_token, not bad_signature",
 			raw:        rawCredential(""),
-			wantReason: auth.ReasonNoToken,
+			wantReason: authn.ReasonNoToken,
 		},
 		{
 			name:       "a stale key set is jwks_stale, not bad_signature",
-			prepare:    func(f fixture) { f.k8sKeys.Err = auth.ErrKeysStale },
-			wantReason: auth.ReasonJWKSStale,
+			prepare:    func(f fixture) { f.k8sKeys.Err = authn.ErrKeysStale },
+			wantReason: authn.ReasonJWKSStale,
 			wantIssuer: k8sName,
-			wantErrIs:  auth.ErrKeysStale,
+			wantErrIs:  authn.ErrKeysStale,
 		},
 	})
 }
@@ -306,18 +306,18 @@ func TestErrorMessagesAreBoundedForUnauthenticatedCallers(t *testing.T) {
 		name string
 		// spoil injects the oversized value.
 		spoil      func(f fixture, spec *TokenSpec)
-		wantReason auth.FailureReason
+		wantReason authn.FailureReason
 	}{
 		{
 			name:       "a 100 KB iss, which is read before any issuer is matched",
 			spoil:      func(_ fixture, spec *TokenSpec) { spec.Issuer = strings.Repeat("A", hugeBytes) },
-			wantReason: auth.ReasonUnknownIssuer,
+			wantReason: authn.ReasonUnknownIssuer,
 		},
 		{
 			// keyFunc runs before the signature is verified.
 			name:       "a 100 KB kid, which keyFunc reads before the signature is checked",
 			spoil:      func(_ fixture, spec *TokenSpec) { spec.KeyID = strings.Repeat("A", hugeBytes) },
-			wantReason: auth.ReasonBadSignature,
+			wantReason: authn.ReasonBadSignature,
 		},
 	}
 
@@ -333,7 +333,7 @@ func TestErrorMessagesAreBoundedForUnauthenticatedCallers(t *testing.T) {
 			_, err := f.verifier.Authenticate(context.Background(), MintToken(t, spec))
 
 			require.Error(t, err)
-			reason, ok := auth.ReasonOf(err)
+			reason, ok := authn.ReasonOf(err)
 			require.True(t, ok)
 			assert.Equal(t, tt.wantReason, reason, "the fix must not change which reason is reported")
 
@@ -357,9 +357,9 @@ func TestErrorMessagesAreBoundedForUnauthenticatedCallers(t *testing.T) {
 		_, err := f.verifier.Authenticate(context.Background(), MintToken(t, spec))
 
 		require.Error(t, err)
-		reason, ok := auth.ReasonOf(err)
+		reason, ok := authn.ReasonOf(err)
 		require.True(t, ok)
-		assert.Equal(t, auth.ReasonNotAdmitted, reason)
+		assert.Equal(t, authn.ReasonNotAdmitted, reason)
 		assert.Less(t, len(err.Error()), maxErrLength)
 	})
 }
@@ -373,7 +373,7 @@ func TestVerifyAudienceOverrideMatrix(t *testing.T) {
 		issuer     string
 		subject    string
 		audience   string
-		wantReason auth.FailureReason
+		wantReason authn.FailureReason
 	}{
 		{
 			// The one direction no other test pins: an overriding issuer's audience
@@ -383,7 +383,7 @@ func TestVerifyAudienceOverrideMatrix(t *testing.T) {
 			issuer:     k8sIssuer,
 			subject:    admittedSubject,
 			audience:   spireAudience,
-			wantReason: auth.ReasonAudienceMismatch,
+			wantReason: authn.ReasonAudienceMismatch,
 		},
 	}
 
@@ -409,7 +409,7 @@ func TestVerifyAudienceOverrideMatrix(t *testing.T) {
 				return
 			}
 			require.Error(t, err)
-			reason, ok := auth.ReasonOf(err)
+			reason, ok := authn.ReasonOf(err)
 			require.True(t, ok)
 			assert.Equal(t, tt.wantReason, reason)
 		})
@@ -423,13 +423,13 @@ func TestAuthenticate(t *testing.T) {
 	tests := []struct {
 		name       string
 		namespace  string
-		wantReason auth.FailureReason
+		wantReason authn.FailureReason
 	}{
 		{name: "an admitted service account authenticates", namespace: admittedNamespace},
 		{
 			name:       "a verified token from an unadmitted namespace is not_admitted",
 			namespace:  "default",
-			wantReason: auth.ReasonNotAdmitted,
+			wantReason: authn.ReasonNotAdmitted,
 		},
 	}
 
@@ -451,12 +451,12 @@ func TestAuthenticate(t *testing.T) {
 			}
 			require.Error(t, err)
 			assert.Nil(t, p)
-			reason, ok := auth.ReasonOf(err)
+			reason, ok := authn.ReasonOf(err)
 			require.True(t, ok)
 			assert.Equal(t, tt.wantReason, reason)
 
 			// The token verified, so the controller knows exactly who signed it.
-			issuerName, hasIssuer := auth.IssuerOf(err)
+			issuerName, hasIssuer := authn.IssuerOf(err)
 			require.True(t, hasIssuer, "a verified token's admission failure knows its issuer")
 			assert.Equal(t, k8sName, issuerName)
 		})
@@ -486,11 +486,11 @@ func TestFailureIssuerNameComesFromTheRegistry(t *testing.T) {
 			_, err := f.verifier.Authenticate(context.Background(), MintToken(t, spec))
 
 			require.Error(t, err)
-			reason, ok := auth.ReasonOf(err)
+			reason, ok := authn.ReasonOf(err)
 			require.True(t, ok)
-			assert.Equal(t, auth.ReasonUnknownIssuer, reason)
+			assert.Equal(t, authn.ReasonUnknownIssuer, reason)
 
-			name, hasIssuer := auth.IssuerOf(err)
+			name, hasIssuer := authn.IssuerOf(err)
 			assert.False(t, hasIssuer, "an unregistered issuer is not an attributable issuer")
 			assert.Empty(t, name, "the \"iss\" claim never becomes a label value")
 		})
@@ -505,47 +505,47 @@ func TestNewVerifier(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		cfg     func() *auth.Config
-		sources map[string]auth.KeySource
+		cfg     func() *authn.Config
+		sources map[string]authn.KeySource
 		wantErr string
 	}{
 		{
 			name:    "both issuers wired",
 			cfg:     testConfig,
-			sources: map[string]auth.KeySource{k8sName: source, spireName: source},
+			sources: map[string]authn.KeySource{k8sName: source, spireName: source},
 		},
 		{
 			name:    "a configured issuer with no key source is a startup failure",
 			cfg:     testConfig,
-			sources: map[string]auth.KeySource{k8sName: source},
+			sources: map[string]authn.KeySource{k8sName: source},
 			wantErr: `issuer "spire"`,
 		},
 		{
 			name:    "a nil key source is a startup failure",
 			cfg:     testConfig,
-			sources: map[string]auth.KeySource{k8sName: source, spireName: nil},
+			sources: map[string]authn.KeySource{k8sName: source, spireName: nil},
 			wantErr: `issuer "spire"`,
 		},
 		{
 			name:    "a key source for no configured issuer is a startup failure",
 			cfg:     testConfig,
-			sources: map[string]auth.KeySource{k8sName: source, spireName: source, "teleport": source},
+			sources: map[string]authn.KeySource{k8sName: source, spireName: source, "teleport": source},
 			wantErr: `key source "teleport"`,
 		},
 		{
 			name: "an invalid config is rejected here too, not only by Load",
-			cfg: func() *auth.Config {
+			cfg: func() *authn.Config {
 				cfg := testConfig()
 				cfg.Audiences = []string{k8sIssuer}
 				return cfg
 			},
-			sources: map[string]auth.KeySource{k8sName: source, spireName: source},
+			sources: map[string]authn.KeySource{k8sName: source, spireName: source},
 			wantErr: "invalid authentication config",
 		},
 		{
 			name:    "a nil config is rejected",
-			cfg:     func() *auth.Config { return nil },
-			sources: map[string]auth.KeySource{},
+			cfg:     func() *authn.Config { return nil },
+			sources: map[string]authn.KeySource{},
 			wantErr: "nil",
 		},
 	}
@@ -554,7 +554,7 @@ func TestNewVerifier(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			v, err := auth.NewVerifier(tt.cfg(), tt.sources)
+			v, err := authn.NewVerifier(tt.cfg(), tt.sources)
 			if tt.wantErr == "" {
 				require.NoError(t, err)
 				assert.NotNil(t, v)
@@ -579,17 +579,17 @@ func TestErrorSurface(t *testing.T) {
 		_, err := f.verifier.Verify(context.Background(), "")
 		require.Error(t, err)
 
-		reason, ok := auth.ReasonOf(err)
+		reason, ok := authn.ReasonOf(err)
 		require.True(t, ok)
-		assert.Equal(t, auth.ReasonNoToken, reason)
-		assert.Contains(t, err.Error(), string(auth.ReasonNoToken))
+		assert.Equal(t, authn.ReasonNoToken, reason)
+		assert.Contains(t, err.Error(), string(authn.ReasonNoToken))
 	})
 
 	// A nil error takes the same errors.As miss.
 	t.Run("ReasonOf reports absence for an unrelated error", func(t *testing.T) {
 		t.Parallel()
 
-		reason, ok := auth.ReasonOf(context.Canceled)
+		reason, ok := authn.ReasonOf(context.Canceled)
 		assert.False(t, ok)
 		assert.Empty(t, reason)
 	})
@@ -609,18 +609,18 @@ func TestConfiguredAudiencesAreAnyOf(t *testing.T) {
 	)
 
 	signing := RSAKey(t, "signing-1")
-	verifier, err := auth.NewVerifier(&auth.Config{
+	verifier, err := authn.NewVerifier(&authn.Config{
 		Audiences: []string{first, second},
-		Issuers: []auth.Issuer{{
+		Issuers: []authn.Issuer{{
 			Name:       k8sName,
 			Issuer:     k8sIssuer,
-			JWKS:       &auth.JWKSKeys{URI: "https://kubernetes.default.svc/openid/v1/jwks"},
+			JWKS:       &authn.JWKSKeys{URI: "https://kubernetes.default.svc/openid/v1/jwks"},
 			Algorithms: []string{"RS256"},
-			Admit: &auth.Admit{
-				ServiceAccounts: []auth.ServiceAccountRule{{Namespace: admittedNamespace}},
+			Admit: &authn.Admit{
+				ServiceAccounts: []authn.ServiceAccountRule{{Namespace: admittedNamespace}},
 			},
 		}},
-	}, map[string]auth.KeySource{k8sName: NewStaticKeySource(signing)})
+	}, map[string]authn.KeySource{k8sName: NewStaticKeySource(signing)})
 	require.NoError(t, err)
 
 	now := time.Now()
@@ -659,9 +659,9 @@ func TestConfiguredAudiencesAreAnyOf(t *testing.T) {
 				return
 			}
 			require.Error(t, err)
-			reason, ok := auth.ReasonOf(err)
+			reason, ok := authn.ReasonOf(err)
 			require.True(t, ok)
-			assert.Equal(t, auth.ReasonAudienceMismatch, reason)
+			assert.Equal(t, authn.ReasonAudienceMismatch, reason)
 		})
 	}
 }

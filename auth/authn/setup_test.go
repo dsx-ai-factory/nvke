@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package auth_test
+package authn_test
 
 // Setup is the whole three-state decision in one place, so these are the tests
 // that say which state a given configuration produces. Before it existed the
@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/auth/authn"
 )
 
 func discardLogger() *slog.Logger {
@@ -28,7 +28,7 @@ func discardLogger() *slog.Logger {
 func TestSetupDisabledWhenNoConfigPath(t *testing.T) {
 	t.Parallel()
 
-	authenticator, err := auth.Setup(t.Context(), auth.Options{}, discardLogger())
+	authenticator, err := authn.Setup(t.Context(), authn.Options{}, discardLogger())
 
 	require.NoError(t, err)
 	assert.Nil(t, authenticator, "an empty ConfigPath is disabled, not enforcing")
@@ -41,7 +41,7 @@ func TestSetupUnreadableConfigPathIsAnError(t *testing.T) {
 
 	missing := filepath.Join(t.TempDir(), "not-mounted.yaml")
 
-	authenticator, err := auth.Setup(t.Context(), auth.Options{ConfigPath: missing}, discardLogger())
+	authenticator, err := authn.Setup(t.Context(), authn.Options{ConfigPath: missing}, discardLogger())
 
 	require.Error(t, err, "a set-but-unreadable path must fail, never disable")
 	assert.Nil(t, authenticator)
@@ -54,7 +54,7 @@ func TestSetupInvalidConfigIsAnError(t *testing.T) {
 
 	path := writeConfig(t, configHeader+"audiences: []\nissuers: []\n")
 
-	authenticator, err := auth.Setup(t.Context(), auth.Options{ConfigPath: path}, discardLogger())
+	authenticator, err := authn.Setup(t.Context(), authn.Options{ConfigPath: path}, discardLogger())
 
 	require.Error(t, err)
 	assert.Nil(t, authenticator)
@@ -67,7 +67,7 @@ func TestSetupPermissiveBuildsWithoutReachableKeys(t *testing.T) {
 
 	path := writeConfig(t, exampleConfig)
 
-	authenticator, err := auth.Setup(t.Context(), auth.Options{ConfigPath: path, Permissive: true}, discardLogger())
+	authenticator, err := authn.Setup(t.Context(), authn.Options{ConfigPath: path, Permissive: true}, discardLogger())
 
 	require.NoError(t, err, "permissive must not require reachable issuer keys")
 	assert.NotNil(t, authenticator)
@@ -80,7 +80,7 @@ func TestSetupEnforcingRefusesWithoutReachableKeys(t *testing.T) {
 
 	path := writeConfig(t, exampleConfig)
 
-	authenticator, err := auth.Setup(t.Context(), auth.Options{ConfigPath: path}, discardLogger())
+	authenticator, err := authn.Setup(t.Context(), authn.Options{ConfigPath: path}, discardLogger())
 
 	require.Error(t, err, "enforcing must not start without every issuer's keys")
 	assert.Nil(t, authenticator)

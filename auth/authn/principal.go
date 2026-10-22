@@ -1,14 +1,14 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package auth holds the NVKE API authentication: the configuration schema, token
+// Package authn holds the NVKE API authentication: the configuration schema, token
 // verification, and per-issuer admission. Three states, chosen outside this
 // package:
 //
 //	Disabled   AUTH_CONFIG_PATH unset; the middleware is not in the chain.
 //	Permissive evaluate, log and count, never reject.
 //	Enforcing  401 on authentication, 403 on admission.
-package auth
+package authn
 
 import (
 	"context"

@@ -27,6 +27,7 @@ on:
     branches: [main]
     paths:
       - 'controller/**'
+      - 'auth/**'
       - 'go.work'
       - 'go.work.sum'
       - '.github/workflows/gofail-e2e.yml'

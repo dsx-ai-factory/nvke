@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package auth_test
+package authn_test
 
 import (
 	"strconv"
@@ -10,13 +10,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/auth/authn"
 )
 
 // serviceAccountPrincipal is a verified principal: admission only ever sees
 // claims that have already passed signature and claim validation.
-func serviceAccountPrincipal(namespace, name string) *auth.Principal {
-	return &auth.Principal{
+func serviceAccountPrincipal(namespace, name string) *authn.Principal {
+	return &authn.Principal{
 		IssuerName: k8sName,
 		Issuer:     k8sIssuer,
 		Subject:    "system:serviceaccount:" + namespace + ":" + name,
@@ -24,8 +24,8 @@ func serviceAccountPrincipal(namespace, name string) *auth.Principal {
 	}
 }
 
-func spiffePrincipal(id string) *auth.Principal {
-	return &auth.Principal{
+func spiffePrincipal(id string) *authn.Principal {
+	return &authn.Principal{
 		IssuerName: spireName,
 		Issuer:     spireIssuer,
 		Subject:    id,
@@ -39,41 +39,41 @@ func TestAdmitServiceAccounts(t *testing.T) {
 	// Name is a pointer so "any name in the namespace" stays distinct from "this
 	// one name".
 	runner := "runner"
-	runnerRule := auth.ServiceAccountRule{Namespace: "nke-clients", Name: &runner}
+	runnerRule := authn.ServiceAccountRule{Namespace: "nke-clients", Name: &runner}
 
 	tests := []struct {
 		name      string
-		admit     *auth.Admit
-		principal *auth.Principal
+		admit     *authn.Admit
+		principal *authn.Principal
 		want      bool
 	}{
 		{
 			name:      "a namespace rule with no name admits any service account in it",
-			admit:     &auth.Admit{ServiceAccounts: []auth.ServiceAccountRule{{Namespace: "nke-clients"}}},
+			admit:     &authn.Admit{ServiceAccounts: []authn.ServiceAccountRule{{Namespace: "nke-clients"}}},
 			principal: serviceAccountPrincipal("nke-clients", "anything-at-all"),
 			want:      true,
 		},
 		{
 			name:      "a named rule admits the matching service account",
-			admit:     &auth.Admit{ServiceAccounts: []auth.ServiceAccountRule{runnerRule}},
+			admit:     &authn.Admit{ServiceAccounts: []authn.ServiceAccountRule{runnerRule}},
 			principal: serviceAccountPrincipal("nke-clients", "runner"),
 			want:      true,
 		},
 		{
 			name:      "a named rule does not admit another name in the admitted namespace",
-			admit:     &auth.Admit{ServiceAccounts: []auth.ServiceAccountRule{runnerRule}},
+			admit:     &authn.Admit{ServiceAccounts: []authn.ServiceAccountRule{runnerRule}},
 			principal: serviceAccountPrincipal("nke-clients", "intruder"),
 			want:      false,
 		},
 		{
 			name:      "a named rule does not admit the same name in another namespace",
-			admit:     &auth.Admit{ServiceAccounts: []auth.ServiceAccountRule{runnerRule}},
+			admit:     &authn.Admit{ServiceAccounts: []authn.ServiceAccountRule{runnerRule}},
 			principal: serviceAccountPrincipal("default", "runner"),
 			want:      false,
 		},
 		{
 			name: "any rule in the list may match",
-			admit: &auth.Admit{ServiceAccounts: []auth.ServiceAccountRule{
+			admit: &authn.Admit{ServiceAccounts: []authn.ServiceAccountRule{
 				runnerRule,
 				{Namespace: "nke-system"},
 			}},
@@ -84,8 +84,8 @@ func TestAdmitServiceAccounts(t *testing.T) {
 			// Nil claims and a string-valued kubernetes.io fail the same first type
 			// assertion.
 			name:  "a kubernetes.io claim of the wrong shape admits nobody",
-			admit: &auth.Admit{ServiceAccounts: []auth.ServiceAccountRule{{Namespace: "nke-clients"}}},
-			principal: &auth.Principal{
+			admit: &authn.Admit{ServiceAccounts: []authn.ServiceAccountRule{{Namespace: "nke-clients"}}},
+			principal: &authn.Principal{
 				Subject: "system:serviceaccount:nke-clients:runner",
 				Claims:  map[string]any{"kubernetes.io": "nke-clients"},
 			},
@@ -95,8 +95,8 @@ func TestAdmitServiceAccounts(t *testing.T) {
 			// A later return than the case above: the namespace is there, the
 			// serviceaccount object is not.
 			name:  "a kubernetes.io claim with no serviceaccount object admits nobody",
-			admit: &auth.Admit{ServiceAccounts: []auth.ServiceAccountRule{{Namespace: "nke-clients"}}},
-			principal: &auth.Principal{
+			admit: &authn.Admit{ServiceAccounts: []authn.ServiceAccountRule{{Namespace: "nke-clients"}}},
+			principal: &authn.Principal{
 				Claims: map[string]any{"kubernetes.io": map[string]any{"namespace": "nke-clients"}},
 			},
 			want: false,
@@ -119,7 +119,7 @@ func TestAdmitServiceAccounts(t *testing.T) {
 func TestAdmitRequiresTheSubjectToMatchTheNestedClaim(t *testing.T) {
 	t.Parallel()
 
-	admit := &auth.Admit{ServiceAccounts: []auth.ServiceAccountRule{{Namespace: "nke-clients"}}}
+	admit := &authn.Admit{ServiceAccounts: []authn.ServiceAccountRule{{Namespace: "nke-clients"}}}
 
 	tests := []struct {
 		name    string
@@ -144,7 +144,7 @@ func TestAdmitRequiresTheSubjectToMatchTheNestedClaim(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			principal := &auth.Principal{
+			principal := &authn.Principal{
 				IssuerName: k8sName,
 				Issuer:     k8sIssuer,
 				Subject:    tt.subject,
@@ -158,14 +158,14 @@ func TestAdmitRequiresTheSubjectToMatchTheNestedClaim(t *testing.T) {
 func TestAdmitSPIFFE(t *testing.T) {
 	t.Parallel()
 
-	rule := func(trustDomain string, prefixes ...string) *auth.Admit {
-		return &auth.Admit{SPIFFE: &auth.SPIFFERule{TrustDomain: trustDomain, PathPrefixes: prefixes}}
+	rule := func(trustDomain string, prefixes ...string) *authn.Admit {
+		return &authn.Admit{SPIFFE: &authn.SPIFFERule{TrustDomain: trustDomain, PathPrefixes: prefixes}}
 	}
 
 	tests := []struct {
 		name      string
-		admit     *auth.Admit
-		principal *auth.Principal
+		admit     *authn.Admit
+		principal *authn.Principal
 		want      bool
 	}{
 		{
@@ -251,8 +251,8 @@ func TestAdmitSPIFFE(t *testing.T) {
 	}
 }
 
-func oidcPrincipal(groups []any) *auth.Principal {
-	return &auth.Principal{
+func oidcPrincipal(groups []any) *authn.Principal {
+	return &authn.Principal{
 		IssuerName: "keycloak",
 		Issuer:     "http://keycloak.nke.test:8180/realms/nke",
 		Subject:    "user-1",
@@ -263,12 +263,12 @@ func oidcPrincipal(groups []any) *auth.Principal {
 func TestAdmitGroups(t *testing.T) {
 	t.Parallel()
 
-	rule := &auth.Admit{Groups: []string{"nvke-operators"}}
+	rule := &authn.Admit{Groups: []string{"nvke-operators"}}
 
 	tests := []struct {
 		name      string
-		admit     *auth.Admit
-		principal *auth.Principal
+		admit     *authn.Admit
+		principal *authn.Principal
 		want      bool
 	}{
 		{
@@ -279,7 +279,7 @@ func TestAdmitGroups(t *testing.T) {
 		},
 		{
 			name:      "any listed group is enough",
-			admit:     &auth.Admit{Groups: []string{"nvke-readers", "nvke-operators"}},
+			admit:     &authn.Admit{Groups: []string{"nvke-readers", "nvke-operators"}},
 			principal: oidcPrincipal([]any{"nvke-operators"}),
 			want:      true,
 		},
@@ -292,7 +292,7 @@ func TestAdmitGroups(t *testing.T) {
 		{
 			name:      "a missing groups claim is not admitted",
 			admit:     rule,
-			principal: &auth.Principal{Subject: "user-1", Claims: map[string]any{"sub": "user-1"}},
+			principal: &authn.Principal{Subject: "user-1", Claims: map[string]any{"sub": "user-1"}},
 			want:      false,
 		},
 		{
@@ -318,15 +318,15 @@ func TestAdmitGroups(t *testing.T) {
 func TestAdmitDefaultDeny(t *testing.T) {
 	t.Parallel()
 
-	both := &auth.Admit{
-		ServiceAccounts: []auth.ServiceAccountRule{{Namespace: "nke-clients"}},
-		SPIFFE:          &auth.SPIFFERule{TrustDomain: "example.org", PathPrefixes: []string{"/nke-service/"}},
+	both := &authn.Admit{
+		ServiceAccounts: []authn.ServiceAccountRule{{Namespace: "nke-clients"}},
+		SPIFFE:          &authn.SPIFFERule{TrustDomain: "example.org", PathPrefixes: []string{"/nke-service/"}},
 	}
 
 	tests := []struct {
 		name      string
-		admit     *auth.Admit
-		principal *auth.Principal
+		admit     *authn.Admit
+		principal *authn.Principal
 		want      bool
 	}{
 		{
@@ -337,7 +337,7 @@ func TestAdmitDefaultDeny(t *testing.T) {
 		},
 		{
 			name:      "an empty rule set admits nobody",
-			admit:     &auth.Admit{},
+			admit:     &authn.Admit{},
 			principal: serviceAccountPrincipal("nke-clients", "runner"),
 			want:      false,
 		},
@@ -378,7 +378,7 @@ func TestUnparseableTrustDomainFailsAtStartupNotPerRequest(t *testing.T) {
 	// matters here is what admission does with one that got through.
 	const td = "EXAMPLE.ORG"
 
-	_, err := auth.Load(writeConfig(t, spiffeConfig(
+	_, err := authn.Load(writeConfig(t, spiffeConfig(
 		`{trustDomain: "`+td+`", pathPrefixes: ["/nke-service/"]}`,
 	)))
 	require.Error(t, err, "an unparseable trust domain must be a startup failure")
@@ -386,7 +386,7 @@ func TestUnparseableTrustDomainFailsAtStartupNotPerRequest(t *testing.T) {
 
 	// What it would do instead: no error, nobody admitted. Built directly,
 	// because Load refuses.
-	rule := &auth.Admit{SPIFFE: &auth.SPIFFERule{
+	rule := &authn.Admit{SPIFFE: &authn.SPIFFERule{
 		TrustDomain:  td,
 		PathPrefixes: []string{"/nke-service/"},
 	}}
@@ -408,7 +408,7 @@ func TestSlashPrefixesAcrossValidationAndAdmission(t *testing.T) {
 		t.Run("prefix "+strconv.Quote(prefix), func(t *testing.T) {
 			t.Parallel()
 
-			_, err := auth.Load(writeConfig(t, spiffeConfig(
+			_, err := authn.Load(writeConfig(t, spiffeConfig(
 				`{trustDomain: example.org, pathPrefixes: ["`+prefix+`"]}`,
 			)))
 			require.Error(t, err, "an all-slash prefix must not survive startup")
@@ -416,7 +416,7 @@ func TestSlashPrefixesAcrossValidationAndAdmission(t *testing.T) {
 			// Built directly, because Load refuses to produce one. Only the
 			// deliberate "/" means the whole trust domain; everything else that
 			// trims to empty is a malformed rule and admits nobody.
-			rule := &auth.Admit{SPIFFE: &auth.SPIFFERule{
+			rule := &authn.Admit{SPIFFE: &authn.SPIFFERule{
 				TrustDomain:  "example.org",
 				PathPrefixes: []string{prefix},
 			}}

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package auth_test
+package authn_test
 
 // Synthetic tokens for the whole auth package. No real issuer will mint a token
 // with a missing "exp" or a signature from the wrong key, so the negatives have
@@ -22,10 +22,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/auth/authn"
 )
 
-// errUnknownKeyID is deliberately an ordinary error, not auth.ErrKeysStale: an
+// errUnknownKeyID is deliberately an ordinary error, not authn.ErrKeysStale: an
 // unknown kid means the token is wrong, not that the controller's key set is.
 var errUnknownKeyID = errors.New("static key source: unknown key id")
 
@@ -188,27 +188,27 @@ func MintToken(t *testing.T, spec TokenSpec) string {
 
 // testConfig is built in Go rather than YAML; config_test.go covers the YAML
 // path.
-func testConfig() *auth.Config {
-	return &auth.Config{
+func testConfig() *authn.Config {
+	return &authn.Config{
 		Audiences: []string{deploymentAudience},
-		Issuers: []auth.Issuer{
+		Issuers: []authn.Issuer{
 			{
 				Name:       k8sName,
 				Issuer:     k8sIssuer,
-				JWKS:       &auth.JWKSKeys{URI: "https://kubernetes.default.svc/openid/v1/jwks"},
+				JWKS:       &authn.JWKSKeys{URI: "https://kubernetes.default.svc/openid/v1/jwks"},
 				Algorithms: []string{"RS256"},
-				Admit: &auth.Admit{
-					ServiceAccounts: []auth.ServiceAccountRule{{Namespace: admittedNamespace}},
+				Admit: &authn.Admit{
+					ServiceAccounts: []authn.ServiceAccountRule{{Namespace: admittedNamespace}},
 				},
 			},
 			{
 				Name:       spireName,
 				Issuer:     spireIssuer,
 				Audiences:  []string{spireAudience},
-				JWKS:       &auth.JWKSKeys{URI: "https://spire.example.com/keys"},
+				JWKS:       &authn.JWKSKeys{URI: "https://spire.example.com/keys"},
 				Algorithms: []string{"RS256", "ES256"},
-				Admit: &auth.Admit{
-					SPIFFE: &auth.SPIFFERule{
+				Admit: &authn.Admit{
+					SPIFFE: &authn.SPIFFERule{
 						TrustDomain:  "example.org",
 						PathPrefixes: []string{"/nke-service/"},
 					},
@@ -221,7 +221,7 @@ func testConfig() *auth.Config {
 // fixture is a Verifier wired to in-process keys, plus the keys, so a case can
 // sign with the wrong one.
 type fixture struct {
-	verifier *auth.Verifier
+	verifier *authn.Verifier
 	// signing is the key both issuers' sources serve.
 	signing SigningKey
 	// elliptic is served too, so an ES256 token reaches the algorithm check
@@ -243,7 +243,7 @@ func newFixture(t *testing.T) fixture {
 	k8sKeys := NewStaticKeySource(signing, elliptic)
 	spireKeys := NewStaticKeySource(signing, elliptic)
 
-	verifier, err := auth.NewVerifier(testConfig(), map[string]auth.KeySource{
+	verifier, err := authn.NewVerifier(testConfig(), map[string]authn.KeySource{
 		k8sName:   k8sKeys,
 		spireName: spireKeys,
 	})
@@ -309,11 +309,11 @@ func spoilIssuer(_ fixture, spec *TokenSpec) {
 	spec.Issuer = hostileIssuer
 }
 
-// StaticKeySource satisfies auth.KeySource from a map of key ids.
+// StaticKeySource satisfies authn.KeySource from a map of key ids.
 type StaticKeySource struct {
 	// Keys is keyed by "kid"; a token with no "kid" looks up "".
 	Keys map[string]crypto.PublicKey
-	// Err, when set, is returned instead of any key. auth.ErrKeysStale exercises
+	// Err, when set, is returned instead of any key. authn.ErrKeysStale exercises
 	// the stale-key path without a clock.
 	Err error
 }
@@ -337,4 +337,4 @@ func (s *StaticKeySource) KeyFor(_ context.Context, kid string) (crypto.PublicKe
 	return key, nil
 }
 
-var _ auth.KeySource = (*StaticKeySource)(nil)
+var _ authn.KeySource = (*StaticKeySource)(nil)

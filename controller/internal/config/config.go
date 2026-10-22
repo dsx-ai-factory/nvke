@@ -386,7 +386,7 @@ type Config struct {
 
 	// AuthConfigPath is the mounted YAML file holding the API authentication
 	// configuration. Unset disables authentication. A set-but-unreadable path is
-	// a startup failure, never "disabled"; see auth.Load.
+	// a startup failure, never "disabled"; see authn.Load.
 	//
 	// Validate() does not check it: unset is the valid default.
 	AuthConfigPath string `env:"AUTH_CONFIG_PATH"`

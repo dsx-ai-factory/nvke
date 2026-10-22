@@ -134,7 +134,7 @@ out="$(render --set apiAuth.enabled=true)"
 # By source template, not kind: the chart renders other ConfigMaps regardless.
 absent "renders no ConfigMap of its own"      '^# Source: .*/templates/configmap-auth\.yaml$' "${out}"
 want   "still mounts the named one"           'name: nvke-auth-config'                "${out}"
-# auth.Load runs once at startup, so a configuration edit that does not restart
+# authn.Load runs once at startup, so a configuration edit that does not restart
 # the pods does nothing at all. Reloader is what restarts them, here and below.
 want   "Reloader watches it"                  'configmap.reloader.stakater.com/reload: "nvke-auth-config,nvke-controller-config"' "${out}"
 
@@ -187,7 +187,7 @@ wantfail "config without issuers is refused"   'apiAuth\.config\.issuers is requ
   --set 'apiAuth.config.audiences[0]=https://nke.example.internal'
 
 echo "the chart owns apiVersion and kind, and says so if you repeat them:"
-# Duplicate keys render clean and then fail auth.Load's strict parse, so the
+# Duplicate keys render clean and then fail authn.Load's strict parse, so the
 # pod crash-loops on a value the operator most likely pasted from the README.
 wantfail "apiVersion in config is refused"     'apiAuth\.config must not carry apiVersion or kind' \
   --set apiAuth.enabled=true --set apiAuth.configMap.create=true \

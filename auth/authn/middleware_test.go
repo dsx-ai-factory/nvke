@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package auth_test
+package authn_test
 
 // These tests drive a bare handler, not a server: NewServer needs a database and
 // a Forge provider, and the rules under test depend on neither.
@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
+	auth "github.com/dsx-ai-factory/nvke/auth/authn"
 )
 
 // modeDisabled is deliberately not an auth.Mode: disabled is the absence of an
