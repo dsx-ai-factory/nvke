@@ -1,5 +1,8 @@
 # Management Engine Development
 
+> **Under development. Do not use management-engine in production.**
+> The instructions below are for isolated development and evaluation only.
+
 From the repository root, activate the [shared toolchain](../docs/development.md#getting-the-tools)
 and enter the module:
 
@@ -66,6 +69,16 @@ For direct commands against the default environment:
 export KUBECONFIG="$PWD/.local/dev/nvke/kubeconfig"
 kubectl --context kind-nvke-state get namespaces
 ```
+
+## Tenant API service
+
+The [tenant service](public/tenant/README.md#service-boundary) implements public
+Cluster operations against a configured datastore namespace. The standalone
+HTTP/gRPC process and deployment integration are separate delivery steps.
+
+Run `make test-public-api` for contract, service, persistence, RBAC, and controller
+checkpoint tests using local envtest binaries. Docker, Tilt, and the NVKE controller
+are not required.
 
 ## NVKE controller integration
 

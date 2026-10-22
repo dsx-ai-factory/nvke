@@ -1,13 +1,14 @@
 # Tenant API contract
 
-This pre-release API is under development and is not recommended for production
-use. Backward compatibility is not currently enforced, including within `v1`.
+> **Under development.** This pre-release API is not for production use.
+> Backward compatibility is not currently enforced, including within `v1`.
 
 `cluster/v1` defines the public `Cluster` representation of the internal
 [`NVKECluster`](../../apis/v1/nvkecluster_types.go). The generated Go package is
-`clusterv1`; the gRPC service is `cluster.v1.ClusterService`. This package provides
-the contract, generated bindings, and spec mappings. The application service and
-deployment are separate work.
+`clusterv1`; the gRPC service is `cluster.v1.ClusterService`. The
+[application service](../../internal/public/tenant/apis/cluster/service.go)
+implements the contract using generated bindings and spec mappings. The standalone
+HTTP/gRPC process and deployment integration are separate work.
 
 Hand off the generated [OpenAPI 2.0 document](gen/cluster/v1/openapi.yaml) to API
 consumers. This standalone YAML includes routes, nested schemas, required fields,
@@ -52,9 +53,11 @@ edited. For spec schema review, read [`spec.proto`](apis/cluster/v1/spec.proto).
 The escaped `rawDesc` constants in generated Go encode that schema for the
 protobuf runtime.
 
-Future operator contracts can use `public/operator` and
-`internal/public/operator`; extract shared definitions or helpers when both
-audiences need them.
+Future operator contracts can use `public/operator` and `internal/public/operator`.
+[`internal/public/shared`](../../internal/public/shared) holds cursor encoding and
+pagination validation, protobuf validation, guarded spec patches, safe storage
+errors and diagnostics, and runtime bounds. Resource behavior, page limits,
+storage scope, and access policy remain with each audience's service.
 
 ## Runtime integration decision
 
@@ -65,6 +68,32 @@ HTTP and native gRPC requests the same RPC interceptor path for authentication,
 authorization, and observability. Use the same wiring in Tilt and production.
 The gateway and gRPC server can remain in one process and Deployment.
 
+## Service boundary
+
+The service uses one configured namespace without caller authentication or
+authorization. Future caller scope must come from verified identity and an
+authorized storage mapping. Unverified claims and caller-supplied headers must
+not select storage. Datastore calls have deadlines and bounded pagination. List
+cursors are encrypted and bound to the configured datastore and namespace.
+
+Create persists the selected spec fields and private creation values below.
+Replace supplies the last `resource_version` and the complete writable spec,
+preserving create-only and private fields. Omitting the optional release-channel
+version removes it. Replacement is allowed only before a provisioning checkpoint
+exists and while the resource is not deleting. A merge patch carries the version
+precondition so concurrent spec, status, or metadata writes cause a conflict.
+Read the current resource before retrying HTTP 409 / gRPC `ABORTED`.
+
+The service checks supported network semantics before storage admission. It accepts
+one canonical IPv4 CIDR each for pods and services, and the ranges must not overlap.
+Datastore admission remains authoritative for the internal CRD and its CEL rules.
+
+GET and LIST project stored data without waiting for reconciliation. Missing or
+stale observations remain PENDING, unavailable readiness is UNKNOWN, and only an
+explicit provisioning observation produces `REASON_PROVISIONING`. Ordinary READY
+and DELETING states omit a reason. Private diagnostic messages never become public
+status. `Cluster.uid` distinguishes a later resource created with the same name.
+
 ## Generate and test
 
 Change the internal Go types, maintained proto, or configuration and regenerate.
@@ -73,12 +102,15 @@ From `management-engine`:
 
 ```sh
 make generate-public-api
-make test-public-contract test-unit
+make test-public-api
 ```
 
 `test-public-contract` runs `check-public-api` before testing the descriptors,
-compiler, and HTTP bindings. `test-unit` includes the mapping tests; `make test`
-includes both suites. `check-public-api` can also be run alone to verify drift.
+compiler, and HTTP bindings. `test-public-api` includes those checks, unit tests,
+and envtest persistence, RBAC, and controller checkpoint races. Checkpoint cases
+invoke reconciliation directly. Transport, deployment, and watch delivery are
+separate checks.
+`make test` includes these suites. `check-public-api` can also be run alone to verify drift.
 
 Generation installs pinned local tools, checks Buf formatting/lint, and generates
 clients, gateway handlers, and OpenAPI. Buf uses the repository-wide pin; protobuf

@@ -88,12 +88,19 @@ vet: ## Run go vet against code.
 TEST_PROCS ?= 5
 
 .PHONY: test
-test: test-api test-controller test-public-contract ## Run API, client, startup, controller, and public contract tests.
+test: test-api test-controller test-public-api ## Run all unit, contract, and envtest suites.
 
 .PHONY: test-public-contract
 test-public-contract: check-public-api ## Test public contract generation, exposure and compatibility.
 	@$(COVERAGE_MKDIR)
 	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,public-contract) -covermode=$(GO_COVER_MODE) ./public/... ./hack/public-api/...
+
+.PHONY: test-public-api
+test-public-api: test-unit test-public-contract setup-envtest ## Verify tenant persistence, RBAC, and controller checkpoint races.
+	@$(COVERAGE_MKDIR)
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" $(GO) test $(GO_TEST_FLAGS) -race \
+		-coverpkg=./internal/public/tenant/apis/cluster,./internal/public/tenant/apis/cluster/mapping,./internal/public/shared/...,./controllers \
+		-coverprofile=$(call coverprofile,publicapi) -covermode=$(GO_COVER_MODE) ./test/public/...
 
 .PHONY: test-unit
 test-unit: fmt vet ## Run client and startup unit tests.

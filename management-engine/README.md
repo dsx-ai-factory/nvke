@@ -1,10 +1,13 @@
 # Management Engine
 
+> **Under development. Do not use management-engine in production.**
+> This component is for isolated development and evaluation only.
+
 The management engine is designed to manage NVKE workload clusters through
 declarative APIs and reconciliation built on Cluster API (CAPI) conventions.
 Its architecture separates user and operator APIs from internal Kubernetes
 resources and lifecycle controllers. This module provides the internal resource
-types, generated CRDs, controller-manager runtime, and tenant API contract generation.
+types, generated CRDs, controller-manager runtime, and a datastore-backed tenant API service.
 
 | Path | Purpose |
 | --- | --- |
@@ -14,6 +17,8 @@ types, generated CRDs, controller-manager runtime, and tenant API contract gener
 | `controllers` | Reconcilers |
 | [`public/tenant`](public/tenant/README.md) | Tenant contract inputs in `apis/`; generated clients, HTTP bindings, and references in `gen/` |
 | `hack/public-api`, `internal/public/tenant/apis/cluster/mapping` | Exposure compiler and generated spec mappings with their helpers |
+| `internal/public/tenant/apis/cluster` | Tenant resource operations and public response projection |
+| `internal/public/shared` | Reusable pagination, validation, datastore helpers, and runtime bounds |
 
 ## Development
 
@@ -121,7 +126,7 @@ projections; do not expose internal structs directly.
 
 | Concern | Contract |
 | --- | --- |
-| Tenancy | One namespace per org per datastore. Public APIs derive org identity from authentication and enforce resource and field authorization. |
+| Tenancy | One namespace per org per datastore. Authenticated org routing and authorization are planned. The tenant service uses one configured namespace without caller authentication or authorization. |
 | Identity | Immutable client-selected DNS-subdomain names (at most 253 characters); UIDs distinguish recreations. Provider names may have shorter limits. |
 | Concurrency | Preserve opaque `resourceVersion` and field ownership. Spec expresses desired state; controllers report progress through status. |
 | Conditions | Use `metav1.Condition` and `observedGeneration`. Missing or stale conditions do not establish readiness. Unknown counts are absent; observed zero counts are explicit. |

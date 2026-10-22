@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Bind this identity within the configured namespace to limit the tenant runtime's datastore access.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: public-api
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: public-api
+rules:
+- apiGroups: [internal.nvke.nvidia.com]
+  resources: [nvkeclusters]
+  verbs: [get, list, create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: public-api
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: public-api
+subjects:
+- kind: ServiceAccount
+  name: public-api
