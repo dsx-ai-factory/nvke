@@ -220,6 +220,22 @@ Replacing that node can break API access and later node joins. This override
 does not provide endpoint failover. Quorum, health and deletion protections
 still apply. A supplied VIP still receives normal address validation.
 
+After setting `allowControlPlaneWithoutVIP` back to `false` and restarting
+the NVKE controller, the controller blocks new restricted API requests and
+new no-VIP surge creation. It does not cancel accepted rollout work.
+A rollout that passes the existing health checks can still
+enqueue teardown when surge capacity is already satisfied or
+`controlPlaneConfig.maxSurge` is `0`.
+
+To pause new surge and teardown actions in control-plane rollouts, set the
+cluster's `enableCPNodeRecycling` field to `false`:
+
+```bash
+nvkectl patch cluster <WORKLOAD_CLUSTER> --patch 'enableCPNodeRecycling: false'
+```
+
+Already-enqueued teardown workflows may still finish.
+
 ## Delete a workload cluster
 
 1. Delete the cluster.
