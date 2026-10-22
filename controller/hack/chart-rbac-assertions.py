@@ -170,6 +170,31 @@ def main():
                 print(f"ERROR: empty additional RBAC must allow {override}\n{result.stderr}", file=sys.stderr)
                 return 1
 
+    for api_version, kind, invalid_field in (
+        ("v1", "Secret", "kind"),
+        ("v1", "ConfigMap", "kind"),
+        ("rbac.authorization.k8s.io/v1", None, "kind"),
+        ("example.test/v1", "Role", "apiVersion"),
+        ("rbac.authorization.k8s.io/v1beta1", "ClusterRole", "apiVersion"),
+        (None, "RoleBinding", "apiVersion"),
+    ):
+        obj = {"metadata": {"name": "invalid-object", "namespace": "tenant-a"}}
+        if api_version is not None:
+            obj["apiVersion"] = api_version
+        if kind is not None:
+            obj["kind"] = kind
+        result = subprocess.run(
+            [*command, "--values", "-"],
+            input=yaml.safe_dump({"tenantAccess": {"additionalRBAC": [obj]}}),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        expected = f"tenantAccess.additionalRBAC[0]: {invalid_field} must be"
+        if result.returncode == 0 or expected not in result.stderr:
+            print(f"ERROR: expected render rejection: {expected}\n{result.stderr}", file=sys.stderr)
+            return 1
+
     invalid_cases = [[document] for document in inner]
     for obj in additional_rbac + scoped_rbac:
         invalid_cases.append([obj, obj])

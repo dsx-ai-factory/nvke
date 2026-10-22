@@ -7,7 +7,9 @@ A Helm chart to deploy the NVKE controller service
 ## Additional tenant RBAC
 
 `tenantAccess.additionalRBAC` defaults to `[]`. Set it to a list of Kubernetes
-RBAC objects to append to the `nke-rbac` ConfigMap's `manifest.yaml`. The
+RBAC objects to append to the `nke-rbac` ConfigMap's `manifest.yaml`. Only
+`Role`, `RoleBinding`, `ClusterRole`, and `ClusterRoleBinding` objects with
+`apiVersion: rbac.authorization.k8s.io/v1` are accepted. The
 tenant-access controller applies these objects to OIDC tenant clusters, not
 the management cluster. Set `spiffe.trustDomain` and enable `tenantAccess`.
 Helm rejects objects with the same kind, namespace, and name as built-in RBAC
