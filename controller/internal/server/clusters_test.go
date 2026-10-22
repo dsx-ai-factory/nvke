@@ -887,10 +887,12 @@ func TestClusterService_DeleteCluster(t *testing.T) {
 // is absent until something writes it, so no provider object is emitted.
 func defaultAPIControlPlaneConfig() *api.ControlPlaneConfig {
 	maxSurge := 0
+	autoScaleDownDisabled := false
 	provisioningMonitorDisabled := false
 	teleportEnabled := false
 	return &api.ControlPlaneConfig{
 		MaxSurge:                    &maxSurge,
+		AutoScaleDownDisabled:       &autoScaleDownDisabled,
 		ProvisioningMonitorDisabled: &provisioningMonitorDisabled,
 		TeleportEnabled:             &teleportEnabled,
 	}

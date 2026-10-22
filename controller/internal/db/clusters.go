@@ -457,6 +457,8 @@ func preserveClusterControlPlaneOverrides(existing Cluster, merged *ControlPlane
 	}
 	// MaxSurge is cluster-level only; sync must not derive it from node pools.
 	merged.MaxSurge = existing.ControlPlaneConfig.MaxSurge
+	// AutoScaleDownDisabled is cluster-level only, same as MaxSurge.
+	merged.AutoScaleDownDisabled = existing.ControlPlaneConfig.AutoScaleDownDisabled
 	merged.ProvisioningMonitorDisabled = existing.ControlPlaneConfig.ProvisioningMonitorDisabled
 
 	// The instance type preference an operator set on the cluster outranks the one
