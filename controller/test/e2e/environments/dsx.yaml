@@ -87,18 +87,19 @@ infrastructure:
       # by a teardown that would not finish and every run failed `409 ... is
       # assigned to an Instance` while six other machines were free and idle.
       #
-      # The type below binds ONE machine: the ARS-221GL-FNB-NC24B, with a
-      # compute allocation reserving it. That is the whole CPU capacity this
-      # type has, because the datahall has two CPU machines in total and a
-      # Super Server carries the jump host. Enough for stage=provision, which
-      # places one node and is what the qualify-e2e-dsx label pins; a full run
-      # places three at once and needs more hardware bound here.
+      # This datahall has NO CPU machines: all fourteen of its machines are VR
+      # NVL72 trays. The type below therefore binds one of those (rack F16
+      # slot 11) with a compute allocation reserving it. One machine is enough
+      # for stage=provision, which places one node and is what the
+      # qualify-e2e-dsx label pins; a full run places three at once and needs
+      # more hardware bound here.
       #
-      # The other 34 machines are VR NVL72 and are deliberately NOT bound: the
-      # provides below says cpu, and binding GPU trays would make that false
-      # and put a site controller on accelerator hardware the GB200 streams
-      # exist to exercise.
+      # `provides` says gpu rather than cpu because that is what the hardware
+      # is. The site controller runs on accelerator hardware here deliberately
+      # -- the point of this change -- where a datahall with CPU boxes would
+      # declare cpu and keep the trays for the streams that exercise them.
+      # Resolve falls back to a GPU shape when a datahall declares no CPU one.
       instanceTypes:
         - name: datahall-1-nvke-tenant
           id: "${DSX_DATAHALL_1_INSTANCE_TYPE_ID:-}"
-          provides: {machineType: cpu, arch: arm64}
+          provides: {machineType: gpu, arch: arm64}

@@ -378,7 +378,7 @@ func (d *Environment) Resolve(capabilities map[string]string) (Selection, error)
 				continue
 			}
 		}
-		cpu, err := site.MatchCPU(arch)
+		cpu, err := site.matchSiteControllerType(arch)
 		if err != nil {
 			continue
 		}
@@ -448,7 +448,8 @@ type Placement struct {
 // so matching on arch alone can put a site controller on accelerator hardware
 // whenever a datahall declares a GPU type of that arch first. That is also the
 // shape Resolve selected on, so asking for less here would place the run
-// somewhere Resolve did not agree to.
+// somewhere Resolve did not agree to -- which is why both go through
+// matchSiteControllerType rather than each deciding for itself.
 func (s Site) Place(arch string) (Placement, error) {
 	if len(s.Machines) > 0 {
 		machine, err := s.MatchMachine(arch)
@@ -457,11 +458,29 @@ func (s Site) Place(arch string) (Placement, error) {
 		}
 		return Placement{MachineID: machine.ID, Arch: machine.Arch(), Name: machine.Name}, nil
 	}
-	instanceType, err := s.MatchCPU(arch)
+	instanceType, err := s.matchSiteControllerType(arch)
 	if err != nil {
 		return Placement{}, err
 	}
 	return Placement{InstanceTypeID: instanceType.ID, Arch: instanceType.Arch(), Name: instanceType.Name}, nil
+}
+
+// matchSiteControllerType picks the instance type the site controller goes on.
+//
+// A datahall with CPU boxes resolves to one, which is what Place's comment
+// above describes. datahall-1 has no CPU machine at all -- every machine it
+// owns is a GPU tray -- so fall back to a GPU shape rather than refuse to
+// place. Resolve and Place must agree on the shape or a run resolves against
+// one type and is placed on another, so both call this.
+func (s Site) matchSiteControllerType(arch string) (InstanceType, error) {
+	instanceType, err := s.MatchCPU(arch)
+	if err == nil {
+		return instanceType, nil
+	}
+	return s.MatchInstanceType(map[string]string{
+		infra.CapabilityMachineType: infra.MachineTypeGPU,
+		infra.CapabilityArch:        arch,
+	})
 }
 
 // MatchMachine returns the first declared machine providing the architecture
