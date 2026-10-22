@@ -537,7 +537,18 @@ jobs:
     # images with NGC_API_KEY (see "Check every artifact the plan names" and
     # "Log in to NVCR" below), so it needs the same approval a real run does.
     # Only Teleport and the suite itself skip on a dry run, not the gate.
-    environment: ${{ github.event_name == 'push' && 'forge-nightly' || 'forge' }}
+    #
+    # The DSX arm is first because a job gets one environment and the
+    # datahall's identifiers live on `dsx`, not repository-wide: a run that
+    # took `forge` would read them as empty, and an unset identifier skips the
+    # site rather than failing, so the lane would report "no declared site
+    # offers" -- a missing variable wearing the costume of missing hardware.
+    # The condition repeats SCOPE's own rather than reading it, because the
+    # env context is not available here.
+    environment: >-
+      ${{ ((github.event.label.name == 'qualify-e2e-dsx' || inputs.scope == 'dsx' || vars.QUALIFY_E2E_SCOPE == 'dsx') && 'dsx')
+          || (github.event_name == 'push' && 'forge-nightly')
+          || 'forge' }}
     # Composed of two budgets that used to be separate jobs: up to 90 minutes
     # waiting for a commit-resolved plan's publishers (see "Check every
     # artifact the plan names"), plus the run budget below. Measured phases
