@@ -304,6 +304,18 @@ def compare(args: argparse.Namespace) -> int:
                 "It was deleted and remade, so anything it carried is gone"
             )
 
+    # The migration's other half has to actually arrive. Without this,
+    # DOCUMENTED_GROUP_MIGRATION is a one-way exemption that nothing verifies:
+    # the loop below only reaches a migrated CRD when it is present, so a chart
+    # that stopped rendering one would pass here while leaving a site with the
+    # old group and nothing to copy its CRs into.
+    for k in sorted(DOCUMENTED_GROUP_MIGRATION - set(after_by_key)):
+        failures.append(
+            f"{k[0]} {k[2]} is missing after the upgrade. "
+            "DOCUMENTED_GROUP_MIGRATION says the chart renders it; a site would keep the old "
+            "group with no new group to migrate its CRs into"
+        )
+
     # Nothing new may be a rename of something old.
     before_names = {(k[0], k[2]) for k in before_by_key}
     for k in sorted(set(after_by_key) - set(before_by_key)):
@@ -394,7 +406,8 @@ def compare(args: argparse.Namespace) -> int:
             )
 
     if failures:
-        print(f"\nFAIL: the upgrade did not preserve the install ({len(failures)} problems)\n", file=sys.stderr)
+        plural = "problem" if len(failures) == 1 else "problems"
+        print(f"\nFAIL: the upgrade did not preserve the install ({len(failures)} {plural})\n", file=sys.stderr)
         for f in failures:
             print(f"  - {f}", file=sys.stderr)
         print("", file=sys.stderr)
@@ -413,23 +426,46 @@ def compare(args: argparse.Namespace) -> int:
 # comparison below still passes and the lane silently tests nothing. These are
 # the names from chart-identity-assertions.py's LEGACY scenario, which is the
 # definition of "what a site that predates the rename runs".
+#
+# The whole inventory, not just the names the rename moved. compare() can only
+# fail on an object the BEFORE snapshot holds, so the baseline's size is the
+# lane's coverage: a ref whose chart renders fewer objects shrinks what the
+# upgrade is checked against, silently. Pinning all 17 means that shows up here
+# instead.
+#
+# Keyed by (kind, namespace, name). Without the namespace, an object of the
+# right kind and name in the wrong namespace satisfies the check -- and the
+# management namespace is one of the things the rename moves.
+#
+# The CRDs are the OLD group. This is the pre-rename install; the new group
+# arrives on the after side, and lives in DOCUMENTED_GROUP_MIGRATION.
 REQUIRED_BASELINE = {
-    ("Deployment", "cloud-workflow-engine"),
-    ("Service", "cloud-workflow-engine"),
-    ("ServiceAccount", "cloud-workflow-engine"),
-    ("ServiceMonitor", "cloud-workflow-engine-metrics"),
-    ("ConfigMap", "nke-controller-config"),
-    ("ConfigMap", "nke-rbac"),
-    ("Namespace", "nke-system"),
+    ("ClusterRole", None, "cloud-workflow-engine-releases"),
+    ("ClusterRoleBinding", None, "cloud-workflow-engine-releases"),
+    ("ConfigMap", "nke-system", "nke-controller-config"),
+    ("ConfigMap", "nke-system", "nke-rbac"),
+    ("CustomResourceDefinition", None, "clusterreleases.internal.nke.nvidia.com"),
+    ("CustomResourceDefinition", None, "machineimages.internal.nke.nvidia.com"),
+    ("CustomResourceDefinition", None, "nodepoolreleases.internal.nke.nvidia.com"),
+    ("Deployment", "nke-system", "cloud-workflow-engine"),
+    ("Namespace", None, "nke-system"),
+    ("NetworkPolicy", "nke-system", "cloud-workflow-engine-metrics"),
+    ("Role", "nke-system", "cloud-workflow-engine"),
+    ("Role", "nke-system", "cloud-workflow-engine-nke-rbac"),
+    ("RoleBinding", "nke-system", "cloud-workflow-engine"),
+    ("RoleBinding", "nke-system", "cloud-workflow-engine-nke-rbac"),
+    ("Service", "nke-system", "cloud-workflow-engine"),
+    ("ServiceAccount", "nke-system", "cloud-workflow-engine"),
+    ("ServiceMonitor", "nke-system", "cloud-workflow-engine-metrics"),
 }
 
 
 def check_baseline(args: argparse.Namespace) -> int:
     """Assert the before snapshot is a pre-rename install, not an already-renamed one."""
     before = json.loads(pathlib.Path(args.snapshot).read_text())
-    present = {(e["kind"], e["name"]) for e in before["objects"] if e["present"]}
+    present = {key(e) for e in before["objects"] if e["present"]}
     missing = sorted(REQUIRED_BASELINE - present)
-    failures = [f"{kind} {name}" for kind, name in missing]
+    failures = [f"{kind} {name}{' in ' + ns if ns else ''}" for kind, ns, name in missing]
 
     # The container name is the one the fleet dashboards select on, and it is
     # not an object name, so the set above cannot see it.
