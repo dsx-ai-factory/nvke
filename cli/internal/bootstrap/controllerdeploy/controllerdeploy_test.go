@@ -478,7 +478,18 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	}
 }
 
-// TestDeploy_EmptyOIDCUsernamePrefix verifies Helm receives an explicit empty prefix and no discovery override.
+// TestDeploy_OmitsUnsetOIDCDiscoveryURL verifies an unset override preserves default discovery behavior.
+func TestDeploy_OmitsUnsetOIDCDiscoveryURL(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.OIDCProviders = []sitespec.OIDCProvider{{Name: "corp", IssuerURL: "https://login.example.com"}}
+	runner := &fakeRunner{}
+	require.NoError(t, New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg))
+	extra := runner.extraValuesFiles[cweReleaseName]
+	require.Len(t, extra, 2)
+	assert.NotContains(t, extra[1], "discoveryURL:")
+}
+
+// TestDeploy_EmptyOIDCUsernamePrefix verifies Helm receives an explicit empty username prefix.
 func TestDeploy_EmptyOIDCUsernamePrefix(t *testing.T) {
 	cfg := testConfig(t)
 	usernamePrefix := ""
@@ -487,7 +498,6 @@ func TestDeploy_EmptyOIDCUsernamePrefix(t *testing.T) {
 	require.NoError(t, New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg))
 	extra := runner.extraValuesFiles[cweReleaseName]
 	require.Len(t, extra, 2)
-	assert.NotContains(t, extra[1], "discoveryURL:")
 	var rendered struct {
 		OIDC struct {
 			Providers []struct {
