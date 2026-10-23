@@ -214,8 +214,10 @@ jobs:
 
   # edge moves only forward. Each main commit publishes in its own group, so
   # two runs can finish out of order; this job's single group lets one move
-  # edge at a time, and a run whose commit edge already contains leaves it. A
-  # pending run a newer one displaces is cancelled, which loses nothing.
+  # edge at a time, and a run whose commit edge already contains leaves it.
+  # GitHub keeps one pending run per group and cancels it when another queues,
+  # even an older commit's, so each run moves edge to the newest published and
+  # attested commit rather than its own.
   edge:
     if: github.repository_id == '1323115536' && github.ref == 'refs/heads/main'
     needs: publish
@@ -228,6 +230,7 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: read
+      attestations: read    # a newer commit counts only once it is attested
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -251,11 +254,47 @@ jobs:
         env:
           IMAGE: ${{ needs.publish.outputs.image }}
           INDEX_DIGEST: ${{ needs.publish.outputs.index_digest }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           target="${IMAGE}:edge"
           # main may have moved past this commit since checkout.
           git fetch --quiet origin main
+
+          # A newer commit's edge run may have been cancelled while pending, by
+          # a run that queued after it, possibly this one. So edge goes to the
+          # newest main commit whose sha- tag is published and attested, this
+          # one at least. A tag is pushed before its run attests it, so a tag
+          # alone may be a run still finishing, or one that failed.
+          attested() {
+            local status
+            status="$(curl -sS -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/attestations/$1")"
+            case "${status}" in
+              200) return 0 ;;
+              404) return 1 ;;
+              *) echo "::error::looking up the attestation for $1 returned HTTP ${status}"; exit 1 ;;
+            esac
+          }
+          commit="${GITHUB_SHA}"
+          digest="${INDEX_DIGEST}"
+          mapfile -t newer < <(git rev-list --max-count=50 "${GITHUB_SHA}..origin/main")
+          for candidate in "${newer[@]}"; do
+            if docker buildx imagetools inspect --raw "${IMAGE}:sha-${candidate}" \
+                > "${RUNNER_TEMP}/candidate.json" 2> "${RUNNER_TEMP}/inspect.err"; then
+              candidate_digest="sha256:$(sha256sum "${RUNNER_TEMP}/candidate.json" | cut -d' ' -f1)"
+              if attested "${candidate_digest}"; then
+                commit="${candidate}"
+                digest="${candidate_digest}"
+                break
+              fi
+            elif ! grep -qF "${IMAGE}:sha-${candidate}: not found" "${RUNNER_TEMP}/inspect.err"; then
+              cat "${RUNNER_TEMP}/inspect.err" >&2
+              echo "::error::could not look up ${IMAGE}:sha-${candidate}"
+              exit 1
+            fi
+          done
 
           if docker buildx imagetools inspect "${target}" \
               --format '{{ index (index .Image "linux/amd64").Config.Labels "org.opencontainers.image.revision" }}' \
@@ -269,15 +308,15 @@ jobs:
             exit 1
           fi
 
-          if [[ -n "${current}" ]] && git merge-base --is-ancestor "${GITHUB_SHA}" "${current}" 2>/dev/null; then
-            echo "- \`${target}\` stays at \`${current}\`, which already contains this commit" >> "${GITHUB_STEP_SUMMARY}"
+          if [[ -n "${current}" ]] && git merge-base --is-ancestor "${commit}" "${current}" 2>/dev/null; then
+            echo "- \`${target}\` stays at \`${current}\`, which already contains \`${commit}\`" >> "${GITHUB_STEP_SUMMARY}"
             exit 0
           fi
 
-          docker buildx imagetools create --tag "${target}" "${IMAGE}@${INDEX_DIGEST}"
+          docker buildx imagetools create --tag "${target}" "${IMAGE}@${digest}"
           moved="sha256:$(docker buildx imagetools inspect --raw "${target}" | sha256sum | cut -d' ' -f1)"
-          if [[ "${moved}" != "${INDEX_DIGEST}" ]]; then
-            echo "::error::${target} is ${moved}, expected ${INDEX_DIGEST}"
+          if [[ "${moved}" != "${digest}" ]]; then
+            echo "::error::${target} is ${moved}, expected ${digest}"
             exit 1
           fi
-          echo "- \`${target}\` now points at \`${INDEX_DIGEST}\`" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- \`${target}\` now points at \`${digest}\`, built from \`${commit}\`" >> "${GITHUB_STEP_SUMMARY}"
