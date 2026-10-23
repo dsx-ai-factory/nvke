@@ -1,9 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Local-development scaffolding for NVKE API authentication. Development only. A
-# real deployment needs just the JWKS discovery ClusterRoleBinding, which the
-# chart renders from apiAuth.clusterIssuerDiscovery.
+# Local-development scaffolding for NVKE API authentication and authorization.
+# Development only. A real deployment needs just the JWKS discovery
+# ClusterRoleBinding, which the chart renders from
+# apiAuth.clusterIssuerDiscovery.
 #
 # Two client identities, so the negative cases can be exercised by hand:
 #
@@ -13,7 +14,17 @@
 #   kubectl create token nke-client -n nke-clients \
 #     --audience=https://nke.tilt.local --duration=10m
 #
-# nvkectl mints that same admitted identity from a management-cluster kubeconfig
+# The role mappings ConfigMap at the end of this file grants each admitted
+# identity its role:
+#
+#   nke-clients/nke-client         admin   authn's default identity, which
+#                                          nvkectl and most e2e specs use
+#   nvke-system/nke-cli            reader  "the reader role" spec
+#                                          (test/e2e/authz_test.go)
+#   nke-clients/nke-claim-subject  reader  authz_claims_test.go's mapped-role
+#                                          spec, see its own comment below
+#
+# nvkectl mints nke-clients/nke-client from a management-cluster kubeconfig
 # (nvkectl config set-site --kubeconfig). The token-minter RoleBindings below
 # are for the nke-e2e ServiceAccount the e2e suite uses, not for a human
 # operator. A cluster-admin kubeconfig, including Tilt's kind user, can mint
@@ -157,8 +168,108 @@ subjects:
     name: nke-e2e
     namespace: nke-clients
 ---
+# The reader-role identity the dev role mappings grant. Tilt's
+# nvke-system-namespace resource owns creating this namespace, hence
+# nvke-auth-dev's resource_deps on it (Tiltfile).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nke-cli
+  namespace: nvke-system
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nke-cli-token-minter
+  namespace: nvke-system
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: ["nke-cli"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nke-cli-token-minter
+  namespace: nvke-system
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nke-cli-token-minter
+subjects:
+  - kind: ServiceAccount
+    name: nke-e2e
+    namespace: nke-clients
+---
+# The identity for authz_claims_test.go's "grants a role by (namespace, service
+# account) match" spec. No other spec authenticates as it: nke-client is authn's
+# default admitted identity, which most e2e specs authenticate as, and holds
+# admin. No other mapping names it, so a 200 proves its nke-authz-role-mappings
+# entry granted the role.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nke-claim-subject
+  namespace: nke-clients
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nke-claim-subject-token-minter
+  namespace: nke-clients
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: ["nke-claim-subject"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nke-claim-subject-token-minter
+  namespace: nke-clients
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nke-claim-subject-token-minter
+subjects:
+  - kind: ServiceAccount
+    name: nke-e2e
+    namespace: nke-clients
+---
 # The authentication configuration, mounted at /etc/nke/auth/auth.yaml by the
-# chart. See internal/auth and the README for the schema. Only
+# chart. See auth/authn and the README for the schema. Only
 # auth.nke.nvidia.com/v1alpha1 is accepted: the apiserver's own
 # AuthenticationConfiguration shares the kind but not the group.
 apiVersion: v1
@@ -193,6 +304,12 @@ data:
             # the namespace, nke-e2e above included.
             - namespace: nke-clients
               name: nke-client
+            - namespace: nvke-system
+              name: nke-cli
+            - namespace: nke-clients
+              name: nke-claim-subject
+        # Admission only. nke-authz-role-mappings, below, grants each of these
+        # a role through this issuer.
       # SPIRE is omitted because it is not reachable yet, and an unreachable
       # issuer is a startup failure in enforcing mode. Two things are missing: the
       # discovery provider's serving certificate does not carry the in-cluster
@@ -210,3 +327,37 @@ data:
       #       spiffe:
       #         trustDomain: controller-capi.nvke.local
       #         pathPrefixes: ["/nke-e2e/"]
+---
+# The dev role mappings. The controller chart projects roleMappings.json from
+# the ConfigMap apiAuthz.roleMappingsConfigMap names, nke-authz-role-mappings
+# by default, in the release namespace. The chart never renders it, so an edit
+# here re-applies it and the controller reloads it without a restart.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nke-authz-role-mappings
+  namespace: nke-controller
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-authz-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-authz-dev
+data:
+  roleMappings.json: |
+    [
+      {
+        "issuer": "local-kubernetes",
+        "serviceAccount": { "namespace": "nke-clients", "name": "nke-client" },
+        "grants": [{ "type": "NKE::Role", "id": "admin" }]
+      },
+      {
+        "issuer": "local-kubernetes",
+        "serviceAccount": { "namespace": "nvke-system", "name": "nke-cli" },
+        "grants": [{ "type": "NKE::Role", "id": "reader" }]
+      },
+      {
+        "issuer": "local-kubernetes",
+        "serviceAccount": { "namespace": "nke-clients", "name": "nke-claim-subject" },
+        "grants": [{ "type": "NKE::Role", "id": "reader" }]
+      }
+    ]

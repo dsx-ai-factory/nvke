@@ -192,22 +192,63 @@ e2e_run_ginkgo() {
 # touches it: a label-filter exclusion prints nothing, only a spec that started
 # and skipped does.
 E2E_EXPECTED_RUNTIME_SKIPS=(
-  pod_cidr_test.go # multi-CIDR rollover, encoded only by the nico-vms specs
-  oidc_test.go     # OIDC is off in the deployments this runs against
+  pod_cidr_test.go      # multi-CIDR rollover, encoded only by the nico-vms specs
+  oidc_test.go          # OIDC is off in the deployments this runs against
+  authz_test.go         # see e2e_expected_skip_reason -- checked by message, not just filename
+  authz_claims_test.go  # see e2e_expected_skip_reason -- checked by message, not just filename
 )
 
-# Fails a leg on any runtime skip not listed above. Ginkgo reports these only
-# inside a "127 Skipped" total that is 126 label-filter exclusions, so a spec
-# that quietly stops running is indistinguishable from one that was never
-# selected.
+# The two authz files above get a second, narrower check: matching by
+# filename alone would let any other skip in the same file pass silently as
+# if it were the one skip this list exists to accept. Each lane's role
+# mappings (nke-authz-role-mappings in deploy/k8s/nvke-auth-dev.yaml) leave
+# exactly one spec per file skipping:
+#   authz_test.go         default-deny, because the mappings grant authn's
+#                         default identity admin
+#   authz_claims_test.go  the OIDC claim spec, because the mappings declare no
+#                         claim entry
+# Everything else stays filename-only: pod_cidr_test.go/oidc_test.go skip for
+# one reason each too, but nothing in their history has needed the extra
+# precision.
+e2e_expected_skip_reason() {
+  case "$1" in
+    authz_test.go) printf '%s' "is not a no-role subject in this deployment" ;;
+    authz_claims_test.go) printf '%s' "declares no claim entry, so there is no claim-based role grant to exercise" ;;
+    *) return 1 ;;
+  esac
+}
+
+# Fails a leg on any runtime skip not listed above, or on a skip in
+# authz_test.go/authz_claims_test.go whose message doesn't match the one
+# reason e2e_expected_skip_reason names for that file. Ginkgo reports these
+# only inside a "127 Skipped" total that is 126 label-filter exclusions, so a
+# spec that quietly stops running -- or stops running for a *different*
+# reason than the one this list was written to accept -- is otherwise
+# indistinguishable from one that was never selected.
 e2e_assert_no_new_skips() {
-  local log_fn="$1" log_file="$2" file unexpected=()
-  while read -r file; do
-    [[ -n "${file}" ]] || continue
-    # shellcheck disable=SC2076  # literal match is what we want here
-    [[ " ${E2E_EXPECTED_RUNTIME_SKIPS[*]} " =~ " ${file} " ]] || unexpected+=("${file}")
-  done < <(grep -oE '\[SKIPPED\] in \[It\] - [^ ]+' "${log_file}" |
-    sed -E 's#.*/##; s#:[0-9]+$##' | sort -u)
+  local log_fn="$1" log_file="$2" unexpected=()
+  local pending="" file reason expected
+  while IFS= read -r line; do
+    if [[ "${line}" =~ \[SKIPPED\]\ in\ \[(It|BeforeEach|JustBeforeEach)\]\ -\ ([^\ ]+) ]]; then
+      [[ -z "${pending}" ]] || unexpected+=("${pending}: no skip message found")
+      file="${BASH_REMATCH[2]}"
+      file="${file##*/}"
+      pending="${file%%:*}"
+      continue
+    fi
+    [[ -n "${pending}" ]] || continue
+    if [[ "${line}" =~ ^\ \ \[SKIPPED\]\ (.+)$ ]] && [[ "${line}" != *"[SKIPPED] in ["* ]]; then
+      reason="${BASH_REMATCH[1]}"
+      # shellcheck disable=SC2076  # literal match is what we want here
+      if [[ ! " ${E2E_EXPECTED_RUNTIME_SKIPS[*]} " =~ " ${pending} " ]]; then
+        unexpected+=("${pending}")
+      elif expected="$(e2e_expected_skip_reason "${pending}")"; then
+        [[ "${reason}" == *"${expected}"* ]] || unexpected+=("${pending}: ${reason}")
+      fi
+      pending=""
+    fi
+  done < "${log_file}"
+  [[ -z "${pending}" ]] || unexpected+=("${pending}: no skip message found")
 
   if ((${#unexpected[@]} > 0)); then
     "${log_fn}" "specs skipped at run time that were expected to run: ${unexpected[*]}" >&2
@@ -339,12 +380,13 @@ E2E_CAPD_PROVIDERS='["capi_core", "bgp-containers", "capd", "capd-reboot-control
 
 # The label filter for the full suite, built from the backend's ginkgo label. It
 # runs every entry for the backend, cp-controller entries included, plus the
-# `health` probes against the deployed controller and the authentication specs.
-# authn-spire stays out because it needs SPIRE pod attestation that neither
-# container-backed backend wires up. The CI workflows pass the same expression
-# as `label-filter` for their full runs; keep the three in step.
+# `health` probes against the deployed controller and the authentication and
+# authorization specs. authn-spire and authz-spiffe stay out because they need
+# SPIRE pod attestation that neither container-backed backend wires up. The CI
+# workflows pass the same expression as `label-filter` for their full runs; keep
+# the three in step.
 e2e_suite_filter() {
-  printf '((%s || health) || (authn && !authn-spire) || authn-permissive) && !tpm-attestation && !gpu' "$1"
+  printf '((%s || health) || (authn && !authn-spire) || authn-permissive || (authz && !authz-spiffe)) && !tpm-attestation && !gpu' "$1"
 }
 
 # Kept for callers that still name CAPD directly.

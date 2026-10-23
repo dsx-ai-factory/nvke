@@ -233,7 +233,7 @@ func AudienceFromCluster(ctx context.Context, client kubernetes.Interface) (stri
 		return "", false, err
 	}
 
-	// Only the one field, rather than reproducing internal/auth's schema.
+	// Only the one field, rather than reproducing auth/authn's schema.
 	var parsed struct {
 		Audiences []string `json:"audiences"`
 	}

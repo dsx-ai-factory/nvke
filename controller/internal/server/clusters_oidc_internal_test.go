@@ -82,6 +82,6 @@ func TestWithFleetOIDCReachesTheClusterService(t *testing.T) {
 	t.Parallel()
 	fleetOIDC := &controllerconfig.OIDCConfig{}
 
-	assert.Same(t, fleetOIDC, NewServerImpl(config.Config{}, slog.New(slog.DiscardHandler), nil, nil, nil, WithFleetOIDC(fleetOIDC)).clusterService.fleetOIDC)
-	assert.Nil(t, NewServerImpl(config.Config{}, slog.New(slog.DiscardHandler), nil, nil, nil).clusterService.fleetOIDC)
+	assert.Same(t, fleetOIDC, NewServerImpl(config.Config{}, slog.New(slog.DiscardHandler), nil, nil, nil, nil, nil, WithFleetOIDC(fleetOIDC)).clusterService.fleetOIDC)
+	assert.Nil(t, NewServerImpl(config.Config{}, slog.New(slog.DiscardHandler), nil, nil, nil, nil, nil).clusterService.fleetOIDC)
 }

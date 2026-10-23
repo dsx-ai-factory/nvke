@@ -32,6 +32,10 @@
 {{- include "controller.renamedValues.validate" . }}
 {{- include "controller.apiAuth.validate" . }}
 {{- include "controller.controllerConfig.validateEnv" . }}
+{{- if and .Values.apiAuthz.enabled (not .Values.apiAuth.enabled) }}
+{{- fail "apiAuthz.enabled requires apiAuth.enabled: authorizing a caller nobody authenticated is not a meaningful state" }}
+{{- end }}
+{{- include "controller.apiAuthz.validate" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -205,6 +209,11 @@ spec:
               mountPath: {{ include "controller.apiAuth.mountPath" . | quote }}
               readOnly: true
             {{- end }}
+            {{- if .Values.apiAuthz.enabled }}
+            - name: nke-authz-policy
+              mountPath: {{ include "controller.apiAuthz.mountPath" . | quote }}
+              readOnly: true
+            {{- end }}
             {{- if .Values.profiles.image.enabled }}
             - name: profiles
               mountPath: {{ .Values.profiles.path | quote }}
@@ -301,6 +310,12 @@ spec:
             - name: AUTH_CONFIG_PATH
               value: {{ printf "%s/%s" (include "controller.apiAuth.mountPath" .) (include "controller.apiAuth.configFile" .) | quote }}
             {{- end }}
+            {{- if .Values.apiAuthz.enabled }}
+            # Omitted when disabled, never set empty: NKE reads an empty value as
+            # unset, so the deployment would look configured and authorize nobody.
+            - name: AUTHZ_BUNDLE_PATH
+              value: {{ include "controller.apiAuthz.mountPath" . | quote }}
+            {{- end }}
             {{- range .Values.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}
@@ -354,6 +369,65 @@ spec:
         - name: nvke-auth-config
           configMap:
             name: {{ required "apiAuth.configMap.name is required when apiAuth.enabled=true" .Values.apiAuth.configMap.name }}
+        {{- end }}
+        {{- if .Values.apiAuthz.enabled }}
+        # One projected volume on both paths, every key listed, from
+        # controller.apiAuthz.packagedFiles so the mount and the chart's
+        # ConfigMap carry the same file set. With
+        # apiAuthz.existingConfigMap empty it mounts the chart's ConfigMap
+        # whole; set, it mounts policies.cedar and roles.json from that
+        # ConfigMap and actions.json from the chart's. Listing the items makes
+        # each path's file set part of the Deployment spec, and turns a missing
+        # key or ConfigMap into a mount failure that holds the pod in
+        # ContainerCreating, rather than starting NKE with part of a bundle.
+        # There is no per-file fallback between the two: the loader validates
+        # the bundle as one unit, and a site's policy must not pair with
+        # whatever roles the next release ships.
+        #
+        # roleMappings.json comes from the operator's mappings ConfigMap on
+        # both paths. That source alone is optional: the chart never renders
+        # it, so a missing one is the likeliest install mistake. With the
+        # source optional, a missing ConfigMap or key leaves the file absent,
+        # and the loader refuses to start with an error naming
+        # apiAuthz.roleMappingsConfigMap. A required source would hold the pod
+        # in ContainerCreating, explained only by a kubelet event.
+        {{- $default := include "controller.apiAuthz.defaultConfigMapName" . }}
+        {{- $name := include "controller.apiAuthz.existingConfigMap" . }}
+        {{- $mappings := include "controller.apiAuthz.roleMappingsConfigMap" . }}
+        {{- $files := include "controller.apiAuthz.packagedFiles" . | fromJson }}
+        - name: nke-authz-policy
+          projected:
+            sources:
+              {{- if $name }}
+              - configMap:
+                  name: {{ $name | quote }}
+                  items:
+                    {{- range $key, $_ := $files }}
+                    {{- if ne $key "actions.json" }}
+                    - key: {{ $key }}
+                      path: {{ $key }}
+                    {{- end }}
+                    {{- end }}
+              - configMap:
+                  name: {{ $default }}
+                  items:
+                    - key: actions.json
+                      path: actions.json
+              {{- else }}
+              - configMap:
+                  name: {{ $default }}
+                  items:
+                    {{- range $key, $_ := $files }}
+                    - key: {{ $key }}
+                      path: {{ $key }}
+                    {{- end }}
+              {{- end }}
+              - configMap:
+                  name: {{ $mappings | quote }}
+                  optional: true
+                  items:
+                    - key: roleMappings.json
+                      path: roleMappings.json
         {{- end }}
         {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}

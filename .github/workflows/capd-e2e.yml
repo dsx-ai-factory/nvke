@@ -23,6 +23,7 @@ on:
       - "pull-request/[0-9]+"
     paths:
       - "controller/**"
+      - "auth/**"
       - "agent/**"
       - Makefile
       # Without these, a change to the suite's own workflow or to the shared
@@ -117,13 +118,16 @@ jobs:
       arch: ${{ matrix.arch }}
       runner: ${{ matrix.runner }}
       # Mirror branches select only the bounded core entry and health probes.
-      # Full runs select every CAPD entry plus `health` and the authn specs, both
-      # of which need a deployed, enforcing NVKE. authn-spire is excluded (needs
-      # SPIRE pod attestation not wired in CAPD). Keep the full expression in
-      # step with e2e_suite_filter in hack/backend-e2e-lib.sh.
+      # Full runs select every CAPD entry plus `health` and the authn and authz
+      # specs, all of which need a deployed, enforcing NVKE. authn-spire is
+      # excluded (needs SPIRE pod attestation not wired in CAPD), and
+      # authz-spiffe for the same reason: it needs a spiffe mapping plus SPIRE
+      # pod attestation (test/e2e/authz_test.go's "the operator and
+      # nodeOperator roles" doc comment). Keep the full expression in step with
+      # e2e_suite_filter in hack/backend-e2e-lib.sh.
       # CAPD nodes are containers, with no TPM and no GPU, so a spec that needs
       # either is excluded whatever else selects it.
-      label-filter: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && '(core-docker || health) && !tpm-attestation && !gpu' || '((capd || health) || (authn && !authn-spire) || authn-permissive) && !tpm-attestation && !gpu' }}
+      label-filter: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && '(core-docker || health) && !tpm-attestation && !gpu' || '((capd || health) || (authn && !authn-spire) || authn-permissive || (authz && !authz-spiffe)) && !tpm-attestation && !gpu' }}
       providers: '["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]'
       # copy-pr-bot mirrors PRs onto pull-request/<n> for self-hosted runners.
       # Mirrored runs select the smaller core/health suite; 30 minutes leaves
@@ -135,6 +139,8 @@ jobs:
       # the authn specs run in the full runs, and without this a broken auth
       # deployment would leave them silently skipped and the job green.
       require-authn: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}
+      # Same reasoning as require-authn, for the authz specs riding the same runs.
+      require-authz: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}
       nvkectl-smoke: true
       needs-capnico-source: true
       # Default on every trigger; a dispatch can still opt out.

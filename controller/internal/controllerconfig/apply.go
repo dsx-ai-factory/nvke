@@ -112,4 +112,5 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 
 	cfg.PermissiveMode = c.PermissiveMode
 	cfg.AllowControlPlaneWithoutVIP = c.AllowControlPlaneWithoutVIP
+	cfg.AuthzPermissive = c.AuthzPermissive
 }

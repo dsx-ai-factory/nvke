@@ -63,6 +63,13 @@ on:
         required: false
         type: boolean
         default: false
+      require-authz:
+        description: >-
+          Fail rather than skip when the deployment is not authorizing. Only
+          meaningful for a backend whose label-filter selects the authz specs.
+        required: false
+        type: boolean
+        default: false
       install-cni-after-init:
         description: >-
           Have the controller initialize the first control-plane before invoking the node
@@ -133,6 +140,7 @@ jobs:
       NKE_E2E_LABEL_FILTER: ${{ inputs.label-filter }}
       NKE_E2E_PROVIDERS: ${{ inputs.providers }}
       NKE_E2E_REQUIRE_AUTHN: ${{ inputs.require-authn }}
+      NKE_E2E_REQUIRE_AUTHZ: ${{ inputs.require-authz }}
       NKE_E2E_NVKECTL_SMOKE: ${{ inputs.nvkectl-smoke }}
       INSTALL_CNI_AFTER_INIT: ${{ inputs.install-cni-after-init }}
       # Empty unless the caller selects the umbrella-chart deploy. backend-e2e.sh

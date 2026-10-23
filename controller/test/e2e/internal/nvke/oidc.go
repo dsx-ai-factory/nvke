@@ -36,6 +36,12 @@ const (
 	// permissiveModeKey decides whether a failed authentication check rejects
 	// the request or is only counted.
 	permissiveModeKey = "permissiveMode"
+	// authzPermissiveModeKey is authorization's own equivalent of
+	// permissiveModeKey, read by internal/authz/middleware.go's deny(). A
+	// separate key because authn and authz are independently configurable,
+	// but see SetAuthzPermissiveMode for why a caller that flips one during a
+	// live request stream usually needs to flip both.
+	authzPermissiveModeKey = "authzPermissive"
 )
 
 // ControllerSetting returns the value at key, a dotted config.yaml path such as
@@ -88,6 +94,26 @@ func SetOIDCEnabled(ctx context.Context, c client.Client, enabled bool) error {
 // the ConfigMap, so a permissive value left there makes them skip.
 func SetPermissiveMode(ctx context.Context, c client.Client, permissive bool) (bool, bool, error) {
 	previous, written, err := setControllerSetting(ctx, c, permissiveModeKey, permissive)
+	return previous == true, written, err
+}
+
+// SetAuthzPermissiveMode sets authzPermissive in nke-controller-config, restarts
+// the controller and waits for the rollout, returning the value it replaced and
+// whether the ConfigMap was written. Same shape as SetPermissiveMode, for
+// authorization instead of authentication.
+//
+// internal/authz/middleware.go's Wrap runs after auth/authn's own Wrap and
+// hard-denies ReasonNoPrincipal (no Principal on the request context)
+// whenever it is enforcing — a real, intentional invariant, not a bug: no
+// Principal means either the chain is misordered, or authentication admitted
+// the request without one. Authentication's own permissive mode does exactly
+// that for an unauthenticated request. So a caller that puts authentication
+// into permissive mode while authorization is deployed and enforcing needs to
+// put authorization into permissive mode too, for the same window, or
+// authorization will hard-deny the very traffic authentication's permissive
+// mode promised not to disrupt.
+func SetAuthzPermissiveMode(ctx context.Context, c client.Client, permissive bool) (bool, bool, error) {
+	previous, written, err := setControllerSetting(ctx, c, authzPermissiveModeKey, permissive)
 	return previous == true, written, err
 }
 

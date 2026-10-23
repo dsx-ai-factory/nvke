@@ -10,6 +10,14 @@ apiAuth:
   enabled: true
   permissive: false
 
+# Enforcing, for the authz specs this lane runs, on the chart's roles and
+# policies (<fullname>-authz-default). roleMappings.json comes from
+# nke-authz-role-mappings, which the nvke-auth-dev item applies before this
+# release.
+apiAuthz:
+  enabled: true
+  permissive: false
+
 # The controller reconciles CAPI objects, so it needs the RBAC for them.
 # The controller accepts only the API provider blocks named here, and the chart defaults
 # to nico. This lane submits Infra blocks against CAPD, so without it every

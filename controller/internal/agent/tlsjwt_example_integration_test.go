@@ -29,7 +29,7 @@ import (
 	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 	"github.com/dsx-ai-factory/nvke/agent/pkg/nkeauth"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/auth/authn"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
@@ -90,7 +90,7 @@ func TestIntegration_TLSJWTGRPC(t *testing.T) {
 		return jwt.MapClaims{
 			"iss": issuer,
 			"sub": "spiffe://dsx.example.test/bm/" + node.ID.String(),
-			"aud": auth.NodeAgentAudience,
+			"aud": authn.NodeAgentAudience,
 			"nbf": now.Add(-time.Minute).Unix(),
 			"exp": now.Add(time.Minute).Unix(),
 		}

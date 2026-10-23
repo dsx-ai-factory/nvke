@@ -102,6 +102,18 @@ const (
 	UpdateInProgressTypeSpireServerUpdate UpdateInProgressType = "spire_server_update"
 )
 
+// AuthzReloadResult The outcome of a policy bundle reload on the replica that answered.
+type AuthzReloadResult struct {
+	// Changed Whether the bundle's content actually differs from what was live before this call. False on a reload that succeeded but reproduced byte-identical content, and false on a throttled call.
+	Changed bool `json:"changed"`
+
+	// Throttled True when this call landed within the reload throttle window and no new load was attempted; the rest of the body reports the previous attempt's outcome instead.
+	Throttled bool `json:"throttled"`
+
+	// Source Always "endpoint" for this route; distinguishes this trigger from the background poll in logs and metrics.
+	Source string `json:"source"`
+}
+
 // CloudInitFile A file written by cloud-init on CAPI-backed nodes.
 type CloudInitFile struct {
 	// Content File contents written by cloud-init.

@@ -883,10 +883,13 @@ k8s_resource(
     pod_readiness="ignore",
 )
 
-# NVKE API authentication scaffolding: the client namespaces and service accounts
-# the demo mints tokens for, the token-minter RBAC, and the auth config the
-# deployment mounts at /etc/nke/auth/auth.yaml. The NVKE release depends on this
-# so the ConfigMap exists before the pod mounts it.
+# NVKE API authentication and authorization scaffolding: the client namespaces
+# and service accounts the demo mints tokens for, the token-minter RBAC, the
+# auth config the deployment mounts at /etc/nke/auth/auth.yaml, and the dev
+# role mappings the chart projects as roleMappings.json. The NVKE release
+# depends on this so both ConfigMaps exist before the pod mounts them. Editing
+# the role mappings re-applies them, and the controller reloads them without a
+# restart.
 k8s_resource(
     new_name="nvke-auth-dev",
     labels=["1-infra"],
@@ -897,13 +900,28 @@ k8s_resource(
         "nke-client:serviceaccount:nke-clients",
         "nke-outsider:serviceaccount:nke-outsiders",
         "nke-e2e:serviceaccount:nke-clients",
+        "nke-cli:serviceaccount:nvke-system",
+        "nke-claim-subject:serviceaccount:nke-clients",
         "nke-client-token-minter:role:nke-clients",
         "nke-client-token-minter:rolebinding:nke-clients",
         "nke-outsider-token-minter:role:nke-outsiders",
         "nke-outsider-token-minter:rolebinding:nke-outsiders",
+        "nke-cli-token-minter:role:nvke-system",
+        "nke-cli-token-minter:rolebinding:nvke-system",
+        "nke-claim-subject-token-minter:role:nke-clients",
+        "nke-claim-subject-token-minter:rolebinding:nke-clients",
         "nvke-auth-config:configmap:nke-controller",
+        "nke-authz-role-mappings:configmap:nke-controller",
     ],
-    resource_deps=["check-management-cluster"],
+    # nke-cli:serviceaccount:nvke-system (and its Role/RoleBinding) are applied
+    # into the nvke-system namespace, which nvke-system-namespace (above) owns
+    # creating -- without this dep both become eligible right after
+    # check-management-cluster and the apply can race namespace creation.
+    #
+    # nke-claim-subject and its Role/RoleBinding live in nke-clients, which
+    # this resource creates. An object not listed here is applied outside
+    # these resource_deps and races that namespace.
+    resource_deps=["check-management-cluster", "nvke-system-namespace"],
     pod_readiness="ignore",
 )
 
@@ -1035,6 +1053,19 @@ _controller_auth_enabled = os.getenv(
 _controller_permissive_mode = os.getenv(
     "NKE_PERMISSIVE_MODE", _tilt_env.get("NKE_PERMISSIVE_MODE", "false")) == "true"
 
+# NVKE API authorization. Enforcing by default alongside authn, on the chart's
+# roles and policies and the dev role mappings (nvke-auth-dev, above). The
+# chart refuses apiAuthz.enabled without apiAuth.enabled (deployment.yaml), so
+# NKE_AUTH_ENABLED=false turns authz off too.
+#
+#   NKE_AUTHZ_ENABLED=false tilt up        -> AUTHZ_BUNDLE_PATH unset, authz off
+#   NKE_AUTHZ_PERMISSIVE_MODE=true tilt up -> evaluate and count, never reject
+#
+_controller_authz_enabled = os.getenv(
+    "NKE_AUTHZ_ENABLED", _tilt_env.get("NKE_AUTHZ_ENABLED", "true")) == "true"
+_controller_authz_permissive_mode = os.getenv(
+    "NKE_AUTHZ_PERMISSIVE_MODE", _tilt_env.get("NKE_AUTHZ_PERMISSIVE_MODE", "false")) == "true"
+
 _controller_chart_extra_env_names = [
     "NODE_PROVISIONING_TIMEOUT",
     "NODE_REBOOT_POLLING_INTERVAL",
@@ -1083,6 +1114,8 @@ _controller_chart_flags = [
     "--set-string", "appDb.postgresPassword=%s" % _postgres_superuser_password,
     "--set", "apiAuth.enabled=%s" % ("true" if _controller_auth_enabled else "false"),
     "--set", "apiAuth.permissive=%s" % ("true" if _controller_permissive_mode else "false"),
+    "--set", "apiAuthz.enabled=%s" % ("true" if (_controller_auth_enabled and _controller_authz_enabled) else "false"),
+    "--set", "apiAuthz.permissive=%s" % ("true" if _controller_authz_permissive_mode else "false"),
     "--set", "capi.rbac.create=true",
     # machine-engine-crds installs them, so Helm must not try to own them.
     "--set", "releaseCRDs.install=false",
