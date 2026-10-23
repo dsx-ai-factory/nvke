@@ -933,7 +933,8 @@ paths:
         `machineHealthIssue` is invalid. Delete the cluster to remove its last
         joined control-plane node.
         Deleting a control-plane node requires controlPlaneVIP because the controller
-        replaces it, unless allowControlPlaneWithoutVIP is enabled for development. Worker node deletion is unaffected.
+        replaces it, unless allowControlPlaneWithoutVIP is enabled for development.
+        Worker node deletion is unaffected.
 
         Returns 409 for a control-plane node while etcd encryption or certificate
         renewal holds the control-plane mutation lock. Retry once the operation
