@@ -15,6 +15,7 @@ on:
       - "pull-request/[0-9]+"
     paths:
       - "controller/**"
+      - "auth/**"
       - "agent/**"
       - .github/workflows/capd-dsx-identity-exchange-e2e.yml
       - .github/workflows/backend-e2e.yml
@@ -42,7 +43,7 @@ jobs:
     with:
       # Keep in step with the push paths above. The Helm chart is below
       # controller/, so no separate pattern is needed for it.
-      relevant_paths: '^controller/|^agent/|^\.github/workflows/(capd-dsx-identity-exchange-e2e|backend-e2e|e2e-pr-path-filter)\.yml$'
+      relevant_paths: '^controller/|^auth/|^agent/|^\.github/workflows/(capd-dsx-identity-exchange-e2e|backend-e2e|e2e-pr-path-filter)\.yml$'
 
   # Keep the ordinary direct-SPIRE CAPD lane as a control. This small lifecycle
   # uses the real exec plugin, a real local JWT-SVID and a real tenant apiserver.

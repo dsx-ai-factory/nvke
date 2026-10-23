@@ -23,8 +23,10 @@ import (
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 
+	"github.com/dsx-ai-factory/nvke/auth/authn"
+
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/controller/internal/authz"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/automode"
@@ -124,7 +126,7 @@ func main() {
 
 	logger.Info("Loaded nke-controller-config", "path", cfg.ControllerConfigPath, "oidcProviders", len(controllerCfg.OIDC.Providers))
 
-	authenticator, err := auth.Setup(ctx, auth.Options{
+	authenticator, err := authn.Setup(ctx, authn.Options{
 		ConfigPath: cfg.AuthConfigPath,
 		Permissive: cfg.PermissiveMode,
 		Recorder:   metrics.RecordAuthRequest,
@@ -141,6 +143,15 @@ func main() {
 		metrics.SetAuthMode("permissive")
 	default:
 		metrics.SetAuthMode("enforcing")
+	}
+
+	// Alongside authentication, and before the migrations for the same reason: a
+	// policy engine holding no bundle refuses every request, and that is much
+	// better to learn at start time than at request time.
+	authzProvider, err := setUpAuthorization(ctx, cfg, authenticator, logger)
+	if err != nil {
+		logger.Error("Failed to set up API authorization", "error", err)
+		os.Exit(1)
 	}
 
 	// Get cloud-workflow-engine workload trust domain and bundle
@@ -449,7 +460,8 @@ func main() {
 		csr.NewRegistrar(dbInstance, logger.With("logger", "tenant-csr-controller")),
 	}
 	if !cfg.NodeHealthCheckDisabled {
-		tenantRegistrars = append(tenantRegistrars,
+		tenantRegistrars = append(
+			tenantRegistrars,
 			tenantnodestatus.NewRegistrar(dbInstance, logger.With("logger", "tenant-node-health-controller")),
 			tenantnoderemediation.NewRegistrar(
 				cfg,
@@ -563,6 +575,7 @@ func main() {
 		dbInstance,
 		temporalClient,
 		authenticator,
+		authzProvider,
 		managementK8sClient,
 		server.WithFleetOIDC(&controllerCfg.OIDC),
 		server.WithAllowLegacyCalicoClusterCreation(controllerCfg.AllowLegacyCalicoClusterCreation),
@@ -718,6 +731,35 @@ func registerTemporalNamespaceWithRetry(ctx context.Context, cfg config.Config, 
 		}
 	}
 	return lastErr
+}
+
+// setUpAuthorization loads the API authorization policy bundle and records the
+// authorization mode. A nil Provider with a nil error means authorization is off.
+func setUpAuthorization(
+	ctx context.Context,
+	cfg config.Config,
+	authenticator *authn.Authenticator,
+	logger *slog.Logger,
+) (*authz.Provider, error) {
+	authzProvider, err := authz.Setup(ctx, authz.Options{
+		BundleDir:              cfg.AuthzBundlePath,
+		Permissive:             cfg.AuthzPermissive,
+		Recorder:               metrics.RecordAuthzRequest,
+		GroupOnlyWriteRecorder: metrics.SetAuthzGroupOnlyWriteActions,
+		IssuerNames:            authenticator.IssuerNames(),
+	}, logger)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case cfg.AuthzBundlePath == "":
+		metrics.SetAuthzMode("off")
+	case cfg.AuthzPermissive:
+		metrics.SetAuthzMode("permissive")
+	default:
+		metrics.SetAuthzMode("enforcing")
+	}
+	return authzProvider, nil
 }
 
 func getSpiffeTrustDomain(ctx context.Context, cfg config.Config, logger *slog.Logger) (string, error) {

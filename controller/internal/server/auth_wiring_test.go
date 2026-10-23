@@ -4,7 +4,7 @@
 package server_test
 
 // Where authentication sits in the chain, tested through the real NewServer.
-// internal/auth's own tests drive a bare handler and prove nothing about the
+// auth/authn's own tests drive a bare handler and prove nothing about the
 // wiring. Routes are driven rather than read, because http.ServeMux is not
 // enumerable and the generated router types BaseRouter as a concrete
 // *http.ServeMux.
@@ -27,8 +27,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	auth "github.com/dsx-ai-factory/nvke/auth/authn"
+
 	"github.com/dsx-ai-factory/nvke/controller/api"
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/server"
@@ -79,7 +80,7 @@ func newEnforcingTestServer(t *testing.T) http.Handler {
 	require.NoError(t, err)
 
 	mockDB := &testutil.MockDB{}
-	srv, err := server.NewServer(cfg, logger, mockDB, nil, authn, nil)
+	srv, err := server.NewServer(cfg, logger, mockDB, nil, authn, nil, nil)
 	require.NoError(t, err)
 
 	return srv.Handler
@@ -131,14 +132,14 @@ func newPermissiveTestServer(t *testing.T) (http.Handler, *decisions) {
 	mockDB := &testutil.MockDB{}
 	mockDB.On("ListClusters", mock.Anything, mock.Anything).Return([]db.Cluster{}, nil)
 
-	srv, err := server.NewServer(cfg, logger, mockDB, nil, authn, nil)
+	srv, err := server.NewServer(cfg, logger, mockDB, nil, authn, nil, nil)
 	require.NoError(t, err)
 
 	return srv.Handler, recorded
 }
 
 // Permissive serves the request and records what enforcing would have refused.
-// internal/auth proves the middleware does this; only the real chain shows that
+// auth/authn proves the middleware does this; only the real chain shows that
 // a permissive Authenticator hands the request on to the mux instead of
 // answering it.
 func TestPermissiveServerServesUnauthenticatedRequests(t *testing.T) {
@@ -218,7 +219,7 @@ func TestEnforcingServerRequiresTokenOnEveryOperation(t *testing.T) {
 		for method := range item.Operations() {
 			// Path parameters are left as literal "{id}" segments, so this only
 			// works if the 401 happens before routing.
-			target := "/api" + path
+			target := api.BasePath + path
 			t.Run(method+" "+target, func(t *testing.T) {
 				rr := httptest.NewRecorder()
 				handler.ServeHTTP(rr, httptest.NewRequestWithContext(t.Context(), method, target, http.NoBody))
@@ -253,7 +254,7 @@ func TestEnforcingServerAuthenticatesBeforeValidating(t *testing.T) {
 //
 // managed-by used to wrap logging, so it answered 409 before logging ever ran.
 // It is now inside logging, so the same 409 produces the usual request/response
-// pair. Asserted here because the ordering is invisible to internal/auth's own
+// pair. Asserted here because the ordering is invisible to auth/authn's own
 // tests and to middleware_test.go, which drives managedByMiddleware directly.
 func TestDisabledServerLogsTheManagedByRejection(t *testing.T) {
 	var logged bytes.Buffer
@@ -265,7 +266,7 @@ func TestDisabledServerLogsTheManagedByRejection(t *testing.T) {
 	}
 	mockDB := &testutil.MockDB{}
 	// nil authenticator: authentication is absent from the chain entirely.
-	srv, err := server.NewServer(cfg, logger, mockDB, nil, nil, nil)
+	srv, err := server.NewServer(cfg, logger, mockDB, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	rr := httptest.NewRecorder()

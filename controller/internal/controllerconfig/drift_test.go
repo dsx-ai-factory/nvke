@@ -65,6 +65,7 @@ var stayEnv = map[string]string{
 	// spiffe.spire.serverAddress is the override.
 	"SPIRE_SERVER_ADDRESS":   downwardAPI,
 	"AUTH_CONFIG_PATH":       separateFile,
+	"AUTHZ_BUNDLE_PATH":      separateFile,
 	"CONTROLLER_CONFIG_PATH": separateFile,
 
 	"LOG_LEVEL":                                chartUnset,
@@ -112,6 +113,7 @@ var configMapOnly = []string{
 	// The dual-accept window for the Teleport "managed-by" value. It exists
 	// because managedByLabelValue moved, which is newer than the environment.
 	"teleport.acceptedManagedByLabelValues",
+	"authzPermissive",
 }
 
 // chartDeployment is the template whose env block decides what the chart sets.

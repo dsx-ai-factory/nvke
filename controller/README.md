@@ -656,7 +656,7 @@ apiAuth:
     name: nvke-auth-config
   config:
     # No apiVersion or kind: the chart supplies both, and repeating them here
-    # renders duplicate keys that auth.Load refuses. The render fails if you do.
+    # renders duplicate keys that authn.Load refuses. The render fails if you do.
     audiences: ["https://nke.example.internal"]
     issuers:
       - name: local-kubernetes
@@ -680,7 +680,7 @@ the same values file as everything else and there is nowhere to put a loose
 manifest.
 
 The chart validates only that `audiences` and `issuers` are present. Everything
-else is checked by `internal/auth/config.go` at startup, which is strict and
+else is checked by `auth/authn/config.go` at startup, which is strict and
 names the field at fault. A bad value becomes a `CrashLoopBackOff` rather than
 a failed render, so read the pod logs, not the Helm output.
 
@@ -721,7 +721,7 @@ kubectl create configmap nvke-auth-config -n "${RELEASE_NAMESPACE}" \
 ```
 
 Either way, editing the configuration only takes effect when the pods restart:
-`auth.Load` runs once at startup and Kubernetes does not restart anything when a
+`authn.Load` runs once at startup and Kubernetes does not restart anything when a
 mounted ConfigMap changes. So whenever `apiAuth.enabled` is true the chart
 annotates the Deployment for [Reloader](https://github.com/stakater/Reloader),
 which watches the ConfigMap and rolls the Deployment when it changes, from any
@@ -731,7 +731,7 @@ over; the chart leaves an annotation you set alone. Without Reloader running,
 restart the pods yourself.
 
 `deploy/k8s/nvke-auth-dev.yaml` is a working example; the full schema and every
-validation rule live in `internal/auth/config.go`. The shape:
+validation rule live in `auth/authn/config.go`. The shape:
 
 ```yaml
 apiVersion: auth.nke.nvidia.com/v1alpha1
@@ -859,7 +859,7 @@ under `outcome="would_reject"` with the status it would have returned.
 These need no token: `/healthz`, `/readyz`, `/api/version`, `/openapi.yaml`,
 `/openapi-public.yaml`, `/docs`, and the Swagger UI under `/api/docs/`.
 Everything else does, including paths that route nowhere, so an unauthenticated
-caller cannot probe which ones exist. `internal/auth/routes.go` is the list.
+caller cannot probe which ones exist. `auth/authn/routes.go` is the list.
 
 ## Debugging
 
