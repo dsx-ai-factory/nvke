@@ -19,9 +19,11 @@ import (
 	"go.temporal.io/sdk/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	auth "github.com/dsx-ai-factory/nvke/auth/authn"
+
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/controller/internal/authz"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
@@ -61,13 +63,20 @@ func WithNodeAgentClient(c agent.Client) Option {
 }
 
 // NewServer builds the API's HTTP server. A nil authn leaves the authentication
-// middleware out of the chain rather than installing one that admits everyone.
+// middleware out of the chain rather than installing one that admits everyone,
+// and a nil authzProvider does the same for authorization.
+//
+// authorization arrives as a Provider rather than as built middleware because it
+// resolves routes against the mux this function creates. The Provider has
+// already validated its configuration and gated on the policy engine; all that
+// is left is to hand it the mux.
 func NewServer(
 	cfg config.Config,
 	logger *slog.Logger,
 	database db.DB,
 	temporalClient client.Client,
 	authn *auth.Authenticator,
+	authzProvider *authz.Provider,
 	k8sReader ctrlclient.Reader,
 	opts ...Option,
 ) (*http.Server, error) {
@@ -98,7 +107,7 @@ func NewServer(
 
 	api.HandlerWithOptions(strictHandler, api.StdHTTPServerOptions{
 		BaseRouter: m,
-		BaseURL:    "/api",
+		BaseURL:    api.BasePath,
 		Middlewares: []api.MiddlewareFunc{
 			oapi_middleware.OapiRequestValidatorWithOptions(openapiSpec, &oapi_middleware.Options{
 				SilenceServersWarning: true,
@@ -169,7 +178,7 @@ func NewServer(
 	// produced, so the order below is the reverse of the order a request meets.
 	// A request runs
 	//
-	//	request log state -> tracing -> logging -> authentication -> managed-by -> mux
+	//	request log state -> tracing -> logging -> authentication -> authorization -> managed-by -> mux
 	//
 	// Authentication precedes managed-by so an unauthenticated caller never
 	// reaches it, and follows logging so a rejection still produces the usual
@@ -178,7 +187,21 @@ func NewServer(
 	// the instrumented request directly to the mux, preserving its matched route
 	// for the HTTP span name. TestDisabledServerLogsTheManagedByRejection pins the
 	// logging and managed-by order.
+	//
+	// Authorization sits between the two: it reads the Principal authentication
+	// put on the context, so it must follow it, and it stays outside the mux so
+	// that a route registered directly here — rather than through the generated
+	// router — is still covered. That position also means a caller with no
+	// authority is answered 403 before the generated wrapper can answer 400 for
+	// a malformed path parameter.
 	handler := managedByMiddleware(cfg.ManagedByK8sPlatform, logger)(m)
+	authzMiddleware, err := authzProvider.Middleware(m)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build the authorization middleware: %w", err)
+	}
+	if authzMiddleware != nil {
+		handler = authzMiddleware.Wrap(handler)
+	}
 	if authn != nil {
 		handler = authn.Wrap(handler)
 	}

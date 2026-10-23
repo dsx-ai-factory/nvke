@@ -21,6 +21,7 @@ go.sum @dsx-ai-factory/nvke-write @TerryHowe @rbever-nvidia
 
 # area/controller — Cloud Workflow Engine
 /controller/ @dsx-ai-factory/nvke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris @jedimt
+/auth/ @dsx-ai-factory/nvke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris @jedimt
 /cluster-api-provider-provisioned/ @dsx-ai-factory/nvke-write @jonathanmeier5 @rbever-nvidia @TerryHowe
 
 # area/agent — renamed from node-agent in #36

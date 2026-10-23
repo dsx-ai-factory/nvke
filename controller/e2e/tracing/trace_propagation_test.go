@@ -109,7 +109,7 @@ func TestTraceContinuesThroughOutbox(t *testing.T) {
 	processor.Start(ctx)
 	t.Cleanup(processor.Stop)
 
-	srv, err := server.NewServer(cfg, logger, database, temporalClient, nil, nil)
+	srv, err := server.NewServer(cfg, logger, database, temporalClient, nil, nil, nil)
 	require.NoError(t, err)
 	httpServer := httptest.NewServer(srv.Handler)
 	t.Cleanup(httpServer.Close)

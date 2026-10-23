@@ -35,7 +35,7 @@ func requestLogs(t *testing.T, exportEnabled bool, traceparent, userAgent string
 	var buf bytes.Buffer
 	logger := slog.New(otelx.LogHandler{Handler: slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})})
 	cfg := config.Config{ProfilesDir: "./profiles", Tracing: config.TracingConfig{Enabled: exportEnabled}}
-	srv, err := server.NewServer(cfg, logger, &testutil.MockDB{}, nil, nil, nil)
+	srv, err := server.NewServer(cfg, logger, &testutil.MockDB{}, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/clusters", strings.NewReader("not json"))
@@ -70,7 +70,7 @@ func createClusterRequestLogs(
 
 	var buf bytes.Buffer
 	logger := slog.New(otelx.LogHandler{Handler: slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})})
-	srv, err := server.NewServer(config.Config{ProfilesDir: "./profiles"}, logger, database, nil, nil, nil)
+	srv, err := server.NewServer(config.Config{ProfilesDir: "./profiles"}, logger, database, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	body, err := json.Marshal(request)

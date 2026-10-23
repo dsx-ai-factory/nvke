@@ -55,6 +55,7 @@ LICENSE_SOURCE_FILTER = awk '!/(^|\/)vendor\// && !/(^|\/)testdata\// && !/^gene
 # Modules in go.work — every module in the repository. All dependencies are
 # public; the Go module cache supplies them after the first download.
 WORK_MODULES := agent \
+                auth \
                 cluster-api-provider-provisioned \
                 controller \
                 controller/api \
@@ -333,6 +334,7 @@ PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
                      controller/api \
                      controller/deploy/charts \
                      agent \
+                     auth \
                      cli \
                      controller \
                      management-engine \
@@ -342,7 +344,10 @@ PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
 # controller/api ships no tests of its own, so linting and testing it alone
 # compiles nothing that uses it. These are the modules that import it, and a
 # change to the API has to build them to mean anything.
-API_DEPENDENTS := controller cli controller/test/e2e
+API_DEPENDENTS := auth controller cli controller/test/e2e
+
+# The modules that import auth, so an authentication change builds what uses it.
+AUTH_DEPENDENTS := controller
 
 # The modules that import controller/deploy/charts, so a chart change builds
 # what ships it. nvkectl is the consumer; until it imports the module, this only
@@ -359,6 +364,7 @@ CHARTS_DEPENDENTS := cli
 # exports CGO_ENABLED=0 should not get a different answer from the gate, and
 # matching it costs nothing.
 RACE_MODULES := agent \
+                auth \
                 cli \
                 cluster-api-provider-provisioned \
                 controller \
@@ -433,6 +439,7 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 			echo "$$m"; \
 			case "$$m" in \
 				(controller/api) printf '%s\n' $(API_DEPENDENTS) ;; \
+				(auth) printf '%s\n' $(AUTH_DEPENDENTS) ;; \
 				(controller/deploy/charts) printf '%s\n' $(CHARTS_DEPENDENTS) ;; \
 			esac; \
 		done | sort -u); \

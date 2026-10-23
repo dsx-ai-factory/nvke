@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Asserts what the chart renders for apiAuth in each state, which `helm lint`
-# does not check.
+# Asserts what the chart renders for apiAuth and apiAuthz in each state, which
+# `helm lint` does not check.
 #
 # Needs helm and yq. Resolves the chart relative to this script, so it runs from
 # anywhere; CHART overrides that, which is how the workflow points it at
@@ -134,7 +134,7 @@ out="$(render --set apiAuth.enabled=true)"
 # By source template, not kind: the chart renders other ConfigMaps regardless.
 absent "renders no ConfigMap of its own"      '^# Source: .*/templates/configmap-auth\.yaml$' "${out}"
 want   "still mounts the named one"           'name: nvke-auth-config'                "${out}"
-# auth.Load runs once at startup, so a configuration edit that does not restart
+# authn.Load runs once at startup, so a configuration edit that does not restart
 # the pods does nothing at all. Reloader is what restarts them, here and below.
 want   "Reloader watches it"                  'configmap.reloader.stakater.com/reload: "nvke-auth-config,nvke-controller-config"' "${out}"
 
@@ -187,7 +187,7 @@ wantfail "config without issuers is refused"   'apiAuth\.config\.issuers is requ
   --set 'apiAuth.config.audiences[0]=https://nke.example.internal'
 
 echo "the chart owns apiVersion and kind, and says so if you repeat them:"
-# Duplicate keys render clean and then fail auth.Load's strict parse, so the
+# Duplicate keys render clean and then fail authn.Load's strict parse, so the
 # pod crash-loops on a value the operator most likely pasted from the README.
 wantfail "apiVersion in config is refused"     'apiAuth\.config must not carry apiVersion or kind' \
   --set apiAuth.enabled=true --set apiAuth.configMap.create=true \
@@ -267,6 +267,66 @@ wantfail "auth.yaml in extraFiles is refused" 'must not contain "auth\.yaml"' \
 echo "extraFiles is inert without create:"
 wantfail "and says so rather than ignoring it" 'apiAuth\.configMap\.extraFiles is set but would not be rendered' \
   --set apiAuth.enabled=true --set 'apiAuth.configMap.extraFiles.spire-ca\.crt=x'
+
+echo "apiAuthz disabled (the default):"
+out="$(render)"
+# Absent, not empty, for the same reason as AUTH_CONFIG_PATH above: an empty
+# AUTHZ_BUNDLE_PATH reads as unset, so the deployment would look configured and
+# authorize nobody.
+absent "AUTHZ_BUNDLE_PATH is not set at all" 'AUTHZ_BUNDLE_PATH'                    "${out}"
+setting "authzPermissive is false"          authzPermissive false                  "${out}"
+absent "no policy volume"                    'name: nke-authz-policy'               "${out}"
+absent "nothing mounted at the bundle path"  'mountPath: "/etc/nke/authz"'          "${out}"
+
+echo "apiAuthz enabled, enforcing:"
+out="$(render --set apiAuth.enabled=true --set apiAuthz.enabled=true --set apiAuthz.existingConfigMap=site-authz)"
+want   "AUTHZ_BUNDLE_PATH points at the mount" 'value: "/etc/nke/authz"'            "${out}"
+setting "authzPermissive is false"          authzPermissive false                  "${out}"
+want   "ConfigMap volume"                    'name: nke-authz-policy'               "${out}"
+want   "mounted where the bundle path says"  'mountPath: "/etc/nke/authz"'          "${out}"
+# The engine resolves the bundle's file names under AUTHZ_BUNDLE_PATH, so the
+# mount and the variable have to name the same directory or it loads nothing.
+want   "and the two agree"                   'value: "/etc/nke/authz"'              "${out}"
+
+echo "apiAuthz enabled, permissive:"
+out="$(render --set apiAuth.enabled=true --set apiAuthz.enabled=true --set apiAuthz.permissive=true \
+  --set apiAuthz.existingConfigMap=site-authz)"
+setting "authzPermissive is true"           authzPermissive true                   "${out}"
+
+echo "the named ConfigMap is what holds the bundle:"
+# A name of its own, distinct from the volume's, so the assertion cannot pass on
+# the volume name alone.
+out="$(render --set apiAuth.enabled=true --set apiAuthz.enabled=true --set apiAuthz.existingConfigMap=site-authz)"
+want   "existingConfigMap is honoured"       'name: "site-authz"'                   "${out}"
+
+echo "existingConfigMap is rendered as a string, whatever YAML would make of it:"
+# Unquoted, "yes" is a boolean to a YAML 1.1 reader and 123 an integer, and the
+# API server refuses either as a ConfigMap name.
+want   "a name YAML reads as a boolean is quoted" 'name: "yes"$' \
+  "$(render --set apiAuth.enabled=true --set apiAuthz.enabled=true --set apiAuthz.existingConfigMap=yes)"
+want   "a name YAML reads as a number is quoted" 'name: "123"$' \
+  "$(render --set apiAuth.enabled=true --set apiAuthz.enabled=true --set-string apiAuthz.existingConfigMap=123)"
+
+echo "the guards that refuse to render:"
+wantfail     "apiAuthz without apiAuth is refused" 'requires apiAuth.enabled' \
+  --set apiAuthz.enabled=true
+wantfail     "existingConfigMap is required when enabled" 'apiAuthz\.existingConfigMap is required' \
+  --set apiAuth.enabled=true --set apiAuthz.enabled=true
+wantfail     "a boolean existingConfigMap is refused" 'apiAuthz\.existingConfigMap must be a ConfigMap name' \
+  --set apiAuth.enabled=true --set apiAuthz.enabled=true --set apiAuthz.existingConfigMap=false
+wantfail     "a number existingConfigMap is refused" 'apiAuthz\.existingConfigMap must be a ConfigMap name' \
+  --set apiAuth.enabled=true --set apiAuthz.enabled=true --set apiAuthz.existingConfigMap=0
+wantfail     "an object existingConfigMap is refused" 'apiAuthz\.existingConfigMap must be a ConfigMap name' \
+  --set apiAuth.enabled=true --set apiAuthz.enabled=true --set-json 'apiAuthz.existingConfigMap={"name":"site-authz"}'
+wantfail     "a list existingConfigMap is refused" 'apiAuthz\.existingConfigMap must be a ConfigMap name' \
+  --set apiAuth.enabled=true --set apiAuthz.enabled=true --set-json 'apiAuthz.existingConfigMap=["site-authz"]'
+# A values file that sets apiAuthz.configMap or apiAuthz.bundle fails, naming
+# apiAuthz.existingConfigMap. Rendering as if those keys meant nothing would
+# mount a bundle other than the one the operator wrote down.
+wantfail     "apiAuthz.configMap is refused, naming existingConfigMap" 'set apiAuthz\.existingConfigMap' \
+  --set apiAuth.enabled=true --set apiAuthz.enabled=true --set apiAuthz.configMap.name=x
+wantfail     "apiAuthz.bundle is refused, naming existingConfigMap" 'set apiAuthz\.existingConfigMap' \
+  --set apiAuth.enabled=true --set apiAuthz.enabled=true --set apiAuthz.bundle.policies=x
 
 if [[ "${failures}" -ne 0 ]]; then
   echo "${failures} chart assertion(s) failed" >&2

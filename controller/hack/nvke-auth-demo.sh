@@ -14,7 +14,7 @@ usage() {
 nvke-auth-demo.sh [--mode enforcing|permissive]
 
 Drives NVKE's API with four credentials and prints the status code each one got.
-The three authentication states are documented on the internal/auth package and
+The three authentication states are documented on the auth/authn package and
 in the authentication section of README.md.
 
 Enforcing (the default deployment):

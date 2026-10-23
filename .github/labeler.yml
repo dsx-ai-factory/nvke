@@ -16,6 +16,7 @@ area/controller:
           - "!controller/hack/chart-*-assertions.*"
       - any-glob-to-any-file:
           - "cluster-api-provider-provisioned/**"
+          - "auth/**"
 
 area/agent:
   - changed-files:

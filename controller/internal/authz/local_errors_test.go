@@ -1,0 +1,200 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package authz
+
+import (
+	"context"
+	"net/http"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/cedar-policy/cedar-go/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// The in-process engine's half of the guarantees the sidecar's tests already
+// cover. It is the chart default, and both of these were previously asserted
+// only against CedarAgent — deleting Local's errored-Allow refusal left the
+// suite green.
+
+// bundleWith writes a throwaway bundle holding one reader and loads it. Used for
+// policies the shipped bundle deliberately does not contain.
+func bundleWith(t *testing.T, policies string) *Local {
+	t.Helper()
+
+	dir := t.TempDir()
+	// The generated action entities are real: an action with no group would not
+	// resolve, and the point here is the evaluation, not the vocabulary.
+	actions, err := os.ReadFile(filepath.Join(bundleDir(t), actionsFile))
+	require.NoError(t, err)
+
+	for name, content := range map[string]string{
+		policiesFile: policies,
+		actionsFile:  string(actions),
+		rolesFile:    oneReader,
+	} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600))
+	}
+
+	local, err := NewLocal(dir)
+	require.NoError(t, err)
+	return local
+}
+
+const oneReader = `[
+ {"uid":{"type":"NKE::Role","id":"reader"},"attrs":{},"parents":[]},
+ {"uid":{"type":"NKE::Principal","id":"system:serviceaccount:nke-system:nke-cli"},
+  "attrs":{},"parents":[{"type":"NKE::Role","id":"reader"}]}
+]`
+
+// A forbid whose guard errors is skipped, and the permit it existed to override
+// wins — so Cedar answers Allow with the error alongside. Serving that is
+// serving a request the policy meant to block.
+//
+// The guard here reads a context key nothing sets, so the attribute is always
+// absent and the guard always errors. Not the ownership idiom that used to stand
+// here — NewLocal refuses a policy reading an entity attribute now, see
+// checkPolicyShape — but the same evaluation failure, which is what this is
+// about: an engine that answers Allow beside an error must not be believed,
+// whatever produced the error.
+func TestLocalRefusesAnAllowReachedWhileAPolicyErrored(t *testing.T) {
+	local := bundleWith(t, `
+permit(principal in NKE::Role::"reader", action in NKE::Action::"read", resource);
+forbid(principal, action, resource) when { context.nothingSetsThis == "forbidden" };
+`)
+
+	decision, err := local.Authorize(context.Background(), Query{
+		Principal: subjectReader, Issuer: "kube-apiserver", Action: "getCluster",
+		ResourceType: "NKE::Cluster", ResourceID: someClusterID, Method: http.MethodGet,
+	})
+
+	require.Error(t, err, "an Allow reached while the forbid errored must not be served")
+	assert.False(t, decision.Allow)
+	assert.NotErrorIs(t, err, ErrInvalidQuery,
+		"the question was fine; the engine could not answer it")
+}
+
+// The mirror: a Deny reached while something errored is still a Deny, and must
+// not be turned into an engine error. Otherwise every ordinary refusal against a
+// bundle with one erroring policy would report engine_error and an operator
+// watching a permissive rollout would see a fault that is not there.
+func TestLocalKeepsADenyThatErrored(t *testing.T) {
+	local := bundleWith(t, `
+permit(principal in NKE::Role::"nobody", action, resource) when { context.nothingSetsThis == "x" };
+`)
+
+	decision, err := local.Authorize(context.Background(), Query{
+		Principal: subjectReader, Issuer: "kube-apiserver", Action: "getCluster",
+		ResourceType: "NKE::Cluster", ResourceID: someClusterID, Method: http.MethodGet,
+	})
+
+	require.NoError(t, err, "a denial that errored is still a denial")
+	assert.False(t, decision.Allow)
+}
+
+// The Cedar context the in-process engine builds, pinned the way cedar_test.go
+// pins the sidecar's. No shipped policy has a `when` clause reading context, so
+// the conformance matrix cannot see this: replacing the record with an empty one
+// left every test green.
+func TestLocalSendsTheContextRecord(t *testing.T) {
+	local := bundleWith(t, `
+permit(principal, action, resource)
+when { context.issuer == "kube-apiserver" && context.method == "GET" };
+`)
+
+	allowed, err := local.Authorize(context.Background(), Query{
+		Principal: subjectReader, Issuer: "kube-apiserver", Action: "getCluster",
+		ResourceType: "NKE::Cluster", ResourceID: someClusterID, Method: http.MethodGet,
+	})
+	require.NoError(t, err)
+	assert.True(t, allowed.Allow, "the context record must carry issuer and method")
+
+	// The same request from another issuer must not match, or the issuer is not
+	// really in the context.
+	other, err := local.Authorize(context.Background(), Query{
+		Principal: subjectReader, Issuer: "some-other-idp", Action: "getCluster",
+		ResourceType: "NKE::Cluster", ResourceID: someClusterID, Method: http.MethodGet,
+	})
+	require.NoError(t, err)
+	assert.False(t, other.Allow, "a policy pinning context.issuer must distinguish issuers")
+}
+
+// A caller-controlled resource identifier must not be able to shadow an entity
+// the bundle declares. The overlay answers before the stored map, so if a
+// resource type could ever collide with a Role or Principal uid, a request would
+// redefine its own authority.
+func TestResourceOverlayCannotShadowABundleEntity(t *testing.T) {
+	local, err := NewLocal(bundleDir(t))
+	require.NoError(t, err)
+
+	// Every resource type the generated table can produce.
+	resourceTypes := map[string]bool{CollectionType: true}
+	for _, op := range operations {
+		if op.ResourceType != "" {
+			resourceTypes[op.ResourceType] = true
+		}
+	}
+	for resourceType := range resourceTypes {
+		assert.NotEqualf(t, PrincipalType, resourceType,
+			"a route resolving to %s would let a caller shadow a principal", resourceType)
+		assert.NotEqualf(t, ActionType, resourceType,
+			"a route resolving to %s would let a caller shadow an action", resourceType)
+		assert.NotEqualf(t, "NKE::Role", resourceType,
+			"a route resolving to %s would let a caller shadow a role", resourceType)
+	}
+
+	// And no stored entity shares a type with any resource the router produces,
+	// so the overlay's shadowing can never reach one.
+	for uid := range local.entities {
+		assert.NotContainsf(t, resourceTypes, string(uid.Type),
+			"bundle entity %s shares a type with a routed resource; a request could shadow it", uid)
+	}
+}
+
+// Guards the assumption the overlay rests on: it must return the request's
+// resource and defer to the bundle for everything else.
+func TestResourceOverlayDefersToTheBundle(t *testing.T) {
+	role := types.NewEntityUID("NKE::Role", "reader")
+	base := types.EntityMap{role: types.Entity{UID: role}}
+	resource := types.NewEntityUID("NKE::Cluster", "c1")
+
+	view := resourceOverlay{base: base, resource: types.Entity{UID: resource}}
+
+	got, ok := view.Get(resource)
+	require.True(t, ok)
+	assert.Equal(t, resource, got.UID)
+
+	got, ok = view.Get(role)
+	require.True(t, ok, "the overlay must not hide the bundle")
+	assert.Equal(t, role, got.UID)
+
+	_, ok = view.Get(types.NewEntityUID("NKE::Cluster", "absent"))
+	assert.False(t, ok, "an entity in neither place must not be invented")
+}
+
+// Policy names in a decision come from the @id annotation. They are what appears
+// in the log when a request is allowed, and cedar-go's positional "policy0"
+// changes meaning the moment a policy is inserted above it — so the name a
+// reader can find in the source is the one that must be reported.
+func TestLocalReportsAnnotatedPolicyNames(t *testing.T) {
+	local, err := NewLocal(bundleDir(t))
+	require.NoError(t, err)
+
+	decision, err := local.Authorize(context.Background(), Query{
+		Principal: subjectReader, Issuer: "kube-apiserver", Action: "getCluster",
+		ResourceType: "NKE::Cluster", ResourceID: someClusterID, Method: http.MethodGet,
+	})
+	require.NoError(t, err)
+	require.True(t, decision.Allow)
+	require.NotEmpty(t, decision.Reasons)
+
+	assert.Contains(t, decision.Reasons, "readers-may-read",
+		"the engine must report the @id the source carries")
+	for _, reason := range decision.Reasons {
+		assert.NotRegexp(t, `^policy\d+$`, reason,
+			"a positional policy id is not a name a reader can find in the source")
+	}
+}
