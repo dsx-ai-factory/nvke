@@ -170,6 +170,7 @@ Deeper module documentation:
 | Document | Contents |
 |---|---|
 | [../controller/test/e2e/README.md](../controller/test/e2e/README.md) | The end to end suite |
+| [../hack/rotation-demo/README.md](../hack/rotation-demo/README.md) | Credential renewal/key-rotation evidence collector (no live evidence included) |
 | [qualification/overview.md](qualification/overview.md) | Release qualification: what it is, what a run proves, and what is not covered yet |
 | [qualification/hardware-lane.md](qualification/hardware-lane.md) | How a candidate is qualified on real hardware, layer by layer |
 | [qualification/environments.md](qualification/environments.md) | Declaring the infrastructure a run can execute against |

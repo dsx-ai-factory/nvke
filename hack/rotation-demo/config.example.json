@@ -1,0 +1,47 @@
+{
+  "cluster_id": "00000000-0000-0000-0000-000000000001",
+  "cluster_name": "example-tenant",
+  "kube_system_uid": "00000000-0000-0000-0000-000000000002",
+  "context": "example-tenant-admin",
+  "api_server": "https://tenant-vip.example.invalid:6443",
+  "profile": "kubeadm-ha",
+  "deployment_source_revision": "0000000000000000000000000000000000000000",
+  "expected_versions": {
+    "controller": "example-build-version",
+    "agents": {
+      "00000000-0000-0000-0000-000000000003": "example-agent-version",
+      "00000000-0000-0000-0000-000000000004": "example-agent-version",
+      "00000000-0000-0000-0000-000000000005": "example-agent-version"
+    },
+    "kubernetes": {"example-cp-1": "v1.35.1", "example-cp-2": "v1.35.1", "example-cp-3": "v1.35.1"}
+  },
+  "cwe_url": "https://cwe.example.invalid",
+  "prometheus_url": "https://prometheus.example.invalid",
+  "kubelet_ca_file": "/operator/private/example-public-kubernetes-ca.crt",
+  "temporal": {
+    "address": "temporal.example.invalid:7233",
+    "namespace": "example-namespace",
+    "task_queue": "example-cwe-task-queue"
+  },
+  "threshold_days": 30,
+  "timeout_seconds": 14400,
+  "traffic_interval_seconds": 2,
+  "max_api_error_fraction": 0,
+  "max_api_latency_seconds": 10,
+  "observation_max_age_seconds": 10800,
+  "alert_node": "example-cp-1",
+  "alert_credential": "apiserver",
+  "alert_receipts_file": "/operator/private/alert-receipts.jsonl",
+  "alert_receipts_since": "2026-10-05T00:00:00Z",
+  "manual_completion_file": "/operator/private/t1-completed.json",
+  "manual_audit_file": "/operator/private/t1-audit.jsonl",
+  "manual_operation": "example-operator-change-window",
+  "nodes": [
+    {"id": "00000000-0000-0000-0000-000000000003", "name": "example-cp-1", "control_plane": true,
+     "kubelet_address": "192.0.2.11", "ssh": "operator@example-cp-1"},
+    {"id": "00000000-0000-0000-0000-000000000004", "name": "example-cp-2", "control_plane": true,
+     "kubelet_address": "192.0.2.12", "ssh": "operator@example-cp-2"},
+    {"id": "00000000-0000-0000-0000-000000000005", "name": "example-cp-3", "control_plane": true,
+     "kubelet_address": "192.0.2.13", "ssh": "operator@example-cp-3"}
+  ]
+}

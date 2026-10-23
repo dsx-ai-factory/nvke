@@ -1,0 +1,53 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+# Offline Prometheus evaluator regression; no live qualification evidence.
+# Run with the pinned Prometheus 3.2.1 promtool: promtool test rules this-file.
+rule_files: []
+evaluation_interval: 1s
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'nvke_controller_serving_csr_observation_age_seconds{tenant_cluster="example-tenant"}'
+        values: '290 5'
+      - series: 'nvke_controller_certificate_not_after_timestamp_seconds{tenant_cluster="example-tenant",node="example-cp-1",credential="apiserver"}'
+        values: '1893456000 1924992000'
+    promql_expr_test:
+      # The synthetic label preserves both branches in one instant evaluation.
+      # The response timestamp is t=50, but timestamp(selector)'s value is t=0.
+      - expr: 'label_replace(nvke_controller_serving_csr_observation_age_seconds{tenant_cluster="example-tenant"}, "nvke_demo_sample", "value", "", "") or label_replace(timestamp(nvke_controller_serving_csr_observation_age_seconds{tenant_cluster="example-tenant"}), "nvke_demo_sample", "timestamp", "", "")'
+        eval_time: 50s
+        exp_samples:
+          - labels: 'nvke_controller_serving_csr_observation_age_seconds{tenant_cluster="example-tenant",nvke_demo_sample="value"}'
+            value: 290
+          - labels: '{tenant_cluster="example-tenant",nvke_demo_sample="timestamp"}'
+            value: 0
+      - expr: 'nvke_controller_serving_csr_observation_age_seconds + time() - timestamp(nvke_controller_serving_csr_observation_age_seconds)'
+        eval_time: 50s
+        exp_samples:
+          - labels: '{tenant_cluster="example-tenant"}'
+            value: 340
+      # At the following scrape, the fresh observation and expiry can qualify.
+      - expr: 'nvke_controller_serving_csr_observation_age_seconds + time() - timestamp(nvke_controller_serving_csr_observation_age_seconds)'
+        eval_time: 61s
+        exp_samples:
+          - labels: '{tenant_cluster="example-tenant"}'
+            value: 6
+      - expr: 'timestamp(nvke_controller_serving_csr_observation_age_seconds) - nvke_controller_serving_csr_observation_age_seconds'
+        eval_time: 61s
+        exp_samples:
+          - labels: '{tenant_cluster="example-tenant"}'
+            value: 55
+      - expr: 'label_replace(nvke_controller_certificate_not_after_timestamp_seconds{tenant_cluster="example-tenant"}, "nvke_demo_sample", "value", "", "") or label_replace(timestamp(nvke_controller_certificate_not_after_timestamp_seconds{tenant_cluster="example-tenant"}), "nvke_demo_sample", "timestamp", "", "")'
+        eval_time: 50s
+        exp_samples:
+          - labels: 'nvke_controller_certificate_not_after_timestamp_seconds{tenant_cluster="example-tenant",node="example-cp-1",credential="apiserver",nvke_demo_sample="value"}'
+            value: 1893456000
+          - labels: '{tenant_cluster="example-tenant",node="example-cp-1",credential="apiserver",nvke_demo_sample="timestamp"}'
+            value: 0
+      - expr: 'label_replace(nvke_controller_certificate_not_after_timestamp_seconds{tenant_cluster="example-tenant"}, "nvke_demo_sample", "value", "", "") or label_replace(timestamp(nvke_controller_certificate_not_after_timestamp_seconds{tenant_cluster="example-tenant"}), "nvke_demo_sample", "timestamp", "", "")'
+        eval_time: 61s
+        exp_samples:
+          - labels: 'nvke_controller_certificate_not_after_timestamp_seconds{tenant_cluster="example-tenant",node="example-cp-1",credential="apiserver",nvke_demo_sample="value"}'
+            value: 1924992000
+          - labels: '{tenant_cluster="example-tenant",node="example-cp-1",credential="apiserver",nvke_demo_sample="timestamp"}'
+            value: 60

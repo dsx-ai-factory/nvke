@@ -69,6 +69,8 @@ os-image/efi/output/
 # ignores its own .local/; make/golangci.mk puts the golangci-lint cache in this
 # one so two checkouts cannot replay each other's issues.
 .local/
+# Python bytecode from running the hack/ scripts and their tests locally.
+__pycache__/
 
 # workspace local applies to a workspace that papers over module boundaries
 # during development; this one is the build definition for every module that

@@ -108,10 +108,18 @@ post-renewal-resolution sample from the site.
 Use the [audit guide](../../controller/docs/credential-audit.md#manual-t1-evidence)
 to prepare `credential-audit` before T1 maintenance. Record `check`, `approve`,
 `renew` and `verify` observations at actual step boundaries, with a stable run ID
-and distinct step IDs. Its operator subject is self-reported; tie it to the
-site's authenticated change record. T1 output is local JSONL, not automatically
-inserted into PostgreSQL. For automatic T2 observations, export the controller's
-ledger with a read-only database role and deduplicate by `event_id`.
+and distinct step IDs. The audit tool's operator subject is self-reported; tie
+it to the site's authenticated change record. When the
+[rotation demo](https://github.com/dsx-ai-factory/nvke/blob/main/hack/rotation-demo/README.md)
+observes the maintenance, pass the exact `kube-system` namespace UID as
+`--cluster` and its configured `manual_operation`, optionally with a per-step
+suffix `/<action>-<n>` such as `/renew-2`, as `--operation`, where `<action>` is
+`check`, `approve`, `renew`, `rotate` or `verify` and `<n>` is 1 through 99
+without leading zeros; other rows fail with
+`manual_audit_target_or_run_mismatch`. T1 output is local JSONL, not
+automatically inserted into PostgreSQL. For automatic T2 observations, export
+the controller's ledger with a read-only database role and deduplicate by
+`event_id`.
 
 T2 writes are bounded best effort after mutations, so a database outage or crash
 can leave gaps. Direct Temporal starts do not supply an authenticated human actor.
@@ -182,6 +190,11 @@ audit references. Record failed and unexecuted checks explicitly. Bind a live
 qualification claim to its original evidence, not a local syntax or docs check.
 
 ## Evidence and secret handling
+
+Use the [credential qualification demo](https://github.com/dsx-ai-factory/nvke/blob/main/hack/rotation-demo/README.md) for
+explicitly selected T2 renewal/key-rotation scenarios, expiry alert delivery,
+and separate T1 runbook observation. It records required failures and missing
+scenarios in sanitized release evidence; offline tests do not qualify a site.
 
 Keep a sanitized maintenance record with source revisions, controller/agent and
 Kubernetes versions, profile/layout, cluster and node identities, topology,
