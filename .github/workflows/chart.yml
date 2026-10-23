@@ -29,11 +29,15 @@ on:
     branches: [main]
     paths:
       - 'controller/deploy/charts/**'
+      - 'controller/deploy/monitoring/**'
       - 'controller/hack/chart-*-assertions.*'
       - 'controller/internal/config/**'
       - 'controller/internal/controllerconfig/**'
       - 'make/checks.mk'
+      - 'make/tool-versions.mk'
       - 'make/versions.mk'
+      - 'hack/check-tool-version.sh'
+      - 'hack/read-tool-version.sh'
       - 'Makefile'
       - '.github/actions/setup-kubeconform/**'
       - '.github/workflows/chart.yml'

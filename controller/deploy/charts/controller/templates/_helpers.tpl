@@ -181,6 +181,61 @@ controller treats an empty variable. sprig's default would also replace false an
 {{- end }}
 
 {{/*
+A Go duration string in whole seconds; refuses the render if it does not parse,
+as the controller would refuse it at startup.
+*/}}
+{{- define "controller.durationSeconds" -}}
+{{- $base := toDate "2006-01-02" "2000-01-01" -}}
+{{- sub (mustDateModify . $base | unixEpoch | int64) ($base | unixEpoch | int64) -}}
+{{- end }}
+
+{{/*
+Refuse the credential settings the controller would refuse at startup
+(internal/config/credential_monitoring.go), so a bad value fails helm upgrade
+instead of crash-looping the new pod. The collector inputs are always checked;
+every other bound only while its feature is enabled.
+*/}}
+{{- define "controller.validateCredentialMonitoring" -}}
+{{- $renewal := .Values.scheduledMaintenance.certRenewal -}}
+{{- $monitoring := .Values.credentialMonitoring -}}
+{{- $renewalEnabled := eq (include "controller.controllerConfig.orGoDefault" (list $renewal.enabled true)) "true" -}}
+{{- $monitoringEnabled := eq (include "controller.controllerConfig.orGoDefault" (list $monitoring.enabled true)) "true" -}}
+{{- $interval := include "controller.durationSeconds" ($renewal.interval | default "12h") | int64 -}}
+{{- $thresholdDays := include "controller.controllerConfig.orGoDefault" (list $renewal.thresholdDays 30) | int64 -}}
+{{- $inspection := include "controller.durationSeconds" ($monitoring.inspectionInterval | default "1h") | int64 -}}
+{{- $maxAge := include "controller.durationSeconds" ($monitoring.observationMaxAge | default "3h") | int64 -}}
+{{- $warningDays := include "controller.controllerConfig.orGoDefault" (list $monitoring.warningDays 45) | int64 -}}
+{{- if le $maxAge 0 -}}
+{{- fail "credentialMonitoring.observationMaxAge must be positive" -}}
+{{- end -}}
+{{- if le $warningDays 0 -}}
+{{- fail "credentialMonitoring.warningDays must be positive" -}}
+{{- end -}}
+{{- if $renewalEnabled -}}
+{{- if or (lt $interval 3600) (gt $interval 86400) -}}
+{{- fail "scheduledMaintenance.certRenewal.interval must be between 1h and 24h while renewal is enabled" -}}
+{{- end -}}
+{{- if or (lt $thresholdDays 7) (gt $thresholdDays 90) -}}
+{{- fail "scheduledMaintenance.certRenewal.thresholdDays must be between 7 and 90 while renewal is enabled" -}}
+{{- end -}}
+{{- end -}}
+{{- if $monitoringEnabled -}}
+{{- if or (lt $inspection 300) (gt $inspection 43200) -}}
+{{- fail "credentialMonitoring.inspectionInterval must be between 5m and 12h while monitoring is enabled" -}}
+{{- end -}}
+{{- if or (lt $maxAge (mul 2 $inspection)) (gt $maxAge 86400) -}}
+{{- fail "credentialMonitoring.observationMaxAge must be at least twice credentialMonitoring.inspectionInterval and at most 24h while monitoring is enabled" -}}
+{{- end -}}
+{{- if or (lt $warningDays 9) (gt $warningDays 120) -}}
+{{- fail "credentialMonitoring.warningDays must be between 9 and 120 while monitoring is enabled" -}}
+{{- end -}}
+{{- if and $renewalEnabled (lt (mul (sub $warningDays $thresholdDays) 86400) (mul 2 $interval)) -}}
+{{- fail "credentialMonitoring.warningDays must exceed scheduledMaintenance.certRenewal.thresholdDays by at least two renewal intervals while monitoring and renewal are enabled" -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Refuse a values file that still sets a key this chart renamed. Helm ignores an
 unknown key without a word, so the old key would leave the chart on its defaults:
 for nkeOIDCAuth, tenant-cluster OIDC quietly reverting to disabled.

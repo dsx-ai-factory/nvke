@@ -36,6 +36,11 @@ certRenewal:
   controllerEnabled: true
   interval: 12h
   thresholdDays: 30
+credentialMonitoring:
+  enabled: true
+  inspectionInterval: 1h
+  observationMaxAge: 3h
+  warningDays: 45
 kubeadmImageRepository: registry.k8s.io
 cniImageRegistry: ""
 installCNIAfterInit: false

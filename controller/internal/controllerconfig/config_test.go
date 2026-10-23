@@ -84,6 +84,11 @@ certRenewal:
   controllerEnabled: true
   interval: 12h
   thresholdDays: 30
+credentialMonitoring:
+  enabled: true
+  inspectionInterval: 1h
+  observationMaxAge: 3h
+  warningDays: 45
 kubeadmImageRepository: registry.k8s.io
 cniImageRegistry: ""
 installCNIAfterInit: false
@@ -169,6 +174,10 @@ permissiveMode: false
 	assert.Equal(t, 12*time.Hour, cfg.CertRenewal.Interval.Duration)
 	assert.Equal(t, 30, cfg.CertRenewal.ThresholdDays)
 	assert.True(t, cfg.AllowLegacyCalicoClusterCreation)
+	assert.True(t, cfg.CredentialMonitoring.Enabled)
+	assert.Equal(t, time.Hour, cfg.CredentialMonitoring.InspectionInterval.Duration)
+	assert.Equal(t, 3*time.Hour, cfg.CredentialMonitoring.ObservationMaxAge.Duration)
+	assert.Equal(t, 45, cfg.CredentialMonitoring.WarningDays)
 	assert.Equal(t, "dsxImds", cfg.NodeAgent.SpireAttestationMethod)
 	assert.Equal(t, "acme", cfg.NodeAgent.DSXImds.OperatorTenant)
 	assert.Equal(t, exampleChecksum, cfg.NodeAgent.DSXImds.PluginChecksum)

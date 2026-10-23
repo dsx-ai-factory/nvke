@@ -10,6 +10,10 @@ option go_package = "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto";
 service NodeAgent {
   rpc GetKubeadmStatus(KubeadmStatusRequest) returns (KubeadmStatusResponse) {}
 
+  // InspectKubernetesCertificates reads the fixed kubeadm credential inventory.
+  // It never mutates files or returns certificate/key contents or identities.
+  rpc InspectKubernetesCertificates(InspectKubernetesCertificatesRequest) returns (InspectKubernetesCertificatesResponse) {}
+
   // ScheduleNodeReboot waits up to five minutes for apt/dpkg locks to clear,
   // then starts a detached reboot so the RPC can return before the node exits.
   rpc ScheduleNodeReboot(ScheduleNodeRebootRequest) returns (ScheduleNodeRebootResponse) {}
@@ -1235,4 +1239,26 @@ message OpenVSwitchReconciliationOperation {
   NodeAgentOperationStatus operation = 1;
   // Populated after a successful reconciliation.
   OpenVSwitchReconciliationResult result = 2;
+}
+
+message InspectKubernetesCertificatesRequest {
+  bool control_plane = 1;
+}
+
+message KubernetesCertificateObservation {
+  string credential = 1;
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_AVAILABLE = 1;
+    STATE_MISSING = 2;
+    STATE_INVALID = 3;
+  }
+  State state = 2;
+  int64 not_after_unix_seconds = 3;
+  // SHA-256 of the public DER certificate with the earliest expiration.
+  string certificate_sha256 = 4;
+}
+
+message InspectKubernetesCertificatesResponse {
+  repeated KubernetesCertificateObservation certificates = 1;
 }

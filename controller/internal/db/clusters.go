@@ -531,6 +531,7 @@ type ClusterConditions struct {
 	UpdateFailed       *Condition                `json:"updateFailed,omitempty"`
 	CertificateRenewal *CertificateRenewalStatus `json:"certificateRenewal,omitempty"`
 	EtcdKeyRotation    *EtcdKeyRotationStatus    `json:"etcdKeyRotation,omitempty"`
+	CredentialCSRs     *CredentialCSRObservation `json:"credentialCSRs,omitempty"`
 }
 
 type ClusterFilters struct {
@@ -592,6 +593,9 @@ type ClusterQueries interface {
 	CreateCluster(ctx context.Context, cluster *Cluster) (Cluster, error)
 	UpdateCluster(ctx context.Context, cluster *Cluster) (Cluster, error)
 	UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID uuid.UUID, nextDue time.Time) error
+	// UpdateClusterConditions writes only the conditions column and leaves
+	// updated_at alone, for periodic observations that are not cluster changes.
+	UpdateClusterConditions(ctx context.Context, cluster *Cluster) error
 	DeleteCluster(ctx context.Context, id uuid.UUID) error
 	// SyncClusterControlPlaneConfigFromCPNodePools sets control_plane_config from all control-plane
 	// node pools for the cluster that are not marked deleting.
@@ -684,6 +688,14 @@ func (q *queriesImpl) UpdateClusterNextCertRenewalDue(ctx context.Context, clust
 		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to update cluster next cert renewal due: %w", err)
+	}
+	return notFoundErrIfNoRowsAffected(res)
+}
+
+func (q *queriesImpl) UpdateClusterConditions(ctx context.Context, cluster *Cluster) error {
+	res, err := q.db.NewUpdate().Model(cluster).Column("conditions").WherePK().Exec(ctx)
+	if err != nil {
+		return err
 	}
 	return notFoundErrIfNoRowsAffected(res)
 }

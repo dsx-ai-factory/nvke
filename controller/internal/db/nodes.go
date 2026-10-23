@@ -50,6 +50,8 @@ type Node struct {
 	Nico               *NicoNodeProvider        `bun:"nico,type:jsonb"`
 	NodeAgentLifecycle *NodeAgentLifecycle      `bun:"node_agent_lifecycle,type:jsonb"`
 	LaunchLayer        *LaunchLayerNodeProvider `bun:"launch_layer,type:jsonb"`
+	// CertificateInspection retains read-only public observations independently of lifecycle conditions.
+	CertificateInspection *CertificateInspection `bun:"type:jsonb,nullzero"`
 }
 
 type NicoNodeProvider struct {

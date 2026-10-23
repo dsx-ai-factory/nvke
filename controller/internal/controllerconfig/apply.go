@@ -53,6 +53,11 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.CertRenewalInterval = c.CertRenewal.Interval.Duration
 	cfg.CertRenewalThresholdDays = c.CertRenewal.ThresholdDays
 
+	cfg.CredentialMonitoringEnabled = c.CredentialMonitoring.Enabled
+	cfg.CertificateInspectionInterval = c.CredentialMonitoring.InspectionInterval.Duration
+	cfg.CertificateObservationMaxAge = c.CredentialMonitoring.ObservationMaxAge.Duration
+	cfg.CertificateWarningDays = c.CredentialMonitoring.WarningDays
+
 	cfg.KubeadmImageRepository = c.KubeadmImageRepository
 	cfg.CNIImageRegistry = c.CNIImageRegistry
 	cfg.InstallCNIAfterInit = c.InstallCNIAfterInit

@@ -19,6 +19,11 @@ CERT_RENEWAL_CONTROLLER_ENABLED: certRenewal.controllerEnabled
 CERT_RENEWAL_INTERVAL: certRenewal.interval
 CERT_RENEWAL_THRESHOLD_DAYS: certRenewal.thresholdDays
 
+CREDENTIAL_MONITORING_ENABLED: credentialMonitoring.enabled
+CERTIFICATE_INSPECTION_INTERVAL: credentialMonitoring.inspectionInterval
+CERTIFICATE_OBSERVATION_MAX_AGE: credentialMonitoring.observationMaxAge
+CERTIFICATE_WARNING_DAYS: credentialMonitoring.warningDays
+
 KUBEADM_IMAGE_REPOSITORY: kubeadmImageRepository
 CNI_IMAGE_REGISTRY: cniImageRegistry
 INSTALL_CNI_AFTER_INIT: installCNIAfterInit

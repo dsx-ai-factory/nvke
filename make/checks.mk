@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Local entry points for merge-gate checks. Every tool comes from PATH, and a
-# missing one reports which tool and two ways to get it.
+# Local entry points for merge-gate checks. Tools come from PATH unless a
+# target explicitly installs its pinned tool (credential-alerts-check).
 
 CHART ?= controller/deploy/charts/controller
 NKTP_CHART ?= nktp/deploy/charts/nktp
@@ -172,7 +172,13 @@ chart-controller-config-check: ## Assert nke-controller-config loads and matches
 	@$(call require_command,yq)
 	@CHART="$(CHART)" ./controller/hack/chart-controller-config-assertions.sh
 
-chart-check: lint-chart chart-rbac-check chart-package-check chart-identity-check chart-controller-config-check ## Run every chart check enforced by CI.
+.PHONY: credential-alerts-check
+credential-alerts-check: ## Validate credential alert rules, fixtures and the enabled PrometheusRule render.
+	@$(call require_tool,helm,$(HELM_VERSION))
+	@$(call require_tool,kubeconform,$(KUBECONFORM_VERSION))
+	@CHART="$(CHART)" ./controller/hack/chart-credential-alerts-assertions.sh
+
+chart-check: lint-chart chart-rbac-check chart-package-check chart-identity-check chart-controller-config-check credential-alerts-check ## Run every chart check enforced by CI.
 
 .PHONY: nktp-chart-deps nktp-chart-lint nktp-chart-check
 
