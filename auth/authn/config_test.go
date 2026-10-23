@@ -247,6 +247,16 @@ issuers:
 			wantErr: `unknown field "issuers[0].jwks.oidc"`,
 		},
 		{
+			name: "unknown field inside tenant",
+			yaml: issuerConfig(`name: k8s
+    issuer: "https://kubernetes.default.svc.cluster.local"
+    jwks: {uri: "https://kubernetes.default.svc/openid/v1/jwks"}
+    algorithms: [RS256]
+    admit: {serviceAccounts: [{namespace: nke-clients}]}
+    tenant: {path: /tenant/}`),
+			wantErr: `unknown field "issuers[0].tenant.path"`,
+		},
+		{
 			name: "unknown field inside admit",
 			yaml: issuerConfig(`name: k8s
     issuer: "https://kubernetes.default.svc.cluster.local"

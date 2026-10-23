@@ -125,6 +125,7 @@ type issuerEntry struct {
 	audiences  []string
 	algorithms []string
 	admit      *admitRules
+	tenant     *TenantSource
 	keys       KeySource
 	parser     *jwt.Parser
 }
@@ -214,12 +215,20 @@ func newVerifier(cfg *Config, sources map[string]KeySource, requireAdmissionPoli
 			// jwt.WithIssuedAt is deliberately absent: "iat" says when a token
 			// was minted, not when it becomes usable.
 		}
+		// Copied like the slices above, so a later change to cfg can't change
+		// which tenant is read.
+		var tenant *TenantSource
+		if iss.Tenant != nil {
+			t := *iss.Tenant
+			tenant = &t
+		}
 		entries[iss.Issuer] = &issuerEntry{
 			name:       iss.Name,
 			issuer:     iss.Issuer,
 			audiences:  audiences,
 			algorithms: algorithms,
 			admit:      admit,
+			tenant:     tenant,
 			keys:       src,
 			parser:     jwt.NewParser(parserOptions...),
 		}
@@ -298,6 +307,7 @@ func (v *Verifier) Verify(ctx context.Context, token string) (*Principal, error)
 		Issuer:     entry.issuer,
 		Subject:    subject,
 		Claims:     verified,
+		Tenant:     entry.tenant.tenantOf(verified),
 	}, nil
 }
 

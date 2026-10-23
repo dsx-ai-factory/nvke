@@ -235,6 +235,12 @@ type fixture struct {
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
+	return newFixtureWith(t, nil)
+}
+
+// newFixtureWith is newFixture with the config changed by mutate first.
+func newFixtureWith(t *testing.T, mutate func(*authn.Config)) fixture {
+	t.Helper()
 
 	signing := RSAKey(t, "signing-1")
 	elliptic := ECDSAKey(t, "elliptic-1")
@@ -243,7 +249,11 @@ func newFixture(t *testing.T) fixture {
 	k8sKeys := NewStaticKeySource(signing, elliptic)
 	spireKeys := NewStaticKeySource(signing, elliptic)
 
-	verifier, err := authn.NewVerifier(testConfig(), map[string]authn.KeySource{
+	cfg := testConfig()
+	if mutate != nil {
+		mutate(cfg)
+	}
+	verifier, err := authn.NewVerifier(cfg, map[string]authn.KeySource{
 		k8sName:   k8sKeys,
 		spireName: spireKeys,
 	})

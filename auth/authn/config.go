@@ -88,6 +88,10 @@ type Issuer struct {
 	// Admit is the admission rule set. Required, and must carry at least one
 	// rule.
 	Admit *Admit `json:"admit"`
+
+	// Tenant says where this issuer's tokens carry the caller's tenant.
+	// Optional. Without it, the issuer's callers have no tenant.
+	Tenant *TenantSource `json:"tenant,omitempty"`
 }
 
 type JWKSKeys struct {
@@ -330,6 +334,12 @@ func (c *Config) validateTypeMeta() error {
 func (i Issuer) validate(issuerURLs map[string]struct{}) error {
 	if err := i.validateTrust(issuerURLs); err != nil {
 		return err
+	}
+
+	if i.Tenant != nil {
+		if err := i.Tenant.validate(); err != nil {
+			return fmt.Errorf("tenant: %w", err)
+		}
 	}
 
 	if i.Admit == nil {

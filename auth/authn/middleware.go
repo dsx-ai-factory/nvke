@@ -111,6 +111,8 @@ func (a *Authenticator) Wrap(next http.Handler) http.Handler {
 		a.logger.Debug("request authenticated",
 			"issuer", principal.IssuerName,
 			"subject", principal.Subject,
+			// tenantOf caps the tenant's length, so it needs no elision.
+			"tenant", principal.Tenant,
 			"method", r.Method,
 			"path", elideForLog(path),
 		)

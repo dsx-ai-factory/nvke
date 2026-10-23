@@ -29,6 +29,10 @@ type Principal struct {
 
 	// Claims is the full verified set, for admission rules and logging.
 	Claims map[string]any
+
+	// Tenant is the caller's tenant, from the issuer's tenant source. Empty if
+	// the issuer has no tenant source, or the token carries no valid tenant ID.
+	Tenant string
 }
 
 // principalContextKey is unexported so no other package can collide with it.
