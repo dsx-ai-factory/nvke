@@ -6,6 +6,9 @@ package http
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/state"
 )
 
@@ -24,38 +27,44 @@ func TestToSDKSubnetSeparatesIPv4PrefixAndLength(t *testing.T) {
 }
 
 func TestToSDKInstanceSanitizesPreservedFailureDuringDeletion(t *testing.T) {
-	instance := toSDKInstance(state.Instance{
-		Status: "deleting",
-		VM: &state.VMState{
-			ErrorReason: "vm create/start failed: sensitive runtime detail",
+	tests := []struct {
+		name            string
+		vm              *state.VMState
+		wantHistory     bool
+		wantHistoryText string
+	}{
+		{
+			name: "preserved failure is sanitized",
+			vm: &state.VMState{
+				ErrorReason: "vm create/start failed: sensitive runtime detail",
+			},
+			wantHistory:     true,
+			wantHistoryText: clientSafeInstanceError,
 		},
-	})
+		{
+			name:        "normal deletion has no failure history",
+			vm:          &state.VMState{},
+			wantHistory: false,
+		},
+	}
 
-	if got := instance.GetStatus(); got != "Terminating" {
-		t.Fatalf("instance status = %q, want %q", got, "Terminating")
-	}
-	history := instance.GetStatusHistory()
-	if len(history) != 1 {
-		t.Fatalf("status history length = %d, want 1", len(history))
-	}
-	if got := history[0].GetStatus(); got != "Error" {
-		t.Fatalf("history status = %q, want %q", got, "Error")
-	}
-	if got := history[0].GetMessage(); got != clientSafeInstanceError {
-		t.Fatalf("history message = %q, want %q", got, clientSafeInstanceError)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instance := toSDKInstance(state.Instance{
+				Status: "deleting",
+				VM:     tt.vm,
+			})
 
-func TestToSDKInstanceKeepsNormalDeletionStatus(t *testing.T) {
-	instance := toSDKInstance(state.Instance{
-		Status: "deleting",
-		VM:     &state.VMState{},
-	})
+			assert.Equal(t, "Terminating", string(instance.GetStatus()))
+			history := instance.GetStatusHistory()
+			if !tt.wantHistory {
+				assert.Empty(t, history)
+				return
+			}
 
-	if got := instance.GetStatus(); got != "Terminating" {
-		t.Fatalf("instance status = %q, want %q", got, "Terminating")
-	}
-	if history := instance.GetStatusHistory(); len(history) != 0 {
-		t.Fatalf("status history = %+v, want empty", history)
+			require.Len(t, history, 1)
+			assert.Equal(t, "Error", history[0].GetStatus())
+			assert.Equal(t, tt.wantHistoryText, history[0].GetMessage())
+		})
 	}
 }

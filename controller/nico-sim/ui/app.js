@@ -204,6 +204,7 @@ function copyToClipboard(text) {
     }
 
     return new Promise(function(resolve, reject) {
+        var previouslyFocused = document.activeElement;
         var textarea = document.createElement('textarea');
         textarea.value = text;
         textarea.style.position = 'fixed';
@@ -217,6 +218,9 @@ function copyToClipboard(text) {
             copied = document.execCommand('copy');
         } finally {
             textarea.remove();
+            if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+                previouslyFocused.focus();
+            }
         }
         if (copied) {
             resolve();
@@ -232,6 +236,27 @@ function copyableHtml(text, label) {
         '<span class="copyable-text">' + escapeHtml(text) + '</span>' +
         '<button type="button" class="copy-btn" data-copy="' + escapeAttribute(text) + '" title="' + escapeAttribute(title) + '" aria-label="' + escapeAttribute(title) + '">&#10697;</button>' +
         '</span>';
+}
+
+function showCopyFeedback(btn, text, title, className, duration) {
+    if (btn._copyOriginalText === undefined) {
+        btn._copyOriginalText = btn.textContent;
+        btn._copyOriginalTitle = btn.title;
+    }
+    if (btn._copyFeedbackTimer !== undefined) {
+        clearTimeout(btn._copyFeedbackTimer);
+    }
+
+    btn.textContent = text;
+    btn.title = title === undefined ? btn._copyOriginalTitle : title;
+    btn.classList.remove('copied', 'copy-failed');
+    btn.classList.add(className);
+    btn._copyFeedbackTimer = setTimeout(function() {
+        btn.textContent = btn._copyOriginalText;
+        btn.title = btn._copyOriginalTitle;
+        btn.classList.remove('copied', 'copy-failed');
+        btn._copyFeedbackTimer = undefined;
+    }, duration);
 }
 
 function buildRowCells(inst) {
@@ -1415,26 +1440,10 @@ document.addEventListener('DOMContentLoaded', function() {
         var text = btn.getAttribute('data-copy') || '';
         if (!text) return;
         copyToClipboard(text).then(function() {
-            var prev = btn.textContent;
-            btn.textContent = '\u2713';
-            btn.classList.add('copied');
-            setTimeout(function() {
-                if (!btn.isConnected) return;
-                btn.textContent = prev;
-                btn.classList.remove('copied');
-            }, 1000);
+            showCopyFeedback(btn, '\u2713', undefined, 'copied', 1000);
         }).catch(function(err) {
-            var prev = btn.textContent;
-            var prevTitle = btn.title;
-            btn.textContent = '!';
-            btn.title = 'Copy failed: ' + (err && err.message ? err.message : err);
-            btn.classList.add('copy-failed');
-            setTimeout(function() {
-                if (!btn.isConnected) return;
-                btn.textContent = prev;
-                btn.title = prevTitle;
-                btn.classList.remove('copy-failed');
-            }, 3000);
+            var message = err && err.message ? err.message : err;
+            showCopyFeedback(btn, '!', 'Copy failed: ' + message, 'copy-failed', 3000);
         });
     }, true);
 
