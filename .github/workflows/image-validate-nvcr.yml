@@ -19,8 +19,8 @@ name: Image Validate NVCR
 #   binary is cross-compiled and the final stage runs nothing, so both
 #   architectures build on one runner without emulation and buildx pushes the
 #   index itself.
-# - edge moves in a job of its own, one run at a time and only forward, so a
-#   slower run for an older main commit cannot move it back.
+# - No edge tag. Nothing consumes one: a site runs the version that matches
+#   its controller, and main builds are also tagged sha-<commit>.
 #
 # The destination comes from the `nvcr` environment:
 #
@@ -50,9 +50,6 @@ jobs:
     runs-on: linux-amd64-cpu16
     environment: nvcr
     timeout-minutes: 30
-    outputs:
-      image: ${{ steps.meta.outputs.image }}
-      index_digest: ${{ steps.push.outputs.index_digest }}
     permissions:
       contents: read
       id-token: write       # the OIDC token the attestation is signed against
@@ -101,9 +98,9 @@ jobs:
           version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           version="${version#controller/}"
 
-          # sha-<commit> and edge record what main built. A tag run rebuilds the
-          # same commit under a different version label, so a different digest,
-          # and must not touch them. edge moves in the edge job, after this one.
+          # sha-<commit> records what main built. A tag run rebuilds the same
+          # commit under a different version label, so a different digest, and
+          # must not touch it.
           tags=("${version}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             tags+=("sha-${GITHUB_SHA}")
@@ -211,112 +208,3 @@ jobs:
         with:
           references: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
           component: nvke-validate
-
-  # edge moves only forward. Each main commit publishes in its own group, so
-  # two runs can finish out of order; this job's single group lets one move
-  # edge at a time, and a run whose commit edge already contains leaves it.
-  # GitHub keeps one pending run per group and cancels it when another queues,
-  # even an older commit's, so each run moves edge to the newest published and
-  # attested commit rather than its own.
-  edge:
-    if: github.repository_id == '1323115536' && github.ref == 'refs/heads/main'
-    needs: publish
-    name: Move edge
-    runs-on: ubuntu-latest
-    environment: nvcr
-    timeout-minutes: 10
-    concurrency:
-      group: Image Validate NVCR-edge
-      cancel-in-progress: false
-    permissions:
-      contents: read
-      attestations: read    # a newer commit counts only once it is attested
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0          # the ancestry check needs history
-          persist-credentials: false
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      # `$oauthtoken` is NGC's literal username, not a variable reference.
-      - name: Log in to NVCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: nvcr.io
-          username: "$oauthtoken"
-          password: ${{ secrets.NGC_REGISTRY_TOKEN_DSX }}
-
-      - name: Move edge forward
-        shell: bash
-        env:
-          IMAGE: ${{ needs.publish.outputs.image }}
-          INDEX_DIGEST: ${{ needs.publish.outputs.index_digest }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          target="${IMAGE}:edge"
-          # main may have moved past this commit since checkout.
-          git fetch --quiet origin main
-
-          # A newer commit's edge run may have been cancelled while pending, by
-          # a run that queued after it, possibly this one. So edge goes to the
-          # newest main commit whose sha- tag is published and attested, this
-          # one at least. A tag is pushed before its run attests it, so a tag
-          # alone may be a run still finishing, or one that failed.
-          attested() {
-            local status
-            status="$(curl -sS -o /dev/null -w '%{http_code}' \
-              -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
-              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/attestations/$1")"
-            case "${status}" in
-              200) return 0 ;;
-              404) return 1 ;;
-              *) echo "::error::looking up the attestation for $1 returned HTTP ${status}"; exit 1 ;;
-            esac
-          }
-          commit="${GITHUB_SHA}"
-          digest="${INDEX_DIGEST}"
-          mapfile -t newer < <(git rev-list --max-count=50 "${GITHUB_SHA}..origin/main")
-          for candidate in "${newer[@]}"; do
-            if docker buildx imagetools inspect --raw "${IMAGE}:sha-${candidate}" \
-                > "${RUNNER_TEMP}/candidate.json" 2> "${RUNNER_TEMP}/inspect.err"; then
-              candidate_digest="sha256:$(sha256sum "${RUNNER_TEMP}/candidate.json" | cut -d' ' -f1)"
-              if attested "${candidate_digest}"; then
-                commit="${candidate}"
-                digest="${candidate_digest}"
-                break
-              fi
-            elif ! grep -qF "${IMAGE}:sha-${candidate}: not found" "${RUNNER_TEMP}/inspect.err"; then
-              cat "${RUNNER_TEMP}/inspect.err" >&2
-              echo "::error::could not look up ${IMAGE}:sha-${candidate}"
-              exit 1
-            fi
-          done
-
-          if docker buildx imagetools inspect "${target}" \
-              --format '{{ index (index .Image "linux/amd64").Config.Labels "org.opencontainers.image.revision" }}' \
-              > "${RUNNER_TEMP}/edge-revision" 2> "${RUNNER_TEMP}/inspect.err"; then
-            current="$(cat "${RUNNER_TEMP}/edge-revision")"
-          elif grep -qF "${target}: not found" "${RUNNER_TEMP}/inspect.err"; then
-            current=""
-          else
-            cat "${RUNNER_TEMP}/inspect.err" >&2
-            echo "::error::could not look up ${target}"
-            exit 1
-          fi
-
-          if [[ -n "${current}" ]] && git merge-base --is-ancestor "${commit}" "${current}" 2>/dev/null; then
-            echo "- \`${target}\` stays at \`${current}\`, which already contains \`${commit}\`" >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
-          fi
-
-          docker buildx imagetools create --tag "${target}" "${IMAGE}@${digest}"
-          moved="sha256:$(docker buildx imagetools inspect --raw "${target}" | sha256sum | cut -d' ' -f1)"
-          if [[ "${moved}" != "${digest}" ]]; then
-            echo "::error::${target} is ${moved}, expected ${digest}"
-            exit 1
-          fi
-          echo "- \`${target}\` now points at \`${digest}\`, built from \`${commit}\`" >> "${GITHUB_STEP_SUMMARY}"
