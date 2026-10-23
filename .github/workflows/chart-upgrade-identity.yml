@@ -1,0 +1,118 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Upgrades a pre-rename install on kind and asserts it kept every object.
+#
+# chart.yml renders the chart and compares names; this installs the chart that
+# predates the nvke rename, upgrades it in place with the values an existing
+# site pins, and compares the CLUSTER against itself. Three of the things that
+# break a real site's upgrade are invisible to `helm template` and visible here:
+# the API server refusing an immutable spec.selector, an object being recreated
+# under the same name, and a rollout.
+#
+# GitHub-hosted: kind, helm and kubectl need no NVIDIA runner, and the old chart
+# comes out of this repository's own history rather than a registry, so this
+# lane also runs on a fork or Dependabot pull_request -- unlike everything that
+# depends on the copy-pr-bot mirror.
+#
+# Advisory for now, not a merge-gate member. The rename it guards has already
+# landed, so this is a regression net rather than a release gate, and a new
+# lane earns its place in the gate by being boring for a while first.
+
+name: Chart upgrade identity
+
+on:
+  pull_request:
+    paths:
+      - 'controller/deploy/charts/**'
+      - 'controller/hack/chart-upgrade-identity-assertions.py'
+      - 'controller/hack/ci/chart-upgrade-identity.sh'
+      - 'controller/hack/testdata/chart-legacy-pinned-values.yaml'
+      - 'controller/hack/testdata/chart-upgrade-before-values.yaml'
+      - 'controller/hack/testdata/servicemonitor-stub-crd.yaml'
+      - 'make/checks.mk'
+      - 'make/tool-versions.mk'
+      - 'make/versions.mk'
+      - '.github/actions/setup-kind/**'
+      - '.github/workflows/chart-upgrade-identity.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'controller/deploy/charts/**'
+      - 'controller/hack/chart-upgrade-identity-assertions.py'
+      - 'controller/hack/ci/chart-upgrade-identity.sh'
+      - 'controller/hack/testdata/chart-legacy-pinned-values.yaml'
+      - 'controller/hack/testdata/chart-upgrade-before-values.yaml'
+      - 'controller/hack/testdata/servicemonitor-stub-crd.yaml'
+      - 'make/checks.mk'
+      - 'make/tool-versions.mk'
+      - 'make/versions.mk'
+      - '.github/actions/setup-kind/**'
+      - '.github/workflows/chart-upgrade-identity.yml'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  # The sha is part of the group on main so back-to-back merges do not evict
+  # each other's queued runs. See the note in chart.yml for what that costs.
+  group: Chart upgrade identity-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  upgrade:
+    name: upgrade a pinned-legacy install
+    runs-on: ubuntu-latest
+    if: github.repository_id == '1323115536'
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      # fetch-depth 0 and fetch-tags: the lane exports the chart at
+      # CHART_UPGRADE_FROM_REF out of this repository's history. A shallow
+      # checkout has neither the tag nor the commit, and `git archive` fails
+      # with a message that reads like a typo in the ref.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Read pinned tool versions
+        id: versions
+        run: |
+          {
+            echo "helm_version=$(make --no-print-directory print-HELM_VERSION)"
+            echo "kind_version=$(make --no-print-directory print-KIND_VERSION)"
+            echo "kubectl_version=$(make --no-print-directory print-KUBECTL_VERSION)"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ steps.versions.outputs.helm_version }}
+
+      - uses: ./.github/actions/setup-kind
+        with:
+          kind_version: ${{ steps.versions.outputs.kind_version }}
+          kubectl_version: ${{ steps.versions.outputs.kubectl_version }}
+
+      - name: Install PyYAML
+        run: python3 -m pip install --user --disable-pip-version-check pyyaml
+
+      - name: Upgrade a pre-rename install and compare
+        run: make chart-upgrade-identity-check
+
+      # The snapshots are what a reader diffs when this fails on a change they
+      # did not expect to touch the chart's identities. The script exports the
+      # directory it used; `if: always()` because a failed run is the one whose
+      # snapshots are worth having.
+      - name: Upload the before and after snapshots
+        if: always() && env.CHART_UPGRADE_WORK != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: chart-upgrade-snapshots
+          path: |
+            ${{ env.CHART_UPGRADE_WORK }}/before.json
+            ${{ env.CHART_UPGRADE_WORK }}/after.json
+          if-no-files-found: warn
+          retention-days: 7

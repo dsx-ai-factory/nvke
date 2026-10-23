@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# A permissive stand-in for the Prometheus Operator's ServiceMonitor CRD, so the
+# upgrade lane's kind cluster will accept the one the chart renders.
+#
+# A stub, not the real CRD, and deliberately. The lane asks one question of the
+# ServiceMonitor: is it still called what it was called, and is it the same
+# object it was? Neither answer depends on the schema. Vendoring the real CRD
+# would add a prometheus-operator version to pin, to bump and to get wrong,
+# in exchange for validation that `make chart-check` already does -- kubeconform
+# renders the chart against the real schemas there.
+#
+# x-kubernetes-preserve-unknown-fields is what makes it permissive: every field
+# the chart sets is stored as sent, and none of them is read back.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: servicemonitors.monitoring.coreos.com
+spec:
+  group: monitoring.coreos.com
+  scope: Namespaced
+  names:
+    kind: ServiceMonitor
+    listKind: ServiceMonitorList
+    plural: servicemonitors
+    singular: servicemonitor
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true

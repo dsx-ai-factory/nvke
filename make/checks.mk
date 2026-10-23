@@ -174,6 +174,22 @@ chart-controller-config-check: ## Assert nke-controller-config loads and matches
 
 chart-check: lint-chart chart-rbac-check chart-package-check chart-identity-check chart-controller-config-check ## Run every chart check enforced by CI.
 
+# NOT a member of chart-check, and not a merge-gate member: this one needs a
+# Kubernetes API server. chart-identity-check asks whether the TEMPLATES still
+# render the pinned names; this asks whether a cluster running the pre-rename
+# chart survives being upgraded by the current one -- the immutable selector,
+# the uids, the rollout. See controller/hack/ci/chart-upgrade-identity.sh.
+chart-upgrade-identity-check: ## Upgrade a pre-rename install on kind and assert it kept every object. (needs kind or KUBECONFIG)
+	@$(call require_tool,helm,$(HELM_VERSION))
+	@$(call require_command,kubectl)
+	@$(call require_command,python3)
+	@python3 -c 'import yaml' >/dev/null 2>&1 || { \
+		echo "ERROR: Python module PyYAML is required for chart upgrade assertions."; \
+		echo "  install: python3 -m pip install PyYAML"; \
+		exit 1; \
+	 }
+	@./controller/hack/ci/chart-upgrade-identity.sh
+
 .PHONY: nktp-chart-deps nktp-chart-lint nktp-chart-check
 
 # The dependency archives are downloaded, never committed; the chart's own

@@ -82,6 +82,22 @@ UBUNTU_ISO_SHA256_24_04_5_ARM64 ?= f12484464c7d4d73e2167e0a7dbda1e669f8fae9bcf77
 UBUNTU_ISO_SHA256_26_04_1_AMD64 ?= cc8a95cde20f6ced61a322420de00f10cc3c90ced545daa46cb9c1a117f1d927
 UBUNTU_ISO_SHA256_26_04_1_ARM64 ?= af78753c94b924c85c4964c670692a853f7c80299a4064e317edad95462e3168
 
+# The git ref whose controller chart DEFAULTS still render the legacy
+# (pre-nvke-rename) names: release cloud-workflow-engine, namespace nke-system,
+# ConfigMap nke-controller-config. chart-upgrade-identity.sh exports the chart
+# at this ref, installs it, and upgrades it with the pinned values a site sets,
+# to prove the pins hold against a real API server.
+#
+# Not a version to keep current -- the opposite. It names the last published
+# chart a site could be running from BEFORE the rename, and it moves only when
+# that stops being true (#1496). The defaults moved in #1698, #1769 and #1818;
+# controller/v0.2.0-rc.2 is the last tag ahead of all three.
+#
+# chart-upgrade-identity-assertions.py check-baseline fails the lane if the ref
+# is bumped to a chart that has already renamed, so a bad bump is loud rather
+# than a lane that passes without testing anything.
+CHART_UPGRADE_FROM_REF ?= controller/v0.2.0-rc.2
+
 KIND_VERSION    ?= v0.32.0
 KIND_SHA256_AMD64 ?= 50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9463721b0f54
 KIND_SHA256_ARM64 ?= b92cd615e97585de8ddade28ed5cd7feb4248d717c233eea5b03c37298900f5d
