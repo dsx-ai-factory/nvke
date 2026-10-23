@@ -64,9 +64,21 @@ pods and successful `/readyz` checks. Stop on unexpected identity or health.
 `nvkectl get kubeconfig` must read the management-cluster access Secret and the
 operator must separately have network reachability to the tenant API.
 
-Use an existing mode-0600 curl configuration containing the site's authentication
-and trust settings; see [Call the API](../operate/api-authentication.md#call-the-api).
-Do not enable curl tracing or print that configuration. Read only the relevant
+Put the site's authentication and trust settings in a mode-0600 curl
+configuration: the bearer token from [Call the API](../operate/api-authentication.md#call-the-api)
+as an `Authorization` header and, when the controller's TLS endpoint uses a
+private CA, that CA bundle. Set `TOKEN` as on that page; `SITE_CA_BUNDLE` is a
+placeholder path:
+
+```bash
+SITE_CA_BUNDLE=/secure/site-ca.crt
+(umask 077 && printf 'header = "Authorization: Bearer %s"\ncacert = "%s"\n' \
+  "$TOKEN" "$SITE_CA_BUNDLE" > "$CWE_CURL_CONFIG")
+```
+
+Omit the `cacert` line when the endpoint's certificate chains to a public CA.
+Replace the file when the token expires. Do not enable curl tracing or print
+that configuration. Read only the relevant
 operational cluster fields for private diagnosis, rather than exporting the
 complete cluster object. Review status diagnostics before including them in
 sanitized evidence:
@@ -232,8 +244,12 @@ lock under an ownership-checked cluster-row transaction. The workflow ID and
 lock type must both still match, and `certificateRenewal.state` must be
 `failed`. An unexpected owner means stop and investigate. If the state is still
 `accepted`, for example because its workflow was terminated, stop and escalate
-without releasing the lock: the scheduler keeps requeuing an accepted cycle
-without dispatching it, so releasing the lock does not resume renewal.
+without releasing the lock. For a scheduled cycle, the scheduler keeps requeuing
+the accepted cycle without dispatching it, so releasing the lock would not
+resume renewal. For a forced cycle (`forced: true`), it would: once
+`nextCertRenewalDue` has passed, the scheduler starts a new scheduled cycle, which
+Begin admits and which overwrites this status, while the terminated run's node
+work is still unconfirmed.
 Do not use a generic condition-clearing SQL command, replay a successful renewal
 to obtain evidence, or delete receipts to unblock work.
 
