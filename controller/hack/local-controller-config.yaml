@@ -100,3 +100,4 @@ teleport:
   tokenNamePrefix: nvke-controller-
   resourceGroupLabelValue: nvke
 permissiveMode: false
+authzPermissive: false

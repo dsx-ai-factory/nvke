@@ -88,7 +88,7 @@ func TestClusterService_UpdateCluster_UpgradeWithoutVIP(t *testing.T) {
 				},
 			}, nil).Maybe()
 
-			svc := server.NewServerImpl(config.Config{AllowControlPlaneWithoutVIP: allow}, discardLogger(), mockDB, nil, nil)
+			svc := server.NewServerImpl(config.Config{AllowControlPlaneWithoutVIP: allow}, discardLogger(), mockDB, nil, nil, nil, nil)
 			resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 				ClusterID: clusterID,
 				Body: &api.UpdateClusterRequest{

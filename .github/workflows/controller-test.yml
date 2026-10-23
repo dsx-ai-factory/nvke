@@ -31,8 +31,8 @@
 
 name: Controller Unit Tests
 
-# Keep the push paths aligned with the test matrix below. `cli/**` is explicit
-# because that module sits outside `controller/**`.
+# Keep the push paths aligned with the test matrix below. `auth/**` and `cli/**`
+# are explicit because those modules sit outside `controller/**`.
 # workflow_call is what merge-gate.yml uses to call this as a reusable workflow.
 # Its own `pull_request:` trigger is gone: pull requests reach it through the
 # gate, so it runs once per pull request rather than twice.
@@ -45,6 +45,7 @@ on:
     branches: [main]
     paths:
       - 'controller/**'
+      - 'auth/**'
       - 'cli/**'
       - 'management-engine/**'
       - 'go.work'
@@ -103,6 +104,8 @@ jobs:
           - module: controller/nico-sim
             run: make test
           - module: controller/deploy/charts
+            run: make test
+          - module: auth
             run: make test
           # Every module here has a Makefile with a `test` target, so all of
           # them go through `make test` and pick up -race from GO_TEST_FLAGS
