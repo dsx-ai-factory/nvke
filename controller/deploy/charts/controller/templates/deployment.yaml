@@ -32,6 +32,10 @@
 {{- include "controller.renamedValues.validate" . }}
 {{- include "controller.apiAuth.validate" . }}
 {{- include "controller.controllerConfig.validateEnv" . }}
+{{- if and .Values.apiAuthz.enabled (not .Values.apiAuth.enabled) }}
+{{- fail "apiAuthz.enabled requires apiAuth.enabled: authorizing a caller nobody authenticated is not a meaningful state" }}
+{{- end }}
+{{- include "controller.apiAuthz.validate" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -205,6 +209,11 @@ spec:
               mountPath: {{ include "controller.apiAuth.mountPath" . | quote }}
               readOnly: true
             {{- end }}
+            {{- if .Values.apiAuthz.enabled }}
+            - name: nke-authz-policy
+              mountPath: {{ include "controller.apiAuthz.mountPath" . | quote }}
+              readOnly: true
+            {{- end }}
             {{- if .Values.profiles.image.enabled }}
             - name: profiles
               mountPath: {{ .Values.profiles.path | quote }}
@@ -301,6 +310,12 @@ spec:
             - name: AUTH_CONFIG_PATH
               value: {{ printf "%s/%s" (include "controller.apiAuth.mountPath" .) (include "controller.apiAuth.configFile" .) | quote }}
             {{- end }}
+            {{- if .Values.apiAuthz.enabled }}
+            # Omitted when disabled, never set empty: NKE reads an empty value as
+            # unset, so the deployment would look configured and authorize nobody.
+            - name: AUTHZ_BUNDLE_PATH
+              value: {{ include "controller.apiAuthz.mountPath" . | quote }}
+            {{- end }}
             {{- range .Values.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}
@@ -354,6 +369,24 @@ spec:
         - name: nvke-auth-config
           configMap:
             name: {{ required "apiAuth.configMap.name is required when apiAuth.enabled=true" .Values.apiAuth.configMap.name }}
+        {{- end }}
+        {{- if .Values.apiAuthz.enabled }}
+        # Not optional, for the same reason as the authentication config: a
+        # missing ConfigMap holds the pod in ContainerCreating with the name in
+        # its events, rather than starting NKE with no bundle to load.
+        # existingConfigMap must be a string: `--set ...=false` or `=0` parses
+        # as a bool or number, and a list or map is never a name. Rendering it
+        # would mount a ConfigMap called "false" or "0".
+        {{- $name := "" }}
+        {{- $v := .Values.apiAuthz.existingConfigMap }}
+        {{- if kindIs "string" $v }}
+        {{- $name = trim $v }}
+        {{- else if not (kindIs "invalid" $v) }}
+        {{- fail (printf "apiAuthz.existingConfigMap must be a ConfigMap name, a string; got %s %v. Quote it in your values file, or pass it with --set-string." (kindOf $v) $v) }}
+        {{- end }}
+        - name: nke-authz-policy
+          configMap:
+            name: {{ required "apiAuthz.existingConfigMap is required when apiAuthz.enabled=true" $name | quote }}
         {{- end }}
         {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}

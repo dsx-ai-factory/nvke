@@ -99,7 +99,7 @@ servers:
 
 # Declared once rather than per operation, so a new operation requires a token by
 # default. The endpoints that need no token are not in this file at all;
-# internal/server registers them and internal/auth/routes.go is the list.
+# internal/server registers them and auth/authn/routes.go is the list.
 security:
   - bearerAuth: []
 
@@ -997,7 +997,7 @@ components:
 
   securitySchemes:
     # Any JWT signed by a trusted issuer. Which issuers, and which subjects they
-    # admit, is operator configuration; see internal/auth and the README.
+    # admit, is operator configuration; see auth/authn and the README.
     bearerAuth:
       type: http
       scheme: bearer

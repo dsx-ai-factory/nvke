@@ -1,0 +1,291 @@
+[
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "read"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "write"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "deleteCluster"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "write"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "deleteNodePool"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "write"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "deleteNode"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "write"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "listClusters"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "read"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "getCluster"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "read"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "getClusterControlPlane"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "read"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "getClusterControlPlaneConfigHistory"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "read"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "getClusterSpireServer"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "read"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "listConfigProfiles"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "read"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "listNodePools"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "read"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "getNodePool"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "read"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "listNodeSets"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "read"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "getNodeSet"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "read"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "listNodes"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "read"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "getNode"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "read"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "listReleases"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "read"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "updateCluster"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "write"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "updateClusterSpireServer"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "write"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "updateNodePool"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "write"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "createCluster"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "write"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "createNodePool"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "write"
+      }
+    ]
+  }
+]

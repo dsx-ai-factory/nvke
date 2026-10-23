@@ -331,4 +331,4 @@ not a setting to leave on: it accepts everything.
   RBAC prerequisite, the full rejection-reason table.
 - [nvkectl](../../cli/README.md#authenticating-to-cwe): how the CLI mints.
 - `deploy/k8s/nvke-auth-dev.yaml`: the local identities and auth config.
-- `internal/auth/`: the implementation.
+- `auth/authn/`: the implementation.

@@ -78,3 +78,72 @@ func TestValidateIgnoresAuthFields(t *testing.T) {
 		require.NoError(t, configured.Validate(), "permissive=%t must not change validation", permissive)
 	}
 }
+
+// Authorization requires authentication, and the binary must say so itself: the
+// chart's fail guard is not in the path of a worker started any other way, and
+// without this the process comes up with authorization enforcing, passes
+// /readyz, and answers every API route with a denial because there is no
+// principal to authorize.
+func TestValidateRejectsAuthzWithoutAuth(t *testing.T) {
+	base := config.Config{
+		MetricsListenAddress:  "127.0.0.1:9090",
+		DBConnectionString:    "postgres://cwe:strong@localhost:5432/cwe?sslmode=disable",
+		SpireServerAPIAddress: "spire-server.spire-server.svc.cluster.local:8081",
+		SpireJoinTokenTTL:     time.Hour,
+		NodeAgent:             config.NodeAgentConfig{SpireAttestationMethod: config.SpireAttestationMethodTPM},
+	}
+
+	tests := []struct {
+		name       string
+		authPath   string
+		bundlePath string
+		wantErr    string
+	}{
+		{
+			name: "neither set: both features off, which is every deployment that has not enabled them",
+		},
+		{
+			name:     "authentication alone: every admitted caller may do everything, which is supported",
+			authPath: "/etc/nke/auth/authentication.yaml",
+		},
+		{
+			name:       "both set: the configuration the check exists to allow",
+			authPath:   "/etc/nke/auth/authentication.yaml",
+			bundlePath: "/etc/nke/authz",
+		},
+		{
+			name:       "authorization alone",
+			bundlePath: "/etc/nke/authz",
+			wantErr:    "AUTHZ_BUNDLE_PATH is set but AUTH_CONFIG_PATH is not",
+		},
+		{
+			// Whitespace rather than "": a path that is all spaces mounts nothing
+			// either, and the check is TrimSpace, not ==.
+			name:       "authorization alone, with a whitespace authentication path",
+			authPath:   "   ",
+			bundlePath: "/etc/nke/authz",
+			wantErr:    "AUTHZ_BUNDLE_PATH is set but AUTH_CONFIG_PATH is not",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Permissive changes what a decision does, never whether one can be
+			// made, so it must not change the verdict either way.
+			for _, permissive := range []bool{false, true} {
+				cfg := base
+				cfg.AuthConfigPath = tt.authPath
+				cfg.AuthzBundlePath = tt.bundlePath
+				cfg.AuthzPermissive = permissive
+
+				err := cfg.Validate()
+				if tt.wantErr == "" {
+					require.NoError(t, err, "authzPermissive=%t must not change validation", permissive)
+					continue
+				}
+				require.Error(t, err, "authzPermissive=%t must not make an unauthenticated bundle valid", permissive)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+		})
+	}
+}

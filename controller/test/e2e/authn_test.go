@@ -148,7 +148,7 @@ var _ = Describe("NVKE API authentication", Label("authn"), func() {
 			status, body, err := authnForwarder(restConfig).Get(tctx, path)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(status).To(Equal(http.StatusOK),
-				"%s is on the anonymous surface in internal/auth/routes.go and must stay reachable without a credential; response body: %s",
+				"%s is on the anonymous surface in auth/authn/routes.go and must stay reachable without a credential; response body: %s",
 				path, body)
 		},
 		// Exempt deliberately: Tilt probes it and the UI reads version metadata

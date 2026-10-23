@@ -102,6 +102,6 @@ jobs:
             **/go.sum
 
       # One entry point covers linting, rendered-manifest validation, apiAuth,
-      # tenant RBAC, and package-version assertions locally and in CI.
+      # apiAuthz, tenant RBAC, and package-version assertions locally and in CI.
       - name: Check the chart
         run: make chart-check
