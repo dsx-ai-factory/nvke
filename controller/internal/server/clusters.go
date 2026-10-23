@@ -78,6 +78,10 @@ func (e *updateInProgressError) Error() string {
 	if e.op == db.OperationTypeCertRenewal {
 		msg += "; a failed certificate renewal can retain the lock until an operator clears it (see controller/docs/certificate-renewal.md)"
 	}
+	if e.op == db.OperationTypeEtcdKeyRotation {
+		msg += "; a rotation that fails after prepare keeps the lock until its workflow is reset and completes " +
+			"(see controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery)"
+	}
 	return msg
 }
 
