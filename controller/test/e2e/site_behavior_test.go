@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -64,11 +65,12 @@ const (
 	// siteAPIServerFlagsEnv lists flags every API server must run with, as
 	// name=value separated by semicolons, because values hold commas.
 	siteAPIServerFlagsEnv = "NVKE_SITE_APISERVER_FLAGS"
-	// siteEtcdEncryptedEnv, when true, requires every API server to encrypt
-	// at rest.
+	// siteEtcdEncryptedEnv, when true, requires every API server to run with
+	// an encryption provider config.
 	siteEtcdEncryptedEnv = "NVKE_SITE_ETCD_ENCRYPTED"
 	// siteReservedMemoryEnv is the least memory every node must hold back
-	// from pods, as a quantity such as 2Gi.
+	// from pods, as a quantity such as 2Gi: capacity less allocatable, which
+	// counts the kubelet's hard eviction threshold with its reservations.
 	siteReservedMemoryEnv = "NVKE_SITE_RESERVED_MEMORY"
 )
 
@@ -98,6 +100,11 @@ const kubeVIPLease = "plndr-cp-lock"
 // siteRunLabel marks every object one run creates, so that runs sharing a
 // namespace select only their own pods.
 const siteRunLabel = "e2e.nvidia.com/site-run"
+
+// validationProbeLabel marks every pod the validation creates, so that the pod
+// check leaves out an earlier run's: a failed probe pod is kept for debugging,
+// and its failure was that run's to report.
+const validationProbeLabel = "e2e.nvidia.com/validation-probe"
 
 // The probe pods' roles, apart from their servers', so that a Service selects
 // no probe: a running probe counts as a ready endpoint, and traffic sent
@@ -246,7 +253,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	work := func() (string, string, map[string]string) {
 		connect()
 		run := utilrand.String(6)
-		return settings.checks.probeNamespace, settings.checks.probeImage, map[string]string{siteRunLabel: run}
+		return settings.checks.probeNamespace, settings.checks.probeImage, map[string]string{siteRunLabel: run, validationProbeLabel: "true"}
 	}
 
 	It("runs Argo CD", func(ctx SpecContext) {
@@ -352,7 +359,10 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		Expect(joinProblems("API server flags", apiServerFlagProblems(kubeadmFlags, expect.apiServerFlags, pods.Items))).To(Succeed())
 	}, Label("site-distro"), NodeTimeout(2*time.Minute))
 
-	It("encrypts Secrets at rest", func(ctx SpecContext) {
+	// Only that a config is given: which provider it writes with is in a file
+	// on the control-plane host, which the API does not show. A config whose
+	// first provider is identity stores Secrets in plain text and passes.
+	It("runs every API server with an encryption provider config", func(ctx SpecContext) {
 		if !connect().etcdEncrypted {
 			Skip(siteEtcdEncryptedEnv + " is not true")
 		}
@@ -393,21 +403,36 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		Expect(joinProblems("StorageClasses", storageClassProblems(expect.storageClasses, classes.Items))).To(Succeed())
 	}, Label("site-distro"), NodeTimeout(2*time.Minute))
 
-	It("denies what default RBAC does not grant", func(ctx SpecContext) {
+	// The site's part is what it grants a request with no credential. The
+	// identity's part holds the image's service account to the README's
+	// RBAC; outside a pod the identity is whoever runs the suite, often an
+	// admin, and says nothing about the site, so it is left out.
+	It("refuses anonymous access and holds the validation identity to read access", func(ctx SpecContext) {
 		connect()
 		var problems []string
-		for _, attributes := range rbacDenied {
-			review := &authorizationv1.SelfSubjectAccessReview{Spec: authorizationv1.SelfSubjectAccessReviewSpec{ResourceAttributes: ptr.To(attributes)}}
-			result := expectSucceed(clientset.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, review, metav1.CreateOptions{}))
-			if result.Status.Allowed {
-				problems = append(problems, "the suite's own identity may "+describeAttributes(attributes)+": it should hold read access only")
+		if settings.inPod {
+			for _, attributes := range rbacDenied {
+				review := &authorizationv1.SelfSubjectAccessReview{Spec: authorizationv1.SelfSubjectAccessReviewSpec{ResourceAttributes: ptr.To(attributes)}}
+				result := expectSucceed(clientset.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, review, metav1.CreateOptions{}))
+				if result.Status.Allowed {
+					problems = append(problems, "the validation identity may "+describeAttributes(attributes)+": it should hold read access only")
+				}
 			}
+		} else {
+			GinkgoLogr.Info("RBAC check leaves out the suite's own identity: it runs outside a pod")
 		}
 		anonymous := expectSucceed(kubernetes.NewForConfig(rest.AnonymousClientConfig(restConfig)))
 		_, err := anonymous.CoreV1().Secrets(kubeSystemNamespace).List(ctx, metav1.ListOptions{Limit: 1})
 		if problem := anonymousProblem(err); problem != "" {
 			problems = append(problems, problem)
 		}
+		var (
+			clusterRoleBindings rbacv1.ClusterRoleBindingList
+			roleBindings        rbacv1.RoleBindingList
+		)
+		Expect(c.List(ctx, &clusterRoleBindings)).To(Succeed())
+		Expect(c.List(ctx, &roleBindings)).To(Succeed())
+		problems = append(problems, unauthenticatedBindingProblems(clusterRoleBindings.Items, roleBindings.Items)...)
 		Expect(joinProblems("RBAC checks", problems)).To(Succeed())
 	}, Label("site-distro"), NodeTimeout(2*time.Minute))
 
@@ -428,7 +453,10 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
 	}, Label("site-distro"), NodeTimeout(siteCheck+time.Minute))
 
-	It("reaches the API server at the control-plane endpoint from another node", func(ctx SpecContext) {
+	// From a node other than kube-vip's leader where its lease names one.
+	// Where it names none, the endpoint's node is unknown and the probe may
+	// run on it, so the pass proves reachability from a pod and no more.
+	It("reaches the API server at the control-plane endpoint from a pod", func(ctx SpecContext) {
 		namespace, image, labels := work()
 		configuration := expectSucceed(kubeadmClusterConfiguration(ctx, c))
 		endpoint := expectSucceed(controlPlaneEndpoint(configuration))
@@ -445,12 +473,17 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		}
 		var nodes corev1.NodeList
 		Expect(c.List(ctx, &nodes)).To(Succeed())
-		candidates := slices.DeleteFunc(probeNodes(nodes.Items), func(n corev1.Node) bool { return n.Name == holder })
-		if len(candidates) == 0 {
+		node, away, ok := endpointProbeNode(nodes.Items, holder)
+		switch {
+		case !ok && away:
 			Skip(fmt.Sprintf("no node but the endpoint's holder %q can run the probe", holder))
+		case !ok:
+			Fail("no Ready, schedulable node to run the probe on")
+		case !away:
+			GinkgoLogr.Info("control-plane endpoint probe: no kube-vip lease names a node, so the probe may share the endpoint's node", "holder", holder)
 		}
-		GinkgoLogr.Info("control-plane endpoint probe", "endpoint", endpoint, "holder", holder, "from", candidates[0].Name)
-		pod := endpointProbePod(namespace, image, labels, candidates[0], endpoint)
+		GinkgoLogr.Info("control-plane endpoint probe", "endpoint", endpoint, "holder", holder, "from", node.Name, "awayFromHolder", away)
+		pod := endpointProbePod(namespace, image, labels, node, endpoint)
 		_, message, err := kube.RunPodWithLogs(ctx, c, clientset, pod, podCIDRProbeContainer, siteCreateTimeout)
 		deleteOnExit(ctx, c, pod)
 		Expect(err).NotTo(HaveOccurred())
@@ -605,7 +638,7 @@ func siteBehaviorClient(restConfig *rest.Config) (client.Client, error) {
 	scheme := runtime.NewScheme()
 	for _, add := range []func(*runtime.Scheme) error{
 		corev1.AddToScheme, appsv1.AddToScheme, batchv1.AddToScheme, networkingv1.AddToScheme, storagev1.AddToScheme,
-		admissionregistrationv1.AddToScheme, discoveryv1.AddToScheme, coordinationv1.AddToScheme,
+		admissionregistrationv1.AddToScheme, discoveryv1.AddToScheme, coordinationv1.AddToScheme, rbacv1.AddToScheme,
 	} {
 		if err := add(scheme); err != nil {
 			return nil, err
@@ -993,6 +1026,10 @@ func etcdQuotaProblems(want string, pods []corev1.Pod) []string {
 	return problems
 }
 
+// reservedMemoryProblems requires every node to hold back at least want from
+// pods. What it holds back is capacity less allocatable, the kubelet's hard
+// eviction threshold included, so a node whose reservations alone fall short
+// of want by less than that threshold passes.
 func reservedMemoryProblems(nodes []corev1.Node, want resource.Quantity) []string {
 	if len(nodes) == 0 {
 		return []string{"the cluster has no nodes"}
@@ -1008,7 +1045,7 @@ func reservedMemoryProblems(nodes []corev1.Node, want resource.Quantity) []strin
 		reserved := capacity.DeepCopy()
 		reserved.Sub(allocatable)
 		if reserved.Cmp(want) < 0 {
-			problems = append(problems, fmt.Sprintf("%s: reserves %s, want at least %s", node.Name, reserved.String(), want.String()))
+			problems = append(problems, fmt.Sprintf("%s: holds back %s from pods (capacity less allocatable), want at least %s", node.Name, reserved.String(), want.String()))
 		}
 	}
 	return problems
@@ -1066,6 +1103,45 @@ func anonymousProblem(err error) string {
 	default:
 		return fmt.Sprintf("an anonymous request for kube-system's Secrets failed other than as refused: %v", err)
 	}
+}
+
+// publicGrants are the roles a site may bind to a request with no credential:
+// kubeadm's version and health readers and kube-public's cluster-info for
+// joining nodes, and the service account issuer's discovery documents, which a
+// site may publish. A Role is named namespace/name.
+var publicGrants = []rbacv1.RoleRef{
+	{Kind: "ClusterRole", Name: "system:public-info-viewer"},
+	{Kind: "ClusterRole", Name: "system:service-account-issuer-discovery"},
+	{Kind: "Role", Name: "kube-public/kubeadm:bootstrap-signer-clusterinfo"},
+}
+
+// unauthenticatedBindingProblems reports every binding that grants a role but
+// publicGrants to system:anonymous or system:unauthenticated.
+func unauthenticatedBindingProblems(clusterBindings []rbacv1.ClusterRoleBinding, bindings []rbacv1.RoleBinding) []string {
+	var problems []string
+	check := func(binding, namespace string, ref rbacv1.RoleRef, subjects []rbacv1.Subject) {
+		grant := rbacv1.RoleRef{Kind: ref.Kind, Name: ref.Name}
+		if ref.Kind == "Role" {
+			grant.Name = namespace + "/" + ref.Name
+		}
+		if slices.Contains(publicGrants, grant) {
+			return
+		}
+		for _, subject := range subjects {
+			if (subject.Kind == rbacv1.UserKind && subject.Name == "system:anonymous") ||
+				(subject.Kind == rbacv1.GroupKind && subject.Name == "system:unauthenticated") {
+				problems = append(problems, fmt.Sprintf("%s grants %s %s to %s", binding, ref.Kind, grant.Name, subject.Name))
+			}
+		}
+	}
+	for _, b := range clusterBindings {
+		check("ClusterRoleBinding "+b.Name, "", b.RoleRef, b.Subjects)
+	}
+	for _, b := range bindings {
+		check("RoleBinding "+b.Namespace+"/"+b.Name, b.Namespace, b.RoleRef, b.Subjects)
+	}
+	slices.Sort(problems)
+	return problems
 }
 
 // webhookService is a Service an admission webhook calls.
@@ -1129,6 +1205,22 @@ func probeNodes(nodes []corev1.Node) []corev1.Node {
 		usable = append(usable, node)
 	}
 	return usable
+}
+
+// endpointProbeNode is the node the control-plane endpoint probe runs on: a
+// probe node other than holder, kube-vip's leader, where holder names a node.
+// away reports that it does, so the node chosen is not the endpoint's; ok is
+// false when no node is left to choose.
+func endpointProbeNode(nodes []corev1.Node, holder string) (corev1.Node, bool, bool) {
+	isHolder := func(n corev1.Node) bool {
+		return holder != "" && (n.Name == holder || n.Labels[corev1.LabelHostname] == holder)
+	}
+	away := slices.ContainsFunc(nodes, isHolder)
+	candidates := slices.DeleteFunc(probeNodes(nodes), isHolder)
+	if len(candidates) == 0 {
+		return corev1.Node{}, away, false
+	}
+	return candidates[0], away, true
 }
 
 func withRunLabels(labels map[string]string, role string) map[string]string {

@@ -89,6 +89,7 @@ func runDNSProbe(ctx context.Context, c client.Client, namespace, image string) 
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "e2e-node-local-dns-",
 			Namespace:    namespace,
+			Labels:       map[string]string{validationProbeLabel: "true"},
 		},
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyNever,

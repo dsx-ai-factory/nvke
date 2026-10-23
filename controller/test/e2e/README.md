@@ -205,8 +205,10 @@ specs that install and change nothing lasting on the site. The site's are the
   (kubeadm's control-plane taint is allowed where another node takes the work)
 - every Deployment, StatefulSet and DaemonSet in the cluster fully available,
   and every required namespace running at least one ready pod
-- no pod failing in any namespace but the probe namespace, the runner's own,
-  where an earlier run's pods may be left; and staying that way for 30 seconds
+- no pod failing in any namespace but the runner's own, where an earlier run's
+  pods may be left; and staying that way for 30 seconds. Pods an earlier run's
+  probes left, labeled `e2e.nvidia.com/validation-probe`, are left out wherever
+  they are
 - every cert-manager Certificate Ready
 - the controller API lists clusters
 - every API server `/readyz` and `/livez` check passing, etcd's included
@@ -216,8 +218,12 @@ specs that install and change nothing lasting on the site. The site's are the
 - the API server and every kubelet at the site's Kubernetes version
 - a pod resolving a cluster DNS name
 - every API server running the flags kubeadm-config sets, and etcd its quota
-- the suite's own identity unable to read Secrets or bind roles, and an
-  anonymous request refused
+- an anonymous request refused, and no RoleBinding or ClusterRoleBinding
+  granting `system:anonymous` or `system:unauthenticated` more than the public
+  roles: `system:public-info-viewer`, `system:service-account-issuer-discovery`
+  and kube-public's `kubeadm:bootstrap-signer-clusterinfo`
+- in a pod, the suite's own identity unable to read Secrets or bind roles;
+  outside one, that identity is whoever runs the suite and is not checked
 - a ready endpoint behind every admission webhook Service
 
 Some checks apply only where the run says so, and skip otherwise:
@@ -231,8 +237,13 @@ Some checks apply only where the run says so, and skip otherwise:
 | Named workloads, such as SPIRE's, the CNI's and the telemetry stack's, present with a ready pod | `NVKE_SITE_REQUIRED_WORKLOADS` is set |
 | Named workloads, the CNI's among them, at their versions | `NVKE_SITE_WORKLOAD_VERSIONS` is set |
 | Every API server running the flags the run names | `NVKE_SITE_APISERVER_FLAGS` is set |
-| Every API server encrypting Secrets at rest | `NVKE_SITE_ETCD_ENCRYPTED=true` |
-| Every node holding back at least the memory the run names | `NVKE_SITE_RESERVED_MEMORY` is set |
+| Every API server running with an encryption provider config | `NVKE_SITE_ETCD_ENCRYPTED=true` |
+| Every node holding back from pods at least the memory the run names | `NVKE_SITE_RESERVED_MEMORY` is set |
+
+The encryption check sees only the flag: which provider the config writes
+with is in a file on the control-plane host, so a config led by `identity`,
+which stores Secrets in plain text, passes. The tenant suite's encryption
+specs read a Secret from etcd to prove it; this image has no such access.
 | Every StorageClass the run names present | `NVKE_SITE_STORAGE_CLASSES` is set |
 
 Specs labeled `creates` try what workloads rely on, with short-lived objects
@@ -240,9 +251,10 @@ in the probe namespace that they delete whether they pass or fail; a runner
 that may create nothing adds `-ginkgo.label-filter='site-validate && !creates'`.
 Each object carries an `e2e.nvidia.com/site-run` label naming its run.
 
-- the API server's `/readyz` at kubeadm's `controlPlaneEndpoint`, from a node
-  other than the one kube-vip's lease says holds it; skipped on a site with
-  no such node
+- the API server's `/readyz` at kubeadm's `controlPlaneEndpoint` from a pod,
+  on a node other than the one kube-vip's lease names as holder; skipped when
+  only that node can run it. Where no lease names a node, the endpoint's node
+  is unknown and the probe may run on it, which the log says
 - traffic between pods, through a Service by name and by ClusterIP, across two
   nodes where there are two
 - a NetworkPolicy denying a source it does not allow, while a pod it does not
@@ -275,7 +287,8 @@ account. That account needs:
 
 - cluster-wide `get` and `list` on Nodes, Pods, Deployments, StatefulSets,
   DaemonSets, Jobs, StorageClasses, EndpointSlices, Validating and Mutating
-  WebhookConfigurations, `cert-manager.io` Certificates, and, where the run
+  WebhookConfigurations, RoleBindings and ClusterRoleBindings,
+  `cert-manager.io` Certificates, and, where the run
   lists their components, `argoproj.io` Applications and `postgresql.cnpg.io`
   Clusters; and `get` on the non-resource URLs `/readyz`, `/livez` and
   `/version`
@@ -309,8 +322,8 @@ Configure it with the [health spec variables](#health-specs) and these:
 | `NVKE_SITE_REQUIRED_WORKLOADS` | `namespace/workload`, comma-separated: a Deployment, StatefulSet or DaemonSet that must exist and run a ready pod. | Unset |
 | `NVKE_SITE_WORKLOAD_VERSIONS` | `namespace/workload=version`, comma-separated: a Deployment, StatefulSet or DaemonSet one of whose containers runs an image tagged `version`, with or without a leading `v`. | Unset |
 | `NVKE_SITE_APISERVER_FLAGS` | Flags every API server runs, `name=value` separated by semicolons, because values hold commas. Added to those kubeadm-config sets; a conflict between the two fails. | Unset |
-| `NVKE_SITE_ETCD_ENCRYPTED` | `true` requires `--encryption-provider-config` on every API server. | Unset |
-| `NVKE_SITE_RESERVED_MEMORY` | The least memory every node holds back from pods (capacity less allocatable), such as `2Gi`. | Unset |
+| `NVKE_SITE_ETCD_ENCRYPTED` | `true` requires `--encryption-provider-config` on every API server. It does not show which provider the config uses. | Unset |
+| `NVKE_SITE_RESERVED_MEMORY` | The least memory every node holds back from pods (capacity less allocatable), such as `2Gi`. That counts the kubelet's hard eviction threshold, 100Mi by default, with its kube and system reservations: set it to their sum. | Unset |
 | `NVKE_SITE_STORAGE_CLASSES` | Comma-separated StorageClasses that must exist. | Unset |
 | `NVKE_SITE_PVC_STORAGE_CLASS` | The class the PVC check binds from. | The default class |
 

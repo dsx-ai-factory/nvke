@@ -16,6 +16,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -310,7 +311,7 @@ func nodeWithMemory(name, capacity, allocatable string) corev1.Node {
 }
 
 func TestUnit_SiteReservedMemoryProblems(t *testing.T) {
-	require.Equal(t, []string{"small: reserves 1Gi, want at least 2Gi"}, reservedMemoryProblems([]corev1.Node{
+	require.Equal(t, []string{"small: holds back 1Gi from pods (capacity less allocatable), want at least 2Gi"}, reservedMemoryProblems([]corev1.Node{
 		nodeWithMemory("enough", "64Gi", "61Gi"),
 		nodeWithMemory("small", "64Gi", "63Gi"),
 	}, resource.MustParse("2Gi")))
@@ -335,6 +336,77 @@ func TestUnit_SiteAnonymousProblem(t *testing.T) {
 	require.Empty(t, anonymousProblem(apierrors.NewForbidden(secrets, "", errors.New("no"))))
 	require.Equal(t, "an anonymous request listed kube-system's Secrets", anonymousProblem(nil))
 	require.Contains(t, anonymousProblem(errors.New("connection refused")), "failed other than as refused")
+}
+
+func TestUnit_SiteUnauthenticatedBindingProblems(t *testing.T) {
+	anonymous := rbacv1.Subject{Kind: rbacv1.UserKind, APIGroup: rbacv1.GroupName, Name: "system:anonymous"}
+	unauthenticated := rbacv1.Subject{Kind: rbacv1.GroupKind, APIGroup: rbacv1.GroupName, Name: "system:unauthenticated"}
+	authenticated := rbacv1.Subject{Kind: rbacv1.GroupKind, APIGroup: rbacv1.GroupName, Name: "system:authenticated"}
+	clusterRole := func(name string) rbacv1.RoleRef {
+		return rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: name}
+	}
+	role := func(name string) rbacv1.RoleRef {
+		return rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: name}
+	}
+
+	clusterBinding := func(name string, ref rbacv1.RoleRef, subjects ...rbacv1.Subject) rbacv1.ClusterRoleBinding {
+		return rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: name}, RoleRef: ref, Subjects: subjects}
+	}
+	binding := func(namespace, name string, ref rbacv1.RoleRef, subjects ...rbacv1.Subject) rbacv1.RoleBinding {
+		return rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}, RoleRef: ref, Subjects: subjects}
+	}
+
+	clusterBindings := []rbacv1.ClusterRoleBinding{
+		clusterBinding("system:public-info-viewer", clusterRole("system:public-info-viewer"), authenticated, unauthenticated),
+		clusterBinding("oidc-discovery", clusterRole("system:service-account-issuer-discovery"), unauthenticated),
+		clusterBinding("open-view", clusterRole("view"), unauthenticated),
+		clusterBinding("everyone-edits", clusterRole("edit"), authenticated),
+	}
+	bindings := []rbacv1.RoleBinding{
+		binding("kube-public", "kubeadm:bootstrap-signer-clusterinfo", role("kubeadm:bootstrap-signer-clusterinfo"), anonymous),
+		binding("kube-system", "kubeadm:bootstrap-signer-clusterinfo", role("kubeadm:bootstrap-signer-clusterinfo"), anonymous),
+		binding("apps", "anyone-admin", clusterRole("admin"), anonymous),
+	}
+	require.Equal(t, []string{
+		"ClusterRoleBinding open-view grants ClusterRole view to system:unauthenticated",
+		"RoleBinding apps/anyone-admin grants ClusterRole admin to system:anonymous",
+		"RoleBinding kube-system/kubeadm:bootstrap-signer-clusterinfo grants Role kube-system/kubeadm:bootstrap-signer-clusterinfo to system:anonymous",
+	}, unauthenticatedBindingProblems(clusterBindings, bindings),
+		"only the public grants pass, a Role only in its own namespace, and authenticated subjects are not this check's")
+}
+
+func TestUnit_SiteEndpointProbeNode(t *testing.T) {
+	node := func(name, hostname string) corev1.Node {
+		return corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{corev1.LabelHostname: hostname}},
+			Status:     corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}},
+		}
+	}
+	nodes := []corev1.Node{node("cp-1", "cp-1"), node("cp-2.example.com", "cp-2")}
+
+	chosen, away, ok := endpointProbeNode(nodes, "cp-1")
+	require.True(t, ok)
+	require.True(t, away)
+	require.Equal(t, "cp-2.example.com", chosen.Name)
+
+	chosen, away, ok = endpointProbeNode(nodes, "cp-2")
+	require.True(t, ok)
+	require.True(t, away, "a holder that names the node by hostname is still that node")
+	require.Equal(t, "cp-1", chosen.Name)
+
+	for _, holder := range []string{"", "some-pod-name"} {
+		_, away, ok = endpointProbeNode(nodes, holder)
+		require.True(t, ok)
+		require.False(t, away, "holder %q names no node, so the probe may share the endpoint's node", holder)
+	}
+
+	_, away, ok = endpointProbeNode(nodes[:1], "cp-1")
+	require.False(t, ok)
+	require.True(t, away, "only the holder is left: skip, not fail")
+
+	_, away, ok = endpointProbeNode(nil, "")
+	require.False(t, ok)
+	require.False(t, away, "no node at all: fail")
 }
 
 func TestUnit_SiteWebhookProblems(t *testing.T) {

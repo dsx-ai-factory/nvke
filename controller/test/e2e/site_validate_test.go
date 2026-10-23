@@ -37,7 +37,10 @@ const serviceAccountNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccou
 
 // siteValidateSettings is the image's site validation configuration.
 type siteValidateSettings struct {
-	enabled           bool
+	enabled bool
+	// inPod reports that the suite runs in a pod, as the image does, so that
+	// its identity is the service account the README grants.
+	inPod             bool
 	kubernetesVersion string
 	checks            siteChecks
 	expect            siteExpectations
@@ -89,6 +92,7 @@ func siteValidateFromEnv(getenv func(string) string, namespaceFile string) (site
 
 	return siteValidateSettings{
 		enabled:           enabled,
+		inPod:             ownNamespace != "",
 		kubernetesVersion: strings.TrimSpace(getenv(siteKubernetesVersionEnv)),
 		checks: siteChecks{
 			namespaces:       namespaces,

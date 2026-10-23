@@ -194,9 +194,9 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool), chec
 			if err := c.List(ctx, &jobs); err != nil {
 				return err
 			}
-			checked, excused := excuseNamespace(pods.Items, checks.excusedNamespace)
+			checked, excused := excusePods(pods.Items, checks.excusedNamespace)
 			if excused > 0 {
-				GinkgoLogr.Info("pod check leaves out the runner's namespace", "namespace", checks.excusedNamespace, "pods", excused)
+				GinkgoLogr.Info("pod check leaves out the runner's namespace and earlier validation probes", "namespace", checks.excusedNamespace, "pods", excused)
 			}
 			return joinProblems("pods", podProblems(checked, jobs.Items))
 		}
@@ -467,13 +467,14 @@ func replicas(desired *int32) int32 {
 	return *desired
 }
 
-// excuseNamespace drops the pods in namespace, returning the rest and how
-// many it dropped.
-func excuseNamespace(pods []corev1.Pod, namespace string) ([]corev1.Pod, int) {
-	if namespace == "" {
-		return pods, 0
-	}
-	kept := slices.DeleteFunc(slices.Clone(pods), func(pod corev1.Pod) bool { return pod.Namespace == namespace })
+// excusePods drops the pods in namespace, none when it is "", and every pod
+// labeled validationProbeLabel, returning the rest and how many it dropped.
+// The pod check runs before any probe of its own run, so every probe pod it
+// sees is an earlier run's.
+func excusePods(pods []corev1.Pod, namespace string) ([]corev1.Pod, int) {
+	kept := slices.DeleteFunc(slices.Clone(pods), func(pod corev1.Pod) bool {
+		return (namespace != "" && pod.Namespace == namespace) || pod.Labels[validationProbeLabel] == "true"
+	})
 	return kept, len(pods) - len(kept)
 }
 
