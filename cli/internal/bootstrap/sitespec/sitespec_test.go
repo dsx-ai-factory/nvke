@@ -316,6 +316,49 @@ func TestValidate_OIDCProviders(t *testing.T) {
 	}
 }
 
+// TestLoadOIDCUsernamePrefix verifies empty prefixes preserve claim values and reserved namespaces remain protected.
+func TestLoadOIDCUsernamePrefix(t *testing.T) {
+	tests := []struct {
+		name           string
+		usernamePrefix string
+		groupsPrefix   string
+		omitPrefix     bool
+		wantErr        string
+	}{
+		{name: "explicit empty prefix"},
+		{name: "omitted prefix", omitPrefix: true},
+		{name: "nonempty prefix", usernamePrefix: "corp:"},
+		{name: "reserved username prefix", usernamePrefix: "system:", wantErr: "cluster.oidcProviders[0].usernamePrefix"},
+		{name: "reserved group prefix", groupsPrefix: "system:", wantErr: "cluster.oidcProviders[0].groupsPrefix"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := validOIDCProvider()
+			provider.UsernamePrefix = tt.usernamePrefix
+			provider.GroupsPrefix = tt.groupsPrefix
+			input := minimalValid()
+			input.Cluster.K8sVersion = "1.34.0"
+			input.Cluster.OIDCProviders = []OIDCProvider{provider}
+			body, err := yaml.Marshal(input)
+			require.NoError(t, err)
+			text := string(body)
+			if tt.omitPrefix {
+				require.Contains(t, text, `usernamePrefix: ""`)
+				text = strings.Replace(text, `usernamePrefix: ""`, "", 1)
+			}
+			inv, err := Load(writeTemp(t, text))
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				assert.ErrorContains(t, err, "reserved")
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, inv.Cluster.OIDCProviders, 1)
+			assert.Equal(t, tt.usernamePrefix, inv.Cluster.OIDCProviders[0].UsernamePrefix)
+		})
+	}
+}
+
 // TestLoadOIDCDiscoveryURL verifies accepted overrides survive loading and invalid URLs fail validation.
 func TestLoadOIDCDiscoveryURL(t *testing.T) {
 	const discoveryURL = "https://identity.example.com/.well-known/openid-configuration"

@@ -477,8 +477,8 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	}
 }
 
-// TestDeploy_OmitsUnsetOIDCDiscoveryURL verifies an unset override preserves default discovery behavior.
-func TestDeploy_OmitsUnsetOIDCDiscoveryURL(t *testing.T) {
+// TestDeploy_EmptyOIDCUsernamePrefix verifies Helm receives an explicit empty prefix and no discovery override.
+func TestDeploy_EmptyOIDCUsernamePrefix(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.OIDCProviders = []sitespec.OIDCProvider{{Name: "corp", IssuerURL: "https://login.example.com"}}
 	runner := &fakeRunner{}
@@ -486,6 +486,17 @@ func TestDeploy_OmitsUnsetOIDCDiscoveryURL(t *testing.T) {
 	extra := runner.extraValuesFiles[cweReleaseName]
 	require.Len(t, extra, 2)
 	assert.NotContains(t, extra[1], "discoveryURL:")
+	var rendered struct {
+		OIDC struct {
+			Providers []struct {
+				UsernamePrefix *string `yaml:"usernamePrefix"`
+			} `yaml:"providers"`
+		} `yaml:"oidc"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(extra[1]), &rendered))
+	require.Len(t, rendered.OIDC.Providers, 1)
+	require.NotNil(t, rendered.OIDC.Providers[0].UsernamePrefix)
+	assert.Empty(t, *rendered.OIDC.Providers[0].UsernamePrefix)
 }
 
 // TestDeploy_InstallsPostgresFromTheEmbeddedChart: Postgres comes from the

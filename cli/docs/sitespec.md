@@ -282,7 +282,7 @@ applies every file in `infra.nico.releases`.
 | `cluster.nodeAgentPort` | string | no | Port number 1–65535. Defaults to `15005`. |
 | `cluster.etcdEncryption` | bool | no | Encrypt the Kubernetes API's etcd data at rest. Defaults to `true`. Decided at bootstrap only: a cluster built with it `false` cannot be encrypted afterwards. See below. |
 | `cluster.kubeletConfig.systemReservedMemory` | string | no | e.g. `16Gi`. |
-| `cluster.oidcProviders` | list | no | OIDC providers for site cluster. Cannot be modified afterwards. Ignored when absent. Rejected when `cluster.k8sVersion` is older than `1.34.0`. Each entry needs `name`, `issuerURL`, `audiences`, `usernameClaim`, `usernamePrefix`, and `caBundle` (inline PEM). Optional: `groupsClaim`, `groupsPrefix`, `requiredClaims`, `discoveryURL`.|
+| `cluster.oidcProviders` | list | no | OIDC providers for site cluster. Cannot be modified afterwards. Ignored when absent. Rejected when `cluster.k8sVersion` is older than `1.34.0`. Each entry needs `name`, `issuerURL`, `audiences`, `usernameClaim`, and `caBundle` (inline PEM). Optional: `usernamePrefix`, `groupsClaim`, `groupsPrefix`, `requiredClaims`, `discoveryURL`.|
 | `spire.upstreamCA` | bool | no | `true` when the site's SPIRE chains to a CA you bring. Every `bootstrap site`, `validate sitespec` and install run then requires `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`, and the variables are refused without it. See "The SPIRE CA". |
 | `spire.trustDomain` | string | no | SPIFFE trust domain, shared by the bootstrap and the controller stack install. Set it once, before the bootstrap, or leave it unset: both then use `nvkectl-bootstrap.nke.local`, and the install says so. A bootstrap run with `NVKECTL_BOOTSTRAP_CLUSTER_NAME` set derives another, so set it then. |
 
@@ -471,7 +471,7 @@ A non-empty list requires `cluster.k8sVersion` `1.34.0` or newer and contains at
 | `issuerURL` | yes | Issuer URL. An `https` URL, unique in the list. The API server compares it with the token's `iss` claim. |
 | `audiences` | yes | `aud` values the API server accepts. At least one, and none empty. |
 | `usernameClaim` | yes | Claim the API server uses as the username. |
-| `usernamePrefix` | yes | Text the API server puts in front of the username. It must not start with `system:`, `kubeadm:`, `nke:`, `nvke:`, or `nvidia:`. |
+| `usernamePrefix` | no | Text the API server puts in front of the username. Omit or set to `""` to use the claim unchanged. It must not start with `system:`, `kubeadm:`, `nke:`, `nvke:`, or `nvidia:`. |
 | `groupsClaim` | no | Claim the API server uses as the user's groups. |
 | `groupsPrefix` | no | Text the API server puts in front of each group. The reserved prefixes are the same as for `usernamePrefix`. |
 | `requiredClaims` | no | Map of claim name to the value that claim must hold. |

@@ -755,9 +755,6 @@ func (v *validator) checkOIDCProviders(c Cluster) {
 		if strings.TrimSpace(p.UsernameClaim) == "" {
 			v.addf("%s.usernameClaim is required", path)
 		}
-		if strings.TrimSpace(p.UsernamePrefix) == "" {
-			v.addf("%s.usernamePrefix is required", path)
-		}
 		v.checkOIDCPrefix(path+".usernamePrefix", p.UsernamePrefix)
 		v.checkOIDCPrefix(path+".groupsPrefix", p.GroupsPrefix)
 		if len(p.Audiences) == 0 {
