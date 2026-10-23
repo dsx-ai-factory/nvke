@@ -74,7 +74,6 @@ linters:
     - gocritic       # 73 issues - various code style
     - godot          # 45 issues - comment punctuation
     - gosec          # 18 issues - security issues
-    - govet          # 41 issues - mostly shadow declarations
     - grouper        # 18 issues - declaration grouping
     - misspell       # 10 issues - spelling errors
     - musttag        # 1 issue - struct tag requirements
@@ -171,6 +170,11 @@ linters:
       - linters:
           - staticcheck
         text: 'ST1003:'
+      # Shadowing err and ctx is the idiomatic Go pattern, not a defect.
+      # controller/.golangci.yml carries the same exclusion.
+      - linters:
+          - govet
+        text: 'shadow: declaration of "(err|ctx)" shadows declaration at'
     paths:
       - pkg/workflow/cluster
       - third_party$
