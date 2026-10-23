@@ -105,8 +105,10 @@ also reserve node work before external calls, even when their legacy inputs omit
 progress messages. Worker-only node-pool changes and health/drift observations
 continue. Failures in `prepare` release this fence; failures from `add_secondary`
 on retain it until their existing owner recovers.
-Cluster deletion is the exception: it is always accepted, teardown is not
-fenced, and the rotation stops at its next phase or membership check.
+There are two exceptions. Cluster deletion is always accepted, teardown is not
+fenced, and the rotation stops at its next phase or membership check. Teardown
+of a node retired as permanently lost is also not fenced (see
+[Control-plane host lost during a rotation](#control-plane-host-lost-during-a-rotation)).
 
 New workflow executions recheck the fixed node snapshot and every API server's
 readiness after rewrite. A read-only embedded probe requires exactly the expected
