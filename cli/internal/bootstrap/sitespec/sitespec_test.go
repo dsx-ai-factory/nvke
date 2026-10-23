@@ -12,6 +12,9 @@ import (
 	"testing"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
@@ -310,6 +313,86 @@ func TestValidate_OIDCProviders(t *testing.T) {
 	withProviders.Cluster.OIDCProviders = []OIDCProvider{validOIDCProvider()}
 	if err := withProviders.Validate(); err != nil {
 		t.Fatalf("Validate rejected oidc providers on 1.34.0: %v", err)
+	}
+}
+
+func TestLoadOIDCDiscoveryURL(t *testing.T) {
+	const discoveryURL = "https://identity.example.com/.well-known/openid-configuration"
+	tests := []struct {
+		name         string
+		discoveryURL string
+		wantErr      string
+	}{
+		{name: "omitted"},
+		{name: "separate discovery host", discoveryURL: discoveryURL},
+		{name: "same issuer host with full discovery path", discoveryURL: "https://login.example.com/.well-known/openid-configuration"},
+		{name: "http", discoveryURL: "http://identity.example.com/discovery", wantErr: "must be an absolute https URL"},
+		{name: "relative URL", discoveryURL: "/.well-known/openid-configuration", wantErr: "must be an absolute https URL"},
+		{name: "missing hostname", discoveryURL: "https://:443/discovery", wantErr: "must be an absolute https URL"},
+		{name: "malformed URL", discoveryURL: "https://identity.example.com/%zz", wantErr: "is not a URL"},
+		{name: "credentials", discoveryURL: "https://example-user:example-password@identity.example.com/discovery", wantErr: "must not contain a username or password"},
+		{name: "query", discoveryURL: discoveryURL + "?tenant=a", wantErr: "must not contain a query or fragment"},
+		{name: "fragment", discoveryURL: discoveryURL + "#fragment", wantErr: "must not contain a query or fragment"},
+		{name: "issuer URL", discoveryURL: "https://login.example.com", wantErr: "must differ from issuerURL"},
+		{name: "issuer URL with trailing slash", discoveryURL: "https://login.example.com/", wantErr: "must differ from issuerURL"},
+		{name: "leading whitespace", discoveryURL: " " + discoveryURL, wantErr: "leading or trailing whitespace"},
+		{name: "trailing whitespace", discoveryURL: discoveryURL + " ", wantErr: "leading or trailing whitespace"},
+		{name: "whitespace only", discoveryURL: " ", wantErr: "leading or trailing whitespace"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := validOIDCProvider()
+			provider.DiscoveryURL = tt.discoveryURL
+			input := minimalValid()
+			input.Cluster.K8sVersion = "1.34.0"
+			input.Cluster.OIDCProviders = []OIDCProvider{provider}
+			body, err := yaml.Marshal(input)
+			require.NoError(t, err)
+			inv, err := Load(writeTemp(t, string(body)))
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, "cluster.oidcProviders[0].discoveryURL")
+				assert.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, inv.Cluster.OIDCProviders, 1)
+			assert.Equal(t, provider.IssuerURL, inv.Cluster.OIDCProviders[0].IssuerURL)
+			assert.Equal(t, tt.discoveryURL, inv.Cluster.OIDCProviders[0].DiscoveryURL)
+		})
+	}
+}
+
+func TestValidateOIDCDuplicateDiscoveryURLs(t *testing.T) {
+	const discoveryURL = "https://identity.example.com/.well-known/openid-configuration"
+	tests := []struct {
+		name      string
+		firstURL  string
+		secondURL string
+		wantErr   bool
+	}{
+		{name: "duplicate override", firstURL: discoveryURL, secondURL: discoveryURL, wantErr: true},
+		{name: "distinct overrides", firstURL: discoveryURL, secondURL: "https://other.example.com/discovery"},
+		{name: "both omitted"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := validOIDCProvider()
+			provider.DiscoveryURL = tt.firstURL
+			other := provider
+			other.Name = "other"
+			other.IssuerURL = "https://other.example.com"
+			other.DiscoveryURL = tt.secondURL
+			inv := minimalValid()
+			inv.Cluster.K8sVersion = "1.34.0"
+			inv.Cluster.OIDCProviders = []OIDCProvider{provider, other}
+			err := inv.Validate()
+			if tt.wantErr {
+				require.ErrorContains(t, err, "cluster.oidcProviders[1].discoveryURL")
+				assert.ErrorContains(t, err, "already used by cluster.oidcProviders[0]")
+				return
+			}
+			require.NoError(t, err)
+		})
 	}
 }
 

@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
@@ -429,6 +431,7 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 		UsernameClaim:  "email",
 		UsernamePrefix: "corp:",
 		CABundle:       "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+		DiscoveryURL:   "https://identity.example.com/.well-known/openid-configuration",
 	}}
 	runner = &fakeRunner{}
 	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
@@ -444,6 +447,18 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 		t.Fatalf("extra controller values files = %d, want the password's and the oidc one", len(extra))
 	}
 	oidc := extra[1]
+	var rendered struct {
+		OIDC struct {
+			Providers []struct {
+				IssuerURL    string `yaml:"issuerURL"`
+				DiscoveryURL string `yaml:"discoveryURL"`
+			} `yaml:"providers"`
+		} `yaml:"oidc"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(oidc), &rendered))
+	require.Len(t, rendered.OIDC.Providers, 1)
+	assert.Equal(t, cfg.OIDCProviders[0].IssuerURL, rendered.OIDC.Providers[0].IssuerURL)
+	assert.Equal(t, cfg.OIDCProviders[0].DiscoveryURL, rendered.OIDC.Providers[0].DiscoveryURL)
 	for _, want := range []string{"name: corp", "issuerURL: https://login.example.com", "providers:"} {
 		if !strings.Contains(oidc, want) {
 			t.Errorf("oidc values missing %q:\n%s", want, oidc)
@@ -459,6 +474,16 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	if strings.Count(cwe, "--values") != 3 {
 		t.Errorf("controller helm call has %d --values, want 3: %s", strings.Count(cwe, "--values"), cwe)
 	}
+}
+
+func TestDeploy_OmitsUnsetOIDCDiscoveryURL(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.OIDCProviders = []sitespec.OIDCProvider{{Name: "corp", IssuerURL: "https://login.example.com"}}
+	runner := &fakeRunner{}
+	require.NoError(t, New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg))
+	extra := runner.extraValuesFiles[cweReleaseName]
+	require.Len(t, extra, 2)
+	assert.NotContains(t, extra[1], "discoveryURL:")
 }
 
 // TestDeploy_InstallsPostgresFromTheEmbeddedChart: Postgres comes from the
