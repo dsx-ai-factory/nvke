@@ -76,7 +76,7 @@ if [[ "${NICO_VMS_STAGE_OS_IMAGE:-true}" == "true" ]]; then
   if [[ -n "${NICO_VMS_OS_IMAGE_URL:-}" ]]; then
     "${SCRIPT_DIR}/stage-nico-vms-image.sh"
   else
-    files_dir="${NICO_SIM_FILES_DIR:-${SCRIPT_DIR}/../nico-sim/var/files}"
+    files_dir="${NICO_SIM_FILES_DIR:-${SCRIPT_DIR}/../nico-sim/.dev/files}"
     image_path="${files_dir}/images/nvke-node.qcow2"
     if [[ ! -s "${image_path}" ]]; then
       echo "No nico-vms OS image exists in nico-sim files at ${image_path}." >&2
