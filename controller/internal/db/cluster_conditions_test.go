@@ -103,3 +103,27 @@ func TestOperationType_Values(t *testing.T) {
 	assert.Equal(t, "cp_nodes_recycling", string(db.OperationTypeCPNodesRecycling))
 	assert.Equal(t, "certificate_renewal", string(db.OperationTypeCertRenewal))
 }
+
+// TestClusterConditionsEtcdKeyRotationRoundTrip protects the durable recovery
+// checkpoint and preserves old records that have no rotation observation.
+func TestClusterConditionsEtcdKeyRotationRoundTrip(t *testing.T) {
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	in := db.ClusterConditions{EtcdKeyRotation: &db.EtcdKeyRotationStatus{
+		WorkflowID: "rotation-owner", State: db.EtcdKeyRotationStateFailed,
+		Phase: db.EtcdKeyRotationPhaseRewrite, StartedAt: now,
+		LastProgressAt: now, CompletedAt: &now,
+		FailureReason: db.EtcdKeyRotationFailureOperation,
+	}}
+	raw, err := json.Marshal(in)
+	require.NoError(t, err)
+	var out db.ClusterConditions
+	require.NoError(t, json.Unmarshal(raw, &out))
+	require.Equal(t, in.EtcdKeyRotation, out.EtcdKeyRotation)
+	raw, err = json.Marshal(db.ClusterConditions{})
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "etcdKeyRotation")
+	require.NoError(t, json.Unmarshal([]byte(`{"provisioned":{"status":"True"}}`), &out))
+	var legacy db.ClusterConditions
+	require.NoError(t, json.Unmarshal([]byte(`{"provisioned":{"status":"True"}}`), &legacy))
+	require.Nil(t, legacy.EtcdKeyRotation)
+}

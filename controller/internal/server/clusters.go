@@ -78,6 +78,10 @@ func (e *updateInProgressError) Error() string {
 	if e.op == db.OperationTypeCertRenewal {
 		msg += "; a failed certificate renewal can retain the lock until an operator clears it (see controller/docs/certificate-renewal.md)"
 	}
+	if e.op == db.OperationTypeEtcdKeyRotation {
+		msg += "; a rotation that fails after prepare keeps the lock until its workflow is reset and completes " +
+			"(see controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery)"
+	}
 	return msg
 }
 
@@ -1342,6 +1346,22 @@ func APIClusterFromDB(dbCluster *db.Cluster) api.Cluster {
 			apiStatus.Message = &message
 		}
 		conditions.CertificateRenewal = &apiStatus
+	}
+
+	if status := dbCluster.Conditions.EtcdKeyRotation; status != nil {
+		apiStatus := api.EtcdKeyRotationStatus{
+			WorkflowID:     status.WorkflowID,
+			State:          api.EtcdKeyRotationStatusState(status.State),
+			Phase:          api.EtcdKeyRotationStatusPhase(status.Phase),
+			StartedAt:      status.StartedAt,
+			LastProgressAt: status.LastProgressAt,
+			CompletedAt:    status.CompletedAt,
+		}
+		if status.FailureReason != "" {
+			reason := api.EtcdKeyRotationStatusFailureReason(status.FailureReason)
+			apiStatus.FailureReason = &reason
+		}
+		conditions.EtcdKeyRotation = &apiStatus
 	}
 
 	return api.Cluster{

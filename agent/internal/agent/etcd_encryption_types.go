@@ -57,19 +57,29 @@ type (
 // ---------------------------------------------------------------------------
 
 // ValidateSecretbox checks that at least one secretbox provider exists and all
-// providers have consistent keys (same count, same secrets, same order).
+// providers have consistent keys (same count, storage names, secrets and order).
 func (c *EncryptionConfiguration) ValidateSecretbox() error {
 	slices := c.secretboxKeySlices()
 	if len(slices) == 0 {
 		return errors.New("no secretbox provider found in encryption config")
 	}
 	first := *slices[0]
+	seen := make(map[string]bool, len(first))
+	for _, key := range first {
+		if err := validateEncryptionKeyName(key.Name); err != nil {
+			return err
+		}
+		if seen[key.Name] {
+			return errors.New("duplicate encryption storage key name")
+		}
+		seen[key.Name] = true
+	}
 	for _, keys := range slices[1:] {
 		if len(*keys) != len(first) {
 			return errors.New("secretbox providers are out of sync across resource groups; manual reconciliation required before key rotation")
 		}
 		for i, k := range *keys {
-			if k.Secret != first[i].Secret {
+			if k != first[i] {
 				return errors.New("secretbox providers are out of sync across resource groups; manual reconciliation required before key rotation")
 			}
 		}
@@ -126,11 +136,11 @@ func (c *EncryptionConfiguration) IsInDesiredState(req *pb.UpdateEncryptionConfi
 	primary, hasPrimary := c.PrimaryKey()
 	switch op := req.Operation.(type) {
 	case *pb.UpdateEncryptionConfigRequest_AddSecondaryKey:
-		return c.HasKey(op.AddSecondaryKey.GetNewKey())
+		return c.hasNamedKey(op.AddSecondaryKey.GetNewKey(), op.AddSecondaryKey.GetKeyName())
 	case *pb.UpdateEncryptionConfigRequest_PromotePrimaryKey:
-		return hasPrimary && primary.Secret == op.PromotePrimaryKey.GetNewKey()
+		return hasPrimary && primary.Secret == op.PromotePrimaryKey.GetNewKey() && keyNameMatches(primary.Name, op.PromotePrimaryKey.GetKeyName())
 	case *pb.UpdateEncryptionConfigRequest_RemoveOldKeys:
-		return c.KeyCount() == 1 && hasPrimary && primary.Secret == op.RemoveOldKeys.GetPrimaryKey()
+		return c.KeyCount() == 1 && hasPrimary && primary.Secret == op.RemoveOldKeys.GetPrimaryKey() && keyNameMatches(primary.Name, op.RemoveOldKeys.GetKeyName())
 	default:
 		return false
 	}
@@ -142,6 +152,9 @@ func (c *EncryptionConfiguration) IsInDesiredState(req *pb.UpdateEncryptionConfi
 // leaving partial state on disk.
 func (c *EncryptionConfiguration) ValidateMutation(req *pb.UpdateEncryptionConfigRequest) error {
 	primary, _ := c.PrimaryKey()
+	if err := c.validateMutationIdentity(req); err != nil {
+		return err
+	}
 	switch op := req.Operation.(type) {
 	case *pb.UpdateEncryptionConfigRequest_PromotePrimaryKey:
 		if !c.HasKey(op.PromotePrimaryKey.GetNewKey()) {
@@ -225,7 +238,10 @@ func (c *EncryptionConfiguration) ApplyMutation(req *pb.UpdateEncryptionConfigRe
 	switch op := req.Operation.(type) {
 	case *pb.UpdateEncryptionConfigRequest_AddSecondaryKey:
 		newKey := op.AddSecondaryKey.GetNewKey()
-		keyName := nextKeyName(*slices[0])
+		keyName := op.AddSecondaryKey.GetKeyName()
+		if keyName == "" {
+			keyName = nextKeyName(*slices[0])
+		}
 		for _, keys := range slices {
 			*keys = append(*keys, KeyConfig{Name: keyName, Secret: newKey})
 		}

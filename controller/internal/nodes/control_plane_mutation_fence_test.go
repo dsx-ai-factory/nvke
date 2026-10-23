@@ -19,7 +19,7 @@ import (
 // path under the cluster row lock for both credential operations, including the
 // retained ownership a failed renewal leaves behind.
 func TestCredentialOwnershipFencesControlPlaneDeletes(t *testing.T) {
-	for _, owner := range []db.OperationType{db.OperationTypeCertRenewal} {
+	for _, owner := range []db.OperationType{db.OperationTypeEtcdKeyRotation, db.OperationTypeCertRenewal} {
 		for _, path := range []string{"live_node", "live_pool", "controller_node", "requested_teardown"} {
 			t.Run(string(owner)+"/"+path, func(t *testing.T) {
 				target := joinedCPNode(cpNodeIDs(1)[0])

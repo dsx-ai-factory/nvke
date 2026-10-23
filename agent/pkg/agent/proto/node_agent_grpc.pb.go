@@ -50,6 +50,7 @@ const (
 	NodeAgent_InitializeKubernetesAPIEncryption_FullMethodName            = "/proto.NodeAgent/InitializeKubernetesAPIEncryption"
 	NodeAgent_PromoteKubernetesAPIEncryptionProviders_FullMethodName      = "/proto.NodeAgent/PromoteKubernetesAPIEncryptionProviders"
 	NodeAgent_UpdateEncryptionConfig_FullMethodName                       = "/proto.NodeAgent/UpdateEncryptionConfig"
+	NodeAgent_GetEtcdEncryptionKeyIdentity_FullMethodName                 = "/proto.NodeAgent/GetEtcdEncryptionKeyIdentity"
 	NodeAgent_StartEtcdEncryptionAtRestObjectsRewrite_FullMethodName      = "/proto.NodeAgent/StartEtcdEncryptionAtRestObjectsRewrite"
 	NodeAgent_GetEtcdEncryptionAtRestObjectsRewriteStatus_FullMethodName  = "/proto.NodeAgent/GetEtcdEncryptionAtRestObjectsRewriteStatus"
 	NodeAgent_RemovePlainTextSecondaryEncryptionEntry_FullMethodName      = "/proto.NodeAgent/RemovePlainTextSecondaryEncryptionEntry"
@@ -189,14 +190,29 @@ type NodeAgentClient interface {
 	// state file is written before the config is touched, so a crash or a
 	// timed-out call can be resumed without re-applying the mutation.
 	//
+	// Once the WAL entry is written it is removed only when the reload is
+	// confirmed. Every later failure retains it (and possibly the written
+	// config), and other mutations fail until the same operation is retried.
+	//
 	// Error codes:
 	//
-	//	FailedPrecondition — encryption-config.yaml is missing on this node; run
-	//	                     InitializeKubernetesAPIEncryption first.
-	//	DeadlineExceeded — config was written but reload was not confirmed
-	//	                   within the deadline; the call is safe to retry.
-	//	other codes      — unrecoverable; no partial state remains.
+	//	FailedPrecondition — encryption-config.yaml is missing (run
+	//	                     InitializeKubernetesAPIEncryption first); a WAL entry
+	//	                     from a different operation exists (retry that
+	//	                     operation first); the apiserver has not yet loaded the
+	//	                     current config; or the config or WAL ownership
+	//	                     changed, or the config became unreadable, before or
+	//	                     during confirmation.
+	//	DeadlineExceeded,
+	//	Canceled         — reload was not confirmed before the deadline or
+	//	                   cancellation; the call is safe to retry.
+	//	Unavailable      — apiserver metrics stayed unavailable, so the reload
+	//	                   cannot be confirmed; retry after they recover.
+	//	other codes      — invalid request, non-control-plane node, invalid
+	//	                   config or mutation, or a local I/O failure.
 	UpdateEncryptionConfig(ctx context.Context, in *UpdateEncryptionConfigRequest, opts ...grpc.CallOption) (*UpdateEncryptionConfigResponse, error)
+	// Looks up a storage key name in the local configuration without returning key material.
+	GetEtcdEncryptionKeyIdentity(ctx context.Context, in *GetEtcdEncryptionKeyIdentityRequest, opts ...grpc.CallOption) (*GetEtcdEncryptionKeyIdentityResponse, error)
 	// StartEtcdEncryptionAtRestObjectsRewrite starts an asynchronous rewrite of
 	// Kubernetes API objects so they are persisted with the current etcd
 	// encryption-at-rest configuration. The operation_id is an idempotency key;
@@ -552,6 +568,16 @@ func (c *nodeAgentClient) UpdateEncryptionConfig(ctx context.Context, in *Update
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UpdateEncryptionConfigResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_UpdateEncryptionConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) GetEtcdEncryptionKeyIdentity(ctx context.Context, in *GetEtcdEncryptionKeyIdentityRequest, opts ...grpc.CallOption) (*GetEtcdEncryptionKeyIdentityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetEtcdEncryptionKeyIdentityResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_GetEtcdEncryptionKeyIdentity_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -923,14 +949,29 @@ type NodeAgentServer interface {
 	// state file is written before the config is touched, so a crash or a
 	// timed-out call can be resumed without re-applying the mutation.
 	//
+	// Once the WAL entry is written it is removed only when the reload is
+	// confirmed. Every later failure retains it (and possibly the written
+	// config), and other mutations fail until the same operation is retried.
+	//
 	// Error codes:
 	//
-	//	FailedPrecondition — encryption-config.yaml is missing on this node; run
-	//	                     InitializeKubernetesAPIEncryption first.
-	//	DeadlineExceeded — config was written but reload was not confirmed
-	//	                   within the deadline; the call is safe to retry.
-	//	other codes      — unrecoverable; no partial state remains.
+	//	FailedPrecondition — encryption-config.yaml is missing (run
+	//	                     InitializeKubernetesAPIEncryption first); a WAL entry
+	//	                     from a different operation exists (retry that
+	//	                     operation first); the apiserver has not yet loaded the
+	//	                     current config; or the config or WAL ownership
+	//	                     changed, or the config became unreadable, before or
+	//	                     during confirmation.
+	//	DeadlineExceeded,
+	//	Canceled         — reload was not confirmed before the deadline or
+	//	                   cancellation; the call is safe to retry.
+	//	Unavailable      — apiserver metrics stayed unavailable, so the reload
+	//	                   cannot be confirmed; retry after they recover.
+	//	other codes      — invalid request, non-control-plane node, invalid
+	//	                   config or mutation, or a local I/O failure.
 	UpdateEncryptionConfig(context.Context, *UpdateEncryptionConfigRequest) (*UpdateEncryptionConfigResponse, error)
+	// Looks up a storage key name in the local configuration without returning key material.
+	GetEtcdEncryptionKeyIdentity(context.Context, *GetEtcdEncryptionKeyIdentityRequest) (*GetEtcdEncryptionKeyIdentityResponse, error)
 	// StartEtcdEncryptionAtRestObjectsRewrite starts an asynchronous rewrite of
 	// Kubernetes API objects so they are persisted with the current etcd
 	// encryption-at-rest configuration. The operation_id is an idempotency key;
@@ -1092,6 +1133,9 @@ func (UnimplementedNodeAgentServer) PromoteKubernetesAPIEncryptionProviders(cont
 }
 func (UnimplementedNodeAgentServer) UpdateEncryptionConfig(context.Context, *UpdateEncryptionConfigRequest) (*UpdateEncryptionConfigResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateEncryptionConfig not implemented")
+}
+func (UnimplementedNodeAgentServer) GetEtcdEncryptionKeyIdentity(context.Context, *GetEtcdEncryptionKeyIdentityRequest) (*GetEtcdEncryptionKeyIdentityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetEtcdEncryptionKeyIdentity not implemented")
 }
 func (UnimplementedNodeAgentServer) StartEtcdEncryptionAtRestObjectsRewrite(context.Context, *StartEtcdEncryptionAtRestObjectsRewriteRequest) (*StartEtcdEncryptionAtRestObjectsRewriteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartEtcdEncryptionAtRestObjectsRewrite not implemented")
@@ -1670,6 +1714,24 @@ func _NodeAgent_UpdateEncryptionConfig_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeAgent_GetEtcdEncryptionKeyIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetEtcdEncryptionKeyIdentityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).GetEtcdEncryptionKeyIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_GetEtcdEncryptionKeyIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).GetEtcdEncryptionKeyIdentity(ctx, req.(*GetEtcdEncryptionKeyIdentityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _NodeAgent_StartEtcdEncryptionAtRestObjectsRewrite_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(StartEtcdEncryptionAtRestObjectsRewriteRequest)
 	if err := dec(in); err != nil {
@@ -2159,6 +2221,10 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateEncryptionConfig",
 			Handler:    _NodeAgent_UpdateEncryptionConfig_Handler,
+		},
+		{
+			MethodName: "GetEtcdEncryptionKeyIdentity",
+			Handler:    _NodeAgent_GetEtcdEncryptionKeyIdentity_Handler,
 		},
 		{
 			MethodName: "StartEtcdEncryptionAtRestObjectsRewrite",

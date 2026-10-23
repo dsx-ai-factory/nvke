@@ -20,6 +20,7 @@ func TestControlPlaneMutationBlockedByRetainedCredentialOwnership(t *testing.T) 
 	}{
 		{name: "no owner"},
 		{name: "etcd encryption", update: &db.UpdateInProgress{Type: db.OperationTypeEtcdEncryption}, want: true},
+		{name: "etcd key rotation", update: &db.UpdateInProgress{Type: db.OperationTypeEtcdKeyRotation}, want: true},
 		{name: "certificate renewal", update: &db.UpdateInProgress{Type: db.OperationTypeCertRenewal}, want: true},
 		{name: "kubernetes upgrade", update: &db.UpdateInProgress{Type: db.OperationTypeK8sUpgrade}},
 		{name: "deletion preempts etcd encryption", update: &db.UpdateInProgress{Type: db.OperationTypeEtcdEncryption}, deleting: true},

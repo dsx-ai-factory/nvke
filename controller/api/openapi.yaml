@@ -335,11 +335,15 @@ paths:
         a control-plane `maxSurge` greater than 1.
 
         Returns 409 when another mutually exclusive cluster operation is in
-        progress (`etcd_encryption`, `k8s_upgrade`, `cp_nodes_recycling`,
-        `oidc_enable`, `certificate_renewal`), or the control plane is upgrading
-        or recycling nodes. A failed certificate renewal can retain the lock
-        until an operator clears it; see the retained-lock recovery procedure in
-        controller/docs/certificate-renewal.md.
+        progress (`etcd_encryption`, `etcd_key_rotation`, `k8s_upgrade`,
+        `cp_nodes_recycling`, `oidc_enable`, `certificate_renewal`), or the
+        control plane is upgrading or recycling nodes. A failed certificate
+        renewal can retain the lock until an operator clears it; see the
+        retained-lock recovery procedure in
+        controller/docs/certificate-renewal.md. A rotation that fails after
+        `prepare` keeps the `etcd_key_rotation` lock until its workflow is
+        reset and completes; see
+        controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery.
       requestBody:
         required: true
         description: The fields to change. All are optional.
@@ -382,11 +386,14 @@ paths:
         "409":
           description: |
             Another mutually exclusive cluster operation is in progress. The
-            message names the operation (etcd_encryption, k8s_upgrade,
-            cp_nodes_recycling, oidc_enable, certificate_renewal). A failed
-            certificate renewal can retain the lock until an operator clears it;
-            see the retained-lock recovery procedure in
-            controller/docs/certificate-renewal.md.
+            message names the operation (etcd_encryption, etcd_key_rotation,
+            k8s_upgrade, cp_nodes_recycling, oidc_enable, certificate_renewal).
+            A failed certificate renewal can retain the lock until an operator
+            clears it; see the retained-lock recovery procedure in
+            controller/docs/certificate-renewal.md. A rotation that fails after
+            prepare keeps the etcd_key_rotation lock until its workflow is reset
+            and completes; see
+            controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery.
           content:
             application/json:
               schema:
@@ -405,7 +412,7 @@ paths:
         Starts deletion and sets `conditions.deleting` to `True`. A cluster can
         be deleted in any state, including while it is provisioning or
         upgrading. Deletion takes precedence over an in-progress or retained
-        etcd encryption or certificate renewal.
+        etcd encryption, etcd key rotation or certificate renewal.
       responses:
         "202":
           description: Deletion started
@@ -748,11 +755,14 @@ paths:
         Deletes a node pool from a running cluster. Also returns 202, with no
         further effect, if the pool or its cluster is already being deleted.
 
-        Returns 409 for a control-plane node pool while etcd encryption or
-        certificate renewal holds the control-plane mutation lock. Retry once the
-        operation has finished. A failed certificate renewal can retain the lock
-        until an operator clears it; see the retained-lock recovery procedure in
-        controller/docs/certificate-renewal.md.
+        Returns 409 for a control-plane node pool while etcd encryption, etcd key
+        rotation or certificate renewal holds the control-plane mutation lock.
+        Retry once the operation has finished. A failed certificate renewal can
+        retain the lock until an operator clears it; see the retained-lock
+        recovery procedure in controller/docs/certificate-renewal.md.
+        A rotation that fails after `prepare` keeps the `etcd_key_rotation` lock
+        until its workflow is reset and completes; see
+        controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery.
       operationId: deleteNodePool
       responses:
         "202":
@@ -767,14 +777,15 @@ paths:
           description: Node pool not found. No body is returned.
         "409":
           description: |
-            A control-plane node pool cannot be deleted while etcd encryption or
-            certificate renewal holds the control-plane mutation lock.
+            A control-plane node pool cannot be deleted while etcd encryption, etcd
+            key rotation or certificate renewal holds the control-plane mutation
+            lock.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericError"
               example:
-                message: control-plane changes are rejected while etcd encryption or certificate renewal holds the cluster mutation lock; retry after the operation completes, or, if a failed certificate renewal retained the lock, after an operator clears it (see controller/docs/certificate-renewal.md)
+                message: control-plane changes are rejected while etcd encryption, etcd key rotation or certificate renewal holds the cluster mutation lock; retry after the operation completes, or, if a failed certificate renewal retained the lock, after an operator clears it (see controller/docs/certificate-renewal.md); a rotation that fails after prepare keeps the etcd_key_rotation lock until its workflow is reset and completes (see controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery)
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -936,11 +947,14 @@ paths:
         replaces it, unless allowControlPlaneWithoutVIP is enabled for development.
         Worker node deletion is unaffected.
 
-        Returns 409 for a control-plane node while etcd encryption or certificate
-        renewal holds the control-plane mutation lock. Retry once the operation
-        has finished. A failed certificate renewal can retain the lock until an
-        operator clears it; see the retained-lock recovery procedure in
-        controller/docs/certificate-renewal.md.
+        Returns 409 for a control-plane node while etcd encryption, etcd key
+        rotation or certificate renewal holds the control-plane mutation lock.
+        Retry once the operation has finished. A failed certificate renewal can
+        retain the lock until an operator clears it; see the retained-lock
+        recovery procedure in controller/docs/certificate-renewal.md.
+        A rotation that fails after `prepare` keeps the `etcd_key_rotation` lock
+        until its workflow is reset and completes; see
+        controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery.
       operationId: deleteNode
       requestBody:
         required: false
@@ -970,14 +984,14 @@ paths:
           description: Node not found. No body is returned.
         "409":
           description: |
-            A control-plane node cannot be deleted while etcd encryption or
-            certificate renewal holds the control-plane mutation lock.
+            A control-plane node cannot be deleted while etcd encryption, etcd key
+            rotation or certificate renewal holds the control-plane mutation lock.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericError"
               example:
-                message: control-plane changes are rejected while etcd encryption or certificate renewal holds the cluster mutation lock; retry after the operation completes, or, if a failed certificate renewal retained the lock, after an operator clears it (see controller/docs/certificate-renewal.md)
+                message: control-plane changes are rejected while etcd encryption, etcd key rotation or certificate renewal holds the cluster mutation lock; retry after the operation completes, or, if a failed certificate renewal retained the lock, after an operator clears it (see controller/docs/certificate-renewal.md); a rotation that fails after prepare keeps the etcd_key_rotation lock until its workflow is reset and completes (see controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery)
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -2546,6 +2560,45 @@ components:
           allOf:
             - $ref: "#/components/schemas/CertificateRenewalStatus"
 
+        etcdKeyRotation:
+          description: The most recent etcd data-encryption-key rotation, including retained ownership after failure.
+          x-order: 9
+          allOf:
+            - $ref: "#/components/schemas/EtcdKeyRotationStatus"
+
+    EtcdKeyRotationStatus:
+      type: object
+      description: Durable status and retained ownership of an etcd data-encryption-key rotation.
+      required: [workflowID, state, phase, startedAt, lastProgressAt]
+      properties:
+        workflowID:
+          type: string
+          description: The Temporal workflow ID owning rotation and recovery. Never use as a metric label.
+        state:
+          description: Whether the owned rotation is running, succeeded, or failed.
+          type: string
+          enum: [running, succeeded, failed]
+        phase:
+          type: string
+          enum: [prepare, add_secondary, promote_primary, rewrite, remove_old_keys, finalize]
+          description: The last entered phase, which a failure retains. A `prepare` failure releases the mutation lock, so start a new rotation workflow after fixing it; a failure in a later phase keeps the lock for recovery of the owning workflow.
+        startedAt:
+          description: When rotation ownership was accepted by the controller.
+          type: string
+          format: date-time
+        lastProgressAt:
+          type: string
+          format: date-time
+          description: When a phase was entered or a terminal state was recorded. Polling does not advance it.
+        completedAt:
+          description: When the terminal success or failure was recorded.
+          type: string
+          format: date-time
+        failureReason:
+          type: string
+          enum: [operation_failed, canceled]
+          description: A bounded reason without keys, arbitrary error strings, or secret identifiers.
+
     CertificateRenewalStatus:
       type: object
       description: The recorded lifecycle state and outcome of a certificate-renewal cycle.
@@ -2615,12 +2668,19 @@ components:
       required:
         - type
         - startedAt
-      description: The mutually exclusive cluster operation in progress. Absent when none.
+      description: |
+        The mutually exclusive cluster operation in progress. Absent when none.
+        `etcd_key_rotation` is reported while an etcd data-encryption-key rotation
+        holds the lock, and also after a rotation that failed after `prepare`,
+        which keeps the lock until its owning workflow is recovered (see
+        `conditions.etcdKeyRotation`). A `prepare` failure releases the lock.
+        Exhaustive client switches over `type` must handle it.
       properties:
         type:
           type: string
           enum:
             - etcd_encryption
+            - etcd_key_rotation
             - k8s_upgrade
             - cp_nodes_recycling
             - oidc_enable

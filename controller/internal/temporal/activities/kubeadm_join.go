@@ -149,6 +149,10 @@ func (a *Activities) kubeadmJoin(ctx context.Context, node db.Node) (KubeadmJoin
 		if err != nil {
 			return KubeadmJoinResult{}, err
 		}
+		req.ApiEncryptionKeyName, err = a.bootstrapKubeAPIEncryptionKeyName(ctx, cluster.ID)
+		if err != nil {
+			return KubeadmJoinResult{}, err
+		}
 	}
 
 	if node.ControlPlane {

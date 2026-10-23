@@ -94,6 +94,7 @@ func (a *Activities) ensureKubeAPIEncryptionKey(ctx context.Context, clusterID u
 			},
 			Data: map[string][]byte{
 				constants.EtcdEncryptionKeyFieldActive:      []byte(key),
+				constants.EtcdEncryptionKeyFieldActiveName:  []byte(constants.LegacyAPIEncryptionKeyName),
 				constants.EtcdEncryptionKeyFieldActiveSince: []byte(fmt.Sprintf("%d", time.Now().Unix())),
 			},
 		}
@@ -109,6 +110,7 @@ func (a *Activities) ensureKubeAPIEncryptionKey(ctx context.Context, clusterID u
 		secret.Data = map[string][]byte{}
 	}
 	secret.Data[constants.EtcdEncryptionKeyFieldActive] = []byte(key)
+	secret.Data[constants.EtcdEncryptionKeyFieldActiveName] = []byte(constants.LegacyAPIEncryptionKeyName)
 	secret.Data[constants.EtcdEncryptionKeyFieldActiveSince] = []byte(fmt.Sprintf("%d", time.Now().Unix()))
 	if err := a.k8sClient.Update(ctx, secret); err != nil {
 		return "", fmt.Errorf("updating kube-api encryption key secret %s/%s: %w", a.cfg.PodNamespace, secretName, err)

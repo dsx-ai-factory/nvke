@@ -54,6 +54,29 @@ const (
 	DiskSelectionStrategyCreateSmallest DiskSelectionStrategyCreate = "smallest"
 )
 
+// Defines values for EtcdKeyRotationStatusFailureReason.
+const (
+	EtcdKeyRotationStatusFailureReasonCanceled        EtcdKeyRotationStatusFailureReason = "canceled"
+	EtcdKeyRotationStatusFailureReasonOperationFailed EtcdKeyRotationStatusFailureReason = "operation_failed"
+)
+
+// Defines values for EtcdKeyRotationStatusPhase.
+const (
+	EtcdKeyRotationStatusPhaseAddSecondary   EtcdKeyRotationStatusPhase = "add_secondary"
+	EtcdKeyRotationStatusPhaseFinalize       EtcdKeyRotationStatusPhase = "finalize"
+	EtcdKeyRotationStatusPhasePrepare        EtcdKeyRotationStatusPhase = "prepare"
+	EtcdKeyRotationStatusPhasePromotePrimary EtcdKeyRotationStatusPhase = "promote_primary"
+	EtcdKeyRotationStatusPhaseRemoveOldKeys  EtcdKeyRotationStatusPhase = "remove_old_keys"
+	EtcdKeyRotationStatusPhaseRewrite        EtcdKeyRotationStatusPhase = "rewrite"
+)
+
+// Defines values for EtcdKeyRotationStatusState.
+const (
+	EtcdKeyRotationStatusStateFailed    EtcdKeyRotationStatusState = "failed"
+	EtcdKeyRotationStatusStateRunning   EtcdKeyRotationStatusState = "running"
+	EtcdKeyRotationStatusStateSucceeded EtcdKeyRotationStatusState = "succeeded"
+)
+
 // Defines values for LaunchLayerClusterProviderVpcType.
 const (
 	LaunchLayerClusterProviderVpcTypeBAREMETAL   LaunchLayerClusterProviderVpcType = "BARE_METAL"
@@ -111,6 +134,7 @@ const (
 	UpdateInProgressTypeCertificateRenewal UpdateInProgressType = "certificate_renewal"
 	UpdateInProgressTypeCpNodesRecycling   UpdateInProgressType = "cp_nodes_recycling"
 	UpdateInProgressTypeEtcdEncryption     UpdateInProgressType = "etcd_encryption"
+	UpdateInProgressTypeEtcdKeyRotation    UpdateInProgressType = "etcd_key_rotation"
 	UpdateInProgressTypeK8SUpgrade         UpdateInProgressType = "k8s_upgrade"
 	UpdateInProgressTypeOidcEnable         UpdateInProgressType = "oidc_enable"
 	UpdateInProgressTypeSpireServerUpdate  UpdateInProgressType = "spire_server_update"
@@ -246,6 +270,9 @@ type ClusterConditions struct {
 
 	// Deleting The cluster is being deleted.
 	Deleting Condition `json:"deleting"`
+
+	// EtcdKeyRotation The most recent etcd data-encryption-key rotation, including retained ownership after failure.
+	EtcdKeyRotation *EtcdKeyRotationStatus `json:"etcdKeyRotation,omitempty"`
 
 	// Provisioned The cluster is provisioned.
 	Provisioned Condition `json:"provisioned"`
@@ -672,6 +699,39 @@ type DiskSelectionStrategy string
 
 // DiskSelectionStrategyCreate Which disk the OS is installed on. Default smallest.
 type DiskSelectionStrategyCreate string
+
+// EtcdKeyRotationStatus Durable status and retained ownership of an etcd data-encryption-key rotation.
+type EtcdKeyRotationStatus struct {
+	// CompletedAt When the terminal success or failure was recorded.
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+
+	// FailureReason A bounded reason without keys, arbitrary error strings, or secret identifiers.
+	FailureReason *EtcdKeyRotationStatusFailureReason `json:"failureReason,omitempty"`
+
+	// LastProgressAt When a phase was entered or a terminal state was recorded. Polling does not advance it.
+	LastProgressAt time.Time `json:"lastProgressAt"`
+
+	// Phase The last entered phase, which a failure retains. A `prepare` failure releases the mutation lock, so start a new rotation workflow after fixing it; a failure in a later phase keeps the lock for recovery of the owning workflow.
+	Phase EtcdKeyRotationStatusPhase `json:"phase"`
+
+	// StartedAt When rotation ownership was accepted by the controller.
+	StartedAt time.Time `json:"startedAt"`
+
+	// State Whether the owned rotation is running, succeeded, or failed.
+	State EtcdKeyRotationStatusState `json:"state"`
+
+	// WorkflowID The Temporal workflow ID owning rotation and recovery. Never use as a metric label.
+	WorkflowID string `json:"workflowID"`
+}
+
+// EtcdKeyRotationStatusFailureReason A bounded reason without keys, arbitrary error strings, or secret identifiers.
+type EtcdKeyRotationStatusFailureReason string
+
+// EtcdKeyRotationStatusPhase The last entered phase, which a failure retains. A `prepare` failure releases the mutation lock, so start a new rotation workflow after fixing it; a failure in a later phase keeps the lock for recovery of the owning workflow.
+type EtcdKeyRotationStatusPhase string
+
+// EtcdKeyRotationStatusState Whether the owned rotation is running, succeeded, or failed.
+type EtcdKeyRotationStatusState string
 
 // GenericError Error response body.
 type GenericError struct {
@@ -1608,6 +1668,11 @@ type UpdateClusterRequest struct {
 }
 
 // UpdateInProgress The mutually exclusive cluster operation in progress. Absent when none.
+// `etcd_key_rotation` is reported while an etcd data-encryption-key rotation
+// holds the lock, and also after a rotation that failed after `prepare`,
+// which keeps the lock until its owning workflow is recovered (see
+// `conditions.etcdKeyRotation`). A `prepare` failure releases the lock.
+// Exhaustive client switches over `type` must handle it.
 type UpdateInProgress struct {
 	// Type Operation in progress. `certificate_renewal` is reported while a
 	// scheduled or forced certificate-renewal cycle holds the lock, and
