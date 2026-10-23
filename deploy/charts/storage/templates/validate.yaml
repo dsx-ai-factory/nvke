@@ -1,0 +1,20 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+
+Two default StorageClasses is not a working configuration. Kubernetes has no
+rule for choosing between them, and a PVC that names no class may then be bound
+by either.
+
+The lookup reads the live cluster, so it returns nothing during `helm template`
+and `--dry-run`. This guards a real install, not a render.
+*/ -}}
+{{- $lpp := index .Values "local-path-provisioner" }}
+{{- if and .Values.refuseSecondDefaultClass $lpp.enabled $lpp.storageClass.create $lpp.storageClass.defaultClass }}
+{{- $ours := $lpp.storageClass.name }}
+{{- range $existing := (lookup "storage.k8s.io/v1" "StorageClass" "" "").items }}
+{{- if and (ne $existing.metadata.name $ours) (eq (index $existing.metadata.annotations "storageclass.kubernetes.io/is-default-class" | default "false") "true") }}
+{{- fail (printf "the cluster already has a default StorageClass, %q, and this chart would add a second (%q). Kubernetes has no rule for choosing between two. Leave this chart out, or set local-path-provisioner.storageClass.defaultClass=false to install the class without making it the default, or set refuseSecondDefaultClass=false to replace %q deliberately." $existing.metadata.name $ours $existing.metadata.name) }}
+{{- end }}
+{{- end }}
+{{- end }}

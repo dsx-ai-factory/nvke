@@ -1,0 +1,45 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+
+Rendering-time refusals, so a bad combination fails with a sentence rather
+than with a pre-install hook that cannot start.
+
+The lookups read the live cluster, so they are empty during `helm template`
+and `--dry-run`. They guard an install, not a render.
+*/ -}}
+
+{{- if .Values.nico.enabled }}
+
+{{- if not (hasKey .Subcharts "nico") }}
+{{- fail "nico.enabled is true but the NICo chart is not in charts/. Run `helm repo add nico <your NICo chart repository>` and `helm dependency build deploy/charts/nico`." }}
+{{- end }}
+
+{{- if not .Values.nico.global.image.repository }}
+{{- fail "nico.global.image.repository is required: the NICo chart names no registry and renders invalid manifests without it." }}
+{{- end }}
+{{- if not .Values.nico.global.image.tag }}
+{{- fail "nico.global.image.tag is required: the NICo chart names no registry and renders invalid manifests without it." }}
+{{- end }}
+
+{{- /* What the pre-install hooks read, and this release cannot provide. */ -}}
+{{- $secret := dig "nico-api" "envFrom" "databaseCredentials" "secretName" "" .Values.nico }}
+{{- if not (lookup "v1" "Secret" .Release.Namespace $secret) }}
+{{- fail (printf "the Secret %q is not in namespace %q. NICo's schema migration Job runs as a pre-install hook and reads DATASTORE_USER and DATASTORE_PASSWORD from it, so it has to exist before this release. Install deploy/charts/nico-prereqs into %s first and wait for it." $secret .Release.Namespace .Release.Namespace) }}
+{{- end }}
+
+{{- /*
+Each NICo subchart resolves its namespace from its OWN namespaceOverride, and
+there is no global that sets them all. A subchart that disagrees with the
+release namespace lands where the prerequisites are not.
+
+nico-machine-a-tron is left out: it reads global.namespaceOverride instead.
+*/ -}}
+{{- range $sub := list "nico-api" "nico-bmc-proxy" "nico-dhcp" "nico-dns" "nico-hardware-health" "nico-pxe" "nico-ssh-console-rs" "nico-dsx-exchange-consumer" "nico-ntp" "unbound" "nico-postgres-exporter" }}
+{{- $got := dig $sub "namespaceOverride" "" $.Values.nico }}
+{{- if ne $got $.Release.Namespace }}
+{{- fail (printf "nico.%s.namespaceOverride is %q but this release is in %q. The two must agree, or %s lands in a namespace without the Secrets and ConfigMaps it mounts." $sub (default "<release namespace>" $got) $.Release.Namespace $sub) }}
+{{- end }}
+{{- end }}
+
+{{- end }}

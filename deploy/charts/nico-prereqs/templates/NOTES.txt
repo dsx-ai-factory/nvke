@@ -1,0 +1,30 @@
+NICo's prerequisites are in {{ .Release.Namespace }}.
+
+{{- if .Values.postgresql.enabled }}
+  PostgreSQL     {{ .Values.database.host }}
+{{- else }}
+  PostgreSQL     {{ .Values.database.host }}  (not installed here)
+{{- end }}
+  Credentials    {{ include "nico-prereqs.database.secretName" . }}
+{{- if .Values.certManager.issuer.create }}
+  ClusterIssuer  {{ .Values.certManager.issuer.name }}  (self-signed CA)
+{{- end }}
+{{- if .Values.temporal.enabled }}
+  Temporal       nico-temporal-frontend.{{ .Release.Namespace }}.svc.cluster.local
+{{- end }}
+
+Wait for the database before installing NICo. Its migration Job runs as a
+pre-install hook and connects to PostgreSQL immediately:
+
+  kubectl -n {{ .Release.Namespace }} rollout status statefulset/{{ .Values.postgresql.fullnameOverride }}
+
+Then install NICo into this same namespace:
+
+  helm upgrade --install nico deploy/charts/nico --namespace {{ .Release.Namespace }} ...
+
+{{- if .Values.certManager.issuer.create }}
+
+The ClusterIssuer {{ .Values.certManager.issuer.name }} is a SELF-SIGNED CA
+created here, not Vault PKI. No revocation, no audit trail, no rotation, and
+its private key is a Secret in this cluster. Development clusters only.
+{{- end }}

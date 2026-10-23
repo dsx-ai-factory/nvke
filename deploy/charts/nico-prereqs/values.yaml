@@ -1,0 +1,263 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What NICo expects to find already in place. Install this, wait for it, then
+# install ../nico.
+#
+#   helm upgrade --install nico-prereqs deploy/charts/nico-prereqs \
+#     --namespace forge-system --create-namespace \
+#     --set database.password=<pick one> \
+#     --set-file sshHostKey.privateKey=./ssh_host_ed25519_key \
+#     --wait
+#
+# THE RELEASE NAMESPACE IS NICo's NAMESPACE, and `--create-namespace` makes it.
+# That is the whole reason this is a separate release: the NICo chart runs
+# namespaced hooks, and helm applies hooks before any manifest in their own
+# release -- a Namespace included.
+#
+# ONE value has no default: database.password.
+
+# ---------------------------------------------------------------------------
+# Certificates
+# ---------------------------------------------------------------------------
+# NICo signs every service certificate through a cert-manager ClusterIssuer,
+# and expects one named vault-nico-issuer backed by a Vault PKI engine.
+#
+# This chart does not install Vault. On a cluster that has one, leave
+# issuer.create false and point issuer.name at the ClusterIssuer that Vault
+# backs. Without a Vault — a kind cluster, a laptop, a test lane — set
+# issuer.create true and this chart creates a self-signed CA chain under the
+# same name instead. NICo cannot tell the difference: it only ever names the
+# issuer.
+#
+# A self-signed CA is NOT a substitute for Vault PKI on a real site. It has no
+# revocation, no audit trail and no rotation story, and its private key lives
+# in a Secret in this cluster.
+certManager:
+  # Where a ClusterIssuer of type `ca` reads its CA Secret from. cert-manager's
+  # --cluster-resource-namespace, which defaults to its own namespace.
+  clusterResourceNamespace: cert-manager
+  issuer:
+    create: false
+    # The name NICo's global.certificate.issuerRef.name points at.
+    name: vault-nico-issuer
+    # Only read when create is true.
+    caSecretName: nico-ca
+    bootstrapIssuerName: nico-ca-bootstrap
+    commonName: "NICo CA"
+    duration: 87600h
+    renewBefore: 720h
+    privateKey:
+      algorithm: ECDSA
+      size: 384
+
+# ---------------------------------------------------------------------------
+# NICo's database
+# ---------------------------------------------------------------------------
+# nico-api reads its connection details from one Secret and one ConfigMap. The
+# migration job in the nico-api subchart creates and migrates the schema; no
+# migration is run by hand.
+database:
+  # REQUIRED unless existingSecret is set.
+  password: ""
+  existingSecret: ""
+
+  user: nico
+  dbName: nico
+  # NICo expects an SSL-enabled PostgreSQL. values-kind.yaml drops this to
+  # disable, because the PostgreSQL this chart installs on kind serves no TLS.
+  sslMode: require
+
+  # Derived from postgresql.fullnameOverride and the release namespace.
+  # ../nico restates it as nico.nico-api.databaseConfig.DB_HOST; the two must
+  # agree, and nothing checks it for you.
+  host: nico-postgresql.forge-system.svc.cluster.local
+  port: 5432
+
+  # The Secret nico-api reads its credentials from. Left empty, this chart
+  # writes the Secret under whatever name
+  # nico.nico-api.envFrom.databaseCredentials.secretName asks for, so the two
+  # cannot disagree. Set it only to write the Secret under a different name
+  # than nico-api reads — which is a mistake, not a feature.
+  secretName: nico.forge-pg-cluster.credentials
+
+# ---------------------------------------------------------------------------
+# Vault
+# ---------------------------------------------------------------------------
+# NICo reads Vault credentials from two Secrets and its connection details from
+# a ConfigMap. This chart does not install Vault.
+#
+# createSecrets writes the two Secrets from the values below. Leave it false
+# where External Secrets, the Vault Secrets Operator or an operator's own
+# `kubectl create secret` owns them.
+#
+# A cluster with no Vault at all — see certManager.issuer.create above — still
+# wants the two Secrets to exist, because the NICo services mount them. Empty
+# values are enough for that; NICo only fails when it actually calls Vault.
+vault:
+  createSecrets: false
+  approleSecretName: nico-vault-approle-tokens
+  tokenSecretName: nico-vault-token
+  roleID: ""
+  secretID: ""
+  token: ""
+
+  # The vault-cluster-info ConfigMap. Created by the NICo chart itself from
+  # nico.nico-api.vaultClusterInfo below, not here.
+  service: ""
+  mount: secrets
+  pkiMount: forgeca
+
+# ---------------------------------------------------------------------------
+# The SSH console host key
+# ---------------------------------------------------------------------------
+# nico-ssh-console-rs presents this key to every client that opens a machine
+# console. Generate it once and keep it: regenerating it makes every client
+# that has the old key report a host-key mismatch.
+#
+#   ssh-keygen -t ed25519 -f ./ssh_host_ed25519_key -N ""
+#   helm ... --set-file sshHostKey.privateKey=./ssh_host_ed25519_key
+#
+# Not generated by this chart on purpose. Helm would mint a new key on every
+# `helm upgrade`, and the OpenSSH format the console expects is not the format
+# Helm's key generator emits.
+sshHostKey:
+  create: true
+  name: ssh-host-key
+  privateKey: ""
+
+# ---------------------------------------------------------------------------
+# PostgreSQL
+# ---------------------------------------------------------------------------
+postgresql:
+  enabled: true
+
+  # Pinned, and load-bearing: the Bitnami chart names its primary Service after
+  # the chart fullname exactly, so this IS the hostname half of database.host.
+  fullnameOverride: nico-postgresql
+  namespaceOverride: forge-system
+
+  auth:
+    username: nico
+    database: nico
+    existingSecret: nico-postgresql-auth
+    secretKeys:
+      adminPasswordKey: postgres-password
+      userPasswordKey: password
+
+    # INERT. Not a credential, and never written anywhere.
+    #
+    # The Bitnami chart refuses an UPGRADE when auth.username is not
+    # `postgres` and auth.password is empty, because it cannot tell whether it
+    # is about to rotate a password it manages:
+    #
+    #   'global.postgresql.auth.password' must not be empty
+    #
+    # It does not manage this one. auth.existingSecret above is set, so
+    # postgresql.v1.createSecret is false and the chart writes no Secret of its
+    # own; every credential comes from templates/database-secret.yaml, which
+    # builds it from database.password. auth.password is read nowhere else.
+    #
+    # Without this, enabling NICo on an existing release fails to render while
+    # a fresh install of the same values succeeds -- the validation only runs
+    # on upgrade. Changing this value changes nothing.
+    password: "unused-see-comment-above"
+
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
+      storageClass: ""
+    resources:
+      limits:
+        memory: 512Mi
+      requests:
+        memory: 256Mi
+
+    # nico, plus the two databases NICo's Temporal needs when temporal.enabled
+    # is on. Created unconditionally: initdb runs once, on an empty data
+    # directory, so there is no later point at which they could be added, and
+    # two empty databases cost nothing.
+    initdb:
+      scripts:
+        init-temporal.sql: |
+          CREATE DATABASE temporal;
+          CREATE DATABASE temporal_visibility;
+
+  # PINNED BY DIGEST, for the same reason as the nvke chart: bitnami/postgresql
+  # on Docker Hub no longer publishes version tags, so there is no version to
+  # pin to and a digest is the only durable reference.
+  image:
+    digest: "sha256:b74b23f091dcc87041bcae557d840c36458af46b955279cb13aedec4c32d7f71"
+
+# ---------------------------------------------------------------------------
+# Temporal
+# ---------------------------------------------------------------------------
+# NICo's Temporal, which is NOT the NVKE controller's. Both default to a
+# release named `temporal`, so they must not share a namespace.
+#
+# Temporal's chart has no namespaceOverride — its templates follow
+# .Release.Namespace — so this one lands wherever THIS chart is released.
+# Release this chart on its own, into its own namespace, to use it. It lands in this release's
+# namespace, which is NICo's -- separate from the NVKE controller's by
+# construction.
+temporal:
+  enabled: false
+
+  # Pinned so nico-temporal-frontend.<namespace>.svc.cluster.local stays
+  # correct whatever the release is called, AND so that nothing it creates
+  # shares a name with the NVKE controller's Temporal.
+  fullnameOverride: nico-temporal
+
+  server:
+    configMapsToMount: sprig
+    setConfigFilePath: true
+    config:
+      persistence:
+        default:
+          driver: sql
+          sql:
+            driver: postgres12
+            # CHANGE WITH database.host ABOVE.
+            host: nico-postgresql.forge-system.svc.cluster.local
+            port: 5432
+            database: temporal
+            user: nico
+            existingSecret: nico-postgresql-auth
+            secretKey: password
+            maxConns: 10
+            maxIdleConns: 5
+        visibility:
+          driver: sql
+          sql:
+            driver: postgres12
+            host: nico-postgresql.forge-system.svc.cluster.local
+            port: 5432
+            database: temporal_visibility
+            user: nico
+            existingSecret: nico-postgresql-auth
+            secretKey: password
+            maxConns: 10
+            maxIdleConns: 5
+
+  schema:
+    createDatabase:
+      enabled: true
+    setup:
+      enabled: true
+    update:
+      enabled: true
+
+  cassandra:
+    enabled: false
+  mysql:
+    enabled: false
+  postgresql:
+    enabled: false
+  prometheus:
+    enabled: false
+  grafana:
+    enabled: false
+  elasticsearch:
+    enabled: false
+

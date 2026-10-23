@@ -1,0 +1,45 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+
+A node agent dials the SPIRE server, and a tenant kube-apiserver fetches the
+OIDC discovery document, before the cluster has any ingress. Both reach a node
+address, so both need a NodePort. The selectors match the upstream chart's own
+pod labels.
+*/ -}}
+{{- if .Values.nodePorts.server.create }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.nodePorts.server.name }}
+  namespace: {{ .Values.namespaces.server }}
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: server
+  ports:
+    - name: grpc
+      protocol: TCP
+      port: 443
+      targetPort: grpc
+      nodePort: {{ .Values.nodePorts.server.nodePort }}
+{{- end }}
+{{- if .Values.nodePorts.oidcProvider.create }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.nodePorts.oidcProvider.name }}
+  namespace: {{ .Values.namespaces.server }}
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: spiffe-oidc-discovery-provider
+  ports:
+    - name: https
+      protocol: TCP
+      port: 443
+      targetPort: https
+      nodePort: {{ .Values.nodePorts.oidcProvider.nodePort }}
+{{- end }}
