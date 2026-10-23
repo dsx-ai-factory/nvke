@@ -76,10 +76,5 @@ else
 fi
 rm -f "${cache_dir}/${cache_key}.qcow2"
 
-# ipxe.bootCacheDirForImage keys the extracted boot partition by the cached
-# image's path, which does not change here either. Left behind, the VM boots the
-# previous image's kernel, initrd and grub.cfg against the new rootfs.
-rm -rf -- "${cache_dir}/boot-partitions"
-
 echo "Staged ${image_url} at ${image_path}" >&2
 echo "nico-sim serves this image at ${files_url_path}" >&2
