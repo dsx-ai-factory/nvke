@@ -479,6 +479,7 @@ cat >> "$NETPLAN_FILE" << EOF
   ethernets:
     $KERNEL_IF:
       mtu: $UPLINK_MTU
+      set-name: $KERNEL_IF
       match:
         macaddress: $DEFAULT_MAC
 EOF
