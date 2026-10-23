@@ -85,6 +85,13 @@ instance_types:
     cpu_count: 4
     memory_gib: 6
     disk_gib: 60
+  - id: "a1b2c3d4-0005-4000-8000-000000000006"
+    name: "cpu4-mem8gb-disk60gb"
+    site_id: "a1b2c3d4-0001-4000-8000-000000000001"
+    gpu_count: 0
+    cpu_count: 4
+    memory_gib: 8
+    disk_gib: 60
   - id: "a1b2c3d4-0005-4000-8000-000000000004"
     name: "cpu6-mem32gb-disk60gb"
     site_id: "a1b2c3d4-0001-4000-8000-000000000001"

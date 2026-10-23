@@ -20,7 +20,7 @@ fi
 
 # ── Core dependencies ─────────────────────────────────────────────────────────
 
-for dep in qemu cdrtools; do
+for dep in qemu cdrtools swtpm; do
 	if brew list --formula "${dep}" >/dev/null 2>&1; then
 		echo "${dep} already installed"
 	else
@@ -44,16 +44,7 @@ else
 	brew install vmnet-helper
 fi
 
-# vmnet-client has /opt/vmnet-helper/bin/vmnet-helper hardcoded.
-# Create symlinks so it can find the helper binary.
-if [[ ! -f /opt/vmnet-helper/bin/vmnet-helper ]]; then
-	echo ""
-	echo "Creating /opt/vmnet-helper/bin symlinks (requires sudo once)..."
-	sudo mkdir -p /opt/vmnet-helper/bin
-	sudo ln -sf /opt/homebrew/opt/vmnet-helper/libexec/vmnet-helper /opt/vmnet-helper/bin/vmnet-helper
-	sudo ln -sf /opt/homebrew/opt/vmnet-helper/libexec/vmnet-client /opt/vmnet-helper/bin/vmnet-client
-	echo "Symlinks created."
-fi
+# Modern vmnet-run discovers the adjacent helper itself; no root-owned symlinks.
 
 # ── cloud-localds ─────────────────────────────────────────────────────────────
 
@@ -72,7 +63,7 @@ fi
 
 echo ""
 echo "Dependency check:"
-for bin in qemu-img mkisofs; do
+for bin in qemu-img mkisofs swtpm swtpm_setup; do
 	if command -v "${bin}" >/dev/null 2>&1; then
 		echo "  ${bin} -> $(command -v "${bin}")"
 	else
@@ -82,16 +73,16 @@ done
 
 # vmnet-helper
 vmnet_client=""
-for p in /opt/vmnet-helper/bin/vmnet-client /opt/homebrew/opt/vmnet-helper/libexec/vmnet-client; do
+for p in /opt/vmnet-helper/bin/vmnet-run /opt/homebrew/opt/vmnet-helper/libexec/vmnet-run; do
 	if [[ -x "${p}" ]]; then
 		vmnet_client="${p}"
 		break
 	fi
 done
 if [[ -n "${vmnet_client}" ]]; then
-	echo "  vmnet-client -> ${vmnet_client}"
+	echo "  vmnet-run -> ${vmnet_client}"
 else
-	echo "  vmnet-client -> MISSING"
+	echo "  vmnet-run -> MISSING"
 fi
 
 if command -v cloud-localds >/dev/null 2>&1; then

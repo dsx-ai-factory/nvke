@@ -54,7 +54,13 @@ ORG_ID="${ORG_ID:-novxwn552ssc}"
 SITE_ID="${SITE_ID:-a1b2c3d4-0001-4000-8000-000000000001}"
 VPC_ID="${VPC_ID:-a1b2c3d4-0002-4000-8000-000000000001}"
 VPC_PREFIX_ID="${VPC_PREFIX_ID:-a1b2c3d4-0004-4000-8000-000000000001}"
-INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-a1b2c3d4-0005-4000-8000-000000000003}"  # cpu4-mem6gb-disk60gb
+# The arm64 generic kernel on darwin-qemu reserves 512Mi for crashkernel, which
+# leaves a 6Gi node too little allocatable for ovnkube-node's 1800Mi request.
+if [[ "$(uname -s)" == Darwin ]]; then
+  INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-a1b2c3d4-0005-4000-8000-000000000006}"  # cpu4-mem8gb-disk60gb
+else
+  INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-a1b2c3d4-0005-4000-8000-000000000003}"  # cpu4-mem6gb-disk60gb
+fi
 
 KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}"
 CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}"
@@ -62,6 +68,13 @@ WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}"
 CONTROL_PLANE_VIP="${CONTROL_PLANE_VIP:-}"
 DEFAULT_VIP_RANGE="${DEFAULT_VIP_RANGE:-172.31.0.0/24}"
 FIRST_CONTROL_PLANE_VIP="${FIRST_CONTROL_PLANE_VIP:-172.31.0.10}"
+# POD_CIDR empty keeps the API default (192.168.0.0/16), which overlaps the
+# vmnet node network on darwin, so pick one outside it there.
+if [[ "$(uname -s)" == Darwin ]]; then
+  POD_CIDR="${POD_CIDR:-10.244.0.0/16}"
+else
+  POD_CIDR="${POD_CIDR:-}"
+fi
 CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}"
 CNI_VERSION="${CNI_VERSION:-}"
 
@@ -85,6 +98,12 @@ if [[ -n "${CNI_VERSION}" ]]; then
   \"cniVersion\": \"${CNI_VERSION}\""
 fi
 
+NETWORK_JSON=""
+if [[ -n "${POD_CIDR}" ]]; then
+  NETWORK_JSON=",
+  \"network\": {\"podCIDR\": \"${POD_CIDR}\"}"
+fi
+
 if [[ -z "${CONTROL_PLANE_VIP}" ]]; then
   CLUSTERS="$(curl "${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"}" -fsS --max-time "${CURL_MAX_TIME:-30}" "${CLUSTERS_API_URL}")"
   CONTROL_PLANE_VIP="$(
@@ -102,7 +121,7 @@ BODY=$(cat <<EOF
   },
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
   "controlPlaneVIP": "${CONTROL_PLANE_VIP}",
-  "cniPlugin": "${CNI_PLUGIN}"${CNI_VERSION_JSON},
+  "cniPlugin": "${CNI_PLUGIN}"${CNI_VERSION_JSON}${NETWORK_JSON},
   "etcdEncrypted": ${ETCD_ENCRYPTED},
   "teleportEnabled": false,
   "controlPlaneConfig": {

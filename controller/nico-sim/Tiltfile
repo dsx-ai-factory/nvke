@@ -133,6 +133,11 @@ def register(ctx):
     # -----------------------------------------------------------------------
     # Network layout — partition bridge subnet into DHCP and VIP pools.
     # -----------------------------------------------------------------------
+    # None of this applies to darwin-qemu: its VMs join Apple's vmnet shared
+    # network, whose subnet nico-sim discovers and Apple's DHCP serves. Its VIPs
+    # still come from the VIP range below, routed by nico-sim's BGP speaker via
+    # sudo route (the VIP range defaults to the same 172.31.0.0/24 in nico-sim).
+    _bridge_layout = _vm_backend_enabled and _host_os == "Linux"
     _bridge_cidr = os.getenv("NICO_VMS_BRIDGE_CIDR", "172.30.0.0/24")
     _ranges = _parse_bridge_ranges(_bridge_cidr)
     # The VIP range is intentionally OFF-LINK (a separate subnet from the bridge)
@@ -143,7 +148,7 @@ def register(ctx):
     # withdrawal (and produces spurious stale-ARP artifacts during CP drain).
     # Keep it off the kind Docker subnet (172.18.0.0/16) too.
     _vip_cidr = os.getenv("NICO_VMS_VIP_CIDR", "172.31.0.0/24")
-    if _vm_backend_enabled:
+    if _bridge_layout:
         print("nico-vms network layout (bridge %s):" % _bridge_cidr)
         print("  gateway:    %s" % _ranges.gateway)
         print("  DHCP pool:  %s - %s" % (_ranges.dhcp_start, _ranges.dhcp_end))
@@ -264,14 +269,14 @@ def register(ctx):
 
     # dnsmasq: DHCP/DNS for VMs on the local bridge (skip if not installed).
     _dnsmasq_available = False
-    if _vm_backend_enabled:
+    if _bridge_layout:
         _dnsmasq_available = str(local("command -v dnsmasq >/dev/null 2>&1 && echo yes || echo no", quiet=True)).strip() == "yes"
     _nico_sim_deps = ["check-management-cluster"]
 
     if _container_backend_enabled and "nico" in ctx.cfg.get("providers", []):
         _nico_sim_deps.append("nico-kind-node-image")
 
-    if _vm_backend_enabled and _dnsmasq_available:
+    if _bridge_layout and _dnsmasq_available:
         local_resource(
             "nico-vms-dnsmasq",
             serve_cmd=serve_with_log("nico-sim", "./scripts/run-dnsmasq.sh", "nico-vms-dnsmasq"),
@@ -280,19 +285,20 @@ def register(ctx):
             labels=["5-nico-sim"],
         )
         _nico_sim_deps.append("nico-vms-dnsmasq")
-    elif _vm_backend_enabled:
-        warn("dnsmasq not found -- VMs using DHCP will not get IPs. Install with: brew install dnsmasq")
+    elif _bridge_layout:
+        warn("dnsmasq not found -- VMs using DHCP will not get IPs. Install dnsmasq.")
 
     nico_sim_env = {
         "NICO_SIM_LISTEN_ADDR": ":18080",
         "NICO_SIM_FILES_DIR": os.getenv("NICO_SIM_FILES_DIR", os.path.join(_dev, "files")),
-        "NICO_VMS_BRIDGE_CIDR": _bridge_cidr,
         "NICO_SIM_DB_PATH": os.path.join(_dev, "nico-sim.db"),
         "NICO_VMS_BASE_IMAGE": os.path.join(provider_dir, "images", "ubuntu-cloud.qcow2"),
-        "NICO_VMS_BGP_VIP_CIDRS": _vip_cidr,
         "NICO_VMS_VM_DISK_GIB": "40",
         "NICO_CONTAINERS_ENABLED": "false",
     }
+    if _host_os == "Linux":
+        nico_sim_env["NICO_VMS_BRIDGE_CIDR"] = _bridge_cidr
+        nico_sim_env["NICO_VMS_BGP_VIP_CIDRS"] = _vip_cidr
     if _container_backend_enabled:
         nico_sim_env["NICO_CONTAINERS_ENABLED"] = "true"
     if not _vm_backend_enabled:

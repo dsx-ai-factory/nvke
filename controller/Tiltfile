@@ -351,11 +351,25 @@ _kind_host_ip = str(local(
 #     host.docker.internal is kept only as a fallback for setups where the
 #     management node isn't a "<cluster>-control-plane" container on the
 #     `kind` network (e.g. non-CAPD backends).
+#   * macOS with only VM tenants (nico_sim_backends ["vm"]): darwin-qemu nodes
+#     sit on Apple's vmnet network, outside the Docker VM, and reach the host
+#     at the vmnet gateway. The gateway port-forwards below bind there.
 #   * CI: site_controller_vip may point directly at the Kind control-plane IP;
 #     CAPD machines share that Docker network and can use its NodePorts.
 _on_mac = str(local("uname -s", quiet=True, echo_off=True)).strip() == "Darwin"
+_mac_vm_tenants = _on_mac and cfg.get("nico_sim_backends", ["container"]) in (["vm"], "vm")
+# Apple's vmnet shared-mode gateway: 192.168.64.1 unless a tool such as UTM or
+# Parallels moved the shared network.
+_vmnet_gateway_ip = ""
+if _mac_vm_tenants:
+    _vmnet_gateway_ip = str(local(
+        "defaults read /Library/Preferences/SystemConfiguration/com.apple.vmnet Shared_Net_Address 2>/dev/null || echo 192.168.64.1",
+        quiet=True, echo_off=True,
+    )).strip()
 if SITE_CONTROLLER_VIP_OVERRIDE:
     _kind_site_controller_vip = SITE_CONTROLLER_VIP_OVERRIDE
+elif _mac_vm_tenants:
+    _kind_site_controller_vip = _vmnet_gateway_ip
 elif _on_mac:
     _management_node_ip = str(local(
         "docker inspect --format '{{(index .NetworkSettings.Networks \"kind\").IPAddress}}' %s-control-plane 2>/dev/null || true" % KIND_CLUSTER_NAME_VALUE,
@@ -974,22 +988,31 @@ local_resource(
 # _kind_site_controller_vip above), which already carries the NodePort. A
 # configured site_controller_vip (CI) points tenants directly at a Kind node
 # too, so the gateway forwards are unnecessary in that mode as well.
-if not _on_mac and not SITE_CONTROLLER_VIP_OVERRIDE:
+#
+# The exception on macOS is VM-only tenants: they dial the vmnet gateway, which
+# is a host address, so bind the same forwards there. The address appears when
+# the first darwin-qemu VM starts; the retry loop covers the gap.
+_tenant_gateway_ip = ""
+if _mac_vm_tenants and not SITE_CONTROLLER_VIP_OVERRIDE:
+    _tenant_gateway_ip = _vmnet_gateway_ip
+elif not _on_mac and not SITE_CONTROLLER_VIP_OVERRIDE:
+    _tenant_gateway_ip = _kind_host_ip
+if _tenant_gateway_ip:
     local_resource(
         "port-forward-spire-server-kind-gw",
         labels=["1-infra"],
-        serve_cmd="while true; do kubectl -n %s port-forward --address %s svc/spire-server-np 30440:443 || true; sleep 2; done" % (SPIRE_NAMESPACE, _kind_host_ip),
+        serve_cmd="while true; do kubectl -n %s port-forward --address %s svc/spire-server-np 30440:443 || true; sleep 2; done" % (SPIRE_NAMESPACE, _tenant_gateway_ip),
         resource_deps=["spire-server"],
-        readiness_probe=probe(exec=exec_action(["nc", "-z", _kind_host_ip, "30440"]), period_secs=5, failure_threshold=2),
+        readiness_probe=probe(exec=exec_action(["nc", "-z", _tenant_gateway_ip, "30440"]), period_secs=5, failure_threshold=2),
         allow_parallel=True,
     )
 
     local_resource(
         "port-forward-spire-oidc-kind-gw",
         labels=["1-infra"],
-        serve_cmd="while true; do kubectl -n %s port-forward --address %s svc/spire-oidc-provider-np 30443:443 || true; sleep 2; done" % (SPIRE_NAMESPACE, _kind_host_ip),
+        serve_cmd="while true; do kubectl -n %s port-forward --address %s svc/spire-oidc-provider-np 30443:443 || true; sleep 2; done" % (SPIRE_NAMESPACE, _tenant_gateway_ip),
         resource_deps=["spire-server"],
-        readiness_probe=probe(exec=exec_action(["nc", "-z", _kind_host_ip, "30443"]), period_secs=5, failure_threshold=2),
+        readiness_probe=probe(exec=exec_action(["nc", "-z", _tenant_gateway_ip, "30443"]), period_secs=5, failure_threshold=2),
         allow_parallel=True,
     )
 

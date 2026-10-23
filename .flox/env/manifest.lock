@@ -6,6 +6,22 @@
       "actionlint": {
         "pkg-path": "actionlint"
       },
+      "cdrtools": {
+        "pkg-path": "cdrtools",
+        "pkg-group": "cdrtools",
+        "version": "3.02a09",
+        "systems": [
+          "aarch64-darwin"
+        ]
+      },
+      "cloud-utils": {
+        "pkg-path": "cloud-utils",
+        "pkg-group": "cloud-utils",
+        "version": "0.33",
+        "systems": [
+          "aarch64-darwin"
+        ]
+      },
       "clusterctl": {
         "pkg-path": "clusterctl"
       },
@@ -57,12 +73,28 @@
         "pkg-path": "python313Packages.pyyaml",
         "pkg-group": "python"
       },
+      "qemu": {
+        "pkg-path": "qemu",
+        "pkg-group": "qemu",
+        "version": "11.1.0",
+        "systems": [
+          "aarch64-darwin"
+        ]
+      },
       "shellcheck": {
         "pkg-path": "shellcheck"
       },
       "spire-agent": {
         "pkg-path": "spire-agent",
         "outputs": "all"
+      },
+      "swtpm": {
+        "pkg-path": "swtpm",
+        "pkg-group": "swtpm",
+        "version": "2026-05-21",
+        "systems": [
+          "aarch64-darwin"
+        ]
       },
       "temporal-cli": {
         "pkg-path": "temporal-cli"
@@ -87,6 +119,35 @@
     }
   },
   "packages": [
+    {
+      "attr_path": "cdrtools",
+      "broken": false,
+      "derivation": "/nix/store/75fkx4l7c416ky7i4k30w1ch4b5vfgp2-cdrtools-3.02a09.drv",
+      "description": "Highly portable CD/DVD/BluRay command line recording software",
+      "install_id": "cdrtools",
+      "license": "[ CDDL-1.0, GPL-2.0-or-later, LGPL-2.1-or-later ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=c59305bab2065cfecc4944690d9eedbb56f3a9fa",
+      "name": "cdrtools-3.02a09",
+      "pname": "cdrtools",
+      "rev": "c59305bab2065cfecc4944690d9eedbb56f3a9fa",
+      "rev_count": 1083223,
+      "rev_date": "2026-10-01T02:47:39Z",
+      "scrape_date": "2026-10-02T04:59:39.198219Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.02a09",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/ccvs7niq96kmcmipfmm35wsb266z4krf-cdrtools-3.02a09"
+      },
+      "system": "aarch64-darwin",
+      "group": "cdrtools",
+      "priority": 5
+    },
     {
       "attr_path": "go_1_27",
       "broken": false,
@@ -703,6 +764,67 @@
       },
       "system": "x86_64-linux",
       "group": "python",
+      "priority": 5
+    },
+    {
+      "attr_path": "qemu",
+      "broken": false,
+      "derivation": "/nix/store/yc16zfcykcvnav342h5yqcda00a33v1y-qemu-11.1.0.drv",
+      "description": "Generic and open source machine emulator and virtualizer",
+      "install_id": "qemu",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=20b1ddd1aa5ace70c9468305030aa4f9ef79671b",
+      "name": "qemu-11.1.0",
+      "pname": "qemu",
+      "rev": "20b1ddd1aa5ace70c9468305030aa4f9ef79671b",
+      "rev_count": 1076192,
+      "rev_date": "2026-09-19T02:38:33Z",
+      "scrape_date": "2026-09-20T04:59:33.155455Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "11.1.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/3jvkybrfyqpwpr8s7mz840gdmwmsdlz1-qemu-11.1.0-doc",
+        "out": "/nix/store/9314hmf6psz3wj7cdlkzbphsqh31dmgq-qemu-11.1.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "qemu",
+      "priority": 5
+    },
+    {
+      "attr_path": "swtpm",
+      "broken": false,
+      "derivation": "/nix/store/0vp6za1a146rcqbgzyrgyy523ih8b016-swtpm-0.10.1-unstable-2026-05-21.drv",
+      "description": "Libtpms-based TPM emulator",
+      "install_id": "swtpm",
+      "license": "BSD-3-Clause",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=c59305bab2065cfecc4944690d9eedbb56f3a9fa",
+      "name": "swtpm-0.10.1-unstable-2026-05-21",
+      "pname": "swtpm",
+      "rev": "c59305bab2065cfecc4944690d9eedbb56f3a9fa",
+      "rev_count": 1083223,
+      "rev_date": "2026-10-01T02:47:39Z",
+      "scrape_date": "2026-10-02T05:02:15.261151Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2026-05-21",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "man": "/nix/store/br9jv6sjggfzfrmymikwrlq6fy0lcc2d-swtpm-0.10.1-unstable-2026-05-21-man",
+        "out": "/nix/store/n4q26ng7b991m4554x04rnspsnzjsymq-swtpm-0.10.1-unstable-2026-05-21"
+      },
+      "system": "aarch64-darwin",
+      "group": "swtpm",
       "priority": 5
     },
     {
@@ -1819,6 +1941,36 @@
       },
       "system": "x86_64-linux",
       "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "cloud-utils",
+      "broken": false,
+      "derivation": "/nix/store/1i7mb5af9c860y6kcdz1dwyhfq2z6hp7-cloud-utils-0.33.drv",
+      "description": "Useful set of utilities for interacting with a cloud",
+      "install_id": "cloud-utils",
+      "license": "GPL-3.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=c59305bab2065cfecc4944690d9eedbb56f3a9fa",
+      "name": "cloud-utils-0.33",
+      "pname": "cloud-utils",
+      "rev": "c59305bab2065cfecc4944690d9eedbb56f3a9fa",
+      "rev_count": 1083223,
+      "rev_date": "2026-10-01T02:47:39Z",
+      "scrape_date": "2026-10-02T04:59:39.539639Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.33",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "guest": "/nix/store/0yys5wnsjcnxwpdd5c48xkx9lfbsi6v3-cloud-utils-0.33-guest",
+        "out": "/nix/store/qnd6kv0aqghfs9i0z3r3qrp10nsmbkhi-cloud-utils-0.33"
+      },
+      "system": "aarch64-darwin",
+      "group": "cloud-utils",
       "priority": 5
     }
   ]

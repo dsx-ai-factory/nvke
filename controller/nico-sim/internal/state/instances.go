@@ -525,6 +525,26 @@ func (s *Store) DeleteInstance(ctx context.Context, id string) error {
 	})
 }
 
+// SetVMDesiredState records the desired power state (present or stopped) of a
+// VM instance that has not been marked for deletion. It reports whether such
+// an instance exists.
+func (s *Store) SetVMDesiredState(ctx context.Context, id, desired string) (bool, error) {
+	result, err := s.db.NewUpdate().
+		Model((*VMState)(nil)).
+		Set("desired_state = ?", desired).
+		Where("instance_id = ?", id).
+		Where("desired_state != ?", DesiredStateAbsent).
+		Exec(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to set VM desired state: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed getting rows affected: %w", err)
+	}
+	return affected > 0, nil
+}
+
 type VMInstanceStatePatch struct {
 	MachineID        *string
 	Status           *string
@@ -619,7 +639,10 @@ func (s *Store) ListVMReconcileCandidates(ctx context.Context) ([]string, error)
 				ObservedStateRebooting,
 				ObservedStateReady,
 			).WhereOr("(vm.desired_state = ? AND vm.observed_state != ?)", DesiredStateAbsent, ObservedStateDeleted).
-				WhereOr("(vm.desired_state = ? AND vm.reboot_requested = 1)", DesiredStatePresent)
+				WhereOr("(vm.desired_state = ? AND vm.reboot_requested = 1)", DesiredStatePresent).
+				WhereOr("(vm.desired_state = ? AND vm.observed_state IN (?, ?, ?))",
+					DesiredStateStopped, ObservedStateRunning, ObservedStateRebooting, ObservedStateReady).
+				WhereOr("(vm.desired_state = ? AND vm.observed_state = ?)", DesiredStatePresent, ObservedStateStopped)
 		}).
 		Scan(ctx, &rows); err != nil {
 		return nil, fmt.Errorf("failed to list reconcile candidates: %w", err)
