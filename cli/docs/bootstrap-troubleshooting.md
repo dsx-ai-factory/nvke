@@ -278,9 +278,13 @@ sudo -n -i nerdctl pull <image>
 
 **`kind load image-archive ...: exit status 1`** or **`want two sha256 digests`**
 
-The image exists locally but could not be exported into the Kind cluster. Pull
-it again with the platform of the bootstrap host and re-run. A multi-platform
-image that was only partially pulled is the usual cause.
+The image exists locally but could not be exported into the Kind cluster,
+usually because the archive lists a platform whose content is not in the local
+store. kind imports every platform an image index lists, so nvkectl pulls every
+platform of an image pinned by an index digest. For a tag, pull it again for the
+bootstrap host's platform and re-run. To load only one platform of a pinned
+image, pin that platform's manifest digest instead:
+`nerdctl image inspect --mode=native --format '{{.ManifestDesc.Digest}}' <image>`.
 
 ### Controller deploy
 

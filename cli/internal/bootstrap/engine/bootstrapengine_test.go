@@ -384,6 +384,103 @@ func TestRepoOfTaggedRef(t *testing.T) {
 	}
 }
 
+// An image saved under a digest name alone reaches the node with no tag, and
+// the node's CRI can then resolve it through the normalized form of kind's
+// import name, which containerd never stored. LoadImage must save a local tag
+// beside the digest name.
+func TestLoadImage_TagsDigestPinnedManifest(t *testing.T) {
+	runner := &fakeRunner{outputs: []fakeOutput{
+		// Target == manifest: the digest names one manifest.
+		{output: hostManifestDigest + " " + hostManifestDigest + "\n"},
+		{output: ""}, // tag
+		{output: ""}, // nerdctl save
+		{output: ""}, // kind load image-archive
+	}}
+	e := New(runner, nil)
+	ref := "nvcr.io/org/controller@" + hostManifestDigest
+	if err := e.LoadImage(context.Background(), "c", ref); err != nil {
+		t.Fatalf("LoadImage returned error: %v", err)
+	}
+	if len(runner.calls) != 4 {
+		t.Fatalf("expected 4 calls, got %d: %+v", len(runner.calls), runner.calls)
+	}
+
+	localTag := "nvcr.io/org/controller:nvkectl-35c50c1e2958"
+	if got, want := joinArgs(runner.calls[1].args), "tag "+ref+" "+localTag; runner.calls[1].name != "nerdctl" || got != want {
+		t.Errorf("call[1] = %s %s, want nerdctl %s", runner.calls[1].name, got, want)
+	}
+	save := runner.calls[2].args
+	if len(save) != 5 || save[0] != "save" || save[1] != "-o" || save[3] != ref || save[4] != localTag {
+		t.Fatalf("call[2] args = %v, want save -o <path> %s %s", save, ref, localTag)
+	}
+	if load := runner.calls[3].args; len(load) < 3 || load[2] != save[2] {
+		t.Errorf("kind load image-archive args %v do not use nerdctl save's -o path %v", load, save)
+	}
+}
+
+// A digest can name a multi-arch index, which was pulled for this host's
+// platform only, while kind imports with `ctr images import --all-platforms`.
+// LoadImage must pull and save every platform the index lists.
+func TestLoadImage_SavesEveryPlatformOfPinnedIndex(t *testing.T) {
+	runner := &fakeRunner{outputs: []fakeOutput{
+		// Target != manifest: the digest names an index.
+		{output: indexDigest + " " + hostManifestDigest + "\n"},
+		{output: ""}, // pull --all-platforms
+		{output: ""}, // tag
+		{output: ""}, // nerdctl save
+		{output: ""}, // kind load image-archive
+	}}
+	e := New(runner, nil)
+	ref := "nvcr.io/org/controller@" + indexDigest
+	if err := e.LoadImage(context.Background(), "c", ref); err != nil {
+		t.Fatalf("LoadImage returned error: %v", err)
+	}
+	if len(runner.calls) != 5 {
+		t.Fatalf("expected 5 calls, got %d: %+v", len(runner.calls), runner.calls)
+	}
+
+	if got, want := joinArgs(runner.calls[1].args), "pull --all-platforms "+ref; runner.calls[1].name != "nerdctl" || got != want {
+		t.Errorf("call[1] = %s %s, want nerdctl %s", runner.calls[1].name, got, want)
+	}
+	localTag := "nvcr.io/org/controller:nvkectl-8090c7c4538a"
+	if got, want := joinArgs(runner.calls[2].args), "tag "+ref+" "+localTag; got != want {
+		t.Errorf("call[2] = %s, want %s", got, want)
+	}
+	save := runner.calls[3].args
+	if len(save) != 6 || save[0] != "save" || save[1] != "--all-platforms" || save[2] != "-o" || save[4] != ref || save[5] != localTag {
+		t.Fatalf("call[3] args = %v, want save --all-platforms -o <path> %s %s", save, ref, localTag)
+	}
+	if load := runner.calls[4].args; len(load) < 3 || load[2] != save[3] {
+		t.Errorf("kind load image-archive args %v do not use nerdctl save's -o path %v", load, save)
+	}
+}
+
+func TestLocalTagForDigestRef(t *testing.T) {
+	const hex12 = "35c50c1e2958"
+	tests := []struct {
+		name    string
+		ref     string
+		wantTag string
+		wantOK  bool
+	}{
+		{"digest only", "nvcr.io/org/controller@" + hostManifestDigest, "nvcr.io/org/controller:nvkectl-" + hex12, true},
+		{"registry port", "localhost:5000/nvke/controller@" + hostManifestDigest, "localhost:5000/nvke/controller:nvkectl-" + hex12, true},
+		{"tag beside digest", "nvcr.io/org/controller:v1@" + hostManifestDigest, "nvcr.io/org/controller:nvkectl-" + hex12, true},
+		{"tag only", "nvcr.io/org/controller:v1", "", false},
+		{"bare name", "nvcr.io/org/controller", "", false},
+		{"short digest", "nvcr.io/org/controller@sha256:35c50c1e", "", false},
+		{"other algorithm", "nvcr.io/org/controller@sha512:" + strings.Repeat("a", 128), "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tag, ok := localTagForDigestRef(tt.ref)
+			if tag != tt.wantTag || ok != tt.wantOK {
+				t.Errorf("localTagForDigestRef(%q) = (%q, %v), want (%q, %v)", tt.ref, tag, ok, tt.wantTag, tt.wantOK)
+			}
+		})
+	}
+}
+
 func TestRenderKindConfig_IncludesMountsAndPorts(t *testing.T) {
 	body, err := renderKindConfig(Config{
 		ClusterName: "test-cluster",
