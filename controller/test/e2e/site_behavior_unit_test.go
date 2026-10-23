@@ -431,6 +431,12 @@ func TestUnit_SiteObjectsSelectOnlyTheirRun(t *testing.T) {
 	service := siteService("ns", run, "traffic", false)
 	server := siteServerPod("ns", "image", run, "traffic", node)
 	require.True(t, matches(metav1.LabelSelector{MatchLabels: service.Spec.Selector}, server.Labels))
+	trafficClient := siteProbePod("ns", "image", run, siteTrafficClientRole, node, nil)
+	require.False(t, matches(metav1.LabelSelector{MatchLabels: service.Spec.Selector}, trafficClient.Labels),
+		"the Service must not send traffic to the probe itself")
+	headlessClient := siteProbePod("ns", "image", run, siteHeadlessClientRole, node, nil)
+	require.False(t, matches(metav1.LabelSelector{MatchLabels: siteService("ns", run, "headless", true).Spec.Selector}, headlessClient.Labels),
+		"the headless Service must not name the probe")
 	require.Empty(t, service.Spec.ClusterIP)
 	require.Equal(t, corev1.ClusterIPNone, siteService("ns", run, "headless", true).Spec.ClusterIP)
 

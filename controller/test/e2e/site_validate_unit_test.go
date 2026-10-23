@@ -22,7 +22,7 @@ func TestUnit_SiteValidateFromEnvDefaults(t *testing.T) {
 	require.False(t, settings.checks.failFast, "the image reports every check, not just the first failure")
 	require.Equal(t, "default", settings.checks.probeNamespace)
 	require.Equal(t, kube.KubectlImage, settings.checks.probeImage)
-	require.Equal(t, "default", settings.checks.excusedNamespace, "the runner's own namespace")
+	require.Empty(t, settings.checks.excusedNamespace, "outside a pod there is no runner namespace to excuse, and default is checked")
 }
 
 func TestUnit_SiteValidateFromEnvOverrides(t *testing.T) {
@@ -43,6 +43,17 @@ func TestUnit_SiteValidateFromEnvOverrides(t *testing.T) {
 	}, settings.checks.namespaces)
 	require.Equal(t, "probes", settings.checks.probeNamespace)
 	require.Equal(t, "registry.example/kubectl:1", settings.checks.probeImage)
+	require.Empty(t, settings.checks.excusedNamespace, "a probe namespace given is still checked")
+}
+
+func TestUnit_SiteValidateExcusesOnlyOwnNamespace(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "namespace")
+	require.NoError(t, os.WriteFile(file, []byte("validation-runner\n"), 0o600))
+
+	settings, err := siteValidateFromEnv(envMap(map[string]string{siteProbeNamespaceEnv: "probes"}), file)
+	require.NoError(t, err)
+	require.Equal(t, "probes", settings.checks.probeNamespace)
+	require.Equal(t, "validation-runner", settings.checks.excusedNamespace)
 }
 
 func TestUnit_SiteValidateProbeDefaultsToOwnNamespace(t *testing.T) {

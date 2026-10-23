@@ -4,6 +4,7 @@
 package e2e
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"strings"
@@ -45,7 +46,9 @@ type siteValidateSettings struct {
 // siteValidateFromEnv reads the settings. The probe pod defaults to the
 // suite's own namespace, read from namespaceFile, so that a runner needs to
 // grant pod rights in no namespace but the one it already runs in; outside a
-// pod it falls back to default.
+// pod it falls back to default. The pod check excuses only that own
+// namespace, and none outside a pod, so a probe namespace given or defaulted
+// never hides another namespace's failing pods.
 func siteValidateFromEnv(getenv func(string) string, namespaceFile string) (siteValidateSettings, error) {
 	enabled, err := parseRequireEnv(siteValidateEnv, getenv(siteValidateEnv))
 	if err != nil {
@@ -65,12 +68,11 @@ func siteValidateFromEnv(getenv func(string) string, namespaceFile string) (site
 		}
 	}
 
-	probeNamespace := strings.TrimSpace(getenv(siteProbeNamespaceEnv))
-	if probeNamespace == "" {
-		if own, readErr := os.ReadFile(namespaceFile); readErr == nil {
-			probeNamespace = strings.TrimSpace(string(own))
-		}
+	ownNamespace := ""
+	if own, readErr := os.ReadFile(namespaceFile); readErr == nil {
+		ownNamespace = strings.TrimSpace(string(own))
 	}
+	probeNamespace := cmp.Or(strings.TrimSpace(getenv(siteProbeNamespaceEnv)), ownNamespace)
 	if probeNamespace == "" {
 		probeNamespace = "default"
 	}
@@ -92,7 +94,7 @@ func siteValidateFromEnv(getenv func(string) string, namespaceFile string) (site
 			namespaces:       namespaces,
 			probeNamespace:   probeNamespace,
 			probeImage:       probeImage,
-			excusedNamespace: probeNamespace,
+			excusedNamespace: ownNamespace,
 		},
 		expect: expect,
 	}, nil
