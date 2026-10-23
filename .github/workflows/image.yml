@@ -398,7 +398,9 @@ jobs:
             nvke/nvke-validate:ci -ginkgo.dry-run
           test -s "${RUNNER_TEMP}/artifacts/junit-test-report.xml"
           test -s "${RUNNER_TEMP}/artifacts/report.json"
-          grep -q 'site-validate' "${RUNNER_TEMP}/artifacts/junit-test-report.xml" \
+          # A testcase's name carries its labels. The bare label also appears in
+          # the suite's LabelFilter property, which is there with no testcases.
+          grep -q '<testcase name="[^"]*site-validate' "${RUNNER_TEMP}/artifacts/junit-test-report.xml" \
             || { echo "::error::the JUnit report selected no site-validate spec"; exit 1; }
 
 # Not built here: controller/hack/Dockerfile.controller.tilt — it only copies a
