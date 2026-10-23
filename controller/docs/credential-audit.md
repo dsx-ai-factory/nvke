@@ -230,7 +230,9 @@ maintenance, its collector also requires `--cluster` to be the exact
 `kube-system` namespace UID of the site-management cluster (the example above
 uses a placeholder name), and `--operation` to be its configured
 `manual_operation` or that value with a per-step suffix `/<action>-<n>`, for
-example `example-maintenance-run/renew-2`. Rows that differ fail with
+example `example-maintenance-run/renew-2`, where `<action>` is `check`,
+`approve`, `renew`, `rotate` or `verify` and `<n>` is 1 through 99 without
+leading zeros. Rows that differ fail with
 `manual_audit_target_or_run_mismatch`. Keep the original audit records; do not
 delete rows or repeat maintenance to manufacture matching evidence.
 

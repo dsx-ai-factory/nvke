@@ -89,21 +89,31 @@ makes the scheduled cycle `unchanged` (which fails that lane) and clears the
 warning window the alert lane needs; `aggregate` requires all T2 reports from
 the same cluster, which then cannot qualify until its certificates approach
 expiry again. The alert lane also needs staggered expiry prepared in advance:
-one still-valid control-plane leaf already inside the warning window and its
-`NVKECertificateExpiring` alert firing, see
+one still-valid control-plane leaf on `alert_node` already inside the warning
+window and its `NVKECertificateExpiring` alert firing. Every leaf on
+`alert_node` must stay inside `warningDays` but outside
+`certRenewal.thresholdDays` (30–45 days left with the defaults) until the alert
+lane starts; otherwise the scheduled lane or the background scheduler renews it,
+the alert resolves and `alert-renewal` fails with `expiry_alert_not_firing`. Use
+a different control-plane node, with a leaf inside `thresholdDays`, as the
+scheduled lane's candidate. See
 [Prove expiry alert delivery and resolution](#prove-expiry-alert-delivery-and-resolution).
 
 Run from the clean candidate checkout. Output paths must be new and outside the
 repository, so subsequent runs remain clean. The exact cluster UUID supplied to
 `--approve-cluster` is the operator's opt-in. Omitting it performs baseline
-checks and fails before creating fixtures or starting workflows.
+checks and fails before creating fixtures or starting workflows. The first lane
+is `scheduled-renewal`; start it at the time described below:
 
 ```bash
 hack/rotation-demo/demo.sh run --config /operator/private/t2.json \
-  --scenario forced-renewal \
+  --scenario scheduled-renewal \
   --approve-cluster 00000000-0000-0000-0000-000000000001 \
-  --output /operator/private/forced-renewal.json
+  --output /operator/private/scheduled-renewal.json
 ```
+
+Then run the same command with `--scenario alert-renewal` and, last,
+`--scenario forced-renewal`, each with a new output path.
 
 `forced-renewal` starts `RenewK8sCertsV2` with a fresh operator workflow ID,
 positive threshold and `force:true`. It requires a completed Temporal execution
@@ -125,8 +135,7 @@ scrape to sampled age gauges, keeping the CSR observation limit at 300 seconds.
 Every returned controller replica must meet these checks. Keep operator,
 controller and Prometheus clocks synchronized for these wall-clock comparisons.
 
-Run the same command with `--scenario scheduled-renewal` and a new output path
-to observe the actual controller scheduler. Start it only when the cluster's
+`scheduled-renewal` observes the actual controller scheduler. Start it only when the cluster's
 `nextCertRenewalDue`, plus the renewal itself and the next certificate
 inspection (default one hour), fits inside `timeout_seconds`, which is at most
 eight hours while `certRenewal.interval` defaults to twelve. Read
@@ -137,8 +146,9 @@ starts its traffic fails the lane with `cycle_started_before_traffic`, and that
 cycle has already renewed the due node. It waits for a new non-forced,
 scheduler-named cycle; it does not synthesize a schedule by starting Temporal
 directly. Prepare a healthy, naturally approaching-expiry candidate within the
-configured selection threshold. The candidate must be older than one renewal
-interval: a newer cluster has no due time yet and is not scheduled. An ordinary scheduled no-op cannot prove
+configured selection threshold. The cluster must already have a
+`nextCertRenewalDue`: the controller sets it one renewal interval after it first
+sees the cluster and schedules nothing before then. An ordinary scheduled no-op cannot prove
 renewal and fails this scenario. The control planes may have staggered expiry:
 the scheduled lane reads each node's cycle-scoped renewal audit outcome and
 requires changed leaf fingerprints, later expiry and replaced static-pod
@@ -184,7 +194,9 @@ non-learner state and all cluster endpoints from every member.
 ## Prove expiry alert delivery and resolution
 
 `alert-renewal` is a separate forced-renewal lane. Prepare a still-valid leaf in
-the warning window, wait for `NVKECertificateExpiring` to fire, and establish a
+the warning window, keeping every leaf on `alert_node` outside
+`certRenewal.thresholdDays` as described in
+[Run the T2 scenarios](#run-the-t2-scenarios), wait for `NVKECertificateExpiring` to fire, and establish a
 real receiver before running it. Never shorten/replace certificates on a live
 production site just to manufacture this test. Set `alert_node`,
 `alert_credential`, `alert_receipts_file` and `alert_receipts_since` (within the
@@ -254,7 +266,9 @@ Record check/renew/verify observations for each control-plane node through the
 existing [manual audit tool](../../controller/docs/credential-audit.md), using
 the exact `kube-system` UID as `--cluster`, node name as `--node`, and the
 configured `manual_operation` as `--operation`, with a per-step suffix
-`/<action>-<n>` (for example `example-operator-change-window/renew-2`) whenever
+`/<action>-<n>` (for example `example-operator-change-window/renew-2`), where
+`<action>` is `check`, `approve`, `renew`, `rotate` or `verify` and `<n>` is 1
+through 99 without leading zeros, whenever
 a step repeats with otherwise identical flags. The collector rejects other
 operation values with `manual_audit_target_or_run_mismatch` and duplicate
 `event_id`s, which a repeated step without its own suffix produces, with

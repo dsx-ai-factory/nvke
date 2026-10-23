@@ -352,11 +352,12 @@ class Live:
         csr_ages = samples("serving_csr_observation_age_seconds")
         require(csr_ages, "csr_metric_stale")
         failures = self.query('sum(increase(nvke_controller_credential_audit_writes_total{result=~"sink_failed|invalid_event"}[10m]))')
-        # CounterVec creates a result series on first use. Healthy deployments
-        # need not have any sink_failed series; require positive stored evidence
-        # before interpreting absent failure series as zero.
+        # The controller creates every result series at zero, and a restart resets
+        # them; unchanged inspections write nothing. The baseline therefore needs
+        # only the stored series and no failure increase. After the mutation,
+        # which writes audit events, require positive stored evidence.
         stored = self.query('sum(nvke_controller_credential_audit_writes_total{result="stored"})')
-        require(len(stored) == 1 and metric_number(stored[0]["value"][1]) > 0 and
+        require(len(stored) == 1 and (not after or metric_number(stored[0]["value"][1]) > 0) and
                 (not failures or (len(failures) == 1 and metric_number(failures[0]["value"][1]) == 0)), "audit_sink_unhealthy_or_unobserved")
         rules = self.http(self.c["prometheus_url"], "/api/v1/rules?type=alert", "prometheus_authorization_file")
         require(rules["status"] == "success", "alert_evaluator_unavailable")
