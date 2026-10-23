@@ -371,26 +371,6 @@ func TestApplyClusterLevelControlPlaneSpecUpdate_DesiredCount(t *testing.T) {
 		require.Contains(t, err.Error(), "desiredCount must be at least 1")
 	})
 
-	t.Run("rejects scale-up whose new nodes could never join", func(t *testing.T) {
-		svc := clusterService{nodeAgentProfile: db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodTPM}}
-		cluster := &db.Cluster{
-			ID:                 uuid.New(),
-			ProviderType:       db.ProviderTypeLaunchLayer,
-			ControlPlaneVIP:    "172.31.0.10",
-			ControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 1},
-		}
-		spec := db.ConfigSpecFromFull(cluster.ControlPlaneConfig)
-		desired := 3
-		err := svc.applyClusterLevelControlPlaneSpecUpdate(ctx, cluster, &api.UpdateClusterControlPlaneConfig{
-			DesiredCount: &desired,
-		}, &spec)
-		var badRequest *badRequestError
-		require.ErrorAs(t, err, &badRequest)
-		require.EqualError(t, err, "this deployment's node-agent settings do not support the launchlayer provider: "+
-			"SPIFFE-enabled LaunchLayer nodes require dsxImds SPIRE attestation, got tpm")
-		require.Equal(t, 1, cluster.ControlPlaneConfig.DesiredCount)
-	})
-
 	t.Run("rejects scale-up of a vmProfile control plane whose new nodes could never attest", func(t *testing.T) {
 		svc := clusterService{nodeAgentProfile: db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS}}
 		cluster := &db.Cluster{

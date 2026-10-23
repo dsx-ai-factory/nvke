@@ -973,13 +973,15 @@ func TestCreateCAPIInfraMachineForNode_UnsupportedMachineConfigIsNonRetryable(t 
 		ClusterID:              clusterID,
 		Name:                   "worker",
 		SpiffeEnabled:          true,
-		SpireAttestationMethod: db.SpireAttestationMethodJoinToken,
+		SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS,
 	}
+	vmPool := db.NodePool{ID: nodePoolID, ClusterID: clusterID}
+	vmPool.SetLaunchLayer(db.LaunchLayerNodePoolProvider{InstanceType: "vm200", VMProfile: "ubuntu"})
 
 	mockDB := &testutil.MockDB{}
 	mockDB.On("GetNode", mock.Anything, nodeID).Return(node, nil)
 	mockDB.On("GetNodeSet", mock.Anything, nodeSetID).Return(db.NodeSet{ID: nodeSetID, NodePoolID: nodePoolID}, nil)
-	mockDB.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{ID: nodePoolID, ClusterID: clusterID}, nil)
+	mockDB.On("GetNodePool", mock.Anything, nodePoolID).Return(vmPool, nil)
 	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, ProviderType: db.ProviderTypeLaunchLayer}, nil)
 
 	a := &Activities{db: mockDB}
@@ -992,7 +994,7 @@ func TestCreateCAPIInfraMachineForNode_UnsupportedMachineConfigIsNonRetryable(t 
 	var applicationErr *temporal.ApplicationError
 	require.ErrorAs(t, err, &applicationErr)
 	require.True(t, applicationErr.NonRetryable(),
-		"a node configured for an attestation method its provider rejects cannot succeed by retrying")
+		"a node its provider cannot attest cannot succeed by retrying")
 	mockDB.AssertExpectations(t)
 }
 

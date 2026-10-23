@@ -135,11 +135,6 @@ func TestValidateCreateNodePoolRequest_LaunchLayer(t *testing.T) {
 			refs:    &api.LaunchLayerSecurityGroupRefs{GpuNetworkInterface: []string{"missing"}},
 			wantErr: `launchLayer.securityGroupRefs: "missing" is not one of the cluster's launchLayer.securityGroups`,
 		},
-		"rejects a pool whose nodes could never join": {
-			nodeAgentProfile: db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodTPM},
-			wantErr: "this deployment's node-agent settings do not support the launchlayer provider: " +
-				"SPIFFE-enabled LaunchLayer nodes require dsxImds SPIRE attestation, got tpm",
-		},
 		"rejects a vmProfile pool whose nodes could never attest": {
 			nodeAgentProfile: db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS},
 			vmProfile:        "ubuntu",

@@ -31,16 +31,6 @@ func TestClient_CreateMachine_RejectsBeforeApplying(t *testing.T) {
 		wantErrIs   error
 		wantErrText string
 	}{
-		"joinToken attestation": {
-			node:        db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodJoinToken},
-			wantErrIs:   shared.ErrUnsupportedMachineConfig,
-			wantErrText: "SPIFFE-enabled LaunchLayer nodes require dsxImds SPIRE attestation",
-		},
-		"tpm attestation": {
-			node:        db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodTPM},
-			wantErrIs:   shared.ErrUnsupportedMachineConfig,
-			wantErrText: "SPIFFE-enabled LaunchLayer nodes require dsxImds SPIRE attestation",
-		},
 		"vmProfile pool": {
 			node:        db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS},
 			nodePool:    vmPool,

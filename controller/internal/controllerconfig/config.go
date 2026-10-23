@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
@@ -321,7 +322,7 @@ func (c *Config) Validate() error {
 		return errors.New("spire.joinTokenTTL must be greater than 0")
 	}
 
-	if err := c.NodeAgent.validate(c.Spire.SpiffeEnabled); err != nil {
+	if err := c.NodeAgent.validate(c.Spire.SpiffeEnabled, slices.Contains(c.SupportedInfraProviders, InfraProviderLaunchLayer)); err != nil {
 		return fmt.Errorf("nodeAgent: %w", err)
 	}
 
@@ -446,8 +447,10 @@ func reservedDomain(key string, domains []string) (string, bool) {
 
 // validate mirrors the node-agent rules in config.Config.Validate. joinToken,
 // dsxImds, and TLS/JWT all read spire.spiffeEnabled, which lives outside this
-// struct, so it is passed in.
-func (n *NodeAgentConfig) validate(spiffeEnabled bool) error {
+// struct, so it is passed in. dsxImds settings are required with the dsxImds
+// method, and also when launchLayer is enabled with SPIFFE: LaunchLayer nodes
+// attest through dsx_imds whatever the deployment method is.
+func (n *NodeAgentConfig) validate(spiffeEnabled, launchLayerEnabled bool) error {
 	if n.UpdateMethod != "" && n.UpdateMethod != "apt" && n.UpdateMethod != "bundle" {
 		return fmt.Errorf("updateMethod must be apt or bundle")
 	}
@@ -461,12 +464,14 @@ func (n *NodeAgentConfig) validate(spiffeEnabled bool) error {
 		if !spiffeEnabled {
 			return fmt.Errorf("spire.spiffeEnabled must be true when spireAttestationMethod is %q", n.SpireAttestationMethod)
 		}
-		if err := n.DSXImds.validate(); err != nil {
-			return fmt.Errorf("dsxImds: %w", err)
-		}
 	default:
 		return fmt.Errorf("spireAttestationMethod must be one of %q, %q, or %q, got %q",
 			SpireAttestationMethodTPM, SpireAttestationMethodJoinToken, SpireAttestationMethodDSXIMDS, n.SpireAttestationMethod)
+	}
+	if n.SpireAttestationMethod == SpireAttestationMethodDSXIMDS || (spiffeEnabled && launchLayerEnabled) {
+		if err := n.DSXImds.validate(); err != nil {
+			return fmt.Errorf("dsxImds: %w", err)
+		}
 	}
 
 	if !n.TLSJWT.Enabled {

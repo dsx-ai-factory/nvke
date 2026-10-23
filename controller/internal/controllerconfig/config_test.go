@@ -563,6 +563,24 @@ func TestValidateDSXImds(t *testing.T) {
 	}
 }
 
+// LaunchLayer nodes attest through dsx_imds whatever the deployment's method,
+// so enabling launchLayer with SPIFFE requires the dsxImds settings.
+func TestValidateDSXImdsForLaunchLayer(t *testing.T) {
+	t.Parallel()
+
+	launchLayerOnTPM := strings.Replace(attestationConfig(true, "tpm"),
+		"supportedInfraProviders: [nico]", "supportedInfraProviders: [nico, launchLayer]", 1)
+
+	_, err := controllerconfig.Load(writeConfig(t, launchLayerOnTPM))
+	require.ErrorContains(t, err, "nodeAgent: dsxImds: operatorTenant is required")
+
+	_, err = controllerconfig.Load(writeConfig(t, launchLayerOnTPM+`  dsxImds:
+    operatorTenant: acme
+    endpoint: http://169.254.169.254
+`))
+	require.NoError(t, err)
+}
+
 func TestValidateNodeAgentTLSJWT(t *testing.T) {
 	t.Parallel()
 

@@ -60,6 +60,16 @@ output="$(render --set-string nodeAgent.spireAttestationMethod=dsxImds --set-str
 setting "renders DSX IMDS endpoint override" nodeAgent.dsxImds.endpoint "https://metadata.example.test" "${output}"
 setting "renders DSX IMDS checksum override" nodeAgent.dsxImds.pluginChecksum "${checksum}" "${output}"
 
+output="$(render --set-string 'supportedInfraProviders=nico\,launchLayer' --set-string nodeAgent.dsxImds.operatorTenant=operator-1 --set spiffe.enabled=true)"
+setting "keeps TPM for other providers with launchLayer" nodeAgent.spireAttestationMethod "tpm" "${output}"
+setting "renders DSX IMDS operator tenant for launchLayer" nodeAgent.dsxImds.operatorTenant "operator-1" "${output}"
+
+wantfail \
+  "rejects launchLayer with SPIFFE and no DSX IMDS operator tenant" \
+  'nodeAgent.dsxImds.operatorTenant is required' \
+  --set-string 'supportedInfraProviders=nico\,launchLayer' \
+  --set spiffe.enabled=true
+
 wantfail \
   "rejects join token when SPIFFE is disabled" \
   'spiffe.enabled must be true when nodeAgent.spireAttestationMethod is joinToken' \

@@ -248,3 +248,34 @@ at fault.
 {{- end -}}
 {{- end -}}
 {{- end }}
+
+{{/*
+supportedInfraProviders as a JSON list of trimmed names. Fails the render on a
+name the controller would refuse at startup, which with one replica can take the
+running controller down before the new pod reports the error. The names match
+internal/controllerconfig's InfraProvider constants.
+*/}}
+{{- define "controller.supportedInfraProviders" -}}
+{{- $providers := list -}}
+{{- range splitList "," (.Values.supportedInfraProviders | default "nico") -}}
+{{- $provider := trim . -}}
+{{- if not (has $provider (list "nico" "infra" "launchLayer")) -}}
+{{- fail (printf "supportedInfraProviders: %q is not a supported provider, which are nico, infra and launchLayer" $provider) -}}
+{{- end -}}
+{{- if has $provider $providers -}}
+{{- fail (printf "supportedInfraProviders: %q is listed more than once" $provider) -}}
+{{- end -}}
+{{- $providers = append $providers $provider -}}
+{{- end -}}
+{{- toJson $providers -}}
+{{- end }}
+
+{{/*
+"true" when the controller needs nodeAgent.dsxImds: with the dsxImds method, and
+with launchLayer and SPIFFE, since LaunchLayer nodes attest through dsx_imds
+whatever the deployment's method. Mirrors internal/controllerconfig.
+*/}}
+{{- define "controller.dsxImds.required" -}}
+{{- $providers := include "controller.supportedInfraProviders" . | fromJsonArray -}}
+{{- if or (eq .Values.nodeAgent.spireAttestationMethod "dsxImds") (and .Values.spiffe.enabled (has "launchLayer" $providers)) -}}true{{- end -}}
+{{- end }}

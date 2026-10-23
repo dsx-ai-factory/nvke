@@ -98,6 +98,7 @@ nodeAgent:
   # -- SPIRE node attestation method pinned to newly created nodes. Changing
   # this deployment default does not reconfigure existing nodes; keep their
   # attestation plugins available until those nodes are retired or migrated.
+  # LaunchLayer nodes with SPIFFE attest through dsxImds whatever this is.
   # dsxImds also requires SPIFFE
   # to be enabled and a DSX node image that installs the plugin and supplies
   # DSX_IMDS_PLUGIN_CHECKSUM through /etc/spire-agent/spire-agent.env.
@@ -342,7 +343,7 @@ resources: {}
   #   cpu: 100m
   #   memory: 128Mi
 
-# -- Comma-separated API provider blocks accepted by mutating cluster and node-pool requests: `nico`, `launchLayer` and `infra`. The chart defaults the deployed controller to Nico only. Add `launchLayer` for deployments with CAPLL installed; with `spiffe.enabled` it also needs `nodeAgent.spireAttestationMethod: dsxImds`, which applies to every provider's new nodes, so a TPM-attested NICo deployment cannot add `launchLayer`. Add `infra` only for deployments that should accept generic CAPI-backed provider payloads.
+# -- Comma-separated API provider blocks accepted by mutating cluster and node-pool requests: `nico`, `launchLayer` and `infra`. The chart defaults the deployed controller to Nico only. Add `launchLayer` for deployments with CAPLL installed; with `spiffe.enabled` it also needs `nodeAgent.dsxImds.operatorTenant` and `endpoint`, since LaunchLayer nodes attest through DSX IMDS whatever `nodeAgent.spireAttestationMethod` is. Add `infra` only for deployments that should accept generic CAPI-backed provider payloads.
 supportedInfraProviders: "nico"
 
 nodeMetadata:

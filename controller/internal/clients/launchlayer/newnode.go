@@ -11,19 +11,34 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
-// ApplyNodePoolNodePayload sets an empty LaunchLayer payload on node. Unlike
-// NICo's pinned instance type, nothing about a LaunchLayer node's identity
-// (instanceID, machineID, rackID) is known before CAPLL creates the Compute
-// instance — all three are reported later, on LaunchLayerMachine.status.
+// ApplyNodePoolNodePayload sets an empty LaunchLayer payload on node and pins
+// its SPIRE attestation. Unlike NICo's pinned instance type, nothing about a
+// LaunchLayer node's identity (instanceID, machineID, rackID) is known before
+// CAPLL creates the Compute instance — all three are reported later, on
+// LaunchLayerMachine.status.
 func (*Client) ApplyNodePoolNodePayload(_ db.NodePool, node *db.Node) error {
 	node.SetLaunchLayer(db.LaunchLayerNodeProvider{})
+	attestThroughDSXImds(node)
 	return nil
 }
 
 // ApplyPlaceholderNodePayload sets an empty LaunchLayer payload on node so
-// downstream strict provider-payload readers succeed.
+// downstream strict provider-payload readers succeed, and pins its SPIRE
+// attestation.
 func (*Client) ApplyPlaceholderNodePayload(node *db.Node) {
 	node.SetLaunchLayer(db.LaunchLayerNodeProvider{})
+	attestThroughDSXImds(node)
+}
+
+// attestThroughDSXImds overrides the deployment's SPIRE attestation method on
+// a SPIFFE-enabled node with dsxImds, the one identity a LaunchLayer node has:
+// the Compute API reports no TPM endorsement key, and join-token attestation
+// is not offered for this provider. Other providers' nodes keep the
+// deployment's method, so one deployment can run both.
+func attestThroughDSXImds(node *db.Node) {
+	if node.SpiffeEnabled {
+		node.SpireAttestationMethod = db.SpireAttestationMethodDSXIMDS
+	}
 }
 
 // ApplyObservedNodeIdentity records the instance, machine and rack IDs

@@ -2,25 +2,26 @@
 {{- if not (has $spireAttestationMethod (list "tpm" "joinToken" "dsxImds")) }}
 {{- fail (printf "nodeAgent.spireAttestationMethod must be one of tpm, joinToken, or dsxImds, got %q" $spireAttestationMethod) }}
 {{- end }}
+{{- $dsxImds := eq (include "controller.dsxImds.required" .) "true" }}
 {{- $dsxIMDSEndpoint := .Values.nodeAgent.dsxImds.endpoint }}
 {{- $dsxIMDSOperatorTenant := .Values.nodeAgent.dsxImds.operatorTenant }}
-{{- if and (eq $spireAttestationMethod "dsxImds") (eq (trim $dsxIMDSOperatorTenant) "") }}
-{{- fail "nodeAgent.dsxImds.operatorTenant is required when nodeAgent.spireAttestationMethod is dsxImds" }}
+{{- if and $dsxImds (eq (trim $dsxIMDSOperatorTenant) "") }}
+{{- fail "nodeAgent.dsxImds.operatorTenant is required when nodeAgent.spireAttestationMethod is dsxImds, or supportedInfraProviders includes launchLayer with spiffe.enabled" }}
 {{- end }}
-{{- if and (eq $spireAttestationMethod "dsxImds") (or (not (regexMatch "^[A-Za-z0-9._-]+$" (trim $dsxIMDSOperatorTenant))) (has (trim $dsxIMDSOperatorTenant) (list "." ".."))) }}
+{{- if and $dsxImds (or (not (regexMatch "^[A-Za-z0-9._-]+$" (trim $dsxIMDSOperatorTenant))) (has (trim $dsxIMDSOperatorTenant) (list "." ".."))) }}
 {{- fail "nodeAgent.dsxImds.operatorTenant must be a valid SPIFFE path segment" }}
 {{- end }}
-{{- if and (eq $spireAttestationMethod "dsxImds") (eq (trim $dsxIMDSEndpoint) "") }}
-{{- fail "nodeAgent.dsxImds.endpoint is required when nodeAgent.spireAttestationMethod is dsxImds" }}
+{{- if and $dsxImds (eq (trim $dsxIMDSEndpoint) "") }}
+{{- fail "nodeAgent.dsxImds.endpoint is required when nodeAgent.spireAttestationMethod is dsxImds, or supportedInfraProviders includes launchLayer with spiffe.enabled" }}
 {{- end }}
-{{- if eq $spireAttestationMethod "dsxImds" }}
+{{- if $dsxImds }}
 {{- $parsedDSXIMDSEndpoint := urlParse (trim $dsxIMDSEndpoint) }}
 {{- if or (not (has (lower (get $parsedDSXIMDSEndpoint "scheme")) (list "http" "https"))) (eq (get $parsedDSXIMDSEndpoint "host") "") }}
 {{- fail "nodeAgent.dsxImds.endpoint must be an absolute HTTP(S) URL with a host" }}
 {{- end }}
 {{- end }}
 {{- $dsxIMDSPluginChecksum := .Values.nodeAgent.dsxImds.pluginChecksum }}
-{{- if and (eq $spireAttestationMethod "dsxImds") (ne $dsxIMDSPluginChecksum "") (not (regexMatch "^[0-9A-Fa-f]{64}$" $dsxIMDSPluginChecksum)) }}
+{{- if and $dsxImds (ne $dsxIMDSPluginChecksum "") (not (regexMatch "^[0-9A-Fa-f]{64}$" $dsxIMDSPluginChecksum)) }}
 {{- fail "nodeAgent.dsxImds.pluginChecksum must be empty or a 64-character SHA-256 hex digest" }}
 {{- end }}
 {{- if and (eq $spireAttestationMethod "joinToken") (not .Values.spiffe.enabled) }}

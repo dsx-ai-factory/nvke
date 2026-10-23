@@ -66,14 +66,8 @@ func TestValidateNodeAgentProfile(t *testing.T) {
 		nodePool db.NodePool
 		wantErr  string
 	}{
-		"launchLayer on a SPIFFE tpm deployment is rejected": {
+		"launchLayer on a SPIFFE tpm deployment is accepted": {
 			profile:  spiffeTPM,
-			provider: db.ProviderTypeLaunchLayer,
-			wantErr: "this deployment's node-agent settings do not support the launchlayer provider: " +
-				"SPIFFE-enabled LaunchLayer nodes require dsxImds SPIRE attestation, got tpm",
-		},
-		"launchLayer on a SPIFFE dsxImds deployment is accepted": {
-			profile:  spiffeDSXIMDS,
 			provider: db.ProviderTypeLaunchLayer,
 		},
 		"launchLayer vmProfile pool on a SPIFFE dsxImds deployment is rejected": {

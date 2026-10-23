@@ -176,11 +176,9 @@ The management plane then has to accept LaunchLayer requests. Until it does, it 
 | `capi.rbac.create` | `true`. It defaults to `false`, and the chart renders no CAPI or LaunchLayer RBAC without it |
 | `capi.rbac.launchLayer` | `true`, the default. Grants the controller access to LaunchLayer's CRDs when `capi.rbac.create` is `true`. Keep it `true` for as long as CAPLL's CRDs are installed, even after removing `launchLayer` from `supportedInfraProviders`: the NVKE controller runs the LaunchLayer SPIFFE controller whenever the `LaunchLayerMachine` CRD exists, so existing clusters' new machines still join, and without the grant its watch is refused and the controller exits |
 | `tenantAccess.enabled` | `true`, the default. The controller reaches a LaunchLayer cluster's API only through the kubeconfig Secret this publishes; with it off, LaunchLayer clusters stay `Provisioning` |
-| `nodeAgent.spireAttestationMethod` | `dsxImds`, when `spiffe.enabled` is `true`. A LaunchLayer node attests to SPIRE only through DSX IMDS, so a SPIFFE-enabled deployment using any other method rejects LaunchLayer requests with 400 |
-| `nodeAgent.dsxImds.operatorTenant` | Required with `dsxImds`; the chart refuses to render without it. Must match DSX Identity's `global.operatorTenant` |
-| `nodeAgent.dsxImds.endpoint` | Required with `dsxImds`. The metadata endpoint the node attestor queries; the default, `http://169.254.169.254`, is the standard link-local address |
-
-`nodeAgent.spireAttestationMethod` applies to every provider's new nodes, not only LaunchLayer's. NICo accepts any method, so on a site whose NICo nodes attest with TPM, setting `dsxImds` pins new NICo nodes to it as well, and they fail only when they attest. A TPM-attested NICo deployment cannot enable LaunchLayer this way.
+| `nodeAgent.spireAttestationMethod` | Leave it as your other providers need it. With `spiffe.enabled`, the NVKE controller attests LaunchLayer nodes through DSX IMDS whatever this is set to, so one deployment can run NICo nodes on TPM and LaunchLayer nodes on DSX IMDS |
+| `nodeAgent.dsxImds.operatorTenant` | Required when `spiffe.enabled` is `true`; the chart refuses to render without it. Must match DSX Identity's `global.operatorTenant` |
+| `nodeAgent.dsxImds.endpoint` | Required when `spiffe.enabled` is `true`. The metadata endpoint the node attestor queries; the default, `http://169.254.169.254`, is the standard link-local address |
 
 DSX IMDS identifies bare-metal instances only. With SPIFFE on and `nodeAgent.externalMTLS.enabled` off, the management plane rejects with 400 any LaunchLayer node pool or control plane that sets `vmProfile`, since its nodes could never attest.
 

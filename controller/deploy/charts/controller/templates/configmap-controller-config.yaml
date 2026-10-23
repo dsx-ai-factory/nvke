@@ -7,7 +7,7 @@
 # values are trimmed.
 {{- $tracing := .Values.tracing }}
 {{- $traceToEndpoint := and $tracing.enabled $tracing.endpoint }}
-{{- $dsxImds := eq .Values.nodeAgent.spireAttestationMethod "dsxImds" }}
+{{- $dsxImds := eq (include "controller.dsxImds.required" .) "true" }}
 {{- $tlsJwt := .Values.nodeAgent.tlsJwt }}
 {{- $mtls := .Values.temporal.mtls }}
 {{- $teleport := .Values.teleport }}
@@ -38,8 +38,8 @@ data:
     managementNamespace: {{ include "controller.managementNamespace" . | quote }}
     metricsListenAddress: {{ .Values.metrics.listenAddress | default "127.0.0.1:9090" | quote }}
     supportedInfraProviders:
-      {{- range splitList "," (.Values.supportedInfraProviders | default "nico") }}
-      - {{ trim . | quote }}
+      {{- range include "controller.supportedInfraProviders" . | fromJsonArray }}
+      - {{ . | quote }}
       {{- end }}
     {{- with .Values.nodeMetadata.allowlistedLabelKeys }}
     nodeMetadataAllowlistedLabelKeys:

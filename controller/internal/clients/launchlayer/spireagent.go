@@ -17,19 +17,14 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
-// ValidateNodeAgentProfile rejects a SPIFFE-enabled node that would attest
-// any way but dsxImds. dsxImds is the one identity a LaunchLayer node has:
-// the Compute API reports no TPM endorsement key, and join-token
-// attestation is not offered for the production-target provider. DSX issues
-// that identity to bare-metal instances only, so a vmProfile pool is rejected
-// too, unless external mTLS carries the node-agent connection without an SVID.
+// ValidateNodeAgentProfile rejects a vmProfile pool on a SPIFFE-enabled
+// deployment without external mTLS. LaunchLayer nodes attest through dsx_imds
+// (see attestThroughDSXImds), and DSX issues that identity to bare-metal
+// instances only; external mTLS carries the node-agent connection without an
+// SVID, so VMs work there.
 func (*Client) ValidateNodeAgentProfile(profile db.Node, nodePool db.NodePool) error {
 	if !profile.SpiffeEnabled {
 		return nil
-	}
-	if profile.SpireAttestationMethod != db.SpireAttestationMethodDSXIMDS {
-		return fmt.Errorf("SPIFFE-enabled LaunchLayer nodes require %s SPIRE attestation, got %s",
-			db.SpireAttestationMethodDSXIMDS, profile.SpireAttestationMethod)
 	}
 	if nodePool.LaunchLayer != nil && nodePool.LaunchLayer.VMProfile != "" && !profile.NodeAgentExternalMTLSEnabled {
 		return fmt.Errorf("SPIFFE-enabled LaunchLayer nodes without external mTLS require hostOSProfile: "+
