@@ -62,7 +62,7 @@ var siteNamespaces = []siteNamespace{
 	// agent and CSI driver here, so no deploy path file names it as a release.
 	{name: "spire-system", source: "the spire chart's layout for its agent"},
 	{name: "nktp", source: "deploy path item nktp"},
-	{name: "nke-controller", source: "deploy path item controller"},
+	{name: "nvke-controller", source: "deploy path item controller"},
 }
 
 const (

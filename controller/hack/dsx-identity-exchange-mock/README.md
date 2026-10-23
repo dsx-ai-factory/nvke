@@ -77,7 +77,7 @@ The E2E lane verifies these concrete mappings:
 
 | Workload | Tenant username |
 |---|---|
-| Controller | `spiffe://nke.capd.nke-controller.nvid.id/bm/cwe` |
+| Controller | `spiffe://nke.capd.nvke-controller.nvid.id/bm/cwe` |
 | CAPI manager | `spiffe://nke.capd.capi-manager.nvid.id/bm/cwe` |
 | Kubeadm control-plane manager | `spiffe://nke.capd.capi-kubeadm-control-plane-manager.nvid.id/bm/cwe` |
 | Kubeadm bootstrap manager | `spiffe://nke.capd.capi-kubeadm-bootstrap-manager.nvid.id/bm/cwe` |

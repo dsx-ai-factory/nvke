@@ -102,8 +102,8 @@ type exchangeServer struct {
 	jwksURL string
 
 	// region and partition form the rewritten DSX trust domain. For example,
-	// spiffe://capd.nke.local/tenant/nke/service/nke-controller/bm/cwe
-	// becomes spiffe://nke.capd.nke-controller.nvid.id/bm/cwe when region
+	// spiffe://capd.nke.local/tenant/nke/service/nvke-controller/bm/cwe
+	// becomes spiffe://nke.capd.nvke-controller.nvid.id/bm/cwe when region
 	// is "capd" and partition is "nvid.id".
 	region    string
 	partition string

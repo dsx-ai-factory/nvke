@@ -327,7 +327,7 @@ func assetsInstalling(t *testing.T, deployPath, name string) string {
 	t.Helper()
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, ControllerReleasePath(deployPath)),
-		"chart:\n  name: nke-controller\nrelease:\n  name: c\n  namespace: "+name+"\n")
+		"chart:\n  name: nvke-controller\nrelease:\n  name: c\n  namespace: "+name+"\n")
 	return dir
 }
 

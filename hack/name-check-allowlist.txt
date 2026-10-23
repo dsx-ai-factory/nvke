@@ -59,9 +59,32 @@ token:^(controller|management-engine)\.nke\.nvidia\.com$
 # ---- Tier 2: Kubernetes identifiers the post-launch release renames for new sites (PR4) ----
 
 # The controller's Helm release, namespace, Deployment, Service, ServiceAccount,
-# container, ConfigMaps, Temporal namespace and queue, database and Teleport
-# managed-by value, and its NVCR repository until the new one exists.
-token:nke-controller
+# container, Temporal namespace and queue, database, field managers and Teleport
+# managed-by value have moved to nvke-controller on the greenfield deploy
+# stacks. What is left of the name is below, each with its own reason.
+
+# The settings ConfigMap. #1818 moved the chart default to
+# nvke-controller-config; this is the name an install that predates it pins,
+# and the chart and its consumers read either.
+token:nke-controller-config
+
+# The NVKR chart artifact, a release-manifest key read outside this repository,
+# and the release fixtures shaped like it. #1554 does not move it.
+token:nke-controller-chart
+
+# The published image. Per #1554 decision 2 the chart moves and the image does
+# not, so the GHCR repository and the bare `nke-controller:<tag>` the bootstrap
+# side-loads keep the name.
+token:(^|[/:-])nke-controller($|[:@.])
+
+# The name a site installed from the greenfield stacks before this rename
+# keeps, which its consumers must still recognise: the namespace, Deployment
+# and ServiceAccount that nvkectl, nvke-token.sh, nvke-auth-demo.sh and
+# dev-env-spire.sh search for after nvke-controller, the Tilt preflight that
+# refuses to take such a cluster over, and the reference dashboards' selectors.
+# Also the node-agent audience the controller and the agent accept beside
+# nvke-controller, and the NVKR release fixtures' artifact name.
+token:^nke-controller[.]?$
 
 # The legacy managed-by value and the umbrella chart.
 token:nke-cloud-workflow-engine|nke-stack

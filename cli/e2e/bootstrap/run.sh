@@ -63,7 +63,7 @@ E2E_CLUSTER_NAME="nke-e2e"
 BOOTSTRAP_KIND_CLUSTER="${NVKECTL_BOOTSTRAP_CLUSTER_NAME:-nvkectl-bootstrap}"
 BOOTSTRAP_CONTROL_PLANE="${BOOTSTRAP_KIND_CLUSTER}-control-plane"
 # The namespace and Deployment `bootstrap site` installs the controller under.
-CONTROLLER_NAME=nke-controller
+CONTROLLER_NAME=nvke-controller
 # The fake-node fixture, as the substrate package names it: N containers on one
 # private network, named by prefix and index. The defaults here mirror
 # substrate.DefaultConfig; override the same variables to change both.

@@ -25,7 +25,7 @@
 #
 # Environment:
 #   SITE_KUBECONFIG              admin kubeconfig on the node (default /var/lib/nke-e2e/site.kubeconfig)
-#   SITE_CONTROLLER_NAMESPACE    where the NVKE controller is deployed (default nke-controller)
+#   SITE_CONTROLLER_NAMESPACE    where the NVKE controller is deployed (default nvke-controller)
 #   SITE_BUNDLE_TIMELINE_DIR     where site-sampler.sh writes (default /var/lib/nke-e2e/site-timeline)
 #   SITE_BUNDLE_DEADLINE_SECONDS the outer timeout, recorded in the manifest
 #   SITE_BUNDLE_HOST_ROOT        test hook: prefix for every file the script reads
@@ -34,7 +34,7 @@ set -u
 OUT=${1:?usage: collect-site-bundle.sh OUT ARCHIVE}
 ARCHIVE=${2:?usage: collect-site-bundle.sh OUT ARCHIVE}
 KUBECONFIG_PATH=${SITE_KUBECONFIG:-/var/lib/nke-e2e/site.kubeconfig}
-CONTROLLER_NAMESPACE=${SITE_CONTROLLER_NAMESPACE:-nke-controller}
+CONTROLLER_NAMESPACE=${SITE_CONTROLLER_NAMESPACE:-nvke-controller}
 TIMELINE_DIR=${SITE_BUNDLE_TIMELINE_DIR:-/var/lib/nke-e2e/site-timeline}
 DEADLINE_SECONDS=${SITE_BUNDLE_DEADLINE_SECONDS:-0}
 HOST_ROOT=${SITE_BUNDLE_HOST_ROOT:-}

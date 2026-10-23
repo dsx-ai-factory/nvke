@@ -65,7 +65,7 @@ nvke_controller_setup() (
     mv "$nvke_controller_dir/credentials.env.tmp" "$nvke_controller_dir/credentials.env"
   fi
   sed -e 's/--namespace=project-a/--namespace=nvke-controller-integration/' \
-    -e 's|https://controller.example.com/api|http://nke-controller.nke-controller.svc.cluster.local:8080/api|' \
+    -e 's|https://controller.example.com/api|http://nvke-controller.nvke-controller.svc.cluster.local:8080/api|' \
     config/samples/nvke-controller-values.yaml >"$nvke_controller_dir/values.yaml"
   nvke_controller_environment
   bash hack/dev.sh up

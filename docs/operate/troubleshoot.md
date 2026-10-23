@@ -6,7 +6,7 @@ This page lists the failures you are most likely to meet when you install NVIDIA
 
 ### Bootstrap diagnostics
 
-When `nvkectl bootstrap site` fails, it writes diagnostics from the seed cluster to `cluster-diagnostics/`, or to the directory `--diagnostics-dir` names: one directory per namespace with object state and every pod's log (the management plane's under `nke-controller/`), plus `all-resources.txt`, `pods-described.txt` and `helm-releases.txt`.
+When `nvkectl bootstrap site` fails, it writes diagnostics from the seed cluster to `cluster-diagnostics/`, or to the directory `--diagnostics-dir` names: one directory per namespace with object state and every pod's log (the management plane's under `nvke-controller/`), plus `all-resources.txt`, `pods-described.txt` and `helm-releases.txt`.
 
 If the run failed after it requested the cluster, `nvkectl` keeps the seed cluster, and its NVKE API answers on the bootstrap host without authentication. List the management cluster's nodes and the step each one is on:
 
@@ -25,7 +25,7 @@ KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name nvkectl-bootstrap 
 Show the warnings and errors from the last hour:
 
 ```bash
-kubectl logs deployment/nke-controller -n nke-controller --since=1h \
+kubectl logs deployment/nvke-controller -n nvke-controller --since=1h \
   | jq -cR 'fromjson? | select(.level == "WARN" or .level == "ERROR")'
 ```
 
@@ -33,10 +33,10 @@ kubectl logs deployment/nke-controller -n nke-controller --since=1h \
 
 ### Inside the management-plane pod
 
-The `nke-controller` image has a busybox shell, so `kubectl exec` works for quick checks. It has `sh`, `wget`, `nc`, `ip`, `netstat`, `ps` and the usual file tools, but no `bash`, `curl`, `nslookup` or `dig`. Read the metrics endpoint from inside the pod:
+The `nvke-controller` image has a busybox shell, so `kubectl exec` works for quick checks. It has `sh`, `wget`, `nc`, `ip`, `netstat`, `ps` and the usual file tools, but no `bash`, `curl`, `nslookup` or `dig`. Read the metrics endpoint from inside the pod:
 
 ```bash
-kubectl exec -n nke-controller deploy/nke-controller -- wget -qO- http://127.0.0.1:9090/metrics
+kubectl exec -n nvke-controller deploy/nvke-controller -- wget -qO- http://127.0.0.1:9090/metrics
 ```
 
 Busybox `wget` does not verify TLS certificates, so do not use it to check an HTTPS endpoint.
@@ -46,20 +46,20 @@ For anything the image does not carry, attach a debug container to the running p
 1. Find the pod name:
 
    ```bash
-   kubectl get pod -n nke-controller -l app.kubernetes.io/name=nke-controller
+   kubectl get pod -n nvke-controller -l app.kubernetes.io/name=nvke-controller
    ```
 
 2. Start a shell in a debug container:
 
    ```bash
-   kubectl debug -it -n nke-controller <POD> --profile=restricted --target=nke-controller --image=<DEBUG_IMAGE> -- sh
+   kubectl debug -it -n nvke-controller <POD> --profile=restricted --target=nvke-controller --image=<DEBUG_IMAGE> -- sh
    ```
 
    Replace `<POD>` with the name from the previous step, and `<DEBUG_IMAGE>` with an image that has the tools you need, such as `curl` and `dig`. `--profile=restricted` runs the debug container without privileges, as the pod runs; without it, a namespace that enforces the `restricted` Pod Security Standard rejects the container.
 
    The debug container runs as the pod's user, uid 65532, with no Linux capabilities, whatever user `<DEBUG_IMAGE>` declares. Choose an image whose tools work as an unprivileged user: `curl`, `dig` and `nslookup` do, while `tcpdump` and anything else that needs root or raw sockets does not.
 
-The debug container stays in the pod's spec, stopped, until the pod is replaced. Starting one needs permission to patch `pods/ephemeralcontainers` in the `nke-controller` namespace.
+The debug container stays in the pod's spec, stopped, until the pod is replaced. Starting one needs permission to patch `pods/ephemeralcontainers` in the `nvke-controller` namespace.
 
 ### Cluster and node state
 
@@ -121,7 +121,7 @@ curl -s http://<MANAGEMENT_ADDRESS>:30080/api/version
 ```
 
 ```bash
-kubectl get deployment nke-controller -n nke-controller -o jsonpath='{.spec.template.spec.containers[0].image}'
+kubectl get deployment nvke-controller -n nvke-controller -o jsonpath='{.spec.template.spec.containers[0].image}'
 ```
 
 ## Building artifacts
@@ -299,7 +299,7 @@ The install stops at the component that failed. Fix the cause and run the same c
 |---|---|---|
 | `nvkectl` fails with `minting token for nke-clients/nke-client`. | `nvkectl` uses the management cluster's admin kubeconfig after authentication is configured. | Use an OpenID Connect (OIDC) kubeconfig, as in [With nvkectl](api-authentication.md#with-nvkectl). |
 | `401`, or `403` with `Not admitted: the authenticated identity matches no admission rule.` | Enforcing mode rejected the token or the caller. | Search the management-plane log for `rejected request` in enforcing mode, or `authentication would have rejected this request` in permissive mode, then see [Find callers that enforcing mode would reject](api-authentication.md#find-callers-that-enforcing-mode-would-reject). |
-| The `nke-controller` pod does not become ready, and logs `Failed to set up API authentication`. | In enforcing mode NVKE cannot fetch an issuer's signing keys at startup. | Fix the issuer setting the error names, or return to permissive mode until the log shows `fetched issuer signing keys` for each issuer. |
+| The `nvke-controller` pod does not become ready, and logs `Failed to set up API authentication`. | In enforcing mode NVKE cannot fetch an issuer's signing keys at startup. | Fix the issuer setting the error names, or return to permissive mode until the log shows `fetched issuer signing keys` for each issuer. |
 | A change to `apiAuth.config` has no effect, or authentication is off after you re-run the install. | NVKE reads the configuration only at startup, and the install's values turn authentication off. | See [Switch to enforcing mode](api-authentication.md#switch-to-enforcing-mode). |
 
 ## Creating clusters

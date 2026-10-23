@@ -80,7 +80,7 @@ func loadEnvironment() environment {
 	return environment{
 		host: newLocalClient(kubeconfig, hostContext), state: newLocalClient(kubeconfig, stateContext),
 		nvkeController: nvkeController, temporal: temporal, temporalAddress: address,
-		temporalNamespace: envOr("TEMPORAL_NAMESPACE", "nke-controller"),
+		temporalNamespace: envOr("TEMPORAL_NAMESPACE", "nvke-controller"),
 		resultsDir:        requiredEnv("NVKE_CONTROLLER_RESULTS_DIR"),
 	}
 }

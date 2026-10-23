@@ -127,9 +127,9 @@ else
 fi
 
 # The controller's namespace, and the name of its Deployment, Service and
-# container. Tilt and the deploy paths both install it as nke-controller. The
+# container. Tilt and the deploy paths both install it as nvke-controller. The
 # e2e suite and the nvkectl smoke are pointed at it.
-CONTROLLER_NAME=nke-controller
+CONTROLLER_NAME=nvke-controller
 NVKECTL_SMOKE_CONTROLLER_NAMESPACE="${CONTROLLER_NAME}"
 NVKECTL_SMOKE_CONTROLLER_SERVICE="${CONTROLLER_NAME}"
 

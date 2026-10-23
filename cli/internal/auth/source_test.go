@@ -27,7 +27,8 @@ import (
 // The controller namespaces authConfigNamespaces searches, by name, so a
 // reordering or a typo there fails here rather than on a site.
 const (
-	greenfieldNamespace = "nke-controller"
+	greenfieldNamespace = "nvke-controller"
+	previousNamespace   = "nke-controller"
 	legacyNamespace     = "cloud-workflow-engine"
 )
 
@@ -248,15 +249,22 @@ func TestAudienceSearchesBothControllerNamespaces(t *testing.T) {
 			wantEnabled:  true,
 		},
 		{
+			name:         "site installed before the nvke rename",
+			objects:      []runtime.Object{authConfig(previousNamespace, "https://previous.example")},
+			wantAudience: "https://previous.example",
+			wantEnabled:  true,
+		},
+		{
 			name:         "legacy site",
 			objects:      []runtime.Object{authConfig(legacyNamespace, "https://legacy.example")},
 			wantAudience: "https://legacy.example",
 			wantEnabled:  true,
 		},
 		{
-			name: "both names present uses the greenfield name",
+			name: "every name present uses the greenfield name",
 			objects: []runtime.Object{
 				authConfig(legacyNamespace, "https://legacy.example"),
+				authConfig(previousNamespace, "https://previous.example"),
 				authConfig(greenfieldNamespace, "https://greenfield.example"),
 			},
 			wantAudience: "https://greenfield.example",

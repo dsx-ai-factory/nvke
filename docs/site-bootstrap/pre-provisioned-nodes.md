@@ -345,7 +345,7 @@ The ephemeral Kind cluster from a previous bootstrap is still up — kept by `--
 umask 077   # both files below are credentials; keep them owner-readable
 export KIND_EXPERIMENTAL_PROVIDER=nerdctl
 kind get kubeconfig --name nvkectl-bootstrap > bootstrap.kubeconfig
-# All namespaces: nke-controller, or cloud-workflow-engine if an older nvkectl created the cluster.
+# All namespaces: nvke-controller, or cloud-workflow-engine if an older nvkectl created the cluster.
 kubectl --kubeconfig bootstrap.kubeconfig get secrets -A | grep etcd-encryption-key-
 # save each that appears with `kubectl ... -n <namespace> get secret <name> -o json > <file>`, then:
 kind delete cluster --name nvkectl-bootstrap
@@ -366,7 +366,7 @@ If nothing on the host is a Kubernetes control plane, check the node list in the
 
 **Bootstrap failed with "its encryption key was not saved":**
 
-The cluster is built and encrypted, and its kubeconfig is written; only the last step, saving the key to disk, failed. The bootstrap Kind cluster is kept because it holds the key. Do not delete it and do not re-run bootstrap. Run the command the error prints: it saves the Secret exactly as the bootstrap cluster holds it, owner-readable only, to the same path a successful run would have used. That file carries a `metadata.namespace` of `nke-controller`; remove that line before applying it anywhere else. Then delete the Kind cluster:
+The cluster is built and encrypted, and its kubeconfig is written; only the last step, saving the key to disk, failed. The bootstrap Kind cluster is kept because it holds the key. Do not delete it and do not re-run bootstrap. Run the command the error prints: it saves the Secret exactly as the bootstrap cluster holds it, owner-readable only, to the same path a successful run would have used. That file carries a `metadata.namespace` of `nvke-controller`; remove that line before applying it anywhere else. Then delete the Kind cluster:
 
 ```bash
 KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap

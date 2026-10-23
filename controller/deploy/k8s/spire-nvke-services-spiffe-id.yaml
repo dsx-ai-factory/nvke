@@ -13,7 +13,7 @@ spec:
     - key: kubernetes.io/metadata.name
       operator: In
       values:
-      - nke-controller
+      - nvke-controller
       - capi-system
       - capi-kubeadm-control-plane-system
       - capi-kubeadm-bootstrap-system

@@ -98,13 +98,19 @@ need yq
 
 if [[ -z "${NVKE_CONTROLLER_NAMESPACE}" ]]; then
   # Same order nvkectl uses: the greenfield namespace if it holds the auth
-  # ConfigMap, else the legacy one. Only a confirmed absence falls back.
-  found="$(
-    "${KUBECTL[@]}" get configmap "${NVKE_AUTH_CONFIGMAP}" -n nke-controller \
-      --ignore-not-found -o name 2>&1
-  )" || die "cannot look up configmap nke-controller/${NVKE_AUTH_CONFIGMAP}: ${found}"
+  # ConfigMap, then the one a site installed before the nvke rename keeps, else
+  # the legacy one. Only a confirmed absence of all of them falls back.
   NVKE_CONTROLLER_NAMESPACE="cloud-workflow-engine"
-  grep -qx "configmap/${NVKE_AUTH_CONFIGMAP}" <<<"${found}" && NVKE_CONTROLLER_NAMESPACE="nke-controller"
+  for candidate in nvke-controller nke-controller; do
+    found="$(
+      "${KUBECTL[@]}" get configmap "${NVKE_AUTH_CONFIGMAP}" -n "${candidate}" \
+        --ignore-not-found -o name 2>&1
+    )" || die "cannot look up configmap ${candidate}/${NVKE_AUTH_CONFIGMAP}: ${found}"
+    if grep -qx "configmap/${NVKE_AUTH_CONFIGMAP}" <<<"${found}"; then
+      NVKE_CONTROLLER_NAMESPACE="${candidate}"
+      break
+    fi
+  done
   export NVKE_CONTROLLER_NAMESPACE
 fi
 
@@ -127,7 +133,7 @@ if [[ ${#missing[@]} -gt 0 ]]; then
   exit 2
 fi
 
-# nvke-token.sh picks nke-controller or cloud-workflow-engine when unset.
+# nvke-token.sh picks nvke-controller, nke-controller or cloud-workflow-engine when unset.
 NKE_DEPLOYMENT="$("${SCRIPT_DIR}/nvke-token.sh" --deployment)"
 [[ -n "${NKE_DEPLOYMENT}" ]] || die "could not resolve NVKE's Deployment in ${NVKE_CONTROLLER_NAMESPACE}"
 

@@ -339,11 +339,11 @@ func controllerForwarder(t *testing.T) (*fake.Clientset, *resolvingStarter, *Ser
 	clientset := fake.NewClientset(controllerService(), readyControllerPod("cwe-old"))
 	starter := &resolvingStarter{inner: &podForwardStarter{
 		clientset: clientset,
-		namespace: "nke-controller",
-		service:   "nke-controller",
+		namespace: "nvke-controller",
+		service:   "nvke-controller",
 		port:      "8080",
 	}}
-	forwarder := newTestForwarder(starter, "http://nke-controller.nke-controller.svc:8080")
+	forwarder := newTestForwarder(starter, "http://nvke-controller.nvke-controller.svc:8080")
 	t.Cleanup(forwarder.Close)
 	return clientset, starter, forwarder
 }
@@ -351,12 +351,12 @@ func controllerForwarder(t *testing.T) (*fake.Clientset, *resolvingStarter, *Ser
 func readyControllerPod(name string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "nke-controller",
+			Namespace: "nvke-controller",
 			Name:      name,
-			Labels:    map[string]string{nameLabel: "nke-controller"},
+			Labels:    map[string]string{nameLabel: "nvke-controller"},
 		},
 		Spec: corev1.PodSpec{Containers: []corev1.Container{{
-			Name:  "nke-controller",
+			Name:  "nvke-controller",
 			Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}},
 		}}},
 		Status: corev1.PodStatus{
@@ -368,9 +368,9 @@ func readyControllerPod(name string) *corev1.Pod {
 
 func controllerService() *corev1.Service {
 	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "nke-controller", Name: "nke-controller"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "nvke-controller", Name: "nvke-controller"},
 		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{nameLabel: "nke-controller"},
+			Selector: map[string]string{nameLabel: "nvke-controller"},
 			Ports: []corev1.ServicePort{
 				{Name: "http", Port: 8080, TargetPort: intstr.FromString("http")},
 			},
@@ -389,7 +389,7 @@ func TestServiceForwarderRedialResolvesTheReplacementPod(t *testing.T) {
 		t.Fatalf("first request landed on pod %q, want cwe-old", pod)
 	}
 
-	pods := clientset.CoreV1().Pods("nke-controller")
+	pods := clientset.CoreV1().Pods("nvke-controller")
 	if err := pods.Delete(t.Context(), "cwe-old", metav1.DeleteOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +429,7 @@ func requestPod(t *testing.T, forwarder *ServiceForwarder) string {
 
 func TestSelectServicePort(t *testing.T) {
 	service := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "nke-controller", Name: "nke-controller"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "nvke-controller", Name: "nvke-controller"},
 		Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{
 			{Name: "http", Port: 8080, TargetPort: intstr.FromString("http")},
 			{Name: "metrics", Port: 9090, TargetPort: intstr.FromString("metrics")},
@@ -466,7 +466,7 @@ func TestSelectServicePort(t *testing.T) {
 
 func TestResolveTargetPort(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "nke-controller", Name: "cwe-0"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "nvke-controller", Name: "cwe-0"},
 		Spec: corev1.PodSpec{Containers: []corev1.Container{{
 			Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}},
 		}}},
@@ -538,18 +538,18 @@ func TestServiceBaseURL(t *testing.T) {
 		{
 			name: "a numeric port is kept, so the Host header names it",
 			port: "8080",
-			want: "http://nke-controller.nke-controller.svc:8080",
+			want: "http://nvke-controller.nvke-controller.svc:8080",
 		},
 		{
 			name: "a named port is dropped, because a name is not a URL port",
 			port: "metrics",
-			want: "http://nke-controller.nke-controller.svc",
+			want: "http://nvke-controller.nvke-controller.svc",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := serviceBaseURL("nke-controller", "nke-controller", tt.port)
+			got := serviceBaseURL("nvke-controller", "nvke-controller", tt.port)
 			if got != tt.want {
 				t.Fatalf("serviceBaseURL = %q, want %q", got, tt.want)
 			}
@@ -606,7 +606,7 @@ func (w *wedgedFirstStarter) Start(ctx context.Context) (*forwardSession, error)
 
 func TestServiceForwarderRecoversFromAWedgedSession(t *testing.T) {
 	starter := &wedgedFirstStarter{inner: &fakeStarter{}}
-	forwarder := newTestForwarder(starter, "http://nke-controller.nke-controller.svc:8080")
+	forwarder := newTestForwarder(starter, "http://nvke-controller.nvke-controller.svc:8080")
 	t.Cleanup(forwarder.Close)
 
 	mustGetOK(t, forwarder, "GET through a forward whose first session is wedged")

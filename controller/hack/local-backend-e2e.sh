@@ -66,7 +66,7 @@ collect_diagnostics() {
     kubectl get events -A --sort-by=.lastTimestamp >"${state_dir}/management-events.txt" 2>&1
     kubectl get clusters,machines,kubeadmcontrolplanes,dockermachines -A -o yaml \
       >"${state_dir}/capi-resources.yaml" 2>&1
-    kubectl -n nke-controller logs deployment/nke-controller --all-containers --tail=-1 \
+    kubectl -n nvke-controller logs deployment/nvke-controller --all-containers --tail=-1 \
       >"${state_dir}/cwe.log" 2>&1
     kubectl -n capd-system logs deployment/capd-controller-manager --all-containers --tail=-1 \
       >"${state_dir}/capd-controller.log" 2>&1

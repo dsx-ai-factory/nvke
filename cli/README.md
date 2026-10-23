@@ -105,8 +105,9 @@ are aliases on `get`, `create`, `patch` and `delete`.
 `nvkectl config set-site` command configures the management-cluster kubeconfig with the site.
 nvkectl commands use it to mint an audience-scoped token for the admitted
 identity `nke-clients/nke-client`. The audience comes from the authentication
-ConfigMap, looked up in namespace `nke-controller` first and then
-`cloud-workflow-engine`, and under two names in each: `nvke-auth-config`, then
+ConfigMap, looked up in namespace `nvke-controller` first, then `nke-controller`
+for a site installed before the `nvke` rename, then `cloud-workflow-engine`,
+and under two names in each: `nvke-auth-config`, then
 `nke-auth-config` for a site that keeps the older name by pinning
 `apiAuth.configMap.name`.
 

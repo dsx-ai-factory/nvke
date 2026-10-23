@@ -174,10 +174,10 @@ print(json.dumps(env))
 }
 NVKE_CONTROLLER_ENV_JSON="$(controller_env_json)"
 
-# The SPIFFE identity the controller presents: its ServiceAccount, nke-controller
+# The SPIFFE identity the controller presents: its ServiceAccount, nvke-controller
 # in every deploy path, under the nvke-service ClusterSPIFFEID in the deploy
 # path's spire values.
-SPIRE_CONTROLLER_ADMIN_PATH="/nvke-service/nke-controller"
+SPIRE_CONTROLLER_ADMIN_PATH="/nvke-service/nvke-controller"
 
 # The kind bridge gateway, alongside the VIP. Tenants' kube-apiservers fetch the
 # OIDC discovery URL by IP, and the provider rejects any request whose Host

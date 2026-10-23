@@ -42,13 +42,13 @@ export KUBECONFIG=$PWD/<CLUSTER_NAME>.kubeconfig
 2. Check that the management plane started its NICo controllers.
 
    ```bash
-   kubectl logs deployment/nke-controller -n nke-controller | grep 'NicoMachine CRD not installed'
+   kubectl logs deployment/nvke-controller -n nvke-controller | grep 'NicoMachine CRD not installed'
    ```
 
    The command prints nothing. The management plane checks for the `NicoMachine` CRD once, when it starts, and the install puts CAPNICo in place first. If the command prints the message, CAPNICo was installed after the management plane started: restart the management plane.
 
    ```bash
-   kubectl rollout restart deployment/nke-controller -n nke-controller
+   kubectl rollout restart deployment/nvke-controller -n nvke-controller
    ```
 
 `CONFIGURED` does not mean the credentials work. The `CREDENTIALS` column of `nvkectl get providers` reports whether they do, from the check CAPNICo runs on them every few minutes, but only with a CAPNICo release that serves `NicoIdentity` and a `NicoIdentity` that names `nico-credentials`. The CAPNICo release this procedure installs does not serve `NicoIdentity`, so `CREDENTIALS` reads `UNSUPPORTED`. CAPNICo still checks the token against the NICo API, but only when it reconciles a `NicoCluster` that belongs to a Cluster API `Cluster`, which normally first happens when you create a workload cluster. [Infrastructure providers](https://github.com/dsx-ai-factory/nvke/blob/main/cli/README.md#infrastructure-providers) lists every `CREDENTIALS` value.

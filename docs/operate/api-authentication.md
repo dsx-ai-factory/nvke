@@ -23,7 +23,7 @@ Authentication has three modes. Off is the default.
   export KUBECONFIG="$PWD/../<CLUSTER_NAME>.kubeconfig"
   ```
 
-  The install created the Helm release `nke-controller` and the Deployment `nke-controller`, both in the `nke-controller` namespace.
+  The install created the Helm release `nvke-controller` and the Deployment `nvke-controller`, both in the `nvke-controller` namespace.
 - The shell you run the install from has the `NVKECTL_*` variables from [Run NVKE end to end on one machine](../get-started/local-site.md) exported, as described in [Run NVKE end to end on one machine](../get-started/local-site.md).
 - Your IdP publishes an OIDC discovery document over HTTPS, and the management cluster can reach its signing-key endpoint.
 - Your IdP has a group for the people and automation allowed to call the NVKE API, and puts it in a token claim named `groups`, a list of strings. NVKE reads group membership only from that claim.
@@ -126,11 +126,11 @@ Authentication has three modes. Off is the default.
 4. Wait for the new pods and check the startup log.
 
    ```bash
-   kubectl -n nke-controller rollout status deploy/nke-controller
+   kubectl -n nvke-controller rollout status deploy/nvke-controller
    ```
 
    ```bash
-   kubectl -n nke-controller logs deploy/nke-controller | grep -E 'fetched issuer signing keys|API authentication'
+   kubectl -n nvke-controller logs deploy/nvke-controller | grep -E 'fetched issuer signing keys|API authentication'
    ```
 
    The output contains a `fetched issuer signing keys` line for `example-idp` and an `API authentication is enabled` line with `"mode":"permissive"`.
@@ -197,7 +197,7 @@ Leave NVKE in permissive mode while your existing callers keep working, and watc
 1. Read the authentication counter.
 
    ```bash
-   kubectl -n nke-controller exec deploy/nke-controller -- wget -qO- http://127.0.0.1:9090/metrics | grep '^nvke_auth_requests_total'
+   kubectl -n nvke-controller exec deploy/nvke-controller -- wget -qO- http://127.0.0.1:9090/metrics | grep '^nvke_auth_requests_total'
    ```
 
    ```text
@@ -221,7 +221,7 @@ Leave NVKE in permissive mode while your existing callers keep working, and watc
 3. Find the caller behind each rejection in the log.
 
    ```bash
-   kubectl -n nke-controller logs deploy/nke-controller | grep 'authentication would have rejected this request'
+   kubectl -n nvke-controller logs deploy/nvke-controller | grep 'authentication would have rejected this request'
    ```
 
    Each line names the `reason`, `issuer`, `method`, `path` and `remote_addr` of the request.
@@ -240,14 +240,14 @@ Continue when `would_reject` stops increasing.
 2. Wait for the rollout.
 
    ```bash
-   kubectl -n nke-controller rollout status deploy/nke-controller
+   kubectl -n nvke-controller rollout status deploy/nvke-controller
    ```
 
    In enforcing mode NVKE does not start unless it fetches the signing keys of every configured issuer. If the new pod does not become ready, its log contains `Failed to set up API authentication` with the issuer and the error.
 
    In enforcing mode, NVKE logs each rejected request as `rejected request`, with the same fields as the permissive-mode message.
 
-NVKE reads the authentication configuration once, at startup. If you later change only `apiAuth.config` or `apiAuth.configMap.extraFiles`, restart the Deployment with `kubectl -n nke-controller rollout restart deploy/nke-controller`. Add a new issuer in permissive mode first, because an issuer whose keys NVKE cannot fetch stops an enforcing NVKE from starting.
+NVKE reads the authentication configuration once, at startup. If you later change only `apiAuth.config` or `apiAuth.configMap.extraFiles`, restart the Deployment with `kubectl -n nvke-controller rollout restart deploy/nvke-controller`. Add a new issuer in permissive mode first, because an issuer whose keys NVKE cannot fetch stops an enforcing NVKE from starting.
 
 The deploy path's own values turn authentication off. Every time you run the install again, for any reason, add `--values-for controller=../auth-values.yaml`, along with the other inputs listed in [Run NVKE end to end on one machine](../get-started/local-site.md).
 
@@ -256,7 +256,7 @@ The deploy path's own values turn authentication off. Every time you run the ins
 1. Check the mode the controller reports.
 
    ```bash
-   kubectl -n nke-controller exec deploy/nke-controller -- wget -qO- http://127.0.0.1:9090/metrics | grep '^nvke_auth_enabled'
+   kubectl -n nvke-controller exec deploy/nvke-controller -- wget -qO- http://127.0.0.1:9090/metrics | grep '^nvke_auth_enabled'
    ```
 
    The output is `nvke_auth_enabled{mode="enforcing"} 1`.

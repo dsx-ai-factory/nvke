@@ -18,7 +18,7 @@
       },
       "id": 0,
       "options": {
-        "content": "### Scope\nReference health dashboard for a single NVKE management cluster. It is not deployed by the nke-stack composition. Import this JSON and select a Prometheus datasource.\n\n### Assumptions\n- Every queried series carries a `k8s_cluster_name` label identifying the management cluster (Prometheus label from the OpenTelemetry resource attribute `k8s.cluster.name`). On a plain kube-prometheus install that stamps `cluster` instead, rewrite the selector or relabel at ingest.\n- kube-state-metrics is installed, which the nke-stack composition provides through kube-prometheus-stack.\n- The NVKE controller workload is either `cloud-workflow-engine` (existing sites and default nke-stack `nameOverride`) or `nke-controller` (greenfield Helm values). Ready / version / restart panels match both.\n\n### Required metrics\n- **kube-state-metrics:** deployment, StatefulSet, DaemonSet, pod readiness, container restart, node condition, and node info series\n\n### Optional metrics\n- **Kubernetes control plane:** `up{job=\"apiserver\"}`, `apiserver_request_total`, and `etcd_*`. These need kube-apiserver and etcd scrape targets, which are not configured by default.\n- **PostgreSQL / CNPG:** PostgreSQL pod readiness, and `cnpg_*` when CloudNativePG is used\n\nOptional panels read **Not installed** or **No scrape** rather than failing. PostgreSQL and CNPG health are reported as ready-over-discovered ratios, so a single-instance PostgreSQL is healthy at 100%; no replica count is assumed.",
+        "content": "### Scope\nReference health dashboard for a single NVKE management cluster. It is not deployed by the nke-stack composition. Import this JSON and select a Prometheus datasource.\n\n### Assumptions\n- Every queried series carries a `k8s_cluster_name` label identifying the management cluster (Prometheus label from the OpenTelemetry resource attribute `k8s.cluster.name`). On a plain kube-prometheus install that stamps `cluster` instead, rewrite the selector or relabel at ingest.\n- kube-state-metrics is installed, which the nke-stack composition provides through kube-prometheus-stack.\n- The NVKE controller workload is `cloud-workflow-engine` (existing sites and default nke-stack `nameOverride`), `nke-controller` (greenfield Helm values before the nvke rename) or `nvke-controller` (greenfield Helm values today). Ready / version / restart panels match all three.\n\n### Required metrics\n- **kube-state-metrics:** deployment, StatefulSet, DaemonSet, pod readiness, container restart, node condition, and node info series\n\n### Optional metrics\n- **Kubernetes control plane:** `up{job=\"apiserver\"}`, `apiserver_request_total`, and `etcd_*`. These need kube-apiserver and etcd scrape targets, which are not configured by default.\n- **PostgreSQL / CNPG:** PostgreSQL pod readiness, and `cnpg_*` when CloudNativePG is used\n\nOptional panels read **Not installed** or **No scrape** rather than failing. PostgreSQL and CNPG health are reported as ready-over-discovered ratios, so a single-instance PostgreSQL is healthy at 100%; no replica count is assumed.",
         "mode": "markdown"
       },
       "title": "Requirements and scope",
@@ -107,7 +107,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "(kube_deployment_status_replicas_ready{k8s_cluster_name=~\"$cluster\",namespace=~\"cloud-workflow-engine|nke-controller|nvke-controller\",deployment=~\"cloud-workflow-engine|nke-controller\"} / clamp_min(kube_deployment_spec_replicas{k8s_cluster_name=~\"$cluster\",namespace=~\"cloud-workflow-engine|nke-controller|nvke-controller\",deployment=~\"cloud-workflow-engine|nke-controller\"}, 1)) or vector(0)",
+          "expr": "(kube_deployment_status_replicas_ready{k8s_cluster_name=~\"$cluster\",namespace=~\"cloud-workflow-engine|nke-controller|nvke-controller\",deployment=~\"cloud-workflow-engine|nke-controller|nvke-controller\"} / clamp_min(kube_deployment_spec_replicas{k8s_cluster_name=~\"$cluster\",namespace=~\"cloud-workflow-engine|nke-controller|nvke-controller\",deployment=~\"cloud-workflow-engine|nke-controller|nvke-controller\"}, 1)) or vector(0)",
           "instant": true,
           "legendFormat": "NVKE",
           "refId": "A"
@@ -157,7 +157,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "label_replace(group by (image) (kube_pod_container_info{k8s_cluster_name=~\"$cluster\",namespace=~\"cloud-workflow-engine|nke-controller|nvke-controller\",container=~\"cloud-workflow-engine|nke-controller\"}), \"version\", \"$1\", \"image\", \".*:(.*)\")",
+          "expr": "label_replace(group by (image) (kube_pod_container_info{k8s_cluster_name=~\"$cluster\",namespace=~\"cloud-workflow-engine|nke-controller|nvke-controller\",container=~\"cloud-workflow-engine|nke-controller|nvke-controller\"}), \"version\", \"$1\", \"image\", \".*:(.*)\")",
           "instant": true,
           "legendFormat": "{{version}}",
           "refId": "A"
@@ -223,7 +223,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(increase(kube_pod_container_status_restarts_total{k8s_cluster_name=~\"$cluster\",namespace=~\"cloud-workflow-engine|nke-controller|nvke-controller\",container=~\"cloud-workflow-engine|nke-controller\"}[$__range])) or vector(0)",
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{k8s_cluster_name=~\"$cluster\",namespace=~\"cloud-workflow-engine|nke-controller|nvke-controller\",container=~\"cloud-workflow-engine|nke-controller|nvke-controller\"}[$__range])) or vector(0)",
           "instant": true,
           "legendFormat": "Restarts",
           "refId": "A"

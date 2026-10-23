@@ -6,8 +6,9 @@ installed through the `deploy/nico` deploy path, or after any change to its NVKE
 values. It assumes the development backend, `lgtm`. Against your own backend,
 run the same queries there.
 
-On an existing site, where the NVKE controller runs as `cloud-workflow-engine`,
-replace `nke-controller` with `cloud-workflow-engine` throughout this page.
+On an existing site, the NVKE controller runs under its pre-rename name, either
+`nke-controller` or, on an older site, `cloud-workflow-engine`. Replace
+`nvke-controller` with whichever name that site has throughout this page.
 
 All commands run against the management cluster:
 
@@ -52,7 +53,7 @@ kubectl get servicemonitors,podmonitors -A
 | `temporal` | `temporal-frontend`, `temporal-history`, `temporal-matching`, `temporal-worker` |
 | `spire-server` | PodMonitor `spire-server` |
 | `spire-system` | PodMonitor `spire-agent` |
-| `nke-controller` | `nke-controller-metrics` |
+| `nvke-controller` | `nvke-controller-metrics` |
 
 **The resource metrics API,** which the Collector autoscalers read:
 
@@ -97,7 +98,7 @@ promql 'count by (job) (up == 1)'
 | `node-exporter` | Node CPU, memory, filesystem and network |
 | `nktp/nktp-ksm-objects`, `nktp/nktp-ksm-pods`, `nktp/nktp-ksm-unscheduled-pods` | Object state from kube-state-metrics |
 | `nktp-operator` | The OpenTelemetry Operator, scraped by the watchdog |
-| `nke-controller` | The controller |
+| `nvke-controller` | The controller |
 | `temporal-frontend-headless`, `temporal-history-headless`, `temporal-matching-headless`, `temporal-worker-headless` | Temporal's server roles |
 | `spire-server/spire-server`, `spire-system/spire-agent` | SPIRE |
 

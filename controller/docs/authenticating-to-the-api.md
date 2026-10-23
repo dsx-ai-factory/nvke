@@ -60,11 +60,13 @@ necessary. `401` means it's on.
 
 If you want to see it from the deployment rather than infer it:
 
-Tilt runs NVKE as Deployment `nke-controller` in namespace `nke-controller`. On a
-site that still runs it under the old name, use `cloud-workflow-engine` for both.
+Tilt runs NVKE as Deployment `nvke-controller` in namespace `nvke-controller`. On a
+site that still runs it under an older name, use that name for both:
+`nke-controller` for a site installed before the `nvke` rename,
+`cloud-workflow-engine` for anything older.
 
 ```bash
-kubectl -n nke-controller get deploy nke-controller \
+kubectl -n nvke-controller get deploy nvke-controller \
   -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="AUTH_CONFIG_PATH")].value}{"\n"}'
 ```
 
@@ -91,7 +93,7 @@ hack/nvke-token.sh --audience
 Or from the ConfigMap directly:
 
 ```bash
-kubectl -n nke-controller get configmap nvke-auth-config \
+kubectl -n nvke-controller get configmap nvke-auth-config \
   -o jsonpath='{.data.auth\.yaml}' | grep audiences
 ```
 
@@ -199,7 +201,7 @@ NVKE does no authorization beyond that. Every admitted caller can do everything.
 NVKE logs its reasoning for every rejection. This is usually faster than guessing:
 
 ```bash
-kubectl -n nke-controller logs deploy/nke-controller | grep '"logger":"auth"'
+kubectl -n nvke-controller logs deploy/nvke-controller | grep '"logger":"auth"'
 ```
 
 ```json
@@ -268,7 +270,8 @@ all 4 checks passed
 `nvkectl` is a caller of this API. After `nvkectl config set-site --kubeconfig`,
 every controller API command mints the same identity this page uses (`nke-clients/nke-client`)
 with the audience from ConfigMap `nvke-auth-config`, read from namespace
-`nke-controller`, or from `cloud-workflow-engine` when that is absent. There
+`nvke-controller`, then from `nke-controller` for a site installed before the
+`nvke` rename, then from `cloud-workflow-engine`. There
 is no `NKECTL_DEV_TOKEN` and no `hack/nvke-token.sh` step.
 
 Those names are fixed in the CLI. A cluster-admin kubeconfig (Tilt's kind

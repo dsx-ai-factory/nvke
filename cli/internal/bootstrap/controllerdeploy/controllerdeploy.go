@@ -59,7 +59,7 @@ const (
 	// release, fullname, ServiceAccount and pod name label: all the same name,
 	// the one greenfield sites use. spire-values.yaml, controller-values.yaml and
 	// controller-nodeport.yaml carry it too and must change with it.
-	cweNamespace = "nke-controller"
+	cweNamespace = "nvke-controller"
 
 	// tenantSecretsNamespace is where the controller publishes each cluster's kubeconfig
 	// and where it puts the cluster's CAPI objects. It is the chart's

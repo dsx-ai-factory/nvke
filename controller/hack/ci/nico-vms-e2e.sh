@@ -253,7 +253,7 @@ collect_diagnostics() {
     capture management-nodes.txt kubectl get nodes -o wide
     capture management-pods.txt kubectl get pods -A -o wide
     capture management-events.txt kubectl get events -A --sort-by=.lastTimestamp
-    capture cwe.log kubectl -n nke-controller logs deployment/nke-controller --all-containers --tail=-1
+    capture cwe.log kubectl -n nvke-controller logs deployment/nvke-controller --all-containers --tail=-1
     capture capnico-controller.log kubectl -n capnico-system logs deployment/controller-manager --all-containers --tail=-1
     capture capi-controller.log kubectl -n capi-system logs deployment/capi-controller-manager --all-containers --tail=-1
     capture capi-kubeadm-bootstrap-controller.log kubectl -n capi-kubeadm-bootstrap-system logs deployment/capi-kubeadm-bootstrap-controller-manager --all-containers --tail=-1
@@ -670,11 +670,11 @@ wait_for_tilt() {
 }
 wait_for_tilt
 
-kubectl -n nke-controller rollout status deployment/nke-controller --timeout=5m
+kubectl -n nvke-controller rollout status deployment/nvke-controller --timeout=5m
 # Tilt passes both as chart values, which the chart renders into nke-controller-config.
 for setting in tenantAccess.enabled nvkeOIDCAuth.enabled; do
-  value="$(helm -n nke-controller get values nke-controller --all -o json | jq -r ".${setting}")"
-  [[ "${value}" == "true" ]] || fail "${setting} must be true in the nke-controller release, got ${value:-<empty>}"
+  value="$(helm -n nvke-controller get values nvke-controller --all -o json | jq -r ".${setting}")"
+  [[ "${value}" == "true" ]] || fail "${setting} must be true in the nvke-controller release, got ${value:-<empty>}"
 done
 kubectl -n capnico-system rollout status deployment/controller-manager --timeout=5m
 curl -fsS --max-time 5 http://localhost:18080/healthz >/dev/null || fail "nico-vms does not answer on localhost:18080"

@@ -13,14 +13,16 @@
 #
 # Environment:
 #   KUBE_CONTEXT               kube context (default: kubeconfig current-context)
-#   NVKE_CONTROLLER_NAMESPACE  NVKE's namespace (default nke-controller when it
-#                              holds NVKE_AUTH_CONFIGMAP or Deployment nke-controller,
-#                              else cloud-workflow-engine)
+#   NVKE_CONTROLLER_NAMESPACE  NVKE's namespace (default nvke-controller, then
+#                              nke-controller, whichever holds NVKE_AUTH_CONFIGMAP
+#                              or the Deployment of the same name; else
+#                              cloud-workflow-engine)
 #   NVKE_AUTH_CONFIGMAP         authentication ConfigMap (default nvke-auth-config;
 #                              a site that pinned apiAuth.configMap.name sets
 #                              this to nke-auth-config)
-#   NKE_DEPLOYMENT             NVKE's Deployment (default nke-controller when it
-#                              exists in NVKE_CONTROLLER_NAMESPACE, else cloud-workflow-engine)
+#   NKE_DEPLOYMENT             NVKE's Deployment (default nvke-controller, then
+#                              nke-controller, whichever exists in
+#                              NVKE_CONTROLLER_NAMESPACE, else cloud-workflow-engine)
 #   NKE_TOKEN_NAMESPACE        service account namespace (default nke-clients)
 #   NKE_TOKEN_SERVICE_ACCOUNT  service account (default nke-client)
 #   NKE_TOKEN_TTL              requested lifetime (default 30m)
@@ -53,16 +55,21 @@ KUBECTL=(kubectl)
 
 if [[ -z "${NVKE_CONTROLLER_NAMESPACE}" ]]; then
   # Same order nvkectl uses: the greenfield namespace if it holds the auth
-  # ConfigMap, else the legacy one. A greenfield site with authentication off
-  # has no ConfigMap, so its Deployment also selects the greenfield namespace.
-  # Only a confirmed absence of both falls back.
-  found="$(
-    "${KUBECTL[@]}" get "configmap/${NVKE_AUTH_CONFIGMAP}" deploy/nke-controller -n nke-controller \
-      --ignore-not-found -o name 2>&1
-  )" || die "cannot look up configmap and deploy nke-controller/nke-controller: ${found}"
+  # ConfigMap, then the one a site installed before the nvke rename keeps, else
+  # the legacy one. A greenfield site with authentication off has no ConfigMap,
+  # so its Deployment also selects the greenfield namespace. Only a confirmed
+  # absence of every candidate falls back.
   NVKE_CONTROLLER_NAMESPACE="cloud-workflow-engine"
-  grep -qxE "configmap/${NVKE_AUTH_CONFIGMAP}|deployment.apps/nke-controller" <<<"${found}" \
-    && NVKE_CONTROLLER_NAMESPACE="nke-controller"
+  for candidate in nvke-controller nke-controller; do
+    found="$(
+      "${KUBECTL[@]}" get "configmap/${NVKE_AUTH_CONFIGMAP}" "deploy/${candidate}" -n "${candidate}" \
+        --ignore-not-found -o name 2>&1
+    )" || die "cannot look up configmap and deploy ${candidate}/${candidate}: ${found}"
+    if grep -qxE "configmap/${NVKE_AUTH_CONFIGMAP}|deployment.apps/${candidate}" <<<"${found}"; then
+      NVKE_CONTROLLER_NAMESPACE="${candidate}"
+      break
+    fi
+  done
 fi
 
 # --- audience ---------------------------------------------------------------
@@ -107,23 +114,26 @@ fi
 
 # --- deployment -------------------------------------------------------------
 
-# A greenfield site installs NVKE as nke-controller; legacy sites still use
+# A greenfield site installs NVKE as nvke-controller, a site installed before
+# the nvke rename as nke-controller; legacy sites still use
 # cloud-workflow-engine. The container shares the Deployment's name
-# in both, which the AUTH_CONFIG_PATH lookup below relies on.
+# in all three, which the AUTH_CONFIG_PATH lookup below relies on.
 # Only a confirmed absence falls back; any other lookup failure is fatal.
 if [[ -z "${NKE_DEPLOYMENT}" ]]; then
   found="$(
-    "${KUBECTL[@]}" get deploy nke-controller -n "${NVKE_CONTROLLER_NAMESPACE}" \
+    "${KUBECTL[@]}" get deploy nvke-controller nke-controller -n "${NVKE_CONTROLLER_NAMESPACE}" \
       --ignore-not-found -o name 2>&1
-  )" || die "cannot look up deploy ${NVKE_CONTROLLER_NAMESPACE}/nke-controller:
+  )" || die "cannot look up deploy nvke-controller or nke-controller in ${NVKE_CONTROLLER_NAMESPACE}:
   ${found}
   Check KUBE_CONTEXT, NVKE_CONTROLLER_NAMESPACE and that this identity may read Deployments,
   or set NKE_DEPLOYMENT."
-  if [[ "${found}" == *"deployment.apps/nke-controller"* ]]; then
-    NKE_DEPLOYMENT="nke-controller"
-  else
-    NKE_DEPLOYMENT="cloud-workflow-engine"
-  fi
+  NKE_DEPLOYMENT="cloud-workflow-engine"
+  for candidate in nvke-controller nke-controller; do
+    if [[ "${found}" == *"deployment.apps/${candidate}"* ]]; then
+      NKE_DEPLOYMENT="${candidate}"
+      break
+    fi
+  done
 fi
 
 # --deployment lets other scripts reuse this lookup, as --audience does above.

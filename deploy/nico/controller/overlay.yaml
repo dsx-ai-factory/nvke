@@ -27,7 +27,7 @@ apiAuth:
 
 # The SAME value the capnico-e2e target uses, deliberately: this is a tenant
 # guard rail, not a mode. It reaches the controller as supportedInfraProviders in
-# nke-controller-config, an accept-list validated at startup, and renders nothing else
+# nvke-controller-config, an accept-list validated at startup, and renders nothing else
 # -- the CAPI permissions come from capi.rbac.create below, which is a separate
 # key.
 #
@@ -90,14 +90,14 @@ env: []
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-fullnameOverride: nke-controller
-namespaceOverride: nke-controller
+fullnameOverride: nvke-controller
+namespaceOverride: nvke-controller
 # The chart pins nameOverride (the pod name label) and serviceAccount.name
 # (which the SPIRE admin ID and the controller's SPIFFE ID name) instead of
 # deriving them from the fullname, so both are set alongside it.
-nameOverride: nke-controller
+nameOverride: nvke-controller
 serviceAccount:
-  name: nke-controller
+  name: nvke-controller
 
 nvkeSystemNamespace:
   create: false
@@ -142,7 +142,7 @@ image:
 # secret at all.
 #
 # A site that pulls the controller from a registry instead needs its own secret
-# in nke-controller, supplied with --values-for.
+# in nvke-controller, supplied with --values-for.
 imagePullSecrets: []
 
 # Telemetry to the nktp item, which installs before this one: its node
@@ -163,7 +163,7 @@ metrics:
 # legacy names.
 serviceMonitor:
   enabled: true
-  name: nke-controller-metrics
+  name: nvke-controller-metrics
 tracing:
   enabled: true
   serviceName: nvke-controller
@@ -190,7 +190,7 @@ readinessProbe:
 
 appDb:
   url: postgres-postgresql.postgres.svc.cluster.local:5432
-  dbName: nke-controller
+  dbName: nvke-controller
   postgresUser: postgres
   # No postgresPassword: the render builds the connection string from these
   # values and NVKECTL_DATABASE_PASSWORD into the nvke-database Secret and
@@ -245,8 +245,8 @@ temporal:
   host: temporal-frontend.temporal.svc.cluster.local
   port: 7233
   cloudWorkflow:
-    namespace: nke-controller
-    queue: nke-controller-tasks
+    namespace: nvke-controller
+    queue: nvke-controller-tasks
 
 profiles:
   path: /profiles
@@ -282,10 +282,10 @@ spiffe:
 
 # The greenfield site profile, which the chart's legacy defaults do not carry.
 identity:
-  fieldManagerName: nke-controller
-  fieldManagerRebootMachineName: nke-controller-reboot-machine
-  fieldManagerMachineHealthIssueName: nke-controller-machine-health-issue
-  managedByLabelValue: nke-controller
+  fieldManagerName: nvke-controller
+  fieldManagerRebootMachineName: nvke-controller-reboot-machine
+  fieldManagerMachineHealthIssueName: nvke-controller-machine-health-issue
+  managedByLabelValue: nvke-controller
 teleport:
-  managedByLabelValue: nke-controller
-  tokenNamePrefix: nke-controller-
+  managedByLabelValue: nvke-controller
+  tokenNamePrefix: nvke-controller-

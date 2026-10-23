@@ -26,7 +26,7 @@ var (
 const (
 	dsxIdentityExchangeEnv    = "NKE_E2E_DSX_IDENTITY_EXCHANGE"
 	dsxExchangeCAConfigMap    = "dsx-identity-exchange-ca"
-	dsxExchangeControllerUser = "spiffe://nke.capd.nke-controller.nvid.id/bm/cwe"
+	dsxExchangeControllerUser = "spiffe://nke.capd.nvke-controller.nvid.id/bm/cwe"
 )
 
 func validateOIDCPostCreate(test *tenantTest) {

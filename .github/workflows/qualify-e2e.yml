@@ -136,7 +136,7 @@ on:
         type: string
         required: false
       controller-name:
-        description: "Name the controller is installed under. Empty uses the suite default, nke-controller, which every release the lane qualifies installs. The run fails early if it disagrees with the deploy path."
+        description: "Name the controller is installed under. Empty uses the suite default, nvke-controller. A release cut before the nvke rename installs nke-controller and needs that passed here. The run fails early if it disagrees with the deploy path."
         type: string
         required: false
       cwe-name:
@@ -605,8 +605,9 @@ jobs:
       PLAN_COMMIT: ${{ needs.plan.outputs.commit }}
       CLI_VERSION: ${{ matrix.cli }}
       # The name the controller is installed under, which the deploy path
-      # decides. Empty leaves the suite on its default, nke-controller, which
-      # every release the lane qualifies installs. Either way
+      # decides. Empty leaves the suite on its default, nvke-controller; a
+      # release cut before the nvke rename installs nke-controller and needs
+      # that passed in. Either way
       # site.CheckControllerName reads the name out of the exported deploy
       # path before a machine is taken and fails the run when it does not
       # match, so a wrong value costs a minute rather than an hour.

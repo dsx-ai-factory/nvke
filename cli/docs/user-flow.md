@@ -164,7 +164,8 @@ providers` and `get kubeconfig` read the cluster directly and need it.
 Controller API commands (`get`/`create`/`patch`/`delete` clusters) use that
 kubeconfig to authenticate: they read the audience from the authentication
 ConfigMap and mint a TokenRequest for `nke-clients/nke-client`. Two names are
-searched, in each of `nke-controller` and then `cloud-workflow-engine`:
+searched, in each of `nvke-controller`, then `nke-controller` for a site
+installed before the `nvke` rename, then `cloud-workflow-engine`:
 `nvke-auth-config` first, then `nke-auth-config`, which a site installed before
 the `nvke` rename keeps by pinning `apiAuth.configMap.name`. The first *readable*
 one is used.

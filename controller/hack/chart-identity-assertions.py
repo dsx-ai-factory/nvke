@@ -57,7 +57,7 @@ DEFAULT_RELEASE = "nvke-controller"
 
 LEGACY_VALUES = pathlib.Path(__file__).resolve().parent / "testdata" / "chart-legacy-pinned-values.yaml"
 
-GREENFIELD_NAME = "nke-controller"
+GREENFIELD_NAME = "nvke-controller"
 GREENFIELD_TRUST_DOMAIN = "example.test"
 
 

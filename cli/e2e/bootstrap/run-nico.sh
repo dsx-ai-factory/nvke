@@ -108,7 +108,7 @@ CWE_PORT=30080
 SPIRE_TRUST_DOMAIN="${NVKECTL_E2E_SPIRE_TRUST_DOMAIN:-nvkectl-e2e.example.test}"
 # The controller's namespace in the bootstrap cluster, and the Secret
 # `bootstrap site` creates there from the node login.
-CONTROLLER_NAMESPACE=nke-controller
+CONTROLLER_NAMESPACE=nvke-controller
 TENANT_SECRET=dgxc-tenant-credentials
 
 TENANT_KUBECONFIG="${SCRIPT_DIR}/.tenant-nico.kubeconfig"
