@@ -21,7 +21,8 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/auth/authn"
+
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodecontract"
@@ -38,7 +39,7 @@ import (
 type Transport struct {
 	cfg                       config.Config
 	trustDomain               string
-	tlsJWTVerifier            *auth.Verifier
+	tlsJWTVerifier            *authn.Verifier
 	logger                    *slog.Logger
 	externalClientCertificate *tls.Certificate
 	// externalClientCertificateNewURN carries the new-form controller URN. It is
@@ -59,16 +60,16 @@ func NewTransport(
 		logger = slog.Default()
 	}
 
-	var tlsJWTVerifier *auth.Verifier
+	var tlsJWTVerifier *authn.Verifier
 	var tlsJWTLogger *slog.Logger
 	if cfg.NodeAgent.TLSJWT.Enabled {
 		tlsJWTLogger = logger.With("logger", "node-agent-auth")
-		verifier, err := auth.SetupTokenVerifier(ctx, &auth.Config{
-			Audiences: auth.NodeAgentAudiences(),
-			Issuers: []auth.Issuer{{
-				Name:       auth.NodeAgentIssuerName,
+		verifier, err := authn.SetupTokenVerifier(ctx, &authn.Config{
+			Audiences: authn.NodeAgentAudiences(),
+			Issuers: []authn.Issuer{{
+				Name:       authn.NodeAgentIssuerName,
 				Issuer:     cfg.NodeAgent.TLSJWT.Issuer,
-				JWKS:       &auth.JWKSKeys{URI: cfg.NodeAgent.TLSJWT.JWKSURI},
+				JWKS:       &authn.JWKSKeys{URI: cfg.NodeAgent.TLSJWT.JWKSURI},
 				Algorithms: cfg.NodeAgent.TLSJWT.Algorithms,
 			}},
 		}, tlsJWTLogger)

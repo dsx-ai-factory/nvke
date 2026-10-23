@@ -6,7 +6,7 @@
 #
 # apiAuth.config is rendered verbatim; only apiVersion and kind are supplied
 # here. The chart validates nothing beyond the presence of the two top-level
-# keys: internal/auth/config.go is a strict loader whose errors name the field
+# keys: auth/authn/config.go is a strict loader whose errors name the field
 # at fault, and restating its rules in Helm would leave two schemas to keep in
 # step. An issuer that gains a new key needs no change to this file.
 apiVersion: v1

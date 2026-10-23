@@ -245,6 +245,25 @@ test-authn: ## Run the authn-labeled subset of the test/e2e suite against the cl
 test-authn-spire: ## Run the SPIRE JWT-SVID authentication spec against the cluster in KUBECONFIG.
 	$(MAKE) test-e2e E2E_TIMEOUT=20m ARGS='--label-filter=authn-spire'
 
+# The authorization specs. test-authz runs the core-enforcement and
+# mapped-role cases that need only a Kubernetes service account token
+# (internal/authtoken). Unlike test-authn above, which leaves authn-spire to
+# self-skip, this filter excludes authz-spiffe outright -- matching
+# .github/workflows/capd-e2e.yml's own filter rather than test-authn's; there
+# is no other split between the two labels worth calling parity. The
+# operator/nodeOperator cases carry the authz-spiffe label and self-skip with
+# a message naming the ClusterSPIFFEID/ServiceAccount pair they need
+# (test/e2e/authz_test.go's "the operator and nodeOperator roles" doc
+# comment) when that scaffolding is absent -- this repo ships none today, so
+# test-authz-spiffe is a real target with nothing yet to run against.
+.PHONY: test-authz
+test-authz: ## Run the authz-labeled subset of the test/e2e suite against the cluster in KUBECONFIG.
+	$(MAKE) test-e2e E2E_TIMEOUT=20m ARGS='--label-filter="authz && !authz-spiffe"'
+
+.PHONY: test-authz-spiffe
+test-authz-spiffe: ## Run the SPIFFE-shaped authorization specs (operator/nodeOperator roles) against the cluster in KUBECONFIG.
+	$(MAKE) test-e2e E2E_TIMEOUT=20m ARGS='--label-filter=authz-spiffe'
+
 .PHONY: test-integration-teleport
 test-integration-teleport: ## Execute Teleport client integration tests (requires valid credentials).
 	@bash -c '[ -f .env.local ] && set -a && source .env.local && set +a; \
@@ -549,7 +568,7 @@ license-policy-check: $(GO_LICENSES) ## Verify every third-party dependency uses
 	@# that genuinely need ignoring are named explicitly.
 	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO_LICENSES) check ./cmd/worker ../cluster-api-provider-provisioned/cmd/manager \
 		--allowed_licenses=$(ALLOWED_LICENSES) \
-		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nvke/agent,github.com/dsx-ai-factory/nvke/management-engine,github.com/dsx-ai-factory/nvke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
+		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nvke/agent,github.com/dsx-ai-factory/nvke/auth,github.com/dsx-ai-factory/nvke/management-engine,github.com/dsx-ai-factory/nvke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
 
 .PHONY: notices
 notices: $(GO_LICENSES) ## Regenerate THIRD_PARTY_NOTICES.md for the released worker and provider manager binaries.

@@ -76,6 +76,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [tenant-clusters/kubernetes-api-access.md](tenant-clusters/kubernetes-api-access.md) | How operators, automation and Site Controller services reach and authenticate to tenant Kubernetes APIs |
 | [../controller/docs/authenticating-to-the-api.md](../controller/docs/authenticating-to-the-api.md) | Authenticating to the API |
 | [../controller/docs/configuring-api-authentication.md](../controller/docs/configuring-api-authentication.md) | Turning API authentication on, including RBAC for `nvkectl` |
+| [../controller/docs/configuring-api-authorization.md](../controller/docs/configuring-api-authorization.md) | Turning API authorization on, and granting callers roles in `roleMappings.json` |
 | [design/README.md](design/README.md) | Design records and proposals; status is stated at the top of each |
 | [design/byo-os.md](design/byo-os.md) | Proposal: bringing your own OS image |
 | [design/multi-oidc-provider-support-design.md](design/multi-oidc-provider-support-design.md) | Design: multiple OIDC providers |

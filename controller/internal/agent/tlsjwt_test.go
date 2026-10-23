@@ -33,7 +33,8 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/agent/pkg/nkeauth"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/auth/authn"
+
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
@@ -49,7 +50,7 @@ func TestUnit_NewTLSJWTTransportCredentials(t *testing.T) {
 
 	type parameters struct {
 		base        credentials.TransportCredentials
-		verifier    *auth.Verifier
+		verifier    *authn.Verifier
 		trustDomain string
 		wantErr     string
 	}
@@ -146,23 +147,23 @@ func TestUnit_VerifyNodeAudience(t *testing.T) {
 			wantErr: true,
 		},
 		"string": {
-			audience: auth.NodeAgentAudience,
+			audience: authn.NodeAgentAudience,
 		},
 		"legacy string": {
-			audience: auth.NodeAgentAudienceLegacy,
+			audience: authn.NodeAgentAudienceLegacy,
 		},
 		"singleton array": {
-			audience: []string{auth.NodeAgentAudience},
+			audience: []string{authn.NodeAgentAudience},
 		},
 		"legacy singleton array": {
-			audience: []string{auth.NodeAgentAudienceLegacy},
+			audience: []string{authn.NodeAgentAudienceLegacy},
 		},
 		"unknown audience": {
 			audience: "someone-else",
 			wantErr:  true,
 		},
 		"multiple audiences": {
-			audience: []string{auth.NodeAgentAudience, "another-service"},
+			audience: []string{authn.NodeAgentAudience, "another-service"},
 			wantErr:  true,
 		},
 	}
@@ -213,16 +214,16 @@ func TestUnit_TLSJWTClientHandshake(t *testing.T) {
 	wrongKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	issuer := "https://identity.example.test"
-	verifier, err := auth.NewVerifier(&auth.Config{
-		Audiences: auth.NodeAgentAudiences(),
-		Issuers: []auth.Issuer{{
-			Name:       auth.NodeAgentIssuerName,
+	verifier, err := authn.NewVerifier(&authn.Config{
+		Audiences: authn.NodeAgentAudiences(),
+		Issuers: []authn.Issuer{{
+			Name:       authn.NodeAgentIssuerName,
 			Issuer:     issuer,
-			JWKS:       &auth.JWKSKeys{URI: issuer + "/jwks"},
+			JWKS:       &authn.JWKSKeys{URI: issuer + "/jwks"},
 			Algorithms: []string{"RS256"},
-			Admit:      &auth.Admit{ServiceAccounts: []auth.ServiceAccountRule{{Namespace: "default"}}},
+			Admit:      &authn.Admit{ServiceAccounts: []authn.ServiceAccountRule{{Namespace: "default"}}},
 		}},
-	}, map[string]auth.KeySource{auth.NodeAgentIssuerName: testKeySource{key: &signingKey.PublicKey}})
+	}, map[string]authn.KeySource{authn.NodeAgentIssuerName: testKeySource{key: &signingKey.PublicKey}})
 	require.NoError(t, err)
 
 	now := time.Now()
@@ -230,7 +231,7 @@ func TestUnit_TLSJWTClientHandshake(t *testing.T) {
 		return jwt.MapClaims{
 			"iss": issuer,
 			"sub": "spiffe://dsx.example.test/bm/" + node.ID.String(),
-			"aud": auth.NodeAgentAudience,
+			"aud": authn.NodeAgentAudience,
 			"nbf": now.Add(-time.Minute).Unix(),
 			"exp": now.Add(time.Minute).Unix(),
 		}
@@ -277,7 +278,7 @@ func TestUnit_TLSJWTClientHandshake(t *testing.T) {
 		"multiple audiences": {
 			claims: func() jwt.MapClaims {
 				claims := validClaims()
-				claims["aud"] = []string{auth.NodeAgentAudience, "another-service"}
+				claims["aud"] = []string{authn.NodeAgentAudience, "another-service"}
 				return claims
 			}(),
 			key:     signingKey,
@@ -408,19 +409,19 @@ type testKeySource struct{ key crypto.PublicKey }
 
 func (s testKeySource) KeyFor(context.Context, string) (crypto.PublicKey, error) { return s.key, nil }
 
-func newTestTLSJWTVerifier(t *testing.T, issuer string, key crypto.PublicKey) *auth.Verifier {
+func newTestTLSJWTVerifier(t *testing.T, issuer string, key crypto.PublicKey) *authn.Verifier {
 	t.Helper()
 
-	verifier, err := auth.NewVerifier(&auth.Config{
-		Audiences: auth.NodeAgentAudiences(),
-		Issuers: []auth.Issuer{{
-			Name:       auth.NodeAgentIssuerName,
+	verifier, err := authn.NewVerifier(&authn.Config{
+		Audiences: authn.NodeAgentAudiences(),
+		Issuers: []authn.Issuer{{
+			Name:       authn.NodeAgentIssuerName,
 			Issuer:     issuer,
-			JWKS:       &auth.JWKSKeys{URI: issuer + "/jwks"},
+			JWKS:       &authn.JWKSKeys{URI: issuer + "/jwks"},
 			Algorithms: []string{"RS256"},
-			Admit:      &auth.Admit{ServiceAccounts: []auth.ServiceAccountRule{{Namespace: "default"}}},
+			Admit:      &authn.Admit{ServiceAccounts: []authn.ServiceAccountRule{{Namespace: "default"}}},
 		}},
-	}, map[string]auth.KeySource{auth.NodeAgentIssuerName: testKeySource{key: key}})
+	}, map[string]authn.KeySource{authn.NodeAgentIssuerName: testKeySource{key: key}})
 	require.NoError(t, err)
 	return verifier
 }

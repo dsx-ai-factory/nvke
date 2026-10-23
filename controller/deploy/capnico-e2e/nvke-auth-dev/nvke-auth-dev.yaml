@@ -140,6 +140,106 @@ subjects:
       namespace: nke-clients
 ---
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-cli
+    namespace: nvke-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-cli-token-minter
+    namespace: nvke-system
+rules:
+    - apiGroups:
+        - ""
+      resourceNames:
+        - nke-cli
+      resources:
+        - serviceaccounts/token
+      verbs:
+        - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-cli-token-minter
+    namespace: nvke-system
+roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: Role
+    name: nke-cli-token-minter
+subjects:
+    - kind: ServiceAccount
+      name: nke-e2e
+      namespace: nke-clients
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-claim-subject
+    namespace: nke-clients
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-claim-subject-token-minter
+    namespace: nke-clients
+rules:
+    - apiGroups:
+        - ""
+      resourceNames:
+        - nke-claim-subject
+      resources:
+        - serviceaccounts/token
+      verbs:
+        - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-claim-subject-token-minter
+    namespace: nke-clients
+roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: Role
+    name: nke-claim-subject-token-minter
+subjects:
+    - kind: ServiceAccount
+      name: nke-e2e
+      namespace: nke-clients
+---
+apiVersion: v1
 data:
     auth.yaml: |
         apiVersion: auth.nke.nvidia.com/v1alpha1
@@ -162,6 +262,12 @@ data:
                 # the namespace, nke-e2e above included.
                 - namespace: nke-clients
                   name: nke-client
+                - namespace: nvke-system
+                  name: nke-cli
+                - namespace: nke-clients
+                  name: nke-claim-subject
+            # Admission only. nke-authz-role-mappings, below, grants each of these
+            # a role through this issuer.
           # SPIRE is omitted because it is not reachable yet, and an unreachable
           # issuer is a startup failure in enforcing mode. Two things are missing: the
           # discovery provider's serving certificate does not carry the in-cluster
@@ -187,4 +293,34 @@ metadata:
         app.kubernetes.io/part-of: cloud-workflow-engine
         nke.nvidia.com/purpose: nke-auth-dev
     name: nvke-auth-config
+    namespace: nke-controller
+---
+apiVersion: v1
+data:
+    roleMappings.json: |
+        [
+          {
+            "issuer": "local-kubernetes",
+            "serviceAccount": { "namespace": "nke-clients", "name": "nke-client" },
+            "grants": [{ "type": "NKE::Role", "id": "admin" }]
+          },
+          {
+            "issuer": "local-kubernetes",
+            "serviceAccount": { "namespace": "nvke-system", "name": "nke-cli" },
+            "grants": [{ "type": "NKE::Role", "id": "reader" }]
+          },
+          {
+            "issuer": "local-kubernetes",
+            "serviceAccount": { "namespace": "nke-clients", "name": "nke-claim-subject" },
+            "grants": [{ "type": "NKE::Role", "id": "reader" }]
+          }
+        ]
+kind: ConfigMap
+metadata:
+    labels:
+        app.kubernetes.io/component: api-authz-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-authz-dev
+    name: nke-authz-role-mappings
     namespace: nke-controller

@@ -93,6 +93,9 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// ReloadAuthzBundle request
+	ReloadAuthzBundle(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListClusters request
 	ListClusters(ctx context.Context, params *ListClustersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -167,6 +170,18 @@ type ClientInterface interface {
 
 	// ListReleases request
 	ListReleases(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) ReloadAuthzBundle(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReloadAuthzBundleRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) ListClusters(ctx context.Context, params *ListClustersParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -491,6 +506,33 @@ func (c *Client) ListReleases(ctx context.Context, reqEditors ...RequestEditorFn
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewReloadAuthzBundleRequest generates requests for ReloadAuthzBundle
+func NewReloadAuthzBundleRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/authz/reload")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
 // NewListClustersRequest generates requests for ListClusters
@@ -1436,6 +1478,9 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// ReloadAuthzBundleWithResponse request
+	ReloadAuthzBundleWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ReloadAuthzBundleClientResponse, error)
+
 	// ListClustersWithResponse request
 	ListClustersWithResponse(ctx context.Context, params *ListClustersParams, reqEditors ...RequestEditorFn) (*ListClustersClientResponse, error)
 
@@ -1510,6 +1555,31 @@ type ClientWithResponsesInterface interface {
 
 	// ListReleasesWithResponse request
 	ListReleasesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListReleasesClientResponse, error)
+}
+
+type ReloadAuthzBundleClientResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *AuthzReloadResult
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
+	JSON500      *GenericError
+}
+
+// Status returns HTTPResponse.Status
+func (r ReloadAuthzBundleClientResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReloadAuthzBundleClientResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type ListClustersClientResponse struct {
@@ -2020,6 +2090,15 @@ func (r ListReleasesClientResponse) StatusCode() int {
 	return 0
 }
 
+// ReloadAuthzBundleWithResponse request returning *ReloadAuthzBundleClientResponse
+func (c *ClientWithResponses) ReloadAuthzBundleWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ReloadAuthzBundleClientResponse, error) {
+	rsp, err := c.ReloadAuthzBundle(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReloadAuthzBundleClientResponse(rsp)
+}
+
 // ListClustersWithResponse request returning *ListClustersClientResponse
 func (c *ClientWithResponses) ListClustersWithResponse(ctx context.Context, params *ListClustersParams, reqEditors ...RequestEditorFn) (*ListClustersClientResponse, error) {
 	rsp, err := c.ListClusters(ctx, params, reqEditors...)
@@ -2255,6 +2334,53 @@ func (c *ClientWithResponses) ListReleasesWithResponse(ctx context.Context, reqE
 		return nil, err
 	}
 	return ParseListReleasesClientResponse(rsp)
+}
+
+// ParseReloadAuthzBundleClientResponse parses an HTTP response from a ReloadAuthzBundleWithResponse call
+func ParseReloadAuthzBundleClientResponse(rsp *http.Response) (*ReloadAuthzBundleClientResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReloadAuthzBundleClientResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AuthzReloadResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest GenericError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseListClustersClientResponse parses an HTTP response from a ListClustersWithResponse call

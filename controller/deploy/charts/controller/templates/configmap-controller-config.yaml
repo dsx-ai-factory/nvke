@@ -130,3 +130,4 @@ data:
       tokenNamePrefix: {{ $teleport.tokenNamePrefix | default "nvke-controller-" | quote }}
       resourceGroupLabelValue: {{ $teleport.resourceGroupLabelValue | default "nvke" | quote }}
     permissiveMode: {{ if .Values.apiAuth.enabled }}{{ .Values.apiAuth.permissive }}{{ else }}false{{ end }}
+    authzPermissive: {{ if .Values.apiAuthz.enabled }}{{ .Values.apiAuthz.permissive }}{{ else }}false{{ end }}

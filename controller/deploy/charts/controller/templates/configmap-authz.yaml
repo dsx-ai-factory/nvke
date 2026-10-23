@@ -1,0 +1,28 @@
+{{- if .Values.apiAuthz.enabled }}
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The policy bundle this chart ships, read verbatim from the packaged files
+# (controller.apiAuthz.packagedFiles). Rendered whenever authorization is on:
+# with apiAuthz.existingConfigMap empty the pod mounts all three keys, and with
+# it set the pod still mounts actions.json from here, since that file is
+# generated for this chart's image and an operator never supplies it. It never
+# carries roleMappings.json, which comes from apiAuthz.roleMappingsConfigMap.
+#
+# The customize annotation reaches the cluster, where someone running kubectl
+# edit on this ConfigMap sees it; the next helm upgrade undoes that edit.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "controller.apiAuthz.defaultConfigMapName" . }}
+  namespace: {{ include "controller.namespace" . }}
+  labels:
+    {{- include "controller.labels" . | nindent 4 }}
+  annotations:
+    nke.nvidia.com/customize: "Managed by Helm. To customize, set apiAuthz.existingConfigMap."
+data:
+  {{- range $key, $path := include "controller.apiAuthz.packagedFiles" . | fromJson }}
+  {{ $key }}: |
+    {{- $.Files.Get $path | nindent 4 }}
+  {{- end }}
+{{- end }}

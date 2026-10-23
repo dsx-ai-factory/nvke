@@ -56,6 +56,7 @@ type Config struct {
 	Spire                                    SpireConfig          `json:"spire"`
 	Teleport                                 TeleportConfig       `json:"teleport"`
 	PermissiveMode                           bool                 `json:"permissiveMode"`
+	AuthzPermissive                          bool                 `json:"authzPermissive"`
 	MachineMetadataAllowlistedLabelKeys      []string             `json:"machineMetadataAllowlistedLabelKeys"`
 	MachineMetadataAllowlistedAnnotationKeys []string             `json:"machineMetadataAllowlistedAnnotationKeys"`
 	AllowControlPlaneWithoutVIP              bool                 `json:"allowControlPlaneWithoutVIP"`
@@ -237,7 +238,7 @@ type TeleportConfig struct {
 // reached in practice: Kubernetes will not start the controller's container
 // until the ConfigMap a volume mount references exists. A malformed or
 // invalid one is a startup failure, never a silent fallback to defaults, the
-// same fail-closed rule auth.Load already follows for AUTH_CONFIG_PATH.
+// same fail-closed rule authn.Load already follows for AUTH_CONFIG_PATH.
 func Load(path string) (*Config, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("controller config path is empty")

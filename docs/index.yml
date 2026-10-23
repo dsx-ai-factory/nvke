@@ -165,6 +165,8 @@ navigation:
             path: ../cli/docs/sitespec.md
           - page: Configuring API Authentication
             path: ../controller/docs/configuring-api-authentication.md
+          - page: Configuring API Authorization
+            path: ../controller/docs/configuring-api-authorization.md
 
   - tab: api
     layout:
