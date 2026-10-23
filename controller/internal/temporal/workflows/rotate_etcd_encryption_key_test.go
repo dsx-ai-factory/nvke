@@ -442,6 +442,7 @@ func TestRotationReusingSucceededWorkflowIDFailsWithoutNodeWork(t *testing.T) {
 	}}, nil)
 	store := &testutil.MockDB{MockTx: tx}
 	store.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+	store.On("RecordCredentialAuditEvent", mock.Anything, mock.Anything).Return(nil).Maybe()
 	env, _ := setupEnableEtcdEncryptionWorkflowEnv(t)
 	a := activities.NewActivities(config.Config{}, store, nil, nil, "", nil, "")
 	env.RegisterActivity(a.BeginEtcdEncryptionKeyRotation)

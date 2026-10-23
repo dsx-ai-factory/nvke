@@ -5,6 +5,7 @@ package certificates
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"testing"
@@ -22,6 +23,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/controllertest"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
+	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
@@ -110,6 +112,45 @@ func TestReconcileRetriesFailedInspectionSoonerAndSettlesOnSuccess(t *testing.T)
 	stored, err = database.GetNode(ctx, node.ID)
 	require.NoError(t, err)
 	require.Zero(t, stored.CertificateInspection.Retries)
+}
+
+// TestReconcileMarksInspectionAuditRecordedOnlyAfterStoredWrite persists whether
+// the ledger holds an inspection, so a repeat after a failed write is recorded.
+func TestReconcileMarksInspectionAuditRecordedOnlyAfterStoredWrite(t *testing.T) {
+	ctx := context.Background()
+	database := inspectionSQLiteDB{DB: db.NewDB(testutil.SetupDB(ctx, t, (*db.Node)(nil)))}
+	node, err := database.CreateNode(ctx, &db.Node{ID: uuid.New(), ClusterID: uuid.New(), Name: "managed-node", SpireAttestationMethod: db.SpireAttestationMethodTPM, Conditions: db.NodeConditions{Joined: db.NewCondition(true, "joined")}})
+	require.NoError(t, err)
+	now := time.Now().UTC().Truncate(time.Second)
+	stub := &inspectorStub{response: &pb.InspectKubernetesCertificatesResponse{Certificates: []*pb.KubernetesCertificateObservation{
+		{Credential: "kubelet-client", State: pb.KubernetesCertificateObservation_STATE_AVAILABLE, NotAfterUnixSeconds: now.Add(time.Hour).Unix()},
+		{Credential: "kubelet-serving", State: pb.KubernetesCertificateObservation_STATE_AVAILABLE, NotAfterUnixSeconds: now.Add(time.Hour).Unix()},
+	}}}
+	store := &inspectionAuditStore{err: errors.New("ledger unavailable")}
+	controller := NewController(config.Config{CertificateInspectionInterval: time.Hour}, dbwrapper.New(database, slog.New(slog.DiscardHandler)), stub)
+	controller.audit = credentialaudit.NewRecorder(store, slog.New(slog.DiscardHandler), nil)
+	reconcileDue := func() db.CertificateInspection {
+		t.Helper()
+		stored, err := database.GetNode(ctx, node.ID)
+		require.NoError(t, err)
+		if stored.CertificateInspection != nil {
+			stored.CertificateInspection.AttemptedAt = stored.CertificateInspection.AttemptedAt.Add(-2 * time.Hour)
+			_, err = database.UpdateNode(ctx, &stored)
+			require.NoError(t, err)
+		}
+		_, err = controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
+		require.NoError(t, err)
+		stored, err = database.GetNode(ctx, node.ID)
+		require.NoError(t, err)
+		return *stored.CertificateInspection
+	}
+
+	require.False(t, reconcileDue().AuditRecorded, "a failed write leaves the inspection unrecorded")
+	store.err, store.events = nil, nil
+	require.True(t, reconcileDue().AuditRecorded)
+	require.Len(t, store.events, 1, "an identical inspection after a failed write is recorded")
+	require.True(t, reconcileDue().AuditRecorded)
+	require.Len(t, store.events, 1, "an identical inspection after a stored write is skipped")
 }
 
 func TestNextDelayRespectsInspectionInterval(t *testing.T) {

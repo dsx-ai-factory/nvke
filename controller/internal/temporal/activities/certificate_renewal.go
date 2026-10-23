@@ -15,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
@@ -113,6 +114,15 @@ func (a *Activities) BeginCertificateRenewal(
 	if err == nil {
 		err = rejection
 	}
+	outcome, reason := auditOperationOutcome(err)
+	if err == nil {
+		reason = credentialaudit.ReasonAccepted
+		if result.AlreadyCompleted {
+			outcome, reason = credentialaudit.OutcomeNoop, credentialaudit.ReasonUnchanged
+		}
+	}
+	a.recordCredentialAudit(ctx, credentialOperationAudit(input.ClusterID, nil, credentialaudit.ActionCheck,
+		credentialaudit.TypeKubeadm, outcome, reason), input.CycleID)
 	if err != nil {
 		return BeginCertificateRenewalResult{}, err
 	}
@@ -222,6 +232,21 @@ func (a *Activities) ValidateCertificateRenewalHealth(
 	ctx context.Context,
 	input ValidateCertificateRenewalHealthInput,
 ) error {
+	err := a.validateCertificateRenewalHealth(ctx, input)
+	action := credentialaudit.ActionCheck
+	if input.PostflightNodeID != nil {
+		action = credentialaudit.ActionVerify
+	}
+	outcome, reason := credentialaudit.OutcomeSuccess, credentialaudit.ReasonVerified
+	if err != nil {
+		outcome, reason = credentialaudit.OutcomeFailure, credentialaudit.ReasonHealthFailed
+	}
+	a.recordCredentialAudit(ctx, credentialOperationAudit(input.ClusterID, input.PostflightNodeID, action,
+		credentialaudit.TypeKubeadm, outcome, reason), input.ClusterID.String())
+	return err
+}
+
+func (a *Activities) validateCertificateRenewalHealth(ctx context.Context, input ValidateCertificateRenewalHealthInput) error {
 	cluster, err := a.db.GetCluster(ctx, input.ClusterID)
 	if err != nil && !errors.Is(err, db.ErrNotFound) {
 		return fmt.Errorf("failed to get cluster %s for certificate-renewal health check: %w", input.ClusterID, err)
@@ -404,6 +429,12 @@ func (a *Activities) CompleteCertificateRenewal(
 		}
 		return nil
 	})
+	outcome, reason := auditOperationOutcome(err)
+	if err == nil && input.Outcome == db.CertificateRenewalOutcomeUnchanged {
+		outcome, reason = credentialaudit.OutcomeNoop, credentialaudit.ReasonUnchanged
+	}
+	a.recordCredentialAudit(ctx, credentialOperationAudit(input.ClusterID, nil, credentialaudit.ActionRenew,
+		credentialaudit.TypeKubeadm, outcome, reason), input.CycleID)
 	if err != nil {
 		return CompleteCertificateRenewalResult{}, err
 	}
@@ -470,8 +501,11 @@ func (a *Activities) FailCertificateRenewal(
 		return nil
 	})
 	if err != nil {
+		// No failure was persisted for this cycle, e.g. it no longer owns the status.
 		return FailCertificateRenewalResult{}, err
 	}
+	a.recordCredentialAudit(ctx, credentialOperationAudit(input.ClusterID, input.FailedNodeID, credentialaudit.ActionRenew,
+		credentialaudit.TypeKubeadm, credentialaudit.OutcomeFailure, credentialaudit.ReasonFailed), input.CycleID)
 	return FailCertificateRenewalResult{}, nil
 }
 

@@ -20,6 +20,7 @@ import (
 
 	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/runbook"
 )
@@ -133,7 +134,15 @@ func (a *Activities) CheckKubernetesCertificateRenewalRequired(
 	if response == nil || response.GetExitCode() != 0 {
 		return KubernetesCertificateRenewalCheckResult{}, errors.New("certificate expiry check failed")
 	}
-	return certificateRenewalCheckResult(response.GetOutput())
+	result, err := certificateRenewalCheckResult(response.GetOutput())
+	if err != nil {
+		return KubernetesCertificateRenewalCheckResult{}, err
+	}
+	if !result.Required {
+		a.recordNodeCertificateRenewalAudit(ctx, node, input.OperationID,
+			KubernetesCertificateRenewalResult{Outcome: db.CertificateRenewalOutcomeUnchanged}, nil)
+	}
+	return result, nil
 }
 
 // certificateRenewalCheckResult requires one full marker line amid the agent's
@@ -278,6 +287,10 @@ func (a *Activities) RenewKubernetesCertificates(
 		result, done, err := certificateRenewalTerminalResult(operation)
 		if err != nil || done {
 			phase := operation.GetOperation().GetPhase()
+			if err == nil || (phase == nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED && isFailedCertificateRenewalOutcome(operation.GetOutcome())) {
+				// Malformed or unknown terminal states do not establish the node outcome.
+				a.recordNodeCertificateRenewalAudit(ctx, node, input.OperationID, result, err)
+			}
 			if phase == nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED || phase == nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED {
 				if releaseErr := a.releaseCertificateRenewal(ctx, node, input.OperationID); releaseErr != nil {
 					return result, releaseErr
@@ -392,7 +405,40 @@ func (a *Activities) RenewLegacyKubernetesCertificates(ctx context.Context, inpu
 				"nodeID", node.ID, "operationID", input.OperationID, "error", err)
 		}
 	}
+	auditResult := result
+	if input.ExpectedEtcdMembers == 0 {
+		// V1 returns diagnostic output only. Audit trusts an explicit marker but
+		// never infers a mutation from markerless or unrecognized output.
+		var err error
+		if auditResult.Outcome, err = certificateRenewalOutcome(result.Output); err != nil {
+			return result, nil
+		}
+	}
+	if a.credentialAudit != nil {
+		if node, err := a.db.GetNode(ctx, input.NodeID); err == nil {
+			a.recordNodeCertificateRenewalAudit(ctx, node, input.OperationID, auditResult, nil)
+		}
+	}
 	return result, nil
+}
+
+func (a *Activities) recordNodeCertificateRenewalAudit(ctx context.Context, node db.Node, operationID string, result KubernetesCertificateRenewalResult, err error) {
+	outcome, reason := auditOperationOutcome(err)
+	if err == nil && result.ExitCode != 0 {
+		outcome, reason = credentialaudit.OutcomeFailure, credentialaudit.ReasonFailed
+	} else if err == nil && result.Outcome == db.CertificateRenewalOutcomeUnchanged {
+		outcome, reason = credentialaudit.OutcomeNoop, credentialaudit.ReasonUnchanged
+	}
+	a.recordCredentialAudit(ctx, credentialOperationAudit(node.ClusterID, &node.ID, credentialaudit.ActionRenew,
+		credentialaudit.TypeKubeadm, outcome, reason), operationID)
+}
+
+// isFailedCertificateRenewalOutcome matches the outcomes that a failed phase must carry to be a
+// confirmed node renewal failure.
+func isFailedCertificateRenewalOutcome(outcome nvkeproto.KubernetesCertificateRenewalOperation_Outcome) bool {
+	return outcome == nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_FAILED_BEFORE_RESTART ||
+		outcome == nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_FAILED_RESTORED ||
+		outcome == nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_FAILED_NOT_RESTORED
 }
 
 // ResolveKubernetesCertificateRenewalInput identifies the exact operation and
@@ -475,13 +521,19 @@ func (a *Activities) awaitCertificateRenewalTermination(ctx context.Context, nod
 		}
 		switch statusOperation.GetPhase() {
 		case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED:
-			_, _, err := certificateRenewalTerminalResult(operation)
+			result, _, err := certificateRenewalTerminalResult(operation)
+			if err == nil {
+				a.recordNodeCertificateRenewalAudit(ctx, node, input.OperationID, result, nil)
+			}
 			return err
 		case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED:
 			switch operation.GetOutcome() {
 			case nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_FAILED_BEFORE_RESTART,
 				nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_FAILED_RESTORED,
 				nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_FAILED_NOT_RESTORED:
+				// Successful resolution proves termination, not renewal success.
+				a.recordCredentialAudit(ctx, credentialOperationAudit(node.ClusterID, &node.ID, credentialaudit.ActionRenew,
+					credentialaudit.TypeKubeadm, credentialaudit.OutcomeFailure, credentialaudit.ReasonFailed), input.OperationID)
 				return nil
 			case nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_UNSPECIFIED,
 				nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_UNCHANGED,

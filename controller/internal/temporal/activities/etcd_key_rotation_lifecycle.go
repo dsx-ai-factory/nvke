@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
@@ -27,7 +28,7 @@ func (a *Activities) RecordEtcdKeyRotationPhase(ctx context.Context, input Recor
 	if !input.Phase.Valid() {
 		return etcdEncryptionKeyRotationPreconditionError("invalid etcd key rotation phase")
 	}
-	return a.mutateEtcdKeyRotation(ctx, input.ClusterID, input.WorkflowID, func(cluster *db.Cluster, status *db.EtcdKeyRotationStatus) error {
+	err := a.mutateEtcdKeyRotation(ctx, input.ClusterID, input.WorkflowID, func(cluster *db.Cluster, status *db.EtcdKeyRotationStatus) error {
 		if status.State == db.EtcdKeyRotationStateSucceeded {
 			return etcdEncryptionKeyRotationPreconditionError("etcd key rotation already completed")
 		}
@@ -49,6 +50,15 @@ func (a *Activities) RecordEtcdKeyRotationPhase(ctx context.Context, input Recor
 		db.ClearUpdateFailed(cluster)
 		return nil
 	})
+	outcome, reason := auditOperationOutcome(err)
+	if err == nil {
+		reason = credentialaudit.ReasonAccepted
+	}
+	event := credentialOperationAudit(input.ClusterID, nil, credentialaudit.ActionCheck,
+		credentialaudit.TypeEtcdKey, outcome, reason)
+	event.Phase = string(input.Phase)
+	a.recordCredentialAudit(ctx, event, input.WorkflowID)
+	return err
 }
 
 // FailEtcdKeyRotationInput intentionally excludes free-form errors and key data.
@@ -65,8 +75,14 @@ func (a *Activities) FailEtcdKeyRotation(ctx context.Context, input FailEtcdKeyR
 	if input.Reason != db.EtcdKeyRotationFailureOperation && input.Reason != db.EtcdKeyRotationFailureCancelled {
 		return etcdEncryptionKeyRotationPreconditionError("invalid etcd key rotation failure reason")
 	}
-	return a.mutateEtcdKeyRotation(ctx, input.ClusterID, input.WorkflowID, func(cluster *db.Cluster, status *db.EtcdKeyRotationStatus) error {
+	phase := ""
+	outcome, reason := credentialaudit.OutcomeFailure, credentialaudit.ReasonFailed
+	err := a.mutateEtcdKeyRotation(ctx, input.ClusterID, input.WorkflowID, func(cluster *db.Cluster, status *db.EtcdKeyRotationStatus) error {
+		phase = string(status.Phase)
 		if status.State == db.EtcdKeyRotationStateSucceeded || status.State == db.EtcdKeyRotationStateFailed {
+			if status.State == db.EtcdKeyRotationStateSucceeded {
+				outcome, reason = credentialaudit.OutcomeNoop, credentialaudit.ReasonUnchanged
+			}
 			return nil
 		}
 		if !ownsEtcdKeyRotationLock(cluster) {
@@ -86,6 +102,11 @@ func (a *Activities) FailEtcdKeyRotation(ctx context.Context, input FailEtcdKeyR
 		db.SetUpdateFailed(cluster, "Etcd encryption key rotation failed; recover the owning workflow")
 		return nil
 	})
+	event := credentialOperationAudit(input.ClusterID, nil, credentialaudit.ActionRotate,
+		credentialaudit.TypeEtcdKey, outcome, reason)
+	event.Phase = phase
+	a.recordCredentialAudit(ctx, event, input.WorkflowID)
+	return err
 }
 
 func (a *Activities) completeEtcdKeyRotation(ctx context.Context, clusterID uuid.UUID, workflowID string) error {

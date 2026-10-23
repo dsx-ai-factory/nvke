@@ -9,8 +9,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/utils/ptr"
@@ -24,7 +26,9 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	dbfilters "github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/filters"
+	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 )
 
 const (
@@ -52,6 +56,7 @@ type Controller struct {
 	cfg      config.Config
 	database *dbwrapper.DB
 	agent    inspector
+	audit    *credentialaudit.Recorder
 	// name registers the controller; controller-runtime rejects a name already
 	// registered in the process, so tests that set up a manager repeatedly vary it.
 	name string
@@ -59,7 +64,11 @@ type Controller struct {
 
 // NewController constructs the certificate observation controller.
 func NewController(cfg config.Config, database *dbwrapper.DB, agent inspector) *Controller {
-	return &Controller{cfg: cfg, database: database, agent: agent, name: "certificate-inspection"}
+	return &Controller{
+		cfg: cfg, database: database, agent: agent,
+		audit: credentialaudit.NewRecorder(database, nil, metrics.RecordCredentialAuditWrite),
+		name:  "certificate-inspection",
+	}
 }
 
 // SetupWithManager watches only non-deleting nodes.
@@ -100,6 +109,7 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 			observation.Retries = min(previous.Retries+1, maxInspectionRetries)
 		}
 	}
+	persisted := false
 	err = c.database.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		locked, err := tx.GetNodeForUpdate(ctx, node.ID)
 		if err != nil {
@@ -110,6 +120,7 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 		}
 		locked.CertificateInspection = observation
 		_, err = tx.UpdateNode(ctx, &locked)
+		persisted = err == nil
 		return err
 	})
 	if errors.Is(err, db.ErrNotFound) {
@@ -118,7 +129,31 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("persist certificate inspection: %w", err)
 	}
+	if persisted && c.recordInspectionAudit(ctx, node, node.CertificateInspection, observation) {
+		c.markInspectionAuditRecorded(ctx, node.ID, observation.AttemptedAt)
+	}
 	return reconcile.Result{RequeueAfter: c.nextDelay(observation)}, nil
+}
+
+// markInspectionAuditRecorded is best effort: if it fails, the next identical
+// inspection is recorded again rather than skipped.
+func (c *Controller) markInspectionAuditRecorded(ctx context.Context, nodeID uuid.UUID, attemptedAt time.Time) {
+	err := c.database.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		locked, err := tx.GetNodeForUpdate(ctx, nodeID)
+		if err != nil {
+			return err
+		}
+		// Only the inspection whose observations were written is marked.
+		if locked.CertificateInspection == nil || !locked.CertificateInspection.AttemptedAt.Equal(attemptedAt) {
+			return nil
+		}
+		locked.CertificateInspection.AuditRecorded = true
+		_, err = tx.UpdateNode(ctx, &locked)
+		return err
+	})
+	if err != nil && !errors.Is(err, db.ErrNotFound) {
+		slog.WarnContext(ctx, "Certificate inspection audit state could not be persisted", "node_id", nodeID, "err", err)
+	}
 }
 
 // nextDelay is how long after an attempt the node is inspected again: the full
@@ -182,7 +217,7 @@ func inspectionObservation(previous *db.CertificateInspection, response *pb.Insp
 				}
 				entry.CertificateSHA256 = fingerprint
 			}
-			entry.State = "available"
+			entry.State = inspectionCertificateAvailable
 			entry.NotAfter = time.Unix(item.GetNotAfterUnixSeconds(), 0).UTC()
 		case pb.KubernetesCertificateObservation_STATE_MISSING:
 			entry.State = "missing"

@@ -19,19 +19,37 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
 type fenceStore struct {
 	db.DB
-	mu        sync.Mutex
-	cluster   db.Cluster
-	nodes     []db.Node
-	pools     []db.NodePool
-	writes    int
-	lockOrder []string
-	cycles    int
+	mu          sync.Mutex
+	cluster     db.Cluster
+	nodes       []db.Node
+	pools       []db.NodePool
+	writes      int
+	lockOrder   []string
+	cycles      int
+	auditEvents []credentialaudit.Event
+}
+
+// RecordCredentialAuditEvent retains validated observations without changing admission state.
+func (s *fenceStore) RecordCredentialAuditEvent(_ context.Context, event credentialaudit.Event) error {
+	if err := event.Validate(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, existing := range s.auditEvents {
+		if existing.ID == event.ID {
+			return nil
+		}
+	}
+	s.auditEvents = append(s.auditEvents, event)
+	return nil
 }
 
 func (s *fenceStore) RunInTx(ctx context.Context, fn func(context.Context, db.Tx) error) error {
@@ -147,6 +165,8 @@ func TestCredentialBeginRejectsPreviouslyAcceptedMembershipWork(t *testing.T) {
 			} else {
 				require.Zero(t, store.writes)
 			}
+			require.Len(t, store.auditEvents, 1)
+			require.Equal(t, credentialaudit.OutcomeFailure, store.auditEvents[0].Outcome)
 		})
 	}
 }
@@ -172,6 +192,8 @@ func TestControlPlaneAdmissionAndCredentialOperationAreExclusive(t *testing.T) {
 				begin := func() error { return beginFenceOwner(t, a, store, c.owner) }
 				if credentialFirst {
 					require.NoError(t, begin())
+					require.Len(t, store.auditEvents, 1)
+					require.Equal(t, credentialaudit.OutcomeSuccess, store.auditEvents[0].Outcome)
 					require.ErrorIs(t, a.UpdateNodeConditions(t.Context(), update), db.ErrControlPlaneMutationBlocked)
 					require.Equal(t, []string{"cluster"}, store.lockOrder)
 					require.NotEqual(t, db.ConditionStatusTrue, store.nodes[0].Conditions.Provisioning.Status)

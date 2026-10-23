@@ -130,6 +130,10 @@ metrics from database state.
 | `etcd_key_rotation_progress_age_seconds` | running rotation age since the last phase progress |
 | `credential_metrics_collection_success` | database inventory queries succeeded |
 
+`nvke_controller_credential_audit_writes_total` counts credential audit ledger
+writes by result; [Credential lifecycle audit evidence](credential-audit.md#sink-and-failure-behavior)
+gives its alert expression for `sink_failed`, `invalid_event` and `rate_limited`.
+
 A renewal due timestamp is a scheduling timestamp. It is never substituted for
 certificate expiry. Unknown rotation state means no recorded rotation and is
 not itself a failed operation.

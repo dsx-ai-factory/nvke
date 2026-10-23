@@ -24,6 +24,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
@@ -167,6 +168,11 @@ func (d *certificateRenewalFallbackDatabase) RunInTx(ctx context.Context, fn fun
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return fn(ctx, d)
+}
+
+// RecordCredentialAuditEvent accepts the audit layer's independent ledger writes.
+func (*certificateRenewalFallbackDatabase) RecordCredentialAuditEvent(context.Context, credentialaudit.Event) error {
+	return nil
 }
 
 func (d *certificateRenewalFallbackDatabase) GetClusterForUpdate(context.Context, uuid.UUID) (db.Cluster, error) {
