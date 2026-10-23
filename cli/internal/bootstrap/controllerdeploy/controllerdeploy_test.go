@@ -425,12 +425,13 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	}
 
 	cfg := testConfig(t)
+	usernamePrefix := "corp:"
 	cfg.OIDCProviders = []sitespec.OIDCProvider{{
 		Name:           "corp",
 		IssuerURL:      "https://login.example.com",
 		Audiences:      []string{"nvke"},
 		UsernameClaim:  "email",
-		UsernamePrefix: "corp:",
+		UsernamePrefix: &usernamePrefix,
 		CABundle:       "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
 		DiscoveryURL:   "https://identity.example.com/.well-known/openid-configuration",
 	}}
@@ -480,7 +481,8 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 // TestDeploy_EmptyOIDCUsernamePrefix verifies Helm receives an explicit empty prefix and no discovery override.
 func TestDeploy_EmptyOIDCUsernamePrefix(t *testing.T) {
 	cfg := testConfig(t)
-	cfg.OIDCProviders = []sitespec.OIDCProvider{{Name: "corp", IssuerURL: "https://login.example.com"}}
+	usernamePrefix := ""
+	cfg.OIDCProviders = []sitespec.OIDCProvider{{Name: "corp", IssuerURL: "https://login.example.com", UsernamePrefix: &usernamePrefix}}
 	runner := &fakeRunner{}
 	require.NoError(t, New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg))
 	extra := runner.extraValuesFiles[cweReleaseName]

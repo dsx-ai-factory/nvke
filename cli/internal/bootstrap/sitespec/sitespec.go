@@ -255,7 +255,7 @@ type OIDCProvider struct {
 	IssuerURL      string            `yaml:"issuerURL"`
 	Audiences      []string          `yaml:"audiences"`
 	UsernameClaim  string            `yaml:"usernameClaim"`
-	UsernamePrefix string            `yaml:"usernamePrefix"`
+	UsernamePrefix *string           `yaml:"usernamePrefix"`
 	GroupsClaim    string            `yaml:"groupsClaim,omitempty"`
 	GroupsPrefix   string            `yaml:"groupsPrefix,omitempty"`
 	RequiredClaims map[string]string `yaml:"requiredClaims,omitempty"`
@@ -755,7 +755,11 @@ func (v *validator) checkOIDCProviders(c Cluster) {
 		if strings.TrimSpace(p.UsernameClaim) == "" {
 			v.addf("%s.usernameClaim is required", path)
 		}
-		v.checkOIDCPrefix(path+".usernamePrefix", p.UsernamePrefix)
+		if p.UsernamePrefix == nil {
+			v.addf("%s.usernamePrefix is required; use \"\" for no prefix", path)
+		} else {
+			v.checkOIDCPrefix(path+".usernamePrefix", *p.UsernamePrefix)
+		}
 		v.checkOIDCPrefix(path+".groupsPrefix", p.GroupsPrefix)
 		if len(p.Audiences) == 0 {
 			v.addf("%s.audiences is required", path)

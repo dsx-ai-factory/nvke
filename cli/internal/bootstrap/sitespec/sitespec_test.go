@@ -260,12 +260,13 @@ func TestValidateInvalidInputs(t *testing.T) {
 }
 
 func validOIDCProvider() OIDCProvider {
+	usernamePrefix := "corp:"
 	return OIDCProvider{
 		Name:           "corp",
 		IssuerURL:      "https://login.example.com",
 		Audiences:      []string{"nvke"},
 		UsernameClaim:  "email",
-		UsernamePrefix: "corp:",
+		UsernamePrefix: &usernamePrefix,
 		CABundle: `-----BEGIN CERTIFICATE-----
 MIIDCTCCAfGgAwIBAgIUfGXirJ1/KK2sS+M1ktcL2jKHJOcwDQYJKoZIhvcNAQEL
 BQAwFDESMBAGA1UEAwwJb2lkYy10ZXN0MB4XDTI2MTAxMzE5NDA0NloXDTM2MTAx
@@ -316,25 +317,27 @@ func TestValidate_OIDCProviders(t *testing.T) {
 	}
 }
 
-// TestLoadOIDCUsernamePrefix verifies empty prefixes preserve claim values and reserved namespaces remain protected.
+// TestLoadOIDCUsernamePrefix verifies prefixes must be explicit and reserved namespaces remain protected.
 func TestLoadOIDCUsernamePrefix(t *testing.T) {
 	tests := []struct {
 		name           string
 		usernamePrefix string
 		groupsPrefix   string
 		omitPrefix     bool
+		nullPrefix     bool
 		wantErr        string
 	}{
 		{name: "explicit empty prefix"},
-		{name: "omitted prefix", omitPrefix: true},
+		{name: "omitted prefix", omitPrefix: true, wantErr: "usernamePrefix is required"},
+		{name: "null prefix", nullPrefix: true, wantErr: "usernamePrefix is required"},
 		{name: "nonempty prefix", usernamePrefix: "corp:"},
-		{name: "reserved username prefix", usernamePrefix: "system:", wantErr: "cluster.oidcProviders[0].usernamePrefix"},
-		{name: "reserved group prefix", groupsPrefix: "system:", wantErr: "cluster.oidcProviders[0].groupsPrefix"},
+		{name: "reserved username prefix", usernamePrefix: "system:", wantErr: "reserved"},
+		{name: "reserved group prefix", groupsPrefix: "system:", wantErr: "reserved"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			provider := validOIDCProvider()
-			provider.UsernamePrefix = tt.usernamePrefix
+			provider.UsernamePrefix = &tt.usernamePrefix
 			provider.GroupsPrefix = tt.groupsPrefix
 			input := minimalValid()
 			input.Cluster.K8sVersion = "1.34.0"
@@ -346,15 +349,20 @@ func TestLoadOIDCUsernamePrefix(t *testing.T) {
 				require.Contains(t, text, `usernamePrefix: ""`)
 				text = strings.Replace(text, `usernamePrefix: ""`, "", 1)
 			}
+			if tt.nullPrefix {
+				require.Contains(t, text, `usernamePrefix: ""`)
+				text = strings.Replace(text, `usernamePrefix: ""`, "usernamePrefix: null", 1)
+			}
 			inv, err := Load(writeTemp(t, text))
 			if tt.wantErr != "" {
-				require.ErrorContains(t, err, tt.wantErr)
-				assert.ErrorContains(t, err, "reserved")
+				require.ErrorContains(t, err, "cluster.oidcProviders[0]")
+				assert.ErrorContains(t, err, tt.wantErr)
 				return
 			}
 			require.NoError(t, err)
 			require.Len(t, inv.Cluster.OIDCProviders, 1)
-			assert.Equal(t, tt.usernamePrefix, inv.Cluster.OIDCProviders[0].UsernamePrefix)
+			require.NotNil(t, inv.Cluster.OIDCProviders[0].UsernamePrefix)
+			assert.Equal(t, tt.usernamePrefix, *inv.Cluster.OIDCProviders[0].UsernamePrefix)
 		})
 	}
 }
