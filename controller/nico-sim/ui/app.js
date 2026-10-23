@@ -199,7 +199,31 @@ function escapeHtml(str) {
 }
 
 function copyToClipboard(text) {
-    return navigator.clipboard.writeText(text);
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        return navigator.clipboard.writeText(text);
+    }
+
+    return new Promise(function(resolve, reject) {
+        var textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+
+        var copied = false;
+        try {
+            copied = document.execCommand('copy');
+        } finally {
+            textarea.remove();
+        }
+        if (copied) {
+            resolve();
+        } else {
+            reject(new Error('Clipboard access is unavailable in this browser context'));
+        }
+    });
 }
 
 function copyableHtml(text, label) {
@@ -1400,7 +1424,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 btn.classList.remove('copied');
             }, 1000);
         }).catch(function(err) {
+            var prev = btn.textContent;
+            var prevTitle = btn.title;
+            btn.textContent = '!';
             btn.title = 'Copy failed: ' + (err && err.message ? err.message : err);
+            btn.classList.add('copy-failed');
+            setTimeout(function() {
+                if (!btn.isConnected) return;
+                btn.textContent = prev;
+                btn.title = prevTitle;
+                btn.classList.remove('copy-failed');
+            }, 3000);
         });
     }, true);
 

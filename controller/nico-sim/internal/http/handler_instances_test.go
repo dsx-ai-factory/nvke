@@ -97,8 +97,8 @@ func TestGetInstanceReturnsPersistedVMFailure(t *testing.T) {
 		t.Fatalf("decode failed instance: %v", err)
 	}
 	history := instance.GetStatusHistory()
-	if len(history) != 1 || history[0].GetMessage() != reason {
-		t.Fatalf("status history = %+v, want failure reason %q", history, reason)
+	if len(history) != 1 || history[0].GetMessage() != clientSafeInstanceError {
+		t.Fatalf("status history = %+v, want client-safe failure reason %q", history, clientSafeInstanceError)
 	}
 }
 

@@ -22,3 +22,40 @@ func TestToSDKSubnetSeparatesIPv4PrefixAndLength(t *testing.T) {
 		t.Fatalf("prefix length = %d, want 24", got)
 	}
 }
+
+func TestToSDKInstanceSanitizesPreservedFailureDuringDeletion(t *testing.T) {
+	instance := toSDKInstance(state.Instance{
+		Status: "deleting",
+		VM: &state.VMState{
+			ErrorReason: "vm create/start failed: sensitive runtime detail",
+		},
+	})
+
+	if got := instance.GetStatus(); got != "Terminating" {
+		t.Fatalf("instance status = %q, want %q", got, "Terminating")
+	}
+	history := instance.GetStatusHistory()
+	if len(history) != 1 {
+		t.Fatalf("status history length = %d, want 1", len(history))
+	}
+	if got := history[0].GetStatus(); got != "Error" {
+		t.Fatalf("history status = %q, want %q", got, "Error")
+	}
+	if got := history[0].GetMessage(); got != clientSafeInstanceError {
+		t.Fatalf("history message = %q, want %q", got, clientSafeInstanceError)
+	}
+}
+
+func TestToSDKInstanceKeepsNormalDeletionStatus(t *testing.T) {
+	instance := toSDKInstance(state.Instance{
+		Status: "deleting",
+		VM:     &state.VMState{},
+	})
+
+	if got := instance.GetStatus(); got != "Terminating" {
+		t.Fatalf("instance status = %q, want %q", got, "Terminating")
+	}
+	if history := instance.GetStatusHistory(); len(history) != 0 {
+		t.Fatalf("status history = %+v, want empty", history)
+	}
+}

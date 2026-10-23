@@ -12,6 +12,8 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/state"
 )
 
+const clientSafeInstanceError = "Instance operation failed"
+
 func toSDKInstance(row state.Instance) nicosdk.Instance {
 	instance := nicosdk.NewInstance()
 	instance.SetId(row.ID)
@@ -39,8 +41,8 @@ func toSDKInstance(row state.Instance) nicosdk.Instance {
 	instance.SetStatus(nicosdk.InstanceStatus(instanceStatus(row.Status)))
 	if row.VM != nil && row.VM.ErrorReason != "" {
 		detail := nicosdk.NewStatusDetail()
-		detail.SetStatus(instanceStatus(row.Status))
-		detail.SetMessage(row.VM.ErrorReason)
+		detail.SetStatus("Error")
+		detail.SetMessage(clientSafeInstanceError)
 		detail.SetCreated(row.UpdatedAt)
 		detail.SetUpdated(row.UpdatedAt)
 		instance.SetStatusHistory([]nicosdk.StatusDetail{*detail})
