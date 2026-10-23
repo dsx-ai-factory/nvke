@@ -405,6 +405,7 @@ func TestDeploy_EnablesPostInitCNI(t *testing.T) {
 	}
 }
 
+// TestDeploy_ControllerValuesCarryOIDCProviders verifies providers reach Helm without changing embedded values.
 func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	embedded, err := fs.ReadFile(manifestsFS, cweValuesFile)
 	if err != nil {
@@ -476,6 +477,7 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	}
 }
 
+// TestDeploy_OmitsUnsetOIDCDiscoveryURL verifies an unset override preserves default discovery behavior.
 func TestDeploy_OmitsUnsetOIDCDiscoveryURL(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.OIDCProviders = []sitespec.OIDCProvider{{Name: "corp", IssuerURL: "https://login.example.com"}}

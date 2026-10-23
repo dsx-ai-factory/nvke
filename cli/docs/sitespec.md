@@ -476,7 +476,7 @@ A non-empty list requires `cluster.k8sVersion` `1.34.0` or newer and contains at
 | `groupsPrefix` | no | Text the API server puts in front of each group. The reserved prefixes are the same as for `usernamePrefix`. |
 | `requiredClaims` | no | Map of claim name to the value that claim must hold. |
 | `caBundle` | yes | PEM-encoded certificates the API server trusts for this provider. |
-| `discoveryURL` | no | Full HTTPS discovery URL, including the discovery document path. Must differ from `issuerURL` and be unique in the list. Must not contain credentials, a query, a fragment, or surrounding whitespace. Omit or set to `""` to fetch discovery from `issuerURL` followed by `/.well-known/openid-configuration`. |
+| `discoveryURL` | no | Full HTTPS discovery URL, including the discovery document path. Must differ from `issuerURL` and be unique in the list. Must not contain credentials, a query, a fragment, or surrounding whitespace. An explicit port must be between 1 and 65535. Omit or set to `""` to fetch discovery from `issuerURL` followed by `/.well-known/openid-configuration`. |
 
 When discovery is hosted separately from the issuer, set both URLs:
 

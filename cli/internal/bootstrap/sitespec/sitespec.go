@@ -706,6 +706,7 @@ func (v *validator) checkNode(path string, n Node, names, ips map[string]int) {
 	}
 }
 
+// checkOIDCProviders records invalid provider settings and duplicate names or URLs.
 func (v *validator) checkOIDCProviders(c Cluster) {
 	if len(c.OIDCProviders) == 0 {
 		return
@@ -775,6 +776,7 @@ func (v *validator) checkOIDCProviders(c Cluster) {
 	}
 }
 
+// checkOIDCDiscoveryURL records discovery overrides that cannot be used by kube-apiserver.
 func (v *validator) checkOIDCDiscoveryURL(path, issuerURL, discoveryURL string) {
 	if strings.TrimSpace(discoveryURL) != discoveryURL {
 		v.addf("%s must not contain leading or trailing whitespace", path)
@@ -784,6 +786,13 @@ func (v *validator) checkOIDCDiscoveryURL(path, issuerURL, discoveryURL string) 
 	if err != nil {
 		v.addf("%s %q is not a URL: %v", path, discoveryURL, err)
 		return
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			v.addf("%s port %q must be between 1 and 65535", path, port)
+			return
+		}
 	}
 	switch {
 	case u.Scheme != "https" || u.Hostname() == "":

@@ -316,6 +316,7 @@ func TestValidate_OIDCProviders(t *testing.T) {
 	}
 }
 
+// TestLoadOIDCDiscoveryURL verifies accepted overrides survive loading and invalid URLs fail validation.
 func TestLoadOIDCDiscoveryURL(t *testing.T) {
 	const discoveryURL = "https://identity.example.com/.well-known/openid-configuration"
 	tests := []struct {
@@ -326,6 +327,12 @@ func TestLoadOIDCDiscoveryURL(t *testing.T) {
 		{name: "omitted"},
 		{name: "separate discovery host", discoveryURL: discoveryURL},
 		{name: "same issuer host with full discovery path", discoveryURL: "https://login.example.com/.well-known/openid-configuration"},
+		{name: "minimum port", discoveryURL: "https://identity.example.com:1/discovery"},
+		{name: "maximum port", discoveryURL: "https://identity.example.com:65535/discovery"},
+		{name: "IPv6 with port", discoveryURL: "https://[2001:db8::1]:443/discovery"},
+		{name: "zero port", discoveryURL: "https://identity.example.com:0/discovery", wantErr: "must be between 1 and 65535"},
+		{name: "port too large", discoveryURL: "https://identity.example.com:65536/discovery", wantErr: "must be between 1 and 65535"},
+		{name: "port overflows integer", discoveryURL: "https://identity.example.com:999999999999999999999999999999/discovery", wantErr: "must be between 1 and 65535"},
 		{name: "http", discoveryURL: "http://identity.example.com/discovery", wantErr: "must be an absolute https URL"},
 		{name: "relative URL", discoveryURL: "/.well-known/openid-configuration", wantErr: "must be an absolute https URL"},
 		{name: "missing hostname", discoveryURL: "https://:443/discovery", wantErr: "must be an absolute https URL"},
@@ -362,6 +369,7 @@ func TestLoadOIDCDiscoveryURL(t *testing.T) {
 	}
 }
 
+// TestValidateOIDCDuplicateDiscoveryURLs verifies only nonempty discovery overrides must be unique.
 func TestValidateOIDCDuplicateDiscoveryURLs(t *testing.T) {
 	const discoveryURL = "https://identity.example.com/.well-known/openid-configuration"
 	tests := []struct {
