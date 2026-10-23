@@ -99,6 +99,14 @@ const kubeVIPLease = "plndr-cp-lock"
 // namespace select only their own pods.
 const siteRunLabel = "e2e.nvidia.com/site-run"
 
+// The probe pods' roles, apart from their servers', so that a Service selects
+// no probe: a running probe counts as a ready endpoint, and traffic sent
+// through the Service would otherwise reach a pod that serves nothing.
+const (
+	siteTrafficClientRole  = "traffic-client"
+	siteHeadlessClientRole = "headless-client"
+)
+
 type workloadVersion struct {
 	namespace, name, version string
 }
@@ -477,7 +485,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 				podCIDRURL(service.Name, podCIDRServerPort),
 				podCIDRURL(service.Spec.ClusterIP, podCIDRServerPort),
 			}
-			probe := siteProbePod(namespace, image, labels, "traffic", node, urls)
+			probe := siteProbePod(namespace, image, labels, siteTrafficClientRole, node, urls)
 			_, message, err := kube.RunPodWithLogs(ctx, c, clientset, probe, podCIDRProbeContainer, siteCreateTimeout)
 			deleteOnExit(ctx, c, probe)
 			Expect(err).NotTo(HaveOccurred(), "traffic from %s", node.Name)
@@ -546,7 +554,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 			return nil
 		}).WithContext(ctx).WithTimeout(siteCreateTimeout).WithPolling(2 * time.Second).Should(Succeed())
 
-		probe := siteProbePod(namespace, image, labels, "headless", targets[0], []string{podCIDRURL(statefulSet.Name+"-0."+service.Name, podCIDRServerPort)})
+		probe := siteProbePod(namespace, image, labels, siteHeadlessClientRole, targets[0], []string{podCIDRURL(statefulSet.Name+"-0."+service.Name, podCIDRServerPort)})
 		_, _, err := kube.RunPodWithLogs(ctx, c, clientset, probe, podCIDRProbeContainer, siteCreateTimeout)
 		deleteOnExit(ctx, c, probe)
 		Expect(err).NotTo(HaveOccurred())
