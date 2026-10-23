@@ -60,6 +60,7 @@ on:
       # The suite builds the controller from controller/Dockerfile, so a controller-only
       # change has to run it too.
       - 'controller/**'
+      - 'auth/**'
       # The controller image uses the root Go workspace, so changes to its
       # workspace files can break the image as well as controller source changes.
       - 'go.work'

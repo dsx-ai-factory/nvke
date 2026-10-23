@@ -549,7 +549,7 @@ license-policy-check: $(GO_LICENSES) ## Verify every third-party dependency uses
 	@# that genuinely need ignoring are named explicitly.
 	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO_LICENSES) check ./cmd/worker ../cluster-api-provider-provisioned/cmd/manager \
 		--allowed_licenses=$(ALLOWED_LICENSES) \
-		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nvke/agent,github.com/dsx-ai-factory/nvke/management-engine,github.com/dsx-ai-factory/nvke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
+		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nvke/agent,github.com/dsx-ai-factory/nvke/auth,github.com/dsx-ai-factory/nvke/management-engine,github.com/dsx-ai-factory/nvke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
 
 .PHONY: notices
 notices: $(GO_LICENSES) ## Regenerate THIRD_PARTY_NOTICES.md for the released worker and provider manager binaries.

@@ -91,7 +91,7 @@ func envOrDefault(key, def string) string {
 
 // These specs talk to the forwarder directly rather than through nvke.Client, so
 // they carry no NVKE credential and need none: all three paths are on the
-// anonymous surface in internal/auth/routes.go. If /api/version ever stops
+// anonymous surface in auth/authn/routes.go. If /api/version ever stops
 // being anonymous, this file goes red before anything else does.
 var _ = Describe("controller management-plane health", Label("health"), func() {
 	var (

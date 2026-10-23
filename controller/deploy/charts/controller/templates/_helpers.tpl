@@ -206,7 +206,7 @@ Called from deployment.yaml rather than from configmap-auth.yaml, because that
 template is itself gated on create and so cannot see a config set without it.
 
 Emits nothing. The shallow presence checks on audiences and issuers stop here:
-every other rule belongs to internal/auth/config.go, whose errors name the field
+every other rule belongs to auth/authn/config.go, whose errors name the field
 at fault.
 */}}
 {{- define "controller.apiAuth.validate" -}}
@@ -246,5 +246,28 @@ at fault.
 {{- end -}}
 {{- end -}}
 {{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+The authorization bundle's mount path, fixed by the chart for the same reason the
+authentication mount path is: nothing outside the pod observes it, so making it a
+value would only create a way for the mount and AUTHZ_BUNDLE_PATH to disagree.
+*/}}
+{{- define "controller.apiAuthz.mountPath" -}}
+/etc/nke/authz
+{{- end }}
+
+{{/*
+Refuse apiAuthz.configMap and apiAuthz.bundle, with any subkey. A values file
+written for them gets an error naming existingConfigMap rather than a render
+that silently mounts a bundle other than the one the operator wrote down.
+
+Called from deployment.yaml. Emits nothing.
+*/}}
+{{- define "controller.apiAuthz.validate" -}}
+{{- $az := .Values.apiAuthz -}}
+{{- if or (hasKey $az "configMap") (hasKey $az "bundle") -}}
+{{- fail "apiAuthz.configMap and apiAuthz.bundle are not values of this chart. Put your bundle in a ConfigMap you manage and set apiAuthz.existingConfigMap to its name." -}}
 {{- end -}}
 {{- end }}

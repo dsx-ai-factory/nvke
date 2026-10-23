@@ -1,0 +1,33 @@
+[
+  {
+    "uid": { "type": "NKE::Role", "id": "reader" },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": { "type": "NKE::Role", "id": "operator" },
+    "attrs": {},
+    "parents": [{ "type": "NKE::Role", "id": "reader" }]
+  },
+  {
+    "uid": { "type": "NKE::Role", "id": "nodeOperator" },
+    "attrs": {},
+    "parents": [{ "type": "NKE::Role", "id": "reader" }]
+  },
+
+  {
+    "uid": { "type": "NKE::Principal", "id": "system:serviceaccount:nke-system:nke-cli" },
+    "attrs": {},
+    "parents": [{ "type": "NKE::Role", "id": "reader" }]
+  },
+  {
+    "uid": { "type": "NKE::Principal", "id": "spiffe://nvidia.com/ns/nke-system/sa/nke-controller" },
+    "attrs": {},
+    "parents": [{ "type": "NKE::Role", "id": "operator" }]
+  },
+  {
+    "uid": { "type": "NKE::Principal", "id": "spiffe://nvidia.com/ns/nke-system/sa/node-lifecycle" },
+    "attrs": {},
+    "parents": [{ "type": "NKE::Role", "id": "nodeOperator" }]
+  }
+]
