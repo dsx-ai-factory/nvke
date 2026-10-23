@@ -9,13 +9,37 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dsx-ai-factory/nvke/cli/internal/config"
 	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 )
 
 const (
 	otlpEndpointFlag = "otlp-endpoint"
 	otlpInsecureFlag = "otlp-insecure"
+
+	// bootstrapExportAnnotation marks "bootstrap site", whose --otlp-endpoint and
+	// --otlp-insecure flags say where its own telemetry goes. "config set-site"
+	// has flags of the same names, which only name an endpoint to store.
+	bootstrapExportAnnotation = "nvkectl/bootstrap-export"
 )
+
+// isBootstrapExport reports whether cmd is "bootstrap site", whose
+// --otlp-endpoint and --otlp-insecure flags choose where its own telemetry goes.
+func isBootstrapExport(cmd *cobra.Command) bool {
+	return cmd.Annotations[bootstrapExportAnnotation] == "true"
+}
+
+// siteCommands are the top-level commands that load a site, so their telemetry
+// goes to that site's OTLP endpoint. A command such as `create ... --dry-run=client`
+// exports there although it may contact nothing, because the lookup cannot see
+// flag values. So does `get bootstrap-manifest`, which is under "get".
+var siteCommands = map[string]bool{ //nolint:gochecknoglobals // constant lookup table
+	"create":    true,
+	"delete":    true,
+	"deprecate": true,
+	"get":       true,
+	"patch":     true,
+}
 
 // otlpSource reads one source of OTLP configuration. ok is false when the
 // source names no endpoint. strict is true when an error should fail the
@@ -24,7 +48,7 @@ type otlpSource func(cmd *cobra.Command) (cfg telemetry.OTLPConfig, ok, strict b
 
 // otlpSources are the places OTLP configuration comes from, in order of
 // precedence: the first that names an endpoint wins.
-var otlpSources = []otlpSource{otlpFromFlags, otlpFromEnv} //nolint:gochecknoglobals // ordered lookup table
+var otlpSources = []otlpSource{otlpFromFlags, otlpFromSite, otlpFromEnv} //nolint:gochecknoglobals // ordered lookup table
 
 // resolveOTLP returns the OTLP configuration for the command about to run, from
 // the first source that names an endpoint. strict is true when that endpoint,
@@ -40,15 +64,14 @@ func resolveOTLP(cmd *cobra.Command) (cfg telemetry.OTLPConfig, ok, strict bool,
 	return telemetry.OTLPConfig{}, false, false, nil
 }
 
-// otlpFromFlags reads --otlp-endpoint and --otlp-insecure, which only
-// "bootstrap site" registers. The endpoint must be reachable from the temporary
-// controller in the bootstrap cluster, so a loopback address is rejected.
+// otlpFromFlags reads --otlp-endpoint and --otlp-insecure on "bootstrap site".
+// The endpoint must be reachable from the temporary controller in the bootstrap
+// cluster, so a loopback address is rejected.
 func otlpFromFlags(cmd *cobra.Command) (telemetry.OTLPConfig, bool, bool, error) {
-	endpointFlag := cmd.Flags().Lookup(otlpEndpointFlag)
-	if endpointFlag == nil {
+	if !isBootstrapExport(cmd) {
 		return telemetry.OTLPConfig{}, false, false, nil
 	}
-	endpoint := endpointFlag.Value.String()
+	endpoint, _ := cmd.Flags().GetString(otlpEndpointFlag)
 	insecure, _ := cmd.Flags().GetBool(otlpInsecureFlag)
 	if endpoint == "" {
 		// No endpoint from the flags, whether the flag was left out or given empty.
@@ -73,6 +96,50 @@ func otlpFromFlags(cmd *cobra.Command) (telemetry.OTLPConfig, bool, bool, error)
 	cfg := telemetry.OTLPConfig{Endpoint: parsed.Host, Insecure: parsed.Insecure || insecure, Headers: telemetry.HeadersFromEnv()}
 	return cfg, true, true, nil
 }
+
+// otlpFromSite reads the OTLP endpoint of the site a command uses: the one
+// --site names, else the current site. Only the commands in siteCommands have
+// one. A config that cannot be read or a site that is missing gives no
+// endpoint and no error: the command reports that itself, and export is best
+// effort. A bad endpoint is not strict, because it was configured earlier and
+// not typed on this command line. Headers come from the environment, as the
+// config never stores them.
+func otlpFromSite(cmd *cobra.Command) (telemetry.OTLPConfig, bool, bool, error) {
+	if !siteCommands[topLevel(cmd)] {
+		return telemetry.OTLPConfig{}, false, false, nil
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return telemetry.OTLPConfig{}, false, false, nil
+	}
+	siteCfg, err := resolveSiteConfig(cfg)
+	if err != nil || siteCfg.OTLPEndpoint == "" {
+		return telemetry.OTLPConfig{}, false, false, nil
+	}
+	parsed, err := telemetry.ParseEndpoint(siteCfg.OTLPEndpoint)
+	if err != nil {
+		name := site
+		if name == "" {
+			name = cfg.CurrentSite
+		}
+		return telemetry.OTLPConfig{}, false, false, &siteEndpointError{site: name, err: err}
+	}
+	return telemetry.OTLPConfig{
+		Endpoint: parsed.Host,
+		Insecure: parsed.Insecure || siteCfg.OTLPInsecure,
+		Headers:  telemetry.HeadersFromEnv(),
+	}, true, false, nil
+}
+
+// siteEndpointError is a stored site endpoint that cannot be used. It carries
+// the site name so the warning can name the source of the bad value.
+type siteEndpointError struct {
+	site string
+	err  error
+}
+
+func (e *siteEndpointError) Error() string { return "site OTLP endpoint: " + e.err.Error() }
+func (e *siteEndpointError) Unwrap() error { return e.err }
 
 // otlpFromEnv reads the standard OTEL_EXPORTER_OTLP_* variables. A problem with
 // them never fails the command.

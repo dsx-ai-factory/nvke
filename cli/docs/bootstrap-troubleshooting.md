@@ -108,6 +108,10 @@ address such as `https://<COLLECTOR_HOST>:4318/v1/traces`.
 If the collector cannot be reached, nvkectl prints one warning and the command
 still succeeds.
 
+Commands that use a site, such as `get clusters`, send to the endpoint stored
+with `nvkectl config set-site --otlp-endpoint`; see
+[Export a site's telemetry](user-flow.md#export-a-sites-telemetry).
+
 ### The diagnostics directory
 
 Bootstrap attempts to collect diagnostics before cleaning up a failed

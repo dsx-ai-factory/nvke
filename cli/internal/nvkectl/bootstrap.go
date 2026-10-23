@@ -214,6 +214,7 @@ site spec file format.`,
 	cmd.Flags().StringVar(&opts.provisionedProviderImage, "provisioned-provider-image", "",
 		"Provisioned-provider image to deploy (overrides NVKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)")
 	// resolveOTLP reads these two through the flag set, before RunE; they have no field.
+	cmd.Annotations = map[string]string{bootstrapExportAnnotation: "true"}
 	cmd.Flags().String(otlpEndpointFlag, "",
 		"OTLP/gRPC endpoint, a host:port or an http(s):// URL (http implies --"+otlpInsecureFlag+"), that receives this run's spans and log records. "+
 			"The temporary controller in the bootstrap cluster exports there too, so a loopback address is rejected")

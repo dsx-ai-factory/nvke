@@ -11,7 +11,7 @@ NVKE control-plane CLI. Bootstraps management clusters and manages tenant cluste
 - **Site bootstrap** — `nvkectl bootstrap site` creates an ephemeral Kind cluster on nerdctl/containerd, deploys Postgres, Temporal, SPIRE (skipped with `--disable-mtls`, which dials the agents in plaintext), Cluster API and CWE onto it, then drives kubeadm init/join across pre-provisioned nodes, or machines CAPNICo allocates with `infra.provider: nico`, via `nvke-agent` gRPC; no SSH required, and Docker is not supported
 - **Cluster lifecycle** — `nvkectl get/create/patch/delete clusters` manages tenant clusters through the CWE API
 - **Site spec** — `nvkectl generate sitespec` writes a site spec from a node CSV; `nvkectl bootstrap site --dry-run` validates one without touching a node
-- **Config** — `nvkectl config set-site` points the CLI at an NVKE management plane.
+- **Config** — `nvkectl config set-site` points the CLI at an NVKE management plane and, with `--otlp-endpoint`, at the OTLP/gRPC endpoint that receives the telemetry of commands that use the site.
 
 ## Installation
 
@@ -58,7 +58,9 @@ nvkectl bootstrap site -f sitespec.yaml --otlp-endpoint 192.0.2.10:4317 --otlp-i
 
 # Point the CLI at a management plane
 nvkectl config set-site --url https://cwe.example.com --name default \
-  --kubeconfig ~/.kube/site.kubeconfig
+  --kubeconfig ~/.kube/site.kubeconfig                  # replaces the entry and makes it current
+nvkectl config set-site --url https://cwe.example.com --name default \
+  --kubeconfig ~/.kube/site.kubeconfig --otlp-endpoint <COLLECTOR_HOST>:4317  # also export this site's commands' spans and logs
 nvkectl config use-site <name>          # switch between configured sites
 nvkectl config view                     # print the config
 nvkectl --site <name> get clusters      # override the active site for one call
