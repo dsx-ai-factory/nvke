@@ -394,49 +394,18 @@ jobs:
           go run ./release/cmd/qualify "${args[@]}"
 
       # The plan as tables on the run page, so what will be qualified can be
-      # read without opening plan.json. An entry shows its url when it has one
-      # and its version when it does not, and says when a person's override
-      # chose it. The streams are one row each, with a column for every value
-      # resolved per stream.
+      # read without opening plan.json. An entry's version and url are separate
+      # columns, and an entry says when a person's override chose it. Each
+      # stream's own dependencies, its OS images among them, are listed under
+      # that stream.
       - name: Summarise the plan
         shell: bash
         run: |
           set -Eeuo pipefail
-          jq -r --arg run "${GITHUB_RUN_ID}" --arg dry "${DRY_RUN}" '
-            (.overrides // []) as $over
-            | def cell($e): if $e.url then ($e.url | sub("^https?://[^/]+/"; "")) else ($e.version // "") end;
-              def short($e): if $e.url then ($e.url | split("/") | last) else ($e.version // "") end;
-              def row($e): "| \($e.name) | `\(cell($e))` | \(if ($over | index($e.name)) then "yes" else "" end) |";
-              "### Qualification plan",
-              "",
-              "| | |",
-              "|---|---|",
-              "| nke | `\(.version)` |",
-              "| scope | `\(.scope)` |",
-              "| overrides | \(if ($over | length) == 0 then "none" else ($over | map("`" + . + "`") | join(", ")) end) |",
-              "| mode | \(if $dry == "true" then "dry run, no machine is taken" else "run" end) |",
-            "| combinations | \(.combinations | length) |",
-              "| streams | \([.combinations[].streams | length] | add) |",
-              "| plan | artifact `qualify-plan-\($run)` |",
-              "",
-              (.combinations[] |
-                ([.streams[].dependencies[].name] | reduce .[] as $n ([]; if index($n) then . else . + [$n] end)) as $cols
-                | "#### Combination `\(.id)`",
-                "",
-                "| Component | Version | Overridden |",
-                "|---|---|---|",
-                (.components[] | row(.)),
-                "",
-                "| Dependency | Value | Overridden |",
-                "|---|---|---|",
-                (.dependencies[] | row(.)),
-                "",
-                "| Stream | Arch | GPU | Ubuntu | Kubernetes minor | \($cols | join(" | ")) |",
-                "|---|---|---|---|---|\($cols | map("---|") | join(""))",
-                (.streams[] as $s
-                  | "| \($s.name) | \($s.capabilities.arch) | \($s.capabilities.gpu // "") | \($s.capabilities.ubuntu // "") | \($s.capabilities.kube // "") | \($cols | map(. as $c | ([$s.dependencies[] | select(.name == $c)] | first) as $e | if $e then "`\(short($e))`" else "" end) | join(" | ")) |"),
-                "")
-          ' plan.json >> "${GITHUB_STEP_SUMMARY}"
+          go run ./release/cmd/qualify summary plan \
+            --plan plan.json \
+            --dry-run="${DRY_RUN}" \
+            --artifact "qualify-plan-${GITHUB_RUN_ID}" >> "${GITHUB_STEP_SUMMARY}"
 
       # One entry per stream of every combination, carrying what that lane
       # needs.
@@ -1799,3 +1768,91 @@ jobs:
         if: always()
         shell: bash
         run: rm -rf -- "${RUNNER_TEMP}/tbot"
+
+  # How every stream went, as one card on the run page below the plan's: a row
+  # for each stream, then each stream's specs and the failure Ginkgo recorded
+  # for anything that did not pass. A job of its own because the run page gives
+  # each job one card, and the lanes are a matrix of them.
+  #
+  # Read from the JUnit report in each lane's run log, which "Withhold
+  # credentials from the run log" scrubbed before the upload, because a failure
+  # can name the jump host. A re-run uploads its run log under its own attempt;
+  # the latest attempt of each stream is the one shown. A stream that left no
+  # report is shown as having none.
+  tests:
+    name: tests
+    needs: [plan, qualify-run]
+    if: >-
+      !cancelled() &&
+      needs.plan.result == 'success' &&
+      needs.plan.outputs.dry-run != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The run's conclusion is the qualification's verdict, and a card that did
+    # not render says nothing about the release.
+    continue-on-error: true
+    permissions:
+      contents: read
+      # Lists and downloads the lanes' run logs.
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      - name: Download the plan
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: qualify-plan-${{ github.run_id }}
+
+      # Through the API rather than download-artifact, which unpacks a pattern
+      # that matches one artifact without the directory that names it, and the
+      # name is the only place the stream is recorded.
+      - name: Summarise the tests
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          listing="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.expired | not) | [.id, .name] | @tsv')"
+
+          # forge-site-<stage>-<stream>-<run id>-<attempt>, as "Upload the run
+          # log" names it. The stage is one word, so what is left before the
+          # run id is the stream.
+          declare -A id_of=() attempt_of=()
+          while IFS=$'\t' read -r id name; do
+            [[ "${name}" =~ ^forge-site-[a-z]+-(.+)-${GITHUB_RUN_ID}-([0-9]+)$ ]] || continue
+            stream="${BASH_REMATCH[1]}"
+            attempt="${BASH_REMATCH[2]}"
+            if [ "${attempt}" -gt "${attempt_of[${stream}]:-0}" ]; then
+              id_of[${stream}]="${id}"
+              attempt_of[${stream}]="${attempt}"
+            fi
+          done <<< "${listing}"
+
+          reports=()
+          while IFS= read -r stream; do
+            [ -n "${id_of[${stream}]:-}" ] || continue
+            dir="run-logs/${stream}"
+            mkdir -p "${dir}"
+            if ! gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id_of[${stream}]}/zip" > "${dir}.zip" ||
+               ! unzip -q "${dir}.zip" -d "${dir}"; then
+              echo "::warning::could not download the run log of ${stream}; the summary shows it as having no report"
+              continue
+            fi
+            junit="$(find "${dir}" -name qualify-e2e.junit.xml -print -quit)"
+            [ -z "${junit}" ] || reports+=(--report "${stream}=${junit}")
+          done < <(jq -r '[.combinations[].streams[].name] | unique[]' plan.json)
+
+          go run ./release/cmd/qualify summary tests --plan plan.json "${reports[@]}" >> "${GITHUB_STEP_SUMMARY}"
