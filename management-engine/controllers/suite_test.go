@@ -6,6 +6,8 @@
 package controllers
 
 import (
+	"context"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
@@ -22,9 +24,12 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/cluster-api-provider-nico/pkg/test/fixture"
 	internalv1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+	"github.com/dsx-ai-factory/nvke/management-engine/internal/fake"
+	"github.com/dsx-ai-factory/nvke/management-engine/internal/nvkecontroller"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -73,21 +78,42 @@ func controllerCaseSet(description, dirPrefix string, defineSteps func(*fixture.
 		Setup: func(ctx SpecContext, tc *fixture.Case, _ fixture.CaseSet) {
 			tc.Client = client.WithFieldOwner(tc.Client, "management-engine-envtest")
 			Expect(tc.CreateObjects(ctx)).To(Succeed())
-			setupWithManager(ctx, tc)
+			backend := fake.New()
+			if input, exists := tc.Input("input_nvke_controller.yaml"); exists {
+				Expect(backend.SeedFromYAML(input)).To(Succeed())
+			}
+			if status, exists := tc.Input("input_status.yaml"); exists {
+				var source internalv1.NVKECluster
+				Expect(tc.Client.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: testCluster}, &source)).To(Succeed())
+				Expect(yaml.UnmarshalStrict([]byte(status), &source.Status)).To(Succeed())
+				Expect(tc.Client.Status().Update(ctx, &source)).To(Succeed())
+			}
+			server := httptest.NewServer(backend.Handler())
+			DeferCleanup(server.Close)
+			nvkeControllerClient, err := nvkecontroller.New(nvkecontroller.Config{Endpoint: server.URL})
+			Expect(err).NotTo(HaveOccurred())
+			tc.AddGolden("expected_nvke_controller.yaml", func(context.Context) (string, error) {
+				return backend.Dump()
+			})
+			setupWithManager(ctx, tc, nvkeControllerClient)
 		},
 		DefineSteps: defineSteps,
 	}
 }
 
-func setupWithManager(ctx SpecContext, tc *fixture.Case) {
+func setupWithManager(ctx SpecContext, tc *fixture.Case, nvkeControllerClient NVKEControllerClient) {
 	mgr, err := ctrl.NewManager(tc.Config, ctrl.Options{
 		Scheme:     tc.Scheme,
 		Metrics:    metricsserver.Options{BindAddress: "0"},
 		Controller: config.Controller{SkipNameValidation: new(true)},
 	})
 	Expect(err).NotTo(HaveOccurred())
-	reconciler := &NVKEClusterReconciler{Client: mgr.GetClient(), PollInterval: pollInterval}
-	setupNVKEControllerFixture(ctx, tc, reconciler)
+	reconciler := &NVKEClusterReconciler{
+		Client:                     mgr.GetClient(),
+		NVKEController:             nvkeControllerClient,
+		PollInterval:               pollInterval,
+		InfraTemplateConfigMapName: "infra-template",
+	}
 	Expect(reconciler.SetupWithManager(mgr)).To(Succeed())
 	tc.StartManager(ctx, mgr)
 }

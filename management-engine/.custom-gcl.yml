@@ -15,3 +15,6 @@ plugins:
   - module: "sigs.k8s.io/logtools"
     import: "sigs.k8s.io/logtools/logcheck/gclplugin"
     version: v0.10.1
+  - module: "github.com/dsx-ai-factory/nvke/management-engine"
+    import: "github.com/dsx-ai-factory/nvke/management-engine/tools/deferredpatch"
+    path: .

@@ -193,6 +193,8 @@ data:
             # the namespace, nke-e2e above included.
             - namespace: nke-clients
               name: nke-client
+            - namespace: management-engine-system
+              name: management-engine-controller-manager
       # SPIRE is omitted because it is not reachable yet, and an unreachable
       # issuer is a startup failure in enforcing mode. Two things are missing: the
       # discovery provider's serving certificate does not carry the in-cluster

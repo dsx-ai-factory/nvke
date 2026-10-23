@@ -72,6 +72,7 @@ _builtin_provider_dirs = {
     "capi-syscmp": os.path.join(config.main_dir, "hack/capi-syscmp-provider"),
     "dsx-identity-exchange": os.path.join(config.main_dir, "hack/dsx-identity-exchange-mock"),
     "dsx-imds-attestation": os.path.join(config.main_dir, "hack/dsx-imds-attestation"),
+    "management-engine": os.path.join(config.main_dir, "../management-engine"),
 }
 
 _tilt_config = read_json("tilt_config.json", default={})

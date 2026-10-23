@@ -11,13 +11,11 @@ import (
 	"fmt"
 	"os"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -54,7 +52,8 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var metricsCertPath, metricsCertName, metricsCertKey string
-	var nvkeControllerEndpoint, nvkeControllerTokenFile, nvkeControllerBindingsPath string
+	var nvkeControllerEndpoint, nvkeControllerTokenFile string
+	var infraTemplateConfigMapName string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metric endpoint binds to; 0 disables it.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -83,7 +82,7 @@ func main() {
 		&nvkeControllerEndpoint,
 		"nvke-controller-endpoint",
 		"",
-		"NVKE controller REST API base URL; requires --nvke-controller-bindings",
+		"NVKE controller REST API base URL",
 	)
 	flag.StringVar(
 		&nvkeControllerTokenFile,
@@ -91,11 +90,12 @@ func main() {
 		"",
 		"File containing the NVKE controller bearer token",
 	)
+
 	flag.StringVar(
-		&nvkeControllerBindingsPath,
-		"nvke-controller-bindings",
+		&infraTemplateConfigMapName,
+		"infra-template-configmap",
 		"",
-		"JSON provisioning bindings; requires --nvke-controller-endpoint",
+		"ConfigMap name for the infrastructure request body template",
 	)
 
 	zapOpts := zap.Options{}
@@ -127,11 +127,12 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
 
-	nvkeControllerClient, bindings, err := configureNVKEController(
-		nvkeControllerEndpoint,
-		nvkeControllerTokenFile,
-		nvkeControllerBindingsPath,
-	)
+	if infraTemplateConfigMapName == "" {
+		setupLog.Error(nil, "--infra-template-configmap is required")
+		os.Exit(1)
+	}
+
+	nvkeControllerClient, err := configureNVKEController(nvkeControllerEndpoint, nvkeControllerTokenFile)
 	if err != nil {
 		setupLog.Error(err, "configure NVKE controller access")
 		os.Exit(1)
@@ -150,9 +151,6 @@ func main() {
 		LeaderElectionNamespace: leaderElectionNamespace,
 		LeaderElectionID:        "management-engine.nke.nvidia.com",
 		Cache:                   cache.Options{DefaultNamespaces: watchNamespaces},
-		Client: client.Options{
-			Cache: &client.CacheOptions{DisableFor: []client.Object{&corev1.Secret{}}},
-		},
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -161,9 +159,9 @@ func main() {
 	ctx := ctrl.SetupSignalHandler()
 
 	if err := (&controllers.NVKEClusterReconciler{
-		Client:         mgr.GetClient(),
-		NVKEController: nvkeControllerClient,
-		Bindings:       bindings,
+		Client:                     mgr.GetClient(),
+		NVKEController:             nvkeControllerClient,
+		InfraTemplateConfigMapName: infraTemplateConfigMapName,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NVKECluster")
 		os.Exit(1)
@@ -186,25 +184,17 @@ func main() {
 	}
 }
 
-// configureNVKEController leaves reconciliation inactive unless an endpoint and bindings are supplied.
-func configureNVKEController(
-	endpoint string,
-	tokenFile string,
-	bindingsPath string,
-) (controllers.NVKEControllerClient, []controllers.NVKEControllerBinding, error) {
-	if endpoint == "" && tokenFile == "" && bindingsPath == "" {
-		return nil, nil, nil
+// configureNVKEController leaves reconciliation inactive unless an endpoint is supplied.
+func configureNVKEController(endpoint, tokenFile string) (controllers.NVKEControllerClient, error) {
+	if endpoint == "" && tokenFile == "" {
+		return nil, nil
 	}
-	if endpoint == "" || bindingsPath == "" {
-		return nil, nil, fmt.Errorf("--nvke-controller-endpoint and --nvke-controller-bindings must be provided together")
-	}
-	bindings, err := controllers.LoadNVKEControllerBindings(bindingsPath)
-	if err != nil {
-		return nil, nil, err
+	if endpoint == "" {
+		return nil, fmt.Errorf("--nvke-controller-token-file requires --nvke-controller-endpoint")
 	}
 	service, err := nvkecontroller.New(nvkecontroller.Config{Endpoint: endpoint, TokenFile: tokenFile})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return service, bindings, nil
+	return service, nil
 }

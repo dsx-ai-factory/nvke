@@ -167,47 +167,12 @@ require-host-context:
 require-state-context:
 	@test -n "$(STATE_CONTEXT)" || { echo 'Set STATE_CONTEXT to the datastore cluster'; exit 1; }
 
-DEV_NAME ?= nvke
-KIND_NODE_IMAGE ?= kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
 TILT_PORT ?= 10351
-export DEV_NAME KIND_NODE_IMAGE TILT_PORT
+export TILT_PORT
 
-.PHONY: dev-up dev dev-sync dev-refresh dev-down test-install
-dev-up: ## Create or reuse the named development environment and prepare credentials.
-	bash hack/dev.sh up
-
-dev: ## Check Tilt, prepare or reuse the development clusters, then start Tilt.
-	bash hack/dev.sh check
-	$(MAKE) dev-up
-	bash hack/dev.sh tilt
-
-dev-sync: ## Update datastore CRDs and RBAC without refreshing credentials.
-	bash hack/dev.sh sync
-
-dev-refresh: ## Renew datastore credentials and report their expiration.
-	bash hack/dev.sh refresh
-
-dev-down: ## Delete this environment's clusters and local credentials; stop Tilt first.
-	bash hack/dev.sh down
-
-test-install: ## Test the runtime in the prepared environment; run before Tilt.
-	IMG="$(IMG)" bash hack/dev.sh test
-
-.PHONY: dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration
-dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration: DEV_NAME = nvke-controller
-dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration: TILT_PORT = 10353
-dev-nvke-controller: ## Start the NVKE controller and management-engine in one Tilt dashboard on dedicated Kind clusters.
-	CAPI_VERSION="$(CAPI_VERSION)" bash hack/dev.sh nvke-controller-up
-	bash hack/dev.sh nvke-controller-tilt
-
-dev-nvke-controller-up: ## Prepare the dedicated NVKE controller integration environment without starting Tilt.
-	CAPI_VERSION="$(CAPI_VERSION)" bash hack/dev.sh nvke-controller-up
-
-test-nvke-controller-integration: ## Run the Ginkgo integration suite against the running combined environment.
-	bash hack/dev.sh nvke-controller-test
-
-dev-nvke-controller-down: ## Remove the dedicated NVKE controller environment and credentials; stop Tilt first.
-	bash hack/dev.sh nvke-controller-down
+.PHONY: tilt-up
+tilt-up: ## Start the controller Tilt stack with providers selected in controller/tilt_config.json.
+	cd ../controller && tilt up --port "$(TILT_PORT)"
 
 .PHONY: install install-state
 install: install-state ## Install the datastore resources using STATE_CONTEXT.
@@ -232,7 +197,6 @@ $(LOCALBIN):
 
 ## Tool Binaries
 KUBECTL ?= kubectl
-KIND ?= $(LOCALBIN)/kind
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 KUBEBUILDER ?= $(LOCALBIN)/kubebuilder
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
@@ -257,13 +221,6 @@ GOLANGCI_LINT_VERSION ?= v2.14.0
 # pins above so the ones derived from go.mod keep their values.
 include ../make/tool-versions.mk
 include ../make/coverage.mk
-
-.PHONY: kind
-kind: $(LOCALBIN) ## Install the pinned Kind CLI for the development environment.
-	$(call go-install-tool,$(KIND),sigs.k8s.io/kind,$(KIND_VERSION))
-
-dev-up dev dev-sync dev-refresh dev-down test-install dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration: kind
-dev-up dev dev-sync dev-refresh dev-down test-install dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration: export PATH := $(LOCALBIN):$(PATH)
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -300,13 +257,10 @@ $(KUBEBUILDER): $(LOCALBIN)
 
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
-$(GOLANGCI_LINT): $(LOCALBIN) .custom-gcl.yml
+$(GOLANGCI_LINT): .custom-gcl.yml $(wildcard tools/deferredpatch/*.go) go.mod go.sum Makefile | $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
-	@test -f .custom-gcl.yml && { \
-		echo "Building custom golangci-lint with plugins..." && \
-		$(GOLANGCI_LINT) custom --destination $(LOCALBIN) --name golangci-lint-custom && \
-		mv -f $(LOCALBIN)/golangci-lint-custom $(GOLANGCI_LINT); \
-	} || true
+	"$(GOLANGCI_LINT)" custom --destination "$(LOCALBIN)" --name golangci-lint-custom
+	mv -f "$(LOCALBIN)/golangci-lint-custom" "$(GOLANGCI_LINT)"
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary

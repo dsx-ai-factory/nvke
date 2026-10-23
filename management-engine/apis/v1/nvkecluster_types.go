@@ -125,13 +125,6 @@ type AcceleratedRuntimeSelection struct {
 
 // NVKEClusterStatus reports the observed state of the control plane and node pools.
 type NVKEClusterStatus struct {
-	// ObservedGeneration identifies the cluster generation reflected in this status.
-	// +optional
-	// +kubebuilder:validation:Minimum=0
-	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Provisioning preserves creation identity across retries and spec changes.
-	// +optional
-	Provisioning *ClusterProvisioningStatus `json:"provisioning,omitempty"`
 	// Conditions report readiness and progress, with details in reason and message.
 	// A missing condition means its state is unknown.
 	// +optional
@@ -148,21 +141,10 @@ type NVKEClusterStatus struct {
 	// +listMapKey=name
 	// +kubebuilder:validation:MaxItems=64
 	NodePools []NodePoolStatus `json:"nodePools,omitempty"`
-}
-
-// ClusterProvisioningStatus identifies the creation attempt independently of the latest observed spec.
-type ClusterProvisioningStatus struct {
-	// Endpoint pins the service so configuration changes cannot redirect an existing cluster.
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=2048
-	Endpoint string `json:"endpoint"`
-	// ID identifies the created cluster. It is absent until creation is confirmed.
+	// ID is the NVKE controller's cluster UID.
 	// +optional
 	// +kubebuilder:validation:Format=uuid
 	ID string `json:"id,omitempty"`
-	// Generation records the spec used to initiate creation, not merely observed by reconciliation.
-	// +kubebuilder:validation:Minimum=1
-	Generation int64 `json:"generation"`
 }
 
 // NVKECluster manages a Kubernetes control plane and its node pools as one cluster.
