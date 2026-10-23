@@ -194,6 +194,7 @@ func NewWorker(
 	w.RegisterWorkflow(workflows.UpgradeControlPlaneAddons)
 	w.RegisterWorkflow(workflows.UpdateKubeadmConfigMap)
 	w.RegisterWorkflow(workflows.RenewK8sCerts)
+	w.RegisterWorkflow(workflows.RenewK8sCertsV2)
 
 	// Rollout subsystem. One Registry backs the activity-side dispatch used by
 	// custom workflows such as EnableEtcdEncryption.

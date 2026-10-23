@@ -16,6 +16,19 @@ const (
 	BearerAuthScopes = "bearerAuth.Scopes"
 )
 
+// Defines values for CertificateRenewalStatusState.
+const (
+	CertificateRenewalStatusStateAccepted  CertificateRenewalStatusState = "accepted"
+	CertificateRenewalStatusStateFailed    CertificateRenewalStatusState = "failed"
+	CertificateRenewalStatusStateSucceeded CertificateRenewalStatusState = "succeeded"
+)
+
+// Defines values for CertificateRenewalStatusOutcome.
+const (
+	CertificateRenewalStatusOutcomeRenewed   CertificateRenewalStatusOutcome = "renewed"
+	CertificateRenewalStatusOutcomeUnchanged CertificateRenewalStatusOutcome = "unchanged"
+)
+
 // Defines values for ConditionStatus.
 const (
 	ConditionStatusFalse   ConditionStatus = "False"
@@ -95,12 +108,52 @@ const (
 
 // Defines values for UpdateInProgressType.
 const (
-	UpdateInProgressTypeCpNodesRecycling  UpdateInProgressType = "cp_nodes_recycling"
-	UpdateInProgressTypeEtcdEncryption    UpdateInProgressType = "etcd_encryption"
-	UpdateInProgressTypeK8SUpgrade        UpdateInProgressType = "k8s_upgrade"
-	UpdateInProgressTypeOidcEnable        UpdateInProgressType = "oidc_enable"
-	UpdateInProgressTypeSpireServerUpdate UpdateInProgressType = "spire_server_update"
+	UpdateInProgressTypeCertificateRenewal UpdateInProgressType = "certificate_renewal"
+	UpdateInProgressTypeCpNodesRecycling   UpdateInProgressType = "cp_nodes_recycling"
+	UpdateInProgressTypeEtcdEncryption     UpdateInProgressType = "etcd_encryption"
+	UpdateInProgressTypeK8SUpgrade         UpdateInProgressType = "k8s_upgrade"
+	UpdateInProgressTypeOidcEnable         UpdateInProgressType = "oidc_enable"
+	UpdateInProgressTypeSpireServerUpdate  UpdateInProgressType = "spire_server_update"
 )
+
+// CertificateRenewalStatus The recorded lifecycle state and outcome of a certificate-renewal cycle.
+type CertificateRenewalStatus struct {
+	// CycleID The Temporal workflow ID that owns this certificate-renewal cycle.
+	CycleID string `json:"cycleID"`
+
+	// State The lifecycle state of the most recent certificate-renewal cycle.
+	State CertificateRenewalStatusState `json:"state"`
+
+	// Outcome Whether a successful cycle renewed certificates or found no certificates due.
+	Outcome *CertificateRenewalStatusOutcome `json:"outcome,omitempty"`
+
+	// Forced Whether the workflow was explicitly forced by an operator.
+	Forced bool `json:"forced"`
+
+	// ScheduledFor The scheduled due time associated with this cycle, when applicable.
+	ScheduledFor *time.Time `json:"scheduledFor,omitempty"`
+
+	// StartedAt When the workflow accepted the cycle and acquired the cluster mutation lock. Refused cycles record startedAt without holding the lock.
+	StartedAt time.Time `json:"startedAt"`
+
+	// CompletedAt When the cycle succeeded or failed.
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+
+	// FailedNodeID The control-plane node being processed when the cycle failed, when applicable.
+	FailedNodeID *openapi_types.UUID `json:"failedNodeID,omitempty"`
+
+	// Phase The workflow phase that failed, when applicable.
+	Phase *string `json:"phase,omitempty"`
+
+	// Message A bounded operator-facing failure summary.
+	Message *string `json:"message,omitempty"`
+}
+
+// CertificateRenewalStatusState The lifecycle state of the most recent certificate-renewal cycle.
+type CertificateRenewalStatusState string
+
+// CertificateRenewalStatusOutcome Whether a successful cycle renewed certificates or found no certificates due.
+type CertificateRenewalStatusOutcome string
 
 // CloudInitFile A file written by cloud-init on CAPI-backed nodes.
 type CloudInitFile struct {
@@ -152,6 +205,12 @@ type Cluster struct {
 	// CreatedAt Creation time.
 	CreatedAt time.Time `json:"createdAt"`
 
+	// NextCertRenewalDue The next scheduled certificate-renewal time. A value in the past is
+	// overdue unless a certificate-renewal operation is currently accepted.
+	// Unset until the controller first sees the cluster, which schedules
+	// the first check one renewal interval later.
+	NextCertRenewalDue *time.Time `json:"nextCertRenewalDue,omitempty"`
+
 	// Conditions Lifecycle conditions.
 	Conditions ClusterConditions `json:"conditions"`
 
@@ -176,6 +235,9 @@ type Cluster struct {
 
 // ClusterConditions Lifecycle conditions of a cluster. Each is a Condition.
 type ClusterConditions struct {
+	// CertificateRenewal The accepted, succeeded, or failed state of the most recent certificate-renewal cycle.
+	CertificateRenewal *CertificateRenewalStatus `json:"certificateRenewal,omitempty"`
+
 	// ControlPlaneUpgrading The control plane is being upgraded.
 	ControlPlaneUpgrading *Condition `json:"controlPlaneUpgrading,omitempty"`
 
@@ -1547,7 +1609,11 @@ type UpdateClusterRequest struct {
 
 // UpdateInProgress The mutually exclusive cluster operation in progress. Absent when none.
 type UpdateInProgress struct {
-	// Type Operation in progress.
+	// Type Operation in progress. `certificate_renewal` is reported while a
+	// scheduled or forced certificate-renewal cycle holds the lock, and
+	// also after a failed cycle whose lock is retained until an operator
+	// clears it. Clients that switch exhaustively over this value must
+	// handle it.
 	Type UpdateInProgressType `json:"type"`
 
 	// Message Detail.
@@ -1557,7 +1623,11 @@ type UpdateInProgress struct {
 	StartedAt time.Time `json:"startedAt"`
 }
 
-// UpdateInProgressType Operation in progress.
+// UpdateInProgressType Operation in progress. `certificate_renewal` is reported while a
+// scheduled or forced certificate-renewal cycle holds the lock, and
+// also after a failed cycle whose lock is retained until an operator
+// clears it. Clients that switch exhaustively over this value must
+// handle it.
 type UpdateInProgressType string
 
 // UpdateNodePoolRequest All fields are optional. A provider payload that does not match the node pool's

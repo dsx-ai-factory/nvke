@@ -336,7 +336,10 @@ paths:
 
         Returns 409 when another mutually exclusive cluster operation is in
         progress (`etcd_encryption`, `k8s_upgrade`, `cp_nodes_recycling`,
-        `oidc_enable`), or the control plane is upgrading or recycling nodes.
+        `oidc_enable`, `certificate_renewal`), or the control plane is upgrading
+        or recycling nodes. A failed certificate renewal can retain the lock
+        until an operator clears it; see the retained-lock recovery procedure in
+        controller/docs/certificate-renewal.md.
       requestBody:
         required: true
         description: The fields to change. All are optional.
@@ -380,7 +383,10 @@ paths:
           description: |
             Another mutually exclusive cluster operation is in progress. The
             message names the operation (etcd_encryption, k8s_upgrade,
-            cp_nodes_recycling, oidc_enable).
+            cp_nodes_recycling, oidc_enable, certificate_renewal). A failed
+            certificate renewal can retain the lock until an operator clears it;
+            see the retained-lock recovery procedure in
+            controller/docs/certificate-renewal.md.
           content:
             application/json:
               schema:
@@ -398,7 +404,8 @@ paths:
       description: |
         Starts deletion and sets `conditions.deleting` to `True`. A cluster can
         be deleted in any state, including while it is provisioning or
-        upgrading.
+        upgrading. Deletion takes precedence over an in-progress or retained
+        etcd encryption or certificate renewal.
       responses:
         "202":
           description: Deletion started
@@ -685,7 +692,10 @@ paths:
         nodes to it.
 
         Returns 400 for, among others: sending a field that is fixed at
-        creation (for example `instanceTypeID`); `nico.release: ""`.
+        creation (for example `instanceTypeID`); `nico.release: ""`; any update
+        to a control-plane node pool, which is configured through the cluster's
+        `controlPlaneConfig` instead. That last refusal does not depend on the
+        control-plane mutation lock, so retrying later does not help.
       requestBody:
         required: true
         description: The fields to change. All are optional.
@@ -737,6 +747,12 @@ paths:
       description: |
         Deletes a node pool from a running cluster. Also returns 202, with no
         further effect, if the pool or its cluster is already being deleted.
+
+        Returns 409 for a control-plane node pool while etcd encryption or
+        certificate renewal holds the control-plane mutation lock. Retry once the
+        operation has finished. A failed certificate renewal can retain the lock
+        until an operator clears it; see the retained-lock recovery procedure in
+        controller/docs/certificate-renewal.md.
       operationId: deleteNodePool
       responses:
         "202":
@@ -749,6 +765,16 @@ paths:
                 $ref: "#/components/schemas/GenericError"
         "404":
           description: Node pool not found. No body is returned.
+        "409":
+          description: |
+            A control-plane node pool cannot be deleted while etcd encryption or
+            certificate renewal holds the control-plane mutation lock.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+              example:
+                message: control-plane changes are rejected while etcd encryption or certificate renewal holds the cluster mutation lock; retry after the operation completes, or, if a failed certificate renewal retained the lock, after an operator clears it (see controller/docs/certificate-renewal.md)
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -907,7 +933,14 @@ paths:
         `machineHealthIssue` is invalid. Delete the cluster to remove its last
         joined control-plane node.
         Deleting a control-plane node requires controlPlaneVIP because the controller
-        replaces it, unless allowControlPlaneWithoutVIP is enabled for development. Worker node deletion is unaffected.
+        replaces it, unless allowControlPlaneWithoutVIP is enabled for development.
+        Worker node deletion is unaffected.
+
+        Returns 409 for a control-plane node while etcd encryption or certificate
+        renewal holds the control-plane mutation lock. Retry once the operation
+        has finished. A failed certificate renewal can retain the lock until an
+        operator clears it; see the retained-lock recovery procedure in
+        controller/docs/certificate-renewal.md.
       operationId: deleteNode
       requestBody:
         required: false
@@ -935,6 +968,16 @@ paths:
                 message: 'cannot delete control-plane node "tenant-a-prod-cp-0002": only 2 joined control-plane node(s) would remain, below the minimum of 3 needed for etcd to survive another failure. Raise the control-plane desired count first so a replacement joins before this node is removed, or delete the cluster instead'
         "404":
           description: Node not found. No body is returned.
+        "409":
+          description: |
+            A control-plane node cannot be deleted while etcd encryption or
+            certificate renewal holds the control-plane mutation lock.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+              example:
+                message: control-plane changes are rejected while etcd encryption or certificate renewal holds the cluster mutation lock; retry after the operation completes, or, if a failed certificate renewal retained the lock, after an operator clears it (see controller/docs/certificate-renewal.md)
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1500,6 +1543,15 @@ components:
           format: date-time
           description: Creation time.
           x-order: 15
+        nextCertRenewalDue:
+          type: string
+          format: date-time
+          description: |
+            The next scheduled certificate-renewal time. A value in the past is
+            overdue unless a certificate-renewal operation is currently accepted.
+            Unset until the controller first sees the cluster, which schedules
+            the first check one renewal interval later.
+          x-order: 16
         conditions:
           allOf:
             - $ref: "#/components/schemas/ClusterConditions"
@@ -2488,6 +2540,75 @@ components:
           description: The most recent cluster update failed.
           allOf:
             - $ref: "#/components/schemas/Condition"
+        certificateRenewal:
+          description: The accepted, succeeded, or failed state of the most recent certificate-renewal cycle.
+          x-order: 8
+          allOf:
+            - $ref: "#/components/schemas/CertificateRenewalStatus"
+
+    CertificateRenewalStatus:
+      type: object
+      description: The recorded lifecycle state and outcome of a certificate-renewal cycle.
+      required:
+        - cycleID
+        - state
+        - forced
+        - startedAt
+      properties:
+        cycleID:
+          type: string
+          description: The Temporal workflow ID that owns this certificate-renewal cycle.
+          x-order: 1
+        state:
+          type: string
+          enum:
+            - accepted
+            - succeeded
+            - failed
+          description: The lifecycle state of the most recent certificate-renewal cycle.
+          x-order: 2
+        outcome:
+          type: string
+          enum:
+            - unchanged
+            - renewed
+          description: Whether a successful cycle renewed certificates or found no certificates due.
+          x-order: 3
+        forced:
+          type: boolean
+          description: Whether the workflow was explicitly forced by an operator.
+          x-order: 4
+        scheduledFor:
+          type: string
+          format: date-time
+          description: The scheduled due time associated with this cycle, when applicable.
+          x-order: 5
+        startedAt:
+          type: string
+          format: date-time
+          description: >-
+            When the workflow accepted the cycle and acquired the cluster mutation lock.
+            Refused cycles record startedAt without holding the lock.
+          x-order: 6
+        completedAt:
+          type: string
+          format: date-time
+          description: When the cycle succeeded or failed.
+          x-order: 7
+        failedNodeID:
+          type: string
+          format: uuid
+          description: The control-plane node being processed when the cycle failed, when applicable.
+          x-order: 8
+        phase:
+          type: string
+          description: The workflow phase that failed, when applicable.
+          x-order: 9
+        message:
+          type: string
+          maxLength: 1024
+          description: A bounded operator-facing failure summary.
+          x-order: 10
 
     UpdateInProgress:
       type: object
@@ -2504,7 +2625,13 @@ components:
             - cp_nodes_recycling
             - oidc_enable
             - spire_server_update
-          description: Operation in progress.
+            - certificate_renewal
+          description: |
+            Operation in progress. `certificate_renewal` is reported while a
+            scheduled or forced certificate-renewal cycle holds the lock, and
+            also after a failed cycle whose lock is retained until an operator
+            clears it. Clients that switch exhaustively over this value must
+            handle it.
           x-order: 1
         message:
           type: string

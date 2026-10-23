@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -30,6 +31,9 @@ type Activities struct {
 	trustDomain              string
 	controllerClientCABundle string
 	getTrustDomainBundle     trustDomainAndBundleGetter
+	// certificateRenewalReleaseBackoff overrides the first release retry wait
+	// when non-zero, so tests need not wait the real backoff.
+	certificateRenewalReleaseBackoff time.Duration
 }
 
 func NewActivities(

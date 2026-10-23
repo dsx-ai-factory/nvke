@@ -76,6 +76,17 @@ func (a *Activities) KubeadmJoin(ctx context.Context, input KubeadmJoinInput) (K
 }
 
 func (a *Activities) kubeadmJoin(ctx context.Context, node db.Node) (KubeadmJoinResult, error) {
+	// Admission is mandatory even when older activity inputs omitted the
+	// optional progress message and bypassed the status wrapper.
+	if node.ControlPlane {
+		if err := a.UpdateNodeConditions(ctx, NodeConditionsUpdate{
+			NodeID: node.ID, Conditions: NodeConditions{Provisioning: &ConditionUpdate{
+				Status: db.ConditionStatusTrue, Message: "Control-plane join is in progress",
+			}},
+		}); err != nil {
+			return KubeadmJoinResult{}, err
+		}
+	}
 	cluster, err := a.db.GetCluster(ctx, node.ClusterID)
 	if err != nil {
 		return KubeadmJoinResult{}, fmt.Errorf("failed to get cluster: %w", err)

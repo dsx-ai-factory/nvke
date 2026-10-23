@@ -38,6 +38,12 @@ func (a *Activities) UpdateClusterConditions(ctx context.Context, update Cluster
 			return fmt.Errorf("failed to get cluster: %w", err)
 		}
 
+		// Deletion is never fenced; credential operations yield to it instead.
+		startsProvisioning := update.Conditions.Provisioning != nil && update.Conditions.Provisioning.Status == db.ConditionStatusTrue
+		if startsProvisioning && db.ControlPlaneMutationBlocked(cluster) {
+			return db.ErrControlPlaneMutationBlocked
+		}
+
 		updateCondition(&cluster.Conditions.Provisioning, update.Conditions.Provisioning)
 		updateCondition(&cluster.Conditions.Provisioned, update.Conditions.Provisioned)
 		updateCondition(&cluster.Conditions.Deleting, update.Conditions.Deleting)

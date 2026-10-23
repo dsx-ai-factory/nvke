@@ -87,7 +87,7 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
 
    | Field | Default | Notes |
    |---|---|---|
-   | `controlPlaneConfig.desiredCount` | None, required | Number of control-plane nodes. Use an odd number so that etcd keeps a quorum. More than one requires `controlPlaneVIP` unless the controller enables the development override described below. |
+   | `controlPlaneConfig.desiredCount` | None, required | Number of control-plane nodes. Use an odd number so that etcd keeps a quorum. More than one requires `controlPlaneVIP` unless the controller enables the development override described below. Exactly two is excluded from automatic certificate renewal: create the cluster with one, or three or more. An existing two-node cluster cannot scale down to one and must be scaled to three or more. |
    | `controlPlaneConfig.maxSurge` | `0` | Extra control-plane nodes allowed during a rollout: `0` or `1`. |
    | `controlPlaneConfig.systemReservedMemory` | `16Gi` | Memory the kubelet reserves for system daemons. |
    | `controlPlaneConfig.nodeLabels` | None | Labels applied to each control-plane node after it joins. Set at creation; updating them is not supported, see [Preview status and known limitations](../overview/preview-status.md#workload-clusters-and-node-pools). Control-plane nodes take no custom taints. |
@@ -135,11 +135,14 @@ curl -X POST http://<MANAGEMENT_ADDRESS>:30080/api/clusters \
    | `STATUS` | Meaning |
    |---|---|
    | `Provisioning` | NVKE is requesting machines from NICo and forming the cluster. |
-   | `Provisioned` | The first control-plane node ran `kubeadm init` and the Container Network Interface (CNI) plugin is installed. The other nodes join after this. |
+   | `Provisioned` | The first control-plane node ran `kubeadm init` and the Container Network Interface (CNI) plugin is installed. The other nodes join after this. This is provisioning state, not certificate-maintenance health. |
    | `ProvisioningFailed` | Provisioning stopped. The `provisioning` condition's message gives the cause. |
-   | `Updating`, `Upgrading`, `Recycling` | A day-2 operation is running. |
+   | `Updating` | A day-2 operation is running, or a failed certificate renewal retained the cluster mutation lock (`conditions.updateInProgress.type=certificate_renewal` with `conditions.certificateRenewal.state=failed`). A retained lock needs [ownership-checked operator recovery](../../controller/docs/certificate-renewal.md#status-and-failure-handling), not just waiting for `Provisioned`. |
+   | `Upgrading`, `Recycling` | A day-2 operation is running. |
    | `UpdateFailed` | The last day-2 operation failed. |
    | `Deleting` | The cluster is being deleted. |
+
+   Inspect `conditions.certificateRenewal.state`, its `phase` and `message`, and `nextCertRenewalDue` even on `Provisioned` clusters. A failed renewal that released its lock can still show `Provisioned`; automatic retry waits for the due time and the one-hour failure backoff. A `two-control-plane-voters` refusal also requires `controlPlaneConfig.desiredCount` of at least `3`. See [Check workload clusters and node pools](../operate/observe.md#check-workload-clusters-and-node-pools) for the checks and [Status and failure handling](../../controller/docs/certificate-renewal.md#status-and-failure-handling) for recovery.
 
 2. If the status stays `Provisioning`, read the condition messages.
 
@@ -147,7 +150,7 @@ curl -X POST http://<MANAGEMENT_ADDRESS>:30080/api/clusters \
    nvkectl get clusters <WORKLOAD_CLUSTER> -o yaml
    ```
 
-   Each condition under `conditions` has a `status`, a `lastTransitionTime` and a `message`. NVKE keeps waiting for a control-plane machine that does not become ready, so a NICo instance type without capacity shows as a cluster that stays in `Provisioning`. See [Troubleshoot](../operate/troubleshoot.md).
+   Each provisioning condition under `conditions` has a `status`, a `lastTransitionTime` and a `message`. NVKE keeps waiting for a control-plane machine that does not become ready, so a NICo instance type without capacity shows as a cluster that stays in `Provisioning`. See [Troubleshoot](../operate/troubleshoot.md).
 
 3. Check the node pools.
 

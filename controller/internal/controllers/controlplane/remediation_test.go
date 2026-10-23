@@ -623,6 +623,8 @@ func TestRemediateMachinesRecordsIntentUnderTheController(t *testing.T) {
 	marked.Conditions.MarkedForRecycling = db.NewCondition(true, "Marked")
 
 	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNode", mock.Anything, marked.ID).Return(marked, nil).Maybe()
+	mockTx.On("GetClusterForUpdate", mock.Anything, marked.ClusterID).Return(db.Cluster{ID: marked.ClusterID}, nil).Maybe()
 	mockTx.On("GetNodeForUpdate", mock.Anything, marked.ID).Return(marked, nil)
 	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{a, b, marked}, nil).Maybe()
 
@@ -672,6 +674,10 @@ func TestRemediateMachinesWithoutControlPlaneVIP(t *testing.T) {
 			}
 			mockTx := &testutil.MockTx{}
 			if allow {
+				// Remediation reads the node and locks its cluster before deleting so the
+				// control-plane mutation fence is checked under the cluster lock.
+				mockTx.On("GetNode", mock.Anything, marked.ID).Return(marked, nil).Once()
+				mockTx.On("GetClusterForUpdate", mock.Anything, cluster.ID).Return(cluster, nil).Once()
 				mockTx.On("GetNodeForUpdate", mock.Anything, marked.ID).Return(marked, nil).Once()
 				mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
 					return node.ID == marked.ID && nodes.IsDeleteRequested(*node)

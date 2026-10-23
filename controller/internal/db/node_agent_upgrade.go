@@ -45,4 +45,7 @@ type NodeAgentLifecycle struct {
 type NodeAgentCertificateRenewal struct {
 	NodeID      uuid.UUID `json:"nodeId"`
 	OperationID string    `json:"operationId"`
+	// Fenced marks a V2 reservation, owned by a cycle under the cluster mutation
+	// lock, so the reconciler may clear it once the agent has no such operation.
+	Fenced bool `json:"fenced,omitempty"`
 }

@@ -52,6 +52,7 @@ const (
 
 	kubectlNamespaceFlag = "-n"
 	kubectlOutputFlag    = "-o"
+	kubectlGetCommand    = "get"
 )
 
 type (
@@ -533,7 +534,7 @@ func (n *NodeAgentServer) getPodStatus(podName string) (string, error) {
 		[]string{
 			kubectlNamespaceFlag,
 			kubeSystemNamespace,
-			"get",
+			kubectlGetCommand,
 			"pod",
 			podName,
 			kubectlOutputFlag,
