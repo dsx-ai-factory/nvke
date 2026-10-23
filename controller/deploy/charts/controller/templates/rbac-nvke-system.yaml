@@ -5,13 +5,13 @@
 
   Always rendered: the namespace exists unconditionally. Persisted-OIDC clusters
   keep publishing from OIDCAuthEnabled after live nvkeOIDCAuth.enabled is
-  flipped off, so ConfigMap get on nke-rbac is not gated on that flag.
+  flipped off, so ConfigMap get on rbacConfigMap.name is not gated on that flag.
   Teardown must still delete owned Secrets.
 */}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "controller.fullname" . }}-nke-rbac
+  name: {{ include "controller.fullname" . }}-{{ include "controller.rbacConfigMap.name" . }}
   namespace: {{ include "controller.managementNamespace" . }}
   labels:
     {{- include "controller.labels" . | nindent 4 }}
@@ -22,7 +22,9 @@ rules:
   - apiGroups: [""]
     resources: ["configmaps"]
     resourceNames:
-      - nke-rbac
+      # Quoted: a name YAML would otherwise read as a scalar of another type
+      # (y, n, true, off) must stay the string the ConfigMap is named.
+      - {{ include "controller.rbacConfigMap.name" . | quote }}
     verbs: ["get"]
   # Publish, rotate, and clean up Secrets owned by the controller.
   - apiGroups: [""]
@@ -32,14 +34,14 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "controller.fullname" . }}-nke-rbac
+  name: {{ include "controller.fullname" . }}-{{ include "controller.rbacConfigMap.name" . }}
   namespace: {{ include "controller.managementNamespace" . }}
   labels:
     {{- include "controller.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "controller.fullname" . }}-nke-rbac
+  name: {{ include "controller.fullname" . }}-{{ include "controller.rbacConfigMap.name" . }}
 subjects:
   - kind: ServiceAccount
     name: {{ include "controller.serviceAccountName" . }}

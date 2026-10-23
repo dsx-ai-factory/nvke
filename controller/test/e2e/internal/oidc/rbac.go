@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -19,18 +21,34 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/mgmtns"
 )
 
-// The nke-rbac ConfigMap lives in the site's management namespace, which
-// mgmtns.Namespace resolves -- it is per-site configurable, so it is never
-// assumed here.
+// The RBAC ConfigMap's namespace and name are both per-site configurable
+// (nvkeSystemNamespace.name and rbacConfigMap.name), so neither is assumed
+// here: mgmtns.Namespace resolves the one, ConfigMapName the other.
 const (
-	nvkeRBACConfigMap = "nke-rbac"
-	nvkeRBACKey       = "manifest.yaml"
+	// ConfigMapNameEnvVar names the RBAC ConfigMap of the site under test. Set
+	// it when running against a site that pinned a name other than
+	// DefaultConfigMapName -- a site installed before the name became
+	// configurable uses "nke-rbac".
+	ConfigMapNameEnvVar = "NVKE_E2E_RBAC_CONFIGMAP"
+
+	// DefaultConfigMapName is the name a current chart renders.
+	DefaultConfigMapName = "nvke-rbac"
+
+	nvkeRBACKey = "manifest.yaml"
 )
 
-// ReservedUsers reads every User subject bound by the live nke-rbac manifest.
+// ConfigMapName returns the RBAC ConfigMap name of the site under test.
+func ConfigMapName() string {
+	if trimmed := strings.TrimSpace(os.Getenv(ConfigMapNameEnvVar)); trimmed != "" {
+		return trimmed
+	}
+	return DefaultConfigMapName
+}
+
+// ReservedUsers reads every User subject bound by the live RBAC manifest.
 func ReservedUsers(ctx context.Context, reader client.Reader) ([]string, error) {
 	var configMap corev1.ConfigMap
-	key := types.NamespacedName{Namespace: mgmtns.Namespace(), Name: nvkeRBACConfigMap}
+	key := types.NamespacedName{Namespace: mgmtns.Namespace(), Name: ConfigMapName()}
 	if err := reader.Get(ctx, key, &configMap); err != nil {
 		return nil, fmt.Errorf("get %s/%s: %w", key.Namespace, key.Name, err)
 	}
@@ -51,7 +69,7 @@ func ReservedUsers(ctx context.Context, reader client.Reader) ([]string, error) 
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return nil, fmt.Errorf("decode nke-rbac manifest: %w", err)
+			return nil, fmt.Errorf("decode RBAC manifest: %w", err)
 		}
 		if document.Kind != "RoleBinding" && document.Kind != "ClusterRoleBinding" {
 			continue
@@ -64,7 +82,7 @@ func ReservedUsers(ctx context.Context, reader client.Reader) ([]string, error) 
 		}
 	}
 	if len(users) == 0 {
-		return nil, errors.New("nke-rbac manifest has no User subjects")
+		return nil, fmt.Errorf("ConfigMap %s/%s has no User subjects", key.Namespace, key.Name)
 	}
 	return users, nil
 }

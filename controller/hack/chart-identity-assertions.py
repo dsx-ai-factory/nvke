@@ -61,13 +61,14 @@ GREENFIELD_NAME = "nke-controller"
 GREENFIELD_TRUST_DOMAIN = "example.test"
 
 
-def expected_names(fullname: str, config_map: str, namespace: str, extra: frozenset = frozenset()) -> frozenset:
+def expected_names(fullname: str, config_map: str, namespace: str, rbac: str, extra: frozenset = frozenset()) -> frozenset:
     """Every (kind, name) the chart renders, given the names that vary between scenarios.
 
     fullname is what `controller.fullname` yields: the Deployment, Service and
-    everything prefixed by it. The ServiceAccount, its Role and RoleBinding and
-    the ServiceMonitor are named by their own defaults, not by fullname, and
-    have not moved.
+    everything prefixed by it. rbac is rbacConfigMap.name, which names the
+    tenant RBAC ConfigMap and suffixes the Role and RoleBinding granting get on
+    it. The ServiceAccount, its Role and RoleBinding and the ServiceMonitor are
+    named by their own defaults, not by fullname, and have not moved.
     """
     return (
         frozenset(
@@ -80,9 +81,9 @@ def expected_names(fullname: str, config_map: str, namespace: str, extra: frozen
                 ("NetworkPolicy", f"{fullname}-metrics"),
                 ("ServiceAccount", "cloud-workflow-engine"),
                 ("Role", "cloud-workflow-engine"),
-                ("Role", f"{fullname}-nke-rbac"),
+                ("Role", f"{fullname}-{rbac}"),
                 ("RoleBinding", "cloud-workflow-engine"),
-                ("RoleBinding", f"{fullname}-nke-rbac"),
+                ("RoleBinding", f"{fullname}-{rbac}"),
                 ("Service", fullname),
                 ("ConfigMap", config_map),
                 ("Deployment", fullname),
@@ -111,13 +112,16 @@ class Scenario:
     container: str
     selector: dict
     # The management namespace, and so the Namespace object and the namespace
-    # of the nke-rbac ConfigMap, Role and RoleBinding.
+    # of the RBAC ConfigMap, Role and RoleBinding.
     namespace: str
     # The teleport block of the rendered controller config.
     teleport: dict
     # The first SPIFFE path segment of the default RBAC subjects, which must be
     # the one the ClusterSPIFFEID issues.
     spiffe_segment: str = "nke-service"
+    # rbacConfigMap.name: the tenant RBAC ConfigMap, and the suffix of the Role
+    # and RoleBinding that grant get on it.
+    rbac_name: str = "nke-rbac"
 
 
 # The names an install keeps by pinning. These do not change when a default does.
@@ -125,8 +129,8 @@ LEGACY = Scenario(
     label="legacy-pinned",
     release=LEGACY_RELEASE,
     values_file=LEGACY_VALUES,
-    # The pinned values set spiffe.trustDomain, so the nke-rbac ConfigMap renders.
-    names=expected_names("cloud-workflow-engine", "nke-controller-config", "nke-system", frozenset({("ConfigMap", "nke-rbac")})),
+    # The pinned values set spiffe.trustDomain, so the RBAC ConfigMap renders.
+    names=expected_names("cloud-workflow-engine", "nke-controller-config", "nke-system", "nke-rbac", frozenset({("ConfigMap", "nke-rbac")})),
     config_map="nke-controller-config",
     container="cloud-workflow-engine",
     selector={
@@ -142,15 +146,15 @@ LEGACY = Scenario(
 )
 
 # What a new install gets. The controller's own names, the config ConfigMap, the
-# management namespace and the Teleport values have moved to nvke. The
-# ServiceAccount, the ServiceMonitor and the nke-rbac objects have not, and moving
-# them is the rest of the rename. Change this, and only this, when a default moves.
+# management namespace, the RBAC ConfigMap and the Teleport values have moved to
+# nvke. The ServiceAccount and the ServiceMonitor have not, and moving them is
+# the rest of the rename. Change this, and only this, when a default moves.
 DEFAULT = dataclasses.replace(
     LEGACY,
     label="default",
     release=DEFAULT_RELEASE,
     values_file=None,
-    names=expected_names("nvke-controller", "nvke-controller-config", "nvke-system"),
+    names=expected_names("nvke-controller", "nvke-controller-config", "nvke-system", "nvke-rbac"),
     config_map="nvke-controller-config",
     container="nvke-controller",
     selector={
@@ -164,6 +168,7 @@ DEFAULT = dataclasses.replace(
         "resourceGroupLabelValue": "nvke",
     },
     spiffe_segment="nvke-service",
+    rbac_name="nvke-rbac",
 )
 
 SCENARIOS = (DEFAULT, LEGACY)
@@ -181,7 +186,7 @@ def render(chart: str, release: str, values_file: pathlib.Path | None = None, se
 
 
 def spiffe_subjects(rbac_config_map: dict) -> set[str]:
-    """Return the spiffe:// subjects of the ClusterRoleBindings the nke-rbac ConfigMap carries."""
+    """Return the spiffe:// subjects of the ClusterRoleBindings the RBAC ConfigMap carries."""
     return {
         s["name"]
         for d in yaml.safe_load_all(rbac_config_map["data"]["manifest.yaml"])
@@ -227,14 +232,14 @@ def check_scenario(chart: str, sc: Scenario) -> list[str]:
         if doc.get("kind") not in ("ConfigMap", "Role", "RoleBinding"):
             continue
         name = doc["metadata"]["name"]
-        if not (name == "nke-rbac" or name.endswith("-nke-rbac")):
+        if not (name == sc.rbac_name or name.endswith(f"-{sc.rbac_name}")):
             continue
         got = doc["metadata"].get("namespace")
         if got != sc.namespace:
             failures.append(f"{doc['kind']} {name} is in namespace {got!r}, expected {sc.namespace!r}")
 
-    # The nke-rbac ConfigMap renders only when spiffe.trustDomain is set.
-    rbac = [d for d in docs if d.get("kind") == "ConfigMap" and d["metadata"]["name"] == "nke-rbac"]
+    # The RBAC ConfigMap renders only when spiffe.trustDomain is set.
+    rbac = [d for d in docs if d.get("kind") == "ConfigMap" and d["metadata"]["name"] == sc.rbac_name]
     if rbac:
         subjects = spiffe_subjects(rbac[0])
         stale = sorted(s for s in subjects if f"/{sc.spiffe_segment}/" not in s)
@@ -253,6 +258,11 @@ def check_scenario(chart: str, sc: Scenario) -> list[str]:
         failures.append(
             f"managementNamespace is {config.get('managementNamespace')!r}, expected {sc.namespace!r}; "
             "the controller would address a namespace the chart did not grant it"
+        )
+    if config.get("rbacConfigMapName") != sc.rbac_name:
+        failures.append(
+            f"rbacConfigMapName is {config.get('rbacConfigMapName')!r}, expected {sc.rbac_name!r}; "
+            "the controller would read a ConfigMap the chart did not render"
         )
     teleport = config.get("teleport") or {}
     for key, want in sc.teleport.items():
@@ -296,10 +306,10 @@ def check_greenfield(chart: str) -> list[str]:
             )
 
     config_maps = [
-        d for d in docs if d.get("kind") == "ConfigMap" and d.get("metadata", {}).get("name") == "nke-rbac"
+        d for d in docs if d.get("kind") == "ConfigMap" and d.get("metadata", {}).get("name") == DEFAULT.rbac_name
     ]
     if not config_maps:
-        failures.append("greenfield render has no nke-rbac ConfigMap")
+        failures.append(f"greenfield render has no {DEFAULT.rbac_name} ConfigMap")
         return failures
 
     inner = list(yaml.safe_load_all(config_maps[0]["data"]["manifest.yaml"]))
@@ -323,8 +333,9 @@ def check_greenfield(chart: str) -> list[str]:
 
 PINNED_CONFIG_NAME = "pinned-controller-config"
 PINNED_SPIFFE_SEGMENT = "pinned-service"
+PINNED_RBAC_NAME = "pinned-rbac"
 
-# Every ServiceAccount nke-rbac names a default subject for: this controller's
+# Every ServiceAccount the RBAC manifest names a default subject for: this controller's
 # own, plus the four CAPI managers the nvke:capi-cluster-admin binding grants.
 # Each is spiffe://<trustDomain>/<servicePathSegment>/<serviceAccount>, so
 # pinning the segment has to move all five together.
@@ -338,14 +349,18 @@ DEFAULT_SPIFFE_SERVICE_ACCOUNTS = (
 
 
 def check_pinnable_names(chart: str) -> list[str]:
-    """Render with controllerConfig.name and spiffe.servicePathSegment set and assert they move everywhere.
+    """Render with the pinnable names set and assert they move everywhere.
 
-    Both were literals, so a chart that renames its defaults could not leave an
-    existing site on the old names. The ConfigMap name is read by the ConfigMap
-    itself, the Deployment's volume and the Reloader annotation; the SPIFFE
-    segment by every default subject in nke-rbac. One consumer left on the
-    default is a pod that cannot mount its config or a controller the tenant
-    apiserver denies.
+    Each was a literal, so a chart that renames its defaults could not leave an
+    existing site on the old names. The controller config ConfigMap name is read
+    by the ConfigMap itself, the Deployment's volume and the Reloader
+    annotation; the SPIFFE segment by every default subject in the RBAC
+    manifest; the RBAC ConfigMap name by that ConfigMap, by the Role and
+    RoleBinding granting get on it, by that Role's resourceNames, and by the
+    controller through rbacConfigMapName in its config file. One consumer left
+    on the default is a pod that cannot mount its config, a controller the
+    tenant apiserver denies, or a Role naming a ConfigMap that no longer
+    exists -- which renders clean and fails only at reconcile time.
     """
     failures = []
 
@@ -355,6 +370,7 @@ def check_pinnable_names(chart: str) -> list[str]:
         sets=(
             f"controllerConfig.name={PINNED_CONFIG_NAME}",
             f"spiffe.servicePathSegment={PINNED_SPIFFE_SEGMENT}",
+            f"rbacConfigMap.name={PINNED_RBAC_NAME}",
             f"spiffe.trustDomain={GREENFIELD_TRUST_DOMAIN}",
             "nvkeOIDCAuth.enabled=true",
             "tenantAccess.enabled=true",
@@ -379,9 +395,36 @@ def check_pinnable_names(chart: str) -> list[str]:
         if PINNED_CONFIG_NAME not in reload.split(","):
             failures.append(f"pinned render Reloader annotation is {reload!r}, which does not watch {PINNED_CONFIG_NAME!r}")
 
-    rbac = [d for d in docs if d.get("kind") == "ConfigMap" and d["metadata"]["name"] == "nke-rbac"]
+    # The Role, its resourceNames and the RoleBinding all follow rbacConfigMap.name.
+    # A resourceNames entry left behind is the silent failure: the ConfigMap moves,
+    # the grant does not, and the controller is denied get on the manifest it needs.
+    for kind in ("Role", "RoleBinding"):
+        named = [d for d in docs if d.get("kind") == kind and str(d["metadata"]["name"]).endswith(PINNED_RBAC_NAME)]
+        if not named:
+            failures.append(f"pinned render has no {kind} suffixed {PINNED_RBAC_NAME!r}; it is still on the default name")
+    for role in [d for d in docs if d.get("kind") == "Role"]:
+        for rule in role.get("rules") or []:
+            if "configmaps" not in (rule.get("resources") or []):
+                continue
+            resource_names = rule.get("resourceNames") or []
+            if PINNED_RBAC_NAME not in resource_names:
+                failures.append(
+                    f"pinned render Role {role['metadata']['name']} grants configmaps on {sorted(resource_names)}, "
+                    f"which does not include {PINNED_RBAC_NAME!r}: the ConfigMap moved and its grant did not"
+                )
+
+    config = [d for d in docs if d.get("kind") == "ConfigMap" and d["metadata"]["name"] == PINNED_CONFIG_NAME]
+    if config:
+        rendered = yaml.safe_load(config[0]["data"]["config.yaml"]) or {}
+        if rendered.get("rbacConfigMapName") != PINNED_RBAC_NAME:
+            failures.append(
+                f"pinned render controller config rbacConfigMapName is {rendered.get('rbacConfigMapName')!r}, "
+                f"not {PINNED_RBAC_NAME!r}: the controller would read the wrong ConfigMap"
+            )
+
+    rbac = [d for d in docs if d.get("kind") == "ConfigMap" and d["metadata"]["name"] == PINNED_RBAC_NAME]
     if not rbac:
-        failures.append("pinned render has no nke-rbac ConfigMap")
+        failures.append(f"pinned render has no {PINNED_RBAC_NAME} ConfigMap")
         return failures
     subjects = {
         str(s.get("name", ""))
@@ -424,7 +467,8 @@ def main() -> int:
             "pinnable names",
             "pinning controllerConfig.name or spiffe.servicePathSegment does not move every consumer",
             lambda: check_pinnable_names(args.chart),
-            f"  pinnable names: controller config ConfigMap and SPIFFE subjects follow {PINNED_CONFIG_NAME} and {PINNED_SPIFFE_SEGMENT}",
+            f"  pinnable names: controller config ConfigMap, SPIFFE subjects and RBAC ConfigMap follow "
+            f"{PINNED_CONFIG_NAME}, {PINNED_SPIFFE_SEGMENT} and {PINNED_RBAC_NAME}",
         )
     )
     checks.append(

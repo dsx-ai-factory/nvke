@@ -178,7 +178,7 @@ identity:
 nvkeSystemNamespace:
   # -- Name of the shared management-plane namespace: the Namespace object, the
   # Roles and RoleBindings in it, and the namespace the controller publishes
-  # tenant-access Secrets into and reads the nke-rbac ConfigMap from. Empty
+  # tenant-access Secrets into and reads rbacConfigMap.name from. Empty
   # means nvke-system. A SITE INSTALLED BEFORE THIS VALUE EXISTED MUST PIN
   # nke-system HERE: the old namespace is not also read, so a site that moves
   # leaves its published kubeconfig and trust-bundle Secrets behind in it.
@@ -467,7 +467,7 @@ nvkeOIDCAuth:
   # -- Enable OIDC authentication from NVKE management identities to tenant cluster kube-apiservers.
   enabled: false
   # -- Name of the ClusterRole/Role/Binding objects the tenant-access controller
-  # applies into every tenant cluster (nke-rbac.yaml).
+  # applies into every tenant cluster (nvke-rbac.yaml).
   tenantRbacName: "nvke:cwe"
   # -- OIDC issuer URL trusted by tenant kube-apiservers.
   issuerURL: ""
@@ -677,6 +677,18 @@ controllerConfig:
   # orphans the live object.
   name: "nvke-controller-config"
 
+rbacConfigMap:
+  # -- Name of the ConfigMap in nvkeSystemNamespace.name that carries the RBAC
+  # manifest the tenant-access controller applies into every tenant cluster, and
+  # whose User subjects fleet-wide OIDC providers may not claim. It also names
+  # the Role and RoleBinding that grant the controller get on it, and the
+  # resourceNames entry in that Role: all four follow this one value, because a
+  # ConfigMap the Role does not name is a ConfigMap the controller is denied.
+  # An install that predates nvke-rbac sets "nke-rbac": the controller reads
+  # only the name set here, so renaming it leaves the live manifest unread and
+  # tenant RBAC unapplied.
+  name: "nvke-rbac"
+
 spiffe:
   # -- Enable SPIFFE identity for mTLS to tenant clusters
   enabled: false
@@ -726,7 +738,7 @@ spiffe:
   # manager. Defaults to its local SPIFFE ID; set it to the rewritten subject
   # when CAPD uses an exchanged tenant kubeconfig.
   capdManagerSubject: ""
-  # -- SPIRE trust domain. When set, the chart renders ConfigMap nke-rbac.
+  # -- SPIRE trust domain. When set, the chart renders ConfigMap rbacConfigMap.name.
   # Required when nvkeOIDCAuth.enabled is true: builds the
   # nvkeOIDCAuth.tenantRbacName SPIFFE subject ID in that ConfigMap. Must equal the
   # SPIRE server's trust domain (the spire chart's global.spire.trustDomain) so the

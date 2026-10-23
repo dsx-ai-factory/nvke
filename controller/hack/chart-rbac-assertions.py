@@ -10,6 +10,14 @@ import sys
 
 import yaml
 
+# The ConfigMap carrying the tenant RBAC manifest. Its name is a chart value
+# (rbacConfigMap.name), so this script sets it rather than reading whatever the
+# default happens to be: these assertions are about the permissions the manifest
+# grants, and moving the default must not break them. That the value drives the
+# ConfigMap, its Role, that Role's resourceNames and the RoleBinding is
+# chart-identity-assertions.py's check, not this one's.
+RBAC_CONFIG_MAP = "nvke-rbac"
+
 
 def granted(rule_set, api_group, resource, verb, resource_name=None):
     """Return whether a rule grants the requested permission."""
@@ -32,7 +40,7 @@ def controller_subjects(rendered, tenant_rbac_name):
         if (
             document
             and document.get("kind") == "ConfigMap"
-            and document.get("metadata", {}).get("name") == "nke-rbac"
+            and document.get("metadata", {}).get("name") == RBAC_CONFIG_MAP
         ):
             inner = yaml.safe_load_all(document["data"]["manifest.yaml"])
             return {
@@ -72,6 +80,8 @@ def main():
         "tenantAccess.enabled=true",
         "--set",
         f"nvkeOIDCAuth.tenantRbacName={tenant_rbac_name}",
+        "--set",
+        f"rbacConfigMap.name={RBAC_CONFIG_MAP}",
     ]
     command = [
         *base_command,
@@ -95,10 +105,10 @@ def main():
         document
         for document in documents
         if document.get("kind") == "ConfigMap"
-        and document.get("metadata", {}).get("name") == "nke-rbac"
+        and document.get("metadata", {}).get("name") == RBAC_CONFIG_MAP
     ]
     if not config_maps:
-        print("ERROR: no nke-rbac ConfigMap in the rendered chart", file=sys.stderr)
+        print(f"ERROR: no {RBAC_CONFIG_MAP} ConfigMap in the rendered chart", file=sys.stderr)
         return 1
 
     inner = list(yaml.safe_load_all(config_maps[0]["data"]["manifest.yaml"]))
@@ -139,7 +149,7 @@ def main():
         actual_documents = [document for document in yaml.safe_load_all(result.stdout) if document]
         actual_config_map = next(
             document for document in actual_documents
-            if document.get("kind") == "ConfigMap" and document["metadata"]["name"] == "nke-rbac"
+            if document.get("kind") == "ConfigMap" and document["metadata"]["name"] == RBAC_CONFIG_MAP
         )
         actual_rbac = list(yaml.safe_load_all(actual_config_map["data"]["manifest.yaml"]))
         if actual_rbac != inner + (additional or []):
@@ -147,7 +157,7 @@ def main():
             return 1
         actual_config_map["data"]["manifest.yaml"] = config_maps[0]["data"]["manifest.yaml"]
         if actual_documents != documents:
-            print("ERROR: additional tenant RBAC must only change the nke-rbac manifest", file=sys.stderr)
+            print(f"ERROR: additional tenant RBAC must only change the {RBAC_CONFIG_MAP} manifest", file=sys.stderr)
             return 1
 
     for override, expected in (
@@ -240,7 +250,7 @@ def main():
     }
     cluster_role = roles.get(("ClusterRole", tenant_rbac_name))
     if cluster_role is None:
-        print(f"ERROR: no {tenant_rbac_name} ClusterRole in the nke-rbac manifest", file=sys.stderr)
+        print(f"ERROR: no {tenant_rbac_name} ClusterRole in the {RBAC_CONFIG_MAP} manifest", file=sys.stderr)
         return 1
 
     bindings = {
@@ -251,7 +261,7 @@ def main():
     capi_binding = bindings.get("nvke:capi-cluster-admin")
     if capi_binding is None:
         print(
-            "ERROR: no nvke:capi-cluster-admin ClusterRoleBinding in the nke-rbac manifest",
+            f"ERROR: no nvke:capi-cluster-admin ClusterRoleBinding in the {RBAC_CONFIG_MAP} manifest",
             file=sys.stderr,
         )
         return 1

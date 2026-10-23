@@ -102,6 +102,9 @@ var stayEnv = map[string]string{
 var configMapOnly = []string{
 	"oidc.providers",
 	"managementNamespace",
+	// The RBAC ConfigMap's name, which became a value with the namespace it
+	// lives in and so never had an environment variable either.
+	"rbacConfigMapName",
 	// New clusters default to OVN-Kubernetes. This is the switch internal
 	// fleets set when they still create Calico clusters.
 	"allowLegacyCalicoClusterCreation",

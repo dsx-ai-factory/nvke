@@ -122,6 +122,16 @@ CONTROLLER_CONFIG_PATH is the mount and the file joined, so none are values.
 {{- required "controllerConfig.name must not be empty" .Values.controllerConfig.name -}}
 {{- end }}
 
+{{/*
+The ConfigMap carrying the tenant RBAC manifest. The ConfigMap itself, the Role
+granting get on it, that Role's resourceNames, and the RoleBinding all render
+from this one helper: a resourceNames entry left on another name is a render
+that installs clean and then denies the controller at reconcile time.
+*/}}
+{{- define "controller.rbacConfigMap.name" -}}
+{{- required "rbacConfigMap.name must not be empty" .Values.rbacConfigMap.name -}}
+{{- end }}
+
 {{- define "controller.controllerConfig.file" -}}
 config.yaml
 {{- end }}

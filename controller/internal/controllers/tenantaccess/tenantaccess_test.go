@@ -1033,7 +1033,7 @@ func TestPublish_ReturnsSPIREAndBreakglassErrors(t *testing.T) {
 	}
 
 	err := c.publish(ctx, cluster, []byte(testAdminConf))
-	require.ErrorContains(t, err, "nke-rbac ConfigMap not found")
+	require.ErrorContains(t, err, "RBAC ConfigMap nke-system/nke-rbac not found")
 	require.ErrorContains(t, err, "issuing breakglass kubeconfig for cluster oidc")
 	require.ErrorContains(t, err, "denied by kubectl certificate deny")
 }

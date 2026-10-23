@@ -36,7 +36,7 @@ func TestBootstrapAuthenticationMatchesRollout(t *testing.T) {
 		cfg:         config.Config{NvkeOIDCAuth: config.NvkeOIDCAuth{Enabled: true, IssuerURL: "https://shared.example.com"}},
 		trustDomain: "jwt.example.com",
 		k8sClient: fake.NewClientBuilder().WithScheme(clientgoscheme.Scheme).WithObjects(&corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.ConfigMapName},
+			ObjectMeta: metav1.ObjectMeta{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.LegacyConfigMapName},
 			Data:       map[string]string{nvkerbac.ConfigMapKey: "kind: ClusterRoleBinding\nsubjects:\n  - {kind: User, name: spiffe://jwt.example.com/capi}\n"},
 		}).Build(),
 	}
@@ -77,7 +77,7 @@ func TestBootstrapAuthenticationMatchesRollout(t *testing.T) {
 				oidc.WithOIDCConfig(&a.cfg.NvkeOIDCAuth),
 				oidc.WithClient(a.k8sClient),
 				oidc.WithTrustDomain(a.trustDomain),
-				oidc.WithManagementNamespace(a.cfg.ManagementNamespaceOrDefault()),
+				oidc.WithRBACConfigMap(a.cfg.RBACConfigMapSource()),
 			)
 			payload, err := op.BuildApplyToNodePayload(context.Background(), adapter.NewCluster(tt.cluster, nil, nil, "50051"))
 			require.NoError(t, err)

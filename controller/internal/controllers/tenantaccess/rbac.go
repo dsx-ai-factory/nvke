@@ -18,9 +18,6 @@ import (
 )
 
 const (
-	// rbacConfigMapName is the operator-managed ConfigMap holding the tenant RBAC
-	// manifest that gets applied into OIDC tenant clusters.
-	rbacConfigMapName = nvkerbac.ConfigMapName
 	// rbacConfigMapKey is the ConfigMap data key containing the multi-document
 	// tenant RBAC manifest.
 	rbacConfigMapKey = nvkerbac.ConfigMapKey
@@ -91,10 +88,10 @@ func pruneLegacyRBAC(ctx context.Context, c ctrlclient.Client, manifest []byte) 
 	return nil
 }
 
-// readRBACManifest reads the operator-managed nke-rbac ConfigMap from the
+// readRBACManifest reads the operator-managed RBAC ConfigMap from the
 // management cluster and returns the multi-document tenant RBAC manifest.
 func (c *Controller) readRBACManifest(ctx context.Context) ([]byte, error) {
-	return nvkerbac.ReadManifest(ctx, c.k8sClient, c.secretsNamespace())
+	return nvkerbac.ReadManifest(ctx, c.k8sClient, c.cfg.RBACConfigMapSource())
 }
 
 // applyManifestSSA splits a multi-document YAML manifest and Server-Side-Applies

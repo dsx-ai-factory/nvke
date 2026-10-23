@@ -67,7 +67,7 @@ const (
 	defaultSpireRelease = "spire"
 
 	// adminSPIFFEPath is bound to cluster-admin in every tenant by the
-	// nvke:capi-cluster-admin ClusterRoleBinding the nke-rbac ConfigMap carries.
+	// nvke:capi-cluster-admin ClusterRoleBinding the RBAC ConfigMap carries.
 	// GetAdminClient mints this rather than widening nvke:cwe for test setup.
 	adminSPIFFEPath     = "/nvke-service/capi-manager"
 	spireExecPluginName = "k8s-spiffe-workload-jwt-exec-auth"
