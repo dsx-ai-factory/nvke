@@ -137,19 +137,28 @@ func TestUnit_SiteWorkloadProblems(t *testing.T) {
 	})
 }
 
-func TestUnit_SiteExcuseNamespace(t *testing.T) {
+func TestUnit_SiteExcusePods(t *testing.T) {
+	probe := map[string]string{validationProbeLabel: "true"}
 	pods := []corev1.Pod{
 		{ObjectMeta: metav1.ObjectMeta{Namespace: "runner", Name: "earlier-run"}},
 		{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "etcd"}},
+		{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "e2e-node-local-dns-x", Labels: probe}},
+		{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "app", Labels: map[string]string{validationProbeLabel: "false"}}},
 	}
-	kept, excused := excuseNamespace(pods, "runner")
-	require.Equal(t, 1, excused)
-	require.Len(t, kept, 1)
-	require.Equal(t, "etcd", kept[0].Name)
-	require.Len(t, pods, 2, "the caller's list is not changed")
-	kept, excused = excuseNamespace(pods, "")
-	require.Zero(t, excused)
-	require.Len(t, kept, 2)
+	names := func(pods []corev1.Pod) []string {
+		names := make([]string, 0, len(pods))
+		for _, pod := range pods {
+			names = append(names, pod.Name)
+		}
+		return names
+	}
+	kept, excused := excusePods(pods, "runner")
+	require.Equal(t, 2, excused)
+	require.Equal(t, []string{"etcd", "app"}, names(kept))
+	require.Len(t, pods, 4, "the caller's list is not changed")
+	kept, excused = excusePods(pods, "")
+	require.Equal(t, 1, excused, "an earlier run's probe pod is left out wherever it is")
+	require.Equal(t, []string{"earlier-run", "etcd", "app"}, names(kept))
 }
 
 func TestUnit_SiteControlPlaneProblems(t *testing.T) {
