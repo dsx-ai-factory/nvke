@@ -79,6 +79,20 @@ navigation:
             path: operations/label-domain-migration.md
           - page: Site Certificate Renewal
             path: site-operations/certificate-renewal.md
+          - page: OSS Alpha Credential Operations
+            path: operations/credential-lifecycle.md
+          - page: Kubernetes Certificate Renewal
+            path: tenant-clusters/certificate-renewal.md
+          - page: Kubelet Serving Certificates
+            path: tenant-clusters/kubelet-serving-certificates.md
+          - page: Certificate Renewal Contract
+            path: ../controller/docs/certificate-renewal.md
+          - page: Etcd Encryption Key Rotation
+            path: ../controller/docs/etcd-encryption-key-rotation.md
+          - page: Credential Monitoring
+            path: ../controller/docs/credential-monitoring.md
+          - page: Credential Audit Evidence
+            path: ../controller/docs/credential-audit.md
 
       - section: NVKE telemetry pipeline (NKTP)
         contents:
