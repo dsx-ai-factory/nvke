@@ -155,20 +155,27 @@ Do not repair a missing management field by renaming a live storage key.
 
 ## Invocation and observation
 
-Choose the actual Temporal address, namespace, and controller task queue from the site
-configuration. Use a new workflow ID for each rotation and retain it for recovery.
+Start the workflow in the namespace and task queue the controller's workers
+poll: `temporal.namespace` and `temporal.taskQueue` in `nvke-controller-config`
+(chart values `temporal.cloudWorkflow.namespace` and
+`temporal.cloudWorkflow.queue`; defaults `cloud-workflow-engine` and
+`cloud-workflow-engine-tasks`). A different namespace or queue is rejected or
+never runs. The address is the site's Temporal frontend, `temporal.hostPort`.
+When the controller uses Temporal mTLS (`temporal.tls.*`), also pass the
+Temporal CLI's TLS flags (`--tls-ca-path`, `--tls-cert-path`, `--tls-key-path`,
+`--tls-server-name`) with the site's frontend credentials. Use a new workflow ID for each rotation and retain it for recovery.
 An execution that reuses the ID of a succeeded rotation fails with a
 non-retryable precondition error before any node work, instead of reporting
 success without rotating.
-The input contains only the tenant cluster UUID. The following values are
-placeholders, not deployment defaults:
+The input contains only the tenant cluster UUID. The cluster ID and address
+below are placeholders; the namespace and queue are the chart defaults:
 
 ```bash
 rotation_cluster_id=00000000-0000-0000-0000-000000000001
 rotation_workflow_id="etcd-key-rotation-${rotation_cluster_id}-$(date -u +%Y%m%dT%H%M%SZ)"
-rotation_temporal_address=temporal.example.invalid:7233
-rotation_temporal_namespace=example-namespace
-rotation_task_queue=example-cwe-task-queue
+rotation_temporal_address=temporal.example.invalid:7233   # temporal.hostPort
+rotation_temporal_namespace=cloud-workflow-engine         # temporal.namespace
+rotation_task_queue=cloud-workflow-engine-tasks           # temporal.taskQueue
 
 temporal workflow start \
   --address "$rotation_temporal_address" \
