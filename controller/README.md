@@ -323,7 +323,7 @@ There are three attestation modes in the local cluster-create paths, set with `n
 - `tpm`
 - `dsxImds` (see the `dsx-imds-attestation` provider above)
 
-The CAPI cluster creation path supports `joinToken` and `tpm`. The Docker-based Forge flow
+The CAPI cluster creation path supports all three modes; `dsxImds` needs the DSX IMDS attestor plugin in the node image. The Docker-based Forge flow
 keeps the same TPM-shaped contracts as a real Forge node and swaps only the
 physical TPM for a software-backed vTPM chain:
 
