@@ -38,6 +38,9 @@ const (
 	NodeAgent_StartKubernetesCertificateRenewal_FullMethodName            = "/proto.NodeAgent/StartKubernetesCertificateRenewal"
 	NodeAgent_GetKubernetesCertificateRenewalStatus_FullMethodName        = "/proto.NodeAgent/GetKubernetesCertificateRenewalStatus"
 	NodeAgent_RemoveEtcdMember_FullMethodName                             = "/proto.NodeAgent/RemoveEtcdMember"
+	NodeAgent_GetEtcdStatus_FullMethodName                                = "/proto.NodeAgent/GetEtcdStatus"
+	NodeAgent_StartEtcdDefrag_FullMethodName                              = "/proto.NodeAgent/StartEtcdDefrag"
+	NodeAgent_GetEtcdDefragStatus_FullMethodName                          = "/proto.NodeAgent/GetEtcdDefragStatus"
 	NodeAgent_StartK8SControlPlaneNodeGracefulShutdown_FullMethodName     = "/proto.NodeAgent/StartK8sControlPlaneNodeGracefulShutdown"
 	NodeAgent_GetK8SControlPlaneNodeGracefulShutdownStatus_FullMethodName = "/proto.NodeAgent/GetK8sControlPlaneNodeGracefulShutdownStatus"
 	NodeAgent_StartKubeVipRestore_FullMethodName                          = "/proto.NodeAgent/StartKubeVipRestore"
@@ -132,6 +135,55 @@ type NodeAgentClient interface {
 	// leadership to the local member before removing a leader, and treats an
 	// absent target as success.
 	RemoveEtcdMember(ctx context.Context, in *RemoveEtcdMemberRequest, opts ...grpc.CallOption) (*RemoveEtcdMemberResponse, error)
+	// GetEtcdStatus reports the local etcd member's backend sizing and role.
+	// Read-only and side-effect free: it uses etcd's Status and MemberList
+	// maintenance APIs and reads the static-pod manifest, never the key/value
+	// API, so it is safe to poll.
+	//
+	// The caller decides whether defragmentation is warranted; this RPC only
+	// reports. reclaimable_bytes (db_total_size - db_total_size_in_use) is the
+	// figure to gate on, not db_total_size: a large file backed by live data is
+	// not reclaimable and defragmentation would not shrink it.
+	GetEtcdStatus(ctx context.Context, in *GetEtcdStatusRequest, opts ...grpc.CallOption) (*GetEtcdStatusResponse, error)
+	// StartEtcdDefrag starts an asynchronous offline defragmentation of the local
+	// etcd member by restarting it so etcd defragments during bootstrap. It never
+	// calls `etcdctl defrag`, which blocks the member while it runs.
+	//
+	// The manifest content is not modified; the restart is driven by moving the
+	// static-pod manifest aside and back, which makes kubelet tear down and
+	// recreate the pod. etcd then defragments during bootstrap if its configured
+	// threshold is met.
+	//
+	// Because the threshold is what decides whether the restart accomplishes
+	// anything, the agent reads it from the manifest and refuses up front when
+	// reclaimable_bytes is below it, reporting OUTCOME_REFUSED without touching
+	// etcd. A restart that cannot defragment is pure downtime, so it is not
+	// attempted. The agent never edits the threshold - it is set by kubeadm when
+	// the node is provisioned - so the configured value is always honoured.
+	//
+	// The agent performs the full per-node sequence: health preflight, voting
+	// member check, leadership transfer away from the local member if it is
+	// leader, the manifest move, the move back, and the wait for etcd to return
+	// healthy. The caller sequences members; it does not orchestrate within one.
+	//
+	// The manifest is put back before that health wait, so a member that then
+	// fails to return healthy is already running its original configuration and
+	// there is nothing left for the agent to restore. That case reports
+	// OUTCOME_FAILED_NOT_RESTORED and needs an operator: no agent-side action
+	// recovers an etcd that will not start from its own unmodified manifest.
+	//
+	// The caller must steer API traffic away from this node first, as it must
+	// for PatchAPIServerManifest. This node's kube-apiserver reaches etcd over
+	// localhost and cannot serve while it is down, but kube-vip keeps
+	// advertising the VIP toward it. Drain kube-vip before this call and restore
+	// it after.
+	//
+	// The operation_id is an idempotency key; retrying with the same operation_id
+	// returns the existing operation instead of restarting etcd a second time.
+	StartEtcdDefrag(ctx context.Context, in *StartEtcdDefragRequest, opts ...grpc.CallOption) (*StartEtcdDefragResponse, error)
+	// GetEtcdDefragStatus returns the current status for a previously started
+	// asynchronous etcd defragmentation, including how many bytes were reclaimed.
+	GetEtcdDefragStatus(ctx context.Context, in *GetEtcdDefragStatusRequest, opts ...grpc.CallOption) (*GetEtcdDefragStatusResponse, error)
 	// StartK8sControlPlaneNodeGracefulShutdown starts an asynchronous
 	// control-plane node graceful shutdown operation. The operation_id is an
 	// idempotency key; retrying with the same operation_id returns the existing
@@ -424,6 +476,36 @@ func (c *nodeAgentClient) RemoveEtcdMember(ctx context.Context, in *RemoveEtcdMe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RemoveEtcdMemberResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_RemoveEtcdMember_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) GetEtcdStatus(ctx context.Context, in *GetEtcdStatusRequest, opts ...grpc.CallOption) (*GetEtcdStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetEtcdStatusResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_GetEtcdStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) StartEtcdDefrag(ctx context.Context, in *StartEtcdDefragRequest, opts ...grpc.CallOption) (*StartEtcdDefragResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartEtcdDefragResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_StartEtcdDefrag_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) GetEtcdDefragStatus(ctx context.Context, in *GetEtcdDefragStatusRequest, opts ...grpc.CallOption) (*GetEtcdDefragStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetEtcdDefragStatusResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_GetEtcdDefragStatus_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -849,6 +931,55 @@ type NodeAgentServer interface {
 	// leadership to the local member before removing a leader, and treats an
 	// absent target as success.
 	RemoveEtcdMember(context.Context, *RemoveEtcdMemberRequest) (*RemoveEtcdMemberResponse, error)
+	// GetEtcdStatus reports the local etcd member's backend sizing and role.
+	// Read-only and side-effect free: it uses etcd's Status and MemberList
+	// maintenance APIs and reads the static-pod manifest, never the key/value
+	// API, so it is safe to poll.
+	//
+	// The caller decides whether defragmentation is warranted; this RPC only
+	// reports. reclaimable_bytes (db_total_size - db_total_size_in_use) is the
+	// figure to gate on, not db_total_size: a large file backed by live data is
+	// not reclaimable and defragmentation would not shrink it.
+	GetEtcdStatus(context.Context, *GetEtcdStatusRequest) (*GetEtcdStatusResponse, error)
+	// StartEtcdDefrag starts an asynchronous offline defragmentation of the local
+	// etcd member by restarting it so etcd defragments during bootstrap. It never
+	// calls `etcdctl defrag`, which blocks the member while it runs.
+	//
+	// The manifest content is not modified; the restart is driven by moving the
+	// static-pod manifest aside and back, which makes kubelet tear down and
+	// recreate the pod. etcd then defragments during bootstrap if its configured
+	// threshold is met.
+	//
+	// Because the threshold is what decides whether the restart accomplishes
+	// anything, the agent reads it from the manifest and refuses up front when
+	// reclaimable_bytes is below it, reporting OUTCOME_REFUSED without touching
+	// etcd. A restart that cannot defragment is pure downtime, so it is not
+	// attempted. The agent never edits the threshold - it is set by kubeadm when
+	// the node is provisioned - so the configured value is always honoured.
+	//
+	// The agent performs the full per-node sequence: health preflight, voting
+	// member check, leadership transfer away from the local member if it is
+	// leader, the manifest move, the move back, and the wait for etcd to return
+	// healthy. The caller sequences members; it does not orchestrate within one.
+	//
+	// The manifest is put back before that health wait, so a member that then
+	// fails to return healthy is already running its original configuration and
+	// there is nothing left for the agent to restore. That case reports
+	// OUTCOME_FAILED_NOT_RESTORED and needs an operator: no agent-side action
+	// recovers an etcd that will not start from its own unmodified manifest.
+	//
+	// The caller must steer API traffic away from this node first, as it must
+	// for PatchAPIServerManifest. This node's kube-apiserver reaches etcd over
+	// localhost and cannot serve while it is down, but kube-vip keeps
+	// advertising the VIP toward it. Drain kube-vip before this call and restore
+	// it after.
+	//
+	// The operation_id is an idempotency key; retrying with the same operation_id
+	// returns the existing operation instead of restarting etcd a second time.
+	StartEtcdDefrag(context.Context, *StartEtcdDefragRequest) (*StartEtcdDefragResponse, error)
+	// GetEtcdDefragStatus returns the current status for a previously started
+	// asynchronous etcd defragmentation, including how many bytes were reclaimed.
+	GetEtcdDefragStatus(context.Context, *GetEtcdDefragStatusRequest) (*GetEtcdDefragStatusResponse, error)
 	// StartK8sControlPlaneNodeGracefulShutdown starts an asynchronous
 	// control-plane node graceful shutdown operation. The operation_id is an
 	// idempotency key; retrying with the same operation_id returns the existing
@@ -1031,6 +1162,15 @@ func (UnimplementedNodeAgentServer) GetKubernetesCertificateRenewalStatus(contex
 }
 func (UnimplementedNodeAgentServer) RemoveEtcdMember(context.Context, *RemoveEtcdMemberRequest) (*RemoveEtcdMemberResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveEtcdMember not implemented")
+}
+func (UnimplementedNodeAgentServer) GetEtcdStatus(context.Context, *GetEtcdStatusRequest) (*GetEtcdStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetEtcdStatus not implemented")
+}
+func (UnimplementedNodeAgentServer) StartEtcdDefrag(context.Context, *StartEtcdDefragRequest) (*StartEtcdDefragResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartEtcdDefrag not implemented")
+}
+func (UnimplementedNodeAgentServer) GetEtcdDefragStatus(context.Context, *GetEtcdDefragStatusRequest) (*GetEtcdDefragStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetEtcdDefragStatus not implemented")
 }
 func (UnimplementedNodeAgentServer) StartK8SControlPlaneNodeGracefulShutdown(context.Context, *StartK8SControlPlaneNodeGracefulShutdownRequest) (*StartK8SControlPlaneNodeGracefulShutdownResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartK8SControlPlaneNodeGracefulShutdown not implemented")
@@ -1422,6 +1562,60 @@ func _NodeAgent_RemoveEtcdMember_Handler(srv interface{}, ctx context.Context, d
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodeAgentServer).RemoveEtcdMember(ctx, req.(*RemoveEtcdMemberRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_GetEtcdStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetEtcdStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).GetEtcdStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_GetEtcdStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).GetEtcdStatus(ctx, req.(*GetEtcdStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_StartEtcdDefrag_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartEtcdDefragRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).StartEtcdDefrag(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_StartEtcdDefrag_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).StartEtcdDefrag(ctx, req.(*StartEtcdDefragRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_GetEtcdDefragStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetEtcdDefragStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).GetEtcdDefragStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_GetEtcdDefragStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).GetEtcdDefragStatus(ctx, req.(*GetEtcdDefragStatusRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2065,6 +2259,18 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveEtcdMember",
 			Handler:    _NodeAgent_RemoveEtcdMember_Handler,
+		},
+		{
+			MethodName: "GetEtcdStatus",
+			Handler:    _NodeAgent_GetEtcdStatus_Handler,
+		},
+		{
+			MethodName: "StartEtcdDefrag",
+			Handler:    _NodeAgent_StartEtcdDefrag_Handler,
+		},
+		{
+			MethodName: "GetEtcdDefragStatus",
+			Handler:    _NodeAgent_GetEtcdDefragStatus_Handler,
 		},
 		{
 			MethodName: "StartK8sControlPlaneNodeGracefulShutdown",

@@ -216,6 +216,22 @@ type NodeAgentServer struct {
 	spireAgentPollInterval time.Duration // overrides the SVID poll interval in tests
 	spireAgentWaitTimeout  time.Duration // overrides the SVID wait timeout in tests
 	fetchX509SVID          func(context.Context, string) (*x509svid.SVID, error)
+
+	// etcdHealthTimeout bounds how long the etcd manifest and defragmentation
+	// RPCs wait for the local member to report healthy after a restart. Zero
+	// means the production default. A defragmenting member is unresponsive for
+	// the duration of the rewrite, so this is sized for the backend file, not
+	// for a plain restart.
+	etcdHealthTimeout time.Duration
+	// etcdHealthPollInterval is the gap between local etcd health probes during
+	// that wait. Zero means the production default.
+	etcdHealthPollInterval time.Duration
+	// etcdExitTimeout bounds the wait for the etcd container to exit once its
+	// manifest has been moved aside. Zero means the production default.
+	etcdExitTimeout time.Duration
+	// etcdCallTimeout bounds a single etcd API call, so an unreachable member
+	// cannot block a call indefinitely. Zero means the production default.
+	etcdCallTimeout time.Duration
 }
 
 // Real implementations

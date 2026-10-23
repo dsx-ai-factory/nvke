@@ -459,9 +459,20 @@ func (s *NodeAgentServer) restoreStaticPod(
 	spec staticPodRestoreSpec,
 ) error {
 	progress.SetStep(spec.restoringStep)
+	// Carry on when the listing fails rather than returning. The listing is only
+	// the baseline for the new-container gate below, so losing it weakens that
+	// gate; returning here would skip the rename entirely and leave a manifest
+	// that was moved aside parked, with nothing scheduled to put it back. For
+	// etcd that is the difference between a failed defragmentation and a member
+	// that stays down.
+	var baseline staticPodBaseline
 	containerIDs, err := listStaticPodContainerIDs(runner, spec.containerName)
 	if err != nil {
-		return fmt.Errorf("list existing %s containers: %w", spec.containerName, err)
+		slog.WarnContext(ctx, "failed to list containers before restoring static pod; restoring anyway",
+			"container", spec.containerName, "err", err)
+		baseline.unknown = true
+	} else {
+		baseline.containerIDs = containerIDs
 	}
 	manifestRestored, err := s.restoreStaticPodManifest(spec.manifestName)
 	if err != nil {
@@ -469,9 +480,11 @@ func (s *NodeAgentServer) restoreStaticPod(
 	}
 	progress.SetStep(spec.waitingStep)
 	if !manifestRestored {
-		containerIDs = nil
+		// The manifest was already active, so nothing was renamed and there is
+		// no restart to wait for.
+		baseline = staticPodBaseline{anyContainerSatisfies: true}
 	}
-	if err := s.waitForStaticPodRunning(ctx, runner, spec.containerName, containerIDs, spec.timeout); err != nil {
+	if err := s.waitForStaticPodRunning(ctx, runner, spec.containerName, baseline, spec.timeout); err != nil {
 		return fmt.Errorf("wait for %s start: %w", spec.containerName, err)
 	}
 	return nil
@@ -624,25 +637,40 @@ func (s *NodeAgentServer) waitForStaticPodExit(
 	}
 }
 
+// waitForStaticPodRunning waits for the container to be running again after a
+// manifest was put back.
+//
+// What counts as "again" depends on what the caller knows, which is why the
+// baseline is a type rather than a slice. A known set of pre-restore container
+// IDs proves a restart when something outside it appears. An absent baseline is
+// two different situations that must not be conflated: when no swap is expected
+// any running container is the answer, but when the listing simply failed, the
+// container still running from before the move would otherwise satisfy the
+// wait. In that case the container has to be observed gone first, which is
+// cheap here because the manifest is renamed back before this is called and the
+// kubelet takes tens of seconds to notice it.
 func (s *NodeAgentServer) waitForStaticPodRunning(
 	ctx context.Context,
 	runner nvkeutils.CommandRunner,
 	containerName string,
-	previousContainerIDs []string,
+	baseline staticPodBaseline,
 	timeout time.Duration,
 ) error {
 	deadline := time.Now().Add(timeout)
-	previousContainerIDSet := make(map[string]struct{}, len(previousContainerIDs))
-	for _, id := range previousContainerIDs {
+	previousContainerIDSet := make(map[string]struct{}, len(baseline.containerIDs))
+	for _, id := range baseline.containerIDs {
 		previousContainerIDSet[id] = struct{}{}
 	}
+	observedAbsent := false
 	for {
 		containerIDs, err := listStaticPodContainerIDs(runner, containerName)
 		if err != nil {
 			return err
 		}
-		newContainerIDs := newStaticPodContainerIDs(containerIDs, previousContainerIDSet)
-		if len(newContainerIDs) > 0 {
+		if len(containerIDs) == 0 {
+			observedAbsent = true
+		}
+		if staticPodRestarted(containerIDs, previousContainerIDSet, baseline, observedAbsent) {
 			slog.Info("static pod containers are running", "container", containerName, "containerIDs", containerIDs)
 			return nil
 		}
@@ -652,6 +680,37 @@ func (s *NodeAgentServer) waitForStaticPodRunning(
 		if err := sleepOrDone(ctx, s.drainKubeVipPollIntervalOrDefault()); err != nil {
 			return err
 		}
+	}
+}
+
+// staticPodBaseline is what the caller knows about the containers that were
+// running before a manifest was restored.
+type staticPodBaseline struct {
+	// containerIDs are the IDs seen before the restore. Empty means none were
+	// seen, which is only meaningful alongside the two flags below.
+	containerIDs []string
+	// anyContainerSatisfies records that no swap is expected, because the
+	// manifest was already in place and nothing was renamed. Whatever is
+	// running is the right answer.
+	anyContainerSatisfies bool
+	// unknown records that the listing failed, so the empty set is absence of
+	// evidence rather than evidence of absence.
+	unknown bool
+}
+
+func staticPodRestarted(
+	containerIDs []string,
+	previousContainerIDSet map[string]struct{},
+	baseline staticPodBaseline,
+	observedAbsent bool,
+) bool {
+	switch {
+	case baseline.anyContainerSatisfies:
+		return len(containerIDs) > 0
+	case baseline.unknown:
+		return observedAbsent && len(containerIDs) > 0
+	default:
+		return len(newStaticPodContainerIDs(containerIDs, previousContainerIDSet)) > 0
 	}
 }
 

@@ -189,7 +189,7 @@ func apiserverCommand(t *testing.T, manifestJSON []byte) []string {
 	t.Helper()
 	var doc map[string]interface{}
 	require.NoError(t, json.Unmarshal(manifestJSON, &doc))
-	container, err := findAPIServerContainerMap(doc)
+	container, err := findContainerMap(doc, kubeAPIServerContainerName)
 	require.NoError(t, err)
 	cmd, err := toStringSlice(container["command"])
 	require.NoError(t, err)
@@ -202,7 +202,7 @@ func TestApplyFlagOps_MultiOpOrdering(t *testing.T) {
 		{Op: &pb.FlagOp_Set{Set: &pb.SetFlag{Name: "foo", Value: "2"}}},
 		{Op: &pb.FlagOp_Set{Set: &pb.SetFlag{Name: "bar", Value: "3"}}},
 	}
-	out, err := applyFlagOps(manifest, ops)
+	out, err := applyFlagOps(manifest, kubeAPIServerContainerName, ops)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"kube-apiserver", "--foo=2", "--bar=3"}, apiserverCommand(t, out))
 }
@@ -213,7 +213,7 @@ func TestApplyFlagOps_SetThenRemove(t *testing.T) {
 		{Op: &pb.FlagOp_Set{Set: &pb.SetFlag{Name: "baz", Value: "1"}}},
 		{Op: &pb.FlagOp_Remove{Remove: &pb.RemoveFlag{Name: "baz"}}},
 	}
-	out, err := applyFlagOps(manifest, ops)
+	out, err := applyFlagOps(manifest, kubeAPIServerContainerName, ops)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"kube-apiserver"}, apiserverCommand(t, out))
 }
@@ -223,12 +223,12 @@ func TestApplyFlagOps_PrefersExistingLocationInArgs(t *testing.T) {
 	// reconciles it there rather than duplicating into command.
 	manifest := []byte(`{"apiVersion":"v1","kind":"Pod","spec":{"containers":[{"name":"kube-apiserver","command":["kube-apiserver"],"args":["--foo=1"]}]}}`)
 	ops := []*pb.FlagOp{{Op: &pb.FlagOp_Set{Set: &pb.SetFlag{Name: "foo", Value: "2"}}}}
-	out, err := applyFlagOps(manifest, ops)
+	out, err := applyFlagOps(manifest, kubeAPIServerContainerName, ops)
 	require.NoError(t, err)
 
 	var doc map[string]interface{}
 	require.NoError(t, json.Unmarshal(out, &doc))
-	container, err := findAPIServerContainerMap(doc)
+	container, err := findContainerMap(doc, kubeAPIServerContainerName)
 	require.NoError(t, err)
 	args, err := toStringSlice(container["args"])
 	require.NoError(t, err)
@@ -241,7 +241,7 @@ func TestApplyFlagOps_PreservesUnknownFields(t *testing.T) {
 	// round-trip untouched.
 	manifest := []byte(`{"apiVersion":"v1","kind":"Pod","spec":{"customUnknownField":"keepme","containers":[{"name":"kube-apiserver","command":["kube-apiserver"]}]}}`)
 	ops := []*pb.FlagOp{{Op: &pb.FlagOp_Set{Set: &pb.SetFlag{Name: "foo", Value: "1"}}}}
-	out, err := applyFlagOps(manifest, ops)
+	out, err := applyFlagOps(manifest, kubeAPIServerContainerName, ops)
 	require.NoError(t, err)
 
 	var doc map[string]interface{}

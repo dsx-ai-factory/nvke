@@ -6,17 +6,11 @@ package agent
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
-	"reflect"
-	"sort"
-	"strings"
 	"syscall"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -141,7 +135,7 @@ func (s *NodeAgentServer) PatchAPIServerManifest(
 	}
 
 	if len(req.GetFlagOps()) > 0 {
-		mergedJSON, err = applyFlagOps(mergedJSON, req.GetFlagOps())
+		mergedJSON, err = applyFlagOps(mergedJSON, kubeAPIServerContainerName, req.GetFlagOps())
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "patch apiserver manifest: apply flag ops: %v", err)
 		}
@@ -413,46 +407,12 @@ func capturePriorFile(path string, content []byte) (priorFile, error) {
 // backup_manifest_path without repeated calls growing the directory without
 // bound.
 func (s *NodeAgentServer) snapshotAPIServerManifest(manifestPath string, manifestRaw []byte) (string, error) {
-	backupDir := s.resolveFilePath(apiServerManifestBackupDir)
-	if err := os.MkdirAll(backupDir, 0o700); err != nil {
-		return "", fmt.Errorf("creating backup dir %s: %w", backupDir, err)
-	}
-	backupName := apiServerManifestBackupPrefix + time.Now().UTC().Format("20060102T150405.000000000Z")
-	backupPath := filepath.Join(backupDir, backupName)
-
-	spec := fileSpec{path: backupPath, content: manifestRaw, mode: patchManifestFileMode, uid: 0, gid: 0}
-	if err := atomicWriteFileWithOwnership(spec, s.kubeadmFileOps); err != nil {
-		return "", fmt.Errorf("writing snapshot %s: %w", backupPath, err)
-	}
-	slog.Info("snapshotted kube-apiserver manifest", "from", manifestPath, "to", backupPath)
-
-	s.pruneAPIServerManifestBackups(backupDir)
-	return backupPath, nil
-}
-
-// pruneAPIServerManifestBackups keeps only the newest maxAPIServerManifestBackups
-// snapshots this RPC wrote (files named apiServerManifestBackupPrefix + a
-// sortable UTC timestamp), removing older ones. Best-effort: failures are logged,
-// not returned, and the just-written snapshot is always among those kept. Only
-// this RPC's own snapshots are considered; other files sharing the backup
-// directory are left untouched.
-func (s *NodeAgentServer) pruneAPIServerManifestBackups(backupDir string) {
-	matches, err := filepath.Glob(filepath.Join(backupDir, apiServerManifestBackupPrefix+"*"))
-	if err != nil {
-		slog.Warn("PatchAPIServerManifest: failed to list manifest backups for pruning (best-effort)", "dir", backupDir, "err", err)
-		return
-	}
-	if len(matches) <= maxAPIServerManifestBackups {
-		return
-	}
-	// The fixed-width UTC timestamp suffix sorts lexicographically in
-	// chronological order, so the newest snapshots are last.
-	sort.Strings(matches)
-	for _, old := range matches[:len(matches)-maxAPIServerManifestBackups] {
-		if err := os.Remove(old); err != nil && !os.IsNotExist(err) {
-			slog.Warn("PatchAPIServerManifest: failed to prune old manifest backup (best-effort)", "path", old, "err", err)
-		}
-	}
+	return s.snapshotStaticPodManifest(
+		manifestPath,
+		apiServerManifestBackupPrefix,
+		maxAPIServerManifestBackups,
+		manifestRaw,
+	)
 }
 
 // restoreNode rolls the node back to its pre-call state and re-verifies
@@ -576,261 +536,6 @@ func validatePatchAPIServerManifestRequest(req *pb.PatchAPIServerManifestRequest
 	return nil
 }
 
-// validateFlagName enforces that a flag name is a single bare token: non-empty,
-// no whitespace, no leading dashes, no "=". Values are unconstrained.
-func validateFlagName(name string) error {
-	if name == "" {
-		return errors.New("flag name is required")
-	}
-	if strings.HasPrefix(name, "-") {
-		return fmt.Errorf("flag name must not include leading dashes: %q", name)
-	}
-	if strings.Contains(name, "=") {
-		return fmt.Errorf("flag name must not contain '=': %q", name)
-	}
-	if len(strings.Fields(name)) != 1 {
-		return fmt.Errorf("flag name must be a single token with no whitespace: %q", name)
-	}
-	return nil
-}
-
-// applyFlagOps applies the flag operations to the kube-apiserver container's
-// command/args string lists, working on the manifest as a map so unknown fields
-// survive. Set operations reconcile the flag where it already lives (command or
-// args), else add it to command when command already carries flags (kubeadm's
-// canonical layout) and otherwise to args. Remove operations strip the flag from
-// both lists.
-func applyFlagOps(manifestJSON []byte, ops []*pb.FlagOp) ([]byte, error) {
-	var doc map[string]interface{}
-	if err := json.Unmarshal(manifestJSON, &doc); err != nil {
-		return nil, fmt.Errorf("unmarshal manifest: %w", err)
-	}
-	container, err := findAPIServerContainerMap(doc)
-	if err != nil {
-		return nil, err
-	}
-
-	command, err := toStringSlice(container["command"])
-	if err != nil {
-		return nil, fmt.Errorf("container command: %w", err)
-	}
-	args, err := toStringSlice(container["args"])
-	if err != nil {
-		return nil, fmt.Errorf("container args: %w", err)
-	}
-	_, argsExisted := container["args"]
-
-	for _, op := range ops {
-		switch {
-		case op.GetSet() != nil:
-			command, args = applySetFlag(command, args, op.GetSet().GetName(), op.GetSet().GetValue())
-		case op.GetRemove() != nil:
-			command = removeFlag(command, op.GetRemove().GetName())
-			args = removeFlag(args, op.GetRemove().GetName())
-		}
-	}
-
-	container["command"] = fromStringSlice(command)
-	if len(args) > 0 || argsExisted {
-		container["args"] = fromStringSlice(args)
-	}
-
-	out, err := json.Marshal(doc)
-	if err != nil {
-		return nil, fmt.Errorf("marshal manifest: %w", err)
-	}
-	return out, nil
-}
-
-// applySetFlag ensures --<name>=<value> is present exactly once, reconciling the
-// flag wherever it currently lives (command preferred over args), or adding it
-// to command when command already carries flags, else to args.
-func applySetFlag(command, args []string, name, value string) ([]string, []string) {
-	// One scan per list: setFlagIfPresent updates in place and reports whether
-	// the flag was there, so a present flag is not scanned twice (once to test,
-	// once to update).
-	if updated, found := setFlagIfPresent(command, name, value); found {
-		return updated, args
-	}
-	if updated, found := setFlagIfPresent(args, name, value); found {
-		return command, updated
-	}
-	// Absent from both lists: append once, preferring command when it already
-	// carries flags (kubeadm's canonical layout), else args.
-	want := "--" + name + "=" + value
-	if commandHasFlags(command) {
-		return append(command, want), args
-	}
-	return command, append(args, want)
-}
-
-// setFlagIfPresent updates an existing --<name> occurrence in list — the token
-// form (--name=old) or the split form (--name, old) — to --<name>=<value> and
-// reports found=true. When the flag is absent it leaves list untouched and
-// returns found=false, so the caller decides where to append. Single pass;
-// mutates the caller-owned copy that toStringSlice allocated.
-func setFlagIfPresent(list []string, name, value string) ([]string, bool) {
-	flag := "--" + name
-	want := flag + "=" + value
-	pfx := flag + "="
-	for i, e := range list {
-		switch {
-		case e == want:
-			return list, true
-		case strings.HasPrefix(e, pfx):
-			list[i] = want
-			return list, true
-		case e == flag:
-			// Split form "--name value": overwrite the following value token only
-			// when it is an actual value, not another flag. A bare boolean flag
-			// (--name with no value token, or followed by the next flag) is
-			// normalized to token form in place so we neither clobber the next
-			// flag nor append a duplicate.
-			if i+1 < len(list) && !strings.HasPrefix(list[i+1], "-") {
-				list[i+1] = value
-			} else {
-				list[i] = want
-			}
-			return list, true
-		}
-	}
-	return list, false
-}
-
-// ensureFlag makes --<name>=<value> present exactly once in cmd: it updates an
-// existing occurrence in place, else appends. Idempotent; operates on the
-// caller-owned copy toStringSlice allocated.
-func ensureFlag(cmd []string, name, value string) []string {
-	if updated, found := setFlagIfPresent(cmd, name, value); found {
-		return updated
-	}
-	return append(cmd, "--"+name+"="+value)
-}
-
-// removeFlag strips every occurrence of --<name> from cmd: the token form
-// (--name=...), and the split form (--name followed by its value token). It is
-// idempotent and compacts cmd in place (callers pass the owned copy
-// toStringSlice allocated), reusing the backing array rather than allocating.
-func removeFlag(cmd []string, name string) []string {
-	flag := "--" + name
-	pfx := flag + "="
-	out := cmd[:0]
-	for i := 0; i < len(cmd); i++ {
-		e := cmd[i]
-		if e == flag {
-			// Split form: also skip a following value token that is not itself
-			// a flag (a bare boolean flag has no value token to consume).
-			if i+1 < len(cmd) && !strings.HasPrefix(cmd[i+1], "-") {
-				i++
-			}
-			continue
-		}
-		if strings.HasPrefix(e, pfx) {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
-}
-
-// commandHasFlags reports whether command has at least one element after the
-// bare executable that starts with "--". kubeadm-rendered apiserver static pods
-// satisfy this; split-shape (command: [exe], args: [--flags...]) does not.
-func commandHasFlags(command []string) bool {
-	if len(command) < 2 {
-		return false
-	}
-	for _, a := range command[1:] {
-		if strings.HasPrefix(a, "--") {
-			return true
-		}
-	}
-	return false
-}
-
-// findAPIServerContainerMap locates the kube-apiserver container map in the
-// manifest doc. It prefers the container named kube-apiserver; failing that it
-// tolerates a single-container manifest, but refuses a multi-container manifest
-// where the target cannot be chosen deterministically.
-func findAPIServerContainerMap(doc map[string]interface{}) (map[string]interface{}, error) {
-	containers, err := containerList(doc)
-	if err != nil {
-		return nil, err
-	}
-	for _, cm := range containers {
-		if name, _ := cm["name"].(string); name == kubeAPIServerContainerName {
-			return cm, nil
-		}
-	}
-	if len(containers) == 1 {
-		return containers[0], nil
-	}
-	return nil, fmt.Errorf(
-		"apiserver manifest has %d containers and none is named %q",
-		len(containers), kubeAPIServerContainerName,
-	)
-}
-
-// containerList returns .spec.containers as a slice of maps.
-func containerList(doc map[string]interface{}) ([]map[string]interface{}, error) {
-	spec, ok := doc["spec"].(map[string]interface{})
-	if !ok {
-		return nil, errors.New("manifest has no spec object")
-	}
-	raw, ok := spec["containers"].([]interface{})
-	if !ok || len(raw) == 0 {
-		return nil, errors.New("manifest has no containers")
-	}
-	out := make([]map[string]interface{}, 0, len(raw))
-	for i, rc := range raw {
-		cm, ok := rc.(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("container %d is not an object", i)
-		}
-		out = append(out, cm)
-	}
-	return out, nil
-}
-
-// jsonSemanticEqual reports whether two JSON documents are structurally equal,
-// ignoring key ordering and whitespace.
-func jsonSemanticEqual(a, b []byte) bool {
-	var av, bv interface{}
-	if err := json.Unmarshal(a, &av); err != nil {
-		return false
-	}
-	if err := json.Unmarshal(b, &bv); err != nil {
-		return false
-	}
-	return reflect.DeepEqual(av, bv)
-}
-
-// toStringSlice converts a JSON array of strings to []string. A nil/absent value
-// yields (nil, nil).
-func toStringSlice(v interface{}) ([]string, error) {
-	if v == nil {
-		return nil, nil
-	}
-	arr, ok := v.([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("expected a list, got %T", v)
-	}
-	out := make([]string, 0, len(arr))
-	for i, e := range arr {
-		s, ok := e.(string)
-		if !ok {
-			return nil, fmt.Errorf("element %d is not a string (%T)", i, e)
-		}
-		out = append(out, s)
-	}
-	return out, nil
-}
-
-// fromStringSlice converts []string to a JSON-marshalable []interface{}.
-func fromStringSlice(s []string) []interface{} {
-	out := make([]interface{}, len(s))
-	for i, e := range s {
-		out[i] = e
-	}
-	return out
-}
+// The convergent flag helpers this RPC relies on (applyFlagOps, validateFlagName,
+// jsonSemanticEqual and friends) live in static_pod_flags.go, shared with the
+// etcd manifest RPCs.
