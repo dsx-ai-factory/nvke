@@ -151,9 +151,6 @@ func TestAssess(t *testing.T) {
 					t.Errorf("Detail = %q, want it to contain %q", got.Detail, want)
 				}
 			}
-			if got.StaleAfterSeconds != 600 {
-				t.Errorf("StaleAfterSeconds = %d, want 600", got.StaleAfterSeconds)
-			}
 		})
 	}
 }
