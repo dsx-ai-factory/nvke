@@ -26,24 +26,37 @@ func TestToSDKSubnetSeparatesIPv4PrefixAndLength(t *testing.T) {
 	}
 }
 
-func TestToSDKInstanceSanitizesPreservedFailureDuringDeletion(t *testing.T) {
+func TestToSDKInstanceReportsOnlyObservedFailures(t *testing.T) {
 	tests := []struct {
 		name            string
+		status          string
 		vm              *state.VMState
 		wantHistory     bool
 		wantHistoryText string
 	}{
 		{
-			name: "preserved failure is sanitized",
+			name:   "preserved failure is reported during deletion",
+			status: "deleting",
 			vm: &state.VMState{
-				ErrorReason: "vm create/start failed: sensitive runtime detail",
+				ObservedState: state.ObservedStateError,
+				ErrorReason:   "vm create/start failed: diagnostic detail",
 			},
 			wantHistory:     true,
-			wantHistoryText: clientSafeInstanceError,
+			wantHistoryText: "vm create/start failed: diagnostic detail",
 		},
 		{
 			name:        "normal deletion has no failure history",
+			status:      "deleting",
 			vm:          &state.VMState{},
+			wantHistory: false,
+		},
+		{
+			name:   "stopped VM reason is not failure history",
+			status: "stopped",
+			vm: &state.VMState{
+				ObservedState: state.ObservedStateStopped,
+				ErrorReason:   "VM shut off",
+			},
 			wantHistory: false,
 		},
 	}
@@ -51,11 +64,10 @@ func TestToSDKInstanceSanitizesPreservedFailureDuringDeletion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			instance := toSDKInstance(state.Instance{
-				Status: "deleting",
+				Status: tt.status,
 				VM:     tt.vm,
 			})
 
-			assert.Equal(t, "Terminating", string(instance.GetStatus()))
 			history := instance.GetStatusHistory()
 			if !tt.wantHistory {
 				assert.Empty(t, history)

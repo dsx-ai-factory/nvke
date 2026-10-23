@@ -12,8 +12,6 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/state"
 )
 
-const clientSafeInstanceError = "Instance operation failed"
-
 func toSDKInstance(row state.Instance) nicosdk.Instance {
 	instance := nicosdk.NewInstance()
 	instance.SetId(row.ID)
@@ -39,10 +37,10 @@ func toSDKInstance(row state.Instance) nicosdk.Instance {
 	groupIDs, _ := row.SSHKeyGroupIDs()
 	instance.SetSshKeyGroupIds(groupIDs)
 	instance.SetStatus(nicosdk.InstanceStatus(instanceStatus(row.Status)))
-	if row.VM != nil && row.VM.ErrorReason != "" {
+	if row.VM != nil && row.VM.ObservedState == state.ObservedStateError && row.VM.ErrorReason != "" {
 		detail := nicosdk.NewStatusDetail()
 		detail.SetStatus("Error")
-		detail.SetMessage(clientSafeInstanceError)
+		detail.SetMessage(row.VM.ErrorReason)
 		detail.SetCreated(row.UpdatedAt)
 		detail.SetUpdated(row.UpdatedAt)
 		instance.SetStatusHistory([]nicosdk.StatusDetail{*detail})
@@ -222,7 +220,7 @@ func instanceStatus(dbStatus string) string {
 	case "deleting":
 		return "Terminating" // SDK uses "Terminating", not "Deleting"
 	case "stopped", "suspended":
-		return "Error" // Forge SDK has no stopped/suspended; detail in statusHistory
+		return "Error" // Forge SDK has no stopped/suspended status
 	default:
 		return titleCase(dbStatus)
 	}

@@ -296,7 +296,7 @@ function buildDetailHtml(inst) {
     var errorReason = getErrorReason(inst);
     var html = '<div class="detail-content">';
     if (errorReason) {
-        html += '<div class="detail-field"><label>Error Reason</label><pre class="error-reason"><code>' +
+        html += '<div class="detail-field"><label>Error Reason</label><pre class="error-reason"><code class="language-plaintext">' +
             escapeHtml(errorReason) + '</code></pre></div>';
     }
     if (ipxe) html += '<div class="detail-field"><label>iPXE Script</label><pre><code class="language-shell">' + escapeHtml(ipxe) + '</code></pre></div>';
@@ -329,8 +329,12 @@ function updateRow(tr, inst) {
     tds[6].title = inst.created || '';
     var detail = tr.nextElementSibling;
     if (detail && detail.classList.contains('detail-row')) {
-        detail.children[0].innerHTML = buildDetailHtml(inst);
-        detail.querySelectorAll('pre code').forEach(function(block) { hljs.highlightElement(block); });
+        var detailHtml = buildDetailHtml(inst);
+        if (detail._sourceHtml !== detailHtml) {
+            detail.children[0].innerHTML = detailHtml;
+            detail._sourceHtml = detailHtml;
+            detail.querySelectorAll('pre code').forEach(function(block) { hljs.highlightElement(block); });
+        }
     }
 }
 
@@ -375,6 +379,7 @@ function createInstanceDetailRow(inst, columnCount) {
     td.colSpan = columnCount;
     td.innerHTML = detailHtml;
     detail.appendChild(td);
+    detail._sourceHtml = detailHtml;
     detail.querySelectorAll('pre code').forEach(function(block) { hljs.highlightElement(block); });
     return detail;
 }
