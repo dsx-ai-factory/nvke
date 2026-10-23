@@ -19,6 +19,8 @@ on:
       - .github/workflows/capd-dsx-identity-exchange-e2e.yml
       - .github/workflows/backend-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml
+      # Installs the pinned kind and kubectl the suite runs on.
+      - .github/actions/setup-kind/**
   # Twice a day, like every other e2e lane. A schedule ignores the paths above,
   # so a break they filtered out, or one a flake hid, still surfaces within
   # twelve hours. :30 past, continuing the ladder the other lanes use -- 2,14
@@ -38,11 +40,8 @@ jobs:
   changes:
     uses: ./.github/workflows/e2e-pr-path-filter.yml
     permissions:
+      contents: read
       pull-requests: read
-    with:
-      # Keep in step with the push paths above. The Helm chart is below
-      # controller/, so no separate pattern is needed for it.
-      relevant_paths: '^controller/|^agent/|^\.github/workflows/(capd-dsx-identity-exchange-e2e|backend-e2e|e2e-pr-path-filter)\.yml$'
 
   # Keep the ordinary direct-SPIRE CAPD lane as a control. This small lifecycle
   # uses the real exec plugin, a real local JWT-SVID and a real tenant apiserver.
