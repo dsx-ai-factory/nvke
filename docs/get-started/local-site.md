@@ -12,19 +12,30 @@ The example credentials, the simulated NICo and the single-node site are for loc
 
 ## Before you begin
 
-- A Linux host, as root, with at least 10 CPUs, 24 GiB of free memory and 100 GiB of free disk; or macOS, set up in [On macOS](#on-macos).
-- The Linux kernel module `tpm_vtpm_proxy`, which the container node's TPM uses. `make -C controller host-up` loads it.
+- A Debian or Ubuntu Linux host, as root, with at least 10 CPUs, 24 GiB of free memory and 100 GiB of free disk; or macOS, set up in [On macOS](#on-macos). The runtime installer below uses `dpkg`, and `make -C controller host-up` installs the TPM module with `apt-get`.
+- The Linux kernel module `tpm_vtpm_proxy`, which the container node's TPM uses. `make -C controller host-up` loads it, and installs it on Debian and Ubuntu if it is missing.
 - A standalone containerd with `nerdctl` and `buildkitd` for the node, which `cli/hack/bootstrap-e2e-host.sh install-runtime` installs with the version, checksums and socket paths exported as the two `export` lines in [On macOS](#on-macos) show, and Docker for the workload cluster nodes.
-- These tools on `PATH`: `git`, GNU Make 4, Go 1.27.3 or later, `gcc`, `kind` v0.32.0, `kubectl`, Helm `v4.2.4`, `clusterctl` v1.13.6, `oras`, `curl`, `jq`, `python3`, `openssl` and `iptables`.
+- These tools on `PATH`: `git`, GNU Make 4, Go 1.27.3 or later, `gcc`, `kind` v0.32.0, `kubectl`, Helm `v4.2.4`, `clusterctl` v1.13.6, `oras`, `curl`, `jq`, `python3`, `openssl`, `iptables` and `dpkg-scanpackages` (the `dpkg-dev` package), which indexes the OVN packages the node image carries.
 - A GitHub token in `GITHUB_TOKEN`: `clusterctl init` reads the Cluster API releases through the GitHub API, which allows anonymous callers 60 requests an hour, and this page runs it twice.
 - Less than 70 percent of the disk in use. The node, the management plane and the workload cluster nodes share it, and the kubelet evicts pods above that.
 - Outbound internet access to GitHub, the Go module proxy and public container registries and chart repositories.
 
 ### On macOS
 
-Run everything inside a Colima virtual machine with the Docker runtime. `make -C controller host-up` creates it, loads `tpm_vtpm_proxy` in its kernel and sizes it from three variables; it refuses to resize a machine that exists, so set the sizes before the first run.
+Run everything inside a Colima virtual machine with the Docker runtime. On the Mac you need only Colima, `git` and `make` (the Xcode Command Line Tools provide the last two; `brew install colima` provides Colima), and a clone of the repository to create the machine from:
 
 ```bash
+git clone https://github.com/dsx-ai-factory/nvke.git && cd nvke
+COLIMA_CPUS=10 COLIMA_MEMORY_GIB=28 COLIMA_DISK_GIB=100 make -C controller host-up
+```
+
+`make -C controller host-up` creates the machine, loads `tpm_vtpm_proxy` in its kernel and sizes it from the three variables; it refuses to resize a machine that exists, so set the sizes before the first run.
+
+If it reports that `tpm_vtpm_proxy` is unavailable, the machine image's kernel is older than the Ubuntu archive, which no longer has that kernel's module package. Install the current kernel, restart the machine into it, and run the command again:
+
+```bash
+colima ssh --profile default -- sudo sh -c 'apt-get update && apt-get install -y linux-image-generic'
+colima restart --profile default
 COLIMA_CPUS=10 COLIMA_MEMORY_GIB=28 COLIMA_DISK_GIB=100 make -C controller host-up
 ```
 
@@ -55,7 +66,13 @@ Install the other tools in the machine with its package manager and from each to
    make local-site-setup
    ```
 
-   The command builds the bootstrap images, starts the container node and records its `hosts.csv` and CA, connects the networks the bootstrap's seed cluster and the node use, builds the controller and profile images from the checkout and stages them into the node, writes the workspace, and starts mock-NICo. The first run takes about ten minutes, most of it the node image; a rerun skips what is there. It ends with the first two commands of the flow and a list of what the workspace holds.
+   The command builds the bootstrap images, builds the OVN and Helm packages the node image carries, starts the container node and records its `hosts.csv` and CA, connects the networks the bootstrap's seed cluster and the node use, builds the controller and profile images from the checkout and stages them into the node, writes the workspace, and starts mock-NICo. The first run takes about twenty minutes, most of it the OVN packages and the node image; a rerun skips what is there. It ends with the first two commands of the flow and a list of what the workspace holds.
+
+   A node image built by an earlier version of this command has no OVN packages, and the command stops on it. Remove that image and the node image derived from it, which is cached under its own tag, and run the command again:
+
+   ```bash
+   nerdctl rmi cwe-capd-kindest-node:local $(nerdctl images --filter reference=nvkectl-e2e/bootstrap-node --format '{{.Repository}}:{{.Tag}}')
+   ```
 
 3. Load the workspace into your shell. Every command below runs from the workspace with its environment.
 
@@ -68,10 +85,10 @@ Install the other tools in the machine with its package manager and from each to
 1. Generate the site spec for the one node.
 
    ```bash
-   nvkectl generate sitespec local-site --nodes hosts.csv --set cluster.podCidr=10.244.0.0/16 --set cluster.kubeletConfig.systemReservedMemory=512Mi --set spire.upstreamCA=true > sitespec.yaml
+   nvkectl generate sitespec local-site --nodes hosts.csv --set cluster.k8sVersion=1.34.8 --set cluster.podCidr=10.244.0.0/16 --set cluster.kubeletConfig.systemReservedMemory=512Mi --set spire.upstreamCA=true > sitespec.yaml
    ```
 
-   One node and no virtual IP address: the node's own address is the API endpoint. The pod network moves off `192.168.0.0/16`, which the lab's DNS sits in; `512Mi` is the system reservation for a container node. Real hardware: [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md).
+   Run the command as `make local-site-setup` printed it: it sets the Kubernetes version to the container node's, `1.34.8` when this page was written. One node and no virtual IP address: the node's own address is the API endpoint. The version is the node's because the node has one kubelet, and a newer control plane leaves image volumes, which the management plane's Cluster API controllers use, switched off on it. The pod network moves off `192.168.0.0/16`, which the lab's DNS sits in; `512Mi` is the system reservation for a container node. Real hardware: [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md).
 
 2. Bootstrap the cluster.
 
