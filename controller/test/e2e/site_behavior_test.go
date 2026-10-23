@@ -1087,13 +1087,14 @@ func webhookServices(validating []admissionregistrationv1.ValidatingWebhookConfi
 
 // webhookProblems requires every webhook Service to have a ready endpoint.
 // One without fails every request it intercepts, or lets them all through
-// unchecked, by its failure policy.
+// unchecked, by its failure policy. An endpoint with no Ready condition counts
+// as ready, as the EndpointSlice API asks of its consumers.
 func webhookProblems(services []webhookService, endpointSlices []discoveryv1.EndpointSlice) []string {
 	var problems []string
 	for _, service := range services {
 		ready := slices.ContainsFunc(endpointSlices, func(slice discoveryv1.EndpointSlice) bool {
 			return slice.Namespace == service.namespace && slice.Labels[discoveryv1.LabelServiceName] == service.name &&
-				slices.ContainsFunc(slice.Endpoints, func(e discoveryv1.Endpoint) bool { return ptr.Deref(e.Conditions.Ready, false) })
+				slices.ContainsFunc(slice.Endpoints, func(e discoveryv1.Endpoint) bool { return ptr.Deref(e.Conditions.Ready, true) })
 		})
 		if !ready {
 			problems = append(problems, fmt.Sprintf("%s: Service %s/%s has no ready endpoint", service.webhook, service.namespace, service.name))
