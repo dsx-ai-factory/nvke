@@ -755,6 +755,7 @@ func (v *validator) checkOIDCProviders(c Cluster) {
 		if strings.TrimSpace(p.UsernameClaim) == "" {
 			v.addf("%s.usernameClaim is required", path)
 		}
+		// Kubernetes requires prefix when claim is set; an empty string explicitly disables prefixing.
 		if p.UsernamePrefix == nil {
 			v.addf("%s.usernamePrefix is required; use \"\" for no prefix", path)
 		} else {
