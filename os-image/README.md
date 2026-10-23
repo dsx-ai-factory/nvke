@@ -15,6 +15,7 @@ consumers whose other software pins that release — see `UBUNTU_RELEASE` under
 | Path | What |
 |---|---|
 | `SPEC.md` | Image contract (bake vs first-boot, ports, identity) |
+| [`test/qualification/`](test/qualification/README.md) | Pending DSX hardware acceptance tests for machine images |
 | `packer/` | Packer + QEMU recipe that produces a qcow2 |
 | [`nix/`](nix/README.md) | Nix apps for package builds and the NixOS VM |
 | `files/` | systemd units, SPIRE template, first-boot script |
