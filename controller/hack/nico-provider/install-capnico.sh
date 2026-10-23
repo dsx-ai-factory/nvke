@@ -21,37 +21,24 @@ adopt_namespace() {
     "meta.helm.sh/release-namespace=${CAPNICO_NAMESPACE}" --overwrite
 }
 
-install_released_chart() {
-  : "${NGC_API_KEY:?NGC_API_KEY is required when CAPNICO_SOURCE_DIR is unset}"
-  : "${CAPNICO_CHART_VERSION:=0.1.0-rc.2}"
-  : "${CAPNICO_HELM_REPO:=ngc-components-dev}"
-  # The org in the chart repository URL is an NGC account identifier, so it is
-  # supplied rather than checked in -- see hack/internal-config-check.sh. Give
-  # the org and the URL is derived; give the whole URL and the org is not read
-  # at all. Either way this is the released-chart path, which already requires
-  # NGC_API_KEY above, so it is one more value and not a new kind of setup.
-  if [[ -z "${CAPNICO_HELM_REPO_URL:-}" ]]; then
-    : "${CAPNICO_HELM_ORG:?CAPNICO_HELM_ORG is required: set it to the NGC org hosting the dev charts, or set CAPNICO_HELM_REPO_URL to the full repository URL}"
-    CAPNICO_HELM_REPO_URL="https://helm.ngc.nvidia.com/${CAPNICO_HELM_ORG}/components-dev"
+# Install the published chart. Without CAPNICO_CHART_VERSION it installs the
+# latest stable chart in the registry.
+install_published_chart() {
+  : "${CAPNICO_CHART_REF:=oci://ghcr.io/dsx-ai-factory/cluster-api-provider-nico/charts/capi-provider-nico}"
+  if [[ -z "${CAPNICO_CHART_VERSION:-}" ]]; then
+    CAPNICO_CHART_VERSION="$(helm show chart "${CAPNICO_CHART_REF}" | awk '/^version:/ { print $2; exit }')"
+    if [[ -z "${CAPNICO_CHART_VERSION}" ]]; then
+      echo "Cannot determine the latest CAPNICo chart version from ${CAPNICO_CHART_REF}. Set CAPNICO_CHART_VERSION." >&2
+      exit 1
+    fi
+    echo "Installing the latest CAPNICo chart, ${CAPNICO_CHART_VERSION}."
   fi
 
-  kubectl -n "${CAPNICO_NAMESPACE}" create secret docker-registry nvcr-creds \
-    --docker-server=nvcr.io \
-    --docker-username='$oauthtoken' \
-    --docker-password="${NGC_API_KEY}" \
-    --dry-run=client -o yaml | kubectl apply -f -
-
-  helm repo add "${CAPNICO_HELM_REPO}" "${CAPNICO_HELM_REPO_URL}" \
-    --username '$oauthtoken' --password "${NGC_API_KEY}" --force-update >/dev/null
-  helm repo update "${CAPNICO_HELM_REPO}" >/dev/null
-
-  helm upgrade --install "${CAPNICO_RELEASE}" \
-    "${CAPNICO_HELM_REPO}/${CAPNICO_RELEASE}" \
+  helm upgrade --install "${CAPNICO_RELEASE}" "${CAPNICO_CHART_REF}" \
     --version "${CAPNICO_CHART_VERSION}" \
     --namespace "${CAPNICO_NAMESPACE}" \
     --server-side=false \
     --reset-values \
-    --set 'imagePullSecrets[0].name=nvcr-creds' \
     --wait --timeout 5m
 }
 
@@ -119,10 +106,10 @@ adopt_namespace
 if [[ -n "${CAPNICO_SOURCE_DIR:-}" ]]; then
   install_source_chart
 else
-  install_released_chart
+  install_published_chart
 fi
 
-# Keep the reboot and repair contracts identical in released-chart and source modes.
+# Keep the reboot and repair contracts identical in source and published modes.
 kubectl -n "${CAPNICO_NAMESPACE}" patch deployment/controller-manager \
   --type=strategic \
   -p "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"manager\",\"args\":[\"--leader-elect\",\"--reboot-annotation=${CAPNICO_REBOOT_ANNOTATION}\",\"--repair-annotation=${CAPNICO_REPAIR_ANNOTATION}\"]}]}}}}"

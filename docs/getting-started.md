@@ -28,12 +28,6 @@ cd nvke
 
 ## controller
 
-> **`controller/` builds without NVIDIA credentials.** All of its dependencies
-> are public. A cold build needs
-> access to the public Go module proxy; from the repository root,
-> `make build` compiles all twelve modules. See
-> [AGENTS.md](../AGENTS.md).
-
 The repository uses [Flox](https://flox.dev/) to pin its toolchain, in one
 environment at the root that serves every module. Activate it from anywhere in
 the tree:

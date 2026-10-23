@@ -276,12 +276,6 @@ def register(ctx):
         exit 1
       fi
     """ % (source_dir, source_dir)
-    else:
-        preflight_script += """      if [ -z "${NGC_API_KEY:-}" ]; then
-        echo "NGC_API_KEY is required to install the released CAPNICo chart." >&2
-        exit 1
-      fi
-    """
 
     return struct(
         controller_resource_deps=controller_resource_deps,

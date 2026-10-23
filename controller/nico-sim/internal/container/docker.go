@@ -20,8 +20,10 @@ import (
 )
 
 const (
-	mockCloudInitStatusPath = "/var/lib/nico-containers/cloud-init/status"
-	statusUpdateTimeout     = 5 * time.Second
+	mockCloudInitStatusPath  = "/var/lib/nico-containers/cloud-init/status"
+	statusUpdateTimeout      = 5 * time.Second
+	systemdReadyTimeout      = 60 * time.Second
+	systemdReadyPollInterval = 250 * time.Millisecond
 )
 
 type cloudConfig struct {
@@ -183,9 +185,17 @@ func (s *Service) applyCloudConfig(ctx context.Context, containerID, userData st
 				}
 			}
 		}
+		systemdReady := false
 		for _, command := range cfg.RunCmd {
 			if strings.TrimSpace(command) == "" {
 				continue
+			}
+			// cloud-init runs these after boot, and they call systemctl.
+			if !systemdReady {
+				if err := s.waitForSystemd(ctx, containerID); err != nil {
+					return err
+				}
+				systemdReady = true
 			}
 			if err := s.execInContainer(ctx, containerID, "sh", "-lc", command); err != nil {
 				return fmt.Errorf("run cloud-config command %q: %w", command, err)
@@ -197,6 +207,40 @@ func (s *Service) applyCloudConfig(ctx context.Context, containerID, userData st
 		return fmt.Errorf("set mock cloud-init status to done: %w", err)
 	}
 	return nil
+}
+
+// waitForSystemd blocks until systemd inside the container accepts commands.
+// docker start returns once the entrypoint is launched, and for about the first
+// second PID 1 is not systemd yet, so systemctl fails with "System has not been
+// booted with systemd". A full boot takes several seconds more, which a create
+// request should not wait for, so basic.target being up ("starting") is enough.
+func (s *Service) waitForSystemd(ctx context.Context, containerID string) error {
+	ctx, cancel := context.WithTimeout(ctx, systemdReadyTimeout)
+	defer cancel()
+
+	state := ""
+	for {
+		// is-system-running exits non-zero in every state but "running", so
+		// read the state from its output and ignore the exit status.
+		out, err := s.execInContainerOutput(ctx, containerID, "sh", "-c", "systemctl is-system-running 2>/dev/null || true")
+		if ctx.Err() != nil {
+			return fmt.Errorf("wait for systemd in node container (last state %q): %w", state, ctx.Err())
+		}
+		if err != nil {
+			return fmt.Errorf("check systemd state: %w", err)
+		}
+		state = out
+		switch state {
+		case "starting", "running", "degraded":
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for systemd in node container (last state %q): %w", state, ctx.Err())
+		case <-time.After(systemdReadyPollInterval):
+		}
+	}
 }
 
 func decodeCloudConfigContent(file cloudConfigWriteFile) (string, error) {
