@@ -44,6 +44,33 @@ node, run the same searches in two steps:
 2. Search for that `workflow_id`. The matches are the node's workflow and
    activity steps, including the one that failed.
 
+#### Send nvkectl's logs to a backend
+
+To also send nvkectl's log records to an OpenTelemetry collector or backend,
+set `OTEL_EXPORTER_OTLP_ENDPOINT` before you run the command. The records carry
+the run's trace ID, so you can search the backend for the `Trace ID:` that
+nvkectl prints. What nvkectl writes to stderr does not change.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://<COLLECTOR_HOST>:4317
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer <TOKEN>'
+nvkectl bootstrap site -f sitespec.yaml
+```
+
+Replace `<COLLECTOR_HOST>` with the host of your OTLP/gRPC endpoint. Replace
+`<TOKEN>` with the token the endpoint requires, or leave out the headers line
+if it needs none. Separate several headers with commas. nvkectl never prints
+them.
+
+- The connection uses TLS. To send without it, start the endpoint with
+  `http://`, or give a `<COLLECTOR_HOST>:4317` endpoint with no scheme and set
+  `OTEL_EXPORTER_OTLP_INSECURE=true`. An `https://` endpoint always uses TLS.
+- Do not put credentials in the endpoint. nvkectl warns that log export is off
+  and sends nothing. Send a token in `OTEL_EXPORTER_OTLP_HEADERS` instead.
+- nvkectl sends log records only. It does not send spans.
+- If the endpoint is unreachable, nvkectl prints one warning, the command
+  still succeeds, and the command takes up to two seconds longer to exit.
+
 ### The diagnostics directory
 
 Bootstrap attempts to collect diagnostics before cleaning up a failed
