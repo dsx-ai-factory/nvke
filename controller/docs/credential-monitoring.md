@@ -162,12 +162,17 @@ does not install Prometheus, a rule evaluator or an Alertmanager notification
 route. Successful scraping alone does not deliver notifications.
 
 Operators must confirm the ServiceMonitor selects the controller service, the
+chart's metrics NetworkPolicy admits the Prometheus namespace (by default only
+`monitoring` and `dgxc-alloy`; add others to
+`metrics.networkPolicy.additionalNamespaces`, as described in
+[Read the management plane metrics](../../docs/operate/observe.md#read-the-management-plane-metrics)), the
 Prometheus instance loads `nvke-credential-lifecycle`, and its Alertmanager route
 has a receiver for the rule severities. Add a separate scrape/target-down alert:
 these rules cannot report from a controller that is unreachable. With
-`credentialMonitoring.enabled=false`, the controller still exports the inspection
-and CSR availability series as unavailable, because nothing observes them, and
-keeps exporting the last stored CSR inventory, whose pending age keeps growing.
+`credentialMonitoring.enabled=false`, nothing refreshes the stored observations.
+Inspection availability keeps its last stored value until that observation is
+older than `observationMaxAge`, then reads 0. The CSR observation age and the
+last stored CSR inventory's pending age keep growing.
 The two availability alerts, `NVKECertificateInspectionUnavailable` and
 `NVKEKubeletServingCSRObservationUnavailable`, and the two CSR alerts,
 `NVKEKubeletServingCSRStale` and `NVKEKubeletServingCSRFailed`, therefore fire
@@ -179,13 +184,18 @@ then, the expiry and missing alerts keep evaluating that last observation.
 
 ## Alert responses
 
-The shipped thresholds below are proposed alpha operational bounds. Expiry uses
-the configurable warning window; the remaining rules use fixed evaluation
-thresholds in `deploy/charts/controller/files/credential-alerts.yaml`.
+The shipped thresholds below are proposed alpha operational bounds. Expiry of
+kubeadm leaves, CAs and kubeconfig certificates uses the configurable warning
+window; the remaining rules use fixed evaluation thresholds in
+`deploy/charts/controller/files/credential-alerts.yaml`. Kubelet client and
+serving certificates have their own seven-day rule: the kubelet rotates them
+itself at 70–90% of their lifetime, so `warningDays` would fire on healthy
+nodes, while seven days catches rotation that has stopped working.
 
 | Alert | Threshold and hold | Operator response |
 | --- | --- | --- |
-| `NVKECertificateExpiring` | NotAfter minus current time below warning window for `5m` | inspect node inventory and renewal status; for a CA, escalate: NVKE ships no CA rotation procedure and [does not rotate CAs](certificate-renewal.md) |
+| `NVKECertificateExpiring` | NotAfter minus current time below warning window for `5m`, except kubelet certificates | inspect node inventory and renewal status; for a CA, escalate: NVKE ships no CA rotation procedure and [does not rotate CAs](certificate-renewal.md) |
+| `NVKEKubeletCertificateExpiring` | kubelet client or serving certificate NotAfter within seven days for `5m` | inspect kubelet certificate rotation, CSR approval and signer health; NVKE renewal does not renew kubelet certificates |
 | `NVKECertificateInspectionUnavailable` | failed, never observed or stale node inspection for `15m`, when monitoring enabled | restore transport, upgrade unsupported agent, confirm layout and observation freshness |
 | `NVKECertificateMissingOrInvalid` | required credential unavailable in a successful fresh inventory for `15m` | inspect fixed file or kubelet bootstrap; validate identity before repair |
 | `NVKECertificateRenewalFailed` | latest cycle failed for `5m` | follow [renewal recovery](certificate-renewal.md); released failures retry after one hour, retained-lock failures stay halted |
