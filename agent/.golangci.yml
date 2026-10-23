@@ -18,7 +18,9 @@ linters:
     - decorder
     - depguard
     - dogsled
+    - dupword
     - durationcheck
+    - errchkjson
     - errname
     - exhaustive
     - forcetypeassert
@@ -39,6 +41,7 @@ linters:
     - loggercheck
     - makezero
     - mirror
+    - misspell
     - nakedret
     - nilerr
     - nolintlint
@@ -54,6 +57,8 @@ linters:
     - unconvert
     - usestdlibvars
     - varnamelen
+    - wastedassign
+    - whitespace
     - zerologlint
   disable:
     - exhaustruct
@@ -67,23 +72,18 @@ linters:
     # TODO: fix and re-enable the following linters
     # Tracked in https://github.com/dsx-ai-factory/nvke/issues/938
     - contextcheck   # 20 issues - context propagation
-    - dupl           # 3 issues - duplicate code blocks
-    - dupword        # 3 issues - duplicate words in comments
-    - errchkjson     # 2 issues - json error checking (unsafe type in test code)
+    - dupl           # 3 issues - 6 near-identical funcs in internal/k8s/cmds.go; wants a real refactor, not a near-free fix
     - errorlint      # 34 issues - error wrapping
     - gocritic       # 73 issues - various code style
     - godot          # 45 issues - comment punctuation
     - gosec          # 18 issues - security issues
     - govet          # 41 issues - mostly shadow declarations
     - grouper        # 18 issues - declaration grouping
-    - misspell       # 10 issues - spelling errors
     - musttag        # 1 issue - struct tag requirements
     - protogetter    # 124 issues - proto field access
     - staticcheck    # 16 issues - deprecated proto fields + style; QF1001/QF1003/QF1007 already clean (no findings)
     - tagliatelle    # 5 issues - would change public JSON field names
     - unparam        # 12 issues - unused parameters
-    - wastedassign   # 1 issue - wasted assignments
-    - whitespace     # 6 issues - whitespace issues
   settings:
     depguard:
       rules:

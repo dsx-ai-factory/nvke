@@ -79,7 +79,7 @@ func (c *EncryptionConfiguration) ValidateSecretbox() error {
 
 // secretboxKeySlices returns pointers to the key slice of every secretbox
 // provider in the config, across all resource groups. Mutations through these
-// pointers are reflected in the config that will be marshalled to disk.
+// pointers are reflected in the config that will be marshaled to disk.
 func (c *EncryptionConfiguration) secretboxKeySlices() []*[]KeyConfig {
 	var result []*[]KeyConfig
 	for i := range c.Resources {

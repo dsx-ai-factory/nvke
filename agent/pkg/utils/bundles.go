@@ -476,7 +476,7 @@ func InstallBundle(b *Bundle, runner CommandRunner, source *BundleSource) (strin
 
 	runDetached := (b.Name == bundleNameAgent || b.Name == bundleNameAttestation)
 
-	installErr := error(nil)
+	var installErr error
 	output := ""
 	if runDetached {
 		installErr = runner.RunDetached(b.InstallCmd[0], b.InstallCmd[1:], &CommandOptions{Dir: localDirectory})

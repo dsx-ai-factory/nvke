@@ -666,7 +666,6 @@ func (s *NodeAgentServer) processKubeadmJoin(args []string, req *pb.KubeadmJoinR
 		ns.CurrentMessage = err.Error()
 		ns.KubeadmErrorMessage = loggable
 		ns.KubeadmStatus = joinFailedStatus
-
 	} else {
 		ns.Status = ReadyStatus
 		ns.CurrentMessage = "node successfully joined"
@@ -722,7 +721,7 @@ func (s *NodeAgentServer) ExecuteKubeadmInit(
 
 	// We process args here before calling the goroutine to processKubeadmInit because
 	// we want to fail fast; we don't want to launch the go routine and return only to
-	// find out the the required args weren't passed
+	// find out the required args weren't passed
 	args := []string{}
 	if req.GetInitConfig() == "" {
 		slog.Info("no init config provided. Using arguments")
@@ -804,7 +803,7 @@ func (s *NodeAgentServer) ExecuteKubeadmInit(
 	return resp, nil
 }
 
-// kubeadmFailureMessage summarises why kubeadm exited, for the one status field
+// kubeadmFailureMessage summarizes why kubeadm exited, for the one status field
 // the orchestrator can see. kubeadm ends with the phase it failed in
 // ("error execution phase wait-control-plane: ..."), which is the single most
 // useful line, so prefer it and fall back to the process error.
@@ -821,7 +820,7 @@ func kubeadmFailureMessage(err error, output []byte, credentials *redact.Credent
 		best = strings.TrimSpace(err.Error())
 	}
 	// Redact before truncating: cutting a credential short would leave part of it
-	// in a form that is no longer recognisable.
+	// in a form that is no longer recognizable.
 	best = credentials.String(best)
 	if len(best) > limit {
 		best = best[:limit] + "..."
@@ -1281,7 +1280,7 @@ func (s *NodeAgentServer) ExecuteKubeadmReset(
 	} else {
 		s.NodeStatus.Status = "reset"
 		s.NodeStatus.CNIPluginStatus = ""
-		s.NodeStatus.CurrentMessage = "node succesfully reset/deleted"
+		s.NodeStatus.CurrentMessage = "node successfully reset/deleted"
 		s.NodeStatus.CompletedPhases = append(s.NodeStatus.CompletedPhases, string(ResetPhase))
 	}
 	s.mu.Unlock()
@@ -2043,7 +2042,7 @@ func bundleIndexUnconfiguredMessage(bundleServerURL string) string {
 		return "bundle index not configured: set --bundle-server-url or --index-file-url (prefer apt repos via ConfigureAptRepo/InstallPackages)"
 	}
 	return fmt.Sprintf(
-		"bundle index not derived from --bundle-server-url %q: the index path is derived from /etc/os-release, which is recognised only for Ubuntu 22 and 24. Set --index-file-url explicitly.",
+		"bundle index not derived from --bundle-server-url %q: the index path is derived from /etc/os-release, which is recognized only for Ubuntu 22 and 24. Set --index-file-url explicitly.",
 		bundleServerURL,
 	)
 }
@@ -2073,7 +2072,7 @@ func (s *NodeAgentServer) InstallBundle(
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("[DEBUG] fetched bundle from index succesfully", "BUNDLE", bundle)
+	slog.Info("[DEBUG] fetched bundle from index successfully", "BUNDLE", bundle)
 
 	requestID := generateRequestID()
 	response := &pb.InstallBundleResponse{RequestId: requestID}

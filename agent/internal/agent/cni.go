@@ -136,7 +136,7 @@ func (s *NodeAgentServer) installCalico(version *semver.Version, operatorManifes
 		slog.Error("failed to fetch calico bundle", "error", err)
 		return err
 	}
-	slog.Info("retrived calico bundle by index", "Bundle", calicoBundle)
+	slog.Info("retrieved calico bundle by index", "Bundle", calicoBundle)
 
 	requestID := generateRequestID()
 

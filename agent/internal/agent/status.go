@@ -214,7 +214,6 @@ func (s *NodeAgentServer) UpdateState() {
 	if err != nil {
 		slog.Warn("failed to get kubeadm version, will set to KubeadmVersion to empty string", "error", err)
 		v = ""
-
 	}
 
 	s.mu.Lock()

@@ -187,8 +187,9 @@ func TestJSONFilePersisterLoadFromStateFile(t *testing.T) {
 		KubeadmVersion:  "v1.28.0",
 		CompletedPhases: []string{JoinPhase},
 	}
-	data, _ := json.MarshalIndent(status, "", "  ")
-	err := os.WriteFile(stateFile, data, 0o644)
+	data, err := json.MarshalIndent(status, "", "  ")
+	assert.NoError(t, err)
+	err = os.WriteFile(stateFile, data, 0o644)
 	assert.NoError(t, err)
 
 	persister := &JSONFilePersister{Path: stateFile}
@@ -518,8 +519,9 @@ func TestLoadFromStateFileWithValidKubeadmVersion(t *testing.T) {
 		NodeName: "test-node",
 		Status:   ReadyStatus,
 	}
-	data, _ := json.MarshalIndent(status, "", "  ")
-	err := os.WriteFile(stateFile, data, 0o644)
+	data, err := json.MarshalIndent(status, "", "  ")
+	assert.NoError(t, err)
+	err = os.WriteFile(stateFile, data, 0o644)
 	assert.NoError(t, err)
 
 	persister := &JSONFilePersister{Path: stateFile}
