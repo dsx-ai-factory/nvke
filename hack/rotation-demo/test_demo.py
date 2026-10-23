@@ -130,7 +130,8 @@ class SampledPrometheus:
         self.queries.append((expression, evaluated_at))
         result = []
         if expression.startswith("sum("):
-            if 'result="stored"' in expression and self.stored:
+            # None models a counter series that does not exist; 0 one created at zero.
+            if 'result="stored"' in expression and self.stored is not None:
                 result = [{"metric": {}, "value": [evaluated_at, str(self.stored)]}]
         else:
             branches = [(expression, None)]
@@ -959,9 +960,27 @@ class CollectorContractTests(unittest.TestCase):
         prometheus.scrape(certificates, sampled, sampled - 1, sampled - 1)
         with patch.object(live, "http", side_effect=prometheus.http):
             live.metrics(certificates)
-            prometheus.stored = 0
+            prometheus.stored = None
             with self.assertRaisesRegex(demo.CheckError, "audit_sink_unhealthy_or_unobserved"):
                 live.metrics(certificates)
+
+    def test_zero_stored_series_after_restart_passes_baseline_but_not_post_mutation(self):
+        # The controller creates every audit result series at zero and a restart
+        # resets them; a quiet site has no new writes until the mutation.
+        c = config()
+        epoch = demo.timestamp("2026-10-07T00:00:00Z")
+        certificates = snapshot(c)
+        live, prometheus = demo.Live(c), SampledPrometheus(c)
+        prometheus.stored = 0
+        prometheus.scrape(certificates, epoch - 1, epoch - 2, epoch - 2)
+        with patch.object(live, "http", side_effect=prometheus.http), patch.object(demo.time, "time", return_value=epoch):
+            live.metrics(certificates)
+        prometheus.scrape(certificates, epoch + 2, epoch + 1, epoch + 1)
+        with patch.object(live, "http", side_effect=prometheus.http), patch.object(demo.time, "time", return_value=epoch + 3):
+            with self.assertRaisesRegex(demo.CheckError, "audit_sink_unhealthy_or_unobserved"):
+                live.metrics(certificates, epoch)
+            prometheus.stored = 1
+            live.metrics(certificates, epoch)
 
     def test_preceding_scrape_and_fresh_wrong_expiry_do_not_prove_renewal(self):
         c = config()

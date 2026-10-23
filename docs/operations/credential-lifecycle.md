@@ -113,7 +113,9 @@ it to the site's authenticated change record. When the
 [rotation demo](https://github.com/dsx-ai-factory/nvke/blob/main/hack/rotation-demo/README.md)
 observes the maintenance, pass the exact `kube-system` namespace UID as
 `--cluster` and its configured `manual_operation`, optionally with a per-step
-suffix such as `/renew-2`, as `--operation`; other rows fail with
+suffix `/<action>-<n>` such as `/renew-2`, as `--operation`, where `<action>` is
+`check`, `approve`, `renew`, `rotate` or `verify` and `<n>` is 1 through 99
+without leading zeros; other rows fail with
 `manual_audit_target_or_run_mismatch`. T1 output is local JSONL, not
 automatically inserted into PostgreSQL. For automatic T2 observations, export
 the controller's ledger with a read-only database role and deduplicate by
