@@ -355,19 +355,19 @@ func TestUnit_SiteWebhookProblems(t *testing.T) {
 	services := webhookServices(validating, mutating)
 	require.Len(t, services, 2, "URL webhooks name no Service")
 
-	slice := func(namespace, name string, ready bool) discoveryv1.EndpointSlice {
+	slice := func(namespace, name string, ready *bool) discoveryv1.EndpointSlice {
 		return discoveryv1.EndpointSlice{
 			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Labels: map[string]string{discoveryv1.LabelServiceName: name}},
-			Endpoints:  []discoveryv1.Endpoint{{Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(ready)}}},
+			Endpoints:  []discoveryv1.Endpoint{{Conditions: discoveryv1.EndpointConditions{Ready: ready}}},
 		}
 	}
 	require.Equal(t, []string{
 		"MutatingWebhookConfiguration capi/default.cluster.x-k8s.io: Service capi-system/capi-webhook-service has no ready endpoint",
 	}, webhookProblems(services, []discoveryv1.EndpointSlice{
-		slice("cert-manager", "cert-manager-webhook", true),
-		slice("capi-system", "capi-webhook-service", false),
-		slice("other", "capi-webhook-service", true),
-	}))
+		slice("cert-manager", "cert-manager-webhook", nil),
+		slice("capi-system", "capi-webhook-service", ptr.To(false)),
+		slice("other", "capi-webhook-service", ptr.To(true)),
+	}), "a nil Ready counts as ready")
 }
 
 func TestUnit_SiteProbeNodes(t *testing.T) {
