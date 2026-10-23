@@ -276,19 +276,23 @@ The install stops at the component that failed. Fix the cause and run the same c
 ### nvkectl get providers shows CREDENTIALS other than HEALTHY
 
 - **Symptom:** The `nico` row reads `CONFIGURED`, but `CREDENTIALS` is not `HEALTHY`. The `DETAIL` column says why.
-- **Cause:** `UNSUPPORTED` is expected with the CAPNICo release the install deploys, which does not serve `NicoIdentity`. With a release that does, `NO-IDENTITY` means no `NicoIdentity` names `nico-credentials`, and `FAILING` or `UNKNOWN` carries the reason from CAPNICo's last check.
+- **Cause:** `UNSUPPORTED` is expected with the CAPNICo release the install deploys, which does not serve `NicoIdentity`. With a release that does, `NO-IDENTITY` means no `NicoIdentity` names `nico-credentials`, `FAILING` or `UNKNOWN` carries the reason from CAPNICo's last check, `STALE` means no check finished in the last 10 minutes, `PENDING` means the `NicoIdentity` has not been checked yet, and `UNREADABLE` means `nvkectl` could not list `NicoIdentity` objects.
 - **Fix:** [Infrastructure providers](https://github.com/dsx-ai-factory/nvke/blob/main/cli/README.md#infrastructure-providers) explains each value. For `FAILING`, correct the credentials as described in [Configure an infrastructure provider: NICo](provider-nico.md#manage-the-nico-credentials).
 
 ### Machines are not delivered
 
-- **Symptom:** A node's `pending` message stays `Waiting for infrastructure allocation`, or its step stays `Waiting for CAPI machine to be ready`. `clusterctl describe cluster <WORKLOAD_CLUSTER> -n nvke-system` may show a machine with the reason `InstanceTypeUnavailable`.
-- **Cause:** The NICo instance type has no allocation for your organization, or no free machine.
-- **Fix:** Add an allocation in NICo, or use an instance type with free capacity. The control plane can list fallback types in `instanceTypePreference`, as in [Create a workload cluster](../workload-clusters/create.md).
+- **Symptom:** A node's `pending` message stays `Waiting for infrastructure allocation`, or its step stays `Waiting for CAPI machine to be ready`. `kubectl -n nvke-system describe nicomachine <NODE_NAME>` shows a `MachineProvisioned` condition that is not `True`.
+- **Cause:** The condition's reason names it:
+  - `InstanceTypeUnavailable`: the instance type has no allocation for your organization, or no free machine.
+  - `InstanceTypeNotFound`: the instance type ID is wrong, or belongs to another organization.
+  - `ControlPlanePriorityDeferred`: workers wait while a control-plane machine waits for the same instance type. It clears when the control plane gets its machine.
+  - `TenantResolutionFailed`: see [CAPNICo logs NICo API errors](#capnico-logs-nico-api-errors).
+- **Fix:** For `InstanceTypeUnavailable`, add an allocation in NICo, or use an instance type with free capacity. For `InstanceTypeNotFound`, correct the instance type ID. The control plane can list fallback types in `instanceTypePreference`, as in [Create a workload cluster](../workload-clusters/create.md).
 
 ### CAPNICo logs NICo API errors
 
-- **Symptom:** Nodes stay on `Waiting for CAPI machine to be ready`, and the CAPNICo logs show failed calls to the NICo API.
-- **Cause:** The endpoint, organization ID, token or API name in the `nico-credentials` Secret is wrong. `CONFIGURED` does not test them.
+- **Symptom:** Nodes stay on `Waiting for CAPI machine to be ready`, and the CAPNICo logs show failed calls to the NICo API, or a NicoMachine's `MachineProvisioned` reason is `TenantResolutionFailed`.
+- **Cause:** The endpoint, organization ID, token or API name in the `nico-credentials` Secret is wrong, or the token has expired. `CONFIGURED` does not test them.
 - **Fix:** Correct the credentials as described in [Configure an infrastructure provider: NICo](provider-nico.md#manage-the-nico-credentials).
 
 ## API access and authentication

@@ -66,8 +66,8 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
    - `<API_VIP>`: the Kubernetes API VIP. It must be outside the pod and service CIDRs.
    - `<NICO_ORG_ID>`, `<NICO_SITE_ID>` and `<NICO_VPC_ID>`: your NICo organization ID, and the site and VPC IDs. Every NICo ID in the spec except the organization ID is a UUID.
    - `<CP_INSTANCE_TYPE_ID>` and `<WORKER_INSTANCE_TYPE_ID>`: NICo instance type IDs. `instanceTypePreference` is a required, ordered list: add more IDs after the first as fallbacks.
-   - `<VPC_PREFIX_ID>`: a NICo VPC prefix ID. On a site without native networking, use `subnetIDs` with subnet IDs instead. Each `nico` object takes exactly one of the two.
-   - `<SSH_KEY_GROUP_ID>`: a NICo SSH key group for node access. Optional; omit `sshKeyGroupIDs` to add none.
+   - `<VPC_PREFIX_ID>`: a NICo VPC prefix ID. If the VPC's network virtualization type is `ETHERNET_VIRTUALIZER`, use `subnetIDs` with subnet IDs instead. Each `nico` object takes exactly one of the two.
+   - `<SSH_KEY_GROUP_ID>`: a NICo SSH key group for serial-over-LAN console access to nodes. Optional; omit `sshKeyGroupIDs` to add none.
    - `<CP_RELEASE>`: the name of a cluster release. `<WORKER_RELEASE>`: the name of a node pool release.
 
 2. Review the settings that are fixed at creation.
@@ -91,7 +91,6 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
    | `controlPlaneConfig.maxSurge` | `0` | Extra control-plane nodes allowed during a rollout: `0` or `1`. |
    | `controlPlaneConfig.systemReservedMemory` | `16Gi` | Memory the kubelet reserves for system daemons. |
    | `controlPlaneConfig.nodeLabels` | None | Labels applied to each control-plane node after it joins. Set at creation; updating them is not supported, see [Preview status and known limitations](../overview/preview-status.md#workload-clusters-and-node-pools). Control-plane nodes take no custom taints. |
-   | `nico.configProfile` (control plane or node pool) | None | Optional. Without one, the nodes run no config profile hooks. |
    | `nodePools[].nodeNamePrefix` | None, required | Node names are `<WORKLOAD_CLUSTER>-<nodeNamePrefix>-<NNNN>` and must fit in 63 characters. |
    | `nodePools[].systemReservedMemory` | `16Gi` | `kubeReservedMemory` defaults to `2Gi`. |
    | `nodePools[].nico.diskSelectionStrategy` | `smallest` | The disk the OS is installed on: `smallest` or `largest`. |
@@ -120,7 +119,7 @@ curl -X POST http://<MANAGEMENT_ADDRESS>:30080/api/clusters \
   --data @cluster.json
 ```
 
-`<MANAGEMENT_ADDRESS>` is the management cluster's API VIP, or the node IP of a single-node management cluster. If API authentication is on, add `-H "Authorization: Bearer <TOKEN>"` to each `curl` command that calls `/api/`, where `<TOKEN>` is a JSON Web Token (JWT) from your identity provider, as described in [Secure the NVKE API](../operate/api-authentication.md). The API returns `201` with the new cluster, or `400` with a `message`.
+`<MANAGEMENT_ADDRESS>` is the management cluster's API VIP, or the node IP of a single-node management cluster. If API authentication is on, add `-H "Authorization: Bearer <TOKEN>"` to each `curl` command that calls `/api/`, where `<TOKEN>` is a JSON Web Token (JWT) from your identity provider, as described in [Secure the NVKE API](../operate/api-authentication.md). The API returns `201` with the new cluster, or an error with a `message`.
 
 ## Watch it come up
 
@@ -140,6 +139,7 @@ curl -X POST http://<MANAGEMENT_ADDRESS>:30080/api/clusters \
    | `Updating`, `Upgrading`, `Recycling` | A day-2 operation is running. |
    | `UpdateFailed` | The last day-2 operation failed. |
    | `Deleting` | The cluster is being deleted. |
+   | `Unknown` | The status could not be read. |
 
 2. If the status stays `Provisioning`, read the condition messages.
 
@@ -147,7 +147,7 @@ curl -X POST http://<MANAGEMENT_ADDRESS>:30080/api/clusters \
    nvkectl get clusters <WORKLOAD_CLUSTER> -o yaml
    ```
 
-   Each condition under `conditions` has a `status`, a `lastTransitionTime` and a `message`. NVKE keeps waiting for a control-plane machine that does not become ready, so a NICo instance type without capacity shows as a cluster that stays in `Provisioning`. See [Troubleshoot](../operate/troubleshoot.md).
+   Each condition under `conditions` has a `message` and a `status` or start time. NVKE keeps waiting for a control-plane machine that does not become ready, so a NICo instance type without capacity shows as a cluster that stays in `Provisioning`. See [Troubleshoot](../operate/troubleshoot.md).
 
 3. Check the node pools.
 
@@ -175,6 +175,20 @@ curl -X POST http://<MANAGEMENT_ADDRESS>:30080/api/clusters \
    ```
 
    `STATUS` reads `Provisioned`.
+
+3. Check the cluster's NICo resources on the management cluster. NVKE creates them in the `nvke-system` namespace: a Cluster API `Cluster` and a `NicoCluster` named after the workload cluster, and a `NicoMachine` for each node, named after the node.
+
+   ```bash
+   kubectl --kubeconfig <CLUSTER_NAME>.kubeconfig -n nvke-system get nicoclusters <WORKLOAD_CLUSTER>
+   ```
+
+   `AVAILABLE` reads `True`, `PROVISIONED` reads `true` and `SITE` is the cluster's `nico.siteID`.
+
+   ```bash
+   kubectl --kubeconfig <CLUSTER_NAME>.kubeconfig -n nvke-system get nicomachines -l cluster.x-k8s.io/cluster-name=<WORKLOAD_CLUSTER>
+   ```
+
+   The output has one line for each node, each with `AVAILABLE` `True` and the NICo instance ID under `INSTANCE`, which identifies the node's machine in NICo. For a line without `True`, the `MachineProvisioned` condition's reason in `kubectl --kubeconfig <CLUSTER_NAME>.kubeconfig -n nvke-system describe nicomachine <NODE_NAME>` says why, such as `InstanceTypeUnavailable`; see [Troubleshoot](../operate/troubleshoot.md).
 
 ## Change cluster settings after creation
 

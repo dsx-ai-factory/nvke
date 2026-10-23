@@ -17,7 +17,7 @@ This page describes how to add, scale and delete the worker node pools of an NVI
    nvkectl get nodepools --cluster <WORKLOAD_CLUSTER>
    ```
 
-   `<WORKLOAD_CLUSTER>` is the workload cluster's name. The table shows each pool's `NAME`, `DESIRED` node count, `K8S VERSION`, `STATUS` (`Provisioning`, `Provisioned`, `Deleting` or `Unknown`) and `ID`. Add `-o yaml` and a pool name to see one pool's full settings, including its `nico` block.
+   `<WORKLOAD_CLUSTER>` is the workload cluster's name. The table shows each pool's `NAME`, `CLUSTER`, `DESIRED` node count, `K8S VERSION`, whether it is the control plane (`CP`), `STATUS` (`Provisioning`, `Provisioned`, `Deleting` or `Unknown`) and `ID`. Add `-o yaml` and a pool name to see one pool's full settings, including its `nico` block.
 
 2. List the nodes of one pool.
 

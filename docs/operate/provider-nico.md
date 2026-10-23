@@ -10,10 +10,11 @@ NICo is NVKE's default infrastructure provider; LaunchLayer is also supported on
 - You have the management cluster kubeconfig, `<CLUSTER_NAME>.kubeconfig`, and `kubectl` on `PATH`. The kubeconfig must be able to read Secrets in the `capnico-system` namespace.
 - `nvkectl` points at your management plane, as set in [Run NVKE end to end on one machine](../get-started/local-site.md) with `nvkectl config set-site`. If API authentication is on, `nvkectl` uses an OpenID Connect (OIDC) kubeconfig, as described in [Secure the NVKE API](api-authentication.md), and `nvkectl get providers` fails with it, because it reads the management cluster's Kubernetes API, which does not accept your identity provider's tokens. The steps that use it give a `kubectl` alternative.
 - In NICo, you have:
+  - Your organization set up as a NICo tenant with access to the site.
   - A site, with machines enrolled.
   - A virtual private cloud (VPC) in that site, and either VPC prefixes or subnets in it for the nodes.
   - One or more instance types, each with an allocation for your organization. An instance type with no allocation looks healthy and provisions nothing: machines wait with the reason `InstanceTypeUnavailable`.
-  - An SSH key group for node access, if you want SSH access to nodes.
+  - An SSH key group, if you want serial-over-LAN console access to nodes. SSH key groups do not install SSH keys on the node OS.
 
 Run the commands on this page with `KUBECONFIG` set:
 
@@ -55,14 +56,14 @@ export KUBECONFIG=$PWD/<CLUSTER_NAME>.kubeconfig
 
 ## Manage the NICo credentials
 
-CAPNICo authenticates to the NICo API with a bearer token from the Secret `nico-credentials` in the `capnico-system` namespace. The name, the namespace and the four keys are fixed.
+CAPNICo authenticates to the NICo API with a bearer token from the Secret `nico-credentials` in the `capnico-system` namespace. The Secret's name and namespace are fixed. The install writes the four keys below; CAPNICo requires only `endpoint`, `orgID` and a credential.
 
 | Key | Value | Where it comes from |
 |---|---|---|
 | `endpoint` | The NICo API base URL. | `nico.endpoint` in the stack config |
 | `orgID` | Your NICo organization ID. | `nico.orgID` in the stack config |
 | `token` | Your NICo API token. | `NVKECTL_NICO_TOKEN` in the install's environment. |
-| `apiName` | The API name in the NICo API path that your NICo deployment serves, such as `forge`. | `nico.apiName` in the stack config |
+| `apiName` | The API name in the NICo API path that your NICo deployment serves, such as `nico`, NICo's default. Older deployments use `forge`. | `nico.apiName` in the stack config |
 
 To rotate the token or change any other value:
 
@@ -82,7 +83,7 @@ To rotate the token or change any other value:
      apiName: "<NICO_API_NAME>"
    ```
 
-   Set all four keys. Replace `<NICO_ENDPOINT>`, `<NICO_ORG_ID>` and `<NICO_API_NAME>` with the values described in the table above, and `REDACTED` with the new token.
+   Set all four keys. Replace `<NICO_ENDPOINT>`, `<NICO_ORG_ID>` and `<NICO_API_NAME>` with the values described in the table above, and `REDACTED` with the new token. NICo tokens expire; rotate the token before it does, or machines stop provisioning with the reason `TenantResolutionFailed`.
 
 2. Apply the Secret, then delete the file.
 
@@ -109,11 +110,11 @@ The management plane holds no site-wide NICo settings. Each workload cluster req
 | `vpcID` | Cluster `nico` | The NICo VPC ID, a UUID. |
 | `instanceTypePreference` | Control plane `nico` | An ordered list of instance type IDs. The first one that has capacity is used. |
 | `instanceTypeID` | Node pool `nico` | One instance type ID. Fixed when the node pool is created. |
-| `vpcPrefixIDs` or `subnetIDs` | Control plane and node pool `nico` | Exactly one of the two: VPC prefixes for a site with native networking, subnets otherwise. |
-| `sshKeyGroupIDs` | Control plane and node pool `nico` | Optional. SSH key groups for node access. |
+| `vpcPrefixIDs` or `subnetIDs` | Control plane and node pool `nico` | Exactly one of the two, set by the VPC's network virtualization type: VPC prefixes for `FNN`, subnets for `ETHERNET_VIRTUALIZER`. `FLAT` VPCs are not supported. |
+| `sshKeyGroupIDs` | Control plane and node pool `nico` | Optional. SSH key groups for serial-over-LAN console access. Fixed when a node pool is created. |
 | `infinibandPartitionID`, `nvLinkLogicalPartitionID` | Node pool `nico` | Optional. An InfiniBand partition and an NVLink logical partition. Fixed when the node pool is created. |
 
-The `orgID`, `siteID` and `vpcID` of a cluster are fixed when the cluster is created. The control plane and each node pool select one of the releases you applied in [Run NVKE end to end on one machine](../get-started/local-site.md) with `nico.release` and, optionally, a config profile with `nico.configProfile`. [Create a workload cluster](../workload-clusters/create.md) shows a full request.
+The `orgID`, `siteID` and `vpcID` of a cluster are fixed when the cluster is created. The control plane and each node pool select one of the releases you applied in [Run NVKE end to end on one machine](../get-started/local-site.md) with `nico.release`. [Create a workload cluster](../workload-clusters/create.md) shows a full request.
 
 ## Verify
 
