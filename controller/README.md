@@ -318,7 +318,7 @@ node's EK certificate through NICo, CAPNICo publishes the TPM EK pubhash on the
 SPIRE parent ID. The Machine SPIRE entry controller then reconciles the related
 cluster entry.
 
-There are three attestation modes, set with `nodeAgent.spireAttestationMethod`:
+There are three attestation modes in the local cluster-create paths, set with `nodeAgent.spireAttestationMethod`:
 - `joinToken`
 - `tpm`
 - `dsxImds` (see the `dsx-imds-attestation` provider above)
