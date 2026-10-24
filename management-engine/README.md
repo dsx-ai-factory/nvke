@@ -4,7 +4,7 @@ The management engine is designed to manage NVKE workload clusters through
 declarative APIs and reconciliation built on Cluster API (CAPI) conventions.
 Its architecture separates user and operator APIs from internal Kubernetes
 resources and lifecycle controllers. This module provides the internal resource
-types, generated CRDs, controller-manager runtime, and tenant API contract generation.
+types, generated CRDs, and controller-manager runtime.
 
 | Path | Purpose |
 | --- | --- |
@@ -12,8 +12,6 @@ types, generated CRDs, controller-manager runtime, and tenant API contract gener
 | `config/crd/bases` | Generated CRDs |
 | `cmd` | Connection configuration and manager startup |
 | `controllers` | Reconcilers |
-| [`public/tenant`](public/tenant/README.md) | Tenant contract inputs in `apis/`; generated clients, HTTP bindings, and references in `gen/` |
-| `hack/public-api`, `internal/public/tenant/apis/cluster/mapping` | Exposure compiler and generated spec mappings with their helpers |
 
 ## Development
 
@@ -107,9 +105,9 @@ Stop deployed replicas before debugging with
 
 ## API conventions
 
-All types use `internal.nvke.nvidia.com/v1`. Public tenant and operator contracts
-(`nke.nvidia.com` and `operator.nke.nvidia.com`) are separately versioned
-projections; do not expose internal structs directly.
+All types use `internal.nvke.nvidia.com/v1`. Future public tenant and operator
+APIs should use separately versioned contracts. Do not expose internal structs
+directly.
 
 | Resource | Scope | Definition and example |
 | --- | --- | --- |
@@ -121,7 +119,7 @@ projections; do not expose internal structs directly.
 
 | Concern | Contract |
 | --- | --- |
-| Tenancy | One namespace per org per datastore. Public APIs derive org identity from authentication and enforce resource and field authorization. |
+| Tenancy | One namespace per org per datastore. Future public APIs must derive org identity from authentication and enforce resource and field authorization. |
 | Identity | Immutable client-selected DNS-subdomain names (at most 253 characters); UIDs distinguish recreations. Provider names may have shorter limits. |
 | Concurrency | Preserve opaque `resourceVersion` and field ownership. Spec expresses desired state; controllers report progress through status. |
 | Conditions | Use `metav1.Condition` and `observedGeneration`. Missing or stale conditions do not establish readiness. Unknown counts are absent; observed zero counts are explicit. |
