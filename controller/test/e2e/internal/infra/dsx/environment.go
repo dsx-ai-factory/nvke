@@ -131,8 +131,13 @@ type Site struct {
 }
 
 // Endpoint is the API base for this datahall.
+//
+// TrimRight, not TrimSuffix: a value ending in "//" would otherwise keep one
+// slash, and every path the caller joins would carry it. The duplicate check
+// in Resolve compares endpoints as strings, so the same host written with two
+// slashes would also read as a second datahall.
 func (s Site) Endpoint() string {
-	return strings.TrimSuffix(strings.TrimSpace(s.API), "/")
+	return strings.TrimRight(strings.TrimSpace(s.API), "/")
 }
 
 // Machine is one host a site controller can be built on.
