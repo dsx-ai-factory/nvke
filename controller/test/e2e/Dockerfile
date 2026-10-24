@@ -89,8 +89,15 @@ LABEL org.opencontainers.image.licenses="Apache-2.0" \
 # -test.run because the binary also carries the module's unit tests, some of
 # which need a git checkout. The JUnit report is the suite's, which lists only
 # the selected specs; report.json is Ginkgo's, with every spec.
+#
+# -ginkgo.timeout because Ginkgo's default is an hour: a healthy site finishes
+# well inside it, but on a broken one every check waits out its own limit,
+# which together run past two hours, and the checks still to run when the
+# suite times out are reported as interrupted, not as what they found. A
+# caller's own -ginkgo.timeout, given later, wins.
 ENTRYPOINT ["/usr/local/bin/e2e.test", \
     "-test.run=^TestE2E$", \
+    "-ginkgo.timeout=3h", \
     "-e2e.junit-report=/artifacts/junit-test-report.xml", \
     "-ginkgo.json-report=/artifacts/report.json", \
     "-ginkgo.silence-skips", \

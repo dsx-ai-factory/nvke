@@ -250,7 +250,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	}
 	// work is where the creates specs make their objects and the label that
 	// marks them as this run's.
-	work := func() (string, string, map[string]string) {
+	work := func() (string, probeImage, map[string]string) {
 		connect()
 		run := utilrand.String(6)
 		return settings.checks.probeNamespace, settings.checks.probeImage, map[string]string{siteRunLabel: run, validationProbeLabel: "true"}
@@ -1229,24 +1229,24 @@ func withRunLabels(labels map[string]string, role string) map[string]string {
 	return all
 }
 
-func siteServerPod(namespace, image string, labels map[string]string, role string, node corev1.Node) *corev1.Pod {
+func siteServerPod(namespace string, image probeImage, labels map[string]string, role string, node corev1.Node) *corev1.Pod {
 	pod := podCIDRServerPod(role, node.Labels[corev1.LabelHostname], false, podCIDRServerPort)
 	pod.GenerateName = "nvke-validate-" + role + "-"
 	pod.Namespace = namespace
 	pod.Labels = withRunLabels(labels, role)
-	pod.Spec.Containers[0].Image = image
+	image.apply(&pod.Spec)
 	pod.Spec.Containers[0].ReadinessProbe = &corev1.Probe{ProbeHandler: corev1.ProbeHandler{
 		TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(podCIDRServerPort)},
 	}}
 	return pod
 }
 
-func siteProbePod(namespace, image string, labels map[string]string, role string, node corev1.Node, targets []string) *corev1.Pod {
+func siteProbePod(namespace string, image probeImage, labels map[string]string, role string, node corev1.Node, targets []string) *corev1.Pod {
 	pod := podCIDRProbePod(role, node.Labels[corev1.LabelHostname], false, targets)
 	pod.GenerateName = "nvke-validate-" + role + "-probe-"
 	pod.Namespace = namespace
 	pod.Labels = withRunLabels(labels, role)
-	pod.Spec.Containers[0].Image = image
+	image.apply(&pod.Spec)
 	return pod
 }
 
@@ -1266,7 +1266,7 @@ func siteService(namespace string, labels map[string]string, role string, headle
 	return service
 }
 
-func siteStatefulSet(namespace, image string, labels map[string]string, service string, node corev1.Node) *appsv1.StatefulSet {
+func siteStatefulSet(namespace string, image probeImage, labels map[string]string, service string, node corev1.Node) *appsv1.StatefulSet {
 	server := siteServerPod(namespace, image, labels, "headless", node)
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: service, Namespace: namespace, Labels: labels},
@@ -1277,9 +1277,10 @@ func siteStatefulSet(namespace, image string, labels map[string]string, service 
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: server.Labels},
 				Spec: corev1.PodSpec{
-					NodeSelector: server.Spec.NodeSelector,
-					Tolerations:  server.Spec.Tolerations,
-					Containers:   server.Spec.Containers,
+					NodeSelector:     server.Spec.NodeSelector,
+					Tolerations:      server.Spec.Tolerations,
+					ImagePullSecrets: server.Spec.ImagePullSecrets,
+					Containers:       server.Spec.Containers,
 				},
 			},
 		},
@@ -1306,15 +1307,14 @@ sync
 printf 'wrote and read back /data/probe' > /dev/termination-log
 `
 
-func siteVolumePod(namespace, image string, labels map[string]string, claim string) *corev1.Pod {
-	return &corev1.Pod{
+func siteVolumePod(namespace string, image probeImage, labels map[string]string, claim string) *corev1.Pod {
+	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{GenerateName: "nvke-validate-volume-", Namespace: namespace, Labels: labels},
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyNever,
 			Tolerations:   podCIDRTolerations(),
 			Containers: []corev1.Container{{
 				Name:         podCIDRProbeContainer,
-				Image:        image,
 				Command:      []string{"sh", "-c", siteVolumeScript},
 				VolumeMounts: []corev1.VolumeMount{{Name: "data", MountPath: "/data"}},
 			}},
@@ -1323,6 +1323,8 @@ func siteVolumePod(namespace, image string, labels map[string]string, claim stri
 			}}},
 		},
 	}
+	image.apply(&pod.Spec)
+	return pod
 }
 
 // siteIngressPolicy admits to the run's target pods only the run's
@@ -1353,7 +1355,7 @@ body="$(curl -fsS --connect-timeout 5 --max-time 15 --cacert "$sa/ca.crt" \
 printf '/readyz at %s: %s' "$1" "$body" > /dev/termination-log
 `
 
-func endpointProbePod(namespace, image string, labels map[string]string, node corev1.Node, endpoint string) *corev1.Pod {
+func endpointProbePod(namespace string, image probeImage, labels map[string]string, node corev1.Node, endpoint string) *corev1.Pod {
 	pod := siteProbePod(namespace, image, labels, "endpoint", node, nil)
 	pod.Spec.Containers[0].Command = []string{"sh", "-c", endpointProbeScript, "probe", endpoint}
 	return pod

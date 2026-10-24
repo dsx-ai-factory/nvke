@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 )
@@ -21,7 +22,7 @@ func TestUnit_SiteValidateFromEnvDefaults(t *testing.T) {
 	require.Equal(t, siteNamespaces, settings.checks.namespaces)
 	require.False(t, settings.checks.failFast, "the image reports every check, not just the first failure")
 	require.Equal(t, "default", settings.checks.probeNamespace)
-	require.Equal(t, kube.KubectlImage, settings.checks.probeImage)
+	require.Equal(t, probeImage{ref: kube.KubectlImage}, settings.checks.probeImage)
 	require.Empty(t, settings.checks.excusedNamespace, "outside a pod there is no runner namespace to excuse, and default is checked")
 	require.False(t, settings.inPod)
 }
@@ -33,6 +34,7 @@ func TestUnit_SiteValidateFromEnvOverrides(t *testing.T) {
 		siteNamespacesEnv:        "kube-system, nke ,,cert-manager",
 		siteProbeNamespaceEnv:    "probes",
 		siteProbeImageEnv:        "registry.example/kubectl:1",
+		siteProbePullSecretsEnv:  " mirror, ,ngc",
 	}), filepath.Join(t.TempDir(), "absent"))
 	require.NoError(t, err)
 	require.True(t, settings.enabled)
@@ -43,7 +45,7 @@ func TestUnit_SiteValidateFromEnvOverrides(t *testing.T) {
 		{name: "cert-manager", source: siteNamespacesEnv},
 	}, settings.checks.namespaces)
 	require.Equal(t, "probes", settings.checks.probeNamespace)
-	require.Equal(t, "registry.example/kubectl:1", settings.checks.probeImage)
+	require.Equal(t, probeImage{ref: "registry.example/kubectl:1", pullSecrets: []corev1.LocalObjectReference{{Name: "mirror"}, {Name: "ngc"}}}, settings.checks.probeImage)
 	require.Empty(t, settings.checks.excusedNamespace, "a probe namespace given is still checked")
 }
 
