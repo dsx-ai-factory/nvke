@@ -67,16 +67,6 @@ manifests: manifests-state kustomize kubebuilder ## Generate state, the runtime 
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
-.PHONY: public-api-tools generate-public-api check-public-api
-public-api-tools: ## Install the pinned public API generation tools.
-	bash hack/public-api/tools.sh
-
-generate-public-api: public-api-tools ## Generate the public Cluster contract and typed projections.
-	bash hack/public-api/generate.sh
-
-check-public-api: public-api-tools ## Check the public contract lock and reproducible generated output.
-	bash hack/public-api/generate.sh --check
-
 .PHONY: fmt
 fmt: ## Run go fmt against code.
 	go fmt ./...
@@ -88,12 +78,7 @@ vet: ## Run go vet against code.
 TEST_PROCS ?= 5
 
 .PHONY: test
-test: test-api test-controller test-public-contract ## Run API, client, startup, controller, and public contract tests.
-
-.PHONY: test-public-contract
-test-public-contract: check-public-api ## Test public contract generation, exposure and compatibility.
-	@$(COVERAGE_MKDIR)
-	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,public-contract) -covermode=$(GO_COVER_MODE) ./public/... ./hack/public-api/...
+test: test-api test-controller ## Run API, client, startup, and controller tests.
 
 .PHONY: test-unit
 test-unit: fmt vet ## Run client and startup unit tests.
