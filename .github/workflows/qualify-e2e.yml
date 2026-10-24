@@ -123,6 +123,10 @@ on:
         description: Overrides the nvkectl release the plan resolves, e.g. v0.1.0-rc.7 (the cli/<version> GitHub Release).
         type: string
         required: false
+      deploy-path-ref:
+        description: "The commit the deploy path is exported from. Empty follows the controller version, which is what a qualification wants: the deploy path carries the controller's own chart and the two have to agree. Set it only when the deploy path is under development and the controller predates it."
+        type: string
+        required: false
       capi-provisioned-version:
         description: "Overrides the cluster-api-provider-provisioned version the plan resolves, e.g. v0.1.0-rc.1. One value for the image archive staged onto the node and the reference the bootstrap uses."
         type: string
@@ -632,6 +636,9 @@ jobs:
       NVKE_CONTROLLER_VERSION_STRATEGY: ${{ matrix.controller_version_strategy }}
       PLAN_COMMIT: ${{ needs.plan.outputs.commit }}
       CLI_VERSION: ${{ matrix.cli }}
+      # The commit the deploy path is exported from. Empty follows the
+      # controller; see the site block in "Write the e2e config".
+      SITE_DEPLOY_PATH_REF: ${{ inputs.deploy-path-ref || vars.QUALIFY_E2E_DEPLOY_PATH_REF }}
       # The name the controller is installed under, which the deploy path
       # decides. Empty leaves the suite on its default, nke-controller, which
       # every release the lane qualifies installs. Either way
@@ -1325,6 +1332,12 @@ jobs:
           nvkectl:
             binary: ${SITE_NVKECTL}
           site:
+            # Empty follows the controller version, which is what a
+            # qualification wants: the deploy path carries the controller's own
+            # chart and the two have to agree. It is set only when the deploy
+            # path itself is under development and the controller predates it,
+            # which is the one case the field exists for.
+            deployPathRef: "${SITE_DEPLOY_PATH_REF}"
             images:
               controller:
                 repository: ${SITE_IMAGES}/${SITE_NVKE_CONTROLLER_REPOSITORY}
