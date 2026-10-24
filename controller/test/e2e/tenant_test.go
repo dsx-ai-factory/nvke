@@ -492,6 +492,17 @@ func nicoForgeTenant() testSpec {
 func nicoDSXTenant() testSpec {
 	spec := nicoForgeTenant()
 	spec.buildSpec = nicoDSXSpec
+	// TEMPORARY: a control plane and no worker, so the run needs two trays
+	// rather than three. redstone-dev1-dh1 has four and two are unavailable ---
+	// one Error, one holding a LaunchLayer host claim with no host on it --- so
+	// the three-tray shape cannot be scheduled there at all. A control plane
+	// alone still exercises what is unproven on this substrate: the DSX tenant
+	// create, CAPNICo placing a machine, and the node coming up. Restore the
+	// worker pool, and requireRunCapacity's worker count with it, once the
+	// datahall has three usable trays.
+	// FIXME: https://github.com/dsx-ai-factory/nvke/issues/1913 --- track the
+	// dh1 capacity shortfall and revert this with it.
+	spec.shape.workerPools = nil
 	return spec
 }
 

@@ -513,7 +513,17 @@ func requireRunCapacity(ctx context.Context, provider infra.Provider) error {
 	if err != nil {
 		return err
 	}
-	return checker.RequireCapacity(ctx, capabilities, 2, 1)
+	// The worker count follows the tenant shape the lane will build. DSX is
+	// TEMPORARILY control-plane only --- see nicoDSXTenant --- so demanding a
+	// worker here would refuse a run the datahall can actually schedule, which
+	// is the gate failing in the unhelpful direction.
+	// FIXME: https://github.com/dsx-ai-factory/nvke/issues/1913 --- revert with
+	// the worker pool.
+	workers := 1
+	if _, isDSX := provider.(*dsx.Provider); isDSX {
+		workers = 0
+	}
+	return checker.RequireCapacity(ctx, capabilities, 2, workers)
 }
 
 // newInfraProvider builds what creates this run's site node, as the run's
