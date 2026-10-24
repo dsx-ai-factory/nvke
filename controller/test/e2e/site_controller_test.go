@@ -394,6 +394,10 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 			// -e2e.site-stage, not the absence of a label: unset, BeforeAll
 			// skips this whole container before any machine is asked for.
 			Entry("nico-forge", Label("nico-forge"), nicoForgeTenant()),
+			// The DSX datahall's own tenant. Reached only when the site lane
+			// resolved a DSX environment, which is what -e2e.environment
+			// already decided before any of this was built.
+			Entry("nico-dsx", Label("nico-dsx"), nicoDSXTenant()),
 		)
 	}
 
@@ -491,21 +495,35 @@ func siteCapabilities(run map[string]string) map[string]string {
 	return node
 }
 
-// requireRunCapacity asks Forge whether the shapes this full run will create
-// have usable allocations: the site node and the tenant control plane on the
-// CPU shape, and one worker on the worker shape.
+// requireRunCapacity asks the substrate whether the shapes this full run will
+// create have usable allocations: the site node and the tenant control plane on
+// the CPU shape, and one worker on the worker shape.
+//
+// Duck-typed rather than part of infra.Provider: a substrate that cannot answer
+// should not have to implement a method that lies, and one that can answers the
+// same question in its own API's terms.
 func requireRunCapacity(ctx context.Context, provider infra.Provider) error {
 	checker, ok := provider.(interface {
 		RequireCapacity(ctx context.Context, selector map[string]string, cpu, workers int) error
 	})
 	if !ok {
-		return fmt.Errorf("provider %T cannot check Forge allocation stats", provider)
+		return fmt.Errorf("provider %T cannot check allocation stats", provider)
 	}
 	capabilities, err := runCapabilities()
 	if err != nil {
 		return err
 	}
-	return checker.RequireCapacity(ctx, capabilities, 2, 1)
+	// The worker count follows the tenant shape the lane will build. DSX is
+	// TEMPORARILY control-plane only --- see nicoDSXTenant --- so demanding a
+	// worker here would refuse a run the datahall can actually schedule, which
+	// is the gate failing in the unhelpful direction.
+	// FIXME: https://github.com/dsx-ai-factory/nvke/issues/1913 --- revert with
+	// the worker pool.
+	workers := 1
+	if _, isDSX := provider.(*dsx.Provider); isDSX {
+		workers = 0
+	}
+	return checker.RequireCapacity(ctx, capabilities, 2, workers)
 }
 
 // newInfraProvider builds what creates this run's site node, as the run's
@@ -538,26 +556,29 @@ func newInfraProvider(cfg config.Config) (infra.Provider, error) {
 // fullStageSupported reports whether a full run can build this provider's
 // tenant, which is what separates it from bootstrap.
 //
-// The tenant half is nicoForgeSpec, and it decodes the environment as a Forge
-// declaration with unknown fields rejected. A DSX environment carries
-// tenantID and nodeUser, which that decoder refuses, so the tenant fails every
-// time however healthy the datahall is.
+// A tenant spec decodes the environment as its own provider's declaration with
+// unknown fields rejected, so a provider without one fails every time however
+// healthy its hardware is: a DSX environment carries tenantID and nodeUser,
+// which Forge's decoder refuses, and the reverse holds too.
 //
-// Checked here because the cost is the point. Without it a full run takes a
-// machine, provisions it and installs the whole stack --- forty minutes, and
-// on redstone-dev1-dh2 the only CPU machine there is, so nothing else can run
-// meanwhile --- to reach a failure that was certain before it started.
+// Checked here because the cost is the point. Without it a full run takes
+// machines, provisions them and installs the whole stack --- forty minutes,
+// and on a datahall whose every machine is a GPU tray that is capacity
+// nothing else can use meanwhile --- to reach a failure that was certain
+// before it started.
 //
-// Not Forge rather than is-DSX: the limitation is that the tenant spec speaks
-// one dialect, so a third provider meets the same wall, and naming DSX would
-// wave it through to the same deterministic failure.
+// A list rather than a not-Forge test: the limitation is that each tenant spec
+// speaks one dialect, so a provider that gains one is added here, and a
+// provider that has none meets the same wall as before.
 func fullStageSupported(provider string) error {
-	if provider == forge.ProviderName {
+	switch provider {
+	case forge.ProviderName, dsx.ProviderName:
 		return nil
 	}
-	return fmt.Errorf("-e2e.site-stage full needs a tenant spec for provider %q, and the only one is Forge's: "+
-		"the tenant half decodes the environment as a Forge declaration, which a %s environment is not. "+
-		"Run this provider at stage provision or bootstrap until a tenant spec for it exists", provider, provider)
+	return fmt.Errorf("-e2e.site-stage full needs a tenant spec for provider %q, and the ones that exist are "+
+		"Forge's and DSX's: the tenant half decodes the environment as one of those declarations, which a %s "+
+		"environment is not. Run this provider at stage provision or bootstrap until a tenant spec for it exists",
+		provider, provider)
 }
 
 // newDeployConfig builds what the Cluster API provider the stack installs
@@ -753,13 +774,12 @@ func newDSXProvider(cfg config.Config, env *environment.Environment) (infra.Prov
 // newDSXNicoConfig is how the site's CAPNICo reaches the same datahall the
 // provider created the site node in.
 //
-// The token is minted once and written into a Secret, where it lives as a
-// static string. On this substrate it expires in fifteen minutes, and CAPNICo
-// has no refresh path: the install itself needs no live authentication, so it
-// completes, but a tenant create afterwards will fail on an expired token
-// until the Secret is patched. The fix is a credential that outlives the
-// run, which is a provisioning question rather than a code one -- see the
-// note on dsx.MintToken.
+// It is handed the SSA client, not a token. A DSX token lives fifteen minutes
+// and nothing refreshes the Secret it would be written into, so a site given
+// one stops being able to create machines a quarter of an hour after an
+// install that needs no live authentication to finish -- the failure lands on
+// the first tenant create, a long way from its cause. With the client,
+// CAPNICo mints its own and keeps minting for as long as the site stands.
 func newDSXNicoConfig(env *environment.Environment) (site.CAPIProviderConfig, error) {
 	dsxEnv, err := dsx.Decode(env.Infrastructure)
 	if err != nil {
@@ -775,11 +795,19 @@ func newDSXNicoConfig(env *environment.Environment) (site.CAPIProviderConfig, er
 	}
 	dsxSite := selection.Site
 
-	token, err := dsx.MintToken(context.Background(), dsxSite)
+	client, err := dsx.SSAClientFor(dsxSite)
 	if err != nil {
 		return nil, err
 	}
-	return site.NewNico(dsxSite.Endpoint(), dsxEnv.Org.ID, token, dsx.APIName), nil
+	return site.NewNicoClient(
+		dsxSite.Endpoint(),
+		dsxEnv.Org.ID,
+		dsx.APIName,
+		client.TokenURL,
+		client.ClientID,
+		client.ClientSecret,
+		client.Scope,
+	), nil
 }
 
 // keepReason names which setting held the node, so the log says what to

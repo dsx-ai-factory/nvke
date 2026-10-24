@@ -27,16 +27,6 @@ import (
 const (
 	// ProviderName is the provider name environments/dsx.yaml declares.
 	ProviderName = "dsx"
-
-	// endpointPrefix and endpointSuffix bracket a datahall's name in the API
-	// hostname. Unlike Forge, which resolves a site name to an id through
-	// GET /site, DSX puts the datahall in DNS --- so the key a site is filed
-	// under is also what addresses it, and there is no site lookup at all.
-	//
-	// Site.API overrides this for a datahall on another domain, rather than
-	// teaching the derivation about domains.
-	endpointPrefix = "https://carbide-rest-api-"
-	endpointSuffix = ".dev.dsx.nvidia.com"
 )
 
 // Environment is DSX's dialect of an infrastructure declaration.
@@ -56,8 +46,8 @@ type Org struct {
 // and the machines it can offer.
 //
 // THE KEY IS THE DATAHALL, and every identifier below belongs to it. Two
-// datahalls at one site --- az51-dev2-dh2 and az51-dev3-dh1 --- hold
-// completely disjoint UUIDs for the same kinds of object, and nothing in an
+// datahalls at one site --- dh2 and dh3 of the same one --- hold completely
+// disjoint UUIDs for the same kinds of object, and nothing in an
 // API response says which datahall an id came from. Nesting them under the key
 // is what stops a VPC from one being paired with a prefix from the other.
 type Site struct {
@@ -66,8 +56,9 @@ type Site struct {
 	// alongside. Endpoint derives the API host from it.
 	Key string `json:"-"`
 
-	// API overrides the endpoint Endpoint would derive from Key. Empty is the
-	// derived one.
+	// API is the carbide host this datahall answers on. Required: the key is
+	// deliberately generic, so nothing derives a host from it, and an unset one
+	// would dial a name that does not resolve.
 	API string `json:"api"`
 
 	// ID is the site id. Recorded, not sent: the host derived from Key already
@@ -140,11 +131,13 @@ type Site struct {
 }
 
 // Endpoint is the API base for this datahall.
+//
+// TrimRight, not TrimSuffix: a value ending in "//" would otherwise keep one
+// slash, and every path the caller joins would carry it. The duplicate check
+// in Resolve compares endpoints as strings, so the same host written with two
+// slashes would also read as a second datahall.
 func (s Site) Endpoint() string {
-	if api := strings.TrimSpace(s.API); api != "" {
-		return strings.TrimSuffix(api, "/")
-	}
-	return endpointPrefix + s.Key + endpointSuffix
+	return strings.TrimRight(strings.TrimSpace(s.API), "/")
 }
 
 // Machine is one host a site controller can be built on.
@@ -241,6 +234,7 @@ func (d *Environment) Site(name string) (Site, error) {
 func (s Site) validate() error {
 	missing := make([]string, 0, 8)
 	for _, field := range []struct{ name, value string }{
+		{"api", s.API},
 		{"tenantID", s.TenantID},
 		{"vpcID", s.VpcID},
 		{"vpcPrefixID", s.VpcPrefixID},
@@ -389,7 +383,7 @@ func (d *Environment) Resolve(capabilities map[string]string) (Selection, error)
 				continue
 			}
 		}
-		cpu, err := site.MatchCPU(arch)
+		cpu, err := site.matchSiteControllerType(arch)
 		if err != nil {
 			continue
 		}
@@ -436,7 +430,7 @@ func (d *Environment) Resolve(capabilities map[string]string) (Selection, error)
 // is for a person standing up a datahall by hand, where choosing the host is
 // the point -- and it is a liability in CI, because a pinned machine that is
 // held or in Error blocks every run while the rest of the datahall sits idle.
-// That cost a full day on az51-dev2-dh2 on 2026-10-12.
+// That cost a full day on 2026-10-12.
 type Placement struct {
 	// MachineID is set only when the site pins one. It needs the tenant's
 	// targetedInstanceCreation capability; InstanceTypeID does not.
@@ -459,7 +453,8 @@ type Placement struct {
 // so matching on arch alone can put a site controller on accelerator hardware
 // whenever a datahall declares a GPU type of that arch first. That is also the
 // shape Resolve selected on, so asking for less here would place the run
-// somewhere Resolve did not agree to.
+// somewhere Resolve did not agree to -- which is why both go through
+// matchSiteControllerType rather than each deciding for itself.
 func (s Site) Place(arch string) (Placement, error) {
 	if len(s.Machines) > 0 {
 		machine, err := s.MatchMachine(arch)
@@ -468,11 +463,29 @@ func (s Site) Place(arch string) (Placement, error) {
 		}
 		return Placement{MachineID: machine.ID, Arch: machine.Arch(), Name: machine.Name}, nil
 	}
-	instanceType, err := s.MatchCPU(arch)
+	instanceType, err := s.matchSiteControllerType(arch)
 	if err != nil {
 		return Placement{}, err
 	}
 	return Placement{InstanceTypeID: instanceType.ID, Arch: instanceType.Arch(), Name: instanceType.Name}, nil
+}
+
+// matchSiteControllerType picks the instance type the site controller goes on.
+//
+// A datahall with CPU boxes resolves to one, which is what Place's comment
+// above describes. datahall-1 has no CPU machine at all -- every machine it
+// owns is a GPU tray -- so fall back to a GPU shape rather than refuse to
+// place. Resolve and Place must agree on the shape or a run resolves against
+// one type and is placed on another, so both call this.
+func (s Site) matchSiteControllerType(arch string) (InstanceType, error) {
+	instanceType, err := s.MatchCPU(arch)
+	if err == nil {
+		return instanceType, nil
+	}
+	return s.MatchInstanceType(map[string]string{
+		infra.CapabilityMachineType: infra.MachineTypeGPU,
+		infra.CapabilityArch:        arch,
+	})
 }
 
 // MatchMachine returns the first declared machine providing the architecture

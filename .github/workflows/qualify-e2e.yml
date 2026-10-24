@@ -533,7 +533,18 @@ jobs:
     # images with NGC_API_KEY (see "Check every artifact the plan names" and
     # "Log in to NVCR" below), so it needs the same approval a real run does.
     # Only Teleport and the suite itself skip on a dry run, not the gate.
-    environment: ${{ github.event_name == 'push' && 'forge-nightly' || 'forge' }}
+    #
+    # The DSX arm is first because a job gets one environment and the
+    # datahall's identifiers live on `dsx`, not repository-wide: a run that
+    # took `forge` would read them as empty, and an unset identifier skips the
+    # site rather than failing, so the lane would report "no declared site
+    # offers" -- a missing variable wearing the costume of missing hardware.
+    # The condition repeats SCOPE's own rather than reading it, because the
+    # env context is not available here.
+    environment: >-
+      ${{ ((github.event.label.name == 'qualify-e2e-dsx' || inputs.scope == 'dsx' || vars.QUALIFY_E2E_SCOPE == 'dsx') && 'dsx')
+          || (github.event_name == 'push' && 'forge-nightly')
+          || 'forge' }}
     # Composed of two budgets that used to be separate jobs: up to 90 minutes
     # waiting for a commit-resolved plan's publishers (see "Check every
     # artifact the plan names"), plus the run budget below. Measured phases
@@ -572,7 +583,7 @@ jobs:
       # a booted node would have qualified none of what it was cut for.
       #
       # provision for the DSX label: it takes the node, reaches it, and
-      # releases it, which is what redstone-dev1-dh2 can place --- one machine
+      # releases it, which is what the DSX datahall can place --- one machine
       # is bound to its instance type, and a full run places three at once.
       # A DSX run at full is refused by the suite before a machine is taken
       # anyway, its tenant half speaking Forge only. See SCOPE in the plan job.
@@ -719,15 +730,18 @@ jobs:
       # beside the rest, and everything else is a variable naming
       # infrastructure rather than granting anything.
       DSX_ORG_ID: ${{ vars.DSX_ORG_ID }}
-      DSX_REDSTONE_DEV1_DH2_SITE_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_SITE_ID }}
-      DSX_REDSTONE_DEV1_DH2_TENANT_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_TENANT_ID }}
-      DSX_REDSTONE_DEV1_DH2_VPC_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_VPC_ID }}
-      DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID }}
-      DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID }}
-      DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID }}
-      DSX_REDSTONE_DEV1_DH2_NODE_USER: ${{ vars.DSX_REDSTONE_DEV1_DH2_NODE_USER }}
-      DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN: ${{ vars.DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN }}
-      DSX_REDSTONE_DEV1_DH2_JUMP_HOST: ${{ secrets.DSX_REDSTONE_DEV1_DH2_JUMP_HOST }}
+      # The datahall's API host. A variable rather than part of the key, so
+      # environments/dsx.yaml names no datahall.
+      DSX_DATAHALL_1_API: ${{ vars.DSX_DATAHALL_1_API }}
+      DSX_DATAHALL_1_SITE_ID: ${{ vars.DSX_DATAHALL_1_SITE_ID }}
+      DSX_DATAHALL_1_TENANT_ID: ${{ vars.DSX_DATAHALL_1_TENANT_ID }}
+      DSX_DATAHALL_1_VPC_ID: ${{ vars.DSX_DATAHALL_1_VPC_ID }}
+      DSX_DATAHALL_1_VPC_PREFIX_ID: ${{ vars.DSX_DATAHALL_1_VPC_PREFIX_ID }}
+      DSX_DATAHALL_1_SSH_KEY_GROUP_ID: ${{ vars.DSX_DATAHALL_1_SSH_KEY_GROUP_ID }}
+      DSX_DATAHALL_1_INSTANCE_TYPE_ID: ${{ vars.DSX_DATAHALL_1_INSTANCE_TYPE_ID }}
+      DSX_DATAHALL_1_NODE_USER: ${{ vars.DSX_DATAHALL_1_NODE_USER }}
+      DSX_DATAHALL_1_TELEPORT_LOGIN: ${{ vars.DSX_DATAHALL_1_TELEPORT_LOGIN }}
+      DSX_DATAHALL_1_JUMP_HOST: ${{ secrets.DSX_DATAHALL_1_JUMP_HOST }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -867,7 +881,7 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          # FORGE_JUMP_HOST and DSX_REDSTONE_DEV1_DH2_JUMP_HOST are secrets, so
+          # FORGE_JUMP_HOST and DSX_DATAHALL_1_JUMP_HOST are secrets, so
           # the log masks them without being asked. Nothing else here needs
           # masking: every other identifier names infrastructure rather than
           # granting anything.
@@ -1408,15 +1422,16 @@ jobs:
             "cpu arch|ARCH|||"
             "gpu model|GPU|||"
             "DSX org|DSX_ORG_ID||DSX_ORG_ID|DSX_ORG_ID"
-            "DSX jump host|DSX_REDSTONE_DEV1_DH2_JUMP_HOST|||"
-            "DSX site|DSX_REDSTONE_DEV1_DH2_SITE_ID||DSX_REDSTONE_DEV1_DH2_SITE_ID|DSX_REDSTONE_DEV1_DH2_SITE_ID"
-            "DSX tenant|DSX_REDSTONE_DEV1_DH2_TENANT_ID||DSX_REDSTONE_DEV1_DH2_TENANT_ID|DSX_REDSTONE_DEV1_DH2_TENANT_ID"
-            "DSX VPC|DSX_REDSTONE_DEV1_DH2_VPC_ID||DSX_REDSTONE_DEV1_DH2_VPC_ID|DSX_REDSTONE_DEV1_DH2_VPC_ID"
-            "DSX VPC prefix|DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID||DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID|DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID"
-            "DSX SSH key group|DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID||DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID|DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID"
-            "DSX instance type|DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID||DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID|DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID"
-            "DSX Teleport login|DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN||DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN|DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN"
-            "DSX node user|DSX_REDSTONE_DEV1_DH2_NODE_USER||DSX_REDSTONE_DEV1_DH2_NODE_USER|DSX_REDSTONE_DEV1_DH2_NODE_USER"
+            "DSX jump host|DSX_DATAHALL_1_JUMP_HOST|||"
+            "DSX api|DSX_DATAHALL_1_API||DSX_DATAHALL_1_API|DSX_DATAHALL_1_API"
+            "DSX site|DSX_DATAHALL_1_SITE_ID||DSX_DATAHALL_1_SITE_ID|DSX_DATAHALL_1_SITE_ID"
+            "DSX tenant|DSX_DATAHALL_1_TENANT_ID||DSX_DATAHALL_1_TENANT_ID|DSX_DATAHALL_1_TENANT_ID"
+            "DSX VPC|DSX_DATAHALL_1_VPC_ID||DSX_DATAHALL_1_VPC_ID|DSX_DATAHALL_1_VPC_ID"
+            "DSX VPC prefix|DSX_DATAHALL_1_VPC_PREFIX_ID||DSX_DATAHALL_1_VPC_PREFIX_ID|DSX_DATAHALL_1_VPC_PREFIX_ID"
+            "DSX SSH key group|DSX_DATAHALL_1_SSH_KEY_GROUP_ID||DSX_DATAHALL_1_SSH_KEY_GROUP_ID|DSX_DATAHALL_1_SSH_KEY_GROUP_ID"
+            "DSX instance type|DSX_DATAHALL_1_INSTANCE_TYPE_ID||DSX_DATAHALL_1_INSTANCE_TYPE_ID|DSX_DATAHALL_1_INSTANCE_TYPE_ID"
+            "DSX Teleport login|DSX_DATAHALL_1_TELEPORT_LOGIN||DSX_DATAHALL_1_TELEPORT_LOGIN|DSX_DATAHALL_1_TELEPORT_LOGIN"
+            "DSX node user|DSX_DATAHALL_1_NODE_USER||DSX_DATAHALL_1_NODE_USER|DSX_DATAHALL_1_NODE_USER"
             "site-2 site|FORGE_SITE_2_SITE_ID||FORGE_SITE_2_SITE_ID|FORGE_SITE_2_SITE_ID"
             "site-2 VPC|FORGE_SITE_2_VPC_ID||FORGE_SITE_2_VPC_ID|FORGE_SITE_2_VPC_ID"
             "site-2 VPC prefix|FORGE_SITE_2_VPC_PREFIX_ID||FORGE_SITE_2_VPC_PREFIX_ID|FORGE_SITE_2_VPC_PREFIX_ID"
@@ -1584,8 +1599,8 @@ jobs:
           # artifact upload. The identifiers stay at job level because the
           # provenance step reads them back by name.
           SSA_ISSUER: ${{ secrets.SSA_ISSUER }}
-          DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID: ${{ secrets.DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID }}
-          DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_SECRET: ${{ secrets.DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_SECRET }}
+          DSX_DATAHALL_1_SSA_CLIENT_ID: ${{ secrets.DSX_DATAHALL_1_SSA_CLIENT_ID }}
+          DSX_DATAHALL_1_SSA_CLIENT_SECRET: ${{ secrets.DSX_DATAHALL_1_SSA_CLIENT_SECRET }}
           # JUMP_HOST_PASSWORD is deliberately absent: its presence is what
           # switches the suite off the Teleport relay and onto plain SSH.
         run: |

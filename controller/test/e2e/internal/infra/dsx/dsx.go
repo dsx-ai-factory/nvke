@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -36,9 +37,9 @@ const (
 	//
 	// SSH is the long one. After the imager writes the disk and reboots, the
 	// firmware loops UEFI HTTP boot across every NIC before falling through to
-	// disk -- ten, fifteen and twenty-seven minutes were all measured on the
-	// az51 exercise. Slow rather than broken, so WaitReachable carries the
-	// budget.
+	// disk -- ten, fifteen and twenty-seven minutes were all measured during
+	// an earlier bring-up. Slow rather than broken, so WaitReachable carries
+	// the budget.
 	//
 	// Together they are 50 minutes, matching Forge's 30 + 20, and both sit
 	// under the same governor: the provision spec's own NodeTimeout, which is
@@ -360,6 +361,86 @@ func (p *Provider) interfaces() []standard.InterfaceCreateRequest {
 	iface.SetVpcPrefixId(p.site.VpcPrefixID)
 	iface.SetIsPhysical(true)
 	return []standard.InterfaceCreateRequest{*iface}
+}
+
+// RequireCapacity fails when a shape this run will create has fewer usable
+// allocations than it needs. cpuCount is the site node plus the tenant control
+// plane. workerCount is the tenant's workers, taken on the GPU shape when the
+// run asked for one and on the CPU shape otherwise.
+//
+// The datahall gates on unusedUsable the way Forge does, and reports it from
+// the same field, so this asks the same question of the same API. What differs
+// is that a datahall with no CPU machine resolves both roles to one instance
+// type -- Resolve fills CPU from matchSiteControllerType, which falls back to a
+// GPU shape -- so the two demands land on the same id and have to sum rather
+// than be checked apart. The map is keyed by id for that reason.
+//
+// Checked before any instance exists, because the suite would otherwise hold
+// the machines it did get until the provision timeout, and on a datahall whose
+// every machine is a tray that is capacity nothing else can use meanwhile.
+func (p *Provider) RequireCapacity(ctx context.Context, capabilities map[string]string, cpuCount, workerCount int) error {
+	selection, err := p.opts.Env.Resolve(capabilities)
+	if err != nil {
+		return fmt.Errorf("dsx: %w", err)
+	}
+	type demand struct {
+		name string
+		id   string
+		need int
+	}
+	needs := map[string]demand{}
+	add := func(instanceType InstanceType, n int) {
+		if n <= 0 || instanceType.ID == "" {
+			return
+		}
+		d := needs[instanceType.ID]
+		d.name = instanceType.Name
+		d.id = instanceType.ID
+		d.need += n
+		needs[instanceType.ID] = d
+	}
+	add(selection.CPU, cpuCount)
+	if workerCount > 0 {
+		add(selection.WorkerType(), workerCount)
+	}
+	if len(needs) == 0 {
+		return nil
+	}
+
+	ctx, err = p.authorize(ctx)
+	if err != nil {
+		return err
+	}
+	ids := make([]string, 0, len(needs))
+	for id := range needs {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	problems := make([]string, 0)
+	for _, id := range ids {
+		d := needs[id]
+		item, resp, err := p.client.InstanceTypeAPI.GetInstanceType(ctx, p.opts.Env.Org.ID, d.id).
+			IncludeAllocationStats(true).Execute()
+		closeBody(resp)
+		if err != nil {
+			return fmt.Errorf("dsx: reading allocation stats for %s (%s): %w", d.name, d.id, apiError(err))
+		}
+		if !item.HasAllocationStats() {
+			return fmt.Errorf("dsx: instance type %s (%s) returned no allocation stats", d.name, d.id)
+		}
+		stats := item.GetAllocationStats()
+		usable := int(stats.GetUnusedUsable())
+		if usable < d.need {
+			problems = append(problems, fmt.Sprintf(
+				"%s (%s): need %d, unusedUsable=%d (total=%d used=%d unused=%d)",
+				d.name, d.id, d.need, usable, stats.GetTotal(), stats.GetUsed(), stats.GetUnused(),
+			))
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("the datahall has no usable allocation for this run:\n%s", strings.Join(problems, "\n"))
+	}
+	return nil
 }
 
 func (p *Provider) authorize(ctx context.Context) (context.Context, error) {

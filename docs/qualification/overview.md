@@ -69,7 +69,7 @@ A beta tag is cut once a night, so it adds one run rather than a stream of them.
 |---|---|
 | `qualify-e2e` | `QUALIFY_E2E_SCOPE`, or `golden-path` when that is unset: Ubuntu 24.04 on GB200, both arches |
 | `qualify-e2e-l40s` | the `l40s` scope: Ubuntu 24.04 on L40S at site-1, amd64 |
-| `qualify-e2e-dsx` | the `dsx` scope: the redstone-dev1-dh2 datahall, at stage `provision` |
+| `qualify-e2e-dsx` | the `dsx` scope: the the DSX datahall datahall, at stage `provision` |
 | `qualify-e2e-dry-run` | everything except joining Teleport and running the suite |
 
 The DSX label names its scope and stage outright, where `qualify-e2e` takes
