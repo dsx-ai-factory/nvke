@@ -143,6 +143,9 @@ func TestEndpointIsTheDeclaredAPI(t *testing.T) {
 		"as declared":       {api: "https://carbide-rest-api-x.example", want: "https://carbide-rest-api-x.example"},
 		"trailing slash":    {api: "https://elsewhere.example/", want: "https://elsewhere.example"},
 		"surrounding space": {api: "  https://elsewhere.example  ", want: "https://elsewhere.example"},
+		// A run of slashes, not one: trimming a single suffix would leave the
+		// endpoint slash-terminated and read as a second datahall.
+		"repeated slashes": {api: "https://elsewhere.example///", want: "https://elsewhere.example"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := (Site{Key: "datahall-1", API: tc.api}).Endpoint(); got != tc.want {
