@@ -841,12 +841,16 @@ const (
 	// reclaimable_bytes was below the manifest's configured bootstrap-defrag
 	// threshold so the restart could not have reclaimed anything.
 	GetEtcdDefragStatusResponse_OUTCOME_REFUSED GetEtcdDefragStatusResponse_Outcome = 3
-	// etcd was restarted but did not return healthy. Needs intervention.
+	// The node is still out of service and needs intervention. Either etcd was
+	// restarted and did not return healthy - in which case kube-apiserver and
+	// kube-vip are deliberately left parked, because an apiserver with no etcd
+	// behind it is worse than one fewer endpoint - or the agent could not
+	// confirm the node back in service afterwards.
 	GetEtcdDefragStatusResponse_OUTCOME_FAILED_NOT_RESTORED GetEtcdDefragStatusResponse_Outcome = 4
-	// The sequence failed after etcd was taken down, but the manifest was put
-	// back and the member verified healthy again. No defragmentation happened
-	// and the node is in its pre-call state, so a rollout may stop cleanly
-	// rather than treating this member as damaged.
+	// The sequence failed after the node was taken out of service, but it was
+	// put back and the local member verified healthy again. No defragmentation
+	// happened and the node is in its pre-call state, so a rollout may stop
+	// cleanly rather than treating this member as damaged.
 	GetEtcdDefragStatusResponse_OUTCOME_FAILED_RESTORED GetEtcdDefragStatusResponse_Outcome = 5
 )
 

@@ -360,6 +360,18 @@ func startSecureServer(ctx context.Context, cfg AgentConfig, agentServer *server
 		log.Fatalf("failed to listen: %v", err)
 	}
 
+	// Before serving, put back any static-pod manifest an operation parked and
+	// then died without restoring. This runs ahead of Serve so a control-plane
+	// node that lost its agent mid-defragmentation is back in service before it
+	// accepts the next instruction, rather than after it. The bound covers all
+	// three manifests at the per-pod start timeout with room to spare; serving
+	// late is better than not serving, so a timeout logs and continues.
+	reconcileCtx, cancelReconcile := context.WithTimeout(ctx, 5*time.Minute)
+	if err := agentServer.ReconcileInterruptedStaticPodParks(reconcileCtx); err != nil {
+		slog.Error("failed to restore static-pod manifests parked by an interrupted operation", "err", err)
+	}
+	cancelReconcile()
+
 	agentServer.NodeStatus.ListenStatus = "listening on port " + cfg.NodeServerListenPort
 	slog.Info("persisting status with listenStatus update")
 	agentServer.Persister.Persist(agentServer.NodeStatus) //nolint:errcheck

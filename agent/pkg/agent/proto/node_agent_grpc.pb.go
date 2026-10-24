@@ -149,10 +149,10 @@ type NodeAgentClient interface {
 	// etcd member by restarting it so etcd defragments during bootstrap. It never
 	// calls `etcdctl defrag`, which blocks the member while it runs.
 	//
-	// The manifest content is not modified; the restart is driven by moving the
-	// static-pod manifest aside and back, which makes kubelet tear down and
-	// recreate the pod. etcd then defragments during bootstrap if its configured
-	// threshold is met.
+	// The etcd manifest is never moved or modified. The restart is `crictl stop`
+	// on the etcd container, and kubelet starts a replacement from the manifest
+	// that stayed in place. etcd then defragments during bootstrap if its
+	// configured threshold is met.
 	//
 	// Because the threshold is what decides whether the restart accomplishes
 	// anything, the agent reads it from the manifest and refuses up front when
@@ -161,22 +161,37 @@ type NodeAgentClient interface {
 	// attempted. The agent never edits the threshold - it is set by kubeadm when
 	// the node is provisioned - so the configured value is always honoured.
 	//
-	// The agent performs the full per-node sequence: health preflight, voting
-	// member check, leadership transfer away from the local member if it is
-	// leader, the manifest move, the move back, and the wait for etcd to return
-	// healthy. The caller sequences members; it does not orchestrate within one.
+	// THE CALLER DOES NOT NEED TO TAKE THIS NODE OUT OF SERVICE FIRST. The agent
+	// performs the whole per-node sequence, including the withdrawal and the
+	// return: health preflight, voting member check, leadership transfer away
+	// from the local member if it is leader, withdrawal from the control-plane
+	// VIP, stopping kube-apiserver, the etcd restart, the wait for etcd to return
+	// healthy, then kube-apiserver and kube-vip back in that order. The caller
+	// sequences members; it does not orchestrate within one.
 	//
-	// The manifest is put back before that health wait, so a member that then
-	// fails to return healthy is already running its original configuration and
-	// there is nothing left for the agent to restore. That case reports
-	// OUTCOME_FAILED_NOT_RESTORED and needs an operator: no agent-side action
+	// kube-apiserver is stopped as well as the VIP withdrawn because two separate
+	// paths reach this node's apiserver, and the VIP is only one of them. The
+	// kubernetes.default Service resolves to control-plane node IPs rather than
+	// to the VIP, so withdrawing the VIP alone leaves kube-proxy load balancing
+	// in-cluster clients onto an apiserver whose only etcd backend is down.
+	// Stopping the apiserver closes that path too, and the endpoint reconciler
+	// prunes and republishes this node's IP on its own as the apiserver stops and
+	// resumes renewing its masterlease - neither direction needs a caller.
+	//
+	// "Withdrawal" is not a drain in the kubectl sense. No workload is evicted
+	// and the node is not cordoned. What stops is this node's participation in
+	// serving the Kubernetes API.
+	//
+	// A member that fails to return healthy after the restart is left withdrawn
+	// on purpose, with kube-apiserver and kube-vip still parked, and reports
+	// OUTCOME_FAILED_NOT_RESTORED. Returning either one would route traffic to an
+	// apiserver with no etcd behind it rather than leaving the remaining members
+	// to carry the cluster. That case needs an operator: no agent-side action
 	// recovers an etcd that will not start from its own unmodified manifest.
 	//
-	// The caller must steer API traffic away from this node first, as it must
-	// for PatchAPIServerManifest. This node's kube-apiserver reaches etcd over
-	// localhost and cannot serve while it is down, but kube-vip keeps
-	// advertising the VIP toward it. Drain kube-vip before this call and restore
-	// it after.
+	// An agent that dies mid-sequence restores what it parked on next startup,
+	// before it serves any RPC, so an interrupted defragmentation does not leave
+	// a node permanently out of the control plane.
 	//
 	// The operation_id is an idempotency key; retrying with the same operation_id
 	// returns the existing operation instead of restarting etcd a second time.
@@ -945,10 +960,10 @@ type NodeAgentServer interface {
 	// etcd member by restarting it so etcd defragments during bootstrap. It never
 	// calls `etcdctl defrag`, which blocks the member while it runs.
 	//
-	// The manifest content is not modified; the restart is driven by moving the
-	// static-pod manifest aside and back, which makes kubelet tear down and
-	// recreate the pod. etcd then defragments during bootstrap if its configured
-	// threshold is met.
+	// The etcd manifest is never moved or modified. The restart is `crictl stop`
+	// on the etcd container, and kubelet starts a replacement from the manifest
+	// that stayed in place. etcd then defragments during bootstrap if its
+	// configured threshold is met.
 	//
 	// Because the threshold is what decides whether the restart accomplishes
 	// anything, the agent reads it from the manifest and refuses up front when
@@ -957,22 +972,37 @@ type NodeAgentServer interface {
 	// attempted. The agent never edits the threshold - it is set by kubeadm when
 	// the node is provisioned - so the configured value is always honoured.
 	//
-	// The agent performs the full per-node sequence: health preflight, voting
-	// member check, leadership transfer away from the local member if it is
-	// leader, the manifest move, the move back, and the wait for etcd to return
-	// healthy. The caller sequences members; it does not orchestrate within one.
+	// THE CALLER DOES NOT NEED TO TAKE THIS NODE OUT OF SERVICE FIRST. The agent
+	// performs the whole per-node sequence, including the withdrawal and the
+	// return: health preflight, voting member check, leadership transfer away
+	// from the local member if it is leader, withdrawal from the control-plane
+	// VIP, stopping kube-apiserver, the etcd restart, the wait for etcd to return
+	// healthy, then kube-apiserver and kube-vip back in that order. The caller
+	// sequences members; it does not orchestrate within one.
 	//
-	// The manifest is put back before that health wait, so a member that then
-	// fails to return healthy is already running its original configuration and
-	// there is nothing left for the agent to restore. That case reports
-	// OUTCOME_FAILED_NOT_RESTORED and needs an operator: no agent-side action
+	// kube-apiserver is stopped as well as the VIP withdrawn because two separate
+	// paths reach this node's apiserver, and the VIP is only one of them. The
+	// kubernetes.default Service resolves to control-plane node IPs rather than
+	// to the VIP, so withdrawing the VIP alone leaves kube-proxy load balancing
+	// in-cluster clients onto an apiserver whose only etcd backend is down.
+	// Stopping the apiserver closes that path too, and the endpoint reconciler
+	// prunes and republishes this node's IP on its own as the apiserver stops and
+	// resumes renewing its masterlease - neither direction needs a caller.
+	//
+	// "Withdrawal" is not a drain in the kubectl sense. No workload is evicted
+	// and the node is not cordoned. What stops is this node's participation in
+	// serving the Kubernetes API.
+	//
+	// A member that fails to return healthy after the restart is left withdrawn
+	// on purpose, with kube-apiserver and kube-vip still parked, and reports
+	// OUTCOME_FAILED_NOT_RESTORED. Returning either one would route traffic to an
+	// apiserver with no etcd behind it rather than leaving the remaining members
+	// to carry the cluster. That case needs an operator: no agent-side action
 	// recovers an etcd that will not start from its own unmodified manifest.
 	//
-	// The caller must steer API traffic away from this node first, as it must
-	// for PatchAPIServerManifest. This node's kube-apiserver reaches etcd over
-	// localhost and cannot serve while it is down, but kube-vip keeps
-	// advertising the VIP toward it. Drain kube-vip before this call and restore
-	// it after.
+	// An agent that dies mid-sequence restores what it parked on next startup,
+	// before it serves any RPC, so an interrupted defragmentation does not leave
+	// a node permanently out of the control plane.
 	//
 	// The operation_id is an idempotency key; retrying with the same operation_id
 	// returns the existing operation instead of restarting etcd a second time.

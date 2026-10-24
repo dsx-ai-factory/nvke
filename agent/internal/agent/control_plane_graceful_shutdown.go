@@ -48,6 +48,8 @@ const (
 
 	stepStoppingKubeAPIServer       = "stopping_kube_apiserver"
 	stepWaitingKubeAPIServerExit    = "waiting_for_kube_apiserver_exit"
+	stepRestoringKubeAPIServer      = "restoring_kube_apiserver"
+	stepWaitingKubeAPIServerStart   = "waiting_for_kube_apiserver_start"
 	stepStoppingKubeVip             = "stopping_kube_vip"
 	stepWaitingKubeVipExit          = "waiting_for_kube_vip_exit"
 	stepRestoringKubeVip            = "restoring_kube_vip"
@@ -171,29 +173,41 @@ func (s *NodeAgentServer) runK8sControlPlaneNodeGracefulShutdown(
 	if runner == nil {
 		runner = &nvkeutils.ExecRunner{}
 	}
+	if err := s.withdrawKubeVipLocked(ctx, runner, progress); err != nil {
+		return err
+	}
+
+	if shouldStopKubeAPIServer {
+		return s.stopKubeAPIServerLocked(ctx, runner, progress)
+	}
+	return nil
+}
+
+// withdrawKubeVipLocked takes this node out of the control-plane VIP, or does
+// nothing when kube-vip is not configured here. Callers must already hold
+// staticPodMutationMu.
+//
+// "Withdraw" rather than "drain": no workload is drained, nothing is cordoned
+// and nothing is evicted. What stops is this node's participation in the VIP,
+// which takes three separate actions because advertising the address, accepting
+// traffic for it, and connections already established to it are three different
+// things. See drainKubeVip for the sequence.
+func (s *NodeAgentServer) withdrawKubeVipLocked(
+	ctx context.Context,
+	runner nvkeutils.CommandRunner,
+	progress nodeAgentOperationProgress,
+) error {
 	progress.SetStep(stepResolvingKubeVip)
 	vip, err := s.resolveKubeVipAddress(runner)
 	switch {
 	case err == nil:
-		if drainErr := s.drainKubeVip(ctx, runner, progress, vip); drainErr != nil {
-			return drainErr
-		}
+		return s.drainKubeVip(ctx, runner, progress, vip)
 	case errors.Is(err, errNoKubeVipAddress):
-		slog.Info("kube-vip is not configured; skipping kube-vip drain")
+		slog.Info("kube-vip is not configured; skipping kube-vip withdrawal")
+		return nil
 	default:
 		return fmt.Errorf("resolve kube-vip address: %w", err)
 	}
-
-	if shouldStopKubeAPIServer {
-		return s.stopStaticPod(ctx, runner, progress, staticPodStopSpec{
-			containerName: kubeAPIServerContainerName,
-			manifestName:  defaultKubeAPIServerManifestName,
-			stoppingStep:  stepStoppingKubeAPIServer,
-			waitingStep:   stepWaitingKubeAPIServerExit,
-			timeout:       time.Duration(defaultStaticPodExitTimeout) * time.Second,
-		})
-	}
-	return nil
 }
 
 // drainKubeVip removes kube-vip from this node so it stops advertising and
@@ -266,7 +280,22 @@ func (s *NodeAgentServer) runKubeVipRestore(
 	if runner == nil {
 		runner = &nvkeutils.ExecRunner{}
 	}
+	return s.restoreKubeVipLocked(ctx, runner, progress)
+}
 
+// restoreKubeVipLocked is runKubeVipRestore without the lock, for callers that
+// already hold staticPodMutationMu because the restore is one step of a longer
+// static-pod transaction. StartEtcdDefrag is one: it withdraws the VIP, takes
+// etcd down and puts both back, and releasing the mutex between those steps
+// would let another static-pod mutation interleave while the VIP is parked.
+//
+// sync.Mutex is not reentrant, so this split is what keeps the bundled sequence
+// from deadlocking on itself.
+func (s *NodeAgentServer) restoreKubeVipLocked(
+	ctx context.Context,
+	runner nvkeutils.CommandRunner,
+	progress nodeAgentOperationProgress,
+) error {
 	progress.SetStep(stepResolvingKubeVip)
 	vip, err := s.resolveKubeVipAddress(runner)
 	switch {
@@ -294,6 +323,55 @@ func (s *NodeAgentServer) runKubeVipRestore(
 		return fmt.Errorf("wait for kube-vip address on lo: %w", err)
 	}
 	return nil
+}
+
+// stopKubeAPIServerLocked parks the kube-apiserver manifest and waits for the
+// container to exit. Callers must already hold staticPodMutationMu.
+//
+// This exists so a caller that is about to take the local etcd member down can
+// stop drawing in-cluster traffic to this node first. Withdrawing the VIP is
+// not enough on its own: the kubernetes.default Service resolves to the
+// control-plane node IPs rather than the VIP, so kube-proxy keeps load
+// balancing in-cluster clients onto this apiserver, and kubeadm points it at
+// --etcd-servers=https://127.0.0.1:2379, its local member only. Left running it
+// would serve those clients from an etcd that is gone.
+//
+// Stopping it also withdraws the node from that Service, because the apiserver
+// publishes a lease under /registry/masterleases/<advertise-address> that the
+// endpoint reconciler in every apiserver prunes once it stops being renewed.
+// That is automatic in both directions - nothing has to add the address back.
+func (s *NodeAgentServer) stopKubeAPIServerLocked(
+	ctx context.Context,
+	runner nvkeutils.CommandRunner,
+	progress nodeAgentOperationProgress,
+) error {
+	return s.stopStaticPod(ctx, runner, progress, staticPodStopSpec{
+		containerName: kubeAPIServerContainerName,
+		manifestName:  defaultKubeAPIServerManifestName,
+		stoppingStep:  stepStoppingKubeAPIServer,
+		waitingStep:   stepWaitingKubeAPIServerExit,
+		timeout:       time.Duration(defaultStaticPodExitTimeout) * time.Second,
+	})
+}
+
+// restoreKubeAPIServerLocked puts the kube-apiserver manifest back and waits for
+// the container to run again. Callers must already hold staticPodMutationMu.
+//
+// Restore this before kube-vip, and only once the local etcd member is serving:
+// the apiserver cannot republish its masterlease until etcd is back, and the VIP
+// must not be advertised from a node whose apiserver is not yet ready.
+func (s *NodeAgentServer) restoreKubeAPIServerLocked(
+	ctx context.Context,
+	runner nvkeutils.CommandRunner,
+	progress nodeAgentOperationProgress,
+) error {
+	return s.restoreStaticPod(ctx, runner, progress, staticPodRestoreSpec{
+		containerName: kubeAPIServerContainerName,
+		manifestName:  defaultKubeAPIServerManifestName,
+		restoringStep: stepRestoringKubeAPIServer,
+		waitingStep:   stepWaitingKubeAPIServerStart,
+		timeout:       s.staticPodStartTimeoutOrDefault(),
+	})
 }
 
 var errNoKubeVipAddress = errors.New("no kube-vip address found")
@@ -486,6 +564,68 @@ func (s *NodeAgentServer) restoreStaticPod(
 	}
 	if err := s.waitForStaticPodRunning(ctx, runner, spec.containerName, baseline, spec.timeout); err != nil {
 		return fmt.Errorf("wait for %s start: %w", spec.containerName, err)
+	}
+	return nil
+}
+
+type staticPodContainerRestartSpec struct {
+	containerName string
+	stoppingStep  string
+	waitingStep   string
+	// stopTimeout bounds the SIGTERM-to-SIGKILL window handed to crictl.
+	stopTimeout time.Duration
+	// startTimeout bounds the wait for kubelet to run a replacement container.
+	startTimeout time.Duration
+}
+
+// restartStaticPodContainer stops a static pod's container through the CRI and
+// waits for kubelet to run a replacement from the manifest, which stays in
+// place throughout.
+//
+// This is the restart path for a pod that has to come back. Moving the manifest
+// aside also restarts the pod, but it makes the agent responsible for putting
+// the manifest back: a crash between the move and the restore leaves the pod
+// down with nothing scheduled to return it. Stopping the container instead
+// leaves kubelet owning the restart, which it performs from the manifest it can
+// still see, under the pod's own restartPolicy of Always.
+//
+// It also fails safe. The container listing is both the set to stop and the
+// baseline that proves a restart happened, so a listing failure aborts before
+// anything is touched - where the manifest-move path had to attempt the rename
+// regardless, because a failed listing there could strand the manifest.
+func (s *NodeAgentServer) restartStaticPodContainer(
+	ctx context.Context,
+	runner nvkeutils.CommandRunner,
+	progress nodeAgentOperationProgress,
+	spec staticPodContainerRestartSpec,
+) error {
+	progress.SetStep(spec.stoppingStep)
+	containerIDs, err := listStaticPodContainerIDs(runner, spec.containerName)
+	if err != nil {
+		return fmt.Errorf("list %s containers: %w", spec.containerName, err)
+	}
+	if len(containerIDs) == 0 {
+		return fmt.Errorf("no running %s container to restart", spec.containerName)
+	}
+
+	stopSeconds := strconv.Itoa(int(spec.stopTimeout.Seconds()))
+	for _, id := range containerIDs {
+		slog.InfoContext(ctx, "stopping static pod container through the CRI",
+			"container", spec.containerName, "containerID", id, "stopTimeout", spec.stopTimeout)
+		output, stopErr := runner.Run("crictl", []string{"stop", "--timeout", stopSeconds, id}, nil)
+		if stopErr != nil {
+			return fmt.Errorf("crictl stop %s %s: %w: %s",
+				spec.containerName, id, stopErr, strings.TrimSpace(string(output)))
+		}
+	}
+
+	progress.SetStep(spec.waitingStep)
+	// The pre-stop IDs are the baseline, so only a container outside that set
+	// counts. Nothing was renamed, so a still-running old container would
+	// otherwise satisfy the wait immediately.
+	if err := s.waitForStaticPodRunning(ctx, runner, spec.containerName,
+		staticPodBaseline{containerIDs: containerIDs}, spec.startTimeout); err != nil {
+		return fmt.Errorf("wait for %s restart: %w", spec.containerName, err)
 	}
 	return nil
 }

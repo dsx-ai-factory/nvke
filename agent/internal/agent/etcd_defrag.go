@@ -9,8 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 
 	nvkeutils "github.com/dsx-ai-factory/nvke/agent/pkg/utils"
@@ -31,15 +29,13 @@ const (
 	// topologies rather than making the operator opt out of them.
 	defaultMinVotingMembersForDefrag = 3
 
-	stepEtcdDefragRecovering     = "etcd_defrag_recovering_parked_manifest"
-	stepEtcdDefragPreflight      = "etcd_defrag_preflight"
-	stepEtcdDefragTransferLeader = "etcd_defrag_transferring_leadership"
-	stepEtcdDefragStopping       = "etcd_defrag_stopping_etcd"
-	stepEtcdDefragWaitingExit    = "etcd_defrag_waiting_for_etcd_exit"
-	stepEtcdDefragRestarting     = "etcd_defrag_restarting_etcd"
-	stepEtcdDefragWaitingStart   = "etcd_defrag_waiting_for_etcd_start"
-	stepEtcdDefragWaitingHealthy = "etcd_defrag_waiting_for_etcd_health"
-	stepEtcdDefragMeasuring      = "etcd_defrag_measuring"
+	stepEtcdDefragPreflight          = "etcd_defrag_preflight"
+	stepEtcdDefragTransferLeader     = "etcd_defrag_transferring_leadership"
+	stepEtcdDefragStoppingEtcd       = "etcd_defrag_stopping_etcd_container"
+	stepEtcdDefragWaitingRestart     = "etcd_defrag_waiting_for_etcd_restart"
+	stepEtcdDefragWaitingHealthy     = "etcd_defrag_waiting_for_etcd_health"
+	stepEtcdDefragReturningToService = "etcd_defrag_returning_node_to_service"
+	stepEtcdDefragMeasuring          = "etcd_defrag_measuring"
 )
 
 // persistedEtcdDefragResult is the typed result carried through the generic
@@ -97,15 +93,17 @@ func (s *NodeAgentServer) StartEtcdDefrag(
 }
 
 // resetInterruptedEtcdDefrag drops defragmentation records left non-terminal by
-// an agent restart, so the Start that follows runs and recovers in band.
+// an agent restart, so a fresh Start is not permanently rejected.
 //
-// Without it the in-band recovery is unreachable in the one case it exists for.
-// A restart with etcd.yaml parked leaves a RUNNING record and no worker, and
-// startNodeAgentOperation then rejects every retry: the same operation ID as
-// inactive, a fresh one as already running, because
+// Without it an interrupted attempt blocks every retry: the same operation ID
+// is rejected as inactive, and a fresh one as already running, because
 // runningNodeAgentOperationOfTypeLocked matches on the phase rather than on an
-// active worker. runEtcdDefrag never executes, so ensureEtcdManifestActive never
-// puts the parked manifest back and the member stays down.
+// active worker. The node would then be stuck until someone cleared the state
+// file by hand.
+//
+// This runs after ReconcileInterruptedStaticPodParks has already put back
+// whatever the interrupted attempt parked, and clearing the record here is what
+// stops that recovery being re-triggered on a later startup.
 //
 // Every non-terminal record of this type is cleared, not just the requested ID,
 // since a stale record under any ID is what blocks a fresh one. Terminal records
@@ -181,15 +179,24 @@ func (s *NodeAgentServer) GetEtcdDefragStatus(
 }
 
 // runEtcdDefrag performs the whole per-node sequence: preflight, leadership
-// transfer, the manifest move that restarts etcd, and verification that the
-// member came back.
+// transfer, withdrawing the node from service, the etcd restart that
+// defragments, and returning the node to service.
+//
+// The node is withdrawn first because restarting etcd makes this node's
+// apiserver useless for the duration, and two separate paths reach it. The VIP
+// is one. The kubernetes.default Service is the other, and it resolves to
+// control-plane node IPs rather than the VIP, so withdrawing the VIP alone
+// leaves kube-proxy load balancing in-cluster clients onto an apiserver whose
+// only etcd (--etcd-servers=https://127.0.0.1:2379) is gone. Stopping the
+// apiserver closes that path, and the endpoint reconciler prunes this node from
+// the Service on its own once the apiserver stops renewing its masterlease.
 //
 // Note the asymmetry in how the failure families are reported, which follows
 // from whether the node is left needing a human. A refusal returns nil so the
 // operation succeeds with OUTCOME_REFUSED: the agent correctly declined and the
-// node is untouched. A failure that etcd verifiably recovered from also returns
-// nil, with OUTCOME_FAILED_RESTORED. Only a member that does not come back
-// returns an error, so the operation lands in phase FAILED *and* carries
+// node is untouched. A failure the agent verifiably undid also returns nil,
+// with OUTCOME_FAILED_RESTORED. Only a node left out of service returns an
+// error, so the operation lands in phase FAILED *and* carries
 // OUTCOME_FAILED_NOT_RESTORED, because a caller polling only the phase must not
 // mistake that for a clean stop.
 //
@@ -213,15 +220,6 @@ func (s *NodeAgentServer) runEtcdDefrag(
 	}
 	defer client.Close()
 
-	// Recover from an attempt that died with the manifest parked, before
-	// preflight gets a chance to misread it. Without this a retry reads an
-	// absent manifest, refuses, and reports OUTCOME_REFUSED - which states that
-	// the node is untouched, when in fact etcd is down and this RPC is the only
-	// thing that can put it back.
-	if err := s.ensureEtcdManifestActive(ctx, runner, progress, client); err != nil {
-		return s.recordEtcdDefragFailure(progress, err.Error(), 0)
-	}
-
 	progress.SetStep(stepEtcdDefragPreflight)
 	sizeBefore, reachable, err := s.etcdDefragPreflight(ctx, client)
 	if err != nil {
@@ -236,38 +234,58 @@ func (s *NodeAgentServer) runEtcdDefrag(
 		return s.recordEtcdDefragRefusal(progress, fmt.Sprintf("transfer etcd leadership away from local member: %v", err), sizeBefore)
 	}
 
-	// Past this point etcd is taken down, so a failure is no longer a refusal.
-	//
-	// stopStaticPod moves the manifest aside *before* it waits for the container
-	// to exit, so a timeout here leaves etcd.yaml parked in the backup directory
-	// with etcd down and nothing scheduled to bring it back. Treating that as
-	// terminal would turn an optional optimization into an outage that needs a
-	// human, so the manifest goes back before anything is reported.
-	if err := s.stopStaticPod(ctx, runner, progress, staticPodStopSpec{
-		containerName: etcdContainerName,
-		manifestName:  etcdManifestName,
-		stoppingStep:  stepEtcdDefragStopping,
-		waitingStep:   stepEtcdDefragWaitingExit,
-		timeout:       s.etcdExitTimeoutOrDefault(),
-	}); err != nil {
-		return s.recoverEtcdAfterFailedStop(ctx, runner, progress, client, sizeBefore,
-			fmt.Sprintf("stop etcd static pod: %v", err))
+	// Past this point the node is being taken out of service, so a failure is
+	// no longer a refusal: something has to put it back.
+	if err := s.withdrawKubeVipLocked(ctx, runner, progress); err != nil {
+		return s.returnEtcdDefragNodeToServiceAfterFailure(ctx, runner, progress, client, sizeBefore,
+			fmt.Sprintf("withdraw this node from the control-plane VIP: %v", err))
 	}
 
-	if err := s.restoreStaticPod(ctx, runner, progress, staticPodRestoreSpec{
+	if err := s.stopKubeAPIServerLocked(ctx, runner, progress); err != nil {
+		return s.returnEtcdDefragNodeToServiceAfterFailure(ctx, runner, progress, client, sizeBefore,
+			fmt.Sprintf("stop kube-apiserver: %v", err))
+	}
+
+	// The manifest stays in place and kubelet owns the restart, so there is no
+	// parked etcd.yaml to put back and no window where a crashed agent leaves
+	// the member down with nothing scheduled to return it.
+	if err := s.restartStaticPodContainer(ctx, runner, progress, staticPodContainerRestartSpec{
 		containerName: etcdContainerName,
-		manifestName:  etcdManifestName,
-		restoringStep: stepEtcdDefragRestarting,
-		waitingStep:   stepEtcdDefragWaitingStart,
-		timeout:       s.etcdHealthTimeoutOrDefault(),
+		stoppingStep:  stepEtcdDefragStoppingEtcd,
+		waitingStep:   stepEtcdDefragWaitingRestart,
+		stopTimeout:   s.etcdExitTimeoutOrDefault(),
+		startTimeout:  s.etcdHealthTimeoutOrDefault(),
 	}); err != nil {
-		return s.recordEtcdDefragFailure(progress, fmt.Sprintf("restore etcd static pod: %v", err), sizeBefore)
+		return s.returnEtcdDefragNodeToServiceAfterFailure(ctx, runner, progress, client, sizeBefore,
+			fmt.Sprintf("restart the etcd container: %v", err))
 	}
 
 	progress.SetStep(stepEtcdDefragWaitingHealthy)
 	postStatus, err := s.waitForLocalEtcdHealthy(ctx, client)
 	if err != nil {
-		return s.recordEtcdDefragFailure(progress, fmt.Sprintf("etcd did not return healthy after restart: %v", err), sizeBefore)
+		// Deliberately leaves the node withdrawn. kube-apiserver cannot serve
+		// without its local etcd and kube-vip would advertise a node that
+		// cannot answer, so returning either one here would route traffic to a
+		// broken member instead of leaving the other two to carry the cluster.
+		// The operation ends terminally failed, which is also what keeps the
+		// startup reconciler from undoing this decision on the next restart.
+		message := fmt.Sprintf(
+			"etcd did not return healthy after restart: %v; this node is left out of service with %s and %s parked in %s",
+			err, defaultKubeAPIServerManifestName, defaultKubeVipManifestName, defaultStaticPodBackupDir,
+		)
+		return s.recordEtcdDefragFailure(progress, message, sizeBefore)
+	}
+
+	progress.SetStep(stepEtcdDefragReturningToService)
+	if err := s.restoreKubeAPIServerLocked(ctx, runner, progress); err != nil {
+		return s.recordEtcdDefragFailure(progress, fmt.Sprintf(
+			"etcd was defragmented but kube-apiserver could not be restored: %v", err,
+		), sizeBefore)
+	}
+	if err := s.restoreKubeVipLocked(ctx, runner, progress); err != nil {
+		return s.recordEtcdDefragFailure(progress, fmt.Sprintf(
+			"etcd was defragmented but this node could not rejoin the control-plane VIP: %v", err,
+		), sizeBefore)
 	}
 
 	progress.SetStep(stepEtcdDefragMeasuring)
@@ -298,61 +316,23 @@ func (s *NodeAgentServer) runEtcdDefrag(
 	})
 }
 
-// ensureEtcdManifestActive puts the manifest back when a previous attempt left
-// it parked in the backup directory, so a retry is in-band recovery rather than
-// a misleading refusal.
+// returnEtcdDefragNodeToServiceAfterFailure undoes the withdrawal after a
+// failure between taking the node out of service and confirming etcd came back,
+// then reports according to whether the node is verifiably serving again.
 //
-// The common case is that the manifest is where it belongs, which costs one
-// stat and no crictl call. When it is parked, etcd is down, so this has to run
-// before preflight: preflight would fail to read the manifest and report
-// OUTCOME_REFUSED, telling the caller the node was untouched.
-func (s *NodeAgentServer) ensureEtcdManifestActive(
-	ctx context.Context,
-	runner nvkeutils.CommandRunner,
-	progress nodeAgentOperationProgress,
-	client etcdMemberClient,
-) error {
-	if _, err := os.Stat(s.etcdManifestPath()); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("stat etcd manifest: %w", err)
-	}
-
-	parkedPath := s.rootedPath(filepath.Join(defaultStaticPodBackupDir, etcdManifestName))
-	if _, err := os.Stat(parkedPath); err != nil {
-		// Neither active nor parked. The agent did not put it here and has
-		// nothing to put back, so there is no recovery to attempt.
-		return fmt.Errorf("etcd manifest is neither active at %s nor parked at %s", s.etcdManifestPath(), parkedPath)
-	}
-
-	slog.WarnContext(ctx, "etcd manifest was left parked by an earlier attempt; restoring it before preflight",
-		"parked", parkedPath)
-	if err := s.restoreStaticPod(ctx, runner, progress, staticPodRestoreSpec{
-		containerName: etcdContainerName,
-		manifestName:  etcdManifestName,
-		restoringStep: stepEtcdDefragRecovering,
-		waitingStep:   stepEtcdDefragWaitingStart,
-		timeout:       s.etcdHealthTimeoutOrDefault(),
-	}); err != nil {
-		return fmt.Errorf("restore the parked etcd manifest: %w", err)
-	}
-
-	progress.SetStep(stepEtcdDefragWaitingHealthy)
-	if _, err := s.waitForLocalEtcdHealthy(ctx, client); err != nil {
-		return fmt.Errorf("etcd did not return healthy after restoring the parked manifest: %w", err)
-	}
-	return nil
-}
-
-// recoverEtcdAfterFailedStop puts the parked manifest back after the stop phase
-// failed, then reports according to whether the member verifiably returned.
+// etcd health is checked first because it decides whether returning the node is
+// the right thing to do at all. A healthy member means the node can serve, so
+// kube-apiserver and then kube-vip go back and the attempt is FAILED_RESTORED:
+// nothing was defragmented, but the node is as it was and a rollout can stop
+// cleanly. An unhealthy member means putting either one back would advertise a
+// node that cannot answer, so the withdrawal stands and the attempt is
+// FAILED_NOT_RESTORED, which needs an operator.
 //
-// The stop phase fails with the manifest already moved and etcd in an unknown
-// state, so putting it back and watching is the only way to learn which. A
-// member that returns healthy leaves the node in its pre-call state with no
-// defragmentation performed, which is FAILED_RESTORED and lets a rollout stop
-// cleanly. One that does not is FAILED_NOT_RESTORED and needs an operator.
-func (s *NodeAgentServer) recoverEtcdAfterFailedStop(
+// Order matters on the way back: the apiserver cannot republish the masterlease
+// that returns this node to the kubernetes.default Service until etcd is
+// serving, and kube-vip must not advertise the node before the apiserver is
+// ready.
+func (s *NodeAgentServer) returnEtcdDefragNodeToServiceAfterFailure(
 	ctx context.Context,
 	runner nvkeutils.CommandRunner,
 	progress nodeAgentOperationProgress,
@@ -360,23 +340,36 @@ func (s *NodeAgentServer) recoverEtcdAfterFailedStop(
 	sizeBefore int64,
 	failureMessage string,
 ) error {
-	slog.ErrorContext(ctx, "etcd stop phase failed; putting the parked manifest back", "reason", failureMessage)
-
-	if err := s.restoreStaticPod(ctx, runner, progress, staticPodRestoreSpec{
-		containerName: etcdContainerName,
-		manifestName:  etcdManifestName,
-		restoringStep: stepEtcdDefragRestarting,
-		waitingStep:   stepEtcdDefragWaitingStart,
-		timeout:       s.etcdHealthTimeoutOrDefault(),
-	}); err != nil {
-		return s.recordEtcdDefragFailure(progress,
-			fmt.Sprintf("%s; putting the manifest back also failed: %v", failureMessage, err), sizeBefore)
-	}
+	slog.ErrorContext(ctx, "etcd defragmentation failed after the node was withdrawn; returning it to service",
+		"reason", failureMessage)
 
 	progress.SetStep(stepEtcdDefragWaitingHealthy)
 	if _, err := s.waitForLocalEtcdHealthy(ctx, client); err != nil {
+		return s.recordEtcdDefragFailure(progress, fmt.Sprintf(
+			"%s; etcd is also not healthy: %v; this node is left out of service with %s and %s parked in %s",
+			failureMessage, err, defaultKubeAPIServerManifestName, defaultKubeVipManifestName,
+			defaultStaticPodBackupDir,
+		), sizeBefore)
+	}
+
+	progress.SetStep(stepEtcdDefragReturningToService)
+	// Both restores are attempted even when the first one fails, and the errors
+	// are collected rather than returned at the first. They are independent
+	// renames, and the failure that brought us here is often something both
+	// share - an unreachable container runtime fails each start wait in turn -
+	// so stopping at kube-apiserver would leave kube-vip parked for a reason
+	// that had nothing to do with kube-vip. A manifest put back has a chance of
+	// recovering on its own; one left in the backup directory does not.
+	var restoreErrs []error
+	if err := s.restoreKubeAPIServerLocked(ctx, runner, progress); err != nil {
+		restoreErrs = append(restoreErrs, fmt.Errorf("restoring kube-apiserver also failed: %w", err))
+	}
+	if err := s.restoreKubeVipLocked(ctx, runner, progress); err != nil {
+		restoreErrs = append(restoreErrs, fmt.Errorf("rejoining the control-plane VIP also failed: %w", err))
+	}
+	if len(restoreErrs) > 0 {
 		return s.recordEtcdDefragFailure(progress,
-			fmt.Sprintf("%s; etcd did not return healthy after the manifest was put back: %v", failureMessage, err), sizeBefore)
+			fmt.Sprintf("%s; %v", failureMessage, errors.Join(restoreErrs...)), sizeBefore)
 	}
 	return recordEtcdDefragRestored(progress, failureMessage, sizeBefore)
 }
