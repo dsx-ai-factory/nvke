@@ -21,9 +21,9 @@ func TestAuthMode(t *testing.T) {
 		want          string
 	}{
 		{name: "no authenticator is off", want: "off"},
-		{name: "no authenticator is off even when permissiveMode is set", permissive: true, want: "off"},
-		{name: "an authenticator with permissiveMode is permissive", authenticator: &authn.Authenticator{}, permissive: true, want: "permissive"},
-		{name: "an authenticator without permissiveMode is enforcing", authenticator: &authn.Authenticator{}, want: "enforcing"},
+		{name: "no authenticator is off even when apiAuth.permissive is set", permissive: true, want: "off"},
+		{name: "an authenticator with apiAuth.permissive is permissive", authenticator: &authn.Authenticator{}, permissive: true, want: "permissive"},
+		{name: "an authenticator without apiAuth.permissive is enforcing", authenticator: &authn.Authenticator{}, want: "enforcing"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

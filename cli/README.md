@@ -104,25 +104,37 @@ are aliases on `get`, `create`, `patch` and `delete`.
 
 `nvkectl config set-site` command configures the management-cluster kubeconfig with the site.
 nvkectl commands use it to mint an audience-scoped token for the admitted
-identity `nke-clients/nke-client`. The audience comes from the authentication
-ConfigMap, looked up in namespace `nke-controller` first and then
-`cloud-workflow-engine`, and under two names in each: `nvke-auth-config`, then
-`nke-auth-config` for a site that keeps the older name by pinning
-`apiAuth.configMap.name`.
+identity `nke-clients/nke-client`. The audience comes from two places, each
+looked up in namespace `nke-controller` first and then `cloud-workflow-engine`,
+under two names:
+
+1. The controller's settings ConfigMap, `nvke-controller-config`, then
+   `nke-controller-config` for a site that pins the older name. When its
+   `config.yaml` has `apiAuth.enabled: true`, the CLI mints for the first entry
+   of `apiAuth.audiences`.
+2. Otherwise, when that section is off or absent (a controller that reads
+   `AUTH_CONFIG_PATH`, or one older than the section), the authentication
+   ConfigMap: `nvke-auth-config`, then `nke-auth-config` for a site that keeps
+   the older name by pinning `apiAuth.configMap.name`. The audience is the first
+   entry of `audiences` in its `auth.yaml`.
 
 The first *readable* candidate is used: a site whose RBAC grants `get` on its
 pinned name alone answers Forbidden for the other name, and the search moves
 past that denial rather than stopping at it.
 
-Only when neither name is found in either namespace does the CLI treat
-authentication as off and send no `Authorization` header — the same as a CWE
-that was installed with `apiAuth.enabled` unset. A denial is not that: it is
-kept, and reported only if no candidate turns out to be readable, so an RBAC
-problem never arrives as an unexplained 401.
+Only when nothing readable turns authentication on does the CLI treat it as off
+and send no `Authorization` header — the same as a CWE that was installed with
+`apiAuth.enabled` unset. A denial is not that: it is kept, and reported only if
+nothing readable turns authentication on, so an RBAC problem never arrives as an
+unexplained 401.
 
 The kubeconfig identity needs:
 
 - `create` on `serviceaccounts/token` for `nke-client` in `nke-clients`
+- `get` on the controller's settings ConfigMap (`nvke-controller-config`, or
+  `nke-controller-config` on a site that pins it) and on the authentication
+  ConfigMap (`nvke-auth-config`, or `nke-auth-config`), in the controller's
+  namespace
 - `get` on `secrets` in the site's management namespace (`nvke-system`, or
   `nke-system` on a site installed before it was configurable), for
   `nvkectl get kubeconfig`, which reads the `<cluster>-admin-kubeconfig` Secret

@@ -1,6 +1,6 @@
 # API authentication in nvke-controller-config: design
 
-> **Status:** phase 1 is implemented. A chart install and released `nvkectl` need no changes, but the `apiAuth` section is required, so a hand-written `nvke-controller-config` must now carry one (see [Startup behaviour](#startup-behaviour)). Phase 2, which retires the old path, is outlined at the end and designed separately.
+> **Status:** phase 1 is implemented. A chart install and released `nvkectl` need no changes, but the `apiAuth` section is required, so a hand-written `nvke-controller-config` must now carry one (see [Startup behaviour](#startup-behaviour)). [Phase 2](#phase-2), which retires the old path, ships in two steps; the first is implemented.
 >
 > **Names:** the chart names the settings ConfigMap `nvke-controller-config` and the authentication ConfigMap `nvke-auth-config` by default; an install that predates the chart's move to nvke names pins `nke-controller-config` and `nke-auth-config`. Below, `nvke-controller-config` means the settings ConfigMap whatever its name. Where this document describes behaviour from before that move, `nke-auth-config` is the authentication ConfigMap, and the Tilt scaffolding it names is now `controller/deploy/k8s/nvke-auth-dev.yaml`.
 
@@ -130,13 +130,51 @@ The values are unchanged. What the chart renders depends on the mode:
 - E2E: the CAPD e2e deploy path moves to `create: true`, so CI exercises the new path. The authentication document moves into its overlay values. Its `nvke-auth-dev` item keeps the ServiceAccounts and RBAC but drops its `nke-auth-config` ConfigMap, because the chart now renders that ConfigMap. Tilt and the CAPNICo e2e path exercise the legacy one. The pull request's CAPD check does not select the authentication specs, so a full CAPD run is dispatched on the branch before it is marked ready; the local entry point runs Tilt, which stays on the external ConfigMap.
 - Docs: the operator guide (Secure the NVKE API), `controller/docs/configuring-api-authentication.md` and the `AUTH_CONFIG_PATH` row in `controller/AGENTS.md`.
 
-## Phase 2, outline
+## Phase 2
 
-Retire `AUTH_CONFIG_PATH` and the external-ConfigMap mode; move Tilt and the CAPNICo e2e path onto values; teach `nvkectl` to read `nvke-controller-config` first; stop rendering `nke-auth-config` once released `nvkectl` no longer needs it; consider moving `permissiveMode` under `apiAuth` and an inline CA bundle. That is a breaking change, like #1527, and gets its own design.
+Phase 1 left the controller with two sources: `apiAuth` for a chart-rendered configuration and `AUTH_CONFIG_PATH` for a ConfigMap managed elsewhere. Phase 2 retires the second, so `apiAuth` in `nvke-controller-config` is the only place the controller, `nvkectl` and the tooling read authentication from.
+
+### Constraints
+
+- **Released `nvkectl` reads only the authentication ConfigMap.** Every release up to `cli/v0.3.0-rc.2` looks up `nvke-auth-config` or `nke-auth-config` and treats their absence as "authentication off". If the chart stopped rendering that ConfigMap first, those clients would send no token and get 401. So the chart can drop it only after an `nvkectl` that reads `nvke-controller-config` has been released.
+- **No released controller has `apiAuth`.** Phase 1 is unreleased, so the shape of the section can still change without a deprecation window: any `config.yaml` that loads on a released controller has no `apiAuth` and is refused by this one regardless.
+
+Phase 2 therefore ships as two pull requests.
+
+### Step 1: everything reads `apiAuth` (not breaking)
+
+**`nvkectl` and the tooling read `nvke-controller-config` first.** `nvkectl` (`cli/internal/auth/source.go`), the e2e token helper (`authtoken.RawConfig`) and `hack/nvke-token.sh` look for the controller's settings ConfigMap, `nvke-controller-config` then `nke-controller-config`, in the same namespaces as before. When its `apiAuth.enabled` is `true` they mint for `apiAuth.audiences[0]`. When the section is off or absent they fall back to the authentication ConfigMap, because in the external-ConfigMap mode `apiAuth.enabled` is `false` while the controller authenticates through `AUTH_CONFIG_PATH`. A denied read is handled as before: remembered, and returned only when nothing readable turns authentication on, so a missing grant never reads as "off". `nvkectl` users need `get` on the settings ConfigMap as well as the authentication one; a role scoped by `resourceNames` must add it.
+
+**Tilt and the CAPNICo e2e path move onto values**, as CAPD did in phase 1. Tilt passes `hack/tilt-controller-api-auth-values.yaml`, with `configMap.create: true` and the configuration, whenever `NKE_AUTH_ENABLED` is true. `deploy/k8s/nvke-auth-dev.yaml` and the CAPNICo `nvke-auth-dev` copy keep the namespaces, ServiceAccounts and token-minter RBAC and drop their `nvke-auth-config` ConfigMap, which the chart now renders. After this nothing in the repository uses `configMap.create: false`. An existing Tilt cluster has a `nvke-auth-config` that Tilt applied, which Helm will not adopt: delete it once before the next `tilt up`.
+
+**`permissiveMode` moves to `apiAuth.permissive`.** The Helm value has always been `apiAuth.permissive`; only the rendered `config.yaml` put it at the top level, as a leftover of the move from the `PERMISSIVE_MODE` variable. It now sits beside the rest of the section. It applies to whichever source configures authentication, so it may be `true` while `apiAuth.enabled` is `false` and `AUTH_CONFIG_PATH` is set; the rule that an off section must be empty covers `audiences` and `issuers` only. A `config.yaml` that still sets top-level `permissiveMode` is refused with an error naming `apiAuth.permissive`, rather than strict decoding's bare "unknown field". The move carries no compatibility window, for the reason under [Constraints](#constraints). The chart refuses `permissive` inside `apiAuth.config`, as it refuses `enabled`, and the retired `PERMISSIVE_MODE` variable now points at `apiAuth.permissive`.
+
+**Issuers take an inline CA bundle.** `jwks.caBundle` is a PEM bundle carried in the configuration itself, an alternative to `caBundlePath`. At most one of the two may be set, and a bundle with no PEM certificates is refused at validation, so it fails at startup like every other configuration error. A CA certificate is public, so it needs no Secret, which matches `oidc.providers[].caBundle`. It is what lets step 2 drop `extraFiles`: today a private CA has to be a file in `/etc/nke/auth`, which exists only because `nvke-auth-config` is mounted there.
+
+### Step 2: retire the old path (breaking)
+
+Merged only after a release that includes step 1, and deployed as chart and image together, as for #1527.
+
+- **`AUTH_CONFIG_PATH` is retired.** The chart refuses it in `env`. The controller refuses to start when it is set, so a hand-written Deployment fails closed instead of starting without the authentication it asked for. `authn.Load`, the file header check and `Options.ConfigPath` go, since the file was their only caller; `auth.yaml`'s `apiVersion` and `kind` go with them.
+- **The external-ConfigMap mode is removed.** `apiAuth.configMap.create`, `apiAuth.configMap.name` and `apiAuth.configMap.extraFiles` are refused by name, as the chart refuses other removed values. `apiAuth` renders whenever `apiAuth.enabled` is true.
+- **`nvke-auth-config` is no longer rendered,** and its volume, mount and Reloader entry go. `caBundlePath` stays: it is how an issuer names a file the pod already has, such as the projected ServiceAccount CA.
+- **`apiAuth.permissive` requires `apiAuth.enabled`.** With one source, permissive with authentication off is a configuration that does nothing, so it is refused.
+- **`nvkectl` and the tooling keep their fallback** to the authentication ConfigMap, for sites still running a controller from before step 2.
+
+`nvkectl` older than step 1 sends no token to a controller from step 2 and gets 401. The release notes for step 2 say so; the fix is to upgrade `nvkectl`.
+
+### Testing
+
+- `auth/authn`: `caBundle` validation (both set, not PEM) and a JWKS fetch trusting an inline bundle.
+- `controllerconfig`: `apiAuth.permissive` while off and on, and the refusal of top-level `permissiveMode`; the drift tests map `PERMISSIVE_MODE` to the new key.
+- Chart: `chart-auth-assertions.sh` checks `apiAuth.permissive` in both modes, the absence of the top-level key, the refusal of `permissive` in `apiAuth.config`, and an inline bundle rendered without `extraFiles`.
+- `nvkectl` and `authtoken`: the lookup order, the fallback when the section is off or absent, a pinned settings name, and denied reads.
+- E2E: CAPD and CAPNICo both run on `create: true`; the authentication specs read `apiAuth.permissive`.
 
 ## Alternatives considered
 
 - **`authn.Load` reads the section out of `config.yaml`.** One loader, but `auth/authn` would have to know the controller configuration's layout, and the file would be parsed twice.
 - **The chart renders `auth.yaml` from `nvke-controller-config`'s values and the controller is left alone.** The controller would still read two files, which is the problem this solves.
 - **Presence of issuers as the on switch.** Fewer keys, but an accidentally emptied list would turn authentication off instead of failing, against the fail-closed contract.
-- **Move `permissiveMode` under `apiAuth` now.** Tidier, but the legacy file, read while `apiAuth.enabled` is `false`, would then take its mode from a section that is turned off. Moving it would also break the e2e suite's `SetPermissiveMode`, which writes the top-level key, on controllers older than this change.
+- **Move `permissiveMode` under `apiAuth` now.** Tidier, but the legacy file, read while `apiAuth.enabled` is `false`, would then take its mode from a section that is turned off. Moving it would also break the e2e suite's `SetPermissiveMode`, which writes the top-level key, on controllers older than this change. Phase 2 moves it anyway: allowing `permissive` in a section that is off answers the first point, and the e2e suite runs against the controller it ships with.
+- **Keep `permissiveMode` at the top level in phase 2.** No migration, but `config.yaml` would keep a shape that differs from the values, and the move only gets more expensive once `apiAuth` is released.

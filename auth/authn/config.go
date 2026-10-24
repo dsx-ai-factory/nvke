@@ -5,6 +5,7 @@ package authn
 
 import (
 	"bytes"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -100,6 +101,11 @@ type JWKSKeys struct {
 	// system roots. For the local cluster this is the projected service account
 	// CA at /var/run/secrets/kubernetes.io/serviceaccount/ca.crt.
 	CABundlePath string `json:"caBundlePath,omitempty"`
+
+	// CABundle is the same PEM bundle inline, for a CA the configuration can
+	// carry itself instead of a file mounted beside it. A CA certificate is
+	// public, so it needs no Secret. At most one of CABundle and CABundlePath.
+	CABundle string `json:"caBundle,omitempty"`
 
 	// BearerTokenPath is read on every fetch, not once, so a projected service
 	// account token that rotates keeps working. The cluster's JWKS endpoint is
@@ -387,6 +393,14 @@ func (s *JWKSKeys) validate() error {
 	}
 	if err := requireUnpadded("bearerTokenPath", s.BearerTokenPath); err != nil {
 		return err
+	}
+	if s.CABundle != "" {
+		if s.CABundlePath != "" {
+			return errors.New("caBundle and caBundlePath are both set; use one")
+		}
+		if !x509.NewCertPool().AppendCertsFromPEM([]byte(s.CABundle)) {
+			return errors.New("caBundle contains no PEM certificates")
+		}
 	}
 	u, err := url.Parse(uri)
 	if err != nil {

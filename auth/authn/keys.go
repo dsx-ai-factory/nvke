@@ -161,17 +161,10 @@ func jwksSourceFromConfig(logger *slog.Logger) jwksSourceFactory {
 		}
 		cloned := transport.Clone()
 
-		if path := strings.TrimSpace(spec.CABundlePath); path != "" {
-			pem, err := os.ReadFile(path)
+		if spec.CABundle != "" || strings.TrimSpace(spec.CABundlePath) != "" {
+			pool, err := caPool(spec)
 			if err != nil {
-				return nil, fmt.Errorf("read caBundlePath %q: %w", path, err)
-			}
-			pool := x509.NewCertPool()
-			// AppendCertsFromPEM only reports "nothing was added", so without this
-			// a non-PEM bundle leaves an empty pool and every fetch fails with an
-			// unknown-authority error naming nothing.
-			if !pool.AppendCertsFromPEM(pem) {
-				return nil, fmt.Errorf("caBundlePath %q contains no PEM certificates", path)
+				return nil, err
 			}
 			cloned.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
 		}
@@ -188,6 +181,28 @@ func jwksSourceFromConfig(logger *slog.Logger) jwksSourceFactory {
 			Timeout:   jwksFetchTimeout,
 		}, logger)
 	}
+}
+
+// caPool returns the roots for an issuer's JWKS endpoint: its inline caBundle,
+// or the file caBundlePath names. Only called when one of them is set; without
+// either, the endpoint is verified against the system roots.
+func caPool(spec *JWKSKeys) (*x509.CertPool, error) {
+	source, bundle := "caBundle", []byte(spec.CABundle)
+	if path := strings.TrimSpace(spec.CABundlePath); path != "" {
+		pem, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read caBundlePath %q: %w", path, err)
+		}
+		source, bundle = fmt.Sprintf("caBundlePath %q", path), pem
+	}
+	pool := x509.NewCertPool()
+	// AppendCertsFromPEM only reports "nothing was added", so without this
+	// a non-PEM bundle leaves an empty pool and every fetch fails with an
+	// unknown-authority error naming nothing.
+	if !pool.AppendCertsFromPEM(bundle) {
+		return nil, fmt.Errorf("%s contains no PEM certificates", source)
+	}
+	return pool, nil
 }
 
 // fileBearerTransport sets Authorization from a file, re-read on every request.

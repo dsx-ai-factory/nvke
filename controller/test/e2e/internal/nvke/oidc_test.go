@@ -25,7 +25,7 @@ import (
 
 func TestControllerSetting(t *testing.T) {
 	t.Parallel()
-	data := map[string]string{controllerConfigKey: "permissiveMode: true\noidc:\n  managementOIDCAuth:\n    enabled: false\n"}
+	data := map[string]string{controllerConfigKey: "metricsListenAddress: 127.0.0.1:9090\napiAuth:\n  permissive: true\noidc:\n  managementOIDCAuth:\n    enabled: false\n"}
 
 	tests := []struct {
 		name    string
@@ -34,11 +34,12 @@ func TestControllerSetting(t *testing.T) {
 		want    any
 		wantErr string
 	}{
-		{name: "top-level key", data: data, key: permissiveModeKey, want: true},
-		{name: "nested key", data: data, key: oidcEnabledKey, want: false},
+		{name: "top-level key", data: data, key: "metricsListenAddress", want: "127.0.0.1:9090"},
+		{name: "nested key", data: data, key: PermissiveKey, want: true},
+		{name: "deeper key", data: data, key: oidcEnabledKey, want: false},
 		{name: "missing key", data: data, key: "oidc.providers", wantErr: "has no oidc.providers"},
 		{name: "missing parent", data: data, key: "teleport.enabled", wantErr: "has no teleport.enabled"},
-		{name: "no config.yaml", data: map[string]string{}, key: permissiveModeKey, wantErr: "has no config.yaml"},
+		{name: "no config.yaml", data: map[string]string{}, key: PermissiveKey, wantErr: "has no config.yaml"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -100,7 +101,7 @@ func TestSetControllerSettingReportsTheWrite(t *testing.T) {
 	settings := func() *corev1.ConfigMap {
 		return &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{Namespace: controller.Namespace(), Name: ControllerConfigMap},
-			Data:       map[string]string{controllerConfigKey: "permissiveMode: true\n"},
+			Data:       map[string]string{controllerConfigKey: "apiAuth:\n  permissive: true\n"},
 		}
 	}
 	replicas := int32(1)
@@ -127,14 +128,14 @@ func TestSetControllerSettingReportsTheWrite(t *testing.T) {
 			wantPrevious: true,
 			wantWritten:  true,
 			wantErr:      "getting NVKE deployment",
-			wantStored:   "permissiveMode: false\n",
+			wantStored:   "apiAuth:\n  permissive: false\n",
 		},
 		{
 			name:         "written and restarted",
 			objects:      []client.Object{settings(), deployment()},
 			wantPrevious: true,
 			wantWritten:  true,
-			wantStored:   "permissiveMode: false\n",
+			wantStored:   "apiAuth:\n  permissive: false\n",
 		},
 	}
 	for _, tt := range tests {
@@ -144,7 +145,7 @@ func TestSetControllerSettingReportsTheWrite(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			previous, written, err := setControllerSetting(ctx, c, permissiveModeKey, false)
+			previous, written, err := setControllerSetting(ctx, c, PermissiveKey, false)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 			} else {
@@ -168,7 +169,7 @@ func TestNodeAgentMethodReportsWriteWhenRestartFails(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Namespace: controller.Namespace(), Name: ControllerConfigMap},
-		Data:       map[string]string{controllerConfigKey: "nodeAgent:\n  updateMethod: apt\npermissiveMode: false\n"},
+		Data:       map[string]string{controllerConfigKey: "apiAuth:\n  permissive: false\nnodeAgent:\n  updateMethod: apt\n"},
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cm).Build()
 	previous, written, err := SetNodeAgentUpdateMethod(t.Context(), c, "bundle")
@@ -180,7 +181,7 @@ func TestNodeAgentMethodReportsWriteWhenRestartFails(t *testing.T) {
 	method, err := ControllerSetting(stored.Data, "nodeAgent.updateMethod")
 	require.NoError(t, err)
 	require.Equal(t, "bundle", method)
-	mode, err := ControllerSetting(stored.Data, permissiveModeKey)
+	mode, err := ControllerSetting(stored.Data, PermissiveKey)
 	require.NoError(t, err)
 	require.Equal(t, false, mode)
 }

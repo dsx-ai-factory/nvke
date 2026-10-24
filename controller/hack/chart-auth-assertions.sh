@@ -55,12 +55,12 @@ setting() {
 
 # same_document <description> <rendered>
 # Asserts apiAuth in nvke-controller-config is the document nvke-auth-config
-# carries, less the switch and the file header. The controller reads one and
+# carries, less the switches and the file header. The controller reads one and
 # nvkectl the other, so they must say the same thing.
 same_document() {
   local inline file
   inline="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nvke-controller-config") | .data["config.yaml"]' <<<"$2" |
-    yq -o=json -I=0 '.apiAuth | del(.enabled) | sort_keys(..)')"
+    yq -o=json -I=0 '.apiAuth | del(.enabled, .permissive) | sort_keys(..)')"
   file="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nvke-auth-config") | .data["auth.yaml"]' <<<"$2" |
     yq -o=json -I=0 'del(.apiVersion, .kind) | sort_keys(..)')"
   if [[ -n "${inline}" && "${inline}" == "${file}" ]]; then
@@ -117,7 +117,7 @@ echo "apiAuth disabled (the default):"
 out="$(render)"
 # Absent, not empty: NVKE reads an empty AUTH_CONFIG_PATH as unset.
 absent "AUTH_CONFIG_PATH is not set at all"   'AUTH_CONFIG_PATH'                     "${out}"
-setting "permissiveMode is false"            permissiveMode false                   "${out}"
+setting "apiAuth.permissive is false"        apiAuth.permissive false               "${out}"
 setting "apiAuth is off in nvke-controller-config" apiAuth.enabled false              "${out}"
 absent "no config volume"                     'name: nvke-auth-config'                "${out}"
 absent "no issuer-discovery binding"          'system:service-account-issuer-discovery' "${out}"
@@ -125,7 +125,7 @@ absent "no issuer-discovery binding"          'system:service-account-issuer-dis
 echo "apiAuth enabled, enforcing:"
 out="$(render --set apiAuth.enabled=true)"
 want   "AUTH_CONFIG_PATH points at the mount" 'value: "/etc/nke/auth/auth.yaml"'     "${out}"
-setting "permissiveMode is false"           permissiveMode false                   "${out}"
+setting "apiAuth.permissive is false"       apiAuth.permissive false               "${out}"
 # A ConfigMap managed elsewhere stays on AUTH_CONFIG_PATH.
 setting "apiAuth stays off in nvke-controller-config" apiAuth.enabled false           "${out}"
 want   "ConfigMap volume"                     'name: nvke-auth-config'                "${out}"
@@ -134,7 +134,11 @@ want   "issuer-discovery binding"             'system:service-account-issuer-dis
 
 echo "apiAuth enabled, permissive:"
 out="$(render --set apiAuth.enabled=true --set apiAuth.permissive=true)"
-setting "permissiveMode is true"            permissiveMode true                    "${out}"
+# Under apiAuth even while the section is off: it applies to AUTH_CONFIG_PATH too.
+setting "apiAuth.permissive is true"        apiAuth.permissive true                "${out}"
+absent "the top-level key is gone"           '^    permissiveMode:'                  "${out}"
+out="$(render -f "${values}" --set apiAuth.permissive=true)"
+setting "and with a rendered configuration"  apiAuth.permissive true                "${out}"
 
 echo "clusterIssuerDiscovery=false:"
 out="$(render --set apiAuth.enabled=true --set apiAuth.clusterIssuerDiscovery=false)"
@@ -254,6 +258,10 @@ wantfail "env AUTH_CONFIG_PATH with create is refused" 'env sets AUTH_CONFIG_PAT
   -f "${values}" \
   --set-string 'env[0].name=AUTH_CONFIG_PATH' --set-string 'env[0].value=/x'
 
+echo "permissive belongs beside config, not in it:"
+wantfail "permissive in config is refused" 'apiAuth\.config must not carry permissive' \
+  -f "${values}" --set 'apiAuth.config.permissive=true'
+
 echo "config is inert while authentication is off:"
 wantfail "and says so rather than ignoring it" 'apiAuth\.config is set but would not be rendered' \
   --set apiAuth.configMap.create=true --set 'apiAuth.config.audiences[0]=https://nke.example.internal'
@@ -291,6 +299,37 @@ want   "the bundle is a key in the ConfigMap"  '^  spire-ca\.crt: \|'     "${out
 want   "its content is carried through"        'notarealcertificate'      "${out}"
 want   "the config file is still there"        '^  auth\.yaml: \|'        "${out}"
 setting "caBundlePath reaches nvke-controller-config" 'apiAuth.issuers[0].jwks.caBundlePath' /etc/nke/auth/spire-ca.crt "${out}"
+same_document "and the two copies agree"      "${out}"
+
+# An inline bundle needs no file, so it skips the extraFiles check and travels
+# with the configuration.
+echo "an inline caBundle needs no extraFiles:"
+inline_ca_values="$(dirname "${values}")/auth-inline-ca-values.yaml"
+cat > "${inline_ca_values}" <<'YAML'
+apiAuth:
+  enabled: true
+  configMap:
+    create: true
+  config:
+    audiences: ["https://nke.example.internal"]
+    issuers:
+      - name: spire
+        issuer: "https://spire.example.internal"
+        jwks:
+          uri: "https://spire.example.internal:30443/keys"
+          caBundle: |
+            -----BEGIN CERTIFICATE-----
+            notarealcertificate
+            -----END CERTIFICATE-----
+        algorithms: [RS256]
+        admit:
+          spiffe:
+            trustDomain: example.internal
+            pathPrefixes: ["/nke-service/"]
+YAML
+out="$(render -f "${inline_ca_values}")"
+want   "the bundle is carried inline"          'notarealcertificate'      "${out}"
+absent "and is not a file in the mount"        '^  spire-ca\.crt: \|'     "${out}"
 same_document "and the two copies agree"      "${out}"
 
 # The whole point: caBundlePath names a file that has to exist in the mount, and

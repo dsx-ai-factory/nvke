@@ -457,6 +457,29 @@ func TestHTTPJWKSRefusesAnUntrustedServer(t *testing.T) {
 	assert.Contains(t, err.Error(), "initial JWKS fetch")
 }
 
+// caPEM is srv's certificate as the PEM bundle caBundle and caBundlePath carry.
+func caPEM(t *testing.T, srv *httptest.Server) []byte {
+	t.Helper()
+	cert := srv.Certificate()
+	require.NotNil(t, cert, "httptest TLS server has no certificate")
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
+}
+
+// An inline bundle is trusted exactly as the same bundle in a file would be.
+func TestHTTPJWKSTrustsAnInlineCABundle(t *testing.T) {
+	t.Parallel()
+
+	jwkA, _ := rsaKey(t, "kid-a")
+	srv := tlsJWKSServer(t, jwksBody(t, jwkA))
+
+	cfg := kubernetesIssuerConfig()
+	cfg.Issuers[0].JWKS = &JWKSKeys{URI: srv.URL + "/keys", CABundle: string(caPEM(t, srv))}
+
+	_, err := newKeySources(context.Background(), cfg, ModeEnforcing, quietLogger(),
+		jwksSourceFromConfig(quietLogger()))
+	require.NoError(t, err)
+}
+
 // The file being wrong rather than the chain. Both spellings produce an empty
 // pool, which would otherwise fail every fetch with an error naming nothing.
 func TestHTTPJWKSRejectsAnUnusableCABundle(t *testing.T) {
@@ -485,6 +508,20 @@ func TestHTTPJWKSRejectsAnUnusableCABundle(t *testing.T) {
 				"the error has to name the file so an operator can find it")
 		})
 	}
+}
+
+// Validation refuses an inline bundle with no certificates first; the key source
+// still names the field if it is ever reached without that check.
+func TestHTTPJWKSRejectsAnUnusableInlineCABundle(t *testing.T) {
+	t.Parallel()
+
+	cfg := kubernetesIssuerConfig()
+	cfg.Issuers[0].JWKS = &JWKSKeys{URI: "https://idp.example.com/keys", CABundle: "this is not a certificate\n"}
+
+	_, err := newKeySources(context.Background(), cfg, ModeEnforcing, quietLogger(),
+		jwksSourceFromConfig(quietLogger()))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "caBundle contains no PEM certificates")
 }
 
 // The token file is usually a projected service account volume, which the kubelet

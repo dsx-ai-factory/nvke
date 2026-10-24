@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The NVKE API authentication configuration Tilt deploys. The Tiltfile passes
+# this file only when NKE_AUTH_ENABLED is true, and sets apiAuth.enabled and
+# apiAuth.permissive itself. The chart renders it into apiAuth in
+# nvke-controller-config, which the controller reads, and into nvke-auth-config
+# for released nvkectl. deploy/k8s/nvke-auth-dev.yaml creates the identities it
+# admits.
+apiAuth:
+  configMap:
+    create: true
+  config:
+    audiences: ["https://nke.tilt.local"]
+    issuers:
+      - name: local-kubernetes
+        issuer: "https://kubernetes.default.svc.cluster.local"
+        # Every issuer is fetched the same way, as a JWKS over HTTPS. The
+        # cluster's own endpoint is not anonymous, hence the bearer token and
+        # the issuer-discovery ClusterRole.
+        jwks:
+          uri: "https://kubernetes.default.svc/openid/v1/jwks"
+          caBundlePath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          bearerTokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token
+        algorithms: [RS256, ES256]
+        admit:
+          serviceAccounts:
+            # Omitting name would widen the rule to every service account in
+            # the namespace, nke-e2e included.
+            - namespace: nke-clients
+              name: nke-client
+      # SPIRE is omitted because it is not reachable yet, and an unreachable
+      # issuer is a startup failure in enforcing mode. The discovery provider's
+      # serving certificate does not carry the in-cluster service name, which
+      # does not resolve from the pod network anyway. Its CA is the ca.crt of
+      # secret oidc-provider-upstream-ca in the spire-server namespace, pasted
+      # inline. Every other value below was read off this cluster:
+      #
+      #   - name: spire
+      #     issuer: "https://nke.site-controller.internal"
+      #     jwks:
+      #       uri: "https://nke.site-controller.internal:30443/keys"
+      #       caBundle: |
+      #         -----BEGIN CERTIFICATE-----
+      #         ...
+      #         -----END CERTIFICATE-----
+      #     algorithms: [RS256]
+      #     admit:
+      #       spiffe:
+      #         trustDomain: controller-capi.nvke.local
+      #         pathPrefixes: ["/nke-e2e/"]

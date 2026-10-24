@@ -234,6 +234,9 @@ at fault.
 {{- if hasKey $auth.config "enabled" -}}
 {{- fail (printf "apiAuth.config must not carry enabled. apiAuth.enabled is the switch, and apiAuth.config is rendered whole into the apiAuth section of %s beside it, so a copy here is a duplicate key the controller refuses at startup. Keep audiences and issuers only." (include "controller.controllerConfig.name" $root)) -}}
 {{- end -}}
+{{- if hasKey $auth.config "permissive" -}}
+{{- fail (printf "apiAuth.config must not carry permissive. Set apiAuth.permissive instead: the chart renders it into the apiAuth section of %s beside apiAuth.config, so a copy here is a duplicate key the controller refuses at startup." (include "controller.controllerConfig.name" $root)) -}}
+{{- end -}}
 {{- if not $auth.config.audiences -}}
 {{- fail "apiAuth.config.audiences is required and must not be empty. The audience is per-install and has no default; a token minted for one install must fail at another." -}}
 {{- end -}}
@@ -251,7 +254,7 @@ at fault.
 {{- if and $ca (hasPrefix $dir $ca) -}}
 {{- $file := trimPrefix $dir $ca -}}
 {{- if and (ne $file $configFile) (not (hasKey $extra $file)) -}}
-{{- fail (printf "issuer %s sets jwks.caBundlePath to %s, but nothing puts %s there. The chart mounts only the ConfigMap it renders at that path, and that ConfigMap carries %s plus whatever apiAuth.configMap.extraFiles lists. Add the bundle under extraFiles (key %s), or point caBundlePath somewhere you mount yourself through .Values.volumes." (quote (default "<unnamed>" .name)) $ca $file $configFile $file) -}}
+{{- fail (printf "issuer %s sets jwks.caBundlePath to %s, but nothing puts %s there. The chart mounts only the ConfigMap it renders at that path, and that ConfigMap carries %s plus whatever apiAuth.configMap.extraFiles lists. Put the PEM inline as jwks.caBundle instead, add the bundle under extraFiles (key %s), or point caBundlePath somewhere you mount yourself through .Values.volumes." (quote (default "<unnamed>" .name)) $ca $file $configFile $file) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

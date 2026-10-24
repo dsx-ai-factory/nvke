@@ -31,7 +31,7 @@ Permissive (NKE_PERMISSIVE_MODE=true tilt up):
   produces. That counter check is the extra case in a permissive run.
 
 The mode is read from the live Deployment's AUTH_CONFIG_PATH and the apiAuth.enabled
-and permissiveMode keys of its controller config ConfigMap, so the same script
+and apiAuth.permissive keys of its controller config ConfigMap, so the same script
 covers every deployment. Override it with --mode.
 
 Scaffolding lives in deploy/k8s/nvke-auth-dev.yaml (namespaces, service accounts,
@@ -148,7 +148,8 @@ if [[ -z "${MODE}" ]]; then
   auth_path="$(container_env AUTH_CONFIG_PATH)"
   controller_config="$("${KUBECTL[@]}" get configmap "${NVKE_CONTROLLER_CONFIGMAP}" -n "${NVKE_CONTROLLER_NAMESPACE}" \
     -o jsonpath='{.data.config\.yaml}' 2>/dev/null)"
-  permissive="$(yq '.permissiveMode' <<<"${controller_config}")"
+  # permissiveMode is where a controller older than apiAuth.permissive keeps it.
+  permissive="$(yq '.apiAuth.permissive // .permissiveMode' <<<"${controller_config}")"
   # A configuration the chart renders reaches NVKE as apiAuth in the controller
   # config ConfigMap, with no AUTH_CONFIG_PATH.
   api_auth="$(yq '.apiAuth.enabled // false' <<<"${controller_config}")"
