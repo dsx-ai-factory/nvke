@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"log"
 	"log/slog"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -172,6 +174,11 @@ func TestOTLPUnreachableEndpointWarnsOnceAndFinishIsBounded(t *testing.T) {
 	assert.Less(t, time.Since(started), flushTimeout+time.Second, "Finish waits at most the flush bound")
 
 	assert.Equal(t, 1, strings.Count(stderr.String(), "could not export telemetry"), "stderr:\n%s", stderr.String())
+	for _, line := range strings.Split(stderr.String(), "\n") {
+		if strings.Contains(line, "could not export telemetry") {
+			assert.Contains(t, line, "trace_id="+run.TraceID(), "the warning carries the run's trace ID")
+		}
+	}
 	assert.Equal(t, 20, strings.Count(stderr.String(), "msg=record"), "local output is unaffected")
 }
 
@@ -192,6 +199,14 @@ func TestEnableOTLPRejectsBadUse(t *testing.T) {
 	run.Start(context.Background(), "nvkectl get clusters")
 	run.LogHandler(slog.NewTextHandler(&bytes.Buffer{}, nil))
 	assert.Error(t, run.EnableOTLP(OTLPConfig{Endpoint: "localhost:4317"}), "after the handler was built")
+
+	early := NewRun("dev")
+	early.LogHandler(slog.NewTextHandler(&bytes.Buffer{}, nil)) // before Start, so it returns inner
+	assert.Error(t, early.EnableOTLP(OTLPConfig{Endpoint: "localhost:4317"}), "after LogHandler on a run that has not started")
+
+	twice := NewRun("dev")
+	require.NoError(t, twice.EnableOTLP(OTLPConfig{Endpoint: "localhost:4317"}))
+	assert.Error(t, twice.EnableOTLP(OTLPConfig{Endpoint: "localhost:4318"}), "a second call")
 }
 
 // The signal-specific variables the OTLP exporter library would read on its own.
@@ -222,6 +237,22 @@ func TestOTLPExporterIgnoresSignalSpecificVariables(t *testing.T) {
 	defer collector.mu.Unlock()
 	assert.Empty(t, collector.metadata.Get("x-leaked"), "no header from OTEL_EXPORTER_OTLP_LOGS_HEADERS")
 	assert.Empty(t, collector.metadata.Get("grpc-encoding"), "no compression from OTEL_EXPORTER_OTLP_LOGS_COMPRESSION")
+}
+
+// A malformed variable the exporter reads on its own must not reach stderr with
+// its value. It sets the global log output, so it is not parallel.
+func TestOTLPDoesNotPrintTheValueOfAnotherEndpointVariable(t *testing.T) {
+	var printed bytes.Buffer
+	log.SetOutput(&printed)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	t.Setenv(logsEndpointVar, "https://user:s3cret@collector/%zz")
+	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_CERTIFICATE", "/nonexistent/ca.pem")
+
+	run := NewRun("dev")
+	require.NoError(t, run.EnableOTLP(OTLPConfig{Endpoint: "127.0.0.1:1", Insecure: true}))
+
+	assert.NotContains(t, printed.String(), "s3cret")
+	assert.NotContains(t, printed.String(), logsEndpointVar, "the exporter did not read the variable")
 }
 
 func TestOTLPSecureConfigIgnoresTheInsecureLogsVariable(t *testing.T) {
@@ -257,6 +288,12 @@ func TestOTLPConfigFromEnv(t *testing.T) {
 			name:   "IPv6 host and port",
 			env:    map[string]string{envEndpoint: "[::1]:4317"},
 			want:   OTLPConfig{Endpoint: "[::1]:4317", Headers: map[string]string{}},
+			wantOK: true,
+		},
+		{
+			name:   "trailing slash is not a path",
+			env:    map[string]string{envEndpoint: "https://collector:4317/"},
+			want:   OTLPConfig{Endpoint: "collector:4317", Headers: map[string]string{}},
 			wantOK: true,
 		},
 		{
@@ -334,6 +371,8 @@ func TestOTLPConfigFromEnvRejectsABadEndpointWithoutPrintingIt(t *testing.T) {
 		"URL with credentials":          "https://user:s3cret@collector:4317",
 		"host:port with credentials":    "user:s3cret@collector:4317",
 		"unparsable":                    "collector:4317 s3cret",
+		"OTLP/HTTP URL with a path":     "http://collector:4318/v1/logs",
+		"query":                         "collector:4317?token=s3cret",
 	}
 	for name, endpoint := range tests {
 		t.Run(name, func(t *testing.T) {

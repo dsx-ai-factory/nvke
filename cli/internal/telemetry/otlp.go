@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -52,7 +53,8 @@ type OTLPConfig struct {
 // host:port or a URL. The http scheme sets Insecure and any other scheme clears
 // it; only an endpoint with no scheme reads OTEL_EXPORTER_OTLP_INSECURE. It
 // returns false when no endpoint is set, and an error that does not contain the
-// endpoint when the endpoint cannot be parsed or contains credentials.
+// endpoint when the endpoint cannot be parsed or has credentials, a path, a query
+// or a fragment: it is an OTLP/gRPC address, not an OTLP/HTTP URL.
 func OTLPConfigFromEnv() (OTLPConfig, bool, error) {
 	// Variables for one signal, such as OTEL_EXPORTER_OTLP_LOGS_ENDPOINT, are not
 	// read: this endpoint and these headers serve every signal nvkectl exports.
@@ -67,8 +69,8 @@ func OTLPConfigFromEnv() (OTLPConfig, bool, error) {
 	}
 	u, err := url.Parse(target)
 	// The error names the variable and not its value, which may hold credentials.
-	if err != nil || u.Host == "" || u.User != nil {
-		return OTLPConfig{}, false, fmt.Errorf("invalid %s: want host:port or a URL with a host and no credentials", envEndpoint)
+	if err != nil || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return OTLPConfig{}, false, fmt.Errorf("invalid %s: want host:port or a URL with a host, no credentials and no path", envEndpoint)
 	}
 	cfg.Endpoint = u.Host
 	switch u.Scheme {
@@ -109,18 +111,23 @@ func (run *Run) EnableOTLP(cfg OTLPConfig) error {
 	if run.handlerBuilt {
 		return errors.New("OTLP export must be enabled before the log handler is built")
 	}
-	// Every setting is explicit: the exporter reads its own OTEL_EXPORTER_OTLP_*
-	// variables, including the logs-only ones, for any that are left unset.
-	creds := credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})
+	if run.logProvider != nil {
+		return errors.New("OTLP export is already enabled")
+	}
+	// Every setting is explicit, so the exporter reads none of its own
+	// OTEL_EXPORTER_OTLP_* variables for them. It still reads the certificate
+	// variables, and a bad one reports through this handler, not to stderr.
+	otel.SetErrorHandler(otel.ErrorHandlerFunc(run.warnExport))
+	scheme, creds := "https", credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})
 	if cfg.Insecure {
-		creds = insecure.NewCredentials()
+		scheme, creds = "http", insecure.NewCredentials()
 	}
 	headers := cfg.Headers
 	if headers == nil {
 		headers = map[string]string{}
 	}
 	opts := []otlploggrpc.Option{
-		otlploggrpc.WithEndpoint(cfg.Endpoint),
+		otlploggrpc.WithEndpointURL(scheme + "://" + cfg.Endpoint),
 		otlploggrpc.WithTLSCredentials(creds),
 		otlploggrpc.WithHeaders(headers),
 		otlploggrpc.WithCompressor("none"),
@@ -157,7 +164,6 @@ func (run *Run) resource() *resource.Resource {
 // otlpHandler returns the handler that sends records to the OTLP endpoint, or
 // nil if EnableOTLP was not called.
 func (run *Run) otlpHandler() slog.Handler {
-	run.handlerBuilt = true
 	if run.logProvider == nil {
 		return nil
 	}

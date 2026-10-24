@@ -21,9 +21,12 @@ type logHandler struct {
 // Records logged without a context therefore still carry the run's trace ID.
 // If EnableOTLP was called, each record that inner handles is also exported,
 // with the same trace ID and span ID and with its attributes. Export
-// failures are reported as warnings through inner. It returns inner unchanged
-// if the run has not started.
+// failures are reported as warnings through the same handler, with the trace
+// ID and span ID. It returns inner unchanged if the run has not started.
 func (run *Run) LogHandler(inner slog.Handler) slog.Handler {
+	if run != nil {
+		run.handlerBuilt = true
+	}
 	root := run.SpanContext()
 	if !root.IsValid() {
 		return inner
@@ -33,7 +36,7 @@ func (run *Run) LogHandler(inner slog.Handler) slog.Handler {
 	if exported == nil {
 		return local
 	}
-	run.warnLogger.Store(slog.New(inner))
+	run.warnLogger.Store(slog.New(local))
 	return &teeHandler{local: local, exported: exported, root: root}
 }
 

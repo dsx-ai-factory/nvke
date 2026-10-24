@@ -65,8 +65,11 @@ them.
 - The connection uses TLS. To send without it, start the endpoint with
   `http://`, or give a `<COLLECTOR_HOST>:4317` endpoint with no scheme and set
   `OTEL_EXPORTER_OTLP_INSECURE=true`. An `https://` endpoint always uses TLS.
-- Do not put credentials in the endpoint. nvkectl warns that log export is off
-  and sends nothing. Send a token in `OTEL_EXPORTER_OTLP_HEADERS` instead.
+- The endpoint is an OTLP/gRPC address with no path and no credentials. nvkectl
+  does not send OTLP/HTTP, so an endpoint such as
+  `https://<COLLECTOR_HOST>:4318/v1/logs` is rejected: nvkectl warns that log
+  export is off and sends nothing. Send a token in `OTEL_EXPORTER_OTLP_HEADERS`,
+  not in the endpoint.
 - nvkectl sends log records only. It does not send spans.
 - If the endpoint is unreachable, nvkectl prints one warning, the command
   still succeeds, and the command takes up to two seconds longer to exit.
