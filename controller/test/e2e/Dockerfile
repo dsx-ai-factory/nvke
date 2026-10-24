@@ -88,7 +88,9 @@ LABEL org.opencontainers.image.licenses="Apache-2.0" \
 #
 # -test.run because the binary also carries the module's unit tests, some of
 # which need a git checkout. The JUnit report is the suite's, which lists only
-# the selected specs; report.json is Ginkgo's, with every spec.
+# the selected specs; report.json is Ginkgo's, with every spec. A spec still
+# running after two minutes reports its current step and stack every minute,
+# so a hung wait shows where it is rather than only its final error.
 #
 # -ginkgo.timeout because Ginkgo's default is an hour: a healthy site finishes
 # well inside it, but on a broken one every check waits out its own limit,
@@ -102,4 +104,6 @@ ENTRYPOINT ["/usr/local/bin/e2e.test", \
     "-ginkgo.json-report=/artifacts/report.json", \
     "-ginkgo.silence-skips", \
     "-ginkgo.no-color", \
+    "-ginkgo.poll-progress-after=2m", \
+    "-ginkgo.poll-progress-interval=1m", \
     "-ginkgo.v"]

@@ -587,6 +587,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 			GinkgoLogr.Info("control-plane endpoint probe: no kube-vip lease names a node, so the probe may share the endpoint's node", "holder", holder)
 		}
 		GinkgoLogr.Info("control-plane endpoint probe", "endpoint", endpoint, "holder", holder, "from", node.Name, "awayFromHolder", away)
+		By("reaching " + endpoint + " from " + node.Name)
 		pod := endpointProbePod(namespace, image, labels, node, endpoint)
 		_, message, err := kube.RunPodWithLogs(ctx, c, clientset, pod, podCIDRProbeContainer, siteCreateTimeout)
 		deleteOnExit(ctx, c, pod)
@@ -604,6 +605,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 			targets = targets[:2]
 		}
 
+		By("starting a server pod on each node")
 		servers := make([]*corev1.Pod, 0, len(targets))
 		for _, node := range targets {
 			server := siteServerPod(namespace, image, labels, "traffic", node)
@@ -616,6 +618,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		deleteOnExit(ctx, c, service)
 
 		for i, node := range targets {
+			By("reaching the server pods and the Service from " + node.Name)
 			urls := []string{
 				podCIDRURL(servers[i].Status.PodIP, podCIDRServerPort),
 				podCIDRURL(servers[(i+1)%len(servers)].Status.PodIP, podCIDRServerPort),
@@ -645,6 +648,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 			Skip(fmt.Sprintf("NetworkPolicy %s/%s already selects this check's pods, so it decides their traffic; set %s to a namespace without one", namespace, name, siteProbeNamespaceEnv))
 		}
 
+		By("starting the target and control pods")
 		target := siteServerPod(namespace, image, labels, ovnPolicyTargetRole, node)
 		control := siteServerPod(namespace, image, labels, ovnPolicyControlRole, node)
 		for _, pod := range []*corev1.Pod{target, control} {
@@ -682,12 +686,14 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		targets := probeNodes(nodes.Items)
 		Expect(targets).NotTo(BeEmpty(), "no Ready, schedulable node to run pods on")
 
+		By("creating a headless Service and a StatefulSet behind it")
 		service := siteService(namespace, labels, "headless", true)
 		Expect(c.Create(ctx, service)).To(Succeed())
 		deleteOnExit(ctx, c, service)
 		statefulSet := siteStatefulSet(namespace, image, labels, service.Name, targets[0])
 		Expect(c.Create(ctx, statefulSet)).To(Succeed())
 		deleteOnExit(ctx, c, statefulSet)
+		By("waiting for the StatefulSet's pod to be ready")
 		Eventually(func(ctx context.Context) error {
 			if err := c.Get(ctx, client.ObjectKeyFromObject(statefulSet), statefulSet); err != nil {
 				return err
@@ -698,6 +704,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 			return nil
 		}).WithContext(ctx).WithTimeout(siteCreateTimeout).WithPolling(2 * time.Second).Should(Succeed())
 
+		By("reaching the pod by its headless Service name")
 		probe := siteProbePod(namespace, image, labels, siteHeadlessClientRole, targets[0], []string{podCIDRURL(statefulSet.Name+"-0."+service.Name, podCIDRServerPort)})
 		_, _, err := kube.RunPodWithLogs(ctx, c, clientset, probe, podCIDRProbeContainer, siteCreateTimeout)
 		deleteOnExit(ctx, c, probe)
@@ -712,9 +719,11 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		if class == "" {
 			Skip(settings.expect.env(sitePVCStorageClassEnv) + " is unset and the site has no default StorageClass")
 		}
+		By("creating a PersistentVolumeClaim of StorageClass " + class)
 		claim := sitePVC(namespace, labels, class)
 		Expect(c.Create(ctx, claim)).To(Succeed())
 		deleteOnExit(ctx, c, claim)
+		By("writing to it from a pod and reading it back")
 		pod := siteVolumePod(namespace, image, labels, claim.Name)
 		_, message, err := kube.RunPodWithLogs(ctx, c, clientset, pod, podCIDRProbeContainer, siteCreateTimeout)
 		deleteOnExit(ctx, c, pod)
@@ -730,11 +739,13 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 			Skip("the cluster is not expected to run cert-manager")
 		}
 		name := "nvke-validate-" + labels[siteRunLabel]
+		By("creating an Issuer and a Certificate from it")
 		issuer, certificate := siteCertificate(namespace, name, labels)
 		Expect(c.Create(ctx, issuer)).To(Succeed())
 		deleteOnExit(ctx, c, issuer)
 		Expect(c.Create(ctx, certificate)).To(Succeed())
 		deleteOnExit(ctx, c, certificate, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}})
+		By("waiting for the Certificate to be issued")
 		Eventually(func(ctx context.Context) error {
 			if err := c.Get(ctx, client.ObjectKeyFromObject(certificate), certificate); err != nil {
 				return err
