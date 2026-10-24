@@ -99,7 +99,6 @@ teleport:
   acceptedManagedByLabelValues: []
   tokenNamePrefix: nvke-controller-
   resourceGroupLabelValue: nvke
-permissiveMode: false
 # Off for host-local runs, as it was before the section existed. To run with
 # authentication, set enabled and give audiences and issuers the shape the
 # chart's apiAuth.config takes.
@@ -107,3 +106,4 @@ apiAuth:
   enabled: false
   audiences: []
   issuers: []
+  permissive: false

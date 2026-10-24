@@ -51,8 +51,8 @@ var _ = Describe("NVKE API authentication", Label("authn"), func() {
 		audience, found, mode = authnDeployment(ctx, clientset)
 		if !found {
 			authnAbsentf(
-				"authentication is OFF: ConfigMap %s/%s does not exist, so this NVKE is configured to authenticate nobody and there is no audience to mint against",
-				controller.Namespace(), authtoken.ConfigMapName,
+				"authentication is OFF: neither apiAuth in %s/%s nor ConfigMap %s/%s turns it on, so this NVKE is configured to authenticate nobody and there is no audience to mint against",
+				controller.Namespace(), authtoken.ControllerConfigMapName, controller.Namespace(), authtoken.ConfigMapName,
 			)
 		}
 		if mode == authnModeDisabled {
@@ -69,7 +69,7 @@ var _ = Describe("NVKE API authentication", Label("authn"), func() {
 		GinkgoHelper()
 		if mode == authnModePermissive {
 			Skip(fmt.Sprintf(
-				"authentication is PERMISSIVE: permissiveMode is true in %s/%s, so a rejected request is counted and then served, and 200 is the correct answer to this case",
+				"authentication is PERMISSIVE: apiAuth.permissive is true in %s/%s, so a rejected request is counted and then served, and 200 is the correct answer to this case",
 				controller.Namespace(), nvke.ControllerConfigMap,
 			))
 		}
@@ -194,7 +194,7 @@ const authnProbeUUID = "00000000-0000-0000-0000-000000000000"
 
 // authnConfigPathEnv puts the middleware in the chain for a ConfigMap the chart
 // does not render; apiAuth.enabled in nvke-controller-config does it for one it
-// does. permissiveMode in nvke-controller-config decides whether either enforces.
+// does. apiAuth.permissive in nvke-controller-config decides whether either enforces.
 const authnConfigPathEnv = "AUTH_CONFIG_PATH"
 
 const (
@@ -216,7 +216,7 @@ const authnTimeout = 60 * time.Second
 
 // detectAuthnEnforcement reports whether the NVKE Deployment's authentication
 // middleware is absent, permissive or enforcing, from AUTH_CONFIG_PATH on its
-// container and apiAuth.enabled and permissiveMode in its nvke-controller-config.
+// container and apiAuth.enabled and apiAuth.permissive in its nvke-controller-config.
 func detectAuthnEnforcement(ctx context.Context, clientset kubernetes.Interface) (string, error) {
 	deployment, err := clientset.AppsV1().Deployments(controller.Namespace()).Get(ctx, controller.Deployment(), metav1.GetOptions{})
 	if err != nil {
@@ -246,7 +246,7 @@ func detectAuthnEnforcement(ctx context.Context, clientset kubernetes.Interface)
 		return authnModeDisabled, nil
 	}
 
-	permissive, err := nvke.ControllerSetting(settings.Data, "permissiveMode")
+	permissive, err := nvke.ControllerSetting(settings.Data, nvke.PermissiveKey)
 	if err != nil {
 		return "", err
 	}
@@ -434,10 +434,7 @@ func TestDetectAuthnEnforcement(t *testing.T) {
 		}
 	}
 	settings := func(permissive, inline bool) *corev1.ConfigMap {
-		config := fmt.Sprintf("metricsListenAddress: 127.0.0.1:9090\npermissiveMode: %t\n", permissive)
-		if inline {
-			config += "apiAuth:\n  enabled: true\n"
-		}
+		config := fmt.Sprintf("metricsListenAddress: 127.0.0.1:9090\napiAuth:\n  enabled: %t\n  permissive: %t\n", inline, permissive)
 		return &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{Namespace: controller.Namespace(), Name: nvke.ControllerConfigMap},
 			Data:       map[string]string{"config.yaml": config},
@@ -453,18 +450,18 @@ func TestDetectAuthnEnforcement(t *testing.T) {
 		want       string
 	}{
 		{
-			name:       "no AUTH_CONFIG_PATH is authentication off, whatever permissiveMode says",
+			name:       "no AUTH_CONFIG_PATH is authentication off, whatever apiAuth.permissive says",
 			permissive: true,
 			want:       authnModeDisabled,
 		},
 		{
-			name:       "AUTH_CONFIG_PATH with permissiveMode true is permissive",
+			name:       "AUTH_CONFIG_PATH with apiAuth.permissive true is permissive",
 			env:        []corev1.EnvVar{authConfigPath},
 			permissive: true,
 			want:       authnModePermissive,
 		},
 		{
-			name: "AUTH_CONFIG_PATH with permissiveMode false is enforcing",
+			name: "AUTH_CONFIG_PATH with apiAuth.permissive false is enforcing",
 			env:  []corev1.EnvVar{authConfigPath},
 			want: authnModeEnforcing,
 		},
@@ -474,7 +471,7 @@ func TestDetectAuthnEnforcement(t *testing.T) {
 			want:   authnModeEnforcing,
 		},
 		{
-			name:       "apiAuth.enabled with permissiveMode true is permissive",
+			name:       "apiAuth.enabled with apiAuth.permissive true is permissive",
 			inline:     true,
 			permissive: true,
 			want:       authnModePermissive,

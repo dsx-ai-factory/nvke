@@ -135,17 +135,19 @@ not the authentication specs, which build their own token per case.
 | `NVKE_E2E_REQUIRE_EXPECTED_VERSION` | When true, an unset `NVKE_CONTROLLER_EXPECTED_VERSION` fails the version spec instead of skipping it. The validation image sets it. | Unset |
 | `NVKE_CONTROLLER_HEALTH_TIMEOUT` | Per-spec context timeout. The old names `NKE_CONTROLLER_HEALTH_TIMEOUT` and `CWE_HEALTH_TIMEOUT` are deprecated and still read when this is unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes them. | `60s` |
 | `NKE_E2E_AUTH_DISABLE` | Turns the token source off, so the suite sends no `Authorization` header. Against an enforcing NVKE every spec then fails with 401. | Unset |
-| `NKE_E2E_AUDIENCE` | Overrides the audience the suite mints for. Normally discovered from the authentication ConfigMap in `NVKE_CONTROLLER_NAMESPACE` -- `nvke-auth-config`, or `nke-auth-config` on a site that pins the older name. | Discovered |
+| `NKE_E2E_AUDIENCE` | Overrides the audience the suite mints for. Normally discovered in `NVKE_CONTROLLER_NAMESPACE`: from `apiAuth` in the controller's settings ConfigMap (`nvke-controller-config`, or `nke-controller-config` on a site that pins the older name) when that section is enabled, otherwise from the authentication ConfigMap (`nvke-auth-config`, or `nke-auth-config`). | Discovered |
 | `NKE_E2E_TOKEN_NAMESPACE` | Namespace of the service account the suite presents. | `nke-clients` |
 | `NKE_E2E_TOKEN_SERVICE_ACCOUNT` | Service account the suite presents. Point this pair at `nke-outsiders`/`nke-outsider` for the 403 case. | `nke-client` |
 | `NKE_E2E_TOKEN_TTL` | Minted token lifetime. The apiserver rejects anything under 10m. | `15m` |
 
-The suite sends no token only when *neither* `nvke-auth-config` nor
-`nke-auth-config` exists in that namespace, so an unauthenticated NVKE needs no
-configuration here. A run against a site pinned to the older name still
-discovers its audience and authenticates. A ConfigMap that exists but cannot be
-read is reported rather than treated as absent, so an RBAC gap does not quietly
-turn the authn specs into assertions about an unauthenticated NVKE.
+The suite sends no token only when *neither* source turns authentication on in
+that namespace: `apiAuth` is off or absent in the settings ConfigMap, and
+neither `nvke-auth-config` nor `nke-auth-config` exists. An unauthenticated
+NVKE needs no configuration here. A run against a site pinned to the older
+names still discovers its audience and authenticates. A ConfigMap that exists
+but cannot be read is reported rather than treated as absent, so an RBAC gap
+does not quietly turn the authn specs into assertions about an unauthenticated
+NVKE.
 
 Unfiltered runs, including `make test-e2e`, include the health specs. To exclude
 them, pass `--label-filter='!health'`.
@@ -156,21 +158,23 @@ Three labels, which do not all run against the same deployment.
 
 | Label | What it covers | Deployment it needs |
 |---|---|---|
-| `authn` | The negative cases: no token -> 401, wrong audience -> 401, an unadmitted identity -> 403, and the anonymous routes `auth/authn/routes.go` exempts staying reachable with no credential. Also selects `authn-spire`. | Enforcing (`AUTH_CONFIG_PATH` set or `apiAuth.enabled` true, `permissiveMode` false) |
+| `authn` | The negative cases: no token -> 401, wrong audience -> 401, an unadmitted identity -> 403, and the anonymous routes `auth/authn/routes.go` exempts staying reachable with no credential. Also selects `authn-spire`. | Enforcing (`AUTH_CONFIG_PATH` set or `apiAuth.enabled` true, `apiAuth.permissive` false) |
 | `authn-spire` | A SPIRE JWT-SVID end to end: a pod the spec creates fetches an SVID over the Workload API and calls NVKE with it, and with one that differs only in `aud`. | Enforcing, plus SPIFFE enabled on the NVKE pod |
 | `authn-permissive` | That permissive mode counts what it would have rejected: all cases return 200 and `nvke_auth_requests_total{outcome="would_reject"}` advances. It flips the deployment itself and puts it back. | Enforcing; it arranges permissive mode for its own duration |
 
 Each skips itself, with the reason, when the deployment is not in the state it
 needs, reading `AUTH_CONFIG_PATH` off the live NVKE Deployment and
-`apiAuth.enabled` and `permissiveMode` from its `nvke-controller-config`. Set
+`apiAuth.enabled` and `apiAuth.permissive` from its `nvke-controller-config`. Set
 `NKE_E2E_REQUIRE_AUTHN=true` (as the CAPD lane does) to turn
 "authentication is not deployed" from a skip into a failure; without it a
 cluster with authentication off produces `SUCCESS! -- 0 Passed | 0 Failed | N
 Skipped`, indistinguishable in a CI log from a suite that never had these specs.
 
 **Prerequisites.** `tilt up` applies `deploy/k8s/nvke-auth-dev.yaml` (client
-namespaces, service accounts, token-minter RBAC and the `nvke-auth-config`
-ConfigMap) and, for `authn-spire`, `deploy/k8s/nvke-spire-client.yaml`. NVKE's
+namespaces, service accounts and token-minter RBAC) and, for `authn-spire`,
+`deploy/k8s/nvke-spire-client.yaml`. The configuration that admits those
+identities is chart values: `hack/tilt-controller-api-auth-values.yaml` under
+Tilt, and the `apiAuth` block of each e2e lane's controller overlay. NVKE's
 permission to read the cluster JWKS comes from the chart
 (`apiAuth.clusterIssuerDiscovery`).
 

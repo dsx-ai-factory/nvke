@@ -235,7 +235,7 @@ test-health: ## Run the health-labeled subset of the test/e2e suite against the 
 # is absent. test-authn-spire is the way to run only that one.
 #
 # The permissive specs have no target: they need an NVKE deployed with
-# permissiveMode: true, which is a different deployment. Run them against one
+# apiAuth.permissive: true, which is a different deployment. Run them against one
 # with `make test-e2e ARGS='--label-filter=authn-permissive'`.
 .PHONY: test-authn
 test-authn: ## Run the authn-labeled subset of the test/e2e suite against the cluster in KUBECONFIG.

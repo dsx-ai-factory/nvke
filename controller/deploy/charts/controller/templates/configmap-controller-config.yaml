@@ -129,13 +129,13 @@ data:
       acceptedManagedByLabelValues: {{ $teleport.acceptedManagedByLabelValues | default list | toJson }}
       tokenNamePrefix: {{ $teleport.tokenNamePrefix | default "nvke-controller-" | quote }}
       resourceGroupLabelValue: {{ $teleport.resourceGroupLabelValue | default "nvke" | quote }}
-    permissiveMode: {{ if .Values.apiAuth.enabled }}{{ .Values.apiAuth.permissive }}{{ else }}false{{ end }}
     {{- /*
     Where the controller reads API authentication when the chart renders the
     configuration. A ConfigMap managed elsewhere stays on AUTH_CONFIG_PATH, so
-    the section is off then. apiAuth.config goes in whole rather than key by key,
-    so a stray key reaches the controller's strict loader instead of vanishing
-    here.
+    the section is off then, though permissive still applies to that file. With
+    apiAuth.enabled false the chart sets no AUTH_CONFIG_PATH either, so
+    permissive is false. apiAuth.config goes in whole rather than key by key, so a stray key reaches
+    the controller's strict loader instead of vanishing here.
     */}}
     apiAuth:
       {{- if and .Values.apiAuth.enabled .Values.apiAuth.configMap.create }}
@@ -146,3 +146,4 @@ data:
       audiences: []
       issuers: []
       {{- end }}
+      permissive: {{ and .Values.apiAuth.enabled .Values.apiAuth.permissive }}

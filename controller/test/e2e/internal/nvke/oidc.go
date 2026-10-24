@@ -33,9 +33,9 @@ const (
 	// oidcEnabledKey turns on tenant OIDC JWT auth for clusters created from
 	// then on.
 	oidcEnabledKey = "oidc.managementOIDCAuth.enabled"
-	// permissiveModeKey decides whether a failed authentication check rejects
-	// the request or is only counted.
-	permissiveModeKey = "permissiveMode"
+	// PermissiveKey decides whether a failed authentication check rejects the
+	// request or is only counted.
+	PermissiveKey = "apiAuth.permissive"
 )
 
 // ControllerSetting returns the value at key, a dotted config.yaml path such as
@@ -96,14 +96,14 @@ func SetOIDCEnabled(ctx context.Context, c client.Client, enabled bool) error {
 	return err
 }
 
-// SetPermissiveMode sets permissiveMode in nvke-controller-config, restarts the
+// SetPermissiveMode sets apiAuth.permissive in nvke-controller-config, restarts the
 // controller and waits for the rollout, returning the value it replaced so a
 // caller can put it back. The second result reports whether the ConfigMap was
 // written. It stays true when the restart after the write fails, and the caller
 // must put the old value back then too: the enforcing specs read the mode from
 // the ConfigMap, so a permissive value left there makes them skip.
 func SetPermissiveMode(ctx context.Context, c client.Client, permissive bool) (bool, bool, error) {
-	previous, written, err := setControllerSetting(ctx, c, permissiveModeKey, permissive)
+	previous, written, err := setControllerSetting(ctx, c, PermissiveKey, permissive)
 	return previous == true, written, err
 }
 

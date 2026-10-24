@@ -4,7 +4,10 @@
 package authn_test
 
 import (
+	"encoding/pem"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -549,6 +552,51 @@ func TestValidateDoesNotRequireTypeMeta(t *testing.T) {
 	}
 
 	require.NoError(t, cfg.Validate())
+}
+
+// caBundle is an inline alternative to caBundlePath, so it must hold a
+// certificate and must not be set together with the path.
+func TestValidateInlineCABundle(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewTLSServer(http.NotFoundHandler())
+	t.Cleanup(srv.Close)
+	bundle := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}))
+
+	tests := []struct {
+		name    string
+		keys    authn.JWKSKeys
+		wantErr string
+	}{
+		{name: "inline bundle", keys: authn.JWKSKeys{CABundle: bundle}},
+		{name: "path only", keys: authn.JWKSKeys{CABundlePath: "/etc/nke/idp-ca.crt"}},
+		{name: "both", keys: authn.JWKSKeys{CABundle: bundle, CABundlePath: "/etc/nke/idp-ca.crt"}, wantErr: "caBundle and caBundlePath are both set"},
+		{name: "not PEM", keys: authn.JWKSKeys{CABundle: "this is not a certificate\n"}, wantErr: "caBundle contains no PEM certificates"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			keys := tt.keys
+			keys.URI = "https://idp.example.com/keys"
+			cfg := &authn.Config{
+				Audiences: []string{"https://cwe.example.com"},
+				Issuers: []authn.Issuer{{
+					Name:       "idp",
+					Issuer:     "https://idp.example.com",
+					JWKS:       &keys,
+					Algorithms: []string{"RS256"},
+					Admit:      &authn.Admit{ServiceAccounts: []authn.ServiceAccountRule{{Namespace: "nke-clients"}}},
+				}},
+			}
+			err := cfg.Validate()
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
 }
 
 // ValidateStartup is how nvke-controller-config's apiAuth section, which has no

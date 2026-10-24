@@ -8,10 +8,9 @@
 # backend-e2e.sh fails rather than skips when authentication is not enforced.
 #
 # The chart renders this configuration, so the controller reads it from apiAuth
-# in its settings ConfigMap; nvke-auth-config is still rendered for the suite's
-# token helper. Tilt and capnico-e2e keep the ConfigMap nvke-auth-dev applies, so
-# CI covers both paths. It matches that ConfigMap: same audience, same admitted
-# service account.
+# in its settings ConfigMap; nvke-auth-config is still rendered for released
+# nvkectl. It matches the configuration deploy/k8s/nvke-auth-dev.yaml carries:
+# same audience, same admitted service account.
 apiAuth:
   enabled: true
   permissive: false
@@ -155,8 +154,7 @@ profiles:
     tag: tilt
 
 # apiAuth is set at the top of this file. The Tiltfile drives it from
-# NKE_AUTH_ENABLED and NKE_PERMISSIVE_MODE instead, mounting the ConfigMap
-# deploy/k8s/nvke-auth-dev.yaml applies.
+# NKE_AUTH_ENABLED and NKE_PERMISSIVE_MODE instead.
 
 spiffe:
   enabled: true

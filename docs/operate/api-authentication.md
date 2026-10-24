@@ -95,24 +95,23 @@ Authentication has three modes. Off is the default.
 
    NVKE uses each value exactly as written. A value with leading or trailing whitespace stops NVKE from starting.
 
-2. If the IdP's certificate is signed by a private certificate authority (CA), add the CA certificate to the same file. The chart places it at `/etc/nke/auth/idp-ca.crt`.
+2. If the IdP's certificate is signed by a private certificate authority (CA), add the CA certificate to the same file, inline in the issuer's `jwks`. A CA certificate is public, so it needs no Secret.
 
    ```yaml
    apiAuth:
-     configMap:
-       extraFiles:
-         idp-ca.crt: |
-           -----BEGIN CERTIFICATE-----
-           ...
-           -----END CERTIFICATE-----
      config:
        issuers:
          - name: example-idp
            jwks:
-             caBundlePath: /etc/nke/auth/idp-ca.crt
+             caBundle: |
+               -----BEGIN CERTIFICATE-----
+               ...
+               -----END CERTIFICATE-----
    ```
 
-   Merge these keys into the file from step 1: `extraFiles` under `configMap`, and `caBundlePath` under the existing issuer's `jwks`, rather than adding a second `apiAuth` block or issuer. Without `caBundlePath`, NVKE trusts the system CAs.
+   Merge `caBundle` into the existing issuer's `jwks` from step 1, rather than adding a second `apiAuth` block or issuer. `caBundle` must contain at least one PEM certificate. Without it, NVKE trusts the system CAs.
+
+   To keep the certificate as a file instead, list it under `apiAuth.configMap.extraFiles`, which places it in `/etc/nke/auth/`, and point `jwks.caBundlePath` at it, for example `/etc/nke/auth/idp-ca.crt`. Set `caBundle` or `caBundlePath`, not both.
 
 3. Run the install command from [Run NVKE end to end on one machine](../get-started/local-site.md) again, with the same flags, including any `--values-for nktp=<FILE>`, and `--values-for controller=../auth-values.yaml` added.
 
@@ -121,7 +120,7 @@ Authentication has three modes. Off is the default.
      --values-for controller=../auth-values.yaml
    ```
 
-   The wrapper reads the site spec, the stack config and the kubeconfig from `NVKE_SITESPEC`, `NVKE_STACK_CONFIG` and `NVKE_KUBECONFIG`, which `env.sh` exports, so the controller chart and image stay the ones you installed. The install upgrades each component in place, and applies `auth-values.yaml` to the controller after the deploy path's own values, which turn authentication off. The chart refuses to render if `config` is set without `create`, or if `caBundlePath` names a file under `/etc/nke/auth` that `extraFiles` does not list.
+   The wrapper reads the site spec, the stack config and the kubeconfig from `NVKE_SITESPEC`, `NVKE_STACK_CONFIG` and `NVKE_KUBECONFIG`, which `env.sh` exports, so the controller chart and image stay the ones you installed. The install upgrades each component in place, and applies `auth-values.yaml` to the controller after the deploy path's own values, which turn authentication off. The chart refuses to render if `config` is set without `create`, if `config` carries `enabled` or `permissive`, which belong directly under `apiAuth`, or if `caBundlePath` names a file under `/etc/nke/auth` that `extraFiles` does not list.
 
 4. Wait for the new pods and check the startup log.
 

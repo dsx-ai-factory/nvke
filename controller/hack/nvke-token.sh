@@ -70,7 +70,8 @@ fi
 
 # --- audience ---------------------------------------------------------------
 
-# Reads the audience from the live deployment. A token minted for the wrong one
+# Reads the audience from the authentication ConfigMap the live deployment
+# mounts at AUTH_CONFIG_PATH. A token minted for the wrong one
 # is rejected with a 401 that looks identical to sending no token at all.
 #
 # Matching is any-of, so the first entry will do. Handles the flow and block
@@ -98,15 +99,38 @@ cwe_discover_audience() {
       '
 }
 
-# --audience lets other scripts reuse this parser rather than growing a copy.
-if [[ "${1:-}" == "--audience" ]]; then
-  # Checked before use: a command substitution inside an argument list does not
-  # trip set -e, so an empty result would pass through silently.
-  audience="${NKE_AUDIENCE:-$(cwe_discover_audience)}"
-  [[ -n "${audience}" ]] || die "no audience in configmap ${NVKE_CONTROLLER_NAMESPACE}/${NVKE_AUTH_CONFIGMAP}; set NKE_AUDIENCE to override"
-  printf '%s' "${audience}"
-  exit 0
-fi
+# The same, out of the apiAuth section of the controller's settings, which is
+# where a configuration the chart renders lives. The list is indented under the
+# section rather than at the top level. Only a key at the section's own depth
+# matches, so an issuers[].audiences, which nests deeper, never does.
+api_auth_audience() {
+  awk '
+    /^apiAuth:/ { section = 1; next }
+    section && /^[^[:space:]]/ { exit }
+    !section || /^[[:space:]]*(#|$)/ { next }
+    {
+      match($0, /^[[:space:]]*/)
+      if (!depth) depth = RLENGTH
+    }
+    inblock && /^[[:space:]]*-[[:space:]]/ {
+      line = $0
+      sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+      gsub(/^["'\'']|["'\'']$/, "", line)
+      print line; exit
+    }
+    inblock { inblock = 0 }
+    RLENGTH != depth { next }
+    /^[[:space:]]+audiences:[[:space:]]*\[/ {
+      line = $0
+      sub(/^[^[]*\[[[:space:]]*/, "", line)
+      sub(/[],].*$/, "", line)
+      gsub(/^[[:space:]]*["'\'']|["'\''][[:space:]]*$/, "", line)
+      if (line != "") { print line; exit }
+      next
+    }
+    /^[[:space:]]+audiences:[[:space:]]*$/ { inblock = 1; next }
+  ' <<<"$1"
+}
 
 # --- deployment -------------------------------------------------------------
 
@@ -204,15 +228,33 @@ if [[ -z "${auth_config_path}" ]]; then
   ' <<<"${controller_config}")"
 fi
 
+if [[ "${api_auth_enabled}" == "true" ]]; then
+  audience_source="apiAuth in configmap ${NVKE_CONTROLLER_NAMESPACE}/${configmap}"
+  discovered_audience="$(api_auth_audience "${controller_config}")"
+else
+  audience_source="configmap ${NVKE_CONTROLLER_NAMESPACE}/${NVKE_AUTH_CONFIGMAP}"
+  discovered_audience="$(cwe_discover_audience)"
+fi
+
+# --audience lets other scripts reuse this discovery rather than growing a copy.
+if [[ "${1:-}" == "--audience" ]]; then
+  # Checked before use: a command substitution inside an argument list does not
+  # trip set -e, so an empty result would pass through silently.
+  audience="${NKE_AUDIENCE:-${discovered_audience}}"
+  [[ -n "${audience}" ]] || die "no audience in ${audience_source}; set NKE_AUDIENCE to override"
+  printf '%s' "${audience}"
+  exit 0
+fi
+
 if [[ -z "${auth_config_path}" && "${api_auth_enabled}" != "true" ]]; then
   # Authentication is off. No token, no error, no output.
   exit 0
 fi
 
-AUDIENCE="${NKE_AUDIENCE:-$(cwe_discover_audience)}"
+AUDIENCE="${NKE_AUDIENCE:-${discovered_audience}}"
 if [[ -z "${AUDIENCE}" ]]; then
   die "NVKE is authenticating but no audience could be read
-  from configmap ${NVKE_CONTROLLER_NAMESPACE}/${NVKE_AUTH_CONFIGMAP}. Set NKE_AUDIENCE to override."
+  from ${audience_source}. Set NKE_AUDIENCE to override."
 fi
 
 # --- mint -------------------------------------------------------------------

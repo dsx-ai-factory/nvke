@@ -19,6 +19,7 @@ import (
 	"time"
 
 	authnv1 "k8s.io/api/authentication/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -37,6 +38,15 @@ const (
 	ConfigMapName       = "nvke-auth-config"
 	LegacyConfigMapName = "nke-auth-config"
 	ConfigMapKey        = "auth.yaml"
+)
+
+// Where a chart-rendered authentication configuration lives instead: the apiAuth
+// section of the controller's settings ConfigMap, under either name the chart
+// gives it. RawConfig reads it before the authentication ConfigMap.
+const (
+	ControllerConfigMapName       = "nvke-controller-config"
+	LegacyControllerConfigMapName = "nke-controller-config"
+	ControllerConfigKey           = "config.yaml"
 )
 
 // The identity the suite presents; deploy/k8s/nvke-auth-dev.yaml creates it.
@@ -185,22 +195,54 @@ func discover(ctx context.Context, client kubernetes.Interface) (*Source, bool, 
 	return source, true, nil
 }
 
-// RawConfig returns the auth.yaml the NVKE pod mounts, out of the authentication
-// ConfigMap; found is false, with a nil error, only when neither name exists. It
-// stops at the bytes, and each caller decodes what it asserts on.
+// RawConfig returns the authentication configuration NVKE runs on: apiAuth from
+// its settings ConfigMap when that section is enabled, otherwise the auth.yaml
+// it mounts from the authentication ConfigMap. found is false, with a nil error,
+// only when neither turns authentication on. It stops at the bytes, which carry
+// audiences and issuers either way, and each caller decodes what it asserts on.
 //
-// Both names are searched so a run against a site pinned to the legacy name reads
+// Every name is searched so a run against a site pinned to a legacy name reads
 // its configuration rather than concluding authentication is off, which would
 // quietly turn the authn specs into assertions about an unauthenticated NVKE and
 // skip the SPIRE one.
 func RawConfig(ctx context.Context, client kubernetes.Interface) ([]byte, bool, error) {
+	settings, name, denied, err := findConfigMap(ctx, client, ControllerConfigMapName, LegacyControllerConfigMapName)
+	if err != nil {
+		return nil, false, err
+	}
+	if settings != nil {
+		raw, found, sectionErr := apiAuthSection(settings, name)
+		if sectionErr != nil || found {
+			return raw, found, sectionErr
+		}
+		// Readable and off: authentication, if any, comes from the file.
+		denied = nil
+	}
+
+	authConfig, name, authDenied, err := findConfigMap(ctx, client, ConfigMapName, LegacyConfigMapName)
+	if err != nil {
+		return nil, false, err
+	}
+	if authConfig == nil {
+		return nil, false, cmp.Or(denied, authDenied)
+	}
+	raw, ok := authConfig.Data[ConfigMapKey]
+	if !ok {
+		return nil, false, fmt.Errorf("authtoken: ConfigMap %s/%s has no %q key", controller.Namespace(), name, ConfigMapKey)
+	}
+	return []byte(raw), true, nil
+}
+
+// findConfigMap returns the first of names that exists in controller.Namespace().
+// As in cli/internal/auth: RBAC scoped to resourceNames denies the names it does
+// not grant, so a run whose kubeconfig may read only the pinned name must not
+// stop at the denial of the other. The first denial is returned separately, for
+// the caller to report only if nothing is readable, never as authentication
+// being absent.
+func findConfigMap(ctx context.Context, client kubernetes.Interface, names ...string) (*corev1.ConfigMap, string, error, error) {
 	namespace := controller.Namespace()
-	// As in cli/internal/auth: RBAC scoped to resourceNames denies the names it
-	// does not grant, so a run whose kubeconfig may read only the pinned name
-	// must not stop at the denial of the other. The denial is returned only if
-	// no candidate is readable, never reported as authentication being absent.
 	var denied error
-	for _, name := range [...]string{ConfigMapName, LegacyConfigMapName} {
+	for _, name := range names {
 		cm, err := client.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
 		switch {
 		case apierrors.IsNotFound(err):
@@ -211,20 +253,39 @@ func RawConfig(ctx context.Context, client kubernetes.Interface) ([]byte, bool, 
 			}
 			continue
 		case err != nil:
-			return nil, false, fmt.Errorf("authtoken: reading ConfigMap %s/%s: %w", namespace, name, err)
+			return nil, "", nil, fmt.Errorf("authtoken: reading ConfigMap %s/%s: %w", namespace, name, err)
 		}
-
-		raw, ok := cm.Data[ConfigMapKey]
-		if !ok {
-			return nil, false, fmt.Errorf("authtoken: ConfigMap %s/%s has no %q key", namespace, name, ConfigMapKey)
-		}
-		return []byte(raw), true, nil
+		return cm, name, denied, nil
 	}
-	return nil, false, denied
+	return nil, "", denied, nil
+}
+
+// apiAuthSection returns the apiAuth section of the controller's settings when
+// it is enabled. Off or absent, which a controller older than the section
+// reads as off, is not found.
+func apiAuthSection(settings *corev1.ConfigMap, name string) ([]byte, bool, error) {
+	raw, ok := settings.Data[ControllerConfigKey]
+	if !ok {
+		return nil, false, fmt.Errorf("authtoken: ConfigMap %s/%s has no %q key", controller.Namespace(), name, ControllerConfigKey)
+	}
+	var parsed struct {
+		APIAuth map[string]any `json:"apiAuth"`
+	}
+	if err := yaml.Unmarshal([]byte(raw), &parsed); err != nil {
+		return nil, false, fmt.Errorf("authtoken: parsing %s from ConfigMap %s/%s: %w", ControllerConfigKey, controller.Namespace(), name, err)
+	}
+	if parsed.APIAuth["enabled"] != true {
+		return nil, false, nil
+	}
+	section, err := yaml.Marshal(parsed.APIAuth)
+	if err != nil {
+		return nil, false, fmt.Errorf("authtoken: encoding apiAuth from ConfigMap %s/%s: %w", controller.Namespace(), name, err)
+	}
+	return section, true, nil
 }
 
 // AudienceFromCluster reads one deployment-wide audience out of the
-// nvke-auth-config ConfigMap. Only the top-level "audiences" list is read, since
+// configuration RawConfig finds. Only the top-level "audiences" list is read, since
 // nothing shipped overrides it for the Kubernetes issuer; any entry would do,
 // as NVKE matches any-of.
 func AudienceFromCluster(ctx context.Context, client kubernetes.Interface) (string, bool, error) {
@@ -238,10 +299,10 @@ func AudienceFromCluster(ctx context.Context, client kubernetes.Interface) (stri
 		Audiences []string `json:"audiences"`
 	}
 	if err := yaml.Unmarshal(raw, &parsed); err != nil {
-		return "", false, fmt.Errorf("authtoken: parsing %s from ConfigMap %s/%s: %w", ConfigMapKey, controller.Namespace(), ConfigMapName, err)
+		return "", false, fmt.Errorf("authtoken: parsing the authentication configuration in %s: %w", controller.Namespace(), err)
 	}
 	if len(parsed.Audiences) == 0 || parsed.Audiences[0] == "" {
-		return "", false, fmt.Errorf("authtoken: ConfigMap %s/%s sets no top-level audiences", controller.Namespace(), ConfigMapName)
+		return "", false, fmt.Errorf("authtoken: the authentication configuration in %s sets no top-level audiences", controller.Namespace())
 	}
 	return parsed.Audiences[0], true, nil
 }

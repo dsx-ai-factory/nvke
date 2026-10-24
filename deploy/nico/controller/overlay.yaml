@@ -11,16 +11,15 @@
 # axis: apiAuth is REST tokens, spiffe is controller-to-agent mTLS. Turning both on at
 # once means a failure could be either.
 #
-# It also cannot simply be flipped true here. The chart defaults
-# apiAuth.configMap.create to false and mounts `nvke-auth-config`, which on the
-# e2e lanes comes from the nke-auth-dev item -- and that item is test
-# scaffolding (it creates nke-client, nke-outsider and nke-e2e ServiceAccounts)
-# that a site has no business installing. The controller treats a configured-but-unreadable
-# AUTH_CONFIG_PATH as a startup failure, never as "disabled", so enabling this
-# without supplying the ConfigMap does not degrade -- it fails to start.
+# It also cannot simply be flipped true here. Enabling it needs a real
+# apiAuth.config with apiAuth.configMap.create=true: the e2e lanes admit the
+# ServiceAccounts their nke-auth-dev item creates, and that item is test
+# scaffolding (nke-client, nke-outsider and nke-e2e) that a site has no
+# business installing. Enabled without a configuration, the chart mounts a
+# ConfigMap nothing creates, and the controller does not start.
 #
 # To turn it on later: set apiAuth.configMap.create=true and supply real
-# apiAuth.config, or add a site-specific auth-config item.
+# apiAuth.config.
 apiAuth:
   enabled: false
   permissive: false
@@ -266,10 +265,6 @@ profiles:
   # enabled=true.
   image:
     enabled: true
-
-# apiAuth is not set here. The Tiltfile drives it from NKE_AUTH_ENABLED and
-# NKE_PERMISSIVE_MODE, and the chart's default ConfigMap name already matches
-# the one deploy/k8s/nvke-auth-dev.yaml applies.
 
 spiffe:
   enabled: true

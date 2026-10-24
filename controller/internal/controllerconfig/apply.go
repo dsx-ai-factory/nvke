@@ -123,6 +123,6 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.Teleport.TokenNamePrefix = c.Teleport.TokenNamePrefix
 	cfg.Teleport.ResourceGroupLabelValue = c.Teleport.ResourceGroupLabelValue
 
-	cfg.PermissiveMode = c.PermissiveMode
+	cfg.PermissiveMode = c.APIAuth.Permissive
 	cfg.AllowControlPlaneWithoutVIP = c.AllowControlPlaneWithoutVIP
 }

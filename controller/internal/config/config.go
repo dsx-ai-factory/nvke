@@ -403,7 +403,7 @@ type Config struct {
 	// PermissiveMode evaluates and logs authentication and admission decisions
 	// without enforcing them, so no request is rejected. No effect while
 	// authentication is off: AuthConfigPath unset and apiAuth.enabled false.
-	PermissiveMode bool `controllerconfig:"permissiveMode"`
+	PermissiveMode bool `controllerconfig:"apiAuth.permissive"`
 
 	// Tracing configures the export of OpenTelemetry spans to an OTLP collector.
 	Tracing TracingConfig

@@ -49,8 +49,8 @@ var _ = Describe("NVKE API authentication in permissive mode", Ordered, Label("a
 		audience, found, mode = authnDeployment(ctx, clientset)
 		if !found {
 			authnAbsentf(
-				"authentication is OFF: ConfigMap %s/%s does not exist, so there is no audience to mint against and nothing to count",
-				controller.Namespace(), authtoken.ConfigMapName,
+				"authentication is OFF: neither apiAuth in %s/%s nor ConfigMap %s/%s turns it on, so there is no audience to mint against and nothing to count",
+				controller.Namespace(), authtoken.ControllerConfigMapName, controller.Namespace(), authtoken.ConfigMapName,
 			)
 		}
 		if mode == authnModeDisabled {
@@ -74,7 +74,7 @@ var _ = Describe("NVKE API authentication in permissive mode", Ordered, Label("a
 				defer restoreCancel()
 
 				_, _, restoreErr := nvke.SetPermissiveMode(restoreCtx, runtimeClient, previous)
-				Expect(restoreErr).NotTo(HaveOccurred(), "restore permissiveMode=%t", previous)
+				Expect(restoreErr).NotTo(HaveOccurred(), "restore apiAuth.permissive=%t", previous)
 
 				// Checked, not assumed. The enforcing specs skip themselves while the
 				// deployment is permissive, so a restore that quietly failed would turn
@@ -159,7 +159,7 @@ const nvkeControllerMetricsPort = "metrics"
 
 const metricsPath = "/metrics"
 
-// permissiveRolloutTimeout bounds one flip of permissiveMode and the restart
+// permissiveRolloutTimeout bounds one flip of apiAuth.permissive and the restart
 // that follows it.
 const permissiveRolloutTimeout = 6 * time.Minute
 

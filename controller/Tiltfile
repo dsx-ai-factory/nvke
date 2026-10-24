@@ -889,9 +889,8 @@ k8s_resource(
 )
 
 # NVKE API authentication scaffolding: the client namespaces and service accounts
-# the demo mints tokens for, the token-minter RBAC, and the auth config the
-# deployment mounts at /etc/nke/auth/auth.yaml. The NVKE release depends on this
-# so the ConfigMap exists before the pod mounts it.
+# the demo mints tokens for, and the token-minter RBAC. The configuration that
+# admits them is chart values, in hack/tilt-controller-api-auth-values.yaml.
 k8s_resource(
     new_name="nvke-auth-dev",
     labels=["1-infra"],
@@ -906,7 +905,6 @@ k8s_resource(
         "nke-client-token-minter:rolebinding:nke-clients",
         "nke-outsider-token-minter:role:nke-outsiders",
         "nke-outsider-token-minter:rolebinding:nke-outsiders",
-        "nvke-auth-config:configmap:nke-controller",
     ],
     resource_deps=["check-management-cluster"],
     pod_readiness="ignore",
@@ -1024,15 +1022,16 @@ _controller_oidc_enabled = os.getenv(
     "NKE_OIDC_AUTH_ENABLED", _tilt_env.get("NKE_OIDC_AUTH_ENABLED", "true")) == "true"
 
 # NVKE API authentication. Enforcing by default now that the suite mints its own
-# token: internal/authtoken discovers the audience from the nvke-auth-config
-# ConfigMap and nvke.NewClient presents it on every call, so the ordinary specs
-# exercise the shipping authentication path rather than bypassing it.
+# token: internal/authtoken discovers the audience from apiAuth in
+# nvke-controller-config and nvke.NewClient presents it on every call, so the
+# ordinary specs exercise the shipping authentication path rather than
+# bypassing it.
 #
-# The config file comes from the nvke-auth-config ConfigMap in
-# deploy/k8s/nvke-auth-dev.yaml, and the chart mounts it from the apiAuth values
-# set below. To drive it by hand, use hack/nvke-token.sh for the bearer token.
+# The configuration is hack/tilt-controller-api-auth-values.yaml, which the
+# chart renders into apiAuth in nvke-controller-config. To drive it by hand, use
+# hack/nvke-token.sh for the bearer token.
 #
-#   NKE_AUTH_ENABLED=false tilt up     -> AUTH_CONFIG_PATH unset, authn off
+#   NKE_AUTH_ENABLED=false tilt up     -> apiAuth.enabled false, authn off
 #   NKE_PERMISSIVE_MODE=true tilt up   -> evaluate and count, never reject
 #
 _controller_auth_enabled = os.getenv(
@@ -1065,8 +1064,7 @@ if _controller_node_reboot_soft_reboot_enabled != "":
     })
 for _name in _required_cred_names:
     _controller_chart_extra_env.append({"name": _name, "value": _required_creds[_name]})
-# AUTH_CONFIG_PATH and permissiveMode come from the apiAuth values below, not
-# from this env list: the chart owns the mount they point at.
+# API authentication comes from the apiAuth values below, not from this env list.
 
 # Local node images include the CNI manifests package, so install CNI after
 # kubeadm init without a bundle server. E2E lanes can still select the legacy
@@ -1088,6 +1086,7 @@ _controller_chart_flags = [
     "--set-string", "appDb.postgresPassword=%s" % _postgres_superuser_password,
     "--set", "apiAuth.enabled=%s" % ("true" if _controller_auth_enabled else "false"),
     "--set", "apiAuth.permissive=%s" % ("true" if _controller_permissive_mode else "false"),
+] + (["--values", "hack/tilt-controller-api-auth-values.yaml"] if _controller_auth_enabled else []) + [
     "--set", "capi.rbac.create=true",
     # machine-engine-crds installs them, so Helm must not try to own them.
     "--set", "releaseCRDs.install=false",
@@ -1319,6 +1318,7 @@ helm_resource(
       ".env.tilt",
       ".env.tilt.example",
       "hack/tilt-controller-chart-values.yaml",
+      "hack/tilt-controller-api-auth-values.yaml",
       "deploy/charts/controller",
     ],
     flags=_controller_chart_flags,
