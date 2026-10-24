@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/sha256"
 	_ "embed"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -28,7 +27,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
@@ -306,46 +304,12 @@ func validateKubeadmEncryptionConfig(ctx context.Context, tenantClient client.Cl
 }
 
 func parseKubeadmExtraArgs(clusterConfiguration string) (map[string]string, error) {
-	configJSON, err := yaml.YAMLToJSON([]byte(clusterConfiguration))
+	args, err := kubeadmAPIServerExtraArgs(clusterConfiguration)
 	if err != nil {
-		return nil, fmt.Errorf("converting kubeadm ClusterConfiguration to JSON: %w", err)
+		return nil, err
 	}
-
-	var config struct {
-		APIServer struct {
-			ExtraArgs any `json:"extraArgs"`
-		} `json:"apiServer"`
-	}
-	if err := json.Unmarshal(configJSON, &config); err != nil {
-		return nil, fmt.Errorf("decoding kubeadm ClusterConfiguration: %w", err)
-	}
-
-	args := map[string]string{}
-	switch extraArgs := config.APIServer.ExtraArgs.(type) {
-	case map[string]any:
-		for name, value := range extraArgs {
-			if rendered, ok := kubeadmArgValue(value); ok {
-				args[name] = rendered
-			}
-		}
-	case []any:
-		for index, item := range extraArgs {
-			entry, ok := item.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("kubeadm apiServer.extraArgs[%d] is not an object", index)
-			}
-			name, ok := entry["name"].(string)
-			if !ok || strings.TrimSpace(name) == "" {
-				return nil, fmt.Errorf("kubeadm apiServer.extraArgs[%d] has no non-empty name", index)
-			}
-			if rendered, ok := kubeadmArgValue(entry["value"]); ok {
-				args[name] = rendered
-			}
-		}
-	case nil:
+	if len(args) == 0 {
 		return nil, fmt.Errorf("kubeadm ClusterConfiguration is missing apiServer.extraArgs")
-	default:
-		return nil, fmt.Errorf("kubeadm apiServer.extraArgs has unsupported type %T", extraArgs)
 	}
 	return args, nil
 }

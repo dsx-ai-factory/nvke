@@ -4,7 +4,9 @@
 # The E2E suite as an image, for validating a running site from inside its
 # cluster, under an in-cluster test runner. It carries the whole suite and runs
 # the specs NVKE_SITE_VALIDATE and NVKE_TENANT_VALIDATE select, the site's by
-# default: specs that change nothing on the site.
+# default: specs that install and change nothing lasting on the site. Those
+# labeled creates, and the DNS probe, make short-lived objects in the probe
+# namespace and delete them.
 #
 # Build from the REPOSITORY ROOT, so the context includes controller/api,
 # which go.mod replaces with a relative path:
@@ -87,8 +89,15 @@ LABEL org.opencontainers.image.licenses="Apache-2.0" \
 # -test.run because the binary also carries the module's unit tests, some of
 # which need a git checkout. The JUnit report is the suite's, which lists only
 # the selected specs; report.json is Ginkgo's, with every spec.
+#
+# -ginkgo.timeout because Ginkgo's default is an hour: a healthy site finishes
+# well inside it, but on a broken one every check waits out its own limit,
+# which together run past two hours, and the checks still to run when the
+# suite times out are reported as interrupted, not as what they found. A
+# caller's own -ginkgo.timeout, given later, wins.
 ENTRYPOINT ["/usr/local/bin/e2e.test", \
     "-test.run=^TestE2E$", \
+    "-ginkgo.timeout=3h", \
     "-e2e.junit-report=/artifacts/junit-test-report.xml", \
     "-ginkgo.json-report=/artifacts/report.json", \
     "-ginkgo.silence-skips", \
