@@ -718,6 +718,7 @@ func TestOpenVSwitchRecordsTheUplinkWhenTheBridgeNameCannotCarryIt(t *testing.T)
 // short-circuit, not the apply path, so the backfill is its only chance.
 func TestOpenVSwitchBackfillsTheUplinkOnAnExistingBridge(t *testing.T) {
 	runner := newOpenVSwitchTestRunner(t, map[string][]openVSwitchCommandResult{
+		"ovs-vsctl --bare --columns=name find interface type=patch":                       {{output: nil}},
 		"dpkg-query --show --showformat=${db:Status-Abbrev} openvswitch-switch":           {{output: []byte("ii ")}},
 		"systemctl enable --now openvswitch-switch":                                       {{}},
 		"ip -j route show default":                                                        {{output: []byte(`[{"dst":"default","dev":"brP13p65s0f0np0"}]`)}},
@@ -735,9 +736,11 @@ func TestOpenVSwitchBackfillsTheUplinkOnAnExistingBridge(t *testing.T) {
 	assert.Contains(t, runner.calls, "ovs-vsctl set bridge brP13p65s0f0np0 external-ids:bridge-uplink=enP13p65s0f0np0")
 }
 
-// Two ports is a topology the backfill cannot name without guessing. It leaves
-// the bridge alone rather than fail a node that is already carrying traffic.
-func TestOpenVSwitchLeavesAnAmbiguousUplinkUnrecorded(t *testing.T) {
+// A bridge whose uplink cannot be named and whose name does not name it either
+// is one ovn-kubernetes cannot resolve. Reporting it UNCHANGED would call it
+// reconciled while the CNI has no uplink --- the silent success this change
+// exists to remove.
+func TestOpenVSwitchRefusesAnUnresolvableBridge(t *testing.T) {
 	runner := newOpenVSwitchTestRunner(t, map[string][]openVSwitchCommandResult{
 		"dpkg-query --show --showformat=${db:Status-Abbrev} openvswitch-switch": {{output: []byte("ii ")}},
 		"systemctl enable --now openvswitch-switch":                             {{}},
@@ -745,6 +748,28 @@ func TestOpenVSwitchLeavesAnAmbiguousUplinkUnrecorded(t *testing.T) {
 		"ovs-vsctl list-br":                                                     {{output: []byte("brP13p65s0f0np0\n")}},
 		"ovs-vsctl br-get-external-id brP13p65s0f0np0 bridge-uplink":            {{output: nil}},
 		"ovs-vsctl list-ports brP13p65s0f0np0":                                  {{output: []byte("enP13p65s0f0np0\nenP13p65s0f1np1\n")}},
+		"ovs-vsctl --bare --columns=name find interface type=patch":             {{output: nil}},
+	})
+	server := &NodeAgentServer{Runner: runner}
+
+	_, _, err := server.reconcileOpenVSwitchLocked(context.Background())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot resolve")
+}
+
+// The pre-existing fleet: the uplink is ambiguous, but the bridge is the uplink
+// prefixed, so ovn-kubernetes' own last resort still answers. Nothing is
+// written and nothing fails --- these nodes have run this way all along.
+func TestOpenVSwitchToleratesAnAmbiguousButInvertibleBridge(t *testing.T) {
+	runner := newOpenVSwitchTestRunner(t, map[string][]openVSwitchCommandResult{
+		"dpkg-query --show --showformat=${db:Status-Abbrev} openvswitch-switch": {{output: []byte("ii ")}},
+		"systemctl enable --now openvswitch-switch":                             {{}},
+		"ip -j route show default":                                              {{output: []byte(`[{"dst":"default","dev":"brenP4s4np0"}]`)}},
+		"ovs-vsctl list-br":                                                     {{output: []byte("brenP4s4np0\n")}},
+		"ovs-vsctl br-get-external-id brenP4s4np0 bridge-uplink":                {{output: nil}},
+		"ovs-vsctl list-ports brenP4s4np0":                                      {{output: []byte("enP4s4np0\nenP4s4np1\n")}},
+		"ovs-vsctl --bare --columns=name find interface type=patch":             {{output: nil}},
 	})
 	server := &NodeAgentServer{Runner: runner}
 
@@ -753,7 +778,7 @@ func TestOpenVSwitchLeavesAnAmbiguousUplinkUnrecorded(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, pb.OpenVSwitchReconciliationResult_OUTCOME_UNCHANGED, result.GetOutcome())
 	for _, call := range runner.calls {
-		assert.NotContains(t, call, "external-ids:bridge-uplink")
+		assert.NotContains(t, call, "external-ids:bridge-uplink=")
 	}
 }
 
@@ -781,12 +806,13 @@ func TestOpenVSwitchVerifyRejectsAMisrecordedUplinkWithoutRetrying(t *testing.T)
 // backfill give up.
 func TestOpenVSwitchBackfillIgnoresTheOVNPatchPort(t *testing.T) {
 	runner := newOpenVSwitchTestRunner(t, map[string][]openVSwitchCommandResult{
+		"ovs-vsctl --bare --columns=name find interface type=patch":                       {{output: []byte("ovn-cp-to-br-int\n")}},
 		"dpkg-query --show --showformat=${db:Status-Abbrev} openvswitch-switch":           {{output: []byte("ii ")}},
 		"systemctl enable --now openvswitch-switch":                                       {{}},
 		"ip -j route show default":                                                        {{output: []byte(`[{"dst":"default","dev":"brP13p65s0f0np0"}]`)}},
 		"ovs-vsctl list-br":                                                               {{output: []byte("brP13p65s0f0np0\n")}},
 		"ovs-vsctl br-get-external-id brP13p65s0f0np0 bridge-uplink":                      {{output: nil}},
-		"ovs-vsctl list-ports brP13p65s0f0np0":                                            {{output: []byte("enP13p65s0f0np0\npatch-brP13p65s0f0np0_cp-to-br-int\n")}},
+		"ovs-vsctl list-ports brP13p65s0f0np0":                                            {{output: []byte("enP13p65s0f0np0\novn-cp-to-br-int\n")}},
 		"ovs-vsctl set bridge brP13p65s0f0np0 external-ids:bridge-uplink=enP13p65s0f0np0": {{}},
 	})
 	server := &NodeAgentServer{Runner: runner}

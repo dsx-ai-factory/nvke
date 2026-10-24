@@ -222,9 +222,14 @@ backfill_bridge_uplink() {
     return 0
   fi
   # ovn-kubernetes patches the uplink bridge to br-int once it is running, so a
-  # bridge that has ever carried OVN holds a second port that is not a NIC and
-  # never the uplink.
-  ports=$(ovs-vsctl list-ports "$bridge" 2>/dev/null | grep -v '^patch-' || true)
+  # bridge that has ever carried OVN holds a port that is not a NIC and never
+  # the uplink. Matched on interface type, not on a name prefix: OVS guarantees
+  # the type, and "patch-" is a convention rather than a rule.
+  local patches
+  patches=$(ovs-vsctl --bare --columns=name find interface type=patch 2>/dev/null || true)
+  # grep -F takes the patch names one per line; with no patches the empty
+  # pattern plus -x drops only blank lines, which is what we want anyway.
+  ports=$(ovs-vsctl list-ports "$bridge" 2>/dev/null | grep -vxF "$patches" || true)
   count=$(printf '%s\n' "$ports" | grep -c . || true)
   # More than one port is a topology this cannot name without guessing, and
   # guessing the uplink is the failure this external-id exists to prevent.
@@ -671,11 +676,6 @@ configure_ovs_direct() {
   ip route replace default via "$gateway" dev "$BRIDGE_NAME" onlink
   ip addr flush dev "$DEFAULT_IF"
 
-  # After the address moves, not before: this fails the caller, and between
-  # add-port and the lines above the NIC is enslaved to a bridge that has no
-  # address yet. Aborting there would leave the node unreachable.
-  record_bridge_uplink "$BRIDGE_NAME" "$DEFAULT_IF"
-
   # Rewrite ifupdown configs so the bridge survives reboot.
   cat > "$ifcfg_file" <<EOF
 auto $DEFAULT_IF
@@ -693,6 +693,12 @@ iface $BRIDGE_NAME inet static
 	ovs_type OVSBridge
 	ovs_ports $DEFAULT_IF
 EOF
+
+  # Last, and both halves of that matter. It fails the caller, so it must come
+  # after the address has moved to the bridge --- aborting between add-port and
+  # that move leaves the node unreachable --- and after the ifupdown files are
+  # written, or a reboot would restore the bare NIC's configuration.
+  record_bridge_uplink "$BRIDGE_NAME" "$DEFAULT_IF"
 
   verify_bridge
 }

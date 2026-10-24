@@ -31,17 +31,19 @@ const (
 	// predictably-named NIC. Both are two characters, which is what keeps the
 	// derived name inside interfaceNameMax.
 	openVSwitchUplinkPrefix = "en"
-	// openVSwitchUplinkExternalID names the bridge's physical port in the OVS
-	// database. ovn-kubernetes reads it first when it resolves a bridge's
-	// uplink; failing that it looks for a single interface of type "system",
-	// which a port added by netplan does not carry, and then strips the bridge
-	// prefix off the bridge name. That last guess is what openVSwitchBridgeName
-	// invalidates whenever it substitutes rather than prefixes, so a bridge
-	// without this external-id is one ovn-kubernetes cannot read.
+	// openVSwitchUplinkExternalID records the bridge's physical uplink port.
+	// OVN reads this value before trying to discover the uplink.
+	//
+	// Netplan leaves the NIC's OVS interface type empty, so OVN's fallback
+	// search for a single "system" interface does not find it. OVN then tries
+	// removing "br" from the bridge name. That also fails for long NIC names,
+	// where openVSwitchBridgeName replaces "en" with "br" to fit Linux's limit.
+	// Recording the uplink explicitly avoids both fallback methods.
 	openVSwitchUplinkExternalID = "bridge-uplink"
-	// openVSwitchPatchPortPrefix is how ovn-kubernetes names the port it adds
-	// to the uplink bridge for br-int. It is never the physical uplink.
-	openVSwitchPatchPortPrefix = "patch-"
+	// openVSwitchPatchType is the OVS interface type of the port
+	// ovn-kubernetes adds to the uplink bridge for br-int. It is matched on
+	// type rather than name: OVS guarantees the type, not a name prefix.
+	openVSwitchPatchType = "patch"
 	// interfaceNameMax is IFNAMSIZ-1: the kernel's buffer is 16 bytes and
 	// includes the NUL, so 15 characters is the longest name it accepts.
 	interfaceNameMax              = 15
@@ -219,7 +221,9 @@ func (s *NodeAgentServer) reconcileOpenVSwitchLocked(
 		return nil, nil, status.Errorf(codes.Internal, "list Open vSwitch bridges: %v", err)
 	}
 	if strings.HasPrefix(defaultRoute.Device, openVSwitchBridgePrefix) && slices.Contains(bridges, defaultRoute.Device) {
-		s.backfillOpenVSwitchUplink(ctx, defaultRoute.Device)
+		if err := s.ensureOpenVSwitchUplinkResolvable(ctx, defaultRoute.Device); err != nil {
+			return nil, nil, err
+		}
 		return &pb.OpenVSwitchReconciliationResult{
 			Outcome:    pb.OpenVSwitchReconciliationResult_OUTCOME_UNCHANGED,
 			BridgeName: defaultRoute.Device,
@@ -416,46 +420,73 @@ func (s *NodeAgentServer) listOpenVSwitchPorts(bridge string) ([]string, error) 
 	return strings.Fields(string(output)), nil
 }
 
-// backfillOpenVSwitchUplink records the uplink of a bridge this agent is
-// leaving alone. A bridge built before the external-id was written carries no
-// record of its uplink, and a reboot reaches this short-circuit rather than the
-// apply path, so without the backfill such a node stays unreadable to
-// ovn-kubernetes for as long as it lives.
+// ensureOpenVSwitchUplinkResolvable makes a bridge this agent is leaving alone
+// readable by ovn-kubernetes, and refuses to call it reconciled when it is not.
 //
-// Best effort throughout. The bridge is already carrying the node's traffic;
-// failing a reconcile that used to succeed would strand a working node over a
-// label, which is a worse trade than leaving the label unwritten.
-func (s *NodeAgentServer) backfillOpenVSwitchUplink(ctx context.Context, bridge string) {
+// A bridge built before the external-id was written carries no record of its
+// uplink, and a reboot reaches the reconcile short-circuit rather than the
+// apply path, so this is the only place such a node is revisited.
+//
+// It does not simply log and continue. A conversion whose uplink write failed
+// lands here on the next reconcile, and reporting UNCHANGED for it would call
+// a bridge reconciled that ovn-kubernetes cannot resolve an uplink for --- the
+// exact silent success this whole change exists to remove. The failure is
+// tolerated only where ovn-kubernetes can still answer the question itself.
+func (s *NodeAgentServer) ensureOpenVSwitchUplinkResolvable(ctx context.Context, bridge string) error {
 	recorded, err := s.readOpenVSwitchUplink(bridge)
 	if err != nil {
-		slog.WarnContext(ctx, "could not read the Open vSwitch uplink", "bridge", bridge, "err", err)
-		return
+		return err
 	}
 	if recorded != "" {
-		return
+		return nil
 	}
+	ports, err := s.listOpenVSwitchUplinkCandidates(bridge)
+	if err != nil {
+		return err
+	}
+	// More than one candidate is a topology this cannot name without guessing,
+	// and guessing the uplink is the failure the external-id exists to prevent.
+	if len(ports) == 1 {
+		if err := s.recordOpenVSwitchUplink(bridge, ports[0]); err == nil {
+			slog.InfoContext(ctx, "recorded the uplink of an existing Open vSwitch bridge", "bridge", bridge, "uplink", ports[0])
+			return nil
+		} else {
+			slog.WarnContext(ctx, "could not record the Open vSwitch uplink", "bridge", bridge, "err", err)
+		}
+	}
+	// Unrecorded is survivable only while the name still answers: stripping the
+	// bridge prefix is ovn-kubernetes' last resort, and it works exactly when
+	// the remainder names a port on this bridge. That is the pre-existing
+	// fleet, which has run this way all along.
+	if slices.Contains(ports, strings.TrimPrefix(bridge, openVSwitchBridgePrefix)) {
+		slog.WarnContext(ctx, "leaving the Open vSwitch uplink unrecorded; the bridge name still names it",
+			"bridge", bridge, "ports", ports)
+		return nil
+	}
+	return fmt.Errorf("bridge %s records no uplink and its name does not name one, so ovn-kubernetes cannot resolve it: ports %v",
+		bridge, ports)
+}
+
+// listOpenVSwitchUplinkCandidates is a bridge's ports with the patch ports
+// removed. ovn-kubernetes patches the uplink bridge to br-int once it runs, so
+// a bridge that has ever carried OVN holds a port that is not a NIC and never
+// the uplink. Patch ports are found by interface type: OVS guarantees the
+// type, and the name prefix is a convention rather than a rule.
+func (s *NodeAgentServer) listOpenVSwitchUplinkCandidates(bridge string) ([]string, error) {
 	ports, err := s.listOpenVSwitchPorts(bridge)
 	if err != nil {
-		slog.WarnContext(ctx, "could not list Open vSwitch bridge ports", "bridge", bridge, "err", err)
-		return
+		return nil, err
 	}
-	// ovn-kubernetes patches the uplink bridge to br-int once it is running, so
-	// a bridge that has ever carried OVN holds a second port that is not a NIC
-	// and never the uplink.
-	ports = slices.DeleteFunc(ports, func(port string) bool {
-		return strings.HasPrefix(port, openVSwitchPatchPortPrefix)
-	})
-	// Anything still ambiguous is a topology this cannot name without guessing,
-	// and guessing the uplink is the failure this external-id exists to prevent.
-	if len(ports) != 1 {
-		slog.WarnContext(ctx, "leaving the Open vSwitch uplink unrecorded", "bridge", bridge, "ports", ports)
-		return
+	output, err := s.runOpenVSwitchCommand(
+		"ovs-vsctl", "--bare", "--columns=name", "find", "interface", "type="+openVSwitchPatchType,
+	)
+	if err != nil {
+		return nil, err
 	}
-	if err := s.recordOpenVSwitchUplink(bridge, ports[0]); err != nil {
-		slog.WarnContext(ctx, "could not record the Open vSwitch uplink", "bridge", bridge, "err", err)
-		return
-	}
-	slog.InfoContext(ctx, "recorded the uplink of an existing Open vSwitch bridge", "bridge", bridge, "uplink", ports[0])
+	patches := strings.Fields(string(output))
+	return slices.DeleteFunc(ports, func(port string) bool {
+		return slices.Contains(patches, port)
+	}), nil
 }
 
 func (s *NodeAgentServer) regenerateOpenVSwitchSystemID() error {
