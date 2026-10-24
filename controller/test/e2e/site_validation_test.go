@@ -99,7 +99,7 @@ type siteChecks struct {
 	// probeNamespace and probeImage are where the DNS probe pod runs and what
 	// it runs.
 	probeNamespace string
-	probeImage     string
+	probeImage     probeImage
 	// excusedNamespace is left out of the pod check: the runner's own, where
 	// an earlier run's pods may be left Failed or not Ready. "" excuses none.
 	excusedNamespace string
@@ -111,7 +111,23 @@ var siteLaneChecks = siteChecks{
 	namespaces:     siteNamespaces,
 	failFast:       true,
 	probeNamespace: "default",
-	probeImage:     kube.KubectlImage,
+	probeImage:     probeImage{ref: kube.KubectlImage},
+}
+
+// probeImage is what every probe and server pod runs, and the Secrets its
+// pods pull it with. The pods run as their namespace's default service
+// account, which holds no pull Secret of its own on most sites.
+type probeImage struct {
+	ref         string
+	pullSecrets []corev1.LocalObjectReference
+}
+
+// apply sets the image on every container in spec, and its pull Secrets.
+func (image probeImage) apply(spec *corev1.PodSpec) {
+	for i := range spec.Containers {
+		spec.Containers[i].Image = image.ref
+	}
+	spec.ImagePullSecrets = slices.Clone(image.pullSecrets)
 }
 
 // validateSitePostDeploy asserts on a site controller after the stack is

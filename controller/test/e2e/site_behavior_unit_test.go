@@ -27,6 +27,27 @@ import (
 	"k8s.io/utils/ptr"
 )
 
+var testProbeImage = probeImage{ref: "image"}
+
+func TestUnit_SiteProbeImageReachesEveryPod(t *testing.T) {
+	image := probeImage{ref: "mirror.example/k8s:1", pullSecrets: []corev1.LocalObjectReference{{Name: "mirror"}}}
+	node := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "n", Labels: map[string]string{corev1.LabelHostname: "n"}}}
+	labels := map[string]string{siteRunLabel: "abc123"}
+	specs := map[string]corev1.PodSpec{
+		"server":   siteServerPod("ns", image, labels, "traffic", node).Spec,
+		"probe":    siteProbePod("ns", image, labels, siteTrafficClientRole, node, nil).Spec,
+		"endpoint": endpointProbePod("ns", image, labels, node, "10.0.0.1:6443").Spec,
+		"volume":   siteVolumePod("ns", image, labels, "claim").Spec,
+		"stateful": siteStatefulSet("ns", image, labels, "headless", node).Spec.Template.Spec,
+	}
+	for name, spec := range specs {
+		require.Equal(t, image.pullSecrets, spec.ImagePullSecrets, name)
+		for _, container := range spec.Containers {
+			require.Equal(t, image.ref, container.Image, name)
+		}
+	}
+}
+
 func TestUnit_SiteExpectationsFromEnvUnset(t *testing.T) {
 	expect, err := siteExpectationsFromEnv(envMap(nil))
 	require.NoError(t, err)
@@ -485,12 +506,12 @@ func TestUnit_SiteObjectsSelectOnlyTheirRun(t *testing.T) {
 	}
 
 	policy := siteIngressPolicy("ns", run)
-	target := siteServerPod("ns", "image", run, ovnPolicyTargetRole, node)
-	control := siteServerPod("ns", "image", run, ovnPolicyControlRole, node)
-	allowed := siteProbePod("ns", "image", run, ovnPolicyAllowedSourceRole, node, nil)
-	denied := siteProbePod("ns", "image", run, ovnPolicyDeniedSourceRole, node, nil)
-	otherTarget := siteServerPod("ns", "image", other, ovnPolicyTargetRole, node)
-	otherAllowed := siteProbePod("ns", "image", other, ovnPolicyAllowedSourceRole, node, nil)
+	target := siteServerPod("ns", testProbeImage, run, ovnPolicyTargetRole, node)
+	control := siteServerPod("ns", testProbeImage, run, ovnPolicyControlRole, node)
+	allowed := siteProbePod("ns", testProbeImage, run, ovnPolicyAllowedSourceRole, node, nil)
+	denied := siteProbePod("ns", testProbeImage, run, ovnPolicyDeniedSourceRole, node, nil)
+	otherTarget := siteServerPod("ns", testProbeImage, other, ovnPolicyTargetRole, node)
+	otherAllowed := siteProbePod("ns", testProbeImage, other, ovnPolicyAllowedSourceRole, node, nil)
 
 	require.True(t, matches(policy.Spec.PodSelector, target.Labels))
 	require.False(t, matches(policy.Spec.PodSelector, control.Labels), "the control pod stays reachable")
@@ -501,18 +522,18 @@ func TestUnit_SiteObjectsSelectOnlyTheirRun(t *testing.T) {
 	require.False(t, matches(from, otherAllowed.Labels))
 
 	service := siteService("ns", run, "traffic", false)
-	server := siteServerPod("ns", "image", run, "traffic", node)
+	server := siteServerPod("ns", testProbeImage, run, "traffic", node)
 	require.True(t, matches(metav1.LabelSelector{MatchLabels: service.Spec.Selector}, server.Labels))
-	trafficClient := siteProbePod("ns", "image", run, siteTrafficClientRole, node, nil)
+	trafficClient := siteProbePod("ns", testProbeImage, run, siteTrafficClientRole, node, nil)
 	require.False(t, matches(metav1.LabelSelector{MatchLabels: service.Spec.Selector}, trafficClient.Labels),
 		"the Service must not send traffic to the probe itself")
-	headlessClient := siteProbePod("ns", "image", run, siteHeadlessClientRole, node, nil)
+	headlessClient := siteProbePod("ns", testProbeImage, run, siteHeadlessClientRole, node, nil)
 	require.False(t, matches(metav1.LabelSelector{MatchLabels: siteService("ns", run, "headless", true).Spec.Selector}, headlessClient.Labels),
 		"the headless Service must not name the probe")
 	require.Empty(t, service.Spec.ClusterIP)
 	require.Equal(t, corev1.ClusterIPNone, siteService("ns", run, "headless", true).Spec.ClusterIP)
 
-	statefulSet := siteStatefulSet("ns", "image", run, "nvke-validate-headless-x", node)
+	statefulSet := siteStatefulSet("ns", testProbeImage, run, "nvke-validate-headless-x", node)
 	require.True(t, matches(*statefulSet.Spec.Selector, statefulSet.Spec.Template.Labels))
 	require.True(t, matches(metav1.LabelSelector{MatchLabels: siteService("ns", run, "headless", true).Spec.Selector}, statefulSet.Spec.Template.Labels))
 	require.Equal(t, "nvke-validate-headless-x", statefulSet.Spec.ServiceName)

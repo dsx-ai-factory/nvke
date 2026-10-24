@@ -313,6 +313,7 @@ Configure it with the [health spec variables](#health-specs) and these:
 | `NVKE_SITE_NAMESPACES` | Comma-separated namespaces that must each run a ready pod, replacing the default list: `kube-system`, `cert-manager`, `capi-system` and those `deploy/nico` installs into. | The `deploy/nico` list |
 | `NVKE_SITE_PROBE_NAMESPACE` | Where the probe pods and every `creates` object go. | The pod's own namespace, else `default` |
 | `NVKE_SITE_PROBE_IMAGE` | The probe and server pods' image, which needs `sh`, `nslookup`, `wget`, `curl` and `nc`. Point it at a mirror on a site without internet access. | The suite's kubectl image |
+| `NVKE_SITE_PROBE_PULL_SECRETS` | Comma-separated Secrets in the probe namespace that the probe and server pods pull their image with. They run as the namespace's `default` service account, not the runner's, so a pull Secret on the runner's account does not reach them. | Unset |
 | `NVKE_SITE_COMPONENTS` | Optional components the site runs, comma-separated, each `name` or `name=namespace`: `argocd` (default namespace `argocd`), `cnpg` (`cnpg-system`), `teleport` (`teleport-agent`), `kube-vip` (`kube-system`). | Unset |
 | `NVKE_SITE_REQUIRED_WORKLOADS` | `namespace/workload`, comma-separated: a Deployment, StatefulSet or DaemonSet that must exist and run a ready pod. | Unset |
 | `NVKE_SITE_WORKLOAD_VERSIONS` | `namespace/workload=version`, comma-separated: a Deployment, StatefulSet or DaemonSet one of whose containers runs an image tagged `version`, with or without a leading `v`. | Unset |
@@ -337,6 +338,11 @@ Each controller release publishes the image built from the same commit, as
 `nvke-validate:v<version>` beside `nvke-controller` (see
 `.github/workflows/image-validate-nvcr.yml`), so the tests a site runs are the
 tests that shipped with its controller.
+
+The entrypoint sets `-ginkgo.timeout=3h`. A healthy site finishes far sooner,
+but on a broken one each check waits out its own limit, and a suite timeout
+reports the checks it did not reach as interrupted. A runner that restates the
+entrypoint should keep the flag, and its own step timeout should be longer.
 
 Results go to `/artifacts`, which the runner mounts:
 

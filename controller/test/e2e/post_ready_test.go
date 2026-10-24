@@ -79,12 +79,12 @@ func assertNodeLocalDNSAvailable(ctx context.Context, tenantClient client.Client
 }
 
 func runNodeLocalDNSProbe(ctx context.Context, tenantClient client.Client) error {
-	return runDNSProbe(ctx, tenantClient, "default", kube.KubectlImage)
+	return runDNSProbe(ctx, tenantClient, "default", probeImage{ref: kube.KubectlImage})
 }
 
 // runDNSProbe resolves the cluster's own API Service name from a pod in
 // namespace, running image, which needs sh and nslookup.
-func runDNSProbe(ctx context.Context, c client.Client, namespace, image string) error {
+func runDNSProbe(ctx context.Context, c client.Client, namespace string, image probeImage) error {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "e2e-node-local-dns-",
@@ -95,13 +95,13 @@ func runDNSProbe(ctx context.Context, c client.Client, namespace, image string) 
 			RestartPolicy: corev1.RestartPolicyNever,
 			Containers: []corev1.Container{{
 				Name:    dnsProbeContainerName,
-				Image:   image,
 				Command: []string{"sh", "-ec"},
 				Args: []string{`nslookup kubernetes.default.svc.cluster.local >/dev/null
 printf '%s' "` + dnsProbeSuccessMessage + `" > /dev/termination-log`},
 			}},
 		},
 	}
+	image.apply(&pod.Spec)
 	_, message, err := kube.RunPod(ctx, c, pod, dnsProbeContainerName, 2*time.Minute)
 	if err != nil {
 		return err

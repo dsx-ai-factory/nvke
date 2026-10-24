@@ -11,6 +11,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/site"
@@ -30,6 +31,10 @@ const (
 	// choose its image, which needs sh and nslookup.
 	siteProbeNamespaceEnv = "NVKE_SITE_PROBE_NAMESPACE"
 	siteProbeImageEnv     = "NVKE_SITE_PROBE_IMAGE"
+	// siteProbePullSecretsEnv lists, comma-separated, the Secrets in the probe
+	// namespace that the probe pods pull their image with: they run as the
+	// namespace's default service account, not the runner's.
+	siteProbePullSecretsEnv = "NVKE_SITE_PROBE_PULL_SECRETS"
 )
 
 // serviceAccountNamespaceFile names the namespace a pod runs in.
@@ -80,9 +85,9 @@ func siteValidateFromEnv(getenv func(string) string, namespaceFile string) (site
 		probeNamespace = "default"
 	}
 
-	probeImage := strings.TrimSpace(getenv(siteProbeImageEnv))
-	if probeImage == "" {
-		probeImage = kube.KubectlImage
+	image := probeImage{ref: cmp.Or(strings.TrimSpace(getenv(siteProbeImageEnv)), kube.KubectlImage)}
+	for _, name := range splitList(getenv(siteProbePullSecretsEnv), ",") {
+		image.pullSecrets = append(image.pullSecrets, corev1.LocalObjectReference{Name: name})
 	}
 
 	expect, err := siteExpectationsFromEnv(getenv)
@@ -97,7 +102,7 @@ func siteValidateFromEnv(getenv func(string) string, namespaceFile string) (site
 		checks: siteChecks{
 			namespaces:       namespaces,
 			probeNamespace:   probeNamespace,
-			probeImage:       probeImage,
+			probeImage:       image,
 			excusedNamespace: ownNamespace,
 		},
 		expect: expect,
