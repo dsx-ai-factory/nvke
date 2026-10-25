@@ -9,35 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"slices"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	k8svalidation "k8s.io/apimachinery/pkg/api/validation"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/dsx-ai-factory/nvke/auth/internal/strictyaml"
-)
-
-// ErrEmptyPath is returned only when path is empty. A set-but-unreadable path is
-// a startup failure, never "disabled".
-var ErrEmptyPath = errors.New("authentication config path is empty")
-
-// The only apiVersion and kind this build accepts. Both are required, never
-// defaulted.
-const (
-	ConfigAPIVersion = "auth.nvke.nvidia.com/v1alpha1"
-	// ConfigAPIVersionLegacy is the spelling existing sites still mount, read
-	// beside ConfigAPIVersion.
-	//
-	// Removed in v0.25.0. Gate: no site's nke-auth-config ConfigMap still
-	// carries this apiVersion, confirmed by a fleet kubectl get cm sweep. A
-	// site that still mounts it after removal fails startup with the
-	// unsupported-apiVersion error below, which names what this build accepts.
-	ConfigAPIVersionLegacy = "auth.nke.nvidia.com/v1alpha1"
-	ConfigKind             = "AuthenticationConfiguration"
 )
 
 // allowedAlgorithms returns the permitted JWS algorithms, asymmetric only. Taken
@@ -58,11 +35,9 @@ func allowedAlgorithms() []string {
 	return algs
 }
 
-// Config is the issuer registry, read once at startup from the file at
-// AUTH_CONFIG_PATH or from apiAuth in nvke-controller-config.
+// Config is the issuer registry, read once at startup from apiAuth in
+// nvke-controller-config.
 type Config struct {
-	metav1.TypeMeta `json:",inline"`
-
 	// Audiences is the deployment-wide "aud" allow-list, required and non-empty
 	// even when every issuer overrides it. Matched any-of.
 	Audiences []string `json:"audiences"`
@@ -74,7 +49,7 @@ type Config struct {
 // Issuer is one trusted token issuer.
 type Issuer struct {
 	// Name is the operator-chosen label used in logs and metrics. Name and Issuer
-	// are each unique within the file.
+	// are each unique within the configuration.
 	Name   string `json:"name"`
 	Issuer string `json:"issuer"`
 
@@ -222,43 +197,9 @@ func (i Issuer) EffectiveAudiences(deploymentAudiences []string) []string {
 	return deploymentAudiences
 }
 
-// Load reads and validates the configuration at path. An unreadable file is an
-// error, never "authentication is disabled", or a typo'd mountPath would produce
-// a controller that starts cleanly and authenticates nobody. Authentication is
-// disabled only when AUTH_CONFIG_PATH is unset and apiAuth is not enabled in
-// nvke-controller-config.
-func Load(path string) (*Config, error) {
-	if strings.TrimSpace(path) == "" {
-		return nil, ErrEmptyPath
-	}
-
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("open authentication config %q: %w", path, err)
-	}
-
-	var cfg Config
-	if err := strictyaml.Decode(fmt.Sprintf("authentication config %q", path), raw, &cfg); err != nil {
-		return nil, err
-	}
-
-	// Properties of the file rather than of the configuration, so checked here
-	// and not in Validate.
-	if err := cfg.validateTypeMeta(); err != nil {
-		return nil, fmt.Errorf("invalid authentication config %q: %w", path, err)
-	}
-
-	if err := cfg.ValidateStartup(); err != nil {
-		return nil, fmt.Errorf("invalid authentication config %q: %w", path, err)
-	}
-	return &cfg, nil
-}
-
 // ValidateStartup runs every check a configuration must pass before the
 // controller serves with it: Validate, and an admit block on every issuer,
-// which Validate alone does not require. Load calls it after the checks that
-// belong to the file; nvke-controller-config's apiAuth section, which has no
-// file of its own, calls it directly.
+// which Validate alone does not require.
 func (c *Config) ValidateStartup() error {
 	if err := c.Validate(); err != nil {
 		return err
@@ -341,28 +282,6 @@ func (c *Config) Validate() error {
 			)
 		}
 	}
-	return nil
-}
-
-// validateTypeMeta names the accepted value in both messages; "wrong" is usually
-// the wrong ConfigMap key mounted at AUTH_CONFIG_PATH.
-func (c *Config) validateTypeMeta() error {
-	switch apiVersion := strings.TrimSpace(c.APIVersion); apiVersion {
-	case ConfigAPIVersion, ConfigAPIVersionLegacy:
-	case "":
-		return fmt.Errorf("apiVersion is required; this build accepts %q or %q", ConfigAPIVersion, ConfigAPIVersionLegacy)
-	default:
-		return fmt.Errorf("apiVersion %q is not supported; this build accepts %q or %q", apiVersion, ConfigAPIVersion, ConfigAPIVersionLegacy)
-	}
-
-	switch kind := strings.TrimSpace(c.Kind); kind {
-	case ConfigKind:
-	case "":
-		return fmt.Errorf("kind is required; this build accepts %q", ConfigKind)
-	default:
-		return fmt.Errorf("kind %q is not supported; this build accepts %q", kind, ConfigKind)
-	}
-
 	return nil
 }
 

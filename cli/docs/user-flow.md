@@ -195,13 +195,14 @@ kubeconfig to authenticate: they read the audience and mint a TokenRequest for
 `nke-clients/nke-client`. The audience comes first from `apiAuth` in the
 controller's settings ConfigMap, `nvke-controller-config` (or
 `nke-controller-config` on a site that pins the older name), when that section
-is enabled. When it is off or absent, as for a controller that reads
-`AUTH_CONFIG_PATH`, the CLI falls back to the authentication ConfigMap:
-`nvke-auth-config` first, then `nke-auth-config`, which a site installed before
-the `nvke` rename keeps by pinning `apiAuth.configMap.name`. Each pair of names
-is searched in `nvke-controller`, then `nke-controller` for a site installed
-before the `nvke` rename, then `cloud-workflow-engine`, and the first *readable*
-one is used.
+is enabled. When it is off or absent, as for a controller from before `apiAuth`
+became its only source, which read `AUTH_CONFIG_PATH`, the CLI falls back to the
+authentication ConfigMap: `nvke-auth-config` first, then `nke-auth-config`,
+which a site installed before the `nvke` rename kept. A current chart renders
+neither, so the fallback matters only for a site still on an older controller.
+Each pair of names is searched in `nvke-controller`, then `nke-controller` for a
+site installed before the `nvke` rename, then `cloud-workflow-engine`, and the
+first *readable* one is used.
 
 Readable matters because RBAC scoped to `resourceNames` denies the names it does
 not grant: a site that grants `get` on its pinned name alone answers Forbidden
@@ -214,8 +215,8 @@ kept, and if nothing readable turns authentication on the command fails with it
 rather than sending a bare request the controller would reject.
 
 The kubeconfig identity needs `create` on `serviceaccounts/token` for
-`nke-client`, and `get` on the controller's settings ConfigMap and the
-authentication ConfigMap. See
+`nke-client`, and `get` on the controller's settings ConfigMap, plus the
+authentication ConfigMap on a site still running an older controller. See
 [Configuring NVKE API Authentication](../../controller/docs/configuring-api-authentication.md).
 
 ### 7. Check the infrastructure providers

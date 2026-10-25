@@ -71,7 +71,7 @@ func TestCheckAuthzNeedsAuthn(t *testing.T) {
 			cfg.APIAuth.Permissive = tt.authnPermissive
 			cfg.APIAuthz.Enabled = tt.authzOn
 			cfg.APIAuthz.Permissive = tt.authzPermissive
-			err := cfg.CheckAuthzNeedsAuthn("")
+			err := cfg.CheckAuthzNeedsAuthn()
 			if tt.wantErr == "" {
 				require.NoError(t, err)
 				return
