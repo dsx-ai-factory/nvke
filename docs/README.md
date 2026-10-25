@@ -93,7 +93,6 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [site-operations/certificate-renewal.md](site-operations/certificate-renewal.md) | Site-management certificate renewal for NVKE fleet operators |
 | [operations/observability.md](operations/observability.md) | Temporal UI, CWE logs, database health, and CAPNICo diagnostics |
 | [operations/credential-lifecycle.md](operations/credential-lifecycle.md) | OSS alpha credential inventory, supported procedures, CA limits, monitoring, audit and evidence |
-| [../controller/docs/certificate-renewal.md](../controller/docs/certificate-renewal.md) | T2 workflow, executor, receipt and retained ownership contracts |
 | [../controller/docs/etcd-encryption-key-rotation.md](../controller/docs/etcd-encryption-key-rotation.md) | Existing T2 key rotation, phase-specific recovery and preexisting-object rewrite proof |
 | [../controller/docs/credential-monitoring.md](../controller/docs/credential-monitoring.md) | Actual expiry inspection, configuration bounds, metrics and alert delivery |
 | [../controller/docs/credential-audit.md](../controller/docs/credential-audit.md) | Versioned lifecycle audit, manual evidence tool, ledger export and retention limits |

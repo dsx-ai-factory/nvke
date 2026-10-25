@@ -258,8 +258,10 @@ and all preflight gates healthy, the controller can retry automatically.
 Before waiting for that retry or starting a forced workflow, confirm that the
 cluster row's `certificate_renewal` reservation column is empty; the REST API
 does not show it. A fenced reservation makes admission refuse both and restart
-the one-hour backoff; a reservation left by an older V1 workflow fails the cycle
-when it reaches that node. If it stays set, follow the reservation
+the one-hour backoff; a reservation left by an older V1 workflow does not block
+admission, but the first node that needs renewal is then refused without
+renewal, whichever node the reservation names, so the cycle fails there and
+`failedNodeID` does not identify the reserved node. If it stays set, follow the reservation
 paragraph of the [component recovery contract](../../controller/docs/certificate-renewal.md#status-and-failure-handling). The
 automatic retry needs scheduling enabled (`certRenewal.controllerEnabled`) and
 starts no earlier than both one hour after the failure and `nextCertRenewalDue`,
