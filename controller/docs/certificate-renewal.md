@@ -102,9 +102,18 @@ kube-apiserver, kube-controller-manager, kube-scheduler). For each pod it moves
 only that manifest to a staging directory on the same filesystem, waits for the
 old container to stop, restores the manifest, and waits for a replacement
 container and full local control-plane health before touching the next pod.
-Unrelated manifests such as kube-vip are never moved. Every failure path
-restores the active manifest, and an interrupted operation resumes by
-restarting all four pods again. A Temporal activity retry reattaches to the
+Unrelated manifests such as kube-vip are never moved. On failure the agent
+tries to restore the moved manifest. An interrupted operation first restores
+any staged manifest, then restarts all four pods again. Restoration can fail,
+for example when an active manifest exists that differs from the staged copy.
+In that case the operation fails with outcome `OUTCOME_FAILED_NOT_RESTORED` in
+the cycle `message`. The manifest stays in
+`/etc/kubernetes/nvke-cert-renewal-manifests/`, and that pod may be stopped.
+The legacy runbook likewise stops when a manifest exists both in
+`/etc/kubernetes/nvke-cert-renewal-staging/` and in the manifests directory.
+Later cycles refuse that node until the staging directory is empty. Before
+retrying, compare the staged and active copies on the failed node and keep
+exactly one in `/etc/kubernetes/manifests/`. A Temporal activity retry reattaches to the
 stable operation ID instead of starting a second renewal. The hardened workflow calls the capability-distinct V2 start RPC, so
 agents that implement only the V1 operation return `Unimplemented` before
 accepting node-side work. When there is no pending typed intent, any definitive
@@ -143,7 +152,9 @@ being deleted, record nothing; the controller waits for the lock to clear.
 
 Forced renewal is intentionally an operator-started Temporal workflow; there is
 no REST or CLI trigger. Use a new workflow ID for every forced run, and do not
-reuse the controller's `renew-k8s-certs-...` IDs. Start it in the namespace and
+reuse the controller's `renew-k8s-certs-...` IDs. The one exception is
+recovering an accepted forced cycle, described under
+[Status and failure handling](#status-and-failure-handling). Start it in the namespace and
 task queue the controller's workers poll: `temporal.namespace` and
 `temporal.taskQueue` in `nvke-controller-config` (chart values
 `temporal.cloudWorkflow.namespace` and `temporal.cloudWorkflow.queue`; defaults
@@ -222,6 +233,16 @@ block overlapping cluster mutations. The due time is not advanced. Legacy status
 checks always use the embedded status-only implementation, not a configured
 runbook override that might ignore the status-only mode.
 
+If the Temporal execution of an accepted scheduled cycle is terminated or
+times out, the controller starts the same workflow ID again; that run re-enters
+the cycle and reattaches to the recorded node operation. The controller does
+not restart an accepted forced cycle, which keeps the lock and defers scheduled
+renewal. After confirming that no execution with that `cycleID` is running,
+start the same `cycleID` again with the original input (`force:true`). This is
+the exception to using a new workflow ID for every forced run: the run re-enters
+the accepted cycle, and its node operation IDs derive from the cycle ID, so it
+reattaches to the recorded node operation instead of starting a second one.
+
 The controller never reopens the same failed cycle ID. Released failures retry
 automatically with a fresh ID once both `nextCertRenewalDue` and the one-hour
 backoff have passed; retained-lock failures stay halted.
@@ -241,8 +262,10 @@ A failed cycle can also leave its node reservation in the cluster row's
 reservation (one written by the current workflow) is set, admission refuses
 every cycle, recording another `admission` failure and restarting the one-hour
 backoff. A reservation left by an older V1 workflow does not block admission,
-but the cycle does not reuse it: when the cycle reaches that node, the node is
-refused without dispatch, the cycle fails and is retried after the backoff. The
+but the cycle does not reuse it: the first node that needs renewal is refused
+without dispatch, whichever node the reservation names, and the cycle fails and
+is retried after the backoff. That failure's `failedNodeID` does not identify
+the reserved node. The
 V1 activity normally releases its reservation when it ends, on success or
 failure. It can leave an unfenced reservation behind when the activity is
 interrupted (worker restart, timeout or cancellation), when the release itself
