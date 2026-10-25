@@ -58,12 +58,11 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 // Reconcile reuses a due-time-derived workflow ID so repeated observations do not
 // create distinct cycles. The first look at a cluster only schedules its first
 // check one interval ahead; after that, dispatch never advances the due time.
-// An accepted scheduled cycle is started again under its recorded ID, so a
-// terminated or timed-out run cannot keep the lock; accepted forced cycles are
-// not. Released failures retry after one hour; retained failures halt, and so does a
-// two-voter refusal until the desired control-plane count changes. The first
-// cycle also waits for the full control plane to join rather than treating
-// Provisioned as cluster readiness.
+// An accepted cycle is never dispatched again, even if its run has ended; that
+// needs operator escalation. Released failures retry after one hour; retained
+// failures halt, and so does a two-voter refusal until the desired control-plane
+// count changes. The first cycle also waits for the full control plane to join
+// rather than treating Provisioned as cluster readiness.
 func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconcile.Result, error) {
 	cluster, err := c.db.GetCluster(ctx, key.ID)
 	if err != nil {
@@ -124,22 +123,17 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 		// CompletedAt is durable, so observations before Begin commits deduplicate.
 		workflowID = fmt.Sprintf("%s-retry-%d", workflowID, status.CompletedAt.UTC().UnixNano())
 	}
-	resumeAccepted := false
 	if scheduledCycleMatches(status, cluster.NextCertRenewalDue) {
 		switch status.State {
 		case db.CertificateRenewalStateAccepted:
-			// The accepted cycle holds the lock, and only its own run releases it.
-			// Starting its recorded ID again is a no-op while that run is open and
-			// replaces a terminated or timed-out run, which re-enters the cycle.
-			c.logger.Info("Ensuring the accepted certificate renewal cycle is running", "clusterID", cluster.ID, "workflowID", status.CycleID)
-			workflowID = status.CycleID
-			resumeAccepted = true
+			c.logger.Info("Certificate renewal is already accepted and remains overdue until completion", "clusterID", cluster.ID)
+			return reconcile.Result{RequeueAfter: time.Minute}, nil
 		case db.CertificateRenewalStateSucceeded, db.CertificateRenewalStateFailed:
 			// Success normally advances the due time atomically, and failure was
 			// handled above. An inconsistent old row should not suppress a new cycle.
 		}
 	}
-	if update := cluster.Conditions.UpdateInProgress; update != nil && !resumeAccepted {
+	if update := cluster.Conditions.UpdateInProgress; update != nil {
 		c.logger.Info("Deferring certificate renewal while another cluster update is in progress", "clusterID", cluster.ID, "operation", update.Type)
 		return reconcile.Result{RequeueAfter: time.Minute}, nil
 	}

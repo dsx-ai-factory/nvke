@@ -152,9 +152,7 @@ being deleted, record nothing; the controller waits for the lock to clear.
 
 Forced renewal is intentionally an operator-started Temporal workflow; there is
 no REST or CLI trigger. Use a new workflow ID for every forced run, and do not
-reuse the controller's `renew-k8s-certs-...` IDs. The one exception is
-recovering an accepted forced cycle, described under
-[Status and failure handling](#status-and-failure-handling). Start it in the namespace and
+reuse the controller's `renew-k8s-certs-...` IDs. Start it in the namespace and
 task queue the controller's workers poll: `temporal.namespace` and
 `temporal.taskQueue` in `nvke-controller-config` (chart values
 `temporal.cloudWorkflow.namespace` and `temporal.cloudWorkflow.queue`; defaults
@@ -233,15 +231,40 @@ block overlapping cluster mutations. The due time is not advanced. Legacy status
 checks always use the embedded status-only implementation, not a configured
 runbook override that might ignore the status-only mode.
 
-If the Temporal execution of an accepted scheduled cycle is terminated or
-times out, the controller starts the same workflow ID again; that run re-enters
-the cycle and reattaches to the recorded node operation. The controller does
-not restart an accepted forced cycle, which keeps the lock and defers scheduled
-renewal. After confirming that no execution with that `cycleID` is running,
-start the same `cycleID` again with the original input (`force:true`). This is
-the exception to using a new workflow ID for every forced run: the run re-enters
-the accepted cycle, and its node operation IDs derive from the cycle ID, so it
-reattaches to the recorded node operation instead of starting a second one.
+An accepted cycle, scheduled or forced, is owned by its own Temporal
+execution. Activity retries and workflow replay continue it; the controller
+never starts a replacement execution. If that execution has closed (for
+example terminated, cancelled or timed out) while `certificateRenewal.state`
+is still `accepted`, the cluster stays halted with the lock held, and no cycle
+runs until the incident is resolved. Stop cluster maintenance and escalate; this guide gives no recovery
+procedure for an accepted cycle.
+
+A closed execution does not prove that its activity attempts and agent RPCs,
+the node renewal, or the kube-vip drain/restore guard have finished. Do not
+clear `updateInProgress` or the node reservation, start the same `cycleID`
+again, start another forced cycle, delete receipts, or rewrite
+`certificateRenewal` to get past the halt. A Temporal reset is not a substitute:
+it does not revoke side effects that older attempts already issued.
+
+Hand off sanitized evidence, without credentials or kubeconfigs:
+
+- cluster ID and name, and the controller and node-agent versions in use;
+- the `cycleID`, run IDs, Temporal namespace and the original workflow input;
+- the relevant workflow history and activity attempts;
+- the selected executor, node operation IDs and the `certificate_renewal`
+  reservation;
+- each node's runbook phase file, receipts and any manifest left in
+  `/etc/kubernetes/nvke-cert-renewal-manifests/` or
+  `/etc/kubernetes/nvke-cert-renewal-staging/`;
+- the kube-vip manifest state and the API and VIP health observed per node.
+
+Any proposal to release the cycle must account for every earlier attempt and
+for unfinished guard work. An empty reservation, a terminal agent response or a
+healthy API is not enough by itself. The node's local API must be ready before
+kube-vip is restored there, and a delayed drain from an old attempt must no
+longer be possible afterwards. If that evidence is missing, keep escalating
+rather than guessing at an unlock. Repairing an accepted cycle needs a
+separately reviewed, incident-specific procedure.
 
 The controller never reopens the same failed cycle ID. Released failures retry
 automatically with a fresh ID once both `nextCertRenewalDue` and the one-hour
@@ -283,6 +306,9 @@ that the `certificate_renewal` column still holds the same node and operation
 ID and set it to `NULL`.
 Before expecting a retry, check that this column is empty; if it stays set,
 check the node agent's reachability and status for that operation.
+Reservation cleanup only removes admission's guard; it is not evidence that
+the cycle, its other attempts or its kube-vip guard work have stopped. An empty
+column does not justify releasing an accepted cycle.
 
 Clearing the lock leaves a released failure, and once the reservation is also
 clear the controller starts
