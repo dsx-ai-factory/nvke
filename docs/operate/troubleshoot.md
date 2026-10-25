@@ -69,10 +69,11 @@ The debug container stays in the pod's spec, stopped, until the pod is replaced.
    nvkectl get clusters <WORKLOAD_CLUSTER> -o yaml
    ```
 
-   `<WORKLOAD_CLUSTER>` is the workload cluster's name. Provisioning condition messages usually name the cause. For certificate maintenance, inspect `conditions.certificateRenewal.state`, its `phase` and `message`, and `nextCertRenewalDue`:
+   `<WORKLOAD_CLUSTER>` is the workload cluster's name. Provisioning condition messages usually name the cause. For certificate maintenance, inspect `conditions.certificateRenewal.state`, its `phase` and `message`, and `nextCertRenewalDue`. For etcd key rotation, inspect `conditions.etcdKeyRotation`:
 
    - A failed renewal that released its mutation lock can still show `Provisioned`. Fix the reported cause; automatic retry waits for both `nextCertRenewalDue` and the one-hour backoff after `conditions.certificateRenewal.completedAt`. A `two-control-plane-voters` refusal also waits for `controlPlaneConfig.desiredCount` of at least `3`; scale to three or more, not down to one.
    - A failed renewal with `conditions.updateInProgress.type=certificate_renewal` retained its mutation lock. `STATUS` can show `Updating`, but a higher-priority condition such as `UpdateFailed` can mask it; use the renewal and ownership conditions regardless of the displayed status. It cannot retry automatically. Follow the [ownership-checked recovery procedure](../../controller/docs/certificate-renewal.md#status-and-failure-handling), including confirmation that all node-operation attempts have stopped. Do not remove the lock blindly or based only on cluster health or workflow completion.
+   - A failed etcd key rotation with `conditions.updateInProgress.type=etcd_key_rotation` and `conditions.etcdKeyRotation.state=failed` keeps its mutation lock until its workflow is reset and completes. Waiting for `Provisioned` will not clear it, and `UpdateFailed` can mask `Updating`. Follow [phase-aware recovery](../../controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery).
 
 2. List the cluster's nodes with the step each one is on.
 
@@ -340,7 +341,7 @@ The install stops at the component that failed. Fix the cause and run the same c
 ### A cluster patch fails
 
 - **Symptom:** `nvkectl patch cluster` fails with `409` and `cluster update rejected: <OPERATION> in progress since <TIME>`, or `STATUS` becomes `UpdateFailed`.
-- **Cause:** Only one operation runs on a cluster at a time. `409` can mean an active operation or a failed certificate renewal that retained the mutation lock. `UpdateFailed` means the last day-2 operation failed; its condition message gives the cause.
+- **Cause:** Only one operation runs on a cluster at a time. `409` can mean an active operation, a failed certificate renewal that retained the mutation lock, or an etcd key rotation that failed after `prepare` and retained the lock (`updateInProgress.type=etcd_key_rotation`). `UpdateFailed` means the last day-2 operation failed; its condition message gives the cause.
 - **Fix:** For `409`, read the cluster's YAML and inspect `conditions.updateInProgress` and `conditions.certificateRenewal`. Wait for `Provisioned` only while the blocking operation is still running. If `updateInProgress.type=certificate_renewal` and `certificateRenewal.state=failed`, waiting will not clear it: follow the [ownership-checked recovery procedure](../../controller/docs/certificate-renewal.md#status-and-failure-handling). Do not clear the lock based only on healthy nodes or workflow completion. If `updateInProgress.type=etcd_key_rotation` and `etcdKeyRotation.state=failed`, the rotation keeps the lock until its workflow is reset and completes: follow [phase-aware recovery](../../controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery). After the operation finishes or recovery releases its lock, or after fixing the cause of `UpdateFailed`, send the same patch again, as in [Create a workload cluster](../workload-clusters/create.md#change-cluster-settings-after-creation).
 
 ### The cluster stays in Deleting

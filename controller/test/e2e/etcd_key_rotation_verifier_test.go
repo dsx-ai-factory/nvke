@@ -164,6 +164,9 @@ esac
 `
 
 func TestEtcdKeyRotationVerifierRequiresExistingSecretRewriteAndConvergence(t *testing.T) {
+	if _, err := exec.LookPath("sha256sum"); err != nil {
+		t.Skip("sha256sum is required to exercise the etcd key rotation verifier on the host")
+	}
 	old := sha256.Sum256([]byte("k8s:enc:secretbox:v1:old-key"))
 	for _, test := range []struct {
 		name    string
