@@ -896,7 +896,8 @@ def aggregate(paths):
     t2 = [r for r in reports if r["scenario"] != "manual-t1"]
     require(len({(r["source_revision"], r["cluster_id"], r["kube_system_uid"], r["profile"]) for r in t2}) <= 1, "release_target_or_revision_mismatch")
     # A redeploy between lanes changes the observed build even when expected_versions is updated to match.
-    builds = {json.dumps(r.get("deployed_versions_before"), sort_keys=True) for r in t2 if r["status"] == "passed"}
+    builds = {json.dumps(sorted(json.dumps(v, sort_keys=True) for v in r["deployed_versions_before"]))
+              for r in t2 if r["status"] == "passed"}
     require(len(builds) <= 1, "release_deployed_versions_mismatch")
     return {"schema": "nke.rotation-release.v1", "created_at": now(), "status": "passed" if passed and not missing else "incomplete",
             "missing_scenarios": missing, "scenarios": [{"scenario": r["scenario"], "status": r["status"],
@@ -926,11 +927,11 @@ def main(argv=None):
                 evidence = run(read_json(args.config), args.scenario, args.approve_cluster)
             else:
                 evidence = aggregate(args.evidence)
-            json.dump(evidence, output, indent=2, sort_keys=True)
-            output.write("\n")
+            text = json.dumps(evidence, indent=2, sort_keys=True) + "\n"
+            reserved = False  # Writing starts; from here a failure keeps whatever reached the file.
+            output.write(text)
             output.flush()
             os.fsync(output.fileno())
-            reserved = False
         print("Rotation evidence: " + evidence["status"])
         return 0 if evidence["status"] == "passed" else 1
     except Exception as error:

@@ -53,7 +53,16 @@ unexpected reported versions into the expected map.
 
 For authenticated HTTP services, optional `cwe_authorization_file` and
 `prometheus_authorization_file` name private files containing the complete
-Authorization header value. URLs/paths/headers never enter evidence. `cwe_url`
+Authorization header value. The collector rereads each file on every request.
+With controller authentication enforcing, `cwe_authorization_file` must hold
+`Bearer <token>`, with a token minted for the controller's audience (see
+[Authenticating to the API](../../controller/docs/authenticating-to-the-api.md)).
+`controller/hack/nvke-token.sh` prints the bare token, so add the `Bearer `
+prefix yourself. The token must stay valid until the lane ends: either mint it
+with `NKE_TOKEN_TTL` covering `timeout_seconds`, or rewrite the file in place
+before it expires. Once the lane has started, an invalid or expired credential
+is reported only as `service_unavailable`, and a renewal lane that has mutated
+cannot be repeated on that cluster. URLs/paths/headers never enter evidence. `cwe_url`
 and `prometheus_url` must use `https://`, and the collector refuses HTTP
 redirects so the header cannot leave for another host or scheme. TLS uses
 normal system trust; no insecure bypass is provided. `kubelet_ca_file` is the

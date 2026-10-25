@@ -9,6 +9,7 @@ import io
 import json
 import os
 from pathlib import Path
+import socket
 import sys
 import tempfile
 import threading
@@ -275,6 +276,30 @@ class DemoTests(unittest.TestCase):
         body["alerts"][0]["labels"]["credential"] = secret
         self.assertEqual([], receiver.receipts(body))
 
+    def test_receiver_times_out_a_stalled_body(self):
+        servers = []
+        class RecordingServer(http.server.ThreadingHTTPServer):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                servers.append(self)
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(receiver, "READ_TIMEOUT_SECONDS", 0.5), \
+                patch.object(receiver.http.server, "ThreadingHTTPServer", RecordingServer), \
+                patch.object(sys, "argv", ["alert-receiver.py", "--port", "0", "--output", str(Path(tmp) / "receipts")]):
+            threading.Thread(target=receiver.main, daemon=True).start()
+            deadline = time.time() + 5
+            while not servers and time.time() < deadline:
+                time.sleep(0.01)
+            server = servers[0]
+            try:
+                with socket.create_connection(server.server_address, timeout=5) as peer:
+                    # Declare a body, send one byte of it, then stall.
+                    peer.sendall(b"POST /alerts HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\n{")
+                    response = peer.recv(1024)
+                self.assertTrue(response == b"" or response.startswith(b"HTTP/1.0 400"), response)
+            finally:
+                server.shutdown()
+
     def test_receiver_missing_resolution_and_untrusted_receipt_fail(self):
         c = config()
         with tempfile.TemporaryDirectory() as tmp:
@@ -377,6 +402,22 @@ class DemoTests(unittest.TestCase):
             with self.assertRaisesRegex(demo.CheckError, "release_deployed_versions_mismatch"):
                 aggregate_with("etcd-key")
 
+    def test_passed_t2_reports_share_deployed_versions_regardless_of_node_order(self):
+        fake = self.run_fake()
+        versions = [{"component": "kubernetes", "node_id": "n1", "reported_version_sha256": "a" * 64},
+                    {"component": "kubernetes", "node_id": "n2", "reported_version_sha256": "b" * 64},
+                    {"component": "controller", "node_id": None, "reported_version_sha256": "c" * 64}]
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = []
+            for scenario in demo.SCENARIOS:
+                # Another T2 config lists the same nodes in a different order.
+                observed = list(reversed(versions)) if scenario == "etcd-key" else versions
+                path = Path(tmp) / (scenario + ".json")
+                demo.write_json(path, {**fake, "scenario": scenario, "live": True, "source_dirty": False,
+                                       "deployed_versions_before": observed, "checks": sorted(demo.required_checks(scenario))})
+                paths.append(path)
+            self.assertEqual("passed", demo.aggregate(paths)["status"])
+
     def test_release_requires_boolean_source_cleanliness(self):
         fake = self.run_fake()
         with tempfile.TemporaryDirectory() as tmp:
@@ -452,6 +493,19 @@ class DemoTests(unittest.TestCase):
             with patch.object(demo, "run", return_value={"status": "failed"}):
                 self.assertEqual(1, demo.main(argv))
             self.assertEqual({"status": "failed"}, json.loads(output.read_text()))
+
+    def test_fsync_failure_after_serialization_keeps_the_written_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "evidence.json"
+            argv = ["run", "--config", "unused.json", "--scenario", "forced-renewal", "--output", str(output)]
+            with patch.object(demo, "read_json", return_value={}), \
+                    patch.object(demo, "run", return_value={"status": "failed", "mutation_started": True, "reason": "x"}), \
+                    patch.object(demo.os, "fsync", side_effect=OSError), \
+                    patch.object(sys, "stderr", new_callable=io.StringIO) as stderr:
+                self.assertEqual(1, demo.main(argv))
+            self.assertIn("could not be collected or written", stderr.getvalue())
+            self.assertTrue(output.exists(), "evidence written before fsync failed must be kept")
+            self.assertIs(True, json.loads(output.read_text())["mutation_started"])
 
     def test_interrupt_after_workflow_start_writes_failed_report_with_mutation(self):
         class Interrupted(FakeLive):

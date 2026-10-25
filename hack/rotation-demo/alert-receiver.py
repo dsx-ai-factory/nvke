@@ -12,6 +12,8 @@ import sys
 import threading
 
 LOCK = threading.Lock()
+# A peer that declares a body and then stalls must not hold a handler thread forever.
+READ_TIMEOUT_SECONDS = 30
 
 
 def receipts(body):
@@ -50,6 +52,8 @@ def main():
         os.close(fd)
         return 1
     class Handler(http.server.BaseHTTPRequestHandler):
+        timeout = READ_TIMEOUT_SECONDS
+
         def do_POST(self):
             try:
                 size = int(self.headers.get("Content-Length", "0"))

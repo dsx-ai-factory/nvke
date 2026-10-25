@@ -112,11 +112,14 @@ and distinct step IDs. The audit tool's operator subject is self-reported; tie
 it to the site's authenticated change record. When the
 [rotation demo](https://github.com/dsx-ai-factory/nvke/blob/main/hack/rotation-demo/README.md)
 observes the maintenance, pass the exact `kube-system` namespace UID as
-`--cluster` and its configured `manual_operation`, optionally with a per-step
+`--cluster`, the configured node name as `--node` (not `--node-id`), and its
+configured `manual_operation`, optionally with a per-step
 suffix `/<action>-<n>` such as `/renew-2`, as `--operation`, where `<action>` is
 `check`, `approve`, `renew`, `rotate` or `verify` and `<n>` is 1 through 99
-without leading zeros; other rows fail with
-`manual_audit_target_or_run_mismatch`. T1 output is local JSONL, not
+without leading zeros; rows with another cluster or operation fail with
+`manual_audit_target_or_run_mismatch`. A row recorded with `--node-id` or a
+different node name does not count toward that node, and the run fails with
+`per_node_audit_coverage_incomplete`. T1 output is local JSONL, not
 automatically inserted into PostgreSQL. For automatic T2 observations, export
 the controller's ledger with a read-only database role and deduplicate by
 `event_id`.
