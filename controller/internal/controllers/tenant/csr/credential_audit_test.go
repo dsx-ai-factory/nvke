@@ -178,7 +178,79 @@ func issueServingCertificate(t *testing.T, csr *certificatesv1.CertificateSignin
 	der, err := x509.CreateCertificate(rand.Reader, template, template, request.PublicKey, key)
 	require.NoError(t, err)
 	csr.Status.Certificate = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-	csr.Status.Conditions = []certificatesv1.CertificateSigningRequestCondition{{Type: certificatesv1.CertificateApproved, Status: corev1.ConditionTrue}}
+	csr.Status.Conditions = []certificatesv1.CertificateSigningRequestCondition{
+		{Type: certificatesv1.CertificateApproved, Status: corev1.ConditionTrue, Reason: approvalReason},
+	}
+}
+
+// TestCSRAuditObservesOnlyNVKEApprovedCertificateForRequestKey keeps a tenant
+// that writes CSR status from recording arbitrary certificates as observed.
+func TestCSRAuditObservesOnlyNVKEApprovedCertificateForRequestKey(t *testing.T) {
+	tests := map[string]struct {
+		mutate      func(t *testing.T, csr *certificatesv1.CertificateSigningRequest)
+		wantEvents  int
+		wantOutcome string
+		wantReason  string
+	}{
+		"approved by another approver is not observed": {
+			mutate: func(_ *testing.T, csr *certificatesv1.CertificateSigningRequest) {
+				csr.Status.Conditions[0].Reason = "KubectlApprove"
+			},
+		},
+		"denied is not observed": {
+			mutate: func(_ *testing.T, csr *certificatesv1.CertificateSigningRequest) {
+				csr.Status.Conditions = []certificatesv1.CertificateSigningRequestCondition{{Type: certificatesv1.CertificateDenied, Status: corev1.ConditionTrue}}
+			},
+		},
+		"failed is not observed": {
+			mutate: func(_ *testing.T, csr *certificatesv1.CertificateSigningRequest) {
+				csr.Status.Conditions = append(csr.Status.Conditions, certificatesv1.CertificateSigningRequestCondition{
+					Type: certificatesv1.CertificateFailed, Status: corev1.ConditionTrue,
+				})
+			},
+		},
+		"certificate for another key is unavailable": {
+			mutate: func(t *testing.T, csr *certificatesv1.CertificateSigningRequest) {
+				t.Helper()
+				otherKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+				require.NoError(t, err)
+				template := &x509.Certificate{SerialNumber: big.NewInt(2), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
+				der, err := x509.CreateCertificate(rand.Reader, template, template, &otherKey.PublicKey, otherKey)
+				require.NoError(t, err)
+				csr.Status.Certificate = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+			},
+			wantEvents: 1, wantOutcome: credentialaudit.OutcomeFailure, wantReason: credentialaudit.ReasonUnavailable,
+		},
+		"NVKE-approved certificate for the request key is observed": {
+			mutate:     func(*testing.T, *certificatesv1.CertificateSigningRequest) {},
+			wantEvents: 1, wantOutcome: credentialaudit.OutcomeSuccess, wantReason: credentialaudit.ReasonObserved,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			csr := newServingCSR(t, "issued-serving", time.Now(), "system:node:worker-1", []string{"system:nodes"}, []string{"worker-1"}, nil, nil)
+			csr.UID = types.UID(uuid.NewString())
+			issueServingCertificate(t, csr)
+			test.mutate(t, csr)
+			scheme := runtime.NewScheme()
+			require.NoError(t, certificatesv1.AddToScheme(scheme))
+			store := &csrAuditStore{}
+			r := &Reconciler{
+				clusterID: uuid.New(), database: staticDatabase{nodes: []db.Node{{ID: uuid.New(), Name: "worker-1", IP: "192.0.2.10"}}},
+				client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(csr).Build(), logger: slog.New(slog.DiscardHandler),
+				audit: credentialaudit.NewRecorder(store, slog.New(slog.DiscardHandler), nil),
+			}
+			_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: types.NamespacedName{Name: csr.Name}})
+			require.NoError(t, err)
+			require.Len(t, store.events, test.wantEvents)
+			for _, event := range store.events {
+				require.Equal(t, credentialaudit.ActionVerify, event.Action)
+				require.Equal(t, test.wantOutcome, event.Outcome)
+				require.Equal(t, test.wantReason, event.Reason)
+				require.Equal(t, test.wantReason == credentialaudit.ReasonUnavailable, len(event.Fingerprints) == 0)
+			}
+		})
+	}
 }
 
 // TestCSRAuditBoundsRowsPerManagedNode keeps a tenant that creates many CSRs

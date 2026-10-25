@@ -17,13 +17,15 @@ import (
 func CertificateFingerprints(contents []byte) ([]string, error) {
 	var fingerprints []string
 	for strings.TrimSpace(string(contents)) != "" {
-		// pem.Decode can skip arbitrary leading text; reject it explicitly.
+		// pem.Decode can skip arbitrary leading text and malformed blocks; reject both explicitly.
 		contents = []byte(strings.TrimSpace(string(contents)))
 		if !strings.HasPrefix(string(contents), "-----BEGIN CERTIFICATE-----") {
 			return nil, errors.New("audit input must contain only public certificate PEM blocks")
 		}
 		block, remaining := pem.Decode(contents)
-		if block == nil || block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+		// A decoded block spans one BEGIN line; more means a malformed block was skipped.
+		consumed := contents[:len(contents)-len(remaining)]
+		if block == nil || strings.Count(string(consumed), "-----BEGIN") != 1 || block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
 			return nil, errors.New("invalid public certificate PEM input")
 		}
 		certificate, err := x509.ParseCertificate(block.Bytes)

@@ -77,14 +77,16 @@ The manual tool rejects mixed PEM bundles and private-key PEM blocks.
   | `check/no_op/identity_not_approved` | a CSR was rejected and not approved; this is how a rejected identity appears, not as `failure`. Recorded at most once per node per UTC hour |
   | `approve/success/completed` | the approval was written to the CSR |
   | `approve/failure/approval_update_failed` | writing the approval failed; the CSR is retried |
-  | `verify/success/observed` | the signer issued a certificate, with its public fingerprints |
-  | `verify/failure/observation_unavailable` | the issued certificate could not be parsed |
+  | `verify/success/observed` | the CSR carries NVKE's approval, has no `Failed` condition, and its certificate carries the request's public key; recorded with its public fingerprints |
+  | `verify/failure/observation_unavailable` | the certificate on an NVKE-approved CSR could not be parsed or does not carry the request's public key |
 
   To find rejected identities, filter on `reason_code =
   'identity_not_approved'`; filtering on `outcome = 'failure'` misses them. CSRs
   from other requestors are logged at debug level but never written to the
   ledger. `verify/success/observed` proves only that the CSR has a public
-  certificate, not that the kubelet installed it. Because a tenant
+  certificate for the request's key, not that the kubelet installed it. It
+  does not authenticate the issuer: a tenant cluster-admin can write CSR
+  status, including the approval condition and the certificate. Because a tenant
   cluster-admin can still create CSRs naming a managed node, CSR-derived writes
   are bounded per cluster and node: at most 12 events within any hour, counted
   in the ledger itself so a controller restart does not reset the bound.

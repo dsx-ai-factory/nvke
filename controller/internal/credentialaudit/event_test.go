@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"math/big"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -130,5 +131,29 @@ func TestCertificateFingerprintsRejectsNonCertificateData(t *testing.T) {
 		_, err := CertificateFingerprints(input)
 		require.Error(t, err)
 		require.NotContains(t, err.Error(), "example-token")
+	}
+}
+
+// TestCertificateFingerprintsRejectsMalformedLeadingBlock covers pem.Decode
+// skipping a malformed block and returning the valid certificate after it.
+func TestCertificateFingerprintsRejectsMalformedLeadingBlock(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), NotBefore: time.Now(), NotAfter: time.Now().Add(time.Hour)}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	require.NoError(t, err)
+	publicPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	fingerprints, err := CertificateFingerprints(append(slices.Clone(publicPEM), publicPEM...))
+	require.NoError(t, err)
+	require.Len(t, fingerprints, 2)
+	for name, prefix := range map[string]string{
+		"bad base64":     "-----BEGIN CERTIFICATE-----\n!!!!\n-----END CERTIFICATE-----\n",
+		"missing END":    "-----BEGIN CERTIFICATE-----\nAAAA\n",
+		"mismatched END": "-----BEGIN CERTIFICATE-----\nAAAA\n-----END PRIVATE KEY-----\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := CertificateFingerprints(append([]byte(prefix), publicPEM...))
+			require.Error(t, err)
+		})
 	}
 }

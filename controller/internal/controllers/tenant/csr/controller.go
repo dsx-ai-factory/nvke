@@ -5,6 +5,7 @@ package csr
 
 import (
 	"context"
+	"crypto"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -191,8 +192,9 @@ func (r *Reconciler) csrAuditEvent(decision csrDecision, nodes []db.Node, action
 	}
 }
 
-// auditIssuedCertificate observes the public signer result without claiming the
-// kubelet has installed it. The CSR must still match a managed node's identity.
+// auditIssuedCertificate observes the public certificate on an NVKE-approved CSR
+// without claiming the kubelet has installed it. The CSR must still match a
+// managed node's identity, and the certificate must carry the request's key.
 func (r *Reconciler) auditIssuedCertificate(ctx context.Context, csr *certificatesv1.CertificateSigningRequest) {
 	if r.audit == nil || !hasIssuedServingCertificate(csr) {
 		return
@@ -206,12 +208,12 @@ func (r *Reconciler) auditIssuedCertificate(ctx context.Context, csr *certificat
 		return
 	}
 	decision := planDecision(csr, nodes)
-	if decision.Action != decisionApprove {
+	if decision.Action != decisionApprove || !approvedByNVKE(csr) {
 		return
 	}
 	event := r.csrAuditEvent(decision, nodes, credentialaudit.ActionVerify, credentialaudit.OutcomeSuccess, credentialaudit.ReasonObserved)
 	fingerprints, err := credentialaudit.CertificateFingerprints(csr.Status.Certificate)
-	if err != nil {
+	if err != nil || !issuedForRequestKey(csr) {
 		event.Outcome, event.Reason = credentialaudit.OutcomeFailure, credentialaudit.ReasonUnavailable
 	} else {
 		event.Fingerprints = fingerprints
@@ -221,6 +223,43 @@ func (r *Reconciler) auditIssuedCertificate(ctx context.Context, csr *certificat
 
 func hasIssuedServingCertificate(csr *certificatesv1.CertificateSigningRequest) bool {
 	return csr.Spec.SignerName == certificatesv1.KubeletServingSignerName && len(csr.Status.Certificate) > 0
+}
+
+// approvedByNVKE reports whether the CSR carries NVKE's approval and is neither
+// denied nor failed. A tenant cluster-admin can still write this condition.
+func approvedByNVKE(csr *certificatesv1.CertificateSigningRequest) bool {
+	approved := false
+	for _, condition := range csr.Status.Conditions {
+		switch condition.Type {
+		case certificatesv1.CertificateDenied, certificatesv1.CertificateFailed:
+			return false
+		case certificatesv1.CertificateApproved:
+			approved = approved || (condition.Status == corev1.ConditionTrue && condition.Reason == approvalReason)
+		}
+	}
+	return approved
+}
+
+// issuedForRequestKey reports whether the issued leaf certificate carries the
+// public key from spec.request. It does not authenticate the issuer.
+func issuedForRequestKey(csr *certificatesv1.CertificateSigningRequest) bool {
+	requestBlock, _ := pem.Decode(csr.Spec.Request)
+	leafBlock, _ := pem.Decode(csr.Status.Certificate)
+	if requestBlock == nil || leafBlock == nil {
+		return false
+	}
+	request, err := x509.ParseCertificateRequest(requestBlock.Bytes)
+	if err != nil {
+		return false
+	}
+	leaf, err := x509.ParseCertificate(leafBlock.Bytes)
+	if err != nil {
+		return false
+	}
+	requestKey, ok := request.PublicKey.(interface {
+		Equal(key crypto.PublicKey) bool
+	})
+	return ok && requestKey.Equal(leaf.PublicKey)
 }
 
 func (r *Reconciler) applyDecision(ctx context.Context, decision csrDecision) error {
