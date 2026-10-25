@@ -98,10 +98,10 @@ audience from. It looks first for the controller's settings ConfigMap,
 `nvke-controller-config`, then `nke-controller-config` for a site that pins the
 older name, and mints for the first entry of its `apiAuth.audiences` when
 `apiAuth.enabled` is true. When that section is off or absent, as it is for a
-controller reading `AUTH_CONFIG_PATH` or one older than the section, it falls
-back to the authentication ConfigMap: `nvke-auth-config`, then
-`nke-auth-config` for a site that keeps the older name by pinning
-`apiAuth.configMap.name`. Each search tries both names in namespace
+controller from before the chart stopped rendering an authentication ConfigMap,
+it falls back to that ConfigMap: `nvke-auth-config`, then `nke-auth-config` for
+a site that kept the older name. A current chart renders neither, so the
+fallback finds nothing there. Each search tries both names in namespace
 `nvke-controller`, then both in `nke-controller` for a site installed before the
 `nvke` rename, then both in `cloud-workflow-engine`, and uses the first it can
 read.
@@ -117,7 +117,8 @@ to revoke when those callers are not the CLI.
 
 Minting a token for that account needs `create` on `serviceaccounts/token` in
 its namespace, and `nvkectl` also needs `get` on the controller's settings
-ConfigMap and the authentication ConfigMap to find the audience. A cluster
+ConfigMap, and on a site running an older controller the authentication
+ConfigMap, to find the audience. A cluster
 administrator already has both. To let something else
 mint it, such as `nvkectl` under a least-privilege kubeconfig, a CI job, or an
 application that renews its own token, grant it:
@@ -178,9 +179,6 @@ as written.
 apiAuth:
   enabled: true
   permissive: true
-  configMap:
-    create: true
-    name: nvke-auth-config
   config:
     # the YAML from step 3 goes here
     audiences: ["https://nke.example.com"]
@@ -191,18 +189,31 @@ apiAuth:
 
 Start permissive. The next section covers going enforcing.
 
-If you would rather manage the config yourself, with a sealed secret or an
-existing GitOps pipeline, leave `create` at its default of `false` and put the document
-in a ConfigMap named by `configMap.name`, under the key `auth.yaml`:
+The chart renders `apiAuth.config` into the `apiAuth` section of
+`nvke-controller-config`, which is the only place NVKE reads the configuration
+from. Setting `enabled` without `config`, `config` without `enabled`, or
+`permissive` without `enabled` fails the install rather than silently ignoring
+one of them.
 
-```bash
-kubectl -n "$NS" create configmap nvke-auth-config \
-  --from-file=auth.yaml=auth.yaml \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
+### Upgrading from an authentication ConfigMap you managed
 
-Set one or the other. Setting `config` without `create`, or `create` without
-`config`, fails the install rather than silently ignoring one of them.
+Earlier charts could mount a ConfigMap you managed yourself
+(`apiAuth.configMap.create: false`), which NVKE read through `AUTH_CONFIG_PATH`.
+Both are gone: the chart refuses `apiAuth.configMap` and an `env` entry named
+`AUTH_CONFIG_PATH`, and NVKE refuses to start when that variable is set. Before
+upgrading such a site:
+
+1. Move the document into `apiAuth.config`. Drop its `apiVersion` and `kind`;
+   keep `audiences` and `issuers` only.
+2. Move any CA bundle that was in `extraFiles` or in your ConfigMap into the
+   issuer as `jwks.caBundle`. A `caBundlePath` under `/etc/nke/auth/` fails the
+   install, because nothing is mounted there any more.
+3. Set `apiAuth.enabled: true` and remove `apiAuth.configMap`.
+
+A site with `apiAuth.permissive: true` and `enabled: false` drops `permissive`.
+Deploy the chart and the image together. Helm deletes the chart-owned
+`nvke-auth-config` on the upgrade; a ConfigMap you created yourself is left for
+you to delete once nothing reads it.
 
 ### 5. Check it came up
 
@@ -212,7 +223,7 @@ kubectl -n "$NS" logs deploy/nvke-controller | grep 'API authentication'
 
 ```json
 {"msg":"fetched issuer signing keys","issuer":"local-kubernetes","keys":1}
-{"msg":"API authentication is enabled","mode":"permissive","source":"nvke-controller-config","issuers":["local-kubernetes"]}
+{"msg":"API authentication is enabled","mode":"permissive","audiences":["https://nke.example.com"],"issuers":["local-kubernetes"]}
 ```
 
 You want one `fetched issuer signing keys` line per issuer. If one is missing,
@@ -274,32 +285,9 @@ The simplest place for it is inline in the issuer, as `jwks.caBundle`, shown in
 step 3. A CA bundle is a public certificate, not a secret, so it can sit in the
 chart values with the rest of the configuration.
 
-To keep it as a file instead, NVKE reads it from inside its container. It goes
-beside the configuration, under `extraFiles`: the whole ConfigMap is mounted as a
-directory, so anything listed here is a file next to `auth.yaml`:
-
-```yaml
-apiAuth:
-  configMap:
-    create: true
-    extraFiles:
-      spire-ca.crt: |
-        -----BEGIN CERTIFICATE-----
-        ...
-        -----END CERTIFICATE-----
-```
-
-It is then at `/etc/nke/auth/spire-ca.crt`, and the issuer names it with
-`caBundlePath: /etc/nke/auth/spire-ca.crt` in place of `caBundle`.
-
-If you manage the ConfigMap yourself, put the file in it directly:
-
-```bash
-kubectl -n "$NS" create configmap nvke-auth-config \
-  --from-file=auth.yaml=auth.yaml \
-  --from-file=spire-ca.crt=spire-ca.crt \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
+`jwks.caBundlePath` is the alternative for a file the pod already has, or one
+you mount yourself through the chart's `volumes` and `volumeMounts`. It cannot
+point under `/etc/nke/auth/`: nothing is mounted there.
 
 ### 3. Write the issuer
 
@@ -362,8 +350,7 @@ A token is admitted when its `groups` claim contains any listed group. The
 group names are matched exactly.
 
 When the identity provider's certificate is signed by a private CA, put the
-PEM bundle inline as `jwks.caBundle`, or in `extraFiles` with `jwks.caBundlePath`,
-as in the SPIRE recipe. Omit both when a public CA signs the certificate.
+PEM bundle inline as `jwks.caBundle`, as in the SPIRE recipe. Omit both when a public CA signs the certificate.
 
 ## Going enforcing without breaking callers
 
@@ -409,7 +396,7 @@ a warning.
 | `issuers[].audiences` | no | Overrides the top-level list for this issuer. |
 | `issuers[].jwks.uri` | yes | Must be `https`. |
 | `issuers[].jwks.caBundle` | no | PEM CA bundle, inline. Must contain at least one certificate. Omit for a publicly trusted certificate. |
-| `issuers[].jwks.caBundlePath` | no | CA file inside the container, usually one you listed under `apiAuth.configMap.extraFiles`. At most one of `caBundle` and `caBundlePath`. |
+| `issuers[].jwks.caBundlePath` | no | CA file inside the container: one the pod already has, or one you mount through `volumes`. Not under `/etc/nke/auth/`. At most one of `caBundle` and `caBundlePath`. |
 | `issuers[].jwks.bearerTokenPath` | no | Token file, if the keys endpoint needs one. Re-read on every fetch. |
 | `issuers[].algorithms` | yes | `RS256` and `ES256` cover most issuers. Asymmetric only. |
 | `issuers[].admit` | yes | One of `serviceAccounts`, `spiffe`, or `groups`. |
@@ -428,11 +415,8 @@ something NVKE trims.
 | Value | Default | Notes |
 |---|---|---|
 | `apiAuth.enabled` | `false` | |
-| `apiAuth.permissive` | `false` | Rendered as `apiAuth.permissive` in `nvke-controller-config`. Applies whichever source configures authentication. Not allowed inside `apiAuth.config`. |
-| `apiAuth.configMap.name` | `nvke-auth-config` | Mounted either way. |
-| `apiAuth.configMap.create` | `false` | Build the ConfigMap from `apiAuth.config`, and give NVKE the same document as `apiAuth` in `nvke-controller-config`. |
-| `apiAuth.configMap.extraFiles` | empty | Files to place beside `auth.yaml`, keyed by filename, for a `caBundlePath` to name. An inline `jwks.caBundle` needs none. |
-| `apiAuth.config` | empty | The document, `audiences` and `issuers` only. |
+| `apiAuth.permissive` | `false` | Rendered as `apiAuth.permissive` in `nvke-controller-config`. Requires `apiAuth.enabled`. Not allowed inside `apiAuth.config`. |
+| `apiAuth.config` | empty | The configuration, `audiences` and `issuers` only, rendered into `apiAuth` in `nvke-controller-config`. Required when `enabled` is true, refused when it is false. |
 | `apiAuth.clusterIssuerDiscovery` | `true` | Lets NVKE read the cluster's own keys. Already granted on a stock cluster; leave it on unless you bind that permission yourself. |
 
 ### Why a request was rejected
@@ -468,9 +452,8 @@ call to `/api/version` tells you nothing about whether authentication is on.
 **NVKE will not start, and the log says it could not set up authentication.**
 When enforcing, every issuer's keys must be reachable at startup. The message
 names the issuer and the error. Check the keys URL is reachable from inside the
-pod, and that any `caBundlePath` points at a file that is actually mounted. If
-it sits under `/etc/nke/auth`, it has to be listed in `extraFiles`; an inline
-`caBundle` avoids the file altogether.
+pod, and that any `caBundlePath` points at a file that is actually mounted; an
+inline `caBundle` avoids the file altogether.
 
 **Everything returns 401, including tokens that look right.**
 Check the audience first: it's the usual cause. A token minted for the wrong
@@ -496,27 +479,24 @@ of your issuers, a value with stray whitespace, `serviceAccounts` and `spiffe`
 on the same issuer, a keys URL that is not `https`, or both `caBundle` and
 `caBundlePath` on one issuer. `permissiveMode moved to apiAuth.permissive` means
 `nvke-controller-config` came from a chart older than the image: deploy the
-chart and image together.
+chart and image together. `AUTH_CONFIG_PATH is set` means the Deployment still
+points NVKE at an authentication file it no longer reads; see
+[Upgrading from an authentication ConfigMap you managed](#upgrading-from-an-authentication-configmap-you-managed).
 
 **Config changes have no effect.**
-It is read once at startup. Restart the deployment. If the chart renders the
-configuration (`apiAuth.configMap.create: true`), also check which copy you
-changed. The controller reads `apiAuth` in `nvke-controller-config`;
-`nvke-auth-config` is a copy for older `nvkectl` releases and the files beside
-it. Editing
-`nvke-auth-config` alone restarts the pods where Reloader runs, but changes
-nothing NVKE enforces. Change the chart values, or edit
-`nvke-controller-config`.
+It is read once at startup. Restart the deployment. NVKE reads only `apiAuth`
+in `nvke-controller-config`, so change the chart values, or edit that
+ConfigMap; a leftover `nvke-auth-config` is not read.
 
 **You cannot tell whether authentication is on.**
-NVKE says so at startup, and names where it read the configuration:
+NVKE says so at startup, with the mode, audiences and issuers:
 
 ```bash
 kubectl -n "$NS" logs deploy/nvke-controller | grep 'API authentication is'
 ```
 
-`"source":"nvke-controller-config"` means the chart rendered it;
-`"source":"AUTH_CONFIG_PATH"` means a ConfigMap managed elsewhere.
+`API authentication is disabled` means `apiAuth.enabled` is false in
+`nvke-controller-config`.
 
 ## See also
 

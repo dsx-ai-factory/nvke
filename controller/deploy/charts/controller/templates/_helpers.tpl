@@ -100,21 +100,6 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-Where the authentication ConfigMap is mounted, and the file within it.
-
-Not values: the chart owns both ends. AUTH_CONFIG_PATH is these two joined, and
-nothing outside the pod observes either, so making them configurable would only
-create a way for the mount and the path to disagree.
-*/}}
-{{- define "controller.apiAuth.mountPath" -}}
-/etc/nke/auth
-{{- end }}
-
-{{- define "controller.apiAuth.configFile" -}}
-auth.yaml
-{{- end }}
-
-{{/*
 The nvke-controller-config ConfigMap, its file key, and where it is mounted.
 CONTROLLER_CONFIG_PATH is the mount and the file joined, so none are values.
 */}}
@@ -267,8 +252,7 @@ values.yaml so that presence only ever comes from the caller. Emits nothing.
 Refuse the ways apiAuth's values can disagree with each other or with the chart,
 each of which otherwise renders clean and does the wrong thing silently.
 
-Called from deployment.yaml rather than from configmap-auth.yaml, because that
-template is itself gated on create and so cannot see a config set without it.
+Called from deployment.yaml, beside the other value checks.
 
 Emits nothing. The shallow presence checks on audiences and issuers stop here:
 every other rule belongs to auth/authn/config.go, whose errors name the field
@@ -277,24 +261,26 @@ at fault.
 {{- define "controller.apiAuth.validate" -}}
 {{- $root := . -}}
 {{- $auth := .Values.apiAuth -}}
-{{- $create := and $auth.enabled $auth.configMap.create -}}
-{{- if and $auth.config (not $create) -}}
-{{- fail "apiAuth.config is set but would not be rendered: it is only used when apiAuth.enabled and apiAuth.configMap.create are both true. Set both, or remove apiAuth.config and create the ConfigMap named by apiAuth.configMap.name yourself." -}}
+{{- if hasKey $auth "configMap" -}}
+{{- fail (printf "apiAuth.configMap was removed. The chart no longer renders or mounts an authentication ConfigMap: the controller reads apiAuth.config from the apiAuth section of %s. Move a ConfigMap you managed into apiAuth.config, put any CA bundle from extraFiles inline as jwks.caBundle, and drop apiAuth.configMap." (include "controller.controllerConfig.name" $root)) -}}
 {{- end -}}
-{{- if and $auth.configMap.extraFiles (not $create) -}}
-{{- fail "apiAuth.configMap.extraFiles is set but would not be rendered: it is only used when apiAuth.enabled and apiAuth.configMap.create are both true. Set both, or drop extraFiles and put the files in the ConfigMap named by apiAuth.configMap.name yourself." -}}
-{{- end -}}
-{{- if and $create (not $auth.config) -}}
-{{- fail "apiAuth.configMap.create is true but apiAuth.config is empty, which would mount an AuthenticationConfiguration carrying no issuers. Populate apiAuth.config, or set create to false and manage the ConfigMap yourself." -}}
-{{- end -}}
-{{- if $create -}}
 {{- range $root.Values.env -}}
 {{- if eq (toString .name) "AUTH_CONFIG_PATH" -}}
-{{- fail (printf "env sets AUTH_CONFIG_PATH while apiAuth.configMap.create is true. The controller reads the chart-rendered configuration from apiAuth in %s, and both together refuse to start. Drop the env entry, or set create to false to mount a ConfigMap you manage." (include "controller.controllerConfig.name" $root)) -}}
+{{- fail (printf "env sets AUTH_CONFIG_PATH, which the controller no longer reads and refuses at startup. Move the file's audiences and issuers into apiAuth.config, which the chart renders into %s, and drop the env entry." (include "controller.controllerConfig.name" $root)) -}}
 {{- end -}}
+{{- end -}}
+{{- if and $auth.permissive (not $auth.enabled) -}}
+{{- fail "apiAuth.permissive is true but apiAuth.enabled is false. Permissive mode applies only while authentication is on, and the controller refuses it otherwise. Set apiAuth.enabled, or drop apiAuth.permissive." -}}
+{{- end -}}
+{{- if and $auth.config (not $auth.enabled) -}}
+{{- fail "apiAuth.config is set but apiAuth.enabled is false, so it would not be rendered. Set apiAuth.enabled, or remove apiAuth.config." -}}
+{{- end -}}
+{{- if $auth.enabled -}}
+{{- if not $auth.config -}}
+{{- fail "apiAuth.enabled is true but apiAuth.config is empty. Populate apiAuth.config with the audiences and issuers to trust." -}}
 {{- end -}}
 {{- if or (hasKey $auth.config "apiVersion") (hasKey $auth.config "kind") -}}
-{{- fail "apiAuth.config must not carry apiVersion or kind. The chart supplies both, so a copy here renders them twice, and auth.Load refuses duplicate keys -- the controller would crash-loop rather than start. Keep audiences and issuers only. If you are pasting the file from the README, drop its first two lines." -}}
+{{- fail (printf "apiAuth.config must not carry apiVersion or kind. They belonged to the retired auth.yaml file; the chart renders apiAuth.config into the apiAuth section of %s, whose strict loader refuses them. Keep audiences and issuers only." (include "controller.controllerConfig.name" $root)) -}}
 {{- end -}}
 {{- if hasKey $auth.config "enabled" -}}
 {{- fail (printf "apiAuth.config must not carry enabled. apiAuth.enabled is the switch, and apiAuth.config is rendered whole into the apiAuth section of %s beside it, so a copy here is a duplicate key the controller refuses at startup. Keep audiences and issuers only." (include "controller.controllerConfig.name" $root)) -}}
@@ -308,19 +294,15 @@ at fault.
 {{- if not $auth.config.issuers -}}
 {{- fail "apiAuth.config.issuers is required and must contain at least one issuer. NVKE refuses to start with none, so this would be a crash loop rather than a permissive deployment." -}}
 {{- end -}}
-{{- $dir := printf "%s/" (include "controller.apiAuth.mountPath" .) -}}
-{{- $configFile := include "controller.apiAuth.configFile" . -}}
-{{- $extra := default dict $auth.configMap.extraFiles -}}
-{{- if hasKey $extra $configFile -}}
-{{- fail (printf "apiAuth.configMap.extraFiles must not contain %q: that key is the configuration file itself, and a second copy of it silently replaces the one rendered from apiAuth.config -- NVKE would load whatever is here instead. Put the configuration under apiAuth.config, and use extraFiles only for files it refers to by path." $configFile) -}}
-{{- end -}}
+{{- /*
+/etc/nke/auth is where the retired nvke-auth-config was mounted, and where
+extraFiles put CA bundles. Nothing is mounted there now, so a path into it
+would fail at pod start; name the replacement at render instead.
+*/ -}}
 {{- range $auth.config.issuers -}}
 {{- $ca := (default dict .jwks).caBundlePath -}}
-{{- if and $ca (hasPrefix $dir $ca) -}}
-{{- $file := trimPrefix $dir $ca -}}
-{{- if and (ne $file $configFile) (not (hasKey $extra $file)) -}}
-{{- fail (printf "issuer %s sets jwks.caBundlePath to %s, but nothing puts %s there. The chart mounts only the ConfigMap it renders at that path, and that ConfigMap carries %s plus whatever apiAuth.configMap.extraFiles lists. Put the PEM inline as jwks.caBundle instead, add the bundle under extraFiles (key %s), or point caBundlePath somewhere you mount yourself through .Values.volumes." (quote (default "<unnamed>" .name)) $ca $file $configFile $file) -}}
-{{- end -}}
+{{- if and $ca (hasPrefix "/etc/nke/auth/" $ca) -}}
+{{- fail (printf "issuer %s sets jwks.caBundlePath to %s, in the directory the retired authentication ConfigMap was mounted at. Nothing is mounted there now. Put the PEM inline as jwks.caBundle instead, or point caBundlePath at a file you mount through .Values.volumes." (quote (default "<unnamed>" .name)) $ca) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

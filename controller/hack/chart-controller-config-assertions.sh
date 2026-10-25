@@ -193,16 +193,10 @@ render oidc \
   --set-string nvkeOIDCAuth.caBundleSecret.name=oidc-ca \
   --set-string nvkeOIDCAuth.caBundleSecret.key=ca.crt
 
-render api-auth-permissive \
-  --set apiAuth.enabled=true \
-  --set apiAuth.permissive=true
-
 # apiAuth rendered by the chart, which the controller reads from config.yaml.
 cat > "${values}/api-auth-inline.yaml" <<'YAML'
 apiAuth:
   enabled: true
-  configMap:
-    create: true
   config:
     audiences: ["https://nke.example.internal"]
     issuers:
@@ -218,6 +212,8 @@ apiAuth:
             - namespace: nke-clients
 YAML
 render api-auth-inline -f "${values}/api-auth-inline.yaml"
+render api-auth-permissive -f "${values}/api-auth-inline.yaml" \
+  --set apiAuth.permissive=true
 
 # Empty strings fall back to Go defaults, which the template must render.
 render empty-strings \

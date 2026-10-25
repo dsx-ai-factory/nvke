@@ -1095,7 +1095,8 @@ _controller_chart_flags = [
     "--values", "hack/tilt-controller-chart-values.yaml",
     "--set-string", "appDb.postgresPassword=%s" % _postgres_superuser_password,
     "--set", "apiAuth.enabled=%s" % ("true" if _controller_auth_enabled else "false"),
-    "--set", "apiAuth.permissive=%s" % ("true" if _controller_permissive_mode else "false"),
+    # The chart refuses permissive without authentication on.
+    "--set", "apiAuth.permissive=%s" % ("true" if _controller_auth_enabled and _controller_permissive_mode else "false"),
 ] + (["--values", "hack/tilt-controller-api-auth-values.yaml"] if _controller_auth_enabled else []) + [
     "--set", "capi.rbac.create=true",
     # machine-engine-crds installs them, so Helm must not try to own them.

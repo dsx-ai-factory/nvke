@@ -79,9 +79,8 @@ cni:
   installAfterInit: true
 
 # Off. apiAuth is REST tokens; spiffe below is controller-to-agent mTLS. They
-# are separate axes. Enabling apiAuth needs a real apiAuth.config with
-# apiAuth.configMap.create=true. Enabled without one, the chart mounts a
-# ConfigMap nothing creates and the controller does not start.
+# are separate axes. Enabling apiAuth needs a real apiAuth.config; the chart
+# refuses either one without the other.
 apiAuth:
   enabled: false
   permissive: false

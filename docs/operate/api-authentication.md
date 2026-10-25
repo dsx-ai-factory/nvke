@@ -71,8 +71,6 @@ Authentication has three modes. Off is the default.
    apiAuth:
      enabled: true
      permissive: true
-     configMap:
-       create: true
      config:
        audiences: ["<AUDIENCE>"]
        issuers:
@@ -111,7 +109,7 @@ Authentication has three modes. Off is the default.
 
    Merge `caBundle` into the existing issuer's `jwks` from step 1, rather than adding a second `apiAuth` block or issuer. `caBundle` must contain at least one PEM certificate. Without it, NVKE trusts the system CAs.
 
-   To keep the certificate as a file instead, list it under `apiAuth.configMap.extraFiles`, which places it in `/etc/nke/auth/`, and point `jwks.caBundlePath` at it, for example `/etc/nke/auth/idp-ca.crt`. Set `caBundle` or `caBundlePath`, not both.
+   `jwks.caBundlePath` is the alternative for a CA file the pod already has or that you mount through the chart's `volumes` and `volumeMounts`. Set `caBundle` or `caBundlePath`, not both.
 
 3. Run the install command from [Run NVKE end to end on one machine](../get-started/local-site.md) again, with the same flags, including any `--values-for nktp=<FILE>`, and `--values-for controller=../auth-values.yaml` added.
 
@@ -120,7 +118,7 @@ Authentication has three modes. Off is the default.
      --values-for controller=../auth-values.yaml
    ```
 
-   The wrapper reads the site spec, the stack config and the kubeconfig from `NVKE_SITESPEC`, `NVKE_STACK_CONFIG` and `NVKE_KUBECONFIG`, which `env.sh` exports, so the controller chart and image stay the ones you installed. The install upgrades each component in place, and applies `auth-values.yaml` to the controller after the deploy path's own values, which turn authentication off. The chart refuses to render if `config` is set without `create`, if `config` carries `enabled` or `permissive`, which belong directly under `apiAuth`, or if `caBundlePath` names a file under `/etc/nke/auth` that `extraFiles` does not list.
+   The wrapper reads the site spec, the stack config and the kubeconfig from `NVKE_SITESPEC`, `NVKE_STACK_CONFIG` and `NVKE_KUBECONFIG`, which `env.sh` exports, so the controller chart and image stay the ones you installed. The install upgrades each component in place, and applies `auth-values.yaml` to the controller after the deploy path's own values, which turn authentication off. The chart renders `config` into the `apiAuth` section of the `nvke-controller-config` ConfigMap, which is the only place NVKE reads it from. The chart refuses to render if `enabled` is set without `config` or `config` without `enabled`, if `permissive` is set without `enabled`, if `config` carries `enabled` or `permissive`, which belong directly under `apiAuth`, or if `caBundlePath` names a file under `/etc/nke/auth/`, where nothing is mounted.
 
 4. Wait for the new pods and check the startup log.
 
@@ -246,7 +244,7 @@ Continue when `would_reject` stops increasing.
 
    In enforcing mode, NVKE logs each rejected request as `rejected request`, with the same fields as the permissive-mode message.
 
-NVKE reads the authentication configuration once, at startup. If you later change only `apiAuth.config` or `apiAuth.configMap.extraFiles`, restart the Deployment with `kubectl -n nvke-controller rollout restart deploy/nvke-controller`. Add a new issuer in permissive mode first, because an issuer whose keys NVKE cannot fetch stops an enforcing NVKE from starting.
+NVKE reads the authentication configuration once, at startup. If you later change only `apiAuth.config`, restart the Deployment with `kubectl -n nvke-controller rollout restart deploy/nvke-controller`. Add a new issuer in permissive mode first, because an issuer whose keys NVKE cannot fetch stops an enforcing NVKE from starting.
 
 The deploy path's own values turn authentication off. Every time you run the install again, for any reason, add `--values-for controller=../auth-values.yaml`, along with the other inputs listed in [Run NVKE end to end on one machine](../get-started/local-site.md).
 
@@ -271,6 +269,17 @@ The deploy path's own values turn authentication off. Every time you run the ins
    Test with `/api/clusters`, not `/api/version`. `/healthz`, `/readyz`, `/api/version`, `/openapi.yaml`, `/docs` and the API documentation under `/api/docs/` need no token, so a successful call to them tells you nothing about authentication.
 
 3. Call the API with a token from a user who is not in `<ADMITTED_GROUP>`. The response is `403` with the message `Not admitted: the authenticated identity matches no admission rule.`
+
+## Upgrade from an authentication ConfigMap you managed
+
+Earlier charts could mount an authentication ConfigMap that you managed yourself (`apiAuth.configMap.create: false`), which NVKE read through the `AUTH_CONFIG_PATH` environment variable. The chart now refuses `apiAuth.configMap` and an `env` entry named `AUTH_CONFIG_PATH`, and NVKE does not start while that variable is set. Before you upgrade such a site, change its controller values:
+
+1. Move the configuration into `apiAuth.config`. Keep `audiences` and `issuers`, and drop `apiVersion` and `kind`.
+2. Move any CA bundle from `apiAuth.configMap.extraFiles` or from your ConfigMap into the issuer as `jwks.caBundle`.
+3. Set `apiAuth.enabled: true` and remove `apiAuth.configMap`.
+4. If `apiAuth.permissive` is `true` while `apiAuth.enabled` is `false`, remove `permissive`.
+
+Upgrade the chart and the controller image together. Helm deletes the chart-owned `nvke-auth-config` ConfigMap during the upgrade. An `nvkectl` release that does not read `nvke-controller-config` sends no token after the upgrade and gets `401`; upgrade `nvkectl`.
 
 ## Next steps
 
