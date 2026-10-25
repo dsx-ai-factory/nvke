@@ -756,9 +756,12 @@ jobs:
       # beside the rest, and everything else is a variable naming
       # infrastructure rather than granting anything.
       DSX_ORG_ID: ${{ vars.DSX_ORG_ID }}
-      # The datahall's API host. A variable rather than part of the key, so
-      # environments/dsx.yaml names no datahall.
-      DSX_DATAHALL_1_API: ${{ vars.DSX_DATAHALL_1_API }}
+      # The datahall's API host. Not part of the key, so environments/dsx.yaml
+      # names no datahall --- and a secret rather than a variable, because
+      # GitHub prints job-level env in every step's log header and only a
+      # secret is masked there. As a variable the hostname, which carries the
+      # datahall's name, was published in the log of every DSX run.
+      DSX_DATAHALL_1_API: ${{ secrets.DSX_DATAHALL_1_API }}
       DSX_DATAHALL_1_SITE_ID: ${{ vars.DSX_DATAHALL_1_SITE_ID }}
       DSX_DATAHALL_1_TENANT_ID: ${{ vars.DSX_DATAHALL_1_TENANT_ID }}
       DSX_DATAHALL_1_VPC_ID: ${{ vars.DSX_DATAHALL_1_VPC_ID }}
@@ -1483,7 +1486,7 @@ jobs:
             "gpu model|GPU|||"
             "DSX org|DSX_ORG_ID||DSX_ORG_ID|DSX_ORG_ID"
             "DSX jump host|DSX_DATAHALL_1_JUMP_HOST|||"
-            "DSX api|DSX_DATAHALL_1_API||DSX_DATAHALL_1_API|DSX_DATAHALL_1_API"
+            "DSX api|DSX_DATAHALL_1_API|||"
             "DSX site|DSX_DATAHALL_1_SITE_ID||DSX_DATAHALL_1_SITE_ID|DSX_DATAHALL_1_SITE_ID"
             "DSX tenant|DSX_DATAHALL_1_TENANT_ID||DSX_DATAHALL_1_TENANT_ID|DSX_DATAHALL_1_TENANT_ID"
             "DSX VPC|DSX_DATAHALL_1_VPC_ID||DSX_DATAHALL_1_VPC_ID|DSX_DATAHALL_1_VPC_ID"
