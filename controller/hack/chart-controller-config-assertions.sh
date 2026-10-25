@@ -62,6 +62,10 @@ render monitoring-disabled-out-of-range \
   --set-string credentialMonitoring.inspectionInterval=1m \
   --set-string credentialMonitoring.observationMaxAge=48h \
   --set credentialMonitoring.warningDays=200
+# Sub-second durations count, as they do for the controller's time.Duration.
+render monitoring-disabled-subsecond-max-age \
+  --set credentialMonitoring.enabled=false \
+  --set-string credentialMonitoring.observationMaxAge=500ms
 
 # The chart refuses what the controller would refuse at startup, so a bad value
 # fails the upgrade instead of crash-looping the new pod. Collector inputs are
@@ -100,6 +104,14 @@ refuse "credentialMonitoring.observationMaxAge must be at least twice" \
   --set-string credentialMonitoring.observationMaxAge=1h
 refuse "credentialMonitoring.observationMaxAge must be at least twice" \
   --set-string credentialMonitoring.observationMaxAge=25h
+refuse "scheduledMaintenance.certRenewal.interval must be between 1h and 24h" \
+  --set-string scheduledMaintenance.certRenewal.interval=24h500ms
+refuse "credentialMonitoring.inspectionInterval must be between 5m and 12h" \
+  --set-string credentialMonitoring.inspectionInterval=12h500ms \
+  --set-string credentialMonitoring.observationMaxAge=24h
+refuse "credentialMonitoring.observationMaxAge must be at least twice" \
+  --set-string credentialMonitoring.inspectionInterval=5m500ms \
+  --set-string credentialMonitoring.observationMaxAge=10m
 refuse "credentialMonitoring.warningDays must be between 9 and 120" --set credentialMonitoring.warningDays=8
 refuse "credentialMonitoring.warningDays must be between 9 and 120" --set credentialMonitoring.warningDays=121
 refuse "credentialMonitoring.warningDays must exceed scheduledMaintenance.certRenewal.thresholdDays" \
@@ -353,15 +365,6 @@ for key in WORKERS TIMEOUT INTERVAL JITTER; do
   fi
   [[ "${refusal}" == *"env sets ${variable}, which nvke-controller-config carries as agentReadiness."* ]] ||
     { echo "env override of ${variable} failed for another reason: ${refusal}" >&2; exit 1; }
-done
-for name in CREDENTIAL_MONITORING_ENABLED CERTIFICATE_INSPECTION_INTERVAL CERTIFICATE_OBSERVATION_MAX_AGE CERTIFICATE_WARNING_DAYS; do
-  key="$(yq ".${name}" "${CHART}/files/controller-config-env.yaml")"
-  if refusal="$(helm template cwe "${CHART}" --set-string "env[0].name=${name}" --set-string 'env[0].value=override' 2>&1)"; then
-    echo "env set ${name} and rendered; the chart must refuse a variable nvke-controller-config carries" >&2
-    exit 1
-  fi
-  [[ "${refusal}" == *"env sets ${name}, which nvke-controller-config carries as ${key}"* ]] ||
-    { echo "env override of ${name} failed for another reason: ${refusal}" >&2; exit 1; }
 done
 printf '  env overrides of nvke-controller-config settings and its path are refused\n'
 

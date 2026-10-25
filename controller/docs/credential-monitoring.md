@@ -63,8 +63,9 @@ fails with the offending setting instead of the new pod failing to start.
 These settings live in the controller ConfigMap named by `controllerConfig.name`
 (default `nvke-controller-config`); the chart renders them from
 `scheduledMaintenance.certRenewal.*` and `credentialMonitoring.*`. The
-controller no longer reads them from environment variables, and the chart
-refuses an `env` entry that names one.
+controller no longer reads the `certRenewal.*` settings from their former
+`CERT_RENEWAL_*` environment variables, and the chart refuses an `env` entry
+that names one.
 
 | Controller config key | Chart value | Default | Supported bound or relationship |
 | --- | --- | --- | --- |

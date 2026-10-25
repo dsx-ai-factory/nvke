@@ -36,9 +36,8 @@ func TestCredentialMonitoringRuleInstallationAndConfig(t *testing.T) {
 			if test.wantRule && (!strings.Contains(rendered, "release: prometheus") || !strings.Contains(rendered, "alert: NVKECertificateExpiring")) {
 				t.Fatal("rule selector or expressions missing")
 			}
-			// The setting reaches the controller through nvke-controller-config, not
-			// through an environment variable the controller no longer reads.
-			if !strings.Contains(rendered, "warningDays: 45") || strings.Contains(rendered, "name: CERTIFICATE_WARNING_DAYS") {
+			// The setting reaches the controller through nvke-controller-config.
+			if !strings.Contains(rendered, "warningDays: 45") {
 				t.Fatal("monitoring config not wired through nvke-controller-config")
 			}
 		})

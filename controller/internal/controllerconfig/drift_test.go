@@ -117,6 +117,11 @@ var configMapOnly = []string{
 	"apiAuth.enabled",
 	"apiAuth.audiences",
 	"apiAuth.issuers",
+	// Credential monitoring started in nvke-controller-config.
+	"credentialMonitoring.enabled",
+	"credentialMonitoring.inspectionInterval",
+	"credentialMonitoring.observationMaxAge",
+	"credentialMonitoring.warningDays",
 }
 
 // chartDeployment is the template whose env block decides what the chart sets.
@@ -167,6 +172,9 @@ func TestEveryMigratedKeyExistsOnce(t *testing.T) {
 		}
 		if other, taken := claimedBy[key]; taken {
 			t.Errorf("%s and %s both map to %s", name, other, key)
+		}
+		if slices.Contains(configMapOnly, key) {
+			t.Errorf("%s maps %s to %s, which configMapOnly says never had an environment variable", migratedEnvFile, name, key)
 		}
 		claimedBy[key] = name
 	}
