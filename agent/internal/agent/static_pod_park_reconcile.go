@@ -90,7 +90,7 @@ func (s *NodeAgentServer) staticPodParkRestores() []staticPodParkRestore {
 // kube-vip, and optionally kube-apiserver, deliberately, and expects them to
 // stay parked until a caller explicitly restores them - that is how a node is
 // taken out of service for recycling. Restoring on sight would re-advertise the
-// VIP on a node someone is deliberately draining.
+// VIP on a node someone is deliberately taking out of service.
 //
 // So the discriminator is the operation record, not the file. An operation left
 // non-terminal with no active in-process worker was interrupted mid-flight,

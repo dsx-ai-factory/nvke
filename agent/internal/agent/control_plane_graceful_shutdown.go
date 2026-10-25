@@ -38,7 +38,7 @@ const (
 	defaultStaticPodStartTimeout     = 60
 	defaultKubeVipApiserverPort      = 6443
 	defaultKubeVipSocketQuietSeconds = 30
-	defaultDrainKubeVipPollInterval  = time.Second
+	defaultControlPlanePollInterval  = time.Second
 	// Match kubeadm's static pod manifest directory convention; keep the agent-owned backup directory private.
 	staticPodManifestDirMode = 0o755
 	staticPodBackupDirMode   = 0o700
@@ -160,7 +160,7 @@ func (s *NodeAgentServer) StartKubeVipRestore(
 //  3. removes the VIP from loopback,
 //  4. verifies a quiet window with no new remote VIP sockets.
 //
-// When kube-vip is not configured, the VIP drain steps are skipped. In both
+// When kube-vip is not configured, the VIP withdrawal steps are skipped. In both
 // cases it optionally removes the kube-apiserver static pod manifest and waits
 // for it to exit.
 func (s *NodeAgentServer) runK8sControlPlaneNodeGracefulShutdown(
@@ -198,7 +198,7 @@ func (s *NodeAgentServer) runK8sControlPlaneNodeGracefulShutdown(
 // established sockets so existing clients get an RST, and `ip addr del` the
 // address from lo so nothing new is accepted. A fourth step then verifies no
 // new sockets arrive, which catches a network that is still steering traffic
-// here despite all three. See drainKubeVip.
+// here despite all three. See withdrawKubeVip.
 func (s *NodeAgentServer) withdrawKubeVipLocked(
 	ctx context.Context,
 	runner nvkeutils.CommandRunner,
@@ -208,7 +208,7 @@ func (s *NodeAgentServer) withdrawKubeVipLocked(
 	vip, err := s.resolveKubeVipAddress(runner)
 	switch {
 	case err == nil:
-		return s.drainKubeVip(ctx, runner, progress, vip)
+		return s.withdrawKubeVip(ctx, runner, progress, vip)
 	case errors.Is(err, errNoKubeVipAddress):
 		slog.Info("kube-vip is not configured; skipping kube-vip withdrawal")
 		return nil
@@ -217,7 +217,7 @@ func (s *NodeAgentServer) withdrawKubeVipLocked(
 	}
 }
 
-// drainKubeVip removes kube-vip from this node so it stops advertising and
+// withdrawKubeVip removes kube-vip from this node so it stops advertising and
 // serving the control-plane VIP, while keeping the local apiserver available.
 //
 // Close stale sockets while the VIP is still assigned to lo. In testing,
@@ -225,7 +225,7 @@ func (s *NodeAgentServer) withdrawKubeVipLocked(
 // but the expected RST was not sent to the remote peer for that established
 // VIP:6443 connection. Closing first gives the kernel the best chance to emit
 // an RST before the local VIP address is removed.
-func (s *NodeAgentServer) drainKubeVip(
+func (s *NodeAgentServer) withdrawKubeVip(
 	ctx context.Context,
 	runner nvkeutils.CommandRunner,
 	progress nodeAgentOperationProgress,
@@ -264,7 +264,7 @@ func (s *NodeAgentServer) drainKubeVip(
 	// otherwise worker kubelets still pinned to this node can lose their API
 	// path and become NotReady.
 	progress.SetStep(stepWaitingVipSocketQuietWindow)
-	if err := s.waitForVipSocketQuietWindow(ctx, runner, vip, defaultKubeVipApiserverPort, s.drainKubeVipSocketQuietWindowOrDefault()); err != nil {
+	if err := s.waitForVipSocketQuietWindow(ctx, runner, vip, defaultKubeVipApiserverPort, s.kubeVipSocketQuietWindowOrDefault()); err != nil {
 		return fmt.Errorf("vip socket quiet window failed: %w", err)
 	}
 	return nil
@@ -274,7 +274,7 @@ func (s *NodeAgentServer) drainKubeVip(
 // runK8sControlPlaneNodeGracefulShutdown. It intentionally does not touch
 // kube-apiserver; callers must restore kube-vip only after the local apiserver
 // is ready to serve requests. When kube-vip is not configured on this node
-// (mirroring the drain-side skip in runK8sControlPlaneNodeGracefulShutdown),
+// (mirroring the withdrawal-side skip in runK8sControlPlaneNodeGracefulShutdown),
 // there is nothing to restore and this is a no-op.
 func (s *NodeAgentServer) runKubeVipRestore(
 	ctx context.Context,
@@ -418,7 +418,7 @@ func (s *NodeAgentServer) resolveKubeVipAddress(runner nvkeutils.CommandRunner) 
 }
 
 func (s *NodeAgentServer) resolveKubeVipAddressFromManifest() (string, bool, error) {
-	for _, path := range []string{s.kubeVipManifestPath(), s.kubeVipDrainedManifestPath()} {
+	for _, path := range []string{s.kubeVipManifestPath(), s.kubeVipParkedManifestPath()} {
 		vip, err := parseKubeVipManifestAddress(path)
 		if err == nil {
 			slog.Info("resolved kube-vip address from static manifest", "path", path, "vip", vip)
@@ -740,7 +740,7 @@ func (s *NodeAgentServer) kubeVipManifestPath() string {
 	return s.rootedPath(filepath.Join(defaultStaticPodManifestDir, defaultKubeVipManifestName))
 }
 
-func (s *NodeAgentServer) kubeVipDrainedManifestPath() string {
+func (s *NodeAgentServer) kubeVipParkedManifestPath() string {
 	return s.rootedPath(filepath.Join(defaultStaticPodBackupDir, defaultKubeVipManifestName))
 }
 
@@ -805,7 +805,7 @@ func (s *NodeAgentServer) waitForStaticPodExit(
 		if time.Now().After(deadline) {
 			return fmt.Errorf("container still running after %s: %s", timeout, strings.Join(containerIDs, ", "))
 		}
-		if err := sleepOrDone(ctx, s.drainKubeVipPollIntervalOrDefault()); err != nil {
+		if err := sleepOrDone(ctx, s.controlPlanePollIntervalOrDefault()); err != nil {
 			return err
 		}
 	}
@@ -851,7 +851,7 @@ func (s *NodeAgentServer) waitForStaticPodRunning(
 		if !time.Now().Before(deadline) {
 			return fmt.Errorf("container not running after %s", timeout)
 		}
-		if err := sleepOrDone(ctx, s.drainKubeVipPollIntervalOrDefault()); err != nil {
+		if err := sleepOrDone(ctx, s.controlPlanePollIntervalOrDefault()); err != nil {
 			return err
 		}
 	}
@@ -953,7 +953,7 @@ func (s *NodeAgentServer) waitForKubeVipOnLoopback(
 		if !time.Now().Before(deadline) {
 			return fmt.Errorf("kube-vip address %s not present on lo after %s", vip, timeout)
 		}
-		if err := sleepOrDone(ctx, s.drainKubeVipPollIntervalOrDefault()); err != nil {
+		if err := sleepOrDone(ctx, s.controlPlanePollIntervalOrDefault()); err != nil {
 			return err
 		}
 	}
@@ -1003,22 +1003,28 @@ func (s *NodeAgentServer) waitForVipSocketQuietWindow(
 			slog.Info("no new remote VIP sockets observed", "vip", vip, "port", port, "quietWindow", quietWindow)
 			return nil
 		}
-		if err := sleepOrDone(ctx, s.drainKubeVipPollIntervalOrDefault()); err != nil {
+		if err := sleepOrDone(ctx, s.controlPlanePollIntervalOrDefault()); err != nil {
 			return err
 		}
 	}
 }
 
-func (s *NodeAgentServer) drainKubeVipPollIntervalOrDefault() time.Duration {
-	if s != nil && s.drainKubeVipPollInterval > 0 {
-		return s.drainKubeVipPollInterval
+// controlPlanePollIntervalOrDefault paces every loop that watches local
+// control-plane state settle: a static pod's container exiting or coming back,
+// and the VIP leaving or returning to loopback. It is not specific to kube-vip
+// despite where it lives - the static-pod waits serve etcd and kube-apiserver
+// too - and it is one knob rather than four because they all poll a local
+// command whose cost is the same.
+func (s *NodeAgentServer) controlPlanePollIntervalOrDefault() time.Duration {
+	if s != nil && s.controlPlanePollInterval > 0 {
+		return s.controlPlanePollInterval
 	}
-	return defaultDrainKubeVipPollInterval
+	return defaultControlPlanePollInterval
 }
 
-func (s *NodeAgentServer) drainKubeVipSocketQuietWindowOrDefault() time.Duration {
-	if s != nil && s.drainKubeVipSocketQuietWindow > 0 {
-		return s.drainKubeVipSocketQuietWindow
+func (s *NodeAgentServer) kubeVipSocketQuietWindowOrDefault() time.Duration {
+	if s != nil && s.kubeVipSocketQuietWindow > 0 {
+		return s.kubeVipSocketQuietWindow
 	}
 	return time.Duration(defaultKubeVipSocketQuietSeconds) * time.Second
 }

@@ -441,7 +441,7 @@ type controlPlaneNodeFake struct {
 	crictlFailsOnceWithdrawn bool
 	crictlFailed             bool
 	// vipPeers is what `ss` reports for established sockets on the VIP. A
-	// non-empty list fails the quiet window, which is how the drain detects
+	// non-empty list fails the quiet window, which is how the withdrawal detects
 	// traffic still arriving after the VIP was withdrawn.
 	vipPeers string
 }
@@ -650,8 +650,8 @@ func etcdRestartTestServer(t *testing.T, client *fakeEtcdMemberClient) (*NodeAge
 	s.etcdExitTimeout = 100 * time.Millisecond
 	s.staticPodStartTimeout = 100 * time.Millisecond
 	s.staticPodExitTimeout = 100 * time.Millisecond
-	s.drainKubeVipPollInterval = time.Millisecond
-	s.drainKubeVipSocketQuietWindow = time.Millisecond
+	s.controlPlanePollInterval = time.Millisecond
+	s.kubeVipSocketQuietWindow = time.Millisecond
 	return s, node
 }
 
@@ -1150,7 +1150,7 @@ func (*staticPodListRunner) RunDetached(string, []string, *nvkeutils.CommandOpti
 // later - no swap expected - so the two had to be told apart rather than
 // merged.
 func TestWaitForStaticPodRunningWithAnUnknownBaseline(t *testing.T) {
-	s := &NodeAgentServer{drainKubeVipPollInterval: time.Millisecond}
+	s := &NodeAgentServer{controlPlanePollInterval: time.Millisecond}
 
 	t.Run("rejects the container that was already running", func(t *testing.T) {
 		runner := &staticPodListRunner{t: t, listings: [][]string{{"etcd-old"}}}

@@ -46,7 +46,7 @@ func TestResolveKubeVipAddressPrefersManifest(t *testing.T) {
 func TestResolveKubeVipAddressUsesBackupManifest(t *testing.T) {
 	st := newGracefulShutdownTestState(t, true)
 	server := &NodeAgentServer{RootPath: st.tmp}
-	backup := server.kubeVipDrainedManifestPath()
+	backup := server.kubeVipParkedManifestPath()
 	assert.NoError(t, os.MkdirAll(filepath.Dir(backup), 0o755))
 	assert.NoError(t, os.Rename(st.manifest, backup))
 
@@ -206,7 +206,7 @@ func TestK8SControlPlaneNodeGracefulShutdown(t *testing.T) {
 			},
 		},
 		{
-			name:           "start stops apiserver after draining vip when requested",
+			name:           "start stops apiserver after withdrawing the vip when requested",
 			createManifest: true,
 			runner: func(st *gracefulShutdownTestState) *MockRunner {
 				return &MockRunner{Runners: []runner{
@@ -401,10 +401,10 @@ func TestK8SControlPlaneNodeGracefulShutdown(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			st := newGracefulShutdownTestState(t, tc.createManifest)
 			server := &NodeAgentServer{
-				NodeStatus:                    tc.nodeStatus,
-				RootPath:                      st.tmp,
-				drainKubeVipPollInterval:      time.Millisecond,
-				drainKubeVipSocketQuietWindow: time.Millisecond,
+				NodeStatus:               tc.nodeStatus,
+				RootPath:                 st.tmp,
+				controlPlanePollInterval: time.Millisecond,
+				kubeVipSocketQuietWindow: time.Millisecond,
 			}
 			if tc.runner != nil {
 				server.Runner = tc.runner(st)
@@ -582,11 +582,11 @@ func TestKubeVipRestore(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			st := newGracefulShutdownTestState(t, tc.createManifest)
 			server := &NodeAgentServer{
-				RootPath:                      st.tmp,
-				Persister:                     &JSONFilePersister{Path: st.stateFile},
-				drainKubeVipPollInterval:      time.Millisecond,
-				drainKubeVipSocketQuietWindow: time.Millisecond,
-				staticPodStartTimeout:         time.Millisecond,
+				RootPath:                 st.tmp,
+				Persister:                &JSONFilePersister{Path: st.stateFile},
+				controlPlanePollInterval: time.Millisecond,
+				kubeVipSocketQuietWindow: time.Millisecond,
+				staticPodStartTimeout:    time.Millisecond,
 			}
 			if tc.runner != nil {
 				server.Runner = tc.runner(st)

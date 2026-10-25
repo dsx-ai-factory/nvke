@@ -160,8 +160,8 @@ type NodeAgentServer struct {
 	openVSwitchSettleDelay         time.Duration       // overrides the post-netplan settle delay in tests
 	openVSwitchConvergenceDelay    time.Duration       // overrides the asynchronous convergence poll delay in tests
 	reloadPollInterval             time.Duration       // overrides the 2s poll interval in tests
-	drainKubeVipPollInterval       time.Duration       // overrides kube-vip drain polling in tests
-	drainKubeVipSocketQuietWindow  time.Duration       // overrides kube-vip socket quiet window in tests
+	controlPlanePollInterval       time.Duration       // overrides local control-plane state polling in tests
+	kubeVipSocketQuietWindow       time.Duration       // overrides kube-vip socket quiet window in tests
 	staticPodStartTimeout          time.Duration       // overrides static-pod restore timeout in tests
 	staticPodExitTimeout           time.Duration       // overrides static-pod stop timeout in tests
 	certificateRenewalStopTimeout  time.Duration       // overrides certificate-renewal stop timeout in tests
