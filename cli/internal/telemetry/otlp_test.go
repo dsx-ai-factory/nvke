@@ -125,7 +125,7 @@ func TestOTLPExportsRecordsWithTraceFields(t *testing.T) {
 	assert.Equal(t, "nvkectl", collector.resource["service.name"])
 	assert.Equal(t, "v1.2.3", collector.resource["service.version"])
 
-	// stderr is what it is without export: the text handler's line plus the trace fields.
+	// stderr gets the text handler's line plus the trace fields.
 	lines := strings.Split(strings.TrimSpace(stderr.String()), "\n")
 	require.Len(t, lines, 2)
 	assert.Contains(t, lines[0], "msg=provisioning phase=kind trace_id="+run.TraceID())
@@ -216,10 +216,9 @@ const (
 	logsInsecureVar = "OTEL_EXPORTER_OTLP_LOGS_INSECURE"
 )
 
-// The exporter library fills a setting nobody passed from its own environment,
-// so these tests set the signal-specific variables and check that none of them
-// changes where the records go, what is sent with them, or whether TLS is used.
-// They set variables, so neither is parallel.
+// These tests set the exporter library's own signal-specific variables and check
+// that none changes the destination, the headers, the compression or TLS. They
+// set variables, so neither is parallel.
 func TestOTLPExporterIgnoresSignalSpecificVariables(t *testing.T) {
 	collector := newFakeCollector(t)
 	t.Setenv(logsEndpointVar, "127.0.0.1:1")
@@ -372,6 +371,8 @@ func TestOTLPConfigFromEnvRejectsABadEndpointWithoutPrintingIt(t *testing.T) {
 		"host:port with credentials":    "user:s3cret@collector:4317",
 		"unparsable":                    "collector:4317 s3cret",
 		"OTLP/HTTP URL with a path":     "http://collector:4318/v1/logs",
+		"unsupported scheme":            "ftp://collector:4317",
+		"grpc scheme":                   "grpc://collector:4317",
 		"query":                         "collector:4317?token=s3cret",
 	}
 	for name, endpoint := range tests {

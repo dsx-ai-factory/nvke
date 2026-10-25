@@ -50,11 +50,11 @@ type OTLPConfig struct {
 
 // OTLPConfigFromEnv reads OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_INSECURE
 // and OTEL_EXPORTER_OTLP_HEADERS, and no other OTLP variable. The endpoint is a
-// host:port or a URL. The http scheme sets Insecure and any other scheme clears
-// it; only an endpoint with no scheme reads OTEL_EXPORTER_OTLP_INSECURE. It
-// returns false when no endpoint is set, and an error that does not contain the
-// endpoint when the endpoint cannot be parsed or has credentials, a path, a query
-// or a fragment: it is an OTLP/gRPC address, not an OTLP/HTTP URL.
+// host:port or an http or https URL. The http scheme sets Insecure and the https
+// scheme clears it; only an endpoint with no scheme reads
+// OTEL_EXPORTER_OTLP_INSECURE. It returns false when no endpoint is set, and an
+// error that does not contain the endpoint when the endpoint cannot be parsed,
+// has another scheme, or has credentials, a path, a query or a fragment.
 func OTLPConfigFromEnv() (OTLPConfig, bool, error) {
 	// Variables for one signal, such as OTEL_EXPORTER_OTLP_LOGS_ENDPOINT, are not
 	// read: this endpoint and these headers serve every signal nvkectl exports.
@@ -69,8 +69,8 @@ func OTLPConfigFromEnv() (OTLPConfig, bool, error) {
 	}
 	u, err := url.Parse(target)
 	// The error names the variable and not its value, which may hold credentials.
-	if err != nil || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
-		return OTLPConfig{}, false, fmt.Errorf("invalid %s: want host:port or a URL with a host, no credentials and no path", envEndpoint)
+	if err != nil || !isOTLPAddress(u) {
+		return OTLPConfig{}, false, fmt.Errorf("invalid %s: want host:port or an http or https URL with a host, no credentials and no path", envEndpoint)
 	}
 	cfg.Endpoint = u.Host
 	switch u.Scheme {
@@ -80,6 +80,17 @@ func OTLPConfigFromEnv() (OTLPConfig, bool, error) {
 		cfg.Insecure, _ = strconv.ParseBool(os.Getenv(envInsecure))
 	}
 	return cfg, true, nil
+}
+
+// isOTLPAddress reports whether u is an OTLP/gRPC address. A path or a query
+// marks an OTLP/HTTP URL, which the gRPC exporter cannot use.
+func isOTLPAddress(u *url.URL) bool {
+	switch u.Scheme {
+	case "", "http", "https":
+	default:
+		return false
+	}
+	return u.Host != "" && u.User == nil && (u.Path == "" || u.Path == "/") && u.RawQuery == "" && u.Fragment == ""
 }
 
 // parseHeaders parses the "key=value,key=value" form of OTEL_EXPORTER_OTLP_HEADERS.

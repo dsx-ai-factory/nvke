@@ -46,33 +46,48 @@ node, run the same searches in two steps:
 
 #### Send nvkectl's logs to a backend
 
-To also send nvkectl's log records to an OpenTelemetry collector or backend,
-set `OTEL_EXPORTER_OTLP_ENDPOINT` before you run the command. The records carry
-the run's trace ID, so you can search the backend for the `Trace ID:` that
-nvkectl prints. What nvkectl writes to stderr does not change.
+To search nvkectl's logs in your own backend, point nvkectl at an
+OpenTelemetry collector before you run a command. Every log record carries the
+command's trace ID, so you can find a run in the backend by the `Trace ID:`
+that nvkectl prints. What nvkectl writes to your terminal does not change.
 
-```bash
-export OTEL_EXPORTER_OTLP_ENDPOINT=https://<COLLECTOR_HOST>:4317
-export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer <TOKEN>'
-nvkectl bootstrap site -f sitespec.yaml
-```
+1. Set the collector's address. Use its OTLP gRPC port, usually 4317:
 
-Replace `<COLLECTOR_HOST>` with the host of your OTLP/gRPC endpoint. Replace
-`<TOKEN>` with the token the endpoint requires, or leave out the headers line
-if it needs none. Separate several headers with commas. nvkectl never prints
-them.
+   ```bash
+   export OTEL_EXPORTER_OTLP_ENDPOINT=https://<COLLECTOR_HOST>:4317
+   ```
 
-- The connection uses TLS. To send without it, start the endpoint with
-  `http://`, or give a `<COLLECTOR_HOST>:4317` endpoint with no scheme and set
-  `OTEL_EXPORTER_OTLP_INSECURE=true`. An `https://` endpoint always uses TLS.
-- The endpoint is an OTLP/gRPC address with no path and no credentials. nvkectl
-  does not send OTLP/HTTP, so an endpoint such as
-  `https://<COLLECTOR_HOST>:4318/v1/logs` is rejected: nvkectl warns that log
-  export is off and sends nothing. Send a token in `OTEL_EXPORTER_OTLP_HEADERS`,
-  not in the endpoint.
-- nvkectl sends log records only. It does not send spans.
-- If the endpoint is unreachable, nvkectl prints one warning, the command
-  still succeeds, and the command takes up to two seconds longer to exit.
+2. If the collector needs a token, set it as a header. Skip this step
+   otherwise:
+
+   ```bash
+   export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer <TOKEN>'
+   ```
+
+3. Run the command:
+
+   ```bash
+   nvkectl bootstrap site -f sitespec.yaml
+   ```
+
+Replace `<COLLECTOR_HOST>` with the collector's host name or IP address and
+`<TOKEN>` with your token. Separate several headers with commas.
+
+The endpoint follows these rules:
+
+- Write it as `<COLLECTOR_HOST>:4317` or as an `http://` or `https://` URL,
+  with no path and no user name or password. Put credentials in
+  `OTEL_EXPORTER_OTLP_HEADERS`. Do not use the collector's HTTP address, such
+  as `https://<COLLECTOR_HOST>:4318/v1/logs`.
+- Connections use TLS. To send without TLS, use an `http://` URL, or write the
+  endpoint without a scheme and set `OTEL_EXPORTER_OTLP_INSECURE=true`. An
+  `https://` URL always uses TLS.
+- nvkectl sends its log records only, not spans.
+
+If nvkectl prints `OTLP log export is off`, it did not accept the endpoint and
+sends no logs. The warning names the setting. Check the endpoint against the
+rules above. If the collector cannot be reached, nvkectl prints one warning
+and the command still succeeds, taking up to two seconds longer to exit.
 
 ### The diagnostics directory
 
