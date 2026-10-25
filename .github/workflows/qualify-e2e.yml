@@ -1391,6 +1391,7 @@ jobs:
           IN_OS_IMAGE_AMD64: ${{ inputs.os-image-amd64 }}
           IN_OS_IMAGE_BOOTLOADER_ARM64: ${{ inputs.os-image-bootloader-arm64 }}
           IN_OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 }}
+          IN_DEPLOY_PATH_REF: ${{ inputs.deploy-path-ref }}
           IN_NVKE_VERSION: ${{ inputs.nvke-version }}
           IN_SCOPE: ${{ inputs.scope }}
           IN_DRY_RUN: ${{ inputs.dry-run }}
@@ -1418,6 +1419,7 @@ jobs:
           VAR_OS_IMAGE_AMD64: ${{ vars.QUALIFY_E2E_OS_IMAGE_AMD64 }}
           VAR_OS_IMAGE_BOOTLOADER_ARM64: ${{ vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
           VAR_OS_IMAGE_ARM64: ${{ vars.QUALIFY_E2E_OS_IMAGE_ARM64 }}
+          VAR_DEPLOY_PATH_REF: ${{ vars.QUALIFY_E2E_DEPLOY_PATH_REF }}
           VAR_NODE_USER: ${{ vars.QUALIFY_E2E_NODE_USER }}
           VAR_NVKE_VERSION: ${{ vars.QUALIFY_E2E_NVKE_VERSION }}
           VAR_SCOPE: ${{ vars.QUALIFY_E2E_SCOPE }}
@@ -1441,6 +1443,7 @@ jobs:
           rows=(
             "stage|SITE_STAGE|IN_STAGE|VAR_STAGE|QUALIFY_E2E_STAGE"
             "controller version|SITE_NVKE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|QUALIFY_E2E_CONTROLLER_VERSION"
+            "deploy path ref|SITE_DEPLOY_PATH_REF|IN_DEPLOY_PATH_REF|VAR_DEPLOY_PATH_REF|QUALIFY_E2E_DEPLOY_PATH_REF"
             "nvkectl version|CLI_VERSION|IN_CLI_VERSION|VAR_CLI_VERSION|QUALIFY_E2E_CLI_VERSION"
             "nvkectl artifact|SITE_CLI_REF|||"
             "dry run|DRY_RUN|IN_DRY_RUN||"
