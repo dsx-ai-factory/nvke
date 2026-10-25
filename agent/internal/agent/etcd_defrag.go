@@ -25,8 +25,13 @@ const (
 	// defaultMinVotingMembersForDefrag is the floor below which the agent will
 	// not restart the local member. Three voters means the cluster survives
 	// losing this one; at two the restart costs quorum, and at one it is a full
-	// API outage. Callers may raise it but the default refuses the unsafe
-	// topologies rather than making the operator opt out of them.
+	// API outage.
+	//
+	// There is no caller override, by design: defragmentation is optional, so
+	// nothing justifies spending a cluster's quorum on it. The floor refuses
+	// the unsafe topologies outright rather than making an operator opt out of
+	// them. See etcdRestartSafetyFloor for how it combines with the registered
+	// voter count.
 	defaultMinVotingMembersForDefrag = 3
 
 	stepEtcdDefragPreflight          = "etcd_defrag_preflight"
@@ -249,12 +254,20 @@ func (s *NodeAgentServer) runEtcdDefrag(
 	// The manifest stays in place and kubelet owns the restart, so there is no
 	// parked etcd.yaml to put back and no window where a crashed agent leaves
 	// the member down with nothing scheduled to return it.
+	//
+	// startTimeout is the static-pod budget rather than the etcd health budget:
+	// this waits only for kubelet to run a replacement container, which is a
+	// scheduling event on the order of kubelet's restart backoff, not the
+	// backend rewrite. The rewrite is what the health wait below covers, and
+	// the two must not share a budget - a ten-minute wait for a container that
+	// kubelet is never going to start is ten minutes of this node sitting out
+	// of service before anyone is told.
 	if err := s.restartStaticPodContainer(ctx, runner, progress, staticPodContainerRestartSpec{
 		containerName: etcdContainerName,
 		stoppingStep:  stepEtcdDefragStoppingEtcd,
 		waitingStep:   stepEtcdDefragWaitingRestart,
 		stopTimeout:   s.etcdExitTimeoutOrDefault(),
-		startTimeout:  s.etcdHealthTimeoutOrDefault(),
+		startTimeout:  s.staticPodStartTimeoutOrDefault(),
 	}); err != nil {
 		return s.returnEtcdDefragNodeToServiceAfterFailure(ctx, runner, progress, client, sizeBefore,
 			fmt.Sprintf("restart the etcd container: %v", err))
@@ -277,14 +290,9 @@ func (s *NodeAgentServer) runEtcdDefrag(
 	}
 
 	progress.SetStep(stepEtcdDefragReturningToService)
-	if err := s.restoreKubeAPIServerLocked(ctx, runner, progress); err != nil {
+	if err := s.returnEtcdDefragNodeToService(ctx, runner, progress); err != nil {
 		return s.recordEtcdDefragFailure(progress, fmt.Sprintf(
-			"etcd was defragmented but kube-apiserver could not be restored: %v", err,
-		), sizeBefore)
-	}
-	if err := s.restoreKubeVipLocked(ctx, runner, progress); err != nil {
-		return s.recordEtcdDefragFailure(progress, fmt.Sprintf(
-			"etcd was defragmented but this node could not rejoin the control-plane VIP: %v", err,
+			"etcd was defragmented but this node could not be returned to service: %v", err,
 		), sizeBefore)
 	}
 
@@ -353,25 +361,37 @@ func (s *NodeAgentServer) returnEtcdDefragNodeToServiceAfterFailure(
 	}
 
 	progress.SetStep(stepEtcdDefragReturningToService)
-	// Both restores are attempted even when the first one fails, and the errors
-	// are collected rather than returned at the first. They are independent
-	// renames, and the failure that brought us here is often something both
-	// share - an unreachable container runtime fails each start wait in turn -
-	// so stopping at kube-apiserver would leave kube-vip parked for a reason
-	// that had nothing to do with kube-vip. A manifest put back has a chance of
-	// recovering on its own; one left in the backup directory does not.
-	var restoreErrs []error
-	if err := s.restoreKubeAPIServerLocked(ctx, runner, progress); err != nil {
-		restoreErrs = append(restoreErrs, fmt.Errorf("restoring kube-apiserver also failed: %w", err))
-	}
-	if err := s.restoreKubeVipLocked(ctx, runner, progress); err != nil {
-		restoreErrs = append(restoreErrs, fmt.Errorf("rejoining the control-plane VIP also failed: %w", err))
-	}
-	if len(restoreErrs) > 0 {
+	if err := s.returnEtcdDefragNodeToService(ctx, runner, progress); err != nil {
 		return s.recordEtcdDefragFailure(progress,
-			fmt.Sprintf("%s; %v", failureMessage, errors.Join(restoreErrs...)), sizeBefore)
+			fmt.Sprintf("%s; %v", failureMessage, err), sizeBefore)
 	}
 	return recordEtcdDefragRestored(progress, failureMessage, sizeBefore)
+}
+
+// returnEtcdDefragNodeToService puts kube-apiserver and then kube-vip back.
+// Callers must already hold staticPodMutationMu and must have confirmed the
+// local etcd member healthy first - neither pod can do its job without it.
+//
+// Both restores are attempted even when the first one fails, and the errors are
+// collected rather than returned at the first. They are independent renames,
+// and a failure here is usually something both share - an unreachable container
+// runtime fails each start wait in turn - so stopping at kube-apiserver would
+// leave kube-vip parked for a reason that had nothing to do with kube-vip. A
+// manifest put back has a chance of recovering on its own; one left in the
+// backup directory does not.
+func (s *NodeAgentServer) returnEtcdDefragNodeToService(
+	ctx context.Context,
+	runner nvkeutils.CommandRunner,
+	progress nodeAgentOperationProgress,
+) error {
+	var restoreErrs []error
+	if err := s.restoreKubeAPIServerLocked(ctx, runner, progress); err != nil {
+		restoreErrs = append(restoreErrs, fmt.Errorf("restoring kube-apiserver failed: %w", err))
+	}
+	if err := s.restoreKubeVipLocked(ctx, runner, progress); err != nil {
+		restoreErrs = append(restoreErrs, fmt.Errorf("rejoining the control-plane VIP failed: %w", err))
+	}
+	return errors.Join(restoreErrs...)
 }
 
 // etcdDefragPreflight verifies every condition that must hold before the member

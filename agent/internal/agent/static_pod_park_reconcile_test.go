@@ -109,6 +109,34 @@ func TestReconcileInterruptedStaticPodParksLeavesATerminalDefragAlone(t *testing
 	assert.False(t, staticPodManifestIsActive(t, s, defaultKubeVipManifestName))
 }
 
+// The bug this exists for: the reconciler left the interrupted record
+// non-terminal, so it stayed a standing instruction to restore. Recycling a
+// node reboots it, and a reboot after a deliberate graceful shutdown would find
+// that stale record alongside a kube-vip manifest parked on purpose - and
+// restore it, putting the node back into the VIP underneath the recycle. Keying
+// on the operation only helps if the operation stops saying "restore me" once
+// it has been honoured.
+func TestReconcileInterruptedStaticPodParksSettlesTheRecordItActedOn(t *testing.T) {
+	s, _ := etcdRestartTestServer(t, &fakeEtcdMemberClient{members: testEtcdMembersThree(), localID: 2, leaderID: 1})
+	s.Persister = &MockPersister{}
+	s.NodeStatus.NodeAgentOperations = runningEtcdDefragRecord()
+	parkManifest(t, s, defaultKubeVipManifestName)
+
+	require.NoError(t, s.ReconcileInterruptedStaticPodParks(context.Background()))
+	require.True(t, staticPodManifestIsActive(t, s, defaultKubeVipManifestName), "precondition: the first pass restores")
+
+	assert.Equal(t, NodeAgentOperationPhaseFailed, s.NodeStatus.NodeAgentOperations["defrag-1"].Phase,
+		"the record must be terminal, and failed rather than deleted so a poll still gets an answer")
+
+	// Now a deliberate park, as node recycling would leave it, and another
+	// restart.
+	parkManifest(t, s, defaultKubeVipManifestName)
+	require.NoError(t, s.ReconcileInterruptedStaticPodParks(context.Background()))
+
+	assert.False(t, staticPodManifestIsActive(t, s, defaultKubeVipManifestName),
+		"the honoured record must not restore a later, unrelated park")
+}
+
 // An operation with a live worker is still running, not interrupted. The
 // reconciler only ever runs before the agent serves, so this cannot happen in
 // production, but getting the condition wrong would make it possible for a

@@ -163,6 +163,7 @@ type NodeAgentServer struct {
 	drainKubeVipPollInterval       time.Duration       // overrides kube-vip drain polling in tests
 	drainKubeVipSocketQuietWindow  time.Duration       // overrides kube-vip socket quiet window in tests
 	staticPodStartTimeout          time.Duration       // overrides static-pod restore timeout in tests
+	staticPodExitTimeout           time.Duration       // overrides static-pod stop timeout in tests
 	certificateRenewalStopTimeout  time.Duration       // overrides certificate-renewal stop timeout in tests
 	initConfigPath                 string              // overrides kubeadmInitConfigPath in tests
 	certificateRenewalStartTimeout time.Duration       // overrides certificate-renewal start timeout in tests

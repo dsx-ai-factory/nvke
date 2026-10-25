@@ -50,6 +50,8 @@ const (
 	stepWaitingKubeAPIServerExit    = "waiting_for_kube_apiserver_exit"
 	stepRestoringKubeAPIServer      = "restoring_kube_apiserver"
 	stepWaitingKubeAPIServerStart   = "waiting_for_kube_apiserver_start"
+	stepRestoringEtcd               = "restoring_etcd"
+	stepWaitingEtcdStart            = "waiting_for_etcd_start"
 	stepStoppingKubeVip             = "stopping_kube_vip"
 	stepWaitingKubeVipExit          = "waiting_for_kube_vip_exit"
 	stepRestoringKubeVip            = "restoring_kube_vip"
@@ -188,10 +190,15 @@ func (s *NodeAgentServer) runK8sControlPlaneNodeGracefulShutdown(
 // staticPodMutationMu.
 //
 // "Withdraw" rather than "drain": no workload is drained, nothing is cordoned
-// and nothing is evicted. What stops is this node's participation in the VIP,
-// which takes three separate actions because advertising the address, accepting
+// and nothing is evicted. What stops is this node's participation in the VIP.
+//
+// That takes three distinct actions, because advertising the address, accepting
 // traffic for it, and connections already established to it are three different
-// things. See drainKubeVip for the sequence.
+// things: park the kube-vip manifest so it stops advertising, `ss -K` the
+// established sockets so existing clients get an RST, and `ip addr del` the
+// address from lo so nothing new is accepted. A fourth step then verifies no
+// new sockets arrive, which catches a network that is still steering traffic
+// here despite all three. See drainKubeVip.
 func (s *NodeAgentServer) withdrawKubeVipLocked(
 	ctx context.Context,
 	runner nvkeutils.CommandRunner,
@@ -229,7 +236,7 @@ func (s *NodeAgentServer) drainKubeVip(
 		manifestName:  defaultKubeVipManifestName,
 		stoppingStep:  stepStoppingKubeVip,
 		waitingStep:   stepWaitingKubeVipExit,
-		timeout:       time.Duration(defaultStaticPodExitTimeout) * time.Second,
+		timeout:       s.staticPodExitTimeoutOrDefault(),
 	}); err != nil {
 		return err
 	}
@@ -350,7 +357,7 @@ func (s *NodeAgentServer) stopKubeAPIServerLocked(
 		manifestName:  defaultKubeAPIServerManifestName,
 		stoppingStep:  stepStoppingKubeAPIServer,
 		waitingStep:   stepWaitingKubeAPIServerExit,
-		timeout:       time.Duration(defaultStaticPodExitTimeout) * time.Second,
+		timeout:       s.staticPodExitTimeoutOrDefault(),
 	})
 }
 
@@ -370,6 +377,29 @@ func (s *NodeAgentServer) restoreKubeAPIServerLocked(
 		manifestName:  defaultKubeAPIServerManifestName,
 		restoringStep: stepRestoringKubeAPIServer,
 		waitingStep:   stepWaitingKubeAPIServerStart,
+		timeout:       s.staticPodStartTimeoutOrDefault(),
+	})
+}
+
+// restoreEtcdManifestLocked puts the etcd manifest back and waits for the
+// container to run again. Callers must already hold staticPodMutationMu.
+//
+// No flow in this agent parks etcd.yaml any more - StartEtcdDefrag restarts the
+// container through the CRI and leaves the manifest alone. This exists for the
+// one case that can still present a parked etcd.yaml: an agent that was
+// upgraded from a version which did park it, and died mid-defragmentation
+// before putting it back. Restoring it is the first thing the node needs, since
+// nothing else on it can serve without the local member.
+func (s *NodeAgentServer) restoreEtcdManifestLocked(
+	ctx context.Context,
+	runner nvkeutils.CommandRunner,
+	progress nodeAgentOperationProgress,
+) error {
+	return s.restoreStaticPod(ctx, runner, progress, staticPodRestoreSpec{
+		containerName: etcdContainerName,
+		manifestName:  etcdManifestName,
+		restoringStep: stepRestoringEtcd,
+		waitingStep:   stepWaitingEtcdStart,
 		timeout:       s.staticPodStartTimeoutOrDefault(),
 	})
 }
@@ -608,7 +638,11 @@ func (s *NodeAgentServer) restartStaticPodContainer(
 		return fmt.Errorf("no running %s container to restart", spec.containerName)
 	}
 
-	stopSeconds := strconv.Itoa(int(spec.stopTimeout.Seconds()))
+	// Floored at a second because crictl takes whole seconds, and rounding a
+	// sub-second budget down to zero would turn a graceful stop into an
+	// immediate kill - the opposite of what every caller here wants. Only a
+	// test configures a budget that small.
+	stopSeconds := strconv.Itoa(max(int(spec.stopTimeout.Seconds()), 1))
 	for _, id := range containerIDs {
 		slog.InfoContext(ctx, "stopping static pod container through the CRI",
 			"container", spec.containerName, "containerID", id, "stopTimeout", spec.stopTimeout)
@@ -994,6 +1028,17 @@ func (s *NodeAgentServer) staticPodStartTimeoutOrDefault() time.Duration {
 		return s.staticPodStartTimeout
 	}
 	return time.Duration(defaultStaticPodStartTimeout) * time.Second
+}
+
+// staticPodExitTimeoutOrDefault bounds the wait for a parked static pod's
+// container to exit. It is overridable for the same reason the start timeout is:
+// without it a test covering a container that will not exit has to sit through
+// the whole production budget to reach the assertion.
+func (s *NodeAgentServer) staticPodExitTimeoutOrDefault() time.Duration {
+	if s != nil && s.staticPodExitTimeout > 0 {
+		return s.staticPodExitTimeout
+	}
+	return time.Duration(defaultStaticPodExitTimeout) * time.Second
 }
 
 func formatVipSocketPeers(vip string, port int, peers []vipSocketPeer) string {

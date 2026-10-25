@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -399,7 +400,7 @@ spec:
     - name: kube-vip
       env:
         - name: address
-          value: 192.168.100.1
+          value: ` + testKubeVipAddress + `
 `
 
 const testKubeAPIServerManifest = `apiVersion: v1
@@ -486,20 +487,22 @@ func (f *controlPlaneNodeFake) manifestParked(manifestName string) bool {
 }
 
 // reconcile applies kubelet's rule to one pod before it is reported on.
-func (f *controlPlaneNodeFake) reconcile(containerName string) *fakeStaticPod {
+func (f *controlPlaneNodeFake) reconcile(containerName string) (*fakeStaticPod, error) {
 	pod := f.pods[containerName]
-	require.NotNil(f.t, pod, "unexpected container %q", containerName)
+	if pod == nil {
+		return nil, fmt.Errorf("crictl ps: unmodelled container %q", containerName)
+	}
 	if f.manifestParked(pod.manifestName) {
 		if !pod.stuckExit {
 			pod.runningID = ""
 			pod.delayed = 0
 		}
-		return pod
+		return pod, nil
 	}
 	if pod.runningID == "" {
 		if pod.delayed < pod.startDelay {
 			pod.delayed++
-			return pod
+			return pod, nil
 		}
 		pod.generation++
 		pod.runningID = fmt.Sprintf("%s-%d", containerName, pod.generation)
@@ -510,11 +513,14 @@ func (f *controlPlaneNodeFake) reconcile(containerName string) *fakeStaticPod {
 			f.loopbackVIPs = append(f.loopbackVIPs, testKubeVipAddress)
 		}
 	}
-	return pod
+	return pod, nil
 }
 
+// Run reports an unexpected command as a command error rather than failing the
+// test from here. runEtcdDefrag is driven from a goroutine in at least one
+// test, and the testing package does not allow a Fatal from a goroutine other
+// than the one running the test.
 func (f *controlPlaneNodeFake) Run(name string, args []string, _ *nvkeutils.CommandOptions) ([]byte, error) {
-	f.t.Helper()
 	switch name {
 	case "crictl":
 		return f.runCrictl(args)
@@ -534,12 +540,25 @@ func (f *controlPlaneNodeFake) runCrictl(args []string) ([]byte, error) {
 	}
 	switch args[0] {
 	case "ps":
-		pod := f.reconcile(containerNameFromCrictlPSArgs(f.t, args))
+		containerName, err := containerNameFromCrictlPSArgs(args)
+		if err != nil {
+			return nil, err
+		}
+		pod, err := f.reconcile(containerName)
+		if err != nil {
+			return nil, err
+		}
 		if pod.runningID == "" {
 			return crictlPS(), nil
 		}
 		return crictlPS(pod.runningID), nil
 	case "stop":
+		// crictl takes the grace period in whole seconds, and zero means kill
+		// now. Rejecting it here is what holds the production path to asking
+		// for a graceful stop rather than silently rounding down to one.
+		if err := assertPositiveCrictlStopTimeout(args); err != nil {
+			return nil, err
+		}
 		id := args[len(args)-1]
 		for _, pod := range f.pods {
 			if pod.runningID == id {
@@ -552,6 +571,23 @@ func (f *controlPlaneNodeFake) runCrictl(args []string) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unexpected crictl subcommand %q", args[0])
 	}
+}
+
+func assertPositiveCrictlStopTimeout(args []string) error {
+	for i, arg := range args {
+		if arg != "--timeout" || i+1 >= len(args) {
+			continue
+		}
+		seconds, err := strconv.Atoi(args[i+1])
+		if err != nil {
+			return fmt.Errorf("crictl stop: unparseable --timeout %q", args[i+1])
+		}
+		if seconds < 1 {
+			return fmt.Errorf("crictl stop: --timeout %d would kill the container immediately", seconds)
+		}
+		return nil
+	}
+	return errors.New("crictl stop: no --timeout given, so the grace period is crictl's default rather than ours")
 }
 
 func (f *controlPlaneNodeFake) runIP(args []string) ([]byte, error) {
@@ -580,15 +616,13 @@ func (*controlPlaneNodeFake) RunDetached(string, []string, *nvkeutils.CommandOpt
 	return errors.New("unexpected detached command")
 }
 
-func containerNameFromCrictlPSArgs(t *testing.T, args []string) string {
-	t.Helper()
+func containerNameFromCrictlPSArgs(args []string) (string, error) {
 	for i, arg := range args {
 		if arg == "--label" && i+1 < len(args) {
-			return strings.TrimPrefix(args[i+1], "io.kubernetes.container.name=")
+			return strings.TrimPrefix(args[i+1], "io.kubernetes.container.name="), nil
 		}
 	}
-	t.Fatalf("crictl ps without a container-name label: %v", args)
-	return ""
+	return "", fmt.Errorf("crictl ps without a container-name label: %v", args)
 }
 
 func crictlPS(ids ...string) []byte {
@@ -615,6 +649,7 @@ func etcdRestartTestServer(t *testing.T, client *fakeEtcdMemberClient) (*NodeAge
 	s.etcdHealthPollInterval = time.Millisecond
 	s.etcdExitTimeout = 100 * time.Millisecond
 	s.staticPodStartTimeout = 100 * time.Millisecond
+	s.staticPodExitTimeout = 100 * time.Millisecond
 	s.drainKubeVipPollInterval = time.Millisecond
 	s.drainKubeVipSocketQuietWindow = time.Millisecond
 	return s, node
@@ -818,6 +853,110 @@ func TestRunEtcdDefragRestartSequence(t *testing.T) {
 		assert.False(t, staticPodManifestIsActive(t, s, defaultKubeVipManifestName),
 			"kube-vip must stay parked rather than advertise a node that cannot answer")
 	})
+}
+
+// The withdrawal can fail before etcd is ever touched, and that still has to
+// put the node back: by then kube-vip is parked and its address is off lo,
+// which no other component will undo. etcd is untouched, so the member is
+// healthy and the honest report is FAILED_RESTORED with a nil error - a rollout
+// can stop on this cleanly.
+//
+// The failure modelled is the socket quiet window: new sockets still arriving
+// on the VIP after kube-vip is gone and the address is removed, which is how a
+// stale sticky ARP entry on a DPU presents. Production stops there rather than
+// going on to take the apiserver down, because worker kubelets still pinned to
+// this node would lose their API path.
+func TestRunEtcdDefragReturnsTheNodeAfterAFailedWithdrawal(t *testing.T) {
+	const mib = int64(1024 * 1024)
+	client := &fakeEtcdMemberClient{
+		members:     testEtcdMembersThree(),
+		localID:     2,
+		leaderID:    1,
+		dbSize:      500 * mib,
+		dbSizeInUse: 100 * mib,
+	}
+	s, node := etcdRestartTestServer(t, client)
+	// ss omits the State column when it is given a state filter, so the fields
+	// are Recv-Q, Send-Q, local, peer.
+	node.vipPeers = "0 0 " + testKubeVipAddress + ":6443 10.0.0.9:51510\n"
+	progress := &fakeOperationProgress{}
+
+	require.NoError(t, s.runEtcdDefrag(context.Background(), progress),
+		"the member is untouched and verifiably healthy, so this is a clean stop")
+
+	result := decodeDefragResult(t, progress)
+	assert.Equal(t, int32(pb.GetEtcdDefragStatusResponse_OUTCOME_FAILED_RESTORED), result.Outcome)
+	assert.Contains(t, result.ErrorMessage, "vip socket quiet window failed")
+	assertNodeInService(t, s)
+	assert.Contains(t, node.loopbackVIPs, testKubeVipAddress,
+		"the VIP has to be back on lo, not just the manifest back in place")
+	assert.NotContains(t, progress.steps, stepEtcdDefragStoppingEtcd,
+		"a withdrawal that failed must never reach the etcd restart")
+	assert.NotContains(t, progress.steps, stepStoppingKubeAPIServer,
+		"nor take the apiserver down while traffic is still arriving here")
+}
+
+// A container that ignores SIGTERM cannot be restarted in any way the agent can
+// prove, and this pins down what it reports when that happens. Both waits fail:
+// the exit wait because the container never goes away, and then the restore's
+// start wait because the new-container gate has nothing new to see.
+//
+// So the outcome is FAILED_NOT_RESTORED with an error, which is the honest
+// answer - nothing was verified - and the manifests are all back on disk
+// regardless, so the node is not left one parked file short of recovering.
+func TestRunEtcdDefragReportsAnUnkillableStaticPod(t *testing.T) {
+	const mib = int64(1024 * 1024)
+	client := &fakeEtcdMemberClient{
+		members:     testEtcdMembersThree(),
+		localID:     2,
+		leaderID:    1,
+		dbSize:      500 * mib,
+		dbSizeInUse: 100 * mib,
+	}
+	s, node := etcdRestartTestServer(t, client)
+	node.pods[kubeVipContainerName].stuckExit = true
+	progress := &fakeOperationProgress{}
+
+	err := s.runEtcdDefrag(context.Background(), progress)
+
+	require.Error(t, err, "an unverified node must fail the operation, not just the outcome")
+	result := decodeDefragResult(t, progress)
+	assert.Equal(t, int32(pb.GetEtcdDefragStatusResponse_OUTCOME_FAILED_NOT_RESTORED), result.Outcome)
+	assert.Contains(t, result.ErrorMessage, "wait for kube-vip exit")
+	assertNodeInService(t, s)
+	assert.NotContains(t, progress.steps, stepEtcdDefragStoppingEtcd,
+		"a withdrawal that failed must never reach the etcd restart")
+}
+
+// The flaw this exists for: on the success path the two restores ran as
+// separate guarded calls that each returned on failure, so a kube-apiserver
+// that was slow to come back left kube-vip parked - over a problem that had
+// nothing to do with kube-vip, on a node whose etcd had just been confirmed
+// healthy. Both restores have to be attempted.
+func TestRunEtcdDefragRestoresKubeVipEvenWhenKubeAPIServerDoesNotComeBack(t *testing.T) {
+	const mib = int64(1024 * 1024)
+	client := &fakeEtcdMemberClient{
+		members:  testEtcdMembersThree(),
+		localID:  2,
+		leaderID: 1,
+		statusFn: etcdSizingStatus(500*mib, 100*mib, 120*mib, 3),
+	}
+	s, node := etcdRestartTestServer(t, client)
+	// More probes than the compressed start timeout allows, so kube-apiserver's
+	// restore reports failure while every other pod behaves.
+	node.pods[kubeAPIServerContainerName].startDelay = 1_000_000
+	progress := &fakeOperationProgress{}
+
+	err := s.runEtcdDefrag(context.Background(), progress)
+
+	require.Error(t, err)
+	result := decodeDefragResult(t, progress)
+	assert.Equal(t, int32(pb.GetEtcdDefragStatusResponse_OUTCOME_FAILED_NOT_RESTORED), result.Outcome)
+	assert.Contains(t, result.ErrorMessage, "restoring kube-apiserver failed")
+	assert.True(t, staticPodManifestIsActive(t, s, defaultKubeVipManifestName),
+		"kube-vip must be put back even though kube-apiserver was not confirmed")
+	assert.True(t, staticPodManifestIsActive(t, s, defaultKubeAPIServerManifestName),
+		"the manifest goes back even when the pod is not seen running")
 }
 
 // The regression this exists for: restoreStaticPod listed containers before

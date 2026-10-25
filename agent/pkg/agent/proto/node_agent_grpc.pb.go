@@ -161,6 +161,13 @@ type NodeAgentClient interface {
 	// attempted. The agent never edits the threshold - it is set by kubeadm when
 	// the node is provisioned - so the configured value is always honoured.
 	//
+	// THIS REVERSES THE EARLIER CONTRACT. A caller written against the previous
+	// documentation drained kube-vip itself, called this, then restored kube-vip.
+	// Doing that now withdraws a node that is about to withdraw itself and
+	// restores one that has already come back. Such a caller must stop bracketing
+	// this RPC - for the rollout framework that means no kube-vip NodeGuard
+	// around it.
+	//
 	// THE CALLER DOES NOT NEED TO TAKE THIS NODE OUT OF SERVICE FIRST. The agent
 	// performs the whole per-node sequence, including the withdrawal and the
 	// return: health preflight, voting member check, leadership transfer away
@@ -971,6 +978,13 @@ type NodeAgentServer interface {
 	// etcd. A restart that cannot defragment is pure downtime, so it is not
 	// attempted. The agent never edits the threshold - it is set by kubeadm when
 	// the node is provisioned - so the configured value is always honoured.
+	//
+	// THIS REVERSES THE EARLIER CONTRACT. A caller written against the previous
+	// documentation drained kube-vip itself, called this, then restored kube-vip.
+	// Doing that now withdraws a node that is about to withdraw itself and
+	// restores one that has already come back. Such a caller must stop bracketing
+	// this RPC - for the rollout framework that means no kube-vip NodeGuard
+	// around it.
 	//
 	// THE CALLER DOES NOT NEED TO TAKE THIS NODE OUT OF SERVICE FIRST. The agent
 	// performs the whole per-node sequence, including the withdrawal and the

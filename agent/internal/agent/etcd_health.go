@@ -35,16 +35,25 @@ const (
 	// after a call returns.
 	defaultEtcdCallTimeout = 15 * time.Second
 
-	// defaultEtcdExitTimeout bounds the wait for the etcd container to exit
-	// after its manifest is moved aside.
+	// defaultEtcdExitTimeout is the grace period handed to `crictl stop` for the
+	// etcd container: how long etcd has to exit on SIGTERM before it is killed.
 	//
-	// The shutdown flow's 60s is not enough here. That budget has to cover
-	// kubelet noticing the manifest is gone, which is bounded by its
-	// file-check frequency rather than by anything the agent controls, and then
-	// the pod's full termination grace period. Overrunning it is not a benign
-	// timeout for this flow: the manifest is already parked, so the caller has
-	// to put it back, and every second of the overrun is etcd downtime.
-	defaultEtcdExitTimeout = 3 * time.Minute
+	// It is sized against the pod's own termination grace period, which kubeadm
+	// leaves at the 30s default, with headroom for a member that is slow to
+	// release its backend file. A clean exit matters here beyond the usual
+	// reasons - the restart exists to have etcd rewrite that file on the way
+	// back up - so the budget errs generous rather than cutting a flush short.
+	//
+	// It is not the three minutes the manifest-move restart used to need. That
+	// budget was mostly kubelet's: the agent parked the manifest and then had
+	// to wait for kubelet to notice, bounded by its file-check frequency rather
+	// than by anything the agent controlled. Stopping the container addresses
+	// it directly, so that part of the wait is gone.
+	//
+	// It is also the one command in this flow that is expected to take a while,
+	// and CommandRunner has no deadline, so this bounds how long a wedged
+	// container runtime can hold staticPodMutationMu.
+	defaultEtcdExitTimeout = 60 * time.Second
 )
 
 func (s *NodeAgentServer) etcdHealthTimeoutOrDefault() time.Duration {
