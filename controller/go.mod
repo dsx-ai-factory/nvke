@@ -12,7 +12,7 @@ require (
 	github.com/dsx-ai-factory/nvke/controller/api v0.0.0-00010101000000-000000000000
 	github.com/dsx-ai-factory/nvke/management-engine v0.0.0-00010101000000-000000000000
 	github.com/evanphx/json-patch/v5 v5.9.11
-	github.com/getkin/kin-openapi v0.151.0
+	github.com/getkin/kin-openapi v0.152.0
 	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/go-logr/logr v1.4.4
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -21,8 +21,8 @@ require (
 	github.com/gravitational/teleport/api v0.0.0-20251224210154-05b9362bd4d6
 	github.com/gravitational/trace v1.5.4
 	github.com/mattn/go-sqlite3 v1.14.52
-	github.com/oapi-codegen/nethttp-middleware v1.2.0
-	github.com/oapi-codegen/runtime v1.7.0
+	github.com/oapi-codegen/nethttp-middleware v1.3.1
+	github.com/oapi-codegen/runtime v1.8.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
 	github.com/spiffe/go-spiffe/v2 v2.9.0
@@ -152,7 +152,7 @@ require (
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.47.0 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
-	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
+	go.opentelemetry.io/proto/otlp v1.11.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
@@ -166,7 +166,7 @@ require (
 	golang.org/x/time v0.16.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.5.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261012220534-4341edf3f941 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/go-jose/go-jose.v2 v2.6.3 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
