@@ -10,7 +10,7 @@
 # images set GOTOOLCHAIN=local, so a lower tag does not download a newer
 # toolchain -- it fails with "go.mod requires go >= ...". 1.26.6 matches the
 # other Dockerfiles in this repository.
-FROM golang:1.27.3@sha256:957861185dbf29d93668ace41e011d091c6e779953d47f0316ef2cc58e28fe2b
+FROM golang:1.27.3@sha256:f20d83a83e18dbd2a4714b8ffd4b30b287b6243962dd75608e86abcc63ba4efc
 ENV GOPROXY=https://proxy.golang.org|direct
 
 # ------------------------------------------------------------
