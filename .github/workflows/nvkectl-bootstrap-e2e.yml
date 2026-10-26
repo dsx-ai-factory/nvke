@@ -67,6 +67,7 @@ on:
       - 'go.work.sum'
       - '.github/workflows/nvkectl-bootstrap-e2e.yml'
       - '.github/workflows/e2e-pr-path-filter.yml'
+      - 'hack/e2e-path-filter.py'
       # Installs the pinned kind and kubectl the suite runs on.
       - '.github/actions/setup-kind/**'
       # The scan of the run's output: the action that installs gitleaks. The rules

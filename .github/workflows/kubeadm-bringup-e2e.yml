@@ -27,6 +27,7 @@ on:
       # Without this, a change to the lane's own definition does not run it.
       - .github/workflows/kubeadm-bringup-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml
+      - hack/e2e-path-filter.py
   # Also twice a day, so a break the paths above filtered out, or one a flake
   # hid, still surfaces within twelve hours. A schedule ignores those paths, so
   # these runs always exercise the whole suite.

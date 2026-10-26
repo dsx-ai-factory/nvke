@@ -36,6 +36,7 @@ on:
       - .github/workflows/capd-e2e.yml
       - .github/workflows/backend-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml
+      - hack/e2e-path-filter.py
       # Installs the pinned kind and kubectl the suite runs on.
       - .github/actions/setup-kind/**
       # The controller-facing CLI. hack/ci/nvkectl-smoke.sh drives nvkectl against this

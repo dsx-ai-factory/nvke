@@ -64,20 +64,22 @@ jobs:
 
           if [[ "$EVENT_NAME" == push && "$REF_NAME" =~ ^pull-request/([0-9]+)$ ]]; then
             pr_number="${BASH_REMATCH[1]}"
-            changed_files="$(mktemp)"
-            # A rename lists both names: moving a lane input away changes the lane.
-            gh api --paginate \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}/files?per_page=100" \
-              --jq '.[] | .filename, (.previous_filename // empty)' > "$changed_files"
             # The files endpoint stops at 3000 files; a longer pull request runs
-            # the lane rather than be judged on part of its list.
+            # the lane rather than be judged on part of its list. Checked before
+            # the listing, so that case does not page through the files first.
             total="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" --jq '.changed_files')"
             if (( total >= 3000 )); then
               echo "Pull request ${pr_number} changes ${total} files, past the list limit: running the lane."
               echo "run_e2e=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
+
+            changed_files="$(mktemp)"
+            # A rename lists both names: moving a lane input away changes the lane.
+            gh api --paginate \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}/files?per_page=100" \
+              --jq '.[] | .filename, (.previous_filename // empty)' > "$changed_files"
 
             # owner/repo/.github/workflows/<lane>.yml@refs/heads/pull-request/<n>
             workflow="${WORKFLOW_REF#*/*/}"

@@ -42,6 +42,8 @@ import sys
 
 MIRROR_BRANCH = "pull-request/[0-9]+"
 FILTER_WORKFLOW = "./.github/workflows/e2e-pr-path-filter.yml"
+# The filter workflow runs this script, so a lane gated on it depends on both.
+FILTER_SCRIPT = "hack/e2e-path-filter.py"
 WORKFLOWS = Path(".github/workflows")
 
 # A runner label that names the self-hosted pools: arc-* (RelEng EKS),
@@ -187,7 +189,7 @@ def local_uses(root, relpath, seen):
     for ref in step_uses(load_workflow(root / relpath)):
         ref = ref[2:].split("@")[0].rstrip("/")
         if ref.endswith((".yml", ".yaml")):
-            yield ref, [ref]
+            yield ref, [ref, FILTER_SCRIPT] if f"./{ref}" == FILTER_WORKFLOW else [ref]
             yield from local_uses(root, ref, seen)
             continue
         metadata = next((f"{ref}/{n}" for n in ("action.yml", "action.yaml") if (root / ref / n).is_file()), f"{ref}/action.yml")
@@ -213,6 +215,9 @@ def check(args):
         if not gates:
             problems.append(f"{path}: runs on mirror pushes with push paths and a self-hosted runner, but no job uses {FILTER_WORKFLOW}.")
             continue
+        if len(gates) > 1:
+            problems.append(f"{path}: jobs {', '.join(sorted(gates))} all use {FILTER_WORKFLOW}; one filter job per lane is supported.")
+            continue
         gate = gates[0]
 
         def reaches_gate(name, seen=()):
@@ -231,10 +236,13 @@ def check(args):
                 problems.append(f"{path}: job {name} can run after a skipped job ({condition.strip()}), so the filter cannot stop it.")
 
         patterns = push["paths"]
-        missing = sorted({ref for ref, files in local_uses(root, path.resolve().relative_to(root).as_posix(), set())
-                          if not all(matches(patterns, f) for f in files)})
-        for ref in missing:
-            problems.append(f"{path}: uses ./{ref}, but its push paths do not list it, so a pull request that changes only it skips this lane.")
+        missing = {}
+        for ref, files in local_uses(root, path.resolve().relative_to(root).as_posix(), set()):
+            unlisted = [f for f in files if not matches(patterns, f)]
+            if unlisted:
+                missing[ref] = unlisted
+        for ref, unlisted in sorted(missing.items()):
+            problems.append(f"{path}: uses ./{ref}, but its push paths do not list {', '.join(unlisted)}, so a pull request that changes only that skips this lane.")
     for problem in problems:
         print(f"ERROR: {problem}", file=sys.stderr)
     return 1 if problems else 0

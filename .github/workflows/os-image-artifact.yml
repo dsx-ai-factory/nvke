@@ -85,6 +85,7 @@ on:
       - "!os-image/**/*_test.go"
       - .github/workflows/os-image-artifact.yml
       - .github/workflows/e2e-pr-path-filter.yml
+      - hack/e2e-path-filter.py
       # The release job checks the published assets with it.
       - .github/actions/verify-release-assets/**
   # Twice a day from main's HEAD, for what changes without an os-image/

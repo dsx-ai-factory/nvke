@@ -41,6 +41,7 @@ on:
       - '.github/actions/setup-kind/**'
       - '.github/workflows/nktp-e2e.yml'
       - '.github/workflows/e2e-pr-path-filter.yml'
+      - 'hack/e2e-path-filter.py'
   # Twice daily, like the other e2e lanes. A schedule ignores the paths above,
   # so these runs also catch a dependency moving under a chart that did not.
   schedule:

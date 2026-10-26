@@ -5,6 +5,7 @@
 
 import importlib.util
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -20,14 +21,21 @@ _spec.loader.exec_module(f)
 
 
 def decide(workflow, changed):
-    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as files:
-        files.write("\n".join(changed) + "\n")
-    out = subprocess.run(
-        ["python3", "-B", str(SCRIPT), "decide", "--workflow", str(workflow), "--changed-files", files.name],
-        capture_output=True, text=True, check=True,
-    )
-    Path(files.name).unlink()
+    with tempfile.TemporaryDirectory() as directory:
+        listing = Path(directory) / "changed.txt"
+        listing.write_text("\n".join(changed) + "\n", encoding="utf-8")
+        out = subprocess.run(
+            ["python3", "-B", str(SCRIPT), "decide", "--workflow", str(workflow), "--changed-files", str(listing)],
+            capture_output=True, text=True, check=True,
+        )
     return out.stdout.strip()
+
+
+def scratch(test):
+    """A temporary directory removed when the test finishes, pass or fail."""
+    directory = Path(tempfile.mkdtemp())
+    test.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+    return directory
 
 
 class GlobTest(unittest.TestCase):
@@ -83,8 +91,7 @@ class LaneInputTest(unittest.TestCase):
 
 class DecideTest(unittest.TestCase):
     def fixture(self, paths):
-        directory = tempfile.mkdtemp()
-        workflow = Path(directory) / "lane.yml"
+        workflow = scratch(self) / "lane.yml"
         body = "on:\n  push:\n    branches: [main, \"pull-request/[0-9]+\"]\n"
         if paths:
             body += "    paths:\n" + "".join(f"      - {p!r}\n" for p in paths)
@@ -120,6 +127,13 @@ class DecideTest(unittest.TestCase):
                 self.assertEqual(decide(WORKFLOWS / lane, skip), "false")
                 self.assertEqual(decide(WORKFLOWS / lane, ["docs/index.yml", "README.md"]), "false", "docs-only")
 
+    def test_filter_script_runs_every_lane(self):
+        for lane in sorted(p.name for p in WORKFLOWS.glob("*.yml") if "e2e-pr-path-filter.yml" in p.read_text(encoding="utf-8")):
+            if lane == "e2e-pr-path-filter.yml":
+                continue
+            with self.subTest(lane=lane):
+                self.assertEqual(decide(WORKFLOWS / lane, ["hack/e2e-path-filter.py"]), "true")
+
     def test_shared_kind_action_runs_every_lane_that_uses_it(self):
         lanes = ["nico-e2e.yml", "nico-vms-e2e.yml", "capd-e2e.yml", "capd-dsx-identity-exchange-e2e.yml",
                  "local-entrypoint-e2e.yml", "nvkectl-bootstrap-e2e.yml", "nktp-e2e.yml"]
@@ -138,11 +152,11 @@ class CheckTest(unittest.TestCase):
         {jobs}""")
     FILTER = "  changes:\n    uses: ./.github/workflows/e2e-pr-path-filter.yml\n"
     GATED = "  e2e:\n    needs: changes\n    if: needs.changes.outputs.run_e2e == 'true'\n    runs-on: arc-arm64-cpu16\n"
-    PATHS = ["controller/**", ".github/workflows/e2e-pr-path-filter.yml"]
+    PATHS = ["controller/**", ".github/workflows/e2e-pr-path-filter.yml", "hack/e2e-path-filter.py"]
 
     def run_check(self, jobs, paths=None, files=None):
         """Check a fixture repository holding .github/workflows/lane.yml and files."""
-        root = Path(tempfile.mkdtemp())
+        root = scratch(self)
         workflows = root / ".github" / "workflows"
         workflows.mkdir(parents=True)
         (workflows / "lane.yml").write_text(self.LANE.format(paths=paths or self.PATHS, jobs=jobs), encoding="utf-8")
@@ -201,7 +215,7 @@ class CheckTest(unittest.TestCase):
         jobs = self.FILTER + self.GATED + "    steps:\n      - uses: ./.github/actions/setup-kind\n"
         out = self.run_check(jobs, files=action)
         self.assertEqual(out.returncode, 1)
-        self.assertIn("uses ./.github/actions/setup-kind, but its push paths do not list it", out.stderr)
+        self.assertIn("uses ./.github/actions/setup-kind, but its push paths do not list .github/actions/setup-kind/action.yml", out.stderr)
         self.assertEqual(self.run_check(jobs, paths=self.PATHS + [".github/actions/setup-kind/**"], files=action).returncode, 0)
 
     def test_unlisted_action_behind_a_called_workflow_fails(self):
@@ -233,6 +247,18 @@ class CheckTest(unittest.TestCase):
         out = self.run_check(jobs, paths=self.PATHS + [".github/actions/tool/action.yml"], files=files)
         self.assertIn("uses ./.github/actions/tool", out.stderr)
         self.assertEqual(self.run_check(jobs, paths=self.PATHS + [".github/actions/tool/**"], files=files).returncode, 0)
+
+    def test_unlisted_filter_script_fails(self):
+        jobs = self.FILTER + self.GATED
+        out = self.run_check(jobs, paths=["controller/**", ".github/workflows/e2e-pr-path-filter.yml"])
+        self.assertEqual(out.returncode, 1)
+        self.assertIn("do not list hack/e2e-path-filter.py", out.stderr)
+
+    def test_second_filter_job_fails(self):
+        jobs = self.FILTER + "  changes-again:\n    uses: ./.github/workflows/e2e-pr-path-filter.yml\n" + self.GATED
+        out = self.run_check(jobs)
+        self.assertEqual(out.returncode, 1)
+        self.assertIn("one filter job per lane is supported", out.stderr)
 
     def test_github_hosted_lane_is_exempt(self):
         self.assertEqual(self.run_check("  e2e:\n    runs-on: ubuntu-latest\n").returncode, 0)

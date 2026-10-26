@@ -31,6 +31,7 @@ on:
       # Without this, a change to the lane's own definition does not run it.
       - .github/workflows/os-image-efi.yml
       - .github/workflows/e2e-pr-path-filter.yml
+      - hack/e2e-path-filter.py
   workflow_dispatch:
     inputs:
       infra_controller_commit:
