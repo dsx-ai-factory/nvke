@@ -232,6 +232,16 @@ image_has_cni() {
   "$1" run --rm --network none --entrypoint dpkg-query "${NODE_IMAGE}" -W "${CNI_CHARTS_PACKAGE}" >/dev/null 2>&1
 }
 
+# docker_copy_current reports whether Docker's NODE_IMAGE is the image nerdctl
+# holds under that name, and not an older build left under the same tag.
+# Docker's ID is the manifest digest with the containerd image store and the
+# config digest without it; nerdctl reports both.
+docker_copy_current() {
+  local id
+  id="$(docker image inspect --format '{{.Id}}' "${NODE_IMAGE}" 2>/dev/null)" && [[ -n "${id}" ]] || return 1
+  nerdctl image inspect --format '{{.Id}} {{.RepoDigests}}' "${NODE_IMAGE}" 2>/dev/null | grep -qF "${id}"
+}
+
 # attach_bootstrap_network does what cli/e2e/bootstrap/run.sh does before
 # the bootstrap: nerdctl's CNI firewall drops a forward from one bridge out
 # another, so the seed cluster on the kind bridge and the node on its bridge
@@ -435,10 +445,10 @@ nico_sim_running() {
 nico_sim_up() {
   local sim="${REPO}/controller/nico-sim" pid_file="${WORKSPACE}/.nico-sim.pid" gateway
   gateway="$(nerdctl network inspect "${NODE_NETWORK}" --format '{{range .IPAM.Config}}{{.Gateway}} {{end}}' | awk '{print $1}')" && [[ -n "${gateway}" ]] || die "cannot read the ${NODE_NETWORK} gateway"
-  # Copied again when Docker's copy predates the CNI packages, whether or not
-  # nico-sim is running: it starts tenant nodes from this name, and a tenant
-  # node without them never gets a CNI.
-  if ! docker image inspect "${NODE_IMAGE}" >/dev/null 2>&1 || ! image_has_cni docker; then
+  # Copied again when Docker's copy is an older build than nerdctl's or predates
+  # the CNI packages, whether or not nico-sim is running: it starts tenant nodes
+  # from this name, and a tenant node without them never gets a CNI.
+  if ! docker_copy_current || ! image_has_cni docker; then
     log "copying the node image into Docker for the tenant nodes"
     nerdctl save "${NODE_IMAGE}" | docker load >/dev/null
   fi
