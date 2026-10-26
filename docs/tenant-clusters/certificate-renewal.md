@@ -260,8 +260,9 @@ cluster row's `certificate_renewal` reservation column is empty; the REST API
 does not show it. A fenced reservation makes admission refuse both and restart
 the one-hour backoff; a reservation left by an older V1 workflow does not block
 admission, but the first node that needs renewal is then refused without
-renewal, whichever node the reservation names, so the cycle fails there and
-`failedNodeID` does not identify the reserved node. If it stays set, follow the reservation
+renewal, whichever node the reservation names, so the cycle fails there.
+`failedNodeID` then names that first node, which may or may not be the
+reserved node; the `certificate_renewal` column identifies the reservation. If it stays set, follow the reservation
 paragraph of the [component recovery contract](../../controller/docs/certificate-renewal.md#status-and-failure-handling). The
 automatic retry needs scheduling enabled (`certRenewal.controllerEnabled`) and
 starts no earlier than both one hour after the failure and `nextCertRenewalDue`,
