@@ -312,29 +312,28 @@ func main() {
 		"enableNicoControllers", cfg.NicoControllersEnabled,
 		"enableSpiffe", cfg.SpiffeEnabled,
 		"enableTenantAccess", cfg.TenantAccessEnabled)
-	// Watches Cluster API's Machine, and takes the manager down where Cluster
-	// API is not installed -- the same failure the NicoMachine watch below had.
+
+	// CAPI Machine CRD is required for nvke
 	machineCRDInstalled, err := capi.MachineCRDInstalled(k8sControllerManager.GetRESTMapper())
 	if err != nil {
 		logger.Error("Failed to look up the Machine CRD", "error", err)
 		os.Exit(1)
 	}
 	if !machineCRDInstalled {
-		logger.Warn("Cluster API Machine CRD not installed; skipping the machine SPIRE entry controller")
+		logger.Error("Required CAPI Machine CRD is not installed")
+		os.Exit(1)
 	}
 
-	if machineCRDInstalled {
-		machineSpireEntryController := capi.NewMachineSpireEntryController(
-			cfg,
-			k8sControllerManager.GetClient(),
-			dbInstance,
-			logger.With("logger", "machine-spire-entry-controller"),
-			trustDomain,
-		)
-		if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
-			logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
-			os.Exit(1)
-		}
+	machineSpireEntryController := capi.NewMachineSpireEntryController(
+		cfg,
+		k8sControllerManager.GetClient(),
+		dbInstance,
+		logger.With("logger", "machine-spire-entry-controller"),
+		trustDomain,
+	)
+	if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
+		logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
+		os.Exit(1)
 	}
 
 	// Writes the SPIRE agent ID path MachineSpireEntryController consumes, so it
@@ -342,62 +341,58 @@ func main() {
 	// supportedInfraProviders: dropping launchLayer from that list stops new
 	// clusters, while existing clusters' new and replacement machines still need
 	// their agent path to join.
-	if machineCRDInstalled {
-		launchLayerCRDInstalled, err := capi.LaunchLayerMachineCRDInstalled(k8sControllerManager.GetRESTMapper())
-		if err != nil {
-			logger.Error("Failed to look up the LaunchLayerMachine CRD", "error", err)
+	launchLayerCRDInstalled, err := capi.LaunchLayerMachineCRDInstalled(k8sControllerManager.GetRESTMapper())
+	if err != nil {
+		logger.Error("Failed to look up the LaunchLayerMachine CRD", "error", err)
+		os.Exit(1)
+	}
+	if launchLayerCRDInstalled {
+		launchLayerSpiffeController := capi.NewLaunchLayerSpiffeController(
+			dbInstance,
+			k8sControllerManager.GetClient(),
+			logger.With("logger", "launchlayer-spiffe-controller"),
+		)
+		if err := launchLayerSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up LaunchLayer SPIFFE controller", "error", err)
 			os.Exit(1)
 		}
-		if !launchLayerCRDInstalled {
-			logger.Warn("LaunchLayerMachine CRD not installed; skipping the LaunchLayer SPIFFE controller")
-		} else {
-			launchLayerSpiffeController := capi.NewLaunchLayerSpiffeController(
-				dbInstance,
-				k8sControllerManager.GetClient(),
-				logger.With("logger", "launchlayer-spiffe-controller"),
-			)
-			if err := launchLayerSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
-				logger.Error("Failed to set up LaunchLayer SPIFFE controller", "error", err)
-				os.Exit(1)
-			}
-		}
+	} else {
+		logger.Info("LaunchLayerMachine CRD not installed; skipping the LaunchLayer SPIFFE controller")
 	}
 
-	if !cfg.NicoControllersEnabled {
-		logger.Info("NICo controllers disabled by configuration")
-	} else {
-		// Both controllers below watch NicoMachine, and either takes the manager
-		// down where CAPNICo is not installed. Read once: every deployment path
-		// installs the infrastructure providers before the NVKE controller.
+	if cfg.NicoControllersEnabled {
 		nicoCRDInstalled, err := capi.NicoMachineCRDInstalled(k8sControllerManager.GetRESTMapper())
 		if err != nil {
 			logger.Error("Failed to look up the NicoMachine CRD", "error", err)
 			os.Exit(1)
 		}
 		if !nicoCRDInstalled {
-			logger.Warn("NicoMachine CRD not installed; skipping the NICo controllers")
-		} else {
-			nicoSpiffeController := capi.NewNicoSpiffeController(
-				cfg,
-				dbInstance,
-				k8sControllerManager.GetClient(),
-				logger.With("logger", "nico-spiffe-controller"),
-			)
-			if err := nicoSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
-				logger.Error("Failed to set up nico SPIFFE controller", "error", err)
-				os.Exit(1)
-			}
-
-			nicoProviderIDController := capi.NewNicoProviderIDController(
-				k8sControllerManager.GetClient(),
-				tenantClientProvider,
-				logger.With("logger", "nico-provider-id-controller"),
-			)
-			if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
-				logger.Error("Failed to set up nico provider ID controller", "error", err)
-				os.Exit(1)
-			}
+			logger.Error("Required NicoMachine CRD is not installed while NICo controllers are enabled")
+			os.Exit(1)
 		}
+
+		nicoSpiffeController := capi.NewNicoSpiffeController(
+			cfg,
+			dbInstance,
+			k8sControllerManager.GetClient(),
+			logger.With("logger", "nico-spiffe-controller"),
+		)
+		if err := nicoSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up nico SPIFFE controller", "error", err)
+			os.Exit(1)
+		}
+
+		nicoProviderIDController := capi.NewNicoProviderIDController(
+			k8sControllerManager.GetClient(),
+			tenantClientProvider,
+			logger.With("logger", "nico-provider-id-controller"),
+		)
+		if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up nico provider ID controller", "error", err)
+			os.Exit(1)
+		}
+	} else {
+		logger.Info("NICo controllers disabled by configuration")
 	}
 
 	var teleportClient teleport.Client

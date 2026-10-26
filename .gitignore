@@ -59,6 +59,7 @@ os-image/efi/output/
 # Editor / OS
 .idea/
 .vscode/
+*.code-workspace
 *.swp
 *.swo
 *~
