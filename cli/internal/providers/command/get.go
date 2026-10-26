@@ -49,7 +49,7 @@ func NewGetCmd(siteFn SiteFn, runner inspect.Runner, newLister credentials.Liste
 			"names the provider's credentials Secret. nvkectl never runs a check: the provider " +
 			"checks every few minutes, and LAST CHECK is how long ago the latest check ran. A result " +
 			"is STALE when the provider's scheduled check is overdue or, if the provider publishes no " +
-			"schedule, when its last check is too old.\n\n" +
+			"usable schedule, when its last check is too old.\n\n" +
 			"  HEALTHY            the last check authenticated and read the current tenant\n" +
 			"  FAILING (reason)   the credentials are missing, invalid, rejected or forbidden\n" +
 			"  UNKNOWN (reason)   the check could not decide, for example during an outage\n" +
