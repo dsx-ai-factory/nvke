@@ -60,9 +60,12 @@ spec:
     name: k8s-certs
 `
 
-// ── ensureFlag ───────────────────────────────────────────────────────────────
+// ── applySetFlag ─────────────────────────────────────────────────────────────
 
-func TestEnsureFlag(t *testing.T) {
+// Every fixture below carries flags on command, so applySetFlag reconciles in
+// place there and never reaches its args fallback. That keeps the table focused
+// on the token/split/bare-boolean forms, which is where the care is needed.
+func TestApplySetFlagOnCommand(t *testing.T) {
 	tests := []struct {
 		name  string
 		cmd   []string
@@ -131,10 +134,12 @@ func TestEnsureFlag(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ensureFlag(tc.cmd, tc.flag, tc.value)
+			got, args := applySetFlag(tc.cmd, nil, tc.flag, tc.value)
 			assert.Equal(t, tc.want, got)
+			assert.Empty(t, args, "command already carries flags, so nothing belongs in args")
 			// Idempotency: applying again yields the same result.
-			assert.Equal(t, tc.want, ensureFlag(got, tc.flag, tc.value))
+			again, _ := applySetFlag(got, nil, tc.flag, tc.value)
+			assert.Equal(t, tc.want, again)
 		})
 	}
 }

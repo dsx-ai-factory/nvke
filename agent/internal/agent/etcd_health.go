@@ -67,8 +67,10 @@ func (s *NodeAgentServer) etcdHealthPollIntervalOrDefault() time.Duration {
 	return defaultEtcdHealthPollInterval
 }
 
-// etcdCallContext derives a context for one etcd API call. Every etcd call in
-// these RPCs goes through it, so none can block past its own deadline.
+// etcdCallContext derives a context for one etcd API call, so none can block
+// past its own deadline. Every call made by the status and defragmentation RPCs
+// goes through it. RemoveEtcdMember predates it and still passes its RPC context
+// straight through; new etcd calls should use this.
 func (s *NodeAgentServer) etcdCallContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(ctx, s.etcdCallTimeoutOrDefault())
 }

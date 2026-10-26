@@ -193,16 +193,6 @@ func setFlagIfPresent(list []string, name, value string) ([]string, bool) {
 	return list, false
 }
 
-// ensureFlag makes --<name>=<value> present exactly once in cmd: it updates an
-// existing occurrence in place, else appends. Idempotent; operates on the
-// caller-owned copy toStringSlice allocated.
-func ensureFlag(cmd []string, name, value string) []string {
-	if updated, found := setFlagIfPresent(cmd, name, value); found {
-		return updated
-	}
-	return append(cmd, "--"+name+"="+value)
-}
-
 // removeFlag strips every occurrence of --<name> from cmd: the token form
 // (--name=...), and the split form (--name followed by its value token). It is
 // idempotent and compacts cmd in place (callers pass the owned copy

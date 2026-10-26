@@ -535,7 +535,3 @@ func validatePatchAPIServerManifestRequest(req *pb.PatchAPIServerManifestRequest
 
 	return nil
 }
-
-// The convergent flag helpers this RPC relies on (applyFlagOps, validateFlagName,
-// jsonSemanticEqual and friends) live in static_pod_flags.go, shared with the
-// etcd manifest RPCs.

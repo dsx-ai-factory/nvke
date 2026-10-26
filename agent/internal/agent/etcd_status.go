@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -92,6 +93,15 @@ func etcdBootstrapDefragThresholdBytes(manifestJSON []byte) (int64, bool, error)
 		return 0, false, fmt.Errorf("parse --%s value %q: %w", etcdBootstrapDefragFlag, raw, err)
 	}
 	if megabytes <= 0 {
+		return 0, false, nil
+	}
+	if megabytes > math.MaxInt64/mebibyte {
+		// The multiplication below would wrap and hand the preflight a negative
+		// threshold, which is the exact failure this function is documented to
+		// prevent. Nothing this large describes a real backend, so treat it the
+		// same as any other value etcd would not act on.
+		slog.Warn("etcd manifest sets an unusable bootstrap-defrag threshold; treating it as not configured",
+			"flag", etcdBootstrapDefragFlag, "megabytes", megabytes)
 		return 0, false, nil
 	}
 	return megabytes * mebibyte, true, nil
@@ -244,7 +254,7 @@ func reclaimableBytes(dbSize, dbSizeInUse int64) int64 {
 //
 // This is a count of *registered* voters. MemberList reports membership, not
 // liveness, so an offline voter is still counted here and this must not be used
-// on its own to decide that a restart is safe - see availableVotingMembers.
+// on its own to decide that a restart is safe - see reachableVotingMembers.
 func votingMemberCount(members *clientv3.MemberListResponse) int32 {
 	if members == nil {
 		return 0
@@ -306,17 +316,52 @@ func (s *NodeAgentServer) reachableVotingMembers(
 				"member", fmt.Sprintf("%x", m.GetID()))
 			continue
 		}
-		probeCtx, cancel := s.etcdCallContext(ctx)
-		st, err := client.Status(probeCtx, endpoints[0])
-		cancel()
-		if healthErr := etcdStatusHealthError(st, err); healthErr != nil {
+		if err := s.probeVotingMember(ctx, client, m, endpoints); err != nil {
 			slog.WarnContext(ctx, "etcd voting member did not answer a status probe; treating it as unavailable",
-				"member", fmt.Sprintf("%x", m.GetID()), "err", healthErr)
+				"member", fmt.Sprintf("%x", m.GetID()), "err", err)
 			continue
 		}
 		reachable = append(reachable, m)
 	}
 	return reachable
+}
+
+// probeVotingMember reports whether a peer answered on any of the client URLs it
+// advertises, and that the answer came from the peer itself.
+//
+// Every URL is tried rather than just the first, because a member advertising
+// several of them (dual-stack, or a hostname alongside an address) is serving
+// fine if any one answers, and counting it as down would refuse a
+// defragmentation the cluster could safely have taken.
+//
+// The responder's identity is checked because reaching *an* etcd says nothing
+// on its own. A member whose advertised URL has gone stale - pointing at
+// loopback, or at a host since reassigned - would otherwise be confirmed
+// available by whichever etcd answered, including this node's own. That inflates
+// the only count standing between a defragmentation and a lost quorum.
+func (s *NodeAgentServer) probeVotingMember(
+	ctx context.Context,
+	client etcdMemberClient,
+	member *etcdserverpb.Member,
+	endpoints []string,
+) error {
+	var probeErrs []error
+	for _, endpoint := range endpoints {
+		probeCtx, cancel := s.etcdCallContext(ctx)
+		st, err := client.Status(probeCtx, endpoint)
+		cancel()
+		if healthErr := etcdStatusHealthError(st, err); healthErr != nil {
+			probeErrs = append(probeErrs, fmt.Errorf("%s: %w", endpoint, healthErr))
+			continue
+		}
+		if responder := st.Header.MemberId; responder != member.GetID() {
+			probeErrs = append(probeErrs, fmt.Errorf("%s: answered by member %x, not %x",
+				endpoint, responder, member.GetID()))
+			continue
+		}
+		return nil
+	}
+	return errors.Join(probeErrs...)
 }
 
 // etcdRestartSafetyFloor is how many voting members must be available before
@@ -401,19 +446,28 @@ func (s *NodeAgentServer) GetEtcdStatus(
 		return nil, status.Errorf(codes.FailedPrecondition, "get etcd status: %v", err)
 	}
 
+	// Scoped to this member's own alarms. Reading Errors here would have
+	// reported every member of an alarmed cluster as unhealthy, which is the
+	// opposite of what a caller polling for a defragmentation candidate needs to
+	// see.
+	healthErr := s.localEtcdHealthError(ctx, client, localStatus, nil)
+	if healthErr != nil {
+		// The response carries no field for the reason, so a caller sees only
+		// healthy=false and cannot tell a leader election or a timed-out
+		// AlarmList from a genuinely alarmed member. Log it so the distinction
+		// exists somewhere.
+		slog.WarnContext(ctx, "reporting the local etcd member as unhealthy", "err", healthErr)
+	}
+
 	return &pb.GetEtcdStatusResponse{
-		DbTotalSizeBytes:      localStatus.DbSize,
-		DbTotalSizeInUseBytes: localStatus.DbSizeInUse,
-		ReclaimableBytes:      reclaimableBytes(localStatus.DbSize, localStatus.DbSizeInUse),
-		QuotaBackendBytes:     quota,
-		IsLeader:              localStatus.Leader != 0 && localStatus.Leader == localStatus.Header.MemberId,
-		VotingMemberCount:     votingMemberCount(members),
-		MemberId:              fmt.Sprintf("%x", localStatus.Header.MemberId),
-		// Scoped to this member's own alarms. Reading Errors here would have
-		// reported every member of an alarmed cluster as unhealthy, which is
-		// the opposite of what a caller polling for a defragmentation
-		// candidate needs to see.
-		Healthy:                       s.localEtcdHealthError(ctx, client, localStatus, nil) == nil,
+		DbTotalSizeBytes:              localStatus.DbSize,
+		DbTotalSizeInUseBytes:         localStatus.DbSizeInUse,
+		ReclaimableBytes:              reclaimableBytes(localStatus.DbSize, localStatus.DbSizeInUse),
+		QuotaBackendBytes:             quota,
+		IsLeader:                      localStatus.Leader != 0 && localStatus.Leader == localStatus.Header.MemberId,
+		VotingMemberCount:             votingMemberCount(members),
+		MemberId:                      fmt.Sprintf("%x", localStatus.Header.MemberId),
+		Healthy:                       healthErr == nil,
 		BootstrapDefragThresholdBytes: threshold,
 	}, nil
 }

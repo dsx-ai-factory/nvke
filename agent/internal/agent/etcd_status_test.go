@@ -206,6 +206,23 @@ spec:
 `,
 			wantErr: true,
 		},
+		{
+			// Parses fine as an int64 and is positive, so only a check on the
+			// product catches it. Left unguarded the megabyte-to-byte
+			// multiplication wraps negative, and a negative threshold is never
+			// cleared by a clamped reclaimable figure - so the member would be
+			// restarted for a defragmentation etcd was never going to perform,
+			// which is the one outcome this function exists to prevent.
+			name: "a value that would overflow the byte conversion reads as unconfigured",
+			manifest: `apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: etcd
+      command: ["etcd", "--bootstrap-defrag-threshold-megabytes=9223372036854775807"]
+`,
+			wantFound: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -302,27 +319,72 @@ func TestReachableVotingMembers(t *testing.T) {
 		), 2)
 		assert.Empty(t, demoted, "a local member demoted to a learner does not vote")
 
-		removed := s.reachableVotingMembers(context.Background(), client, members(
-			&etcdserverpb.Member{ID: 1, Name: "cp-1", ClientURLs: []string{"https://cp-1:2379"}},
-		), 2)
+		onlyPeer := []*etcdserverpb.Member{
+			{ID: 1, Name: "cp-1", ClientURLs: []string{"https://cp-1:2379"}},
+		}
+		removed := s.reachableVotingMembers(context.Background(),
+			&fakeEtcdMemberClient{members: onlyPeer}, members(onlyPeer...), 2)
 		assert.Len(t, removed, 1, "a local member absent from the membership must not be counted")
 	})
+
+	threeVoters := []*etcdserverpb.Member{
+		{ID: 1, Name: "cp-1", ClientURLs: []string{"https://cp-1:2379"}},
+		{ID: 2, Name: "cp-2", ClientURLs: []string{"https://cp-2:2379"}},
+		{ID: 3, Name: "cp-3", ClientURLs: []string{"https://cp-3:2379"}},
+	}
 
 	t.Run("leaves out peers that do not answer", func(t *testing.T) {
 		s := &NodeAgentServer{}
 		client := &fakeEtcdMemberClient{
+			members:          threeVoters,
 			unavailablePeers: map[string]bool{"https://cp-3:2379": true},
 		}
 
-		got := s.reachableVotingMembers(context.Background(), client, members(
-			&etcdserverpb.Member{ID: 1, Name: "cp-1", ClientURLs: []string{"https://cp-1:2379"}},
-			&etcdserverpb.Member{ID: 2, Name: "cp-2", ClientURLs: []string{"https://cp-2:2379"}},
-			&etcdserverpb.Member{ID: 3, Name: "cp-3", ClientURLs: []string{"https://cp-3:2379"}},
-		), 2)
+		got := s.reachableVotingMembers(context.Background(), client, members(threeVoters...), 2)
 
 		require.Len(t, got, 2)
 		assert.Equal(t, uint64(1), got[0].GetID())
 		assert.Equal(t, uint64(2), got[1].GetID())
+	})
+
+	// A stale advertised URL - left pointing at loopback, or at a host since
+	// reassigned - means a probe can be answered by an etcd that is not the
+	// member being probed, including this node's own. Counting that as reachable
+	// inflates the only number standing between a defragmentation and a lost
+	// quorum, so the responder's identity has to be checked and not just the
+	// fact that something answered.
+	t.Run("leaves out a peer whose probe is answered by a different member", func(t *testing.T) {
+		s := &NodeAgentServer{}
+		impostor := []*etcdserverpb.Member{
+			{ID: 1, Name: "cp-1", ClientURLs: []string{"https://cp-1:2379"}},
+			// cp-3's URL resolves to cp-1, so cp-1 answers for it.
+			{ID: 3, Name: "cp-3", ClientURLs: []string{"https://cp-1:2379"}},
+		}
+		client := &fakeEtcdMemberClient{members: impostor}
+
+		got := s.reachableVotingMembers(context.Background(), client, members(impostor...), 2)
+
+		require.Len(t, got, 1, "only the member that answered as itself is reachable")
+		assert.Equal(t, uint64(1), got[0].GetID())
+	})
+
+	// A member advertising several client URLs is serving if any one of them
+	// answers; declaring it down on the first failure would refuse a
+	// defragmentation the cluster could safely have taken.
+	t.Run("accepts a peer that answers on a later client URL", func(t *testing.T) {
+		s := &NodeAgentServer{}
+		multiURL := []*etcdserverpb.Member{
+			{ID: 1, Name: "cp-1", ClientURLs: []string{"https://cp-1-v6:2379", "https://cp-1:2379"}},
+		}
+		client := &fakeEtcdMemberClient{
+			members:          multiURL,
+			unavailablePeers: map[string]bool{"https://cp-1-v6:2379": true},
+		}
+
+		got := s.reachableVotingMembers(context.Background(), client, members(multiURL...), 2)
+
+		require.Len(t, got, 1)
+		assert.Equal(t, uint64(1), got[0].GetID())
 	})
 }
 
