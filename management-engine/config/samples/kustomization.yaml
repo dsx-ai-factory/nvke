@@ -5,4 +5,5 @@
 resources:
 - internal_v1_nvkecluster.yaml
 - internal_v1_clusterreleasechannel.yaml
+- internal_v1_clusterclass.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
