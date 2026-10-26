@@ -66,6 +66,16 @@ PROFILES_IMAGE="nvke.local/controller-profiles:local"
 # The image `make -C cli images` builds for the bootstrap's seed cluster; the
 # site's controller is the same build under the name above.
 BOOTSTRAP_CONTROLLER_IMAGE="${NVKECTL_NVKE_CONTROLLER_IMAGE:-nke-controller:latest}"
+# The node image, for the site node and, copied into Docker, the tenant nodes,
+# under the name `make -C cli nodes-up` builds it with.
+NODE_IMAGE="${CAPD_KINDEST_NODE_IMAGE:-cwe-capd-kindest-node:local}"
+# The OVN chart stream the node image carries, as cli/e2e/bootstrap/run.sh
+# builds it, and where its packages are kept: outside the workspace, which
+# down removes, since building them takes minutes. The stream is fixed because
+# prepare-capd-bundles.sh builds only this one.
+CNI_STREAM="2.4.2"
+CNI_CHARTS_PACKAGE="nvke-cni-ovn-charts-${CNI_STREAM}"
+CNI_BUNDLE_DIR="${CNI_BUNDLE_DIR:-${XDG_CACHE_HOME:-${HOME}/.cache}/nvke-local-site/cni-$(uname -m)}"
 
 log() { printf '[local-site] %s\n' "$*" >&2; }
 die() { printf 'local-site: %s\n' "$*" >&2; exit 1; }
@@ -167,7 +177,9 @@ node_up() {
       die "${NODE_IMAGE} has no ${CNI_CHARTS_PACKAGE}, so the bootstrap would stop at InstallCNI; remove it and the node image built from it (${rmi}) and run setup again to rebuild them with the packages"
     fi
     log "starting the container node (make -C cli nodes-up; the first run builds the node image)"
-    NVKECTL_E2E_NODES=1 NVKECTL_E2E_REUSE=1 mk -C cli nodes-up
+    # The build names the image after CAPD_KINDEST_NODE_IMAGE and the node
+    # derives its own from NVKECTL_E2E_BASE_IMAGE, so both carry NODE_IMAGE.
+    NVKECTL_E2E_NODES=1 NVKECTL_E2E_REUSE=1 CAPD_KINDEST_NODE_IMAGE="${NODE_IMAGE}" NVKECTL_E2E_BASE_IMAGE="${NODE_IMAGE}" mk -C cli nodes-up
   fi
   # nodes-hosts records a SPIRE journal cursor per node under the attestation
   # baseline; right after nodes-up the agent may not have logged yet, so the
@@ -423,6 +435,13 @@ nico_sim_running() {
 nico_sim_up() {
   local sim="${REPO}/controller/nico-sim" pid_file="${WORKSPACE}/.nico-sim.pid" gateway
   gateway="$(nerdctl network inspect "${NODE_NETWORK}" --format '{{range .IPAM.Config}}{{.Gateway}} {{end}}' | awk '{print $1}')" && [[ -n "${gateway}" ]] || die "cannot read the ${NODE_NETWORK} gateway"
+  # Copied again when Docker's copy predates the CNI packages, whether or not
+  # nico-sim is running: it starts tenant nodes from this name, and a tenant
+  # node without them never gets a CNI.
+  if ! docker image inspect "${NODE_IMAGE}" >/dev/null 2>&1 || ! image_has_cni docker; then
+    log "copying the node image into Docker for the tenant nodes"
+    nerdctl save "${NODE_IMAGE}" | docker load >/dev/null
+  fi
   if nico_sim_running; then
     log "nico-sim is running"
   else
@@ -431,12 +450,6 @@ nico_sim_up() {
     # a down.
     log "building nico-sim (make -C controller/nico-sim build)"
     CGO_ENABLED=1 mk -C controller/nico-sim build >/dev/null
-    # Again when Docker's copy predates the CNI packages: it is this script's
-    # copy of the node image, and a tenant node without them never gets a CNI.
-    if ! docker image inspect "${NODE_IMAGE}" >/dev/null 2>&1 || ! image_has_cni docker; then
-      log "copying the node image into Docker for the tenant nodes"
-      nerdctl save "${NODE_IMAGE}" | docker load >/dev/null
-    fi
     # nico-sim binds its port last, after its database, seed and Docker
     # checks, so an answer on the port while it starts can be another
     # process's; refuse a port that is already taken.
