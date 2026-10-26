@@ -82,6 +82,11 @@ The endpoint follows these rules:
 - Connections use TLS. To send without TLS, use an `http://` URL, or write the
   endpoint without a scheme and set `OTEL_EXPORTER_OTLP_INSECURE=true`. An
   `https://` URL always uses TLS.
+- nvkectl verifies the collector's certificate against the host's trusted
+  certificate authorities. It does not use `OTEL_EXPORTER_OTLP_CERTIFICATE` or
+  the client certificate variables, so a collector with a private certificate
+  authority needs that authority in the host's trust store, and a collector
+  that requires client certificates is not supported.
 - nvkectl sends its log records only, not spans.
 
 If nvkectl prints `OTLP log export is off`, it did not accept the endpoint and

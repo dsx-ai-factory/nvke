@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -126,9 +125,9 @@ func (run *Run) EnableOTLP(cfg OTLPConfig) error {
 		return errors.New("OTLP export is already enabled")
 	}
 	// Every setting is explicit, so the exporter reads none of its own
-	// OTEL_EXPORTER_OTLP_* variables for them. It still reads the certificate
-	// variables, and a bad one reports through this handler, not to stderr.
-	otel.SetErrorHandler(otel.ErrorHandlerFunc(run.warnExport))
+	// OTEL_EXPORTER_OTLP_* variables for them. TLS uses the system roots: the
+	// exporter still reads its certificate variables, ignores them and prints a
+	// bad one itself.
 	scheme, creds := "https", credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})
 	if cfg.Insecure {
 		scheme, creds = "http", insecure.NewCredentials()

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"log"
 	"log/slog"
 	"net"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
 	"google.golang.org/grpc"
@@ -236,6 +238,67 @@ func TestOTLPExporterIgnoresSignalSpecificVariables(t *testing.T) {
 	defer collector.mu.Unlock()
 	assert.Empty(t, collector.metadata.Get("x-leaked"), "no header from OTEL_EXPORTER_OTLP_LOGS_HEADERS")
 	assert.Empty(t, collector.metadata.Get("grpc-encoding"), "no compression from OTEL_EXPORTER_OTLP_LOGS_COMPRESSION")
+}
+
+// A bad certificate variable, which the exporter library reads and nvkectl does
+// not use, must not spend the run's one warning: a real export failure after it
+// still gives exactly one warning, with the trace ID. It sets the global log
+// output and a variable, so it is not parallel.
+func TestOTLPBadCertificateVariableDoesNotSpendTheExportWarning(t *testing.T) {
+	var printed bytes.Buffer
+	log.SetOutput(&printed)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	t.Setenv("OTEL_EXPORTER_OTLP_CERTIFICATE", "/nonexistent/ca.pem")
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	closed := lis.Addr().String() // nothing listens here, so every export fails
+	require.NoError(t, lis.Close())
+	stderr := &lockedBuffer{}
+
+	run := NewRun("dev")
+	require.NoError(t, run.EnableOTLP(OTLPConfig{Endpoint: closed, Insecure: true}))
+	run.Start(context.Background(), "nvkectl get clusters")
+	slog.New(run.LogHandler(slog.NewTextHandler(stderr, nil))).Info("hello")
+	run.Finish(nil)
+
+	var warnings []string
+	for _, line := range strings.Split(stderr.String(), "\n") {
+		if strings.Contains(line, "could not export telemetry") {
+			warnings = append(warnings, line)
+		}
+	}
+	require.Len(t, warnings, 1, "stderr:\n%s", stderr.String())
+	assert.Contains(t, warnings[0], "trace_id="+run.TraceID())
+	assert.NotContains(t, stderr.String(), "failed to load TLS", "the library's own line is not turned into the warning")
+	assert.Contains(t, printed.String(), "failed to load TLS", "the library prints the bad variable itself")
+}
+
+// EnableOTLP leaves the OpenTelemetry error handler to its owner: an error
+// another component reports reaches that handler and does not use up the run's
+// export warning. It installs a global handler, so it is not parallel.
+func TestEnableOTLPLeavesTheGlobalErrorHandlerAlone(t *testing.T) {
+	var mu sync.Mutex
+	var got []error
+	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, err)
+	}))
+	// The library offers no way to put its default handler back, so log as it does.
+	t.Cleanup(func() { otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) { log.Print(err) })) })
+	stderr := &lockedBuffer{}
+
+	run := NewRun("dev")
+	require.NoError(t, run.EnableOTLP(OTLPConfig{Endpoint: "127.0.0.1:1", Insecure: true}))
+	otel.Handle(errors.New("another component's error"))
+	run.Start(context.Background(), "nvkectl get clusters")
+	slog.New(run.LogHandler(slog.NewTextHandler(stderr, nil))).Info("hello")
+
+	mu.Lock()
+	assert.Len(t, got, 1, "the handler its owner installed received the error")
+	mu.Unlock()
+	assert.NotContains(t, stderr.String(), "could not export telemetry")
+	run.Finish(nil)
 }
 
 // A malformed variable the exporter reads on its own must not reach stderr with
