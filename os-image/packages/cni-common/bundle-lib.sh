@@ -395,10 +395,13 @@ build_image() {
         ;;
       nerdctl)
         # nerdctl has no buildx; its build drives buildkit, which has the same exporter.
+        # nerdctl 1.7 writes the archive, then exits "no image was built" because it
+        # loaded nothing into containerd; the checks below verify the archive.
         SOURCE_DATE_EPOCH="$epoch" "$oci" build \
           --platform "linux/${ARCH}" --build-arg "SOURCE_DATE_EPOCH=${epoch}" "$@" \
           --output "type=docker,dest=${WORK}/images.tar,rewrite-timestamp=true" \
           -t "$ref" -f "$dockerfile" "$ctx" ||
+          [[ -s "${WORK}/images.tar" ]] ||
           die "building ${ref} failed"
         ;;
       *)
