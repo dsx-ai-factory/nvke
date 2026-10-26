@@ -142,7 +142,7 @@ func (c *CredentialCollector) collectCertificates(ch chan<- prometheus.Metric, c
 	if observation != nil {
 		if observation.ObservedAt != nil {
 			observedAge = age(now, *observation.ObservedAt)
-			observedFresh = observedAge <= c.cfg.CertificateObservationMaxAge.Seconds()
+			observedFresh = observedAge >= 0 && observedAge <= c.cfg.CertificateObservationMaxAge.Seconds()
 			inspectionFresh = observation.Available && observedFresh
 		}
 		for _, item := range observation.Certificates {

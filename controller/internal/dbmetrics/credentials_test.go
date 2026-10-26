@@ -151,14 +151,19 @@ func TestCredentialObservationSurvivesFailedAttempt(t *testing.T) {
 	for _, test := range []struct {
 		name            string
 		observedAgo     time.Duration
+		zeroObservedAt  bool
 		wantObservation float64
 	}{
 		{name: "failed attempt within observation max age", observedAgo: time.Hour, wantObservation: 1},
 		{name: "failed attempt after observation max age", observedAgo: 4 * time.Hour},
+		{name: "zero observation time is not fresh", zeroObservedAt: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			id := uuid.New()
 			observed := now.Add(-test.observedAgo)
+			if test.zeroObservedAt {
+				observed = time.Time{}
+			}
 			cluster := db.Cluster{ID: id, Name: "managed", CreatedAt: observed, Conditions: db.ClusterConditions{Provisioned: db.NewCondition(true, "")}}
 			node := db.Node{ID: uuid.New(), ClusterID: id, Name: "node-one", Conditions: db.NodeConditions{Joined: db.NewCondition(true, "")}, CertificateInspection: &db.CertificateInspection{
 				AttemptedAt: now, ObservedAt: &observed, Available: false, Reason: "unavailable",

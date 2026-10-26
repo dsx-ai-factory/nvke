@@ -109,8 +109,8 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 			return nil
 		}
 		locked.CertificateInspection = observation
-		_, err = tx.UpdateNode(ctx, &locked)
-		return err
+		// A column-only write: the wrapped UpdateNode would enqueue every node controller.
+		return tx.UpdateNodeCertificateInspection(ctx, &locked)
 	})
 	if errors.Is(err, db.ErrNotFound) {
 		return reconcile.Result{}, nil

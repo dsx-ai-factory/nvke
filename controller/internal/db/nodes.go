@@ -298,6 +298,9 @@ type NodeQueries interface {
 	GetNodeForUpdate(ctx context.Context, id uuid.UUID) (Node, error)
 	CreateNode(ctx context.Context, node *Node) (Node, error)
 	UpdateNode(ctx context.Context, node *Node) (Node, error)
+	// UpdateNodeCertificateInspection writes only the certificate_inspection column
+	// and leaves updated_at alone, for periodic observations that are not node changes.
+	UpdateNodeCertificateInspection(ctx context.Context, node *Node) error
 	DeleteNode(ctx context.Context, id uuid.UUID) error
 
 	// TryAcquireNodeProvisioningLock tries to acquire a transaction-level advisory lock for a specific node.
@@ -509,6 +512,14 @@ func (q *queriesImpl) UpdateNode(ctx context.Context, node *Node) (Node, error) 
 		return Node{}, err
 	}
 	return *node, notFoundErrIfNoRowsAffected(res)
+}
+
+func (q *queriesImpl) UpdateNodeCertificateInspection(ctx context.Context, node *Node) error {
+	res, err := q.db.NewUpdate().Model(node).Column("certificate_inspection").WherePK().Exec(ctx)
+	if err != nil {
+		return err
+	}
+	return notFoundErrIfNoRowsAffected(res)
 }
 
 func (q *queriesImpl) DeleteNode(ctx context.Context, id uuid.UUID) error {

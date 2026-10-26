@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -219,6 +220,29 @@ func TestReconcilePersistsPublicObservationsAndPreservesLifecycleConditions(t *t
 	_, err = restarted.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
 	require.NoError(t, err)
 	require.Equal(t, 2, stub.calls)
+}
+
+// TestReconcilePersistsInspectionWithoutNodeUpdate keeps a periodic inspection
+// from re-enqueueing every node controller: the wrapped UpdateNode records the
+// node for all node sources, so only the certificate_inspection column is written.
+func TestReconcilePersistsInspectionWithoutNodeUpdate(t *testing.T) {
+	ctx := context.Background()
+	node := db.Node{ID: uuid.New(), Name: "managed-node", Conditions: db.NodeConditions{Joined: db.NewCondition(true, "joined")}}
+	tx := &testutil.MockTx{}
+	tx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil)
+	tx.On("UpdateNodeCertificateInspection", mock.Anything, mock.MatchedBy(func(n *db.Node) bool {
+		return n.ID == node.ID && n.CertificateInspection != nil
+	})).Return(nil)
+	database := &testutil.MockDB{MockTx: tx}
+	database.On("GetNode", mock.Anything, node.ID).Return(node, nil)
+	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+	controller := NewController(config.Config{CertificateInspectionInterval: time.Hour}, dbwrapper.New(database, slog.New(slog.DiscardHandler)), &inspectorStub{err: status.Error(codes.Unavailable, "agent restarting")})
+
+	_, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
+
+	require.NoError(t, err)
+	tx.AssertExpectations(t)
+	tx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 }
 
 // SQLite serializes this test on one connection and does not implement FOR UPDATE.

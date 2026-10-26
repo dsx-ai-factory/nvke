@@ -504,6 +504,10 @@ func (m *MockTx) GetNodeForUpdate(ctx context.Context, id uuid.UUID) (db.Node, e
 	return v, args.Error(1)
 }
 
+func (m *MockTx) UpdateNodeCertificateInspection(ctx context.Context, node *db.Node) error {
+	return m.Called(ctx, node).Error(0)
+}
+
 func (m *MockTx) UpdateNode(ctx context.Context, node *db.Node) (db.Node, error) {
 	args := m.Called(ctx, node)
 	v, ok := args.Get(0).(db.Node)
