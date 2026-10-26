@@ -96,6 +96,16 @@ func (s *NodeAgentServer) PatchAPIServerManifest(
 		return nil, status.Errorf(codes.InvalidArgument, "patch apiserver manifest: %v", err)
 	}
 
+	// This rewrites kube-apiserver.yaml, which other operations park and restore
+	// by renaming that same path. Without this lock a park racing a patch either
+	// clobbers the patch, or leaves the restore comparing a manifest it did not
+	// write against its backup and refusing to put it back - which ends with the
+	// node out of service. Certificate renewal takes the same lock for the same
+	// reason. Held for the whole call, including the apiserver restart waits,
+	// because the manifest is in a rewritten state until those finish.
+	s.staticPodMutationMu.Lock()
+	defer s.staticPodMutationMu.Unlock()
+
 	// Phase 1: compute the target manifest entirely in memory. No disk writes
 	// happen here, so any failure leaves the node untouched and needs no
 	// rollback.

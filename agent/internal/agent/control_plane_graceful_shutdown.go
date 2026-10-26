@@ -173,7 +173,10 @@ func (s *NodeAgentServer) runK8sControlPlaneNodeGracefulShutdown(
 	if runner == nil {
 		runner = &nvkeutils.ExecRunner{}
 	}
-	if err := s.withdrawKubeVipLocked(ctx, runner, progress); err != nil {
+	// The address is discarded because this RPC does not restore: the node is
+	// meant to stay out of service until a caller asks for it back, and that
+	// restore re-resolves from the manifest this parked.
+	if _, err := s.withdrawKubeVipLocked(ctx, runner, progress); err != nil {
 		return err
 	}
 
@@ -197,22 +200,47 @@ func (s *NodeAgentServer) runK8sControlPlaneNodeGracefulShutdown(
 // address from lo so nothing new is accepted. A fourth step then verifies no
 // new sockets arrive, which catches a network that is still steering traffic
 // here despite all three. See withdrawKubeVip.
+// It reports what it withdrew, so a caller that restores within the same call
+// can put back exactly that rather than working it out again afterwards. The
+// withdrawal destroys the evidence: it parks the manifest and deletes the
+// address from lo, which are two of the three things the address resolves from.
 func (s *NodeAgentServer) withdrawKubeVipLocked(
 	ctx context.Context,
 	runner nvkeutils.CommandRunner,
 	progress nodeAgentOperationProgress,
-) error {
+) (kubeVipWithdrawal, error) {
 	progress.SetStep(stepResolvingKubeVip)
-	vip, err := s.resolveKubeVipAddress(runner)
-	switch {
-	case err == nil:
-		return s.withdrawKubeVip(ctx, runner, progress, vip)
-	case errors.Is(err, errNoKubeVipAddress):
-		slog.Info("kube-vip is not configured; skipping kube-vip withdrawal")
-		return nil
-	default:
-		return fmt.Errorf("resolve kube-vip address: %w", err)
+	vip, fromManifest, err := s.resolveKubeVipAddressFromManifest()
+	if err != nil {
+		return kubeVipWithdrawal{}, fmt.Errorf("resolve kube-vip address: %w", err)
 	}
+	if !fromManifest {
+		vip, err = resolveKubeVipAddressFromLoopback(runner)
+		switch {
+		case err == nil:
+		case errors.Is(err, errNoKubeVipAddress):
+			slog.Info("kube-vip is not configured; skipping kube-vip withdrawal")
+			return kubeVipWithdrawal{}, nil
+		default:
+			return kubeVipWithdrawal{}, fmt.Errorf("resolve kube-vip address: %w", err)
+		}
+	}
+	withdrawal := kubeVipWithdrawal{vip: vip, manifestParked: fromManifest}
+	return withdrawal, s.withdrawKubeVip(ctx, runner, progress, vip)
+}
+
+// kubeVipWithdrawal records what a withdrawal did, so the restore puts back that
+// and nothing else.
+type kubeVipWithdrawal struct {
+	// vip is the address withdrawn from this node. Empty means kube-vip is not
+	// configured here and nothing was withdrawn.
+	vip string
+	// manifestParked distinguishes a kube-vip that is a static pod from one that
+	// is not. When the address came from lo rather than from a manifest there is
+	// no manifest to park, and the restore must not try to put one back: it
+	// would fail with the manifest neither active nor backed up, and report a
+	// node unreturnable when all it needs is its address again.
+	manifestParked bool
 }
 
 // withdrawKubeVip removes kube-vip from this node so it stops advertising and
@@ -247,7 +275,12 @@ func (s *NodeAgentServer) withdrawKubeVip(
 	removeErr := s.removeKubeVipFromLoopback(runner, vip)
 	if closeErr != nil {
 		if removeErr != nil {
-			return fmt.Errorf("close stale remote VIP sockets: %w; remove kube-vip address from lo: %v", closeErr, removeErr)
+			// Joined rather than formatted with %v, so both stay reachable
+			// through errors.Is and errors.As.
+			return errors.Join(
+				fmt.Errorf("close stale remote VIP sockets: %w", closeErr),
+				fmt.Errorf("remove kube-vip address from lo: %w", removeErr),
+			)
 		}
 		return fmt.Errorf("close stale remote VIP sockets: %w", closeErr)
 	}
@@ -285,7 +318,9 @@ func (s *NodeAgentServer) runKubeVipRestore(
 	if runner == nil {
 		runner = &nvkeutils.ExecRunner{}
 	}
-	return s.restoreKubeVipLocked(ctx, runner, progress)
+	// No withdrawal happened in this call, so the address is re-resolved from
+	// the manifest the graceful shutdown parked.
+	return s.restoreKubeVipLocked(ctx, runner, progress, kubeVipWithdrawal{})
 }
 
 // restoreKubeVipLocked is runKubeVipRestore without the lock, for callers that
@@ -296,31 +331,57 @@ func (s *NodeAgentServer) runKubeVipRestore(
 //
 // sync.Mutex is not reentrant, so this split is what keeps the bundled sequence
 // from deadlocking on itself.
+// withdrawn describes a withdrawal performed earlier in this same call, and is
+// the zero value when there was none - the standalone restore RPC and the
+// startup reconciler both arrive that way and re-resolve, which works for them
+// because reaching either means a manifest is parked.
+//
+// Given a withdrawal, this does not re-resolve. The withdrawal removed what
+// re-resolution reads, so on a node where kube-vip is not a static pod there
+// would be nothing left to find, and the restore would quietly decide kube-vip
+// was not configured and skip - leaving the node out of the VIP while the
+// operation reported success.
 func (s *NodeAgentServer) restoreKubeVipLocked(
 	ctx context.Context,
 	runner nvkeutils.CommandRunner,
 	progress nodeAgentOperationProgress,
+	withdrawn kubeVipWithdrawal,
 ) error {
-	progress.SetStep(stepResolvingKubeVip)
-	vip, err := s.resolveKubeVipAddress(runner)
-	switch {
-	case err == nil:
-		// fall through to restore below
-	case errors.Is(err, errNoKubeVipAddress):
-		slog.Info("kube-vip is not configured; skipping kube-vip restore")
-		return nil
-	default:
-		return fmt.Errorf("resolve kube-vip address: %w", err)
+	vip := withdrawn.vip
+	restoreManifest := withdrawn.manifestParked
+	if vip == "" {
+		progress.SetStep(stepResolvingKubeVip)
+		resolved, err := s.resolveKubeVipAddress(runner)
+		switch {
+		case err == nil:
+			vip = resolved
+			restoreManifest = true
+		case errors.Is(err, errNoKubeVipAddress):
+			slog.Info("kube-vip is not configured; skipping kube-vip restore")
+			return nil
+		default:
+			return fmt.Errorf("resolve kube-vip address: %w", err)
+		}
 	}
 
-	if err := s.restoreStaticPod(ctx, runner, progress, staticPodRestoreSpec{
-		containerName: kubeVipContainerName,
-		manifestName:  defaultKubeVipManifestName,
-		restoringStep: stepRestoringKubeVip,
-		waitingStep:   stepWaitingKubeVipStart,
-		timeout:       s.staticPodStartTimeoutOrDefault(),
-	}); err != nil {
-		return err
+	// Skipped when the withdrawal had no manifest to park. Asking for one back
+	// would fail with it neither active nor backed up, which is the truth but
+	// not a problem: kube-vip runs some other way here and only the address was
+	// taken.
+	if restoreManifest {
+		if err := s.restoreStaticPod(ctx, runner, progress, staticPodRestoreSpec{
+			containerName: kubeVipContainerName,
+			manifestName:  defaultKubeVipManifestName,
+			restoringStep: stepRestoringKubeVip,
+			waitingStep:   stepWaitingKubeVipStart,
+			timeout:       s.staticPodStartTimeoutOrDefault(),
+		}); err != nil {
+			return err
+		}
+	} else if err := s.addKubeVipToLoopback(runner, vip); err != nil {
+		// Nothing else will put the address back, since there is no manifest for
+		// kubelet to act on.
+		return fmt.Errorf("restore kube-vip address on lo: %w", err)
 	}
 
 	progress.SetStep(stepWaitingLoopbackVip)
@@ -888,6 +949,28 @@ func sleepOrDone(ctx context.Context, d time.Duration) error {
 	}
 }
 
+// addKubeVipToLoopback puts the VIP back on lo directly. It is only for the node
+// whose kube-vip is not a static pod: everywhere else kube-vip reclaims the
+// address itself once its manifest is back, and waitForKubeVipOnLoopback is what
+// confirms it. Treats an address that is already present as success, so a
+// partially completed withdrawal can be undone.
+func (s *NodeAgentServer) addKubeVipToLoopback(runner nvkeutils.CommandRunner, vip string) error {
+	output, err := runner.Run("ip", []string{"addr", "add", vip + "/32", "dev", "lo"}, nil)
+	if err == nil {
+		slog.Info("restored kube-vip address on lo", "vip", vip)
+		return nil
+	}
+	current, currentErr := runner.Run("ip", []string{"-o", "-4", "addr", "show", "dev", "lo", "scope", "host"}, nil)
+	if currentErr == nil {
+		vips, parseErr := parseLoopbackIPv4VIPs(string(current))
+		if parseErr == nil && slices.Contains(vips, vip) {
+			slog.Info("kube-vip address is already present on lo", "vip", vip)
+			return nil
+		}
+	}
+	return fmt.Errorf("ip addr add %s dev lo: %w: %s", vip, err, strings.TrimSpace(string(output)))
+}
+
 func (s *NodeAgentServer) removeKubeVipFromLoopback(runner nvkeutils.CommandRunner, vip string) error {
 	output, err := runner.Run("ip", []string{"addr", "del", vip + "/32", "dev", "lo"}, nil)
 	if err == nil {
@@ -990,6 +1073,15 @@ func (s *NodeAgentServer) waitForVipSocketQuietWindow(
 // despite where it lives - the static-pod waits serve etcd and kube-apiserver
 // too - and it is one knob rather than four because they all poll a local
 // command whose cost is the same.
+//
+// The timeouts those loops carry bound how long they wait between commands,
+// not the commands themselves: CommandRunner takes no context, so a crictl,
+// ip or ss that never returns hangs its loop regardless of the deadline, and
+// does so holding staticPodMutationMu. That is a property of the runner
+// interface rather than of this flow - every static-pod operation in the agent
+// shares it - and the only case given its own guard is the one command here
+// expected to take a while, `crictl stop`, through defaultEtcdExitTimeout.
+// Giving CommandRunner a context would fix it for all of them.
 func (s *NodeAgentServer) controlPlanePollIntervalOrDefault() time.Duration {
 	if s != nil && s.controlPlanePollInterval > 0 {
 		return s.controlPlanePollInterval

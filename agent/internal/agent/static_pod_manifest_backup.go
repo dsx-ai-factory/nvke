@@ -4,22 +4,32 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
 // Timestamped snapshots of static-pod manifests taken before an RPC mutates
-// them, shared by the kube-apiserver and etcd manifest patch paths.
+// them. PatchAPIServerManifest is the only caller today; the helper is kept
+// general because the prefix and retention are already parameters.
 //
 // Snapshots live in defaultStaticPodBackupDir, which is deliberately outside
 // /etc/kubernetes/manifests/ so kubelet does not try to start a second pod from
 // a backup file. Each caller passes its own prefix, which must end in a dot so
 // a glob on it never matches the sibling fixed-name manifests that the
-// stop/restore static-pod flow parks in the same directory.
+// stop/restore static-pod flow parks in the same directory. That requirement is
+// enforced rather than assumed: a prefix without the dot would make the pruner
+// below delete a parked manifest, which is the only copy of a control-plane pod
+// that exists while an operation holds it aside.
+
+// errBackupPrefixNotDotTerminated rejects a prefix that a glob could extend
+// into a parked manifest's fixed name.
+var errBackupPrefixNotDotTerminated = errors.New("static pod manifest backup prefix must end in a dot")
 
 // snapshotStaticPodManifest copies manifestRaw into the backup directory under
 // a timestamped name derived from backupPrefix and returns the absolute backup
@@ -31,6 +41,9 @@ func (s *NodeAgentServer) snapshotStaticPodManifest(
 	maxBackups int,
 	manifestRaw []byte,
 ) (string, error) {
+	if !strings.HasSuffix(backupPrefix, ".") {
+		return "", fmt.Errorf("%w: %q", errBackupPrefixNotDotTerminated, backupPrefix)
+	}
 	backupDir := s.rootedPath(defaultStaticPodBackupDir)
 	if err := os.MkdirAll(backupDir, 0o700); err != nil {
 		return "", fmt.Errorf("creating backup dir %s: %w", backupDir, err)
@@ -54,6 +67,14 @@ func (s *NodeAgentServer) snapshotStaticPodManifest(
 // snapshots carrying the prefix are considered; other files sharing the backup
 // directory are left untouched.
 func pruneStaticPodManifestBackups(backupDir, backupPrefix string, maxBackups int) {
+	if maxBackups < 1 {
+		// Retaining nothing would delete the snapshot written moments ago, and a
+		// negative count would slice past the end of the match list. Neither is
+		// a retention policy, and this cannot report an error, so decline.
+		slog.Warn("refusing to prune static pod manifest backups to a retention below one (best-effort)",
+			"dir", backupDir, "maxBackups", maxBackups)
+		return
+	}
 	matches, err := filepath.Glob(filepath.Join(backupDir, backupPrefix+"*"))
 	if err != nil {
 		slog.Warn("failed to list static pod manifest backups for pruning (best-effort)", "dir", backupDir, "err", err)

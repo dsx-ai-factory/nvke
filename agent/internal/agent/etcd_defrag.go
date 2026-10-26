@@ -241,13 +241,19 @@ func (s *NodeAgentServer) runEtcdDefrag(
 
 	// Past this point the node is being taken out of service, so a failure is
 	// no longer a refusal: something has to put it back.
-	if err := s.withdrawKubeVipLocked(ctx, runner, progress); err != nil {
-		return s.returnEtcdDefragNodeToServiceAfterFailure(ctx, runner, progress, client, sizeBefore,
+	// The withdrawn address is carried to the restore rather than resolved again
+	// there. Withdrawing parks the manifest and clears the address from lo, so on
+	// a node whose kube-vip is not a static pod nothing is left to resolve from.
+	// It is kept even when the withdrawal fails, because the failure may have
+	// come after the address was already removed.
+	withdrawn, err := s.withdrawKubeVipLocked(ctx, runner, progress)
+	if err != nil {
+		return s.returnEtcdDefragNodeToServiceAfterFailure(ctx, runner, progress, client, sizeBefore, withdrawn,
 			fmt.Sprintf("withdraw this node from the control-plane VIP: %v", err))
 	}
 
 	if err := s.stopKubeAPIServerLocked(ctx, runner, progress); err != nil {
-		return s.returnEtcdDefragNodeToServiceAfterFailure(ctx, runner, progress, client, sizeBefore,
+		return s.returnEtcdDefragNodeToServiceAfterFailure(ctx, runner, progress, client, sizeBefore, withdrawn,
 			fmt.Sprintf("stop kube-apiserver: %v", err))
 	}
 
@@ -269,7 +275,7 @@ func (s *NodeAgentServer) runEtcdDefrag(
 		stopTimeout:   s.etcdExitTimeoutOrDefault(),
 		startTimeout:  s.staticPodStartTimeoutOrDefault(),
 	}); err != nil {
-		return s.returnEtcdDefragNodeToServiceAfterFailure(ctx, runner, progress, client, sizeBefore,
+		return s.returnEtcdDefragNodeToServiceAfterFailure(ctx, runner, progress, client, sizeBefore, withdrawn,
 			fmt.Sprintf("restart the etcd container: %v", err))
 	}
 
@@ -290,7 +296,7 @@ func (s *NodeAgentServer) runEtcdDefrag(
 	}
 
 	progress.SetStep(stepEtcdDefragReturningToService)
-	if err := s.returnEtcdDefragNodeToService(ctx, runner, progress); err != nil {
+	if err := s.returnEtcdDefragNodeToService(ctx, runner, progress, withdrawn); err != nil {
 		return s.recordEtcdDefragFailure(progress, fmt.Sprintf(
 			"etcd was defragmented but this node could not be returned to service: %v", err,
 		), sizeBefore)
@@ -349,6 +355,7 @@ func (s *NodeAgentServer) returnEtcdDefragNodeToServiceAfterFailure(
 	progress nodeAgentOperationProgress,
 	client etcdMemberClient,
 	sizeBefore int64,
+	withdrawn kubeVipWithdrawal,
 	failureMessage string,
 ) error {
 	slog.ErrorContext(ctx, "etcd defragmentation failed after the node was withdrawn; returning it to service",
@@ -364,7 +371,7 @@ func (s *NodeAgentServer) returnEtcdDefragNodeToServiceAfterFailure(
 	}
 
 	progress.SetStep(stepEtcdDefragReturningToService)
-	if err := s.returnEtcdDefragNodeToService(ctx, runner, progress); err != nil {
+	if err := s.returnEtcdDefragNodeToService(ctx, runner, progress, withdrawn); err != nil {
 		return s.recordEtcdDefragFailure(progress,
 			fmt.Sprintf("%s; %v", failureMessage, err), sizeBefore)
 	}
@@ -382,16 +389,21 @@ func (s *NodeAgentServer) returnEtcdDefragNodeToServiceAfterFailure(
 // leave kube-vip parked for a reason that had nothing to do with kube-vip. A
 // manifest put back has a chance of recovering on its own; one left in the
 // backup directory does not.
+// withdrawn is what the withdrawal earlier in this call reported, passed back so
+// the restore puts that same thing back rather than re-deriving it from state
+// the withdrawal removed. Its zero value means kube-vip is not configured on
+// this node, and the restore skips it.
 func (s *NodeAgentServer) returnEtcdDefragNodeToService(
 	ctx context.Context,
 	runner nvkeutils.CommandRunner,
 	progress nodeAgentOperationProgress,
+	withdrawn kubeVipWithdrawal,
 ) error {
 	var restoreErrs []error
 	if err := s.restoreKubeAPIServerLocked(ctx, runner, progress); err != nil {
 		restoreErrs = append(restoreErrs, fmt.Errorf("restoring kube-apiserver failed: %w", err))
 	}
-	if err := s.restoreKubeVipLocked(ctx, runner, progress); err != nil {
+	if err := s.restoreKubeVipLocked(ctx, runner, progress, withdrawn); err != nil {
 		restoreErrs = append(restoreErrs, fmt.Errorf("rejoining the control-plane VIP failed: %w", err))
 	}
 	return errors.Join(restoreErrs...)

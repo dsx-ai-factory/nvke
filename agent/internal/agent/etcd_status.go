@@ -188,7 +188,12 @@ func (s *NodeAgentServer) localEtcdAlarmError(ctx context.Context, client etcdMe
 		return fmt.Errorf("list etcd alarms: %w", err)
 	}
 	if resp == nil {
-		return nil
+		// Treated as a fault rather than as "no alarms", matching
+		// etcdStatusHealthError on an absent status. clientv3 does not return
+		// one without an error, so this is a client that is not answering
+		// properly - and reading that as an all-clear would fail open on the
+		// gate that stands between a defragmentation and a NOSPACE member.
+		return errors.New("etcd returned no alarm list")
 	}
 	var raised []string
 	for _, alarm := range resp.Alarms {

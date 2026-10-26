@@ -69,7 +69,12 @@ type staticPodParkRestore struct {
 func (s *NodeAgentServer) staticPodParkRestores() []staticPodParkRestore {
 	return []staticPodParkRestore{
 		{defaultKubeAPIServerManifestName, s.restoreKubeAPIServerLocked},
-		{defaultKubeVipManifestName, s.restoreKubeVipLocked},
+		{defaultKubeVipManifestName, func(ctx context.Context, runner nvkeutils.CommandRunner, progress nodeAgentOperationProgress) error {
+			// No address to hand over: the withdrawal happened in a process that
+			// is gone. Re-resolving works here because reaching this point means
+			// the manifest is parked, which is one of the sources.
+			return s.restoreKubeVipLocked(ctx, runner, progress, kubeVipWithdrawal{})
+		}},
 	}
 }
 

@@ -97,24 +97,41 @@ func (s *NodeAgentServer) etcdExitTimeoutOrDefault() time.Duration {
 //
 // It returns the last successful status so callers can read the post-restart
 // backend size without a second round trip.
+//
+// The probes run under the deadline rather than merely being checked against
+// it. Only checking would let a probe that started just inside the budget run
+// a further Status and AlarmList call to completion, overrunning by two call
+// budgets while this holds staticPodMutationMu and reporting a timeout that
+// misstates how long the node was actually held.
 func (s *NodeAgentServer) waitForLocalEtcdHealthy(
 	ctx context.Context,
 	client etcdMemberClient,
 ) (*clientv3.StatusResponse, error) {
-	deadline := time.Now().Add(s.etcdHealthTimeoutOrDefault())
+	timeout := s.etcdHealthTimeoutOrDefault()
+	started := time.Now()
+	waitCtx, cancelWait := context.WithDeadline(ctx, started.Add(timeout))
+	defer cancelWait()
+
 	for {
-		probeCtx, cancel := s.etcdCallContext(ctx)
+		probeCtx, cancel := s.etcdCallContext(waitCtx)
 		st, err := client.Status(probeCtx, etcdLocalEndpoint)
 		cancel()
-		lastErr := s.localEtcdHealthError(ctx, client, st, err)
+		lastErr := s.localEtcdHealthError(waitCtx, client, st, err)
 		if lastErr == nil {
 			return st, nil
 		}
 
-		if !time.Now().Before(deadline) {
-			return nil, fmt.Errorf("etcd did not become healthy within %s: %w", s.etcdHealthTimeoutOrDefault(), lastErr)
-		}
-		if err := sleepOrDone(ctx, s.etcdHealthPollIntervalOrDefault()); err != nil {
+		if err := sleepOrDone(waitCtx, s.etcdHealthPollIntervalOrDefault()); err != nil {
+			if waitCtx.Err() != nil && ctx.Err() == nil {
+				// Elapsed rather than the nominal timeout: a probe cut short by
+				// the deadline still returns a little after it, and the wait is
+				// worth reporting as it happened. lastErr is carried out because
+				// a bare DeadlineExceeded says nothing about why etcd was unwell.
+				return nil, fmt.Errorf("etcd did not become healthy within %s: %w",
+					time.Since(started).Round(time.Second), lastErr)
+			}
+			// The caller gave up, which is its own outcome rather than a
+			// timeout.
 			return nil, err
 		}
 	}

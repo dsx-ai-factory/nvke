@@ -602,6 +602,12 @@ func (f *controlPlaneNodeFake) runIP(args []string) ([]byte, error) {
 		vip := strings.TrimSuffix(args[2], "/32")
 		f.loopbackVIPs = slices.DeleteFunc(f.loopbackVIPs, func(got string) bool { return got == vip })
 		return nil, nil
+	case len(args) == 5 && args[0] == "addr" && args[1] == "add":
+		vip := strings.TrimSuffix(args[2], "/32")
+		if !slices.Contains(f.loopbackVIPs, vip) {
+			f.loopbackVIPs = append(f.loopbackVIPs, vip)
+		}
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("unexpected ip args %v", args)
 	}
@@ -757,7 +763,9 @@ func TestRunEtcdDefragRestartSequence(t *testing.T) {
 			stepEtcdDefragReturningToService,
 			stepRestoringKubeAPIServer,
 			stepWaitingKubeAPIServerStart,
-			stepResolvingKubeVip,
+			// No second resolve: the restore is handed the address the
+			// withdrawal resolved, because by now the withdrawal has removed
+			// what resolving reads.
 			stepRestoringKubeVip,
 			stepWaitingKubeVipStart,
 			stepWaitingLoopbackVip,
@@ -959,6 +967,39 @@ func TestRunEtcdDefragRestoresKubeVipEvenWhenKubeAPIServerDoesNotComeBack(t *tes
 		"the manifest goes back even when the pod is not seen running")
 }
 
+// The bug this exists for: the restore re-resolved the VIP address after the
+// withdrawal had already destroyed two of the three places it can be resolved
+// from - the manifest is parked and the address is gone from lo. On a node
+// whose kube-vip is not a static pod, loopback was the only source, so
+// re-resolution found nothing, concluded kube-vip was "not configured", skipped
+// the restore and returned nil. The operation then reported RECLAIMED with the
+// node silently and permanently out of the control-plane VIP, and the startup
+// reconciler could not help either, since no manifest was ever parked to find.
+func TestRunEtcdDefragRestoresAVipOnlyLoopbackKnewAbout(t *testing.T) {
+	const mib = int64(1024 * 1024)
+	client := &fakeEtcdMemberClient{
+		members:  testEtcdMembersThree(),
+		localID:  2,
+		leaderID: 1,
+		statusFn: etcdSizingStatus(500*mib, 100*mib, 120*mib, 3),
+	}
+	s, node := etcdRestartTestServer(t, client)
+
+	// kube-vip runs here but not as a static pod, so the address on lo is the
+	// only record of it.
+	require.NoError(t, os.Remove(filepath.Join(s.RootPath, defaultStaticPodManifestDir, defaultKubeVipManifestName)))
+	node.pods[kubeVipContainerName].runningID = ""
+
+	progress := &fakeOperationProgress{}
+
+	require.NoError(t, s.runEtcdDefrag(context.Background(), progress))
+
+	result := decodeDefragResult(t, progress)
+	assert.Equal(t, int32(pb.GetEtcdDefragStatusResponse_OUTCOME_RECLAIMED), result.Outcome)
+	assert.Contains(t, node.loopbackVIPs, testKubeVipAddress,
+		"the VIP must be back on lo even though no manifest recorded it")
+}
+
 // The regression this exists for: restoreStaticPod listed containers before
 // renaming the manifest back and returned on a listing error, so a single
 // failed `crictl ps` after the move left a manifest parked with its pod down.
@@ -1028,6 +1069,42 @@ func TestRunEtcdDefragDoesNotBlockOnAnUnresponsiveMember(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("runEtcdDefrag blocked on an etcd call; every call must carry its own deadline")
 	}
+}
+
+// Per-call deadlines keep any one call bounded but say nothing about the wait
+// as a whole: a probe that starts just inside the health budget used to run to
+// its own completion, so the wait overran by a Status call and, when the status
+// came back but AlarmList did not, by an AlarmList call as well. That is time
+// spent holding staticPodMutationMu after the budget said to give up, and the
+// error reported the nominal timeout rather than what was actually waited.
+func TestWaitForLocalEtcdHealthyStopsAtItsOwnDeadline(t *testing.T) {
+	const callTimeout = 5 * time.Second
+	client := &fakeEtcdMemberClient{
+		members:  testEtcdMembersThree(),
+		localID:  2,
+		leaderID: 1,
+		statusFn: func(ctx context.Context, _ int) (*clientv3.StatusResponse, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	s := &NodeAgentServer{
+		etcdHealthTimeout:      50 * time.Millisecond,
+		etcdHealthPollInterval: time.Millisecond,
+		etcdCallTimeout:        callTimeout,
+	}
+
+	started := time.Now()
+	_, err := s.waitForLocalEtcdHealthy(context.Background(), client)
+	elapsed := time.Since(started)
+
+	require.Error(t, err)
+	assert.Less(t, elapsed, callTimeout,
+		"the wait ran past its own budget and into the call budget of a probe it should have cut short")
+	// The deadline cut the probe short, so the reason etcd was unwell has to
+	// survive into the error rather than being replaced by a bare cancellation.
+	assert.Contains(t, err.Error(), "etcd did not become healthy within")
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 // The regression this exists for: an agent restart mid-defragmentation leaves a
