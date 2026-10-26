@@ -73,7 +73,7 @@ The controller already reads a pool's labels and taints when each node joins, so
 
 Cordon, drain, `forceUnreachable` and `machineHealthIssue` are unchanged. A separate pool-scoped endpoint was considered and rejected: it would be a second way to delete a node and would add nothing these fields lack.
 
-`nvkectl delete node <name> --cluster <cluster> --pool <pool> [--replace]` resolves the node within the pool and always sends `nodePoolID`. Without `--replace` the pool shrinks; with it, the pool replaces the node.
+`nvkectl delete node <name> --cluster <cluster> --pool <pool> [--replace]` resolves the node within the pool and always sends `nodePoolID`. Without `--replace` the pool shrinks; with it, the pool replaces the node. The CLI always sends `decrementDesiredNodeCount` explicitly (`true`, or `false` with `--replace`), so its behavior does not depend on the undecided server default.
 
 **Default: not final or decided.** The proposed default for `decrementDesiredNodeCount` is `true`. That changes a bare `DELETE`, which today replaces the node. Callers that rely on replacement, such as break-fix automation, would have to send `false`, and the API compatibility check cannot detect this. Defaulting to `false` keeps existing behavior and makes shrinking opt-in. See open question 1.
 
@@ -84,7 +84,10 @@ Today a version or release change creates a new NodeSet, and `maxSurge` lets the
 Add a pool field `recycleAction: Mark | Replace`, default `Mark`, which keeps today's behavior. With `Replace`, auto mode deletes the nodes it selects instead of marking them. It uses the controller delete path the provisioning monitor already uses (`nodes.DeleteWithTx`, desired count unchanged), so each node is drained as in a manual delete and replaced on the new NodeSet. Two changes to auto mode's selection:
 
 - Exclude nodes already being deleted, which today's query does not need to do.
-- Cap each pass so that available nodes minus selected nodes stay at or above `minNodeCount`. "Available" means Ready, schedulable and not deleting, the set auto mode already counts.
+- Include nodes already marked `NeedsRecycle`, which today's query skips. Otherwise, switching a pool from `Mark` to `Replace` mid-upgrade would leave the nodes marked earlier in place.
+- Cap each pass so that available nodes minus selected nodes stay at or above `minNodeCount`. "Available" means Ready, schedulable and not deleting. Unlike today's count, it includes marked nodes, which still run workloads until they are deleted.
+
+Auto mode already runs each pass in one transaction that holds the pool's row lock, so two passes for a pool cannot interleave. The API delete path takes the same pool lock, in the global order cluster, pool, node, so a manual delete and a pass cannot both count the same available nodes. Taking the cluster lock inside the pass, through the live delete guard, would invert that order, because the pass already holds the pool lock.
 
 If `maxSurge` is 0 and `minNodeCount` equals `desiredNodeCount`, no node can ever be removed. So the update rejects `Replace` unless `desiredNodeCount - minNodeCount + maxSurge ≥ 1`, naming `recycleAction`.
 
