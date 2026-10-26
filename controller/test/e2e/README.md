@@ -239,12 +239,12 @@ Some checks apply only where the run says so, and skip otherwise:
 | Every API server running the flags the run names | `NVKE_SITE_APISERVER_FLAGS` is set |
 | Every API server running with an encryption provider config | `NVKE_SITE_ETCD_ENCRYPTED=true` |
 | Every node holding back from pods at least the memory the run names | `NVKE_SITE_RESERVED_MEMORY` is set |
+| Every StorageClass the run names present | `NVKE_SITE_STORAGE_CLASSES` is set |
 
 The encryption check sees only the flag: which provider the config writes
 with is in a file on the control-plane host, so a config led by `identity`,
 which stores Secrets in plain text, passes. The tenant suite's encryption
 specs read a Secret from etcd to prove it; this image has no such access.
-| Every StorageClass the run names present | `NVKE_SITE_STORAGE_CLASSES` is set |
 
 Specs labeled `creates` try what workloads rely on, with short-lived objects
 in the probe namespace that they delete whether they pass or fail; a runner
