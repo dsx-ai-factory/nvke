@@ -52,20 +52,22 @@ type staticPodParkRestore struct {
 // on lo again, and a node where kube-vip is not configured is skipped rather
 // than failed.
 //
-// The order is a dependency order rather than a preference. etcd first, because
-// kube-apiserver is pointed at the local member only and cannot serve without
-// it. kube-vip last, because advertising the control-plane VIP from a node
-// whose apiserver is not up yet sends traffic to an endpoint that will fail it.
+// The order is a dependency order rather than a preference: kube-vip last,
+// because advertising the control-plane VIP from a node whose apiserver is not
+// up yet sends traffic to an endpoint that will fail it.
+//
+// etcd is absent because nothing parks etcd.yaml. StartEtcdDefrag restarts that
+// container through the CRI and leaves its manifest in place, which is what
+// makes the member kubelet's problem to bring back rather than this
+// reconciler's.
 //
 // The ordering is best-effort, not a health gate: each step waits for a
 // container to be running, not for the service behind it to be ready. Waiting
-// for etcd to report healthy would mean standing up an etcd client before the
-// agent serves anything, and stalling startup for as long as a backend rewrite
-// takes. It is unnecessary because kube-apiserver already retries a backend
-// that is not up yet, which is the same thing it does on an ordinary reboot.
+// for the apiserver to serve would mean probing it before the agent serves
+// anything, and it already retries an etcd backend that is not up yet, which is
+// the same thing it does on an ordinary reboot.
 func (s *NodeAgentServer) staticPodParkRestores() []staticPodParkRestore {
 	return []staticPodParkRestore{
-		{etcdManifestName, s.restoreEtcdManifestLocked},
 		{defaultKubeAPIServerManifestName, s.restoreKubeAPIServerLocked},
 		{defaultKubeVipManifestName, s.restoreKubeVipLocked},
 	}
@@ -79,9 +81,9 @@ func (s *NodeAgentServer) staticPodParkRestores() []staticPodParkRestore {
 // The durable record is the backup directory itself. A fixed-name manifest
 // there means the agent renamed it out of the manifest directory and has not
 // renamed it back, and that survives the agent dying, systemd restarting it and
-// the node rebooting, so no separate state file is needed. Only the three
-// manifests the stop paths touch can ever appear: etcd, kube-apiserver and
-// kube-vip. Timestamped forensic snapshots live in the same directory but
+// the node rebooting, so no separate state file is needed. Only the two
+// manifests the stop paths touch can ever appear: kube-apiserver and kube-vip.
+// Timestamped forensic snapshots live in the same directory but
 // cannot be confused with them, because snapshotStaticPodManifest requires a
 // prefix ending in a dot.
 //

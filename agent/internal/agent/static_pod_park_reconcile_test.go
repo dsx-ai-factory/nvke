@@ -165,19 +165,23 @@ func TestReconcileInterruptedStaticPodParksIsANoOpWithNothingParked(t *testing.T
 }
 
 // A timestamped forensic snapshot shares the backup directory with the parked
-// manifests, and the dot in its prefix is the only thing keeping the two apart.
-// Restoring one would overwrite a live manifest with an old copy.
+// manifests, and restoring one would overwrite a live manifest with an old
+// copy. Two independent things prevent it: parkedStaticPodManifests stats an
+// exact fixed name, and the restore itself resolves source and destination from
+// that same fixed name and stops when the destination is already active. This
+// is a guard on the pair rather than a regression test for either - breaking
+// one alone does not reach the live manifest.
 func TestReconcileInterruptedStaticPodParksIgnoresTimestampedSnapshots(t *testing.T) {
 	s, _ := etcdRestartTestServer(t, &fakeEtcdMemberClient{members: testEtcdMembersThree(), localID: 2, leaderID: 1})
 	s.NodeStatus.NodeAgentOperations = runningEtcdDefragRecord()
 
-	snapshot := filepath.Join(s.RootPath, defaultStaticPodBackupDir, etcdManifestName+".20260101T000000Z")
+	snapshot := filepath.Join(s.RootPath, defaultStaticPodBackupDir, defaultKubeVipManifestName+".20260101T000000Z")
 	require.NoError(t, os.MkdirAll(filepath.Dir(snapshot), 0o700))
 	require.NoError(t, os.WriteFile(snapshot, []byte("stale: true\n"), 0o600))
 
 	require.NoError(t, s.ReconcileInterruptedStaticPodParks(context.Background()))
 
-	active, err := os.ReadFile(filepath.Join(s.RootPath, defaultStaticPodManifestDir, etcdManifestName))
+	active, err := os.ReadFile(filepath.Join(s.RootPath, defaultStaticPodManifestDir, defaultKubeVipManifestName))
 	require.NoError(t, err)
-	assert.Equal(t, etcdManifestThreshold100MiB, string(active), "the live manifest must be untouched")
+	assert.Equal(t, testKubeVipManifest, string(active), "the live manifest must be untouched")
 }

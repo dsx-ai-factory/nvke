@@ -362,10 +362,10 @@ func startSecureServer(ctx context.Context, cfg AgentConfig, agentServer *server
 	// runs, so it goes ahead of anything that would let a caller send the next
 	// instruction to a node still in that state.
 	//
-	// The bound covers the worst case with room to spare: four waits at the
-	// per-pod start timeout of a minute each, one per manifest plus the VIP
-	// returning to loopback. Serving late beats not serving, so overrunning it
-	// logs and carries on rather than exiting.
+	// The bound covers the worst case with room to spare: three waits at the
+	// per-pod start timeout of a minute each, one each for kube-apiserver and
+	// kube-vip plus the VIP returning to loopback. Serving late beats not
+	// serving, so overrunning it logs and carries on rather than exiting.
 	reconcileCtx, cancelReconcile := context.WithTimeout(ctx, 5*time.Minute)
 	if err := agentServer.ReconcileInterruptedStaticPodParks(reconcileCtx); err != nil {
 		slog.Error("failed to restore static-pod manifests parked by an interrupted operation", "err", err)

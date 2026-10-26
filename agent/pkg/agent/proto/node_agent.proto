@@ -108,20 +108,16 @@ service NodeAgent {
   // attempted. The agent never edits the threshold - it is set by kubeadm when
   // the node is provisioned - so the configured value is always honoured.
   //
-  // THIS REVERSES THE EARLIER CONTRACT. A caller written against the previous
-  // documentation drained kube-vip itself, called this, then restored kube-vip.
-  // Doing that now withdraws a node that is about to withdraw itself and
-  // restores one that has already come back. Such a caller must stop bracketing
-  // this RPC - for the rollout framework that means no kube-vip NodeGuard
-  // around it.
-  //
-  // THE CALLER DOES NOT NEED TO TAKE THIS NODE OUT OF SERVICE FIRST. The agent
-  // performs the whole per-node sequence, including the withdrawal and the
-  // return: health preflight, voting member check, leadership transfer away
-  // from the local member if it is leader, withdrawal from the control-plane
-  // VIP, stopping kube-apiserver, the etcd restart, the wait for etcd to return
+  // THE CALLER MUST NOT TAKE THIS NODE OUT OF SERVICE FIRST. The agent performs
+  // the whole per-node sequence, including the withdrawal and the return:
+  // health preflight, voting member check, leadership transfer away from the
+  // local member if it is leader, withdrawal from the control-plane VIP,
+  // stopping kube-apiserver, the etcd restart, the wait for etcd to return
   // healthy, then kube-apiserver and kube-vip back in that order. The caller
-  // sequences members; it does not orchestrate within one.
+  // sequences members; it does not orchestrate within one. Bracketing this RPC
+  // with a withdrawal of its own would take out a node that is about to do it
+  // anyway and restore one that has already come back - in the rollout
+  // framework that means no kube-vip NodeGuard around this call.
   //
   // kube-apiserver is stopped as well as the VIP withdrawn because two separate
   // paths reach this node's apiserver, and the VIP is only one of them. The
@@ -1286,13 +1282,6 @@ message StartEtcdDefragRequest {
   // Idempotency key. Retrying with the same value returns the in-flight or
   // completed operation rather than restarting etcd again.
   string operation_id = 1;
-  // There is deliberately no min_voting_members here. The floor is a property
-  // of the cluster, so the agent derives it from the membership: it probes each
-  // voting member and requires max(3, registered_voters/2 + 2) of them to
-  // answer, which is what leaves a quorum once this member goes down.
-  // Defragmentation is optional, so no caller has a reason to lower that, and
-  // the derived floor already refuses the one- and two-member topologies where
-  // no value could preserve a quorum.
 }
 
 message StartEtcdDefragResponse {
@@ -1308,9 +1297,12 @@ message GetEtcdDefragStatusResponse {
     OUTCOME_UNSPECIFIED = 0;
     // etcd restarted, came back healthy, and reclaimed space.
     OUTCOME_RECLAIMED = 1;
-    // etcd restarted and came back healthy but reclaimed little or nothing.
-    // The backend is mostly live data, which defragmentation cannot shrink.
-    // Callers should stop retrying and surface this rather than loop.
+    // etcd restarted and came back healthy but reclaimed nothing: the backend
+    // was no smaller afterwards. Usually that means it is mostly live data,
+    // which defragmentation cannot shrink, so callers should surface this
+    // rather than loop. Note it also covers a backend that grew between the two
+    // measurements, so a defragmentation outrun by incoming writes reports the
+    // same thing as one that found nothing to reclaim.
     OUTCOME_NOT_RECLAIMED = 2;
     // A precondition failed and etcd was never restarted, so the node is
     // untouched: the local member was unhealthy, too few voting members
@@ -1318,6 +1310,12 @@ message GetEtcdDefragStatusResponse {
     // not be transferred away to a reachable member, or
     // reclaimable_bytes was below the manifest's configured bootstrap-defrag
     // threshold so the restart could not have reclaimed anything.
+    //
+    // The quorum floor is a property of the cluster rather than a caller
+    // setting: the agent probes each voting member and requires
+    // max(3, registered_voters/2 + 2) of them to answer, which is what leaves a
+    // quorum once this member goes down. One- and two-member clusters cannot
+    // satisfy that at all, and are refused on every call.
     OUTCOME_REFUSED = 3;
     // The node is still out of service and needs intervention. Either etcd was
     // restarted and did not return healthy - in which case kube-apiserver and

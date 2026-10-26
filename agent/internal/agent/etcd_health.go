@@ -44,11 +44,8 @@ const (
 	// reasons - the restart exists to have etcd rewrite that file on the way
 	// back up - so the budget errs generous rather than cutting a flush short.
 	//
-	// It is not the three minutes the manifest-move restart used to need. That
-	// budget was mostly kubelet's: the agent parked the manifest and then had
-	// to wait for kubelet to notice, bounded by its file-check frequency rather
-	// than by anything the agent controlled. Stopping the container addresses
-	// it directly, so that part of the wait is gone.
+	// Nothing here waits on kubelet noticing a manifest change, so the budget
+	// covers only the container's own shutdown.
 	//
 	// It is also the one command in this flow that is expected to take a while,
 	// and CommandRunner has no deadline, so this bounds how long a wedged

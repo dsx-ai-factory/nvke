@@ -303,9 +303,12 @@ func (s *NodeAgentServer) runEtcdDefrag(
 		reclaimed = sizeBefore - sizeAfter
 	}
 
-	// A restart that crossed the threshold but reclaimed nothing means the
-	// backend was live data, not free pages. That is a real answer, not a
-	// failure, and the caller should stop retrying rather than loop.
+	// A restart that crossed the threshold but came back no smaller is a real
+	// answer rather than a failure, so the caller should stop retrying rather
+	// than loop. Usually it means the backend was live data and not free pages.
+	// It also covers a backend that grew between the two measurements, which is
+	// why the subtraction above is clamped: writes landing during the restart
+	// can outrun what the defragmentation freed.
 	outcome := pb.GetEtcdDefragStatusResponse_OUTCOME_RECLAIMED
 	if reclaimed == 0 {
 		outcome = pb.GetEtcdDefragStatusResponse_OUTCOME_NOT_RECLAIMED

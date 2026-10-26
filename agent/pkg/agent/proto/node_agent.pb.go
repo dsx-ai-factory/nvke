@@ -830,9 +830,12 @@ const (
 	GetEtcdDefragStatusResponse_OUTCOME_UNSPECIFIED GetEtcdDefragStatusResponse_Outcome = 0
 	// etcd restarted, came back healthy, and reclaimed space.
 	GetEtcdDefragStatusResponse_OUTCOME_RECLAIMED GetEtcdDefragStatusResponse_Outcome = 1
-	// etcd restarted and came back healthy but reclaimed little or nothing.
-	// The backend is mostly live data, which defragmentation cannot shrink.
-	// Callers should stop retrying and surface this rather than loop.
+	// etcd restarted and came back healthy but reclaimed nothing: the backend
+	// was no smaller afterwards. Usually that means it is mostly live data,
+	// which defragmentation cannot shrink, so callers should surface this
+	// rather than loop. Note it also covers a backend that grew between the two
+	// measurements, so a defragmentation outrun by incoming writes reports the
+	// same thing as one that found nothing to reclaim.
 	GetEtcdDefragStatusResponse_OUTCOME_NOT_RECLAIMED GetEtcdDefragStatusResponse_Outcome = 2
 	// A precondition failed and etcd was never restarted, so the node is
 	// untouched: the local member was unhealthy, too few voting members
@@ -840,6 +843,12 @@ const (
 	// not be transferred away to a reachable member, or
 	// reclaimable_bytes was below the manifest's configured bootstrap-defrag
 	// threshold so the restart could not have reclaimed anything.
+	//
+	// The quorum floor is a property of the cluster rather than a caller
+	// setting: the agent probes each voting member and requires
+	// max(3, registered_voters/2 + 2) of them to answer, which is what leaves a
+	// quorum once this member goes down. One- and two-member clusters cannot
+	// satisfy that at all, and are refused on every call.
 	GetEtcdDefragStatusResponse_OUTCOME_REFUSED GetEtcdDefragStatusResponse_Outcome = 3
 	// The node is still out of service and needs intervention. Either etcd was
 	// restarted and did not return healthy - in which case kube-apiserver and

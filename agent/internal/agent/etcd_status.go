@@ -322,18 +322,15 @@ func (s *NodeAgentServer) reachableVotingMembers(
 // etcdRestartSafetyFloor is how many voting members must be available before
 // the local one may be restarted.
 //
-// It is the larger of the caller's floor and what the registered membership
-// needs in order to keep a quorum once this member goes down. Those differ: a
+// It is the larger of a fixed floor and what the registered membership needs in
+// order to keep a quorum once this member goes down. Those differ: a
 // five-member cluster with two already offline has three available, which
 // clears a floor of three but would leave two against a quorum of three.
 //
-// A minVoters of 1 is the documented opt-in for topologies where no value can
-// preserve quorum, so it disables the quorum term rather than overriding the
-// caller's explicit decision to accept a brief outage.
+// Neither term can be waived. A one- or two-member cluster cannot keep a quorum
+// through the restart at any floor, and this returning more than the registered
+// voter count is how those topologies get refused.
 func etcdRestartSafetyFloor(registeredVoters, minVoters int32) int32 {
-	if minVoters <= 1 {
-		return 1
-	}
 	// Quorum is registeredVoters/2+1; one more than that has to be available so
 	// the quorum survives the member that is about to go down.
 	return max(minVoters, registeredVoters/2+2)

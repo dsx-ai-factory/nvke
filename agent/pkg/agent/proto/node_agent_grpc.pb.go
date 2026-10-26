@@ -161,20 +161,16 @@ type NodeAgentClient interface {
 	// attempted. The agent never edits the threshold - it is set by kubeadm when
 	// the node is provisioned - so the configured value is always honoured.
 	//
-	// THIS REVERSES THE EARLIER CONTRACT. A caller written against the previous
-	// documentation drained kube-vip itself, called this, then restored kube-vip.
-	// Doing that now withdraws a node that is about to withdraw itself and
-	// restores one that has already come back. Such a caller must stop bracketing
-	// this RPC - for the rollout framework that means no kube-vip NodeGuard
-	// around it.
-	//
-	// THE CALLER DOES NOT NEED TO TAKE THIS NODE OUT OF SERVICE FIRST. The agent
-	// performs the whole per-node sequence, including the withdrawal and the
-	// return: health preflight, voting member check, leadership transfer away
-	// from the local member if it is leader, withdrawal from the control-plane
-	// VIP, stopping kube-apiserver, the etcd restart, the wait for etcd to return
+	// THE CALLER MUST NOT TAKE THIS NODE OUT OF SERVICE FIRST. The agent performs
+	// the whole per-node sequence, including the withdrawal and the return:
+	// health preflight, voting member check, leadership transfer away from the
+	// local member if it is leader, withdrawal from the control-plane VIP,
+	// stopping kube-apiserver, the etcd restart, the wait for etcd to return
 	// healthy, then kube-apiserver and kube-vip back in that order. The caller
-	// sequences members; it does not orchestrate within one.
+	// sequences members; it does not orchestrate within one. Bracketing this RPC
+	// with a withdrawal of its own would take out a node that is about to do it
+	// anyway and restore one that has already come back - in the rollout
+	// framework that means no kube-vip NodeGuard around this call.
 	//
 	// kube-apiserver is stopped as well as the VIP withdrawn because two separate
 	// paths reach this node's apiserver, and the VIP is only one of them. The
@@ -979,20 +975,16 @@ type NodeAgentServer interface {
 	// attempted. The agent never edits the threshold - it is set by kubeadm when
 	// the node is provisioned - so the configured value is always honoured.
 	//
-	// THIS REVERSES THE EARLIER CONTRACT. A caller written against the previous
-	// documentation drained kube-vip itself, called this, then restored kube-vip.
-	// Doing that now withdraws a node that is about to withdraw itself and
-	// restores one that has already come back. Such a caller must stop bracketing
-	// this RPC - for the rollout framework that means no kube-vip NodeGuard
-	// around it.
-	//
-	// THE CALLER DOES NOT NEED TO TAKE THIS NODE OUT OF SERVICE FIRST. The agent
-	// performs the whole per-node sequence, including the withdrawal and the
-	// return: health preflight, voting member check, leadership transfer away
-	// from the local member if it is leader, withdrawal from the control-plane
-	// VIP, stopping kube-apiserver, the etcd restart, the wait for etcd to return
+	// THE CALLER MUST NOT TAKE THIS NODE OUT OF SERVICE FIRST. The agent performs
+	// the whole per-node sequence, including the withdrawal and the return:
+	// health preflight, voting member check, leadership transfer away from the
+	// local member if it is leader, withdrawal from the control-plane VIP,
+	// stopping kube-apiserver, the etcd restart, the wait for etcd to return
 	// healthy, then kube-apiserver and kube-vip back in that order. The caller
-	// sequences members; it does not orchestrate within one.
+	// sequences members; it does not orchestrate within one. Bracketing this RPC
+	// with a withdrawal of its own would take out a node that is about to do it
+	// anyway and restore one that has already come back - in the rollout
+	// framework that means no kube-vip NodeGuard around this call.
 	//
 	// kube-apiserver is stopped as well as the VIP withdrawn because two separate
 	// paths reach this node's apiserver, and the VIP is only one of them. The

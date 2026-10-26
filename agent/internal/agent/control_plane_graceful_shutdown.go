@@ -50,8 +50,6 @@ const (
 	stepWaitingKubeAPIServerExit    = "waiting_for_kube_apiserver_exit"
 	stepRestoringKubeAPIServer      = "restoring_kube_apiserver"
 	stepWaitingKubeAPIServerStart   = "waiting_for_kube_apiserver_start"
-	stepRestoringEtcd               = "restoring_etcd"
-	stepWaitingEtcdStart            = "waiting_for_etcd_start"
 	stepStoppingKubeVip             = "stopping_kube_vip"
 	stepWaitingKubeVipExit          = "waiting_for_kube_vip_exit"
 	stepRestoringKubeVip            = "restoring_kube_vip"
@@ -377,29 +375,6 @@ func (s *NodeAgentServer) restoreKubeAPIServerLocked(
 		manifestName:  defaultKubeAPIServerManifestName,
 		restoringStep: stepRestoringKubeAPIServer,
 		waitingStep:   stepWaitingKubeAPIServerStart,
-		timeout:       s.staticPodStartTimeoutOrDefault(),
-	})
-}
-
-// restoreEtcdManifestLocked puts the etcd manifest back and waits for the
-// container to run again. Callers must already hold staticPodMutationMu.
-//
-// No flow in this agent parks etcd.yaml any more - StartEtcdDefrag restarts the
-// container through the CRI and leaves the manifest alone. This exists for the
-// one case that can still present a parked etcd.yaml: an agent that was
-// upgraded from a version which did park it, and died mid-defragmentation
-// before putting it back. Restoring it is the first thing the node needs, since
-// nothing else on it can serve without the local member.
-func (s *NodeAgentServer) restoreEtcdManifestLocked(
-	ctx context.Context,
-	runner nvkeutils.CommandRunner,
-	progress nodeAgentOperationProgress,
-) error {
-	return s.restoreStaticPod(ctx, runner, progress, staticPodRestoreSpec{
-		containerName: etcdContainerName,
-		manifestName:  etcdManifestName,
-		restoringStep: stepRestoringEtcd,
-		waitingStep:   stepWaitingEtcdStart,
 		timeout:       s.staticPodStartTimeoutOrDefault(),
 	})
 }
