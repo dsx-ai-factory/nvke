@@ -4,6 +4,7 @@
 package csr
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/x509"
@@ -216,7 +217,8 @@ func (r *Reconciler) auditIssuedCertificate(ctx context.Context, csr *certificat
 	if err != nil || !issuedForRequestKey(csr) {
 		event.Outcome, event.Reason = credentialaudit.OutcomeFailure, credentialaudit.ReasonUnavailable
 	} else {
-		event.Fingerprints = fingerprints
+		// Only the leaf (first block) was checked against the request key.
+		event.Fingerprints = fingerprints[:1]
 	}
 	r.audit.RecordCSR(ctx, event)
 }
@@ -244,7 +246,8 @@ func approvedByNVKE(csr *certificatesv1.CertificateSigningRequest) bool {
 // public key from spec.request. It does not authenticate the issuer.
 func issuedForRequestKey(csr *certificatesv1.CertificateSigningRequest) bool {
 	requestBlock, _ := pem.Decode(csr.Spec.Request)
-	leafBlock, _ := pem.Decode(csr.Status.Certificate)
+	// Trim like CertificateFingerprints so both read the same first block.
+	leafBlock, _ := pem.Decode(bytes.TrimSpace(csr.Status.Certificate))
 	if requestBlock == nil || leafBlock == nil {
 		return false
 	}

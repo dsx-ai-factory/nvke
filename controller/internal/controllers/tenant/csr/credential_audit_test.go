@@ -225,12 +225,39 @@ func TestCSRAuditObservesOnlyNVKEApprovedCertificateForRequestKey(t *testing.T) 
 			mutate:     func(*testing.T, *certificatesv1.CertificateSigningRequest) {},
 			wantEvents: 1, wantOutcome: credentialaudit.OutcomeSuccess, wantReason: credentialaudit.ReasonObserved,
 		},
+		"appended foreign certificate is not recorded with the observed leaf": {
+			mutate: func(t *testing.T, csr *certificatesv1.CertificateSigningRequest) {
+				t.Helper()
+				otherKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+				require.NoError(t, err)
+				template := &x509.Certificate{SerialNumber: big.NewInt(3), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
+				der, err := x509.CreateCertificate(rand.Reader, template, template, &otherKey.PublicKey, otherKey)
+				require.NoError(t, err)
+				csr.Status.Certificate = append(csr.Status.Certificate, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
+			},
+			wantEvents: 1, wantOutcome: credentialaudit.OutcomeSuccess, wantReason: credentialaudit.ReasonObserved,
+		},
+		"leading whitespace cannot make the key check skip a foreign first certificate": {
+			mutate: func(t *testing.T, csr *certificatesv1.CertificateSigningRequest) {
+				t.Helper()
+				otherKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+				require.NoError(t, err)
+				template := &x509.Certificate{SerialNumber: big.NewInt(4), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
+				der, err := x509.CreateCertificate(rand.Reader, template, template, &otherKey.PublicKey, otherKey)
+				require.NoError(t, err)
+				foreign := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+				csr.Status.Certificate = append(append([]byte(" "), foreign...), csr.Status.Certificate...)
+			},
+			wantEvents: 1, wantOutcome: credentialaudit.OutcomeFailure, wantReason: credentialaudit.ReasonUnavailable,
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			csr := newServingCSR(t, "issued-serving", time.Now(), "system:node:worker-1", []string{"system:nodes"}, []string{"worker-1"}, nil, nil)
 			csr.UID = types.UID(uuid.NewString())
 			issueServingCertificate(t, csr)
+			leafFingerprints, err := credentialaudit.CertificateFingerprints(csr.Status.Certificate)
+			require.NoError(t, err)
 			test.mutate(t, csr)
 			scheme := runtime.NewScheme()
 			require.NoError(t, certificatesv1.AddToScheme(scheme))
@@ -240,7 +267,7 @@ func TestCSRAuditObservesOnlyNVKEApprovedCertificateForRequestKey(t *testing.T) 
 				client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(csr).Build(), logger: slog.New(slog.DiscardHandler),
 				audit: credentialaudit.NewRecorder(store, slog.New(slog.DiscardHandler), nil),
 			}
-			_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: types.NamespacedName{Name: csr.Name}})
+			_, err = r.Reconcile(t.Context(), ctrl.Request{NamespacedName: types.NamespacedName{Name: csr.Name}})
 			require.NoError(t, err)
 			require.Len(t, store.events, test.wantEvents)
 			for _, event := range store.events {
@@ -248,6 +275,10 @@ func TestCSRAuditObservesOnlyNVKEApprovedCertificateForRequestKey(t *testing.T) 
 				require.Equal(t, test.wantOutcome, event.Outcome)
 				require.Equal(t, test.wantReason, event.Reason)
 				require.Equal(t, test.wantReason == credentialaudit.ReasonUnavailable, len(event.Fingerprints) == 0)
+				if event.Outcome == credentialaudit.OutcomeSuccess {
+					// Only the certificate checked against the request key is recorded.
+					require.Equal(t, leafFingerprints, event.Fingerprints)
+				}
 			}
 		})
 	}

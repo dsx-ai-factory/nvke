@@ -77,7 +77,7 @@ The manual tool rejects mixed PEM bundles and private-key PEM blocks.
   | `check/no_op/identity_not_approved` | a CSR was rejected and not approved; this is how a rejected identity appears, not as `failure`. Recorded at most once per node per UTC hour |
   | `approve/success/completed` | the approval was written to the CSR |
   | `approve/failure/approval_update_failed` | writing the approval failed; the CSR is retried |
-  | `verify/success/observed` | the CSR carries NVKE's approval, has no `Failed` condition, and its certificate carries the request's public key; recorded with its public fingerprints |
+  | `verify/success/observed` | the CSR carries NVKE's approval, has no `Failed` condition, and the leaf (first) certificate carries the request's public key; recorded with only that leaf's public fingerprint |
   | `verify/failure/observation_unavailable` | the certificate on an NVKE-approved CSR could not be parsed or does not carry the request's public key |
 
   To find rejected identities, filter on `reason_code =
