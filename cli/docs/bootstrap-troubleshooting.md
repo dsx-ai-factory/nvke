@@ -92,7 +92,7 @@ The endpoint follows these rules:
 If nvkectl prints `OTLP log export is off`, it did not accept the endpoint and
 sends no logs. The warning names the setting. Check the endpoint against the
 rules above. If the collector cannot be reached, nvkectl prints one warning
-and the command still succeeds, taking up to two seconds longer to exit.
+and the command still succeeds.
 
 ### The diagnostics directory
 
