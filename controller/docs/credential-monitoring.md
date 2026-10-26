@@ -74,7 +74,7 @@ that names one.
 | `credentialMonitoring.enabled` | `credentialMonitoring.enabled` | `true` | controls read-only node and CSR observations independently of renewal |
 | `credentialMonitoring.inspectionInterval` | `credentialMonitoring.inspectionInterval` | `1h` | `5m` through `12h` |
 | `credentialMonitoring.observationMaxAge` | `credentialMonitoring.observationMaxAge` | `3h` | at least two inspection intervals; at most `24h` |
-| `credentialMonitoring.warningDays` | `credentialMonitoring.warningDays` | `45` | `9` through `120` days; exceed the renewal threshold by at least two renewal intervals |
+| `credentialMonitoring.warningDays` | `credentialMonitoring.warningDays` | `45` | `9` through `120` days; while renewal is enabled, exceed the renewal threshold by at least two renewal intervals |
 
 The warning margin gives an operator notice before the automated renewal
 threshold, with at least two check opportunities. A node-agent connection and
@@ -199,7 +199,7 @@ nodes, while seven days catches rotation that has stopped working.
 | `NVKEKubeletCertificateExpiring` | kubelet client or serving certificate NotAfter within seven days for `5m` | inspect kubelet certificate rotation, CSR approval and signer health; NVKE renewal does not renew kubelet certificates |
 | `NVKECertificateInspectionUnavailable` | failed, never observed or stale node inspection for `15m`, when monitoring enabled | restore transport, upgrade unsupported agent, confirm layout and observation freshness |
 | `NVKECertificateMissingOrInvalid` | required credential unavailable in a successful fresh inventory for `15m` | inspect fixed file or kubelet bootstrap; validate identity before repair |
-| `NVKECertificateRenewalFailed` | latest cycle failed for `5m` | follow [renewal recovery](certificate-renewal.md#status-and-failure-handling); released failures retry once `nextCertRenewalDue` and the one-hour backoff have both passed and no fenced node reservation remains, retained-lock failures stay halted |
+| `NVKECertificateRenewalFailed` | latest cycle failed for `5m` | follow [renewal recovery](certificate-renewal.md#status-and-failure-handling); released failures retry once `nextCertRenewalDue` and the one-hour backoff have both passed and no fenced node reservation remains (a `two-control-plane-voters` failure is not retried until `controlPlaneConfig.desiredCount` is 3 or more), retained-lock failures stay halted |
 | `NVKECertificateRenewalOverdue` | more than one hour overdue for `15m`, when automation enabled | inspect readiness, Temporal and maintenance ownership; if a cycle is still accepted, respond as for `NVKECertificateRenewalStuck` |
 | `NVKECertificateRenewalStuck` | accepted cycle older than two hours for `15m` | check whether the cycle's Temporal workflow is still running; if it has closed while the cycle is still `accepted`, stop cluster maintenance and [escalate](certificate-renewal.md#status-and-failure-handling) without releasing ownership, retrying or starting a forced cycle |
 | `NVKEKubeletServingCSRStale` | unissued CSR older than fifteen minutes for `5m`, when monitoring enabled | inspect approver decisions and signer health; approved is not issued |

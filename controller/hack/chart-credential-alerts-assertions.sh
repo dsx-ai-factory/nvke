@@ -45,8 +45,11 @@ trap 'exit 1' HUP INT TERM
 if [[ ! -x "${bin_dir}/promtool" ]]; then
   archive="prometheus-${version}.${os}-${arch}"
   echo "Installing promtool ${version} (${platform})"
-  # Retry flags follow .github/workflows/README.md invariant 9; the per-attempt
-  # cap keeps the last retry inside the chart job's timeout.
+  # Retry flags follow .github/workflows/README.md invariant 9. Each download
+  # can take about six minutes (the 240s retry window plus a final 120s
+  # attempt), so this one and the schema download below can together outlast
+  # the chart job's 10-minute timeout; a persistent outage may then end in a
+  # job timeout rather than a curl error.
   curl -fSL --retry 8 --retry-all-errors --retry-max-time 240 --connect-timeout 10 --max-time 120 \
     "https://github.com/prometheus/prometheus/releases/download/v${version}/${archive}.tar.gz" \
     -o "${tmp}/prometheus.tar.gz"
