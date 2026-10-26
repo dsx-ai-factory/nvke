@@ -352,7 +352,9 @@ it does not claim CA rotation, failure/reset recovery, unsupported topologies,
 audit delivery completeness, or an unrelated notification receiver. Retain
 separate reviewed evidence for those acceptance criteria. Audit ledger writes
 are best effort after state changes; missing observations fail collection and
-must never be manufactured to fill a gap.
+must never be manufactured to fill a gap. The audit-write failure counter is
+controller-wide: another tenant's failed or rate-limited write fails this lane
+with `audit_writes_failed_during_lane`, even if this lane's mutation succeeded.
 
 ## Offline checks
 

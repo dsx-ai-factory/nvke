@@ -67,9 +67,10 @@ internal-config-check: ## Check the tree names no internal infrastructure. (run 
 # mode summarises and exits 0; the gate ran that way until 2026-10-11, while
 # the tree still carried the name. A dead allowlist entry fails in either mode.
 NAME_CHECK_MODE ?= fail
-name-check: ## Fail on tokens that carry a banned name outside the allowlist. (run by the merge gate)
+name-check: ## Fail on tokens that carry a banned name outside the allowlist, and run the offline hack/rotation-demo tests. (run by the merge gate)
 	@$(call require_command,python3)
 	@python3 -B ./hack/test_name_check.py
+	@$(MAKE) --no-print-directory -C hack/rotation-demo test
 	@python3 -B ./hack/name-check.py --mode $(NAME_CHECK_MODE)
 
 CHART_CRDS_KUSTOMIZE := controller/deploy/release-crds

@@ -127,6 +127,7 @@ def validate_config(c, scenario):
         require(c.get("manual_operation"), "missing_t1_operation_identity")
     else:
         require(c["cwe_url"] and c["prometheus_url"] and c["temporal"]["task_queue"], "missing_services")
+        require(isinstance(c.get("cluster_name"), str) and bool(c["cluster_name"]), "missing_target")
         # These URLs receive the optional Authorization header.
         require(c["cwe_url"].startswith("https://") and c["prometheus_url"].startswith("https://"), "insecure_service_url")
         expected = c["expected_versions"]
@@ -256,8 +257,7 @@ class Live:
                 if not n["control_plane"]:
                     rows.append({"id": n["id"], "certificate_inspection": {"available": True, "observedAt": now(), "certificates": []}})
                     continue
-                raw = command(["ssh", "-o", "BatchMode=yes", "--", n["ssh"], "sudo", "sh", "-s", "--",
-                               "control-plane" if n["control_plane"] else "worker"], script)
+                raw = command(["ssh", "-o", "BatchMode=yes", "--", n["ssh"], "sudo", "sh", "-s", "--", "control-plane"], script)
                 rows.append({"id": n["id"], "certificate_inspection": json.loads(raw)})
         else:
             rows = self.sql("SELECT COALESCE(json_agg(json_build_object('id',id,'certificate_inspection',certificate_inspection)), '[]'::json) FROM nodes WHERE cluster_id='" + self.c["cluster_id"] + "'::uuid")
@@ -350,15 +350,21 @@ class Live:
         inspection_ages = samples("certificate_observation_age_seconds")
         require({labels["node"] for labels, _value, _sample in inspection_ages} == nodes, "inspection_metric_unavailable")
         csr_ages = samples("serving_csr_observation_age_seconds")
-        require(csr_ages, "csr_metric_stale")
-        failures = self.query('sum(increase(nvke_controller_credential_audit_writes_total{result=~"sink_failed|invalid_event"}[10m]))')
+        require(csr_ages, "csr_metric_missing")
+        failures = self.query('sum(nvke_controller_credential_audit_writes_total{result=~"sink_failed|invalid_event|rate_limited"})')
+        failed = metric_number(failures[0]["value"][1]) if failures else 0
+        if not after:
+            self.audit_failures_before = failed
         # The controller creates every result series at zero, and a restart resets
         # them; unchanged inspections write nothing. The baseline therefore needs
-        # only the stored series and no failure increase. After the mutation,
-        # which writes audit events, require positive stored evidence.
+        # only the stored series and records the failure total. Any failed or
+        # dropped write since the baseline cannot be undone, and a reset in between
+        # hides whether one happened, so either ends the lane at once. After the
+        # mutation, which writes audit events, require positive stored evidence.
+        require(failed == self.audit_failures_before, "audit_writes_failed_during_lane")
         stored = self.query('sum(nvke_controller_credential_audit_writes_total{result="stored"})')
-        require(len(stored) == 1 and (not after or metric_number(stored[0]["value"][1]) > 0) and
-                (not failures or (len(failures) == 1 and metric_number(failures[0]["value"][1]) == 0)), "audit_sink_unhealthy_or_unobserved")
+        require(len(stored) == 1 and (not after or metric_number(stored[0]["value"][1]) > 0),
+                "audit_sink_unhealthy_or_unobserved")
         rules = self.http(self.c["prometheus_url"], "/api/v1/rules?type=alert", "prometheus_authorization_file")
         require(rules["status"] == "success", "alert_evaluator_unavailable")
         loaded = {r["name"] for g in rules["data"]["groups"] for r in g["rules"] if r.get("health") == "ok"}
@@ -577,7 +583,8 @@ def wait_for(check, deadline):
             last = str(error)
             if last in {"workflow_failed", "workflow_identity_mismatch", "unsupported_workflow", "cycle_not_scheduled",
                         "cycle_not_scheduler_named", "cycle_started_before_traffic", "manual_marker_invalid", "audit_schema_invalid", "audit_values_invalid",
-                        "audit_event_duplicate", "scheduled_cycle_did_not_renew"}:
+                        "audit_event_duplicate", "scheduled_cycle_did_not_renew",
+                        "audit_writes_failed_during_lane"}:
                 raise
         time.sleep(2)
     raise CheckError(last)

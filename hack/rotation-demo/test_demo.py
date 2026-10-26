@@ -104,6 +104,8 @@ class SampledPrometheus:
     def __init__(self, c):
         self.c, self.series, self.queries = c, {}, []
         self.stored = 3
+        # Raw audit failure counters by result; a trailing increase() window sees none of these earlier writes.
+        self.failures = {}
 
     def put(self, suffix, labels, sampled_at, value):
         labels = {"__name__": "nvke_controller_" + suffix, "tenant_cluster": self.c["cluster_name"], **labels}
@@ -134,6 +136,9 @@ class SampledPrometheus:
             # None models a counter series that does not exist; 0 one created at zero.
             if 'result="stored"' in expression and self.stored is not None:
                 result = [{"metric": {}, "value": [evaluated_at, str(self.stored)]}]
+            elif 'result=~"' in expression and "increase(" not in expression and self.failures:
+                names = expression.split('result=~"', 1)[1].split('"', 1)[0].split("|")
+                result = [{"metric": {}, "value": [evaluated_at, str(sum(self.failures.get(name, 0) for name in names))]}]
         else:
             branches = [(expression, None)]
             if expression.startswith("label_replace("):
@@ -1036,6 +1041,54 @@ class CollectorContractTests(unittest.TestCase):
             prometheus.stored = 1
             live.metrics(certificates, epoch)
 
+    def audit_failures_during_lane(self, result):
+        c = config()
+        epoch = demo.timestamp("2026-10-07T00:00:00Z")
+        certificates = snapshot(c)
+        live, prometheus = demo.Live(c), SampledPrometheus(c)
+        # Failures before the lane do not fail it; any later increase does.
+        prometheus.failures = {result: 2}
+        prometheus.scrape(certificates, epoch - 1, epoch - 2, epoch - 2)
+        with patch.object(live, "http", side_effect=prometheus.http), patch.object(demo.time, "time", return_value=epoch):
+            live.metrics(certificates)
+        prometheus.scrape(certificates, epoch + 2, epoch + 1, epoch + 1)
+        with patch.object(live, "http", side_effect=prometheus.http), patch.object(demo.time, "time", return_value=epoch + 3):
+            live.metrics(certificates, epoch)
+            for failures in (3, 1):  # an increase, and a counter reset since the baseline
+                prometheus.failures = {result: failures}
+                with self.assertRaisesRegex(demo.CheckError, "^audit_writes_failed_during_lane$"):
+                    live.metrics(certificates, epoch)
+
+    def test_audit_write_failure_stops_waiting_immediately(self):
+        calls = []
+
+        def check():
+            calls.append(1)
+            raise demo.CheckError("audit_writes_failed_during_lane")
+        with self.assertRaisesRegex(demo.CheckError, "audit_writes_failed_during_lane"):
+            demo.wait_for(check, demo.time.monotonic() + 60)
+        self.assertEqual(len(calls), 1)
+
+    def test_audit_failure_anywhere_in_the_lane_fails_not_only_in_the_last_10m(self):
+        for result in ("sink_failed", "invalid_event"):
+            with self.subTest(result=result):
+                self.audit_failures_during_lane(result)
+
+    def test_rate_limited_audit_write_during_the_lane_fails(self):
+        self.audit_failures_during_lane("rate_limited")
+
+    def test_absent_csr_metric_is_missing_not_stale(self):
+        c = config()
+        certificates = snapshot(c)
+        live, prometheus = demo.Live(c), SampledPrometheus(c)
+        sampled = demo.timestamp("2026-10-07T00:00:00Z")
+        prometheus.scrape(certificates, sampled, sampled - 1, sampled - 1)
+        prometheus.series = {k: v for k, v in prometheus.series.items()
+                             if dict(k)["__name__"] != "nvke_controller_serving_csr_observation_age_seconds"}
+        with patch.object(live, "http", side_effect=prometheus.http), patch.object(demo.time, "time", return_value=sampled + 1):
+            with self.assertRaisesRegex(demo.CheckError, "csr_metric_missing"):
+                live.metrics(certificates)
+
     def test_preceding_scrape_and_fresh_wrong_expiry_do_not_prove_renewal(self):
         c = config()
         before, after = snapshot(c), snapshot(c, True)
@@ -1095,6 +1148,7 @@ class CollectorContractTests(unittest.TestCase):
                 live, prometheus = demo.Live(c), SampledPrometheus(c)
                 prometheus.scrape(certificates, completion + 5, inspected, csr_observed)
                 with patch.object(live, "http", side_effect=prometheus.http), patch.object(demo.time, "time", return_value=completion + 10):
+                    live.metrics(certificates)
                     with self.assertRaisesRegex(demo.CheckError, reason):
                         live.metrics(certificates, completion)
 
@@ -1272,6 +1326,15 @@ class CollectorContractTests(unittest.TestCase):
                 server.server_close()
         self.assertEqual([(servers[0].server_port, "/ok", "Bearer REDIRECT_SENTINEL"),
                           (servers[0].server_port, "/start", "Bearer REDIRECT_SENTINEL")], seen)
+
+    def test_t2_scenarios_require_a_cluster_name(self):
+        for name, change in (("absent", lambda c: c.pop("cluster_name")), ("empty", lambda c: c.update(cluster_name="")),
+                             ("not a string", lambda c: c.update(cluster_name=["example-tenant"]))):
+            with self.subTest(name):
+                c = config()
+                change(c)
+                with self.assertRaisesRegex(demo.CheckError, "missing_target"):
+                    demo.validate_config(c, "forced-renewal")
 
     def test_services_receiving_the_token_require_https(self):
         for key in ("cwe_url", "prometheus_url"):
