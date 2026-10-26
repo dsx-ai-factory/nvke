@@ -133,7 +133,7 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
 
    With API authentication on, `nvkectl` must use an OIDC kubeconfig for this and the next two steps; with the management cluster's admin kubeconfig every NVKE API call fails.
 
-   `Provisioned` records provisioning state, not certificate-maintenance health. `Provisioning`, `Updating`, `Upgrading`, `Recycling` and `Deleting` mean an operation is running, except that `Updating` can also mean a failed certificate renewal retained the cluster mutation lock and needs operator recovery. `ProvisioningFailed` and `UpdateFailed` mean the last operation failed. [Create a workload cluster](../workload-clusters/create.md) describes each status.
+   `Provisioned` records provisioning state, not certificate-maintenance health. `Provisioning`, `Updating`, `Upgrading`, `Recycling` and `Deleting` mean an operation is running, except that `Updating` can also mean a failed certificate renewal or a failed etcd key rotation retained the cluster mutation lock and needs operator recovery. `ProvisioningFailed` and `UpdateFailed` mean the last operation failed. [Create a workload cluster](../workload-clusters/create.md) describes each status.
 
 2. Read the cluster's conditions, including on clusters whose status is `Provisioned`.
 
@@ -145,7 +145,7 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
 
    - A failed renewal that released its mutation lock can leave `STATUS` as `Provisioned`. Fix the reported cause; automatic retry waits until both `nextCertRenewalDue` and the one-hour backoff after `conditions.certificateRenewal.completedAt` have passed. A `two-control-plane-voters` refusal additionally waits for `controlPlaneConfig.desiredCount` to be at least `3`; scale to three or more, not down to one.
    - If `conditions.updateInProgress.type=certificate_renewal` remains set with renewal state `failed`, the lock is retained. `STATUS` can show `Updating`, but a higher-priority condition such as `UpdateFailed` can mask it; identify retained ownership from these conditions regardless of the displayed status. Waiting does not release it. Follow the [ownership-checked recovery procedure](../../controller/docs/certificate-renewal.md#status-and-failure-handling) after confirming that the node operation and all its attempts have stopped. Cluster health or workflow completion alone is not enough to clear it.
-   - A failed etcd key rotation with `conditions.updateInProgress.type=etcd_key_rotation` and `conditions.etcdKeyRotation.state=failed` keeps its mutation lock until its workflow is reset and completes. Waiting for `Provisioned` will not clear it, and `UpdateFailed` can mask `Updating`. Follow [phase-aware recovery](../../controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery).
+   - A failed etcd key rotation with `conditions.updateInProgress.type=etcd_key_rotation` and `conditions.etcdKeyRotation.state=failed` keeps its mutation lock until its workflow is reset and completes. Waiting for `Provisioned` will not clear it, and `UpdateFailed` can mask `Updating`. The lock is also retained when `conditions.etcdKeyRotation.state=running` while the workflow named by `conditions.etcdKeyRotation.workflowID` is no longer open. Follow [phase-aware recovery](../../controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery).
 
 3. List the cluster's node pools.
 
