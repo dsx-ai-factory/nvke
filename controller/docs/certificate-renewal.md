@@ -111,9 +111,16 @@ the cycle `message`. The manifest stays in
 `/etc/kubernetes/nvke-cert-renewal-manifests/`, and that pod may be stopped.
 The legacy runbook likewise stops when a manifest exists both in
 `/etc/kubernetes/nvke-cert-renewal-staging/` and in the manifests directory.
-Later cycles refuse that node until the staging directory is empty. Before
-retrying, compare the staged and active copies on the failed node and keep
-exactly one in `/etc/kubernetes/manifests/`. A Temporal activity retry reattaches to the
+With the legacy runbook, later cycles fail on that node with the mutation lock
+released, and retry, until the staging directory is empty. With the typed node
+agent, a next cycle that reaches dispatch has its V2 Start rejected with
+`FailedPrecondition` before the agent records an operation; the status check for
+that operation ID then returns `NotFound` because the agent never recorded it,
+so that cycle fails with the mutation lock and the node reservation retained.
+Before retrying, compare the staged and active copies on the failed node and
+keep exactly one in `/etc/kubernetes/manifests/`. On the typed path, then follow
+the retained-lock recovery under
+[Status and failure handling](#status-and-failure-handling). A Temporal activity retry reattaches to the
 stable operation ID instead of starting a second renewal. The hardened workflow calls the capability-distinct V2 start RPC, so
 agents that implement only the V1 operation return `Unimplemented` before
 accepting node-side work. When there is no pending typed intent, any definitive
@@ -287,8 +294,9 @@ every cycle, recording another `admission` failure and restarting the one-hour
 backoff. A reservation left by an older V1 workflow does not block admission,
 but the cycle does not reuse it: the first node that needs renewal is refused
 without dispatch, whichever node the reservation names, and the cycle fails and
-is retried after the backoff. That failure's `failedNodeID` does not identify
-the reserved node. The
+is retried after the backoff. That failure's `failedNodeID` names the first
+node that needed renewal, which may or may not be the reserved node; the
+`certificate_renewal` column identifies the reservation. The
 V1 activity normally releases its reservation when it ends, on success or
 failure. It can leave an unfenced reservation behind when the activity is
 interrupted (worker restart, timeout or cancellation), when the release itself
