@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/rest"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/environment"
@@ -346,6 +347,20 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 		validateSitePostDeploy(func() (site.Cluster, site.Spec, bool) {
 			return cluster, spec, deployed
 		}, siteLaneChecks)
+		// The validation image's behavior checks, on the site this run built.
+		// They skip after any failure, as the checks above do, so a broken
+		// site keeps the minutes its teardown needs.
+		validateSiteBehavior(func() siteValidateSettings {
+			if !deployed {
+				Skip("the stack was not deployed")
+			}
+			if failed {
+				Skip("an earlier site check failed")
+			}
+			checks := siteLaneChecks
+			checks.restConfig = func() (*rest.Config, error) { return kube.RESTConfig(cluster.Kubeconfig, "") }
+			return siteValidateSettings{enabled: true, kubernetesVersion: spec.KubernetesVersion, checks: checks}
+		})
 
 		It("delivers the site's telemetry through NKTP", func(ctx SpecContext) {
 			if !deployed {
@@ -1205,9 +1220,9 @@ func (c terminatingAware) WaitForClusterDeleted(ctx context.Context, id openapi_
 }
 
 func inRepo(repo, path string) string {
-	if rest, ok := strings.CutPrefix(path, "~/"); ok {
+	if relative, ok := strings.CutPrefix(path, "~/"); ok {
 		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, rest)
+			return filepath.Join(home, relative)
 		}
 	}
 	if filepath.IsAbs(path) {

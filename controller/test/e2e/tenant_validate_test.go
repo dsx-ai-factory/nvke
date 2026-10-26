@@ -353,6 +353,12 @@ var _ = Describe("tenant validation", Ordered, ContinueOnFailure, Label(tenantVa
 			AddReportEntry("tenant validation inputs", strings.Join(settings.describe(), "\n"))
 		}
 	})
+	validateTenant(resolve, settings)
+})
+
+// validateTenant runs every tenant check against the tenant resolve finds:
+// the image's, named by the run, or the one a lane has just built.
+func validateTenant(resolve func() *tenantTarget, settings tenantValidateSettings) {
 	checks := settings.checks
 	checks.restConfig = func() (*rest.Config, error) { return resolve().restConfig, nil }
 
@@ -367,7 +373,44 @@ var _ = Describe("tenant validation", Ordered, ContinueOnFailure, Label(tenantVa
 		return siteValidateSettings{enabled: true, checks: checks, expect: tenantExpectations(settings.expect, resolve().record)}
 	})
 	validateTenantRecord(resolve, settings)
-})
+}
+
+// laneTenantSettings are the tenant checks a lane runs on the tenant it built:
+// kube-system's workloads, probe pods in default, and fail fast, since every
+// minute a failed check spends is one the delete needs. Nothing on a lane
+// installs a GPU driver or device plugin, so the GPU checks skip.
+var laneTenantSettings = tenantValidateSettings{
+	enabled:  true,
+	gpuImage: defaultTenantGPUImage,
+	checks: siteChecks{
+		namespaces:     []siteNamespace{{name: kubeSystemNamespace, source: "kubeadm"}},
+		failFast:       true,
+		probeNamespace: "default",
+		probeImage:     probeImage{ref: kube.KubectlImage},
+		tenant:         true,
+	},
+	expect: siteExpectations{prefix: tenantPrefix},
+}
+
+// laneTenantTarget is the tenant test built, reached as its admin through
+// the lane's own controller client and relay. It skips once failed reports
+// an earlier failure, for the same reason the settings fail fast.
+func laneTenantTarget(test *tenantTest, failed func() bool) func() *tenantTarget {
+	var target *tenantTarget
+	return func() *tenantTarget {
+		if failed() {
+			Skip("an earlier check on this tenant failed")
+		}
+		if target == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), tenantConnect)
+			defer cancel()
+			restConfig := expectSucceed(test.tenantClients.AdminRESTConfig(ctx, test.cluster.Name))
+			target = &tenantTarget{record: *test.cluster, controller: test.nvke, restConfig: restConfig}
+			AddReportEntry("tenant validation target", strings.Join(target.describe(), "\n"))
+		}
+		return target
+	}
+}
 
 // validateTenantRecord asserts that the tenant is what the controller records
 // it to be, and that its GPUs work.
@@ -472,7 +515,8 @@ func validateTenantRecord(resolve func() *tenantTarget, settings tenantValidateS
 		if settings.gpuNodes == nil || *settings.gpuNodes == 0 {
 			Skip(tenantGPUNodesEnv + " expects no GPU node")
 		}
-		pod := gpuPod(settings.checks.probeNamespace, settings.gpuImage, map[string]string{siteRunLabel: utilrand.String(6)})
+		image := probeImage{ref: settings.gpuImage, pullSecrets: settings.checks.probeImage.pullSecrets}
+		pod := gpuPod(settings.checks.probeNamespace, image, map[string]string{siteRunLabel: utilrand.String(6)})
 		_, message, err := kube.RunPodWithLogs(ctx, c, clientset, pod, gpuContainer, siteCreateTimeout)
 		deleteOnExit(ctx, c, pod)
 		Expect(err).NotTo(HaveOccurred())
@@ -621,16 +665,16 @@ func gpuNodeProblems(nodes []corev1.Node, want int) []string {
 }
 
 // gpuPod lists the GPU it is given. It tolerates every taint, since GPU nodes
-// are commonly tainted to keep other work off them.
-func gpuPod(namespace, image string, labels map[string]string) *corev1.Pod {
-	return &corev1.Pod{
+// are commonly tainted to keep other work off them, and runs as the probe
+// pods do, since it shares their namespace.
+func gpuPod(namespace string, image probeImage, labels map[string]string) *corev1.Pod {
+	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{GenerateName: "nvke-validate-gpu-", Namespace: namespace, Labels: labels},
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyNever,
 			Tolerations:   []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
 			Containers: []corev1.Container{{
 				Name:    gpuContainer,
-				Image:   image,
 				Command: []string{"sh", "-ec", "nvidia-smi -L | tee /dev/termination-log"},
 				Resources: corev1.ResourceRequirements{
 					Limits: corev1.ResourceList{gpuResource: resource.MustParse("1")},
@@ -638,4 +682,6 @@ func gpuPod(namespace, image string, labels map[string]string) *corev1.Pod {
 			}},
 		},
 	}
+	image.apply(&pod.Spec)
+	return pod
 }

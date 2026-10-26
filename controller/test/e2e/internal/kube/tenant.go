@@ -212,11 +212,17 @@ func (f *TenantClientFactory) GetClient(ctx context.Context, clusterName string)
 // credential, so authenticate as adminSPIFFEPath instead. nvke:capi-cluster-admin
 // binds that identity to cluster-admin in every tenant.
 func (f *TenantClientFactory) GetAdminClient(ctx context.Context, clusterName string) (client.Client, error) {
-	restConfig, err := f.tenantRESTConfigAs(ctx, clusterName, adminSPIFFEPath)
+	restConfig, err := f.AdminRESTConfig(ctx, clusterName)
 	if err != nil {
 		return nil, err
 	}
 	return newTenantClient(restConfig, clusterName)
+}
+
+// AdminRESTConfig is the config GetAdminClient connects with, for a caller
+// that builds clients of its own from it.
+func (f *TenantClientFactory) AdminRESTConfig(ctx context.Context, clusterName string) (*rest.Config, error) {
+	return f.tenantRESTConfigAs(ctx, clusterName, adminSPIFFEPath)
 }
 
 func newTenantClient(restConfig *rest.Config, clusterName string) (client.Client, error) {

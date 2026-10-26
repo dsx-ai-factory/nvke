@@ -411,6 +411,7 @@ VIP or is reached some other way. Without `server`, the suite uses
 | `NVKE_TENANT_KUBERNETES_VERSION` | Overrides the version the controller records. | The record's |
 | `NVKE_TENANT_NAMESPACES` | Comma-separated namespaces that must each run a ready pod. | `kube-system` |
 | `NVKE_TENANT_PROBE_IMAGE` | As `NVKE_SITE_PROBE_IMAGE`, in the tenant. | The suite's kubectl image |
+| `NVKE_TENANT_PROBE_PULL_SECRETS` | As `NVKE_SITE_PROBE_PULL_SECRETS`, in `NVKE_TENANT_NAMESPACE`. The GPU pod pulls with them too. | Unset |
 | `NVKE_TENANT_GPU_NODES` | How many nodes must advertise GPUs. | Unset |
 | `NVKE_TENANT_GPU_IMAGE` | The GPU pod's image, which needs `sh`; the NVIDIA container runtime supplies `nvidia-smi`. | `nvcr.io/nvidia/cuda:12.9.1-base-ubuntu24.04` |
 
@@ -778,6 +779,13 @@ without it the lane is skipped:
 - `full`: also deploy the SBOM stack, wait for CWE, check that NKTP delivers the
   site's telemetry (below), then create and delete a tenant.
 
+At `full` the lane runs the [validation image](#validation-image)'s site checks
+against the site it built. The `nico-forge` tenant, in either lane, runs the
+image's [tenant checks](#tenant-checks) before it is deleted, reached as the
+tenant's admin rather than a provisioned ServiceAccount; its GPU checks are
+skipped. Each set stops at its first failure, so a broken site does not wait
+out every later check.
+
 Both lanes create the same `nico-forge` tenant and both entries carry that
 label, so pick between them with `site-controller`, which only the lane that
 builds a site carries. Measured against this tree with `-ginkgo.dry-run` and
@@ -785,13 +793,13 @@ builds a site carries. Measured against this tree with `-ginkgo.dry-run` and
 
 | label filter | specs | which |
 |---|---|---|
-| `nico-forge && !site-controller` | 5 | the tenant, against the site controller in the kube context |
-| `site-controller` | 12 | the lane that builds a site, tenant included |
-| `nico-forge` | 10 | both |
+| `nico-forge && !site-controller` | 42 | the tenant, against the site controller in the kube context |
+| `site-controller` | 80 | the lane that builds a site, tenant included |
+| `nico-forge` | 84 | both |
 
 `-e2e.site-stage`, not the label, is what decides whether a machine is
 provisioned: the site lane's tenant entries are built only when it is set, so
-a bare `nico-forge` without it selects 5 specs and reaches no hardware.
+a bare `nico-forge` without it selects 42 specs and reaches no hardware.
 
 The node is torn down afterwards (tenants are deleted first). `-e2e.keep-site`, or
 `lifecycle.preserveOnFailure` with a failed spec, keeps it.

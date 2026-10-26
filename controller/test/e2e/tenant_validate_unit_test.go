@@ -262,7 +262,8 @@ func TestUnit_TenantGPUNodeProblems(t *testing.T) {
 }
 
 func TestUnit_TenantGPUPod(t *testing.T) {
-	pod := gpuPod("qa", "cuda:1", map[string]string{siteRunLabel: "abc123"})
+	pod := gpuPod("qa", probeImage{ref: "cuda:1", pullSecrets: []corev1.LocalObjectReference{{Name: "ngc"}}},
+		map[string]string{siteRunLabel: "abc123"})
 	require.Equal(t, "qa", pod.Namespace)
 	require.Equal(t, "abc123", pod.Labels[siteRunLabel])
 	require.Equal(t, corev1.RestartPolicyNever, pod.Spec.RestartPolicy)
@@ -271,6 +272,9 @@ func TestUnit_TenantGPUPod(t *testing.T) {
 	require.Equal(t, gpuContainer, container.Name)
 	require.Equal(t, "cuda:1", container.Image)
 	require.Equal(t, int64(1), container.Resources.Limits.Name(gpuResource, resource.DecimalSI).Value())
+	require.Equal(t, []corev1.LocalObjectReference{{Name: "ngc"}}, pod.Spec.ImagePullSecrets)
+	require.Equal(t, ptr.To[int64](probePodUser), pod.Spec.SecurityContext.RunAsUser, "restricted, as the probe pods")
+	require.Equal(t, []corev1.Capability{"ALL"}, container.SecurityContext.Capabilities.Drop)
 }
 
 func TestUnit_ValidateInputsDescribed(t *testing.T) {
