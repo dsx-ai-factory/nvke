@@ -258,11 +258,20 @@ Each object carries an `e2e.nvidia.com/site-run` label naming its run.
 - traffic between pods, through a Service by name and by ClusterIP, across two
   nodes where there are two
 - a NetworkPolicy denying a source it does not allow, while a pod it does not
-  select stays reachable and a source it allows gets through
+  select stays reachable and a source it allows gets through; skipped when a
+  NetworkPolicy already in the probe namespace selects the check's pods
 - a StatefulSet pod resolved and reached by its headless Service name
 - a PersistentVolumeClaim bound and written from a pod, from
   `NVKE_SITE_PVC_STORAGE_CLASS` or the default class; skipped without either
 - a certificate issued by a new self-signed cert-manager Issuer
+
+Every probe and server pod runs as the restricted PodSecurity level requires:
+as user 65534, with no capabilities and the runtime's default seccomp profile.
+The PVC check writes as that user through the pod's `fsGroup`, so a
+StorageClass whose driver ignores `fsGroup` must create volumes that user can
+write. The probe namespace must still let those pods reach one another, the API
+server and the cluster DNS: a NetworkPolicy there that blocks them fails the
+traffic checks.
 
 The DNS probe also creates a pod, and is not labeled `creates`. The
 authentication specs are not included, because they mint tokens for the
@@ -303,8 +312,8 @@ account. That account needs:
 - in the probe namespace, by default the pod's own, `create`, `get` and
   `delete` on Pods; and for the `creates` specs, the same on Services,
   StatefulSets, PersistentVolumeClaims, NetworkPolicies and `cert-manager.io`
-  Issuers and Certificates, `get` on `pods/log` and `get` and `delete` on
-  Secrets (the issued certificate's)
+  Issuers and Certificates, `list` on NetworkPolicies, `get` on `pods/log` and
+  `get` and `delete` on Secrets (the issued certificate's)
 
 It needs nothing more, and should be given nothing more: the RBAC check fails
 an identity that can read Secrets across the cluster or bind roles.

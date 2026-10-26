@@ -16,6 +16,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -42,10 +43,38 @@ func TestUnit_SiteProbeImageReachesEveryPod(t *testing.T) {
 	}
 	for name, spec := range specs {
 		require.Equal(t, image.pullSecrets, spec.ImagePullSecrets, name)
+		require.NotNil(t, spec.SecurityContext, name)
+		require.Equal(t, ptr.To(true), spec.SecurityContext.RunAsNonRoot, name)
+		require.Equal(t, ptr.To[int64](probePodUser), spec.SecurityContext.RunAsUser, name)
+		require.Equal(t, &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}, spec.SecurityContext.SeccompProfile, name)
 		for _, container := range spec.Containers {
 			require.Equal(t, image.ref, container.Image, name)
+			require.Equal(t, corev1.PullIfNotPresent, container.ImagePullPolicy, name)
+			require.NotNil(t, container.SecurityContext, name)
+			require.Equal(t, ptr.To(false), container.SecurityContext.AllowPrivilegeEscalation, name)
+			require.Equal(t, []corev1.Capability{"ALL"}, container.SecurityContext.Capabilities.Drop, name)
 		}
 	}
+	require.Equal(t, ptr.To[int64](probePodUser), specs["volume"].SecurityContext.FSGroup, "the non-root probe must be able to write the volume")
+}
+
+func TestUnit_PolicySelectingAnyFindsPoliciesThatDecideTheProbes(t *testing.T) {
+	run := map[string]string{siteRunLabel: "abc123", validationProbeLabel: "true"}
+	roles := []string{ovnPolicyTargetRole, ovnPolicyAllowedSourceRole}
+	policy := func(name string, selector metav1.LabelSelector) networkingv1.NetworkPolicy {
+		return networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: name}, Spec: networkingv1.NetworkPolicySpec{PodSelector: selector}}
+	}
+	otherRun := policy("other-run", metav1.LabelSelector{MatchLabels: map[string]string{siteRunLabel: "zzz999"}})
+	unrelated := policy("app", metav1.LabelSelector{MatchLabels: map[string]string{"app": "web"}})
+
+	require.Empty(t, policySelectingAny(nil, run, roles))
+	require.Empty(t, policySelectingAny([]networkingv1.NetworkPolicy{otherRun, unrelated}, run, roles),
+		"another run's policy and an app's select none of this run's pods")
+	require.Equal(t, "default-deny", policySelectingAny([]networkingv1.NetworkPolicy{unrelated, policy("default-deny", metav1.LabelSelector{})}, run, roles),
+		"an empty selector selects every pod in the namespace")
+	require.Equal(t, "sources", policySelectingAny([]networkingv1.NetworkPolicy{
+		policy("sources", metav1.LabelSelector{MatchLabels: map[string]string{ovnPolicyRoleLabel: ovnPolicyAllowedSourceRole}}),
+	}, run, roles), "a policy on a source decides the check's traffic as much as one on the target")
 }
 
 func TestUnit_SiteExpectationsFromEnvUnset(t *testing.T) {

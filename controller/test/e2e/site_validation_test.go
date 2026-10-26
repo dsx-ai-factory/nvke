@@ -22,6 +22,7 @@ import (
 	utilversion "k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
@@ -122,10 +123,27 @@ type probeImage struct {
 	pullSecrets []corev1.LocalObjectReference
 }
 
-// apply sets the image on every container in spec, and its pull Secrets.
+// probePodUser is nobody: the restricted PodSecurity level refuses root, and
+// the image needs no account of its own for it.
+const probePodUser = 65534
+
+// apply sets the image on every container in spec, pulled only when the node
+// lacks it (an untagged image defaults to always), and its pull Secrets. It
+// also runs spec as the restricted PodSecurity level requires, since the probe
+// namespace is the runner's own, not one the run creates, and may enforce it.
 func (image probeImage) apply(spec *corev1.PodSpec) {
+	spec.SecurityContext = &corev1.PodSecurityContext{
+		RunAsNonRoot:   ptr.To(true),
+		RunAsUser:      ptr.To[int64](probePodUser),
+		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+	}
 	for i := range spec.Containers {
 		spec.Containers[i].Image = image.ref
+		spec.Containers[i].ImagePullPolicy = corev1.PullIfNotPresent
+		spec.Containers[i].SecurityContext = &corev1.SecurityContext{
+			AllowPrivilegeEscalation: ptr.To(false),
+			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+		}
 	}
 	spec.ImagePullSecrets = slices.Clone(image.pullSecrets)
 }

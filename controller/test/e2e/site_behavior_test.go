@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -533,6 +534,13 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		targets := probeNodes(nodes.Items)
 		Expect(targets).NotTo(BeEmpty(), "no Ready, schedulable node to run pods on")
 		node := targets[0]
+
+		var existing networkingv1.NetworkPolicyList
+		Expect(c.List(ctx, &existing, client.InNamespace(namespace))).To(Succeed())
+		roles := []string{ovnPolicyTargetRole, ovnPolicyControlRole, ovnPolicyAllowedSourceRole, ovnPolicyDeniedSourceRole}
+		if name := policySelectingAny(existing.Items, labels, roles); name != "" {
+			Skip(fmt.Sprintf("NetworkPolicy %s/%s already selects this check's pods, so it decides their traffic; set %s to a namespace without one", namespace, name, siteProbeNamespaceEnv))
+		}
 
 		target := siteServerPod(namespace, image, labels, ovnPolicyTargetRole, node)
 		control := siteServerPod(namespace, image, labels, ovnPolicyControlRole, node)
@@ -1280,6 +1288,7 @@ func siteStatefulSet(namespace string, image probeImage, labels map[string]strin
 					NodeSelector:     server.Spec.NodeSelector,
 					Tolerations:      server.Spec.Tolerations,
 					ImagePullSecrets: server.Spec.ImagePullSecrets,
+					SecurityContext:  server.Spec.SecurityContext,
 					Containers:       server.Spec.Containers,
 				},
 			},
@@ -1324,6 +1333,8 @@ func siteVolumePod(namespace string, image probeImage, labels map[string]string,
 		},
 	}
 	image.apply(&pod.Spec)
+	// A new volume's root is root's; the group lets the non-root probe write it.
+	pod.Spec.SecurityContext.FSGroup = ptr.To[int64](probePodUser)
 	return pod
 }
 
@@ -1344,6 +1355,24 @@ func siteIngressPolicy(namespace string, labels map[string]string) *networkingv1
 			}},
 		},
 	}
+}
+
+// policySelectingAny names the first of policies whose pod selector matches
+// the run's pods of any of roles, or "" when none does. A selector that does
+// not parse matches nothing, as the API server would not have admitted it.
+func policySelectingAny(policies []networkingv1.NetworkPolicy, labels map[string]string, roles []string) string {
+	for _, policy := range policies {
+		selector, err := metav1.LabelSelectorAsSelector(&policy.Spec.PodSelector)
+		if err != nil {
+			continue
+		}
+		for _, role := range roles {
+			if selector.Matches(klabels.Set(withRunLabels(labels, role))) {
+				return policy.Name
+			}
+		}
+	}
+	return ""
 }
 
 // endpointProbeScript fetches /readyz at the control-plane endpoint given as
