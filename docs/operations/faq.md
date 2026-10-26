@@ -95,7 +95,7 @@ CAPNICo is not ready. Check:
 
 - `FAILING (reason)`: fix what the reason names. `CredentialsNotFound` and `InvalidConfiguration` point at the `nico-credentials` Secret; `AuthenticationFailed` and `AccessDenied` mean NICo rejected or forbade the credentials. CAPNICo rechecks within seconds of a change to the Secret.
 - `UNKNOWN (ValidationFailed)`: CAPNICo could not reach NICo, or the check timed out or failed TLS verification. Check the endpoint in the Secret and the network path from the management cluster.
-- `STALE`: CAPNICo has not checked when a check was due. `DETAIL` names the cause when nvkectl can see one: the manager is not running, or it watches another namespace or `--watch-filter`.
+- `STALE`: CAPNICo has not checked when a check was due. `DETAIL` names the cause when nvkectl can see one: the manager is not running, or it watches another namespace or `--watch-filter`. When `DETAIL` names no cause, check whether the manager predates the `NicoIdentity` CRD and needs a restart.
 - `PENDING`: CAPNICo has not checked the `NicoIdentity`, or its latest change, yet. Run the command again in a few seconds; if nothing checks it, it turns `STALE`.
 - `NO-IDENTITY`: no `NicoIdentity` names the Secret. Create one; see [Infrastructure providers](../../cli/README.md#infrastructure-providers).
 - `UNSUPPORTED`: the installed CAPNICo predates `NicoIdentity`.
