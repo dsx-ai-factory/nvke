@@ -54,7 +54,7 @@ resources:
     crdVersion: v1
   domain: nvke.nvidia.com
   group: internal
-  kind: ClusterClass
+  kind: ControlPlaneClass
   path: github.com/dsx-ai-factory/nvke/management-engine/apis/v1
   version: v1
 version: "3"

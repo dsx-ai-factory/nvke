@@ -208,9 +208,9 @@ var baseResources = map[string]string{
 			"machineInit": {"userDataTemplate": "#cloud-config\nhostname: {{ .Hostname }}\n"}
 		}
 	}`,
-	"clusterclasses": `{
+	"controlplaneclasses": `{
 		"apiVersion": "internal.nvke.nvidia.com/v1",
-		"kind": "ClusterClass",
+		"kind": "ControlPlaneClass",
 		"metadata": {"name": "standard"},
 		"spec": {
 			"controlPlane": {
@@ -304,24 +304,24 @@ func deleteField(obj map[string]any, path []string) {
 }
 
 func TestGeneratedResourceSchemas(t *testing.T) {
-	for _, resource := range []string{"nvkeclusters", "machineimages", "clusterreleases", "nodepoolreleases", "clusterclasses"} {
+	for _, resource := range []string{"nvkeclusters", "machineimages", "clusterreleases", "nodepoolreleases", "controlplaneclasses"} {
 		t.Run(resource, func(t *testing.T) {
 			loadResourceSchema(t, resource).admit(t, baseResource(t, resource), nil)
 		})
 	}
 }
 
-// TestClusterClassAdmission checks required policy choices and provider-neutral
+// TestControlPlaneClassAdmission checks required policy choices and provider-neutral
 // identifiers through Kubernetes admission rather than inspecting markers.
-func TestClusterClassAdmission(t *testing.T) {
+func TestControlPlaneClassAdmission(t *testing.T) {
 	replicas := []string{"spec", "controlPlane", "replicas"}
 	preferences := []string{"spec", "controlPlane", "instanceTypePreferences"}
 	memory := []string{"spec", "controlPlane", "systemReservedMemory"}
 	strategy := []string{"spec", "rollout", "strategy", "type"}
 	surge := []string{"spec", "rollout", "strategy", "rollingUpdate", "maxSurge"}
 
-	schema := loadResourceSchema(t, "clusterclasses")
-	schema.runCreate(t, "clusterclasses", []fieldCase{
+	schema := loadResourceSchema(t, "controlplaneclasses")
+	schema.runCreate(t, "controlplaneclasses", []fieldCase{
 		{name: "missing spec", path: []string{"spec"}, remove: true, invalid: true},
 		{name: "missing control plane", path: []string{"spec", "controlPlane"}, remove: true, invalid: true},
 		{name: "missing rollout", path: []string{"spec", "rollout"}, remove: true, invalid: true},
@@ -350,23 +350,23 @@ func TestClusterClassAdmission(t *testing.T) {
 		{name: "percentage surge", path: surge, value: "25%", invalid: true},
 	})
 	t.Run("single replica cannot disable surge", func(t *testing.T) {
-		obj := baseResource(t, "clusterclasses")
+		obj := baseResource(t, "controlplaneclasses")
 		setField(obj, replicas, int64(1))
 		setField(obj, surge, int64(1))
 		schema.admit(t, obj, nil)
-		updated := baseResource(t, "clusterclasses")
+		updated := baseResource(t, "controlplaneclasses")
 		setField(updated, replicas, int64(1))
 		schema.check(t, true, updated, obj)
 	})
 }
 
-// TestClusterClassSpecMutable permits operators to revise every policy choice.
+// TestControlPlaneClassSpecMutable permits operators to revise every policy choice.
 // Resolving those choices for existing clusters belongs to their reconciler.
-func TestClusterClassSpecMutable(t *testing.T) {
-	schema := loadResourceSchema(t, "clusterclasses")
-	previous := baseResource(t, "clusterclasses")
+func TestControlPlaneClassSpecMutable(t *testing.T) {
+	schema := loadResourceSchema(t, "controlplaneclasses")
+	previous := baseResource(t, "controlplaneclasses")
 	schema.admit(t, previous, nil)
-	updated := mutate(t, "clusterclasses", func(spec map[string]any) {
+	updated := mutate(t, "controlplaneclasses", func(spec map[string]any) {
 		spec["controlPlane"] = map[string]any{
 			"replicas":                int64(5),
 			"instanceTypePreferences": []any{"provider.example/instance-types/CP_Large"},

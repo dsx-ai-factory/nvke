@@ -95,20 +95,20 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 			},
 		},
 		{
-			resource: "clusterclasses", kind: "ClusterClass",
-			object: &ClusterClass{
+			resource: "controlplaneclasses", kind: "ControlPlaneClass",
+			object: &ControlPlaneClass{
 				Name: "standard",
-				Spec: ClusterClassSpec{
-					ControlPlane: ClusterClassControlPlane{
+				Spec: ControlPlaneClassSpec{
+					ControlPlane: ControlPlaneClassConfig{
 						Replicas: &three, InstanceTypePreferences: instanceTypes, SystemReservedMemory: "16Gi",
 					},
-					Rollout: ClusterClassRollout{Strategy: ClusterClassRolloutStrategy{
-						Type: "RollingUpdate", RollingUpdate: ClusterClassRollingUpdate{MaxSurge: 0},
+					Rollout: ControlPlaneClassRollout{Strategy: ControlPlaneClassRolloutStrategy{
+						Type: "RollingUpdate", RollingUpdate: ControlPlaneClassRollingUpdate{MaxSurge: 0},
 					}},
 				},
 			},
 			verify: func(t *testing.T, decoded runtime.Object) {
-				class := decoded.(*ClusterClass)
+				class := decoded.(*ControlPlaneClass)
 				require.Equal(t, instanceTypes, class.Spec.ControlPlane.InstanceTypePreferences, "instance preference order must survive serialization")
 			},
 		},
@@ -134,7 +134,7 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 		})
 	}
 
-	for _, kind := range []string{"NVKEClusterList", "MachineImageList", "ClusterReleaseList", "NodePoolReleaseList", "ClusterClassList"} {
+	for _, kind := range []string{"NVKEClusterList", "MachineImageList", "ClusterReleaseList", "NodePoolReleaseList", "ControlPlaneClassList"} {
 		if _, err := scheme.New(GroupVersion.WithKind(kind)); err != nil {
 			t.Fatal(err)
 		}

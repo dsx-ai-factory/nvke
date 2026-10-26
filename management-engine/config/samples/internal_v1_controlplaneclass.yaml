@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 apiVersion: internal.nvke.nvidia.com/v1
-kind: ClusterClass
+kind: ControlPlaneClass
 metadata:
   name: standard
 spec:

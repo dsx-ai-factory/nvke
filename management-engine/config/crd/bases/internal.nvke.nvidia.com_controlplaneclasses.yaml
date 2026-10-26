@@ -6,14 +6,14 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: clusterclasses.internal.nvke.nvidia.com
+  name: controlplaneclasses.internal.nvke.nvidia.com
 spec:
   group: internal.nvke.nvidia.com
   names:
-    kind: ClusterClass
-    listKind: ClusterClassList
-    plural: clusterclasses
-    singular: clusterclass
+    kind: ControlPlaneClass
+    listKind: ControlPlaneClassList
+    plural: controlplaneclasses
+    singular: controlplaneclass
   scope: Cluster
   versions:
   - additionalPrinterColumns:
@@ -23,8 +23,8 @@ spec:
     name: v1
     schema:
       openAPIV3Schema:
-        description: ClusterClass is operator-published control-plane policy selected
-          by NVKECluster.
+        description: ControlPlaneClass is operator-published control-plane policy
+          selected by NVKECluster.
         properties:
           apiVersion:
             description: |-
@@ -44,7 +44,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: ClusterClassSpec configures the control plane of clusters
+            description: ControlPlaneClassSpec configures the control plane of clusters
               selecting this class.
             properties:
               controlPlane:
@@ -69,7 +69,7 @@ spec:
                     type: integer
                   systemReservedMemory:
                     description: |-
-                      SystemReservedMemory is the memory reserved for system daemons on each node.
+                      SystemReservedMemory reserves memory for system daemons on each control-plane node.
                       Zero requests no reservation.
                     minLength: 1
                     type: string
