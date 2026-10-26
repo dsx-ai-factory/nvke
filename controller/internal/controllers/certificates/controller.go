@@ -149,8 +149,7 @@ func (c *Controller) markInspectionAuditRecorded(ctx context.Context, nodeID uui
 			return nil
 		}
 		locked.CertificateInspection.AuditRecorded = true
-		_, err = tx.UpdateNode(ctx, &locked)
-		return err
+		return tx.UpdateNodeCertificateInspection(ctx, &locked)
 	})
 	if err != nil && !errors.Is(err, db.ErrNotFound) {
 		slog.WarnContext(ctx, "Certificate inspection audit state could not be persisted", "node_id", nodeID, "err", err)
