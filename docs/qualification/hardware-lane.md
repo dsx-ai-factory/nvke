@@ -58,6 +58,7 @@ flowchart TB
 
     P["site-stage=provision"] -.->|stops here| S1
     B["site-stage=bootstrap"] -.->|stops here| S2K
+    D["site-stage=deployment"] -.->|stops here| S2N
     F["site-stage=full"] -.->|runs everything| S4
 ```
 

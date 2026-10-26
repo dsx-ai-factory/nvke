@@ -32,7 +32,7 @@
 #   user: ""            # "" -> ubuntu
 
 # The site lane builds a site controller on a Forge node (-e2e.site-stage=
-# provision|bootstrap|full). `gmake site-inputs SITE_NVKE_CONTROLLER_VERSION=...`
+# provision|bootstrap|deployment|full). `gmake site-inputs SITE_NVKE_CONTROLLER_VERSION=...`
 # builds nvkectl and the image archives below, pulling the published images
 # from SITE_IMAGE_REGISTRY: GHCR by default, or nvcr.io/<NGC org> after a
 # `docker login nvcr.io` with an NGC key. Secrets come only from the

@@ -140,7 +140,8 @@ and its jobs are named `<stream> (dry run)`.
 |---|---|---|
 | `provision` | a Forge node, reachable, then released | 20 min |
 | `bootstrap` | vanilla Kubernetes via `nvkectl bootstrap site` | 45 min |
-| `full` | the NVKE stack, the engine, and a tenant cluster | 80 min |
+| `deployment` | the NVKE stack and the engine | 60 min |
+| `full` | a tenant cluster | 80 min |
 
 ## Reading a result
 

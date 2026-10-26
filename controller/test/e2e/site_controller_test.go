@@ -40,9 +40,10 @@ import (
 
 // The stages of the site controller run, each doing everything the one before it did.
 const (
-	siteStageProvision = "provision" // a node, reachable, then released
-	siteStageBootstrap = "bootstrap" // plus vanilla Kubernetes from nvkectl
-	siteStageFull      = "full"      // plus the NVKE stack, the controller, and a tenant
+	siteStageProvision  = "provision"  // a node, reachable, then released
+	siteStageBootstrap  = "bootstrap"  // plus vanilla Kubernetes from nvkectl
+	siteStageDeployment = "deployment" // plus the NVKE stack and the controller
+	siteStageFull       = "full"       // plus a tenant
 )
 
 // Secrets the site controller run reads from the environment. They are never written to
@@ -192,13 +193,13 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 		switch siteStage {
 		case "":
 			Skip("-e2e.site-stage is not set")
-		case siteStageProvision, siteStageBootstrap:
+		case siteStageProvision, siteStageBootstrap, siteStageDeployment:
 		case siteStageFull:
 			if err := fullStageSupported(expectSucceed(runEnvironment()).Provider); err != nil {
 				Fail(err.Error())
 			}
 		default:
-			Fail(fmt.Sprintf("-e2e.site-stage %q is not provision, bootstrap or full", siteStage))
+			Fail(fmt.Sprintf("-e2e.site-stage %q is not provision, bootstrap, deployment or full", siteStage))
 		}
 		// An archive an earlier run left behind describes another node.
 		if err := os.Remove(siteDiagnostics); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -220,7 +221,7 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 		// its whole provision timeout reporting that. The site node has not
 		// been asked for yet, so a shortfall here releases nothing.
 		secrets = withheldFromEnvironment()
-		if siteStage == siteStageFull {
+		if siteStage == siteStageDeployment || siteStage == siteStageFull {
 			var placed []string
 			stack, placed = expectSucceed2(newStack(cfg, capabilities[infra.CapabilityArch]))
 			secrets = append(secrets, placed...)
@@ -275,7 +276,7 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 	// that stops earlier runs fewer specs rather than running the same spec
 	// with a collaborator neutered, which is what a do-nothing deployer and a
 	// substitute probe used to express.
-	if siteStage == siteStageBootstrap || siteStage == siteStageFull {
+	if siteStage == siteStageBootstrap || siteStage == siteStageDeployment || siteStage == siteStageFull {
 		It("bootstraps the site controller", func(ctx SpecContext) {
 			if session == nil {
 				Skip("no node")
@@ -309,7 +310,7 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 		}, NodeTimeout(5*time.Minute))
 	}
 
-	if siteStage == siteStageFull {
+	if siteStage == siteStageDeployment || siteStage == siteStageFull {
 		It("deploys the stack", func(ctx SpecContext) {
 			if cluster.Kubeconfig == "" || session == nil {
 				Skip("the site controller was not bootstrapped")
@@ -510,9 +511,10 @@ func siteCapabilities(run map[string]string) map[string]string {
 	return node
 }
 
-// requireRunCapacity asks the substrate whether the shapes this full run will
-// create have usable allocations: the site node and the tenant control plane on
-// the CPU shape, and one worker on the worker shape.
+// requireRunCapacity asks the substrate whether the shapes this run will create
+// have usable allocations: the site node and, at the full stage, the tenant
+// control plane on the CPU shape, and one worker on the worker shape. A
+// deployment run builds the site node and no tenant, so it asks for one machine.
 //
 // Duck-typed rather than part of infra.Provider: a substrate that cannot answer
 // should not have to implement a method that lies, and one that can answers the
@@ -527,6 +529,9 @@ func requireRunCapacity(ctx context.Context, provider infra.Provider) error {
 	capabilities, err := runCapabilities()
 	if err != nil {
 		return err
+	}
+	if siteStage == siteStageDeployment {
+		return checker.RequireCapacity(ctx, capabilities, 1, 0)
 	}
 	return checker.RequireCapacity(ctx, capabilities, 2, 1)
 }
@@ -582,7 +587,7 @@ func fullStageSupported(provider string) error {
 	}
 	return fmt.Errorf("-e2e.site-stage full needs a tenant spec for provider %q, and the ones that exist are "+
 		"Forge's and DSX's: the tenant half decodes the environment as one of those declarations, which a %s "+
-		"environment is not. Run this provider at stage provision or bootstrap until a tenant spec for it exists",
+		"environment is not. Run this provider at stage provision, bootstrap or deployment until a tenant spec for it exists",
 		provider, provider)
 }
 

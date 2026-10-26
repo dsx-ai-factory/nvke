@@ -33,7 +33,7 @@ func TestFullStageSupported(t *testing.T) {
 			if !strings.Contains(err.Error(), provider) {
 				t.Errorf("error does not name the provider: %v", err)
 			}
-			for _, stage := range []string{siteStageProvision, siteStageBootstrap} {
+			for _, stage := range []string{siteStageProvision, siteStageBootstrap, siteStageDeployment} {
 				if !strings.Contains(err.Error(), stage) {
 					t.Errorf("error does not offer stage %q: %v", stage, err)
 				}

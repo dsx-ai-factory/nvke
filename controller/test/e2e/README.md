@@ -789,8 +789,9 @@ without it the lane is skipped:
 
 - `provision`: provision the node over the site's jump host and check its egress.
 - `bootstrap`: also run `nvkectl bootstrap site` and wait for the API server.
-- `full`: also deploy the SBOM stack, wait for CWE, check that NKTP delivers the
-  site's telemetry (below), then create and delete a tenant.
+- `deployment`: also deploy the SBOM stack, wait for CWE, and check that NKTP
+  delivers the site's telemetry (below). Takes one machine; no tenant is built.
+- `full`: also create and delete a tenant.
 
 At `full` the lane runs the [validation image](#validation-image)'s site checks,
 1–31 in [What it checks](#what-it-checks), against the site it built. The

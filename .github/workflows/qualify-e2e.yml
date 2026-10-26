@@ -90,13 +90,14 @@ on:
   workflow_dispatch:
     inputs:
       stage:
-        description: How far to go. provision stops at a booted node, bootstrap adds vanilla Kubernetes, full adds the deploy path and a tenant.
+        description: How far to go. provision stops at a booted node, bootstrap adds vanilla Kubernetes, deployment adds the deploy path, full adds a tenant.
         type: choice
         required: true
         default: full
         options:
           - provision
           - bootstrap
+          - deployment
           - full
       nvke-version:
         description: "The nvke tag to qualify, e.g. v0.22.0-beta.1. It must be an existing tag. QUALIFY_E2E_NVKE_VERSION supplies it when this is empty, and the plan takes the highest nke version when neither is set."
