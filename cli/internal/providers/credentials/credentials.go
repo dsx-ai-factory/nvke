@@ -92,7 +92,8 @@ type Credentials struct {
 
 	// NextCheckTime is when the provider next checks the Identity on its own
 	// schedule, as it published it. Nil when the provider has published none,
-	// or when it is not a valid time.
+	// or when it is not a valid time. It is reported even when freshness
+	// ignores it, as when it is not later than LastCheckedTime.
 	NextCheckTime *metav1.Time `json:"nextCheckTime,omitempty"`
 }
 
