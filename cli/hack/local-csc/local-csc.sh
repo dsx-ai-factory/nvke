@@ -21,24 +21,27 @@ REPO="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 : "${NODE_NAME:=csc-node-0}"
 : "${NODE_IP:=10.4.1.10}"
 : "${NODE_COUNT:=1}"
-# Where import puts the CSC's CAPI objects; CWE writes them to nke-system in the bootstrap cluster.
-: "${MGMT_NAMESPACE:=nke-system}"
+# Where import puts the CSC's CAPI objects; the controller writes them to nvke-system in the bootstrap cluster.
+: "${MGMT_NAMESPACE:=nvke-system}"
 # Where import puts them: kind (a fresh kind cluster) or csc (the CSC itself, self-managed).
 : "${IMPORT_TARGET:=kind}"
 : "${K8S_VERSION:=1.34.8}"
 
 BOOTSTRAP_CLUSTER=nvkectl-bootstrap
-BOOTSTRAP_NAMESPACE=nke-system
+BOOTSTRAP_NAMESPACE=nvke-system
 MGMT_CLUSTER=csc-mgmt
 AGENT_PORT=15005
 NODE_IMAGE="cwe-capd-kindest-node:local"
 CONTROLLER_IMAGE="nke-controller:latest"
 PROVIDER_IMAGE="cluster-api-provider-provisioned:latest"
 NVKECTL="${REPO}/cli/bin/nvkectl"
-# prepare-calico-assets.sh pins this version.
-CALICO_VERSION=3.30.1
-CALICO_PACKAGE="nke-cni-calico-manifests-${CALICO_VERSION}"
-CALICO_DEB="${STATE_DIR}/cni/${CALICO_PACKAGE}_${CALICO_VERSION}_all.deb"
+# The OVN-Kubernetes stream prepare-ovn-assets.sh builds and the agent installs by default.
+OVN_VERSION=2.4.2
+OVN_DIR="${STATE_DIR}/cni-ovn"
+OVN_CHARTS_PACKAGE="nvke-cni-ovn-charts-${OVN_VERSION}"
+HELM_DEB="${OVN_DIR}/nke-e2e-helm.deb"
+# nvkectl writes nerdctl's networks here rather than /etc/cni/net.d.
+NERDCTL_NETCONF=/etc/containerd-nerdctl/net.d
 KUBECONFIG_OUT="${STATE_DIR}/${CLUSTER_NAME}.kubeconfig"
 ETCD_KEY_OUT="${STATE_DIR}/${CLUSTER_NAME}-etcd-encryption-key.json"
 CNI_LEASE_DIR=/var/lib/cni/networks/kind
@@ -79,6 +82,7 @@ host_ip() {
   echo "${a}.${b}.${c}.$((d + $1))"
 }
 image_exists() { sudo nerdctl image inspect "$1" >/dev/null 2>&1; }
+ovn_deb() { echo "${OVN_DIR}/nvke-cni-ovn-$1-${OVN_VERSION}_${OVN_VERSION}_$(dpkg --print-architecture).deb"; }
 
 usage() {
   cat <<EOF
@@ -188,11 +192,27 @@ add_safe_directory() {
   grep -qx "${REPO}" <<<"${dirs}" || "${git_cmd[@]}" --add safe.directory "${REPO}"
 }
 
+# nvkectl refuses to bootstrap while nerdctl network configs are in
+# /etc/cni/net.d, which a site node's containerd reads, and points its own kind
+# commands elsewhere. Every nerdctl here uses the same directory.
+configure_nerdctl_cni() {
+  local toml=/etc/nerdctl/nerdctl.toml f
+  if ! sudo grep -qs '^cni_netconfpath' "${toml}"; then
+    sudo mkdir -p "$(dirname "${toml}")"
+    printf 'cni_netconfpath = "%s"\n' "${NERDCTL_NETCONF}" | sudo tee -a "${toml}" >/dev/null
+  fi
+  sudo grep -qx "cni_netconfpath = \"${NERDCTL_NETCONF}\"" "${toml}" || die "${toml} sets another cni_netconfpath"
+  sudo install -d -m 0700 "${NERDCTL_NETCONF}"
+  while read -r f; do
+    [[ -n "${f}" ]] && sudo mv "${f}" "${NERDCTL_NETCONF}/"
+  done < <(sudo find /etc/cni/net.d -maxdepth 1 -name 'nerdctl-*.conflist' 2>/dev/null)
+}
+
 cmd_provision() {
   require_linux provision
   log "base packages and kernel settings"
   sudo apt-get update -qq
-  sudo apt-get install -y -qq make git curl jq ca-certificates tmux >/dev/null
+  sudo apt-get install -y -qq make git curl jq ca-certificates tmux dpkg-dev >/dev/null
   sudo tee /etc/sysctl.d/99-local-csc.conf >/dev/null <<'EOF'
 fs.inotify.max_user_instances=1024
 fs.inotify.max_user_watches=1048576
@@ -213,6 +233,7 @@ EOF
   # Without these, git rejects the mounted repo and make stamps nvkectl v0.0.0.
   add_safe_directory
   add_safe_directory sudo
+  configure_nerdctl_cni
 
   sudo nerdctl version >/dev/null || die "rootful nerdctl does not work"
   pgrep -x buildkitd >/dev/null || die "buildkitd is not running"
@@ -227,15 +248,17 @@ cmd_build() {
   make -C "${REPO}/cli" build
   log "controller and provisioned-provider images"
   sudo make -C "${REPO}/cli" images
-  if [[ ! -f "${CALICO_DEB}" ]]; then
-    log "Calico manifests package"
-    bash "${REPO}/controller/hack/ci/prepare-calico-assets.sh" "${STATE_DIR}/cni"
+  if [[ ! -f "$(ovn_deb charts)" || ! -f "$(ovn_deb images)" || ! -f "${HELM_DEB}" ]]; then
+    log "OVN-Kubernetes ${OVN_VERSION} packages, built from source"
+    sudo env OCI_BIN=nerdctl BUNDLE_ARCH="$(dpkg --print-architecture)" \
+      bash "${REPO}/controller/hack/ci/prepare-ovn-assets.sh" "${OVN_DIR}"
   fi
   if [[ "${REBUILD_NODE_IMAGE:-}" == 1 ]] && image_exists "${NODE_IMAGE}"; then
     sudo nerdctl rmi -f "${NODE_IMAGE}"
   fi
   log "node image (kept if present; REBUILD_NODE_IMAGE=1 rebuilds it)"
-  sudo make -C "${REPO}/cli" ensure-capd-image CAPD_CNI_MANIFESTS_DEB_PATH="${CALICO_DEB}"
+  sudo make -C "${REPO}/cli" ensure-capd-image CAPD_CNI_CHARTS_DEB_PATH="$(ovn_deb charts)" \
+    CAPD_CNI_IMAGES_DEB_PATH="$(ovn_deb images)" CAPD_HELM_DEB_PATH="${HELM_DEB}"
 }
 
 # ------------------------------------------------------------------------ up
@@ -279,12 +302,14 @@ release_stale_lease() {
   sudo rm -f "${lease}"
 }
 
+# The default pod CIDR, 192.168.0.0/16, would take Colima's VM network
+# (192.168.5.0/24, the VM's DNS) into OVN's overlay.
 write_sitespec() {
   printf 'name,ip,tpm_ek_thumbprint\n%s,%s,\n' "${NODE_NAME}" "${NODE_IP}" >"${STATE_DIR}/hosts.csv"
   "${NVKECTL}" generate sitespec "${CLUSTER_NAME}" --nodes "${STATE_DIR}/hosts.csv" \
     --set "cluster.k8sVersion=${K8S_VERSION}" \
-    --set cluster.cniName=calico --set "cluster.cniVersion=${CALICO_VERSION}" \
-    --set cluster.podCidr=192.168.0.0/16 --set cluster.serviceCidr=10.96.0.0/12 \
+    --set cluster.cniName=ovn-kubernetes --set "cluster.cniVersion=${OVN_VERSION}" \
+    --set cluster.podCidr=10.244.0.0/16 --set cluster.serviceCidr=10.96.0.0/12 \
     --set cluster.kubeletConfig.systemReservedMemory=512Mi \
     >"${STATE_DIR}/sitespec.yaml"
 }
@@ -328,7 +353,7 @@ wait_node() {
   ((i < 15)) || die "nke-agent is not listening on ${AGENT_PORT} in ${name}"
   [[ "$("${ex[@]}" cloud-init status)" == *done* ]] || die "cloud-init status is not done in ${name}"
   [[ "$("${ex[@]}" cat /proc/sys/net/ipv4/ip_forward)" == 1 ]] || die "ip_forward is not 1 in ${name}"
-  "${ex[@]}" dpkg -s "${CALICO_PACKAGE}" >/dev/null 2>&1 || die "${CALICO_PACKAGE} is not installed in the node image"
+  "${ex[@]}" dpkg -s "${OVN_CHARTS_PACKAGE}" >/dev/null 2>&1 || die "${OVN_CHARTS_PACKAGE} is not installed in the node image"
   log "${name} is ready"
 }
 
@@ -424,9 +449,9 @@ cmd_status() {
 # -------------------------------------------------------------------- import
 
 # IMPORT_EXTRA names a JSON file, {"hosts": [...], "items": [...]}, describing
-# hosts joined outside CWE: inventory entries for the ProvisionedCluster, and a
-# Machine, ProvisionedMachine and <machine>-bootstrap-data Secret per host.
-# Their Machines are created before the CWE-built node's so it, the
+# hosts joined outside the controller: inventory entries for the ProvisionedCluster,
+# and a Machine, ProvisionedMachine and <machine>-bootstrap-data Secret per host.
+# Their Machines are created before the controller-built node's so it, the
 # controlPlaneEndpoint holder, is the newest: KCP updates the oldest first.
 import_extra() {
   local capi="$1" m
