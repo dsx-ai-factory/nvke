@@ -585,6 +585,31 @@ class DemoTests(unittest.TestCase):
             with self.assertRaisesRegex(demo.CheckError, "notification_refired_before_completion"):
                 demo.alert_receipts(c, start - 10, mutation_at, completed_at)
 
+    def test_a_valid_receipt_wins_over_an_invalid_one_in_any_order(self):
+        c = config()
+        start = time.time()
+        def iso(seconds):
+            return demo.dt.datetime.fromtimestamp(seconds, demo.dt.timezone.utc).isoformat()
+        common = {"schema": "nke.alert-receipt.v1", "cluster_hash": demo.digest(c["cluster_name"]),
+                  "node_hash": demo.digest(c["alert_node"]), "credential": c["alert_credential"]}
+        mutation_at, completed_at = start, start + 20
+        with tempfile.TemporaryDirectory() as tmp:
+            c["alert_receipts_file"] = str(Path(tmp) / "receipts")
+            for refired_id, valid_id in (("a" * 64, "b" * 64), ("b" * 64, "a" * 64)):
+                entries = [{**common, "receipt_id": refired_id, "status": "firing", "received_at": iso(start - 5)},
+                           {**common, "receipt_id": refired_id, "status": "resolved", "received_at": iso(start + 10)},
+                           {**common, "receipt_id": refired_id, "status": "firing", "received_at": iso(start + 15)},
+                           {**common, "receipt_id": valid_id, "status": "firing", "received_at": iso(start - 5)},
+                           {**common, "receipt_id": valid_id, "status": "resolved", "received_at": iso(start + 10)}]
+                Path(c["alert_receipts_file"]).write_text("".join(json.dumps(e) + "\n" for e in entries))
+                pair = demo.alert_receipts(c, start - 10, mutation_at, completed_at)
+                self.assertEqual([valid_id, valid_id], [e["receipt_id"] for e in pair])
+            # With only the invalid receipt, its specific reason is reported.
+            refired_only = [e for e in entries if e["receipt_id"] == refired_id]
+            Path(c["alert_receipts_file"]).write_text("".join(json.dumps(e) + "\n" for e in refired_only))
+            with self.assertRaisesRegex(demo.CheckError, "notification_refired_before_completion"):
+                demo.alert_receipts(c, start - 10, mutation_at, completed_at)
+
     def test_continuous_secret_failure_is_distinct_from_allowed_api_outage(self):
         class LocalLive:
             c = {"traffic_interval_seconds": 0.001, "api_server": "https://approved.example", "kube_system_uid": "uid"}
@@ -1059,15 +1084,17 @@ class CollectorContractTests(unittest.TestCase):
                 with self.assertRaisesRegex(demo.CheckError, "^audit_writes_failed_during_lane$"):
                     live.metrics(certificates, epoch)
 
-    def test_audit_write_failure_stops_waiting_immediately(self):
-        calls = []
+    def test_past_event_failures_stop_waiting_immediately(self):
+        for reason in ("audit_writes_failed_during_lane", "notification_order_invalid", "notification_refired_before_completion"):
+            with self.subTest(reason=reason):
+                calls = []
 
-        def check():
-            calls.append(1)
-            raise demo.CheckError("audit_writes_failed_during_lane")
-        with self.assertRaisesRegex(demo.CheckError, "audit_writes_failed_during_lane"):
-            demo.wait_for(check, demo.time.monotonic() + 60)
-        self.assertEqual(len(calls), 1)
+                def check():
+                    calls.append(1)
+                    raise demo.CheckError(reason)
+                with patch.object(demo.time, "sleep"), self.assertRaisesRegex(demo.CheckError, reason):
+                    demo.wait_for(check, demo.time.monotonic() + 0.5)
+                self.assertEqual(len(calls), 1)
 
     def test_audit_failure_anywhere_in_the_lane_fails_not_only_in_the_last_10m(self):
         for result in ("sink_failed", "invalid_event"):

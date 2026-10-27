@@ -584,6 +584,7 @@ def wait_for(check, deadline):
             if last in {"workflow_failed", "workflow_identity_mismatch", "unsupported_workflow", "cycle_not_scheduled",
                         "cycle_not_scheduler_named", "cycle_started_before_traffic", "manual_marker_invalid", "audit_schema_invalid", "audit_values_invalid",
                         "audit_event_duplicate", "scheduled_cycle_did_not_renew",
+                        "notification_order_invalid", "notification_refired_before_completion",
                         "audit_writes_failed_during_lane"}:
                 raise
         time.sleep(2)
@@ -605,7 +606,8 @@ def firing_receipt_received(c, since, until):
 
 def alert_receipts(c, since, mutation_at, completed_at):
     selected = matching_receipts(c, since)
-    for receipt in {e["receipt_id"] for e in selected}:
+    failure = None
+    for receipt in sorted({e["receipt_id"] for e in selected}):
         same = [e for e in selected if e["receipt_id"] == receipt]
         firing = [e for e in same if e["status"] == "firing" and timestamp(e["received_at"]) <= mutation_at]
         # Renewal is one node at a time, so the alert node's inspection can resolve
@@ -614,11 +616,19 @@ def alert_receipts(c, since, mutation_at, completed_at):
         resolved = [e for e in same if e["status"] == "resolved" and timestamp(e["received_at"]) >= mutation_at]
         if firing and resolved:
             pair = [max(firing, key=lambda e: timestamp(e["received_at"])), min(resolved, key=lambda e: timestamp(e["received_at"]))]
-            require(timestamp(pair[0]["received_at"]) < timestamp(pair[1]["received_at"]), "notification_order_invalid")
             resolved_at = timestamp(pair[1]["received_at"])
-            require(not any(e["status"] == "firing" and resolved_at < timestamp(e["received_at"]) <= completed_at for e in same),
-                    "notification_refired_before_completion")
+            try:
+                require(timestamp(pair[0]["received_at"]) < resolved_at, "notification_order_invalid")
+                require(not any(e["status"] == "firing" and resolved_at < timestamp(e["received_at"]) <= completed_at for e in same),
+                        "notification_refired_before_completion")
+            except CheckError as error:
+                # Another receipt may still carry a complete delivery; keep the
+                # first specific reason so a single candidate still reports it.
+                failure = failure or error
+                continue
             return [{"status": e["status"], "received_at": e["received_at"], "receipt_id": e["receipt_id"]} for e in pair]
+    if failure:
+        raise failure
     raise CheckError("notification_delivery_incomplete")
 
 

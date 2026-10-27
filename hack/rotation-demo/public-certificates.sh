@@ -5,7 +5,7 @@
 set -eu
 umask 077
 rotation_role="${1:?node role required}"
-case "$rotation_role" in control-plane|worker) ;; *) exit 1 ;; esac
+case "$rotation_role" in control-plane) ;; *) exit 1 ;; esac
 rotation_tmp="$(mktemp -d)"
 trap 'rm -rf "$rotation_tmp"' EXIT HUP INT TERM
 rotation_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
