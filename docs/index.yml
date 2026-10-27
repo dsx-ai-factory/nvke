@@ -44,6 +44,8 @@ navigation:
             path: operate/prepare-nodes.md
           - page: Bootstrap the management cluster
             path: operate/bootstrap-management-cluster.md
+          - page: Install the management plane
+            path: operate/install-management-plane.md
           - page: "Configure an infrastructure provider: NICo"
             path: operate/provider-nico.md
           - page: Secure the NVKE API

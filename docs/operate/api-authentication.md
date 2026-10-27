@@ -16,7 +16,7 @@ Authentication has three modes. Off is the default.
 
 ## Before you begin
 
-- You have completed [Run NVKE end to end on one machine](../get-started/local-site.md). You can do this before or after [Configure an infrastructure provider: NICo](provider-nico.md).
+- You have completed [Install the management plane](install-management-plane.md). You can do this before or after [Configure an infrastructure provider: NICo](provider-nico.md).
 - You run the install and `kubectl` commands on the host you installed from, from the root of the same `nvke/` checkout, with the site spec, `<CLUSTER_NAME>.kubeconfig` and, if you installed from one, `release.json` in the directory above it, as in [Run NVKE end to end on one machine](../get-started/local-site.md). Set `KUBECONFIG` for `kubectl`:
 
   ```bash
