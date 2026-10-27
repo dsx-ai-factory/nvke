@@ -6,11 +6,15 @@ set -euo pipefail
 # Prints the next release tag for a branch or commit without creating it.
 # usage: hack/next-tag.sh <BRANCH> [<PRE-RELEASE>]
 #
+# The version is read from the conventional-commit subjects since the latest GA
+# tag. A feat, or a breaking change of any type, bumps the minor; a fix bumps the
+# patch. The major is never bumped: 1.0 is cut by hand. With neither, nothing is
+# releasable, and the script exits 3 having printed nothing on stdout.
+#
 # next_version prints the next release tag for a branch or commit.
 # Args:
 #   $1 - branch or other committish to inspect
-#   $2 - prerelease label (e.g. "beta") or empty for GA.
-# Bumps minor if any commit since the latest GA tag starts with "feat", else patch.
+#   $2 - prerelease label (e.g. "beta" or "rc") or empty for GA.
 function next_version() {
     local branch="$1"
     local prerelease="$2"
@@ -23,11 +27,18 @@ function next_version() {
     local minor="$(cut -d. -f2 <<< "${latest_ga#"${prefix}"}")"
     local patch="$(cut -d. -f3 <<< "${latest_ga#"${prefix}"}")"
 
-    if git log --format='%s' "${range}" | grep '^feat' &>/dev/null; then
+    # Read into a variable rather than piped: grep -q exits on the first match,
+    # and git log, killed by SIGPIPE, would fail the pipeline under pipefail.
+    local subjects
+    subjects="$(git log --format='%s' "${range}")"
+    if grep -Eq '^(feat(\([^)]*\))?!?|[a-z]+(\([^)]*\))?!):' <<< "${subjects}"; then
         minor=$((minor+1))
         patch=0
-    else
+    elif grep -Eq '^fix(\([^)]*\))?:' <<< "${subjects}"; then
         patch=$((patch+1))
+    else
+        echo "nothing releasable since ${latest_ga}: no feat or fix commit" >&2
+        exit 3
     fi
 
     local base="${prefix}${major}.${minor}.${patch}"
@@ -39,7 +50,7 @@ function next_version() {
     local latest_prerelease=$(git tag -l | grep "^${base}-${prerelease}\\.[0-9]\+$" | sort -V | tail -1)
     local n=1
     if [[ -n "${latest_prerelease}" ]]; then
-        n=$(("$(cut -d. -f4 <<< "${latest_prerelease}")"+1))
+        n=$(( $(cut -d. -f4 <<< "${latest_prerelease}") + 1 ))
     fi
 
     echo "${base}-${prerelease}.${n}"

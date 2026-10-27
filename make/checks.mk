@@ -72,6 +72,13 @@ name-check: ## Fail on tokens that carry a banned name outside the allowlist. (r
 	@python3 -B ./hack/test_name_check.py
 	@python3 -B ./hack/name-check.py --mode $(NAME_CHECK_MODE)
 
+# The version every nightly beta and release candidate is tagged with. A wrong
+# answer is pushed as a tag rather than reported, so the bump rules are tested
+# against fixture repositories.
+next-tag-test: ## Test the release version rules in hack/next-tag.sh. (run by the merge gate)
+	@$(call require_command,python3)
+	@python3 -B ./hack/test_next_tag.py
+
 CHART_CRDS_KUSTOMIZE := controller/deploy/release-crds
 CHART_CRDS_FILE := $(CHART)/files/crds.yaml
 

@@ -453,6 +453,13 @@ For security patches that cannot wait for the next regular release:
 For release candidates, append `-rc.N` to the version: `v0.2.0-rc.1`, or
 `cli/v0.2.0-rc.1` for one component. Tag and push the same way.
 
+A root release candidate can also be cut without anyone pushing it. When the
+Qualify e2e run a nightly beta tag started passes every stream at scope
+`golden-path` and stage `full`, `.github/workflows/nightly-beta-tag.yml` tags
+the beta's commit as the next `vX.Y.Z-rc.N` of the beta's version. It pushes
+only while the `NVKE_AUTO_RC` repository variable is `true`; otherwise the run
+summary says what it would have tagged.
+
 **The dot in `-rc.N` is load-bearing.** `.github/workflows/release.yml` marks
 the release as a pre-release by looking for `-rc.`, so `v0.2.0-rc1` without it
 would publish as a full release and take the repository's "Latest release"
