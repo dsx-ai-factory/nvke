@@ -12,7 +12,9 @@ import (
 	"log/slog"
 	"net"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/stretchr/testify/assert"
@@ -24,6 +26,39 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
 )
+
+type synchronizedBuffer struct {
+	mu sync.Mutex
+	bytes.Buffer
+	writes chan struct{}
+}
+
+func newSynchronizedBuffer() *synchronizedBuffer {
+	return &synchronizedBuffer{writes: make(chan struct{}, 16)}
+}
+
+func (b *synchronizedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	n, err := b.Buffer.Write(p)
+	b.mu.Unlock()
+	b.writes <- struct{}{}
+	return n, err
+}
+
+func (b *synchronizedBuffer) Read(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.Read(p)
+}
+
+func (b *synchronizedBuffer) waitForWrite(t *testing.T) {
+	t.Helper()
+	select {
+	case <-b.writes:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for audit record")
+	}
+}
 
 // The authorizer is the whole of this agent's access control, so these pin what it
 // refuses as much as what it admits.
@@ -255,8 +290,8 @@ func TestControllerClientCABundleName(t *testing.T) {
 }
 
 func TestAuditLogCarriesIncomingTraceContext(t *testing.T) {
-	var auditLog bytes.Buffer
-	server := grpc.NewServer(newGRPCServerOptions(slog.New(slog.NewJSONHandler(&auditLog, nil)))...)
+	auditLog := newSynchronizedBuffer()
+	server := grpc.NewServer(newGRPCServerOptions(slog.New(slog.NewJSONHandler(auditLog, nil)))...)
 	healthpb.RegisterHealthServer(server, health.NewServer())
 
 	listener := bufconn.Listen(1024 * 1024)
@@ -292,20 +327,57 @@ func TestAuditLogCarriesIncomingTraceContext(t *testing.T) {
 	_, err = client.Check(malformedCtx, &healthpb.HealthCheckRequest{})
 	require.NoError(t, err)
 
-	decoder := json.NewDecoder(&auditLog)
+	decoder := json.NewDecoder(auditLog)
 	var tracedRecord map[string]any
+	auditLog.waitForWrite(t)
 	require.NoError(t, decoder.Decode(&tracedRecord))
 	assert.Equal(t, traceID, tracedRecord["trace_id"])
 	assert.Equal(t, parentSpanID, tracedRecord["span_id"])
 	assert.Equal(t, "/grpc.health.v1.Health/Check", tracedRecord["method"])
+	assert.GreaterOrEqual(t, tracedRecord["duration_ms"], float64(0))
 
 	var untracedRecord map[string]any
+	auditLog.waitForWrite(t)
 	require.NoError(t, decoder.Decode(&untracedRecord))
 	assert.NotContains(t, untracedRecord, "trace_id")
 	assert.NotContains(t, untracedRecord, "span_id")
 
 	var malformedRecord map[string]any
+	auditLog.waitForWrite(t)
 	require.NoError(t, decoder.Decode(&malformedRecord))
 	assert.NotContains(t, malformedRecord, "trace_id")
 	assert.NotContains(t, malformedRecord, "span_id")
+
+	tracedStreamCtx, cancelTracedStream := context.WithCancel(tracedCtx)
+	tracedStream, err := client.Watch(tracedStreamCtx, &healthpb.HealthCheckRequest{})
+	require.NoError(t, err)
+	_, err = tracedStream.Recv()
+	require.NoError(t, err)
+	cancelTracedStream()
+	_, err = tracedStream.Recv()
+	require.Error(t, err)
+
+	var tracedStreamRecord map[string]any
+	auditLog.waitForWrite(t)
+	require.NoError(t, decoder.Decode(&tracedStreamRecord))
+	assert.Equal(t, traceID, tracedStreamRecord["trace_id"])
+	assert.Equal(t, parentSpanID, tracedStreamRecord["span_id"])
+	assert.Equal(t, "/grpc.health.v1.Health/Watch", tracedStreamRecord["method"])
+	assert.GreaterOrEqual(t, tracedStreamRecord["duration_ms"], float64(0))
+
+	untracedStreamCtx, cancelUntracedStream := context.WithCancel(context.Background())
+	untracedStream, err := client.Watch(untracedStreamCtx, &healthpb.HealthCheckRequest{})
+	require.NoError(t, err)
+	_, err = untracedStream.Recv()
+	require.NoError(t, err)
+	cancelUntracedStream()
+	_, err = untracedStream.Recv()
+	require.Error(t, err)
+
+	var untracedStreamRecord map[string]any
+	auditLog.waitForWrite(t)
+	require.NoError(t, decoder.Decode(&untracedStreamRecord))
+	assert.NotContains(t, untracedStreamRecord, "trace_id")
+	assert.NotContains(t, untracedStreamRecord, "span_id")
+	assert.Equal(t, "/grpc.health.v1.Health/Watch", untracedStreamRecord["method"])
 }

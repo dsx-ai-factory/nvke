@@ -277,51 +277,62 @@ func buildTLSJWTCredentials(
 	return tlsjwt.NewServerCredentials(base, tokens, slog.Default())
 }
 
-// newAuditLogInterceptor returns an interceptor that logs audit events using the provided logger.
-func newAuditLogInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
+func logAuditEvent(logger *slog.Logger, ctx context.Context, method string, startedAt time.Time, err error) {
+	client := "Unavailable"
+	clientAddress := "Unavailable"
+	errorResponse := "nil"
+
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if userAgents := md.Get("user-agent"); len(userAgents) > 0 {
+			client = userAgents[0]
+		}
+	}
+	if p, ok := peer.FromContext(ctx); ok {
+		clientAddress = p.Addr.String()
+	}
+	if err != nil {
+		errorResponse = err.Error()
+	}
+
+	attrs := []slog.Attr{
+		slog.String("method", method),
+		slog.String("error", errorResponse),
+		slog.String("user-agent", client),
+		slog.String("client-address", clientAddress),
+		slog.Int64("duration_ms", time.Since(startedAt).Milliseconds()),
+	}
+	if spanContext := trace.SpanContextFromContext(ctx); spanContext.IsValid() {
+		attrs = append(attrs,
+			slog.String("trace_id", spanContext.TraceID().String()),
+			slog.String("span_id", spanContext.SpanID().String()),
+		)
+	}
+
+	logger.LogAttrs(ctx, slog.LevelInfo, "grpc request received", attrs...)
+}
+
+// newAuditLogUnaryInterceptor returns an interceptor that logs unary audit events using the provided logger.
+func newAuditLogUnaryInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
 		req any,
 		method *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (any, error) {
-		client := "Unavailable"
-		errorResponse := "nil"
-		clientAddress := "Unavailable"
+		startedAt := time.Now()
+		response, err := handler(ctx, req)
+		logAuditEvent(logger, ctx, method.FullMethod, startedAt, err)
+		return response, err
+	}
+}
 
-		md, ok := metadata.FromIncomingContext(ctx)
-		if ok {
-			ua := md.Get("user-agent")
-			if len(ua) > 0 {
-				client = ua[0]
-			}
-		}
-
-		m, err := handler(ctx, req)
-		if err != nil {
-			errorResponse = err.Error()
-		}
-
-		p, ok := peer.FromContext(ctx)
-		if ok {
-			clientAddress = p.Addr.String()
-		}
-
-		attrs := []slog.Attr{
-			slog.String("method", method.FullMethod),
-			slog.String("error", errorResponse),
-			slog.String("user-agent", client),
-			slog.String("client-address", clientAddress),
-		}
-		if spanContext := trace.SpanContextFromContext(ctx); spanContext.IsValid() {
-			attrs = append(attrs,
-				slog.String("trace_id", spanContext.TraceID().String()),
-				slog.String("span_id", spanContext.SpanID().String()),
-			)
-		}
-
-		logger.LogAttrs(ctx, slog.LevelInfo, "grpc request received", attrs...)
-		return m, err
+// newAuditLogStreamInterceptor returns an interceptor that logs streaming audit events using the provided logger.
+func newAuditLogStreamInterceptor(logger *slog.Logger) grpc.StreamServerInterceptor {
+	return func(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		startedAt := time.Now()
+		err := handler(server, stream)
+		logAuditEvent(logger, stream.Context(), info.FullMethod, startedAt, err)
+		return err
 	}
 }
 
@@ -331,7 +342,8 @@ func newGRPCServerOptions(auditLogger *slog.Logger) []grpc.ServerOption {
 			otelgrpc.WithPropagators(propagation.TraceContext{}),
 			otelgrpc.WithTracerProvider(noop.NewTracerProvider()),
 		)),
-		grpc.UnaryInterceptor(newAuditLogInterceptor(auditLogger)),
+		grpc.UnaryInterceptor(newAuditLogUnaryInterceptor(auditLogger)),
+		grpc.StreamInterceptor(newAuditLogStreamInterceptor(auditLogger)),
 	}
 }
 
