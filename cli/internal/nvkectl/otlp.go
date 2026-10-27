@@ -106,6 +106,11 @@ func otlpFromSite(cmd *cobra.Command) (telemetry.OTLPConfig, bool, bool, error) 
 		return telemetry.OTLPConfig{}, false, false, nil
 	}
 	parsed, err := telemetry.ParseEndpoint(siteCfg.OTLPEndpoint)
+	// An https endpoint always uses TLS, as set-site enforces; a hand-edited config
+	// could still pair it with otlp-insecure and send the headers in clear text.
+	if err == nil && parsed.HTTPS && siteCfg.OTLPInsecure {
+		err = errors.New("otlp-insecure conflicts with the https scheme of the endpoint")
+	}
 	if err != nil {
 		name := site
 		if name == "" {

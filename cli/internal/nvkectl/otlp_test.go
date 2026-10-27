@@ -733,22 +733,30 @@ func TestSiteOTLPUnreachableEndpointNeverFailsTheCommand(t *testing.T) {
 }
 
 // A site whose stored endpoint cannot be used warns and leaves the command alone.
+// That includes an https endpoint stored with otlp-insecure, which would send the
+// headers in clear text.
 func TestSiteOTLPBadSiteEndpointWarnsAndContinues(t *testing.T) {
-	siteOTLPEnv(t)
-	controller := newFakeController(t)
-	saveSiteConfig(t, &config.Config{CurrentSite: "t", Sites: map[string]config.SiteConfig{
-		"t": {URL: controller.URL, OTLPEndpoint: "http://"},
-	}})
+	for name, stored := range map[string]config.SiteConfig{
+		"unparsable":               {OTLPEndpoint: "http://"},
+		"https with otlp-insecure": {OTLPEndpoint: "https://collector.example:4317", OTLPInsecure: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			siteOTLPEnv(t)
+			controller := newFakeController(t)
+			stored.URL = controller.URL
+			saveSiteConfig(t, &config.Config{CurrentSite: "t", Sites: map[string]config.SiteConfig{"t": stored}})
 
-	stdout, stderr, err := runSiteCommand(t, "get", "clusters")
+			stdout, stderr, err := runSiteCommand(t, "get", "clusters")
 
-	require.NoError(t, err)
-	assert.Contains(t, stdout, "demo")
-	// The logger quotes the message, so the site name's quotes arrive escaped.
-	assert.Contains(t, stderr, `nvkectl sends no telemetry because the OTLP endpoint of site \"t\" is not a usable OTLP/gRPC endpoint; `+
-		"run nvkectl config set-site again with a valid --otlp-endpoint, or without it to remove the endpoint")
-	assert.NotContains(t, stderr, "OTEL_EXPORTER_OTLP_ENDPOINT")
-	assert.Equal(t, 1, strings.Count(stderr, "nvkectl sends no telemetry"), "one warning")
+			require.NoError(t, err)
+			assert.Contains(t, stdout, "demo")
+			// The logger quotes the message, so the site name's quotes arrive escaped.
+			assert.Contains(t, stderr, `nvkectl sends no telemetry because the OTLP endpoint of site \"t\" is not a usable OTLP/gRPC endpoint; `+
+				"run nvkectl config set-site again with a valid --otlp-endpoint, or without it to remove the endpoint")
+			assert.NotContains(t, stderr, "OTEL_EXPORTER_OTLP_ENDPOINT")
+			assert.Equal(t, 1, strings.Count(stderr, "nvkectl sends no telemetry"), "one warning")
+		})
+	}
 }
 
 // The export step reads the config best effort: the command reports a missing
