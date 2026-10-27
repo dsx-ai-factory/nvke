@@ -293,6 +293,7 @@ func TestLoadStartupConfig(t *testing.T) {
 // between a host-local run and a deployment.
 var localOnly = map[string]string{
 	"metricsListenAddress":       "a host-local controller keeps metrics on the loopback",
+	"nicoControllersEnabled":     "host-local runs do not install CAPNICo, so the NICo controllers stay off",
 	"profilesDir":                "host-local runs use the fixture profiles",
 	"runbooksDir":                "host-local runs use the fixture runbooks",
 	"spire.serverPort":           "the local SPIRE server port-forward, not the site's NodePort",

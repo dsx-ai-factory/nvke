@@ -46,7 +46,7 @@ cniImageRegistry: ""
 installCNIAfterInit: false
 allowLegacyCalicoClusterCreation: false
 allowControlPlaneWithoutVIP: false
-nicoControllersEnabled: true
+nicoControllersEnabled: false
 profilesDir: test/fixtures/profiles
 runbooksDir: test/fixtures/runbooks
 tenantAccessEnabled: false

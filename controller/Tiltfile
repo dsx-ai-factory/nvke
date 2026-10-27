@@ -1080,6 +1080,11 @@ _controller_spire_attestation_method = os.getenv(
     "NODE_AGENT_SPIRE_ATTESTATION_METHOD",
     _tilt_env.get("NODE_AGENT_SPIRE_ATTESTATION_METHOD", ""))
 
+# The chart defaults controllers.nico.enabled to true. Only the nico and
+# nico-vm providers install the NicoMachine CRD, and the controller exits
+# when the flag is true without that CRD.
+_nico_controllers_enabled = "nico" in _provider_names or "nico-vm" in _provider_names
+
 _controller_chart_flags = [
     "--create-namespace",
     "--set", "cni.installAfterInit=%s" % ("true" if _controller_install_cni_after_init == "true" else "false"),
@@ -1092,6 +1097,7 @@ _controller_chart_flags = [
     # machine-engine-crds installs them, so Helm must not try to own them.
     "--set", "releaseCRDs.install=false",
     "--set", "tenantAccess.enabled=%s" % ("true" if _controller_tenant_access_enabled else "false"),
+    "--set", "controllers.nico.enabled=%s" % ("true" if _nico_controllers_enabled else "false"),
     "--set", "nvkeOIDCAuth.enabled=%s" % ("true" if _controller_oidc_enabled else "false"),
     "--set-string", "nvkeOIDCAuth.issuerURL=%s" % NKE_OIDC_ISSUER_URL,
     "--set-string", "nvkeOIDCAuth.discoveryURL=https://%s:30443/.well-known/openid-configuration" % _kind_site_controller_vip,

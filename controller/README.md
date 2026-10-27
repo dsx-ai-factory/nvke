@@ -79,7 +79,7 @@ Use the latest tagged version or a specific semver (e.g. `@v0.0.5`) as needed.
 ## Choose a Development Path
 
 - `CAPI + Tilt (recommended)`: bring up a local Kind management cluster with CAPD, then run `tilt up` for an end-to-end local stack.
-- `Manual local/remote worker run`: work on the CWE worker without the local CAPI management-cluster flow by using `make run-local` or `make run-remote`. `make run-local` installs the release CRDs and the fixture releases into the cluster in `KUBECONFIG` first (`make releases-install`); `make run-remote` installs nothing, so the cluster it reads must already have the releases (a fleet cluster gets them from Argo CD).
+- `Manual local/remote worker run`: work on the CWE worker without the local CAPI management-cluster flow by using `make run-local` or `make run-remote`. `make run-local` installs the release CRDs and the fixture releases into the cluster in `KUBECONFIG` first (`make releases-install`); `make run-remote` installs nothing, so the cluster it reads must already have the releases (a fleet cluster gets them from Argo CD). The process still exits when the Cluster API `Machine` CRD is missing: `make releases-install` does not install it, and `make capd-up` does.
 - `UI-only development`: port-forward a live CWE deployment and run the local UI dev server against it.
 
 For the controller-to-node-agent TLS/JWT transport configuration, see
@@ -177,7 +177,7 @@ tilt up
 ```
 
 - Tilt only runs against the expected Kind context (`kind-${KIND_CLUSTER_NAME}` or the current `kind-*` context if `KIND_CLUSTER_NAME` is unset).
-- Plain `tilt up` keeps the default CAPD-oriented provider set.
+- Plain `tilt up` keeps the default CAPD-oriented provider set and sets `controllers.nico.enabled=false`. Listing `nico` or `nico-vm` in `tilt_config.json` sets it to `true`; those providers install the `NicoMachine` CRD.
 - If you want to enable NICo for the local dev flow, set `providers` in
   `tilt_config.json` to include `"capi_core"`, `"bgp-containers"`, and
   `"nico"`. That one provider starts nico-sim and installs one CAPNICo

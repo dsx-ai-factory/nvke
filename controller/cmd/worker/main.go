@@ -320,7 +320,7 @@ func main() {
 		os.Exit(1)
 	}
 	if !machineCRDInstalled {
-		logger.Error("Required CAPI Machine CRD is not installed")
+		logger.Error("Required CAPI Machine CRD is not installed; install Cluster API before starting the NVKE controller")
 		os.Exit(1)
 	}
 
@@ -367,7 +367,7 @@ func main() {
 			os.Exit(1)
 		}
 		if !nicoCRDInstalled {
-			logger.Error("Required NicoMachine CRD is not installed while NICo controllers are enabled")
+			logger.Error("Required NicoMachine CRD is not installed while NICo controllers are enabled; install CAPNICo first, or set controllers.nico.enabled=false")
 			os.Exit(1)
 		}
 
