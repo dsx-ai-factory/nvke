@@ -41,6 +41,20 @@ type Activities struct {
 	imageVerifier                    shared.ImageVerifier
 }
 
+// Option configures an optional Activities dependency at construction. Options
+// exist because worker.RegisterActivity reflects over every exported method of
+// *Activities and refuses any that is not an activity, so a chainable exported
+// setter would panic the worker at startup.
+type Option func(*Activities)
+
+// WithImageVerifier sets the verdict source the nico CreateMachine pre-flight
+// consults. Unset, the pre-flight sees a nil verifier: a no-op in mode off,
+// reported in warn and refused fail-closed in enforce (see
+// internal/clients/nico/imageverify.go).
+func WithImageVerifier(v shared.ImageVerifier) Option {
+	return func(a *Activities) { a.imageVerifier = v }
+}
+
 func NewActivities(
 	cfg config.Config,
 	database db.DB,
@@ -49,8 +63,9 @@ func NewActivities(
 	trustDomain string,
 	tenantClientProvider TenantClientProvider,
 	controllerClientCABundle string,
+	opts ...Option,
 ) *Activities {
-	return &Activities{
+	a := &Activities{
 		cfg:                      cfg,
 		db:                       database,
 		k8sClient:                k8sClient,
@@ -61,14 +76,9 @@ func NewActivities(
 		getTrustDomainBundle:     spiffe.GetTrustDomainAndBundle,
 		credentialAudit:          credentialaudit.NewRecorder(database, nil, metrics.RecordCredentialAuditWrite),
 	}
-}
-
-// WithImageVerifier sets the verdict source the nico CreateMachine pre-flight
-// consults, and returns a for chaining at the construction site. Unset, the
-// pre-flight sees a nil verifier: a no-op in mode off, reported in warn and
-// refused fail-closed in enforce (see internal/clients/nico/imageverify.go).
-func (a *Activities) WithImageVerifier(v shared.ImageVerifier) *Activities {
-	a.imageVerifier = v
+	for _, opt := range opts {
+		opt(a)
+	}
 	return a
 }
 
