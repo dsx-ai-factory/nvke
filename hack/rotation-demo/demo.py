@@ -351,17 +351,27 @@ class Live:
         require({labels["node"] for labels, _value, _sample in inspection_ages} == nodes, "inspection_metric_unavailable")
         csr_ages = samples("serving_csr_observation_age_seconds")
         require(csr_ages, "csr_metric_missing")
-        failures = self.query('sum(nvke_controller_credential_audit_writes_total{result=~"sink_failed|invalid_event|rate_limited"})')
-        failed = metric_number(failures[0]["value"][1]) if failures else 0
+        failures = {tuple(sorted((k, v) for k, v in row["metric"].items() if k != "__name__")): metric_number(row["value"][1])
+                    for row in self.query('nvke_controller_credential_audit_writes_total{result=~"sink_failed|invalid_event|rate_limited"}',
+                                          evaluation_time)}
         if not after:
-            self.audit_failures_before = failed
-        # The controller creates every result series at zero, and a restart resets
-        # them; unchanged inspections write nothing. The baseline therefore needs
-        # only the stored series and records the failure total. Any failed or
-        # dropped write since the baseline cannot be undone, and a reset in between
-        # hides whether one happened, so either ends the lane at once. After the
-        # mutation, which writes audit events, require positive stored evidence.
-        require(failed == self.audit_failures_before, "audit_writes_failed_during_lane")
+            self.audit_failures_before, self.audit_failures_before_at = failures, time.time()
+        # The controller creates every result series at zero; unchanged inspections
+        # write nothing. The baseline records each failure series (by its labels,
+        # including the pod or instance Prometheus adds) and the baseline time. Any
+        # failed or dropped write since the baseline cannot be undone, so the lane
+        # ends at once unless every later sample has exactly the baseline series
+        # with the baseline values: a rollout or replica change alters the series
+        # set and fails. An in-place restart that refills a series to its old value
+        # keeps the set, so after the mutation also require no reset in any series
+        # since the baseline; the window starts at the stored baseline time.
+        # After the mutation, which writes audit events, require positive stored evidence.
+        require(failures == self.audit_failures_before, "audit_writes_failed_during_lane")
+        if after:
+            window = max(1, math.ceil(time.time() - self.audit_failures_before_at))
+            resets = self.query('sum(resets(nvke_controller_credential_audit_writes_total'
+                                '{result=~"sink_failed|invalid_event|rate_limited"}[' + str(window) + 's]))')
+            require(not resets or metric_number(resets[0]["value"][1]) == 0, "audit_writes_failed_during_lane")
         stored = self.query('sum(nvke_controller_credential_audit_writes_total{result="stored"})')
         require(len(stored) == 1 and (not after or metric_number(stored[0]["value"][1]) > 0),
                 "audit_sink_unhealthy_or_unobserved")
@@ -606,7 +616,7 @@ def firing_receipt_received(c, since, until):
 
 def alert_receipts(c, since, mutation_at, completed_at):
     selected = matching_receipts(c, since)
-    failure = None
+    failure, pending = None, False
     for receipt in sorted({e["receipt_id"] for e in selected}):
         same = [e for e in selected if e["receipt_id"] == receipt]
         firing = [e for e in same if e["status"] == "firing" and timestamp(e["received_at"]) <= mutation_at]
@@ -627,7 +637,12 @@ def alert_receipts(c, since, mutation_at, completed_at):
                 failure = failure or error
                 continue
             return [{"status": e["status"], "received_at": e["received_at"], "receipt_id": e["receipt_id"]} for e in pair]
-    if failure:
+        # Pending: fired by the mutation and not resolved since its latest such firing.
+        pending = pending or (bool(firing) and not any(
+            e["status"] == "resolved" and timestamp(e["received_at"]) > max(timestamp(f["received_at"]) for f in firing) for e in same))
+    # A receipt that has fired may still resolve validly, so a specific (terminal)
+    # failure is reported only once no such receipt is pending.
+    if failure and not pending:
         raise failure
     raise CheckError("notification_delivery_incomplete")
 

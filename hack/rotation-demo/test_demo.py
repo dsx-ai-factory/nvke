@@ -104,8 +104,10 @@ class SampledPrometheus:
     def __init__(self, c):
         self.c, self.series, self.queries = c, {}, []
         self.stored = 3
-        # Raw audit failure counters by result; a trailing increase() window sees none of these earlier writes.
-        self.failures = {}
+        # Raw audit failure counters by result, one series per result on the controller pod failure_pod.
+        self.failures, self.failure_pod = {}, "controller-x"
+        # Counter resets of the failure series within any queried window.
+        self.failure_resets = 0
 
     def put(self, suffix, labels, sampled_at, value):
         labels = {"__name__": "nvke_controller_" + suffix, "tenant_cluster": self.c["cluster_name"], **labels}
@@ -132,13 +134,16 @@ class SampledPrometheus:
         evaluated_at = float(parameters["time"][0]) if "time" in parameters else time.time()
         self.queries.append((expression, evaluated_at))
         result = []
-        if expression.startswith("sum("):
+        if expression.startswith('nvke_controller_credential_audit_writes_total{result=~"'):
+            names = expression.split('result=~"', 1)[1].split('"', 1)[0].split("|")
+            result = [{"metric": {"__name__": "nvke_controller_credential_audit_writes_total", "result": name, "pod": self.failure_pod},
+                       "value": [evaluated_at, str(value)]} for name, value in self.failures.items() if name in names]
+        elif expression.startswith("sum("):
             # None models a counter series that does not exist; 0 one created at zero.
             if 'result="stored"' in expression and self.stored is not None:
                 result = [{"metric": {}, "value": [evaluated_at, str(self.stored)]}]
-            elif 'result=~"' in expression and "increase(" not in expression and self.failures:
-                names = expression.split('result=~"', 1)[1].split('"', 1)[0].split("|")
-                result = [{"metric": {}, "value": [evaluated_at, str(sum(self.failures.get(name, 0) for name in names))]}]
+            elif expression.startswith("sum(resets(") and self.failures:
+                result = [{"metric": {}, "value": [evaluated_at, str(self.failure_resets)]}]
         else:
             branches = [(expression, None)]
             if expression.startswith("label_replace("):
@@ -609,6 +614,60 @@ class DemoTests(unittest.TestCase):
             Path(c["alert_receipts_file"]).write_text("".join(json.dumps(e) + "\n" for e in refired_only))
             with self.assertRaisesRegex(demo.CheckError, "notification_refired_before_completion"):
                 demo.alert_receipts(c, start - 10, mutation_at, completed_at)
+
+    def test_an_invalid_receipt_waits_while_another_receipt_is_unresolved(self):
+        c = config()
+        start = time.time()
+        def iso(seconds):
+            return demo.dt.datetime.fromtimestamp(seconds, demo.dt.timezone.utc).isoformat()
+        common = {"schema": "nke.alert-receipt.v1", "cluster_hash": demo.digest(c["cluster_name"]),
+                  "node_hash": demo.digest(c["alert_node"]), "credential": c["alert_credential"]}
+        mutation_at, completed_at = start, start + 20
+        entries = [{**common, "receipt_id": "a" * 64, "status": "firing", "received_at": iso(start - 5)},
+                   {**common, "receipt_id": "a" * 64, "status": "resolved", "received_at": iso(start + 10)},
+                   {**common, "receipt_id": "a" * 64, "status": "firing", "received_at": iso(start + 15)},
+                   {**common, "receipt_id": "b" * 64, "status": "firing", "received_at": iso(start - 5)}]
+        late = {**common, "receipt_id": "b" * 64, "status": "resolved", "received_at": iso(start + 30)}
+        with tempfile.TemporaryDirectory() as tmp:
+            c["alert_receipts_file"] = str(Path(tmp) / "receipts")
+            Path(c["alert_receipts_file"]).write_text("".join(json.dumps(e) + "\n" for e in entries))
+            calls = []
+
+            def check():
+                calls.append(1)
+                if len(calls) == 3:
+                    with Path(c["alert_receipts_file"]).open("a") as out:
+                        out.write(json.dumps(late) + "\n")
+                return demo.alert_receipts(c, start - 10, mutation_at, completed_at)
+            with patch.object(demo.time, "sleep"):
+                pair = demo.wait_for(check, demo.time.monotonic() + 30)
+        self.assertEqual(3, len(calls))
+        self.assertEqual(["b" * 64, "b" * 64], [e["receipt_id"] for e in pair])
+
+    def test_a_receipt_resolved_before_the_mutation_does_not_keep_a_failure_pending(self):
+        c = config()
+        start = time.time()
+        def iso(seconds):
+            return demo.dt.datetime.fromtimestamp(seconds, demo.dt.timezone.utc).isoformat()
+        common = {"schema": "nke.alert-receipt.v1", "cluster_hash": demo.digest(c["cluster_name"]),
+                  "node_hash": demo.digest(c["alert_node"]), "credential": c["alert_credential"]}
+        mutation_at, completed_at = start, start + 20
+        entries = [{**common, "receipt_id": "a" * 64, "status": "firing", "received_at": iso(start - 5)},
+                   {**common, "receipt_id": "a" * 64, "status": "resolved", "received_at": iso(start + 10)},
+                   {**common, "receipt_id": "a" * 64, "status": "firing", "received_at": iso(start + 15)},
+                   {**common, "receipt_id": "b" * 64, "status": "firing", "received_at": iso(start - 8)},
+                   {**common, "receipt_id": "b" * 64, "status": "resolved", "received_at": iso(start - 6)}]
+        with tempfile.TemporaryDirectory() as tmp:
+            c["alert_receipts_file"] = str(Path(tmp) / "receipts")
+            Path(c["alert_receipts_file"]).write_text("".join(json.dumps(e) + "\n" for e in entries))
+            calls = []
+
+            def check():
+                calls.append(1)
+                return demo.alert_receipts(c, start - 10, mutation_at, completed_at)
+            with patch.object(demo.time, "sleep"), self.assertRaisesRegex(demo.CheckError, "^notification_refired_before_completion$"):
+                demo.wait_for(check, demo.time.monotonic() + 30)
+        self.assertEqual(1, len(calls))
 
     def test_continuous_secret_failure_is_distinct_from_allowed_api_outage(self):
         class LocalLive:
@@ -1083,6 +1142,44 @@ class CollectorContractTests(unittest.TestCase):
                 prometheus.failures = {result: failures}
                 with self.assertRaisesRegex(demo.CheckError, "^audit_writes_failed_during_lane$"):
                     live.metrics(certificates, epoch)
+
+    def test_counter_reset_hidden_by_new_failures_fails_the_lane(self):
+        # A controller restart recreates the series at zero; new failures can then
+        # bring the sum back to the baseline, or a reset can undo a failure.
+        for before, final in ((2, 2), (0, 0)):
+            with self.subTest(before=before, final=final):
+                c = config()
+                epoch = demo.timestamp("2026-10-07T00:00:00Z")
+                certificates = snapshot(c)
+                live, prometheus = demo.Live(c), SampledPrometheus(c)
+                prometheus.failures = {"sink_failed": before}
+                prometheus.scrape(certificates, epoch - 1, epoch - 2, epoch - 2)
+                with patch.object(live, "http", side_effect=prometheus.http), patch.object(demo.time, "time", return_value=epoch):
+                    live.metrics(certificates)
+                prometheus.scrape(certificates, epoch + 2, epoch + 1, epoch + 1)
+                prometheus.failures, prometheus.failure_resets = {"sink_failed": final}, 1
+                with patch.object(live, "http", side_effect=prometheus.http), patch.object(demo.time, "time", return_value=epoch + 3):
+                    with self.assertRaisesRegex(demo.CheckError, "^audit_writes_failed_during_lane$"):
+                        live.metrics(certificates, epoch)
+                # The resets window reaches back to the stored baseline time.
+                self.assertTrue(any(query.startswith("sum(resets(") and "[3s]" in query for query, _at in prometheus.queries))
+
+    def test_controller_rollout_replacing_failure_series_fails_the_lane(self):
+        # A rollout creates new pod series; equal values on the new pod must not
+        # pass for the old pod's baseline, since resets() sees only one series.
+        c = config()
+        epoch = demo.timestamp("2026-10-07T00:00:00Z")
+        certificates = snapshot(c)
+        live, prometheus = demo.Live(c), SampledPrometheus(c)
+        prometheus.failures = {"sink_failed": 2}
+        prometheus.scrape(certificates, epoch - 1, epoch - 2, epoch - 2)
+        with patch.object(live, "http", side_effect=prometheus.http), patch.object(demo.time, "time", return_value=epoch):
+            live.metrics(certificates)
+        prometheus.scrape(certificates, epoch + 2, epoch + 1, epoch + 1)
+        prometheus.failure_pod = "controller-y"
+        with patch.object(live, "http", side_effect=prometheus.http), patch.object(demo.time, "time", return_value=epoch + 3):
+            with self.assertRaisesRegex(demo.CheckError, "^audit_writes_failed_during_lane$"):
+                live.metrics(certificates, epoch)
 
     def test_past_event_failures_stop_waiting_immediately(self):
         for reason in ("audit_writes_failed_during_lane", "notification_order_invalid", "notification_refired_before_completion"):

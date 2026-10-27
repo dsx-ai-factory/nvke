@@ -21,9 +21,9 @@ prerequisites or phase-aware failure/reset recovery.
 
 ## Prepare the environment
 
-Use Python 3.10+, a Kubernetes-compatible `kubectl`, Temporal CLI supporting
-JSON [workflow describe](https://docs.temporal.io/cli/command-reference/workflow),
-`psql` and OpenSSL. T1 collection also needs SSH,
+Use Python 3.10+, a Kubernetes-compatible `kubectl`, Temporal CLI 1.1.1 or later
+(the lanes use JSON [workflow describe](https://docs.temporal.io/cli/command-reference/workflow)
+and `workflow start --id-conflict-policy Fail`), `psql` and OpenSSL. T1 collection also needs SSH,
 noninteractive privileged access, GNU `date`, `sha256sum`, `openssl`, `base64`
 and `kubectl` on the control-plane nodes. The script never prints command diagnostics or histories.
 Temporal connection/TLS credentials use its existing CLI environment/profile;
@@ -84,7 +84,8 @@ repair these states or approve CSRs. See
 and [monitoring](../../controller/docs/credential-monitoring.md).
 
 Reserve a change window, backups and supported recovery access. Do not overlap
-renewal, key rotation, upgrades or recycling. Select a timeout long enough for
+renewal, key rotation, upgrades or recycling. Do not restart or redeploy the
+controller while a lane runs. Select a timeout long enough for
 the next inspection (default one hour), scheduler check and etcd rewrite (up to
 six hours). `timeout_seconds` allows up to eight hours; timing out observation
 does not terminate/reset a workflow or release its mutation lock.
@@ -186,7 +187,7 @@ memory and protected command capture, and never enter evidence. It also requires
 unchanged certificate/container identities and all rotation phase/check and
 terminal rotate audit observations. Successful runs remove their public fixtures
 after observation stops; failed runs may leave fixtures for diagnosis. Follow
-[phase-aware recovery](../../controller/docs/etcd-encryption-key-rotation.md)
+[phase-aware recovery](../../controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery)
 before removing anything or starting another operation.
 
 Every scenario continuously reads the API during work and checks the declared
@@ -355,6 +356,10 @@ are best effort after state changes; missing observations fail collection and
 must never be manufactured to fill a gap. The audit-write failure counter is
 controller-wide: another tenant's failed or rate-limited write fails this lane
 with `audit_writes_failed_during_lane`, even if this lane's mutation succeeded.
+The failure series must match the baseline exactly, so a controller rollout or
+replica change during the lane, which changes the series, always ends it with
+`audit_writes_failed_during_lane`; an in-place controller restart ends it the
+same way when it resets a nonzero failure counter.
 
 ## Offline checks
 
