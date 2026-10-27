@@ -104,7 +104,7 @@ Without a release description, the controller item runs two images that no regis
    }
    ```
 
-   The names have no registry host: the nodes never pull them. Keep a tag other than `latest`, which Kubernetes pulls on every start. To run a new build later, import it on every node under a new tag, name the new tag here and run the install again.
+   The names have no registry host: the nodes never pull them. Keep a tag other than `latest`: the profile image's init container sets no pull policy, so Kubernetes would try to pull a `latest` tag on every start, and a tag that changes with the build is what makes a later install pick the new build up. To run a new build later, import it on every node under a new tag, name the new tag here and run the install again.
 
 ## Check the site
 
@@ -168,7 +168,7 @@ The controller chart admits the NVKE API only from pods in the management cluste
 
 2. In `../nvke-api-clients.yaml`, replace `REPLACE_HOST_CIDR` with the management cluster's node network, and add an `ipBlock` for each other network that calls the API, such as the network of the hosts you run `nvkectl` on. Replace `REPLACE_TENANT_CIDR` with the network your workload cluster nodes come up on. Admit only trusted networks: the API serves plain HTTP, and with authentication off it serves every caller it admits.
 
-   A request can reach the controller from a management node's address rather than the caller's own, because the NVKE API's NodePort forwards it from the node that receives it. Admitting the node network covers that. Filter port 30080 at your network edge as well, since the policy alone may not tell callers apart.
+   A request can reach the controller from an address other than the caller's own, because the NVKE API's NodePort forwards it from the node that receives it: a management node's address, or an address from the OVN-Kubernetes join subnet. Add an `ipBlock` for the join subnet your OVN-Kubernetes install uses; its default is `100.64.0.0/16`, and NVKE does not change it. Filter port 30080 at your network edge as well, since the policy alone may not tell callers apart.
 
 3. Apply the policy.
 
@@ -196,8 +196,8 @@ The controller chart admits the NVKE API only from pods in the management cluste
 
    Run it from a host you admitted, not from a management node. The output is `{"status":"ok"}`. If it times out:
 
-   - Check that the policy admits the network the host calls from and the management node network.
-   - If it still times out, the request reaches the controller from the OVN-Kubernetes join network, `100.64.0.0/16`, which NVKE does not change. Add an `ipBlock` for it and check again. The policy then admits every caller that can reach port 30080, so limit that port to your operator networks at your network edge or the hosts' firewalls.
+   - Check that the policy admits the network the host calls from, the management node network and the OVN-Kubernetes join subnet your install uses, `100.64.0.0/16` by default.
+   - Through the join subnet the policy admits every caller that can reach port 30080, so limit that port to your operator networks at your network edge or the hosts' firewalls.
 
 2. Check that CAPNICo is configured.
 
