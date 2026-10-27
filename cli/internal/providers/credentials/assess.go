@@ -57,9 +57,8 @@ type Input struct {
 // name its credentials Secret. It performs no I/O.
 //
 // When several Identities name the Secret, the one with a current, fresh
-// result is reported, then one whose next check time is readable, then the
-// most recently checked, then the first by name; the others are listed in
-// AdditionalIdentities.
+// result is reported, then the most recently checked, then the first by name;
+// the others are listed in AdditionalIdentities.
 func Assess(in Input) *Credentials {
 	c := &Credentials{}
 
@@ -99,18 +98,11 @@ func Assess(in Input) *Credentials {
 	}
 
 	slices.SortStableFunc(candidates, func(a, b Identity) int {
-		aGood := isCurrent(a) && !a.NextCheckInvalid && !isStale(a, in.Now)
-		bGood := isCurrent(b) && !b.NextCheckInvalid && !isStale(b, in.Now)
+		aGood := isCurrent(a) && !isStale(a, in.Now)
+		bGood := isCurrent(b) && !isStale(b, in.Now)
 		switch {
 		case aGood != bGood:
 			if aGood {
-				return -1
-			}
-			return 1
-		case a.NextCheckInvalid != b.NextCheckInvalid:
-			// A malformed next check time makes the result unknown, so a
-			// well-formed Identity is reported first even when it is older.
-			if b.NextCheckInvalid {
 				return -1
 			}
 			return 1
@@ -146,9 +138,6 @@ func Assess(in Input) *Credentials {
 	case pick.LastChecked != nil && pick.LastChecked.After(in.Now.Add(futureTolerance)):
 		c.Health = HealthUnknown
 		c.Detail = ref + ": lastCheckedTime is in the future; check the clock on this machine"
-	case pick.NextCheckInvalid:
-		c.Health = HealthUnknown
-		c.Detail = ref + ": nextCheckTime is not a valid time"
 	case isStale(pick, in.Now):
 		c.Health = HealthStale
 		// Name a reason the manager has not checked the Identity only when
