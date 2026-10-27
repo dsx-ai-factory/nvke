@@ -722,6 +722,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "spiffe.spire.serverAddress=" + spireNodeAddress(cfg),
 		"--set-string", "spiffe.spire.serverPort=" + spireNodePort(cfg),
 		"--set-string", "supportedInfraProviders=" + supportedInfraProviders(cfg),
+		"--set", fmt.Sprintf("controllers.nico.enabled=%t", cfg.NicoInfrastructure),
 		"--set", fmt.Sprintf("service.port=%d", cwePort),
 	}
 	profilesArgs, err := profilesImageArgs(cfg)
