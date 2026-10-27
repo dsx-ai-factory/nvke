@@ -118,7 +118,7 @@ func warnExportOff(cmd *cobra.Command, reason error) {
 		return
 	}
 	msg := "nvkectl sends no telemetry because OTEL_EXPORTER_OTLP_ENDPOINT is not a usable OTLP/gRPC endpoint; fix or unset the variable"
-	if isBootstrapExport(cmd) {
+	if cmd.Annotations[bootstrapExportAnnotation] == "true" {
 		msg += ", or pass --" + otlpEndpointFlag + " to export from this command"
 	}
 	slog.Warn(msg, "reason", reason.Error())

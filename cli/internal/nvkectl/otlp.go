@@ -6,6 +6,7 @@ package nvkectl
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/spf13/cobra"
 
@@ -23,23 +24,11 @@ const (
 	bootstrapExportAnnotation = "nvkectl/bootstrap-export"
 )
 
-// isBootstrapExport reports whether cmd is "bootstrap site", whose
-// --otlp-endpoint and --otlp-insecure flags choose where its own telemetry goes.
-func isBootstrapExport(cmd *cobra.Command) bool {
-	return cmd.Annotations[bootstrapExportAnnotation] == "true"
-}
-
 // siteCommands are the top-level commands that load a site, so their telemetry
 // goes to that site's OTLP endpoint. A command such as `create ... --dry-run=client`
 // exports there although it may contact nothing, because the lookup cannot see
 // flag values. So does `get bootstrap-manifest`, which is under "get".
-var siteCommands = map[string]bool{ //nolint:gochecknoglobals // constant lookup table
-	"create":    true,
-	"delete":    true,
-	"deprecate": true,
-	"get":       true,
-	"patch":     true,
-}
+var siteCommands = []string{"create", "delete", "deprecate", "get", "patch"} //nolint:gochecknoglobals // constant lookup table
 
 // otlpSource reads one source of OTLP configuration. ok is false when the
 // source names no endpoint. strict is true when an error should fail the
@@ -68,7 +57,7 @@ func resolveOTLP(cmd *cobra.Command) (cfg telemetry.OTLPConfig, ok, strict bool,
 // The endpoint must be reachable from the temporary controller in the bootstrap
 // cluster, so a loopback address is rejected.
 func otlpFromFlags(cmd *cobra.Command) (telemetry.OTLPConfig, bool, bool, error) {
-	if !isBootstrapExport(cmd) {
+	if cmd.Annotations[bootstrapExportAnnotation] != "true" {
 		return telemetry.OTLPConfig{}, false, false, nil
 	}
 	endpoint, _ := cmd.Flags().GetString(otlpEndpointFlag)
@@ -105,7 +94,7 @@ func otlpFromFlags(cmd *cobra.Command) (telemetry.OTLPConfig, bool, bool, error)
 // not typed on this command line. Headers come from the environment, as the
 // config never stores them.
 func otlpFromSite(cmd *cobra.Command) (telemetry.OTLPConfig, bool, bool, error) {
-	if !siteCommands[topLevel(cmd)] {
+	if !slices.Contains(siteCommands, topLevel(cmd)) {
 		return telemetry.OTLPConfig{}, false, false, nil
 	}
 	cfg, err := config.Load()

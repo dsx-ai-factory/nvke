@@ -861,7 +861,7 @@ func TestSiteOTLPSourceOrder(t *testing.T) {
 func TestSiteOTLPCommands(t *testing.T) {
 	var got []string
 	for _, cmd := range NewRootCmd("test", "test", "test", "test").Commands() {
-		if siteCommands[cmd.Name()] {
+		if slices.Contains(siteCommands, cmd.Name()) {
 			got = append(got, cmd.Name())
 		}
 	}
