@@ -22,24 +22,44 @@ and `--dry-run`. They guard an install, not a render.
 {{- fail "nico.global.image.tag is required: the NICo chart names no registry and renders invalid manifests without it." }}
 {{- end }}
 
-{{- /* What the pre-install hooks read, and this release cannot provide. */ -}}
+{{- /*
+What NICo's migration Job reads. Installed on its own, that Secret belongs to
+an earlier release and must already be there; inside the nvke-nico-stack
+umbrella it is in this release, where no lookup can see it at render time, so
+the umbrella sets global.nvkeNicoStack and the check is skipped.
+*/ -}}
+{{- if not (dig "nvkeNicoStack" false (.Values.global | default dict)) }}
 {{- $secret := dig "nico-api" "envFrom" "databaseCredentials" "secretName" "" .Values.nico }}
 {{- if not (lookup "v1" "Secret" .Release.Namespace $secret) }}
-{{- fail (printf "the Secret %q is not in namespace %q. NICo's schema migration Job runs as a pre-install hook and reads DATASTORE_USER and DATASTORE_PASSWORD from it, so it has to exist before this release. Install deploy/charts/nico-prereqs into %s first and wait for it." $secret .Release.Namespace .Release.Namespace) }}
+{{- fail (printf "the Secret %q is not in namespace %q. NICo's schema migration Job reads DATASTORE_USER and DATASTORE_PASSWORD from it. Install deploy/charts/nico-prereqs into %s first and wait for it, or install the nvke-nico-stack umbrella, which carries both." $secret .Release.Namespace .Release.Namespace) }}
+{{- end }}
 {{- end }}
 
 {{- /*
 Each NICo subchart resolves its namespace from its OWN namespaceOverride, and
-there is no global that sets them all. A subchart that disagrees with the
-release namespace lands where the prerequisites are not.
+there is no global that sets them all. One that disagrees with the rest lands
+where the prerequisites are not.
+
+nico-api's is the canonical one: every other subchart has to match it, and the
+prerequisites have to be in the same place. Released on its own this chart owns
+its namespace, so that value must also be the release namespace. Inside the
+nvke-nico-stack umbrella the release is elsewhere and nico-prereqs.namespace
+carries it instead.
 
 nico-machine-a-tron is left out: it reads global.namespaceOverride instead.
 */ -}}
-{{- range $sub := list "nico-api" "nico-bmc-proxy" "nico-dhcp" "nico-dns" "nico-hardware-health" "nico-pxe" "nico-ssh-console-rs" "nico-dsx-exchange-consumer" "nico-ntp" "unbound" "nico-postgres-exporter" }}
-{{- $got := dig $sub "namespaceOverride" "" $.Values.nico }}
-{{- if ne $got $.Release.Namespace }}
-{{- fail (printf "nico.%s.namespaceOverride is %q but this release is in %q. The two must agree, or %s lands in a namespace without the Secrets and ConfigMaps it mounts." $sub (default "<release namespace>" $got) $.Release.Namespace $sub) }}
+{{- $want := dig "nico-api" "namespaceOverride" "" .Values.nico }}
+{{- if not $want }}
+{{- fail "nico.nico-api.namespaceOverride is not set. It names the namespace NICo lands in, and every other subchart and the prerequisites follow it." }}
 {{- end }}
+{{- range $sub := list "nico-bmc-proxy" "nico-dhcp" "nico-dns" "nico-hardware-health" "nico-pxe" "nico-ssh-console-rs" "nico-dsx-exchange-consumer" "nico-ntp" "unbound" "nico-postgres-exporter" }}
+{{- $got := dig $sub "namespaceOverride" "" $.Values.nico }}
+{{- if ne $got $want }}
+{{- fail (printf "nico.%s.namespaceOverride is %q but nico.nico-api.namespaceOverride is %q. Every NICo subchart has to land in one namespace, or %s mounts Secrets and ConfigMaps that are not there." $sub (default "<release namespace>" $got) $want $sub) }}
+{{- end }}
+{{- end }}
+{{- if and (not (dig "nvkeNicoStack" false (.Values.global | default dict))) (ne $want .Release.Namespace) }}
+{{- fail (printf "nico.nico-api.namespaceOverride is %q but this release is in %q. Released on its own, this chart installs NICo into its own release namespace. Release it into %q, or install the nvke-nico-stack umbrella, which puts NICo somewhere other than its own release namespace deliberately." $want .Release.Namespace $want) }}
 {{- end }}
 
 {{- end }}

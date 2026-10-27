@@ -3,6 +3,19 @@ SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All 
 SPDX-License-Identifier: Apache-2.0
 */ -}}
 
+{{/*
+The namespace NICo lands in, and everything here goes in.
+
+Empty means the release namespace, which is the case when this chart is
+released on its own into forge-system. Inside the nvke-nico-stack umbrella the
+release is elsewhere, so the umbrella sets it and templates/namespace.yaml
+creates it -- safe now that the NICo chart has no hooks, because helm applies a
+Namespace before every other kind.
+*/}}
+{{- define "nico-prereqs.namespace" -}}
+{{- default .Release.Namespace .Values.namespace -}}
+{{- end -}}
+
 {{- define "nico-prereqs.database.password" -}}
 {{- required "database.password is required. Set it with --set database.password=... or supply database.existingSecret." .Values.database.password -}}
 {{- end -}}

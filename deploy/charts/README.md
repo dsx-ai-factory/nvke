@@ -1,31 +1,38 @@
 # Helm charts
 
-Five charts, installed as separate releases **in order**, each waited on
-before the next.
+[`nvke-nico-stack/`](nvke-nico-stack/) installs NVKE and NICo and what they
+run on, in **one release**. The five component charts below are its
+dependencies, and each also installs on its own.
 
-| # | Chart | Installs | Namespace |
+| Chart | Installs | Namespace | In the umbrella |
 |---|---|---|---|
-| 0 | [`storage/`](storage/) | A default StorageClass, for a cluster with none | `nvke-storage` |
-| 1 | [`spire/`](spire/) | SPIRE, the OIDC upstream CA chain and the two NodePorts | `spire-server` |
-| 2 | [`nvke/`](nvke/) | The NVKE controller, with the PostgreSQL and Temporal it runs on | `nvke-system` |
-| 3 | [`nico-prereqs/`](nico-prereqs/) | NICo's namespace, database, credentials and issuer | `forge-system` |
-| 4 | [`nico/`](nico/) | NICo itself | `forge-system` |
+| [`storage/`](storage/) | A default StorageClass, for a cluster with none | `nvke-storage` | yes, off by default |
+| [`spire/`](spire/) | SPIRE, the OIDC upstream CA chain and the two NodePorts | `spire-server` | yes |
+| [`nvke/`](nvke/) | The NVKE controller, with the PostgreSQL and Temporal it runs on | `nvke-system` | yes |
+| [`nico-prereqs/`](nico-prereqs/) | NICo's database, credentials and certificate issuer | `forge-system` | yes |
+| [`nico/`](nico/) | NICo itself | `forge-system` | yes, off by default |
 
-**The order is load-bearing, and so is waiting between steps.** It is not a
-style preference:
+**The umbrella needs a NICo chart that has no Helm hooks.** Through NICo 2.4
+the `nico-api` schema migration Job and its database-config ConfigMap were
+`pre-install,pre-upgrade` hooks, and helm applies hooks **before every
+ordinary manifest in the same release** — so they ran before the namespace,
+the database and the credentials Secret that this release creates:
 
-- SPIRE before NVKE, because the controller blocks on "no identity issued"
-  until SPIRE has issued its SVID.
-- `nico-prereqs` before `nico`, because the NICo chart runs its config
-  ConfigMap and its schema migration Job as `pre-install,pre-upgrade` hooks,
-  and helm applies hooks **before every regular manifest in their own
-  release**. The namespace, the database and the credentials Secret therefore
-  cannot be in the NICo release — they would be created after the hooks that
-  read them.
-- The StorageClass before anything that takes a PVC, which is steps 2 and 3.
+```text
+Hook pre-upgrade .../nico-api/templates/configmap.yaml failed:
+namespaces "forge-system" not found
+```
 
-There is deliberately no umbrella chart. One release cannot sequence any of
-this: see [below](#why-there-is-no-umbrella-chart).
+[infra-controller#8270](https://github.com/dsx-ai-factory/infra-controller/pull/8270)
+makes both ordinary manifests and has the Job wait by retrying. With that,
+one release works: helm's own apply order puts a `Namespace` first and a
+`Secret` long before a `Job`, and the Job retries until PostgreSQL accepts
+connections.
+
+Against an older NICo chart, set `nvke-nico.enabled=false` and install
+[`nico-prereqs/`](nico-prereqs/) and [`nico/`](nico/) as separate releases
+instead — [the sequence](#installing-as-separate-releases) still works and is
+what `nvkectl` drives.
 
 **CAPNICo is not here.** It is a Cluster API infrastructure provider, so
 `clusterctl init --infrastructure nico` installs it — the same command that
@@ -126,7 +133,38 @@ CRD defining it cannot be in the same release. Vendoring those CRDs into a
 this repository the owner of cert-manager's CRD lifecycle. That is not a trade
 worth making for a prerequisite `clusterctl init` already installs.
 
-## The sequence
+## One release
+
+```bash
+helm repo add nico <your NICo chart repository>
+helm dependency build deploy/charts/nico            # first: the umbrella packages it as found
+helm dependency build deploy/charts/nvke-nico-stack
+
+ssh-keygen -t ed25519 -f ./ssh_host_ed25519_key -N ""
+
+helm upgrade --install nvke-nico-stack deploy/charts/nvke-nico-stack \
+  --namespace nvke-system --create-namespace \
+  --set nvke.database.password=<pick one> \
+  --set nvke.nvke-controller.profiles.image.repository=<repo> \
+  --set nvke.nvke-controller.profiles.image.tag=<tag> \
+  --set nico-prereqs.database.password=<pick one> \
+  --set-file nico-prereqs.sshHostKey.privateKey=./ssh_host_ed25519_key \
+  --set nvke-nico.enabled=true \
+  --set nvke-nico.nico.global.image.repository=<repo> \
+  --set nvke-nico.nico.global.image.tag=<tag>
+```
+
+Release it into `nvke-system`. Temporal's chart has no `namespaceOverride`, so
+the NVKE controller's Temporal lands in the release namespace, and
+`nvke.nvke-controller.temporal.host` names it. NICo goes to `forge-system`
+through `nico-prereqs.namespace` and every
+`nvke-nico.nico.<subchart>.namespaceOverride`; `nico/templates/validate.yaml`
+refuses an install where those disagree.
+
+## Installing as separate releases
+
+Each chart stands alone, and this is what `nvkectl` drives — it is also the
+only way to install against a NICo chart that still uses hooks.
 
 ```bash
 helm dependency build deploy/charts/spire
@@ -186,24 +224,24 @@ kubectl -n nke-controller exec deploy/nke-controller -- wget -qO- http://localho
 # {"status":"ok","checks":{"database":"ok","temporal":"ok"}}
 ```
 
-## Why there is no umbrella chart
+## What one release still cannot do
 
-There was one. It could not work, and the reasons are worth keeping:
+Two of the three original blockers are gone — NICo's hooks through
+[#8270](https://github.com/dsx-ai-factory/infra-controller/pull/8270), and the
+CRD-before-custom-resource problem by vendoring SPIRE's CRDs into
+[`spire/crds/`](spire/crds/), which helm applies before anything else.
 
-- **Helm applies hooks before manifests.** NICo's chart hooks need a
-  namespace, a database and a Secret. All three would be in the same release,
-  created after the hooks that read them. No hook weight fixes this: a
-  `Namespace` as a `pre-install,pre-upgrade` hook is **deleted and recreated
-  on every upgrade** under helm's default `before-hook-creation` policy —
-  measured, with everything in it destroyed — and a `pre-install`-only hook
-  does not run on the upgrade that first enables NICo.
-- **Helm validates the whole release against the API server before applying
-  any of it.** A CRD and a custom resource of that CRD cannot share a release.
-- **Temporal's chart has no `namespaceOverride`.** Two Temporals in one
-  release land in one namespace and take each other's Service names.
+One remains. **Temporal's chart has no `namespaceOverride`**, so two Temporals
+in one release land in the same namespace and take each other's Service names.
+The NVKE controller's is on; NICo's, in `nico-prereqs`, is off.
+`nvke-nico-stack/templates/validate.yaml` refuses an install that enables both.
+Give NICo a Temporal of its own by installing `nico-prereqs` as a separate
+release in its own namespace.
 
-Separate releases make all three disappear. Whatever drives the sequence —
-`nvkectl`, a shell script, helmfile, Flux — the charts do not care.
+Worth knowing either way: a `Namespace` cannot be a `pre-install,pre-upgrade`
+hook. Under helm's default `before-hook-creation` policy it is **deleted and
+recreated on every upgrade**, taking everything in it — measured on a kind
+cluster. That is why the fix for NICo had to be on the NICo side.
 
 ## NICo's chart repository
 

@@ -18,6 +18,19 @@
 # ONE value has no default: database.password.
 
 # ---------------------------------------------------------------------------
+# Namespace
+# ---------------------------------------------------------------------------
+# Where NICo lands, and everything here with it. Empty means the release
+# namespace, which is what `--create-namespace` makes when this chart is
+# released on its own.
+#
+# The nvke-nico-stack umbrella sets it, because there the release is in
+# nvke-system and NICo is not. It must agree with every
+# nico.<subchart>.namespaceOverride in ../nico; that chart's
+# templates/validate.yaml refuses an install where they disagree.
+namespace: ""
+
+# ---------------------------------------------------------------------------
 # Certificates
 # ---------------------------------------------------------------------------
 # NICo signs every service certificate through a cert-manager ClusterIssuer,
