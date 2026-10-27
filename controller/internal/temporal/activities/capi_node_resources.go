@@ -141,6 +141,9 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 	if err != nil {
 		return nonRetryableIfNotFound("failed to get node", err)
 	}
+	if err := a.reserveControlPlaneDeletion(ctx, node); err != nil {
+		return err
+	}
 	machine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
@@ -159,18 +162,10 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 	// ignore it (CAPD) and delete the instance as normal.
 	if input.MachineHealthIssue != nil {
 		logger.Info("Applying machine health issue annotation", "nodeID", input.NodeID, "machine", machine.Name, "machineHealthIssue", input.MachineHealthIssue)
-		// Written in both domains. cluster-api-provider-nico watches exactly one
-		// key, named by its --repair-annotation flag, and silently ignores a
-		// request under any other, so a deployment whose flag has not been
-		// moved to the new domain yet would drop every repair request. Both
-		// keys are owned by the same field manager, so clearing the annotation
-		// clears both.
-		// FIXME: https://github.com/dsx-ai-factory/nvke/issues/1718 -- write
-		// only the current domain once every deployment reads the new key.
-		machine.Annotations = map[string]string{}
-		for _, key := range keys.MachineHealthIssue.All() {
-			machine.Annotations[key] = *input.MachineHealthIssue
-		}
+		// cluster-api-provider-nico watches exactly one key, named by its
+		// --repair-annotation flag, and silently ignores a request under any
+		// other, so that flag must name this key.
+		machine.Annotations = map[string]string{keys.MachineHealthIssue.String(): *input.MachineHealthIssue}
 
 		if err := a.k8sClient.Patch(ctx, machine, client.Apply, client.FieldOwner(a.cfg.FieldManagerMachineHealthIssueName), client.ForceOwnership); err != nil {
 			return fmt.Errorf("failed to apply machine health issue annotation: %w", err)
@@ -498,6 +493,15 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	node, err := a.db.GetNode(ctx, nodeID)
 	if err != nil {
 		return nonRetryableIfNotFound("failed to get node", err)
+	}
+	if annotation != nil && node.ControlPlane {
+		if err := a.UpdateNodeConditions(ctx, NodeConditionsUpdate{
+			NodeID: node.ID, Conditions: NodeConditions{Rebooting: &ConditionUpdate{
+				Status: db.ConditionStatusTrue, Message: "Control-plane reboot is in progress",
+			}},
+		}); err != nil {
+			return err
+		}
 	}
 	cluster, err := a.GetCluster(ctx, node.ClusterID)
 	if err != nil {

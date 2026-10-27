@@ -11,6 +11,7 @@ This page describes how to turn your prepared nodes into the management cluster,
 - You have your SPIRE CA certificate and key as files on the bootstrap host, and the certificate is already on each node.
 - You have a Linux bootstrap host that reaches every node on the `nvke-agent` port (15005 by default) and reaches the Kubernetes API address on 6443. Nodes with a TPM thumbprint must reach the bootstrap host on 30081. You can use one of the nodes as the bootstrap host.
 - The bootstrap host has rootful `nerdctl` with containerd, plus `kind`, `helm`, `kubectl` and `clusterctl` on `PATH`. Docker is not supported. Only `nerdctl` is checked before the run starts, so a missing `helm`, `kubectl` or `clusterctl` fails the run part-way through.
+- The bootstrap host's `/etc/nerdctl/nerdctl.toml` sets `cni_netconfpath = "/etc/containerd-nerdctl/net.d"`, so nerdctl keeps its network configs out of `/etc/cni/net.d`, the directory a node's containerd reads for pod networking. The bootstrap stops if `/etc/cni/net.d` already holds `nerdctl-*.conflist` files; [Troubleshoot](troubleshoot.md#the-node-cni-directory-holds-nerdctl-network-configs) gives the fix.
 - The bootstrap host has Go and GNU Make to build `nvkectl`, and outbound access to the registries and chart repositories the bootstrap pulls from.
 
 Run every command on this page on the bootstrap host, as root, in a session that survives a disconnect, such as `tmux`.

@@ -1,3 +1,11 @@
+{{- if .Values.tenantAccess.additionalRBAC }}
+{{- if not .Values.spiffe.trustDomain }}
+{{- fail "spiffe.trustDomain must be set when tenantAccess.additionalRBAC is non-empty" }}
+{{- end }}
+{{- if not .Values.tenantAccess.enabled }}
+{{- fail "tenantAccess.enabled must be true when tenantAccess.additionalRBAC is non-empty" }}
+{{- end }}
+{{- end }}
 # Shared management-plane namespace (nvkeSystemNamespace.name, nvke-system by
 # default) and tenant RBAC ConfigMap.
 #
@@ -96,6 +104,36 @@ metadata:
 {{- $capiKubeadmBootstrapManagerSubject := .Values.spiffe.capiKubeadmBootstrapManagerSubject | default (printf "spiffe://%s/%s/capi-kubeadm-bootstrap-manager" $td $seg) }}
 {{- $capdManagerSubject := .Values.spiffe.capdManagerSubject | default (printf "spiffe://%s/%s/capd-manager" $td $seg) }}
 {{- $tenantRbacName := .Values.nvkeOIDCAuth.tenantRbacName }}
+{{- $rbacIdentities := dict }}
+{{- range $kind := list "ClusterRole" "ClusterRoleBinding" }}
+{{- $_ := set $rbacIdentities (printf "%s//%s" $kind $tenantRbacName) true }}
+{{- end }}
+{{- range $kind := list "Role" "RoleBinding" }}
+{{- range $namespace := list "kube-system" "kube-node-lease" }}
+{{- $_ := set $rbacIdentities (printf "%s/%s/%s" $kind $namespace $tenantRbacName) true }}
+{{- end }}
+{{- end }}
+{{- $_ := set $rbacIdentities "ClusterRoleBinding//nvke:capi-cluster-admin" true }}
+{{- range $index, $object := .Values.tenantAccess.additionalRBAC }}
+{{- if not (has ($object.kind | default "") (list "Role" "RoleBinding" "ClusterRole" "ClusterRoleBinding")) }}
+{{- fail (printf "tenantAccess.additionalRBAC[%d]: kind must be Role, RoleBinding, ClusterRole, or ClusterRoleBinding" $index) }}
+{{- end }}
+{{- if ne ($object.apiVersion | default "") "rbac.authorization.k8s.io/v1" }}
+{{- fail (printf "tenantAccess.additionalRBAC[%d]: apiVersion must be rbac.authorization.k8s.io/v1" $index) }}
+{{- end }}
+{{- $namespace := $object.metadata.namespace | default "" }}
+{{- if and $namespace (has $object.kind (list "ClusterRole" "ClusterRoleBinding")) }}
+{{- fail (printf "tenantAccess.additionalRBAC[%d]: %s must not set metadata.namespace" $index $object.kind) }}
+{{- end }}
+{{- if and (not $namespace) (has $object.kind (list "Role" "RoleBinding")) }}
+{{- fail (printf "tenantAccess.additionalRBAC[%d]: %s must set metadata.namespace" $index $object.kind) }}
+{{- end }}
+{{- $identity := printf "%s/%s/%s" $object.kind $namespace $object.metadata.name }}
+{{- if hasKey $rbacIdentities $identity }}
+{{- fail (printf "tenantAccess.additionalRBAC[%d]: duplicate RBAC object %s (conflicts with built-in RBAC or an earlier additional entry)" $index $identity) }}
+{{- end }}
+{{- $_ := set $rbacIdentities $identity true }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -253,4 +291,8 @@ data:
       kind: ClusterRole
       name: cluster-admin
       apiGroup: rbac.authorization.k8s.io
+    {{- range .Values.tenantAccess.additionalRBAC }}
+    ---
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 {{- end }}

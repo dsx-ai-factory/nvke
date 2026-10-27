@@ -27,10 +27,6 @@ namespaceOverride: nke-controller
 serviceAccount:
   name: nke-controller
 
-podSecurityContext: null
-securityContext:
-  readOnlyRootFilesystem: false
-
 metrics:
   networkPolicy:
     enabled: false

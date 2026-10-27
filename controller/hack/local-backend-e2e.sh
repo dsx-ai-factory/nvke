@@ -458,7 +458,7 @@ local_e2e_exec() {
     oidc_env=(-e "NKE_E2E_OIDC_ISSUER_HOST=${oidc_issuer_host}")
   fi
   docker exec \
-    -e "NKE_CONTROLLER_EXPECTED_VERSION=${cwe_expected_version}" \
+    -e "NVKE_CONTROLLER_EXPECTED_VERSION=${cwe_expected_version}" \
     -e "NKE_E2E_DSX_IDENTITY_EXCHANGE=${exchange_enabled}" \
     -e "NKE_E2E_BUNDLE_SERVER_URL=${e2e_bundle_server_url}" \
     -e "NVKE_E2E_NODE_AGENT_BUNDLE_VOLUME=${bundle_mirror_volume}" \

@@ -119,31 +119,35 @@ cd test/e2e
 go run github.com/onsi/ginkgo/v2/ginkgo@v2.27.2 run -v --label-filter=health .
 ```
 
-Only `NKE_CONTROLLER_EXPECTED_VERSION` and `NKE_CONTROLLER_HEALTH_TIMEOUT` are specific to the health
-specs; the first four apply everywhere. The `NKE_E2E_*` group configures the
+Only `NVKE_CONTROLLER_EXPECTED_VERSION`, `NVKE_E2E_REQUIRE_EXPECTED_VERSION` and
+`NVKE_CONTROLLER_HEALTH_TIMEOUT` are specific to the health specs; the first four
+apply everywhere. The `NKE_E2E_*` group configures the
 credential `nvke.NewClient` discovers and presents on every ordinary NVKE call,
 not the authentication specs, which build their own token per case.
 
 | Variable | Description | Default |
 | --- | --- | --- |
 | `KUBECONFIG` | Kubeconfig used to reach the management cluster (clientcmd default loading rules). | Unset (falls back to in-cluster configuration) |
-| `NKE_CONTROLLER_NAMESPACE` | Namespace containing the controller. The old name `CWE_NAMESPACE` is deprecated and still read when this is unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes it. | `nke-controller` |
-| `NKE_CONTROLLER_SERVICE` | Controller Service whose backing pod is port-forwarded to; also the name of its Deployment, container and ServiceAccount. The old name `CWE_SERVICE` is deprecated and still read when this is unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes it. | `nke-controller` |
-| `NKE_CONTROLLER_SERVICE_PORT` | Controller Service port, by name or number; the pod-side port is resolved from its `targetPort`. The old name `CWE_SERVICE_PORT` is deprecated and still read when this is unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes it. | `8080` |
-| `NKE_CONTROLLER_EXPECTED_VERSION` | Required controller version; when unset, the version spec is skipped. The old name `CWE_EXPECTED_VERSION` is deprecated and still read when this is unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes it. | Unset |
-| `NKE_CONTROLLER_HEALTH_TIMEOUT` | Per-spec context timeout. The old name `CWE_HEALTH_TIMEOUT` is deprecated and still read when this is unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes it. | `60s` |
+| `NVKE_CONTROLLER_NAMESPACE` | Namespace containing the controller. The old names `NKE_CONTROLLER_NAMESPACE` and `CWE_NAMESPACE` are deprecated and still read when this is unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes them. | `nke-controller` |
+| `NVKE_CONTROLLER_SERVICE` | Controller Service whose backing pod is port-forwarded to; also the name of its Deployment, container and ServiceAccount. The old names `NKE_CONTROLLER_SERVICE` and `CWE_SERVICE` are deprecated and still read when this is unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes them. | `nke-controller` |
+| `NVKE_CONTROLLER_SERVICE_PORT` | Controller Service port, by name or number; the pod-side port is resolved from its `targetPort`. The old names `NKE_CONTROLLER_SERVICE_PORT` and `CWE_SERVICE_PORT` are deprecated and still read when this is unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes them. | `8080` |
+| `NVKE_CONTROLLER_EXPECTED_VERSION` | Required controller version; when unset, the version spec is skipped. The old names `NKE_CONTROLLER_EXPECTED_VERSION` and `CWE_EXPECTED_VERSION` are deprecated and still read when this is unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes them. | Unset |
+| `NVKE_E2E_REQUIRE_EXPECTED_VERSION` | When true, an unset `NVKE_CONTROLLER_EXPECTED_VERSION` fails the version spec instead of skipping it. The validation image sets it. | Unset |
+| `NVKE_CONTROLLER_HEALTH_TIMEOUT` | Per-spec context timeout. The old names `NKE_CONTROLLER_HEALTH_TIMEOUT` and `CWE_HEALTH_TIMEOUT` are deprecated and still read when this is unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes them. | `60s` |
 | `NKE_E2E_AUTH_DISABLE` | Turns the token source off, so the suite sends no `Authorization` header. Against an enforcing NVKE every spec then fails with 401. | Unset |
-| `NKE_E2E_AUDIENCE` | Overrides the audience the suite mints for. Normally discovered from the authentication ConfigMap in `NKE_CONTROLLER_NAMESPACE` -- `nvke-auth-config`, or `nke-auth-config` on a site that pins the older name. | Discovered |
+| `NKE_E2E_AUDIENCE` | Overrides the audience the suite mints for. Normally discovered in `NVKE_CONTROLLER_NAMESPACE`: from `apiAuth` in the controller's settings ConfigMap (`nvke-controller-config`, or `nke-controller-config` on a site that pins the older name) when that section is enabled, otherwise from the authentication ConfigMap (`nvke-auth-config`, or `nke-auth-config`). | Discovered |
 | `NKE_E2E_TOKEN_NAMESPACE` | Namespace of the service account the suite presents. | `nke-clients` |
 | `NKE_E2E_TOKEN_SERVICE_ACCOUNT` | Service account the suite presents. Point this pair at `nke-outsiders`/`nke-outsider` for the 403 case. | `nke-client` |
 | `NKE_E2E_TOKEN_TTL` | Minted token lifetime. The apiserver rejects anything under 10m. | `15m` |
 
-The suite sends no token only when *neither* `nvke-auth-config` nor
-`nke-auth-config` exists in that namespace, so an unauthenticated NVKE needs no
-configuration here. A run against a site pinned to the older name still
-discovers its audience and authenticates. A ConfigMap that exists but cannot be
-read is reported rather than treated as absent, so an RBAC gap does not quietly
-turn the authn specs into assertions about an unauthenticated NVKE.
+The suite sends no token only when *neither* source turns authentication on in
+that namespace: `apiAuth` is off or absent in the settings ConfigMap, and
+neither `nvke-auth-config` nor `nke-auth-config` exists. An unauthenticated
+NVKE needs no configuration here. A run against a site pinned to the older
+names still discovers its audience and authenticates. A ConfigMap that exists
+but cannot be read is reported rather than treated as absent, so an RBAC gap
+does not quietly turn the authn specs into assertions about an unauthenticated
+NVKE.
 
 Unfiltered runs, including `make test-e2e`, include the health specs. To exclude
 them, pass `--label-filter='!health'`.
@@ -154,20 +158,23 @@ Three labels, which do not all run against the same deployment.
 
 | Label | What it covers | Deployment it needs |
 |---|---|---|
-| `authn` | The negative cases: no token -> 401, wrong audience -> 401, an unadmitted identity -> 403, and the anonymous routes `internal/auth/routes.go` exempts staying reachable with no credential. Also selects `authn-spire`. | Enforcing (`AUTH_CONFIG_PATH` set, `permissiveMode` false) |
+| `authn` | The negative cases: no token -> 401, wrong audience -> 401, an unadmitted identity -> 403, and the anonymous routes `auth/authn/routes.go` exempts staying reachable with no credential. Also selects `authn-spire`. | Enforcing (`AUTH_CONFIG_PATH` set or `apiAuth.enabled` true, `apiAuth.permissive` false) |
 | `authn-spire` | A SPIRE JWT-SVID end to end: a pod the spec creates fetches an SVID over the Workload API and calls NVKE with it, and with one that differs only in `aud`. | Enforcing, plus SPIFFE enabled on the NVKE pod |
 | `authn-permissive` | That permissive mode counts what it would have rejected: all cases return 200 and `nvke_auth_requests_total{outcome="would_reject"}` advances. It flips the deployment itself and puts it back. | Enforcing; it arranges permissive mode for its own duration |
 
 Each skips itself, with the reason, when the deployment is not in the state it
 needs, reading `AUTH_CONFIG_PATH` off the live NVKE Deployment and
-`permissiveMode` from its `nke-controller-config`. Set `NKE_E2E_REQUIRE_AUTHN=true` (as the CAPD lane does) to turn
+`apiAuth.enabled` and `apiAuth.permissive` from its `nvke-controller-config`. Set
+`NKE_E2E_REQUIRE_AUTHN=true` (as the CAPD lane does) to turn
 "authentication is not deployed" from a skip into a failure; without it a
 cluster with authentication off produces `SUCCESS! -- 0 Passed | 0 Failed | N
 Skipped`, indistinguishable in a CI log from a suite that never had these specs.
 
 **Prerequisites.** `tilt up` applies `deploy/k8s/nvke-auth-dev.yaml` (client
-namespaces, service accounts, token-minter RBAC and the `nvke-auth-config`
-ConfigMap) and, for `authn-spire`, `deploy/k8s/nvke-spire-client.yaml`. NVKE's
+namespaces, service accounts and token-minter RBAC) and, for `authn-spire`,
+`deploy/k8s/nvke-spire-client.yaml`. The configuration that admits those
+identities is chart values: `hack/tilt-controller-api-auth-values.yaml` under
+Tilt, and the `apiAuth` block of each e2e lane's controller overlay. NVKE's
 permission to read the cluster JWKS comes from the chart
 (`apiAuth.clusterIssuerDiscovery`).
 
@@ -185,6 +192,262 @@ make test-authn-spire
 
 `hack/nvke-auth-demo.sh` drives the same four credentials with `curl` and needs
 no Go at all.
+
+## Validation image
+
+`Dockerfile` packages the suite as an image that validates a running site from
+a pod inside its cluster, as an in-cluster test runner runs it. The image carries
+every spec and runs those its two switches select, shown in the table below:
+specs that install and change nothing lasting on the site. The site's are the
+[health specs](#health-specs) and the site checks:
+
+- every node Ready and uncordoned, with no taint that keeps pods off it
+  (kubeadm's control-plane taint is allowed where another node takes the work)
+- every Deployment, StatefulSet and DaemonSet in the cluster fully available,
+  and every required namespace running at least one ready pod
+- no pod failing in any namespace but the runner's own, where an earlier run's
+  pods may be left; and staying that way for 30 seconds. Pods an earlier run's
+  probes left, labeled `e2e.nvidia.com/validation-probe`, are left out wherever
+  they are
+- every cert-manager Certificate Ready
+- the controller API lists clusters
+- every API server `/readyz` and `/livez` check passing, etcd's included
+- `kube-scheduler` and `kube-controller-manager` Ready on every control-plane
+  node
+- CoreDNS available
+- the API server and every kubelet at the site's Kubernetes version
+- a pod resolving a cluster DNS name
+- every API server running the flags kubeadm-config sets, and etcd its quota
+- an anonymous request refused, and no RoleBinding or ClusterRoleBinding
+  granting `system:anonymous` or `system:unauthenticated` more than the public
+  roles: `system:public-info-viewer`, `system:service-account-issuer-discovery`
+  and kube-public's `kubeadm:bootstrap-signer-clusterinfo`
+- in a pod, the suite's own identity unable to read Secrets or bind roles;
+  outside one, that identity is whoever runs the suite and is not checked
+- a ready endpoint behind every admission webhook Service
+
+Some checks apply only where the run says so, and skip otherwise:
+
+| Check | Runs when |
+| --- | --- |
+| Argo CD running, every Application Synced and Healthy | `NVKE_SITE_COMPONENTS` lists `argocd` |
+| The CloudNativePG operator running, every database cluster healthy | it lists `cnpg` |
+| The Teleport agent running | it lists `teleport` |
+| kube-vip Ready on every control-plane node | it lists `kube-vip` |
+| Named workloads, such as SPIRE's, the CNI's and the telemetry stack's, present with a ready pod | `NVKE_SITE_REQUIRED_WORKLOADS` is set |
+| Named workloads, the CNI's among them, at their versions | `NVKE_SITE_WORKLOAD_VERSIONS` is set |
+| Every API server running the flags the run names | `NVKE_SITE_APISERVER_FLAGS` is set |
+| Every API server running with an encryption provider config | `NVKE_SITE_ETCD_ENCRYPTED=true` |
+| Every node holding back from pods at least the memory the run names | `NVKE_SITE_RESERVED_MEMORY` is set |
+| Every StorageClass the run names present | `NVKE_SITE_STORAGE_CLASSES` is set |
+
+The encryption check sees only the flag: which provider the config writes
+with is in a file on the control-plane host, so a config led by `identity`,
+which stores Secrets in plain text, passes. The tenant suite's encryption
+specs read a Secret from etcd to prove it; this image has no such access.
+
+Specs labeled `creates` try what workloads rely on, with short-lived objects
+in the probe namespace that they delete whether they pass or fail; a runner
+that may create nothing adds `-ginkgo.label-filter='site-validate && !creates'`.
+Each object carries an `e2e.nvidia.com/site-run` label naming its run.
+
+- the API server's `/readyz` at kubeadm's `controlPlaneEndpoint` from a pod,
+  on a node other than the one kube-vip's lease names as holder; skipped when
+  only that node can run it. Where no lease names a node, the endpoint's node
+  is unknown and the probe may run on it, which the log says
+- traffic between pods, through a Service by name and by ClusterIP, across two
+  nodes where there are two
+- a NetworkPolicy denying a source it does not allow, while a pod it does not
+  select stays reachable and a source it allows gets through; skipped when a
+  NetworkPolicy already in the probe namespace selects the check's pods
+- a StatefulSet pod resolved and reached by its headless Service name
+- a PersistentVolumeClaim bound and written from a pod, from
+  `NVKE_SITE_PVC_STORAGE_CLASS` or the default class; skipped without either
+- a certificate issued by a new self-signed cert-manager Issuer
+
+Every probe and server pod runs as the restricted PodSecurity level requires:
+as user 65534, with no capabilities and the runtime's default seccomp profile.
+The PVC check writes as that user through the pod's `fsGroup`, so a
+StorageClass whose driver ignores `fsGroup` must create volumes that user can
+write. The probe namespace must still let those pods reach one another, the API
+server and the cluster DNS: a NetworkPolicy there that blocks them fails the
+traffic checks.
+
+The DNS probe also creates a pod, and is not labeled `creates`. The
+authentication specs are not included, because they mint tokens for the
+scaffolding identities in `deploy/k8s/nvke-auth-dev.yaml`.
+
+| Run | `NVKE_SITE_VALIDATE` | `NVKE_TENANT_VALIDATE` | Specs labelled |
+| --- | --- | --- | --- |
+| The site (the image's default) | `true` | `false` | `site-validate` |
+| The site and a tenant | `true` | `true` | `site-validate` or `tenant-validate` |
+| A tenant alone | `false` | `true` | `tenant-validate` |
+
+The health specs carry both labels, so every run checks the controller: a
+tenant has none of its own. Both `false` fails the run, which would validate
+nothing. An explicit `-ginkgo.label-filter` argument overrides the switches.
+
+```bash
+make -C controller/test/e2e validate-image   # VALIDATE_IMAGE, VALIDATE_PLATFORM
+```
+
+The pod needs no kubeconfig: with `KUBECONFIG` unset the suite uses its service
+account. That account needs:
+
+- cluster-wide `get` and `list` on Nodes, Pods, Deployments, StatefulSets,
+  DaemonSets, Jobs, StorageClasses, EndpointSlices, Validating and Mutating
+  WebhookConfigurations, RoleBindings and ClusterRoleBindings,
+  `cert-manager.io` Certificates, and, where the run
+  lists their components, `argoproj.io` Applications and `postgresql.cnpg.io`
+  Clusters; and `get` on the non-resource URLs `/readyz`, `/livez` and
+  `/version`
+- in `kube-system`, `get` on ConfigMaps (`kubeadm-config`) and
+  `coordination.k8s.io` Leases (kube-vip's)
+- in the controller's namespace, `get` on Services and ConfigMaps (the
+  authentication ConfigMap) and both `get` and `create` on
+  `pods/portforward`: the port-forward tries websockets first, a `get`, and
+  falls back to SPDY, a `create`
+- `create` on `serviceaccounts/token` for the identity it presents to the
+  controller API, `NKE_E2E_TOKEN_NAMESPACE`/`NKE_E2E_TOKEN_SERVICE_ACCOUNT`
+- in the probe namespace, by default the pod's own, `create`, `get` and
+  `delete` on Pods; and for the `creates` specs, the same on Services,
+  StatefulSets, PersistentVolumeClaims, NetworkPolicies and `cert-manager.io`
+  Issuers and Certificates, `list` on NetworkPolicies, `get` on `pods/log` and
+  `get` and `delete` on Secrets (the issued certificate's)
+
+It needs nothing more, and should be given nothing more: the RBAC check fails
+an identity that can read Secrets across the cluster or bind roles.
+
+Configure it with the [health spec variables](#health-specs) and these:
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `NVKE_SITE_VALIDATE` | Turns the site checks on. The image sets it; elsewhere they skip. | Unset |
+| `NVKE_SITE_KUBERNETES_VERSION` | The Kubernetes version the site was built with. Unset fails the version check. | Unset |
+| `NVKE_SITE_NAMESPACES` | Comma-separated namespaces that must each run a ready pod, replacing the default list: `kube-system`, `cert-manager`, `capi-system` and those `deploy/nico` installs into. | The `deploy/nico` list |
+| `NVKE_SITE_PROBE_NAMESPACE` | Where the probe pods and every `creates` object go. | The pod's own namespace, else `default` |
+| `NVKE_SITE_PROBE_IMAGE` | The probe and server pods' image, which needs `sh`, `nslookup`, `wget`, `curl` and `nc`. Point it at a mirror on a site without internet access. | The suite's kubectl image |
+| `NVKE_SITE_PROBE_PULL_SECRETS` | Comma-separated Secrets in the probe namespace that the probe and server pods pull their image with. They run as the namespace's `default` service account, not the runner's, so a pull Secret on the runner's account does not reach them. | Unset |
+| `NVKE_SITE_COMPONENTS` | Optional components the site runs, comma-separated, each `name` or `name=namespace`: `argocd` (default namespace `argocd`), `cnpg` (`cnpg-system`), `teleport` (`teleport-agent`), `kube-vip` (`kube-system`). | Unset |
+| `NVKE_SITE_REQUIRED_WORKLOADS` | `namespace/workload`, comma-separated: a Deployment, StatefulSet or DaemonSet that must exist and run a ready pod. | Unset |
+| `NVKE_SITE_WORKLOAD_VERSIONS` | `namespace/workload=version`, comma-separated: a Deployment, StatefulSet or DaemonSet one of whose containers runs an image tagged `version`, with or without a leading `v`. | Unset |
+| `NVKE_SITE_APISERVER_FLAGS` | Flags every API server runs, `name=value` separated by semicolons, because values hold commas. Added to those kubeadm-config sets; a conflict between the two fails. | Unset |
+| `NVKE_SITE_ETCD_ENCRYPTED` | `true` requires `--encryption-provider-config` on every API server. It does not show which provider the config uses. | Unset |
+| `NVKE_SITE_RESERVED_MEMORY` | The least memory every node holds back from pods (capacity less allocatable), such as `2Gi`. That counts the kubelet's hard eviction threshold, 100Mi by default, with its kube and system reservations: set it to their sum. | Unset |
+| `NVKE_SITE_STORAGE_CLASSES` | Comma-separated StorageClasses that must exist. | Unset |
+| `NVKE_SITE_PVC_STORAGE_CLASS` | The class the PVC check binds from. | The default class |
+
+The controller API check authenticates as `NKE_E2E_TOKEN_NAMESPACE`/
+`NKE_E2E_TOKEN_SERVICE_ACCOUNT`, whose defaults are the development identity in
+`deploy/k8s/nvke-auth-dev.yaml`. A production site has no such identity: set
+both to one the site's controller authorizes to list clusters.
+
+`NVKE_CONTROLLER_NAMESPACE` matters wherever the controller is not installed in
+`nke-controller`, and `NVKE_CONTROLLER_SERVICE` wherever its release is not
+named that. Set `NVKE_CONTROLLER_EXPECTED_VERSION` and
+`NVKE_SITE_KUBERNETES_VERSION`: the image sets
+`NVKE_E2E_REQUIRE_EXPECTED_VERSION=true`, so a run without either fails.
+
+Each controller release publishes the image built from the same commit, as
+`nvke-validate:v<version>` beside `nvke-controller` (see
+`.github/workflows/image-validate-nvcr.yml`), so the tests a site runs are the
+tests that shipped with its controller.
+
+The entrypoint sets `-ginkgo.timeout=3h`. A healthy site finishes far sooner,
+but on a broken one each check waits out its own limit, and a suite timeout
+reports the checks it did not reach as interrupted. A runner that restates the
+entrypoint should keep the flag, and its own step timeout should be longer.
+
+Results go to `/artifacts`, which the runner mounts:
+
+| File | Contents |
+| --- | --- |
+| `junit-test-report.xml` | The selected specs only (`-e2e.junit-report`). Ginkgo's own JUnit report lists every spec the filter left out as skipped. |
+| `report.json` | Ginkgo's JSON report, every spec. |
+
+To run it by hand against the current kube context, as your own user so the
+container can read your kubeconfig and write `artifacts/`:
+
+```bash
+mkdir -p artifacts
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD/artifacts:/artifacts" -v "$HOME/.kube/config:/kube/config:ro" \
+  -e KUBECONFIG=/kube/config -e NVKE_CONTROLLER_EXPECTED_VERSION=v0.1.1 \
+  -e NVKE_SITE_KUBERNETES_VERSION=v1.34.2 nvke-validate:local
+```
+
+### Building the image yourself
+
+The build is reproducible: the same commit built with the same arguments gives
+the published image's digest, so a site can build it in its own pipeline and
+still check it against the release. CI proves this on every change by
+building it twice, the second time with no cache and every file's mtime
+changed.
+
+Build from the release tag of the controller the site runs,
+`controller/v<version>`, the same version the site pins. Never build from
+`main`: its suite tests the next controller, not the one installed.
+
+```bash
+git clone --branch controller/v0.2.0 --depth 1 https://github.com/dsx-ai-factory/nvke.git
+cd nvke
+make -C controller/test/e2e validate-image-oci VALIDATE_VERSION=v0.2.0
+cat controller/test/e2e/bin/validate-image-digest.txt
+```
+
+`validate-image-push VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS=v0.2.0`
+pushes it instead. Either target derives the rest from the checkout. Compare
+the digest with the published one; when they match, the release's build
+provenance covers this build too:
+
+```bash
+crane digest nvcr.io/<dsx-org-team>/nvke-validate:v0.2.0
+gh attestation verify oci://nvcr.io/<dsx-org-team>/nvke-validate:v0.2.0 --repo dsx-ai-factory/nvke \
+  --signer-workflow dsx-ai-factory/nvke/.github/workflows/image-validate-nvcr.yml
+```
+
+Without a checkout, BuildKit can take the tag as a remote context. Then the
+arguments make derives must be given by hand, from the tagged commit:
+`SOURCE_DATE_EPOCH` is `git log -1 --format=%ct`, `VALIDATE_REVISION` the full
+commit hash. Where cloning the repository needs authentication, give BuildKit
+a token with read access as the `GIT_AUTH_TOKEN` secret; otherwise drop the
+`--secret` line.
+
+```bash
+docker buildx build -f controller/test/e2e/Dockerfile \
+  --platform linux/amd64,linux/arm64 --provenance=false --sbom=false \
+  --build-arg SOURCE_DATE_EPOCH=<commit time> \
+  --build-arg VALIDATE_VERSION=v0.2.0 --build-arg VALIDATE_REVISION=<commit> \
+  --secret id=GIT_AUTH_TOKEN,env=GIT_AUTH_TOKEN \
+  --output type=image,name=<repository>:v0.2.0,push=true,oci-mediatypes=true,rewrite-timestamp=true \
+  'https://github.com/dsx-ai-factory/nvke.git#controller/v0.2.0'
+```
+
+Arguments that change where things come from, not what, keep the digest:
+
+| Argument | Make variable | Use |
+| --- | --- | --- |
+| `GOPROXY` | `VALIDATE_GOPROXY` | A Go module mirror. `go.sum` still decides the modules. |
+| `GOLANG_IMAGE`, `ALPINE_IMAGE` | (`--build-arg` in `VALIDATE_BUILDX_ARGS`) | A mirror of the base images. Keep the `@sha256:` digests from the Dockerfile; another digest is another image. |
+
+Any other change, such as the platforms or attestations added with
+`--provenance` or `--sbom`, gives a different digest that no release attested.
+
+### Extending the image
+
+To add tools, certificates or wrapper scripts, start from the published image
+rather than editing this Dockerfile, so the suite stays the one that shipped:
+
+```dockerfile
+FROM nvcr.io/<dsx-org-team>/nvke-validate:v0.2.0
+USER 0
+RUN apk add --no-cache curl
+USER 65532:65532
+```
+
+Keep the user, the `ENV` switches, and `ENTRYPOINT` or restate it in full:
+the report paths a runner reads are in it. Specs cannot be added this
+way; they are compiled into the test binary.
 
 ## Useful Ginkgo CLI Commands
 
@@ -253,9 +516,12 @@ wait for both nodes to become Ready in CWE, and delete the cluster. The matrix
 reads active release names, architectures, and Kubernetes versions from the
 fleet releases (NodePoolReleases that are not deprecated, and the
 MachineImages they reference), which is maintained outside this repository.
-If `NKE_CONTROLLER_RELEASES_DIR` is set, it is used exclusively and must
+If `NVKE_CONTROLLER_RELEASES_DIR` is set, it is used exclusively and must
 contain at least one YAML release manifest. A missing or empty explicit
-directory causes suite initialization to fail.
+directory causes suite initialization to fail. The old name
+`NKE_CONTROLLER_RELEASES_DIR` is deprecated and still read when the new one is
+unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399)
+removes it.
 
 When the variable is unset, releases are resolved in this order:
 
@@ -288,7 +554,7 @@ When adding a release:
 
 1. Add its MachineImage, ClusterRelease and NodePoolRelease to the fleet
    releases (for NVIDIA maintainers, the internal fleet repository; otherwise
-   the directory `$NKE_CONTROLLER_RELEASES_DIR` points at).
+   the directory `$NVKE_CONTROLLER_RELEASES_DIR` points at).
 2. For a tenant profile, no separate e2e list update is required; the matrix
    includes it automatically on a runner of its architecture.
 3. If nico-vms cannot support it, add it to
@@ -402,10 +668,10 @@ enqueues the `EnableOIDC` workflow via the outbox, then waits for the lock to cl
 
 **Constructing the OIDC-off precondition.** A cluster created on an OIDC-enabled
 site is always born OIDC-on (`OIDCAuthEnabled` follows
-`oidc.managementOIDCAuth.enabled` in `nke-controller-config`), which would make `UpdateCluster{enableOidc}` a no-op — there is no
+`oidc.managementOIDCAuth.enabled` in `nvke-controller-config`), which would make `UpdateCluster{enableOidc}` a no-op — there is no
 supported way to create an OIDC-off cluster on such a site. So the brownfield entry
 creates its cluster with the CWE create-default flipped **off**
-(`nvke.SetOIDCEnabled(false)` — a live edit of `nke-controller-config` and a controller
+(`nvke.SetOIDCEnabled(false)` — a live edit of `nvke-controller-config` and a controller
 restart, leaving the OIDC issuer/discovery/CA settings intact), then flips it back **on** before enabling. This
 mirrors a real brownfield cluster: one created before its site turned OIDC on. The
 flag is restored in the entry's `AfterAll`; the CAPD suite runs serially so this does

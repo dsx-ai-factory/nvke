@@ -99,7 +99,7 @@ servers:
 
 # Declared once rather than per operation, so a new operation requires a token by
 # default. The endpoints that need no token are not in this file at all;
-# internal/server registers them and internal/auth/routes.go is the list.
+# internal/server registers them and auth/authn/routes.go is the list.
 security:
   - bearerAuth: []
 
@@ -335,8 +335,15 @@ paths:
         a control-plane `maxSurge` greater than 1.
 
         Returns 409 when another mutually exclusive cluster operation is in
-        progress (`etcd_encryption`, `k8s_upgrade`, `cp_nodes_recycling`,
-        `oidc_enable`), or the control plane is upgrading or recycling nodes.
+        progress (`etcd_encryption`, `etcd_key_rotation`, `k8s_upgrade`,
+        `cp_nodes_recycling`, `oidc_enable`, `certificate_renewal`), or the
+        control plane is upgrading or recycling nodes. A failed certificate
+        renewal can retain the lock until an operator clears it; see the
+        retained-lock recovery procedure in
+        controller/docs/certificate-renewal.md. A rotation that fails after
+        `prepare` keeps the `etcd_key_rotation` lock until its workflow is
+        reset and completes; see
+        controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery.
       requestBody:
         required: true
         description: The fields to change. All are optional.
@@ -379,8 +386,14 @@ paths:
         "409":
           description: |
             Another mutually exclusive cluster operation is in progress. The
-            message names the operation (etcd_encryption, k8s_upgrade,
-            cp_nodes_recycling, oidc_enable).
+            message names the operation (etcd_encryption, etcd_key_rotation,
+            k8s_upgrade, cp_nodes_recycling, oidc_enable, certificate_renewal).
+            A failed certificate renewal can retain the lock until an operator
+            clears it; see the retained-lock recovery procedure in
+            controller/docs/certificate-renewal.md. A rotation that fails after
+            prepare keeps the etcd_key_rotation lock until its workflow is reset
+            and completes; see
+            controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery.
           content:
             application/json:
               schema:
@@ -398,7 +411,8 @@ paths:
       description: |
         Starts deletion and sets `conditions.deleting` to `True`. A cluster can
         be deleted in any state, including while it is provisioning or
-        upgrading.
+        upgrading. Deletion takes precedence over an in-progress or retained
+        etcd encryption, etcd key rotation or certificate renewal.
       responses:
         "202":
           description: Deletion started
@@ -464,6 +478,81 @@ paths:
                 $ref: "#/components/schemas/ControlPlaneConfigHistory"
         "404":
           description: Cluster not found. No body is returned.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /clusters/{clusterID}/spire-server:
+    parameters:
+      - name: clusterID
+        in: path
+        required: true
+        description: Cluster ID.
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Clusters]
+      summary: Get the SPIRE server the cluster's nodes point at
+      operationId: getClusterSpireServer
+      description: |
+        Returns the SPIRE server last requested through
+        `PATCH /clusters/{clusterID}/spire-server`, and for each node the
+        server its SPIRE agent points at and whether the agent holds a valid
+        X.509 SVID from it. Node status is read live from each node agent on
+        every call; an unreachable node is reported with `reachable: false`.
+      responses:
+        "200":
+          description: Requested server and live per-node SPIRE agent status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterSpireServerStatus"
+        "404":
+          description: Cluster not found. No body is returned.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    patch:
+      tags: [Clusters]
+      summary: Point the cluster's nodes at a SPIRE server
+      operationId: updateClusterSpireServer
+      description: |
+        Starts a `spire_server_update` operation that points the SPIRE agent on
+        every node of the cluster at the given server and waits for each agent
+        to hold an SVID from it. Track it through `conditions.updateInProgress`
+        and `conditions.updateFailed` on the cluster, and per node through
+        `GET /clusters/{clusterID}/spire-server`. Repeating the request with
+        the same server is safe, including while it is in progress.
+      requestBody:
+        description: The SPIRE server the cluster's nodes should point at.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpireServer"
+      responses:
+        "202":
+          description: Update started
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "404":
+          description: Cluster not found. No body is returned.
+        "409":
+          description: |
+            Another cluster operation is in progress, or a SPIRE server update
+            to a different server is in progress. The message names the
+            operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -610,7 +699,10 @@ paths:
         nodes to it.
 
         Returns 400 for, among others: sending a field that is fixed at
-        creation (for example `instanceTypeID`); `nico.release: ""`.
+        creation (for example `instanceTypeID`); `nico.release: ""`; any update
+        to a control-plane node pool, which is configured through the cluster's
+        `controlPlaneConfig` instead. That last refusal does not depend on the
+        control-plane mutation lock, so retrying later does not help.
       requestBody:
         required: true
         description: The fields to change. All are optional.
@@ -662,6 +754,15 @@ paths:
       description: |
         Deletes a node pool from a running cluster. Also returns 202, with no
         further effect, if the pool or its cluster is already being deleted.
+
+        Returns 409 for a control-plane node pool while etcd encryption, etcd key
+        rotation or certificate renewal holds the control-plane mutation lock.
+        Retry once the operation has finished. A failed certificate renewal can
+        retain the lock until an operator clears it; see the retained-lock
+        recovery procedure in controller/docs/certificate-renewal.md.
+        A rotation that fails after `prepare` keeps the `etcd_key_rotation` lock
+        until its workflow is reset and completes; see
+        controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery.
       operationId: deleteNodePool
       responses:
         "202":
@@ -674,6 +775,17 @@ paths:
                 $ref: "#/components/schemas/GenericError"
         "404":
           description: Node pool not found. No body is returned.
+        "409":
+          description: |
+            A control-plane node pool cannot be deleted while etcd encryption, etcd
+            key rotation or certificate renewal holds the control-plane mutation
+            lock.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+              example:
+                message: control-plane changes are rejected while etcd encryption, etcd key rotation or certificate renewal holds the cluster mutation lock; retry after the operation completes, or, if a failed certificate renewal retained the lock, after an operator clears it (see controller/docs/certificate-renewal.md); a rotation that fails after prepare keeps the etcd_key_rotation lock until its workflow is reset and completes (see controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery)
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -832,7 +944,17 @@ paths:
         `machineHealthIssue` is invalid. Delete the cluster to remove its last
         joined control-plane node.
         Deleting a control-plane node requires controlPlaneVIP because the controller
-        replaces it. Worker node deletion is unaffected.
+        replaces it, unless allowControlPlaneWithoutVIP is enabled for development.
+        Worker node deletion is unaffected.
+
+        Returns 409 for a control-plane node while etcd encryption, etcd key
+        rotation or certificate renewal holds the control-plane mutation lock.
+        Retry once the operation has finished. A failed certificate renewal can
+        retain the lock until an operator clears it; see the retained-lock
+        recovery procedure in controller/docs/certificate-renewal.md.
+        A rotation that fails after `prepare` keeps the `etcd_key_rotation` lock
+        until its workflow is reset and completes; see
+        controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery.
       operationId: deleteNode
       requestBody:
         required: false
@@ -860,6 +982,16 @@ paths:
                 message: 'cannot delete control-plane node "tenant-a-prod-cp-0002": only 2 joined control-plane node(s) would remain, below the minimum of 3 needed for etcd to survive another failure. Raise the control-plane desired count first so a replacement joins before this node is removed, or delete the cluster instead'
         "404":
           description: Node not found. No body is returned.
+        "409":
+          description: |
+            A control-plane node cannot be deleted while etcd encryption, etcd key
+            rotation or certificate renewal holds the control-plane mutation lock.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+              example:
+                message: control-plane changes are rejected while etcd encryption, etcd key rotation or certificate renewal holds the cluster mutation lock; retry after the operation completes, or, if a failed certificate renewal retained the lock, after an operator clears it (see controller/docs/certificate-renewal.md); a rotation that fails after prepare keeps the etcd_key_rotation lock until its workflow is reset and completes (see controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery)
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -922,7 +1054,7 @@ components:
 
   securitySchemes:
     # Any JWT signed by a trusted issuer. Which issuers, and which subjects they
-    # admit, is operator configuration; see internal/auth and the README.
+    # admit, is operator configuration; see auth/authn and the README.
     bearerAuth:
       type: http
       scheme: bearer
@@ -1003,10 +1135,12 @@ components:
             Virtual IP for the API server through kube-vip. Omit to skip kube-vip and
             use the first control-plane node's IP as the API server endpoint. Must not
             fall inside the pod or service CIDR. An explicit empty string is rejected.
-            Without a VIP, a new cluster must have exactly one desired control-plane
-            node. Control-plane scale-up above one node, upgrades, and configuration
-            changes that replace control-plane nodes require a VIP. Recreate a no-VIP
-            cluster with controlPlaneVIP to make those operations available.
+            By default, a cluster without a VIP must have exactly one desired
+            control-plane node. Scale-up above one node, upgrades and node replacement
+            require a VIP unless the controller deployment enables the development-only
+            allowControlPlaneWithoutVIP setting. That override keeps the initializing
+            node's IP as the endpoint; replacing that node can break API access.
+            Quorum, health and deletion protections still apply.
           x-go-type-skip-optional-pointer: true
           x-order: 9
         teleportEnabled:
@@ -1083,7 +1217,7 @@ components:
         desiredCount:
           type: integer
           minimum: 1
-          description: The desired number of cluster-level control plane nodes. Creating a cluster with or increasing this count above 1 requires controlPlaneVIP on the cluster.
+          description: The desired number of cluster-level control plane nodes. Creating a cluster with or increasing this count above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
           x-go-type-skip-optional-pointer: true
         maxSurge:
           type: integer
@@ -1243,7 +1377,7 @@ components:
         desiredCount:
           type: integer
           minimum: 1
-          description: The desired number of cluster-level control plane nodes. Must be at least 1. Values above 1 require controlPlaneVIP on the cluster.
+          description: The desired number of cluster-level control plane nodes. Must be at least 1. Values above 1 require controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
           x-go-type-skip-optional-pointer: true
         maxSurge:
           type: integer
@@ -1316,7 +1450,8 @@ components:
         Changes to `release` or the Kubernetes version start a control-plane
         rollout. All fields are optional. A provider payload that does not match the
         cluster's provider is rejected with 400.
-        Rollout-triggering changes require controlPlaneVIP. maxSurge alone does not
+        Rollout-triggering changes require controlPlaneVIP unless the development-only
+        allowControlPlaneWithoutVIP setting is enabled. maxSurge alone does not
         trigger a rollout and remains mutable without a VIP.
       properties:
         desiredCount:
@@ -1324,7 +1459,7 @@ components:
           minimum: 1
           description: |
             The desired number of cluster-level control plane nodes. Must be at least 1.
-            Increasing the count above 1 requires controlPlaneVIP on the cluster.
+            Increasing the count above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
         maxSurge:
           type: integer
           minimum: 0
@@ -1422,6 +1557,15 @@ components:
           format: date-time
           description: Creation time.
           x-order: 15
+        nextCertRenewalDue:
+          type: string
+          format: date-time
+          description: |
+            The next scheduled certificate-renewal time. A value in the past is
+            overdue unless a certificate-renewal operation is currently accepted.
+            Unset until the controller first sees the cluster, which schedules
+            the first check one renewal interval later.
+          x-order: 16
         conditions:
           allOf:
             - $ref: "#/components/schemas/ClusterConditions"
@@ -1457,7 +1601,8 @@ components:
             Target control-plane version, as X.Y.Z with no leading "v". Must be newer than
             the current version by at most one minor version and keep every worker pool
             within 3 minor versions.
-            The cluster must have controlPlaneVIP configured.
+            The cluster must have controlPlaneVIP configured unless the development-only
+            allowControlPlaneWithoutVIP setting is enabled.
         teleportEnabled:
           x-fern-ignore: true
           type: boolean
@@ -1712,7 +1857,7 @@ components:
         desiredNodeCount:
           type: integer
           minimum: 0
-          description: The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster.
+          description: The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
           x-order: 15
         description:
           type: string
@@ -1763,7 +1908,8 @@ components:
         All fields are optional. A provider payload that does not match the node pool's
         cluster is rejected with 400.
         Updating a control-plane pool in a way that creates a replacement node set
-        requires controlPlaneVIP. maxSurge alone does not create a replacement
+        requires controlPlaneVIP unless the development-only allowControlPlaneWithoutVIP
+        setting is enabled. maxSurge alone does not create a replacement
         and remains mutable without a VIP.
       # No required fields since all fields are optional
       properties:
@@ -1788,7 +1934,7 @@ components:
         desiredNodeCount:
           type: integer
           minimum: 0
-          description: The desired number of nodes in the pool. Increasing aggregate control-plane capacity above 1 requires controlPlaneVIP on the cluster.
+          description: The desired number of nodes in the pool. Increasing aggregate control-plane capacity above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
         recycleBudget:
           type: integer
           minimum: 0
@@ -2408,22 +2554,144 @@ components:
           description: The most recent cluster update failed.
           allOf:
             - $ref: "#/components/schemas/Condition"
+        certificateRenewal:
+          description: The accepted, succeeded, or failed state of the most recent certificate-renewal cycle.
+          x-order: 8
+          allOf:
+            - $ref: "#/components/schemas/CertificateRenewalStatus"
+
+        etcdKeyRotation:
+          description: The most recent etcd data-encryption-key rotation, including retained ownership after failure.
+          x-order: 9
+          allOf:
+            - $ref: "#/components/schemas/EtcdKeyRotationStatus"
+
+    EtcdKeyRotationStatus:
+      type: object
+      description: Durable status and retained ownership of an etcd data-encryption-key rotation.
+      required: [workflowID, state, phase, startedAt, lastProgressAt]
+      properties:
+        workflowID:
+          type: string
+          description: The Temporal workflow ID owning rotation and recovery. Never use as a metric label.
+        state:
+          description: Whether the owned rotation is running, succeeded, or failed.
+          type: string
+          enum: [running, succeeded, failed]
+        phase:
+          type: string
+          enum: [prepare, add_secondary, promote_primary, rewrite, remove_old_keys, finalize]
+          description: The last entered phase, which a failure retains. A `prepare` failure releases the mutation lock, so start a new rotation workflow after fixing it; a failure in a later phase keeps the lock for recovery of the owning workflow.
+        startedAt:
+          description: When rotation ownership was accepted by the controller.
+          type: string
+          format: date-time
+        lastProgressAt:
+          type: string
+          format: date-time
+          description: When a phase was entered or a terminal state was recorded. Polling does not advance it.
+        completedAt:
+          description: When the terminal success or failure was recorded.
+          type: string
+          format: date-time
+        failureReason:
+          type: string
+          enum: [operation_failed, canceled]
+          description: A bounded reason without keys, arbitrary error strings, or secret identifiers.
+
+    CertificateRenewalStatus:
+      type: object
+      description: The recorded lifecycle state and outcome of a certificate-renewal cycle.
+      required:
+        - cycleID
+        - state
+        - forced
+        - startedAt
+      properties:
+        cycleID:
+          type: string
+          description: The Temporal workflow ID that owns this certificate-renewal cycle.
+          x-order: 1
+        state:
+          type: string
+          enum:
+            - accepted
+            - succeeded
+            - failed
+          description: The lifecycle state of the most recent certificate-renewal cycle.
+          x-order: 2
+        outcome:
+          type: string
+          enum:
+            - unchanged
+            - renewed
+          description: Whether a successful cycle renewed certificates or found no certificates due.
+          x-order: 3
+        forced:
+          type: boolean
+          description: Whether the workflow was explicitly forced by an operator.
+          x-order: 4
+        scheduledFor:
+          type: string
+          format: date-time
+          description: The scheduled due time associated with this cycle, when applicable.
+          x-order: 5
+        startedAt:
+          type: string
+          format: date-time
+          description: >-
+            When the workflow accepted the cycle and acquired the cluster mutation lock.
+            Refused cycles record startedAt without holding the lock.
+          x-order: 6
+        completedAt:
+          type: string
+          format: date-time
+          description: When the cycle succeeded or failed.
+          x-order: 7
+        failedNodeID:
+          type: string
+          format: uuid
+          description: The control-plane node being processed when the cycle failed, when applicable.
+          x-order: 8
+        phase:
+          type: string
+          description: The workflow phase that failed, when applicable.
+          x-order: 9
+        message:
+          type: string
+          maxLength: 1024
+          description: A bounded operator-facing failure summary.
+          x-order: 10
 
     UpdateInProgress:
       type: object
       required:
         - type
         - startedAt
-      description: The mutually exclusive cluster operation in progress. Absent when none.
+      description: |
+        The mutually exclusive cluster operation in progress. Absent when none.
+        `etcd_key_rotation` is reported while an etcd data-encryption-key rotation
+        holds the lock, and also after a rotation that failed after `prepare`,
+        which keeps the lock until its owning workflow is recovered (see
+        `conditions.etcdKeyRotation`). A `prepare` failure releases the lock.
+        Exhaustive client switches over `type` must handle it.
       properties:
         type:
           type: string
           enum:
             - etcd_encryption
+            - etcd_key_rotation
             - k8s_upgrade
             - cp_nodes_recycling
             - oidc_enable
-          description: Operation in progress.
+            - spire_server_update
+            - certificate_renewal
+          description: |
+            Operation in progress. `certificate_renewal` is reported while a
+            scheduled or forced certificate-renewal cycle holds the lock, and
+            also after a failed cycle whose lock is retained until an operator
+            clears it. Clients that switch exhaustively over this value must
+            handle it.
           x-order: 1
         message:
           type: string
@@ -2545,6 +2813,91 @@ components:
             teardown. At most one of deleting and deleteRequested is True.
           allOf:
             - $ref: "#/components/schemas/Condition"
+
+    SpireServer:
+      description: A SPIRE server address the cluster's SPIRE agents dial.
+      type: object
+      required:
+        - address
+        - port
+      properties:
+        address:
+          type: string
+          minLength: 1
+          description: Host name or IP address of the SPIRE server.
+          example: 192.168.150.100
+          x-order: 1
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          description: SPIRE server port.
+          example: 30440
+          x-order: 2
+
+    ClusterSpireServerStatus:
+      description: Requested SPIRE server and live per-node SPIRE agent status.
+      type: object
+      required:
+        - nodes
+      properties:
+        requested:
+          description: The server last requested. Absent if none was requested.
+          allOf:
+            - $ref: "#/components/schemas/SpireServer"
+          x-order: 1
+        nodes:
+          type: array
+          description: Every node of the cluster.
+          items:
+            $ref: "#/components/schemas/NodeSpireAgentStatus"
+          x-order: 2
+
+    NodeSpireAgentStatus:
+      description: One node's SPIRE agent, as reported live by its node agent.
+      type: object
+      required:
+        - nodeID
+        - name
+        - reachable
+        - hasValidSVID
+      properties:
+        nodeID:
+          type: string
+          format: uuid
+          description: Node ID.
+          x-order: 1
+        name:
+          type: string
+          description: Node name.
+          x-order: 2
+        reachable:
+          type: boolean
+          description: The node agent answered. When false, only `message` is set.
+          x-order: 3
+        serverAddress:
+          type: string
+          description: SPIRE server address in the node's agent config.
+          x-order: 4
+        serverPort:
+          type: integer
+          description: SPIRE server port in the node's agent config.
+          x-order: 5
+        hasValidSVID:
+          type: boolean
+          description: |
+            The running SPIRE agent uses the config above and serves an
+            unexpired X.509 SVID, so it holds a certificate from that server.
+          x-order: 6
+        svidExpiresAt:
+          type: string
+          format: date-time
+          description: Expiry of that SVID.
+          x-order: 7
+        message:
+          type: string
+          description: Why the node is unreachable or has no valid SVID.
+          x-order: 8
 
     GenericError:
       description: Error response body.

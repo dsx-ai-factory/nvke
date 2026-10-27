@@ -1,1 +1,22 @@
-{"ready": false}
+clusters:
+  resources:
+  - id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    name: cluster-1-34bd578c-mgmt-eng
+    conditions:
+      provisioned:
+        status: "False"
+      provisioning:
+        status: "True"
+      deleting:
+        status: "False"
+nodePools:
+  create:
+    id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+    clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    conditions:
+      provisioned:
+        status: "False"
+      provisioning:
+        status: "True"
+      deleting:
+        status: "False"

@@ -21,12 +21,17 @@ const (
 )
 
 // The overrides, which apply suite-wide so moving the controller moves
-// everything at once. The Legacy names are the deprecated spellings, still read
-// when the new name is unset. #1399 removes them.
+// everything at once. The Legacy names are the deprecated spellings (the
+// NKE_CONTROLLER_ ones, then the CWE_ ones), still read when the new name is
+// unset. #1399 removes them.
 const (
-	EnvNamespace = "NKE_CONTROLLER_NAMESPACE"
-	EnvService   = "NKE_CONTROLLER_SERVICE"
-	EnvPort      = "NKE_CONTROLLER_SERVICE_PORT"
+	EnvNamespace = "NVKE_CONTROLLER_NAMESPACE"
+	EnvService   = "NVKE_CONTROLLER_SERVICE"
+	EnvPort      = "NVKE_CONTROLLER_SERVICE_PORT"
+
+	PreviousEnvNamespace = "NKE_CONTROLLER_NAMESPACE"
+	PreviousEnvService   = "NKE_CONTROLLER_SERVICE"
+	PreviousEnvPort      = "NKE_CONTROLLER_SERVICE_PORT"
 
 	LegacyEnvNamespace = "CWE_NAMESPACE"
 	LegacyEnvService   = "CWE_SERVICE"
@@ -35,24 +40,28 @@ const (
 
 // Namespace is the namespace to look for the controller in.
 func Namespace() string {
-	return cmp.Or(os.Getenv(EnvNamespace), os.Getenv(LegacyEnvNamespace), ServiceNamespace)
+	return cmp.Or(os.Getenv(EnvNamespace), os.Getenv(PreviousEnvNamespace), os.Getenv(LegacyEnvNamespace), ServiceNamespace)
 }
 
 // Service is the Service in front of the controller pods.
-func Service() string { return cmp.Or(os.Getenv(EnvService), os.Getenv(LegacyEnvService), ServiceName) }
+func Service() string {
+	return cmp.Or(os.Getenv(EnvService), os.Getenv(PreviousEnvService), os.Getenv(LegacyEnvService), ServiceName)
+}
 
 // Port is the Service port the controller API is published on, named or numeric.
-func Port() string { return cmp.Or(os.Getenv(EnvPort), os.Getenv(LegacyEnvPort), ServicePort) }
+func Port() string {
+	return cmp.Or(os.Getenv(EnvPort), os.Getenv(PreviousEnvPort), os.Getenv(LegacyEnvPort), ServicePort)
+}
 
 // Deployment is the controller Deployment, which is also the name of its container.
 // The chart names the Deployment, its container and the Service alike, so
 // EnvService moves it too.
 func Deployment() string {
-	return cmp.Or(os.Getenv(EnvService), os.Getenv(LegacyEnvService), DeploymentName)
+	return cmp.Or(os.Getenv(EnvService), os.Getenv(PreviousEnvService), os.Getenv(LegacyEnvService), DeploymentName)
 }
 
 // ServiceAccount is the ServiceAccount the controller runs as, and so the last segment of
 // its SPIFFE ID. Named like the Service; EnvService moves it too.
 func ServiceAccount() string {
-	return cmp.Or(os.Getenv(EnvService), os.Getenv(LegacyEnvService), ServiceName)
+	return cmp.Or(os.Getenv(EnvService), os.Getenv(PreviousEnvService), os.Getenv(LegacyEnvService), ServiceName)
 }

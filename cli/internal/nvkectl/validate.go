@@ -23,9 +23,10 @@ func newValidateCmd() *cobra.Command {
 }
 
 type validateSiteSpecOptions struct {
-	siteSpec      string
-	bootstrapOnly bool
-	disableMTLS   bool
+	siteSpec                    string
+	bootstrapOnly               bool
+	disableMTLS                 bool
+	allowControlPlaneWithoutVIP bool
 }
 
 func newValidateSiteSpecCmd() *cobra.Command {
@@ -61,13 +62,15 @@ a file it passes is one "nvkectl bootstrap site" accepts on this host.`,
 	_ = cmd.MarkFlagRequired("sitespec")
 	cmd.Flags().BoolVar(&opts.bootstrapOnly, "bootstrap-only", false,
 		"Also fail on what only the bootstrap host holds, as \"bootstrap site\" does")
+	cmd.Flags().BoolVar(&opts.allowControlPlaneWithoutVIP, "allow-control-plane-without-vip", false,
+		"Permit a multi-node control plane without a VIP. Development only; bootstrap site needs the same flag.")
 	cmd.Flags().BoolVar(&opts.disableMTLS, "disable-mtls", false,
 		"Check the file as \"bootstrap site --disable-mtls\" would: with infra.provider nico, spire.externalAddress is not required")
 	return cmd
 }
 
 func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
-	spec, err := sitespec.Load(opts.siteSpec)
+	spec, err := sitespec.Load(opts.siteSpec, sitespec.WithAllowControlPlaneWithoutVIP(opts.allowControlPlaneWithoutVIP))
 	if err != nil {
 		return err
 	}

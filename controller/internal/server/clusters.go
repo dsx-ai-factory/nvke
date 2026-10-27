@@ -18,6 +18,7 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	capiclient "github.com/dsx-ai-factory/nvke/controller/internal/clients/capi"
@@ -74,6 +75,13 @@ func (e *updateInProgressError) Error() string {
 	if e.message != "" {
 		msg += " (" + e.message + ")"
 	}
+	if e.op == db.OperationTypeCertRenewal {
+		msg += "; a failed certificate renewal can retain the lock until an operator clears it (see controller/docs/certificate-renewal.md)"
+	}
+	if e.op == db.OperationTypeEtcdKeyRotation {
+		msg += "; a rotation that fails after prepare keeps the lock until its workflow is reset and completes " +
+			"(see controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery)"
+	}
 	return msg
 }
 
@@ -93,6 +101,9 @@ type clusterService struct {
 	// nodeAgentProfile carries the node-agent settings nodes.PinAgentProfile
 	// stamps on every node this deployment creates.
 	nodeAgentProfile db.Node
+	// nodeAgentClient reads live node state; nil reports nodes unreachable.
+	nodeAgentClient             agent.Client
+	allowControlPlaneWithoutVIP bool
 }
 
 func NewClusterService(
@@ -422,7 +433,7 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 	if err := validateMachineMetadata(req.ControlPlaneConfig.MachineAnnotations, req.ControlPlaneConfig.MachineLabels, s.machineAllowlistedAnnotationKeys, s.machineAllowlistedLabelKeys); err != nil {
 		return fmt.Errorf("controlPlaneConfig: %w", err)
 	}
-	if err := validateControlPlaneCapacityChange(req.ControlPlaneVIP, 0, req.ControlPlaneConfig.DesiredCount); err != nil {
+	if err := s.validateControlPlaneCapacityChange(req.ControlPlaneVIP, 0, req.ControlPlaneConfig.DesiredCount); err != nil {
 		return err
 	}
 
@@ -668,7 +679,7 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 			if err := ValidateKubernetesVersionSkewWithControlPlane(dbCluster.KubernetesVersion, *req.Body.ControlPlaneKubernetesVersion); err != nil {
 				return err
 			}
-			if err := validateControlPlaneUpgrade(dbCluster.ControlPlaneVIP); err != nil {
+			if err := s.validateControlPlaneUpgrade(dbCluster.ControlPlaneVIP); err != nil {
 				return err
 			}
 
@@ -943,7 +954,7 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 			return err
 		}
 	}
-	if err := validateControlPlaneRollout(
+	if err := s.validateControlPlaneRollout(
 		cluster.ControlPlaneVIP,
 		db.IsControlPlaneRolloutRequired(cluster.ControlPlaneConfig.ControlPlaneConfigSpec, controlPlaneConfigSpec),
 	); err != nil {
@@ -1006,7 +1017,7 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 		if *req.DesiredCount < 1 {
 			return newBadRequestErrorf("controlPlaneConfig.desiredCount must be at least 1")
 		}
-		if err := validateControlPlaneCapacityChange(
+		if err := s.validateControlPlaneCapacityChange(
 			cluster.ControlPlaneVIP,
 			cluster.ControlPlaneConfig.DesiredCount,
 			*req.DesiredCount,
@@ -1309,6 +1320,49 @@ func APIClusterFromDB(dbCluster *db.Cluster) api.Cluster {
 		updateFailed := apiConditionFromDB(*dbCluster.Conditions.UpdateFailed)
 		conditions.UpdateFailed = &updateFailed
 	}
+	// Project the recorded cycle separately from UpdateInProgress: a failed cycle
+	// can still own the mutation lock. Empty optional diagnostics remain absent;
+	// overdue status is derived by consumers from NextCertRenewalDue.
+	if status := dbCluster.Conditions.CertificateRenewal; status != nil {
+		apiStatus := api.CertificateRenewalStatus{
+			CycleID:      status.CycleID,
+			State:        api.CertificateRenewalStatusState(status.State),
+			Forced:       status.Forced,
+			ScheduledFor: status.ScheduledFor,
+			StartedAt:    status.StartedAt,
+			CompletedAt:  status.CompletedAt,
+			FailedNodeID: status.FailedNodeID,
+		}
+		if status.Outcome != "" {
+			outcome := api.CertificateRenewalStatusOutcome(status.Outcome)
+			apiStatus.Outcome = &outcome
+		}
+		if status.Phase != "" {
+			phase := status.Phase
+			apiStatus.Phase = &phase
+		}
+		if status.Message != "" {
+			message := status.Message
+			apiStatus.Message = &message
+		}
+		conditions.CertificateRenewal = &apiStatus
+	}
+
+	if status := dbCluster.Conditions.EtcdKeyRotation; status != nil {
+		apiStatus := api.EtcdKeyRotationStatus{
+			WorkflowID:     status.WorkflowID,
+			State:          api.EtcdKeyRotationStatusState(status.State),
+			Phase:          api.EtcdKeyRotationStatusPhase(status.Phase),
+			StartedAt:      status.StartedAt,
+			LastProgressAt: status.LastProgressAt,
+			CompletedAt:    status.CompletedAt,
+		}
+		if status.FailureReason != "" {
+			reason := api.EtcdKeyRotationStatusFailureReason(status.FailureReason)
+			apiStatus.FailureReason = &reason
+		}
+		conditions.EtcdKeyRotation = &apiStatus
+	}
 
 	return api.Cluster{
 		ID:                            dbCluster.ID,
@@ -1325,7 +1379,8 @@ func APIClusterFromDB(dbCluster *db.Cluster) api.Cluster {
 			PodCIDR:     dbCluster.PodCIDR,
 			ServiceCIDR: dbCluster.ServiceCIDR,
 		},
-		CreatedAt: dbCluster.CreatedAt,
+		CreatedAt:          dbCluster.CreatedAt,
+		NextCertRenewalDue: dbCluster.NextCertRenewalDue,
 
 		Nico:        apiNicoClusterProviderFromDB(dbCluster.Nico),
 		Infra:       apiInfraClusterProviderFromDB(dbCluster.Capi),

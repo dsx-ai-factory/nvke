@@ -138,3 +138,77 @@ endif
 	docker save --platform linux/$(SITE_ARCH) -o "$(SITE_INPUTS)/capi-provisioned.tar" $(SITE_PROVISIONED_IMAGE)
 	docker save --platform linux/$(SITE_ARCH) -o "$(SITE_INPUTS)/profiles.tar" $(SITE_PROFILES_IMAGE)
 	@echo "site inputs in $(SITE_INPUTS); see the site: block in e2e-config-example.yaml"
+
+# The validation image (Dockerfile). The context is the repository root;
+# Dockerfile.dockerignore limits it to what the build reads.
+VALIDATE_IMAGE ?= nvke-validate:local
+VALIDATE_PLATFORM ?= linux/amd64
+
+.PHONY: validate-image
+validate-image: ## Build the site validation image into the local docker image store.
+	docker buildx build --platform $(VALIDATE_PLATFORM) --load -t $(VALIDATE_IMAGE) -f Dockerfile "$(REPO_ROOT)"
+
+# What image-validate-nvcr.yml publishes. Both architectures come from one
+# build: the binary is cross-compiled and the final stage runs nothing, so
+# neither needs emulation or its own runner.
+#
+# The build is reproducible, so a site can build this itself and get the digest
+# the release published. Everything that reaches the image's bytes is derived
+# from the commit here: the timestamps (SOURCE_DATE_EPOCH, applied to layer
+# contents by rewrite-timestamp), the version and revision labels, and the
+# platforms. Overriding any of them gives a different digest.
+VALIDATE_REPO ?=
+VALIDATE_PUSH_TAGS ?=
+VALIDATE_PLATFORMS ?= linux/amd64,linux/arm64
+VALIDATE_EPOCH ?= $(shell git -C "$(REPO_ROOT)" log -1 --format=%ct HEAD)
+VALIDATE_REVISION ?= $(shell git -C "$(REPO_ROOT)" rev-parse HEAD)
+VALIDATE_VERSION ?= $(patsubst controller/%,%,$(shell git -C "$(REPO_ROOT)" describe --match 'controller/v*' --tags --always))
+# A Go module mirror. Unset uses the Dockerfile's default; either way go.sum
+# decides the modules, so it does not change the digest.
+VALIDATE_GOPROXY ?=
+# Flags that change how it builds but not what, such as --no-cache.
+VALIDATE_BUILDX_ARGS ?=
+VALIDATE_DIGEST_FILE ?= bin/validate-image-digest.txt
+VALIDATE_OCI ?= bin/validate-image.oci.tar
+
+# --provenance=false and --sbom=false: an attestation adds an unknown/unknown
+# entry to the index, which the publish job's architecture check and the NGC
+# UI do not expect, and it records the build's time and builder, which would
+# make every build's digest different.
+VALIDATE_BUILD_FLAGS = -f Dockerfile \
+	--platform $(VALIDATE_PLATFORMS) --provenance=false --sbom=false --progress=plain \
+	--build-arg SOURCE_DATE_EPOCH=$(VALIDATE_EPOCH) \
+	--build-arg VALIDATE_VERSION=$(VALIDATE_VERSION) \
+	--build-arg VALIDATE_REVISION=$(VALIDATE_REVISION) \
+	$(if $(VALIDATE_GOPROXY),--build-arg 'GOPROXY=$(VALIDATE_GOPROXY)') \
+	$(VALIDATE_BUILDX_ARGS)
+
+# containerimage.digest is read with sed rather than jq, which the self-hosted
+# runners do not all carry.
+define validate_read_digest
+@sed -n 's/.*"containerimage\.digest": *"\([^"]*\)".*/\1/p' $(VALIDATE_DIGEST_FILE).json > $(VALIDATE_DIGEST_FILE)
+@test -s $(VALIDATE_DIGEST_FILE) || { echo "ERROR: no containerimage.digest in $(VALIDATE_DIGEST_FILE).json" >&2; exit 1; }
+endef
+
+.PHONY: validate-image-push
+validate-image-push: ## Build the validation image for VALIDATE_PLATFORMS and push it to VALIDATE_REPO under each of VALIDATE_PUSH_TAGS. Writes the index digest to VALIDATE_DIGEST_FILE.
+	@test -n "$(VALIDATE_REPO)" || { echo "VALIDATE_REPO is required, e.g. nvcr.io/<org>/nvke-validate" >&2; exit 1; }
+	@test -n "$(VALIDATE_PUSH_TAGS)" || { echo "VALIDATE_PUSH_TAGS is required" >&2; exit 1; }
+	@mkdir -p $(dir $(VALIDATE_DIGEST_FILE))
+	docker buildx build $(VALIDATE_BUILD_FLAGS) \
+	  $(foreach t,$(VALIDATE_PUSH_TAGS),--tag $(VALIDATE_REPO):$(t)) \
+	  --output type=image,push=true,oci-mediatypes=true,rewrite-timestamp=true \
+	  --metadata-file $(VALIDATE_DIGEST_FILE).json \
+	  "$(REPO_ROOT)"
+	$(validate_read_digest)
+	@echo "pushed $(VALIDATE_REPO)@$$(cat $(VALIDATE_DIGEST_FILE))"
+
+.PHONY: validate-image-oci
+validate-image-oci: ## Build the validation image as an OCI archive at VALIDATE_OCI, pushing nothing. Writes the index digest to VALIDATE_DIGEST_FILE, to compare with a published one.
+	@mkdir -p $(dir $(VALIDATE_DIGEST_FILE)) $(dir $(VALIDATE_OCI))
+	docker buildx build $(VALIDATE_BUILD_FLAGS) \
+	  --output type=oci,dest=$(VALIDATE_OCI),rewrite-timestamp=true \
+	  --metadata-file $(VALIDATE_DIGEST_FILE).json \
+	  "$(REPO_ROOT)"
+	$(validate_read_digest)
+	@echo "built $(VALIDATE_OCI) as $$(cat $(VALIDATE_DIGEST_FILE))"

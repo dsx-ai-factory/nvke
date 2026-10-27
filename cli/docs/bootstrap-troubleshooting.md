@@ -44,6 +44,56 @@ node, run the same searches in two steps:
 2. Search for that `workflow_id`. The matches are the node's workflow and
    activity steps, including the one that failed.
 
+#### Send nvkectl's logs to a backend
+
+To search nvkectl's logs in your own backend, point nvkectl at an
+OpenTelemetry collector before you run a command. Every log record carries the
+command's trace ID, so you can find a run in the backend by the `Trace ID:`
+that nvkectl prints. What nvkectl writes to your terminal does not change.
+
+1. Set the collector's address. Use its OTLP gRPC port, usually 4317:
+
+   ```bash
+   export OTEL_EXPORTER_OTLP_ENDPOINT=https://<COLLECTOR_HOST>:4317
+   ```
+
+2. If the collector needs a token, set it as a header. Skip this step
+   otherwise:
+
+   ```bash
+   export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer <TOKEN>'
+   ```
+
+3. Run the command:
+
+   ```bash
+   nvkectl bootstrap site -f sitespec.yaml
+   ```
+
+Replace `<COLLECTOR_HOST>` with the collector's host name or IP address and
+`<TOKEN>` with your token. Separate several headers with commas.
+
+The endpoint follows these rules:
+
+- Write it as `<COLLECTOR_HOST>:4317` or as an `http://` or `https://` URL,
+  with no path and no user name or password. Put credentials in
+  `OTEL_EXPORTER_OTLP_HEADERS`. Do not use the collector's HTTP address, such
+  as `https://<COLLECTOR_HOST>:4318/v1/logs`.
+- Connections use TLS. To send without TLS, use an `http://` URL, or write the
+  endpoint without a scheme and set `OTEL_EXPORTER_OTLP_INSECURE=true`. An
+  `https://` URL always uses TLS.
+- nvkectl verifies the collector's certificate against the host's trusted
+  certificate authorities. It does not use `OTEL_EXPORTER_OTLP_CERTIFICATE` or
+  the client certificate variables, so a collector with a private certificate
+  authority needs that authority in the host's trust store, and a collector
+  that requires client certificates is not supported.
+- nvkectl sends its log records only, not spans.
+
+If nvkectl prints `OTLP log export is off`, it did not accept the endpoint and
+sends no logs. The warning names the setting. Check the endpoint against the
+rules above. If the collector cannot be reached, nvkectl prints one warning
+and the command still succeeds.
+
 ### The diagnostics directory
 
 Bootstrap attempts to collect diagnostics before cleaning up a failed
@@ -278,9 +328,13 @@ sudo -n -i nerdctl pull <image>
 
 **`kind load image-archive ...: exit status 1`** or **`want two sha256 digests`**
 
-The image exists locally but could not be exported into the Kind cluster. Pull
-it again with the platform of the bootstrap host and re-run. A multi-platform
-image that was only partially pulled is the usual cause.
+The image exists locally but could not be exported into the Kind cluster,
+usually because the archive lists a platform whose content is not in the local
+store. kind imports every platform an image index lists, so nvkectl pulls every
+platform of an image pinned by an index digest. For a tag, pull it again for the
+bootstrap host's platform and re-run. To load only one platform of a pinned
+image, pin that platform's manifest digest instead:
+`nerdctl image inspect --mode=native --format '{{.ManifestDesc.Digest}}' <image>`.
 
 ### Controller deploy
 

@@ -181,6 +181,61 @@ controller treats an empty variable. sprig's default would also replace false an
 {{- end }}
 
 {{/*
+A Go duration string in nanoseconds, the unit of time.Duration; refuses the
+render if it does not parse, as the controller would refuse it at startup.
+*/}}
+{{- define "controller.durationNanoseconds" -}}
+{{- $base := toDate "2006-01-02" "2000-01-01" -}}
+{{- ((mustDateModify . $base).Sub $base).Nanoseconds -}}
+{{- end }}
+
+{{/*
+Refuse the credential settings the controller would refuse at startup
+(internal/config/credential_monitoring.go), so a bad value fails helm upgrade
+instead of crash-looping the new pod. The collector inputs are always checked;
+every other bound only while its feature is enabled.
+*/}}
+{{- define "controller.validateCredentialMonitoring" -}}
+{{- $renewal := .Values.scheduledMaintenance.certRenewal -}}
+{{- $monitoring := .Values.credentialMonitoring -}}
+{{- $renewalEnabled := eq (include "controller.controllerConfig.orGoDefault" (list $renewal.enabled true)) "true" -}}
+{{- $monitoringEnabled := eq (include "controller.controllerConfig.orGoDefault" (list $monitoring.enabled true)) "true" -}}
+{{- $interval := include "controller.durationNanoseconds" ($renewal.interval | default "12h") | int64 -}}
+{{- $thresholdDays := include "controller.controllerConfig.orGoDefault" (list $renewal.thresholdDays 30) | int64 -}}
+{{- $inspection := include "controller.durationNanoseconds" ($monitoring.inspectionInterval | default "1h") | int64 -}}
+{{- $maxAge := include "controller.durationNanoseconds" ($monitoring.observationMaxAge | default "3h") | int64 -}}
+{{- $warningDays := include "controller.controllerConfig.orGoDefault" (list $monitoring.warningDays 45) | int64 -}}
+{{- if le $maxAge 0 -}}
+{{- fail "credentialMonitoring.observationMaxAge must be positive" -}}
+{{- end -}}
+{{- if le $warningDays 0 -}}
+{{- fail "credentialMonitoring.warningDays must be positive" -}}
+{{- end -}}
+{{- if $renewalEnabled -}}
+{{- if or (lt $interval 3600000000000) (gt $interval 86400000000000) -}}
+{{- fail "scheduledMaintenance.certRenewal.interval must be between 1h and 24h while renewal is enabled" -}}
+{{- end -}}
+{{- if or (lt $thresholdDays 7) (gt $thresholdDays 90) -}}
+{{- fail "scheduledMaintenance.certRenewal.thresholdDays must be between 7 and 90 while renewal is enabled" -}}
+{{- end -}}
+{{- end -}}
+{{- if $monitoringEnabled -}}
+{{- if or (lt $inspection 300000000000) (gt $inspection 43200000000000) -}}
+{{- fail "credentialMonitoring.inspectionInterval must be between 5m and 12h while monitoring is enabled" -}}
+{{- end -}}
+{{- if or (lt $maxAge (mul 2 $inspection)) (gt $maxAge 86400000000000) -}}
+{{- fail "credentialMonitoring.observationMaxAge must be at least twice credentialMonitoring.inspectionInterval and at most 24h while monitoring is enabled" -}}
+{{- end -}}
+{{- if or (lt $warningDays 9) (gt $warningDays 120) -}}
+{{- fail "credentialMonitoring.warningDays must be between 9 and 120 while monitoring is enabled" -}}
+{{- end -}}
+{{- if and $renewalEnabled (lt (mul (sub $warningDays $thresholdDays) 86400000000000) (mul 2 $interval)) -}}
+{{- fail "credentialMonitoring.warningDays must exceed scheduledMaintenance.certRenewal.thresholdDays by at least two renewal intervals while monitoring and renewal are enabled" -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Refuse a values file that still sets a key this chart renamed. Helm ignores an
 unknown key without a word, so the old key would leave the chart on its defaults:
 for nkeOIDCAuth, tenant-cluster OIDC quietly reverting to disabled.
@@ -206,10 +261,11 @@ Called from deployment.yaml rather than from configmap-auth.yaml, because that
 template is itself gated on create and so cannot see a config set without it.
 
 Emits nothing. The shallow presence checks on audiences and issuers stop here:
-every other rule belongs to internal/auth/config.go, whose errors name the field
+every other rule belongs to auth/authn/config.go, whose errors name the field
 at fault.
 */}}
 {{- define "controller.apiAuth.validate" -}}
+{{- $root := . -}}
 {{- $auth := .Values.apiAuth -}}
 {{- $create := and $auth.enabled $auth.configMap.create -}}
 {{- if and $auth.config (not $create) -}}
@@ -222,8 +278,19 @@ at fault.
 {{- fail "apiAuth.configMap.create is true but apiAuth.config is empty, which would mount an AuthenticationConfiguration carrying no issuers. Populate apiAuth.config, or set create to false and manage the ConfigMap yourself." -}}
 {{- end -}}
 {{- if $create -}}
+{{- range $root.Values.env -}}
+{{- if eq (toString .name) "AUTH_CONFIG_PATH" -}}
+{{- fail (printf "env sets AUTH_CONFIG_PATH while apiAuth.configMap.create is true. The controller reads the chart-rendered configuration from apiAuth in %s, and both together refuse to start. Drop the env entry, or set create to false to mount a ConfigMap you manage." (include "controller.controllerConfig.name" $root)) -}}
+{{- end -}}
+{{- end -}}
 {{- if or (hasKey $auth.config "apiVersion") (hasKey $auth.config "kind") -}}
 {{- fail "apiAuth.config must not carry apiVersion or kind. The chart supplies both, so a copy here renders them twice, and auth.Load refuses duplicate keys -- the controller would crash-loop rather than start. Keep audiences and issuers only. If you are pasting the file from the README, drop its first two lines." -}}
+{{- end -}}
+{{- if hasKey $auth.config "enabled" -}}
+{{- fail (printf "apiAuth.config must not carry enabled. apiAuth.enabled is the switch, and apiAuth.config is rendered whole into the apiAuth section of %s beside it, so a copy here is a duplicate key the controller refuses at startup. Keep audiences and issuers only." (include "controller.controllerConfig.name" $root)) -}}
+{{- end -}}
+{{- if hasKey $auth.config "permissive" -}}
+{{- fail (printf "apiAuth.config must not carry permissive. Set apiAuth.permissive instead: the chart renders it into the apiAuth section of %s beside apiAuth.config, so a copy here is a duplicate key the controller refuses at startup." (include "controller.controllerConfig.name" $root)) -}}
 {{- end -}}
 {{- if not $auth.config.audiences -}}
 {{- fail "apiAuth.config.audiences is required and must not be empty. The audience is per-install and has no default; a token minted for one install must fail at another." -}}
@@ -242,7 +309,7 @@ at fault.
 {{- if and $ca (hasPrefix $dir $ca) -}}
 {{- $file := trimPrefix $dir $ca -}}
 {{- if and (ne $file $configFile) (not (hasKey $extra $file)) -}}
-{{- fail (printf "issuer %s sets jwks.caBundlePath to %s, but nothing puts %s there. The chart mounts only the ConfigMap it renders at that path, and that ConfigMap carries %s plus whatever apiAuth.configMap.extraFiles lists. Add the bundle under extraFiles (key %s), or point caBundlePath somewhere you mount yourself through .Values.volumes." (quote (default "<unnamed>" .name)) $ca $file $configFile $file) -}}
+{{- fail (printf "issuer %s sets jwks.caBundlePath to %s, but nothing puts %s there. The chart mounts only the ConfigMap it renders at that path, and that ConfigMap carries %s plus whatever apiAuth.configMap.extraFiles lists. Put the PEM inline as jwks.caBundle instead, add the bundle under extraFiles (key %s), or point caBundlePath somewhere you mount yourself through .Values.volumes." (quote (default "<unnamed>" .name)) $ca $file $configFile $file) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

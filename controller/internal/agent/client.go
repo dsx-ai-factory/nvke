@@ -22,6 +22,7 @@ import (
 type Client interface {
 	GetKubeconfig(ctx context.Context, node db.Node) (string, error)
 	GetAgentVersion(ctx context.Context, node db.Node) (string, error)
+	GetEtcdEncryptionKeyIdentity(ctx context.Context, node db.Node, digest string) (string, error)
 	SupportsKubeadmFiles(ctx context.Context, node db.Node) (bool, error)
 	GetKubeadmStatus(ctx context.Context, node db.Node) (*nvkeproto.KubeadmStatusResponse, error)
 	ScheduleNodeReboot(ctx context.Context, node db.Node) (*nvkeproto.ScheduleNodeRebootResponse, error)
@@ -36,6 +37,7 @@ type Client interface {
 	KubeadmUpgradeApply(ctx context.Context, node db.Node, req *nvkeproto.KubeadmUpgradeApplyRequest) (*nvkeproto.KubeadmUpgradeApplyResponse, error)
 	ReconcileKubeVip(ctx context.Context, node db.Node, req *nvkeproto.ReconcileKubeVipRequest) (*nvkeproto.ReconcileKubeVipResponse, error)
 	StartKubernetesCertificateRenewal(ctx context.Context, node db.Node, req *nvkeproto.StartKubernetesCertificateRenewalRequest) (*nvkeproto.StartKubernetesCertificateRenewalResponse, error)
+	StartKubernetesCertificateRenewalV2(ctx context.Context, node db.Node, req *nvkeproto.StartKubernetesCertificateRenewalV2Request) (*nvkeproto.StartKubernetesCertificateRenewalV2Response, error)
 	GetKubernetesCertificateRenewalStatus(ctx context.Context, node db.Node, req *nvkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nvkeproto.GetKubernetesCertificateRenewalStatusResponse, error)
 	RemoveEtcdMember(ctx context.Context, node db.Node, req *nvkeproto.RemoveEtcdMemberRequest) (*nvkeproto.RemoveEtcdMemberResponse, error)
 	ExecuteNodePreflight(ctx context.Context, node db.Node, req *nvkeproto.ExecuteNodePreflightRequest) (*nvkeproto.ExecuteNodePreflightResponse, error)
@@ -52,6 +54,8 @@ type Client interface {
 	RemovePlainTextSecondaryEncryptionEntry(ctx context.Context, node db.Node) error
 	StartKubeVIPRestore(ctx context.Context, node db.Node, operationID string) (*nvkeproto.NodeAgentOperationStatus, error)
 	ConvergeNodeAgent(ctx context.Context, node db.Node, target, method string) (string, bool, error)
+	ReconfigureSpireAgent(ctx context.Context, node db.Node, req *nvkeproto.ReconfigureSpireAgentRequest) (*nvkeproto.ReconfigureSpireAgentResponse, error)
+	GetSpireAgentStatus(ctx context.Context, node db.Node) (*nvkeproto.GetSpireAgentStatusResponse, error)
 }
 
 type NodeAgentClient struct {
@@ -207,6 +211,9 @@ func (c *NodeAgentClient) ExecuteKubeadmInit(ctx context.Context, node db.Node, 
 	}
 	defer cleanup()
 
+	if err := requireKubeadmEncryptionKeyName(ctx, conn, req.GetApiEncryptionKeyName()); err != nil {
+		return nil, err
+	}
 	resp, err := nvkeproto.NewNodeAgentClient(conn).ExecuteKubeadmInit(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute kubeadm init on node %s: %w", node.Name, err)
@@ -221,6 +228,9 @@ func (c *NodeAgentClient) ExecuteKubeadmJoin(ctx context.Context, node db.Node, 
 	}
 	defer cleanup()
 
+	if err := requireKubeadmEncryptionKeyName(ctx, conn, req.GetApiEncryptionKeyName()); err != nil {
+		return nil, err
+	}
 	// Returns only the RPC execution error; resp.Status is parsed by the caller
 	// via the GetKubeadmStatus poll loop (see Activities.kubeadmJoin). Do not
 	// promote resp.Status to a Go error here: a re-fired join on an already
@@ -257,6 +267,44 @@ func (c *NodeAgentClient) ReconfigureKubeletAPIServer(ctx context.Context, node 
 	resp, err := nvkeproto.NewNodeAgentClient(conn).ReconfigureKubeletAPIServer(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reconfigure kubelet API server on node %s: %w", node.Name, err)
+	}
+	return resp, nil
+}
+
+// ReconfigureSpireAgent points the node's SPIRE agent at a new SPIRE server and
+// waits until the agent holds an SVID from it.
+func (c *NodeAgentClient) ReconfigureSpireAgent(ctx context.Context, node db.Node, req *nvkeproto.ReconfigureSpireAgentRequest) (*nvkeproto.ReconfigureSpireAgentResponse, error) {
+	conn, cleanup, err := c.getGRPCConnection(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node agent on node %s: %w", node.Name, err)
+	}
+	defer cleanup()
+
+	resp, err := nvkeproto.NewNodeAgentClient(conn).ReconfigureSpireAgent(ctx, req)
+	if status.Code(err) == codes.Unimplemented {
+		return nil, fmt.Errorf("node agent on node %s does not support ReconfigureSpireAgent; upgrade the node agent before retrying: %w", node.Name, err)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to reconfigure SPIRE agent on node %s: %w", node.Name, err)
+	}
+	return resp, nil
+}
+
+// GetSpireAgentStatus reports the SPIRE server the node's agent points at and
+// whether it holds a valid SVID from that server.
+func (c *NodeAgentClient) GetSpireAgentStatus(ctx context.Context, node db.Node) (*nvkeproto.GetSpireAgentStatusResponse, error) {
+	conn, cleanup, err := c.getGRPCConnection(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node agent on node %s: %w", node.Name, err)
+	}
+	defer cleanup()
+
+	resp, err := nvkeproto.NewNodeAgentClient(conn).GetSpireAgentStatus(ctx, &nvkeproto.GetSpireAgentStatusRequest{})
+	if status.Code(err) == codes.Unimplemented {
+		return nil, fmt.Errorf("node agent on node %s does not support GetSpireAgentStatus; upgrade the node agent before retrying: %w", node.Name, err)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get SPIRE agent status from node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }
@@ -338,6 +386,27 @@ func (c *NodeAgentClient) StartKubernetesCertificateRenewal(
 	resp, err := nvkeproto.NewNodeAgentClient(conn).StartKubernetesCertificateRenewal(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start certificate renewal on node %s: %w", node.Name, err)
+	}
+	return resp, nil
+}
+
+// StartKubernetesCertificateRenewalV2 preserves the capability-distinct RPC and
+// wrapped gRPC status so the activity can distinguish Unimplemented from an
+// ambiguous transport failure. It neither selects fallback nor waits for renewal;
+// canceling this RPC does not cancel work the agent has already accepted.
+func (c *NodeAgentClient) StartKubernetesCertificateRenewalV2(
+	ctx context.Context,
+	node db.Node,
+	req *nvkeproto.StartKubernetesCertificateRenewalV2Request,
+) (*nvkeproto.StartKubernetesCertificateRenewalV2Response, error) {
+	conn, cleanup, err := c.getGRPCConnection(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node agent for certificate renewal on node %s: %w", node.Name, err)
+	}
+	defer cleanup()
+	resp, err := nvkeproto.NewNodeAgentClient(conn).StartKubernetesCertificateRenewalV2(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start V2 certificate renewal on node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }

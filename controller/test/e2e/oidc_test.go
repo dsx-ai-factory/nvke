@@ -93,7 +93,7 @@ func validateOIDCPostDelete(test *tenantTest) {
 }
 
 // skipIfNVKEOIDCDisabled skips the current spec when the controller does not have
-// tenant OIDC JWT auth enabled (oidc.managementOIDCAuth.enabled in nke-controller-config).
+// tenant OIDC JWT auth enabled (oidc.managementOIDCAuth.enabled in nvke-controller-config).
 func skipIfNVKEOIDCDisabled(ctx context.Context, k8s client.Client) {
 	GinkgoHelper()
 	if !expectSucceed(nvke.OIDCEnabled(ctx, k8s)) {

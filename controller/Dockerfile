@@ -14,8 +14,8 @@
 #   docker build --build-arg GOLANG_IMAGE=dockerhub.nvidia.com/golang:1.27.3@sha256:... .
 # A digest is content-addressed, so a mirror serving the same content answers
 # to the same digest.
-ARG GOLANG_IMAGE=docker.io/golang:1.27.3@sha256:957861185dbf29d93668ace41e011d091c6e779953d47f0316ef2cc58e28fe2b
-ARG ALPINE_IMAGE=docker.io/alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+ARG GOLANG_IMAGE=docker.io/golang:1.27.3@sha256:f20d83a83e18dbd2a4714b8ffd4b30b287b6243962dd75608e86abcc63ba4efc
+ARG RUNTIME_IMAGE=gcr.io/distroless/static-debian12:debug-nonroot@sha256:d5563cc7f2f44313f332e91138cc8c6a158899afeeeab2fce3b0f9ccdb3cf9ee
 
 FROM ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:1.0.0@sha256:e30e90774e5951f84eb6dfb36f972fead08b64c3bfdc0912c5b15f988e79de3a AS spiffe-jwt-exec-auth
 
@@ -38,33 +38,16 @@ ARG GIT_VERSION=""
 WORKDIR /workspace/controller
 RUN echo "BUILD_VERSION=${BUILD_VERSION} GIT_VERSION=${GIT_VERSION} TARGETOS=${TARGETOS} TARGETARCH=${TARGETARCH}"
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} BUILD_VERSION=${BUILD_VERSION} GIT_VERSION=${GIT_VERSION} make build
+# The runtime image has no shell to run mkdir in, so the empty mount point for
+# operator-supplied profiles is made here and copied across.
+RUN mkdir -p /out/profiles
 
 ########################################################################
-# Multi-state-final build
-# This should be alpine for us to test & debug
-FROM ${ALPINE_IMAGE}
-# Runtime + in-container debug tooling, installed in a single --no-cache layer
-# so the apk index is not shipped. Documentation (*-doc) packages and packages
-# with no function inside this pod (binutils, pciutils, usbutils) are
-# intentionally excluded to minimize the image's CVE surface.
-#
-# apk add leaves packages the base tag already carries at their old version,
-# and Alpine patches a branch without always cutting a new tag. So upgrade
-# first, or dependencies nobody names here (libcrypto3, libssl3) go stale.
-RUN apk upgrade --no-cache && \
-    apk add --update --no-cache \
-    ca-certificates \
-    bash \
-    bash-completion \
-    curl \
-    gcompat \
-    sed \
-    attr \
-    dialog \
-    grep \
-    util-linux \
-    findutils \
-    readline
+# Runtime image: distroless static, which carries CA certificates, time zone
+# data and the nonroot user, and no package manager or package database. The
+# debug variant adds busybox, so `kubectl exec ... -- sh` still gives a shell
+# with wget, grep, sed and find on PATH. It has no bash and no curl.
+FROM ${RUNTIME_IMAGE}
 
 WORKDIR /
 COPY --from=builder /workspace/controller/bin/controller /usr/local/bin/controller
@@ -72,7 +55,7 @@ COPY --from=spiffe-jwt-exec-auth /ko-app/cmd /opt/spiffe/bin/k8s-spiffe-workload
 
 # OS/config profiles are operator-supplied at runtime (profilesDir), not baked
 # into the image.
-RUN mkdir -p /profiles
+COPY --from=builder /out/profiles /profiles
 
 # Include both the project license and generated dependency notices.
 COPY LICENSE NOTICE /licenses/
@@ -84,6 +67,14 @@ LABEL org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.source="https://github.com/dsx-ai-factory/nvke" \
       org.opencontainers.image.description="NVKE Cloud Workflow Engine"
 
+# The nonroot uid distroless images use. The chart sets the same uid and
+# runAsNonRoot, which the kubelet can only verify against a numeric USER.
+USER 65532:65532
+
 EXPOSE 8080
 
+# The debug base's entrypoint is /busybox/sh, which would run CMD as a shell
+# script. Clear it so the container starts the controller as before, and a
+# chart `command:` or `args:` override keeps its meaning.
+ENTRYPOINT []
 CMD ["controller"]

@@ -154,6 +154,16 @@ func TestLogOutcomeLevel(t *testing.T) {
 		{"canceled is not an error-level event", context.Canceled, "canceled", "WARN"},
 		{"timed out", context.DeadlineExceeded, "timed_out", "ERROR"},
 		{"failed", errors.New("boom"), "failed", "ERROR"},
+		{
+			"benign activity failures remain visible in the outcome log",
+			sdktemporal.NewApplicationErrorWithOptions(
+				"not ready",
+				"NotReady",
+				sdktemporal.ApplicationErrorOptions{Category: sdktemporal.ApplicationErrorCategoryBenign},
+			),
+			"failed",
+			"ERROR",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -110,7 +110,7 @@ type NodeAgentConfig struct {
 
 // Config is the controller's configuration. A field with an env tag comes from
 // that environment variable; a field with a controllerconfig tag comes from that
-// key in the mounted nke-controller-config file, which
+// key in the mounted nvke-controller-config file, which
 // controllerconfig.Config.ApplyTo copies in at startup.
 type Config struct {
 	// LogLevel is the level of logs to output (debug|info|warn|error)
@@ -135,6 +135,11 @@ type Config struct {
 
 	// DBQueryLogLevel is the level of logs to output for all database queries (debug|info)
 	DBQueryLogLevel string `env:"DB_QUERY_LOG_LEVEL" default:"debug"`
+
+	// DBQueryLogValues logs each query with its values instead of a "?" for each,
+	// and logs PostgreSQL error messages. A query can carry operator-supplied
+	// content, and a message can repeat a rejected value, so it is off by default.
+	DBQueryLogValues bool `env:"DB_QUERY_LOG_VALUES" default:"false"`
 
 	// DBMaxOpenConnections is the maximum number of open connections to the database
 	DBMaxOpenConnections int `env:"DB_MAX_OPEN_CONNECTIONS" default:"32"`
@@ -237,6 +242,18 @@ type Config struct {
 
 	// CertRenewalThresholdDays is passed to the certificate-renewal runbook.
 	CertRenewalThresholdDays int `controllerconfig:"certRenewal.thresholdDays"`
+
+	// CredentialMonitoringEnabled enables read-only credential inspection independently of renewal.
+	CredentialMonitoringEnabled bool `controllerconfig:"credentialMonitoring.enabled"`
+
+	// CertificateInspectionInterval is the interval between node certificate inspections.
+	CertificateInspectionInterval time.Duration `controllerconfig:"credentialMonitoring.inspectionInterval"`
+
+	// CertificateObservationMaxAge is the oldest observation that still counts as fresh.
+	CertificateObservationMaxAge time.Duration `controllerconfig:"credentialMonitoring.observationMaxAge"`
+
+	// CertificateWarningDays is how many days before expiry a certificate is reported as expiring.
+	CertificateWarningDays int `controllerconfig:"credentialMonitoring.warningDays"`
 
 	// NVKESiteControllerName is the name of the site controller
 	NVKESiteControllerName string `env:"NKE_SITE_CONTROLLER_NAME"`
@@ -380,21 +397,25 @@ type Config struct {
 	TenantAccessEnabled bool `controllerconfig:"tenantAccessEnabled"`
 
 	// AuthConfigPath is the mounted YAML file holding the API authentication
-	// configuration. Unset disables authentication. A set-but-unreadable path is
-	// a startup failure, never "disabled"; see auth.Load.
+	// configuration, for a ConfigMap the chart does not render; the
+	// chart-rendered configuration is apiAuth in nvke-controller-config
+	// instead, and setting both is a startup failure. Unset, with apiAuth not
+	// enabled in nvke-controller-config, disables authentication. A
+	// set-but-unreadable path is a startup failure, never "disabled"; see
+	// authn.Load.
 	//
 	// Validate() does not check it: unset is the valid default.
 	AuthConfigPath string `env:"AUTH_CONFIG_PATH"`
 
-	// ControllerConfigPath is the nke-controller-config file every field with a
-	// controllerconfig tag comes from. Required: a path that does not load is a
-	// startup failure.
+	// ControllerConfigPath is the nvke-controller-config file every field with
+	// a controllerconfig tag comes from. Required: a path that does not load is
+	// a startup failure.
 	ControllerConfigPath string `env:"CONTROLLER_CONFIG_PATH,notEmpty"`
 
 	// PermissiveMode evaluates and logs authentication and admission decisions
-	// without enforcing them, so no request is rejected. No effect when
-	// AuthConfigPath is unset.
-	PermissiveMode bool `controllerconfig:"permissiveMode"`
+	// without enforcing them, so no request is rejected. No effect while
+	// authentication is off: AuthConfigPath unset and apiAuth.enabled false.
+	PermissiveMode bool `controllerconfig:"apiAuth.permissive"`
 
 	// Tracing configures the export of OpenTelemetry spans to an OTLP collector.
 	Tracing TracingConfig
@@ -402,6 +423,10 @@ type Config struct {
 	// Machine metadata allowlists permit exact keys under reserved domains.
 	MachineMetadataAllowlistedLabelKeys      []string `controllerconfig:"machineMetadataAllowlistedLabelKeys"`
 	MachineMetadataAllowlistedAnnotationKeys []string `controllerconfig:"machineMetadataAllowlistedAnnotationKeys"`
+
+	// AllowControlPlaneWithoutVIP permits control-plane lifecycle operations without a VIP for development.
+	// The API endpoint remains tied to the initializing node's IP.
+	AllowControlPlaneWithoutVIP bool `controllerconfig:"allowControlPlaneWithoutVIP"`
 }
 
 // TracingConfig configures OpenTelemetry span export.
@@ -573,13 +598,16 @@ func (c Config) ManagementNamespaceOrDefault() string {
 	return c.ManagementNamespace
 }
 
-// Validate checks the settings the environment supplies. nke-controller-config
+// Validate checks the settings the environment supplies. nvke-controller-config
 // validates its own when it loads.
 func (c *Config) Validate() error {
 	if err := c.AgentReadiness.Validate(); err != nil {
 		return err
 	}
 	if err := c.validateDBCredentials(); err != nil {
+		return err
+	}
+	if err := c.validateCredentialMonitoring(); err != nil {
 		return err
 	}
 	if c.SpireServerAPIAddress == "" {
@@ -597,7 +625,7 @@ func (c Config) EffectiveRunbooksDir() string {
 }
 
 // ParseConfigFromEnv parses the fields with an env tag. It does not validate:
-// the caller applies nke-controller-config first, then calls Validate.
+// the caller applies nvke-controller-config first, then calls Validate.
 func ParseConfigFromEnv() (Config, error) {
 	cfg, err := env.ParseAsWithOptions[Config](env.Options{
 		DefaultValueTagName: "default",

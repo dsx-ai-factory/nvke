@@ -203,11 +203,6 @@ path:agent/pkg/agentupgrade/updater_test.go
 # The package qualification builds a legacy agent fixture with its old version line.
 path:os-image/packages/nvke-agent/test/install.sh
 
-# The OIDC upstream CA's subject (CN "NKE OIDC Upstream CA", OU "NKE") is in
-# every certificate it issued; a new subject is a new CA (PR4, new sites).
-path:*/40-oidc-upstream-ca.yaml
-path:controller/deploy/k8s/oidc-upstream-ca.yaml
-
 # The NGC organisation these two workflows publish to is named NKE.
 path:.github/workflows/cli-artifact-nvcr.yml
 path:.github/workflows/agent-artifact-nvcr.yml

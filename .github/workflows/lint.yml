@@ -53,6 +53,11 @@ jobs:
             goversion: go.work
             gowork: ""
             timeout: 15
+          - name: auth
+            dir: auth
+            goversion: go.work
+            gowork: ""
+            timeout: 15
           - name: provisioned-provider
             dir: cluster-api-provider-provisioned
             goversion: cluster-api-provider-provisioned/go.mod

@@ -1,6 +1,6 @@
 # The Go workspace
 
-This repository holds twelve Go modules. The root `go.work` ties them together,
+This repository holds thirteen Go modules. The root `go.work` ties them together,
 so one `make build` covers the whole tree and one Go toolchain version applies.
 `go.work`, `go.work.sum`, and the module manifests are committed; the generated
 `vendor/` tree is not. All dependencies, including
@@ -11,6 +11,7 @@ but no NVIDIA credentials.
 | Module | In `go.work` | Role |
 |---|---|---|
 | `agent` | yes | node agent |
+| `auth` | yes | API authentication library |
 | `cli` | yes | command-line tools |
 | `cluster-api-provider-provisioned` | yes | provisioned-host provider |
 | `controller` | yes | cloud workflow engine |

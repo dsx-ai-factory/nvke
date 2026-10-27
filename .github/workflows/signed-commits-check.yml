@@ -1,0 +1,127 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Labels open pull requests that carry a commit without a verified signature.
+#
+# Advisory, not a gate: the `required_signatures` rule on `main` already blocks
+# the merge. But the rule speaks only in the merge box, as "Commits must have
+# verified signatures.", and only to the person merging. This puts the same
+# verdict on the pull request as `needs-signed-commits`, for the author.
+#
+# WHY A PUSH EVENT AND A SWEEP
+#
+# GitHub verifies a signature as the commit arrives, so a new head is judged
+# at once and the push event labels it within the minute. The sweep covers
+# pull requests opened before this workflow existed, and a verdict that
+# changes without a push, as when the author registers the key afterwards.
+#
+# The fix is in CONTRIBUTING.md under "Verified signatures".
+
+name: PR Signed Commits Check
+
+on:
+  schedule:
+    # Twenty-five past and twenty-five to: off the hour, where the daily E2E
+    # crons sit, and five minutes behind the DCO sweep so the two never queue
+    # together.
+    - cron: '25,55 * * * *'
+  # The verdict lives on the commits, so a new head needs no wait.
+  # No checkout here, so the write token never meets fork code.
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+  workflow_dispatch: {}
+
+concurrency:
+  # A literal name, not ${{ github.workflow }}. See merge-gate.yml.
+  group: PR Signed Commits Check-${{ github.event.pull_request.number || 'sweep' }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  signed-commits:
+    name: Check open PRs for unsigned commits
+    if: github.repository_id == '1323115536'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    timeout-minutes: 10
+    steps:
+      - name: Label pull requests that need signed commits
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            // Label exists already; recreate as #e11d21 if it is ever deleted,
+            // since addLabels would otherwise invent a colour.
+            const LABEL = 'needs-signed-commits';
+
+            // One pull request on its own event, every open one on a sweep.
+            const open = context.payload.pull_request
+              ? [context.payload.pull_request]
+              : await github.paginate(github.rest.pulls.list, {
+                  ...context.repo,
+                  state: 'open',
+                  per_page: 100,
+                });
+
+            // Read the rule once per base branch, so the label cannot outlive
+            // it: without the rule, every pull request counts as signed.
+            const enforced = new Map();
+            const ruleOn = async (branch) => {
+              if (!enforced.has(branch)) {
+                const { data: rules } = await github.request('GET /repos/{owner}/{repo}/rules/branches/{branch}', {
+                  ...context.repo,
+                  branch,
+                });
+                enforced.set(branch, rules.some((r) => r.type === 'required_signatures'));
+              }
+              return enforced.get(branch);
+            };
+
+            let labelled = 0;
+            let cleared = 0;
+
+            for (const pr of open) {
+              let unsigned = [];
+              if (await ruleOn(pr.base.ref)) {
+                // State is recomputed from the commits rather than tracked, so
+                // a signed push clears the label on its own event. The endpoint
+                // stops at 250 commits; no pull request here is that long.
+                const commits = await github.paginate(github.rest.pulls.listCommits, {
+                  ...context.repo,
+                  pull_number: pr.number,
+                  per_page: 100,
+                });
+                unsigned = commits.filter((c) => !c.commit.verification?.verified);
+              }
+
+              const hasLabel = pr.labels.some((l) => l.name === LABEL);
+
+              if (unsigned.length > 0 && !hasLabel) {
+                await github.rest.issues.addLabels({
+                  ...context.repo,
+                  issue_number: pr.number,
+                  labels: [LABEL],
+                });
+                labelled += 1;
+                const reasons = [...new Set(unsigned.map((c) => c.commit.verification?.reason ?? 'unknown'))];
+                core.info(`#${pr.number}: labelled, ${unsigned.length} unverified (${reasons.join(', ')})`);
+              } else if (unsigned.length === 0 && hasLabel) {
+                try {
+                  await github.rest.issues.removeLabel({
+                    ...context.repo,
+                    issue_number: pr.number,
+                    name: LABEL,
+                  });
+                  cleared += 1;
+                  core.info(`#${pr.number}: cleared`);
+                } catch (error) {
+                  // 404 means someone removed it by hand first.
+                  if (error.status !== 404) {
+                    throw error;
+                  }
+                }
+              }
+            }
+
+            core.info(`${open.length} checked: ${labelled} labelled, ${cleared} cleared`);

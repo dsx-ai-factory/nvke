@@ -23,7 +23,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -47,6 +49,18 @@ const (
 	// out to for the image operations kind does not cover.
 	RuntimeCLI = "nerdctl"
 
+	// netconfPathEnv is the environment form of nerdctl's --cni-netconfpath:
+	// the directory nerdctl writes its network configs to.
+	netconfPathEnv = "NETCONFPATH"
+
+	// SharedCNIConfDir is the CNI configuration directory the node's own
+	// containerd reads, and so the one the bootstrap runtime must not write to.
+	SharedCNIConfDir = "/etc/cni/net.d"
+
+	// IsolatedCNIConfDir is where the bootstrap runtime's network configs go
+	// instead of SharedCNIConfDir.
+	IsolatedCNIConfDir = "/etc/containerd-nerdctl/net.d"
+
 	// createCleanupTimeout bounds each of the diagnostics and the teardown that follow a
 	// failed create. They run on a context detached from the caller's, so they
 	// need a stop of their own.
@@ -60,8 +74,49 @@ const (
 // CommandRunner interface, whose implementations include test fakes and
 // could include anything. One that annotated the map it was handed would
 // otherwise corrupt every later invocation in the process.
+//
+// It also moves nerdctl's network configs out of SharedCNIConfDir, which is the
+// node containerd's own conf_dir. Left there, the bootstrap bridge is the only
+// CNI config on the node between kubeadm init and the CNI plugin writing its
+// own, so the first pods are sandboxed on the bootstrap bridge and keep that
+// address: CoreDNS then answers on a network the cluster's pods cannot reach.
 func kindEnv() map[string]string {
-	return map[string]string{kindExperimentalProviderEnv: RuntimeCLI}
+	return kindEnvAs(os.Geteuid(), os.Getenv(netconfPathEnv))
+}
+
+// kindEnvAs is kindEnv for a given effective user and NETCONFPATH. An operator's
+// NETCONFPATH wins unless it names SharedCNIConfDir, which is the directory this
+// exists to avoid and is replaced like an unset value. Rootless nerdctl keeps its
+// own per-user directory, which never reaches the node containerd.
+func kindEnvAs(euid int, netconfPath string) map[string]string {
+	env := map[string]string{kindExperimentalProviderEnv: RuntimeCLI}
+	if netconfPath != "" && filepath.Clean(netconfPath) == SharedCNIConfDir {
+		netconfPath = ""
+	}
+	if euid == 0 && netconfPath == "" {
+		env[netconfPathEnv] = IsolatedCNIConfDir
+	}
+	return env
+}
+
+// NerdctlCNIConfigs returns the nerdctl network configs in dir, in name order.
+// A missing directory has none; any other failure to read it is an error, since
+// an unreadable directory has not been shown to be clear.
+func NerdctlCNIConfigs(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("listing nerdctl CNI configs in %s: %w", dir, err)
+	}
+	var paths []string
+	for _, entry := range entries {
+		if ok, _ := filepath.Match("nerdctl-*.conflist", entry.Name()); ok {
+			paths = append(paths, filepath.Join(dir, entry.Name()))
+		}
+	}
+	return paths, nil
 }
 
 // Mount is an extra bind mount into every cluster node container, for e.g.
@@ -334,8 +389,11 @@ func (e *Engine) Kubeconfig(ctx context.Context, clusterName string) (string, er
 	return path, nil
 }
 
-// LoadImage loads a locally built image into every node of clusterName. It
-// saves the image to a temporary archive first and hands kind that archive.
+// LoadImage loads image from the host's image store into every node of
+// clusterName through a temporary archive. It may change the host's store
+// first: a multi-platform tag is retagged to this host's manifest, and an
+// image pinned by digest gets a <repo>:nvkectl-<hex> tag and, for an index,
+// every platform pulled.
 //
 // `kind load docker-image` is unusable here: its "is the image present, and
 // what is its ID" and "save it to a tarball" steps are hardcoded to the
@@ -354,7 +412,7 @@ func (e *Engine) LoadImage(ctx context.Context, clusterName, image string) error
 	e.log.Info("loading image into bootstrap kind cluster",
 		"cluster", clusterName, "image", image)
 
-	archivePath, cleanup, err := saveImageArchive(ctx, e.Runner, image)
+	archivePath, cleanup, err := saveImageArchive(ctx, e.Runner, e.log, image)
 	if err != nil {
 		return err
 	}
@@ -369,8 +427,12 @@ func (e *Engine) LoadImage(ctx context.Context, clusterName, image string) error
 
 // saveImageArchive saves image to a temp tarball via `nerdctl save`. The
 // caller must call cleanup once done with the file.
-func saveImageArchive(ctx context.Context, runner CommandRunner, image string) (path string, cleanup func(), err error) {
+func saveImageArchive(ctx context.Context, runner CommandRunner, log *slog.Logger, image string) (path string, cleanup func(), err error) {
 	if err := flattenToHostPlatform(ctx, runner, RuntimeCLI, image); err != nil {
+		return "", nil, err
+	}
+	flags, names, err := prepareDigestRef(ctx, runner, log, RuntimeCLI, image)
+	if err != nil {
 		return "", nil, err
 	}
 
@@ -382,7 +444,8 @@ func saveImageArchive(ctx context.Context, runner CommandRunner, image string) (
 	_ = f.Close()
 	cleanup = func() { _ = os.Remove(archivePath) }
 
-	if out, err := runner.Run(ctx, nil, RuntimeCLI, "save", "-o", archivePath, image); err != nil {
+	args := append(append([]string{"save"}, flags...), "-o", archivePath)
+	if out, err := runner.Run(ctx, nil, RuntimeCLI, append(args, names...)...); err != nil {
 		cleanup()
 		return "", nil, fmt.Errorf("%s save %s: %w\n%s", RuntimeCLI, image, err, out)
 	}
@@ -398,8 +461,8 @@ func saveImageArchive(ctx context.Context, runner CommandRunner, image string) (
 // --all-platforms`, so it reads every entry the index lists and fails on the
 // platform nobody pulled: "content digest sha256:...: not found".
 //
-// A digest reference is already one manifest, and `tag` cannot target one, so
-// it is left alone.
+// A digest reference is left alone: retagging its name would point it at a
+// different digest. prepareDigestRef readies those instead.
 //
 // Pulls the platform manifest by digest before retagging (see the comment on
 // that call below) -- without it, `tag` fails with "not found" for a digest
@@ -410,16 +473,9 @@ func flattenToHostPlatform(ctx context.Context, runner CommandRunner, cli, image
 	if !ok {
 		return nil
 	}
-	out, err := runner.Run(ctx, nil, cli, "image", "inspect", "--mode=native",
-		"--format", "{{.Image.Target.Digest}} {{.ManifestDesc.Digest}}", image)
+	target, manifest, err := inspectTargetAndManifest(ctx, runner, cli, image)
 	if err != nil {
-		return fmt.Errorf("%s image inspect %s: %w\n%s", cli, image, err, out)
-	}
-	// One line per store entry matching image, all the same pair.
-	line, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
-	target, manifest, ok := strings.Cut(line, " ")
-	if !ok || !strings.HasPrefix(manifest, "sha256:") {
-		return fmt.Errorf("%s image inspect %s: want two sha256 digests, got %q", cli, image, out)
+		return err
 	}
 	// Equal means the tag already points at one manifest, so there is no
 	// index to flatten. A locally built or loaded image is always this, and
@@ -450,6 +506,82 @@ func flattenToHostPlatform(ctx context.Context, runner CommandRunner, cli, image
 		return fmt.Errorf("%s tag %s %s: %w\n%s", cli, digestRef, image, err, out)
 	}
 	return nil
+}
+
+// prepareDigestRef prepares an image pinned by a sha256 digest for `nerdctl
+// save`. It tags the image <repo>:nvkectl-<first 12 hex digits> in the local
+// image store and, when the digest names a multi-platform index, pulls every
+// platform the index lists. It returns the save flags and the names to save,
+// the image and that tag. Any other reference is returned under its own name
+// with no flags.
+func prepareDigestRef(ctx context.Context, runner CommandRunner, log *slog.Logger, cli, image string) (flags, names []string, err error) {
+	tag, ok := localTagForDigestRef(image)
+	if !ok {
+		return nil, []string{image}, nil
+	}
+	target, manifest, err := inspectTargetAndManifest(ctx, runner, cli, image)
+	if err != nil {
+		return nil, nil, err
+	}
+	// The earlier pull fetched an index for this host's platform only, and
+	// kind imports with `ctr images import --all-platforms`, so the archive
+	// must carry every platform the index lists.
+	if target != manifest {
+		log.Info("pulling every platform of the pinned image index; kind imports them all",
+			"image", image, "index", target)
+		if out, err := runner.Run(ctx, nil, cli, "pull", "--all-platforms", image); err != nil {
+			return nil, nil, fmt.Errorf("%s pull --all-platforms %s: %w\n%s", cli, image, err, out)
+		}
+		flags = []string{"--all-platforms"}
+	}
+	// kind's import also names the archive import-<date>@sha256:<digest of the
+	// archive's index>. The node's CRI uses an image's first reference, tagged
+	// ones first, in normalized form: for a digest-only image that can be
+	// docker.io/library/import-<date>@..., a name containerd never stored, and
+	// creating the container fails with "failed to check if this is a
+	// checkpoint image". A tagged name always sorts first.
+	log.Info("tagging the digest-pinned image so the node can resolve it", "image", image, "tag", tag)
+	if out, err := runner.Run(ctx, nil, cli, "tag", image, tag); err != nil {
+		return nil, nil, fmt.Errorf("%s tag %s %s: %w\n%s", cli, image, tag, err, out)
+	}
+	return flags, []string{image, tag}, nil
+}
+
+// inspectTargetAndManifest returns the digest image points at and the digest
+// of the manifest for this host's platform. The two differ when image is a
+// multi-arch index.
+func inspectTargetAndManifest(ctx context.Context, runner CommandRunner, cli, image string) (target, manifest string, err error) {
+	out, err := runner.Run(ctx, nil, cli, "image", "inspect", "--mode=native",
+		"--format", "{{.Image.Target.Digest}} {{.ManifestDesc.Digest}}", image)
+	if err != nil {
+		return "", "", fmt.Errorf("%s image inspect %s: %w\n%s", cli, image, err, out)
+	}
+	// One line per store entry matching image, all the same pair.
+	line, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
+	target, manifest, ok := strings.Cut(line, " ")
+	if !ok || !strings.HasPrefix(manifest, "sha256:") {
+		return "", "", fmt.Errorf("%s image inspect %s: want two sha256 digests, got %q", cli, image, out)
+	}
+	return target, manifest, nil
+}
+
+// localTagForDigestRef returns "<repo>:nvkectl-<first 12 hex digits>" for an
+// image pinned by a sha256 digest, "repo[:tag]@sha256:<hex>", and false for
+// any other reference.
+func localTagForDigestRef(image string) (string, bool) {
+	repo, digest, ok := strings.Cut(image, "@")
+	if !ok {
+		return "", false
+	}
+	hex, ok := strings.CutPrefix(digest, "sha256:")
+	if !ok || len(hex) != 64 {
+		return "", false
+	}
+	// A reference carries one tag: drop any tag beside the digest.
+	if i := strings.LastIndex(repo, ":"); i > strings.LastIndex(repo, "/") {
+		repo = repo[:i]
+	}
+	return repo + ":nvkectl-" + hex[:12], true
 }
 
 // repoOfTaggedRef splits the repository off a "repo:tag" reference. It reports

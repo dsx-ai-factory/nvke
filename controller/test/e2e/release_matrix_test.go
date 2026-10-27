@@ -4,6 +4,7 @@
 package e2e
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -22,7 +23,7 @@ import (
 )
 
 // errReleaseMetadataUnavailable is returned when fleet release metadata
-// cannot be located (sibling nke-site-deploy / NKE_CONTROLLER_RELEASES_DIR).
+// cannot be located (sibling nke-site-deploy / NVKE_CONTROLLER_RELEASES_DIR).
 var errReleaseMetadataUnavailable = errors.New("release fleet metadata unavailable")
 
 func isReleaseMetadataUnavailable(err error) bool {
@@ -326,13 +327,14 @@ func resolveReleasesDir() (string, error) {
 	// An explicit directory is authoritative. Falling back from it would run the
 	// matrix against releases the caller did not name, and the error below is
 	// not errOSProfileMetadataUnavailable, so it fails rather than skips.
-	if dir := os.Getenv("NKE_CONTROLLER_RELEASES_DIR"); dir != "" {
+	// NKE_CONTROLLER_RELEASES_DIR is a deprecated alias for NVKE_CONTROLLER_RELEASES_DIR; #1399 removes it.
+	if dir := cmp.Or(os.Getenv("NVKE_CONTROLLER_RELEASES_DIR"), os.Getenv("NKE_CONTROLLER_RELEASES_DIR")); dir != "" {
 		matches, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
 		if err != nil {
-			return "", fmt.Errorf("listing NKE_CONTROLLER_RELEASES_DIR %s: %w", dir, err)
+			return "", fmt.Errorf("listing NVKE_CONTROLLER_RELEASES_DIR %s: %w", dir, err)
 		}
 		if len(matches) == 0 {
-			return "", fmt.Errorf("NKE_CONTROLLER_RELEASES_DIR is %s, which holds no release manifests", dir)
+			return "", fmt.Errorf("NVKE_CONTROLLER_RELEASES_DIR is %s, which holds no release manifests", dir)
 		}
 		return dir, nil
 	}
@@ -354,7 +356,7 @@ func resolveReleasesDir() (string, error) {
 		}
 		missing = append(missing, dir)
 	}
-	return "", fmt.Errorf("%w (set NKE_CONTROLLER_RELEASES_DIR to nke-site-deploy/cwe-profiles/releases); tried: %s", errReleaseMetadataUnavailable, strings.Join(missing, ", "))
+	return "", fmt.Errorf("%w (set NVKE_CONTROLLER_RELEASES_DIR to nke-site-deploy/cwe-profiles/releases); tried: %s", errReleaseMetadataUnavailable, strings.Join(missing, ", "))
 }
 
 func TestNicoVMSReleaseMatrix(t *testing.T) {

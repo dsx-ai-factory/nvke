@@ -25,9 +25,15 @@ gateway_logs:
             - { key: tls.key, path: tls.key }
             - { key: ca.crt, path: ca.crt }
       - name: backend-tls
-        secret:
-          secretName: backend-tls
+        projected:
           defaultMode: 0440
+          sources:
+            - secret:
+                name: backend-tls
+                items:
+                  - { key: ca.crt, path: ca.crt }
+                  - { key: tls.crt, path: tls.crt }
+                  - { key: tls.key, path: tls.key }
     volumeMounts:
       - name: internal-tls-server
         mountPath: /etc/nktp/internal-tls/server
@@ -67,9 +73,15 @@ gateway_metrics:
             - { key: tls.key, path: tls.key }
             - { key: ca.crt, path: ca.crt }
       - name: backend-tls
-        secret:
-          secretName: backend-tls
+        projected:
           defaultMode: 0440
+          sources:
+            - secret:
+                name: backend-tls
+                items:
+                  - { key: ca.crt, path: ca.crt }
+                  - { key: tls.crt, path: tls.crt }
+                  - { key: tls.key, path: tls.key }
     volumeMounts:
       - name: internal-tls-server
         mountPath: /etc/nktp/internal-tls/server
@@ -109,9 +121,15 @@ gateway_traces:
             - { key: tls.key, path: tls.key }
             - { key: ca.crt, path: ca.crt }
       - name: backend-tls
-        secret:
-          secretName: backend-tls
+        projected:
           defaultMode: 0440
+          sources:
+            - secret:
+                name: backend-tls
+                items:
+                  - { key: ca.crt, path: ca.crt }
+                  - { key: tls.crt, path: tls.crt }
+                  - { key: tls.key, path: tls.key }
     volumeMounts:
       - name: internal-tls-server
         mountPath: /etc/nktp/internal-tls/server

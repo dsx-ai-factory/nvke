@@ -35,7 +35,7 @@ func TestPinFleetOIDCProviders(t *testing.T) {
 		wantWarning bool
 	}{
 		{
-			name:    "no nke-controller-config pins nothing",
+			name:    "no nvke-controller-config pins nothing",
 			version: "1.34.1",
 		},
 		{

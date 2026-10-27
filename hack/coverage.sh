@@ -49,6 +49,7 @@ coverage_dir="${COVERAGE_DIR:-${repo_root}/coverage}"
 # includes make/coverage.mk and appends $(GO_COVER_FLAGS) to its `go test`.
 COVERAGE_MODULES=(
 	agent
+	auth
 	cli
 	cluster-api-provider-provisioned
 	controller

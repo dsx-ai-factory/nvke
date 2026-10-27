@@ -38,12 +38,15 @@ default. Each kubelet certificate must cover the node IP that the collector
 uses.
 
 To enable verification, first create a ConfigMap in the NVKE telemetry pipeline (NKTP) release namespace
-that contains the kubelet-serving CA:
+that contains the kubelet-serving CA. Edit the namespace and local certificate
+path below before running:
 
 ```console
+NKTP_NAMESPACE=nktp
+KUBELET_CA_FILE=/path/to/kubelet-serving-ca.crt
 kubectl create configmap kubelet-serving-ca \
-  --namespace <release-namespace> \
-  --from-file=ca.crt=/path/to/kubelet-serving-ca.crt
+  --namespace "$NKTP_NAMESPACE" \
+  --from-file="ca.crt=$KUBELET_CA_FILE"
 ```
 
 Then mount it into the collector. Add this volume to

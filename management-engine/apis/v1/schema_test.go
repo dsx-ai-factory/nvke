@@ -208,6 +208,19 @@ var baseResources = map[string]string{
 			"machineInit": {"userDataTemplate": "#cloud-config\nhostname: {{ .Hostname }}\n"}
 		}
 	}`,
+	"controlplaneclasses": `{
+		"apiVersion": "internal.nvke.nvidia.com/v1",
+		"kind": "ControlPlaneClass",
+		"metadata": {"name": "standard"},
+		"spec": {
+			"controlPlane": {
+				"replicas": 3,
+				"instanceTypePreferences": ["1c3e5a7f-9b1d-4f3e-a5c7-e9b1d3f5a7c9"],
+				"systemReservedMemory": "16Gi"
+			},
+			"rollout": {"strategy": {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 0}}}
+		}
+	}`,
 }
 
 // releaseResources are the two kinds that share the release shape. Every rule
@@ -291,11 +304,77 @@ func deleteField(obj map[string]any, path []string) {
 }
 
 func TestGeneratedResourceSchemas(t *testing.T) {
-	for _, resource := range []string{"nvkeclusters", "machineimages", "clusterreleases", "nodepoolreleases"} {
+	for _, resource := range []string{"nvkeclusters", "machineimages", "clusterreleases", "nodepoolreleases", "controlplaneclasses"} {
 		t.Run(resource, func(t *testing.T) {
 			loadResourceSchema(t, resource).admit(t, baseResource(t, resource), nil)
 		})
 	}
+}
+
+// TestControlPlaneClassAdmission checks required policy choices and provider-neutral
+// identifiers through Kubernetes admission rather than inspecting markers.
+func TestControlPlaneClassAdmission(t *testing.T) {
+	replicas := []string{"spec", "controlPlane", "replicas"}
+	preferences := []string{"spec", "controlPlane", "instanceTypePreferences"}
+	memory := []string{"spec", "controlPlane", "systemReservedMemory"}
+	strategy := []string{"spec", "rollout", "strategy", "type"}
+	surge := []string{"spec", "rollout", "strategy", "rollingUpdate", "maxSurge"}
+
+	schema := loadResourceSchema(t, "controlplaneclasses")
+	schema.runCreate(t, "controlplaneclasses", []fieldCase{
+		{name: "missing spec", path: []string{"spec"}, remove: true, invalid: true},
+		{name: "missing control plane", path: []string{"spec", "controlPlane"}, remove: true, invalid: true},
+		{name: "missing rollout", path: []string{"spec", "rollout"}, remove: true, invalid: true},
+		{name: "missing replicas", path: replicas, remove: true, invalid: true},
+		{name: "zero replicas", path: replicas, value: int64(0), invalid: true},
+		{name: "single replica without surge", path: replicas, value: int64(1), invalid: true},
+		{name: "two replicas without surge", path: replicas, value: int64(2)},
+		{name: "missing preferences", path: preferences, remove: true, invalid: true},
+		{name: "empty preferences", path: preferences, value: []any{}, invalid: true},
+		{name: "empty instance identifier", path: preferences, value: []any{""}, invalid: true},
+		{name: "provider native identifier", path: preferences, value: []any{"provider.example/instance-types/CP_Large"}},
+		{name: "missing memory reservation", path: memory, remove: true, invalid: true},
+		{name: "empty memory reservation", path: memory, value: "", invalid: true},
+		{name: "invalid memory quantity", path: memory, value: "sixteen GiB", invalid: true},
+		{name: "negative memory reservation", path: memory, value: "-1Gi", invalid: true},
+		{name: "zero memory reservation", path: memory, value: "0"},
+		{name: "decimal memory quantity", path: memory, value: "1.5G"},
+		{name: "missing rollout strategy", path: []string{"spec", "rollout", "strategy"}, remove: true, invalid: true},
+		{name: "missing strategy type", path: strategy, remove: true, invalid: true},
+		{name: "unsupported strategy", path: strategy, value: "OnDelete", invalid: true},
+		{name: "missing rolling update", path: []string{"spec", "rollout", "strategy", "rollingUpdate"}, remove: true, invalid: true},
+		{name: "missing surge", path: surge, remove: true, invalid: true},
+		{name: "negative surge", path: surge, value: int64(-1), invalid: true},
+		{name: "one surge node", path: surge, value: int64(1)},
+		{name: "multiple surge nodes", path: surge, value: int64(2), invalid: true},
+		{name: "percentage surge", path: surge, value: "25%", invalid: true},
+	})
+	t.Run("single replica cannot disable surge", func(t *testing.T) {
+		obj := baseResource(t, "controlplaneclasses")
+		setField(obj, replicas, int64(1))
+		setField(obj, surge, int64(1))
+		schema.admit(t, obj, nil)
+		updated := baseResource(t, "controlplaneclasses")
+		setField(updated, replicas, int64(1))
+		schema.check(t, true, updated, obj)
+	})
+}
+
+// TestControlPlaneClassSpecMutable permits operators to revise every policy choice.
+// Resolving those choices for existing clusters belongs to their reconciler.
+func TestControlPlaneClassSpecMutable(t *testing.T) {
+	schema := loadResourceSchema(t, "controlplaneclasses")
+	previous := baseResource(t, "controlplaneclasses")
+	schema.admit(t, previous, nil)
+	updated := mutate(t, "controlplaneclasses", func(spec map[string]any) {
+		spec["controlPlane"] = map[string]any{
+			"replicas":                int64(5),
+			"instanceTypePreferences": []any{"provider.example/instance-types/CP_Large"},
+			"systemReservedMemory":    "32Gi",
+		}
+	})
+	setField(updated, []string{"spec", "rollout", "strategy", "rollingUpdate", "maxSurge"}, int64(1))
+	schema.admit(t, updated, previous)
 }
 
 func TestNVKEClusterSchemaAdmission(t *testing.T) {

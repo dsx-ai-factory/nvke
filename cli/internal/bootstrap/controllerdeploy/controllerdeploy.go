@@ -169,7 +169,8 @@ const (
 	// (profilesDir). Set explicitly rather than left to the chart's empty
 	// default, so profilesDir names the empty /profiles the controller image
 	// ships rather than resolving somewhere else. nvkectl deploys no profiles
-	// into it; a site gets them from its deploy repository.
+	// into it unless Config.ProfilesImage is set, which copies that image's
+	// /profiles tree in; a site otherwise gets them from its deploy repository.
 	profilesPath = "/profiles"
 )
 
@@ -238,6 +239,17 @@ type Config struct {
 	// When set, the server is also published on a NodePort: the hosts that
 	// attest are outside the cluster, and a ClusterIP is not a route they have.
 	TPMEKFingerprints []string
+
+	// ProfilesImage is an OCI content image holding the OS and config profiles
+	// CWE reads, mounted at PROFILES_DIR by the chart's init container. Empty
+	// deploys CWE with the controller image's empty /profiles, which is enough
+	// for hosts that already exist and not for nodes CAPNICo creates: those need
+	// the profiles a cluster request names.
+	//
+	// A reference without a registry is side-loaded from the local image store,
+	// like CWEImage. The chart sets no pull policy on it, so it has to carry a
+	// tag other than latest, or a digest, or the cluster tries to pull it.
+	ProfilesImage string
 
 	// SPIREExternalAddress is the address nodes created by CAPNICo use to reach
 	// the SPIRE server. CWE writes it into each node's userdata, so it has to
@@ -328,6 +340,9 @@ type Config struct {
 	// OCI reference or a local path. Empty uses the spiffe.github.io hardened
 	// chart repo.
 	SPIRECRDsChartRef string
+
+	// AllowControlPlaneWithoutVIP permits dev control-plane lifecycle operations without a VIP.
+	AllowControlPlaneWithoutVIP bool
 }
 
 // TPMAttestorEnabled reports whether the bootstrap SPIRE server attests hosts
@@ -351,6 +366,9 @@ func DefaultConfig() Config {
 
 		ProvisionedProviderImage: envOr("NVKECTL_CAPI_PROVISIONED_IMAGE", defaultImage(manifest.ComponentProvisioned, manifest.ImageManager)),
 		CWEPort:                  envPort("NVKECTL_NVKE_CONTROLLER_PORT", DefaultCWEPort),
+		// Added after the rename, so it has no NKECTL_ name to fall back to and
+		// is not in Settings.
+		ProfilesImage: os.Getenv(ProfilesImageEnv),
 
 		HelmTimeout:  envDuration("NVKECTL_NVKE_CONTROLLER_HELM_TIMEOUT", 5*time.Minute),
 		ReadyTimeout: envDuration("NVKECTL_NVKE_CONTROLLER_READY_TIMEOUT", 5*time.Minute),
@@ -697,6 +715,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "image.pullPolicy=IfNotPresent",
 		"--set-string", "profiles.path=" + profilesPath,
 		"--set", "cni.installAfterInit=true",
+		"--set", fmt.Sprintf("allowControlPlaneWithoutVIP=%t", cfg.AllowControlPlaneWithoutVIP),
 		"--set", fmt.Sprintf("spiffe.enabled=%t", !cfg.DisableMTLS),
 		"--set-string", "spiffe.trustDomain=" + spireTrustDomain,
 		"--set-string", "spiffe.spire.className=" + spireControllerManagerClass,
@@ -705,6 +724,11 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "supportedInfraProviders=" + supportedInfraProviders(cfg),
 		"--set", fmt.Sprintf("service.port=%d", cwePort),
 	}
+	profilesArgs, err := profilesImageArgs(cfg)
+	if err != nil {
+		return err
+	}
+	cweArgs = append(cweArgs, profilesArgs...)
 	cweArgs = append(cweArgs, cweEnvArgs(cfg)...)
 	if cfg.NicoInfrastructure {
 		cweArgs = append(cweArgs, "--set-string", "secrets.dgxcTenantCredSecretName="+dgxcTenantSecret)
@@ -779,6 +803,53 @@ func (e *Engine) applyReleases(ctx context.Context, kubeconfigPath, path string)
 		return fmt.Errorf("controllerdeploy: applying the release manifests at %s: %w\n%s", path, err, out)
 	}
 	return nil
+}
+
+// ProfilesImageEnv names the environment variable that sets Config.ProfilesImage.
+const ProfilesImageEnv = "NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE"
+
+// ValidateProfilesImage reports an error when image cannot be used as the
+// profiles image. An empty image is valid: no profiles image is deployed. The
+// check is cheap and needs no cluster, so callers run it before anything is
+// built.
+func ValidateProfilesImage(image string) error {
+	if image == "" {
+		return nil
+	}
+	// A colon with nothing after it is not a tag at all, and splitImageRef would
+	// report it as an empty one that the latest check below lets through.
+	if repo, _, _ := strings.Cut(image, "@"); strings.HasSuffix(repo, ":") {
+		return fmt.Errorf("controllerdeploy: the profiles image %q (%s) has an empty tag: nothing follows the colon", image, ProfilesImageEnv)
+	}
+	_, tag, digest := splitImageRef(image)
+	// splitImageRef reports an untagged reference as latest. Kubernetes pulls
+	// latest unconditionally, and the chart gives this image no pull policy to
+	// override that, so a side-loaded image would never be found.
+	if digest == "" && tag == "latest" {
+		return fmt.Errorf("controllerdeploy: the profiles image %q (%s) must carry a tag other than latest, or a digest: "+
+			"the chart sets no pull policy on it, so a latest tag makes the cluster pull it instead of using the "+
+			"side-loaded copy", image, ProfilesImageEnv)
+	}
+	return nil
+}
+
+// profilesImageArgs turns Config.ProfilesImage into the chart values that make
+// its init container copy the profiles into place. Nothing is added when no
+// image is set.
+func profilesImageArgs(cfg Config) ([]string, error) {
+	if cfg.ProfilesImage == "" {
+		return nil, nil
+	}
+	if err := ValidateProfilesImage(cfg.ProfilesImage); err != nil {
+		return nil, err
+	}
+	repo, tag, digest := splitImageRef(cfg.ProfilesImage)
+	return []string{
+		"--set", "profiles.image.enabled=true",
+		"--set-string", "profiles.image.repository=" + repo,
+		"--set-string", "profiles.image.tag=" + tag,
+		"--set-string", "profiles.image.digest=" + digest,
+	}, nil
 }
 
 // cweEnvArgs renders the settings the controller reads from its own environment as helm

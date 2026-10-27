@@ -241,6 +241,7 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		updatedNode := node
 		updatedNode.IP = "10.0.0.10"
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		mockTx.On("GetNode", mock.Anything, node.ID).Return(node, nil).Maybe()
 		mockTx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil)
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
 			return nodeForUpdate.ID == node.ID &&
@@ -291,6 +292,7 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		)
 		mockDB, mockTx := newCAPIMachineReadyDB(t, typelessNode, cluster)
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		mockTx.On("GetNode", mock.Anything, typelessNode.ID).Return(typelessNode, nil).Maybe()
 		mockTx.On("GetNodeForUpdate", mock.Anything, typelessNode.ID).Return(typelessNode, nil)
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
 			return nodeForUpdate.ID == typelessNode.ID &&
@@ -332,6 +334,7 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		)
 		mockDB, mockTx := newCAPIMachineReadyDB(t, node, cluster)
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		mockTx.On("GetNode", mock.Anything, node.ID).Return(node, nil).Maybe()
 		mockTx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil)
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
 			return nodeForUpdate.ID == node.ID &&
@@ -379,6 +382,7 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		)
 		mockDB, mockTx := newCAPIMachineReadyDB(t, existing, cluster)
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		mockTx.On("GetNode", mock.Anything, existing.ID).Return(existing, nil).Maybe()
 		mockTx.On("GetNodeForUpdate", mock.Anything, existing.ID).Return(existing, nil)
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
 			return nodeForUpdate.ID == existing.ID &&
@@ -418,6 +422,7 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		)
 		mockDB, mockTx := newCAPIMachineReadyDB(t, node, cluster)
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		mockTx.On("GetNode", mock.Anything, node.ID).Return(node, nil).Maybe()
 		mockTx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil)
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
 			return nodeForUpdate.ID == node.ID &&
@@ -452,6 +457,7 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		)
 		mockDB, mockTx := newCAPIMachineReadyDB(t, node, cluster)
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		mockTx.On("GetNode", mock.Anything, node.ID).Return(node, nil).Maybe()
 		mockTx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil)
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
 			return nodeForUpdate.ID == node.ID &&
@@ -491,6 +497,7 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		)
 		mockDB, mockTx := newCAPIMachineReadyDB(t, node, cluster)
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		mockTx.On("GetNode", mock.Anything, node.ID).Return(node, nil).Maybe()
 		mockTx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil)
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
 			return nodeForUpdate.ID == node.ID &&
@@ -562,6 +569,7 @@ func TestActivities_UpdateCAPIMachineWaitNodeCondition(t *testing.T) {
 			mockTx := &testutil.MockTx{}
 			mockDB.MockTx = mockTx
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+			mockTx.On("GetNode", mock.Anything, nodeID).Return(baseNode, nil).Maybe()
 			mockTx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(baseNode, nil)
 			mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(updated *db.Node) bool {
 				switch tt.expectedType {
@@ -1063,9 +1071,10 @@ func TestApplyCAPIMachineRebootAnnotation(t *testing.T) {
 		Namespace: constants.LegacyManagementNamespace,
 		Name:      "worker-0",
 	}, storedMachine))
-	// Written in both domains while cluster-api-provider-nico deployments move over.
+	// Current domain only: cluster-api-provider-nico is pointed at this key by
+	// its --reboot-annotation flag, and a legacy copy would be dead weight.
 	require.Contains(t, storedMachine.Annotations, keys.MachineReboot.String())
-	require.Contains(t, storedMachine.Annotations, keys.MachineReboot.Legacy())
+	require.NotContains(t, storedMachine.Annotations, keys.MachineReboot.Legacy())
 	mockDB.AssertExpectations(t)
 }
 
@@ -1152,7 +1161,6 @@ func TestDeleteCAPIMachineRebootAnnotation(t *testing.T) {
 		Name:      "worker-1",
 	}, storedMachine))
 	require.NotContains(t, storedMachine.Annotations, keys.MachineReboot.String())
-	require.NotContains(t, storedMachine.Annotations, keys.MachineReboot.Legacy())
 	mockDB.AssertExpectations(t)
 }
 

@@ -32,6 +32,7 @@ on:
       - "pull-request/[0-9]+"
     paths:
       - "controller/**"
+      - "auth/**"
       - "agent/**"
       - Makefile
       # The deploy path this lane installs. Without it a change to the tree

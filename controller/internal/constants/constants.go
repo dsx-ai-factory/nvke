@@ -14,11 +14,15 @@ const (
 	TeardownClusterWorkflowPrefix      = "teardown-cluster-"
 	EnableEtcdEncryptionWorkflowPrefix = "enable-etcd-encryption-"
 	EnableOIDCWorkflowPrefix           = "enable-oidc-"
+	UpdateSpireServerWorkflowPrefix    = "update-spire-server-"
 
 	EtcdEncryptionKeySecretPrefix     = "etcd-encryption-key-"
 	EtcdEncryptionKeyFieldActive      = "active"
 	EtcdEncryptionKeyFieldActiveSince = "active-since"
 	EtcdEncryptionKeyFieldPending     = "pending"
+	EtcdEncryptionKeyFieldActiveName  = "active-name"
+	EtcdEncryptionKeyFieldPendingName = "pending-name"
+	LegacyAPIEncryptionKeyName        = "current-primary-encryption-key"
 
 	ProvisionNodePoolWorkflowPrefix = "provision-node-pool-"
 	TeardownNodePoolWorkflowPrefix  = "teardown-node-pool-"
@@ -31,6 +35,7 @@ const (
 	TeardownNodeWorkflowType         = "TeardownNode"
 	EnableEtcdEncryptionWorkflowType = "EnableEtcdEncryption"
 	EnableOIDCWorkflowType           = "EnableOIDC"
+	UpdateSpireServerWorkflowType    = "UpdateSpireServer"
 
 	RebootNodeWorkflowPrefix       = "reboot-node-"
 	RebootNodeUptimeWorkflowPrefix = "reboot-node-uptime-"

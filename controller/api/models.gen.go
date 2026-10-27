@@ -16,6 +16,19 @@ const (
 	BearerAuthScopes = "bearerAuth.Scopes"
 )
 
+// Defines values for CertificateRenewalStatusState.
+const (
+	CertificateRenewalStatusStateAccepted  CertificateRenewalStatusState = "accepted"
+	CertificateRenewalStatusStateFailed    CertificateRenewalStatusState = "failed"
+	CertificateRenewalStatusStateSucceeded CertificateRenewalStatusState = "succeeded"
+)
+
+// Defines values for CertificateRenewalStatusOutcome.
+const (
+	CertificateRenewalStatusOutcomeRenewed   CertificateRenewalStatusOutcome = "renewed"
+	CertificateRenewalStatusOutcomeUnchanged CertificateRenewalStatusOutcome = "unchanged"
+)
+
 // Defines values for ConditionStatus.
 const (
 	ConditionStatusFalse   ConditionStatus = "False"
@@ -39,6 +52,29 @@ const (
 const (
 	DiskSelectionStrategyCreateLargest  DiskSelectionStrategyCreate = "largest"
 	DiskSelectionStrategyCreateSmallest DiskSelectionStrategyCreate = "smallest"
+)
+
+// Defines values for EtcdKeyRotationStatusFailureReason.
+const (
+	EtcdKeyRotationStatusFailureReasonCanceled        EtcdKeyRotationStatusFailureReason = "canceled"
+	EtcdKeyRotationStatusFailureReasonOperationFailed EtcdKeyRotationStatusFailureReason = "operation_failed"
+)
+
+// Defines values for EtcdKeyRotationStatusPhase.
+const (
+	EtcdKeyRotationStatusPhaseAddSecondary   EtcdKeyRotationStatusPhase = "add_secondary"
+	EtcdKeyRotationStatusPhaseFinalize       EtcdKeyRotationStatusPhase = "finalize"
+	EtcdKeyRotationStatusPhasePrepare        EtcdKeyRotationStatusPhase = "prepare"
+	EtcdKeyRotationStatusPhasePromotePrimary EtcdKeyRotationStatusPhase = "promote_primary"
+	EtcdKeyRotationStatusPhaseRemoveOldKeys  EtcdKeyRotationStatusPhase = "remove_old_keys"
+	EtcdKeyRotationStatusPhaseRewrite        EtcdKeyRotationStatusPhase = "rewrite"
+)
+
+// Defines values for EtcdKeyRotationStatusState.
+const (
+	EtcdKeyRotationStatusStateFailed    EtcdKeyRotationStatusState = "failed"
+	EtcdKeyRotationStatusStateRunning   EtcdKeyRotationStatusState = "running"
+	EtcdKeyRotationStatusStateSucceeded EtcdKeyRotationStatusState = "succeeded"
 )
 
 // Defines values for LaunchLayerClusterProviderVpcType.
@@ -95,11 +131,53 @@ const (
 
 // Defines values for UpdateInProgressType.
 const (
-	UpdateInProgressTypeCpNodesRecycling UpdateInProgressType = "cp_nodes_recycling"
-	UpdateInProgressTypeEtcdEncryption   UpdateInProgressType = "etcd_encryption"
-	UpdateInProgressTypeK8SUpgrade       UpdateInProgressType = "k8s_upgrade"
-	UpdateInProgressTypeOidcEnable       UpdateInProgressType = "oidc_enable"
+	UpdateInProgressTypeCertificateRenewal UpdateInProgressType = "certificate_renewal"
+	UpdateInProgressTypeCpNodesRecycling   UpdateInProgressType = "cp_nodes_recycling"
+	UpdateInProgressTypeEtcdEncryption     UpdateInProgressType = "etcd_encryption"
+	UpdateInProgressTypeEtcdKeyRotation    UpdateInProgressType = "etcd_key_rotation"
+	UpdateInProgressTypeK8SUpgrade         UpdateInProgressType = "k8s_upgrade"
+	UpdateInProgressTypeOidcEnable         UpdateInProgressType = "oidc_enable"
+	UpdateInProgressTypeSpireServerUpdate  UpdateInProgressType = "spire_server_update"
 )
+
+// CertificateRenewalStatus The recorded lifecycle state and outcome of a certificate-renewal cycle.
+type CertificateRenewalStatus struct {
+	// CycleID The Temporal workflow ID that owns this certificate-renewal cycle.
+	CycleID string `json:"cycleID"`
+
+	// State The lifecycle state of the most recent certificate-renewal cycle.
+	State CertificateRenewalStatusState `json:"state"`
+
+	// Outcome Whether a successful cycle renewed certificates or found no certificates due.
+	Outcome *CertificateRenewalStatusOutcome `json:"outcome,omitempty"`
+
+	// Forced Whether the workflow was explicitly forced by an operator.
+	Forced bool `json:"forced"`
+
+	// ScheduledFor The scheduled due time associated with this cycle, when applicable.
+	ScheduledFor *time.Time `json:"scheduledFor,omitempty"`
+
+	// StartedAt When the workflow accepted the cycle and acquired the cluster mutation lock. Refused cycles record startedAt without holding the lock.
+	StartedAt time.Time `json:"startedAt"`
+
+	// CompletedAt When the cycle succeeded or failed.
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+
+	// FailedNodeID The control-plane node being processed when the cycle failed, when applicable.
+	FailedNodeID *openapi_types.UUID `json:"failedNodeID,omitempty"`
+
+	// Phase The workflow phase that failed, when applicable.
+	Phase *string `json:"phase,omitempty"`
+
+	// Message A bounded operator-facing failure summary.
+	Message *string `json:"message,omitempty"`
+}
+
+// CertificateRenewalStatusState The lifecycle state of the most recent certificate-renewal cycle.
+type CertificateRenewalStatusState string
+
+// CertificateRenewalStatusOutcome Whether a successful cycle renewed certificates or found no certificates due.
+type CertificateRenewalStatusOutcome string
 
 // CloudInitFile A file written by cloud-init on CAPI-backed nodes.
 type CloudInitFile struct {
@@ -151,6 +229,12 @@ type Cluster struct {
 	// CreatedAt Creation time.
 	CreatedAt time.Time `json:"createdAt"`
 
+	// NextCertRenewalDue The next scheduled certificate-renewal time. A value in the past is
+	// overdue unless a certificate-renewal operation is currently accepted.
+	// Unset until the controller first sees the cluster, which schedules
+	// the first check one renewal interval later.
+	NextCertRenewalDue *time.Time `json:"nextCertRenewalDue,omitempty"`
+
 	// Conditions Lifecycle conditions.
 	Conditions ClusterConditions `json:"conditions"`
 
@@ -175,6 +259,9 @@ type Cluster struct {
 
 // ClusterConditions Lifecycle conditions of a cluster. Each is a Condition.
 type ClusterConditions struct {
+	// CertificateRenewal The accepted, succeeded, or failed state of the most recent certificate-renewal cycle.
+	CertificateRenewal *CertificateRenewalStatus `json:"certificateRenewal,omitempty"`
+
 	// ControlPlaneUpgrading The control plane is being upgraded.
 	ControlPlaneUpgrading *Condition `json:"controlPlaneUpgrading,omitempty"`
 
@@ -183,6 +270,9 @@ type ClusterConditions struct {
 
 	// Deleting The cluster is being deleted.
 	Deleting Condition `json:"deleting"`
+
+	// EtcdKeyRotation The most recent etcd data-encryption-key rotation, including retained ownership after failure.
+	EtcdKeyRotation *EtcdKeyRotationStatus `json:"etcdKeyRotation,omitempty"`
 
 	// Provisioned The cluster is provisioned.
 	Provisioned Condition `json:"provisioned"`
@@ -227,6 +317,15 @@ type ClusterNetworkCreateConfig struct {
 	ServiceCIDR string `json:"serviceCIDR,omitempty"`
 }
 
+// ClusterSpireServerStatus Requested SPIRE server and live per-node SPIRE agent status.
+type ClusterSpireServerStatus struct {
+	// Requested The server last requested. Absent if none was requested.
+	Requested *SpireServer `json:"requested,omitempty"`
+
+	// Nodes Every node of the cluster.
+	Nodes []NodeSpireAgentStatus `json:"nodes"`
+}
+
 // Condition A status, when it last changed, and a message.
 type Condition struct {
 	// Status Condition status.
@@ -253,7 +352,7 @@ type ControlPlaneConfig struct {
 	// ConfigurationID ID of the current configuration snapshot.
 	ConfigurationID openapi_types.UUID `json:"configurationId,omitempty"`
 
-	// DesiredCount The desired number of cluster-level control plane nodes. Creating a cluster with or increasing this count above 1 requires controlPlaneVIP on the cluster.
+	// DesiredCount The desired number of cluster-level control plane nodes. Creating a cluster with or increasing this count above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
 	DesiredCount int `json:"desiredCount,omitempty"`
 
 	// Infra Infra provider control plane fields.
@@ -416,7 +515,7 @@ type ControlPlaneStatus struct {
 // `nico` carries the NICo settings for the control-plane nodes; it is required
 // for a NICo cluster. `launchLayer` is required for a LaunchLayer cluster.
 type CreateClusterControlPlaneConfig struct {
-	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1. Values above 1 require controlPlaneVIP on the cluster.
+	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1. Values above 1 require controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
 	DesiredCount int `json:"desiredCount"`
 
 	// Infra Infra provider fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
@@ -477,10 +576,12 @@ type CreateClusterRequest struct {
 	// ControlPlaneVIP Virtual IP for the API server through kube-vip. Omit to skip kube-vip and
 	// use the first control-plane node's IP as the API server endpoint. Must not
 	// fall inside the pod or service CIDR. An explicit empty string is rejected.
-	// Without a VIP, a new cluster must have exactly one desired control-plane
-	// node. Control-plane scale-up above one node, upgrades, and configuration
-	// changes that replace control-plane nodes require a VIP. Recreate a no-VIP
-	// cluster with controlPlaneVIP to make those operations available.
+	// By default, a cluster without a VIP must have exactly one desired
+	// control-plane node. Scale-up above one node, upgrades and node replacement
+	// require a VIP unless the controller deployment enables the development-only
+	// allowControlPlaneWithoutVIP setting. That override keeps the initializing
+	// node's IP as the endpoint; replacing that node can break API access.
+	// Quorum, health and deletion protections still apply.
 	ControlPlaneVIP string `json:"controlPlaneVIP,omitempty"`
 
 	// TeleportEnabled Enable Teleport SSH enrollment for nodes in this cluster. When omitted, the server-side default for the site is applied.
@@ -537,7 +638,7 @@ type CreateNodePoolRequest struct {
 	// NodeTaints Taints applied to the pool's nodes at creation. Not allowed on control-plane pools. Keys under nvke.nvidia.com, nke.nvidia.com (legacy), nke.io (legacy), kubernetes.io, k8s.io and their subdomains are reserved. Each key and effect pair may appear only once.
 	NodeTaints []NodeTaint `json:"nodeTaints,omitempty"`
 
-	// DesiredNodeCount The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster.
+	// DesiredNodeCount The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
 	DesiredNodeCount int `json:"desiredNodeCount"`
 
 	// Description Free-text description.
@@ -598,6 +699,39 @@ type DiskSelectionStrategy string
 
 // DiskSelectionStrategyCreate Which disk the OS is installed on. Default smallest.
 type DiskSelectionStrategyCreate string
+
+// EtcdKeyRotationStatus Durable status and retained ownership of an etcd data-encryption-key rotation.
+type EtcdKeyRotationStatus struct {
+	// CompletedAt When the terminal success or failure was recorded.
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+
+	// FailureReason A bounded reason without keys, arbitrary error strings, or secret identifiers.
+	FailureReason *EtcdKeyRotationStatusFailureReason `json:"failureReason,omitempty"`
+
+	// LastProgressAt When a phase was entered or a terminal state was recorded. Polling does not advance it.
+	LastProgressAt time.Time `json:"lastProgressAt"`
+
+	// Phase The last entered phase, which a failure retains. A `prepare` failure releases the mutation lock, so start a new rotation workflow after fixing it; a failure in a later phase keeps the lock for recovery of the owning workflow.
+	Phase EtcdKeyRotationStatusPhase `json:"phase"`
+
+	// StartedAt When rotation ownership was accepted by the controller.
+	StartedAt time.Time `json:"startedAt"`
+
+	// State Whether the owned rotation is running, succeeded, or failed.
+	State EtcdKeyRotationStatusState `json:"state"`
+
+	// WorkflowID The Temporal workflow ID owning rotation and recovery. Never use as a metric label.
+	WorkflowID string `json:"workflowID"`
+}
+
+// EtcdKeyRotationStatusFailureReason A bounded reason without keys, arbitrary error strings, or secret identifiers.
+type EtcdKeyRotationStatusFailureReason string
+
+// EtcdKeyRotationStatusPhase The last entered phase, which a failure retains. A `prepare` failure releases the mutation lock, so start a new rotation workflow after fixing it; a failure in a later phase keeps the lock for recovery of the owning workflow.
+type EtcdKeyRotationStatusPhase string
+
+// EtcdKeyRotationStatusState Whether the owned rotation is running, succeeded, or failed.
+type EtcdKeyRotationStatusState string
 
 // GenericError Error response body.
 type GenericError struct {
@@ -1318,7 +1452,7 @@ type NodePoolCreateConfig struct {
 	// NodeTaints Taints applied to the pool's nodes at creation. Not allowed on control-plane pools. Keys under nvke.nvidia.com, nke.nvidia.com (legacy), nke.io (legacy), kubernetes.io, k8s.io and their subdomains are reserved. Each key and effect pair may appear only once.
 	NodeTaints []NodeTaint `json:"nodeTaints,omitempty"`
 
-	// DesiredNodeCount The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster.
+	// DesiredNodeCount The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
 	DesiredNodeCount int `json:"desiredNodeCount"`
 
 	// Description Free-text description.
@@ -1396,6 +1530,34 @@ type NodeSet struct {
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
 }
 
+// NodeSpireAgentStatus One node's SPIRE agent, as reported live by its node agent.
+type NodeSpireAgentStatus struct {
+	// NodeID Node ID.
+	NodeID openapi_types.UUID `json:"nodeID"`
+
+	// Name Node name.
+	Name string `json:"name"`
+
+	// Reachable The node agent answered. When false, only `message` is set.
+	Reachable bool `json:"reachable"`
+
+	// ServerAddress SPIRE server address in the node's agent config.
+	ServerAddress *string `json:"serverAddress,omitempty"`
+
+	// ServerPort SPIRE server port in the node's agent config.
+	ServerPort *int `json:"serverPort,omitempty"`
+
+	// HasValidSVID The running SPIRE agent uses the config above and serves an
+	// unexpired X.509 SVID, so it holds a certificate from that server.
+	HasValidSVID bool `json:"hasValidSVID"`
+
+	// SvidExpiresAt Expiry of that SVID.
+	SvidExpiresAt *time.Time `json:"svidExpiresAt,omitempty"`
+
+	// Message Why the node is unreachable or has no valid SVID.
+	Message *string `json:"message,omitempty"`
+}
+
 // NodeTaint A Kubernetes taint applied to nodes in a pool.
 type NodeTaint struct {
 	// Effect Kubernetes taint effect.
@@ -1417,14 +1579,24 @@ type Release struct {
 	Name string `json:"name"`
 }
 
+// SpireServer A SPIRE server address the cluster's SPIRE agents dial.
+type SpireServer struct {
+	// Address Host name or IP address of the SPIRE server.
+	Address string `json:"address"`
+
+	// Port SPIRE server port.
+	Port int `json:"port"`
+}
+
 // UpdateClusterControlPlaneConfig Changes to `release` or the Kubernetes version start a control-plane
 // rollout. All fields are optional. A provider payload that does not match the
 // cluster's provider is rejected with 400.
-// Rollout-triggering changes require controlPlaneVIP. maxSurge alone does not
+// Rollout-triggering changes require controlPlaneVIP unless the development-only
+// allowControlPlaneWithoutVIP setting is enabled. maxSurge alone does not
 // trigger a rollout and remains mutable without a VIP.
 type UpdateClusterControlPlaneConfig struct {
 	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1.
-	// Increasing the count above 1 requires controlPlaneVIP on the cluster.
+	// Increasing the count above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
 	DesiredCount *int `json:"desiredCount,omitempty"`
 
 	// Infra The mutable infra provider control plane fields. Every field carries three states: omitted
@@ -1462,14 +1634,16 @@ type UpdateClusterRequest struct {
 	// ControlPlaneConfig Changes to `release` or the Kubernetes version start a control-plane
 	// rollout. All fields are optional. A provider payload that does not match the
 	// cluster's provider is rejected with 400.
-	// Rollout-triggering changes require controlPlaneVIP. maxSurge alone does not
+	// Rollout-triggering changes require controlPlaneVIP unless the development-only
+	// allowControlPlaneWithoutVIP setting is enabled. maxSurge alone does not
 	// trigger a rollout and remains mutable without a VIP.
 	ControlPlaneConfig *UpdateClusterControlPlaneConfig `json:"controlPlaneConfig,omitempty"`
 
 	// ControlPlaneKubernetesVersion Target control-plane version, as X.Y.Z with no leading "v". Must be newer than
 	// the current version by at most one minor version and keep every worker pool
 	// within 3 minor versions.
-	// The cluster must have controlPlaneVIP configured.
+	// The cluster must have controlPlaneVIP configured unless the development-only
+	// allowControlPlaneWithoutVIP setting is enabled.
 	ControlPlaneKubernetesVersion *string `json:"controlPlaneKubernetesVersion,omitempty"`
 
 	// EnableCPNodeRecycling Turn automatic control-plane node replacement on or off.
@@ -1494,8 +1668,17 @@ type UpdateClusterRequest struct {
 }
 
 // UpdateInProgress The mutually exclusive cluster operation in progress. Absent when none.
+// `etcd_key_rotation` is reported while an etcd data-encryption-key rotation
+// holds the lock, and also after a rotation that failed after `prepare`,
+// which keeps the lock until its owning workflow is recovered (see
+// `conditions.etcdKeyRotation`). A `prepare` failure releases the lock.
+// Exhaustive client switches over `type` must handle it.
 type UpdateInProgress struct {
-	// Type Operation in progress.
+	// Type Operation in progress. `certificate_renewal` is reported while a
+	// scheduled or forced certificate-renewal cycle holds the lock, and
+	// also after a failed cycle whose lock is retained until an operator
+	// clears it. Clients that switch exhaustively over this value must
+	// handle it.
 	Type UpdateInProgressType `json:"type"`
 
 	// Message Detail.
@@ -1505,13 +1688,18 @@ type UpdateInProgress struct {
 	StartedAt time.Time `json:"startedAt"`
 }
 
-// UpdateInProgressType Operation in progress.
+// UpdateInProgressType Operation in progress. `certificate_renewal` is reported while a
+// scheduled or forced certificate-renewal cycle holds the lock, and
+// also after a failed cycle whose lock is retained until an operator
+// clears it. Clients that switch exhaustively over this value must
+// handle it.
 type UpdateInProgressType string
 
 // UpdateNodePoolRequest All fields are optional. A provider payload that does not match the node pool's
 // cluster is rejected with 400.
 // Updating a control-plane pool in a way that creates a replacement node set
-// requires controlPlaneVIP. maxSurge alone does not create a replacement
+// requires controlPlaneVIP unless the development-only allowControlPlaneWithoutVIP
+// setting is enabled. maxSurge alone does not create a replacement
 // and remains mutable without a VIP.
 type UpdateNodePoolRequest struct {
 	// AutoModeDisabled Disables auto-mode (automatic node recycling).
@@ -1523,7 +1711,7 @@ type UpdateNodePoolRequest struct {
 	// Description Free-text description.
 	Description *string `json:"description,omitempty"`
 
-	// DesiredNodeCount The desired number of nodes in the pool. Increasing aggregate control-plane capacity above 1 requires controlPlaneVIP on the cluster.
+	// DesiredNodeCount The desired number of nodes in the pool. Increasing aggregate control-plane capacity above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
 	DesiredNodeCount *int `json:"desiredNodeCount,omitempty"`
 
 	// Infra The mutable infra provider node pool fields. Every field carries three states: omitted
@@ -1619,6 +1807,9 @@ type CreateClusterJSONRequestBody = CreateClusterRequest
 
 // UpdateClusterJSONRequestBody defines body for UpdateCluster for application/json ContentType.
 type UpdateClusterJSONRequestBody = UpdateClusterRequest
+
+// UpdateClusterSpireServerJSONRequestBody defines body for UpdateClusterSpireServer for application/json ContentType.
+type UpdateClusterSpireServerJSONRequestBody = SpireServer
 
 // CreateNodePoolJSONRequestBody defines body for CreateNodePool for application/json ContentType.
 type CreateNodePoolJSONRequestBody = CreateNodePoolRequest

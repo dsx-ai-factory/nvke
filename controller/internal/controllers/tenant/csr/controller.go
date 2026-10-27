@@ -4,7 +4,9 @@
 package csr
 
 import (
+	"bytes"
 	"context"
+	"crypto"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -13,6 +15,7 @@ import (
 	"net"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	certificatesv1 "k8s.io/api/certificates/v1"
@@ -29,7 +32,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/tenant"
+	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 )
 
 const (
@@ -56,6 +61,7 @@ type Reconciler struct {
 	database  database
 	client    client.Client
 	logger    *slog.Logger
+	audit     *credentialaudit.Recorder
 }
 
 type csrDecision struct {
@@ -72,6 +78,10 @@ func NewRegistrar(database database, logger *slog.Logger) tenant.Registrar {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	var audit *credentialaudit.Recorder
+	if store, ok := database.(credentialaudit.Store); ok {
+		audit = credentialaudit.NewRecorder(store, logger, metrics.RecordCredentialAuditWrite)
+	}
 	return func(clusterID uuid.UUID, manager ctrl.Manager) error {
 		controllerName, controllerOptions := tenantCSRControllerRegistration(clusterID)
 		reconciler := &Reconciler{
@@ -79,6 +89,7 @@ func NewRegistrar(database database, logger *slog.Logger) tenant.Registrar {
 			database:  database,
 			client:    manager.GetClient(),
 			logger:    logger,
+			audit:     audit,
 		}
 		return ctrl.NewControllerManagedBy(manager).
 			Named(controllerName).
@@ -111,6 +122,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 		return ctrl.Result{}, fmt.Errorf("getting tenant CSR %s for cluster %s: %w", request.Name, r.clusterID, err)
 	}
 	if !isPendingKubeletServingCSR(csr) {
+		r.auditIssuedCertificate(ctx, csr)
 		return ctrl.Result{}, nil
 	}
 	cluster, err := r.database.GetCluster(ctx, r.clusterID)
@@ -130,14 +142,127 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 	}
 	decision := planDecision(csr, nodes)
 	if decision.Action == decisionSkip {
+		// Only a managed node's rejected CSR is ledger evidence; other requestors
+		// are never written. A tenant can still create CSRs naming a managed
+		// node, so every CSR-derived write goes through a per-node bound.
+		if _, managed := knownNodeIP(nodes, decision.NodeName); managed {
+			r.auditDecision(ctx, decision, nodes, credentialaudit.ActionCheck, credentialaudit.OutcomeNoop, credentialaudit.ReasonRejected)
+		}
 		r.logDecision(decision)
 		return ctrl.Result{}, nil
 	}
+	r.auditDecision(ctx, decision, nodes, credentialaudit.ActionCheck, credentialaudit.OutcomeSuccess, credentialaudit.ReasonVerified)
 	if err := r.applyDecision(ctx, decision); err != nil {
+		r.auditDecision(ctx, decision, nodes, credentialaudit.ActionApprove, credentialaudit.OutcomeFailure, credentialaudit.ReasonApprovalFail)
 		return ctrl.Result{}, err
 	}
+	r.auditDecision(ctx, decision, nodes, credentialaudit.ActionApprove, credentialaudit.OutcomeSuccess, credentialaudit.ReasonCompleted)
 	r.logDecision(decision)
 	return ctrl.Result{}, nil
+}
+
+func (r *Reconciler) auditDecision(ctx context.Context, decision csrDecision, nodes []db.Node, action, outcome, reason string) {
+	if r.audit == nil {
+		return
+	}
+	r.audit.RecordCSR(ctx, r.csrAuditEvent(decision, nodes, action, outcome, reason))
+}
+
+func (r *Reconciler) csrAuditEvent(decision csrDecision, nodes []db.Node, action, outcome, reason string) credentialaudit.Event {
+	target := credentialaudit.Target{ClusterID: r.clusterID.String()}
+	for _, node := range nodes {
+		if node.Name == decision.NodeName {
+			target.NodeID = node.ID.String()
+			break
+		}
+	}
+	now := time.Now().UTC()
+	operation := string(decision.CSR.UID)
+	if reason == credentialaudit.ReasonRejected {
+		// A tenant can create rejected CSRs naming a managed node at will. One
+		// identity per node and UTC hour gives them one event ID, so repeats are
+		// stored once and use one slot of the per-node bound, leaving the rest to
+		// approvals and issued certificates.
+		operation = target.NodeID + "/rejected/" + now.Truncate(time.Hour).Format(time.RFC3339)
+	}
+	return credentialaudit.Event{
+		Timestamp: now, Action: action, Credential: credentialaudit.TypeServing,
+		Plane: credentialaudit.PlaneT2, Target: target, Actor: credentialaudit.Actor{Kind: credentialaudit.ActorAutomatic},
+		Outcome: outcome, Reason: reason,
+		Correlation: credentialaudit.Correlation{OperationHash: credentialaudit.Hash("operation", operation)},
+	}
+}
+
+// auditIssuedCertificate observes the public certificate on an NVKE-approved CSR
+// without claiming the kubelet has installed it. The CSR must still match a
+// managed node's identity, and the certificate must carry the request's key.
+func (r *Reconciler) auditIssuedCertificate(ctx context.Context, csr *certificatesv1.CertificateSigningRequest) {
+	if r.audit == nil || !hasIssuedServingCertificate(csr) {
+		return
+	}
+	cluster, err := r.database.GetCluster(ctx, r.clusterID)
+	if err != nil || cluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
+		return
+	}
+	nodes, err := r.database.ListNodes(ctx, db.NodeFilters{ClusterID: &r.clusterID})
+	if err != nil {
+		return
+	}
+	decision := planDecision(csr, nodes)
+	if decision.Action != decisionApprove || !approvedByNVKE(csr) {
+		return
+	}
+	event := r.csrAuditEvent(decision, nodes, credentialaudit.ActionVerify, credentialaudit.OutcomeSuccess, credentialaudit.ReasonObserved)
+	fingerprints, err := credentialaudit.CertificateFingerprints(csr.Status.Certificate)
+	if err != nil || !issuedForRequestKey(csr) {
+		event.Outcome, event.Reason = credentialaudit.OutcomeFailure, credentialaudit.ReasonUnavailable
+	} else {
+		// Only the leaf (first block) was checked against the request key.
+		event.Fingerprints = fingerprints[:1]
+	}
+	r.audit.RecordCSR(ctx, event)
+}
+
+func hasIssuedServingCertificate(csr *certificatesv1.CertificateSigningRequest) bool {
+	return csr.Spec.SignerName == certificatesv1.KubeletServingSignerName && len(csr.Status.Certificate) > 0
+}
+
+// approvedByNVKE reports whether the CSR carries NVKE's approval and is neither
+// denied nor failed. A tenant cluster-admin can still write this condition.
+func approvedByNVKE(csr *certificatesv1.CertificateSigningRequest) bool {
+	approved := false
+	for _, condition := range csr.Status.Conditions {
+		switch condition.Type {
+		case certificatesv1.CertificateDenied, certificatesv1.CertificateFailed:
+			return false
+		case certificatesv1.CertificateApproved:
+			approved = approved || (condition.Status == corev1.ConditionTrue && condition.Reason == approvalReason)
+		}
+	}
+	return approved
+}
+
+// issuedForRequestKey reports whether the issued leaf certificate carries the
+// public key from spec.request. It does not authenticate the issuer.
+func issuedForRequestKey(csr *certificatesv1.CertificateSigningRequest) bool {
+	requestBlock, _ := pem.Decode(csr.Spec.Request)
+	// Trim like CertificateFingerprints so both read the same first block.
+	leafBlock, _ := pem.Decode(bytes.TrimSpace(csr.Status.Certificate))
+	if requestBlock == nil || leafBlock == nil {
+		return false
+	}
+	request, err := x509.ParseCertificateRequest(requestBlock.Bytes)
+	if err != nil {
+		return false
+	}
+	leaf, err := x509.ParseCertificate(leafBlock.Bytes)
+	if err != nil {
+		return false
+	}
+	requestKey, ok := request.PublicKey.(interface {
+		Equal(key crypto.PublicKey) bool
+	})
+	return ok && requestKey.Equal(leaf.PublicKey)
 }
 
 func (r *Reconciler) applyDecision(ctx context.Context, decision csrDecision) error {
@@ -170,7 +295,7 @@ func (r *Reconciler) logDecision(decision csrDecision) {
 	log(
 		"Reconciled tenant kubelet-serving CSR",
 		"clusterID", r.clusterID,
-		"csrName", decision.CSR.Name,
+		"requestHash", credentialaudit.Hash("operation", string(decision.CSR.UID)),
 		"nodeName", decision.NodeName,
 		"decision", decision.Action,
 		"reason", decision.Reason,
@@ -180,7 +305,7 @@ func (r *Reconciler) logDecision(decision csrDecision) {
 func kubeletServingCSRPredicate() predicate.Predicate {
 	matches := func(object client.Object) bool {
 		csr, ok := object.(*certificatesv1.CertificateSigningRequest)
-		return ok && isPendingKubeletServingCSR(csr)
+		return ok && (isPendingKubeletServingCSR(csr) || hasIssuedServingCertificate(csr))
 	}
 
 	return predicate.Funcs{
@@ -254,7 +379,7 @@ func validateServingCSR(csr *certificatesv1.CertificateSigningRequest, nodeName,
 		if usage != certificatesv1.UsageServerAuth &&
 			usage != certificatesv1.UsageDigitalSignature &&
 			usage != certificatesv1.UsageKeyEncipherment {
-			return fmt.Sprintf("spec.usages contains disallowed usage %q", usage)
+			return "spec.usages contains a disallowed usage"
 		}
 	}
 	if !hasServerAuth {
@@ -295,7 +420,7 @@ func validateSubjectAlternativeNames(csr *x509.CertificateRequest, nodeName, exp
 
 	for _, dnsName := range csr.DNSNames {
 		if dnsName != nodeName {
-			return fmt.Sprintf("DNS SAN %q does not match controller node name", dnsName)
+			return "DNS SAN does not match controller node name"
 		}
 	}
 
@@ -305,7 +430,7 @@ func validateSubjectAlternativeNames(csr *x509.CertificateRequest, nodeName, exp
 	expected := net.ParseIP(expectedIP)
 	for _, ipAddress := range csr.IPAddresses {
 		if expected == nil || !ipAddress.Equal(expected) {
-			return fmt.Sprintf("IP SAN %q does not match controller node IP", ipAddress)
+			return "IP SAN does not match controller node IP"
 		}
 	}
 	return ""

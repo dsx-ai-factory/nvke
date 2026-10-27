@@ -1,0 +1,48 @@
+clusters:
+  resources:
+  - id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    name: cluster-1-34bd578c-mgmt-eng
+    conditions:
+      provisioned:
+        status: "True"
+      provisioning:
+        status: "False"
+      deleting:
+        status: "False"
+nodePools:
+  resources:
+  - id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+    clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    name: workers-a
+    desiredNodeCount: 1
+    conditions:
+      provisioned:
+        status: "False"
+        message: Provisioning failed for workers-a
+      provisioning:
+        status: "False"
+      deleting:
+        status: "False"
+  - id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+    clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    name: workers-b
+    desiredNodeCount: 1
+    conditions:
+      provisioned:
+        status: "False"
+        message: Provisioning failed for workers-b
+      provisioning:
+        status: "False"
+      deleting:
+        status: "False"
+  - id: dddddddd-dddd-4ddd-8ddd-dddddddddddd
+    clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    name: workers-c
+    desiredNodeCount: 1
+    conditions:
+      provisioned:
+        status: "True"
+      provisioning:
+        status: "False"
+      deleting:
+        status: "False"

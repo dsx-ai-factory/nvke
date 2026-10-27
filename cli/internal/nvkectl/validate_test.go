@@ -357,3 +357,20 @@ func TestValidateSiteSpec_NicoSpecIsValidWithoutBootstrapInputs(t *testing.T) {
 		t.Fatalf("--bootstrap-only: err = %v, output %q; want it to fail without the inputs", err, out.String())
 	}
 }
+
+func TestControlPlaneVIPOverrideCLIFlags(t *testing.T) {
+	body := strings.Replace(threeNodeSiteSpec, "  controlPlaneVIP: 10.0.0.100\n", "", 1)
+	path := writeSiteSpec(t, body)
+	for _, command := range [][]string{
+		{"validate", "sitespec", "-f", path},
+		{"bootstrap", "site", "-f", path, "--dry-run"},
+	} {
+		if _, _, err := runGenerate(t, command...); err == nil {
+			t.Fatalf("%v accepted multiple control planes without the flag", command)
+		}
+		args := append(append([]string{}, command...), "--allow-control-plane-without-vip")
+		if _, _, err := runGenerate(t, args...); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+	}
+}

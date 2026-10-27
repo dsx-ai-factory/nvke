@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
@@ -403,6 +405,7 @@ func TestDeploy_EnablesPostInitCNI(t *testing.T) {
 	}
 }
 
+// TestDeploy_ControllerValuesCarryOIDCProviders verifies providers reach Helm without changing embedded values.
 func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	embedded, err := fs.ReadFile(manifestsFS, cweValuesFile)
 	if err != nil {
@@ -422,13 +425,15 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	}
 
 	cfg := testConfig(t)
+	usernamePrefix := "corp:"
 	cfg.OIDCProviders = []sitespec.OIDCProvider{{
 		Name:           "corp",
 		IssuerURL:      "https://login.example.com",
 		Audiences:      []string{"nvke"},
 		UsernameClaim:  "email",
-		UsernamePrefix: "corp:",
+		UsernamePrefix: &usernamePrefix,
 		CABundle:       "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+		DiscoveryURL:   "https://identity.example.com/.well-known/openid-configuration",
 	}}
 	runner = &fakeRunner{}
 	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
@@ -444,6 +449,18 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 		t.Fatalf("extra controller values files = %d, want the password's and the oidc one", len(extra))
 	}
 	oidc := extra[1]
+	var rendered struct {
+		OIDC struct {
+			Providers []struct {
+				IssuerURL    string `yaml:"issuerURL"`
+				DiscoveryURL string `yaml:"discoveryURL"`
+			} `yaml:"providers"`
+		} `yaml:"oidc"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(oidc), &rendered))
+	require.Len(t, rendered.OIDC.Providers, 1)
+	assert.Equal(t, cfg.OIDCProviders[0].IssuerURL, rendered.OIDC.Providers[0].IssuerURL)
+	assert.Equal(t, cfg.OIDCProviders[0].DiscoveryURL, rendered.OIDC.Providers[0].DiscoveryURL)
 	for _, want := range []string{"name: corp", "issuerURL: https://login.example.com", "providers:"} {
 		if !strings.Contains(oidc, want) {
 			t.Errorf("oidc values missing %q:\n%s", want, oidc)
@@ -459,6 +476,39 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	if strings.Count(cwe, "--values") != 3 {
 		t.Errorf("controller helm call has %d --values, want 3: %s", strings.Count(cwe, "--values"), cwe)
 	}
+}
+
+// TestDeploy_OmitsUnsetOIDCDiscoveryURL verifies an unset override preserves default discovery behavior.
+func TestDeploy_OmitsUnsetOIDCDiscoveryURL(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.OIDCProviders = []sitespec.OIDCProvider{{Name: "corp", IssuerURL: "https://login.example.com"}}
+	runner := &fakeRunner{}
+	require.NoError(t, New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg))
+	extra := runner.extraValuesFiles[cweReleaseName]
+	require.Len(t, extra, 2)
+	assert.NotContains(t, extra[1], "discoveryURL:")
+}
+
+// TestDeploy_EmptyOIDCUsernamePrefix verifies Helm receives an explicit empty username prefix.
+func TestDeploy_EmptyOIDCUsernamePrefix(t *testing.T) {
+	cfg := testConfig(t)
+	usernamePrefix := ""
+	cfg.OIDCProviders = []sitespec.OIDCProvider{{Name: "corp", IssuerURL: "https://login.example.com", UsernamePrefix: &usernamePrefix}}
+	runner := &fakeRunner{}
+	require.NoError(t, New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg))
+	extra := runner.extraValuesFiles[cweReleaseName]
+	require.Len(t, extra, 2)
+	var rendered struct {
+		OIDC struct {
+			Providers []struct {
+				UsernamePrefix *string `yaml:"usernamePrefix"`
+			} `yaml:"providers"`
+		} `yaml:"oidc"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(extra[1]), &rendered))
+	require.Len(t, rendered.OIDC.Providers, 1)
+	require.NotNil(t, rendered.OIDC.Providers[0].UsernamePrefix)
+	assert.Empty(t, *rendered.OIDC.Providers[0].UsernamePrefix)
 }
 
 // TestDeploy_InstallsPostgresFromTheEmbeddedChart: Postgres comes from the
@@ -2152,4 +2202,134 @@ func TestDumpDiagnostics_WhatAlreadyHasTheFinalName(t *testing.T) {
 			t.Errorf("the name should now hold the published file: %v, %v", info, err)
 		}
 	})
+}
+
+func TestProfilesImageArgs(t *testing.T) {
+	tests := []struct {
+		name    string
+		image   string
+		want    []string // substrings the args must contain; empty means no args at all
+		wantErr string
+	}{
+		{"unset adds nothing", "", nil, ""},
+		{
+			"a tagged local image",
+			"controller-profiles:e2e",
+			[]string{"profiles.image.enabled=true", "profiles.image.repository=controller-profiles", "profiles.image.tag=e2e", "profiles.image.digest="},
+			"",
+		},
+		{
+			"a registry image with a port and a tag",
+			"localhost:5000/team/profiles:v1",
+			[]string{"profiles.image.repository=localhost:5000/team/profiles", "profiles.image.tag=v1"},
+			"",
+		},
+		{
+			"a digest pin needs no tag",
+			"registry.example.com/profiles@sha256:abc123",
+			[]string{"profiles.image.repository=registry.example.com/profiles", "profiles.image.digest=sha256:abc123"},
+			"",
+		},
+		{"an explicit latest tag is refused", "controller-profiles:latest", nil, "other than latest"},
+		{"an untagged reference reads as latest and is refused", "controller-profiles", nil, "other than latest"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args, err := profilesImageArgs(Config{ProfilesImage: tt.image})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("profilesImageArgs error = %v, want one containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("profilesImageArgs: %v", err)
+			}
+			if len(tt.want) == 0 && len(args) != 0 {
+				t.Fatalf("args = %v, want none", args)
+			}
+			joined := strings.Join(args, " ")
+			for _, want := range tt.want {
+				if !strings.Contains(joined, want) {
+					t.Errorf("args = %q, want %q", joined, want)
+				}
+			}
+		})
+	}
+}
+
+// TestDeploy_ProfilesImageReachesTheControllerInstall: the chart values are on
+// the release that runs the controller, not just built.
+func TestDeploy_ProfilesImageReachesTheControllerInstall(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.ProfilesImage = "controller-profiles:e2e"
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	install := joinArgs(runner.calls[callIndex(runner, "upgrade --install "+cweReleaseName)].args)
+	for _, want := range []string{"profiles.image.enabled=true", "profiles.image.repository=controller-profiles", "profiles.image.tag=e2e"} {
+		if !strings.Contains(install, want) {
+			t.Errorf("controller install = %q, want %q", install, want)
+		}
+	}
+}
+
+func TestDeploy_RefusesAProfilesImageTheClusterWouldPull(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.ProfilesImage = "controller-profiles:latest"
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err == nil {
+		t.Fatal("Deploy accepted a latest-tagged profiles image")
+	}
+}
+
+func TestValidateProfilesImage(t *testing.T) {
+	tests := []struct {
+		image   string
+		wantErr string
+	}{
+		{"", ""},
+		{"controller-profiles:e2e", ""},
+		{"localhost:5000/team/profiles:v1", ""},
+		{"registry.example.com/profiles@sha256:abc123", ""},
+		{"controller-profiles:latest", "other than latest"},
+		{"controller-profiles", "other than latest"},
+		{"localhost:5000/team/profiles", "other than latest"},
+		{"registry.example.com/profiles:", "empty tag"},
+		{"localhost:5000/team/profiles:", "empty tag"},
+		{"registry.example.com/profiles:@sha256:abc123", "empty tag"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.image, func(t *testing.T) {
+			err := ValidateProfilesImage(tt.image)
+			switch {
+			case tt.wantErr == "" && err != nil:
+				t.Fatalf("ValidateProfilesImage(%q) = %v, want nil", tt.image, err)
+			case tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr) || !strings.Contains(err.Error(), ProfilesImageEnv)):
+				t.Fatalf("ValidateProfilesImage(%q) = %v, want one naming %s and %q", tt.image, err, ProfilesImageEnv, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestDeployControlPlaneVIPOverride(t *testing.T) {
+	for _, allow := range []bool{false, true} {
+		t.Run(strconv.FormatBool(allow), func(t *testing.T) {
+			cfg := testConfig(t)
+			cfg.AllowControlPlaneWithoutVIP = allow
+			runner := &fakeRunner{}
+			if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+				t.Fatal(err)
+			}
+			i := callIndex(runner, "upgrade --install "+cweReleaseName)
+			if i < 0 {
+				t.Fatal("no NVKE controller Helm install")
+			}
+			want := "--set allowControlPlaneWithoutVIP=" + strconv.FormatBool(allow)
+			if !strings.Contains(joinArgs(runner.calls[i].args), want) {
+				t.Fatalf("NVKE controller Helm install did not contain %q", want)
+			}
+		})
+	}
 }

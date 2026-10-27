@@ -1,0 +1,133 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: controlplaneclasses.internal.nvke.nvidia.com
+spec:
+  group: internal.nvke.nvidia.com
+  names:
+    kind: ControlPlaneClass
+    listKind: ControlPlaneClassList
+    plural: controlplaneclasses
+    singular: controlplaneclass
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.controlPlane.replicas
+      name: Replicas
+      type: integer
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: ControlPlaneClass is operator-published control-plane policy
+          selected by NVKECluster.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ControlPlaneClassSpec configures the control plane of clusters
+              selecting this class.
+            properties:
+              controlPlane:
+                description: ControlPlane configures control-plane capacity and machine
+                  settings.
+                properties:
+                  instanceTypePreferences:
+                    description: |-
+                      InstanceTypePreferences lists provider-native identifiers in preference order.
+                      NICo uses instance-type UUIDs. Providers who use instance-type strings may also use this field.
+                      The deployment selects the provider and site used to interpret these values.
+                    items:
+                      minLength: 1
+                      type: string
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  replicas:
+                    description: Replicas is the desired number of control-plane nodes.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  systemReservedMemory:
+                    description: |-
+                      SystemReservedMemory reserves memory for system daemons on each control-plane node.
+                      Zero requests no reservation.
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: systemReservedMemory must be a nonnegative Kubernetes
+                        quantity
+                      rule: isQuantity(self) && quantity(self).compareTo(quantity('0'))
+                        >= 0
+                required:
+                - instanceTypePreferences
+                - replicas
+                - systemReservedMemory
+                type: object
+              rollout:
+                description: Rollout controls replacement of control-plane nodes.
+                properties:
+                  strategy:
+                    description: Strategy controls replacement order and capacity.
+                    properties:
+                      rollingUpdate:
+                        description: RollingUpdate bounds additional capacity during
+                          replacement.
+                        properties:
+                          maxSurge:
+                            description: |-
+                              MaxSurge is the number of extra nodes allowed during replacement.
+                              Zero removes first. One waits for healthy replacement capacity before removal.
+                            format: int32
+                            maximum: 1
+                            minimum: 0
+                            type: integer
+                        required:
+                        - maxSurge
+                        type: object
+                      type:
+                        description: Type selects the replacement strategy. Only RollingUpdate
+                          is supported.
+                        enum:
+                        - RollingUpdate
+                        type: string
+                    required:
+                    - rollingUpdate
+                    - type
+                    type: object
+                required:
+                - strategy
+                type: object
+            required:
+            - controlPlane
+            - rollout
+            type: object
+            x-kubernetes-validations:
+            - message: single-replica control planes require maxSurge 1
+              rule: self.controlPlane.replicas > 1 || self.rollout.strategy.rollingUpdate.maxSurge
+                == 1
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources: {}

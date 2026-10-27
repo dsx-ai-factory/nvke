@@ -52,34 +52,36 @@ type FakeClient struct {
 	GetOpenVSwitchStatusCalls           []uuid.UUID
 	GetOpenVSwitchStatusHook            func(db.Node, *nvkeproto.GetOpenVSwitchReconciliationStatusRequest) (*nvkeproto.GetOpenVSwitchReconciliationStatusResponse, error)
 
-	InitializeAPIEncryptionCalls            []uuid.UUID
-	InitializeAPIEncryptionKeys             []string
-	PromoteAPIEncryptionProvidersCalls      []uuid.UUID
-	StartEncryptedObjectsRewriteCalls       []uuid.UUID
-	StartEncryptedObjectsRewriteIDs         []string
-	GetEncryptedObjectsRewriteStatusCalls   []uuid.UUID
-	GetEncryptedObjectsRewriteStatusIDs     []string
-	RemovePlainTextSecondaryEncryptionCalls []uuid.UUID
-	StartKubeVIPRestoreCalls                []uuid.UUID
-	StartKubeVIPRestoreIDs                  []string
-	ExecuteScriptNames                      []string
-	ExecuteScriptArgs                       [][]string
-	KubeadmUpgradeApplyCalls                []uuid.UUID
-	KubeadmUpgradeApplyRequests             []*nvkeproto.KubeadmUpgradeApplyRequest
-	KubeadmUpgradeApplyResponse             *nvkeproto.KubeadmUpgradeApplyResponse
-	KubeadmUpgradeApplyError                error
-	ReconcileKubeVipCalls                   []uuid.UUID
-	ReconcileKubeVipRequests                []*nvkeproto.ReconcileKubeVipRequest
-	ReconcileKubeVipResponse                *nvkeproto.ReconcileKubeVipResponse
-	ReconcileKubeVipError                   error
-	StartKubernetesCertificateRenewalCalls  []uuid.UUID
-	StartKubernetesCertificateRenewalHook   func(db.Node, *nvkeproto.StartKubernetesCertificateRenewalRequest) (*nvkeproto.StartKubernetesCertificateRenewalResponse, error)
-	GetKubernetesCertificateRenewalCalls    []uuid.UUID
-	GetKubernetesCertificateRenewalHook     func(db.Node, *nvkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nvkeproto.GetKubernetesCertificateRenewalStatusResponse, error)
-	RemoveEtcdMemberCalls                   []uuid.UUID
-	RemoveEtcdMemberRequests                []*nvkeproto.RemoveEtcdMemberRequest
-	RemoveEtcdMemberResponse                *nvkeproto.RemoveEtcdMemberResponse
-	RemoveEtcdMemberError                   error
+	InitializeAPIEncryptionCalls             []uuid.UUID
+	InitializeAPIEncryptionKeys              []string
+	PromoteAPIEncryptionProvidersCalls       []uuid.UUID
+	StartEncryptedObjectsRewriteCalls        []uuid.UUID
+	StartEncryptedObjectsRewriteIDs          []string
+	GetEncryptedObjectsRewriteStatusCalls    []uuid.UUID
+	GetEncryptedObjectsRewriteStatusIDs      []string
+	RemovePlainTextSecondaryEncryptionCalls  []uuid.UUID
+	StartKubeVIPRestoreCalls                 []uuid.UUID
+	StartKubeVIPRestoreIDs                   []string
+	ExecuteScriptNames                       []string
+	ExecuteScriptArgs                        [][]string
+	KubeadmUpgradeApplyCalls                 []uuid.UUID
+	KubeadmUpgradeApplyRequests              []*nvkeproto.KubeadmUpgradeApplyRequest
+	KubeadmUpgradeApplyResponse              *nvkeproto.KubeadmUpgradeApplyResponse
+	KubeadmUpgradeApplyError                 error
+	ReconcileKubeVipCalls                    []uuid.UUID
+	ReconcileKubeVipRequests                 []*nvkeproto.ReconcileKubeVipRequest
+	ReconcileKubeVipResponse                 *nvkeproto.ReconcileKubeVipResponse
+	ReconcileKubeVipError                    error
+	StartKubernetesCertificateRenewalCalls   []uuid.UUID
+	StartKubernetesCertificateRenewalHook    func(db.Node, *nvkeproto.StartKubernetesCertificateRenewalRequest) (*nvkeproto.StartKubernetesCertificateRenewalResponse, error)
+	StartKubernetesCertificateRenewalV2Calls []uuid.UUID
+	StartKubernetesCertificateRenewalV2Hook  func(db.Node, *nvkeproto.StartKubernetesCertificateRenewalV2Request) (*nvkeproto.StartKubernetesCertificateRenewalV2Response, error)
+	GetKubernetesCertificateRenewalCalls     []uuid.UUID
+	GetKubernetesCertificateRenewalHook      func(db.Node, *nvkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nvkeproto.GetKubernetesCertificateRenewalStatusResponse, error)
+	RemoveEtcdMemberCalls                    []uuid.UUID
+	RemoveEtcdMemberRequests                 []*nvkeproto.RemoveEtcdMemberRequest
+	RemoveEtcdMemberResponse                 *nvkeproto.RemoveEtcdMemberResponse
+	RemoveEtcdMemberError                    error
 
 	// ExecuteScriptHook, when set, produces the response for ExecuteScript calls,
 	// letting tests drive per-node script output (e.g. /readyz probes).
@@ -87,6 +89,20 @@ type FakeClient struct {
 
 	StartEncryptedObjectsRewriteHook func(node db.Node, operationID string) (*nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error)
 	GetEncryptedObjectsRewriteHook   func(node db.Node, operationID string) (*nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error)
+	GetEtcdEncryptionKeyIdentityHook func(node db.Node, digest string) (string, error)
+
+	// ReconfigureSpireAgentHook and GetSpireAgentStatusHook produce the
+	// responses for those RPCs. They may be called concurrently, so the fake
+	// records no calls for them; a hook that needs to must synchronize itself.
+	ReconfigureSpireAgentHook func(ctx context.Context, node db.Node, req *nvkeproto.ReconfigureSpireAgentRequest) (*nvkeproto.ReconfigureSpireAgentResponse, error)
+	GetSpireAgentStatusHook   func(ctx context.Context, node db.Node) (*nvkeproto.GetSpireAgentStatusResponse, error)
+}
+
+func (f *FakeClient) GetEtcdEncryptionKeyIdentity(_ context.Context, node db.Node, digest string) (string, error) {
+	if f.GetEtcdEncryptionKeyIdentityHook != nil {
+		return f.GetEtcdEncryptionKeyIdentityHook(node, digest)
+	}
+	return "", errors.New("encryption identity lookup is not configured")
 }
 
 func (f *FakeClient) GetKubeconfig(ctx context.Context, node db.Node) (string, error) {
@@ -242,6 +258,20 @@ func (f *FakeClient) StartKubernetesCertificateRenewal(
 	return f.StartKubernetesCertificateRenewalHook(node, req)
 }
 
+// StartKubernetesCertificateRenewalV2 requires an explicit hook so tests choose
+// supported, unsupported or ambiguous acceptance rather than silently using V1.
+func (f *FakeClient) StartKubernetesCertificateRenewalV2(
+	_ context.Context,
+	node db.Node,
+	req *nvkeproto.StartKubernetesCertificateRenewalV2Request,
+) (*nvkeproto.StartKubernetesCertificateRenewalV2Response, error) {
+	f.StartKubernetesCertificateRenewalV2Calls = append(f.StartKubernetesCertificateRenewalV2Calls, node.ID)
+	if f.StartKubernetesCertificateRenewalV2Hook == nil {
+		return nil, errors.New("StartKubernetesCertificateRenewalV2Hook is nil")
+	}
+	return f.StartKubernetesCertificateRenewalV2Hook(node, req)
+}
+
 func (f *FakeClient) GetKubernetesCertificateRenewalStatus(
 	_ context.Context,
 	node db.Node,
@@ -300,4 +330,20 @@ type InstallCNICall struct {
 func (f *FakeClient) ConvergeNodeAgent(ctx context.Context, node db.Node, target, _ string) (string, bool, error) {
 	version, err := f.GetAgentVersion(ctx, node)
 	return version, version == target || target == "", err
+}
+
+// ReconfigureSpireAgent implements agent.Client through ReconfigureSpireAgentHook.
+func (f *FakeClient) ReconfigureSpireAgent(ctx context.Context, node db.Node, req *nvkeproto.ReconfigureSpireAgentRequest) (*nvkeproto.ReconfigureSpireAgentResponse, error) {
+	if f.ReconfigureSpireAgentHook == nil {
+		return nil, errors.New("ReconfigureSpireAgentHook is nil")
+	}
+	return f.ReconfigureSpireAgentHook(ctx, node, req)
+}
+
+// GetSpireAgentStatus implements agent.Client through GetSpireAgentStatusHook.
+func (f *FakeClient) GetSpireAgentStatus(ctx context.Context, node db.Node) (*nvkeproto.GetSpireAgentStatusResponse, error) {
+	if f.GetSpireAgentStatusHook == nil {
+		return nil, errors.New("GetSpireAgentStatusHook is nil")
+	}
+	return f.GetSpireAgentStatusHook(ctx, node)
 }

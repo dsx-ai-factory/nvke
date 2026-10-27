@@ -361,3 +361,72 @@ func TestRemovedLifecycleNodeReleasesUpgradeSelection(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, database.cluster.NodeAgentUpgrade)
 }
+
+// TestAbsentFencedRenewalReservationIsClearedWithoutLock clears a V2 reservation
+// the agent does not know only once no renewal cycle holds the mutation lock,
+// and never clears a reservation that changed after the status RPC.
+func TestAbsentFencedRenewalReservationIsClearedWithoutLock(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		code   codes.Code
+		fenced bool
+		locked bool
+		// replaced is the reservation the locked row holds instead of the snapshot.
+		replaced    *db.NodeAgentCertificateRenewal
+		wantCleared bool
+		wantError   bool
+	}{
+		{name: "not found and unlocked clears", code: codes.NotFound, fenced: true, wantCleared: true},
+		{name: "unimplemented and unlocked clears", code: codes.Unimplemented, fenced: true, wantCleared: true},
+		{name: "not found while a cycle holds the lock retains", code: codes.NotFound, fenced: true, locked: true},
+		{name: "unimplemented while a cycle holds the lock retains", code: codes.Unimplemented, fenced: true, locked: true},
+		{name: "unfenced not found retains", code: codes.NotFound, wantError: true},
+		{name: "unfenced unimplemented retains", code: codes.Unimplemented},
+		{
+			name: "operation replaced under the lock retains", code: codes.NotFound, fenced: true,
+			replaced: &db.NodeAgentCertificateRenewal{OperationID: "newer-renewal", Fenced: true},
+		},
+		{
+			name: "node replaced under the lock retains", code: codes.NotFound, fenced: true,
+			replaced: &db.NodeAgentCertificateRenewal{NodeID: uuid.MustParse("00000000-0000-0000-0000-000000000009"), OperationID: "accepted-renewal", Fenced: true},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			node := healthyAgentNode()
+			controller, database := agentUpgradeTestController(node)
+			database.cluster.CertificateRenewal = &db.NodeAgentCertificateRenewal{NodeID: node.ID, OperationID: "accepted-renewal", Fenced: tt.fenced}
+			if tt.locked {
+				database.cluster.Conditions.UpdateInProgress = &db.UpdateInProgress{Type: db.OperationTypeCertRenewal}
+			}
+			controller.nodeAgentClient = convergenceClient{FakeClient: &agenttest.FakeClient{GetKubernetesCertificateRenewalHook: func(db.Node, *pb.GetKubernetesCertificateRenewalStatusRequest) (*pb.GetKubernetesCertificateRenewalStatusResponse, error) {
+				return nil, status.Error(tt.code, "no such operation")
+			}}}
+
+			snapshot := database.cluster
+			if tt.replaced != nil {
+				replaced := *tt.replaced
+				if replaced.NodeID == uuid.Nil {
+					replaced.NodeID = node.ID
+				}
+				database.cluster.CertificateRenewal = &replaced
+			}
+
+			running, err := controller.checkCertificateRenewal(t.Context(), snapshot)
+
+			if tt.wantError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			if tt.replaced != nil {
+				require.False(t, running)
+				require.NotNil(t, database.cluster.CertificateRenewal)
+				require.NotEqual(t, *snapshot.CertificateRenewal, *database.cluster.CertificateRenewal)
+				require.Equal(t, tt.replaced.OperationID, database.cluster.CertificateRenewal.OperationID)
+				return
+			}
+			require.Equal(t, !tt.wantCleared, running)
+			require.Equal(t, tt.wantCleared, database.cluster.CertificateRenewal == nil)
+		})
+	}
+}

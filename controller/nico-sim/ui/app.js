@@ -198,15 +198,77 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+function copyToClipboard(text) {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        return navigator.clipboard.writeText(text);
+    }
+
+    return new Promise(function(resolve, reject) {
+        var previouslyFocused = document.activeElement;
+        var textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+
+        var copied = false;
+        try {
+            copied = document.execCommand('copy');
+        } finally {
+            textarea.remove();
+            if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+                previouslyFocused.focus();
+            }
+        }
+        if (copied) {
+            resolve();
+        } else {
+            reject(new Error('Clipboard access is unavailable in this browser context'));
+        }
+    });
+}
+
+function copyableHtml(text, label) {
+    var title = 'Copy ' + label;
+    return '<span class="copyable-value">' +
+        '<span class="copyable-text">' + escapeHtml(text) + '</span>' +
+        '<button type="button" class="copy-btn" data-copy="' + escapeAttribute(text) + '" title="' + escapeAttribute(title) + '" aria-label="' + escapeAttribute(title) + '">&#10697;</button>' +
+        '</span>';
+}
+
+function showCopyFeedback(btn, text, title, className, duration) {
+    if (btn._copyOriginalText === undefined) {
+        btn._copyOriginalText = btn.textContent;
+        btn._copyOriginalTitle = btn.title;
+    }
+    if (btn._copyFeedbackTimer !== undefined) {
+        clearTimeout(btn._copyFeedbackTimer);
+    }
+
+    btn.textContent = text;
+    btn.title = title === undefined ? btn._copyOriginalTitle : title;
+    btn.classList.remove('copied', 'copy-failed');
+    btn.classList.add(className);
+    btn._copyFeedbackTimer = setTimeout(function() {
+        btn.textContent = btn._copyOriginalText;
+        btn.title = btn._copyOriginalTitle;
+        btn.classList.remove('copied', 'copy-failed');
+        btn._copyFeedbackTimer = undefined;
+    }, duration);
+}
+
 function buildRowCells(inst) {
     var status = inst.status || 'Unknown';
     var ip = getIP(inst);
     var ipxe = inst.ipxeScript || '';
     var isDHCP = ipxe !== '';
+    var name = inst.name || inst.id;
     return {
-        name: '<span class="chevron">&#9656;</span> ' + escapeHtml(inst.name || inst.id),
+        name: '<span class="name-line"><span class="chevron">&#9656;</span>' + copyableHtml(name, 'name') + '</span>',
         status: '<span class="badge ' + statusBadgeClass(status) + '">' + escapeHtml(status) + '</span>',
-        ip: escapeHtml(ip),
+        ip: ip === '\u2014' ? escapeHtml(ip) : copyableHtml(ip, 'IP address'),
         itype: escapeHtml(instanceTypeNames[inst.instanceTypeId] || inst.instanceTypeId || '\u2014'),
         dhcp: boolIndicator(isDHCP),
         phone: boolIndicator(inst.phoneHomeEnabled),
@@ -219,10 +281,24 @@ function detectLang(text) {
     return 'shell';
 }
 
+function getErrorReason(inst) {
+    var history = inst.statusHistory || [];
+    // Status history is chronological, so search backward for the newest message.
+    for (var i = history.length - 1; i >= 0; i--) {
+        if (history[i].message) return history[i].message;
+    }
+    return '';
+}
+
 function buildDetailHtml(inst) {
     var ipxe = inst.ipxeScript || '';
     var userData = inst.userData || '';
+    var errorReason = getErrorReason(inst);
     var html = '<div class="detail-content">';
+    if (errorReason) {
+        html += '<div class="detail-field"><label>Error Reason</label><pre class="error-reason"><code class="language-plaintext">' +
+            escapeHtml(errorReason) + '</code></pre></div>';
+    }
     if (ipxe) html += '<div class="detail-field"><label>iPXE Script</label><pre><code class="language-shell">' + escapeHtml(ipxe) + '</code></pre></div>';
     if (userData) {
         html += '<div class="detail-field"><label>User Data</label><pre><code class="language-' + detectLang(userData) + '">' + escapeHtml(userData) + '</code></pre></div>';
@@ -251,6 +327,15 @@ function updateRow(tr, inst) {
     tds[6].innerHTML = cells.created;
     tds[0].title = inst.id;
     tds[6].title = inst.created || '';
+    var detail = tr.nextElementSibling;
+    if (detail && detail.classList.contains('detail-row')) {
+        var detailHtml = buildDetailHtml(inst);
+        if (detail._sourceHtml !== detailHtml) {
+            detail.children[0].innerHTML = detailHtml;
+            detail._sourceHtml = detailHtml;
+            detail.querySelectorAll('pre code').forEach(function(block) { hljs.highlightElement(block); });
+        }
+    }
 }
 
 function createInstanceRow(inst) {
@@ -294,6 +379,7 @@ function createInstanceDetailRow(inst, columnCount) {
     td.colSpan = columnCount;
     td.innerHTML = detailHtml;
     detail.appendChild(td);
+    detail._sourceHtml = detailHtml;
     detail.querySelectorAll('pre code').forEach(function(block) { hljs.highlightElement(block); });
     return detail;
 }
@@ -1350,6 +1436,21 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('auto-refresh').addEventListener('change', function(e) {
         if (e.target.checked) { startRefresh(); } else { stopRefresh(); }
     });
+
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest && e.target.closest('.copy-btn');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        var text = btn.getAttribute('data-copy') || '';
+        if (!text) return;
+        copyToClipboard(text).then(function() {
+            showCopyFeedback(btn, '\u2713', undefined, 'copied', 1000);
+        }).catch(function(err) {
+            var message = err && err.message ? err.message : err;
+            showCopyFeedback(btn, '!', 'Copy failed: ' + message, 'copy-failed', 3000);
+        });
+    }, true);
 
     document.getElementById('files-refresh').addEventListener('click', function() {
         loadFilesTree();

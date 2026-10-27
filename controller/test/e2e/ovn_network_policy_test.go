@@ -38,13 +38,21 @@ const (
 
 	ovnPolicyProbeTimeout     = 3 * time.Minute
 	ovnPolicyConvergenceLimit = 2 * time.Minute
+	// ovnPolicyNodeWait bounds the wait for two Ready tenant nodes that carry a
+	// hostname label. The readiness spec has just seen every node Ready, yet one
+	// List right after it has twice found a single qualifying node, so poll.
+	ovnPolicyNodeWait = 3 * time.Minute
 )
 
 func validateOVNNetworkPolicyPostCreate(test *tenantTest) {
 	It("enforces isolated cross-node ingress and egress NetworkPolicies", func(ctx context.Context) {
 		tenantClient := expectSucceed(test.tenantClients.GetAdminClient(ctx, test.cluster.Name))
-		sourceNode, targetNode, err := ovnPolicyNodes(ctx, tenantClient)
-		Expect(err).NotTo(HaveOccurred())
+		var sourceNode, targetNode ovnPolicyNode
+		Eventually(func(ctx context.Context) error {
+			var err error
+			sourceNode, targetNode, err = ovnPolicyNodes(ctx, tenantClient)
+			return err
+		}).WithContext(ctx).WithTimeout(ovnPolicyNodeWait).WithPolling(2 * time.Second).Should(Succeed())
 
 		sourceNamespace := createOVNPolicyNamespace(ctx, tenantClient, "source")
 		allowedNamespace := createOVNPolicyNamespace(ctx, tenantClient, "allowed")

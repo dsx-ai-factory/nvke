@@ -4,8 +4,13 @@
 package db
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +20,7 @@ import (
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
 	"github.com/uptrace/bun/extra/bunotel"
+	"github.com/uptrace/bun/schema"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -130,4 +136,152 @@ func TestTracingHookDoesNotCreateRootSpans(t *testing.T) {
 
 	assert.Empty(t, recorder.Ended())
 	assert.Equal(t, 1, meterProvider.histogram.records)
+}
+
+type queryLogRow struct {
+	bun.BaseModel `bun:"table:query_log_rows"`
+
+	ID       int      `bun:",pk"`
+	Content  string   `bun:"type:text"`
+	Commands []string `bun:"type:jsonb"`
+}
+
+// unrebuildableQuery is a bun.Query whose AppendQuery always fails.
+type unrebuildableQuery struct{}
+
+func (unrebuildableQuery) AppendQuery(schema.QueryGen, []byte) ([]byte, error) {
+	return nil, errors.New("cannot append")
+}
+func (unrebuildableQuery) Operation() string    { return "INSERT" }
+func (unrebuildableQuery) GetModel() bun.Model  { return nil }
+func (unrebuildableQuery) GetTableName() string { return "query_log_rows" }
+
+// TestQueryLogKeepsBoundValuesOutOfTheLogUnlessAsked covers the values of a
+// statement: bun puts them into both Query and QueryTemplate for ORM queries, so
+// the log line has to be rebuilt without them unless DB_QUERY_LOG_VALUES is set.
+// sql.OpenDB does not dial, so no database is needed.
+func TestQueryLogKeepsBoundValuesOutOfTheLogUnlessAsked(t *testing.T) {
+	const secret = "SECRET-TOKEN-123"
+
+	bdb := bun.NewDB(sql.OpenDB(pgdriver.NewConnector()), pgdialect.New())
+	t.Cleanup(func() { _ = bdb.Close() })
+
+	row := &queryLogRow{Content: secret, Commands: []string{"login --token " + secret}}
+	queries := []struct {
+		name string
+		q    bun.Query
+	}{
+		{"orm insert", bdb.NewInsert().Model(row)},
+		{"orm update", bdb.NewUpdate().Model(row).Set("content = ?", secret).WherePK()},
+		{"new raw", bdb.NewRaw("INSERT INTO query_log_rows (content) VALUES (?)", secret)},
+	}
+	modes := []struct {
+		name      string
+		logValues bool
+		level     slog.Level
+	}{
+		{"values off at info", false, slog.LevelInfo},
+		{"values off at debug", false, slog.LevelDebug},
+		{"values on", true, slog.LevelInfo},
+	}
+
+	logQuery := func(logValues bool, level slog.Level, event *bun.QueryEvent) string {
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: level}))
+		attrs := queryLogFormat(logValues)(event)
+		logger.LogAttrs(context.Background(), slog.LevelError, "", attrs...)
+		return buf.String()
+	}
+
+	for _, tt := range queries {
+		formatted, err := tt.q.AppendQuery(bdb.QueryGen(), nil)
+		require.NoError(t, err)
+		for _, m := range modes {
+			t.Run(fmt.Sprintf("%s, %s", tt.name, m.name), func(t *testing.T) {
+				out := logQuery(m.logValues, m.level, &bun.QueryEvent{
+					DB:            bdb,
+					IQuery:        tt.q,
+					Query:         string(formatted),
+					QueryTemplate: string(formatted),
+					Err:           errors.New("boom"),
+					StartTime:     time.Now(),
+				})
+				assert.Equal(t, m.logValues, strings.Contains(out, secret), out)
+				assert.Contains(t, out, "operation=")
+				if !m.logValues {
+					assert.Contains(t, out, "?", "the shape of the statement is still logged")
+				}
+			})
+		}
+	}
+
+	t.Run("a query run with db.ExecContext keeps its placeholder template", func(t *testing.T) {
+		out := logQuery(false, slog.LevelInfo, &bun.QueryEvent{
+			DB:            bdb,
+			Query:         "INSERT INTO query_log_rows (content) VALUES ('" + secret + "')",
+			QueryTemplate: "INSERT INTO query_log_rows (content) VALUES (?)",
+			QueryArgs:     []any{secret},
+			Err:           errors.New("boom"),
+			StartTime:     time.Now(),
+		})
+		assert.NotContains(t, out, secret)
+		assert.Contains(t, out, "VALUES (?)")
+	})
+
+	t.Run("a query that cannot be rebuilt logs no SQL rather than the values", func(t *testing.T) {
+		out := logQuery(false, slog.LevelInfo, &bun.QueryEvent{
+			DB:            bdb,
+			IQuery:        unrebuildableQuery{},
+			Query:         "INSERT INTO query_log_rows (content) VALUES ('" + secret + "')",
+			QueryTemplate: "INSERT INTO query_log_rows (content) VALUES ('" + secret + "')",
+			Err:           errors.New("boom"),
+			StartTime:     time.Now(),
+		})
+		assert.NotContains(t, out, secret)
+		assert.Contains(t, out, "operation=INSERT")
+	})
+}
+
+// TestQueryLogKeepsPostgresErrorMessagesOutOfTheLogUnlessAsked covers the
+// message of a PostgreSQL error, which can repeat the value it rejected, for
+// example "invalid input syntax for type uuid".
+func TestQueryLogKeepsPostgresErrorMessagesOutOfTheLogUnlessAsked(t *testing.T) {
+	const secret = "SECRET-TOKEN-123"
+
+	pgErr := pgdriver.NewError(map[byte]string{
+		'S': "ERROR",
+		'C': "22P02",
+		'M': `invalid input syntax for type uuid: "` + secret + `"`,
+	})
+	errs := []struct {
+		name string
+		err  error
+	}{
+		{"a PostgreSQL error", pgErr},
+		{"a wrapped PostgreSQL error", fmt.Errorf("exec: %w", pgErr)},
+	}
+	for _, tt := range errs {
+		for _, logValues := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s, values on=%t", tt.name, logValues), func(t *testing.T) {
+				var buf bytes.Buffer
+				logger := slog.New(slog.NewTextHandler(&buf, nil))
+				attrs := queryLogFormat(logValues)(&bun.QueryEvent{Err: tt.err, StartTime: time.Now()})
+				logger.LogAttrs(context.Background(), slog.LevelError, "", attrs...)
+				out := buf.String()
+
+				assert.Equal(t, logValues, strings.Contains(out, secret), out)
+				assert.Contains(t, out, "pg_sqlstate=22P02")
+				assert.Contains(t, out, "pg_severity=ERROR")
+				assert.Contains(t, out, "SQLSTATE=22P02", "the error attribute still names the condition")
+			})
+		}
+	}
+
+	t.Run("an error from outside PostgreSQL is logged as is", func(t *testing.T) {
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&buf, nil))
+		attrs := queryLogFormat(false)(&bun.QueryEvent{Err: errors.New("context canceled"), StartTime: time.Now()})
+		logger.LogAttrs(context.Background(), slog.LevelError, "", attrs...)
+		assert.Contains(t, buf.String(), `error="context canceled"`)
+	})
 }

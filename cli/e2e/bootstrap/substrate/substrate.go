@@ -394,12 +394,35 @@ func (s *Substrate) waitReady(ctx context.Context) error {
 	return nil
 }
 
+// readyUnits are the systemd units probeHost requires active.
+var readyUnits = []string{"containerd", "swtpm-local", "spire-agent"}
+
 // probeHost checks readiness from inside the container.
 func probeHost(ctx context.Context, node Node) error {
-	out, err := exec.CommandContext(ctx, ContainerCLI, "exec", node.Container,
-		"systemctl", "is-active", "containerd", "swtpm-local", "spire-agent").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("required systemd units are not active: %w\n%s", err, out)
+	// The exit status is not the verdict: with several units, is-active exits 0
+	// when any one is active, so a unit still queued behind another would pass.
+	out, _ := exec.CommandContext(ctx, ContainerCLI, append([]string{
+		"exec", node.Container,
+		"systemctl", "is-active",
+	}, readyUnits...)...).CombinedOutput()
+	return unitsActive(string(out), readyUnits)
+}
+
+// unitsActive reports an error unless out, the lines systemctl is-active
+// printed for units in order, says every one is active.
+func unitsActive(out string, units []string) error {
+	states := strings.Fields(out)
+	if len(states) != len(units) {
+		return fmt.Errorf("required systemd units are not active: is-active %s printed %q", strings.Join(units, " "), strings.TrimSpace(out))
+	}
+	var down []string
+	for i, state := range states {
+		if state != "active" {
+			down = append(down, units[i]+"="+state)
+		}
+	}
+	if len(down) > 0 {
+		return fmt.Errorf("required systemd units are not active: %s", strings.Join(down, ", "))
 	}
 	return nil
 }

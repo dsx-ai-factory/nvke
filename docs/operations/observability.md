@@ -2,6 +2,12 @@
 
 NVKE's operational surface spans three layers: the management plane services, the Cluster API infrastructure provider, and the tenant cluster nodes. Observability tooling for each is covered here.
 
+For credential expiry, renewal/rotation health, kubelet-serving CSRs and audit
+evidence, start with [OSS alpha credential operations](credential-lifecycle.md).
+The [credential monitoring guide](../../controller/docs/credential-monitoring.md)
+defines current observations and alert rules, including the evaluator and
+notification receiver required beyond scraping.
+
 ## Management plane services
 
 ### Temporal Web UI
@@ -31,7 +37,7 @@ kubectl logs -n nke-controller deploy/nke-controller \
   --kubeconfig <sitename>.kubeconfig -f
 ```
 
-Logs include workflow and activity identifiers so a failure in the Temporal UI can be correlated to a controller log line. Set `LOG_LEVEL=debug` in the controller deployment environment to increase verbosity.
+Logs include workflow and activity identifiers so a failure in the Temporal UI can be correlated to a controller log line. Set `LOG_LEVEL=debug` in the controller deployment environment to increase verbosity. By default the logs leave out the values of every database query and the message of a PostgreSQL error; [Observe NVKE and its clusters](../operate/observe.md#read-the-management-plane-logs) describes how to include them.
 
 ### Controller REST API Health
 

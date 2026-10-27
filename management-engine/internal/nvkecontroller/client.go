@@ -49,8 +49,7 @@ type Config struct {
 
 // Client validates cluster identity and redacts failures from generated NVKE controller requests.
 type Client struct {
-	api      *api.Client
-	endpoint string
+	api *api.Client
 }
 
 // New constructs a client with bounded requests, verified TLS and no redirects.
@@ -87,11 +86,8 @@ func New(cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, errors.New("could not construct NVKE controller API client")
 	}
-	return &Client{api: raw, endpoint: endpoint}, nil
+	return &Client{api: raw}, nil
 }
-
-// Endpoint returns the normalized API URL for checking persisted backend identity.
-func (c *Client) Endpoint() string { return c.endpoint }
 
 // FindByName finds a single exact-name match. It does not establish ownership.
 func (c *Client) FindByName(ctx context.Context, name string) (*api.Cluster, error) {
@@ -148,7 +144,7 @@ func (c *Client) Create(ctx context.Context, request api.CreateClusterRequest) (
 	return &result, nil
 }
 
-// Delete requests asynchronous deletion. A missing cluster is already deleted.
+// Delete requests asynchronous deletion
 func (c *Client) Delete(ctx context.Context, id string) error {
 	clusterID, err := parseID(id)
 	if err != nil {
@@ -162,9 +158,80 @@ func (c *Client) Delete(ctx context.Context, id string) error {
 	return err
 }
 
+// FindNodePool finds a worker pool by its exact name within the named cluster.
+func (c *Client) FindNodePool(ctx context.Context, clusterName, name string) (*api.NodePool, error) {
+	if clusterName == "" || name == "" {
+		return nil, errors.New("NVKE controller cluster and node pool names are required")
+	}
+	response, err := c.api.ListNodePools(ctx, &api.ListNodePoolsParams{ClusterName: &clusterName, Name: &name})
+	var result api.ListNodePoolsResponse
+	if err := readResponse(response, err, http.StatusOK, &result); err != nil {
+		return nil, err
+	}
+	if result.NodePools == nil {
+		return nil, ErrInvalidResponse
+	}
+	if len(result.NodePools) == 0 {
+		return nil, ErrNotFound
+	}
+	if len(result.NodePools) != 1 {
+		return nil, ErrInvalidResponse
+	}
+	pool := result.NodePools[0]
+	if pool.ID == uuid.Nil || pool.ClusterID == uuid.Nil || pool.Name != name || pool.ControlPlane {
+		return nil, ErrInvalidResponse
+	}
+	return &pool, nil
+}
+
+// CreateNodePool creates a worker pool and validates its returned identity.
+func (c *Client) CreateNodePool(ctx context.Context, request api.CreateNodePoolRequest) (*api.NodePool, error) {
+	if request.ClusterID == uuid.Nil || request.Name == "" {
+		return nil, errors.New("NVKE controller cluster ID and node pool name are required")
+	}
+	response, err := c.api.CreateNodePool(ctx, request)
+	var result api.NodePool
+	if err := readResponse(response, err, http.StatusCreated, &result); err != nil {
+		return nil, err
+	}
+	if result.ID == uuid.Nil || result.ClusterID != request.ClusterID || result.Name != request.Name || result.ControlPlane {
+		return nil, ErrInvalidResponse
+	}
+	return &result, nil
+}
+
+// UpdateNodePool patches the supplied fields on a worker pool and validates its returned identity.
+func (c *Client) UpdateNodePool(ctx context.Context, id string, request api.UpdateNodePoolRequest) (*api.NodePool, error) {
+	nodePoolID, err := parseNodePoolID(id)
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.api.UpdateNodePool(ctx, nodePoolID, request)
+	var result api.NodePool
+	if err := readResponse(response, err, http.StatusOK, &result); err != nil {
+		return nil, err
+	}
+	if result.ID != nodePoolID || result.ClusterID == uuid.Nil || result.Name == "" || result.ControlPlane {
+		return nil, ErrInvalidResponse
+	}
+	return &result, nil
+}
+
+func (c *Client) DeleteNodePool(ctx context.Context, id string) error {
+	nodePoolID, err := parseNodePoolID(id)
+	if err != nil {
+		return err
+	}
+	response, err := c.api.DeleteNodePool(ctx, nodePoolID)
+	err = readResponse(response, err, http.StatusAccepted, nil)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	return err
+}
+
 func readResponse(response *http.Response, requestErr error, expected int, target any) error {
 	if requestErr != nil {
-		// Transport errors can contain credentials. Preserve only safe context error identities.
 		if errors.Is(requestErr, context.Canceled) {
 			return fmt.Errorf("NVKE controller request canceled: %w", context.Canceled)
 		}
@@ -194,6 +261,14 @@ func parseID(id string) (uuid.UUID, error) {
 	parsed, err := uuid.Parse(id)
 	if err != nil || parsed == uuid.Nil {
 		return uuid.Nil, errors.New("NVKE controller cluster ID must be a nonzero UUID")
+	}
+	return parsed, nil
+}
+
+func parseNodePoolID(id string) (uuid.UUID, error) {
+	parsed, err := uuid.Parse(id)
+	if err != nil || parsed == uuid.Nil {
+		return uuid.Nil, errors.New("NVKE controller node pool ID must be a nonzero UUID")
 	}
 	return parsed, nil
 }

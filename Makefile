@@ -55,6 +55,7 @@ LICENSE_SOURCE_FILTER = awk '!/(^|\/)vendor\// && !/(^|\/)testdata\// && !/^gene
 # Modules in go.work — every module in the repository. All dependencies are
 # public; the Go module cache supplies them after the first download.
 WORK_MODULES := agent \
+                auth \
                 cluster-api-provider-provisioned \
                 controller \
                 controller/api \
@@ -116,9 +117,9 @@ cmd_ldflags = -X 'main.version=$(call cmd_version,$(1))' \
 RELEASE_LDFLAGS ?= -s -w -buildid= -extldflags -static
 
 # Must match WORKER_BIN_NAME in controller/Makefile. `build` fails if it does not.
-# NKE_CONTROLLER_BIN_NAME overrides it. An empty value counts as unset.
-# CWE_BIN_NAME is a deprecated alias for NKE_CONTROLLER_BIN_NAME; #1399 removes it.
-controller_bin_name = $(or $(NKE_CONTROLLER_BIN_NAME),$(CWE_BIN_NAME),controller)
+# NVKE_CONTROLLER_BIN_NAME overrides it. An empty value counts as unset.
+# NKE_CONTROLLER_BIN_NAME and CWE_BIN_NAME are deprecated aliases for NVKE_CONTROLLER_BIN_NAME; #1399 removes them.
+controller_bin_name = $(or $(NVKE_CONTROLLER_BIN_NAME),$(NKE_CONTROLLER_BIN_NAME),$(CWE_BIN_NAME),controller)
 
 # No module is excluded from the workspace any more; kept (empty) because
 # work-check accounts for every go.mod in the tree against these two lists.
@@ -333,6 +334,7 @@ PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
                      controller/api \
                      controller/deploy/charts \
                      agent \
+                     auth \
                      cli \
                      controller \
                      management-engine \
@@ -343,6 +345,9 @@ PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
 # compiles nothing that uses it. These are the modules that import it, and a
 # change to the API has to build them to mean anything.
 API_DEPENDENTS := controller cli controller/test/e2e
+
+# The modules that import auth, so an authentication change builds what uses it.
+AUTH_DEPENDENTS := controller
 
 # The modules that import controller/deploy/charts, so a chart change builds
 # what ships it. nvkectl is the consumer; until it imports the module, this only
@@ -359,6 +364,7 @@ CHARTS_DEPENDENTS := cli
 # exports CGO_ENABLED=0 should not get a different answer from the gate, and
 # matching it costs nothing.
 RACE_MODULES := agent \
+                auth \
                 cli \
                 cluster-api-provider-provisioned \
                 controller \
@@ -403,7 +409,7 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 	build_system=no; workflows=no; shell=no; chart=no; nktp=no; workspace=no; licences=no; provider_manifest=no; cli_docs=no; \
 	printf '%s\n' "$$changed" | grep -qE '^Makefile$$|^make/[^/]+\.mk$$' && build_system=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^\.github/workflows/.*\.ya?ml$$' && workflows=yes || true; \
-	printf '%s\n' "$$changed" | grep -qE '^controller/deploy/charts/|^controller/hack/chart-.*-assertions\.(py|sh)$$|^controller/internal/(config|controllerconfig)/|^\.github/workflows/chart\.yml$$' && chart=yes || true; \
+	printf '%s\n' "$$changed" | grep -qE '^controller/deploy/charts/|^controller/deploy/monitoring/|^controller/hack/chart-.*-assertions\.(py|sh)$$|^controller/internal/(config|controllerconfig)/|^\.github/workflows/chart\.yml$$' && chart=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^nktp/deploy/charts/|^nktp/hack/chart-.*\.sh$$|^\.github/workflows/nktp-chart\.yml$$' && nktp=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^cluster-api-provider-provisioned/config/|^cli/internal/bootstrap/controllerdeploy/manifests/(provisioned-provider|capnico)\.yaml$$|^deploy/nico/capnico/capnico\.yaml$$' && provider_manifest=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^cli/' && cli_docs=yes || true; \
@@ -433,6 +439,7 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 			echo "$$m"; \
 			case "$$m" in \
 				(controller/api) printf '%s\n' $(API_DEPENDENTS) ;; \
+				(auth) printf '%s\n' $(AUTH_DEPENDENTS) ;; \
 				(controller/deploy/charts) printf '%s\n' $(CHARTS_DEPENDENTS) ;; \
 			esac; \
 		done | sort -u); \

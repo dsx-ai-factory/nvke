@@ -20,17 +20,18 @@ import (
 )
 
 const (
-	ControllerGofailPostgresDSNEnv = "NKE_CONTROLLER_GOFAIL_E2E_DB_CONNECTION_STRING"
+	ControllerGofailPostgresDSNEnv = "NVKE_CONTROLLER_GOFAIL_E2E_DB_CONNECTION_STRING"
 	postgresReadyTimeout           = 15 * time.Second
-	// legacyPostgresDSNEnv is a deprecated alias; #1399 removes it.
-	legacyPostgresDSNEnv = "CWE_GOFAIL_E2E_DB_CONNECTION_STRING"
+	// previousPostgresDSNEnv and legacyPostgresDSNEnv are deprecated aliases; #1399 removes them.
+	previousPostgresDSNEnv = "NKE_CONTROLLER_GOFAIL_E2E_DB_CONNECTION_STRING"
+	legacyPostgresDSNEnv   = "CWE_GOFAIL_E2E_DB_CONNECTION_STRING"
 )
 
 // StartPostgres returns the CI-provided PostgreSQL DSN or starts an ephemeral local server.
 func StartPostgres(t testing.TB) string {
 	t.Helper()
 
-	if dsn := getenvWithLegacy(ControllerGofailPostgresDSNEnv, legacyPostgresDSNEnv); dsn != "" {
+	if dsn := getenvWithLegacy(ControllerGofailPostgresDSNEnv, previousPostgresDSNEnv, legacyPostgresDSNEnv); dsn != "" {
 		waitForPostgres(t, dsn)
 		return dsn
 	}

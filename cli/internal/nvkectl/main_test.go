@@ -5,6 +5,7 @@ package nvkectl
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -30,5 +31,8 @@ func TestMain(m *testing.M) {
 	} {
 		_ = os.Unsetenv(name)
 	}
+	// The machine running the tests may have nerdctl's configs in the real
+	// directory, which the bootstrap preflight would rightly refuse.
+	sharedCNIConfDir = filepath.Join(os.TempDir(), "nvkectl-no-such-cni-conf-dir")
 	os.Exit(m.Run())
 }

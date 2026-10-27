@@ -77,6 +77,57 @@ subjects:
 `,
 		},
 		{
+			name: "operator users from both binding kinds are not reserved",
+			manifest: `kind: ClusterRoleBinding
+metadata:
+  annotations:
+    nvke.nvidia.com/identity-source: operator
+subjects:
+  - {kind: User, name: corp:alice}
+---
+kind: RoleBinding
+metadata:
+  annotations:
+    nvke.nvidia.com/identity-source: operator
+subjects:
+  - {kind: User, name: corp:bob}
+`,
+		},
+		{
+			name: "management binding still reserves a user also in an operator binding",
+			manifest: `kind: RoleBinding
+metadata:
+  annotations:
+    nvke.nvidia.com/identity-source: operator
+subjects:
+  - {kind: User, name: exchanged-service}
+---
+kind: ClusterRoleBinding
+subjects:
+  - {kind: User, name: exchanged-service}
+---
+kind: RoleBinding
+metadata:
+  annotations:
+    nvke.nvidia.com/identity-source: management
+subjects:
+  - {kind: User, name: explicit-management-service}
+`,
+			want: []string{"exchanged-service", "explicit-management-service"},
+		},
+		{
+			name: "invalid identity source fails closed",
+			manifest: `kind: ClusterRoleBinding
+metadata:
+  name: invalid
+  annotations:
+    nvke.nvidia.com/identity-source: opertor
+subjects:
+  - {kind: User, name: corp:alice}
+`,
+			wantErr: true,
+		},
+		{
 			name:     "malformed YAML is an error",
 			manifest: "kind: [unclosed",
 			wantErr:  true,

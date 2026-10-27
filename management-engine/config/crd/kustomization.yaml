@@ -8,6 +8,7 @@ resources:
 - bases/internal.nvke.nvidia.com_nvkeclusters.yaml
 - bases/internal.nvke.nvidia.com_nodepoolreleases.yaml
 - bases/internal.nvke.nvidia.com_clusterreleasechannels.yaml
+- bases/internal.nvke.nvidia.com_controlplaneclasses.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

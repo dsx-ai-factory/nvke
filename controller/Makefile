@@ -9,17 +9,17 @@ export GOTOOLCHAIN
 
 WORKER_BIN_NAME			?= controller
 TEMPORAL_CLI_DOWNLOAD_DIR	?= $(CURDIR)/.go/temporal-cli
-# The e2e-gofail settings are NKE_CONTROLLER_GOFAIL_E2E_*. An empty value counts as unset.
-# CWE_GOFAIL_E2E_* are deprecated aliases for them; #1399 removes them.
-gofail_e2e_worker_binary	= $(or $(NKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY),$(CWE_GOFAIL_E2E_WORKER_BINARY),$(CURDIR)/.go/bin/cwe-worker-gofail)
+# The e2e-gofail settings are NVKE_CONTROLLER_GOFAIL_E2E_*. An empty value counts as unset.
+# NKE_CONTROLLER_GOFAIL_E2E_* and CWE_GOFAIL_E2E_* are deprecated aliases for them; #1399 removes them.
+gofail_e2e_worker_binary	= $(or $(NVKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY),$(NKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY),$(CWE_GOFAIL_E2E_WORKER_BINARY),$(CURDIR)/.go/bin/cwe-worker-gofail)
 GOFAIL				?= $(shell go env GOPATH)/bin/gofail
 SETUP_ENVTEST			?= $(shell go env GOPATH)/bin/setup-envtest
 # Explicit store, so CI can cache a known path instead of guessing setup-envtest's
 # platform-dependent default.
 ENVTEST_BIN_DIR			?= $(CURDIR)/.go/envtest
 OIDC_LIVE_CAPD_NODE_IMAGE	?= cwe-capd-kindest-node:oidc-acceptance-jointoken
-gofail_e2e_cluster_crds		= $(or $(NKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS),$(CWE_GOFAIL_E2E_CLUSTER_CRDS),$(shell go env GOMODCACHE)/sigs.k8s.io/cluster-api@$(shell go list -m -f '{{.Version}}' sigs.k8s.io/cluster-api)/config/crd/bases)
-gofail_e2e_capnico_crds		= $(or $(NKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS),$(CWE_GOFAIL_E2E_CAPNICO_CRDS),$(shell go env GOMODCACHE)/github.com/dsx-ai-factory/cluster-api-provider-nico@$(shell go list -m -f '{{.Version}}' github.com/dsx-ai-factory/cluster-api-provider-nico)/config/crd/bases)
+gofail_e2e_cluster_crds		= $(or $(NVKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS),$(NKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS),$(CWE_GOFAIL_E2E_CLUSTER_CRDS),$(shell go env GOMODCACHE)/sigs.k8s.io/cluster-api@$(shell go list -m -f '{{.Version}}' sigs.k8s.io/cluster-api)/config/crd/bases)
+gofail_e2e_capnico_crds		= $(or $(NVKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS),$(NKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS),$(CWE_GOFAIL_E2E_CAPNICO_CRDS),$(shell go env GOMODCACHE)/github.com/dsx-ai-factory/cluster-api-provider-nico@$(shell go list -m -f '{{.Version}}' github.com/dsx-ai-factory/cluster-api-provider-nico)/config/crd/bases)
 
 # The licence header template lives once, at the repository root.
 REPO_ROOT ?= $(shell git rev-parse --show-toplevel)
@@ -235,7 +235,7 @@ test-health: ## Run the health-labeled subset of the test/e2e suite against the 
 # is absent. test-authn-spire is the way to run only that one.
 #
 # The permissive specs have no target: they need an NVKE deployed with
-# permissiveMode: true, which is a different deployment. Run them against one
+# apiAuth.permissive: true, which is a different deployment. Run them against one
 # with `make test-e2e ARGS='--label-filter=authn-permissive'`.
 .PHONY: test-authn
 test-authn: ## Run the authn-labeled subset of the test/e2e suite against the cluster in KUBECONFIG.
@@ -366,9 +366,9 @@ e2e-gofail: ## Execute gofail e2e tests against a local Temporal dev server.
 		go build -tags gofail -o "$(gofail_e2e_worker_binary)" ./cmd/worker; \
 		phase "build-worker"; \
 		TEMPORAL_CLI_DOWNLOAD_DIR="$(TEMPORAL_CLI_DOWNLOAD_DIR)" \
-			NKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY="$(gofail_e2e_worker_binary)" \
-			NKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS="$(gofail_e2e_cluster_crds)" \
-			NKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS="$(gofail_e2e_capnico_crds)" \
+			NVKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY="$(gofail_e2e_worker_binary)" \
+			NVKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS="$(gofail_e2e_cluster_crds)" \
+			NVKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS="$(gofail_e2e_capnico_crds)" \
 			go test -v -tags gofail ./e2e/gofail ./e2e/tracing -timeout 30m -count=1; \
 		phase "run-tests"; \
 		cleanup; \
@@ -378,7 +378,7 @@ e2e-gofail: ## Execute gofail e2e tests against a local Temporal dev server.
 
 
 .PHONY: e2e-tracing
-e2e-tracing: ## Execute the tracing e2e test against a local Temporal dev server and PostgreSQL (initdb and postgres on PATH, or set NKE_CONTROLLER_GOFAIL_E2E_DB_CONNECTION_STRING).
+e2e-tracing: ## Execute the tracing e2e test against a local Temporal dev server and PostgreSQL (initdb and postgres on PATH, or set NVKE_CONTROLLER_GOFAIL_E2E_DB_CONNECTION_STRING).
 	mkdir -p "$(TEMPORAL_CLI_DOWNLOAD_DIR)"
 	TEMPORAL_CLI_DOWNLOAD_DIR="$(TEMPORAL_CLI_DOWNLOAD_DIR)" go test -v -tags gofail ./e2e/tracing -timeout 10m -count=1
 
@@ -485,7 +485,7 @@ docker-manifest: check-img-repo ## Stitch <t>-amd64 + <t>-arm64 into <t> under I
 ##@ Run
 
 .PHONY: run
-# Host-local runs read nke-controller-config from this file unless
+# Host-local runs read nvke-controller-config from this file unless
 # CONTROLLER_CONFIG_PATH names another.
 LOCAL_CONTROLLER_CONFIG ?= $(CURDIR)/hack/local-controller-config.yaml
 
@@ -549,7 +549,7 @@ license-policy-check: $(GO_LICENSES) ## Verify every third-party dependency uses
 	@# that genuinely need ignoring are named explicitly.
 	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO_LICENSES) check ./cmd/worker ../cluster-api-provider-provisioned/cmd/manager \
 		--allowed_licenses=$(ALLOWED_LICENSES) \
-		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nvke/agent,github.com/dsx-ai-factory/nvke/management-engine,github.com/dsx-ai-factory/nvke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
+		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nvke/agent,github.com/dsx-ai-factory/nvke/auth,github.com/dsx-ai-factory/nvke/management-engine,github.com/dsx-ai-factory/nvke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
 
 .PHONY: notices
 notices: $(GO_LICENSES) ## Regenerate THIRD_PARTY_NOTICES.md for the released worker and provider manager binaries.
@@ -569,3 +569,9 @@ notices-check: ## Verify THIRD_PARTY_NOTICES.md is up to date. (advisory; not in
 		git diff --name-only -- THIRD_PARTY_NOTICES.md; \
 		exit 1; \
 	fi
+
+##@ Credential monitoring
+
+.PHONY: credential-alerts-check
+credential-alerts-check: ## Validate credential rules, fixtures and chart render with the repository-pinned tools.
+	$(MAKE) -C .. credential-alerts-check

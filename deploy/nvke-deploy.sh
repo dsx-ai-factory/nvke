@@ -122,6 +122,46 @@ kubectl_run() {
   fi
 }
 
+# skip_create_if_absent reports whether a manifest file declares itself
+# create-if-absent and the object it names is already in the cluster.
+#
+#   # nvke-deploy: create-if-absent <kind>:<name>:<namespace>
+#
+# A file that carries the directive is applied on a first install and left
+# alone on every install after it, so what it created keeps the shape it was
+# created with. It is for the few objects whose identity a site persists and
+# cannot re-derive -- a CA whose private key tenants have embedded -- not for
+# ordinary drift, which still belongs under apply.
+#
+# The probe is a read and runs under --dry-run too, so a dry run describes the
+# install that would happen rather than one branch of it. A probe that fails
+# for any reason other than NotFound stops the install: "the API server did
+# not answer" must not read as "the object is absent", because that direction
+# re-creates the object. Under --dry-run there may be no cluster at all, so
+# there the failure is reported and the file counted as absent.
+skip_create_if_absent() {
+  local file="$1" spec kind name namespace err rc=0
+  spec="$(sed -n 's/^#[[:space:]]*nvke-deploy:[[:space:]]*create-if-absent[[:space:]]\{1,\}//p' "${file}" | head -n 1)"
+  [[ -n "${spec}" ]] || return 1
+  IFS=: read -r kind name namespace <<<"${spec}"
+  [[ -n "${kind}" && -n "${name}" && -n "${namespace}" ]] \
+    || die "${file}: create-if-absent wants <kind>:<name>:<namespace>, got ${spec}"
+  err="$(kubectl ${KUBECONFIG_PATH:+--kubeconfig "${KUBECONFIG_PATH}"} \
+    -n "${namespace}" get "${kind}" "${name}" 2>&1 >/dev/null)" || rc=$?
+  if (( rc == 0 )); then
+    log "skipping ${file##*/}: ${kind}/${name} already exists in ${namespace}"
+    return 0
+  fi
+  if [[ "${err}" == *NotFound* ]]; then
+    return 1
+  fi
+  [[ -n "${DRY_RUN}" ]] || die "cannot tell whether ${kind}/${name} exists in namespace ${namespace}: ${err}
+${file##*/} is applied only when it does not, so the install stops rather than
+guess. Fix the cluster read and run again."
+  log "cannot probe ${kind}/${name} in ${namespace} (${err}); would apply ${file##*/}"
+  return 1
+}
+
 # apply_manifest_item applies every .yaml in the item directory, lexicographically.
 # The generator names them 00-, 10-, 40- precisely so that order is the intended
 # one: namespaces exist before anything lands in them.
@@ -129,7 +169,10 @@ apply_manifest_item() {
   local dir="$1" file found=""
   if [[ -f "${dir}/kustomization.yaml" ]]; then
     # Rendered by nvkectl render deploy-path: the committed YAML with its image
-    # rewritten to the release's repository and digest.
+    # rewritten to the release's repository and digest. A kustomization is one
+    # apply of one stream, so a create-if-absent file in it is not honoured;
+    # only an item that binds an image to a release gets one, and none of
+    # those carries the directive.
     log "kustomization: $(awk '$1 == "newName:" { print $2 }' "${dir}/kustomization.yaml" | tr -d '"')@$(awk '$1 == "digest:" { print $2 }' "${dir}/kustomization.yaml" | tr -d '"')"
     if [[ -n "${DRY_RUN}" ]]; then
       run kubectl kustomize "${dir}"
@@ -144,6 +187,7 @@ apply_manifest_item() {
     # release.yaml is the item's metadata, as it is for a helm item, not a manifest.
     [[ "${file##*/}" == release.yaml ]] && continue
     found=1
+    skip_create_if_absent "${file}" && continue
     kubectl_run apply --server-side -f "${file}"
   done
   [[ -n "${found}" ]] || die "manifest item ${dir} contains no .yaml files"
@@ -176,7 +220,7 @@ wait_for_requires() {
         -n "${namespace}" get "${kind}" "${name}" >/dev/null 2>&1; then
       die "phase ${phase} requires ${kind}/${name} in namespace ${namespace}, which does not exist.
 It is not part of this chart -- an earlier item supplies it. In this repository
-that is the nvke-base-config item, from controller/deploy/k8s/oidc-upstream-ca.yaml."
+that is the nvke-base-config item, from controller/deploy/k8s/oidc-upstream-ca-certificate.yaml."
     fi
     log "waiting for ${kind}/${name} condition=${condition}"
     kubectl_run -n "${namespace}" wait --for="condition=${condition}" \

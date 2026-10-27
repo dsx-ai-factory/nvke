@@ -81,6 +81,15 @@ env:
 
 Then run the install command from [Run NVKE end to end on one machine](../get-started/local-site.md) again, with the same flags and `--values-for controller=../controller-log.yaml` added. Your `env` list replaces the deploy path's list, which sets `NODE_AGENT_PORT`, so keep that entry. `LOG_LEVEL` accepts `debug`, `info`, `warn` and `error`. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md). If you passed `--values-for nktp=<FILE>` when you installed, pass it again, or NKTP goes back to the bundled development backend.
 
+Database queries appear in the `query` key with a `?` for each value, and a PostgreSQL error appears by its severity and code without its message, at every log level. The values can include content you supplied, such as cloud-init files in a cluster's `infra` settings, and an error message can repeat a rejected value. To log the values and messages while you debug a query, add this entry to the `env` list in `controller-log.yaml` and run the install command again as above:
+
+```yaml
+  - name: DB_QUERY_LOG_VALUES
+    value: "true"
+```
+
+> **Warning:** The values and messages appear in the logs in clear text. Remove the entry when you finish.
+
 ### Read the management plane metrics
 
 The management plane serves Prometheus metrics at `/metrics` on port 9090 of its pod. NVKE telemetry pipeline (NKTP) scrapes them, as described in [Find the management cluster's telemetry](#find-the-management-clusters-telemetry). To read them directly:
@@ -124,15 +133,19 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
 
    With API authentication on, `nvkectl` must use an OIDC kubeconfig for this and the next two steps; with the management cluster's admin kubeconfig every NVKE API call fails.
 
-   A healthy cluster's `STATUS` is `Provisioned`. `Provisioning`, `Updating`, `Upgrading`, `Recycling` and `Deleting` mean an operation is running. `ProvisioningFailed` and `UpdateFailed` mean the last operation failed. [Create a workload cluster](../workload-clusters/create.md) describes each status.
+   `Provisioned` records provisioning state, not certificate-maintenance health. `Provisioning`, `Updating`, `Upgrading`, `Recycling` and `Deleting` mean an operation is running, except that `Updating` can also mean a failed certificate renewal or a failed etcd key rotation retained the cluster mutation lock and needs operator recovery. `ProvisioningFailed` and `UpdateFailed` mean the last operation failed. [Create a workload cluster](../workload-clusters/create.md) describes each status.
 
-2. Read the conditions of a cluster whose status is not `Provisioned`.
+2. Read the cluster's conditions, including on clusters whose status is `Provisioned`.
 
    ```bash
    nvkectl get clusters <WORKLOAD_CLUSTER> -o yaml
    ```
 
-   `<WORKLOAD_CLUSTER>` is the workload cluster's name. Each entry under `conditions` has a `status`, a `lastTransitionTime` and a `message`. The `message` of the condition that last changed usually names the cause.
+   `<WORKLOAD_CLUSTER>` is the workload cluster's name. Provisioning conditions have a `status`, a `lastTransitionTime` and a `message`; the message usually names the cause of a provisioning failure. For certificate maintenance, inspect `conditions.certificateRenewal.state`, its `phase` and `message`, and the top-level `nextCertRenewalDue`, even when `STATUS` is `Provisioned`. For etcd key rotation, inspect `conditions.etcdKeyRotation`:
+
+   - A failed renewal that released its mutation lock can leave `STATUS` as `Provisioned`. Fix the reported cause; automatic retry waits until both `nextCertRenewalDue` and the one-hour backoff after `conditions.certificateRenewal.completedAt` have passed. A `two-control-plane-voters` refusal additionally waits for `controlPlaneConfig.desiredCount` to be at least `3`; scale to three or more, not down to one.
+   - If `conditions.updateInProgress.type=certificate_renewal` remains set with renewal state `failed`, the lock is retained. `STATUS` can show `Updating`, but a higher-priority condition such as `UpdateFailed` can mask it; identify retained ownership from these conditions regardless of the displayed status. Waiting does not release it. Follow the [ownership-checked recovery procedure](../../controller/docs/certificate-renewal.md#status-and-failure-handling) after confirming that the node operation and all its attempts have stopped. Cluster health or workflow completion alone is not enough to clear it.
+   - A failed etcd key rotation with `conditions.updateInProgress.type=etcd_key_rotation` and `conditions.etcdKeyRotation.state=failed` keeps its mutation lock until its workflow is reset and completes. Waiting for `Provisioned` will not clear it, and `UpdateFailed` can mask `Updating`. The lock is also retained when `conditions.etcdKeyRotation.state=running` while the workflow named by `conditions.etcdKeyRotation.workflowID` is no longer open. Follow [phase-aware recovery](../../controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery).
 
 3. List the cluster's node pools.
 

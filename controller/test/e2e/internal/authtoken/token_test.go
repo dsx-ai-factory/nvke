@@ -371,7 +371,7 @@ func TestAudienceFromCluster(t *testing.T) {
 			name:    "unparseable YAML is an error",
 			data:    map[string]string{ConfigMapKey: "audience: [unterminated\n"},
 			wantErr: true,
-			errFrag: "parsing auth.yaml",
+			errFrag: "parsing the authentication configuration",
 		},
 	}
 
@@ -404,6 +404,48 @@ func TestAudienceFromCluster(t *testing.T) {
 			}
 			if audience != tc.want {
 				t.Fatalf("audience = %q, want %q", audience, tc.want)
+			}
+		})
+	}
+}
+
+// A chart-rendered configuration is apiAuth in the controller's settings, read
+// before the authentication ConfigMap. Off or absent there leaves the
+// authentication ConfigMap to decide.
+func TestRawConfigReadsAPIAuthFirst(t *testing.T) {
+	settings := func(name, config string) *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: controller.Namespace()},
+			Data:       map[string]string{ControllerConfigKey: config},
+		}
+	}
+	authConfig := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: ConfigMapName, Namespace: controller.Namespace()},
+		Data:       map[string]string{ConfigMapKey: "audiences: [\"https://file.example\"]\n"},
+	}
+	const on = "apiAuth:\n  enabled: true\n  permissive: false\n  audiences: [\"https://inline.example\"]\n  issuers: []\n"
+	const off = "apiAuth:\n  enabled: false\n  audiences: []\n  issuers: []\n"
+
+	tests := []struct {
+		name    string
+		objects []runtime.Object
+		want    string
+		wantOK  bool
+	}{
+		{name: "apiAuth wins", objects: []runtime.Object{settings(ControllerConfigMapName, on), authConfig}, want: "https://inline.example", wantOK: true},
+		{name: "under the pinned settings name too", objects: []runtime.Object{settings(LegacyControllerConfigMapName, on)}, want: "https://inline.example", wantOK: true},
+		{name: "apiAuth off falls back to the file", objects: []runtime.Object{settings(ControllerConfigMapName, off), authConfig}, want: "https://file.example", wantOK: true},
+		{name: "no section falls back too", objects: []runtime.Object{settings(ControllerConfigMapName, "metricsListenAddress: :9090\n"), authConfig}, want: "https://file.example", wantOK: true},
+		{name: "off with no file is not configured", objects: []runtime.Object{settings(ControllerConfigMapName, off)}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			audience, ok, err := AudienceFromCluster(context.Background(), fake.NewClientset(tc.objects...))
+			if err != nil {
+				t.Fatalf("AudienceFromCluster: %v", err)
+			}
+			if ok != tc.wantOK || audience != tc.want {
+				t.Fatalf("AudienceFromCluster = %q, %v; want %q, %v", audience, ok, tc.want, tc.wantOK)
 			}
 		})
 	}

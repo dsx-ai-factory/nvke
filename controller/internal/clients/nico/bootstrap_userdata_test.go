@@ -43,7 +43,7 @@ func testNodeAgentBootstrapFiles(cfg config.Config, controllerClientCABundle str
 				Encoding:    "b64",
 				Content:     base64.StdEncoding.EncodeToString([]byte(controllerClientCABundle)),
 			})
-			args = append(args, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
+			args = append(args, "--nvke-controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
 		}
 		if node.NodeAgentTLSJWTEnabled {
 			args = append(args, "--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url="+cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)
@@ -292,7 +292,7 @@ autoinstall:
 				agentConfigFile := rendered[1]
 				assert.Equal(t, config.NodeAgentConfigPath, agentConfigFile.Path)
 				assert.Empty(t, agentConfigFile.Encoding)
-				assert.Contains(t, agentConfigFile.Content, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
+				assert.Contains(t, agentConfigFile.Content, "--nvke-controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
 				assert.NotContains(t, userData, "systemctl restart nke-agent.service")
 			},
 		},
@@ -322,7 +322,7 @@ autoinstall:
 				assert.Contains(t, userData, "--dsx-identity-exchange-url=https://identity.example.test/v1/exchange")
 				assert.Contains(t, userData, config.NodeAgentControllerCAPath)
 				assert.Contains(t, userData, base64.StdEncoding.EncodeToString([]byte(testControllerClientCA)))
-				assert.Contains(t, userData, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
+				assert.Contains(t, userData, "--nvke-controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
 			},
 		},
 		"external mTLS requires a controller CA": {
@@ -459,7 +459,7 @@ func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
 			assert.Equal(t, 1, strings.Count(userData, "write_files:"))
 			assert.Equal(t, 1, strings.Count(userData, "path: \""+config.NodeAgentConfigPath+"\""))
 			assert.NotContains(t, userData, "printf 'AGENT_ARGS=")
-			assert.Contains(t, userData, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
+			assert.Contains(t, userData, "--nvke-controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
 
 			writeFiles := parseWriteFiles(t, userData)
 			var controllerCAFile *testWriteFile
@@ -484,7 +484,7 @@ func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
 			assert.Equal(t, "0644", agentConfigFile.Permissions)
 			assert.Empty(t, agentConfigFile.Encoding)
 			assert.Contains(t, agentConfigFile.Content, "--secure-server-port 15005")
-			assert.Contains(t, agentConfigFile.Content, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
+			assert.Contains(t, agentConfigFile.Content, "--nvke-controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
 
 			cfgNoExternalMTLS := cfg
 			cfgNoExternalMTLS.NodeAgentExternalMTLSEnabled = false
@@ -505,14 +505,14 @@ func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
 			assert.Equal(t, 1, strings.Count(userData, "write_files:"))
 			assert.Equal(t, 1, strings.Count(userData, "path: \""+config.NodeAgentConfigPath+"\""))
 			assert.NotContains(t, userData, "printf 'AGENT_ARGS=")
-			assert.NotContains(t, userData, "--controller-client-ca-bundle")
+			assert.NotContains(t, userData, "client-ca-bundle")
 			var defaultAgentConfigFile *testWriteFile
 			writeFiles = parseWriteFiles(t, userData)
 			for index := range writeFiles {
 				assert.NotEqual(t, config.NodeAgentControllerCAPath, writeFiles[index].Path)
 				if writeFiles[index].Path == config.NodeAgentConfigPath {
 					defaultAgentConfigFile = &writeFiles[index]
-					assert.NotContains(t, writeFiles[index].Content, "--controller-client-ca-bundle")
+					assert.NotContains(t, writeFiles[index].Content, "client-ca-bundle")
 				}
 			}
 			require.NotNil(t, defaultAgentConfigFile)
