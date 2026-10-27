@@ -22,18 +22,6 @@ import (
 const (
 	operationTypeEtcdDefrag = "etcd_defrag"
 
-	// defaultMinVotingMembersForDefrag is the floor below which the agent will
-	// not restart the local member. Three voters means the cluster survives
-	// losing this one; at two the restart costs quorum, and at one it is a full
-	// API outage.
-	//
-	// There is no caller override, by design: defragmentation is optional, so
-	// nothing justifies spending a cluster's quorum on it. The floor refuses
-	// the unsafe topologies outright rather than making an operator opt out of
-	// them. See etcdRestartSafetyFloor for how it combines with the registered
-	// voter count.
-	defaultMinVotingMembersForDefrag = 3
-
 	stepEtcdDefragPreflight          = "etcd_defrag_preflight"
 	stepEtcdDefragTransferLeader     = "etcd_defrag_transferring_leadership"
 	stepEtcdDefragStoppingEtcd       = "etcd_defrag_stopping_etcd_container"
@@ -452,10 +440,8 @@ func (s *NodeAgentServer) etcdDefragPreflight(
 	reachable := s.reachableVotingMembers(ctx, client, members, localStatus.Header.MemberId)
 	// Defragmentation is optional, so the floor is derived from the membership
 	// alone and there is no caller override: nothing justifies defragmenting a
-	// member at the cost of the cluster's quorum. The derived floor already
-	// refuses the topologies where no value could preserve one, needing two
-	// available voters of one registered and three of two.
-	if floor := etcdRestartSafetyFloor(registeredVoters, defaultMinVotingMembersForDefrag); int32(len(reachable)) < floor {
+	// member at the cost of the cluster's quorum.
+	if floor := etcdRestartSafetyFloor(registeredVoters); int32(len(reachable)) < floor {
 		return sizeBefore, nil, fmt.Errorf(
 			"refusing to restart etcd: %d of %d voting members are available, need %d",
 			len(reachable), registeredVoters, floor,

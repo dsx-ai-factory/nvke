@@ -405,6 +405,39 @@ func TestVotingMemberCount(t *testing.T) {
 	}), "learners do not vote so they do not count toward quorum")
 }
 
+// The floor carries the whole safety argument for taking a voter down, so the
+// topologies are pinned rather than left to the formula. One and two
+// registered voters are the point: both need more available voters than exist,
+// which is how a cluster that cannot survive the restart is refused without a
+// separate minimum to exclude it.
+func TestEtcdRestartSafetyFloor(t *testing.T) {
+	tests := []struct {
+		name             string
+		registeredVoters int32
+		want             int32
+		refusesOutright  bool
+	}{
+		{"one voter cannot survive losing it", 1, 2, true},
+		{"two voters lose quorum on the restart", 2, 3, true},
+		{"three voters tolerate one down", 3, 3, false},
+		{"four voters need a quorum of three to survive", 4, 4, false},
+		{"five voters tolerate one down but not three", 5, 4, false},
+		{"seven voters", 7, 5, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := etcdRestartSafetyFloor(tc.registeredVoters)
+			assert.Equal(t, tc.want, got)
+			// len(reachable) can never exceed the registered count, so a floor
+			// above it refuses on every call no matter who is answering.
+			assert.Equal(t, tc.refusesOutright, got > tc.registeredVoters,
+				"whether this topology is refused on every call")
+			// One more than the quorum that must survive the restart.
+			assert.Equal(t, tc.registeredVoters/2+1, got-1, "floor must be quorum+1")
+		})
+	}
+}
+
 func TestGetEtcdStatus(t *testing.T) {
 	t.Run("reports sizing, leadership and voters", func(t *testing.T) {
 		s := writeEtcdManifest(t, etcdManifestWithFlags)

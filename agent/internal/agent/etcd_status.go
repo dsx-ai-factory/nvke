@@ -370,20 +370,21 @@ func (s *NodeAgentServer) probeVotingMember(
 }
 
 // etcdRestartSafetyFloor is how many voting members must be available before
-// the local one may be restarted.
+// the local one may be restarted: quorum is registeredVoters/2+1, so one more
+// than that has to be answering for the quorum to survive the member that is
+// about to go down.
 //
-// It is the larger of a fixed floor and what the registered membership needs in
-// order to keep a quorum once this member goes down. Those differ: a
-// five-member cluster with two already offline has three available, which
-// clears a floor of three but would leave two against a quorum of three.
+// It is derived from the registered membership rather than being a fixed
+// number, because the two part company on a cluster that is already degraded:
+// five registered with two offline leaves three available, which clears any
+// floor of three but would leave two against a quorum of three.
 //
-// Neither term can be waived. A one- or two-member cluster cannot keep a quorum
-// through the restart at any floor, and this returning more than the registered
-// voter count is how those topologies get refused.
-func etcdRestartSafetyFloor(registeredVoters, minVoters int32) int32 {
-	// Quorum is registeredVoters/2+1; one more than that has to be available so
-	// the quorum survives the member that is about to go down.
-	return max(minVoters, registeredVoters/2+2)
+// Returning more than the registered voter count is how the topologies that
+// cannot survive a restart at all are refused - one registered member needs
+// two available and two registered need three - so no separate minimum is
+// needed to exclude them.
+func etcdRestartSafetyFloor(registeredVoters int32) int32 {
+	return registeredVoters/2 + 2
 }
 
 // GetEtcdStatus reports the local etcd member's backend sizing and role so a
