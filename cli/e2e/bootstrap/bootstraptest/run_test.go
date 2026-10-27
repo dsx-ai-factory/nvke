@@ -38,6 +38,11 @@ func TestE2E_BootstrapSite(t *testing.T) {
 		t.Fatalf("reading the run configuration: %v", err)
 	}
 
+	// Temporary: export this run's telemetry to a collector in this process.
+	collector, endpoint := startTraceCollector(t)
+	opts.Env = append(opts.Env, "OTEL_EXPORTER_OTLP_ENDPOINT="+endpoint)
+	t.Cleanup(func() { collector.report(t) })
+
 	b, err := bootstraptest.StartBootstrap(context.Background(), opts, t.Logf)
 	if err != nil {
 		t.Fatalf("starting bootstrap site: %v", err)
@@ -49,6 +54,7 @@ func TestE2E_BootstrapSite(t *testing.T) {
 		t.Fatalf("nvkectl bootstrap site exited %d: %v", b.ExitCode(), err)
 	}
 	t.Logf("bootstraptest: nvkectl bootstrap site exited 0")
+	collector.check(t)
 }
 
 // stopOnSignal ends the bootstrap when this process is signalled.
