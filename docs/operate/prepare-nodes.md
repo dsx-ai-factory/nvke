@@ -55,6 +55,8 @@ The node image is not a ready Kubernetes node. It carries the node agent and the
 
    Do not set `SPIRE_JOIN_TOKEN`. Without it, the SPIRE agent attests with the node's TPM, which is how the bootstrap's SPIRE server admits nodes; it issues no join tokens. Install the Kubernetes package before the CNI images package: the images package loads its image into containerd, which the Kubernetes package provides.
 
+   If you install the management plane without a release description, you later copy two container images to each node over `ssh`; see [Install the management plane](install-management-plane.md#stage-the-controller-images-on-the-management-nodes). Add a `users:` entry for that with your SSH public key in `ssh_authorized_keys` and `sudo: ALL=(ALL) NOPASSWD:ALL`. The image accepts no password logins.
+
 2. Boot each node from the image with the user data.
 
    On first boot, cloud-init writes the SPIRE files, a configuration service renders `/etc/spire-agent/agent.conf` from them, and `runcmd` installs the packages from the local repository without network access. The SPIRE agent then retries until the bootstrap's SPIRE server is reachable.
