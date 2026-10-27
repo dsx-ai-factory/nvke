@@ -1777,8 +1777,9 @@ jobs:
   # Read from the JUnit report in each lane's run log, which "Withhold
   # credentials from the run log" scrubbed before the upload, because a failure
   # can name the jump host. A re-run uploads its run log under its own attempt;
-  # the latest attempt of each stream is the one shown. A stream that left no
-  # report is shown as having none.
+  # each stream shows the report of the attempt that last ran it. A stream whose
+  # last run left no report is shown as having none, even when an earlier
+  # attempt left one.
   tests:
     name: tests
     needs: [plan, qualify-run]
@@ -1827,17 +1828,33 @@ jobs:
           listing="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
             --jq '.artifacts[] | select(.expired | not) | [.id, .name] | @tsv')"
 
+          # The attempt that last ran each stream, from the run's jobs, which are
+          # named for their stream. Not the newest artifact: a re-run that fails
+          # before its upload leaves the previous attempt's report, showing a
+          # stream as passed that has just failed. Nor the newest job: a re-run
+          # of the failed jobs copies every job it does not re-run into the new
+          # attempt, under the new attempt's number and the original start time.
+          # So it is the earliest attempt holding the stream's latest start.
+          last_runs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=all&per_page=100" \
+            --jq '.jobs[] | {name, started_at, run_attempt}' \
+            | jq -rs 'group_by(.name)[]
+                | (map(.started_at) | max) as $last
+                | [.[0].name, (map(select(.started_at == $last) | .run_attempt) | min)] | @tsv')"
+          declare -A ran_in=()
+          while IFS=$'\t' read -r stream attempt; do
+            [ -n "${stream}" ] || continue
+            ran_in[${stream}]="${attempt}"
+          done <<< "${last_runs}"
+
           # forge-site-<stage>-<stream>-<run id>-<attempt>, as "Upload the run
           # log" names it. The stage is one word, so what is left before the
           # run id is the stream.
-          declare -A id_of=() attempt_of=()
+          declare -A id_of=()
           while IFS=$'\t' read -r id name; do
             [[ "${name}" =~ ^forge-site-[a-z]+-(.+)-${GITHUB_RUN_ID}-([0-9]+)$ ]] || continue
             stream="${BASH_REMATCH[1]}"
-            attempt="${BASH_REMATCH[2]}"
-            if [ "${attempt}" -gt "${attempt_of[${stream}]:-0}" ]; then
+            if [ "${BASH_REMATCH[2]}" = "${ran_in[${stream}]:-}" ]; then
               id_of[${stream}]="${id}"
-              attempt_of[${stream}]="${attempt}"
             fi
           done <<< "${listing}"
 
