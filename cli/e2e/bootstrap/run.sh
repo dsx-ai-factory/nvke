@@ -29,14 +29,8 @@
 # runs on success and on failure, so a change that starts printing a secret turns
 # the run red. CI sets NVKECTL_E2E_REQUIRE_SECRET_SCAN=1, which makes a missing
 # gitleaks a failure; a developer running this locally without it only sees a
-# warning.
-#
-# `bootstrap site` runs with a fake OTLP header token in
-# OTEL_EXPORTER_OTLP_HEADERS and an endpoint nothing listens on. The same trap
-# fails the run if that token, or the non-credential header beside it, appears
-# in the bootstrap log, the Go test log or the diagnostics bundle. The values are
-# known, so that is an exact-value search, which runs with the scan above and
-# without gitleaks.
+# warning. `bootstrap site` runs with a fake OTLP header token, and the scan also
+# fails the run if that token appears in the same output.
 #
 # Everything created is registered for teardown as it is created, and the EXIT
 # trap runs those registrations in reverse, whatever the exit. A failing exit
@@ -105,13 +99,11 @@ BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap.log"
 # own output is not in here: it goes to BOOTSTRAP_LOG, so there is one copy of
 # it and the credential scan covers that copy.
 BOOTSTRAP_GO_TEST_LOG="${SCRIPT_DIR}/.bootstrap-go-test.log"
-# The OTLP settings `bootstrap site` runs with, to prove that a header value
-# stays out of everything the run prints or saves. The values are random, so
-# none sits in this repository. The endpoint is a documentation address that
-# nothing answers, and not a loopback one: `bootstrap site` gives the controller
-# in the bootstrap cluster the headers only for an endpoint it can reach.
-# The tenant header has no credential in its name, so nvkectl masks it only as
-# the pair `x-tenant=<value>`, which is what the scan looks for.
+# The OTLP settings `bootstrap site` runs with, for the credential scan. The
+# values are random, so none sits in this repository. The endpoint is a
+# documentation address nothing answers; it is not a loopback one, because
+# `bootstrap site` gives the controller the headers only for an endpoint the
+# bootstrap cluster can reach.
 OTLP_TOKEN="e2e$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 OTLP_TENANT="e2e$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 OTLP_ENDPOINT="http://192.0.2.1:4317"
@@ -222,7 +214,7 @@ scan_output_for_secrets() {
       return 1
     fi
     log "gitleaks is not on PATH: skipping the scan of the bootstrap output for credentials (CI requires it)"
-    # The OTLP header values need no scanner: they are known.
+    # The OTLP header search needs no scanner.
     scan_for_otlp_header_values "${BOOTSTRAP_LOG}" "${BOOTSTRAP_GO_TEST_LOG}" "${DIAGNOSTICS_DIR}"
     return
   fi
@@ -344,10 +336,9 @@ scan_output_for_secrets() {
     fi
   done
 
-  # The search for the OTLP header values, driven the same way. The token planted
-  # in each place it could reach, in the form the controller's environment holds,
-  # and the tenant header as a pair must each fail it, and the search itself must
-  # say so: gitleaks might flag the same line and hide a search that finds nothing.
+  # The OTLP header search, driven the same way. Each plant must fail the scan
+  # with the search's own message, so a gitleaks finding cannot hide a search that
+  # finds nothing.
   local gotest_log="${work}/go-test.log" found
   printf 'msg="nothing to see"\n' >"${gotest_log}"
   for where in log go-test-log diagnostics-file pod-log encoded-token tenant-pair; do
@@ -377,9 +368,9 @@ scan_output_for_secrets() {
   return "${rc}"
 }
 
-# scan_run_output scans a bootstrap log, a diagnostics directory, which may not
-# exist, and optionally the Go test log with gitleaks, and searches the same files
-# for the OTLP header values. It returns 1 on a finding or a scanner failure.
+# scan_run_output scans a bootstrap log, a diagnostics directory (which may not
+# exist) and optionally the Go test log with gitleaks, and searches them for the
+# OTLP header values. It returns 1 on a finding or a scanner failure.
 scan_run_output() {
   local log_file="$1" diag_dir="$2" go_test_log="${3:-}" out rc values_rc=0
   out="$(mktemp -d)"
@@ -411,14 +402,15 @@ scan_run_output() {
   esac
 }
 
-# scan_for_otlp_header_values returns 1 if a file or directory named in its
-# arguments holds the OTLP token or the tenant header the lane set, and 0 if none
-# does. A path that does not exist is skipped. It prints the names of the files
-# that hold a value and never the value: this output goes to a public CI log.
+# scan_for_otlp_header_values returns 1 if a file or directory it is given holds
+# the OTLP token or the tenant header the lane set. A path that does not exist is
+# skipped. It prints the names of the files that hold a value, never the value:
+# this output goes to a public CI log.
 #
-# The token alone is searched, not the whole header, so the form it takes in the
-# cluster, authorization=Bearer%20<token>, is found too. The tenant is searched as
-# the pair, as nvkectl masks it.
+# The token is searched alone, so its encoded form in the cluster,
+# authorization=Bearer%20<token>, is found too. The tenant header has no
+# credential in its name, so nvkectl masks it only as the pair x-tenant=<value>,
+# and that pair is what is searched.
 scan_for_otlp_header_values() {
   local needles path hits rc=0
   local paths=()
@@ -1034,9 +1026,9 @@ sa="$(bk -n "${CONTROLLER_NAME}" get deployment "${CONTROLLER_NAME}" \
 endpoints="$(bk -n "${CONTROLLER_NAME}" get endpoints "${CONTROLLER_NAME}-external" \
   -o 'jsonpath={.subsets[*].addresses[*].ip}')"
 [ -n "${endpoints}" ] || fail "Service ${CONTROLLER_NAME}-external has no endpoints"
-# The headers the lane gave nvkectl reached the controller, in the encoded form
-# the OpenTelemetry SDK reads. Without this the credential scan could pass only
-# because the token never left nvkectl. The value is compared and not printed.
+# The headers the lane gave nvkectl reached the controller. Without this the
+# scan could pass only because the token never left nvkectl. The value is
+# compared and not printed.
 otlp_env="$(bk -n "${CONTROLLER_NAME}" get deployment "${CONTROLLER_NAME}" \
   -o 'jsonpath={.spec.template.spec.containers[*].env[?(@.name=="OTEL_EXPORTER_OTLP_HEADERS")].value}')"
 [ "${otlp_env}" = "authorization=Bearer%20${OTLP_TOKEN},x-tenant=${OTLP_TENANT}" ] ||
