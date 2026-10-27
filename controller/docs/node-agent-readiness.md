@@ -6,7 +6,7 @@
 The `node-agent-health` controller periodically calls the node agent to obtain
 its version and reconcile `NodeAgentReady`. It uses a bounded worker pool and a
 dedicated deadline for each reachability RPC. Settings come from the
-`agentReadiness` block of `nke-controller-config`'s `config.yaml`, loaded once at
+`agentReadiness` block of `nvke-controller-config`'s `config.yaml`, loaded once at
 startup. The Helm chart renders it from `nodeAgent.readiness` values:
 
 ```yaml

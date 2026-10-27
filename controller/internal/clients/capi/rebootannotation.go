@@ -7,9 +7,9 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
-// HardRebootAnnotationKeys returns NVKE's reboot key under both domains, as
-// for NICo: a CAPI template may render a NicoMachine, whose provider reads
+// HardRebootAnnotationKeys returns NVKE's reboot key under the current domain,
+// as for NICo: a CAPI template may render a NicoMachine, whose provider reads
 // only the key its --reboot-annotation flag names.
 func (*Client) HardRebootAnnotationKeys() []string {
-	return keys.MachineReboot.All()
+	return []string{keys.MachineReboot.String()}
 }

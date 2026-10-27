@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
@@ -21,6 +22,16 @@ type MockDB struct {
 	MockTx *MockTx
 	// GetTx, if set, is used by RunInTx to obtain the tx (e.g. func() db.Tx { return mockTx }). Use when MockTx is not reliable.
 	GetTx func() db.Tx
+}
+
+func (m *MockDB) RecordCredentialAuditEvent(ctx context.Context, event credentialaudit.Event) error {
+	args := m.Called(ctx, event)
+	return args.Error(0)
+}
+
+func (m *MockDB) RecordCSRCredentialAuditEvent(ctx context.Context, event credentialaudit.Event, limit int, since time.Time) (bool, error) {
+	args := m.Called(ctx, event, limit, since)
+	return args.Bool(0), args.Error(1)
 }
 
 func (m *MockDB) Ping(ctx context.Context) error {
@@ -323,6 +334,10 @@ func (m *MockTx) UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID 
 	return args.Error(0)
 }
 
+func (m *MockTx) UpdateClusterConditions(ctx context.Context, cluster *db.Cluster) error {
+	return m.Called(ctx, cluster).Error(0)
+}
+
 func (m *MockTx) SyncClusterControlPlaneConfigFromCPNodePools(ctx context.Context, clusterID uuid.UUID) error {
 	args := m.Called(ctx, clusterID)
 	return args.Error(0)
@@ -498,6 +513,10 @@ func (m *MockTx) GetNodeForUpdate(ctx context.Context, id uuid.UUID) (db.Node, e
 		return db.Node{}, args.Error(1)
 	}
 	return v, args.Error(1)
+}
+
+func (m *MockTx) UpdateNodeCertificateInspection(ctx context.Context, node *db.Node) error {
+	return m.Called(ctx, node).Error(0)
 }
 
 func (m *MockTx) UpdateNode(ctx context.Context, node *db.Node) (db.Node, error) {

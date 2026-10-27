@@ -99,6 +99,7 @@ checkout, and do not stub a dependency to make the build pass.
 |---|---|---|
 | `agent/cmd/`, `agent/internal/`, `agent/pkg/` | Node agent implementation | Yes |
 | `cli/` | nvkectl CLI implementation and e2e fixtures | Yes |
+| `auth/authn/` | NVKE API authentication library, used by the controller | Yes |
 | `cluster-api-provider-provisioned/` | Provisioned Cluster API infrastructure provider | Yes |
 | `controller/internal/` | Controller server, controllers, Temporal workflows and activities, database layer | Yes |
 | `controller/api/openapi.yaml` | OpenAPI 3.0 spec — **the source of truth for the REST API** | Yes |

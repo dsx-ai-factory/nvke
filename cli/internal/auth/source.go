@@ -37,8 +37,14 @@ var authConfigNamespaces = []string{"nke-controller", "cloud-workflow-engine"}
 // need not have pinned the other.
 var authConfigMaps = []string{"nvke-auth-config", "nke-auth-config"}
 
+// controllerConfigMaps are the names the chart gives the controller's settings
+// ConfigMap, searched the same way: a greenfield site's name first, then the
+// name an earlier site keeps by pinning controllerConfig.name.
+var controllerConfigMaps = []string{"nvke-controller-config", "nke-controller-config"}
+
 const (
 	authConfigKey       = "auth.yaml"
+	controllerConfigKey = "config.yaml"
 	tokenNamespace      = "nke-clients"
 	tokenServiceAccount = "nke-client"
 	tokenLifetime       = 10 * time.Minute
@@ -47,8 +53,8 @@ const (
 
 // TokenSource supplies bearer tokens for nvkectl's controller API calls. Mint returns the
 // oidc-login plugin's bearer token, a TokenRequest for nke-clients/nke-client,
-// or no credential when the management cluster has no controller auth ConfigMap in
-// either controller namespace.
+// or no credential when neither apiAuth in the controller's settings ConfigMap nor
+// a controller auth ConfigMap turns authentication on in either controller namespace.
 type TokenSource struct {
 	client     kubernetes.Interface
 	restConfig *rest.Config
@@ -208,46 +214,46 @@ func (t *tokenCatcher) RoundTrip(req *http.Request) (*http.Response, error) {
 	}, nil
 }
 
+// audience returns the audience to mint for and whether the controller
+// authenticates its API at all. It reads the apiAuth section of the
+// controller's settings ConfigMap, then the authentication ConfigMap when that
+// section is off or absent.
 func (s *TokenSource) audience(ctx context.Context) (string, bool, error) {
-	var configMap *corev1.ConfigMap
-	var namespace, name string
 	// A ConfigMap this kubeconfig may not read is information, not a failure:
 	// RBAC scoped to resourceNames denies every name it does not grant, which is
 	// exactly how a site pinned to the legacy name looks once there are two names
 	// to try. Keep the first denial and carry on. It is returned only if no
 	// candidate turns out to be readable, so a denied read still never degrades
 	// into "authentication is off" and a bare, rejected request.
-	var denied error
-	for _, candidateNS := range authConfigNamespaces {
-		for _, candidateName := range authConfigMaps {
-			found, err := s.client.CoreV1().
-				ConfigMaps(candidateNS).
-				Get(ctx, candidateName, metav1.GetOptions{})
-			switch {
-			case apierrors.IsNotFound(err):
-				continue
-			case apierrors.IsForbidden(err):
-				if denied == nil {
-					denied = fmt.Errorf("reading controller authentication ConfigMap %s/%s: %w",
-						candidateNS, candidateName, err)
-				}
-				continue
-			case err != nil:
-				return "", false, fmt.Errorf("reading controller authentication ConfigMap %s/%s: %w",
-					candidateNS, candidateName, err)
-			}
-			configMap, namespace, name = found, candidateNS, candidateName
-			break
-		}
-		if configMap != nil {
-			break
-		}
+	settings, namespace, name, denied, err := s.findConfigMap(ctx, controllerConfigMaps)
+	if err != nil {
+		return "", false, err
 	}
-	if configMap == nil {
+	// A chart-rendered configuration lives in the settings. The authentication
+	// ConfigMap serves a controller that mounts one it does not render, or that
+	// predates the apiAuth section.
+	if settings != nil {
+		audience, enabled, err := apiAuthAudience(settings, namespace, name)
+		if err != nil || enabled {
+			return audience, enabled, err
+		}
+		// The settings were readable and leave authentication to the file, so
+		// a denial on another candidate name says nothing about it.
+		denied = nil
+	}
+
+	authConfig, namespace, name, authDenied, err := s.findConfigMap(ctx, authConfigMaps)
+	if err != nil {
+		return "", false, err
+	}
+	if authConfig == nil {
+		if denied == nil {
+			denied = authDenied
+		}
 		return "", false, denied
 	}
 
-	raw, ok := configMap.Data[authConfigKey]
+	raw, ok := authConfig.Data[authConfigKey]
 	if !ok {
 		return "", false, fmt.Errorf("controller authentication ConfigMap %s/%s has no %q key",
 			namespace, name, authConfigKey)
@@ -265,4 +271,57 @@ func (s *TokenSource) audience(ctx context.Context) (string, bool, error) {
 			namespace, name)
 	}
 	return config.Audiences[0], true, nil
+}
+
+// findConfigMap returns the first of names that exists in authConfigNamespaces,
+// trying every (namespace, name) pair. A denied read is returned separately, as
+// the first denial, and never stops the search.
+func (s *TokenSource) findConfigMap(ctx context.Context, names []string) (*corev1.ConfigMap, string, string, error, error) {
+	var denied error
+	for _, namespace := range authConfigNamespaces {
+		for _, name := range names {
+			found, err := s.client.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
+			switch {
+			case apierrors.IsNotFound(err):
+				continue
+			case apierrors.IsForbidden(err):
+				if denied == nil {
+					denied = fmt.Errorf("reading controller ConfigMap %s/%s: %w", namespace, name, err)
+				}
+				continue
+			case err != nil:
+				return nil, "", "", nil, fmt.Errorf("reading controller ConfigMap %s/%s: %w", namespace, name, err)
+			}
+			return found, namespace, name, denied, nil
+		}
+	}
+	return nil, "", "", denied, nil
+}
+
+// apiAuthAudience returns the first audience of the apiAuth section in the
+// controller's settings ConfigMap, and whether the section is enabled. It
+// returns false with no error when the section is off or absent.
+func apiAuthAudience(configMap *corev1.ConfigMap, namespace, name string) (string, bool, error) {
+	raw, ok := configMap.Data[controllerConfigKey]
+	if !ok {
+		return "", false, fmt.Errorf("controller ConfigMap %s/%s has no %q key", namespace, name, controllerConfigKey)
+	}
+	var config struct {
+		APIAuth *struct {
+			Enabled   bool     `yaml:"enabled"`
+			Audiences []string `yaml:"audiences"`
+		} `yaml:"apiAuth"`
+	}
+	if err := yaml.Unmarshal([]byte(raw), &config); err != nil {
+		return "", false, fmt.Errorf("parsing %q from controller ConfigMap %s/%s: %w", controllerConfigKey, namespace, name, err)
+	}
+	// Off or absent is not "authentication is off": the controller may still
+	// read a file at AUTH_CONFIG_PATH, which the caller looks for next.
+	if config.APIAuth == nil || !config.APIAuth.Enabled {
+		return "", false, nil
+	}
+	if len(config.APIAuth.Audiences) == 0 || config.APIAuth.Audiences[0] == "" {
+		return "", false, fmt.Errorf("controller ConfigMap %s/%s enables apiAuth but sets no audiences", namespace, name)
+	}
+	return config.APIAuth.Audiences[0], true, nil
 }

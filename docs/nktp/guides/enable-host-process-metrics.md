@@ -119,10 +119,11 @@ To reduce volume:
 The scraper emits what it can read and, on every collection, logs an
 `Error scraping metrics` line for the rest, counted in
 `otelcol_scraper_errored_metric_points`. CPU time and memory need no extra
-privileges. To see the errors:
+privileges. Edit the namespace below, then inspect the errors:
 
 ```console
-kubectl logs --namespace <release-namespace> daemonset/nktp-daemonset-collector \
+NKTP_NAMESPACE=nktp
+kubectl logs --namespace "$NKTP_NAMESPACE" daemonset/nktp-daemonset-collector \
   --container otc-container | grep "Error scraping metrics"
 ```
 

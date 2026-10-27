@@ -16,6 +16,7 @@ install_hint() {
     kubectl) echo "https://dl.k8s.io/release/${expected}/bin/\$(go env GOOS)/\$(go env GOARCH)/kubectl" ;;
     govulncheck) echo "go install golang.org/x/vuln/cmd/govulncheck@${expected}" ;;
     helm) echo "https://github.com/helm/helm/releases/tag/${expected}" ;;
+    promtool) echo "https://github.com/prometheus/prometheus/releases/tag/v${expected}" ;;
     shellcheck) echo "https://github.com/koalaman/shellcheck/releases/tag/v${expected#v}" ;;
     *) echo "install ${tool} ${expected}" ;;
   esac
@@ -42,6 +43,9 @@ case "${tool}" in
     ;;
   kubeconform)
     actual="$(kubeconform -v | tr -d '[:space:]')"
+    ;;
+  promtool)
+    actual="$(promtool --version 2>&1 | awk 'NR == 1 { print $3 }')"
     ;;
   kubectl)
     # `kubectl version --client` contacts no cluster; the Kustomize line below

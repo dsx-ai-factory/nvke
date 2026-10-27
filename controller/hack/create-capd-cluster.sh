@@ -5,7 +5,8 @@
 # The control plane is cluster-level controlPlaneConfig, not a node pool.
 # The controller rejects control-plane node pools when control-plane controller
 # provisioning is enabled, which is the default. More than one control-plane
-# node requires controlPlaneVIP, so the count defaults to 1 unless kube-vip is on.
+# node requires controlPlaneVIP unless the dev override is enabled in both this
+# helper and the NVKE controller. The count defaults to 1 unless kube-vip is on.
 
 set -euo pipefail
 
@@ -60,6 +61,12 @@ case "${CAPD_ENABLE_KUBE_VIP:-}" in
   *) die "CAPD_ENABLE_KUBE_VIP must be true or false" ;;
 esac
 
+ALLOW_CONTROL_PLANE_WITHOUT_VIP="${ALLOW_CONTROL_PLANE_WITHOUT_VIP:-false}"
+case "${ALLOW_CONTROL_PLANE_WITHOUT_VIP}" in
+  true|false) ;;
+  *) die "ALLOW_CONTROL_PLANE_WITHOUT_VIP must be true or false" ;;
+esac
+
 if [[ "${CAPD_ENABLE_KUBE_VIP}" == "true" ]]; then
   CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-3}"
   if [[ -z "${CONTROL_PLANE_VIP}" ]]; then
@@ -72,8 +79,8 @@ if [[ "${CAPD_ENABLE_KUBE_VIP}" == "true" ]]; then
   echo "Creating CAPD cluster with kube-vip enabled: controlPlaneVIP=${CONTROL_PLANE_VIP} controlPlane=${CONTROL_PLANE_DESIRED_COUNT}" >&2
 else
   CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}"
-  if [[ "${CONTROL_PLANE_DESIRED_COUNT}" -gt 1 ]]; then
-    die "a control plane of ${CONTROL_PLANE_DESIRED_COUNT} nodes requires controlPlaneVIP; start bgp-containers, set CAPD_ENABLE_KUBE_VIP=true, or set CONTROL_PLANE_DESIRED_COUNT=1"
+  if [[ "${CONTROL_PLANE_DESIRED_COUNT}" -gt 1 && "${ALLOW_CONTROL_PLANE_WITHOUT_VIP}" != "true" ]]; then
+    die "a control plane of ${CONTROL_PLANE_DESIRED_COUNT} nodes requires controlPlaneVIP; start bgp-containers, set CAPD_ENABLE_KUBE_VIP=true, set CONTROL_PLANE_DESIRED_COUNT=1, or enable allowControlPlaneWithoutVIP in the controller and set ALLOW_CONTROL_PLANE_WITHOUT_VIP=true"
   fi
   CONTROL_PLANE_VIP_FIELD=""
   echo "Creating CAPD cluster with kube-vip disabled: controlPlane=${CONTROL_PLANE_DESIRED_COUNT}. Start bgp-containers or set CAPD_ENABLE_KUBE_VIP=true to add a VIP." >&2

@@ -253,7 +253,7 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 		var settings map[string]any
 		raw, _ := dig(t, find(t, docs, "ConfigMap", "nvke-controller-config"), "data", "config.yaml").(string)
 		if err := yaml.Unmarshal([]byte(raw), &settings); err != nil {
-			t.Fatalf("parse nke-controller-config: %v", err)
+			t.Fatalf("parse nvke-controller-config: %v", err)
 		}
 		for key, want := range map[string]string{
 			// The greenfield profile, not the chart's legacy defaults.
@@ -266,7 +266,7 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 			"teleport.tokenNamePrefix":       controllerName() + "-",
 		} {
 			if got := dig(t, settings, strings.Split(key, ".")...); got != want {
-				t.Errorf("nke-controller-config %s = %v, want %s", key, got, want)
+				t.Errorf("nvke-controller-config %s = %v, want %s", key, got, want)
 			}
 		}
 		if got, _ := env["DB_CONNECTION_STRING"].(string); !strings.Contains(got, "/"+controllerName()+"?") {

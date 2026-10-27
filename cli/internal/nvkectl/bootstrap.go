@@ -124,7 +124,8 @@ type bootstrapSiteOptions struct {
 
 	// dialContext is how the pre-create probe reaches each site spec host.
 	// Nil uses a net.Dialer; tests substitute it so no real host is dialled.
-	dialContext func(ctx context.Context, network, address string) (net.Conn, error)
+	dialContext                 func(ctx context.Context, network, address string) (net.Conn, error)
+	allowControlPlaneWithoutVIP bool
 }
 
 const (
@@ -225,6 +226,9 @@ site spec file format.`,
 	cmd.Flags().BoolVar(&opts.disableMTLS, "disable-mtls", false,
 		"Stand the site up without SPIFFE: no SPIRE, and the controller dials node agents in plaintext. "+
 			"The agents must be running with --disable-mtls too. Development only.")
+	cmd.Flags().BoolVar(&opts.allowControlPlaneWithoutVIP, "allow-control-plane-without-vip", false,
+		"Permit a multi-node control plane without a VIP and enable the override in the temporary NVKE controller. "+
+			"Development only; replacing the initializing node can break API access.")
 	cmd.Flags().BoolVar(&opts.keepBootstrapKind, "keep-bootstrap-cluster", false,
 		"Leave the ephemeral bootstrap Kind cluster running after the command exits, for debugging")
 	cmd.Flags().DurationVar(&opts.clusterTimeout, "timeout",
@@ -283,7 +287,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	}
 
 	// Step 1: load and validate the sitespec. Fail fast on any problem.
-	inv, err := sitespec.Load(opts.siteSpec)
+	inv, err := sitespec.Load(opts.siteSpec, sitespec.WithAllowControlPlaneWithoutVIP(opts.allowControlPlaneWithoutVIP))
 	if err != nil {
 		return err
 	}
@@ -355,6 +359,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	}
 
 	cweCfg.CAPNICoImage = capnicoImage
+	cweCfg.AllowControlPlaneWithoutVIP = opts.allowControlPlaneWithoutVIP
 
 	// The controller API has to be reachable from this host: this command deploys it
 	// and then calls it. A host port mapping rather than the node container's
@@ -377,6 +382,12 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		releaseSteps = nicoReleaseSteps(inv.ClusterName, cfg.ClusterName, "<its kubeconfig file>", cweCfg.CWEPort)
 	}
 	if err := requireNoBootstrapCluster(ctx, engine, cfg.ClusterName, releaseSteps); err != nil {
+		return err
+	}
+	// After the check above: a retained bootstrap cluster owns the runtime's
+	// bridge config, and its own message says how to recover it before anything
+	// is deleted. Bridge-removal advice here would pre-empt that.
+	if err := requireIsolatedRuntimeCNI(sharedCNIConfDir); err != nil {
 		return err
 	}
 	// A key file already at the output path belongs to an earlier bootstrap of
@@ -1274,6 +1285,36 @@ func requireContainerRuntime(lookPath func(string) (string, error)) error {
 			bootstrapengine.RuntimeCLI, err)
 	}
 	return nil
+}
+
+// sharedCNIConfDir is the directory requireIsolatedRuntimeCNI inspects. A
+// variable so tests do not read the machine running them.
+var sharedCNIConfDir = bootstrapengine.SharedCNIConfDir
+
+// requireIsolatedRuntimeCNI fails when the container runtime has already written
+// network configs into dir, the node containerd's CNI directory.
+//
+// The bootstrap runs on the node that becomes the site. A runtime config left in
+// dir is the only CNI config there between kubeadm init and the CNI plugin
+// writing its own, so the first pods, CoreDNS among them, are sandboxed on the
+// runtime's bridge and keep an address no pod on the cluster network can reach.
+// The bootstrap now writes new configs elsewhere, but cannot move these.
+func requireIsolatedRuntimeCNI(dir string) error {
+	found, err := bootstrapengine.NerdctlCNIConfigs(dir)
+	if err != nil {
+		return err
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s already holds %s network config(s), and this node's own containerd reads that directory for pod networking:\n  %s\n"+
+		"Left there, they are the only CNI config on the node until the cluster's CNI plugin writes its own, so the first pods "+
+		"(CoreDNS, node-local-dns) get addresses on the bootstrap bridge and cluster DNS never works.\n"+
+		"List the bridge each file names with `grep -h '\"bridge\":' %s/nerdctl-*.conflist` before removing the files, "+
+		"then delete each of those bridges with `ip link delete <bridge>` and re-run. "+
+		"To keep %s out of that directory for good, set `cni_netconfpath = %q` in /etc/nerdctl/nerdctl.toml",
+		dir, bootstrapengine.RuntimeCLI, strings.Join(found, "\n  "), dir,
+		bootstrapengine.RuntimeCLI, bootstrapengine.IsolatedCNIConfDir)
 }
 
 // ensureImageAvailable makes sure image is present in containerd's image

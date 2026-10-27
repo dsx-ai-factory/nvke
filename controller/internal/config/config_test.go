@@ -29,7 +29,7 @@ func TestParseConfigFromEnvRequiresControllerConfigPath(t *testing.T) {
 	})
 }
 
-// A variable whose setting moved into nke-controller-config no longer reaches
+// A variable whose setting moved into nvke-controller-config no longer reaches
 // config.Config, so a stale override cannot quietly win over the file.
 func TestParseConfigFromEnvIgnoresRetiredVariables(t *testing.T) {
 	setMinimumEnv(t)

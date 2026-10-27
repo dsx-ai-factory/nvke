@@ -270,7 +270,8 @@ func rewriteEtcdEncryptedObjectsWithTimeout(ctx workflow.Context, nodeID uuid.UU
 	if operation.OperationID == "" {
 		return errors.New("encrypted-object rewrite returned an empty operation ID")
 	}
-	// Start may resume an operation left running by an earlier workflow run.
+	// Retain the acknowledged operation ID, including when a reset replays
+	// the Start result recorded by the original run.
 	input.OperationID = operation.OperationID
 	if done, err := validateEtcdEncryptionRewriteOperation(input.OperationID, operation); done || err != nil {
 		return err
@@ -321,7 +322,8 @@ func validateEtcdEncryptionRewriteOperation(
 	case activities.EtcdEncryptionOperationPhaseSucceeded:
 		return true, nil
 	case activities.EtcdEncryptionOperationPhaseFailed:
-		return false, fmt.Errorf("encrypted-object rewrite failed: %s", operation.ErrorMessage)
+		// The activity drops agent error text, which can echo rejected Secret bodies.
+		return false, errors.New("encrypted-object rewrite failed; inspect node rewrite state")
 	default:
 		return false, fmt.Errorf("encrypted-object rewrite returned unknown phase %q", operation.Phase)
 	}

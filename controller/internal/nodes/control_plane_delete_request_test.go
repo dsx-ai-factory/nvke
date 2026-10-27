@@ -178,6 +178,8 @@ func TestControlPlaneQuorumFloor(t *testing.T) {
 			target := cpNodes[tt.target]
 
 			mockTx := &testutil.MockTx{}
+			mockTx.On("GetNode", mock.Anything, target.ID).Return(target, nil).Maybe()
+			mockTx.On("GetClusterForUpdate", mock.Anything, target.ClusterID).Return(db.Cluster{ID: target.ClusterID}, nil).Maybe()
 			mockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil)
 			expectControlPlaneCensus(mockTx, cpNodes)
 			if !tt.wantRefuse {
@@ -219,6 +221,8 @@ func TestControlPlaneDeleteRecordsIntentWithoutStartingTeardown(t *testing.T) {
 	target := cpNodes[0]
 
 	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNode", mock.Anything, target.ID).Return(target, nil).Maybe()
+	mockTx.On("GetClusterForUpdate", mock.Anything, target.ClusterID).Return(db.Cluster{ID: target.ClusterID}, nil).Maybe()
 	mockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil)
 	expectControlPlaneCensus(mockTx, cpNodes)
 
@@ -272,6 +276,8 @@ func TestUnhealthyControlPlaneDeleteRecordsForceUnreachable(t *testing.T) {
 	target := cpNodes[0]
 
 	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNode", mock.Anything, target.ID).Return(target, nil).Maybe()
+	mockTx.On("GetClusterForUpdate", mock.Anything, target.ClusterID).Return(db.Cluster{ID: target.ClusterID}, nil).Maybe()
 	mockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil)
 	expectControlPlaneCensus(mockTx, cpNodes)
 
@@ -306,6 +312,8 @@ func TestWorkerDeleteIgnoresControlPlaneControllerFlag(t *testing.T) {
 	worker := db.Node{ID: workerID, ClusterID: testClusterID, Name: "worker-1"}
 
 	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNode", mock.Anything, workerID).Return(worker, nil).Maybe()
+	mockTx.On("GetClusterForUpdate", mock.Anything, worker.ClusterID).Return(db.Cluster{ID: worker.ClusterID}, nil).Maybe()
 	mockTx.On("GetNodeForUpdate", mock.Anything, workerID).Return(worker, nil)
 	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(updated *db.Node) bool {
 		return nodes.IsDeleting(*updated) && !nodes.IsDeleteRequested(*updated)
@@ -338,6 +346,8 @@ func TestUnjoinedControlPlaneDeleteSkipsTheQuorumFloor(t *testing.T) {
 	pending.Conditions.Pending = db.NewCondition(true, "Pending control-plane node provisioning")
 
 	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNode", mock.Anything, pending.ID).Return(pending, nil).Maybe()
+	mockTx.On("GetClusterForUpdate", mock.Anything, pending.ClusterID).Return(db.Cluster{ID: pending.ClusterID}, nil).Maybe()
 	mockTx.On("GetNodeForUpdate", mock.Anything, pending.ID).Return(pending, nil)
 	expectControlPlaneCensus(mockTx, []db.Node{joined, pending})
 
@@ -364,6 +374,8 @@ func TestControlPlaneDeleteIsIdempotent(t *testing.T) {
 	target.Conditions.DeleteRequested = db.NewCondition(true, "Delete accepted")
 
 	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNode", mock.Anything, target.ID).Return(target, nil).Maybe()
+	mockTx.On("GetClusterForUpdate", mock.Anything, target.ClusterID).Return(db.Cluster{ID: target.ClusterID}, nil).Maybe()
 	mockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil)
 
 	err := nodes.DeleteWithTx(ctx, mockTx, target.ID,
@@ -386,6 +398,8 @@ func TestStartRequestedTeardown(t *testing.T) {
 	target.DeleteRequest = []byte(`{"reason":"API","forceUnreachable":true}`)
 
 	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNode", mock.Anything, target.ID).Return(target, nil).Maybe()
+	mockTx.On("GetClusterForUpdate", mock.Anything, target.ClusterID).Return(db.Cluster{ID: target.ClusterID}, nil).Maybe()
 	mockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil)
 
 	var written db.Node
@@ -435,6 +449,8 @@ func TestStartRequestedTeardownWithoutRequest(t *testing.T) {
 	target := joinedCPNode(cpNodeIDs(1)[0])
 
 	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNode", mock.Anything, target.ID).Return(target, nil).Maybe()
+	mockTx.On("GetClusterForUpdate", mock.Anything, target.ClusterID).Return(db.Cluster{ID: target.ClusterID}, nil).Maybe()
 	mockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil)
 
 	require.ErrorIs(t, nodes.StartRequestedTeardown(ctx, mockTx, target.ID), nodes.ErrNoDeleteRequested)
@@ -448,6 +464,8 @@ func TestStartRequestedTeardownForcesDeleteWhenAgentBecomesUnavailable(t *testin
 	target.Conditions.NodeAgentReady = db.NewCondition(false, "Agent drain failed")
 	target.DeleteRequest = []byte(`{"reason":"API"}`)
 	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNode", mock.Anything, target.ID).Return(target, nil).Maybe()
+	mockTx.On("GetClusterForUpdate", mock.Anything, target.ClusterID).Return(db.Cluster{ID: target.ClusterID}, nil).Maybe()
 	mockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil)
 	mockTx.On("UpdateNode", mock.Anything, mock.Anything).Return(target, nil)
 	mockTx.On("CreateWorkflowOutboxEntry", mock.Anything, constants.TeardownNodeWorkflowType, constants.TeardownNodeWorkflowPrefix+target.ID.String(), mock.MatchedBy(func(input nodes.TeardownNodeInput) bool {
@@ -455,4 +473,51 @@ func TestStartRequestedTeardownForcesDeleteWhenAgentBecomesUnavailable(t *testin
 	})).Return(db.WorkflowOutbox{}, nil)
 	require.NoError(t, nodes.StartRequestedTeardown(context.Background(), mockTx, target.ID))
 	mockTx.AssertExpectations(t)
+}
+
+func TestLiveDeleteVIPOverridePreservesSafety(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		allow     bool
+		count     int
+		wantError string
+	}{
+		{name: "default rejects without VIP", count: 4, wantError: "controlPlaneVIP"},
+		{name: "override permits replacement intent", allow: true, count: 4},
+		{name: "override keeps quorum floor", allow: true, count: 3, wantError: "below the minimum of 3"},
+		{name: "override protects last joined node", allow: true, count: 1, wantError: "last joined control-plane node"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ids := cpNodeIDs(tc.count)
+			cpNodes := make([]db.Node, tc.count)
+			for i, id := range ids {
+				cpNodes[i] = joinedCPNode(id)
+			}
+			target := cpNodes[0]
+			tx := &testutil.MockTx{}
+			tx.On("GetNode", mock.Anything, target.ID).Return(target, nil).Once()
+			tx.On("GetClusterForUpdate", mock.Anything, target.ClusterID).Return(db.Cluster{ID: target.ClusterID}, nil).Once()
+			tx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil).Once()
+			if tc.allow {
+				expectControlPlaneCensus(tx, cpNodes)
+			}
+			if tc.wantError == "" {
+				tx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
+					return node.ID == target.ID && nodes.IsDeleteRequested(*node) && !nodes.IsDeleting(*node)
+				})).Return(target, nil).Once()
+			}
+			err := nodes.DeleteWithTx(context.Background(), tx, target.ID,
+				nodes.WithAllowCPNode(true), nodes.WithAllowControlPlaneWithoutVIP(tc.allow))
+			if tc.wantError != "" {
+				require.ErrorContains(t, err, tc.wantError)
+				tx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+			} else {
+				require.NoError(t, err)
+			}
+			tx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+			tx.AssertExpectations(t)
+		})
+	}
 }

@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
@@ -403,6 +405,7 @@ func TestDeploy_EnablesPostInitCNI(t *testing.T) {
 	}
 }
 
+// TestDeploy_ControllerValuesCarryOIDCProviders verifies providers reach Helm without changing embedded values.
 func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	embedded, err := fs.ReadFile(manifestsFS, cweValuesFile)
 	if err != nil {
@@ -422,13 +425,15 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	}
 
 	cfg := testConfig(t)
+	usernamePrefix := "corp:"
 	cfg.OIDCProviders = []sitespec.OIDCProvider{{
 		Name:           "corp",
 		IssuerURL:      "https://login.example.com",
 		Audiences:      []string{"nvke"},
 		UsernameClaim:  "email",
-		UsernamePrefix: "corp:",
+		UsernamePrefix: &usernamePrefix,
 		CABundle:       "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+		DiscoveryURL:   "https://identity.example.com/.well-known/openid-configuration",
 	}}
 	runner = &fakeRunner{}
 	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
@@ -444,6 +449,18 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 		t.Fatalf("extra controller values files = %d, want the password's and the oidc one", len(extra))
 	}
 	oidc := extra[1]
+	var rendered struct {
+		OIDC struct {
+			Providers []struct {
+				IssuerURL    string `yaml:"issuerURL"`
+				DiscoveryURL string `yaml:"discoveryURL"`
+			} `yaml:"providers"`
+		} `yaml:"oidc"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(oidc), &rendered))
+	require.Len(t, rendered.OIDC.Providers, 1)
+	assert.Equal(t, cfg.OIDCProviders[0].IssuerURL, rendered.OIDC.Providers[0].IssuerURL)
+	assert.Equal(t, cfg.OIDCProviders[0].DiscoveryURL, rendered.OIDC.Providers[0].DiscoveryURL)
 	for _, want := range []string{"name: corp", "issuerURL: https://login.example.com", "providers:"} {
 		if !strings.Contains(oidc, want) {
 			t.Errorf("oidc values missing %q:\n%s", want, oidc)
@@ -459,6 +476,39 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	if strings.Count(cwe, "--values") != 3 {
 		t.Errorf("controller helm call has %d --values, want 3: %s", strings.Count(cwe, "--values"), cwe)
 	}
+}
+
+// TestDeploy_OmitsUnsetOIDCDiscoveryURL verifies an unset override preserves default discovery behavior.
+func TestDeploy_OmitsUnsetOIDCDiscoveryURL(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.OIDCProviders = []sitespec.OIDCProvider{{Name: "corp", IssuerURL: "https://login.example.com"}}
+	runner := &fakeRunner{}
+	require.NoError(t, New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg))
+	extra := runner.extraValuesFiles[cweReleaseName]
+	require.Len(t, extra, 2)
+	assert.NotContains(t, extra[1], "discoveryURL:")
+}
+
+// TestDeploy_EmptyOIDCUsernamePrefix verifies Helm receives an explicit empty username prefix.
+func TestDeploy_EmptyOIDCUsernamePrefix(t *testing.T) {
+	cfg := testConfig(t)
+	usernamePrefix := ""
+	cfg.OIDCProviders = []sitespec.OIDCProvider{{Name: "corp", IssuerURL: "https://login.example.com", UsernamePrefix: &usernamePrefix}}
+	runner := &fakeRunner{}
+	require.NoError(t, New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg))
+	extra := runner.extraValuesFiles[cweReleaseName]
+	require.Len(t, extra, 2)
+	var rendered struct {
+		OIDC struct {
+			Providers []struct {
+				UsernamePrefix *string `yaml:"usernamePrefix"`
+			} `yaml:"providers"`
+		} `yaml:"oidc"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(extra[1]), &rendered))
+	require.Len(t, rendered.OIDC.Providers, 1)
+	require.NotNil(t, rendered.OIDC.Providers[0].UsernamePrefix)
+	assert.Empty(t, *rendered.OIDC.Providers[0].UsernamePrefix)
 }
 
 // TestDeploy_InstallsPostgresFromTheEmbeddedChart: Postgres comes from the
@@ -2258,6 +2308,27 @@ func TestValidateProfilesImage(t *testing.T) {
 				t.Fatalf("ValidateProfilesImage(%q) = %v, want nil", tt.image, err)
 			case tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr) || !strings.Contains(err.Error(), ProfilesImageEnv)):
 				t.Fatalf("ValidateProfilesImage(%q) = %v, want one naming %s and %q", tt.image, err, ProfilesImageEnv, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestDeployControlPlaneVIPOverride(t *testing.T) {
+	for _, allow := range []bool{false, true} {
+		t.Run(strconv.FormatBool(allow), func(t *testing.T) {
+			cfg := testConfig(t)
+			cfg.AllowControlPlaneWithoutVIP = allow
+			runner := &fakeRunner{}
+			if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+				t.Fatal(err)
+			}
+			i := callIndex(runner, "upgrade --install "+cweReleaseName)
+			if i < 0 {
+				t.Fatal("no NVKE controller Helm install")
+			}
+			want := "--set allowControlPlaneWithoutVIP=" + strconv.FormatBool(allow)
+			if !strings.Contains(joinArgs(runner.calls[i].args), want) {
+				t.Fatalf("NVKE controller Helm install did not contain %q", want)
 			}
 		})
 	}

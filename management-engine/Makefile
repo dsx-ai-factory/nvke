@@ -67,16 +67,6 @@ manifests: manifests-state kustomize kubebuilder ## Generate state, the runtime 
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
-.PHONY: public-api-tools generate-public-api check-public-api
-public-api-tools: ## Install the pinned public API generation tools.
-	bash hack/public-api/tools.sh
-
-generate-public-api: public-api-tools ## Generate the public Cluster contract and typed projections.
-	bash hack/public-api/generate.sh
-
-check-public-api: public-api-tools ## Check the public contract lock and reproducible generated output.
-	bash hack/public-api/generate.sh --check
-
 .PHONY: fmt
 fmt: ## Run go fmt against code.
 	go fmt ./...
@@ -88,12 +78,7 @@ vet: ## Run go vet against code.
 TEST_PROCS ?= 5
 
 .PHONY: test
-test: test-api test-controller test-public-contract ## Run API, client, startup, controller, and public contract tests.
-
-.PHONY: test-public-contract
-test-public-contract: check-public-api ## Test public contract generation, exposure and compatibility.
-	@$(COVERAGE_MKDIR)
-	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,public-contract) -covermode=$(GO_COVER_MODE) ./public/... ./hack/public-api/...
+test: test-api test-controller ## Run API, client, startup, and controller tests.
 
 .PHONY: test-unit
 test-unit: fmt vet ## Run client and startup unit tests.
@@ -167,47 +152,12 @@ require-host-context:
 require-state-context:
 	@test -n "$(STATE_CONTEXT)" || { echo 'Set STATE_CONTEXT to the datastore cluster'; exit 1; }
 
-DEV_NAME ?= nvke
-KIND_NODE_IMAGE ?= kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
 TILT_PORT ?= 10351
-export DEV_NAME KIND_NODE_IMAGE TILT_PORT
+export TILT_PORT
 
-.PHONY: dev-up dev dev-sync dev-refresh dev-down test-install
-dev-up: ## Create or reuse the named development environment and prepare credentials.
-	bash hack/dev.sh up
-
-dev: ## Check Tilt, prepare or reuse the development clusters, then start Tilt.
-	bash hack/dev.sh check
-	$(MAKE) dev-up
-	bash hack/dev.sh tilt
-
-dev-sync: ## Update datastore CRDs and RBAC without refreshing credentials.
-	bash hack/dev.sh sync
-
-dev-refresh: ## Renew datastore credentials and report their expiration.
-	bash hack/dev.sh refresh
-
-dev-down: ## Delete this environment's clusters and local credentials; stop Tilt first.
-	bash hack/dev.sh down
-
-test-install: ## Test the runtime in the prepared environment; run before Tilt.
-	IMG="$(IMG)" bash hack/dev.sh test
-
-.PHONY: dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration
-dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration: DEV_NAME = nvke-controller
-dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration: TILT_PORT = 10353
-dev-nvke-controller: ## Start the NVKE controller and management-engine in one Tilt dashboard on dedicated Kind clusters.
-	CAPI_VERSION="$(CAPI_VERSION)" bash hack/dev.sh nvke-controller-up
-	bash hack/dev.sh nvke-controller-tilt
-
-dev-nvke-controller-up: ## Prepare the dedicated NVKE controller integration environment without starting Tilt.
-	CAPI_VERSION="$(CAPI_VERSION)" bash hack/dev.sh nvke-controller-up
-
-test-nvke-controller-integration: ## Run the Ginkgo integration suite against the running combined environment.
-	bash hack/dev.sh nvke-controller-test
-
-dev-nvke-controller-down: ## Remove the dedicated NVKE controller environment and credentials; stop Tilt first.
-	bash hack/dev.sh nvke-controller-down
+.PHONY: tilt-up
+tilt-up: ## Start the controller Tilt stack with providers selected in controller/tilt_config.json.
+	cd ../controller && tilt up --port "$(TILT_PORT)"
 
 .PHONY: install install-state
 install: install-state ## Install the datastore resources using STATE_CONTEXT.
@@ -232,7 +182,6 @@ $(LOCALBIN):
 
 ## Tool Binaries
 KUBECTL ?= kubectl
-KIND ?= $(LOCALBIN)/kind
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 KUBEBUILDER ?= $(LOCALBIN)/kubebuilder
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
@@ -257,13 +206,6 @@ GOLANGCI_LINT_VERSION ?= v2.14.0
 # pins above so the ones derived from go.mod keep their values.
 include ../make/tool-versions.mk
 include ../make/coverage.mk
-
-.PHONY: kind
-kind: $(LOCALBIN) ## Install the pinned Kind CLI for the development environment.
-	$(call go-install-tool,$(KIND),sigs.k8s.io/kind,$(KIND_VERSION))
-
-dev-up dev dev-sync dev-refresh dev-down test-install dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration: kind
-dev-up dev dev-sync dev-refresh dev-down test-install dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration: export PATH := $(LOCALBIN):$(PATH)
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -300,13 +242,10 @@ $(KUBEBUILDER): $(LOCALBIN)
 
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
-$(GOLANGCI_LINT): $(LOCALBIN) .custom-gcl.yml
+$(GOLANGCI_LINT): .custom-gcl.yml $(wildcard tools/deferredpatch/*.go) go.mod go.sum Makefile | $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
-	@test -f .custom-gcl.yml && { \
-		echo "Building custom golangci-lint with plugins..." && \
-		$(GOLANGCI_LINT) custom --destination $(LOCALBIN) --name golangci-lint-custom && \
-		mv -f $(LOCALBIN)/golangci-lint-custom $(GOLANGCI_LINT); \
-	} || true
+	"$(GOLANGCI_LINT)" custom --destination "$(LOCALBIN)" --name golangci-lint-custom
+	mv -f "$(LOCALBIN)/golangci-lint-custom" "$(GOLANGCI_LINT)"
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary

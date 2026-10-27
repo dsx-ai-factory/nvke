@@ -28,6 +28,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [workload-clusters/access.md](workload-clusters/access.md) | Getting a workload cluster's admin kubeconfig, giving the customer access, and connecting with `kubectl` |
 | [workload-clusters/oidc.md](workload-clusters/oidc.md) | Making workload clusters accept tokens from the management plane and from your own OpenID Connect (OIDC) identity providers, and the identities they may not claim |
 | [workload-clusters/node-pools.md](workload-clusters/node-pools.md) | Adding, scaling and removing node pools |
+| [Workload cluster Kubernetes certificate renewal](../controller/docs/certificate-renewal.md) | Scheduled and forced leaf certificate renewal, failure diagnostics and ownership-checked recovery |
 | [operate/observe.md](operate/observe.md) | Metrics, dashboards, logs and status for NVKE and its clusters |
 | [operate/troubleshoot.md](operate/troubleshoot.md) | Symptoms, causes and fixes for common failures |
 
@@ -74,6 +75,8 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 |---|---|
 | [tenant-clusters/node-lifecycle.md](tenant-clusters/node-lifecycle.md) | What happens to a node through its life |
 | [tenant-clusters/kubernetes-api-access.md](tenant-clusters/kubernetes-api-access.md) | How operators, automation and Site Controller services reach and authenticate to tenant Kubernetes APIs |
+| [tenant-clusters/certificate-renewal.md](tenant-clusters/certificate-renewal.md) | Scheduled and forced T2 leaf renewal, preflight, terminal verification and recovery |
+| [tenant-clusters/kubelet-serving-certificates.md](tenant-clusters/kubelet-serving-certificates.md) | Kubelet-serving identity validation, CSR signing, installation and troubleshooting |
 | [../controller/docs/authenticating-to-the-api.md](../controller/docs/authenticating-to-the-api.md) | Authenticating to the API |
 | [../controller/docs/configuring-api-authentication.md](../controller/docs/configuring-api-authentication.md) | Turning API authentication on, including RBAC for `nvkectl` |
 | [design/README.md](design/README.md) | Design records and proposals; status is stated at the top of each |
@@ -89,6 +92,10 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [operations/label-domain-migration.md](operations/label-domain-migration.md) | What the move to the `nvke.nvidia.com` label and annotation domain means for an existing site |
 | [site-operations/certificate-renewal.md](site-operations/certificate-renewal.md) | Site-management certificate renewal for NVKE fleet operators |
 | [operations/observability.md](operations/observability.md) | Temporal UI, CWE logs, database health, and CAPNICo diagnostics |
+| [operations/credential-lifecycle.md](operations/credential-lifecycle.md) | OSS alpha credential inventory, supported procedures, CA limits, monitoring, audit and evidence |
+| [../controller/docs/etcd-encryption-key-rotation.md](../controller/docs/etcd-encryption-key-rotation.md) | Existing T2 key rotation, phase-specific recovery and preexisting-object rewrite proof |
+| [../controller/docs/credential-monitoring.md](../controller/docs/credential-monitoring.md) | Actual expiry inspection, configuration bounds, metrics and alert delivery |
+| [../controller/docs/credential-audit.md](../controller/docs/credential-audit.md) | Versioned lifecycle audit, manual evidence tool, ledger export and retention limits |
 | [operations/faq.md](operations/faq.md) | Common bootstrap and tenant cluster failure modes |
 | [nktp/site-telemetry/getting-started.md](nktp/site-telemetry/getting-started.md) | Management cluster telemetry: what NKTP collects and what the deploy path needs |
 | [nktp/site-telemetry/configuration.md](nktp/site-telemetry/configuration.md) | What the site's NKTP values change, connecting a real backend, and overriding values safely |
@@ -101,7 +108,9 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | Document | Contents |
 |---|---|
 | [nktp/getting-started.md](nktp/getting-started.md) | NKTP on any cluster: installing the chart, a first look, and what commonly needs changing |
-| [nktp/guides/send-telemetry.md](nktp/guides/send-telemetry.md) | For service owners: how a workload's logs, OTLP and Prometheus metrics reach NKTP |
+| [nktp/guides/send-telemetry.md](nktp/guides/send-telemetry.md) | For service owners: how a workload's logs, OTLP and Prometheus metrics reach NKTP, and adding a sidecar Collector |
+| [nktp/guides/enable-auto-instrumentation.md](nktp/guides/enable-auto-instrumentation.md) | A shared `Instrumentation` that injects OpenTelemetry agents into Java, Node.js, Python and .NET Pods |
+| [nktp/guides/enable-ebpf-instrumentation.md](nktp/guides/enable-ebpf-instrumentation.md) | Running OpenTelemetry eBPF Instrumentation (OBI) to trace requests in any language and send them to the node Collector |
 | [nktp/architecture/topology.md](nktp/architecture/topology.md) | The Collectors, how each signal flows to the backend, and how scraping is allocated |
 | [nktp/architecture/backpressure.md](nktp/architecture/backpressure.md) | How queues and the memory limiter behave when a Collector is saturated |
 | [nktp/architecture/self-telemetry.md](nktp/architecture/self-telemetry.md) | The sidecar that buffers each Collector's own telemetry, and how it samples traces |
@@ -110,6 +119,8 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [nktp/guides/secure-gateway-export.md](nktp/guides/secure-gateway-export.md) | TLS and mTLS from the gateways and the watchdog to the backend |
 | [nktp/guides/configure-kubelet-metrics.md](nktp/guides/configure-kubelet-metrics.md) | Changing the kubelet scrapes, verifying kubelet certificates, and running beside kube-prometheus-stack |
 | [nktp/guides/restrict-monitor-file-access.md](nktp/guides/restrict-monitor-file-access.md) | Migrate monitor credentials before enabling file-access restrictions |
+| [nktp/guides/configure-persistent-queue.md](nktp/guides/configure-persistent-queue.md) | Keeping the watchdog and gateway exporter queues on a PersistentVolume across restarts |
+| [nktp/guides/enable-daemonset-log-checkpoints.md](nktp/guides/enable-daemonset-log-checkpoints.md) | Persisting the node Collector's log read positions so a restarted Collector resumes instead of skipping lines |
 | [nktp/guides/enable-host-process-metrics.md](nktp/guides/enable-host-process-metrics.md) | Per-process host metrics, the privileges they need, and their cardinality |
 | [nktp/components/node-collector.md](nktp/components/node-collector.md) | The node Collector (`daemonset`): OTLP endpoint, pod logs, journal, log classification and monitor credentials |
 | [nktp/components/gateways.md](nktp/components/gateways.md) | The logs, metrics and traces gateways (`gateway_*`) and their endpoints |

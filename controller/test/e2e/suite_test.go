@@ -6,6 +6,7 @@ package e2e
 import (
 	"flag"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -217,5 +218,16 @@ func TestE2E(t *testing.T) {
 	// the tenant client talks to a machine through a relay, and its retries
 	// and REST-layer warnings are what a slow or flaky run needs explained.
 	ctrllog.SetLogger(GinkgoLogr)
-	RunSpecs(t, "NVKE E2E Suite")
+
+	suiteConfig, reporterConfig := GinkgoConfiguration()
+	if !labelFilterGiven() {
+		filter, err := validationLabelFilter(os.LookupEnv)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if filter != "" {
+			suiteConfig.LabelFilter = filter
+		}
+	}
+	RunSpecs(t, "NVKE E2E Suite", suiteConfig, reporterConfig)
 }

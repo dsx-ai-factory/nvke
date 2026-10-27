@@ -295,9 +295,12 @@ spec:
             {{- end }}
             - name: CONTROLLER_CONFIG_PATH
               value: {{ printf "%s/%s" (include "controller.controllerConfig.mountPath" .) (include "controller.controllerConfig.file" .) | quote }}
-            {{- if .Values.apiAuth.enabled }}
-            # Omitted when disabled, never set empty: NVKE reads an empty value as
-            # unset, so the deployment would look configured and authenticate nobody.
+            {{- if and .Values.apiAuth.enabled (not .Values.apiAuth.configMap.create) }}
+            # Only for a ConfigMap managed elsewhere: a configuration the chart
+            # renders reaches the controller as apiAuth in the settings
+            # ConfigMap, and setting both is a startup failure. Omitted
+            # otherwise, never set empty: NVKE reads an empty value as unset, so
+            # the deployment would look configured and authenticate nobody.
             - name: AUTH_CONFIG_PATH
               value: {{ printf "%s/%s" (include "controller.apiAuth.mountPath" .) (include "controller.apiAuth.configFile" .) | quote }}
             {{- end }}

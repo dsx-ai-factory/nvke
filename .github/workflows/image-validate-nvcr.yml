@@ -1,0 +1,216 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Image Validate NVCR
+
+# Builds the site validation image (controller/test/e2e/Dockerfile) and
+# publishes it to the DSX org beside the controller image, from the same commit
+# and under the same version: nvcr.io/<dsx-org-team>/nvke-validate:<version>
+# next to nvcr.io/<dsx-org-team>/nvke-controller:<version>. A site running a
+# controller version can then run the tests that shipped with it.
+#
+# Triggers, versioning and tags follow image-nvcr.yml; see its header for why.
+# The differences:
+#
+# - One destination. DSX is the only consumer, so the image is pushed straight
+#   to the DSX org: no NVKE org copy, no GHCR copy, no promotion job. Beta tags
+#   do not trigger it, as they are never promoted to DSX.
+# - One build job, not one per architecture plus a manifest job. The test
+#   binary is cross-compiled and the final stage runs nothing, so both
+#   architectures build on one runner without emulation and buildx pushes the
+#   index itself.
+# - No edge tag. Nothing consumes one: a site runs the version that matches
+#   its controller, and main builds are also tagged sha-<commit>.
+#
+# The destination comes from the `nvcr` environment:
+#
+#   DSX_NGC_ORG_TEAM          variable  DSX NGC org/team path
+#   NGC_REGISTRY_TOKEN_DSX    secret    NGC API key with write access on DSX
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "controller/v[0-9]+.[0-9]+.[0-9]+"
+      - "controller/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  # As image-nvcr.yml: the sha keeps every main commit in its own group, and the
+  # name is a literal rather than ${{ github.workflow }}.
+  group: Image Validate NVCR-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository_id == '1323115536'
+    name: Build and push
+    runs-on: linux-amd64-cpu16
+    environment: nvcr
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write       # the OIDC token the attestation is signed against
+      attestations: write   # writes the provenance attestation
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0          # git describe needs history and tags
+          persist-credentials: false
+
+      - name: Detect runner BuildKit config
+        id: buildkit
+        shell: bash
+        run: |
+          if [[ -r /etc/buildkit/buildkitd.toml ]]; then
+            echo "config=/etc/buildkit/buildkitd.toml" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          buildkitd-config: ${{ steps.buildkit.outputs.config }}
+
+      # `$oauthtoken` is NGC's literal username, not a variable reference.
+      - name: Log in to NVCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: nvcr.io
+          username: "$oauthtoken"
+          password: ${{ secrets.NGC_REGISTRY_TOKEN_DSX }}
+
+      - name: Resolve destination and tags
+        id: meta
+        shell: bash
+        env:
+          DSX_NGC_ORG_TEAM: ${{ vars.DSX_NGC_ORG_TEAM }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${DSX_NGC_ORG_TEAM}" ]]; then
+            echo "::error::DSX_NGC_ORG_TEAM is not set in the nvcr environment"
+            exit 1
+          fi
+
+          # The controller image's version, so the two pair by tag. A tag run
+          # takes the tag that triggered it: an RC and its final release can
+          # sit on one commit, and git describe picks the final for both.
+          if [[ "${GITHUB_REF}" == refs/tags/controller/v* ]]; then
+            version="${GITHUB_REF_NAME}"
+          else
+            version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          fi
+          version="${version#controller/}"
+
+          # sha-<commit> records what main built. A tag run rebuilds the same
+          # commit under a different version label, so a different digest, and
+          # must not touch it.
+          tags=("${version}")
+          if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+            tags+=("sha-${GITHUB_SHA}")
+          fi
+
+          {
+            echo "image=nvcr.io/${DSX_NGC_ORG_TEAM}/nvke-validate"
+            echo "push_tags=${tags[*]}"
+            echo "version=${version}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Publishing to nvcr.io/${DSX_NGC_ORG_TEAM}/nvke-validate as: ${tags[*]}"
+
+      # Built once without pushing, so the digest is known before any tag
+      # moves. The push below rebuilds from the same cache and inputs.
+      - name: Build
+        id: build
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The version is passed so the label matches the tag this run
+          # resolved; the rest of the reproducible inputs make derives from the
+          # commit, as it does for anyone rebuilding it.
+          make -C controller/test/e2e validate-image-oci VALIDATE_VERSION="${VERSION}"
+          echo "digest=$(cat controller/test/e2e/bin/validate-image-digest.txt)" >> "${GITHUB_OUTPUT}"
+
+      # A tag this run pushes that already exists must already hold this
+      # digest. Only "not found" means a tag is absent: any other lookup
+      # failure, such as an expired token, stops the run rather than letting
+      # the push replace a tag it could not read.
+      - name: Check existing tags
+        shell: bash
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          PUSH_TAGS: ${{ steps.meta.outputs.push_tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          read -ra tags <<<"${PUSH_TAGS}"
+          for tag in "${tags[@]}"; do
+            if ! docker buildx imagetools inspect --raw "${IMAGE}:${tag}" \
+                > "${RUNNER_TEMP}/existing.json" 2> "${RUNNER_TEMP}/inspect.err"; then
+              if grep -qF "${IMAGE}:${tag}: not found" "${RUNNER_TEMP}/inspect.err"; then
+                continue
+              fi
+              cat "${RUNNER_TEMP}/inspect.err" >&2
+              echo "::error::could not look up ${IMAGE}:${tag}, so it may exist with a different digest"
+              exit 1
+            fi
+            existing="sha256:$(sha256sum "${RUNNER_TEMP}/existing.json" | cut -d' ' -f1)"
+            if [[ "${existing}" != "${DIGEST}" ]]; then
+              echo "::error::${IMAGE}:${tag} already exists with digest ${existing}, expected ${DIGEST}"
+              exit 1
+            fi
+            echo "${IMAGE}:${tag} already exists with matching digest"
+          done
+
+      - name: Push
+        id: push
+        shell: bash
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          PUSH_TAGS: ${{ steps.meta.outputs.push_tags }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          make -C controller/test/e2e validate-image-push \
+            VALIDATE_REPO="${IMAGE}" \
+            VALIDATE_PUSH_TAGS="${PUSH_TAGS}" \
+            VALIDATE_VERSION="${VERSION}"
+          index="$(cat controller/test/e2e/bin/validate-image-digest.txt)"
+          if [[ "${index}" != "${DIGEST}" ]]; then
+            echo "::error::pushed ${index}, but the build produced ${DIGEST}"
+            exit 1
+          fi
+          echo "index_digest=${index}" >> "${GITHUB_OUTPUT}"
+          echo "- \`${IMAGE}:${VERSION}\` is \`${index}\`" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Check both architectures were published
+        shell: bash
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          INDEX_DIGEST: ${{ steps.push.outputs.index_digest }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "${IMAGE}@${INDEX_DIGEST}" | tee "${RUNNER_TEMP}/index.txt"
+          for arch in amd64 arm64; do
+            grep -q "linux/${arch}" "${RUNNER_TEMP}/index.txt" \
+              || { echo "::error::${IMAGE}@${INDEX_DIGEST} has no linux/${arch}"; exit 1; }
+          done
+
+      # push-to-registry is false because NVCR serves no referrers API; see
+      # image-nvcr.yml and RELEASE.md.
+      - name: Attest the published index
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.meta.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.index_digest }}
+          push-to-registry: false
+
+      - name: Record the published digest
+        uses: ./.github/actions/record-digest
+        with:
+          references: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+          component: nvke-validate

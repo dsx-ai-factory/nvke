@@ -1,0 +1,112 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Persists the node Collector's log read positions in a host directory, so a
+# restarted or replaced Collector resumes where it stopped. Read
+# ../guides/enable-daemonset-log-checkpoints.md first: the Collector writes to
+# the node's filesystem.
+daemonset:
+  kubernetes:
+    # Helm replaces lists, so the chart's default volumes and mounts are restated
+    # with log-checkpoints added.
+    volumes:
+      - name: pod-logs
+        hostPath:
+          path: /var/log/pods
+          type: Directory
+      - name: host-proc
+        hostPath:
+          path: /proc
+          type: Directory
+      - name: journalctl
+        hostPath:
+          path: /usr/bin/journalctl
+          type: File
+      - name: host-lib
+        hostPath:
+          path: /lib
+          type: Directory
+      - name: host-lib64
+        hostPath:
+          path: /lib64
+          type: DirectoryOrCreate
+      - name: host-usr-lib
+        hostPath:
+          path: /usr/lib
+          type: Directory
+      - name: host-machine-id
+        hostPath:
+          path: /etc/machine-id
+          type: File
+      - name: host-logs
+        hostPath:
+          path: /var/log
+          type: Directory
+      - name: internal-tls-client
+        secret:
+          secretName: nktp-daemonset-client-tls
+          items:
+            - {key: tls.crt, path: tls.crt}
+            - {key: tls.key, path: tls.key}
+            - {key: ca.crt, path: ca.crt}
+      - name: log-checkpoints
+        hostPath:
+          path: /var/lib/nktp/log-checkpoints # One directory per node. Change it when running more than one NKTP release.
+          type: DirectoryOrCreate
+    volumeMounts:
+      - name: pod-logs
+        mountPath: /var/log/pods
+        readOnly: true
+      - name: host-proc
+        mountPath: /hostfs/proc
+        readOnly: true
+      - name: journalctl
+        mountPath: /hostfs/usr/bin/journalctl
+        readOnly: true
+      - name: host-lib
+        mountPath: /hostfs/lib
+        readOnly: true
+      - name: host-lib64
+        mountPath: /hostfs/lib64
+        readOnly: true
+      - name: host-lib64
+        mountPath: /hostfs/usr/lib64
+        readOnly: true
+      - name: host-usr-lib
+        mountPath: /hostfs/usr/lib
+        readOnly: true
+      - name: host-machine-id
+        mountPath: /hostfs/etc/machine-id
+        readOnly: true
+      - name: host-logs
+        mountPath: /hostfs/var/log
+        readOnly: true
+      - name: internal-tls-client
+        mountPath: /etc/nktp/internal-tls/client
+        readOnly: true
+      - name: log-checkpoints
+        mountPath: /var/lib/otelcol/log-checkpoints
+  otelcol:
+    config:
+      extensions:
+        file_storage/log-checkpoints:
+          directory: /var/lib/otelcol/log-checkpoints
+          create_directory: true
+          timeout: 1s
+      receivers:
+        filelog:
+          storage: file_storage/log-checkpoints
+        filelog/host-auth:
+          storage: file_storage/log-checkpoints
+        filelog/host-audit:
+          storage: file_storage/log-checkpoints
+        filelog/kube-api-audit:
+          storage: file_storage/log-checkpoints
+        filelog/targetallocator:
+          storage: file_storage/log-checkpoints
+        filelog/operator:
+          storage: file_storage/log-checkpoints
+        journald:
+          storage: file_storage/log-checkpoints
+      service:
+        extensions: [health_check, file_storage/log-checkpoints] # Helm replaces lists.

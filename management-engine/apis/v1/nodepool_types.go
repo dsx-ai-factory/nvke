@@ -103,16 +103,13 @@ type UserParams struct {
 type NodePoolStatus struct {
 	// Name identifies the corresponding pool in spec.nodePools.
 	Name ResourceName `json:"name"`
-	// ObservedGeneration refers to the enclosing NVKECluster's generation.
-	// +optional
-	// +kubebuilder:validation:Minimum=0
-	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions report pool readiness and progress, with details in reason and message.
+	// Each condition's observedGeneration refers to the enclosing NVKECluster's generation.
 	// +optional
 	// +listType=map
 	// +listMapKey=type
 	// +kubebuilder:validation:MaxItems=32
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Conditions []NodePoolCondition `json:"conditions,omitempty"`
 	// Replicas is the observed number of nodes in the pool. Omitted means unknown.
 	// +optional
 	// +kubebuilder:validation:Minimum=0
@@ -126,6 +123,67 @@ type NodePoolStatus struct {
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	UpdatedReplicas *int32 `json:"updatedReplicas,omitempty"`
+	// ID is the NVKE controller's node pool UUID.
+	// +optional
+	// +kubebuilder:validation:Format=uuid
+	ID string `json:"id,omitempty"`
+}
+
+// NodePoolCondition reports pool state without a transition timestamp.
+type NodePoolCondition struct {
+	// +kubebuilder:validation:MaxLength=316
+	// +kubebuilder:validation:Pattern=`^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$`
+	Type string `json:"type"`
+	// +kubebuilder:validation:Enum=True;False;Unknown
+	Status metav1.ConditionStatus `json:"status"`
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:Pattern=`^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$`
+	Reason string `json:"reason"`
+	// +kubebuilder:validation:MaxLength=32768
+	Message string `json:"message"`
+}
+
+// GetConditions returns the pool's conditions for CAPI condition aggregation.
+func (p NodePoolStatus) GetConditions() []metav1.Condition {
+	conditions := make([]metav1.Condition, len(p.Conditions))
+	for i, condition := range p.Conditions {
+		conditions[i] = metav1.Condition{
+			Type:               condition.Type,
+			Status:             condition.Status,
+			ObservedGeneration: condition.ObservedGeneration,
+			Reason:             condition.Reason,
+			Message:            condition.Message,
+		}
+	}
+	return conditions
+}
+
+// SetConditions updates the pool's conditions for CAPI condition helpers.
+func (p *NodePoolStatus) SetConditions(conditions []metav1.Condition) {
+	p.Conditions = make([]NodePoolCondition, len(conditions))
+	for i, condition := range conditions {
+		p.Conditions[i] = NodePoolCondition{
+			Type:               condition.Type,
+			Status:             condition.Status,
+			ObservedGeneration: condition.ObservedGeneration,
+			Reason:             condition.Reason,
+			Message:            condition.Message,
+		}
+	}
+}
+
+// GetName identifies the pool in CAPI aggregate condition messages.
+func (p NodePoolStatus) GetName() string {
+	return string(p.Name)
+}
+
+// GetLabels returns nil because embedded node pool status has no resource labels.
+func (p NodePoolStatus) GetLabels() map[string]string {
+	return nil
 }
 
 // LabelValue follows Kubernetes label value syntax.

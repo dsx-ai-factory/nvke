@@ -19,9 +19,10 @@ import (
 	"go.temporal.io/sdk/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	auth "github.com/dsx-ai-factory/nvke/auth/authn"
+
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
@@ -43,7 +44,7 @@ type options struct {
 	nodeAgentClient                  agent.Client
 }
 
-// WithFleetOIDC sets the nke-controller-config OIDC section new clusters are pinned from.
+// WithFleetOIDC sets the nvke-controller-config OIDC section new clusters are pinned from.
 func WithFleetOIDC(oidc *controllerconfig.OIDCConfig) Option {
 	return func(o *options) { o.fleetOIDC = oidc }
 }
@@ -274,14 +275,18 @@ func NewServerImpl(
 	clusterService.machineAllowlistedAnnotationKeys = cfg.MachineMetadataAllowlistedAnnotationKeys
 	clusterService.fleetOIDC = o.fleetOIDC
 	clusterService.nodeAgentClient = o.nodeAgentClient
+	clusterService.allowControlPlaneWithoutVIP = cfg.AllowControlPlaneWithoutVIP
 	nodes.PinAgentProfile(&clusterService.nodeAgentProfile, cfg)
 	nodes.PinAgentProfile(&nodePoolService.nodeAgentProfile, cfg)
+
+	nodeService := NewNodeService(logger, database)
+	nodeService.allowControlPlaneWithoutVIP = cfg.AllowControlPlaneWithoutVIP
 
 	return &serverImpl{
 		clusterService:       *clusterService,
 		nodePoolService:      *nodePoolService,
 		nodeSetService:       *NewNodeSetService(logger, database, temporalClient),
-		nodeService:          *NewNodeService(logger, database),
+		nodeService:          *nodeService,
 		releaseService:       *NewReleaseService(logger, k8sReader),
 		configProfileService: *NewConfigProfileService(cfg, logger),
 	}

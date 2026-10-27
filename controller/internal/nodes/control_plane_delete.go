@@ -43,7 +43,7 @@ var (
 // control-plane reconcile transaction (cluster then node), so the two cannot
 // deadlock. Callers must finish marking the node deleting before committing so
 // the cluster lock serializes concurrent live deletes.
-func guardLiveNodeDelete(ctx context.Context, tx db.Tx, nodeID uuid.UUID) (db.Node, error) {
+func guardLiveNodeDelete(ctx context.Context, tx db.Tx, nodeID uuid.UUID, allowWithoutVIP bool) (db.Node, error) {
 	// Read the node without a lock first, solely to learn its cluster so we can
 	// take the cluster lock before the node lock (global cluster-first order).
 	node, err := tx.GetNode(ctx, nodeID)
@@ -84,7 +84,10 @@ func guardLiveNodeDelete(ctx context.Context, tx db.Tx, nodeID uuid.UUID) (db.No
 	}
 
 	if dbNode.ControlPlane {
-		if strings.TrimSpace(cluster.ControlPlaneVIP) == "" {
+		if db.ControlPlaneMutationBlocked(cluster) {
+			return db.Node{}, db.ErrControlPlaneMutationBlocked
+		}
+		if !allowWithoutVIP && strings.TrimSpace(cluster.ControlPlaneVIP) == "" {
 			return db.Node{}, ErrControlPlaneVIPRequired
 		}
 		if err := ensureSurvivingJoinedControlPlane(ctx, tx, dbNode.ClusterID, liveControlPlaneDeleteExclusion{
@@ -112,7 +115,8 @@ func guardLiveNodePoolDelete(ctx context.Context, tx db.Tx, nodePoolID uuid.UUID
 	// Same cluster-row mutex as guardLiveNodeDelete: serialize last-CP races and
 	// reject deletes once cluster teardown is in progress. Lock is held until
 	// this transaction commits after the caller marks the pool deleting.
-	if _, err := lockClusterForLiveDelete(ctx, tx, nodePool.ClusterID); err != nil {
+	cluster, err := lockClusterForLiveDelete(ctx, tx, nodePool.ClusterID)
+	if err != nil {
 		return db.NodePool{}, err
 	}
 
@@ -128,6 +132,9 @@ func guardLiveNodePoolDelete(ctx context.Context, tx db.Tx, nodePoolID uuid.UUID
 	}
 
 	if dbNodePool.ControlPlane {
+		if db.ControlPlaneMutationBlocked(cluster) {
+			return db.NodePool{}, db.ErrControlPlaneMutationBlocked
+		}
 		if err := ensureSurvivingJoinedControlPlane(ctx, tx, dbNodePool.ClusterID, liveControlPlaneDeleteExclusion{
 			ExcludeNodePoolID: &dbNodePool.ID,
 		}); err != nil {

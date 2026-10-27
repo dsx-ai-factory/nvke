@@ -6,6 +6,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"testing"
 
@@ -433,9 +434,11 @@ func TestApplyClusterControlPlaneConfigUpdate_RolloutRequiresVIP(t *testing.T) {
 		name            string
 		controlPlaneVIP string
 		wantBadRequest  bool
+		allowWithoutVIP bool
 	}{
 		{name: "without VIP", wantBadRequest: true},
 		{name: "with VIP", controlPlaneVIP: "172.31.0.10"},
+		{name: "dev override without VIP", allowWithoutVIP: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			oldConfigID := uuid.New()
@@ -478,7 +481,7 @@ func TestApplyClusterControlPlaneConfigUpdate_RolloutRequiresVIP(t *testing.T) {
 				createConfigCall.Once()
 			}
 
-			svc := clusterService{}
+			svc := clusterService{allowControlPlaneWithoutVIP: tc.allowWithoutVIP}
 			err := svc.applyClusterControlPlaneConfigUpdate(context.Background(), tx, cluster, &api.UpdateClusterControlPlaneConfig{
 				Nico: &api.NicoControlPlaneProviderUpdate{ConfigProfile: &newProfile},
 			})
@@ -945,4 +948,36 @@ func TestValidateUpdateControlPlaneConfigProviderMatch_UnknownProvider(t *testin
 	var badRequest *badRequestError
 	require.ErrorAs(t, err, &badRequest)
 	require.EqualError(t, err, `unsupported cluster provider "bogus"`)
+}
+
+func TestControlPlaneVIPOverrideCreateAndScale(t *testing.T) {
+	for _, allow := range []bool{false, true} {
+		t.Run(fmt.Sprintf("override=%t", allow), func(t *testing.T) {
+			svc := clusterService{allowControlPlaneWithoutVIP: allow}
+			req := validForgeCreateClusterRequest()
+			req.ControlPlaneConfig = validForgeControlPlaneConfig()
+			err := svc.ValidateCreateClusterRequestFields(req)
+			if allow {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, "controlPlaneVIP")
+			}
+			cluster := &db.Cluster{
+				ProviderType:       db.ProviderTypeCAPI,
+				ControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 1},
+			}
+			spec := db.ConfigSpecFromFull(cluster.ControlPlaneConfig)
+			desired := 3
+			err = svc.applyClusterLevelControlPlaneSpecUpdate(context.Background(), cluster, &api.UpdateClusterControlPlaneConfig{
+				DesiredCount: &desired,
+			}, &spec)
+			if allow {
+				require.NoError(t, err)
+				require.Equal(t, desired, cluster.ControlPlaneConfig.DesiredCount)
+			} else {
+				require.ErrorContains(t, err, "controlPlaneVIP")
+				require.Equal(t, 1, cluster.ControlPlaneConfig.DesiredCount)
+			}
+		})
+	}
 }

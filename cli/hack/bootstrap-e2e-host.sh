@@ -163,7 +163,12 @@ install_runtime() {
     exit 1
   fi
   log "nerdctl data root ${NERDCTL_DATA_ROOT} is on ${data_root_fstype}"
-  printf 'data_root = "%s"\n' "${NERDCTL_DATA_ROOT}" | sudo tee /etc/nerdctl/nerdctl.toml >/dev/null
+  # cni_netconfpath keeps nerdctl's network configs out of /etc/cni/net.d, the
+  # directory nvkectl's preflight inspects for configs a site node's containerd
+  # would pick up. Without it the `nerdctl build` that runs before the suite
+  # writes nerdctl-bridge.conflist there and the preflight refuses to start.
+  printf 'data_root = "%s"\ncni_netconfpath = "/etc/containerd-nerdctl/net.d"\n' "${NERDCTL_DATA_ROOT}" |
+    sudo tee /etc/nerdctl/nerdctl.toml >/dev/null
 
   sudo tee /etc/systemd/system/containerd-nerdctl.service >/dev/null <<'UNIT'
 [Unit]

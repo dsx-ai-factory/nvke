@@ -1809,6 +1809,7 @@ type DeleteNodePoolClientResponse struct {
 	JSON400      *GenericError
 	JSON401      *Unauthorized
 	JSON403      *Forbidden
+	JSON409      *GenericError
 }
 
 // Status returns HTTPResponse.Status
@@ -1954,6 +1955,7 @@ type DeleteNodeClientResponse struct {
 	JSON400      *GenericError
 	JSON401      *Unauthorized
 	JSON403      *Forbidden
+	JSON409      *GenericError
 }
 
 // Status returns HTTPResponse.Status
@@ -2792,6 +2794,13 @@ func ParseDeleteNodePoolClientResponse(rsp *http.Response) (*DeleteNodePoolClien
 		}
 		response.JSON403 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest GenericError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
 	}
 
 	return response, nil
@@ -3038,6 +3047,13 @@ func ParseDeleteNodeClientResponse(rsp *http.Response) (*DeleteNodeClientRespons
 			return nil, err
 		}
 		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest GenericError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
 
 	}
 

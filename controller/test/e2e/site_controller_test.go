@@ -345,7 +345,7 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 
 		validateSitePostDeploy(func() (site.Cluster, site.Spec, bool) {
 			return cluster, spec, deployed
-		})
+		}, siteLaneChecks)
 
 		It("delivers the site's telemetry through NKTP", func(ctx SpecContext) {
 			if !deployed {

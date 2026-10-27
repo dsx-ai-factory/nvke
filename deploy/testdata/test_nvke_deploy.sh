@@ -86,6 +86,14 @@ case "$*" in
   *"capi-controller-manager"*)
     if [[ -n "${STUB_CAPI_IMAGE:-}" ]]; then printf '%s' "${STUB_CAPI_IMAGE}"; else
       echo 'Error from server (NotFound): deployments.apps "capi-controller-manager" not found' >&2; exit 1; fi ;;
+  *"get secret oidc-provider-upstream-ca"*)
+    # The CA Secret the OIDC upstream CA Certificate is gated on. Absent is a
+    # site with no CA yet, so the Certificate applies; STUB_CA_SECRET is a
+    # site that already has one.
+    if [[ -z "${STUB_CA_SECRET:-}" ]]; then
+      echo 'Error from server (NotFound): secrets "oidc-provider-upstream-ca" not found' >&2; exit 1
+    fi
+    printf 'oidc-provider-upstream-ca\n' ;;
   *"capi-kubeadm-"*)
     if [[ -n "${STUB_DENY_KUBEADM:-}" ]]; then echo 'Error from server (Forbidden): deployments.apps is forbidden' >&2; exit 1; fi
     if [[ -n "${STUB_NO_KUBEADM:-}" ]]; then echo 'Error from server (NotFound): deployments.apps not found' >&2; exit 1; else printf 'deployment.apps/x'; fi ;;
@@ -184,6 +192,24 @@ expect "the external render shows the connection string shape" '^expected in the
 [[ ! -e "${WORK}/external/site-credentials" && ! -e "${WORK}/external/nvke-base-config/20-nico-credentials.yaml" && -e "${WORK}/external/nvke-base-config/45-nktp-cluster.yaml" && ! -e "${WORK}/external/.gitignore" ]] && pass "the external tree carries no Secret and no .gitignore" || fail "external tree: $(ls -a "${WORK}/external" "${WORK}/external/nvke-base-config")"
 ! grep -rqF -e "${DEPLOY_DIR}" -e "${WORK}" "${WORK}/external" && pass "the external tree names no path of this machine" || fail "the external tree names a local path: $(grep -rnF -e "${DEPLOY_DIR}" -e "${WORK}" "${WORK}/external" | head -3)"
 grep -q 'path: ../../controller/deploy/charts/controller' "${WORK}/external/controller/release.yaml" && pass "the external tree keeps the committed chart path" || fail "external controller release.yaml: $(cat "${WORK}/external/controller/release.yaml")"
+
+# create-if-absent: the OIDC upstream CA Certificate is applied on a first
+# install and skipped once the CA Secret exists, so re-running the install on
+# a site that has a CA cannot re-issue it under the new NVKE subject. The two
+# Issuers beside it carry no key material and are applied either way.
+ca_cert="${rendered}/nvke-base-config/41-oidc-upstream-ca-certificate.yaml"
+ca_out="$(PATH="${stubs}:${PATH}" bash "${EXECUTOR}" install --deploy-path "${rendered}" --dry-run 2>&1)" || fail "first-install dry run exited $?: ${ca_out}"
+expect "a site with no CA applies the CA Certificate" "^kubectl apply --server-side -f ${ca_cert}" "${ca_out}"
+expect "and its Issuers" "^kubectl apply --server-side -f ${rendered}/nvke-base-config/40-oidc-upstream-ca.yaml" "${ca_out}"
+ca_out="$(STUB_CA_SECRET=1 PATH="${stubs}:${PATH}" bash "${EXECUTOR}" install --deploy-path "${rendered}" --dry-run 2>&1)" || fail "re-install dry run exited $?: ${ca_out}"
+reject "a site that has a CA does not re-apply the Certificate" "apply --server-side -f ${ca_cert}" "${ca_out}"
+expect "and says why it was skipped" 'skipping 41-oidc-upstream-ca-certificate\.yaml: secret/oidc-provider-upstream-ca already exists in spire-server' "${ca_out}"
+expect "the Issuers are applied on a re-install too" "^kubectl apply --server-side -f ${rendered}/nvke-base-config/40-oidc-upstream-ca.yaml" "${ca_out}"
+# A probe that fails for a reason other than NotFound is not "absent": in a
+# dry run it is reported and the file counted as absent, and a real install
+# stops rather than re-issue the CA on a cluster it could not read.
+ca_out="$(STUB_API_DOWN=1 PATH="${stubs}:${PATH}" bash "${EXECUTOR}" install --deploy-path "${rendered}" --dry-run 2>&1)" || fail "unreadable-cluster dry run exited $?: ${ca_out}"
+expect "a dry run reports a probe it could not make" 'cannot probe secret/oidc-provider-upstream-ca in spire-server' "${ca_out}"
 
 out="$(bash "${EXECUTOR}" install --deploy-path "${rendered}" --dry-run 2>&1)" || fail "rendered dry run exited $?"
 expect "the controller takes its site values" "helm upgrade --install nke-controller .*--values ${rendered}/controller/values.yaml --values ${rendered}/controller/overlay.yaml --values ${rendered}/controller/site-values.yaml" "${out}"

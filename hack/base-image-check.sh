@@ -19,7 +19,7 @@
 # either way. So of the bases this script enforces:
 #
 #   controller/Dockerfile   SPIFFE jwt-exec-auth  direct FROM  Dependabot bumps it
-#                           golang, alpine        via ARG      base-image-update.sh
+#                           golang, distroless    via ARG      base-image-update.sh
 #   cluster-api-provider-provisioned/Dockerfile
 #                           golang, alpine        via ARG      base-image-update.sh
 #

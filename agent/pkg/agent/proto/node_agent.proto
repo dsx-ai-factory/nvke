@@ -10,6 +10,10 @@ option go_package = "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto";
 service NodeAgent {
   rpc GetKubeadmStatus(KubeadmStatusRequest) returns (KubeadmStatusResponse) {}
 
+  // InspectKubernetesCertificates reads the fixed kubeadm credential inventory.
+  // It never mutates files or returns certificate/key contents or identities.
+  rpc InspectKubernetesCertificates(InspectKubernetesCertificatesRequest) returns (InspectKubernetesCertificatesResponse) {}
+
   // ScheduleNodeReboot waits up to five minutes for apt/dpkg locks to clear,
   // then starts a detached reboot so the RPC can return before the node exits.
   rpc ScheduleNodeReboot(ScheduleNodeRebootRequest) returns (ScheduleNodeRebootResponse) {}
@@ -67,9 +71,17 @@ service NodeAgent {
   // reads, creates, or mounts the host's admin.conf or super-admin.conf.
   rpc ReconcileKubeVip(ReconcileKubeVipRequest) returns (ReconcileKubeVipResponse) {}
 
-  // StartKubernetesCertificateRenewal starts an asynchronous control-plane
+  // StartKubernetesCertificateRenewal starts a V1 asynchronous control-plane
   // certificate renewal operation. The operation_id is an idempotency key.
+  // Callers that require forced renewal or strict etcd membership validation
+  // must use StartKubernetesCertificateRenewalV2.
   rpc StartKubernetesCertificateRenewal(StartKubernetesCertificateRenewalRequest) returns (StartKubernetesCertificateRenewalResponse) {}
+
+  // StartKubernetesCertificateRenewalV2 starts an asynchronous control-plane
+  // certificate renewal operation with forced-renewal and exact etcd-membership
+  // semantics. Its distinct method name lets callers detect V1-only agents
+  // before any renewal operation is accepted.
+  rpc StartKubernetesCertificateRenewalV2(StartKubernetesCertificateRenewalV2Request) returns (StartKubernetesCertificateRenewalV2Response) {}
 
   // GetKubernetesCertificateRenewalStatus returns the current status for a
   // previously started certificate renewal operation.
@@ -140,13 +152,29 @@ service NodeAgent {
   // state file is written before the config is touched, so a crash or a
   // timed-out call can be resumed without re-applying the mutation.
   //
+  // Once the WAL entry is written it is removed only when the reload is
+  // confirmed. Every later failure retains it (and possibly the written
+  // config), and other mutations fail until the same operation is retried.
+  //
   // Error codes:
-  //   FailedPrecondition — encryption-config.yaml is missing on this node; run
-  //                        InitializeKubernetesAPIEncryption first.
-  //   DeadlineExceeded — config was written but reload was not confirmed
-  //                      within the deadline; the call is safe to retry.
-  //   other codes      — unrecoverable; no partial state remains.
+  //   FailedPrecondition — encryption-config.yaml is missing (run
+  //                        InitializeKubernetesAPIEncryption first); a WAL entry
+  //                        from a different operation exists (retry that
+  //                        operation first); the apiserver has not yet loaded the
+  //                        current config; or the config or WAL ownership
+  //                        changed, or the config became unreadable, before or
+  //                        during confirmation.
+  //   DeadlineExceeded,
+  //   Canceled         — reload was not confirmed before the deadline or
+  //                      cancellation; the call is safe to retry.
+  //   Unavailable      — apiserver metrics stayed unavailable, so the reload
+  //                      cannot be confirmed; retry after they recover.
+  //   other codes      — invalid request, non-control-plane node, invalid
+  //                      config or mutation, or a local I/O failure.
   rpc UpdateEncryptionConfig(UpdateEncryptionConfigRequest) returns (UpdateEncryptionConfigResponse) {}
+
+  // Looks up a storage key name in the local configuration without returning key material.
+  rpc GetEtcdEncryptionKeyIdentity(GetEtcdEncryptionKeyIdentityRequest) returns (GetEtcdEncryptionKeyIdentityResponse) {}
 
   // StartEtcdEncryptionAtRestObjectsRewrite starts an asynchronous rewrite of
   // Kubernetes API objects so they are persisted with the current etcd
@@ -386,6 +414,8 @@ message KubeadmInitRequest {
   // Canonical form uses a leading v. When empty, the agent tries kubeadm version -o short from the binary on PATH.
   // When init_config is non-empty, set kubernetesVersion inside ClusterConfiguration instead (NVKE controller kubeadm templates already do).
   string kubernetes_version = 22;
+  // Empty preserves the legacy bootstrap name. Must match the existing storage identity on joins/replacements.
+  string api_encryption_key_name = 23;
 }
 
 message KubeadmInitStatusRequest {}
@@ -406,6 +436,7 @@ message KubeadmJoinRequest {
   string api_encryption_key = 3;
   string certificate_key = 4;
   repeated File files = 5;
+  string api_encryption_key_name = 6;
 }
 
 message KubeadmJoinStatusRequest {}
@@ -578,6 +609,7 @@ message InitializeKubernetesAPIEncryptionRequest {
   // When empty, a built-in default list is used. Identity is always the first
   // provider (then secretbox); new clusters use kubeadm init encryption instead.
   repeated string objects_to_encrypt = 2;
+  string encryption_key_name = 3;
 }
 
 message InitializeKubernetesAPIEncryptionResponse {
@@ -596,15 +628,18 @@ message PromoteKubernetesAPIEncryptionProvidersResponse {}
 // UpdateEncryptionConfig messages
 
 message AddSecondaryKeyOperation {
-  string new_key = 1; // base64-encoded 32-byte secretbox key; name is auto-derived
+  string new_key = 1; // base64-encoded 32-byte secretbox key
+  string key_name = 2; // empty retains legacy auto-derived naming
 }
 
 message PromotePrimaryKeyOperation {
   string new_key = 1; // base64-encoded key to move to the primary (first) position
+  string key_name = 2; // when supplied, verifies the stored identity; never renames a live key
 }
 
 message RemoveOldKeysOperation {
   string primary_key = 1; // the key to retain; all other keys are removed
+  string key_name = 2; // when supplied, verifies the retained storage identity
 }
 
 message UpdateEncryptionConfigRequest {
@@ -615,12 +650,20 @@ message UpdateEncryptionConfigRequest {
   }
 }
 
-// UpdateEncryptionConfigResponse is empty on success.
-// On failure the gRPC status code describes the nature of the error:
-//   DeadlineExceeded — config was written but the apiserver did not confirm
-//                      a reload within the deadline; safe to retry.
-//   other codes      — unrecoverable error; no partial state remains.
+// UpdateEncryptionConfigResponse is empty on success. On failure the gRPC
+// status code follows the UpdateEncryptionConfig contract; a written WAL entry
+// is retained for a retry of the same operation.
 message UpdateEncryptionConfigResponse {}
+
+message GetEtcdEncryptionKeyIdentityRequest {
+  // SHA-256 of the base64 key string, lowercase hex. The raw key is never returned.
+  string key_sha256 = 1;
+}
+
+message GetEtcdEncryptionKeyIdentityResponse {
+  // Empty if this key has not yet been distributed to this node.
+  string key_name = 1;
+}
 
 enum EtcdEncryptionAtRestObjectsRewriteState {
   ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_UNSPECIFIED = 0;
@@ -1104,7 +1147,22 @@ message StartKubernetesCertificateRenewalRequest {
   int32 threshold_days = 2;
 }
 
+message StartKubernetesCertificateRenewalV2Request {
+  // Stable caller-provided idempotency key.
+  string operation_id = 1;
+  // Renew certificates whose residual lifetime is less than this many days.
+  int32 threshold_days = 2;
+  // Renew all kubeadm-managed leaf certificates regardless of residual lifetime.
+  bool force = 3;
+  // Expected positive number of voting etcd members.
+  int32 expected_etcd_members = 4;
+}
+
 message StartKubernetesCertificateRenewalResponse {
+  KubernetesCertificateRenewalOperation operation = 1;
+}
+
+message StartKubernetesCertificateRenewalV2Response {
   KubernetesCertificateRenewalOperation operation = 1;
 }
 
@@ -1181,4 +1239,26 @@ message OpenVSwitchReconciliationOperation {
   NodeAgentOperationStatus operation = 1;
   // Populated after a successful reconciliation.
   OpenVSwitchReconciliationResult result = 2;
+}
+
+message InspectKubernetesCertificatesRequest {
+  bool control_plane = 1;
+}
+
+message KubernetesCertificateObservation {
+  string credential = 1;
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_AVAILABLE = 1;
+    STATE_MISSING = 2;
+    STATE_INVALID = 3;
+  }
+  State state = 2;
+  int64 not_after_unix_seconds = 3;
+  // SHA-256 of the public DER certificate with the earliest expiration.
+  string certificate_sha256 = 4;
+}
+
+message InspectKubernetesCertificatesResponse {
+  repeated KubernetesCertificateObservation certificates = 1;
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -408,6 +409,103 @@ func TestAudienceReportsForbiddenWhenNothingIsReadable(t *testing.T) {
 	}
 	if !apierrors.IsForbidden(err) {
 		t.Fatalf("audience lost the Forbidden cause: %v", err)
+	}
+}
+
+// A chart-rendered configuration reaches the controller as apiAuth in its
+// settings ConfigMap, so that is read first. Off or absent there leaves the
+// authentication ConfigMap to decide, as a controller reading AUTH_CONFIG_PATH
+// or one older than apiAuth needs.
+func TestAudienceReadsAPIAuthFromControllerConfig(t *testing.T) {
+	settings := func(name, config string) *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: greenfieldNamespace},
+			Data:       map[string]string{controllerConfigKey: config},
+		}
+	}
+	authConfig := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "nvke-auth-config", Namespace: greenfieldNamespace},
+		Data:       map[string]string{authConfigKey: "audiences:\n  - https://file.example\n"},
+	}
+	const on = "apiAuth:\n  enabled: true\n  audiences: [\"https://inline.example\"]\n"
+	const off = "apiAuth:\n  enabled: false\n  audiences: []\n"
+
+	tests := []struct {
+		name         string
+		objects      []runtime.Object
+		forbidden    []string
+		wantAudience string
+		wantEnabled  bool
+		wantErr      string
+	}{
+		{
+			name:         "apiAuth wins over the authentication ConfigMap",
+			objects:      []runtime.Object{settings("nvke-controller-config", on), authConfig},
+			wantAudience: "https://inline.example",
+			wantEnabled:  true,
+		},
+		{
+			name:         "a pinned settings name is read too",
+			objects:      []runtime.Object{settings("nke-controller-config", on)},
+			wantAudience: "https://inline.example",
+			wantEnabled:  true,
+		},
+		{
+			name:         "apiAuth off falls back to the authentication ConfigMap",
+			objects:      []runtime.Object{settings("nvke-controller-config", off), authConfig},
+			wantAudience: "https://file.example",
+			wantEnabled:  true,
+		},
+		{
+			name:         "a controller older than apiAuth falls back too",
+			objects:      []runtime.Object{settings("nvke-controller-config", "metricsListenAddress: :9090\n"), authConfig},
+			wantAudience: "https://file.example",
+			wantEnabled:  true,
+		},
+		{
+			name:    "apiAuth off and no authentication ConfigMap is off",
+			objects: []runtime.Object{settings("nvke-controller-config", off)},
+		},
+		{
+			name:         "an unreadable settings ConfigMap still falls back",
+			objects:      []runtime.Object{settings("nvke-controller-config", on), authConfig},
+			forbidden:    []string{"nvke-controller-config", "nke-controller-config"},
+			wantAudience: "https://file.example",
+			wantEnabled:  true,
+		},
+		{
+			name:      "apiAuth off and an unreadable authentication ConfigMap is the denial",
+			objects:   []runtime.Object{settings("nvke-controller-config", off)},
+			forbidden: []string{"nvke-auth-config", "nke-auth-config"},
+			wantErr:   "forbidden",
+		},
+		{
+			name:    "apiAuth on without audiences is an error",
+			objects: []runtime.Object{settings("nvke-controller-config", "apiAuth:\n  enabled: true\n")},
+			wantErr: "enables apiAuth but sets no audiences",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := fake.NewClientset(tt.objects...)
+			if len(tt.forbidden) > 0 {
+				client.PrependReactor("get", "configmaps", forbid(tt.forbidden...))
+			}
+			audience, enabled, err := (&TokenSource{client: client}).audience(t.Context())
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("audience error = %v, want one containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("audience: %v", err)
+			}
+			if audience != tt.wantAudience || enabled != tt.wantEnabled {
+				t.Fatalf("audience = %q, enabled = %t; want %q, %t", audience, enabled, tt.wantAudience, tt.wantEnabled)
+			}
+		})
 	}
 }
 

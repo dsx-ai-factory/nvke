@@ -18,7 +18,8 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/agent/pkg/nkeauth"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/auth/authn"
+
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
@@ -30,7 +31,7 @@ var _ credentials.TransportCredentials = (*tlsJWTTransportCredentials)(nil)
 
 type tlsJWTTransportCredentials struct {
 	base        credentials.TransportCredentials
-	verifier    *auth.Verifier
+	verifier    *authn.Verifier
 	node        db.Node
 	trustDomain spiffeid.TrustDomain
 	logger      *slog.Logger
@@ -38,7 +39,7 @@ type tlsJWTTransportCredentials struct {
 
 func newTLSJWTTransportCredentials(
 	base credentials.TransportCredentials,
-	verifier *auth.Verifier,
+	verifier *authn.Verifier,
 	subjectTrustDomain string,
 	node db.Node,
 	logger *slog.Logger,
@@ -142,8 +143,8 @@ func verifyNodeAudience(claims jwt.MapClaims) error {
 	if err != nil {
 		return fmt.Errorf("node-agent token audience is unreadable: %w", err)
 	}
-	if len(audiences) != 1 || !slices.Contains(auth.NodeAgentAudiences(), audiences[0]) {
-		return fmt.Errorf("node-agent token audience must contain only %q or %q", auth.NodeAgentAudience, auth.NodeAgentAudienceLegacy)
+	if len(audiences) != 1 || !slices.Contains(authn.NodeAgentAudiences(), audiences[0]) {
+		return fmt.Errorf("node-agent token audience must contain only %q or %q", authn.NodeAgentAudience, authn.NodeAgentAudienceLegacy)
 	}
 	return nil
 }

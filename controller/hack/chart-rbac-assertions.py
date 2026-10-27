@@ -4,6 +4,7 @@
 """Assert that the rendered tenant ClusterRole grants required permissions."""
 
 import argparse
+import copy
 import subprocess
 import sys
 
@@ -101,6 +102,137 @@ def main():
         return 1
 
     inner = list(yaml.safe_load_all(config_maps[0]["data"]["manifest.yaml"]))
+    additional_rbac = [
+        {
+            "apiVersion": "rbac.authorization.k8s.io/v1",
+            "kind": "ClusterRole",
+            "metadata": {"name": "node-reader"},
+            "rules": [{"apiGroups": [""], "resources": ["nodes"], "verbs": ["get", "list"]}],
+        },
+        {
+            "apiVersion": "rbac.authorization.k8s.io/v1",
+            "kind": "ClusterRoleBinding",
+            "metadata": {"name": "node-reader"},
+            "subjects": [{"kind": "User", "name": "spiffe://example.test/node-reader", "apiGroup": "rbac.authorization.k8s.io"}],
+            "roleRef": {"kind": "ClusterRole", "name": "node-reader", "apiGroup": "rbac.authorization.k8s.io"},
+        },
+    ]
+    scoped_rbac = []
+    for namespace in ("tenant-a", "tenant-b"):
+        for kind in ("Role", "RoleBinding"):
+            obj = copy.deepcopy(next(document for document in inner if document["kind"] == kind))
+            obj["metadata"]["namespace"] = namespace
+            if kind == "RoleBinding":
+                obj["metadata"]["annotations"] = {"nvke.nvidia.com/identity-source": "operator"}
+            scoped_rbac.append(obj)
+    for additional in ([], None, additional_rbac, scoped_rbac):
+        result = subprocess.run(
+            [*command, "--values", "-"],
+            input=yaml.safe_dump({"tenantAccess": {"additionalRBAC": additional}}),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            sys.stderr.write(result.stderr)
+            return result.returncode
+        actual_documents = [document for document in yaml.safe_load_all(result.stdout) if document]
+        actual_config_map = next(
+            document for document in actual_documents
+            if document.get("kind") == "ConfigMap" and document["metadata"]["name"] == "nke-rbac"
+        )
+        actual_rbac = list(yaml.safe_load_all(actual_config_map["data"]["manifest.yaml"]))
+        if actual_rbac != inner + (additional or []):
+            print("ERROR: additional tenant RBAC must append complete documents without changing existing RBAC", file=sys.stderr)
+            return 1
+        actual_config_map["data"]["manifest.yaml"] = config_maps[0]["data"]["manifest.yaml"]
+        if actual_documents != documents:
+            print("ERROR: additional tenant RBAC must only change the nke-rbac manifest", file=sys.stderr)
+            return 1
+
+    for override, expected in (
+        ("spiffe.trustDomain=", "spiffe.trustDomain must be set when tenantAccess.additionalRBAC is non-empty"),
+        ("tenantAccess.enabled=false", "tenantAccess.enabled must be true when tenantAccess.additionalRBAC is non-empty"),
+    ):
+        for additional in ([], None, additional_rbac):
+            result = subprocess.run(
+                [*command, "--set", "nvkeOIDCAuth.enabled=false", "--set", override, "--values", "-"],
+                input=yaml.safe_dump({"tenantAccess": {"additionalRBAC": additional}}),
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if additional:
+                if result.returncode == 0 or expected not in result.stderr:
+                    print(f"ERROR: expected render rejection: {expected}\n{result.stderr}", file=sys.stderr)
+                    return 1
+            elif result.returncode != 0:
+                print(f"ERROR: empty additional RBAC must allow {override}\n{result.stderr}", file=sys.stderr)
+                return 1
+
+    for api_version, kind, invalid_field in (
+        ("v1", "Secret", "kind"),
+        ("v1", "ConfigMap", "kind"),
+        ("rbac.authorization.k8s.io/v1", None, "kind"),
+        ("example.test/v1", "Role", "apiVersion"),
+        ("rbac.authorization.k8s.io/v1beta1", "ClusterRole", "apiVersion"),
+        (None, "RoleBinding", "apiVersion"),
+    ):
+        obj = {"metadata": {"name": "invalid-object", "namespace": "tenant-a"}}
+        if api_version is not None:
+            obj["apiVersion"] = api_version
+        if kind is not None:
+            obj["kind"] = kind
+        if kind == "Secret":
+            obj["stringData"] = {"marker": "not-a-credential"}
+        result = subprocess.run(
+            [*command, "--values", "-"],
+            input=yaml.safe_dump({"tenantAccess": {"additionalRBAC": [obj]}}),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        expected = f"tenantAccess.additionalRBAC[0]: {invalid_field} must be"
+        if result.returncode == 0 or expected not in result.stderr:
+            print(f"ERROR: expected render rejection: {expected}\n{result.stderr}", file=sys.stderr)
+            return 1
+
+    invalid_cases = [[document] for document in inner]
+    for obj in additional_rbac + scoped_rbac:
+        invalid_cases.append([obj, obj])
+    for document in inner + additional_rbac:
+        if document["kind"] in ("ClusterRole", "ClusterRoleBinding"):
+            obj = copy.deepcopy(document)
+            obj["metadata"]["namespace"] = "invalid-for-cluster-scoped-rbac"
+            invalid_cases.append([obj])
+    for kind in ("Role", "RoleBinding"):
+        for namespace in (None, ""):
+            obj = copy.deepcopy(next(document for document in scoped_rbac if document["kind"] == kind))
+            if namespace is None:
+                obj["metadata"].pop("namespace")
+            else:
+                obj["metadata"]["namespace"] = namespace
+            invalid_cases.append([obj])
+    for additional in invalid_cases:
+        result = subprocess.run(
+            [*command, "--values", "-"],
+            input=yaml.safe_dump({"tenantAccess": {"additionalRBAC": additional}}),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        obj = additional[-1]
+        namespace = obj["metadata"].get("namespace", "") if obj["kind"] in ("Role", "RoleBinding") else ""
+        identity = f"{obj['kind']}/{namespace}/{obj['metadata']['name']}"
+        expected = f"tenantAccess.additionalRBAC[{len(additional) - 1}]: duplicate RBAC object {identity}"
+        if obj["kind"] in ("ClusterRole", "ClusterRoleBinding") and obj["metadata"].get("namespace"):
+            expected = f"tenantAccess.additionalRBAC[0]: {obj['kind']} must not set metadata.namespace"
+        elif obj["kind"] in ("Role", "RoleBinding") and not obj["metadata"].get("namespace"):
+            expected = f"tenantAccess.additionalRBAC[0]: {obj['kind']} must set metadata.namespace"
+        if result.returncode == 0 or expected not in result.stderr:
+            print(f"ERROR: expected render rejection: {expected}\n{result.stderr}", file=sys.stderr)
+            return 1
+
     roles = {
         (document.get("kind"), document["metadata"]["name"]): document
         for document in inner

@@ -74,7 +74,7 @@ TELEPORT_MANAGED_BY_LABEL_VALUE: teleport.managedByLabelValue
 TELEPORT_TOKEN_NAME_PREFIX: teleport.tokenNamePrefix
 TELEPORT_RESOURCE_GROUP_LABEL_VALUE: teleport.resourceGroupLabelValue
 
-PERMISSIVE_MODE: permissiveMode
+PERMISSIVE_MODE: apiAuth.permissive
 
 NODE_AGENT_READINESS_WORKERS: agentReadiness.workers
 NODE_AGENT_READINESS_TIMEOUT: agentReadiness.timeout

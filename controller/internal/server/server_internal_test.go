@@ -40,3 +40,11 @@ func TestMachineMetadataAllowlistsReachNodePoolService(t *testing.T) {
 	assert.Empty(t, impl.nodePoolService.machineAllowlistedLabelKeys)
 	assert.Empty(t, impl.nodePoolService.machineAllowlistedAnnotationKeys)
 }
+
+func TestControlPlaneVIPOverrideReachesServices(t *testing.T) {
+	for _, allow := range []bool{false, true} {
+		impl := NewServerImpl(config.Config{AllowControlPlaneWithoutVIP: allow}, slog.New(slog.DiscardHandler), nil, nil, nil)
+		assert.Equal(t, allow, impl.clusterService.allowControlPlaneWithoutVIP)
+		assert.Equal(t, allow, impl.nodeService.allowControlPlaneWithoutVIP)
+	}
+}

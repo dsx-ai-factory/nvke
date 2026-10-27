@@ -340,6 +340,9 @@ type Config struct {
 	// OCI reference or a local path. Empty uses the spiffe.github.io hardened
 	// chart repo.
 	SPIRECRDsChartRef string
+
+	// AllowControlPlaneWithoutVIP permits dev control-plane lifecycle operations without a VIP.
+	AllowControlPlaneWithoutVIP bool
 }
 
 // TPMAttestorEnabled reports whether the bootstrap SPIRE server attests hosts
@@ -712,6 +715,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "image.pullPolicy=IfNotPresent",
 		"--set-string", "profiles.path=" + profilesPath,
 		"--set", "cni.installAfterInit=true",
+		"--set", fmt.Sprintf("allowControlPlaneWithoutVIP=%t", cfg.AllowControlPlaneWithoutVIP),
 		"--set", fmt.Sprintf("spiffe.enabled=%t", !cfg.DisableMTLS),
 		"--set-string", "spiffe.trustDomain=" + spireTrustDomain,
 		"--set-string", "spiffe.spire.className=" + spireControllerManagerClass,

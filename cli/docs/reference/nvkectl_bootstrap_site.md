@@ -68,6 +68,7 @@ nvkectl bootstrap site [flags]
 ### Options
 
 ```
+      --allow-control-plane-without-vip     Permit a multi-node control plane without a VIP and enable the override in the temporary NVKE controller. Development only; replacing the initializing node can break API access.
       --arch string                         Architecture of the release artifact to use, linux/amd64 or linux/arm64; default: the bootstrap host's, since the bootstrap CAPNICo runs in its Kind cluster. Only with --release.
       --diagnostics-dir string              Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. With --verbose a successful bootstrap writes them too. Overrides NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR. (default "cluster-diagnostics")
       --disable-mtls                        Stand the site up without SPIFFE: no SPIRE, and the controller dials node agents in plaintext. The agents must be running with --disable-mtls too. Development only.

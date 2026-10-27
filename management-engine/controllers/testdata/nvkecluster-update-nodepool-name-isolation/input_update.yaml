@@ -1,0 +1,26 @@
+apiVersion: internal.nvke.nvidia.com/v1
+kind: NVKECluster
+metadata:
+  name: cluster-1
+  namespace: default
+spec:
+  apiServerAccess:
+    publicAccessEnabled: false
+  clusterNetwork:
+    pods:
+      cidrBlocks: [10.244.0.0/16]
+    services:
+      cidrBlocks: [10.96.0.0/12]
+    serviceDomain: cluster.local
+  release:
+    channel:
+      name: stable
+  controlPlaneClass: standard
+  network:
+    vpcID: 22222222-2222-4222-8222-222222222222
+  nodePools:
+    - name: workers
+      instanceType: 33333333-3333-4333-8333-333333333333
+      replicas: 2
+      vpcSubnetID: 44444444-4444-4444-8444-444444444444
+      nodeProfile: "example:1.36.1"

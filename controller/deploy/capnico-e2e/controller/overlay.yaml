@@ -6,9 +6,34 @@
 # The suite mints its own token and presents it on every call, so the ordinary
 # specs exercise the shipping authentication path rather than bypassing it.
 # backend-e2e.sh fails rather than skips when authentication is not enforced.
+#
+# The chart renders this configuration, so the controller reads it from apiAuth
+# in its settings ConfigMap; nvke-auth-config is still rendered for released
+# nvkectl. It matches the configuration deploy/k8s/nvke-auth-dev.yaml carries:
+# same audience, same admitted service account.
 apiAuth:
   enabled: true
   permissive: false
+  configMap:
+    create: true
+  config:
+    audiences: ["https://nke.tilt.local"]
+    issuers:
+      - name: local-kubernetes
+        issuer: "https://kubernetes.default.svc.cluster.local"
+        # The cluster's own JWKS endpoint is not anonymous, hence the bearer
+        # token and the issuer-discovery ClusterRole.
+        jwks:
+          uri: "https://kubernetes.default.svc/openid/v1/jwks"
+          caBundlePath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          bearerTokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token
+        algorithms: [RS256, ES256]
+        admit:
+          serviceAccounts:
+            # Omitting name would widen the rule to every service account in
+            # the namespace, nke-e2e included.
+            - namespace: nke-clients
+              name: nke-client
 
 # The controller reconciles CAPI objects, so it needs the RBAC for them.
 # The controller accepts only the API provider blocks named here, and this lane needs
@@ -133,9 +158,8 @@ profiles:
     repository: docker.local/cwe-profiles
     tag: tilt
 
-# apiAuth is not set here. The Tiltfile drives it from NKE_AUTH_ENABLED and
-# NKE_PERMISSIVE_MODE, and the chart's default ConfigMap name already matches
-# the one deploy/k8s/nvke-auth-dev.yaml applies.
+# apiAuth is set at the top of this file. The Tiltfile drives it from
+# NKE_AUTH_ENABLED and NKE_PERMISSIVE_MODE instead.
 
 spiffe:
   enabled: true

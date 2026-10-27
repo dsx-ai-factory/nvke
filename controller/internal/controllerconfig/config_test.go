@@ -15,13 +15,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dsx-ai-factory/nvke/auth/authn"
+
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 )
 
-// baseConfig is every required key except nodeAgent, for tests that supply
-// their own nodeAgent block.
-const baseConfig = `
+// baseConfigWithoutAPIAuth is every required key except nodeAgent and apiAuth,
+// for tests that supply their own of either.
+const baseConfigWithoutAPIAuth = `
 agentReadiness:
   workers: 8
   timeout: 30s
@@ -33,11 +35,23 @@ spire:
   joinTokenTTL: 1h
 `
 
-// minimalConfig satisfies every Validate constraint with the smallest possible
-// document: everything optional left out, everything required present.
-const minimalConfig = baseConfig + `nodeAgent:
+// offAPIAuth is the apiAuth section that switches authentication off. Load
+// requires the section, so every document that must load carries one.
+const offAPIAuth = "apiAuth:\n  enabled: false\n  audiences: []\n  issuers: []\n"
+
+// baseConfig is every required key except nodeAgent, for tests that supply
+// their own nodeAgent block.
+const baseConfig = baseConfigWithoutAPIAuth + offAPIAuth
+
+// minimalConfigWithoutAPIAuth is minimalConfig less its apiAuth section, for
+// tests that supply their own.
+const minimalConfigWithoutAPIAuth = baseConfigWithoutAPIAuth + `nodeAgent:
   spireAttestationMethod: tpm
 `
+
+// minimalConfig satisfies every Validate constraint with the smallest possible
+// document: everything optional left out, everything required present.
+const minimalConfig = minimalConfigWithoutAPIAuth + offAPIAuth
 
 // A 64-character hex digest, the shape nodeAgent.dsxImds.pluginChecksum takes.
 const exampleChecksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -84,6 +98,11 @@ certRenewal:
   controllerEnabled: true
   interval: 12h
   thresholdDays: 30
+credentialMonitoring:
+  enabled: true
+  inspectionInterval: 1h
+  observationMaxAge: 3h
+  warningDays: 45
 kubeadmImageRepository: registry.k8s.io
 cniImageRegistry: ""
 installCNIAfterInit: false
@@ -157,7 +176,11 @@ teleport:
   managedByLabelValue: nke-cloud-workflow-engine
   tokenNamePrefix: nke-cwe-
   resourceGroupLabelValue: nke
-permissiveMode: false
+apiAuth:
+  enabled: false
+  audiences: []
+  issuers: []
+  permissive: false
 `
 
 	cfg, err := controllerconfig.Load(writeConfig(t, full))
@@ -169,6 +192,10 @@ permissiveMode: false
 	assert.Equal(t, 12*time.Hour, cfg.CertRenewal.Interval.Duration)
 	assert.Equal(t, 30, cfg.CertRenewal.ThresholdDays)
 	assert.True(t, cfg.AllowLegacyCalicoClusterCreation)
+	assert.True(t, cfg.CredentialMonitoring.Enabled)
+	assert.Equal(t, time.Hour, cfg.CredentialMonitoring.InspectionInterval.Duration)
+	assert.Equal(t, 3*time.Hour, cfg.CredentialMonitoring.ObservationMaxAge.Duration)
+	assert.Equal(t, 45, cfg.CredentialMonitoring.WarningDays)
 	assert.Equal(t, "dsxImds", cfg.NodeAgent.SpireAttestationMethod)
 	assert.Equal(t, "acme", cfg.NodeAgent.DSXImds.OperatorTenant)
 	assert.Equal(t, exampleChecksum, cfg.NodeAgent.DSXImds.PluginChecksum)
@@ -438,6 +465,10 @@ supportedInfraProviders: [nico]
 spire:
   spiffeEnabled: %t
   joinTokenTTL: 1h
+apiAuth:
+  enabled: false
+  audiences: []
+  issuers: []
 nodeAgent:
   spireAttestationMethod: %s
 `, spiffeEnabled, method)
@@ -1175,5 +1206,213 @@ func TestMachineMetadataAllowlists_Config(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestControlPlaneVIPOverrideConfiguration(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{"", "allowControlPlaneWithoutVIP: false\n", "allowControlPlaneWithoutVIP: true\n"} {
+		t.Run(value, func(t *testing.T) {
+			t.Parallel()
+			file, err := controllerconfig.Load(writeConfig(t, minimalConfig+"\n"+value))
+			require.NoError(t, err)
+			var runtime config.Config
+			file.ApplyTo(&runtime)
+			require.Equal(t, strings.Contains(value, "true"), runtime.AllowControlPlaneWithoutVIP)
+		})
+	}
+}
+
+// exampleAPIAuth is an enabled apiAuth section that passes auth/authn's rules.
+func exampleAPIAuth() controllerconfig.APIAuthConfig {
+	return controllerconfig.APIAuthConfig{
+		Enabled:   true,
+		Audiences: []string{"https://nke.example.internal"},
+		Issuers: []authn.Issuer{{
+			Name:       "local-kubernetes",
+			Issuer:     "https://kubernetes.default.svc.cluster.local",
+			JWKS:       &authn.JWKSKeys{URI: "https://kubernetes.default.svc/openid/v1/jwks"},
+			Algorithms: []string{"RS256"},
+			Admit: &authn.Admit{
+				ServiceAccounts: []authn.ServiceAccountRule{{Namespace: "nke-clients"}},
+			},
+		}},
+	}
+}
+
+// apiAuthIssuer is one valid issuer, indented to sit under apiAuth.issuers.
+const apiAuthIssuer = `
+    - name: local-kubernetes
+      issuer: "https://kubernetes.default.svc.cluster.local"
+      jwks:
+        uri: "https://kubernetes.default.svc/openid/v1/jwks"
+      algorithms: [RS256]
+      admit:
+        serviceAccounts:
+          - namespace: nke-clients
+`
+
+// apiAuth reuses auth/authn's issuer schema and rules, and adds an explicit
+// switch: a section filled in but switched off is an error, never a silent off.
+func TestValidateAPIAuth(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		apiAuth string
+		wantOn  bool
+		wantErr string
+	}{
+		{name: "absent is refused", wantErr: "apiAuth is required"},
+		{name: "apiAuth: null is refused", apiAuth: "apiAuth: null\n", wantErr: "apiAuth is required"},
+		{name: "off and empty is off", apiAuth: offAPIAuth},
+		{
+			name:    "on with a valid issuer",
+			apiAuth: "apiAuth:\n  enabled: true\n  audiences: [\"https://nke.example.internal\"]\n  issuers:" + apiAuthIssuer,
+			wantOn:  true,
+		},
+		{
+			name:    "issuers while off are refused rather than ignored",
+			apiAuth: "apiAuth:\n  enabled: false\n  audiences: []\n  issuers:" + apiAuthIssuer,
+			wantErr: "apiAuth: audiences or issuers are set but enabled is false",
+		},
+		{
+			name:    "audiences while off are refused too",
+			apiAuth: "apiAuth:\n  enabled: false\n  audiences: [\"https://nke.example.internal\"]\n  issuers: []\n",
+			wantErr: "apiAuth: audiences or issuers are set but enabled is false",
+		},
+		{
+			name:    "on with no issuers is refused",
+			apiAuth: "apiAuth:\n  enabled: true\n  audiences: [\"https://nke.example.internal\"]\n  issuers: []\n",
+			wantErr: "apiAuth: issuers is required",
+		},
+		{
+			name: "an issuer without admit is refused, as authn.Load refuses it",
+			apiAuth: "apiAuth:\n  enabled: true\n  audiences: [\"https://nke.example.internal\"]\n  issuers:\n" +
+				"    - name: local-kubernetes\n" +
+				"      issuer: \"https://kubernetes.default.svc.cluster.local\"\n" +
+				"      jwks: {uri: \"https://kubernetes.default.svc/openid/v1/jwks\"}\n" +
+				"      algorithms: [RS256]\n",
+			wantErr: "apiAuth: issuers[0] (local-kubernetes): admit is required",
+		},
+		{
+			name:    "apiVersion belongs to the standalone file, not this section",
+			apiAuth: "apiAuth:\n  apiVersion: auth.nvke.nvidia.com/v1alpha1\n  enabled: true\n  audiences: [\"https://nke.example.internal\"]\n  issuers:" + apiAuthIssuer,
+			wantErr: `unknown field "apiAuth.apiVersion"`,
+		},
+		{
+			name: "a misspelled issuer key is refused, not dropped",
+			apiAuth: "apiAuth:\n  enabled: true\n  audiences: [\"https://nke.example.internal\"]\n  issuers:\n" +
+				"    - name: local-kubernetes\n" +
+				"      issuer: \"https://kubernetes.default.svc.cluster.local\"\n" +
+				"      jwks: {urii: \"https://kubernetes.default.svc/openid/v1/jwks\"}\n" +
+				"      algorithms: [RS256]\n" +
+				"      admit: {serviceAccounts: [{namespace: nke-clients}]}\n",
+			wantErr: "urii",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg, err := controllerconfig.Load(writeConfig(t, minimalConfigWithoutAPIAuth+tt.apiAuth))
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			if !tt.wantOn {
+				assert.Nil(t, cfg.APIAuth.AuthConfig(), "an off section yields no authn.Config")
+				return
+			}
+			authCfg := cfg.APIAuth.AuthConfig()
+			require.NotNil(t, authCfg)
+			assert.Equal(t, []string{"https://nke.example.internal"}, authCfg.Audiences)
+			require.Len(t, authCfg.Issuers, 1)
+			assert.Equal(t, "local-kubernetes", authCfg.Issuers[0].Name)
+		})
+	}
+}
+
+// permissive lives under apiAuth. It applies to whichever source configures
+// authentication, so it loads while the section is off, and the old top-level
+// key is refused with a pointer to the new one.
+func TestAPIAuthPermissive(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		config         string
+		wantPermissive bool
+		wantErr        string
+	}{
+		{name: "absent is enforcing", config: offAPIAuth},
+		{name: "set while off, for AUTH_CONFIG_PATH", config: offAPIAuth + "  permissive: true\n", wantPermissive: true},
+		{
+			name:           "set while on",
+			config:         "apiAuth:\n  enabled: true\n  permissive: true\n  audiences: [\"https://nke.example.internal\"]\n  issuers:" + apiAuthIssuer,
+			wantPermissive: true,
+		},
+		{
+			name:    "the top-level key names where it moved",
+			config:  offAPIAuth + "permissiveMode: true\n",
+			wantErr: "permissiveMode moved to apiAuth.permissive",
+		},
+		{
+			name:    "even when false",
+			config:  offAPIAuth + "permissiveMode: false\n",
+			wantErr: "permissiveMode moved to apiAuth.permissive",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			file, err := controllerconfig.Load(writeConfig(t, minimalConfigWithoutAPIAuth+tt.config))
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			var cfg config.Config
+			file.ApplyTo(&cfg)
+			assert.Equal(t, tt.wantPermissive, cfg.PermissiveMode)
+		})
+	}
+}
+
+// The two sources could disagree about who is admitted, so neither wins.
+func TestCheckAuthSource(t *testing.T) {
+	t.Parallel()
+
+	const path = "/etc/nke/auth/auth.yaml"
+	tests := []struct {
+		name    string
+		apiAuth controllerconfig.APIAuthConfig
+		path    string
+		wantErr string
+	}{
+		{name: "neither is off"},
+		{name: "apiAuth alone", apiAuth: exampleAPIAuth()},
+		{name: "AUTH_CONFIG_PATH alone", path: path},
+		{
+			name:    "both are refused, naming the path",
+			apiAuth: exampleAPIAuth(),
+			path:    path,
+			wantErr: `configured twice: apiAuth.enabled is true in nvke-controller-config and AUTH_CONFIG_PATH is "/etc/nke/auth/auth.yaml"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			file := controllerconfig.Config{APIAuth: tt.apiAuth}
+			err := file.CheckAuthSource(tt.path)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tt.wantErr)
+		})
 	}
 }

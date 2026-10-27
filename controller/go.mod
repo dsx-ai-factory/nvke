@@ -8,6 +8,7 @@ require (
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/dsx-ai-factory/cluster-api-provider-nico v0.1.0-rc.2.0.20260929174319-72784d3eaafc
 	github.com/dsx-ai-factory/nvke/agent v0.0.0-00010101000000-000000000000
+	github.com/dsx-ai-factory/nvke/auth v0.0.0-00010101000000-000000000000
 	github.com/dsx-ai-factory/nvke/controller/api v0.0.0-00010101000000-000000000000
 	github.com/dsx-ai-factory/nvke/management-engine v0.0.0-00010101000000-000000000000
 	github.com/evanphx/json-patch/v5 v5.9.11
@@ -118,6 +119,7 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
@@ -179,6 +181,7 @@ require (
 
 replace (
 	github.com/dsx-ai-factory/nvke/agent => ../agent
+	github.com/dsx-ai-factory/nvke/auth => ../auth
 	github.com/dsx-ai-factory/nvke/controller/api => ./api
 	github.com/dsx-ai-factory/nvke/management-engine => ../management-engine
 )

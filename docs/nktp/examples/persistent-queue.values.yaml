@@ -1,0 +1,144 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Keeps the export queue of the watchdog and each gateway on a PersistentVolume.
+# See ../guides/configure-persistent-queue.md.
+watchdog:
+  kubernetes:
+    podSecurityContext:
+      fsGroup: 10001 # The Collector image's user, so it can write to the volume.
+      fsGroupChangePolicy: OnRootMismatch
+    volumeClaimTemplates:
+      - metadata:
+          name: queue
+        spec:
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 3Gi # The watchdog keeps a separate queue for each signal.
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Retain # The Operator deletes the StatefulSet when claim templates change.
+      whenScaled: Retain
+    volumeMounts: # Helm replaces lists, so the chart's mount is restated.
+      - name: internal-tls-server
+        mountPath: /etc/nktp/internal-tls/server
+        readOnly: true
+      - name: queue
+        mountPath: /var/lib/otelcol/queue
+  otelcol:
+    config:
+      extensions:
+        file_storage/queue:
+          directory: /var/lib/otelcol/queue
+      exporters:
+        otlp:
+          sending_queue:
+            storage: file_storage/queue
+            queue_size: 536870912 # Half of each queue's 1Gi. See "Size the volumes" in the guide.
+      service:
+        extensions: [health_check, file_storage/queue]
+
+gateway_logs:
+  kubernetes:
+    podSecurityContext:
+      fsGroup: 10001
+      fsGroupChangePolicy: OnRootMismatch
+    volumeClaimTemplates:
+      - metadata:
+          name: queue
+        spec:
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 1Gi # Twice queue_size. See "Size the volumes" in the guide.
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Retain
+      whenScaled: Retain
+    volumeMounts:
+      - name: internal-tls-server
+        mountPath: /etc/nktp/internal-tls/server
+        readOnly: true
+      - name: queue
+        mountPath: /var/lib/otelcol/queue
+  otelcol:
+    config:
+      extensions:
+        file_storage/queue:
+          directory: /var/lib/otelcol/queue
+      exporters:
+        otlp:
+          sending_queue:
+            storage: file_storage/queue
+            queue_size: 536870912
+      service:
+        extensions: [health_check, file_storage/queue]
+
+gateway_metrics:
+  kubernetes:
+    podSecurityContext:
+      fsGroup: 10001
+      fsGroupChangePolicy: OnRootMismatch
+    volumeClaimTemplates:
+      - metadata:
+          name: queue
+        spec:
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 1Gi
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Retain
+      whenScaled: Retain
+    volumeMounts:
+      - name: internal-tls-server
+        mountPath: /etc/nktp/internal-tls/server
+        readOnly: true
+      - name: queue
+        mountPath: /var/lib/otelcol/queue
+  otelcol:
+    config:
+      extensions:
+        file_storage/queue:
+          directory: /var/lib/otelcol/queue
+      exporters:
+        otlp:
+          sending_queue:
+            storage: file_storage/queue
+            queue_size: 536870912
+      service:
+        extensions: [health_check, file_storage/queue]
+
+gateway_traces:
+  kubernetes:
+    podSecurityContext:
+      fsGroup: 10001
+      fsGroupChangePolicy: OnRootMismatch
+    volumeClaimTemplates:
+      - metadata:
+          name: queue
+        spec:
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 1Gi
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Retain
+      whenScaled: Retain
+    volumeMounts:
+      - name: internal-tls-server
+        mountPath: /etc/nktp/internal-tls/server
+        readOnly: true
+      - name: queue
+        mountPath: /var/lib/otelcol/queue
+  otelcol:
+    config:
+      extensions:
+        file_storage/queue:
+          directory: /var/lib/otelcol/queue
+      exporters:
+        otlp:
+          sending_queue:
+            storage: file_storage/queue
+            queue_size: 536870912
+      service:
+        extensions: [health_check, file_storage/queue]

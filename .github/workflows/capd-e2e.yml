@@ -23,6 +23,7 @@ on:
       - "pull-request/[0-9]+"
     paths:
       - "controller/**"
+      - "auth/**"
       - "agent/**"
       - Makefile
       # Without these, a change to the suite's own workflow or to the shared

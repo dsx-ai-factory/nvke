@@ -34,7 +34,7 @@ func TestForAgentVersionBoundary(t *testing.T) {
 	}
 }
 
-// Each of the six contracts is checked at the boundary, including the empty
+// Each of the five contracts is checked at the boundary, including the empty
 // version, so a field that is not wired to the gate cannot hide behind the others.
 func TestEveryContractFlipsAtTheBoundary(t *testing.T) {
 	for _, version := range []string{"", "0.2.9"} {
@@ -43,8 +43,7 @@ func TestEveryContractFlipsAtTheBoundary(t *testing.T) {
 			got.UnitName != "nke-agent.service" ||
 			got.EnvFilePath != "/etc/default/nke-agent" ||
 			got.CNIPackagePrefix != "nke-cni-" ||
-			got.ControllerCABundlePath != "/etc/nke/controller-ca.crt" ||
-			got.ControllerCABundleFlag != "controller-client-ca-bundle" {
+			got.ControllerCABundlePath != "/etc/nke/controller-ca.crt" {
 			t.Errorf("version %q: not every contract is the old form: %+v", version, got)
 		}
 	}
@@ -53,8 +52,7 @@ func TestEveryContractFlipsAtTheBoundary(t *testing.T) {
 		got.UnitName != "nvke-agent.service" ||
 		got.EnvFilePath != "/etc/default/nvke-agent" ||
 		got.CNIPackagePrefix != "nvke-cni-" ||
-		got.ControllerCABundlePath != "/etc/nvke/controller-ca.crt" ||
-		got.ControllerCABundleFlag != "nvke-controller-client-ca-bundle" {
+		got.ControllerCABundlePath != "/etc/nvke/controller-ca.crt" {
 		t.Errorf("cutover version: not every contract is the new form: %+v", got)
 	}
 }

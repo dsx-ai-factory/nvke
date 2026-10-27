@@ -27,8 +27,12 @@ linters:
     - unused
     - logcheck
     - commentpolicy
+    - deferredpatch
   settings:
     custom:
+      deferredpatch:
+        type: "module"
+        description: Restricts writes to reconciled CR types to their deferred CAPI patch.
       commentpolicy:
         type: "module"
         description: Limits inline comment block size.

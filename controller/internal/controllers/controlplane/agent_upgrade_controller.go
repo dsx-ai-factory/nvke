@@ -236,8 +236,14 @@ func (c *Controller) checkCertificateRenewal(ctx context.Context, cluster db.Clu
 		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		response, callErr := c.nodeAgentClient.GetKubernetesCertificateRenewalStatus(callCtx, node, &pb.GetKubernetesCertificateRenewalStatusRequest{OperationId: active.OperationID})
 		cancel()
-		if status.Code(callErr) == codes.Unimplemented {
-			// The existing legacy activity releases its record when its script ends.
+		// A fenced reservation the agent does not know is cleared only once no
+		// cycle holds the lock; until then its activity may still dispatch it.
+		// Unfenced (V1) legacy work releases its record when its script ends.
+		code := status.Code(callErr)
+		if active.Fenced && (code == codes.NotFound || code == codes.Unimplemented) {
+			return c.clearAbsentCertificateRenewal(ctx, cluster.ID, active)
+		}
+		if code == codes.Unimplemented {
 			return true, nil
 		}
 		if callErr != nil {
@@ -265,4 +271,30 @@ func (c *Controller) checkCertificateRenewal(ctx context.Context, cluster db.Clu
 		return err
 	})
 	return false, err
+}
+
+// clearAbsentCertificateRenewal clears a fenced reservation that the agent does
+// not report, unless a renewal cycle still holds the cluster mutation lock.
+func (c *Controller) clearAbsentCertificateRenewal(ctx context.Context, clusterID uuid.UUID, active db.NodeAgentCertificateRenewal) (bool, error) {
+	running := false
+	err := c.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		locked, err := tx.GetClusterForUpdate(ctx, clusterID)
+		if err != nil {
+			return err
+		}
+		if locked.CertificateRenewal == nil || *locked.CertificateRenewal != active {
+			return nil
+		}
+		if update := locked.Conditions.UpdateInProgress; update != nil && update.Type == db.OperationTypeCertRenewal {
+			running = true
+			return nil
+		}
+		locked.CertificateRenewal = nil
+		_, err = tx.UpdateCluster(ctx, &locked)
+		return err
+	})
+	if err != nil {
+		return true, fmt.Errorf("failed to clear absent certificate renewal reservation: %w", err)
+	}
+	return running, nil
 }

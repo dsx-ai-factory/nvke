@@ -1,0 +1,9 @@
+nodePools:
+- name: workers-remove
+  id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+  conditions:
+  - type: NVKEControllerDeleting
+    status: "True"
+    observedGeneration: 1
+    reason: Deleting
+    message: Node pool removal is in progress

@@ -582,6 +582,13 @@ http://localhost:18080/files/images/custom-image.qcow2
 http://localhost:18080/files/agent/nvke-agent
 ```
 
+When the VM backend is enabled, the `nico-sim` Tilt resource provides a
+**Stage OS image** button. Enable **Pull NVKR release** to pull an immutable OCI
+release reference and disk output. Leave it disabled to download an `https://`
+URL or copy an absolute `file://` path. NVKR pulling fails clearly when
+`NVKR_BIN` is unset and `nvkr` is unavailable on `PATH`. The destination is
+relative to the nico-sim `/files` root and defaults to `images/nvke-node.qcow2`.
+
 The nico-vms dev release uses `carbide-pxe.forge` inside the VM, so the
 same agent URL becomes:
 

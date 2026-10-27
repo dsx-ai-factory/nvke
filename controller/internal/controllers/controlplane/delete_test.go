@@ -56,6 +56,8 @@ func TestReconcileRequestedDeletes_StartsTeardown(t *testing.T) {
 	target := requestedDeleteNode(uuid.New(), clusterID, "cp-1", time.Now())
 
 	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNode", mock.Anything, target.ID).Return(target, nil)
+	mockTx.On("GetClusterForUpdate", mock.Anything, target.ClusterID).Return(cluster, nil)
 	mockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil)
 
 	var written db.Node

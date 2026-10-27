@@ -38,7 +38,7 @@ func testNodeAgentBootstrapFiles(cfg config.Config, controllerClientCABundle str
 				Encoding:    "b64",
 				Content:     base64.StdEncoding.EncodeToString([]byte(controllerClientCABundle)),
 			})
-			args = append(args, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
+			args = append(args, "--nvke-controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
 		}
 		if node.NodeAgentTLSJWTEnabled {
 			args = append(args, "--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url="+cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)
@@ -127,7 +127,7 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 				assert.Contains(t, userData, `NodeAttestor "tpm"`)
 				assert.NotContains(t, userData, `NodeAttestor "dsx_imds"`)
 				assert.NotContains(t, userData, "--grpc-auth-mode=tls-jwt")
-				assert.NotContains(t, userData, "--controller-client-ca-bundle")
+				assert.NotContains(t, userData, "client-ca-bundle")
 			},
 		},
 		"TPM attestor": {
@@ -363,7 +363,7 @@ func TestRenderCAPIBootstrapUserData_ExternalMTLS(t *testing.T) {
 	assert.Equal(t, "root:root", agentConfigFile.Owner)
 	assert.Equal(t, "0644", agentConfigFile.Permissions)
 	assert.Empty(t, agentConfigFile.Encoding)
-	assert.Equal(t, "AGENT_ARGS=\"--secure-server-port 15005 --controller-client-ca-bundle=/etc/nke/controller-ca.crt\"\n", agentConfigFile.Content)
+	assert.Equal(t, "AGENT_ARGS=\"--secure-server-port 15005 --nvke-controller-client-ca-bundle=/etc/nke/controller-ca.crt\"\n", agentConfigFile.Content)
 	assert.Equal(t, []string{"systemctl restart nke-agent.service"}, cloudConfig.RunCmd)
 	assert.NotContains(t, userData, "--grpc-auth-mode")
 	assert.NotContains(t, userData, "PRIVATE KEY")

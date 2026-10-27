@@ -104,25 +104,37 @@ are aliases on `get`, `create`, `patch` and `delete`.
 
 `nvkectl config set-site` command configures the management-cluster kubeconfig with the site.
 nvkectl commands use it to mint an audience-scoped token for the admitted
-identity `nke-clients/nke-client`. The audience comes from the authentication
-ConfigMap, looked up in namespace `nke-controller` first and then
-`cloud-workflow-engine`, and under two names in each: `nvke-auth-config`, then
-`nke-auth-config` for a site that keeps the older name by pinning
-`apiAuth.configMap.name`.
+identity `nke-clients/nke-client`. The audience comes from two places, each
+looked up in namespace `nke-controller` first and then `cloud-workflow-engine`,
+under two names:
+
+1. The controller's settings ConfigMap, `nvke-controller-config`, then
+   `nke-controller-config` for a site that pins the older name. When its
+   `config.yaml` has `apiAuth.enabled: true`, the CLI mints for the first entry
+   of `apiAuth.audiences`.
+2. Otherwise, when that section is off or absent (a controller that reads
+   `AUTH_CONFIG_PATH`, or one older than the section), the authentication
+   ConfigMap: `nvke-auth-config`, then `nke-auth-config` for a site that keeps
+   the older name by pinning `apiAuth.configMap.name`. The audience is the first
+   entry of `audiences` in its `auth.yaml`.
 
 The first *readable* candidate is used: a site whose RBAC grants `get` on its
 pinned name alone answers Forbidden for the other name, and the search moves
 past that denial rather than stopping at it.
 
-Only when neither name is found in either namespace does the CLI treat
-authentication as off and send no `Authorization` header — the same as a CWE
-that was installed with `apiAuth.enabled` unset. A denial is not that: it is
-kept, and reported only if no candidate turns out to be readable, so an RBAC
-problem never arrives as an unexplained 401.
+Only when nothing readable turns authentication on does the CLI treat it as off
+and send no `Authorization` header — the same as a CWE that was installed with
+`apiAuth.enabled` unset. A denial is not that: it is kept, and reported only if
+nothing readable turns authentication on, so an RBAC problem never arrives as an
+unexplained 401.
 
 The kubeconfig identity needs:
 
 - `create` on `serviceaccounts/token` for `nke-client` in `nke-clients`
+- `get` on the controller's settings ConfigMap (`nvke-controller-config`, or
+  `nke-controller-config` on a site that pins it) and on the authentication
+  ConfigMap (`nvke-auth-config`, or `nke-auth-config`), in the controller's
+  namespace
 - `get` on `secrets` in the site's management namespace (`nvke-system`, or
   `nke-system` on a site installed before it was configurable), for
   `nvkectl get kubeconfig`, which reads the `<cluster>-admin-kubeconfig` Secret
@@ -299,7 +311,7 @@ through `KIND_EXPERIMENTAL_PROVIDER=nerdctl`, which `nvkectl` sets itself.
 | `NVKECTL_NODE_USER`, `NVKECTL_NODE_PASSWORD` | unset | The login rendered into the cloud-init of every node CAPNICo creates. Required with `infra.provider: nico` by `bootstrap site` and `validate sitespec --bootstrap-only`; the stack install reads the same variables. |
 | `NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT` | unset | Set to `1` to let `infra.nico.remote.endpoint` be an http URL. The bootstrap sends the NICo token there, so without it `bootstrap site` and `validate sitespec --bootstrap-only` require https; it is for a local or simulated NICo. |
 | `NVKECTL_BOOTSTRAP_CLUSTER_TIMEOUT` | `30m` | How long to wait for the site cluster to finish provisioning (`--timeout`) |
-| `NVKECTL_NVKE_CONTROLLER_IMAGE` | `nke-controller:latest` | Controller image to deploy. A reference without a registry is side-loaded from the local image store; `make -C cli images` builds the default with nerdctl. A reference with a registry host is pulled with `nerdctl pull` when it is not already in containerd's image store, then loaded into the ephemeral cluster; log in to the registry first (`nerdctl login`). For Docker Hub, write `docker.io/<org>/<name>`. `--nvke-controller-image` overrides it for one run. |
+| `NVKECTL_NVKE_CONTROLLER_IMAGE` | `nke-controller:latest` | Controller image to deploy. A reference without a registry is side-loaded from the local image store; `make -C cli images` builds the default with nerdctl. A reference with a registry host is pulled with `nerdctl pull` when it is not already in containerd's image store, then loaded into the ephemeral cluster; log in to the registry first (`nerdctl login`). One pinned by a multi-platform index digest is pulled for every platform the index lists, because kind imports them all. For Docker Hub, write `docker.io/<org>/<name>`. `--nvke-controller-image` overrides it for one run. |
 | `NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE` | unset | OCI content image whose `/profiles` tree is copied into the controller's profiles directory, which is otherwise empty. It needs a tag other than `latest`, or a digest; `bootstrap site` refuses one that does not, including with `--dry-run`. An image with no registry host is side-loaded from the local image store, so it must already be there; one with a registry host is pulled. The image must provide `/profiles` and `/bin/sh`: the chart's init container runs `cp -a /profiles/. /profiles-out/` through the shell. |
 | `NVKECTL_CAPI_PROVISIONED_IMAGE` | `cluster-api-provider-provisioned:latest` | Provisioned-provider image, same semantics; unused with `infra.provider: nico`. `--provisioned-provider-image` overrides it for one run. |
 | `NVKECTL_NVKE_CONTROLLER_PORT` | `30080` | Port of the controller API: its Service, NodePort, Kind host mapping and the address `nvkectl` calls |

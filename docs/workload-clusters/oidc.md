@@ -136,7 +136,7 @@ The install configures the shared provider for the management cluster's SPIRE se
 
 ## How NVKE applies the providers
 
-The chart renders both kinds of provider into `nke-controller-config`, the ConfigMap in the `nke-controller` namespace that holds the controller's settings: `nvkeOIDCAuth` becomes the `oidc.managementOIDCAuth` key, with `caBundleSecret` renamed `caBundleSecretRef`, and `oidc.providers` keeps its name. The controller reads the file once, when it starts, and refuses to start when the file is invalid. It takes these settings only from the file: it ignores the `NKE_OIDC_AUTH_*` environment variables, and the chart refuses to render an `env` entry that sets one.
+The chart renders both kinds of provider into `nvke-controller-config` (`nke-controller-config` on an install that pins the old name), the ConfigMap in the `nke-controller` namespace that holds the controller's settings: `nvkeOIDCAuth` becomes the `oidc.managementOIDCAuth` key, with `caBundleSecret` renamed `caBundleSecretRef`, and `oidc.providers` keeps its name. The controller reads the file once, when it starts, and refuses to start when the file is invalid. It takes these settings only from the file: it ignores the `NKE_OIDC_AUTH_*` environment variables, and the chart refuses to render an `env` entry that sets one.
 
 NVKE writes a workload cluster's providers into `/etc/kubernetes/oidc/auth-config.yaml` on each control-plane node and passes it to the API server with `--authentication-config`. The two kinds of provider reach the file differently:
 
