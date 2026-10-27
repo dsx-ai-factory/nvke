@@ -12,9 +12,11 @@ name: Nightly beta tag
 # chooses the commit, creates the tag and pushes it.
 #
 # The push must NOT use GITHUB_TOKEN. Events caused by GITHUB_TOKEN never start
-# other workflows, so the beta builds would silently not run. BETA_TAG_TOKEN is
-# a token (fine-grained PAT or GitHub App installation token) with contents:
-# write on this repository.
+# other workflows, so the beta builds would silently not run. It uses an
+# installation token for the release bot GitHub App (RELEASE_BOT_CLIENT and its
+# private key, RELEASE_BOT_SECRET), minted per run with contents: write on this
+# repository only. The App must be a bypass actor on the "Protect release
+# tags" ruleset, which restricts creating v* tags.
 on:
   schedule:
     # Nightly 02:00 UTC. Scheduled runs always use the default branch.
@@ -45,6 +47,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Mint the release bot token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT }}
+          private-key: ${{ secrets.RELEASE_BOT_SECRET }}
+          permission-contents: write
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,7 +62,7 @@ jobs:
           # The script reads every tag and the history back to the latest GA tag.
           fetch-depth: 0
           fetch-tags: true
-          token: ${{ secrets.BETA_TAG_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           # Credentials stay configured: the next step pushes with them.
           persist-credentials: true
 

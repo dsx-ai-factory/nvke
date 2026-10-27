@@ -2484,3 +2484,63 @@ func TestBootstrapPortMappings_ControllerAPIIsLoopbackOnly(t *testing.T) {
 		t.Errorf("mappings without the TPM attestor = %+v, want only the controller API", got)
 	}
 }
+
+func TestRequireIsolatedRuntimeCNI(t *testing.T) {
+	dir := t.TempDir()
+	if err := requireIsolatedRuntimeCNI(dir); err != nil {
+		t.Fatalf("an empty directory should pass: %v", err)
+	}
+	if err := requireIsolatedRuntimeCNI(filepath.Join(dir, "missing")); err != nil {
+		t.Fatalf("a missing directory should pass: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "10-ovn-kubernetes.conf"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := requireIsolatedRuntimeCNI(dir); err != nil {
+		t.Fatalf("the cluster's own CNI config is not a runtime config: %v", err)
+	}
+
+	stale := filepath.Join(dir, "nerdctl-bridge.conflist")
+	if err := os.WriteFile(stale, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := requireIsolatedRuntimeCNI(dir)
+	if err == nil {
+		t.Fatal("a nerdctl config in the node's CNI directory should fail the preflight")
+	}
+	if !strings.HasPrefix(err.Error(), dir+" already holds nerdctl network config(s)") {
+		t.Errorf("error should start with the directory that holds the configs, got:\n%v", err)
+	}
+	for _, want := range []string{stale, "CoreDNS", `grep -h '"bridge":' ` + dir + "/nerdctl-*.conflist", "ip link delete", "cni_netconfpath", bootstrapengine.IsolatedCNIConfDir} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q, got:\n%v", want, err)
+		}
+	}
+}
+
+func TestBootstrapControlPlaneVIPOverrideReachesController(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPIWithNodes(t, true, 3, 3)
+	runner := &recordingCWERunner{next: newFakeCWERunner(t)}
+	body := strings.Replace(threeNodeSiteSpec, "  controlPlaneVIP: 10.0.0.100\n", "", 1)
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec:                    writeSiteSpec(t, body),
+		bootstrapRunner:             fakeBootstrapRunner{},
+		cweRunner:                   runner,
+		kubeconfigOut:               filepath.Join(t.TempDir(), "site.kubeconfig"),
+		lookPath:                    runtimeOnPath,
+		dialContext:                 refuseDial,
+		untaintControlPlane:         skipUntaint,
+		dumpSpireEntries:            func(context.Context, string, string) (int, error) { return 0, nil },
+		encryptionKeyOut:            filepath.Join(t.TempDir(), "key.json"),
+		allowControlPlaneWithoutVIP: true,
+		clusterTimeout:              5 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !runner.saw("--set allowControlPlaneWithoutVIP=true") {
+		t.Fatal("bootstrap did not enable the VIP override in the temporary controller")
+	}
+}

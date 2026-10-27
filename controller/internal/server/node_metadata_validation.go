@@ -31,7 +31,7 @@ func reservedKubernetesDomains() []string {
 
 // validateNodeLabels checks labels supplied on create. Keys under the Kubernetes domains are
 // reserved unless they appear in allowlistedLabelKeys, which operators set through
-// nodeMetadataAllowlistedLabelKeys in nke-controller-config. Keys under the internal domains are always reserved.
+// nodeMetadataAllowlistedLabelKeys in nvke-controller-config. Keys under the internal domains are always reserved.
 func validateNodeLabels(labels map[string]string, allowlistedLabelKeys []string) error {
 	//  sort the keys to get a deterministic error for failures
 	for _, key := range slices.Sorted(maps.Keys(labels)) {

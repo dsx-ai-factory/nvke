@@ -15,6 +15,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: lgtm-dashboard-provider
+  namespace: {{ .Release.Namespace }}
 data:
   nktp.yaml: |
 {{ $provider | trim | indent 4 }}
@@ -27,6 +28,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: lgtm-dashboards
+  namespace: {{ .Release.Namespace }}
 data:
 {{ (.Files.Glob "dashboards/default/*.json").AsConfig | indent 2 }}
 ---
@@ -34,6 +36,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: lgtm
+  namespace: {{ .Release.Namespace }}
 spec:
   selector:
     app: lgtm
@@ -59,6 +62,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: lgtm
+  namespace: {{ .Release.Namespace }}
 spec:
   replicas: 1
   selector:

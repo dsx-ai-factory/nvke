@@ -95,8 +95,8 @@ CAPNICo is not ready. Check:
 
 - `FAILING (reason)`: fix what the reason names. `CredentialsNotFound` and `InvalidConfiguration` point at the `nico-credentials` Secret; `AuthenticationFailed` and `AccessDenied` mean NICo rejected or forbade the credentials. CAPNICo rechecks within seconds of a change to the Secret.
 - `UNKNOWN (ValidationFailed)`: CAPNICo could not reach NICo, or the check timed out or failed TLS verification. Check the endpoint in the Secret and the network path from the management cluster.
-- `STALE`: CAPNICo has not checked in the last 10 minutes. `DETAIL` names the likely cause: the manager is not running, it watches another namespace or `--watch-filter`, or it needs a restart because the `NicoIdentity` CRD was installed after it started.
-- `PENDING`: CAPNICo has not checked the `NicoIdentity`, or its latest change, yet. Run the command again in a few seconds; if nothing checks it, it turns `STALE` after 10 minutes.
+- `STALE`: CAPNICo has not checked when a check was due. `DETAIL` names the cause when nvkectl can see one: the manager is not running, or it watches another namespace or `--watch-filter`. When `DETAIL` names no cause, check whether the manager predates the `NicoIdentity` CRD and needs a restart.
+- `PENDING`: CAPNICo has not checked the `NicoIdentity`, or its latest change, yet. Run the command again in a few seconds; if nothing checks it, it turns `STALE`.
 - `NO-IDENTITY`: no `NicoIdentity` names the Secret. Create one; see [Infrastructure providers](../../cli/README.md#infrastructure-providers).
 - `UNSUPPORTED`: the installed CAPNICo predates `NicoIdentity`.
 - `UNREADABLE`: the site kubeconfig could not list `NicoIdentity` objects, and `DETAIL` names the error. If listing is forbidden, grant `list` on `nicoidentities.infrastructure.cluster.x-k8s.io` in the Secret's namespace; the kubeconfig permissions are in [Authenticating to CWE](../../cli/README.md#authenticating-to-cwe).

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -54,6 +55,14 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 	)
 }
 
+// Reconcile reuses a due-time-derived workflow ID so repeated observations do not
+// create distinct cycles. The first look at a cluster only schedules its first
+// check one interval ahead; after that, dispatch never advances the due time.
+// An accepted cycle is never dispatched again, even if its run has ended; that
+// needs operator escalation. Released failures retry after one hour; retained
+// failures halt, and so does a two-voter refusal until the desired control-plane
+// count changes. The first cycle also waits for the full control plane to join
+// rather than treating Provisioned as cluster readiness.
 func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconcile.Result, error) {
 	cluster, err := c.db.GetCluster(ctx, key.ID)
 	if err != nil {
@@ -77,13 +86,83 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 		}
 		return reconcile.Result{RequeueAfter: c.cfg.CertRenewalInterval}, nil
 	}
+	if cluster.Conditions.Provisioned.Status != db.ConditionStatusTrue {
+		return reconcile.Result{}, nil
+	}
+	workflowID := scheduledWorkflowID(cluster.ID, *cluster.NextCertRenewalDue)
 	if !maintenanceDue(*cluster.NextCertRenewalDue, now) {
 		return reconcile.Result{RequeueAfter: cluster.NextCertRenewalDue.Sub(now)}, nil
 	}
 
-	workflowID := constants.RenewK8sCertsWorkflowPrefix + cluster.ID.String()
+	status := cluster.Conditions.CertificateRenewal
+	if status != nil && status.State == db.CertificateRenewalStateFailed {
+		var failedNodeID any
+		if status.FailedNodeID != nil {
+			failedNodeID = *status.FailedNodeID
+		}
+		c.logger.Error(
+			"Certificate renewal failed and remains overdue",
+			"clusterID", cluster.ID,
+			"failedNodeID", failedNodeID,
+			"phase", status.Phase,
+			"message", status.Message,
+		)
+		if update := cluster.Conditions.UpdateInProgress; (update != nil && update.Type == db.OperationTypeCertRenewal) || status.CompletedAt == nil {
+			return reconcile.Result{RequeueAfter: 15 * time.Minute}, nil
+		}
+		// Two voters always fail the renewal health gate. Wait until three or more
+		// are desired; that cluster update reconciles again. A two-node control
+		// plane cannot scale down to one, so a smaller desired size changes nothing.
+		if status.Phase == db.CertificateRenewalPhaseTwoControlPlaneVoters && cluster.ControlPlaneConfig.DesiredCount < 3 {
+			return reconcile.Result{}, nil
+		}
+		if retryAt := status.CompletedAt.Add(time.Hour); retryAt.After(now) {
+			return reconcile.Result{RequeueAfter: retryAt.Sub(now)}, nil
+		}
+		// Keep the due-time identity, but never reopen the failed cycle's ID.
+		// CompletedAt is durable, so observations before Begin commits deduplicate.
+		workflowID = fmt.Sprintf("%s-retry-%d", workflowID, status.CompletedAt.UTC().UnixNano())
+	}
+	if scheduledCycleMatches(status, cluster.NextCertRenewalDue) {
+		switch status.State {
+		case db.CertificateRenewalStateAccepted:
+			c.logger.Info("Certificate renewal is already accepted and remains overdue until completion", "clusterID", cluster.ID)
+			return reconcile.Result{RequeueAfter: time.Minute}, nil
+		case db.CertificateRenewalStateSucceeded, db.CertificateRenewalStateFailed:
+			// Success normally advances the due time atomically, and failure was
+			// handled above. An inconsistent old row should not suppress a new cycle.
+		}
+	}
+	if update := cluster.Conditions.UpdateInProgress; update != nil {
+		c.logger.Info("Deferring certificate renewal while another cluster update is in progress", "clusterID", cluster.ID, "operation", update.Type)
+		return reconcile.Result{RequeueAfter: time.Minute}, nil
+	}
+
+	if status == nil {
+		// Provisioned is set after the first control-plane node is initialized;
+		// the remaining nodes may still be joining. Leave the workflow's health
+		// recheck in place, but do not start the first cycle before they are ready.
+		controlPlane := true
+		nodes, err := c.db.ListNodes(ctx, db.NodeFilters{ClusterID: &cluster.ID, ControlPlane: &controlPlane})
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("list control-plane nodes for initial certificate renewal: %w", err)
+		}
+		if len(nodes) < cluster.ControlPlaneConfig.DesiredCount {
+			c.logger.Info("Deferring initial certificate renewal until all control-plane nodes are present", "clusterID", cluster.ID)
+			return reconcile.Result{RequeueAfter: time.Minute}, nil
+		}
+		for _, node := range nodes {
+			if node.Conditions.Joined.Status != db.ConditionStatusTrue ||
+				node.Conditions.KubernetesReady.Status != db.ConditionStatusTrue ||
+				node.Conditions.NodeAgentReady.Status != db.ConditionStatusTrue {
+				c.logger.Info("Deferring initial certificate renewal until control-plane nodes are ready", "clusterID", cluster.ID, "nodeID", node.ID)
+				return reconcile.Result{RequeueAfter: time.Minute}, nil
+			}
+		}
+	}
+
 	workflowCtx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowStart, otelx.WorkflowAttributes{
-		WorkflowType: workflows.RenewK8sCertsWorkflowType,
+		WorkflowType: workflows.RenewK8sCertsV2WorkflowType,
 		WorkflowID:   workflowID,
 		ClusterID:    cluster.ID,
 		ClusterName:  cluster.Name,
@@ -92,10 +171,12 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 		TaskQueue:                c.cfg.TemporalTaskQueue,
 		ID:                       workflowID,
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
-		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
-	}, workflows.RenewK8sCerts, workflows.RenewK8sCertsInput{
+		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
+	}, workflows.RenewK8sCertsV2, workflows.RenewK8sCertsInput{
 		ClusterID:     cluster.ID,
 		ThresholdDays: c.cfg.CertRenewalThresholdDays,
+		Force:         false,
+		ScheduledFor:  cluster.NextCertRenewalDue,
 	})
 	otelx.EndWorkflowSpan(span, err)
 	if err != nil {
@@ -103,14 +184,30 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 		return reconcile.Result{}, fmt.Errorf("start cert renewal workflow for cluster %s: %w", cluster.ID, err)
 	}
 
-	nextDue := now.Add(c.cfg.CertRenewalInterval)
-	if err := c.db.UpdateClusterNextCertRenewalDue(ctx, cluster.ID, nextDue); err != nil {
-		return reconcile.Result{}, fmt.Errorf("update cert renewal due time for cluster %s: %w", cluster.ID, err)
-	}
-
-	return reconcile.Result{RequeueAfter: c.cfg.CertRenewalInterval}, nil
+	c.logger.Info("Certificate renewal workflow accepted", "clusterID", cluster.ID, "workflowID", workflowID)
+	return reconcile.Result{RequeueAfter: time.Minute}, nil
 }
 
 func maintenanceDue(nextDue, now time.Time) bool {
 	return !nextDue.After(now)
+}
+
+// scheduledWorkflowID identifies the due-time cycle, not this reconcile attempt.
+// Only successful workflow completion changes the due time that selects the next
+// scheduled ID.
+func scheduledWorkflowID(clusterID uuid.UUID, scheduledFor time.Time) string {
+	return fmt.Sprintf("%s%s-%d", constants.RenewK8sCertsWorkflowPrefix, clusterID, scheduledFor.UTC().UnixNano())
+}
+
+// scheduledCycleMatches excludes forced cycles, whose nil ScheduledFor must not
+// be mistaken for acceptance of the initial scheduled cycle. Retry IDs keep the
+// same ScheduledFor, so an accepted retry also suppresses duplicate dispatch.
+func scheduledCycleMatches(status *db.CertificateRenewalStatus, scheduledFor *time.Time) bool {
+	if status == nil || status.Forced {
+		return false
+	}
+	if status.ScheduledFor == nil || scheduledFor == nil {
+		return status.ScheduledFor == nil && scheduledFor == nil
+	}
+	return status.ScheduledFor.Equal(*scheduledFor)
 }

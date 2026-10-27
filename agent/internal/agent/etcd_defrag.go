@@ -533,7 +533,7 @@ func etcdMemberClientURLs(members []*etcdserverpb.Member, id uint64) []string {
 }
 
 // recordEtcdDefragRefusal persists a REFUSED outcome and completes the
-// operation successfully: nothing was changed, which is the intended behaviour
+// operation successfully: nothing was changed, which is the intended behavior
 // when a precondition does not hold.
 func (s *NodeAgentServer) recordEtcdDefragRefusal(
 	progress nodeAgentOperationProgress,

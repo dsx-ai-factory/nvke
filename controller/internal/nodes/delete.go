@@ -44,13 +44,22 @@ type DeleteOptions struct {
 	SkipQuorumFloor bool
 
 	// If a non-nil MachineHealthIssue is provided it signals Forge to flag the instance for repair.
-	MachineHealthIssue *MachineHealthIssue
+	MachineHealthIssue          *MachineHealthIssue
+	allowControlPlaneWithoutVIP bool
 }
 
 // WithReason sets the reason for node deletion.
 func WithReason(reason string) DeleteOpt {
 	return func(o *DeleteOptions) {
 		o.Reason = reason
+	}
+}
+
+// WithAllowControlPlaneWithoutVIP waives only the VIP requirement for a live control-plane delete.
+// Surviving-node, quorum and deletion-lock checks still apply.
+func WithAllowControlPlaneWithoutVIP(allow bool) DeleteOpt {
+	return func(o *DeleteOptions) {
+		o.allowControlPlaneWithoutVIP = allow
 	}
 }
 
@@ -141,6 +150,19 @@ func DeleteWithTx(ctx context.Context, tx db.Tx, nodeID uuid.UUID, opts ...Delet
 	var dbNode db.Node
 	var err error
 	if options.skipLiveDeleteGuard {
+		unlocked, readErr := tx.GetNode(ctx, nodeID)
+		if readErr != nil {
+			return fmt.Errorf("reading node for deletion: %w", readErr)
+		}
+		if unlocked.ControlPlane {
+			cluster, lockErr := tx.GetClusterForUpdate(ctx, unlocked.ClusterID)
+			if lockErr != nil {
+				return fmt.Errorf("locking cluster for control-plane deletion: %w", lockErr)
+			}
+			if db.ControlPlaneMutationBlocked(cluster) {
+				return db.ErrControlPlaneMutationBlocked
+			}
+		}
 		dbNode, err = tx.GetNodeForUpdate(ctx, nodeID)
 		if err != nil {
 			if errors.Is(err, db.ErrNotFound) {
@@ -149,7 +171,7 @@ func DeleteWithTx(ctx context.Context, tx db.Tx, nodeID uuid.UUID, opts ...Delet
 			return fmt.Errorf("failed to get node: %w", err)
 		}
 	} else {
-		dbNode, err = guardLiveNodeDelete(ctx, tx, nodeID)
+		dbNode, err = guardLiveNodeDelete(ctx, tx, nodeID, options.allowControlPlaneWithoutVIP)
 		if err != nil {
 			return err
 		}

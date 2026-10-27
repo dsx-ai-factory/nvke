@@ -7,11 +7,14 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
@@ -51,18 +54,19 @@ type fakeEncryptionKeyReader struct {
 	calls         int
 	rotationCalls int
 	clusterID     uuid.UUID
+	name          string
 }
 
-func (r *fakeEncryptionKeyReader) ReadEnablementKey(_ context.Context, clusterID uuid.UUID) (string, error) {
+func (r *fakeEncryptionKeyReader) ReadEnablementKey(_ context.Context, clusterID uuid.UUID) (EncryptionKey, error) {
 	r.calls++
 	r.clusterID = clusterID
-	return r.key, r.err
+	return EncryptionKey{Key: r.key, Name: r.name}, r.err
 }
 
-func (r *fakeEncryptionKeyReader) ReadRotationKey(_ context.Context, clusterID uuid.UUID) (string, error) {
+func (r *fakeEncryptionKeyReader) ReadRotationKey(_ context.Context, clusterID uuid.UUID) (EncryptionKey, error) {
 	r.rotationCalls++
 	r.clusterID = clusterID
-	return r.key, r.err
+	return EncryptionKey{Key: r.key, Name: r.name}, r.err
 }
 
 type fakeEncryptionClient struct {
@@ -74,6 +78,11 @@ type fakeEncryptionClient struct {
 	removeCalls       int
 	updateRequests    []*nvkeproto.UpdateEncryptionConfigRequest
 	updateErr         error
+	updateErrs        []error
+	onUpdate          func()
+	identityName      string
+	identityErr       error
+	identityCalls     int
 }
 
 func (c *fakeEncryptionClient) InitializeKubernetesAPIEncryption(
@@ -118,6 +127,17 @@ func (c *fakeEncryptionClient) UpdateEncryptionConfig(
 	_ ...grpc.CallOption,
 ) (*nvkeproto.UpdateEncryptionConfigResponse, error) {
 	c.updateRequests = append(c.updateRequests, req)
+	if c.onUpdate != nil {
+		c.onUpdate()
+	}
+	if len(c.updateErrs) > 0 {
+		err := c.updateErrs[0]
+		c.updateErrs = c.updateErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+		return &nvkeproto.UpdateEncryptionConfigResponse{}, nil
+	}
 	if c.updateErr != nil {
 		return nil, c.updateErr
 	}
@@ -237,7 +257,7 @@ func TestPromoteAndRemoveDispatchTheirNodeAgentRPCs(t *testing.T) {
 
 func TestKeyRotationOperationsReadPendingKeyAndDispatchTheirMutations(t *testing.T) {
 	clusterID := uuid.New()
-	keyReader := &fakeEncryptionKeyReader{key: "new-pending-key"}
+	keyReader := &fakeEncryptionKeyReader{key: "new-pending-key", name: "kube-api-encryption-key-fixture"}
 	client := &fakeEncryptionClient{}
 	dialer := func(context.Context, rollout.Node) (nodeAgentEncryptionClient, func(), error) {
 		return client, func() {}, nil
@@ -263,6 +283,9 @@ func TestKeyRotationOperationsReadPendingKeyAndDispatchTheirMutations(t *testing
 	assert.Equal(t, "new-pending-key", client.updateRequests[0].GetAddSecondaryKey().GetNewKey())
 	assert.Equal(t, "new-pending-key", client.updateRequests[1].GetPromotePrimaryKey().GetNewKey())
 	assert.Equal(t, "new-pending-key", client.updateRequests[2].GetRemoveOldKeys().GetPrimaryKey())
+	assert.Equal(t, keyReader.name, client.updateRequests[0].GetAddSecondaryKey().GetKeyName())
+	assert.Equal(t, keyReader.name, client.updateRequests[1].GetPromotePrimaryKey().GetKeyName())
+	assert.Equal(t, keyReader.name, client.updateRequests[2].GetRemoveOldKeys().GetKeyName())
 	assert.Equal(t, 3, keyReader.rotationCalls)
 	assert.Equal(t, 0, keyReader.calls)
 	assert.Equal(t, clusterID, keyReader.clusterID)
@@ -289,5 +312,149 @@ func TestKeyRotationOperationFailureLeavesNodeStateForRetry(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Equal(t, rollout.OutcomeFailedNotRestored, outcome)
-	assert.ErrorContains(t, err, "reload not confirmed")
+	require.ErrorContains(t, err, "inspect node encryption health")
+	assert.NotContains(t, err.Error(), "reload not confirmed")
+}
+
+// TestRotationErrorsNeverSerializeKeyMaterial simulates unsafe upstream error
+// text and protects both activity failure and rollout outcome boundaries.
+func TestRotationErrorsNeverSerializeKeyMaterial(t *testing.T) {
+	for _, name := range []string{"key lookup", "agent update"} {
+		t.Run(name, func(t *testing.T) {
+			reader := &fakeEncryptionKeyReader{key: "KEY_MATERIAL_SENTINEL"}
+			client := &fakeEncryptionClient{}
+			if name == "key lookup" {
+				reader.err = errors.New("rejected Secret body KEY_MATERIAL_SENTINEL")
+			} else {
+				client.updateErr = errors.New("rejected request KEY_MATERIAL_SENTINEL")
+			}
+			op := NewAddSecondaryKeyOperation(WithEncryptionKeyReader(reader))
+			op.nodeAgentClientDialer = func(context.Context, rollout.Node) (nodeAgentEncryptionClient, func(), error) {
+				return client, func() {}, nil
+			}
+			payload, err := op.BuildApplyToNodePayload(t.Context(), &fakeCluster{id: uuid.New()})
+			require.NoError(t, err)
+			_, err = op.ApplyToNode(t.Context(), fakeNode{role: rollout.NodeRoleControlPlane}, payload)
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), "KEY_MATERIAL_SENTINEL")
+			require.NotContains(t, string(payload), "KEY_MATERIAL_SENTINEL")
+		})
+	}
+}
+
+func (c *fakeEncryptionClient) GetEtcdEncryptionKeyIdentity(context.Context, *nvkeproto.GetEtcdEncryptionKeyIdentityRequest, ...grpc.CallOption) (*nvkeproto.GetEtcdEncryptionKeyIdentityResponse, error) {
+	c.identityCalls++
+	return &nvkeproto.GetEtcdEncryptionKeyIdentityResponse{KeyName: c.identityName}, c.identityErr
+}
+
+func TestRotationIdentityChecksBeforeMutation(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		storedName   string
+		observedName string
+		err          error
+		wantError    bool
+	}{
+		{name: "supported named key", storedName: "key-7", observedName: "key-7"},
+		{name: "named key not yet distributed", storedName: "key-7"},
+		{name: "unnamed legacy key skips identity", observedName: "key-7"},
+		{name: "mismatched names rejected", storedName: "key-7", observedName: "key-8", wantError: true},
+		{name: "older agent rejected", storedName: "key-7", err: errors.New("unsupported identity RPC"), wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			reader := &fakeEncryptionKeyReader{key: "public-fixture-key", name: test.storedName}
+			client := &fakeEncryptionClient{identityName: test.observedName, identityErr: test.err}
+			op := NewAddSecondaryKeyOperation(WithEncryptionKeyReader(reader))
+			op.nodeAgentClientDialer = func(context.Context, rollout.Node) (nodeAgentEncryptionClient, func(), error) {
+				return client, nil, nil
+			}
+			payload, err := op.BuildApplyToNodePayload(context.Background(), &fakeCluster{id: uuid.New()})
+			require.NoError(t, err)
+			_, err = op.ApplyToNode(context.Background(), fakeNode{name: "cp-1", role: rollout.NodeRoleControlPlane}, payload)
+			if test.wantError {
+				require.Error(t, err)
+				require.Empty(t, client.updateRequests)
+			} else {
+				require.NoError(t, err)
+				require.Len(t, client.updateRequests, 1)
+				require.Equal(t, test.storedName, client.updateRequests[0].GetAddSecondaryKey().GetKeyName())
+			}
+			if test.storedName == "" {
+				require.Zero(t, client.identityCalls)
+			} else {
+				require.Equal(t, 1, client.identityCalls)
+			}
+		})
+	}
+}
+
+// TestLegacyRotationPhasesUseOriginalProtocolOnAgentsWithoutIdentity models a
+// rotation started by an earlier controller: its pending key has no recorded
+// name and the agents predate the identity RPC. Every phase must send the
+// original unnamed request and never call the identity RPC.
+func TestLegacyRotationPhasesUseOriginalProtocolOnAgentsWithoutIdentity(t *testing.T) {
+	reader := &fakeEncryptionKeyReader{key: "legacy-pending-key"}
+	client := &fakeEncryptionClient{identityErr: status.Error(codes.Unimplemented, "unknown method GetEtcdEncryptionKeyIdentity")}
+	cluster := &fakeCluster{id: uuid.New(), name: "tenant-a"}
+	for _, op := range []*EncryptionOperation{
+		NewAddSecondaryKeyOperation(WithEncryptionKeyReader(reader)),
+		NewPromotePrimaryKeyOperation(WithEncryptionKeyReader(reader)),
+		NewRemoveOldKeysOperation(WithEncryptionKeyReader(reader)),
+	} {
+		op.nodeAgentClientDialer = func(context.Context, rollout.Node) (nodeAgentEncryptionClient, func(), error) {
+			return client, nil, nil
+		}
+		payload, err := op.BuildApplyToNodePayload(t.Context(), cluster)
+		require.NoError(t, err)
+		outcome, err := op.ApplyToNode(t.Context(), fakeNode{name: "cp-0", role: rollout.NodeRoleControlPlane}, payload)
+		require.NoError(t, err, op.Name())
+		require.Equal(t, rollout.OutcomeApplied, outcome)
+	}
+	require.Zero(t, client.identityCalls)
+	require.Len(t, client.updateRequests, 3)
+	require.Equal(t, &nvkeproto.AddSecondaryKeyOperation{NewKey: "legacy-pending-key"}, client.updateRequests[0].GetAddSecondaryKey())
+	require.Equal(t, &nvkeproto.PromotePrimaryKeyOperation{NewKey: "legacy-pending-key"}, client.updateRequests[1].GetPromotePrimaryKey())
+	require.Equal(t, &nvkeproto.RemoveOldKeysOperation{PrimaryKey: "legacy-pending-key"}, client.updateRequests[2].GetRemoveOldKeys())
+}
+
+// TestRotationRetriesRetrySafeUpdateErrors retries only the codes the
+// UpdateEncryptionConfig contract calls safe to retry, within a bounded budget,
+// because ApplyToNode returns outcomes and nothing else retries the node.
+func TestRotationRetriesRetrySafeUpdateErrors(t *testing.T) {
+	unavailable := status.Error(codes.Unavailable, "apiserver metrics unavailable")
+	deadline := status.Error(codes.DeadlineExceeded, "reload not confirmed")
+	for _, test := range []struct {
+		name        string
+		errs        []error
+		cancel      bool
+		wantCalls   int
+		wantOutcome rollout.Outcome
+	}{
+		{name: "transient then success", errs: []error{unavailable, deadline, nil}, wantCalls: 3, wantOutcome: rollout.OutcomeApplied},
+		{name: "persistent transient fails after the budget", errs: []error{unavailable, unavailable, unavailable, nil}, wantCalls: 3, wantOutcome: rollout.OutcomeFailedNotRestored},
+		{name: "non-retryable fails at once", errs: []error{status.Error(codes.FailedPrecondition, "wal from another operation"), nil}, wantCalls: 1, wantOutcome: rollout.OutcomeFailedNotRestored},
+		{name: "canceled context stops retrying", errs: []error{unavailable, nil}, cancel: true, wantCalls: 1, wantOutcome: rollout.OutcomeFailedNotRestored},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			client := &fakeEncryptionClient{updateErrs: test.errs}
+			if test.cancel {
+				client.onUpdate = cancel
+			}
+			op := NewPromotePrimaryKeyOperation(WithEncryptionKeyReader(&fakeEncryptionKeyReader{key: "new-pending-key"}))
+			op.updateRetryBackoff = time.Millisecond
+			op.nodeAgentClientDialer = func(context.Context, rollout.Node) (nodeAgentEncryptionClient, func(), error) {
+				return client, func() {}, nil
+			}
+			payload, err := op.BuildApplyToNodePayload(ctx, &fakeCluster{id: uuid.New(), name: "tenant-a"})
+			require.NoError(t, err)
+
+			outcome, err := op.ApplyToNode(ctx, fakeNode{name: "cp-0", role: rollout.NodeRoleControlPlane}, payload)
+
+			assert.Equal(t, test.wantOutcome, outcome)
+			assert.Equal(t, test.wantOutcome != rollout.OutcomeApplied, err != nil)
+			assert.Len(t, client.updateRequests, test.wantCalls)
+		})
+	}
 }

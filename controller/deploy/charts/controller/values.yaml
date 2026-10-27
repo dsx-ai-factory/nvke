@@ -138,7 +138,8 @@ nodeAgent:
   externalMTLS:
     # -- Pin an externally managed client certificate transport for newly
     # created nodes instead of the controller SPIRE X509-SVID. Keep the Secret
-    # available while nodes using this transport remain.
+    # available while nodes using this transport remain. Requires node agent
+    # 0.3.0 or later, which reads --nvke-controller-client-ca-bundle.
     enabled: false
     secret:
       # -- Name of the externally managed Secret containing the client identity.
@@ -217,17 +218,24 @@ podLabels:
   project: nvke
   team: nvke
 
+# The uid is set here rather than left to the image so that every container in
+# the pod runs unprivileged, including the materialize-profiles init container,
+# whose operator-built content image usually has no USER of its own. 65532 is
+# the controller image's USER.
 podSecurityContext:
   runAsNonRoot: true
-  # fsGroup: 2000
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
 
 securityContext:
   readOnlyRootFilesystem: true
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # runAsNonRoot: true
-  # runAsUser: 1000
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
 
 # This is for setting up a service.
 # https://kubernetes.io/docs/concepts/services-networking/service/
@@ -448,6 +456,9 @@ tenantAccess:
   # and remove those Secrets during cluster teardown. Gates both the controller
   # and its cleanup activity, and the Secret grant they depend on.
   enabled: true
+  # -- Additional RBAC objects applied to OIDC tenant clusters through nke-rbac.
+  # Requires spiffe.trustDomain and tenantAccess.enabled. Use unique object names.
+  additionalRBAC: []
 
 # nkeOIDCAuth is the older name for nvkeOIDCAuth. It is absent here on purpose:
 # the guard in _helpers.tpl keys off its presence, so setting it at all fails
@@ -503,10 +514,11 @@ apiAuth:
   # Watch nvke_auth_requests_total{outcome="would_reject"} before enforcing.
   permissive: false
   configMap:
-    # -- Render `apiAuth.config` into the ConfigMap named below, rather than
-    # mounting one managed elsewhere. The two are alternatives: setting `config`
-    # without this, or this without `config`, fails the render rather than
-    # silently ignoring one of them.
+    # -- Render `apiAuth.config` into both `nvke-controller-config`, which is
+    # what the controller reads, and the ConfigMap named below, a copy for
+    # `nvkectl` and `extraFiles`, rather than mounting one managed elsewhere.
+    # The two are alternatives: setting `config` without this, or this without
+    # `config`, fails the render rather than silently ignoring one of them.
     create: false
     # -- ConfigMap holding the authentication configuration, keyed `auth.yaml`.
     # Required when apiAuth.enabled=true; an empty name fails the render.
@@ -518,10 +530,11 @@ apiAuth:
     # -- Extra files to place beside `auth.yaml`, keyed by filename. Only used
     # when configMap.create=true. The whole ConfigMap is mounted, so each one
     # lands in the same directory and can be named by a `jwks.caBundlePath` as
-    # /etc/nke/auth/<filename> -- which is how an issuer behind a private CA
-    # gets its bundle. A CA bundle is a public certificate, not a secret. The
-    # render fails if `caBundlePath` names a file in that directory that is not
-    # listed here, rather than leaving NVKE to crash-loop on a missing file.
+    # /etc/nke/auth/<filename>. For an issuer behind a private CA, prefer the
+    # PEM inline as `jwks.caBundle` in `config`, which needs no file; a CA
+    # bundle is a public certificate, not a secret. The render fails if
+    # `caBundlePath` names a file in that directory that is not listed here,
+    # rather than leaving NVKE to crash-loop on a missing file.
     #
     # extraFiles:
     #   spire-ca.crt: \|
@@ -529,15 +542,19 @@ apiAuth:
     #     ...
     #     -----END CERTIFICATE-----
     extraFiles: {}
-  # -- The AuthenticationConfiguration itself, rendered verbatim into that
-  # ConfigMap. Carries `audiences` and `issuers` only: apiVersion and kind are
-  # supplied by the chart, which ships in lockstep with the build that accepts
-  # them.
+  # -- The AuthenticationConfiguration itself. With `configMap.create` the chart
+  # renders it into the `apiAuth` section of `nvke-controller-config`, which is
+  # what the controller reads, and verbatim into the ConfigMap named by
+  # `configMap.name`, a copy for `nvkectl` and `extraFiles`. Carries `audiences`
+  # and `issuers` only: apiVersion and kind are supplied by the chart, which
+  # ships in lockstep with the build that accepts them, `enabled` is
+  # `apiAuth.enabled`, and `permissive` is `apiAuth.permissive`.
   #
-  # Not validated here beyond both keys being present. internal/auth/config.go
-  # is a strict loader whose errors name the offending field, and a second copy
-  # of its rules in Helm would drift the first time an issuer gains a new key.
-  # The cost is that a bad value fails at pod start rather than at render.
+  # The render checks that both keys are present and refuses `apiVersion`,
+  # `kind`, `enabled` and `permissive` here, and nothing more. The controller applies
+  # auth/authn's rules at startup and its errors name the offending field; a
+  # second copy of them in Helm would drift the first time an issuer gains a new
+  # key. The cost is that a bad value fails at pod start rather than at render.
   #
   # config:
   #   audiences: ["https://nke.example.internal"]
@@ -564,9 +581,9 @@ scheduledMaintenance:
   certRenewal:
     # -- Enable controller-owned periodic Kubernetes control-plane certificate renewal.
     enabled: true
-    # -- Interval between certificate renewal checks for each cluster.
+    # -- Interval between certificate renewal checks for each cluster (1h through 24h while renewal is enabled; the chart refuses other values).
     interval: 12h
-    # -- Days before expiry that the runbook renews certificates.
+    # -- Days before expiry that the runbook renews certificates (7 through 90 while renewal is enabled; with credential monitoring also enabled, credentialMonitoring.warningDays must exceed it by at least two renewal intervals, so the default maximum is 44; the chart refuses other values).
     thresholdDays: 30
 
 secrets:
@@ -654,6 +671,11 @@ profiles:
     tag: ""
     # -- Digest pin for the profiles content image (preferred; e.g. `sha256:…`)
     digest: ""
+
+# -- Development only: permit control-plane creation, scale-up, upgrades and replacement
+# without a VIP. The API endpoint uses the initializing node's IP; replacing that
+# node can interrupt API access. Quorum and deletion protections still apply.
+allowControlPlaneWithoutVIP: false
 
 controllerConfig:
   # -- Name of the ConfigMap that carries the controller's settings file, and
@@ -761,3 +783,19 @@ teleport:
   # -- Value of the Teleport "resource-group" label stamped on the tokens and
   # node userdata this controller creates. An existing site pins "nke".
   resourceGroupLabelValue: "nvke"
+
+# Read-only credential inventory is independent of automated renewal.
+credentialMonitoring:
+  # -- Enable read-only node certificate and direct tenant API CSR observations independently of renewal. When false, the inspection and CSR availability alerts and the stale and failed CSR alerts are suppressed, because nothing observes those series.
+  enabled: true
+  # -- Interval between node certificate inspection attempts (5m through 12h while monitoring is enabled; the chart refuses other values).
+  inspectionInterval: "1h"
+  # -- Maximum usable observation age; always positive, and at least twice inspectionInterval and at most 24h while monitoring is enabled. The chart refuses other values.
+  observationMaxAge: "3h"
+  # -- Warn this many days before expiry; always positive, 9 through 120 while monitoring is enabled, and with renewal also enabled it must exceed the renewal threshold by at least two renewal intervals. The chart refuses other values.
+  warningDays: 45
+  alerts:
+    # -- Install credential PrometheusRules. Requires Prometheus Operator CRDs, a selecting rule evaluator, and Alertmanager routing.
+    enabled: false
+    # -- Additional PrometheusRule labels for the evaluator's rule selector.
+    labels: {}

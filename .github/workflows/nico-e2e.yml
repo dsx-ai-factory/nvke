@@ -32,6 +32,7 @@ on:
       - "pull-request/[0-9]+"
     paths:
       - "controller/**"
+      - "auth/**"
       - "agent/**"
       - Makefile
       # The deploy path this lane installs. Without it a change to the tree
@@ -42,6 +43,9 @@ on:
       - .github/workflows/nico-e2e.yml
       - .github/workflows/backend-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml
+      - hack/e2e-path-filter.py
+      # Installs the pinned kind and kubectl the suite runs on.
+      - .github/actions/setup-kind/**
   # Also twice a day, so a break the paths above filtered out, or one a flake
   # hid, still surfaces within twelve hours. A schedule ignores those paths, so
   # these runs always exercise the whole suite.
@@ -68,12 +72,13 @@ jobs:
   # A mirror-branch push carries base-branch commits as well as the pull
   # request's own, so the push paths above fire for a pull request that touches
   # none of them. This re-reads the pull request's file list and skips the lane
-  # when every changed file is one backend E2E cannot exercise. The CAPD lane
+  # when none of those files is on the paths above. The CAPD lane
   # has gated this way since #466; this one did not, so a docs-only pull request
   # was still paying 73 minutes on two architectures.
   changes:
     uses: ./.github/workflows/e2e-pr-path-filter.yml
     permissions:
+      contents: read
       pull-requests: read
 
   # Both architectures, as the CAPD lane has run since #399. CAPNICo builds for

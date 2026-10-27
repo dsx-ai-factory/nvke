@@ -23,10 +23,6 @@ import (
 )
 
 const (
-	// etcdContainerName is the name kubeadm gives the etcd container in its
-	// static-pod manifest.
-	etcdContainerName = "etcd"
-
 	// etcdManifestName is the filename of the kubeadm-rendered etcd static-pod
 	// manifest inside defaultStaticPodManifestDir.
 	etcdManifestName = "etcd.yaml"

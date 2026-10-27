@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Local entry points for merge-gate checks. Every tool comes from PATH, and a
-# missing one reports which tool and two ways to get it.
+# Local entry points for merge-gate checks. Tools come from PATH unless a
+# target explicitly installs its pinned tool (credential-alerts-check).
 
 CHART ?= controller/deploy/charts/controller
 NKTP_CHART ?= nktp/deploy/charts/nktp
@@ -33,6 +33,10 @@ lint-workflows: ## Lint the GitHub Actions workflows. (run by the merge gate)
 		git grep -n -E 'github\.repository[[:space:]]*[!=]=' -- .github; \
 		exit 1; \
 	 fi
+	@$(call require_command,python3)
+	@$(call require_command,yq)
+	@python3 -B ./hack/test_e2e_path_filter.py
+	@python3 -B ./hack/e2e-path-filter.py check
 	@echo "  workflows: no findings"
 
 # --severity=error matches shellcheck.yml. The tree is clean at error and is not
@@ -164,15 +168,21 @@ chart-identity-check: ## Assert the chart still renders the deployed identities 
 	 }
 	@python3 ./controller/hack/chart-identity-assertions.py --chart "$(CHART)"
 
-# helm lint and kubeconform cannot tell whether nke-controller-config agrees
+# helm lint and kubeconform cannot tell whether nvke-controller-config agrees
 # with the controller's environment variables; this checks each key against them.
-chart-controller-config-check: ## Assert nke-controller-config loads and matches the controller's environment.
+chart-controller-config-check: ## Assert nvke-controller-config loads and matches the controller's environment.
 	@$(call require_tool,helm,$(HELM_VERSION))
 	@$(call require_command,go)
 	@$(call require_command,yq)
 	@CHART="$(CHART)" ./controller/hack/chart-controller-config-assertions.sh
 
-chart-check: lint-chart chart-rbac-check chart-package-check chart-identity-check chart-controller-config-check ## Run every chart check enforced by CI.
+.PHONY: credential-alerts-check
+credential-alerts-check: ## Validate credential alert rules, fixtures and the enabled PrometheusRule render.
+	@$(call require_tool,helm,$(HELM_VERSION))
+	@$(call require_tool,kubeconform,$(KUBECONFORM_VERSION))
+	@CHART="$(CHART)" ./controller/hack/chart-credential-alerts-assertions.sh
+
+chart-check: lint-chart chart-rbac-check chart-package-check chart-identity-check chart-controller-config-check credential-alerts-check ## Run every chart check enforced by CI.
 
 .PHONY: nktp-chart-deps nktp-chart-lint nktp-chart-check
 

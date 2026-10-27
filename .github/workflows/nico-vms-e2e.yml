@@ -45,6 +45,9 @@ on:
       # not run it.
       - .github/workflows/nico-vms-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml
+      - hack/e2e-path-filter.py
+      # Installs the pinned kind and kubectl the suite runs on.
+      - .github/actions/setup-kind/**
   # Twice a day, like the other E2E lanes, half an hour after the kubeadm
   # bring-up lane's slot so the two do not queue on the same runner. A schedule
   # ignores the paths above, so these runs catch changes to the suite, the
@@ -86,10 +89,8 @@ jobs:
   changes:
     uses: ./.github/workflows/e2e-pr-path-filter.yml
     permissions:
+      contents: read
       pull-requests: read
-    with:
-      # Keep in step with the push paths above.
-      relevant_paths: '^agent/(internal/agent/open_vswitch.*\.go$|pkg/agent/proto/node_agent\.proto$)|^controller/(Tiltfile$|internal/temporal/activities/configure_open_vswitch\.go$|internal/temporal/workflows/provision_node\.go$|nico-sim/|hack/nico-provider/|hack/ci/nico-vms-e2e\.sh$|hack/ci/nvkectl-smoke\.sh$|test/e2e/|test/kubeadm/scripts/)|^\.github/workflows/(nico-vms-e2e|e2e-pr-path-filter)\.yml$'
 
   nico-vms-e2e:
     name: nico-vms-e2e (${{ matrix.arch }}, KVM)

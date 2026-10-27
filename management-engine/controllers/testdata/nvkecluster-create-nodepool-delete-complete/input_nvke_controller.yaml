@@ -1,0 +1,24 @@
+clusters:
+  resources:
+  - id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    name: cluster-1-34bd578c-mgmt-eng
+    conditions:
+      provisioned:
+        status: "True"
+      provisioning:
+        status: "False"
+      deleting:
+        status: "False"
+nodePools:
+  resources:
+  - id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+    clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    name: workers-keep
+    desiredNodeCount: 2
+    conditions:
+      provisioned:
+        status: "True"
+      provisioning:
+        status: "False"
+      deleting:
+        status: "False"

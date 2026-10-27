@@ -191,6 +191,17 @@ func ensureControlPlaneQuorumFloor(ctx context.Context, tx db.Tx, node db.Node) 
 // operator's overrides survive the hand-off. Callers are responsible for allowing
 // only one teardown in flight per cluster.
 func StartRequestedTeardown(ctx context.Context, tx db.Tx, nodeID uuid.UUID) error {
+	unlocked, err := tx.GetNode(ctx, nodeID)
+	if err != nil {
+		return fmt.Errorf("reading requested teardown node: %w", err)
+	}
+	cluster, err := tx.GetClusterForUpdate(ctx, unlocked.ClusterID)
+	if err != nil {
+		return fmt.Errorf("locking cluster for requested teardown: %w", err)
+	}
+	if db.ControlPlaneMutationBlocked(cluster) {
+		return db.ErrControlPlaneMutationBlocked
+	}
 	node, err := tx.GetNodeForUpdate(ctx, nodeID)
 	if err != nil {
 		return fmt.Errorf("failed to get node: %w", err)
@@ -249,6 +260,15 @@ func RestartTeardownInput(node db.Node) (TeardownNodeInput, error) {
 // because the node being torn down is the one passed in and every caller of this
 // is tearing down a control-plane node.
 func StartTeardown(ctx context.Context, tx db.Tx, node db.Node, input TeardownNodeInput, deletingMessage string) error {
+	// Controller callers already hold the cluster row lock before locking the
+	// node. Recheck ownership here so helper callers cannot bypass the fence.
+	cluster, err := tx.GetClusterForUpdate(ctx, node.ClusterID)
+	if err != nil {
+		return fmt.Errorf("locking cluster for control-plane teardown: %w", err)
+	}
+	if db.ControlPlaneMutationBlocked(cluster) {
+		return db.ErrControlPlaneMutationBlocked
+	}
 	input.NodeID = node.ID
 	input.AllowCPNode = true
 

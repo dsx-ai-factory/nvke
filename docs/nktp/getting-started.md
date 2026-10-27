@@ -21,11 +21,10 @@ that most often need preparing:
   autoscalers read. NKTP can install metrics-server if nothing provides it.
 - **The Operator's admission webhook must be reachable** from the API server on
   TCP 9443. Managed clusters can block it with firewall rules or security groups.
-- **Capacity.** The defaults are sized for large clusters: about 10 CPU and
-  26 GiB of memory in requests for the cluster-wide components, plus about
-  1.1 CPU and 2.2 GiB on every node. These totals include each Collector's
-  [self-telemetry sidecar](architecture/self-telemetry.md). See
-  [Size resources](guides/size-resources.md).
+- **Capacity.** The defaults are sized for large clusters. Budget for the
+  Collectors, [self-telemetry sidecars](architecture/self-telemetry.md),
+  Target Allocators and bundled dependencies, including autoscaling growth.
+  See [Size resources](guides/size-resources.md).
 
 ## Install
 

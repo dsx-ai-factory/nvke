@@ -132,6 +132,11 @@ spec:
         {{- if .Values.profiles.image.enabled }}
         - name: materialize-profiles
           image: {{ $profilesImage | quote }}
+          {{- /* The controller container's restrictions: the copy writes only
+          to the profiles emptyDir, so it needs no capability, escalation or
+          writable root either. */}}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           command:
             - /bin/sh
             - -c
@@ -140,7 +145,9 @@ spec:
               # Image content is at /profiles. Mount emptyDir elsewhere so we
               # do not hide the source tree, then copy into the shared volume.
               # The app container mounts the same volume at profiles.path.
-              cp -a /profiles/. /profiles-out/
+              # -R, not -a: the pod runs unprivileged, so preserving the
+              # image's root ownership fails on every file.
+              cp -R /profiles/. /profiles-out/
           volumeMounts:
             - name: profiles
               mountPath: /profiles-out
@@ -288,9 +295,12 @@ spec:
             {{- end }}
             - name: CONTROLLER_CONFIG_PATH
               value: {{ printf "%s/%s" (include "controller.controllerConfig.mountPath" .) (include "controller.controllerConfig.file" .) | quote }}
-            {{- if .Values.apiAuth.enabled }}
-            # Omitted when disabled, never set empty: NVKE reads an empty value as
-            # unset, so the deployment would look configured and authenticate nobody.
+            {{- if and .Values.apiAuth.enabled (not .Values.apiAuth.configMap.create) }}
+            # Only for a ConfigMap managed elsewhere: a configuration the chart
+            # renders reaches the controller as apiAuth in the settings
+            # ConfigMap, and setting both is a startup failure. Omitted
+            # otherwise, never set empty: NVKE reads an empty value as unset, so
+            # the deployment would look configured and authenticate nobody.
             - name: AUTH_CONFIG_PATH
               value: {{ printf "%s/%s" (include "controller.apiAuth.mountPath" .) (include "controller.apiAuth.configFile" .) | quote }}
             {{- end }}

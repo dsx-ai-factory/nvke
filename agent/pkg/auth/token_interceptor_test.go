@@ -18,7 +18,7 @@ import (
 )
 
 // TestConstantTimeCompareAcceptsTwoEmptyStrings pins the standard-library
-// behaviour this package has to defend against.
+// behavior this package has to defend against.
 //
 // It is not testing our code. It is here so that if the premise ever changes,
 // the reason for the guards in UnaryInterceptor is still discoverable rather

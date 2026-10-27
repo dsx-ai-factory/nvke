@@ -11,6 +11,7 @@ This page describes how to turn your prepared nodes into the management cluster,
 - You have your SPIRE CA certificate and key as files on the bootstrap host, and the certificate is already on each node.
 - You have a Linux bootstrap host that reaches every node on the `nvke-agent` port (15005 by default) and reaches the Kubernetes API address on 6443. Nodes with a TPM thumbprint must reach the bootstrap host on 30081. You can use one of the nodes as the bootstrap host.
 - The bootstrap host has rootful `nerdctl` with containerd, plus `kind`, `helm`, `kubectl` and `clusterctl` on `PATH`. Docker is not supported. Only `nerdctl` is checked before the run starts, so a missing `helm`, `kubectl` or `clusterctl` fails the run part-way through.
+- The bootstrap host's `/etc/nerdctl/nerdctl.toml` sets `cni_netconfpath = "/etc/containerd-nerdctl/net.d"`, so nerdctl keeps its network configs out of `/etc/cni/net.d`, the directory a node's containerd reads for pod networking. The bootstrap stops if `/etc/cni/net.d` already holds `nerdctl-*.conflist` files; [Troubleshoot](troubleshoot.md#the-node-cni-directory-holds-nerdctl-network-configs) gives the fix.
 - The bootstrap host has Go and GNU Make to build `nvkectl`, and outbound access to the registries and chart repositories the bootstrap pulls from.
 
 Run every command on this page on the bootstrap host, as root, in a session that survives a disconnect, such as `tmux`.
@@ -79,7 +80,7 @@ The site spec is a YAML file that lists the nodes and the Kubernetes settings fo
 
    If you omit a `--set` line, the field keeps its default: `k8sVersion` `1.36.3`, `podCidr` `192.168.0.0/16`, `serviceCidr` `10.96.0.0/12`, `systemReservedMemory` `16Gi`. If the reserved memory is close to a node's total memory, the node has nothing left to schedule and never reaches `Ready`. The CNI defaults to `ovn-kubernetes`, and etcd encryption at rest is on. Encryption can only be chosen at bootstrap: a cluster built with `--set cluster.etcdEncryption=false` stays unencrypted.
 
-   The site spec carries the bootstrap's fields and nothing else. What the management plane needs beyond them goes in a file of its own, which you write before you [Run NVKE end to end on one machine](../get-started/local-site.md).
+   The site spec carries the bootstrap's fields and nothing else. What the management plane needs beyond them goes in a file of its own, which you write when you [Install the management plane](install-management-plane.md).
 
    `generate sitespec` validates every field before it writes the file. `bootstrap site` also reads environment variables, such as `CLUSTER_POD_CIDR`, that override fields in the file; [Site Spec](../../cli/docs/sitespec.md) lists them. Unset them before you run the bootstrap unless you mean to override the file.
 
@@ -165,7 +166,7 @@ Replace `registry.example.com` with the host in your image references. In the ne
 
    The kubeconfig and the key file are secrets. Every control-plane node holds the etcd key, so the running cluster does not depend on the file, and installing the management-plane services does not use it. It is the only copy of the key that is not on a node. After you finish [Verify](#verify), copy the key file to secure storage and delete it from the bootstrap host.
 
-   Keep `<CLUSTER_NAME>.kubeconfig` on the host you install from. [Run NVKE end to end on one machine](../get-started/local-site.md), [Configure an infrastructure provider: NICo](provider-nico.md) and [Secure the NVKE API](api-authentication.md) all use it. When you finish those pages, copy it to secure storage and delete it from that host.
+   Keep `<CLUSTER_NAME>.kubeconfig` on the host you install from. [Install the management plane](install-management-plane.md), [Configure an infrastructure provider: NICo](provider-nico.md) and [Secure the NVKE API](api-authentication.md) all use it. When you finish those pages, copy it to secure storage and delete it from that host.
 
 ## What happens during the bootstrap
 
@@ -256,5 +257,5 @@ The management cluster is a plain Kubernetes cluster at this point. It does not 
 
 ## Next steps
 
-- [Run NVKE end to end on one machine](../get-started/local-site.md) on the new cluster, using the kubeconfig from the bootstrap.
+- [Install the management plane](install-management-plane.md) on the new cluster, using the kubeconfig from the bootstrap.
 - [Configure an infrastructure provider: NICo](provider-nico.md).

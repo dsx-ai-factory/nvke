@@ -221,10 +221,10 @@ table {
     min-width: 1100px;
 }
 
-.instance-col-name { width: 18%; }
+.instance-col-name { width: 20%; }
 .instance-col-status { width: 10%; }
-.instance-col-ip { width: 13%; }
-.instance-col-type { width: 18%; }
+.instance-col-ip { width: 15%; }
+.instance-col-type { width: 14%; }
 .instance-col-dhcp { width: 8%; }
 .instance-col-phone { width: 10%; }
 .instance-col-created { width: 11%; }
@@ -277,6 +277,87 @@ tbody tr:hover {
 .col-name {
     font-weight: 600;
     color: #fff;
+}
+
+.col-name .name-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    min-width: 0;
+}
+
+.col-name .chevron {
+    flex: none;
+}
+
+.copyable-value {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    min-width: 0;
+    vertical-align: middle;
+}
+
+.col-name .copyable-value {
+    min-width: 0;
+}
+
+.copyable-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.copy-btn {
+    position: relative;
+    flex: none;
+    padding: 0 4px;
+    min-width: 0;
+    height: 18px;
+    line-height: 16px;
+    font-size: 12px;
+    font-weight: 400;
+    background: transparent;
+    color: var(--nvidia-text-dim);
+    border: 1px solid transparent;
+    border-radius: 3px;
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+.copy-btn::before {
+    content: "";
+    position: absolute;
+    inset: -13px;
+}
+
+.copyable-value:hover .copy-btn,
+.copy-btn:focus-visible {
+    opacity: 1;
+}
+
+.copy-btn:hover {
+    background: var(--nvidia-hover);
+    color: var(--nvidia-green);
+    border-color: var(--nvidia-border);
+}
+
+.copy-btn:focus-visible {
+    outline: 2px solid var(--nvidia-green);
+    outline-offset: 2px;
+}
+
+.copy-btn.copied {
+    opacity: 1;
+    color: var(--nvidia-green);
+}
+
+.copy-btn.copy-failed {
+    opacity: 1;
+    color: var(--nvidia-error);
 }
 
 .col-ip {
@@ -350,6 +431,11 @@ tr.expandable { cursor: pointer; }
     word-break: break-all;
     max-height: 300px;
     overflow-y: auto;
+}
+
+.detail-field pre.error-reason {
+    color: var(--nvidia-error);
+    border-color: rgba(255, 85, 85, 0.3);
 }
 
 .empty-state {

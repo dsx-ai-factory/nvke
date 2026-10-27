@@ -20,6 +20,9 @@ const (
 	EtcdEncryptionKeyFieldActive      = "active"
 	EtcdEncryptionKeyFieldActiveSince = "active-since"
 	EtcdEncryptionKeyFieldPending     = "pending"
+	EtcdEncryptionKeyFieldActiveName  = "active-name"
+	EtcdEncryptionKeyFieldPendingName = "pending-name"
+	LegacyAPIEncryptionKeyName        = "current-primary-encryption-key"
 
 	ProvisionNodePoolWorkflowPrefix = "provision-node-pool-"
 	TeardownNodePoolWorkflowPrefix  = "teardown-node-pool-"

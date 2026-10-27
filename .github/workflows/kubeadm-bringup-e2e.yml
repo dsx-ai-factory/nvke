@@ -26,6 +26,8 @@ on:
       - "controller/test/kubeadm/**"
       # Without this, a change to the lane's own definition does not run it.
       - .github/workflows/kubeadm-bringup-e2e.yml
+      - .github/workflows/e2e-pr-path-filter.yml
+      - hack/e2e-path-filter.py
   # Also twice a day, so a break the paths above filtered out, or one a flake
   # hid, still surfaces within twelve hours. A schedule ignores those paths, so
   # these runs always exercise the whole suite.
@@ -42,6 +44,16 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # A mirror-branch push carries base-branch commits as well as the pull
+  # request's own, so the paths above fire for pull requests that change none
+  # of them. Read the pull request's own files first; main, the schedule and
+  # dispatch pass through.
+  changes:
+    uses: ./.github/workflows/e2e-pr-path-filter.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
   bringup:
     name: kubeadm bringup (2 VMs, ${{ matrix.arch }})
     strategy:
@@ -67,7 +79,8 @@ jobs:
             # was wrong.
             runner: arc-arm64-kvm-8c16g
     runs-on: ${{ matrix.runner }}
-    if: github.repository_id == '1323115536'
+    needs: changes
+    if: github.repository_id == '1323115536' && needs.changes.outputs.run_e2e == 'true'
     # Still sized for the emulated path, so a fall back to TCG cannot time out.
     timeout-minutes: 240
     permissions:

@@ -9,12 +9,15 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodecontract"
 	"github.com/dsx-ai-factory/nvke/controller/internal/spiffe"
 )
@@ -30,6 +33,10 @@ type Activities struct {
 	trustDomain              string
 	controllerClientCABundle string
 	getTrustDomainBundle     trustDomainAndBundleGetter
+	credentialAudit          *credentialaudit.Recorder
+	// certificateRenewalReleaseBackoff overrides the first release retry wait
+	// when non-zero, so tests need not wait the real backoff.
+	certificateRenewalReleaseBackoff time.Duration
 }
 
 func NewActivities(
@@ -50,6 +57,7 @@ func NewActivities(
 		trustDomain:              trustDomain,
 		controllerClientCABundle: controllerClientCABundle,
 		getTrustDomainBundle:     spiffe.GetTrustDomainAndBundle,
+		credentialAudit:          credentialaudit.NewRecorder(database, nil, metrics.RecordCredentialAuditWrite),
 	}
 }
 
@@ -69,7 +77,7 @@ func (a *Activities) nodeAgentBootstrapFiles(node db.Node) ([]db.CloudInitFile, 
 			Encoding:    "b64",
 			Content:     base64.StdEncoding.EncodeToString([]byte(a.controllerClientCABundle)),
 		})
-		args = append(args, "--"+contracts.ControllerCABundleFlag+"="+contracts.ControllerCABundlePath)
+		args = append(args, "--nvke-controller-client-ca-bundle="+contracts.ControllerCABundlePath)
 	}
 	if node.NodeAgentTLSJWTEnabled {
 		args = append(args, "--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url="+a.cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)

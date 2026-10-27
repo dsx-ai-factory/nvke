@@ -11,7 +11,10 @@ on:
   # Runs against the base repository, so a fork pull request is labelled too.
   # Safe because nothing here checks out or runs pull request code.
   pull_request_target:
-    types: [opened, reopened, synchronize]
+    # `edited` also fires for title and body changes; the job keeps only the
+    # base change, the one that alters the diff. #1748 kept the labels of its
+    # docs-only diff after GitHub retargeted it to main.
+    types: [opened, reopened, synchronize, edited]
   # Manual run. Give one or more pull request numbers, or leave blank to
   # relabel every open pull request.
   workflow_dispatch:
@@ -31,7 +34,9 @@ permissions:
 jobs:
   label:
     name: Apply component labels
-    if: github.repository_id == '1323115536'
+    if: >-
+      github.repository_id == '1323115536' &&
+      (github.event.action != 'edited' || github.event.changes.base.ref.from != null)
     runs-on: ubuntu-latest
     permissions:
       contents: read

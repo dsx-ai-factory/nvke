@@ -60,11 +60,16 @@ on:
       # The suite builds the controller from controller/Dockerfile, so a controller-only
       # change has to run it too.
       - 'controller/**'
+      - 'auth/**'
       # The controller image uses the root Go workspace, so changes to its
       # workspace files can break the image as well as controller source changes.
       - 'go.work'
       - 'go.work.sum'
       - '.github/workflows/nvkectl-bootstrap-e2e.yml'
+      - '.github/workflows/e2e-pr-path-filter.yml'
+      - 'hack/e2e-path-filter.py'
+      # Installs the pinned kind and kubectl the suite runs on.
+      - '.github/actions/setup-kind/**'
       # The scan of the run's output: the action that installs gitleaks. The rules
       # file is under cli/, which is already listed. The pin it reads is in
       # make/tool-versions.mk, which holds every tool's pin and is not a trigger:
@@ -85,13 +90,24 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # A mirror-branch push carries base-branch commits as well as the pull
+  # request's own, so the paths above fire for pull requests that change none
+  # of them. Read the pull request's own files first; main, the schedule and
+  # dispatch pass through.
+  changes:
+    uses: ./.github/workflows/e2e-pr-path-filter.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
   e2e:
     name: e2e (${{ matrix.suite }}, ${{ matrix.arch }})
     # The bootstrap cluster and three nested control planes need the 16-CPU
     # pool; pull requests reach it through the mirror branch. No leg needs
     # /dev/kvm.
     runs-on: ${{ matrix.runner }}
-    if: github.repository_id == '1323115536'
+    needs: changes
+    if: github.repository_id == '1323115536' && needs.changes.outputs.run_e2e == 'true'
     strategy:
       fail-fast: false
       matrix:

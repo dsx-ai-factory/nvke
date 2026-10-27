@@ -127,9 +127,15 @@ gateway_logs:
       requests: {cpu: 200m, memory: 512Mi}
       limits: {cpu: "1", memory: 1Gi}
     env:
-      - {name: GOMEMLIMIT, value: 896MiB}
+      - {name: GOMEMLIMIT, value: 384MiB}
       - {name: GOGC, value: "50"}
       - *cluster-name-env
+  otelcol:
+    config:
+      exporters:
+        otlp:
+          sending_queue:
+            queue_size: 128849018 # 12% of the 1Gi container limit, in serialized bytes.
 
 gateway_metrics:
   kubernetes:
@@ -139,9 +145,15 @@ gateway_metrics:
       requests: {cpu: 200m, memory: 512Mi}
       limits: {cpu: "1", memory: 1Gi}
     env:
-      - {name: GOMEMLIMIT, value: 896MiB}
+      - {name: GOMEMLIMIT, value: 384MiB}
       - {name: GOGC, value: "50"}
       - *cluster-name-env
+  otelcol:
+    config:
+      exporters:
+        otlp:
+          sending_queue:
+            queue_size: 128849018 # 12% of the 1Gi container limit, in serialized bytes.
 
 gateway_traces:
   kubernetes:
@@ -151,9 +163,15 @@ gateway_traces:
       requests: {cpu: 200m, memory: 512Mi}
       limits: {cpu: "1", memory: 1Gi}
     env:
-      - {name: GOMEMLIMIT, value: 896MiB}
+      - {name: GOMEMLIMIT, value: 384MiB}
       - {name: GOGC, value: "50"}
       - *cluster-name-env
+  otelcol:
+    config:
+      exporters:
+        otlp:
+          sending_queue:
+            queue_size: 128849018 # 12% of the 1Gi container limit, in serialized bytes.
 
 cluster_events:
   kubernetes:

@@ -18,8 +18,9 @@ import (
 )
 
 type nodeService struct {
-	logger *slog.Logger
-	db     db.DB
+	logger                      *slog.Logger
+	db                          db.DB
+	allowControlPlaneWithoutVIP bool
 }
 
 func NewNodeService(logger *slog.Logger, database db.DB) *nodeService {
@@ -95,6 +96,7 @@ func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestO
 			nodes.WithAllowCPNode(true),
 			nodes.WithMachineHealthIssue(machineHealthIssue),
 			nodes.WithForceUnreachable(forceUnreachable),
+			nodes.WithAllowControlPlaneWithoutVIP(s.allowControlPlaneWithoutVIP),
 		)
 	})
 	if err != nil {
@@ -107,6 +109,9 @@ func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestO
 		var quorumFloor *nodes.ControlPlaneQuorumFloorError
 		if errors.As(err, &quorumFloor) {
 			return api.DeleteNode400JSONResponse{Message: quorumFloor.Error()}, nil
+		}
+		if errors.Is(err, db.ErrControlPlaneMutationBlocked) {
+			return api.DeleteNode409JSONResponse{Message: err.Error()}, nil
 		}
 		if errors.Is(err, nodes.ErrLastJoinedControlPlaneNode) {
 			return api.DeleteNode400JSONResponse{Message: err.Error()}, nil

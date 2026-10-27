@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -70,6 +71,24 @@ func nodePoolKeysForNode(_ context.Context, node db.Node) ([]dbreconcile.Key, er
 //   - Update the DesiredCount of non-current NodeSets to 0.
 func (a *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconcile.Result, error) {
 	err := a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		// Discover the parent before taking any row locks. Legacy CP pools share
+		// the same cluster-first admission mutex as the control-plane controller.
+		pool, err := tx.GetNodePool(ctx, key.ID)
+		if err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				return nil
+			}
+			return fmt.Errorf("reading node pool: %w", err)
+		}
+		if pool.ControlPlane {
+			cluster, err := tx.GetClusterForUpdate(ctx, pool.ClusterID)
+			if err != nil {
+				return fmt.Errorf("locking cluster for control-plane node pool: %w", err)
+			}
+			if db.ControlPlaneMutationBlocked(cluster) {
+				return db.ErrControlPlaneMutationBlocked
+			}
+		}
 		nodePool, err := tx.GetNodePoolForUpdate(ctx, key.ID)
 		if err != nil {
 			if errors.Is(err, db.ErrNotFound) {
@@ -81,6 +100,9 @@ func (a *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 
 		return a.reconcileNodePool(ctx, tx, nodePool)
 	})
+	if errors.Is(err, db.ErrControlPlaneMutationBlocked) {
+		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+	}
 	return reconcile.Result{}, err
 }
 
@@ -167,7 +189,7 @@ func (a *Controller) reconcileNodePool(ctx context.Context, tx db.Tx, nodePool d
 	// Only surge when there are deprecated nodes to migrate, enabling faster rollout
 	// Cap surge to the number of deprecated nodes (no point surging more than what we're migrating)
 	surgeNodes := min(nodePool.MaxSurge, nodesInNonCurrentNodeSets)
-	if nodePool.ControlPlane && surgeNodes > 0 && strings.TrimSpace(cluster.ControlPlaneVIP) == "" {
+	if !a.cfg.AllowControlPlaneWithoutVIP && nodePool.ControlPlane && surgeNodes > 0 && strings.TrimSpace(cluster.ControlPlaneVIP) == "" {
 		logger.Warn("Skipping control-plane surge because controlPlaneVIP is not configured")
 		surgeNodes = 0
 	}
@@ -222,7 +244,7 @@ func (a *Controller) createNodeSetIfChanged(
 	if err := provider.NodeSetProvider().ApplyNodeSetProvider(nodePool, newNodeSet); err != nil {
 		return nodePool, currentNodeSet, err
 	}
-	return applyNewNodeSet(ctx, tx, cluster, nodePool, currentNodeSet, newNodeSet, logger)
+	return a.applyNewNodeSet(ctx, tx, cluster, nodePool, currentNodeSet, newNodeSet, logger)
 }
 
 // buildBaseNodeSet returns a new NodeSet pre-populated with the provider-independent
@@ -239,12 +261,12 @@ func buildBaseNodeSet(nodePool db.NodePool) *db.NodeSet {
 }
 
 // applyNewNodeSet persists the new NodeSet and updates the pool's current NodeSet pointer.
-func applyNewNodeSet(
+func (a *Controller) applyNewNodeSet(
 	ctx context.Context, tx db.Tx,
 	cluster db.Cluster, nodePool db.NodePool, prevNodeSet db.NodeSet, newNodeSet *db.NodeSet,
 	logger *slog.Logger,
 ) (db.NodePool, db.NodeSet, error) {
-	if nodePool.ControlPlane && nodePool.CurrentNodeSetID != nil && strings.TrimSpace(cluster.ControlPlaneVIP) == "" {
+	if !a.cfg.AllowControlPlaneWithoutVIP && nodePool.ControlPlane && nodePool.CurrentNodeSetID != nil && strings.TrimSpace(cluster.ControlPlaneVIP) == "" {
 		logger.Warn("Skipping control-plane NodeSet replacement because controlPlaneVIP is not configured")
 		return nodePool, prevNodeSet, nil
 	}

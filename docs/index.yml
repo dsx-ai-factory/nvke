@@ -44,6 +44,8 @@ navigation:
             path: operate/prepare-nodes.md
           - page: Bootstrap the management cluster
             path: operate/bootstrap-management-cluster.md
+          - page: Install the management plane
+            path: operate/install-management-plane.md
           - page: "Configure an infrastructure provider: NICo"
             path: operate/provider-nico.md
           - page: Secure the NVKE API
@@ -64,6 +66,8 @@ navigation:
             path: workload-clusters/oidc.md
           - page: Manage node pools
             path: workload-clusters/node-pools.md
+          - page: Workload cluster Kubernetes certificate renewal
+            path: ../controller/docs/certificate-renewal.md
 
       - section: Operate
         contents:
@@ -77,6 +81,18 @@ navigation:
             path: operations/label-domain-migration.md
           - page: Site Certificate Renewal
             path: site-operations/certificate-renewal.md
+          - page: OSS alpha credential operations
+            path: operations/credential-lifecycle.md
+          - page: Renew tenant Kubernetes leaf certificates
+            path: tenant-clusters/certificate-renewal.md
+          - page: Kubelet serving certificate renewal and troubleshooting
+            path: tenant-clusters/kubelet-serving-certificates.md
+          - page: T2 etcd data-encryption-key rotation
+            path: ../controller/docs/etcd-encryption-key-rotation.md
+          - page: Credential monitoring
+            path: ../controller/docs/credential-monitoring.md
+          - page: Credential lifecycle audit evidence
+            path: ../controller/docs/credential-audit.md
 
       - section: NVKE telemetry pipeline (NKTP)
         contents:
@@ -104,6 +120,16 @@ navigation:
                 path: nktp/guides/configure-kubelet-metrics.md
               - page: Enable Host Process Metrics
                 path: nktp/guides/enable-host-process-metrics.md
+              - page: Restrict monitor file access
+                path: nktp/guides/restrict-monitor-file-access.md
+              - page: Enable auto-instrumentation
+                path: nktp/guides/enable-auto-instrumentation.md
+              - page: Enable eBPF instrumentation
+                path: nktp/guides/enable-ebpf-instrumentation.md
+              - page: Configure a persistent exporter queue
+                path: nktp/guides/configure-persistent-queue.md
+              - page: Enable log checkpoints for the node Collector
+                path: nktp/guides/enable-daemonset-log-checkpoints.md
           - section: Components
             contents:
               - page: Node Collector
@@ -128,6 +154,8 @@ navigation:
                 path: nktp/design-principles.md
               - page: Required Target Allocation
                 path: nktp/designs/target-allocation.md
+              - page: "Monitor file-access restriction: rationale and compatibility"
+                path: nktp/designs/monitor-file-access.md
               - page: kube-state-metrics
                 path: nktp/designs/kube-state-metrics.md
           - section: Management cluster telemetry

@@ -1285,7 +1285,7 @@ for controller in \
 done
 runner_exec kubectl -n "${CONTROLLER_NAME}" rollout status "deployment/${CONTROLLER_NAME}" --timeout=5m
 # Both deploy paths set these as chart values, which the chart renders into
-# nke-controller-config.
+# nvke-controller-config.
 controller_values="$(runner_exec helm -n "${CONTROLLER_NAME}" get values "${CONTROLLER_NAME}" --all -o json)"
 for setting in tenantAccess.enabled nvkeOIDCAuth.enabled; do
   value="$(jq -r ".${setting}" <<<"${controller_values}")"

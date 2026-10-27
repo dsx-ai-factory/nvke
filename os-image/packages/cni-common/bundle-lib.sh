@@ -395,10 +395,13 @@ build_image() {
         ;;
       nerdctl)
         # nerdctl has no buildx; its build drives buildkit, which has the same exporter.
+        # nerdctl 1.7 writes the archive, then exits "no image was built" because it
+        # loaded nothing into containerd; the checks below verify the archive.
         SOURCE_DATE_EPOCH="$epoch" "$oci" build \
           --platform "linux/${ARCH}" --build-arg "SOURCE_DATE_EPOCH=${epoch}" "$@" \
           --output "type=docker,dest=${WORK}/images.tar,rewrite-timestamp=true" \
           -t "$ref" -f "$dockerfile" "$ctx" ||
+          [[ -s "${WORK}/images.tar" ]] ||
           die "building ${ref} failed"
         ;;
       *)
@@ -418,14 +421,17 @@ build_image() {
           die "building ${ref} failed"
         ;;
     esac
-    mkdir -p "${DIST}/image-cache"
-    cp "${WORK}/images.tar" "${cache}.tmp" && mv "${cache}.tmp" "$cache"
   fi
   tar_paths_safe "${WORK}/images.tar"
   mkdir -p "${WORK}/unpacked"
   tar -xf "${WORK}/images.tar" --no-same-owner -C "${WORK}/unpacked"
   grep -q -- "$ref" "${WORK}/unpacked/manifest.json" ||
     die "the built archive does not name ${ref}; it would import under the wrong name"
+  # Cached only once checked: a failed build can leave a partial archive.
+  if [[ ! -f "$cache" ]]; then
+    mkdir -p "${DIST}/image-cache"
+    cp "${WORK}/images.tar" "${cache}.tmp" && mv "${cache}.tmp" "$cache"
+  fi
 }
 
 # finish_bundle removes the work tree, then writes the lock for --write-lock or

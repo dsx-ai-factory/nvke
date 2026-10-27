@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/sha256"
 	_ "embed"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -28,7 +27,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
@@ -94,13 +92,31 @@ func validateEtcdEncryptionKeyRotation(test *tenantTest) {
 		Eventually(test.assertDesiredNodesReady).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(1*time.Second).
 			Should(Succeed(), "all desired nodes should be ready before rotating the etcd encryption key")
 
+		By("Creating a public fixture Secret before rotation and recording its storage header")
+		adminClient := expectSucceed(test.tenantClients.GetAdminClient(ctx, test.cluster.Name))
+		fixture := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{GenerateName: "e2e-rotation-proof-", Namespace: "default"},
+			Data:       map[string][]byte{"probe": []byte("nvke-rotation-public-fixture")},
+		}
+		Expect(adminClient.Create(ctx, fixture)).To(Succeed())
+		DeferCleanup(func(ctx context.Context) { _ = adminClient.Delete(ctx, fixture) })
+		kubeconfigSecret := adminKubeconfigSecret(ctx, test)
+		beforeHeader := expectSucceed(verifyPreexistingSecretRotation(ctx, test.k8sClient, kubeconfigSecret, fixture.Name, ""))
+
 		beforeKey := expectSucceed(readEtcdEncryptionKeyState(ctx, test.k8sClient, test.cluster.ID.String()))
 		Expect(beforeKey.pending).To(BeFalse(), "a pending key should not exist before rotation")
 		beforeRestarts := expectSucceed(readKubeAPIServerRestartCounts(ctx, test.k8sClient, adminKubeconfigSecret(ctx, test)))
 
+		stopTraffic := monitorRotationSecret(ctx, adminClient, fixture)
+		DeferCleanup(func() { stopTraffic() })
+
 		By("Starting the operator-only Temporal workflow")
 		workflowID := expectSucceed(runEtcdEncryptionKeyRotation(ctx, test.k8sClient, test.cluster.ID.String()))
 		GinkgoLogr.Info("Etcd encryption key rotation workflow completed", "workflowID", workflowID)
+		traffic := stopTraffic()
+		Expect(traffic.Succeeded).To(BeNumerically(">", 0), "must observe API Secret reads during rotation")
+		Expect(traffic.Failed).To(BeZero(), "preexisting Secret reads must stay available during rotation")
+		GinkgoLogr.Info("Etcd rotation API fixture traffic", "succeeded", traffic.Succeeded, "failed", traffic.Failed)
 
 		By("Verifying the new key was promoted and temporary state was removed")
 		afterKey := expectSucceed(readEtcdEncryptionKeyState(ctx, test.k8sClient, test.cluster.ID.String()))
@@ -118,6 +134,13 @@ func validateEtcdEncryptionKeyRotation(test *tenantTest) {
 		afterRestarts := expectSucceed(readKubeAPIServerRestartCounts(ctx, test.k8sClient, adminKubeconfigSecret(ctx, test)))
 		Expect(afterRestarts).To(Equal(beforeRestarts))
 		Expect(test.assertDesiredNodesReady(ctx)).To(Succeed())
+
+		By("Proving the preexisting Secret was rewritten and all API servers use the new key")
+		afterHeader := expectSucceed(verifyPreexistingSecretRotation(ctx, test.k8sClient, kubeconfigSecret, fixture.Name, beforeHeader))
+		Expect(afterHeader).NotTo(Equal(beforeHeader))
+		Expect(cluster.Conditions.EtcdKeyRotation).NotTo(BeNil())
+		Expect(cluster.Conditions.EtcdKeyRotation.WorkflowID).To(Equal(workflowID))
+		Expect(cluster.Conditions.EtcdKeyRotation.State).To(Equal(api.EtcdKeyRotationStatusStateSucceeded))
 
 		By("Verifying Secrets remain encrypted in raw etcd after rotation")
 		Expect(runEtcdEncryptionVerifier(ctx, test.k8sClient, test.k8sClientset, adminKubeconfigSecret(ctx, test))).To(Succeed())
@@ -306,46 +329,12 @@ func validateKubeadmEncryptionConfig(ctx context.Context, tenantClient client.Cl
 }
 
 func parseKubeadmExtraArgs(clusterConfiguration string) (map[string]string, error) {
-	configJSON, err := yaml.YAMLToJSON([]byte(clusterConfiguration))
+	args, err := kubeadmAPIServerExtraArgs(clusterConfiguration)
 	if err != nil {
-		return nil, fmt.Errorf("converting kubeadm ClusterConfiguration to JSON: %w", err)
+		return nil, err
 	}
-
-	var config struct {
-		APIServer struct {
-			ExtraArgs any `json:"extraArgs"`
-		} `json:"apiServer"`
-	}
-	if err := json.Unmarshal(configJSON, &config); err != nil {
-		return nil, fmt.Errorf("decoding kubeadm ClusterConfiguration: %w", err)
-	}
-
-	args := map[string]string{}
-	switch extraArgs := config.APIServer.ExtraArgs.(type) {
-	case map[string]any:
-		for name, value := range extraArgs {
-			if rendered, ok := kubeadmArgValue(value); ok {
-				args[name] = rendered
-			}
-		}
-	case []any:
-		for index, item := range extraArgs {
-			entry, ok := item.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("kubeadm apiServer.extraArgs[%d] is not an object", index)
-			}
-			name, ok := entry["name"].(string)
-			if !ok || strings.TrimSpace(name) == "" {
-				return nil, fmt.Errorf("kubeadm apiServer.extraArgs[%d] has no non-empty name", index)
-			}
-			if rendered, ok := kubeadmArgValue(entry["value"]); ok {
-				args[name] = rendered
-			}
-		}
-	case nil:
+	if len(args) == 0 {
 		return nil, fmt.Errorf("kubeadm ClusterConfiguration is missing apiServer.extraArgs")
-	default:
-		return nil, fmt.Errorf("kubeadm apiServer.extraArgs has unsupported type %T", extraArgs)
 	}
 	return args, nil
 }

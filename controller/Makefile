@@ -235,7 +235,7 @@ test-health: ## Run the health-labeled subset of the test/e2e suite against the 
 # is absent. test-authn-spire is the way to run only that one.
 #
 # The permissive specs have no target: they need an NVKE deployed with
-# permissiveMode: true, which is a different deployment. Run them against one
+# apiAuth.permissive: true, which is a different deployment. Run them against one
 # with `make test-e2e ARGS='--label-filter=authn-permissive'`.
 .PHONY: test-authn
 test-authn: ## Run the authn-labeled subset of the test/e2e suite against the cluster in KUBECONFIG.
@@ -485,7 +485,7 @@ docker-manifest: check-img-repo ## Stitch <t>-amd64 + <t>-arm64 into <t> under I
 ##@ Run
 
 .PHONY: run
-# Host-local runs read nke-controller-config from this file unless
+# Host-local runs read nvke-controller-config from this file unless
 # CONTROLLER_CONFIG_PATH names another.
 LOCAL_CONTROLLER_CONFIG ?= $(CURDIR)/hack/local-controller-config.yaml
 
@@ -549,7 +549,7 @@ license-policy-check: $(GO_LICENSES) ## Verify every third-party dependency uses
 	@# that genuinely need ignoring are named explicitly.
 	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO_LICENSES) check ./cmd/worker ../cluster-api-provider-provisioned/cmd/manager \
 		--allowed_licenses=$(ALLOWED_LICENSES) \
-		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nvke/agent,github.com/dsx-ai-factory/nvke/management-engine,github.com/dsx-ai-factory/nvke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
+		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nvke/agent,github.com/dsx-ai-factory/nvke/auth,github.com/dsx-ai-factory/nvke/management-engine,github.com/dsx-ai-factory/nvke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
 
 .PHONY: notices
 notices: $(GO_LICENSES) ## Regenerate THIRD_PARTY_NOTICES.md for the released worker and provider manager binaries.
@@ -569,3 +569,9 @@ notices-check: ## Verify THIRD_PARTY_NOTICES.md is up to date. (advisory; not in
 		git diff --name-only -- THIRD_PARTY_NOTICES.md; \
 		exit 1; \
 	fi
+
+##@ Credential monitoring
+
+.PHONY: credential-alerts-check
+credential-alerts-check: ## Validate credential rules, fixtures and chart render with the repository-pinned tools.
+	$(MAKE) -C .. credential-alerts-check

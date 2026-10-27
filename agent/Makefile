@@ -396,8 +396,12 @@ bin/go-licenses:
 notices: bin/go-licenses ## Regenerate THIRD_PARTY_NOTICES.md.
 	@bash hack/generate-notices.sh
 
+.PHONY: notices-generator-check
+notices-generator-check: ## Check deterministic offline license/NOTICE rendering.
+	@bash hack/test-generate-notices.sh
+
 .PHONY: notices-check
-notices-check: ## Verify THIRD_PARTY_NOTICES.md matches the dependency tree. (advisory; not in the merge gate)
+notices-check: notices-generator-check ## Verify THIRD_PARTY_NOTICES.md matches the dependency tree. (advisory; not in the merge gate)
 	@echo "- Checking THIRD_PARTY_NOTICES.md is up to date..."
 	@# Cheap gate first, before spending minutes regenerating. git diff reports
 	@# nothing for an untracked path, so an uncommitted notices file would

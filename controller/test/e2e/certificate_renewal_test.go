@@ -13,16 +13,20 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 const (
-	renewK8sCertsWorkflowType = "RenewK8sCerts"
-	// Fresh kubeadm certificates normally have about one year of residual life.
-	// A much larger threshold makes the E2E exercise renewal and static-pod
-	// restart rather than the unchanged fast path.
-	forceCertificateRenewalThresholdDays = 10_000
+	renewK8sCertsWorkflowType            = "RenewK8sCertsV2"
+	forceCertificateRenewalThresholdDays = 30
 )
 
+// validatePostReadyCertificateRenewal first runs a non-forced V2 cycle, which
+// must select no node for fresh certificates, then forces a uniquely identified
+// V2 cycle so fresh certificates cannot take the unchanged path. Ready nodes and
+// changed static-pod container IDs demonstrate restart and recovery, not CA
+// rotation or independent verification of certificate contents.
 func validatePostReadyCertificateRenewal(test *tenantTest) {
 	It("renews every control-plane certificate and returns the cluster to Ready", func(ctx context.Context) {
 		tenantClient := expectSucceed(test.tenantClients.GetClient(ctx, test.cluster.Name))
@@ -38,25 +42,44 @@ func validatePostReadyCertificateRenewal(test *tenantTest) {
 			return err
 		}).WithContext(ctx).WithTimeout(2 * time.Minute).WithPolling(2 * time.Second).Should(Succeed())
 
-		input := struct {
-			ClusterID     string `json:"clusterID"`
-			ThresholdDays int    `json:"thresholdDays"`
-		}{
-			ClusterID:     test.cluster.ID.String(),
-			ThresholdDays: forceCertificateRenewalThresholdDays,
+		runRenewal := func(force bool) string {
+			input := struct {
+				ClusterID     string `json:"clusterID"`
+				ThresholdDays int    `json:"thresholdDays"`
+				Force         bool   `json:"force"`
+			}{
+				ClusterID:     test.cluster.ID.String(),
+				ThresholdDays: forceCertificateRenewalThresholdDays,
+				Force:         force,
+			}
+			rawInput := expectSucceed(json.Marshal(input))
+			workflowID := fmt.Sprintf("e2e-renew-k8s-certs-%s-%d", test.cluster.ID, time.Now().UnixNano())
+			Expect(runTemporalWorkflow(
+				ctx,
+				test.k8sClient,
+				renewK8sCertsWorkflowType,
+				workflowID,
+				[]string{string(rawInput)},
+				20*time.Minute,
+			)).To(Succeed())
+			return workflowID
 		}
-		rawInput := expectSucceed(json.Marshal(input))
-		workflowID := fmt.Sprintf("e2e-renew-k8s-certs-%s-%d", test.cluster.ID, time.Now().UnixNano())
 
-		By("Executing the registered certificate-renewal workflow after cluster readiness")
-		Expect(runTemporalWorkflow(
-			ctx,
-			test.k8sClient,
-			renewK8sCertsWorkflowType,
-			workflowID,
-			[]string{string(rawInput)},
-			20*time.Minute,
-		)).To(Succeed())
+		// Joined control-plane nodes have no super-admin.conf, so this exercises
+		// expiry selection on every node of a multi-node control plane.
+		By("Executing a non-forced certificate-renewal cycle, which leaves fresh certificates unchanged")
+		nonForcedWorkflowID := runRenewal(false)
+		renewal := expectSucceed(test.nvke.GetCluster(ctx, test.cluster.ID)).Conditions.CertificateRenewal
+		Expect(renewal).NotTo(BeNil(), "the non-forced cycle must record a certificate renewal condition")
+		Expect(renewal.CycleID).To(Equal(nonForcedWorkflowID))
+		Expect(renewal.State).To(Equal(api.CertificateRenewalStatusStateSucceeded))
+		Expect(renewal.Outcome).To(HaveValue(Equal(api.CertificateRenewalStatusOutcomeUnchanged)),
+			"a non-forced cycle with fresh certificates must report outcome unchanged")
+		Expect(staticControlPlaneContainerIDs(ctx, tenantClient, expectedControlPlanes)).To(Equal(originalContainerIDs),
+			"a non-forced cycle with fresh certificates must not restart static control-plane components")
+
+		By("Executing a forced certificate-renewal cycle after cluster readiness")
+		runRenewal(true)
 
 		By("Verifying the controller and the tenant API report every node Ready after renewal")
 		Eventually(func(ctx context.Context) error {

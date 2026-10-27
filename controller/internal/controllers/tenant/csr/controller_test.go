@@ -151,7 +151,7 @@ func TestValidateServingCSR(t *testing.T) {
 			mutate: func(csr *certificatesv1.CertificateSigningRequest) {
 				csr.Spec.Usages = append(csr.Spec.Usages, certificatesv1.UsageClientAuth)
 			},
-			wantReason: `spec.usages contains disallowed usage "client auth"`,
+			wantReason: "spec.usages contains a disallowed usage",
 		},
 		"malformed request": {
 			commonName: "system:node:worker-1",
@@ -183,13 +183,13 @@ func TestValidateServingCSR(t *testing.T) {
 			commonName: "system:node:worker-1",
 			org:        []string{"system:nodes"},
 			dnsNames:   []string{"other"},
-			wantReason: `DNS SAN "other" does not match controller node name`,
+			wantReason: "DNS SAN does not match controller node name",
 		},
 		"wrong IP SAN": {
 			commonName: "system:node:worker-1",
 			org:        []string{"system:nodes"},
 			ips:        []net.IP{net.ParseIP("192.0.2.11")},
-			wantReason: `IP SAN "192.0.2.11" does not match controller node IP`,
+			wantReason: "IP SAN does not match controller node IP",
 		},
 		"URI SAN": {
 			commonName: "system:node:worker-1",
@@ -229,7 +229,7 @@ func TestPlanDecision(t *testing.T) {
 		invalid := newServingCSR(t, "invalid", time.Now(), "system:node:worker-1", []string{"system:nodes"}, []string{"other"}, nil, nil)
 		decision := planDecision(invalid, nodes)
 		require.Equal(t, decisionSkip, decision.Action)
-		require.Equal(t, `DNS SAN "other" does not match controller node name`, decision.Reason)
+		require.Equal(t, "DNS SAN does not match controller node name", decision.Reason)
 	})
 
 	t.Run("unknown node is skipped", func(t *testing.T) {
@@ -265,11 +265,15 @@ func TestLogDecisionUsesDecisionLevel(t *testing.T) {
 				})),
 			}
 			reconciler.logDecision(csrDecision{
-				CSR:    &certificatesv1.CertificateSigningRequest{ObjectMeta: metav1.ObjectMeta{Name: "test-csr"}},
-				Action: test.action,
+				CSR:      &certificatesv1.CertificateSigningRequest{ObjectMeta: metav1.ObjectMeta{Name: "test-csr"}},
+				NodeName: "worker-1",
+				Action:   test.action,
+				Reason:   "DNS SAN does not match controller node name",
 			})
 
 			require.Contains(t, output.String(), test.wantLevel)
+			require.Contains(t, output.String(), `"nodeName":"worker-1"`)
+			require.Contains(t, output.String(), `"reason":"DNS SAN does not match controller node name"`)
 		})
 	}
 }

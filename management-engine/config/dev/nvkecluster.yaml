@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: internal.nvke.nvidia.com/v1
+kind: NVKECluster
+metadata:
+  name: test-docker
+  namespace: management-engine-system
+spec:
+  apiServerAccess:
+    publicAccessEnabled: false
+  clusterNetwork:
+    pods:
+      cidrBlocks: [10.244.0.0/16]
+    services:
+      cidrBlocks: [10.96.0.0/12]
+    serviceDomain: cluster.local
+  release:
+    channel:
+      name: stable
+  controlPlaneClass: standard
+  network:
+    vpcID: 22222222-2222-4222-8222-222222222222
+  nodePools:
+    - name: workers
+      instanceType: docker
+      replicas: 1
+      vpcSubnetID: 44444444-4444-4444-8444-444444444444
+      nodeProfile: "docker:1.36.1"

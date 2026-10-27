@@ -16,6 +16,7 @@ deploy/nico/
 │   ├── 20-nico-credentials.yaml.tmpl
 │   ├── 35-dgxc-tenant-credentials.yaml.tmpl
 │   ├── 40-oidc-upstream-ca.yaml
+│   ├── 41-oidc-upstream-ca-certificate.yaml   # create-if-absent: first install only
 │   └── 45-nktp-cluster.yaml.tmpl
 ├── spire-server-nodeport/        # manifest: a Service
 │   └── spire-server-nodeport.yaml
@@ -111,6 +112,24 @@ artifact: capnico-controller
 
 `image` is the repository and tag the committed YAML names. `artifact` is the NVKR output that publishes it. A render against a release writes a `kustomization.yaml` that repoints the image to the artifact's repository and digest, and the script applies the kustomization instead of the files. `release.yaml` itself is never applied.
 
+#### `create-if-absent`: a file applied on a first install only
+
+A `.yaml` file may declare that it is applied only when the object it creates is not in the cluster yet, with a comment anywhere in the file:
+
+```yaml
+# nvke-deploy: create-if-absent <kind>:<name>:<namespace>
+```
+
+Before applying that file, the script reads that object. If it exists, the file is skipped and a line says so; if it does not, the file is applied as usual. The probe is a read, so it runs under `--dry-run` too and a dry run describes the install that would happen. A probe that fails for any reason other than `NotFound` stops the install rather than read an unanswered API server as "absent" — under `--dry-run`, where there may be no cluster, it is reported instead.
+
+This is for the few objects whose identity a site persists and cannot re-derive, not for ordinary drift, which still belongs under apply. There is one today: `41-oidc-upstream-ca-certificate.yaml` holds the OIDC upstream CA, whose certificate every tenant of the site has embedded as a trust anchor. Any change to its spec would make cert-manager re-issue the CA under a new key, and the leaf it then signs for the OIDC discovery provider would no longer chain to the certificate the tenants trust. So a site keeps the CA it was installed with — the launch rename moved its subject to NVKE, and only a site installed after that gets the new one.
+
+**The gate is the executor's, not the manifest's.** `kubectl apply -f` on that file, a GitOps controller syncing the directory, or any other tool that does not read the directive will apply the Certificate and re-issue the CA. An executor other than `nvke-deploy.sh` has to enforce the gate itself — see [Applying It Another Way](#applying-it-another-way).
+
+A file carrying the directive must be the only place that object is created, and the object named should be the one that holds the state, not the one that declares it: the CA is gated on its `Secret`, which holds the key material, not on the `Certificate`. Split such a file from the rest of its chain, so that the parts carrying no state — the two Issuers in `40-oidc-upstream-ca.yaml` — keep being applied every install.
+
+An item rendered against a release applies through a `kustomization.yaml`, which is one apply of one stream and does not honour the directive. Only an item that binds an image to a release gets one, and none of those carries it.
+
 ### `helm`: one chart as one release
 
 A helm item installs one chart as one Helm release. Its `release.yaml` names the chart, the release and the values:
@@ -177,6 +196,7 @@ Every item is a Helm chart with values, or plain YAML, so another tool can deliv
 2. Render the template items first. Under GitOps, the Secrets they and the `site-credentials` item produce come from your secret store instead; `--credentials external` lists them. Each must exist in its namespace after `nvke-base-config` has created it and before the first item that reads it: in a sync-wave setup, a wave between the two.
 3. Wait for each `requires` entry before its chart. In GitOps that is a sync-wave boundary or a health check on the object.
 4. With a local NVKR Run (`--nvkr-run-dir`), import the images listed in `images.txt` into the node's containerd before the first item.
+5. Honour `create-if-absent`. A file carrying that directive is applied only when the object it names is not in the cluster; applying it to a site that has one re-creates that object. For `41-oidc-upstream-ca-certificate.yaml` that means re-issuing the OIDC upstream CA under a new key, which invalidates the trust anchor every tenant of the site has embedded. Under GitOps, exclude that file from an existing site's sync, or make its sync conditional on `secret/oidc-provider-upstream-ca` being absent from `spire-server`; a tool that cannot express either must not deliver the file to a site that already has a CA. Do not let a failed read of the cluster stand in for "absent".
 
 A GitOps tool maps these onto sync waves and a secret store; `nvkectl render deploy-path` writes the per-site values and the rendered template items it delivers. The steps around the deploy path, such as `clusterctl init` and the SPIRE exec-auth patch, are in the same guide and stay imperative.
 

@@ -56,6 +56,15 @@ func (a *Activities) kubeadmInit(ctx context.Context, input KubeadmInitInput) er
 	if err != nil {
 		return fmt.Errorf("failed to get initial control plane node: %w", err)
 	}
+	if node.ControlPlane {
+		if err := a.UpdateNodeConditions(ctx, NodeConditionsUpdate{
+			NodeID: node.ID, Conditions: NodeConditions{Provisioning: &ConditionUpdate{
+				Status: db.ConditionStatusTrue, Message: "Control-plane initialization is in progress",
+			}},
+		}); err != nil {
+			return err
+		}
+	}
 
 	_, nodePool, err := nodes.GetNodeContext(ctx, a.db, node)
 	if err != nil {
@@ -132,6 +141,10 @@ func (a *Activities) kubeadmInit(ctx context.Context, input KubeadmInitInput) er
 		req.ApiEncryptionKey, err = a.ensureKubeAPIEncryptionKey(ctx, cluster.ID)
 		if err != nil {
 			return fmt.Errorf("failed to ensure kube-api encryption key: %w", err)
+		}
+		req.ApiEncryptionKeyName, err = a.bootstrapKubeAPIEncryptionKeyName(ctx, cluster.ID)
+		if err != nil {
+			return err
 		}
 	}
 	// The deprecated CNI fields set below are still populated either way; the

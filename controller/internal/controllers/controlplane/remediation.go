@@ -31,7 +31,7 @@ func (r *reconciler) remediateMachines(ctx context.Context, cluster db.Cluster, 
 		log.Debug("No control plane nodes marked for remediation")
 		return false, nil
 	}
-	if controlPlaneReplacementBlocked(cluster) {
+	if r.controlPlaneReplacementBlocked(cluster) {
 		log.Warn("Skipping control plane node remediation because controlPlaneVIP is not configured")
 		return false, nil
 	}

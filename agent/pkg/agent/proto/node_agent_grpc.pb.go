@@ -23,6 +23,7 @@ const _ = grpc.SupportPackageIsVersion8
 
 const (
 	NodeAgent_GetKubeadmStatus_FullMethodName                             = "/proto.NodeAgent/GetKubeadmStatus"
+	NodeAgent_InspectKubernetesCertificates_FullMethodName                = "/proto.NodeAgent/InspectKubernetesCertificates"
 	NodeAgent_ScheduleNodeReboot_FullMethodName                           = "/proto.NodeAgent/ScheduleNodeReboot"
 	NodeAgent_GetNodeBootInfo_FullMethodName                              = "/proto.NodeAgent/GetNodeBootInfo"
 	NodeAgent_ExecuteKubeadmInit_FullMethodName                           = "/proto.NodeAgent/ExecuteKubeadmInit"
@@ -36,6 +37,7 @@ const (
 	NodeAgent_KubeadmUpgradeApply_FullMethodName                          = "/proto.NodeAgent/KubeadmUpgradeApply"
 	NodeAgent_ReconcileKubeVip_FullMethodName                             = "/proto.NodeAgent/ReconcileKubeVip"
 	NodeAgent_StartKubernetesCertificateRenewal_FullMethodName            = "/proto.NodeAgent/StartKubernetesCertificateRenewal"
+	NodeAgent_StartKubernetesCertificateRenewalV2_FullMethodName          = "/proto.NodeAgent/StartKubernetesCertificateRenewalV2"
 	NodeAgent_GetKubernetesCertificateRenewalStatus_FullMethodName        = "/proto.NodeAgent/GetKubernetesCertificateRenewalStatus"
 	NodeAgent_RemoveEtcdMember_FullMethodName                             = "/proto.NodeAgent/RemoveEtcdMember"
 	NodeAgent_GetEtcdStatus_FullMethodName                                = "/proto.NodeAgent/GetEtcdStatus"
@@ -52,6 +54,7 @@ const (
 	NodeAgent_InitializeKubernetesAPIEncryption_FullMethodName            = "/proto.NodeAgent/InitializeKubernetesAPIEncryption"
 	NodeAgent_PromoteKubernetesAPIEncryptionProviders_FullMethodName      = "/proto.NodeAgent/PromoteKubernetesAPIEncryptionProviders"
 	NodeAgent_UpdateEncryptionConfig_FullMethodName                       = "/proto.NodeAgent/UpdateEncryptionConfig"
+	NodeAgent_GetEtcdEncryptionKeyIdentity_FullMethodName                 = "/proto.NodeAgent/GetEtcdEncryptionKeyIdentity"
 	NodeAgent_StartEtcdEncryptionAtRestObjectsRewrite_FullMethodName      = "/proto.NodeAgent/StartEtcdEncryptionAtRestObjectsRewrite"
 	NodeAgent_GetEtcdEncryptionAtRestObjectsRewriteStatus_FullMethodName  = "/proto.NodeAgent/GetEtcdEncryptionAtRestObjectsRewriteStatus"
 	NodeAgent_RemovePlainTextSecondaryEncryptionEntry_FullMethodName      = "/proto.NodeAgent/RemovePlainTextSecondaryEncryptionEntry"
@@ -79,6 +82,9 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type NodeAgentClient interface {
 	GetKubeadmStatus(ctx context.Context, in *KubeadmStatusRequest, opts ...grpc.CallOption) (*KubeadmStatusResponse, error)
+	// InspectKubernetesCertificates reads the fixed kubeadm credential inventory.
+	// It never mutates files or returns certificate/key contents or identities.
+	InspectKubernetesCertificates(ctx context.Context, in *InspectKubernetesCertificatesRequest, opts ...grpc.CallOption) (*InspectKubernetesCertificatesResponse, error)
 	// ScheduleNodeReboot waits up to five minutes for apt/dpkg locks to clear,
 	// then starts a detached reboot so the RPC can return before the node exits.
 	ScheduleNodeReboot(ctx context.Context, in *ScheduleNodeRebootRequest, opts ...grpc.CallOption) (*ScheduleNodeRebootResponse, error)
@@ -124,9 +130,16 @@ type NodeAgentClient interface {
 	// the pod receives a kubeconfig with no client credential; this RPC never
 	// reads, creates, or mounts the host's admin.conf or super-admin.conf.
 	ReconcileKubeVip(ctx context.Context, in *ReconcileKubeVipRequest, opts ...grpc.CallOption) (*ReconcileKubeVipResponse, error)
-	// StartKubernetesCertificateRenewal starts an asynchronous control-plane
+	// StartKubernetesCertificateRenewal starts a V1 asynchronous control-plane
 	// certificate renewal operation. The operation_id is an idempotency key.
+	// Callers that require forced renewal or strict etcd membership validation
+	// must use StartKubernetesCertificateRenewalV2.
 	StartKubernetesCertificateRenewal(ctx context.Context, in *StartKubernetesCertificateRenewalRequest, opts ...grpc.CallOption) (*StartKubernetesCertificateRenewalResponse, error)
+	// StartKubernetesCertificateRenewalV2 starts an asynchronous control-plane
+	// certificate renewal operation with forced-renewal and exact etcd-membership
+	// semantics. Its distinct method name lets callers detect V1-only agents
+	// before any renewal operation is accepted.
+	StartKubernetesCertificateRenewalV2(ctx context.Context, in *StartKubernetesCertificateRenewalV2Request, opts ...grpc.CallOption) (*StartKubernetesCertificateRenewalV2Response, error)
 	// GetKubernetesCertificateRenewalStatus returns the current status for a
 	// previously started certificate renewal operation.
 	GetKubernetesCertificateRenewalStatus(ctx context.Context, in *GetKubernetesCertificateRenewalStatusRequest, opts ...grpc.CallOption) (*GetKubernetesCertificateRenewalStatusResponse, error)
@@ -159,7 +172,7 @@ type NodeAgentClient interface {
 	// reclaimable_bytes is below it, reporting OUTCOME_REFUSED without touching
 	// etcd. A restart that cannot defragment is pure downtime, so it is not
 	// attempted. The agent never edits the threshold - it is set by kubeadm when
-	// the node is provisioned - so the configured value is always honoured.
+	// the node is provisioned - so the configured value is always honored.
 	//
 	// THE CALLER MUST NOT TAKE THIS NODE OUT OF SERVICE FIRST. The agent performs
 	// the whole per-node sequence, including the withdrawal and the return:
@@ -251,14 +264,29 @@ type NodeAgentClient interface {
 	// state file is written before the config is touched, so a crash or a
 	// timed-out call can be resumed without re-applying the mutation.
 	//
+	// Once the WAL entry is written it is removed only when the reload is
+	// confirmed. Every later failure retains it (and possibly the written
+	// config), and other mutations fail until the same operation is retried.
+	//
 	// Error codes:
 	//
-	//	FailedPrecondition — encryption-config.yaml is missing on this node; run
-	//	                     InitializeKubernetesAPIEncryption first.
-	//	DeadlineExceeded — config was written but reload was not confirmed
-	//	                   within the deadline; the call is safe to retry.
-	//	other codes      — unrecoverable; no partial state remains.
+	//	FailedPrecondition — encryption-config.yaml is missing (run
+	//	                     InitializeKubernetesAPIEncryption first); a WAL entry
+	//	                     from a different operation exists (retry that
+	//	                     operation first); the apiserver has not yet loaded the
+	//	                     current config; or the config or WAL ownership
+	//	                     changed, or the config became unreadable, before or
+	//	                     during confirmation.
+	//	DeadlineExceeded,
+	//	Canceled         — reload was not confirmed before the deadline or
+	//	                   cancellation; the call is safe to retry.
+	//	Unavailable      — apiserver metrics stayed unavailable, so the reload
+	//	                   cannot be confirmed; retry after they recover.
+	//	other codes      — invalid request, non-control-plane node, invalid
+	//	                   config or mutation, or a local I/O failure.
 	UpdateEncryptionConfig(ctx context.Context, in *UpdateEncryptionConfigRequest, opts ...grpc.CallOption) (*UpdateEncryptionConfigResponse, error)
+	// Looks up a storage key name in the local configuration without returning key material.
+	GetEtcdEncryptionKeyIdentity(ctx context.Context, in *GetEtcdEncryptionKeyIdentityRequest, opts ...grpc.CallOption) (*GetEtcdEncryptionKeyIdentityResponse, error)
 	// StartEtcdEncryptionAtRestObjectsRewrite starts an asynchronous rewrite of
 	// Kubernetes API objects so they are persisted with the current etcd
 	// encryption-at-rest configuration. The operation_id is an idempotency key;
@@ -344,6 +372,16 @@ func (c *nodeAgentClient) GetKubeadmStatus(ctx context.Context, in *KubeadmStatu
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(KubeadmStatusResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_GetKubeadmStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) InspectKubernetesCertificates(ctx context.Context, in *InspectKubernetesCertificatesRequest, opts ...grpc.CallOption) (*InspectKubernetesCertificatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InspectKubernetesCertificatesResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_InspectKubernetesCertificates_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -474,6 +512,16 @@ func (c *nodeAgentClient) StartKubernetesCertificateRenewal(ctx context.Context,
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StartKubernetesCertificateRenewalResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_StartKubernetesCertificateRenewal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) StartKubernetesCertificateRenewalV2(ctx context.Context, in *StartKubernetesCertificateRenewalV2Request, opts ...grpc.CallOption) (*StartKubernetesCertificateRenewalV2Response, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartKubernetesCertificateRenewalV2Response)
+	err := c.cc.Invoke(ctx, NodeAgent_StartKubernetesCertificateRenewalV2_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -634,6 +682,16 @@ func (c *nodeAgentClient) UpdateEncryptionConfig(ctx context.Context, in *Update
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UpdateEncryptionConfigResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_UpdateEncryptionConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) GetEtcdEncryptionKeyIdentity(ctx context.Context, in *GetEtcdEncryptionKeyIdentityRequest, opts ...grpc.CallOption) (*GetEtcdEncryptionKeyIdentityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetEtcdEncryptionKeyIdentityResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_GetEtcdEncryptionKeyIdentity_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -893,6 +951,9 @@ func (c *nodeAgentClient) PatchAPIServerManifest(ctx context.Context, in *PatchA
 // for forward compatibility
 type NodeAgentServer interface {
 	GetKubeadmStatus(context.Context, *KubeadmStatusRequest) (*KubeadmStatusResponse, error)
+	// InspectKubernetesCertificates reads the fixed kubeadm credential inventory.
+	// It never mutates files or returns certificate/key contents or identities.
+	InspectKubernetesCertificates(context.Context, *InspectKubernetesCertificatesRequest) (*InspectKubernetesCertificatesResponse, error)
 	// ScheduleNodeReboot waits up to five minutes for apt/dpkg locks to clear,
 	// then starts a detached reboot so the RPC can return before the node exits.
 	ScheduleNodeReboot(context.Context, *ScheduleNodeRebootRequest) (*ScheduleNodeRebootResponse, error)
@@ -938,9 +999,16 @@ type NodeAgentServer interface {
 	// the pod receives a kubeconfig with no client credential; this RPC never
 	// reads, creates, or mounts the host's admin.conf or super-admin.conf.
 	ReconcileKubeVip(context.Context, *ReconcileKubeVipRequest) (*ReconcileKubeVipResponse, error)
-	// StartKubernetesCertificateRenewal starts an asynchronous control-plane
+	// StartKubernetesCertificateRenewal starts a V1 asynchronous control-plane
 	// certificate renewal operation. The operation_id is an idempotency key.
+	// Callers that require forced renewal or strict etcd membership validation
+	// must use StartKubernetesCertificateRenewalV2.
 	StartKubernetesCertificateRenewal(context.Context, *StartKubernetesCertificateRenewalRequest) (*StartKubernetesCertificateRenewalResponse, error)
+	// StartKubernetesCertificateRenewalV2 starts an asynchronous control-plane
+	// certificate renewal operation with forced-renewal and exact etcd-membership
+	// semantics. Its distinct method name lets callers detect V1-only agents
+	// before any renewal operation is accepted.
+	StartKubernetesCertificateRenewalV2(context.Context, *StartKubernetesCertificateRenewalV2Request) (*StartKubernetesCertificateRenewalV2Response, error)
 	// GetKubernetesCertificateRenewalStatus returns the current status for a
 	// previously started certificate renewal operation.
 	GetKubernetesCertificateRenewalStatus(context.Context, *GetKubernetesCertificateRenewalStatusRequest) (*GetKubernetesCertificateRenewalStatusResponse, error)
@@ -973,7 +1041,7 @@ type NodeAgentServer interface {
 	// reclaimable_bytes is below it, reporting OUTCOME_REFUSED without touching
 	// etcd. A restart that cannot defragment is pure downtime, so it is not
 	// attempted. The agent never edits the threshold - it is set by kubeadm when
-	// the node is provisioned - so the configured value is always honoured.
+	// the node is provisioned - so the configured value is always honored.
 	//
 	// THE CALLER MUST NOT TAKE THIS NODE OUT OF SERVICE FIRST. The agent performs
 	// the whole per-node sequence, including the withdrawal and the return:
@@ -1065,14 +1133,29 @@ type NodeAgentServer interface {
 	// state file is written before the config is touched, so a crash or a
 	// timed-out call can be resumed without re-applying the mutation.
 	//
+	// Once the WAL entry is written it is removed only when the reload is
+	// confirmed. Every later failure retains it (and possibly the written
+	// config), and other mutations fail until the same operation is retried.
+	//
 	// Error codes:
 	//
-	//	FailedPrecondition — encryption-config.yaml is missing on this node; run
-	//	                     InitializeKubernetesAPIEncryption first.
-	//	DeadlineExceeded — config was written but reload was not confirmed
-	//	                   within the deadline; the call is safe to retry.
-	//	other codes      — unrecoverable; no partial state remains.
+	//	FailedPrecondition — encryption-config.yaml is missing (run
+	//	                     InitializeKubernetesAPIEncryption first); a WAL entry
+	//	                     from a different operation exists (retry that
+	//	                     operation first); the apiserver has not yet loaded the
+	//	                     current config; or the config or WAL ownership
+	//	                     changed, or the config became unreadable, before or
+	//	                     during confirmation.
+	//	DeadlineExceeded,
+	//	Canceled         — reload was not confirmed before the deadline or
+	//	                   cancellation; the call is safe to retry.
+	//	Unavailable      — apiserver metrics stayed unavailable, so the reload
+	//	                   cannot be confirmed; retry after they recover.
+	//	other codes      — invalid request, non-control-plane node, invalid
+	//	                   config or mutation, or a local I/O failure.
 	UpdateEncryptionConfig(context.Context, *UpdateEncryptionConfigRequest) (*UpdateEncryptionConfigResponse, error)
+	// Looks up a storage key name in the local configuration without returning key material.
+	GetEtcdEncryptionKeyIdentity(context.Context, *GetEtcdEncryptionKeyIdentityRequest) (*GetEtcdEncryptionKeyIdentityResponse, error)
 	// StartEtcdEncryptionAtRestObjectsRewrite starts an asynchronous rewrite of
 	// Kubernetes API objects so they are persisted with the current etcd
 	// encryption-at-rest configuration. The operation_id is an idempotency key;
@@ -1154,6 +1237,9 @@ type UnimplementedNodeAgentServer struct {
 func (UnimplementedNodeAgentServer) GetKubeadmStatus(context.Context, *KubeadmStatusRequest) (*KubeadmStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetKubeadmStatus not implemented")
 }
+func (UnimplementedNodeAgentServer) InspectKubernetesCertificates(context.Context, *InspectKubernetesCertificatesRequest) (*InspectKubernetesCertificatesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InspectKubernetesCertificates not implemented")
+}
 func (UnimplementedNodeAgentServer) ScheduleNodeReboot(context.Context, *ScheduleNodeRebootRequest) (*ScheduleNodeRebootResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ScheduleNodeReboot not implemented")
 }
@@ -1192,6 +1278,9 @@ func (UnimplementedNodeAgentServer) ReconcileKubeVip(context.Context, *Reconcile
 }
 func (UnimplementedNodeAgentServer) StartKubernetesCertificateRenewal(context.Context, *StartKubernetesCertificateRenewalRequest) (*StartKubernetesCertificateRenewalResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartKubernetesCertificateRenewal not implemented")
+}
+func (UnimplementedNodeAgentServer) StartKubernetesCertificateRenewalV2(context.Context, *StartKubernetesCertificateRenewalV2Request) (*StartKubernetesCertificateRenewalV2Response, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartKubernetesCertificateRenewalV2 not implemented")
 }
 func (UnimplementedNodeAgentServer) GetKubernetesCertificateRenewalStatus(context.Context, *GetKubernetesCertificateRenewalStatusRequest) (*GetKubernetesCertificateRenewalStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetKubernetesCertificateRenewalStatus not implemented")
@@ -1240,6 +1329,9 @@ func (UnimplementedNodeAgentServer) PromoteKubernetesAPIEncryptionProviders(cont
 }
 func (UnimplementedNodeAgentServer) UpdateEncryptionConfig(context.Context, *UpdateEncryptionConfigRequest) (*UpdateEncryptionConfigResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateEncryptionConfig not implemented")
+}
+func (UnimplementedNodeAgentServer) GetEtcdEncryptionKeyIdentity(context.Context, *GetEtcdEncryptionKeyIdentityRequest) (*GetEtcdEncryptionKeyIdentityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetEtcdEncryptionKeyIdentity not implemented")
 }
 func (UnimplementedNodeAgentServer) StartEtcdEncryptionAtRestObjectsRewrite(context.Context, *StartEtcdEncryptionAtRestObjectsRewriteRequest) (*StartEtcdEncryptionAtRestObjectsRewriteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartEtcdEncryptionAtRestObjectsRewrite not implemented")
@@ -1328,6 +1420,24 @@ func _NodeAgent_GetKubeadmStatus_Handler(srv interface{}, ctx context.Context, d
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodeAgentServer).GetKubeadmStatus(ctx, req.(*KubeadmStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_InspectKubernetesCertificates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InspectKubernetesCertificatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).InspectKubernetesCertificates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_InspectKubernetesCertificates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).InspectKubernetesCertificates(ctx, req.(*InspectKubernetesCertificatesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1562,6 +1672,24 @@ func _NodeAgent_StartKubernetesCertificateRenewal_Handler(srv interface{}, ctx c
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodeAgentServer).StartKubernetesCertificateRenewal(ctx, req.(*StartKubernetesCertificateRenewalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_StartKubernetesCertificateRenewalV2_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartKubernetesCertificateRenewalV2Request)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).StartKubernetesCertificateRenewalV2(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_StartKubernetesCertificateRenewalV2_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).StartKubernetesCertificateRenewalV2(ctx, req.(*StartKubernetesCertificateRenewalV2Request))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1850,6 +1978,24 @@ func _NodeAgent_UpdateEncryptionConfig_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodeAgentServer).UpdateEncryptionConfig(ctx, req.(*UpdateEncryptionConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_GetEtcdEncryptionKeyIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetEtcdEncryptionKeyIdentityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).GetEtcdEncryptionKeyIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_GetEtcdEncryptionKeyIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).GetEtcdEncryptionKeyIdentity(ctx, req.(*GetEtcdEncryptionKeyIdentityRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2237,6 +2383,10 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _NodeAgent_GetKubeadmStatus_Handler,
 		},
 		{
+			MethodName: "InspectKubernetesCertificates",
+			Handler:    _NodeAgent_InspectKubernetesCertificates_Handler,
+		},
+		{
 			MethodName: "ScheduleNodeReboot",
 			Handler:    _NodeAgent_ScheduleNodeReboot_Handler,
 		},
@@ -2287,6 +2437,10 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StartKubernetesCertificateRenewal",
 			Handler:    _NodeAgent_StartKubernetesCertificateRenewal_Handler,
+		},
+		{
+			MethodName: "StartKubernetesCertificateRenewalV2",
+			Handler:    _NodeAgent_StartKubernetesCertificateRenewalV2_Handler,
 		},
 		{
 			MethodName: "GetKubernetesCertificateRenewalStatus",
@@ -2351,6 +2505,10 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateEncryptionConfig",
 			Handler:    _NodeAgent_UpdateEncryptionConfig_Handler,
+		},
+		{
+			MethodName: "GetEtcdEncryptionKeyIdentity",
+			Handler:    _NodeAgent_GetEtcdEncryptionKeyIdentity_Handler,
 		},
 		{
 			MethodName: "StartEtcdEncryptionAtRestObjectsRewrite",

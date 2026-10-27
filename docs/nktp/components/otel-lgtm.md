@@ -5,7 +5,8 @@ NVKE telemetry pipeline (NKTP) deploys it by default so that telemetry is viewab
 Prometheus is available on port 9090 of the `lgtm` Service, for example
 `http://lgtm.nktp.svc:9090` when installed in namespace `nktp`. Grafana is served on port 3000 of the `lgtm` service, with anonymous admin access (no login).
 
-> **Warning:** This container is intended for kicking the tires only. It will not support
+> [!WARNING]
+> This container is intended for kicking the tires only. It will not support
 > substantial scale and MUST be disabled for production use:
 >
 > ```yaml

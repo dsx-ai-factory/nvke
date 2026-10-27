@@ -37,7 +37,8 @@ Collector's main container. See docs/nktp/architecture/self-telemetry.md.
 The sidecar configuration is passed unchanged, as JSON, to --config=yaml:.
 Environment variables are added to the sidecar's env when the list omits them,
 as daemonset.yaml does for the node Collector. Every sidecar configuration uses
-POD_NAME, so it is always added.
+POD_NAME, so it is always added. Workloads inherit priorityClass.name unless
+kubernetes.priorityClassName is explicitly set; an empty string opts out.
 
 Arguments: name (values key), values (workload values), root (chart root),
 sidecarEnv (optional, more env entries to add to the sidecar when missing),
@@ -55,6 +56,9 @@ mainEnv (optional, env entries to add to the main Collector when missing).
 {{- $sidecarEnv := concat (.sidecarEnv | default list) (list $podName) -}}
 {{- $_ := set $container "env" (include "nktp.addEnv" (dict "env" $container.env "add" $sidecarEnv) | fromYaml).env -}}
 {{- $workload := deepCopy .values.kubernetes -}}
+{{- if not (hasKey $workload "priorityClassName") -}}
+{{- $_ := set $workload "priorityClassName" .root.Values.priorityClass.name -}}
+{{- end -}}
 {{- if .mainEnv -}}
 {{- $_ := set $workload "env" (include "nktp.addEnv" (dict "env" $workload.env "add" .mainEnv) | fromYaml).env -}}
 {{- end -}}

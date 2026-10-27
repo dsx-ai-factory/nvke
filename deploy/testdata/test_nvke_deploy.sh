@@ -86,6 +86,14 @@ case "$*" in
   *"capi-controller-manager"*)
     if [[ -n "${STUB_CAPI_IMAGE:-}" ]]; then printf '%s' "${STUB_CAPI_IMAGE}"; else
       echo 'Error from server (NotFound): deployments.apps "capi-controller-manager" not found' >&2; exit 1; fi ;;
+  *"get secret oidc-provider-upstream-ca"*)
+    # The CA Secret the OIDC upstream CA Certificate is gated on. Absent is a
+    # site with no CA yet, so the Certificate applies; STUB_CA_SECRET is a
+    # site that already has one.
+    if [[ -z "${STUB_CA_SECRET:-}" ]]; then
+      echo 'Error from server (NotFound): secrets "oidc-provider-upstream-ca" not found' >&2; exit 1
+    fi
+    printf 'oidc-provider-upstream-ca\n' ;;
   *"capi-kubeadm-"*)
     if [[ -n "${STUB_DENY_KUBEADM:-}" ]]; then echo 'Error from server (Forbidden): deployments.apps is forbidden' >&2; exit 1; fi
     if [[ -n "${STUB_NO_KUBEADM:-}" ]]; then echo 'Error from server (NotFound): deployments.apps not found' >&2; exit 1; else printf 'deployment.apps/x'; fi ;;
@@ -184,6 +192,24 @@ expect "the external render shows the connection string shape" '^expected in the
 [[ ! -e "${WORK}/external/site-credentials" && ! -e "${WORK}/external/nvke-base-config/20-nico-credentials.yaml" && -e "${WORK}/external/nvke-base-config/45-nktp-cluster.yaml" && ! -e "${WORK}/external/.gitignore" ]] && pass "the external tree carries no Secret and no .gitignore" || fail "external tree: $(ls -a "${WORK}/external" "${WORK}/external/nvke-base-config")"
 ! grep -rqF -e "${DEPLOY_DIR}" -e "${WORK}" "${WORK}/external" && pass "the external tree names no path of this machine" || fail "the external tree names a local path: $(grep -rnF -e "${DEPLOY_DIR}" -e "${WORK}" "${WORK}/external" | head -3)"
 grep -q 'path: ../../controller/deploy/charts/controller' "${WORK}/external/controller/release.yaml" && pass "the external tree keeps the committed chart path" || fail "external controller release.yaml: $(cat "${WORK}/external/controller/release.yaml")"
+
+# create-if-absent: the OIDC upstream CA Certificate is applied on a first
+# install and skipped once the CA Secret exists, so re-running the install on
+# a site that has a CA cannot re-issue it under the new NVKE subject. The two
+# Issuers beside it carry no key material and are applied either way.
+ca_cert="${rendered}/nvke-base-config/41-oidc-upstream-ca-certificate.yaml"
+ca_out="$(PATH="${stubs}:${PATH}" bash "${EXECUTOR}" install --deploy-path "${rendered}" --dry-run 2>&1)" || fail "first-install dry run exited $?: ${ca_out}"
+expect "a site with no CA applies the CA Certificate" "^kubectl apply --server-side -f ${ca_cert}" "${ca_out}"
+expect "and its Issuers" "^kubectl apply --server-side -f ${rendered}/nvke-base-config/40-oidc-upstream-ca.yaml" "${ca_out}"
+ca_out="$(STUB_CA_SECRET=1 PATH="${stubs}:${PATH}" bash "${EXECUTOR}" install --deploy-path "${rendered}" --dry-run 2>&1)" || fail "re-install dry run exited $?: ${ca_out}"
+reject "a site that has a CA does not re-apply the Certificate" "apply --server-side -f ${ca_cert}" "${ca_out}"
+expect "and says why it was skipped" 'skipping 41-oidc-upstream-ca-certificate\.yaml: secret/oidc-provider-upstream-ca already exists in spire-server' "${ca_out}"
+expect "the Issuers are applied on a re-install too" "^kubectl apply --server-side -f ${rendered}/nvke-base-config/40-oidc-upstream-ca.yaml" "${ca_out}"
+# A probe that fails for a reason other than NotFound is not "absent": in a
+# dry run it is reported and the file counted as absent, and a real install
+# stops rather than re-issue the CA on a cluster it could not read.
+ca_out="$(STUB_API_DOWN=1 PATH="${stubs}:${PATH}" bash "${EXECUTOR}" install --deploy-path "${rendered}" --dry-run 2>&1)" || fail "unreadable-cluster dry run exited $?: ${ca_out}"
+expect "a dry run reports a probe it could not make" 'cannot probe secret/oidc-provider-upstream-ca in spire-server' "${ca_out}"
 
 out="$(bash "${EXECUTOR}" install --deploy-path "${rendered}" --dry-run 2>&1)" || fail "rendered dry run exited $?"
 expect "the controller takes its site values" "helm upgrade --install nke-controller .*--values ${rendered}/controller/values.yaml --values ${rendered}/controller/overlay.yaml --values ${rendered}/controller/site-values.yaml" "${out}"
@@ -524,7 +550,25 @@ LOCAL_DEPLOY="${DEPLOY_DIR}/nvke-deploy-local.sh"
 lstubs="${WORK}/local-site-stubs"
 mkdir -p "${lstubs}"
 printf '#!/usr/bin/env bash\n[[ -z "${STUB_LOG:-}" ]] || printf "%%s\\n" "nerdctl $*" >>"${STUB_LOG}"\ncase "$*" in *inspect*) exit 1 ;; esac\nexit 0\n' >"${lstubs}/nerdctl"
-printf '#!/usr/bin/env bash\n[[ -z "${STUB_LOG:-}" ]] || printf "%%s\\n" "docker $*" >>"${STUB_LOG}"\ncase "$*" in *"network inspect"*) exit 1 ;; esac\nexit 0\n' >"${lstubs}/docker"
+# docker ps answers node-<id> for each instance id in STUB_DOCKER_NODES that
+# its filter names, as Docker would for a node with that instance label.
+cat >"${lstubs}/docker" <<'STUB'
+#!/usr/bin/env bash
+[[ -z "${STUB_LOG:-}" ]] || printf '%s\n' "docker $*" >>"${STUB_LOG}"
+case "$*" in
+  *"network inspect"*) exit 1 ;;
+  "ps "*)
+    [[ -z "${STUB_DOCKER_PS_FAIL:-}" ]] || exit 1
+    for arg in "$@"; do
+      [[ "${arg}" == label=nvidia.com/nico-containers.instance-id=* ]] || continue
+      for node in ${STUB_DOCKER_NODES:-}; do
+        [[ "${node}" != "${arg#*instance-id=}" ]] || printf 'node-%s\n' "${node}"
+      done
+    done
+    ;;
+esac
+exit 0
+STUB
 printf '#!/usr/bin/env bash\n[[ -z "${STUB_LOG:-}" ]] || printf "%%s\\n" "kubectl $*" >>"${STUB_LOG}"\nexit 1\n' >"${lstubs}/kubectl"
 printf '#!/usr/bin/env bash\nexit 0\n' >"${lstubs}/iptables"
 printf '#!/usr/bin/env bash\n[[ -z "${STUB_LOG:-}" ]] || printf "%%s\\n" "ip $*" >>"${STUB_LOG}"\nexit 1\n' >"${lstubs}/ip"
@@ -561,6 +605,36 @@ rm -rf "${WORK}/local-site"
 mkdir -p "${WORK}/local-site/releases" && : >"${WORK}/local-site/.local-site"
 out="$(lsite down)" || fail "down on a half-finished workspace exited $?: ${out}"
 [[ ! -e "${WORK}/local-site" ]] && pass "down removes a workspace the setup started" || fail "half-finished workspace left"
+# down removes the tenant nodes this workspace's nico-sim created, by the
+# instance ids in its database, not every node of the seeded site.
+if command -v python3 >/dev/null 2>&1; then
+  instance_id=7f3c9a2e-4b1d-4e8a-9c6f-2d5e8b1a0c47
+  mkdir -p "${WORK}/local-site" && : >"${WORK}/local-site/.local-site"
+  python3 -c 'import sqlite3, sys; c = sqlite3.connect(sys.argv[1]); c.execute("CREATE TABLE instances (id TEXT PRIMARY KEY)"); c.execute("INSERT INTO instances VALUES (?)", (sys.argv[2],)); c.commit()' "${WORK}/local-site/.nico-sim.db" "${instance_id}"
+  # Another nico-sim's node on the same Docker daemon, which down must keep.
+  decoy_id=0b8e4d1f-6a2c-4f3e-8d7b-5c9a1e2f3d64
+  : >"${WORK}/local-site.log"
+  out="$(STUB_LOG="${WORK}/local-site.log" STUB_DOCKER_NODES="${instance_id} ${decoy_id}" lsite down)" || fail "down on a workspace with a nico-sim database exited $?: ${out}"
+  expect "down looks up this nico-sim's instances by id" "^docker ps .*label=nvidia\\.com/nico-containers\\.instance-id=${instance_id}\$" "$(cat "${WORK}/local-site.log")"
+  reject "down does not select by the shared seeded site" 'nico-containers\.site-id' "$(cat "${WORK}/local-site.log")"
+  expect "down removes the node it found, with its volumes" "^docker rm -f -v node-${instance_id}\$" "$(cat "${WORK}/local-site.log")"
+  reject "down keeps another nico-sim's node" "${decoy_id}" "$(cat "${WORK}/local-site.log")"
+  [[ ! -e "${WORK}/local-site" ]] && pass "down removes a workspace with a nico-sim database" || fail "workspace with a nico-sim database left"
+  # The database is the only record of those nodes: when it cannot be read,
+  # or Docker cannot list them, down stops and keeps the workspace.
+  mkdir -p "${WORK}/local-site" && : >"${WORK}/local-site/.local-site"
+  printf 'not a database\n' >"${WORK}/local-site/.nico-sim.db"
+  out="$(lsite down)" && fail "down on an unreadable nico-sim database exited 0"
+  expect "down says it cannot find the tenant nodes" 'cannot tell which tenant nodes are this workspace' "${out}"
+  [[ -f "${WORK}/local-site/.nico-sim.db" ]] && pass "down keeps a workspace whose database it cannot read" || fail "workspace with an unreadable database removed"
+  rm -rf "${WORK}/local-site"
+  mkdir -p "${WORK}/local-site" && : >"${WORK}/local-site/.local-site"
+  python3 -c 'import sqlite3, sys; c = sqlite3.connect(sys.argv[1]); c.execute("CREATE TABLE instances (id TEXT PRIMARY KEY)"); c.execute("INSERT INTO instances VALUES (?)", (sys.argv[2],)); c.commit()' "${WORK}/local-site/.nico-sim.db" "${instance_id}"
+  out="$(STUB_DOCKER_PS_FAIL=1 lsite down)" && fail "down with a failing docker ps exited 0"
+  expect "down says it cannot list the tenant nodes" 'cannot list the tenant nodes in Docker' "${out}"
+  [[ -f "${WORK}/local-site/.nico-sim.db" ]] && pass "down keeps the workspace when Docker cannot list the tenant nodes" || fail "workspace removed after a failing docker ps"
+  rm -rf "${WORK}/local-site"
+fi
 if [[ "$(uname -s)" != Linux || "$(id -u)" != 0 ]]; then
   out="$(lsite setup)" && fail "local-site.sh setup off Linux or without root exited 0"
   expect "setup names what it needs" '^local-site: run as root|^local-site: run this inside the Colima machine' "${out}"

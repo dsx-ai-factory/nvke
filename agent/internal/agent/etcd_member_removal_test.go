@@ -51,7 +51,7 @@ type fakeEtcdMemberClient struct {
 	alarmErr error
 
 	// unavailablePeers marks peer client URLs that fail the availability probe,
-	// modelling a registered voter that is offline. Keyed by client URL because
+	// modeling a registered voter that is offline. Keyed by client URL because
 	// that is what the probe dials. Peer probes are counted separately from
 	// local ones so adding a peer does not shift statusFn's call numbering.
 	unavailablePeers map[string]bool

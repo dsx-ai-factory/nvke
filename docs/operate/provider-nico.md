@@ -6,9 +6,9 @@ NICo is NVKE's default infrastructure provider; LaunchLayer is also supported on
 
 ## Before you begin
 
-- You have completed [Run NVKE end to end on one machine](../get-started/local-site.md). That procedure installs CAPNICo in the `capnico-system` namespace and writes your NICo API details from the `nico` section of the stack config to the `nico-credentials` Secret, before it installs the management plane.
+- You have completed [Install the management plane](install-management-plane.md). That procedure installs CAPNICo in the `capnico-system` namespace and writes your NICo API details from the `nico` section of the stack config to the `nico-credentials` Secret, before it installs the management plane.
 - You have the management cluster kubeconfig, `<CLUSTER_NAME>.kubeconfig`, and `kubectl` on `PATH`. The kubeconfig must be able to read Secrets in the `capnico-system` namespace.
-- `nvkectl` points at your management plane, as set in [Run NVKE end to end on one machine](../get-started/local-site.md) with `nvkectl config set-site`. If API authentication is on, `nvkectl` uses an OpenID Connect (OIDC) kubeconfig, as described in [Secure the NVKE API](api-authentication.md), and `nvkectl get providers` fails with it, because it reads the management cluster's Kubernetes API, which does not accept your identity provider's tokens. The steps that use it give a `kubectl` alternative.
+- `nvkectl` points at your management plane, as set in [Install the management plane](install-management-plane.md) with `nvkectl config set-site`. If API authentication is on, `nvkectl` uses an OpenID Connect (OIDC) kubeconfig, as described in [Secure the NVKE API](api-authentication.md), and `nvkectl get providers` fails with it, because it reads the management cluster's Kubernetes API, which does not accept your identity provider's tokens. The steps that use it give a `kubectl` alternative.
 - In NICo, you have:
   - A site, with machines enrolled.
   - A virtual private cloud (VPC) in that site, and either VPC prefixes or subnets in it for the nodes.

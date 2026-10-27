@@ -1,31 +1,89 @@
-calls:
-- POST /api/clusters (1 calls; finalizer persisted)
-createRequest:
-  cniPlugin: ovn-kubernetes
-  controlPlaneConfig:
-    desiredCount: 3
+clusters:
+- cniPlugin: ""
+  cniVersion: ""
+  conditions:
+    deleting:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "False"
+    provisioned:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "True"
+    provisioning:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "False"
+  controlPlaneKubernetesVersion: ""
+  createdAt: "0001-01-01T00:00:00Z"
+  etcdEncrypted: false
+  id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+  name: cluster-1-34bd578c-mgmt-eng
+  network:
+    podCIDR: ""
+    serviceCIDR: ""
+nodePools:
+- autoModeDisabled: false
+  autoProvisionDisabled: false
+  clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+  conditions:
+    deleting:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "False"
+    provisioned:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "True"
+    provisioning:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "False"
+  controlPlane: false
+  currentNodeSetID: null
+  desiredNodeCount: 1
+  id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+  infra:
+    machineTemplate:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+      kind: DockerMachineTemplate
+      spec:
+        template:
+          metadata:
+            annotations:
+              cluster.x-k8s.io/paused: "true"
+            labels:
+              instance-type: 33333333-3333-4333-8333-333333333333
+              vpc-id: 22222222-2222-4222-8222-222222222222
+          spec: {}
+  kubernetesVersion: ""
+  name: workers
+  nodeLabels: null
+  nodeNamePrefix: workers
+  nodeTaints: null
+  provisioningMonitorDisabled: true
+  recycleBudget: 0
+  systemReservedMemory: 1Gi
+requests:
+- createNodePool:
+    clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    desiredNodeCount: 1
     infra:
-      bootstrapFiles:
-      - content: example
-        owner: ""
-        path: /tmp/example
-        permissions: ""
       machineTemplate:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
         kind: DockerMachineTemplate
         spec:
           template:
-            spec:
-              subnetIDs:
-              - id: opaque
-  controlPlaneKubernetesVersion: 1.36.1
-  etcdEncrypted: true
-  infra:
-    cluster:
-      apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
-      kind: DockerCluster
-      spec: {}
-  name: nke-CLUSTER-UID
-  network:
-    podCIDR: 10.244.0.0/16
-    serviceCIDR: 10.96.0.0/12
+            metadata:
+              annotations:
+                cluster.x-k8s.io/paused: "true"
+              labels:
+                instance-type: 33333333-3333-4333-8333-333333333333
+                vpc-id: 22222222-2222-4222-8222-222222222222
+            spec: {}
+    name: workers
+    nodeNamePrefix: workers
+    provisioningMonitorDisabled: true
+    systemReservedMemory: 1Gi
+  method: POST
+  path: /api/nodePools

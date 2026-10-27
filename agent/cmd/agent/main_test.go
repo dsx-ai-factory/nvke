@@ -4,12 +4,61 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"flag"
+	"io"
+	"log/slog"
+	"net"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/test/bufconn"
 )
+
+type synchronizedBuffer struct {
+	mu sync.Mutex
+	bytes.Buffer
+	writes chan struct{}
+}
+
+func newSynchronizedBuffer() *synchronizedBuffer {
+	return &synchronizedBuffer{writes: make(chan struct{}, 16)}
+}
+
+func (b *synchronizedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	n, err := b.Buffer.Write(p)
+	b.mu.Unlock()
+	b.writes <- struct{}{}
+	return n, err
+}
+
+func (b *synchronizedBuffer) Read(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.Read(p)
+}
+
+func (b *synchronizedBuffer) waitForWrite(t *testing.T) {
+	t.Helper()
+	select {
+	case <-b.writes:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for audit record")
+	}
+}
 
 // The authorizer is the whole of this agent's access control, so these pin what it
 // refuses as much as what it admits.
@@ -132,7 +181,7 @@ func TestValidateAuthConfig(t *testing.T) {
 				GRPCAuthMode:             authModeSPIFFEMTLS,
 				ControllerClientCABundle: "/etc/nke/controller-ca.crt",
 			},
-			wantErr: "--controller-client-ca-bundle requires --grpc-auth-mode=tls-jwt",
+			wantErr: "--nvke-controller-client-ca-bundle requires --grpc-auth-mode=tls-jwt",
 		},
 		{
 			name: "external mTLS cannot run on plaintext gRPC",
@@ -142,7 +191,7 @@ func TestValidateAuthConfig(t *testing.T) {
 				DSXIdentityExchangeURL:   "https://identity.example.test/v1/exchange",
 				ControllerClientCABundle: "/etc/nke/controller-ca.crt",
 			},
-			wantErr: "--controller-client-ca-bundle cannot be combined with --disable-mtls",
+			wantErr: "--nvke-controller-client-ca-bundle cannot be combined with --disable-mtls",
 		},
 	}
 
@@ -178,33 +227,39 @@ func TestControllerAudienceCompatibility(t *testing.T) {
 	}
 }
 
-func TestControllerClientCABundleNames(t *testing.T) {
+func TestControllerClientCABundleName(t *testing.T) {
 	tests := []struct {
-		name string
-		env  map[string]string
-		args []string
-		want string
+		name    string
+		env     map[string]string
+		args    []string
+		want    string
+		wantErr string
 	}{
 		{name: "unset", want: ""},
-		{name: "nvke flag", args: []string{"--nvke-controller-client-ca-bundle=/nvke.crt"}, want: "/nvke.crt"},
-		{name: "nvke env", env: map[string]string{"NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nvke.crt"}, want: "/nvke.crt"},
-		{name: "earlier flag", args: []string{"--controller-client-ca-bundle=/earlier.crt"}, want: "/earlier.crt"},
-		{name: "earlier env", env: map[string]string{"NKE_CONTROLLER_CLIENT_CA_BUNDLE": "/earlier.crt"}, want: "/earlier.crt"},
+		{name: "flag", args: []string{"--nvke-controller-client-ca-bundle=/nvke.crt"}, want: "/nvke.crt"},
+		{name: "env", env: map[string]string{"NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nvke.crt"}, want: "/nvke.crt"},
 		{
-			name: "both flags: nvke wins",
-			args: []string{"--controller-client-ca-bundle=/earlier.crt", "--nvke-controller-client-ca-bundle=/nvke.crt"},
-			want: "/nvke.crt",
+			name: "flag overrides env",
+			env:  map[string]string{"NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/env.crt"},
+			args: []string{"--nvke-controller-client-ca-bundle=/flag.crt"},
+			want: "/flag.crt",
 		},
 		{
-			name: "both env: nvke wins",
-			env:  map[string]string{"NKE_CONTROLLER_CLIENT_CA_BUNDLE": "/earlier.crt", "NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nvke.crt"},
-			want: "/nvke.crt",
+			name: "empty flag overrides env",
+			env:  map[string]string{"NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/env.crt", "NKE_CONTROLLER_CLIENT_CA_BUNDLE": "/other.crt"},
+			args: []string{"--nvke-controller-client-ca-bundle="},
+			want: "",
 		},
 		{
-			name: "nvke env and earlier flag: nvke wins",
-			env:  map[string]string{"NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nvke.crt"},
-			args: []string{"--controller-client-ca-bundle=/earlier.crt"},
-			want: "/nvke.crt",
+			name:    "--controller-client-ca-bundle is not a flag",
+			args:    []string{"--controller-client-ca-bundle=/other.crt"},
+			wantErr: "flag provided but not defined: -controller-client-ca-bundle",
+		},
+		{
+			// An unread setting leaves external mTLS off, so the agent stays on SPIFFE mTLS.
+			name: "NKE_CONTROLLER_CLIENT_CA_BUNDLE is not read",
+			env:  map[string]string{"NKE_CONTROLLER_CLIENT_CA_BUNDLE": "/other.crt"},
+			want: "",
 		},
 	}
 	for _, tc := range tests {
@@ -215,13 +270,114 @@ func TestControllerClientCABundleNames(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			fs := flag.NewFlagSet("agent", flag.ContinueOnError)
-			bundle := registerControllerClientCABundleFlags(fs)
-			if err := fs.Parse(tc.args); err != nil {
+			fs.SetOutput(io.Discard)
+			bundle := registerControllerClientCABundleFlag(fs)
+			err := fs.Parse(tc.args)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("Parse(%v) = %v, want error containing %q", tc.args, err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
 				t.Fatalf("Parse(%v) = %v", tc.args, err)
 			}
-			if got := bundle(); got != tc.want {
+			if got := *bundle; got != tc.want {
 				t.Fatalf("controller client CA bundle = %q, want %q", got, tc.want)
 			}
 		})
 	}
+}
+
+func TestAuditLogCarriesIncomingTraceContext(t *testing.T) {
+	auditLog := newSynchronizedBuffer()
+	server := grpc.NewServer(newGRPCServerOptions(slog.New(slog.NewJSONHandler(auditLog, nil)))...)
+	healthpb.RegisterHealthServer(server, health.NewServer())
+
+	listener := bufconn.Listen(1024 * 1024)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, conn.Close()) })
+	client := healthpb.NewHealthClient(conn)
+
+	const traceID = "0123456789abcdef0123456789abcdef"
+	const parentSpanID = "0123456789abcdef"
+	tracedCtx := metadata.AppendToOutgoingContext(
+		context.Background(),
+		"traceparent", "00-"+traceID+"-"+parentSpanID+"-01",
+	)
+	_, err = client.Check(tracedCtx, &healthpb.HealthCheckRequest{})
+	require.NoError(t, err)
+	_, err = client.Check(context.Background(), &healthpb.HealthCheckRequest{})
+	require.NoError(t, err)
+	malformedCtx := metadata.AppendToOutgoingContext(
+		context.Background(),
+		"traceparent", "not-a-valid-traceparent",
+	)
+	_, err = client.Check(malformedCtx, &healthpb.HealthCheckRequest{})
+	require.NoError(t, err)
+
+	decoder := json.NewDecoder(auditLog)
+	var tracedRecord map[string]any
+	auditLog.waitForWrite(t)
+	require.NoError(t, decoder.Decode(&tracedRecord))
+	assert.Equal(t, traceID, tracedRecord["trace_id"])
+	assert.Equal(t, parentSpanID, tracedRecord["span_id"])
+	assert.Equal(t, "/grpc.health.v1.Health/Check", tracedRecord["method"])
+	assert.GreaterOrEqual(t, tracedRecord["duration_ms"], float64(0))
+
+	var untracedRecord map[string]any
+	auditLog.waitForWrite(t)
+	require.NoError(t, decoder.Decode(&untracedRecord))
+	assert.NotContains(t, untracedRecord, "trace_id")
+	assert.NotContains(t, untracedRecord, "span_id")
+
+	var malformedRecord map[string]any
+	auditLog.waitForWrite(t)
+	require.NoError(t, decoder.Decode(&malformedRecord))
+	assert.NotContains(t, malformedRecord, "trace_id")
+	assert.NotContains(t, malformedRecord, "span_id")
+
+	tracedStreamCtx, cancelTracedStream := context.WithCancel(tracedCtx)
+	tracedStream, err := client.Watch(tracedStreamCtx, &healthpb.HealthCheckRequest{})
+	require.NoError(t, err)
+	_, err = tracedStream.Recv()
+	require.NoError(t, err)
+	cancelTracedStream()
+	_, err = tracedStream.Recv()
+	require.Error(t, err)
+
+	var tracedStreamRecord map[string]any
+	auditLog.waitForWrite(t)
+	require.NoError(t, decoder.Decode(&tracedStreamRecord))
+	assert.Equal(t, traceID, tracedStreamRecord["trace_id"])
+	assert.Equal(t, parentSpanID, tracedStreamRecord["span_id"])
+	assert.Equal(t, "/grpc.health.v1.Health/Watch", tracedStreamRecord["method"])
+	assert.GreaterOrEqual(t, tracedStreamRecord["duration_ms"], float64(0))
+
+	untracedStreamCtx, cancelUntracedStream := context.WithCancel(context.Background())
+	untracedStream, err := client.Watch(untracedStreamCtx, &healthpb.HealthCheckRequest{})
+	require.NoError(t, err)
+	_, err = untracedStream.Recv()
+	require.NoError(t, err)
+	cancelUntracedStream()
+	_, err = untracedStream.Recv()
+	require.Error(t, err)
+
+	var untracedStreamRecord map[string]any
+	auditLog.waitForWrite(t)
+	require.NoError(t, decoder.Decode(&untracedStreamRecord))
+	assert.NotContains(t, untracedStreamRecord, "trace_id")
+	assert.NotContains(t, untracedStreamRecord, "span_id")
+	assert.Equal(t, "/grpc.health.v1.Health/Watch", untracedStreamRecord["method"])
 }

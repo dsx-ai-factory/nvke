@@ -12,9 +12,9 @@ IFUPDOWN_DIR="${IFUPDOWN_DIR:-/etc/network/interfaces.d}"
 # SYS_CLASS_NET_DIR is overridable for tests; production always reads /sys.
 SYS_CLASS_NET_DIR="${SYS_CLASS_NET_DIR:-/sys/class/net}"
 UPLINK_MTU="${UPLINK_MTU:-}"
-# UPLINK_BRIDGE_NAME pins the OVS bridge name. The NVKE controller leaves this unset; the
-# default br<kernel-iface> derivation below matches ovn-kubernetes's
-# strip-br convention. Set this only to override the derivation.
+# UPLINK_BRIDGE_NAME pins the OVS bridge name. The NVKE controller leaves this
+# unset and resolve_bridge_name derives one. Set this only to override the
+# derivation.
 UPLINK_BRIDGE_NAME="${UPLINK_BRIDGE_NAME:-}"
 # UPLINK_INTERFACE explicitly names the kernel NIC to bridge (wins over
 # UPLINK_INTERFACE_SELECTOR). When neither is set, the default-route NIC is used.
@@ -174,13 +174,70 @@ check_already_configured() {
   local bridges
   bridges=$(ovs-vsctl list-br 2>/dev/null || true)
   if echo "$bridges" | grep -qx "$target_bridge_name"; then
+    backfill_bridge_uplink "$target_bridge_name"
     echo "Open vSwitch bridge $target_bridge_name has already been configured."
     exit 0
   fi
   if [[ "$DEFAULT_IF" =~ ^br.*$ ]] && echo "$bridges" | grep -qx "$DEFAULT_IF"; then
+    backfill_bridge_uplink "$DEFAULT_IF"
     echo "Open vSwitch bridge $DEFAULT_IF has already been configured."
     exit 0
   fi
+}
+
+# record_bridge_uplink names the bridge's physical port in the OVS database.
+# ovn-kubernetes reads external-ids:bridge-uplink first when it resolves a
+# bridge's uplink; failing that it wants a single interface of type "system",
+# which a port added by netplan does not carry, and then strips the bridge
+# prefix off the bridge name. That last guess is what resolve_bridge_name
+# invalidates whenever it substitutes rather than prefixes, so a bridge without
+# this external-id is one ovn-kubernetes cannot read.
+record_bridge_uplink() {
+  local bridge="$1"
+  local uplink="$2"
+  # Fails the caller. A bridge built without this is one ovn-kubernetes cannot
+  # resolve an uplink for, and it reports that half an hour later as a cluster
+  # that never finished provisioning. The backfill ignores the failure; a path
+  # that just built the bridge must not.
+  if ! ovs-vsctl set bridge "$bridge" external-ids:bridge-uplink="$uplink"; then
+    echo "Error: could not record uplink $uplink on bridge $bridge." >&2
+    return 1
+  fi
+  echo "Recorded uplink $uplink on bridge $bridge."
+}
+
+# backfill_bridge_uplink records the uplink of a bridge this run is leaving
+# alone. A bridge built before the external-id was written carries no record of
+# its uplink, and a rerun short-circuits above rather than rebuilding it, so
+# without this such a node stays unreadable to ovn-kubernetes for as long as it
+# lives.
+#
+# Best effort throughout, and never fails: the bridge is already carrying the
+# node's traffic, and a rerun that used to succeed must keep succeeding.
+backfill_bridge_uplink() {
+  local bridge="$1"
+  local recorded ports count
+  recorded=$(ovs-vsctl br-get-external-id "$bridge" bridge-uplink 2>/dev/null || true)
+  if [ -n "$recorded" ]; then
+    return 0
+  fi
+  # ovn-kubernetes patches the uplink bridge to br-int once it is running, so a
+  # bridge that has ever carried OVN holds a port that is not a NIC and never
+  # the uplink. Matched on interface type, not on a name prefix: OVS guarantees
+  # the type, and "patch-" is a convention rather than a rule.
+  local patches
+  patches=$(ovs-vsctl --bare --columns=name find interface type=patch 2>/dev/null || true)
+  # grep -F takes the patch names one per line; with no patches the empty
+  # pattern plus -x drops only blank lines, which is what we want anyway.
+  ports=$(ovs-vsctl list-ports "$bridge" 2>/dev/null | grep -vxF "$patches" || true)
+  count=$(printf '%s\n' "$ports" | grep -c . || true)
+  # More than one port is a topology this cannot name without guessing, and
+  # guessing the uplink is the failure this external-id exists to prevent.
+  if [ "$count" != "1" ]; then
+    echo "Leaving the uplink of $bridge unrecorded: $count candidate port(s)."
+    return 0
+  fi
+  record_bridge_uplink "$bridge" "$ports" || true
 }
 
 regenerate_ovs_system_id() {
@@ -243,12 +300,36 @@ find_netplan_config() {
   fi
 }
 
+# Prefixing is kept wherever it fits, so a fleet that already runs brens1np0
+# keeps that name and nothing is renamed by an upgrade. Only when the prefix
+# would overflow IFNAMSIZ-1 is the uplink's leading "en" substituted instead:
+# both affixes are two characters, so the result is within the limit for any
+# name the kernel can hand us. enP13p65s0f0np0 on a GB200 tray is exactly at
+# the limit, and brenP13p65s0f0np0 is two over.
+#
+# This derivation never fails. A name that still does not fit is caught by
+# require_bridge_name_fits, which the caller runs AFTER check_already_configured
+# -- on a rerun DEFAULT_IF is the bridge we built last time, and composing
+# br<bridge> must not be fatal before the short-circuit sees it.
 resolve_bridge_name() {
   local kernel_if="$1"
   if [ -n "${UPLINK_BRIDGE_NAME:-}" ]; then
     echo "$UPLINK_BRIDGE_NAME"
-  else
-    echo "br${kernel_if}"
+    return 0
+  fi
+  local bridge="br${kernel_if}"
+  if [ "${#bridge}" -gt 15 ]; then
+    bridge="br${kernel_if#en}"
+  fi
+  echo "$bridge"
+}
+
+# IFNAMSIZ is 16 including the NUL, so the kernel refuses anything longer
+# than 15 and the bridge could never be created.
+require_bridge_name_fits() {
+  local bridge="$1"
+  if [ "${#bridge}" -gt 15 ]; then
+    error_exit "derived bridge name ${bridge} exceeds the Linux interface-name limit"
   fi
 }
 
@@ -613,6 +694,12 @@ iface $BRIDGE_NAME inet static
 	ovs_ports $DEFAULT_IF
 EOF
 
+  # Last, and both halves of that matter. It fails the caller, so it must come
+  # after the address has moved to the bridge --- aborting between add-port and
+  # that move leaves the node unreachable --- and after the ifupdown files are
+  # written, or a reboot would restore the bare NIC's configuration.
+  record_bridge_uplink "$BRIDGE_NAME" "$DEFAULT_IF"
+
   verify_bridge
 }
 
@@ -628,6 +715,7 @@ configure_openvswitch() {
   local target_bridge_name
   target_bridge_name=$(resolve_bridge_name "$DEFAULT_IF")
   check_already_configured "$target_bridge_name"
+  require_bridge_name_fits "$target_bridge_name"
   regenerate_ovs_system_id
   if [ "${UPLINK_DHCP:-}" = "false" ] && [ -z "${UPLINK_ADDRESS:-}" ]; then
     error_exit "UPLINK_DHCP=false requires UPLINK_ADDRESS"
@@ -661,6 +749,10 @@ configure_openvswitch() {
       transform_netplan_to_bridge
     fi
     apply_and_verify "$default_route_if"
+    # After apply: netplan, not this script, creates the bridge, so there is
+    # nothing to label until it exists. KERNEL_IF is the port both netplan
+    # paths attach.
+    record_bridge_uplink "$BRIDGE_NAME" "$KERNEL_IF"
   else
     configure_ovs_direct
   fi

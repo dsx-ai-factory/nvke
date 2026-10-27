@@ -150,6 +150,7 @@ additionally publishes the controller image and Helm chart:
 | `image-nvcr.yml` | multi-arch image to `nvcr.io/<org>/nvke-controller`, promotes that released image to DSX as `nvcr.io/<dsx-org-team>/nvke-controller`, and promotes release tags to `ghcr.io/dsx-ai-factory/nvke/nke-controller` |
 | `chart-publish.yml` | chart to `ghcr.io/dsx-ai-factory/nvke/charts/nvke-controller` |
 | `chart-publish-nvcr.yml` | chart to `nvcr.io/<org>/nvke-controller-chart` and `nvcr.io/<dsx-org-team>/nvke-controller-chart` |
+| `image-validate-nvcr.yml` | multi-arch site validation image (`controller/test/e2e/Dockerfile`) pushed straight to DSX as `nvcr.io/<dsx-org-team>/nvke-validate`, under the controller image's version |
 
 Every `main` commit already publishes the image and chart to NVCR. GHCR receives
 released versions only, which is why a chart built from a tag can safely point at
@@ -160,8 +161,11 @@ Releases before the repository moved to `dsx-ai-factory` on 2026-09-12 were prom
 image exists nowhere. Later releases land under `ghcr.io/dsx-ai-factory/nvke`.
 
 DSX receives the controller image from `image-nvcr.yml`, after the NVKE multi-arch
-manifest exists. It receives the controller chart from `chart-publish-nvcr.yml`.
-Both use separate credentials from the same protected GitHub environment:
+manifest exists. It receives the controller chart from `chart-publish-nvcr.yml`,
+and the validation image that tests that controller from
+`image-validate-nvcr.yml`, tagged with the same version so a site that pins a
+controller can run the tests built from the same commit. All three use separate
+credentials from the same protected GitHub environment:
 
 | Name | Type | Purpose |
 |---|---|---|

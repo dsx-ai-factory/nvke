@@ -138,8 +138,7 @@ done
 
 [[ -s "${CSV}" ]] || die "go-licenses produced no rows for ${PACKAGES[*]}."
 
-# package -> module@version, so a reader can pin what was actually linked, and
-# so the settle step below can compare the version against the committed file.
+# package -> module@version, so a reader can pin what was actually linked.
 MODMAP="${WORK}/modmap"
 for platform in "${PLATFORMS[@]}"; do
     goos="${platform%/*}"; goarch="${platform#*/}"
@@ -147,118 +146,6 @@ for platform in "${PLATFORMS[@]}"; do
         -f '{{if .Module}}{{.ImportPath}} {{.Module.Path}}@{{.Module.Version}}{{end}}' \
         "${PACKAGES[@]}" 2>/dev/null
 done | sort -u >"${MODMAP}"
-
-# Settle the licence URL from the committed file, not the network.
-#
-# For a module in a repository subdirectory with a major version suffix --
-# go.etcd.io/etcd/client/v3, tagged client/v3.7.1 -- the directory may be
-# client/v3 or client, and etcd has both kinds: api/v3 lives in api/. The repair
-# above cannot help, because the tag carries the subdirectory either way.
-# go-licenses decides with a HEAD request for <dir>/vN/go.mod on github.com and,
-# in its own words, "on any failure, assume that the right directory is the one
-# without the version" (pkgsite's source.adjustVersionedModuleDirectory).
-# GitHub-hosted runners are throttled often enough that the URL flips between
-# runs, and notices-check cannot tell a flip from a change, since it compares
-# the file against a regeneration of itself.
-#
-# So when the committed file already has a URL for the package that differs
-# from the regenerated one only by that /vN segment, the committed URL stands:
-# a human verified it once, and the probe has no information the file lacks.
-# The same holds when the probe finds nothing and go-licenses writes "Unknown":
-# gopkg.in answers its go-get requests with a 502 now and then, and a URL the
-# file already has for the same module version stands over a blank.
-# Anything else -- a new package, a new version, a different licence file --
-# still shows up as a diff, and a new package keeps whatever go-licenses chose,
-# to be verified when it is first committed. The root-module repair below runs
-# after this step on purpose: a committed URL may carry the spurious /vN segment
-# from before that repair existed, and the rule, not the file, decides for roots.
-if [[ -f "${OUTPUT}" ]]; then
-    SETTLED="${WORK}/licenses.settled.csv"
-    awk -F, 'BEGIN { OFS = "," }
-        # First file: the committed index rows, "| [pkg](url) | licence | module |".
-        FILENAME == ARGV[1] {
-            if (match($0, /^\| \[[^]]+\]\([^)]+\)/)) {
-                row = substr($0, RSTART, RLENGTH)
-                pkg = substr(row, 4, index(row, "](") - 4)
-                url = substr(row, index(row, "](") + 2)
-                sub(/\)$/, "", url)
-                committed[pkg] = url
-                mod = $0; sub(/ \|$/, "", mod); sub(/^.* \| /, "", mod)
-                cmod[pkg] = mod
-            }
-            next
-        }
-        # Second file: package -> module@version.
-        FILENAME == ARGV[2] { split($0, f, " "); mp[f[1]] = f[2]; next }
-        # Third file: the regenerated CSV.
-        {
-            if (($1 in committed) && committed[$1] != $2) {
-                a = $2; b = committed[$1]
-                # Drop the first /vN/ segment from each; equal means they differ
-                # only in that segment. The tag "client/v3.7.1" does not match:
-                # a dot follows its digits, not a slash.
-                a2 = a; sub(/\/v[0-9]+\//, "/", a2)
-                b2 = b; sub(/\/v[0-9]+\//, "/", b2)
-                if (a2 == b || b2 == a) { $2 = b }
-                else if (a == "Unknown" && ($1 in mp) && mp[$1] == cmod[$1]) { $2 = b }
-            }
-            print
-        }' "${OUTPUT}" "${MODMAP}" "${CSV}" >"${SETTLED}"
-    SETTLED_N=$(diff <(cut -d, -f2 "${CSV}") <(cut -d, -f2 "${SETTLED}") | grep -c '^>' || true)
-    if [[ "${SETTLED_N}" -gt 0 ]]; then
-        log "kept ${SETTLED_N} committed licence URL(s) over go-licenses' network-dependent choice"
-    fi
-    mv "${SETTLED}" "${CSV}"
-fi
-
-# Repair the licence URL of a major-version module.
-#
-# For a module whose path ends in /vN, go-licenses treats that suffix as a
-# directory inside the repository and writes it into the URL:
-#
-#   https://github.com/blang/semver/blob/v4.0.0/v4/LICENSE      404
-#   https://github.com/blang/semver/blob/v4.0.0/LICENSE         200
-#
-# The reference decides which is right, and it does so without guessing. Go
-# requires a module in a subdirectory to be tagged <subdir>/vX.Y.Z, so a plain
-# vX.Y.Z tag means the module sits at the repository root -- and a root module
-# cannot have a directory prefix on its licence path. When the tag carries no
-# slash and the next segment is exactly the major-version suffix, that segment
-# is spurious.
-#
-# A module genuinely in a vN/ subdirectory is tagged vN/vX.Y.Z, does not match,
-# and is left alone. Pseudo-versions and commit refs do not match either.
-#
-# This mattered beyond the dead links: go-licenses picks the two forms
-# inconsistently between runs on identical input, so notices-check would pass on
-# one run and fail on the next. notices-check cannot detect the wrong form on
-# its own -- it compares the file against a regeneration of itself, so a wrong
-# URL matches a wrong URL.
-REPAIRED="${WORK}/licenses.repaired.csv"
-awk -F, 'BEGIN { OFS = "," }
-    {
-        url = $2
-        # https://<host>/<owner>/<repo>/blob/<ref>/<path>
-        if (match(url, /\/blob\/[^\/]+\//)) {
-            ref  = substr(url, RSTART + 6, RLENGTH - 7)
-            rest = substr(url, RSTART + RLENGTH)
-            # A plain semantic-version tag: the module is at the repository root.
-            if (ref ~ /^v[0-9]+\.[0-9]+\.[0-9]+/ && rest ~ /^v[0-9]+\//) {
-                major = substr(rest, 1, index(rest, "/") - 1)
-                # Only when it matches this module major, e.g. .../json-patch/v5.
-                if ($1 ~ ("/" major "$") || $1 ~ ("/" major "/")) {
-                    $2 = substr(url, 1, RSTART + RLENGTH - 1) substr(rest, length(major) + 2)
-                }
-            }
-        }
-        print
-    }' "${CSV}" >"${REPAIRED}"
-
-REPAIRS=$(diff <(cut -d, -f2 "${CSV}") <(cut -d, -f2 "${REPAIRED}") | grep -c '^>' || true)
-if [[ "${REPAIRS}" -gt 0 ]]; then
-    log "repaired ${REPAIRS} major-version licence URL(s)"
-fi
-mv "${REPAIRED}" "${CSV}"
 
 # -mod=mod is allowed to rewrite go.mod. Generating a documentation file must
 # not quietly change the dependency set. Checked before the URL scan below, so
@@ -293,14 +180,15 @@ if [[ -n "${SELF_REF}" ]]; then
 fi
 
 # Join every licence seen for a package rather than taking the first: a package
-# may be dual-licensed, and dropping one would misstate the terms.
+# may be dual-licensed, and dropping one would misstate the terms. Rows are
+# reduced to unique package/licence pairs before joining, so the label order is
+# canonical and does not depend on the source URL each row carried.
 INDEX="${WORK}/index"
-sort -u "${CSV}" | awk -F, 'NF>=3 {
-    pkg=$1; url=$2; lic=$3
+awk -F, 'NF>=3 { print $1 "," $3 }' "${CSV}" | sort -u | awk -F, '{
+    pkg=$1; lic=$2
     if (!(pkg in seen)) { order[++n]=pkg }
     if (index(seen[pkg], lic) == 0) { seen[pkg] = (seen[pkg]=="" ? lic : seen[pkg]" / "lic) }
-    link[pkg]=url
-} END { for (i=1;i<=n;i++) { p=order[i]; print p "\t" seen[p] "\t" link[p] } }' >"${INDEX}"
+} END { for (i=1;i<=n;i++) { p=order[i]; print p "\t" seen[p] } }' >"${INDEX}"
 
 TMP="${WORK}/out.md"
 {
@@ -321,6 +209,8 @@ the attribution those licenses require.
 Generated from the import closure of \`${PACKAGES[*]}\` in module
 \`${LOCAL_MODULE}\`, for $(printf '%s ' "${PLATFORMS[@]}" | sed 's/ $//').
 
+Index links identify the pinned Go module, independently of source URL discovery.
+
 The Go standard library is excluded, as are packages belonging to this module.
 Test-only and build-time dependencies that are not reachable from the released
 commands are not listed, because they are not distributed.
@@ -330,55 +220,42 @@ commands are not listed, because they are not distributed.
 | Package | License | Module |
 |---|---|---|
 EOF
-    while IFS=$'\t' read -r pkg lic url; do
-        mod=$(awk -v p="${pkg}" '$1==p {print $2; exit}' "${MODMAP}")
-        printf '| [%s](%s) | %s | %s |\n' "${pkg}" "${url}" "${lic}" "${mod:-—}"
+    while IFS=$'\t' read -r pkg lic; do
+        # CSV rows name attribution roots, which need not themselves be imported.
+        # Choose the longest matching module prefix from the actual linked closure.
+        mod=$(awk -v p="${pkg}" '
+            { split($2, parts, "@"); root=parts[1]
+              if ((p==root || index(p, root "/")==1) && length(root)>best) {
+                  best=length(root); value=$2
+              }
+            } END { print value }' "${MODMAP}")
+        [[ -n "${mod}" ]] || die "no linked module metadata for ${pkg}"
+        # go-licenses URL discovery can depend on GitHub API availability. A
+        # version-qualified Go module page is stable for the same import graph.
+        printf '| [%s](https://pkg.go.dev/%s) | %s | %s |\n' "${pkg}" "${mod}" "${lic}" "${mod}"
     done <"${INDEX}"
 
     echo
     echo "## License Texts"
     echo
 
-    # Every attribution file for the package, not just the first. go-licenses
-    # saves LICENSE and NOTICE side by side, and this loop used to take
-    # `sort | head -1` — which under LC_ALL=C always kept LICENSE and always
-    # discarded NOTICE. Apache-2.0 section 4(d) requires the NOTICE text to
-    # travel with the distribution, and this file is how it travels.
-    #
-    # The licence file itself comes from the URL go-licenses reported, not from
-    # a name pattern. Guessing is how the first attempt at this fix went wrong:
-    # go-licenses accepts UNLICENSE and README as licence files (its
-    # licenseRegexp is `^(?i)((UN)?LICEN(S|C)E|COPYING|README|NOTICE).*$`), and
-    # a narrower allowlist drops such a dependency's entire licence text without
-    # a word. The URL's last segment is the file it actually classified;
-    # googlesource spells that "<tag>:LICENSE", hence the second strip.
+    # Every saved attribution file travels with the distribution. Do not use
+    # the discovered URL to select files: URL discovery can fail independently
+    # of save, and selecting NOTICE first used to suppress a fallback LICENSE.
+    # Match go-licenses' classification names, including README and UNLICENSE.
     PKGFILES="${WORK}/pkgfiles"
-    while IFS=$'\t' read -r pkg lic url; do
+    while IFS=$'\t' read -r pkg lic; do
         : >"${PKGFILES}"
-        classified="${url##*/}"; classified="${classified##*:}"
-        if [[ -n "${classified}" && -f "${LICENSES_DIR}/${pkg}/${classified}" ]]; then
-            printf '%s\n' "${LICENSES_DIR}/${pkg}/${classified}" >>"${PKGFILES}"
-        fi
-
-        # Plus any NOTICE. go-licenses saves it but never reports it, so it has
-        # to be found by name. This is the file the old code discarded.
-        find "${LICENSES_DIR}/${pkg}" -maxdepth 1 -type f -iname 'NOTICE*' \
+        find "${LICENSES_DIR}/${pkg}" -maxdepth 1 -type f \
+            \( -iname 'LICEN[SC]E*' -o -iname 'UNLICEN[SC]E*' \
+               -o -iname 'COPYING*' -o -iname 'README*' -o -iname 'NOTICE*' \) \
             2>/dev/null >>"${PKGFILES}"
-
-        # Fallback for a reported URL that names no saved file. Mirrors
-        # go-licenses' own regexp rather than a narrower guess.
-        if [[ ! -s "${PKGFILES}" ]]; then
-            find "${LICENSES_DIR}/${pkg}" -maxdepth 1 -type f \
-                \( -iname 'LICEN[SC]E*' -o -iname 'UNLICEN[SC]E*' \
-                   -o -iname 'COPYING*' -o -iname 'README*' \) \
-                2>/dev/null >>"${PKGFILES}"
-        fi
 
         sort -u -o "${PKGFILES}" "${PKGFILES}"
         count=$(wc -l <"${PKGFILES}" | tr -d ' ')
         # Silence here would mean shipping a dependency with no attribution at
         # all, which is the one outcome this file exists to prevent.
-        [[ "${count}" -gt 0 ]] || die "no attribution file for ${pkg} (go-licenses reported '${classified}')"
+        [[ "${count}" -gt 0 ]] || die "no attribution file for ${pkg}"
 
         printf '### %s\n\n' "${pkg}"
         printf '_%s_\n\n' "${lic}"

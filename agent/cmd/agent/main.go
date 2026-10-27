@@ -23,6 +23,10 @@ import (
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -67,30 +71,16 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-// registerControllerClientCABundleFlags registers the controller client CA
-// bundle under its NVKE name and its earlier name, which nodes already pass.
-// The returned function, called after parsing, gives the NVKE name's value when
-// it is set (flag or environment) and the earlier name's value otherwise.
-func registerControllerClientCABundleFlags(fs *flag.FlagSet) func() string {
-	nvke := fs.String(
+// registerControllerClientCABundleFlag registers --nvke-controller-client-ca-bundle,
+// which defaults to NVKE_CONTROLLER_CLIENT_CA_BUNDLE.
+func registerControllerClientCABundleFlag(fs *flag.FlagSet) *string {
+	return fs.String(
 		"nvke-controller-client-ca-bundle",
 		envOr("NVKE_CONTROLLER_CLIENT_CA_BUNDLE", ""),
 		fmt.Sprintf("PEM CA bundle verifying the controller's client certificate. Setting it selects external mTLS "+
 			"instead of SPIFFE mTLS and requires --grpc-auth-mode=%s. The controller's certificate must also carry "+
 			"the URI SAN %s. Also set via NVKE_CONTROLLER_CLIENT_CA_BUNDLE", authModeTLSJWT, externalmtls.ControllerURI),
 	)
-	legacy := fs.String(
-		"controller-client-ca-bundle",
-		envOr("NKE_CONTROLLER_CLIENT_CA_BUNDLE", ""),
-		"Earlier name for --nvke-controller-client-ca-bundle. When both are set, --nvke-controller-client-ca-bundle wins. "+
-			"Also set via NKE_CONTROLLER_CLIENT_CA_BUNDLE",
-	)
-	return func() string {
-		if *nvke != "" {
-			return *nvke
-		}
-		return *legacy
-	}
 }
 
 // AgentConfig centralizes configuration previously stored in globals.
@@ -125,14 +115,14 @@ func validateAuthConfig(cfg AgentConfig) error {
 	}
 	if cfg.ControllerClientCABundle != "" {
 		if cfg.DisableMTLS {
-			return errors.New("--controller-client-ca-bundle cannot be combined with --disable-mtls: " +
+			return errors.New("--nvke-controller-client-ca-bundle cannot be combined with --disable-mtls: " +
 				"there is no TLS handshake in which to verify the controller certificate")
 		}
 		// The controller does not verify the self-signed certificate the agent
 		// serves in this mode, so without the identity token nothing
 		// authenticates the agent to the controller.
 		if cfg.GRPCAuthMode != authModeTLSJWT {
-			return fmt.Errorf("--controller-client-ca-bundle requires --grpc-auth-mode=%s: "+
+			return fmt.Errorf("--nvke-controller-client-ca-bundle requires --grpc-auth-mode=%s: "+
 				"the controller cannot otherwise authenticate the agent", authModeTLSJWT)
 		}
 	}
@@ -287,51 +277,78 @@ func buildTLSJWTCredentials(
 	return tlsjwt.NewServerCredentials(base, tokens, slog.Default())
 }
 
-// newAuditLogInterceptor returns an interceptor that logs audit events using the provided logger.
-func newAuditLogInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
+func logAuditEvent(logger *slog.Logger, ctx context.Context, method string, startedAt time.Time, err error) {
+	client := "Unavailable"
+	clientAddress := "Unavailable"
+	errorResponse := "nil"
+
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if userAgents := md.Get("user-agent"); len(userAgents) > 0 {
+			client = userAgents[0]
+		}
+	}
+	if p, ok := peer.FromContext(ctx); ok {
+		clientAddress = p.Addr.String()
+	}
+	if err != nil {
+		errorResponse = err.Error()
+	}
+
+	attrs := []slog.Attr{
+		slog.String("method", method),
+		slog.String("error", errorResponse),
+		slog.String("user-agent", client),
+		slog.String("client-address", clientAddress),
+		slog.Int64("duration_ms", time.Since(startedAt).Milliseconds()),
+	}
+	if spanContext := trace.SpanContextFromContext(ctx); spanContext.IsValid() {
+		attrs = append(attrs,
+			slog.String("trace_id", spanContext.TraceID().String()),
+			slog.String("span_id", spanContext.SpanID().String()),
+		)
+	}
+
+	logger.LogAttrs(ctx, slog.LevelInfo, "grpc request received", attrs...)
+}
+
+// newAuditLogUnaryInterceptor returns an interceptor that logs unary audit events using the provided logger.
+func newAuditLogUnaryInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
 		req any,
 		method *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (any, error) {
-		client := "Unavailable"
-		errorResponse := "nil"
-		clientAddress := "Unavailable"
+		startedAt := time.Now()
+		response, err := handler(ctx, req)
+		logAuditEvent(logger, ctx, method.FullMethod, startedAt, err)
+		return response, err
+	}
+}
 
-		md, ok := metadata.FromIncomingContext(ctx)
-		if ok {
-			ua := md.Get("user-agent")
-			if len(ua) > 0 {
-				client = ua[0]
-			}
-		}
+// newAuditLogStreamInterceptor returns an interceptor that logs streaming audit events using the provided logger.
+func newAuditLogStreamInterceptor(logger *slog.Logger) grpc.StreamServerInterceptor {
+	return func(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		startedAt := time.Now()
+		err := handler(server, stream)
+		logAuditEvent(logger, stream.Context(), info.FullMethod, startedAt, err)
+		return err
+	}
+}
 
-		m, err := handler(ctx, req)
-		if err != nil {
-			errorResponse = err.Error()
-		}
-
-		p, ok := peer.FromContext(ctx)
-		if ok {
-			clientAddress = p.Addr.String()
-		}
-
-		logger.Info(
-			"grpc request received",
-			slog.String("method", method.FullMethod),
-			slog.String("error", errorResponse),
-			slog.String("user-agent", client),
-			slog.String("client-address", clientAddress),
-		)
-		return m, err
+func newGRPCServerOptions(auditLogger *slog.Logger) []grpc.ServerOption {
+	return []grpc.ServerOption{
+		grpc.StatsHandler(otelgrpc.NewServerHandler(
+			otelgrpc.WithPropagators(propagation.TraceContext{}),
+			otelgrpc.WithTracerProvider(noop.NewTracerProvider()),
+		)),
+		grpc.UnaryInterceptor(newAuditLogUnaryInterceptor(auditLogger)),
+		grpc.StreamInterceptor(newAuditLogStreamInterceptor(auditLogger)),
 	}
 }
 
 func startSecureServer(ctx context.Context, cfg AgentConfig, agentServer *server.NodeAgentServer, auditLogger *slog.Logger) {
-	serverOptions := []grpc.ServerOption{
-		grpc.UnaryInterceptor(newAuditLogInterceptor(auditLogger)),
-	}
+	serverOptions := newGRPCServerOptions(auditLogger)
 
 	if !cfg.DisableMTLS {
 		tlsCfg, err := buildServerTLSConfig(ctx, cfg)
@@ -442,7 +459,7 @@ func main() {
 		defaultDSXIdentityTimeout,
 		"Timeout for one DSX Identity token-exchange request",
 	)
-	controllerClientCABundle := registerControllerClientCABundleFlags(flag.CommandLine)
+	controllerClientCABundle := registerControllerClientCABundleFlag(flag.CommandLine)
 	versionFlag := flag.Bool("version", false, "Print the version and exit")
 	auditLogFileName := flag.String(
 		"audit-log-file",
@@ -503,7 +520,7 @@ func main() {
 		DSXIdentityExchangeURL:   *dsxIdentityExchangeURL,
 		DSXIdentityCABundle:      *dsxIdentityCABundle,
 		DSXIdentityTimeout:       *dsxIdentityTimeout,
-		ControllerClientCABundle: controllerClientCABundle(),
+		ControllerClientCABundle: *controllerClientCABundle,
 		ControllerAudience:       *controllerAudience,
 	}
 

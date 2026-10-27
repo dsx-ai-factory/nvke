@@ -115,7 +115,7 @@ func TestReconcileInterruptedStaticPodParksLeavesATerminalDefragAlone(t *testing
 // that stale record alongside a kube-vip manifest parked on purpose - and
 // restore it, putting the node back into the VIP underneath the recycle. Keying
 // on the operation only helps if the operation stops saying "restore me" once
-// it has been honoured.
+// it has been honored.
 func TestReconcileInterruptedStaticPodParksSettlesTheRecordItActedOn(t *testing.T) {
 	s, _ := etcdRestartTestServer(t, &fakeEtcdMemberClient{members: testEtcdMembersThree(), localID: 2, leaderID: 1})
 	s.Persister = &MockPersister{}
@@ -134,7 +134,7 @@ func TestReconcileInterruptedStaticPodParksSettlesTheRecordItActedOn(t *testing.
 	require.NoError(t, s.ReconcileInterruptedStaticPodParks(context.Background()))
 
 	assert.False(t, staticPodManifestIsActive(t, s, defaultKubeVipManifestName),
-		"the honoured record must not restore a later, unrelated park")
+		"the honored record must not restore a later, unrelated park")
 }
 
 // An operation with a live worker is still running, not interrupted. The

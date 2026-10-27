@@ -30,6 +30,8 @@ on:
       - "os-image/efi/**"
       # Without this, a change to the lane's own definition does not run it.
       - .github/workflows/os-image-efi.yml
+      - .github/workflows/e2e-pr-path-filter.yml
+      - hack/e2e-path-filter.py
   workflow_dispatch:
     inputs:
       infra_controller_commit:
@@ -47,8 +49,19 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # A mirror-branch push carries base-branch commits as well as the pull
+  # request's own, so the paths above fire for pull requests that change none
+  # of them. Read the pull request's own files first; main, the schedule and
+  # dispatch pass through.
+  changes:
+    uses: ./.github/workflows/e2e-pr-path-filter.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
   build-efi:
-    if: github.repository_id == '1323115536'
+    needs: changes
+    if: github.repository_id == '1323115536' && needs.changes.outputs.run_e2e == 'true'
     name: Build qcow-imager.efi (${{ matrix.arch }})
     strategy:
       fail-fast: false

@@ -417,7 +417,7 @@ spec:
 // bundled defragmentation sequence drives: three static pods and the loopback
 // address kube-vip advertises.
 //
-// The static pods are modelled rather than scripted, because what decides every
+// The static pods are modeled rather than scripted, because what decides every
 // `crictl ps` answer is a rule, not a sequence: kubelet runs a container while
 // its manifest is present and reaps it when the manifest goes away, and the
 // replacement always carries a new ID. That ID change is the only thing telling
@@ -869,7 +869,7 @@ func TestRunEtcdDefragRestartSequence(t *testing.T) {
 // healthy and the honest report is FAILED_RESTORED with a nil error - a rollout
 // can stop on this cleanly.
 //
-// The failure modelled is the socket quiet window: new sockets still arriving
+// The failure modeled is the socket quiet window: new sockets still arriving
 // on the VIP after kube-vip is gone and the address is removed, which is how a
 // stale sticky ARP entry on a DPU presents. Production stops there rather than
 // going on to take the apiserver down, because worker kubelets still pinned to

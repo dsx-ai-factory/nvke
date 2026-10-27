@@ -55,7 +55,7 @@ var _ = Describe("NVKE API authentication with a SPIRE JWT-SVID", Label("authn",
 		Expect(err).NotTo(HaveOccurred(), "read the NVKE deployment's enforcement mode")
 		if mode == authnModeDisabled {
 			authnAbsentf(
-				"authentication is OFF on Deployment %s/%s: %s is not set, so the middleware is not in the request chain and no SVID could be rejected",
+				"authentication is OFF on Deployment %s/%s: neither %s nor apiAuth.enabled in nvke-controller-config is set, so the middleware is not in the request chain and no SVID could be rejected",
 				controller.Namespace(), controller.Deployment(), authnConfigPathEnv,
 			)
 		}
@@ -73,8 +73,8 @@ var _ = Describe("NVKE API authentication with a SPIRE JWT-SVID", Label("authn",
 		Expect(err).NotTo(HaveOccurred(), "read the deployment's auth configuration")
 		if !found {
 			Skip(fmt.Sprintf(
-				"ConfigMap %s/%s configures no issuer named %q, so this NVKE trusts no SPIRE and there is nothing to accept",
-				controller.Namespace(), authtoken.ConfigMapName, spireIssuerName,
+				"the authentication configuration in %s configures no issuer named %q, so this NVKE trusts no SPIRE and there is nothing to accept",
+				controller.Namespace(), spireIssuerName,
 			))
 		}
 
@@ -154,8 +154,8 @@ type spireAdmission struct {
 	PathPrefixes []string
 }
 
-// spireAdmissionFromCluster reads the SPIRE issuer out of the nvke-auth-config
-// ConfigMap; found is false, with a nil error, when there is none.
+// spireAdmissionFromCluster reads the SPIRE issuer out of the configuration
+// authtoken.RawConfig finds; found is false, with a nil error, when there is none.
 func spireAdmissionFromCluster(ctx context.Context, clientset kubernetes.Interface) (spireAdmission, bool, error) {
 	raw, found, err := authtoken.RawConfig(ctx, clientset)
 	if err != nil || !found {

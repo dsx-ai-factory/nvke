@@ -35,6 +35,10 @@ type Identity struct {
 	// valid time.
 	LastChecked        *time.Time
 	LastCheckedInvalid bool
+
+	// NextCheck is status.nextCheckTime, when the provider next checks the
+	// Identity on its own schedule, or nil when absent or not a valid time.
+	NextCheck *time.Time
 }
 
 // decode extracts an Identity from u. It never fails: a field that is missing
@@ -57,6 +61,13 @@ func decode(u *unstructured.Unstructured) Identity {
 		} else {
 			id.LastCheckedInvalid = true
 		}
+	}
+
+	// A next check time that is not a valid time is treated as absent: the
+	// provider has published no usable schedule.
+	raw, _, _ := unstructured.NestedFieldNoCopy(u.Object, "status", "nextCheckTime")
+	if t, ok := parseTime(raw); ok {
+		id.NextCheck = &t
 	}
 
 	conditions, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")

@@ -32,7 +32,7 @@ func TestKubernetesEncryptionKeyReaderRotationRequiresPendingKey(t *testing.T) {
 
 	enablementKey, err := reader.ReadEnablementKey(context.Background(), clusterID)
 	require.NoError(t, err)
-	require.Equal(t, "active-key", enablementKey)
+	require.Equal(t, "active-key", enablementKey.Key)
 
 	_, err = reader.ReadRotationKey(context.Background(), clusterID)
 	require.ErrorContains(t, err, "has no pending rotation key")
@@ -43,13 +43,15 @@ func TestKubernetesEncryptionKeyReaderRotationRequiresPendingKey(t *testing.T) {
 			Name:      constants.EtcdEncryptionKeySecretName(clusterID),
 		},
 		Data: map[string][]byte{
-			constants.EtcdEncryptionKeyFieldActive:  []byte("active-key"),
-			constants.EtcdEncryptionKeyFieldPending: []byte("pending-key"),
+			constants.EtcdEncryptionKeyFieldActive:      []byte("active-key"),
+			constants.EtcdEncryptionKeyFieldPending:     []byte("pending-key"),
+			constants.EtcdEncryptionKeyFieldPendingName: []byte("key-7"),
 		},
 	}).Build()
 	readerWithPending := NewKubernetesEncryptionKeyReader(k8sClientWithPending, namespace)
 
 	rotationKey, err := readerWithPending.ReadRotationKey(context.Background(), clusterID)
 	require.NoError(t, err)
-	require.Equal(t, "pending-key", rotationKey)
+	require.Equal(t, "pending-key", rotationKey.Key)
+	require.Equal(t, "key-7", rotationKey.Name)
 }

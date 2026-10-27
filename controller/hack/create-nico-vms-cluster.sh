@@ -9,13 +9,11 @@
 # networking. Every value is overridable via the environment variables below.
 #
 # Notes:
-#   - Defaults to the cpu4-mem6gb seed instance type. The kubelet reservations are
-#     fixed by the controller's generated kubeadm patch (kubeReserved 2Gi plus the
-#     systemReservedMemory below),
-#     so ~3Gi is carved off regardless of node size. On a 4Gi node that leaves only
-#     ~700Mi allocatable -> the control plane exceeds it -> kubelet reports
-#     MemoryPressure and tags the node NoSchedule (which, among other things, blocks
-#     kubeadm's upgrade-health-check Job). 6Gi leaves ~3Gi allocatable, enough headroom.
+#   - Defaults to cpu4-mem8gb for control-plane nodes and cpu4-mem6gb for workers.
+#     The controller's generated kubeadm patch reserves 2Gi for Kubernetes plus the
+#     systemReservedMemory below. OVN's node pod requests another 1800Mi, so 6Gi is
+#     sufficient for workers but not for control-plane nodes after kernel reservations
+#     and control-plane pod requests.
 #   - systemReservedMemory defaults to 1Gi. The controller API/DB default is 16Gi, which alone
 #     exceeds these small seed instance types, so it must be set explicitly here.
 #   - The control plane is cluster-level controlPlaneConfig, not a node pool.
@@ -54,7 +52,8 @@ ORG_ID="${ORG_ID:-novxwn552ssc}"
 SITE_ID="${SITE_ID:-a1b2c3d4-0001-4000-8000-000000000001}"
 VPC_ID="${VPC_ID:-a1b2c3d4-0002-4000-8000-000000000001}"
 VPC_PREFIX_ID="${VPC_PREFIX_ID:-a1b2c3d4-0004-4000-8000-000000000001}"
-INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-a1b2c3d4-0005-4000-8000-000000000003}"  # cpu4-mem6gb-disk60gb
+CONTROL_PLANE_INSTANCE_TYPE_ID="${CONTROL_PLANE_INSTANCE_TYPE_ID:-a1b2c3d4-0005-4000-8000-000000000006}"  # cpu4-mem8gb-disk60gb
+WORKER_INSTANCE_TYPE_ID="${WORKER_INSTANCE_TYPE_ID:-a1b2c3d4-0005-4000-8000-000000000003}"  # cpu4-mem6gb-disk60gb
 
 KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}"
 CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}"
@@ -73,6 +72,20 @@ case "$(uname -m)" in
     exit 1
     ;;
 esac
+if [[ "${NICO_VMS_STAGE_OS_IMAGE:-true}" == "true" ]]; then
+  if [[ -n "${NICO_VMS_OS_IMAGE_URL:-}" ]]; then
+    "${SCRIPT_DIR}/stage-nico-vms-image.sh"
+  else
+    files_dir="${NICO_SIM_FILES_DIR:-${SCRIPT_DIR}/../nico-sim/.dev/files}"
+    image_path="${files_dir}/images/nvke-node.qcow2"
+    if [[ ! -s "${image_path}" ]]; then
+      echo "No nico-vms OS image exists in nico-sim files at ${image_path}." >&2
+      echo "Use the nico-sim Stage OS image button or provide NICO_VMS_OS_IMAGE_URL." >&2
+      exit 1
+    fi
+    echo "Using the nico-sim OS image at ${image_path}." >&2
+  fi
+fi
 RELEASE="${RELEASE:-nvke-nico-vms-24.04-${PROFILE_ARCH}-fde}"
 CP_CONFIG_PROFILE="${CP_CONFIG_PROFILE:-nico-vms-cp}"
 WORKER_CONFIG_PROFILE="${WORKER_CONFIG_PROFILE:-nico-vms-worker}"
@@ -110,7 +123,7 @@ BODY=$(cat <<EOF
     "systemReservedMemory": "${SYSTEM_RESERVED_MEMORY}",
     "teleportEnabled": false,
     "nico": {
-      "instanceTypePreference": ["${INSTANCE_TYPE_ID}"],
+      "instanceTypePreference": ["${CONTROL_PLANE_INSTANCE_TYPE_ID}"],
       "vpcPrefixIDs": ["${VPC_PREFIX_ID}"],
       "release": "${RELEASE}",
       "configProfile": "${CP_CONFIG_PROFILE}"
@@ -122,7 +135,7 @@ BODY=$(cat <<EOF
       "nodeNamePrefix": "w",
       "nico": {
         "vpcPrefixIDs": ["${VPC_PREFIX_ID}"],
-        "instanceTypeID": "${INSTANCE_TYPE_ID}",
+        "instanceTypeID": "${WORKER_INSTANCE_TYPE_ID}",
         "release": "${RELEASE}",
         "configProfile": "${WORKER_CONFIG_PROFILE}"
       },

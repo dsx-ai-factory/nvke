@@ -23,12 +23,14 @@ import (
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 
+	"github.com/dsx-ai-factory/nvke/auth/authn"
+
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/automode"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/certificates"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/certrenewal"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/controlplane"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/controlplanenodescheduler"
@@ -124,24 +126,18 @@ func main() {
 
 	logger.Info("Loaded nke-controller-config", "path", cfg.ControllerConfigPath, "oidcProviders", len(controllerCfg.OIDC.Providers))
 
-	authenticator, err := auth.Setup(ctx, auth.Options{
+	authenticator, err := authn.Setup(ctx, authn.Options{
 		ConfigPath: cfg.AuthConfigPath,
 		Permissive: cfg.PermissiveMode,
 		Recorder:   metrics.RecordAuthRequest,
+		Config:     controllerCfg.APIAuth.AuthConfig(),
 	}, logger)
 	if err != nil {
 		logger.Error("Failed to set up API authentication", "error", err)
 		os.Exit(1)
 	}
 
-	switch {
-	case cfg.AuthConfigPath == "":
-		metrics.SetAuthMode("off")
-	case cfg.PermissiveMode:
-		metrics.SetAuthMode("permissive")
-	default:
-		metrics.SetAuthMode("enforcing")
-	}
+	metrics.SetAuthMode(authMode(authenticator, cfg.PermissiveMode))
 
 	// Get cloud-workflow-engine workload trust domain and bundle
 	trustDomain, err := getSpiffeTrustDomain(ctx, cfg, logger)
@@ -190,11 +186,16 @@ func main() {
 
 	dbMetricsLogger := logger.With("logger", "db-metrics")
 	dbMetricsCollector := dbmetrics.NewCollector(dbMetricsLogger, dbInstance)
+	credentialMetricsCollector := dbmetrics.NewCredentialCollector(dbMetricsLogger, dbInstance, cfg)
 	if err := prometheus.Register(dbMetricsCollector); err != nil {
 		logger.Error("Failed to register db metrics collector", "error", err)
 		os.Exit(1)
 	}
 
+	if err := prometheus.Register(credentialMetricsCollector); err != nil {
+		logger.Error("Failed to register credential metrics collector", "error", err)
+		os.Exit(1)
+	}
 	teleportCollector := metrics.NewTeleportCollector(
 		logger.With("logger", "teleport-metrics"), dbInstance,
 	)
@@ -448,6 +449,9 @@ func main() {
 	tenantRegistrars := []tenant.Registrar{
 		csr.NewRegistrar(dbInstance, logger.With("logger", "tenant-csr-controller")),
 	}
+	if cfg.CredentialMonitoringEnabled {
+		tenantRegistrars = append(tenantRegistrars, csr.NewObserverRegistrar(dbInstance, logger.With("logger", "tenant-csr-observer")))
+	}
 	if !cfg.NodeHealthCheckDisabled {
 		tenantRegistrars = append(tenantRegistrars,
 			tenantnodestatus.NewRegistrar(dbInstance, logger.With("logger", "tenant-node-health-controller")),
@@ -542,6 +546,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	if cfg.CredentialMonitoringEnabled {
+		if err := certificates.NewController(cfg, dbInstance, nodeAgentClient).SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to setup certificate inspection controller", "error", err)
+			os.Exit(1)
+		}
+	}
 	if cfg.CertRenewalControllerEnabled {
 		certRenewalController := certrenewal.NewController(
 			cfg,
@@ -688,6 +698,19 @@ func main() {
 	if err := g.Wait(); err != nil {
 		logger.Error("Service error occurred", "error", err)
 		os.Exit(1)
+	}
+}
+
+// authMode is the nvke_auth_enabled mode label. Setup builds no
+// authenticator exactly when authentication is off.
+func authMode(authenticator *authn.Authenticator, permissive bool) string {
+	switch {
+	case authenticator == nil:
+		return "off"
+	case permissive:
+		return "permissive"
+	default:
+		return "enforcing"
 	}
 }
 

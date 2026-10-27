@@ -19,7 +19,7 @@ A management cluster with an odd number of nodes, each a control-plane node that
 | 1. Build | Build the reference node OS image and host its boot files over HTTP(S). | [Build and host node OS images](build-node-images.md) |
 | 2. Prepare nodes | Boot the management cluster's nodes from the node image with cloud-init user data, and record each node's TPM thumbprint. | [Prepare nodes](prepare-nodes.md) |
 | 3. Bootstrap | Run `nvkectl bootstrap site` to form the management cluster. | [Bootstrap the management cluster](bootstrap-management-cluster.md) |
-| 4. Install | Install Cluster API, CAPNICo, SPIRE, telemetry and the NVKE API and controllers. | [Run NVKE end to end on one machine](../get-started/local-site.md) |
+| 4. Install | Install Cluster API, CAPNICo, SPIRE, telemetry and the NVKE API and controllers, and admit your networks to the API. | [Install the management plane](install-management-plane.md) |
 | 5. Configure NICo | Confirm that CAPNICo is running, and collect the NICo identifiers each workload cluster needs. | [Configure an infrastructure provider: NICo](provider-nico.md) |
 | 6. Secure the API | Make the NVKE API require a token from your identity provider. | [Secure the NVKE API](api-authentication.md) |
 | 7. Create clusters | Create a workload cluster. | [Create a workload cluster](../workload-clusters/create.md) |
@@ -45,7 +45,7 @@ A management cluster with an odd number of nodes, each a control-plane node that
 - **A Kubernetes API virtual IP address (VIP)** for the management cluster when it has more than one node, and for each workload cluster with more than one control-plane node. Each VIP is an unused, routable IPv4 address outside the cluster's pod and service networks. A single-node management cluster uses its node's IP instead.
 - **Border Gateway Protocol (BGP) peering for each VIP.** Every control-plane node advertises the VIP from local autonomous system (AS) 65100 to the node's default gateway, with peer AS 4294967000. The local AS is fixed. The peer AS has two exceptions, both for workload clusters: a control plane that uses VPC prefix IDs reads its peer AS from NICo's metadata service on each node, and setting `KUBE_VIP_FMDS_ENDPOINT` in the management plane's `env` makes every workload cluster read it from that URL. Your network must accept the route and carry it to the cluster's API callers.
 - **Pod and service networks** for each cluster that do not overlap each other or your node network.
-- **Outbound access** from the bootstrap host and the management cluster to the registries and chart repositories listed in [Run NVKE end to end on one machine](../get-started/local-site.md).
+- **Outbound access** from the bootstrap host and the management cluster to the registries and chart repositories listed in [Install the management plane](install-management-plane.md).
 - **A boot-artifact HTTP(S) endpoint** reachable from the machines' provisioning network before the installed OS starts. For QCOW2 imaging, it serves the EFI imager and QCOW2; for an ISO install, it serves the kernel, initrd and ISO. See [Serve the boot artifacts over HTTP(S)](build-node-images.md#serve-the-boot-artifacts-over-https) for hosting, an S3 example and download checks.
 
 ### Ports
@@ -137,7 +137,7 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 |---|---|---|---|
 | Registry host and namespace | `<REGISTRY_HOST>`, `<NAMESPACE>` | Build, Bootstrap, Install | |
 | Registry account that can push | `<REGISTRY_USER>`, `<REGISTRY_TOKEN>` | Build | |
-| Optional release description; see [Run NVKE end to end on one machine](../get-started/local-site.md) | `release.json` | Install | |
+| Optional NVKR release description; see [Install the management plane](install-management-plane.md) | `release.json` | Install | |
 | Controller image reference | `<CONTROLLER_IMAGE>` | Bootstrap; Install without a release | |
 | Provisioned infrastructure provider image | `<PROVISIONED_PROVIDER_IMAGE>` | Bootstrap | |
 | Profile content image reference | `images.profiles` in the stack config | Install without a release | |
