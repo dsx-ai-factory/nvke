@@ -31,6 +31,12 @@
 # gitleaks a failure; a developer running this locally without it only sees a
 # warning.
 #
+# `bootstrap site` runs with a fake OTLP header token in
+# OTEL_EXPORTER_OTLP_HEADERS and an endpoint nothing listens on. The same trap
+# fails the run if that token, or the non-credential header beside it, appears
+# in the bootstrap log, the Go test log or the diagnostics bundle. This needs no
+# gitleaks: the values are known, so it is an exact-value search.
+#
 # Everything created is registered for teardown as it is created, and the EXIT
 # trap runs those registrations in reverse, whatever the exit. A failing exit
 # first collects diagnostics into NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR.
@@ -98,6 +104,17 @@ BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap.log"
 # own output is not in here: it goes to BOOTSTRAP_LOG, so there is one copy of
 # it and the credential scan covers that copy.
 BOOTSTRAP_GO_TEST_LOG="${SCRIPT_DIR}/.bootstrap-go-test.log"
+# The OTLP settings `bootstrap site` runs with, to prove that a header value
+# stays out of everything the run prints or saves. The values are random, so
+# none sits in this repository. The endpoint is a documentation address that
+# nothing answers, and not a loopback one: `bootstrap site` gives the controller
+# in the bootstrap cluster the headers only for an endpoint it can reach.
+# The tenant header has no credential in its name, so nvkectl masks it only as
+# the pair `x-tenant=<value>`, which is what the scan looks for.
+OTLP_TOKEN="e2e$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+OTLP_TENANT="e2e$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+OTLP_ENDPOINT="http://192.0.2.1:4317"
+OTLP_HEADERS="authorization=Bearer ${OTLP_TOKEN},x-tenant=${OTLP_TENANT}"
 GO="${GO:-go}"
 # The lane runs `bootstrap site` through the Go tests in bootstraptest. Those
 # tests carry two marks: the e2e_bootstrap build tag, which keeps them out of
@@ -355,6 +372,89 @@ scan_run_output() {
   esac
 }
 
+# scan_for_otlp_header_values returns 1 if a file or directory named in its
+# arguments holds the OTLP token or the tenant header the lane set, and 0 if none
+# does. A path that does not exist is skipped. It prints the names of the files
+# that hold a value and never the value: this output goes to a public CI log.
+#
+# The token alone is searched, not the whole header, so the form it takes in the
+# cluster, authorization=Bearer%20<token>, is found too. The tenant is searched as
+# the pair, as nvkectl masks it.
+scan_for_otlp_header_values() {
+  local needles path hits rc=0
+  local paths=()
+  for path in "$@"; do
+    if [ -e "${path}" ]; then
+      paths+=("${path}")
+    fi
+  done
+  [ "${#paths[@]}" -gt 0 ] || return 0
+  needles="$(mktemp)"
+  printf '%s\n' "${OTLP_TOKEN}" "x-tenant=${OTLP_TENANT}" >"${needles}"
+  hits="$(grep -rlF -f "${needles}" -- "${paths[@]}")" || rc=$?
+  rm -f "${needles}"
+  case "${rc}" in
+    0)
+      log "FAIL: an OTLP header value the lane set is in:"
+      printf '%s\n' "${hits}" | while IFS= read -r path; do log "  ${path}"; done
+      return 1
+      ;;
+    1) return 0 ;;
+    *)
+      log "FAIL: could not search for the OTLP header values (grep exit ${rc})"
+      return 1
+      ;;
+  esac
+}
+
+# scan_output_for_otlp_headers fails the run if an OTLP header value the lane set
+# is in the bootstrap log, the Go test log or the diagnostics bundle. It first
+# proves the search finds a value in each of those places, and in the encoded form
+# the controller's environment holds, because a clean result from a search that
+# finds nothing means nothing.
+scan_output_for_otlp_headers() {
+  if [ ! -f "${BOOTSTRAP_LOG}" ]; then
+    log "no bootstrap output to scan for OTLP header values: bootstrap site was never started"
+    return 0
+  fi
+
+  local work where rc
+  work="$(mktemp -d)"
+  for where in none log go-test-log diagnostics-file pod-log encoded-token tenant-pair; do
+    mkdir -p "${work}/diag/nvke/controller"
+    printf 'nothing to see\n' >"${work}/run.log"
+    printf 'nothing to see\n' >"${work}/go-test.log"
+    printf 'nothing to see\n' >"${work}/diag/all-resources.txt"
+    printf 'nothing to see\n' >"${work}/diag/nvke/controller/logs.txt"
+    case "${where}" in
+      log) printf 'msg=x value=%s\n' "${OTLP_TOKEN}" >"${work}/run.log" ;;
+      go-test-log) printf 'msg=x value=%s\n' "${OTLP_TOKEN}" >"${work}/go-test.log" ;;
+      diagnostics-file) printf 'msg=x value=%s\n' "${OTLP_TOKEN}" >"${work}/diag/all-resources.txt" ;;
+      pod-log) printf 'msg=x value=%s\n' "${OTLP_TOKEN}" >"${work}/diag/nvke/controller/logs.txt" ;;
+      encoded-token) printf 'OTEL_EXPORTER_OTLP_HEADERS: authorization=Bearer%%20%s\n' "${OTLP_TOKEN}" >"${work}/diag/all-resources.txt" ;;
+      tenant-pair) printf 'OTEL_EXPORTER_OTLP_HEADERS: x-tenant=%s\n' "${OTLP_TENANT}" >"${work}/diag/all-resources.txt" ;;
+    esac
+    rc=0
+    scan_for_otlp_header_values "${work}/run.log" "${work}/go-test.log" "${work}/diag" >/dev/null 2>&1 || rc=$?
+    if [ "${where}" = none ] && [ "${rc}" -ne 0 ]; then
+      log "FAIL: the search for OTLP header values flagged files that hold none, so it would flag a clean run"
+      rm -rf "${work}"
+      return 1
+    fi
+    if [ "${where}" != none ] && [ "${rc}" -eq 0 ]; then
+      log "FAIL: the search for OTLP header values missed one planted in the ${where}, so a clean result proves nothing"
+      rm -rf "${work}"
+      return 1
+    fi
+  done
+  rm -rf "${work}"
+
+  if ! scan_for_otlp_header_values "${BOOTSTRAP_LOG}" "${BOOTSTRAP_GO_TEST_LOG}" "${DIAGNOSTICS_DIR}"; then
+    return 1
+  fi
+  log "PASS: no OTLP header value in the bootstrap log, the Go test log or the diagnostics"
+}
+
 # defer registers a command for the EXIT trap, which runs registrations in
 # reverse order. Register the teardown *before* the operation it undoes: under
 # `set -e` an operation can fail partway and exit on the spot, so the teardown
@@ -372,6 +472,7 @@ cleanup() {
   # A leak turns a passing run red; a run that already failed stays failed.
   local scan_failed=0
   scan_output_for_secrets || scan_failed=1
+  scan_output_for_otlp_headers || scan_failed=1
   # CI uploads this directory when the job fails, and a failed scan is a failed
   # job. The bundle is redacted in the scan's output but not on disk, so it is
   # removed rather than published with the credential the scan reported. A
@@ -747,6 +848,8 @@ setsid env \
   NVKECTL_E2E_BOOTSTRAP_TIMEOUT=15m \
   NVKECTL_E2E_KEEP_BOOTSTRAP_CLUSTER=1 \
   NVKECTL_E2E_VERBOSE=1 \
+  OTEL_EXPORTER_OTLP_ENDPOINT="${OTLP_ENDPOINT}" \
+  OTEL_EXPORTER_OTLP_HEADERS="${OTLP_HEADERS}" \
   "${GO}" test -C "${CLI_DIR}" -tags e2e_bootstrap -timeout 0 -count=1 -v \
   ./e2e/bootstrap/bootstraptest/ -run '^TestE2E_' \
   >"${BOOTSTRAP_GO_TEST_LOG}" 2>&1 &
@@ -941,6 +1044,14 @@ sa="$(bk -n "${CONTROLLER_NAME}" get deployment "${CONTROLLER_NAME}" \
 endpoints="$(bk -n "${CONTROLLER_NAME}" get endpoints "${CONTROLLER_NAME}-external" \
   -o 'jsonpath={.subsets[*].addresses[*].ip}')"
 [ -n "${endpoints}" ] || fail "Service ${CONTROLLER_NAME}-external has no endpoints"
+# The headers the lane gave nvkectl reached the controller, in the encoded form
+# the OpenTelemetry SDK reads. Without this the credential scan could pass only
+# because the token never left nvkectl. The value is compared and not printed.
+otlp_env="$(bk -n "${CONTROLLER_NAME}" get deployment "${CONTROLLER_NAME}" \
+  -o 'jsonpath={.spec.template.spec.containers[*].env[?(@.name=="OTEL_EXPORTER_OTLP_HEADERS")].value}')"
+[ "${otlp_env}" = "authorization=Bearer%20${OTLP_TOKEN},x-tenant=${OTLP_TENANT}" ] ||
+  fail "the controller's OTEL_EXPORTER_OTLP_HEADERS is not the headers the lane gave bootstrap site," \
+    "so the scan for them proves nothing about the controller's output"
 spiffe_id="spiffe://${SPIRE_TRUST_DOMAIN}/nvke-service/${CONTROLLER_NAME}"
 bk -n spire-server exec spire-server-0 -c spire-server -- \
   /opt/spire/bin/spire-server entry show -spiffeID "${spiffe_id}" | grep -q "Entry ID" ||
