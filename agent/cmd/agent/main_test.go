@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"io"
 	"log/slog"
@@ -24,6 +25,73 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
 )
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) {
+	return f(p)
+}
+
+func TestAuditLoggerMirrorsStructuredRecords(t *testing.T) {
+	t.Parallel()
+
+	var fileOutput bytes.Buffer
+	var serviceOutput bytes.Buffer
+	logger := newAuditLogger(&fileOutput, &serviceOutput)
+
+	logger.Info("audit event", "rpc_method", "/nvke.NodeAgent/NodePreflight")
+
+	if !bytes.Equal(fileOutput.Bytes(), serviceOutput.Bytes()) {
+		t.Fatalf("audit outputs differ:\nfile: %s\nservice: %s", fileOutput.Bytes(), serviceOutput.Bytes())
+	}
+
+	var record map[string]any
+	if err := json.Unmarshal(fileOutput.Bytes(), &record); err != nil {
+		t.Fatalf("audit output is not JSON: %v", err)
+	}
+	if got := record["msg"]; got != "audit event" {
+		t.Errorf("msg = %v, want %q", got, "audit event")
+	}
+	if got := record["rpc_method"]; got != "/nvke.NodeAgent/NodePreflight" {
+		t.Errorf("rpc_method = %v, want %q", got, "/nvke.NodeAgent/NodePreflight")
+	}
+}
+
+func TestFanoutWriterAttemptsEveryOutput(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("audit file unavailable")
+	var serviceOutput bytes.Buffer
+	errorWriter := writerFunc(func([]byte) (int, error) { return 0, wantErr })
+	writer := fanoutWriter{errorWriter, &serviceOutput}
+	input := []byte("audit record")
+
+	n, err := writer.Write(input)
+
+	if n != len(input) {
+		t.Errorf("Write() count = %d, want %d", n, len(input))
+	}
+	if !errors.Is(err, wantErr) {
+		t.Errorf("Write() error = %v, want an error wrapping %v", err, wantErr)
+	}
+	if !bytes.Equal(serviceOutput.Bytes(), input) {
+		t.Errorf("service output = %q, want %q", serviceOutput.Bytes(), input)
+	}
+}
+
+func TestFanoutWriterReportsShortWrite(t *testing.T) {
+	t.Parallel()
+
+	shortWriter := writerFunc(func([]byte) (int, error) { return 0, nil })
+	writer := fanoutWriter{io.Discard, shortWriter}
+	input := []byte("audit record")
+
+	_, err := writer.Write(input)
+
+	if !errors.Is(err, io.ErrShortWrite) {
+		t.Errorf("Write() error = %v, want an error wrapping %v", err, io.ErrShortWrite)
+	}
+}
 
 // The authorizer is the whole of this agent's access control, so these pin what it
 // refuses as much as what it admits.
