@@ -773,8 +773,9 @@ func siteBehaviorClient(restConfig *rest.Config) (client.Client, error) {
 }
 
 // keepOnFailureEnv, when true, leaves a failed spec's objects in place to be
-// inspected. They stay in the probe namespace, which the pod check leaves
-// out, so they fail no later run.
+// inspected. The pod check leaves out the probe namespace, but the workload
+// and certificate checks read the whole cluster, so a kept StatefulSet or
+// Certificate fails the next run until it is deleted by its siteRunLabel.
 const keepOnFailureEnv = "NVKE_E2E_KEEP_ON_FAILURE"
 
 // keepOnFailure reads keepOnFailureEnv. The settings already rejected a value
