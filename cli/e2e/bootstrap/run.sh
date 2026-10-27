@@ -34,8 +34,9 @@
 # `bootstrap site` runs with a fake OTLP header token in
 # OTEL_EXPORTER_OTLP_HEADERS and an endpoint nothing listens on. The same trap
 # fails the run if that token, or the non-credential header beside it, appears
-# in the bootstrap log, the Go test log or the diagnostics bundle. This needs no
-# gitleaks: the values are known, so it is an exact-value search.
+# in the bootstrap log, the Go test log or the diagnostics bundle. The values are
+# known, so that is an exact-value search, which runs with the scan above and
+# without gitleaks.
 #
 # Everything created is registered for teardown as it is created, and the EXIT
 # trap runs those registrations in reverse, whatever the exit. A failing exit
@@ -195,10 +196,11 @@ if [ "${netconfpath%/}" = /etc/cni/net.d ]; then
     "unset it, or point it at /etc/containerd-nerdctl/net.d"
 fi
 
-# scan_output_for_secrets scans the bootstrap log and the diagnostics bundle for
-# credentials, and returns 1 if it finds one or cannot tell. It prints the
-# scanner's findings with the secret redacted and never the secret itself: this
-# output goes to a public CI log.
+# scan_output_for_secrets scans the bootstrap log, the Go test log and the
+# diagnostics bundle for credentials, and returns 1 if it finds one or cannot
+# tell. It prints the scanner's findings with the secret redacted and never the
+# secret itself: this output goes to a public CI log. It also searches them for
+# the OTLP header values the lane set, which gitleaks has no rule for.
 #
 # It first proves the rules work, because a clean result from a scanner that
 # matches nothing means nothing. Each shape the rules target must be flagged when
@@ -220,7 +222,9 @@ scan_output_for_secrets() {
       return 1
     fi
     log "gitleaks is not on PATH: skipping the scan of the bootstrap output for credentials (CI requires it)"
-    return 0
+    # The OTLP header values need no scanner: they are known.
+    scan_for_otlp_header_values "${BOOTSTRAP_LOG}" "${BOOTSTRAP_GO_TEST_LOG}" "${DIAGNOSTICS_DIR}"
+    return
   fi
   if [ ! -f "${BOOTSTRAP_LOG}" ]; then
     log "no bootstrap output to scan: bootstrap site was never started"
@@ -309,7 +313,7 @@ scan_output_for_secrets() {
   # in the log, in a file of the diagnostics bundle, and in a pod log inside it
   # (the controller's, in the real bundle) must each fail it, and the same
   # files without it must pass.
-  local planted clean_log diag where
+  local planted clean_log diag where glog
   planted="$(sed 's/PLACEHOLDER/aaaa-bbbb-cccc/' <<<'helm upgrade --install demo chart --set-string auth.password=PLACEHOLDER')"
   clean_log="${work}/clean.log"
   printf 'msg="nothing to see" trace_id=%032x\n' 1 >"${clean_log}"
@@ -320,7 +324,7 @@ scan_output_for_secrets() {
     printf 'no secret here\n' >"${diag}/nvke/controller/logs.txt"
   }
   reset_diag
-  if ! scan_run_output "${clean_log}" "${diag}" >/dev/null 2>&1; then
+  if ! scan_run_output "${clean_log}" "${diag}" "${clean_log}" >/dev/null 2>&1; then
     log "FAIL: the scan failed a log and diagnostics bundle with no secret in them"
     rm -rf "${work}"
     return 1
@@ -340,19 +344,50 @@ scan_output_for_secrets() {
     fi
   done
 
+  # The search for the OTLP header values, driven the same way. The token planted
+  # in each place it could reach, in the form the controller's environment holds,
+  # and the tenant header as a pair must each fail it, and the search itself must
+  # say so: gitleaks might flag the same line and hide a search that finds nothing.
+  local gotest_log="${work}/go-test.log" found
+  printf 'msg="nothing to see"\n' >"${gotest_log}"
+  for where in log go-test-log diagnostics-file pod-log encoded-token tenant-pair; do
+    reset_diag
+    plog="${clean_log}"
+    glog="${gotest_log}"
+    case "${where}" in
+      log) printf 'msg=x value=%s\n' "${OTLP_TOKEN}" >"${work}/planted.log"; plog="${work}/planted.log" ;;
+      go-test-log) printf 'msg=x value=%s\n' "${OTLP_TOKEN}" >"${work}/planted-go-test.log"; glog="${work}/planted-go-test.log" ;;
+      diagnostics-file) printf 'msg=x value=%s\n' "${OTLP_TOKEN}" >"${diag}/all-resources.txt" ;;
+      pod-log) printf 'msg=x value=%s\n' "${OTLP_TOKEN}" >"${diag}/nvke/controller/logs.txt" ;;
+      encoded-token) printf 'OTEL_EXPORTER_OTLP_HEADERS: authorization=Bearer%%20%s\n' "${OTLP_TOKEN}" >"${diag}/all-resources.txt" ;;
+      tenant-pair) printf 'OTEL_EXPORTER_OTLP_HEADERS: x-tenant=%s\n' "${OTLP_TENANT}" >"${diag}/all-resources.txt" ;;
+    esac
+    rc=0
+    found="$(scan_run_output "${plog}" "${diag}" "${glog}" 2>&1)" || rc=$?
+    if [ "${rc}" -eq 0 ] || ! grep -q "OTLP header value" <<<"${found}"; then
+      log "FAIL: the search for OTLP header values missed one planted in the ${where}, so a clean result proves nothing"
+      rm -rf "${work}"
+      return 1
+    fi
+  done
+
   rc=0
-  scan_run_output "${BOOTSTRAP_LOG}" "${DIAGNOSTICS_DIR}" || rc=$?
+  scan_run_output "${BOOTSTRAP_LOG}" "${DIAGNOSTICS_DIR}" "${BOOTSTRAP_GO_TEST_LOG}" || rc=$?
   rm -rf "${work}"
   return "${rc}"
 }
 
-# scan_run_output scans a bootstrap log and a diagnostics directory, which may
-# not exist, with gitleaks. It returns 1 on a finding or a scanner failure.
+# scan_run_output scans a bootstrap log, a diagnostics directory, which may not
+# exist, and optionally the Go test log with gitleaks, and searches the same files
+# for the OTLP header values. It returns 1 on a finding or a scanner failure.
 scan_run_output() {
-  local log_file="$1" diag_dir="$2" out rc
+  local log_file="$1" diag_dir="$2" go_test_log="${3:-}" out rc values_rc=0
   out="$(mktemp -d)"
   mkdir -p "${out}/output"
   cp "${log_file}" "${out}/output/bootstrap.log"
+  if [ -f "${go_test_log}" ]; then
+    cp "${go_test_log}" "${out}/output/go-test.log"
+  fi
   if [ -d "${diag_dir}" ]; then
     mkdir -p "${out}/output/diagnostics"
     cp -R "${diag_dir}/." "${out}/output/diagnostics/" || {
@@ -361,12 +396,16 @@ scan_run_output() {
       return 1
     }
   fi
+  scan_for_otlp_header_values "${out}/output" || values_rc=1
   rc=0
   # --verbose names each finding: rule, file and line, with the secret redacted.
   gitleaks_scan "${out}/output" --verbose || rc=$?
   rm -rf "${out}"
   case "${rc}" in
-    0) log "PASS: no credential in the bootstrap log or its diagnostics" ;;
+    0)
+      [ "${values_rc}" -eq 0 ] || return 1
+      log "PASS: no credential or OTLP header value in the bootstrap output or its diagnostics"
+      ;;
     2) log "FAIL: gitleaks found a credential in the bootstrap output; the findings above are redacted" ; return 1 ;;
     *) log "FAIL: gitleaks could not scan the bootstrap output (exit ${rc})" ; return 1 ;;
   esac
@@ -407,54 +446,6 @@ scan_for_otlp_header_values() {
   esac
 }
 
-# scan_output_for_otlp_headers fails the run if an OTLP header value the lane set
-# is in the bootstrap log, the Go test log or the diagnostics bundle. It first
-# proves the search finds a value in each of those places, and in the encoded form
-# the controller's environment holds, because a clean result from a search that
-# finds nothing means nothing.
-scan_output_for_otlp_headers() {
-  if [ ! -f "${BOOTSTRAP_LOG}" ]; then
-    log "no bootstrap output to scan for OTLP header values: bootstrap site was never started"
-    return 0
-  fi
-
-  local work where rc
-  work="$(mktemp -d)"
-  for where in none log go-test-log diagnostics-file pod-log encoded-token tenant-pair; do
-    mkdir -p "${work}/diag/nvke/controller"
-    printf 'nothing to see\n' >"${work}/run.log"
-    printf 'nothing to see\n' >"${work}/go-test.log"
-    printf 'nothing to see\n' >"${work}/diag/all-resources.txt"
-    printf 'nothing to see\n' >"${work}/diag/nvke/controller/logs.txt"
-    case "${where}" in
-      log) printf 'msg=x value=%s\n' "${OTLP_TOKEN}" >"${work}/run.log" ;;
-      go-test-log) printf 'msg=x value=%s\n' "${OTLP_TOKEN}" >"${work}/go-test.log" ;;
-      diagnostics-file) printf 'msg=x value=%s\n' "${OTLP_TOKEN}" >"${work}/diag/all-resources.txt" ;;
-      pod-log) printf 'msg=x value=%s\n' "${OTLP_TOKEN}" >"${work}/diag/nvke/controller/logs.txt" ;;
-      encoded-token) printf 'OTEL_EXPORTER_OTLP_HEADERS: authorization=Bearer%%20%s\n' "${OTLP_TOKEN}" >"${work}/diag/all-resources.txt" ;;
-      tenant-pair) printf 'OTEL_EXPORTER_OTLP_HEADERS: x-tenant=%s\n' "${OTLP_TENANT}" >"${work}/diag/all-resources.txt" ;;
-    esac
-    rc=0
-    scan_for_otlp_header_values "${work}/run.log" "${work}/go-test.log" "${work}/diag" >/dev/null 2>&1 || rc=$?
-    if [ "${where}" = none ] && [ "${rc}" -ne 0 ]; then
-      log "FAIL: the search for OTLP header values flagged files that hold none, so it would flag a clean run"
-      rm -rf "${work}"
-      return 1
-    fi
-    if [ "${where}" != none ] && [ "${rc}" -eq 0 ]; then
-      log "FAIL: the search for OTLP header values missed one planted in the ${where}, so a clean result proves nothing"
-      rm -rf "${work}"
-      return 1
-    fi
-  done
-  rm -rf "${work}"
-
-  if ! scan_for_otlp_header_values "${BOOTSTRAP_LOG}" "${BOOTSTRAP_GO_TEST_LOG}" "${DIAGNOSTICS_DIR}"; then
-    return 1
-  fi
-  log "PASS: no OTLP header value in the bootstrap log, the Go test log or the diagnostics"
-}
-
 # defer registers a command for the EXIT trap, which runs registrations in
 # reverse order. Register the teardown *before* the operation it undoes: under
 # `set -e` an operation can fail partway and exit on the spot, so the teardown
@@ -472,7 +463,6 @@ cleanup() {
   # A leak turns a passing run red; a run that already failed stays failed.
   local scan_failed=0
   scan_output_for_secrets || scan_failed=1
-  scan_output_for_otlp_headers || scan_failed=1
   # CI uploads this directory when the job fails, and a failed scan is a failed
   # job. The bundle is redacted in the scan's output but not on disk, so it is
   # removed rather than published with the credential the scan reported. A
