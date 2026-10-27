@@ -37,7 +37,7 @@ func TestAuditLoggerMirrorsStructuredRecords(t *testing.T) {
 
 	var fileOutput bytes.Buffer
 	var serviceOutput bytes.Buffer
-	logger := newAuditLogger(&fileOutput, &serviceOutput)
+	logger := newAuditLogger(&fileOutput, &serviceOutput, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 
 	logger.Info("audit event", "rpc_method", "/nvke.NodeAgent/NodePreflight")
 
@@ -62,8 +62,15 @@ func TestFanoutWriterAttemptsEveryOutput(t *testing.T) {
 
 	wantErr := errors.New("audit file unavailable")
 	var serviceOutput bytes.Buffer
+	var diagnosticOutput bytes.Buffer
 	errorWriter := writerFunc(func([]byte) (int, error) { return 0, wantErr })
-	writer := fanoutWriter{errorWriter, &serviceOutput}
+	writer := fanoutWriter{
+		outputs: []fanoutOutput{
+			{name: "file", writer: errorWriter},
+			{name: "service", writer: &serviceOutput},
+		},
+		diagnostics: slog.New(slog.NewJSONHandler(&diagnosticOutput, nil)),
+	}
 	input := []byte("audit record")
 
 	n, err := writer.Write(input)
@@ -77,13 +84,26 @@ func TestFanoutWriterAttemptsEveryOutput(t *testing.T) {
 	if !bytes.Equal(serviceOutput.Bytes(), input) {
 		t.Errorf("service output = %q, want %q", serviceOutput.Bytes(), input)
 	}
+
+	var diagnostic map[string]any
+	require.NoError(t, json.Unmarshal(diagnosticOutput.Bytes(), &diagnostic))
+	assert.Equal(t, "failed to write audit output", diagnostic["msg"])
+	assert.Equal(t, "file", diagnostic["output"])
+	assert.Equal(t, float64(0), diagnostic["output_index"])
+	assert.Contains(t, diagnostic["err"], wantErr.Error())
 }
 
 func TestFanoutWriterReportsShortWrite(t *testing.T) {
 	t.Parallel()
 
 	shortWriter := writerFunc(func([]byte) (int, error) { return 0, nil })
-	writer := fanoutWriter{io.Discard, shortWriter}
+	writer := fanoutWriter{
+		outputs: []fanoutOutput{
+			{name: "file", writer: io.Discard},
+			{name: "service", writer: shortWriter},
+		},
+		diagnostics: slog.New(slog.NewJSONHandler(io.Discard, nil)),
+	}
 	input := []byte("audit record")
 
 	_, err := writer.Write(input)

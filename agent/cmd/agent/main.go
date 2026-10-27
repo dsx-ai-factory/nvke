@@ -404,20 +404,30 @@ func RunNodeStartup(cfg AgentConfig) (*server.NodeAgentServer, error) {
 	return agentServer, nil
 }
 
-type fanoutWriter []io.Writer
+type fanoutOutput struct {
+	name   string
+	writer io.Writer
+}
+
+type fanoutWriter struct {
+	outputs     []fanoutOutput
+	diagnostics *slog.Logger
+}
 
 // Write attempts every output even if an earlier one fails. Returning the full
 // input length prevents callers from retrying and duplicating a record in the
 // outputs that succeeded; the joined error still reports any failed copies.
 func (w fanoutWriter) Write(p []byte) (int, error) {
 	var errs []error
-	for i, output := range w {
-		n, err := output.Write(p)
+	for i, output := range w.outputs {
+		n, err := output.writer.Write(p)
 		if err == nil && n != len(p) {
 			err = io.ErrShortWrite
 		}
 		if err != nil {
-			errs = append(errs, fmt.Errorf("write audit output %d: %w", i, err))
+			err = fmt.Errorf("write %s audit output: %w", output.name, err)
+			errs = append(errs, err)
+			w.diagnostics.Error("failed to write audit output", "output", output.name, "output_index", i, "err", err)
 		}
 	}
 
@@ -426,8 +436,14 @@ func (w fanoutWriter) Write(p []byte) (int, error) {
 
 // newAuditLogger mirrors audit records to their durable file and the service
 // output collected by journald.
-func newAuditLogger(fileOutput, serviceOutput io.Writer) *slog.Logger {
-	return slog.New(slog.NewJSONHandler(fanoutWriter{fileOutput, serviceOutput}, nil))
+func newAuditLogger(fileOutput, serviceOutput io.Writer, diagnostics *slog.Logger) *slog.Logger {
+	return slog.New(slog.NewJSONHandler(fanoutWriter{
+		outputs: []fanoutOutput{
+			{name: "file", writer: fileOutput},
+			{name: "service", writer: serviceOutput},
+		},
+		diagnostics: diagnostics,
+	}, nil))
 }
 
 func main() {
@@ -497,7 +513,7 @@ func main() {
 		log.Fatalf("failed to open script execution log file: %v", err)
 	}
 	// Create audit logger, script execution logger, and default logger
-	auditLogger := newAuditLogger(auditFile, os.Stdout)
+	auditLogger := newAuditLogger(auditFile, os.Stdout, slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	scriptExecutionLogger := slog.New(slog.NewJSONHandler(scriptExecLogFile, nil))
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
