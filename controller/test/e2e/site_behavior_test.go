@@ -507,23 +507,21 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		Expect(joinProblems("StorageClasses", storageClassProblems(expect.storageClasses, classes.Items))).To(Succeed())
 	}, Label("site-distro"), NodeTimeout(2*time.Minute))
 
-	// The site's part is what it grants a request with no credential. The
-	// identity's part holds the image's service account to the README's
-	// RBAC; outside a pod the identity is whoever runs the suite, often an
-	// admin, and says nothing about the site, so it is left out.
+	// The cluster's part is what it grants a request with no credential. The
+	// identity's part holds the suite's identity to the README's RBAC where
+	// that identity is one the README grants. Elsewhere it is whoever runs
+	// the suite, or a lane's admin, and says nothing about the cluster, so
+	// it is left out.
 	It("refuses anonymous access and holds the validation identity to read access", func(ctx SpecContext) {
 		connect()
 		var problems []string
-		if settings.inPod {
-			for _, attributes := range rbacDenied {
+		if settings.checkIdentity {
+			problems = identityProblems(func(attributes authorizationv1.ResourceAttributes) bool {
 				review := &authorizationv1.SelfSubjectAccessReview{Spec: authorizationv1.SelfSubjectAccessReviewSpec{ResourceAttributes: ptr.To(attributes)}}
-				result := expectSucceed(clientset.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, review, metav1.CreateOptions{}))
-				if result.Status.Allowed {
-					problems = append(problems, "the validation identity may "+describeAttributes(attributes)+": it should hold read access only")
-				}
-			}
+				return expectSucceed(clientset.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, review, metav1.CreateOptions{})).Status.Allowed
+			})
 		} else {
-			GinkgoLogr.Info("RBAC check leaves out the suite's own identity: it runs outside a pod")
+			GinkgoLogr.Info("RBAC check leaves out the suite's own identity: it is not one the README grants")
 		}
 		anonymous := expectSucceed(kubernetes.NewForConfig(rest.AnonymousClientConfig(restConfig)))
 		_, err := anonymous.CoreV1().Secrets(kubeSystemNamespace).List(ctx, metav1.ListOptions{Limit: 1})
@@ -1227,6 +1225,18 @@ var rbacDenied = []authorizationv1.ResourceAttributes{
 	{Verb: "list", Resource: "secrets"},
 	{Verb: "create", Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings"},
 	{Verb: "*", Group: "*", Resource: "*"},
+}
+
+// identityProblems names each of rbacDenied that allowed, which reviews the
+// suite's own identity, permits.
+func identityProblems(allowed func(authorizationv1.ResourceAttributes) bool) []string {
+	var problems []string
+	for _, attributes := range rbacDenied {
+		if allowed(attributes) {
+			problems = append(problems, "the validation identity may "+describeAttributes(attributes)+": it should hold read access only")
+		}
+	}
+	return problems
 }
 
 func describeAttributes(a authorizationv1.ResourceAttributes) string {

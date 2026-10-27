@@ -110,6 +110,11 @@ type siteChecks struct {
 	// tenant marks the cluster as a tenant: the specs that only a site
 	// controller can pass skip.
 	tenant bool
+	// declaredTaints, set for a tenant, maps each node to the taints its node
+	// pool declares. The node check lets a tenant's nodes carry those and,
+	// on a control-plane node, kubeadm's taint; any other taint that keeps
+	// pods off a node fails.
+	declaredTaints func(ctx context.Context) (map[string][]corev1.Taint, error)
 	// certManager requires cert-manager: its Certificates checked, and an
 	// Issuer tried.
 	certManager bool
@@ -208,7 +213,14 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool), chec
 			if err := c.List(ctx, &nodes); err != nil {
 				return err
 			}
-			return joinProblems("nodes", nodeProblems(nodes.Items, !checks.tenant))
+			var declared map[string][]corev1.Taint
+			if checks.declaredTaints != nil {
+				var err error
+				if declared, err = checks.declaredTaints(ctx); err != nil {
+					return err
+				}
+			}
+			return joinProblems("nodes", nodeProblems(nodes.Items, declared))
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
 	}, Label("readiness", "site-software"), NodeTimeout(siteCheck+time.Minute))
 
@@ -375,11 +387,12 @@ func joinProblems(what string, problems []string) error {
 // controlPlaneTaint is the taint kubeadm puts on a control-plane node.
 const controlPlaneTaint = "node-role.kubernetes.io/control-plane"
 
-// nodeProblems reports nodes not Ready or cordoned and, with taints, nodes
-// carrying a taint that keeps pods off them. A tenant's node pools taint
-// their nodes by design, and the tenant checks compare those taints with the
-// pool's, so a tenant passes taints false.
-func nodeProblems(nodes []corev1.Node, taints bool) []string {
+// nodeProblems reports nodes not Ready or cordoned, and nodes carrying a
+// taint that keeps pods off them. declared is nil for a site. For a tenant it
+// holds the taints each node's pool declares: a tenant's nodes may carry
+// those, and its control-plane nodes kubeadm's taint, since its pools take
+// the work.
+func nodeProblems(nodes []corev1.Node, declared map[string][]corev1.Taint) []string {
 	if len(nodes) == 0 {
 		return []string{"the cluster has no nodes"}
 	}
@@ -396,10 +409,18 @@ func nodeProblems(nodes []corev1.Node, taints bool) []string {
 		// Where another node takes the work, the taint is kubeadm's normal
 		// state.
 		for _, taint := range node.Spec.Taints {
-			if !taints || !hardTaint(taint) {
+			if !hardTaint(taint) {
 				continue
 			}
-			if taint.Key == controlPlaneTaint && schedulableOtherThan(nodes, node.Name) {
+			if declared != nil {
+				_, controlPlane := node.Labels[controlPlaneTaint]
+				kubeadm := taint.Key == controlPlaneTaint && taint.Value == "" && taint.Effect == corev1.TaintEffectNoSchedule
+				if kubeadm && controlPlane || slices.ContainsFunc(declared[node.Name], func(d corev1.Taint) bool {
+					return d.Key == taint.Key && d.Value == taint.Value && d.Effect == taint.Effect
+				}) {
+					continue
+				}
+			} else if taint.Key == controlPlaneTaint && schedulableOtherThan(nodes, node.Name) {
 				continue
 			}
 			problems = append(problems, fmt.Sprintf("%s: tainted %s:%s", node.Name, taint.Key, taint.Effect))

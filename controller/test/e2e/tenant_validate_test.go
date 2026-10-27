@@ -95,10 +95,13 @@ type tenantValidateSettings struct {
 	tokenSecret       string
 	runnerNamespace   string
 	kubernetesVersion string
-	gpuNodes          *int
-	gpuImage          string
-	checks            siteChecks
-	expect            siteExpectations
+	// adminCredential marks a tenant reached as its admin, as a lane does,
+	// rather than as the ServiceAccount the README grants.
+	adminCredential bool
+	gpuNodes        *int
+	gpuImage        string
+	checks          siteChecks
+	expect          siteExpectations
 }
 
 func tenantValidateFromEnv(getenv func(string) string, namespaceFile string) (tenantValidateSettings, error) {
@@ -361,6 +364,22 @@ var _ = Describe("tenant validation", Ordered, ContinueOnFailure, Label(tenantVa
 func validateTenant(resolve func() *tenantTarget, settings tenantValidateSettings) {
 	checks := settings.checks
 	checks.restConfig = func() (*rest.Config, error) { return resolve().restConfig, nil }
+	checks.declaredTaints = func(ctx context.Context) (map[string][]corev1.Taint, error) {
+		target := resolve()
+		pools, err := target.controller.ListNodePools(ctx, target.record.ID)
+		if err != nil {
+			return nil, err
+		}
+		declared := map[string][]corev1.Taint{}
+		for _, pool := range pools {
+			members, err := target.controller.ListNodePoolNodes(ctx, pool.ID)
+			if err != nil {
+				return nil, err
+			}
+			addPoolTaints(declared, pool, members)
+		}
+		return declared, nil
+	}
 
 	validateSitePostDeploy(func() (site.Cluster, site.Spec, bool) {
 		version := settings.kubernetesVersion
@@ -370,9 +389,22 @@ func validateTenant(resolve func() *tenantTarget, settings tenantValidateSetting
 		return site.Cluster{}, site.Spec{KubernetesVersion: version}, true
 	}, checks)
 	validateSiteBehavior(func() siteValidateSettings {
-		return siteValidateSettings{enabled: true, checks: checks, expect: tenantExpectations(settings.expect, resolve().record)}
+		return tenantBehaviorSettings(settings, checks, resolve().record)
 	})
 	validateTenantRecord(resolve, settings)
+}
+
+// tenantBehaviorSettings are the shared checks' settings for a tenant. The
+// suite's identity there is the ServiceAccount the runner provisioned, so it
+// is held to read access wherever the suite runs, unless a lane reaches the
+// tenant as its admin.
+func tenantBehaviorSettings(settings tenantValidateSettings, checks siteChecks, record api.Cluster) siteValidateSettings {
+	return siteValidateSettings{
+		enabled:       true,
+		checkIdentity: !settings.adminCredential,
+		checks:        checks,
+		expect:        tenantExpectations(settings.expect, record),
+	}
 }
 
 // laneTenantSettings are the tenant checks a lane runs on the tenant it built:
@@ -380,8 +412,9 @@ func validateTenant(resolve func() *tenantTarget, settings tenantValidateSetting
 // minute a failed check spends is one the delete needs. Nothing on a lane
 // installs a GPU driver or device plugin, so the GPU checks skip.
 var laneTenantSettings = tenantValidateSettings{
-	enabled:  true,
-	gpuImage: defaultTenantGPUImage,
+	enabled:         true,
+	adminCredential: true,
+	gpuImage:        defaultTenantGPUImage,
 	checks: siteChecks{
 		namespaces:     []siteNamespace{{name: kubeSystemNamespace, source: "kubeadm"}},
 		failFast:       true,
@@ -590,6 +623,15 @@ func poolMembers(members []api.Node, nodes []corev1.Node) []corev1.Node {
 		}
 	}
 	return found
+}
+
+// addPoolTaints records the taints pool declares against each of its members.
+func addPoolTaints(declared map[string][]corev1.Taint, pool api.NodePool, members []api.Node) {
+	for _, member := range members {
+		for _, taint := range pool.NodeTaints {
+			declared[member.Name] = append(declared[member.Name], corev1.Taint{Key: taint.Key, Value: taint.Value, Effect: corev1.TaintEffect(taint.Effect)})
+		}
+	}
 }
 
 // nodePoolMetadataProblems requires every node the controller records in pool

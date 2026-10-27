@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -224,6 +225,26 @@ func TestUnit_TenantNodePoolMetadataProblems(t *testing.T) {
 		"pool gpu: node g-3 is not in the cluster",
 	}, nodePoolMetadataProblems(pool, members, []corev1.Node{good, bad, other}))
 	require.Empty(t, nodePoolMetadataProblems(pool, members[:1], []corev1.Node{good, other}))
+}
+
+func TestUnit_TenantPoolTaints(t *testing.T) {
+	declared := map[string][]corev1.Taint{}
+	addPoolTaints(declared, api.NodePool{NodeTaints: []api.NodeTaint{{Key: "nvidia.com/gpu", Value: "present", Effect: "NoSchedule"}}}, []api.Node{{Name: "g-1"}})
+	addPoolTaints(declared, api.NodePool{}, []api.Node{{Name: "c-1"}})
+	require.Equal(t, map[string][]corev1.Taint{"g-1": {{Key: "nvidia.com/gpu", Value: "present", Effect: corev1.TaintEffectNoSchedule}}}, declared)
+}
+
+func TestUnit_TenantChecksIdentity(t *testing.T) {
+	settings, err := tenantValidateFromEnv(envMap(map[string]string{tenantClusterEnv: "blue"}), filepath.Join(t.TempDir(), "absent"))
+	require.NoError(t, err)
+	require.True(t, tenantBehaviorSettings(settings, settings.checks, api.Cluster{}).checkIdentity,
+		"the image reaches a tenant as the provisioned ServiceAccount, in a pod or not")
+	require.False(t, tenantBehaviorSettings(laneTenantSettings, laneTenantSettings.checks, api.Cluster{}).checkIdentity,
+		"a lane reaches the tenant as its admin")
+
+	require.Len(t, identityProblems(func(authorizationv1.ResourceAttributes) bool { return true }), len(rbacDenied),
+		"an identity allowed everything fails each denied request")
+	require.Empty(t, identityProblems(func(authorizationv1.ResourceAttributes) bool { return false }))
 }
 
 func TestUnit_TenantPoolReservedMemory(t *testing.T) {

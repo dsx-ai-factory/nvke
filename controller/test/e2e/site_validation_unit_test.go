@@ -84,20 +84,49 @@ func TestUnit_SiteNodeProblems(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, nodeProblems(tt.nodes, true))
+			require.Equal(t, tt.want, nodeProblems(tt.nodes, nil))
 		})
 	}
+}
 
-	gpuPool := corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{Name: "gpu-1"},
-		Spec:       corev1.NodeSpec{Taints: []corev1.Taint{{Key: "nvidia.com/gpu", Effect: corev1.TaintEffectNoSchedule}}},
-		Status:     corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}},
+func TestUnit_TenantNodeProblemsTaints(t *testing.T) {
+	ready := corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}}
+	gpuTaint := corev1.Taint{Key: "nvidia.com/gpu", Value: "present", Effect: corev1.TaintEffectNoSchedule}
+	gpuPool := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "gpu-1"}, Spec: corev1.NodeSpec{Taints: []corev1.Taint{gpuTaint}}, Status: ready}
+	controlPlane := corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "cp-1", Labels: map[string]string{controlPlaneTaint: ""}},
+		Spec:       corev1.NodeSpec{Taints: []corev1.Taint{{Key: controlPlaneTaint, Effect: corev1.TaintEffectNoSchedule}}},
+		Status:     ready,
 	}
-	require.Equal(t, []string{"gpu-1: tainted nvidia.com/gpu:NoSchedule"}, nodeProblems([]corev1.Node{gpuPool}, true))
-	require.Empty(t, nodeProblems([]corev1.Node{gpuPool}, false), "a tenant's pool taints are the pool check's to judge")
+	declared := map[string][]corev1.Taint{"gpu-1": {gpuTaint}}
+
+	require.Equal(t, []string{"gpu-1: tainted nvidia.com/gpu:NoSchedule"}, nodeProblems([]corev1.Node{gpuPool}, nil), "a site declares no pool taints")
+	require.Empty(t, nodeProblems([]corev1.Node{gpuPool, controlPlane}, declared), "a declared pool taint and kubeadm's control-plane taint are expected")
+
+	undeclared := corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker-1"},
+		Spec:       corev1.NodeSpec{Taints: []corev1.Taint{{Key: "example.com/drain", Effect: corev1.TaintEffectNoSchedule}}},
+		Status:     ready,
+	}
+	require.Equal(t, []string{"worker-1: tainted example.com/drain:NoSchedule"}, nodeProblems([]corev1.Node{gpuPool, undeclared}, declared))
+
+	otherValue := gpuPool
+	otherValue.Spec.Taints = []corev1.Taint{{Key: gpuTaint.Key, Value: "absent", Effect: gpuTaint.Effect}}
+	require.Equal(t, []string{"gpu-1: tainted nvidia.com/gpu:NoSchedule"}, nodeProblems([]corev1.Node{otherValue}, declared), "a taint differing from its pool's is not excused")
+
+	evicting := controlPlane
+	evicting.Spec.Taints = []corev1.Taint{{Key: controlPlaneTaint, Effect: corev1.TaintEffectNoExecute}}
+	require.Equal(t, []string{"cp-1: tainted node-role.kubernetes.io/control-plane:NoExecute"}, nodeProblems([]corev1.Node{evicting}, declared), "only kubeadm's NoSchedule taint is excused")
+	declaredEvicting := map[string][]corev1.Taint{"cp-1": evicting.Spec.Taints}
+	require.Empty(t, nodeProblems([]corev1.Node{evicting}, declaredEvicting), "a pool may declare another effect")
+
+	worker := controlPlane
+	worker.Labels = nil
+	require.Equal(t, []string{"cp-1: tainted node-role.kubernetes.io/control-plane:NoSchedule"}, nodeProblems([]corev1.Node{worker}, declared), "kubeadm's taint is excused only on a control-plane node")
+
 	cordoned := gpuPool
 	cordoned.Spec.Unschedulable = true
-	require.Equal(t, []string{"gpu-1: cordoned"}, nodeProblems([]corev1.Node{cordoned}, false))
+	require.Equal(t, []string{"gpu-1: cordoned"}, nodeProblems([]corev1.Node{cordoned}, declared))
 }
 
 func TestUnit_SiteWorkloadProblems(t *testing.T) {
@@ -367,7 +396,7 @@ func TestUnit_SiteProblemsSayWhy(t *testing.T) {
 			Type: corev1.NodeReady, Status: corev1.ConditionFalse, Reason: "KubeletNotReady", Message: "container runtime network not ready",
 		}}},
 	}
-	require.Equal(t, []string{"w-1: not Ready (False KubeletNotReady: container runtime network not ready)"}, nodeProblems([]corev1.Node{node}, false))
+	require.Equal(t, []string{"w-1: not Ready (False KubeletNotReady: container runtime network not ready)"}, nodeProblems([]corev1.Node{node}, nil))
 
 	stuck := appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "api"}}
 	stuck.Status.Conditions = []appsv1.DeploymentCondition{
