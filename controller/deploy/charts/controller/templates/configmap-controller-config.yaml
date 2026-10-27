@@ -39,8 +39,20 @@ data:
     managementNamespace: {{ include "controller.managementNamespace" . | quote }}
     metricsListenAddress: {{ .Values.metrics.listenAddress | default "127.0.0.1:9090" | quote }}
     supportedInfraProviders:
+      {{- /* Refuse here what internal/controllerconfig would refuse at startup,
+      after a rollout had replaced the running pod. The names match its
+      InfraProvider constants. */}}
+      {{- $providers := list }}
       {{- range splitList "," (.Values.supportedInfraProviders | default "nico") }}
-      - {{ trim . | quote }}
+      {{- $provider := trim . }}
+      {{- if not (has $provider (list "nico" "infra" "launchLayer")) }}
+      {{- fail (printf "supportedInfraProviders: %q is not a supported provider, which are nico, infra and launchLayer" $provider) }}
+      {{- end }}
+      {{- if has $provider $providers }}
+      {{- fail (printf "supportedInfraProviders: %q is listed more than once" $provider) }}
+      {{- end }}
+      {{- $providers = append $providers $provider }}
+      - {{ $provider | quote }}
       {{- end }}
     {{- with .Values.nodeMetadata.allowlistedLabelKeys }}
     nodeMetadataAllowlistedLabelKeys:
