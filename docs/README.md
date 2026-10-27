@@ -51,6 +51,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [development.md](development.md) | The checks to run before opening a pull request, and which ones a laptop cannot reproduce |
 | [go-workspace.md](go-workspace.md) | The Go workspace, which modules are in it, and how to keep `go.work.sum` current |
 | [coverage-policy.md](coverage-policy.md) | What coverage is collected, what CI does with it, and why no threshold gates a merge |
+| [adrs/20261014-adr-conventions.md](adrs/20261014-adr-conventions.md) | Accepted decision on ADR scope, placement, format, and lifecycle |
 | [issue-triage.md](issue-triage.md) | How issues are triaged: the `needs-triage` and `priority/*` labels, who sets them, and what the automation does |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | How to get a change reviewed and merged |
 | [../.github/workflows/README.md](../.github/workflows/README.md) | How CI is wired, and the invariants a new workflow has to hold to |
