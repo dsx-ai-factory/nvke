@@ -55,7 +55,8 @@ const (
 
 // StaleAfter is how old a provider's last completed check, or an Identity never
 // checked, may be before its result is no longer reported as current, when the
-// provider has published no usable next check time.
+// provider has published no usable next check time. A published next check
+// time more than StaleAfter after the last check is not usable.
 const StaleAfter = 10 * time.Minute
 
 // nextCheckGrace is how long past its published next check time a provider's

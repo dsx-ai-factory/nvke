@@ -221,10 +221,20 @@ func isStale(id Identity, now time.Time) bool {
 
 // nextCheckDue returns the next check time id's provider published, or nil
 // when it published none that describes the reported check. A next check time
-// is usable only when it is later than the last check: a provider that does not
-// write the field advances lastCheckedTime and leaves an older value in place.
+// is usable only when it is later than the last check, and no more than
+// StaleAfter after it.
 func nextCheckDue(id Identity) *time.Time {
-	if id.NextCheck == nil || id.LastChecked == nil || !id.NextCheck.After(*id.LastChecked) {
+	if id.NextCheck == nil || id.LastChecked == nil {
+		return nil
+	}
+	// A provider that does not write the field advances lastCheckedTime and
+	// leaves an older value in place.
+	if !id.NextCheck.After(*id.LastChecked) {
+		return nil
+	}
+	// Bound how long a published value can keep a result current, so a
+	// far-future time cannot hide a stopped manager past the age fallback.
+	if id.NextCheck.After(id.LastChecked.Add(StaleAfter)) {
 		return nil
 	}
 	return id.NextCheck
