@@ -82,6 +82,100 @@ func candidateLibrary(t *testing.T) string {
 	return path
 }
 
+func TestUnit_CandidateNativeArchitectureAdmission(t *testing.T) {
+	for _, tc := range []struct {
+		name, arch, hostOS, hostArch string
+		pass                         bool
+	}{
+		{"existing default", "", "Linux", "aarch64", true},
+		{"native ARM64", "arm64", "Linux", "aarch64", true},
+		{"native AMD64", "amd64", "Linux", "x86_64", true},
+		{"AMD64 on ARM64", "amd64", "Linux", "aarch64", false},
+		{"ARM64 on AMD64", "arm64", "Linux", "x86_64", false},
+		{"unsupported architecture", "riscv64", "Linux", "riscv64", false},
+		{"non Linux", "arm64", "Darwin", "arm64", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := exec.CommandContext(t.Context(), "bash", "-ec", `source "$1"
+fail(){ printf '%s\n' "$*" >&2; exit 1; }
+uname(){ case "$1" in -s) printf '%s\n' "$TEST_HOST_OS";; -m) printf '%s\n' "$TEST_HOST_ARCH";; *) exit 1;; esac; }
+candidate_native_host`, "contract", candidateLibrary(t))
+			cmd.Env = []string{
+				"PATH=" + os.Getenv("PATH"), "NKE_E2E_CANDIDATE_ARCH=" + tc.arch,
+				"TEST_HOST_OS=" + tc.hostOS, "TEST_HOST_ARCH=" + tc.hostArch,
+			}
+			out, err := cmd.CombinedOutput()
+			if (err == nil) != tc.pass {
+				t.Fatalf("native candidate admission: %s %v", out, err)
+			}
+		})
+	}
+}
+
+func TestUnit_CandidateNetworkGuardBindsLiveBridge(t *testing.T) {
+	for _, tc := range []struct {
+		name, bridge, mismatch string
+		pass                   bool
+	}{
+		{"current bridge", "nvkevm0", "", true},
+		{"retained bridge", "nkdvm0", "", true},
+		{"foreign bridge", "nvkevm0", "bridge", false},
+		{"foreign hosts", "nvkevm0", "hosts", false},
+		{"foreign lease", "nvkevm0", "lease", false},
+		{"missing bridge", "", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "guard state")
+			hosts := filepath.Join(root, "dhcp-hosts")
+			lease := filepath.Join(root, "leases")
+			if err := os.MkdirAll(hosts, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(lease, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"dnsmasq", "--interface=" + tc.bridge, "--dhcp-hostsdir=" + hosts, "--dhcp-leasefile=" + lease}
+			switch tc.mismatch {
+			case "bridge":
+				args[1] = "--interface=foreign"
+			case "hosts":
+				args[2] = "--dhcp-hostsdir=/foreign"
+			case "lease":
+				args[3] = "--dhcp-leasefile=/foreign"
+			}
+			argv := filepath.Join(root, "argv")
+			if err := os.WriteFile(argv, []byte(strings.Join(args, "\x00")+"\x00"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			// Stub privileged process inspection; keep the real owned-file checks
+			// and the NUL-framed argv comparison in the source-owned consumer.
+			cmd := exec.CommandContext(t.Context(), "bash", "-ec", `source "$1"
+fail(){ printf '%s\n' "$*" >&2; exit 1; }
+kill(){ [[ "$*" == '-0 4242' ]]; }
+sudo(){
+  [[ "$1" == -n ]] || return 1
+  shift
+  case "$1" in
+    test) [[ "$2" == /proc/4242/exe && "$3" == -ef && "$4" == "$TEST_GUARD_ROOT/dnsmasq" ]];;
+    cat) [[ "$2" == /proc/4242/cmdline ]] || return 1; cat "$TEST_GUARD_ARGV";;
+    *) return 1;;
+  esac
+}
+candidate_network_inputs`, "contract", candidateLibrary(t))
+			cmd.Env = []string{
+				"PATH=" + os.Getenv("PATH"), "NKE_E2E_CANDIDATE_NETWORK_OWNER=nvkr-network-guard",
+				"NICO_VMS_BRIDGE_NAME=" + tc.bridge, "NKE_E2E_CANDIDATE_DHCP_HOSTS_DIR=" + hosts,
+				"NKE_E2E_CANDIDATE_DHCP_LEASE_FILE=" + lease, "NKE_E2E_CANDIDATE_DHCP_PID=4242",
+				"TEST_GUARD_ROOT=" + root, "TEST_GUARD_ARGV=" + argv,
+			}
+			out, err := cmd.CombinedOutput()
+			if (err == nil) != tc.pass {
+				t.Fatalf("candidate bridge handoff: %s %v", out, err)
+			}
+		})
+	}
+}
+
 // The current product CLI is built only as a contract-test fixture. Runtime
 // candidate admission receives an already verified and supplied CLI; it never
 // invokes this build or turns metadata inspection into authentication.
@@ -97,10 +191,12 @@ func TestUnit_CandidateReleaseInputsUseCurrentCLIOwner(t *testing.T) {
 	}
 	cases := []struct {
 		name   string
+		arch   string
 		mutate func(map[string]any)
 		wantOK bool
 	}{
 		{name: "complete current metadata", wantOK: true},
+		{name: "complete AMD64 metadata", arch: "amd64", wantOK: true},
 		{name: "lifecycle v4", mutate: func(doc map[string]any) {
 			doc["schemaVersion"] = "nvkr.dev/release/v4"
 			doc["artifacts"] = doc["outputs"]
@@ -228,7 +324,7 @@ func TestUnit_CandidateReleaseInputsUseCurrentCLIOwner(t *testing.T) {
 			// Admission invokes the CLI up to ten times. Remove only the race
 			// runtime's one-second exit sleep; keep its detection and failure exit.
 			raceReports := t.TempDir()
-			cmd.Env = []string{"PATH=" + t.TempDir(), "GORACE=atexit_sleep_ms=0 log_path=" + filepath.Join(raceReports, "race"), "NKE_E2E_CANDIDATE_NVKECTL=" + binary, "NKE_E2E_CANDIDATE_RELEASE=" + release}
+			cmd.Env = []string{"PATH=" + t.TempDir(), "GORACE=atexit_sleep_ms=0 log_path=" + filepath.Join(raceReports, "race"), "NKE_E2E_CANDIDATE_NVKECTL=" + binary, "NKE_E2E_CANDIDATE_RELEASE=" + release, "NKE_E2E_CANDIDATE_ARCH=" + tc.arch}
 			out, runErr := cmd.CombinedOutput()
 			if probeCtx.Err() != nil {
 				t.Fatalf("metadata admission exceeded its deadline: %s %v", out, probeCtx.Err())
@@ -395,8 +491,13 @@ func TestUnit_CandidateCleanupPreservesFailureAndOwnsExactInstances(t *testing.T
 }
 
 func TestUnit_CandidateImagePinsAndContainerdReadback(t *testing.T) {
-	for _, scenario := range []string{"valid", "archive changed", "wrong reference", "duplicate", "missing values", "wrong readback"} {
+	for _, scenario := range []string{"valid", "valid amd64", "archive changed", "wrong reference", "duplicate", "missing values", "wrong readback"} {
 		t.Run(scenario, func(t *testing.T) {
+			arch := "arm64"
+			if scenario == "valid amd64" {
+				arch = "amd64"
+			}
+			valid := scenario == "valid" || scenario == "valid amd64"
 			dir := t.TempDir()
 			archive := filepath.Join(dir, "image.tar")
 			payload := []byte("transport fixture; containerd media validation belongs to the native importer")
@@ -452,14 +553,14 @@ docker(){
 candidate_image_inputs
 candidate_import_images
 `, "contract", candidateLibrary(t))
-			cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "STATE_DIR=" + dir, "NKE_E2E_CANDIDATE_IMAGE_INPUTS=" + input, "NKE_E2E_CANDIDATE_VALUES=" + dir, "KIND_CLUSTER_NAME=owned", "READBACK=" + readback}
+			cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "STATE_DIR=" + dir, "NKE_E2E_CANDIDATE_IMAGE_INPUTS=" + input, "NKE_E2E_CANDIDATE_VALUES=" + dir, "KIND_CLUSTER_NAME=owned", "READBACK=" + readback, "NKE_E2E_CANDIDATE_ARCH=" + arch}
 			out, runErr := cmd.CombinedOutput()
-			if (runErr == nil) != (scenario == "valid") {
+			if (runErr == nil) != valid {
 				t.Fatalf("image %s result: %s %v", scenario, out, runErr)
 			}
-			if scenario == "valid" {
+			if valid {
 				actions, readErr := os.ReadFile(filepath.Join(dir, "actions"))
-				if readErr != nil || !strings.Contains(string(actions), "--platform linux/arm64 --base-name registry.example/cwe -") {
+				if readErr != nil || !strings.Contains(string(actions), "--platform linux/"+arch+" --base-name registry.example/cwe -") {
 					t.Fatalf("did not invoke native selected-platform importer: %s %v", actions, readErr)
 				}
 			}
@@ -468,8 +569,12 @@ candidate_import_images
 }
 
 func TestUnit_CandidateServedDiskMatchesPin(t *testing.T) {
-	for _, scenario := range []string{"exact", "different bytes", "download failed"} {
+	for _, scenario := range []string{"exact", "exact amd64", "different bytes", "download failed"} {
 		t.Run(scenario, func(t *testing.T) {
+			arch := "arm64"
+			if scenario == "exact amd64" {
+				arch = "amd64"
+			}
 			payload := []byte("pinned candidate disk bytes")
 			served := filepath.Join(t.TempDir(), "served.qcow2")
 			if scenario == "different bytes" {
@@ -481,11 +586,11 @@ func TestUnit_CandidateServedDiskMatchesPin(t *testing.T) {
 			pin := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte("pinned candidate disk bytes")))
 			cmd := exec.CommandContext(t.Context(), "bash", "-ec", `source "$1";
 timeout(){ while [[ "$1" == -* ]]; do shift; done; shift; "$@"; }
-curl(){ cat "$SERVED"; [[ "$CASE" != 'download failed' ]]; }
+curl(){ [[ "${!#}" == "http://172.30.0.1:18080/nvke-node-image-${NKE_E2E_CANDIDATE_ARCH}.qcow2" ]] || return 1; cat "$SERVED"; [[ "$CASE" != 'download failed' ]]; }
 candidate_verify_disk_service`, "contract", candidateLibrary(t))
-			cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "SERVED=" + served, "CASE=" + scenario, "NKE_E2E_CANDIDATE_QCOW2_SHA256=" + pin}
+			cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "SERVED=" + served, "CASE=" + scenario, "NKE_E2E_CANDIDATE_QCOW2_SHA256=" + pin, "NKE_E2E_CANDIDATE_ARCH=" + arch}
 			out, err := cmd.CombinedOutput()
-			if (err == nil) != (scenario == "exact") {
+			if (err == nil) != (scenario == "exact" || scenario == "exact amd64") {
 				t.Fatalf("served disk %s: %s %v", scenario, out, err)
 			}
 		})
@@ -720,11 +825,15 @@ func TestUnit_CandidateStackConfigurationHandoff(t *testing.T) {
 	if err := os.WriteFile(cli, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\"\n[ \"$NVKECTL_DATABASE_PASSWORD\" = synthetic-database ]\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.CommandContext(t.Context(), "bash", "-ec", `source "$1"; candidate_render_stack`, "contract", candidateLibrary(t))
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "NVKECTL_BIN=" + cli, "WORKSPACE_ROOT=/source", "STATE_DIR=/private/state", "NKE_E2E_CANDIDATE_SITESPEC=/private/site.json", "NKE_E2E_CANDIDATE_STACK_CONFIG=/private/stack.json", "NKE_E2E_CANDIDATE_RELEASE=/private/release.json", "NKE_E2E_CANDIDATE_LAYOUT=/private/layout", "NVKECTL_DATABASE_PASSWORD=synthetic-database"}
-	out, err := cmd.CombinedOutput()
-	want := "render\ndeploy-path\n--deploy-path\n/source/deploy/nico\n--sitespec\n/private/site.json\n--stack-config\n/private/stack.json\n--release\n/private/release.json\n--nvkr-run-dir\n/private/layout\n--arch\nlinux/arm64\n--out\n/private/state/rendered\n"
-	if err != nil || string(out) != want {
-		t.Fatalf("candidate render handoff: %s, %v", out, err)
+	for _, arch := range []string{"arm64", "amd64"} {
+		t.Run(arch, func(t *testing.T) {
+			cmd := exec.CommandContext(t.Context(), "bash", "-ec", `source "$1"; candidate_render_stack`, "contract", candidateLibrary(t))
+			cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "NVKECTL_BIN=" + cli, "WORKSPACE_ROOT=/source", "STATE_DIR=/private/state", "NKE_E2E_CANDIDATE_SITESPEC=/private/site.json", "NKE_E2E_CANDIDATE_STACK_CONFIG=/private/stack.json", "NKE_E2E_CANDIDATE_RELEASE=/private/release.json", "NKE_E2E_CANDIDATE_LAYOUT=/private/layout", "NVKECTL_DATABASE_PASSWORD=synthetic-database", "NKE_E2E_CANDIDATE_ARCH=" + arch}
+			out, err := cmd.CombinedOutput()
+			want := "render\ndeploy-path\n--deploy-path\n/source/deploy/nico\n--sitespec\n/private/site.json\n--stack-config\n/private/stack.json\n--release\n/private/release.json\n--nvkr-run-dir\n/private/layout\n--arch\nlinux/" + arch + "\n--out\n/private/state/rendered\n"
+			if err != nil || string(out) != want {
+				t.Fatalf("candidate render handoff: %s, %v", out, err)
+			}
+		})
 	}
 }

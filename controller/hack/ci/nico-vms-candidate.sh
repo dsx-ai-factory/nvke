@@ -21,7 +21,8 @@
 # process. NKE_CI_HOST_EXTERNAL_DHCP=true leaves DHCP ownership to this attempt.
 # Optional NETWORK_OWNER=nvkr-network-guard instead uses the parent's owned
 # DHCP_HOSTS_DIR, DHCP_LEASE_FILE and DHCP_PID (all three required in that mode).
-# The parent serves QCOW2 at http://172.30.0.1:18080/nvke-node-image-arm64.qcow2;
+# Optional ARCH selects amd64 or arm64 (the existing default).
+# The parent serves QCOW2 at http://172.30.0.1:18080/nvke-node-image-<arch>.qcow2;
 # this adapter checks the complete served bytes and observed guest backing files.
 # The supplied nvkectl must support inspect nvkr-release and render deploy-path
 # --nvkr-run-dir for the current release-description/v1 contract. Its inspection
@@ -30,15 +31,31 @@
 # Native Ginkgo/JUnit and KVM observations are diagnostic runtime evidence;
 # this adapter neither signs observations nor authorizes a Release.
 
+candidate_architecture() {
+  case "${NKE_E2E_CANDIDATE_ARCH:-arm64}" in
+    amd64|arm64) printf '%s\n' "${NKE_E2E_CANDIDATE_ARCH:-arm64}" ;;
+    *) fail "candidate mode requires an explicit supported native architecture" ;;
+  esac
+}
+
+candidate_native_host() {
+  local arch
+  arch="$(candidate_architecture)" || return 1
+  case "$(uname -s):$(uname -m):${arch}" in
+    Linux:x86_64:amd64|Linux:aarch64:arm64) ;;
+    *) fail "candidate architecture differs from the native Linux host" ;;
+  esac
+}
+
 candidate_network_inputs() {
-  local argument hosts=false lease=false
+  local argument hosts=false lease=false interface=false
   case "${NKE_E2E_CANDIDATE_NETWORK_OWNER:-}" in
     "")
       [[ "${NKE_CI_HOST_EXTERNAL_DHCP:-}" == true ]] || fail "host setup must leave DHCP ownership to this attempt"
       ;;
     nvkr-network-guard)
       for variable in NKE_E2E_CANDIDATE_DHCP_HOSTS_DIR NKE_E2E_CANDIDATE_DHCP_LEASE_FILE NKE_E2E_CANDIDATE_DHCP_PID; do candidate_require "${variable}"; done
-      [[ "${NICO_VMS_BRIDGE_NAME:-}" == nkdvm0 ]] || fail "the admitted network guard requires its owned nkdvm0 bridge"
+      candidate_require NICO_VMS_BRIDGE_NAME
       [[ "${NKE_E2E_CANDIDATE_DHCP_HOSTS_DIR}" == /* && -d "${NKE_E2E_CANDIDATE_DHCP_HOSTS_DIR}" && ! -L "${NKE_E2E_CANDIDATE_DHCP_HOSTS_DIR}" && -O "${NKE_E2E_CANDIDATE_DHCP_HOSTS_DIR}" ]] || fail "guard DHCP hosts directory is not private and owned"
       [[ "${NKE_E2E_CANDIDATE_DHCP_LEASE_FILE}" == /* && -f "${NKE_E2E_CANDIDATE_DHCP_LEASE_FILE}" && ! -L "${NKE_E2E_CANDIDATE_DHCP_LEASE_FILE}" && -O "${NKE_E2E_CANDIDATE_DHCP_LEASE_FILE}" ]] || fail "guard DHCP lease file is not regular and owned"
       [[ "${NKE_E2E_CANDIDATE_DHCP_PID}" != *[!0-9]* ]] || fail "guard DHCP process identifier is invalid"
@@ -50,8 +67,9 @@ candidate_network_inputs() {
       while IFS= read -r -d '' argument; do
         [[ "${argument}" != "--dhcp-hostsdir=${NKE_E2E_CANDIDATE_DHCP_HOSTS_DIR}" ]] || hosts=true
         [[ "${argument}" != "--dhcp-leasefile=${NKE_E2E_CANDIDATE_DHCP_LEASE_FILE}" ]] || lease=true
+        [[ "${argument}" != "--interface=${NICO_VMS_BRIDGE_NAME}" ]] || interface=true
       done < <(sudo -n cat "/proc/${NKE_E2E_CANDIDATE_DHCP_PID}/cmdline")
-      [[ "${hosts}" == true && "${lease}" == true ]] || fail "running DHCP process does not own the exact guard paths"
+      [[ "${hosts}" == true && "${lease}" == true && "${interface}" == true ]] || fail "running DHCP process does not own the exact guard paths and bridge"
       ;;
     *) fail "unknown candidate network owner" ;;
   esac
@@ -71,13 +89,14 @@ candidate_pin() {
 candidate_kubectl() { kubectl --kubeconfig "${E2E_KUBECONFIG}" "$@"; }
 
 candidate_release_inputs() {
-  local role selected
+  local role selected arch
+  arch="$(candidate_architecture)" || return 1
   [[ -f "${NKE_E2E_CANDIDATE_RELEASE}" && ! -L "${NKE_E2E_CANDIDATE_RELEASE}" ]] || fail "candidate release description is not a regular file"
   # The product owner validates its current v1 format and full inventory.
   # Do not translate lifecycle verification JSON or infer signer authority.
   timeout 30 "${NKE_E2E_CANDIDATE_NVKECTL}" inspect nvkr-release "${NKE_E2E_CANDIDATE_RELEASE}" --artifacts >/dev/null || fail "supplied CLI cannot read the current complete release description"
   for role in controller-chart nktp postgresql spire-crds spire temporal cwe controller-profiles capnico-controller; do
-    selected="$(timeout 30 "${NKE_E2E_CANDIDATE_NVKECTL}" inspect nvkr-release "${NKE_E2E_CANDIDATE_RELEASE}" --select "${role}" --arch linux/arm64)" || fail "candidate role ${role} is not selectable for Linux ARM64"
+    selected="$(timeout 30 "${NKE_E2E_CANDIDATE_NVKECTL}" inspect nvkr-release "${NKE_E2E_CANDIDATE_RELEASE}" --select "${role}" --arch "linux/${arch}")" || fail "candidate role ${role} is not selectable for Linux ${arch}"
     # The inspect owner deliberately returns empty success for an absent role.
     [[ -n "${selected}" ]] || fail "candidate release description omits required role ${role}"
   done
@@ -106,13 +125,14 @@ candidate_image_inputs() {
 }
 
 candidate_import_images() {
-  local row archive ref repository names
+  local row archive ref repository names arch
+  arch="$(candidate_architecture)" || return 1
   while IFS= read -r row; do
     archive="$(jq -r .archive <<<"${row}")"
     ref="$(jq -r .reference <<<"${row}")"
     repository="${ref%@*}"
     timeout 180 docker exec -i "${KIND_CLUSTER_NAME}-control-plane" ctr -n k8s.io images import --local --digests \
-      --platform linux/arm64 --base-name "${repository}" - <"${archive}" || fail "cannot import selected native candidate image"
+      --platform "linux/${arch}" --base-name "${repository}" - <"${archive}" || fail "cannot import selected native candidate image"
     names="$(timeout 30 docker exec -i "${KIND_CLUSTER_NAME}-control-plane" ctr -n k8s.io images ls -q "name==${ref}" </dev/null)" || fail "cannot read back native candidate image"
     [[ "${names}" == "${ref}" ]] || fail "containerd did not resolve the exact selected native digest"
     printf '%s\n' "${row}" >>"${STATE_DIR}/imported-images.jsonl"
@@ -125,9 +145,10 @@ candidate_api() {
 }
 
 candidate_verify_disk_service() {
-  local digest
+  local digest arch
+  arch="$(candidate_architecture)" || return 1
   digest="$(set -o pipefail; curl --fail --silent --show-error --connect-timeout 5 --max-time 300 \
-    http://172.30.0.1:18080/nvke-node-image-arm64.qcow2 | timeout --foreground --kill-after=5s 300 sha256sum)" || return 1
+    "http://172.30.0.1:18080/nvke-node-image-${arch}.qcow2" | timeout --foreground --kill-after=5s 300 sha256sum)" || return 1
   [[ "sha256:${digest%% *}" == "${NKE_E2E_CANDIDATE_QCOW2_SHA256}" ]]
 }
 
@@ -334,13 +355,17 @@ candidate_cleanup() {
 }
 
 candidate_render_stack() {
+  local arch
+  arch="$(candidate_architecture)" || return 1
   "${NVKECTL_BIN}" render deploy-path --deploy-path "${WORKSPACE_ROOT}/deploy/nico" --sitespec "${NKE_E2E_CANDIDATE_SITESPEC}" \
     --stack-config "${NKE_E2E_CANDIDATE_STACK_CONFIG}" \
-    --release "${NKE_E2E_CANDIDATE_RELEASE}" --nvkr-run-dir "${NKE_E2E_CANDIDATE_LAYOUT}" --arch linux/arm64 --out "${STATE_DIR}/rendered"
+    --release "${NKE_E2E_CANDIDATE_RELEASE}" --nvkr-run-dir "${NKE_E2E_CANDIDATE_LAYOUT}" --arch "linux/${arch}" --out "${STATE_DIR}/rendered"
 }
 
 candidate_admit() {
-  [[ "$(uname -s)" == Linux && "$(uname -m)" == aarch64 ]] || fail "the initial candidate VM profile requires native Linux ARM64"
+  local arch
+  candidate_native_host || return 1
+  arch="$(candidate_architecture)" || return 1
   [[ -r /dev/kvm && -w /dev/kvm ]] || fail "candidate VM execution requires usable KVM"
   (exec 8<>/dev/kvm) || fail "cannot open KVM"
   [[ "${NKE_E2E_LABEL_FILTER:-}" == "(nico-vms && ovn) || health" ]] || fail "first candidate mode requires the explicit OVN and health suite contract"
@@ -353,7 +378,7 @@ candidate_admit() {
     NKE_E2E_CANDIDATE_CONTROLLER_VERSION NKE_E2E_CANDIDATE_SIMULATOR_ENDPOINT NKE_E2E_CANDIDATE_SIMULATOR_ADDRESS NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB NKE_E2E_CANDIDATE_MIN_DISK_MIB \
     NKE_E2E_CANDIDATE_IMAGE_INPUTS NKE_E2E_CANDIDATE_VALUES; do candidate_require "${variable}"; done
   [[ "${NKE_E2E_CANDIDATE_SIMULATOR_ENDPOINT}" == "http://${NKE_E2E_CANDIDATE_SIMULATOR_ADDRESS}:18089" ]] || fail "candidate simulator API must use its exact admitted listener18089"
-  [[ "${NKE_E2E_CANDIDATE_OS_PROFILE}" == nvke-local-26-04-arm64-plain ]] || fail "candidate mode requires the explicit plain Ubuntu26.04 ARM64 profile"
+  [[ "${NKE_E2E_CANDIDATE_OS_PROFILE}" == "nvke-local-26-04-${arch}-plain" ]] || fail "candidate mode requires the matching plain Ubuntu26.04 native profile"
   for pair in NVKECTL SIMULATOR SEED QCOW2; do
     local file_variable="NKE_E2E_CANDIDATE_${pair}" pin_variable="NKE_E2E_CANDIDATE_${pair}_SHA256"
     candidate_pin "${!file_variable}" "${!pin_variable}" || return 1
@@ -427,7 +452,7 @@ run_candidate_e2e() {
   export KUBECONFIG="${E2E_KUBECONFIG}"
   NVKECTL_SMOKE_PREBUILT="${NKE_E2E_CANDIDATE_NVKECTL}"
   NVKECTL_SMOKE_SHA256="${NKE_E2E_CANDIDATE_NVKECTL_SHA256}"
-  nvkectl_smoke_build arm64
+  nvkectl_smoke_build "$(candidate_architecture)"
   if [[ "${NKE_E2E_CANDIDATE_NETWORK_OWNER:-}" == nvkr-network-guard ]]; then
     # The guard owns this exact copy and its journaled capability lifecycle.
     sudo -n setcap -v cap_net_admin=ep "${simulator_executable}"

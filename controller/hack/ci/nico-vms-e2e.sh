@@ -21,10 +21,13 @@
 #   NKE_E2E_NVKECTL_SMOKE     run hack/ci/nvkectl-smoke.sh after the suite (default: true)
 #   KIND_CLUSTER_NAME        management cluster name    (default: cwe-nico-vms)
 #   NKE_E2E_KEEP             non-empty keeps kind, Tilt and the VMs running on exit
+#   NKE_E2E_OS_IMAGE_FILE    local QCOW2 input; mutually exclusive with OS image tag
+#   NKE_E2E_OS_IMAGE_SHA256  required exact lowercase SHA256 for the local input
 #
 # Candidate mode is selected by NKE_E2E_CANDIDATE_RELEASE and implemented in
 # nico-vms-candidate.sh. It uses verified, supplied artifacts, never Tilt or
-# product builds. The first candidate contract is native Linux ARM64 with
+# product builds. The candidate contract supports native Linux AMD64 and ARM64 with
+# NKE_E2E_CANDIDATE_ARCH selecting the architecture (default: arm64),
 # NKE_E2E_LABEL_FILTER='(nico-vms && ovn) || health' and the explicit local plain profile.
 # Its caller owns publication verification, the exact-image HTTP service on
 # 172.30.0.1:18080, and the runtime lease across host setup and cleanup.
@@ -40,6 +43,8 @@ source "${CONTROLLER_ROOT}/hack/backend-e2e-lib.sh"
 # NVKECTL_SMOKE_RUNNER being unset as the signal; see its header.
 # shellcheck source=controller/hack/ci/nvkectl-smoke.sh
 source "${SCRIPT_DIR}/nvkectl-smoke.sh"
+# shellcheck source=controller/hack/ci/nico-vms-os-image.sh
+source "${SCRIPT_DIR}/nico-vms-os-image.sh"
 cd "${CONTROLLER_ROOT}"
 
 RUN_ID="${NKE_E2E_RUN_ID:-${GITHUB_RUN_ID:-local-$$}}"
@@ -394,6 +399,12 @@ case "$(uname -m)" in
   *) fail "unsupported architecture $(uname -m)" ;;
 esac
 
+qcow=""
+if [[ -n "${NKE_E2E_OS_IMAGE_FILE:-}" || -n "${NKE_E2E_OS_IMAGE_SHA256:-}" ]]; then
+  qcow="$(nico_vms_local_os_image)" || exit 1
+  log "using the exact local QCOW2 input ${qcow}; no registry image lookup or pull"
+fi
+
 # ── The agent the tenant nodes run ──────────────────────────────────────────
 # The OS profile's userData apt-installs nvke-agent from the bundle server, then
 # replaces it with http://carbide-pxe.forge:18080/files/node-agent/nvke-agent
@@ -458,7 +469,7 @@ newest_os_image_tag() {
 os_image_tag_pinned=no
 [[ -n "${NKE_E2E_OS_IMAGE_TAG:-}" ]] && os_image_tag_pinned=yes
 
-if [[ -z "${NKE_E2E_OS_IMAGE_TAG:-}" ]]; then
+if [[ -z "${qcow}" && -z "${NKE_E2E_OS_IMAGE_TAG:-}" ]]; then
   NKE_E2E_OS_IMAGE_TAG="$(newest_os_image_tag "${host_arch}" || true)"
   # No fallback. The profile's image-url is CloudFront, and this lane does not
   # depend on it. Stopping here costs a minute; falling back spends the whole
@@ -468,7 +479,7 @@ if [[ -z "${NKE_E2E_OS_IMAGE_TAG:-}" ]]; then
   log "newest published os-image for ${host_arch}: ${NKE_E2E_OS_IMAGE_TAG}"
 fi
 
-if [[ -n "${NKE_E2E_OS_IMAGE_TAG:-}" ]]; then
+if [[ -z "${qcow}" && -n "${NKE_E2E_OS_IMAGE_TAG:-}" ]]; then
   command -v oras >/dev/null 2>&1 ||
     fail "NKE_E2E_OS_IMAGE_TAG is set but oras is not on PATH"
   image_repo="${NKE_E2E_OS_IMAGE_REPO:-ghcr.io/dsx-ai-factory/nvke/os-image-non-fde}"
@@ -505,7 +516,9 @@ if [[ -n "${NKE_E2E_OS_IMAGE_TAG:-}" ]]; then
   (( ${#pulled[@]} == 1 )) ||
     fail "${image_ref} carried ${#pulled[@]} qcow2 files, expected exactly 1"
   qcow="${pulled[0]}"
+fi
 
+if [[ -n "${qcow}" ]]; then
   # Repoint every MachineImage that names a real image. Counted, because an
   # image that stopped carrying an image-url would otherwise leave the CloudFront
   # pin in place and the lane would quietly test the wrong thing. The script is a
