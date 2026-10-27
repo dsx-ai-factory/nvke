@@ -166,7 +166,9 @@ The controller chart admits the NVKE API only from pods in the management cluste
    cp deploy/examples/local-site/nvke-api-clients.yaml ../nvke-api-clients.yaml
    ```
 
-2. In `../nvke-api-clients.yaml`, replace `REPLACE_HOST_CIDR` with the network your API callers use, such as the network of the hosts you run `nvkectl` on, and `REPLACE_TENANT_CIDR` with the network your workload cluster nodes come up on. Admit only trusted networks: the API serves plain HTTP, and with authentication off it serves every caller it admits.
+2. In `../nvke-api-clients.yaml`, replace `REPLACE_HOST_CIDR` with the management cluster's node network, and add an `ipBlock` for each other network that calls the API, such as the network of the hosts you run `nvkectl` on. Replace `REPLACE_TENANT_CIDR` with the network your workload cluster nodes come up on. Admit only trusted networks: the API serves plain HTTP, and with authentication off it serves every caller it admits.
+
+   A request can reach the controller from a management node's address rather than the caller's own, because the NVKE API's NodePort forwards it from the node that receives it. Admitting the node network covers that. Filter port 30080 at your network edge as well, since the policy alone may not tell callers apart.
 
 3. Apply the policy.
 
@@ -186,13 +188,16 @@ The controller chart admits the NVKE API only from pods in the management cluste
 
 ## Verify
 
-1. Check that the NVKE API answers from the install host.
+1. Check that the NVKE API answers.
 
    ```bash
-   curl -s http://<MANAGEMENT_ADDRESS>:30080/healthz
+   curl -sS --max-time 10 http://<MANAGEMENT_ADDRESS>:30080/healthz
    ```
 
-   The output is `{"status":"ok"}`. If the request times out, check that the NetworkPolicy admits the network the install host calls from.
+   Run it from a host you admitted, not from a management node. The output is `{"status":"ok"}`. If it times out:
+
+   - Check that the policy admits the network the host calls from and the management node network.
+   - If it still times out, the request reaches the controller from the OVN-Kubernetes join network, `100.64.0.0/16`, which NVKE does not change. Add an `ipBlock` for it and check again. The policy then admits every caller that can reach port 30080, so limit that port to your operator networks at your network edge or the hosts' firewalls.
 
 2. Check that CAPNICo is configured.
 
