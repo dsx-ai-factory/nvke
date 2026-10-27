@@ -39,7 +39,7 @@ func TestAuditLoggerMirrorsStructuredRecords(t *testing.T) {
 
 	var fileOutput bytes.Buffer
 	var serviceOutput bytes.Buffer
-	logger := newAuditLogger(&fileOutput, &serviceOutput, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	logger := newAuditLogger(&fileOutput, &serviceOutput, slog.New(slog.DiscardHandler))
 
 	interceptor := newAuditLogUnaryInterceptor(logger)
 	_, err := interceptor(
@@ -111,7 +111,7 @@ func TestFanoutWriterReportsShortWrite(t *testing.T) {
 			{name: "file", writer: io.Discard},
 			{name: "service", writer: shortWriter},
 		},
-		diagnostics: slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		diagnostics: slog.New(slog.DiscardHandler),
 	}
 	input := []byte("audit record")
 
