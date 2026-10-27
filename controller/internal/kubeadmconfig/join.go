@@ -51,7 +51,8 @@ type JoinConfig struct {
 	SystemReservedMemory string
 	// KubernetesVersion is the joining cluster's Kubernetes version. It decides
 	// whether the kubelet needs the KEP-4639 image volume feature gate set
-	// explicitly; an empty value leaves the gate unset.
+	// explicitly, and whether the kubeadm config renders as v1beta4. An empty
+	// value leaves the gate unset and keeps v1beta3.
 	KubernetesVersion string
 	// KubeReservedMemory is the memory reserved for Kubernetes processes by the
 	// kubelet configuration patch. It defaults to 2Gi when empty.
@@ -145,7 +146,7 @@ func (config *JoinConfig) Render() (*BootstrapArtifacts, error) {
 	}
 
 	configYAML, err := renderYAMLDocuments(
-		joinConfiguration(config),
+		joinKubeadmDocument(joinConfiguration(config), config.KubernetesVersion),
 		kubeProxyConfiguration(false),
 		joinKubeletConfiguration(config.KubernetesVersion),
 	)

@@ -1,0 +1,44 @@
+apiVersion: kubeadm.k8s.io/v1beta4
+discovery:
+  bootstrapToken:
+    apiServerEndpoint: 1.2.3.4:6443
+    caCertHashes:
+    - sha256:abc123
+    token: token123
+  tlsBootstrapToken: token123
+kind: JoinConfiguration
+nodeRegistration:
+  criSocket: unix:///var/run/containerd/containerd.sock
+  kubeletExtraArgs:
+  - name: node-ip
+    value: 10.0.0.3
+  name: worker-1
+  taints:
+  - effect: NoSchedule
+    key: nvke.nvidia.com/provisioning
+    value: "true"
+patches:
+  directory: /etc/kubernetes/patches
+timeouts:
+  discovery: 5m0s
+---
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+metricsBindAddress: 0.0.0.0:10249
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+featureGates:
+  ImageVolume: true
+kind: KubeletConfiguration
+maxParallelImagePulls: 4
+podPidsLimit: 16384
+seccompDefault: true
+serializeImagePulls: false
+serverTLSBootstrap: true
+tlsCipherSuites:
+- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
