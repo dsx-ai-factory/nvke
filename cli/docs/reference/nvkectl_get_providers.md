@@ -21,13 +21,13 @@ This reads the site's Kubernetes cluster directly rather than the controller API
 
 CONFIGURED means the provider's CRDs are established, its manager is available, and its credentials Secret exists. It does not mean those credentials work.
 
-CREDENTIALS is the provider's own credential check, read from the NicoIdentity that names the provider's credentials Secret. nvkectl never runs a check: the provider checks every few minutes, and LAST CHECK is how long ago the latest check ran. A result older than 10 minutes is STALE.
+CREDENTIALS is the provider's own credential check, read from the NicoIdentity that names the provider's credentials Secret. nvkectl never runs a check: the provider checks every few minutes, and LAST CHECK is how long ago the latest check ran. A result is STALE when the provider's scheduled check is overdue or, if the provider publishes no usable schedule, when its last check, or its creation if it was never checked, is too old.
 
 ```
 HEALTHY            the last check authenticated and read the current tenant
 FAILING (reason)   the credentials are missing, invalid, rejected or forbidden
 UNKNOWN (reason)   the check could not decide, for example during an outage
-STALE              no check in the last 10 minutes
+STALE              no check when one was due
 PENDING            not checked yet
 NO-IDENTITY        no NicoIdentity names the provider's credentials Secret
 UNSUPPORTED        the provider does not serve NicoIdentity

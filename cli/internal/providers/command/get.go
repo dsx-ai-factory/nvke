@@ -48,11 +48,12 @@ func NewGetCmd(siteFn SiteFn, runner inspect.Runner, newLister credentials.Liste
 			"CREDENTIALS is the provider's own credential check, read from the NicoIdentity that " +
 			"names the provider's credentials Secret. nvkectl never runs a check: the provider " +
 			"checks every few minutes, and LAST CHECK is how long ago the latest check ran. A result " +
-			"older than 10 minutes is STALE.\n\n" +
+			"is STALE when the provider's scheduled check is overdue or, if the provider publishes no " +
+			"usable schedule, when its last check, or its creation if it was never checked, is too old.\n\n" +
 			"  HEALTHY            the last check authenticated and read the current tenant\n" +
 			"  FAILING (reason)   the credentials are missing, invalid, rejected or forbidden\n" +
 			"  UNKNOWN (reason)   the check could not decide, for example during an outage\n" +
-			"  STALE              no check in the last 10 minutes\n" +
+			"  STALE              no check when one was due\n" +
 			"  PENDING            not checked yet\n" +
 			"  NO-IDENTITY        no NicoIdentity names the provider's credentials Secret\n" +
 			"  UNSUPPORTED        the provider does not serve NicoIdentity\n" +

@@ -8,7 +8,7 @@ This page lists what the NVIDIA Kubernetes Engine (NVKE) preview supports and ev
 
 - Build reference node OS images with the repository Make targets and serve the boot artifacts over HTTP(S): [Build and host node OS images](../operate/build-node-images.md).
 - Prepare nodes and bootstrap a management cluster from them with `nvkectl`: [Prepare nodes](../operate/prepare-nodes.md) and [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md).
-- Install the management plane on the management cluster: [Run NVKE end to end on one machine](../get-started/local-site.md).
+- Install the management plane on the management cluster: [Install the management plane](../operate/install-management-plane.md).
 - Provision workload cluster nodes through NVIDIA Infra Controller (NICo): [Configure an infrastructure provider: NICo](../operate/provider-nico.md).
 - Authenticate NVKE API callers with JWTs from your identity provider: [Secure the NVKE API](../operate/api-authentication.md).
 - Create, change and delete workload clusters with `ovn-kubernetes` networking and optional etcd encryption: [Create a workload cluster](../workload-clusters/create.md).

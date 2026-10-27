@@ -73,6 +73,9 @@ func TestAssess(t *testing.T) {
 		wantHealth Health
 		wantCell   string
 		wantDetail []string
+		// wantExactDetail, when set, is the whole detail, so nothing may be
+		// appended to it.
+		wantExactDetail string
 	}{
 		{
 			name: "a forbidden list names the missing permission",
@@ -131,6 +134,17 @@ func TestAssess(t *testing.T) {
 			wantDetail: []string{"last checked 10m ago (Ready=True, ValidationSucceeded)"},
 		},
 		{
+			name: "a check a second past the grace after its published next check time is stale and says how overdue",
+			in: func() Input {
+				id := checkedAgo(9*time.Minute+2*time.Second, "True", "ValidationSucceeded")
+				id.NextCheck = new(id.LastChecked.Add(4*time.Minute + time.Second))
+				return input(id)
+			}(),
+			wantHealth:      HealthStale,
+			wantCell:        "STALE",
+			wantExactDetail: "capnico-system/nico-default: last checked 9m ago, next check due 5m ago (Ready=True, ValidationSucceeded)",
+		},
+		{
 			name:       "an unreadable Secret is unknown",
 			in:         input(checkedAgo(time.Minute, "Unknown", "SecretReadFailed")),
 			wantHealth: HealthUnknown,
@@ -151,8 +165,8 @@ func TestAssess(t *testing.T) {
 					t.Errorf("Detail = %q, want it to contain %q", got.Detail, want)
 				}
 			}
-			if got.StaleAfterSeconds != 600 {
-				t.Errorf("StaleAfterSeconds = %d, want 600", got.StaleAfterSeconds)
+			if tt.wantExactDetail != "" && got.Detail != tt.wantExactDetail {
+				t.Errorf("Detail = %q, want %q", got.Detail, tt.wantExactDetail)
 			}
 		})
 	}

@@ -180,10 +180,10 @@ Kubernetes API directly, not through `kubectl`.
 
 | Credentials | Meaning |
 |---|---|
-| `HEALTHY` | The last check authenticated and read the current tenant, within the last 10 minutes. It does not prove that provisioning will succeed. |
+| `HEALTHY` | The last check authenticated and read the current tenant, and no later check is overdue. It does not prove that provisioning will succeed. |
 | `FAILING (reason)` | The last check found the Secret missing (`CredentialsNotFound`) or malformed (`InvalidConfiguration`), or the backend rejected (`AuthenticationFailed`) or forbade (`AccessDenied`) the credentials. |
 | `UNKNOWN (reason)` | The last check could not decide: the Secret could not be read (`SecretReadFailed`), or the backend timed out, was unreachable, or failed TLS verification (`ValidationFailed`). `UNKNOWN` with no reason means the check time is in the future or malformed. |
-| `STALE` | No check has finished in the last 10 minutes. The provider's manager may be stopped, or the `NicoIdentity` is outside the namespace or `--watch-filter` the manager watches. `DETAIL` names the likely cause. |
+| `STALE` | No check has finished when one was due: the next check CAPNICo scheduled is overdue or, when CAPNICo publishes no usable schedule or has never checked the `NicoIdentity`, the last check or its creation is too old. The provider's manager may be stopped, or the `NicoIdentity` is outside the namespace or `--watch-filter` the manager watches. `DETAIL` names the cause when nvkectl can see one. |
 | `PENDING` | The `NicoIdentity`, or its latest spec change, has not been checked yet. |
 | `NO-IDENTITY` | No `NicoIdentity` in the Secret's namespace names the credentials Secret, so nothing checks it. |
 | `UNSUPPORTED` | The installed CAPNICo does not serve `NicoIdentity`. |
@@ -206,7 +206,7 @@ spec:
 
 `-o json` adds a `credentials` object to each provider that publishes credential
 health, with the health, the `NicoIdentity` it was read from, its `Ready`
-condition, `lastCheckedTime`, and `staleAfterSeconds`.
+condition, `lastCheckedTime`, and `nextCheckTime` when CAPNICo publishes it.
 
 The providers listed are the ones nvkectl knows how to describe. That is not a
 restriction: CWE accepts any infrastructure manifest written by hand.

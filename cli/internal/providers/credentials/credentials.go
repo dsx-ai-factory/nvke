@@ -31,11 +31,10 @@ const (
 	HealthFailing Health = "FAILING"
 
 	// HealthUnknown means the last check could not decide, for example during
-	// a backend outage, or that its check time cannot be trusted.
+	// a backend outage, or that its check times cannot be trusted.
 	HealthUnknown Health = "UNKNOWN"
 
-	// HealthStale means no check has completed within StaleAfter when one
-	// should have.
+	// HealthStale means no check has completed when one was due.
 	HealthStale Health = "STALE"
 
 	// HealthPending means the Identity, or its current spec, has not been
@@ -54,10 +53,16 @@ const (
 	HealthUnreadable Health = "UNREADABLE"
 )
 
-// StaleAfter is how old a provider's last completed check may be before its
-// result is no longer reported as current. Providers recheck about every five
-// minutes, so this allows one slow or missed check.
+// StaleAfter is how old a provider's last completed check, or an Identity never
+// checked, may be before its result is no longer reported as current, when the
+// provider has published no usable next check time. A published next check
+// time more than StaleAfter after the last check is not usable.
 const StaleAfter = 10 * time.Minute
+
+// nextCheckGrace is how long past its published next check time a provider's
+// result is still reported as current. It is the grace the provider documents
+// for readers of its next check time.
+const nextCheckGrace = 5 * time.Minute
 
 // futureTolerance is how far ahead of this machine's clock a check time may be
 // before it is treated as untrustworthy rather than current.
@@ -70,10 +75,6 @@ type Credentials struct {
 
 	// Detail explains Health for a person. Its wording is not stable.
 	Detail string `json:"detail"`
-
-	// StaleAfterSeconds is the age, in seconds, after which a check result is
-	// reported as STALE.
-	StaleAfterSeconds int64 `json:"staleAfterSeconds"`
 
 	// Identity is the Identity the result was read from. Nil when none was
 	// found.
@@ -89,6 +90,12 @@ type Credentials struct {
 	// AdditionalIdentities lists other Identities that name the same Secret.
 	// They observe the same credentials; Identity is the one reported.
 	AdditionalIdentities []ObjectRef `json:"additionalIdentities,omitempty"`
+
+	// NextCheckTime is when the provider next checks the Identity on its own
+	// schedule, as it published it. Nil when the provider has published none,
+	// or when it is not a valid time. It is reported even when freshness
+	// ignores it, as when it is not later than LastCheckedTime.
+	NextCheckTime *metav1.Time `json:"nextCheckTime,omitempty"`
 }
 
 // IdentityRef identifies the Identity a result was read from, and the spec

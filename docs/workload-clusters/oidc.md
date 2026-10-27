@@ -18,7 +18,7 @@ NVKE binds Kubernetes roles only to the management plane's own identities. A fle
 
 ## Before you begin
 
-- You have completed [Run NVKE end to end on one machine](../get-started/local-site.md). You run the install and `kubectl` commands on the host you installed from, from the root of the same `nvke/` checkout, with the site spec, `<CLUSTER_NAME>.kubeconfig` and, if you installed from one, `release.json` in the directory above it. Set `KUBECONFIG` for `kubectl`:
+- You have completed [Install the management plane](../operate/install-management-plane.md). You run the install and `kubectl` commands on the host you installed from, from the root of the same `nvke/` checkout, with the site spec, `<CLUSTER_NAME>.kubeconfig` and, if you installed from one, `release.json` in the directory above it. Set `KUBECONFIG` for `kubectl`:
 
   ```bash
   export KUBECONFIG="$PWD/../<CLUSTER_NAME>.kubeconfig"

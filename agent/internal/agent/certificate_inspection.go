@@ -30,7 +30,7 @@ func (s *NodeAgentServer) InspectKubernetesCertificates(ctx context.Context, req
 	response := &pb.InspectKubernetesCertificatesResponse{}
 	for _, name := range certificates.Names(req.GetControlPlane()) {
 		if err := ctx.Err(); err != nil {
-			return nil, status.Error(codes.Canceled, "certificate inspection cancelled")
+			return nil, status.Error(codes.Canceled, "certificate inspection canceled")
 		}
 		expiry, fingerprint, err := s.inspectCertificate(name)
 		observation := &pb.KubernetesCertificateObservation{Credential: name, State: pb.KubernetesCertificateObservation_STATE_AVAILABLE, NotAfterUnixSeconds: expiry, CertificateSha256: fingerprint}

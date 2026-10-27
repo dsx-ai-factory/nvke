@@ -4,7 +4,7 @@ This page describes how to create an NVIDIA Kubernetes Engine (NVKE) workload cl
 
 ## Before you begin
 
-- You have completed [Run NVKE end to end on one machine](../get-started/local-site.md) and [Configure an infrastructure provider: NICo](../operate/provider-nico.md).
+- You have completed [Install the management plane](../operate/install-management-plane.md) and [Configure an infrastructure provider: NICo](../operate/provider-nico.md).
 - `nvkectl` points at your management plane, set with `nvkectl config set-site`, and `nvkectl get providers` reports the `nico` row as `CONFIGURED`. If you turned on API authentication, `nvkectl` uses an OpenID Connect (OIDC) kubeconfig, as described in [Secure the NVKE API](../operate/api-authentication.md). `nvkectl get providers` reads the management cluster's Kubernetes API with that kubeconfig, which the bootstrap does not configure to accept tokens from your identity provider, so the command fails. Check the provider with the management cluster's admin kubeconfig instead:
 
   ```bash
