@@ -60,19 +60,28 @@ func (r *reconciler) reconcileControlPlaneScaleDown(ctx context.Context, cluster
 	// coming up.
 	victim := selectControlPlaneNodeToScaleDown(removable, cluster.ControlPlaneConfig.ScaleDownRanker())
 
-	// Never shrink the joined control plane below the fault-tolerant floor. Only a
-	// joined member counts toward quorum, so the floor is checked against the joined
-	// subset and only when the victim is itself a joined member -- a not-yet-joined
-	// victim is not an etcd member and the floor does not apply to it. The delete
-	// path's ensureControlPlaneQuorumFloor is authoritative; this pre-check just
-	// avoids selecting a victim it would refuse. A desiredCount below the floor is a
+	// Never shrink the joined control plane below the fault-tolerant floor. A
+	// joined node counts toward quorum whether or not it is currently healthy --
+	// its etcd member still exists -- so the count here mirrors the authoritative
+	// delete-path floor (countSurvivingJoinedControlPlane), which counts joined
+	// members regardless of health. The floor is applied only when the victim is
+	// itself a healthy joined member, matching ensureControlPlaneQuorumFloor, which
+	// exempts a not-yet-joined or unhealthy victim -- removing a dead member is how
+	// a replacement starts, so the floor must not block it. That delete-path floor
+	// is authoritative; this pre-check just avoids selecting a victim it would
+	// refuse and keeps the two consistent. A desiredCount below the floor is a
 	// steady state that never converges, so it logs at debug rather than warning on
 	// every reconcile.
 	if isCleanJoinedControlPlaneMember(victim) {
-		joinedMembers := cp.scaleDownEligible()
-		if len(joinedMembers) <= nodes.MinFaultTolerantControlPlaneNodes {
+		joinedMembers := 0
+		for _, node := range removable {
+			if node.Conditions.Joined.Status == db.ConditionStatusTrue {
+				joinedMembers++
+			}
+		}
+		if joinedMembers <= nodes.MinFaultTolerantControlPlaneNodes {
 			logger.Debug("Control-plane scale-down held at the fault-tolerant floor",
-				"joinedMembers", len(joinedMembers),
+				"joinedMembers", joinedMembers,
 				"minFaultTolerant", nodes.MinFaultTolerantControlPlaneNodes,
 			)
 			return nil
