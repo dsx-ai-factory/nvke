@@ -200,7 +200,8 @@ if os.getenv("KIND_CLUSTER_NAME", "") == "" and KIND_CLUSTER_NAME_VALUE == "cwe-
          "controller-capi.nvke.local. Delete the old cluster with 'kind delete cluster --name cwe-capi', then run " +
          "'make capd-up' and 'tilt up' again.")
 EXPECTED_K8S_CONTEXT = "kind-%s" % KIND_CLUSTER_NAME_VALUE
-SPIRE_TRUST_DOMAIN = "%s.nvke.local" % KIND_CLUSTER_NAME_VALUE
+# Reused SPIRE datastores must retain the trust domain of their existing identities.
+SPIRE_TRUST_DOMAIN = cfg.get("spire_trust_domain", "%s.nvke.local" % KIND_CLUSTER_NAME_VALUE)
 NKE_OIDC_ISSUER_URL = "https://nke.site-controller.internal"
 SPIRE_CONTROLLER_ADMIN_PATH = "/nvke-service/nke-controller"
 if DSX_IDENTITY_EXCHANGE_ENABLED:
