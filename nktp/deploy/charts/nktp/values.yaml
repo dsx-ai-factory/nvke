@@ -40,6 +40,10 @@ priorityClass:
   preemptionPolicy: PreemptLowerPriority # Set Never to prioritize scheduling without preempting other Pods.
 
 certManager:
+  # Sets mtls.useCertManager on the watchdog, daemonset, and large_target_metrics Target Allocators.
+  # Set false to supply your own certificates; mtls.enabled stays per allocator.
+  targetAllocators:
+    enabled: true
   # Creates a Certificate for each collector and its sidecar for collector->gateway and collector->watchdog
   # and creates a self-signed Issuer to act as a in-cluster CA + Issuer to sign collector Certificates
   # https://cert-manager.io/docs/configuration/selfsigned/#bootstrapping-ca-issuers
@@ -84,7 +88,6 @@ watchdog:
       enabled: true # Assign each explicit scrape target to one watchdog replica.
       mtls:
         enabled: true # Let cert-manager secure Collector requests to the allocator.
-        useCertManager: true
       replicas: 1
       allocationStrategy: consistent-hashing
       resources:
@@ -1449,7 +1452,6 @@ daemonset:
       enabled: true
       mtls:
         enabled: true # Let cert-manager secure Collector requests to the allocator.
-        useCertManager: true
       replicas: 1
       allocationStrategy: per-node # Targets without a matching collector node stay unassigned.
       resources:
@@ -2127,7 +2129,6 @@ large_target_metrics:
       enabled: true
       mtls:
         enabled: true # Let cert-manager secure Collector requests to the allocator.
-        useCertManager: true
       replicas: 1
       allocationStrategy: consistent-hashing
       collectorTargetReloadInterval: 10s
