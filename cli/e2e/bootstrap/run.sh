@@ -106,9 +106,8 @@ OTLP_TOKEN="e2e$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 OTLP_TENANT="e2e$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 OTLP_ENDPOINT="http://192.0.2.1:4317"
 OTLP_HEADERS="authorization=Bearer ${OTLP_TOKEN},x-tenant=${OTLP_TENANT}"
-# The values the scan searches for as exact strings: the OTLP token, and the
-# tenant header as the pair nvkectl masks. The lane adds the secrets it can only
-# read from the cluster once bootstrap has finished.
+# The values the scan searches for as exact strings. The lane adds the ones it can
+# only read from the cluster once bootstrap has finished.
 KNOWN_SECRETS=("${OTLP_TOKEN}" "x-tenant=${OTLP_TENANT}")
 GO="${GO:-go}"
 # The lane runs `bootstrap site` through the Go tests in bootstraptest. Those
@@ -1058,9 +1057,8 @@ otlp_env="$(bk -n "${CONTROLLER_NAME}" get deployment "${CONTROLLER_NAME}" \
 [ "${otlp_env}" = "authorization=Bearer%20${OTLP_TOKEN},x-tenant=${OTLP_TENANT}" ] ||
   fail "the controller's OTEL_EXPORTER_OTLP_HEADERS is not the headers the lane gave bootstrap site," \
     "so the scan for them proves nothing about the controller's output"
-# The secrets bootstrap generates, which the scan also searches for. The values go
-# into KNOWN_SECRETS and are never printed. The etcd key is searched as the
-# manifest stores it and as the controller reads it.
+# The secrets bootstrap generates, searched for like the OTLP ones. The etcd key is
+# searched as the manifest stores it (base64) and decoded.
 pg_password="$(bk -n postgres get secret postgres-postgresql -o 'jsonpath={.data.password}' | base64 -d)" ||
   fail "could not read the generated Postgres password from the bootstrap cluster"
 [ -n "${pg_password}" ] || fail "the generated Postgres password is empty"

@@ -78,12 +78,10 @@ regex = '''(?i)\b[\w.-]*passw(?:or)?d=([^\s"'<][^\s"']{3,})'''
 secretGroup = 1
 keywords = ["passw"]
 
-# The headers nvkectl sends to the OTLP endpoint can hold an authorization token,
-# under any header name, and nvkectl replaces the whole value with <redacted>.
-# Any other value after the variable name is one it did not mask. The first rule
-# reads the variable as a field, an assignment or a describe line; the second as
-# the separate name and value of a pod spec. A message that only names the
-# variable has no : or = after it and does not match.
+# nvkectl replaces the whole OTEL_EXPORTER_OTLP_HEADERS value, which can hold an
+# authorization token, with <redacted>, so a literal value after the name was not
+# masked. The first rule reads it as a field, assignment or describe line; the
+# second as the separate name and value of a pod spec.
 [[rules]]
 id = "nvkectl-otlp-headers-value"
 description = "A literal OTEL_EXPORTER_OTLP_HEADERS value, which can hold an authorization token"
