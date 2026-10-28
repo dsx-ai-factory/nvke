@@ -51,6 +51,8 @@ git clone https://github.com/dsx-ai-factory/nvke.git
 cd nvke
 ```
 
+To contribute, clone your fork instead. See [Work from a fork](#work-from-a-fork).
+
 **Everything that builds publicly, in one command:**
 
 ```bash
@@ -173,6 +175,21 @@ Look at the unassigned issues, and find an issue you are comfortable with
 contributing to. Start with _Step 3_ from above, commenting on the issue to let
 others know you are working on it. If you have any questions related to the
 implementation of the issue, ask them in the issue instead of the PR.
+
+### Work from a fork
+
+Push your branches to your own fork and open pull requests from there, not
+from a branch on `dsx-ai-factory/nvke`. This applies even if you have write
+access to the repository.
+
+```bash
+gh repo fork dsx-ai-factory/nvke --clone
+```
+
+That creates the fork, clones it as `origin` and adds this repository as
+`upstream`. In an existing clone of this repository, `gh repo fork --remote`
+does the same: your fork becomes `origin` and the old `origin` becomes
+`upstream`.
 
 ### Branch naming
 
