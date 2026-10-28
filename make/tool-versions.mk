@@ -47,6 +47,12 @@ GH_CLI_SHA256_ARM64 ?= 73ea440ecad9c9e284429997ee6f93577bc6f7bc6fba357ef62c53ad8
 TELEPORT_VERSION   ?= 18.11.0
 TELEPORT_SHA256_AMD64 ?= 8d3dba03ea6b6e0d72c97e190da0595e8f0d70f5573c3a26b1908cf60caf6e3f
 
+# aicr installs and validates the GPU runtime on the Forge lane's tenant. It
+# runs on the lane's amd64 runner whatever the tenant's architecture, so amd64
+# is the only platform needed. aicr_<version>_linux_amd64.tar.gz.
+AICR_VERSION ?= 1.1.2
+AICR_SHA256_AMD64 ?= 6350c5a50e7866569ec746b87b4c1c5e836f9ffba2b9505eb24241852f52e350
+
 KUBECONFORM_VERSION ?= v0.7.0
 # .github/actions/setup-kubeconform installs it for chart.yml and nktp-chart.yml,
 # both on ubuntu-latest, so amd64 is the only platform needed.
