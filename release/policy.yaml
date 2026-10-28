@@ -61,7 +61,7 @@ spec:
   # A stream is named <provider>-<gpu>-<arch>-ubuntu-<series>-kube-<minor>, so
   # two streams that differ only in GPU model do not share a name. A stream
   # that declares no gpu omits that segment rather than inventing a value for
-  # it --- the DSX lane below is named dsx-arm64-..., and a `none` or `cpu`
+  # it --- the DSX lane below is named dsx-amd64-..., and a `none` or `cpu`
   # there would read as a capability no stream selects on. The name is the key
   # of everything recorded for a stream.
   streams:
@@ -88,5 +88,5 @@ spec:
     #
     # kube 1.36 matches the Forge streams. The recorded DSX exercise reached
     # CoreDNS on a 1.34.2 tenant, so 1.36 is unproven on this substrate.
-    - name: dsx-arm64-ubuntu-24.04-kube-1.36
-      capabilities: {provider: dsx, arch: arm64, ubuntu: "24.04", kube: "1.36"}
+    - name: dsx-amd64-ubuntu-24.04-kube-1.36
+      capabilities: {provider: dsx, arch: amd64, ubuntu: "24.04", kube: "1.36"}
