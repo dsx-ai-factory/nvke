@@ -9,13 +9,30 @@
 # render time:
 #   global.spire.trustDomain and spire-server.adminIDs   from the site spec
 #   global.spire.clusterName                             from the site spec
+#   global.spire.image.registry                          the mirror, when the
+#                                                        stack config names one
+#   spire-server.nodeAttestor.tpmDirect.checksum         per architecture; the
+#                                                        chart default is the
+#                                                        amd64 one, and the
+#                                                        server crash-loops on
+#                                                        arm64 without it
+#   spire-server.upstreamAuthority.disk                  when the site spec
+#                                                        sets spire.upstreamCA;
+#                                                        reads the Secret
+#                                                        spire-upstream-ca, and
+#                                                        the node agent trusts
+#                                                        that CA
+#   spiffe-oidc-discovery-provider.config.jwksUri        https://<site address>:30443/keys
+#   spiffe-oidc-discovery-provider.tls.certManager.certificate.ipAddresses
+#                                                        the site's addresses
 #   spiffe-oidc-discovery-provider.config.additionalDomains
 #                                                        this list plus the
 #                                                        site's addresses
 # The two trust-domain values must agree. An adminID whose trust domain is not
 # the server's matches nothing, and the controller silently has no admin
-# access to SPIRE. example.org below is a placeholder that strict mode
-# rejects, so a wrong override fails loudly.
+# access to SPIRE. example.org below is a placeholder. With strict mode off
+# the chart renders it without complaint, so the install checks that the
+# overlay replaces it before anything is applied.
 
 global:
   spire:
@@ -24,8 +41,9 @@ global:
     # spire-system.
     recommendations:
       enabled: true
-      # strictMode rejects the placeholder trust domain. A real trust domain
-      # can turn it back on.
+      # strictMode would reject the placeholder trust domain and demand a
+      # clusterName and a CA subject as well. Off, so the file renders on its
+      # own. The install validates the overlay instead.
       strictMode: false
     # Placeholder. See the header.
     trustDomain: example.org

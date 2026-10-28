@@ -25,7 +25,7 @@ can run them by hand with `helm` and `kubectl`.
 | `values/controller.yaml` | The NVKE controller | the `nvke-controller` chart |
 | `values/nico-prereqs.yaml` | NICo's database, seed only | the Bitnami `postgresql` chart |
 | `values/nico.yaml` | NICo, seed only | the `nico` umbrella chart |
-| `values/kind/<chart>.yaml` | Smaller sizing for the seed, one file per chart | the same chart, after its values file |
+| `values/kind/<values file>.yaml` | Smaller sizing for the seed, one file per values file that needs it | the same chart, after its values file |
 | `manifests/*.yaml` | Glue the charts do not create | `kubectl apply --server-side` |
 | `manifests/nico/*.yaml` | Glue for NICo, seed only | `kubectl apply --server-side` |
 | `manifests/*.yaml.tmpl` | Glue that needs an input value | rendered, then `kubectl apply --server-side` |
@@ -42,10 +42,14 @@ Every chart listed by the artifact file is installed as a Helm release. The
 artifact file pins the chart. The values file here is passed to
 `helm upgrade --install` with `--values`.
 
-The kind layer is applied on top for the seed cluster only.
-`values/kind/<chart>.yaml` is passed as a second `--values` after
-`values/<chart>.yaml`. Helm merges maps
-key by key, so a kind file restates only what changes.
+The seed is a kind cluster that runs NICo. It gets the same stack as a site,
+NKTP included, so the monitors, the OIDC provider and the NetworkPolicy stay
+on there. The kind layer changes sizing only. It is applied on top for the
+seed cluster only: `values/kind/<name>.yaml` is passed as a second `--values`
+after `values/<name>.yaml`. The file is named after the values file, not the
+chart. The Bitnami `postgresql` chart has two, `kind/postgresql.yaml` and
+`kind/nico-prereqs.yaml`. Helm merges maps key by key, so a kind file
+restates only what changes.
 
 Glue manifests are applied with `kubectl apply --server-side`. A second apply
 of the same manifest does not conflict.
@@ -56,13 +60,14 @@ equivalent keys. No values file carries a password.
 
 | Secret | Namespaces | Read by |
 |---|---|---|
-| `nvke-database` | `postgres`, `temporal`, `nvke-controller` | PostgreSQL (`postgres-password`), Temporal (`password`), the controller (`database-connection-string`) |
+| `nvke-database` | `postgres`, `temporal`, `nvke-controller` | PostgreSQL and Temporal (`postgres-password`), the controller (`database-connection-string`, built from the same password) |
 | `dgxc-tenant-credentials` | `nvke-controller` | the controller (`user`, `password`) |
+| `spire-upstream-ca` | `spire-server` | SPIRE server (`tls.crt`, `tls.key`, `bundle.crt`), only when the site spec sets `spire.upstreamCA` |
 | `nico-credentials` | `capnico-system` | CAPNICo (`endpoint`, `orgID`, `apiName`, `token`) |
 | `nico-postgresql-auth` | `forge-system` | NICo's PostgreSQL (`postgres-password`, `password`), seed only |
-| `nico.forge-pg-cluster.credentials` | `forge-system` | `nico-api`, seed only |
-| `nico-vault-approle-tokens`, `nico-vault-token` | `forge-system` | NICo's services mount them, seed only |
-| `ssh-host-key` | `forge-system` | `nico-ssh-console-rs`, seed only |
+| `nico.forge-pg-cluster.credentials` | `forge-system` | `nico-api` (`username`, `password`, `host`, `port`, `dbname`, `uri`; the URI carries `sslmode=disable` on kind), seed only |
+| `nico-vault-approle-tokens`, `nico-vault-token` | `forge-system` | NICo's services (`VAULT_ROLE_ID`, `VAULT_SECRET_ID`; `VAULT_TOKEN`), seed only |
+| `ssh-host-key` | `forge-system` | `nico-ssh-console-rs` (`ssh_host_ed25519_key`), seed only |
 
 No wrapper charts exist. Each values file is written in the upstream chart's
 own layout and goes straight to that chart.
@@ -95,6 +100,7 @@ own layout and goes straight to that chart.
 | File | Input |
 |---|---|
 | `manifests/nktp-cluster.yaml.tmpl` | `.ClusterName`, the site's name from the site spec |
+| `manifests/nvke-api-clients.yaml.tmpl` | `.ClientNetworks`, the CIDRs from the site spec that may reach the API: the host that runs `nvkectl` and the tenant node network. The controller chart's NetworkPolicy admits pods only, so without this policy nothing outside the cluster reaches the API. |
 
 Every other file under `manifests/` is plain YAML.
 
@@ -104,8 +110,9 @@ Every other file under `manifests/` is plain YAML.
   only. The command skips it once the Secret `oidc-provider-upstream-ca`
   exists. A changed Certificate spec re-issues the CA with a new key, and
   every tenant trusts the old one.
-- `manifests/tpm-pubhashes.yaml` is applied empty. The controller fills it.
-  A re-apply resets it, and the controller repairs that drift.
+- `manifests/tpm-pubhashes.yaml` is applied empty. The controller fills it
+  under its own field manager. A server-side re-apply of the empty file
+  leaves the controller's keys in place.
 
 ## Running it by hand
 

@@ -5,8 +5,9 @@
 # and Temporal.
 #
 # No password is in this file. The command creates the nvke-database Secret
-# and the chart reads the admin password from it. Temporal and the controller
-# read the same Secret, so the three always agree.
+# and the chart reads the admin password from it. Temporal reads the same key
+# of the same Secret. The controller reads a connection string from it that
+# the command builds with the same password.
 
 # The chart names its Service after the fullname. Pinning it keeps the host
 # nvke-postgresql.postgres.svc.cluster.local stable whatever the release is

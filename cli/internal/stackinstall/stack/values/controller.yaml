@@ -3,11 +3,14 @@
 
 # Values for the nvke-controller chart.
 #
-# Three things are not in this file. The generated overlay supplies them at
+# Site identity is not in this file. The generated overlay supplies it at
 # render time:
 #   image.repository and image.tag     from the artifact file
 #   profiles.image.repository and .tag from the artifact file
 #   spiffe.spire.serverAddress         the control-plane address of the site
+#   spiffe.trustDomain                 from the site spec; must equal the
+#                                      SPIRE server's trust domain
+#   nvkeOIDCAuth.discoveryURL          https://<site address>:30443/.well-known/openid-configuration
 #
 # No credential is in this file. The command creates the nvke-database and
 # dgxc-tenant-credentials Secrets and the chart reads them by name.
@@ -34,8 +37,8 @@ image:
 # in nvke-controller through the generated overlay.
 imagePullSecrets: []
 
-# Named Secret, not a chart-built connection string. Once dbSecretName is set
-# the chart reads appDb for the host and database only.
+# Named Secret, not a chart-built connection string. With dbSecretName set the
+# chart reads the connection string from the Secret and nothing from appDb.
 secrets:
   createDbSecret: false
   dbSecretName: nvke-database
@@ -45,6 +48,9 @@ secrets:
   # tenant create fails at user-data rendering.
   dgxcTenantCredSecretName: dgxc-tenant-credentials
 
+# Not read by the chart while dbSecretName is set. Kept as the record of what
+# the connection string in nvke-database must contain: this host, this
+# database, this user, sslmode disable.
 appDb:
   url: nvke-postgresql.postgres.svc.cluster.local:5432
   dbName: nvke-controller
@@ -82,7 +88,9 @@ apiAuth:
 
 # Off, with its settings kept. The spire release still installs the OIDC
 # discovery provider, and manifests/ still publishes the upstream CA. Turning
-# this on is a one-line change.
+# this on needs spiffe.trustDomain and nvkeOIDCAuth.discoveryURL from the
+# overlay as well. The chart refuses to render it enabled without the trust
+# domain.
 nvkeOIDCAuth:
   enabled: false
   # The logical issuer, string-compared against the JWT iss claim. It does not
@@ -144,9 +152,9 @@ env:
 # ClusterIP one. That is how the API is published without a cluster route,
 # for the host running nvkectl and for an operator reaching /api on a node
 # address. The chart's NetworkPolicy admits the API port from in-cluster
-# namespaces only. External clients need an ipBlock rule with the site's
-# client networks. The generated overlay adds that policy from the site spec;
-# the base values cannot know the addresses.
+# namespaces only, and it has no key for anything else. External clients are
+# admitted by the glue policy manifests/nvke-api-clients.yaml.tmpl, rendered
+# from the site spec's client networks.
 service:
   port: 8080
   nodePort: 30080

@@ -13,9 +13,9 @@
 #     -> the controller derives this ConfigMap from those entries
 #     -> SPIRE server's tpmDirect attestor reads it
 #
-# Re-applying this file resets the data. That is harmless. The
-# ClusterStaticEntries are the source of truth, and the controller watches the
-# ConfigMap to repair exactly that drift.
+# Re-applying this file with --server-side leaves the controller's keys in
+# place. The controller owns them under its own field manager, and an apply of
+# empty data by another manager does not remove them.
 apiVersion: v1
 kind: ConfigMap
 metadata:

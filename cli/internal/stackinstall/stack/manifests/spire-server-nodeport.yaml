@@ -4,7 +4,7 @@
 # A node agent dials the SPIRE server before the cluster has any ingress. It
 # reaches a node address, so the server needs a NodePort. The selector matches
 # the upstream chart's pod labels. The port must match
-# spiffe.spire.serverPort in controller/values.yaml.
+# spiffe.spire.serverPort in values/controller.yaml.
 apiVersion: v1
 kind: Service
 metadata:

@@ -19,7 +19,6 @@ server:
   setConfigFilePath: true
   config:
     persistence:
-      driver: sql
       default:
         driver: sql
         sql:
@@ -28,8 +27,9 @@ server:
           port: 5432
           database: temporal
           user: postgres
+          # The same key PostgreSQL reads. Temporal logs in as postgres.
           existingSecret: nvke-database
-          secretKey: password
+          secretKey: postgres-password
           maxConns: 10
           maxIdleConns: 5
       visibility:
@@ -41,7 +41,7 @@ server:
           database: temporal_visibility
           user: postgres
           existingSecret: nvke-database
-          secretKey: password
+          secretKey: postgres-password
           maxConns: 10
           maxIdleConns: 5
   # One ServiceMonitor per server role, so NKTP scrapes them. Each role's
