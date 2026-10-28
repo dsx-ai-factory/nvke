@@ -368,6 +368,28 @@ func TestSummarizeFailuresCopiesTheFailureIntoSystemErrWhenItIsMissing(t *testin
 	}
 }
 
+func TestSummarizeFailuresKeepsAMessageThatHasNoBody(t *testing.T) {
+	message := "creating the cluster: " + strings.Repeat("the API server did not answer; ", 10)
+	junit := ginkgoReport(t, reporters.JUnitTestCase{
+		Name:    "[It] fails",
+		Status:  "failed",
+		Failure: &reporters.JUnitFailure{Message: message, Type: "failed"},
+	})
+
+	got, err := summarizeFailures(junit)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tc := decodeReport(t, got).TestSuites[0].TestCases[0]
+	if len(tc.Failure.Message) >= testGridMessageLimit {
+		t.Errorf("failure message is %d bytes, want it summarized", len(tc.Failure.Message))
+	}
+	if !strings.Contains(tc.SystemErr, strings.TrimSpace(message)) {
+		t.Errorf("system-err = %q, want it to keep the full message the summary cut", tc.SystemErr)
+	}
+}
+
 func TestSummarizeFailuresSummarizesErrorElements(t *testing.T) {
 	junit := ginkgoReport(t, reporters.JUnitTestCase{
 		Name:   "[It] panics",

@@ -89,8 +89,13 @@ func summarizeCase(tc *reporters.JUnitTestCase, kind string, message, descriptio
 	if summary == *message && *description == "" {
 		return false
 	}
-	if full := strings.TrimSpace(*description); full != "" && !strings.Contains(tc.SystemErr, full) {
-		tc.SystemErr = full + "\n" + tc.SystemErr
+	// Both are kept in system-err unless it already carries them, as it
+	// carries Ginkgo's own: a report that has only a message, or a body that
+	// does not repeat it, would otherwise lose the full text.
+	for _, original := range []string{*description, *message} {
+		if full := strings.TrimSpace(original); full != "" && !strings.Contains(oneLine(tc.SystemErr), oneLine(full)) {
+			tc.SystemErr = full + "\n" + tc.SystemErr
+		}
 	}
 	*message, *description = summary, ""
 	return true
