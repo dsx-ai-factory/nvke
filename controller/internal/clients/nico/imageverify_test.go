@@ -35,7 +35,7 @@ func (s *stubVerifier) VerifyImage(context.Context, *enginev1.MachineImage) erro
 // missing verdict source" is the security property the mode exists for. A
 // refactor that changes any row here changes the feature, not the code.
 func TestVerifyImage(t *testing.T) {
-	image := &enginev1.MachineImage{ObjectMeta: metav1.ObjectMeta{Name: "nke-node-fde-ubuntu-24.04.5-amd64"}}
+	image := &enginev1.MachineImage{ObjectMeta: metav1.ObjectMeta{Name: "nvke-node-fde-ubuntu-24.04.5-amd64"}}
 	verdictErr := errors.New("verdict says no")
 
 	tests := []struct {
