@@ -3,9 +3,13 @@
 This directory holds the Helm values and the glue manifests that `nvkectl`
 installs the NVKE stack with. It holds no charts. It is not a chart
 collection. The charts come from the artifact file; this directory only says
-what each chart gets and which extra objects go next to it. It is embedded into the `nvkectl` binary with
-`go:embed`. `go:embed` reaches only files inside the package tree, which is
-why the directory lives inside the CLI module and not under `deploy/`.
+what each chart gets and which extra objects go next to it.
+
+The `nvkectl` stack installer that reads this directory follows in a later
+change. Until it lands, `deploy/README.md` describes the current install. The
+installer embeds the directory into the binary with `go:embed`. `go:embed`
+reaches only files inside the package tree, which is why the directory lives
+inside the CLI module.
 
 Everything here is plain Helm values and plain Kubernetes manifests. Anyone
 can run them by hand with `helm` and `kubectl`.
@@ -107,6 +111,8 @@ Every other file under `manifests/` is plain YAML.
 
 ```bash
 kubectl apply --server-side -f manifests/namespaces.yaml
+# Render manifests/nktp-cluster.yaml.tmpl with the site's name first.
+kubectl apply --server-side -f <rendered nktp-cluster.yaml>
 helm upgrade --install nktp <chart> --namespace nktp \
   --values values/nktp.yaml
 helm upgrade --install postgres <chart> --namespace postgres \

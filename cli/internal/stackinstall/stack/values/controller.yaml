@@ -143,7 +143,10 @@ env:
 # container listens on 8080. nodePort renders a second Service beside the
 # ClusterIP one. That is how the API is published without a cluster route,
 # for the host running nvkectl and for an operator reaching /api on a node
-# address.
+# address. The chart's NetworkPolicy admits the API port from in-cluster
+# namespaces only. External clients need an ipBlock rule with the site's
+# client networks. The generated overlay adds that policy from the site spec;
+# the base values cannot know the addresses.
 service:
   port: 8080
   nodePort: 30080

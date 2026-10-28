@@ -124,6 +124,14 @@ spire-server:
         # The chart names the CR <release namespace>-<release>-nvke-service.
         # Nothing reads it by name. The SPIFFE ID is what matters. It has to
         # keep matching adminIDs above and the prefixes the node agent admits.
+        #
+        # Two CRs share the template. nvke-service covers the controller's own
+        # namespace, so the admin ID in adminIDs is only mintable there.
+        # capi-exec-auth covers the Cluster API controllers, which present a
+        # nvke-service identity to the API through the SPIFFE exec-auth plugin.
+        # Their service accounts have their own names, so they never match the
+        # admin ID. A distinct path for them is a follow-up that also changes
+        # what the API accepts.
         nvke-service:
           type: raw
           spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nvke-service/{{.PodSpec.ServiceAccountName}}"
@@ -133,6 +141,14 @@ spire-server:
                 operator: In
                 values:
                   - nvke-controller
+        capi-exec-auth:
+          type: raw
+          spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nvke-service/{{.PodSpec.ServiceAccountName}}"
+          namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
                   - capi-system
                   - capi-kubeadm-control-plane-system
                   - capi-kubeadm-bootstrap-system

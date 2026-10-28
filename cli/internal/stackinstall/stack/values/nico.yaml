@@ -57,11 +57,12 @@ nico-api:
   # nico-api exits at startup without resource pools, so siteConfig is not
   # optional. The four pools are the required minimum. The ranges are
   # placeholders. The generated overlay replaces them with the site's address
-  # plan.
+  # plan. dhcp_servers takes IPv4 addresses, so the base leaves it empty and
+  # the overlay fills it.
   siteConfig:
     enabled: true
     nicoApiSiteConfig: |
-      dhcp_servers = ["nico-dhcp.forge-system.svc.cluster.local:67"]
+      dhcp_servers = []
       enable_route_servers = true
       initial_domain_name = "site.example.com"
       sitename = "site"
