@@ -13,7 +13,10 @@
 # SITESPEC and STACK_CONFIG (separate public configuration), NKTP_VALUES, RELEASES (owner-generated profile CRs),
 # OS_PROFILE, KUBERNETES_VERSION, CONTROLLER_VERSION, SIMULATOR_ADDRESS,
 # SIMULATOR_ENDPOINT (exactly http://<SIMULATOR_ADDRESS>:18089),
-# MIN_AVAILABLE_MIB, MIN_DISK_MIB and RUNTIME_LOCK (precreated owned file).
+# RUNTIME_LOCK (precreated owned file). Existing callers must supply positive
+# MIN_AVAILABLE_MIB and MIN_DISK_MIB. Optional RESOURCE_POLICY=github-hosted-amd64-v1
+# instead records available resources and attempts the selected workload on a
+# native GitHub-hosted AMD64 runner; it forbids simultaneous fixed thresholds.
 # IMAGE_INPUTS is the owning consumer's JSON array of {name, reference,
 # manifestDigest, archive, archiveDigest}; VALUES holds spire.json,
 # postgresql.json and temporal.json derived from the same verified artifacts.
@@ -45,6 +48,40 @@ candidate_native_host() {
     Linux:x86_64:amd64|Linux:aarch64:arm64) ;;
     *) fail "candidate architecture differs from the native Linux host" ;;
   esac
+}
+
+candidate_resource_inputs() {
+  case "${NKE_E2E_CANDIDATE_RESOURCE_POLICY:-}" in
+    "")
+      candidate_require NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB
+      candidate_require NKE_E2E_CANDIDATE_MIN_DISK_MIB
+      [[ "${NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB}" != *[!0-9]* && "${NKE_E2E_CANDIDATE_MIN_DISK_MIB}" != *[!0-9]* ]] || fail "candidate resource budgets must be positive integer MiB"
+      [[ ${#NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB} -le 9 && ${#NKE_E2E_CANDIDATE_MIN_DISK_MIB} -le 9 ]] || fail "candidate budgets exceed supported MiB bounds"
+      ((10#${NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB} > 0 && 10#${NKE_E2E_CANDIDATE_MIN_DISK_MIB} > 0)) || fail "candidate resource budgets must be positive"
+      ;;
+    github-hosted-amd64-v1)
+      candidate_native_host || return 1
+      [[ "$(candidate_architecture)" == amd64 && "${RUNNER_ENVIRONMENT:-}" == github-hosted ]] || fail "hosted resource policy requires a native GitHub-hosted AMD64 runner"
+      [[ -z "${NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB:-}" && -z "${NKE_E2E_CANDIDATE_MIN_DISK_MIB:-}" ]] || fail "hosted resource policy cannot be combined with fixed thresholds"
+      ;;
+    *) fail "unknown candidate resource policy" ;;
+  esac
+}
+
+candidate_check_resources() {
+  local available disk
+  available="$(awk '/MemAvailable:/{print int($2/1024)}' /proc/meminfo)" || fail "cannot observe candidate available memory"
+  disk="$(df -Pm "${WORKSPACE_ROOT}" | awk 'NR==2{print $4}')" || fail "cannot observe candidate free disk"
+  [[ "${available}" =~ ^[0-9]+$ && "${disk}" =~ ^[0-9]+$ ]] || fail "candidate resource observations must be numeric MiB"
+  printf 'candidate available memory: %s MiB; free disk: %s MiB; resource policy: %s\n' "${available}" "${disk}" "${NKE_E2E_CANDIDATE_RESOURCE_POLICY:-fixed-thresholds}"
+  if [[ "${NKE_E2E_CANDIDATE_RESOURCE_POLICY:-}" == github-hosted-amd64-v1 ]]; then
+    # A measured workload succeeded on this runner class. That run does not
+    # establish universal minimum resources; the attempted workload owns its
+    # runtime result. KVM, exact inputs, ownership and cleanup remain required.
+    return 0
+  fi
+  ((available >= 10#${NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB})) || fail "candidate memory budget is unavailable"
+  ((disk >= 10#${NKE_E2E_CANDIDATE_MIN_DISK_MIB})) || fail "candidate disk budget is unavailable"
 }
 
 candidate_network_inputs() {
@@ -366,6 +403,7 @@ candidate_admit() {
   local arch
   candidate_native_host || return 1
   arch="$(candidate_architecture)" || return 1
+  candidate_resource_inputs || return 1
   [[ -r /dev/kvm && -w /dev/kvm ]] || fail "candidate VM execution requires usable KVM"
   (exec 8<>/dev/kvm) || fail "cannot open KVM"
   [[ "${NKE_E2E_LABEL_FILTER:-}" == "(nico-vms && ovn) || health" ]] || fail "first candidate mode requires the explicit OVN and health suite contract"
@@ -375,7 +413,7 @@ candidate_admit() {
     NKE_E2E_CANDIDATE_SIMULATOR NKE_E2E_CANDIDATE_SIMULATOR_SHA256 NKE_E2E_CANDIDATE_SEED NKE_E2E_CANDIDATE_SEED_SHA256 \
     NKE_E2E_CANDIDATE_QCOW2 NKE_E2E_CANDIDATE_QCOW2_SHA256 \
     NKE_E2E_CANDIDATE_SITESPEC NKE_E2E_CANDIDATE_STACK_CONFIG NKE_E2E_CANDIDATE_NKTP_VALUES NKE_E2E_CANDIDATE_RELEASES NKE_E2E_CANDIDATE_OS_PROFILE NKE_E2E_CANDIDATE_KUBERNETES_VERSION \
-    NKE_E2E_CANDIDATE_CONTROLLER_VERSION NKE_E2E_CANDIDATE_SIMULATOR_ENDPOINT NKE_E2E_CANDIDATE_SIMULATOR_ADDRESS NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB NKE_E2E_CANDIDATE_MIN_DISK_MIB \
+    NKE_E2E_CANDIDATE_CONTROLLER_VERSION NKE_E2E_CANDIDATE_SIMULATOR_ENDPOINT NKE_E2E_CANDIDATE_SIMULATOR_ADDRESS \
     NKE_E2E_CANDIDATE_IMAGE_INPUTS NKE_E2E_CANDIDATE_VALUES; do candidate_require "${variable}"; done
   [[ "${NKE_E2E_CANDIDATE_SIMULATOR_ENDPOINT}" == "http://${NKE_E2E_CANDIDATE_SIMULATOR_ADDRESS}:18089" ]] || fail "candidate simulator API must use its exact admitted listener18089"
   [[ "${NKE_E2E_CANDIDATE_OS_PROFILE}" == "nvke-local-26-04-${arch}-plain" ]] || fail "candidate mode requires the matching plain Ubuntu26.04 native profile"
@@ -395,16 +433,13 @@ candidate_admit() {
   [[ ! -e "${STATE_DIR}" && ! -L "${STATE_DIR}" ]] || fail "candidate mode requires a fresh private state directory"
   [[ "${LIBVIRT_URI}" == qemu:///session ]] || fail "candidate mode requires its dedicated libvirt session"
   candidate_network_inputs
-  [[ "${NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB}" != *[!0-9]* && "${NKE_E2E_CANDIDATE_MIN_DISK_MIB}" != *[!0-9]* ]] || fail "candidate resource budgets must be positive integer MiB"
-  [[ ${#NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB} -le 9 && ${#NKE_E2E_CANDIDATE_MIN_DISK_MIB} -le 9 ]] || fail "candidate budgets exceed supported MiB bounds"
-  ((10#${NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB} > 0 && 10#${NKE_E2E_CANDIDATE_MIN_DISK_MIB} > 0)) || fail "candidate resource budgets must be positive"
 }
 
 run_candidate_e2e() {
   candidate_admit
   candidate_state_owned=false candidate_test_exit=null candidate_endpoint="${NKE_E2E_CANDIDATE_SIMULATOR_ENDPOINT}"
   candidate_sim_pid="" candidate_dhcp_pid="" candidate_monitor_pid="" candidate_spire_pid="" candidate_oidc_pid="" candidate_suite_pid="" candidate_controller_pid=""
-  local bridge="${NICO_VMS_BRIDGE_NAME:-cwebr0}" gateway=172.30.0.1 available minimum disk inventory
+  local bridge="${NICO_VMS_BRIDGE_NAME:-cwebr0}" gateway=172.30.0.1 inventory
   local simulator_executable="${NKE_E2E_CANDIDATE_SIMULATOR}"
   local vm_memory_mib=6144
   local dhcp_hosts="${STATE_DIR}/sim/dhcp-hosts" dhcp_leases="${STATE_DIR}/sim/leases"
@@ -431,11 +466,7 @@ run_candidate_e2e() {
   candidate_verify_disk_service || fail "served candidate disk differs from its exact byte pin or is unavailable"
   ip link show "${bridge}" >/dev/null || fail "host setup has not prepared the dedicated VM bridge"
   sudo -n true || fail "candidate DHCP and simulator networking require admitted passwordless sudo"
-  available="$(awk '/MemAvailable:/{print int($2/1024)}' /proc/meminfo)"
-  minimum="$((10#${NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB}))"
-  ((available >= minimum)) || fail "candidate memory budget is unavailable"
-  disk="$(df -Pm "${WORKSPACE_ROOT}" | awk 'NR==2{print $4}')"
-  ((disk >= 10#${NKE_E2E_CANDIDATE_MIN_DISK_MIB})) || fail "candidate disk budget is unavailable"
+  candidate_check_resources
   inventory="$(timeout 30 kind get clusters)" || fail "cannot inspect kind clusters"
   if grep -Fxq "${KIND_CLUSTER_NAME}" <<<"${inventory}"; then fail "candidate kind cluster already exists"; fi
   mkdir -p "$(dirname "${STATE_DIR}")"

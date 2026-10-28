@@ -112,6 +112,80 @@ candidate_native_host`, "contract", candidateLibrary(t))
 	}
 }
 
+func TestUnit_CandidateResourcePolicyAdmission(t *testing.T) {
+	for _, tc := range []struct {
+		name, policy, arch, hostOS, hostArch, provider, memory, disk string
+		pass                                                         bool
+	}{
+		{"existing fixed ARM64", "", "", "Linux", "aarch64", "", "24576", "92160", true},
+		{"existing fixed AMD64", "", "amd64", "Linux", "x86_64", "", "8192", "32768", true},
+		{"missing fixed memory", "", "", "Linux", "aarch64", "", "", "92160", false},
+		{"zero fixed memory", "", "", "Linux", "aarch64", "", "0", "92160", false},
+		{"invalid fixed disk", "", "", "Linux", "aarch64", "", "24576", "free", false},
+		{"oversized fixed memory", "", "", "Linux", "aarch64", "", "9999999999", "92160", false},
+		{"hosted AMD64", "github-hosted-amd64-v1", "amd64", "Linux", "x86_64", "github-hosted", "", "", true},
+		{"hosted ARM64", "github-hosted-amd64-v1", "arm64", "Linux", "aarch64", "github-hosted", "", "", false},
+		{"cross architecture", "github-hosted-amd64-v1", "amd64", "Linux", "aarch64", "github-hosted", "", "", false},
+		{"foreign provider", "github-hosted-amd64-v1", "amd64", "Linux", "x86_64", "self-hosted", "", "", false},
+		{"missing provider", "github-hosted-amd64-v1", "amd64", "Linux", "x86_64", "", "", "", false},
+		{"foreign OS", "github-hosted-amd64-v1", "amd64", "Darwin", "x86_64", "github-hosted", "", "", false},
+		{"mixed memory", "github-hosted-amd64-v1", "amd64", "Linux", "x86_64", "github-hosted", "1", "", false},
+		{"mixed disk", "github-hosted-amd64-v1", "amd64", "Linux", "x86_64", "github-hosted", "", "1", false},
+		{"unknown policy", "unknown", "amd64", "Linux", "x86_64", "github-hosted", "", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := exec.CommandContext(t.Context(), "bash", "-ec", `source "$1"
+fail(){ printf '%s\n' "$*" >&2; exit 1; }
+uname(){ case "$1" in -s) printf '%s\n' "$TEST_HOST_OS";; -m) printf '%s\n' "$TEST_HOST_ARCH";; *) exit 1;; esac; }
+candidate_resource_inputs`, "contract", candidateLibrary(t))
+			cmd.Env = []string{
+				"PATH=" + os.Getenv("PATH"), "NKE_E2E_CANDIDATE_RESOURCE_POLICY=" + tc.policy,
+				"NKE_E2E_CANDIDATE_ARCH=" + tc.arch, "RUNNER_ENVIRONMENT=" + tc.provider,
+				"NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB=" + tc.memory, "NKE_E2E_CANDIDATE_MIN_DISK_MIB=" + tc.disk,
+				"TEST_HOST_OS=" + tc.hostOS, "TEST_HOST_ARCH=" + tc.hostArch,
+			}
+			out, err := cmd.CombinedOutput()
+			if (err == nil) != tc.pass {
+				t.Fatalf("candidate resource policy: %s %v", out, err)
+			}
+		})
+	}
+}
+
+func TestUnit_CandidateResourceObservations(t *testing.T) {
+	for _, tc := range []struct {
+		name, policy, memory, disk string
+		pass                       bool
+	}{
+		{"fixed sufficient", "", "24576", "92160", true},
+		{"fixed insufficient memory", "", "24575", "92160", false},
+		{"fixed insufficient disk", "", "24576", "92159", false},
+		{"hosted reports without invented minimum", "github-hosted-amd64-v1", "0", "0", true},
+		{"hosted memory observation missing", "github-hosted-amd64-v1", "", "10240", false},
+		{"hosted disk observation invalid", "github-hosted-amd64-v1", "8192", "unknown", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := exec.CommandContext(t.Context(), "bash", "-ec", `source "$1"
+fail(){ printf '%s\n' "$*" >&2; exit 1; }
+awk(){ case "$1" in /MemAvailable:*) printf '%s\n' "$TEST_MEMORY";; *) cat >/dev/null; printf '%s\n' "$TEST_DISK";; esac; }
+df(){ printf unused; }
+candidate_check_resources`, "contract", candidateLibrary(t))
+			cmd.Env = []string{
+				"PATH=" + os.Getenv("PATH"), "NKE_E2E_CANDIDATE_RESOURCE_POLICY=" + tc.policy, "WORKSPACE_ROOT=/fixture",
+				"NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB=24576", "NKE_E2E_CANDIDATE_MIN_DISK_MIB=92160",
+				"TEST_MEMORY=" + tc.memory, "TEST_DISK=" + tc.disk,
+			}
+			out, err := cmd.CombinedOutput()
+			if (err == nil) != tc.pass {
+				t.Fatalf("candidate resource observations: %s %v", out, err)
+			}
+			if tc.pass && (!strings.Contains(string(out), tc.memory+" MiB") || !strings.Contains(string(out), tc.disk+" MiB")) {
+				t.Fatalf("resource observations missing: %s", out)
+			}
+		})
+	}
+}
+
 func TestUnit_CandidateNetworkGuardBindsLiveBridge(t *testing.T) {
 	for _, tc := range []struct {
 		name, bridge, mismatch string
