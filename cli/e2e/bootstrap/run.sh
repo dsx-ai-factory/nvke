@@ -109,6 +109,8 @@ OTLP_HEADERS="authorization=Bearer ${OTLP_TOKEN},x-tenant=${OTLP_TENANT}"
 # The values the scan searches for as exact strings. The lane adds the ones it can
 # only read from the cluster once bootstrap has finished.
 KNOWN_SECRETS=("${OTLP_TOKEN}" "x-tenant=${OTLP_TENANT}")
+PG_PASSWORD_KNOWN=false
+ETCD_KEY_KNOWN=false
 GO="${GO:-go}"
 # The lane runs `bootstrap site` through the Go tests in bootstraptest. Those
 # tests carry two marks: the e2e_bootstrap build tag, which keeps them out of
@@ -409,10 +411,18 @@ scan_run_output() {
   out="$(mktemp -d)"
   mkdir -p "${out}/output"
   if [ -f "${log_file}" ]; then
-    cp "${log_file}" "${out}/output/bootstrap.log"
+    cp "${log_file}" "${out}/output/bootstrap.log" || {
+      log "FAIL: could not read ${log_file}, so it was not scanned for credentials"
+      rm -rf "${out}"
+      return 1
+    }
   fi
   if [ -f "${go_test_log}" ]; then
-    cp "${go_test_log}" "${out}/output/go-test.log"
+    cp "${go_test_log}" "${out}/output/go-test.log" || {
+      log "FAIL: could not read ${go_test_log}, so it was not scanned for credentials"
+      rm -rf "${out}"
+      return 1
+    }
   fi
   if [ -d "${diag_dir}" ]; then
     mkdir -p "${out}/output/diagnostics"
@@ -451,33 +461,40 @@ add_known_secret() {
 # learn_generated_secrets adds the secrets bootstrap generates to KNOWN_SECRETS: the
 # Postgres password, read from the bootstrap cluster, and the etcd key, read from
 # the saved key file as stored (base64) and decoded. It returns 1 if either could
-# not be read. The values are never printed.
+# not be read. A value already read is kept and not read again, so it still
+# succeeds after the lane deletes the cluster. The values are never printed.
 learn_generated_secrets() {
   local kubeconfig pg_password="" etcd_key="" etcd_key_text="" rc=0
-  kubeconfig="$(mktemp)"
-  if KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name "${BOOTSTRAP_KIND_CLUSTER}" >"${kubeconfig}" 2>/dev/null; then
-    pg_password="$(kubectl --kubeconfig "${kubeconfig}" --request-timeout=10s -n postgres get secret postgres-postgresql \
-      -o 'jsonpath={.data.password}' 2>/dev/null | base64 -d 2>/dev/null)" || pg_password=""
-  fi
-  rm -f "${kubeconfig}"
-  if [ -n "${pg_password}" ]; then
-    add_known_secret "${pg_password}"
-  else
-    log "the generated Postgres password could not be read from the bootstrap cluster"
-    rc=1
-  fi
-  if [ -f "${ETCD_KEY_FILE}" ]; then
-    etcd_key="$(sed -n 's/^ *"active": *"\([^"]*\)".*/\1/p' "${ETCD_KEY_FILE}")"
-  fi
-  if [ -n "${etcd_key}" ]; then
-    add_known_secret "${etcd_key}"
-    etcd_key_text="$(printf '%s' "${etcd_key}" | base64 -d 2>/dev/null)" || etcd_key_text=""
-    if printf '%s' "${etcd_key_text}" | LC_ALL=C grep -qE '^[[:print:]]{16,}$'; then
-      add_known_secret "${etcd_key_text}"
+  if [ "${PG_PASSWORD_KNOWN}" != true ]; then
+    kubeconfig="$(mktemp)"
+    if KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name "${BOOTSTRAP_KIND_CLUSTER}" >"${kubeconfig}" 2>/dev/null; then
+      pg_password="$(kubectl --kubeconfig "${kubeconfig}" --request-timeout=10s -n postgres get secret postgres-postgresql \
+        -o 'jsonpath={.data.password}' 2>/dev/null | base64 -d 2>/dev/null)" || pg_password=""
     fi
-  else
-    log "the etcd key could not be read from ${ETCD_KEY_FILE}"
-    rc=1
+    rm -f "${kubeconfig}"
+    if [ -n "${pg_password}" ]; then
+      add_known_secret "${pg_password}"
+      PG_PASSWORD_KNOWN=true
+    else
+      log "the generated Postgres password could not be read from the bootstrap cluster"
+      rc=1
+    fi
+  fi
+  if [ "${ETCD_KEY_KNOWN}" != true ]; then
+    if [ -f "${ETCD_KEY_FILE}" ]; then
+      etcd_key="$(sed -n 's/^ *"active": *"\([^"]*\)".*/\1/p' "${ETCD_KEY_FILE}")"
+    fi
+    if [ -n "${etcd_key}" ]; then
+      add_known_secret "${etcd_key}"
+      etcd_key_text="$(printf '%s' "${etcd_key}" | base64 -d 2>/dev/null | tr -d '\0')" || etcd_key_text=""
+      if printf '%s' "${etcd_key_text}" | LC_ALL=C grep -qE '^[[:print:]]{16,}$'; then
+        add_known_secret "${etcd_key_text}"
+      fi
+      ETCD_KEY_KNOWN=true
+    else
+      log "the etcd key could not be read from ${ETCD_KEY_FILE}"
+      rc=1
+    fi
   fi
   return "${rc}"
 }
@@ -533,6 +550,8 @@ print_run_logs() {
   learn_generated_secrets >/dev/null 2>&1 || true
   if command -v gitleaks >/dev/null 2>&1; then
     scan_run_output "${BOOTSTRAP_LOG}" "" "${BOOTSTRAP_GO_TEST_LOG}" >/dev/null 2>&1 || scan_rc=$?
+  elif [ "${NVKECTL_E2E_REQUIRE_SECRET_SCAN:-}" = 1 ]; then
+    scan_rc=1
   else
     scan_for_known_secrets "${BOOTSTRAP_LOG}" "${BOOTSTRAP_GO_TEST_LOG}" >/dev/null 2>&1 || scan_rc=$?
   fi
@@ -1146,6 +1165,9 @@ otlp_env="$(bk -n "${CONTROLLER_NAME}" get deployment "${CONTROLLER_NAME}" \
 [ "${otlp_env}" = "authorization=Bearer%20${OTLP_TOKEN},x-tenant=${OTLP_TENANT}" ] ||
   fail "the controller's OTEL_EXPORTER_OTLP_HEADERS is not the headers the lane gave bootstrap site," \
     "so the scan for them proves nothing about the controller's output"
+# Read now: the lane deletes the bootstrap cluster before the scan at exit.
+learn_generated_secrets ||
+  fail "the generated secrets could not be read, so the search for them proves nothing"
 spiffe_id="spiffe://${SPIRE_TRUST_DOMAIN}/nvke-service/${CONTROLLER_NAME}"
 bk -n spire-server exec spire-server-0 -c spire-server -- \
   /opt/spire/bin/spire-server entry show -spiffeID "${spiffe_id}" | grep -q "Entry ID" ||
