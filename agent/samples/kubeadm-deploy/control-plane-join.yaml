@@ -5,7 +5,8 @@ apiVersion: kubeadm.k8s.io/v1beta4
 kind: JoinConfiguration
 controlPlane:
   # The API server's encryption flag and volume come from the cluster's ClusterConfiguration
-  # (see kubeadm-init.yaml); /etc/kubernetes/encryption-config.yaml must already be on this node.
+  # (see kubeadm-init.yaml). Before joining, copy /etc/kubernetes/encryption-config.yaml, with the
+  # same keys, from an existing control-plane node; a new key would leave Secrets unreadable.
   localAPIEndpoint:
     advertiseAddress: 10.85.140.173
 discovery:
