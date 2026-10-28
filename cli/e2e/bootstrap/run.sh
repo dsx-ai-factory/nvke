@@ -408,7 +408,9 @@ scan_run_output() {
   local log_file="$1" diag_dir="$2" go_test_log="${3:-}" out rc values_rc=0
   out="$(mktemp -d)"
   mkdir -p "${out}/output"
-  cp "${log_file}" "${out}/output/bootstrap.log"
+  if [ -f "${log_file}" ]; then
+    cp "${log_file}" "${out}/output/bootstrap.log"
+  fi
   if [ -f "${go_test_log}" ]; then
     cp "${go_test_log}" "${out}/output/go-test.log"
   fi
@@ -435,6 +437,17 @@ scan_run_output() {
   esac
 }
 
+# add_known_secret adds its argument to KNOWN_SECRETS unless it is already there.
+add_known_secret() {
+  local known
+  for known in "${KNOWN_SECRETS[@]}"; do
+    if [ "${known}" = "$1" ]; then
+      return 0
+    fi
+  done
+  KNOWN_SECRETS+=("$1")
+}
+
 # learn_generated_secrets adds the secrets bootstrap generates to KNOWN_SECRETS: the
 # Postgres password, read from the bootstrap cluster, and the etcd key, read from
 # the saved key file as stored (base64) and decoded. It returns 1 if either could
@@ -448,7 +461,7 @@ learn_generated_secrets() {
   fi
   rm -f "${kubeconfig}"
   if [ -n "${pg_password}" ]; then
-    KNOWN_SECRETS+=("${pg_password}")
+    add_known_secret "${pg_password}"
   else
     log "the generated Postgres password could not be read from the bootstrap cluster"
     rc=1
@@ -457,10 +470,10 @@ learn_generated_secrets() {
     etcd_key="$(sed -n 's/^ *"active": *"\([^"]*\)".*/\1/p' "${ETCD_KEY_FILE}")"
   fi
   if [ -n "${etcd_key}" ]; then
-    KNOWN_SECRETS+=("${etcd_key}")
+    add_known_secret "${etcd_key}"
     etcd_key_text="$(printf '%s' "${etcd_key}" | base64 -d 2>/dev/null)" || etcd_key_text=""
     if printf '%s' "${etcd_key_text}" | LC_ALL=C grep -qE '^[[:print:]]{16,}$'; then
-      KNOWN_SECRETS+=("${etcd_key_text}")
+      add_known_secret "${etcd_key_text}"
     fi
   else
     log "the etcd key could not be read from ${ETCD_KEY_FILE}"
@@ -508,6 +521,28 @@ scan_for_known_secrets() {
       return 1
       ;;
   esac
+}
+
+# print_run_logs prints the bootstrap log and the Go test log it is given, unless a
+# scan of both finds a credential or a known secret value in them. Their output
+# goes to the CI log, which is public, and the scan at exit comes too late for
+# that. It prints a notice instead, and the scan at exit fails the run.
+print_run_logs() {
+  local file scan_rc=0
+  # The generated secrets exist once the bootstrap cluster does.
+  learn_generated_secrets >/dev/null 2>&1 || true
+  if command -v gitleaks >/dev/null 2>&1; then
+    scan_run_output "${BOOTSTRAP_LOG}" "" "${BOOTSTRAP_GO_TEST_LOG}" >/dev/null 2>&1 || scan_rc=$?
+  else
+    scan_for_known_secrets "${BOOTSTRAP_LOG}" "${BOOTSTRAP_GO_TEST_LOG}" >/dev/null 2>&1 || scan_rc=$?
+  fi
+  if [ "${scan_rc}" -ne 0 ]; then
+    log "the bootstrap output holds a credential or could not be scanned, so it is not printed to the CI log"
+    return 0
+  fi
+  for file in "$@"; do
+    cat "${file}" || true
+  done
 }
 
 # defer registers a command for the EXIT trap, which runs registrations in
@@ -922,8 +957,7 @@ bootstrap_pid=$!
 abort_bootstrap() {
   kill -- "-${bootstrap_pid}" 2>/dev/null || kill "${bootstrap_pid}" 2>/dev/null || true
   wait "${bootstrap_pid}" 2>/dev/null || true
-  cat "${BOOTSTRAP_LOG}" || true
-  cat "${BOOTSTRAP_GO_TEST_LOG}" || true
+  print_run_logs "${BOOTSTRAP_LOG}" "${BOOTSTRAP_GO_TEST_LOG}"
   exit 1
 }
 
@@ -1039,13 +1073,13 @@ fi
 
 status=0
 wait "${bootstrap_pid}" || status=$?
-cat "${BOOTSTRAP_LOG}"
+print_run_logs "${BOOTSTRAP_LOG}"
 output="$(cat "${BOOTSTRAP_LOG}")"
 
 if [ "${status}" -ne 0 ]; then
   # The go test exit status says only that the run failed. What nvkectl exited
   # with, or that it could not be started at all, is in its log.
-  cat "${BOOTSTRAP_GO_TEST_LOG}" || true
+  print_run_logs "${BOOTSTRAP_GO_TEST_LOG}"
   fail "nvkectl bootstrap site failed; see ${BOOTSTRAP_GO_TEST_LOG}"
 fi
 if ! grep -q "controller deployment healthy" <<<"${output}"; then
