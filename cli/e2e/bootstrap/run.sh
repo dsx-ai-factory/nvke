@@ -100,10 +100,7 @@ BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap.log"
 # it and the credential scan covers that copy.
 BOOTSTRAP_GO_TEST_LOG="${SCRIPT_DIR}/.bootstrap-go-test.log"
 # The OTLP settings `bootstrap site` runs with, for the credential scan. The
-# values are random, so none sits in this repository. The endpoint is a
-# documentation address nothing answers; it is not a loopback one, because
-# `bootstrap site` gives the controller the headers only for an endpoint the
-# bootstrap cluster can reach.
+# values are random, so none sits in this repository.
 OTLP_TOKEN="e2e$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 OTLP_TENANT="e2e$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 OTLP_ENDPOINT="http://192.0.2.1:4317"
