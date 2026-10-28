@@ -173,6 +173,11 @@ on:
         type: boolean
         required: false
         default: false
+      tenant-gpu-runtime:
+        description: Install the GPU runtime on a GB200 Ubuntu 24.04 tenant with AICR, run AICR's deployment checks and the tenant GPU checks. Holds the tenant up to 65 minutes longer.
+        type: boolean
+        required: false
+        default: false
       image-registry:
         description: Where the published controller and capi-provisioned images are pulled from. nvcr is the default and needs the NGC_API_KEY secret and the QUALIFY_E2E_NGC_ORG variable.
         type: choice
@@ -476,6 +481,7 @@ jobs:
                   arch: $s.capabilities.arch,
                   provider: $s.capabilities.provider,
                   gpu: ($s.capabilities.gpu // ""),
+                  ubuntu: ($s.capabilities.ubuntu // ""),
                   controller: version($all; "controller"),
                   cli: version($all; "cli"),
                   capi_provisioned: version($all; "capi-provisioned"),
@@ -554,7 +560,12 @@ jobs:
     # the note on the three nested timeouts at the run step. This bound is
     # only ever reached by a run that has already gone wrong; a healthy
     # `full` is about an hour plus whatever the artifact wait cost.
-    timeout-minutes: 335
+    #
+    # tenant-gpu-runtime moves every clock out by the 65 minutes its two
+    # specs may take, so the gaps between them stay what they are sized as.
+    # Read from inputs and vars rather than TENANT_GPU_RUNTIME: a job's env is
+    # not in scope for its own timeout.
+    timeout-minutes: ${{ (inputs.tenant-gpu-runtime || (github.event_name != 'push' && vars.QUALIFY_E2E_TENANT_GPU_RUNTIME == 'true')) && 400 || 335 }}
     permissions:
       contents: read
       # The runner's own GHCR and NVCR pulls, and the Teleport join. No PAT
@@ -663,6 +674,12 @@ jobs:
       # needed the machine has been read off it. A tag push never reads it:
       # nobody is there to read a kept machine, or to delete it.
       KEEP_SITE: ${{ inputs.keep-site || (github.event_name != 'push' && vars.QUALIFY_E2E_KEEP_SITE) || false }}
+      # Off unless asked for, and never on a tag push, for the same reason as
+      # KEEP_SITE: it holds a GB200 tenant up to 65 minutes longer, which is
+      # a cost every beta would pay. The suite installs only where AICR has a
+      # recipe -- GB200, Ubuntu 24.04 -- and skips with the reason elsewhere.
+      TENANT_GPU_RUNTIME: ${{ inputs.tenant-gpu-runtime || (github.event_name != 'push' && vars.QUALIFY_E2E_TENANT_GPU_RUNTIME == 'true') || false }}
+      UBUNTU: ${{ matrix.ubuntu }}
       # ghcr or nvcr. Only the runner pulls from it: every image it names is
       # staged onto the node as an archive. The node's own pull is CAPNICo,
       # which is published to GHCR alone, so the GHCR login below stays either
@@ -1004,6 +1021,12 @@ jobs:
           if [ -n "${GPU}" ]; then
             capabilities="${capabilities},gpu=${GPU}"
           fi
+          # Software, not infrastructure: it selects no machine. The suite
+          # reads it to install the GPU runtime only where AICR admits the
+          # series.
+          if [ -n "${UBUNTU}" ]; then
+            capabilities="${capabilities},ubuntu=${UBUNTU}"
+          fi
           echo "CAPABILITIES=${capabilities}" >> "${GITHUB_ENV}"
           echo "capabilities: ${capabilities}"
 
@@ -1217,6 +1240,67 @@ jobs:
           echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
           "${HOME}/.local/bin/tsh" version
 
+      # aicr renders the tenant's GPU runtime bundle and runs its checks; the
+      # bundle's deploy.sh drives helm and kubectl. All three run here on the
+      # runner against the tenant's relayed kubeconfig, so the runner needs
+      # them and the tenant needs nothing preinstalled.
+      - name: Install aicr
+        if: env.DRY_RUN != 'true' && env.TENANT_GPU_RUNTIME == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          version="$(make --no-print-directory print-AICR_VERSION)"
+          # A committed digest, not the release's aicr_checksums.txt -- same
+          # host, so the same compromise boundary.
+          expected="$(make --no-print-directory print-AICR_SHA256_AMD64)"
+          tar="aicr_${version}_linux_amd64.tar.gz"
+          tmp="$(mktemp -d)"
+
+          curl -fsSL --connect-timeout 20 --max-time 300 --retry 8 --retry-all-errors --retry-max-time 240 \
+            -o "${tmp}/${tar}" "https://github.com/NVIDIA/aicr/releases/download/v${version}/${tar}"
+          if [ -z "${expected}" ]; then
+            echo "::error::no checksum entry for ${tar}"
+            exit 1
+          fi
+          actual="$(sha256sum "${tmp}/${tar}" | awk '{print $1}')"
+          if [ "${actual}" != "${expected}" ]; then
+            echo "::error::checksum mismatch for ${tar}"
+            exit 1
+          fi
+
+          tar -C "${tmp}" -xzf "${tmp}/${tar}" aicr
+          mkdir -p "${HOME}/.local/bin"
+          install -m 0755 "${tmp}/aicr" "${HOME}/.local/bin/"
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+          "${HOME}/.local/bin/aicr" --version
+
+      - name: Read the helm and kubectl versions
+        if: env.DRY_RUN != 'true' && env.TENANT_GPU_RUNTIME == 'true'
+        id: gpu-runtime-tools
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          {
+            echo "helm=$(make --no-print-directory print-HELM_VERSION)"
+            echo "kubectl=$(make --no-print-directory print-KUBECTL_VERSION)"
+            echo "kind=$(make --no-print-directory print-KIND_VERSION)"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Helm
+        if: env.DRY_RUN != 'true' && env.TENANT_GPU_RUNTIME == 'true'
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ steps.gpu-runtime-tools.outputs.helm }}
+
+      # setup-kind is the repository's one checked kubectl install; kind comes
+      # with it and goes unused here.
+      - name: Set up kubectl
+        if: env.DRY_RUN != 'true' && env.TENANT_GPU_RUNTIME == 'true'
+        uses: ./.github/actions/setup-kind
+        with:
+          kind_version: ${{ steps.gpu-runtime-tools.outputs.kind }}
+          kubectl_version: ${{ steps.gpu-runtime-tools.outputs.kubectl }}
+
       # No stored identity: tbot joins with the repository's OIDC token
       # against a join token named by FORGE_TELEPORT_JOIN_TOKEN, whose bot
       # holds a role granting root on the jump hosts labelled for it -- one
@@ -1371,6 +1455,8 @@ jobs:
           VAR_RESOLUTION: ${{ vars.QUALIFY_E2E_RESOLUTION }}
           IN_KEEP_SITE: ${{ inputs.keep-site }}
           VAR_KEEP_SITE: ${{ vars.QUALIFY_E2E_KEEP_SITE }}
+          IN_TENANT_GPU_RUNTIME: ${{ inputs.tenant-gpu-runtime }}
+          VAR_TENANT_GPU_RUNTIME: ${{ vars.QUALIFY_E2E_TENANT_GPU_RUNTIME }}
           IN_IMAGE_REGISTRY: ${{ inputs.image-registry }}
           VAR_IMAGE_REGISTRY: ${{ vars.QUALIFY_E2E_IMAGE_REGISTRY }}
           VAR_NGC_ORG: ${{ vars.QUALIFY_E2E_NGC_ORG }}
@@ -1418,6 +1504,7 @@ jobs:
             "nvkectl artifact|SITE_CLI_REF|||"
             "dry run|DRY_RUN|IN_DRY_RUN||"
             "keep the node|KEEP_SITE|IN_KEEP_SITE|VAR_KEEP_SITE|QUALIFY_E2E_KEEP_SITE"
+            "tenant GPU runtime|TENANT_GPU_RUNTIME|IN_TENANT_GPU_RUNTIME|VAR_TENANT_GPU_RUNTIME|QUALIFY_E2E_TENANT_GPU_RUNTIME"
             "image registry|SITE_IMAGE_REGISTRY|IN_IMAGE_REGISTRY|VAR_IMAGE_REGISTRY|QUALIFY_E2E_IMAGE_REGISTRY"
             "NGC org|QUALIFY_E2E_NGC_ORG||VAR_NGC_ORG|QUALIFY_E2E_NGC_ORG"
             "Teleport proxy|FORGE_TELEPORT_PROXY||VAR_TELEPORT_PROXY|FORGE_TELEPORT_PROXY"
@@ -1622,6 +1709,11 @@ jobs:
       # backstop starts firing during a teardown that was going to succeed --
       # which is the one failure that leaks the instance.
       #
+      # tenant-gpu-runtime adds two specs before the tenant is deleted, an
+      # install of up to 45 minutes and AICR's checks of up to 20, so with it
+      # on the first two are 215m and 285m and the job's limit grows by the
+      # same 65. The gaps, which are what is sized, do not change.
+      #
       # There is no fourth clock. The bot certificate expires in an hour, but
       # tbot rewrites it every twenty minutes for as long as the job runs --
       # see the daemon step. Before that it was a real limit on `full`.
@@ -1650,6 +1742,16 @@ jobs:
           if [ "${KEEP_SITE}" = "true" ]; then
             keep=(-e2e.keep-site)
             echo "::warning::-e2e.keep-site is set; the site node, and a failed tenant's nodes, survive this run and must be deleted by hand"
+          fi
+          # The three clocks move together, by the 65 minutes the GPU runtime
+          # specs may take; see the note above this step.
+          gpu_runtime=()
+          ginkgo_timeout=150m
+          go_timeout=220m
+          if [ "${TENANT_GPU_RUNTIME}" = "true" ]; then
+            gpu_runtime=(-e2e.tenant-gpu-runtime)
+            ginkgo_timeout=215m
+            go_timeout=285m
           fi
           # -v so a green run keeps its output. Without it `go test` buffers a
           # passing package's stdout and throws it away, which is what run
@@ -1686,11 +1788,13 @@ jobs:
               echo "  -e2e.versions=controller=${SITE_NVKE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}"
               echo "  -e2e.capabilities=${CAPABILITIES}"
               echo "  keep: ${keep[*]:-no}"
+              echo "  tenant GPU runtime: ${gpu_runtime[*]:-no}"
+              echo "  -ginkgo.timeout=${ginkgo_timeout} -timeout=${go_timeout}"
             } | tee qualify-e2e.log
           else
-            go test -v -timeout 220m . -args \
+            go test -v -timeout "${go_timeout}" . -args \
               -ginkgo.label-filter=site-controller \
-              -ginkgo.timeout=150m \
+              -ginkgo.timeout="${ginkgo_timeout}" \
               -ginkgo.v \
               -ginkgo.fail-on-empty \
               -ginkgo.no-color \
@@ -1701,7 +1805,7 @@ jobs:
               -e2e.site-stage="${SITE_STAGE}" \
               -e2e.versions="controller=${SITE_NVKE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}" \
               -e2e.capabilities="${CAPABILITIES}" \
-              "${keep[@]}" 2>&1 | tee qualify-e2e.log
+              "${keep[@]}" "${gpu_runtime[@]}" 2>&1 | tee qualify-e2e.log
           fi
 
       # The suite names the jump host in its own errors ("not reachable
