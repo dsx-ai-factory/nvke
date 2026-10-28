@@ -1,6 +1,6 @@
 module github.com/dsx-ai-factory/nvke/controller/hack/capd-reboot-controller
 
-go 1.27.2
+go 1.27.3
 
 require (
 	k8s.io/apimachinery v0.37.1

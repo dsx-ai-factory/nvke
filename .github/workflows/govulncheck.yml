@@ -177,7 +177,7 @@ jobs:
           # reported 7 reachable standard-library vulnerabilities under 1.26.5
           # and 0 under 1.26.6.
           go-version: ${{ steps.versions.outputs.go }}
-          cache: true
+          cache: false
           # go.work.sum holds only the hashes NOT already in a member's go.sum,
           # so the versions actually linked often appear in it zero times. Keyed
           # on it alone, a dependency bump leaves the key unchanged and restores

@@ -213,7 +213,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.work
-          cache: true
+          cache: false
           cache-dependency-path: |
             go.work.sum
             **/go.sum
@@ -360,6 +360,10 @@ jobs:
         with:
           # The arch too: GitHub keeps two same-named artifacts.
           name: nvkectl-bootstrap-e2e-diagnostics-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: cli/cluster-diagnostics/
+          path: |
+            cli/cluster-diagnostics/bootstrap-cluster-create-failure.txt
+            cli/cluster-diagnostics/all-resources.txt
+            cli/cluster-diagnostics/pods-described.txt
+            cli/cluster-diagnostics/helm-releases.txt
           if-no-files-found: ignore
           retention-days: 7

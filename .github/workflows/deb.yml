@@ -126,7 +126,7 @@ jobs:
           # notices-check.yml reads agent/go.mod and is also correct, because it
           # sets GOWORK=off and builds the module on its own.
           go-version-file: go.work
-          cache: true
+          cache: false
 
       - name: Install the Debian packaging tools
         run: |

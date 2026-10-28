@@ -1,6 +1,6 @@
 module github.com/dsx-ai-factory/nvke/controller/nico-sim
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/NVIDIA/ncx-infra-controller-rest v1.3.0

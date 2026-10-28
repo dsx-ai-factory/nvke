@@ -253,7 +253,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.work
-          cache: true
+          cache: false
           cache-dependency-path: |
             go.work.sum
             **/go.sum
@@ -612,7 +612,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.work
-          cache: true
+          cache: false
           cache-dependency-path: |
             go.work.sum
             **/go.sum
@@ -1418,7 +1418,6 @@ jobs:
           path: |
             controller/test/e2e/qualify-e2e.log
             controller/test/e2e/qualify-e2e.junit.xml
-            controller/test/e2e/nvkectl-diagnostics.tar.gz
             controller/test/e2e/tenant-diagnostics.json
             controller/test/e2e/site-cluster-state.txt
             ${{ runner.temp }}/run-inputs.txt

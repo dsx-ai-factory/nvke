@@ -95,7 +95,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.work
-          cache: true
+          cache: false
           cache-dependency-path: |
             go.work.sum
             **/go.sum
@@ -212,11 +212,7 @@ jobs:
           # The arch too: GitHub keeps two same-named artifacts, so without it
           # a download cannot tell the legs apart.
           name: kubeadm-bringup-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
-          # The smoke test generates a throwaway SSH keypair for VMs that no
-          # longer exist by upload time, but a private key still has no business
-          # in a downloadable artifact.
-          path: |
-            ${{ env.NKE_BRINGUP_ARTIFACT_DIR }}/
-            !${{ env.NKE_BRINGUP_ARTIFACT_DIR }}/**/smoke_id_ed25519
+          # Guest console text only; no disks, executable inputs or keypairs.
+          path: ${{ env.NKE_BRINGUP_ARTIFACT_DIR }}/console-logs/*.log
           if-no-files-found: warn
           retention-days: 7

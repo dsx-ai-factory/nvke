@@ -86,7 +86,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.work
-          cache: true
+          cache: false
 
       - name: Build nvkectl
         run: make -C cli build
@@ -182,5 +182,15 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: kind-stack-from-release-${{ github.run_id }}
-          path: /tmp/kind-stack-diag
+          path: |
+            /tmp/kind-stack-diag/release.json
+            /tmp/kind-stack-diag/disk.txt
+            /tmp/kind-stack-diag/nodes.txt
+            /tmp/kind-stack-diag/pods.txt
+            /tmp/kind-stack-diag/describe-pods.txt
+            /tmp/kind-stack-diag/events.txt
+            /tmp/kind-stack-diag/nke-controller.log
+            /tmp/kind-stack-diag/capnico-system.log
+            /tmp/kind-stack-diag/spire-server.log
+            /tmp/kind-stack-diag/containerd-images.txt
           retention-days: 7

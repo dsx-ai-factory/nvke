@@ -73,7 +73,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: controller/api/go.mod
-          cache: true
+          cache: false
           cache-dependency-path: |
             controller/api/go.sum
             controller/api/oapi-codegen.sum
@@ -110,7 +110,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.work
-          cache: true
+          cache: false
           cache-dependency-path: |
             go.work.sum
             cluster-api-provider-provisioned/go.sum
@@ -171,7 +171,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.work
-          cache: true
+          cache: false
           cache-dependency-path: |
             go.work.sum
             agent/go.sum

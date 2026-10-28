@@ -42,6 +42,11 @@ Preserve these rules when adding or changing a workflow:
 
 ## Event ownership
 
+PR jobs keep Go product build caches on the runner: `setup-go` caching is off,
+and the gofail lane does not upload its Go build cache. Diagnostic uploads name
+their text reports explicitly. PR OS-image builds validate their local disks
+without uploading release assets.
+
 | Event | Owner | Expected coverage |
 |---|---|---|
 | Pull request, including a stacked PR | `merge-gate.yml` | Every required member |

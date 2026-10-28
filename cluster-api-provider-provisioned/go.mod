@@ -1,6 +1,6 @@
 module github.com/dsx-ai-factory/nvke/cluster-api-provider-provisioned
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/go-logr/logr v1.4.4

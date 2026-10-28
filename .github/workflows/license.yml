@@ -136,7 +136,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.work
-          cache: true
+          cache: false
           # go.work.sum holds only the hashes NOT already in a member's go.sum,
           # so keying on it alone restores a stale cache after a bump.
           cache-dependency-path: |
@@ -175,7 +175,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.work
-          cache: true
+          cache: false
 
       - name: Verify license headers
         run: make license-header-check

@@ -175,7 +175,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.work
-          cache: true
+          cache: false
           cache-dependency-path: |
             go.work.sum
             **/go.sum
@@ -319,15 +319,8 @@ jobs:
           # it the two are one name and you cannot tell which leg you opened.
           name: nico-vms-e2e-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ env.NKE_E2E_STATE_DIR }}/
-            !${{ env.NKE_E2E_STATE_DIR }}/cwe-e2e.test
-            # The smoke's own nvkectl state: a cached controller token lives here.
-            !${{ env.NKE_E2E_STATE_DIR }}/nvkectl-home
-            !${{ env.NKE_E2E_STATE_DIR }}/nvkectl-no-auth
-            !${{ env.NKE_E2E_STATE_DIR }}/nvkectl
-            !${{ env.NKE_E2E_STATE_DIR }}/kubeconfig
-            # The node image pulled from GHCR (nico-vms-e2e.sh:442): an input,
-            # not a diagnostic, and 3.1 GB of a 3.1 GB artifact.
-            !${{ env.NKE_E2E_STATE_DIR }}/os-image/*.qcow2
+            ${{ env.NKE_E2E_STATE_DIR }}/junit.xml
+            ${{ env.NKE_E2E_STATE_DIR }}/e2e.log
+            ${{ env.NKE_E2E_STATE_DIR }}/candidate-outcome.json
           if-no-files-found: warn
           retention-days: 7

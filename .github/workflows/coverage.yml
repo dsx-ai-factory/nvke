@@ -120,7 +120,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.work
-          cache: true
+          cache: false
           # go.work.sum holds only the hashes not already in a member's go.sum,
           # so keyed on it alone a dependency bump restores a stale cache.
           cache-dependency-path: |
@@ -149,7 +149,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-profiles
-          path: coverage/
+          path: coverage/*.out
           # 30, not the default 90. The schedule above supersedes this
           # measurement weekly, so two months of superseded profiles is storage
           # spent on nothing anyone will open. The table in the job summary has
