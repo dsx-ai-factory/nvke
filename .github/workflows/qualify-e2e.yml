@@ -604,12 +604,15 @@ jobs:
       # run and a tag push carry no dispatch input, and a beta that stopped at
       # a booted node would have qualified none of what it was cut for.
       #
-      # provision for the DSX label: it takes the node, reaches it, and
-      # releases it, which is what the DSX datahall can place --- one machine
-      # is bound to its instance type, and a full run places three at once.
+      # provision is the DSX label's default, not its verdict: the variable
+      # sits ahead of it so a dsx-environment QUALIFY_E2E_STAGE carries the
+      # stream further without a repository-wide override, which is what
+      # collides with every other run in flight. provision takes the node,
+      # reaches it, and releases it, which is what the DSX datahall can place
+      # --- one machine is bound to its instance type, and full places three.
       # A DSX run at full is refused by the suite before a machine is taken
       # anyway, its tenant half speaking Forge only. See SCOPE in the plan job.
-      SITE_STAGE: ${{ inputs.stage || (github.event.label.name == 'qualify-e2e-dsx' && 'provision') || (github.event_name != 'push' && vars.QUALIFY_E2E_STAGE) || 'full' }}
+      SITE_STAGE: ${{ inputs.stage || (github.event_name != 'push' && vars.QUALIFY_E2E_STAGE) || (github.event.label.name == 'qualify-e2e-dsx' && 'provision') || 'full' }}
       DRY_RUN: ${{ needs.plan.outputs.dry-run }}
       # Whether this run's ref is one the nvke WIF provider in the testgrid
       # repo actually trusts (main, or a v<digit> tag -- see wif-nvke.tf
