@@ -6,9 +6,10 @@ set -euo pipefail
 # Prints the next release tag for a branch or commit without creating it.
 # usage: hack/next-tag.sh <BRANCH> [<PRE-RELEASE>]
 #
-# The version is read from the conventional-commit subjects since the latest GA
-# tag. A feat, or a breaking change of any type, bumps the minor; a fix bumps the
-# patch. The major is never bumped: 1.0 is cut by hand. With neither, nothing is
+# The version is read from the conventional commits since the latest GA tag. A
+# feat, or a breaking change of any type, bumps the minor; a fix bumps the patch.
+# A breaking change is a ! after the type, or a BREAKING CHANGE footer in the
+# body. The major is never bumped: 1.0 is cut by hand. With neither, nothing is
 # releasable, and the script exits 3 having printed nothing on stdout.
 #
 # next_version prints the next release tag for a branch or commit.
@@ -27,11 +28,14 @@ function next_version() {
     local minor="$(cut -d. -f2 <<< "${latest_ga#"${prefix}"}")"
     local patch="$(cut -d. -f3 <<< "${latest_ga#"${prefix}"}")"
 
-    # Read into a variable rather than piped: grep -q exits on the first match,
+    # Read into variables rather than piped: grep -q exits on the first match,
     # and git log, killed by SIGPIPE, would fail the pipeline under pipefail.
-    local subjects
+    # The footer token is uppercase, and BREAKING-CHANGE is its synonym.
+    local subjects bodies
     subjects="$(git log --format='%s' "${range}")"
-    if grep -Eq '^(feat(\([^)]*\))?!?|[a-z]+(\([^)]*\))?!):' <<< "${subjects}"; then
+    bodies="$(git log --format='%b' "${range}")"
+    if grep -Eq '^(feat(\([^)]*\))?!?|[a-z]+(\([^)]*\))?!):' <<< "${subjects}" \
+        || grep -Eq '^BREAKING[ -]CHANGE: ' <<< "${bodies}"; then
         minor=$((minor+1))
         patch=0
     elif grep -Eq '^fix(\([^)]*\))?:' <<< "${subjects}"; then

@@ -69,6 +69,22 @@ class NextTagTest(unittest.TestCase):
                 self.commit(subject)
                 self.assert_next_tag("v0.23.0", "main")
 
+    def test_a_breaking_change_footer_bumps_the_minor(self):
+        for footer in ("BREAKING CHANGE: the v1 field is gone.", "BREAKING-CHANGE: the v1 field is gone."):
+            for subject in ("refactor(api): remove a public field", "fix(api): drop the v1 field"):
+                with self.subTest(footer=footer, subject=subject):
+                    self.git("reset", "--quiet", "--hard", "v0.22.0")
+                    self.commit(f"{subject}\n\nRemoves it.\n\n{footer}\nSigned-off-by: fixture <fixture@example.com>")
+                    self.assert_next_tag("v0.23.0", "main")
+
+    def test_a_footer_lookalike_is_not_a_breaking_change(self):
+        self.commit(
+            "docs: a\n\nThis is not a BREAKING CHANGE: it only mentions one.",
+            "docs: b\n\nbreaking change: lowercase is not the token.",
+            "docs: c\n\nBREAKING CHANGES: the plural is not the token.",
+        )
+        self.assert_nothing_releasable("main")
+
     def test_fix_bumps_the_patch(self):
         self.commit("fix: a", "docs: b", "fix(controller): c")
         self.assert_next_tag("v0.22.1", "main")
