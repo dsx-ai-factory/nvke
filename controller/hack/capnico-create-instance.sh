@@ -64,7 +64,7 @@ if [[ -n "${OS_PROFILE:-}" ]]; then
   echo "OS_PROFILE is no longer read; this script takes RELEASE (the NodePoolRelease name)." >&2
   exit 1
 fi
-RELEASE="${RELEASE:-nke-260611-24.04-amd64-fde}"
+RELEASE="${RELEASE:-nvke-260625-24.04-x86-fde}"
 DISK_SELECTION_STRATEGY="${DISK_SELECTION_STRATEGY:-smallest}"
 
 # Seed resources for the selected backend.
