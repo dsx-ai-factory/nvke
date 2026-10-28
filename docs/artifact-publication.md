@@ -460,6 +460,13 @@ the beta's commit as the next `vX.Y.Z-rc.N` of the beta's version. It pushes
 only while the `NVKE_AUTO_RC` repository variable is `true`; otherwise the run
 summary says what it would have tagged.
 
+Unlike an RC a person pushes with `git tag -s`, the automatic RC is an unsigned
+lightweight tag, as the nightly betas are: the workflow has no key to sign
+with. It marks a candidate that qualified, not a release, so `git verify-tag`
+does not apply to it. The signed annotated tag
+[RELEASE.md](../RELEASE.md#publish-and-verify) requires is for the approved
+release, which the release owner creates.
+
 **The dot in `-rc.N` is load-bearing.** `.github/workflows/release.yml` marks
 the release as a pre-release by looking for `-rc.`, so `v0.2.0-rc1` without it
 would publish as a full release and take the repository's "Latest release"

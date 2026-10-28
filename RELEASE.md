@@ -19,6 +19,12 @@ module. Component prefixes must follow the module directories in `go.work`.
 The [CLI compatibility policy](cli/docs/compatibility.md) defines the CLI's
 breaking-change surface. Use `-rc.N` for a release candidate, including the dot.
 
+Nightly beta tags, and the release candidates automation cuts from a qualified
+beta, are unsigned lightweight tags. They mark candidates for qualification,
+not releases, so `git verify-tag` does not apply to them. The signed annotated
+tag below is for the approved release; see
+[pre-releases](docs/artifact-publication.md#pre-releases).
+
 Record the full source commit, tag name and signed annotated tag object in the
 release record. Tags are immutable once published. A beta or RC qualification
 result can support a final release only when it covers that same source commit
