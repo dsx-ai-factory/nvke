@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # What the seed changes about the controller. Layered over
-# controller/values.yaml.
+# values/controller.yaml.
 #
 # SPIRE stays on and the attestation method stays tpm. A kind node has no TPM,
 # but nothing on the seed attests by TPM. The seed's own workloads attest with

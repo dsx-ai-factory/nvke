@@ -1,7 +1,9 @@
-# The embedded deploy directory
+# The embedded stack directory
 
 This directory holds the Helm values and the glue manifests that `nvkectl`
-installs the NVKE stack with. It is embedded into the `nvkectl` binary with
+installs the NVKE stack with. It holds no charts. It is not a chart
+collection. The charts come from the artifact file; this directory only says
+what each chart gets and which extra objects go next to it. It is embedded into the `nvkectl` binary with
 `go:embed`. `go:embed` reaches only files inside the package tree, which is
 why the directory lives inside the CLI module and not under `deploy/`.
 
@@ -12,18 +14,19 @@ can run them by hand with `helm` and `kubectl`.
 
 | Path | What it is | Passed to |
 |---|---|---|
-| `nktp/values.yaml` | The telemetry pipeline | the `nktp` chart |
-| `postgresql/values.yaml` | PostgreSQL for the controller and Temporal | the Bitnami `postgresql` chart |
-| `spire-crds/` | No values. The chart installs with its defaults | the `spire-crds` chart |
-| `temporal/values.yaml` | Temporal | the `temporal` chart |
-| `spire/values.yaml` | SPIRE, the OIDC discovery provider | the SPIFFE hardened `spire` chart |
-| `controller/values.yaml` | The NVKE controller | the `nke-controller` chart |
-| `nico-prereqs/values.yaml` | NICo's database, seed only | the Bitnami `postgresql` chart |
-| `nico/values.yaml` | NICo, seed only | the `nico` umbrella chart |
-| `kind/<chart>.yaml` | Smaller sizing for the seed, one file per chart | the same chart, after its values file |
+| `values/nktp.yaml` | The telemetry pipeline | the `nktp` chart |
+| `values/postgresql.yaml` | PostgreSQL for the controller and Temporal | the Bitnami `postgresql` chart |
+| `values/temporal.yaml` | Temporal | the `temporal` chart |
+| `values/spire.yaml` | SPIRE, the OIDC discovery provider | the SPIFFE hardened `spire` chart |
+| `values/controller.yaml` | The NVKE controller | the `nke-controller` chart |
+| `values/nico-prereqs.yaml` | NICo's database, seed only | the Bitnami `postgresql` chart |
+| `values/nico.yaml` | NICo, seed only | the `nico` umbrella chart |
+| `values/kind/<chart>.yaml` | Smaller sizing for the seed, one file per chart | the same chart, after its values file |
 | `manifests/*.yaml` | Glue the charts do not create | `kubectl apply --server-side` |
 | `manifests/nico/*.yaml` | Glue for NICo, seed only | `kubectl apply --server-side` |
 | `manifests/*.yaml.tmpl` | Glue that needs an input value | rendered, then `kubectl apply --server-side` |
+
+The `spire-crds` chart takes no values and has no file here.
 
 ## How nvkectl consumes it
 
@@ -35,8 +38,9 @@ Every chart listed by the artifact file is installed as a Helm release. The
 artifact file pins the chart. The values file here is passed to
 `helm upgrade --install` with `--values`.
 
-The kind layer is applied on top for the seed cluster only. `kind/<chart>.yaml`
-is passed as a second `--values` after `<chart>/values.yaml`. Helm merges maps
+The kind layer is applied on top for the seed cluster only.
+`values/kind/<chart>.yaml` is passed as a second `--values` after
+`values/<chart>.yaml`. Helm merges maps
 key by key, so a kind file restates only what changes.
 
 Glue manifests are applied with `kubectl apply --server-side`. A second apply
@@ -104,9 +108,9 @@ Every other file under `manifests/` is plain YAML.
 ```bash
 kubectl apply --server-side -f manifests/namespaces.yaml
 helm upgrade --install nktp <chart> --namespace nktp \
-  --values nktp/values.yaml
+  --values values/nktp.yaml
 helm upgrade --install postgres <chart> --namespace postgres \
-  --values postgresql/values.yaml --values kind/postgresql.yaml
+  --values values/postgresql.yaml --values values/kind/postgresql.yaml
 ```
 
 Create the Secrets from the table above first. Pass the generated overlay as

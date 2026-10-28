@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# What the seed changes about postgresql. Layered over postgresql/values.yaml.
+# What the seed changes about postgresql. Layered over values/postgresql.yaml.
 primary:
   persistence:
     # kind ships the rancher local-path provisioner as the default

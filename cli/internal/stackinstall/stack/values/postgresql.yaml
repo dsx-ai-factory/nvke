@@ -10,7 +10,7 @@
 
 # The chart names its Service after the fullname. Pinning it keeps the host
 # nvke-postgresql.postgres.svc.cluster.local stable whatever the release is
-# called. temporal/values.yaml and controller/values.yaml dial that host.
+# called. values/temporal.yaml and values/controller.yaml dial that host.
 fullnameOverride: nvke-postgresql
 namespaceOverride: postgres
 

@@ -41,7 +41,7 @@ nico-api:
     databaseCredentials:
       secretName: nico.forge-pg-cluster.credentials
   # The NICo chart creates both ConfigMaps when these are non-empty. DB_HOST
-  # must match the host in nico-prereqs/values.yaml.
+  # must match the host in values/nico-prereqs.yaml.
   databaseConfig:
     DB_HOST: nico-postgresql.forge-system.svc.cluster.local
     DB_PORT: "5432"

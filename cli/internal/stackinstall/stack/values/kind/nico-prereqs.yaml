@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # What the seed changes about NICo's database. Layered over
-# nico-prereqs/values.yaml.
+# values/nico-prereqs.yaml.
 primary:
   persistence:
     size: 8Gi

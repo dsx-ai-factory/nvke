@@ -13,7 +13,7 @@
 # one value.
 
 # The chart names its Service after the fullname. Pinning it keeps the host
-# nico-postgresql.forge-system.svc.cluster.local stable. nico/values.yaml
+# nico-postgresql.forge-system.svc.cluster.local stable. values/nico.yaml
 # dials that host as DB_HOST.
 fullnameOverride: nico-postgresql
 namespaceOverride: forge-system
@@ -54,6 +54,6 @@ primary:
         CREATE DATABASE temporal;
         CREATE DATABASE temporal_visibility;
 
-# Pinned by digest, for the same reason as postgresql/values.yaml.
+# Pinned by digest, for the same reason as values/postgresql.yaml.
 image:
   digest: "sha256:b74b23f091dcc87041bcae557d840c36458af46b955279cb13aedec4c32d7f71"
