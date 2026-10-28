@@ -89,12 +89,19 @@ func summarizeCase(tc *reporters.JUnitTestCase, kind string, message, descriptio
 	if summary == *message && *description == "" {
 		return false
 	}
-	// Both are kept in system-err unless it already carries them, as it
-	// carries Ginkgo's own: a report that has only a message, or a body that
-	// does not repeat it, would otherwise lose the full text.
-	for _, original := range []string{*description, *message} {
-		if full := strings.TrimSpace(original); full != "" && !strings.Contains(oneLine(tc.SystemErr), oneLine(full)) {
-			tc.SystemErr = full + "\n" + tc.SystemErr
+	// Ginkgo's own timeline in system-err draws every failure, starting with
+	// its message, though on a timeout or a failing cleanup not in the same
+	// shape as the body. A system-err that carries the message therefore
+	// carries the failure. Any other report gets the body and the message
+	// copied in, so one with only a message, or a body that does not repeat
+	// it, keeps the full text.
+	logged := oneLine(tc.SystemErr)
+	if key := oneLine(*message); key == "" || !strings.Contains(logged, key) {
+		for _, original := range []string{*description, *message} {
+			if full := strings.TrimSpace(original); full != "" && !strings.Contains(logged, oneLine(full)) {
+				tc.SystemErr = full + "\n" + tc.SystemErr
+				logged = oneLine(tc.SystemErr)
+			}
 		}
 	}
 	*message, *description = summary, ""

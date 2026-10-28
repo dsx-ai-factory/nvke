@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,7 +64,7 @@ func TestFailureSummary(t *testing.T) {
 		{
 			name:    "so are colour codes whose ESC XML replaced with U+FFFD",
 			kind:    "failed",
-			message: "clusterctl init: �[31merror�[0m: provider \"nvke\" not found",
+			message: "clusterctl init: \uFFFD[31merror\uFFFD[0m: provider \"nvke\" not found",
 			want:    "clusterctl init: error: provider \"nvke\" not found",
 		},
 		{
@@ -159,14 +160,14 @@ func TestRecordedCause(t *testing.T) {
 // U+FFFD instead. The cause still matches.
 func TestRecordedCauseMatchesWhereXMLReplacedAnEscape(t *testing.T) {
 	failure := "Expected success, but got an error:\n    <*errors.errorString | 0xc000abc123>: \n" +
-		"    clusterctl init: �[31merror�[0m: provider \"nvke\" not found\n    "
+		"    clusterctl init: \uFFFD[31merror\uFFFD[0m: provider \"nvke\" not found\n    "
 	tc := &reporters.JUnitTestCase{Properties: causes(`"clusterctl init: \u001b[31merror\u001b[0m: provider \"nvke\" not found"`)}
 	if got, want := recordedCause(tc, failure), `clusterctl init: error: provider "nvke" not found`; got != want {
 		t.Errorf("recordedCause() = %q, want %q", got, want)
 	}
 
 	// A lone control character, outside any colour code, is replaced too.
-	failure = "Unexpected error:\n    <*errors.errorString | 0xc000abc123>: \n    connection reset�by peer\n    \noccurred"
+	failure = "Unexpected error:\n    <*errors.errorString | 0xc000abc123>: \n    connection reset\uFFFDby peer\n    \noccurred"
 	tc = &reporters.JUnitTestCase{Properties: causes(`"connection reset\u0000by peer"`)}
 	if got, want := recordedCause(tc, failure), "connection reset by peer"; got != want {
 		t.Errorf("recordedCause() = %q, want %q", got, want)
@@ -390,6 +391,36 @@ func TestSummarizeFailuresKeepsAMessageThatHasNoBody(t *testing.T) {
 	}
 }
 
+// On a spec timeout Ginkgo folds the additional failure into the failure body,
+// but its timeline in system-err draws them as separate entries, so the body
+// never matches system-err as a whole. The message does.
+func TestSummarizeFailuresDoesNotRepeatGinkgosCopy(t *testing.T) {
+	progress := "In [It] at: /work/e2e/a_test.go:10 @ 10/28/26 15:12:53.833\n\n" +
+		"This is the Progress Report generated when the spec timeout occurred:\n  waits (Spec Runtime: 150ms)\n"
+	timeline := "> Enter [It] waits - /work/e2e/a_test.go:10 @ 10/28/26 15:12:53.683\n" +
+		"[TIMEDOUT] A spec timeout occurred\n" + progress +
+		"failure-cause - /work/e2e/a_test.go:13 @ 10/28/26 15:12:53.834\n" +
+		"  cluster c1 has 2 control-plane nodes KubernetesReady; want 3\n" +
+		"< Exit [It] waits - /work/e2e/a_test.go:10 @ 10/28/26 15:12:53.835 (152ms)\n"
+	body := "[TIMEDOUT] A spec timeout occurred\n" + progress +
+		"\nThere were additional failures detected after the initial failure. These are visible in the timeline\n"
+	junit := ginkgoReport(t, reporters.JUnitTestCase{
+		Name:      "[It] waits",
+		Status:    "timedout",
+		Failure:   &reporters.JUnitFailure{Message: "A spec timeout occurred", Type: "timedout", Description: body},
+		SystemErr: timeline,
+	})
+
+	got, err := summarizeFailures(junit)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if systemErr := decodeReport(t, got).TestSuites[0].TestCases[0].SystemErr; systemErr != timeline {
+		t.Errorf("system-err changed, though it already held Ginkgo's copy of the failure:\n%s", systemErr)
+	}
+}
+
 func TestSummarizeFailuresSummarizesErrorElements(t *testing.T) {
 	junit := ginkgoReport(t, reporters.JUnitTestCase{
 		Name:   "[It] panics",
@@ -465,6 +496,10 @@ func TestPublishUploadsTheJUnitWithFailuresSummarized(t *testing.T) {
 }
 
 func TestPublishUploadsAJUnitThatDoesNotParseAsWritten(t *testing.T) {
+	var logged bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
 	result := publishTestResult(t, false)
 	junitPath := filepath.Join(t.TempDir(), "qualify-e2e.junit.xml")
 	if err := os.WriteFile(junitPath, []byte("<testsuites><testsuite"), 0o644); err != nil {
@@ -481,5 +516,8 @@ func TestPublishUploadsAJUnitThatDoesNotParseAsWritten(t *testing.T) {
 	}
 	if got := string(uploader.calls[1].data); got != "<testsuites><testsuite" {
 		t.Errorf("junit upload carries %q, want the file's own content", got)
+	}
+	if !strings.Contains(logged.String(), "level=WARN") || !strings.Contains(logged.String(), "without failure summaries") {
+		t.Errorf("logged %q, want a warning that the report went up without summaries", logged.String())
 	}
 }

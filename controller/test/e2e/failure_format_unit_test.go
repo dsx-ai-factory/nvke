@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/onsi/gomega"
@@ -62,6 +63,14 @@ func TestUnit_FailureCause(t *testing.T) {
 	require.Equal(t, denied.Error(), failureCause(mismatched, []error{denied, notFound}),
 		"the actual error, formatted first, rather than the expected one formatted after it")
 
+	// Expect(io.EOF).To(MatchError(io.ErrUnexpectedEOF)): the expected error's
+	// text contains the actual one's, which also stands on its own.
+	unexpectedEOF := errors.New("unexpected EOF")
+	matched := "Expected\n    <*errors.errorString | 0xc000123456>: \n    EOF\n    \n" +
+		"to match error\n    <*errors.errorString | 0xc000654321>: \n    unexpected EOF\n    "
+	require.Equal(t, eof.Error(), failureCause(matched, []error{eof, unexpectedEOF}),
+		"the actual error, even when the expected one's text contains it")
+
 	var nilPointer *panickingError
 	require.Empty(t, failureCause(message, []error{nilPointer}), "an Error method that panics gives no cause, and no panic")
 
@@ -70,6 +79,12 @@ func TestUnit_FailureCause(t *testing.T) {
 	require.LessOrEqual(t, len(cut), maxCauseBytes)
 	require.True(t, utf8.ValidString(cut), "cut on a rune boundary")
 	require.True(t, strings.HasPrefix(long.Error(), cut))
+	require.True(t, strings.HasPrefix(long.Error()[len(cut):], " "), "cut at the end of a word")
+
+	straddling := errors.New(strings.Repeat("a", maxCauseBytes-5) + " jump-host.example.internal not reachable")
+	cut = failureCause(straddling.Error(), []error{straddling})
+	require.NotContains(t, cut, "jump", "a word the cut would split is left out whole")
+	require.True(t, strings.HasPrefix(straddling.Error(), cut))
 }
 
 // panickingError dereferences its receiver, so a nil pointer of it panics in
@@ -78,17 +93,8 @@ type panickingError struct{ reason string }
 
 func (e *panickingError) Error() string { return e.reason }
 
-// takeFormattedErrors empties formattedErrors and returns what it held.
-func takeFormattedErrors() []error {
-	formattedErrors.Lock()
-	defer formattedErrors.Unlock()
-	errs := formattedErrors.errs
-	formattedErrors.errs = nil
-	return errs
-}
-
 func TestUnit_FormatErrorIsSafeAcrossGoroutines(t *testing.T) {
-	takeFormattedErrors()
+	takeFormattedErrors(time.Time{})
 	var wg sync.WaitGroup
 	for i := range 8 {
 		wg.Add(1)
@@ -97,17 +103,17 @@ func TestUnit_FormatErrorIsSafeAcrossGoroutines(t *testing.T) {
 			for j := range 100 {
 				formatError(fmt.Errorf("progress report %d.%d", i, j))
 				if j%10 == 0 {
-					takeFormattedErrors()
+					takeFormattedErrors(time.Time{})
 				}
 			}
 		}()
 	}
 	wg.Wait()
-	require.LessOrEqual(t, len(takeFormattedErrors()), maxFormattedErrors)
+	require.LessOrEqual(t, len(takeFormattedErrors(time.Time{})), maxFormattedErrors)
 }
 
 func TestUnit_FormatErrorRemembersTheErrorsItFormats(t *testing.T) {
-	takeFormattedErrors()
+	takeFormattedErrors(time.Time{})
 
 	// The message a failing Gomega assertion builds, with this suite's
 	// formatter registered.
@@ -115,10 +121,23 @@ func TestUnit_FormatErrorRemembersTheErrorsItFormats(t *testing.T) {
 	g := gomega.NewGomega(func(m string, _ ...int) { message = m })
 	cause := fmt.Errorf("reaching NVKE over the port-forward: %w", errors.New("connection refused"))
 	g.Expect(cause).NotTo(gomega.HaveOccurred(), "listing clusters")
-	require.Equal(t, cause.Error(), failureCause(message, takeFormattedErrors()), "message: %q", message)
+	require.Equal(t, cause.Error(), failureCause(message, takeFormattedErrors(time.Time{})), "message: %q", message)
 
 	for i := range 2 * maxFormattedErrors {
 		formatError(fmt.Errorf("progress %d", i))
 	}
-	require.Len(t, takeFormattedErrors(), maxFormattedErrors, "formatted errors are bounded")
+	require.Len(t, takeFormattedErrors(time.Time{}), maxFormattedErrors, "formatted errors are bounded")
+}
+
+func TestUnit_TakeFormattedErrorsPassesOverEarlierSpecs(t *testing.T) {
+	specStart := time.Now()
+	earlier := errors.New("connection refused")
+	current := errors.New("node n1 not found")
+	formattedErrors.Lock()
+	formattedErrors.errs = []formattedError{{err: earlier, at: specStart.Add(-time.Second)}, {err: current, at: specStart}}
+	formattedErrors.Unlock()
+
+	require.Equal(t, []error{current}, takeFormattedErrors(specStart),
+		"an error formatted before the failing spec began is not one of its causes")
+	require.Empty(t, takeFormattedErrors(time.Time{}), "taking empties the buffer, earlier errors included")
 }

@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -171,11 +172,14 @@ func (d *Destination) Publish(ctx context.Context, result *qualification.Result,
 	case err != nil:
 		return fmt.Errorf("reading JUnit report: %w", err)
 	default:
-		// A report that does not parse is uploaded as Ginkgo wrote it: TestGrid
-		// reads it on its own terms, and a missing summary costs less than a
-		// missing result.
+		// A report that does not parse is uploaded as it is: TestGrid reads it
+		// on its own terms, and a missing summary costs less than a missing
+		// result. The warning is the only sign that its failures went
+		// unsummarized.
 		if summarized, err := summarizeFailures(junitBytes); err == nil {
 			junitBytes = summarized
+		} else {
+			slog.Warn("uploading the JUnit report without failure summaries", "path", junitPath, "err", err)
 		}
 		if err := d.Uploader.Upload(ctx, prefix+"artifacts/junit.xml", junitBytes, "application/xml"); err != nil {
 			return fmt.Errorf("uploading junit.xml: %w", err)

@@ -6,6 +6,8 @@ package e2e
 import (
 	"strings"
 	"sync"
+	"time"
+	"unicode"
 	"unicode/utf8"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -34,12 +36,37 @@ const failureCauseEntry = "failure-cause"
 const maxFormattedErrors = 32
 
 // formattedErrors are the errors Gomega has formatted since the last failure,
-// oldest first. Gomega formats an error only to describe a failure or for a
-// progress report, so the error a failure is about is among them. Progress
-// reports are written from another goroutine, hence the lock.
+// oldest first, with when each was formatted. Gomega formats an error only to
+// describe a failure, a failed attempt of an Eventually, or a progress
+// report, so the error a failure is about is among them. Progress reports are
+// written from another goroutine, hence the lock.
 var formattedErrors struct {
 	sync.Mutex
-	errs []error
+	errs []formattedError
+}
+
+// formattedError is an error Gomega formatted, and when it did.
+type formattedError struct {
+	err error
+	at  time.Time
+}
+
+// takeFormattedErrors empties formattedErrors and returns the errors it held
+// that were formatted at or after since. failWithCause passes the start of
+// the failing spec, so an error formatted during an earlier spec, for a
+// progress report or an attempt that later passed, is not taken for this
+// one's cause.
+func takeFormattedErrors(since time.Time) []error {
+	formattedErrors.Lock()
+	defer formattedErrors.Unlock()
+	var errs []error
+	for _, f := range formattedErrors.errs {
+		if !f.at.Before(since) {
+			errs = append(errs, f.err)
+		}
+	}
+	formattedErrors.errs = nil
+	return errs
 }
 
 // formatError stands in for the fields Gomega prints after an error's
@@ -53,7 +80,7 @@ func formatError(value any) (string, bool) {
 		return "", false
 	}
 	formattedErrors.Lock()
-	formattedErrors.errs = append(formattedErrors.errs, err)
+	formattedErrors.errs = append(formattedErrors.errs, formattedError{err: err, at: time.Now()})
 	if n := len(formattedErrors.errs); n > maxFormattedErrors {
 		formattedErrors.errs = formattedErrors.errs[n-maxFormattedErrors:]
 	}
@@ -72,13 +99,11 @@ func failWithCause(message string, callerSkip ...int) {
 	if len(callerSkip) > 0 {
 		skip = callerSkip[0]
 	}
-	formattedErrors.Lock()
-	errs := formattedErrors.errs
-	formattedErrors.errs = nil
-	formattedErrors.Unlock()
+	report := CurrentSpecReport()
+	errs := takeFormattedErrors(report.StartTime)
 	// Report entries can be added only while specs run, not while the spec
 	// tree is built, and a refused one would fail in place of this failure.
-	if cause := failureCause(message, errs); cause != "" && CurrentSpecReport().LeafNodeType != types.NodeTypeInvalid {
+	if cause := failureCause(message, errs); cause != "" && report.LeafNodeType != types.NodeTypeInvalid {
 		// Located at the failing assertion, as the failure itself is.
 		AddReportEntry(failureCauseEntry, cause, types.NewCodeLocation(skip+1), ReportEntryVisibilityNever)
 	}
@@ -91,11 +116,13 @@ const maxCauseBytes = 4096
 
 // failureCause is the text of the error the failure message is about, cut to
 // maxCauseBytes, or "" when the message carries none of errs. That is the
-// first of errs whose text the message contains, or a later one whose text
-// contains that one's in turn: an error formatted earlier, for a progress
-// report or an earlier attempt of an Eventually, can be a fragment of the
-// final one, such as "EOF" before "reading the body: unexpected EOF".
-// Whitespace is not compared, since Gomega indents each line of an error.
+// first of errs whose text the message contains, since Gomega formats an
+// assertion's actual value before its expected one. A later error whose text
+// contains that one's takes its place only when the earlier text appears in
+// the message nowhere but inside the later one: then it is a fragment of the
+// final error, formatted for an earlier attempt of an Eventually, such as
+// "EOF" before "reading the body: unexpected EOF". Whitespace is not
+// compared, since Gomega indents each line of an error.
 func failureCause(message string, errs []error) string {
 	flat := oneLine(message)
 	cause, causeFlat := "", ""
@@ -105,11 +132,31 @@ func failureCause(message string, errs []error) string {
 		if textFlat == "" || !strings.Contains(flat, textFlat) {
 			continue
 		}
-		if causeFlat == "" || (textFlat != causeFlat && strings.Contains(textFlat, causeFlat)) {
+		fragment := causeFlat != "" && textFlat != causeFlat && strings.Contains(textFlat, causeFlat) &&
+			!strings.Contains(strings.ReplaceAll(flat, textFlat, "\x00"), causeFlat)
+		if causeFlat == "" || fragment {
 			cause, causeFlat = text, textFlat
 		}
 	}
-	return truncateToBytes(cause, maxCauseBytes)
+	return truncateAtWord(cause, maxCauseBytes)
+}
+
+// truncateAtWord cuts s to at most n bytes at the end of a word, so that a
+// word such as a host name is kept whole or left out, never split: the
+// workflow withholds such values by matching them whole. A single word longer
+// than n is cut on a rune boundary.
+func truncateAtWord(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	cut := truncateToBytes(s, n)
+	if next, _ := utf8.DecodeRuneInString(s[len(cut):]); unicode.IsSpace(next) {
+		return cut
+	}
+	if i := strings.LastIndexFunc(cut, unicode.IsSpace); i >= 0 {
+		return cut[:i]
+	}
+	return cut
 }
 
 // errorText is err.Error(), or "" when that panics, as it can for a nil
