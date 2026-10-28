@@ -260,9 +260,29 @@ func (f *TenantClientFactory) relayEndpoint(ctx context.Context, cfg *rest.Confi
 	if f.relay == nil {
 		return nil
 	}
-	published, err := url.Parse(cfg.Host)
+	relayed, serverName, err := f.relayServer(ctx, cfg.Host)
 	if err != nil {
-		return fmt.Errorf("parsing the published API server %q: %w", cfg.Host, err)
+		return err
+	}
+	if cfg.ServerName == "" {
+		cfg.ServerName = serverName
+	}
+	cfg.Host = relayed
+	return nil
+}
+
+// relayServer substitutes a reachable address for a published API server URL,
+// returning the rewritten URL and the host name the server's certificate
+// covers. The caller pins that name: a REST config as ServerName, a kubeconfig
+// as tls-server-name.
+//
+// Shared by both so the rules live once -- in particular the default to 443
+// for a URL that names no port, which a relay asked for a bare hostname would
+// otherwise try to dial as-is.
+func (f *TenantClientFactory) relayServer(ctx context.Context, server string) (string, string, error) {
+	published, err := url.Parse(server)
+	if err != nil {
+		return "", "", fmt.Errorf("parsing the published API server %q: %w", server, err)
 	}
 	hostPort := published.Host
 	if published.Port() == "" {
@@ -270,14 +290,11 @@ func (f *TenantClientFactory) relayEndpoint(ctx context.Context, cfg *rest.Confi
 	}
 	local, err := f.relay(ctx, hostPort)
 	if err != nil {
-		return err
+		return "", "", err
 	}
-	if cfg.ServerName == "" {
-		cfg.ServerName = published.Hostname()
-	}
+	serverName := published.Hostname()
 	published.Host = local
-	cfg.Host = published.String()
-	return nil
+	return published.String(), serverName, nil
 }
 
 func (f *TenantClientFactory) tenantRESTConfig(ctx context.Context, clusterName string) (*rest.Config, error) {
@@ -339,7 +356,7 @@ func (f *TenantClientFactory) tenantRESTConfigAs(ctx context.Context, clusterNam
 	tenantConfig := rest.AnonymousClientConfig(publishedConfig)
 	tokenSource := newExpiringJWTSource(
 		func(tokenCtx context.Context) (string, error) {
-			return f.mintTenantJWTAs(tokenCtx, trustDomain, audience, spiffePath, exchangeEndpoint)
+			return f.mintTenantJWTAs(tokenCtx, trustDomain, audience, spiffePath, exchangeEndpoint, 0)
 		},
 		f.now,
 	)
@@ -361,6 +378,12 @@ func (f *TenantClientFactory) tenantRESTConfigAs(ctx context.Context, clusterNam
 //
 // The token is fixed at call time, so use it promptly and do not cache it.
 func (f *TenantClientFactory) AdminKubeconfig(ctx context.Context, clusterName string) ([]byte, error) {
+	return f.adminKubeconfig(ctx, clusterName, 0)
+}
+
+// adminKubeconfig is AdminKubeconfig with the minted token's lifetime set by
+// the caller. Zero leaves it to the SPIRE server's default, which is minutes.
+func (f *TenantClientFactory) adminKubeconfig(ctx context.Context, clusterName string, lifetime time.Duration) ([]byte, error) {
 	clusterName = strings.TrimSpace(clusterName)
 	if clusterName == "" {
 		return nil, errors.New("cluster name is required")
@@ -405,7 +428,7 @@ func (f *TenantClientFactory) AdminKubeconfig(ctx context.Context, clusterName s
 	if err != nil {
 		return nil, fmt.Errorf("reading SPIRE JWT exchange endpoint from tenant kubeconfig for %q: %w", clusterName, err)
 	}
-	token, err := f.mintTenantJWTAs(ctx, trustDomain, audience, adminSPIFFEPath, exchangeEndpoint)
+	token, err := f.mintTenantJWTAs(ctx, trustDomain, audience, adminSPIFFEPath, exchangeEndpoint, lifetime)
 	if err != nil {
 		return nil, err
 	}
@@ -424,6 +447,7 @@ func (f *TenantClientFactory) AdminKubeconfig(ctx context.Context, clusterName s
 	config := clientcmdapi.NewConfig()
 	config.Clusters[tenantContextName] = &clientcmdapi.Cluster{
 		Server:                   cluster.Server,
+		TLSServerName:            cluster.TLSServerName,
 		CertificateAuthorityData: cluster.CertificateAuthorityData,
 		InsecureSkipTLSVerify:    cluster.InsecureSkipTLSVerify,
 	}
@@ -434,6 +458,58 @@ func (f *TenantClientFactory) AdminKubeconfig(ctx context.Context, clusterName s
 	rendered, err := clientcmd.Write(*config)
 	if err != nil {
 		return nil, fmt.Errorf("writing admin kubeconfig for %q: %w", clusterName, err)
+	}
+	return rendered, nil
+}
+
+// RelayedAdminKubeconfig returns an admin kubeconfig that a process outside the
+// site can use as it stands: the API server is routed through the endpoint
+// relay and tls-server-name is pinned to the host the certificate covers.
+//
+// AdminKubeconfig alone is not enough for that. It keeps the tenant's published
+// address, which is correct for a pod on the management cluster -- that runs
+// inside the site and can reach it -- and unroutable from CI. Anything the
+// suite shells out to runs on the runner, so it needs the relayed form: helm
+// installing into a tenant is the case this exists for.
+//
+// With no relay configured this is AdminKubeconfig unchanged, which is what the
+// lanes sharing a network with their clusters need.
+//
+// The credential is fixed at call time, so write it, use it, and do not cache
+// it. A minted one is asked to last lifetime, which should cover whatever the
+// file is handed to: helm's --wait can outlast the SPIRE default by a long way,
+// and nothing refreshes a token written into a file. A token from the DSX
+// exchange lasts whatever the exchange issues, which this cannot change.
+func (f *TenantClientFactory) RelayedAdminKubeconfig(ctx context.Context, clusterName string, lifetime time.Duration) ([]byte, error) {
+	kubeconfig, err := f.adminKubeconfig(ctx, clusterName, lifetime)
+	if err != nil {
+		return nil, err
+	}
+	if f.relay == nil {
+		return kubeconfig, nil
+	}
+
+	parsed, err := clientcmd.Load(kubeconfig)
+	if err != nil {
+		return nil, fmt.Errorf("parsing the admin kubeconfig for %q: %w", clusterName, err)
+	}
+	for _, cluster := range parsed.Clusters {
+		if cluster == nil {
+			continue
+		}
+		relayed, serverName, relayErr := f.relayServer(ctx, cluster.Server)
+		if relayErr != nil {
+			return nil, fmt.Errorf("relaying the tenant API server for %q: %w", clusterName, relayErr)
+		}
+		if cluster.TLSServerName == "" {
+			cluster.TLSServerName = serverName
+		}
+		cluster.Server = relayed
+	}
+
+	rendered, err := clientcmd.Write(*parsed)
+	if err != nil {
+		return nil, fmt.Errorf("writing the relayed admin kubeconfig for %q: %w", clusterName, err)
 	}
 	return rendered, nil
 }
@@ -500,6 +576,7 @@ func spireExchangeEndpoint(execConfig *clientcmdapi.ExecConfig) (string, error) 
 func (f *TenantClientFactory) mintTenantJWTAs(
 	ctx context.Context,
 	trustDomain, audience, spiffePath, exchangeEndpoint string,
+	lifetime time.Duration,
 ) (string, error) {
 	sourcePath := spiffePath
 	if exchangeEndpoint != "" {
@@ -510,7 +587,7 @@ func (f *TenantClientFactory) mintTenantJWTAs(
 		}
 	}
 
-	sourceToken, err := f.mintJWTAs(ctx, trustDomain, audience, sourcePath)
+	sourceToken, err := f.mintJWTAs(ctx, trustDomain, audience, sourcePath, lifetime)
 	if err != nil {
 		return "", err
 	}
@@ -568,16 +645,22 @@ func (f *TenantClientFactory) exchangeJWT(ctx context.Context, endpoint, sourceT
 }
 
 func (f *TenantClientFactory) mintJWT(ctx context.Context, trustDomain, audience string) (string, error) {
-	return f.mintJWTAs(ctx, trustDomain, audience, controllerSPIFFEPath())
+	return f.mintJWTAs(ctx, trustDomain, audience, controllerSPIFFEPath(), 0)
 }
 
-func (f *TenantClientFactory) mintJWTAs(ctx context.Context, trustDomain, audience, spiffePath string) (string, error) {
+// mintJWTAs mints a JWT-SVID for spiffePath. A zero lifetime leaves it to the
+// server's default_jwt_svid_ttl.
+func (f *TenantClientFactory) mintJWTAs(ctx context.Context, trustDomain, audience, spiffePath string, lifetime time.Duration) (string, error) {
 	spiffeID := "spiffe://" + trustDomain + spiffePath
-	stdout, err := f.execSPIREServer(ctx, "minting tenant JWT", []string{
+	command := []string{
 		"bin/spire-server", "jwt", "mint",
 		"-spiffeID", spiffeID,
 		"-audience", audience,
-	})
+	}
+	if lifetime > 0 {
+		command = append(command, "-ttl", lifetime.String())
+	}
+	stdout, err := f.execSPIREServer(ctx, "minting tenant JWT", command)
 	if err != nil {
 		return "", err
 	}
