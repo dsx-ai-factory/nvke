@@ -565,7 +565,8 @@ jobs:
     # specs may take, so the gaps between them stay what they are sized as.
     # Read from inputs and vars rather than TENANT_GPU_RUNTIME: a job's env is
     # not in scope for its own timeout.
-    timeout-minutes: ${{ (inputs.tenant-gpu-runtime || (github.event_name != 'push' && vars.QUALIFY_E2E_TENANT_GPU_RUNTIME == 'true')) && 400 || 335 }}
+    # REVERT-WHEN-hw-proven: forces the switch on for pull_request runs.
+    timeout-minutes: ${{ (github.event_name == 'pull_request' || inputs.tenant-gpu-runtime || (github.event_name != 'push' && vars.QUALIFY_E2E_TENANT_GPU_RUNTIME == 'true')) && 400 || 335 }}
     permissions:
       contents: read
       # The runner's own GHCR and NVCR pulls, and the Teleport join. No PAT
@@ -678,7 +679,8 @@ jobs:
       # KEEP_SITE: it holds a GB200 tenant up to 65 minutes longer, which is
       # a cost every beta would pay. The suite installs only where AICR has a
       # recipe -- GB200, Ubuntu 24.04 -- and skips with the reason elsewhere.
-      TENANT_GPU_RUNTIME: ${{ inputs.tenant-gpu-runtime || (github.event_name != 'push' && vars.QUALIFY_E2E_TENANT_GPU_RUNTIME == 'true') || false }}
+      # REVERT-WHEN-hw-proven: forces the switch on for pull_request runs.
+      TENANT_GPU_RUNTIME: ${{ github.event_name == 'pull_request' || inputs.tenant-gpu-runtime || (github.event_name != 'push' && vars.QUALIFY_E2E_TENANT_GPU_RUNTIME == 'true') || false }}
       UBUNTU: ${{ matrix.ubuntu }}
       # ghcr or nvcr. Only the runner pulls from it: every image it names is
       # staged onto the node as an archive. The node's own pull is CAPNICo,
