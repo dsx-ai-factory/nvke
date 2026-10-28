@@ -31,7 +31,7 @@ global:
     trustDomain: example.org
     # The issuer the OIDC discovery provider publishes. Tenant API servers
     # string-compare it against the JWT iss claim.
-    jwtIssuer: "https://nke.site-controller.internal"
+    jwtIssuer: "https://nvke.site-controller.internal"
   # The chart's hooks flip the controller manager's webhook to Ignore during
   # an install and back afterwards. spire-server.controllerManager below sets
   # Ignore outright instead, with no hook Jobs, RBAC or extra image.
@@ -86,10 +86,10 @@ spire-server:
       # runs, or the agent sits at Init:0/2 forever.
       namespace: spire-system
   # Placeholder trust domain. See the header. The path is a constant,
-  # /nvke-service/nke-controller. It matches the nvke-service ClusterSPIFFEID
+  # /nvke-service/nvke-controller. It matches the nvke-service ClusterSPIFFEID
   # below and the prefixes the node agent admits.
   adminIDs:
-    - spiffe://example.org/nvke-service/nke-controller
+    - spiffe://example.org/nvke-service/nvke-controller
   controllerManager:
     # The chart applies its ClusterSPIFFEID objects in the same release that
     # creates the controller manager serving the webhook that validates them.
@@ -114,7 +114,7 @@ spire-server:
               - key: kubernetes.io/metadata.name
                 operator: NotIn
                 values:
-                  - nke-controller
+                  - nvke-controller
         # The identity NVKE's own services present.
         #
         # type raw is required. Every other type makes the chart append its
@@ -132,7 +132,7 @@ spire-server:
               - key: kubernetes.io/metadata.name
                 operator: In
                 values:
-                  - nke-controller
+                  - nvke-controller
                   - capi-system
                   - capi-kubeadm-control-plane-system
                   - capi-kubeadm-bootstrap-system
@@ -184,7 +184,7 @@ spiffe-oidc-discovery-provider:
           algorithm: ECDSA
           size: 256
         dnsNames:
-          - nke.site-controller.internal
+          - nvke.site-controller.internal
           - localhost
         issuerRef:
           group: cert-manager.io
@@ -197,6 +197,6 @@ spiffe-oidc-discovery-provider:
     # appends the site's addresses. A values file replaces a list, so the
     # overlay must repeat these three.
     additionalDomains:
-      - "nke.site-controller.internal"
+      - "nvke.site-controller.internal"
       - "localhost"
       - "127.0.0.1"

@@ -18,7 +18,7 @@ can run them by hand with `helm` and `kubectl`.
 | `values/postgresql.yaml` | PostgreSQL for the controller and Temporal | the Bitnami `postgresql` chart |
 | `values/temporal.yaml` | Temporal | the `temporal` chart |
 | `values/spire.yaml` | SPIRE, the OIDC discovery provider | the SPIFFE hardened `spire` chart |
-| `values/controller.yaml` | The NVKE controller | the `nke-controller` chart |
+| `values/controller.yaml` | The NVKE controller | the `nvke-controller` chart |
 | `values/nico-prereqs.yaml` | NICo's database, seed only | the Bitnami `postgresql` chart |
 | `values/nico.yaml` | NICo, seed only | the `nico` umbrella chart |
 | `values/kind/<chart>.yaml` | Smaller sizing for the seed, one file per chart | the same chart, after its values file |
@@ -52,8 +52,8 @@ equivalent keys. No values file carries a password.
 
 | Secret | Namespaces | Read by |
 |---|---|---|
-| `nvke-database` | `postgres`, `temporal`, `nke-controller` | PostgreSQL (`postgres-password`), Temporal (`password`), the controller (`database-connection-string`) |
-| `dgxc-tenant-credentials` | `nke-controller` | the controller (`user`, `password`) |
+| `nvke-database` | `postgres`, `temporal`, `nvke-controller` | PostgreSQL (`postgres-password`), Temporal (`password`), the controller (`database-connection-string`) |
+| `dgxc-tenant-credentials` | `nvke-controller` | the controller (`user`, `password`) |
 | `nico-credentials` | `capnico-system` | CAPNICo (`endpoint`, `orgID`, `apiName`, `token`) |
 | `nico-postgresql-auth` | `forge-system` | NICo's PostgreSQL (`postgres-password`, `password`), seed only |
 | `nico.forge-pg-cluster.credentials` | `forge-system` | `nico-api`, seed only |
