@@ -1741,7 +1741,10 @@ jobs:
               value="$(printf '%s' "${form}" | sed 's/[][\.*^$/]/\\&/g')"
               for f in qualify-e2e.log qualify-e2e.junit.xml tenant-diagnostics.json site-cluster-state.txt; do
                 [ -f "${f}" ] || continue
-                sed -i "s/${value}/<withheld>/g" "${f}"
+                # No < or >: in qualify-e2e.junit.xml they would make the
+                # report invalid XML, which neither `qualify publish` nor
+                # TestGrid can read.
+                sed -i "s/${value}/[withheld]/g" "${f}"
               done
             done
           done < <(compgen -v | grep -E '_JUMP_HOST$|^SSA_ISSUER$' || true)
