@@ -442,8 +442,8 @@ Results go to `/artifacts`, which the runner mounts:
 
 | File | Contents |
 | --- | --- |
-| `junit-test-report.xml` | The selected specs only (`-e2e.junit-report`). Ginkgo's own JUnit report lists every spec the filter left out as skipped. |
-| `report.json` | Ginkgo's JSON report, every spec. Its report entries record the inputs each validation resolved and, for a tenant, the cluster ID and API server it reached, never the credential. |
+| `junit-test-report.xml` | The selected specs only (`-e2e.junit-report`). Ginkgo's own JUnit report lists every spec the filter left out as skipped. A spec that failed on an error carries the error's text as a `failure-cause` property. |
+| `report.json` | Ginkgo's JSON report, every spec. Its report entries record the inputs each validation resolved and, for a tenant, the cluster ID and API server it reached, never the credential; a spec that failed on an error also records the error's text, which its failure message already carries. |
 
 A failure says why where the cluster records it: a pod that never ran gives
 its scheduling condition, each container's waiting reason and its latest
