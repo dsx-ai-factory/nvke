@@ -81,11 +81,13 @@ keywords = ["passw"]
 # nvkectl replaces the whole OTEL_EXPORTER_OTLP_HEADERS value, which can hold an
 # authorization token, with <redacted>, so a literal value after the name was not
 # masked. The first rule reads it as a field, assignment or describe line; the
-# second as the separate name and value of a pod spec.
+# second as the separate name and value of a pod spec. The first takes the value
+# to the end of the line: a header value can hold a space, which gitleaks also
+# sees after decoding %20, and it prints whatever follows the secret it found.
 [[rules]]
 id = "nvkectl-otlp-headers-value"
 description = "A literal OTEL_EXPORTER_OTLP_HEADERS value, which can hold an authorization token"
-regex = '''(?i)OTEL_EXPORTER_OTLP_HEADERS["']?[ \t]*[:=][ \t]*["']?([^"'<\s{\[][^"'\s]{3,})'''
+regex = '''(?i)OTEL_EXPORTER_OTLP_HEADERS["']?[ \t]*[:=][ \t]*["']?([^"'<\s{\[][^"'\r\n]{3,})'''
 secretGroup = 1
 keywords = ["otel_exporter_otlp_headers"]
 

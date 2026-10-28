@@ -224,7 +224,7 @@ scan_output_for_secrets() {
     return 0
   fi
 
-  local work rc name shape fingerprint join_token leaked plog trace_hex span_hex i
+  local work rc name shape fingerprint join_token leaked plog trace_hex span_hex i found
   work="$(mktemp -d)"
 
   # The rules, proved on a sample of each shape: flagged with a value, clean with
@@ -290,6 +290,21 @@ scan_output_for_secrets() {
     "${leaked}" >"${work}/flagged/spire-field-before-cert.txt"
   printf 'api_key=%s time=x level=INFO msg="SPIRE upstream CA from the environment" component=x cert=/w/ca.crt key=/w/ca.key\n' \
     "${leaked}" >"${work}/flagged/spire-field-before-msg.txt"
+  # A header value holds a space, plain or as %20. A finding prints the text beside
+  # the secret it found, so the value must be inside the secret.
+  for name in otlp-spaced:' ' otlp-encoded:'%20'; do
+    printf '      OTEL_EXPORTER_OTLP_HEADERS:  authorization=Bearer%sPLACEHOLDER\n' "${name#*:}" |
+      sed 's/PLACEHOLDER/aaaa-bbbb-cccc/' >"${work}/flagged/${name%%:*}.txt"
+  done
+  for name in "${work}"/flagged/otlp-spaced.txt "${work}"/flagged/otlp-encoded.txt; do
+    # Captured, not piped: gitleaks exits 2 on a finding, which pipefail would report.
+    found="$(gitleaks_scan "${name}" --verbose 2>&1 || true)"
+    if grep -q 'aaaa-bbbb-cccc' <<<"${found}"; then
+      log "FAIL: the secret scan printed the value of ${name##*/}, so its output is not safe for a public CI log"
+      rm -rf "${work}"
+      return 1
+    fi
+  done
   for name in "${work}"/flagged/*; do
     rc=0
     gitleaks_scan "${name}" >/dev/null 2>&1 || rc=$?
@@ -345,7 +360,7 @@ scan_output_for_secrets() {
   # The search for known secret values, driven the same way. Each plant must fail
   # the scan with the search's own message, so a gitleaks finding cannot hide a
   # search that finds nothing.
-  local gotest_log="${work}/go-test.log" found
+  local gotest_log="${work}/go-test.log"
   printf 'msg="nothing to see"\n' >"${gotest_log}"
   for where in log go-test-log diagnostics-file pod-log encoded-token tenant-pair; do
     reset_diag
@@ -420,6 +435,40 @@ scan_run_output() {
   esac
 }
 
+# learn_generated_secrets adds the secrets bootstrap generates to KNOWN_SECRETS: the
+# Postgres password, read from the bootstrap cluster, and the etcd key, read from
+# the saved key file as stored (base64) and decoded. It returns 1 if either could
+# not be read. The values are never printed.
+learn_generated_secrets() {
+  local kubeconfig pg_password="" etcd_key="" etcd_key_text="" rc=0
+  kubeconfig="$(mktemp)"
+  if KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name "${BOOTSTRAP_KIND_CLUSTER}" >"${kubeconfig}" 2>/dev/null; then
+    pg_password="$(kubectl --kubeconfig "${kubeconfig}" --request-timeout=10s -n postgres get secret postgres-postgresql \
+      -o 'jsonpath={.data.password}' 2>/dev/null | base64 -d 2>/dev/null)" || pg_password=""
+  fi
+  rm -f "${kubeconfig}"
+  if [ -n "${pg_password}" ]; then
+    KNOWN_SECRETS+=("${pg_password}")
+  else
+    log "the generated Postgres password could not be read from the bootstrap cluster"
+    rc=1
+  fi
+  if [ -f "${ETCD_KEY_FILE}" ]; then
+    etcd_key="$(sed -n 's/^ *"active": *"\([^"]*\)".*/\1/p' "${ETCD_KEY_FILE}")"
+  fi
+  if [ -n "${etcd_key}" ]; then
+    KNOWN_SECRETS+=("${etcd_key}")
+    etcd_key_text="$(printf '%s' "${etcd_key}" | base64 -d 2>/dev/null)" || etcd_key_text=""
+    if printf '%s' "${etcd_key_text}" | LC_ALL=C grep -qE '^[[:print:]]{16,}$'; then
+      KNOWN_SECRETS+=("${etcd_key_text}")
+    fi
+  else
+    log "the etcd key could not be read from ${ETCD_KEY_FILE}"
+    rc=1
+  fi
+  return "${rc}"
+}
+
 # scan_for_known_secrets returns 1 if a file or directory it is given holds one of
 # the values in KNOWN_SECRETS. A path that does not exist is skipped. It prints
 # the names of the files that hold a value, never the value: this output goes to a
@@ -477,6 +526,12 @@ cleanup() {
   # Before anything is removed: the log and the diagnostics are what is scanned.
   # A leak turns a passing run red; a run that already failed stays failed.
   local scan_failed=0
+  # Read here, not when bootstrap succeeds, so a run that fails after generating
+  # them is searched for them too. A run that succeeded must have them.
+  if ! learn_generated_secrets && [ "${status}" -eq 0 ]; then
+    log "FAIL: the generated secrets could not be read, so the search for them proves nothing"
+    scan_failed=1
+  fi
   scan_output_for_secrets || scan_failed=1
   # CI uploads this directory when the job fails, and a failed scan is a failed
   # job. The bundle is redacted in the scan's output but not on disk, so it is
@@ -1057,19 +1112,6 @@ otlp_env="$(bk -n "${CONTROLLER_NAME}" get deployment "${CONTROLLER_NAME}" \
 [ "${otlp_env}" = "authorization=Bearer%20${OTLP_TOKEN},x-tenant=${OTLP_TENANT}" ] ||
   fail "the controller's OTEL_EXPORTER_OTLP_HEADERS is not the headers the lane gave bootstrap site," \
     "so the scan for them proves nothing about the controller's output"
-# The secrets bootstrap generates, searched for like the OTLP ones. The etcd key is
-# searched as the manifest stores it (base64) and decoded.
-pg_password="$(bk -n postgres get secret postgres-postgresql -o 'jsonpath={.data.password}' | base64 -d)" ||
-  fail "could not read the generated Postgres password from the bootstrap cluster"
-[ -n "${pg_password}" ] || fail "the generated Postgres password is empty"
-KNOWN_SECRETS+=("${pg_password}")
-etcd_key="$(sed -n 's/^ *"active": *"\([^"]*\)".*/\1/p' "${ETCD_KEY_FILE}")"
-[ -n "${etcd_key}" ] || fail "no active key in ${ETCD_KEY_FILE}"
-KNOWN_SECRETS+=("${etcd_key}")
-etcd_key_text="$(printf '%s' "${etcd_key}" | base64 -d 2>/dev/null || true)"
-if printf '%s' "${etcd_key_text}" | LC_ALL=C grep -qE '^[[:print:]]{16,}$'; then
-  KNOWN_SECRETS+=("${etcd_key_text}")
-fi
 spiffe_id="spiffe://${SPIRE_TRUST_DOMAIN}/nvke-service/${CONTROLLER_NAME}"
 bk -n spire-server exec spire-server-0 -c spire-server -- \
   /opt/spire/bin/spire-server entry show -spiffeID "${spiffe_id}" | grep -q "Entry ID" ||
