@@ -24,13 +24,13 @@ import (
 func TestTerminalToNonRetryable(t *testing.T) {
 	refusal := fmt.Errorf("creating machine: %w",
 		shared.Terminal("nico.ErrImageVerificationFailed",
-			fmt.Errorf("%w: image x: no passing verdict", nico.ErrImageVerificationFailed)))
+			fmt.Errorf("%w: image x: untrusted signer", nico.ErrImageVerificationFailed)))
 	err := terminalToNonRetryable(refusal)
 	var appErr *temporal.ApplicationError
 	require.ErrorAs(t, err, &appErr)
 	assert.True(t, appErr.NonRetryable(), "a permanent refusal must not retry")
 	assert.Equal(t, "nico.ErrImageVerificationFailed", appErr.Type(), "the marker's code is the application-error type, usable in RetryPolicy.NonRetryableErrorTypes")
-	assert.Contains(t, appErr.Error(), "no passing verdict", "the named check context must survive classification")
+	assert.Contains(t, appErr.Error(), "untrusted signer", "the named check context must survive classification")
 
 	transient := errors.New("apply NicoMachine: connection refused")
 	assert.Equal(t, transient, terminalToNonRetryable(transient), "unmarked errors keep default retry behavior")

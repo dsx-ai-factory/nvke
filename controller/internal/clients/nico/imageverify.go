@@ -17,9 +17,9 @@ import (
 
 // Image-verification modes for config.Config.ImageVerificationMode. The
 // pre-flight runs in CreateMachine, after the OS profile resolves to a
-// MachineImage and before any object is applied: a node image that cannot
-// show a passing validation verdict should be refused before a NicoMachine
-// exists, not discovered after a node boots from it.
+// MachineImage and before any object is applied: a node image that cannot be
+// verified should be refused before a NicoMachine exists, not discovered after
+// a node boots from it.
 const (
 	// ImageVerificationOff skips the pre-flight entirely. The default.
 	ImageVerificationOff = "off"
@@ -40,17 +40,16 @@ const (
 var (
 	ErrImageVerificationFailed = errors.New("node image verification failed")
 
-	// ErrVerdictRejected is the definitive policy "no". Implementations wrap
+	// ErrImageRejected is the verifier's definitive "no". Implementations wrap
 	// it when asking again cannot change the answer; any other error reads as
 	// operational — still refused fail-closed, but retryable.
-	ErrVerdictRejected = errors.New("image validation verdict rejected")
+	ErrImageRejected = errors.New("node image rejected by its verifier")
 )
 
-// ImageVerifier is the verdict-source seam, defined in shared so Activities
-// can thread one through MachineCreateDeps (its injection path into this
-// pre-flight) without importing a provider package. A nil verifier means no
-// verdict source is configured, which warn mode reports and enforce mode
-// refuses.
+// ImageVerifier is the verifier seam, defined in shared so Activities can
+// thread one through MachineCreateDeps (its injection path into this
+// pre-flight) without importing a provider package. A nil verifier means none
+// is configured, which warn mode reports and enforce mode refuses.
 type ImageVerifier = shared.ImageVerifier
 
 // verifyImage applies the configured image-verification mode. Behavior is
@@ -69,7 +68,7 @@ func verifyImage(ctx context.Context, mode string, verifier ImageVerifier, image
 		return fmt.Errorf("unknown image verification mode %q", mode)
 	}
 
-	err := verdict(ctx, verifier, image)
+	err := runVerifier(ctx, verifier, image)
 	result := "pass"
 	if err != nil {
 		result = "fail"
@@ -89,15 +88,15 @@ func verifyImage(ctx context.Context, mode string, verifier ImageVerifier, image
 	refusal := fmt.Errorf("%w: image %s: %w", ErrImageVerificationFailed, image.Name, err)
 	// Permanent only when the answer cannot change: a definitive rejection,
 	// or a nil verifier (static configuration). Outages stay retryable.
-	if verifier == nil || errors.Is(err, ErrVerdictRejected) {
+	if verifier == nil || errors.Is(err, ErrImageRejected) {
 		return shared.Terminal("nico.ErrImageVerificationFailed", refusal)
 	}
 	return refusal
 }
 
-func verdict(ctx context.Context, verifier ImageVerifier, image *enginev1.MachineImage) error {
+func runVerifier(ctx context.Context, verifier ImageVerifier, image *enginev1.MachineImage) error {
 	if verifier == nil {
-		return errors.New("no verdict source is configured")
+		return errors.New("no image verifier is configured")
 	}
 	return verifier.VerifyImage(ctx, image)
 }

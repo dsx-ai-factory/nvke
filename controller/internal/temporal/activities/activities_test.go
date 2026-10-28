@@ -85,11 +85,11 @@ func TestUnit_NodeAgentBootstrapFiles(t *testing.T) {
 	}
 }
 
-// fixedVerdictVerifier is the smallest shared.ImageVerifier: every image gets
-// the same answer.
-type fixedVerdictVerifier struct{ err error }
+// fixedVerifier is the smallest shared.ImageVerifier: every image gets the
+// same answer.
+type fixedVerifier struct{ err error }
 
-func (f fixedVerdictVerifier) VerifyImage(context.Context, *enginev1.MachineImage) error {
+func (f fixedVerifier) VerifyImage(context.Context, *enginev1.MachineImage) error {
 	return f.err
 }
 
@@ -111,7 +111,7 @@ func TestUnit_ActivitiesRegisterWithATemporalWorker(t *testing.T) {
 func TestUnit_WithImageVerifierSetsThePreflightSource(t *testing.T) {
 	t.Parallel()
 
-	verifier := fixedVerdictVerifier{}
+	verifier := fixedVerifier{}
 	a := NewActivities(config.Config{}, nil, nil, nil, "", nil, "", WithImageVerifier(verifier))
 	assert.Equal(t, verifier, a.imageVerifier)
 }

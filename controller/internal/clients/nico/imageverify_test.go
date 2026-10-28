@@ -32,11 +32,11 @@ func (s *stubVerifier) VerifyImage(context.Context, *enginev1.MachineImage) erro
 // TestVerifyImage pins the pre-flight's mode semantics. These are behavioral
 // guarantees, not implementation details: "off is a true no-op" is what makes
 // the default configuration safe to merge, and "enforce fails closed on a
-// missing verdict source" is the security property the mode exists for. A
+// missing verifier" is the security property the mode exists for. A
 // refactor that changes any row here changes the feature, not the code.
 func TestVerifyImage(t *testing.T) {
 	image := &enginev1.MachineImage{ObjectMeta: metav1.ObjectMeta{Name: "nvke-node-fde-ubuntu-24.04.5-amd64"}}
-	verdictErr := errors.New("verdict says no")
+	rejection := errors.New("verifier says no")
 
 	tests := []struct {
 		name         string
@@ -46,14 +46,14 @@ func TestVerifyImage(t *testing.T) {
 		wantSentinel bool
 		wantCalls    int
 	}{
-		{name: "off never consults the verifier", mode: ImageVerificationOff, verifier: &stubVerifier{err: verdictErr}, wantCalls: 0},
-		{name: "empty mode is off", mode: "", verifier: &stubVerifier{err: verdictErr}, wantCalls: 0},
-		{name: "warn with no verdict source proceeds", mode: ImageVerificationWarn, verifier: nil},
-		{name: "warn with a failing verdict proceeds", mode: ImageVerificationWarn, verifier: &stubVerifier{err: verdictErr}, wantCalls: 1},
-		{name: "warn with a passing verdict proceeds", mode: ImageVerificationWarn, verifier: &stubVerifier{}, wantCalls: 1},
-		{name: "enforce with a passing verdict proceeds", mode: ImageVerificationEnforce, verifier: &stubVerifier{}, wantCalls: 1},
-		{name: "enforce with a failing verdict refuses", mode: ImageVerificationEnforce, verifier: &stubVerifier{err: verdictErr}, wantErr: true, wantSentinel: true, wantCalls: 1},
-		{name: "enforce with no verdict source fails closed", mode: ImageVerificationEnforce, verifier: nil, wantErr: true, wantSentinel: true},
+		{name: "off never consults the verifier", mode: ImageVerificationOff, verifier: &stubVerifier{err: rejection}, wantCalls: 0},
+		{name: "empty mode is off", mode: "", verifier: &stubVerifier{err: rejection}, wantCalls: 0},
+		{name: "warn with no verifier proceeds", mode: ImageVerificationWarn, verifier: nil},
+		{name: "warn with a rejected image proceeds", mode: ImageVerificationWarn, verifier: &stubVerifier{err: rejection}, wantCalls: 1},
+		{name: "warn with a verified image proceeds", mode: ImageVerificationWarn, verifier: &stubVerifier{}, wantCalls: 1},
+		{name: "enforce with a verified image proceeds", mode: ImageVerificationEnforce, verifier: &stubVerifier{}, wantCalls: 1},
+		{name: "enforce with a rejected image refuses", mode: ImageVerificationEnforce, verifier: &stubVerifier{err: rejection}, wantErr: true, wantSentinel: true, wantCalls: 1},
+		{name: "enforce with no verifier fails closed", mode: ImageVerificationEnforce, verifier: nil, wantErr: true, wantSentinel: true},
 		{name: "an unknown mode is an error, not a guess", mode: "audit", verifier: &stubVerifier{}, wantErr: true, wantCalls: 0},
 	}
 	for _, tt := range tests {
@@ -81,26 +81,26 @@ func TestVerifyImage(t *testing.T) {
 	}
 }
 
-// TestVerifyImageWrapsTheVerdict pins that an enforce refusal preserves the
-// verifier's own error for errors.Is, so callers can distinguish verdict
+// TestVerifyImageWrapsTheVerifierError pins that an enforce refusal preserves
+// the verifier's own error for errors.Is, so callers can distinguish rejection
 // classes without parsing strings.
-func TestVerifyImageWrapsTheVerdict(t *testing.T) {
+func TestVerifyImageWrapsTheVerifierError(t *testing.T) {
 	image := &enginev1.MachineImage{ObjectMeta: metav1.ObjectMeta{Name: "img"}}
-	verdictErr := errors.New("checksum mismatch")
-	err := verifyImage(context.Background(), ImageVerificationEnforce, &stubVerifier{err: verdictErr}, image, "node-test-id", "cluster-test-id")
+	verifierErr := errors.New("checksum mismatch")
+	err := verifyImage(context.Background(), ImageVerificationEnforce, &stubVerifier{err: verifierErr}, image, "node-test-id", "cluster-test-id")
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrImageVerificationFailed)
-	require.ErrorIs(t, err, verdictErr)
+	require.ErrorIs(t, err, verifierErr)
 }
 
 // TestEnforceDistinguishesRejectionFromOutage pins the retry contract of the
-// seam: a definitive verdict rejection (and a nil verifier — static
-// configuration) is permanent; an operational verifier failure still refuses
-// this attempt fail-closed but stays retryable.
+// seam: a definitive rejection (and a nil verifier — static configuration) is
+// permanent; an operational verifier failure still refuses this attempt
+// fail-closed but stays retryable.
 func TestEnforceDistinguishesRejectionFromOutage(t *testing.T) {
 	image := &enginev1.MachineImage{ObjectMeta: metav1.ObjectMeta{Name: "img-1"}}
 
-	rejection := fmt.Errorf("no passing verdict for digest: %w", ErrVerdictRejected)
+	rejection := fmt.Errorf("untrusted signer: %w", ErrImageRejected)
 	err := verifyImage(context.Background(), ImageVerificationEnforce, &stubVerifier{err: rejection}, image, "node-test-id", "cluster-test-id")
 	require.ErrorIs(t, err, ErrImageVerificationFailed)
 	_, terminal := shared.AsTerminal(err)
@@ -111,7 +111,7 @@ func TestEnforceDistinguishesRejectionFromOutage(t *testing.T) {
 	_, terminal = shared.AsTerminal(err)
 	assert.True(t, terminal, "a nil verifier is static configuration; retrying cannot help")
 
-	outage := errors.New("verdict store: connection refused")
+	outage := errors.New("registry: connection refused")
 	err = verifyImage(context.Background(), ImageVerificationEnforce, &stubVerifier{err: outage}, image, "node-test-id", "cluster-test-id")
 	require.ErrorIs(t, err, ErrImageVerificationFailed, "an outage still refuses fail-closed")
 	_, terminal = shared.AsTerminal(err)

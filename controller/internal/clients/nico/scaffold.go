@@ -18,7 +18,7 @@ import (
 )
 
 // Client is the NICo provider's capability client. It is stateless: the
-// CreateMachine pre-flight's verdict source arrives per call on
+// CreateMachine pre-flight's image verifier arrives per call on
 // shared.MachineCreateDeps.ImageVerifier, like every other dependency
 // Activities supplies.
 type Client struct{}

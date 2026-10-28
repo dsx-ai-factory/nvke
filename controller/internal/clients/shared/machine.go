@@ -120,13 +120,12 @@ type MachineCreateDeps struct {
 	// pool. Only the nico client calls this.
 	SeedControlPlaneInstanceType func(ctx context.Context, node db.Node, nodePool db.NodePool) (db.NodePool, error)
 
-	// ImageVerifier supplies the node-image validation verdict the nico
-	// client's CreateMachine pre-flight checks. Nil means no verdict source is
-	// configured; what that does is decided by
+	// ImageVerifier is the verifier the nico client's CreateMachine pre-flight
+	// consults. Nil means none is configured; what that does is decided by
 	// config.Config.ImageVerificationMode (see
 	// internal/clients/nico/imageverify.go). Activities threads it from its
-	// own wiring (NewActivities().WithImageVerifier), the same path every
-	// other CreateMachine dependency takes.
+	// own wiring (the WithImageVerifier option to NewActivities), the same
+	// path every other CreateMachine dependency takes.
 	ImageVerifier ImageVerifier
 }
 

@@ -47,7 +47,7 @@ type Activities struct {
 // setter would panic the worker at startup.
 type Option func(*Activities)
 
-// WithImageVerifier sets the verdict source the nico CreateMachine pre-flight
+// WithImageVerifier sets the verifier the nico CreateMachine pre-flight
 // consults. Unset, the pre-flight sees a nil verifier: a no-op in mode off,
 // reported in warn and refused fail-closed in enforce (see
 // internal/clients/nico/imageverify.go).

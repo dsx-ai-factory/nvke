@@ -145,11 +145,11 @@ type Config struct {
 	// DBMaxOpenConnections is the maximum number of open connections to the database
 	DBMaxOpenConnections int `env:"DB_MAX_OPEN_CONNECTIONS" default:"32"`
 
-	// ImageVerificationMode controls the node-image validation pre-flight in
-	// the NICo machine-materialization path: "off" (default) skips it, "warn"
-	// logs a failed or unavailable verdict and proceeds, "enforce" refuses to
-	// create the machine. Enforce is fail-closed: an image whose verdict
-	// cannot be checked is treated as failing.
+	// ImageVerificationMode controls the node-image verification pre-flight
+	// in the NICo machine-materialization path: "off" (default) skips it,
+	// "warn" logs a failed or unavailable verification and proceeds,
+	// "enforce" refuses to create the machine. Enforce is fail-closed: an
+	// image that cannot be verified is treated as failing.
 	ImageVerificationMode string `controllerconfig:"imageVerification.mode" default:"off"`
 
 	// ServerListenAddress is the address and port to bind for the HTTP server
