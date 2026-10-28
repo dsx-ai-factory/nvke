@@ -55,6 +55,10 @@ func TestE2E_BootstrapSite(t *testing.T) {
 	}
 	t.Logf("bootstraptest: nvkectl bootstrap site exited 0")
 	collector.check(t)
+	// Temporary: the lane prints the test log and uploads the diagnostics only
+	// when it fails, so fail here, after the check, to read the spans and the
+	// controller's logs.
+	t.Fatal("the check passed; failing on purpose so the lane prints the span list and keeps the diagnostics")
 }
 
 // stopOnSignal ends the bootstrap when this process is signalled.
