@@ -14,77 +14,74 @@ import (
 	"unicode/utf8"
 
 	"github.com/onsi/ginkgo/v2/reporters"
+	"github.com/onsi/ginkgo/v2/types"
 )
 
-// The messages below have the shapes Gomega and Ginkgo give real failures:
-// an error behind "Unexpected error:" or "Expected success, but got an
-// error:" with a type tag and field dump around it, a value mismatch, an
-// Eventually timeout, a panic and a suite timeout.
 func TestFailureSummary(t *testing.T) {
 	cases := []struct {
-		name, kind, message, description, want string
+		name, kind, cause, message, description, want string
 	}{
 		{
-			name: "an unexpected error keeps the assertion's description and the error's text",
-			kind: "failed",
-			message: "should install the NVKE stack\nUnexpected error:\n    <*fmt.wrapError | 0xc000123456>: \n" +
-				"    clusterctl init: exit status 1\n    {\n        msg: \"clusterctl init: exit status 1\",\n" +
-				"        err: <*exec.ExitError | 0xc000654321>{ProcessState: {pid: 4242}},\n    }",
-			description: "[FAILED] should install the NVKE stack\nUnexpected error:\n    ...\n" +
-				"In [It] at: /home/runner/work/nvke/controller/test/e2e/site_controller_test.go:277 @ 10/19/26 09:37:51.511\n",
-			want: "should install the NVKE stack clusterctl init: exit status 1 [It site_controller_test.go:277]",
+			name:  "a recorded cause is the summary",
+			kind:  "failed",
+			cause: "cluster 4f2a9c1e has 2 control-plane nodes KubernetesReady; want 3",
+			message: "Timed out after 5400.001s.\nthis spec needs a settled three-node control plane\n" +
+				"Expected success, but got an error:\n    <*errors.errorString | 0xc000abc123>: \n" +
+				"    cluster 4f2a9c1e has 2 control-plane nodes KubernetesReady; want 3\n    ",
+			want: "cluster 4f2a9c1e has 2 control-plane nodes KubernetesReady; want 3",
 		},
 		{
-			name: "an expected-success error drops the framing and shortens IDs, keeping the node when file:line does not fit",
-			kind: "failed",
-			message: "Expected success, but got an error:\n    <*errors.errorString | 0xc000abc123>: \n" +
-				"    forge has no usable allocation for this run:\n" +
-				"    cpu.x86_64 (0f4e2a91-1c3b-4d5e-8f60-7a8b9c0d1e2f): need 2, unusedUsable=1 (total=7 used=6 unused=1)\n    ",
-			description: "[FAILED] Expected success, but got an error:\n    ...\n" +
-				"In [BeforeAll] at: /home/runner/work/nvke/controller/test/e2e/site_controller_test.go:227 @ 10/28/26 15:12:53.683\n",
-			want: "forge has no usable allocation for this run: cpu.x86_64 (0f4e2a91...): need 2, unusedUsable=1 (total=7 used=6 unused=1) [BeforeAll]",
+			name:    "without a recorded cause, the message is the summary, on one line",
+			kind:    "failed",
+			message: "Expected\n    <int>: 3\nto equal\n    <int>: 2",
+			want:    "Expected <int>: 3 to equal <int>: 2",
 		},
 		{
-			name:        "a value mismatch keeps both sides",
-			kind:        "failed",
-			message:     "Expected\n    <int>: 3\nto equal\n    <int>: 2",
-			description: "[FAILED] Expected\n    <int>: 3\nto equal\n    <int>: 2\nIn [It] at: /work/e2e/quota_test.go:41 @ 10/28/26 15:12:53.683\n",
-			want:        "Expected <int>: 3 to equal <int>: 2 [It quota_test.go:41]",
-		},
-		{
-			name: "an Eventually timeout keeps the wait and the last value",
-			kind: "failed",
-			message: "Timed out after 900.001s.\nwaiting for the cluster to be ready\nExpected\n    <string>: Provisioning\n" +
-				"to equal\n    <string>: Ready",
-			description: "[FAILED] Timed out after 900.001s.\n...\nIn [It] at: /work/e2e/tenant_test.go:520 @ 10/28/26 15:12:53.683\n",
-			want:        "Timed out after 900.001s. waiting for the cluster to be ready Expected <string>: Provisioning to equal <string>: Ready [It]",
+			name:  "UUIDs are cut to their first block",
+			kind:  "failed",
+			cause: "forge has no usable allocation for this run: cpu.x86_64 (0f4e2a91-1c3b-4d5e-8f60-7a8b9c0d1e2f): need 2, unusedUsable=1 (total=7 used=6 unused=1)",
+			want:  "forge has no usable allocation for this run: cpu.x86_64 (0f4e2a91...): need 2, unusedUsable=1 (total=7 used=6 unused=1)",
 		},
 		{
 			name:    "a panic is labelled and keeps the panic value",
 			kind:    "panicked",
 			message: "runtime error: invalid memory address or nil pointer dereference",
-			description: "[PANICKED] Test Panicked\nIn [It] at: /usr/local/go/src/runtime/panic.go:262 @ 10/28/26 15:12:53.683\n\n" +
-				"runtime error: invalid memory address or nil pointer dereference\n\nFull Stack Trace\n  main.go:1\n",
-			want: "[PANICKED] runtime error: invalid memory address or nil pointer dereference [It panic.go:262]",
+			want:    "[PANICKED] runtime error: invalid memory address or nil pointer dereference",
 		},
 		{
 			name:    "a suite timeout is labelled",
 			kind:    "timedout",
 			message: "A suite timeout occurred",
-			description: "[TIMEDOUT] A suite timeout occurred\nIn [It] at: /work/e2e/tenant_test.go:534 @ 10/28/26 15:12:53.683\n\n" +
-				"This is the Progress Report generated when the suite timeout occurred:\n  ...\n",
-			want: "[TIMEDOUT] A suite timeout occurred [It tenant_test.go:534]",
+			want:    "[TIMEDOUT] A suite timeout occurred",
 		},
 		{
-			name:        "an empty message falls back to the description",
+			name:  "terminal colour codes are dropped",
+			kind:  "failed",
+			cause: "clusterctl init: \x1b[31merror\x1b[0m: provider \"nvke\" not found",
+			want:  "clusterctl init: error: provider \"nvke\" not found",
+		},
+		{
+			name:    "so are colour codes whose ESC XML replaced with U+FFFD",
+			kind:    "failed",
+			message: "clusterctl init: �[31merror�[0m: provider \"nvke\" not found",
+			want:    "clusterctl init: error: provider \"nvke\" not found",
+		},
+		{
+			name:    "other control characters become spaces",
+			kind:    "failed",
+			message: "connection reset\x00by peer\x07",
+			want:    "connection reset by peer",
+		},
+		{
+			name:        "an empty message falls back to the body",
 			kind:        "failed",
 			description: "[FAILED] boom\nIn [It] at: /work/e2e/a_test.go:1 @ 10/28/26 15:12:53.683\n",
-			want:        "boom [It a_test.go:1]",
+			want:        "[FAILED] boom In [It] at: /work/e2e/a_test.go:1 @ 10/28/26 15:12:53.683",
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := failureSummary(c.kind, c.message, c.description)
+			got := failureSummary(c.kind, c.cause, c.message, c.description)
 			if got != c.want {
 				t.Errorf("failureSummary() = %q\nwant              %q", got, c.want)
 			}
@@ -95,7 +92,7 @@ func TestFailureSummary(t *testing.T) {
 
 func TestFailureSummaryCutsALongCauseAtTheEnd(t *testing.T) {
 	cause := strings.Repeat("connection refused by the upstream service; ", 10)
-	got := failureSummary("failed", cause, "In [It] at: /work/e2e/a_test.go:1 @ 10/28/26 15:12:53.683\n")
+	got := failureSummary("failed", cause, "", "")
 	if !strings.HasPrefix(got, "connection refused by the upstream service; connection refused") {
 		t.Errorf("summary %q does not start with the cause", got)
 	}
@@ -106,8 +103,84 @@ func TestFailureSummaryCutsALongCauseAtTheEnd(t *testing.T) {
 }
 
 func TestFailureSummaryCutsMultibyteTextOnARuneBoundary(t *testing.T) {
-	got := failureSummary("failed", strings.Repeat("ノードの準備ができていません。", 20), "")
+	got := failureSummary("failed", "", strings.Repeat("ノードの準備ができていません。", 20), "")
 	assertKeptWholeByTestGrid(t, got)
+}
+
+func TestRecordedCause(t *testing.T) {
+	failure := "Expected success, but got an error:\n    <*fmt.wrapError | 0xc000abc123>: \n" +
+		"    allocating machines: 403 Forbidden\n    {\"error\":\"project quota exceeded\"}\n    "
+	cases := []struct {
+		name       string
+		properties *reporters.JUnitProperties
+		want       string
+	}{
+		{name: "no properties", want: ""},
+		{
+			name: "the cause the failure carries, whole and on one line",
+			properties: causes(
+				`"allocating machines: 403 Forbidden\n{\"error\":\"project quota exceeded\"}"`,
+			),
+			want: `allocating machines: 403 Forbidden {"error":"project quota exceeded"}`,
+		},
+		{
+			name: "a cause recorded for a later failure of the same spec is passed over",
+			properties: causes(
+				`"deleting the cluster: context canceled"`,
+				`"allocating machines: 403 Forbidden\n{\"error\":\"project quota exceeded\"}"`,
+			),
+			want: `allocating machines: 403 Forbidden {"error":"project quota exceeded"}`,
+		},
+		{
+			name:       "a value that is not a JSON string is ignored",
+			properties: causes(`allocating machines: 403 Forbidden`),
+			want:       "",
+		},
+		{
+			name: "other properties are ignored",
+			properties: &reporters.JUnitProperties{Properties: []reporters.JUnitProperty{
+				{Name: "stage", Value: `"allocating machines: 403 Forbidden"`},
+			}},
+			want: "",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			tc := &reporters.JUnitTestCase{Properties: c.properties}
+			if got := recordedCause(tc, failure); got != c.want {
+				t.Errorf("recordedCause() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// Ginkgo writes the cause into a property as JSON, which keeps an ESC, but
+// writes the failure message as XML text, which cannot hold one and gets
+// U+FFFD instead. The cause still matches.
+func TestRecordedCauseMatchesWhereXMLReplacedAnEscape(t *testing.T) {
+	failure := "Expected success, but got an error:\n    <*errors.errorString | 0xc000abc123>: \n" +
+		"    clusterctl init: �[31merror�[0m: provider \"nvke\" not found\n    "
+	tc := &reporters.JUnitTestCase{Properties: causes(`"clusterctl init: \u001b[31merror\u001b[0m: provider \"nvke\" not found"`)}
+	if got, want := recordedCause(tc, failure), `clusterctl init: error: provider "nvke" not found`; got != want {
+		t.Errorf("recordedCause() = %q, want %q", got, want)
+	}
+
+	// A lone control character, outside any colour code, is replaced too.
+	failure = "Unexpected error:\n    <*errors.errorString | 0xc000abc123>: \n    connection reset�by peer\n    \noccurred"
+	tc = &reporters.JUnitTestCase{Properties: causes(`"connection reset\u0000by peer"`)}
+	if got, want := recordedCause(tc, failure), "connection reset by peer"; got != want {
+		t.Errorf("recordedCause() = %q, want %q", got, want)
+	}
+}
+
+// causes is the properties a test case carries when the e2e suite recorded
+// each value, already JSON-encoded, as its failure cause.
+func causes(values ...string) *reporters.JUnitProperties {
+	properties := &reporters.JUnitProperties{}
+	for _, v := range values {
+		properties.Properties = append(properties.Properties, reporters.JUnitProperty{Name: failureCauseProperty, Value: v})
+	}
+	return properties
 }
 
 // assertKeptWholeByTestGrid fails unless TestGrid would store s as it is:
@@ -155,22 +228,23 @@ func decodeReport(t *testing.T, junit []byte) reporters.JUnitTestSuites {
 	return report
 }
 
-const failureDescription = "[FAILED] Expected success, but got an error:\n    <*errors.errorString | 0xc000abc123>: \n" +
-	"    no route to the site\n    \nIn [BeforeAll] at: /work/e2e/site_controller_test.go:227 @ 10/28/26 15:12:53.683\n"
+const (
+	failureMessage = "Expected success, but got an error:\n    <*errors.errorString | 0xc000abc123>: \n" +
+		"    no route to the site\n    "
+	failureDescription = "[FAILED] " + failureMessage +
+		"\nIn [BeforeAll] at: /work/e2e/site_controller_test.go:227 @ 10/28/26 15:12:53.683\n"
+)
 
 func TestSummarizeFailuresRewritesOnlyTheFailingCase(t *testing.T) {
 	junit := ginkgoReport(t,
 		reporters.JUnitTestCase{Name: "[It] passes", Status: "passed"},
 		reporters.JUnitTestCase{Name: "[It] is skipped", Status: "skipped", Skipped: &reporters.JUnitSkipped{Message: "skipped"}},
 		reporters.JUnitTestCase{
-			Name:   "[It] fails",
-			Status: "failed",
-			Failure: &reporters.JUnitFailure{
-				Message:     "Expected success, but got an error:\n    <*errors.errorString | 0xc000abc123>: \n    no route to the site\n    ",
-				Type:        "failed",
-				Description: failureDescription,
-			},
-			SystemErr: "> Enter [BeforeAll]\n" + failureDescription + "< Exit [BeforeAll]\n",
+			Name:       "[It] fails",
+			Status:     "failed",
+			Failure:    &reporters.JUnitFailure{Message: failureMessage, Type: "failed", Description: failureDescription},
+			SystemErr:  "> Enter [BeforeAll]\n" + failureDescription + "< Exit [BeforeAll]\n",
+			Properties: causes(`"no route to the site"`),
 		},
 	)
 
@@ -194,7 +268,7 @@ func TestSummarizeFailuresRewritesOnlyTheFailingCase(t *testing.T) {
 	if failure == nil {
 		t.Fatal("failing case lost its failure")
 	}
-	if want := "no route to the site [BeforeAll site_controller_test.go:227]"; failure.Message != want {
+	if want := "no route to the site"; failure.Message != want {
 		t.Errorf("failure message = %q, want %q", failure.Message, want)
 	}
 	if failure.Description != "" {
@@ -205,6 +279,74 @@ func TestSummarizeFailuresRewritesOnlyTheFailingCase(t *testing.T) {
 	}
 	if n := strings.Count(cases[2].SystemErr, strings.TrimSpace(failureDescription)); n != 1 {
 		t.Errorf("system-err holds the full failure %d times, want exactly once (Ginkgo's own copy):\n%s", n, cases[2].SystemErr)
+	}
+	if cases[2].Properties == nil || len(cases[2].Properties.Properties) != 1 {
+		t.Errorf("properties = %+v, want the recorded cause kept", cases[2].Properties)
+	}
+}
+
+func TestSummarizeFailuresUsesTheMessageWhenNoCauseWasRecorded(t *testing.T) {
+	junit := ginkgoReport(t, reporters.JUnitTestCase{
+		Name:    "[It] fails",
+		Status:  "failed",
+		Failure: &reporters.JUnitFailure{Message: failureMessage, Type: "failed", Description: failureDescription},
+	})
+
+	got, err := summarizeFailures(junit)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	failure := decodeReport(t, got).TestSuites[0].TestCases[0].Failure
+	if want := "Expected success, but got an error: <*errors.errorString | 0xc000abc123>: no route to the site"; failure.Message != want {
+		t.Errorf("failure message = %q, want %q", failure.Message, want)
+	}
+	if failure.Description != "" {
+		t.Errorf("failure body = %q, want it empty", failure.Description)
+	}
+}
+
+// The suite records the cause with AddReportEntry; this reads it back from a
+// report Ginkgo's own JUnit reporter wrote, so the property's name and
+// encoding are the ones Ginkgo produces.
+func TestSummarizeFailuresReadsTheCauseFromGinkgosJUnit(t *testing.T) {
+	cause := "cluster 12345678-1234-1234-1234-123456789abc has 2 control-plane nodes KubernetesReady; want 3"
+	report := types.Report{
+		SuiteDescription: "NVKE E2E Suite",
+		SpecReports: types.SpecReports{{
+			LeafNodeType: types.NodeTypeIt,
+			LeafNodeText: "refuses deleting a healthy control-plane node but removes an unreachable one",
+			State:        types.SpecStateFailed,
+			Failure: types.Failure{
+				Message: "Timed out after 5400.001s.\nthis spec needs a settled three-node control plane\n" +
+					"Expected success, but got an error:\n    <*errors.errorString | 0xc000abc123>: \n    " + cause + "\n    ",
+				Location:        types.NewCustomCodeLocation("cp_controller_test.go:361"),
+				FailureNodeType: types.NodeTypeIt,
+			},
+			ReportEntries: types.ReportEntries{{
+				Name:       failureCauseProperty,
+				Value:      types.WrapEntryValue(cause),
+				Visibility: types.ReportEntryVisibilityNever,
+			}},
+		}},
+	}
+	path := filepath.Join(t.TempDir(), "junit.xml")
+	if err := reporters.GenerateJUnitReport(report, path); err != nil {
+		t.Fatal(err)
+	}
+	junit, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := summarizeFailures(junit)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	failure := decodeReport(t, got).TestSuites[0].TestCases[0].Failure
+	if want := "cluster 12345678... has 2 control-plane nodes KubernetesReady; want 3"; failure.Message != want {
+		t.Errorf("failure message = %q, want %q", failure.Message, want)
 	}
 }
 
@@ -243,7 +385,7 @@ func TestSummarizeFailuresSummarizesErrorElements(t *testing.T) {
 	}
 
 	errored := decodeReport(t, got).TestSuites[0].TestCases[0].Error
-	if want := "[PANICKED] runtime error: index out of range [3] with length 3 [It panic.go:115]"; errored.Message != want {
+	if want := "[PANICKED] runtime error: index out of range [3] with length 3"; errored.Message != want {
 		t.Errorf("error message = %q, want %q", errored.Message, want)
 	}
 	if errored.Description != "" {
@@ -276,10 +418,11 @@ func TestPublishUploadsTheJUnitWithFailuresSummarized(t *testing.T) {
 	result := publishTestResult(t, false)
 	junitPath := filepath.Join(t.TempDir(), "qualify-e2e.junit.xml")
 	junit := ginkgoReport(t, reporters.JUnitTestCase{
-		Name:      "[It] fails",
-		Status:    "failed",
-		Failure:   &reporters.JUnitFailure{Message: "no route to the site", Type: "failed", Description: failureDescription},
-		SystemErr: failureDescription,
+		Name:       "[It] fails",
+		Status:     "failed",
+		Failure:    &reporters.JUnitFailure{Message: failureMessage, Type: "failed", Description: failureDescription},
+		SystemErr:  failureDescription,
+		Properties: causes(`"no route to the site"`),
 	})
 	if err := os.WriteFile(junitPath, junit, 0o644); err != nil {
 		t.Fatal(err)
@@ -294,7 +437,7 @@ func TestPublishUploadsTheJUnitWithFailuresSummarized(t *testing.T) {
 		t.Fatalf("got %d uploads, want 3", len(uploader.calls))
 	}
 	failure := decodeReport(t, uploader.calls[1].data).TestSuites[0].TestCases[0].Failure
-	if want := "no route to the site [BeforeAll site_controller_test.go:227]"; failure.Message != want {
+	if want := "no route to the site"; failure.Message != want {
 		t.Errorf("uploaded failure message = %q, want %q", failure.Message, want)
 	}
 }
