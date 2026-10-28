@@ -2781,7 +2781,7 @@ otel-lgtm:
   image:
     registry: "" # Empty pulls from the image's default registry (Docker Hub for this repository).
     repository: grafana/otel-lgtm
-    tag: 0.32.0
+    tag: 0.38.0
   # Container resource requests/limits and Pod placement.
   resources: {}
   nodeSelector: {}
@@ -2920,6 +2920,10 @@ opentelemetry-kube-stack:
       enabled: false
   clusterRole:
     enabled: false
+  # Uninstall hook. opentelemetry-kube-stack's default kubectl tag lags upstream security fixes.
+  cleanupJob:
+    image:
+      tag: v1.35.6
   opentelemetry-operator:
     fullnameOverride: nktp-operator
     manager:
