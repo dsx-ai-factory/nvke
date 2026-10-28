@@ -1,17 +1,17 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-apiVersion: kubeadm.k8s.io/v1beta3
+apiVersion: kubeadm.k8s.io/v1beta4
 kind: InitConfiguration
 localAPIEndpoint:
   advertiseAddress: "10.85.140.141"
   bindPort: 6443
 ---
-apiVersion: kubeadm.k8s.io/v1beta3
+apiVersion: kubeadm.k8s.io/v1beta4
 kind: ClusterConfiguration
 clusterName: ktv-cluster
 controlPlaneEndpoint: "10.85.140.141"
-kubernetesVersion: "v1.31.9" # must match bundled / pre-loaded control-plane images (air gap)
+kubernetesVersion: "v1.36.3" # must match bundled / pre-loaded control-plane images (air gap)
 networking:
   podSubnet: "192.168.0.0/16"       # Calico-compatible
   serviceSubnet: "10.96.0.0/12"
@@ -19,7 +19,8 @@ networking:
 
 apiServer:
   extraArgs:
-    encryption-provider-config: /etc/kubernetes/encryption-config.yaml
+    - name: encryption-provider-config
+      value: /etc/kubernetes/encryption-config.yaml
   extraVolumes:
     - name: encryptionconfig
       hostPath: /etc/kubernetes/encryption-config.yaml
