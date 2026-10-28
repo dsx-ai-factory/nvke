@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Verifies that a change to controller/api/openapi.yaml is backward compatible
-# with the newest published controller/api version tag.
+# with the newest published controller/api version tag for the default branch,
+# or the exact target commit for a stacked or maintenance pull request.
 #
 # This is deliberately not a job inside generate-check.yml. That workflow asks
 # whether the committed generated code matches the specification; this one asks
@@ -72,9 +73,31 @@ jobs:
             go.work.sum
             controller/go.sum
 
-      - name: Check the specification against the newest published API tag
+      - name: Check the specification against its target compatibility baseline
         working-directory: controller
-        run: make api-compat-check API_COMPAT_REPORT=.local/openapi-changes.json
+        env:
+          API_COMPAT_EVENT: ${{ github.event_name }}
+          API_COMPAT_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          API_COMPAT_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          API_COMPAT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          arguments=(api-compat-check API_COMPAT_REPORT=.local/openapi-changes.json)
+          if [[ "$API_COMPAT_EVENT" == pull_request ]]; then
+            [[ -n "$API_COMPAT_DEFAULT_BRANCH" && -n "$API_COMPAT_BASE_REF" ]] || {
+              echo 'API compatibility requires the trusted PR target and default branch.' >&2
+              exit 1
+            }
+            if [[ "$API_COMPAT_BASE_REF" != "$API_COMPAT_DEFAULT_BRANCH" ]]; then
+              [[ "$API_COMPAT_BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+                echo 'API compatibility requires the exact PR target commit.' >&2
+                exit 1
+              }
+              git cat-file -e "${API_COMPAT_BASE_SHA}^{commit}"
+              arguments+=("API_COMPAT_BASELINE=$API_COMPAT_BASE_SHA")
+            fi
+          fi
+          make "${arguments[@]}"
 
       # The report is the evidence behind the verdict, and the thing a reviewer
       # wants when arguing with it. Uploaded on failure too -- especially then.

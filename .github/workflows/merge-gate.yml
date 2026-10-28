@@ -76,8 +76,9 @@ on:
   # handles merge_group.checks_requested itself and reports on the merge group
   # head sha.
   #
-  # The called workflows need no change. Each declares workflow_call and runs
-  # under this caller's event, and none reads github.event.pull_request.
+  # Each called workflow runs under this caller's event. API compatibility
+  # reads PR target metadata only for pull_request; merge_group keeps the
+  # published-consumer baseline.
   merge_group:
   workflow_dispatch:
 

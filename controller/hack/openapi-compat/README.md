@@ -35,6 +35,14 @@ Pass `--baseline <ref>` to compare against something else. `make
 api-compat-check API_COMPAT_BASELINE=controller/api/v0.0.12` is the usual form,
 for checking a change against an older release rather than the latest.
 
+The GitHub API compatibility job uses that explicit baseline for pull requests
+targeting a non-default branch: it compares against the exact target commit
+from GitHub's pull request event. This keeps a maintenance or stacked change
+compatible with its actual target, including changes to the API specification.
+Pull requests targeting the default branch, default-branch pushes, merge queues
+and manual runs retain the newest published API tag. Retargeting a pull request
+reruns the merge gate against its new target.
+
 ## The policy
 
 1. The change engine ([`openapi-changes`][engine], pinned as
