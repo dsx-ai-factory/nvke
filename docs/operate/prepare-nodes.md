@@ -49,7 +49,7 @@ The node image is not a ready Kubernetes node. It carries the node agent and the
    - `<BOOTSTRAP_HOST_IP>`: the IP address the nodes use to reach the bootstrap host. During the bootstrap, the SPIRE server listens there on port 30081.
    - `<TRUST_DOMAIN>`: your SPIFFE trust domain. Set the same value as `spire.trustDomain` in the site spec. If the site spec leaves it unset, `nvkectl` uses `nvkectl-bootstrap.nke.local`, so set it explicitly in both places.
    - `<SPIRE_CA_CERT_PEM>`: the PEM contents of the CA certificate you pass as `NVKECTL_SPIRE_CA_CERT_FILE`, with every line indented to match the placeholder.
-   - `<K8S_VERSION>`: the Kubernetes version you set as `cluster.k8sVersion` in the site spec, without a leading `v`: `1.36.3`, the supported version. The image also stages 1.34.2 and 1.35.3, which are not supported; see [Supported platforms and versions](../overview/supported-platforms.md).
+   - `<K8S_VERSION>`: the Kubernetes version you set as `cluster.k8sVersion` in the site spec, without a leading `v`: `1.36.3`, the supported version. The image also stages 1.34.2, 1.35.3 and 1.37.2, which are not supported; see [Supported platforms and versions](../overview/supported-platforms.md).
 
    The image stages OVN-Kubernetes 2.4.2, the version the bootstrap uses when the site spec leaves `cluster.cniVersion` unset.
 

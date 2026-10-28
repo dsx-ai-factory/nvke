@@ -86,7 +86,7 @@ checksum is verified. `curl`, `gpg`, `gzip`, `sha256sum` and `tar` must be on
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `K8S_VERSIONS` | `v1.36.3 v1.35.3 v1.34.2` | Kubernetes releases to build |
+| `K8S_VERSIONS` | `v1.37.2 v1.36.3 v1.35.3 v1.34.2` | Kubernetes releases to build |
 | `DEB_REVISION` | `1` | Debian packaging revision; the Kubernetes patch is in the package name |
 | `LOCK_DIR` | `./lock` | The committed lock files |
 | `DIST_DIR` | `./dist` | Artifact cache. Anything that still hashes to its lock entry is reused offline; anything else is re-downloaded and re-verified |
@@ -98,7 +98,8 @@ build-host metadata (a timestamp, a path, ownership) that nfpm is not pinning.
 ## Bumping versions
 
 1. Edit `K8S_VERSIONS` in the [Makefile](Makefile): the newest patch of each of
-   the three newest minors.
+   the three newest minors. v1.34.2 stays as a fourth until the CI and dev
+   defaults move off it.
 2. If the bump crosses a minor, add a row to `pins_for` in `bundle.sh`. There
    is no fallback row, so check containerd's Kubernetes support matrix and
    Helm's version skew policy.
