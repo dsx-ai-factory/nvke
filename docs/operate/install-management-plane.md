@@ -65,7 +65,7 @@ The install reads the site spec, a stack config file for what only the managemen
 
 ## Stage the controller images on the management nodes
 
-Without a release description, the controller item runs two images that no registry serves without a credential: the NVKE controller and a profile content image. The deploy path installs them with `imagePullPolicy: IfNotPresent` and no pull secret, so they must already be in every management node's containerd, in the `k8s.io` namespace the kubelet reads. The bootstrap loaded the controller image only into its temporary seed cluster, which it deleted. Skip this section if you install from a release: the nodes then pull both images by digest from the registries the release names.
+Without a release description, the controller item runs two images that no registry serves without a credential: the NVKE controller and a profile content image. The deploy path sets `imagePullPolicy: IfNotPresent` on the controller container, sets no pull policy on the profile init container, and sets no pull secret, so both images must already be in every management node's containerd, in the `k8s.io` namespace the kubelet reads. The bootstrap loaded the controller image only into its temporary seed cluster, which it deleted. Skip this section if you install from a release: the nodes then pull both images by digest from the registries the release names.
 
 `<ARCH>` below is the nodes' CPU architecture, `amd64` or `arm64`. The controller image you tag must be built for it.
 
