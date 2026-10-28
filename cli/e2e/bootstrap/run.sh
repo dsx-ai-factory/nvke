@@ -30,7 +30,8 @@
 # the run red. CI sets NVKECTL_E2E_REQUIRE_SECRET_SCAN=1, which makes a missing
 # gitleaks a failure; a developer running this locally without it only sees a
 # warning. `bootstrap site` runs with a fake OTLP header token, and the scan also
-# fails the run if that token appears in the same output.
+# fails the run if that token, or the Postgres password or etcd key it reads back
+# from the cluster, appears in the same output.
 #
 # Everything created is registered for teardown as it is created, and the EXIT
 # trap runs those registrations in reverse, whatever the exit. A failing exit
@@ -105,6 +106,10 @@ OTLP_TOKEN="e2e$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 OTLP_TENANT="e2e$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 OTLP_ENDPOINT="http://192.0.2.1:4317"
 OTLP_HEADERS="authorization=Bearer ${OTLP_TOKEN},x-tenant=${OTLP_TENANT}"
+# The values the scan searches for as exact strings: the OTLP token, and the
+# tenant header as the pair nvkectl masks. The lane adds the secrets it can only
+# read from the cluster once bootstrap has finished.
+KNOWN_SECRETS=("${OTLP_TOKEN}" "x-tenant=${OTLP_TENANT}")
 GO="${GO:-go}"
 # The lane runs `bootstrap site` through the Go tests in bootstraptest. Those
 # tests carry two marks: the e2e_bootstrap build tag, which keeps them out of
@@ -189,7 +194,7 @@ fi
 # diagnostics bundle for credentials, and returns 1 if it finds one or cannot
 # tell. It prints the scanner's findings with the secret redacted and never the
 # secret itself: this output goes to a public CI log. It also searches them for
-# the OTLP header values the lane set, which gitleaks has no rule for.
+# the secret values the lane knows, which gitleaks has no rule for.
 #
 # It first proves the rules work, because a clean result from a scanner that
 # matches nothing means nothing. Each shape the rules target must be flagged when
@@ -211,8 +216,8 @@ scan_output_for_secrets() {
       return 1
     fi
     log "gitleaks is not on PATH: skipping the scan of the bootstrap output for credentials (CI requires it)"
-    # The OTLP header search needs no scanner.
-    scan_for_otlp_header_values "${BOOTSTRAP_LOG}" "${BOOTSTRAP_GO_TEST_LOG}" "${DIAGNOSTICS_DIR}"
+    # The search for known secret values needs no scanner.
+    scan_for_known_secrets "${BOOTSTRAP_LOG}" "${BOOTSTRAP_GO_TEST_LOG}" "${DIAGNOSTICS_DIR}"
     return
   fi
   if [ ! -f "${BOOTSTRAP_LOG}" ]; then
@@ -220,7 +225,7 @@ scan_output_for_secrets() {
     return 0
   fi
 
-  local work rc name shape fingerprint join_token leaked plog trace_hex span_hex
+  local work rc name shape fingerprint join_token leaked plog trace_hex span_hex i
   work="$(mktemp -d)"
 
   # The rules, proved on a sample of each shape: flagged with a value, clean with
@@ -231,7 +236,10 @@ scan_output_for_secrets() {
     'url|{"env":[{"name":"DATABASE_URL","value":"postgres://cloud:PLACEHOLDER@db.example:5432/cloud"}]}' \
     'field|{"auth":{"username":"cloud","password":"PLACEHOLDER"}}' \
     'unquoted|      POSTGRES_PASSWORD:  PLACEHOLDER' \
-    'env|{"env":[{"name":"POSTGRES_PASSWORD","value":"PLACEHOLDER"}]}'; do
+    'env|{"env":[{"name":"POSTGRES_PASSWORD","value":"PLACEHOLDER"}]}' \
+    'slog|time=x level=ERROR msg="connect failed" db_password=PLACEHOLDER' \
+    'otlp-env|{"env":[{"name":"OTEL_EXPORTER_OTLP_HEADERS","value":"PLACEHOLDER"}]}' \
+    'otlp-describe|      OTEL_EXPORTER_OTLP_HEADERS:  PLACEHOLDER'; do
     name="${shape%%|*}"
     printf '%s\n' "${shape#*|}" | sed 's/PLACEHOLDER/aaaa-bbbb-cccc/' >"${work}/flagged/${name}.txt"
     printf '%s\n' "${shape#*|}" | sed 's/PLACEHOLDER/<redacted>/' >"${work}/clean/${name}.txt"
@@ -242,6 +250,8 @@ scan_output_for_secrets() {
   printf "      POSTGRES_PASSWORD:  <set to the key 'password' in secret 'pg'>  Optional: false\n" >"${work}/clean/describe-secret.txt"
   printf 'spec:\n  usePassword: true\n  password: null\n' >"${work}/clean/password-state.txt"
   printf '{"env":[{"name":"POSTGRES_PASSWORD","valueFrom":{"secretKeyRef":{"name":"pg","key":"password"}}}]}\n' >"${work}/clean/env-secretref.txt"
+  printf 'time=x level=INFO msg="chart values" usePassword=true\n' >"${work}/clean/password-flag.txt"
+  printf 'time=x level=WARN msg="OTEL_EXPORTER_OTLP_HEADERS is sent to the OTLP endpoint without TLS; use an https endpoint if the headers hold a credential"\n' >"${work}/clean/otlp-warning.txt"
   # The one line the rules allow, and the same line under another message, which
   # they must not allow. The hash is computed here, not written in this file: a
   # literal would trip the Secrets workflow just as it trips the default rules.
@@ -333,9 +343,9 @@ scan_output_for_secrets() {
     fi
   done
 
-  # The OTLP header search, driven the same way. Each plant must fail the scan
-  # with the search's own message, so a gitleaks finding cannot hide a search that
-  # finds nothing.
+  # The search for known secret values, driven the same way. Each plant must fail
+  # the scan with the search's own message, so a gitleaks finding cannot hide a
+  # search that finds nothing.
   local gotest_log="${work}/go-test.log" found
   printf 'msg="nothing to see"\n' >"${gotest_log}"
   for where in log go-test-log diagnostics-file pod-log encoded-token tenant-pair; do
@@ -352,8 +362,20 @@ scan_output_for_secrets() {
     esac
     rc=0
     found="$(scan_run_output "${plog}" "${diag}" "${glog}" 2>&1)" || rc=$?
-    if [ "${rc}" -eq 0 ] || ! grep -q "OTLP header value" <<<"${found}"; then
-      log "FAIL: the search for OTLP header values missed one planted in the ${where}, so a clean result proves nothing"
+    if [ "${rc}" -eq 0 ] || ! grep -q "known secret value" <<<"${found}"; then
+      log "FAIL: the search for known secret values missed one planted in the ${where}, so a clean result proves nothing"
+      rm -rf "${work}"
+      return 1
+    fi
+  done
+  # Each value read from the cluster after bootstrap, planted alone.
+  for ((i = 2; i < ${#KNOWN_SECRETS[@]}; i++)); do
+    reset_diag
+    printf 'msg=x value=%s\n' "${KNOWN_SECRETS[i]}" >"${diag}/all-resources.txt"
+    rc=0
+    found="$(scan_run_output "${clean_log}" "${diag}" "${gotest_log}" 2>&1)" || rc=$?
+    if [ "${rc}" -eq 0 ] || ! grep -q "known secret value" <<<"${found}"; then
+      log "FAIL: the search for known secret values missed one read from the cluster (number $((i + 1))), so a clean result proves nothing"
       rm -rf "${work}"
       return 1
     fi
@@ -367,7 +389,7 @@ scan_output_for_secrets() {
 
 # scan_run_output scans a bootstrap log, a diagnostics directory (which may not
 # exist) and optionally the Go test log with gitleaks, and searches them for the
-# OTLP header values. It returns 1 on a finding or a scanner failure.
+# secret values the lane knows. It returns 1 on a finding or a scanner failure.
 scan_run_output() {
   local log_file="$1" diag_dir="$2" go_test_log="${3:-}" out rc values_rc=0
   out="$(mktemp -d)"
@@ -384,7 +406,7 @@ scan_run_output() {
       return 1
     }
   fi
-  scan_for_otlp_header_values "${out}/output" || values_rc=1
+  scan_for_known_secrets "${out}/output" || values_rc=1
   rc=0
   # --verbose names each finding: rule, file and line, with the secret redacted.
   gitleaks_scan "${out}/output" --verbose || rc=$?
@@ -392,24 +414,24 @@ scan_run_output() {
   case "${rc}" in
     0)
       [ "${values_rc}" -eq 0 ] || return 1
-      log "PASS: no credential or OTLP header value in the bootstrap output or its diagnostics"
+      log "PASS: no credential or known secret value in the bootstrap output or its diagnostics"
       ;;
     2) log "FAIL: gitleaks found a credential in the bootstrap output; the findings above are redacted" ; return 1 ;;
     *) log "FAIL: gitleaks could not scan the bootstrap output (exit ${rc})" ; return 1 ;;
   esac
 }
 
-# scan_for_otlp_header_values returns 1 if a file or directory it is given holds
-# the OTLP token or the tenant header the lane set. A path that does not exist is
-# skipped. It prints the names of the files that hold a value, never the value:
-# this output goes to a public CI log.
+# scan_for_known_secrets returns 1 if a file or directory it is given holds one of
+# the values in KNOWN_SECRETS. A path that does not exist is skipped. It prints
+# the names of the files that hold a value, never the value: this output goes to a
+# public CI log.
 #
-# The token is searched alone, so its encoded form in the cluster,
+# The OTLP token is searched alone, so its encoded form in the cluster,
 # authorization=Bearer%20<token>, is found too. The tenant header has no
 # credential in its name, so nvkectl masks it only as the pair x-tenant=<value>,
 # and that pair is what is searched.
-scan_for_otlp_header_values() {
-  local needles path hits rc=0
+scan_for_known_secrets() {
+  local needles path secret hits rc=0
   local paths=()
   for path in "$@"; do
     if [ -e "${path}" ]; then
@@ -418,18 +440,23 @@ scan_for_otlp_header_values() {
   done
   [ "${#paths[@]}" -gt 0 ] || return 0
   needles="$(mktemp)"
-  printf '%s\n' "${OTLP_TOKEN}" "x-tenant=${OTLP_TENANT}" >"${needles}"
+  for secret in "${KNOWN_SECRETS[@]}"; do
+    # An empty line would match every line.
+    if [ -n "${secret}" ]; then
+      printf '%s\n' "${secret}" >>"${needles}"
+    fi
+  done
   hits="$(grep -rlF -f "${needles}" -- "${paths[@]}")" || rc=$?
   rm -f "${needles}"
   case "${rc}" in
     0)
-      log "FAIL: an OTLP header value the lane set is in:"
+      log "FAIL: a known secret value is in:"
       printf '%s\n' "${hits}" | while IFS= read -r path; do log "  ${path}"; done
       return 1
       ;;
     1) return 0 ;;
     *)
-      log "FAIL: could not search for the OTLP header values (grep exit ${rc})"
+      log "FAIL: could not search for the known secret values (grep exit ${rc})"
       return 1
       ;;
   esac
@@ -1031,6 +1058,20 @@ otlp_env="$(bk -n "${CONTROLLER_NAME}" get deployment "${CONTROLLER_NAME}" \
 [ "${otlp_env}" = "authorization=Bearer%20${OTLP_TOKEN},x-tenant=${OTLP_TENANT}" ] ||
   fail "the controller's OTEL_EXPORTER_OTLP_HEADERS is not the headers the lane gave bootstrap site," \
     "so the scan for them proves nothing about the controller's output"
+# The secrets bootstrap generates, which the scan also searches for. The values go
+# into KNOWN_SECRETS and are never printed. The etcd key is searched as the
+# manifest stores it and as the controller reads it.
+pg_password="$(bk -n postgres get secret postgres-postgresql -o 'jsonpath={.data.password}' | base64 -d)" ||
+  fail "could not read the generated Postgres password from the bootstrap cluster"
+[ -n "${pg_password}" ] || fail "the generated Postgres password is empty"
+KNOWN_SECRETS+=("${pg_password}")
+etcd_key="$(sed -n 's/^ *"active": *"\([^"]*\)".*/\1/p' "${ETCD_KEY_FILE}")"
+[ -n "${etcd_key}" ] || fail "no active key in ${ETCD_KEY_FILE}"
+KNOWN_SECRETS+=("${etcd_key}")
+etcd_key_text="$(printf '%s' "${etcd_key}" | base64 -d 2>/dev/null || true)"
+if printf '%s' "${etcd_key_text}" | LC_ALL=C grep -qE '^[[:print:]]{16,}$'; then
+  KNOWN_SECRETS+=("${etcd_key_text}")
+fi
 spiffe_id="spiffe://${SPIRE_TRUST_DOMAIN}/nvke-service/${CONTROLLER_NAME}"
 bk -n spire-server exec spire-server-0 -c spire-server -- \
   /opt/spire/bin/spire-server entry show -spiffeID "${spiffe_id}" | grep -q "Entry ID" ||

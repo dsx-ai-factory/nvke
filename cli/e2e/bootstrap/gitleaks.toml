@@ -68,11 +68,41 @@ regex = '''(?i)"name"\s*:\s*"[\w.-]*passw(?:or)?d"\s*,\s*"value"\s*:\s*"([^"<]{4
 secretGroup = 1
 keywords = ["passw"]
 
-# Values that name a state, not a credential. The unquoted rule reads
-# "usePassword: true" as a password field.
+# A password written as name=value with no quotes, which is how nvkectl's own log
+# lines print an attribute. The field rules above need quotes or a line of their
+# own, so they miss "db_password=value".
+[[rules]]
+id = "nvkectl-password-attribute"
+description = "A password attribute with an unquoted literal value, as a log line prints it"
+regex = '''(?i)\b[\w.-]*passw(?:or)?d=([^\s"'<][^\s"']{3,})'''
+secretGroup = 1
+keywords = ["passw"]
+
+# The headers nvkectl sends to the OTLP endpoint can hold an authorization token,
+# under any header name, and nvkectl replaces the whole value with <redacted>.
+# Any other value after the variable name is one it did not mask. The first rule
+# reads the variable as a field, an assignment or a describe line; the second as
+# the separate name and value of a pod spec. A message that only names the
+# variable has no : or = after it and does not match.
+[[rules]]
+id = "nvkectl-otlp-headers-value"
+description = "A literal OTEL_EXPORTER_OTLP_HEADERS value, which can hold an authorization token"
+regex = '''(?i)OTEL_EXPORTER_OTLP_HEADERS["']?[ \t]*[:=][ \t]*["']?([^"'<\s{\[][^"'\s]{3,})'''
+secretGroup = 1
+keywords = ["otel_exporter_otlp_headers"]
+
+[[rules]]
+id = "nvkectl-otlp-headers-env"
+description = "A literal OTEL_EXPORTER_OTLP_HEADERS environment variable in a pod spec"
+regex = '''(?i)"name"\s*:\s*"OTEL_EXPORTER_OTLP_HEADERS"\s*,\s*"value"\s*:\s*"([^"<]{4,})"'''
+secretGroup = 1
+keywords = ["otel_exporter_otlp_headers"]
+
+# Values that name a state, not a credential. The unquoted and attribute rules
+# read "usePassword: true" and "usePassword=true" as a password.
 [[allowlists]]
 description = "a boolean or null where a password field is expected"
-targetRules = ["nvkectl-password-unquoted"]
+targetRules = ["nvkectl-password-unquoted", "nvkectl-password-attribute"]
 regexTarget = "secret"
 regexes = [
   '''^(?i:true|false|null|none|nil)$''',
