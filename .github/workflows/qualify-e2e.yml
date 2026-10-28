@@ -396,16 +396,15 @@ jobs:
       # The plan as tables on the run page, so what will be qualified can be
       # read without opening plan.json. An entry's version and url are separate
       # columns, and an entry says when a person's override chose it. Each
-      # stream's own dependencies, its OS images among them, are listed under
-      # that stream.
+      # stream's capabilities and its own dependencies, its OS images among
+      # them, are listed under that stream.
       - name: Summarise the plan
         shell: bash
         run: |
           set -Eeuo pipefail
           go run ./release/cmd/qualify summary plan \
             --plan plan.json \
-            --dry-run="${DRY_RUN}" \
-            --artifact "qualify-plan-${GITHUB_RUN_ID}" >> "${GITHUB_STEP_SUMMARY}"
+            --dry-run="${DRY_RUN}" >> "${GITHUB_STEP_SUMMARY}"
 
       # One entry per stream of every combination, carrying what that lane
       # needs.
@@ -1780,8 +1779,8 @@ jobs:
   # each stream shows the report of the attempt that last ran it. A stream whose
   # last run left no report is shown as having none, even when an earlier
   # attempt left one.
-  tests:
-    name: tests
+  results:
+    name: results
     needs: [plan, qualify-run]
     if: >-
       !cancelled() &&
@@ -1819,7 +1818,7 @@ jobs:
       # Through the API rather than download-artifact, which unpacks a pattern
       # that matches one artifact without the directory that names it, and the
       # name is the only place the stream is recorded.
-      - name: Summarise the tests
+      - name: Summarise the test results
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1872,4 +1871,4 @@ jobs:
             [ -z "${junit}" ] || reports+=(--report "${stream}=${junit}")
           done < <(jq -r '[.combinations[].streams[].name] | unique[]' plan.json)
 
-          go run ./release/cmd/qualify summary tests --plan plan.json "${reports[@]}" >> "${GITHUB_STEP_SUMMARY}"
+          go run ./release/cmd/qualify summary results --plan plan.json "${reports[@]}" >> "${GITHUB_STEP_SUMMARY}"

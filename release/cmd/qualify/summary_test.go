@@ -146,32 +146,54 @@ func assertLines(t *testing.T, got string, want ...string) {
 }
 
 func TestSummaryPlan(t *testing.T) {
-	got, err := runSummaryCmd(t, "plan", "--plan", writeFile(t, "plan.json", summaryTestPlan), "--artifact", "qualify-plan-123")
+	got, err := runSummaryCmd(t, "plan", "--plan", writeFile(t, "plan.json", summaryTestPlan))
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertLines(t, got,
 		"### Qualification plan",
-		"| nke | `v0.23.0-beta.2` |",
+		"| nvke | `v0.23.0-beta.2` |",
 		"| scope | `golden-path` |",
 		"| overrides | `os-image-amd64` |",
 		"| mode | run |",
-		"| plan | artifact `qualify-plan-123` |",
 		"#### Combination `cli-v0.2.0-5-g48dc30932_controller-v0.2.0-7-g48dc30932`",
 		"| Component | Version | URL | Overridden |",
 		"| controller | `v0.2.0-7-g48dc30932` | `oci://registry.example/org/nvke-controller:v0.2.0-7-g48dc30932` |  |",
 		"| cli | `v0.2.0-5-g48dc30932` |  |  |",
 		"| Dependency | Version | URL | Overridden |",
 		"| os-image-bootloader-amd64 |  | `nke-isos/qcow/efi/x86_64/qcow-imager.efi` |  |",
-		"| Stream | Arch | GPU | Ubuntu | Kubernetes minor |",
-		"| "+amd64Stream+" | amd64 | gb200 | 24.04 | 1.36 |",
-		"| "+arm64Stream+" | arm64 | gb200 | 24.04 | 1.36 |",
 		"##### Stream `"+amd64Stream+"`",
+		"arch `amd64` · GPU `gb200` · Ubuntu `24.04` · Kubernetes `1.36`",
 		"| kube | `1.36.3` |  |  |",
 		"| os-image-amd64 |  | `custom/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2` | yes |",
 		"##### Stream `"+arm64Stream+"`",
+		"arch `arm64` · GPU `gb200` · Ubuntu `24.04` · Kubernetes `1.36`",
 		"| os-image-arm64 | `v0.2.0-2-g48dc30932` | `nvke-packages/os-image/builds/v0.2.0-2-g48dc30932/arm64/nvke-node-non-fde-ubuntu-24.04.5-arm64.qcow2` |  |",
 	)
+	if strings.Contains(got, "| Stream |") {
+		t.Errorf("the plan summary has a table of streams; each stream's section shows its capabilities:\n%s", got)
+	}
+}
+
+func TestCapabilities(t *testing.T) {
+	tests := []struct {
+		name string
+		caps map[string]string
+		want string
+	}{
+		{name: "every capability, in a fixed order", caps: map[string]string{"kube": "1.36", "ubuntu": "24.04", "gpu": "l40s", "arch": "amd64"}, want: "\narch `amd64` · GPU `l40s` · Ubuntu `24.04` · Kubernetes `1.36`\n"},
+		{name: "one the stream does not declare is left out", caps: map[string]string{"arch": "arm64", "kube": "1.36"}, want: "\narch `arm64` · Kubernetes `1.36`\n"},
+		{name: "none is nothing", caps: nil, want: ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var b strings.Builder
+			capabilities(&b, tc.caps)
+			if b.String() != tc.want {
+				t.Errorf("got %q, want %q", b.String(), tc.want)
+			}
+		})
+	}
 }
 
 func TestSummaryPlanSaysDryRun(t *testing.T) {
@@ -182,12 +204,9 @@ func TestSummaryPlanSaysDryRun(t *testing.T) {
 	if !strings.Contains(got, "| mode | dry run, no machine is taken |") {
 		t.Errorf("a dry run's plan summary does not say so:\n%s", got)
 	}
-	if strings.Contains(got, "| plan | artifact") {
-		t.Errorf("a plan summary with no --artifact names one:\n%s", got)
-	}
 }
 
-func TestSummaryTests(t *testing.T) {
+func TestSummaryResults(t *testing.T) {
 	plan := writeFile(t, "plan.json", summaryTestPlan)
 	passed := writeFile(t, "passed.junit.xml", summaryTestPassed)
 	failed := writeFile(t, "failed.junit.xml", summaryTestFailed)
@@ -203,7 +222,7 @@ func TestSummaryTests(t *testing.T) {
 			name:    "passing streams count what the label filter left out",
 			reports: []string{amd64Stream + "=" + passed, arm64Stream + "=" + passed},
 			want: []string{
-				"### Tests",
+				"### Test results",
 				"**2 of 2 streams passed.**",
 				"| Stream | Result | Ran | Passed | Failed | Took |",
 				"| " + amd64Stream + " | passed | 3 | 3 | 0 | 13m18s |",
@@ -258,7 +277,7 @@ func TestSummaryTests(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			args := []string{"tests", "--plan", plan}
+			args := []string{"results", "--plan", plan}
 			for _, r := range tc.reports {
 				args = append(args, "--report", r)
 			}
@@ -277,7 +296,7 @@ func TestSummaryTests(t *testing.T) {
 	}
 }
 
-func TestSummaryTestsRejects(t *testing.T) {
+func TestSummaryResultsRejects(t *testing.T) {
 	plan := writeFile(t, "plan.json", summaryTestPlan)
 	malformed := writeFile(t, "qualify-e2e.junit.xml", "<testsuites")
 	passed := writeFile(t, "passed.junit.xml", summaryTestPassed)
@@ -294,7 +313,7 @@ func TestSummaryTestsRejects(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			args := []string{"tests", "--plan", plan}
+			args := []string{"results", "--plan", plan}
 			for _, r := range tc.reports {
 				args = append(args, "--report", r)
 			}

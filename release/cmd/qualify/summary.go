@@ -31,20 +31,19 @@ Each subcommand writes GitHub-flavoured Markdown to stdout, for a workflow to
 append to $GITHUB_STEP_SUMMARY, so what a run qualified and how each stream went
 can be read on the run page without downloading an artifact.
 
-  plan    what the plan resolved, with versions and locations in separate columns
-  tests   what every stream ran, and why anything that did not pass failed`,
+  plan     what the plan resolved, with versions and locations in separate columns
+  results  what every stream ran, and why anything that did not pass failed`,
 		SilenceUsage: true,
 	}
 	cmd.AddCommand(summaryPlanCmd())
-	cmd.AddCommand(summaryTestsCmd())
+	cmd.AddCommand(summaryResultsCmd())
 	return cmd
 }
 
 func summaryPlanCmd() *cobra.Command {
 	var (
-		planAt   string
-		dryRun   bool
-		artifact string
+		planAt string
+		dryRun bool
 	)
 
 	cmd := &cobra.Command{
@@ -53,8 +52,8 @@ func summaryPlanCmd() *cobra.Command {
 		Long: `Render a plan as Markdown.
 
 One table for the run as a whole, then for each combination its components and
-dependencies, the capabilities of its streams, and each stream's own
-dependencies.
+dependencies, and for each of its streams a line of its capabilities and a
+table of its own dependencies.
 
 A version and a location are separate columns. An entry can have either or
 both, and one column showing whichever was set could not say which it showed.`,
@@ -65,7 +64,7 @@ both, and one column showing whichever was set could not say which it showed.`,
 			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprint(cmd.OutOrStdout(), planSummary(plan, dryRun, artifact))
+			_, err = fmt.Fprint(cmd.OutOrStdout(), planSummary(plan, dryRun))
 			return err
 		},
 	}
@@ -73,18 +72,17 @@ both, and one column showing whichever was set could not say which it showed.`,
 	f := cmd.Flags()
 	f.StringVar(&planAt, "plan", "plan.json", "the plan to render, - is stdin")
 	f.BoolVar(&dryRun, "dry-run", false, "say that the run is a dry run, which takes no machine")
-	f.StringVar(&artifact, "artifact", "", "the artifact the plan is uploaded as, named so a reader can find it")
 	return cmd
 }
 
-func summaryTestsCmd() *cobra.Command {
+func summaryResultsCmd() *cobra.Command {
 	var (
 		planAt  string
 		reports []string
 	)
 
 	cmd := &cobra.Command{
-		Use:   "tests",
+		Use:   "results",
 		Short: "Render every stream's JUnit report as Markdown",
 		Long: `Render every stream's JUnit report as Markdown.
 
@@ -135,7 +133,7 @@ a row.`,
 				}
 				found[stream] = suites
 			}
-			_, err = fmt.Fprint(cmd.OutOrStdout(), testsSummary(streams, found))
+			_, err = fmt.Fprint(cmd.OutOrStdout(), resultsSummary(streams, found))
 			return err
 		},
 	}
@@ -147,7 +145,7 @@ a row.`,
 }
 
 // planSummary renders a plan as Markdown.
-func planSummary(plan *qualification.Plan, dryRun bool, artifact string) string {
+func planSummary(plan *qualification.Plan, dryRun bool) string {
 	overridden := func(name string) string {
 		if contains(plan.Overrides, name) {
 			return "yes"
@@ -170,32 +168,48 @@ func planSummary(plan *qualification.Plan, dryRun bool, artifact string) string 
 
 	var b strings.Builder
 	b.WriteString("### Qualification plan\n\n| | |\n|---|---|\n")
-	row(&b, "nke", code(plan.Version))
+	row(&b, "nvke", code(plan.Version))
 	row(&b, "scope", code(plan.Scope))
 	row(&b, "overrides", overrides)
 	row(&b, "mode", mode)
 	row(&b, "combinations", strconv.Itoa(len(plan.Combinations)))
 	row(&b, "streams", strconv.Itoa(streams))
-	if artifact != "" {
-		row(&b, "plan", "artifact "+code(artifact))
-	}
 
 	for _, c := range plan.Combinations {
 		fmt.Fprintf(&b, "\n#### Combination %s\n", code(c.ID))
 		entries(&b, "Component", c.Components, overridden)
 		entries(&b, "Dependency", c.Dependencies, overridden)
-
-		b.WriteString("\n| Stream | Arch | GPU | Ubuntu | Kubernetes minor |\n|---|---|---|---|---|\n")
-		for _, s := range c.Streams {
-			caps := s.Capabilities
-			row(&b, text(s.Name), text(caps["arch"]), text(caps["gpu"]), text(caps["ubuntu"]), text(caps["kube"]))
-		}
 		for _, s := range c.Streams {
 			fmt.Fprintf(&b, "\n##### Stream %s\n", code(s.Name))
+			capabilities(&b, s.Capabilities)
 			entries(&b, "Dependency", s.Dependencies, overridden)
 		}
 	}
 	return b.String()
+}
+
+// streamCapabilities are the capabilities a stream's section shows, in order,
+// with the label each is shown under.
+var streamCapabilities = []struct{ key, label string }{
+	{"arch", "arch"},
+	{"gpu", "GPU"},
+	{"ubuntu", "Ubuntu"},
+	{"kube", "Kubernetes"},
+}
+
+// capabilities writes a stream's capabilities as one line, leaving out any the
+// stream does not declare, or nothing for none. The line is not in a table, so
+// the values are code spans as they are, without code's escaped pipes.
+func capabilities(b *strings.Builder, caps map[string]string) {
+	var parts []string
+	for _, c := range streamCapabilities {
+		if v := caps[c.key]; v != "" {
+			parts = append(parts, c.label+" `"+v+"`")
+		}
+	}
+	if len(parts) > 0 {
+		fmt.Fprintf(b, "\n%s\n", strings.Join(parts, " · "))
+	}
 }
 
 // entries writes one table of resolved entries, or nothing for none rather than
@@ -334,12 +348,12 @@ func (o outcome) verdict() string {
 	}
 }
 
-// testsSummary renders every stream's JUnit report as Markdown: a row for each
+// resultsSummary renders every stream's JUnit report as Markdown: a row for each
 // stream of the plan, then a section for each. A stream missing from reports
 // wrote none.
-func testsSummary(streams []string, reports map[string]*reporters.JUnitTestSuites) string {
+func resultsSummary(streams []string, reports map[string]*reporters.JUnitTestSuites) string {
 	var b strings.Builder
-	b.WriteString("### Tests\n\n")
+	b.WriteString("### Test results\n\n")
 	if len(streams) == 0 {
 		b.WriteString("The plan names no streams.\n")
 		return b.String()

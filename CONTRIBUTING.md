@@ -168,9 +168,9 @@ Apply one change-category label:
 
 A Qualify e2e run, started by one of the `qualify-e2e` labels described in
 [Running one](docs/qualification/overview.md#running-one), shows its test
-results on the run page in a `tests` card below the `plan` card. The card has
+results on the run page in a `results` card below the `plan` card. The card has
 one row per stream and lists each stream's specs, with the failure messages,
-read from that stream's JUnit report. A dry run has no `tests` card.
+read from that stream's JUnit report. A dry run has no `results` card.
 
 ### Seasoned developers
 
