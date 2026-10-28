@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# AICR requires a registry at the root of every --data directory. This one
+# adds no components: the overlays here only select embedded ones.
+apiVersion: aicr.run/v1beta1
+kind: ComponentRegistry
+components: []
