@@ -1,0 +1,286 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Values for the nktp chart: the telemetry pipeline with its bundled
+# Operator, monitoring CRDs, node-exporter, kube-state-metrics and
+# metrics-server.
+#
+# nktp installs first. It brings the monitoring CRDs, and the temporal, spire
+# and controller releases each create a monitor that needs them.
+#
+# The exporters stay pointed at the bundled development backend. It keeps
+# data in memory and has no authentication. A site with its own backend sets
+# the backend keys through the generated overlay. "Set a backend" in
+# docs/nktp/getting-started.md lists them.
+#
+# Helm merges maps key by key but replaces lists whole. Every list below is
+# complete. The env lists restate the chart's entries beside ours. Recheck
+# them whenever the chart changes.
+
+# Nothing else on a management cluster serves metrics.k8s.io, and the
+# Collector autoscalers read it.
+metrics-server:
+  enabled: true
+
+# node_exporter's cpufreq collector hangs on arm64 nodes that use the
+# cppc_cpufreq driver. A read of cpuinfo_avg_freq never returns, so scrapes
+# time out (prometheus/node_exporter#3791). The fix, prometheus/procfs#879, is
+# in no release yet. Remove this once the chart's node_exporter has it.
+# Nothing in nktp reads the node_cpu_frequency_* or node_cpu_scaling_* series.
+node-exporter:
+  extraArgs:
+    - --no-collector.cpufreq
+
+opentelemetry-kube-stack:
+  # NVKE binds the scheduler and the controller manager to 127.0.0.1
+  # (defaultControlPlaneBindAddress in controller/internal/kubeadmconfig), so
+  # their monitors would target an address nothing listens on. An OVN cluster
+  # runs no kube-proxy. The API server, etcd and CoreDNS monitors work as the
+  # chart ships them.
+  kubeScheduler:
+    enabled: false
+  kubeControllerManager:
+    enabled: false
+  kubeProxy:
+    enabled: false
+  opentelemetry-operator:
+    # The Operator creates a NetworkPolicy owned by its own Deployment, with
+    # blockOwnerDeletion set. NVKE's API server runs the
+    # OwnerReferencesPermissionEnforcement admission plugin, which allows that
+    # only with update on the owner's finalizers. The Operator chart does not
+    # grant it, so the create fails and the Operator exits. The Operator chart
+    # renders these objects, so its helpers name the Deployment, the namespace
+    # and the ServiceAccount.
+    extraObjects:
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: Role
+        metadata:
+          name: '{{ include "opentelemetry-operator.fullname" . }}-deployment-finalizers'
+          namespace: '{{ include "opentelemetry-operator.namespace" . }}'
+        rules:
+          - apiGroups: [apps]
+            resources: [deployments/finalizers]
+            resourceNames: ['{{ include "opentelemetry-operator.fullname" . }}']
+            verbs: [update]
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        metadata:
+          name: '{{ include "opentelemetry-operator.fullname" . }}-deployment-finalizers'
+          namespace: '{{ include "opentelemetry-operator.namespace" . }}'
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: Role
+          name: '{{ include "opentelemetry-operator.fullname" . }}-deployment-finalizers'
+        subjects:
+          - kind: ServiceAccount
+            name: '{{ include "opentelemetry-operator.serviceAccountName" . }}'
+            namespace: '{{ include "opentelemetry-operator.namespace" . }}'
+
+# ---------------------------------------------------------------------------
+# Sizing. One replica of everything, autoscaling up from one, and requests a
+# small management cluster can hold.
+
+# The four Collectors that export to the backend, and the watchdog's sidecar,
+# label what they send with the site's name. The chart's transform/cluster
+# processor reads it from K8S_CLUSTER_NAME. The chart sets that from
+# global.clusterName only when the env list omits it. The name comes from the
+# nktp-cluster ConfigMap instead, which manifests/nktp-cluster.yaml.tmpl
+# renders from the site spec. The anchor below is defined once and reused.
+watchdog:
+  kubernetes:
+    autoscaler:
+      minReplicas: 1
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    targetAllocator:
+      resources:
+        requests: {cpu: 100m, memory: 256Mi}
+        limits: {cpu: "1", memory: 1Gi}
+    env:
+      - {name: GOMEMLIMIT, value: 448MiB}
+      - {name: GOGC, value: "50"}
+      - &cluster-name-env
+        name: K8S_CLUSTER_NAME
+        valueFrom:
+          configMapKeyRef: {name: nktp-cluster, key: name}
+  # The sidecar exports the watchdog's own telemetry straight to the backend,
+  # so it needs the name too.
+  sidecar:
+    kubernetes:
+      env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef: {fieldPath: metadata.name}
+        - {name: GOMEMLIMIT, value: 192MiB}
+        - *cluster-name-env
+
+gateway_logs:
+  kubernetes:
+    autoscaler:
+      minReplicas: 1
+    resources:
+      requests: {cpu: 200m, memory: 512Mi}
+      limits: {cpu: "1", memory: 1Gi}
+    env:
+      - {name: GOMEMLIMIT, value: 384MiB}
+      - {name: GOGC, value: "50"}
+      - *cluster-name-env
+  otelcol:
+    config:
+      exporters:
+        otlp:
+          sending_queue:
+            queue_size: 128849018 # 12% of the 1Gi container limit, in serialized bytes.
+
+gateway_metrics:
+  kubernetes:
+    autoscaler:
+      minReplicas: 1
+    resources:
+      requests: {cpu: 200m, memory: 512Mi}
+      limits: {cpu: "1", memory: 1Gi}
+    env:
+      - {name: GOMEMLIMIT, value: 384MiB}
+      - {name: GOGC, value: "50"}
+      - *cluster-name-env
+  otelcol:
+    config:
+      exporters:
+        otlp:
+          sending_queue:
+            queue_size: 128849018 # 12% of the 1Gi container limit, in serialized bytes.
+
+gateway_traces:
+  kubernetes:
+    autoscaler:
+      minReplicas: 1
+    resources:
+      requests: {cpu: 200m, memory: 512Mi}
+      limits: {cpu: "1", memory: 1Gi}
+    env:
+      - {name: GOMEMLIMIT, value: 384MiB}
+      - {name: GOGC, value: "50"}
+      - *cluster-name-env
+  otelcol:
+    config:
+      exporters:
+        otlp:
+          sending_queue:
+            queue_size: 128849018 # 12% of the 1Gi container limit, in serialized bytes.
+
+cluster_events:
+  kubernetes:
+    # A second replica only stands by. It adds no watch throughput.
+    replicas: 1
+    resources:
+      requests: {cpu: 200m, memory: 512Mi}
+      limits: {cpu: "1", memory: 1Gi}
+
+large_target_metrics:
+  kubernetes:
+    autoscaler:
+      minReplicas: 1
+    # Heap and limits for a small cluster's kube-state-metrics. Raise them
+    # with the object count.
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: "1", memory: 1Gi}
+    env:
+      - {name: GOMEMLIMIT, value: 512MiB}
+      - {name: GOGC, value: "50"}
+    targetAllocator:
+      resources:
+        requests: {cpu: 100m, memory: 256Mi}
+        limits: {cpu: "1", memory: 1Gi}
+  otelcol:
+    config:
+      exporters:
+        otlp:
+          sending_queue:
+            queue_size: 67108864 # 64MiB serialized.
+      receivers:
+        prometheus:
+          config:
+            global:
+              body_size_limit: 64MiB
+
+# One Deployment for every central object type rather than one per group.
+kube-state-metrics:
+  kubernetes:
+    resources:
+      requests: {cpu: 25m, memory: 64Mi}
+  deployments:
+    workloads: {enabled: false}
+    networking: {enabled: false}
+    storage: {enabled: false}
+    configuration: {enabled: false}
+    cluster: {enabled: false}
+    objects:
+      enabled: true
+      shards: 1
+      track_unscheduled_pods: false
+      kubernetes: {}
+      resource_types:
+        - deployments
+        - statefulsets
+        - daemonsets
+        - replicasets
+        - replicationcontrollers
+        - jobs
+        - cronjobs
+        - horizontalpodautoscalers
+        - poddisruptionbudgets
+        - services
+        - endpointslices
+        - ingresses
+        - networkpolicies
+        - persistentvolumes
+        - persistentvolumeclaims
+        - volumeattachments
+        - configmaps
+        - nodes
+        - namespaces
+        - storageclasses
+        - resourcequotas
+        - limitranges
+        - leases
+        - certificatesigningrequests
+        - mutatingwebhookconfigurations
+        - validatingadmissionpolicies
+        - validatingadmissionpolicybindings
+        - validatingwebhookconfigurations
+
+# ---------------------------------------------------------------------------
+# The node Collector.
+
+daemonset:
+  kubernetes:
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    env:
+      - {name: GOMEMLIMIT, value: 448MiB}
+      - {name: GOGC, value: "50"}
+      - name: NODE_NAME
+        valueFrom:
+          fieldRef: {fieldPath: spec.nodeName}
+      - name: POD_NAMESPACE
+        valueFrom:
+          fieldRef: {fieldPath: metadata.namespace}
+    targetAllocator:
+      resources:
+        requests: {cpu: 100m, memory: 256Mi}
+        limits: {cpu: "1", memory: 1Gi}
+  otelcol:
+    config:
+      exporters:
+        otlp/metrics:
+          sending_queue:
+            queue_size: 8388608 # 8MiB serialized.
+      receivers:
+        # NVKE's kubeadm configuration writes the API server's audit log here
+        # (defaultAuditLogPath in controller/internal/kubeadmconfig), not at
+        # the chart's /var/log/kubernetes/audit/audit.log.
+        filelog/kube-api-audit:
+          include: [/hostfs/var/log/kubernetes_audit/audit.log]

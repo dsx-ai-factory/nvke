@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What the seed changes about temporal. Layered over temporal/values.yaml.
+server:
+  # One node. Extra replicas only sit Pending.
+  replicaCount: 1
+web:
+  replicaCount: 1
