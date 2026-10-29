@@ -455,10 +455,12 @@ For release candidates, append `-rc.N` to the version: `v0.2.0-rc.1`, or
 
 A root release candidate can also be cut without anyone pushing it. When the
 Qualify e2e run a nightly beta tag started passes every stream at scope
-`golden-path` and stage `full`, `.github/workflows/nightly-beta-tag.yml` tags
-the beta's commit as the next `vX.Y.Z-rc.N` of the beta's version. It pushes
-only while the `NVKE_AUTO_RC` repository variable is `true`; otherwise the run
-summary says what it would have tagged.
+`golden-path` and stage `full`, `.github/workflows/rc-promotion.yml` tags
+the beta's commit as the next `vX.Y.Z-rc.N` of the beta's version. A dispatched
+or pull request run of Qualify e2e never promotes, and a re-run does not tag a
+beta that an RC already names. It pushes only while the `NVKE_AUTO_RC`
+repository variable is `true`; otherwise the run summary says what it would
+have tagged.
 
 Unlike an RC a person pushes with `git tag -s`, the automatic RC is an unsigned
 lightweight tag, as the nightly betas are: the workflow has no key to sign
