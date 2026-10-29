@@ -807,14 +807,17 @@ a broken site does not wait out every later check.
 
 Both lanes create the same `nico-forge` tenant and both entries carry that
 label, so pick between them with `site-controller`, which only the lane that
-builds a site carries. Measured against this tree with `-ginkgo.dry-run` and
+builds a site carries. At `full` the site lane also registers one tenant entry
+per dialect, so the filter has to exclude the ones belonging to other
+providers by name. Measured against this tree with `-ginkgo.dry-run` and
 `-e2e.site-stage=full`:
 
 | label filter | specs | which |
 |---|---|---|
 | `nico-forge && !site-controller` | 42 | the tenant, against the site controller in the kube context |
-| `site-controller` | 80 | the lane that builds a site, tenant included |
+| `site-controller && !nico-dsx` | 80 | the lane that builds a site, its own tenant included |
 | `nico-forge` | 84 | both |
+| `site-controller` | 122 | the site lane carrying every dialect's tenant, and so the foreign one that fails the run |
 
 `-e2e.site-stage`, not the label, is what decides whether a machine is
 provisioned: the site lane's tenant entries are built only when it is set, so
@@ -863,14 +866,14 @@ go test -timeout 5h . -args \
   -ginkgo.label-filter=site-controller -ginkgo.v \
   -e2e.config=e2e-config.yaml -e2e.environment=dsx -e2e.site-stage=provision \
   -e2e.capabilities=arch=amd64 \
-  -e2e.versions=controller=<…>,os-image=<arm64 url>,os-image-bootloader=<arm64 url>,…
+  -e2e.versions=controller=<…>,os-image=<amd64 url>,os-image-bootloader=<amd64 url>,…
 ``` Build the inputs, then run; with the `site-inputs` defaults
 no `site:` block is needed at all:
 
 ```bash
 gmake site-inputs SITE_NVKE_CONTROLLER_VERSION=$(git rev-parse --short=12 HEAD)
 go test -timeout 5h . -args \
-  -ginkgo.label-filter=site-controller -ginkgo.v \
+  -ginkgo.label-filter="site-controller && !nico-dsx" -ginkgo.v \
   -e2e.config=e2e-config.yaml -e2e.environment=forge -e2e.site-stage=full \
   -e2e.versions=controller=<the same value>,os-image-bootloader=<url>,os-image=<url>,capi-provisioned=<version>,kube=<version>,cni-ovn=<version>,kind=<version>,clusterctl=<version>,nerdctl=<version>
 ```
