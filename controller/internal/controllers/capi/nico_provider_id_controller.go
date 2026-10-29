@@ -164,9 +164,15 @@ func (c *NicoProviderIDController) Reconcile(ctx context.Context, req ctrl.Reque
 }
 
 // isNVKEManagedCluster reports whether NVKE created the CAPI Cluster, which it
-// marks with the managed-by label in either label domain.
+// marks with the managed-by label in either label domain. An empty configured
+// value matches nothing, so a misconfiguration cannot make an unlabeled Cluster
+// look NVKE-managed.
 func isNVKEManagedCluster(cluster *clusterv1.Cluster, managedByLabelValue string) bool {
-	return keys.ManagedBy.Value(cluster.Labels) == managedByLabelValue
+	if managedByLabelValue == "" {
+		return false
+	}
+	value, ok := keys.ManagedBy.Get(cluster.Labels)
+	return ok && value == managedByLabelValue
 }
 
 func reconcileNodeMetadata(node *corev1.Node, nicoMachine *nicov1.NicoMachine) bool {

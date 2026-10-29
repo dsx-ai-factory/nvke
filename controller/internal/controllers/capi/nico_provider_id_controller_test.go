@@ -396,6 +396,42 @@ func TestNicoProviderIDControllerReconcileChecksNVKEOwnershipOfCAPICluster(t *te
 	}
 }
 
+func TestIsNVKEManagedCluster(t *testing.T) {
+	tests := []struct {
+		name            string
+		clusterLabels   map[string]string
+		configuredValue string
+		want            bool
+	}{
+		{
+			name:            "matching label is managed",
+			clusterLabels:   map[string]string{keys.ManagedBy.String(): providerIDTestManagedByLabelValue},
+			configuredValue: providerIDTestManagedByLabelValue,
+			want:            true,
+		},
+		{
+			name:            "empty configured value does not match an unlabeled cluster",
+			clusterLabels:   nil,
+			configuredValue: "",
+			want:            false,
+		},
+		{
+			name:            "empty configured value does not match an empty label",
+			clusterLabels:   map[string]string{keys.ManagedBy.String(): ""},
+			configuredValue: "",
+			want:            false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cluster := newCAPIClusterForProviderIDTest()
+			cluster.Labels = tt.clusterLabels
+			require.Equal(t, tt.want, isNVKEManagedCluster(cluster, tt.configuredValue))
+		})
+	}
+}
+
 func TestNicoProviderIDControllerReconcileWaitsForTenantNode(t *testing.T) {
 	controller, _ := newNicoProviderIDControllerForTest(
 		t,
