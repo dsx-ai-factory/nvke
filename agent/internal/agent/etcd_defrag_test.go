@@ -860,6 +860,17 @@ func TestRunEtcdDefragRestartSequence(t *testing.T) {
 			"kube-apiserver must stay parked while its only etcd is down")
 		assert.False(t, staticPodManifestIsActive(t, s, defaultKubeVipManifestName),
 			"kube-vip must stay parked rather than advertise a node that cannot answer")
+
+		// Staying parked is only half of it. The manifests have to end up in
+		// the shared directory, because that is what stops the startup
+		// reconciler putting them back and undoing this on the next restart.
+		assert.True(t, manifestIsParkedIn(t, s, defaultStaticPodBackupDir, defaultKubeAPIServerManifestName),
+			"kube-apiserver must be handed to the caller, not left where a restart would restore it")
+		assert.True(t, manifestIsParkedIn(t, s, defaultStaticPodBackupDir, defaultKubeVipManifestName),
+			"kube-vip must be handed to the caller, not left where a restart would restore it")
+		require.NoError(t, s.ReconcileInterruptedStaticPodParks(context.Background()))
+		assert.False(t, staticPodManifestIsActive(t, s, defaultKubeVipManifestName),
+			"and a restart must not return a node whose etcd still cannot answer")
 	})
 }
 
@@ -1032,6 +1043,53 @@ func TestRunEtcdDefragPutsEveryManifestBackWhenCrictlFails(t *testing.T) {
 	result := decodeDefragResult(t, progress)
 	assert.Equal(t, int32(pb.GetEtcdDefragStatusResponse_OUTCOME_FAILED_NOT_RESTORED), result.Outcome)
 	assertNodeInService(t, s)
+}
+
+// The other way into leaving this node out of service: something failed after
+// the withdrawal, the rollback went to put the node back, and the health wait
+// it gates on found etcd unwell too. That is the same decision as the success
+// path's unhealthy branch and has to stick the same way, so it is pinned
+// separately - the two branches are several hundred lines apart and only one of
+// them is on the path a reviewer reads first.
+func TestRunEtcdDefragHandsOffWhenTheRollbackFindsEtcdUnhealthy(t *testing.T) {
+	const mib = int64(1024 * 1024)
+	client := &fakeEtcdMemberClient{
+		members:  testEtcdMembersThree(),
+		localID:  2,
+		leaderID: 1,
+		statusFn: func(_ context.Context, call int) (*clientv3.StatusResponse, error) {
+			// Preflight and the leadership check succeed; the rollback's health
+			// wait does not.
+			if call >= 3 {
+				return nil, errors.New("connection refused")
+			}
+			return &clientv3.StatusResponse{
+				Header:      &etcdserverpb.ResponseHeader{MemberId: 2},
+				Leader:      1,
+				DbSize:      500 * mib,
+				DbSizeInUse: 100 * mib,
+			}, nil
+		},
+	}
+	s, node := etcdRestartTestServer(t, client)
+	// Fails the etcd container restart, which is what sends this into the
+	// rollback rather than on to the success path.
+	node.crictlFailsOnceWithdrawn = true
+	progress := &fakeOperationProgress{}
+
+	err := s.runEtcdDefrag(context.Background(), progress)
+
+	require.Error(t, err)
+	result := decodeDefragResult(t, progress)
+	assert.Equal(t, int32(pb.GetEtcdDefragStatusResponse_OUTCOME_FAILED_NOT_RESTORED), result.Outcome)
+	assert.Contains(t, result.ErrorMessage, "not healthy")
+	assert.True(t, manifestIsParkedIn(t, s, defaultStaticPodBackupDir, defaultKubeAPIServerManifestName),
+		"kube-apiserver must be handed to the caller from the rollback path too")
+	assert.True(t, manifestIsParkedIn(t, s, defaultStaticPodBackupDir, defaultKubeVipManifestName),
+		"kube-vip must be handed to the caller from the rollback path too")
+	require.NoError(t, s.ReconcileInterruptedStaticPodParks(context.Background()))
+	assert.False(t, staticPodManifestIsActive(t, s, defaultKubeVipManifestName),
+		"and a restart must not return a node whose etcd still cannot answer")
 }
 
 // The regression this exists for: clientv3 waits for the connection to become

@@ -234,13 +234,13 @@ func (s *NodeAgentServer) runEtcdDefrag(
 	// a node whose kube-vip is not a static pod nothing is left to resolve from.
 	// It is kept even when the withdrawal fails, because the failure may have
 	// come after the address was already removed.
-	withdrawn, err := s.withdrawKubeVipLocked(ctx, runner, progress)
+	withdrawn, err := s.withdrawKubeVipLocked(ctx, runner, progress, defaultEtcdDefragParkDir)
 	if err != nil {
 		return s.returnEtcdDefragNodeToServiceAfterFailure(ctx, runner, progress, client, sizeBefore, withdrawn,
 			fmt.Sprintf("withdraw this node from the control-plane VIP: %v", err))
 	}
 
-	if err := s.stopKubeAPIServerLocked(ctx, runner, progress); err != nil {
+	if err := s.stopKubeAPIServerLocked(ctx, runner, progress, defaultEtcdDefragParkDir); err != nil {
 		return s.returnEtcdDefragNodeToServiceAfterFailure(ctx, runner, progress, client, sizeBefore, withdrawn,
 			fmt.Sprintf("stop kube-apiserver: %v", err))
 	}
@@ -274,12 +274,19 @@ func (s *NodeAgentServer) runEtcdDefrag(
 		// without its local etcd and kube-vip would advertise a node that
 		// cannot answer, so returning either one here would route traffic to a
 		// broken member instead of leaving the other two to carry the cluster.
-		// The operation ends terminally failed, which is also what keeps the
-		// startup reconciler from undoing this decision on the next restart.
+		//
+		// Handing the manifests to the shared park directory is what makes that
+		// decision stick: the startup reconciler restores whatever is still in
+		// the defragmentation park directory, so leaving them there would
+		// undo this on the next restart.
 		message := fmt.Sprintf(
 			"etcd did not return healthy after restart: %v; this node is left out of service with %s and %s parked in %s",
 			err, defaultKubeAPIServerManifestName, defaultKubeVipManifestName, defaultStaticPodBackupDir,
 		)
+		if handOffErr := s.handOffParkedManifestsToCaller(); handOffErr != nil {
+			message += fmt.Sprintf("; handing those manifests to %s failed (%v), so a restart may return this node to service with etcd still unhealthy",
+				defaultStaticPodBackupDir, handOffErr)
+		}
 		return s.recordEtcdDefragFailure(progress, message, sizeBefore)
 	}
 
@@ -351,11 +358,19 @@ func (s *NodeAgentServer) returnEtcdDefragNodeToServiceAfterFailure(
 
 	progress.SetStep(stepEtcdDefragWaitingHealthy)
 	if _, err := s.waitForLocalEtcdHealthy(ctx, client); err != nil {
-		return s.recordEtcdDefragFailure(progress, fmt.Sprintf(
+		// Same decision as the success path's unhealthy branch, and it has to
+		// be made to stick the same way: hand the manifests over so the startup
+		// reconciler does not return a node whose etcd cannot answer.
+		message := fmt.Sprintf(
 			"%s; etcd is also not healthy: %v; this node is left out of service with %s and %s parked in %s",
 			failureMessage, err, defaultKubeAPIServerManifestName, defaultKubeVipManifestName,
 			defaultStaticPodBackupDir,
-		), sizeBefore)
+		)
+		if handOffErr := s.handOffParkedManifestsToCaller(); handOffErr != nil {
+			message += fmt.Sprintf("; handing those manifests to %s failed (%v), so a restart may return this node to service with etcd still unhealthy",
+				defaultStaticPodBackupDir, handOffErr)
+		}
+		return s.recordEtcdDefragFailure(progress, message, sizeBefore)
 	}
 
 	progress.SetStep(stepEtcdDefragReturningToService)
@@ -388,10 +403,10 @@ func (s *NodeAgentServer) returnEtcdDefragNodeToService(
 	withdrawn kubeVipWithdrawal,
 ) error {
 	var restoreErrs []error
-	if err := s.restoreKubeAPIServerLocked(ctx, runner, progress); err != nil {
+	if err := s.restoreKubeAPIServerLocked(ctx, runner, progress, defaultEtcdDefragParkDir); err != nil {
 		restoreErrs = append(restoreErrs, fmt.Errorf("restoring kube-apiserver failed: %w", err))
 	}
-	if err := s.restoreKubeVipLocked(ctx, runner, progress, withdrawn); err != nil {
+	if err := s.restoreKubeVipLocked(ctx, runner, progress, defaultEtcdDefragParkDir, withdrawn); err != nil {
 		restoreErrs = append(restoreErrs, fmt.Errorf("rejoining the control-plane VIP failed: %w", err))
 	}
 	return errors.Join(restoreErrs...)

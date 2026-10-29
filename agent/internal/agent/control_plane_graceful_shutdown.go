@@ -30,7 +30,27 @@ import (
 const (
 	defaultStaticPodManifestDir = "/etc/kubernetes/manifests"
 	defaultStaticPodBackupDir   = "/etc/kubernetes/manifests-backup"
-	defaultKubeVipManifestName  = "kube-vip.yaml"
+
+	// defaultEtcdDefragParkDir is where the etcd defragmentation sequence parks
+	// the manifests it owes a restore for, kept apart from the manifests parked
+	// by a graceful shutdown.
+	//
+	// The directory is the whole discriminator. A manifest here means some
+	// defragmentation moved it aside and has not put it back, which is a debt
+	// nothing but this agent will settle; a manifest in the parent directory
+	// means a caller deliberately took this node out of service and owns the
+	// restore itself. Separating them by path is what lets the startup
+	// reconciler act on sight, with no operation record to consult and no
+	// ordering to get wrong - and it is why it cannot re-advertise the VIP on a
+	// node somebody is recycling.
+	//
+	// A subdirectory rather than a suffix on the filename: the snapshot pruner
+	// globs "<manifest>.*" in the parent, so a sibling named
+	// "kube-apiserver.yaml.etcd-defrag" would match it and be deleted as an old
+	// snapshot, destroying the only copy of a control-plane manifest.
+	defaultEtcdDefragParkDir = defaultStaticPodBackupDir + "/etcd-defrag"
+
+	defaultKubeVipManifestName = "kube-vip.yaml"
 	// loopbackInterface is the device kube-vip binds the VIP to in ARP mode.
 	loopbackInterface                = "lo"
 	defaultKubeAPIServerManifestName = "kube-apiserver.yaml"
@@ -176,12 +196,12 @@ func (s *NodeAgentServer) runK8sControlPlaneNodeGracefulShutdown(
 	// The address is discarded because this RPC does not restore: the node is
 	// meant to stay out of service until a caller asks for it back, and that
 	// restore re-resolves from the manifest this parked.
-	if _, err := s.withdrawKubeVipLocked(ctx, runner, progress); err != nil {
+	if _, err := s.withdrawKubeVipLocked(ctx, runner, progress, defaultStaticPodBackupDir); err != nil {
 		return err
 	}
 
 	if shouldStopKubeAPIServer {
-		return s.stopKubeAPIServerLocked(ctx, runner, progress)
+		return s.stopKubeAPIServerLocked(ctx, runner, progress, defaultStaticPodBackupDir)
 	}
 	return nil
 }
@@ -208,9 +228,10 @@ func (s *NodeAgentServer) withdrawKubeVipLocked(
 	ctx context.Context,
 	runner nvkeutils.CommandRunner,
 	progress nodeAgentOperationProgress,
+	parkDir string,
 ) (kubeVipWithdrawal, error) {
 	progress.SetStep(stepResolvingKubeVip)
-	vip, fromManifest, err := s.resolveKubeVipAddressFromManifest()
+	vip, fromManifest, err := s.resolveKubeVipAddressFromManifest(parkDir)
 	if err != nil {
 		return kubeVipWithdrawal{}, fmt.Errorf("resolve kube-vip address: %w", err)
 	}
@@ -226,7 +247,7 @@ func (s *NodeAgentServer) withdrawKubeVipLocked(
 		}
 	}
 	withdrawal := kubeVipWithdrawal{vip: vip, manifestParked: fromManifest}
-	return withdrawal, s.withdrawKubeVip(ctx, runner, progress, vip)
+	return withdrawal, s.withdrawKubeVip(ctx, runner, progress, parkDir, vip)
 }
 
 // kubeVipWithdrawal records what a withdrawal did, so the restore puts back that
@@ -255,11 +276,13 @@ func (s *NodeAgentServer) withdrawKubeVip(
 	ctx context.Context,
 	runner nvkeutils.CommandRunner,
 	progress nodeAgentOperationProgress,
+	parkDir string,
 	vip string,
 ) error {
 	if err := s.stopStaticPod(ctx, runner, progress, staticPodStopSpec{
 		containerName: kubeVipContainerName,
 		manifestName:  defaultKubeVipManifestName,
+		parkDir:       parkDir,
 		stoppingStep:  stepStoppingKubeVip,
 		waitingStep:   stepWaitingKubeVipExit,
 		timeout:       s.staticPodExitTimeoutOrDefault(),
@@ -320,7 +343,7 @@ func (s *NodeAgentServer) runKubeVipRestore(
 	}
 	// No withdrawal happened in this call, so the address is re-resolved from
 	// the manifest the graceful shutdown parked.
-	return s.restoreKubeVipLocked(ctx, runner, progress, kubeVipWithdrawal{})
+	return s.restoreKubeVipLocked(ctx, runner, progress, defaultStaticPodBackupDir, kubeVipWithdrawal{})
 }
 
 // restoreKubeVipLocked is runKubeVipRestore without the lock, for callers that
@@ -345,13 +368,14 @@ func (s *NodeAgentServer) restoreKubeVipLocked(
 	ctx context.Context,
 	runner nvkeutils.CommandRunner,
 	progress nodeAgentOperationProgress,
+	parkDir string,
 	withdrawn kubeVipWithdrawal,
 ) error {
 	vip := withdrawn.vip
 	restoreManifest := withdrawn.manifestParked
 	if vip == "" {
 		progress.SetStep(stepResolvingKubeVip)
-		resolved, err := s.resolveKubeVipAddress(runner)
+		resolved, err := s.resolveKubeVipAddress(runner, parkDir)
 		switch {
 		case err == nil:
 			vip = resolved
@@ -372,6 +396,7 @@ func (s *NodeAgentServer) restoreKubeVipLocked(
 		if err := s.restoreStaticPod(ctx, runner, progress, staticPodRestoreSpec{
 			containerName: kubeVipContainerName,
 			manifestName:  defaultKubeVipManifestName,
+			parkDir:       parkDir,
 			restoringStep: stepRestoringKubeVip,
 			waitingStep:   stepWaitingKubeVipStart,
 			timeout:       s.staticPodStartTimeoutOrDefault(),
@@ -410,10 +435,12 @@ func (s *NodeAgentServer) stopKubeAPIServerLocked(
 	ctx context.Context,
 	runner nvkeutils.CommandRunner,
 	progress nodeAgentOperationProgress,
+	parkDir string,
 ) error {
 	return s.stopStaticPod(ctx, runner, progress, staticPodStopSpec{
 		containerName: kubeAPIServerContainerName,
 		manifestName:  defaultKubeAPIServerManifestName,
+		parkDir:       parkDir,
 		stoppingStep:  stepStoppingKubeAPIServer,
 		waitingStep:   stepWaitingKubeAPIServerExit,
 		timeout:       s.staticPodExitTimeoutOrDefault(),
@@ -430,10 +457,12 @@ func (s *NodeAgentServer) restoreKubeAPIServerLocked(
 	ctx context.Context,
 	runner nvkeutils.CommandRunner,
 	progress nodeAgentOperationProgress,
+	parkDir string,
 ) error {
 	return s.restoreStaticPod(ctx, runner, progress, staticPodRestoreSpec{
 		containerName: kubeAPIServerContainerName,
 		manifestName:  defaultKubeAPIServerManifestName,
+		parkDir:       parkDir,
 		restoringStep: stepRestoringKubeAPIServer,
 		waitingStep:   stepWaitingKubeAPIServerStart,
 		timeout:       s.staticPodStartTimeoutOrDefault(),
@@ -442,8 +471,8 @@ func (s *NodeAgentServer) restoreKubeAPIServerLocked(
 
 var errNoKubeVipAddress = errors.New("no kube-vip address found")
 
-func (s *NodeAgentServer) resolveKubeVipAddress(runner nvkeutils.CommandRunner) (string, error) {
-	vip, found, err := s.resolveKubeVipAddressFromManifest()
+func (s *NodeAgentServer) resolveKubeVipAddress(runner nvkeutils.CommandRunner, parkDir string) (string, error) {
+	vip, found, err := s.resolveKubeVipAddressFromManifest(parkDir)
 	if err != nil {
 		return "", err
 	}
@@ -453,8 +482,8 @@ func (s *NodeAgentServer) resolveKubeVipAddress(runner nvkeutils.CommandRunner) 
 	return resolveKubeVipAddressFromLoopback(runner)
 }
 
-func (s *NodeAgentServer) resolveKubeVipAddressFromManifest() (string, bool, error) {
-	for _, path := range []string{s.kubeVipManifestPath(), s.kubeVipParkedManifestPath()} {
+func (s *NodeAgentServer) resolveKubeVipAddressFromManifest(parkDir string) (string, bool, error) {
+	for _, path := range []string{s.kubeVipManifestPath(), s.kubeVipParkedManifestPath(parkDir)} {
 		vip, err := parseKubeVipManifestAddress(path)
 		if err == nil {
 			slog.Info("resolved kube-vip address from static manifest", "path", path, "vip", vip)
@@ -562,14 +591,20 @@ func parseLoopbackIPv4VIPs(output string) ([]string, error) {
 type staticPodStopSpec struct {
 	containerName string
 	manifestName  string
-	stoppingStep  string
-	waitingStep   string
-	timeout       time.Duration
+	// parkDir is where the manifest is moved to, and so which family of park
+	// this is. See defaultEtcdDefragParkDir.
+	parkDir      string
+	stoppingStep string
+	waitingStep  string
+	timeout      time.Duration
 }
 
 type staticPodRestoreSpec struct {
 	containerName string
 	manifestName  string
+	// parkDir must match the one the stop used, or the restore looks for the
+	// manifest where nothing parked it.
+	parkDir       string
 	restoringStep string
 	waitingStep   string
 	timeout       time.Duration
@@ -586,7 +621,7 @@ func (s *NodeAgentServer) stopStaticPod(
 	if err != nil {
 		return fmt.Errorf("list %s containers: %w", spec.containerName, err)
 	}
-	if err := s.moveStaticPodManifest(spec.manifestName); err != nil {
+	if err := s.moveStaticPodManifest(spec.parkDir, spec.manifestName); err != nil {
 		return fmt.Errorf("move %s manifest: %w", spec.containerName, err)
 	}
 	progress.SetStep(spec.waitingStep)
@@ -618,7 +653,7 @@ func (s *NodeAgentServer) restoreStaticPod(
 	} else {
 		baseline.containerIDs = containerIDs
 	}
-	manifestRestored, err := s.restoreStaticPodManifest(spec.manifestName)
+	manifestRestored, err := s.restoreStaticPodManifest(spec.parkDir, spec.manifestName)
 	if err != nil {
 		return fmt.Errorf("restore %s manifest: %w", spec.containerName, err)
 	}
@@ -700,9 +735,57 @@ func (s *NodeAgentServer) restartStaticPodContainer(
 	return nil
 }
 
-func (s *NodeAgentServer) moveStaticPodManifest(manifestName string) error {
+// handOffParkedManifestsToCaller moves everything the etcd defragmentation
+// parked out of its own park directory and into the shared one, which is how
+// the sequence stops owing a restore.
+//
+// It is for the one branch that leaves this node out of service on purpose:
+// etcd did not come back healthy, and putting kube-apiserver or kube-vip back
+// would route traffic to a member that cannot answer. The parent directory
+// already means "parked, and a caller owns the restore" - it is where a
+// graceful shutdown leaves a node held for recycling - so moving them there
+// says exactly that, and leaves StartKubeVipRestore able to undo it once an
+// operator has dealt with the member.
+//
+// Without this the startup reconciler would find them still sitting in the
+// defragmentation park directory and put them straight back, overruling the
+// decision on the next restart.
+func (s *NodeAgentServer) handOffParkedManifestsToCaller() error {
+	var moved []string
+	var errs []error
+	for _, manifestName := range []string{defaultKubeAPIServerManifestName, defaultKubeVipManifestName} {
+		src := s.rootedPath(filepath.Join(defaultEtcdDefragParkDir, manifestName))
+		dst := s.rootedPath(filepath.Join(defaultStaticPodBackupDir, manifestName))
+		if _, err := os.Stat(src); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			errs = append(errs, fmt.Errorf("stat %s: %w", src, err))
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(dst), staticPodBackupDirMode); err != nil {
+			errs = append(errs, fmt.Errorf("create %s: %w", filepath.Dir(dst), err))
+			continue
+		}
+		if err := os.Rename(src, dst); err != nil {
+			errs = append(errs, fmt.Errorf("move %s to %s: %w", src, dst, err))
+			continue
+		}
+		moved = append(moved, manifestName)
+	}
+	if len(moved) > 0 {
+		slog.Warn("handed parked static pod manifests to the caller; this node stays out of service until they are restored",
+			"manifests", moved, "dir", defaultStaticPodBackupDir)
+	}
+	return errors.Join(errs...)
+}
+
+// moveStaticPodManifest parks a manifest in parkDir, which is what makes
+// kubelet tear the pod down. parkDir decides who owes the restore: see
+// defaultEtcdDefragParkDir.
+func (s *NodeAgentServer) moveStaticPodManifest(parkDir, manifestName string) error {
 	src := s.rootedPath(filepath.Join(defaultStaticPodManifestDir, manifestName))
-	dst := s.rootedPath(filepath.Join(defaultStaticPodBackupDir, manifestName))
+	dst := s.rootedPath(filepath.Join(parkDir, manifestName))
 	if _, err := os.Stat(src); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			slog.Info("static pod manifest not present; assuming already moved", "path", src, "manifest", manifestName)
@@ -717,8 +800,8 @@ func (s *NodeAgentServer) moveStaticPodManifest(manifestName string) error {
 	return os.Rename(src, dst)
 }
 
-func (s *NodeAgentServer) restoreStaticPodManifest(manifestName string) (bool, error) {
-	src := s.rootedPath(filepath.Join(defaultStaticPodBackupDir, manifestName))
+func (s *NodeAgentServer) restoreStaticPodManifest(parkDir, manifestName string) (bool, error) {
+	src := s.rootedPath(filepath.Join(parkDir, manifestName))
 	dst := s.rootedPath(filepath.Join(defaultStaticPodManifestDir, manifestName))
 	if _, err := os.Stat(dst); err == nil {
 		if err := verifyRestoredStaticPodManifest(src, dst, manifestName); err != nil {
@@ -776,8 +859,8 @@ func (s *NodeAgentServer) kubeVipManifestPath() string {
 	return s.rootedPath(filepath.Join(defaultStaticPodManifestDir, defaultKubeVipManifestName))
 }
 
-func (s *NodeAgentServer) kubeVipParkedManifestPath() string {
-	return s.rootedPath(filepath.Join(defaultStaticPodBackupDir, defaultKubeVipManifestName))
+func (s *NodeAgentServer) kubeVipParkedManifestPath(parkDir string) string {
+	return s.rootedPath(filepath.Join(parkDir, defaultKubeVipManifestName))
 }
 
 func (s *NodeAgentServer) rootedPath(path string) string {

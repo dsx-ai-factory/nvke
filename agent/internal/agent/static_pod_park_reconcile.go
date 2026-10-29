@@ -28,14 +28,12 @@ func (p loggingOperationProgress) SetStep(step string) {
 
 func (p loggingOperationProgress) SetResult(string) {}
 
-// staticPodParkingOperationTypes are the operation types that park a
-// static-pod manifest and owe its restore within the same call, so an
-// interrupted one leaves a debt nothing else will settle.
+// staticPodParkingOperationTypes are the operation types that park a static-pod
+// manifest and owe its restore within the same call, so an interrupted one
+// leaves a record claiming to be running that never will be again.
 //
-// Only etcd defragmentation qualifies. The graceful-shutdown family is excluded
-// by design, not by omission: its park is the point of the operation and its
-// restore is a separate RPC the caller owns, so an interrupted one is still a
-// node someone means to have out of service.
+// This drives only the settling of those records, not the restores. Which
+// manifests to put back is answered by defaultEtcdDefragParkDir, not from here.
 var staticPodParkingOperationTypes = map[string]bool{
 	operationTypeEtcdDefrag: true,
 }
@@ -68,12 +66,14 @@ type staticPodParkRestore struct {
 // the same thing it does on an ordinary reboot.
 func (s *NodeAgentServer) staticPodParkRestores() []staticPodParkRestore {
 	return []staticPodParkRestore{
-		{defaultKubeAPIServerManifestName, s.restoreKubeAPIServerLocked},
+		{defaultKubeAPIServerManifestName, func(ctx context.Context, runner nvkeutils.CommandRunner, progress nodeAgentOperationProgress) error {
+			return s.restoreKubeAPIServerLocked(ctx, runner, progress, defaultEtcdDefragParkDir)
+		}},
 		{defaultKubeVipManifestName, func(ctx context.Context, runner nvkeutils.CommandRunner, progress nodeAgentOperationProgress) error {
 			// No address to hand over: the withdrawal happened in a process that
 			// is gone. Re-resolving works here because reaching this point means
 			// the manifest is parked, which is one of the sources.
-			return s.restoreKubeVipLocked(ctx, runner, progress, kubeVipWithdrawal{})
+			return s.restoreKubeVipLocked(ctx, runner, progress, defaultEtcdDefragParkDir, kubeVipWithdrawal{})
 		}},
 	}
 }
@@ -83,56 +83,58 @@ func (s *NodeAgentServer) staticPodParkRestores() []staticPodParkRestore {
 // half of the bundled etcd defragmentation sequence. Run it at startup, before
 // the agent serves RPCs.
 //
-// The durable record is the backup directory itself. A fixed-name manifest
-// there means the agent renamed it out of the manifest directory and has not
+// The durable record is defaultEtcdDefragParkDir itself. A manifest there means
+// a defragmentation renamed it out of the manifest directory and has not
 // renamed it back, and that survives the agent dying, systemd restarting it and
-// the node rebooting, so no separate state file is needed. Only the two
-// manifests the stop paths touch can ever appear: kube-apiserver and kube-vip.
-// Timestamped forensic snapshots live in the same directory but
-// cannot be confused with them, because snapshotStaticPodManifest requires a
-// prefix ending in a dot.
+// the node rebooting, so no separate state, marker or content hash is needed.
+// Only the two manifests the sequence parks can ever appear: kube-apiserver and
+// kube-vip.
 //
-// A parked manifest is not on its own evidence that a restore is owed, which is
-// the trap this function exists to avoid. The graceful-shutdown RPC parks
-// kube-vip, and optionally kube-apiserver, deliberately, and expects them to
-// stay parked until a caller explicitly restores them - that is how a node is
-// taken out of service for recycling. Restoring on sight would re-advertise the
-// VIP on a node someone is deliberately taking out of service.
+// The directory is also the whole of the discrimination. A graceful shutdown
+// parks into the parent directory instead, deliberately, and expects its
+// manifests to stay parked until a caller asks for them back - that is how a
+// node is held out of service for recycling. Restoring one of those on sight
+// would re-advertise the VIP underneath whoever is recycling the node, and this
+// cannot do that because it never looks there. Timestamped forensic snapshots
+// live in the parent too and are equally out of reach.
 //
-// So the discriminator is the operation record, not the file. An operation left
-// non-terminal with no active in-process worker was interrupted mid-flight,
-// which is exactly the condition inactiveNodeAgentOperationError already names,
-// and only those operations are owed a restore here. A graceful shutdown that
-// reached a terminal phase is a completed, intentional park and is left alone.
+// Keying on the path rather than on an operation record is what makes this
+// safe to repeat. Everything below is idempotent and derived from what is on
+// disk right now, so an agent that dies partway through recovery simply finds
+// the remaining manifests still parked and finishes the job next time. An
+// earlier version keyed on the record and settled it first, which meant a crash
+// in that window left a terminal record, nothing to act on, and two manifests
+// stranded for good.
+//
+// Settling those records is still worth doing, so a caller polling
+// GetEtcdDefragStatus is told the attempt died rather than seeing it run
+// forever, but it is now a separate concern with no ordering against the
+// restores and no ability to suppress them.
 func (s *NodeAgentServer) ReconcileInterruptedStaticPodParks(ctx context.Context) error {
-	interrupted := s.interruptedStaticPodParkingOperations()
-	if len(interrupted) == 0 {
-		return nil
-	}
-
-	// Settle the records before touching anything, and whether or not there is
-	// anything parked. A record left non-terminal is a standing instruction to
-	// restore, so leaving it would make every later startup act on it again -
-	// and by then the parked kube-vip manifest it finds could be one a
-	// deliberate graceful shutdown put there, which is precisely what keying on
-	// the operation rather than the file is meant to prevent.
-	if err := s.failInterruptedStaticPodParkingOperations(ctx, interrupted); err != nil {
-		return err
-	}
-
 	parked, err := s.parkedStaticPodManifests()
 	if err != nil {
 		return err
 	}
-	if len(parked) == 0 {
-		slog.InfoContext(ctx, "found interrupted static-pod operations but no parked manifests; nothing to restore",
-			"operationIDs", interrupted)
-		return nil
+
+	var failures []error
+	if len(parked) > 0 {
+		slog.WarnContext(ctx, "restoring static-pod manifests parked by an interrupted etcd defragmentation",
+			"dir", defaultEtcdDefragParkDir, "manifests", parked)
+		failures = append(failures, s.restoreParkedStaticPodManifests(ctx, parked))
 	}
 
-	slog.WarnContext(ctx, "restoring static-pod manifests parked by an interrupted operation",
-		"operationIDs", interrupted, "manifests", parked)
+	// After the restores, and not gating them. A record cannot be settled on a
+	// node whose Persister is failing, and that must not be a reason to leave
+	// the control plane parked.
+	if interrupted := s.interruptedStaticPodParkingOperations(); len(interrupted) > 0 {
+		failures = append(failures, s.failInterruptedStaticPodParkingOperations(ctx, interrupted))
+	}
+	return errors.Join(failures...)
+}
 
+// restoreParkedStaticPodManifests puts back the given parked manifests in
+// dependency order.
+func (s *NodeAgentServer) restoreParkedStaticPodManifests(ctx context.Context, parked map[string]bool) error {
 	// Held for the same reason the operations hold it: these are static-pod
 	// mutations. Nothing can race this today because it runs before the gRPC
 	// server accepts a connection, and taking the lock is what keeps that true
@@ -155,7 +157,8 @@ func (s *NodeAgentServer) ReconcileInterruptedStaticPodParks(ctx context.Context
 			// Carry on to the remaining manifests rather than returning. They
 			// are independent pods, and leaving kube-vip parked because
 			// kube-apiserver was slow to come back would compound one problem
-			// into two.
+			// into two. Whatever fails here stays parked, so the next startup
+			// tries it again.
 			failures = append(failures, fmt.Errorf("restore %s: %w", candidate.manifestName, err))
 			continue
 		}
@@ -186,14 +189,16 @@ func (s *NodeAgentServer) interruptedStaticPodParkingOperations() []string {
 }
 
 // failInterruptedStaticPodParkingOperations moves the given records to a
-// terminal failed phase and persists them, so no later startup treats them as
-// a restore still owed.
+// terminal failed phase and persists them, so a caller polling for one gets an
+// answer instead of watching an operation that no longer exists.
 //
 // Failed rather than deleted: a caller polling GetEtcdDefragStatus should be
 // told the attempt died with the agent, not given a NotFound that reads as
 // though it never ran. Such a poll sees phase FAILED with that message and no
-// typed outcome, which is the honest answer - the record is settled before the
-// restores are attempted, so at this point nothing can promise one.
+// typed outcome, which is the honest answer - the agent cannot know how far the
+// dead attempt got.
+//
+// This no longer decides whether anything is restored; the park directory does.
 func (s *NodeAgentServer) failInterruptedStaticPodParkingOperations(ctx context.Context, ids []string) error {
 	s.mu.Lock()
 	s.ensureNodeAgentOperationStateLocked()
@@ -203,11 +208,10 @@ func (s *NodeAgentServer) failInterruptedStaticPodParkingOperations(ctx context.
 			continue
 		}
 		op.Phase = NodeAgentOperationPhaseFailed
-		// Deliberately does not claim the restore succeeded. This is written
-		// before it is attempted, and the agent log is where the result of that
-		// attempt is reported.
+		// Deliberately does not claim the restore succeeded. Whether it did is
+		// in the agent log; this record only says the attempt died.
 		op.ErrorMessage = "the agent restarted while this operation was running; " +
-			"it did not complete and any static-pod manifests it had parked are being restored at startup"
+			"it did not complete and any static-pod manifests it had parked are restored at startup"
 		s.NodeStatus.NodeAgentOperations[id] = op
 	}
 	statusCopy := s.nodeStatusSnapshotLocked()
@@ -218,23 +222,19 @@ func (s *NodeAgentServer) failInterruptedStaticPodParkingOperations(ctx context.
 		return nil
 	}
 	if err := s.Persister.Persist(&statusCopy); err != nil {
-		// Returning here, before anything is restored, is deliberate. If the
-		// record cannot be settled then restoring now would be undone in the
-		// sense that matters: the next startup would find the same standing
-		// instruction and act on whatever is parked by then.
 		return fmt.Errorf("persist interrupted operation records: %w", err)
 	}
 	return nil
 }
 
-// parkedStaticPodManifests reports which of the restorable fixed-name manifests
-// are currently sitting in the backup directory. Missing directory means none,
-// which is the normal case and not an error.
+// parkedStaticPodManifests reports which of the restorable manifests are
+// currently sitting in the etcd defragmentation park directory. Missing
+// directory means none, which is the normal case and not an error.
 func (s *NodeAgentServer) parkedStaticPodManifests() (map[string]bool, error) {
 	restores := s.staticPodParkRestores()
 	parked := make(map[string]bool, len(restores))
 	for _, candidate := range restores {
-		path := s.rootedPath(filepath.Join(defaultStaticPodBackupDir, candidate.manifestName))
+		path := s.rootedPath(filepath.Join(defaultEtcdDefragParkDir, candidate.manifestName))
 		switch _, err := os.Stat(path); {
 		case err == nil:
 			parked[candidate.manifestName] = true
