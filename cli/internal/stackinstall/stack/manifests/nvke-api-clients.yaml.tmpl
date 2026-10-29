@@ -3,9 +3,9 @@
 
 # Admits external clients to the NVKE API. The controller chart's own
 # NetworkPolicy admits the API port from pods in the cluster only, and it has
-# no key for an address range. This policy adds the networks the site spec
-# names: the host that runs nvkectl and the network the tenant nodes come up
-# on. The port is the container port behind service.port in
+# no key for an address range. This policy adds the networks the stack
+# config names: the host that runs nvkectl and the network the tenant nodes
+# come up on. The port is the container port behind service.port in
 # values/controller.yaml.
 #
 # The rule renders only when the list has entries. An empty from list would

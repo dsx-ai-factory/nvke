@@ -8,6 +8,7 @@
 # Site identity is not in this file. The generated overlay supplies it at
 # render time:
 #   global.spire.trustDomain and spire-server.adminIDs   from the site spec
+#   global.spire.caSubject.commonName                    the trust domain
 #   global.spire.clusterName                             from the site spec
 #   global.spire.image.registry                          the mirror, when the
 #                                                        stack config names one
@@ -22,12 +23,17 @@
 #                                                        spire-upstream-ca, and
 #                                                        the node agent trusts
 #                                                        that CA
-#   spiffe-oidc-discovery-provider.config.jwksUri        https://<site address>:30443/keys
+#   spiffe-oidc-discovery-provider.config.jwksUri        https://<target address>:30443/keys
 #   spiffe-oidc-discovery-provider.tls.certManager.certificate.ipAddresses
-#                                                        the site's addresses
+#                                                        the target's address,
+#                                                        when it is an IP
+#   spiffe-oidc-discovery-provider.tls.certManager.certificate.dnsNames
+#                                                        this list plus the
+#                                                        target's address, when
+#                                                        it is a DNS name
 #   spiffe-oidc-discovery-provider.config.additionalDomains
 #                                                        this list plus the
-#                                                        site's addresses
+#                                                        target's address
 # The two trust-domain values must agree. An adminID whose trust domain is not
 # the server's matches nothing, and the controller silently has no admin
 # access to SPIRE. example.org below is a placeholder. With strict mode off
