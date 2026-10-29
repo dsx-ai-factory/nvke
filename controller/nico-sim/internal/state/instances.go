@@ -525,24 +525,63 @@ func (s *Store) DeleteInstance(ctx context.Context, id string) error {
 	})
 }
 
+// Observed states the reconciler acts on for each desired power state.
+// ListVMReconcileCandidates and SetVMDesiredState both read them, so a request
+// the setter accepts is one the reconciler picks up.
+var (
+	// stoppableObservedStates are the states a stop request can act on.
+	stoppableObservedStates = []string{ObservedStateRunning, ObservedStateRebooting, ObservedStateReady}
+	// startableObservedStates are the states a start request is accepted in:
+	// every present-desired state the reconciler handles. New and provisioning
+	// are already on their way up; error is not startable.
+	startableObservedStates = []string{
+		ObservedStateNew, ObservedStateProvisioning, ObservedStateRunning, ObservedStateRebooting, ObservedStateReady, ObservedStateStopped,
+	}
+)
+
 // SetVMDesiredState records the desired power state (present or stopped) of a
 // VM instance that has not been marked for deletion. It reports whether such
-// an instance exists.
+// an instance exists. A request the reconciler would never act on, such as
+// stopping an instance that is still provisioning or in error, fails with
+// ErrConflict and leaves the desired state unchanged. Stopping an already
+// stopped instance is accepted.
 func (s *Store) SetVMDesiredState(ctx context.Context, id, desired string) (bool, error) {
-	result, err := s.db.NewUpdate().
-		Model((*VMState)(nil)).
-		Set("desired_state = ?", desired).
-		Where("instance_id = ?", id).
-		Where("desired_state != ?", DesiredStateAbsent).
-		Exec(ctx)
+	found := false
+	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var vm VMState
+		if err := tx.NewSelect().
+			Model(&vm).
+			Where("instance_id = ?", id).
+			Where("desired_state != ?", DesiredStateAbsent).
+			Scan(ctx); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			return fmt.Errorf("failed to get VM state: %w", err)
+		}
+		found = true
+
+		accepted := startableObservedStates
+		if desired == DesiredStateStopped {
+			accepted = append([]string{ObservedStateStopped}, stoppableObservedStates...)
+		}
+		if !slices.Contains(accepted, vm.ObservedState) {
+			return fmt.Errorf("%w: cannot set desired state %q while the instance is %q", ErrConflict, desired, vm.ObservedState)
+		}
+
+		if _, err := tx.NewUpdate().
+			Model((*VMState)(nil)).
+			Set("desired_state = ?", desired).
+			Where("instance_id = ?", id).
+			Exec(ctx); err != nil {
+			return fmt.Errorf("failed to set VM desired state: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
-		return false, fmt.Errorf("failed to set VM desired state: %w", err)
+		return false, err
 	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("failed getting rows affected: %w", err)
-	}
-	return affected > 0, nil
+	return found, nil
 }
 
 type VMInstanceStatePatch struct {
@@ -631,18 +670,10 @@ func (s *Store) ListVMReconcileCandidates(ctx context.Context) ([]string, error)
 		TableExpr("vms AS vm").
 		ColumnExpr("vm.instance_id AS id").
 		WhereGroup(" AND ", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.WhereOr("(vm.desired_state = ? AND vm.observed_state IN (?, ?, ?, ?, ?) )",
-				DesiredStatePresent,
-				ObservedStateNew,
-				ObservedStateProvisioning,
-				ObservedStateRunning,
-				ObservedStateRebooting,
-				ObservedStateReady,
-			).WhereOr("(vm.desired_state = ? AND vm.observed_state != ?)", DesiredStateAbsent, ObservedStateDeleted).
+			return q.WhereOr("(vm.desired_state = ? AND vm.observed_state IN (?))", DesiredStatePresent, bun.List(startableObservedStates)).
+				WhereOr("(vm.desired_state = ? AND vm.observed_state != ?)", DesiredStateAbsent, ObservedStateDeleted).
 				WhereOr("(vm.desired_state = ? AND vm.reboot_requested = 1)", DesiredStatePresent).
-				WhereOr("(vm.desired_state = ? AND vm.observed_state IN (?, ?, ?))",
-					DesiredStateStopped, ObservedStateRunning, ObservedStateRebooting, ObservedStateReady).
-				WhereOr("(vm.desired_state = ? AND vm.observed_state = ?)", DesiredStatePresent, ObservedStateStopped)
+				WhereOr("(vm.desired_state = ? AND vm.observed_state IN (?))", DesiredStateStopped, bun.List(stoppableObservedStates))
 		}).
 		Scan(ctx, &rows); err != nil {
 		return nil, fmt.Errorf("failed to list reconcile candidates: %w", err)

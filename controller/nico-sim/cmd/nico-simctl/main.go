@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -138,9 +139,15 @@ func runInstanceCommand(action string, args []string) {
 		}
 	case "stop", "start":
 		opts := parseCommon(args)
+		// Try every instance: nico-sim rejects one whose state it cannot act on,
+		// and that should not keep the rest from stopping or starting.
+		var errs []error
 		for _, id := range resolveInstanceIDs(opts, args) {
-			exitOnErr(doJSON(opts, http.MethodPost, fmt.Sprintf("%s/sim/instances/%s/%s", opts.BaseURL, id, action), nil))
+			if err := doJSON(opts, http.MethodPost, fmt.Sprintf("%s/sim/instances/%s/%s", opts.BaseURL, id, action), nil); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", id, err))
+			}
 		}
+		exitOnErr(errors.Join(errs...))
 	case "console-log":
 		runConsoleLog(args)
 	case "console-log-local":
