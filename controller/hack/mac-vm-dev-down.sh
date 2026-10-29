@@ -40,9 +40,45 @@ step "2. Stop the nico-sim VMs and delete their state" \
   "the management plane gone, any instance left in it would be rebuilt as an" \
   "orphan on the next start."
 pause
-if pgrep -f 'qemu-system-aarch64 .*-name nico-vm-' >/dev/null; then
-  run pkill -f 'qemu-system-aarch64 .*-name nico-vm-'
-  pkill -f 'swtpm .*nico-sim' || true
+# Only processes this checkout started: each instance directory under .dev holds
+# the PID files nico-sim's runtime wrote, so another checkout's VMs are left
+# alone. vmnet-client.pid holds the process group of vmnet-client and QEMU.
+# A PID file can outlive its process (a reboot, say), so a PID counts only while
+# its command line still names the instance directory.
+tracked=()
+groups=()
+owned_pid() { # pidfile
+  local pid
+  pid="$(<"$1")"
+  ps -p "${pid}" -o command= 2>/dev/null | grep -qF "$(dirname "$1")" && echo "${pid}"
+}
+for pidfile in "${CONTROLLER_DIR}"/nico-sim/.dev/instances/*/{qemu,swtpm}.pid; do
+  [[ -f ${pidfile} ]] && pid="$(owned_pid "${pidfile}")" && tracked+=("${pid}")
+done
+for pidfile in "${CONTROLLER_DIR}"/nico-sim/.dev/instances/*/vmnet-client.pid; do
+  [[ -f ${pidfile} ]] && pid="$(owned_pid "${pidfile}")" && groups+=("${pid}")
+done
+if ((${#tracked[@]} + ${#groups[@]} > 0)); then
+  for pgid in ${groups[@]+"${groups[@]}"}; do
+    run kill -TERM -- "-${pgid}" 2>/dev/null || true
+  done
+  for pid in ${tracked[@]+"${tracked[@]}"}; do
+    run kill -TERM "${pid}" 2>/dev/null || true
+  done
+  note "waiting for the VM processes to exit"
+  alive=true
+  for _ in $(seq 30); do
+    alive=false
+    for pid in ${tracked[@]+"${tracked[@]}"}; do kill -0 "${pid}" 2>/dev/null && alive=true; done
+    for pgid in ${groups[@]+"${groups[@]}"}; do kill -0 -- "-${pgid}" 2>/dev/null && alive=true; done
+    "${alive}" || break
+    sleep 1
+  done
+  if "${alive}"; then
+    note "still running after 30s; sending SIGKILL"
+    for pgid in ${groups[@]+"${groups[@]}"}; do kill -KILL -- "-${pgid}" 2>/dev/null || true; done
+    for pid in ${tracked[@]+"${tracked[@]}"}; do kill -KILL "${pid}" 2>/dev/null || true; done
+  fi
 else
   note "no VMs running"
 fi
