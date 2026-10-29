@@ -78,12 +78,11 @@ regex = '''(?i)\b[\w.-]*passw(?:or)?d=([^\s"'<][^\s"']{3,})'''
 secretGroup = 1
 keywords = ["passw"]
 
-# nvkectl replaces the whole OTEL_EXPORTER_OTLP_HEADERS value, which can hold an
-# authorization token, with <redacted>, so a literal value after the name was not
-# masked. The first rule reads it as a field, assignment or describe line; the
-# second as the separate name and value of a pod spec. The first takes the value
-# to the end of the line: a header value can hold a space, which gitleaks also
-# sees after decoding %20, and it prints whatever follows the secret it found.
+# nvkectl masks an OTEL_EXPORTER_OTLP_HEADERS value with <redacted>, so a literal
+# one was not masked, and it can hold a token. The first rule reads it as a field,
+# assignment or describe line; the second as a pod spec's separate name and value.
+# The first runs to the end of the line, because a value can hold a space (gitleaks
+# also decodes %20) and a finding prints the text beside the secret.
 [[rules]]
 id = "nvkectl-otlp-headers-value"
 description = "A literal OTEL_EXPORTER_OTLP_HEADERS value, which can hold an authorization token"

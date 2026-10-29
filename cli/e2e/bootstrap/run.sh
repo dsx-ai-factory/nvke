@@ -460,13 +460,12 @@ add_known_secret() {
 
 # learn_generated_secrets adds the secrets bootstrap generates to KNOWN_SECRETS: the
 # Postgres password, read from the bootstrap cluster, and the etcd key, read from
-# the saved key file as stored (base64) and decoded. A value already read is kept
-# and not read again, so it still succeeds after the lane deletes the cluster. The
-# values are never printed.
+# the saved key file (base64, and decoded). A value already read is kept, so it
+# still succeeds after the lane deletes the cluster. It never prints a value.
 #
-# It returns 1 if a value is not there to read yet, as when bootstrap failed before
-# it made the secret, and 2 if a secret is there but could not be read: the search
-# for it is then missing a value that may be in the output.
+# It returns 1 if a secret is not there yet, as when bootstrap failed before it
+# made one, and 2 if it is there but could not be read, so the search is missing a
+# value.
 learn_generated_secrets() {
   local kubeconfig kubectl_err pg_b64 pg_password="" pg_unreadable=false
   local etcd_key="" etcd_key_text="" rc=0
@@ -522,9 +521,8 @@ learn_generated_secrets() {
 # public CI log.
 #
 # The OTLP token is searched alone, so its encoded form in the cluster,
-# authorization=Bearer%20<token>, is found too. The tenant header has no
-# credential in its name, so nvkectl masks it only as the pair x-tenant=<value>,
-# and that pair is what is searched.
+# authorization=Bearer%20<token>, is found too. nvkectl masks the tenant header
+# only as the pair x-tenant=<value>, so that pair is searched.
 scan_for_known_secrets() {
   local needles path secret hits rc=0
   local paths=()
@@ -558,14 +556,14 @@ scan_for_known_secrets() {
 }
 
 # print_run_logs prints the bootstrap log and the Go test log it is given, unless a
-# scan of both finds a credential or a known secret value in them, or a generated
-# secret exists that the scan could not read to search for. Their output
-# goes to the CI log, which is public, and the scan at exit comes too late for
-# that. It prints a notice instead, and the scan at exit fails the run.
+# scan of both finds a credential or a known secret value in them, or cannot read
+# a generated secret to search for. The CI log is public and the scan at exit
+# comes too late, so it prints a notice instead; the scan at exit still fails the
+# run.
 print_run_logs() {
   local file scan_rc=0 learn_rc=0
-  # The generated secrets exist once the bootstrap cluster does. One that is not
-  # there yet is no reason to hold the logs back, one that cannot be read is.
+  # The generated secrets exist once the bootstrap cluster does. Withhold the logs
+  # only for one that exists and cannot be read.
   learn_generated_secrets >/dev/null 2>&1 || learn_rc=$?
   if [ "${learn_rc}" -eq 2 ]; then
     scan_rc=1
@@ -601,10 +599,9 @@ cleanup() {
   # Before anything is removed: the log and the diagnostics are what is scanned.
   # A leak turns a passing run red; a run that already failed stays failed.
   local scan_failed=0
-  # Read here, not when bootstrap succeeds, so a run that fails after generating
-  # them is searched for them too. A run that succeeded must have them, and a
-  # secret that exists but cannot be read fails a failed run too. A run that
-  # failed before it made one has nothing to search for.
+  # Read here, so a run that fails after generating them is searched for them too.
+  # A passing run must have them. A failed run fails only for a secret that exists
+  # and cannot be read: one it never made has nothing to search for.
   local learn_rc=0
   learn_generated_secrets || learn_rc=$?
   if [ "${learn_rc}" -eq 2 ] || { [ "${learn_rc}" -ne 0 ] && [ "${status}" -eq 0 ]; }; then
