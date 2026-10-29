@@ -15,6 +15,7 @@ import (
 type QMPClient struct {
 	socketPath string
 	conn       net.Conn
+	dec        *json.Decoder
 }
 
 // qmpResponse is the top-level shape of every QMP message. Exactly one of
@@ -53,6 +54,7 @@ func (c *QMPClient) Connect() error {
 		return fmt.Errorf("qmp dial %s: %w", c.socketPath, err)
 	}
 	c.conn = conn
+	c.dec = json.NewDecoder(conn)
 
 	if _, err := c.readMessage(5 * time.Second); err != nil {
 		c.conn.Close()
@@ -80,26 +82,19 @@ func (c *QMPClient) Close() error {
 	return err
 }
 
-// readMessage reads a single QMP JSON message from the socket.
+// readMessage decodes the next QMP JSON message from the connection. The
+// decoder is shared across calls, so several messages arriving in one read, or
+// one message split across reads, are handled. A timeout leaves the decoder
+// unusable, so the connection must not be read again after an error.
 func (c *QMPClient) readMessage(timeout time.Duration) (*qmpResponse, error) {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		_ = c.conn.SetDeadline(time.Now().Add(2 * time.Second))
-		buf := make([]byte, 4096)
-		n, err := c.conn.Read(buf)
-		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				continue
-			}
-			return nil, err
-		}
-		var resp qmpResponse
-		if jsonErr := json.Unmarshal(buf[:n], &resp); jsonErr != nil {
-			return nil, fmt.Errorf("qmp unmarshal: %w (raw: %s)", jsonErr, string(buf[:n]))
-		}
-		return &resp, nil
+	if err := c.conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("timed out after %s", timeout)
+	var resp qmpResponse
+	if err := c.dec.Decode(&resp); err != nil {
+		return nil, fmt.Errorf("qmp decode: %w", err)
+	}
+	return &resp, nil
 }
 
 // sendCommand sends a QMP execute command and blocks until the
