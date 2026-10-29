@@ -548,10 +548,12 @@ jobs:
     # took `forge` would read them as empty, and an unset identifier skips the
     # site rather than failing, so the lane would report "no declared site
     # offers" -- a missing variable wearing the costume of missing hardware.
-    # The condition repeats SCOPE's own rather than reading it, because the
-    # env context is not available here.
+    # The scope the plan resolved, not a second derivation of it: the env
+    # context is unavailable here but `needs` is, and re-deriving drops
+    # SCOPE's own precedence -- a push ignores QUALIFY_E2E_SCOPE and the l40s
+    # label outranks it, so either would attach `dsx` to a Forge run.
     environment: >-
-      ${{ ((github.event.label.name == 'qualify-e2e-dsx' || inputs.scope == 'dsx' || vars.QUALIFY_E2E_SCOPE == 'dsx') && 'dsx')
+      ${{ (needs.plan.outputs.scope == 'dsx' && 'dsx')
           || (github.event_name == 'push' && 'forge-nightly')
           || 'forge' }}
     # Composed of two budgets that used to be separate jobs: up to 90 minutes
