@@ -14,6 +14,7 @@ package nvkectl
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -105,12 +106,19 @@ func NewRootCmd(ver, commit, treeState, date string) *cobra.Command {
 }
 
 // warnExportOff logs one warning that nvkectl sends no telemetry because the
-// endpoint in the environment is unusable, and what to do. It offers the flag
-// only on a command that has it. The reason never holds the endpoint, which may
-// hold credentials.
+// endpoint stored with a site, or else the one in the environment, is unusable,
+// and what to do. It offers the flag only on a command that has it. The reason
+// never holds the endpoint, which may hold credentials.
 func warnExportOff(cmd *cobra.Command, reason error) {
+	var siteErr *siteEndpointError
+	if errors.As(reason, &siteErr) {
+		slog.Warn(fmt.Sprintf("nvkectl sends no telemetry because the OTLP endpoint of site %q is not a usable OTLP/gRPC endpoint; "+
+			"run nvkectl config set-site again with a valid --%s, or without it to remove the endpoint", siteErr.site, otlpEndpointFlag),
+			"reason", reason.Error())
+		return
+	}
 	msg := "nvkectl sends no telemetry because OTEL_EXPORTER_OTLP_ENDPOINT is not a usable OTLP/gRPC endpoint; fix or unset the variable"
-	if cmd.Flags().Lookup(otlpEndpointFlag) != nil {
+	if cmd.Annotations[bootstrapExportAnnotation] == "true" {
 		msg += ", or pass --" + otlpEndpointFlag + " to export from this command"
 	}
 	slog.Warn(msg, "reason", reason.Error())

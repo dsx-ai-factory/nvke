@@ -1,0 +1,78 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Values for the go.temporal.io temporal chart.
+#
+# The chart has no namespaceOverride. Its templates follow the release
+# namespace, so the release namespace is where Temporal lands. nvkectl
+# releases it into temporal, and values/controller.yaml dials
+# temporal-frontend.temporal.svc.cluster.local.
+#
+# No password is in this file. Both datastores read the nvke-database Secret
+# that the command creates in the release namespace.
+
+# Pinned so the Service names do not follow the release name.
+fullnameOverride: temporal
+
+server:
+  configMapsToMount: sprig
+  setConfigFilePath: true
+  config:
+    persistence:
+      default:
+        driver: sql
+        sql:
+          driver: postgres12
+          host: nvke-postgresql.postgres.svc.cluster.local
+          port: 5432
+          database: temporal
+          user: postgres
+          # The same key PostgreSQL reads. Temporal logs in as postgres.
+          existingSecret: nvke-database
+          secretKey: postgres-password
+          maxConns: 10
+          maxIdleConns: 5
+      visibility:
+        driver: sql
+        sql:
+          driver: postgres12
+          host: nvke-postgresql.postgres.svc.cluster.local
+          port: 5432
+          database: temporal_visibility
+          user: postgres
+          existingSecret: nvke-database
+          secretKey: postgres-password
+          maxConns: 10
+          maxIdleConns: 5
+  # One ServiceMonitor per server role, so NKTP scrapes them. Each role's
+  # headless Service already exposes its Prometheus endpoint as port metrics.
+  # The monitors need the monitoring CRDs, which the nktp release installs
+  # before this one.
+  metrics:
+    serviceMonitor:
+      enabled: true
+
+# Temporal bundles its own datastores and monitoring. The stack supplies
+# PostgreSQL and NKTP instead.
+cassandra:
+  enabled: false
+mysql:
+  enabled: false
+postgresql:
+  enabled: false
+prometheus:
+  enabled: false
+grafana:
+  enabled: false
+elasticsearch:
+  enabled: false
+
+# The schema jobs connect to PostgreSQL and create and migrate both
+# databases. This is why postgresql installs before temporal.
+schema:
+  createDatabase:
+    enabled: true
+  setup:
+    enabled: true
+  update:
+    enabled: true

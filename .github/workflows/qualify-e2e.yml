@@ -136,7 +136,7 @@ on:
         type: string
         required: false
       controller-name:
-        description: "Name the controller is installed under. Empty uses the suite default, nke-controller, which every release the lane qualifies installs. The run fails early if it disagrees with the deploy path."
+        description: "Name the controller is installed under. Empty uses the suite default, nvke-controller. A release cut before the nvke rename installs nke-controller and needs that passed here. The run fails early if it disagrees with the deploy path."
         type: string
         required: false
       cwe-name:
@@ -301,7 +301,11 @@ jobs:
       # the join token allows only refs/heads/main and refs/pull/*/merge. Until
       # this lands on main a label is the only way to run the DSX stream.
       # qualify-e2e-l40s is the same for the site-1 L40S stream.
-      SCOPE: ${{ inputs.scope || (github.event.label.name == 'qualify-e2e-dsx' && 'dsx') || (github.event.label.name == 'qualify-e2e-l40s' && 'l40s') || vars.QUALIFY_E2E_SCOPE || 'golden-path' }}
+      #
+      # A tag push does not read QUALIFY_E2E_SCOPE, so a beta qualifies
+      # golden-path whatever a label run left there. qualify-run's env says
+      # why none of the label runs' variables reach a tag push.
+      SCOPE: ${{ inputs.scope || (github.event.label.name == 'qualify-e2e-dsx' && 'dsx') || (github.event.label.name == 'qualify-e2e-l40s' && 'l40s') || (github.event_name != 'push' && vars.QUALIFY_E2E_SCOPE) || 'golden-path' }}
       # The registry.yaml base names this, so the plan fails here when it is
       # unset rather than naming an artifact under no org. The same variable
       # the lanes build SITE_IMAGES from.
@@ -567,6 +571,19 @@ jobs:
       # variables instead. The guard step checks the result rather than
       # letting an empty value surface twenty minutes into a run.
       #
+      # A tag push has no inputs either, but it does not fall back to the
+      # QUALIFY_E2E_* variables that stand in for one. Those are how a label
+      # run asks for what it wants, so they hold whatever the last label run
+      # asked for: v0.23.0-beta.6 and beta.9 both took the scope, stage and
+      # keep-site left there for DSX label runs and ran the dsx stream instead
+      # of golden-path, beta.9 at a stage the suite on main does not have. A
+      # beta therefore qualifies golden-path, at full, from NVCR, and keeps
+      # nothing; the plan job drops the version overrides for the same
+      # reason. Variables with no dispatch input -- QUALIFY_E2E_NGC_ORG,
+      # QUALIFY_E2E_NODE_USER, the sites -- say where a run happens rather
+      # than what it asks for, and every event reads them, as it does the
+      # controller name, which the deploy path decides.
+      #
       # full, so a run that names no stage qualifies the whole thing. A label
       # run and a tag push carry no dispatch input, and a beta that stopped at
       # a booted node would have qualified none of what it was cut for.
@@ -576,7 +593,7 @@ jobs:
       # is bound to its instance type, and a full run places three at once.
       # A DSX run at full is refused by the suite before a machine is taken
       # anyway, its tenant half speaking Forge only. See SCOPE in the plan job.
-      SITE_STAGE: ${{ inputs.stage || (github.event.label.name == 'qualify-e2e-dsx' && 'provision') || vars.QUALIFY_E2E_STAGE || 'full' }}
+      SITE_STAGE: ${{ inputs.stage || (github.event.label.name == 'qualify-e2e-dsx' && 'provision') || (github.event_name != 'push' && vars.QUALIFY_E2E_STAGE) || 'full' }}
       DRY_RUN: ${{ needs.plan.outputs.dry-run }}
       # Whether this run's ref is one the nvke WIF provider in the testgrid
       # repo actually trusts (main, or a v<digit> tag -- see wif-nvke.tf
@@ -605,8 +622,9 @@ jobs:
       PLAN_COMMIT: ${{ needs.plan.outputs.commit }}
       CLI_VERSION: ${{ matrix.cli }}
       # The name the controller is installed under, which the deploy path
-      # decides. Empty leaves the suite on its default, nke-controller, which
-      # every release the lane qualifies installs. Either way
+      # decides. Empty leaves the suite on its default, nvke-controller; a
+      # release cut before the nvke rename installs nke-controller and needs
+      # that passed in. Either way
       # site.CheckControllerName reads the name out of the exported deploy
       # path before a machine is taken and fails the run when it does not
       # match, so a wrong value costs a minute rather than an hour.
@@ -643,14 +661,16 @@ jobs:
       # repository variable, as it does every other setting. Holding a Forge
       # machine is expensive and the variable is easy to leave set, so the run
       # warns when it is on and the value is meant to be cleared once whatever
-      # needed the machine has been read off it.
-      KEEP_SITE: ${{ inputs.keep-site || vars.QUALIFY_E2E_KEEP_SITE || false }}
+      # needed the machine has been read off it. A tag push never reads it:
+      # nobody is there to read a kept machine, or to delete it.
+      KEEP_SITE: ${{ inputs.keep-site || (github.event_name != 'push' && vars.QUALIFY_E2E_KEEP_SITE) || false }}
       # ghcr or nvcr. Only the runner pulls from it: every image it names is
       # staged onto the node as an archive. The node's own pull is CAPNICo,
       # which is published to GHCR alone, so the GHCR login below stays either
       # way. NVCR holds every build, so a commit between releases has an
-      # image, which is why it is the default.
-      SITE_IMAGE_REGISTRY: ${{ inputs.image-registry || vars.QUALIFY_E2E_IMAGE_REGISTRY || 'nvcr' }}
+      # image, which is why it is the default, and why a tag push takes it
+      # whatever the variable says: a beta is built between releases.
+      SITE_IMAGE_REGISTRY: ${{ inputs.image-registry || (github.event_name != 'push' && vars.QUALIFY_E2E_IMAGE_REGISTRY) || 'nvcr' }}
       CAPI_PROVISIONED_VERSION: ${{ matrix.capi_provisioned }}
       # The NGC org the NVCR images are published under. A repository
       # variable, not the nvcr environment's NVKE_NGC_ORG: that environment
@@ -901,7 +921,8 @@ jobs:
           fi
 
           # The image path, resolved here so every later step reads one value.
-          # Same image names on both; only the prefix differs.
+          # Same image names on both except the controller on GHCR before the
+          # rename, resolved below; only the prefix differs.
           case "${SITE_IMAGE_REGISTRY}" in
             ghcr) images="ghcr.io/dsx-ai-factory/nvke" ;;
             nvcr)
@@ -1073,7 +1094,7 @@ jobs:
       # capi-provisioned images from here, both private. The node needs no
       # credential: CAPNICo's image is public and everything else is staged.
       - name: Log in to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -1093,7 +1114,7 @@ jobs:
       # pulls with it: nothing on the node pulls from NVCR.
       - name: Log in to NVCR
         if: env.SITE_IMAGE_REGISTRY == 'nvcr'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: nvcr.io
           # `$oauthtoken` is NGC's literal username, not a variable reference.
@@ -1107,6 +1128,29 @@ jobs:
         uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
         with:
           version: ${{ steps.oras.outputs.version }}
+
+      # nvke-controller is the name everywhere now, but GHCR keeps releases from
+      # before the rename under nke-controller. Probed here, after the logins,
+      # because the GHCR package is private. site-inputs and the e2e config
+      # both read the result, which is what keeps the name on the node's
+      # archive and the name the Helm values ask for the same.
+      - name: Resolve the controller image name
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          repository=nvke-controller
+          if [ "${SITE_NVKE_CONTROLLER_BUILD}" != 1 ] && [ "${SITE_IMAGE_REGISTRY}" = ghcr ]; then
+            if docker manifest inspect "${SITE_IMAGES}/nvke-controller:${SITE_NVKE_CONTROLLER_VERSION}" >/dev/null 2>&1; then
+              :
+            elif docker manifest inspect "${SITE_IMAGES}/nke-controller:${SITE_NVKE_CONTROLLER_VERSION}" >/dev/null 2>&1; then
+              repository=nke-controller
+            else
+              echo "::error::${SITE_NVKE_CONTROLLER_VERSION} is on GHCR as neither nvke-controller nor nke-controller"
+              exit 1
+            fi
+          fi
+          echo "SITE_NVKE_CONTROLLER_REPOSITORY=${repository}" >> "${GITHUB_ENV}"
+          echo "controller image: ${SITE_IMAGES}/${repository}:${SITE_NVKE_CONTROLLER_VERSION}"
 
       # nvkectl for the node's architecture, the three image archives, and the
       # deploy path out of the checkout. The node has no access to this
@@ -1125,6 +1169,7 @@ jobs:
           make -C controller/test/e2e site-inputs \
             SITE_NVKE_CONTROLLER_VERSION="${SITE_NVKE_CONTROLLER_VERSION}" \
             SITE_NVKE_CONTROLLER_BUILD="${SITE_NVKE_CONTROLLER_BUILD}" \
+            SITE_NVKE_CONTROLLER_REPOSITORY="${SITE_NVKE_CONTROLLER_REPOSITORY}" \
             SITE_ARCH="${SITE_ARCH}" \
             SITE_CLI_BUILD="${SITE_CLI_BUILD}" \
             SITE_CLI_VERSION="${CLI_VERSION}" \
@@ -1269,7 +1314,7 @@ jobs:
           site:
             images:
               controller:
-                repository: ${SITE_IMAGES}/nvke-controller
+                repository: ${SITE_IMAGES}/${SITE_NVKE_CONTROLLER_REPOSITORY}
                 archive: ${SITE_INPUTS}/controller.tar
               capi-provisioned:
                 repository: ${SITE_IMAGES}/cluster-api-provider-provisioned
@@ -1491,6 +1536,7 @@ jobs:
               if [ "${withhold}" = 1 ] && [ "${value}" != "<unset>" ]; then
                 value="<set, withheld>"
               fi
+              note=""
               if [ -n "${input}" ] && [ -n "${!input:-}" ]; then
                 source="dispatch input"
               elif [ "${input}" = IN_CONTROLLER_NAME ] && [ -n "${IN_CWE_NAME:-}" ]; then
@@ -1500,6 +1546,16 @@ jobs:
                 # The label names these outright, ahead of the variables, so it
                 # is what produced the value whenever it is the trigger.
                 source="label ${EVENT_LABEL}"
+              elif [ "${GITHUB_EVENT_NAME}" = push ] && [ -n "${input}" ] && [[ "${varname}" == QUALIFY_E2E_* ]]; then
+                # A tag push does not read the variables that stand in for a
+                # dispatch input (see the job env), so one that is set did not
+                # produce this value. It is named all the same: whoever left
+                # it set for a label run is who reads this to find out why the
+                # nightly ignored it.
+                source="workflow default"
+                if [ -n "${var}" ] && [ -n "${!var:-}" ]; then
+                  note=", ${varname} is set and was not applied"
+                fi
               elif [ -n "${var}" ] && [ -n "${!var:-}" ]; then
                 source="repository variable ${varname}"
               elif [ -n "${wasvar}" ] && [ -n "${!wasvar:-}" ]; then
@@ -1524,10 +1580,11 @@ jobs:
               if [ "${resolved}" = "DRY_RUN" ] && [ "${DRY_RUN}" = "true" ] && [ -z "${IN_DRY_RUN:-}" ]; then
                 source="label qualify-e2e-dry-run"
               fi
-              # A push carries no inputs, so the tag selected commitDescribe
-              # and neither arm above named it.
-              if [ "${resolved}" = "RESOLUTION" ] && [ -z "${IN_RESOLUTION:-}" ] &&
-                 [ "${GITHUB_EVENT_NAME}" = push ]; then
+              # A push carries no inputs, so the tag named itself as the
+              # version and selected commitDescribe, and neither arm above
+              # named either.
+              if { [ "${resolved}" = "RESOLUTION" ] || [ "${resolved}" = "NVKE_VERSION" ]; } &&
+                 [ -z "${!input:-}" ] && [ "${GITHUB_EVENT_NAME}" = push ]; then
                 source="beta tag push"
               fi
               # The resolve steps fill these in from the checkout when no
@@ -1537,7 +1594,7 @@ jobs:
                 source="built from this checkout"
               fi
               printf '  %-22s = %s\n' "${label}" "${value}"
-              printf '  %-22s   [%s]\n' "" "${source}"
+              printf '  %-22s   [%s]\n' "" "${source}${note}"
             done
             if [ "${DRY_RUN}" != "true" ]; then
               echo

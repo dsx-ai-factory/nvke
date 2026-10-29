@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What the seed changes about postgresql. Layered over values/postgresql.yaml.
+primary:
+  persistence:
+    # kind ships the rancher local-path provisioner as the default
+    # StorageClass. 40Gi on a laptop is not wanted.
+    size: 8Gi
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      memory: 128Mi

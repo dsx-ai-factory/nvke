@@ -124,7 +124,7 @@ names, comma-separated with no spaces:
 | Name | Tag | What GitHub gets when the name is listed |
 |---|---|---|
 | `root` | bare `vX.Y.Z` | the GitHub Release with the product manifest and SBOM |
-| `controller` | `controller/v*` | the GitHub Release, the `nke-controller` image and the `charts/nvke-controller` chart on GHCR |
+| `controller` | `controller/v*` | the GitHub Release, the `nvke-controller` image and the `charts/nvke-controller` chart on GHCR |
 | `cli` | `cli/v*` | the GitHub Release with the binaries, `cli` binaries on GHCR |
 | `agent` | `agent/v*` | the GitHub Release with the `.deb`s, `agent` and `agent-deb` on GHCR |
 | `cluster-api-provider-provisioned` | `cluster-api-provider-provisioned/v*` | the provider image on GHCR |
@@ -147,18 +147,36 @@ additionally publishes the controller image and Helm chart:
 
 | Workflow | What it publishes |
 |---|---|
-| `image-nvcr.yml` | multi-arch image to `nvcr.io/<org>/nvke-controller`, promotes that released image to DSX as `nvcr.io/<dsx-org-team>/nvke-controller`, and promotes release tags to `ghcr.io/dsx-ai-factory/nvke/nke-controller` |
+| `image-nvcr.yml` | multi-arch image to `nvcr.io/<org>/nvke-controller`, promotes that released image to DSX as `nvcr.io/<dsx-org-team>/nvke-controller`, and promotes release tags to `ghcr.io/dsx-ai-factory/nvke/nvke-controller` |
 | `chart-publish.yml` | chart to `ghcr.io/dsx-ai-factory/nvke/charts/nvke-controller` |
 | `chart-publish-nvcr.yml` | chart to `nvcr.io/<org>/nvke-controller-chart` and `nvcr.io/<dsx-org-team>/nvke-controller-chart` |
 | `image-validate-nvcr.yml` | multi-arch site validation image (`controller/test/e2e/Dockerfile`) pushed straight to DSX as `nvcr.io/<dsx-org-team>/nvke-validate`, under the controller image's version |
 
 Every `main` commit already publishes the image and chart to NVCR. GHCR receives
 released versions only, which is why a chart built from a tag can safely point at
-`ghcr.io/dsx-ai-factory/nvke/nke-controller:<version>` while a chart built from `main` could not.
+`ghcr.io/dsx-ai-factory/nvke/nvke-controller:<version>` while a chart built from `main` could not.
 Releases before the repository moved to `dsx-ai-factory` on 2026-09-12 were promoted to
 `ghcr.io/nvidia/nke/controller` instead: `controller/v0.1.1-rc.1` to `rc.3` are there,
 `controller/v0.1.0` predates the promotion job, and the `rc.4` promotion failed, so that
 image exists nowhere. Later releases land under `ghcr.io/dsx-ai-factory/nvke`.
+
+### Image repository and pull secret names
+
+The controller image is `nvke-controller` on every registry. The chart is `nvke-controller`
+on GHCR and `nvke-controller-chart` on NVCR. Releases
+cut before this rename were promoted to `ghcr.io/dsx-ai-factory/nvke/nke-controller`,
+which stays in place so existing pins keep resolving; nothing is republished under the new
+name. A pin moves to `nvke-controller` only once its tag exists there.
+`qualify-e2e.yml` probes GHCR for `nvke-controller` first and falls back to `nke-controller`, so
+it qualifies releases from either side of the rename.
+
+The pull secret `svc-nke-ngc-imagepull` keeps its name. It is an NGC service account
+provisioned outside this repository, so a rename means re-provisioning it on every site in
+step with the chart reference. `chart-publish-nvcr.yml` adds it only to the NVCR-published
+chart; the GHCR chart defaults to no pull secret.
+
+A new GHCR package is created `internal`. Make it public in the package settings after the
+first release that publishes it.
 
 DSX receives the controller image from `image-nvcr.yml`, after the NVKE multi-arch
 manifest exists. It receives the controller chart from `chart-publish-nvcr.yml`,
@@ -207,7 +225,7 @@ publishers (GHCR and the GitHub Release only when `NVKE_GITHUB_PUBLISH` names
 `os-image`). For `controller/v*`, confirm the **Image
 NVCR** check, and, when `NVKE_GITHUB_PUBLISH` names `controller`, the **Chart
 Publish** check and the promoted image at
-`ghcr.io/dsx-ai-factory/nvke/nke-controller:<version>`. For `nktp/v*`, confirm the
+`ghcr.io/dsx-ai-factory/nvke/nvke-controller:<version>`. For `nktp/v*`, confirm the
 **NKTP Chart Publish** check.
 
 ## Verifying a release
@@ -260,7 +278,7 @@ gh attestation verify checksums.txt \
 
 ```bash
 gh attestation verify \
-  oci://ghcr.io/dsx-ai-factory/nvke/nke-controller@sha256:<digest> \
+  oci://ghcr.io/dsx-ai-factory/nvke/nvke-controller@sha256:<digest> \
   --repo dsx-ai-factory/nvke \
   --bundle-from-oci
 ```
@@ -283,7 +301,7 @@ what a build of this commit ought to select.
 | `nvkectl-<os>-<arch>` | `nvkectl-<os>-<arch>.spdx.json` | Go modules, from the binary's embedded build info | GitHub Release asset |
 | `nvke-agent_<version>_<arch>.deb` | `nvke-agent_<version>_<arch>.spdx.json` | Go modules, from the binary inside the package | GitHub Release asset |
 | `nvke-node-{fde,non-fde}-ubuntu-<rel>-<arch>.qcow2` | `nvke-node-…-<arch>.spdx.json` | dpkg packages, from the image's own package database | S3, beside the disk; a GitHub Release asset too when `NVKE_GITHUB_PUBLISH` names `os-image` |
-| `nke-controller` image | `controller-sbom-linux-<arch>.spdx.json` | image contents, scanned from the pushed image | workflow artifact on the **Image NVCR** run |
+| `nvke-controller` image | `controller-sbom-linux-<arch>.spdx.json` | image contents, scanned from the pushed image | workflow artifact on the **Image NVCR** run |
 | `cluster-api-provider-provisioned` image | `cluster-api-provider-provisioned-sbom-linux-<arch>.spdx.json` | image contents, scanned from the pushed image | workflow artifact on the **Image Provisioned NVCR** run |
 
 The Helm charts — `nvke-controller` and `nktp` — have no SBOM of their own. A
@@ -353,7 +371,7 @@ the artifact was built by some GitHub workflow somewhere. Use
 |---|---|---|
 | Release assets (`nvkectl`, agent `.deb`s, `nvke-os-image-check`, the NKTP chart archive) | `checksums.txt`, which names each by digest | GitHub, plus the attached bundle |
 | `os-image` qcow2 OCI artifacts | the same `checksums.txt` | GitHub, plus the attached bundle, when `NVKE_GITHUB_PUBLISH` names `os-image`; otherwise unattested |
-| `nke-controller`, `cluster-api-provider-provisioned` on GHCR | the multi-arch index digest | attached to the image in GHCR as an OCI referrer |
+| `nvke-controller`, `cluster-api-provider-provisioned` on GHCR | the multi-arch index digest | attached to the image in GHCR as an OCI referrer |
 | the same two images on NVCR | the same index digest | GitHub's attestation store only |
 
 Attestations are made where the artifact lands. `crane copy` preserves an image

@@ -101,7 +101,7 @@ func NewController(
 
 // secretsNamespace is the management-cluster namespace that holds the
 // per-cluster Secrets this controller owns (kubeconfig + trust bundle) and the
-// nke-rbac ConfigMap it reads. The chart creates the namespace and scopes the
+// RBAC ConfigMap it reads. The chart creates the namespace and scopes the
 // controller's Secret grant to it, so the two must be configured together.
 func (c *Controller) secretsNamespace() string {
 	return c.cfg.ManagementNamespaceOrDefault()
@@ -355,15 +355,17 @@ func (c *Controller) publishSPIRE(ctx context.Context, cluster db.Cluster, admin
 	return c.upsertSecret(ctx, cluster, trustBundleSecret)
 }
 
-// applyRBAC server-side applies the operator-managed nke-rbac manifest into the
+// applyRBAC server-side applies the operator-managed RBAC manifest into the
 // tenant cluster.
 func (c *Controller) applyRBAC(ctx context.Context, cluster db.Cluster, adminConf []byte) error {
 	manifest, err := c.readRBACManifest(ctx)
 	if apierrors.IsNotFound(err) {
 		// Do not publish a SPIRE kubeconfig that cannot authenticate as nvke:cwe /
 		// CAPI SPIFFE IDs. The chart renders this ConfigMap when spiffe.trustDomain
-		// is set, independent of the live OIDC flag.
-		return fmt.Errorf("nke-rbac ConfigMap not found; refusing to publish SPIRE kubeconfig for cluster %s: %w", cluster.Name, err)
+		// is set, independent of the live OIDC flag. The name is per-site
+		// configurable, so say which one was looked for.
+		src := c.cfg.RBACConfigMapSource()
+		return fmt.Errorf("RBAC ConfigMap %s/%s not found; refusing to publish SPIRE kubeconfig for cluster %s: %w", src.Namespace, src.Name, cluster.Name, err)
 	}
 	if err != nil {
 		return err

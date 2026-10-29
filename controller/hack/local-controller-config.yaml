@@ -21,6 +21,7 @@ fieldManager:
 managedByLabelValue: cloud-workflow-engine
 # The shared management-plane namespace. Tilt creates it (deploy/k8s/nvke-system-namespace.yaml).
 managementNamespace: nvke-system
+rbacConfigMapName: nvke-rbac
 metricsListenAddress: 127.0.0.1:9090
 supportedInfraProviders:
   - nico

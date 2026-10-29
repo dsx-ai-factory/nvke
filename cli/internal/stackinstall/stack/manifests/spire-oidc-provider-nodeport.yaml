@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# A tenant kube-apiserver fetches the OIDC discovery document from a node
+# address, so the provider needs a NodePort. The selector matches the upstream
+# chart's pod labels.
+apiVersion: v1
+kind: Service
+metadata:
+  name: spire-oidc-provider-np
+  namespace: spire-server
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: spiffe-oidc-discovery-provider
+  ports:
+    - name: https
+      protocol: TCP
+      port: 443
+      targetPort: https
+      nodePort: 30443

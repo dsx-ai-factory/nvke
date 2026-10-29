@@ -105,6 +105,13 @@ release rather than with what that commit built. A tag push therefore asks for
 tag marks, and the commit is derived from the version being qualified rather
 than given.
 
+A tag push also ignores the `QUALIFY_E2E_*` variables that stand in for a
+dispatch input on a labelled run: the scope, the stage, keep-site, the image
+registry and the version overrides. They hold whatever the last labelled run
+asked for, so a beta qualifies `golden-path` at stage `full` from NVCR and keeps
+no machine, whatever they say. The run's resolved inputs name any of them that
+was set and not applied.
+
 `commitDescribe` is also the default, because a beta is what this lane
 qualifies nightly. A release qualification therefore has to select `gitTag`,
 by the `resolution` input or by the `QUALIFY_E2E_RESOLUTION` repository

@@ -14,10 +14,10 @@ import (
 // The defaults; read the first three through Namespace, Service and Port.
 // DeploymentName is also the name of the controller container.
 const (
-	ServiceNamespace = "nke-controller"
-	ServiceName      = "nke-controller"
+	ServiceNamespace = "nvke-controller"
+	ServiceName      = "nvke-controller"
 	ServicePort      = "8080"
-	DeploymentName   = "nke-controller"
+	DeploymentName   = "nvke-controller"
 )
 
 // The overrides, which apply suite-wide so moving the controller moves

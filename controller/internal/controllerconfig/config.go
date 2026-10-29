@@ -41,6 +41,7 @@ type Config struct {
 	FieldManager                             FieldManagerConfig         `json:"fieldManager"`
 	ManagedByLabelValue                      string                     `json:"managedByLabelValue"`
 	ManagementNamespace                      string                     `json:"managementNamespace"`
+	RBACConfigMapName                        string                     `json:"rbacConfigMapName"`
 	MetricsListenAddress                     string                     `json:"metricsListenAddress"`
 	SupportedInfraProviders                  []string                   `json:"supportedInfraProviders"`
 	NodeMetadataAllowlistedLabelKeys         []string                   `json:"nodeMetadataAllowlistedLabelKeys"`
@@ -413,6 +414,12 @@ func (c *Config) Validate() error {
 	if c.ManagementNamespace != "" {
 		if errs := validation.IsDNS1123Label(c.ManagementNamespace); len(errs) > 0 {
 			return fmt.Errorf("managementNamespace %q is not a valid namespace name: %s", c.ManagementNamespace, strings.Join(errs, "; "))
+		}
+	}
+
+	if c.RBACConfigMapName != "" {
+		if errs := validation.IsDNS1123Subdomain(c.RBACConfigMapName); len(errs) > 0 {
+			return fmt.Errorf("rbacConfigMapName %q is not a valid ConfigMap name: %s", c.RBACConfigMapName, strings.Join(errs, "; "))
 		}
 	}
 

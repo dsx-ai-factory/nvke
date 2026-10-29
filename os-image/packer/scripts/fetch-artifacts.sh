@@ -14,6 +14,8 @@ ARTIFACTS_DIR="${ARTIFACTS_DIR:?ARTIFACTS_DIR is required}"
 # so this always matches the guest being built rather than the host.
 ARCH="${ARCH:?ARCH is required}"
 SOURCE_ROOT="${SOURCE_ROOT:?SOURCE_ROOT is required}"
+# The image's Ubuntu release, which selects the DOCA OVS build.
+UBUNTU_SERIES="${NKE_TARGET_UBUNTU_SERIES:?NKE_TARGET_UBUNTU_SERIES is required}"
 
 case "${ARCH}" in
   amd64|arm64) ;;
@@ -87,6 +89,16 @@ if [[ -n "${TPM_PLUGIN_VERSION:-}" ]]; then
   spire_args+=(TPM_PLUGIN_VERSION="${TPM_PLUGIN_VERSION}")
 fi
 make -C "${repo_root}/os-image/packages/spire-agent" debs "${spire_args[@]}"
+
+# NVIDIA's DOCA Open vSwitch, which replaces Ubuntu's openvswitch-switch.
+# provision.sh installs it at bake time. DOCA builds each Ubuntu release
+# separately, so this is the one package set that depends on the target series.
+echo "fetching DOCA OVS debs (${repo_root}/os-image/packages/doca-ovs, Ubuntu ${UBUNTU_SERIES})"
+doca_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}" UBUNTU_SERIES="${UBUNTU_SERIES}")
+if [[ -n "${DOCA_VERSION:-}" ]]; then
+  doca_args+=(DOCA_VERSION="${DOCA_VERSION}")
+fi
+make -C "${repo_root}/os-image/packages/doca-ovs" debs "${doca_args[@]}"
 
 files_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../files" && pwd)"
 install -m 0644 "${files_dir}/nvke-agent-spire.conf" "${ARTIFACTS_DIR}/nvke-agent-spire.conf"

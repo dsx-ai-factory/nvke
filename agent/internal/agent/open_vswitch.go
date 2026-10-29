@@ -22,6 +22,7 @@ import (
 
 const (
 	openVSwitchPackage         = "openvswitch-switch"
+	openVSwitchDOCAPackage     = "doca-openvswitch-switch"
 	openVSwitchService         = "openvswitch-switch"
 	openVSwitchDaemonService   = "ovs-vswitchd"
 	openVSwitchSystemIDPath    = "/etc/openvswitch/system-id.conf"
@@ -356,10 +357,22 @@ func configuredOpenVSwitchResult(plan openVSwitchPlan) *pb.OpenVSwitchReconcilia
 	}
 }
 
+// openVSwitchPackageInstalled reports whether either the stock or the DOCA Open vSwitch package is installed.
+// dpkg-query does not resolve Provides, and exits non-zero when given an unknown name, so each package is queried on its own.
+func (s *NodeAgentServer) openVSwitchPackageInstalled() bool {
+	for _, pkg := range []string{openVSwitchPackage, openVSwitchDOCAPackage} {
+		output, err := s.Runner.Run("dpkg-query", []string{"--show", "--showformat=${db:Status-Abbrev}", pkg}, nil)
+		if err == nil && strings.HasPrefix(strings.TrimSpace(string(output)), "ii") {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *NodeAgentServer) ensureOpenVSwitchService() error {
-	output, err := s.Runner.Run("dpkg-query", []string{"--show", "--showformat=${db:Status-Abbrev}", openVSwitchPackage}, nil)
-	if err != nil || !strings.HasPrefix(strings.TrimSpace(string(output)), "ii") {
-		return status.Error(codes.FailedPrecondition, "openvswitch-switch is not installed")
+	if !s.openVSwitchPackageInstalled() {
+		slog.Error("Open vSwitch is not installed", "packages", []string{openVSwitchPackage, openVSwitchDOCAPackage})
+		return status.Errorf(codes.FailedPrecondition, "neither %s nor %s is installed", openVSwitchPackage, openVSwitchDOCAPackage)
 	}
 	if _, err := s.runOpenVSwitchCommand("systemctl", "enable", "--now", openVSwitchService); err != nil {
 		return status.Errorf(codes.Internal, "enable %s: %v", openVSwitchService, err)

@@ -84,8 +84,8 @@ autoinstall:
     - python3-apt
     - openssh-server
     - tpm2-tools
-    # ovn-kubernetes runs against the host's Open vSwitch (values-nke.yaml: ovs-node false).
-    - openvswitch-switch
+    # Open vSwitch is DOCA's doca-openvswitch-switch, installed by
+    # scripts/provision.sh from the image's local repo, not from this list.
     # kubeadm preflight requires conntrack and warns without socat/ethtool;
     # iproute2 is Priority: important and already on the base image.
     - iptables

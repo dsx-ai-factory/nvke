@@ -108,7 +108,7 @@ CWE_PORT=30080
 SPIRE_TRUST_DOMAIN="${NVKECTL_E2E_SPIRE_TRUST_DOMAIN:-nvkectl-e2e.example.test}"
 # The controller's namespace in the bootstrap cluster, and the Secret
 # `bootstrap site` creates there from the node login.
-CONTROLLER_NAMESPACE=nke-controller
+CONTROLLER_NAMESPACE=nvke-controller
 TENANT_SECRET=dgxc-tenant-credentials
 
 TENANT_KUBECONFIG="${SCRIPT_DIR}/.tenant-nico.kubeconfig"
@@ -118,6 +118,11 @@ BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap-nico.log"
 # own output is not in here: it goes to BOOTSTRAP_LOG, so there is one copy of
 # it and the credential scan covers that copy.
 BOOTSTRAP_GO_TEST_LOG="${SCRIPT_DIR}/.bootstrap-nico-go-test.log"
+# The namespaces the NVKE stack installs on the site cluster, which
+# TestE2E_BootstrapSite checks once the bootstrap succeeds. It leaves out
+# spire-server when NVKECTL_E2E_DISABLE_MTLS is set, since no SPIRE is installed.
+SITE_STACK_NAMESPACES="local-path-storage,postgres,temporal,spire-server,capi-system,capi-kubeadm-bootstrap-system"
+SITE_STACK_NAMESPACES+=",capi-kubeadm-control-plane-system,capnico-system,${CONTROLLER_NAMESPACE}"
 GO="${GO:-go}"
 # The lane runs `bootstrap site` through the Go tests in bootstraptest. Those
 # tests carry two marks: the e2e_bootstrap build tag, which keeps them out of
@@ -310,6 +315,23 @@ nerdctl build --file "${PROFILES_FIXTURE_DIR}/Dockerfile" --tag "${PROFILES_IMAG
 # than latest: the chart sets no pull policy on it.
 export NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE="${PROFILES_IMAGE}"
 log "PASS: the node and profiles images are in containerd"
+
+# The bootstrap also installs the NVKE stack on the site cluster, whose nodes
+# pull its images themselves, so nvkectl requires names with a registry. The
+# images are imported into each site node instead (stage 3), so nothing is
+# pulled from this registry. This is a workaround for nico-sim's container
+# nodes having no registry they can pull from; a local registry they can reach
+# would replace both the tag and the import.
+SITE_IMAGE_REGISTRY=nvke-e2e.invalid
+untag_site_images() { nerdctl rmi "$@" >/dev/null 2>&1 || true; }
+site_images=()
+for image in "${NVKECTL_NVKE_CONTROLLER_IMAGE}" "${NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE}"; do
+  tagged="${SITE_IMAGE_REGISTRY}/${image##*/}"
+  nerdctl tag "${image}" "${tagged}" || fail "could not tag ${image} as ${tagged}"
+  defer untag_site_images "${tagged}"
+  site_images+=("${tagged}")
+done
+export NVKECTL_NVKE_CONTROLLER_IMAGE="${site_images[0]}" NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE="${site_images[1]}"
 
 # ── Stage 2: nico-sim ──────────────────────────────────────────────────────
 
@@ -594,6 +616,7 @@ setsid env \
   NVKECTL_E2E_ENCRYPTION_KEY_OUT="${ETCD_KEY_FILE}" \
   NVKECTL_E2E_BOOTSTRAP_TIMEOUT=25m \
   NVKECTL_E2E_KEEP_BOOTSTRAP_CLUSTER=1 \
+  NVKECTL_E2E_SITE_STACK_NAMESPACES="${SITE_STACK_NAMESPACES}" \
   "${GO}" test -C "${CLI_DIR}" -tags e2e_bootstrap -timeout 0 -count=1 -v \
   ./e2e/bootstrap/bootstraptest/ -run '^TestE2E_' \
   >"${BOOTSTRAP_GO_TEST_LOG}" 2>&1 &
@@ -652,6 +675,28 @@ if [ "${bridged}" != true ]; then
   abort_bootstrap
 fi
 
+# Each site node gets the images as soon as its containerd answers. A pod that
+# asked first backs off and finds the image on its next try. The archive is
+# copied in rather than piped: nerdctl exec -i truncates a large stdin.
+site_images_archive="${SIM_STATE_DIR}/site-images.tar"
+nerdctl save --output "${site_images_archive}" "${site_images[@]}" || fail "could not save ${site_images[*]}"
+declare -A imported=()
+import_site_images() {
+  local node
+  for node in $(nerdctl ps -q --filter "label=${SIM_LABEL}"); do
+    [ -z "${imported[${node}]:-}" ] || continue
+    nerdctl exec "${node}" ctr -n k8s.io version >/dev/null 2>&1 || continue
+    nerdctl cp "${site_images_archive}" "${node}:/site-images.tar" &&
+      nerdctl exec "${node}" ctr -n k8s.io images import /site-images.tar >/dev/null || continue
+    imported[${node}]=1
+    log "imported the controller and profiles images into site node ${node}"
+  done
+}
+while kill -0 "${bootstrap_pid}" 2>/dev/null; do
+  import_site_images
+  sleep 5
+done
+
 status=0
 wait "${bootstrap_pid}" || status=$?
 bootstrap_pid=""
@@ -668,6 +713,12 @@ grep -q "installing CAPNICo" <<<"${output}" || fail "the bootstrap never install
 grep -q "cluster provisioned" <<<"${output}" || fail "the command exited 0 without reporting the cluster provisioned"
 [ -s "${TENANT_KUBECONFIG}" ] || fail "no kubeconfig was written to ${TENANT_KUBECONFIG}"
 log "PASS: bootstrap site created the site cluster, allocating its machines through CAPNICo"
+
+# TestE2E_BootstrapSite checked the NVKE stack on the site (bootstraptest.VerifySiteStack);
+# make sure it did, rather than skipped it for want of the namespaces.
+grep -q "bootstraptest: the NVKE stack on the site cluster is rolled out and Ready" "${BOOTSTRAP_GO_TEST_LOG}" ||
+  fail "TestE2E_BootstrapSite did not check the NVKE stack on the site cluster"
+log "PASS: every NVKE stack workload on the site cluster is rolled out and Ready: ${SITE_STACK_NAMESPACES}"
 
 # ── Stage 4: what was built ────────────────────────────────────────────────
 

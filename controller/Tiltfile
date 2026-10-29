@@ -155,7 +155,7 @@ if "launchlayer" in _provider_names:
 if not _supported_infra_providers:
     _supported_infra_providers.append("nico")
 
-CONTROLLER_NAMESPACE = "nke-controller"
+CONTROLLER_NAMESPACE = "nvke-controller"
 TEMPORAL_NAMESPACE = "temporal"
 POSTGRES_NAMESPACE = "postgres"
 SPIRE_NAMESPACE = "spire-server"
@@ -202,9 +202,9 @@ if os.getenv("KIND_CLUSTER_NAME", "") == "" and KIND_CLUSTER_NAME_VALUE == "cwe-
 EXPECTED_K8S_CONTEXT = "kind-%s" % KIND_CLUSTER_NAME_VALUE
 SPIRE_TRUST_DOMAIN = "%s.nvke.local" % KIND_CLUSTER_NAME_VALUE
 NKE_OIDC_ISSUER_URL = "https://nke.site-controller.internal"
-SPIRE_CONTROLLER_ADMIN_PATH = "/nvke-service/nke-controller"
+SPIRE_CONTROLLER_ADMIN_PATH = "/nvke-service/nvke-controller"
 if DSX_IDENTITY_EXCHANGE_ENABLED:
-    SPIRE_CONTROLLER_ADMIN_PATH = "/tenant/nke/service/nke-controller/bm/cwe"
+    SPIRE_CONTROLLER_ADMIN_PATH = "/tenant/nke/service/nvke-controller/bm/cwe"
 
 # sha256 of /app/tpm_attestor_server inside ghcr.io/spiffe/spire-tpm-plugin-tpm-attestor-server:v1.9.0,
 # selected by host arch (kind pulls the Linux variant matching the host CPU). Override via env var
@@ -500,7 +500,11 @@ _preflight_script += """
         exit 1
       }
       if helm status cwe -n cloud-workflow-engine >/dev/null 2>&1; then
-        echo "This cluster runs the controller as Helm release cwe in namespace cloud-workflow-engine. Tilt now installs it as nke-controller in nke-controller and cannot take over the old install. Recreate the cluster: make kind-down, then make capd-up." >&2
+        echo "This cluster runs the controller as Helm release cwe in namespace cloud-workflow-engine. Tilt now installs it as nvke-controller in nvke-controller and cannot take over the old install. Recreate the cluster: make kind-down, then make capd-up." >&2
+        exit 1
+      fi
+      if helm status nke-controller -n nke-controller >/dev/null 2>&1; then
+        echo "This cluster runs the controller as Helm release nke-controller in namespace nke-controller. Tilt now installs it as nvke-controller in nvke-controller and cannot take over the old install. Recreate the cluster: make kind-down, then make capd-up." >&2
         exit 1
       fi
 """
@@ -896,7 +900,7 @@ k8s_resource(
     new_name="nvke-auth-dev",
     labels=["1-infra"],
     objects=[
-        "nke-controller:namespace",
+        "nvke-controller:namespace",
         "nke-clients:namespace",
         "nke-outsiders:namespace",
         "nke-client:serviceaccount:nke-clients",
@@ -1317,7 +1321,7 @@ helm_resource(
     "nvke-controller",
     chart="deploy/charts/controller",
     labels=["3-nvke-controller"],
-    release_name="nke-controller",
+    release_name="nvke-controller",
     namespace=CONTROLLER_NAMESPACE,
     image_deps=_controller_image_deps,
     image_keys=_controller_image_keys,
@@ -1334,7 +1338,7 @@ helm_resource(
     links=[
       ui_link(CONTROLLER_HTTP_PORT, "/api/docs", "Swagger Docs"),
       ui_link(CONTROLLER_HTTP_PORT, "/metrics", "Metrics"),
-      ui_link(CONTROLLER_TEMPORAL_UI_PORT, "/namespaces/nke-controller/workflows", "Temporal UI"),
+      ui_link(CONTROLLER_TEMPORAL_UI_PORT, "/namespaces/nvke-controller/workflows", "Temporal UI"),
     ],
 )
 
@@ -1398,8 +1402,8 @@ cmd_button(
     "3-restart-nvke-controller",
     argv=["bash", "-c", """
       set -euo pipefail
-      kubectl -n """ + CONTROLLER_NAMESPACE + """ rollout restart deployment/nke-controller
-      kubectl -n """ + CONTROLLER_NAMESPACE + """ rollout status deployment/nke-controller --timeout=180s
+      kubectl -n """ + CONTROLLER_NAMESPACE + """ rollout restart deployment/nvke-controller
+      kubectl -n """ + CONTROLLER_NAMESPACE + """ rollout status deployment/nvke-controller --timeout=180s
     """],
     resource="nvke-controller",
     icon_name="restart_alt",

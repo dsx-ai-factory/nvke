@@ -55,7 +55,7 @@ spire-server:
               - key: kubernetes.io/metadata.name
                 operator: NotIn
                 values:
-                  - nke-controller
+                  - nvke-controller
         nvke-service:
           enabled: true
           spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/nvke-service/{{ .PodSpec.ServiceAccountName }}"
@@ -64,7 +64,7 @@ spire-server:
               - key: kubernetes.io/metadata.name
                 operator: In
                 values:
-                  - nke-controller
+                  - nvke-controller
           fallback: false
 
 # Workload identity does not require an OIDC provider. Disabling it also

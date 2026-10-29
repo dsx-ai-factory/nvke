@@ -976,14 +976,14 @@ Use this when you want to set breakpoints and step through CWE code while the re
 
 ```bash
 mkdir -p .local
-yq '.temporal.namespace = "nke-controller" | .temporal.taskQueue = "nke-controller-tasks"' hack/local-controller-config.yaml > .local/controller-config.tilt.yaml
+yq '.temporal.namespace = "nvke-controller" | .temporal.taskQueue = "nvke-controller-tasks"' hack/local-controller-config.yaml > .local/controller-config.tilt.yaml
 ```
 
 and ensure `.env.local` points at it and at the Tilt-forwarded database:
 
 ```bash
 export CONTROLLER_CONFIG_PATH="$PWD/.local/controller-config.tilt.yaml"
-export DB_CONNECTION_STRING="postgres://postgres:postgres@localhost:5432/nke-controller?sslmode=disable"
+export DB_CONNECTION_STRING="postgres://postgres:postgres@localhost:5432/nvke-controller?sslmode=disable"
 export DB_MAX_OPEN_CONNECTIONS=12
 ```
 

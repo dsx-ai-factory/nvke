@@ -10,11 +10,11 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: nvke-api-clients
-  namespace: nke-controller
+  namespace: nvke-controller
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: nke-controller
+      app.kubernetes.io/name: nvke-controller
   policyTypes:
     - Ingress
   ingress:

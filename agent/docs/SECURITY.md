@@ -56,9 +56,9 @@ RPC implementations are under `internal/agent/`.
    content from configured HTTPS/S3 or OCI sources. Apt repositories use
    caller-supplied signing keys and `signed-by` keyrings.
 6. **agent to operators:** Unary RPC metadata is written to
-   `/var/log/nvke-agent-audit.log`. Script activity is written to
-   `/var/log/nvke-execute-scripts.log`. `GetSupportBundle` returns selected
-   state and logs to an authenticated caller.
+   `/var/log/nvke-agent-audit.log` and mirrored to the service journal. Script
+   activity is written to `/var/log/nvke-execute-scripts.log`.
+   `GetSupportBundle` returns selected state and logs to an authenticated caller.
 
 ### Authorization model
 

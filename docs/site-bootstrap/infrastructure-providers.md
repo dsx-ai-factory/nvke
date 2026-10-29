@@ -34,7 +34,7 @@ depends on the Helm release name your controller install used:
 On an existing site, where the controller runs as `cloud-workflow-engine`, use `cloud-workflow-engine` for both the namespace and the label in the command below.
 
 ```bash
-kubectl rollout restart deployment -n nke-controller -l app.kubernetes.io/name=nke-controller
+kubectl rollout restart deployment -n nvke-controller -l app.kubernetes.io/name=nvke-controller
 ```
 
 ## 1. Check the Control-Plane Taint Is Gone

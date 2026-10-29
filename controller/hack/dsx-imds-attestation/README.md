@@ -30,7 +30,7 @@ the provider is enabled.
 To exercise node-agent TLS/JWT too, add `dsx-identity-exchange` to the provider
 list and set `site_controller_vip` to the management Kind node's IP reachable
 from CAPD nodes. The exchange fixture validates the agent's SPIRE JWT-SVID for
-`nke-controller` and maps
+`nvke-controller` and maps
 `spiffe://<local-trust-domain>/tenant/nke/service/node-agent/bm/<node-UUID>` to
 `spiffe://nke.capd.node-agent.nvid.id/bm/<same-node-UUID>`. The provider then
 configures CWE to verify the fixture's ES256 JWTs and injects its HTTPS exchange

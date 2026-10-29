@@ -21,6 +21,7 @@ spec:
             net.ipv6.conf.all.disable_ipv6 = 1
             net.ipv6.conf.default.disable_ipv6 = 1
             net.ipv6.conf.lo.disable_ipv6 = 1
+      {{- if .SpiffeEnabled }}
         - path: /etc/spire-agent/agent.conf
           owner: root:root
           permissions: '0644'
@@ -58,6 +59,7 @@ spec:
           permissions: '0644'
           content: |
       {{ indent 6 .TrustBundle }}
+      {{- end }}
       {{- range .Files }}
         - path: {{ quote .Path }}
           owner: {{ quote .Owner }}
@@ -69,12 +71,20 @@ spec:
       {{- end }}
 
       runcmd:
+      {{- if .SpiffeEnabled }}
         - systemctl restart spire-agent.service
+      {{- else }}
+        - systemctl disable --now spire-agent.service
+      {{- end }}
         - sysctl --system
         - systemctl restart procps
         - mkdir -p /run/cluster-api
         - echo success > /run/cluster-api/bootstrap-success.complete
+      {{- if .SpiffeEnabled }}
         - sh -c 'nohup sh -c "for i in \$(seq 1 90); do [ -S /tmp/spire-agent/public/api.sock ] && systemctl restart nvke-agent.service && exit 0; sleep 1; done; exit 1" >/var/log/nvke-agent-spire-wait.log 2>&1 &'
+      {{- else }}
+        - systemctl restart nvke-agent.service
+      {{- end }}
   lifecycle:
     deprecated: false
     hidden: false

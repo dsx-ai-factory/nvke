@@ -603,7 +603,7 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 	if !strings.Contains(spire, "upgrade --install spire spire") ||
 		!strings.Contains(spire, "global.spire.clusterName=test-kind") ||
 		!strings.Contains(spire, "global.spire.trustDomain=test-kind.nke.local") ||
-		!strings.Contains(spire, "spire-server.adminIDs[0]=spiffe://test-kind.nke.local/nvke-service/nke-controller") {
+		!strings.Contains(spire, "spire-server.adminIDs[0]=spiffe://test-kind.nke.local/nvke-service/nvke-controller") {
 		t.Errorf("SPIRE call = %q, want the pinned chart and controller identity", spire)
 	}
 
@@ -744,7 +744,7 @@ func TestWaitReady_SucceedsOnOKStatus(t *testing.T) {
 	if call.name != "kubectl" {
 		t.Errorf("call.name = %q, want %q", call.name, "kubectl")
 	}
-	wantProxyPath := "/api/v1/namespaces/nke-controller/services/nke-controller:http/proxy/readyz"
+	wantProxyPath := "/api/v1/namespaces/nvke-controller/services/nvke-controller:http/proxy/readyz"
 	if !strings.Contains(joinArgs(call.args), wantProxyPath) {
 		t.Errorf("args = %q, want it to include %q", joinArgs(call.args), wantProxyPath)
 	}
@@ -879,7 +879,7 @@ func TestSpireInstallArgs(t *testing.T) {
 		"--values /tmp/values.yaml",
 		"global.spire.clusterName=kind",
 		"global.spire.trustDomain=kind.nke.local",
-		spireServerValuesPrefix + ".adminIDs[0]=spiffe://kind.nke.local/nvke-service/nke-controller",
+		spireServerValuesPrefix + ".adminIDs[0]=spiffe://kind.nke.local/nvke-service/nvke-controller",
 	} {
 		if !hasArgs(got, strings.Fields(want)...) {
 			t.Errorf("install = %q, want it to contain %q", got, want)
@@ -1534,7 +1534,7 @@ func (r *dumpingRunner) Run(ctx context.Context, name string, args ...string) (s
 		if a != "--output-directory" || i+1 >= len(args) {
 			continue
 		}
-		sub := filepath.Join(args[i+1], "nke-controller")
+		sub := filepath.Join(args[i+1], "nvke-controller")
 		if mkErr := os.MkdirAll(sub, 0o750); mkErr != nil {
 			return out, mkErr
 		}
@@ -1562,7 +1562,7 @@ func TestDumpDiagnostics_ScrubsCredentials(t *testing.T) {
 		"pods.json":  fakeValue,        // a registered password, in a URL
 		"other.json": "not-registered", // any password in a database URL
 	} {
-		body, err := os.ReadFile(filepath.Join(dir, "nke-controller", file))
+		body, err := os.ReadFile(filepath.Join(dir, "nvke-controller", file))
 		if err != nil {
 			t.Fatalf("%s: %v", file, err)
 		}
@@ -1573,7 +1573,7 @@ func TestDumpDiagnostics_ScrubsCredentials(t *testing.T) {
 			t.Errorf("%s lost more than the password:\n%s", file, body)
 		}
 	}
-	body, err := os.ReadFile(filepath.Join(dir, "nke-controller", "pods.json"))
+	body, err := os.ReadFile(filepath.Join(dir, "nvke-controller", "pods.json"))
 	if err != nil || !strings.Contains(string(body), `"keep":"host=db"`) {
 		t.Errorf("an unrelated field did not survive: %q, %v", body, err)
 	}
@@ -1605,10 +1605,10 @@ func TestDumpDiagnostics_LeavesOtherFilesInTheDirectoryAlone(t *testing.T) {
 	redact.RegisterSecret(fakeValue)
 	dir := t.TempDir()
 	others := map[string]string{
-		"app.env":          "DATABASE_URL=postgres://u:p@h/db\n",
-		"old.log":          "rejected " + fakeValue + "\n",
-		"sub/notes.txt":    "postgresql://dev:hunter2@localhost/app\n",
-		"nke-controller/x": "a file in a directory the bundle also uses\n",
+		"app.env":           "DATABASE_URL=postgres://u:p@h/db\n",
+		"old.log":           "rejected " + fakeValue + "\n",
+		"sub/notes.txt":     "postgresql://dev:hunter2@localhost/app\n",
+		"nvke-controller/x": "a file in a directory the bundle also uses\n",
 	}
 	for name, body := range others {
 		path := filepath.Join(dir, name)
@@ -1635,7 +1635,7 @@ func TestDumpDiagnostics_LeavesOtherFilesInTheDirectoryAlone(t *testing.T) {
 	if got, _ := os.ReadFile(stale); string(got) == "stale" {
 		t.Error("a bundle file did not replace the file of the same name")
 	}
-	body, err := os.ReadFile(filepath.Join(dir, "nke-controller", "pods.json"))
+	body, err := os.ReadFile(filepath.Join(dir, "nvke-controller", "pods.json"))
 	if err != nil {
 		t.Fatalf("the bundle was not published into dir: %v", err)
 	}
@@ -1966,12 +1966,12 @@ func TestDumpDiagnostics_DoesNotWriteThroughASymlinkInTheDirectory(t *testing.T)
 		make func(t *testing.T, dir, elsewhere string)
 	}{
 		{"a symlink to a directory", func(t *testing.T, dir, elsewhere string) {
-			if err := os.Symlink(elsewhere, filepath.Join(dir, "nke-controller")); err != nil {
+			if err := os.Symlink(elsewhere, filepath.Join(dir, "nvke-controller")); err != nil {
 				t.Skipf("no symlinks here: %v", err)
 			}
 		}},
 		{"a file where a directory is wanted", func(t *testing.T, dir, _ string) {
-			if err := os.WriteFile(filepath.Join(dir, "nke-controller"), []byte("not a directory"), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "nvke-controller"), []byte("not a directory"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}},
@@ -2015,7 +2015,7 @@ func TestDumpDiagnostics_PublishesIntoADirectoryThatIsASymlink(t *testing.T) {
 
 	New(&dumpingRunner{fakeRunner: &fakeRunner{}}, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", link)
 
-	for _, name := range []string{"helm-releases.txt", filepath.Join("nke-controller", "pods.json")} {
+	for _, name := range []string{"helm-releases.txt", filepath.Join("nvke-controller", "pods.json")} {
 		if _, err := os.Stat(filepath.Join(target, name)); err != nil {
 			t.Errorf("%s was not published into the directory the symlink points at: %v", name, err)
 		}
@@ -2457,6 +2457,42 @@ func TestDeploy_TracingValues(t *testing.T) {
 						t.Errorf("values file %s still exists after Deploy", call.args[i+1])
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestEnsureDefaultStorageClass(t *testing.T) {
+	tests := []struct {
+		name        string
+		defaults    string
+		wantInstall bool
+	}{
+		{name: "installs local-path when no StorageClass is the default", defaults: "\n\n", wantInstall: true},
+		{name: "keeps a cluster's own default StorageClass", defaults: "\ntrue\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeRunner{outputs: []fakeOutput{{output: tt.defaults}, {}, {}, {}}}
+			if err := New(runner, nil).EnsureDefaultStorageClass(context.Background(), "site.kubeconfig"); err != nil {
+				t.Fatal(err)
+			}
+			if !tt.wantInstall {
+				if len(runner.calls) != 1 {
+					t.Fatalf("want only the StorageClass lookup, got %d calls", len(runner.calls))
+				}
+				return
+			}
+			if len(runner.applied) != 1 || !strings.Contains(runner.applied[0], "rancher/local-path-provisioner:v0.0.31") {
+				t.Fatalf("want the local-path manifest applied, got %d manifests", len(runner.applied))
+			}
+			want := "annotate storageclass local-path storageclass.kubernetes.io/is-default-class=true --overwrite"
+			if got := joinArgs(runner.calls[2].args[2:]); got != want {
+				t.Fatalf("got %q, want %q", got, want)
+			}
+			want = "-n local-path-storage rollout status deployment/local-path-provisioner --timeout 5m0s"
+			if got := joinArgs(runner.calls[3].args[2:]); got != want {
+				t.Fatalf("got %q, want %q", got, want)
 			}
 		})
 	}

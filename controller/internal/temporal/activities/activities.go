@@ -82,6 +82,10 @@ func (a *Activities) nodeAgentBootstrapFiles(node db.Node) ([]db.CloudInitFile, 
 	if node.NodeAgentTLSJWTEnabled {
 		args = append(args, "--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url="+a.cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)
 	}
+	// The controller dials such a node in plaintext, so the agent must serve plaintext too.
+	if !node.SpiffeEnabled && !node.NodeAgentExternalMTLSEnabled {
+		args = append(args, "--disable-mtls")
+	}
 	files = append(files, db.CloudInitFile{
 		Path:        contracts.EnvFilePath,
 		Owner:       "root:root",

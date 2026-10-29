@@ -7,7 +7,7 @@
 // nvkeSystemNamespace.name into the controller's managementNamespace), so the
 // suite must not assume the default. Everything the suite reads or writes on
 // the site controller -- published kubeconfig and trust-bundle Secrets, the
-// nke-rbac ConfigMap, CAPI Clusters and Machines, verifier Pods -- lives in
+// RBAC ConfigMap, CAPI Clusters and Machines, verifier Pods -- lives in
 // this one namespace, so one resolved value covers the whole suite.
 package mgmtns
 

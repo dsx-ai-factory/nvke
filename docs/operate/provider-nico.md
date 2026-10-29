@@ -42,7 +42,7 @@ export KUBECONFIG=$PWD/<CLUSTER_NAME>.kubeconfig
 2. Check that the management plane started its NICo controllers.
 
    ```bash
-   kubectl -n nke-controller get deploy nke-controller
+   kubectl -n nvke-controller get deploy nvke-controller
    ```
 
    The Deployment is ready. This install enables the NICo controllers, and the process exits at startup when the `NicoMachine` CRD is missing, so a ready Deployment means those controllers started.

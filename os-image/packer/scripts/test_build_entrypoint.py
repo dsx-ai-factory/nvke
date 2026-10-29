@@ -254,6 +254,7 @@ class GuestUpdaterTest(unittest.TestCase):
                 log = root / "make.log"
                 env = os.environ | {"PATH": f"{tools}:{os.environ['PATH']}",
                                     "REPO_ROOT": str(repo), "ARCH": "arm64",
+                                    "NKE_TARGET_UBUNTU_SERIES": "26.04",
                                     "ARTIFACTS_DIR": str(artifacts), "TEST_MAKE_LOG": str(log)}
                 env.pop("SOURCE_ROOT", None)
                 if source_root is not None:
@@ -264,8 +265,10 @@ class GuestUpdaterTest(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 calls = log.read_text().splitlines()
-                self.assertEqual(len(calls), 5, calls)
+                self.assertEqual(len(calls), 6, calls)
                 self.assertIn(f"-C {repo}/agent deb-arm64", calls[0])
+                self.assertIn(f"-C {repo}/os-image/packages/doca-ovs debs", calls[5])
+                self.assertIn("UBUNTU_SERIES=26.04", calls[5])
                 self.assertTrue((artifacts / "00-dhcp-all.yaml").is_file())
                 self.assertTrue((artifacts / "99-disable-network-config.cfg").is_file())
                 self.assertTrue((artifacts / "nvke-agent-spire.conf").is_file())

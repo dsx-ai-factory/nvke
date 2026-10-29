@@ -43,6 +43,12 @@ spire.externalAddress is required unless --disable-mtls is set. The nodes'
 names and addresses are not printed; read them with "kubectl get nodes -o wide"
 on the finished cluster.
 
+With nico, the NVKE stack is then installed on the site cluster the same way:
+Postgres, Temporal, SPIRE, Cluster API with CAPNICo, and the NVKE controller,
+with SPIRE published at the control-plane VIP. A site without a default
+StorageClass gets local-path-provisioner. The site's nodes pull the controller
+image, so --nvke-controller-image must name a registry they can reach.
+
 See the bundled examples/sitespec.yaml and docs/sitespec.md for the
 site spec file format.
 

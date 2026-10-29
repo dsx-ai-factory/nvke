@@ -97,7 +97,7 @@ data:
 
     SOCKET="${SPIFFE_ENDPOINT_SOCKET:-unix:///spiffe-workload-api/spire-agent.sock}"
     EXEC_AUTH="${SPIFFE_JWT_EXEC_AUTH:-/opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth}"
-    NKE_URL="${NKE_URL:-http://nke-controller.nke-controller.svc:8080}"
+    NKE_URL="${NKE_URL:-http://nvke-controller.nvke-controller.svc:8080}"
     PROBE_PATH="${PROBE_PATH:-/api/clusters}"
     AUDIENCE="${NKE_AUDIENCE:-https://nke.tilt.local}"
     WRONG_AUDIENCE="${NKE_WRONG_AUDIENCE:-https://nke.wrong.invalid}"

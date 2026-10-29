@@ -32,9 +32,26 @@ type Principal struct {
 	Claims map[string]any
 }
 
+// ServiceAccount returns the service account p's nested "kubernetes.io" claim
+// names. It reports false unless the claim is well formed and p.Subject is
+// system:serviceaccount:<namespace>:<name> for the same account.
+//
+// It reads the nested claim rather than parsing "sub", because "sub" splits
+// ambiguously when a part holds a colon, and a wrong split could match another
+// account. The two must agree, or a token admitted as one account could be
+// treated as another.
+func (p *Principal) ServiceAccount() (ServiceAccount, bool) {
+	sa, ok := serviceAccountFromClaims(p.Claims)
+	if !ok || p.Subject != serviceAccountSubjectPrefix+sa.Namespace+":"+sa.Name {
+		return ServiceAccount{}, false
+	}
+	return sa, true
+}
+
 // principalContextKey is unexported so no other package can collide with it.
 type principalContextKey struct{}
 
+// ContextWithPrincipal returns a copy of ctx that carries p.
 func ContextWithPrincipal(ctx context.Context, p *Principal) context.Context {
 	return context.WithValue(ctx, principalContextKey{}, p)
 }

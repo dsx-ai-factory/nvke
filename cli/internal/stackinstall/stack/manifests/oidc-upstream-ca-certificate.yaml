@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The OIDC upstream CA itself. Its Issuers are in oidc-upstream-ca.yaml.
+#
+# Applied on a first install only. nvkectl skips this file once the Secret
+# oidc-provider-upstream-ca exists. Any change to this Certificate's spec
+# makes cert-manager re-issue the CA with a new private key, which invalidates
+# the trust anchor every tenant has embedded. The Secret is the anchor. It
+# holds the key material and it is what tenants trust.
+#
+# renewBefore puts the auto-rotation trigger 30 days before notAfter, which is
+# never during normal operation.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: oidc-provider-upstream-ca
+  namespace: spire-server
+spec:
+  isCA: true
+  commonName: "NVKE OIDC Upstream CA"
+  subject:
+    organizations: ["NVIDIA"]
+    organizationalUnits: ["NVKE"]
+  duration: 87600h # 10 years
+  renewBefore: 720h # 30 days
+  secretName: oidc-provider-upstream-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 384
+  issuerRef:
+    name: oidc-ca-bootstrap
+    kind: Issuer
+    group: cert-manager.io

@@ -59,9 +59,32 @@ token:^(controller|management-engine)\.nke\.nvidia\.com$
 # ---- Tier 2: Kubernetes identifiers the post-launch release renames for new sites (PR4) ----
 
 # The controller's Helm release, namespace, Deployment, Service, ServiceAccount,
-# container, ConfigMaps, Temporal namespace and queue, database and Teleport
-# managed-by value, and its NVCR repository until the new one exists.
-token:nke-controller
+# container, Temporal namespace and queue, database, field managers and Teleport
+# managed-by value have moved to nvke-controller on the greenfield deploy
+# stacks. What is left of the name is below, each with its own reason.
+
+# The settings ConfigMap. #1818 moved the chart default to
+# nvke-controller-config; this is the name an install that predates it pins,
+# and the chart and its consumers read either.
+token:nke-controller-config
+
+# The NVKR chart artifact, a release-manifest key read outside this repository,
+# and the release fixtures shaped like it. #1554 does not move it.
+token:nke-controller-chart
+
+# The image under its old name: the GHCR repository of releases cut before the
+# rename (docs/artifact-publication.md) and the local build tags the bootstrap
+# and hack/local-site.sh side-load.
+token:(^|[/:-])nke-controller($|[:@.])
+
+# The name a site installed from the greenfield stacks before this rename
+# keeps, which its consumers must still recognise: the namespace, Deployment
+# and ServiceAccount that nvkectl, nvke-token.sh, nvke-auth-demo.sh and
+# dev-env-spire.sh search for after nvke-controller, the Tilt preflight that
+# refuses to take such a cluster over, and the reference dashboards' selectors.
+# Also the node-agent audience the controller and the agent accept beside
+# nvke-controller, and the NVKR release fixtures' artifact name.
+token:^nke-controller[.]?$
 
 # The legacy managed-by value and the umbrella chart.
 token:nke-cloud-workflow-engine|nke-stack
@@ -87,12 +110,17 @@ token:(^|[./])nke\.nvidia\.com|^label_nke_nvidia_com_|\.labels\.nke$
 # and no longer need this entry.
 token:NKECluster|nkecluster|NKENodePool|nkenodepool|nkeClusterRef|NKEValidatedNodeIdentity
 
-# The nke-rbac ConfigMap, whose name is still a compiled constant
-# (controller/internal/nvkerbac) and so has to become a chart value before it
-# can move, and the nke: ClusterRole prefix the tenant apiserver reserves.
-# The nvkerbac package's own filenames have been renamed and no longer need
-# an entry.
-token:nke-rbac|^nke:
+# The nke-rbac ConfigMap, Role and RoleBinding. The name is a chart value
+# (rbacConfigMap.name) defaulting to nvke-rbac, and the controller reads it from
+# rbacConfigMapName; what is left is the legacy default a site installed before
+# the value pins, so the name survives in the pinned-values fixture, the
+# legacy-pinned render assertion, nvkerbac.LegacyConfigMapName and the prose
+# that tells an operator which name their site keeps.
+token:nke-rbac
+
+# The nke: ClusterRole prefix the tenant apiserver reserves, and the nke:cwe
+# objects an earlier release applied, which tenantaccess prunes by name.
+token:^nke:
 
 # SPIFFE caller paths and the ClusterSPIFFEID, the client identities, and the
 # e2e and Tilt probe identities.

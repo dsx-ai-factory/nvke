@@ -240,7 +240,8 @@ What the suite passes down is `NodePayloads` — the iPXE script and
 `preKubeadmCommands` rendered by the same `BuildForgeNodePayloads` the site
 node was built from, so tenant nodes are constructed the same way. The
 pre-kubeadm script installs the pinned `nvke-kubeadm-distro`, both OVN
-packages and `openvswitch-switch`.
+packages and `openvswitch-switch`, which on a DOCA image resolves to the
+already-installed `doca-openvswitch-switch`.
 
 It configures no apt repository. Those packages come from the flat `file:`
 repo the image stages under `/usr/lib/nvke/debs` and indexes at bake time, so

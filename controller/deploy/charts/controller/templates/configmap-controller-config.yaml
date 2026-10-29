@@ -37,6 +37,7 @@ data:
       machineHealthIssueName: {{ .Values.identity.fieldManagerMachineHealthIssueName | default "cloud-workflow-engine-machine-health-issue" | quote }}
     managedByLabelValue: {{ .Values.identity.managedByLabelValue | default "cloud-workflow-engine" | quote }}
     managementNamespace: {{ include "controller.managementNamespace" . | quote }}
+    rbacConfigMapName: {{ include "controller.rbacConfigMap.name" . | quote }}
     metricsListenAddress: {{ .Values.metrics.listenAddress | default "127.0.0.1:9090" | quote }}
     supportedInfraProviders:
       {{- range splitList "," (.Values.supportedInfraProviders | default "nico") }}

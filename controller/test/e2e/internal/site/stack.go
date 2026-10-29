@@ -6,7 +6,6 @@ package site
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -283,11 +282,7 @@ func (d Stack) Deploy(ctx context.Context, s infra.Session, t DeployTarget) erro
 		return err
 	}
 	if d.DatabasePassword == "" {
-		password, err := randomPassword()
-		if err != nil {
-			return err
-		}
-		d.DatabasePassword = password
+		d.DatabasePassword = rand.Text()
 	}
 
 	if err := d.stageAssets(ctx, s); err != nil {
@@ -349,7 +344,7 @@ func (d Stack) withDefaults() Stack {
 //
 // These are two owners of one string: the deploy path, exported from the
 // controller version under test, and NVKE_CONTROLLER_NAMESPACE and
-// NVKE_CONTROLLER_SERVICE, which default to nke-controller. Nothing makes the
+// NVKE_CONTROLLER_SERVICE, which default to nvke-controller. Nothing makes the
 // two move together.
 //
 // Getting it wrong is expensive rather than obvious: the readiness probe
@@ -598,12 +593,4 @@ func oidcDomains(overlay []byte, vip string) ([]string, error) {
 		}
 	}
 	return append(domains, vip), nil
-}
-
-func randomPassword() (string, error) {
-	b := make([]byte, 24)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("generate database password: %w", err)
-	}
-	return hex.EncodeToString(b), nil
 }

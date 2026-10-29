@@ -171,14 +171,14 @@ nico-sim's VM backend runs a BGP speaker that enables kube-vip high availability
 
 **VIP range (off-link, routed via BGP):**
 
-The control-plane VIP range is a *separate* subnet, not carved from the bridge. Every client (VMs, worker kubelets, and nke-controller in Kind) reaches the VIP via the BGP route the speaker installs, exercising the same L3/ECMP path as a routed production fabric instead of on-link ARP. The whole bridge subnet is therefore free for DHCP.
+The control-plane VIP range is a *separate* subnet, not carved from the bridge. Every client (VMs, worker kubelets, and nvke-controller in Kind) reaches the VIP via the BGP route the speaker installs, exercising the same L3/ECMP path as a routed production fabric instead of on-link ARP. The whole bridge subnet is therefore free for DHCP.
 
 ```
 bridge 172.30.0.0/24:  .1 gateway, .10-.254 DHCP pool (dnsmasq)
-VIP    172.31.0.0/24:  nke-controller allocates cluster VIPs; reached via BGP /32 routes
+VIP    172.31.0.0/24:  nvke-controller allocates cluster VIPs; reached via BGP /32 routes
 ```
 
-On startup the speaker installs a covering `blackhole` route for the VIP range (so traffic for a VIP that no CP is currently announcing is dropped locally rather than leaking to the host default route), plus a more-specific `/32` ECMP route per announced VIP. The Tiltfile sets `NICO_VMS_VIP_CIDR`, registers the site with nke-controller, and passes it as the speaker's allowlist; the layout is printed at `tilt up` time.
+On startup the speaker installs a covering `blackhole` route for the VIP range (so traffic for a VIP that no CP is currently announcing is dropped locally rather than leaking to the host default route), plus a more-specific `/32` ECMP route per announced VIP. The Tiltfile sets `NICO_VMS_VIP_CIDR`, registers the site with nvke-controller, and passes it as the speaker's allowlist; the layout is printed at `tilt up` time.
 
 ### Libvirt-Network Mode
 
@@ -235,7 +235,7 @@ Ranges used by a nico-vms deployment and the tenant clusters it creates — keep
 | Control-plane VIP range | `172.31.0.0/24` | B | tenant API VIPs (off-link, via BGP) | `NICO_VMS_VIP_CIDR` (Tiltfile) |
 | Tenant pod CIDR | `192.168.0.0/16` | C | Calico pods in tenant clusters | defaulted in `internal/server/cluster_network.go` |
 | Tenant service CIDR | `10.96.0.0/12` | A | tenant cluster Services | kubeadm default |
-| kind mgmt network | assigned by Docker; see the note below | B (C on the `192.168` fallback) | Docker network hosting the nke-controller/Kind management cluster | Kind / Docker |
+| kind mgmt network | assigned by Docker; see the note below | B (C on the `192.168` fallback) | Docker network hosting the nvke-controller/Kind management cluster | Kind / Docker |
 
 > **Why `172.30`/`172.31`?** The bridge and VIP ranges are deliberately kept clear of every other consumer:
 > - tenant **pod CIDR** `192.168.0.0/16` (class C, Calico default) — a node or VIP inside it gets shadowed by Calico's per-node `/26` `blackhole` routes;
@@ -814,7 +814,7 @@ For one-shot nico-vms integration tests, sync just this tree and run on the remo
 | ---------------------------------- | ----------------------------------------------------------------- |
 | `scripts/run-vm-server.sh`         | Start the server with auto-detected backend and base image        |
 | `scripts/run-dnsmasq.sh`           | Start dnsmasq for VM DHCP/DNS on the bridge (used by Tilt)        |
-| `scripts/get-kubeconfig.sh`        | Extract kubeconfig from a running NVKE cluster via the nke-controller API + SSH   |
+| `scripts/get-kubeconfig.sh`        | Extract kubeconfig from a running NVKE cluster via the nvke-controller API + SSH   |
 | `scripts/inspect-vm-ips.sh`        | Compare DB IPs vs actual ARP IPs to detect IP drift               |
 | `scripts/create-prod-vm.sh`        | Create a production FDE VM with iPXE + LUKS + kubeadm             |
 | `scripts/nico-vms-console-log.sh` | View VM console output from disk                                  |
@@ -906,7 +906,7 @@ The default seed (`internal/seed/default-seed.yaml`) provides IDs used throughou
 
 Subnet CIDRs and VPC prefixes are auto-hydrated from `NICO_VMS_BRIDGE_CIDR` at startup if not explicitly set in the seed file.
 
-## nke-controller Integration
+## nvke-controller Integration
 
 ### Manual
 
@@ -916,7 +916,7 @@ use nico-containers.
 
 ### With Tilt (recommended)
 
-The Tilt workflow runs nke-controller and nico-sim locally with hot-reload. The parent
+The Tilt workflow runs nvke-controller and nico-sim locally with hot-reload. The parent
 `nico` provider loads the nico-sim component when no external endpoint is set.
 
 Prerequisites: [Tilt](https://tilt.dev), a Kind cluster, Docker.

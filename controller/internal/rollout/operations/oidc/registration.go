@@ -7,6 +7,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nvkerbac"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
 )
@@ -14,8 +15,9 @@ import (
 // RegisterDefaults wires the enable-OIDC operation into reg with its runtime
 // dependencies: the agent dialer, the reflection-based capability checker
 // (verifies PatchAPIServerManifest support before any node is touched), the
-// management-cluster client (reads the issuer CA bundle and nke-rbac), the site
-// OIDC config, and the management SPIFFE trust domain.
+// management-cluster client (reads the issuer CA bundle and the RBAC manifest),
+// the site OIDC config, the management SPIFFE trust domain, and the RBAC
+// ConfigMap that manifest lives in.
 func RegisterDefaults(
 	reg *rollout.Registry,
 	dialer nodeagent.Dialer,
@@ -23,7 +25,7 @@ func RegisterDefaults(
 	k8sClient client.Client,
 	oidc config.NvkeOIDCAuth,
 	trustDomain string,
-	managementNamespace string,
+	rbacConfigMap nvkerbac.Source,
 ) {
 	oidcConfig := oidc
 	reg.RegisterOperation(rollout.Compile(NewEnableOIDCOperation(
@@ -32,6 +34,6 @@ func RegisterDefaults(
 		WithClient(k8sClient),
 		WithOIDCConfig(&oidcConfig),
 		WithTrustDomain(trustDomain),
-		WithManagementNamespace(managementNamespace),
+		WithRBACConfigMap(rbacConfigMap),
 	)))
 }

@@ -6,12 +6,15 @@ package nvkectl
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -28,6 +31,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/dsx-ai-factory/nvke/cli/internal/config"
 	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 )
 
@@ -517,4 +521,360 @@ func TestLoggerMasksCredentials(t *testing.T) {
 			assert.GreaterOrEqual(t, strings.Count(body, "<redacted>"), 7, "%s", body)
 		})
 	}
+}
+
+// siteOTLPEnv clears every OTEL_EXPORTER_OTLP_* variable the shell may export,
+// so a test starts with no environment source whatever the ambient environment.
+func siteOTLPEnv(t *testing.T) {
+	t.Helper()
+	for _, kv := range os.Environ() {
+		if name, _, _ := strings.Cut(kv, "="); strings.HasPrefix(name, "OTEL_EXPORTER_OTLP_") {
+			t.Setenv(name, "") // registers the restore
+			require.NoError(t, os.Unsetenv(name))
+		}
+	}
+	t.Cleanup(func() { verbose = false })
+}
+
+// siteCollector is an in-process OTLP/gRPC endpoint on a loopback address,
+// which a site's endpoint may be, that keeps spans and log records.
+type siteCollector struct {
+	*otlpCollector
+	logs *logsCollector
+}
+
+func newSiteCollector(t *testing.T) *siteCollector {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	c := &siteCollector{otlpCollector: &otlpCollector{addr: lis.Addr().String()}, logs: &logsCollector{addr: lis.Addr().String()}}
+	server := grpc.NewServer()
+	coltracepb.RegisterTraceServiceServer(server, c.otlpCollector)
+	collogspb.RegisterLogsServiceServer(server, c.logs)
+	go func() { _ = server.Serve(lis) }()
+	t.Cleanup(server.Stop)
+	return c
+}
+
+func (c *siteCollector) spanNames() []string {
+	spans, _ := c.received()
+	names := make([]string, 0, len(spans))
+	for _, span := range spans {
+		names = append(names, span.GetName())
+	}
+	return names
+}
+
+// saveSiteConfig writes cfg to a config directory of its own and points
+// XDG_CONFIG_HOME at it.
+func saveSiteConfig(t *testing.T, cfg *config.Config) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	require.NoError(t, cfg.Save())
+}
+
+// runSiteCommand runs nvkectl with args through execute and returns stdout,
+// everything written to stderr, including the logs the command installs on the
+// process's stderr, and the error.
+func runSiteCommand(t *testing.T, args ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	root := NewRootCmd("v1.2.3", "test", "test", "test")
+	root.SetArgs(args)
+	var out, errOut bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+
+	r, w, pipeErr := os.Pipe()
+	require.NoError(t, pipeErr)
+	realStderr, realLogger := os.Stderr, slog.Default()
+	t.Cleanup(func() { os.Stderr = realStderr; slog.SetDefault(realLogger) })
+	os.Stderr = w
+	var logs bytes.Buffer
+	copied := make(chan struct{})
+	go func() { _, _ = io.Copy(&logs, r); close(copied) }()
+	err = execute(context.Background(), root, "v1.2.3", &errOut)
+	os.Stderr = realStderr
+	slog.SetDefault(realLogger)
+	require.NoError(t, w.Close())
+	<-copied
+	require.NoError(t, r.Close())
+	return out.String(), errOut.String() + logs.String(), err
+}
+
+func TestSiteOTLPExportsACommandsTelemetryToItsSite(t *testing.T) {
+	siteOTLPEnv(t)
+	collector := newSiteCollector(t)
+	controller := newFakeController(t)
+	saveSiteConfig(t, &config.Config{CurrentSite: "t", Sites: map[string]config.SiteConfig{
+		"t": {URL: controller.URL, OTLPEndpoint: collector.addr, OTLPInsecure: true},
+	}})
+
+	stdout, _, err := runSiteCommand(t, "get", "clusters", "--verbose")
+	require.NoError(t, err)
+	assert.Contains(t, stdout, "demo")
+
+	spans, _ := collector.received()
+	var rootSpan, clientSpan *tracepb.Span
+	for _, span := range spans {
+		switch {
+		case span.GetName() == "nvkectl get clusters":
+			rootSpan = span
+		case span.GetKind() == tracepb.Span_SPAN_KIND_CLIENT:
+			clientSpan = span
+		}
+	}
+	require.NotNil(t, rootSpan, "the collector holds the command's root span: %v", collector.spanNames())
+	require.NotNil(t, clientSpan, "the collector holds the HTTP client span: %v", collector.spanNames())
+	traceID := hex.EncodeToString(rootSpan.GetTraceId())
+	assert.Equal(t, traceID, hex.EncodeToString(clientSpan.GetTraceId()))
+	assert.Equal(t, []string{traceID}, traceparents(t, controller), "the controller received the exported trace")
+	controller.mu.Lock()
+	parts := strings.Split(controller.headers[0].Get("Traceparent"), "-")
+	controller.mu.Unlock()
+	require.Len(t, parts, 4)
+	assert.Equal(t, hex.EncodeToString(clientSpan.GetSpanId()), parts[2], "the controller's parent is the HTTP client span")
+	assert.Contains(t, collector.logs.received(), "command finished", "the logs are exported too")
+}
+
+func TestSiteOTLPSiteFlagUsesThatSitesEndpoint(t *testing.T) {
+	siteOTLPEnv(t)
+	current, other := newSiteCollector(t), newSiteCollector(t)
+	controller := newFakeController(t)
+	saveSiteConfig(t, &config.Config{CurrentSite: "t", Sites: map[string]config.SiteConfig{
+		"t":     {URL: controller.URL, OTLPEndpoint: current.addr, OTLPInsecure: true},
+		"other": {URL: controller.URL, OTLPEndpoint: other.addr, OTLPInsecure: true},
+	}})
+
+	_, _, err := runSiteCommand(t, "get", "clusters", "--site", "other")
+	require.NoError(t, err)
+
+	assert.Contains(t, other.spanNames(), "nvkectl get clusters")
+	assert.Empty(t, current.spanNames(), "the current site's collector receives nothing")
+}
+
+func TestSiteOTLPSiteEndpointWinsOverEnvironment(t *testing.T) {
+	siteOTLPEnv(t)
+	siteCollector, envCollector := newSiteCollector(t), newSiteCollector(t)
+	controller := newFakeController(t)
+	saveSiteConfig(t, &config.Config{CurrentSite: "t", Sites: map[string]config.SiteConfig{
+		"t": {URL: controller.URL, OTLPEndpoint: siteCollector.addr, OTLPInsecure: true},
+	}})
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://"+envCollector.addr)
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "authorization=Bearer example-token")
+
+	_, _, err := runSiteCommand(t, "get", "clusters")
+	require.NoError(t, err)
+
+	spans, md := siteCollector.received()
+	assert.NotEmpty(t, spans)
+	assert.Equal(t, []string{"Bearer example-token"}, md.Get("authorization"), "the environment supplies the headers")
+	assert.Empty(t, envCollector.spanNames(), "the environment's endpoint receives nothing")
+}
+
+func TestSiteOTLPWithoutSiteEndpointFallsBackToEnvironment(t *testing.T) {
+	siteOTLPEnv(t)
+	envCollector := newSiteCollector(t)
+	controller := newFakeController(t)
+	saveSiteConfig(t, &config.Config{CurrentSite: "t", Sites: map[string]config.SiteConfig{"t": {URL: controller.URL}}})
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://"+envCollector.addr)
+
+	_, _, err := runSiteCommand(t, "get", "clusters")
+	require.NoError(t, err)
+
+	assert.Contains(t, envCollector.spanNames(), "nvkectl get clusters")
+}
+
+// A command that loads no site never exports to one.
+func TestSiteOTLPCommandsWithoutASiteExportNothing(t *testing.T) {
+	for name, args := range map[string][]string{
+		"version":     {"version"},
+		"render":      {"render", "deploy-path"},
+		"config view": {"config", "view"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			siteOTLPEnv(t)
+			collector := newSiteCollector(t)
+			saveSiteConfig(t, &config.Config{CurrentSite: "t", Sites: map[string]config.SiteConfig{
+				"t": {URL: "http://127.0.0.1:1", OTLPEndpoint: collector.addr, OTLPInsecure: true},
+			}})
+
+			// render fails for want of its flags; the export step still must not use the site.
+			_, _, _ = runSiteCommand(t, append(args, "--verbose")...)
+
+			assert.Empty(t, collector.spanNames())
+			assert.Empty(t, collector.logs.received())
+		})
+	}
+}
+
+func TestSiteOTLPUnreachableEndpointNeverFailsTheCommand(t *testing.T) {
+	siteOTLPEnv(t)
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	closed := lis.Addr().String()
+	require.NoError(t, lis.Close())
+	controller := newFakeController(t)
+
+	saveSiteConfig(t, &config.Config{CurrentSite: "t", Sites: map[string]config.SiteConfig{"t": {URL: controller.URL}}})
+	baseOut, baseErr, err := runSiteCommand(t, "get", "clusters")
+	require.NoError(t, err)
+	assert.Zero(t, strings.Count(baseErr, exportWarning))
+
+	saveSiteConfig(t, &config.Config{CurrentSite: "t", Sites: map[string]config.SiteConfig{
+		"t": {URL: controller.URL, OTLPEndpoint: closed, OTLPInsecure: true},
+	}})
+	started := time.Now()
+	stdout, stderr, err := runSiteCommand(t, "get", "clusters")
+
+	require.NoError(t, err)
+	assert.Less(t, time.Since(started), 6*time.Second, "the flush is bounded")
+	assert.Equal(t, baseOut, stdout, "stdout is unchanged")
+	assert.Equal(t, 1, strings.Count(stderr, exportWarning), "one warning for the unreachable endpoint:\n%s", stderr)
+}
+
+// A site whose stored endpoint cannot be used warns and leaves the command alone.
+// That includes an https endpoint stored with otlp-insecure, which would send the
+// headers in clear text.
+func TestSiteOTLPBadSiteEndpointWarnsAndContinues(t *testing.T) {
+	for name, stored := range map[string]config.SiteConfig{
+		"unparsable":               {OTLPEndpoint: "http://"},
+		"https with otlp-insecure": {OTLPEndpoint: "https://collector.example:4317", OTLPInsecure: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			siteOTLPEnv(t)
+			controller := newFakeController(t)
+			stored.URL = controller.URL
+			saveSiteConfig(t, &config.Config{CurrentSite: "t", Sites: map[string]config.SiteConfig{"t": stored}})
+
+			stdout, stderr, err := runSiteCommand(t, "get", "clusters")
+
+			require.NoError(t, err)
+			assert.Contains(t, stdout, "demo")
+			// The logger quotes the message, so the site name's quotes arrive escaped.
+			assert.Contains(t, stderr, `nvkectl sends no telemetry because the OTLP endpoint of site \"t\" is not a usable OTLP/gRPC endpoint; `+
+				"run nvkectl config set-site again with a valid --otlp-endpoint, or without it to remove the endpoint")
+			assert.NotContains(t, stderr, "OTEL_EXPORTER_OTLP_ENDPOINT")
+			assert.Equal(t, 1, strings.Count(stderr, "nvkectl sends no telemetry"), "one warning")
+		})
+	}
+}
+
+// The export step reads the config best effort: the command reports a missing
+// or corrupt config itself, and the step neither fails nor changes that.
+func TestSiteOTLPMissingOrCorruptConfigDoesNotFailTheExportStep(t *testing.T) {
+	for name, write := range map[string]func(t *testing.T){
+		"missing": func(*testing.T) {},
+		"corrupt": func(t *testing.T) {
+			dir, err := config.Dir()
+			require.NoError(t, err)
+			require.NoError(t, os.MkdirAll(dir, 0o700))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("sites: [not: a map"), 0o600))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			siteOTLPEnv(t)
+			envCollector := newSiteCollector(t)
+			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://"+envCollector.addr)
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			write(t)
+
+			_, stderr, err := runSiteCommand(t, "get", "clusters")
+
+			require.Error(t, err, "the command reports its own config error")
+			assert.Regexp(t, "site|config", err.Error(), "the error is the command's, not the export step's")
+			assert.NotContains(t, stderr, "OTLP export is off")
+			assert.Contains(t, envCollector.spanNames(), "nvkectl get clusters", "the environment still exports")
+		})
+	}
+}
+
+// siteResolveFor resolves the OTLP configuration of "get clusters", a command
+// that uses a site, with the config in a temp dir and the given flags parsed.
+func siteResolveFor(t *testing.T, cfg *config.Config, args ...string) (telemetry.OTLPConfig, bool, bool, error) {
+	t.Helper()
+	saveSiteConfig(t, cfg)
+	root := NewRootCmd("test", "test", "test", "test")
+	cmd, _, err := root.Find([]string{"get", "clusters"})
+	require.NoError(t, err)
+	require.NoError(t, root.ParseFlags(args))
+	require.NoError(t, cmd.ParseFlags(args))
+	t.Cleanup(func() { site = "" })
+	return resolveOTLP(cmd)
+}
+
+func TestSiteOTLPSourceOrder(t *testing.T) {
+	siteOTLPEnv(t)
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "env.example:4317")
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "authorization=Bearer x")
+	cfg := &config.Config{CurrentSite: "a", Sites: map[string]config.SiteConfig{
+		"a":     {URL: "http://a", OTLPEndpoint: "a.example:4317", OTLPInsecure: true},
+		"b":     {URL: "http://b", OTLPEndpoint: "https://b.example:4317"},
+		"plain": {URL: "http://plain"},
+		"bad":   {URL: "http://bad", OTLPEndpoint: "http://"},
+	}}
+
+	t.Run("the current site beats the environment, which gives only headers", func(t *testing.T) {
+		got, ok, strict, err := siteResolveFor(t, cfg)
+		require.NoError(t, err)
+		assert.True(t, ok)
+		assert.False(t, strict)
+		assert.Equal(t, "a.example:4317", got.Endpoint)
+		assert.True(t, got.Insecure, "the site's insecure setting applies")
+		assert.Equal(t, "Bearer x", got.Headers["authorization"])
+	})
+
+	t.Run("--site picks that site", func(t *testing.T) {
+		got, ok, _, err := siteResolveFor(t, cfg, "--site", "b")
+		require.NoError(t, err)
+		assert.True(t, ok)
+		assert.Equal(t, "b.example:4317", got.Endpoint)
+		assert.False(t, got.Insecure)
+	})
+
+	t.Run("a site without an endpoint falls back to the environment", func(t *testing.T) {
+		got, ok, strict, err := siteResolveFor(t, cfg, "--site", "plain")
+		require.NoError(t, err)
+		assert.True(t, ok)
+		assert.False(t, strict)
+		assert.Equal(t, "env.example:4317", got.Endpoint)
+	})
+
+	t.Run("an unknown site falls back to the environment", func(t *testing.T) {
+		got, ok, _, err := siteResolveFor(t, cfg, "--site", "nope")
+		require.NoError(t, err)
+		assert.True(t, ok)
+		assert.Equal(t, "env.example:4317", got.Endpoint)
+	})
+
+	t.Run("a bad site endpoint is an error that is not strict", func(t *testing.T) {
+		_, ok, strict, err := siteResolveFor(t, cfg, "--site", "bad")
+		require.Error(t, err)
+		assert.False(t, ok)
+		assert.False(t, strict)
+	})
+
+	t.Run("a command that uses no site ignores the config", func(t *testing.T) {
+		saveSiteConfig(t, cfg)
+		root := NewRootCmd("test", "test", "test", "test")
+		cmd, _, err := root.Find([]string{"version"})
+		require.NoError(t, err)
+		got, ok, _, err := resolveOTLP(cmd)
+		require.NoError(t, err)
+		assert.True(t, ok)
+		assert.Equal(t, "env.example:4317", got.Endpoint)
+	})
+}
+
+// The top-level commands that load a site are exactly these, and each exists.
+func TestSiteOTLPCommands(t *testing.T) {
+	var got []string
+	for _, cmd := range NewRootCmd("test", "test", "test", "test").Commands() {
+		if slices.Contains(siteCommands, cmd.Name()) {
+			got = append(got, cmd.Name())
+		}
+	}
+	slices.Sort(got)
+
+	assert.Equal(t, []string{"create", "delete", "deprecate", "get", "patch"}, got)
+	assert.Len(t, got, len(siteCommands), "every entry names a top-level command")
 }

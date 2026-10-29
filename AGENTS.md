@@ -351,6 +351,9 @@ reverting it.
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 Branches follow `<type>/<short-description>`, for example `fix/kubeadm-reset-timeout`.
+Push branches to a fork and open the pull request from there, never from a
+branch on `dsx-ai-factory/nvke`, even with write access
+([CONTRIBUTING.md](CONTRIBUTING.md#work-from-a-fork)).
 
 Most checks are built through a `pull-request/<number>` branch rather than the
 `pull_request` event, because the self-hosted runners do not pick up

@@ -286,19 +286,28 @@ func waitForPodReady(ctx context.Context, tenantClient client.Client, key client
 			return fmt.Errorf("getting pod %s: %w", key, err)
 		}
 		if pod.Status.Phase == corev1.PodFailed || pod.Status.Phase == corev1.PodSucceeded {
-			return fmt.Errorf("pod %s terminated before becoming Ready, phase %s", key, pod.Status.Phase)
+			return fmt.Errorf("pod %s terminated before becoming Ready, phase %s%s", key, pod.Status.Phase, podDetails(&pod))
 		}
 		if pod.Status.PodIP == "" {
-			return fmt.Errorf("pod %s does not have an IP, phase %s", key, pod.Status.Phase)
+			return fmt.Errorf("pod %s does not have an IP, phase %s%s", key, pod.Status.Phase, podDetails(&pod))
 		}
 		for _, condition := range pod.Status.Conditions {
 			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
 				return nil
 			}
 		}
-		return fmt.Errorf("pod %s is not Ready, phase %s", key, pod.Status.Phase)
+		return fmt.Errorf("pod %s is not Ready, phase %s%s", key, pod.Status.Phase, podDetails(&pod))
 	}).WithContext(ctx).WithTimeout(5 * time.Minute).WithPolling(2 * time.Second).Should(Succeed())
 	return pod.DeepCopy()
+}
+
+// podDetails is kube.PodStatusDetails as a suffix for an error.
+func podDetails(pod *corev1.Pod) string {
+	details := kube.PodStatusDetails(pod)
+	if len(details) == 0 {
+		return ""
+	}
+	return ": " + strings.Join(details, "; ")
 }
 
 func expectPodInCIDRs(pod *corev1.Pod, nodeName string, prefixes []netip.Prefix) {

@@ -22,7 +22,7 @@ The node image is not a ready Kubernetes node. It carries the node agent and the
 | `spire-agent`, its TPM attestor and `get_tpm_pubhash` | Installed and enabled. | The SPIRE server address, trust domain and trust bundle, in user data. |
 | Kubernetes packages: kubeadm, kubelet, kubectl and containerd | Staged in a local package repository at `/usr/lib/nvke/debs`, one `nvke-kubeadm-distro-<version>` package per Kubernetes version. | Install the package for your Kubernetes version. |
 | OVN-Kubernetes CNI packages | Staged in the same repository, for version 2.4.2. | Install the charts and images packages. |
-| Open vSwitch (`openvswitch-switch`) | Installed. | Nothing. |
+| Open vSwitch (`doca-openvswitch-switch`) | Installed. This is NVIDIA's DOCA build of Open vSwitch, from the DOCA apt repository, running in kernel mode. | Nothing. |
 
 ## Write the user data
 
@@ -83,7 +83,7 @@ Each component the bootstrap needs is a Debian package. If a check in [Verify](#
 | SPIRE agent, TPM attestor and `get_tpm_pubhash` | `spire-agent` |
 | Kubernetes for one version | `nvke-kubeadm-distro-<K8S_VERSION>` |
 | OVN-Kubernetes | `nvke-cni-ovn-charts-2.4.2` and `nvke-cni-ovn-images-2.4.2` |
-| Open vSwitch | `openvswitch-switch` |
+| Open vSwitch | `doca-openvswitch-switch`. The agent also accepts the stock `openvswitch-switch` package. |
 
 If `nvke-kubeadm-distro-<K8S_VERSION>` is the missing package, the image was built without that Kubernetes version. Choose a staged version, or rebuild the image with it.
 
@@ -104,10 +104,10 @@ Run these checks on every node, as root.
 2. Check that the packages are installed.
 
    ```bash
-   dpkg -l nvke-agent spire-agent openvswitch-switch 'nvke-kubeadm-distro-*' 'nvke-cni-ovn-*'
+   dpkg -l nvke-agent spire-agent '*openvswitch-switch' 'nvke-kubeadm-distro-*' 'nvke-cni-ovn-*'
    ```
 
-   Each package is listed with status `ii`, including `nvke-kubeadm-distro-<K8S_VERSION>`, `nvke-cni-ovn-charts-2.4.2` and `nvke-cni-ovn-images-2.4.2`. A staged package that is not installed is not listed, and `dpkg` reports that no package matches.
+   Each package is listed with status `ii`, including `doca-openvswitch-switch` (or `openvswitch-switch` on a node you prepared with the stock package), `nvke-kubeadm-distro-<K8S_VERSION>`, `nvke-cni-ovn-charts-2.4.2` and `nvke-cni-ovn-images-2.4.2`. A staged package that is not installed is not listed, and `dpkg` reports that no package matches.
 
    ```bash
    kubeadm version -o short

@@ -386,6 +386,7 @@ func main() {
 			k8sControllerManager.GetClient(),
 			tenantClientProvider,
 			logger.With("logger", "nico-provider-id-controller"),
+			cfg.ManagedByLabelValue,
 		)
 		if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
 			logger.Error("Failed to set up nico provider ID controller", "error", err)

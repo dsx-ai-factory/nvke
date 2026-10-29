@@ -79,13 +79,13 @@ func TestTracingHookDBNameFollowsDSN(t *testing.T) {
 		},
 		{
 			name: "greenfield inline env value",
-			dsn:  "postgres://postgres:postgres@cnpg-cloud-rw.cnpg-cloud.svc.cluster.local/nke-controller?sslmode=disable",
-			want: "nke-controller",
+			dsn:  "postgres://postgres:postgres@cnpg-cloud-rw.cnpg-cloud.svc.cluster.local/nvke-controller?sslmode=disable",
+			want: "nvke-controller",
 		},
 		{
 			name: "chart-created secret with escaped password",
-			dsn:  "postgresql://postgres:p%40ss%2Fword@postgresql:5432/nke-controller?sslmode=require",
-			want: "nke-controller",
+			dsn:  "postgresql://postgres:p%40ss%2Fword@postgresql:5432/nvke-controller?sslmode=require",
+			want: "nvke-controller",
 		},
 	}
 	for _, tt := range tests {
@@ -125,7 +125,7 @@ func TestTracingHookDoesNotCreateRootSpans(t *testing.T) {
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
 	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
 	meterProvider := newRecordingMeterProvider()
-	connector := pgdriver.NewConnector(pgdriver.WithDSN("postgres://postgres:postgres@localhost:5432/nke-controller?sslmode=disable"))
+	connector := pgdriver.NewConnector(pgdriver.WithDSN("postgres://postgres:postgres@localhost:5432/nvke-controller?sslmode=disable"))
 	hook := newTracingHook(connector, bunotel.WithTracerProvider(tp), bunotel.WithMeterProvider(meterProvider))
 
 	bdb := bun.NewDB(sql.OpenDB(connector), pgdialect.New())

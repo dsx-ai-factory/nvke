@@ -21,7 +21,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,6 +32,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -60,7 +60,7 @@ const (
 	// release, fullname, ServiceAccount and pod name label: all the same name,
 	// the one greenfield sites use. spire-values.yaml, controller-values.yaml and
 	// controller-nodeport.yaml carry it too and must change with it.
-	cweNamespace = "nke-controller"
+	cweNamespace = "nvke-controller"
 
 	// tenantSecretsNamespace is where the controller publishes each cluster's kubeconfig
 	// and where it puts the cluster's CAPI objects. It is the chart's
@@ -523,11 +523,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 
 	password := cfg.PostgresPassword
 	if password == "" {
-		var err error
-		password, err = randomPassword()
-		if err != nil {
-			return fmt.Errorf("controllerdeploy: generating postgres password: %w", err)
-		}
+		password = rand.Text()
 	}
 	redact.RegisterSecret(password)
 	// The NICo token and the node password reach the cluster only as Secrets,
@@ -1134,17 +1130,6 @@ func splitImageRef(ref string) (repo, tag, digest string) {
 	return ref[:idx], ref[idx+1:], digest
 }
 
-// randomPassword returns a 32-character hex string suitable for the shared
-// Postgres superuser password used only within this ephemeral cluster's
-// lifetime.
-func randomPassword() (string, error) {
-	buf := make([]byte, 16)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf), nil
-}
-
 func envDuration(key string, fallback time.Duration) time.Duration {
 	v := getenv(key)
 	if v == "" {
@@ -1387,6 +1372,41 @@ func (e *Engine) publishSpireExternally(ctx context.Context, kubeconfigPath stri
 	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"-n", spireNamespace, "apply", "-f", manifest); err != nil {
 		return fmt.Errorf("controllerdeploy: publishing SPIRE with %s: %w\n%s", spireNodePortFile, err, out)
+	}
+	return nil
+}
+
+// localPathRolloutTimeout bounds the wait for local-path-provisioner to run.
+const localPathRolloutTimeout = 5 * time.Minute
+
+// EnsureDefaultStorageClass installs local-path-provisioner as the default
+// StorageClass of the cluster kubeconfigPath points at, and waits for it to
+// run, unless the cluster already has a default StorageClass.
+func (e *Engine) EnsureDefaultStorageClass(ctx context.Context, kubeconfigPath string) error {
+	out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "get", "storageclass", "-o",
+		`jsonpath={range .items[*]}{.metadata.annotations.storageclass\.kubernetes\.io/is-default-class}{"\n"}{end}`)
+	if err != nil {
+		return fmt.Errorf("controllerdeploy: listing StorageClasses: %w\n%s", err, out)
+	}
+	if slices.Contains(strings.Fields(out), "true") {
+		return nil
+	}
+	manifest, cleanup, err := writeEmbeddedFile(localPathFile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	e.log.Info("the cluster has no default StorageClass; installing local-path-provisioner")
+	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", manifest); err != nil {
+		return fmt.Errorf("controllerdeploy: applying %s: %w\n%s", localPathFile, err, out)
+	}
+	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "annotate", "storageclass", "local-path",
+		"storageclass.kubernetes.io/is-default-class=true", "--overwrite"); err != nil {
+		return fmt.Errorf("controllerdeploy: making local-path the default StorageClass: %w\n%s", err, out)
+	}
+	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", "local-path-storage",
+		"rollout", "status", "deployment/local-path-provisioner", "--timeout", localPathRolloutTimeout.String()); err != nil {
+		return fmt.Errorf("controllerdeploy: waiting for local-path-provisioner: %w\n%s", err, out)
 	}
 	return nil
 }

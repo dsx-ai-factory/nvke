@@ -43,9 +43,10 @@ const serviceAccountNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccou
 // siteValidateSettings is the image's site validation configuration.
 type siteValidateSettings struct {
 	enabled bool
-	// inPod reports that the suite runs in a pod, as the image does, so that
-	// its identity is the service account the README grants.
-	inPod             bool
+	// checkIdentity holds the suite's identity to read access. It is set
+	// where that identity is one the README grants: the image's service
+	// account on a site, and the provisioned ServiceAccount on a tenant.
+	checkIdentity     bool
 	kubernetesVersion string
 	checks            siteChecks
 	expect            siteExpectations
@@ -90,23 +91,34 @@ func siteValidateFromEnv(getenv func(string) string, namespaceFile string) (site
 		image.pullSecrets = append(image.pullSecrets, corev1.LocalObjectReference{Name: name})
 	}
 
-	expect, err := siteExpectationsFromEnv(getenv)
+	expect, err := siteExpectationsFromEnv(getenv, sitePrefix)
 	if err != nil {
+		return siteValidateSettings{}, err
+	}
+	if _, err := parseRequireEnv(keepOnFailureEnv, getenv(keepOnFailureEnv)); err != nil {
 		return siteValidateSettings{}, err
 	}
 
 	return siteValidateSettings{
 		enabled:           enabled,
-		inPod:             ownNamespace != "",
+		checkIdentity:     ownNamespace != "",
 		kubernetesVersion: strings.TrimSpace(getenv(siteKubernetesVersionEnv)),
 		checks: siteChecks{
 			namespaces:       namespaces,
 			probeNamespace:   probeNamespace,
 			probeImage:       image,
 			excusedNamespace: ownNamespace,
+			certManager:      true,
 		},
 		expect: expect,
 	}, nil
+}
+
+// describe lists the settings the run resolved, for the report.
+func (s siteValidateSettings) describe() []string {
+	lines := []string{siteKubernetesVersionEnv + "=" + s.kubernetesVersion}
+	lines = append(lines, s.checks.describe()...)
+	return append(lines, s.expect.describe()...)
 }
 
 // Every check runs whatever the others found, unlike the site lane's: there
@@ -125,6 +137,11 @@ var _ = Describe("site validation", Ordered, ContinueOnFailure, Label("site-vali
 		}
 		return settings
 	}
+	BeforeAll(func() {
+		if err == nil && settings.enabled {
+			AddReportEntry("site validation inputs", strings.Join(settings.describe(), "\n"))
+		}
+	})
 
 	validateSitePostDeploy(func() (site.Cluster, site.Spec, bool) {
 		resolve()

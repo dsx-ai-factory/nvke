@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -85,5 +86,58 @@ func TestLoadReadsTheLegacyLocationOnce(t *testing.T) {
 	}
 	if again.CurrentSite != "old" {
 		t.Errorf("second Load read the legacy file again: current-site = %q, want %q", again.CurrentSite, "old")
+	}
+}
+
+func TestLoadReadsTheOTLPFields(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	if err := os.MkdirAll(filepath.Join(dir, "nvkectl"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data := "sites:\n  dev:\n    url: http://localhost:8080\n    kubeconfig: /k\n    otlp-endpoint: collector:4317\n    otlp-insecure: true\ncurrent-site: dev\n"
+	if err := os.WriteFile(filepath.Join(dir, "nvkectl", "config.yaml"), []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	site := cfg.Sites["dev"]
+	if site.OTLPEndpoint != "collector:4317" || !site.OTLPInsecure {
+		t.Errorf("site = %+v, want otlp-endpoint collector:4317 and otlp-insecure true", site)
+	}
+}
+
+func TestSaveOmitsUnsetOTLPFields(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	cfg := &Config{Sites: map[string]SiteConfig{"dev": {URL: "http://localhost:8080", Kubeconfig: "/k"}}, CurrentSite: "dev"}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "nvkectl", "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "otlp") {
+		t.Errorf("config without an OTLP endpoint serialises otlp keys:\n%s", data)
+	}
+}
+
+func TestSaveLoadRoundTripsTheOTLPFields(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	cfg := &Config{Sites: map[string]SiteConfig{"dev": {
+		URL: "http://localhost:8080", Kubeconfig: "/k", OTLPEndpoint: "collector:4317", OTLPInsecure: true,
+	}}, CurrentSite: "dev"}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := loaded.Sites["dev"]; got != cfg.Sites["dev"] {
+		t.Errorf("round trip = %+v, want %+v", got, cfg.Sites["dev"])
 	}
 }

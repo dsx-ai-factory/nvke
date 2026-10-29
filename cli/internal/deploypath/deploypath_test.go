@@ -47,7 +47,7 @@ func TestItemsAndReleases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if controller.Chart.Name != "nke-controller" || controller.Chart.Path == "" || controller.Release.Namespace != "nke-controller" {
+	if controller.Chart.Name != "nvke-controller" || controller.Chart.Path == "" || controller.Release.Namespace != "nvke-controller" {
 		t.Errorf("controller: %+v", controller.Chart)
 	}
 	if controller.Chart.Artifact != "controller-chart" || controller.Chart.ImageArtifact != "cwe" || controller.Chart.ProfilesArtifact != "controller-profiles" {
@@ -315,7 +315,7 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	secrets := readSecrets(t, filepath.Join(out, "site-credentials", "secrets.yaml"))
 	if secrets["postgres/nvke-database"]["postgres-password"] != "db-secret" || secrets["postgres/nvke-database"]["password"] != "db-secret" ||
 		secrets["temporal/nvke-database"]["password"] != "db-secret" ||
-		secrets["nke-controller/nvke-database"]["database-connection-string"] != "postgresql://postgres:db-secret@postgres-postgresql.postgres.svc.cluster.local:5432/nke-controller?sslmode=disable" {
+		secrets["nvke-controller/nvke-database"]["database-connection-string"] != "postgresql://postgres:db-secret@postgres-postgresql.postgres.svc.cluster.local:5432/nvke-controller?sslmode=disable" {
 		t.Errorf("site credentials: %v", secrets)
 	}
 	if secrets["spire-server/spire-upstream-ca"]["tls.crt"] != "CERT\n" || secrets["spire-server/spire-upstream-ca"]["tls.key"] != "KEY\n" || secrets["spire-server/spire-upstream-ca"]["bundle.crt"] != "CERT\n" {
@@ -334,7 +334,7 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	if dig(sp, "global", "spire", "trustDomain") != td || dig(sp, "global", "spire", "clusterName") != spec.ClusterName {
 		t.Errorf("spire identity: %v", sp)
 	}
-	if ids, _ := dig(sp, "spire-server", "adminIDs").([]any); len(ids) != 1 || ids[0] != "spiffe://"+td+"/nvke-service/nke-controller" {
+	if ids, _ := dig(sp, "spire-server", "adminIDs").([]any); len(ids) != 1 || ids[0] != "spiffe://"+td+"/nvke-service/nvke-controller" {
 		t.Errorf("adminIDs: %v", dig(sp, "spire-server", "adminIDs"))
 	}
 	if dig(sp, "spire-server", "nodeAttestor", "tpmDirect", "checksum") != "b69d0153c8241383f24da138bc85429a620d9f962a2f10abb314aa0e39046d16" {
@@ -526,7 +526,7 @@ func TestRender_ExternalCredentials(t *testing.T) {
 	want := []string{
 		"Secret postgres/nvke-database with keys password, postgres-password",
 		"Secret temporal/nvke-database with keys password",
-		"Secret nke-controller/nvke-database with keys database-connection-string, the URL postgresql://postgres:<password>@postgres-postgresql.postgres.svc.cluster.local:5432/nke-controller?sslmode=disable with the password URL-escaped",
+		"Secret nvke-controller/nvke-database with keys database-connection-string, the URL postgresql://postgres:<password>@postgres-postgresql.postgres.svc.cluster.local:5432/nvke-controller?sslmode=disable with the password URL-escaped",
 		"Secret spire-server/spire-upstream-ca with keys bundle.crt, tls.crt, tls.key",
 		"Secret capnico-system/nico-credentials with keys apiName, endpoint, orgID, token",
 	}
@@ -614,7 +614,7 @@ func TestRender_SecretsSharingANamespace(t *testing.T) {
 	if err := copyTree(nico, path); err != nil {
 		t.Fatal(err)
 	}
-	for item, namespace := range map[string]string{"temporal": "temporal", "controller": "nke-controller"} {
+	for item, namespace := range map[string]string{"temporal": "temporal", "controller": "nvke-controller"} {
 		release := filepath.Join(path, item, "release.yaml")
 		data, err := os.ReadFile(release)
 		if err != nil {
@@ -648,7 +648,7 @@ func TestRender_SecretsSharingANamespace(t *testing.T) {
 	}
 	shared := readSecrets(t, filepath.Join(out, "site-credentials", "secrets.yaml"))["postgres/nvke-database"]
 	if shared["postgres-password"] != "db-secret" || shared["password"] != "db-secret" ||
-		shared[connectionStringKey] != "postgresql://postgres:db-secret@postgres-postgresql.postgres.svc.cluster.local:5432/nke-controller?sslmode=disable" || len(shared) != 3 {
+		shared[connectionStringKey] != "postgresql://postgres:db-secret@postgres-postgresql.postgres.svc.cluster.local:5432/nvke-controller?sslmode=disable" || len(shared) != 3 {
 		t.Errorf("the shared Secret does not hold every key: %v", shared)
 	}
 
@@ -658,7 +658,7 @@ func TestRender_SecretsSharingANamespace(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "Secret postgres/nvke-database with keys password, postgres-password, database-connection-string, the URL " +
-		"postgresql://postgres:<password>@postgres-postgresql.postgres.svc.cluster.local:5432/nke-controller?sslmode=disable with the password URL-escaped"
+		"postgresql://postgres:<password>@postgres-postgresql.postgres.svc.cluster.local:5432/nvke-controller?sslmode=disable with the password URL-escaped"
 	var lines []string
 	for _, e := range result.Expected {
 		if strings.HasPrefix(e, "Secret postgres/nvke-database ") {
@@ -1136,7 +1136,7 @@ func TestRender_FromRegistry(t *testing.T) {
 	}
 	// controller: chart from the archive, images in release-images.yaml.
 	ctl, _ := ReadRelease(filepath.Join(out, "controller"))
-	if !strings.HasPrefix(ctl.Chart.Path, "charts/controller/nke-controller-") || ctl.Values[len(ctl.Values)-1] != "release-images.yaml" {
+	if !strings.HasPrefix(ctl.Chart.Path, "charts/controller/nvke-controller-") || ctl.Values[len(ctl.Values)-1] != "release-images.yaml" {
 		t.Errorf("controller release.yaml: %+v", ctl)
 	}
 	values, _ := os.ReadFile(filepath.Join(out, "controller", "release-images.yaml"))

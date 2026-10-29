@@ -4,11 +4,13 @@
 // Package bootstraptest runs `nvkectl bootstrap site` for the bootstrap e2e
 // lanes.
 //
-// It owns starting and supervising the command, and nothing else. It adds no
-// lane and no assertion: cli/e2e/bootstrap/run.sh and run-nico.sh remain the
-// two lanes, they still build the fixtures, bridge the networks and make every
-// assertion about what the run produced, and they still do it by watching the
-// log file and grepping it afterwards. TestE2E_BootstrapSite stands exactly
+// It owns starting and supervising the command, and the assertions moved here
+// from the lanes so far: VerifySiteStack checks the NVKE stack on the site
+// cluster. It adds no lane: cli/e2e/bootstrap/run.sh and run-nico.sh remain the
+// two lanes, they still build the fixtures, bridge the networks and make the
+// rest of the assertions about what the run produced, by watching the log file
+// and grepping it afterwards. New assertions belong here rather than in the
+// lanes. TestE2E_BootstrapSite stands exactly
 // where `setsid nvkectl bootstrap site … &` stood, and the lane waits on it the
 // same way.
 //

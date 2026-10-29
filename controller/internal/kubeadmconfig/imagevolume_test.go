@@ -90,7 +90,7 @@ func TestImageVolumeGateRenderedOnBothComponents(t *testing.T) {
 	require.NoError(t, err)
 
 	rendered := string(artifacts.ConfigYAML)
-	assert.Contains(t, rendered, "feature-gates: ImageVolume=true", "kube-apiserver gate missing")
+	assert.Contains(t, rendered, "- name: feature-gates\n    value: ImageVolume=true", "kube-apiserver gate missing")
 	assert.Contains(t, rendered, "featureGates:\n  ImageVolume: true", "kubelet gate missing")
 }
 

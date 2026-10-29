@@ -16,7 +16,7 @@ See [Pre-Provisioned Nodes](../site-bootstrap/pre-provisioned-nodes.md) for the 
 
 ### Bootstrap fails with "bootstrap cluster … from an earlier run is still running"
 
-Before deleting the leftover Kind cluster, export the etcd encryption key if it was generated during the failed run — it may be the only recoverable copy. The key is in the controller's namespace of the bootstrap cluster, not the default kubeconfig: `nke-controller`, or `cloud-workflow-engine` if an older `nvkectl` created the cluster. Search all namespaces and save each key from the namespace it is in:
+Before deleting the leftover Kind cluster, export the etcd encryption key if it was generated during the failed run — it may be the only recoverable copy. The key is in the controller's namespace of the bootstrap cluster, not the default kubeconfig: `nvke-controller`, or `cloud-workflow-engine` if an older `nvkectl` created the cluster. Search all namespaces and save each key from the namespace it is in:
 
 ```bash
 umask 077
@@ -154,14 +154,14 @@ kubectl apply -f https://github.com/rancher/local-path-provisioner/releases/down
 
 ```bash
 nvkectl version                          # CLI version
-kubectl get deploy -n nke-controller nke-controller \
+kubectl get deploy -n nvke-controller nvke-controller \
   -o jsonpath='{.spec.template.spec.containers[0].image}' \
   --kubeconfig <sitename>.kubeconfig    # controller image tag
 ```
 
 ### Where are the controller workflow logs?
 
-Port-forward the Temporal Web UI from the management cluster and look for workflows in the `nke-controller` namespace. See [Observability](observability.md).
+Port-forward the Temporal Web UI from the management cluster and look for workflows in the `nvke-controller` namespace. See [Observability](observability.md).
 
 ### How do I get a tenant cluster's kubeconfig?
 

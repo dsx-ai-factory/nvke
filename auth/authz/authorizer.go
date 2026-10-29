@@ -5,8 +5,9 @@
 // Authorizer interface every backend implements, and the isolation check and
 // tenant ID rules every backend shares.
 //
-// A backend is the Authorizer a Client asks for each decision. The first will
-// be LocalBundle, which evaluates Cedar policy from files the deployer mounts.
+// A backend is the Authorizer a Client asks for each decision, such as
+// LocalBundle (authz/localbundle), which evaluates Cedar policy from files the
+// deployer mounts.
 //
 // The backend owns tenancy. It reads the caller's tenant, decides who is an
 // operator, and refuses a cross-tenant request before any policy runs. The
@@ -152,6 +153,8 @@ func (q Query) Validate() error {
 	return nil
 }
 
+// validateScope checks that Tenant fits Scope: an object names its owner,
+// a list or a global resource names none, and a create may name one.
 func (r Resource) validateScope() error {
 	switch r.Scope {
 	case ScopeObject:

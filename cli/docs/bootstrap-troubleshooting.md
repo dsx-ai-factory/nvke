@@ -28,8 +28,8 @@ Search the controller logs for it, in the diagnostics directory or in a
 
 ```bash
 grep -F '<trace-id>' bootstrap.log                                          # nvkectl's log
-grep -rF '<trace-id>' cluster-diagnostics/nke-controller/                   # diagnostics directory
-kubectl -n nke-controller logs deploy/nke-controller | grep -F '<trace-id>' # retained cluster
+grep -rF '<trace-id>' cluster-diagnostics/nvke-controller/                   # diagnostics directory
+kubectl -n nvke-controller logs deploy/nvke-controller | grep -F '<trace-id>' # retained cluster
 ```
 
 This works with text and JSON logs. Each node is provisioned by a workflow with
@@ -108,6 +108,10 @@ address such as `https://<COLLECTOR_HOST>:4318/v1/traces`.
 If the collector cannot be reached, nvkectl prints one warning and the command
 still succeeds.
 
+Commands that use a site, such as `get clusters`, send to the endpoint stored
+with `nvkectl config set-site --otlp-endpoint`; see
+[Export a site's telemetry](user-flow.md#export-a-sites-telemetry).
+
 ### The diagnostics directory
 
 Bootstrap attempts to collect diagnostics before cleaning up a failed
@@ -137,7 +141,7 @@ they are collected in that case too.
 For a deployment failure, start with `all-resources.txt`, then check the
 failing pod in `pods-described.txt` and its `logs.txt`. Key namespaces are
 `postgres`, `temporal`, `spire-server`, `capi-system`, `provisioned-system`
-(`capnico-system` with `infra.provider: nico`) and `nke-controller`.
+(`capnico-system` with `infra.provider: nico`) and `nvke-controller`.
 
 ### The retained bootstrap cluster
 
@@ -159,7 +163,7 @@ delete it when you are done.
 
 With `infra.provider: nico`, the kept cluster also holds the
 NICo token and the tenant password as Secrets (`nico-credentials` in
-`capnico-system`, `dgxc-tenant-credentials` in `nke-controller`), so delete it
+`capnico-system`, `dgxc-tenant-credentials` in `nvke-controller`), so delete it
 when you are done. After a failure past site cluster creation but before every
 control-plane node joined, it also holds the machines for the NICo instances
 CAPNICo allocated, and those must be released before the cluster is deleted: see
@@ -173,7 +177,7 @@ captures:
 ```bash
 export KUBECONFIG=<bootstrap-kubeconfig>
 kubectl get pods -A
-kubectl -n nke-controller logs deploy/nke-controller --tail=500
+kubectl -n nvke-controller logs deploy/nvke-controller --tail=500
 ```
 
 To pick out one attempt or one node, see [The trace ID](#the-trace-id).
@@ -487,10 +491,10 @@ Keep the bootstrap cluster and run the recovery command printed in the error.
 If an earlier failure prevented key capture, locate and save the key Secret:
 
 ```bash
-kubectl --kubeconfig <bootstrap-kubeconfig> -n nke-controller get secrets | grep etcd-encryption-key-
+kubectl --kubeconfig <bootstrap-kubeconfig> -n nvke-controller get secrets | grep etcd-encryption-key-
 # Creates a private file; noclobber refuses to overwrite an existing one.
 ( umask 077; set -o noclobber
-  kubectl --kubeconfig <bootstrap-kubeconfig> -n nke-controller get secret <secret-name> -o json > <secret-name>.json )
+  kubectl --kubeconfig <bootstrap-kubeconfig> -n nvke-controller get secret <secret-name> -o json > <secret-name>.json )
 ```
 
 Confirm the saved file contains the expected Secret, and keep it with the

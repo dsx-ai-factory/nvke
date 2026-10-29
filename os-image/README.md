@@ -175,6 +175,13 @@ dropping the upstream binaries in by hand, so a node ends up with the same
 artifact whichever path installed it. The build also installs the Calico
 manifests package that the agent uses during offline bootstrap.
 
+Open vSwitch is NVIDIA's DOCA build, `doca-openvswitch-switch`, in kernel mode,
+not Ubuntu's `openvswitch-switch`. Its debs come from NVIDIA's DOCA apt
+repository through [`packages/doca-ovs/`](packages/doca-ovs/), pinned per Ubuntu
+release and architecture by SHA-256 in its lock, and provisioning installs them
+from the image's local repo. Nodes never contact the DOCA repository. Changing
+the OVS version means building a new image; it is never upgraded in place.
+
 Both variants install Ubuntu's NVIDIA-tuned kernel (`kernel.package` in
 `cidata/autoinstall-lvm.pkrtpl`), so the generic kernel never lands on disk in
 the first place — no post-install kernel swap or reboot.
@@ -348,15 +355,20 @@ packer/scripts/patch-installer-iso.sh \
 ```
 
 The `agent` binding is one bare `.deb` file. `calico`, `kubeadm-distro`, `ovn`,
-and `spire-agent` are uncompressed GNU/USTAR archives of flat regular `.deb`
+`spire-agent`, and `doca-ovs` are uncompressed GNU/USTAR archives of flat regular `.deb`
 files, with filenames unique across all bindings. Only the optional root `.`
 directory entry is accepted; omit `Packages`, subdirectories, links, and PAX/GNU
 extended metadata headers. The package builders are `packages/cni-calico`,
-`packages/kubeadm-distro`, `packages/cni-ovn`, and `packages/spire-agent`.
+`packages/kubeadm-distro`, `packages/cni-ovn`, `packages/spire-agent`, and
+`packages/doca-ovs`.
 Run their `debs` targets and archive only the resulting `.deb` files with
 `tar --format=ustar -cf component.tar -C "$OUT_DIR" <package filenames>`.
+`packages/doca-ovs` also needs `UBUNTU_SERIES`: DOCA builds each Ubuntu release
+separately and its filenames do not say which, so the composer cannot catch a
+`doca-ovs` binding fetched for the wrong release.
 The composer regenerates `Packages` itself. The SPIRE binding must contain
-exactly one `spire-agent_*.deb`; Calico inputs may contain at most one
+exactly one `spire-agent_*.deb`, the inputs exactly one
+`doca-openvswitch-switch_*.deb`; Calico inputs may contain at most one
 `nvke-cni-calico-manifests-*.deb`. Every package must declare the requested
 `--architecture` or `all`, checked with `dpkg-deb`.
 

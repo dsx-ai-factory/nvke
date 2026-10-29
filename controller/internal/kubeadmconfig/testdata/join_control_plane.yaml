@@ -1,4 +1,4 @@
-apiVersion: kubeadm.k8s.io/v1beta3
+apiVersion: kubeadm.k8s.io/v1beta4
 controlPlane:
   certificateKey: certkey123
   localAPIEndpoint:
@@ -10,17 +10,19 @@ discovery:
     caCertHashes:
     - sha256:abc123
     token: token123
-  timeout: 5m0s
   tlsBootstrapToken: token123
 kind: JoinConfiguration
 nodeRegistration:
   criSocket: unix:///var/run/containerd/containerd.sock
   kubeletExtraArgs:
-    node-ip: 10.0.0.2
+  - name: node-ip
+    value: 10.0.0.2
   name: cp-1
   taints: null
 patches:
   directory: /etc/kubernetes/patches
+timeouts:
+  discovery: 5m0s
 ---
 apiVersion: kubeproxy.config.k8s.io/v1alpha1
 kind: KubeProxyConfiguration

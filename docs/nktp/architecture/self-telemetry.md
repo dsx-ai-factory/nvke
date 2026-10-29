@@ -52,13 +52,21 @@ matches:
 - `slow`: a single span is longer than 1 second. Trace duration is not used,
   because export batching adds up to 1 second to most traces.
 
-A Collector's traces stay inside its Pod, so the sidecar sees whole traces. It
+A Collector's self-telemetry spans go to the sidecar in its Pod. The sidecar
 decides 5 seconds after a trace's first span arrives. The main Collector
-flushes spans every second (`schedule_delay: 1000`), so the spans of one trace
-arrive close together. Late spans of a kept trace are also kept.
+flushes completed spans every second (`schedule_delay: 1000`), but an operation
+that is still running has not sent its span yet. Late spans of a kept trace
+are also kept.
 
 When an export batches several requests, its span starts a new trace with links
 to the requests' spans. A kept export trace does not keep the linked traces.
+
+A late ERROR or slow span can be dropped if its trace was already rejected.
+If this limits troubleshooting, increase `processors.tail_sampling.decision_wait`
+in the affected workload's `sidecar.otelcol.config`, reviewing `num_traces` and
+the memory budget together. A longer window without enough trace capacity can
+increase loss through eviction before evaluation. See the
+[upstream tuning guidance](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/v0.162.0/processor/tailsamplingprocessor/README.md#monitoring-and-tuning).
 
 ## Sizing
 

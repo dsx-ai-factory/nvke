@@ -4,11 +4,9 @@
 package authn
 
 import (
-	"bytes"
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"slices"
@@ -16,11 +14,10 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
-	yamlv3 "gopkg.in/yaml.v3"
 	k8svalidation "k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kjson "sigs.k8s.io/json"
-	"sigs.k8s.io/yaml"
+
+	"github.com/dsx-ai-factory/nvke/auth/internal/strictyaml"
 )
 
 // ErrEmptyPath is returned only when path is empty. A set-but-unreadable path is
@@ -121,7 +118,7 @@ type Admit struct {
 	Groups          []string             `json:"groups,omitempty"`
 }
 
-// ServiceAccountRule admits Kubernetes service accounts.
+// ServiceAccountRule matches Kubernetes service accounts.
 type ServiceAccountRule struct {
 	Namespace string `json:"namespace"`
 
@@ -133,6 +130,12 @@ type ServiceAccountRule struct {
 
 // AllowsAnyName reports whether the rule matches every name in its namespace.
 func (r ServiceAccountRule) AllowsAnyName() bool { return r.Name == nil }
+
+// Matches reports whether sa is in the rule's namespace and, unless the rule
+// allows any name, has the rule's name.
+func (r ServiceAccountRule) Matches(sa ServiceAccount) bool {
+	return sa.Namespace == r.Namespace && (r.AllowsAnyName() || *r.Name == sa.Name)
+}
 
 // SPIFFERule admits SPIFFE IDs. Both fields are required: a trust domain alone
 // admits every workload in it, and prefixes alone admit them from any domain.
@@ -171,29 +174,9 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("open authentication config %q: %w", path, err)
 	}
 
-	if err := requireSingleDocument(raw, path); err != nil {
-		return nil, err
-	}
-
-	// Decoded with sigs.k8s.io/json, NOT sigs.k8s.io/yaml.UnmarshalStrict, which
-	// ends in encoding/json and matches keys case-insensitively. There a rule
-	// carrying both pathPrefixes and pathprefixes is not a duplicate: the
-	// lowercase spelling wins and the file loads clean while admitting the whole
-	// trust domain.
-	jsonBytes, err := yaml.YAMLToJSONStrict(raw)
-	if err != nil {
-		return nil, fmt.Errorf("parse authentication config %q: %w", path, err)
-	}
-
 	var cfg Config
-	strictErrs, err := kjson.UnmarshalStrict(jsonBytes, &cfg)
-	if err != nil {
-		return nil, fmt.Errorf("parse authentication config %q: %w", path, err)
-	}
-	// Fatal, not advisory: UnmarshalStrict reports a duplicate and still keeps the
-	// winning value, so ignoring these would leave the widened rule in place.
-	if len(strictErrs) > 0 {
-		return nil, fmt.Errorf("parse authentication config %q: %w", path, errors.Join(strictErrs...))
+	if err := strictyaml.Decode(fmt.Sprintf("authentication config %q", path), raw, &cfg); err != nil {
+		return nil, err
 	}
 
 	// Properties of the file rather than of the configuration, so checked here
@@ -225,32 +208,6 @@ func (c *Config) ValidateStartup() error {
 				strings.TrimSpace(issuer.Name),
 			)
 		}
-	}
-	return nil
-}
-
-// requireSingleDocument refuses a file that is empty or holds more than one YAML
-// document. sigs.k8s.io/yaml has no streaming decoder and silently honors only
-// the first, so an appended stanza would have no error and no effect.
-func requireSingleDocument(raw []byte, path string) error {
-	dec := yamlv3.NewDecoder(bytes.NewReader(raw))
-
-	var first yamlv3.Node
-	if err := dec.Decode(&first); err != nil {
-		if errors.Is(err, io.EOF) {
-			// Named here because Validate would report it as a missing apiVersion
-			// and send the operator looking elsewhere.
-			return fmt.Errorf("authentication config %q is empty", path)
-		}
-		return fmt.Errorf("parse authentication config %q: %w", path, err)
-	}
-
-	var extra yamlv3.Node
-	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err != nil {
-			return fmt.Errorf("parse authentication config %q: %w", path, err)
-		}
-		return fmt.Errorf("authentication config %q contains more than one YAML document", path)
 	}
 	return nil
 }
@@ -415,6 +372,8 @@ func (s *JWKSKeys) validate() error {
 	return nil
 }
 
+// validate requires exactly one kind of rule, and checks each rule of that
+// kind.
 func (a *Admit) validate() error {
 	kinds := 0
 	if len(a.ServiceAccounts) > 0 {
@@ -448,35 +407,8 @@ func (a *Admit) validate() error {
 	}
 
 	for i, r := range a.ServiceAccounts {
-		// Ordered so the most specific message wins: empty, then padded, then
-		// whether Kubernetes would accept the name at all.
-		if strings.TrimSpace(r.Namespace) == "" {
-			return fmt.Errorf("serviceAccounts[%d]: namespace is required and must not be empty", i)
-		}
-		if err := requireUnpadded(fmt.Sprintf("serviceAccounts[%d].namespace", i), r.Namespace); err != nil {
-			return err
-		}
-		// NameIsDNSLabel and NameIsDNSSubdomain are what upstream's
-		// ValidateNamespaceName and ValidateServiceAccountName resolve to, so a
-		// name that could never exist fails at startup rather than becoming a
-		// rule that matches nothing for ever.
-		if msgs := k8svalidation.NameIsDNSLabel(r.Namespace, false); len(msgs) > 0 {
-			return fmt.Errorf("serviceAccounts[%d]: namespace %q is not a valid namespace name: %s",
-				i, r.Namespace, strings.Join(msgs, "; "))
-		}
-
-		if r.Name == nil {
-			continue
-		}
-		if strings.TrimSpace(*r.Name) == "" {
-			return fmt.Errorf("serviceAccounts[%d]: name is present but empty; remove the key to admit any service account in namespace %q", i, r.Namespace)
-		}
-		if err := requireUnpadded(fmt.Sprintf("serviceAccounts[%d].name", i), *r.Name); err != nil {
-			return err
-		}
-		if msgs := k8svalidation.NameIsDNSSubdomain(*r.Name, false); len(msgs) > 0 {
-			return fmt.Errorf("serviceAccounts[%d]: name %q is not a valid service account name: %s",
-				i, *r.Name, strings.Join(msgs, "; "))
+		if err := r.Validate(); err != nil {
+			return fmt.Errorf("serviceAccounts[%d]: %w", i, err)
 		}
 	}
 
@@ -484,6 +416,33 @@ func (a *Admit) validate() error {
 		if err := a.SPIFFE.validate(); err != nil {
 			return fmt.Errorf("spiffe: %w", err)
 		}
+	}
+	return nil
+}
+
+// Validate checks the rule's namespace and optional name. A value Kubernetes
+// refuses can never match, so it fails here.
+func (r ServiceAccountRule) Validate() error {
+	if strings.TrimSpace(r.Namespace) == "" {
+		return errors.New("namespace is required and must not be empty")
+	}
+	if err := requireUnpadded("namespace", r.Namespace); err != nil {
+		return err
+	}
+	if msgs := k8svalidation.NameIsDNSLabel(r.Namespace, false); len(msgs) > 0 {
+		return fmt.Errorf("namespace %q is not a valid namespace name: %s", r.Namespace, strings.Join(msgs, "; "))
+	}
+	if r.Name == nil {
+		return nil
+	}
+	if strings.TrimSpace(*r.Name) == "" {
+		return fmt.Errorf("name is present but empty; remove the key to match any service account in namespace %q", r.Namespace)
+	}
+	if err := requireUnpadded("name", *r.Name); err != nil {
+		return err
+	}
+	if msgs := k8svalidation.NameIsDNSSubdomain(*r.Name, false); len(msgs) > 0 {
+		return fmt.Errorf("name %q is not a valid service account name: %s", *r.Name, strings.Join(msgs, "; "))
 	}
 	return nil
 }

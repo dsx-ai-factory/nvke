@@ -4,9 +4,9 @@
 # The E2E suite as an image, for validating a running site from inside its
 # cluster, under an in-cluster test runner. It carries the whole suite and runs
 # the specs NVKE_SITE_VALIDATE and NVKE_TENANT_VALIDATE select, the site's by
-# default: specs that install and change nothing lasting on the site. Those
-# labeled creates, and the DNS probe, make short-lived objects in the probe
-# namespace and delete them.
+# default: specs that install and change nothing lasting on the site or the
+# tenant. Those labeled creates, and the DNS probe, make short-lived objects in
+# the probe namespace and delete them.
 #
 # Build from the REPOSITORY ROOT, so the context includes controller/api,
 # which go.mod replaces with a relative path:
@@ -88,7 +88,9 @@ LABEL org.opencontainers.image.licenses="Apache-2.0" \
 #
 # -test.run because the binary also carries the module's unit tests, some of
 # which need a git checkout. The JUnit report is the suite's, which lists only
-# the selected specs; report.json is Ginkgo's, with every spec.
+# the selected specs; report.json is Ginkgo's, with every spec. A spec still
+# running after two minutes reports its current step and stack every minute,
+# so a hung wait shows where it is rather than only its final error.
 #
 # -ginkgo.timeout because Ginkgo's default is an hour: a healthy site finishes
 # well inside it, but on a broken one every check waits out its own limit,
@@ -102,4 +104,6 @@ ENTRYPOINT ["/usr/local/bin/e2e.test", \
     "-ginkgo.json-report=/artifacts/report.json", \
     "-ginkgo.silence-skips", \
     "-ginkgo.no-color", \
+    "-ginkgo.poll-progress-after=2m", \
+    "-ginkgo.poll-progress-interval=1m", \
     "-ginkgo.v"]

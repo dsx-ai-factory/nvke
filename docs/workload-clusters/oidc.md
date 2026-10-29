@@ -78,11 +78,11 @@ NVKE binds Kubernetes roles only to the management plane's own identities. A fle
 3. Restart the controller so that it reads the new configuration.
 
    ```bash
-   kubectl -n nke-controller rollout restart deploy/nke-controller
+   kubectl -n nvke-controller rollout restart deploy/nvke-controller
    ```
 
    ```bash
-   kubectl -n nke-controller rollout status deploy/nke-controller --timeout 5m
+   kubectl -n nvke-controller rollout status deploy/nvke-controller --timeout 5m
    ```
 
    The output ends with `successfully rolled out`. The controller reads its configuration only when it starts, and the install does not restart it when only the configuration changes. If the rollout does not finish, the controller has refused the configuration and the NVKE API is unavailable until you fix it; see [If the controller does not start](#if-the-controller-does-not-start).
@@ -132,11 +132,11 @@ The install configures the shared provider for the management cluster's SPIRE se
    kubectl -n nvke-system get secret <WORKLOAD_CLUSTER>-kubeconfig -o jsonpath='{.metadata.labels.nvke\.nvidia\.com/kubeconfig-mode}'
    ```
 
-   The output is `spire` when the management plane reaches the cluster with SPIFFE JWTs through the shared provider, and `admin` when it uses the admin kubeconfig. NVKE switches it to `spire` after it applies its own role bindings in the cluster. If it stays `admin` after the cluster is `Provisioned` or the rollout succeeds, the controller's log says why: NVKE could not read the `nke-rbac` ConfigMap in `nvke-system` or could not apply the role bindings.
+   The output is `spire` when the management plane reaches the cluster with SPIFFE JWTs through the shared provider, and `admin` when it uses the admin kubeconfig. NVKE switches it to `spire` after it applies its own role bindings in the cluster. If it stays `admin` after the cluster is `Provisioned` or the rollout succeeds, the controller's log says why: NVKE could not read the RBAC ConfigMap in `nvke-system` — `nvke-rbac` by default, `nke-rbac` on a site that pinned the old name — or could not apply the role bindings. The log names the namespace and ConfigMap it looked for.
 
 ## How NVKE applies the providers
 
-The chart renders both kinds of provider into `nvke-controller-config` (`nke-controller-config` on an install that pins the old name), the ConfigMap in the `nke-controller` namespace that holds the controller's settings: `nvkeOIDCAuth` becomes the `oidc.managementOIDCAuth` key, with `caBundleSecret` renamed `caBundleSecretRef`, and `oidc.providers` keeps its name. The controller reads the file once, when it starts, and refuses to start when the file is invalid. It takes these settings only from the file: it ignores the `NKE_OIDC_AUTH_*` environment variables, and the chart refuses to render an `env` entry that sets one.
+The chart renders both kinds of provider into `nvke-controller-config` (`nke-controller-config` on an install that pins the old name), the ConfigMap in the `nvke-controller` namespace that holds the controller's settings: `nvkeOIDCAuth` becomes the `oidc.managementOIDCAuth` key, with `caBundleSecret` renamed `caBundleSecretRef`, and `oidc.providers` keeps its name. The controller reads the file once, when it starts, and refuses to start when the file is invalid. It takes these settings only from the file: it ignores the `NKE_OIDC_AUTH_*` environment variables, and the chart refuses to render an `env` entry that sets one.
 
 NVKE writes a workload cluster's providers into `/etc/kubernetes/oidc/auth-config.yaml` on each control-plane node and passes it to the API server with `--authentication-config`. The two kinds of provider reach the file differently:
 
@@ -159,7 +159,7 @@ A fleet-wide provider therefore cannot sign in a user as a Kubernetes or kubeadm
 Read the controller's log.
 
 ```bash
-kubectl -n nke-controller logs deploy/nke-controller
+kubectl -n nvke-controller logs deploy/nvke-controller
 ```
 
 The error begins `Error loading configuration: invalid controller config` and names the provider and the rule it breaks, for example `oidc: providers[0] (example-idp): usernamePrefix "system:" is inside the reserved "system:" namespace`. Fix `oidc-values.yaml`, then repeat steps 2 and 3 of [Add fleet-wide providers](#add-fleet-wide-providers).

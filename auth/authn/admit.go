@@ -78,6 +78,8 @@ func (r *admitRules) admits(p *Principal) bool {
 	return r.spiffe.admits(p.Subject)
 }
 
+// admitsGroups reports whether the token's groups claim holds one of the
+// rule's groups.
 func (r *admitRules) admitsGroups(p *Principal) bool {
 	items, _ := p.Claims["groups"].([]any)
 	for _, item := range items {
@@ -94,57 +96,47 @@ func (r *admitRules) admitsGroups(p *Principal) bool {
 	return false
 }
 
-// admitsServiceAccount matches the nested "kubernetes.io" claim rather than
-// parsing "sub", whose shape a colon in a namespace name would break in the
-// permissive direction. The two must then agree, or a token could be admitted on
-// one identity while every consumer of the Principal reads the other.
+// admitsServiceAccount reports whether the token is a service account's that
+// one of the rules matches.
 func (r *admitRules) admitsServiceAccount(p *Principal) bool {
-	if len(r.serviceAccounts) == 0 {
-		return false
-	}
-	sa, ok := serviceAccountFromClaims(p.Claims)
+	sa, ok := p.ServiceAccount()
 	if !ok {
 		return false
 	}
-	if p.Subject != serviceAccountSubjectPrefix+sa.namespace+":"+sa.name {
-		return false
-	}
 	for _, rule := range r.serviceAccounts {
-		if rule.Namespace != sa.namespace {
-			continue
-		}
-		if rule.AllowsAnyName() || *rule.Name == sa.name {
+		if rule.Matches(sa) {
 			return true
 		}
 	}
 	return false
 }
 
-type serviceAccountIdentity struct {
-	namespace string
-	name      string
+// ServiceAccount is a bound service account token's namespace and name.
+type ServiceAccount struct {
+	Namespace string
+	Name      string
 }
 
 // serviceAccountFromClaims reports false for anything but a bound service account
 // token.
-func serviceAccountFromClaims(claims map[string]any) (serviceAccountIdentity, bool) {
+func serviceAccountFromClaims(claims map[string]any) (ServiceAccount, bool) {
 	k8s, ok := claims[kubernetesClaim].(map[string]any)
 	if !ok {
-		return serviceAccountIdentity{}, false
+		return ServiceAccount{}, false
 	}
 	namespace, ok := k8s[namespaceClaim].(string)
 	if !ok || namespace == "" {
-		return serviceAccountIdentity{}, false
+		return ServiceAccount{}, false
 	}
 	sa, ok := k8s[serviceAccountClaim].(map[string]any)
 	if !ok {
-		return serviceAccountIdentity{}, false
+		return ServiceAccount{}, false
 	}
 	name, ok := sa[serviceAccountName].(string)
 	if !ok || name == "" {
-		return serviceAccountIdentity{}, false
+		return ServiceAccount{}, false
 	}
-	return serviceAccountIdentity{namespace: namespace, name: name}, true
+	return ServiceAccount{Namespace: namespace, Name: name}, true
 }
 
 // admits reports whether subject is a SPIFFE ID in the rule's trust domain under

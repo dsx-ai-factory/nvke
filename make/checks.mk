@@ -156,7 +156,7 @@ chart-package-check: ## Assert that chart packaging replaces placeholder version
 	@$(call require_tool,helm,$(HELM_VERSION))
 	@CHART="$(CHART)" ./controller/hack/chart-package-assertions.sh
 
-# The chart package is named nke-controller while everything it renders stays
+# The chart package is named nvke-controller while everything it renders stays
 # cloud-workflow-engine, held there by nameOverride. helm lint and kubeconform
 # both pass if that pin is dropped, so this is the only check that would catch it.
 chart-identity-check: ## Assert the chart still renders the deployed identities it must preserve.

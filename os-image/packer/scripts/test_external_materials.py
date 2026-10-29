@@ -55,8 +55,13 @@ class ComposeImageInputsTest(unittest.TestCase):
         for directory in (self.materials, self.source_files, self.tools):
             directory.mkdir()
         (self.materials / "agent").write_bytes(b"agent-deb\n")
-        for binding in ("calico", "kubeadm-distro", "ovn", "spire-agent"):
-            name = "spire-agent_1.0_all.deb" if binding == "spire-agent" else f"{binding}.deb"
+        for binding, name in (
+            ("calico", "calico.deb"),
+            ("kubeadm-distro", "kubeadm-distro.deb"),
+            ("ovn", "ovn.deb"),
+            ("spire-agent", "spire-agent_1.0_all.deb"),
+            ("doca-ovs", "doca-openvswitch-switch_1.0_all.deb"),
+        ):
             write_package_archive(self.materials / binding, name)
         for name in ("nvke-agent-spire.conf", "wait-spiffe-socket.sh",
                      "conntrack-tune.service", "configure-conntrack.sh",
@@ -119,6 +124,7 @@ class ComposeImageInputsTest(unittest.TestCase):
                 "debs/kubeadm-distro.deb",
                 "debs/ovn.deb",
                 "debs/spire-agent_1.0_all.deb",
+                "debs/doca-openvswitch-switch_1.0_all.deb",
                 "nvke-agent-spire.conf",
                 "nvke-agent.deb",
                 "wait-spiffe-socket.sh",
@@ -174,8 +180,11 @@ class ComposeImageInputsTest(unittest.TestCase):
         require_real_tools(self, "dpkg-deb", "dpkg-scanpackages")
         (self.tools / "dpkg-scanpackages").unlink()
         (self.tools / "dpkg-deb").unlink()
-        for number, binding in enumerate(("agent", "calico", "kubeadm-distro", "ovn", "spire-agent")):
-            name = "fixture-shared" if number in (1, 2) else ("spire-agent" if binding == "spire-agent" else f"fixture-{binding}")
+        for number, binding in enumerate(("agent", "calico", "kubeadm-distro", "ovn", "spire-agent", "doca-ovs")):
+            name = "fixture-shared" if number in (1, 2) else {
+                "spire-agent": "spire-agent",
+                "doca-ovs": "doca-openvswitch-switch",
+            }.get(binding, f"fixture-{binding}")
             package = self.root / f"package-{number}"
             control = package / "DEBIAN"
             control.mkdir(parents=True)
@@ -501,6 +510,18 @@ class ComposeImageInputsTest(unittest.TestCase):
         result = self.run_compose(self.root / "ambiguous-spire.tar")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("exactly one spire-agent_*.deb across all bindings", result.stderr)
+
+    def test_doca_openvswitch_switch_cardinality(self):
+        for filenames in (("other.deb",), ("doca-openvswitch-switch_1_all.deb", "doca-openvswitch-switch_2_all.deb")):
+            with self.subTest(filenames=filenames):
+                with tarfile.open(self.materials / "doca-ovs", "w") as archive:
+                    for name in filenames:
+                        member = tarfile.TarInfo(name)
+                        member.size = 1
+                        archive.addfile(member, io.BytesIO(b"x"))
+                result = self.run_compose(self.root / "doca.tar")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("exactly one doca-openvswitch-switch_*.deb", result.stderr)
 
     def test_missing_files_and_unsafe_outputs(self):
         for relative in ("materials/ovn", "materials/agent", "source-files/nvke-agent-spire.conf",

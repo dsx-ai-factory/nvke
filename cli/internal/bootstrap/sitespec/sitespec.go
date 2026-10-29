@@ -862,12 +862,16 @@ func (v *validator) checkCIDR(path, value string, allowList bool) {
 	}
 }
 
-// checkControlPlaneVIP requires a stable endpoint for multi-node control planes
-// and validates a configured IPv4 VIP against cluster CIDRs.
+// checkControlPlaneVIP requires a stable endpoint for nico sites and for
+// multi-node control planes, and validates a configured IPv4 VIP against
+// cluster CIDRs.
 func (v *validator) checkControlPlaneVIP(inv *SiteSpec) {
 	c := inv.Cluster
 	if c.ControlPlaneVIP == "" {
-		if inv.ControlPlaneCount() > 1 && !v.allowControlPlaneWithoutVIP {
+		if inv.IsNico() {
+			v.addf("%s is required with %s: %q: the site cluster's management plane is reached there", pathControlPlaneVIP,
+				pathInfraProvider, ProviderNico)
+		} else if inv.ControlPlaneCount() > 1 && !v.allowControlPlaneWithoutVIP {
 			v.addf("%s is required when the cluster has more than one control-plane node (%s or %s) because kube-vip provides "+
 				"a stable control-plane endpoint", pathControlPlaneVIP, pathNodes, pathNicoControlPlane+".count")
 		}
@@ -1013,19 +1017,6 @@ func (inv *SiteSpec) CheckBootstrapMode(disableMTLS bool) error {
 			"need an address that reaches the bootstrap host's SPIRE server", pathSpireExternalAddress, pathInfraProvider, ProviderNico)
 	}
 	return nil
-}
-
-// NicoVIPWarning returns a warning for a nico site spec that leaves
-// cluster.controlPlaneVIP unset, or "" for any other site spec. The bootstrap
-// can build such a site cluster, but render deploy-path needs the VIP to determine
-// the controller endpoint. The VIP cannot be added once the site cluster exists.
-func (inv *SiteSpec) NicoVIPWarning() string {
-	if !inv.IsNico() || inv.Cluster.ControlPlaneVIP != "" {
-		return ""
-	}
-	return pathControlPlaneVIP + " is not set: the bootstrap can build this site cluster, but render deploy-path needs the VIP " +
-		"to determine the controller endpoint. The installed controller's allowControlPlaneWithoutVIP setting does not supply that endpoint. " +
-		"The VIP cannot be added once the site cluster exists; set it before bootstrap if this site will get the controller stack"
 }
 
 // checkTrustDomain validates the DNS-name form required for a SPIFFE trust

@@ -177,13 +177,13 @@ for ref in "nvkr.local/nvke/cwe@${cwe_digest}" "nvkr.local/nvke/controller-profi
 done
 # The stack's workloads first, for a named failure; then every pod in the
 # stack's namespaces must be Running and Ready, nothing excluded.
-for target in deployment/nke-controller:nke-controller deployment/controller-manager:capnico-system statefulset/spire-server:spire-server \
+for target in deployment/nvke-controller:nvke-controller deployment/controller-manager:capnico-system statefulset/spire-server:spire-server \
   statefulset/postgres-postgresql:postgres deployment/temporal-frontend:temporal deployment/temporal-history:temporal deployment/temporal-matching:temporal; do
   kubectl -n "${target#*:}" rollout status "${target%%:*}" --timeout=5m || die "${target} is not ready"
 done
 not_ready() {
   local ns
-  for ns in nvke-system capnico-system nktp postgres spire-server spire-system temporal nke-controller cert-manager capi-system; do
+  for ns in nvke-system capnico-system nktp postgres spire-server spire-system temporal nvke-controller cert-manager capi-system; do
     kubectl -n "${ns}" get pods -o jsonpath='{range .items[?(@.status.phase!="Succeeded")]}{.metadata.namespace}/{.metadata.name}{"\t"}{.status.phase}{"\t"}{range .status.containerStatuses[*]}{.ready}{" "}{end}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' || die "cannot list pods in ${ns}"
   done | awk -F'\t' '$2 != "Running" || $3 ~ /false/ || $4 != "True"'
 }
@@ -193,7 +193,7 @@ for _ in $(seq 1 30); do
   sleep 10
 done
 [[ -z "${pending}" ]] || { printf '%s\n' "${pending}" >&2; die "pods that are not Running and Ready"; }
-controller_ids="$(kubectl -n nke-controller get pods -l app.kubernetes.io/name=nke-controller \
+controller_ids="$(kubectl -n nvke-controller get pods -l app.kubernetes.io/name=nvke-controller \
   -o jsonpath='{range .items[*]}{range .status.initContainerStatuses[*]}{.imageID}{"\n"}{end}{range .status.containerStatuses[*]}{.imageID}{"\n"}{end}{end}')"
 grep -q "${cwe_digest}" <<<"${controller_ids}" || die "the controller does not run the release's cwe digest: ${controller_ids}"
 grep -q "${profiles_digest}" <<<"${controller_ids}" || die "the controller does not materialise the release's profiles digest: ${controller_ids}"

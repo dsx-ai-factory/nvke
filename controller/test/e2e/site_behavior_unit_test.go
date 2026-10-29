@@ -78,9 +78,25 @@ func TestUnit_PolicySelectingAnyFindsPoliciesThatDecideTheProbes(t *testing.T) {
 }
 
 func TestUnit_SiteExpectationsFromEnvUnset(t *testing.T) {
-	expect, err := siteExpectationsFromEnv(envMap(nil))
+	expect, err := siteExpectationsFromEnv(envMap(nil), sitePrefix)
 	require.NoError(t, err)
-	require.Equal(t, siteExpectations{}, expect, "nothing is expected unless the run says so")
+	require.Equal(t, siteExpectations{prefix: sitePrefix}, expect, "nothing is expected unless the run says so")
+}
+
+func TestUnit_SiteExpectationsFromEnvTenantPrefix(t *testing.T) {
+	expect, err := siteExpectationsFromEnv(envMap(map[string]string{
+		siteComponentsEnv:           "argocd",
+		"NVKE_TENANT_COMPONENTS":    "kube-vip, cert-manager",
+		"NVKE_TENANT_STORAGE_CLASS": "ignored",
+	}), tenantPrefix)
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{componentKubeVIP: kubeSystemNamespace, componentCertManager: "cert-manager"}, expect.components,
+		"a tenant reads its own variables, not the site's")
+	require.Equal(t, "NVKE_TENANT_COMPONENTS", expect.env(siteComponentsEnv))
+	require.Equal(t, siteComponentsEnv, siteExpectations{}.env(siteComponentsEnv))
+
+	_, err = siteExpectationsFromEnv(envMap(map[string]string{"NVKE_TENANT_COMPONENTS": "flux"}), tenantPrefix)
+	require.ErrorContains(t, err, "NVKE_TENANT_COMPONENTS")
 }
 
 func TestUnit_SiteExpectationsFromEnv(t *testing.T) {
@@ -93,7 +109,7 @@ func TestUnit_SiteExpectationsFromEnv(t *testing.T) {
 		siteAPIServerFlagsEnv:    "--profiling=false; enable-admission-plugins=NodeRestriction,PodSecurity;",
 		siteEtcdEncryptedEnv:     "true",
 		siteReservedMemoryEnv:    "2Gi",
-	}))
+	}), sitePrefix)
 	require.NoError(t, err)
 	require.Equal(t, map[string]string{componentArgoCD: "argocd", componentCNPG: "databases", componentKubeVIP: kubeSystemNamespace}, expect.components)
 	require.Equal(t, []string{"local-path", "fast"}, expect.storageClasses)
@@ -122,7 +138,7 @@ func TestUnit_SiteExpectationsFromEnvRejects(t *testing.T) {
 		"error reaches settings":  {siteComponentsEnv: "nope"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := siteExpectationsFromEnv(envMap(env))
+			_, err := siteExpectationsFromEnv(envMap(env), sitePrefix)
 			require.Error(t, err)
 			_, err = siteValidateFromEnv(envMap(env), filepath.Join(t.TempDir(), "absent"))
 			require.Error(t, err)
@@ -318,16 +334,16 @@ func TestUnit_SiteAPIServerFlagProblems(t *testing.T) {
 	require.Equal(t, []string{
 		"kube-apiserver-cp-2: no --audit-log-maxage (set by " + siteAPIServerFlagsEnv + ")",
 		"kube-apiserver-cp-2: --profiling=true, want false (set by kubeadm-config)",
-	}, apiServerFlagProblems(map[string]string{"profiling": "false"}, map[string]string{"audit-log-maxage": "30"}, pods))
+	}, apiServerFlagProblems(map[string]string{"profiling": "false"}, map[string]string{"audit-log-maxage": "30"}, siteAPIServerFlagsEnv, pods))
 	require.Equal(t, []string{
 		`--profiling: kubeadm-config sets "false", ` + siteAPIServerFlagsEnv + ` wants "true"`,
-	}, apiServerFlagProblems(map[string]string{"profiling": "false"}, map[string]string{"profiling": "true"}, pods[:1]))
-	require.Equal(t, []string{"no kube-apiserver pod in kube-system"}, apiServerFlagProblems(nil, nil, nil))
-	require.Empty(t, apiServerFlagProblems(map[string]string{"runtime-config": ""}, nil,
+	}, apiServerFlagProblems(map[string]string{"profiling": "false"}, map[string]string{"profiling": "true"}, siteAPIServerFlagsEnv, pods[:1]))
+	require.Equal(t, []string{"no kube-apiserver pod in kube-system"}, apiServerFlagProblems(nil, nil, siteAPIServerFlagsEnv, nil))
+	require.Empty(t, apiServerFlagProblems(map[string]string{"runtime-config": ""}, nil, siteAPIServerFlagsEnv,
 		[]corev1.Pod{staticPod("kube-apiserver-kind", "kube-apiserver", "--runtime-config=")}),
 		"kubeadm renders an empty value as --name=, as kind's runtime-config")
 	require.Equal(t, []string{"kube-apiserver-cp-1: no --runtime-config (set by kubeadm-config)"},
-		apiServerFlagProblems(map[string]string{"runtime-config": ""}, nil, pods[:1]))
+		apiServerFlagProblems(map[string]string{"runtime-config": ""}, nil, siteAPIServerFlagsEnv, pods[:1]))
 }
 
 func TestUnit_SiteEncryptionProblems(t *testing.T) {

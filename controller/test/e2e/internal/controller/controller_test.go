@@ -46,8 +46,8 @@ func TestEnvFallbackOrder(t *testing.T) {
 
 func TestDefaults(t *testing.T) {
 	for _, v := range []string{ServiceNamespace, ServiceName, DeploymentName} {
-		if v != "nke-controller" {
-			t.Errorf("default %q, want nke-controller", v)
+		if v != "nvke-controller" {
+			t.Errorf("default %q, want nvke-controller", v)
 		}
 	}
 }
