@@ -56,13 +56,13 @@ type formattedError struct {
 // the failing spec, so an error formatted during an earlier spec, for a
 // progress report or an attempt that later passed, is not taken for this
 // one's cause.
-func takeFormattedErrors(since time.Time) []error {
+func takeFormattedErrors(since time.Time) []formattedError {
 	formattedErrors.Lock()
 	defer formattedErrors.Unlock()
-	var errs []error
+	var errs []formattedError
 	for _, f := range formattedErrors.errs {
 		if !f.at.Before(since) {
-			errs = append(errs, f.err)
+			errs = append(errs, f)
 		}
 	}
 	formattedErrors.errs = nil
@@ -114,37 +114,48 @@ func failWithCause(message string, callerSkip ...int) {
 // failure message and the timeline, and a summary needs far less of it.
 const maxCauseBytes = 4096
 
-// failureCause is the text of the error the failure message is about, cut to
-// maxCauseBytes, or "" when the message carries none of errs. That is the
-// first of errs whose text the message contains, since Gomega formats an
-// assertion's actual value before its expected one. A later error whose text
-// contains that one's takes its place only when the earlier text appears in
-// the message nowhere but inside the later one: then it is a fragment of the
-// final error, formatted for an earlier attempt of an Eventually, such as
-// "EOF" before "reading the body: unexpected EOF". Whitespace is not
+// causeWindow is how long before the newest error a failure message carries
+// the message's other errors can have been formatted. Gomega formats them as
+// it builds the message, microseconds apart; the rest is room for a slow Error
+// method or a pause between them. An earlier attempt of an Eventually
+// formatted its errors at least a polling interval before, and this suite
+// polls every 200ms or slower. A faster poll, or a progress report on a
+// different error, could put an error the failure is not about inside the
+// window.
+const causeWindow = 100 * time.Millisecond
+
+// failureCause is the text of the error the failure message is about, cut at a
+// word to at most maxCauseBytes, or "" when there is none. The newest error
+// the message contains is one Gomega formatted for it: as it built the
+// message or, for an Eventually polling a function that takes a Gomega and
+// returns nothing, which formats nothing when it gives up, in its last
+// attempt. The cause is the first error the message contains among those
+// formatted up to causeWindow before that one, since Gomega formats an
+// assertion's actual value before its expected one. Whitespace is not
 // compared, since Gomega indents each line of an error.
-func failureCause(message string, errs []error) string {
+func failureCause(message string, errs []formattedError) string {
 	flat := oneLine(message)
-	cause, causeFlat := "", ""
-	for _, err := range errs {
-		text := errorText(err)
-		textFlat := oneLine(text)
-		if textFlat == "" || !strings.Contains(flat, textFlat) {
-			continue
-		}
-		fragment := causeFlat != "" && textFlat != causeFlat && strings.Contains(textFlat, causeFlat) &&
-			!strings.Contains(strings.ReplaceAll(flat, textFlat, "\x00"), causeFlat)
-		if causeFlat == "" || fragment {
-			cause, causeFlat = text, textFlat
+	// texts holds the text of each error the message contains, "" for the rest.
+	texts := make([]string, len(errs))
+	newest := -1
+	for i, f := range errs {
+		text := errorText(f.err)
+		if t := oneLine(text); t != "" && strings.Contains(flat, t) {
+			texts[i], newest = text, i
 		}
 	}
-	return truncateAtWord(cause, maxCauseBytes)
+	for i := range newest + 1 {
+		if texts[i] != "" && errs[newest].at.Sub(errs[i].at) <= causeWindow {
+			return truncateAtWord(texts[i], maxCauseBytes)
+		}
+	}
+	return ""
 }
 
 // truncateAtWord cuts s to at most n bytes at the end of a word, so that a
 // word such as a host name is kept whole or left out, never split: the
-// workflow withholds such values by matching them whole. A single word longer
-// than n is cut on a rune boundary.
+// workflow withholds such values by matching them whole. For the same reason
+// it gives "" when no word ends within n bytes.
 func truncateAtWord(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -154,9 +165,9 @@ func truncateAtWord(s string, n int) string {
 		return cut
 	}
 	if i := strings.LastIndexFunc(cut, unicode.IsSpace); i >= 0 {
-		return cut[:i]
+		return strings.TrimRightFunc(cut[:i], unicode.IsSpace)
 	}
-	return cut
+	return ""
 }
 
 // errorText is err.Error(), or "" when that panics, as it can for a nil

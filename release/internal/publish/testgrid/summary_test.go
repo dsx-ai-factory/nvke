@@ -7,11 +7,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/onsi/ginkgo/v2/reporters"
@@ -392,31 +394,77 @@ func TestSummarizeFailuresKeepsAMessageThatHasNoBody(t *testing.T) {
 }
 
 // On a spec timeout Ginkgo folds the additional failure into the failure body,
-// but its timeline in system-err draws them as separate entries, so the body
-// never matches system-err as a whole. The message does.
+// but its timeline in system-err draws it as an entry of its own, so the body
+// never matches system-err as a whole. The message does, and system-err holds
+// everything the body does. The report comes from Ginkgo's own JUnit reporter,
+// so a change in how Ginkgo draws either one shows up here.
 func TestSummarizeFailuresDoesNotRepeatGinkgosCopy(t *testing.T) {
-	progress := "In [It] at: /work/e2e/a_test.go:10 @ 10/28/26 15:12:53.833\n\n" +
-		"This is the Progress Report generated when the spec timeout occurred:\n  waits (Spec Runtime: 150ms)\n"
-	timeline := "> Enter [It] waits - /work/e2e/a_test.go:10 @ 10/28/26 15:12:53.683\n" +
-		"[TIMEDOUT] A spec timeout occurred\n" + progress +
-		"failure-cause - /work/e2e/a_test.go:13 @ 10/28/26 15:12:53.834\n" +
-		"  cluster c1 has 2 control-plane nodes KubernetesReady; want 3\n" +
-		"< Exit [It] waits - /work/e2e/a_test.go:10 @ 10/28/26 15:12:53.835 (152ms)\n"
-	body := "[TIMEDOUT] A spec timeout occurred\n" + progress +
-		"\nThere were additional failures detected after the initial failure. These are visible in the timeline\n"
-	junit := ginkgoReport(t, reporters.JUnitTestCase{
-		Name:      "[It] waits",
-		Status:    "timedout",
-		Failure:   &reporters.JUnitFailure{Message: "A spec timeout occurred", Type: "timedout", Description: body},
-		SystemErr: timeline,
-	})
+	start := time.Now()
+	cause := "cluster c1 has 2 control-plane nodes KubernetesReady; want 3"
+	report := types.Report{
+		SuiteDescription: "NVKE E2E Suite",
+		SpecReports: types.SpecReports{{
+			LeafNodeType: types.NodeTypeIt,
+			LeafNodeText: "waits for the control plane",
+			State:        types.SpecStateTimedout,
+			StartTime:    start,
+			EndTime:      start.Add(152 * time.Millisecond),
+			Failure: types.Failure{
+				Message:          "A spec timeout occurred",
+				Location:         types.NewCustomCodeLocation("cp_controller_test.go:359"),
+				FailureNodeType:  types.NodeTypeIt,
+				TimelineLocation: types.TimelineLocation{Order: 1, Time: start.Add(150 * time.Millisecond)},
+				ProgressReport: types.ProgressReport{
+					Message:         "This is the Progress Report generated when the spec timeout occurred:",
+					LeafNodeText:    "waits for the control plane",
+					CurrentNodeType: types.NodeTypeIt,
+					CurrentNodeText: "waits for the control plane",
+				},
+				AdditionalFailure: &types.AdditionalFailure{
+					State: types.SpecStateFailed,
+					Failure: types.Failure{
+						Message:          "Context was cancelled (cause: spec timeout occurred) after 0.150s.\n" + cause,
+						Location:         types.NewCustomCodeLocation("cp_controller_test.go:361"),
+						FailureNodeType:  types.NodeTypeIt,
+						TimelineLocation: types.TimelineLocation{Order: 3, Time: start.Add(151 * time.Millisecond)},
+					},
+				},
+			},
+			ReportEntries: types.ReportEntries{{
+				Name:             failureCauseProperty,
+				Value:            types.WrapEntryValue(cause),
+				Visibility:       types.ReportEntryVisibilityNever,
+				TimelineLocation: types.TimelineLocation{Order: 2, Time: start.Add(151 * time.Millisecond)},
+			}},
+		}},
+	}
+	path := filepath.Join(t.TempDir(), "junit.xml")
+	if err := reporters.GenerateJUnitReport(report, path); err != nil {
+		t.Fatal(err)
+	}
+	junit, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ginkgos := decodeReport(t, junit).TestSuites[0].TestCases[0]
+	if oneLine(ginkgos.Failure.Description) == "" || strings.Contains(oneLine(ginkgos.SystemErr), oneLine(ginkgos.Failure.Description)) {
+		t.Fatalf("Ginkgo's body and timeline no longer differ, so this test no longer covers the case:\n%s", ginkgos.SystemErr)
+	}
+	for _, want := range []string{"This is the Progress Report generated when the spec timeout occurred", "Context was cancelled", cause} {
+		if !strings.Contains(ginkgos.Failure.Description, want) {
+			t.Fatalf("the failure body lacks %q, so this test no longer covers it:\n%s", want, ginkgos.Failure.Description)
+		}
+		if !strings.Contains(ginkgos.SystemErr, want) {
+			t.Fatalf("Ginkgo's system-err lacks %q, which the failure body carries:\n%s", want, ginkgos.SystemErr)
+		}
+	}
 
 	got, err := summarizeFailures(junit)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if systemErr := decodeReport(t, got).TestSuites[0].TestCases[0].SystemErr; systemErr != timeline {
+	if systemErr := decodeReport(t, got).TestSuites[0].TestCases[0].SystemErr; systemErr != ginkgos.SystemErr {
 		t.Errorf("system-err changed, though it already held Ginkgo's copy of the failure:\n%s", systemErr)
 	}
 }
@@ -496,10 +544,16 @@ func TestPublishUploadsTheJUnitWithFailuresSummarized(t *testing.T) {
 }
 
 func TestPublishUploadsAJUnitThatDoesNotParseAsWritten(t *testing.T) {
+	// slog.SetDefault also points the log package at the new handler, which
+	// restoring the old default does not undo, so restore that too.
 	var logged bytes.Buffer
-	previous := slog.Default()
+	previous, writer, flags := slog.Default(), log.Writer(), log.Flags()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, nil)))
-	t.Cleanup(func() { slog.SetDefault(previous) })
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+		log.SetOutput(writer)
+		log.SetFlags(flags)
+	})
 	result := publishTestResult(t, false)
 	junitPath := filepath.Join(t.TempDir(), "qualify-e2e.junit.xml")
 	if err := os.WriteFile(junitPath, []byte("<testsuites><testsuite"), 0o644); err != nil {
