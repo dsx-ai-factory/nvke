@@ -1,8 +1,8 @@
 # API authentication in nvke-controller-config: design
 
-> **Status:** phase 1 is implemented. A chart install and released `nvkectl` need no changes, but the `apiAuth` section is required, so a hand-written `nvke-controller-config` must now carry one (see [Startup behaviour](#startup-behaviour)). [Phase 2](#phase-2), which retires the old path, ships in two steps; the first is implemented.
+> **Status:** phase 1 is implemented. A chart install and released `nvkectl` need no changes, but the `apiAuth` section is required, so a hand-written `nvke-controller-config` must now carry one (see [Startup behaviour](#startup-behaviour)). [Phase 2](#phase-2), which retires the old path, ships in two steps; both are implemented. Step 2 is breaking: `apiAuth` in `nvke-controller-config` is now the controller's only source, and a site that managed its own authentication ConfigMap moves it into `apiAuth.config` (see [Step 2](#step-2-retire-the-old-path-breaking)).
 >
-> **Names:** the chart names the settings ConfigMap `nvke-controller-config` and the authentication ConfigMap `nvke-auth-config` by default; an install that predates the chart's move to nvke names pins `nke-controller-config` and `nke-auth-config`. Below, `nvke-controller-config` means the settings ConfigMap whatever its name. Where this document describes behaviour from before that move, `nke-auth-config` is the authentication ConfigMap, and the Tilt scaffolding it names is now `controller/deploy/k8s/nvke-auth-dev.yaml`.
+> **Names:** the chart names the settings ConfigMap `nvke-controller-config` by default, and until step 2 named the authentication ConfigMap `nvke-auth-config`; an install that predates the chart's move to nvke names pins `nke-controller-config`, and pinned `nke-auth-config` until step 2 removed the value. Below, `nvke-controller-config` means the settings ConfigMap whatever its name. Where this document describes behaviour from before that move, `nke-auth-config` is the authentication ConfigMap, and the Tilt scaffolding it names is now `controller/deploy/k8s/nvke-auth-dev.yaml`.
 
 ## Problem
 
@@ -156,12 +156,22 @@ Phase 2 therefore ships as two pull requests.
 Merged only after a release that includes step 1, and deployed as chart and image together, as for #1527.
 
 - **`AUTH_CONFIG_PATH` is retired.** The chart refuses it in `env`. The controller refuses to start when it is set, so a hand-written Deployment fails closed instead of starting without the authentication it asked for. `authn.Load`, the file header check and `Options.ConfigPath` go, since the file was their only caller; `auth.yaml`'s `apiVersion` and `kind` go with them.
-- **The external-ConfigMap mode is removed.** `apiAuth.configMap.create`, `apiAuth.configMap.name` and `apiAuth.configMap.extraFiles` are refused by name, as the chart refuses other removed values. `apiAuth` renders whenever `apiAuth.enabled` is true.
+- **The external-ConfigMap mode is removed.** `apiAuth.configMap`, and with it `create`, `name` and `extraFiles`, is refused by name, as the chart refuses other removed values. `apiAuth` renders whenever `apiAuth.enabled` is true.
 - **`nvke-auth-config` is no longer rendered,** and its volume, mount and Reloader entry go. `caBundlePath` stays: it is how an issuer names a file the pod already has, such as the projected ServiceAccount CA.
 - **`apiAuth.permissive` requires `apiAuth.enabled`.** With one source, permissive with authentication off is a configuration that does nothing, so it is refused.
 - **`nvkectl` and the tooling keep their fallback** to the authentication ConfigMap, for sites still running a controller from before step 2.
 
 `nvkectl` older than step 1 sends no token to a controller from step 2 and gets 401. The release notes for step 2 say so; the fix is to upgrade `nvkectl`.
+
+The implementation adds these details to the outline:
+
+- The chart refuses `apiAuth.configMap` as a whole, so a site that pinned only `name` is told to drop it rather than having it ignored.
+- A `jwks.caBundlePath` under `/etc/nke/auth/` fails the render and names the inline `jwks.caBundle`, because nothing is mounted there any more. A path elsewhere, such as the projected ServiceAccount CA or a file mounted through `.Values.volumes`, is accepted as before.
+- `apiAuth.config` without `apiAuth.enabled`, and `apiAuth.enabled` without `apiAuth.config`, each fail the render, rather than one being silently ignored.
+- The controller refuses only a non-empty `AUTH_CONFIG_PATH`. An empty value has always meant unset, so it still starts.
+- The e2e suite's `detectAuthnEnforcement` reads only `apiAuth.enabled` and `apiAuth.permissive` from `nvke-controller-config`; it no longer looks at the Deployment's environment. `hack/nvke-auth-demo.sh` no longer requires `nvke-auth-config` to exist.
+
+A site upgrading to step 2 that set `apiAuth.configMap.create: false` moves its configuration into `apiAuth.config` (audiences and issuers only, without `apiVersion` and `kind`), moves any CA bundle from `extraFiles` or its own ConfigMap into `jwks.caBundle`, sets `apiAuth.enabled: true` and removes `apiAuth.configMap`. A site with `apiAuth.permissive: true` and `enabled: false` drops `permissive`. Helm deletes the chart-owned `nvke-auth-config` on the upgrade.
 
 ### Testing
 
@@ -169,7 +179,8 @@ Merged only after a release that includes step 1, and deployed as chart and imag
 - `controllerconfig`: `apiAuth.permissive` while off and on, and the refusal of top-level `permissiveMode`; the drift tests map `PERMISSIVE_MODE` to the new key.
 - Chart: `chart-auth-assertions.sh` checks `apiAuth.permissive` in both modes, the absence of the top-level key, the refusal of `permissive` in `apiAuth.config`, and an inline bundle rendered without `extraFiles`.
 - `nvkectl` and `authtoken`: the lookup order, the fallback when the section is off or absent, a pinned settings name, and denied reads.
-- E2E: CAPD and CAPNICo both run on `create: true`; the authentication specs read `apiAuth.permissive`.
+- E2E: CAPD and CAPNICo both run on the chart-rendered configuration; the authentication specs read `apiAuth.permissive`.
+- Step 2: `controllerconfig` refuses a set `AUTH_CONFIG_PATH` and starts with an empty one, and refuses `permissive` while off; `chart-auth-assertions.sh` checks the refusals of `apiAuth.configMap`, of `AUTH_CONFIG_PATH` in `env`, of `config` and `enabled` without each other, of `permissive` without `enabled` and of a `caBundlePath` under `/etc/nke/auth/`, and that nothing but `nvke-controller-config` is rendered or mounted for authentication.
 
 ## Alternatives considered
 

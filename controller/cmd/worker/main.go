@@ -127,7 +127,6 @@ func main() {
 	logger.Info("Loaded nke-controller-config", "path", cfg.ControllerConfigPath, "oidcProviders", len(controllerCfg.OIDC.Providers))
 
 	authenticator, err := authn.Setup(ctx, authn.Options{
-		ConfigPath: cfg.AuthConfigPath,
 		Permissive: cfg.PermissiveMode,
 		Recorder:   metrics.RecordAuthRequest,
 		Config:     controllerCfg.APIAuth.AuthConfig(),

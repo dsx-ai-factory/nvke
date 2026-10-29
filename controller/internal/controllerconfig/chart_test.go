@@ -88,16 +88,16 @@ func TestRenderedChart(t *testing.T) {
 			}
 			require.NoError(t, cfg.Validate())
 
-			// Both sources at once is a startup failure, so no render may produce it.
-			require.NoError(t, fromFile.CheckAuthSource(environment["AUTH_CONFIG_PATH"]))
+			// The controller refuses to start with it set.
+			require.NotContains(t, environment, "AUTH_CONFIG_PATH")
 
 			if filepath.Base(render) == "api-auth-inline.yaml" {
 				require.True(t, fromFile.APIAuth.Enabled, "the controller reads the chart's apiAuth.config from config.yaml")
-				require.NotContains(t, environment, "AUTH_CONFIG_PATH")
+				require.False(t, cfg.PermissiveMode)
 			}
 			if filepath.Base(render) == "api-auth-permissive.yaml" {
-				require.False(t, fromFile.APIAuth.Enabled, "a ConfigMap managed elsewhere stays on AUTH_CONFIG_PATH")
-				require.Contains(t, environment, "AUTH_CONFIG_PATH")
+				require.True(t, fromFile.APIAuth.Enabled)
+				require.True(t, cfg.PermissiveMode)
 			}
 
 			if filepath.Base(render) == "machine-metadata-allowlists.yaml" {
@@ -273,17 +273,21 @@ func TestLoadStartupConfig(t *testing.T) {
 		require.ErrorContains(t, err, "absent.yaml")
 	})
 
-	t.Run("apiAuth and AUTH_CONFIG_PATH together are refused", func(t *testing.T) {
-		local, err := controllerconfig.Load(localControllerConfig)
-		require.NoError(t, err)
-		local.APIAuth = exampleAPIAuth()
-		encoded, err := yaml.Marshal(local)
-		require.NoError(t, err)
-		t.Setenv("CONTROLLER_CONFIG_PATH", writeConfig(t, string(encoded)))
+	t.Run("AUTH_CONFIG_PATH is refused, naming its replacement", func(t *testing.T) {
+		t.Setenv("CONTROLLER_CONFIG_PATH", localControllerConfig)
 		t.Setenv("AUTH_CONFIG_PATH", "/etc/nke/auth/auth.yaml")
 
-		_, _, err = controllerconfig.LoadStartupConfig()
-		require.ErrorContains(t, err, "configured twice")
+		_, _, err := controllerconfig.LoadStartupConfig()
+		require.ErrorContains(t, err, `AUTH_CONFIG_PATH is set to "/etc/nke/auth/auth.yaml", but the controller no longer reads an authentication file`)
+		require.ErrorContains(t, err, "apiAuth in nvke-controller-config")
+	})
+
+	t.Run("an empty AUTH_CONFIG_PATH is unset", func(t *testing.T) {
+		t.Setenv("CONTROLLER_CONFIG_PATH", localControllerConfig)
+		t.Setenv("AUTH_CONFIG_PATH", "")
+
+		_, _, err := controllerconfig.LoadStartupConfig()
+		require.NoError(t, err)
 	})
 }
 

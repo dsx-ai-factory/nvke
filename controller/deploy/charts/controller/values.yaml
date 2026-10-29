@@ -504,51 +504,21 @@ oidc:
   #       -----END CERTIFICATE-----
   providers: []
 
-# NVKE API authentication. The chart always mounts the configuration ConfigMap,
-# and creates it too when apiAuth.configMap.create is set. See the README for
-# the schema.
+# NVKE API authentication. The chart renders it into the apiAuth section of
+# nvke-controller-config. See the README for the schema.
 apiAuth:
   # -- Enable NVKE API authentication.
   enabled: false
   # -- Count what enforcement would have refused but serve the request anyway.
   # Watch nvke_auth_requests_total{outcome="would_reject"} before enforcing.
+  # Requires `enabled`.
   permissive: false
-  configMap:
-    # -- Render `apiAuth.config` into both `nvke-controller-config`, which is
-    # what the controller reads, and the ConfigMap named below, a copy for
-    # `nvkectl` and `extraFiles`, rather than mounting one managed elsewhere.
-    # The two are alternatives: setting `config` without this, or this without
-    # `config`, fails the render rather than silently ignoring one of them.
-    create: false
-    # -- ConfigMap holding the authentication configuration, keyed `auth.yaml`.
-    # Required when apiAuth.enabled=true; an empty name fails the render.
-    # Created by the chart when configMap.create=true, mounted either way. An
-    # install that predates nvke-auth-config sets "nke-auth-config": renaming it
-    # orphans the live object, and with configMap.create=false the pod stays in
-    # ContainerCreating until the named ConfigMap exists.
-    name: nvke-auth-config
-    # -- Extra files to place beside `auth.yaml`, keyed by filename. Only used
-    # when configMap.create=true. The whole ConfigMap is mounted, so each one
-    # lands in the same directory and can be named by a `jwks.caBundlePath` as
-    # /etc/nke/auth/<filename>. For an issuer behind a private CA, prefer the
-    # PEM inline as `jwks.caBundle` in `config`, which needs no file; a CA
-    # bundle is a public certificate, not a secret. The render fails if
-    # `caBundlePath` names a file in that directory that is not listed here,
-    # rather than leaving NVKE to crash-loop on a missing file.
-    #
-    # extraFiles:
-    #   spire-ca.crt: \|
-    #     -----BEGIN CERTIFICATE-----
-    #     ...
-    #     -----END CERTIFICATE-----
-    extraFiles: {}
-  # -- The AuthenticationConfiguration itself. With `configMap.create` the chart
-  # renders it into the `apiAuth` section of `nvke-controller-config`, which is
-  # what the controller reads, and verbatim into the ConfigMap named by
-  # `configMap.name`, a copy for `nvkectl` and `extraFiles`. Carries `audiences`
-  # and `issuers` only: apiVersion and kind are supplied by the chart, which
-  # ships in lockstep with the build that accepts them, `enabled` is
-  # `apiAuth.enabled`, and `permissive` is `apiAuth.permissive`.
+  # -- The API authentication configuration: `audiences` and `issuers`. The
+  # chart renders it into the `apiAuth` section of `nvke-controller-config`,
+  # which is what the controller reads. Required when `enabled` is true, and
+  # refused when it is false. `enabled` is `apiAuth.enabled` and `permissive` is
+  # `apiAuth.permissive`. An issuer behind a private CA carries the PEM inline
+  # as `jwks.caBundle`; a CA bundle is a public certificate, not a secret.
   #
   # The render checks that both keys are present and refuses `apiVersion`,
   # `kind`, `enabled` and `permissive` here, and nothing more. The controller applies

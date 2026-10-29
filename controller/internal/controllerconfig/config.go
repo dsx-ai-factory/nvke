@@ -33,9 +33,9 @@ import (
 // Config is the top-level shape of nvke-controller-config's config.yaml key. It
 // mirrors every field of internal/config.Config the chart sets, except the ones
 // that keep the environment-variable path: secretKeyRef-backed credentials,
-// POD_NAMESPACE and SPIRE_SERVER_ADDRESS (both can come from the downward API),
-// and AUTH_CONFIG_PATH. The package tests hold the full classification and fail
-// when config.Config gains a field it does not cover.
+// and POD_NAMESPACE and SPIRE_SERVER_ADDRESS (both can come from the downward
+// API). The package tests hold the full classification and fail when
+// config.Config gains a field it does not cover.
 type Config struct {
 	AgentReadiness                           AgentReadinessConfig       `json:"agentReadiness"`
 	FieldManager                             FieldManagerConfig         `json:"fieldManager"`
@@ -247,18 +247,16 @@ type TeleportConfig struct {
 	ResourceGroupLabelValue string `json:"resourceGroupLabelValue"`
 }
 
-// APIAuthConfig is the NVKE REST API's authentication configuration: the same
-// audiences and issuers auth/authn reads from the file at AUTH_CONFIG_PATH,
-// plus the switch that turns it on. It has no apiVersion or kind, which
-// describe a file; this section is part of one.
+// APIAuthConfig is the NVKE REST API's authentication configuration: the
+// audiences and issuers auth/authn verifies tokens against, plus the switches
+// that turn it on and make it permissive.
 type APIAuthConfig struct {
 	Enabled   bool           `json:"enabled"`
 	Audiences []string       `json:"audiences"`
 	Issuers   []authn.Issuer `json:"issuers"`
 
 	// Permissive evaluates and logs every authentication decision without
-	// acting on it. It applies to whichever source configures authentication,
-	// so it may be true while Enabled is false and AUTH_CONFIG_PATH is set.
+	// acting on it. It requires Enabled.
 	Permissive bool `json:"permissive"`
 }
 
@@ -279,6 +277,9 @@ func (a APIAuthConfig) validate() error {
 		if len(a.Audiences) > 0 || len(a.Issuers) > 0 {
 			return errors.New("audiences or issuers are set but enabled is false; set enabled to true to authenticate API requests, or empty both")
 		}
+		if a.Permissive {
+			return errors.New("permissive is true but enabled is false; permissive mode applies only while authentication is on, so set enabled to true or permissive to false")
+		}
 		return nil
 	}
 	return a.AuthConfig().ValidateStartup()
@@ -287,8 +288,7 @@ func (a APIAuthConfig) validate() error {
 // Load reads and validates the configuration at path. A missing file is not
 // reached in practice: Kubernetes will not start the controller's container
 // until the ConfigMap a volume mount references exists. A malformed or
-// invalid one is a startup failure, never a silent fallback to defaults, the
-// same fail-closed rule authn.Load already follows for AUTH_CONFIG_PATH.
+// invalid one is a startup failure, never a silent fallback to defaults.
 func Load(path string) (*Config, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("controller config path is empty")
@@ -328,8 +328,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("invalid controller config %q: %w", path, err)
 	}
 
-	// Required of the file rather than of a Config value, like authn.Load's
-	// header check. An absent apiAuth decodes as the zero value, which is
+	// Required of the file rather than of a Config value. An absent apiAuth decodes as the zero value, which is
 	// switched off, so a ConfigMap that predates the section would start the
 	// controller without authentication. Turning it off must be said outright.
 	if err := requireAPIAuth(jsonBytes); err != nil {

@@ -15,8 +15,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nvke/auth/authn"
-
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 )
@@ -1223,23 +1221,6 @@ func TestControlPlaneVIPOverrideConfiguration(t *testing.T) {
 	}
 }
 
-// exampleAPIAuth is an enabled apiAuth section that passes auth/authn's rules.
-func exampleAPIAuth() controllerconfig.APIAuthConfig {
-	return controllerconfig.APIAuthConfig{
-		Enabled:   true,
-		Audiences: []string{"https://nke.example.internal"},
-		Issuers: []authn.Issuer{{
-			Name:       "local-kubernetes",
-			Issuer:     "https://kubernetes.default.svc.cluster.local",
-			JWKS:       &authn.JWKSKeys{URI: "https://kubernetes.default.svc/openid/v1/jwks"},
-			Algorithms: []string{"RS256"},
-			Admit: &authn.Admit{
-				ServiceAccounts: []authn.ServiceAccountRule{{Namespace: "nke-clients"}},
-			},
-		}},
-	}
-}
-
 // apiAuthIssuer is one valid issuer, indented to sit under apiAuth.issuers.
 const apiAuthIssuer = `
     - name: local-kubernetes
@@ -1287,7 +1268,7 @@ func TestValidateAPIAuth(t *testing.T) {
 			wantErr: "apiAuth: issuers is required",
 		},
 		{
-			name: "an issuer without admit is refused, as authn.Load refuses it",
+			name: "an issuer without admit is refused",
 			apiAuth: "apiAuth:\n  enabled: true\n  audiences: [\"https://nke.example.internal\"]\n  issuers:\n" +
 				"    - name: local-kubernetes\n" +
 				"      issuer: \"https://kubernetes.default.svc.cluster.local\"\n" +
@@ -1296,7 +1277,7 @@ func TestValidateAPIAuth(t *testing.T) {
 			wantErr: "apiAuth: issuers[0] (local-kubernetes): admit is required",
 		},
 		{
-			name:    "apiVersion belongs to the standalone file, not this section",
+			name:    "apiVersion belonged to the retired auth.yaml, not this section",
 			apiAuth: "apiAuth:\n  apiVersion: auth.nvke.nvidia.com/v1alpha1\n  enabled: true\n  audiences: [\"https://nke.example.internal\"]\n  issuers:" + apiAuthIssuer,
 			wantErr: `unknown field "apiAuth.apiVersion"`,
 		},
@@ -1334,9 +1315,8 @@ func TestValidateAPIAuth(t *testing.T) {
 	}
 }
 
-// permissive lives under apiAuth. It applies to whichever source configures
-// authentication, so it loads while the section is off, and the old top-level
-// key is refused with a pointer to the new one.
+// permissive lives under apiAuth and requires the section to be on. The old
+// top-level key is refused with a pointer to the new one.
 func TestAPIAuthPermissive(t *testing.T) {
 	t.Parallel()
 
@@ -1347,7 +1327,7 @@ func TestAPIAuthPermissive(t *testing.T) {
 		wantErr        string
 	}{
 		{name: "absent is enforcing", config: offAPIAuth},
-		{name: "set while off, for AUTH_CONFIG_PATH", config: offAPIAuth + "  permissive: true\n", wantPermissive: true},
+		{name: "set while off is refused", config: offAPIAuth + "  permissive: true\n", wantErr: "permissive is true but enabled is false"},
 		{
 			name:           "set while on",
 			config:         "apiAuth:\n  enabled: true\n  permissive: true\n  audiences: [\"https://nke.example.internal\"]\n  issuers:" + apiAuthIssuer,
@@ -1377,42 +1357,6 @@ func TestAPIAuthPermissive(t *testing.T) {
 			var cfg config.Config
 			file.ApplyTo(&cfg)
 			assert.Equal(t, tt.wantPermissive, cfg.PermissiveMode)
-		})
-	}
-}
-
-// The two sources could disagree about who is admitted, so neither wins.
-func TestCheckAuthSource(t *testing.T) {
-	t.Parallel()
-
-	const path = "/etc/nke/auth/auth.yaml"
-	tests := []struct {
-		name    string
-		apiAuth controllerconfig.APIAuthConfig
-		path    string
-		wantErr string
-	}{
-		{name: "neither is off"},
-		{name: "apiAuth alone", apiAuth: exampleAPIAuth()},
-		{name: "AUTH_CONFIG_PATH alone", path: path},
-		{
-			name:    "both are refused, naming the path",
-			apiAuth: exampleAPIAuth(),
-			path:    path,
-			wantErr: `configured twice: apiAuth.enabled is true in nvke-controller-config and AUTH_CONFIG_PATH is "/etc/nke/auth/auth.yaml"`,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			file := controllerconfig.Config{APIAuth: tt.apiAuth}
-			err := file.CheckAuthSource(tt.path)
-			if tt.wantErr == "" {
-				require.NoError(t, err)
-				return
-			}
-			require.ErrorContains(t, err, tt.wantErr)
 		})
 	}
 }

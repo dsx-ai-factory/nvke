@@ -140,8 +140,9 @@ not export a token for `nvkectl`.
 Under Tilt the API requires a token, unlike **API Only** — a bare `curl` to
 `/api/clusters` returns 401. `nvkectl get clusters` does not, once `set-site`
 has the kubeconfig: it discovers the audience from `apiAuth` in the
-`nvke-controller-config` ConfigMap (falling back to `nvke-auth-config` when that
-section is off) and mints through the TokenRequest API.
+`nvke-controller-config` ConfigMap and mints through the TokenRequest API.
+(When that section is off it falls back to `nvke-auth-config`, which only a
+controller from before `apiAuth` became its only source has.)
 
 ```bash
 bin/nvkectl get providers      # wait for nico: CONFIGURED
@@ -172,7 +173,7 @@ curl -H "Authorization: Bearer ${TOKEN}" http://localhost:8080/api/clusters
 
 `NKE_AUTH_ENABLED=false tilt up` turns authentication off. Then neither
 `nvkectl` nor `curl` needs a token — `nvkectl` finds `apiAuth` disabled and no
-`nvke-auth-config` ConfigMap, and sends requests unauthenticated.
+`nvke-auth-config` ConfigMap to fall back to, and sends requests unauthenticated.
 
 ### Getting a tenant kubeconfig
 
@@ -401,11 +402,11 @@ bearer token to it, so use it from a trusted network only.
 
 That kubeconfig is also how `nvkectl` authenticates to CWE once the site has API
 authentication on. The CLI always mints for `nke-clients/nke-client` and reads
-the audience from `apiAuth` in ConfigMap `nvke-controller-config`, or from
-ConfigMap `nvke-auth-config` when that section is off, in namespace
-`nvke-controller`, then in `nke-controller` for a site installed before the
-`nvke` rename, then in `cloud-workflow-engine`, and uses the first it can read.
-Create that service
+the audience from `apiAuth` in ConfigMap `nvke-controller-config`, or, on a
+site still running an older controller, from ConfigMap `nvke-auth-config` when
+that section is off, in namespace `nvke-controller`, then in `nke-controller`
+for a site installed before the `nvke` rename, then in `cloud-workflow-engine`,
+and uses the first it can read. Create that service
 account, admit it, and grant the kubeconfig identity the permissions in
 [Configuring NVKE API Authentication](../controller/docs/configuring-api-authentication.md).
 Without them, `get clusters` fails at minting or CWE returns 403.

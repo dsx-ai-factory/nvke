@@ -11,7 +11,6 @@ package authn_test
 import (
 	"bytes"
 	"log/slog"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -24,38 +23,33 @@ func discardLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
+// mustParseConfig is parseConfig for a configuration the test needs to be valid.
+func mustParseConfig(t *testing.T, contents string) *authn.Config {
+	t.Helper()
+	cfg, err := parseConfig(contents)
+	require.NoError(t, err)
+	return cfg
+}
+
 // The default every deployment gets. Nil and no error, so the caller keeps the
 // middleware out of the chain.
-func TestSetupDisabledWhenNoConfigPath(t *testing.T) {
+func TestSetupDisabledWhenNoConfig(t *testing.T) {
 	t.Parallel()
 
 	authenticator, err := authn.Setup(t.Context(), authn.Options{}, discardLogger())
 
 	require.NoError(t, err)
-	assert.Nil(t, authenticator, "an empty ConfigPath is disabled, not enforcing")
+	assert.Nil(t, authenticator, "a nil Config is disabled, not enforcing")
 }
 
-// A set-but-unreadable path is an error, never "disabled". Read as disabled, it
-// would produce a server that authenticates nobody.
-func TestSetupUnreadableConfigPathIsAnError(t *testing.T) {
-	t.Parallel()
-
-	missing := filepath.Join(t.TempDir(), "not-mounted.yaml")
-
-	authenticator, err := authn.Setup(t.Context(), authn.Options{ConfigPath: missing}, discardLogger())
-
-	require.Error(t, err, "a set-but-unreadable path must fail, never disable")
-	assert.Nil(t, authenticator)
-	assert.Contains(t, err.Error(), missing, "the error should name the path that was tried")
-}
-
-// A malformed file is the same class of failure as a missing one.
+// An invalid Config is an error, never "disabled". Read as disabled, it would
+// produce a server that authenticates nobody.
 func TestSetupInvalidConfigIsAnError(t *testing.T) {
 	t.Parallel()
 
-	path := writeConfig(t, configHeader+"audiences: []\nissuers: []\n")
+	cfg := &authn.Config{Audiences: []string{}, Issuers: []authn.Issuer{}}
 
-	authenticator, err := authn.Setup(t.Context(), authn.Options{ConfigPath: path}, discardLogger())
+	authenticator, err := authn.Setup(t.Context(), authn.Options{Config: cfg}, discardLogger())
 
 	require.Error(t, err)
 	assert.Nil(t, authenticator)
@@ -66,9 +60,9 @@ func TestSetupInvalidConfigIsAnError(t *testing.T) {
 func TestSetupPermissiveBuildsWithoutReachableKeys(t *testing.T) {
 	t.Parallel()
 
-	path := writeConfig(t, exampleConfig)
+	cfg := mustParseConfig(t, exampleConfig)
 
-	authenticator, err := authn.Setup(t.Context(), authn.Options{ConfigPath: path, Permissive: true}, discardLogger())
+	authenticator, err := authn.Setup(t.Context(), authn.Options{Config: cfg, Permissive: true}, discardLogger())
 
 	require.NoError(t, err, "permissive must not require reachable issuer keys")
 	assert.NotNil(t, authenticator)
@@ -79,16 +73,16 @@ func TestSetupPermissiveBuildsWithoutReachableKeys(t *testing.T) {
 func TestSetupEnforcingRefusesWithoutReachableKeys(t *testing.T) {
 	t.Parallel()
 
-	path := writeConfig(t, exampleConfig)
+	cfg := mustParseConfig(t, exampleConfig)
 
-	authenticator, err := authn.Setup(t.Context(), authn.Options{ConfigPath: path}, discardLogger())
+	authenticator, err := authn.Setup(t.Context(), authn.Options{Config: cfg}, discardLogger())
 
 	require.Error(t, err, "enforcing must not start without every issuer's keys")
 	assert.Nil(t, authenticator)
 }
 
-// apiAuth in nvke-controller-config arrives as a Config rather than a path. From
-// there it takes the same road, so permissive builds without reachable keys.
+// A Config built in Go, as controllerconfig hands over apiAuth, takes the same
+// road, so permissive builds without reachable keys.
 func TestSetupFromControllerConfig(t *testing.T) {
 	t.Parallel()
 
@@ -98,7 +92,8 @@ func TestSetupFromControllerConfig(t *testing.T) {
 	assert.NotNil(t, authenticator)
 }
 
-// A Config that Load would refuse is refused here too, never served.
+// Setup runs ValidateStartup itself, so a Config that skipped it is refused
+// here too, never served.
 func TestSetupInvalidControllerConfigIsAnError(t *testing.T) {
 	t.Parallel()
 
@@ -111,47 +106,18 @@ func TestSetupInvalidControllerConfigIsAnError(t *testing.T) {
 	assert.Nil(t, authenticator)
 }
 
-// Two sources could disagree about who is admitted, so neither wins.
-func TestSetupRefusesBothSources(t *testing.T) {
+// The startup line says authentication is on, in which mode, and for which
+// issuers, so an operator can confirm what the controller is enforcing.
+func TestSetupLogsEnabled(t *testing.T) {
 	t.Parallel()
 
-	path := writeConfig(t, exampleConfig)
+	var buf bytes.Buffer
+	authenticator, err := authn.Setup(t.Context(), authn.Options{Permissive: true, Config: exampleStructConfig()},
+		slog.New(slog.NewJSONHandler(&buf, nil)))
 
-	authenticator, err := authn.Setup(t.Context(), authn.Options{ConfigPath: path, Permissive: true, Config: exampleStructConfig()}, discardLogger())
-
-	require.ErrorContains(t, err, "configured twice")
-	assert.Nil(t, authenticator)
-}
-
-// The startup line names where the configuration was read from, which is how an
-// operator tells the chart-rendered section from an external ConfigMap.
-func TestSetupLogsItsSource(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		fromFile bool // the file at ConfigPath rather than a Config
-		want     string
-	}{
-		{name: "apiAuth in nvke-controller-config", want: `"source":"nvke-controller-config"`},
-		{name: "the file at AUTH_CONFIG_PATH", fromFile: true, want: `"source":"AUTH_CONFIG_PATH"`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			opts := authn.Options{Permissive: true, Config: exampleStructConfig()}
-			if tt.fromFile {
-				opts = authn.Options{Permissive: true, ConfigPath: writeConfig(t, exampleConfig)}
-			}
-
-			var buf bytes.Buffer
-			authenticator, err := authn.Setup(t.Context(), opts, slog.New(slog.NewJSONHandler(&buf, nil)))
-
-			require.NoError(t, err)
-			require.NotNil(t, authenticator)
-			assert.Contains(t, buf.String(), `"msg":"API authentication is enabled"`)
-			assert.Contains(t, buf.String(), tt.want)
-		})
-	}
+	require.NoError(t, err)
+	require.NotNil(t, authenticator)
+	assert.Contains(t, buf.String(), `"msg":"API authentication is enabled"`)
+	assert.Contains(t, buf.String(), `"mode":"permissive"`)
+	assert.Contains(t, buf.String(), `"issuers":["k8s"]`)
 }

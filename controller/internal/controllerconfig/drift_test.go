@@ -64,7 +64,6 @@ var stayEnv = map[string]string{
 	// The chart's default is a fieldRef to status.hostIP; a literal
 	// spiffe.spire.serverAddress is the override.
 	"SPIRE_SERVER_ADDRESS":   downwardAPI,
-	"AUTH_CONFIG_PATH":       separateFile,
 	"CONTROLLER_CONFIG_PATH": separateFile,
 
 	"LOG_LEVEL":                                chartUnset,
@@ -116,7 +115,6 @@ var configMapOnly = []string{
 	// because managedByLabelValue moved, which is newer than the environment.
 	"teleport.acceptedManagedByLabelValues",
 	// API authentication was a file of its own, never environment variables.
-	// AUTH_CONFIG_PATH, which names that file, stays on the environment.
 	"apiAuth.enabled",
 	"apiAuth.audiences",
 	"apiAuth.issuers",

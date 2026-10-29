@@ -404,25 +404,14 @@ type Config struct {
 	// not gate that writer.
 	TenantAccessEnabled bool `controllerconfig:"tenantAccessEnabled"`
 
-	// AuthConfigPath is the mounted YAML file holding the API authentication
-	// configuration, for a ConfigMap the chart does not render; the
-	// chart-rendered configuration is apiAuth in nvke-controller-config
-	// instead, and setting both is a startup failure. Unset, with apiAuth not
-	// enabled in nvke-controller-config, disables authentication. A
-	// set-but-unreadable path is a startup failure, never "disabled"; see
-	// authn.Load.
-	//
-	// Validate() does not check it: unset is the valid default.
-	AuthConfigPath string `env:"AUTH_CONFIG_PATH"`
-
 	// ControllerConfigPath is the nvke-controller-config file every field with
 	// a controllerconfig tag comes from. Required: a path that does not load is
 	// a startup failure.
 	ControllerConfigPath string `env:"CONTROLLER_CONFIG_PATH,notEmpty"`
 
 	// PermissiveMode evaluates and logs authentication and admission decisions
-	// without enforcing them, so no request is rejected. No effect while
-	// authentication is off: AuthConfigPath unset and apiAuth.enabled false.
+	// without enforcing them, so no request is rejected. nvke-controller-config
+	// refuses it while apiAuth.enabled is false.
 	PermissiveMode bool `controllerconfig:"apiAuth.permissive"`
 
 	// Tracing configures the export of OpenTelemetry spans to an OTLP collector.

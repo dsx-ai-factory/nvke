@@ -29,8 +29,9 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 )
 
-// Where the authentication configuration lives, in controller.Namespace().
-// LegacyConfigMapName is the name a site keeps by pinning
+// Where a controller from before apiAuth was the only source kept its
+// authentication configuration, in controller.Namespace(). LegacyConfigMapName
+// is the name a site kept by pinning the chart's retired
 // apiAuth.configMap.name; RawConfig searches ConfigMapName first, and
 // ConfigMapName stays the one the suite names in its diagnostics, since it is
 // what a run is expected to find.

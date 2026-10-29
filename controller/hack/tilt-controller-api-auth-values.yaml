@@ -4,12 +4,9 @@
 # The NVKE API authentication configuration Tilt deploys. The Tiltfile passes
 # this file only when NKE_AUTH_ENABLED is true, and sets apiAuth.enabled and
 # apiAuth.permissive itself. The chart renders it into apiAuth in
-# nvke-controller-config, which the controller reads, and into nvke-auth-config
-# for released nvkectl. deploy/k8s/nvke-auth-dev.yaml creates the identities it
-# admits.
+# nvke-controller-config, which the controller reads.
+# deploy/k8s/nvke-auth-dev.yaml creates the identities it admits.
 apiAuth:
-  configMap:
-    create: true
   config:
     audiences: ["https://nke.tilt.local"]
     issuers:

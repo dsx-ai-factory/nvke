@@ -66,30 +66,22 @@ site that still runs it under an older name, use that name for both:
 `nke-controller` for a site installed before the `nvke` rename,
 `cloud-workflow-engine` for anything older.
 
-```bash
-kubectl -n nvke-controller get deploy nvke-controller \
-  -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="AUTH_CONFIG_PATH")].value}{"\n"}'
-```
-
-That prints a path only for a ConfigMap managed outside the chart. Tilt, like
-any deployment whose chart renders the configuration, sets none and has
-`apiAuth.enabled: true` in its settings ConfigMap instead,
-`nvke-controller-config` by default (`nke-controller-config` on an install that
-pins the old name). Read that switch with:
+NVKE reads the authentication configuration only from the `apiAuth` section of
+its settings ConfigMap, `nvke-controller-config` by default
+(`nke-controller-config` on an install that pins the old name). Read the switch
+with:
 
 ```bash
 kubectl -n nvke-controller get configmap nvke-controller-config \
   -o jsonpath='{.data.config\.yaml}' | yq '.apiAuth.enabled'
 ```
 
-Authentication is off when this prints `false` and the `AUTH_CONFIG_PATH`
-command prints nothing.
+Authentication is off when this prints `false`.
 
 NVKE also says which at startup:
 
 ```json
 {"level":"INFO","msg":"API authentication is enabled","mode":"enforcing",
- "source":"nvke-controller-config","config_path":"",
  "audiences":["https://nke.tilt.local"],"issuers":["local-kubernetes"]}
 ```
 
@@ -115,10 +107,6 @@ kubectl -n nvke-controller get configmap nvke-controller-config \
 ```yaml
 ["https://nke.tilt.local"]
 ```
-
-On a deployment that reads `AUTH_CONFIG_PATH` instead, `apiAuth.enabled` is
-`false` there and the audiences are in `auth.yaml` of ConfigMap
-`nvke-auth-config`.
 
 This value is per-install. On a real management cluster it is different.
 
@@ -214,7 +202,7 @@ NVKE does no authorization beyond that. Every admitted caller can do everything.
 | `401` and your token looks fine | Almost always the audience. | Re-read it with `hack/nvke-token.sh --audience` and mint again. A wrong audience and no token at all are the same 401. |
 | `401` after it worked a minute ago | The token expired. | Mint another. They're short-lived by design. |
 | `403` | The token is valid; the subject isn't admitted. | You're minting for the wrong service account, or the `admit` rules don't list yours. A different token won't help. |
-| `200` for everything, even garbage tokens | Authentication is off, or NVKE is permissive. | Check `AUTH_CONFIG_PATH` on the deployment, and `apiAuth.enabled` and `apiAuth.permissive` in its `nvke-controller-config`. |
+| `200` for everything, even garbage tokens | Authentication is off, or NVKE is permissive. | Check `apiAuth.enabled` and `apiAuth.permissive` in the deployment's `nvke-controller-config`. |
 | `error: failed to create token` | Your kubeconfig identity can't mint for that service account. | You need `create` on `serviceaccounts/token` for it. `deploy/k8s/nvke-auth-dev.yaml` grants this locally; apply it, or run `tilt up`. |
 
 NVKE logs its reasoning for every rejection. This is usually faster than guessing:
@@ -289,8 +277,9 @@ all 4 checks passed
 `nvkectl` is a caller of this API. After `nvkectl config set-site --kubeconfig`,
 every controller API command mints the same identity this page uses (`nke-clients/nke-client`)
 with the first audience of `apiAuth` in ConfigMap `nvke-controller-config` when
-that section is enabled, and otherwise with the audience from ConfigMap
-`nvke-auth-config`. Each is read from namespace `nvke-controller`, then from
+that section is enabled. Otherwise it falls back to the audience in ConfigMap
+`nvke-auth-config`, which only a controller from before that ConfigMap was
+retired still has. Each is read from namespace `nvke-controller`, then from
 `nke-controller` for a site installed before the `nvke` rename, then from
 `cloud-workflow-engine`. There is no `NKECTL_DEV_TOKEN` and no
 `hack/nvke-token.sh` step.

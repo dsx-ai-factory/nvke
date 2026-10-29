@@ -87,8 +87,8 @@ func newKeySources(
 	var failures []error
 	for _, iss := range cfg.Issuers {
 		// A missing jwks block is a configuration error, not a runtime one, so it
-		// is fatal in permissive mode too. Load rejects it first; this covers a
-		// Config built in code.
+		// is fatal in permissive mode too. ValidateStartup rejects it first; this
+		// covers a Config built in code.
 		if iss.JWKS == nil {
 			return nil, fmt.Errorf("issuer %q (%s): jwks is required", iss.Name, iss.Issuer)
 		}

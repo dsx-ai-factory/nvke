@@ -116,11 +116,13 @@ names:
    `nke-controller-config` for a site that pins the older name. When its
    `config.yaml` has `apiAuth.enabled: true`, the CLI mints for the first entry
    of `apiAuth.audiences`.
-2. Otherwise, when that section is off or absent (a controller that reads
-   `AUTH_CONFIG_PATH`, or one older than the section), the authentication
-   ConfigMap: `nvke-auth-config`, then `nke-auth-config` for a site that keeps
-   the older name by pinning `apiAuth.configMap.name`. The audience is the first
-   entry of `audiences` in its `auth.yaml`.
+2. Otherwise, when that section is off or absent, the authentication
+   ConfigMap: `nvke-auth-config`, then `nke-auth-config` for a site that kept
+   the older name. The audience is the first entry of `audiences` in its
+   `auth.yaml`. This fallback is for a site still running a controller from
+   before `apiAuth` became its only source, which read that file through
+   `AUTH_CONFIG_PATH`. A current chart renders neither ConfigMap, so on a
+   current site the fallback finds nothing.
 
 The first *readable* candidate is used: a site whose RBAC grants `get` on its
 pinned name alone answers Forbidden for the other name, and the search moves
@@ -136,9 +138,9 @@ The kubeconfig identity needs:
 
 - `create` on `serviceaccounts/token` for `nke-client` in `nke-clients`
 - `get` on the controller's settings ConfigMap (`nvke-controller-config`, or
-  `nke-controller-config` on a site that pins it) and on the authentication
-  ConfigMap (`nvke-auth-config`, or `nke-auth-config`), in the controller's
-  namespace
+  `nke-controller-config` on a site that pins it), in the controller's
+  namespace; on a site still running an older controller, `get` on the
+  authentication ConfigMap (`nvke-auth-config`, or `nke-auth-config`) as well
 - `get` on `secrets` in the site's management namespace (`nvke-system`, or
   `nke-system` on a site installed before it was configurable), for
   `nvkectl get kubeconfig`, which reads the `<cluster>-admin-kubeconfig` Secret

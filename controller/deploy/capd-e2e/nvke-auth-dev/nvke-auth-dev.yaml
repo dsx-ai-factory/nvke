@@ -2,9 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # nke-auth-dev, copied from this repository per manifests/nke-auth-dev.pin.yaml,
-# without its nvke-auth-config ConfigMap: the controller chart renders that from
-# apiAuth.config in controller/overlay.yaml, and Helm will not adopt one kubectl
-# created. Applied with kubectl apply --server-side.
+# without an authentication ConfigMap: the controller chart renders
+# apiAuth.config from controller/overlay.yaml into the apiAuth section of
+# nvke-controller-config, the only place the controller reads it from. Applied
+# with kubectl apply --server-side.
 ---
 apiVersion: v1
 kind: Namespace
