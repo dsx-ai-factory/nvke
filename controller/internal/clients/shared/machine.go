@@ -242,10 +242,21 @@ func MachineLabels(clusterName string, controlPlane bool) map[string]string {
 
 // MachineAnnotations returns the controller-owned annotations added to every Machine.
 func MachineAnnotations(node db.Node) map[string]string {
+	mode := "plaintext"
+	switch {
+	case node.NodeAgentExternalMTLSEnabled:
+		mode = "external-mtls"
+	case node.SpiffeEnabled:
+		mode = "spiffe"
+	}
+	if node.NodeAgentTLSJWTEnabled {
+		mode += "-jwt"
+	}
 	// The controller owns drain / kube Node removal in teardown workflows. Tell CAPI to skip its
 	// drain and volume-detach waits so Machine deletion is not blocked when the
 	// workload API is unreachable.
 	return map[string]string{
+		keys.MachineAgentConnection.String():               mode,
 		keys.MachineHostID.String():                        node.ID.String(),
 		clusterv1.ExcludeNodeDrainingAnnotation:            "cwe-controlled",
 		clusterv1.ExcludeWaitForNodeVolumeDetachAnnotation: "cwe-controlled",

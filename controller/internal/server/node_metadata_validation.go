@@ -17,6 +17,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 const (
@@ -139,12 +140,18 @@ func forbiddenKeyError(field, key string) error {
 // explicitly configured keys under those domains.
 func validateMachineMetadata(annotations, labels map[string]string, allowlistedAnnotations, allowlistedLabels []string) error {
 	completeAnnotations := db.CloneStringMap(annotations)
-	// The zero UUID has the same encoded length as the host ID allocated at creation.
-	maps.Copy(completeAnnotations, shared.MachineAnnotations(db.Node{}))
+	// Use the longest transport mode; the zero UUID has the same length as an allocated host ID.
+	maps.Copy(completeAnnotations, shared.MachineAnnotations(db.Node{
+		NodeAgentExternalMTLSEnabled: true,
+		NodeAgentTLSJWTEnabled:       true,
+	}))
 	if errs := apivalidation.ValidateAnnotations(completeAnnotations, field.NewPath("machineAnnotations")); len(errs) > 0 {
 		return errs.ToAggregate()
 	}
 	for _, key := range slices.Sorted(maps.Keys(annotations)) {
+		if keys.MachineAgentConnection.Matches(key) {
+			return fmt.Errorf("machineAnnotations: key %q is controller-owned", key)
+		}
 		if err := validateMachineMetadataKey("machineAnnotations", key, allowlistedAnnotations); err != nil {
 			return err
 		}

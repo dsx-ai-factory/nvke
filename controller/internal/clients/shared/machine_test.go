@@ -191,12 +191,34 @@ func TestBuildMachine_Metadata(t *testing.T) {
 			for key, value := range params.labels {
 				require.Equal(t, value, machine.Labels[key])
 			}
+			require.Equal(t, "plaintext", machine.Annotations[keys.MachineAgentConnection.String()])
 			require.Equal(t, "cluster-a", machine.Labels[clusterv1.ClusterNameLabel])
 			require.Equal(t, "cwe-controlled", machine.Annotations[clusterv1.ExcludeNodeDrainingAnnotation])
 			machine.Annotations["example.com/only-machine"] = "value"
 			machine.Labels["example.com/only-machine"] = "value"
 			require.NotContains(t, pool.MachineAnnotations, "example.com/only-machine")
 			require.NotContains(t, pool.MachineLabels, "example.com/only-machine")
+		})
+	}
+}
+
+func TestUnit_MachineAnnotations(t *testing.T) {
+	id := uuid.MustParse("60000000-0000-0000-0000-000000000001")
+	type parameters struct {
+		node      db.Node
+		transport string
+	}
+	for name, params := range map[string]parameters{
+		"plaintext":       {node: db.Node{ID: id}, transport: "plaintext"},
+		"legacy SPIFFE":   {node: db.Node{ID: id, SpiffeEnabled: true}, transport: "spiffe"},
+		"JWT SPIFFE":      {node: db.Node{ID: id, SpiffeEnabled: true, NodeAgentTLSJWTEnabled: true}, transport: "spiffe-jwt"},
+		"external legacy": {node: db.Node{ID: id, NodeAgentExternalMTLSEnabled: true}, transport: "external-mtls"},
+		"external new":    {node: db.Node{ID: id, NodeAgentExternalMTLSEnabled: true, AgentVersion: "v0.3.0"}, transport: "external-mtls"},
+		"external JWT":    {node: db.Node{ID: id, NodeAgentExternalMTLSEnabled: true, NodeAgentTLSJWTEnabled: true}, transport: "external-mtls-jwt"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			annotations := shared.MachineAnnotations(params.node)
+			require.Equal(t, params.transport, annotations[keys.MachineAgentConnection.String()])
 		})
 	}
 }

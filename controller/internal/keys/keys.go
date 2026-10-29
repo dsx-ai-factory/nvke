@@ -171,6 +171,7 @@ const (
 	// (--reboot-annotation, --repair-annotation) and silently ignores a
 	// request under any other, so those two flags must name the current
 	// domain. They are the only keys here with a single configured reader.
+	MachineAgentConnection         Key = "agent-connection"
 	MachineHostID                  Key = "host-id"
 	MachineRebootCompleteTimestamp Key = "reboot-complete-timestamp"
 	MachineReboot                  Key = "reboot"
