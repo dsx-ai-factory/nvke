@@ -29,6 +29,11 @@ e2e/bootstrap/.bootstrap-nico-go-test.log
 .*-etcd-encryption-key.json.*
 e2e/bootstrap/.etcd-encryption-key.json
 
+# The secret values the bootstrap E2E's Go test saves for the search at the end
+# of the lane: the generated Postgres password and etcd key, in clear. An aborted
+# run can leave it behind. The root .gitignore carries the same rule.
+e2e/bootstrap/.bootstrap-known-secrets.json
+
 # E2E scratch: the cluster dump `nvkectl bootstrap site` collects when a
 # bootstrap fails, and CI uploads as an artifact. Regenerated on every
 # failing run.

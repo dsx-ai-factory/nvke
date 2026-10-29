@@ -85,6 +85,9 @@ __pycache__/
 .*-etcd-encryption-key.json.*
 cli/e2e/bootstrap/.etcd-encryption-key.json
 
+# The secret values the bootstrap E2E's Go test saves, in clear. See cli/.gitignore.
+cli/e2e/bootstrap/.bootstrap-known-secrets.json
+
 # nvkectl and the three image archives `make site-inputs` stages for the Forge
 # site-controller lane. The lane points SITE_INPUTS here, inside the checkout,
 # so the workspace rather than a $HOME cache owns them -- see the env block in
