@@ -4,6 +4,7 @@
 package bootstraptest
 
 import (
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -180,4 +181,32 @@ func TestOTLPSettings(t *testing.T) {
 	assert.Equal(t, "http", u.Scheme)
 	assert.False(t, strings.HasPrefix(u.Hostname(), "127.") || u.Hostname() == "localhost",
 		"a loopback endpoint would keep bootstrap site from passing the headers to the controller")
+}
+
+func TestSecretSetFindInVanishedFile(t *testing.T) {
+	set := &SecretSet{}
+	set.Add(planted)
+	dir := tree(t, map[string]string{"a.log": "ok", "b.log": "v=" + planted, "c.log": "ok"})
+
+	t.Run("a file that vanishes mid-walk does not end the search of the rest", func(t *testing.T) {
+		read := func(path string) ([]byte, error) {
+			if filepath.Base(path) == "a.log" {
+				return nil, fs.ErrNotExist
+			}
+			return os.ReadFile(path)
+		}
+		got, err := set.findIn(read, dir)
+		require.NoError(t, err)
+		assert.Equal(t, []string{filepath.Join(dir, "b.log")}, got, "b.log comes after the file that vanished")
+	})
+	t.Run("any other read error still fails the search", func(t *testing.T) {
+		read := func(path string) ([]byte, error) {
+			if filepath.Base(path) == "a.log" {
+				return nil, fs.ErrPermission
+			}
+			return os.ReadFile(path)
+		}
+		_, err := set.findIn(read, dir)
+		assert.ErrorIs(t, err, fs.ErrPermission)
+	})
 }

@@ -68,9 +68,14 @@ func (s *SecretSet) Len() int {
 
 // FindIn returns the files under paths that hold a value of the set, sorted. A
 // path may be a file or a directory, which is walked. A path that does not exist
-// is skipped, and any other read error is returned, because a file that was not
-// searched proves nothing.
+// is skipped, and so is a file that vanishes during the walk. Any other read
+// error is returned, because a file that was not searched proves nothing.
 func (s *SecretSet) FindIn(paths ...string) ([]string, error) {
+	return s.findIn(os.ReadFile, paths...)
+}
+
+// findIn is FindIn reading files with read.
+func (s *SecretSet) findIn(read func(string) ([]byte, error), paths ...string) ([]string, error) {
 	needles := s.snapshot()
 	var hits []string
 	for _, root := range paths {
@@ -78,13 +83,21 @@ func (s *SecretSet) FindIn(paths ...string) ([]string, error) {
 			continue
 		}
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			// A missing root, or an entry removed while the walk ran: there is
+			// nothing to search there, and the rest of the root still is.
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
 			if err != nil {
 				return err
 			}
 			if !d.Type().IsRegular() {
 				return nil
 			}
-			content, err := os.ReadFile(path)
+			content, err := read(path)
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
 			if err != nil {
 				return err
 			}
@@ -96,7 +109,7 @@ func (s *SecretSet) FindIn(paths ...string) ([]string, error) {
 			}
 			return nil
 		})
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err != nil {
 			return nil, fmt.Errorf("searching %s for the known secret values: %w", root, err)
 		}
 	}
