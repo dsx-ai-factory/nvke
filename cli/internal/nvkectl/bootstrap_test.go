@@ -2827,7 +2827,7 @@ func (r *flakySiteRunner) Run(_ context.Context, name string, args ...string) (s
 				}
 			}
 		}
-	case strings.Contains(line, "upgrade --install nke-controller"):
+	case strings.Contains(line, "upgrade --install nvke-controller"):
 		r.controllerInstalls++
 		if r.controllerInstalls == 1 {
 			if r.failure != "" {
