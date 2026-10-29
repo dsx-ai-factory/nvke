@@ -91,6 +91,7 @@ func TestDecodeMinimal(t *testing.T) {
 func TestDecodeCases(t *testing.T) {
 	decodeErrors := map[string]string{
 		"not-json.json":         "not valid JSON",
+		"null.json":             "not a JSON object",
 		"trailing-content.json": "content after the JSON object",
 	}
 	files, err := filepath.Glob(filepath.Join("testdata", "cases", "*.json"))

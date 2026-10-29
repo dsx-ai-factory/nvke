@@ -86,16 +86,19 @@ type ImageIndexChild struct {
 // Decode reads one JSON object and rejects anything after it. It does not
 // validate the content.
 func Decode(r io.Reader) (*Release, error) {
-	var rel Release
+	var rel *Release
 	dec := json.NewDecoder(r)
 	if err := dec.Decode(&rel); err != nil {
 		return nil, fmt.Errorf("artifact file is not valid JSON: %w", err)
+	}
+	if rel == nil {
+		return nil, errors.New("artifact file is not a JSON object")
 	}
 	_, err := dec.Token()
 	var syntax *json.SyntaxError
 	switch {
 	case errors.Is(err, io.EOF):
-		return &rel, nil
+		return rel, nil
 	case err == nil, errors.As(err, &syntax):
 		return nil, errors.New("artifact file has content after the JSON object")
 	default:

@@ -26,6 +26,8 @@
   expect: 'required output "cwe" is missing'
 - file: cases/not-json.json
   expect: 'not valid JSON'
+- file: cases/null.json
+  expect: 'not a JSON object'
 - file: cases/trailing-content.json
   expect: 'content after the JSON object'
 - file: cases/duplicate-output-name.json
