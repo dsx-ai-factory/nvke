@@ -21,7 +21,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -45,6 +44,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 	"github.com/dsx-ai-factory/nvke/cli/internal/redact"
+	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 	"github.com/dsx-ai-factory/nvke/controller/deploy/charts"
 )
 
@@ -60,7 +60,7 @@ const (
 	// release, fullname, ServiceAccount and pod name label: all the same name,
 	// the one greenfield sites use. spire-values.yaml, controller-values.yaml and
 	// controller-nodeport.yaml carry it too and must change with it.
-	cweNamespace = "nke-controller"
+	cweNamespace = "nvke-controller"
 
 	// tenantSecretsNamespace is where the controller publishes each cluster's kubeconfig
 	// and where it puts the cluster's CAPI objects. It is the chart's
@@ -170,8 +170,13 @@ const (
 	// (profilesDir). Set explicitly rather than left to the chart's empty
 	// default, so profilesDir names the empty /profiles the controller image
 	// ships rather than resolving somewhere else. nvkectl deploys no profiles
-	// into it; a site gets them from its deploy repository.
+	// into it unless Config.ProfilesImage is set, which copies that image's
+	// /profiles tree in; a site otherwise gets them from its deploy repository.
 	profilesPath = "/profiles"
+
+	// otlpHeadersEnv is the variable the controller's OpenTelemetry SDK reads
+	// the headers of its exports from.
+	otlpHeadersEnv = "OTEL_EXPORTER_OTLP_HEADERS"
 )
 
 // waitReadyPollInterval is the delay between /readyz polls. A var, not a
@@ -204,10 +209,23 @@ type oidcProviders struct {
 	Providers []sitespec.OIDCProvider `yaml:"providers"`
 }
 
+// TracingConfig points the controller's own OpenTelemetry export at a collector.
+// The zero value leaves it off, which is the chart's default.
+type TracingConfig struct {
+	// Endpoint is the collector's OTLP/gRPC host:port. Empty turns export off.
+	Endpoint string
+	// Insecure sends without TLS.
+	Insecure bool
+	// Headers are sent on every export request, for instance an authorization
+	// token. They reach the controller as OTEL_EXPORTER_OTLP_HEADERS, and only
+	// when Endpoint is set.
+	Headers map[string]string
+}
+
 // Config describes a controller deployment.
 type Config struct {
 	// CWEImage is the image reference to deploy. Defaults to nke-controller:latest,
-	// the local build's tag, from the bootstrap manifest. NVKECTL_CONTROLLER_IMAGE
+	// the local build's tag, from the bootstrap manifest. NVKECTL_NVKE_CONTROLLER_IMAGE
 	// overrides it, for example with the image .github/workflows/image-nvcr.yml
 	// publishes.
 	CWEImage string
@@ -239,6 +257,17 @@ type Config struct {
 	// When set, the server is also published on a NodePort: the hosts that
 	// attest are outside the cluster, and a ClusterIP is not a route they have.
 	TPMEKFingerprints []string
+
+	// ProfilesImage is an OCI content image holding the OS and config profiles
+	// CWE reads, mounted at PROFILES_DIR by the chart's init container. Empty
+	// deploys CWE with the controller image's empty /profiles, which is enough
+	// for hosts that already exist and not for nodes CAPNICo creates: those need
+	// the profiles a cluster request names.
+	//
+	// A reference without a registry is side-loaded from the local image store,
+	// like CWEImage. The chart sets no pull policy on it, so it has to carry a
+	// tag other than latest, or a digest, or the cluster tries to pull it.
+	ProfilesImage string
 
 	// SPIREExternalAddress is the address nodes created by CAPNICo use to reach
 	// the SPIRE server. CWE writes it into each node's userdata, so it has to
@@ -329,6 +358,12 @@ type Config struct {
 	// OCI reference or a local path. Empty uses the spiffe.github.io hardened
 	// chart repo.
 	SPIRECRDsChartRef string
+
+	// AllowControlPlaneWithoutVIP permits dev control-plane lifecycle operations without a VIP.
+	AllowControlPlaneWithoutVIP bool
+
+	// Tracing exports the controller's spans to a collector the operator named.
+	Tracing TracingConfig
 }
 
 // TPMAttestorEnabled reports whether the bootstrap SPIRE server attests hosts
@@ -343,7 +378,7 @@ func (c Config) TPMAttestorEnabled() bool {
 // bootstrapengine.DefaultConfig's env-driven shape.
 func DefaultConfig() Config {
 	return Config{
-		CWEImage: envOr("NVKECTL_CONTROLLER_IMAGE", defaultImage(manifest.ComponentController, manifest.ImageController)),
+		CWEImage: envOr("NVKECTL_NVKE_CONTROLLER_IMAGE", defaultImage(manifest.ComponentController, manifest.ImageController)),
 		// No cluster-name variable of its own: the bootstrap cluster has one
 		// name, NVKECTL_BOOTSTRAP_CLUSTER_NAME, and SPIRE is told that one.
 		// Callers set SPIFFEClusterName; an empty trust domain is derived from
@@ -351,30 +386,33 @@ func DefaultConfig() Config {
 		SPIFFETrustDomain: getenv("NVKECTL_SPIFFE_TRUST_DOMAIN"),
 
 		ProvisionedProviderImage: envOr("NVKECTL_CAPI_PROVISIONED_IMAGE", defaultImage(manifest.ComponentProvisioned, manifest.ImageManager)),
-		CWEPort:                  envPort("NVKECTL_CONTROLLER_PORT", DefaultCWEPort),
+		CWEPort:                  envPort("NVKECTL_NVKE_CONTROLLER_PORT", DefaultCWEPort),
+		// Added after the rename, so it has no NKECTL_ name to fall back to and
+		// is not in Settings.
+		ProfilesImage: os.Getenv(ProfilesImageEnv),
 
-		HelmTimeout:  envDuration("NVKECTL_CONTROLLER_HELM_TIMEOUT", 5*time.Minute),
-		ReadyTimeout: envDuration("NVKECTL_CONTROLLER_READY_TIMEOUT", 5*time.Minute),
+		HelmTimeout:  envDuration("NVKECTL_NVKE_CONTROLLER_HELM_TIMEOUT", 5*time.Minute),
+		ReadyTimeout: envDuration("NVKECTL_NVKE_CONTROLLER_READY_TIMEOUT", 5*time.Minute),
 
-		TemporalChartRef:  getenv("NVKECTL_CONTROLLER_TEMPORAL_CHART"),
-		SPIREChartRef:     getenv("NVKECTL_CONTROLLER_SPIRE_CHART"),
-		SPIRECRDsChartRef: getenv("NVKECTL_CONTROLLER_SPIRE_CRDS_CHART"),
+		TemporalChartRef:  getenv("NVKECTL_NVKE_CONTROLLER_TEMPORAL_CHART"),
+		SPIREChartRef:     getenv("NVKECTL_NVKE_CONTROLLER_SPIRE_CHART"),
+		SPIRECRDsChartRef: getenv("NVKECTL_NVKE_CONTROLLER_SPIRE_CRDS_CHART"),
 	}
 }
 
-// Settings is every environment variable this package reads. Each is also
-// read under the name it had while the binary was called nkectl, for one
-// release; see envalias.
+// Settings is every environment variable this package reads. Each one that is
+// not NVKECTL_NVKE_* is also read under the name it had while the binary was
+// called nkectl, for one release; see envalias.
 var Settings = []string{
-	"NVKECTL_CONTROLLER_IMAGE",
+	"NVKECTL_NVKE_CONTROLLER_IMAGE",
 	"NVKECTL_CAPI_PROVISIONED_IMAGE",
 	"NVKECTL_SPIFFE_TRUST_DOMAIN",
-	"NVKECTL_CONTROLLER_PORT",
-	"NVKECTL_CONTROLLER_HELM_TIMEOUT",
-	"NVKECTL_CONTROLLER_READY_TIMEOUT",
-	"NVKECTL_CONTROLLER_TEMPORAL_CHART",
-	"NVKECTL_CONTROLLER_SPIRE_CHART",
-	"NVKECTL_CONTROLLER_SPIRE_CRDS_CHART",
+	"NVKECTL_NVKE_CONTROLLER_PORT",
+	"NVKECTL_NVKE_CONTROLLER_HELM_TIMEOUT",
+	"NVKECTL_NVKE_CONTROLLER_READY_TIMEOUT",
+	"NVKECTL_NVKE_CONTROLLER_TEMPORAL_CHART",
+	"NVKECTL_NVKE_CONTROLLER_SPIRE_CHART",
+	"NVKECTL_NVKE_CONTROLLER_SPIRE_CRDS_CHART",
 }
 
 // DeprecatedSettings returns, sorted by old name, every setting in Settings
@@ -383,25 +421,6 @@ var Settings = []string{
 // the point DefaultConfig runs.
 func DeprecatedSettings() []envalias.Renamed {
 	return envalias.Deprecated(Settings...)
-}
-
-// RemovedSettings returns, sorted by old name, every NKECTL_CWE_* variable that
-// is set. nkectl cli/v0.1.x read the NVKECTL_CONTROLLER_* settings under those
-// names; DefaultConfig does not read them. New is the setting that replaces
-// each one.
-func RemovedSettings() []envalias.Renamed {
-	var found []envalias.Renamed
-	for _, name := range Settings {
-		suffix, ok := strings.CutPrefix(name, "NVKECTL_CONTROLLER_")
-		if !ok {
-			continue
-		}
-		if old := "NKECTL_CWE_" + suffix; os.Getenv(old) != "" {
-			found = append(found, envalias.Renamed{Old: old, New: name})
-		}
-	}
-	slices.SortFunc(found, func(a, b envalias.Renamed) int { return strings.Compare(a.Old, b.Old) })
-	return found
 }
 
 // getenv returns the setting's value, or, when it is unset or empty, the value
@@ -504,11 +523,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 
 	password := cfg.PostgresPassword
 	if password == "" {
-		var err error
-		password, err = randomPassword()
-		if err != nil {
-			return fmt.Errorf("controllerdeploy: generating postgres password: %w", err)
-		}
+		password = rand.Text()
 	}
 	redact.RegisterSecret(password)
 	// The NICo token and the node password reach the cluster only as Secrets,
@@ -717,15 +732,37 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "image.pullPolicy=IfNotPresent",
 		"--set-string", "profiles.path=" + profilesPath,
 		"--set", "cni.installAfterInit=true",
+		"--set", fmt.Sprintf("allowControlPlaneWithoutVIP=%t", cfg.AllowControlPlaneWithoutVIP),
 		"--set", fmt.Sprintf("spiffe.enabled=%t", !cfg.DisableMTLS),
 		"--set-string", "spiffe.trustDomain=" + spireTrustDomain,
 		"--set-string", "spiffe.spire.className=" + spireControllerManagerClass,
 		"--set-string", "spiffe.spire.serverAddress=" + spireNodeAddress(cfg),
 		"--set-string", "spiffe.spire.serverPort=" + spireNodePort(cfg),
 		"--set-string", "supportedInfraProviders=" + supportedInfraProviders(cfg),
+		"--set", fmt.Sprintf("controllers.nico.enabled=%t", cfg.NicoInfrastructure),
 		"--set", fmt.Sprintf("service.port=%d", cwePort),
 	}
-	cweArgs = append(cweArgs, cweEnvArgs(cfg)...)
+	profilesArgs, err := profilesImageArgs(cfg)
+	if err != nil {
+		return err
+	}
+	cweArgs = append(cweArgs, profilesArgs...)
+	otlpHeaders := ""
+	if cfg.Tracing.Endpoint != "" {
+		cweArgs = append(cweArgs,
+			"--set", "tracing.enabled=true",
+			"--set-string", "tracing.endpoint="+cfg.Tracing.Endpoint,
+			"--set", fmt.Sprintf("tracing.insecure=%t", cfg.Tracing.Insecure),
+		)
+		otlpHeaders = telemetry.FormatHeaders(cfg.Tracing.Headers)
+	}
+	envArgs, removeEnvValuesFile, err := cweEnvHelmArgs(cfg, otlpHeaders)
+	if err != nil {
+		return err
+	}
+	// Removed as soon as helm returns; the defer covers an early return or a panic.
+	defer removeEnvValuesFile()
+	cweArgs = append(cweArgs, envArgs...)
 	if cfg.NicoInfrastructure {
 		cweArgs = append(cweArgs, "--set-string", "secrets.dgxcTenantCredSecretName="+dgxcTenantSecret)
 	}
@@ -733,7 +770,9 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	if oidcValues != "" {
 		cweArgs = append(cweArgs, "--values", oidcValues)
 	}
-	if _, err := e.helm(ctx, kubeconfigPath, cweArgs...); err != nil {
+	_, err = e.helm(ctx, kubeconfigPath, cweArgs...)
+	removeEnvValuesFile()
+	if err != nil {
 		return fmt.Errorf("controllerdeploy: installing the controller: %w", err)
 	}
 
@@ -801,15 +840,96 @@ func (e *Engine) applyReleases(ctx context.Context, kubeconfigPath, path string)
 	return nil
 }
 
-// cweEnvArgs renders the settings the controller reads from its own environment as helm
-// arguments over the chart's generic `env` list. A setting left at its zero
-// value is omitted, leaving the controller's own default in place.
-func cweEnvArgs(cfg Config) []string {
+// ProfilesImageEnv names the environment variable that sets Config.ProfilesImage.
+const ProfilesImageEnv = "NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE"
+
+// ValidateProfilesImage reports an error when image cannot be used as the
+// profiles image. An empty image is valid: no profiles image is deployed. The
+// check is cheap and needs no cluster, so callers run it before anything is
+// built.
+func ValidateProfilesImage(image string) error {
+	if image == "" {
+		return nil
+	}
+	// A colon with nothing after it is not a tag at all, and splitImageRef would
+	// report it as an empty one that the latest check below lets through.
+	if repo, _, _ := strings.Cut(image, "@"); strings.HasSuffix(repo, ":") {
+		return fmt.Errorf("controllerdeploy: the profiles image %q (%s) has an empty tag: nothing follows the colon", image, ProfilesImageEnv)
+	}
+	_, tag, digest := splitImageRef(image)
+	// splitImageRef reports an untagged reference as latest. Kubernetes pulls
+	// latest unconditionally, and the chart gives this image no pull policy to
+	// override that, so a side-loaded image would never be found.
+	if digest == "" && tag == "latest" {
+		return fmt.Errorf("controllerdeploy: the profiles image %q (%s) must carry a tag other than latest, or a digest: "+
+			"the chart sets no pull policy on it, so a latest tag makes the cluster pull it instead of using the "+
+			"side-loaded copy", image, ProfilesImageEnv)
+	}
+	return nil
+}
+
+// profilesImageArgs turns Config.ProfilesImage into the chart values that make
+// its init container copy the profiles into place. Nothing is added when no
+// image is set.
+func profilesImageArgs(cfg Config) ([]string, error) {
+	if cfg.ProfilesImage == "" {
+		return nil, nil
+	}
+	if err := ValidateProfilesImage(cfg.ProfilesImage); err != nil {
+		return nil, err
+	}
+	repo, tag, digest := splitImageRef(cfg.ProfilesImage)
+	return []string{
+		"--set", "profiles.image.enabled=true",
+		"--set-string", "profiles.image.repository=" + repo,
+		"--set-string", "profiles.image.tag=" + tag,
+		"--set-string", "profiles.image.digest=" + digest,
+	}, nil
+}
+
+// cweEnvVars lists the settings the controller reads from its own environment,
+// as name and value pairs. A setting left at its zero value is omitted, leaving
+// the controller's own default in place.
+func cweEnvVars(cfg Config) [][2]string {
 	var vars [][2]string
 	if cfg.NodeAgentPort != "" {
 		vars = append(vars, [2]string{"NODE_AGENT_PORT", cfg.NodeAgentPort})
 	}
+	return vars
+}
 
+// cweEnvHelmArgs returns the helm arguments that set the controller's
+// environment, and a function that removes any file they name. Without OTLP
+// headers they are --set-string arguments. With them, every entry goes in a
+// values file, which keeps the headers off the command line.
+func cweEnvHelmArgs(cfg Config, otlpHeaders string) (args []string, removeValuesFile func(), err error) {
+	if otlpHeaders == "" {
+		return cweEnvArgs(cfg), func() {}, nil
+	}
+	// A values file's env list does not merge with --set env[i] entries, so the
+	// file carries every entry.
+	vars := append(cweEnvVars(cfg), [2]string{otlpHeadersEnv, otlpHeaders})
+	valuesFile, removeValuesFile, err := writeEnvValues(vars)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return []string{"--values", valuesFile}, removeValuesFile, nil
+}
+
+// writeEnvValues writes vars as the chart's `env` list to a values file for
+// helm's --values, as writeSecretValues does.
+func writeEnvValues(vars [][2]string) (path string, cleanup func(), err error) {
+	env := make([]map[string]string, 0, len(vars))
+	for _, v := range vars {
+		env = append(env, map[string]string{"name": v[0], "value": v[1]})
+	}
+	return writeSecretValues(map[string]any{"env": env})
+}
+
+// cweEnvArgs renders the settings the controller reads from its own environment as helm
+// arguments over the chart's generic `env` list.
+func cweEnvArgs(cfg Config) []string {
+	vars := cweEnvVars(cfg)
 	// `env` is a list, so the settings share one numbering. Numbering each on its
 	// own would put every one of them at env[0], keeping only the last.
 	args := make([]string, 0, len(vars)*4)
@@ -1010,17 +1130,6 @@ func splitImageRef(ref string) (repo, tag, digest string) {
 	return ref[:idx], ref[idx+1:], digest
 }
 
-// randomPassword returns a 32-character hex string suitable for the shared
-// Postgres superuser password used only within this ephemeral cluster's
-// lifetime.
-func randomPassword() (string, error) {
-	buf := make([]byte, 16)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf), nil
-}
-
 func envDuration(key string, fallback time.Duration) time.Duration {
 	v := getenv(key)
 	if v == "" {
@@ -1148,7 +1257,7 @@ func spireInstallArgs(cfg Config, chart manifest.Chart, valuesPath, clusterName,
 		"--values", valuesPath,
 		"--set-string", "global.spire.clusterName="+clusterName,
 		"--set-string", "global.spire.trustDomain="+trustDomain,
-		"--set-string", prefix+".adminIDs[0]=spiffe://"+trustDomain+"/nke-service/"+cweReleaseName,
+		"--set-string", prefix+".adminIDs[0]=spiffe://"+trustDomain+"/nvke-service/"+cweReleaseName,
 		// Both halves of the two agreements the controller depends on. See the constants.
 		"--set-string", prefix+".controllerManager.className="+spireControllerManagerClass,
 		// --set, not --set-string: the chart's schema types these as integers.
@@ -1263,6 +1372,41 @@ func (e *Engine) publishSpireExternally(ctx context.Context, kubeconfigPath stri
 	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"-n", spireNamespace, "apply", "-f", manifest); err != nil {
 		return fmt.Errorf("controllerdeploy: publishing SPIRE with %s: %w\n%s", spireNodePortFile, err, out)
+	}
+	return nil
+}
+
+// localPathRolloutTimeout bounds the wait for local-path-provisioner to run.
+const localPathRolloutTimeout = 5 * time.Minute
+
+// EnsureDefaultStorageClass installs local-path-provisioner as the default
+// StorageClass of the cluster kubeconfigPath points at, and waits for it to
+// run, unless the cluster already has a default StorageClass.
+func (e *Engine) EnsureDefaultStorageClass(ctx context.Context, kubeconfigPath string) error {
+	out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "get", "storageclass", "-o",
+		`jsonpath={range .items[*]}{.metadata.annotations.storageclass\.kubernetes\.io/is-default-class}{"\n"}{end}`)
+	if err != nil {
+		return fmt.Errorf("controllerdeploy: listing StorageClasses: %w\n%s", err, out)
+	}
+	if slices.Contains(strings.Fields(out), "true") {
+		return nil
+	}
+	manifest, cleanup, err := writeEmbeddedFile(localPathFile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	e.log.Info("the cluster has no default StorageClass; installing local-path-provisioner")
+	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", manifest); err != nil {
+		return fmt.Errorf("controllerdeploy: applying %s: %w\n%s", localPathFile, err, out)
+	}
+	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "annotate", "storageclass", "local-path",
+		"storageclass.kubernetes.io/is-default-class=true", "--overwrite"); err != nil {
+		return fmt.Errorf("controllerdeploy: making local-path the default StorageClass: %w\n%s", err, out)
+	}
+	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", "local-path-storage",
+		"rollout", "status", "deployment/local-path-provisioner", "--timeout", localPathRolloutTimeout.String()); err != nil {
+		return fmt.Errorf("controllerdeploy: waiting for local-path-provisioner: %w\n%s", err, out)
 	}
 	return nil
 }

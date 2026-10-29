@@ -121,8 +121,52 @@ func TestIsOwnedByController(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := IsOwnedByController(tt.labels, testManagedByValue)
+			got := IsOwnedByController(tt.labels, []string{testManagedByValue})
 			assert.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+// A value this controller accepts but no longer writes is still owned: that is
+// the whole point of the accept list, and the case a rename gets wrong.
+func TestIsOwnedByControllerAcceptsPreviousValues(t *testing.T) {
+	accepted := []string{"nvke-controller", "nke-cloud-workflow-engine"}
+
+	tests := []struct {
+		name     string
+		labels   map[string]string
+		accepted []string
+		expected bool
+	}{
+		{
+			name:     "value this controller writes",
+			labels:   map[string]string{LabelManagedBy: "nvke-controller"},
+			accepted: accepted,
+			expected: true,
+		},
+		{
+			name:     "value an earlier release wrote",
+			labels:   map[string]string{LabelManagedBy: "nke-cloud-workflow-engine"},
+			accepted: accepted,
+			expected: true,
+		},
+		{
+			name:     "value belonging to another controller",
+			labels:   map[string]string{LabelManagedBy: "some-other-system"},
+			accepted: accepted,
+			expected: false,
+		},
+		{
+			name:     "no accepted values owns nothing",
+			labels:   map[string]string{LabelManagedBy: "nvke-controller"},
+			accepted: nil,
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, IsOwnedByController(tt.labels, tt.accepted))
 		})
 	}
 }

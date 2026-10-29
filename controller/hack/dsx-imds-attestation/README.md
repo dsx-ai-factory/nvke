@@ -30,7 +30,7 @@ the provider is enabled.
 To exercise node-agent TLS/JWT too, add `dsx-identity-exchange` to the provider
 list and set `site_controller_vip` to the management Kind node's IP reachable
 from CAPD nodes. The exchange fixture validates the agent's SPIRE JWT-SVID for
-`nke-controller` and maps
+`nvke-controller` and maps
 `spiffe://<local-trust-domain>/tenant/nke/service/node-agent/bm/<node-UUID>` to
 `spiffe://nke.capd.node-agent.nvid.id/bm/<same-node-UUID>`. The provider then
 configures CWE to verify the fixture's ES256 JWTs and injects its HTTPS exchange
@@ -46,5 +46,5 @@ For the full external-mTLS plus TLS/JWT path, set `dsx_imds_external_mtls` to
 `true` alongside both providers. Tilt asks cert-manager to issue a test-only
 controller client certificate with URI SAN `urn:nvidia:nke:controller`, waits
 for its Secret, and enables `nodeAgent.externalMTLS` in CWE. Use an agent build
-that supports `--controller-client-ca-bundle`; the controller writes this CA
+at 0.3.0 or later, which reads `--nvke-controller-client-ca-bundle`; the controller writes this CA
 bundle and flag into the generated node bootstrap files.

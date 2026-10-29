@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# A node agent dials the SPIRE server before the cluster has any ingress. It
+# reaches a node address, so the server needs a NodePort. The selector matches
+# the upstream chart's pod labels. The port must match
+# spiffe.spire.serverPort in values/controller.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: spire-server-np
+  namespace: spire-server
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: server
+  ports:
+    - name: grpc
+      protocol: TCP
+      port: 443
+      targetPort: grpc
+      nodePort: 30440

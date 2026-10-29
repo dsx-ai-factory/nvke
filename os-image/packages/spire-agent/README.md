@@ -11,7 +11,6 @@ Builds the Debian package that gives a node its SPIFFE identity:
 |---|---|
 | `/usr/local/bin/spire-agent` | The upstream SPIRE agent release binary (musl) |
 | `/usr/local/lib/spire-agent/tpm_attestor_agent` | spire-tpm-plugin's agent-side node attestor |
-| `/usr/local/lib/spire-agent/dsx-imds-node-attestor-agent` | DSX IMDS node attestor plugin |
 | `/usr/local/bin/get_tpm_pubhash` | spire-tpm-plugin's EK-reading helper |
 | `/lib/systemd/system/spire-agent.service` | The agent unit |
 | `/lib/systemd/system/nvke-spire-configure.service` | Renders the config before it |
@@ -42,9 +41,8 @@ mask the vendor unit in `/lib`.
 Two divergent install paths used to exist: the Packer build installed raw
 upstream SPIRE and TPM plugin binaries, while apt-path nodes installed
 a `spire-agent` deb built out of an internal GitLab repository and served from
-the NVKE S3 apt repo. This package is the single artifact both converge on.
-SPIRE and the TPM plugin come from public GitHub releases. The DSX IMDS
-plugin comes from the pinned S3 objects below.
+the NVKE S3 apt repo. This package is the single artifact both converge on, and
+every byte it wraps comes from a public GitHub release.
 
 ## Verification
 
@@ -56,18 +54,6 @@ committed lock.
 `tpm_attestor_agent` and `get_tpm_pubhash` the lock is the only pin. Treat a
 lock diff on those two rows as a supply-chain event and confirm the change is
 an intended version bump before committing it.
-
-`dsx-imds-node-attestor-agent` is the same shape of pin, for a different
-reason. The published objects are raw binaries at unversioned URLs:
-
-- `https://nke-prod-assets.s3.us-west-2.amazonaws.com/dsx-imds-node-attestor-agent/linux-amd64/dsx-imds-node-attestor-agent`
-- `https://nke-prod-assets.s3.us-west-2.amazonaws.com/dsx-imds-node-attestor-agent/linux-arm64/dsx-imds-node-attestor-agent`
-
-There is no checksum sidecar beside them. Replacing either object in the
-bucket fails the next build until `make lock` is reviewed and committed.
-`postinst` writes `DSX_IMDS_PLUGIN_CHECKSUM` from the binary the package
-installed, which is what a CAPI `agent.conf` expands. The first-boot renderer
-still chooses join-token or TPM; it does not select this plugin.
 
 ## Building
 

@@ -5,6 +5,7 @@ package teleport
 
 import (
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -60,9 +61,22 @@ func MergeLabels(userLabels map[string]string, managedByValue string) map[string
 	return result
 }
 
-// IsOwnedByController checks if a token has the correct managed-by label.
-func IsOwnedByController(labels map[string]string, managedByValue string) bool {
-	return labels[LabelManagedBy] == managedByValue
+// IsOwnedByController reports whether a token carries a managed-by value this
+// controller owns. It takes every accepted spelling, not just the one the
+// controller writes: a deployment that moves ManagedByLabelValue keeps tokens
+// and nodes stamped with the previous one until each is replaced, and a check
+// against the written value alone disowns all of them at once -- they stop
+// being listed, cannot be deleted, and nothing ever cleans them up.
+//
+// acceptedValues comes from config.TeleportConfig.OwnershipManagedByValues.
+// An empty list owns nothing, which is the safe direction: it refuses tokens
+// rather than claiming ones this controller did not write.
+func IsOwnedByController(labels map[string]string, acceptedValues []string) bool {
+	value, ok := labels[LabelManagedBy]
+	if !ok {
+		return false
+	}
+	return slices.Contains(acceptedValues, value)
 }
 
 // BuildLabelsString constructs a sorted, comma-separated "key=value" label string.

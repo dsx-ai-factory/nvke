@@ -11,23 +11,22 @@
 # axis: apiAuth is REST tokens, spiffe is controller-to-agent mTLS. Turning both on at
 # once means a failure could be either.
 #
-# It also cannot simply be flipped true here. The chart defaults
-# apiAuth.configMap.create to false and mounts `nke-auth-config`, which on the
-# e2e lanes comes from the nke-auth-dev item -- and that item is test
-# scaffolding (it creates nke-client, nke-outsider and nke-e2e ServiceAccounts)
-# that a site has no business installing. The controller treats a configured-but-unreadable
-# AUTH_CONFIG_PATH as a startup failure, never as "disabled", so enabling this
-# without supplying the ConfigMap does not degrade -- it fails to start.
+# It also cannot simply be flipped true here. Enabling it needs a real
+# apiAuth.config with apiAuth.configMap.create=true: the e2e lanes admit the
+# ServiceAccounts their nke-auth-dev item creates, and that item is test
+# scaffolding (nke-client, nke-outsider and nke-e2e) that a site has no
+# business installing. Enabled without a configuration, the chart mounts a
+# ConfigMap nothing creates, and the controller does not start.
 #
 # To turn it on later: set apiAuth.configMap.create=true and supply real
-# apiAuth.config, or add a site-specific auth-config item.
+# apiAuth.config.
 apiAuth:
   enabled: false
   permissive: false
 
 # The SAME value the capnico-e2e target uses, deliberately: this is a tenant
 # guard rail, not a mode. It reaches the controller as supportedInfraProviders in
-# nke-controller-config, an accept-list validated at startup, and renders nothing else
+# nvke-controller-config, an accept-list validated at startup, and renders nothing else
 # -- the CAPI permissions come from capi.rbac.create below, which is a separate
 # key.
 #
@@ -90,14 +89,14 @@ env: []
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-fullnameOverride: nke-controller
-namespaceOverride: nke-controller
+fullnameOverride: nvke-controller
+namespaceOverride: nvke-controller
 # The chart pins nameOverride (the pod name label) and serviceAccount.name
 # (which the SPIRE admin ID and the controller's SPIFFE ID name) instead of
 # deriving them from the fullname, so both are set alongside it.
-nameOverride: nke-controller
+nameOverride: nvke-controller
 serviceAccount:
-  name: nke-controller
+  name: nvke-controller
 
 nvkeSystemNamespace:
   create: false
@@ -142,12 +141,8 @@ image:
 # secret at all.
 #
 # A site that pulls the controller from a registry instead needs its own secret
-# in nke-controller, supplied with --values-for.
+# in nvke-controller, supplied with --values-for.
 imagePullSecrets: []
-
-podSecurityContext: null
-securityContext:
-  readOnlyRootFilesystem: false
 
 # Telemetry to the nktp item, which installs before this one: its node
 # Collectors scrape the ServiceMonitor, the metrics NetworkPolicy admits their
@@ -167,7 +162,7 @@ metrics:
 # legacy names.
 serviceMonitor:
   enabled: true
-  name: nke-controller-metrics
+  name: nvke-controller-metrics
 tracing:
   enabled: true
   serviceName: nvke-controller
@@ -194,7 +189,7 @@ readinessProbe:
 
 appDb:
   url: postgres-postgresql.postgres.svc.cluster.local:5432
-  dbName: nke-controller
+  dbName: nvke-controller
   postgresUser: postgres
   # No postgresPassword: the render builds the connection string from these
   # values and NVKECTL_DATABASE_PASSWORD into the nvke-database Secret and
@@ -249,8 +244,8 @@ temporal:
   host: temporal-frontend.temporal.svc.cluster.local
   port: 7233
   cloudWorkflow:
-    namespace: nke-controller
-    queue: nke-controller-tasks
+    namespace: nvke-controller
+    queue: nvke-controller-tasks
 
 profiles:
   path: /profiles
@@ -271,10 +266,6 @@ profiles:
   image:
     enabled: true
 
-# apiAuth is not set here. The Tiltfile drives it from NKE_AUTH_ENABLED and
-# NKE_PERMISSIVE_MODE, and the chart's default ConfigMap name already matches
-# the one deploy/k8s/nke-auth-dev.yaml applies.
-
 spiffe:
   enabled: true
   endpointSocket: unix:///spiffe-workload-api/spire-agent.sock
@@ -286,10 +277,10 @@ spiffe:
 
 # The greenfield site profile, which the chart's legacy defaults do not carry.
 identity:
-  fieldManagerName: nke-controller
-  fieldManagerRebootMachineName: nke-controller-reboot-machine
-  fieldManagerMachineHealthIssueName: nke-controller-machine-health-issue
-  managedByLabelValue: nke-controller
+  fieldManagerName: nvke-controller
+  fieldManagerRebootMachineName: nvke-controller-reboot-machine
+  fieldManagerMachineHealthIssueName: nvke-controller-machine-health-issue
+  managedByLabelValue: nvke-controller
 teleport:
-  managedByLabelValue: nke-controller
-  tokenNamePrefix: nke-controller-
+  managedByLabelValue: nvke-controller
+  tokenNamePrefix: nvke-controller-

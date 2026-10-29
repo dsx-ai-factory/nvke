@@ -20,24 +20,30 @@ func TestUnit_NodeAgentBootstrapFiles(t *testing.T) {
 	type parameters struct {
 		tlsJWT       bool
 		externalMTLS bool
+		spiffe       bool
 		wantArgs     string
 	}
 	tests := map[string]parameters{
 		"SPIFFE without JWT": {
+			spiffe:   true,
 			wantArgs: "AGENT_ARGS=\"--secure-server-port 15005\"\n",
 		},
 		"SPIFFE with JWT": {
 			tlsJWT:   true,
+			spiffe:   true,
 			wantArgs: "AGENT_ARGS=\"--secure-server-port 15005 --grpc-auth-mode=tls-jwt --dsx-identity-exchange-url=https://identity.example.test/v1/exchange\"\n",
 		},
 		"external mTLS without JWT": {
 			externalMTLS: true,
-			wantArgs:     "AGENT_ARGS=\"--secure-server-port 15005 --controller-client-ca-bundle=/etc/nke/controller-ca.crt\"\n",
+			wantArgs:     "AGENT_ARGS=\"--secure-server-port 15005 --nvke-controller-client-ca-bundle=/etc/nke/controller-ca.crt\"\n",
 		},
 		"external mTLS with JWT": {
 			tlsJWT:       true,
 			externalMTLS: true,
-			wantArgs:     "AGENT_ARGS=\"--secure-server-port 15005 --controller-client-ca-bundle=/etc/nke/controller-ca.crt --grpc-auth-mode=tls-jwt --dsx-identity-exchange-url=https://identity.example.test/v1/exchange\"\n",
+			wantArgs:     "AGENT_ARGS=\"--secure-server-port 15005 --nvke-controller-client-ca-bundle=/etc/nke/controller-ca.crt --grpc-auth-mode=tls-jwt --dsx-identity-exchange-url=https://identity.example.test/v1/exchange\"\n",
+		},
+		"neither SPIFFE nor external mTLS": {
+			wantArgs: "AGENT_ARGS=\"--secure-server-port 15005 --disable-mtls\"\n",
 		},
 	}
 
@@ -57,6 +63,7 @@ func TestUnit_NodeAgentBootstrapFiles(t *testing.T) {
 			files, err := activities.nodeAgentBootstrapFiles(db.Node{
 				NodeAgentExternalMTLSEnabled: params.externalMTLS,
 				NodeAgentTLSJWTEnabled:       params.tlsJWT,
+				SpiffeEnabled:                params.spiffe,
 			})
 			require.NoError(t, err)
 			wantFileCount := 1

@@ -42,11 +42,19 @@ repository.
 
 An operator first configures `nvkectl` with a kubeconfig for the management
 cluster. That management-cluster identity must be allowed to read the tenant
-access Secret in `nvke-system`.
+access Secret in `nvke-system`. Set the three values the commands below use.
+`NVKE_CONTROLLER_URL` is the NVKE API's base address,
+`http://<MANAGEMENT_ADDRESS>:30080`, where `<MANAGEMENT_ADDRESS>` is the
+management cluster's API virtual IP address (VIP), or the node IP of a
+single-node management cluster.
 
 ```bash
+export SITE_NAME="<SITE_NAME>"
+export NVKE_CONTROLLER_URL="http://<MANAGEMENT_ADDRESS>:30080"
+export CLUSTER_NAME="<TENANT_CLUSTER_NAME>"
+
 nvkectl config set-site --name "$SITE_NAME" \
-  --url "$NKE_CONTROLLER_URL" \
+  --url "$NVKE_CONTROLLER_URL" \
   --kubeconfig site-controller.kubeconfig
 
 nvkectl get kubeconfig "$CLUSTER_NAME" --output-file tenant.kubeconfig
@@ -72,9 +80,16 @@ certificate signing request named `nvke-breakglass` and approves it.
 kube-controller-manager issues the certificate, and tenant-access replaces the
 Secret. The node's `admin.conf` is used to approve the request and to copy the
 server URL and cluster CA. That `admin.conf` is kept valid by the separate
-12-hour kubeadm certificate renewal. Renewal updates the Secret, not kubeconfig
+12-hour kubeadm certificate renewal, which does not run on a cluster with
+exactly two control-plane nodes; see
+[Certificate renewal](../../controller/docs/certificate-renewal.md). Renewal updates the Secret, not kubeconfig
 files that operators have already downloaded. Operators must retrieve a
 refreshed kubeconfig before the certificate in their local copy expires.
+
+Follow the [tenant renewal runbook](certificate-renewal.md) for target selection,
+forced invocation, health checks, leaf verification and failed-cycle recovery.
+Leaf renewal does not reissue the downloaded breakglass kubeconfig. The [credential operations inventory](../operations/credential-lifecycle.md)
+states the existing-CA profile and deferred revocation/CA-rotation capabilities.
 
 ## Service Identity and Tenant OIDC
 

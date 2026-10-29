@@ -1,6 +1,6 @@
 ---
 name: open-pr
-description: Open or update a pull request on dsx-ai-factory/nvke following the repository's squash-merge, DCO, labeling, and CI-presence rules. Use when asked to open a PR, push a branch for review, or check why PR checks look wrong.
+description: Open or update a pull request on dsx-ai-factory/nvke following the repository's fork, squash-merge, DCO, labeling, and CI-presence rules. Use when asked to open a PR, push a branch for review, or check why PR checks look wrong.
 disable-model-invocation: true
 ---
 
@@ -12,7 +12,9 @@ executable checklist, not a replacement for it.
 ## Before pushing
 
 1. Branch name is `<type>/<short-description>` (`feat/`, `fix/`, `docs/`,
-   `refactor/`, `test/`, `chore/`).
+   `refactor/`, `test/`, `chore/`). Push it to your fork, never to
+   `dsx-ai-factory/nvke`, even with write access, and open the PR from there:
+   `gh pr create --repo dsx-ai-factory/nvke --head <your-user>:<branch>`.
 2. Run `make preflight` from the repository root. It lints and tests the
    modules you changed and adds workspace and license checks when relevant.
 3. Every commit carries a DCO sign-off (`git commit -s`). Missing one on an
@@ -33,7 +35,9 @@ executable checklist, not a replacement for it.
    `documentation`. There is no `breaking` label; mark a breaking change
    with `!` in the title or a `BREAKING CHANGE:` footer.
 7. If a substantial portion of the change was AI-generated, disclose that in
-   the PR description (required by CONTRIBUTING.md).
+   the PR description (required by CONTRIBUTING.md). Do not add agent
+   attribution: no `Co-Authored-By` trailer naming an agent in any commit, and
+   no "Generated with …" footer in the PR description.
 
 ## After opening — verify checks are PRESENT, not just green
 

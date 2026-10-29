@@ -78,7 +78,7 @@ NVKECTL_LDFLAGS := \
 	-X 'github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/controllerdeploy.capiVersion=$(CAPI_VERSION)' \
 	$(RELEASE_LDFLAGS)
 
-.PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check check-no-docker \
+.PHONY: build build-cross test test-e2e-bootstrap test-e2e-bootstrap-nico fmt lint license file-license-check check-no-docker \
 	ensure-capd-image ensure-provisioned-provider-image images \
 	nodes-up nodes-down nodes-status nodes-hosts nodes-attested
 
@@ -161,6 +161,14 @@ test: ## Run this module's tests. (run by the merge gate)
 test-e2e-bootstrap: build
 	./e2e/bootstrap/run.sh
 
+# The same suite for `infra.provider: nico`: CAPNICo allocates the nodes from a
+# nico-sim running on the host, instead of fake hosts being listed in the site
+# spec. Needs everything run.sh does, plus a Go toolchain and gcc to build
+# nico-sim, network access to ghcr.io, and NVKECTL_NVKE_CONTROLLER_IMAGE set to a
+# controller image already in containerd. See e2e/bootstrap/run-nico.sh.
+test-e2e-bootstrap-nico: build
+	./e2e/bootstrap/run-nico.sh
+
 # Fake-node fixture for the bootstrap e2e suite: nerdctl containers running
 # nvke-agent, standing in for pre-provisioned hardware. cli/e2e/bootstrap/substrate
 # is a thin derivation of controller/hack/capd-kindest-node's node image
@@ -204,7 +212,7 @@ ensure-capd-image:
 # workspace vendor tree.
 CAPI_PROVISIONED_IMAGE ?= cluster-api-provider-provisioned:latest
 # The tags below are the defaults `bootstrap site` uses when neither the image
-# flags nor NVKECTL_CONTROLLER_IMAGE / NVKECTL_CAPI_PROVISIONED_IMAGE name an image; the
+# flags nor NVKECTL_NVKE_CONTROLLER_IMAGE / NVKECTL_CAPI_PROVISIONED_IMAGE name an image; the
 # bootstrap manifest pins them.
 # CONTROLLER_IMAGE is the tag `images` gives the controller image. CWE_IMAGE
 # is its deprecated name. When CONTROLLER_IMAGE is unset or empty and
@@ -344,6 +352,45 @@ provider-manifest-check: capnico-manifest-check ## Verify the embedded provider 
 	@git diff --exit-code -- $(PROVIDER_MANIFEST) \
 		|| { echo "ERROR: $(PROVIDER_MANIFEST) is stale. Run 'make -C cli provider-manifest' and commit it."; exit 1; }
 	@echo "  $(PROVIDER_MANIFEST) is up to date."
+
+.PHONY: docs docs-check
+# The nvkectl command reference: one page per public command, generated from the
+# same cobra tree the binary runs. hack/gendocs builds that tree and reads its
+# metadata -- it runs no command, so this needs no credential, kubeconfig,
+# configured site or reachable cluster, and nothing beyond the module cache.
+#
+# Deterministic by construction: the generator clears the NVKECTL_ and NKECTL_
+# variables before building the tree, because two of `bootstrap site`'s flag
+# defaults are read from the environment when the command is constructed, and
+# it switches off cobra's generated-on timestamp. See cli/internal/clidocs.
+DOCS_DIR := docs/reference
+
+docs: ## Regenerate the nvkectl command reference under docs/reference.
+	@$(GO) run ./hack/gendocs -output $(DOCS_DIR)
+
+docs-check: ## Verify the nvkectl command reference is up to date. (run by the merge gate)
+	@# Tracking first, as provider-manifest-check does: git diff says nothing
+	@# about an untracked path, so a reference that was never committed would
+	@# otherwise pass this check in silence.
+	@git ls-files --error-unmatch $(DOCS_DIR)/README.md > /dev/null 2>&1 \
+		|| { echo "ERROR: $(DOCS_DIR) is not tracked by git. Run 'make -C cli docs' and commit it."; exit 1; }
+	@$(MAKE) --no-print-directory docs
+	@# `docs` empties the directory before writing, so a page for a command
+	@# that no longer exists is not rewritten and shows up here as a deletion.
+	@# That is the obsolete-page case; a changed page is a modification.
+	@git diff --exit-code --stat -- $(DOCS_DIR) \
+		|| { echo "ERROR: the nvkectl reference is stale. Run 'make -C cli docs' and commit $(DOCS_DIR)."; exit 1; }
+	@# And the case git diff cannot see: a page for a NEW command, generated
+	@# just now and never added. Without this a new command reaches main
+	@# undocumented, with every check green.
+	@untracked=$$(git ls-files --others --exclude-standard -- $(DOCS_DIR)); \
+	if [ -n "$$untracked" ]; then \
+		echo "ERROR: the nvkectl reference has pages that are not tracked by git:"; \
+		printf '%s\n' "$$untracked" | sed 's/^/    /'; \
+		echo "Run 'make -C cli docs' and commit $(DOCS_DIR)."; \
+		exit 1; \
+	fi
+	@echo "  the nvkectl reference matches the command tree."
 
 notices: ## Regenerate THIRD_PARTY_NOTICES.md for the nvkectl binary.
 	@# The tool and the script both live in controller/, which is a sibling now,

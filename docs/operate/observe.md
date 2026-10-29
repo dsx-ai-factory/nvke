@@ -1,13 +1,13 @@
 # Observe NVKE and its clusters
 
-This page describes how to check the health of the NVIDIA Kubernetes Engine (NVKE) management plane and the workload clusters it manages, and where to find their logs, metrics and dashboards. You use it after [Install management-plane services](install-management-plane-services.md), and whenever you need to know whether NVKE and its clusters are working.
+This page describes how to check the health of the NVIDIA Kubernetes Engine (NVKE) management plane and the workload clusters it manages, and where to find their logs, metrics and dashboards. You use it after [Run NVKE end to end on one machine](../get-started/local-site.md), and whenever you need to know whether NVKE and its clusters are working.
 
 ## Before you begin
 
-- You have completed [Install management-plane services](install-management-plane-services.md), and `nvkectl config set-site` points `nvkectl` at your NVKE API and the management cluster's kubeconfig. If API authentication is on, `nvkectl` points at an OpenID Connect (OIDC) kubeconfig instead, as described in [Secure the NVKE API](api-authentication.md). With that kubeconfig, `nvkectl get providers` and `nvkectl get kubeconfig` fail, because they read the management cluster's Kubernetes API, which does not accept your identity provider's tokens; the steps that use them give a `kubectl` alternative.
+- You have completed [Install the management plane](install-management-plane.md), and `nvkectl config set-site` points `nvkectl` at your NVKE API and the management cluster's kubeconfig. If API authentication is on, `nvkectl` points at an OpenID Connect (OIDC) kubeconfig instead, as described in [Secure the NVKE API](api-authentication.md). With that kubeconfig, `nvkectl get providers` and `nvkectl get kubeconfig` fail, because they read the management cluster's Kubernetes API, which does not accept your identity provider's tokens; the steps that use them give a `kubectl` alternative.
 - `kubectl` uses the management cluster's admin kubeconfig, for example with `export KUBECONFIG=<CLUSTER_NAME>.kubeconfig`, where `<CLUSTER_NAME>` is the management cluster's name.
 - You have `curl` and `jq`.
-- If you change the management plane's values below, run the install from a shell with the `NVKECTL_*` variables exported, as described in [Run the install again](install-management-plane-services.md#run-the-install-again).
+- If you change the management plane's values below, run the install from a shell with the `NVKECTL_*` variables exported, as described in [Run NVKE end to end on one machine](../get-started/local-site.md).
 - You know `<MANAGEMENT_ADDRESS>`, the management cluster's API virtual IP address (VIP), or the node IP of a single-node management cluster. The NVKE API is at `http://<MANAGEMENT_ADDRESS>:30080`. If API authentication is on, add `-H "Authorization: Bearer <TOKEN>"` to each `curl` command that calls `/api/`, where `<TOKEN>` is a JSON Web Token (JWT) from your identity provider, as described in [Secure the NVKE API](api-authentication.md). `/healthz` and `/readyz` need no token.
 
 ## Check the management plane
@@ -15,7 +15,7 @@ This page describes how to check the health of the NVIDIA Kubernetes Engine (NVK
 1. Check that the management plane is rolled out.
 
    ```bash
-   kubectl rollout status deployment/nke-controller -n nke-controller
+   kubectl rollout status deployment/nvke-controller -n nvke-controller
    ```
 
    The output ends with `successfully rolled out`.
@@ -34,7 +34,7 @@ This page describes how to check the health of the NVIDIA Kubernetes Engine (NVK
    kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded
    ```
 
-   A healthy management cluster prints `No resources found`. The management plane depends on the pods in the `nke-controller`, `postgres`, `temporal`, `spire-server`, `spire-system` and `capnico-system` namespaces.
+   A healthy management cluster prints `No resources found`. The management plane depends on the pods in the `nvke-controller`, `postgres`, `temporal`, `spire-server`, `spire-system` and `capnico-system` namespaces.
 
 4. Check the infrastructure provider.
 
@@ -59,14 +59,14 @@ The management plane writes one JSON object per log line to standard output, wit
 1. Show recent warnings and errors.
 
    ```bash
-   kubectl logs deployment/nke-controller -n nke-controller --since=1h \
+   kubectl logs deployment/nvke-controller -n nvke-controller --since=1h \
      | jq -cR 'fromjson? | select(.level == "WARN" or .level == "ERROR")'
    ```
 
 2. Follow the logs while you reproduce a problem.
 
    ```bash
-   kubectl logs deployment/nke-controller -n nke-controller -f
+   kubectl logs deployment/nvke-controller -n nvke-controller -f
    ```
 
 The default level is `info`. To log at `debug`, save these values as `controller-log.yaml` in the directory above the `nvke/` checkout:
@@ -79,16 +79,25 @@ env:
     value: debug
 ```
 
-Then run the install command from [Install management-plane services](install-management-plane-services.md) again, with the same flags and `--values-for controller=../controller-log.yaml` added. Your `env` list replaces the deploy path's list, which sets `NODE_AGENT_PORT`, so keep that entry. `LOG_LEVEL` accepts `debug`, `info`, `warn` and `error`. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md). If you passed `--values-for nktp=<FILE>` when you installed, pass it again, or NKTP goes back to the bundled development backend.
+Then run the install command from [Run NVKE end to end on one machine](../get-started/local-site.md) again, with the same flags and `--values-for controller=../controller-log.yaml` added. Your `env` list replaces the deploy path's list, which sets `NODE_AGENT_PORT`, so keep that entry. `LOG_LEVEL` accepts `debug`, `info`, `warn` and `error`. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md). If you passed `--values-for nktp=<FILE>` when you installed, pass it again, or NKTP goes back to the bundled development backend.
+
+Database queries appear in the `query` key with a `?` for each value, and a PostgreSQL error appears by its severity and code without its message, at every log level. The values can include content you supplied, such as cloud-init files in a cluster's `infra` settings, and an error message can repeat a rejected value. To log the values and messages while you debug a query, add this entry to the `env` list in `controller-log.yaml` and run the install command again as above:
+
+```yaml
+  - name: DB_QUERY_LOG_VALUES
+    value: "true"
+```
+
+> **Warning:** The values and messages appear in the logs in clear text. Remove the entry when you finish.
 
 ### Read the management plane metrics
 
-The management plane serves Prometheus metrics at `/metrics` on port 9090 of its pod. NVKE telemetry pipelines (NKTP) scrapes them, as described in [Find the management cluster's telemetry](#find-the-management-clusters-telemetry). To read them directly:
+The management plane serves Prometheus metrics at `/metrics` on port 9090 of its pod. NVKE telemetry pipeline (NKTP) scrapes them, as described in [Find the management cluster's telemetry](#find-the-management-clusters-telemetry). To read them directly:
 
 1. Forward the metrics port to your machine.
 
    ```bash
-   kubectl port-forward -n nke-controller deployment/nke-controller 9090:9090
+   kubectl port-forward -n nvke-controller deployment/nvke-controller 9090:9090
    ```
 
 2. In a second shell, list the NVKE series.
@@ -124,15 +133,19 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
 
    With API authentication on, `nvkectl` must use an OIDC kubeconfig for this and the next two steps; with the management cluster's admin kubeconfig every NVKE API call fails.
 
-   A healthy cluster's `STATUS` is `Provisioned`. `Provisioning`, `Updating`, `Upgrading`, `Recycling` and `Deleting` mean an operation is running. `ProvisioningFailed` and `UpdateFailed` mean the last operation failed. [Create a workload cluster](../workload-clusters/create.md) describes each status.
+   `Provisioned` records provisioning state, not certificate-maintenance health. `Provisioning`, `Updating`, `Upgrading`, `Recycling` and `Deleting` mean an operation is running, except that `Updating` can also mean a failed certificate renewal or a failed etcd key rotation retained the cluster mutation lock and needs operator recovery. `ProvisioningFailed` and `UpdateFailed` mean the last operation failed. [Create a workload cluster](../workload-clusters/create.md) describes each status.
 
-2. Read the conditions of a cluster whose status is not `Provisioned`.
+2. Read the cluster's conditions, including on clusters whose status is `Provisioned`.
 
    ```bash
    nvkectl get clusters <WORKLOAD_CLUSTER> -o yaml
    ```
 
-   `<WORKLOAD_CLUSTER>` is the workload cluster's name. Each entry under `conditions` has a `status`, a `lastTransitionTime` and a `message`. The `message` of the condition that last changed usually names the cause.
+   `<WORKLOAD_CLUSTER>` is the workload cluster's name. Provisioning conditions have a `status`, a `lastTransitionTime` and a `message`; the message usually names the cause of a provisioning failure. For certificate maintenance, inspect `conditions.certificateRenewal.state`, its `phase` and `message`, and the top-level `nextCertRenewalDue`, even when `STATUS` is `Provisioned`. For etcd key rotation, inspect `conditions.etcdKeyRotation`:
+
+   - A failed renewal that released its mutation lock can leave `STATUS` as `Provisioned`. Fix the reported cause; automatic retry waits until both `nextCertRenewalDue` and the one-hour backoff after `conditions.certificateRenewal.completedAt` have passed. A `two-control-plane-voters` refusal additionally waits for `controlPlaneConfig.desiredCount` to be at least `3`; scale to three or more, not down to one.
+   - If `conditions.updateInProgress.type=certificate_renewal` remains set with renewal state `failed`, the lock is retained. `STATUS` can show `Updating`, but a higher-priority condition such as `UpdateFailed` can mask it; identify retained ownership from these conditions regardless of the displayed status. Waiting does not release it. Follow the [ownership-checked recovery procedure](../../controller/docs/certificate-renewal.md#status-and-failure-handling) after confirming that the node operation and all its attempts have stopped. Cluster health or workflow completion alone is not enough to clear it.
+   - A failed etcd key rotation with `conditions.updateInProgress.type=etcd_key_rotation` and `conditions.etcdKeyRotation.state=failed` keeps its mutation lock until its workflow is reset and completes. Waiting for `Provisioned` will not clear it, and `UpdateFailed` can mask `Updating`. The lock is also retained when `conditions.etcdKeyRotation.state=running` while the workflow named by `conditions.etcdKeyRotation.workflowID` is no longer open. Follow [phase-aware recovery](../../controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery).
 
 3. List the cluster's node pools.
 
@@ -175,7 +188,7 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
 
 ## Find the management cluster's telemetry
 
-The install deploys NKTP in the `nktp` namespace of the management cluster. NKTP collects the cluster's logs, metrics and Kubernetes Events, scrapes the management plane through the ServiceMonitor `nke-controller-metrics`, receives its traces, and labels everything with `k8s.cluster.name` set to the management cluster's name.
+The install deploys NKTP in the `nktp` namespace of the management cluster. NKTP collects the cluster's logs, metrics and Kubernetes Events, scrapes the management plane through the ServiceMonitor `nvke-controller-metrics`, receives its traces, and labels everything with `k8s.cluster.name` set to the management cluster's name.
 
 By default NKTP exports to a bundled development backend, with Grafana, Prometheus, Loki and Tempo in one pod that keeps data in memory. To look at it, forward Grafana to your machine and open `http://127.0.0.1:3000`. This Grafana gives every anonymous user the Admin role, so keep the port forward bound to `127.0.0.1` and use it only for evaluation.
 
@@ -183,7 +196,7 @@ By default NKTP exports to a bundled development backend, with Grafana, Promethe
 kubectl -n nktp port-forward svc/lgtm 3000:3000 --address 127.0.0.1
 ```
 
-To keep the data, send it to your own backend: write a values file as described under "Set a backend" in [Getting started with NKTP](../nktp/getting-started.md), and run the install from [Install management-plane services](install-management-plane-services.md) again with `--values-for nktp=<FILE>` added. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
+To keep the data, send it to your own backend: write a values file as described under "Set a backend" in [Getting started with NKTP](../nktp/getting-started.md), and run the install from [Run NVKE end to end on one machine](../get-started/local-site.md) again with `--values-for nktp=<FILE>` added. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
 
 NVKE installs neither NKTP nor cert-manager in workload clusters. NKTP collects only from the management cluster, where the install deploys it; for workload clusters you have the management plane's metrics, which describe each cluster, node pool and node as NVKE tracks them. [Getting started with NKTP](../nktp/getting-started.md) describes NKTP itself.
 

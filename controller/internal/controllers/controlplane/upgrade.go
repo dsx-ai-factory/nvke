@@ -49,7 +49,7 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 		// in one pass (parallel host provisioning) with no further upgrade-code changes.
 		target := cluster.ControlPlaneConfig.DesiredCount + cp.surgeBudget()
 		if deficit := target - cp.countControllerManagedNodes(); deficit > 0 {
-			if controlPlaneReplacementBlocked(cluster) {
+			if r.controlPlaneReplacementBlocked(cluster) {
 				logger.Warn("Skipping control plane scale-up because controlPlaneVIP is not configured",
 					"nodesNeedingRolloutCount", len(nodesNeedingRollout))
 				return nil

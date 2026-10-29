@@ -12,11 +12,11 @@ The most common cause is incomplete node preparation. `nvkectl bootstrap site` d
 - `nvke-agent` is running on all nodes: `systemctl status nvke-agent`
 - Port 15005 is reachable from the init node to each join node
 
-See [Pre-Provisioned Nodes](../site-bootstrap/pre-provisioned-nodes.md) for the complete node prep checklist. Use [`nvke-os-image-check`](https://github.com/dsx-ai-factory/nvke/tree/main/os-image#checker) to validate a node's image against the NVKE spec before bootstrap.
+See [Pre-Provisioned Nodes](../site-bootstrap/pre-provisioned-nodes.md) for the complete node prep checklist.
 
 ### Bootstrap fails with "bootstrap cluster … from an earlier run is still running"
 
-Before deleting the leftover Kind cluster, export the etcd encryption key if it was generated during the failed run — it may be the only recoverable copy. The key is in the controller's namespace of the bootstrap cluster, not the default kubeconfig: `nke-controller`, or `cloud-workflow-engine` if an older `nvkectl` created the cluster. Search all namespaces and save each key from the namespace it is in:
+Before deleting the leftover Kind cluster, export the etcd encryption key if it was generated during the failed run — it may be the only recoverable copy. The key is in the controller's namespace of the bootstrap cluster, not the default kubeconfig: `nvke-controller`, or `cloud-workflow-engine` if an older `nvkectl` created the cluster. Search all namespaces and save each key from the namespace it is in:
 
 ```bash
 umask 077
@@ -95,8 +95,8 @@ CAPNICo is not ready. Check:
 
 - `FAILING (reason)`: fix what the reason names. `CredentialsNotFound` and `InvalidConfiguration` point at the `nico-credentials` Secret; `AuthenticationFailed` and `AccessDenied` mean NICo rejected or forbade the credentials. CAPNICo rechecks within seconds of a change to the Secret.
 - `UNKNOWN (ValidationFailed)`: CAPNICo could not reach NICo, or the check timed out or failed TLS verification. Check the endpoint in the Secret and the network path from the management cluster.
-- `STALE`: CAPNICo has not checked in the last 10 minutes. `DETAIL` names the likely cause: the manager is not running, it watches another namespace or `--watch-filter`, or it needs a restart because the `NicoIdentity` CRD was installed after it started.
-- `PENDING`: CAPNICo has not checked the `NicoIdentity`, or its latest change, yet. Run the command again in a few seconds; if nothing checks it, it turns `STALE` after 10 minutes.
+- `STALE`: CAPNICo has not checked when a check was due. `DETAIL` names the cause when nvkectl can see one: the manager is not running, or it watches another namespace or `--watch-filter`. When `DETAIL` names no cause, check whether the manager predates the `NicoIdentity` CRD and needs a restart.
+- `PENDING`: CAPNICo has not checked the `NicoIdentity`, or its latest change, yet. Run the command again in a few seconds; if nothing checks it, it turns `STALE`.
 - `NO-IDENTITY`: no `NicoIdentity` names the Secret. Create one; see [Infrastructure providers](../../cli/README.md#infrastructure-providers).
 - `UNSUPPORTED`: the installed CAPNICo predates `NicoIdentity`.
 - `UNREADABLE`: the site kubeconfig could not list `NicoIdentity` objects, and `DETAIL` names the error. If listing is forbidden, grant `list` on `nicoidentities.infrastructure.cluster.x-k8s.io` in the Secret's namespace; the kubeconfig permissions are in [Authenticating to CWE](../../cli/README.md#authenticating-to-cwe).
@@ -154,14 +154,14 @@ kubectl apply -f https://github.com/rancher/local-path-provisioner/releases/down
 
 ```bash
 nvkectl version                          # CLI version
-kubectl get deploy -n nke-controller nke-controller \
+kubectl get deploy -n nvke-controller nvke-controller \
   -o jsonpath='{.spec.template.spec.containers[0].image}' \
   --kubeconfig <sitename>.kubeconfig    # controller image tag
 ```
 
 ### Where are the controller workflow logs?
 
-Port-forward the Temporal Web UI from the management cluster and look for workflows in the `nke-controller` namespace. See [Observability](observability.md).
+Port-forward the Temporal Web UI from the management cluster and look for workflows in the `nvke-controller` namespace. See [Observability](observability.md).
 
 ### How do I get a tenant cluster's kubeconfig?
 

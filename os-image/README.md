@@ -5,6 +5,9 @@ controller can reach the node over SPIFFE mTLS, built on Ubuntu's
 NVIDIA-tuned kernel flavor (`linux-nvidia`/`linux-nvidia-64k`), not the
 generic default. The contract is [SPEC.md](SPEC.md).
 
+> **Canonical licensing:** For internal/dev use only - contact Canonical
+> before commercial production use.
+
 26.04 LTS is the default. 24.04 LTS is built and published alongside it, for
 consumers whose other software pins that release — see `UBUNTU_RELEASE` under
 [Build the OS image](#build-the-os-image).
@@ -55,6 +58,11 @@ requiring approximately three times the source ISO's size in total disk space;
 an existing patched ISO adds to that peak until it is replaced. Legacy
 `.patched.iso.tmp` leftovers are not reused; the existing Make `clean` target
 removes them with the ISO cache and its other build outputs.
+
+A bake requires a clean checkout: `check-source` fails on any tracked or
+untracked change, so commit or stash first. Rebuilding a variant also fails
+while `packer/output-<variant>/` exists; run
+`make -C os-image/packer clean-fde-output` or `clean-non-fde-output` first.
 
 From the repository root, bake and smoke-test with native KVM:
 
@@ -159,13 +167,20 @@ and both systemd units. Startup is deferred during the bake with
 and socket wait across package upgrades.
 The baked agent is whatever your checkout says — no prebuilt artifact is
 pulled. To bake a released agent, check out its `agent/vX.Y.Z` tag first.
-The SPIRE agent, TPM tools, and DSX IMDS node attestor come from
+The SPIRE agent and TPM tools come from
 the `spire-agent` .deb built at bake time out of
 [`packages/spire-agent/`](packages/spire-agent/), pinned by version and
 SHA-256 in its lock; the build installs that package into the image rather than
 dropping the upstream binaries in by hand, so a node ends up with the same
 artifact whichever path installed it. The build also installs the Calico
 manifests package that the agent uses during offline bootstrap.
+
+Open vSwitch is NVIDIA's DOCA build, `doca-openvswitch-switch`, in kernel mode,
+not Ubuntu's `openvswitch-switch`. Its debs come from NVIDIA's DOCA apt
+repository through [`packages/doca-ovs/`](packages/doca-ovs/), pinned per Ubuntu
+release and architecture by SHA-256 in its lock, and provisioning installs them
+from the image's local repo. Nodes never contact the DOCA repository. Changing
+the OVS version means building a new image; it is never upgraded in place.
 
 Both variants install Ubuntu's NVIDIA-tuned kernel (`kernel.package` in
 `cidata/autoinstall-lvm.pkrtpl`), so the generic kernel never lands on disk in
@@ -340,22 +355,28 @@ packer/scripts/patch-installer-iso.sh \
 ```
 
 The `agent` binding is one bare `.deb` file. `calico`, `kubeadm-distro`, `ovn`,
-and `spire-agent` are uncompressed GNU/USTAR archives of flat regular `.deb`
+`spire-agent`, and `doca-ovs` are uncompressed GNU/USTAR archives of flat regular `.deb`
 files, with filenames unique across all bindings. Only the optional root `.`
 directory entry is accepted; omit `Packages`, subdirectories, links, and PAX/GNU
 extended metadata headers. The package builders are `packages/cni-calico`,
-`packages/kubeadm-distro`, `packages/cni-ovn`, and `packages/spire-agent`.
+`packages/kubeadm-distro`, `packages/cni-ovn`, `packages/spire-agent`, and
+`packages/doca-ovs`.
 Run their `debs` targets and archive only the resulting `.deb` files with
 `tar --format=ustar -cf component.tar -C "$OUT_DIR" <package filenames>`.
+`packages/doca-ovs` also needs `UBUNTU_SERIES`: DOCA builds each Ubuntu release
+separately and its filenames do not say which, so the composer cannot catch a
+`doca-ovs` binding fetched for the wrong release.
 The composer regenerates `Packages` itself. The SPIRE binding must contain
-exactly one `spire-agent_*.deb`; Calico inputs may contain at most one
+exactly one `spire-agent_*.deb`, the inputs exactly one
+`doca-openvswitch-switch_*.deb`; Calico inputs may contain at most one
 `nvke-cni-calico-manifests-*.deb`. Every package must declare the requested
 `--architecture` or `all`, checked with `dpkg-deb`.
 
 `--source-files-dir` supplies the checkout's image-owned provisioning files:
 `nvke-agent-spire.conf`, `wait-spiffe-socket.sh`, `conntrack-tune.service`,
-`configure-conntrack.sh`, and `10-nke-conntrack-timeouts.conf`. All five are
-required, copied unchanged, and staged with the same modes as the Make build.
+`configure-conntrack.sh`, `10-nke-conntrack-timeouts.conf`,
+`99-disable-network-config.cfg`, and `00-dhcp-all.yaml`. All seven are required,
+copied unchanged, and staged with the same modes as the Make build.
 
 The runner must authenticate these files before calling the composer and keep
 the authenticated bytes immutable until composition returns. The composer
@@ -487,9 +508,9 @@ An `os-image/vX.Y.Z` tag (or `os-image/vX.Y.Z-rc.N`) runs
 `.github/workflows/os-image-artifact.yml`, which builds and validates the FDE
 and non-FDE images for both architectures and, only if that succeeds, publishes
 the qcow2s to NVCR and S3, each with its SBOM and checksums beside it. GHCR
-gets them as OCI artifacts under arch-suffixed `sha-<commit>` tags — not one
-multi-platform manifest shared across arches, see the workflow's header
-comment for why. The version tags on GHCR and the GitHub Release attaching
+gets them as OCI artifacts under arch-suffixed `sha-<commit>` tags
+(`main-sha-<commit>` from a run on `main`) — not one multi-platform manifest
+shared across arches, see the workflow's header comment for why. The version tags on GHCR and the GitHub Release attaching
 `nvke-os-image-check` and a `checksums.txt` covering all the qcow2s and the
 checker binary are cut only when the repository variable `NVKE_GITHUB_PUBLISH`
 names `os-image` (see `docs/artifact-publication.md`).
@@ -566,8 +587,9 @@ write_files:
 `nvke-agent` starts after the workload API socket exists.
 
 The site SPIRE server must also register a workload entry for root
-`nvke-agent` (unix attestor, uid 0) and a `/nke-service/...` identity for
-whatever will dial the node (controller or `nvke-os-image-check`).
+`nvke-agent` (unix attestor, uid 0) and an identity under an accepted caller
+path for whatever will dial the node (controller or `nvke-os-image-check`);
+see [Checker](#checker).
 
 ## Conntrack limits
 
@@ -606,20 +628,74 @@ The Make targets do not collect the capture; use direct Packer for this output.
 
 ## Checker
 
-From the repository root (`make build` writes `bin/nvke-os-image-check`):
+`nvke-os-image-check` confirms that a booted node's `nvke-agent` answers over
+SPIFFE mTLS. Use it to qualify an image you built, against a SPIRE server you
+control. It is not an install step: on the management-cluster path no SPIRE
+server exists until `nvkectl bootstrap site` runs, so a node has nothing to
+attest to before then.
+
+`make build` from the repository root writes `bin/nvke-os-image-check`;
+`make -C os-image build` writes `os-image/bin/nvke-os-image-check`.
+
+### Before you run it
+
+- The node booted with the [first-boot user data](#first-boot-cloud-init),
+  attested to your SPIRE server, and `nvke-agent` is active on it. Until the
+  node attests, `journalctl -u nvke-agent` shows
+  `timed out waiting for SPIFFE workload API socket` and the unit restarts.
+- Your SPIRE server has the workload entry for root `nvke-agent` (unix
+  attestor, uid 0), parented to the node's agent SPIFFE ID.
+- The machine running the checker has a SPIRE agent in the same trust domain,
+  and an entry that issues the checker an SVID under a caller path the agent
+  accepts:
+
+  | Prefix | Status |
+  |---|---|
+  | `/tenant/nvke/service/` | Canonical. |
+  | `/nke-service/` | Legacy. Still what the SPIRE values under `controller/deploy/` and `controller/scripts/dev-env-spire.sh` issue. |
+  | `/nvke-service/`, `/tenant/nke/service/` | Transitional. |
+
+  The checker refuses to dial when its own SVID is outside these, because the
+  agent would reject the handshake. `controller/scripts/dev-env-spire.sh` sets
+  up a local SPIRE.
+
+### Run it
 
 ```bash
 nvke-os-image-check --endpoint 192.0.2.10:15005
 ```
 
-The process needs a SPIFFE workload API with an SVID whose path starts with
-`/nke-service/`, in the same trust domain as the node. Default socket:
+| Flag | Default | Meaning |
+|---|---|---|
+| `--endpoint` | required | Node address, `host` or `host:port`. The port defaults to `15005`. |
+| `--spiffe-socket` | `unix:///tmp/spire-agent/public/api.sock` | Local SPIFFE workload API. |
+| `--expect-trust-domain` | unset | Fail unless the checker's own SVID is in this trust domain. |
+| `--tls-jwt` | `false` | Expect the `NKEAuth` record; see below. |
+| `--timeout` | `30s` | Limit for the whole probe. |
+| `--version` | | Print the version and exit. |
 
-`unix:///tmp/spire-agent/public/api.sock`
+A pass means all of these held, in order:
 
-Override with `--spiffe-socket`. This is the same shape as the controller
-dialer; it is not a SPIRE server. For a local SPIRE, see
-`controller/scripts/dev-env-spire.sh`.
+1. The checker's SVID is under an accepted caller path, and in
+   `--expect-trust-domain` if you set it.
+2. The mTLS handshake completed, and the agent's SVID is in the checker's
+   trust domain.
+3. gRPC reflection on the agent lists `proto.NodeAgent`.
+4. `GetKubeadmStatus` returned.
+
+On a pass the checker exits 0 and logs `nvke-agent reachable` with
+`agent_version`, `kubeadm_status` and `services`. On a failed probe it exits 1
+and logs `probe failed`; a usage error exits 2.
+
+| Error starts with | Likely cause |
+|---|---|
+| `spiffe workload api:` | No workload API at `--spiffe-socket`, or no entry issues the checker an SVID. |
+| `client spiffe identity:` | The checker's SVID path is outside the accepted prefixes, or its trust domain differs from `--expect-trust-domain`. The message names only the canonical prefix. |
+| `nvke-agent rpc: reflection: dial nvke-agent:` | The connection or handshake failed: the port is unreachable, `nvke-agent` is not running because the node has not attested, or the agent's SVID is in another trust domain. Check `journalctl -u spire-agent` on the node. If the error mentions the server preface, the agent likely runs `--grpc-auth-mode=tls-jwt`; add `--tls-jwt`. |
+| `nvke-agent rpc: proto.NodeAgent not in reflection listing` | Something other than `nvke-agent` answered on the port. |
+| `nvke-agent rpc: GetKubeadmStatus:` | The handshake worked but the agent failed the call. Check `journalctl -u nvke-agent` on the node. |
+
+### `tls-jwt` agents
 
 If the node runs `nvke-agent --grpc-auth-mode=tls-jwt`, pass `--tls-jwt`:
 

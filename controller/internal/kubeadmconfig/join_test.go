@@ -26,6 +26,15 @@ func TestJoinConfigRender_Golden(t *testing.T) {
 			config:     validWorkerJoinConfig,
 		},
 		{
+			name:       "worker join config renders kubeadm v1beta4 for a supported Kubernetes version",
+			wantConfig: "join_worker_v1beta4.yaml",
+			config: func() *JoinConfig {
+				cfg := validWorkerJoinConfig()
+				cfg.KubernetesVersion = supportedK8sVersion
+				return cfg
+			},
+		},
+		{
 			name:       "control-plane join config without encryption",
 			wantConfig: "join_control_plane.yaml",
 			config:     validControlPlaneJoinConfig,

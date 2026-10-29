@@ -27,6 +27,7 @@ SHELLCHECK_VERSION ?= 0.11.0
 SHELLCHECK_SHA256  ?= 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
 GITLEAKS_VERSION   ?= 8.30.1
 GITLEAKS_SHA256_AMD64 ?= 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+GITLEAKS_SHA256_ARM64 ?= e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080
 
 # The GitHub CLI, for `gh attestation verify` in the image promotion gates.
 # Pinned rather than taken from the runner image: the promotion jobs run on
@@ -52,11 +53,47 @@ KUBECONFORM_VERSION ?= v0.7.0
 KUBECONFORM_SHA256_AMD64 ?= c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3
 HELM_VERSION         ?= v4.2.4
 
+# promtool comes from the Prometheus release archive, installed on demand by
+# chart-credential-alerts-assertions.sh for both chart-check and local use.
+PROMTOOL_VERSION ?= 3.2.1
+PROMTOOL_SHA256_LINUX_AMD64 ?= a622e3007c9109a7f470e1433cbd29bf392596715cf7eea8b81b37fa9d26b7be
+PROMTOOL_SHA256_LINUX_ARM64 ?= f2dec3178f1181c1b795b275750d056e71ead13f7fbfe08b76834c4ec20b748e
+PROMTOOL_SHA256_DARWIN_AMD64 ?= e73ecf2ccd3ecca4bba8f2f82f82c8c51d190283217c6007b41bfe2478ebe482
+PROMTOOL_SHA256_DARWIN_ARM64 ?= f71d933be340486e27625a9b80c7be8282a5c8dbb041594ba2e52a4788dc6ebb
+# The PrometheusRule JSON schema the same script validates the rendered rule
+# against: monitoring.coreos.com/prometheusrule_v1.json at this
+# datreeio/CRDs-catalog commit, verified against the digest below.
+PROMETHEUSRULE_SCHEMA_VERSION ?= 501527ab9c40c827144c8f45945b25a023e344ce
+PROMETHEUSRULE_SCHEMA_SHA256  ?= 9cd71d75b714b541a0be960b46bd961dbf1f0106071381cd88f54dfe80b8bd9d
+
 # crane and nfpm build the CNI debs under os-image/packages/.
 CRANE_VERSION ?= 0.21.9
 CRANE_SHA256_AMD64 ?= 5c16d8ddb971cb1d5e6ed8b1e743da8224414eeba2c2762d8f1a61b2f095699e
 CRANE_SHA256_ARM64 ?= 1f4c647b7bb260ab5435661df5b526cf59950ebf95201790db7183ac189cbcbd
 NFPM_VERSION  ?= 2.47.0
+
+# The Ubuntu Server installer ISO, one line per point release per architecture.
+# os-image/packer/Makefile selects by UBUNTU_RELEASE and ARCH and fails closed
+# on a combination with no line here, so a release bump lands with its digest.
+#
+# Committed for exactly the reason stated at the top of this file. ISO_CHECKSUM
+# used to be file:<the mirror's own SHA256SUMS>, which is served by the same
+# host as the ISO: a host that substitutes the image serves the matching
+# checksum with it, so that form cannot reject one.
+#
+# Taken from Canonical's SHA256SUMS and verified against the SHA256SUMS.gpg
+# beside it with the Ubuntu CD Image Automatic Signing Key (2012),
+# 8439 38DF 228D 22F7 B374  2BC0 D94A A3F0 EFE2 1092. To add or re-check a line:
+#
+#   gpg --verify SHA256SUMS.gpg SHA256SUMS && grep live-server SHA256SUMS
+#
+# amd64 is published under releases.ubuntu.com/<series>/, arm64 only under
+# cdimage.ubuntu.com/ubuntu/releases/<series>/release/ -- releases.ubuntu.com
+# has no arm64 entry at all.
+UBUNTU_ISO_SHA256_24_04_5_AMD64 ?= 97f3d7ffb032c3eb3b23d2c8be9cc76e60c2c1f2c0146ba5ba9fe01cafae0fd8
+UBUNTU_ISO_SHA256_24_04_5_ARM64 ?= f12484464c7d4d73e2167e0a7dbda1e669f8fae9bcf778dc0944937034b320cb
+UBUNTU_ISO_SHA256_26_04_1_AMD64 ?= cc8a95cde20f6ced61a322420de00f10cc3c90ced545daa46cb9c1a117f1d927
+UBUNTU_ISO_SHA256_26_04_1_ARM64 ?= af78753c94b924c85c4964c670692a853f7c80299a4064e317edad95462e3168
 
 KIND_VERSION    ?= v0.32.0
 KIND_SHA256_AMD64 ?= 50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9463721b0f54
@@ -76,6 +113,9 @@ CLUSTERCTL_SHA256_ARM64 ?= c3fe61fd44fa63d2efcee2a93432619527909b210a84cda7ee86e
 # Kind e2e installs it, and its kubeconform check validates against its CRDs.
 # Move it with CAPI_VERSION.
 CERT_MANAGER_VERSION ?= v1.21.1
+# Rancher's local-path-provisioner, the lab StorageClass of the local site
+# (deploy/nvke-deploy-local.sh); a real site brings its own CSI driver.
+LOCAL_PATH_PROVISIONER_VERSION ?= v0.0.31
 # kind drives it as its container provider in the nvkectl bootstrap e2e, which
 # installs the nerdctl-full release for this version. release/ reads this pin
 # for the qualification plan.

@@ -6,7 +6,6 @@ package site
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -283,11 +282,7 @@ func (d Stack) Deploy(ctx context.Context, s infra.Session, t DeployTarget) erro
 		return err
 	}
 	if d.DatabasePassword == "" {
-		password, err := randomPassword()
-		if err != nil {
-			return err
-		}
-		d.DatabasePassword = password
+		d.DatabasePassword = rand.Text()
 	}
 
 	if err := d.stageAssets(ctx, s); err != nil {
@@ -348,8 +343,8 @@ func (d Stack) withDefaults() Stack {
 // under a name the suite is not configured to look for.
 //
 // These are two owners of one string: the deploy path, exported from the
-// controller version under test, and NKE_CONTROLLER_NAMESPACE and
-// NKE_CONTROLLER_SERVICE, which default to nke-controller. Nothing makes the
+// controller version under test, and NVKE_CONTROLLER_NAMESPACE and
+// NVKE_CONTROLLER_SERVICE, which default to nvke-controller. Nothing makes the
 // two move together.
 //
 // Getting it wrong is expensive rather than obvious: the readiness probe
@@ -406,7 +401,7 @@ func controllerName() string { return controller.Service() }
 // spireAdminPath is the controller's SPIFFE ID below the trust domain. A name that does
 // not match what the deploy path installed leaves the controller denied every
 // authorization check, which reads as an RBAC fault rather than a naming one.
-func spireAdminPath() string { return "/nke-service/" + controllerName() }
+func spireAdminPath() string { return "/nvke-service/" + controllerName() }
 
 func (d Stack) validate() error {
 	var problems []string
@@ -598,12 +593,4 @@ func oidcDomains(overlay []byte, vip string) ([]string, error) {
 		}
 	}
 	return append(domains, vip), nil
-}
-
-func randomPassword() (string, error) {
-	b := make([]byte, 24)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("generate database password: %w", err)
-	}
-	return hex.EncodeToString(b), nil
 }

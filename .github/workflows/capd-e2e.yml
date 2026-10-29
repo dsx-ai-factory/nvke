@@ -23,6 +23,7 @@ on:
       - "pull-request/[0-9]+"
     paths:
       - "controller/**"
+      - "auth/**"
       - "agent/**"
       - Makefile
       # Without these, a change to the suite's own workflow or to the shared
@@ -35,9 +36,12 @@ on:
       - .github/workflows/capd-e2e.yml
       - .github/workflows/backend-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml
+      - hack/e2e-path-filter.py
+      # Installs the pinned kind and kubectl the suite runs on.
+      - .github/actions/setup-kind/**
       # The controller-facing CLI. hack/ci/nvkectl-smoke.sh drives nvkectl against this
-      # lane's controller, so a change here has something to break. Keep in step with
-      # cwe_facing in e2e-pr-path-filter.yml, which suppresses the rest of cli/.
+      # lane's controller, so a change here has something to break. The rest of
+      # cli/ cannot break against the controller and does not run this lane.
       #
       # Both halves of the command tree: cmd/ is the shim holding main and the
       # contract test, and internal/nvkectl is the tree itself. The smoke drives
@@ -91,6 +95,7 @@ jobs:
   changes:
     uses: ./.github/workflows/e2e-pr-path-filter.yml
     permissions:
+      contents: read
       pull-requests: read
 
   # Pull requests use the dedicated one-control-plane/one-worker core row. The

@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Renders the chart under value sets that reach each conditional key of
-# nke-controller-config, then runs TestRenderedChart over the renders.
+# nvke-controller-config, then runs TestRenderedChart over the renders.
 # RENDERS_DIR keeps the renders; GO_TEST_FLAGS is passed to go test.
 
 set -euo pipefail
@@ -35,6 +35,7 @@ render() {
 checksum="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 render defaults
+render dev-without-vip --set allowControlPlaneWithoutVIP=true
 render readiness-custom \
   --set nodeAgent.readiness.workers=4 \
   --set-string nodeAgent.readiness.timeout=10s \
@@ -43,6 +44,79 @@ render readiness-custom \
 
 render legacy-calico \
   --set cni.allowLegacyCalicoClusterCreation=true
+
+# Monitoring stays independent of renewal and both config surfaces agree.
+render monitoring-without-renewal \
+  --set scheduledMaintenance.certRenewal.enabled=false \
+  --set-string credentialMonitoring.inspectionInterval=2h \
+  --set-string credentialMonitoring.observationMaxAge=6h \
+  --set credentialMonitoring.warningDays=60
+render monitoring-disabled --set credentialMonitoring.enabled=false
+# A disabled feature's bounds do not apply, at render or at startup.
+render renewal-disabled-out-of-range \
+  --set scheduledMaintenance.certRenewal.enabled=false \
+  --set-string scheduledMaintenance.certRenewal.interval=30m \
+  --set scheduledMaintenance.certRenewal.thresholdDays=120
+render monitoring-disabled-out-of-range \
+  --set credentialMonitoring.enabled=false \
+  --set-string credentialMonitoring.inspectionInterval=1m \
+  --set-string credentialMonitoring.observationMaxAge=48h \
+  --set credentialMonitoring.warningDays=200
+# Sub-second durations count, as they do for the controller's time.Duration.
+render monitoring-disabled-subsecond-max-age \
+  --set credentialMonitoring.enabled=false \
+  --set-string credentialMonitoring.observationMaxAge=500ms
+
+# The chart refuses what the controller would refuse at startup, so a bad value
+# fails the upgrade instead of crash-looping the new pod. Collector inputs are
+# checked even with monitoring disabled; the other bounds only while enabled.
+refuse() {
+  local want="$1"
+  shift
+  local refusal
+  if refusal="$(helm template cwe "${CHART}" "$@" 2>&1)"; then
+    echo "rendered with $*; the chart must refuse it with: ${want}" >&2
+    exit 1
+  fi
+  [[ "${refusal}" == *"${want}"* ]] || { echo "$* failed for another reason: ${refusal}" >&2; exit 1; }
+}
+refuse "credentialMonitoring.warningDays must be positive" --set credentialMonitoring.warningDays=0
+refuse "credentialMonitoring.warningDays must be positive" \
+  --set credentialMonitoring.enabled=false --set scheduledMaintenance.certRenewal.enabled=false \
+  --set credentialMonitoring.warningDays=-1
+refuse "credentialMonitoring.observationMaxAge must be positive" \
+  --set credentialMonitoring.enabled=false --set-string credentialMonitoring.observationMaxAge=0s
+refuse 'invalid duration "soon"' --set-string credentialMonitoring.observationMaxAge=soon
+refuse "scheduledMaintenance.certRenewal.interval must be between 1h and 24h" \
+  --set-string scheduledMaintenance.certRenewal.interval=30m
+refuse "scheduledMaintenance.certRenewal.interval must be between 1h and 24h" \
+  --set-string scheduledMaintenance.certRenewal.interval=25h
+refuse "scheduledMaintenance.certRenewal.thresholdDays must be between 7 and 90" \
+  --set scheduledMaintenance.certRenewal.thresholdDays=6
+refuse "scheduledMaintenance.certRenewal.thresholdDays must be between 7 and 90" \
+  --set scheduledMaintenance.certRenewal.thresholdDays=91
+refuse "credentialMonitoring.inspectionInterval must be between 5m and 12h" \
+  --set-string credentialMonitoring.inspectionInterval=1m
+refuse "credentialMonitoring.inspectionInterval must be between 5m and 12h" \
+  --set-string credentialMonitoring.inspectionInterval=13h \
+  --set-string credentialMonitoring.observationMaxAge=24h
+refuse "credentialMonitoring.observationMaxAge must be at least twice" \
+  --set-string credentialMonitoring.observationMaxAge=1h
+refuse "credentialMonitoring.observationMaxAge must be at least twice" \
+  --set-string credentialMonitoring.observationMaxAge=25h
+refuse "scheduledMaintenance.certRenewal.interval must be between 1h and 24h" \
+  --set-string scheduledMaintenance.certRenewal.interval=24h500ms
+refuse "credentialMonitoring.inspectionInterval must be between 5m and 12h" \
+  --set-string credentialMonitoring.inspectionInterval=12h500ms \
+  --set-string credentialMonitoring.observationMaxAge=24h
+refuse "credentialMonitoring.observationMaxAge must be at least twice" \
+  --set-string credentialMonitoring.inspectionInterval=5m500ms \
+  --set-string credentialMonitoring.observationMaxAge=10m
+refuse "credentialMonitoring.warningDays must be between 9 and 120" --set credentialMonitoring.warningDays=8
+refuse "credentialMonitoring.warningDays must be between 9 and 120" --set credentialMonitoring.warningDays=121
+refuse "credentialMonitoring.warningDays must exceed scheduledMaintenance.certRenewal.thresholdDays" \
+  --set scheduledMaintenance.certRenewal.thresholdDays=60
+printf '  credential settings the controller would refuse are refused at render\n'
 
 # Padded on purpose: the template must trim these.
 render dsx-imds \
@@ -123,6 +197,28 @@ render api-auth-permissive \
   --set apiAuth.enabled=true \
   --set apiAuth.permissive=true
 
+# apiAuth rendered by the chart, which the controller reads from config.yaml.
+cat > "${values}/api-auth-inline.yaml" <<'YAML'
+apiAuth:
+  enabled: true
+  configMap:
+    create: true
+  config:
+    audiences: ["https://nke.example.internal"]
+    issuers:
+      - name: local-kubernetes
+        issuer: "https://kubernetes.default.svc.cluster.local"
+        jwks:
+          uri: "https://kubernetes.default.svc/openid/v1/jwks"
+          caBundlePath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          bearerTokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token
+        algorithms: [RS256]
+        admit:
+          serviceAccounts:
+            - namespace: nke-clients
+YAML
+render api-auth-inline -f "${values}/api-auth-inline.yaml"
+
 # Empty strings fall back to Go defaults, which the template must render.
 render empty-strings \
   --set-string identity.fieldManagerName= \
@@ -131,6 +227,8 @@ render empty-strings \
   --set-string supportedInfraProviders= \
   --set-string kubeadm.imageRepository= \
   --set-string scheduledMaintenance.certRenewal.interval= \
+  --set-string credentialMonitoring.inspectionInterval= \
+  --set-string credentialMonitoring.observationMaxAge= \
   --set-string spiffe.endpointSocket= \
   --set-string spiffe.spire.serverNamespace= \
   --set-string spiffe.spire.serverPort= \
@@ -142,6 +240,8 @@ render empty-strings \
 # Bool and int keys whose Go default is not zero: null and empty fall back to it,
 # an explicit false or 0 does not.
 render empty-nonzero-defaults \
+  --set-string credentialMonitoring.enabled= \
+  --set-string credentialMonitoring.warningDays= \
   --set-string scheduledMaintenance.certRenewal.enabled= \
   --set-string scheduledMaintenance.certRenewal.thresholdDays= \
   --set-string controllers.nico.enabled= \
@@ -149,6 +249,8 @@ render empty-nonzero-defaults \
   --set-string tracing.endpoint=otel-collector:4317 \
   --set-string tracing.insecure=
 render null-nonzero-defaults \
+  --set credentialMonitoring.enabled=null \
+  --set credentialMonitoring.warningDays=null \
   --set scheduledMaintenance.certRenewal.enabled=null \
   --set scheduledMaintenance.certRenewal.thresholdDays=null \
   --set controllers.nico.enabled=null \
@@ -217,7 +319,7 @@ done
 # The providers reach config.yaml as given, down to the CA bundle's newlines.
 for name in oidc-providers-required oidc-providers-full oidc-providers-at-cap; do
   want="$(yq -o=json -I=0 '.oidc.providers | sort_keys(..)' "${values}/${name}.yaml")"
-  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nke-controller-config") | .data["config.yaml"]' "${renders}/${name}.yaml" |
+  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nvke-controller-config") | .data["config.yaml"]' "${renders}/${name}.yaml" |
     yq -o=json -I=0 '.oidc.providers | sort_keys(..)')"
   [[ "${got}" == "${want}" ]] || { echo "${name}: config.yaml has oidc.providers ${got}, values gave ${want}" >&2; exit 1; }
 done
@@ -236,7 +338,7 @@ render runbooks-path-with-profiles-image \
   --set-string profiles.path=/opt/nke/profiles \
   --set-string profiles.runbooksPath=/opt/nke/hooks
 
-# env stays open to what nke-controller-config does not carry, such as what
+# env stays open to what nvke-controller-config does not carry, such as what
 # Tilt and nvkectl bootstrap pass, and refuses what it does.
 render env-passthrough \
   --set-string 'env[0].name=LOG_LEVEL' --set-string 'env[0].value=debug' \
@@ -244,10 +346,10 @@ render env-passthrough \
 if refusal="$(helm template cwe "${CHART}" \
   --set nvkeOIDCAuth.enabled=true --set spiffe.enabled=true --set-string spiffe.trustDomain=example.test \
   --set-string 'env[0].name=NKE_OIDC_AUTH_ISSUER_URL' --set-string 'env[0].value=https://oidc.example.test' 2>&1)"; then
-  echo "env set NKE_OIDC_AUTH_ISSUER_URL and rendered; the chart must refuse a variable nke-controller-config carries" >&2
+  echo "env set NKE_OIDC_AUTH_ISSUER_URL and rendered; the chart must refuse a variable nvke-controller-config carries" >&2
   exit 1
 fi
-[[ "${refusal}" == *"env sets NKE_OIDC_AUTH_ISSUER_URL, which nke-controller-config carries as oidc.managementOIDCAuth.issuerURL"* ]] ||
+[[ "${refusal}" == *"env sets NKE_OIDC_AUTH_ISSUER_URL, which nvke-controller-config carries as oidc.managementOIDCAuth.issuerURL"* ]] ||
   { echo "env override of NKE_OIDC_AUTH_ISSUER_URL failed for another reason: ${refusal}" >&2; exit 1; }
 if refusal="$(helm template cwe "${CHART}" --set-string 'env[0].name=CONTROLLER_CONFIG_PATH' --set-string 'env[0].value=' 2>&1)"; then
   echo "env set CONTROLLER_CONFIG_PATH and rendered; the chart must refuse it" >&2
@@ -261,10 +363,10 @@ for key in WORKERS TIMEOUT INTERVAL JITTER; do
     echo "env set ${variable} and rendered; the chart must refuse it" >&2
     exit 1
   fi
-  [[ "${refusal}" == *"env sets ${variable}, which nke-controller-config carries as agentReadiness."* ]] ||
+  [[ "${refusal}" == *"env sets ${variable}, which nvke-controller-config carries as agentReadiness."* ]] ||
     { echo "env override of ${variable} failed for another reason: ${refusal}" >&2; exit 1; }
 done
-printf '  env overrides of nke-controller-config settings and its path are refused\n'
+printf '  env overrides of nvke-controller-config settings and its path are refused\n'
 
 # A renamed values key must fail the render naming its replacement, not fall
 # back to the chart defaults, which is what Helm does with an unknown key.

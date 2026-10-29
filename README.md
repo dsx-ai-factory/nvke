@@ -1,20 +1,66 @@
-# NVIDIA Kubernetes® Engine (NVKE)
+# NVIDIA Kubernetes Engine (NVKE)
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8.svg)](https://go.dev/dl/)
+[![Go](https://img.shields.io/badge/Go-1.27.3-00ADD8.svg)](go.work)
 
-**A management plane for running GPU Kubernetes clusters on bare metal.** NVKE
-provisions and operates isolated Kubernetes clusters on NVIDIA infrastructure,
-so platform teams can offer managed Kubernetes to their customers without
-building and running a control plane themselves.
-
-**Who this is for:** NVIDIA Cloud Partners and platform operators who have GPU
-bare metal and want to hand out Kubernetes clusters on it, and engineers
-integrating against its management plane.
+**Run a managed Kubernetes service on your own NVIDIA GPU infrastructure.**
+NVIDIA Kubernetes® Engine (NVKE) provides the management plane that platform teams install to create and
+operate Kubernetes clusters for their customers. Each workload cluster has its
+own Kubernetes control plane, etcd and node pools. You operate the NVKE management
+plane; your customers use their clusters through the Kubernetes API and `kubectl`.
 
 > **Preview:** NVKE is available as a preview. APIs, configuration and behavior
 > can change between releases, and we do not recommend NVKE for production
 > workloads. See [Preview status and known limitations](docs/overview/preview-status.md).
+
+[Get started](#getting-started) · [Documentation](docs/README.md) ·
+[Contribute](CONTRIBUTING.md) · [Get help](SUPPORT.md)
+
+## Getting started
+
+| Your goal | Start here | What you get |
+|---|---|---|
+| **Evaluate without GPU hardware** | [Local quickstart](docs/get-started/quickstart-local.md) | A development management plane and a workload cluster on simulated machines. No NVIDIA account is required. |
+| **Install on your infrastructure** | [Plan your installation](docs/operate/plan-installation.md) | The prerequisites and sequence for preparing nodes, bootstrapping a management cluster and installing its services. |
+| **Build or contribute** | [Build from source](#build-from-source) | The NVKE binaries and the contributor development loop. |
+
+The local quickstart runs on a **Linux host or VM, amd64 or arm64**, with at least
+**6 CPUs, 12 GiB of free memory and 100 GiB of free disk**. It requires Docker,
+virtual TPM support and the tools listed in the guide. Follow its setup through
+workload-cluster creation and confirm the cluster's nodes report `Ready`.
+On macOS, use the [local site guide](docs/get-started/local-site.md), which runs
+the evaluation inside a Colima virtual machine.
+
+For a real installation, you supply the machines, networking, node images and
+registries, and configure access to **NVIDIA Infra Controller (NICo)**. NICo is
+the sole compatible infrastructure provider at preview. The
+[platform and version reference](docs/overview/supported-platforms.md) lists
+validated combinations and pinned dependencies.
+
+## What NVKE does
+
+- **Creates independent workload clusters.** Request clusters through the NVKE
+  API or `nvkectl`; NVKE provisions machines through NICo and forms Kubernetes
+  clusters with their own control planes.
+- **Manages workload cluster lifecycle.** Create, scale and delete node pools,
+  upgrade Kubernetes and replace nodes. See the [node pool guide](docs/workload-clusters/node-pools.md)
+  for the manual steps and preview limits on replacement and upgrades.
+- **Establishes node identity.** Nodes attest through SPIFFE/SPIRE using their
+  TPM before receiving join credentials. Encryption of etcd data is available
+  per cluster.
+- **Connects builds to deployment.** Its companion project,
+  [NVIDIA Kubernetes Recipes (NVKR)](https://github.com/dsx-ai-factory/nvkr),
+  builds node images and NVKE components from pinned inputs. NVKE deploys those
+  artifacts; NVKR owns their build and release evidence.
+
+The preview needs explicit operator configuration: API authentication is off
+and the API uses plain HTTP after installation. Configure
+[API authentication and protected access](docs/operate/api-authentication.md)
+before admitting callers. The management cluster does not upgrade, scale or
+replace itself, and there is no management-plane upgrade or backup/restore
+procedure. FDE node images are for evaluation and provide no data-at-rest
+confidentiality. Read the [known limitations](docs/overview/preview-status.md)
+before choosing an evaluation or installation path.
 
 ## Overview
 
@@ -24,195 +70,73 @@ The diagram shows the NVKE product family, how it sits on NICo and your GPU mach
 
 NVKE is not a Kubernetes distribution and not a Cluster API flavour. It is a
 **self-hosting factory for Kubernetes clusters**: a throwaway seed cluster
-stands up a highly available management cluster, and the management plane on
+stands up a management cluster, and the management plane on
 it then provisions and lifecycle-manages many isolated workload clusters
 on demand.
 
-The loop is **seed → pivot → mint**:
+An installation has two kinds of Kubernetes cluster:
 
-1. **Seed** — an ephemeral single-node cluster runs the controller, Temporal, and Postgres.
-2. **Bring up** — a durable workflow runs `kubeadm init` against pre-provisioned hosts.
-3. **Pivot** — the new cluster registers itself into its own database. Installing the controller onto it is a separate step today; it does not yet upgrade, cycle or scale itself.
-4. **Tear down** the seed.
-5. **Mint** tenant clusters on demand.
+- The **management cluster** runs the NVKE management plane and infrastructure
+  controllers. `nvkectl` forms it using a temporary seed cluster; installing the
+  management-plane services is a separate step.
+- **Workload clusters** run customer applications. The management plane creates
+  and operates them through NICo, Cluster API and the node agent.
 
-What distinguishes it from a generic CAPI distribution:
+Read [What is NVKE](docs/overview/what-is-nvke.md) for the operator workflow and
+[Architecture](docs/architecture.md) for the implementation and data flows.
 
-- **Hard tenant isolation.** Every tenant gets a dedicated `kubeadm` cluster with
-  its own control plane and etcd, not a namespace in a shared one.
-- **Secure by default.** TPM-attested node identity through SPIFFE/SPIRE, full
-  disk encryption with TPM unlock, and etcd encryption at rest.
-- **Built for egress-only sites.** Durable state, identity, and image serving are
-  all local, so a site that cannot call out still works. Air-gapped installation
-  is a first-class mode, not a workaround.
-- **Pluggable infrastructure.** Bare metal is reached through the Cluster API
-  contract, so the same control plane drives different backends.
+## Build from source
 
-### Components
-
-| Directory | What it is |
-|---|---|
-| `controller/` | The management plane. REST API, durable Temporal workflows, cluster and node inventory, and the infrastructure provider integrations. |
-| `cluster-api-provider-provisioned/` | Cluster API infrastructure provider for hosts that NVKE provisions before CAPI bootstraps them. |
-| `agent/` | The on-node daemon. Exposes a gRPC API the controller drives to run `kubeadm`, install a CNI, and configure disk and etcd encryption. |
-| `cli/` | `nvkectl`, the command-line interface. Validates a site spec and drives bootstrap. |
-| `controller/nico-sim/` | `nico-sim`, the NICo-compatible VM and Docker-container simulator used by development and tests. |
-| `build/` | Build and publish scripts per component. |
-| `docs/` | Architecture, getting started, and admin guides. |
-| `os-image/` | Reference Ubuntu node OS image (spec + Packer) and `nvke-os-image-check`. |
-| `nktp/` | NVKE telemetry pipelines (NKTP): a Helm chart that deploys an OpenTelemetry pipeline for cluster metrics, logs and traces. Versioned and released on its own. |
-
-**Twelve Go modules**, tied together by a workspace at the repository root, each
-independently buildable. `make build` links seven binaries: `agent`, `updater`,
-`controller`, `nvkectl`, `capd-reboot-controller`, `nvke-os-image-check` and
-`management-engine`.
-See [docs/go-workspace.md](docs/go-workspace.md) for workspace and dependency setup.
-
-What each binary is, and where it ends up running:
-
-| Binary | Module | What it does | Runs on |
-|---|---|---|---|
-| `management-engine` | `management-engine/` | Controller management engine for NVKE resources, communicating directly with the management Kubernetes API | An operator-owned management cluster, or a development host with kubeconfig |
-| `controller` | `controller/` | The control plane: REST API, Temporal workflows, and the Kubernetes reconcilers | The management cluster |
-| `agent` | `agent/` | gRPC server the control plane drives to run `kubeadm`, install a CNI, and configure encryption | Every managed node |
-| `updater` | `agent/` | Independent helper that replaces the node agent without depending on the agent process | Every managed node |
-| `nvkectl` | `cli/` | Validates a site spec and drives bootstrap | Your machine |
-| `nvke-os-image-check` | `os-image/` | Checks a node image against the contract in `os-image/SPEC.md` | Your machine, or an image build |
-| `capd-reboot-controller` | `controller/hack/capd-reboot-controller/` | Test helper that reboots CAPD machines | Test clusters |
-
-### Platforms
-
-Development works on Linux and on Apple Silicon. Most of CI is Linux amd64, so
-that is the platform with the most coverage. Packaging and image builds also run
-on Linux arm64 runners: `deb.yml` and `agent-deb-publish.yml` build the Debian
-packages on `ubuntu-24.04-arm`, and `image-nvcr.yml` builds images on
-`linux-arm64-cpu16`.
-
-There is no macOS runner, so nothing in CI exercises macOS. The Flox environment
-targets `x86_64-linux`, `aarch64-linux` and `aarch64-darwin`, which leaves Intel
-macOS out.
-
-The agent is built for Linux on both architectures, `linux/amd64` and
-`linux/arm64`, because that is where the agent runs. It is not built for macOS at
-all.
-
-The end-to-end path is the part that is amd64 only. `backend-e2e.yml` runs on
-`linux-amd64-cpu16`, and the bundles `controller/hack/ci/prepare-capd-bundles.sh`
-fetches are amd64 Linux binaries, so the CAPD end-to-end path does not run on
-Apple Silicon.
-
-Flox is offered, not required. Every target runs from whatever is on your `PATH`.
-
-## Getting started
+Use **Go 1.27.3**, the version pinned in [go.work](go.work), and **GNU Make 4 or later**. Public Go modules must be
+reachable on the first build. [Flox](https://flox.dev/) is optional and supplies
+the repository's development tools; on macOS, it also supplies GNU Make 4.
+See [Development](docs/development.md) for toolchain setup.
 
 ```bash
 git clone https://github.com/dsx-ai-factory/nvke.git
 cd nvke
-```
-
-Build the repository from a clean checkout with access to public Go modules:
-
-```bash
 make build
 ```
 
-This compiles the workspace modules and writes the binaries to `bin/`.
+This builds the workspace and writes seven binaries to `bin/`: `agent`,
+`updater`, `controller`, `nvkectl`, `capd-reboot-controller`,
+`nvke-os-image-check` and `management-engine`. Building does not start a
+management plane or create a cluster. The node agent runs on Linux.
 
-**Build and test the agent:**
-
-```bash
-cd agent
-make build
-make test
-make lint
-```
-
-The agent runs on cluster nodes, so `make build` cross-compiles it for Linux on
-amd64 and arm64 and writes to `agent/bin/linux_*`. The tests and the lint run
-against your own machine, but on macOS the binaries it produces will not.
-
-**Build and test the controller:**
-
-```bash
-cd controller
-make build          # → ./bin/controller
-make test           # unit tests
-make lint
-```
-
-The repository pins its toolchain with [Flox](https://flox.dev/) in an
-environment at the root that covers every module. `flox activate` gives you the
-versions CI uses, including the GNU Make 4 that macOS lacks. It is optional, and
-every target runs from whatever is on your `PATH` without it.
-
-For building, testing and what to run before opening a pull request, see
-**[docs/development.md](docs/development.md)**. For the end-to-end suites and the
-wider local setup, see **[docs/getting-started.md](docs/getting-started.md)**.
-[docs/README.md](docs/README.md) indexes everything else.
-
-The controller has its own guide in
-[controller/README.md](controller/README.md). For a worked `nvkectl` input, see
-[cli/examples/sitespec.yaml](cli/examples/sitespec.yaml), which describes a
-site, and [cli/examples/capd-cluster.yaml](cli/examples/capd-cluster.yaml),
-which requests a cluster.
-
-## Requirements
-
-| Tool | Version |
-|---|---|
-| Go | 1.26+ |
-| Docker | 24+ |
-| GNU Make | 4.0+ |
-| Flox | optional, for a reproducible repository toolchain |
-
-Running NVKE against real infrastructure additionally requires hosts already
-booted on an NVKE-compatible OS image with the agent installed. NVKE does not
-publish OS images; it publishes the recipes for building them.
+The [workspace guide](docs/go-workspace.md) explains the modules and outputs.
+For local services and test environments, see [Local development setup](docs/getting-started.md).
+Before submitting a change, follow [CONTRIBUTING.md](CONTRIBUTING.md) and run
+`make preflight`; it selects checks for the modules you changed.
 
 ## Documentation
 
-| Document | Contents |
+| Task | Guide |
 |---|---|
-| [docs/first-cluster.md](docs/first-cluster.md) | Three paths to a running cluster, driven by `nvkectl` |
-| [docs/architecture.md](docs/architecture.md) | System overview — modules, data flows, deployment model |
-| [docs/getting-started.md](docs/getting-started.md) | Local development setup for the controller and the agent |
+| Prepare nodes and bootstrap the management cluster | [Bootstrap the management cluster](docs/operate/bootstrap-management-cluster.md) |
+| Install NVKE services | [Install the management plane from the deploy path](deploy/README.md) |
+| Build node images and supply release artifacts | [Get NVKE artifacts from NVKR](docs/operate/build-node-images.md) |
+| Create and manage customer clusters | [Create a workload cluster](docs/workload-clusters/create.md), [Manage node pools](docs/workload-clusters/node-pools.md) |
+| Give a customer access | [Access a workload cluster](docs/workload-clusters/access.md) |
+| Inspect cluster health and telemetry | [Observe NVKE and its clusters](docs/operate/observe.md) |
 
-Module-specific documentation lives alongside the code, in `controller/docs/`,
-`agent/docs/` and the `AGENTS.md` files.
+The [documentation index](docs/README.md) links the remaining guides and references.
 
-## Contributing
+## Contributing and support
 
-Start with [CONTRIBUTING.md](CONTRIBUTING.md). Contributions are accepted by pull
-request; please open an issue first for anything substantial so the approach can
-be agreed before you write code.
+Contributions, bug reports and documentation improvements are welcome.
+Start with [CONTRIBUTING.md](CONTRIBUTING.md); open an issue before substantial
+work so maintainers can agree on the approach.
 
-Development quickstart:
-
-```bash
-git clone https://github.com/dsx-ai-factory/nvke.git && cd nvke
-(cd agent && make build test)
-(cd controller && make build test)
-```
-
-- Code of Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- Governance: [GOVERNANCE.md](GOVERNANCE.md)
-- Maintainers: [MAINTAINERS.md](MAINTAINERS.md)
-- Changelog: [CHANGELOG.md](CHANGELOG.md)
-- Release process: [RELEASE.md](RELEASE.md)
-
-## Security
-
-Report vulnerabilities as described in [SECURITY.md](SECURITY.md). **Do not open
-a public issue for a security report.**
-
-## Support
-
-See [SUPPORT.md](SUPPORT.md) for support channels and expectations.
-
-Questions and discussion:
-[GitHub Discussions](https://github.com/dsx-ai-factory/nvke/discussions/categories/q-a).
-Bugs, feature requests and documentation gaps:
-[GitHub Issues](https://github.com/dsx-ai-factory/nvke/issues).
+- **Questions:** [GitHub Discussions](https://github.com/dsx-ai-factory/nvke/discussions/categories/q-a).
+- **Chat:** the `#nvke` channel in the DSX AI Factory Slack.
+  [Get an invite](https://inviter.co/dsx-ai-factory).
+- **Bugs and feature requests:** [GitHub Issues](https://github.com/dsx-ai-factory/nvke/issues).
+- **Security vulnerabilities:** follow [SECURITY.md](SECURITY.md) and report privately.
+- **Community:** [Code of Conduct](CODE_OF_CONDUCT.md), [Governance](GOVERNANCE.md),
+  [Maintainers](MAINTAINERS.md) and [Support](SUPPORT.md).
+- **Releases:** [Changelog](CHANGELOG.md) and [release process](RELEASE.md).
+- **CI health:** the [CI dashboard](https://dsx-ai-factory.github.io/nvke/)
+  shows the last thirty runs of every workflow and refreshes hourly.
 
 ## Trademarks
 
@@ -224,15 +148,6 @@ with which they are associated.
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-
-Copies of `LICENSE` are kept inside the two Helm charts so that the packaged charts
-ship them. They are identical to the root file, are regenerated with
-`make licenses`, and are verified by `make licenses-check`:
-
-| Directory | License | Path | Why it is here |
-|---|---|---|---|
-| `controller/deploy/charts/controller/` (Helm chart) | Apache-2.0 | [controller/deploy/charts/controller/LICENSE](controller/deploy/charts/controller/LICENSE) | Helm packages only files inside the chart directory. |
-| `nktp/deploy/charts/nktp/` (Helm chart) | Apache-2.0 | [nktp/deploy/charts/nktp/LICENSE](nktp/deploy/charts/nktp/LICENSE) | Helm packages only files inside the chart directory. This chart keeps its own `NOTICE`. |

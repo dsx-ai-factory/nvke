@@ -1,13 +1,13 @@
 # Managed dependencies
 
-NVKE telemetry pipelines (NKTP) installs these upstream charts as Helm dependencies. Their versions are
+NVKE telemetry pipeline (NKTP) installs these upstream charts as Helm dependencies. Their versions are
 pinned in `nktp/deploy/charts/nktp/Chart.yaml` and `nktp/deploy/charts/nktp/Chart.lock`. Settings for each pass
 through under its values key using the upstream chart's own values.
 
 ## OpenTelemetry Operator and CRDs
 
-NKTP depends on the published [opentelemetry-kube-stack 0.22.0](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/opentelemetry-kube-stack-0.22.0/charts/opentelemetry-kube-stack)
-chart. It supplies OpenTelemetry Operator chart 0.123.0, operator image 0.159.0,
+NKTP depends on the published [opentelemetry-kube-stack 0.25.1](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/opentelemetry-kube-stack-0.25.1/charts/opentelemetry-kube-stack)
+chart. It supplies OpenTelemetry Operator chart 0.126.0, operator image 0.161.0,
 and native CRDs. NKTP disables its default Collector and general Collector RBAC.
 Settings pass through under `opentelemetry-kube-stack` using upstream values.
 
@@ -52,6 +52,17 @@ node-exporter:
   enabled: false
 ```
 
+The exporter's cpufreq collector is turned off with `--no-collector.cpufreq`. In node_exporter 1.12.1,
+this collector hangs on arm64 nodes that use the `cppc_cpufreq` driver, so scrapes of the exporter time out
+([prometheus/node_exporter#3791](https://github.com/prometheus/node_exporter/issues/3791)). As a result,
+the exporter does not produce the `node_cpu_frequency_*` and `node_cpu_scaling_*` series.
+To turn the collector back on, set `extraArgs` to an empty list:
+
+```yaml
+node-exporter:
+  extraArgs: []
+```
+
 ## Metrics server
 
 [metrics-server](https://github.com/kubernetes-sigs/metrics-server) serves the Kubernetes
@@ -72,7 +83,7 @@ metrics-server:
 ```
 
 The bundled chart is pinned to metrics-server chart 3.13.1, which installs metrics-server
-0.8.1.
+0.8.1. That version supports Kubernetes 1.31+.
 
 Settings pass through under `metrics-server` using the upstream chart's own values, none
 of which NKTP overrides. See the [chart's values reference](https://github.com/kubernetes-sigs/metrics-server/blob/metrics-server-helm-chart-3.13.1/charts/metrics-server/README.md)

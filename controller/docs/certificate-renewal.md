@@ -1,0 +1,371 @@
+# Kubernetes certificate renewal
+
+The NVKE controller renews kubeadm-managed Kubernetes leaf certificates on
+provisioned clusters. It does not rotate Kubernetes certificate authorities (CAs).
+
+## Scheduled renewal
+
+The certificate-renewal controller is enabled by
+`certRenewal.controllerEnabled` in `nvke-controller-config` (default `true`). The chart
+renders `certRenewal.controllerEnabled`, `certRenewal.interval` and
+`certRenewal.thresholdDays` from `scheduledMaintenance.certRenewal.enabled`,
+`.interval` and `.thresholdDays`. It evaluates each cluster at
+`nextCertRenewalDue` and starts the `RenewK8sCertsV2` Temporal workflow with the
+configured `certRenewal.thresholdDays` (default `30`). The original
+`RenewK8sCerts` type remains registered so existing v1 typed-activity histories
+can replay during rollout.
+
+While renewal is enabled, `certRenewal.interval` must be between `1h` and `24h`
+and `certRenewal.thresholdDays` between `7` and `90`. With credential monitoring
+also enabled (the default), `credentialMonitoring.warningDays` must exceed
+`certRenewal.thresholdDays` by at least two renewal intervals, so with the
+default `warningDays` of `45` and `interval` of `12h` the largest accepted
+`thresholdDays` is `44`. The controller refuses to start and the chart refuses
+to render otherwise; see
+[Credential monitoring configuration](credential-monitoring.md#configuration).
+
+The first time the controller sees a cluster without `nextCertRenewalDue`, it
+only sets that field one renewal interval ahead; no cycle starts. A new cluster
+has nothing to renew, and the cycle holds the cluster mutation lock, which would
+reject upgrades and node changes requested while the cluster is still settling.
+When that first check is due, the cycle additionally waits until all
+control-plane nodes are present and ready.
+
+A cycle acquires the cluster's mutually exclusive update lock, snapshots the
+control-plane nodes, and then runs. Acceptance refuses unfinished control-plane
+membership work (joins, provisioning/upgrades, accepted deletes, teardown, and
+reboots). While the lock is held, or retained by a failed cycle, API requests
+to delete a control-plane node or pool are rejected with HTTP 409 and nothing is
+recorded, so they must be resubmitted after the lock clears. (Patching a
+control-plane pool is always rejected with HTTP 400, lock or not; configure the
+control plane through the cluster's `controlPlaneConfig`.) Controller-driven membership work
+(creation, remediation, upgrades, joins, and deletes accepted earlier) waits
+and resumes once the lock clears; worker-only changes and health observations
+continue. Cluster deletion is the exception: it is always accepted, teardown is
+not fenced, and the cycle stops at its next health check:
+
+```text
+cluster health → node renewal → cluster health → next node
+```
+
+The health gate requires stable control-plane membership, joined and Ready
+nodes, reachable node agents, for multi-node clusters enough etcd voters to
+tolerate losing one, every local kube-apiserver `/readyz` check needed
+for quorum-plus-one safety, and healthy static mirror pods after each node. The
+typed node-agent operation also verifies that all local control-plane
+components are running, etcd has the exact expected voting membership, its
+local endpoint is healthy, and the local kube-apiserver is ready immediately
+before and after renewal.
+
+Before any drain or renewal dispatch, an embedded read-only runbook reads each
+executor's persisted renewal state (the runbook's phase file and the node agent's
+`k8sCertRenewalState`). A renewal left `renewing` or `restart_pending` by an
+earlier attempt must finish its restarts, even with fresh certificates. Pending
+typed-only intent requires typed executor success, with no legacy fallback;
+legacy-only intent resumes on the legacy executor. If both are pending, the
+legacy executor runs first, then the typed executor must succeed.
+
+For nonforced cycles, the check also reads each node's leaf certificate expiry.
+A node with nothing inside `certRenewal.thresholdDays` and no pending renewal
+records `unchanged` without either operation. Check failures stop the cycle
+without dispatch. An unreadable or unknown agent state is fatal unless legacy
+intent is pending; in that case, the check warns and selects only legacy so its
+pending restarts can finish. Forced cycles bypass expiry checks, not
+pending-intent checks or executor requirements.
+
+With more than one control-plane node, a selected node's renewal is bracketed by the
+rollout framework's kube-vip drain/restore node guard, as in the
+etcd-encryption and OIDC rollouts: the
+guard removes kube-vip from the node and waits for VIP connections to drain
+before the apiserver restarts, so worker kubelets pinned to that node fail over
+instead of going NotReady. The restore runs after success, failure and
+cancellation on a disconnected context before the node's postflight. A drain
+failure stops the cycle before any renewal is dispatched. A restore failure
+fails the cycle for that node even if renewal succeeded, and the message
+records it; it does not retain the cluster mutation lock, which only tracks
+unconfirmed renewal work. Nodes without kube-vip skip the drain. A cluster with
+a single control-plane node is renewed without the drain, since there is no
+other node for workers to fail over to. An agent that predates the drain RPCs
+(`Unimplemented`) fails the cycle, as it does for the etcd-encryption and OIDC
+rollouts, so upgrade such agents before renewal.
+
+Renewal supports clusters with one or with three or more control-plane nodes.
+Two etcd voters cannot lose one, so a cluster with exactly two control-plane
+nodes is never renewed. Acceptance refuses it and records the cycle as `failed`
+with `phase` `two-control-plane-voters`, without the mutation lock. The
+controller does not retry that cycle while `controlPlaneConfig.desiredCount`
+is below 3; changing it to 3 or more lets the automatic retry resume. Scaling
+down to one node is not possible: the controller only adds control-plane nodes,
+and it refuses to delete a healthy node that would leave fewer than three.
+Scale such a cluster to three or more nodes before its leaf certificates expire.
+
+A single-control-plane cluster has no peer quorum to protect, so the
+lose-one-voter requirement does not apply to it; every other gate, including
+exactly one voting etcd member and no learners, still does. Renewing its only
+node restarts its only etcd and kube-apiserver, so the Kubernetes API is briefly
+unavailable during the cycle. That interruption is inherent and accepted.
+
+The node-agent operation persists its phase and restarts the four kubeadm
+control-plane static pods one at a time in the runbook's order (etcd,
+kube-apiserver, kube-controller-manager, kube-scheduler). For each pod it moves
+only that manifest to a staging directory on the same filesystem, waits for the
+old container to stop, restores the manifest, and waits for a replacement
+container and full local control-plane health before touching the next pod.
+Unrelated manifests such as kube-vip are never moved. On failure the agent
+tries to restore the moved manifest. An interrupted operation first restores
+any staged manifest, then restarts all four pods again. Restoration can fail,
+for example when an active manifest exists that differs from the staged copy.
+In that case the operation fails with outcome `OUTCOME_FAILED_NOT_RESTORED` in
+the cycle `message`. The manifest stays in
+`/etc/kubernetes/nvke-cert-renewal-manifests/`, and that pod may be stopped.
+The legacy runbook likewise stops when a manifest exists both in
+`/etc/kubernetes/nvke-cert-renewal-staging/` and in the manifests directory.
+With the legacy runbook, later cycles fail on that node with the mutation lock
+released, and retry, until the staging directory is empty. With the typed node
+agent, a next cycle that reaches dispatch has its V2 Start rejected with
+`FailedPrecondition` before the agent records an operation; the status check for
+that operation ID then returns `NotFound` because the agent never recorded it,
+so that cycle fails with the mutation lock and the node reservation retained.
+Before retrying, compare the staged and active copies on the failed node and
+keep exactly one in `/etc/kubernetes/manifests/`. On the typed path, then follow
+the retained-lock recovery under
+[Status and failure handling](#status-and-failure-handling). A Temporal activity retry reattaches to the
+stable operation ID instead of starting a second renewal. The hardened workflow calls the capability-distinct V2 start RPC, so
+agents that implement only the V1 operation return `Unimplemented` before
+accepting node-side work. When there is no pending typed intent, any definitive
+V2 Start `Unimplemented` response, including on an activity retry, allows the
+controller to use the embedded runbook. Pending typed intent forbids that
+fallback: legacy success cannot complete the typed executor's pending restarts.
+In that case the agent did not accept the operation, so the cycle fails with a
+message to upgrade the node agent and releases the mutation lock. Nothing blocks
+the agent upgrade, and the upgraded agent finishes the pending typed renewal on
+a later cycle.
+The runbook's persistent state, bounded lock, and CA fingerprint checks add
+mixed-fleet safety. Both executors restart the same pods one at a time in the same order,
+gated on local control-plane health; they differ in resume granularity (the
+runbook resumes at the persisted component, the node agent restarts all four
+pods again) and in the runbook's additional lock and CA fingerprint checks.
+
+`nextCertRenewalDue` advances by `certRenewal.interval` only after the workflow
+succeeds. A failed scheduled cycle leaves the old due time intact and therefore
+remains overdue until a fresh cycle succeeds. If the failure released the
+mutation lock, the controller retries with a new workflow ID once both
+`nextCertRenewalDue` and a fixed one-hour backoff after
+`certificateRenewal.completedAt` have passed. A failure does not move
+`nextCertRenewalDue`, so a failed cycle that started before its due time, such
+as a forced one, is not retried until that due time arrives, up to
+`certRenewal.interval` later. A retained `certificate_renewal` lock prevents automatic retry.
+When acceptance refuses a cycle because of cluster state (unfinished
+control-plane membership, upgrade or recycling work, a node-agent installation,
+a fenced node certificate-renewal reservation that has not been cleared yet,
+or two control-plane nodes), the cycle is recorded as `failed` with `phase`
+`admission` (or `two-control-plane-voters`) and the lock is not taken, so the
+same backoff applies. Such a record replaces the previous cycle's status.
+Refusals because another operation holds the lock, or because the cluster is
+being deleted, record nothing; the controller waits for the lock to clear.
+
+## Forced renewal
+
+Forced renewal is intentionally an operator-started Temporal workflow; there is
+no REST or CLI trigger. Use a new workflow ID for every forced run, and do not
+reuse the controller's `renew-k8s-certs-...` IDs. Start it in the namespace and
+task queue the controller's workers poll: `temporal.namespace` and
+`temporal.taskQueue` in `nvke-controller-config` (chart values
+`temporal.cloudWorkflow.namespace` and `temporal.cloudWorkflow.queue`; defaults
+`cloud-workflow-engine` and `cloud-workflow-engine-tasks`). A different namespace
+or queue is rejected or never runs. Also pass the Temporal CLI's address and TLS
+flags for the site's Temporal frontend (`temporal.hostPort`).
+
+```bash
+TEMPORAL_NAMESPACE=cloud-workflow-engine         # temporal.namespace
+TEMPORAL_TASK_QUEUE=cloud-workflow-engine-tasks  # temporal.taskQueue
+
+temporal workflow start \
+  --namespace "$TEMPORAL_NAMESPACE" \
+  --task-queue "$TEMPORAL_TASK_QUEUE" \
+  --type RenewK8sCertsV2 \
+  --workflow-id "operator-k8s-cert-renewal-$(date -u +%Y%m%dT%H%M%SZ)-$(uuidgen)" \
+  --input '{"clusterID":"<cluster-uuid>","thresholdDays":30,"force":true}'
+```
+
+A successful forced cycle also resets `nextCertRenewalDue`, preventing an
+immediate duplicate scheduled run.
+
+## Status and failure handling
+
+`Provisioned` describes provisioning, not certificate-maintenance health. A
+failed renewal that released its mutation lock can still show `Provisioned`;
+a failed renewal that retained the lock requires operator recovery. Its status
+can be `Updating`, but higher-priority conditions such as `UpdateFailed` can mask
+it. Inspect `conditions.updateInProgress` and `conditions.certificateRenewal`
+regardless of the displayed status.
+
+`GET /api/clusters/{id}` exposes:
+
+- `nextCertRenewalDue`: a past value is overdue unless a cycle is accepted;
+- `conditions.updateInProgress.type=certificate_renewal`: the cluster mutation
+  lock held by an accepted cycle, or retained by a failed cycle whose node work
+  has not been confirmed terminal;
+- `conditions.certificateRenewal.cycleID`: the owning Temporal workflow ID;
+- `conditions.certificateRenewal.state`: `accepted`, `succeeded`, or `failed`;
+- successful `outcome`: `renewed` or `unchanged`;
+- failure `failedNodeID`, `phase`, and a bounded operator-facing `message`.
+
+A node operation, fallback runbook, or postflight failure exhausts its bounded
+Temporal activity retries, records the failing node and phase, and stops before
+another node is scheduled. After a node-renewal failure or cancellation, cleanup
+has a separate five-minute budget to confirm termination of the same operation
+ID on the executor already selected by the workflow. Typed cleanup only polls
+status, retrying transport, `Unavailable` and `DeadlineExceeded` errors until
+that budget ends; legacy cleanup requires a matching durable terminal receipt under the
+runbook's flock, which also excludes an active EXIT restoration. Neither cleanup
+starts or resumes renewal. Healthy diagnostic postflight alone is not proof of
+termination.
+
+The V2 runbook stores immutable, operation-ID-keyed receipts in
+`/var/lib/nvke/k8s-cert-renewal/completed/`. Delayed attempts check their own receipt
+before reading or resuming the shared phase file, so they cannot restart an old
+operation or interfere with a newer one. Receipts preserve the original outcome
+and must not be deleted while delayed attempts could still arrive. Only newly
+started V2 operations use the receipt-aware phase format: old five-line state
+remains readable/resumable but is never upgraded into fencing evidence.
+Normal V2 legacy success also requires this receipt verification. V2 legacy
+dispatch always uses the controller's embedded runbook, never a configured
+override; overrides remain available to V1's inline fallback.
+
+For a legacy operation that ended without a receipt, the status-only check,
+holding the renewal lock, records an `abandoned` receipt for that operation ID.
+Delayed attempts with that ID then fail without changing the node, the cycle is
+recorded as failed, and the lock is released; a half-finished renewal is
+resumed by the next operation. Phase files written without receipt provenance
+are never abandoned this way.
+
+If termination cannot be confirmed (including mismatched, unfinished,
+malformed, or unreachable status), the cycle is recorded as failed with a
+`cluster mutation lock retained` diagnostic. `updateInProgress` remains set to
+block overlapping cluster mutations. The due time is not advanced. Legacy status
+checks always use the embedded status-only implementation, not a configured
+runbook override that might ignore the status-only mode.
+
+An accepted cycle, scheduled or forced, is owned by its own Temporal
+execution. Activity retries and workflow replay continue it; the controller
+never starts a replacement execution. If that execution has closed (for
+example terminated, cancelled or timed out) while `certificateRenewal.state`
+is still `accepted`, the cluster stays halted with the lock held, and no cycle
+runs until the incident is resolved. Stop cluster maintenance and escalate; this guide gives no recovery
+procedure for an accepted cycle.
+
+A closed execution does not prove that its activity attempts and agent RPCs,
+the node renewal, or the kube-vip drain/restore guard have finished. Do not
+clear `updateInProgress` or the node reservation, start the same `cycleID`
+again, start another forced cycle, delete receipts, or rewrite
+`certificateRenewal` to get past the halt. A Temporal reset is not a substitute:
+it does not revoke side effects that older attempts already issued.
+
+Hand off sanitized evidence, without credentials or kubeconfigs:
+
+- cluster ID and name, and the controller and node-agent versions in use;
+- the `cycleID`, run IDs, Temporal namespace and the original workflow input;
+- the relevant workflow history and activity attempts;
+- the selected executor, node operation IDs and the `certificate_renewal`
+  reservation;
+- each node's runbook phase file, receipts and any manifest left in
+  `/etc/kubernetes/nvke-cert-renewal-manifests/` or
+  `/etc/kubernetes/nvke-cert-renewal-staging/`;
+- the kube-vip manifest state and the API and VIP health observed per node.
+
+Any proposal to release the cycle must account for every earlier attempt and
+for unfinished guard work. An empty reservation, a terminal agent response or a
+healthy API is not enough by itself. The node's local API must be ready before
+kube-vip is restored there, and a delayed drain from an old attempt must no
+longer be possible afterwards. If that evidence is missing, keep escalating
+rather than guessing at an unlock. Repairing an accepted cycle needs a
+separately reviewed, incident-specific procedure.
+
+The controller never reopens the same failed cycle ID. Released failures retry
+automatically with a fresh ID once both `nextCertRenewalDue` and the one-hour
+backoff have passed; retained-lock failures stay halted.
+For a retained lock, first establish that the reported operation and all its
+attempts have stopped, including any legacy manifest restoration, and repair the
+reported node/health problem. An operator must then clear only that cycle's
+`certificate_renewal` mutation lock with an ownership-checked database transaction
+on the cluster's row in the `clusters` table: under the row lock, check that the
+`conditions` jsonb column has `updateInProgress.type` = `certificate_renewal`,
+`certificateRenewal.cycleID` = the failed cycle ID and `certificateRenewal.state`
+= `failed`, then remove only the `updateInProgress` key. There is no automatic
+retained-lock release or dedicated recovery API. Do not clear the lock based
+only on cluster health or workflow completion.
+
+A failed cycle can also leave its node reservation in the cluster row's
+`certificate_renewal` column (not shown by the REST API). While a fenced
+reservation (one written by the current workflow) is set, admission refuses
+every cycle, recording another `admission` failure and restarting the one-hour
+backoff. A reservation left by an older V1 workflow does not block admission,
+but the cycle does not reuse it: the first node that needs renewal is refused
+without dispatch, whichever node the reservation names, and the cycle fails and
+is retried after the backoff. That failure's `failedNodeID` names the first
+node that needed renewal, which may or may not be the reserved node; the
+`certificate_renewal` column identifies the reservation. The
+V1 activity normally releases its reservation when it ends, on success or
+failure. It can leave an unfenced reservation behind when the activity is
+interrupted (worker restart, timeout or cancellation), when the release itself
+fails, or when the node agent accepted typed work and then stopped answering.
+A fenced reservation is cleared automatically once the node agent reports its
+operation finished or no longer knows it while no `certificate_renewal` lock is
+held, or once the node row is gone. An unfenced reservation is cleared
+automatically only when the node agent reports that operation finished or the
+node row is gone. The controller never clears it when the agent does not know
+the operation or does not implement the typed status RPC, as with an
+interrupted legacy runbook. Clear such a reservation yourself: confirm that the
+runbook has stopped on that node (no process holds
+`/var/lib/nvke/k8s-cert-renewal/lock`), then, under the cluster row lock, check
+that the `certificate_renewal` column still holds the same node and operation
+ID and set it to `NULL`.
+Before expecting a retry, check that this column is empty; if it stays set,
+check the node agent's reachability and status for that operation.
+Reservation cleanup only removes admission's guard; it is not evidence that
+the cycle, its other attempts or its kube-vip guard work have stopped. An empty
+column does not justify releasing an accepted cycle.
+
+Clearing the lock leaves a released failure, and once the reservation is also
+clear the controller starts
+its own non-forced `-retry-` cycle once `nextCertRenewalDue` has passed and
+`certificateRenewal.completedAt` is more than an hour old. If the due time is
+still in the future, that retry waits for it, up to `certRenewal.interval`. That retry takes the lock, so
+a forced workflow started meanwhile is refused. Wait for the automatic retry and
+inspect its result; start a uniquely named forced workflow only when forced
+semantics are needed, after that retry has finished.
+
+## Validation evidence
+
+For a representative three-control-plane cluster, capture before and after:
+
+```bash
+sudo kubeadm certs check-expiration
+sudo sha256sum \
+  /etc/kubernetes/pki/ca.crt \
+  /etc/kubernetes/pki/etcd/ca.crt \
+  /etc/kubernetes/pki/front-proxy-ca.crt
+kubectl get nodes
+kubectl -n kube-system get pods \
+  -l component=kube-apiserver -o wide
+kubectl get --raw '/readyz?verbose'
+```
+
+Run continuous API traffic for the duration of scheduled and forced validation.
+On each control-plane node, validate etcd from the local kubeadm etcd container
+with the same TLS settings the renewal runbook uses:
+
+```bash
+sudo crictl exec "$(sudo crictl ps --label io.kubernetes.container.name=etcd -q)" etcdctl \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key \
+  --dial-timeout=10s --command-timeout=30s \
+  endpoint health --cluster
+```
+
+Record the source revision, workflow ID, Temporal result, certificate details,
+unchanged CA fingerprints, static-pod container IDs, API probe results, and any
+known validation limitations.

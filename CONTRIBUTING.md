@@ -51,6 +51,8 @@ git clone https://github.com/dsx-ai-factory/nvke.git
 cd nvke
 ```
 
+To contribute, clone your fork instead. See [Work from a fork](#work-from-a-fork).
+
 **Everything that builds publicly, in one command:**
 
 ```bash
@@ -173,6 +175,21 @@ Look at the unassigned issues, and find an issue you are comfortable with
 contributing to. Start with _Step 3_ from above, commenting on the issue to let
 others know you are working on it. If you have any questions related to the
 implementation of the issue, ask them in the issue instead of the PR.
+
+### Work from a fork
+
+Push your branches to your own fork and open pull requests from there, not
+from a branch on `dsx-ai-factory/nvke`. This applies even if you have write
+access to the repository.
+
+```bash
+gh repo fork dsx-ai-factory/nvke --clone
+```
+
+That creates the fork, clones it as `origin` and adds this repository as
+`upstream`. In an existing clone of this repository, `gh repo fork --remote`
+does the same: your fork becomes `origin` and the old `origin` becomes
+`upstream`.
 
 ### Branch naming
 
@@ -320,6 +337,35 @@ this, because an empty commit is dropped if anyone rebases the branch.
 
 The configuration lives in [`.github/dco.yml`](.github/dco.yml).
 
+### Verified signatures
+
+The sign-off above is a line of text in the commit message. `main` also
+requires a cryptographic signature on every commit. The ruleset reports it in
+the merge box as "Commits must have verified signatures." and blocks the merge
+until each commit on the branch carries one. An open pull request in that
+state gets the `needs-signed-commits` label.
+
+Sign with a GPG or SSH key that is registered on your GitHub account, under an
+email address the account has verified. GitHub's guide to [commit signature
+verification](https://docs.github.com/en/authentication/managing-commit-signature-verification)
+covers both key types. Then sign every commit in this clone by default:
+
+```bash
+git config commit.gpgsign true
+```
+
+To sign the commits already on a branch, replay them with a signature:
+
+```bash
+git rebase --keep-base --force-rebase --gpg-sign main
+git push --force-with-lease
+```
+
+`--force-rebase` matters: without it the rebase keeps the commits that already
+sit on the base as they are, unsigned. `--gpg-sign` covers SSH keys too; the
+option is older than SSH signing. For a single commit, `git commit --amend
+--no-edit -S` followed by the same push does the same.
+
 ## AI-assisted contributions
 
 We welcome contributions written with the help of AI coding assistants (Claude,
@@ -332,7 +378,11 @@ Copilot, Cursor, etc.). When using AI assistance:
 - **No AI-generated sensitive content:** Do not use AI to generate security policies,
   legal text, or license headers — these require human judgment and legal review.
 - **Disclose in the PR** if a substantial portion of the change was AI-generated,
-  so reviewers can calibrate their review depth.
+  so reviewers can calibrate their review depth. Write the note yourself.
+- **No agent attribution:** Do not add `Co-Authored-By` trailers naming an AI
+  assistant to commits, or tool-generated footers such as "Generated with …" to
+  PR descriptions. You are the author of the change; turn off your tool's
+  default attribution.
 
 ## Changelog
 

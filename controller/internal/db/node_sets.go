@@ -37,8 +37,9 @@ type NodeSet struct {
 	UpdatedAt       time.Time `bun:"type:timestamptz,notnull,default:current_timestamp"`
 	TeleportEnabled bool      `bun:"type:boolean,notnull,default:false"`
 
-	Nico *NicoNodePoolProvider `bun:"nico,type:jsonb"`
-	Capi *CAPINodePoolProvider `bun:"capi,type:jsonb"`
+	Nico        *NicoNodePoolProvider        `bun:"nico,type:jsonb"`
+	Capi        *CAPINodePoolProvider        `bun:"capi,type:jsonb"`
+	LaunchLayer *LaunchLayerNodePoolProvider `bun:"launch_layer,type:jsonb"`
 }
 
 // NodePoolNeedsNewNodeSet reports whether reconciling nodePool requires a replacement node set.
@@ -58,6 +59,9 @@ func NodePoolNeedsNewNodeSet(nodePool NodePool, current NodeSet) bool {
 	case nodePool.Capi != nil:
 		currentProvider, _ := current.CAPIProvider()
 		return !nodePool.Capi.Equal(currentProvider)
+	case nodePool.LaunchLayer != nil:
+		currentProvider, _ := current.LaunchLayerProvider()
+		return !nodePool.LaunchLayer.Equal(currentProvider)
 	default:
 		return true
 	}
@@ -77,6 +81,13 @@ func (n *NodeSet) CAPIProvider() (CAPINodePoolProvider, error) {
 	return *cloneCAPINodePoolProvider(*n.Capi), nil
 }
 
+func (n *NodeSet) LaunchLayerProvider() (LaunchLayerNodePoolProvider, error) {
+	if n.LaunchLayer == nil {
+		return LaunchLayerNodePoolProvider{}, fmt.Errorf("%w: node set %s launch_layer", ErrMissingProviderPayload, n.ID)
+	}
+	return *cloneLaunchLayerNodePoolProvider(*n.LaunchLayer), nil
+}
+
 // ResolveProviderType infers the node set's provider type from which
 // provider payload is set. NodeSet has no persisted ProviderType field the
 // way Cluster does, so this is the node-set equivalent of
@@ -87,6 +98,8 @@ func (n *NodeSet) ResolveProviderType() (ProviderType, error) {
 		return ProviderTypeNico, nil
 	case n.Capi != nil:
 		return ProviderTypeCAPI, nil
+	case n.LaunchLayer != nil:
+		return ProviderTypeLaunchLayer, nil
 	default:
 		return "", fmt.Errorf("%w: node set %s has no provider payload set", ErrMissingProviderPayload, n.ID)
 	}
@@ -95,11 +108,19 @@ func (n *NodeSet) ResolveProviderType() (ProviderType, error) {
 func (n *NodeSet) SetNico(provider NicoNodePoolProvider) {
 	n.Nico = cloneNicoNodePoolProvider(provider)
 	n.Capi = nil
+	n.LaunchLayer = nil
 }
 
 func (n *NodeSet) SetCapi(provider CAPINodePoolProvider) {
 	n.Capi = cloneCAPINodePoolProvider(provider)
 	n.Nico = nil
+	n.LaunchLayer = nil
+}
+
+func (n *NodeSet) SetLaunchLayer(provider LaunchLayerNodePoolProvider) {
+	n.LaunchLayer = cloneLaunchLayerNodePoolProvider(provider)
+	n.Nico = nil
+	n.Capi = nil
 }
 
 type NodeSetFilters struct {

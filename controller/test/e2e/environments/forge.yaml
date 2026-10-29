@@ -34,11 +34,11 @@ infrastructure:
     # Sites are named for the site rather than the role each plays: a second
     # site makes a name like "default" meaningless, and capabilities choose
     # between them anyway.
-    az61:
+    site-1:
       id: "${FORGE_SITE_ID}"
       vpcID: "${FORGE_VPC_ID}"
 
-      # This site's fabric attaches an interface by subnet; ytl below
+      # This site's fabric attaches an interface by subnet; site-2 below
       # attaches by VPC prefix. Note also that a VPC name is unique per site
       # rather than per org, so two sites can each have one of the same name
       # and they are different VPCs -- which is the reason this is an id and
@@ -71,7 +71,7 @@ infrastructure:
       # types here are amd64, which is why the site boots an x86_64 image.
       #
       # Note for qualification: nothing here provides a GB200, so a stream
-      # asking for {gpu: gb200} resolves to the ytl site below rather than
+      # asking for {gpu: gb200} resolves to site-2 below rather than
       # falling back to an L40S.
       #
       # The CPU type has a single NVMe with root on it and no spare
@@ -90,18 +90,18 @@ infrastructure:
           id: "${FORGE_INSTANCE_TYPE_GPU_ID}"
           provides: {machineType: gpu, arch: amd64, gpu: l40s}
 
-    # GB200 capacity. Its own FORGE_YTL_* variables rather than a rename of
-    # the ones above, so a run against az61 is unaffected by declaring this.
+    # GB200 capacity. Its own FORGE_SITE_2_* variables rather than a rename of
+    # the ones above, so a run against site-1 is unaffected by declaring this.
     #
-    # This fabric attaches by VPC prefix where az61 attaches by subnet, which
+    # This fabric attaches by VPC prefix where site-1 attaches by subnet, which
     # is a property of the VPC's network virtualization rather than a choice.
-    ytl:
-      id: "${FORGE_YTL_SITE_ID:-}"
-      vpcID: "${FORGE_YTL_VPC_ID:-}"
-      vpcPrefixID: "${FORGE_YTL_VPC_PREFIX_ID:-}"
-      sshKeyGroupID: "${FORGE_YTL_SSH_KEY_GROUP_ID:-}"
-      jumpHost: "${FORGE_YTL_JUMP_HOST:-}"
-      teleportLogin: "${FORGE_YTL_TELEPORT_LOGIN:-}"
+    site-2:
+      id: "${FORGE_SITE_2_SITE_ID:-}"
+      vpcID: "${FORGE_SITE_2_VPC_ID:-}"
+      vpcPrefixID: "${FORGE_SITE_2_VPC_PREFIX_ID:-}"
+      sshKeyGroupID: "${FORGE_SITE_2_SSH_KEY_GROUP_ID:-}"
+      jumpHost: "${FORGE_SITE_2_JUMP_HOST:-}"
+      teleportLogin: "${FORGE_SITE_2_TELEPORT_LOGIN:-}"
       # Both CPU architectures, because the site controller and the tenants it
       # hosts are different machines and need not agree. A GB200 tenant is
       # arm64 throughout, while the site controller in front of it can be
@@ -113,11 +113,11 @@ infrastructure:
       # half-usable.
       instanceTypes:
         - name: cpu.x86_64
-          id: "${FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID:-}"
+          id: "${FORGE_SITE_2_INSTANCE_TYPE_CPU_AMD64_ID:-}"
           provides: {machineType: cpu, arch: amd64}
         - name: cpu.arm
-          id: "${FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID:-}"
+          id: "${FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID:-}"
           provides: {machineType: cpu, arch: arm64}
         - name: gpu.gb200.h05.ibx4.dpux2
-          id: "${FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID:-}"
+          id: "${FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID:-}"
           provides: {machineType: gpu, arch: arm64, gpu: gb200}

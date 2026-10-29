@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Admits external clients to the NVKE API. The controller chart's own
+# NetworkPolicy admits the API port from pods in the cluster only, and it has
+# no key for an address range. This policy adds the networks the site spec
+# names: the host that runs nvkectl and the network the tenant nodes come up
+# on. The port is the container port behind service.port in
+# values/controller.yaml.
+#
+# The rule renders only when the list has entries. An empty from list would
+# admit every source, so an empty list leaves the policy with no ingress rule
+# and admits nothing. The install refuses an empty list before it gets here.
+#
+# The API Service is a NodePort without externalTrafficPolicy Local, so a
+# request that enters on one node and lands on another arrives with that
+# node's address. The site's node network is therefore always one of the
+# listed networks.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nvke-api-clients
+  namespace: nvke-controller
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: nvke-controller
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- if .ClientNetworks }}
+    - from:
+        {{- range .ClientNetworks }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+      ports:
+        - port: 8080
+          protocol: TCP
+    {{- end }}

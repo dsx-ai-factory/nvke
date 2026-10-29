@@ -8,7 +8,7 @@
 # the chart from this checkout. A release that carries controller-chart is
 # installed from it by digest instead.
 chart:
-  name: nke-controller
+  name: nvke-controller
   # No version: the chart at path carries its own, and a release that
   # carries the chart decides.
   path: ../../controller/deploy/charts/controller
@@ -19,8 +19,8 @@ chart:
   imageArtifact: cwe
   profilesArtifact: controller-profiles
 release:
-  name: nke-controller
-  namespace: nke-controller
+  name: nvke-controller
+  namespace: nvke-controller
 values:
   - values.yaml
   - overlay.yaml

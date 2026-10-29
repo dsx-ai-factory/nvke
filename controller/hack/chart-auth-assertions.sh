@@ -39,16 +39,34 @@ absent() {
 }
 
 # setting <description> <config.yaml key> <value> <rendered>
-# Asserts one key of the rendered nke-controller-config, where the controller
+# Asserts one key of the rendered nvke-controller-config, where the controller
 # reads its settings. A list compares as its items joined with commas.
 setting() {
   local got
-  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nke-controller-config") | .data["config.yaml"]' <<<"$4" |
+  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nvke-controller-config") | .data["config.yaml"]' <<<"$4" |
     yq ".$2 | (select(tag == \"!!seq\") | join(\",\")) // .")"
   if [[ "${got}" == "$3" ]]; then
     printf '  ok    %s\n' "$1"
   else
     printf '  FAIL  %s (expected %s = %s, got %s)\n' "$1" "$2" "$3" "${got}" >&2
+    failures=$((failures + 1))
+  fi
+}
+
+# same_document <description> <rendered>
+# Asserts apiAuth in nvke-controller-config is the document nvke-auth-config
+# carries, less the switches and the file header. The controller reads one and
+# nvkectl the other, so they must say the same thing.
+same_document() {
+  local inline file
+  inline="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nvke-controller-config") | .data["config.yaml"]' <<<"$2" |
+    yq -o=json -I=0 '.apiAuth | del(.enabled, .permissive) | sort_keys(..)')"
+  file="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nvke-auth-config") | .data["auth.yaml"]' <<<"$2" |
+    yq -o=json -I=0 'del(.apiVersion, .kind) | sort_keys(..)')"
+  if [[ -n "${inline}" && "${inline}" == "${file}" ]]; then
+    printf '  ok    %s\n' "$1"
+  else
+    printf '  FAIL  %s (nvke-controller-config has %s, nvke-auth-config has %s)\n' "$1" "${inline}" "${file}" >&2
     failures=$((failures + 1))
   fi
 }
@@ -99,21 +117,28 @@ echo "apiAuth disabled (the default):"
 out="$(render)"
 # Absent, not empty: NVKE reads an empty AUTH_CONFIG_PATH as unset.
 absent "AUTH_CONFIG_PATH is not set at all"   'AUTH_CONFIG_PATH'                     "${out}"
-setting "permissiveMode is false"            permissiveMode false                   "${out}"
-absent "no config volume"                     'name: nke-auth-config'                "${out}"
+setting "apiAuth.permissive is false"        apiAuth.permissive false               "${out}"
+setting "apiAuth is off in nvke-controller-config" apiAuth.enabled false              "${out}"
+absent "no config volume"                     'name: nvke-auth-config'                "${out}"
 absent "no issuer-discovery binding"          'system:service-account-issuer-discovery' "${out}"
 
 echo "apiAuth enabled, enforcing:"
 out="$(render --set apiAuth.enabled=true)"
 want   "AUTH_CONFIG_PATH points at the mount" 'value: "/etc/nke/auth/auth.yaml"'     "${out}"
-setting "permissiveMode is false"           permissiveMode false                   "${out}"
-want   "ConfigMap volume"                     'name: nke-auth-config'                "${out}"
+setting "apiAuth.permissive is false"       apiAuth.permissive false               "${out}"
+# A ConfigMap managed elsewhere stays on AUTH_CONFIG_PATH.
+setting "apiAuth stays off in nvke-controller-config" apiAuth.enabled false           "${out}"
+want   "ConfigMap volume"                     'name: nvke-auth-config'                "${out}"
 want   "mounted where the path says"          'mountPath: "/etc/nke/auth"'           "${out}"
 want   "issuer-discovery binding"             'system:service-account-issuer-discovery' "${out}"
 
 echo "apiAuth enabled, permissive:"
 out="$(render --set apiAuth.enabled=true --set apiAuth.permissive=true)"
-setting "permissiveMode is true"            permissiveMode true                    "${out}"
+# Under apiAuth even while the section is off: it applies to AUTH_CONFIG_PATH too.
+setting "apiAuth.permissive is true"        apiAuth.permissive true                "${out}"
+absent "the top-level key is gone"           '^    permissiveMode:'                  "${out}"
+out="$(render -f "${values}" --set apiAuth.permissive=true)"
+setting "and with a rendered configuration"  apiAuth.permissive true                "${out}"
 
 echo "clusterIssuerDiscovery=false:"
 out="$(render --set apiAuth.enabled=true --set apiAuth.clusterIssuerDiscovery=false)"
@@ -133,10 +158,10 @@ echo "configMap.create=false (the default) mounts a ConfigMap it does not create
 out="$(render --set apiAuth.enabled=true)"
 # By source template, not kind: the chart renders other ConfigMaps regardless.
 absent "renders no ConfigMap of its own"      '^# Source: .*/templates/configmap-auth\.yaml$' "${out}"
-want   "still mounts the named one"           'name: nke-auth-config'                "${out}"
-# auth.Load runs once at startup, so a configuration edit that does not restart
+want   "still mounts the named one"           'name: nvke-auth-config'                "${out}"
+# authn.Load runs once at startup, so a configuration edit that does not restart
 # the pods does nothing at all. Reloader is what restarts them, here and below.
-want   "Reloader watches it"                  'configmap.reloader.stakater.com/reload: "nke-auth-config,nke-controller-config"' "${out}"
+want   "Reloader watches it"                  'configmap.reloader.stakater.com/reload: "nvke-auth-config,nvke-controller-config"' "${out}"
 
 echo "configMap.create=true renders the configuration:"
 out="$(render -f "${values}")"
@@ -153,15 +178,31 @@ want   "the nested admit rule keeps its name" '^        - name: forge-console'  
 want   "and its namespace"                    '^          namespace: cloud-workflow-engine' "${out}"
 # Rendering the ConfigMap does not change how it gets applied: Reloader watches
 # it either way, so there is one mechanism to reason about rather than two.
-want   "Reloader watches it here too"         'configmap.reloader.stakater.com/reload: "nke-auth-config,nke-controller-config"' "${out}"
+want   "Reloader watches it here too"         'configmap.reloader.stakater.com/reload: "nvke-auth-config,nvke-controller-config"' "${out}"
+# The controller reads these values from nvke-controller-config, so the chart
+# must not also point it at the file: both together refuse to start. The env
+# var's name line, since the rendered ConfigMap's comments mention the variable.
+absent "AUTH_CONFIG_PATH is not set"         'name: AUTH_CONFIG_PATH'               "${out}"
+setting "apiAuth is on in nvke-controller-config" apiAuth.enabled true               "${out}"
+setting "audiences reach nvke-controller-config" apiAuth.audiences https://nke.example.internal "${out}"
+setting "the admit rule keeps its name there" 'apiAuth.issuers[0].admit.serviceAccounts[0].name' forge-console "${out}"
+# Still rendered and mounted: nvkectl reads the audience from it, and
+# extraFiles land beside it.
+want   "nvke-auth-config is still mounted"    'mountPath: "/etc/nke/auth"'           "${out}"
+same_document "nvke-controller-config and nvke-auth-config agree" "${out}"
+
+echo "an install that predates the rename pins the old name and keeps it:"
+out="$(render --set apiAuth.enabled=true --set apiAuth.configMap.name=nke-auth-config)"
+want   "the pinned ConfigMap is mounted"      'name: nke-auth-config'                "${out}"
+want   "and it is the watched one"            'configmap.reloader.stakater.com/reload: "nke-auth-config,nvke-controller-config"' "${out}"
 
 echo "the Reloader annotation names whatever configMap.name says:"
 out="$(render --set apiAuth.enabled=true --set apiAuth.configMap.name=my-auth)"
-want   "the named ConfigMap is the watched one" 'configmap.reloader.stakater.com/reload: "my-auth,nke-controller-config"' "${out}"
+want   "the named ConfigMap is the watched one" 'configmap.reloader.stakater.com/reload: "my-auth,nvke-controller-config"' "${out}"
 
-echo "only nke-controller-config is watched while authentication is off:"
+echo "only nvke-controller-config is watched while authentication is off:"
 out="$(render)"
-want   "no auth ConfigMap in the reload annotation" 'configmap.reloader.stakater.com/reload: "nke-controller-config"' "${out}"
+want   "no auth ConfigMap in the reload annotation" 'configmap.reloader.stakater.com/reload: "nvke-controller-config"' "${out}"
 
 echo "an operator override of the reload annotation is left alone:"
 out="$(render --set apiAuth.enabled=true \
@@ -182,7 +223,7 @@ wantfail "config without issuers is refused"   'apiAuth\.config\.issuers is requ
   --set 'apiAuth.config.audiences[0]=https://nke.example.internal'
 
 echo "the chart owns apiVersion and kind, and says so if you repeat them:"
-# Duplicate keys render clean and then fail auth.Load's strict parse, so the
+# Duplicate keys render clean and then fail authn.Load's strict parse, so the
 # pod crash-loops on a value the operator most likely pasted from the README.
 wantfail "apiVersion in config is refused"     'apiAuth\.config must not carry apiVersion or kind' \
   --set apiAuth.enabled=true --set apiAuth.configMap.create=true \
@@ -194,6 +235,13 @@ wantfail "kind in config is refused"           'apiAuth\.config must not carry a
   --set 'apiAuth.config.audiences[0]=https://nke.example.internal' \
   --set 'apiAuth.config.issuers[0].name=local-kubernetes' \
   --set 'apiAuth.config.kind=AuthenticationConfiguration'
+# apiAuth.config goes into nvke-controller-config's apiAuth section whole, next
+# to the chart's own enabled, so a copy would be a duplicate key there.
+wantfail "enabled in config is refused"        'apiAuth\.config must not carry enabled' \
+  --set apiAuth.enabled=true --set apiAuth.configMap.create=true \
+  --set 'apiAuth.config.audiences[0]=https://nke.example.internal' \
+  --set 'apiAuth.config.issuers[0].name=local-kubernetes' \
+  --set 'apiAuth.config.enabled=true'
 # The rendered file carries exactly one of each, whatever the values said.
 out="$(render -f "${values}")"
 if [[ "$(grep -c '^    apiVersion: auth\.nke\.nvidia\.com' <<<"${out}")" -eq 1 ]]; then
@@ -202,6 +250,17 @@ else
   printf '  FAIL  %s\n' "expected exactly one apiVersion line" >&2
   failures=$((failures + 1))
 fi
+
+# The controller reads the chart-rendered configuration from nvke-controller-config,
+# and refuses to start when AUTH_CONFIG_PATH names a second source.
+echo "AUTH_CONFIG_PATH in env conflicts with a rendered configuration:"
+wantfail "env AUTH_CONFIG_PATH with create is refused" 'env sets AUTH_CONFIG_PATH while apiAuth\.configMap\.create is true' \
+  -f "${values}" \
+  --set-string 'env[0].name=AUTH_CONFIG_PATH' --set-string 'env[0].value=/x'
+
+echo "permissive belongs beside config, not in it:"
+wantfail "permissive in config is refused" 'apiAuth\.config must not carry permissive' \
+  -f "${values}" --set 'apiAuth.config.permissive=true'
 
 echo "config is inert while authentication is off:"
 wantfail "and says so rather than ignoring it" 'apiAuth\.config is set but would not be rendered' \
@@ -239,6 +298,39 @@ out="$(render -f "${ca_values}")"
 want   "the bundle is a key in the ConfigMap"  '^  spire-ca\.crt: \|'     "${out}"
 want   "its content is carried through"        'notarealcertificate'      "${out}"
 want   "the config file is still there"        '^  auth\.yaml: \|'        "${out}"
+setting "caBundlePath reaches nvke-controller-config" 'apiAuth.issuers[0].jwks.caBundlePath' /etc/nke/auth/spire-ca.crt "${out}"
+same_document "and the two copies agree"      "${out}"
+
+# An inline bundle needs no file, so it skips the extraFiles check and travels
+# with the configuration.
+echo "an inline caBundle needs no extraFiles:"
+inline_ca_values="$(dirname "${values}")/auth-inline-ca-values.yaml"
+cat > "${inline_ca_values}" <<'YAML'
+apiAuth:
+  enabled: true
+  configMap:
+    create: true
+  config:
+    audiences: ["https://nke.example.internal"]
+    issuers:
+      - name: spire
+        issuer: "https://spire.example.internal"
+        jwks:
+          uri: "https://spire.example.internal:30443/keys"
+          caBundle: |
+            -----BEGIN CERTIFICATE-----
+            notarealcertificate
+            -----END CERTIFICATE-----
+        algorithms: [RS256]
+        admit:
+          spiffe:
+            trustDomain: example.internal
+            pathPrefixes: ["/nke-service/"]
+YAML
+out="$(render -f "${inline_ca_values}")"
+want   "the bundle is carried inline"          'notarealcertificate'      "${out}"
+absent "and is not a file in the mount"        '^  spire-ca\.crt: \|'     "${out}"
+same_document "and the two copies agree"      "${out}"
 
 # The whole point: caBundlePath names a file that has to exist in the mount, and
 # a missing one is a CrashLoopBackOff on a path rather than a render error.

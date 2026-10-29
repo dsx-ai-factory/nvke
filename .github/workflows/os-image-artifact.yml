@@ -8,8 +8,9 @@ name: OS Image Artifact
 # UBUNTU_RELEASE in os-image/packer/Makefile for why both ship), on an
 # os-image/v* tag, a manual dispatch, a main push that touches os-image/ or
 # the 12-hourly schedule, pushes all eight qcow2s to GHCR as OCI artifacts
-# under sha-<commit> tags (main pushes and the schedule stop there; NVCR and
-# S3 stay tag/dispatch only and read that sha- alias), and on a real tag, when
+# under sha-<commit> tags, or main-sha-<commit> when the run is on main (main
+# pushes and the schedule stop there; NVCR and S3 stay tag/dispatch only and
+# read the alias their own run pushed), and on a real tag, when
 # NVKE_GITHUB_PUBLISH names os-image (it does not by default), adds the version
 # tags on GHCR and cuts a GitHub Release carrying nvke-os-image-check +
 # checksums covering all nine files. The GitHub Release is created here (not
@@ -83,6 +84,10 @@ on:
       # workflows cover them, and a bake is eight legs for half an hour.
       - "!os-image/**/*_test.go"
       - .github/workflows/os-image-artifact.yml
+      - .github/workflows/e2e-pr-path-filter.yml
+      - hack/e2e-path-filter.py
+      # The release job checks the published assets with it.
+      - .github/actions/verify-release-assets/**
   # Twice a day from main's HEAD, for what changes without an os-image/
   # commit: the agent baked from source and the apt packages. The e2e lanes
   # boot the newest published image built from a commit on their branch (see
@@ -123,6 +128,12 @@ concurrency:
 env:
   REPO_FDE: ghcr.io/dsx-ai-factory/nvke/os-image-fde
   REPO_NON_FDE: ghcr.io/dsx-ai-factory/nvke/os-image-non-fde
+  # The GHCR hand-off alias. A run on main (a push or the schedule) gets its own
+  # prefix: a tag at the same commit builds the same legs, and one shared alias
+  # let the slower run move the tag under the other run's publish. The readers
+  # (the skip check below, the NICo VMs lane, os-image/prune-ghcr-versions.sh)
+  # accept both prefixes.
+  SHA_ALIAS: ${{ github.ref == 'refs/heads/main' && format('main-sha-{0}', github.sha) || format('sha-{0}', github.sha) }}
   # The S3 build cache. The bucket and its two roles are repository variables;
   # this workflow only reads, and os-image-cache.yml, on main, is the only
   # writer.
@@ -137,10 +148,8 @@ jobs:
   changes:
     uses: ./.github/workflows/e2e-pr-path-filter.yml
     permissions:
+      contents: read
       pull-requests: read
-    with:
-      # Keep in step with the push paths above.
-      relevant_paths: '^os-image/|^\.github/workflows/os-image-artifact\.yml$'
 
   matrix:
     needs: changes
@@ -180,9 +189,9 @@ jobs:
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
       # A scheduled run, or a re-run of a main push, on a commit whose
-      # default-flavor non-FDE images are already published has nothing to
-      # add. A tag, a mirror-branch push or a dispatch always bakes. Fails
-      # open: if GHCR cannot be listed, bake anyway.
+      # default-flavor non-FDE images are already published under either alias
+      # prefix has nothing to add. A tag, a mirror-branch push or a dispatch
+      # always bakes. Fails open: if GHCR cannot be listed, bake anyway.
       - name: Skip when this commit is already published
         id: existing
         if: github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -197,10 +206,13 @@ jobs:
             echo "::warning::could not list ${REPO_NON_FDE} versions; baking anyway"
             tags=""
           fi
-          if grep -qx "sha-${GITHUB_SHA}-amd64" <<< "${tags}" && grep -qx "sha-${GITHUB_SHA}-arm64" <<< "${tags}"; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "sha-${GITHUB_SHA} is already published for both arches; nothing to bake"
-          fi
+          for alias in "sha-${GITHUB_SHA}" "main-sha-${GITHUB_SHA}"; do
+            if grep -qx "${alias}-amd64" <<< "${tags}" && grep -qx "${alias}-arm64" <<< "${tags}"; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "${alias} is already published for both arches; nothing to bake"
+              break
+            fi
+          done
 
       - name: Pick
         id: pick
@@ -425,9 +437,10 @@ jobs:
 
           version="${VERSION}"
 
-          # The sha- alias is the hand-off the NVCR and S3 publishers and the
-          # NICo VMs lane read. The version alias is the GitHub publication.
-          aliases=("sha-${GITHUB_SHA}")
+          # The sha- alias (main-sha- on main) is the hand-off the NVCR and S3
+          # publishers and the NICo VMs lane read. The version alias is the
+          # GitHub publication.
+          aliases=("${SHA_ALIAS}")
           if [[ "${GITHUB_REF}" == refs/tags/* && "${GITHUB_PUBLISH}" == "true" ]]; then
             aliases+=("${version}")
           fi
@@ -886,7 +899,7 @@ jobs:
            (github.event_name == 'push' && github.ref == 'refs/heads/main'))
         env:
           REPO: ${{ matrix.variant == 'fde' && env.REPO_FDE || env.REPO_NON_FDE }}
-        run: oras manifest fetch --pretty "${REPO}:sha-${GITHUB_SHA}${{ matrix.tag_suffix }}-${{ matrix.arch }}"
+        run: oras manifest fetch --pretty "${REPO}:${SHA_ALIAS}${{ matrix.tag_suffix }}-${{ matrix.arch }}"
 
       # One file per leg; the release job concatenates them. The checker
       # binary and the version metadata come from a single build -- amd64,
@@ -978,9 +991,9 @@ jobs:
             echo "::error::NVKE_NGC_ORG is not set in the nvcr environment"
             exit 1
           fi
-          # The source is always the sha- alias: the version alias exists on
-          # GHCR only when NVKE_GITHUB_PUBLISH names os-image.
-          source_tag="sha-${GITHUB_SHA}${SUFFIX}-${ARCH}"
+          # The source is always this run's sha- or main-sha- alias: the version
+          # alias exists on GHCR only when NVKE_GITHUB_PUBLISH names os-image.
+          source_tag="${SHA_ALIAS}${SUFFIX}-${ARCH}"
           tag="${source_tag}"
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             tag="${VERSION}${SUFFIX}-${ARCH}"
@@ -1085,10 +1098,11 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             release="${VERSION}"
           fi
-          # Pull the sha- alias: the version alias exists on GHCR only when
-          # NVKE_GITHUB_PUBLISH names os-image. The S3 path keeps the version.
+          # Pull this run's sha- or main-sha- alias: the version alias exists on
+          # GHCR only when NVKE_GITHUB_PUBLISH names os-image. The S3 path keeps
+          # the version.
           mkdir -p dist
-          oras pull "${REPO}:sha-${GITHUB_SHA}${SUFFIX}-${ARCH}" -o dist
+          oras pull "${REPO}:${SHA_ALIAS}${SUFFIX}-${ARCH}" -o dist
           {
             echo "s3_uri=${S3_URI}"
             echo "role_arn=${ROLE_ARN}"
@@ -1249,21 +1263,7 @@ jobs:
             os-image ${{ steps.meta.outputs.version }}: the FDE and non-FDE Packer
             node images for amd64 and arm64, built and validated against nvke-agent
             `${{ steps.meta.outputs.agent_version }}` (built from source at this
-            commit). Each is published in two Ubuntu flavors: 26.04 under the
-            plain tag, and 24.04 under a `-ubuntu24.04` tag.
-
-            Pull the qcow2s with oras (not docker):
-
-            ```
-            oras pull ghcr.io/dsx-ai-factory/nvke/os-image-fde:${{ steps.meta.outputs.version }}-amd64 --platform linux/amd64
-            oras pull ghcr.io/dsx-ai-factory/nvke/os-image-fde:${{ steps.meta.outputs.version }}-arm64 --platform linux/arm64
-            oras pull ghcr.io/dsx-ai-factory/nvke/os-image-non-fde:${{ steps.meta.outputs.version }}-amd64 --platform linux/amd64
-            oras pull ghcr.io/dsx-ai-factory/nvke/os-image-non-fde:${{ steps.meta.outputs.version }}-arm64 --platform linux/arm64
-            ```
-
-            For the Ubuntu 24.04 flavor, insert `-ubuntu24.04` before the
-            architecture, for example
-            `os-image-fde:${{ steps.meta.outputs.version }}-ubuntu24.04-amd64`.
+            commit). Each is available in two Ubuntu flavors: 26.04 and 24.04.
 
             **FDE security note**: this image's `LUKS_PASSPHRASE` is the shared,
             documented build-time placeholder (`changeit`), baked into both a LUKS
@@ -1275,8 +1275,7 @@ jobs:
             TPM-only unlock in production.
 
             `checksums.txt` covers all eight qcow2s, their SBOMs and the checker
-            binary. The disks themselves are the OCI artifacts above; they are
-            too large to attach here.
+            binary. The disks are too large to attach here.
 
             Each disk has an SPDX 2.3 SBOM attached beside it, named after the
             disk it describes -- `nvke-node-fde-ubuntu-26.04.1-amd64.spdx.json`

@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/retry"
 )
 
 var (
@@ -60,36 +61,40 @@ func updateObjectMetadata(getObj func() (metav1.Object, error), updateObj func(m
 		val = kv[1]
 	}
 
-	obj, err := getObj()
-	if err != nil {
-		return err
-	}
+	// Other clients (the kubelet, controllers) write the object too; a write between the read and the update
+	// makes the update conflict, so re-read and apply the change again.
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		obj, err := getObj()
+		if err != nil {
+			return err
+		}
 
-	if isLabel {
-		labels := obj.GetLabels()
-		if labels == nil {
-			labels = map[string]string{}
-		}
-		if remove {
-			delete(labels, key)
+		if isLabel {
+			labels := obj.GetLabels()
+			if labels == nil {
+				labels = map[string]string{}
+			}
+			if remove {
+				delete(labels, key)
+			} else {
+				labels[key] = val
+			}
+			obj.SetLabels(labels)
 		} else {
-			labels[key] = val
+			annotations := obj.GetAnnotations()
+			if annotations == nil {
+				annotations = map[string]string{}
+			}
+			if remove {
+				delete(annotations, key)
+			} else {
+				annotations[key] = val
+			}
+			obj.SetAnnotations(annotations)
 		}
-		obj.SetLabels(labels)
-	} else {
-		annotations := obj.GetAnnotations()
-		if annotations == nil {
-			annotations = map[string]string{}
-		}
-		if remove {
-			delete(annotations, key)
-		} else {
-			annotations[key] = val
-		}
-		obj.SetAnnotations(annotations)
-	}
 
-	return updateObj(obj)
+		return updateObj(obj)
+	})
 }
 
 func AnnotatePod(ctx context.Context, namespace, name, annotation string) error {

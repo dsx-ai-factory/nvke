@@ -189,10 +189,13 @@ func NewWorker(
 	w.RegisterWorkflow(workflows.ApplyK8sNodeCondition)
 	w.RegisterWorkflow(workflows.EnableEtcdEncryption)
 	w.RegisterWorkflow(workflows.EnableOIDC)
+	w.RegisterWorkflow(workflows.UpdateSpireServer)
 	w.RegisterWorkflow(workflows.RotateEtcdEncryptionKey)
+	w.RegisterWorkflow(workflows.RetireLostEtcdRotationNode)
 	w.RegisterWorkflow(workflows.UpgradeControlPlaneAddons)
 	w.RegisterWorkflow(workflows.UpdateKubeadmConfigMap)
 	w.RegisterWorkflow(workflows.RenewK8sCerts)
+	w.RegisterWorkflow(workflows.RenewK8sCertsV2)
 
 	// Rollout subsystem. One Registry backs the activity-side dispatch used by
 	// custom workflows such as EnableEtcdEncryption.
@@ -213,7 +216,7 @@ func NewWorker(
 	preflights.RegisterDefaults(rolloutRegistry, rolloutDialer)
 	rolloutkubevip.RegisterDefaults(rolloutRegistry, rolloutDialer)
 	rolloutetcd.RegisterDefaults(rolloutRegistry, rolloutDialer, k8sClient, cfg.PodNamespace)
-	rolloutoidc.RegisterDefaults(rolloutRegistry, rolloutDialer, rolloutMethodChecker, k8sClient, cfg.NvkeOIDCAuth, trustDomain, cfg.ManagementNamespaceOrDefault())
+	rolloutoidc.RegisterDefaults(rolloutRegistry, rolloutDialer, rolloutMethodChecker, k8sClient, cfg.NvkeOIDCAuth, trustDomain, cfg.RBACConfigMapSource())
 	rollouttemporal.NewActivities(rolloutLoader, rolloutRegistry).Register(w)
 	rollouttemporal.NewClusterLoaderActivity(rolloutLoader, cfg.NodeAgent.Port).Register(w)
 

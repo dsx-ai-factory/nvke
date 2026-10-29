@@ -31,7 +31,7 @@ version; this procedure does not depend on a particular patch release.
 
 | Location | Tools and purpose |
 |---|---|
-| Operator machine | `kubectl` with the site kubeconfig, remote access, and off-node backup storage |
+| Operator machine | `kubectl` with the site kubeconfig, remote access, off-node backup storage, and an NVKE repository checkout with the Go toolchain its `go.work` requires, to build `credential-audit` for T1 evidence |
 | Selected control-plane node | Installed `kubeadm`, `crictl`, `kubectl`, and `/etc/kubernetes`; use privileged access for node checks and renewal |
 
 Use a Bash shell for the command blocks. If your terminal uses another shell,
@@ -51,6 +51,13 @@ every control-plane node remains available if the site's Kubernetes API fails.
 Prevent concurrent provisioning, upgrades, node replacements, and other
 certificate work through your site's maintenance process. Agree on the maximum
 API outage, node recovery deadline, and who will recover a failed node.
+
+Before the window starts, build `credential-audit` from the NVKE checkout into
+a new private evidence directory, as described in
+[Manual T1 evidence](https://github.com/dsx-ai-factory/nvke/blob/main/controller/docs/credential-audit.md#manual-t1-evidence).
+From the first node's pre-renewal checks on, record the T1 evidence right after
+each check, approval, renewal, and verification; it cannot be recreated after
+the maintenance window.
 
 Three control-plane nodes do not by themselves provide a highly available
 client endpoint: determine whether clients use an init-node IP or a working

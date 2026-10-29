@@ -7,7 +7,7 @@ Before proceeding, write your [site spec file](configuration.md) so it can be pl
 The bootstrap host additionally needs `nerdctl` with containerd, `kind`, `helm`,
 `kubectl` and `clusterctl` on `PATH` — see
 [Installation](installation.md#additional-prerequisites-for-bootstrap). The two
-images `nvkectl` deploys come from a registry here, named with `--controller-image`
+images `nvkectl` deploys come from a registry here, named with `--nvke-controller-image`
 and `--provisioned-provider-image`, because a freshly installed host has no local
 build to side-load. The example marks where the tool installs go rather than
 scripting them; the right commands depend on your image.
@@ -103,14 +103,14 @@ autoinstall:
 
       # Download and install nvkectl (bootstrap host only). Replace cli/vX.Y.Z
       # with a cli/ tag listed at https://github.com/dsx-ai-factory/nvke/releases,
-      # cli/v0.2.0-rc.1 or later; earlier releases name the binary nkectl.
+      # cli/v0.2.0 or later; earlier releases do not take --nvke-controller-image.
       - [sh, -c, "curl -fsSL -o /usr/local/bin/nvkectl https://github.com/dsx-ai-factory/nvke/releases/download/cli/vX.Y.Z/nvkectl-linux-amd64 && chmod +x /usr/local/bin/nvkectl"]
 
       # Run bootstrap (bootstrap host only). --disable-mtls matches the plaintext
       # agents configured above; this is the development-only mode, not a
       # production path. The two images are named by flag because this host has
       # no local build to side-load; nvkectl pulls them with nerdctl.
-      - [sh, -c, "nvkectl bootstrap site -f /etc/nvkectl/sitespec.yaml --controller-image <controller-image> --provisioned-provider-image <provisioned-provider-image> --disable-mtls --encryption-key-out /root/nvke-site-etcd-encryption-key.json >> /var/log/nvkectl-bootstrap.log 2>&1"]
+      - [sh, -c, "nvkectl bootstrap site -f /etc/nvkectl/sitespec.yaml --nvke-controller-image <controller-image> --provisioned-provider-image <provisioned-provider-image> --disable-mtls --encryption-key-out /root/nvke-site-etcd-encryption-key.json >> /var/log/nvkectl-bootstrap.log 2>&1"]
 ```
 
 The bootstrap writes the cluster's etcd encryption key to the path given by

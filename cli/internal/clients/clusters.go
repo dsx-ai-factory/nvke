@@ -109,3 +109,32 @@ func (c *ControllerClient) FindClusterByName(ctx context.Context, name string) (
 		return nil, fmt.Errorf("cluster name %q is ambiguous: %d clusters match", name, len(clusters))
 	}
 }
+
+// UpdateClusterSpireServer asks the controller to point every node of the
+// cluster at server. A non-202 answer is returned as a *StatusError.
+func (c *ControllerClient) UpdateClusterSpireServer(ctx context.Context, id openapi_types.UUID, server api.SpireServer) error {
+	resp, err := c.raw.UpdateClusterSpireServerWithResponse(ctx, id, server)
+	if err != nil {
+		return fmt.Errorf("updating cluster SPIRE server: %w", err)
+	}
+	if resp.StatusCode() != 202 {
+		return fmt.Errorf("updating cluster SPIRE server: %w", &StatusError{StatusCode: resp.StatusCode(), err: apiError(resp.Status(), resp.Body)})
+	}
+	return nil
+}
+
+// GetClusterSpireServer returns the SPIRE server last requested for the
+// cluster and the live SPIRE agent status of each of its nodes.
+func (c *ControllerClient) GetClusterSpireServer(ctx context.Context, id openapi_types.UUID) (*api.ClusterSpireServerStatus, error) {
+	resp, err := c.raw.GetClusterSpireServerWithResponse(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("getting cluster SPIRE server: %w", err)
+	}
+	if resp.StatusCode() != 200 {
+		return nil, fmt.Errorf("getting cluster SPIRE server: %w", apiError(resp.Status(), resp.Body))
+	}
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("getting cluster SPIRE server: empty response body")
+	}
+	return resp.JSON200, nil
+}

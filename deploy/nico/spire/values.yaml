@@ -94,11 +94,11 @@ spire-server:
   # and forget the other, which is why this says example.org rather than
   # something that looks plausible.
   #
-  # The path is a constant: /nke-service/nke-controller, matching the
-  # nke-service ClusterSPIFFEID below and the prefixes
+  # The path is a constant: /nvke-service/nvke-controller, matching the
+  # nvke-service ClusterSPIFFEID below and the prefixes
   # agent/cmd/agent/main.go admits.
   adminIDs:
-    - spiffe://example.org/nke-service/nke-controller
+    - spiffe://example.org/nvke-service/nvke-controller
   controllerManager:
     # The chart applies its ClusterSPIFFEID objects as part of the same release
     # that creates the controller manager serving the webhook that validates
@@ -130,14 +130,14 @@ spire-server:
     identities:
       clusterSPIFFEIDs:
         default:
-          # nke-controller workloads use a dedicated nke-service
+          # nvke-controller workloads use a dedicated nvke-service
           # identity. Keep the fallback from racing it during reconciliation.
           namespaceSelector:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: NotIn
                 values:
-                  - nke-controller
+                  - nvke-controller
 
         # The identity NVKE's own services present. This was a loose manifest in
         # controller/deploy/k8s, which the CAPD lane had to apply between two
@@ -150,20 +150,20 @@ spire-server:
         # append its own expression to namespaceSelector and merge a podSelector
         # in; raw is the one branch that passes these through verbatim.
         #
-        # The emitted CR is named <release namespace>-<release>-nke-service
-        # rather than nke-service -- the chart derives it. Nothing reads it by
+        # The emitted CR is named <release namespace>-<release>-nvke-service
+        # rather than nvke-service -- the chart derives it. Nothing reads it by
         # name on this path; what matters is the SPIFFE ID below, which has to
         # keep matching spire-server.adminIDs above and the prefixes
         # agent/cmd/agent/main.go admits.
-        nke-service:
+        nvke-service:
           type: raw
-          spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nke-service/{{.PodSpec.ServiceAccountName}}"
+          spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nvke-service/{{.PodSpec.ServiceAccountName}}"
           namespaceSelector:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: In
                 values:
-                  - nke-controller
+                  - nvke-controller
                   - capi-system
                   - capi-kubeadm-control-plane-system
                   - capi-kubeadm-bootstrap-system
@@ -210,7 +210,7 @@ spiffe-oidc-discovery-provider:
         issuerRef:
           group: cert-manager.io
           kind: Issuer
-          name: nke-oidc-upstream-ca
+          name: nvke-oidc-upstream-ca
   config:
     # The provider rejects requests whose Host header is absent here. Literal
     # IPs tenants hit are appended at install time -- kube-apiserver fetches

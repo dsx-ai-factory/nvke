@@ -112,7 +112,7 @@ would be a sibling of it, so nothing here changes when one is added.
 | `infra.nico.controlPlane.vpcPrefixIDs` / `subnetIDs` | UUID list | with `nico` | Exactly one of the two: native networking or not. |
 | `infra.nico.controlPlane.sshKeyGroupIDs` | UUID list | with `nico` | At least one. |
 | `infra.nico.controlPlane.release` | string | with `nico` | The `ClusterRelease` the nodes boot from, which `infra.nico.releases` must hold. See Release manifests. |
-| `infra.nico.controlPlane.configProfile` | string | no | A config profile name. The bootstrap controller starts with an empty profiles directory and serves none, so it treats any name as missing and logs a warning: its hooks and labels never reach the nodes. Leave it unset. |
+| `infra.nico.controlPlane.configProfile` | string | no | A config profile name. The bootstrap controller's profiles directory is empty unless `NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE` fills it (see Profiles), so by default any name is treated as missing: the controller logs a warning and builds the nodes without that profile's hooks and labels. Leave it unset unless you supply the profiles. |
 | `infra.nico.releases` | path | with `nico` | A file, or a directory of `.yaml`, `.yml` and `.json` files, holding the `MachineImage` and `ClusterRelease` manifests. See below. |
 | `spire.externalAddress` | string | with `nico`, unless `--disable-mtls` | IP address or DNS name nodes use to reach the bootstrap host's SPIRE server, on NodePort 30081. It must be a routable unicast IP address without a zone, or a DNS name other than `localhost` or a `*.localhost` name: a loopback, unspecified, link-local or multicast address means nothing from a node. See below. |
 
@@ -159,6 +159,19 @@ finished management cluster fills in. The bootstrap controller fills in others:
 passed, since nothing reads it without SPIRE. `--dry-run` applies the same check.
 Setting `spire.externalAddress` with `provisioned` is rejected: those hosts were
 given their SPIRE address when they were provisioned.
+
+### Profiles
+
+`infra.nico.controlPlane.configProfile` names a config profile the controller
+reads from its profiles directory, and `nvkectl` deploys the controller with
+that directory empty. Without profiles the controller still accepts the cluster
+request: it logs a warning, treats the named profile as empty, and builds the
+nodes without that profile's hooks and labels. To supply them, set
+`NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE` to an OCI content image whose `/profiles`
+tree is copied into place; it needs a tag other than `latest`, or a digest, and
+the README's [variable table](../README.md#bootstrap-cluster-and-cwe) has the
+rest. The release the nodes boot is separate: it comes from
+`infra.nico.releases`, below.
 
 ### NICo credentials
 
@@ -269,7 +282,7 @@ applies every file in `infra.nico.releases`.
 | `cluster.nodeAgentPort` | string | no | Port number 1–65535. Defaults to `15005`. |
 | `cluster.etcdEncryption` | bool | no | Encrypt the Kubernetes API's etcd data at rest. Defaults to `true`. Decided at bootstrap only: a cluster built with it `false` cannot be encrypted afterwards. See below. |
 | `cluster.kubeletConfig.systemReservedMemory` | string | no | e.g. `16Gi`. |
-| `cluster.oidcProviders` | list | no | OIDC providers for site cluster. Cannot be modified afterwards. Ignored when absent. Rejected when `cluster.k8sVersion` is older than `1.34.0`. Each entry needs `name`, `issuerURL`, `audiences`, `usernameClaim`, `usernamePrefix`, and `caBundle` (inline PEM). Optional: `groupsClaim`, `groupsPrefix`, `requiredClaims`.|
+| `cluster.oidcProviders` | list | no | OIDC providers for site cluster. Cannot be modified afterwards. Ignored when absent. Rejected when `cluster.k8sVersion` is older than `1.34.0`. Each entry needs `name`, `issuerURL`, `audiences`, `usernameClaim`, `usernamePrefix`, and `caBundle` (inline PEM). Optional: `groupsClaim`, `groupsPrefix`, `requiredClaims`, `discoveryURL`.|
 | `spire.upstreamCA` | bool | no | `true` when the site's SPIRE chains to a CA you bring. Every `bootstrap site`, `validate sitespec` and install run then requires `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`, and the variables are refused without it. See "The SPIRE CA". |
 | `spire.trustDomain` | string | no | SPIFFE trust domain, shared by the bootstrap and the controller stack install. Set it once, before the bootstrap, or leave it unset: both then use `nvkectl-bootstrap.nke.local`, and the install says so. A bootstrap run with `NVKECTL_BOOTSTRAP_CLUSTER_NAME` set derives another, so set it then. |
 
@@ -300,7 +313,7 @@ architecture is in neither file: the install reads it from the cluster.
 bootstrap host holds, the file `NVKECTL_NICO_CREDENTIALS` names, the release
 manifests, the node login in `NVKECTL_NODE_USER` and `NVKECTL_NODE_PASSWORD`,
 `spire.externalAddress` and the https check on `infra.nico.remote.endpoint`,
-is reported without failing, because `deploy/check-site.sh` runs the command
+is reported without failing, because the install runs the command
 on the site node, which does not hold them. `--bootstrap-only` fails on them,
 so a file it passes is one `bootstrap site` accepts on this host; pass
 `--disable-mtls` to it as you will to `bootstrap site`.
@@ -339,6 +352,16 @@ so a file it passes is one `bootstrap site` accepts on this host; pass
   `validate sitespec --bootstrap-only` both check. Pass `--disable-mtls` to
   `validate sitespec` as you will to `bootstrap site`, and the file is checked
   as that run would: `spire.externalAddress` is not required.
+
+For development, pass `--allow-control-plane-without-vip` to both
+`nvkectl validate sitespec` and `nvkectl bootstrap site` to permit a multi-node
+control plane without a VIP. The bootstrap also enables
+`allowControlPlaneWithoutVIP` in its temporary NVKE controller. The flag
+defaults to false and still validates a supplied VIP. kubeadm uses the
+initializing node's IP as the API endpoint, so replacing that node can break
+API access. The flag does not supply an address for `render deploy-path`.
+Enable the same controller setting in the installed management plane for
+later workload-cluster operations. Quorum and deletion protections still apply.
 
 CLI acceptance does not prove bootstrap or network reachability. The controller
 chooses the first control-plane node ready to join, which need not be the first
@@ -448,11 +471,21 @@ A non-empty list requires `cluster.k8sVersion` `1.34.0` or newer and contains at
 | `issuerURL` | yes | Issuer URL. An `https` URL, unique in the list. The API server compares it with the token's `iss` claim. |
 | `audiences` | yes | `aud` values the API server accepts. At least one, and none empty. |
 | `usernameClaim` | yes | Claim the API server uses as the username. |
-| `usernamePrefix` | yes | Text the API server puts in front of the username. It must not start with `system:`, `kubeadm:`, `nke:`, `nvke:`, or `nvidia:`. |
+| `usernamePrefix` | yes | Text the API server puts in front of the username. Set to `""` to use the claim unchanged. It must not start with `system:`, `kubeadm:`, `nke:`, `nvke:`, or `nvidia:`. |
 | `groupsClaim` | no | Claim the API server uses as the user's groups. |
 | `groupsPrefix` | no | Text the API server puts in front of each group. The reserved prefixes are the same as for `usernamePrefix`. |
 | `requiredClaims` | no | Map of claim name to the value that claim must hold. |
 | `caBundle` | yes | PEM-encoded certificates the API server trusts for this provider. |
+| `discoveryURL` | no | Full HTTPS discovery URL, including the discovery document path. Omit to use `issuerURL` followed by `/.well-known/openid-configuration`. |
+
+When discovery is hosted separately from the issuer, set both URLs:
+
+```yaml
+issuerURL: https://issuer.example.com
+discoveryURL: https://identity.example.com/.well-known/openid-configuration
+```
+
+The discovery document's `issuer` and the token's `iss` must still match `issuerURL`.
 
 ## etcd encryption at rest
 
@@ -534,7 +567,7 @@ so operators do not need to relearn them. The subset of settings our main user
 The differences from tier-0 are deliberate and make the file open-sourceable:
 
 - **Images from the command line.** tier-0's `registry.ngcApiKey` and
-  `registry.sweImageTag` give way to `--controller-image` and
+  `registry.sweImageTag` give way to `--nvke-controller-image` and
   `--provisioned-provider-image`, with registry access from `nerdctl login`.
   The chart versions are baked into the `nvkectl` build.
 - **No deploy-time fields.** `argocd`, `repos`, `skipDeploy`, Forge/baremetal,
@@ -550,7 +583,7 @@ values are never logged or printed.
 | Environment variable | Read by | What |
 |---|---|---|
 | `NVKECTL_SPIRE_CA_CERT_FILE`, `NVKECTL_SPIRE_CA_KEY_FILE` | `bootstrap site`, `validate sitespec`, the stack install | Paths to the SPIRE CA certificate and its private key. Required with `spire.upstreamCA: true`, refused without it. See "The SPIRE CA". |
-| `NVKECTL_NICO_TOKEN` | the stack install, which `deploy/check-site.sh` checks | NICo API token. |
+| `NVKECTL_NICO_TOKEN` | the stack install | NICo API token. |
 | `NVKECTL_NODE_USER` | `bootstrap site` (with `nico`), `validate sitespec --bootstrap-only`, the stack install | Login account rendered into every node's cloud-init: the site's nodes with `nico`, and every tenant node. Both refuse a quote, a backslash or a control character. |
 | `NVKECTL_NODE_PASSWORD` | `bootstrap site` (with `nico`), `validate sitespec --bootstrap-only`, the stack install | Password for `NVKECTL_NODE_USER`. |
 | `NVKECTL_NICO_CREDENTIALS` | `bootstrap site` (with `nico`), `validate sitespec --bootstrap-only` | Path to the file holding the NICo token the bootstrap's CAPNICo uses. Not `NVKECTL_NICO_TOKEN`, which is the finished management cluster's token. See "NICo credentials". |

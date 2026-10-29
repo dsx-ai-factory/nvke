@@ -25,7 +25,7 @@
       }
     ]
   },
-  "description": "Reference dashboard for Kubernetes kubelet, control-plane, and OS-profile upgrade progress. Requires k8s_cluster_name on kube-state-metrics series. Control-plane upgrade status and OS profile require NVKE controller inventory metrics (nvke_controller_*). Not deployed by nke-stack.",
+  "description": "Reference dashboard for Kubernetes kubelet, control-plane, and release upgrade progress. Requires k8s_cluster_name on kube-state-metrics series. Control-plane upgrade status and release require NVKE controller inventory metrics (nvke_controller_*). Not deployed by nke-stack.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -45,7 +45,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "### Scope\nIt is an importable reference dashboard and is not deployed by nke-stack. Select a Prometheus datasource with kube-state-metrics from the selected Kubernetes cluster. Controller inventory metrics add the control-plane upgrade and OS-profile panels; the kubelet panels can render without them.\n\n### Assumptions\n- Every queried kube-state-metrics series carries the Prometheus label `k8s_cluster_name` (from the OpenTelemetry resource attribute `k8s.cluster.name`).\n- **Target Kubernetes** and **target OS profile** are dashboard variables. They are policy choices used to compute \u201cat target\u201d and burndown panels. Target Kubernetes is matched against kubelet versions.\n\n### Metric dependencies\n- **kube-state-metrics:** `kube_node_info` (kubelet version)\n- **NVKE controller:** `nvke_controller_cluster_info` (in-progress control-plane upgrades) and `nvke_controller_node_info` (OS profile). These use `name` / `tenant_cluster` as the cluster identity matching the Cluster variable. See [dsx-ai-factory/nvke](https://github.com/dsx-ai-factory/nvke).\n\nController inventory metrics are needed only for their corresponding panels. If those series are absent, those panels stay empty while kubelet panels can still render.\n\nQueries match both the `nvke_controller_*` series and the `nke_controller_*` series a controller emitted before the rename, for one release, so the panels stay continuous across the upgrade.\n"
+        "content": "### Scope\nIt is an importable reference dashboard and is not deployed by nke-stack. Select a Prometheus datasource with kube-state-metrics from the selected Kubernetes cluster. Controller inventory metrics add the control-plane upgrade and release panels; the kubelet panels can render without them.\n\n### Assumptions\n- Every queried kube-state-metrics series carries the Prometheus label `k8s_cluster_name` (from the OpenTelemetry resource attribute `k8s.cluster.name`).\n- **Target Kubernetes** and **target release** are dashboard variables. They are policy choices used to compute \u201cat target\u201d and burndown panels. Target Kubernetes is matched against kubelet versions.\n\n### Metric dependencies\n- **kube-state-metrics:** `kube_node_info` (kubelet version)\n- **NVKE controller:** `nvke_controller_cluster_info` (in-progress control-plane upgrades) and `nvke_controller_node_info` (release). These use `name` / `tenant_cluster` as the cluster identity matching the Cluster variable. See [dsx-ai-factory/nvke](https://github.com/dsx-ai-factory/nvke).\n\nController inventory metrics are needed only for their corresponding panels. If those series are absent, those panels stay empty while kubelet panels can still render.\n\nQueries match both the `nvke_controller_*` series and the `nke_controller_*` series a controller emitted before the rename, for one release, so the panels stay continuous across the upgrade.\n"
       }
     },
     {
@@ -282,8 +282,8 @@
     {
       "id": 7,
       "type": "stat",
-      "title": "At target OS profile (${target_os_profile})",
-      "description": "Requires nvke_controller_node_info os_profile.",
+      "title": "At target release (${target_release})",
+      "description": "Requires nvke_controller_node_info release.",
       "gridPos": {
         "x": 18,
         "y": 14,
@@ -297,14 +297,14 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(max by (tenant_cluster,node) ({__name__=~\"nke_controller_node_info|nvke_controller_node_info\", tenant_cluster=~\"$cluster\",os_profile=\"$target_os_profile\"})) or (0 * count({__name__=~\"nke_controller_node_info|nvke_controller_node_info\", tenant_cluster=~\"$cluster\"}))",
+          "expr": "count(max by (tenant_cluster,node) ({__name__=~\"nke_controller_node_info|nvke_controller_node_info\", tenant_cluster=~\"$cluster\",release=\"$target_release\"})) or (0 * count({__name__=~\"nke_controller_node_info|nvke_controller_node_info\", tenant_cluster=~\"$cluster\"}))",
           "legendFormat": "Count",
           "instant": true,
           "range": false
         },
         {
           "refId": "B",
-          "expr": "100 * (count(max by (tenant_cluster,node) ({__name__=~\"nke_controller_node_info|nvke_controller_node_info\", tenant_cluster=~\"$cluster\",os_profile=\"$target_os_profile\"})) or (0 * count({__name__=~\"nke_controller_node_info|nvke_controller_node_info\", tenant_cluster=~\"$cluster\"}))) / clamp_min(count(max by (tenant_cluster,node) ({__name__=~\"nke_controller_node_info|nvke_controller_node_info\", tenant_cluster=~\"$cluster\"})), 1)",
+          "expr": "100 * (count(max by (tenant_cluster,node) ({__name__=~\"nke_controller_node_info|nvke_controller_node_info\", tenant_cluster=~\"$cluster\",release=\"$target_release\"})) or (0 * count({__name__=~\"nke_controller_node_info|nvke_controller_node_info\", tenant_cluster=~\"$cluster\"}))) / clamp_min(count(max by (tenant_cluster,node) ({__name__=~\"nke_controller_node_info|nvke_controller_node_info\", tenant_cluster=~\"$cluster\"})), 1)",
           "legendFormat": "Percent",
           "instant": true,
           "range": false
@@ -677,7 +677,7 @@
     {
       "id": 18,
       "type": "piechart",
-      "title": "OS profiles",
+      "title": "Releases",
       "description": "",
       "gridPos": {
         "x": 12,
@@ -692,8 +692,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count by (os_profile) (max by (tenant_cluster,node,os_profile) ({__name__=~\"nke_controller_node_info|nvke_controller_node_info\", tenant_cluster=~\"$cluster\"}))",
-          "legendFormat": "{{os_profile}}",
+          "expr": "count by (release) (max by (tenant_cluster,node,release) ({__name__=~\"nke_controller_node_info|nvke_controller_node_info\", tenant_cluster=~\"$cluster\"}))",
+          "legendFormat": "{{release}}",
           "instant": true,
           "range": false
         }
@@ -740,7 +740,7 @@
       "id": 19,
       "type": "table",
       "title": "Versions by cluster",
-      "description": "Lists every observed kubelet and OS profile version for each cluster, including mixed versions during an upgrade.",
+      "description": "Lists every observed kubelet and release version for each cluster, including mixed versions during an upgrade.",
       "gridPos": {
         "x": 0,
         "y": 47,
@@ -761,7 +761,7 @@
         },
         {
           "refId": "D",
-          "expr": "count by (k8s_cluster_name,os_profile) (max by (k8s_cluster_name,node,os_profile) (label_replace({__name__=~\"nke_controller_node_info|nvke_controller_node_info\", tenant_cluster=~\"$cluster\"}, \"k8s_cluster_name\", \"$1\", \"tenant_cluster\", \"(.*)\")))",
+          "expr": "count by (k8s_cluster_name,release) (max by (k8s_cluster_name,node,release) (label_replace({__name__=~\"nke_controller_node_info|nvke_controller_node_info\", tenant_cluster=~\"$cluster\"}, \"k8s_cluster_name\", \"$1\", \"tenant_cluster\", \"(.*)\")))",
           "format": "table",
           "instant": true,
           "range": false
@@ -786,7 +786,7 @@
                 ],
                 "operation": "aggregate"
               },
-              "os_profile": {
+              "release": {
                 "aggregations": [
                   "uniqueValues"
                 ],
@@ -808,7 +808,7 @@
             "renameByName": {
               "k8s_cluster_name": "Cluster",
               "kubelet_version (uniqueValues)": "Kubelet versions",
-              "os_profile (uniqueValues)": "OS profiles"
+              "release (uniqueValues)": "Releases"
             }
           }
         }
@@ -892,21 +892,21 @@
         "description": "Kubelet target version. Used only for at-target and burndown math."
       },
       {
-        "name": "target_os_profile",
-        "label": "Target OS profile",
+        "name": "target_release",
+        "label": "Target release",
         "type": "query",
         "datasource": {
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values(nvke_controller_node_info{tenant_cluster=~\"$cluster\"}, os_profile)",
-        "query": "label_values(nvke_controller_node_info{tenant_cluster=~\"$cluster\"}, os_profile)",
+        "definition": "label_values(nvke_controller_node_info{tenant_cluster=~\"$cluster\"}, release)",
+        "query": "label_values(nvke_controller_node_info{tenant_cluster=~\"$cluster\"}, release)",
         "includeAll": false,
         "multi": false,
         "refresh": 2,
         "sort": 1,
         "current": {},
-        "description": "Target OS profile from nvke_controller_node_info. Requires cluster/node inventory metrics."
+        "description": "Target release from nvke_controller_node_info. Requires cluster/node inventory metrics."
       }
     ]
   },

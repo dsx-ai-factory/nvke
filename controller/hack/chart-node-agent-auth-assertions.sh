@@ -26,11 +26,11 @@ absent() {
 }
 
 # setting <description> <config.yaml key> <value> <rendered>
-# Asserts one key of the rendered nke-controller-config, where the controller
+# Asserts one key of the rendered nvke-controller-config, where the controller
 # reads its settings. A list compares as its items joined with commas.
 setting() {
   local got
-  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nke-controller-config") | .data["config.yaml"]' <<<"$4" |
+  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nvke-controller-config") | .data["config.yaml"]' <<<"$4" |
     yq ".$2 | (select(tag == \"!!seq\") | join(\",\")) // .")"
   if [[ "${got}" == "$3" ]]; then
     printf '  ok    %s\n' "$1"
@@ -62,7 +62,7 @@ tls_jwt_values=(
 out="$(helm template cwe "${CHART}" "${tls_jwt_values[@]}")"
 setting "capability is true" nodeAgent.tlsJWT.enabled true "${out}"
 absent "no token configuration ConfigMap" 'name: nke-node-agent-auth' "${out}"
-absent "no client identity Secret" 'secretName: nke-controller-agent-client-tls' "${out}"
+absent "no client identity Secret" 'secretName: nvke-controller-agent-client-tls' "${out}"
 absent "no client identity mount" 'name: node-agent-client-tls' "${out}"
 setting "JWT issuer comes from controller config" nodeAgent.tlsJWT.issuer https://identity.example.test "${out}"
 setting "JWT key source comes from controller config" nodeAgent.tlsJWT.jwksURI https://identity.example.test/.well-known/jwks.json "${out}"
@@ -78,8 +78,8 @@ if whitespace_out="$(helm template cwe "${CHART}" "${tls_jwt_values[@]}" \
 else
   want "whitespace-only identity exchange URL is rejected" 'nodeAgent.tlsJwt.dsxIdentityExchangeURL is required' "${whitespace_out}"
 fi
-absent "no certificate Secret reload" 'secret.reloader.stakater.com/reload: "nke-controller-agent-client-tls"' "${out}"
-absent "no certificate mount" 'mountPath: /etc/nke/node-agent-tls' "${out}"
+absent "no certificate Secret reload" 'secret.reloader.stakater.com/reload: "nvke-controller-agent-client-tls"' "${out}"
+absent "no certificate mount" 'mountPath: /etc/nvke/node-agent-client-tls' "${out}"
 
 if ((failures > 0)); then
   printf '%d node-agent TLS/JWT chart assertion(s) failed\n' "${failures}" >&2

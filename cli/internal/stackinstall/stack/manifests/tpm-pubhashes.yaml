@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The allowlist SPIRE's tpmDirect node attestor reads. It is created empty
+# and stays that way in this directory.
+#
+# A node's TPM EK thumbprint cannot be known before the node exists, and the
+# controller creates nodes long after the install. The controller fills the
+# ConfigMap, and nobody edits it:
+#
+#   CAPNICo sets NicoMachine.status.tpmEkPubHash
+#     -> the controller writes a ClusterStaticEntry for that hash
+#     -> the controller derives this ConfigMap from those entries
+#     -> SPIRE server's tpmDirect attestor reads it
+#
+# Re-applying this file with --server-side leaves the controller's keys in
+# place. The controller owns them under its own field manager, and an apply of
+# empty data by another manager does not remove them.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tpm-pubhashes
+  namespace: spire-server
+data: {}

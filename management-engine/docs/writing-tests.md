@@ -8,8 +8,8 @@ state, not workflow scripts. Four rules follow from that.
   a flow that is specific to this provider.
 - Group cases only when their settled generation differs.
 - A step only waits for the case-set invariant, which is the current
-  `observedGeneration`, the expected generation, or deletion. Goldens assert
-  every field and condition.
+  condition's `observedGeneration`, the expected generation, or deletion.
+  NVKECluster cases use the `Synced` condition. Goldens assert every field and condition.
 - Use end-to-end tests for timing, watches, and interactions across
   controllers. Use envtest cases for individual state-machine states.
 

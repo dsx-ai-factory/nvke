@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+# A tenant cluster on the local site: one control-plane node and one worker,
+# each a nico-sim container on the tenant network, for
+# `nvkectl create cluster -f`. The site, VPC, instance type, subnet and SSH
+# key group are nico-sim's seeded identifiers (controller/nico-sim/README.md,
+# "NICo Containers Site"); the release is the local-site-arm64 set published
+# with `nvkectl create`.
+name: tenant-1
+# Kubernetes version of the tenant, X.Y.Z without a leading v.
+controlPlaneKubernetesVersion: 1.34.2
+cniPlugin: ovn-kubernetes
+etcdEncrypted: false
+# The pod CIDR stays clear of 192.168.0.0/16, where a lab's DNS server may
+# live; OVN routes the whole pod CIDR into the overlay.
+network:
+  podCIDR: 10.244.0.0/16
+  serviceCIDR: 10.96.0.0/12
+# No controlPlaneVIP: kubeadm uses the control-plane node's address as the
+# API endpoint, so no kube-vip and no BGP speaker are needed.
+
+nico:
+  orgID: novxwn552ssc
+  siteID: 00000000-0000-0000-0000-000000000001
+  vpcID: 00000000-0000-0000-0000-000000000002
+
+controlPlaneConfig:
+  desiredCount: 1
+  systemReservedMemory: "1Gi"
+  nico:
+    instanceTypePreference:
+      - 00000000-0000-0000-0000-000000000005
+    subnetIDs:
+      - 00000000-0000-0000-0000-000000000003
+    sshKeyGroupIDs:
+      - 00000000-0000-0000-0000-000000000004
+    release: local-site-arm64
+
+nodePools:
+  - name: worker
+    nodeNamePrefix: w
+    desiredNodeCount: 1
+    controlPlane: false
+    systemReservedMemory: "1Gi"
+    nico:
+      instanceTypeID: 00000000-0000-0000-0000-000000000005
+      subnetIDs:
+        - 00000000-0000-0000-0000-000000000003
+      sshKeyGroupIDs:
+        - 00000000-0000-0000-0000-000000000004
+      release: local-site-arm64

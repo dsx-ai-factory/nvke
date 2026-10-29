@@ -48,8 +48,6 @@ docker push ghcr.io/example/controller-profiles:v1
 Configure the controller Helm chart to consume the image:
 
 ```yaml
-podSecurityContext: null
-
 profiles:
   path: /profiles
   image:
@@ -62,9 +60,9 @@ spiffe:
 ```
 
 The chart's `materialize-profiles` init container copies `/profiles` from the
-content image into the directory the controller reads. If the registry is
+content image into the directory the controller reads. It runs as the chart's
+unprivileged uid, so the files under `/profiles` must be world-readable, as a
+plain `COPY` leaves them. If the registry is
 private, also configure `imagePullSecrets` with credentials that can pull the
 image. This example uses plaintext controller-to-agent transport for evaluation;
-configure SPIFFE before using it in production. Setting `podSecurityContext` to
-`null` also runs the controller and materializer as root; restore a non-root
-materialization design for production.
+configure SPIFFE before using it in production.

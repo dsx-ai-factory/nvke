@@ -19,6 +19,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
@@ -50,13 +51,13 @@ var _ = Describe("NVKE API authentication", Label("authn"), func() {
 		audience, found, mode = authnDeployment(ctx, clientset)
 		if !found {
 			authnAbsentf(
-				"authentication is OFF: ConfigMap %s/%s does not exist, so this NVKE is configured to authenticate nobody and there is no audience to mint against",
-				controller.Namespace(), authtoken.ConfigMapName,
+				"authentication is OFF: neither apiAuth in %s/%s nor ConfigMap %s/%s turns it on, so this NVKE is configured to authenticate nobody and there is no audience to mint against",
+				controller.Namespace(), authtoken.ControllerConfigMapName, controller.Namespace(), authtoken.ConfigMapName,
 			)
 		}
 		if mode == authnModeDisabled {
 			authnAbsentf(
-				"authentication is OFF: %s is not set on Deployment %s/%s, so the authentication middleware is not in the request chain even though ConfigMap %s carries an audience",
+				"authentication is OFF: neither %s on Deployment %s/%s nor apiAuth.enabled in nvke-controller-config is set, so the authentication middleware is not in the request chain even though ConfigMap %s carries an audience",
 				authnConfigPathEnv, controller.Namespace(), controller.Deployment(), authtoken.ConfigMapName,
 			)
 		}
@@ -68,7 +69,7 @@ var _ = Describe("NVKE API authentication", Label("authn"), func() {
 		GinkgoHelper()
 		if mode == authnModePermissive {
 			Skip(fmt.Sprintf(
-				"authentication is PERMISSIVE: permissiveMode is true in %s/%s, so a rejected request is counted and then served, and 200 is the correct answer to this case",
+				"authentication is PERMISSIVE: apiAuth.permissive is true in %s/%s, so a rejected request is counted and then served, and 200 is the correct answer to this case",
 				controller.Namespace(), nvke.ControllerConfigMap,
 			))
 		}
@@ -148,7 +149,7 @@ var _ = Describe("NVKE API authentication", Label("authn"), func() {
 			status, body, err := authnForwarder(restConfig).Get(tctx, path)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(status).To(Equal(http.StatusOK),
-				"%s is on the anonymous surface in internal/auth/routes.go and must stay reachable without a credential; response body: %s",
+				"%s is on the anonymous surface in auth/authn/routes.go and must stay reachable without a credential; response body: %s",
 				path, body)
 		},
 		// Exempt deliberately: Tilt probes it and the UI reads version metadata
@@ -191,8 +192,9 @@ var _ = Describe("NVKE API authentication", Label("authn"), func() {
 // parameter binder with a 400 — hence 401 exactly, not "not 200".
 const authnProbeUUID = "00000000-0000-0000-0000-000000000000"
 
-// authnConfigPathEnv puts the middleware in the chain; permissiveMode in
-// nke-controller-config decides whether it enforces.
+// authnConfigPathEnv puts the middleware in the chain for a ConfigMap the chart
+// does not render; apiAuth.enabled in nvke-controller-config does it for one it
+// does. apiAuth.permissive in nvke-controller-config decides whether either enforces.
 const authnConfigPathEnv = "AUTH_CONFIG_PATH"
 
 const (
@@ -201,7 +203,7 @@ const (
 	authnModeEnforcing  = "enforcing"
 )
 
-// From deploy/k8s/nke-auth-dev.yaml; .invalid is reserved and cannot collide.
+// From deploy/k8s/nvke-auth-dev.yaml; .invalid is reserved and cannot collide.
 const (
 	authnOutsiderNamespace      = "nke-outsiders"
 	authnOutsiderServiceAccount = "nke-outsider"
@@ -213,7 +215,8 @@ const (
 const authnTimeout = 60 * time.Second
 
 // detectAuthnEnforcement reports whether the NVKE Deployment's authentication
-// middleware is absent, permissive or enforcing.
+// middleware is absent, permissive or enforcing, from AUTH_CONFIG_PATH on its
+// container and apiAuth.enabled and apiAuth.permissive in its nvke-controller-config.
 func detectAuthnEnforcement(ctx context.Context, clientset kubernetes.Interface) (string, error) {
 	deployment, err := clientset.AppsV1().Deployments(controller.Namespace()).Get(ctx, controller.Deployment(), metav1.GetOptions{})
 	if err != nil {
@@ -225,15 +228,25 @@ func detectAuthnEnforcement(ctx context.Context, clientset kubernetes.Interface)
 		return "", fmt.Errorf("deployment %s/%s has no container named %s", controller.Namespace(), controller.Deployment(), controller.Deployment())
 	}
 
-	if _, found := containerEnvValue(container, authnConfigPathEnv); !found {
-		return authnModeDisabled, nil
-	}
+	_, fileConfigured := containerEnvValue(container, authnConfigPathEnv)
 
 	settings, err := clientset.CoreV1().ConfigMaps(controller.Namespace()).Get(ctx, nvke.ControllerConfigMap, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) && !fileConfigured {
+		// A controller older than the settings ConfigMap, with no file either.
+		return authnModeDisabled, nil
+	}
 	if err != nil {
 		return "", fmt.Errorf("getting ConfigMap %s/%s: %w", controller.Namespace(), nvke.ControllerConfigMap, err)
 	}
-	permissive, err := nvke.ControllerSetting(settings.Data, "permissiveMode")
+	inline, err := nvke.APIAuthEnabled(settings.Data)
+	if err != nil {
+		return "", err
+	}
+	if !fileConfigured && !inline {
+		return authnModeDisabled, nil
+	}
+
+	permissive, err := nvke.ControllerSetting(settings.Data, nvke.PermissiveKey)
 	if err != nil {
 		return "", err
 	}
@@ -319,17 +332,21 @@ func authnRequired() bool {
 	return required
 }
 
-// parseAuthnRequired reads the variable; unset or empty is false. Anything
-// ParseBool refuses is an error, because a variable whose job is to fail a run
-// must not decline to.
 func parseAuthnRequired(raw string) (bool, error) {
+	return parseRequireEnv(authnRequireEnv, raw)
+}
+
+// parseRequireEnv reads a boolean variable, such as NKE_E2E_REQUIRE_AUTHN,
+// that turns a skip into a failure; unset or empty is false. Anything ParseBool refuses is
+// an error, because a variable whose job is to fail a run must not decline to.
+func parseRequireEnv(name, raw string) (bool, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return false, nil
 	}
 	required, err := strconv.ParseBool(trimmed)
 	if err != nil {
-		return false, fmt.Errorf("parsing %s=%q: %w (it takes a boolean: 1, t, T, TRUE, true, True, or their false counterparts)", authnRequireEnv, raw, err)
+		return false, fmt.Errorf("parsing %s=%q: %w (it takes a boolean: 1, t, T, TRUE, true, True, or their false counterparts)", name, raw, err)
 	}
 	return required, nil
 }
@@ -416,10 +433,11 @@ func TestDetectAuthnEnforcement(t *testing.T) {
 			},
 		}
 	}
-	settings := func(permissive bool) *corev1.ConfigMap {
+	settings := func(permissive, inline bool) *corev1.ConfigMap {
+		config := fmt.Sprintf("metricsListenAddress: 127.0.0.1:9090\napiAuth:\n  enabled: %t\n  permissive: %t\n", inline, permissive)
 		return &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{Namespace: controller.Namespace(), Name: nvke.ControllerConfigMap},
-			Data:       map[string]string{"config.yaml": fmt.Sprintf("metricsListenAddress: 127.0.0.1:9090\npermissiveMode: %t\n", permissive)},
+			Data:       map[string]string{"config.yaml": config},
 		}
 	}
 	authConfigPath := corev1.EnvVar{Name: "AUTH_CONFIG_PATH", Value: "/etc/nke/auth/auth.yaml"}
@@ -428,29 +446,41 @@ func TestDetectAuthnEnforcement(t *testing.T) {
 		name       string
 		env        []corev1.EnvVar
 		permissive bool
+		inline     bool
 		want       string
 	}{
 		{
-			name:       "no AUTH_CONFIG_PATH is authentication off, whatever permissiveMode says",
+			name:       "no AUTH_CONFIG_PATH is authentication off, whatever apiAuth.permissive says",
 			permissive: true,
 			want:       authnModeDisabled,
 		},
 		{
-			name:       "AUTH_CONFIG_PATH with permissiveMode true is permissive",
+			name:       "AUTH_CONFIG_PATH with apiAuth.permissive true is permissive",
 			env:        []corev1.EnvVar{authConfigPath},
 			permissive: true,
 			want:       authnModePermissive,
 		},
 		{
-			name: "AUTH_CONFIG_PATH with permissiveMode false is enforcing",
+			name: "AUTH_CONFIG_PATH with apiAuth.permissive false is enforcing",
 			env:  []corev1.EnvVar{authConfigPath},
 			want: authnModeEnforcing,
+		},
+		{
+			name:   "apiAuth.enabled without AUTH_CONFIG_PATH is enforcing",
+			inline: true,
+			want:   authnModeEnforcing,
+		},
+		{
+			name:       "apiAuth.enabled with apiAuth.permissive true is permissive",
+			inline:     true,
+			permissive: true,
+			want:       authnModePermissive,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := detectAuthnEnforcement(context.Background(), fake.NewClientset(deployment(tt.env...), settings(tt.permissive)))
+			got, err := detectAuthnEnforcement(context.Background(), fake.NewClientset(deployment(tt.env...), settings(tt.permissive, tt.inline)))
 			if err != nil {
 				t.Fatalf("detectAuthnEnforcement: %v", err)
 			}
@@ -460,9 +490,20 @@ func TestDetectAuthnEnforcement(t *testing.T) {
 		})
 	}
 
-	t.Run("a missing nke-controller-config is an error, not a mode", func(t *testing.T) {
+	t.Run("a missing nvke-controller-config is an error, not a mode", func(t *testing.T) {
 		if _, err := detectAuthnEnforcement(context.Background(), fake.NewClientset(deployment(authConfigPath))); err == nil {
-			t.Fatal("expected an error when nke-controller-config cannot be read")
+			t.Fatal("expected an error when nvke-controller-config cannot be read")
+		}
+	})
+
+	t.Run("no AUTH_CONFIG_PATH and no nvke-controller-config is authentication off", func(t *testing.T) {
+		// A controller older than the settings ConfigMap, with no file either.
+		got, err := detectAuthnEnforcement(context.Background(), fake.NewClientset(deployment()))
+		if err != nil {
+			t.Fatalf("detectAuthnEnforcement: %v", err)
+		}
+		if got != authnModeDisabled {
+			t.Fatalf("detectAuthnEnforcement = %q, want %q", got, authnModeDisabled)
 		}
 	})
 

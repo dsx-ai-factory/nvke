@@ -111,11 +111,11 @@ spec:
         - DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=600 nvke-agent nvke-kubeadm-distro-{{ trimPrefix .KubernetesVersion "v" }} spire-agent
         - [sh, -c, 'u=http://carbide-pxe.forge:18080/files/node-agent/nvke-agent; if curl -fsSL "$u" -o /tmp/nvke-agent; then install -m 0755 /tmp/nvke-agent /usr/local/bin/nvke-agent && echo "downloaded local nvke-agent" && /usr/local/bin/nvke-agent -version; else echo "local nvke-agent not available at $u; using image agent"; fi']
       {{- if .CalicoEnabled }}
-        - DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=600 nvke-cni-calico-images-3.30.1 nvke-cni-calico-manifests-3.30.1
+        - DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=600 {{ .CNIImagePackage }} {{ .CNIChartsPackage }}
       {{- end }}
       {{- if .OvnEnabled }}
         # The charts package is what the post-init CNI install reads.
-        - DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=600 nvke-cni-ovn-images-2.4.2 nvke-cni-ovn-charts-2.4.2
+        - DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=600 {{ .CNIImagePackage }} {{ .CNIChartsPackage }}
       {{- end }}
         - sysctl --system
         - systemctl daemon-reload

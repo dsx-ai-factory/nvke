@@ -18,6 +18,6 @@ metadata:
 spec:
   {{- $collector := dict "image" (include "nktp.image" (dict "imageRegistry" .Values.global.imageRegistry "image" ($values.otelcol.image | default .Values.otelcol_image))) }}
   {{- /* Kubernetes workload values override defaults. The resolved Collector image overrides any workload image. */}}
-  {{- mustMergeOverwrite (dict "mode" "statefulset" "managementState" "managed" "upgradeStrategy" "automatic" "targetAllocator" (dict "image" (include "nktp.image" (dict "imageRegistry" .Values.global.imageRegistry "image" .Values.targetallocator_image)))) (omit (include "nktp.withSidecar" (dict "name" "large_target_metrics" "values" $values "root" $) | fromYaml) "config") $collector | toYaml | nindent 2 }}
+  {{- mustMergeOverwrite (dict "mode" "statefulset" "managementState" "managed" "upgradeStrategy" "automatic" "targetAllocator" (dict "mtls" (dict "useCertManager" .Values.certManager.targetAllocators.enabled) "image" (include "nktp.image" (dict "imageRegistry" .Values.global.imageRegistry "image" .Values.targetallocator_image)))) (omit (include "nktp.withSidecar" (dict "name" "large_target_metrics" "values" $values "root" $) | fromYaml) "config") $collector | toYaml | nindent 2 }}
   config:
     {{- $values.otelcol.config | toYaml | nindent 4 }}

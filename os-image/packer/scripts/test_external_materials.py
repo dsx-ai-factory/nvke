@@ -55,12 +55,18 @@ class ComposeImageInputsTest(unittest.TestCase):
         for directory in (self.materials, self.source_files, self.tools):
             directory.mkdir()
         (self.materials / "agent").write_bytes(b"agent-deb\n")
-        for binding in ("calico", "kubeadm-distro", "ovn", "spire-agent"):
-            name = "spire-agent_1.0_all.deb" if binding == "spire-agent" else f"{binding}.deb"
+        for binding, name in (
+            ("calico", "calico.deb"),
+            ("kubeadm-distro", "kubeadm-distro.deb"),
+            ("ovn", "ovn.deb"),
+            ("spire-agent", "spire-agent_1.0_all.deb"),
+            ("doca-ovs", "doca-openvswitch-switch_1.0_all.deb"),
+        ):
             write_package_archive(self.materials / binding, name)
         for name in ("nvke-agent-spire.conf", "wait-spiffe-socket.sh",
                      "conntrack-tune.service", "configure-conntrack.sh",
-                     "10-nke-conntrack-timeouts.conf"):
+                     "10-nke-conntrack-timeouts.conf", "99-disable-network-config.cfg",
+                     "00-dhcp-all.yaml"):
             shutil.copyfile(SCRIPTS.parent.parent / "files" / name, self.source_files / name)
         write_executable(
             self.tools / "dpkg-scanpackages",
@@ -118,12 +124,15 @@ class ComposeImageInputsTest(unittest.TestCase):
                 "debs/kubeadm-distro.deb",
                 "debs/ovn.deb",
                 "debs/spire-agent_1.0_all.deb",
+                "debs/doca-openvswitch-switch_1.0_all.deb",
                 "nvke-agent-spire.conf",
                 "nvke-agent.deb",
                 "wait-spiffe-socket.sh",
                 "conntrack-tune.service",
                 "configure-conntrack.sh",
                 "10-nke-conntrack-timeouts.conf",
+                "99-disable-network-config.cfg",
+                "00-dhcp-all.yaml",
             },
         )
 
@@ -138,6 +147,8 @@ class ComposeImageInputsTest(unittest.TestCase):
                 ("conntrack-tune.service", 0o644),
                 ("configure-conntrack.sh", 0o755),
                 ("10-nke-conntrack-timeouts.conf", 0o644),
+                ("99-disable-network-config.cfg", 0o644),
+                ("00-dhcp-all.yaml", 0o644),
             ):
                 with self.subTest(name=name):
                     self.assertEqual(archive.getmember(name).mode, mode)
@@ -169,8 +180,11 @@ class ComposeImageInputsTest(unittest.TestCase):
         require_real_tools(self, "dpkg-deb", "dpkg-scanpackages")
         (self.tools / "dpkg-scanpackages").unlink()
         (self.tools / "dpkg-deb").unlink()
-        for number, binding in enumerate(("agent", "calico", "kubeadm-distro", "ovn", "spire-agent")):
-            name = "fixture-shared" if number in (1, 2) else ("spire-agent" if binding == "spire-agent" else f"fixture-{binding}")
+        for number, binding in enumerate(("agent", "calico", "kubeadm-distro", "ovn", "spire-agent", "doca-ovs")):
+            name = "fixture-shared" if number in (1, 2) else {
+                "spire-agent": "spire-agent",
+                "doca-ovs": "doca-openvswitch-switch",
+            }.get(binding, f"fixture-{binding}")
             package = self.root / f"package-{number}"
             control = package / "DEBIAN"
             control.mkdir(parents=True)
@@ -281,7 +295,7 @@ class ComposeImageInputsTest(unittest.TestCase):
                             patch.object(module.subprocess, "run") as index:
                         with self.assertRaisesRegex(SystemExit, expected):
                             module.main()
-                        self.assertEqual(install.call_count, 6 if copies_agent else 0)
+                        self.assertEqual(install.call_count, 8 if copies_agent else 0)
                         index.assert_not_called()
                     if existing:
                         self.assertEqual(output.read_bytes(), b"prior output")
@@ -497,10 +511,23 @@ class ComposeImageInputsTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("exactly one spire-agent_*.deb across all bindings", result.stderr)
 
+    def test_doca_openvswitch_switch_cardinality(self):
+        for filenames in (("other.deb",), ("doca-openvswitch-switch_1_all.deb", "doca-openvswitch-switch_2_all.deb")):
+            with self.subTest(filenames=filenames):
+                with tarfile.open(self.materials / "doca-ovs", "w") as archive:
+                    for name in filenames:
+                        member = tarfile.TarInfo(name)
+                        member.size = 1
+                        archive.addfile(member, io.BytesIO(b"x"))
+                result = self.run_compose(self.root / "doca.tar")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("exactly one doca-openvswitch-switch_*.deb", result.stderr)
+
     def test_missing_files_and_unsafe_outputs(self):
         for relative in ("materials/ovn", "materials/agent", "source-files/nvke-agent-spire.conf",
                          "source-files/wait-spiffe-socket.sh", "source-files/conntrack-tune.service",
-                         "source-files/configure-conntrack.sh", "source-files/10-nke-conntrack-timeouts.conf"):
+                         "source-files/configure-conntrack.sh", "source-files/10-nke-conntrack-timeouts.conf",
+                         "source-files/99-disable-network-config.cfg", "source-files/00-dhcp-all.yaml"):
             with self.subTest(relative=relative):
                 path = self.root / relative
                 saved = path.read_bytes()

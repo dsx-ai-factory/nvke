@@ -8,12 +8,14 @@ import (
 	"net"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v11"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nvkerbac"
 )
 
 const (
@@ -21,20 +23,22 @@ const (
 	InfraProviderNico = "nico"
 	// InfraProviderInfra is the API-facing name for the generic CAPI provider block.
 	InfraProviderInfra = "infra"
+	// InfraProviderLaunchLayer is the API-facing name for the LaunchLayer provider block.
+	InfraProviderLaunchLayer = "launchLayer"
 
 	SpireAttestationMethodTPM       SpireAttestationMethod = "tpm"
 	SpireAttestationMethodJoinToken SpireAttestationMethod = "joinToken"
 	SpireAttestationMethodDSXIMDS   SpireAttestationMethod = "dsxImds"
 
-	NodeAgentExternalTLSCertPath = "/etc/nke/node-agent-client-tls/tls.crt"
-	NodeAgentExternalTLSKeyPath  = "/etc/nke/node-agent-client-tls/tls.key"
-	NodeAgentExternalTLSCAPath   = "/etc/nke/node-agent-client-tls/ca.crt"
+	NodeAgentExternalTLSCertPath = "/etc/nvke/node-agent-client-tls/tls.crt"
+	NodeAgentExternalTLSKeyPath  = "/etc/nvke/node-agent-client-tls/tls.key"
+	NodeAgentExternalTLSCAPath   = "/etc/nvke/node-agent-client-tls/ca.crt"
 	// NodeAgentExternalTLSNVKECertPath and ...KeyPath are an optional second client
 	// identity whose URI SAN is the new-form controller URN. When present, nodes whose
 	// agent speaks the new form are dialed with it; otherwise the first identity is
 	// used for every node.
-	NodeAgentExternalTLSNVKECertPath = "/etc/nke/node-agent-client-tls/nvke-tls.crt"
-	NodeAgentExternalTLSNVKEKeyPath  = "/etc/nke/node-agent-client-tls/nvke-tls.key"
+	NodeAgentExternalTLSNVKECertPath = "/etc/nvke/node-agent-client-tls/nvke-tls.crt"
+	NodeAgentExternalTLSNVKEKeyPath  = "/etc/nvke/node-agent-client-tls/nvke-tls.key"
 	NodeAgentConfigPath              = "/etc/default/nke-agent"
 	NodeAgentControllerCAPath        = "/etc/nke/controller-ca.crt"
 )
@@ -107,7 +111,7 @@ type NodeAgentConfig struct {
 
 // Config is the controller's configuration. A field with an env tag comes from
 // that environment variable; a field with a controllerconfig tag comes from that
-// key in the mounted nke-controller-config file, which
+// key in the mounted nvke-controller-config file, which
 // controllerconfig.Config.ApplyTo copies in at startup.
 type Config struct {
 	// LogLevel is the level of logs to output (debug|info|warn|error)
@@ -132,6 +136,11 @@ type Config struct {
 
 	// DBQueryLogLevel is the level of logs to output for all database queries (debug|info)
 	DBQueryLogLevel string `env:"DB_QUERY_LOG_LEVEL" default:"debug"`
+
+	// DBQueryLogValues logs each query with its values instead of a "?" for each,
+	// and logs PostgreSQL error messages. A query can carry operator-supplied
+	// content, and a message can repeat a rejected value, so it is off by default.
+	DBQueryLogValues bool `env:"DB_QUERY_LOG_VALUES" default:"false"`
 
 	// DBMaxOpenConnections is the maximum number of open connections to the database
 	DBMaxOpenConnections int `env:"DB_MAX_OPEN_CONNECTIONS" default:"32"`
@@ -235,6 +244,18 @@ type Config struct {
 	// CertRenewalThresholdDays is passed to the certificate-renewal runbook.
 	CertRenewalThresholdDays int `controllerconfig:"certRenewal.thresholdDays"`
 
+	// CredentialMonitoringEnabled enables read-only credential inspection independently of renewal.
+	CredentialMonitoringEnabled bool `controllerconfig:"credentialMonitoring.enabled"`
+
+	// CertificateInspectionInterval is the interval between node certificate inspections.
+	CertificateInspectionInterval time.Duration `controllerconfig:"credentialMonitoring.inspectionInterval"`
+
+	// CertificateObservationMaxAge is the oldest observation that still counts as fresh.
+	CertificateObservationMaxAge time.Duration `controllerconfig:"credentialMonitoring.observationMaxAge"`
+
+	// CertificateWarningDays is how many days before expiry a certificate is reported as expiring.
+	CertificateWarningDays int `controllerconfig:"credentialMonitoring.warningDays"`
+
 	// NVKESiteControllerName is the name of the site controller
 	NVKESiteControllerName string `env:"NKE_SITE_CONTROLLER_NAME"`
 
@@ -261,13 +282,20 @@ type Config struct {
 	ManagedByLabelValue string `controllerconfig:"managedByLabelValue"`
 
 	// ManagementNamespace is the shared management-plane namespace holding the
-	// tenant-access Secrets, the nke-rbac ConfigMap and the OIDC-mode CAPI
+	// tenant-access Secrets, the RBAC ConfigMap and the OIDC-mode CAPI
 	// objects. Empty means constants.LegacyManagementNamespace, so a config.yaml
 	// written before this key existed keeps today's behavior exactly. Read it
 	// through ManagementNamespaceOrDefault rather than directly: unlike the
 	// label keys, the old namespace is not also read, so an empty value reaching
 	// a client would address the wrong namespace rather than fall back.
 	ManagementNamespace string `controllerconfig:"managementNamespace"`
+
+	// RBACConfigMapName is the operator-managed ConfigMap in ManagementNamespace
+	// holding the RBAC manifest applied into tenant clusters. Empty means
+	// nvkerbac.LegacyConfigMapName, for the same reason ManagementNamespace
+	// falls back. Read it through RBACConfigMapSource, which pairs it with the
+	// namespace it is resolved against.
+	RBACConfigMapName string `controllerconfig:"rbacConfigMapName"`
 
 	// SpiffeEnabled is a feature flag to enable SPIFFE support.
 	SpiffeEnabled bool `controllerconfig:"spire.spiffeEnabled"`
@@ -377,21 +405,25 @@ type Config struct {
 	TenantAccessEnabled bool `controllerconfig:"tenantAccessEnabled"`
 
 	// AuthConfigPath is the mounted YAML file holding the API authentication
-	// configuration. Unset disables authentication. A set-but-unreadable path is
-	// a startup failure, never "disabled"; see auth.Load.
+	// configuration, for a ConfigMap the chart does not render; the
+	// chart-rendered configuration is apiAuth in nvke-controller-config
+	// instead, and setting both is a startup failure. Unset, with apiAuth not
+	// enabled in nvke-controller-config, disables authentication. A
+	// set-but-unreadable path is a startup failure, never "disabled"; see
+	// authn.Load.
 	//
 	// Validate() does not check it: unset is the valid default.
 	AuthConfigPath string `env:"AUTH_CONFIG_PATH"`
 
-	// ControllerConfigPath is the nke-controller-config file every field with a
-	// controllerconfig tag comes from. Required: a path that does not load is a
-	// startup failure.
+	// ControllerConfigPath is the nvke-controller-config file every field with
+	// a controllerconfig tag comes from. Required: a path that does not load is
+	// a startup failure.
 	ControllerConfigPath string `env:"CONTROLLER_CONFIG_PATH,notEmpty"`
 
 	// PermissiveMode evaluates and logs authentication and admission decisions
-	// without enforcing them, so no request is rejected. No effect when
-	// AuthConfigPath is unset.
-	PermissiveMode bool `controllerconfig:"permissiveMode"`
+	// without enforcing them, so no request is rejected. No effect while
+	// authentication is off: AuthConfigPath unset and apiAuth.enabled false.
+	PermissiveMode bool `controllerconfig:"apiAuth.permissive"`
 
 	// Tracing configures the export of OpenTelemetry spans to an OTLP collector.
 	Tracing TracingConfig
@@ -399,6 +431,10 @@ type Config struct {
 	// Machine metadata allowlists permit exact keys under reserved domains.
 	MachineMetadataAllowlistedLabelKeys      []string `controllerconfig:"machineMetadataAllowlistedLabelKeys"`
 	MachineMetadataAllowlistedAnnotationKeys []string `controllerconfig:"machineMetadataAllowlistedAnnotationKeys"`
+
+	// AllowControlPlaneWithoutVIP permits control-plane lifecycle operations without a VIP for development.
+	// The API endpoint remains tied to the initializing node's IP.
+	AllowControlPlaneWithoutVIP bool `controllerconfig:"allowControlPlaneWithoutVIP"`
 }
 
 // TracingConfig configures OpenTelemetry span export.
@@ -460,11 +496,19 @@ type TeleportConfig struct {
 	DefaultWorkerPoolEnabled bool `env:"DEFAULT_WORKER_POOL_ENABLED" default:"false"`
 
 	// ManagedByLabelValue is the value of the Teleport "managed-by" label this
-	// controller stamps on tokens it creates, and the value ownership checks
-	// (IsOwnedByController) compare incoming tokens against. The chart default
-	// is for new sites; a site that exists pins its old value
-	// ("nke-cloud-workflow-engine"), or stops recognizing the tokens it owns.
+	// controller stamps on tokens it creates. It is the written value only;
+	// ownership checks go through OwnershipManagedByValues, which also accepts
+	// AcceptedManagedByLabelValues.
 	ManagedByLabelValue string `controllerconfig:"teleport.managedByLabelValue"`
+
+	// AcceptedManagedByLabelValues are additional "managed-by" values this
+	// controller still owns without writing: the spellings its own earlier
+	// releases stamped. Moving ManagedByLabelValue does not relabel the tokens
+	// and nodes already carrying the old one -- a Teleport token's labels are
+	// fixed at mint, a node's at join -- so without this the move disowns every
+	// one of them, and nothing reaps what nothing owns. List the previous value
+	// here for as long as any resource may still carry it.
+	AcceptedManagedByLabelValues []string `controllerconfig:"teleport.acceptedManagedByLabelValues"`
 
 	// TokenNamePrefix prefixes the deterministic Teleport TPM join token name
 	// this controller mints for a node.
@@ -473,6 +517,21 @@ type TeleportConfig struct {
 	// ResourceGroupLabelValue is the value of the Teleport "resource-group"
 	// label stamped on tokens and node userdata. Existing sites pin "nke".
 	ResourceGroupLabelValue string `controllerconfig:"teleport.resourceGroupLabelValue"`
+}
+
+// OwnershipManagedByValues returns every "managed-by" value this controller
+// owns: the one it writes first, then the ones it only accepts. Duplicates and
+// blanks are dropped, so a deployment that lists its current value among the
+// accepted ones gets the same answer as one that does not.
+func (c TeleportConfig) OwnershipManagedByValues() []string {
+	values := make([]string, 0, len(c.AcceptedManagedByLabelValues)+1)
+	for _, v := range append([]string{c.ManagedByLabelValue}, c.AcceptedManagedByLabelValues...) {
+		v = strings.TrimSpace(v)
+		if v != "" && !slices.Contains(values, v) {
+			values = append(values, v)
+		}
+	}
+	return values
 }
 
 // NodePoolTeleportDefault returns the teleport default for a node pool based on its role.
@@ -547,13 +606,29 @@ func (c Config) ManagementNamespaceOrDefault() string {
 	return c.ManagementNamespace
 }
 
-// Validate checks the settings the environment supplies. nke-controller-config
+// RBACConfigMapSource returns the ConfigMap holding the tenant RBAC manifest:
+// the management namespace and the name together, because a name resolved
+// against the wrong namespace reads nothing. The name falls back to
+// nvkerbac.LegacyConfigMapName when unset, for the reason
+// ManagementNamespaceOrDefault gives.
+func (c Config) RBACConfigMapSource() nvkerbac.Source {
+	name := c.RBACConfigMapName
+	if name == "" {
+		name = nvkerbac.LegacyConfigMapName
+	}
+	return nvkerbac.Source{Namespace: c.ManagementNamespaceOrDefault(), Name: name}
+}
+
+// Validate checks the settings the environment supplies. nvke-controller-config
 // validates its own when it loads.
 func (c *Config) Validate() error {
 	if err := c.AgentReadiness.Validate(); err != nil {
 		return err
 	}
 	if err := c.validateDBCredentials(); err != nil {
+		return err
+	}
+	if err := c.validateCredentialMonitoring(); err != nil {
 		return err
 	}
 	if c.SpireServerAPIAddress == "" {
@@ -571,7 +646,7 @@ func (c Config) EffectiveRunbooksDir() string {
 }
 
 // ParseConfigFromEnv parses the fields with an env tag. It does not validate:
-// the caller applies nke-controller-config first, then calls Validate.
+// the caller applies nvke-controller-config first, then calls Validate.
 func ParseConfigFromEnv() (Config, error) {
 	cfg, err := env.ParseAsWithOptions[Config](env.Options{
 		DefaultValueTagName: "default",

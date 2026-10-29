@@ -83,6 +83,11 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	if err := r.reconcileControlPlaneRolloutRequiredCondition(ctx, controlPlane); err != nil {
 		return fmt.Errorf("reconciling control plane rollout-required conditions: %w", err)
 	}
+	// The caller holds the cluster row lock. Keep drift observations current,
+	// but defer creation, remediation, upgrades, joins and accepted deletes.
+	if db.ControlPlaneMutationBlocked(cluster) {
+		return nil
+	}
 
 	failureDomains, err := r.readFailureDomains(ctx, cluster)
 	if err != nil {
@@ -125,6 +130,12 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		if joinInFlight {
 			return nil
 		}
+	}
+
+	// Last, and records intent only: scale-up, remediation and rollout grow
+	// first, so the control plane never shrinks while it owes a replacement.
+	if err := r.reconcileControlPlaneScaleDown(ctx, cluster, controlPlane); err != nil {
+		return fmt.Errorf("reconciling control plane scale-down: %w", err)
 	}
 
 	// Promote the oldest accepted delete into a teardown, one at a time.

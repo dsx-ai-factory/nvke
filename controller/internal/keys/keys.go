@@ -169,10 +169,8 @@ const (
 	// MachineReboot and MachineHealthIssue are the handshake with
 	// cluster-api-provider-nico, which watches exactly one key for each
 	// (--reboot-annotation, --repair-annotation) and silently ignores a
-	// request under any other. Until every deployment has been pointed at the
-	// new domain those two are written in both -- see the apply paths in
-	// internal/temporal/activities/capi_node_resources.go, and
-	// https://github.com/dsx-ai-factory/nvke/issues/1718 for dropping it.
+	// request under any other, so those two flags must name the current
+	// domain. They are the only keys here with a single configured reader.
 	MachineHostID                  Key = "host-id"
 	MachineRebootCompleteTimestamp Key = "reboot-complete-timestamp"
 	MachineReboot                  Key = "reboot"

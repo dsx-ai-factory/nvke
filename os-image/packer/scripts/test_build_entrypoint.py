@@ -12,6 +12,7 @@ import tempfile
 import unittest
 
 PACKER_DIR = Path(__file__).resolve().parents[1]
+REPO_ROOT = PACKER_DIR.parents[1]
 
 
 class BuildEntrypointTest(unittest.TestCase):
@@ -23,6 +24,12 @@ class BuildEntrypointTest(unittest.TestCase):
         self.packer_dir.mkdir(parents=True)
         shutil.copy(PACKER_DIR / "Makefile", self.packer_dir)
         shutil.copytree(PACKER_DIR / "scripts", self.packer_dir / "scripts")
+        # The Makefile includes ../../make/tool-versions.mk for the committed
+        # installer digests. Copy the real file rather than a stub so the
+        # fixture resolves ISO_CHECKSUM exactly as a real checkout does.
+        make_dir = self.root / "make"
+        make_dir.mkdir()
+        shutil.copy(REPO_ROOT / "make/tool-versions.mk", make_dir)
         self.env = os.environ.copy()
         self.env.update(
             PATH=f"{self.root}:{self.env['PATH']}",
@@ -247,6 +254,7 @@ class GuestUpdaterTest(unittest.TestCase):
                 log = root / "make.log"
                 env = os.environ | {"PATH": f"{tools}:{os.environ['PATH']}",
                                     "REPO_ROOT": str(repo), "ARCH": "arm64",
+                                    "NKE_TARGET_UBUNTU_SERIES": "26.04",
                                     "ARTIFACTS_DIR": str(artifacts), "TEST_MAKE_LOG": str(log)}
                 env.pop("SOURCE_ROOT", None)
                 if source_root is not None:
@@ -257,8 +265,10 @@ class GuestUpdaterTest(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 calls = log.read_text().splitlines()
-                self.assertEqual(len(calls), 5, calls)
+                self.assertEqual(len(calls), 6, calls)
                 self.assertIn(f"-C {repo}/agent deb-arm64", calls[0])
+                self.assertIn(f"-C {repo}/os-image/packages/doca-ovs debs", calls[5])
+                self.assertIn("UBUNTU_SERIES=26.04", calls[5])
                 self.assertTrue((artifacts / "00-dhcp-all.yaml").is_file())
                 self.assertTrue((artifacts / "99-disable-network-config.cfg").is_file())
                 self.assertTrue((artifacts / "nvke-agent-spire.conf").is_file())

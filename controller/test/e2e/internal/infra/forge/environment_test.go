@@ -192,27 +192,27 @@ func TestSiteReportsEveryMissingField(t *testing.T) {
 }
 
 func TestResolvePicksTheSiteByCapability(t *testing.T) {
-	az61 := Site{
+	site1 := Site{
 		ID: "a", VpcID: "v", SubnetID: "s", SSHKeyGroupID: "k",
 		InstanceTypes: []InstanceType{
 			{Name: "cpu.himem.t1", ID: "1", Provides: map[string]string{"machineType": "cpu", "arch": "amd64"}},
 			{Name: "gpu.l40sx8", ID: "2", Provides: map[string]string{"machineType": "gpu", "arch": "amd64", "gpu": "l40s"}},
 		},
 	}
-	ytl := Site{
+	site2 := Site{
 		ID: "b", VpcID: "v", VpcPrefixID: "p", SSHKeyGroupID: "k",
 		InstanceTypes: []InstanceType{
 			{Name: "cpu.x86_64", ID: "2", Provides: map[string]string{"machineType": "cpu", "arch": "amd64"}},
 			{Name: "gpu.gb200", ID: "3", Provides: map[string]string{"machineType": "gpu", "arch": "arm64", "gpu": "gb200"}},
 		},
 	}
-	env := &Environment{Sites: map[string]Site{"az61": az61, "ytl": ytl}}
+	env := &Environment{Sites: map[string]Site{"site-1": site1, "site-2": site2}}
 
 	// The capability picks the site. Keying on a name instead would make this
 	// ambiguous the moment a second site is declared.
 	for _, tc := range []struct{ name, gpu, wantSite, wantType string }{
-		{"l40s is only at az61", "l40s", "az61", "gpu.l40sx8"},
-		{"gb200 is only at ytl", "gb200", "ytl", "gpu.gb200"},
+		{"l40s is only at site-1", "l40s", "site-1", "gpu.l40sx8"},
+		{"gb200 is only at site-2", "gb200", "site-2", "gpu.gb200"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			selection, err := env.Resolve(map[string]string{"gpu": tc.gpu})
@@ -239,7 +239,7 @@ func TestResolvePicksTheSiteByCapability(t *testing.T) {
 	if err == nil {
 		t.Fatal("a capability no site offers should fail")
 	}
-	for _, want := range []string{"az61", "ytl", "gpu.gb200"} {
+	for _, want := range []string{"site-1", "site-2", "gpu.gb200"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error does not mention %q: %v", want, err)
 		}
@@ -291,24 +291,24 @@ func TestResolveSkipsIncompleteSites(t *testing.T) {
 			{Name: "cpu", ID: "1", Provides: map[string]string{"machineType": "cpu", "arch": "amd64"}},
 		},
 	}
-	env := &Environment{Sites: map[string]Site{"az61": usable, "ytl": {}}}
+	env := &Environment{Sites: map[string]Site{"site-1": usable, "site-2": {}}}
 
 	selection, err := env.Resolve(nil)
 	if err != nil {
 		t.Fatalf("an incomplete site should be skipped, not fatal: %v", err)
 	}
-	if selection.Site.Key != "az61" {
-		t.Errorf("site = %q, want az61", selection.Site.Key)
+	if selection.Site.Key != "site-1" {
+		t.Errorf("site = %q, want site-1", selection.Site.Key)
 	}
 	if selection.HasGPU() {
 		t.Error("a run asking for no GPU should resolve none")
 	}
 
 	// When nothing matches, the skipped ones are named: "no site offers gb200"
-	// reads very differently if ytl was silently dropped for being unset.
+	// reads very differently if site-2 was silently dropped for being unset.
 	if _, err := env.Resolve(map[string]string{"gpu": "gb200"}); err == nil {
 		t.Fatal("a capability no usable site offers should fail")
-	} else if !strings.Contains(err.Error(), "ytl") {
+	} else if !strings.Contains(err.Error(), "site-2") {
 		t.Errorf("the error should name the skipped site: %v", err)
 	}
 }
@@ -319,7 +319,7 @@ func TestResolveSkipsIncompleteSites(t *testing.T) {
 
 func TestMatchCPUTakesTheCPUShapeOfTheSameArch(t *testing.T) {
 	site := Site{
-		Key: "ytl",
+		Key: "site-2",
 		InstanceTypes: []InstanceType{
 			{Name: "cpu.amd", ID: "a", Provides: map[string]string{"machineType": "cpu", "arch": "amd64"}},
 			{Name: "cpu.arm", ID: "b", Provides: map[string]string{"machineType": "cpu", "arch": "arm64"}},
@@ -344,7 +344,7 @@ func TestMatchCPUTakesTheCPUShapeOfTheSameArch(t *testing.T) {
 
 func TestSiteRequiresAnIDOnEveryInstanceType(t *testing.T) {
 	site := Site{
-		Key: "ytl", ID: "s", VpcID: "v", VpcPrefixID: "p", SSHKeyGroupID: "k",
+		Key: "site-2", ID: "s", VpcID: "v", VpcPrefixID: "p", SSHKeyGroupID: "k",
 		InstanceTypes: []InstanceType{
 			{Name: "cpu.arm", ID: "b", Provides: map[string]string{"machineType": "cpu", "arch": "arm64"}},
 			{Name: "cpu.amd", Provides: map[string]string{"machineType": "cpu", "arch": "amd64"}},
@@ -364,7 +364,7 @@ func TestSiteRequiresAnIDOnEveryInstanceType(t *testing.T) {
 // the shape rather than asked for, because the model already decided it.
 
 func TestResolveMixesArchitectures(t *testing.T) {
-	ytl := Site{
+	site2 := Site{
 		ID: "b", VpcID: "v", VpcPrefixID: "p", SSHKeyGroupID: "k",
 		InstanceTypes: []InstanceType{
 			{Name: "cpu.x86_64", ID: "1", Provides: map[string]string{"machineType": "cpu", "arch": "amd64"}},
@@ -372,7 +372,7 @@ func TestResolveMixesArchitectures(t *testing.T) {
 			{Name: "gpu.gb200", ID: "3", Provides: map[string]string{"machineType": "gpu", "arch": "arm64", "gpu": "gb200"}},
 		},
 	}
-	env := &Environment{Sites: map[string]Site{"ytl": ytl}}
+	env := &Environment{Sites: map[string]Site{"site-2": site2}}
 
 	selection, err := env.Resolve(map[string]string{"gpu": "gb200", "arch": "amd64"})
 	if err != nil {

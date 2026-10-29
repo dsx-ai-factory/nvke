@@ -8,7 +8,7 @@ This page describes what you need before you install NVIDIA Kubernetes Engine (N
 
 - You have read [What is NVKE](../overview/what-is-nvke.md).
 - You have checked your hardware and versions against [Supported platforms and versions](../overview/supported-platforms.md).
-- You have read [Preview status and known limitations](../overview/preview-status.md). Two limitations shape the plan: the management cluster does not upgrade, scale or replace its own nodes, and NVIDIA Infra Controller (NICo) is the only infrastructure provider.
+- You have read [Preview status and known limitations](../overview/preview-status.md). Two limitations shape the plan: the management cluster does not upgrade, scale or replace its own nodes, and NVIDIA Infra Controller (NICo) is the default infrastructure provider, with LaunchLayer available only once a deployment enables it.
 
 ## What you end up with
 
@@ -16,10 +16,10 @@ A management cluster with an odd number of nodes, each a control-plane node that
 
 | Step | What you do | Page |
 |---|---|---|
-| 1. Build | Build the NVKE controller image and the node OS image with NVIDIA Kubernetes Recipes (NVKR), and package the releases. | [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md) |
+| 1. Build | Build the reference node OS image and host its boot files over HTTP(S). | [Build and host node OS images](build-node-images.md) |
 | 2. Prepare nodes | Boot the management cluster's nodes from the node image with cloud-init user data, and record each node's TPM thumbprint. | [Prepare nodes](prepare-nodes.md) |
 | 3. Bootstrap | Run `nvkectl bootstrap site` to form the management cluster. | [Bootstrap the management cluster](bootstrap-management-cluster.md) |
-| 4. Install | Install Cluster API, CAPNICo, SPIRE, telemetry and the NVKE API and controllers. | [Install management-plane services](install-management-plane-services.md) |
+| 4. Install | Install Cluster API, CAPNICo, SPIRE, telemetry and the NVKE API and controllers, and admit your networks to the API. | [Install the management plane](install-management-plane.md) |
 | 5. Configure NICo | Confirm that CAPNICo is running, and collect the NICo identifiers each workload cluster needs. | [Configure an infrastructure provider: NICo](provider-nico.md) |
 | 6. Secure the API | Make the NVKE API require a token from your identity provider. | [Secure the NVKE API](api-authentication.md) |
 | 7. Create clusters | Create a workload cluster. | [Create a workload cluster](../workload-clusters/create.md) |
@@ -45,7 +45,8 @@ A management cluster with an odd number of nodes, each a control-plane node that
 - **A Kubernetes API virtual IP address (VIP)** for the management cluster when it has more than one node, and for each workload cluster with more than one control-plane node. Each VIP is an unused, routable IPv4 address outside the cluster's pod and service networks. A single-node management cluster uses its node's IP instead.
 - **Border Gateway Protocol (BGP) peering for each VIP.** Every control-plane node advertises the VIP from local autonomous system (AS) 65100 to the node's default gateway, with peer AS 4294967000. The local AS is fixed. The peer AS has two exceptions, both for workload clusters: a control plane that uses VPC prefix IDs reads its peer AS from NICo's metadata service on each node, and setting `KUBE_VIP_FMDS_ENDPOINT` in the management plane's `env` makes every workload cluster read it from that URL. Your network must accept the route and carry it to the cluster's API callers.
 - **Pod and service networks** for each cluster that do not overlap each other or your node network.
-- **Outbound access** from the bootstrap host and the management cluster to the registries and chart repositories listed in [Install management-plane services](install-management-plane-services.md).
+- **Outbound access** from the bootstrap host and the management cluster to the registries and chart repositories listed in [Install the management plane](install-management-plane.md).
+- **A boot-artifact HTTP(S) endpoint** reachable from the machines' provisioning network before the installed OS starts. For QCOW2 imaging, it serves the EFI imager and QCOW2; for an ISO install, it serves the kernel, initrd and ISO. See [Serve the boot artifacts over HTTP(S)](build-node-images.md#serve-the-boot-artifacts-over-https) for hosting, an S3 example and download checks.
 
 ### Ports
 
@@ -53,6 +54,7 @@ All connections are TCP; traffic between the nodes of one cluster is not listed.
 
 | Source | Destination | Port | Purpose |
 |---|---|---|---|
+| Machines being provisioned | Boot-artifact HTTP(S) endpoint | The port in the URL, usually 80 or 443 | Downloading boot scripts, EFI imagers and OS images before the installed OS starts. |
 | Bootstrap host | Each management cluster node | 15005 | `nvke-agent`, which the bootstrap drives. |
 | Each management cluster node | Bootstrap host | 30081 | SPIRE server, for TPM node attestation during the bootstrap. |
 | Bootstrap host and install host | Management cluster API address | 6443 | Kubernetes API. |
@@ -72,14 +74,14 @@ All connections are TCP; traffic between the nodes of one cluster is not listed.
 
 ### Registries
 
-- **A container registry you control**, with an account that can push to it, for the controller image and the profile content image. If pulling needs credentials, the management cluster needs them too.
-- CAPNICo's image is public on `ghcr.io`, or comes from your NVKR release, so it needs no credentials.
+- **A container registry you control**, only if you supply the controller or profile content image from one, with an account that can push to it. If pulling needs credentials, the management cluster needs them too.
+- CAPNICo's published image is public on `ghcr.io`, so it needs no credentials.
 
 ### Hosts and tools
 
 | Host | Needs |
 |---|---|
-| NVKR build host | Linux AMD64 with Docker, Git, GNU Make, `jq` and the Go version NVKR pins. For the node OS image, also Kernel-based Virtual Machine (KVM) access, 8 CPUs, 10 GiB of memory and 64 GiB of free disk. |
+| Node-image build host | Linux matching the target architecture, with KVM access and the tools listed in [Build the OS image](../../os-image/README.md#build-the-os-image). |
 | Bootstrap host | Linux, run as root, with rootful `nerdctl` and containerd, `kind`, `helm`, `kubectl`, `clusterctl`, Go and GNU Make. Docker is not supported. It can be a management cluster node. |
 | Install host | `nvkectl`, `helm` v4.2.4, `kubectl`, `clusterctl` v1.13.6, `curl`, `python3` and `git`. It can be the bootstrap host. |
 | API workstation | `nvkectl`, `curl` and `jq`; with API authentication, also the `kubectl oidc-login` plugin and `python3`. |
@@ -128,7 +130,6 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 | Address the nodes use to reach the bootstrap host | `<BOOTSTRAP_HOST_IP>` | Prepare nodes | |
 | SPIFFE trust domain | `<TRUST_DOMAIN>` | Prepare nodes, Bootstrap, Install | |
 | SPIRE CA certificate and key files, passed as `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE` with `spire.upstreamCA: true` in the site spec; the certificate in PEM | `<CA_CERT_PATH>`, `<CA_KEY_PATH>`; `<SPIRE_CA_CERT_PEM>` | Bootstrap, Install; Prepare nodes | |
-| CPU architecture of the management nodes, `amd64` or `arm64` | `<ARCH>` | Install | |
 
 ### Registries and images
 
@@ -136,12 +137,11 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 |---|---|---|---|
 | Registry host and namespace | `<REGISTRY_HOST>`, `<NAMESPACE>` | Build, Bootstrap, Install | |
 | Registry account that can push | `<REGISTRY_USER>`, `<REGISTRY_TOKEN>` | Build | |
-| NVKR release reference, and its exported description `release.json` | `<RELEASE_REF>` | Build, Install | |
-| Controller image, the release's `cwe` artifact | `<CONTROLLER_IMAGE>` | Bootstrap; Install without a release | |
+| Optional NVKR release description; see [Install the management plane](install-management-plane.md) | `release.json` | Install | |
+| Controller image reference | `<CONTROLLER_IMAGE>` | Bootstrap; Install without a release | |
 | Provisioned infrastructure provider image | `<PROVISIONED_PROVIDER_IMAGE>` | Bootstrap | |
-| Profile content image, the release's `controller-profiles` artifact | `images.profiles` in the stack config | Install without a release | |
-| OS release resources, `MachineImage`, `ClusterRelease` and `NodePoolRelease` | `releases/` | Build, Install | |
-| For `nvkr release verify`: the accepted signer identity and OIDC issuer, and a `cosign` path and digest | `<IDENTITY_REGEXP>`, `<OIDC_ISSUER>`, `<COSIGN_PATH>`, `<COSIGN_DIGEST>` | Build | |
+| Profile content image reference | `images.profiles` in the stack config | Install without a release | |
+| Node provisioning configuration files; see [Register node images for provisioning](build-node-images.md#register-the-image-for-provisioning) | `node-config/` | After Install | |
 
 ### NICo
 
@@ -192,4 +192,4 @@ Your plan is complete when every row in [Fill in your values](#fill-in-your-valu
 
 ## Next steps
 
-- [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md).
+- [Build and host node OS images](build-node-images.md).

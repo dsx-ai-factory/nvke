@@ -1,12 +1,20 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# e2e coverage for `nvkectl bootstrap site`, driven by cli/e2e/bootstrap/run.sh.
+# e2e coverage for `nvkectl bootstrap site`, in two suites that share this job's
+# host setup and run side by side:
+#
+#   provisioned   cli/e2e/bootstrap/run.sh, `infra.provider: provisioned`: the
+#                 control-plane hosts are a fixed list of fake node containers.
+#   nico          cli/e2e/bootstrap/run-nico.sh, `infra.provider: nico`: CAPNICo
+#                 allocates the machines from nico-sim.
+#
 # Separate from the `cli` unit-test lane, which is plain `go test ./...`.
 #
-# The suite stands up everything it needs: fake node containers
-# (cli/e2e/bootstrap/substrate) and a real ephemeral Kind cluster that the
-# command creates, deploys Postgres, Temporal and the controller onto, and tears down.
+# Each suite stands up everything it needs: its node containers (the provisioned
+# suite's cli/e2e/bootstrap/substrate, or nico-sim's) and a real ephemeral Kind
+# cluster that the command creates, deploys Postgres, Temporal and the controller
+# onto, and tears down.
 # The controller is built from this checkout, so the CLI and controller changes under
 # test stay compatible.
 #
@@ -52,11 +60,21 @@ on:
       # The suite builds the controller from controller/Dockerfile, so a controller-only
       # change has to run it too.
       - 'controller/**'
+      - 'auth/**'
       # The controller image uses the root Go workspace, so changes to its
       # workspace files can break the image as well as controller source changes.
       - 'go.work'
       - 'go.work.sum'
       - '.github/workflows/nvkectl-bootstrap-e2e.yml'
+      - '.github/workflows/e2e-pr-path-filter.yml'
+      - 'hack/e2e-path-filter.py'
+      # Installs the pinned kind and kubectl the suite runs on.
+      - '.github/actions/setup-kind/**'
+      # The scan of the run's output: the action that installs gitleaks. The rules
+      # file is under cli/, which is already listed. The pin it reads is in
+      # make/tool-versions.mk, which holds every tool's pin and is not a trigger:
+      # the schedule below surfaces a broken gitleaks pin within twelve hours.
+      - '.github/actions/setup-gitleaks/**'
   # Twice a day as well: a schedule ignores the paths above, so a break they
   # filtered out still surfaces within twelve hours.
   schedule:
@@ -72,17 +90,34 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # A mirror-branch push carries base-branch commits as well as the pull
+  # request's own, so the paths above fire for pull requests that change none
+  # of them. Read the pull request's own files first; main, the schedule and
+  # dispatch pass through.
+  changes:
+    uses: ./.github/workflows/e2e-pr-path-filter.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
   e2e:
-    name: e2e (${{ matrix.arch }})
+    name: e2e (${{ matrix.suite }}, ${{ matrix.arch }})
     # The bootstrap cluster and three nested control planes need the 16-CPU
-    # pool; pull requests reach it through the mirror branch. Neither leg needs
+    # pool; pull requests reach it through the mirror branch. No leg needs
     # /dev/kvm.
     runs-on: ${{ matrix.runner }}
-    if: github.repository_id == '1323115536'
+    needs: changes
+    if: github.repository_id == '1323115536' && needs.changes.outputs.run_e2e == 'true'
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
+        # One job per suite and architecture, so a failure names the suite and
+        # the suites do not share a host: each leaves its own images, networks
+        # and several GB of snapshots behind. The nico suite's release fixture
+        # is named for arm64 on both architectures, as the nico-e2e lane's is:
+        # the name is a label, and the nodes are built from the host's own.
+        suite: [provisioned, nico]
         include:
           - arch: amd64
             runner: linux-amd64-cpu16
@@ -100,14 +135,15 @@ jobs:
             # volume on the pod's own overlayfs root, where overlay cannot
             # mount an upperdir. Fixed by pinning nerdctl's data root.
             runner: arc-arm64-vtpm
-    # A full run takes 12-17 minutes on this pool, most of it the node image
-    # build and the controller's three sequential control-plane joins. The margin covers
-    # a cold image cache and a slow mirror; queue time does not count.
+    # A full run takes 12-17 minutes on this pool for either suite, most of it
+    # the node image build and the controller's three sequential control-plane
+    # joins. The margin covers a cold image cache and a slow mirror; queue time
+    # does not count.
     timeout-minutes: 45
     permissions:
       contents: read
     env:
-      CONTROLLER_IMAGE: controller:nvkectl-bootstrap-e2e
+      NVKE_CONTROLLER_IMAGE: controller:nvkectl-bootstrap-e2e
       # A public pull-through mirror, not dc.local.gha-runners.nvidia.com:
       # that name resolves only on the self-hosted fleet. Same host and same
       # reasoning as backend-e2e.yml and os-image-artifact.yml, both of which
@@ -270,10 +306,14 @@ jobs:
 
       # The fake nodes emulate a TPM with swtpm, which asks the host kernel for
       # a device through /dev/vtpmx. That comes from tpm_vtpm_proxy, built per
-      # kernel version, so install the matching extra-modules package and prove
-      # the device appears. Done here, not in run.sh, so a runner image that
-      # stops shipping it fails on this line rather than ten minutes later.
-      - name: Load the vTPM proxy driver
+      # kernel version. Their Open vSwitch needs the openvswitch module too, and
+      # a node can only load it from a module tree that matches the host kernel:
+      # the ARC arm64 image boots a Jammy backport build while apt serves the
+      # Noble build of the same version (see backend-e2e.yml and #1574), so
+      # stage the exact host build and load both modules from it here. Done
+      # here, not in run.sh, so a runner image that stops shipping them fails
+      # on this line rather than fifteen minutes later.
+      - name: Load the vTPM proxy and Open vSwitch drivers
         run: |
           echo "CPU count: $(nproc)"
           free -h
@@ -284,10 +324,13 @@ jobs:
             grep '^CONFIG_TCG_VTPM_PROXY=' "${config}"
           fi
           sudo apt-get update
-          sudo apt-get install -y --allow-change-held-packages \
-            jq "linux-modules-extra-$(uname -r)"
-          sudo modprobe tpm_vtpm_proxy
-          modinfo tpm_vtpm_proxy
+          sudo apt-get install -y --allow-change-held-packages jq kmod
+          modules="${RUNNER_TEMP}/nvke-host-kernel-modules"
+          sudo bash controller/hack/ci/prepare-host-kernel-modules.sh "${modules}"
+          sudo modprobe -d "${modules}" tpm_vtpm_proxy
+          sudo modprobe -d "${modules}" openvswitch
+          modinfo -b "${modules}" tpm_vtpm_proxy
+          test -e /sys/module/openvswitch
           # -c, not -e: it has to be the character device swtpm opens.
           test -c /dev/vtpmx
 
@@ -324,7 +367,7 @@ jobs:
           sudo -E env "PATH=$PATH" nerdctl build \
             --file controller/Dockerfile \
             --platform "linux/${{ matrix.arch }}" \
-            --tag "${CONTROLLER_IMAGE}" \
+            --tag "${NVKE_CONTROLLER_IMAGE}" \
             --build-arg "BUILD_VERSION=nvkectl-bootstrap-e2e" \
             --build-arg "GIT_VERSION=${GITHUB_SHA}" \
             "${mirror_args[@]}" \
@@ -342,26 +385,54 @@ jobs:
         working-directory: cli
         run: make check-no-docker
 
+      # run.sh scans the bootstrap log and the diagnostics bundle for
+      # credentials, on success and on failure, so a change that starts printing
+      # a secret turns this lane red. Pinned and checksum-verified, on both
+      # architectures; see cli/e2e/bootstrap/gitleaks.toml for the rules.
+      - name: Set up gitleaks
+        uses: ./.github/actions/setup-gitleaks
+
       # sudo -E: kind and nerdctl reach the standalone containerd's socket as
       # root, the same way every other step below that touches them does.
-      - name: Run nvkectl bootstrap e2e
+      - name: Run nvkectl bootstrap e2e (provisioned)
+        if: matrix.suite == 'provisioned'
         working-directory: cli
         env:
-          NVKECTL_CONTROLLER_IMAGE: ${{ env.CONTROLLER_IMAGE }}
+          NVKECTL_NVKE_CONTROLLER_IMAGE: ${{ env.NVKE_CONTROLLER_IMAGE }}
           # Docker is removed on this lane; the OVN image builds through nerdctl.
           OCI_BIN: nerdctl
+          # Without it a runner that lost gitleaks would skip the scan and
+          # still pass, and the check would protect nothing.
+          NVKECTL_E2E_REQUIRE_SECRET_SCAN: "1"
         run: sudo -E env "PATH=$PATH" ./e2e/bootstrap/run.sh
 
-      # Written by `nvkectl bootstrap site` when a bootstrap fails: a
-      # cluster-info dump plus the object state and helm releases that explain
-      # a pod which never started, collected before the cluster goes away.
-      # if-no-files-found: ignore, since a successful run writes nothing.
+      # Three control-plane nodes, as run.sh builds, so the two suites cover the
+      # same shape. The script builds nico-sim itself (it needs the Go toolchain
+      # and gcc above) and pulls the CAPNICo image from ghcr.io.
+      - name: Run nvkectl bootstrap e2e (nico)
+        if: matrix.suite == 'nico'
+        working-directory: cli
+        env:
+          NVKECTL_NVKE_CONTROLLER_IMAGE: ${{ env.NVKE_CONTROLLER_IMAGE }}
+          OCI_BIN: nerdctl
+          NVKECTL_E2E_NICO_NODES: "3"
+        run: sudo -E env "PATH=$PATH" ./e2e/bootstrap/run-nico.sh
+
+      # Written by `nvkectl bootstrap site`: a cluster-info dump plus the object
+      # state and helm releases that explain a pod which never started,
+      # collected before the cluster goes away. run.sh passes -v, so a passing
+      # run writes it too, for the credential scan; it is uploaded only when the
+      # job fails. run.sh deletes it when the scan reports a credential or cannot
+      # run, so a leaked secret is not published.
+      # if-no-files-found: ignore, since a run that stops before the bootstrap
+      # cluster exists writes nothing.
       - name: Upload bootstrap cluster diagnostics
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          # The arch too: GitHub keeps two same-named artifacts.
-          name: nvkectl-bootstrap-e2e-diagnostics-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          # The suite and the arch too: GitHub keeps same-named artifacts apart
+          # only by failing the upload.
+          name: nvkectl-bootstrap-e2e-diagnostics-${{ matrix.suite }}-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: cli/cluster-diagnostics/
           if-no-files-found: ignore
           retention-days: 7

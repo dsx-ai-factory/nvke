@@ -70,7 +70,7 @@ func TestPublishUsesConfiguredManagementNamespace(t *testing.T) {
 }
 
 // TestSecretsNamespaceFallsBackToLegacy covers the other half: a Config with no
-// managementNamespace is a site whose nke-controller-config predates the key,
+// managementNamespace is a site whose nvke-controller-config predates the key,
 // and it must keep addressing nke-system.
 func TestSecretsNamespaceFallsBackToLegacy(t *testing.T) {
 	c := newTestController(config.Config{}, &testutil.MockDB{}, nil, nil)

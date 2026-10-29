@@ -7,7 +7,7 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: dsx-controller-client-bootstrap
-  namespace: nke-controller
+  namespace: nvke-controller
 spec:
   selfSigned: {}
 ---
@@ -15,7 +15,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: dsx-controller-client-ca
-  namespace: nke-controller
+  namespace: nvke-controller
 spec:
   isCA: true
   commonName: DSX Tilt Controller Client CA
@@ -35,7 +35,7 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: dsx-controller-client-ca
-  namespace: nke-controller
+  namespace: nvke-controller
 spec:
   ca:
     secretName: dsx-controller-client-ca
@@ -44,7 +44,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: dsx-controller-client
-  namespace: nke-controller
+  namespace: nvke-controller
 spec:
   secretName: dsx-controller-client
   privateKey:

@@ -92,34 +92,77 @@ func TestClusterStateSurvivesANewlineEatingTransport(t *testing.T) {
 		t.Fatalf("running the collapsed script: %v\n%s", err, out)
 	}
 
-	for _, section := range []string{
+	sections := []string{
 		"service and endpoints", "pods", "deployments", "pod detail", "events",
 		"controller logs", "controller logs, previous", "nodes",
-		"workloads, all namespaces",
-	} {
+		"workloads, all namespaces", "events, all namespaces",
+		"cni pod detail", "cni logs", "cni logs, previous",
+		"cert-manager pod detail", "cert-manager logs", "cert-manager logs, previous",
+	}
+	for _, section := range sections {
 		if !strings.Contains(string(out), sectionMarker+section+"\n") {
 			t.Errorf("section %q did not survive; the node sees:\n%s", section, out)
 		}
 	}
-	if got := strings.Count(string(out), "RAN "); got != 9 {
-		t.Errorf("%d of 9 commands ran; the node sees:\n%s", got, out)
+	if got := strings.Count(string(out), "RAN "); got != len(sections) {
+		t.Errorf("%d of %d commands ran; the node sees:\n%s", got, len(sections), out)
+	}
+}
+
+// A deploy that fails before the controller exists fails in what it waits on:
+// the CNI, or cert-manager, which clusterctl init waits for. The controller
+// sections are then empty, so the collector has to describe those pods and
+// keep the logs of the container that died, or the artifact shows that a pod
+// is crash-looping and never why.
+func TestClusterStateReadsTheInfrastructureTheDeployWaitsOn(t *testing.T) {
+	script := clusterStateScript()
+	for _, want := range []string{
+		"get events -A",
+		"-n 'ovn-kubernetes' describe pods",
+		"-n 'ovn-kubernetes' logs -l 'component=network' --all-containers --tail=200 --prefix --ignore-errors --previous",
+		"-n 'cert-manager' describe pods",
+		"-n 'cert-manager' logs -l 'app.kubernetes.io/instance=cert-manager' --all-containers --tail=200 --prefix --ignore-errors --previous",
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("the script does not run %q:\n%s", want, script)
+		}
+	}
+}
+
+// kubectl logs over a selector stops at the first container it cannot read.
+// Run 39238542656 asked ovn-kubernetes for --previous; ovnkube-control-plane
+// had never restarted, so the section held that error and not the ovnkube-node
+// container that was crash-looping.
+func TestClusterStateLogsOutliveAContainerWithNothingToRead(t *testing.T) {
+	var reads int
+	for _, stanza := range strings.Split(clusterStateScript(), "; ") {
+		if !strings.Contains(stanza, " logs -l ") {
+			continue
+		}
+		reads++
+		if !strings.Contains(stanza, " --ignore-errors") {
+			t.Errorf("a log read stops at the first container it cannot read: %s", stanza)
+		}
+	}
+	if reads == 0 {
+		t.Fatal("the script reads no logs")
 	}
 }
 
 // The collector has to read the namespace the controller is deployed into, which on a
 // site cluster is controller.Namespace(). Run 37582097398 dumped every namespace and
-// found the controller running there, and found nke-controller empty.
+// found the controller running there, and found nvke-controller empty.
 //
-// nke-controller is where nvkectl's own bootstrap cluster puts it
+// nvke-controller is where nvkectl's own bootstrap cluster puts it
 // (cli/internal/bootstrap/controllerdeploy), so it is the plausible wrong answer, and
 // the one a reader reaches for. A collector pointed at it answers "No
 // resources found" for every section -- indistinguishable, in the artifact,
 // from a cluster with nothing running, which is how run 37582097398 was read
 // at first.
 //
-// The suite's own default is nke-controller, so the test configures the
+// The suite's own default is nvke-controller, so the test configures the
 // legacy name a site like that one runs under: only then does reading
-// nke-controller mean the collector ignored the configuration.
+// nvke-controller mean the collector ignored the configuration.
 func TestClusterStateReadsTheNamespaceControllerIsDeployedInto(t *testing.T) {
 	t.Setenv(controller.EnvNamespace, "cloud-workflow-engine")
 	t.Setenv(controller.EnvService, "cloud-workflow-engine")
@@ -127,8 +170,8 @@ func TestClusterStateReadsTheNamespaceControllerIsDeployedInto(t *testing.T) {
 	if !strings.Contains(script, "-n "+shellQuote(controller.Namespace())) {
 		t.Errorf("the script does not read namespace %s:\n%s", controller.Namespace(), script)
 	}
-	if strings.Contains(script, "nke-controller") {
-		t.Errorf("the script reads nke-controller, which is the bootstrap cluster's namespace and empty on a site:\n%s", script)
+	if strings.Contains(script, "nvke-controller") {
+		t.Errorf("the script reads nvke-controller, which is the bootstrap cluster's namespace and empty on a site:\n%s", script)
 	}
 	if !strings.Contains(script, "app.kubernetes.io/name="+controller.Service()) {
 		t.Errorf("the controller log selector does not name %s:\n%s", controller.Service(), script)
@@ -150,7 +193,7 @@ func TestClusterStateRunsOnTheNode(t *testing.T) {
 
 func TestCollectClusterState(t *testing.T) {
 	session := newFakeSession()
-	session.fail = func(string) (string, error) { return "pod/nke-controller-0  0/1  CrashLoopBackOff", nil }
+	session.fail = func(string) (string, error) { return "pod/nvke-controller-0  0/1  CrashLoopBackOff", nil }
 
 	dest := filepath.Join(t.TempDir(), "state.txt")
 	if err := CollectClusterState(context.Background(), session, dest); err != nil {

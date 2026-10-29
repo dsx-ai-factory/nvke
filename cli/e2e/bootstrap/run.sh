@@ -24,6 +24,13 @@
 #   5. Traefik serves a whoami Deployment on that cluster: hosts that already
 #      existed now serve traffic like any other cluster.
 #
+# The EXIT trap also scans what the run printed and saved, the bootstrap log and
+# the diagnostics bundle, for credentials with gitleaks and gitleaks.toml. It
+# runs on success and on failure, so a change that starts printing a secret turns
+# the run red. CI sets NVKECTL_E2E_REQUIRE_SECRET_SCAN=1, which makes a missing
+# gitleaks a failure; a developer running this locally without it only sees a
+# warning.
+#
 # Everything created is registered for teardown as it is created, and the EXIT
 # trap runs those registrations in reverse, whatever the exit. A failing exit
 # first collects diagnostics into NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR.
@@ -38,7 +45,7 @@
 #
 # jq is required for BGP route checks when the control-plane VIP is enabled.
 #
-# NVKECTL_CONTROLLER_IMAGE must already be in containerd's image store: nvkectl saves it
+# NVKECTL_NVKE_CONTROLLER_IMAGE must already be in containerd's image store: nvkectl saves it
 # from there and loads it into the kind cluster rather than pulling from inside
 # the cluster, so no registry credentials are needed past that point.
 
@@ -55,6 +62,8 @@ NVKECTL="${NVKECTL:-${CLI_DIR}/bin/nvkectl}"
 E2E_CLUSTER_NAME="nke-e2e"
 BOOTSTRAP_KIND_CLUSTER="${NVKECTL_BOOTSTRAP_CLUSTER_NAME:-nvkectl-bootstrap}"
 BOOTSTRAP_CONTROL_PLANE="${BOOTSTRAP_KIND_CLUSTER}-control-plane"
+# The namespace and Deployment `bootstrap site` installs the controller under.
+CONTROLLER_NAME=nvke-controller
 # The fake-node fixture, as the substrate package names it: N containers on one
 # private network, named by prefix and index. The defaults here mirror
 # substrate.DefaultConfig; override the same variables to change both.
@@ -85,6 +94,15 @@ TRAEFIK_NODE_PORT="${NVKECTL_E2E_TRAEFIK_NODE_PORT:-30082}"
 TENANT_KUBECONFIG="${SCRIPT_DIR}/.tenant.kubeconfig"
 ETCD_KEY_FILE="${SCRIPT_DIR}/.etcd-encryption-key.json"
 BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap.log"
+# What the Go test that runs the command prints about the run itself. nvkectl's
+# own output is not in here: it goes to BOOTSTRAP_LOG, so there is one copy of
+# it and the credential scan covers that copy.
+BOOTSTRAP_GO_TEST_LOG="${SCRIPT_DIR}/.bootstrap-go-test.log"
+GO="${GO:-go}"
+# The lane runs `bootstrap site` through the Go tests in bootstraptest. Those
+# tests carry two marks: the e2e_bootstrap build tag, which keeps them out of
+# `make test` by leaving them unbuilt, and the TestE2E_ name prefix, which is
+# what -run selects once the tag is on.
 
 # Keep the VIP outside the node subnet so nodes route through the host's
 # BGP-learned /32 instead of ARPing for another node's loopback address.
@@ -105,8 +123,12 @@ REPO_ROOT="$(dirname "${CLI_DIR}")"
 BGP_FILES_DIR="${REPO_ROOT}/controller/hack/bgp-containers"
 # Scratch dir for the rendered FRR config, bind-mounted into the container.
 BGP_RENDER_DIR="${SCRIPT_DIR}/.bgp"
-: "${NVKECTL_CONTROLLER_IMAGE:?NVKECTL_CONTROLLER_IMAGE must name the controller image to deploy, already present in containerd (see comment above)}"
-export NVKECTL_CONTROLLER_IMAGE
+# shellcheck source=bgp-lib.sh
+source "${SCRIPT_DIR}/bgp-lib.sh"
+# shellcheck source=etcd-lib.sh
+source "${SCRIPT_DIR}/etcd-lib.sh"
+: "${NVKECTL_NVKE_CONTROLLER_IMAGE:?NVKECTL_NVKE_CONTROLLER_IMAGE must name the controller image to deploy, already present in containerd (see comment above)}"
+export NVKECTL_NVKE_CONTROLLER_IMAGE
 
 # The Cluster API infrastructure provider for hosts that already exist, built
 # below from this checkout. Without it the CAPI objects the NVKE controller writes have no
@@ -147,6 +169,192 @@ fail() {
   exit 1
 }
 
+# NETCONFPATH outranks the cni_netconfpath bootstrap-e2e-host.sh writes, and
+# this one would put the suite's nerdctl networks where nvkectl's kind commands
+# no longer look and its preflight refuses to start.
+netconfpath="${NETCONFPATH:-}"
+if [ "${netconfpath%/}" = /etc/cni/net.d ]; then
+  fail "NETCONFPATH names /etc/cni/net.d, the directory nvkectl keeps nerdctl's networks out of" \
+    "unset it, or point it at /etc/containerd-nerdctl/net.d"
+fi
+
+# scan_output_for_secrets scans the bootstrap log and the diagnostics bundle for
+# credentials, and returns 1 if it finds one or cannot tell. It prints the
+# scanner's findings with the secret redacted and never the secret itself: this
+# output goes to a public CI log.
+#
+# It first proves the rules work, because a clean result from a scanner that
+# matches nothing means nothing. Each shape the rules target must be flagged when
+# it holds a value, and must pass when it holds nvkectl's <redacted> placeholder.
+# The sample values are plain on purpose, so the commit that adds this line does
+# not trip the Secrets workflow.
+#
+# --exit-code 2 separates a finding (2) from a scanner failure (1).
+GITLEAKS_CONFIG="${SCRIPT_DIR}/gitleaks.toml"
+gitleaks_scan() {
+  local target="$1"
+  shift
+  gitleaks dir "${target}" --config "${GITLEAKS_CONFIG}" --redact=100 --no-banner --exit-code 2 "$@"
+}
+scan_output_for_secrets() {
+  if ! command -v gitleaks >/dev/null 2>&1; then
+    if [ "${NVKECTL_E2E_REQUIRE_SECRET_SCAN:-}" = 1 ]; then
+      log "FAIL: gitleaks is not on PATH, so the bootstrap output was not scanned for credentials"
+      return 1
+    fi
+    log "gitleaks is not on PATH: skipping the scan of the bootstrap output for credentials (CI requires it)"
+    return 0
+  fi
+  if [ ! -f "${BOOTSTRAP_LOG}" ]; then
+    log "no bootstrap output to scan: bootstrap site was never started"
+    return 0
+  fi
+
+  local work rc name shape fingerprint join_token leaked plog trace_hex span_hex
+  work="$(mktemp -d)"
+
+  # The rules, proved on a sample of each shape: flagged with a value, clean with
+  # the placeholder.
+  mkdir -p "${work}/flagged" "${work}/clean"
+  for shape in \
+    'helm|helm upgrade --install demo chart --set-string auth.password=PLACEHOLDER --wait' \
+    'url|{"env":[{"name":"DATABASE_URL","value":"postgres://cloud:PLACEHOLDER@db.example:5432/cloud"}]}' \
+    'field|{"auth":{"username":"cloud","password":"PLACEHOLDER"}}' \
+    'unquoted|      POSTGRES_PASSWORD:  PLACEHOLDER' \
+    'env|{"env":[{"name":"POSTGRES_PASSWORD","value":"PLACEHOLDER"}]}'; do
+    name="${shape%%|*}"
+    printf '%s\n' "${shape#*|}" | sed 's/PLACEHOLDER/aaaa-bbbb-cccc/' >"${work}/flagged/${name}.txt"
+    printf '%s\n' "${shape#*|}" | sed 's/PLACEHOLDER/<redacted>/' >"${work}/clean/${name}.txt"
+  done
+  # Password fields that hold no credential, which the rules must not flag: a
+  # value kubectl describe prints for a Secret, a boolean, and an environment
+  # variable fed from a Secret, which has valueFrom and no value.
+  printf "      POSTGRES_PASSWORD:  <set to the key 'password' in secret 'pg'>  Optional: false\n" >"${work}/clean/describe-secret.txt"
+  printf 'spec:\n  usePassword: true\n  password: null\n' >"${work}/clean/password-state.txt"
+  printf '{"env":[{"name":"POSTGRES_PASSWORD","valueFrom":{"secretKeyRef":{"name":"pg","key":"password"}}}]}\n' >"${work}/clean/env-secretref.txt"
+  # The one line the rules allow, and the same line under another message, which
+  # they must not allow. The hash is computed here, not written in this file: a
+  # literal would trip the Secrets workflow just as it trips the default rules.
+  fingerprint="$(printf '%s' sample | sha256sum | cut -d' ' -f1)"
+  printf 'time=x level=INFO msg="wrote the etcd encryption key" component=x path=/x/.etcd-encryption-key.json sha256=%s trace_id=%032x span_id=%016x\n' \
+    "${fingerprint}" 1 1 >"${work}/clean/etcd-fingerprint.txt"
+  printf 'time=x level=INFO msg="wrote the file" component=x path=/x/.etcd-encryption-key.json sha256=%s trace_id=%032x span_id=%016x\n' \
+    "${fingerprint}" 1 1 >"${work}/flagged/etcd-other.txt"
+  # The SPIRE CA line, which holds file paths, and the same line with a field
+  # appended after the span ID, which the allowlist does not match. The
+  # IDs are derived, and random-looking: with a trivial span ID the default rule
+  # would not flag the line even without the allowlist, and the sample would
+  # prove nothing.
+  trace_hex="$(printf t | sha256sum | cut -c1-32)"
+  span_hex="$(printf s | sha256sum | cut -c1-16)"
+  printf 'time=x level=INFO msg="SPIRE upstream CA from the environment" component=x cert=/w/cli/.local/spire-ca/ca.crt key=/w/cli/.local/spire-ca/ca.key trace_id=%s span_id=%s\n' \
+    "${trace_hex}" "${span_hex}" >"${work}/clean/spire-ca-paths.txt"
+  printf 'time=x level=INFO msg="SPIRE upstream CA from the environment" component=x cert=/w/cli/.local/spire-ca/ca.crt key=/w/cli/.local/spire-ca/ca.key trace_id=%s span_id=%s extra=%s\n' \
+    "${trace_hex}" "${span_hex}" "${fingerprint}" >"${work}/flagged/spire-ca-extra.txt"
+  # The two hashes the rules allow, and a join token and certificate key beside one
+  # of them, which they must not. Computed here for the same reason as above.
+  printf '{"msg":"update","api_encryption_key_sha256":"%s"}\n' "${fingerprint}" >"${work}/clean/key-fingerprint.txt"
+  printf 'kubeadm join x:6443 --discovery-token-ca-cert-hash sha256:%s --control-plane\n' "${fingerprint}" >"${work}/clean/ca-hash.txt"
+  join_token="$(printf a | sha256sum | cut -c1-6).$(printf b | sha256sum | cut -c1-16)"
+  printf '{"args":["join","--token","%s","--discovery-token-ca-cert-hash","sha256:%s"]}\n' \
+    "${join_token}" "${fingerprint}" >"${work}/flagged/join-token.txt"
+  # The allowed etcd and SPIRE lines with a credential-shaped field added where
+  # a loose allowlist would let it ride along: between the message and the path,
+  # and before the message. The value is derived, and long enough for the default
+  # rules to flag it under these names.
+  leaked="$(printf leak | sha256sum | cut -c1-32)"
+  printf 'time=x level=INFO msg="wrote the etcd encryption key" component=x token=%s path=/x/.etcd-encryption-key.json sha256=%s\n' \
+    "${leaked}" "${fingerprint}" >"${work}/flagged/etcd-field-before-path.txt"
+  printf 'token=%s time=x level=INFO msg="wrote the etcd encryption key" component=x path=/x/.etcd-encryption-key.json sha256=%s\n' \
+    "${leaked}" "${fingerprint}" >"${work}/flagged/etcd-field-before-msg.txt"
+  printf 'time=x level=INFO msg="SPIRE upstream CA from the environment" component=x api_key=%s cert=/w/ca.crt key=/w/ca.key\n' \
+    "${leaked}" >"${work}/flagged/spire-field-before-cert.txt"
+  printf 'api_key=%s time=x level=INFO msg="SPIRE upstream CA from the environment" component=x cert=/w/ca.crt key=/w/ca.key\n' \
+    "${leaked}" >"${work}/flagged/spire-field-before-msg.txt"
+  for name in "${work}"/flagged/*; do
+    rc=0
+    gitleaks_scan "${name}" >/dev/null 2>&1 || rc=$?
+    if [ "${rc}" -ne 2 ]; then
+      log "FAIL: the secret scan's rules did not flag the sample ${name##*/} (exit ${rc}), so a clean scan proves nothing"
+      rm -rf "${work}"
+      return 1
+    fi
+  done
+  rc=0
+  gitleaks_scan "${work}/clean" >/dev/null 2>&1 || rc=$?
+  if [ "${rc}" -ne 0 ]; then
+    log "FAIL: the secret scan flagged the clean samples, the <redacted> placeholder and the fingerprint and hash lines it allows (exit ${rc}), so it would flag a clean run"
+    rm -rf "${work}"
+    return 1
+  fi
+
+  # The scan itself, driven the way it is on the real output: a secret planted
+  # in the log, in a file of the diagnostics bundle, and in a pod log inside it
+  # (the controller's, in the real bundle) must each fail it, and the same
+  # files without it must pass.
+  local planted clean_log diag where
+  planted="$(sed 's/PLACEHOLDER/aaaa-bbbb-cccc/' <<<'helm upgrade --install demo chart --set-string auth.password=PLACEHOLDER')"
+  clean_log="${work}/clean.log"
+  printf 'msg="nothing to see" trace_id=%032x\n' 1 >"${clean_log}"
+  diag="${work}/diag"
+  reset_diag() {
+    mkdir -p "${diag}/nvke/controller"
+    printf 'no secret here\n' >"${diag}/all-resources.txt"
+    printf 'no secret here\n' >"${diag}/nvke/controller/logs.txt"
+  }
+  reset_diag
+  if ! scan_run_output "${clean_log}" "${diag}" >/dev/null 2>&1; then
+    log "FAIL: the scan failed a log and diagnostics bundle with no secret in them"
+    rm -rf "${work}"
+    return 1
+  fi
+  for where in log diagnostics-file pod-log; do
+    reset_diag
+    plog="${clean_log}"
+    case "${where}" in
+      log) printf '%s\n' "${planted}" >"${work}/planted.log"; plog="${work}/planted.log" ;;
+      diagnostics-file) printf '%s\n' "${planted}" >"${diag}/all-resources.txt" ;;
+      pod-log) printf '%s\n' "${planted}" >"${diag}/nvke/controller/logs.txt" ;;
+    esac
+    if scan_run_output "${plog}" "${diag}" >/dev/null 2>&1; then
+      log "FAIL: the scan passed a secret planted in the ${where}"
+      rm -rf "${work}"
+      return 1
+    fi
+  done
+
+  rc=0
+  scan_run_output "${BOOTSTRAP_LOG}" "${DIAGNOSTICS_DIR}" || rc=$?
+  rm -rf "${work}"
+  return "${rc}"
+}
+
+# scan_run_output scans a bootstrap log and a diagnostics directory, which may
+# not exist, with gitleaks. It returns 1 on a finding or a scanner failure.
+scan_run_output() {
+  local log_file="$1" diag_dir="$2" out rc
+  out="$(mktemp -d)"
+  mkdir -p "${out}/output"
+  cp "${log_file}" "${out}/output/bootstrap.log"
+  if [ -d "${diag_dir}" ]; then
+    mkdir -p "${out}/output/diagnostics"
+    cp -R "${diag_dir}/." "${out}/output/diagnostics/" || {
+      log "FAIL: could not read ${diag_dir}, so it was not scanned for credentials"
+      rm -rf "${out}"
+      return 1
+    }
+  fi
+  rc=0
+  # --verbose names each finding: rule, file and line, with the secret redacted.
+  gitleaks_scan "${out}/output" --verbose || rc=$?
+  rm -rf "${out}"
+  case "${rc}" in
+    0) log "PASS: no credential in the bootstrap log or its diagnostics" ;;
+    2) log "FAIL: gitleaks found a credential in the bootstrap output; the findings above are redacted" ; return 1 ;;
+    *) log "FAIL: gitleaks could not scan the bootstrap output (exit ${rc})" ; return 1 ;;
+  esac
+}
+
 # defer registers a command for the EXIT trap, which runs registrations in
 # reverse order. Register the teardown *before* the operation it undoes: under
 # `set -e` an operation can fail partway and exit on the spot, so the teardown
@@ -159,6 +367,18 @@ cleanup() {
   local status=$? i
   if [ "${status}" -ne 0 ] && [ "${nodes_started}" = true ]; then
     collect_diagnostics
+  fi
+  # Before anything is removed: the log and the diagnostics are what is scanned.
+  # A leak turns a passing run red; a run that already failed stays failed.
+  local scan_failed=0
+  scan_output_for_secrets || scan_failed=1
+  # CI uploads this directory when the job fails, and a failed scan is a failed
+  # job. The bundle is redacted in the scan's output but not on disk, so it is
+  # removed rather than published with the credential the scan reported. A
+  # scan that could not run counts too: the bundle was not checked.
+  if [ "${scan_failed}" -ne 0 ] && [ -d "${DIAGNOSTICS_DIR}" ]; then
+    log "removing ${DIAGNOSTICS_DIR}: it may hold a credential, and CI uploads it"
+    rm -rf "${DIAGNOSTICS_DIR}"
   fi
   for ((i = ${#DEFERRED[@]} - 1; i >= 0; i--)); do
     eval "${DEFERRED[$i]}" || true
@@ -175,6 +395,9 @@ cleanup() {
 
   rm -f "${TENANT_KUBECONFIG}" "${ETCD_KEY_FILE}" "${BOOTSTRAP_LOG}"
   rm -rf "${KUBECONFIG_DIR}" "${CNI_BUNDLE_DIR}" "${BGP_RENDER_DIR}"
+  if [ "${scan_failed}" -ne 0 ] && [ "${status}" -eq 0 ]; then
+    exit 1
+  fi
 }
 nodes_started=false
 trap cleanup EXIT
@@ -224,14 +447,6 @@ remove_spire_vip() {
 remove_vip_forward_rule() {
   iptables -D FORWARD -i "$1" -o "$1" -j ACCEPT 2>/dev/null || true
 }
-teardown_bgp_speaker() {
-  # Let zebra withdraw its routes before removing the container.
-  log "stopping the FRR BGP speaker ${BGP_CONTAINER}"
-  nerdctl stop --time 10 "${BGP_CONTAINER}" >/dev/null 2>&1 || true
-  nerdctl rm -f "${BGP_CONTAINER}" >/dev/null 2>&1 || true
-  # Remove routes left behind if FRR could not withdraw them.
-  ip route del "${CONTROL_PLANE_VIP}/32" 2>/dev/null || true
-}
 
 # check_api_server accepts a VIP, server URL, and whitespace-separated node IPs.
 # Without a VIP, any control-plane node may be the API endpoint.
@@ -250,13 +465,6 @@ check_api_server() {
   return 1
 }
 
-# bgp_vip_nexthops prints sorted, unique next-hop IPs for the VIP /32.
-bgp_vip_nexthops() {
-  local out
-  out="$(nerdctl exec "${BGP_CONTAINER}" vtysh -c \
-    "show bgp ipv4 unicast ${CONTROL_PLANE_VIP}/32 json" 2>/dev/null)" || return 0
-  printf '%s' "${out}" | jq -r '.paths[]?.nexthops[]?.ip // empty' 2>/dev/null | sort -u || true
-}
 
 # Which registry each side's pulls resolve to. A pull that falls through to
 # upstream is the difference between a 30 second install and a helm timeout,
@@ -293,17 +501,25 @@ collect_diagnostics() {
     fi
   } > "${DIAGNOSTICS_DIR}/host-network.txt" 2>&1 || true
 
-  log "collecting kubelet, containerd, nvke-agent and spire-agent diagnostics from ${NODE_COUNT} fake node(s)"
+  log "collecting kubelet, containerd, nvke-agent, spire-agent and Open vSwitch diagnostics from ${NODE_COUNT} fake node(s)"
   for ((i = 1; i <= NODE_COUNT; i++)); do
     node="nvkectl-e2e-${NODE_PREFIX}${i}"
     output="${DIAGNOSTICS_DIR}/host-diagnostics-${NODE_PREFIX}${i}.txt"
     {
-      printf '### journalctl: kubelet, containerd, nvke-agent, spire-agent\n'
-      nerdctl exec "${node}" journalctl -u kubelet -u containerd -u nvke-agent -u spire-agent \
+      printf '### journalctl: kubelet, containerd, nvke-agent, spire-agent, openvswitch-switch\n'
+      nerdctl exec "${node}" journalctl -u kubelet -u containerd -u nvke-agent -u spire-agent -u openvswitch-switch \
         --boot --no-pager --output=short-iso-precise --lines=10000 || true
 
       printf '\n### systemctl status\n'
-      nerdctl exec "${node}" systemctl status kubelet containerd --no-pager || true
+      nerdctl exec "${node}" systemctl status kubelet containerd openvswitch-switch --no-pager || true
+
+      # The controller's Open vSwitch step fails inside the node when
+      # openvswitch-switch does not come up, and its daemons log only here.
+      printf '\n### ovs-vsctl show\n'
+      nerdctl exec "${node}" ovs-vsctl show || true
+
+      printf '\n### /var/log/openvswitch (tail 200 each)\n'
+      nerdctl exec "${node}" sh -c 'tail -n 200 /var/log/openvswitch/*.log' || true
 
       printf '\n### crictl ps -a\n'
       nerdctl exec "${node}" crictl ps -a || true
@@ -324,6 +540,21 @@ collect_diagnostics() {
       nerdctl exec "${node}" ls -la /etc/cni/net.d /opt/cni/bin || true
     } >"${output}" 2>&1
   done
+
+  # nvkectl keeps the bootstrap kind cluster after a failure past site cluster
+  # creation, and its controller log names the provisioning step that stalled.
+  if kind_lists_bootstrap_cluster; then
+    log "collecting the controller logs from the kept bootstrap kind cluster"
+    local kubeconfig
+    kubeconfig="$(mktemp)"
+    if KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name "${BOOTSTRAP_KIND_CLUSTER}" >"${kubeconfig}" 2>/dev/null; then
+      kubectl --kubeconfig "${kubeconfig}" -n "${CONTROLLER_NAME}" logs "deployment/${CONTROLLER_NAME}" \
+        --all-containers --tail=5000 >"${DIAGNOSTICS_DIR}/controller.log" 2>&1 || true
+      kubectl --kubeconfig "${kubeconfig}" -n provisioned-system logs deployment/provisioned-controller-manager \
+        --all-containers --tail=2000 >"${DIAGNOSTICS_DIR}/provisioned-controller.log" 2>&1 || true
+    fi
+    rm -f "${kubeconfig}"
+  fi
 }
 
 # ── Stage 1: fake nodes ──────────────────────────────────────────────────
@@ -338,6 +569,14 @@ CAPD_HELM_DEB_PATH="${CNI_BUNDLE_DIR}/nke-e2e-helm.deb"
 export CAPD_CNI_CHARTS_DEB_PATH CAPD_CNI_IMAGES_DEB_PATH CAPD_HELM_DEB_PATH
 if [ ! -f "${CAPD_CNI_CHARTS_DEB_PATH}" ] || [ ! -f "${CAPD_CNI_IMAGES_DEB_PATH}" ] || [ ! -f "${CAPD_HELM_DEB_PATH}" ]; then
   fail "OVN packages were not built"
+fi
+
+# The nodes' openvswitch-switch unit loads the openvswitch module from the
+# host tree mounted into them, which works only against the running kernel's
+# own build. Without the module the controller's Open vSwitch step fails on
+# every node and the site cluster sits in Provisioning until its timeout.
+if [ ! -e /sys/module/openvswitch ]; then
+  fail "the host has not loaded the openvswitch kernel module; load it before starting the fake nodes"
 fi
 
 log "starting fake node containers"
@@ -444,59 +683,6 @@ if [ -n "${CONTROL_PLANE_VIP}" ]; then
 fi
 log "allowlisting ${expected_nodes} EK thumbprint(s)"
 
-# Start before bootstrap so joining nodes can reach the VIP through BGP.
-start_bgp_speaker() {
-  local router_id listen_range
-
-  # kube-vip peers with the default gateway. Read it and the node subnet from
-  # the live network, skipping IPv6 entries that may have no gateway.
-  router_id="$(nerdctl network inspect "${NODE_NETWORK}" \
-    --format '{{range .IPAM.Config}}{{.Gateway}} {{end}}' \
-    | awk '{for (i=1;i<=NF;i++) if ($i ~ /^[0-9]+(\.[0-9]+){3}$/) {print $i; exit}}')"
-  listen_range="$(nerdctl network inspect "${NODE_NETWORK}" \
-    --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' \
-    | awk '{for (i=1;i<=NF;i++) if ($i ~ /^[0-9]+(\.[0-9]+){3}\/[0-9]+$/) {print $i; exit}}')"
-  [ -n "${router_id}" ] || { log "FAIL: could not read the ${NODE_NETWORK} gateway for the FRR router-id"; return 1; }
-  [ -n "${listen_range}" ] || { log "FAIL: could not read the ${NODE_NETWORK} subnet for the FRR listen range"; return 1; }
-  log "FRR router-id=${router_id} listen-range=${listen_range} (node network ${NODE_NETWORK})"
-
-  # Reuse the controller's FRR fixture with this network's addresses.
-  rm -rf "${BGP_RENDER_DIR}"
-  mkdir -p "${BGP_RENDER_DIR}"
-  # Called as `start_bgp_speaker || exit 1`, so errexit is off for this body
-  # and each step reports its own failure. FRR starts on an empty frr.conf.
-  sed -e "s|@ROUTER_ID@|${router_id}|g" \
-      -e "s|@LISTEN_RANGE@|${listen_range}|g" \
-      "${BGP_FILES_DIR}/frr.conf.tmpl" > "${BGP_RENDER_DIR}/frr.conf" ||
-    { log "FAIL: could not render frr.conf from ${BGP_FILES_DIR}/frr.conf.tmpl"; return 1; }
-  [ -s "${BGP_RENDER_DIR}/frr.conf" ] ||
-    { log "FAIL: rendered frr.conf is empty"; return 1; }
-  cp "${BGP_FILES_DIR}/vtysh.conf" "${BGP_RENDER_DIR}/vtysh.conf" ||
-    { log "FAIL: could not copy vtysh.conf from ${BGP_FILES_DIR}"; return 1; }
-  cp "${BGP_FILES_DIR}/daemons" "${BGP_RENDER_DIR}/daemons" ||
-    { log "FAIL: could not copy daemons from ${BGP_FILES_DIR}"; return 1; }
-
-  # A leftover container from an aborted run would make `run` fail on the name.
-  nerdctl rm -f "${BGP_CONTAINER}" >/dev/null 2>&1 || true
-
-  # Host networking lets zebra install routes used by both nerdctl bridges.
-  # Capabilities match controller/hack/bgp-containers/up.sh.
-  defer teardown_bgp_speaker
-  nerdctl run -d --name "${BGP_CONTAINER}" \
-    --net host \
-    --cap-add NET_ADMIN --cap-add SYS_ADMIN --cap-add NET_BIND_SERVICE \
-    -v "${BGP_RENDER_DIR}/frr.conf:/etc/frr/frr.conf" \
-    -v "${BGP_RENDER_DIR}/vtysh.conf:/etc/frr/vtysh.conf" \
-    -v "${BGP_RENDER_DIR}/daemons:/etc/frr/daemons" \
-    "${FRR_IMAGE}" >/dev/null || { log "FAIL: could not start the FRR BGP speaker"; return 1; }
-
-  if ! wait_until 30 1 nerdctl exec "${BGP_CONTAINER}" vtysh -c 'show version' >/dev/null 2>&1; then
-    log "FAIL: FRR (${BGP_CONTAINER}) did not become ready within 30s"
-    nerdctl logs "${BGP_CONTAINER}" 2>&1 | sed 's/^/  /' || true
-    return 1
-  fi
-  log "PASS: FRR BGP speaker ${BGP_CONTAINER} is up (image ${FRR_IMAGE}, pulled from quay.io)"
-}
 
 if [ -n "${CONTROL_PLANE_VIP}" ]; then
   log "starting the FRR BGP speaker for control-plane VIP ${CONTROL_PLANE_VIP}"
@@ -511,7 +697,8 @@ fi
 rm -f "${ETCD_KEY_FILE}"
 
 log "running: nvkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 15m" \
-  "(NVKECTL_CONTROLLER_IMAGE=${NVKECTL_CONTROLLER_IMAGE}," \
+  "via the e2e_bootstrap TestE2E_ tests" \
+  "(NVKECTL_NVKE_CONTROLLER_IMAGE=${NVKECTL_NVKE_CONTROLLER_IMAGE}," \
   "NVKECTL_CAPI_PROVISIONED_IMAGE=${NVKECTL_CAPI_PROVISIONED_IMAGE})"
 
 # In the background, because the attach below has to happen *during* the run:
@@ -521,22 +708,59 @@ log "running: nvkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cl
 # --keep-bootstrap-cluster: this suite's EXIT trap removes the cluster, and the
 # teardown registers here because the command can fail after creating it.
 defer teardown_bootstrap_cluster
-# setsid makes nvkectl a process-group leader so abort_bootstrap can signal the
-# kind, nerdctl and helm it drives as one group; nvkectl does not forward
-# signals to its children.
-setsid "${NVKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" --keep-bootstrap-cluster \
-  --timeout 15m --kubeconfig-out "${TENANT_KUBECONFIG}" \
-  --encryption-key-out "${ETCD_KEY_FILE}" >"${BOOTSTRAP_LOG}" 2>&1 &
+# The command is run by TestE2E_BootstrapSite rather than invoked here, so that
+# starting it, giving it a process group and reaping that group are stated once
+# in Go instead of twice in shell. It writes nvkectl's output to BOOTSTRAP_LOG,
+# which is what the loop below and every assertion after it read, so this lane
+# is unchanged on either side of this line. The test asserts nothing: it reports
+# what the command exited with and no more.
+#
+# setsid makes `go test` a process-group leader so abort_bootstrap can signal
+# it. The test binary shares that group, so the signal reaches the test, which
+# in turn stops nvkectl and the kind, nerdctl and helm it drives -- those are in
+# a group of their own and the lane's signal does not reach them.
+#
+# -v makes a successful run write its diagnostics bundle too, so the credential
+# scan covers the bundle on the passing path and not only after a failure.
+# A -run that matches nothing exits 0, so a renamed or mistyped test would look
+# like a bootstrap that ran and passed. Assert the selector picks something up
+# before relying on it. This compiles the package too, so the run below starts
+# without a build in front of it.
+#
+# Captured rather than piped into grep: under `set -o pipefail`, a `grep -q`
+# that exits on the first match leaves `go test` writing to a closed pipe, and
+# the pipeline then fails for a reason that has nothing to do with the result.
+listed_tests="$("${GO}" test -C "${CLI_DIR}" -tags e2e_bootstrap -list '^TestE2E_' \
+  ./e2e/bootstrap/bootstraptest/)" ||
+  fail "could not list the bootstrap tests"
+case "${listed_tests}" in
+  *TestE2E_*) ;;
+  *) fail "no TestE2E_ test in the bootstrap test package: the lane would report success without bootstrapping anything" ;;
+esac
+
+setsid env \
+  NVKECTL="${NVKECTL}" \
+  NVKECTL_E2E_SITESPEC="${RENDERED_SITESPEC}" \
+  NVKECTL_E2E_BOOTSTRAP_LOG="${BOOTSTRAP_LOG}" \
+  NVKECTL_E2E_KUBECONFIG_OUT="${TENANT_KUBECONFIG}" \
+  NVKECTL_E2E_ENCRYPTION_KEY_OUT="${ETCD_KEY_FILE}" \
+  NVKECTL_E2E_BOOTSTRAP_TIMEOUT=15m \
+  NVKECTL_E2E_KEEP_BOOTSTRAP_CLUSTER=1 \
+  NVKECTL_E2E_VERBOSE=1 \
+  "${GO}" test -C "${CLI_DIR}" -tags e2e_bootstrap -timeout 0 -count=1 -v \
+  ./e2e/bootstrap/bootstraptest/ -run '^TestE2E_' \
+  >"${BOOTSTRAP_GO_TEST_LOG}" 2>&1 &
 bootstrap_pid=$!
 
-# abort_bootstrap stops the background `bootstrap site` and its children before
-# this script exits -- nvkectl runs as a process-group leader, so the whole
-# group is signalled and reaped. Otherwise the EXIT trap would delete the
-# cluster the command is still driving.
+# abort_bootstrap stops the background run and its children before this script
+# exits. Signalling the group reaches the go test, which stops nvkectl and the
+# kind, nerdctl and helm it drives before it goes. Otherwise the EXIT trap would
+# delete the cluster the command is still driving.
 abort_bootstrap() {
   kill -- "-${bootstrap_pid}" 2>/dev/null || kill "${bootstrap_pid}" 2>/dev/null || true
   wait "${bootstrap_pid}" 2>/dev/null || true
   cat "${BOOTSTRAP_LOG}" || true
+  cat "${BOOTSTRAP_GO_TEST_LOG}" || true
   exit 1
 }
 
@@ -656,7 +880,10 @@ cat "${BOOTSTRAP_LOG}"
 output="$(cat "${BOOTSTRAP_LOG}")"
 
 if [ "${status}" -ne 0 ]; then
-  fail "nvkectl bootstrap site exited ${status}"
+  # The go test exit status says only that the run failed. What nvkectl exited
+  # with, or that it could not be started at all, is in its log.
+  cat "${BOOTSTRAP_GO_TEST_LOG}" || true
+  fail "nvkectl bootstrap site failed; see ${BOOTSTRAP_GO_TEST_LOG}"
 fi
 if ! grep -q "controller deployment healthy" <<<"${output}"; then
   fail "the controller was never confirmed healthy on /readyz"
@@ -672,11 +899,36 @@ if [[ -n "${NVKECTL_SPIRE_CA_CERT_FILE:-}" ]] && ! grep -q "SPIRE upstream CA fr
 fi
 log "PASS: bootstrap site created the site cluster through the controller API"
 
+# check_trace_id asserts the run's trace ID: printed first and last, the same
+# value, and on every log record nvkectl wrote. Records are the slog lines, which
+# start with time=; the output of helm, kind and the like is not nvkectl's.
+check_trace_id() {
+  local ids first last id bare
+  ids="$(grep -E '^Trace ID: ' <<<"${output}" || true)"
+  [ "$(wc -l <<<"${ids}")" -ge 2 ] ||
+    fail "expected a Trace ID line at the start and at the end of the output" "${ids}"
+  first="$(head -n1 <<<"${ids}")"
+  last="$(tail -n1 <<<"${ids}")"
+  [[ "${first}" =~ ^Trace\ ID:\ ([0-9a-f]{32})$ ]] || fail "malformed Trace ID line: ${first}"
+  id="${BASH_REMATCH[1]}"
+  [ "${first}" = "${last}" ] || fail "the first and last Trace ID lines differ" "${first}" "${last}"
+  [ "$(grep -c '^time=' <<<"${output}")" -gt 0 ] || fail "no log records in the output to carry a trace ID"
+  bare="$(grep '^time=' <<<"${output}" | grep -vc "trace_id=${id}" || true)"
+  [ "${bare}" -eq 0 ] || fail "${bare} log records do not carry trace_id=${id}"
+  log "PASS: one trace ID, first and last line, on every nvkectl log record"
+}
+check_trace_id
+
+# -v makes the run write diagnostics even on success. An empty directory would
+# make the credential scan pass over nothing.
+[ -n "$(find "${DIAGNOSTICS_DIR}" -type f 2>/dev/null | head -n1)" ] ||
+  fail "bootstrap site -v wrote no diagnostics to ${DIAGNOSTICS_DIR}"
+log "PASS: a successful run wrote its diagnostics bundle for the credential scan"
+
 # The controller reached this point by answering /readyz through its Service
 # and the host through its external NodePort. What that does not show is that
 # it runs under the name greenfield sites use, as the ServiceAccount its
 # SPIFFE ID names, with SPIRE registered to issue that ID.
-CONTROLLER_NAME=nke-controller
 bootstrap_kubeconfig="$(mktemp)"
 KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name "${BOOTSTRAP_KIND_CLUSTER}" \
   > "${bootstrap_kubeconfig}" || fail "could not read the bootstrap cluster's kubeconfig"
@@ -689,7 +941,7 @@ sa="$(bk -n "${CONTROLLER_NAME}" get deployment "${CONTROLLER_NAME}" \
 endpoints="$(bk -n "${CONTROLLER_NAME}" get endpoints "${CONTROLLER_NAME}-external" \
   -o 'jsonpath={.subsets[*].addresses[*].ip}')"
 [ -n "${endpoints}" ] || fail "Service ${CONTROLLER_NAME}-external has no endpoints"
-spiffe_id="spiffe://${SPIRE_TRUST_DOMAIN}/nke-service/${CONTROLLER_NAME}"
+spiffe_id="spiffe://${SPIRE_TRUST_DOMAIN}/nvke-service/${CONTROLLER_NAME}"
 bk -n spire-server exec spire-server-0 -c spire-server -- \
   /opt/spire/bin/spire-server entry show -spiffeID "${spiffe_id}" | grep -q "Entry ID" ||
   fail "SPIRE has no entry for ${spiffe_id}"
@@ -808,61 +1060,13 @@ fi
 
 # ── Stage 4b: etcd data is encrypted, and the saved key is the nodes' key ──
 #
-# Two checks. The first reads a Secret straight out of etcd and looks at the
-# bytes: secretbox envelope present, plaintext absent. It is the only way to
-# tell "encryption configured" from "data encrypted". The second compares the
-# key `bootstrap site` saved with the one each control-plane node runs on, by
-# digest: the file is what an operator keeps, and it has to be the right key.
-# Neither check prints key material or ciphertext.
-log "checking that etcd data is encrypted at rest"
-[ -f "${ETCD_KEY_FILE}" ] || fail "bootstrap site did not write ${ETCD_KEY_FILE}"
-key_mode=$(stat -c '%a' "${ETCD_KEY_FILE}")
-[ "${key_mode}" = "600" ] || fail "${ETCD_KEY_FILE} has mode ${key_mode}, want 600"
-
-probe_name="nvkectl-e2e-encryption-probe"
-plaintext_marker="nvkectl-e2e-plaintext-marker-$(date +%s)"
-kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n default create secret generic "${probe_name}" \
-  --from-literal=probe="${plaintext_marker}" >/dev/null
-etcd_pod=$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n kube-system get pods -l component=etcd \
-  -o jsonpath='{.items[0].metadata.name}')
-[ -n "${etcd_pod}" ] || fail "no etcd pod found in kube-system"
-# The raw value goes to a file, not a variable, so its bytes never reach the
-# log. Removed on exit like everything else this suite creates.
-raw_value=$(mktemp)
-defer rm -f "${raw_value}"
-kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n kube-system exec "${etcd_pod}" -c etcd -- \
-  etcdctl --endpoints=https://127.0.0.1:2379 \
-    --cacert=/etc/kubernetes/pki/etcd/ca.crt \
-    --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt \
-    --key=/etc/kubernetes/pki/etcd/healthcheck-client.key \
-    get "/registry/secrets/default/${probe_name}" --print-value-only >"${raw_value}" 2>/dev/null ||
-  fail "could not read the probe Secret out of etcd"
-# Positive control first: an empty read would pass the plaintext check for the
-# wrong reason.
-[ -s "${raw_value}" ] || fail "the probe Secret's etcd value is empty"
-! grep -a -F -q "${plaintext_marker}" "${raw_value}" ||
-  fail "the probe Secret is stored in etcd as plaintext"
-grep -a -q 'k8s:enc:secretbox:v1:' "${raw_value}" ||
-  fail "the probe Secret's etcd value does not carry the secretbox envelope"
-rm -f "${raw_value}"
-kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n default delete secret "${probe_name}" >/dev/null
-log "PASS: Secrets are stored in etcd under the secretbox envelope"
-
-log "checking that the saved key is the key every control-plane node runs on"
-# The manifest is what `bootstrap site` wrote, so its shape is known: the key
-# is the base64 "active" field. Digests are compared, never values.
-saved_active=$(sed -n 's/.*"active": "\([^"]*\)".*/\1/p' "${ETCD_KEY_FILE}" | head -1)
-[ -n "${saved_active}" ] || fail "${ETCD_KEY_FILE} carries no active key"
-saved_digest=$(printf '%s' "${saved_active}" | base64 -d | sha256sum | cut -d' ' -f1)
+# The checks are in etcd-lib.sh, shared with run-nico.sh.
+check_etcd_encrypted_at_rest "${TENANT_KUBECONFIG}" "${ETCD_KEY_FILE}"
+control_plane_containers=()
 for ((i = 1; i <= NODE_COUNT; i++)); do
-  node="nvkectl-e2e-${NODE_PREFIX}${i}"
-  node_digest=$(nerdctl exec "${node}" \
-    awk '/secret:/ {printf "%s", $2; exit}' /etc/kubernetes/kube-api-encryption/encryption-config.yaml \
-    | sha256sum | cut -d' ' -f1)
-  [ "${node_digest}" = "${saved_digest}" ] ||
-    fail "${node} runs a different etcd encryption key than ${ETCD_KEY_FILE} holds"
+  control_plane_containers+=("nvkectl-e2e-${NODE_PREFIX}${i}")
 done
-log "PASS: the saved etcd encryption key matches all ${NODE_COUNT} control-plane nodes"
+check_saved_key_matches_nodes "${ETCD_KEY_FILE}" "${control_plane_containers[@]}"
 
 # hello_world_served is the stage 5 condition. whoami answers with the request
 # it received, so "Hostname:" in the body is the pod talking, not Traefik's own

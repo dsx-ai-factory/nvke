@@ -35,7 +35,7 @@ import (
 // hack/chart-controller-config-assertions.sh renders them and sets it.
 const renderedChartDirEnv = "NKE_RENDERED_CHART_DIR"
 
-// TestRenderedChart checks the chart's nke-controller-config against the
+// TestRenderedChart checks the chart's nvke-controller-config against the
 // controller, once per rendered value set: the document loads, defines every
 // key, is mounted where CONTROLLER_CONFIG_PATH points, and together with the
 // render's environment gives the controller a configuration that validates.
@@ -79,7 +79,26 @@ func TestRenderedChart(t *testing.T) {
 			})
 			require.NoError(t, err)
 			fromFile.ApplyTo(&cfg)
+			// Explicit zero must survive rendering. The runtime policy only
+			// checks the bounds of an enabled feature, so a zero threshold
+			// under disabled renewal loads. Values the controller refuses are
+			// refused at render, so every render here must validate.
+			if strings.TrimSuffix(filepath.Base(render), ".yaml") == "explicit-false-and-zero" {
+				require.Zero(t, cfg.CertRenewalThresholdDays)
+			}
 			require.NoError(t, cfg.Validate())
+
+			// Both sources at once is a startup failure, so no render may produce it.
+			require.NoError(t, fromFile.CheckAuthSource(environment["AUTH_CONFIG_PATH"]))
+
+			if filepath.Base(render) == "api-auth-inline.yaml" {
+				require.True(t, fromFile.APIAuth.Enabled, "the controller reads the chart's apiAuth.config from config.yaml")
+				require.NotContains(t, environment, "AUTH_CONFIG_PATH")
+			}
+			if filepath.Base(render) == "api-auth-permissive.yaml" {
+				require.False(t, fromFile.APIAuth.Enabled, "a ConfigMap managed elsewhere stays on AUTH_CONFIG_PATH")
+				require.Contains(t, environment, "AUTH_CONFIG_PATH")
+			}
 
 			if filepath.Base(render) == "machine-metadata-allowlists.yaml" {
 				require.Equal(t, []string{"cluster.x-k8s.io/custom"}, cfg.MachineMetadataAllowlistedLabelKeys)
@@ -93,14 +112,18 @@ func TestRenderedChart(t *testing.T) {
 				}, cfg.AgentReadiness)
 			}
 
+			if filepath.Base(render) == "dev-without-vip.yaml" {
+				require.True(t, cfg.AllowControlPlaneWithoutVIP)
+			}
 			if filepath.Base(render) == "defaults.yaml" {
+				require.False(t, cfg.AllowControlPlaneWithoutVIP)
 				checkLocalAgreesWithChart(t, fromFile)
 			}
 		})
 	}
 }
 
-// splitRender returns the nke-controller-config document, the controller
+// splitRender returns the nvke-controller-config document, the controller
 // container's literal environment variables, and the controller Deployment from
 // one `helm template` output. Variables set through valueFrom are left out:
 // none of them migrate.
@@ -124,8 +147,8 @@ func splitRender(t *testing.T, raw []byte) (string, map[string]string, *appsv1.D
 		case "ConfigMap":
 			var configMap corev1.ConfigMap
 			require.NoError(t, yaml.Unmarshal(manifest, &configMap))
-			if configMap.Name == "nke-controller-config" {
-				require.Empty(t, document, "the render has more than one nke-controller-config")
+			if configMap.Name == "nvke-controller-config" {
+				require.Empty(t, document, "the render has more than one nvke-controller-config")
 				document = configMap.Data["config.yaml"]
 			}
 		case "Deployment":
@@ -143,12 +166,12 @@ func splitRender(t *testing.T, raw []byte) (string, map[string]string, *appsv1.D
 			controller = &deployment
 		}
 	}
-	require.NotEmpty(t, document, "the render has no nke-controller-config")
+	require.NotEmpty(t, document, "the render has no nvke-controller-config")
 	require.NotNil(t, environment, "the render has no controller Deployment")
 	return document, environment, controller
 }
 
-// checkMounted requires the Deployment to mount nke-controller-config, read-only
+// checkMounted requires the Deployment to mount nvke-controller-config, read-only
 // and not optional, at the path CONTROLLER_CONFIG_PATH names, and Reloader to
 // restart the controller when it changes.
 func checkMounted(t *testing.T, deployment *appsv1.Deployment, environment map[string]string) {
@@ -156,27 +179,27 @@ func checkMounted(t *testing.T, deployment *appsv1.Deployment, environment map[s
 
 	var volume string
 	for _, v := range deployment.Spec.Template.Spec.Volumes {
-		if v.ConfigMap != nil && v.ConfigMap.Name == "nke-controller-config" {
-			require.Empty(t, volume, "more than one volume mounts nke-controller-config")
-			require.False(t, ptr.Deref(v.ConfigMap.Optional, false), "the nke-controller-config volume is optional")
+		if v.ConfigMap != nil && v.ConfigMap.Name == "nvke-controller-config" {
+			require.Empty(t, volume, "more than one volume mounts nvke-controller-config")
+			require.False(t, ptr.Deref(v.ConfigMap.Optional, false), "the nvke-controller-config volume is optional")
 			volume = v.Name
 		}
 	}
-	require.NotEmpty(t, volume, "no volume mounts nke-controller-config")
+	require.NotEmpty(t, volume, "no volume mounts nvke-controller-config")
 
 	var mountPath string
 	for _, m := range deployment.Spec.Template.Spec.Containers[0].VolumeMounts {
 		if m.Name == volume {
-			require.Empty(t, mountPath, "the controller mounts nke-controller-config more than once")
-			require.True(t, m.ReadOnly, "nke-controller-config is mounted writable")
+			require.Empty(t, mountPath, "the controller mounts nvke-controller-config more than once")
+			require.True(t, m.ReadOnly, "nvke-controller-config is mounted writable")
 			mountPath = m.MountPath
 		}
 	}
-	require.NotEmpty(t, mountPath, "the controller does not mount nke-controller-config")
+	require.NotEmpty(t, mountPath, "the controller does not mount nvke-controller-config")
 	require.Equal(t, path.Join(mountPath, "config.yaml"), environment["CONTROLLER_CONFIG_PATH"])
 
 	watched := strings.Split(deployment.Annotations["configmap.reloader.stakater.com/reload"], ",")
-	require.Contains(t, watched, "nke-controller-config", "Reloader does not watch nke-controller-config")
+	require.Contains(t, watched, "nvke-controller-config", "Reloader does not watch nvke-controller-config")
 }
 
 // documentKeys returns every dotted key path the YAML document sets, at every
@@ -249,6 +272,19 @@ func TestLoadStartupConfig(t *testing.T) {
 		_, _, err := controllerconfig.LoadStartupConfig()
 		require.ErrorContains(t, err, "absent.yaml")
 	})
+
+	t.Run("apiAuth and AUTH_CONFIG_PATH together are refused", func(t *testing.T) {
+		local, err := controllerconfig.Load(localControllerConfig)
+		require.NoError(t, err)
+		local.APIAuth = exampleAPIAuth()
+		encoded, err := yaml.Marshal(local)
+		require.NoError(t, err)
+		t.Setenv("CONTROLLER_CONFIG_PATH", writeConfig(t, string(encoded)))
+		t.Setenv("AUTH_CONFIG_PATH", "/etc/nke/auth/auth.yaml")
+
+		_, _, err = controllerconfig.LoadStartupConfig()
+		require.ErrorContains(t, err, "configured twice")
+	})
 }
 
 // localOnly lists the keys where hack/local-controller-config.yaml deliberately
@@ -257,6 +293,7 @@ func TestLoadStartupConfig(t *testing.T) {
 // between a host-local run and a deployment.
 var localOnly = map[string]string{
 	"metricsListenAddress":       "a host-local controller keeps metrics on the loopback",
+	"nicoControllersEnabled":     "host-local runs do not install CAPNICo, so the NICo controllers stay off",
 	"profilesDir":                "host-local runs use the fixture profiles",
 	"runbooksDir":                "host-local runs use the fixture runbooks",
 	"spire.serverPort":           "the local SPIRE server port-forward, not the site's NodePort",

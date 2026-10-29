@@ -35,6 +35,9 @@ const (
 
 	// When ProviderType is CAPI, the user specifies the infra machine template and the controller clones it for each node.
 	ProviderTypeCAPI ProviderType = "capi"
+
+	// When ProviderType is LaunchLayer, the caller gives a VPC/org/site and the controller generates the LaunchLayerCluster/LaunchLayerMachine manifests for each node, the same way it does for Nico.
+	ProviderTypeLaunchLayer ProviderType = "launchlayer"
 )
 
 type NicoClusterProvider struct {
@@ -45,6 +48,32 @@ type NicoClusterProvider struct {
 
 type CAPIClusterProvider struct {
 	InfraCluster json.RawMessage `json:"infra_cluster,omitempty"`
+}
+
+// LaunchLayerClusterOwner is the LaunchLayer identity requests are attributed
+// to. Mirrors LaunchLayerCluster.spec.owner in CAPLL.
+type LaunchLayerClusterOwner struct {
+	UserID   string `json:"user_id,omitempty"`
+	Username string `json:"username,omitempty"`
+}
+
+// LaunchLayerSecurityGroup is a security group CAPLL creates with the cluster
+// and deletes with it. Mirrors one entry of
+// LaunchLayerCluster.spec.securityGroups in CAPLL.
+type LaunchLayerSecurityGroup struct {
+	Name        string `json:"name,omitempty"`
+	Type        string `json:"type,omitempty"`
+	NetworkType string `json:"network_type,omitempty"`
+}
+
+type LaunchLayerClusterProvider struct {
+	VpcID                string                     `json:"vpc_id,omitempty"`
+	OrgID                string                     `json:"org_id,omitempty"`
+	VpcType              string                     `json:"vpc_type,omitempty"`
+	SiteID               string                     `json:"site_id,omitempty"`
+	CloudProviderEnabled bool                       `json:"cloud_provider_enabled,omitempty"`
+	Owner                LaunchLayerClusterOwner    `json:"owner,omitempty"`
+	SecurityGroups       []LaunchLayerSecurityGroup `json:"security_groups,omitempty"`
 }
 
 type Cluster struct {
@@ -62,9 +91,10 @@ type Cluster struct {
 	OIDCAuthEnabled       bool       `bun:"type:boolean,notnull,default:false"`
 	NextCertRenewalDue    *time.Time `bun:"type:timestamptz"`
 
-	ProviderType ProviderType         `bun:"provider_type,type:text,notnull"`
-	Nico         *NicoClusterProvider `bun:"nico,type:jsonb"`
-	Capi         *CAPIClusterProvider `bun:"capi,type:jsonb"`
+	ProviderType ProviderType                `bun:"provider_type,type:text,notnull"`
+	Nico         *NicoClusterProvider        `bun:"nico,type:jsonb"`
+	Capi         *CAPIClusterProvider        `bun:"capi,type:jsonb"`
+	LaunchLayer  *LaunchLayerClusterProvider `bun:"launch_layer,type:jsonb"`
 
 	// OIDCProviders is set only at creation; UpdateCluster never writes it.
 	OIDCProviders []ClusterOIDCProvider `bun:"oidc_providers,type:jsonb,nullzero"`
@@ -80,6 +110,18 @@ type Cluster struct {
 
 	NodeAgentUpgrade   *NodeAgentUpgrade            `bun:"node_agent_upgrade,type:jsonb"`
 	CertificateRenewal *NodeAgentCertificateRenewal `bun:"certificate_renewal,type:jsonb"`
+
+	// SpireServer is the SPIRE server last requested for the cluster's nodes.
+	// Nil means none was requested.
+	SpireServer *ClusterSpireServer `bun:"spire_server,type:jsonb"`
+}
+
+// ClusterSpireServer is a SPIRE server address requested for a cluster's
+// SPIRE agents, stored in clusters.spire_server.
+type ClusterSpireServer struct {
+	Address     string    `json:"address"`
+	Port        int       `json:"port"`
+	RequestedAt time.Time `json:"requestedAt"`
 }
 
 func (c *Cluster) NicoProvider() (NicoClusterProvider, error) {
@@ -104,6 +146,16 @@ func (c *Cluster) CAPIProvider() (CAPIClusterProvider, error) {
 	}, nil
 }
 
+func (c *Cluster) LaunchLayerProvider() (LaunchLayerClusterProvider, error) {
+	if c.ProviderType != ProviderTypeLaunchLayer {
+		return LaunchLayerClusterProvider{}, fmt.Errorf("cluster %s provider type is %q, not %q", c.ID, c.ProviderType, ProviderTypeLaunchLayer)
+	}
+	if c.LaunchLayer == nil {
+		return LaunchLayerClusterProvider{}, fmt.Errorf("%w: cluster %s launch_layer", ErrMissingProviderPayload, c.ID)
+	}
+	return *cloneLaunchLayerClusterProvider(c.LaunchLayer), nil
+}
+
 // ResolveProviderType validates and returns the cluster's provider type. It
 // does not require the matching payload to be present — use NicoProvider or
 // CAPIProvider for that. NodePool and NodeSet have no persisted ProviderType
@@ -112,7 +164,7 @@ func (c *Cluster) CAPIProvider() (CAPIClusterProvider, error) {
 // regardless of which of the three types they're holding.
 func (c *Cluster) ResolveProviderType() (ProviderType, error) {
 	switch c.ProviderType {
-	case ProviderTypeNico, ProviderTypeCAPI:
+	case ProviderTypeNico, ProviderTypeCAPI, ProviderTypeLaunchLayer:
 		return c.ProviderType, nil
 	default:
 		return "", fmt.Errorf("cluster %s has unsupported provider type %q", c.ID, c.ProviderType)
@@ -134,6 +186,7 @@ func (c *Cluster) SetNicoProvider(provider NicoClusterProvider) {
 	c.ProviderType = ProviderTypeNico
 	c.Nico = &provider
 	c.Capi = nil
+	c.LaunchLayer = nil
 }
 
 func (c *Cluster) SetCAPIProvider(provider CAPIClusterProvider) {
@@ -142,6 +195,14 @@ func (c *Cluster) SetCAPIProvider(provider CAPIClusterProvider) {
 	c.Capi = &CAPIClusterProvider{
 		InfraCluster: cloneRawMessage(provider.InfraCluster),
 	}
+	c.LaunchLayer = nil
+}
+
+func (c *Cluster) SetLaunchLayerProvider(provider LaunchLayerClusterProvider) {
+	c.ProviderType = ProviderTypeLaunchLayer
+	c.Nico = nil
+	c.Capi = nil
+	c.LaunchLayer = cloneLaunchLayerClusterProvider(&provider)
 }
 
 func cloneRawMessage(raw json.RawMessage) json.RawMessage {
@@ -149,6 +210,18 @@ func cloneRawMessage(raw json.RawMessage) json.RawMessage {
 		return nil
 	}
 	return append(json.RawMessage(nil), raw...)
+}
+
+func cloneLaunchLayerClusterProvider(provider *LaunchLayerClusterProvider) *LaunchLayerClusterProvider {
+	return &LaunchLayerClusterProvider{
+		VpcID:                provider.VpcID,
+		OrgID:                provider.OrgID,
+		VpcType:              provider.VpcType,
+		SiteID:               provider.SiteID,
+		CloudProviderEnabled: provider.CloudProviderEnabled,
+		Owner:                provider.Owner,
+		SecurityGroups:       append([]LaunchLayerSecurityGroup(nil), provider.SecurityGroups...),
+	}
 }
 
 // ControlPlaneConfigFromNodePool copies a control-plane node pool into ControlPlaneConfig.
@@ -384,6 +457,8 @@ func preserveClusterControlPlaneOverrides(existing Cluster, merged *ControlPlane
 	}
 	// MaxSurge is cluster-level only; sync must not derive it from node pools.
 	merged.MaxSurge = existing.ControlPlaneConfig.MaxSurge
+	// AutoScaleDownDisabled is cluster-level only, same as MaxSurge.
+	merged.AutoScaleDownDisabled = existing.ControlPlaneConfig.AutoScaleDownDisabled
 	merged.ProvisioningMonitorDisabled = existing.ControlPlaneConfig.ProvisioningMonitorDisabled
 
 	// The instance type preference an operator set on the cluster outranks the one
@@ -400,16 +475,65 @@ func preserveClusterControlPlaneOverrides(existing Cluster, merged *ControlPlane
 	merged.SetNico(nicoProvider)
 }
 
+// CertificateRenewalState is the persisted lifecycle state of the most recent
+// certificate-renewal cycle.
+type CertificateRenewalState string
+
+const (
+	CertificateRenewalStateAccepted  CertificateRenewalState = "accepted"
+	CertificateRenewalStateSucceeded CertificateRenewalState = "succeeded"
+	CertificateRenewalStateFailed    CertificateRenewalState = "failed"
+)
+
+// Phases recorded for a cycle that Begin refused without taking the mutation lock.
+const (
+	CertificateRenewalPhaseAdmission = "admission"
+	// CertificateRenewalPhaseTwoControlPlaneVoters is not retried while the
+	// cluster's desired control-plane count stays at two.
+	CertificateRenewalPhaseTwoControlPlaneVoters = "two-control-plane-voters"
+)
+
+// CertificateRenewalOutcome reports whether a successful cycle changed leaf
+// certificates or was a no-op.
+type CertificateRenewalOutcome string
+
+const (
+	CertificateRenewalOutcomeUnchanged CertificateRenewalOutcome = "unchanged"
+	CertificateRenewalOutcomeRenewed   CertificateRenewalOutcome = "renewed"
+)
+
+// CertificateRenewalStatus records the most recent cycle, keyed by its Temporal
+// workflow ID rather than run ID. Failed does not imply that mutation ownership
+// was released: UpdateInProgress is retained if node termination is unconfirmed.
+// NextCertRenewalDue advances only on success; consumers derive overdue status
+// from that timestamp instead of persisting a time-dependent boolean.
+type CertificateRenewalStatus struct {
+	CycleID      string                    `json:"cycleID"`
+	State        CertificateRenewalState   `json:"state"`
+	Outcome      CertificateRenewalOutcome `json:"outcome,omitempty"`
+	Forced       bool                      `json:"forced"`
+	ScheduledFor *time.Time                `json:"scheduledFor,omitempty"`
+	StartedAt    time.Time                 `json:"startedAt"`
+	CompletedAt  *time.Time                `json:"completedAt,omitempty"`
+	FailedNodeID *uuid.UUID                `json:"failedNodeID,omitempty"`
+	Phase        string                    `json:"phase,omitempty"`
+	Message      string                    `json:"message,omitempty"`
+}
+
 type ClusterConditions struct {
 	Provisioning          Condition `json:"provisioning"`
 	Provisioned           Condition `json:"provisioned"`
 	Deleting              Condition `json:"deleting"`
 	ControlPlaneUpgrading Condition `json:"controlPlaneUpgrading"`
 	CPNodesRecycling      Condition `json:"cpNodesRecycling"`
-	// UpdateInProgress marks a mutually-exclusive cluster operation started by
-	// UpdateCluster; legacy operation flags may still be populated by controllers.
-	UpdateInProgress *UpdateInProgress `json:"updateInProgress,omitempty"`
-	UpdateFailed     *Condition        `json:"updateFailed,omitempty"`
+	// UpdateInProgress marks a mutually-exclusive cluster mutation, including
+	// certificate-renewal workflow ownership retained after an unresolved failure.
+	// Legacy operation flags may still be populated by controllers.
+	UpdateInProgress   *UpdateInProgress         `json:"updateInProgress,omitempty"`
+	UpdateFailed       *Condition                `json:"updateFailed,omitempty"`
+	CertificateRenewal *CertificateRenewalStatus `json:"certificateRenewal,omitempty"`
+	EtcdKeyRotation    *EtcdKeyRotationStatus    `json:"etcdKeyRotation,omitempty"`
+	CredentialCSRs     *CredentialCSRObservation `json:"credentialCSRs,omitempty"`
 }
 
 type ClusterFilters struct {
@@ -471,6 +595,9 @@ type ClusterQueries interface {
 	CreateCluster(ctx context.Context, cluster *Cluster) (Cluster, error)
 	UpdateCluster(ctx context.Context, cluster *Cluster) (Cluster, error)
 	UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID uuid.UUID, nextDue time.Time) error
+	// UpdateClusterConditions writes only the conditions column and leaves
+	// updated_at alone, for periodic observations that are not cluster changes.
+	UpdateClusterConditions(ctx context.Context, cluster *Cluster) error
 	DeleteCluster(ctx context.Context, id uuid.UUID) error
 	// SyncClusterControlPlaneConfigFromCPNodePools sets control_plane_config from all control-plane
 	// node pools for the cluster that are not marked deleting.
@@ -563,6 +690,14 @@ func (q *queriesImpl) UpdateClusterNextCertRenewalDue(ctx context.Context, clust
 		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to update cluster next cert renewal due: %w", err)
+	}
+	return notFoundErrIfNoRowsAffected(res)
+}
+
+func (q *queriesImpl) UpdateClusterConditions(ctx context.Context, cluster *Cluster) error {
+	res, err := q.db.NewUpdate().Model(cluster).Column("conditions").WherePK().Exec(ctx)
+	if err != nil {
+		return err
 	}
 	return notFoundErrIfNoRowsAffected(res)
 }

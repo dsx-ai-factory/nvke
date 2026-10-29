@@ -30,20 +30,20 @@ spire-agent:
 
 spire-server:
   adminIDs:
-    - spiffe://example.org/nke-service/nke-controller
+    - spiffe://example.org/nvke-service/nvke-controller
   controllerManager:
     className: spire-mgmt-spire
     identities:
       clusterSPIFFEIDs:
         default:
-          # Controller workloads use the dedicated nke-service identity deployed by
+          # Controller workloads use the dedicated nvke-service identity deployed by
           # Tilt. Keep the fallback from racing it during pod reconciliation.
           namespaceSelector:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: NotIn
                 values:
-                  - nke-controller
+                  - nvke-controller
   nodeAttestor:
     tpmDirect:
       enabled: true
@@ -83,7 +83,7 @@ spiffe-oidc-discovery-provider:
         issuerRef:
           group: cert-manager.io
           kind: Issuer
-          name: nke-oidc-upstream-ca
+          name: nvke-oidc-upstream-ca
   config:
     # The provider rejects requests whose Host header is not in this list.
     # Every value that will appear in a request URL must be present — including

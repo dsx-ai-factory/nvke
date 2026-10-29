@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ControlPlaneClass
+metadata:
+  name: standard
+spec:
+  controlPlane:
+    replicas: 3
+    # NICo instance-type UUIDs, ordered from most to least preferred.
+    # Can be populated with name identifiers for providers where appropriate.
+    # Replace with identifiers from the deployment's provider and site.
+    instanceTypePreferences:
+      - 1c3e5a7f-9b1d-4f3e-a5c7-e9b1d3f5a7c9
+    systemReservedMemory: 16Gi
+  rollout:
+    strategy:
+      # Only RollingUpdate is supported currently.
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 1

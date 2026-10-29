@@ -21,7 +21,7 @@ cd nvke
 
 | Tool | Needed for | Notes |
 |---|---|---|
-| [Go](https://go.dev/dl/) 1.27.2+ | all | `go.work` pins it. An older Go fetches the right toolchain unless `GOTOOLCHAIN=local` |
+| [Go](https://go.dev/dl/) 1.27.3+ | all | `go.work` pins it. An older Go fetches the right toolchain unless `GOTOOLCHAIN=local` |
 | [Docker](https://docs.docker.com/get-docker/) 24+ | API Only, Mock NICo | Not supported for Real Site bootstrapping |
 | [nerdctl](https://github.com/containerd/nerdctl) with containerd | Real Site | The bootstrap drives kind and pulls images through it; no Docker daemon |
 | GNU Make 4.0+ | all | macOS ships 3.81; `brew install make` gives `gmake` |
@@ -134,13 +134,14 @@ bin/nvkectl config view
 `--kubeconfig` is the management cluster. `get providers` reads it directly, and
 CWE API commands (`get`/`create`/`patch`/`delete` clusters) use it to mint a
 bearer token for `nke-clients/nke-client` when authentication is on. Tilt
-applies that identity in `controller/deploy/k8s/nke-auth-dev.yaml`. You do
+applies that identity in `controller/deploy/k8s/nvke-auth-dev.yaml`. You do
 not export a token for `nvkectl`.
 
 Under Tilt the API requires a token, unlike **API Only** — a bare `curl` to
 `/api/clusters` returns 401. `nvkectl get clusters` does not, once `set-site`
-has the kubeconfig: it discovers the audience from the `nke-auth-config`
-ConfigMap and mints through the TokenRequest API.
+has the kubeconfig: it discovers the audience from `apiAuth` in the
+`nvke-controller-config` ConfigMap (falling back to `nvke-auth-config` when that
+section is off) and mints through the TokenRequest API.
 
 ```bash
 bin/nvkectl get providers      # wait for nico: CONFIGURED
@@ -170,8 +171,8 @@ curl -H "Authorization: Bearer ${TOKEN}" http://localhost:8080/api/clusters
 ```
 
 `NKE_AUTH_ENABLED=false tilt up` turns authentication off. Then neither
-`nvkectl` nor `curl` needs a token — `nvkectl` sees no `nke-auth-config`
-ConfigMap and sends requests unauthenticated.
+`nvkectl` nor `curl` needs a token — `nvkectl` finds `apiAuth` disabled and no
+`nvke-auth-config` ConfigMap, and sends requests unauthenticated.
 
 ### Getting a tenant kubeconfig
 
@@ -312,11 +313,11 @@ bootstrap side-loads them by default. To use images you pushed to a registry
 instead, name them:
 
 ```bash
-export NVKECTL_CONTROLLER_IMAGE=<nke-controller image>
+export NVKECTL_NVKE_CONTROLLER_IMAGE=<nvke-controller image>
 export NVKECTL_CAPI_PROVISIONED_IMAGE=<provisioned provider image>
 ```
 
-The `--controller-image` and `--provisioned-provider-image` flags do the same for one
+The `--nvke-controller-image` and `--provisioned-provider-image` flags do the same for one
 run. `nvkectl` carries the CWE chart and the provisioned provider's manifests.
 Step 4 lists what it fetches.
 
@@ -336,8 +337,8 @@ the listed images into a local or private registry. To change where they come
 from:
 
 - `NVKECTL_BOOTSTRAP_DOCKERHUB_MIRROR=<host>` pulls the Docker Hub images from a mirror.
-- `NVKECTL_CONTROLLER_TEMPORAL_CHART`, `NVKECTL_CONTROLLER_SPIRE_CHART` and
-  `NVKECTL_CONTROLLER_SPIRE_CRDS_CHART` take an OCI reference or a local path.
+- `NVKECTL_NVKE_CONTROLLER_TEMPORAL_CHART`, `NVKECTL_NVKE_CONTROLLER_SPIRE_CHART` and
+  `NVKECTL_NVKE_CONTROLLER_SPIRE_CRDS_CHART` take an OCI reference or a local path.
 
 Images from `ghcr.io`, `registry.k8s.io` and `cgr.dev` come from those
 registries. Cluster API and cert-manager come from `github.com` through
@@ -385,9 +386,9 @@ explains how to prove the NICo credentials once the site is up.
 The bootstrap leaves you a plain Kubernetes cluster. Installing CWE onto it is a
 separate job, and the largest step here — `nvkectl` has no command for it.
 
-Follow [Install management-plane services](operate/install-management-plane-services.md).
+Follow [Run NVKE end to end on one machine](get-started/local-site.md).
 It installs the whole management plane, Postgres, Temporal, SPIRE, CAPNICo,
-NVKE telemetry pipelines (NKTP) and CWE, with the commands that page lists, from the `deploy/nico`
+NVKE telemetry pipeline (NKTP) and CWE, with the commands that page lists, from the `deploy/nico`
 deploy path, the site spec and an NVKR release description.
 
 ```bash
@@ -400,8 +401,11 @@ bearer token to it, so use it from a trusted network only.
 
 That kubeconfig is also how `nvkectl` authenticates to CWE once the site has API
 authentication on. The CLI always mints for `nke-clients/nke-client` and reads
-the audience from ConfigMap `nke-auth-config` in namespace `nke-controller`, or
-in `cloud-workflow-engine` when that is absent. Create that service
+the audience from `apiAuth` in ConfigMap `nvke-controller-config`, or from
+ConfigMap `nvke-auth-config` when that section is off, in namespace
+`nvke-controller`, then in `nke-controller` for a site installed before the
+`nvke` rename, then in `cloud-workflow-engine`, and uses the first it can read.
+Create that service
 account, admit it, and grant the kubeconfig identity the permissions in
 [Configuring NVKE API Authentication](../controller/docs/configuring-api-authentication.md).
 Without them, `get clusters` fails at minting or CWE returns 403.

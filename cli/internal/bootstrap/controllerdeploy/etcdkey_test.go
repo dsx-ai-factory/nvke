@@ -36,7 +36,7 @@ func TestEtcdEncryptionKey(t *testing.T) {
 		t.Fatalf("calls = %d, want 1", len(runner.calls))
 	}
 	args := strings.Join(runner.calls[0].args, " ")
-	for _, want := range []string{"--kubeconfig /kube.conf", "-n nke-controller", "get secret etcd-encryption-key-" + id.String(), "-o json"} {
+	for _, want := range []string{"--kubeconfig /kube.conf", "-n nvke-controller", "get secret etcd-encryption-key-" + id.String(), "-o json"} {
 		if !strings.Contains(args, want) {
 			t.Errorf("kubectl args %q do not contain %q", args, want)
 		}

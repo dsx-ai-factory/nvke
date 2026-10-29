@@ -178,3 +178,39 @@ jobs:
 
       - name: Verify proto formatting and generated code are up to date
         run: make -C agent check-protos
+
+  # The CLI reference under cli/docs/reference, generated from the nvkectl cobra
+  # command tree. It belongs here rather than in docs-check.yml: that workflow
+  # checks prose against the repository, while this one checks committed
+  # generated output against its source, which is what the reference is.
+  #
+  # No credential, kubeconfig, configured site or cluster: hack/gendocs builds
+  # the command tree and reads its metadata without running a command. The
+  # module download is the only network it needs.
+  cli-docs-check:
+    name: Check the generated nvkectl CLI reference is up to date
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            cli/go.sum
+
+      # Deliberately not given the NVKECTL_ variables a bootstrap job would set.
+      # The generator clears them anyway -- two of `bootstrap site`'s flag
+      # defaults are read from the environment when the command is constructed
+      # -- but a job that sets them would hide a regression in that clearing.
+      - name: Verify the nvkectl command reference is up to date
+        run: make -C cli docs-check

@@ -56,3 +56,32 @@ func TestNoDockerInvocations(t *testing.T) {
 		t.Fatalf("walking the package tree: %v", err)
 	}
 }
+
+// systemctl is-active exits 0 when any listed unit is active, so readiness has
+// to read each unit's state: spire-agent can still be queued behind the image
+// import while containerd and swtpm-local are up.
+func TestUnitsActive(t *testing.T) {
+	units := []string{"containerd", "swtpm-local", "spire-agent"}
+	tests := []struct {
+		name    string
+		out     string
+		wantErr string
+	}{
+		{"all active", "active\nactive\nactive\n", ""},
+		{"spire-agent still queued", "active\nactive\ninactive\n", "spire-agent=inactive"},
+		{"two units down", "active\nactivating\nfailed\n", "swtpm-local=activating, spire-agent=failed"},
+		{"too few lines", "active\n", "printed"},
+		{"no output", "", "printed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := unitsActive(tt.out, units)
+			switch {
+			case tt.wantErr == "" && err != nil:
+				t.Fatalf("unitsActive = %v, want nil", err)
+			case tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)):
+				t.Fatalf("unitsActive = %v, want one containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}

@@ -13,6 +13,7 @@ load("ext://uibutton", "cmd_button", "text_input")
 #   "bgp-containers"          -- shared BGP router and default-site VIP pool for container nodes
 #   "capd"                    -- built-in CAPD support
 #   "nico"                    -- CAPNICo plus NICo endpoint (nico-sim by default)
+#   "launchlayer"             -- CAPLL plus its fake LaunchLayer API, from capll_source_dir
 #   "capd-reboot-controller"  -- CAPD reboot dev controller provider
 #   "capi-syscmp"             -- CAPI system component addon provider
 #   "dsx-identity-exchange"   -- DSX-compatible JWT exchange test double
@@ -26,7 +27,7 @@ load("ext://uibutton", "cmd_button", "text_input")
 #
 #   def register(ctx):
 #       ...
-#       return struct(cwe_resource_deps, cwe_env_overrides,
+#       return struct(controller_resource_deps, controller_env_overrides,
 #                     preflight_script=...)  # optional
 #
 # Input — ctx is a struct with:
@@ -41,18 +42,21 @@ load("ext://uibutton", "cmd_button", "text_input")
 #   ctx.provider_dir  (string)  Absolute path to the provider's root directory.
 #
 # Output — returned struct with:
-#   cwe_resource_deps  (list[string])           Tilt resource names the controller should depend on.
-#                                               Appended to the controller k8s_resource resource_deps.
-#   cwe_env_overrides  (dict[string, string])   Overrides for .env.tilt. Only the names this file passes to
+#   controller_resource_deps (list[string])     Tilt resource names the controller should depend on.
+#                                               Appended to the nvke-controller resource's resource_deps.
+#   controller_env_overrides (dict[string, string]) Overrides for .env.tilt. Only the names this file passes to
 #                                               the controller's env list reach it; settings in
-#                                               nke-controller-config go through cwe_chart_flags.
-#   cwe_chart_flags    (list[string], optional) Additional Helm flags for the controller.
+#                                               nvke-controller-config go through controller_chart_flags.
+#   controller_chart_flags (list[string], optional) Additional Helm flags for the controller.
 #   spire_chart_flags  (list[string], optional) Additional Helm flags for SPIRE.
 #   spire_resource_deps (list[string], optional) Tilt resources SPIRE should depend on.
 #   preflight_script   (string, optional)       Bash fragment appended to the
 #                                               check-management-cluster preflight script.
 #                                               Use to assert provider-required tooling or
 #                                               CRDs are present in the cluster.
+#
+# cwe_resource_deps, cwe_env_overrides and cwe_chart_flags are the deprecated
+# names of the three controller_ fields. They are still read for one release.
 #
 # Inside register(), the provider creates its own Tilt resources (local_resource,
 # helm_resource, etc.) and returns the struct to wire itself into the controller.
@@ -63,17 +67,23 @@ _builtin_provider_dirs = {
     "bgp-containers": os.path.join(config.main_dir, "hack/bgp-containers"),
     "capd": os.path.join(config.main_dir, "hack/capd-provider"),
     "nico": os.path.join(config.main_dir, "hack/nico-provider"),
+    "launchlayer": os.path.join(config.main_dir, "hack/launchlayer-provider"),
     "capd-reboot-controller": os.path.join(config.main_dir, "hack/capd-reboot-controller"),
     "capi-syscmp": os.path.join(config.main_dir, "hack/capi-syscmp-provider"),
     "dsx-identity-exchange": os.path.join(config.main_dir, "hack/dsx-identity-exchange-mock"),
     "dsx-imds-attestation": os.path.join(config.main_dir, "hack/dsx-imds-attestation"),
+    "management-engine": os.path.join(config.main_dir, "../management-engine"),
 }
 
 _tilt_config = read_json("tilt_config.json", default={})
 cfg = _tilt_config
 # CI can preload immutable images into Kind and bypass the local Docker builds.
 # Local development keeps the existing build behavior when these are unset.
-CWE_IMAGE = cfg.get("cwe_image", "")
+CONTROLLER_IMAGE = cfg.get("nvke_controller_image", "")
+# cwe_image is the deprecated name of nvke_controller_image, read for one release.
+if not CONTROLLER_IMAGE and cfg.get("cwe_image", ""):
+    warn("tilt_config.json: cwe_image is deprecated; rename it to nvke_controller_image.")
+    CONTROLLER_IMAGE = cfg["cwe_image"]
 SITE_CONTROLLER_VIP_OVERRIDE = cfg.get("site_controller_vip", "")
 
 _provider_entries = cfg.get("providers", [
@@ -101,6 +111,9 @@ if "capi-syscmp" in _provider_names and "capi_core" not in _provider_names:
 
 if "nico-vm" in _provider_names and "capi_core" not in _provider_names:
     fail("Provider 'nico-vm' requires 'capi_core' in the provider list.")
+
+if "launchlayer" in _provider_names and "capi_core" not in _provider_names:
+    fail("Provider 'launchlayer' requires 'capi_core' in the provider list.")
 
 # nico-vm points nico-credentials at the local nico-vms backend and its
 # credentials resource depends on the 'nico-vms' Tilt resource by name.
@@ -137,17 +150,19 @@ if "nico" in _provider_names or "nico-vms" in _provider_names:
     _supported_infra_providers.append("nico")
 if "capd" in _provider_names or "nico" in _provider_names or "nico-vm" in _provider_names:
     _supported_infra_providers.append("infra")
+if "launchlayer" in _provider_names:
+    _supported_infra_providers.append("launchLayer")
 if not _supported_infra_providers:
     _supported_infra_providers.append("nico")
 
-CONTROLLER_NAMESPACE = "nke-controller"
+CONTROLLER_NAMESPACE = "nvke-controller"
 TEMPORAL_NAMESPACE = "temporal"
 POSTGRES_NAMESPACE = "postgres"
 SPIRE_NAMESPACE = "spire-server"
 CONTROLLER_LOCAL_DEBUG_MARKER = ".tilt-cwe-debug-local"
-# CWE_HTTP_PORT and CWE_TEMPORAL_UI_PORT are deprecated aliases for the NKE_CONTROLLER_ names; #1399 removes them.
-CONTROLLER_HTTP_PORT = os.getenv("NKE_CONTROLLER_HTTP_PORT", "") or os.getenv("CWE_HTTP_PORT", "") or "8080"
-CONTROLLER_TEMPORAL_UI_PORT = os.getenv("NKE_CONTROLLER_TEMPORAL_UI_PORT", "") or os.getenv("CWE_TEMPORAL_UI_PORT", "") or "8081"
+# NKE_CONTROLLER_HTTP_PORT, NKE_CONTROLLER_TEMPORAL_UI_PORT, CWE_HTTP_PORT and CWE_TEMPORAL_UI_PORT are deprecated aliases for the NVKE_CONTROLLER_ names; #1399 removes them.
+CONTROLLER_HTTP_PORT = os.getenv("NVKE_CONTROLLER_HTTP_PORT", "") or os.getenv("NKE_CONTROLLER_HTTP_PORT", "") or os.getenv("CWE_HTTP_PORT", "") or "8080"
+CONTROLLER_TEMPORAL_UI_PORT = os.getenv("NVKE_CONTROLLER_TEMPORAL_UI_PORT", "") or os.getenv("NKE_CONTROLLER_TEMPORAL_UI_PORT", "") or os.getenv("CWE_TEMPORAL_UI_PORT", "") or "8081"
 
 # Tilt UI links open in the browser of whoever views the Tilt UI. When Tilt runs
 # on a remote host accessed via forwarded ports (e.g. Mutagen forwards a target
@@ -187,9 +202,9 @@ if os.getenv("KIND_CLUSTER_NAME", "") == "" and KIND_CLUSTER_NAME_VALUE == "cwe-
 EXPECTED_K8S_CONTEXT = "kind-%s" % KIND_CLUSTER_NAME_VALUE
 SPIRE_TRUST_DOMAIN = "%s.nvke.local" % KIND_CLUSTER_NAME_VALUE
 NKE_OIDC_ISSUER_URL = "https://nke.site-controller.internal"
-SPIRE_CONTROLLER_ADMIN_PATH = "/nke-service/nke-controller"
+SPIRE_CONTROLLER_ADMIN_PATH = "/nvke-service/nvke-controller"
 if DSX_IDENTITY_EXCHANGE_ENABLED:
-    SPIRE_CONTROLLER_ADMIN_PATH = "/tenant/nke/service/nke-controller/bm/cwe"
+    SPIRE_CONTROLLER_ADMIN_PATH = "/tenant/nke/service/nvke-controller/bm/cwe"
 
 # sha256 of /app/tpm_attestor_server inside ghcr.io/spiffe/spire-tpm-plugin-tpm-attestor-server:v1.9.0,
 # selected by host arch (kind pulls the Linux variant matching the host CPU). Override via env var
@@ -262,7 +277,7 @@ if not _tilt_env:
 
 # ---------------------------------------------------------------------------
 # cert-manager — needed by the OIDC discovery provider to issue its TLS cert
-# from the long-lived NVKE OIDC upstream CA (see deploy/k8s/oidc-upstream-ca.yaml).
+# from the long-lived NVKE OIDC upstream CA (see deploy/k8s/oidc-upstream-ca-certificate.yaml).
 #
 # cert-manager is frequently already present out-of-band — most commonly
 # clusterctl installs its own copy when it initialises CAPI. We probe the
@@ -367,7 +382,7 @@ else:
     _kind_site_controller_vip = _kind_host_ip
 
 # Collect integration points from all providers.
-_all_cwe_resource_deps = []
+_all_controller_resource_deps = []
 # Default controller env overrides applied before any provider overrides. Providers
 # can still .update() these if they need a different value.
 #
@@ -376,13 +391,23 @@ _all_cwe_resource_deps = []
 # generates for each tenant. The default in .env.tilt.example is
 # host.docker.internal, which only resolves on Docker Desktop; this override
 # makes the Linux native Docker path work too.
-_all_cwe_env_overrides = {
+_all_controller_env_overrides = {
     "SPIRE_SERVER_ADDRESS": _kind_site_controller_vip,
 }
 _all_preflight_fragments = []
-_all_cwe_chart_flags = []
+_all_controller_chart_flags = []
 _all_spire_chart_flags = []
 _all_spire_resource_deps = []
+
+def _provider_controller_field(provider_name, result, name, default=None):
+    if hasattr(result, "controller_" + name):
+        return getattr(result, "controller_" + name)
+    if hasattr(result, "cwe_" + name):
+        warn("Provider '%s' returns cwe_%s, which is deprecated; rename it to controller_%s." % (provider_name, name, name))
+        return getattr(result, "cwe_" + name)
+    if default == None:
+        fail("Provider '%s' register() must return controller_%s." % (provider_name, name))
+    return default
 
 for _entry in _provider_entries:
     if type(_entry) == "string":
@@ -416,9 +441,9 @@ for _entry in _provider_entries:
         site_controller_vip = _kind_site_controller_vip,
         provider_dir = _provider_dir,
     ))
-    _all_cwe_resource_deps += _result.cwe_resource_deps
-    _all_cwe_env_overrides.update(_result.cwe_env_overrides)
-    _all_cwe_chart_flags += getattr(_result, "cwe_chart_flags", [])
+    _all_controller_resource_deps += _provider_controller_field(_provider_name, _result, "resource_deps")
+    _all_controller_env_overrides.update(_provider_controller_field(_provider_name, _result, "env_overrides"))
+    _all_controller_chart_flags += _provider_controller_field(_provider_name, _result, "chart_flags", [])
     _all_spire_chart_flags += getattr(_result, "spire_chart_flags", [])
     _all_spire_resource_deps += getattr(_result, "spire_resource_deps", [])
     if getattr(_result, "preflight_script", ""):
@@ -430,7 +455,7 @@ for _entry in _provider_entries:
 #
 # Parsed before provider loading so external providers can consume .env.tilt
 # through ctx.tilt_env.
-_tilt_env.update(_all_cwe_env_overrides)
+_tilt_env.update(_all_controller_env_overrides)
 
 # Credentials with no defaults anywhere in the repo. The developer supplies each
 # one via .env.tilt or the shell environment; `tilt up` fails fast rather than
@@ -489,11 +514,15 @@ _preflight_script += """
         exit 1
       }
       if helm status cwe -n cloud-workflow-engine >/dev/null 2>&1; then
-        echo "This cluster runs the controller as Helm release cwe in namespace cloud-workflow-engine. Tilt now installs it as nke-controller in nke-controller and cannot take over the old install. Recreate the cluster: make kind-down, then make capd-up." >&2
+        echo "This cluster runs the controller as Helm release cwe in namespace cloud-workflow-engine. Tilt now installs it as nvke-controller in nvke-controller and cannot take over the old install. Recreate the cluster: make kind-down, then make capd-up." >&2
+        exit 1
+      fi
+      if helm status nke-controller -n nke-controller >/dev/null 2>&1; then
+        echo "This cluster runs the controller as Helm release nke-controller in namespace nke-controller. Tilt now installs it as nvke-controller in nvke-controller and cannot take over the old install. Recreate the cluster: make kind-down, then make capd-up." >&2
         exit 1
       fi
 """
-if not CWE_IMAGE:
+if not CONTROLLER_IMAGE:
     _preflight_script += """
       command -v docker >/dev/null || {
         echo "docker is required in PATH" >&2
@@ -807,17 +836,22 @@ helm_resource(
 
 k8s_yaml([
     "deploy/k8s/oidc-upstream-ca.yaml",
+    # Separate because the deploy paths apply it only on a first install; Tilt
+    # has no such gate, so a long-lived dev cluster re-issues the CA when this
+    # Certificate's spec changes. Delete the oidc-provider-upstream-ca Secret
+    # if anything in the dev loop has embedded the old CA.
+    "deploy/k8s/oidc-upstream-ca-certificate.yaml",
     "deploy/k8s/spire-server-nodeport.yaml",
     "deploy/k8s/spire-oidc-provider-nodeport.yaml",
     "deploy/k8s/spire-tpm-pubhashes-configmap.yaml",
-    "deploy/k8s/nke-auth-dev.yaml",
-    "deploy/k8s/nke-spire-client.yaml",
+    "deploy/k8s/nvke-auth-dev.yaml",
+    "deploy/k8s/nvke-spire-client.yaml",
 ])
 
-_nke_service_spiffe_id_yaml = str(read_file("deploy/k8s/spire-nke-services-spiffe-id.yaml"))
+_nke_service_spiffe_id_yaml = str(read_file("deploy/k8s/spire-nvke-services-spiffe-id.yaml"))
 if DSX_IDENTITY_EXCHANGE_ENABLED:
     _nke_service_spiffe_id_yaml = _nke_service_spiffe_id_yaml.replace(
-        "spiffe://{{.TrustDomain}}/nke-service/{{.PodSpec.ServiceAccountName}}",
+        "spiffe://{{.TrustDomain}}/nvke-service/{{.PodSpec.ServiceAccountName}}",
         "spiffe://{{.TrustDomain}}/tenant/nke/service/{{.PodSpec.ServiceAccountName}}/bm/cwe",
     )
 k8s_yaml(blob(_nke_service_spiffe_id_yaml))
@@ -836,7 +870,7 @@ k8s_resource(
 k8s_resource(
     new_name="oidc-upstream-ca-issuer",
     labels=["1-infra"],
-    objects=["nke-oidc-upstream-ca:issuer"],
+    objects=["nvke-oidc-upstream-ca:issuer"],
     resource_deps=["oidc-ca-bootstrap"],
     pod_readiness="ignore",
 )
@@ -874,14 +908,13 @@ k8s_resource(
 )
 
 # NVKE API authentication scaffolding: the client namespaces and service accounts
-# the demo mints tokens for, the token-minter RBAC, and the auth config the
-# deployment mounts at /etc/nke/auth/auth.yaml. The NVKE release depends on this
-# so the ConfigMap exists before the pod mounts it.
+# the demo mints tokens for, and the token-minter RBAC. The configuration that
+# admits them is chart values, in hack/tilt-controller-api-auth-values.yaml.
 k8s_resource(
-    new_name="nke-auth-dev",
+    new_name="nvke-auth-dev",
     labels=["1-infra"],
     objects=[
-        "nke-controller:namespace",
+        "nvke-controller:namespace",
         "nke-clients:namespace",
         "nke-outsiders:namespace",
         "nke-client:serviceaccount:nke-clients",
@@ -891,7 +924,6 @@ k8s_resource(
         "nke-client-token-minter:rolebinding:nke-clients",
         "nke-outsider-token-minter:role:nke-outsiders",
         "nke-outsider-token-minter:rolebinding:nke-outsiders",
-        "nke-auth-config:configmap:nke-controller",
     ],
     resource_deps=["check-management-cluster"],
     pod_readiness="ignore",
@@ -993,9 +1025,9 @@ if _tenant_gateway_ip:
     )
 
 k8s_resource(
-    new_name="spire-nke-services-spiffe-id",
+    new_name="spire-nvke-services-spiffe-id",
     labels=["1-infra"],
-    objects=["nke-service:clusterspiffeid"],
+    objects=["nvke-service:clusterspiffeid"],
     resource_deps=["spire-server"],
     pod_readiness="ignore",
 )
@@ -1012,29 +1044,30 @@ k8s_resource(
 # Controller
 # ---------------------------------------------------------------------------
 
-_cwe_tenant_access_enabled = os.getenv(
+_controller_tenant_access_enabled = os.getenv(
     "TENANT_ACCESS_ENABLED", _tilt_env.get("TENANT_ACCESS_ENABLED", "true")) == "true"
-_cwe_oidc_enabled = os.getenv(
+_controller_oidc_enabled = os.getenv(
     "NKE_OIDC_AUTH_ENABLED", _tilt_env.get("NKE_OIDC_AUTH_ENABLED", "true")) == "true"
 
 # NVKE API authentication. Enforcing by default now that the suite mints its own
-# token: internal/authtoken discovers the audience from the nke-auth-config
-# ConfigMap and nvke.NewClient presents it on every call, so the ordinary specs
-# exercise the shipping authentication path rather than bypassing it.
+# token: internal/authtoken discovers the audience from apiAuth in
+# nvke-controller-config and nvke.NewClient presents it on every call, so the
+# ordinary specs exercise the shipping authentication path rather than
+# bypassing it.
 #
-# The config file comes from the nke-auth-config ConfigMap in
-# deploy/k8s/nke-auth-dev.yaml, and the chart mounts it from the apiAuth values
-# set below. To drive it by hand, use hack/nvke-token.sh for the bearer token.
+# The configuration is hack/tilt-controller-api-auth-values.yaml, which the
+# chart renders into apiAuth in nvke-controller-config. To drive it by hand, use
+# hack/nvke-token.sh for the bearer token.
 #
-#   NKE_AUTH_ENABLED=false tilt up     -> AUTH_CONFIG_PATH unset, authn off
+#   NKE_AUTH_ENABLED=false tilt up     -> apiAuth.enabled false, authn off
 #   NKE_PERMISSIVE_MODE=true tilt up   -> evaluate and count, never reject
 #
-_cwe_auth_enabled = os.getenv(
+_controller_auth_enabled = os.getenv(
     "NKE_AUTH_ENABLED", _tilt_env.get("NKE_AUTH_ENABLED", "true")) == "true"
-_cwe_permissive_mode = os.getenv(
+_controller_permissive_mode = os.getenv(
     "NKE_PERMISSIVE_MODE", _tilt_env.get("NKE_PERMISSIVE_MODE", "false")) == "true"
 
-_cwe_chart_extra_env_names = [
+_controller_chart_extra_env_names = [
     "NODE_PROVISIONING_TIMEOUT",
     "NODE_REBOOT_POLLING_INTERVAL",
     "LOG_LEVEL",
@@ -1042,51 +1075,57 @@ _cwe_chart_extra_env_names = [
     "SPIRE_SERVER_API_ADDRESS",
     "SSL_CERT_FILE",
 ]
-_cwe_chart_extra_env = []
-for _name in _cwe_chart_extra_env_names:
+_controller_chart_extra_env = []
+for _name in _controller_chart_extra_env_names:
     if _name in _tilt_env:
-        _cwe_chart_extra_env.append({"name": _name, "value": _tilt_env[_name]})
+        _controller_chart_extra_env.append({"name": _name, "value": _tilt_env[_name]})
 # NODE_REBOOT_SOFT_REBOOT_ENABLED is honored from the process environment first (with the
 # .env.tilt value as a fallback) so CI can disable soft reboot without touching the
 # production default.
-_cwe_node_reboot_soft_reboot_enabled = os.getenv(
+_controller_node_reboot_soft_reboot_enabled = os.getenv(
     "NODE_REBOOT_SOFT_REBOOT_ENABLED",
     _tilt_env.get("NODE_REBOOT_SOFT_REBOOT_ENABLED", ""))
-if _cwe_node_reboot_soft_reboot_enabled != "":
-    _cwe_chart_extra_env.append({
+if _controller_node_reboot_soft_reboot_enabled != "":
+    _controller_chart_extra_env.append({
         "name": "NODE_REBOOT_SOFT_REBOOT_ENABLED",
-        "value": _cwe_node_reboot_soft_reboot_enabled,
+        "value": _controller_node_reboot_soft_reboot_enabled,
     })
 for _name in _required_cred_names:
-    _cwe_chart_extra_env.append({"name": _name, "value": _required_creds[_name]})
-# AUTH_CONFIG_PATH and permissiveMode come from the apiAuth values below, not
-# from this env list: the chart owns the mount they point at.
+    _controller_chart_extra_env.append({"name": _name, "value": _required_creds[_name]})
+# API authentication comes from the apiAuth values below, not from this env list.
 
 # Local node images include the CNI manifests package, so install CNI after
 # kubeadm init without a bundle server. E2E lanes can still select the legacy
 # in-init path explicitly through the process environment or .env.tilt.
-_cwe_install_cni_after_init = os.getenv(
+_controller_install_cni_after_init = os.getenv(
     "INSTALL_CNI_AFTER_INIT",
     _tilt_env.get("INSTALL_CNI_AFTER_INIT", "true"))
 
 # Keep the chart default when this is unset. E2E sets it explicitly so the
 # deployment-wide method matches the attestor baked into its CAPD node image.
-_cwe_spire_attestation_method = os.getenv(
+_controller_spire_attestation_method = os.getenv(
     "NODE_AGENT_SPIRE_ATTESTATION_METHOD",
     _tilt_env.get("NODE_AGENT_SPIRE_ATTESTATION_METHOD", ""))
 
-_cwe_chart_flags = [
+# The chart defaults controllers.nico.enabled to true. Only the nico and
+# nico-vm providers install the NicoMachine CRD, and the controller exits
+# when the flag is true without that CRD.
+_nico_controllers_enabled = "nico" in _provider_names or "nico-vm" in _provider_names
+
+_controller_chart_flags = [
     "--create-namespace",
-    "--set", "cni.installAfterInit=%s" % ("true" if _cwe_install_cni_after_init == "true" else "false"),
+    "--set", "cni.installAfterInit=%s" % ("true" if _controller_install_cni_after_init == "true" else "false"),
     "--values", "hack/tilt-controller-chart-values.yaml",
     "--set-string", "appDb.postgresPassword=%s" % _postgres_superuser_password,
-    "--set", "apiAuth.enabled=%s" % ("true" if _cwe_auth_enabled else "false"),
-    "--set", "apiAuth.permissive=%s" % ("true" if _cwe_permissive_mode else "false"),
+    "--set", "apiAuth.enabled=%s" % ("true" if _controller_auth_enabled else "false"),
+    "--set", "apiAuth.permissive=%s" % ("true" if _controller_permissive_mode else "false"),
+] + (["--values", "hack/tilt-controller-api-auth-values.yaml"] if _controller_auth_enabled else []) + [
     "--set", "capi.rbac.create=true",
     # machine-engine-crds installs them, so Helm must not try to own them.
     "--set", "releaseCRDs.install=false",
-    "--set", "tenantAccess.enabled=%s" % ("true" if _cwe_tenant_access_enabled else "false"),
-    "--set", "nvkeOIDCAuth.enabled=%s" % ("true" if _cwe_oidc_enabled else "false"),
+    "--set", "tenantAccess.enabled=%s" % ("true" if _controller_tenant_access_enabled else "false"),
+    "--set", "controllers.nico.enabled=%s" % ("true" if _nico_controllers_enabled else "false"),
+    "--set", "nvkeOIDCAuth.enabled=%s" % ("true" if _controller_oidc_enabled else "false"),
     "--set-string", "nvkeOIDCAuth.issuerURL=%s" % NKE_OIDC_ISSUER_URL,
     "--set-string", "nvkeOIDCAuth.discoveryURL=https://%s:30443/.well-known/openid-configuration" % _kind_site_controller_vip,
     "--set-string", "nvkeOIDCAuth.caBundleSecret.namespace=%s" % SPIRE_NAMESPACE,
@@ -1096,49 +1135,49 @@ _cwe_chart_flags = [
     "--set-string", "spiffe.spire.serverAddress=%s" % _tilt_env.get("SPIRE_SERVER_ADDRESS", _kind_site_controller_vip),
     # helm splits --set-string on commas; escape the one inside the value.
     "--set-string", "supportedInfraProviders=%s" % "\\,".join(_supported_infra_providers),
-    "--set-json", "env=%s" % encode_json(_cwe_chart_extra_env),
+    "--set-json", "env=%s" % encode_json(_controller_chart_extra_env),
     "--wait",
     "--timeout", "10m",
-] + _all_cwe_chart_flags
+] + _all_controller_chart_flags
 
-if _cwe_spire_attestation_method != "":
-    _cwe_chart_flags += [
-        "--set-string", "nodeAgent.spireAttestationMethod=%s" % _cwe_spire_attestation_method,
+if _controller_spire_attestation_method != "":
+    _controller_chart_flags += [
+        "--set-string", "nodeAgent.spireAttestationMethod=%s" % _controller_spire_attestation_method,
     ]
 
-if CWE_IMAGE:
-    _image_parts = CWE_IMAGE.split(":")
+if CONTROLLER_IMAGE:
+    _image_parts = CONTROLLER_IMAGE.split(":")
     if len(_image_parts) > 1:
-        _cwe_chart_flags += [
+        _controller_chart_flags += [
             "--set-string", "image.repository=%s" % ":".join(_image_parts[:-1]),
             "--set-string", "image.tag=%s" % _image_parts[-1],
         ]
     else:
-        _cwe_chart_flags += [
-            "--set-string", "image.repository=%s" % CWE_IMAGE,
+        _controller_chart_flags += [
+            "--set-string", "image.repository=%s" % CONTROLLER_IMAGE,
             "--set-string", "image.tag=latest",
         ]
 
-_cwe_local_debug_active = os.path.exists(CONTROLLER_LOCAL_DEBUG_MARKER)
-_cwe_tilt_goarch = local_arch()
-_cwe_resource_deps = ["postgres", "temporal", "spire-nke-services-spiffe-id", "spire-tpm-pubhashes", "nvke-system-namespace", "nke-auth-dev", "machine-engine-releases"] + _all_cwe_resource_deps
-if _cwe_oidc_enabled:
-    _cwe_resource_deps += ["spire-oidc-provider-nodeport", "oidc-upstream-ca-ready"]
+_controller_local_debug_active = os.path.exists(CONTROLLER_LOCAL_DEBUG_MARKER)
+_controller_tilt_goarch = local_arch()
+_controller_resource_deps = ["postgres", "temporal", "spire-nvke-services-spiffe-id", "spire-tpm-pubhashes", "nvke-system-namespace", "nvke-auth-dev", "machine-engine-releases"] + _all_controller_resource_deps
+if _controller_oidc_enabled:
+    _controller_resource_deps += ["spire-oidc-provider-nodeport", "oidc-upstream-ca-ready"]
 
-_cwe_image_deps = []
-_cwe_image_keys = []
-if not CWE_IMAGE and not _cwe_local_debug_active:
-    _cwe_image_deps = ["docker.local/cwe:tilt"]
-    _cwe_image_keys = [("image.repository", "image.tag")]
-    _cwe_resource_deps = ["cwe-compile"] + _cwe_resource_deps
-elif _cwe_local_debug_active:
+_controller_image_deps = []
+_controller_image_keys = []
+if not CONTROLLER_IMAGE and not _controller_local_debug_active:
+    _controller_image_deps = ["docker.local/cwe:tilt"]
+    _controller_image_keys = [("image.repository", "image.tag")]
+    _controller_resource_deps = ["nvke-controller-compile"] + _controller_resource_deps
+elif _controller_local_debug_active:
     print("Skipping in-cluster controller image build while local controller debug mode is active")
 
-_cwe_compile_script = """
+_controller_compile_script = """
       set -euo pipefail
       mkdir -p bin
       CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
-""" % _cwe_tilt_goarch
+""" % _controller_tilt_goarch
 
 # Default to the sanitized fixture that ships in this repository. It is
 # Apache-2.0, builds from a Docker Hub base, and is what CI already uses
@@ -1146,39 +1185,39 @@ _cwe_compile_script = """
 # a plain `tilt up` failed for anyone without that checkout, even though a
 # working profiles tree was one directory away.
 #
-# Point NKE_CONTROLLER_PROFILES_DIR at nke-site-deploy/cwe-profiles/profiles to exercise
+# Point NVKE_CONTROLLER_PROFILES_DIR at nke-site-deploy/cwe-profiles/profiles to exercise
 # the fleet profiles.
-# CWE_PROFILES_DIR and CWE_PROFILES_PRELOADED are deprecated aliases for the NKE_CONTROLLER_ names; #1399 removes them.
-_cwe_profiles_dir = (os.getenv("NKE_CONTROLLER_PROFILES_DIR", "") or os.getenv("CWE_PROFILES_DIR", "") or _tilt_env.get("NKE_CONTROLLER_PROFILES_DIR", "") or _tilt_env.get("CWE_PROFILES_DIR", "")).strip()
-if _cwe_profiles_dir == "":
-    _cwe_profiles_dir = os.path.abspath(os.path.join(config.main_dir, "test", "fixtures", "profiles"))
-elif not _cwe_profiles_dir.startswith("/"):
-    _cwe_profiles_dir = os.path.abspath(os.path.join(config.main_dir, _cwe_profiles_dir))
-_cwe_profiles_preloaded = (os.getenv("NKE_CONTROLLER_PROFILES_PRELOADED", "") or os.getenv("CWE_PROFILES_PRELOADED", "")) == "true"
+# NKE_CONTROLLER_PROFILES_DIR, NKE_CONTROLLER_PROFILES_PRELOADED, CWE_PROFILES_DIR and CWE_PROFILES_PRELOADED are deprecated aliases for the NVKE_CONTROLLER_ names; #1399 removes them.
+_controller_profiles_dir = (os.getenv("NVKE_CONTROLLER_PROFILES_DIR", "") or os.getenv("NKE_CONTROLLER_PROFILES_DIR", "") or os.getenv("CWE_PROFILES_DIR", "") or _tilt_env.get("NVKE_CONTROLLER_PROFILES_DIR", "") or _tilt_env.get("NKE_CONTROLLER_PROFILES_DIR", "") or _tilt_env.get("CWE_PROFILES_DIR", "")).strip()
+if _controller_profiles_dir == "":
+    _controller_profiles_dir = os.path.abspath(os.path.join(config.main_dir, "test", "fixtures", "profiles"))
+elif not _controller_profiles_dir.startswith("/"):
+    _controller_profiles_dir = os.path.abspath(os.path.join(config.main_dir, _controller_profiles_dir))
+_controller_profiles_preloaded = (os.getenv("NVKE_CONTROLLER_PROFILES_PRELOADED", "") or os.getenv("NKE_CONTROLLER_PROFILES_PRELOADED", "") or os.getenv("CWE_PROFILES_PRELOADED", "")) == "true"
 # Starlark's os.path has exists/join but not isdir.
-if not _cwe_profiles_preloaded and not _cwe_profiles_dir:
-    fail("NKE_CONTROLLER_PROFILES_DIR must point to an external profiles directory")
-if not _cwe_profiles_preloaded and not os.path.exists(_cwe_profiles_dir):
-    fail("Controller profiles not found at %s. Set NKE_CONTROLLER_PROFILES_DIR to a profiles tree; the in-repo fixture is controller/test/fixtures/profiles and the fleet profiles live in nke-site-deploy." % _cwe_profiles_dir)
+if not _controller_profiles_preloaded and not _controller_profiles_dir:
+    fail("NVKE_CONTROLLER_PROFILES_DIR must point to an external profiles directory")
+if not _controller_profiles_preloaded and not os.path.exists(_controller_profiles_dir):
+    fail("Controller profiles not found at %s. Set NVKE_CONTROLLER_PROFILES_DIR to a profiles tree; the in-repo fixture is controller/test/fixtures/profiles and the fleet profiles live in nke-site-deploy." % _controller_profiles_dir)
 
-_cwe_profiles_context = os.path.dirname(_cwe_profiles_dir)
-_cwe_profiles_dockerfile = os.path.join(_cwe_profiles_context, "Dockerfile")
-_cwe_profiles_runbooks_dir = os.path.join(_cwe_profiles_context, "runbooks")
+_controller_profiles_context = os.path.dirname(_controller_profiles_dir)
+_controller_profiles_dockerfile = os.path.join(_controller_profiles_context, "Dockerfile")
+_controller_profiles_runbooks_dir = os.path.join(_controller_profiles_context, "runbooks")
 
 # Match hack/tilt-controller-chart-values.yaml: when profiles.image is on, skip baking
 # profiles into the Tilt controller image and skip live_update sync into the read-only mount.
-_cwe_profiles_image_enabled = True
+_controller_profiles_image_enabled = True
 
-if _cwe_profiles_image_enabled:
-    if _cwe_profiles_preloaded:
+if _controller_profiles_image_enabled:
+    if _controller_profiles_preloaded:
         print("Using preloaded docker.local/cwe-profiles:tilt image")
     else:
-        _cwe_image_deps = _cwe_image_deps + ["docker.local/cwe-profiles:tilt"]
-        _cwe_image_keys = _cwe_image_keys + [("profiles.image.repository", "profiles.image.tag")]
-        if not os.path.exists(_cwe_profiles_dockerfile):
-            fail("Controller profiles Dockerfile not found at %s" % _cwe_profiles_dockerfile)
-        if not os.path.exists(_cwe_profiles_runbooks_dir):
-            fail("Controller profile runbooks not found at %s" % _cwe_profiles_runbooks_dir)
+        _controller_image_deps = _controller_image_deps + ["docker.local/cwe-profiles:tilt"]
+        _controller_image_keys = _controller_image_keys + [("profiles.image.repository", "profiles.image.tag")]
+        if not os.path.exists(_controller_profiles_dockerfile):
+            fail("Controller profiles Dockerfile not found at %s" % _controller_profiles_dockerfile)
+        if not os.path.exists(_controller_profiles_runbooks_dir):
+            fail("Controller profile runbooks not found at %s" % _controller_profiles_runbooks_dir)
         custom_build(
             ref="docker.local/cwe-profiles:tilt",
             command=[
@@ -1189,13 +1228,13 @@ if _cwe_profiles_image_enabled:
                   export DOCKER_HOST="${COLIMA_DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
                 fi
                 retry() { "$@" || { echo "docker build failed, retrying once in 15s" >&2; sleep 15; "$@"; }; }; retry docker build --platform linux/%s --tag "$EXPECTED_REF" -f "%s" "%s"
-                """ % (_cwe_tilt_goarch, _cwe_profiles_dockerfile, _cwe_profiles_context),
+                """ % (_controller_tilt_goarch, _controller_profiles_dockerfile, _controller_profiles_context),
             ],
-            deps=[_cwe_profiles_dir, _cwe_profiles_runbooks_dir, _cwe_profiles_dockerfile],
+            deps=[_controller_profiles_dir, _controller_profiles_runbooks_dir, _controller_profiles_dockerfile],
         )
 
 # docker build runs through a one-shot retry: the mirror can 404 a layer it just resolved.
-_cwe_build_script = """
+_controller_build_script = """
       set -euo pipefail
 
       if [ "$(uname -s)" = "Darwin" ] && [ -z "${DOCKER_HOST:-}" ]; then
@@ -1203,7 +1242,7 @@ _cwe_build_script = """
       fi
 
       mkdir -p bin
-      # cwe-compile owns bin/controller. Compiling here too rewrote a file this
+      # nvke-controller-compile owns bin/controller. Compiling here too rewrote a file this
       # build watches, so every build queued the next one.
       [ -x bin/controller ] || CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
       tmp_dir="$(mktemp -d)"
@@ -1212,10 +1251,10 @@ _cwe_build_script = """
       mkdir -p "${tmp_dir}/bin"
       cp bin/controller "${tmp_dir}/bin/controller"
       retry() { "$@" || { echo "docker build failed, retrying once in 15s" >&2; sleep 15; "$@"; }; }; retry docker build --platform linux/%s --tag "$EXPECTED_REF" "${tmp_dir}"
-""" % (_cwe_tilt_goarch, _cwe_tilt_goarch)
+""" % (_controller_tilt_goarch, _controller_tilt_goarch)
 
-if not _cwe_profiles_image_enabled:
-    _cwe_build_script = """
+if not _controller_profiles_image_enabled:
+    _controller_build_script = """
       set -euo pipefail
 
       if [ "$(uname -s)" = "Darwin" ] && [ -z "${DOCKER_HOST:-}" ]; then
@@ -1223,7 +1262,7 @@ if not _cwe_profiles_image_enabled:
       fi
 
       mkdir -p bin
-      # cwe-compile owns bin/controller. Compiling here too rewrote a file this
+      # nvke-controller-compile owns bin/controller. Compiling here too rewrote a file this
       # build watches, so every build queued the next one.
       [ -x bin/controller ] || CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
       tmp_dir="$(mktemp -d)"
@@ -1238,13 +1277,13 @@ if not _cwe_profiles_image_enabled:
       mkdir -p "${tmp_dir}/profiles"
       cp -a "%s/." "${tmp_dir}/profiles/"
       retry() { "$@" || { echo "docker build failed, retrying once in 15s" >&2; sleep 15; "$@"; }; }; retry docker build --platform linux/%s --tag "$EXPECTED_REF" "${tmp_dir}"
-""" % (_cwe_tilt_goarch, _cwe_profiles_dir, _cwe_tilt_goarch)
+""" % (_controller_tilt_goarch, _controller_profiles_dir, _controller_tilt_goarch)
 
-if not CWE_IMAGE and not _cwe_local_debug_active:
+if not CONTROLLER_IMAGE and not _controller_local_debug_active:
     local_resource(
-        "cwe-compile",
-        cmd=["bash", "-c", _cwe_compile_script],
-        labels=["3-cwe"],
+        "nvke-controller-compile",
+        cmd=["bash", "-c", _controller_compile_script],
+        labels=["3-nvke-controller"],
         deps=[
           "cmd",
           "internal",
@@ -1272,15 +1311,16 @@ local_resource(
         kubectl wait --for=condition=Established --timeout=120s "crd/${crd}.internal.nvke.nvidia.com"
       done
     """],
-    labels=["3-cwe"],
+    labels=["3-nvke-controller"],
     deps=["deploy/charts/controller/files/crds.yaml"],
     resource_deps=["check-management-cluster"],
 )
 
 # Applies the releases the controller resolves every OS image from.
-_nke_release_dir = os.getenv("NKE_CONTROLLER_RELEASES_DIR", _tilt_env.get("NKE_CONTROLLER_RELEASES_DIR", "")).strip()
+# NKE_CONTROLLER_RELEASES_DIR is a deprecated alias for NVKE_CONTROLLER_RELEASES_DIR; #1399 removes it.
+_nke_release_dir = (os.getenv("NVKE_CONTROLLER_RELEASES_DIR", "") or os.getenv("NKE_CONTROLLER_RELEASES_DIR", "") or _tilt_env.get("NVKE_CONTROLLER_RELEASES_DIR", "") or _tilt_env.get("NKE_CONTROLLER_RELEASES_DIR", "")).strip()
 if _nke_release_dir == "":
-    _nke_release_dir = os.path.join(_cwe_profiles_context, "releases")
+    _nke_release_dir = os.path.join(_controller_profiles_context, "releases")
 elif not _nke_release_dir.startswith("/"):
     _nke_release_dir = os.path.abspath(os.path.join(config.main_dir, _nke_release_dir))
 
@@ -1289,50 +1329,51 @@ local_resource(
     cmd=["bash", "-c", """
       set -euo pipefail
       dir="%s"
-      [ -d "${dir}" ] || { echo "releases not found at ${dir}; set NKE_CONTROLLER_RELEASES_DIR to a directory of generated MachineImage, ClusterRelease and NodePoolRelease manifests" >&2; exit 1; }
+      [ -d "${dir}" ] || { echo "releases not found at ${dir}; set NVKE_CONTROLLER_RELEASES_DIR to a directory of generated MachineImage, ClusterRelease and NodePoolRelease manifests" >&2; exit 1; }
       # MachineImage specs are immutable. After editing a profile, delete the
       # stale image (kubectl delete machineimage <name>) and apply again.
       kubectl apply --server-side --field-manager=tilt-releases -f "${dir}"
     """ % _nke_release_dir],
-    labels=["3-cwe"],
+    labels=["3-nvke-controller"],
     deps=[_nke_release_dir],
     resource_deps=["machine-engine-crds"],
     allow_parallel=True,
 )
 
 helm_resource(
-    "cwe",
+    "nvke-controller",
     chart="deploy/charts/controller",
-    labels=["3-cwe"],
-    release_name="nke-controller",
+    labels=["3-nvke-controller"],
+    release_name="nvke-controller",
     namespace=CONTROLLER_NAMESPACE,
-    image_deps=_cwe_image_deps,
-    image_keys=_cwe_image_keys,
+    image_deps=_controller_image_deps,
+    image_keys=_controller_image_keys,
     deps=[
       ".env.tilt",
       ".env.tilt.example",
       "hack/tilt-controller-chart-values.yaml",
+      "hack/tilt-controller-api-auth-values.yaml",
       "deploy/charts/controller",
     ],
-    flags=_cwe_chart_flags,
-    resource_deps=_cwe_resource_deps,
+    flags=_controller_chart_flags,
+    resource_deps=_controller_resource_deps,
     port_forwards=[CONTROLLER_HTTP_PORT + ":8080"],
     links=[
       ui_link(CONTROLLER_HTTP_PORT, "/api/docs", "Swagger Docs"),
       ui_link(CONTROLLER_HTTP_PORT, "/metrics", "Metrics"),
-      ui_link(CONTROLLER_TEMPORAL_UI_PORT, "/namespaces/nke-controller/workflows", "Temporal UI"),
+      ui_link(CONTROLLER_TEMPORAL_UI_PORT, "/namespaces/nvke-controller/workflows", "Temporal UI"),
     ],
 )
 
-if not CWE_IMAGE and not _cwe_local_debug_active:
+if not CONTROLLER_IMAGE and not _controller_local_debug_active:
     # When profiles.image is enabled, /profiles is an emptyDir filled by the
     # materialize initContainer (read-only on the app container). Do not
     # live_update sync into that mount.
-    _cwe_live_update = [
+    _controller_live_update = [
       fall_back_on(["hack/Dockerfile.controller.tilt", "go.mod", "go.sum", "Makefile", "Makefile.dev"]),
       sync("bin/controller", "/usr/local/bin/controller"),
     ]
-    _cwe_build_deps = [
+    _controller_build_deps = [
       "bin",
       "hack/Dockerfile.controller.tilt",
       "Makefile",
@@ -1340,16 +1381,16 @@ if not CWE_IMAGE and not _cwe_local_debug_active:
       "go.mod",
       "go.sum",
     ]
-    if not _cwe_profiles_image_enabled:
-        _cwe_live_update.insert(-1, sync(_cwe_profiles_dir, "/profiles"))
-        _cwe_build_deps.append(_cwe_profiles_dir)
+    if not _controller_profiles_image_enabled:
+        _controller_live_update.insert(-1, sync(_controller_profiles_dir, "/profiles"))
+        _controller_build_deps.append(_controller_profiles_dir)
 
     custom_build_with_restart(
         ref="docker.local/cwe:tilt",
-        command=["bash", "-c", _cwe_build_script],
-        deps=_cwe_build_deps,
+        command=["bash", "-c", _controller_build_script],
+        deps=_controller_build_deps,
         entrypoint="/usr/local/bin/controller",
-        live_update=_cwe_live_update,
+        live_update=_controller_live_update,
         trigger=["bin/controller"],
         ignore=[
           "**/__debug_bin*",
@@ -1368,7 +1409,7 @@ cmd_button(
       ETCD_ENCRYPTED="${ETCD_ENCRYPTED:-false}" \
       ./hack/create-capd-cluster.sh
     """ % CONTROLLER_HTTP_PORT],
-    resource="cwe",
+    resource="nvke-controller",
     icon_name="add_box",
     text="Create sample CAPD cluster",
     inputs=[
@@ -1381,13 +1422,13 @@ cmd_button(
 )
 
 cmd_button(
-    "3-restart-cwe",
+    "3-restart-nvke-controller",
     argv=["bash", "-c", """
       set -euo pipefail
-      kubectl -n """ + CONTROLLER_NAMESPACE + """ rollout restart deployment/nke-controller
-      kubectl -n """ + CONTROLLER_NAMESPACE + """ rollout status deployment/nke-controller --timeout=180s
+      kubectl -n """ + CONTROLLER_NAMESPACE + """ rollout restart deployment/nvke-controller
+      kubectl -n """ + CONTROLLER_NAMESPACE + """ rollout status deployment/nvke-controller --timeout=180s
     """],
-    resource="cwe",
+    resource="nvke-controller",
     icon_name="restart_alt",
     text="Restart controller",
 )
@@ -1400,7 +1441,7 @@ cmd_button(
       export DOCKER_HOST="${DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
       ./hack/fetch-capd-kubeconfig.sh "${CLUSTER_NAME}"
     """],
-    resource="cwe",
+    resource="nvke-controller",
     icon_name="download",
     text="Fetch CAPD workload kubeconfig",
     inputs=[

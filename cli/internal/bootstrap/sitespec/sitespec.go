@@ -112,7 +112,7 @@ var removedSpireCAEnv = [][2]string{
 
 // removedFields maps each removed field to what replaced it.
 var removedFields = map[string]string{
-	"registry":          "the bootstrap takes its images from --controller-image and --provisioned-provider-image; log in to a private registry with nerdctl login",
+	"registry":          "the bootstrap takes its images from --nvke-controller-image and --provisioned-provider-image; log in to a private registry with nerdctl login",
 	"spire.caCertFile":  "set " + EnvSpireCACertFile + " and spire.upstreamCA: true",
 	"spire.caKeyFile":   "set " + EnvSpireCAKeyFile + " and spire.upstreamCA: true",
 	"infra.nico.tenant": "set " + stackconfig.EnvNodeUser + " and " + stackconfig.EnvNodePassword,
@@ -255,11 +255,12 @@ type OIDCProvider struct {
 	IssuerURL      string            `yaml:"issuerURL"`
 	Audiences      []string          `yaml:"audiences"`
 	UsernameClaim  string            `yaml:"usernameClaim"`
-	UsernamePrefix string            `yaml:"usernamePrefix"`
+	UsernamePrefix *string           `yaml:"usernamePrefix"`
 	GroupsClaim    string            `yaml:"groupsClaim,omitempty"`
 	GroupsPrefix   string            `yaml:"groupsPrefix,omitempty"`
 	RequiredClaims map[string]string `yaml:"requiredClaims,omitempty"`
 	CABundle       string            `yaml:"caBundle"`
+	DiscoveryURL   string            `yaml:"discoveryURL,omitempty"`
 }
 
 // EtcdEncryptionEnabled reports whether the cluster's etcd data is encrypted
@@ -373,23 +374,42 @@ func newInventoryViper() *viper.Viper {
 	return v
 }
 
+type loadOptions struct {
+	allowControlPlaneWithoutVIP bool
+}
+
+// LoadOption configures site-spec loading.
+type LoadOption func(*loadOptions)
+
+// WithAllowControlPlaneWithoutVIP permits a multi-node site to omit its VIP during development.
+// A configured VIP still receives normal address validation.
+func WithAllowControlPlaneWithoutVIP(allow bool) LoadOption {
+	return func(options *loadOptions) {
+		options.allowControlPlaneWithoutVIP = allow
+	}
+}
+
 // Load reads the site spec file, overlays bound environment variables, applies
 // defaults, and validates the result. It returns a fully validated SiteSpec
 // or an aggregated error describing every problem found. A nil error means the
 // site spec is safe to act on.
-func Load(path string) (*SiteSpec, error) {
-	return load(path, true)
+func Load(path string, options ...LoadOption) (*SiteSpec, error) {
+	return load(path, true, options...)
 }
 
 // LoadDescription reads the site spec as Load does but without the SPIRE CA:
 // the CA variables are not read and the files are not opened. Spire.UpstreamCA
 // still says whether the site uses one. For a caller that describes the site
 // and never acts on it, such as a render that writes no credential.
-func LoadDescription(path string) (*SiteSpec, error) {
-	return load(path, false)
+func LoadDescription(path string, options ...LoadOption) (*SiteSpec, error) {
+	return load(path, false, options...)
 }
 
-func load(path string, withCA bool) (*SiteSpec, error) {
+func load(path string, withCA bool, options ...LoadOption) (*SiteSpec, error) {
+	var opts loadOptions
+	for _, option := range options {
+		option(&opts)
+	}
 	v := newInventoryViper()
 	v.SetConfigFile(path)
 	if err := v.ReadInConfig(); err != nil {
@@ -434,7 +454,7 @@ func load(path string, withCA bool) (*SiteSpec, error) {
 
 	// Both check sets share one validator so the caller still sees every
 	// problem in one pass, as it did before the two were separated.
-	checks := &validator{}
+	checks := &validator{allowControlPlaneWithoutVIP: opts.allowControlPlaneWithoutVIP}
 	inv.appendDataChecks(checks)
 	if withCA {
 		inv.appendReferenceChecks(checks)
@@ -590,7 +610,8 @@ func (inv *SiteSpec) ValidateBootstrapReferences() error {
 // validator accumulates field-level errors so the caller sees every problem
 // in one pass rather than one-at-a-time.
 type validator struct {
-	errs []string
+	errs                        []string
+	allowControlPlaneWithoutVIP bool
 }
 
 func (v *validator) addf(format string, args ...any) {
@@ -685,6 +706,7 @@ func (v *validator) checkNode(path string, n Node, names, ips map[string]int) {
 	}
 }
 
+// checkOIDCProviders records invalid provider settings and duplicate names or URLs.
 func (v *validator) checkOIDCProviders(c Cluster) {
 	if len(c.OIDCProviders) == 0 {
 		return
@@ -698,6 +720,7 @@ func (v *validator) checkOIDCProviders(c Cluster) {
 
 	seenNames := map[string]int{}
 	seenIssuers := map[string]int{}
+	seenDiscoveryURLs := map[string]int{}
 	for i, p := range c.OIDCProviders {
 		path := fmt.Sprintf("%s[%d]", pathOIDCProviders, i)
 		name := strings.TrimSpace(p.Name)
@@ -721,13 +744,23 @@ func (v *validator) checkOIDCProviders(c Cluster) {
 				seenIssuers[issuerURL] = i
 			}
 		}
+		if p.DiscoveryURL != "" {
+			v.checkOIDCDiscoveryURL(path+".discoveryURL", issuerURL, p.DiscoveryURL)
+			if prev, dup := seenDiscoveryURLs[p.DiscoveryURL]; dup {
+				v.addf("%s.discoveryURL %q is already used by %s[%d]", path, p.DiscoveryURL, pathOIDCProviders, prev)
+			} else {
+				seenDiscoveryURLs[p.DiscoveryURL] = i
+			}
+		}
 		if strings.TrimSpace(p.UsernameClaim) == "" {
 			v.addf("%s.usernameClaim is required", path)
 		}
-		if strings.TrimSpace(p.UsernamePrefix) == "" {
-			v.addf("%s.usernamePrefix is required", path)
+		// Kubernetes requires prefix when claim is set; an empty string explicitly disables prefixing.
+		if p.UsernamePrefix == nil {
+			v.addf("%s.usernamePrefix is required; use \"\" for no prefix", path)
+		} else {
+			v.checkOIDCPrefix(path+".usernamePrefix", *p.UsernamePrefix)
 		}
-		v.checkOIDCPrefix(path+".usernamePrefix", p.UsernamePrefix)
 		v.checkOIDCPrefix(path+".groupsPrefix", p.GroupsPrefix)
 		if len(p.Audiences) == 0 {
 			v.addf("%s.audiences is required", path)
@@ -742,6 +775,36 @@ func (v *validator) checkOIDCProviders(c Cluster) {
 		} else if _, err := cert.ParseCertsPEM([]byte(p.CABundle)); err != nil {
 			v.addf("%s.caBundle must contain a PEM-encoded certificate", path)
 		}
+	}
+}
+
+// checkOIDCDiscoveryURL records discovery overrides that cannot be used by kube-apiserver.
+func (v *validator) checkOIDCDiscoveryURL(path, issuerURL, discoveryURL string) {
+	if strings.TrimSpace(discoveryURL) != discoveryURL {
+		v.addf("%s must not contain leading or trailing whitespace", path)
+		return
+	}
+	u, err := url.Parse(discoveryURL)
+	if err != nil {
+		v.addf("%s %q is not a URL: %v", path, discoveryURL, err)
+		return
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			v.addf("%s port %q must be between 1 and 65535", path, port)
+			return
+		}
+	}
+	switch {
+	case u.Scheme != "https" || u.Hostname() == "":
+		v.addf("%s %q must be an absolute https URL", path, discoveryURL)
+	case u.User != nil:
+		v.addf("%s must not contain a username or password", path)
+	case u.RawQuery != "" || u.Fragment != "":
+		v.addf("%s %q must not contain a query or fragment", path, discoveryURL)
+	case strings.TrimRight(discoveryURL, "/") == strings.TrimRight(issuerURL, "/"):
+		v.addf("%s %q must differ from issuerURL; leave it unset to use the issuer's own discovery document", path, discoveryURL)
 	}
 }
 
@@ -799,12 +862,16 @@ func (v *validator) checkCIDR(path, value string, allowList bool) {
 	}
 }
 
-// checkControlPlaneVIP requires a stable endpoint for multi-node control planes
-// and validates a configured IPv4 VIP against cluster CIDRs.
+// checkControlPlaneVIP requires a stable endpoint for nico sites and for
+// multi-node control planes, and validates a configured IPv4 VIP against
+// cluster CIDRs.
 func (v *validator) checkControlPlaneVIP(inv *SiteSpec) {
 	c := inv.Cluster
 	if c.ControlPlaneVIP == "" {
-		if inv.ControlPlaneCount() > 1 {
+		if inv.IsNico() {
+			v.addf("%s is required with %s: %q: the site cluster's management plane is reached there", pathControlPlaneVIP,
+				pathInfraProvider, ProviderNico)
+		} else if inv.ControlPlaneCount() > 1 && !v.allowControlPlaneWithoutVIP {
 			v.addf("%s is required when the cluster has more than one control-plane node (%s or %s) because kube-vip provides "+
 				"a stable control-plane endpoint", pathControlPlaneVIP, pathNodes, pathNicoControlPlane+".count")
 		}
@@ -950,19 +1017,6 @@ func (inv *SiteSpec) CheckBootstrapMode(disableMTLS bool) error {
 			"need an address that reaches the bootstrap host's SPIRE server", pathSpireExternalAddress, pathInfraProvider, ProviderNico)
 	}
 	return nil
-}
-
-// NicoVIPWarning returns a warning for a nico site spec that leaves
-// cluster.controlPlaneVIP unset, or "" for any other site spec. The bootstrap
-// builds such a site cluster, but the controller stack install refuses the spec,
-// and the VIP cannot be added once the site cluster exists.
-func (inv *SiteSpec) NicoVIPWarning() string {
-	if !inv.IsNico() || inv.Cluster.ControlPlaneVIP != "" {
-		return ""
-	}
-	return pathControlPlaneVIP + " is not set: the bootstrap can build this one-node site cluster, but the controller stack " +
-		"install needs the VIP, and it cannot be added once the site cluster exists (kube-vip is set up only when the cluster " +
-		"is created with one); set it now unless this site will not get the controller stack"
 }
 
 // checkTrustDomain validates the DNS-name form required for a SPIFFE trust

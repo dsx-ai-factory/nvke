@@ -26,7 +26,7 @@ const threeNodeVIPSet = "cluster.controlPlaneVIP=10.10.50.10"
 func runGenerate(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	root := newRootCmd("test", "none", "clean", "now")
+	root := NewRootCmd("test", "none", "clean", "now")
 	root.SetOut(&out)
 	root.SetErr(&errOut)
 	root.SetArgs(args)
@@ -111,7 +111,7 @@ func TestGenerateSiteSpecSetReachesTheFile(t *testing.T) {
 
 func TestGenerateSiteSpecReadsStdin(t *testing.T) {
 	var out bytes.Buffer
-	root := newRootCmd("test", "none", "clean", "now")
+	root := NewRootCmd("test", "none", "clean", "now")
 	root.SetOut(&out)
 	root.SetIn(strings.NewReader(threeHostCSV))
 	root.SetArgs([]string{"generate", "sitespec", "my-tier0-site", "--nodes", "-", "--set", threeNodeVIPSet})

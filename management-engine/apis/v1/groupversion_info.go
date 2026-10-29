@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package v1 defines the persisted internal management-engine API.
-// Public tenant and operator contracts are separately versioned projections.
+// Future public APIs must version their contracts independently.
 // +kubebuilder:object:generate=true
 // +groupName=internal.nvke.nvidia.com
 package v1
@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-// GroupName separates internal storage from the public API groups.
+// GroupName identifies the persisted internal API.
 const GroupName = "internal.nvke.nvidia.com"
 
 var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1"}

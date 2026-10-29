@@ -73,7 +73,7 @@ func TestContainerCreateFailureRollsBackInstanceRow(t *testing.T) {
 func TestContainerRequestsDispatchAcrossAPIAliases(t *testing.T) {
 	store := newUnifiedTestStore(t)
 	containers := &fakeContainerService{instances: map[string]nicosdk.Instance{}}
-	containers.onCreate = func(instanceID string) {
+	containers.onCreate = func(_ context.Context, instanceID string) {
 		record, err := store.GetInstance(context.Background(), instanceID)
 		if err != nil {
 			t.Errorf("instance row was not created before the container: %v", err)
@@ -272,16 +272,16 @@ type fakeContainerService struct {
 	lastID     string
 	lastCreate nicosdk.InstanceCreateRequest
 	lastUpdate nicosdk.InstanceUpdateRequest
-	onCreate   func(string)
+	onCreate   func(context.Context, string)
 	createErr  error
 }
 
-func (f *fakeContainerService) Create(_ context.Context, instanceID string, req nicosdk.InstanceCreateRequest) (*nicosdk.Instance, error) {
+func (f *fakeContainerService) Create(ctx context.Context, instanceID string, req nicosdk.InstanceCreateRequest) (*nicosdk.Instance, error) {
 	f.creates++
 	f.lastID = instanceID
 	f.lastCreate = req
 	if f.onCreate != nil {
-		f.onCreate(instanceID)
+		f.onCreate(ctx, instanceID)
 	}
 	if f.createErr != nil {
 		return nil, f.createErr
@@ -385,6 +385,14 @@ func newUnifiedTestStore(t *testing.T) *state.Store {
 
 func performJSONRequest(t *testing.T, handler nethttp.Handler, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, newJSONRequest(t, method, path, body))
+	return response
+}
+
+// newJSONRequest builds an authenticated request that carries body as JSON.
+func newJSONRequest(t *testing.T, method, path string, body any) *nethttp.Request {
+	t.Helper()
 	var payload []byte
 	if body != nil {
 		var err error
@@ -398,7 +406,5 @@ func performJSONRequest(t *testing.T, handler nethttp.Handler, method, path stri
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	return response
+	return request
 }

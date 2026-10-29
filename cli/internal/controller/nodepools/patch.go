@@ -35,7 +35,8 @@ identify which pool to patch.
 
 PATCH semantics apply: only the fields in the patch document are changed;
 everything else on the node pool is left as it is. Pass the patch inline with
---patch, or from a file (or stdin via -) with --patch-file.
+--patch, or from a file (or stdin via -) with --patch-file. Exactly one of
+the two is required.
 
 nvkectl can set ` + strings.Join(settableFields(), ", ") + ` so far. The API
 accepts more, but anything else is rejected before the request is sent.

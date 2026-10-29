@@ -26,7 +26,7 @@ var (
 const (
 	dsxIdentityExchangeEnv    = "NKE_E2E_DSX_IDENTITY_EXCHANGE"
 	dsxExchangeCAConfigMap    = "dsx-identity-exchange-ca"
-	dsxExchangeControllerUser = "spiffe://nke.capd.nke-controller.nvid.id/bm/cwe"
+	dsxExchangeControllerUser = "spiffe://nke.capd.nvke-controller.nvid.id/bm/cwe"
 )
 
 func validateOIDCPostCreate(test *tenantTest) {
@@ -44,7 +44,7 @@ func validateOIDCPostCreate(test *tenantTest) {
 		}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
 		controllerIdentity := tenantauth.Identity{Namespace: controller.Namespace(), ServiceAccount: controller.ServiceAccount()}
-		controllerUser := "spiffe://" + test.trustDomain + "/nke-service/" + controller.ServiceAccount()
+		controllerUser := "spiffe://" + test.trustDomain + "/nvke-service/" + controller.ServiceAccount()
 		if os.Getenv(dsxIdentityExchangeEnv) == "true" {
 			By("Asserting the published kubeconfig selects the HTTPS token exchange")
 			exchangeEndpoint := expectSucceed(tenantauth.KubeconfigExecEnv(
@@ -93,7 +93,7 @@ func validateOIDCPostDelete(test *tenantTest) {
 }
 
 // skipIfNVKEOIDCDisabled skips the current spec when the controller does not have
-// tenant OIDC JWT auth enabled (oidc.managementOIDCAuth.enabled in nke-controller-config).
+// tenant OIDC JWT auth enabled (oidc.managementOIDCAuth.enabled in nvke-controller-config).
 func skipIfNVKEOIDCDisabled(ctx context.Context, k8s client.Client) {
 	GinkgoHelper()
 	if !expectSucceed(nvke.OIDCEnabled(ctx, k8s)) {

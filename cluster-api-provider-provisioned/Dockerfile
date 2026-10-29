@@ -11,10 +11,10 @@
 # evidence and the trade-off in closing it.
 #
 # Internal builds override these rather than BASE_REGISTRY, for example
-#   docker build --build-arg GOLANG_IMAGE=dockerhub.nvidia.com/golang:1.27.2@sha256:... .
+#   docker build --build-arg GOLANG_IMAGE=dockerhub.nvidia.com/golang:1.27.3@sha256:... .
 # A digest is content-addressed, so a mirror serving the same content answers
 # to the same digest.
-ARG GOLANG_IMAGE=docker.io/golang:1.27.2@sha256:5bc7f572bbaa98885a3a1fd9c0aa76b59e3e14e8628bfc316bbfd0c701e4818c
+ARG GOLANG_IMAGE=docker.io/golang:1.27.3@sha256:f20d83a83e18dbd2a4714b8ffd4b30b287b6243962dd75608e86abcc63ba4efc
 ARG ALPINE_IMAGE=docker.io/alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 FROM --platform=${BUILDPLATFORM} ${GOLANG_IMAGE} AS builder

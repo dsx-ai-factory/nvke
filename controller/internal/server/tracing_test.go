@@ -13,12 +13,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nvke/controller/internal/server"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
@@ -57,6 +61,37 @@ func requestLogs(t *testing.T, exportEnabled bool, traceparent, userAgent string
 	return response, records
 }
 
+func createClusterRequestLogs(
+	t *testing.T,
+	database *testutil.MockDB,
+	request api.CreateClusterRequest,
+) (*httptest.ResponseRecorder, []map[string]any) {
+	t.Helper()
+
+	var buf bytes.Buffer
+	logger := slog.New(otelx.LogHandler{Handler: slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})})
+	srv, err := server.NewServer(config.Config{ProfilesDir: "./profiles"}, logger, database, nil, nil, nil)
+	require.NoError(t, err)
+
+	body, err := json.Marshal(request)
+	require.NoError(t, err)
+	httpRequest := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/clusters", bytes.NewReader(body))
+	httpRequest.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(response, httpRequest)
+
+	var records []map[string]any
+	for _, line := range bytes.Split(buf.Bytes(), []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		var record map[string]any
+		require.NoError(t, json.Unmarshal(line, &record))
+		records = append(records, record)
+	}
+	return response, records
+}
+
 func completedRecord(t *testing.T, records []map[string]any) map[string]any {
 	t.Helper()
 	for _, record := range records {
@@ -68,12 +103,13 @@ func completedRecord(t *testing.T, records []map[string]any) map[string]any {
 	return nil
 }
 
-// installTracerProvider installs a provider with no span processor, the way
-// otelx.Init does when nothing is exported, for the duration of the test.
-func installTracerProvider(t *testing.T) {
+// installTracerProvider installs a provider that records spans in memory for
+// the duration of the test.
+func installTracerProvider(t *testing.T) *tracetest.SpanRecorder {
 	t.Helper()
 	previousProvider, previousPropagator := otel.GetTracerProvider(), otel.GetTextMapPropagator()
-	provider := sdktrace.NewTracerProvider()
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
 	otel.SetTracerProvider(provider)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 	t.Cleanup(func() {
@@ -81,6 +117,7 @@ func installTracerProvider(t *testing.T) {
 		otel.SetTextMapPropagator(previousPropagator)
 		require.NoError(t, provider.Shutdown(context.Background()))
 	})
+	return recorder
 }
 
 func TestRequestCompletedLogCarriesEventAndOutcome(t *testing.T) {
@@ -93,6 +130,65 @@ func TestRequestCompletedLogCarriesEventAndOutcome(t *testing.T) {
 	require.Equal(t, "http.completed", record["event"])
 	require.Equal(t, "rejected", record["outcome"], "a 4xx is rejected, not failed")
 	require.EqualValues(t, response.Code, record["status"])
+}
+
+func TestRequestCompletedLogCarriesValidationReason(t *testing.T) {
+	installTracerProvider(t)
+
+	response, records := requestLogs(t, false, "", "")
+
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	require.Equal(t, "request_validation_failed", completedRecord(t, records)["reason"])
+	encodedLogs, err := json.Marshal(records)
+	require.NoError(t, err)
+	require.NotContains(t, string(encodedLogs), "not json")
+}
+
+func TestRequestSpanUsesMatchedRoute(t *testing.T) {
+	recorder := installTracerProvider(t)
+
+	response, _ := requestLogs(t, false, "", "")
+
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	spanNames := make([]string, 0, len(recorder.Ended()))
+	for _, span := range recorder.Ended() {
+		spanNames = append(spanNames, span.Name())
+	}
+	require.Contains(t, spanNames, "POST /api/clusters")
+}
+
+func TestRequestCompletedLogClassifiesInvalidClusterNetwork(t *testing.T) {
+	installTracerProvider(t)
+	request := openAPIForgeCreateClusterRequest()
+	request.Network = &api.ClusterNetworkCreateConfig{PodCIDR: "not-a-cidr"}
+
+	response, records := createClusterRequestLogs(t, &testutil.MockDB{}, request)
+
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	require.Equal(t, "invalid_cluster_network", completedRecord(t, records)["reason"])
+	encodedLogs, err := json.Marshal(records)
+	require.NoError(t, err)
+	require.NotContains(t, string(encodedLogs), "not-a-cidr")
+}
+
+func TestRequestCompletedLogClassifiesDuplicateClusterName(t *testing.T) {
+	installTracerProvider(t)
+	request := openAPIForgeCreateClusterRequest()
+	request.Name = "client-supplied-duplicate-name"
+	mockTx := &testutil.MockTx{}
+	mockTx.On("CreateCluster", mock.Anything, mock.Anything).Return(db.Cluster{}, db.ErrClusterNameNotUnique).Once()
+	database := &testutil.MockDB{MockTx: mockTx}
+	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
+
+	response, records := createClusterRequestLogs(t, database, request)
+
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	require.Equal(t, "cluster_name_already_exists", completedRecord(t, records)["reason"])
+	encodedLogs, err := json.Marshal(records)
+	require.NoError(t, err)
+	require.NotContains(t, string(encodedLogs), request.Name)
+	mockTx.AssertExpectations(t)
+	database.AssertExpectations(t)
 }
 
 func TestRequestStartsATraceWithoutExport(t *testing.T) {

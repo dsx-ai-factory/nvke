@@ -245,7 +245,7 @@ func TestInitConfigRenderDefaultsEmptyEtcdQuotaBackendBytes(t *testing.T) {
 
 	artifacts, err := cfg.Render()
 	require.NoError(t, err)
-	assert.Contains(t, string(artifacts.ConfigYAML), `quota-backend-bytes: "`+EtcdQuotaBackendBytes+`"`)
+	assert.Contains(t, string(artifacts.ConfigYAML), "- name: quota-backend-bytes\n      value: \""+EtcdQuotaBackendBytes+"\"")
 	assert.Empty(t, cfg.EtcdQuotaBackendBytes, "Render must not mutate the caller's config")
 }
 

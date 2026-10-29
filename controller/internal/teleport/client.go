@@ -103,7 +103,9 @@ func WithLabels(labels map[string]string) ListNodesOption {
 
 // Client defines the interface for Teleport API operations needed by the controller.
 // All token operations enforce ownership - the client will only interact with
-// tokens that have the "managed-by: nke-cloud-workflow-engine" label.
+// tokens whose "managed-by" label holds one of the values this controller owns
+// (config.TeleportConfig.OwnershipManagedByValues): the one it writes, plus any
+// its earlier releases wrote.
 type Client interface {
 	Close() error
 
@@ -124,6 +126,7 @@ type clientImpl struct {
 	proxyAddress        string
 	credentialsPath     string
 	managedByLabelValue string
+	managedByValues     []string
 	logger              *slog.Logger
 
 	mu        sync.RWMutex
@@ -155,6 +158,7 @@ func NewClient(ctx context.Context, cfg config.TeleportConfig, opts ...ClientOpt
 		proxyAddress:        cfg.ProxyAddress,
 		credentialsPath:     cfg.IdentityFile,
 		managedByLabelValue: cfg.ManagedByLabelValue,
+		managedByValues:     cfg.OwnershipManagedByValues(),
 		logger:              slog.Default(),
 	}
 
@@ -250,7 +254,7 @@ func (c *clientImpl) GetToken(ctx context.Context, name string) (*ProvisionToken
 		result = fromTeleportToken(teleportToken)
 
 		// Verify ownership - refuse to return tokens not managed by the controller
-		if !IsOwnedByController(result.Labels, c.managedByLabelValue) {
+		if !IsOwnedByController(result.Labels, c.managedByValues) {
 			c.logger.Warn("attempted to access token not owned by the controller",
 				"name", name,
 				LabelManagedBy, result.Labels[LabelManagedBy],
@@ -273,7 +277,7 @@ func (c *clientImpl) DeleteToken(ctx context.Context, name string) error {
 	}
 
 	// GetToken already verified ownership, but double-check
-	if !IsOwnedByController(token.Labels, c.managedByLabelValue) {
+	if !IsOwnedByController(token.Labels, c.managedByValues) {
 		c.logger.Warn("attempted to delete token not owned by the controller",
 			"name", name,
 			LabelManagedBy, token.Labels[LabelManagedBy],
@@ -313,7 +317,7 @@ func (c *clientImpl) ListTokens(ctx context.Context) ([]ProvisionToken, error) {
 		for _, tt := range teleportTokens {
 			totalCount++
 			token := fromTeleportToken(tt)
-			if IsOwnedByController(token.Labels, c.managedByLabelValue) {
+			if IsOwnedByController(token.Labels, c.managedByValues) {
 				result = append(result, *token)
 			}
 		}
@@ -366,45 +370,67 @@ func (c *clientImpl) ListNodes(ctx context.Context, namespace string, opts ...Li
 		opt(&options)
 	}
 
-	// Merge caller-provided labels with ownership labels. Ownership labels take precedence.
-	labels := make(map[string]string)
-	for k, v := range options.extraLabels {
-		labels[k] = v
-	}
-	for k, v := range OwnershipLabels(c.managedByLabelValue) {
-		labels[k] = v
-	}
-
+	// The server-side filter takes one value per label, so an accepted spelling
+	// beyond the written one needs its own request. Nodes carry the value they
+	// joined with and are never relabelled, so filtering on the written value
+	// alone hides every node that joined before the value moved -- which is the
+	// set anti-entropy most needs to see.
 	var result []Node
-	err := c.withRetry(ctx, "ListNodes", func() error {
-		c.mu.RLock()
-		apiClient := c.apiClient
-		c.mu.RUnlock()
+	seen := make(map[string]struct{})
 
-		// Use GetAllResources for paginated listing with server-side label filtering.
-		// This handles pagination automatically and downsizes pages on LimitExceeded errors.
-		req := &proto.ListResourcesRequest{
-			ResourceType: types.KindNode,
-			Namespace:    namespace,
-			Limit:        defaults.DefaultChunkSize,
-			Labels:       labels,
+	for _, managedByValue := range c.managedByValues {
+		// Merge caller-provided labels with ownership labels. Ownership labels take precedence.
+		labels := make(map[string]string)
+		for k, v := range options.extraLabels {
+			labels[k] = v
+		}
+		for k, v := range OwnershipLabels(managedByValue) {
+			labels[k] = v
 		}
 
-		teleportNodes, err := client.GetAllResources[types.Server](ctx, apiClient, req)
+		err := c.withRetry(ctx, "ListNodes", func() error {
+			c.mu.RLock()
+			apiClient := c.apiClient
+			c.mu.RUnlock()
+
+			// Use GetAllResources for paginated listing with server-side label filtering.
+			// This handles pagination automatically and downsizes pages on LimitExceeded errors.
+			req := &proto.ListResourcesRequest{
+				ResourceType: types.KindNode,
+				Namespace:    namespace,
+				Limit:        defaults.DefaultChunkSize,
+				Labels:       labels,
+			}
+
+			teleportNodes, err := client.GetAllResources[types.Server](ctx, apiClient, req)
+			if err != nil {
+				return err
+			}
+
+			for _, tn := range teleportNodes {
+				node := fromTeleportNode(tn)
+				// A node matches one managed-by value, so this only dedupes a
+				// deployment that listed its written value as accepted too.
+				if _, dup := seen[node.Name]; dup {
+					continue
+				}
+				seen[node.Name] = struct{}{}
+				result = append(result, *node)
+			}
+
+			c.logger.Debug("listed nodes", "namespace", namespace, "count", len(teleportNodes), "labels", labels)
+			return nil
+		})
 		if err != nil {
-			return err
+			return nil, err
 		}
+	}
 
-		result = make([]Node, 0, len(teleportNodes))
-		for _, tn := range teleportNodes {
-			result = append(result, *fromTeleportNode(tn))
-		}
+	if result == nil {
+		result = make([]Node, 0)
+	}
 
-		c.logger.Debug("listed nodes", "namespace", namespace, "count", len(result), "labels", labels)
-		return nil
-	})
-
-	return result, err
+	return result, nil
 }
 
 func (c *clientImpl) toTeleportToken(token ProvisionToken) (types.ProvisionToken, error) {

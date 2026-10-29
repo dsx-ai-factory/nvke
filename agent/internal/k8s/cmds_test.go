@@ -5,13 +5,18 @@ package k8s_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+	clienttesting "k8s.io/client-go/testing"
 
 	"github.com/dsx-ai-factory/nvke/agent/internal/k8s"
 )
@@ -98,6 +103,30 @@ func TestRemoveNodeLabel(t *testing.T) {
 			"nvke.nvidia.com/k8s-api-encryption-configured": "true",
 		})
 		cs := fake.NewSimpleClientset(node)
+		k8s.SetClientsetForTest(cs)
+
+		err := k8s.RemoveNodeLabel(ctx, "cp1", "nvke.nvidia.com/k8s-api-encryption-configured=true")
+		require.NoError(t, err)
+
+		updated, err := cs.CoreV1().Nodes().Get(ctx, "cp1", metav1.GetOptions{})
+		require.NoError(t, err)
+		_, present := updated.Labels["nvke.nvidia.com/k8s-api-encryption-configured"]
+		assert.False(t, present)
+	})
+
+	t.Run("retries an update that conflicts with another writer", func(t *testing.T) {
+		node := nodeWithLabels("cp1", map[string]string{
+			"nvke.nvidia.com/k8s-api-encryption-configured": "true",
+		})
+		cs := fake.NewSimpleClientset(node)
+		conflicted := false
+		cs.PrependReactor("update", "nodes", func(clienttesting.Action) (bool, runtime.Object, error) {
+			if conflicted {
+				return false, nil, nil
+			}
+			conflicted = true
+			return true, nil, apierrors.NewConflict(schema.GroupResource{Resource: "nodes"}, "cp1", errors.New("the object has been modified"))
+		})
 		k8s.SetClientsetForTest(cs)
 
 		err := k8s.RemoveNodeLabel(ctx, "cp1", "nvke.nvidia.com/k8s-api-encryption-configured=true")

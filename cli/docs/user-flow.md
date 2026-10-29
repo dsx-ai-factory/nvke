@@ -3,7 +3,9 @@
 What `nvkectl` does today, in the order an operator uses it, with the two
 steps that are not CLI commands marked: getting a release from NVKR and
 installing the controller stack with the deploy script.
-`nvkectl <command> --help` is the authoritative reference for flags. The
+The [command reference](https://github.com/dsx-ai-factory/nvke/blob/main/cli/docs/reference/README.md)
+lists every command and flag; it is generated from the CLI, so it says the same
+as `nvkectl <command> --help`. The
 walkthrough is [Your first cluster](https://github.com/dsx-ai-factory/nvke/blob/main/docs/first-cluster.md); this page is
 the reference it points at.
 
@@ -17,7 +19,7 @@ the reference it points at.
 | Write the stack config, `stack-config.json` | The controller stack install reads it: the NICo API, and under `images` the profile content image (required without a release) and, optionally, the controller image. Copy `deploy/examples/stack-config.json` and fill in every `REPLACE_*` value; the install refuses a placeholder. The tokens and passwords come from `NVKECTL_*` variables. Not read by `bootstrap site`. | Available |
 | `nvkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
 | `nvkr release verify` and `nvkr release export --reference <release>` | NVKR, not `nvkectl`: verifies a published release under your policy, then writes its description, the `--release` input of the install. Optional: without it the charts come from this checkout, the profile content image from the stack config's `images.profiles`, and the controller image from `images.controller` or, when that is empty, the deploy path's pin. | Not in the CLI |
-| `deploy/check-site.sh`, `clusterctl init`, `deploy/nvke-deploy.sh install --deploy-path deploy/nico`, the exec-auth patch | The management plane install, a short list of commands run in order: the check reports what the cluster and this machine still need; `clusterctl init` installs Cluster API; the executor renders the `deploy/nico` deploy path for the site (Postgres, Temporal, SPIRE, CAPNICo, NVKE telemetry pipelines (NKTP), the controller) and applies it; the patch gives the Cluster API controllers SPIRE exec-auth. See [Install management-plane services](../../docs/operate/install-management-plane-services.md). | Not in the CLI |
+| `clusterctl init`, `deploy/nvke-deploy-local.sh install` | The management plane install, a short list of commands run in order: `clusterctl init` installs Cluster API; the wrapper installs the lab StorageClass, renders the `deploy/nico` deploy path for the site (Postgres, Temporal, SPIRE, CAPNICo, NKTP, the controller) and applies it, and gives the Cluster API controllers SPIRE exec-auth. See [Run NVKE end to end on one machine](../../docs/get-started/local-site.md). | Not in the CLI |
 | `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at an NVKE management plane. `use-site` switches between entries, `view` prints the config. | Available |
 | `nvkectl get providers` | Lists the Cluster API infrastructure providers the management plane can use, with their state. Alpha. | Available |
 | `nvkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
@@ -121,25 +123,21 @@ spec. [deploy/README.md](https://github.com/dsx-ai-factory/nvke/blob/main/deploy
 ### 5. Install the controller stack
 
 ```bash
-deploy/check-site.sh --sitespec sitespec.yaml --stack-config stack-config.json --kubeconfig my-tier0-site.kubeconfig --release release.json
-clusterctl init --kubeconfig my-tier0-site.kubeconfig --core cluster-api:<v> --bootstrap kubeadm:<v> --control-plane kubeadm:<v> --wait-providers
-deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json --kubeconfig my-tier0-site.kubeconfig --release release.json
-controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig my-tier0-site.kubeconfig
-kubectl --kubeconfig my-tier0-site.kubeconfig apply -f nvke-api-clients.yaml
+clusterctl init --kubeconfig local-site.kubeconfig --core cluster-api:<v> --bootstrap kubeadm:<v> --control-plane kubeadm:<v> --wait-providers
+"$NVKE_REPO"/deploy/nvke-deploy-local.sh install
+kubectl --kubeconfig local-site.kubeconfig apply -f nvke-api-clients.yaml
 ```
 
-A list of commands, in this order: the check reports what the cluster and
-this machine still need, with the fix, and prints the commands that remain
-when everything passes; `clusterctl init` installs Cluster API at the
-pinned version; the executor reads the nodes' architecture from the
-cluster, renders the `deploy/nico` deploy path for the site and the release
-and applies it, item by item; the next script patches
-the Cluster API controllers for SPIRE; the NetworkPolicy admits your client
+A list of commands, in this order: `clusterctl init` installs Cluster API at
+the pinned version; the wrapper installs the lab StorageClass, reads the
+nodes' architecture from the cluster, renders and applies the `deploy/nico`
+deploy path item by item, and patches the Cluster API controllers for SPIRE;
+the NetworkPolicy admits your client
 networks to the controller API, which the chart otherwise answers from
 in-cluster pods only. Then point the CLI at the site (step 6) and publish a `MachineImage`, `ClusterRelease` and `NodePoolRelease`
 with `nvkectl create`, as [Your first cluster](https://github.com/dsx-ai-factory/nvke/blob/main/docs/first-cluster.md)
 shows, before the first tenant cluster.
-[Install management-plane services](../../docs/operate/install-management-plane-services.md)
+[Run NVKE end to end on one machine](../../docs/get-started/local-site.md)
 gives each step with its inputs.
 
 The deploy path is the interface and the script is the reference way to apply
@@ -161,17 +159,63 @@ nvkectl config view
 ```
 
 `--url` is the controller's API. Port 30080 is the plain-HTTP NodePort the chart exposes, and the CLI sends a bearer token to it, so use it from a trusted network only, or put a TLS endpoint in front of it and name that. `--kubeconfig` is the site cluster's kubeconfig; `get
-providers` and `get kubeconfig` read the cluster directly and need it.
+providers` and `get kubeconfig` read the cluster directly and need it. Each `set-site` call replaces the whole entry for `--name`, so repeat every setting you want to keep, and makes that site the current one. `nvkectl config use-site <name>` switches between configured sites.
+
+#### Export a site's telemetry
+
+To send the spans and log records of the commands that use this site (`get`,
+`create`, `patch`, `delete` and the like) to an OpenTelemetry collector or
+backend, add its OTLP/gRPC address to the same `set-site` call:
+
+```bash
+nvkectl config set-site --name my-tier0-site \
+  --url http://<VIP>:30080 \
+  --kubeconfig ./my-tier0-site.kubeconfig \
+  --otlp-endpoint <COLLECTOR_HOST>:4317
+```
+
+- **Removing it.** Run `set-site` again without `--otlp-endpoint`.
+- **TLS.** The connection uses TLS. For an endpoint without it, use `http://` or
+  pass `--otlp-insecure`, which needs `--otlp-endpoint` in the same call.
+- **Headers.** They come only from `OTEL_EXPORTER_OTLP_HEADERS` in the shell
+  that runs the command and are never stored in the config.
+- **A bad endpoint or an unreachable collector.** `set-site` rejects an endpoint
+  that is not a usable OTLP/gRPC address with an error and stores nothing. A
+  collector that cannot be reached when a command runs does not fail it: the
+  command succeeds and logs one warning.
+- **Precedence.** The site's endpoint takes precedence over
+  `OTEL_EXPORTER_OTLP_ENDPOINT`, which applies to commands that have no site
+  endpoint. The `--otlp-endpoint` and `--otlp-insecure` flags of `bootstrap site`
+  apply to that command only; the commands above never read them. See
+  [Send nvkectl's telemetry to a backend](bootstrap-troubleshooting.md#send-nvkectls-telemetry-to-a-backend)
+  for `bootstrap site`.
 
 Controller API commands (`get`/`create`/`patch`/`delete` clusters) use that
-kubeconfig to authenticate: they read the audience from ConfigMap
-`nke-auth-config` in `nke-controller`, or in `cloud-workflow-engine` when that
-is absent, and mint a TokenRequest for
-`nke-clients/nke-client`. If neither holds the ConfigMap, authentication is off
-and the CLI sends no bearer token.
+kubeconfig to authenticate: they read the audience and mint a TokenRequest for
+`nke-clients/nke-client`. The audience comes first from `apiAuth` in the
+controller's settings ConfigMap, `nvke-controller-config` (or
+`nke-controller-config` on a site that pins the older name), when that section
+is enabled. When it is off or absent, as for a controller that reads
+`AUTH_CONFIG_PATH`, the CLI falls back to the authentication ConfigMap:
+`nvke-auth-config` first, then `nke-auth-config`, which a site installed before
+the `nvke` rename keeps by pinning `apiAuth.configMap.name`. Each pair of names
+is searched in `nvke-controller`, then `nke-controller` for a site installed
+before the `nvke` rename, then `cloud-workflow-engine`, and the first *readable*
+one is used.
+
+Readable matters because RBAC scoped to `resourceNames` denies the names it does
+not grant: a site that grants `get` on its pinned name alone answers Forbidden
+for the other. The search moves past such a denial to the next candidate, so a
+kubeconfig that can read only the pinned ConfigMap still mints a token.
+
+The CLI sends no bearer token only when nothing readable turns authentication
+on; that is read as authentication being off. A denial is not that — it is
+kept, and if nothing readable turns authentication on the command fails with it
+rather than sending a bare request the controller would reject.
 
 The kubeconfig identity needs `create` on `serviceaccounts/token` for
-`nke-client`. See
+`nke-client`, and `get` on the controller's settings ConfigMap and the
+authentication ConfigMap. See
 [Configuring NVKE API Authentication](../../controller/docs/configuring-api-authentication.md).
 
 ### 7. Check the infrastructure providers

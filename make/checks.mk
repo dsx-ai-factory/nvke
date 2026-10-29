@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Local entry points for merge-gate checks. Every tool comes from PATH, and a
-# missing one reports which tool and two ways to get it.
+# Local entry points for merge-gate checks. Tools come from PATH unless a
+# target explicitly installs its pinned tool (credential-alerts-check).
 
 CHART ?= controller/deploy/charts/controller
 NKTP_CHART ?= nktp/deploy/charts/nktp
@@ -33,6 +33,10 @@ lint-workflows: ## Lint the GitHub Actions workflows. (run by the merge gate)
 		git grep -n -E 'github\.repository[[:space:]]*[!=]=' -- .github; \
 		exit 1; \
 	 fi
+	@$(call require_command,python3)
+	@$(call require_command,yq)
+	@python3 -B ./hack/test_e2e_path_filter.py
+	@python3 -B ./hack/e2e-path-filter.py check
 	@echo "  workflows: no findings"
 
 # --severity=error matches shellcheck.yml. The tree is clean at error and is not
@@ -67,9 +71,10 @@ internal-config-check: ## Check the tree names no internal infrastructure. (run 
 # mode summarises and exits 0; the gate ran that way until 2026-10-11, while
 # the tree still carried the name. A dead allowlist entry fails in either mode.
 NAME_CHECK_MODE ?= fail
-name-check: ## Fail on tokens that carry a banned name outside the allowlist. (run by the merge gate)
+name-check: ## Fail on tokens that carry a banned name outside the allowlist, and run the offline hack/rotation-demo tests. (run by the merge gate)
 	@$(call require_command,python3)
 	@python3 -B ./hack/test_name_check.py
+	@$(MAKE) --no-print-directory -C hack/rotation-demo test
 	@python3 -B ./hack/name-check.py --mode $(NAME_CHECK_MODE)
 
 CHART_CRDS_KUSTOMIZE := controller/deploy/release-crds
@@ -151,7 +156,7 @@ chart-package-check: ## Assert that chart packaging replaces placeholder version
 	@$(call require_tool,helm,$(HELM_VERSION))
 	@CHART="$(CHART)" ./controller/hack/chart-package-assertions.sh
 
-# The chart package is named nke-controller while everything it renders stays
+# The chart package is named nvke-controller while everything it renders stays
 # cloud-workflow-engine, held there by nameOverride. helm lint and kubeconform
 # both pass if that pin is dropped, so this is the only check that would catch it.
 chart-identity-check: ## Assert the chart still renders the deployed identities it must preserve.
@@ -164,15 +169,21 @@ chart-identity-check: ## Assert the chart still renders the deployed identities 
 	 }
 	@python3 ./controller/hack/chart-identity-assertions.py --chart "$(CHART)"
 
-# helm lint and kubeconform cannot tell whether nke-controller-config agrees
+# helm lint and kubeconform cannot tell whether nvke-controller-config agrees
 # with the controller's environment variables; this checks each key against them.
-chart-controller-config-check: ## Assert nke-controller-config loads and matches the controller's environment.
+chart-controller-config-check: ## Assert nvke-controller-config loads and matches the controller's environment.
 	@$(call require_tool,helm,$(HELM_VERSION))
 	@$(call require_command,go)
 	@$(call require_command,yq)
 	@CHART="$(CHART)" ./controller/hack/chart-controller-config-assertions.sh
 
-chart-check: lint-chart chart-rbac-check chart-package-check chart-identity-check chart-controller-config-check ## Run every chart check enforced by CI.
+.PHONY: credential-alerts-check
+credential-alerts-check: ## Validate credential alert rules, fixtures and the enabled PrometheusRule render.
+	@$(call require_tool,helm,$(HELM_VERSION))
+	@$(call require_tool,kubeconform,$(KUBECONFORM_VERSION))
+	@CHART="$(CHART)" ./controller/hack/chart-credential-alerts-assertions.sh
+
+chart-check: lint-chart chart-rbac-check chart-package-check chart-identity-check chart-controller-config-check credential-alerts-check ## Run every chart check enforced by CI.
 
 .PHONY: nktp-chart-deps nktp-chart-lint nktp-chart-check
 
@@ -337,6 +348,7 @@ gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory nktp-chart-check
 	@$(MAKE) --no-print-directory -C controller generate-check
 	@$(MAKE) --no-print-directory -C cli provider-manifest-check
+	@$(MAKE) --no-print-directory -C cli docs-check
 	@$(MAKE) --no-print-directory chart-crds-check
 	@$(MAKE) --no-print-directory vulncheck
 	@echo

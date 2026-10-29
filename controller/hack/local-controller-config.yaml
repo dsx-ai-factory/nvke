@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# nke-controller-config for host-local runs: make run, make run-local,
+# nvke-controller-config for host-local runs: make run, make run-local,
 # make run-remote, make debug, and the gofail e2e worker. A deployment gets the
 # same file from the chart instead. Every key is required, because
 # internal/controllerconfig has no defaults; TestLocalControllerConfig checks
@@ -21,6 +21,7 @@ fieldManager:
 managedByLabelValue: cloud-workflow-engine
 # The shared management-plane namespace. Tilt creates it (deploy/k8s/nvke-system-namespace.yaml).
 managementNamespace: nvke-system
+rbacConfigMapName: nvke-rbac
 metricsListenAddress: 127.0.0.1:9090
 supportedInfraProviders:
   - nico
@@ -36,11 +37,17 @@ certRenewal:
   controllerEnabled: true
   interval: 12h
   thresholdDays: 30
+credentialMonitoring:
+  enabled: true
+  inspectionInterval: 1h
+  observationMaxAge: 3h
+  warningDays: 45
 kubeadmImageRepository: registry.k8s.io
 cniImageRegistry: ""
 installCNIAfterInit: false
 allowLegacyCalicoClusterCreation: false
-nicoControllersEnabled: true
+allowControlPlaneWithoutVIP: false
+nicoControllersEnabled: false
 profilesDir: test/fixtures/profiles
 runbooksDir: test/fixtures/runbooks
 tenantAccessEnabled: false
@@ -95,6 +102,14 @@ teleport:
   proxyAddress: ""
   environment: non-prod
   managedByLabelValue: nvke-controller
+  acceptedManagedByLabelValues: []
   tokenNamePrefix: nvke-controller-
   resourceGroupLabelValue: nvke
-permissiveMode: false
+# Off for host-local runs, as it was before the section existed. To run with
+# authentication, set enabled and give audiences and issuers the shape the
+# chart's apiAuth.config takes.
+apiAuth:
+  enabled: false
+  audiences: []
+  issuers: []
+  permissive: false

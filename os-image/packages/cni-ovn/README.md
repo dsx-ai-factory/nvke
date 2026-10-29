@@ -28,7 +28,7 @@ time so both paths hold with no maintainer script.
 
 `values-nke.yaml` is written by `bundle.sh`, not shipped by the fork. It sets
 `tags.ovs-node: false`, so OVS stays on the host (the node image installs
-`openvswitch-switch`; the agent checks for `ovs-vsctl` before helm). It also
+`doca-openvswitch-switch`; the agent checks for `ovs-vsctl` before helm). It also
 points every enabled component at the one image the images package imports into
 containerd: `global.imageRepositoryPrefix: localhost/nvke`, so the chart's
 `ovnkube` repository becomes `localhost/nvke/ovnkube`, and each component's

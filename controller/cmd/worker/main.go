@@ -23,12 +23,14 @@ import (
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 
+	"github.com/dsx-ai-factory/nvke/auth/authn"
+
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/automode"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/certificates"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/certrenewal"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/controlplane"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/controlplanenodescheduler"
@@ -49,6 +51,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db/migrations"
 	"github.com/dsx-ai-factory/nvke/controller/internal/dbmetrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/internal/machinerelease"
 	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nvke/controller/internal/runbook"
@@ -123,24 +126,18 @@ func main() {
 
 	logger.Info("Loaded nke-controller-config", "path", cfg.ControllerConfigPath, "oidcProviders", len(controllerCfg.OIDC.Providers))
 
-	authenticator, err := auth.Setup(ctx, auth.Options{
+	authenticator, err := authn.Setup(ctx, authn.Options{
 		ConfigPath: cfg.AuthConfigPath,
 		Permissive: cfg.PermissiveMode,
 		Recorder:   metrics.RecordAuthRequest,
+		Config:     controllerCfg.APIAuth.AuthConfig(),
 	}, logger)
 	if err != nil {
 		logger.Error("Failed to set up API authentication", "error", err)
 		os.Exit(1)
 	}
 
-	switch {
-	case cfg.AuthConfigPath == "":
-		metrics.SetAuthMode("off")
-	case cfg.PermissiveMode:
-		metrics.SetAuthMode("permissive")
-	default:
-		metrics.SetAuthMode("enforcing")
-	}
+	metrics.SetAuthMode(authMode(authenticator, cfg.PermissiveMode))
 
 	// Get cloud-workflow-engine workload trust domain and bundle
 	trustDomain, err := getSpiffeTrustDomain(ctx, cfg, logger)
@@ -189,11 +186,16 @@ func main() {
 
 	dbMetricsLogger := logger.With("logger", "db-metrics")
 	dbMetricsCollector := dbmetrics.NewCollector(dbMetricsLogger, dbInstance)
+	credentialMetricsCollector := dbmetrics.NewCredentialCollector(dbMetricsLogger, dbInstance, cfg)
 	if err := prometheus.Register(dbMetricsCollector); err != nil {
 		logger.Error("Failed to register db metrics collector", "error", err)
 		os.Exit(1)
 	}
 
+	if err := prometheus.Register(credentialMetricsCollector); err != nil {
+		logger.Error("Failed to register credential metrics collector", "error", err)
+		os.Exit(1)
+	}
 	teleportCollector := metrics.NewTeleportCollector(
 		logger.With("logger", "teleport-metrics"), dbInstance,
 	)
@@ -205,6 +207,10 @@ func main() {
 	managementK8sClient, err := kube.NewRuntimeClient(spirev1alpha1.AddToScheme, nicov1.AddToScheme, enginev1.AddToScheme)
 	if err != nil {
 		logger.Error("Failed to create management-cluster Kubernetes client", "error", err)
+		os.Exit(1)
+	}
+	if err := machinerelease.CheckCRDs(ctx, managementK8sClient); err != nil {
+		logger.Error("Failed the release CRD startup check", "error", err)
 		os.Exit(1)
 	}
 
@@ -306,66 +312,88 @@ func main() {
 		"enableNicoControllers", cfg.NicoControllersEnabled,
 		"enableSpiffe", cfg.SpiffeEnabled,
 		"enableTenantAccess", cfg.TenantAccessEnabled)
-	// Watches Cluster API's Machine, and takes the manager down where Cluster
-	// API is not installed -- the same failure the NicoMachine watch below had.
+
+	// CAPI Machine CRD is required for nvke
 	machineCRDInstalled, err := capi.MachineCRDInstalled(k8sControllerManager.GetRESTMapper())
 	if err != nil {
 		logger.Error("Failed to look up the Machine CRD", "error", err)
 		os.Exit(1)
 	}
 	if !machineCRDInstalled {
-		logger.Warn("Cluster API Machine CRD not installed; skipping the machine SPIRE entry controller")
+		logger.Error("Required CAPI Machine CRD is not installed; install Cluster API before starting the NVKE controller")
+		os.Exit(1)
 	}
 
-	if machineCRDInstalled {
-		machineSpireEntryController := capi.NewMachineSpireEntryController(
-			cfg,
-			k8sControllerManager.GetClient(),
+	machineSpireEntryController := capi.NewMachineSpireEntryController(
+		cfg,
+		k8sControllerManager.GetClient(),
+		dbInstance,
+		logger.With("logger", "machine-spire-entry-controller"),
+		trustDomain,
+	)
+	if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
+		logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
+		os.Exit(1)
+	}
+
+	// Writes the SPIRE agent ID path MachineSpireEntryController consumes, so it
+	// is only useful alongside that controller. Gated on CAPLL's CRD rather than
+	// supportedInfraProviders: dropping launchLayer from that list stops new
+	// clusters, while existing clusters' new and replacement machines still need
+	// their agent path to join.
+	launchLayerCRDInstalled, err := capi.LaunchLayerMachineCRDInstalled(k8sControllerManager.GetRESTMapper())
+	if err != nil {
+		logger.Error("Failed to look up the LaunchLayerMachine CRD", "error", err)
+		os.Exit(1)
+	}
+	if launchLayerCRDInstalled {
+		launchLayerSpiffeController := capi.NewLaunchLayerSpiffeController(
 			dbInstance,
-			logger.With("logger", "machine-spire-entry-controller"),
-			trustDomain,
+			k8sControllerManager.GetClient(),
+			logger.With("logger", "launchlayer-spiffe-controller"),
 		)
-		if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
-			logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
+		if err := launchLayerSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up LaunchLayer SPIFFE controller", "error", err)
 			os.Exit(1)
 		}
+	} else {
+		logger.Info("LaunchLayerMachine CRD not installed; skipping the LaunchLayer SPIFFE controller")
 	}
 
-	if !cfg.NicoControllersEnabled {
-		logger.Info("NICo controllers disabled by configuration")
-	} else {
-		// Both controllers below watch NicoMachine, and either takes the manager
-		// down where CAPNICo is not installed. Read once: every deployment path
-		// installs the infrastructure providers before the NVKE controller.
+	if cfg.NicoControllersEnabled {
 		nicoCRDInstalled, err := capi.NicoMachineCRDInstalled(k8sControllerManager.GetRESTMapper())
 		if err != nil {
 			logger.Error("Failed to look up the NicoMachine CRD", "error", err)
 			os.Exit(1)
 		}
 		if !nicoCRDInstalled {
-			logger.Warn("NicoMachine CRD not installed; skipping the NICo controllers")
-		} else {
-			nicoSpiffeController := capi.NewNicoSpiffeController(
-				cfg,
-				dbInstance,
-				k8sControllerManager.GetClient(),
-				logger.With("logger", "nico-spiffe-controller"),
-			)
-			if err := nicoSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
-				logger.Error("Failed to set up nico SPIFFE controller", "error", err)
-				os.Exit(1)
-			}
-
-			nicoProviderIDController := capi.NewNicoProviderIDController(
-				k8sControllerManager.GetClient(),
-				tenantClientProvider,
-				logger.With("logger", "nico-provider-id-controller"),
-			)
-			if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
-				logger.Error("Failed to set up nico provider ID controller", "error", err)
-				os.Exit(1)
-			}
+			logger.Error("Required NicoMachine CRD is not installed while NICo controllers are enabled; install CAPNICo first, or set controllers.nico.enabled=false")
+			os.Exit(1)
 		}
+
+		nicoSpiffeController := capi.NewNicoSpiffeController(
+			cfg,
+			dbInstance,
+			k8sControllerManager.GetClient(),
+			logger.With("logger", "nico-spiffe-controller"),
+		)
+		if err := nicoSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up nico SPIFFE controller", "error", err)
+			os.Exit(1)
+		}
+
+		nicoProviderIDController := capi.NewNicoProviderIDController(
+			k8sControllerManager.GetClient(),
+			tenantClientProvider,
+			logger.With("logger", "nico-provider-id-controller"),
+			cfg.ManagedByLabelValue,
+		)
+		if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up nico provider ID controller", "error", err)
+			os.Exit(1)
+		}
+	} else {
+		logger.Info("NICo controllers disabled by configuration")
 	}
 
 	var teleportClient teleport.Client
@@ -416,6 +444,9 @@ func main() {
 
 	tenantRegistrars := []tenant.Registrar{
 		csr.NewRegistrar(dbInstance, logger.With("logger", "tenant-csr-controller")),
+	}
+	if cfg.CredentialMonitoringEnabled {
+		tenantRegistrars = append(tenantRegistrars, csr.NewObserverRegistrar(dbInstance, logger.With("logger", "tenant-csr-observer")))
 	}
 	if !cfg.NodeHealthCheckDisabled {
 		tenantRegistrars = append(tenantRegistrars,
@@ -511,6 +542,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	if cfg.CredentialMonitoringEnabled {
+		if err := certificates.NewController(cfg, dbInstance, nodeAgentClient).SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to setup certificate inspection controller", "error", err)
+			os.Exit(1)
+		}
+	}
 	if cfg.CertRenewalControllerEnabled {
 		certRenewalController := certrenewal.NewController(
 			cfg,
@@ -535,6 +572,7 @@ func main() {
 		managementK8sClient,
 		server.WithFleetOIDC(&controllerCfg.OIDC),
 		server.WithAllowLegacyCalicoClusterCreation(controllerCfg.AllowLegacyCalicoClusterCreation),
+		server.WithNodeAgentClient(nodeAgentClient),
 	)
 	if err != nil {
 		logger.Error("Failed to construct HTTP server", "error", err)
@@ -656,6 +694,19 @@ func main() {
 	if err := g.Wait(); err != nil {
 		logger.Error("Service error occurred", "error", err)
 		os.Exit(1)
+	}
+}
+
+// authMode is the nvke_auth_enabled mode label. Setup builds no
+// authenticator exactly when authentication is off.
+func authMode(authenticator *authn.Authenticator, permissive bool) string {
+	switch {
+	case authenticator == nil:
+		return "off"
+	case permissive:
+		return "permissive"
+	default:
+		return "enforcing"
 	}
 }
 

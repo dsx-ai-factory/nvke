@@ -1,12 +1,12 @@
 dependencies:
 - name: opentelemetry-kube-stack
   repository: https://open-telemetry.github.io/opentelemetry-helm-charts
-  version: 0.22.0
+  version: 0.25.1
 - name: prometheus-node-exporter
   repository: https://prometheus-community.github.io/helm-charts
   version: 4.56.1
 - name: metrics-server
   repository: https://kubernetes-sigs.github.io/metrics-server/
   version: 3.13.1
-digest: sha256:7e4292c8c8bb36f85e0f4dff3aeedfb2502b9200f6fab321d0a8689cf0faa400
-generated: "2026-09-18T16:15:33.784369+05:30"
+digest: sha256:3fff0996e43fdc0b34044e3ef09c34878f1ddb885ca199ba72c9f2c2a3beb981
+generated: "2026-10-21T10:33:05.556767483-07:00"

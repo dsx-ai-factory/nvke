@@ -5,7 +5,8 @@
 // release, accepts each setting under the name it had while the binary was
 // called nkectl: NVKECTL_X is read first, then NKECTL_X. The command that
 // reads a setting under its previous name warns once, naming the replacement,
-// so the old names can be dropped in the release after this one.
+// so the old names can be dropped in the release after this one. A setting
+// named NVKECTL_NVKE_* was added after the rename and has no previous name.
 package envalias
 
 import (
@@ -18,13 +19,14 @@ const (
 	prefix     = "NVKECTL_"
 	oldPrefix  = "NKECTL_"
 	prefixLen  = len(prefix)
+	newPrefix  = "NVKECTL_NVKE_" // settings added after the rename
 	deprecated = " is deprecated and will be removed in a future release; set "
 )
 
 // Old returns the name a setting had before the rename, or "" when the name
-// does not carry the prefix the rename changed.
+// does not carry the prefix the rename changed or the setting is NVKECTL_NVKE_*.
 func Old(name string) string {
-	if !strings.HasPrefix(name, prefix) {
+	if !strings.HasPrefix(name, prefix) || strings.HasPrefix(name, newPrefix) {
 		return ""
 	}
 	return oldPrefix + name[prefixLen:]

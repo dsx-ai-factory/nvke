@@ -18,8 +18,9 @@ import (
 )
 
 type nodeService struct {
-	logger *slog.Logger
-	db     db.DB
+	logger                      *slog.Logger
+	db                          db.DB
+	allowControlPlaneWithoutVIP bool
 }
 
 func NewNodeService(logger *slog.Logger, database db.DB) *nodeService {
@@ -95,6 +96,7 @@ func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestO
 			nodes.WithAllowCPNode(true),
 			nodes.WithMachineHealthIssue(machineHealthIssue),
 			nodes.WithForceUnreachable(forceUnreachable),
+			nodes.WithAllowControlPlaneWithoutVIP(s.allowControlPlaneWithoutVIP),
 		)
 	})
 	if err != nil {
@@ -107,6 +109,9 @@ func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestO
 		var quorumFloor *nodes.ControlPlaneQuorumFloorError
 		if errors.As(err, &quorumFloor) {
 			return api.DeleteNode400JSONResponse{Message: quorumFloor.Error()}, nil
+		}
+		if errors.Is(err, db.ErrControlPlaneMutationBlocked) {
+			return api.DeleteNode409JSONResponse{Message: err.Error()}, nil
 		}
 		if errors.Is(err, nodes.ErrLastJoinedControlPlaneNode) {
 			return api.DeleteNode400JSONResponse{Message: err.Error()}, nil
@@ -164,8 +169,25 @@ func apiNodeFromDB(dbNode *db.Node) api.Node {
 		Name:         dbNode.Name,
 		IP:           dbNode.IP,
 		Nico:         apiNicoNodeProviderFromDB(dbNode.Nico),
+		LaunchLayer:  apiLaunchLayerNodeProviderFromDB(dbNode.LaunchLayer),
 		ControlPlane: dbNode.ControlPlane,
 		Conditions:   nodeConditions,
+	}
+}
+
+func apiLaunchLayerNodeProviderFromDB(provider *db.LaunchLayerNodeProvider) *api.LaunchLayerNodeProvider {
+	if provider == nil {
+		return nil
+	}
+	// An all-zero payload means the node is not LaunchLayer-backed (or not yet
+	// stamped) — matches the Nico equivalent's behavior.
+	if provider.InstanceID == "" && provider.MachineID == "" && provider.RackID == "" {
+		return nil
+	}
+	return &api.LaunchLayerNodeProvider{
+		InstanceID: provider.InstanceID,
+		MachineID:  provider.MachineID,
+		RackID:     provider.RackID,
 	}
 }
 

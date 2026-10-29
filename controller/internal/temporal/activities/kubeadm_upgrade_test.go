@@ -40,6 +40,7 @@ func TestKubeadmUpgradeApplyPrefersHealthyJoinedControlPlaneNode(t *testing.T) {
 			TargetVersion: "v1.34.2",
 		},
 	}
+	mockUpgradeAdmission(mockDB, healthyNode, 2)
 	a := &Activities{db: mockDB, nodeAgentClient: fakeAgent}
 
 	result, err := executeKubeadmUpgradeApplyActivity(t, a, KubeadmUpgradeApplyInput{
@@ -67,6 +68,7 @@ func TestKubeadmUpgradeApplyFallsBackToJoinedControlPlaneNode(t *testing.T) {
 			Outcome: nvkeproto.KubeadmUpgradeApplyResponse_OUTCOME_APPLIED,
 		},
 	}
+	mockUpgradeAdmission(mockDB, joinedNode, 2)
 	a := &Activities{db: mockDB, nodeAgentClient: fakeAgent}
 
 	result, err := executeKubeadmUpgradeApplyActivity(t, a, KubeadmUpgradeApplyInput{
@@ -98,6 +100,7 @@ func TestKubeadmUpgradeApplyFallsBackToLegacyRunbookWhenRPCIsUnimplemented(t *te
 			return &nvkeproto.ExecuteScriptResponse{Output: "legacy upgrade output\n"}, nil
 		},
 	}
+	mockUpgradeAdmission(mockDB, controlPlaneNode, 2)
 	a := &Activities{db: mockDB, nodeAgentClient: fakeAgent}
 
 	result, err := executeKubeadmUpgradeApplyActivity(t, a, KubeadmUpgradeApplyInput{
@@ -122,6 +125,7 @@ func TestKubeadmUpgradeApplyDoesNotFallBackForSupportedRPCFailure(t *testing.T) 
 	fakeAgent := &agenttest.FakeClient{
 		KubeadmUpgradeApplyError: status.Error(codes.Internal, "upgrade failed"),
 	}
+	mockUpgradeAdmission(mockDB, controlPlaneNode, 1)
 	a := &Activities{db: mockDB, nodeAgentClient: fakeAgent}
 
 	_, err := executeKubeadmUpgradeApplyActivity(t, a, KubeadmUpgradeApplyInput{
@@ -173,6 +177,9 @@ func TestKubeadmUpgradeApplyReportsSelectionAndAgentFailures(t *testing.T) {
 				KubeadmUpgradeApplyResponse: test.response,
 				KubeadmUpgradeApplyError:    test.agentError,
 			}
+			if test.nodes[0].Conditions.Joined.Status == db.ConditionStatusTrue {
+				mockUpgradeAdmission(mockDB, test.nodes[0], 1)
+			}
 			a := &Activities{db: mockDB, nodeAgentClient: fakeAgent}
 
 			_, err := executeKubeadmUpgradeApplyActivity(t, a, KubeadmUpgradeApplyInput{
@@ -220,4 +227,14 @@ func executeKubeadmUpgradeApplyActivity(
 		return KubeadmUpgradeApplyResult{}, err
 	}
 	return result, nil
+}
+
+func mockUpgradeAdmission(store *testutil.MockDB, node db.Node, calls int) {
+	store.MockTx = &testutil.MockTx{}
+	store.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Times(calls)
+	store.MockTx.On("GetClusterForUpdate", mock.Anything, node.ClusterID).Return(db.Cluster{ID: node.ClusterID}, nil).Times(calls)
+	store.MockTx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil).Times(calls)
+	store.MockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(updated *db.Node) bool {
+		return updated.ID == node.ID
+	})).Return(node, nil).Times(calls)
 }

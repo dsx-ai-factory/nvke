@@ -41,6 +41,9 @@ on:
       - os-image/packages/cni-common/**
       - .github/workflows/local-entrypoint-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml
+      - hack/e2e-path-filter.py
+      # Installs the pinned kind and kubectl the suite runs on.
+      - .github/actions/setup-kind/**
   # Also twice a day, so a break the paths above filtered out, or one a flake
   # hid, still surfaces within twelve hours. A schedule ignores those paths, so
   # these runs always exercise the whole suite.
@@ -61,6 +64,7 @@ jobs:
   changes:
     uses: ./.github/workflows/e2e-pr-path-filter.yml
     permissions:
+      contents: read
       pull-requests: read
 
   local-entrypoint:

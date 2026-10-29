@@ -86,3 +86,40 @@ func TestGetNodeAgentUpgradeStatusReturnsEmptyResponseWithoutAnUpgrade(t *testin
 	require.NotNil(t, response)
 	require.Nil(t, response.GetOperation())
 }
+
+func TestStartNodeAgentUpgradePersistsPrereleaseTarget(t *testing.T) {
+	store := agentupgrade.NewStore(t.TempDir())
+	launcher := &recordingAgentUpgradeLauncher{}
+	server := &NodeAgentServer{
+		NodeStatus:           &NodeStatus{AgentVersion: "v0.3.0-rc.1"},
+		AgentUpgradeStore:    store,
+		AgentUpgradeLauncher: launcher,
+	}
+	response, err := server.StartNodeAgentUpgrade(t.Context(), &pb.StartNodeAgentUpgradeRequest{
+		TargetVersion: "v0.3.0-rc.2",
+		Method:        pb.NodeAgentUpgradeMethod_NODE_AGENT_UPGRADE_METHOD_APT,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "v0.3.0-rc.2", response.GetOperation().GetTargetVersion())
+	require.Equal(t, []string{"v0.3.0-rc.2_apt"}, launcher.requests)
+	persisted, err := store.Load(launcher.requests[0])
+	require.NoError(t, err)
+	require.Equal(t, "v0.3.0-rc.2", persisted.TargetVersion)
+	require.Equal(t, "v0.3.0-rc.1", persisted.PreviousVersion)
+}
+
+func TestParseCanonicalAgentVersion(t *testing.T) {
+	for _, value := range []string{"v1.2.3", "v0.3.0-rc.2", "v1.2.3-0", "v1.2.3-alpha-beta.1"} {
+		t.Run(value, func(t *testing.T) {
+			version, err := parseCanonicalAgentVersion(value)
+			require.NoError(t, err)
+			require.Equal(t, value, "v"+version.String())
+		})
+	}
+	for _, value := range []string{"", "latest", "1.2.3", "v1.2", "v01.2.3", "v1.2.3-rc.01", "v1.2.3-rc..1", "v1.2.3-", "v1.2.3+build", "v1.2.3-rc.1+build", "v1.2.3-rc/1", " v1.2.3"} {
+		t.Run(value, func(t *testing.T) {
+			_, err := parseCanonicalAgentVersion(value)
+			require.Error(t, err)
+		})
+	}
+}

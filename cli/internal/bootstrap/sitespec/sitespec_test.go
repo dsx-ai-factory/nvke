@@ -12,6 +12,9 @@ import (
 	"testing"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
@@ -257,12 +260,13 @@ func TestValidateInvalidInputs(t *testing.T) {
 }
 
 func validOIDCProvider() OIDCProvider {
+	usernamePrefix := "corp:"
 	return OIDCProvider{
 		Name:           "corp",
 		IssuerURL:      "https://login.example.com",
 		Audiences:      []string{"nvke"},
 		UsernameClaim:  "email",
-		UsernamePrefix: "corp:",
+		UsernamePrefix: &usernamePrefix,
 		CABundle: `-----BEGIN CERTIFICATE-----
 MIIDCTCCAfGgAwIBAgIUfGXirJ1/KK2sS+M1ktcL2jKHJOcwDQYJKoZIhvcNAQEL
 BQAwFDESMBAGA1UEAwwJb2lkYy10ZXN0MB4XDTI2MTAxMzE5NDA0NloXDTM2MTAx
@@ -310,6 +314,144 @@ func TestValidate_OIDCProviders(t *testing.T) {
 	withProviders.Cluster.OIDCProviders = []OIDCProvider{validOIDCProvider()}
 	if err := withProviders.Validate(); err != nil {
 		t.Fatalf("Validate rejected oidc providers on 1.34.0: %v", err)
+	}
+}
+
+// TestLoadOIDCUsernamePrefix verifies prefixes must be explicit and reserved namespaces remain protected.
+func TestLoadOIDCUsernamePrefix(t *testing.T) {
+	tests := []struct {
+		name           string
+		usernamePrefix string
+		groupsPrefix   string
+		omitPrefix     bool
+		nullPrefix     bool
+		wantErr        string
+	}{
+		{name: "explicit empty prefix"},
+		{name: "omitted prefix", omitPrefix: true, wantErr: "usernamePrefix is required"},
+		{name: "null prefix", nullPrefix: true, wantErr: "usernamePrefix is required"},
+		{name: "nonempty prefix", usernamePrefix: "corp:"},
+		{name: "reserved username prefix", usernamePrefix: "system:", wantErr: "reserved"},
+		{name: "reserved group prefix", groupsPrefix: "system:", wantErr: "reserved"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := validOIDCProvider()
+			provider.UsernamePrefix = &tt.usernamePrefix
+			provider.GroupsPrefix = tt.groupsPrefix
+			input := minimalValid()
+			input.Cluster.K8sVersion = "1.34.0"
+			input.Cluster.OIDCProviders = []OIDCProvider{provider}
+			body, err := yaml.Marshal(input)
+			require.NoError(t, err)
+			text := string(body)
+			if tt.omitPrefix {
+				require.Contains(t, text, `usernamePrefix: ""`)
+				text = strings.Replace(text, `usernamePrefix: ""`, "", 1)
+			}
+			if tt.nullPrefix {
+				require.Contains(t, text, `usernamePrefix: ""`)
+				text = strings.Replace(text, `usernamePrefix: ""`, "usernamePrefix: null", 1)
+			}
+			inv, err := Load(writeTemp(t, text))
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, "cluster.oidcProviders[0]")
+				assert.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, inv.Cluster.OIDCProviders, 1)
+			require.NotNil(t, inv.Cluster.OIDCProviders[0].UsernamePrefix)
+			assert.Equal(t, tt.usernamePrefix, *inv.Cluster.OIDCProviders[0].UsernamePrefix)
+		})
+	}
+}
+
+// TestLoadOIDCDiscoveryURL verifies accepted overrides survive loading and invalid URLs fail validation.
+func TestLoadOIDCDiscoveryURL(t *testing.T) {
+	const discoveryURL = "https://identity.example.com/.well-known/openid-configuration"
+	tests := []struct {
+		name         string
+		discoveryURL string
+		wantErr      string
+	}{
+		{name: "omitted"},
+		{name: "separate discovery host", discoveryURL: discoveryURL},
+		{name: "same issuer host with full discovery path", discoveryURL: "https://login.example.com/.well-known/openid-configuration"},
+		{name: "minimum port", discoveryURL: "https://identity.example.com:1/discovery"},
+		{name: "maximum port", discoveryURL: "https://identity.example.com:65535/discovery"},
+		{name: "IPv6 with port", discoveryURL: "https://[2001:db8::1]:443/discovery"},
+		{name: "zero port", discoveryURL: "https://identity.example.com:0/discovery", wantErr: "must be between 1 and 65535"},
+		{name: "port too large", discoveryURL: "https://identity.example.com:65536/discovery", wantErr: "must be between 1 and 65535"},
+		{name: "port overflows integer", discoveryURL: "https://identity.example.com:999999999999999999999999999999/discovery", wantErr: "must be between 1 and 65535"},
+		{name: "http", discoveryURL: "http://identity.example.com/discovery", wantErr: "must be an absolute https URL"},
+		{name: "relative URL", discoveryURL: "/.well-known/openid-configuration", wantErr: "must be an absolute https URL"},
+		{name: "missing hostname", discoveryURL: "https://:443/discovery", wantErr: "must be an absolute https URL"},
+		{name: "malformed URL", discoveryURL: "https://identity.example.com/%zz", wantErr: "is not a URL"},
+		{name: "credentials", discoveryURL: "https://example-user:example-password@identity.example.com/discovery", wantErr: "must not contain a username or password"},
+		{name: "query", discoveryURL: discoveryURL + "?tenant=a", wantErr: "must not contain a query or fragment"},
+		{name: "fragment", discoveryURL: discoveryURL + "#fragment", wantErr: "must not contain a query or fragment"},
+		{name: "issuer URL", discoveryURL: "https://login.example.com", wantErr: "must differ from issuerURL"},
+		{name: "issuer URL with trailing slash", discoveryURL: "https://login.example.com/", wantErr: "must differ from issuerURL"},
+		{name: "leading whitespace", discoveryURL: " " + discoveryURL, wantErr: "leading or trailing whitespace"},
+		{name: "trailing whitespace", discoveryURL: discoveryURL + " ", wantErr: "leading or trailing whitespace"},
+		{name: "whitespace only", discoveryURL: " ", wantErr: "leading or trailing whitespace"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := validOIDCProvider()
+			provider.DiscoveryURL = tt.discoveryURL
+			input := minimalValid()
+			input.Cluster.K8sVersion = "1.34.0"
+			input.Cluster.OIDCProviders = []OIDCProvider{provider}
+			body, err := yaml.Marshal(input)
+			require.NoError(t, err)
+			inv, err := Load(writeTemp(t, string(body)))
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, "cluster.oidcProviders[0].discoveryURL")
+				assert.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, inv.Cluster.OIDCProviders, 1)
+			assert.Equal(t, provider.IssuerURL, inv.Cluster.OIDCProviders[0].IssuerURL)
+			assert.Equal(t, tt.discoveryURL, inv.Cluster.OIDCProviders[0].DiscoveryURL)
+		})
+	}
+}
+
+// TestValidateOIDCDuplicateDiscoveryURLs verifies only nonempty discovery overrides must be unique.
+func TestValidateOIDCDuplicateDiscoveryURLs(t *testing.T) {
+	const discoveryURL = "https://identity.example.com/.well-known/openid-configuration"
+	tests := []struct {
+		name      string
+		firstURL  string
+		secondURL string
+		wantErr   bool
+	}{
+		{name: "duplicate override", firstURL: discoveryURL, secondURL: discoveryURL, wantErr: true},
+		{name: "distinct overrides", firstURL: discoveryURL, secondURL: "https://other.example.com/discovery"},
+		{name: "both omitted"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := validOIDCProvider()
+			provider.DiscoveryURL = tt.firstURL
+			other := provider
+			other.Name = "other"
+			other.IssuerURL = "https://other.example.com"
+			other.DiscoveryURL = tt.secondURL
+			inv := minimalValid()
+			inv.Cluster.K8sVersion = "1.34.0"
+			inv.Cluster.OIDCProviders = []OIDCProvider{provider, other}
+			err := inv.Validate()
+			if tt.wantErr {
+				require.ErrorContains(t, err, "cluster.oidcProviders[1].discoveryURL")
+				assert.ErrorContains(t, err, "already used by cluster.oidcProviders[0]")
+				return
+			}
+			require.NoError(t, err)
+		})
 	}
 }
 
@@ -1344,32 +1486,6 @@ func TestNicoExampleLoads(t *testing.T) {
 	}
 }
 
-// TestNicoVIPWarning: only a nico site spec without cluster.controlPlaneVIP is
-// warned about, since its stack install is refused and the VIP cannot be added
-// once the site cluster exists.
-func TestNicoVIPWarning(t *testing.T) {
-	tests := []struct {
-		name string
-		spec SiteSpec
-		want bool
-	}{
-		{name: "provisioned without a VIP", spec: SiteSpec{}},
-		{name: "nico with a VIP", spec: SiteSpec{Infra: Infra{Provider: ProviderNico}, Cluster: Cluster{ControlPlaneVIP: "10.0.0.100"}}},
-		{name: "nico without a VIP", spec: SiteSpec{Infra: Infra{Provider: ProviderNico}}, want: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := tt.spec.NicoVIPWarning()
-			if tt.want != (got != "") {
-				t.Fatalf("NicoVIPWarning() = %q, want a warning: %v", got, tt.want)
-			}
-			if tt.want && (!strings.Contains(got, pathControlPlaneVIP) || !strings.Contains(got, "cannot be added once the site cluster exists")) {
-				t.Errorf("NicoVIPWarning() = %q; want it to name %s and say it cannot be added later", got, pathControlPlaneVIP)
-			}
-		})
-	}
-}
-
 // TestCheckBootstrapMode: the SPIRE address CAPNICo nodes read from userdata is
 // required with mTLS and unused without it.
 func TestCheckBootstrapMode(t *testing.T) {
@@ -1418,7 +1534,8 @@ func TestValidate_NicoControlPlaneVIP(t *testing.T) {
 	}{
 		{"three nodes without a VIP", 3, "", true},
 		{"three nodes with a VIP", 3, "10.0.0.100", false},
-		{"one node without a VIP", 1, "", false},
+		{"one node without a VIP", 1, "", true},
+		{"one node with a VIP", 1, "10.0.0.100", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inv := minimalValid()
@@ -1734,16 +1851,16 @@ func TestNodeLoginFromEnv(t *testing.T) {
 	}
 }
 
-// TestControllerEndpoint_NicoNeedsTheVIP: one nico node without a VIP
-// bootstraps, but the stack install has no address for the controller, and
-// says so for nico instead of claiming the spec has several nodes.
+// TestControllerEndpoint_NicoNeedsTheVIP: one nico node without a VIP fails
+// validation, and the controller endpoint says so for nico instead of claiming
+// the spec has several nodes.
 func TestControllerEndpoint_NicoNeedsTheVIP(t *testing.T) {
 	spec := baseSpec(t)
 	makeNico(spec)
 	spec.Infra.Nico.ControlPlane.Count = 1
 	spec.Cluster.ControlPlaneVIP = ""
-	if err := spec.Validate(); err != nil {
-		t.Fatalf("one nico node without a VIP must validate for the bootstrap: %v", err)
+	if err := spec.Validate(); err == nil || !strings.Contains(err.Error(), "cluster.controlPlaneVIP is required") {
+		t.Fatalf("Validate = %v, want cluster.controlPlaneVIP is required for one nico node", err)
 	}
 	if _, err := spec.ControllerEndpoint(); err == nil || !strings.Contains(err.Error(), "cluster.controlPlaneVIP") || strings.Contains(err.Error(), "several nodes") {
 		t.Errorf("ControllerEndpoint error = %v, want one naming cluster.controlPlaneVIP for nico", err)
@@ -1751,5 +1868,57 @@ func TestControllerEndpoint_NicoNeedsTheVIP(t *testing.T) {
 	spec.Cluster.ControlPlaneVIP = "10.0.0.5"
 	if ep, err := spec.ControllerEndpoint(); err != nil || ep != "10.0.0.5" {
 		t.Errorf("endpoint with a VIP: %q %v", ep, err)
+	}
+}
+
+func TestLoadControlPlaneVIPOverride(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		allow     bool
+		vip       string
+		wantError string
+	}{
+		{name: "default refuses missing VIP", wantError: "controlPlaneVIP"},
+		{name: "explicit false refuses missing VIP", wantError: "controlPlaneVIP"},
+		{name: "override permits missing VIP", allow: true},
+		{name: "override validates malformed VIP", allow: true, vip: "invalid", wantError: "not a valid IP"},
+		{name: "override validates CIDR overlap", allow: true, vip: "10.100.0.10", wantError: "inside"},
+		{name: "override validates loopback VIP", allow: true, vip: "127.0.0.1", wantError: "routable unicast"},
+		{name: "override validates IPv6 VIP", allow: true, vip: "2001:db8::1", wantError: "IPv4"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := strings.Replace(validYAML, `controlPlaneVIP: "10.0.0.100"`, `controlPlaneVIP: "`+tc.vip+`"`, 1)
+			path := filepath.Join(t.TempDir(), "sitespec.yaml")
+			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			spec, err := Load(path, WithAllowControlPlaneWithoutVIP(tc.allow))
+			if tc.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+					t.Fatalf("Load error = %v, want %q", err, tc.wantError)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			} else if spec.Cluster.ControlPlaneVIP != "" {
+				t.Fatalf("override filled in a VIP: %q", spec.Cluster.ControlPlaneVIP)
+			}
+			if tc.allow && tc.vip == "" {
+				if _, err := Load(path); err == nil {
+					t.Fatal("an override load changed later default validation")
+				}
+			}
+		})
+	}
+}
+
+func TestLoadNicoControlPlaneVIPOverride(t *testing.T) {
+	body := strings.Replace(nicoYAML, "  controlPlaneVIP: \"10.0.0.100\"\n", "", 1)
+	path := writeNicoTemp(t, body)
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "controlPlaneVIP") {
+		t.Fatalf("default NICo validation = %v, want a VIP requirement", err)
+	}
+	// A nico site always needs its VIP, so the dev override does not lift it.
+	if _, err := Load(path, WithAllowControlPlaneWithoutVIP(true)); err == nil || !strings.Contains(err.Error(), "controlPlaneVIP") {
+		t.Fatalf("NICo validation with the override = %v, want a VIP requirement", err)
 	}
 }

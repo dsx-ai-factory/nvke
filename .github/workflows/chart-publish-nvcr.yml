@@ -17,7 +17,7 @@ name: Chart Publish NVCR
 #
 # The chart is pushed to nvcr.io/<destination>/nvke-controller-chart, so the
 # chart is REPACKAGED under the name nvke-controller-chart below. On GHCR the
-# same chart publishes as charts/nke-controller; the NVCR and GHCR paths
+# same chart publishes as charts/nvke-controller; the NVCR and GHCR paths
 # deliberately differ.
 #
 # NVCR cannot take the `charts/` path segment GHCR uses. An NGC reference is
@@ -163,7 +163,7 @@ jobs:
           # helm push takes the destination's last path segment from `name:` in
           # Chart.yaml, not from the push argument. Keep this explicit so image
           # and chart repositories do not accidentally collide in NVCR.
-          sed -i -e "s#^name: nke-controller\$#name: ${CHART_NAME}#" \
+          sed -i -e "s#^name: nvke-controller\$#name: ${CHART_NAME}#" \
             "${CHART}/Chart.yaml"
           grep -q "^name: ${CHART_NAME}\$" "${CHART}/Chart.yaml" \
             || { echo "::error::chart rename did not apply"; exit 1; }
@@ -222,7 +222,7 @@ jobs:
       # looks for it. `$oauthtoken` is NGC's literal username.
       - name: Log in to NVCR for crane
         if: env.SKIP_PUBLISH != 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: nvcr.io
           username: "$oauthtoken"

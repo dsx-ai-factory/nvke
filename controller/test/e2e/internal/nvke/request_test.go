@@ -429,7 +429,7 @@ func TestBuildNicoNodePoolInterfaces(t *testing.T) {
 			subnets: []string{subnetA, subnetB},
 			want:    []map[string]any{{"subnetID": subnetA}, {"subnetID": subnetB}},
 		},
-		// ytl: the pool names a prefix and no subnet, which is what failed as
+		// site-2: the pool names a prefix and no subnet, which is what failed as
 		// "at least one subnet ID is required" before the builder knew prefixes.
 		"VPC prefix fabric": {
 			vpcPrefixes: []string{prefix},

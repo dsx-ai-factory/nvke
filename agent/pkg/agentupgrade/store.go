@@ -17,7 +17,7 @@ import (
 const operationFileName = "operation.json"
 
 var (
-	requestKeyPattern = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)_(apt|bundle)$`)
+	requestKeyPattern = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?_(apt|bundle)$`)
 
 	// ErrOperationActive means another non-terminal node-agent operation owns the node.
 	ErrOperationActive = errors.New("another node-agent upgrade operation is active")

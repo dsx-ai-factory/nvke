@@ -72,7 +72,7 @@ func TestControllerValuesNameEveryObject(t *testing.T) {
 // TestNodePortAndSPIRENameTheController pins the two other manifests that carry
 // the name. The external Service has to select the controller's pods, and the
 // SPIRE namespace selectors have to keep the controller's namespace out of the
-// default identity and issue it the nke-service one; a typo in any of them
+// default identity and issue it the nvke-service one; a typo in any of them
 // installs cleanly and fails later.
 func TestNodePortAndSPIRENameTheController(t *testing.T) {
 	path, cleanup, err := writeEmbeddedTemplate(cweNodePortFile, struct{ Port int32 }{DefaultCWEPort})
@@ -130,7 +130,7 @@ func TestNodePortAndSPIRENameTheController(t *testing.T) {
 		t.Fatalf("%s: %v", spireValuesFile, err)
 	}
 	ids := values.SPIREServer.ControllerManager.Identities.ClusterSPIFFEIDs
-	for id, operator := range map[string]string{"default": "NotIn", "nke-service": "In"} {
+	for id, operator := range map[string]string{"default": "NotIn", "nvke-service": "In"} {
 		exprs := ids[id].NamespaceSelector.MatchExpressions
 		if len(exprs) != 1 || exprs[0].Key != "kubernetes.io/metadata.name" || exprs[0].Operator != operator ||
 			len(exprs[0].Values) != 1 || exprs[0].Values[0] != cweNamespace {

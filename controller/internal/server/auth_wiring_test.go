@@ -4,7 +4,7 @@
 package server_test
 
 // Where authentication sits in the chain, tested through the real NewServer.
-// internal/auth's own tests drive a bare handler and prove nothing about the
+// auth/authn's own tests drive a bare handler and prove nothing about the
 // wiring. Routes are driven rather than read, because http.ServeMux is not
 // enumerable and the generated router types BaseRouter as a concrete
 // *http.ServeMux.
@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -26,8 +27,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	auth "github.com/dsx-ai-factory/nvke/auth/authn"
+
 	"github.com/dsx-ai-factory/nvke/controller/api"
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/server"
@@ -137,7 +139,7 @@ func newPermissiveTestServer(t *testing.T) (http.Handler, *decisions) {
 }
 
 // Permissive serves the request and records what enforcing would have refused.
-// internal/auth proves the middleware does this; only the real chain shows that
+// auth/authn proves the middleware does this; only the real chain shows that
 // a permissive Authenticator hands the request on to the mux instead of
 // answering it.
 func TestPermissiveServerServesUnauthenticatedRequests(t *testing.T) {
@@ -245,6 +247,24 @@ func TestEnforcingServerAuthenticatesBeforeValidating(t *testing.T) {
 		"an unauthenticated request must be 401 even when its body would also fail validation")
 }
 
+// The authN library writes its own error body so its module doesn't depend on
+// controller/api. This holds it to the API's GenericError: an unknown field or a
+// missing message fails the decode.
+func TestAuthenticationErrorBodyIsAGenericError(t *testing.T) {
+	handler := newEnforcingTestServer(t)
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/clusters", http.NoBody))
+	require.Equal(t, http.StatusUnauthorized, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	dec := json.NewDecoder(rr.Body)
+	dec.DisallowUnknownFields()
+	var body api.GenericError
+	require.NoError(t, dec.Decode(&body))
+	assert.NotEmpty(t, body.Message)
+}
+
 // The chain order, through the real NewServer, with authentication disabled --
 // which is every deployment today. Wiring authentication in reordered the two
 // middlewares that were already there, and this is the one behavior that
@@ -252,11 +272,11 @@ func TestEnforcingServerAuthenticatesBeforeValidating(t *testing.T) {
 //
 // managed-by used to wrap logging, so it answered 409 before logging ever ran.
 // It is now inside logging, so the same 409 produces the usual request/response
-// pair. Asserted here because the ordering is invisible to internal/auth's own
+// pair. Asserted here because the ordering is invisible to auth/authn's own
 // tests and to middleware_test.go, which drives managedByMiddleware directly.
 func TestDisabledServerLogsTheManagedByRejection(t *testing.T) {
 	var logged bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logger := slog.New(slog.NewJSONHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	cfg := config.Config{
 		ManagedByK8sPlatform: true,
@@ -275,9 +295,23 @@ func TestDisabledServerLogsTheManagedByRejection(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, rr.Code,
 		"a mutating request with no managed-by header is still rejected when authentication is off")
 
-	out := logged.String()
-	assert.Contains(t, out, "Incoming request",
+	var incoming, completed map[string]any
+	for _, line := range bytes.Split(logged.Bytes(), []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		var record map[string]any
+		require.NoError(t, json.Unmarshal(line, &record))
+		switch record["msg"] {
+		case "Incoming request":
+			incoming = record
+		case "Request completed":
+			completed = record
+		}
+	}
+	require.NotNil(t, incoming,
 		"logging now wraps managed-by, so the rejected request is logged on the way in")
-	assert.Contains(t, out, "Request completed",
+	require.NotNil(t, completed,
 		"and on the way out; before this change managed-by answered before logging ran")
+	require.Equal(t, "managed_by_header_required", completed["reason"])
 }

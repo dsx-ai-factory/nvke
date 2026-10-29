@@ -37,6 +37,14 @@ func toSDKInstance(row state.Instance) nicosdk.Instance {
 	groupIDs, _ := row.SSHKeyGroupIDs()
 	instance.SetSshKeyGroupIds(groupIDs)
 	instance.SetStatus(nicosdk.InstanceStatus(instanceStatus(row.Status)))
+	if row.VM != nil && row.VM.ObservedState == state.ObservedStateError && row.VM.ErrorReason != "" {
+		detail := nicosdk.NewStatusDetail()
+		detail.SetStatus("Error")
+		detail.SetMessage(row.VM.ErrorReason)
+		detail.SetCreated(row.UpdatedAt)
+		detail.SetUpdated(row.UpdatedAt)
+		instance.SetStatusHistory([]nicosdk.StatusDetail{*detail})
+	}
 	instance.SetPhoneHomeEnabled(row.PhoneHomeEnabled)
 	if row.TpmEkCertificate != "" {
 		instance.SetTpmEkCertificate(row.TpmEkCertificate)
@@ -212,7 +220,7 @@ func instanceStatus(dbStatus string) string {
 	case "deleting":
 		return "Terminating" // SDK uses "Terminating", not "Deleting"
 	case "stopped", "suspended":
-		return "Error" // Forge SDK has no stopped/suspended; detail in ErrorReason
+		return "Error" // Forge SDK has no stopped/suspended status
 	default:
 		return titleCase(dbStatus)
 	}

@@ -74,3 +74,61 @@ func TestTeleportConfig_NodePoolTeleportDefault(t *testing.T) {
 		})
 	}
 }
+
+func TestTeleportConfig_OwnershipManagedByValues(t *testing.T) {
+	tests := []struct {
+		name     string
+		written  string
+		accepted []string
+		want     []string
+	}{
+		{
+			name:    "written value alone",
+			written: "nvke-controller",
+			want:    []string{"nvke-controller"},
+		},
+		{
+			name:     "written value comes first, then the accepted ones in order",
+			written:  "nvke-controller",
+			accepted: []string{"nke-cloud-workflow-engine", "nke-controller"},
+			want:     []string{"nvke-controller", "nke-cloud-workflow-engine", "nke-controller"},
+		},
+		{
+			name:     "listing the written value among the accepted ones changes nothing",
+			written:  "nvke-controller",
+			accepted: []string{"nvke-controller", "nke-cloud-workflow-engine"},
+			want:     []string{"nvke-controller", "nke-cloud-workflow-engine"},
+		},
+		{
+			name:     "blank and repeated entries are dropped",
+			written:  "nvke-controller",
+			accepted: []string{"", "  ", "nke-cloud-workflow-engine", "nke-cloud-workflow-engine"},
+			want:     []string{"nvke-controller", "nke-cloud-workflow-engine"},
+		},
+		{
+			name:     "surrounding space does not make a separate value",
+			written:  "nvke-controller",
+			accepted: []string{"  nvke-controller  "},
+			want:     []string{"nvke-controller"},
+		},
+		{
+			name:     "an unset written value owns only what is accepted",
+			accepted: []string{"nke-cloud-workflow-engine"},
+			want:     []string{"nke-cloud-workflow-engine"},
+		},
+		{
+			name: "nothing configured owns nothing",
+			want: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.TeleportConfig{
+				ManagedByLabelValue:          tt.written,
+				AcceptedManagedByLabelValues: tt.accepted,
+			}
+			assert.Equal(t, tt.want, cfg.OwnershipManagedByValues())
+		})
+	}
+}

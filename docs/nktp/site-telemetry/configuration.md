@@ -1,6 +1,6 @@
 # Management cluster telemetry: configuration
 
-The NVKE telemetry pipelines (NKTP) chart's defaults are for a multi-node cluster, and they know nothing
+The NVKE telemetry pipeline (NKTP) chart's defaults are for a multi-node cluster, and they know nothing
 about NVKE. Everything a management cluster needs differently is in
 [`deploy/nico/nktp/values.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/nktp/values.yaml),
 which the `nktp` item applies over the chart. This page explains what it
@@ -16,6 +16,13 @@ changes and why, and how a site overrides it.
 | **Control-plane monitors** (`kubeScheduler`, `kubeControllerManager`, `kubeProxy` off) | NVKE binds the scheduler and controller manager to `127.0.0.1`, and OVN clusters run no kube-proxy. Left on, they would show as permanently down targets. The API server, etcd and CoreDNS monitors stay on and work. |
 | **metrics-server on** | Nothing else serves `metrics.k8s.io` on the management cluster, and the Collector autoscalers read it. |
 | **Sizing** | One replica of everything, autoscalers starting at one, small requests and limits for every Collector and Target Allocator, and one kube-state-metrics Deployment for all object types instead of five. Sized for a small management cluster. |
+
+Each gateway has a 1 GiB container memory limit. Its exporter queue holds
+128,849,018 serialized bytes (12% of that limit, about 123 MiB), rather than
+inheriting the base chart's queue sized for a 4 GiB container. `GOMEMLIMIT` is
+384 MiB, below the memory limiter's 55% soft refusal threshold. Serialized
+payloads can use several times their size on the heap; tune the queue and
+runtime memory target together when changing the container limit.
 
 ## Connecting a real backend
 
@@ -96,5 +103,5 @@ workloads. As a site grows:
 - **kube-state-metrics** is one `objects` Deployment in the site values. The
   chart's own default splits it into five groups (`workloads`, `networking`,
   `storage`, `configuration`, `cluster`), each of which can be sharded.
-- **The gateways** autoscale up to 64 replicas on CPU and memory, so their
+- **The gateways** autoscale up to 128 replicas on CPU and memory, so their
   limits matter more than their replica count.

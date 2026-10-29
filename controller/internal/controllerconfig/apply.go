@@ -11,9 +11,9 @@ import (
 )
 
 // LoadStartupConfig returns the configuration the controller runs on: the
-// environment, then the nke-controller-config file CONTROLLER_CONFIG_PATH names,
+// environment, then the nvke-controller-config file CONTROLLER_CONFIG_PATH names,
 // validated together. It also returns the file, for the settings config.Config
-// does not carry, such as oidc.providers.
+// does not carry, such as oidc.providers and apiAuth.
 func LoadStartupConfig() (config.Config, *Config, error) {
 	cfg, err := config.ParseConfigFromEnv()
 	if err != nil {
@@ -27,7 +27,20 @@ func LoadStartupConfig() (config.Config, *Config, error) {
 	if err := cfg.Validate(); err != nil {
 		return config.Config{}, nil, fmt.Errorf("config validation failed: %w", err)
 	}
+	if err := file.CheckAuthSource(cfg.AuthConfigPath); err != nil {
+		return config.Config{}, nil, err
+	}
 	return cfg, file, nil
+}
+
+// CheckAuthSource refuses a deployment that configures API authentication in
+// both places: apiAuth in this file, and the file AUTH_CONFIG_PATH names.
+// Neither wins, because the two could disagree about who is admitted.
+func (c *Config) CheckAuthSource(authConfigPath string) error {
+	if c.APIAuth.Enabled && authConfigPath != "" {
+		return fmt.Errorf("API authentication is configured twice: apiAuth.enabled is true in nvke-controller-config and AUTH_CONFIG_PATH is %q; use one", authConfigPath)
+	}
+	return nil
 }
 
 // ApplyTo copies the file into every field of cfg that has a controllerconfig
@@ -39,6 +52,7 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.FieldManagerMachineHealthIssueName = c.FieldManager.MachineHealthIssueName
 	cfg.ManagedByLabelValue = c.ManagedByLabelValue
 	cfg.ManagementNamespace = c.ManagementNamespace
+	cfg.RBACConfigMapName = c.RBACConfigMapName
 	cfg.MetricsListenAddress = c.MetricsListenAddress
 	cfg.SupportedInfraProviders = slices.Clone(c.SupportedInfraProviders)
 	cfg.NodeMetadataAllowlistedLabelKeys = slices.Clone(c.NodeMetadataAllowlistedLabelKeys)
@@ -52,6 +66,11 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.CertRenewalControllerEnabled = c.CertRenewal.ControllerEnabled
 	cfg.CertRenewalInterval = c.CertRenewal.Interval.Duration
 	cfg.CertRenewalThresholdDays = c.CertRenewal.ThresholdDays
+
+	cfg.CredentialMonitoringEnabled = c.CredentialMonitoring.Enabled
+	cfg.CertificateInspectionInterval = c.CredentialMonitoring.InspectionInterval.Duration
+	cfg.CertificateObservationMaxAge = c.CredentialMonitoring.ObservationMaxAge.Duration
+	cfg.CertificateWarningDays = c.CredentialMonitoring.WarningDays
 
 	cfg.KubeadmImageRepository = c.KubeadmImageRepository
 	cfg.CNIImageRegistry = c.CNIImageRegistry
@@ -106,8 +125,10 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.Teleport.ProxyAddress = c.Teleport.ProxyAddress
 	cfg.Teleport.Environment = c.Teleport.Environment
 	cfg.Teleport.ManagedByLabelValue = c.Teleport.ManagedByLabelValue
+	cfg.Teleport.AcceptedManagedByLabelValues = c.Teleport.AcceptedManagedByLabelValues
 	cfg.Teleport.TokenNamePrefix = c.Teleport.TokenNamePrefix
 	cfg.Teleport.ResourceGroupLabelValue = c.Teleport.ResourceGroupLabelValue
 
-	cfg.PermissiveMode = c.PermissiveMode
+	cfg.PermissiveMode = c.APIAuth.Permissive
+	cfg.AllowControlPlaneWithoutVIP = c.AllowControlPlaneWithoutVIP
 }

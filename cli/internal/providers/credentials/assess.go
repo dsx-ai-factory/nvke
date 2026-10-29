@@ -60,7 +60,7 @@ type Input struct {
 // result is reported, then the most recently checked, then the first by name;
 // the others are listed in AdditionalIdentities.
 func Assess(in Input) *Credentials {
-	c := &Credentials{StaleAfterSeconds: int64(StaleAfter / time.Second)}
+	c := &Credentials{}
 
 	switch {
 	case !in.CRDEstablished:
@@ -126,6 +126,9 @@ func Assess(in Input) *Credentials {
 	if pick.LastChecked != nil {
 		c.LastCheckedTime = new(metav1.NewTime(*pick.LastChecked))
 	}
+	if pick.NextCheck != nil {
+		c.NextCheckTime = new(metav1.NewTime(*pick.NextCheck))
+	}
 
 	ref := pick.Namespace + "/" + pick.Name
 	switch {
@@ -137,7 +140,8 @@ func Assess(in Input) *Credentials {
 		c.Detail = ref + ": lastCheckedTime is in the future; check the clock on this machine"
 	case isStale(pick, in.Now):
 		c.Health = HealthStale
-		// Name the most likely reason the manager has not checked the Identity.
+		// Name a reason the manager has not checked the Identity only when
+		// nvkectl can see one.
 		var cause string
 		switch {
 		case !in.ManagerFound:
@@ -148,12 +152,12 @@ func Assess(in Input) *Credentials {
 			cause = fmt.Sprintf("the Identity lacks label %s=%s", watchFilterLabel, in.WatchFilter)
 		case !in.ManagerAvailable:
 			cause = "the provider manager is not available"
-		default:
-			cause = fmt.Sprintf("the provider manager may be stuck, or needs a restart if the %s CRD was installed after it started",
-				in.Kind.Kind)
+		}
+		if cause != "" {
+			cause = "; " + cause
 		}
 		if pick.LastChecked == nil {
-			c.Detail = fmt.Sprintf("%s: not checked since it was created %s ago; %s",
+			c.Detail = fmt.Sprintf("%s: not checked since it was created %s ago%s",
 				ref, util.FormatDuration(in.Now.Sub(pick.Created)), cause)
 		} else {
 			last := "no Ready condition"
@@ -163,8 +167,12 @@ func Assess(in Input) *Credentials {
 					last += ", " + pick.Ready.Reason
 				}
 			}
-			c.Detail = fmt.Sprintf("%s: last checked %s ago (%s); %s",
-				ref, util.FormatDuration(in.Now.Sub(*pick.LastChecked)), last, cause)
+			due := ""
+			if next := nextCheckDue(pick); next != nil {
+				due = ", next check due " + util.FormatDuration(in.Now.Sub(*next)) + " ago"
+			}
+			c.Detail = fmt.Sprintf("%s: last checked %s ago%s (%s)%s",
+				ref, util.FormatDuration(in.Now.Sub(*pick.LastChecked)), due, last, cause)
 		}
 	case !isCurrent(pick):
 		c.Health = HealthPending
@@ -194,14 +202,40 @@ func isCurrent(id Identity) bool {
 	return id.Ready != nil && id.LastChecked != nil && id.Ready.ObservedGeneration == id.Generation
 }
 
-// isStale reports whether id's newest evidence is older than StaleAfter. The
-// evidence is the last check, or, for an Identity never checked, its creation:
-// an Identity that has waited longer than StaleAfter for its first check is not
-// being observed.
+// isStale reports whether id's result is overdue at now. When the provider
+// published a usable next check time, the result is overdue once now is more
+// than nextCheckGrace past it. Otherwise it is overdue once its newest evidence
+// is older than StaleAfter. The evidence is the last check, or, for an Identity
+// never checked, its creation: an Identity that has waited longer than
+// StaleAfter for its first check is not being observed.
 func isStale(id Identity, now time.Time) bool {
+	if next := nextCheckDue(id); next != nil {
+		return now.Sub(*next) > nextCheckGrace
+	}
 	evidence := id.Created
 	if id.LastChecked != nil {
 		evidence = *id.LastChecked
 	}
 	return now.Sub(evidence) > StaleAfter
+}
+
+// nextCheckDue returns the next check time id's provider published, or nil
+// when it published none that describes the reported check. A next check time
+// is usable only when it is later than the last check, and no more than
+// StaleAfter after it.
+func nextCheckDue(id Identity) *time.Time {
+	if id.NextCheck == nil || id.LastChecked == nil {
+		return nil
+	}
+	// A provider that does not write the field advances lastCheckedTime and
+	// leaves an older value in place.
+	if !id.NextCheck.After(*id.LastChecked) {
+		return nil
+	}
+	// Bound how long a published value can keep a result current, so a
+	// far-future time cannot hide a stopped manager past the age fallback.
+	if id.NextCheck.After(id.LastChecked.Add(StaleAfter)) {
+		return nil
+	}
+	return id.NextCheck
 }

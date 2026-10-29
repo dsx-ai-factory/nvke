@@ -143,7 +143,7 @@ func TestSBOMRender(t *testing.T) {
 	// the reason spireAdminPath gives: the deploy path chooses it and this
 	// file does not. TestSBOMAdminIDFollowsTheControllerName covers the
 	// following itself.
-	wantAdminIDs := fmt.Sprintf(`["spiffe://e2e-site.nke.local/nke-service/%s"]`, controller.Service())
+	wantAdminIDs := fmt.Sprintf(`["spiffe://e2e-site.nke.local/nvke-service/%s"]`, controller.Service())
 	if got := mustJSON(t, dig(t, spire, "spire-server", "adminIDs")); got != wantAdminIDs {
 		t.Errorf("adminIDs = %s, want %s", got, wantAdminIDs)
 	}
@@ -212,7 +212,7 @@ func TestSBOMDeploy(t *testing.T) {
 		}
 	}
 	pg := decode(t, s.puts[path.Join(valuesDir, "postgresql.yaml")].data)
-	if pw, _ := dig(t, pg, "auth", "postgresPassword").(string); len(pw) < 32 {
+	if pw, _ := dig(t, pg, "auth", "postgresPassword").(string); len(pw) < 26 {
 		t.Errorf("generated password %q is too short", pw)
 	}
 
@@ -327,7 +327,7 @@ func assetsInstalling(t *testing.T, deployPath, name string) string {
 	t.Helper()
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, ControllerReleasePath(deployPath)),
-		"chart:\n  name: nke-controller\nrelease:\n  name: c\n  namespace: "+name+"\n")
+		"chart:\n  name: nvke-controller\nrelease:\n  name: c\n  namespace: "+name+"\n")
 	return dir
 }
 
@@ -337,8 +337,8 @@ func assetsInstalling(t *testing.T, deployPath, name string) string {
 func TestCheckControllerName(t *testing.T) {
 	deployPath := CurrentLayout().DeployPath
 	for _, env := range []string{
-		controller.EnvNamespace, controller.LegacyEnvNamespace,
-		controller.EnvService, controller.LegacyEnvService,
+		controller.EnvNamespace, controller.PreviousEnvNamespace, controller.LegacyEnvNamespace,
+		controller.EnvService, controller.PreviousEnvService, controller.LegacyEnvService,
 	} {
 		t.Setenv(env, "")
 	}

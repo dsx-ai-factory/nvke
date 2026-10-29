@@ -265,6 +265,8 @@ func (s *Service) createInstance(ctx context.Context, instanceID string, req nic
 		"--network", s.cfg.NodeNetwork,
 		"--env", "KUBECONFIG=/etc/kubernetes/admin.conf",
 		"--env", "KIND_EXPERIMENTAL_CONTAINERD_SNAPSHOTTER=fuse-overlayfs",
+		// containerd cannot write image whiteouts onto an overlayfs rootfs; kind gives /var a volume too.
+		"--volume", "/var",
 		"--volume", "/lib/modules:/lib/modules:ro",
 		"--entrypoint", "/bin/sh",
 		"--tty",

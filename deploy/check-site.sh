@@ -16,7 +16,7 @@
 # What the stack needs and this check reports, the operator supplies: the
 # control-plane taint is removed by nvkectl bootstrap site, the default
 # StorageClass is the hardware's CSI driver, Cluster API is installed with
-# the clusterctl init this check prints. docs/operate/install-management-plane-services.md
+# the clusterctl init this check prints. docs/get-started/local-site.md
 # lists the steps in order.
 set -euo pipefail
 
@@ -34,7 +34,7 @@ DIAGNOSTICS=""
 NVKECTL="${NVKECTL:-nvkectl}"
 DEPLOY_PATH="${SCRIPT_DIR}/nico"
 STATE_DIR="${NVKE_STATE_DIR:-${XDG_STATE_HOME:-${HOME}/.local/state}/nvke}"
-CONTROLLER_NAMESPACE="${CONTROLLER_NAMESPACE:-nke-controller}"
+CONTROLLER_NAMESPACE="${CONTROLLER_NAMESPACE:-nvke-controller}"
 CAPI_VERSION="${CAPI_VERSION:-$(mk_var CAPI_VERSION)}"
 SITE_NAME=""
 NODE_ARCH=""

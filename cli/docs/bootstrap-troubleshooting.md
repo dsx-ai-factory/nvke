@@ -20,17 +20,16 @@ nvkectl bootstrap site -f sitespec.yaml 2>&1 | tee bootstrap.log
 
 Each attempt has its own trace ID. Include it when reporting a failure. It
 also finds the controller's records of the site cluster request: the API call,
-the cluster and node pool workflows, and their steps. Bootstrap does not
-configure span export for the controller it installs, so these logs are the
-record.
+the cluster and node pool workflows, and their steps. Without an OTLP endpoint
+(below), the controller's logs are the record.
 
 Search the controller logs for it, in the diagnostics directory or in a
 [retained bootstrap cluster](#the-retained-bootstrap-cluster):
 
 ```bash
 grep -F '<trace-id>' bootstrap.log                                          # nvkectl's log
-grep -rF '<trace-id>' cluster-diagnostics/nke-controller/                   # diagnostics directory
-kubectl -n nke-controller logs deploy/nke-controller | grep -F '<trace-id>' # retained cluster
+grep -rF '<trace-id>' cluster-diagnostics/nvke-controller/                   # diagnostics directory
+kubectl -n nvke-controller logs deploy/nvke-controller | grep -F '<trace-id>' # retained cluster
 ```
 
 This works with text and JSON logs. Each node is provisioned by a workflow with
@@ -44,19 +43,91 @@ node, run the same searches in two steps:
 2. Search for that `workflow_id`. The matches are the node's workflow and
    activity steps, including the one that failed.
 
+#### Send nvkectl's telemetry to a backend
+
+nvkectl can send its spans and log records to an OpenTelemetry collector over
+OTLP/gRPC. Each carries the run's trace ID, so you can search the backend for
+the `Trace ID:` that nvkectl prints. What nvkectl writes to stderr does not
+change.
+
+##### With environment variables
+
+| Variable | What it does |
+|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | The collector's address, as `host:port` or an `http://` or `https://` URL, with no credentials and no path. With no scheme, nvkectl uses TLS. Every nvkectl command reads it. |
+| `OTEL_EXPORTER_OTLP_INSECURE` | With an endpoint that has no scheme, `true` sends without TLS. An `http://` URL already does. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Headers for the collector, such as a token, as `key=value` pairs separated by commas. nvkectl sends them, and `bootstrap site` also gives them to the temporary controller. |
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://collector.example.com:4317
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer <TOKEN>'
+nvkectl bootstrap site -f sitespec.yaml
+```
+
+`bootstrap site` also exports the temporary controller's spans to this endpoint,
+with these headers, so the endpoint must be reachable from inside the Kind
+cluster. A loopback endpoint (`localhost`, `127.0.0.1`, `::1`) is used by nvkectl
+only: nvkectl prints a warning and the controller's spans are not exported.
+
+If the endpoint is wrong, nvkectl prints one warning that names the variable
+and says what to do, sends no telemetry, and runs the command.
+
+##### With flags on `bootstrap site`
+
+`--otlp-endpoint <host:port or URL>` sets the collector's address and
+`--otlp-insecure` sends without TLS. When `--otlp-endpoint` is set, it is used
+instead of `OTEL_EXPORTER_OTLP_ENDPOINT`:
+
+```bash
+nvkectl bootstrap site -f sitespec.yaml --otlp-endpoint 192.0.2.10:4317 --otlp-insecure
+```
+
+The temporary controller in the bootstrap cluster exports its spans to the same
+endpoint, so the endpoint must be reachable from inside the Kind cluster. A
+loopback address (`localhost`, `127.0.0.1`, `::1`, `0.0.0.0` or `::`) is
+rejected; use the host's LAN address or a DNS name.
+
+A wrong flag value is an error: the command stops before bootstrap starts and
+the error names the flag.
+
+Headers cannot be passed as a flag. Set `OTEL_EXPORTER_OTLP_HEADERS`. nvkectl
+sends them to the endpoint you set with `--otlp-endpoint` and also gives them to
+the temporary controller, so its spans reach the same backend. With an `http://`
+endpoint or `--otlp-insecure`, the headers travel without TLS and nvkectl prints
+a warning. The controller keeps them in its Deployment and Helm release until
+the bootstrap cluster is deleted.
+
+nvkectl verifies the collector's certificate against the host's trusted
+certificate authorities, for spans and for logs. It does not use
+`OTEL_EXPORTER_OTLP_CERTIFICATE` or the client certificate variables, so a
+collector with a private certificate authority needs that authority in the
+host's trust store, and a collector that requires client certificates is not
+supported. Use the collector's gRPC address, usually `:4317`, not its HTTP
+address such as `https://<COLLECTOR_HOST>:4318/v1/traces`.
+
+If the collector cannot be reached, nvkectl prints one warning and the command
+still succeeds.
+
+Commands that use a site, such as `get clusters`, send to the endpoint stored
+with `nvkectl config set-site --otlp-endpoint`; see
+[Export a site's telemetry](user-flow.md#export-a-sites-telemetry).
+
 ### The diagnostics directory
 
 Bootstrap attempts to collect diagnostics before cleaning up a failed
 bootstrap cluster. The default is `cluster-diagnostics/`; change it with
 `--diagnostics-dir` or `NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR`. Collection may be
-incomplete if the cluster is unreachable. A retry writes into the same
+incomplete if the cluster is unreachable. Pass `-v` to collect them from a
+successful bootstrap as well, for a support bundle or to check what a healthy
+run prints. A retry writes into the same
 directory, replacing files of the same name, so move it first or pass a new
 `--diagnostics-dir`.
 
-No diagnostics are collected when the failure comes after the site cluster and
-its outputs are saved, as in
+Without `-v`, no diagnostics are collected when the failure comes after the site
+cluster and its outputs are saved, as in
 [making the control-plane nodes schedulable](#finish). The bootstrap cluster is
-retained, so read its controller logs and the nodes' journals instead.
+retained, so read its controller logs and the nodes' journals instead. With `-v`
+they are collected in that case too.
 
 | Path | Use it to check |
 |---|---|
@@ -70,7 +141,7 @@ retained, so read its controller logs and the nodes' journals instead.
 For a deployment failure, start with `all-resources.txt`, then check the
 failing pod in `pods-described.txt` and its `logs.txt`. Key namespaces are
 `postgres`, `temporal`, `spire-server`, `capi-system`, `provisioned-system`
-(`capnico-system` with `infra.provider: nico`) and `nke-controller`.
+(`capnico-system` with `infra.provider: nico`) and `nvke-controller`.
 
 ### The retained bootstrap cluster
 
@@ -86,9 +157,13 @@ available, the kubeconfig path.
 level=WARN msg="bootstrap failed after site cluster creation; retaining the bootstrap kind cluster for recovery" cluster=nvkectl-bootstrap kubeconfig=/tmp/nvkectl-bootstrap-kubeconfig-.../config
 ```
 
+If you set `OTEL_EXPORTER_OTLP_HEADERS`, the kept cluster also holds those
+headers, typically a token, in the controller's Deployment and Helm release, so
+delete it when you are done.
+
 With `infra.provider: nico`, the kept cluster also holds the
 NICo token and the tenant password as Secrets (`nico-credentials` in
-`capnico-system`, `dgxc-tenant-credentials` in `nke-controller`), so delete it
+`capnico-system`, `dgxc-tenant-credentials` in `nvke-controller`), so delete it
 when you are done. After a failure past site cluster creation but before every
 control-plane node joined, it also holds the machines for the NICo instances
 CAPNICo allocated, and those must be released before the cluster is deleted: see
@@ -102,7 +177,7 @@ captures:
 ```bash
 export KUBECONFIG=<bootstrap-kubeconfig>
 kubectl get pods -A
-kubectl -n nke-controller logs deploy/nke-controller --tail=500
+kubectl -n nvke-controller logs deploy/nvke-controller --tail=500
 ```
 
 To pick out one attempt or one node, see [The trace ID](#the-trace-id).
@@ -137,7 +212,7 @@ nvkectl delete cluster <clusterName>                          # clusterName from
 nvkectl get clusters                                          # repeat until it is no longer listed
 ```
 
-The URL port is `NVKECTL_CONTROLLER_PORT`, `30080` by default. `set-site` makes
+The URL port is `NVKECTL_NVKE_CONTROLLER_PORT`, `30080` by default. `set-site` makes
 `nvkectl-bootstrap` the active site; switch back with
 `nvkectl config use-site <name>`. A cluster can be deleted in any state, and it
 stays listed as `Deleting` until every machine is released. Only then delete the
@@ -211,8 +286,8 @@ supported. Install both on the machine running `nvkectl`; see
 **`image <image> is not in the local image store ... and names no registry to pull it from`**
 
 A required image is missing from containerd's image store. Supply a pullable
-registry reference with `--controller-image` or `--provisioned-provider-image`
-(or `NVKECTL_CONTROLLER_IMAGE` / `NVKECTL_CAPI_PROVISIONED_IMAGE`). If building
+registry reference with `--nvke-controller-image` or `--provisioned-provider-image`
+(or `NVKECTL_NVKE_CONTROLLER_IMAGE` / `NVKECTL_CAPI_PROVISIONED_IMAGE`). If building
 from source, `make -C cli images` builds the default local images.
 
 **`bootstrap cluster "nvkectl-bootstrap" from an earlier run is still running`**
@@ -275,9 +350,13 @@ sudo -n -i nerdctl pull <image>
 
 **`kind load image-archive ...: exit status 1`** or **`want two sha256 digests`**
 
-The image exists locally but could not be exported into the Kind cluster. Pull
-it again with the platform of the bootstrap host and re-run. A multi-platform
-image that was only partially pulled is the usual cause.
+The image exists locally but could not be exported into the Kind cluster,
+usually because the archive lists a platform whose content is not in the local
+store. kind imports every platform an image index lists, so nvkectl pulls every
+platform of an image pinned by an index digest. For a tag, pull it again for the
+bootstrap host's platform and re-run. To load only one platform of a pinned
+image, pin that platform's manifest digest instead:
+`nerdctl image inspect --mode=native --format '{{.ManifestDesc.Digest}}' <image>`.
 
 ### Controller deploy
 
@@ -287,8 +366,8 @@ The error names the release; the Helm output gives the cause:
 
 - *Chart fetch failed*, such as `failed to fetch ... 500` or a timeout. The
   chart repository is unreachable from the bootstrap host. Retry, or point at
-  a mirror or local copy with `NVKECTL_CONTROLLER_TEMPORAL_CHART`,
-  `NVKECTL_CONTROLLER_SPIRE_CHART` and `NVKECTL_CONTROLLER_SPIRE_CRDS_CHART`. Nodes are
+  a mirror or local copy with `NVKECTL_NVKE_CONTROLLER_TEMPORAL_CHART`,
+  `NVKECTL_NVKE_CONTROLLER_SPIRE_CHART` and `NVKECTL_NVKE_CONTROLLER_SPIRE_CRDS_CHART`. Nodes are
   untouched.
 - *Image pull failed inside the cluster*, visible as `ErrImagePull` or
   `ImagePullBackOff`. Check the pod events for an incorrect image reference,
@@ -301,7 +380,7 @@ The error names the release; the Helm output gives the cause:
   dependency's readiness and credentials; for migration errors, inspect the
   named migration or schema job.
 
-`NVKECTL_CONTROLLER_HELM_TIMEOUT` raises the per-release wait from its default of
+`NVKECTL_NVKE_CONTROLLER_HELM_TIMEOUT` raises the per-release wait from its default of
 five minutes on a slow network.
 
 **`the controller did not report healthy on <url> within 5m0s: last error=... last response=...`**
@@ -309,13 +388,13 @@ five minutes on a slow network.
 Check the controller pod's state and the last error. If `/readyz` responded,
 it identifies the failing dependency: inspect `postgres/*/logs.txt` for
 `database`, or `temporal/*/logs.txt` for `temporal`. Check credentials,
-connectivity and schema jobs. `NVKECTL_CONTROLLER_READY_TIMEOUT` raises the wait.
+connectivity and schema jobs. `NVKECTL_NVKE_CONTROLLER_READY_TIMEOUT` raises the wait.
 
 **`waiting for the published cwe api: http://127.0.0.1:30080/readyz did not become ready`**
 
 The controller passed its in-cluster check, but the host check failed. Verify
 it is still healthy, then inspect the Kind port mapping and NodePort Service.
-Check for a conflict on port 30080, or change it with `NVKECTL_CONTROLLER_PORT`.
+Check for a conflict on port 30080, or change it with `NVKECTL_NVKE_CONTROLLER_PORT`.
 
 ### Site cluster
 
@@ -412,10 +491,10 @@ Keep the bootstrap cluster and run the recovery command printed in the error.
 If an earlier failure prevented key capture, locate and save the key Secret:
 
 ```bash
-kubectl --kubeconfig <bootstrap-kubeconfig> -n nke-controller get secrets | grep etcd-encryption-key-
+kubectl --kubeconfig <bootstrap-kubeconfig> -n nvke-controller get secrets | grep etcd-encryption-key-
 # Creates a private file; noclobber refuses to overwrite an existing one.
 ( umask 077; set -o noclobber
-  kubectl --kubeconfig <bootstrap-kubeconfig> -n nke-controller get secret <secret-name> -o json > <secret-name>.json )
+  kubectl --kubeconfig <bootstrap-kubeconfig> -n nvke-controller get secret <secret-name> -o json > <secret-name>.json )
 ```
 
 Confirm the saved file contains the expected Secret, and keep it with the

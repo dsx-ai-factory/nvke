@@ -67,9 +67,9 @@ const (
 	defaultSpireRelease = "spire"
 
 	// adminSPIFFEPath is bound to cluster-admin in every tenant by the
-	// nvke:capi-cluster-admin ClusterRoleBinding the nke-rbac ConfigMap carries.
+	// nvke:capi-cluster-admin ClusterRoleBinding the RBAC ConfigMap carries.
 	// GetAdminClient mints this rather than widening nvke:cwe for test setup.
-	adminSPIFFEPath     = "/nke-service/capi-manager"
+	adminSPIFFEPath     = "/nvke-service/capi-manager"
 	spireExecPluginName = "k8s-spiffe-workload-jwt-exec-auth"
 	spireAudienceEnv    = "SPIFFE_JWT_AUDIENCE"
 	spireExchangeEnv    = "SPIFFE_JWT_EXCHANGE_ENDPOINT"
@@ -212,11 +212,17 @@ func (f *TenantClientFactory) GetClient(ctx context.Context, clusterName string)
 // credential, so authenticate as adminSPIFFEPath instead. nvke:capi-cluster-admin
 // binds that identity to cluster-admin in every tenant.
 func (f *TenantClientFactory) GetAdminClient(ctx context.Context, clusterName string) (client.Client, error) {
-	restConfig, err := f.tenantRESTConfigAs(ctx, clusterName, adminSPIFFEPath)
+	restConfig, err := f.AdminRESTConfig(ctx, clusterName)
 	if err != nil {
 		return nil, err
 	}
 	return newTenantClient(restConfig, clusterName)
+}
+
+// AdminRESTConfig is the config GetAdminClient connects with, for a caller
+// that builds clients of its own from it.
+func (f *TenantClientFactory) AdminRESTConfig(ctx context.Context, clusterName string) (*rest.Config, error) {
+	return f.tenantRESTConfigAs(ctx, clusterName, adminSPIFFEPath)
 }
 
 func newTenantClient(restConfig *rest.Config, clusterName string) (client.Client, error) {
@@ -515,7 +521,7 @@ func (f *TenantClientFactory) mintTenantJWTAs(
 }
 
 func exchangeSourceSPIFFEPath(spiffePath string) (string, error) {
-	service, ok := strings.CutPrefix(spiffePath, "/nke-service/")
+	service, ok := strings.CutPrefix(spiffePath, "/nvke-service/")
 	if !ok || service == "" || strings.Contains(service, "/") {
 		return "", fmt.Errorf("cannot map SPIFFE path %q to a DSX exchange source identity", spiffePath)
 	}
@@ -939,5 +945,5 @@ func discardAndClose(body io.ReadCloser) error {
 }
 
 // controllerSPIFFEPath is the SPIFFE ID path the controller presents and the
-// tenant nvke:cwe bindings name: its ServiceAccount under /nke-service/.
-func controllerSPIFFEPath() string { return "/nke-service/" + controller.ServiceAccount() }
+// tenant nvke:cwe bindings name: its ServiceAccount under /nvke-service/.
+func controllerSPIFFEPath() string { return "/nvke-service/" + controller.ServiceAccount() }

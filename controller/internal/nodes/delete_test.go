@@ -113,9 +113,11 @@ func TestDelete(t *testing.T) {
 			mockTx := &testutil.MockTx{}
 
 			if tt.wantErr != nil {
-				mockTx.On("GetNodeForUpdate", mock.Anything, tt.nodeID).Return(db.Node{}, tt.wantErr)
+				mockTx.On("GetNode", mock.Anything, tt.nodeID).Return(db.Node{}, tt.wantErr)
 			} else {
 				node := newTestNode(tt.nodeID, nodePoolID, nodeSetID)
+				mockTx.On("GetNode", mock.Anything, tt.nodeID).Return(node, nil).Maybe()
+				mockTx.On("GetClusterForUpdate", mock.Anything, node.ClusterID).Return(db.Cluster{ID: node.ClusterID}, nil).Maybe()
 				mockTx.On("GetNodeForUpdate", mock.Anything, tt.nodeID).Return(node, nil)
 				mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(updated *db.Node) bool {
 					return updated.ID == tt.nodeID &&

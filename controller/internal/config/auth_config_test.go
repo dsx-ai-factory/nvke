@@ -18,11 +18,11 @@ import (
 func setMinimumEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("CNPG_SUPERUSER_PASSWORD", "not-the-dev-default")
-	t.Setenv("CONTROLLER_CONFIG_PATH", "/etc/nke/controller-config/config.yaml")
+	t.Setenv("CONTROLLER_CONFIG_PATH", "/etc/nvke/controller-config/config.yaml")
 }
 
 // Unset AUTH_CONFIG_PATH parses as the disabled state. Permissive mode comes
-// from nke-controller-config.
+// from nvke-controller-config.
 func TestAuthEnvFields(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -59,11 +59,16 @@ func TestAuthEnvFields(t *testing.T) {
 // would stop every deployment that has not enabled authentication.
 func TestValidateIgnoresAuthFields(t *testing.T) {
 	base := config.Config{
-		MetricsListenAddress:  "127.0.0.1:9090",
-		DBConnectionString:    "postgres://cwe:strong@localhost:5432/cwe?sslmode=disable",
-		SpireServerAPIAddress: "spire-server.spire-server.svc.cluster.local:8081",
-		SpireJoinTokenTTL:     time.Hour,
-		NodeAgent:             config.NodeAgentConfig{SpireAttestationMethod: config.SpireAttestationMethodTPM},
+		CertRenewalInterval:           12 * time.Hour,
+		CertRenewalThresholdDays:      30,
+		CertificateInspectionInterval: time.Hour,
+		CertificateObservationMaxAge:  3 * time.Hour,
+		CertificateWarningDays:        45,
+		MetricsListenAddress:          "127.0.0.1:9090",
+		DBConnectionString:            "postgres://cwe:strong@localhost:5432/cwe?sslmode=disable",
+		SpireServerAPIAddress:         "spire-server.spire-server.svc.cluster.local:8081",
+		SpireJoinTokenTTL:             time.Hour,
+		NodeAgent:                     config.NodeAgentConfig{SpireAttestationMethod: config.SpireAttestationMethodTPM},
 	}
 
 	// Unset is the disabled state every existing deployment upgrades into. This

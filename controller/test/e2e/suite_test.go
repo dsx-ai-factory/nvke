@@ -6,13 +6,17 @@ package e2e
 import (
 	"flag"
 	"fmt"
+	"log/slog"
+	"os"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/klog/v2"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/environment"
@@ -217,5 +221,22 @@ func TestE2E(t *testing.T) {
 	// the tenant client talks to a machine through a relay, and its retries
 	// and REST-layer warnings are what a slow or flaky run needs explained.
 	ctrllog.SetLogger(GinkgoLogr)
-	RunSpecs(t, "NVKE E2E Suite")
+	// client-go logs through klog and the port-forward through slog. Both
+	// write to stderr by default, which a serial run does not capture per
+	// spec, so their warnings would reach neither a spec's report nor the
+	// JUnit file.
+	klog.SetLogger(GinkgoLogr)
+	slog.SetDefault(slog.New(logr.ToSlogHandler(GinkgoLogr)))
+
+	suiteConfig, reporterConfig := GinkgoConfiguration()
+	if !labelFilterGiven() {
+		filter, err := validationLabelFilter(os.LookupEnv)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if filter != "" {
+			suiteConfig.LabelFilter = filter
+		}
+	}
+	RunSpecs(t, "NVKE E2E Suite", suiteConfig, reporterConfig)
 }

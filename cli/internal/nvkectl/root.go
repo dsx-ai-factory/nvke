@@ -14,6 +14,7 @@ package nvkectl
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -25,6 +26,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/clients"
 	"github.com/dsx-ai-factory/nvke/cli/internal/config"
 	"github.com/dsx-ai-factory/nvke/cli/internal/operator"
+	"github.com/dsx-ai-factory/nvke/cli/internal/redact"
 	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 )
 
@@ -34,7 +36,14 @@ var (
 	site     string //nolint:gochecknoglobals // cobra PersistentFlags binding requires package-level var
 )
 
-func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
+// NewRootCmd returns the nvkectl command tree, stamped with the build metadata
+// the version command reports.
+//
+// Building the tree reads no configuration and contacts nothing: every client
+// is created when a command runs, not here. That is what lets the reference
+// documentation be generated from this tree without a kubeconfig, a configured
+// site or a reachable cluster.
+func NewRootCmd(ver, commit, treeState, date string) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "nvkectl",
 		Short: "NVKE control-plane CLI",
@@ -48,7 +57,31 @@ func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
 			if !isTraced(cmd) {
 				run = nil
 			}
-			return setupLogging(verbose, jsonLogs, run)
+			var exportErr error
+			var cleartextHeaders bool
+			if run != nil {
+				cfg, ok, strict, err := resolveOTLP(cmd)
+				if err == nil && ok {
+					err = run.EnableOTLP(cfg)
+					cleartextHeaders = err == nil && cfg.Insecure && len(cfg.Headers) > 0
+				}
+				// An endpoint the operator gave as a flag must work; one from the
+				// environment never fails the command.
+				if err != nil && strict {
+					return err
+				}
+				exportErr = err
+			}
+			if err := setupLogging(verbose, jsonLogs, run); err != nil {
+				return err
+			}
+			if exportErr != nil {
+				warnExportOff(cmd, exportErr)
+			}
+			if cleartextHeaders {
+				slog.Warn("OTEL_EXPORTER_OTLP_HEADERS is sent to the OTLP endpoint without TLS; use an https endpoint if the headers hold a credential")
+			}
+			return nil
 		},
 	}
 
@@ -70,6 +103,25 @@ func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
 	root.AddCommand(newInspectCmd())
 
 	return root
+}
+
+// warnExportOff logs one warning that nvkectl sends no telemetry because the
+// endpoint stored with a site, or else the one in the environment, is unusable,
+// and what to do. It offers the flag only on a command that has it. The reason
+// never holds the endpoint, which may hold credentials.
+func warnExportOff(cmd *cobra.Command, reason error) {
+	var siteErr *siteEndpointError
+	if errors.As(reason, &siteErr) {
+		slog.Warn(fmt.Sprintf("nvkectl sends no telemetry because the OTLP endpoint of site %q is not a usable OTLP/gRPC endpoint; "+
+			"run nvkectl config set-site again with a valid --%s, or without it to remove the endpoint", siteErr.site, otlpEndpointFlag),
+			"reason", reason.Error())
+		return
+	}
+	msg := "nvkectl sends no telemetry because OTEL_EXPORTER_OTLP_ENDPOINT is not a usable OTLP/gRPC endpoint; fix or unset the variable"
+	if cmd.Annotations[bootstrapExportAnnotation] == "true" {
+		msg += ", or pass --" + otlpEndpointFlag + " to export from this command"
+	}
+	slog.Warn(msg, "reason", reason.Error())
 }
 
 // loadClient is the shared client factory injected into all commands backed by the controller API.
@@ -135,7 +187,7 @@ func resolveSiteConfig(cfg *config.Config) (config.SiteConfig, error) {
 // as a "Trace ID:" line on stderr, never on stdout. A succeeding query command
 // writes nothing and logs the ID at debug level.
 func Execute(ctx context.Context, ver, commit, treeState, date string) error {
-	root := newRootCmd(ver, commit, treeState, date)
+	root := NewRootCmd(ver, commit, treeState, date)
 	return execute(ctx, root, ver, root.ErrOrStderr())
 }
 
@@ -150,8 +202,11 @@ func execute(ctx context.Context, root *cobra.Command, ver string, stderr io.Wri
 	if cmd != nil {
 		run.SetName(cmd.CommandPath())
 	}
+	// announceTrace logs the command's last record, and Finish shuts the log
+	// exporter down, so the announcement comes first.
+	result := announceTrace(cmd, stderr, run.TraceID(), err)
 	run.Finish(err)
-	return announceTrace(cmd, stderr, run.TraceID(), err)
+	return result
 }
 
 // untracedCommands are the top-level commands that do no work of their own:
@@ -238,7 +293,9 @@ func setupLogging(verbose, jsonLogs bool, run *telemetry.Run) error {
 	if verbose {
 		level = slog.LevelDebug
 	}
-	opts := &slog.HandlerOptions{Level: level}
+	// ReplaceAttr masks each value before the handler escapes it, so a credential
+	// holding a quote, a backslash or a newline is still found.
+	opts := &slog.HandlerOptions{Level: level, ReplaceAttr: redact.ReplaceAttr}
 	var h slog.Handler
 	if jsonLogs {
 		h = slog.NewJSONHandler(os.Stderr, opts)

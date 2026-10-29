@@ -4,7 +4,7 @@ NVKE can update the node agent without replacing a bare-metal node. This feature
 covers control planes managed by the control-plane controller. Workers and
 pool-managed control planes are outside its scope.
 
-Set `nodeAgent.updateMethod` to `apt` or `bundle` in `nke-controller-config`.
+Set `nodeAgent.updateMethod` to `apt` or `bundle` in `nvke-controller-config`.
 In Helm, set `nodeAgent.updateMethod`. The installation method comes from the controller
 configuration, not the cluster request.
 
@@ -21,8 +21,12 @@ Set `controlPlaneConfig.nodeAgentConfig.version` to an exact release version in
 }
 ```
 
-NVKE also accepts `0.1.33` and stores `v0.1.33`. It rejects partial versions,
-prerelease versions, build suffixes, and `latest`. It permits downgrades.
+NVKE also accepts `0.1.33` and stores `v0.1.33`.
+It accepts exact prerelease versions, such as `v0.3.0-rc.2`.
+It rejects partial versions, build suffixes, and `latest`. It permits downgrades.
+
+Agents that reject prerelease targets need an initial update outside this path.
+Both the controller and the running agent must accept the target version.
 
 If an update omits the version, NVKE keeps the stored target. An explicit empty
 version disables future convergence. An accepted installation finishes before

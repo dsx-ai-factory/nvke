@@ -7,14 +7,16 @@
 #   os-image/prune-ghcr-versions.sh            # say what it would delete
 #   os-image/prune-ghcr-versions.sh --delete   # actually delete
 #
-# Every build publishes a sha-<commit>-<arch> tag and a qcow2 is gigabytes, so
-# without this the registry grows without limit.
+# Every build publishes a sha-<commit>-<arch> tag (main-sha- from a run on
+# main) and a qcow2 is gigabytes, so without this the registry grows without
+# limit.
 #
 # A version goes only when all three hold:
 #
-#   1. Every tag on it starts with "sha-", or it has none. GHCR puts a release
-#      tag and its sha- tag on the SAME version, so requiring EVERY tag to be a
-#      sha- tag is what keeps a release, and any moving tag, alive.
+#   1. Every tag on it starts with "sha-" or "main-sha-", or it has none. GHCR
+#      puts a release tag and its sha- tag on the SAME version, so requiring
+#      EVERY tag to be a hand-off tag is what keeps a release, and any moving
+#      tag, alive.
 #   2. It is not among the newest KEEP_MIN of its package. A bake publishes
 #      four versions per package (amd64/arm64 x two Ubuntu flavors), and the
 #      scheduled bake skips a commit that already has its images, so after a
@@ -61,7 +63,7 @@ for v in versions:
     tags, vid, at = v["tags"], v["id"], v["created_at"]
     kind = "sha-only" if tags else "untagged"
     named = ",".join(tags)
-    if tags and not all(t.startswith("sha-") for t in tags):
+    if tags and not all(t.startswith(("sha-", "main-sha-")) for t in tags):
         print(f"KEEP {vid} {at} named tag: {named}")
     elif kept < keep_min:
         kept += 1

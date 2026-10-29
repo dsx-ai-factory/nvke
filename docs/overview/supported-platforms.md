@@ -1,6 +1,6 @@
 # Supported platforms and versions
 
-This page lists the Kubernetes versions, networking, infrastructure providers, node operating system and tools that this release of NVIDIA Kubernetes Engine (NVKE) supports. Values change between releases; the values below are checked against this release's source and the NVIDIA Kubernetes Recipes (NVKR) Definitions that build its artifacts.
+This page lists the Kubernetes versions, networking, infrastructure providers, node operating system and tools that this release of NVIDIA Kubernetes Engine (NVKE) supports. Values change between releases; the values below are checked against this release's source. The node-image rows describe the repository's reference image build.
 
 In the Notes column, **Pinned** means NVKE builds, installs or stages exactly that version, and other versions are not supported. **Range** means NVKE accepts any version within the stated bounds. For what preview does and does not support, see [Preview status and known limitations](preview-status.md).
 
@@ -43,7 +43,7 @@ The NVKE API and the site spec have no field to change a feature gate. The [Kube
 
 | Provider | Version | Notes |
 |---|---|---|
-| NVIDIA Infra Controller (NICo), through CAPNICo | CAPNICo v0.0.45 | Pinned. The only infrastructure provider for workload clusters. The install deploys this CAPNICo release with the reboot and repair settings NVKE uses. The local quickstart builds a development CAPNICo version from source instead. |
+| NVIDIA Infra Controller (NICo), through CAPNICo | CAPNICo v0.0.45 | Pinned. The default infrastructure provider for workload clusters; LaunchLayer is also supported once enabled, see [Infrastructure Providers](../site-bootstrap/infrastructure-providers.md#launchlayer). The install deploys this CAPNICo release with the reboot and repair settings NVKE uses. The local quickstart builds a development CAPNICo version from source instead. |
 | Cluster API core, kubeadm bootstrap and kubeadm control plane | v1.13.6 | Pinned. One version covers `clusterctl`, the providers that `clusterctl init` installs on the management cluster, and the providers `nvkectl` installs in the seed cluster. |
 | cert-manager | The version Cluster API v1.13.6 installs | `clusterctl init` installs it. |
 | Provisioned infrastructure provider | Built from the same NVKE source as `nvkectl` | Runs only in the seed cluster during bootstrap, to form the management cluster. |
@@ -52,14 +52,16 @@ The NVKE API and the site spec have no field to change a feature gate. The [Kube
 
 | Item | Supported | Notes |
 |---|---|---|
-| Operating system | Ubuntu 26.04 LTS or Ubuntu 24.04 LTS | Both releases are built, published and qualified; no other release is supported. 26.04 is the default. NVKR builds the node image from the Ubuntu server installer for the release you select. |
-| CPU architectures | amd64, arm64 | NVKR has a node image Definition for each architecture. |
+| Operating system | Ubuntu 26.04 LTS or Ubuntu 24.04 LTS | No other release is supported. The reference Make build defaults to Ubuntu 26.04.1; set `UBUNTU_RELEASE` to select the installer point release. See the image build guide for release selection and verification. |
+| CPU architectures | amd64, arm64 | Set `ARCH=amd64` or `ARCH=arm64` on the repository image Make target; `image-native` requires a matching Linux/KVM host. |
 | Kernel | `linux-nvidia` on amd64, `linux-nvidia-64k` on arm64 | Ubuntu's NVIDIA-tuned kernel flavors. |
-| Full-disk encryption (FDE) | FDE node image, amd64 and arm64, for evaluation only | NVKR's hosted pipeline is configured to build `nvke-node-fde-amd64` and `nvke-node-fde-arm64`, with the root volume on LUKS2. A local build with NVKR's `scripts/nvke-os-local.sh` produces only the image without FDE. Nodes built from one FDE image share its volume encryption key, so the image does not protect data at rest; see [Preview status and known limitations](preview-status.md#building-artifacts). |
+| Full-disk encryption (FDE) | Opt-in reference build, amd64 and arm64, for evaluation only | `VARIANT=fde`; follow the separate [build and verification instructions](../../os-image/README.md#full-disk-encryption-fde-variant). NVKR's hosted pipeline also selects FDE images for both architectures; its local `scripts/nvke-os-local.sh` path builds only non-FDE. Nodes built from one FDE image share its volume encryption key, so the image does not protect data at rest; see [Preview status and known limitations](preview-status.md#building-artifacts). |
 | SPIFFE Runtime Environment (SPIRE) agent | 1.14.1, with TPM plugin 1.9.0 | Pinned. Installed on the node image for TPM node attestation. |
-| Node agent (`nvke-agent`) | Built from the NVKE source NVKR pins | Installed and enabled on the node image. Listens on port 15005. |
+| Node agent (`nvke-agent`) | Built from the NVKE checkout used for the image | Installed and enabled on the node image. Listens on port 15005. |
 
-NVKR's [node image Definition](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/definitions/diagnostics/README.md) lists the build host requirements; [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md) summarizes them.
+[Build the OS image](../../os-image/README.md#build-the-os-image) lists the build host requirements and Make targets; [Build and host node OS images](../operate/build-node-images.md) covers the build and HTTP(S) hosting. [Register node images for provisioning](../operate/build-node-images.md#register-the-image-for-provisioning) covers the management-cluster configuration.
+
+For NVKR's separate build route, see its [node image Definition](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/definitions/diagnostics/README.md).
 
 ## Management and bootstrap tooling
 
@@ -69,9 +71,9 @@ NVKR's [node image Definition](https://github.com/dsx-ai-factory/nvkr/blob/main/
 | Container runtime on the bootstrap host | Rootful `nerdctl` with containerd | No version is checked. Docker is not supported. |
 | `kind` | v0.32.0 | Pinned for continuous integration (CI) and the local quickstart. The bootstrap does not check the version. |
 | `kubectl` | v1.36.0 | Pinned for CI. The bootstrap does not check the version. |
-| `clusterctl` | v1.13.6 | Pinned. Match the Cluster API version above. `deploy/check-site.sh` reports a Cluster API of another version. |
-| Helm | v4.2.4 | Pinned. The install and the local quickstart need Helm 4; Helm 3 cannot install the charts. `deploy/check-site.sh` warns on another version. |
-| Go, to build `nvkectl` and the NVKE images | 1.27.2 or later | Range. An older Go downloads 1.27.2 unless `GOTOOLCHAIN=local` is set. Also needs GNU Make. |
+| `clusterctl` | v1.13.6 | Pinned. Match the Cluster API version above. The install reports a Cluster API of another version. |
+| Helm | v4.2.4 | Pinned. The install and the local quickstart need Helm 4; Helm 3 cannot install the charts. The install warns on another version. |
+| Go, to build `nvkectl` and the NVKE images | 1.27.3 or later | Range. An older Go downloads 1.27.3 unless `GOTOOLCHAIN=local` is set. Also needs GNU Make. |
 | Go, to build `nvkr` (NVKR) | 1.27.2 | Pinned in NVKR's `.go-version`. |
 | `nvkectl` | Linux and macOS, amd64 and arm64 | `nvkectl bootstrap site` runs only on a Linux bootstrap host. |
 | Management cluster nodes | amd64, arm64 | All nodes of one architecture. The install reads it from the nodes and selects the release's artifacts for it. NVKR's maintained release builds the controller image for both architectures. |

@@ -7,14 +7,14 @@ package metrics
 import (
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/auth/authn"
 )
 
 const (
 	// outcomeLabel is authenticated | would_reject | rejected.
 	outcomeLabel = "outcome"
 
-	// reasonLabel is an internal/auth.FailureReason, empty on success.
+	// reasonLabel is an auth/authn.FailureReason, empty on success.
 	reasonLabel = "reason"
 
 	// issuerLabel is the configured issuer name or "unknown". The name, never
@@ -37,8 +37,9 @@ var (
 	)
 
 	// authEnabled is a config-state gauge, not a traffic counter: it is set once
-	// at startup from cfg.AuthConfigPath/PermissiveMode, so a site with zero
-	// callers still reports its real mode. nvke_auth_requests_total cannot answer
+	// at startup from whether authentication is on (AUTH_CONFIG_PATH or
+	// apiAuth.enabled) and apiAuth.permissive, so a site with zero callers still
+	// reports its real mode. nvke_auth_requests_total cannot answer
 	// "is this on" on its own -- its series only exist once a request has been
 	// evaluated, so a quiet site is indistinguishable from a disabled one.
 	authEnabled = prometheus.NewGaugeVec(
@@ -50,7 +51,7 @@ var (
 		[]string{"mode"},
 	)
 
-	_ auth.Recorder = RecordAuthRequest
+	_ authn.Recorder = RecordAuthRequest
 )
 
 func init() {
@@ -58,15 +59,15 @@ func init() {
 }
 
 // RecordAuthRequest counts one authentication decision. Its signature is
-// internal/auth.Recorder, so main passes it to auth.NewAuthenticator directly.
-func RecordAuthRequest(outcome auth.Outcome, reason auth.FailureReason, issuer string) {
+// auth/authn.Recorder, so main passes it to authn.NewAuthenticator directly.
+func RecordAuthRequest(outcome authn.Outcome, reason authn.FailureReason, issuer string) {
 	authRequestsTotal.WithLabelValues(string(outcome), string(reason), issuer).Inc()
 }
 
 // SetAuthMode records the deployment's authentication mode once at startup:
 // "off", "permissive", or "enforcing". Call exactly once; it is not meant to
 // track changes at runtime, since the config is only ever read once at
-// startup (see internal/auth.Setup).
+// startup (see auth/authn.Setup).
 func SetAuthMode(mode string) {
 	authEnabled.WithLabelValues(mode).Set(1)
 }

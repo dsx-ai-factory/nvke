@@ -53,7 +53,8 @@ func TestExistsOverHTTP(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "HTTP 404") {
 			t.Fatalf("err = %v, want it to report the 404", err)
 		}
-		if strings.Contains(err.Error(), "403") {
+		// The server's ephemeral port can contain "403", so match the explanation, not the number.
+		if strings.Contains(err.Error(), "a network that is not allowed") {
 			t.Errorf("a 404 should not carry the 403 explanation:\n%s", err)
 		}
 	})

@@ -253,7 +253,7 @@ collect_diagnostics() {
     capture management-nodes.txt kubectl get nodes -o wide
     capture management-pods.txt kubectl get pods -A -o wide
     capture management-events.txt kubectl get events -A --sort-by=.lastTimestamp
-    capture cwe.log kubectl -n nke-controller logs deployment/nke-controller --all-containers --tail=-1
+    capture cwe.log kubectl -n nvke-controller logs deployment/nvke-controller --all-containers --tail=-1
     capture capnico-controller.log kubectl -n capnico-system logs deployment/controller-manager --all-containers --tail=-1
     capture capi-controller.log kubectl -n capi-system logs deployment/capi-controller-manager --all-containers --tail=-1
     capture capi-kubeadm-bootstrap-controller.log kubectl -n capi-kubeadm-bootstrap-system logs deployment/capi-kubeadm-bootstrap-controller-manager --all-containers --tail=-1
@@ -374,14 +374,15 @@ export CNPG_TEMPORAL_PASSWORD="${CNPG_TEMPORAL_PASSWORD:-example-password}"
 export TENANT_ACCESS_ENABLED=true
 export NKE_OIDC_AUTH_ENABLED=true
 # Config profiles and runbooks only. OS images come from the releases below.
-# CWE_PROFILES_DIR is the deprecated name for NKE_CONTROLLER_PROFILES_DIR; #1399 removes it.
-export NKE_CONTROLLER_PROFILES_DIR="${NKE_CONTROLLER_PROFILES_DIR:-${CWE_PROFILES_DIR:-${CONTROLLER_ROOT}/test/fixtures/profiles}}"
-RELEASES_SRC="${NKE_CONTROLLER_RELEASES_DIR:-${CONTROLLER_ROOT}/test/fixtures/releases}"
+# NKE_CONTROLLER_PROFILES_DIR and CWE_PROFILES_DIR are the deprecated names for NVKE_CONTROLLER_PROFILES_DIR; #1399 removes them.
+export NVKE_CONTROLLER_PROFILES_DIR="${NVKE_CONTROLLER_PROFILES_DIR:-${NKE_CONTROLLER_PROFILES_DIR:-${CWE_PROFILES_DIR:-${CONTROLLER_ROOT}/test/fixtures/profiles}}}"
+# NKE_CONTROLLER_RELEASES_DIR is a deprecated name for NVKE_CONTROLLER_RELEASES_DIR; #1399 removes it.
+RELEASES_SRC="${NVKE_CONTROLLER_RELEASES_DIR:-${NKE_CONTROLLER_RELEASES_DIR:-${CONTROLLER_ROOT}/test/fixtures/releases}}"
 [[ -d "${RELEASES_SRC}" ]] || fail "releases not found at ${RELEASES_SRC}"
-export NKE_CONTROLLER_RELEASES_DIR="${STATE_DIR}/releases"
-rm -rf "${NKE_CONTROLLER_RELEASES_DIR}"
-mkdir -p "${NKE_CONTROLLER_RELEASES_DIR}"
-cp -R "${RELEASES_SRC}/." "${NKE_CONTROLLER_RELEASES_DIR}/"
+export NVKE_CONTROLLER_RELEASES_DIR="${STATE_DIR}/releases"
+rm -rf "${NVKE_CONTROLLER_RELEASES_DIR}"
+mkdir -p "${NVKE_CONTROLLER_RELEASES_DIR}"
+cp -R "${RELEASES_SRC}/." "${NVKE_CONTROLLER_RELEASES_DIR}/"
 # Inherited by Tilt's serve_cmd. -1 skips the console SSH listener; :2222 taken is fatal.
 export NICO_VMS_CONSOLE_SSH_PORT="${NICO_VMS_CONSOLE_SSH_PORT:--1}"
 export NICO_VMS_LIBVIRT_URI="${LIBVIRT_URI}"
@@ -408,7 +409,7 @@ export NICO_SIM_FILES_DIR="${NICO_SIM_DIR}/var/files"
 # matching release. Keep this name in step with nicoVMSRelease in
 # test/e2e/tenant_test.go.
 NODEPOOL_RELEASE="nvke-nico-vms-24.04-${host_arch}-fde"
-AGENT_URL_PATH="$(grep -oE 'files/[a-z-]+/nvke-agent' "${NKE_CONTROLLER_RELEASES_DIR}/${NODEPOOL_RELEASE}-nodepoolrelease.yaml" | head -1)"
+AGENT_URL_PATH="$(grep -oE 'files/[a-z-]+/nvke-agent' "${NVKE_CONTROLLER_RELEASES_DIR}/${NODEPOOL_RELEASE}-nodepoolrelease.yaml" | head -1)"
 [[ -n "${AGENT_URL_PATH}" ]] || fail "${NODEPOOL_RELEASE} no longer downloads nvke-agent from /files/"
 log "building nvke-agent from ${WORKSPACE_ROOT}/agent"
 make -C "${WORKSPACE_ROOT}/agent" "build-${host_arch}" >"${STATE_DIR}/agent-build.log" 2>&1 ||
@@ -426,11 +427,12 @@ log "staged nvke-agent for the tenant nodes: $(git -C "${WORKSPACE_ROOT}" descri
 # copyLocal in nico-sim/internal/ipxe/imagecache.go, whose own comment gives
 # the reason -- an image built in the same job is already on disk.
 # The newest tag GHCR holds for this architecture, built from a commit on the
-# branch under test. Registry tag order is not chronological and sha-<hex>
-# carries no ordering, so this reads updated_at from the packages API. PR
-# builds publish here too, so a tag counts only if its commit is an ancestor
-# of HEAD (the checkout has fetch-depth 0). Flavor tags (-ubuntu24.04-) are
-# skipped. The -<arch> suffix comes off, because image_ref adds it back.
+# branch under test: sha-<hex> from a tag or a dispatch, main-sha-<hex> from a
+# run on main. Registry tag order is not chronological and the hex carries no
+# ordering, so this reads updated_at from the packages API. PR builds publish
+# here too, so a tag counts only if its commit is an ancestor of HEAD (the
+# checkout has fetch-depth 0). Flavor tags (-ubuntu24.04-) are skipped. The
+# -<arch> suffix comes off, because image_ref adds it back.
 newest_os_image_tag() {
   local arch="$1" repo path org pkg tag sha
   # Keep this in step with image_repo below: both lanes booted an LVM image
@@ -440,7 +442,8 @@ newest_os_image_tag() {
   org="${path%%/*}"
   pkg="${path#*/}"
   while read -r tag; do
-    sha="${tag#sha-}"
+    sha="${tag#main-}"
+    sha="${sha#sha-}"
     sha="${sha%%-*}"
     if ! git -C "${WORKSPACE_ROOT}" merge-base --is-ancestor "${sha}" HEAD 2>/dev/null; then
       log "skipping os-image ${tag}: commit ${sha:0:9} is not on this branch" >&2
@@ -452,7 +455,7 @@ newest_os_image_tag() {
       "/orgs/${org}/packages/container/${pkg//\//%2F}/versions?per_page=100" \
       --jq '(if type == "array" then . else [] end)[] | {u: .updated_at, t: (.metadata.container.tags // [])[]}' 2>/dev/null |
     jq -rs --arg a "-${arch}" \
-      'map(select(.t | startswith("sha-") and endswith($a) and (contains("-ubuntu") | not)))
+      'map(select(.t | (startswith("sha-") or startswith("main-sha-")) and endswith($a) and (contains("-ubuntu") | not)))
        | sort_by(.u) | reverse | .[].t')
   return 1
 }
@@ -513,7 +516,7 @@ if [[ -n "${NKE_E2E_OS_IMAGE_TAG:-}" ]]; then
   # pin in place and the lane would quietly test the wrong thing. The script is a
   # YAML block scalar, so the line keeps its indentation.
   repointed=0
-  for manifest in "${NKE_CONTROLLER_RELEASES_DIR}"/*-machineimage.yaml; do
+  for manifest in "${NVKE_CONTROLLER_RELEASES_DIR}"/*-machineimage.yaml; do
     grep -Eq '^ +set image-url ' "${manifest}" || continue
     # Not sed -i: it takes an argument on BSD and none on GNU, and this script
     # is run by hand on both.
@@ -528,7 +531,7 @@ if [[ -n "${NKE_E2E_OS_IMAGE_TAG:-}" ]]; then
   # userData.tmpl and this check used to walk straight past it, so the lane
   # reported "no CloudFront left" while still shipping a CloudFront URL to
   # every node it created.
-  if grep -rl cloudfront.net "${NKE_CONTROLLER_RELEASES_DIR}" 2>/dev/null; then
+  if grep -rl cloudfront.net "${NVKE_CONTROLLER_RELEASES_DIR}" 2>/dev/null; then
     fail "the manifest(s) listed above still name CloudFront after repointing"
   fi
   log "tenant nodes boot ${qcow} (${repointed} image(s) repointed, no CloudFront left)"
@@ -542,28 +545,28 @@ rm -rf "${NICO_SIM_DIR}/.dev"
 # it re-queues itself forever. Prebuild both images, as ci/backend-e2e.sh does.
 git_sha="$(git -C "${WORKSPACE_ROOT}" rev-parse HEAD)"
 git_short_sha="$(git -C "${WORKSPACE_ROOT}" rev-parse --short=12 HEAD)"
-NKE_CONTROLLER_IMAGE="cwe-e2e:${git_short_sha}"
-NKE_CONTROLLER_BUILD_VERSION="e2e-${git_short_sha}"
-NKE_CONTROLLER_PROFILES_TILT_IMAGE="docker.local/cwe-profiles:tilt"
+NVKE_CONTROLLER_IMAGE="cwe-e2e:${git_short_sha}"
+NVKE_CONTROLLER_BUILD_VERSION="e2e-${git_short_sha}"
+NVKE_CONTROLLER_PROFILES_TILT_IMAGE="docker.local/cwe-profiles:tilt"
 
 # Both host builds pull their bases through the mirror; see dockerhub_build_args.
-log "building the profiles fixture image ${NKE_CONTROLLER_PROFILES_TILT_IMAGE}"
+log "building the profiles fixture image ${NVKE_CONTROLLER_PROFILES_TILT_IMAGE}"
 mapfile -t profiles_build_args < <(dockerhub_build_args test/fixtures/Dockerfile)
 docker build --platform "linux/${host_arch}" "${profiles_build_args[@]}" \
-  --file test/fixtures/Dockerfile --tag "${NKE_CONTROLLER_PROFILES_TILT_IMAGE}" test/fixtures \
+  --file test/fixtures/Dockerfile --tag "${NVKE_CONTROLLER_PROFILES_TILT_IMAGE}" test/fixtures \
   >"${STATE_DIR}/profiles-image-build.log" 2>&1 ||
   { tail -n 40 "${STATE_DIR}/profiles-image-build.log" >&2; fail "building the profiles image failed"; }
 
-log "building the controller image ${NKE_CONTROLLER_IMAGE}"
+log "building the controller image ${NVKE_CONTROLLER_IMAGE}"
 mapfile -t cwe_build_args < <(dockerhub_build_args "${CONTROLLER_ROOT}/Dockerfile")
 DOCKER_BUILDKIT=1 docker build --platform "linux/${host_arch}" "${cwe_build_args[@]}" \
   --file "${CONTROLLER_ROOT}/Dockerfile" \
-  --build-arg "BUILD_VERSION=${NKE_CONTROLLER_BUILD_VERSION}" \
+  --build-arg "BUILD_VERSION=${NVKE_CONTROLLER_BUILD_VERSION}" \
   --build-arg "GIT_VERSION=${git_sha}" \
-  --tag "${NKE_CONTROLLER_IMAGE}" "${WORKSPACE_ROOT}" \
+  --tag "${NVKE_CONTROLLER_IMAGE}" "${WORKSPACE_ROOT}" \
   >"${STATE_DIR}/cwe-image-build.log" 2>&1 ||
   { tail -n 60 "${STATE_DIR}/cwe-image-build.log" >&2; fail "building the controller image failed"; }
-export NKE_CONTROLLER_PROFILES_PRELOADED=true
+export NVKE_CONTROLLER_PROFILES_PRELOADED=true
 
 # ── Management cluster: kind + CAPI core ────────────────────────────────────
 log "creating the kind management cluster ${KIND_CLUSTER_NAME} with CAPI core"
@@ -578,8 +581,8 @@ configure_kind_dockerhub_mirror "${KIND_CLUSTER_NAME}"
 make -C "${CONTROLLER_ROOT}" capi-core-up KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
   REGISTRY_MIRROR_IMAGE="$(dockerhub_image registry:2)"
 kind get kubeconfig --name "${KIND_CLUSTER_NAME}" >"${E2E_KUBECONFIG}"
-log "loading ${NKE_CONTROLLER_IMAGE} and ${NKE_CONTROLLER_PROFILES_TILT_IMAGE} into the kind cluster"
-kind load docker-image --name "${KIND_CLUSTER_NAME}" "${NKE_CONTROLLER_IMAGE}" "${NKE_CONTROLLER_PROFILES_TILT_IMAGE}"
+log "loading ${NVKE_CONTROLLER_IMAGE} and ${NVKE_CONTROLLER_PROFILES_TILT_IMAGE} into the kind cluster"
+kind load docker-image --name "${KIND_CLUSTER_NAME}" "${NVKE_CONTROLLER_IMAGE}" "${NVKE_CONTROLLER_PROFILES_TILT_IMAGE}"
 
 # ── Tilt: controller, SPIRE, nico-vms, CAPNICo ─────────────────────────────────────
 # No site_controller_vip: the kind node's container address is not routable
@@ -595,10 +598,10 @@ else
 fi
 jq -n \
   --arg capnico "${CAPNICO_SOURCE_DIR}" \
-  --arg cwe_image "${NKE_CONTROLLER_IMAGE}" \
+  --arg nvke_controller_image "${NVKE_CONTROLLER_IMAGE}" \
   '{
     providers: ["capi_core", "nico"],
-    cwe_image: $cwe_image,
+    nvke_controller_image: $nvke_controller_image,
     capnico_source_dir: $capnico,
     nico_sim_backends: ["vm"],
     nico_vms_observability: false
@@ -667,11 +670,11 @@ wait_for_tilt() {
 }
 wait_for_tilt
 
-kubectl -n nke-controller rollout status deployment/nke-controller --timeout=5m
-# Tilt passes both as chart values, which the chart renders into nke-controller-config.
+kubectl -n nvke-controller rollout status deployment/nvke-controller --timeout=5m
+# Tilt passes both as chart values, which the chart renders into nvke-controller-config.
 for setting in tenantAccess.enabled nvkeOIDCAuth.enabled; do
-  value="$(helm -n nke-controller get values nke-controller --all -o json | jq -r ".${setting}")"
-  [[ "${value}" == "true" ]] || fail "${setting} must be true in the nke-controller release, got ${value:-<empty>}"
+  value="$(helm -n nvke-controller get values nvke-controller --all -o json | jq -r ".${setting}")"
+  [[ "${value}" == "true" ]] || fail "${setting} must be true in the nvke-controller release, got ${value:-<empty>}"
 done
 kubectl -n capnico-system rollout status deployment/controller-manager --timeout=5m
 curl -fsS --max-time 5 http://localhost:18080/healthz >/dev/null || fail "nico-vms does not answer on localhost:18080"
@@ -713,8 +716,8 @@ test_timeout="$((ginkgo_minutes + 15))m"
 log "running E2E specs matching ${LABEL_FILTER} (ginkgo timeout ${GINKGO_TIMEOUT})"
 start_state_monitor
 set +e
-env NKE_CONTROLLER_RELEASES_DIR="${CONTROLLER_ROOT}/test/fixtures/fleet-releases" \
-  NKE_CONTROLLER_EXPECTED_VERSION="${NKE_CONTROLLER_BUILD_VERSION}" \
+env NVKE_CONTROLLER_RELEASES_DIR="${CONTROLLER_ROOT}/test/fixtures/fleet-releases" \
+  NVKE_CONTROLLER_EXPECTED_VERSION="${NVKE_CONTROLLER_BUILD_VERSION}" \
   "${E2E_BIN}" \
   -test.v \
   -test.timeout="${test_timeout}" \

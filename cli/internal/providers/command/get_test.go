@@ -305,3 +305,34 @@ func TestGetProviders_ShowsCredentialHealthColumns(t *testing.T) {
 		t.Errorf("launchlayer row = %v, want - in CREDENTIALS and LAST CHECK", ll)
 	}
 }
+
+func TestGetProviders_JSONShowsTheNextCheckTimeAndNoStaleThreshold(t *testing.T) {
+	id := nicoDefault(2*time.Minute, "True", "ValidationSucceeded", "Authentication and current-tenant lookup succeeded.")
+	id.NextCheck = new(id.LastChecked.Add(4*time.Minute + 30*time.Second))
+	out, stderr, err := runSplit(t, nicoSite(), serving(id), "-o", "json")
+	if err != nil {
+		t.Fatalf("get providers -o json: %v\n%s", err, stderr)
+	}
+	var listed []struct {
+		Type        string         `json:"type"`
+		Credentials map[string]any `json:"credentials"`
+	}
+	if err := json.Unmarshal([]byte(out), &listed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	for _, p := range listed {
+		if p.Type != "nico" {
+			continue
+		}
+		if v, ok := p.Credentials["staleAfterSeconds"]; ok {
+			t.Errorf("credentials carries staleAfterSeconds = %v, want no such field", v)
+		}
+		// The API reports whole seconds, as the provider writes them.
+		want := id.NextCheck.UTC().Truncate(time.Second).Format(time.RFC3339)
+		if got, ok := p.Credentials["nextCheckTime"].(string); !ok || got != want {
+			t.Errorf("credentials.nextCheckTime = %v, want %q", p.Credentials["nextCheckTime"], want)
+		}
+		return
+	}
+	t.Fatalf("no nico provider in:\n%s", out)
+}

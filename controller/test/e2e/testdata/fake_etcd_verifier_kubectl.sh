@@ -29,8 +29,21 @@ case "$args" in
 				*) exit 98 ;;
 			esac
 			: > "${FAKE_STATE_DIR}/server-${server_index}"
+			exit 0
 		fi
-		exit "${FAKE_CREATE_STATUS:-0}"
+		# The first FAKE_CREATE_FAILURES calls through the kubeconfig's server
+		# fail the way a reset connection to the control-plane endpoint does.
+		# The per-apiserver probes above are not affected.
+		create_failures=0
+		if [ -f "${FAKE_STATE_DIR}/create-failures" ]; then
+			read -r create_failures < "${FAKE_STATE_DIR}/create-failures"
+		fi
+		if [ "$create_failures" -lt "${FAKE_CREATE_FAILURES:-0}" ]; then
+			echo $((create_failures + 1)) > "${FAKE_STATE_DIR}/create-failures"
+			printf 'Unable to connect to the server: fake connection reset by peer\n' >&2
+			exit 1
+		fi
+		exit 0
 		;;
 	*" get --raw /metrics"*)
 		case "$api_server" in

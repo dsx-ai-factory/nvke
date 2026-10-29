@@ -21,6 +21,12 @@ type SiteConfig struct {
 	ProxyClientCertFile string `yaml:"proxy-client-cert,omitempty"`
 	// ProxyClientKeyFile is the path to the private key matching ProxyClientCertFile.
 	ProxyClientKeyFile string `yaml:"proxy-client-key,omitempty"`
+	// OTLPEndpoint is the host:port of the OTLP/gRPC endpoint that receives
+	// the spans and log records of commands that use this site. Headers are
+	// never stored: they come from OTEL_EXPORTER_OTLP_HEADERS.
+	OTLPEndpoint string `yaml:"otlp-endpoint,omitempty"`
+	// OTLPInsecure sends to OTLPEndpoint without TLS.
+	OTLPInsecure bool `yaml:"otlp-insecure,omitempty"`
 }
 
 // Config is the top-level nvkectl config file.

@@ -1,0 +1,56 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Values for the Bitnami postgresql chart. One PostgreSQL serves the controller
+# and Temporal.
+#
+# No password is in this file. The command creates the nvke-database Secret
+# and the chart reads the admin password from it. Temporal reads the same key
+# of the same Secret. The controller reads a connection string from it that
+# the command builds with the same password.
+
+# The chart names its Service after the fullname. Pinning it keeps the host
+# nvke-postgresql.postgres.svc.cluster.local stable whatever the release is
+# called. values/temporal.yaml and values/controller.yaml dial that host.
+fullnameOverride: nvke-postgresql
+namespaceOverride: postgres
+
+auth:
+  username: postgres
+  database: postgres
+  existingSecret: nvke-database
+  secretKeys:
+    adminPasswordKey: postgres-password
+
+primary:
+  # primary.persistence, not a top-level persistence. The chart nests it here.
+  # Helm does not reject unknown values, so a top-level persistence.enabled is
+  # accepted and silently ignored. The result is PostgreSQL on an emptyDir.
+  persistence:
+    enabled: true
+    size: 40Gi
+    # Empty takes the cluster's default StorageClass. The right provisioner
+    # depends on the hardware. There must be a default, or the PVC stays
+    # Pending.
+    storageClass: ""
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      memory: 256Mi
+  # The databases the controller and Temporal expect. Nothing else creates
+  # them. initdb runs once, on an empty data directory.
+  initdb:
+    scripts:
+      init-controller.sql: |
+        CREATE DATABASE "nvke-controller";
+      init-temporal.sql: |
+        CREATE DATABASE temporal;
+        CREATE DATABASE temporal_visibility;
+
+# Pinned by digest. The chart defaults every image to tag latest, and
+# bitnami/postgresql on Docker Hub publishes no version tags. A digest is the
+# only durable reference. Without it two installs a week apart run different
+# binaries with nothing in the tree to show it.
+image:
+  digest: "sha256:b74b23f091dcc87041bcae557d840c36458af46b955279cb13aedec4c32d7f71"

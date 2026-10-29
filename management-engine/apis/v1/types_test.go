@@ -6,6 +6,7 @@ package v1
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 )
@@ -21,6 +22,8 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 	}
 	codecs := serializer.NewCodecFactory(scheme)
 	zero := int32(0)
+	three := int32(3)
+	instanceTypes := []string{"bc3e5a7f-9b1d-4f3e-a5c7-e9b1d3f5a7c9", "1c3e5a7f-9b1d-4f3e-a5c7-e9b1d3f5a7c9"}
 
 	for _, tt := range []struct {
 		resource string
@@ -91,6 +94,24 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 				},
 			},
 		},
+		{
+			resource: "controlplaneclasses", kind: "ControlPlaneClass",
+			object: &ControlPlaneClass{
+				Name: "standard",
+				Spec: ControlPlaneClassSpec{
+					ControlPlane: ControlPlaneClassConfig{
+						Replicas: &three, InstanceTypePreferences: instanceTypes, SystemReservedMemory: "16Gi",
+					},
+					Rollout: ControlPlaneClassRollout{Strategy: ControlPlaneClassRolloutStrategy{
+						Type: "RollingUpdate", RollingUpdate: ControlPlaneClassRollingUpdate{MaxSurge: 0},
+					}},
+				},
+			},
+			verify: func(t *testing.T, decoded runtime.Object) {
+				class := decoded.(*ControlPlaneClass)
+				require.Equal(t, instanceTypes, class.Spec.ControlPlane.InstanceTypePreferences, "instance preference order must survive serialization")
+			},
+		},
 	} {
 		t.Run(tt.kind, func(t *testing.T) {
 			encoded, err := runtime.Encode(codecs.LegacyCodec(GroupVersion), tt.object)
@@ -113,7 +134,7 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 		})
 	}
 
-	for _, kind := range []string{"NVKEClusterList", "MachineImageList", "ClusterReleaseList", "NodePoolReleaseList"} {
+	for _, kind := range []string{"NVKEClusterList", "MachineImageList", "ClusterReleaseList", "NodePoolReleaseList", "ControlPlaneClassList"} {
 		if _, err := scheme.New(GroupVersion.WithKind(kind)); err != nil {
 			t.Fatal(err)
 		}

@@ -176,7 +176,7 @@ func nicoStackSiteSpec(t *testing.T, edit func(string) string) string {
 }
 
 // oneNicoNodeNoVIP makes the nico example a single node with no control-plane
-// VIP: valid for the bootstrap, and with no address for the stack install.
+// VIP, which a nico site spec must have.
 func oneNicoNodeNoVIP(t *testing.T) func(string) string {
 	return func(text string) string {
 		t.Helper()

@@ -4,7 +4,7 @@ This page describes how to create an NVIDIA Kubernetes Engine (NVKE) workload cl
 
 ## Before you begin
 
-- You have completed [Install management-plane services](../operate/install-management-plane-services.md) and [Configure an infrastructure provider: NICo](../operate/provider-nico.md).
+- You have completed [Install the management plane](../operate/install-management-plane.md) and [Configure an infrastructure provider: NICo](../operate/provider-nico.md).
 - `nvkectl` points at your management plane, set with `nvkectl config set-site`, and `nvkectl get providers` reports the `nico` row as `CONFIGURED`. If you turned on API authentication, `nvkectl` uses an OpenID Connect (OIDC) kubeconfig, as described in [Secure the NVKE API](../operate/api-authentication.md). `nvkectl get providers` reads the management cluster's Kubernetes API with that kubeconfig, which the bootstrap does not configure to accept tokens from your identity provider, so the command fails. Check the provider with the management cluster's admin kubeconfig instead:
 
   ```bash
@@ -76,7 +76,7 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
    |---|---|---|
    | `cniPlugin` | `ovn-kubernetes` | `cniVersion` defaults to `2.4.2`, the version the node image carries. |
    | `etcdEncrypted` | None, required | Encrypts etcd at rest. You can turn encryption on later, but not off. |
-   | `controlPlaneVIP` | None | Without a VIP, the API endpoint is the first control-plane node's IP, `desiredCount` must be `1`, and you cannot later scale the control plane above one node, upgrade it or replace its nodes. Recreate the cluster to add a VIP. |
+   | `controlPlaneVIP` | None | Without a VIP, the API endpoint is the first control-plane node's IP. By default, `desiredCount` must be `1`, and you cannot later scale the control plane above one node, upgrade it or replace its nodes. The [development override](#change-cluster-settings-after-creation) permits those operations without a VIP. Recreate the cluster to add a VIP. |
    | `network.podCIDR` | `192.168.0.0/16` | Private IPv4 CIDRs, comma-separated, each `/12` to `/23`. Needs one `/24` for every node in the request, plus one. |
    | `network.serviceCIDR` | `10.96.0.0/12` | Private IPv4, `/12` to `/24`. |
    | `nico.orgID`, `siteID`, `vpcID` | None, required | Fixed for the life of the cluster. |
@@ -87,7 +87,7 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
 
    | Field | Default | Notes |
    |---|---|---|
-   | `controlPlaneConfig.desiredCount` | None, required | Number of control-plane nodes. Use an odd number so that etcd keeps a quorum. More than one requires `controlPlaneVIP`. |
+   | `controlPlaneConfig.desiredCount` | None, required | Number of control-plane nodes. Use an odd number so that etcd keeps a quorum. More than one requires `controlPlaneVIP` unless the controller enables the development override described below. Exactly two is excluded from automatic certificate renewal: create the cluster with one, or three or more. An existing two-node cluster cannot scale down to one and must be scaled to three or more. |
    | `controlPlaneConfig.maxSurge` | `0` | Extra control-plane nodes allowed during a rollout: `0` or `1`. |
    | `controlPlaneConfig.systemReservedMemory` | `16Gi` | Memory the kubelet reserves for system daemons. |
    | `controlPlaneConfig.nodeLabels` | None | Labels applied to each control-plane node after it joins. Set at creation; updating them is not supported, see [Preview status and known limitations](../overview/preview-status.md#workload-clusters-and-node-pools). Control-plane nodes take no custom taints. |
@@ -135,11 +135,14 @@ curl -X POST http://<MANAGEMENT_ADDRESS>:30080/api/clusters \
    | `STATUS` | Meaning |
    |---|---|
    | `Provisioning` | NVKE is requesting machines from NICo and forming the cluster. |
-   | `Provisioned` | The first control-plane node ran `kubeadm init` and the Container Network Interface (CNI) plugin is installed. The other nodes join after this. |
+   | `Provisioned` | The first control-plane node ran `kubeadm init` and the Container Network Interface (CNI) plugin is installed. The other nodes join after this. This is provisioning state, not certificate-maintenance health. |
    | `ProvisioningFailed` | Provisioning stopped. The `provisioning` condition's message gives the cause. |
-   | `Updating`, `Upgrading`, `Recycling` | A day-2 operation is running. |
+   | `Updating` | A day-2 operation is running, a failed certificate renewal retained the cluster mutation lock (`conditions.updateInProgress.type=certificate_renewal` with `conditions.certificateRenewal.state=failed`), or a failed etcd key rotation retained it (`conditions.updateInProgress.type=etcd_key_rotation` with `conditions.etcdKeyRotation.state=failed`, or `state=running` while the workflow named by `conditions.etcdKeyRotation.workflowID` is no longer open). A retained lock needs operator recovery, not just waiting for `Provisioned`: [ownership-checked recovery](../../controller/docs/certificate-renewal.md#status-and-failure-handling) for a certificate renewal, or [phase-aware recovery](../../controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery) for an etcd key rotation. |
+   | `Upgrading`, `Recycling` | A day-2 operation is running. |
    | `UpdateFailed` | The last day-2 operation failed. |
    | `Deleting` | The cluster is being deleted. |
+
+   Inspect `conditions.certificateRenewal.state`, its `phase` and `message`, and `nextCertRenewalDue` even on `Provisioned` clusters. A failed renewal that released its lock can still show `Provisioned`; automatic retry waits for the due time and the one-hour failure backoff. A `two-control-plane-voters` refusal also requires `controlPlaneConfig.desiredCount` of at least `3`. See [Check workload clusters and node pools](../operate/observe.md#check-workload-clusters-and-node-pools) for the checks and [Status and failure handling](../../controller/docs/certificate-renewal.md#status-and-failure-handling) for recovery.
 
 2. If the status stays `Provisioning`, read the condition messages.
 
@@ -147,7 +150,7 @@ curl -X POST http://<MANAGEMENT_ADDRESS>:30080/api/clusters \
    nvkectl get clusters <WORKLOAD_CLUSTER> -o yaml
    ```
 
-   Each condition under `conditions` has a `status`, a `lastTransitionTime` and a `message`. NVKE keeps waiting for a control-plane machine that does not become ready, so a NICo instance type without capacity shows as a cluster that stays in `Provisioning`. See [Troubleshoot](../operate/troubleshoot.md).
+   Each provisioning condition under `conditions` has a `status`, a `lastTransitionTime` and a `message`. NVKE keeps waiting for a control-plane machine that does not become ready, so a NICo instance type without capacity shows as a cluster that stays in `Provisioning`. See [Troubleshoot](../operate/troubleshoot.md).
 
 3. Check the node pools.
 
@@ -204,9 +207,37 @@ You change three cluster settings after creation with `nvkectl patch cluster`, w
 
    After etcd encryption, `nvkectl get clusters <WORKLOAD_CLUSTER> -o yaml` shows `etcdEncrypted: true`. If `STATUS` reads `UpdateFailed`, send the same patch again to retry.
 
-`enableOidc` requires Kubernetes 1.30.0 or later and turns on the shared OIDC provider that the `nvkeOIDCAuth` chart values configure. The install in [Install management-plane services](../operate/install-management-plane-services.md) configures it for the management cluster's SPIRE server and sets `nvkeOIDCAuth.enabled` to `false`, so new clusters start without it and the `enableOidc` patch is accepted. Try `enableOidc` on one cluster before you rely on it. [Configure OIDC for workload clusters](oidc.md) describes the shared provider, and the fleet-wide providers that a cluster gets only at creation.
+`enableOidc` requires Kubernetes 1.30.0 or later and turns on the shared OIDC provider that the `nvkeOIDCAuth` chart values configure. The install in [Run NVKE end to end on one machine](../get-started/local-site.md) configures it for the management cluster's SPIRE server and sets `nvkeOIDCAuth.enabled` to `false`, so new clusters start without it and the `enableOidc` patch is accepted. Try `enableOidc` on one cluster before you rely on it. [Configure OIDC for workload clusters](oidc.md) describes the shared provider, and the fleet-wide providers that a cluster gets only at creation.
 
-The same `PATCH` also takes `controlPlaneKubernetesVersion`, to upgrade the control plane, and `controlPlaneConfig`, to change the control-plane node count or release. An upgrade, a node count above one and a release change each require `controlPlaneVIP`.
+The same `PATCH` also takes `controlPlaneKubernetesVersion`, to upgrade the control plane, and `controlPlaneConfig`, to change the control-plane node count or release. An upgrade, a node count above one and a release change each require `controlPlaneVIP` by default.
+
+A dedicated development NVKE controller can set
+`allowControlPlaneWithoutVIP: true` in its controller configuration file.
+For a Helm installation, set the chart value of the same name. This setting
+permits creation, scale-up, upgrades, rollout, remediation and node replacement
+without a VIP for every cluster the controller manages. The default is false.
+API requests and responses keep their existing format.
+
+Without a VIP, kubeadm uses the initializing node's IP as the API endpoint.
+Replacing that node can break API access and later node joins. This override
+does not provide endpoint failover. Quorum, health and deletion protections
+still apply. A supplied VIP still receives normal address validation.
+
+After setting `allowControlPlaneWithoutVIP` back to `false` and restarting
+the NVKE controller, the controller blocks new restricted API requests and
+new no-VIP surge creation. It does not cancel accepted rollout work.
+A rollout that passes the existing health checks can still
+enqueue teardown when surge capacity is already satisfied or
+`controlPlaneConfig.maxSurge` is `0`.
+
+To pause new surge and teardown actions in control-plane rollouts, set the
+cluster's `enableCPNodeRecycling` field to `false`:
+
+```bash
+nvkectl patch cluster <WORKLOAD_CLUSTER> --patch 'enableCPNodeRecycling: false'
+```
+
+Already-enqueued teardown workflows may still finish.
 
 ## Delete a workload cluster
 

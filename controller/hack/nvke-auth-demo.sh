@@ -14,7 +14,7 @@ usage() {
 nvke-auth-demo.sh [--mode enforcing|permissive]
 
 Drives NVKE's API with four credentials and prints the status code each one got.
-The three authentication states are documented on the internal/auth package and
+The three authentication states are documented on the auth/authn package and
 in the authentication section of README.md.
 
 Enforcing (the default deployment):
@@ -30,25 +30,29 @@ Permissive (NKE_PERMISSIVE_MODE=true tilt up):
   advances by 3 across the run, which is the only evidence permissive mode
   produces. That counter check is the extra case in a permissive run.
 
-The mode is read from the live Deployment's AUTH_CONFIG_PATH and the
-permissiveMode key of its nke-controller-config, so the same script covers both
-deployments. Override it with --mode.
+The mode is read from the live Deployment's AUTH_CONFIG_PATH and the apiAuth.enabled
+and apiAuth.permissive keys of its controller config ConfigMap, so the same script
+covers every deployment. Override it with --mode.
 
-Scaffolding lives in deploy/k8s/nke-auth-dev.yaml (namespaces, service accounts,
-token-minter RBAC, nke-auth-config). The chart mounts the config and binds the
+Scaffolding lives in deploy/k8s/nvke-auth-dev.yaml (namespaces, service accounts,
+token-minter RBAC, the auth ConfigMap). The chart mounts the config and binds the
 JWKS read permission.
 
-Environment: KUBE_CONTEXT, NKE_CONTROLLER_NAMESPACE, NKE_DEPLOYMENT, NKE_CONTROLLER_HTTP_PORT,
-NKE_HTTP_URL, NKE_METRICS_PORT, NKE_METRICS_LOCAL_PORT, PROBE_PATH, TOKEN_TTL.
+Environment: KUBE_CONTEXT, NVKE_CONTROLLER_NAMESPACE, NVKE_AUTH_CONFIGMAP, NKE_DEPLOYMENT, NVKE_CONTROLLER_HTTP_PORT,
+NKE_HTTP_URL, NKE_METRICS_PORT, NKE_METRICS_LOCAL_PORT, NVKE_CONTROLLER_CONFIGMAP, PROBE_PATH,
+TOKEN_TTL.
 EOF
 }
 
 KUBE_CONTEXT="${KUBE_CONTEXT:-kind-controller-capi}"
-# CWE_NAMESPACE and CWE_HTTP_PORT are deprecated aliases for the NKE_CONTROLLER_ names; #1399 removes them.
-NKE_CONTROLLER_NAMESPACE="${NKE_CONTROLLER_NAMESPACE:-${CWE_NAMESPACE:-}}"
+# The NKE_CONTROLLER_ and CWE_ names (NAMESPACE, HTTP_PORT) are deprecated aliases for the NVKE_CONTROLLER_ names; #1399 removes them.
+NVKE_CONTROLLER_NAMESPACE="${NVKE_CONTROLLER_NAMESPACE:-${NKE_CONTROLLER_NAMESPACE:-${CWE_NAMESPACE:-}}}"
+# controllerConfig.name in the chart; an install that pins the old name sets this to nke-controller-config.
+NVKE_CONTROLLER_CONFIGMAP="${NVKE_CONTROLLER_CONFIGMAP:-nvke-controller-config}"
+NVKE_AUTH_CONFIGMAP="${NVKE_AUTH_CONFIGMAP:-nvke-auth-config}"
 NKE_DEPLOYMENT="${NKE_DEPLOYMENT:-}"
-NKE_CONTROLLER_HTTP_PORT="${NKE_CONTROLLER_HTTP_PORT:-${CWE_HTTP_PORT:-8080}}"
-NKE_HTTP_URL="${NKE_HTTP_URL:-http://127.0.0.1:${NKE_CONTROLLER_HTTP_PORT}}"
+NVKE_CONTROLLER_HTTP_PORT="${NVKE_CONTROLLER_HTTP_PORT:-${NKE_CONTROLLER_HTTP_PORT:-${CWE_HTTP_PORT:-8080}}}"
+NKE_HTTP_URL="${NKE_HTTP_URL:-http://127.0.0.1:${NVKE_CONTROLLER_HTTP_PORT}}"
 # Metrics are a separate listener (metricsListenAddress, chart default
 # 0.0.0.0:9090) that neither the Service nor Tilt publishes, so this script
 # forwards that port itself.
@@ -60,7 +64,7 @@ TOKEN_TTL="${TOKEN_TTL:-10m}"
 # Exported because nvke-token.sh runs as a child process and reads them from the
 # environment. Without this it would use the kubeconfig's current context while
 # this script targets KUBE_CONTEXT.
-export KUBE_CONTEXT NKE_CONTROLLER_NAMESPACE NKE_DEPLOYMENT
+export KUBE_CONTEXT NVKE_CONTROLLER_NAMESPACE NVKE_AUTH_CONFIGMAP NKE_DEPLOYMENT
 
 ADMITTED_NS="nke-clients"
 ADMITTED_SA="nke-client"
@@ -93,20 +97,40 @@ need kubectl
 need curl
 need yq
 
-if [[ -z "${NKE_CONTROLLER_NAMESPACE}" ]]; then
+if [[ -z "${NVKE_CONTROLLER_NAMESPACE}" ]]; then
   # Same order nvkectl uses: the greenfield namespace if it holds the auth
-  # ConfigMap, else the legacy one. Only a confirmed absence falls back.
-  found="$(
-    "${KUBECTL[@]}" get configmap nke-auth-config -n nke-controller \
-      --ignore-not-found -o name 2>&1
-  )" || die "cannot look up configmap nke-controller/nke-auth-config: ${found}"
-  NKE_CONTROLLER_NAMESPACE="cloud-workflow-engine"
-  grep -qx "configmap/nke-auth-config" <<<"${found}" && NKE_CONTROLLER_NAMESPACE="nke-controller"
-  export NKE_CONTROLLER_NAMESPACE
+  # ConfigMap, then the one a site installed before the nvke rename keeps, else
+  # the legacy one. Only a confirmed absence of all of them falls back.
+  NVKE_CONTROLLER_NAMESPACE="cloud-workflow-engine"
+  ns_denial=""
+  ns_readable=false
+  for candidate in nvke-controller nke-controller; do
+    # --ignore-not-found covers absence, not denial. RBAC scoped to one
+    # namespace answers Forbidden for the other, so keep the denial and try
+    # the rest rather than stopping at it, the way nvkectl's search does.
+    if ! found="$(
+      "${KUBECTL[@]}" get configmap "${NVKE_AUTH_CONFIGMAP}" -n "${candidate}" \
+        --ignore-not-found -o name 2>&1
+    )"; then
+      ns_denial="${ns_denial:-cannot look up configmap ${candidate}/${NVKE_AUTH_CONFIGMAP}: ${found}}"
+      continue
+    fi
+    ns_readable=true
+    if grep -qx "configmap/${NVKE_AUTH_CONFIGMAP}" <<<"${found}"; then
+      NVKE_CONTROLLER_NAMESPACE="${candidate}"
+      break
+    fi
+  done
+  # Falling back needs a confirmed absence. Every candidate denied confirms
+  # nothing, so report the denial rather than guessing the legacy namespace.
+  if [[ "${ns_readable}" == false && -n "${ns_denial}" ]]; then
+    die "${ns_denial}"
+  fi
+  export NVKE_CONTROLLER_NAMESPACE
 fi
 
-"${KUBECTL[@]}" get ns "${NKE_CONTROLLER_NAMESPACE}" >/dev/null 2>&1 \
-  || die "namespace ${NKE_CONTROLLER_NAMESPACE} not found in context ${KUBE_CONTEXT}"
+"${KUBECTL[@]}" get ns "${NVKE_CONTROLLER_NAMESPACE}" >/dev/null 2>&1 \
+  || die "namespace ${NVKE_CONTROLLER_NAMESPACE} not found in context ${KUBE_CONTEXT}"
 
 # --- scaffolding preflight ------------------------------------------------
 
@@ -115,22 +139,22 @@ missing=()
   || missing+=("serviceaccount ${ADMITTED_NS}/${ADMITTED_SA}")
 "${KUBECTL[@]}" get sa "${OUTSIDER_SA}" -n "${OUTSIDER_NS}" >/dev/null 2>&1 \
   || missing+=("serviceaccount ${OUTSIDER_NS}/${OUTSIDER_SA}")
-"${KUBECTL[@]}" get configmap nke-auth-config -n "${NKE_CONTROLLER_NAMESPACE}" >/dev/null 2>&1 \
-  || missing+=("configmap ${NKE_CONTROLLER_NAMESPACE}/nke-auth-config")
+"${KUBECTL[@]}" get configmap "${NVKE_AUTH_CONFIGMAP}" -n "${NVKE_CONTROLLER_NAMESPACE}" >/dev/null 2>&1 \
+  || missing+=("configmap ${NVKE_CONTROLLER_NAMESPACE}/${NVKE_AUTH_CONFIGMAP}")
 if [[ ${#missing[@]} -gt 0 ]]; then
   printf 'FATAL: missing scaffolding:\n' >&2
   printf '  - %s\n' "${missing[@]}" >&2
-  echo "  apply deploy/k8s/nke-auth-dev.yaml, or run tilt up" >&2
+  echo "  apply deploy/k8s/nvke-auth-dev.yaml, or run tilt up" >&2
   exit 2
 fi
 
-# nvke-token.sh picks nke-controller or cloud-workflow-engine when unset.
+# nvke-token.sh picks nvke-controller, nke-controller or cloud-workflow-engine when unset.
 NKE_DEPLOYMENT="$("${SCRIPT_DIR}/nvke-token.sh" --deployment)"
-[[ -n "${NKE_DEPLOYMENT}" ]] || die "could not resolve NVKE's Deployment in ${NKE_CONTROLLER_NAMESPACE}"
+[[ -n "${NKE_DEPLOYMENT}" ]] || die "could not resolve NVKE's Deployment in ${NVKE_CONTROLLER_NAMESPACE}"
 
 # The audience comes from the live deployment, via nvke-token.sh.
 AUDIENCE="$("${SCRIPT_DIR}/nvke-token.sh" --audience)"
-[[ -n "${AUDIENCE}" ]] || die "could not read the audience from configmap ${NKE_CONTROLLER_NAMESPACE}/nke-auth-config"
+[[ -n "${AUDIENCE}" ]] || die "could not read the audience from configmap ${NVKE_CONTROLLER_NAMESPACE}/${NVKE_AUTH_CONFIGMAP}"
 
 # --- mode detection -------------------------------------------------------
 
@@ -138,13 +162,18 @@ if [[ -z "${MODE}" ]]; then
   # By container name, not index: a sidecar can sort first, and its environment
   # would report the wrong mode.
   container_env() {
-    "${KUBECTL[@]}" get deploy "${NKE_DEPLOYMENT}" -n "${NKE_CONTROLLER_NAMESPACE}" \
+    "${KUBECTL[@]}" get deploy "${NKE_DEPLOYMENT}" -n "${NVKE_CONTROLLER_NAMESPACE}" \
       -o jsonpath="{.spec.template.spec.containers[?(@.name=='${NKE_DEPLOYMENT}')].env[?(@.name=='$1')].value}" 2>/dev/null
   }
   auth_path="$(container_env AUTH_CONFIG_PATH)"
-  permissive="$("${KUBECTL[@]}" get configmap nke-controller-config -n "${NKE_CONTROLLER_NAMESPACE}" \
-    -o jsonpath='{.data.config\.yaml}' 2>/dev/null | yq '.permissiveMode')"
-  if [[ -z "${auth_path}" ]]; then
+  controller_config="$("${KUBECTL[@]}" get configmap "${NVKE_CONTROLLER_CONFIGMAP}" -n "${NVKE_CONTROLLER_NAMESPACE}" \
+    -o jsonpath='{.data.config\.yaml}' 2>/dev/null)"
+  # permissiveMode is where a controller older than apiAuth.permissive keeps it.
+  permissive="$(yq '.apiAuth.permissive // .permissiveMode' <<<"${controller_config}")"
+  # A configuration the chart renders reaches NVKE as apiAuth in the controller
+  # config ConfigMap, with no AUTH_CONFIG_PATH.
+  api_auth="$(yq '.apiAuth.enabled // false' <<<"${controller_config}")"
+  if [[ -z "${auth_path}" && "${api_auth}" != "true" ]]; then
     MODE="disabled"
   elif [[ "${permissive}" == "true" ]]; then
     MODE="permissive"
@@ -156,8 +185,9 @@ fi
 case "${MODE}" in
   enforcing|permissive) ;;
   disabled)
-    echo "FATAL: AUTH_CONFIG_PATH is not set on deploy/${NKE_DEPLOYMENT}." >&2
-    echo "  Authentication is disabled, so there is nothing to prove." >&2
+    echo "FATAL: deploy/${NKE_DEPLOYMENT} has no AUTH_CONFIG_PATH and apiAuth.enabled is not" >&2
+    echo "  true in its ${NVKE_CONTROLLER_CONFIGMAP}. Authentication is disabled, so there is nothing to prove." >&2
+    echo "  On an install that pins the old name, set NVKE_CONTROLLER_CONFIGMAP=nke-controller-config." >&2
     echo "  Redeploy with NKE_AUTH_ENABLED=true, or pass --mode explicitly." >&2
     exit 2
     ;;
@@ -187,8 +217,8 @@ wait_for_port() {
 # Reuse Tilt's forward on 8080 when it is already up (Tiltfile port_forwards).
 if ! curl -s -o /dev/null --max-time 2 "${NKE_HTTP_URL}/api/version"; then
   echo "no listener on ${NKE_HTTP_URL}, starting a port-forward"
-  "${KUBECTL[@]}" -n "${NKE_CONTROLLER_NAMESPACE}" port-forward \
-    "deploy/${NKE_DEPLOYMENT}" "${NKE_CONTROLLER_HTTP_PORT}:8080" >/dev/null 2>&1 &
+  "${KUBECTL[@]}" -n "${NVKE_CONTROLLER_NAMESPACE}" port-forward \
+    "deploy/${NKE_DEPLOYMENT}" "${NVKE_CONTROLLER_HTTP_PORT}:8080" >/dev/null 2>&1 &
   PF_PIDS+=("$!")
   wait_for_port "${NKE_HTTP_URL}/api/version" \
     || die "could not reach NVKE on ${NKE_HTTP_URL}"
@@ -196,7 +226,7 @@ fi
 
 METRICS_URL="http://127.0.0.1:${NKE_METRICS_LOCAL_PORT}/metrics"
 metrics_available=0
-"${KUBECTL[@]}" -n "${NKE_CONTROLLER_NAMESPACE}" port-forward \
+"${KUBECTL[@]}" -n "${NVKE_CONTROLLER_NAMESPACE}" port-forward \
   "deploy/${NKE_DEPLOYMENT}" "${NKE_METRICS_LOCAL_PORT}:${NKE_METRICS_PORT}" >/dev/null 2>&1 &
 PF_PIDS+=("$!")
 if wait_for_port "${METRICS_URL}"; then

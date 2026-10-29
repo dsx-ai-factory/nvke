@@ -1,6 +1,6 @@
 # Profiles fixture
 
-The profiles tree the controller E2E lanes deploy (`NKE_CONTROLLER_PROFILES_DIR`; the deprecated `CWE_PROFILES_DIR` still works until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399)), built into the
+The profiles tree the controller E2E lanes deploy (`NVKE_CONTROLLER_PROFILES_DIR`; the deprecated `NKE_CONTROLLER_PROFILES_DIR` and `CWE_PROFILES_DIR` still work until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399)), built into the
 `cwe-profiles` image by the `Dockerfile` one directory up. The fleet profiles
 live in `nke-site-deploy/cwe-profiles`; this tree is a fixture for tests.
 

@@ -1,0 +1,40 @@
+clusters: []
+nodePools: []
+requests:
+- create:
+    cniPlugin: ovn-kubernetes
+    controlPlaneConfig:
+      desiredCount: 1
+      infra:
+        machineTemplate:
+          apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+          kind: DockerMachineTemplate
+          spec:
+            template:
+              metadata: {}
+              spec:
+                customImage: cwe-capd-kindest-node:local
+                extraMounts:
+                - containerPath: /var/run/docker.sock
+                  hostPath: /var/run/docker.sock
+        preKubeadmCommands:
+        - mkdir -p /run/cluster-api
+        - echo success > /run/cluster-api/bootstrap-success.complete
+      provisioningMonitorDisabled: true
+      systemReservedMemory: 1Gi
+    controlPlaneKubernetesVersion: 1.36.1
+    etcdEncrypted: true
+    infra:
+      cluster:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        kind: DockerCluster
+        metadata:
+          labels:
+            vpc-id: 22222222-2222-4222-8222-222222222222
+        spec: {}
+    name: cluster-1-34bd578c-mgmt-eng
+    network:
+      podCIDR: 10.244.0.0/16
+      serviceCIDR: 10.96.0.0/12
+  method: POST
+  path: /api/clusters

@@ -9,6 +9,6 @@ Maintained by hand. `go test ./internal/clients/nico` renders the bootstrap
 user-data out of the `*-nodepoolrelease.yaml` files here, so a malformed one
 fails there.
 
-Tilt applies them by default (`NKE_CONTROLLER_RELEASES_DIR` overrides the directory), the
+Tilt applies them by default (`NVKE_CONTROLLER_RELEASES_DIR` overrides the directory), the
 gofail e2e installs them into envtest, and `make releases-install` applies them
 to the cluster in `KUBECONFIG`.

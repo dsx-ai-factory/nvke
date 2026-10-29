@@ -66,7 +66,7 @@ collect_diagnostics() {
     kubectl get events -A --sort-by=.lastTimestamp >"${state_dir}/management-events.txt" 2>&1
     kubectl get clusters,machines,kubeadmcontrolplanes,dockermachines -A -o yaml \
       >"${state_dir}/capi-resources.yaml" 2>&1
-    kubectl -n nke-controller logs deployment/nke-controller --all-containers --tail=-1 \
+    kubectl -n nvke-controller logs deployment/nvke-controller --all-containers --tail=-1 \
       >"${state_dir}/cwe.log" 2>&1
     kubectl -n capd-system logs deployment/capd-controller-manager --all-containers --tail=-1 \
       >"${state_dir}/capd-controller.log" 2>&1
@@ -356,6 +356,11 @@ e2e_write_tilt_config "${tilt_config}" \
   "${LOCAL_CWE_IMAGE:-}" "${management_vip}" "${BGP_CONTAINER_NAME:-bgp-containers}"
 tilt_config_staged=true
 
+# `|` makes go fall back to a direct fetch on any proxy error; the default
+# `,` only does so on 404/410. Set before `tilt ci`: its cwe-compile resource
+# compiles the controller. See the same block in hack/ci/backend-e2e.sh.
+export GOPROXY="${GOPROXY:-https://proxy.golang.org|direct}"
+
 log "deploying local controller through Tilt"
 TILT_DISABLE_ANALYTICS=1 tilt ci \
   --port=0 \
@@ -381,9 +386,6 @@ if [[ "${LOCAL_NKE_E2E_BUILD_TAGS:-}" =~ (^|[[:space:],])oidc_acceptance($|[[:sp
 fi
 
 log "compiling the E2E suite for linux/${host_arch}"
-# `|` makes go fall back to a direct fetch on any proxy error; the default
-# `,` only does so on 404/410. See the same block in hack/ci/backend-e2e.sh.
-export GOPROXY="${GOPROXY:-https://proxy.golang.org|direct}"
 e2e_built=false
 e2e_build_flags=()
 if [[ -n "${LOCAL_NKE_E2E_BUILD_TAGS:-}" ]]; then
@@ -456,7 +458,7 @@ local_e2e_exec() {
     oidc_env=(-e "NKE_E2E_OIDC_ISSUER_HOST=${oidc_issuer_host}")
   fi
   docker exec \
-    -e "NKE_CONTROLLER_EXPECTED_VERSION=${cwe_expected_version}" \
+    -e "NVKE_CONTROLLER_EXPECTED_VERSION=${cwe_expected_version}" \
     -e "NKE_E2E_DSX_IDENTITY_EXCHANGE=${exchange_enabled}" \
     -e "NKE_E2E_BUNDLE_SERVER_URL=${e2e_bundle_server_url}" \
     -e "NVKE_E2E_NODE_AGENT_BUNDLE_VOLUME=${bundle_mirror_volume}" \

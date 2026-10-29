@@ -9,7 +9,7 @@ spire-server:
       clusterSPIFFEIDs:
         nke-spire-client:
           type: raw
-          # /nke-e2e/ rather than NVKE's own /nke-service/, so the probe does
+          # /nke-e2e/ rather than NVKE's own /nvke-service/, so the probe does
           # not share NVKE's prefix and admit.spiffe's prefix check is actually
           # exercised.
           spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nke-e2e/{{.PodSpec.ServiceAccountName}}"

@@ -41,14 +41,15 @@ CHART=...   # your NVKE chart reference
 helm show values "$CHART" | grep apiAuth
 ```
 
-On an existing site, where the controller runs as `cloud-workflow-engine`,
-replace `nke-controller` with `cloud-workflow-engine` in every command on this
-page.
+On an existing site, the controller runs under the name it was installed with:
+`nke-controller` for a site installed before the `nvke` rename,
+`cloud-workflow-engine` for anything older. Replace `nvke-controller` with that
+name in every command on this page.
 
 The commands below use `$NS` for the namespace NVKE runs in:
 
 ```bash
-NS=nke-controller   # your release namespace
+NS=nvke-controller   # your release namespace
 ```
 
 ## Recipe: your cluster's own API server
@@ -92,17 +93,32 @@ kubectl -n nke-clients create serviceaccount nke-client
 ```
 
 `nvkectl` mints this pair and no other. The names `nke-clients` /
-`nke-client` and ConfigMap `nke-auth-config` are fixed in the CLI. It reads
-that ConfigMap from namespace `nke-controller`, or from `cloud-workflow-engine`
-when `nke-controller` has none. Any other error reading it, such as a
-permission denial, stops the command. In any other namespace, `nvkectl` finds
-no ConfigMap and sends no token.
+`nke-client` are fixed in the CLI, and so are the ConfigMaps it reads the
+audience from. It looks first for the controller's settings ConfigMap,
+`nvke-controller-config`, then `nke-controller-config` for a site that pins the
+older name, and mints for the first entry of its `apiAuth.audiences` when
+`apiAuth.enabled` is true. When that section is off or absent, as it is for a
+controller reading `AUTH_CONFIG_PATH` or one older than the section, it falls
+back to the authentication ConfigMap: `nvke-auth-config`, then
+`nke-auth-config` for a site that keeps the older name by pinning
+`apiAuth.configMap.name`. Each search tries both names in namespace
+`nvke-controller`, then both in `nke-controller` for a site installed before the
+`nvke` rename, then both in `cloud-workflow-engine`, and uses the first it can
+read.
+
+A ConfigMap it is not permitted to read does not stop the command: the search
+moves to the next candidate, so a kubeconfig scoped to the pinned names alone
+still works. The denial is reported only if nothing readable turns
+authentication on. Any other error reading a ConfigMap stops the command. In any other
+namespace, `nvkectl` finds no ConfigMap and sends no token.
 Other names work for `curl` and `hack/nvke-token.sh` if you override
 them; they will not work for `nvkectl`. One account per caller is still easier
 to revoke when those callers are not the CLI.
 
 Minting a token for that account needs `create` on `serviceaccounts/token` in
-its namespace. A cluster administrator already has it. To let something else
+its namespace, and `nvkectl` also needs `get` on the controller's settings
+ConfigMap and the authentication ConfigMap to find the audience. A cluster
+administrator already has both. To let something else
 mint it, such as `nvkectl` under a least-privilege kubeconfig, a CI job, or an
 application that renews its own token, grant it:
 
@@ -164,7 +180,7 @@ apiAuth:
   permissive: true
   configMap:
     create: true
-    name: nke-auth-config
+    name: nvke-auth-config
   config:
     # the YAML from step 3 goes here
     audiences: ["https://nke.example.com"]
@@ -180,7 +196,7 @@ existing GitOps pipeline, leave `create` at its default of `false` and put the d
 in a ConfigMap named by `configMap.name`, under the key `auth.yaml`:
 
 ```bash
-kubectl -n "$NS" create configmap nke-auth-config \
+kubectl -n "$NS" create configmap nvke-auth-config \
   --from-file=auth.yaml=auth.yaml \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
@@ -191,12 +207,12 @@ Set one or the other. Setting `config` without `create`, or `create` without
 ### 5. Check it came up
 
 ```bash
-kubectl -n "$NS" logs deploy/nke-controller | grep 'API authentication'
+kubectl -n "$NS" logs deploy/nvke-controller | grep 'API authentication'
 ```
 
 ```json
 {"msg":"fetched issuer signing keys","issuer":"local-kubernetes","keys":1}
-{"msg":"API authentication is enabled","mode":"permissive","issuers":["local-kubernetes"]}
+{"msg":"API authentication is enabled","mode":"permissive","source":"nvke-controller-config","issuers":["local-kubernetes"]}
 ```
 
 You want one `fetched issuer signing keys` line per issuer. If one is missing,
@@ -254,9 +270,13 @@ kubectl -n spire-server get secret oidc-provider-upstream-ca \
   -o jsonpath='{.data.tls\.crt}' | base64 -d > spire-ca.crt
 ```
 
-NVKE reads it from a file inside its container. It goes beside the configuration,
-under `extraFiles`: the whole ConfigMap is mounted as a directory, so anything
-listed here is a file next to `auth.yaml`:
+The simplest place for it is inline in the issuer, as `jwks.caBundle`, shown in
+step 3. A CA bundle is a public certificate, not a secret, so it can sit in the
+chart values with the rest of the configuration.
+
+To keep it as a file instead, NVKE reads it from inside its container. It goes
+beside the configuration, under `extraFiles`: the whole ConfigMap is mounted as a
+directory, so anything listed here is a file next to `auth.yaml`:
 
 ```yaml
 apiAuth:
@@ -269,13 +289,13 @@ apiAuth:
         -----END CERTIFICATE-----
 ```
 
-It is then at `/etc/nke/auth/spire-ca.crt`, which is what `caBundlePath` points
-at below. A CA bundle is a public certificate, not a secret.
+It is then at `/etc/nke/auth/spire-ca.crt`, and the issuer names it with
+`caBundlePath: /etc/nke/auth/spire-ca.crt` in place of `caBundle`.
 
-If you manage the ConfigMap yourself instead, put the file in it directly:
+If you manage the ConfigMap yourself, put the file in it directly:
 
 ```bash
-kubectl -n "$NS" create configmap nke-auth-config \
+kubectl -n "$NS" create configmap nvke-auth-config \
   --from-file=auth.yaml=auth.yaml \
   --from-file=spire-ca.crt=spire-ca.crt \
   --dry-run=client -o yaml | kubectl apply -f -
@@ -289,7 +309,11 @@ issuers:
     issuer: "https://spire.example.com"
     jwks:
       uri: "https://spire.example.com:30443/keys"
-      caBundlePath: /etc/nke/auth/spire-ca.crt
+      # The contents of spire-ca.crt. Or caBundlePath, for a file; not both.
+      caBundle: |
+        -----BEGIN CERTIFICATE-----
+        ...
+        -----END CERTIFICATE-----
     algorithms: [RS256, ES256, ES384]
     admit:
       spiffe:
@@ -338,8 +362,8 @@ A token is admitted when its `groups` claim contains any listed group. The
 group names are matched exactly.
 
 When the identity provider's certificate is signed by a private CA, put the
-bundle in `extraFiles` and set `jwks.caBundlePath`, as in the SPIRE recipe.
-Omit `caBundlePath` when a public CA signs the certificate.
+PEM bundle inline as `jwks.caBundle`, or in `extraFiles` with `jwks.caBundlePath`,
+as in the SPIRE recipe. Omit both when a public CA signs the certificate.
 
 ## Going enforcing without breaking callers
 
@@ -350,8 +374,8 @@ Watch the counter, not the log. Successful reads are logged at debug level,
 so the log will undercount them:
 
 ```bash
-kubectl -n "$NS" exec deploy/nke-controller -- \
-  curl -s http://127.0.0.1:9090/metrics | grep '^nvke_auth_requests_total'
+kubectl -n "$NS" exec deploy/nvke-controller -- \
+  wget -qO- http://127.0.0.1:9090/metrics | grep '^nvke_auth_requests_total'
 ```
 
 ```
@@ -364,7 +388,7 @@ label says what each one needs: usually a token, or a subject added to your
 allow-list. Rejections are also logged in full:
 
 ```bash
-kubectl -n "$NS" logs deploy/nke-controller | grep '"logger":"auth"'
+kubectl -n "$NS" logs deploy/nvke-controller | grep '"logger":"auth"'
 ```
 
 When `would_reject` stops climbing, set `apiAuth.permissive: false`.
@@ -384,15 +408,16 @@ a warning.
 | `issuers[].issuer` | yes | Must match the token's `iss` exactly. |
 | `issuers[].audiences` | no | Overrides the top-level list for this issuer. |
 | `issuers[].jwks.uri` | yes | Must be `https`. |
-| `issuers[].jwks.caBundlePath` | no | CA file inside the container, usually one you listed under `apiAuth.configMap.extraFiles`. Omit for a publicly trusted certificate. |
+| `issuers[].jwks.caBundle` | no | PEM CA bundle, inline. Must contain at least one certificate. Omit for a publicly trusted certificate. |
+| `issuers[].jwks.caBundlePath` | no | CA file inside the container, usually one you listed under `apiAuth.configMap.extraFiles`. At most one of `caBundle` and `caBundlePath`. |
 | `issuers[].jwks.bearerTokenPath` | no | Token file, if the keys endpoint needs one. Re-read on every fetch. |
 | `issuers[].algorithms` | yes | `RS256` and `ES256` cover most issuers. Asymmetric only. |
 | `issuers[].admit` | yes | One of `serviceAccounts`, `spiffe`, or `groups`. |
 
-The file is read once at startup, so restart NVKE after you change it:
+The configuration is read once at startup, so restart NVKE after you change it:
 
 ```bash
-kubectl -n "$NS" rollout restart deploy/nke-controller
+kubectl -n "$NS" rollout restart deploy/nvke-controller
 ```
 
 Values are matched exactly: leading or trailing whitespace is an error, not
@@ -403,10 +428,10 @@ something NVKE trims.
 | Value | Default | Notes |
 |---|---|---|
 | `apiAuth.enabled` | `false` | |
-| `apiAuth.permissive` | `false` | |
-| `apiAuth.configMap.name` | `nke-auth-config` | Mounted either way. |
-| `apiAuth.configMap.create` | `false` | Build the ConfigMap from `apiAuth.config`. |
-| `apiAuth.configMap.extraFiles` | empty | Files to place beside `auth.yaml`, keyed by filename. A CA bundle goes here. |
+| `apiAuth.permissive` | `false` | Rendered as `apiAuth.permissive` in `nvke-controller-config`. Applies whichever source configures authentication. Not allowed inside `apiAuth.config`. |
+| `apiAuth.configMap.name` | `nvke-auth-config` | Mounted either way. |
+| `apiAuth.configMap.create` | `false` | Build the ConfigMap from `apiAuth.config`, and give NVKE the same document as `apiAuth` in `nvke-controller-config`. |
+| `apiAuth.configMap.extraFiles` | empty | Files to place beside `auth.yaml`, keyed by filename, for a `caBundlePath` to name. An inline `jwks.caBundle` needs none. |
 | `apiAuth.config` | empty | The document, `audiences` and `issuers` only. |
 | `apiAuth.clusterIssuerDiscovery` | `true` | Lets NVKE read the cluster's own keys. Already granted on a stock cluster; leave it on unless you bind that permission yourself. |
 
@@ -444,12 +469,22 @@ call to `/api/version` tells you nothing about whether authentication is on.
 When enforcing, every issuer's keys must be reachable at startup. The message
 names the issuer and the error. Check the keys URL is reachable from inside the
 pod, and that any `caBundlePath` points at a file that is actually mounted. If
-it sits under `/etc/nke/auth`, it has to be listed in `extraFiles`.
+it sits under `/etc/nke/auth`, it has to be listed in `extraFiles`; an inline
+`caBundle` avoids the file altogether.
 
 **Everything returns 401, including tokens that look right.**
 Check the audience first: it's the usual cause. A token minted for the wrong
 audience is rejected identically to no token at all. Compare its `aud` claim
 against the audiences NVKE logs at startup.
+
+**NVKE does not start, and the log never says "API authentication is".**
+An invalid inline configuration fails before that log line, on stderr, as
+`Error loading configuration: invalid controller config "<path>": apiAuth: ...`.
+Read the container's previous log:
+
+```bash
+kubectl -n "$NS" logs deploy/nke-controller --previous
+```
 
 **A caller gets 403.**
 Its token is fine and its subject is not on the allow-list. The log names the
@@ -458,18 +493,30 @@ subject; compare it to your `admit` rules. Re-minting the token will not help.
 **NVKE rejected the configuration at startup.**
 The error names the offending field. Usual causes: an audience that matches one
 of your issuers, a value with stray whitespace, `serviceAccounts` and `spiffe`
-on the same issuer, or a keys URL that is not `https`.
+on the same issuer, a keys URL that is not `https`, or both `caBundle` and
+`caBundlePath` on one issuer. `permissiveMode moved to apiAuth.permissive` means
+`nvke-controller-config` came from a chart older than the image: deploy the
+chart and image together.
 
 **Config changes have no effect.**
-It is read once at startup. Restart the deployment.
+It is read once at startup. Restart the deployment. If the chart renders the
+configuration (`apiAuth.configMap.create: true`), also check which copy you
+changed. The controller reads `apiAuth` in `nvke-controller-config`;
+`nvke-auth-config` is a copy for older `nvkectl` releases and the files beside
+it. Editing
+`nvke-auth-config` alone restarts the pods where Reloader runs, but changes
+nothing NVKE enforces. Change the chart values, or edit
+`nvke-controller-config`.
 
 **You cannot tell whether authentication is on.**
-Read it off the deployment rather than probing the API:
+NVKE says so at startup, and names where it read the configuration:
 
 ```bash
-kubectl -n "$NS" get deploy nke-controller \
-  -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="AUTH_CONFIG_PATH")].value}{"\n"}'
+kubectl -n "$NS" logs deploy/nvke-controller | grep 'API authentication is'
 ```
+
+`"source":"nvke-controller-config"` means the chart rendered it;
+`"source":"AUTH_CONFIG_PATH"` means a ConfigMap managed elsewhere.
 
 ## See also
 

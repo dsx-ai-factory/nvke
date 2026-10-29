@@ -146,6 +146,16 @@ func capiCluster() db.Cluster {
 	return db.Cluster{ProviderType: db.ProviderTypeCAPI}
 }
 
+func launchLayerCluster() db.Cluster {
+	return db.Cluster{
+		ProviderType: db.ProviderTypeLaunchLayer,
+		LaunchLayer: &db.LaunchLayerClusterProvider{
+			OrgID:  "test-org",
+			SiteID: "test-site",
+		},
+	}
+}
+
 func forgeCluster() db.Cluster {
 	return db.Cluster{
 		ProviderType: db.ProviderTypeNico,
@@ -303,6 +313,33 @@ func TestApplyUpdateNodePoolRequest_NestedNicoPatch(t *testing.T) {
 		assert.Equal(t, "os", pool.Nico.Release)
 		assert.Equal(t, []uuid.UUID{subnetA}, pool.Nico.SubnetIDs)
 	})
+}
+
+func TestApplyUpdateNodePoolRequest_LaunchLayerFieldsAreFixedAtCreation(t *testing.T) {
+	pool := &db.NodePool{
+		ID:                uuid.New(),
+		ClusterID:         uuid.New(),
+		Name:              "worker",
+		NodeNamePrefix:    "w",
+		KubernetesVersion: "1.31.0",
+		NodeLabels:        map[string]string{},
+		Conditions:        db.NodePoolConditions{},
+	}
+	pool.SetLaunchLayer(db.LaunchLayerNodePoolProvider{
+		InstanceType:  "vm200",
+		HostOSProfile: "ubuntu-bm",
+	})
+
+	// LaunchLayerNodePoolProviderUpdate carries no properties (matches
+	// LaunchLayerControlPlaneProviderUpdate and NicoNodePoolProviderUpdate's
+	// fixed-at-creation fields): an empty launchLayer object is all a caller
+	// can ever send, and applying it must change nothing.
+	req := &api.UpdateNodePoolRequest{LaunchLayer: &api.LaunchLayerNodePoolProviderUpdate{}}
+	require.NoError(t, applyUpdateNodePoolRequest(launchLayerCluster(), pool, req))
+
+	require.NotNil(t, pool.LaunchLayer)
+	assert.Equal(t, "vm200", pool.LaunchLayer.InstanceType)
+	assert.Equal(t, "ubuntu-bm", pool.LaunchLayer.HostOSProfile)
 }
 
 func TestApiNodePoolFromDB_EmitsNestedWhenPayloadPresent(t *testing.T) {

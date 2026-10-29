@@ -57,7 +57,7 @@ Every new issue should have a priority within seven calendar days. Each area
 sweeps its queue once a week; the project lead sweeps the unrouted queue.
 
 - Everything waiting: [`is:open is:issue label:needs-triage`](https://github.com/dsx-ai-factory/nvke/issues?q=is%3Aopen+is%3Aissue+label%3Aneeds-triage)
-- One area, for example the controller: [`is:open is:issue label:needs-triage label:area/controller`](https://github.com/dsx-ai-factory/nvke/issues?q=is%3Aopen+is%3Aissue+label%3Aneeds-triage+label%3Aarea%2Fcontroller)
+- One area, for example the NVKE controller: [`is:open is:issue label:needs-triage label:area/controller`](https://github.com/dsx-ai-factory/nvke/issues?q=is%3Aopen+is%3Aissue+label%3Aneeds-triage+label%3Aarea%2Fcontroller)
 - Unrouted: [`is:open is:issue label:needs-triage -label:area/controller -label:area/agent -label:area/cli -label:area/chart -label:area/os-image -label:area/ci-build -label:area/docs -label:area/deps -label:area/nktp -label:area/generated`](https://github.com/dsx-ai-factory/nvke/issues?q=is%3Aopen+is%3Aissue+label%3Aneeds-triage+-label%3Aarea%2Fcontroller+-label%3Aarea%2Fagent+-label%3Aarea%2Fcli+-label%3Aarea%2Fchart+-label%3Aarea%2Fos-image+-label%3Aarea%2Fci-build+-label%3Aarea%2Fdocs+-label%3Aarea%2Fdeps+-label%3Aarea%2Fnktp+-label%3Aarea%2Fgenerated)
 - Waiting on the reporter: [`is:open is:issue label:needs-info`](https://github.com/dsx-ai-factory/nvke/issues?q=is%3Aopen+is%3Aissue+label%3Aneeds-info)
 

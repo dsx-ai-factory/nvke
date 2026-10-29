@@ -45,16 +45,88 @@ func TestUnit_SiteNodeProblems(t *testing.T) {
 			want: []string{"n: tainted node-role.kubernetes.io/control-plane:NoSchedule"},
 		},
 		{
+			name: "control-plane taint with a worker to take the work",
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "cp"}, Status: ready,
+					Spec: corev1.NodeSpec{Taints: []corev1.Taint{{Key: controlPlaneTaint, Effect: corev1.TaintEffectNoSchedule}}},
+				},
+				{ObjectMeta: metav1.ObjectMeta{Name: "worker"}, Status: ready},
+			},
+		},
+		{
+			name: "control-plane taint when the only other node is cordoned",
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "cp"}, Status: ready,
+					Spec: corev1.NodeSpec{Taints: []corev1.Taint{{Key: controlPlaneTaint, Effect: corev1.TaintEffectNoSchedule}}},
+				},
+				{ObjectMeta: metav1.ObjectMeta{Name: "worker"}, Status: ready, Spec: corev1.NodeSpec{Unschedulable: true}},
+			},
+			want: []string{"cp: tainted node-role.kubernetes.io/control-plane:NoSchedule", "worker: cordoned"},
+		},
+		{
+			name: "another taint is not excused by a worker",
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "cp"}, Status: ready,
+					Spec: corev1.NodeSpec{Taints: []corev1.Taint{{Key: "node.kubernetes.io/disk-pressure", Effect: corev1.TaintEffectNoSchedule}}},
+				},
+				{ObjectMeta: metav1.ObjectMeta{Name: "worker"}, Status: ready},
+			},
+			want: []string{"cp: tainted node.kubernetes.io/disk-pressure:NoSchedule"},
+		},
+		{
 			name:  "not ready and cordoned",
 			nodes: []corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "n"}, Spec: corev1.NodeSpec{Unschedulable: true}}},
-			want:  []string{"n: not Ready", "n: cordoned"},
+			want:  []string{"n: not Ready (no Ready condition)", "n: cordoned"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, nodeProblems(tt.nodes))
+			require.Equal(t, tt.want, nodeProblems(tt.nodes, nil))
 		})
 	}
+}
+
+func TestUnit_TenantNodeProblemsTaints(t *testing.T) {
+	ready := corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}}
+	gpuTaint := corev1.Taint{Key: "nvidia.com/gpu", Value: "present", Effect: corev1.TaintEffectNoSchedule}
+	gpuPool := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "gpu-1"}, Spec: corev1.NodeSpec{Taints: []corev1.Taint{gpuTaint}}, Status: ready}
+	controlPlane := corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "cp-1", Labels: map[string]string{controlPlaneTaint: ""}},
+		Spec:       corev1.NodeSpec{Taints: []corev1.Taint{{Key: controlPlaneTaint, Effect: corev1.TaintEffectNoSchedule}}},
+		Status:     ready,
+	}
+	declared := map[string][]corev1.Taint{"gpu-1": {gpuTaint}}
+
+	require.Equal(t, []string{"gpu-1: tainted nvidia.com/gpu:NoSchedule"}, nodeProblems([]corev1.Node{gpuPool}, nil), "a site declares no pool taints")
+	require.Empty(t, nodeProblems([]corev1.Node{gpuPool, controlPlane}, declared), "a declared pool taint and kubeadm's control-plane taint are expected")
+
+	undeclared := corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker-1"},
+		Spec:       corev1.NodeSpec{Taints: []corev1.Taint{{Key: "example.com/drain", Effect: corev1.TaintEffectNoSchedule}}},
+		Status:     ready,
+	}
+	require.Equal(t, []string{"worker-1: tainted example.com/drain:NoSchedule"}, nodeProblems([]corev1.Node{gpuPool, undeclared}, declared))
+
+	otherValue := gpuPool
+	otherValue.Spec.Taints = []corev1.Taint{{Key: gpuTaint.Key, Value: "absent", Effect: gpuTaint.Effect}}
+	require.Equal(t, []string{"gpu-1: tainted nvidia.com/gpu:NoSchedule"}, nodeProblems([]corev1.Node{otherValue}, declared), "a taint differing from its pool's is not excused")
+
+	evicting := controlPlane
+	evicting.Spec.Taints = []corev1.Taint{{Key: controlPlaneTaint, Effect: corev1.TaintEffectNoExecute}}
+	require.Equal(t, []string{"cp-1: tainted node-role.kubernetes.io/control-plane:NoExecute"}, nodeProblems([]corev1.Node{evicting}, declared), "only kubeadm's NoSchedule taint is excused")
+	declaredEvicting := map[string][]corev1.Taint{"cp-1": evicting.Spec.Taints}
+	require.Empty(t, nodeProblems([]corev1.Node{evicting}, declaredEvicting), "a pool may declare another effect")
+
+	worker := controlPlane
+	worker.Labels = nil
+	require.Equal(t, []string{"cp-1: tainted node-role.kubernetes.io/control-plane:NoSchedule"}, nodeProblems([]corev1.Node{worker}, declared), "kubeadm's taint is excused only on a control-plane node")
+
+	cordoned := gpuPool
+	cordoned.Spec.Unschedulable = true
+	require.Equal(t, []string{"gpu-1: cordoned"}, nodeProblems([]corev1.Node{cordoned}, declared))
 }
 
 func TestUnit_SiteWorkloadProblems(t *testing.T) {
@@ -68,26 +140,32 @@ func TestUnit_SiteWorkloadProblems(t *testing.T) {
 		Status:     appsv1.DeploymentStatus{ObservedGeneration: 2, UpdatedReplicas: 2, AvailableReplicas: 2},
 	}
 	// Nothing to schedule is healthy: a DaemonSet selecting no node on the
-	// site wants zero pods and has them.
+	// site wants zero pods and has them. It does not run anything, though.
 	idle := appsv1.DaemonSet{ObjectMeta: meta("b", "idle"), Status: appsv1.DaemonSetStatus{ObservedGeneration: 2}}
+	agent := appsv1.DaemonSet{ObjectMeta: meta("b", "agent"), Status: appsv1.DaemonSetStatus{ObservedGeneration: 2, DesiredNumberScheduled: 1, NumberReady: 1, NumberAvailable: 1}}
 
 	t.Run("healthy", func(t *testing.T) {
-		require.Empty(t, workloadProblems(required, []appsv1.Deployment{available}, nil, []appsv1.DaemonSet{idle}))
+		require.Empty(t, workloadProblems(required, []appsv1.Deployment{available}, nil, []appsv1.DaemonSet{idle, agent}))
 	})
 	t.Run("a required namespace with nothing in it", func(t *testing.T) {
-		require.Equal(t, []string{"namespace b: no workloads (expected from item b)"},
+		require.Equal(t, []string{"namespace b: no workload running (expected from item b)"},
 			workloadProblems(required, []appsv1.Deployment{available}, nil, nil))
+	})
+	t.Run("a required namespace whose only workloads run nothing", func(t *testing.T) {
+		scaledDown := appsv1.Deployment{ObjectMeta: meta("b", "off"), Spec: appsv1.DeploymentSpec{Replicas: ptr.To[int32](0)}, Status: appsv1.DeploymentStatus{ObservedGeneration: 2}}
+		require.Equal(t, []string{"namespace b: no workload running (expected from item b)"},
+			workloadProblems(required, []appsv1.Deployment{available, scaledDown}, nil, []appsv1.DaemonSet{idle}))
 	})
 	t.Run("unset replicas default to one", func(t *testing.T) {
 		d := appsv1.Deployment{ObjectMeta: meta("a", "d"), Status: appsv1.DeploymentStatus{ObservedGeneration: 2}}
-		require.Equal(t, []string{"Deployment a/d: 0 of 1 available, 0 updated"},
-			workloadProblems(required, []appsv1.Deployment{d}, nil, []appsv1.DaemonSet{idle}))
+		require.Equal(t, []string{"Deployment a/d: 0 of 1 available, 0 updated", "namespace a: no workload running (expected from item a)"},
+			workloadProblems(required, []appsv1.Deployment{d}, nil, []appsv1.DaemonSet{agent}))
 	})
 	t.Run("status from an older generation is not trusted", func(t *testing.T) {
 		stale := available
 		stale.Status.ObservedGeneration = 1
 		require.Equal(t, []string{"Deployment a/ok: 2 of 2 available, 2 updated"},
-			workloadProblems(required, []appsv1.Deployment{stale}, nil, []appsv1.DaemonSet{idle}))
+			workloadProblems(required, []appsv1.Deployment{stale}, nil, []appsv1.DaemonSet{agent}))
 	})
 	t.Run("an unready StatefulSet and DaemonSet outside the required namespaces", func(t *testing.T) {
 		st := appsv1.StatefulSet{ObjectMeta: meta("other", "db"), Spec: appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)}, Status: appsv1.StatefulSetStatus{ObservedGeneration: 2}}
@@ -95,7 +173,70 @@ func TestUnit_SiteWorkloadProblems(t *testing.T) {
 		require.Equal(t, []string{
 			"DaemonSet cni/ovnkube-node: 0 of 1 ready, 0 available",
 			"StatefulSet other/db: 0 of 1 ready",
-		}, workloadProblems(required, []appsv1.Deployment{available}, []appsv1.StatefulSet{st}, []appsv1.DaemonSet{idle, ds}))
+		}, workloadProblems(required, []appsv1.Deployment{available}, []appsv1.StatefulSet{st}, []appsv1.DaemonSet{agent, ds}))
+	})
+}
+
+func TestUnit_SiteExcusePods(t *testing.T) {
+	probe := map[string]string{validationProbeLabel: "true"}
+	pods := []corev1.Pod{
+		{ObjectMeta: metav1.ObjectMeta{Namespace: "runner", Name: "earlier-run"}},
+		{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "etcd"}},
+		{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "e2e-node-local-dns-x", Labels: probe}},
+		{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "app", Labels: map[string]string{validationProbeLabel: "false"}}},
+	}
+	names := func(pods []corev1.Pod) []string {
+		names := make([]string, 0, len(pods))
+		for _, pod := range pods {
+			names = append(names, pod.Name)
+		}
+		return names
+	}
+	kept, excused := excusePods(pods, "runner")
+	require.Equal(t, 2, excused)
+	require.Equal(t, []string{"etcd", "app"}, names(kept))
+	require.Len(t, pods, 4, "the caller's list is not changed")
+	kept, excused = excusePods(pods, "")
+	require.Equal(t, 1, excused, "an earlier run's probe pod is left out wherever it is")
+	require.Equal(t, []string{"earlier-run", "etcd", "app"}, names(kept))
+}
+
+func TestUnit_SiteControlPlaneProblems(t *testing.T) {
+	cp := func(name string) corev1.Node {
+		return corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{controlPlaneTaint: ""}}}
+	}
+	worker := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker"}}
+	static := func(name string, phase corev1.PodPhase, ready bool) corev1.Pod {
+		status := corev1.ConditionFalse
+		if ready {
+			status = corev1.ConditionTrue
+		}
+		return corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Namespace: kubeSystemNamespace, Name: name},
+			Status:     corev1.PodStatus{Phase: phase, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: status}}},
+		}
+	}
+	healthy := []corev1.Pod{
+		static("kube-scheduler-cp1", corev1.PodRunning, true),
+		static("kube-controller-manager-cp1", corev1.PodRunning, true),
+	}
+
+	t.Run("healthy, workers ignored", func(t *testing.T) {
+		require.Empty(t, controlPlaneProblems([]corev1.Node{cp("cp1"), worker}, healthy))
+	})
+	t.Run("a component missing on a second control plane", func(t *testing.T) {
+		pods := append(slices.Clone(healthy), static("kube-scheduler-cp2", corev1.PodRunning, true))
+		require.Equal(t, []string{"cp2: no kube-controller-manager pod"},
+			controlPlaneProblems([]corev1.Node{cp("cp1"), cp("cp2")}, pods))
+	})
+	t.Run("a component not Ready", func(t *testing.T) {
+		pods := []corev1.Pod{healthy[0], static("kube-controller-manager-cp1", corev1.PodRunning, false)}
+		require.Equal(t, []string{"cp1: kube-controller-manager not Ready (phase Running)"},
+			controlPlaneProblems([]corev1.Node{cp("cp1")}, pods))
+	})
+	t.Run("no control-plane node", func(t *testing.T) {
+		require.Equal(t, []string{"no node is labeled " + controlPlaneTaint},
+			controlPlaneProblems([]corev1.Node{worker}, nil))
 	})
 }
 
@@ -214,6 +355,59 @@ func TestUnit_SitePodProblemsCatchStuckAndEvicted(t *testing.T) {
 		"ns/loop: container app CrashLoopBackOff",
 		"ns/pull: container init ImagePullBackOff",
 	}, podProblems([]corev1.Pod{crashLooping, initPull, evictedOwned, evictedBare}, nil))
+}
+
+func TestUnit_SiteProblemsSayWhy(t *testing.T) {
+	looping := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "loop"},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{{
+				Name:                 "app",
+				State:                corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+				RestartCount:         7,
+				LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1, Reason: "Error"}},
+			}},
+		},
+	}
+	unready := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "unready"},
+		Status: corev1.PodStatus{
+			Phase:             corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{{Name: "app", Ready: true}, {Name: "sidecar"}},
+		},
+	}
+	pending := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "pending"},
+		Status: corev1.PodStatus{
+			Phase:      corev1.PodPending,
+			Conditions: []corev1.PodCondition{{Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: "Unschedulable", Message: "0/2 nodes are available"}},
+		},
+	}
+	require.Equal(t, []string{
+		"ns/loop: container app CrashLoopBackOff (container app restarted 7 times, last exit 1 Error)",
+		"ns/pending: Pending: PodScheduled=False Unschedulable (0/2 nodes are available)",
+		"ns/unready: Running, not Ready (containers sidecar)",
+	}, podProblems([]corev1.Pod{looping, unready, pending}, nil))
+
+	node := corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "w-1"},
+		Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+			Type: corev1.NodeReady, Status: corev1.ConditionFalse, Reason: "KubeletNotReady", Message: "container runtime network not ready",
+		}}},
+	}
+	require.Equal(t, []string{"w-1: not Ready (False KubeletNotReady: container runtime network not ready)"}, nodeProblems([]corev1.Node{node}, nil))
+
+	stuck := appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "api"}}
+	stuck.Status.Conditions = []appsv1.DeploymentCondition{
+		{Type: appsv1.DeploymentAvailable, Status: corev1.ConditionFalse, Reason: "MinimumReplicasUnavailable", Message: "Deployment does not have minimum availability."},
+		{Type: appsv1.DeploymentProgressing, Status: corev1.ConditionTrue, Reason: "ReplicaSetUpdated"},
+		{Type: appsv1.DeploymentReplicaFailure, Status: corev1.ConditionTrue, Reason: "FailedCreate", Message: `pods "api-1" is forbidden: violates PodSecurity "restricted:latest"`},
+	}
+	require.Equal(t, []string{
+		`Deployment ns/api: 0 of 1 available, 0 updated (Available MinimumReplicasUnavailable: Deployment does not have minimum availability.; ` +
+			`ReplicaFailure FailedCreate: pods "api-1" is forbidden: violates PodSecurity "restricted:latest")`,
+	}, workloadProblems(nil, []appsv1.Deployment{stuck}, nil, nil))
 }
 
 // The deploy path is what the required namespaces are copied from, so a

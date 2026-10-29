@@ -149,7 +149,7 @@ Entry point: `cmd/agent/main.go`.
    URL, CNI image registry, mTLS toggle, SPIFFE socket, audit/script log paths,
    mlx5 rescan toggle).
 2. **Logger setup** — three JSON `slog` loggers: default (stdout), **audit**
-   (`/var/log/nvke-agent-audit.log`), **script execution**
+   (`/var/log/nvke-agent-audit.log` and stdout for journald), **script execution**
    (`/var/log/nvke-execute-scripts.log`).
 3. **`RunNodeStartup`** → `NewNodeAgentServer`:
    - Ensure `/var/lib/nvke` and `state.json` exist (never truncate existing state).

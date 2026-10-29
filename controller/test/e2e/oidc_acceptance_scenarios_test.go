@@ -431,7 +431,7 @@ func expectSPIREAccess(ctx context.Context, run *oidcAcceptanceRun, cluster *api
 		}
 		return tenantauth.AssertSPIREKubeconfigHasNoFallback(ctx, run.test.k8sClient, cluster.Name)
 	}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
-	expected := "spiffe://" + run.test.trustDomain + "/nke-service/" + controller.ServiceAccount()
+	expected := "spiffe://" + run.test.trustDomain + "/nvke-service/" + controller.ServiceAccount()
 	if os.Getenv(dsxIdentityExchangeEnv) == "true" {
 		expected = dsxExchangeControllerUser
 	}

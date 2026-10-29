@@ -5,6 +5,7 @@ package nvkectl
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -58,14 +60,17 @@ func newBootstrapCmd() *cobra.Command {
 type bootstrapSiteOptions struct {
 	siteSpec string
 	dryRun   bool
-	// controllerImage and provisionedProviderImage are the --controller-image and
+	// controllerImage and provisionedProviderImage are the --nvke-controller-image and
 	// --provisioned-provider-image flags. A flag wins over its variable.
 	controllerImage          string
 	provisionedProviderImage string
 	// diagnosticsDir is where a failed bootstrap writes what the cluster had
 	// to say for itself, before it is torn down.
-	diagnosticsDir    string
-	keepBootstrapKind bool
+	diagnosticsDir string
+	// collectDiagnostics also collects them when the bootstrap succeeds. It is
+	// set by -v/--verbose.
+	collectDiagnostics bool
+	keepBootstrapKind  bool
 
 	// release is an NVKR release description. With infra.provider nico its
 	// capnico-controller artifact replaces the CAPNICo image, as the deploy
@@ -121,7 +126,8 @@ type bootstrapSiteOptions struct {
 
 	// dialContext is how the pre-create probe reaches each site spec host.
 	// Nil uses a net.Dialer; tests substitute it so no real host is dialled.
-	dialContext func(ctx context.Context, network, address string) (net.Conn, error)
+	dialContext                 func(ctx context.Context, network, address string) (net.Conn, error)
+	allowControlPlaneWithoutVIP bool
 }
 
 const (
@@ -152,8 +158,8 @@ dispatched or any node is touched.
 The bootstrap side-loads the images this repository builds, nke-controller:latest
 and, with the provisioned provider, cluster-api-provider-provisioned:latest,
 which "make -C cli images" builds. With nico, CAPNICo's image is public and
-pulled by the cluster; --release pins it to an NVKR release's artifact. --controller-image and --provisioned-provider-image, or
-NVKECTL_CONTROLLER_IMAGE and NVKECTL_CAPI_PROVISIONED_IMAGE, name other images, such as
+pulled by the cluster; --release pins it to an NVKR release's artifact. --nvke-controller-image and --provisioned-provider-image, or
+NVKECTL_NVKE_CONTROLLER_IMAGE and NVKECTL_CAPI_PROVISIONED_IMAGE, name other images, such as
 ones pushed to a registry; a flag wins over its variable. cli/README.md lists
 every NVKECTL_* variable.
 
@@ -168,6 +174,12 @@ spire.externalAddress is required unless --disable-mtls is set. The nodes'
 names and addresses are not printed; read them with "kubectl get nodes -o wide"
 on the finished cluster.
 
+With nico, the NVKE stack is then installed on the site cluster the same way:
+Postgres, Temporal, SPIRE, Cluster API with CAPNICo, and the NVKE controller,
+with SPIRE published at the control-plane VIP. A site without a default
+StorageClass gets local-path-provisioner. The site's nodes pull the controller
+image, so --nvke-controller-image must name a registry they can reach.
+
 See the bundled examples/sitespec.yaml and docs/sitespec.md for the
 site spec file format.`,
 		Example: `  # Validate and bootstrap from a site spec file
@@ -178,14 +190,20 @@ site spec file format.`,
 
   # Deploy images you pushed to a registry instead of the local build
   nvkectl bootstrap site -f sitespec.yaml \
-    --controller-image nvcr.io/<org>/nvke-controller:edge \
-    --provisioned-provider-image nvcr.io/<org>/cluster-api-provider-provisioned:edge`,
+    --nvke-controller-image nvcr.io/<org>/nvke-controller:edge \
+    --provisioned-provider-image nvcr.io/<org>/cluster-api-provider-provisioned:edge
+
+  # Export this run's spans and log records to a collector the cluster can reach
+  nvkectl bootstrap site -f sitespec.yaml --otlp-endpoint collector.example.com:4317`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if id := telemetry.RunFrom(cmd.Context()).TraceID(); id != "" {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Trace ID: %s\n", id)
 			}
+			// A debug run is one somebody wants evidence from, so it keeps the
+			// bundle whether or not the bootstrap succeeds.
+			opts.collectDiagnostics = verbose
 			// arch has a default, so only Changed tells an explicit value from none.
 			if cmd.Flags().Changed("arch") && opts.release == "" {
 				return errors.New("--arch selects the architecture of a --release artifact; pass --release too, or drop --arch")
@@ -199,25 +217,35 @@ site spec file format.`,
 	_ = cmd.MarkFlagRequired("sitespec")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false,
 		"Load and validate the site spec and print it, but do not dispatch any workflow")
-	cmd.Flags().StringVar(&opts.controllerImage, "controller-image", "",
-		"Controller image to deploy (overrides NVKECTL_CONTROLLER_IMAGE and the manifest default)")
+	cmd.Flags().StringVar(&opts.controllerImage, "nvke-controller-image", "",
+		"NVKE controller image to deploy (overrides NVKECTL_NVKE_CONTROLLER_IMAGE and the manifest default)")
 	cmd.Flags().StringVar(&opts.provisionedProviderImage, "provisioned-provider-image", "",
 		"Provisioned-provider image to deploy (overrides NVKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)")
+	// resolveOTLP reads these two through the flag set, before RunE; they have no field.
+	cmd.Annotations = map[string]string{bootstrapExportAnnotation: "true"}
+	cmd.Flags().String(otlpEndpointFlag, "",
+		"OTLP/gRPC endpoint, a host:port or an http(s):// URL (http implies --"+otlpInsecureFlag+"), that receives this run's spans and log records. "+
+			"The temporary controller in the bootstrap cluster exports there too, so a loopback address is rejected")
+	cmd.Flags().Bool(otlpInsecureFlag, false, "Send to --"+otlpEndpointFlag+" without TLS; requires --"+otlpEndpointFlag)
 	cmd.Flags().StringVar(&opts.release, "release", "",
 		"NVKR release description whose "+controllerdeploy.CAPNICoArtifact+" artifact replaces the bootstrap CAPNICo image "+
 			"with its pinned digest, as \"render deploy-path --release\" does for the management cluster's CAPNICo. "+
 			"The release description is not verified: run \"nvkr release verify\" on the same reference first. "+
 			"Only with infra.provider nico.")
-	cmd.Flags().StringVar(&opts.arch, "arch", "linux/"+runtime.GOARCH,
-		"Architecture of the release artifact to use: the bootstrap host's, since the bootstrap CAPNICo runs in its Kind cluster. "+
-			"Only with --release.")
+	cmd.Flags().StringVar(&opts.arch, "arch", "",
+		"Architecture of the release artifact to use, linux/amd64 or linux/arm64; default: the bootstrap host's, "+
+			"since the bootstrap CAPNICo runs in its Kind cluster. Only with --release.")
 	cmd.Flags().StringVar(&opts.diagnosticsDir, "diagnostics-dir",
 		envOrDefault("NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR", "cluster-diagnostics"),
 		"Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. "+
+			"With --verbose a successful bootstrap writes them too. "+
 			"Overrides NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR.")
 	cmd.Flags().BoolVar(&opts.disableMTLS, "disable-mtls", false,
 		"Stand the site up without SPIFFE: no SPIRE, and the controller dials node agents in plaintext. "+
 			"The agents must be running with --disable-mtls too. Development only.")
+	cmd.Flags().BoolVar(&opts.allowControlPlaneWithoutVIP, "allow-control-plane-without-vip", false,
+		"Permit a multi-node control plane without a VIP and enable the override in the temporary NVKE controller. "+
+			"Development only; replacing the initializing node can break API access.")
 	cmd.Flags().BoolVar(&opts.keepBootstrapKind, "keep-bootstrap-cluster", false,
 		"Leave the ephemeral bootstrap Kind cluster running after the command exits, for debugging")
 	cmd.Flags().DurationVar(&opts.clusterTimeout, "timeout",
@@ -243,35 +271,6 @@ func bootstrapSettings() []string {
 	names = append(names, bootstrapengine.Settings...)
 	names = append(names, sitespec.Settings...)
 	return names
-}
-
-// checkRemovedSettings returns an error naming every NKECTL_CWE_* variable that
-// is set while its replacement is not, and logs a warning for each one whose
-// replacement is set, as a variable or as the flag that overrides it.
-// bootstrap site does not read those names, so without this a value set for
-// nkectl cli/v0.1.x would be dropped without a word.
-func checkRemovedSettings(logger *slog.Logger, opts *bootstrapSiteOptions) error {
-	flags := map[string]struct{ name, value string }{
-		"NVKECTL_CONTROLLER_IMAGE": {"--controller-image", opts.controllerImage},
-	}
-	var unreplaced []string
-	for _, s := range controllerdeploy.RemovedSettings() {
-		replacement := ""
-		if f := flags[s.New]; f.value != "" {
-			replacement = f.name
-		} else if envalias.Get(s.New) != "" {
-			replacement = s.New
-		}
-		if replacement != "" {
-			logger.Warn(s.Old+" is not read; "+replacement+" is set and is used instead", "ignored", s.Old, "replacement", replacement)
-			continue
-		}
-		unreplaced = append(unreplaced, s.Old+" is no longer read; set "+s.New+" instead")
-	}
-	if len(unreplaced) > 0 {
-		return errors.New(strings.Join(unreplaced, "; "))
-	}
-	return nil
 }
 
 // cleanupTimeout bounds each post-failure cleanup step. The steps run on a
@@ -303,12 +302,9 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	for _, s := range envalias.Deprecated(bootstrapSettings()...) {
 		logger.Warn(s.Warning(), "deprecated", s.Old, "replacement", s.New)
 	}
-	if err := checkRemovedSettings(logger, opts); err != nil {
-		return err
-	}
 
 	// Step 1: load and validate the sitespec. Fail fast on any problem.
-	inv, err := sitespec.Load(opts.siteSpec)
+	inv, err := sitespec.Load(opts.siteSpec, sitespec.WithAllowControlPlaneWithoutVIP(opts.allowControlPlaneWithoutVIP))
 	if err != nil {
 		return err
 	}
@@ -317,9 +313,6 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	// and together so one run reports every problem.
 	if err := errors.Join(inv.CheckBootstrapMode(opts.disableMTLS), inv.ValidateBootstrapReferences()); err != nil {
 		return fmt.Errorf("site spec file %s: %w", opts.siteSpec, err)
-	}
-	if warning := inv.NicoVIPWarning(); warning != "" {
-		logger.Warn(warning)
 	}
 	// Resolved here too, so a bad --release or --arch fails the dry run.
 	capnicoImage, err := capnicoReleaseImage(inv, opts.release, opts.arch)
@@ -343,6 +336,12 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 			logger.Warn("spire.trustDomain is not set; derived from the bootstrap cluster name. Set spire.trustDomain to this value before the controller stack install, whose default differs",
 				"trustDomain", inv.EffectiveTrustDomain(bootstrapCluster), "installDefault", inv.EffectiveTrustDomain(sitespec.DefaultBootstrapClusterName))
 		}
+	}
+
+	// Before the dry-run return, so a profiles image the deploy would refuse
+	// fails here and not minutes into a real run, after the Kind cluster exists.
+	if err := controllerdeploy.ValidateProfilesImage(os.Getenv(controllerdeploy.ProfilesImageEnv)); err != nil {
+		return err
 	}
 
 	if opts.dryRun {
@@ -374,6 +373,8 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	}
 
 	cweCfg.CAPNICoImage = capnicoImage
+	cweCfg.AllowControlPlaneWithoutVIP = opts.allowControlPlaneWithoutVIP
+	cweCfg.Tracing = controllerTracing(ctx, logger)
 
 	// The controller API has to be reachable from this host: this command deploys it
 	// and then calls it. A host port mapping rather than the node container's
@@ -396,6 +397,12 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		releaseSteps = nicoReleaseSteps(inv.ClusterName, cfg.ClusterName, "<its kubeconfig file>", cweCfg.CWEPort)
 	}
 	if err := requireNoBootstrapCluster(ctx, engine, cfg.ClusterName, releaseSteps); err != nil {
+		return err
+	}
+	// After the check above: a retained bootstrap cluster owns the runtime's
+	// bridge config, and its own message says how to recover it before anything
+	// is deleted. Bridge-removal advice here would pre-empt that.
+	if err := requireIsolatedRuntimeCNI(sharedCNIConfDir); err != nil {
 		return err
 	}
 	// A key file already at the output path belongs to an earlier bootstrap of
@@ -426,6 +433,11 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err := requireLocalImages(ctx, engine, nvkeImages(cweCfg)...); err != nil {
 		return err
 	}
+	if inv.IsNico() {
+		if err := requireSitePullableImages(cweCfg); err != nil {
+			return err
+		}
+	}
 
 	logger.Info("creating ephemeral bootstrap kind cluster", "cluster", cfg.ClusterName)
 	cluster, err := engine.Create(ctx, cfg)
@@ -435,31 +447,36 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	siteClusterCreated := false
 	// handedOver is set once the site cluster and every artifact the operator
 	// needs are on disk. A failure after that is about the site cluster, so
-	// the bootstrap cluster's diagnostics are not collected and it is torn
-	// down.
+	// without -v the bootstrap cluster's diagnostics are not collected and it
+	// is torn down.
 	handedOver := false
 	defer func() {
 		// Collect diagnostics before anything is torn down: this cluster is
 		// removed on every exit path, so this is the only moment the evidence
-		// still exists. Only on failure — a successful bootstrap has nothing
-		// to explain.
+		// still exists. Only on failure, or on any outcome under -v: a
+		// successful bootstrap has nothing to explain unless asked.
 		// Cleanup runs on the cancellation path too: a SIGINT during the
 		// deploy cancels ctx, and both runners exec through
 		// exec.CommandContext, so reusing ctx here would skip the diagnostics
 		// and leave the Kind cluster standing to block the next bootstrap.
 		// Each step gets its own bounded context detached from ctx, so slow
 		// diagnostics cannot eat the deletion's budget.
-		if err != nil && !handedOver {
+		if opts.collectDiagnostics || (err != nil && !handedOver) {
 			diagnosticsCtx, cancelDiagnostics := context.WithTimeout(
 				context.WithoutCancel(ctx), cleanupTimeout,
 			)
 			dir := opts.diagnosticsDir
-			logger.Info("bootstrap failed; collecting cluster diagnostics", "dir", dir)
+			if err != nil {
+				logger.Info("bootstrap failed; collecting cluster diagnostics", "dir", dir)
+			} else {
+				logger.Info("collecting cluster diagnostics (--verbose)", "dir", dir)
+			}
 			controllerdeploy.New(opts.cweRunner, logger).
 				DumpDiagnostics(diagnosticsCtx, cluster.KubeconfigPath, dir)
 			cancelDiagnostics()
 		}
 
+		// Once the site cluster exists, any failure keeps the bootstrap cluster for recovery.
 		if opts.keepBootstrapKind || (siteClusterCreated && err != nil) {
 			if siteClusterCreated && err != nil {
 				logger.Warn("bootstrap failed after site cluster creation; retaining the bootstrap kind cluster for recovery",
@@ -514,9 +531,6 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		return err
 	}
 
-	// Everything recovery needs is on disk by now, so the bootstrap cluster is
-	// torn down even if the untaint fails.
-	siteClusterCreated = false
 	handedOver = true
 	kubeconfigPath := siteKubeconfigPath(inv.ClusterName, opts)
 	if inv.Cluster.EtcdEncryptionEnabled() {
@@ -526,11 +540,104 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err := makeControlPlaneSchedulable(ctx, inv, kubeconfigPath, opts, logger); err != nil {
 		return err
 	}
+	if inv.IsNico() {
+		if err := deploySiteStack(ctx, inv, kubeconfigPath, cweCfg, opts.cweRunner, logger); err != nil {
+			return err
+		}
+	}
 
 	// Nico mode does not list the allocated nodes here; kubectl get nodes shows them.
 	fmt.Fprintf(out, "\nCluster %q is ready. Talk to it with:\n  kubectl --kubeconfig %s get nodes\n",
 		inv.ClusterName, kubeconfigPath)
 	return nil
+}
+
+// siteDeployAttempts bounds how often deploySiteStack runs the install.
+const siteDeployAttempts = 3
+
+// connectionErrors are what a dropped or refused connection to the API server
+// leaves in the output of helm and kubectl. A helm --wait that times out reports
+// a deadline instead, and is not among them.
+var connectionErrors = []string{
+	"broken pipe", "connection reset by peer", "connection refused", "i/o timeout", "unexpected EOF",
+	"TLS handshake timeout", "http2: client connection lost", "use of closed network connection",
+}
+
+// isConnectionError reports whether err comes from a lost connection to the API server.
+func isConnectionError(err error) bool {
+	msg := err.Error()
+	return slices.ContainsFunc(connectionErrors, func(s string) bool { return strings.Contains(msg, s) })
+}
+
+// requireSitePullableImages returns an error naming every image the site
+// cluster's nodes would have to pull that names no registry. Those images are
+// side-loaded into the bootstrap cluster only.
+func requireSitePullableImages(cweCfg controllerdeploy.Config) error {
+	var bare []string
+	for _, image := range nvkeImages(cweCfg) {
+		if !hasRegistryHost(image) {
+			bare = append(bare, image)
+		}
+	}
+	if len(bare) == 0 {
+		return nil
+	}
+	return fmt.Errorf("with infra.provider nico the NVKE stack is installed on the site cluster, whose nodes pull "+
+		"its images themselves; these images name no registry: %s. Pass images the nodes can pull with "+
+		"--nvke-controller-image (NVKECTL_NVKE_CONTROLLER_IMAGE) and NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE", strings.Join(bare, ", "))
+}
+
+// deploySiteStack installs the NVKE stack on the site cluster as the bootstrap
+// cluster runs it, and waits for the site's controller to report healthy.
+func deploySiteStack(
+	ctx context.Context,
+	inv *sitespec.SiteSpec,
+	siteKubeconfig string,
+	cweCfg controllerdeploy.Config,
+	runner controllerdeploy.CommandRunner,
+	logger *slog.Logger,
+) error {
+	cfg := siteDeployConfig(inv, cweCfg)
+	cwe := controllerdeploy.New(runner, logger)
+	logger.Info("installing the NVKE stack on the site cluster", "kubeconfig", siteKubeconfig, "image", cfg.CWEImage)
+	if err := cwe.EnsureDefaultStorageClass(ctx, siteKubeconfig); err != nil {
+		return fmt.Errorf("site cluster: %w", err)
+	}
+	// A retry must reuse the database password the first attempt installed.
+	if cfg.PostgresPassword == "" {
+		cfg.PostgresPassword = rand.Text()
+	}
+	// The site API is reached through a VIP that has only just come up, and one
+	// dropped connection fails a helm call. Every step is an idempotent
+	// upgrade --install or apply, so the install is repeated after one; any
+	// other failure is reported at once.
+	var err error
+	for attempt := 1; ; attempt++ {
+		err = cwe.Deploy(ctx, siteKubeconfig, cfg)
+		if err == nil || attempt == siteDeployAttempts || !isConnectionError(err) {
+			break
+		}
+		logger.Warn("installing the NVKE stack on the site cluster lost its connection; retrying",
+			"attempt", attempt, "of", siteDeployAttempts, "err", err)
+	}
+	if err != nil {
+		return fmt.Errorf("installing the NVKE stack on the site cluster: %w", err)
+	}
+	if err := cwe.WaitReady(ctx, siteKubeconfig, cfg.ReadyTimeout); err != nil {
+		return fmt.Errorf("waiting for the site cluster's controller to become healthy: %w", err)
+	}
+	logger.Info("the NVKE stack on the site cluster is healthy")
+	return nil
+}
+
+// siteDeployConfig is the bootstrap cluster's deploy configuration as the site
+// cluster needs it: SPIRE names the site cluster, and nodes the site's
+// controller creates reach SPIRE at the control-plane VIP.
+func siteDeployConfig(inv *sitespec.SiteSpec, seed controllerdeploy.Config) controllerdeploy.Config {
+	cfg := seed
+	cfg.SPIFFEClusterName = inv.ClusterName
+	cfg.SPIREExternalAddress = inv.Cluster.ControlPlaneVIP
+	return cfg
 }
 
 // untaintTimeout bounds the whole untaint: one List and a few Updates.
@@ -1045,6 +1152,27 @@ func envOrDefault(key, fallback string) string {
 	return fallback
 }
 
+// controllerTracing returns the tracing settings for the temporary controller:
+// the collector this run exports to, with the run's headers. It returns the zero
+// value when the run does not export, or when the endpoint, which can come from
+// the environment, is a loopback address the bootstrap cluster cannot reach; the
+// latter is logged once.
+func controllerTracing(ctx context.Context, logger *slog.Logger) controllerdeploy.TracingConfig {
+	run := telemetry.RunFrom(ctx)
+	if run == nil {
+		return controllerdeploy.TracingConfig{}
+	}
+	otlp, ok := run.OTLP()
+	if !ok {
+		return controllerdeploy.TracingConfig{}
+	}
+	if telemetry.RejectLoopback(otlp.Endpoint) != nil {
+		logger.Warn("the controller in the bootstrap cluster cannot reach " + otlp.Endpoint + "; its spans are not exported")
+		return controllerdeploy.TracingConfig{}
+	}
+	return controllerdeploy.TracingConfig{Endpoint: otlp.Endpoint, Insecure: otlp.Insecure, Headers: otlp.Headers}
+}
+
 // cweDeployConfig assembles everything the controller deploy needs into one value,
 // from the site spec, the flags and the environment, before any of it is used.
 //
@@ -1068,7 +1196,7 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 	// Both images default to the local build's tag from the bootstrap
 	// manifest, so an empty value means the manifest lacks the entry.
 	if cfg.CWEImage == "" {
-		return cfg, errors.New("--controller-image and NVKECTL_CONTROLLER_IMAGE are not set and the bootstrap manifest carries no default controller image")
+		return cfg, errors.New("--nvke-controller-image and NVKECTL_NVKE_CONTROLLER_IMAGE are not set and the bootstrap manifest carries no default controller image")
 	}
 	cfg.NicoInfrastructure = inv.IsNico()
 	access, err := capnicoAccess(inv)
@@ -1174,10 +1302,14 @@ func deployAndWaitForCWE(
 // into the Kind cluster. The provisioned provider is among them only when it is
 // the infrastructure provider in use.
 func nvkeImages(cfg controllerdeploy.Config) []string {
-	if cfg.NicoInfrastructure {
-		return []string{cfg.CWEImage}
+	images := []string{cfg.CWEImage}
+	if !cfg.NicoInfrastructure {
+		images = append(images, cfg.ProvisionedProviderImage)
 	}
-	return []string{cfg.CWEImage, cfg.ProvisionedProviderImage}
+	if cfg.ProfilesImage != "" {
+		images = append(images, cfg.ProfilesImage)
+	}
+	return images
 }
 
 // capnicoAccess resolves the site spec's infra.nico into the values the
@@ -1217,6 +1349,11 @@ func capnicoAccess(inv *sitespec.SiteSpec) (controllerdeploy.CAPNICoAccess, erro
 func capnicoReleaseImage(inv *sitespec.SiteSpec, releasePath, arch string) (string, error) {
 	if releasePath == "" {
 		return "", nil
+	}
+	// The flag's default is empty, not the host's architecture, so the generated
+	// command reference does not change with the machine that generates it.
+	if arch == "" {
+		arch = "linux/" + runtime.GOARCH
 	}
 	if !inv.IsNico() {
 		return "", errors.New("--release only applies with infra.provider nico: it replaces the bootstrap CAPNICo image, and no other provider installs one")
@@ -1282,6 +1419,36 @@ func requireContainerRuntime(lookPath func(string) (string, error)) error {
 	return nil
 }
 
+// sharedCNIConfDir is the directory requireIsolatedRuntimeCNI inspects. A
+// variable so tests do not read the machine running them.
+var sharedCNIConfDir = bootstrapengine.SharedCNIConfDir
+
+// requireIsolatedRuntimeCNI fails when the container runtime has already written
+// network configs into dir, the node containerd's CNI directory.
+//
+// The bootstrap runs on the node that becomes the site. A runtime config left in
+// dir is the only CNI config there between kubeadm init and the CNI plugin
+// writing its own, so the first pods, CoreDNS among them, are sandboxed on the
+// runtime's bridge and keep an address no pod on the cluster network can reach.
+// The bootstrap now writes new configs elsewhere, but cannot move these.
+func requireIsolatedRuntimeCNI(dir string) error {
+	found, err := bootstrapengine.NerdctlCNIConfigs(dir)
+	if err != nil {
+		return err
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s already holds %s network config(s), and this node's own containerd reads that directory for pod networking:\n  %s\n"+
+		"Left there, they are the only CNI config on the node until the cluster's CNI plugin writes its own, so the first pods "+
+		"(CoreDNS, node-local-dns) get addresses on the bootstrap bridge and cluster DNS never works.\n"+
+		"List the bridge each file names with `grep -h '\"bridge\":' %s/nerdctl-*.conflist` before removing the files, "+
+		"then delete each of those bridges with `ip link delete <bridge>` and re-run. "+
+		"To keep %s out of that directory for good, set `cni_netconfpath = %q` in /etc/nerdctl/nerdctl.toml",
+		dir, bootstrapengine.RuntimeCLI, strings.Join(found, "\n  "), dir,
+		bootstrapengine.RuntimeCLI, bootstrapengine.IsolatedCNIConfDir)
+}
+
 // ensureImageAvailable makes sure image is present in containerd's image
 // store before handing it to Engine.LoadImage. A reference with a registry
 // host is pulled when it is not cached. One without must already be there;
@@ -1345,11 +1512,18 @@ func requireLocalImages(ctx context.Context, engine *bootstrapengine.Engine, ima
 }
 
 // missingLocalImageError names the build command and the flags and variables
-// that replace a local build, and keeps the inspect failure.
+// that replace a local build, and keeps the inspect failure. The profiles image
+// is not one `make -C cli images` builds, and only its own variable sets it.
 func missingLocalImageError(image string, err error, out string) error {
+	if image == os.Getenv(controllerdeploy.ProfilesImageEnv) {
+		return fmt.Errorf("the profiles image %s is not in the local image store (%w\n%s) and names no registry to pull it from; "+
+			"build it and tag it with something other than latest, or name an image the runtime can pull in %s "+
+			"(for Docker Hub, write docker.io/<org>/<name>)",
+			image, err, strings.TrimSpace(out), controllerdeploy.ProfilesImageEnv)
+	}
 	return fmt.Errorf("image %s is not in the local image store (%w\n%s) and names no registry to pull it from; "+
 		"build it with `make -C cli images`, or name an image the runtime can pull with "+
-		"--controller-image / --provisioned-provider-image or NVKECTL_CONTROLLER_IMAGE / NVKECTL_CAPI_PROVISIONED_IMAGE "+
+		"--nvke-controller-image / --provisioned-provider-image or NVKECTL_NVKE_CONTROLLER_IMAGE / NVKECTL_CAPI_PROVISIONED_IMAGE "+
 		"(for Docker Hub, write docker.io/<org>/<name>)",
 		image, err, strings.TrimSpace(out))
 }

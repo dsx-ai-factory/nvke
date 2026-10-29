@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -20,12 +21,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 	"github.com/dsx-ai-factory/nvke/cli/internal/redact"
+	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 )
 
 // fakeCall records one CommandRunner.Run invocation.
@@ -295,7 +299,7 @@ func TestCWEEnvArgs(t *testing.T) {
 }
 
 func TestDefaultConfig_CWEPort(t *testing.T) {
-	t.Setenv("NVKECTL_CONTROLLER_PORT", "30181")
+	t.Setenv("NVKECTL_NVKE_CONTROLLER_PORT", "30181")
 
 	cfg := DefaultConfig()
 	if cfg.CWEPort != 30181 {
@@ -403,6 +407,7 @@ func TestDeploy_EnablesPostInitCNI(t *testing.T) {
 	}
 }
 
+// TestDeploy_ControllerValuesCarryOIDCProviders verifies providers reach Helm without changing embedded values.
 func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	embedded, err := fs.ReadFile(manifestsFS, cweValuesFile)
 	if err != nil {
@@ -422,13 +427,15 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	}
 
 	cfg := testConfig(t)
+	usernamePrefix := "corp:"
 	cfg.OIDCProviders = []sitespec.OIDCProvider{{
 		Name:           "corp",
 		IssuerURL:      "https://login.example.com",
 		Audiences:      []string{"nvke"},
 		UsernameClaim:  "email",
-		UsernamePrefix: "corp:",
+		UsernamePrefix: &usernamePrefix,
 		CABundle:       "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+		DiscoveryURL:   "https://identity.example.com/.well-known/openid-configuration",
 	}}
 	runner = &fakeRunner{}
 	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
@@ -444,6 +451,18 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 		t.Fatalf("extra controller values files = %d, want the password's and the oidc one", len(extra))
 	}
 	oidc := extra[1]
+	var rendered struct {
+		OIDC struct {
+			Providers []struct {
+				IssuerURL    string `yaml:"issuerURL"`
+				DiscoveryURL string `yaml:"discoveryURL"`
+			} `yaml:"providers"`
+		} `yaml:"oidc"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(oidc), &rendered))
+	require.Len(t, rendered.OIDC.Providers, 1)
+	assert.Equal(t, cfg.OIDCProviders[0].IssuerURL, rendered.OIDC.Providers[0].IssuerURL)
+	assert.Equal(t, cfg.OIDCProviders[0].DiscoveryURL, rendered.OIDC.Providers[0].DiscoveryURL)
 	for _, want := range []string{"name: corp", "issuerURL: https://login.example.com", "providers:"} {
 		if !strings.Contains(oidc, want) {
 			t.Errorf("oidc values missing %q:\n%s", want, oidc)
@@ -459,6 +478,39 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	if strings.Count(cwe, "--values") != 3 {
 		t.Errorf("controller helm call has %d --values, want 3: %s", strings.Count(cwe, "--values"), cwe)
 	}
+}
+
+// TestDeploy_OmitsUnsetOIDCDiscoveryURL verifies an unset override preserves default discovery behavior.
+func TestDeploy_OmitsUnsetOIDCDiscoveryURL(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.OIDCProviders = []sitespec.OIDCProvider{{Name: "corp", IssuerURL: "https://login.example.com"}}
+	runner := &fakeRunner{}
+	require.NoError(t, New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg))
+	extra := runner.extraValuesFiles[cweReleaseName]
+	require.Len(t, extra, 2)
+	assert.NotContains(t, extra[1], "discoveryURL:")
+}
+
+// TestDeploy_EmptyOIDCUsernamePrefix verifies Helm receives an explicit empty username prefix.
+func TestDeploy_EmptyOIDCUsernamePrefix(t *testing.T) {
+	cfg := testConfig(t)
+	usernamePrefix := ""
+	cfg.OIDCProviders = []sitespec.OIDCProvider{{Name: "corp", IssuerURL: "https://login.example.com", UsernamePrefix: &usernamePrefix}}
+	runner := &fakeRunner{}
+	require.NoError(t, New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg))
+	extra := runner.extraValuesFiles[cweReleaseName]
+	require.Len(t, extra, 2)
+	var rendered struct {
+		OIDC struct {
+			Providers []struct {
+				UsernamePrefix *string `yaml:"usernamePrefix"`
+			} `yaml:"providers"`
+		} `yaml:"oidc"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(extra[1]), &rendered))
+	require.Len(t, rendered.OIDC.Providers, 1)
+	require.NotNil(t, rendered.OIDC.Providers[0].UsernamePrefix)
+	assert.Empty(t, *rendered.OIDC.Providers[0].UsernamePrefix)
 }
 
 // TestDeploy_InstallsPostgresFromTheEmbeddedChart: Postgres comes from the
@@ -551,7 +603,7 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 	if !strings.Contains(spire, "upgrade --install spire spire") ||
 		!strings.Contains(spire, "global.spire.clusterName=test-kind") ||
 		!strings.Contains(spire, "global.spire.trustDomain=test-kind.nke.local") ||
-		!strings.Contains(spire, "spire-server.adminIDs[0]=spiffe://test-kind.nke.local/nke-service/nke-controller") {
+		!strings.Contains(spire, "spire-server.adminIDs[0]=spiffe://test-kind.nke.local/nvke-service/nvke-controller") {
 		t.Errorf("SPIRE call = %q, want the pinned chart and controller identity", spire)
 	}
 
@@ -692,7 +744,7 @@ func TestWaitReady_SucceedsOnOKStatus(t *testing.T) {
 	if call.name != "kubectl" {
 		t.Errorf("call.name = %q, want %q", call.name, "kubectl")
 	}
-	wantProxyPath := "/api/v1/namespaces/nke-controller/services/nke-controller:http/proxy/readyz"
+	wantProxyPath := "/api/v1/namespaces/nvke-controller/services/nvke-controller:http/proxy/readyz"
 	if !strings.Contains(joinArgs(call.args), wantProxyPath) {
 		t.Errorf("args = %q, want it to include %q", joinArgs(call.args), wantProxyPath)
 	}
@@ -827,7 +879,7 @@ func TestSpireInstallArgs(t *testing.T) {
 		"--values /tmp/values.yaml",
 		"global.spire.clusterName=kind",
 		"global.spire.trustDomain=kind.nke.local",
-		spireServerValuesPrefix + ".adminIDs[0]=spiffe://kind.nke.local/nke-service/nke-controller",
+		spireServerValuesPrefix + ".adminIDs[0]=spiffe://kind.nke.local/nvke-service/nvke-controller",
 	} {
 		if !hasArgs(got, strings.Fields(want)...) {
 			t.Errorf("install = %q, want it to contain %q", got, want)
@@ -1106,8 +1158,7 @@ func TestDeploy_PullsTemporalAndSPIREChartsFromTheConfiguredRef(t *testing.T) {
 // TestDefaultConfig_ImagesDefaultToTheManifest: with neither variable set the
 // two built images are the manifest's refs; a set variable wins.
 func TestDefaultConfig_ImagesDefaultToTheManifest(t *testing.T) {
-	t.Setenv("NVKECTL_CONTROLLER_IMAGE", "")
-	t.Setenv("NKECTL_CONTROLLER_IMAGE", "")
+	t.Setenv("NVKECTL_NVKE_CONTROLLER_IMAGE", "")
 	t.Setenv("NVKECTL_CAPI_PROVISIONED_IMAGE", "")
 	cfg := DefaultConfig()
 	m := manifest.Load()
@@ -1118,7 +1169,7 @@ func TestDefaultConfig_ImagesDefaultToTheManifest(t *testing.T) {
 		t.Errorf("ProvisionedProviderImage = %q, want the manifest's %q", cfg.ProvisionedProviderImage, want)
 	}
 
-	t.Setenv("NVKECTL_CONTROLLER_IMAGE", "nvcr.io/org/nvke-controller:edge")
+	t.Setenv("NVKECTL_NVKE_CONTROLLER_IMAGE", "nvcr.io/org/nvke-controller:edge")
 	t.Setenv("NVKECTL_CAPI_PROVISIONED_IMAGE", "nvcr.io/org/provisioned:edge")
 	cfg = DefaultConfig()
 	if cfg.CWEImage != "nvcr.io/org/nvke-controller:edge" || cfg.ProvisionedProviderImage != "nvcr.io/org/provisioned:edge" {
@@ -1127,9 +1178,9 @@ func TestDefaultConfig_ImagesDefaultToTheManifest(t *testing.T) {
 }
 
 func TestDefaultConfig_ChartRefs(t *testing.T) {
-	t.Setenv("NVKECTL_CONTROLLER_TEMPORAL_CHART", "/srv/charts/temporal-0.74.0.tgz")
-	t.Setenv("NVKECTL_CONTROLLER_SPIRE_CHART", "oci://mirror.example.com/spiffe/spire")
-	t.Setenv("NVKECTL_CONTROLLER_SPIRE_CRDS_CHART", "oci://mirror.example.com/spiffe/spire-crds")
+	t.Setenv("NVKECTL_NVKE_CONTROLLER_TEMPORAL_CHART", "/srv/charts/temporal-0.74.0.tgz")
+	t.Setenv("NVKECTL_NVKE_CONTROLLER_SPIRE_CHART", "oci://mirror.example.com/spiffe/spire")
+	t.Setenv("NVKECTL_NVKE_CONTROLLER_SPIRE_CRDS_CHART", "oci://mirror.example.com/spiffe/spire-crds")
 
 	cfg := DefaultConfig()
 	for _, tt := range []struct{ field, got, want string }{
@@ -1144,32 +1195,48 @@ func TestDefaultConfig_ChartRefs(t *testing.T) {
 }
 
 // renamedSettingCases is every setting this package reads, with its previous
-// NKECTL_* name, two values it accepts and the Config field that carries it.
+// NKECTL_* name (none for an NVKECTL_NVKE_* setting), two values it accepts and
+// the Config field that carries it.
 var renamedSettingCases = []struct {
 	name, old  string
 	oldV, newV string
 	got        func(Config) string
 }{
-	{"NVKECTL_CONTROLLER_IMAGE", "NKECTL_CONTROLLER_IMAGE", "nvcr.io/org/old:1", "nvcr.io/org/new:1", func(c Config) string { return c.CWEImage }},
-	{"NVKECTL_CONTROLLER_PORT", "NKECTL_CONTROLLER_PORT", "30181", "30182", func(c Config) string { return strconv.Itoa(int(c.CWEPort)) }},
-	{"NVKECTL_CONTROLLER_HELM_TIMEOUT", "NKECTL_CONTROLLER_HELM_TIMEOUT", "1m0s", "2m0s", func(c Config) string { return c.HelmTimeout.String() }},
-	{"NVKECTL_CONTROLLER_READY_TIMEOUT", "NKECTL_CONTROLLER_READY_TIMEOUT", "3m0s", "4m0s", func(c Config) string { return c.ReadyTimeout.String() }},
-	{"NVKECTL_CONTROLLER_TEMPORAL_CHART", "NKECTL_CONTROLLER_TEMPORAL_CHART", "/srv/old/temporal.tgz", "/srv/new/temporal.tgz", func(c Config) string { return c.TemporalChartRef }},
-	{"NVKECTL_CONTROLLER_SPIRE_CHART", "NKECTL_CONTROLLER_SPIRE_CHART", "oci://old.example.com/spire", "oci://new.example.com/spire", func(c Config) string { return c.SPIREChartRef }},
-	{"NVKECTL_CONTROLLER_SPIRE_CRDS_CHART", "NKECTL_CONTROLLER_SPIRE_CRDS_CHART", "oci://old.example.com/spire-crds", "oci://new.example.com/spire-crds", func(c Config) string { return c.SPIRECRDsChartRef }},
+	{"NVKECTL_NVKE_CONTROLLER_IMAGE", "", "nvcr.io/org/old:1", "nvcr.io/org/new:1", func(c Config) string { return c.CWEImage }},
+	{"NVKECTL_NVKE_CONTROLLER_PORT", "", "30181", "30182", func(c Config) string { return strconv.Itoa(int(c.CWEPort)) }},
+	{"NVKECTL_NVKE_CONTROLLER_HELM_TIMEOUT", "", "1m0s", "2m0s", func(c Config) string { return c.HelmTimeout.String() }},
+	{"NVKECTL_NVKE_CONTROLLER_READY_TIMEOUT", "", "3m0s", "4m0s", func(c Config) string { return c.ReadyTimeout.String() }},
+	{"NVKECTL_NVKE_CONTROLLER_TEMPORAL_CHART", "", "/srv/old/temporal.tgz", "/srv/new/temporal.tgz", func(c Config) string { return c.TemporalChartRef }},
+	{"NVKECTL_NVKE_CONTROLLER_SPIRE_CHART", "", "oci://old.example.com/spire", "oci://new.example.com/spire", func(c Config) string { return c.SPIREChartRef }},
+	{"NVKECTL_NVKE_CONTROLLER_SPIRE_CRDS_CHART", "", "oci://old.example.com/spire-crds", "oci://new.example.com/spire-crds", func(c Config) string { return c.SPIRECRDsChartRef }},
 	{"NVKECTL_CAPI_PROVISIONED_IMAGE", "NKECTL_CAPI_PROVISIONED_IMAGE", "nvcr.io/org/old-provisioned:1", "nvcr.io/org/new-provisioned:1", func(c Config) string { return c.ProvisionedProviderImage }},
 	{"NVKECTL_SPIFFE_TRUST_DOMAIN", "NKECTL_SPIFFE_TRUST_DOMAIN", "old.example", "new.example", func(c Config) string { return c.SPIFFETrustDomain }},
 }
 
-// TestDefaultConfig_RenamedSettings: each NVKECTL_CONTROLLER_* setting is
-// read; its NKECTL_* name is read when the new one is unset and is
-// then reported as deprecated; with both set the new one wins and nothing is
+// clearSettings blanks every setting this package reads, under every name it
+// has had.
+func clearSettings(t *testing.T) {
+	t.Helper()
+	for _, c := range renamedSettingCases {
+		t.Setenv(c.name, "")
+		if c.old != "" {
+			t.Setenv(c.old, "")
+		}
+	}
+}
+
+// TestDefaultConfig_RenamedSettings: each setting with a previous NKECTL_*
+// name is read; that name is read when the new one is unset and is then
+// reported as deprecated; with both set the new one wins and nothing is
 // reported.
 func TestDefaultConfig_RenamedSettings(t *testing.T) {
 	if len(renamedSettingCases) != len(Settings) {
 		t.Fatalf("%d cases for %d settings", len(renamedSettingCases), len(Settings))
 	}
 	for _, tc := range renamedSettingCases {
+		if tc.old == "" {
+			continue
+		}
 		for _, set := range []struct {
 			desc             string
 			newV, oldV, want string
@@ -1180,10 +1247,7 @@ func TestDefaultConfig_RenamedSettings(t *testing.T) {
 			{"both names", tc.newV, tc.oldV, tc.newV, false},
 		} {
 			t.Run(tc.name+"/"+set.desc, func(t *testing.T) {
-				for _, c := range renamedSettingCases {
-					t.Setenv(c.name, "")
-					t.Setenv(c.old, "")
-				}
+				clearSettings(t)
 				t.Setenv(tc.name, set.newV)
 				t.Setenv(tc.old, set.oldV)
 
@@ -1202,72 +1266,51 @@ func TestDefaultConfig_RenamedSettings(t *testing.T) {
 	}
 }
 
+// TestDefaultConfig_ControllerSettings: each NVKECTL_NVKE_CONTROLLER_* setting
+// is read under that name only. An earlier name (the cli/v0.2.0 release
+// candidates' NVKECTL_CONTROLLER_* and NKECTL_CONTROLLER_*, or cli/v0.1.x's
+// NKECTL_CWE_*) is neither read nor reported as deprecated, alone or beside the
+// new one.
+func TestDefaultConfig_ControllerSettings(t *testing.T) {
+	for _, tc := range renamedSettingCases {
+		suffix, ok := strings.CutPrefix(tc.name, "NVKECTL_NVKE_CONTROLLER_")
+		if !ok {
+			continue
+		}
+		for _, prefix := range []string{"NVKECTL_CONTROLLER_", "NKECTL_CONTROLLER_", "NKECTL_CWE_"} {
+			old := prefix + suffix
+			t.Run(tc.name+"/"+old, func(t *testing.T) {
+				clearSettings(t)
+				t.Setenv(old, tc.oldV)
+				if got := tc.got(DefaultConfig()); got == tc.oldV {
+					t.Errorf("DefaultConfig read %s", old)
+				}
+
+				t.Setenv(tc.name, tc.newV)
+				if got := tc.got(DefaultConfig()); got != tc.newV {
+					t.Errorf("DefaultConfig read %q, want %q", got, tc.newV)
+				}
+				if got := DeprecatedSettings(); len(got) != 0 {
+					t.Errorf("DeprecatedSettings = %v, want none", got)
+				}
+			})
+		}
+	}
+}
+
 // TestDeprecatedSettings_SortedByOldName: several old names at once come back
 // in a stable order, so the warnings print the same way every run.
 func TestDeprecatedSettings_SortedByOldName(t *testing.T) {
-	for _, c := range renamedSettingCases {
-		t.Setenv(c.name, "")
-		t.Setenv(c.old, "")
-	}
-	t.Setenv("NKECTL_CONTROLLER_SPIRE_CHART", "oci://old.example.com/spire")
-	t.Setenv("NKECTL_CONTROLLER_IMAGE", "nvcr.io/org/old:1")
-	t.Setenv("NKECTL_CONTROLLER_PORT", "30181")
+	clearSettings(t)
+	t.Setenv("NKECTL_SPIFFE_TRUST_DOMAIN", "old.example")
+	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "nvcr.io/org/old-provisioned:1")
 
 	want := []envalias.Renamed{
-		{Old: "NKECTL_CONTROLLER_IMAGE", New: "NVKECTL_CONTROLLER_IMAGE"},
-		{Old: "NKECTL_CONTROLLER_PORT", New: "NVKECTL_CONTROLLER_PORT"},
-		{Old: "NKECTL_CONTROLLER_SPIRE_CHART", New: "NVKECTL_CONTROLLER_SPIRE_CHART"},
+		{Old: "NKECTL_CAPI_PROVISIONED_IMAGE", New: "NVKECTL_CAPI_PROVISIONED_IMAGE"},
+		{Old: "NKECTL_SPIFFE_TRUST_DOMAIN", New: "NVKECTL_SPIFFE_TRUST_DOMAIN"},
 	}
 	if got := DeprecatedSettings(); !slices.Equal(got, want) {
 		t.Errorf("DeprecatedSettings = %v, want %v", got, want)
-	}
-}
-
-// removedSettingNames is every controller setting name nkectl cli/v0.1.x read.
-var removedSettingNames = []string{
-	"NKECTL_CWE_HELM_TIMEOUT",
-	"NKECTL_CWE_IMAGE",
-	"NKECTL_CWE_PORT",
-	"NKECTL_CWE_READY_TIMEOUT",
-	"NKECTL_CWE_SPIRE_CHART",
-	"NKECTL_CWE_SPIRE_CRDS_CHART",
-	"NKECTL_CWE_TEMPORAL_CHART",
-}
-
-// TestRemovedSettings: every cli/v0.1.x name that is set comes back, sorted,
-// with the setting that replaces it; one that is unset does not, and setting
-// its replacement does not hide it.
-func TestRemovedSettings(t *testing.T) {
-	for _, old := range removedSettingNames {
-		t.Setenv(old, "")
-	}
-	if got := RemovedSettings(); len(got) != 0 {
-		t.Fatalf("RemovedSettings with nothing set = %v", got)
-	}
-
-	t.Setenv("NKECTL_CWE_SPIRE_CHART", "oci://old.example.com/spire")
-	t.Setenv("NKECTL_CWE_IMAGE", "nvcr.io/org/old:1")
-	t.Setenv("NVKECTL_CONTROLLER_IMAGE", "nvcr.io/org/new:1")
-	want := []envalias.Renamed{
-		{Old: "NKECTL_CWE_IMAGE", New: "NVKECTL_CONTROLLER_IMAGE"},
-		{Old: "NKECTL_CWE_SPIRE_CHART", New: "NVKECTL_CONTROLLER_SPIRE_CHART"},
-	}
-	if got := RemovedSettings(); !slices.Equal(got, want) {
-		t.Errorf("RemovedSettings = %v, want %v", got, want)
-	}
-
-	for _, old := range removedSettingNames {
-		t.Setenv(old, "x")
-	}
-	var olds []string
-	for _, r := range RemovedSettings() {
-		if !slices.Contains(Settings, r.New) {
-			t.Errorf("%s maps to %s, which DefaultConfig does not read", r.Old, r.New)
-		}
-		olds = append(olds, r.Old)
-	}
-	if !slices.Equal(olds, removedSettingNames) {
-		t.Errorf("RemovedSettings covers %v, want %v", olds, removedSettingNames)
 	}
 }
 
@@ -1491,7 +1534,7 @@ func (r *dumpingRunner) Run(ctx context.Context, name string, args ...string) (s
 		if a != "--output-directory" || i+1 >= len(args) {
 			continue
 		}
-		sub := filepath.Join(args[i+1], "nke-controller")
+		sub := filepath.Join(args[i+1], "nvke-controller")
 		if mkErr := os.MkdirAll(sub, 0o750); mkErr != nil {
 			return out, mkErr
 		}
@@ -1519,7 +1562,7 @@ func TestDumpDiagnostics_ScrubsCredentials(t *testing.T) {
 		"pods.json":  fakeValue,        // a registered password, in a URL
 		"other.json": "not-registered", // any password in a database URL
 	} {
-		body, err := os.ReadFile(filepath.Join(dir, "nke-controller", file))
+		body, err := os.ReadFile(filepath.Join(dir, "nvke-controller", file))
 		if err != nil {
 			t.Fatalf("%s: %v", file, err)
 		}
@@ -1530,7 +1573,7 @@ func TestDumpDiagnostics_ScrubsCredentials(t *testing.T) {
 			t.Errorf("%s lost more than the password:\n%s", file, body)
 		}
 	}
-	body, err := os.ReadFile(filepath.Join(dir, "nke-controller", "pods.json"))
+	body, err := os.ReadFile(filepath.Join(dir, "nvke-controller", "pods.json"))
 	if err != nil || !strings.Contains(string(body), `"keep":"host=db"`) {
 		t.Errorf("an unrelated field did not survive: %q, %v", body, err)
 	}
@@ -1562,10 +1605,10 @@ func TestDumpDiagnostics_LeavesOtherFilesInTheDirectoryAlone(t *testing.T) {
 	redact.RegisterSecret(fakeValue)
 	dir := t.TempDir()
 	others := map[string]string{
-		"app.env":          "DATABASE_URL=postgres://u:p@h/db\n",
-		"old.log":          "rejected " + fakeValue + "\n",
-		"sub/notes.txt":    "postgresql://dev:hunter2@localhost/app\n",
-		"nke-controller/x": "a file in a directory the bundle also uses\n",
+		"app.env":           "DATABASE_URL=postgres://u:p@h/db\n",
+		"old.log":           "rejected " + fakeValue + "\n",
+		"sub/notes.txt":     "postgresql://dev:hunter2@localhost/app\n",
+		"nvke-controller/x": "a file in a directory the bundle also uses\n",
 	}
 	for name, body := range others {
 		path := filepath.Join(dir, name)
@@ -1592,7 +1635,7 @@ func TestDumpDiagnostics_LeavesOtherFilesInTheDirectoryAlone(t *testing.T) {
 	if got, _ := os.ReadFile(stale); string(got) == "stale" {
 		t.Error("a bundle file did not replace the file of the same name")
 	}
-	body, err := os.ReadFile(filepath.Join(dir, "nke-controller", "pods.json"))
+	body, err := os.ReadFile(filepath.Join(dir, "nvke-controller", "pods.json"))
 	if err != nil {
 		t.Fatalf("the bundle was not published into dir: %v", err)
 	}
@@ -1923,12 +1966,12 @@ func TestDumpDiagnostics_DoesNotWriteThroughASymlinkInTheDirectory(t *testing.T)
 		make func(t *testing.T, dir, elsewhere string)
 	}{
 		{"a symlink to a directory", func(t *testing.T, dir, elsewhere string) {
-			if err := os.Symlink(elsewhere, filepath.Join(dir, "nke-controller")); err != nil {
+			if err := os.Symlink(elsewhere, filepath.Join(dir, "nvke-controller")); err != nil {
 				t.Skipf("no symlinks here: %v", err)
 			}
 		}},
 		{"a file where a directory is wanted", func(t *testing.T, dir, _ string) {
-			if err := os.WriteFile(filepath.Join(dir, "nke-controller"), []byte("not a directory"), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "nvke-controller"), []byte("not a directory"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}},
@@ -1972,7 +2015,7 @@ func TestDumpDiagnostics_PublishesIntoADirectoryThatIsASymlink(t *testing.T) {
 
 	New(&dumpingRunner{fakeRunner: &fakeRunner{}}, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", link)
 
-	for _, name := range []string{"helm-releases.txt", filepath.Join("nke-controller", "pods.json")} {
+	for _, name := range []string{"helm-releases.txt", filepath.Join("nvke-controller", "pods.json")} {
 		if _, err := os.Stat(filepath.Join(target, name)); err != nil {
 			t.Errorf("%s was not published into the directory the symlink points at: %v", name, err)
 		}
@@ -2161,4 +2204,296 @@ func TestDumpDiagnostics_WhatAlreadyHasTheFinalName(t *testing.T) {
 			t.Errorf("the name should now hold the published file: %v, %v", info, err)
 		}
 	})
+}
+
+func TestProfilesImageArgs(t *testing.T) {
+	tests := []struct {
+		name    string
+		image   string
+		want    []string // substrings the args must contain; empty means no args at all
+		wantErr string
+	}{
+		{"unset adds nothing", "", nil, ""},
+		{
+			"a tagged local image",
+			"controller-profiles:e2e",
+			[]string{"profiles.image.enabled=true", "profiles.image.repository=controller-profiles", "profiles.image.tag=e2e", "profiles.image.digest="},
+			"",
+		},
+		{
+			"a registry image with a port and a tag",
+			"localhost:5000/team/profiles:v1",
+			[]string{"profiles.image.repository=localhost:5000/team/profiles", "profiles.image.tag=v1"},
+			"",
+		},
+		{
+			"a digest pin needs no tag",
+			"registry.example.com/profiles@sha256:abc123",
+			[]string{"profiles.image.repository=registry.example.com/profiles", "profiles.image.digest=sha256:abc123"},
+			"",
+		},
+		{"an explicit latest tag is refused", "controller-profiles:latest", nil, "other than latest"},
+		{"an untagged reference reads as latest and is refused", "controller-profiles", nil, "other than latest"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args, err := profilesImageArgs(Config{ProfilesImage: tt.image})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("profilesImageArgs error = %v, want one containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("profilesImageArgs: %v", err)
+			}
+			if len(tt.want) == 0 && len(args) != 0 {
+				t.Fatalf("args = %v, want none", args)
+			}
+			joined := strings.Join(args, " ")
+			for _, want := range tt.want {
+				if !strings.Contains(joined, want) {
+					t.Errorf("args = %q, want %q", joined, want)
+				}
+			}
+		})
+	}
+}
+
+// TestDeploy_ProfilesImageReachesTheControllerInstall: the chart values are on
+// the release that runs the controller, not just built.
+func TestDeploy_ProfilesImageReachesTheControllerInstall(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.ProfilesImage = "controller-profiles:e2e"
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	install := joinArgs(runner.calls[callIndex(runner, "upgrade --install "+cweReleaseName)].args)
+	for _, want := range []string{"profiles.image.enabled=true", "profiles.image.repository=controller-profiles", "profiles.image.tag=e2e"} {
+		if !strings.Contains(install, want) {
+			t.Errorf("controller install = %q, want %q", install, want)
+		}
+	}
+}
+
+func TestDeploy_RefusesAProfilesImageTheClusterWouldPull(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.ProfilesImage = "controller-profiles:latest"
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err == nil {
+		t.Fatal("Deploy accepted a latest-tagged profiles image")
+	}
+}
+
+func TestValidateProfilesImage(t *testing.T) {
+	tests := []struct {
+		image   string
+		wantErr string
+	}{
+		{"", ""},
+		{"controller-profiles:e2e", ""},
+		{"localhost:5000/team/profiles:v1", ""},
+		{"registry.example.com/profiles@sha256:abc123", ""},
+		{"controller-profiles:latest", "other than latest"},
+		{"controller-profiles", "other than latest"},
+		{"localhost:5000/team/profiles", "other than latest"},
+		{"registry.example.com/profiles:", "empty tag"},
+		{"localhost:5000/team/profiles:", "empty tag"},
+		{"registry.example.com/profiles:@sha256:abc123", "empty tag"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.image, func(t *testing.T) {
+			err := ValidateProfilesImage(tt.image)
+			switch {
+			case tt.wantErr == "" && err != nil:
+				t.Fatalf("ValidateProfilesImage(%q) = %v, want nil", tt.image, err)
+			case tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr) || !strings.Contains(err.Error(), ProfilesImageEnv)):
+				t.Fatalf("ValidateProfilesImage(%q) = %v, want one naming %s and %q", tt.image, err, ProfilesImageEnv, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestDeployControlPlaneVIPOverride(t *testing.T) {
+	for _, allow := range []bool{false, true} {
+		t.Run(strconv.FormatBool(allow), func(t *testing.T) {
+			cfg := testConfig(t)
+			cfg.AllowControlPlaneWithoutVIP = allow
+			runner := &fakeRunner{}
+			if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+				t.Fatal(err)
+			}
+			i := callIndex(runner, "upgrade --install "+cweReleaseName)
+			if i < 0 {
+				t.Fatal("no NVKE controller Helm install")
+			}
+			want := "--set allowControlPlaneWithoutVIP=" + strconv.FormatBool(allow)
+			if !strings.Contains(joinArgs(runner.calls[i].args), want) {
+				t.Fatalf("NVKE controller Helm install did not contain %q", want)
+			}
+		})
+	}
+}
+
+// A tracing endpoint turns on the controller's own span export; without one, no
+// tracing value is set. With headers too, they reach the controller as
+// OTEL_EXPORTER_OTLP_HEADERS in a values file, never as an argument, alongside
+// its other environment settings.
+func TestDeploy_TracingValues(t *testing.T) {
+	const token = "Bearer s3cr3t,token=with%odd chars"
+	headers := map[string]string{"authorization": token}
+	encoded := telemetry.FormatHeaders(headers)
+	tests := []struct {
+		name          string
+		tracing       TracingConfig
+		nodeAgentPort string
+		want          []string
+		wantEnv       map[string]string
+	}{
+		{
+			name:    "secure endpoint",
+			tracing: TracingConfig{Endpoint: "collector.example:4317"},
+			want:    []string{"--set tracing.enabled=true", "--set-string tracing.endpoint=collector.example:4317", "--set tracing.insecure=false"},
+		},
+		{
+			name:    "insecure endpoint",
+			tracing: TracingConfig{Endpoint: "collector.example:4317", Insecure: true},
+			want:    []string{"--set tracing.enabled=true", "--set-string tracing.endpoint=collector.example:4317", "--set tracing.insecure=true"},
+		},
+		{
+			name:          "endpoint and headers",
+			tracing:       TracingConfig{Endpoint: "collector.example:4317", Headers: headers},
+			nodeAgentPort: "9444",
+			want:          []string{"--set tracing.enabled=true", "--set-string tracing.endpoint=collector.example:4317", "--set tracing.insecure=false"},
+			wantEnv:       map[string]string{"NODE_AGENT_PORT": "9444", "OTEL_EXPORTER_OTLP_HEADERS": encoded},
+		},
+		{
+			name:          "insecure endpoint and headers",
+			tracing:       TracingConfig{Endpoint: "collector.example:4317", Insecure: true, Headers: headers},
+			nodeAgentPort: "9444",
+			want:          []string{"--set tracing.enabled=true", "--set-string tracing.endpoint=collector.example:4317", "--set tracing.insecure=true"},
+			wantEnv:       map[string]string{"NODE_AGENT_PORT": "9444", "OTEL_EXPORTER_OTLP_HEADERS": encoded},
+		},
+		{
+			name:          "endpoint without headers keeps the env arguments",
+			tracing:       TracingConfig{Endpoint: "collector.example:4317"},
+			nodeAgentPort: "9444",
+			want: []string{
+				"--set tracing.enabled=true", "--set-string tracing.endpoint=collector.example:4317",
+				"--set-string env[0].name=NODE_AGENT_PORT", "--set-string env[0].value=9444",
+			},
+		},
+		{
+			name:          "headers without an endpoint keep the env arguments",
+			tracing:       TracingConfig{Headers: headers},
+			nodeAgentPort: "9444",
+			want:          []string{"--set-string env[0].name=NODE_AGENT_PORT", "--set-string env[0].value=9444"},
+		},
+		{name: "zero value", tracing: TracingConfig{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeRunner{}
+			cfg := testConfig(t)
+			cfg.Tracing = tt.tracing
+			cfg.NodeAgentPort = tt.nodeAgentPort
+
+			if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+				t.Fatalf("Deploy: %v", err)
+			}
+
+			all := strings.Join(helmCalls(runner), "\n")
+			for _, want := range tt.want {
+				if !strings.Contains(all, want) {
+					t.Errorf("calls = %q, want %q", all, want)
+				}
+			}
+			if tt.tracing.Endpoint == "" && strings.Contains(all, "tracing.") {
+				t.Errorf("calls = %q, want no tracing values", all)
+			}
+			if strings.Contains(all, token) || strings.Contains(all, encoded) {
+				t.Errorf("calls = %q, want the headers in no argument", all)
+			}
+			if tt.wantEnv == nil {
+				if strings.Contains(all, "OTEL_EXPORTER_OTLP_HEADERS") {
+					t.Errorf("calls = %q, want no headers for the controller", all)
+				}
+				for _, body := range runner.extraValuesFiles[cweReleaseName] {
+					if strings.Contains(body, "OTEL_EXPORTER_OTLP_HEADERS") || strings.Contains(body, "env:") {
+						t.Errorf("a values file sets the controller's environment without headers:\n%s", body)
+					}
+				}
+				return
+			}
+			if strings.Contains(all, "env[") {
+				t.Errorf("calls = %q, want every env entry in the values file", all)
+			}
+			got := map[string]string{}
+			for _, body := range runner.extraValuesFiles[cweReleaseName] {
+				var doc struct {
+					Env []struct{ Name, Value string } `yaml:"env"`
+				}
+				if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
+					t.Fatalf("a values file is not YAML: %v", err)
+				}
+				for _, e := range doc.Env {
+					got[e.Name] = e.Value
+				}
+			}
+			if !maps.Equal(got, tt.wantEnv) {
+				t.Errorf("env in the values file = %v, want %v", got, tt.wantEnv)
+			}
+			// Every values file of the controller install is removed once Deploy returns.
+			for _, call := range runner.calls {
+				if call.name != "helm" || !slices.Contains(call.args, cweReleaseName) {
+					continue
+				}
+				for i, arg := range call.args {
+					if arg != "--values" || i+1 >= len(call.args) {
+						continue
+					}
+					if _, err := os.Stat(call.args[i+1]); !errors.Is(err, os.ErrNotExist) {
+						t.Errorf("values file %s still exists after Deploy", call.args[i+1])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestEnsureDefaultStorageClass(t *testing.T) {
+	tests := []struct {
+		name        string
+		defaults    string
+		wantInstall bool
+	}{
+		{name: "installs local-path when no StorageClass is the default", defaults: "\n\n", wantInstall: true},
+		{name: "keeps a cluster's own default StorageClass", defaults: "\ntrue\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeRunner{outputs: []fakeOutput{{output: tt.defaults}, {}, {}, {}}}
+			if err := New(runner, nil).EnsureDefaultStorageClass(context.Background(), "site.kubeconfig"); err != nil {
+				t.Fatal(err)
+			}
+			if !tt.wantInstall {
+				if len(runner.calls) != 1 {
+					t.Fatalf("want only the StorageClass lookup, got %d calls", len(runner.calls))
+				}
+				return
+			}
+			if len(runner.applied) != 1 || !strings.Contains(runner.applied[0], "rancher/local-path-provisioner:v0.0.31") {
+				t.Fatalf("want the local-path manifest applied, got %d manifests", len(runner.applied))
+			}
+			want := "annotate storageclass local-path storageclass.kubernetes.io/is-default-class=true --overwrite"
+			if got := joinArgs(runner.calls[2].args[2:]); got != want {
+				t.Fatalf("got %q, want %q", got, want)
+			}
+			want = "-n local-path-storage rollout status deployment/local-path-provisioner --timeout 5m0s"
+			if got := joinArgs(runner.calls[3].args[2:]); got != want {
+				t.Fatalf("got %q, want %q", got, want)
+			}
+		})
+	}
 }

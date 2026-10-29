@@ -8,13 +8,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	authnv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	k8stesting "k8s.io/client-go/testing"
@@ -25,7 +28,8 @@ import (
 // The controller namespaces authConfigNamespaces searches, by name, so a
 // reordering or a typo there fails here rather than on a site.
 const (
-	greenfieldNamespace = "nke-controller"
+	greenfieldNamespace = "nvke-controller"
+	previousNamespace   = "nke-controller"
 	legacyNamespace     = "cloud-workflow-engine"
 )
 
@@ -34,7 +38,7 @@ func TestTokenMintsForConfiguredAudience(t *testing.T) {
 
 	client := fake.NewClientset(&corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      authConfigMap,
+			Name:      authConfigMaps[0],
 			Namespace: legacyNamespace,
 		},
 		Data: map[string]string{
@@ -104,7 +108,7 @@ func TestTokenRenewsAndCachesNearExpiryToken(t *testing.T) {
 	const endpoint = "https://nke.example.internal"
 	mintedExpiry := time.Now().Add(tokenLifetime)
 	client := fake.NewClientset(&corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: authConfigMap, Namespace: legacyNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: authConfigMaps[0], Namespace: legacyNamespace},
 		Data:       map[string]string{authConfigKey: "audiences:\n  - " + endpoint + "\n"},
 	})
 	client.PrependReactor("create", "serviceaccounts", func(_ k8stesting.Action) (bool, runtime.Object, error) {
@@ -139,7 +143,7 @@ func TestTokenRenewsAndCachesNearExpiryToken(t *testing.T) {
 func TestTokenReusesMintedTokenInMemory(t *testing.T) {
 	const configuredAudience = "https://nke.example.internal"
 	client := fake.NewClientset(&corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: authConfigMap, Namespace: legacyNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: authConfigMaps[0], Namespace: legacyNamespace},
 		Data:       map[string]string{authConfigKey: "audiences:\n  - " + configuredAudience + "\n"},
 	})
 	mints := 0
@@ -196,13 +200,13 @@ func TestTokenRequiresConfiguredAudience(t *testing.T) {
 		{
 			name: "missing auth config key",
 			configMap: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{Name: authConfigMap, Namespace: legacyNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: authConfigMaps[0], Namespace: legacyNamespace},
 			},
 		},
 		{
 			name: "empty audience list",
 			configMap: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{Name: authConfigMap, Namespace: legacyNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: authConfigMaps[0], Namespace: legacyNamespace},
 				Data:       map[string]string{authConfigKey: "audiences: []\n"},
 			},
 		},
@@ -228,7 +232,7 @@ func TestTokenRequiresConfiguredAudience(t *testing.T) {
 func TestAudienceSearchesBothControllerNamespaces(t *testing.T) {
 	authConfig := func(namespace, audience string) *corev1.ConfigMap {
 		return &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Name: authConfigMap, Namespace: namespace},
+			ObjectMeta: metav1.ObjectMeta{Name: authConfigMaps[0], Namespace: namespace},
 			Data:       map[string]string{authConfigKey: "audiences:\n  - " + audience + "\n"},
 		}
 	}
@@ -246,15 +250,22 @@ func TestAudienceSearchesBothControllerNamespaces(t *testing.T) {
 			wantEnabled:  true,
 		},
 		{
+			name:         "site installed before the nvke rename",
+			objects:      []runtime.Object{authConfig(previousNamespace, "https://previous.example")},
+			wantAudience: "https://previous.example",
+			wantEnabled:  true,
+		},
+		{
 			name:         "legacy site",
 			objects:      []runtime.Object{authConfig(legacyNamespace, "https://legacy.example")},
 			wantAudience: "https://legacy.example",
 			wantEnabled:  true,
 		},
 		{
-			name: "both names present uses the greenfield name",
+			name: "every name present uses the greenfield name",
 			objects: []runtime.Object{
 				authConfig(legacyNamespace, "https://legacy.example"),
+				authConfig(previousNamespace, "https://previous.example"),
 				authConfig(greenfieldNamespace, "https://greenfield.example"),
 			},
 			wantAudience: "https://greenfield.example",
@@ -280,11 +291,65 @@ func TestAudienceSearchesBothControllerNamespaces(t *testing.T) {
 	}
 }
 
+// The chart's default ConfigMap name moved to nvke-auth-config; a site that
+// pinned apiAuth.configMap.name keeps nke-auth-config. The CLI reads either,
+// so one nvkectl works against both.
+func TestAudienceSearchesBothConfigMapNames(t *testing.T) {
+	authConfig := func(name, audience string) *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: greenfieldNamespace},
+			Data:       map[string]string{authConfigKey: "audiences:\n  - " + audience + "\n"},
+		}
+	}
+
+	tests := []struct {
+		name         string
+		objects      []runtime.Object
+		wantAudience string
+		wantEnabled  bool
+	}{
+		{
+			name:         "greenfield name",
+			objects:      []runtime.Object{authConfig("nvke-auth-config", "https://greenfield.example")},
+			wantAudience: "https://greenfield.example",
+			wantEnabled:  true,
+		},
+		{
+			name:         "pinned legacy name",
+			objects:      []runtime.Object{authConfig("nke-auth-config", "https://legacy.example")},
+			wantAudience: "https://legacy.example",
+			wantEnabled:  true,
+		},
+		{
+			name: "both names present uses the greenfield name",
+			objects: []runtime.Object{
+				authConfig("nke-auth-config", "https://legacy.example"),
+				authConfig("nvke-auth-config", "https://greenfield.example"),
+			},
+			wantAudience: "https://greenfield.example",
+			wantEnabled:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := fake.NewClientset(tt.objects...)
+			audience, enabled, err := (&TokenSource{client: client}).audience(t.Context())
+			if err != nil {
+				t.Fatalf("audience: %v", err)
+			}
+			if audience != tt.wantAudience || enabled != tt.wantEnabled {
+				t.Fatalf("audience = %q, enabled = %t; want %q, %t", audience, enabled, tt.wantAudience, tt.wantEnabled)
+			}
+		})
+	}
+}
+
 // Only NotFound moves on to the next namespace. Any other failure is reported,
 // so a denied read cannot turn into an unauthenticated request.
 func TestAudienceReportsNonNotFoundErrors(t *testing.T) {
 	client := fake.NewClientset(&corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: authConfigMap, Namespace: legacyNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: authConfigMaps[0], Namespace: legacyNamespace},
 		Data:       map[string]string{authConfigKey: "audiences:\n  - https://legacy.example\n"},
 	})
 	client.PrependReactor("get", "configmaps", func(action k8stesting.Action) (bool, runtime.Object, error) {
@@ -296,6 +361,159 @@ func TestAudienceReportsNonNotFoundErrors(t *testing.T) {
 
 	if _, _, err := (&TokenSource{client: client}).audience(t.Context()); err == nil {
 		t.Fatal("audience returned no error for a failed read of the greenfield namespace")
+	}
+}
+
+// forbid returns a reactor that denies get on exactly the named ConfigMaps, the
+// way RBAC scoped to resourceNames does, and passes everything else through.
+func forbid(names ...string) k8stesting.ReactionFunc {
+	denied := make(map[string]bool, len(names))
+	for _, n := range names {
+		denied[n] = true
+	}
+	return func(action k8stesting.Action) (bool, runtime.Object, error) {
+		get, ok := action.(k8stesting.GetActionImpl)
+		if !ok || !denied[get.Name] {
+			return false, nil, nil
+		}
+		return true, nil, apierrors.NewForbidden(
+			schema.GroupResource{Resource: "configmaps"}, get.Name, fmt.Errorf("not permitted"),
+		)
+	}
+}
+
+// A site pinned to the legacy name may grant get on that name alone. The denial
+// of the greenfield name is then expected, and must not stop the search before
+// the name the kubeconfig can actually read.
+func TestAudienceFallsBackWhenTheGreenfieldNameIsForbidden(t *testing.T) {
+	client := fake.NewClientset(&corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "nke-auth-config", Namespace: greenfieldNamespace},
+		Data:       map[string]string{authConfigKey: "audiences:\n  - https://pinned.example\n"},
+	})
+	client.PrependReactor("get", "configmaps", forbid("nvke-auth-config"))
+
+	audience, enabled, err := (&TokenSource{client: client}).audience(t.Context())
+	if err != nil {
+		t.Fatalf("audience: %v", err)
+	}
+	if audience != "https://pinned.example" || !enabled {
+		t.Fatalf("audience = %q, enabled = %t; want https://pinned.example, true", audience, enabled)
+	}
+}
+
+// The other half of that: when nothing is readable, the denial is the answer.
+// Reporting "authentication is off" would send a bare request that the
+// controller rejects, turning an RBAC problem into a confusing 401.
+func TestAudienceReportsForbiddenWhenNothingIsReadable(t *testing.T) {
+	client := fake.NewClientset()
+	client.PrependReactor("get", "configmaps", forbid("nvke-auth-config", "nke-auth-config"))
+
+	_, enabled, err := (&TokenSource{client: client}).audience(t.Context())
+	if err == nil {
+		t.Fatal("audience treated a denied read as authentication being off")
+	}
+	if enabled {
+		t.Fatal("audience reported authentication as enabled without a ConfigMap")
+	}
+	if !apierrors.IsForbidden(err) {
+		t.Fatalf("audience lost the Forbidden cause: %v", err)
+	}
+}
+
+// A chart-rendered configuration reaches the controller as apiAuth in its
+// settings ConfigMap, so that is read first. Off or absent there leaves the
+// authentication ConfigMap to decide, as a controller reading AUTH_CONFIG_PATH
+// or one older than apiAuth needs.
+func TestAudienceReadsAPIAuthFromControllerConfig(t *testing.T) {
+	settings := func(name, config string) *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: greenfieldNamespace},
+			Data:       map[string]string{controllerConfigKey: config},
+		}
+	}
+	authConfig := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "nvke-auth-config", Namespace: greenfieldNamespace},
+		Data:       map[string]string{authConfigKey: "audiences:\n  - https://file.example\n"},
+	}
+	const on = "apiAuth:\n  enabled: true\n  audiences: [\"https://inline.example\"]\n"
+	const off = "apiAuth:\n  enabled: false\n  audiences: []\n"
+
+	tests := []struct {
+		name         string
+		objects      []runtime.Object
+		forbidden    []string
+		wantAudience string
+		wantEnabled  bool
+		wantErr      string
+	}{
+		{
+			name:         "apiAuth wins over the authentication ConfigMap",
+			objects:      []runtime.Object{settings("nvke-controller-config", on), authConfig},
+			wantAudience: "https://inline.example",
+			wantEnabled:  true,
+		},
+		{
+			name:         "a pinned settings name is read too",
+			objects:      []runtime.Object{settings("nke-controller-config", on)},
+			wantAudience: "https://inline.example",
+			wantEnabled:  true,
+		},
+		{
+			name:         "apiAuth off falls back to the authentication ConfigMap",
+			objects:      []runtime.Object{settings("nvke-controller-config", off), authConfig},
+			wantAudience: "https://file.example",
+			wantEnabled:  true,
+		},
+		{
+			name:         "a controller older than apiAuth falls back too",
+			objects:      []runtime.Object{settings("nvke-controller-config", "metricsListenAddress: :9090\n"), authConfig},
+			wantAudience: "https://file.example",
+			wantEnabled:  true,
+		},
+		{
+			name:    "apiAuth off and no authentication ConfigMap is off",
+			objects: []runtime.Object{settings("nvke-controller-config", off)},
+		},
+		{
+			name:         "an unreadable settings ConfigMap still falls back",
+			objects:      []runtime.Object{settings("nvke-controller-config", on), authConfig},
+			forbidden:    []string{"nvke-controller-config", "nke-controller-config"},
+			wantAudience: "https://file.example",
+			wantEnabled:  true,
+		},
+		{
+			name:      "apiAuth off and an unreadable authentication ConfigMap is the denial",
+			objects:   []runtime.Object{settings("nvke-controller-config", off)},
+			forbidden: []string{"nvke-auth-config", "nke-auth-config"},
+			wantErr:   "forbidden",
+		},
+		{
+			name:    "apiAuth on without audiences is an error",
+			objects: []runtime.Object{settings("nvke-controller-config", "apiAuth:\n  enabled: true\n")},
+			wantErr: "enables apiAuth but sets no audiences",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := fake.NewClientset(tt.objects...)
+			if len(tt.forbidden) > 0 {
+				client.PrependReactor("get", "configmaps", forbid(tt.forbidden...))
+			}
+			audience, enabled, err := (&TokenSource{client: client}).audience(t.Context())
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("audience error = %v, want one containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("audience: %v", err)
+			}
+			if audience != tt.wantAudience || enabled != tt.wantEnabled {
+				t.Fatalf("audience = %q, enabled = %t; want %q, %t", audience, enabled, tt.wantAudience, tt.wantEnabled)
+			}
+		})
 	}
 }
 

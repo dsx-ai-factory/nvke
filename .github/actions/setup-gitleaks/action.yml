@@ -1,0 +1,61 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Installs gitleaks at the version pinned in make/tool-versions.mk, verifies its
+# sha256 against the digest committed there, and adds it to PATH.
+#
+# For jobs that scan files rather than commits. The Secrets workflow keeps its
+# own install step for the amd64 self-hosted runners; this one also serves
+# arm64, which the bootstrap e2e lane runs on.
+#
+# Prepends to PATH, so a gitleaks already on the runner is shadowed.
+
+name: Set up gitleaks
+description: Download gitleaks at the pinned version, verify sha256, add it to PATH
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        # env -u, not a plain call: see setup-gh/action.yml. tool-versions.mk
+        # assigns with ?=, which make skips when the name is already set in the
+        # environment, and an empty value counts as set.
+        version="$(env -u GITLEAKS_VERSION make -C "${GITHUB_WORKSPACE}" --no-print-directory print-GITLEAKS_VERSION)"
+        if [ -z "${version}" ]; then
+          echo "::error::gitleaks version resolved empty from make/tool-versions.mk"
+          exit 1
+        fi
+
+        # gitleaks names its amd64 archives x64.
+        case "$(uname -m)" in
+          x86_64)  arch=x64;   pin=GITLEAKS_SHA256_AMD64 ;;
+          aarch64) arch=arm64; pin=GITLEAKS_SHA256_ARM64 ;;
+          *) echo "::error::no committed gitleaks digest for $(uname -m)"; exit 1 ;;
+        esac
+
+        archive="gitleaks_${version}_linux_${arch}.tar.gz"
+        base="https://github.com/gitleaks/gitleaks/releases/download/v${version}"
+        bin="${RUNNER_TEMP}/gitleaks-bin"
+        mkdir -p "${bin}"
+        cd "${bin}"
+
+        # Retry: a CDN 504 must not fail the job on the first response.
+        curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 \
+          -o "${archive}" "${base}/${archive}"
+
+        # A committed digest, not the release's checksums file: that is served
+        # by the host that serves the archive, so it shares its compromise
+        # boundary. make/tool-versions.mk owns both digests.
+        want="$(env -u "${pin}" make -C "${GITHUB_WORKSPACE}" --no-print-directory "print-${pin}")"
+        if [ -z "${want}" ]; then
+          echo "::error::no committed gitleaks digest in ${pin}"
+          exit 1
+        fi
+        echo "${want}  ${archive}" | sha256sum -c
+
+        tar -xzf "${archive}" gitleaks
+        chmod +x gitleaks
+        echo "${bin}" >> "${GITHUB_PATH}"
+        "${bin}/gitleaks" version

@@ -21,7 +21,7 @@ The example passwords, the simulated NICo and the Tilt-managed management plane 
 - At least 6 CPUs, 12 GiB of free memory and 100 GiB of free disk. These are the sizes the repository gives its own development VM for this stack.
 - The Linux kernel module `tpm_vtpm_proxy`, which the simulated nodes use for their TPMs. On Debian and Ubuntu, the setup step below installs it if it is missing. You need `sudo` for that step.
 - Docker Engine with BuildKit, usable by your user without `sudo`.
-- These tools on `PATH`: `git`, GNU Make, Go 1.27.2 or later, a C compiler such as `gcc`, `kind` v0.32.0, `kubectl`, Helm 4, `tilt`, `jq`, `curl`, `nc`, `dpkg-deb` and `dpkg-scanpackages`. On Debian and Ubuntu, `dpkg-scanpackages` is in the `dpkg-dev` package. An older Go downloads 1.27.2 automatically unless `GOTOOLCHAIN=local` is set. You do not need `clusterctl`: the setup installs the pinned version into the repository.
+- These tools on `PATH`: `git`, GNU Make, Go 1.27.3 or later, a C compiler such as `gcc`, `kind` v0.32.0, `kubectl`, Helm 4, `tilt`, `jq`, `curl`, `nc`, `dpkg-deb` and `dpkg-scanpackages`. On Debian and Ubuntu, `dpkg-scanpackages` is in the `dpkg-dev` package. An older Go downloads 1.27.3 automatically unless `GOTOOLCHAIN=local` is set. You do not need `clusterctl`: the setup installs the pinned version into the repository.
 - `fs.inotify.max_user_instances` at 1024 or more. Tilt restarts the management plane with a file watcher, and with a lower limit, such as the common default of 128, the management plane restarts in a loop with `entr: cannot create kqueue: No file descriptors available` in its log. [Prepare the machine](#prepare-the-machine) checks and raises the limit.
 - Nothing else listening on ports 179, 5432, 7233, 8080, 8081, 10350, 18080, 30440 or 30443.
 - Outbound internet access to GitHub, the Go module proxy and public container registries.
@@ -167,7 +167,7 @@ CAPNICo is public at [dsx-ai-factory/cluster-api-provider-nico](https://github.c
    cd controller && tilt up
    ```
 
-   Tilt prints the address of its web UI. Open it and wait until every resource is green. If `helm`, `docker`, `go` or `kind` is missing, the `check-management-cluster` resource fails and its log names the tool. `nico-sim` is mock-NICo, `capnico-provider` builds and installs CAPNICo, and `cwe` is the management plane.
+   Tilt prints the address of its web UI. Open it and wait until every resource is green. If `helm`, `docker`, `go` or `kind` is missing, the `check-management-cluster` resource fails and its log names the tool. `nico-sim` is mock-NICo, `capnico-provider` builds and installs CAPNICo, and `nvke-controller` is the management plane.
 
 Open a second terminal in the `nvke` directory for the rest of this page, and run `export PATH="$PWD/cli/bin:$PATH"` in it.
 
@@ -227,7 +227,7 @@ Open a second terminal in the `nvke` directory for the rest of this page, and ru
    my-cluster   1.34.8               ovn-kubernetes   Provisioned   <CLUSTER_ID>   <AGE>
    ```
 
-   The status is `Provisioning` while mock-NICo starts the node containers and NVKE forms the cluster. If it becomes `ProvisioningFailed`, check the `cwe` and `nico-sim` logs in the Tilt UI, and the CAPNICo logs with `kubectl -n capnico-system logs deployment/controller-manager`.
+   The status is `Provisioning` while mock-NICo starts the node containers and NVKE forms the cluster. If it becomes `ProvisioningFailed`, check the `nvke-controller` and `nico-sim` logs in the Tilt UI, and the CAPNICo logs with `kubectl -n capnico-system logs deployment/controller-manager`.
 
 ## Access the workload cluster
 
@@ -239,7 +239,13 @@ Open a second terminal in the `nvke` directory for the rest of this page, and ru
 
    The output is `kubeconfig written to my-cluster.kubeconfig`. The file is an admin credential for the cluster.
 
-2. List the cluster's nodes.
+2. Wait for every node to become ready. `Provisioned` means the provisioning workflow has finished; node networking can still be starting. Watch the nodes until each one shows `Ready`, then press Ctrl+C. This usually takes a few minutes.
+
+   ```bash
+   kubectl --kubeconfig my-cluster.kubeconfig get nodes --watch
+   ```
+
+3. List the cluster's nodes.
 
    ```bash
    kubectl --kubeconfig my-cluster.kubeconfig get nodes

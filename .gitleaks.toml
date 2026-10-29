@@ -95,3 +95,25 @@ paths = [
 regexes = [
   '''9Q3nKEdv4abcdef''',
 ]
+
+[[allowlists]]
+description = """env.go names the environment variables the bootstrap e2e
+lanes configure a run through. One of them is NVKECTL_E2E_ENCRYPTION_KEY_OUT,
+which names the file `nvkectl bootstrap site --encryption-key-out` writes the
+etcd encryption key to. generic-api-key matches the constant that holds it on
+entropy: the Go identifier EnvEncryptionKeyOut supplies the rule's keyword and
+the variable's name is a thirty-character upper-case string. What is matched is
+the name of an environment variable, not its value and not a key -- the key
+itself is written at run time to a path the lane chooses, and never enters the
+tree. The same string sits in run.sh and run-nico.sh without matching, because
+only the Go identifier puts "key" beside an assignment.
+
+Scoped to that one literal in that one file rather than to the file as a whole,
+so a real credential added beside it is still caught."""
+condition = "AND"
+paths = [
+  '''^cli/e2e/bootstrap/bootstraptest/env\.go$''',
+]
+regexes = [
+  '''NVKECTL_E2E_ENCRYPTION_KEY_OUT''',
+]

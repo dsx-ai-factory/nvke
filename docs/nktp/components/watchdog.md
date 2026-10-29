@@ -1,6 +1,6 @@
 # Watchdog
 
-The watchdog receives internal metrics, logs and traces from NVKE telemetry pipelines (NKTP) collectors over
+The watchdog receives internal metrics, logs and traces from NVKE telemetry pipeline (NKTP) collectors over
 OTLP/gRPC with mTLS at `nktp-watchdog-collector:4317` in the Helm release namespace.
 Target Allocators send their own metrics over plaintext OTLP/gRPC at
 `nktp-watchdog-collector:4320`; that receiver is used only by the metrics pipeline.
@@ -42,10 +42,15 @@ The sidecar needs its own processor because the watchdog's own telemetry goes
 from the sidecar straight to the backend. When `global.clusterName` is empty,
 the value is `unknown`.
 
+The exporter queue is in memory by default. To keep it on a PersistentVolume,
+see [Configure a persistent exporter queue](../guides/configure-persistent-queue.md).
+
 Use `watchdog.kubernetes` for Collector CR settings and `watchdog.otelcol.image`
 to override the global `otelcol_image`.
 Include `GOMEMLIMIT` and `GOGC` in any replacement `watchdog.kubernetes.env` list
 to retain these settings.
+The Collector Pod inherits `priorityClass.name`; override
+`watchdog.kubernetes.priorityClassName` to use another class or `""` to opt out.
 
 ## Redaction
 

@@ -30,7 +30,7 @@ const (
 	startupMessage = "Loaded nke-controller-config"
 	defaultRestart = "e2e.nvke.nvidia.com/oidc-restart"
 	maxLogBytes    = 1 << 20
-	chartConfigMap = "nke-controller-config"
+	chartConfigMap = "nvke-controller-config"
 	chartConfigKey = "config.yaml"
 	// Match controller/internal/controllerconfig.MaxOIDCProviders in this standalone module.
 	maxOIDCProviders = 5

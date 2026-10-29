@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/spiffe/go-spiffe/v2/svid/x509svid"
 	sqids "github.com/sqids/sqids-go"
 
 	"google.golang.org/grpc/codes"
@@ -207,6 +208,14 @@ type NodeAgentServer struct {
 	kubeletConfigAtomicWrite func(string, []byte, os.FileMode) error
 	kubeVipFetchASN          func(context.Context, string) (uint32, error)
 	staticPodMutationMu      sync.Mutex // serializes agent-owned static-pod manifest transactions
+
+	// SPIFFESocketPath is the SPIFFE workload API address used to read this
+	// node's X.509 SVID.
+	SPIFFESocketPath       string
+	spireAgentMu           sync.Mutex    // serializes SPIRE agent reconfiguration
+	spireAgentPollInterval time.Duration // overrides the SVID poll interval in tests
+	spireAgentWaitTimeout  time.Duration // overrides the SVID wait timeout in tests
+	fetchX509SVID          func(context.Context, string) (*x509svid.SVID, error)
 }
 
 // Real implementations
@@ -615,7 +624,7 @@ func (s *NodeAgentServer) processKubeadmJoin(args []string, req *pb.KubeadmJoinR
 
 	// If the node role is controlPlane check for encryption settings
 	if s.NodeStatus.Role == ControlPlaneRole && req.ApiEncryptionKey != "" {
-		err = s.createAPIEncryptionConfig(req.ApiEncryptionKey, false, nil)
+		err = s.createBootstrapAPIEncryptionConfig(req.ApiEncryptionKey, req.ApiEncryptionKeyName)
 		if err != nil {
 			slog.Error("failed to write config", "err", err)
 			ns.Status = ErrorStatus
@@ -657,7 +666,6 @@ func (s *NodeAgentServer) processKubeadmJoin(args []string, req *pb.KubeadmJoinR
 		ns.CurrentMessage = err.Error()
 		ns.KubeadmErrorMessage = loggable
 		ns.KubeadmStatus = joinFailedStatus
-
 	} else {
 		ns.Status = ReadyStatus
 		ns.CurrentMessage = "node successfully joined"
@@ -713,7 +721,7 @@ func (s *NodeAgentServer) ExecuteKubeadmInit(
 
 	// We process args here before calling the goroutine to processKubeadmInit because
 	// we want to fail fast; we don't want to launch the go routine and return only to
-	// find out the the required args weren't passed
+	// find out the required args weren't passed
 	args := []string{}
 	if req.GetInitConfig() == "" {
 		slog.Info("no init config provided. Using arguments")
@@ -795,7 +803,7 @@ func (s *NodeAgentServer) ExecuteKubeadmInit(
 	return resp, nil
 }
 
-// kubeadmFailureMessage summarises why kubeadm exited, for the one status field
+// kubeadmFailureMessage summarizes why kubeadm exited, for the one status field
 // the orchestrator can see. kubeadm ends with the phase it failed in
 // ("error execution phase wait-control-plane: ..."), which is the single most
 // useful line, so prefer it and fall back to the process error.
@@ -812,7 +820,7 @@ func kubeadmFailureMessage(err error, output []byte, credentials *redact.Credent
 		best = strings.TrimSpace(err.Error())
 	}
 	// Redact before truncating: cutting a credential short would leave part of it
-	// in a form that is no longer recognisable.
+	// in a form that is no longer recognizable.
 	best = credentials.String(best)
 	if len(best) > limit {
 		best = best[:limit] + "..."
@@ -861,7 +869,7 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 
 	// Before we run init, check to see if encryption is requested and set up the encryption-config file
 	if req.ApiEncryptionEnabled && req.ApiEncryptionKey != "" {
-		if err := s.createAPIEncryptionConfig(req.ApiEncryptionKey, false, nil); err != nil {
+		if err := s.createBootstrapAPIEncryptionConfig(req.ApiEncryptionKey, req.ApiEncryptionKeyName); err != nil {
 			ns.Status = ErrorStatus
 			ns.ErrorMessage = "Failed to initialize API encryption: " + err.Error()
 			return
@@ -1272,7 +1280,7 @@ func (s *NodeAgentServer) ExecuteKubeadmReset(
 	} else {
 		s.NodeStatus.Status = "reset"
 		s.NodeStatus.CNIPluginStatus = ""
-		s.NodeStatus.CurrentMessage = "node succesfully reset/deleted"
+		s.NodeStatus.CurrentMessage = "node successfully reset/deleted"
 		s.NodeStatus.CompletedPhases = append(s.NodeStatus.CompletedPhases, string(ResetPhase))
 	}
 	s.mu.Unlock()
@@ -1613,9 +1621,9 @@ func (s *NodeAgentServer) ExecuteScript(
 
 	slog.Info("Issuing script execution request", "requestID", requestID, "scriptName", req.ScriptName, "async", req.Async)
 	if req.Async {
-		go s.executeScript(req, requestID) //nolint:all
+		go s.executeScript(context.WithoutCancel(ctx), req, requestID) //nolint:all
 	} else {
-		resp, err = s.executeScript(req, requestID)
+		resp, err = s.executeScript(ctx, req, requestID)
 	}
 	return resp, err
 }
@@ -1639,27 +1647,37 @@ func (s *NodeAgentServer) addScript(script Script) {
 }
 
 // logScriptExecution writes call info and result to ScriptExecutionLogger when set. output is truncated for size.
-func (s *NodeAgentServer) logScriptExecution(event, requestID string, req *pb.ExecuteScriptRequest, status string, exitCode int32, errMsg, output string) {
+func (s *NodeAgentServer) logScriptExecution(
+	ctx context.Context,
+	event, requestID string,
+	req *pb.ExecuteScriptRequest,
+	status string,
+	exitCode int32,
+	errMsg, output string,
+) {
 	if s.ScriptExecutionLogger == nil {
 		return
 	}
 	if len(output) > maxScriptLogOutputBytes {
 		output = output[:maxScriptLogOutputBytes] + "...[truncated]"
 	}
-	s.ScriptExecutionLogger.Info(event,
-		"request_id", requestID,
-		"script_name", req.GetScriptName(),
-		"script_path", req.GetScriptPath(),
-		"args", req.GetArgs(),
-		"async", req.GetAsync(),
-		"status", status,
-		"exit_code", exitCode,
-		"error_message", errMsg,
-		"output", output,
-	)
+	attrs := []slog.Attr{
+		slog.String("request_id", requestID),
+		slog.String("script_name", req.GetScriptName()),
+		slog.String("script_path", req.GetScriptPath()),
+		slog.Any("args", req.GetArgs()),
+		slog.Bool("async", req.GetAsync()),
+		slog.String("status", status),
+		slog.Int64("exit_code", int64(exitCode)),
+		slog.String("error_message", errMsg),
+		slog.String("output", output),
+	}
+	attrs = append(attrs, traceLogAttrs(ctx)...)
+	s.ScriptExecutionLogger.LogAttrs(ctx, slog.LevelInfo, event, attrs...)
 }
 
 func (s *NodeAgentServer) executeScript(
+	ctx context.Context,
 	req *pb.ExecuteScriptRequest,
 	requestID string,
 ) (*pb.ExecuteScriptResponse, error) {
@@ -1689,7 +1707,7 @@ func (s *NodeAgentServer) executeScript(
 		response.Status = ErrorStatus
 		response.ErrorMessage = errMsg
 
-		s.logScriptExecution("ExecuteScript", requestID, req, ErrorStatus, 1, errMsg, "")
+		s.logScriptExecution(ctx, "ExecuteScript", requestID, req, ErrorStatus, 1, errMsg, "")
 		return response, nil
 	}
 	defer cleanup()
@@ -1712,7 +1730,7 @@ func (s *NodeAgentServer) executeScript(
 		response.ExitCode = int32(exitCode)
 		response.ErrorMessage = err.Error()
 
-		s.logScriptExecution("ExecuteScript", requestID, req, ErrorStatus, int32(exitCode), err.Error(), string(output))
+		s.logScriptExecution(ctx, "ExecuteScript", requestID, req, ErrorStatus, int32(exitCode), err.Error(), string(output))
 		return response, nil
 	}
 
@@ -1723,7 +1741,7 @@ func (s *NodeAgentServer) executeScript(
 
 	script.Status = scriptStatusSuccess
 	s.addScript(script)
-	s.logScriptExecution("ExecuteScript", requestID, req, SuccessStatus, int32(exitCode), "", string(output))
+	s.logScriptExecution(ctx, "ExecuteScript", requestID, req, SuccessStatus, int32(exitCode), "", string(output))
 	return response, nil
 }
 
@@ -1871,7 +1889,7 @@ func (s *NodeAgentServer) StreamExecuteScript(
 	}
 
 	requestID := generateRequestID()
-	s.logScriptExecution("StreamExecuteScript_start", requestID, req, "start", 0, "", "")
+	s.logScriptExecution(stream.Context(), "StreamExecuteScript_start", requestID, req, "start", 0, "", "")
 
 	scriptPath, cleanup, err := resolveScript(req, requestID)
 	if err != nil {
@@ -1888,7 +1906,7 @@ func (s *NodeAgentServer) StreamExecuteScript(
 	cmdErr := streamCommand(stream, scriptPath, req.Args...)
 
 	exitCode, errMsg := exitResult(cmdErr)
-	s.logScriptExecution("StreamExecuteScript", requestID, req, errStatus(cmdErr), int32(exitCode), errMsg, "")
+	s.logScriptExecution(stream.Context(), "StreamExecuteScript", requestID, req, errStatus(cmdErr), int32(exitCode), errMsg, "")
 	return stream.Send(&pb.ScriptOutputChunk{
 		ExitCode:   int32(exitCode),
 		IsComplete: true,
@@ -2034,7 +2052,7 @@ func bundleIndexUnconfiguredMessage(bundleServerURL string) string {
 		return "bundle index not configured: set --bundle-server-url or --index-file-url (prefer apt repos via ConfigureAptRepo/InstallPackages)"
 	}
 	return fmt.Sprintf(
-		"bundle index not derived from --bundle-server-url %q: the index path is derived from /etc/os-release, which is recognised only for Ubuntu 22 and 24. Set --index-file-url explicitly.",
+		"bundle index not derived from --bundle-server-url %q: the index path is derived from /etc/os-release, which is recognized only for Ubuntu 22 and 24. Set --index-file-url explicitly.",
 		bundleServerURL,
 	)
 }
@@ -2064,7 +2082,7 @@ func (s *NodeAgentServer) InstallBundle(
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("[DEBUG] fetched bundle from index succesfully", "BUNDLE", bundle)
+	slog.Info("[DEBUG] fetched bundle from index successfully", "BUNDLE", bundle)
 
 	requestID := generateRequestID()
 	response := &pb.InstallBundleResponse{RequestId: requestID}

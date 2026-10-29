@@ -5,11 +5,11 @@ This page describes how to bring the management cluster's nodes from a first boo
 ## Before you begin
 
 - You have read [Plan your installation](plan-installation.md).
-- You have a node image built as described in [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md), for the CPU architecture of your nodes.
+- You have a node image built as described in [Build and host node OS images](build-node-images.md), for the CPU architecture of your nodes.
 - You have an odd number of machines, such as one, three or five, that meet [Supported platforms and versions](../overview/supported-platforms.md). Each has a TPM 2.0 device, and your provisioning system can boot it from the image and pass it cloud-init user data.
 - Each node keeps the same IP address across reboots. The image configures every `e*` network interface with DHCP and disables cloud-init network configuration, so reserve each node's address in DHCP.
 - You have chosen the bootstrap host and know the IP address the nodes use to reach it. It can be one of the nodes.
-- You have chosen a SPIFFE trust domain, such as `mgmt.example.com`, and have your SPIRE certificate authority (CA) certificate and key as files. The node image's SPIRE agent does not start without a trust bundle, and the SPIRE server that `nvkectl` deploys has no certificate the nodes could trust until the bootstrap runs, so nodes that attest with their TPM need a CA you bring. The install also makes this CA the upstream authority of the management cluster's SPIRE server, so workload cluster nodes trust it through the bundle NVKE puts in their user data; see [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md#what-nvke-puts-in-the-user-data).
+- You have chosen a SPIFFE trust domain, such as `mgmt.example.com`, and have your SPIRE certificate authority (CA) certificate and key as files. The node image's SPIRE agent does not start without a trust bundle, and the SPIRE server that `nvkectl` deploys has no certificate the nodes could trust until the bootstrap runs, so nodes that attest with their TPM need a CA you bring. The install also makes this CA the upstream authority of the management cluster's SPIRE server, so workload cluster nodes trust it through the bundle NVKE puts in their user data; see [Register node images for provisioning](build-node-images.md#what-nvke-puts-in-the-user-data).
 - Your network lets the bootstrap host reach every node on the `nvke-agent` port (15005 by default), and lets every node reach the bootstrap host on 30081.
 
 ## What the image provides
@@ -22,7 +22,7 @@ The node image is not a ready Kubernetes node. It carries the node agent and the
 | `spire-agent`, its TPM attestor and `get_tpm_pubhash` | Installed and enabled. | The SPIRE server address, trust domain and trust bundle, in user data. |
 | Kubernetes packages: kubeadm, kubelet, kubectl and containerd | Staged in a local package repository at `/usr/lib/nvke/debs`, one `nvke-kubeadm-distro-<version>` package per Kubernetes version. | Install the package for your Kubernetes version. |
 | OVN-Kubernetes CNI packages | Staged in the same repository, for version 2.4.2. | Install the charts and images packages. |
-| Open vSwitch (`openvswitch-switch`) | Installed. | Nothing. |
+| Open vSwitch (`doca-openvswitch-switch`) | Installed. This is NVIDIA's DOCA build of Open vSwitch, from the DOCA apt repository, running in kernel mode. | Nothing. |
 
 ## Write the user data
 
@@ -55,6 +55,8 @@ The node image is not a ready Kubernetes node. It carries the node agent and the
 
    Do not set `SPIRE_JOIN_TOKEN`. Without it, the SPIRE agent attests with the node's TPM, which is how the bootstrap's SPIRE server admits nodes; it issues no join tokens. Install the Kubernetes package before the CNI images package: the images package loads its image into containerd, which the Kubernetes package provides.
 
+   If you install the management plane without a release description, you later copy two container images to each node over `ssh`; see [Install the management plane](install-management-plane.md#stage-the-controller-images-on-the-management-nodes). Add a `users:` entry for that with your SSH public key in `ssh_authorized_keys` and `sudo: ALL=(ALL) NOPASSWD:ALL`. The image accepts no password logins.
+
 2. Boot each node from the image with the user data.
 
    On first boot, cloud-init writes the SPIRE files, a configuration service renders `/etc/spire-agent/agent.conf` from them, and `runcmd` installs the packages from the local repository without network access. The SPIRE agent then retries until the bootstrap's SPIRE server is reachable.
@@ -73,7 +75,7 @@ The node image is not a ready Kubernetes node. It carries the node agent and the
 
 ## If the image lacks a component
 
-Each component the bootstrap needs is a Debian package. If a check in [Verify](#verify) shows one is missing, rebuild the image as described in [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md).
+Each component the bootstrap needs is a Debian package. If a check in [Verify](#verify) shows one is missing, rebuild the image as described in [Build and host node OS images](build-node-images.md).
 
 | Component | Package |
 |---|---|
@@ -81,7 +83,7 @@ Each component the bootstrap needs is a Debian package. If a check in [Verify](#
 | SPIRE agent, TPM attestor and `get_tpm_pubhash` | `spire-agent` |
 | Kubernetes for one version | `nvke-kubeadm-distro-<K8S_VERSION>` |
 | OVN-Kubernetes | `nvke-cni-ovn-charts-2.4.2` and `nvke-cni-ovn-images-2.4.2` |
-| Open vSwitch | `openvswitch-switch` |
+| Open vSwitch | `doca-openvswitch-switch`. The agent also accepts the stock `openvswitch-switch` package. |
 
 If `nvke-kubeadm-distro-<K8S_VERSION>` is the missing package, the image was built without that Kubernetes version. Choose a staged version, or rebuild the image with it.
 
@@ -102,10 +104,10 @@ Run these checks on every node, as root.
 2. Check that the packages are installed.
 
    ```bash
-   dpkg -l nvke-agent spire-agent openvswitch-switch 'nvke-kubeadm-distro-*' 'nvke-cni-ovn-*'
+   dpkg -l nvke-agent spire-agent '*openvswitch-switch' 'nvke-kubeadm-distro-*' 'nvke-cni-ovn-*'
    ```
 
-   Each package is listed with status `ii`, including `nvke-kubeadm-distro-<K8S_VERSION>`, `nvke-cni-ovn-charts-2.4.2` and `nvke-cni-ovn-images-2.4.2`. A staged package that is not installed is not listed, and `dpkg` reports that no package matches.
+   Each package is listed with status `ii`, including `doca-openvswitch-switch` (or `openvswitch-switch` on a node you prepared with the stock package), `nvke-kubeadm-distro-<K8S_VERSION>`, `nvke-cni-ovn-charts-2.4.2` and `nvke-cni-ovn-images-2.4.2`. A staged package that is not installed is not listed, and `dpkg` reports that no package matches.
 
    ```bash
    kubeadm version -o short
@@ -139,7 +141,7 @@ Run these checks on every node, as root.
 
 During the bootstrap, each node's SPIRE agent logs `Node attestation was successful` and `nvke-agent` starts. To watch for it, run `journalctl -u spire-agent -f` on a node.
 
-Workload-cluster nodes are not prepared this way. NVIDIA Infra Controller (NICo) provisions them from your node image, and the management plane supplies their user data from the release, including the Kubernetes and CNI packages to install; see [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md).
+Workload-cluster nodes are not prepared this way. NVIDIA Infra Controller (NICo) provisions them from your node image, and the management plane supplies their user data from the release, including the Kubernetes and CNI packages to install; see [Register node images for provisioning](build-node-images.md#register-the-image-for-provisioning).
 
 ## Next steps
 

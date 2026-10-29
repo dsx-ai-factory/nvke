@@ -5,6 +5,7 @@ package nvkectl
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -26,9 +27,12 @@ func TestMain(m *testing.M) {
 		"NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT", "NKECTL_NICO_ALLOW_INSECURE_ENDPOINT",
 		"NVKECTL_BOOTSTRAP_CLUSTER_NAME", "NKECTL_BOOTSTRAP_CLUSTER_NAME",
 		"NVKECTL_CLUSTER_NODES", "NKECTL_CLUSTER_NODES",
-		"NVKECTL_CONTROLLER_PORT", "NKECTL_CONTROLLER_PORT",
+		"NVKECTL_NVKE_CONTROLLER_PORT", "NVKECTL_CONTROLLER_PORT", "NKECTL_CONTROLLER_PORT",
 	} {
 		_ = os.Unsetenv(name)
 	}
+	// The machine running the tests may have nerdctl's configs in the real
+	// directory, which the bootstrap preflight would rightly refuse.
+	sharedCNIConfDir = filepath.Join(os.TempDir(), "nvkectl-no-such-cni-conf-dir")
 	os.Exit(m.Run())
 }

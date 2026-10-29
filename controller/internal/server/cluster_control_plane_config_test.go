@@ -6,6 +6,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"testing"
 
@@ -207,6 +208,95 @@ func TestValidateCreateClusterRequestFields_ControlPlaneConfig(t *testing.T) {
 	})
 }
 
+// validLaunchLayerCreateClusterRequest returns a minimal valid LaunchLayer
+// cluster create request with one managed security group per type.
+func validLaunchLayerCreateClusterRequest() *api.CreateClusterRequest {
+	primary := api.LaunchLayerSecurityGroupNetworkTypePrimary
+	return &api.CreateClusterRequest{
+		Name: "launchlayer-cluster",
+		LaunchLayer: &api.LaunchLayerClusterProvider{
+			VpcID:  "vpc-1",
+			SiteID: "site-1",
+			SecurityGroups: &[]api.LaunchLayerSecurityGroup{
+				{Name: "bm", Type: api.LaunchLayerSecurityGroupTypeBAREMETAL},
+				{Name: "vm", Type: api.LaunchLayerSecurityGroupTypeVIRTUALIZED, NetworkType: &primary},
+			},
+		},
+		CniPlugin:                     "ovn-kubernetes",
+		ControlPlaneKubernetesVersion: "1.33.1",
+		ControlPlaneConfig: &api.CreateClusterControlPlaneConfig{
+			DesiredCount: 1,
+			LaunchLayer: &api.LaunchLayerControlPlaneProvider{
+				InstanceType:      "dgx200",
+				SecurityGroupRefs: &api.LaunchLayerSecurityGroupRefs{PrimaryNetworkInterface: []string{"bm"}},
+			},
+		},
+	}
+}
+
+func TestValidateCreateClusterRequestFields_LaunchLayer(t *testing.T) {
+	svc := clusterService{providers: newProviderSupport([]string{config.InfraProviderLaunchLayer})}
+	primary := api.LaunchLayerSecurityGroupNetworkTypePrimary
+	bareMetalVPC := api.LaunchLayerClusterProviderVpcTypeBAREMETAL
+
+	tests := map[string]struct {
+		nodeAgentProfile db.Node
+		mutate           func(*api.CreateClusterRequest)
+		wantErr          string
+	}{
+		"accepts a valid request, VIRTUALIZED group with vpcType unset": {
+			mutate: func(*api.CreateClusterRequest) {},
+		},
+		"rejects cloudProviderEnabled": {
+			mutate:  func(r *api.CreateClusterRequest) { r.LaunchLayer.CloudProviderEnabled = true },
+			wantErr: "launchLayer.cloudProviderEnabled must not be true: NVKE runs no cloud controller manager",
+		},
+		"rejects a VIRTUALIZED group without networkType": {
+			mutate:  func(r *api.CreateClusterRequest) { (*r.LaunchLayer.SecurityGroups)[1].NetworkType = nil },
+			wantErr: `launchLayer.securityGroups "vm": networkType is required for a VIRTUALIZED group and forbidden for a BARE_METAL group`,
+		},
+		"rejects a BARE_METAL group with networkType": {
+			mutate:  func(r *api.CreateClusterRequest) { (*r.LaunchLayer.SecurityGroups)[0].NetworkType = &primary },
+			wantErr: `launchLayer.securityGroups "bm": networkType is required for a VIRTUALIZED group and forbidden for a BARE_METAL group`,
+		},
+		"rejects duplicate group names": {
+			mutate:  func(r *api.CreateClusterRequest) { (*r.LaunchLayer.SecurityGroups)[1].Name = "bm" },
+			wantErr: `duplicate launchLayer.securityGroups name "bm"`,
+		},
+		"rejects a VIRTUALIZED group in a BARE_METAL VPC": {
+			mutate:  func(r *api.CreateClusterRequest) { r.LaunchLayer.VpcType = &bareMetalVPC },
+			wantErr: `launchLayer.securityGroups "vm": a VIRTUALIZED group requires a VIRTUALIZED vpcType`,
+		},
+		"rejects a control-plane securityGroupRefs name the cluster does not define": {
+			mutate: func(r *api.CreateClusterRequest) {
+				r.ControlPlaneConfig.LaunchLayer.SecurityGroupRefs.GpuNetworkInterface = []string{"missing"}
+			},
+			wantErr: `controlPlaneConfig.launchLayer.securityGroupRefs: "missing" is not one of the cluster's launchLayer.securityGroups`,
+		},
+		"rejects a vmProfile control plane whose nodes could never attest": {
+			nodeAgentProfile: db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS},
+			mutate:           func(r *api.CreateClusterRequest) { r.ControlPlaneConfig.LaunchLayer.VMProfile = "ubuntu" },
+			wantErr: "this deployment's node-agent settings do not support the launchlayer provider: " +
+				`SPIFFE-enabled LaunchLayer nodes without external mTLS require hostOSProfile: dsxImds attestation is not available to vmProfile "ubuntu" instances`,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			req := validLaunchLayerCreateClusterRequest()
+			tt.mutate(req)
+
+			svc := svc
+			svc.nodeAgentProfile = tt.nodeAgentProfile
+			err := svc.ValidateCreateClusterRequestFields(req)
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestApplyClusterLevelControlPlaneSpecUpdate_DesiredCount(t *testing.T) {
 	svc := clusterService{}
 	ctx := context.Background()
@@ -214,6 +304,7 @@ func TestApplyClusterLevelControlPlaneSpecUpdate_DesiredCount(t *testing.T) {
 	newCAPICluster := func(current int, vip string) *db.Cluster {
 		return &db.Cluster{
 			ID:              uuid.New(),
+			ProviderType:    db.ProviderTypeCAPI,
 			ControlPlaneVIP: vip,
 			ControlPlaneConfig: db.ControlPlaneConfig{
 				DesiredCount: current,
@@ -279,6 +370,46 @@ func TestApplyClusterLevelControlPlaneSpecUpdate_DesiredCount(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "desiredCount must be at least 1")
 	})
+
+	t.Run("rejects scale-up whose new nodes could never join", func(t *testing.T) {
+		svc := clusterService{nodeAgentProfile: db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodTPM}}
+		cluster := &db.Cluster{
+			ID:                 uuid.New(),
+			ProviderType:       db.ProviderTypeLaunchLayer,
+			ControlPlaneVIP:    "172.31.0.10",
+			ControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 1},
+		}
+		spec := db.ConfigSpecFromFull(cluster.ControlPlaneConfig)
+		desired := 3
+		err := svc.applyClusterLevelControlPlaneSpecUpdate(ctx, cluster, &api.UpdateClusterControlPlaneConfig{
+			DesiredCount: &desired,
+		}, &spec)
+		var badRequest *badRequestError
+		require.ErrorAs(t, err, &badRequest)
+		require.EqualError(t, err, "this deployment's node-agent settings do not support the launchlayer provider: "+
+			"SPIFFE-enabled LaunchLayer nodes require dsxImds SPIRE attestation, got tpm")
+		require.Equal(t, 1, cluster.ControlPlaneConfig.DesiredCount)
+	})
+
+	t.Run("rejects scale-up of a vmProfile control plane whose new nodes could never attest", func(t *testing.T) {
+		svc := clusterService{nodeAgentProfile: db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS}}
+		cluster := &db.Cluster{
+			ID:                 uuid.New(),
+			ProviderType:       db.ProviderTypeLaunchLayer,
+			ControlPlaneVIP:    "172.31.0.10",
+			ControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 1},
+		}
+		spec := db.ConfigSpecFromFull(cluster.ControlPlaneConfig)
+		spec.SetLaunchLayer(db.LaunchLayerControlPlaneProvider{InstanceType: "vm200", VMProfile: "ubuntu"})
+		desired := 3
+		err := svc.applyClusterLevelControlPlaneSpecUpdate(ctx, cluster, &api.UpdateClusterControlPlaneConfig{
+			DesiredCount: &desired,
+		}, &spec)
+		var badRequest *badRequestError
+		require.ErrorAs(t, err, &badRequest)
+		require.ErrorContains(t, err, `dsxImds attestation is not available to vmProfile "ubuntu" instances`)
+		require.Equal(t, 1, cluster.ControlPlaneConfig.DesiredCount)
+	})
 }
 
 func TestApplyClusterControlPlaneConfigUpdate_MaxSurgeWithoutVIP(t *testing.T) {
@@ -303,9 +434,11 @@ func TestApplyClusterControlPlaneConfigUpdate_RolloutRequiresVIP(t *testing.T) {
 		name            string
 		controlPlaneVIP string
 		wantBadRequest  bool
+		allowWithoutVIP bool
 	}{
 		{name: "without VIP", wantBadRequest: true},
 		{name: "with VIP", controlPlaneVIP: "172.31.0.10"},
+		{name: "dev override without VIP", allowWithoutVIP: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			oldConfigID := uuid.New()
@@ -348,7 +481,7 @@ func TestApplyClusterControlPlaneConfigUpdate_RolloutRequiresVIP(t *testing.T) {
 				createConfigCall.Once()
 			}
 
-			svc := clusterService{}
+			svc := clusterService{allowControlPlaneWithoutVIP: tc.allowWithoutVIP}
 			err := svc.applyClusterControlPlaneConfigUpdate(context.Background(), tx, cluster, &api.UpdateClusterControlPlaneConfig{
 				Nico: &api.NicoControlPlaneProviderUpdate{ConfigProfile: &newProfile},
 			})
@@ -804,6 +937,46 @@ func TestValidateCreateClusterRequestFields_MachineMetadata(t *testing.T) {
 				require.ErrorContains(t, err, params.wantErr)
 			} else {
 				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateUpdateControlPlaneConfigProviderMatch_UnknownProvider(t *testing.T) {
+	err := validateUpdateControlPlaneConfigProviderMatch("bogus", &api.UpdateClusterControlPlaneConfig{})
+
+	var badRequest *badRequestError
+	require.ErrorAs(t, err, &badRequest)
+	require.EqualError(t, err, `unsupported cluster provider "bogus"`)
+}
+
+func TestControlPlaneVIPOverrideCreateAndScale(t *testing.T) {
+	for _, allow := range []bool{false, true} {
+		t.Run(fmt.Sprintf("override=%t", allow), func(t *testing.T) {
+			svc := clusterService{allowControlPlaneWithoutVIP: allow}
+			req := validForgeCreateClusterRequest()
+			req.ControlPlaneConfig = validForgeControlPlaneConfig()
+			err := svc.ValidateCreateClusterRequestFields(req)
+			if allow {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, "controlPlaneVIP")
+			}
+			cluster := &db.Cluster{
+				ProviderType:       db.ProviderTypeCAPI,
+				ControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 1},
+			}
+			spec := db.ConfigSpecFromFull(cluster.ControlPlaneConfig)
+			desired := 3
+			err = svc.applyClusterLevelControlPlaneSpecUpdate(context.Background(), cluster, &api.UpdateClusterControlPlaneConfig{
+				DesiredCount: &desired,
+			}, &spec)
+			if allow {
+				require.NoError(t, err)
+				require.Equal(t, desired, cluster.ControlPlaneConfig.DesiredCount)
+			} else {
+				require.ErrorContains(t, err, "controlPlaneVIP")
+				require.Equal(t, 1, cluster.ControlPlaneConfig.DesiredCount)
 			}
 		})
 	}

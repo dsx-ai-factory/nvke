@@ -14,7 +14,7 @@ The process has three steps:
 
 ## What Happens During Bootstrap
 
-`nvkectl bootstrap site` does more than call kubeadm. It first stands up an ephemeral Kind cluster on the init node, deploys a self-contained NVKE management plane (Postgres, Temporal, SPIRE, the Cluster API providers, and CWE) onto it — `--disable-mtls`, the development-only plaintext mode, skips SPIRE — and then uses that controller to drive the init and join workflows against your actual nodes over `nvke-agent`'s gRPC API — no SSH required.
+`nvkectl bootstrap site` does more than call kubeadm. It first stands up an ephemeral Kind cluster on the init node, deploys a self-contained NVKE management plane (Postgres, Temporal, SPIRE, the Cluster API providers, and the NVKE controller) onto it — `--disable-mtls`, the development-only plaintext mode, skips SPIRE — and then uses that controller to drive the init and join workflows against your actual nodes over `nvke-agent`'s gRPC API — no SSH required.
 
 The ephemeral Kind cluster is torn down when bootstrap succeeds. It is retained if you pass `--keep-bootstrap-cluster`, or if the run fails after the site cluster was created (with `infra.provider: nico`, also when the create request got no answer) — see [Pre-Provisioned Nodes](pre-provisioned-nodes.md) for the recovery steps. With `infra.provider: nico`, use [the retained bootstrap cluster](../../cli/docs/bootstrap-troubleshooting.md#release-the-nico-instances-first) instead: deleting the Kind cluster alone leaves the NICo instances allocated and unmanaged, and after every control-plane node joined only the Kind cluster is deleted.
 
@@ -23,7 +23,7 @@ sequenceDiagram
     participant Op as Operator
     participant Ctl as nvkectl (init node)
     participant Kind as Ephemeral Kind cluster
-    participant CWE as Cloud Workflow Engine
+    participant Controller as NVKE controller
     participant Init as nvke-agent (init node)
     participant Join as nvke-agent (join nodes)
     participant K8s as Management Cluster
@@ -31,12 +31,12 @@ sequenceDiagram
     Op->>Ctl: nvkectl bootstrap site -f sitespec.yaml
     Ctl->>Ctl: Load and validate inventory
     Ctl->>Kind: Create ephemeral bootstrap Kind cluster
-    Ctl->>Kind: Deploy Postgres + Temporal + SPIRE (default path) + Cluster API + CWE
-    Ctl->>CWE: Wait for /readyz healthy
-    CWE->>Init: ExecuteKubeadmInit (gRPC)
+    Ctl->>Kind: Deploy Postgres + Temporal + SPIRE (default path) + Cluster API + NVKE controller
+    Ctl->>Controller: Wait for /readyz healthy
+    Controller->>Init: ExecuteKubeadmInit (gRPC)
     Init->>K8s: kubeadm init
-    K8s-->>CWE: Join strings
-    CWE->>Join: ExecuteKubeadmJoin (gRPC, parallel)
+    K8s-->>Controller: Join strings
+    Controller->>Join: ExecuteKubeadmJoin (gRPC, parallel)
     Join->>K8s: kubeadm join
     Ctl->>Kind: Tear down ephemeral Kind cluster
     K8s-->>Op: Cluster ready
@@ -44,7 +44,7 @@ sequenceDiagram
 
 ## After Bootstrap
 
-Once the cluster is up, install Cluster API and an infrastructure provider on it before deploying the NVKE services (CWE, Temporal, CNPG) via your GitOps tooling — see [Infrastructure Providers](infrastructure-providers.md) for why the order matters, and [Deploy Repository](deploy-repository.md) for the ArgoCD application structure.
+Once the cluster is up, install Cluster API and an infrastructure provider on it before deploying the NVKE services (the NVKE controller, Temporal, CNPG) via your GitOps tooling — see [Infrastructure Providers](infrastructure-providers.md) for why the order matters, and [Deploy Repository](deploy-repository.md) for the ArgoCD application structure.
 
 The cluster's etcd data is encrypted at rest from its first `kubeadm init`, and every control-plane node holds the key. Bootstrap also saves it into the working directory as `<clusterName>-etcd-encryption-key.json` (`--encryption-key-out` to choose the path): a convenience, since a controller installed later can be given the file instead of having the key pulled off a node, and the disaster-recovery copy, since a restore onto new hosts has no node to pull it from. Move the file off the host and keep it. See [Pre-Provisioned Nodes](pre-provisioned-nodes.md#troubleshooting).
 
@@ -62,4 +62,4 @@ For planned renewal of site-management cluster certificates, use the
 - [Pre-Provisioned Nodes](pre-provisioned-nodes.md) — prepare nodes and run the bootstrap
 - [Custom Base OS](custom-base-os.md) — cloud-init based node preparation
 - [Deploy Repository](deploy-repository.md) — post-bootstrap NVKE services deployment
-- [Infrastructure Providers](infrastructure-providers.md) — install Cluster API and CAPNICo before CWE
+- [Infrastructure Providers](infrastructure-providers.md) — install Cluster API and CAPNICo before the NVKE controller

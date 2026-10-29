@@ -138,7 +138,7 @@
         "targets": [
           {
             "refId": "A",
-            "expr": "sum(kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=\"Ready\",status=\"true\"} == 1) / clamp_min(count(kube_node_info{k8s_cluster_name=~\"$cluster\"}),1)",
+            "expr": "sum(kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=\"Ready\",status=\"true\"}) / clamp_min(count(kube_node_info{k8s_cluster_name=~\"$cluster\"}),1)",
             "legendFormat": "Ready ratio",
             "instant": true,
             "range": false
@@ -863,7 +863,7 @@
         "targets": [
           {
             "refId": "A",
-            "expr": "sum by (k8s_cluster_name) (kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=\"Ready\",status=\"true\"} == 1)",
+            "expr": "sum by (k8s_cluster_name) (kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=\"Ready\",status=\"true\"})",
             "legendFormat": "{{k8s_cluster_name}}",
             "instant": false,
             "range": true
@@ -961,7 +961,7 @@
         "id": 19,
         "type": "table",
         "title": "Node inventory",
-        "description": "Kubelet version, object age, and readiness by node.",
+        "description": "Kubelet version, object age, and readiness by cluster and node.",
         "gridPos": {
           "x": 0,
           "y": 52,
@@ -975,7 +975,7 @@
         "targets": [
           {
             "refId": "A",
-            "expr": "group by (node,kubelet_version) (kube_node_info{k8s_cluster_name=~\"$cluster\"})",
+            "expr": "group by (cluster_node,k8s_cluster_name,node,kubelet_version) (label_join(kube_node_info{k8s_cluster_name=~\"$cluster\"}, \"cluster_node\", \"/\", \"k8s_cluster_name\", \"node\"))",
             "format": "table",
             "legendFormat": "",
             "instant": true,
@@ -983,7 +983,7 @@
           },
           {
             "refId": "B",
-            "expr": "(time() - kube_node_created{k8s_cluster_name=~\"$cluster\"}) / 86400",
+            "expr": "max by (cluster_node) (label_join((time() - kube_node_created{k8s_cluster_name=~\"$cluster\"}) / 86400, \"cluster_node\", \"/\", \"k8s_cluster_name\", \"node\"))",
             "format": "table",
             "legendFormat": "",
             "instant": true,
@@ -991,7 +991,7 @@
           },
           {
             "refId": "C",
-            "expr": "kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=\"Ready\",status=\"true\"}",
+            "expr": "max by (cluster_node) (label_join(kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=\"Ready\",status=\"true\"}, \"cluster_node\", \"/\", \"k8s_cluster_name\", \"node\"))",
             "format": "table",
             "legendFormat": "",
             "instant": true,
@@ -1002,7 +1002,7 @@
           {
             "id": "joinByField",
             "options": {
-              "byField": "node",
+              "byField": "cluster_node",
               "mode": "outer"
             }
           },
@@ -1010,18 +1010,21 @@
             "id": "organize",
             "options": {
               "includeByName": {
+                "k8s_cluster_name": true,
                 "node": true,
                 "kubelet_version": true,
                 "Value #B": true,
                 "Value #C": true
               },
               "indexByName": {
-                "node": 0,
-                "kubelet_version": 1,
-                "Value #B": 2,
-                "Value #C": 3
+                "k8s_cluster_name": 0,
+                "node": 1,
+                "kubelet_version": 2,
+                "Value #B": 3,
+                "Value #C": 4
               },
               "renameByName": {
+                "k8s_cluster_name": "Cluster",
                 "node": "Node",
                 "kubelet_version": "Kubelet version",
                 "Value #B": "Age (days)",

@@ -22,7 +22,7 @@ spec:
   issuerRef:
     group: cert-manager.io
     kind: Issuer
-    name: nke-oidc-upstream-ca
+    name: nvke-oidc-upstream-ca
 ---
 apiVersion: spire.spiffe.io/v1alpha1
 kind: ClusterSPIFFEID

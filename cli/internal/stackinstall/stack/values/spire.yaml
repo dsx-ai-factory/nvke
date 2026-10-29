@@ -1,0 +1,236 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Values for the SPIFFE hardened spire chart. The chart is itself a chart of
+# subcharts: spire-server, spire-agent, spiffe-csi-driver and
+# spiffe-oidc-discovery-provider. Helm merges global into every one of them.
+#
+# Site identity is not in this file. The generated overlay supplies it at
+# render time:
+#   global.spire.trustDomain and spire-server.adminIDs   from the site spec
+#   global.spire.clusterName                             from the site spec
+#   global.spire.image.registry                          the mirror, when the
+#                                                        stack config names one
+#   spire-server.nodeAttestor.tpmDirect.checksum         per architecture; the
+#                                                        chart default is the
+#                                                        amd64 one, and the
+#                                                        server crash-loops on
+#                                                        arm64 without it
+#   spire-server.upstreamAuthority.disk                  when the site spec
+#                                                        sets spire.upstreamCA;
+#                                                        reads the Secret
+#                                                        spire-upstream-ca, and
+#                                                        the node agent trusts
+#                                                        that CA
+#   spiffe-oidc-discovery-provider.config.jwksUri        https://<site address>:30443/keys
+#   spiffe-oidc-discovery-provider.tls.certManager.certificate.ipAddresses
+#                                                        the site's addresses
+#   spiffe-oidc-discovery-provider.config.additionalDomains
+#                                                        this list plus the
+#                                                        site's addresses
+# The two trust-domain values must agree. An adminID whose trust domain is not
+# the server's matches nothing, and the controller silently has no admin
+# access to SPIRE. example.org below is a placeholder. With strict mode off
+# the chart renders it without complaint, so the install checks that the
+# overlay replaces it before anything is applied.
+
+global:
+  spire:
+    # recommendations gives the two-namespace layout. Without it a subchart
+    # with no namespaceOverride lands in the release namespace, not in
+    # spire-system.
+    recommendations:
+      enabled: true
+      # strictMode would reject the placeholder trust domain and demand a
+      # clusterName and a CA subject as well. Off, so the file renders on its
+      # own. The install validates the overlay instead.
+      strictMode: false
+    # Placeholder. See the header.
+    trustDomain: example.org
+    # The issuer the OIDC discovery provider publishes. Tenant API servers
+    # string-compare it against the JWT iss claim.
+    jwtIssuer: "https://nvke.site-controller.internal"
+  # The chart's hooks flip the controller manager's webhook to Ignore during
+  # an install and back afterwards. spire-server.controllerManager below sets
+  # Ignore outright instead, with no hook Jobs, RBAC or extra image.
+  installAndUpgradeHooks:
+    enabled: false
+  deleteHooks:
+    enabled: false
+
+# spire-agent and spiffe-csi-driver carry no namespaceOverride. They fall
+# through to spire-system under the recommended layout. Both need hostNetwork,
+# hostPID and privileged containers, which the restricted PodSecurity label on
+# spire-server rejects.
+spiffe-csi-driver: {}
+
+spire-agent:
+  serviceAccount:
+    # Pinned. The chart derives it as <release>-agent otherwise, and
+    # fullnameOverride does not change it. The server's PSAT allowlist names
+    # it exactly.
+    name: spire-agent
+  server:
+    # Where the agent dials the server. This is a separate key from where the
+    # agent's own resources land. Without it the agent derives
+    # <release>-server.<release namespace>, finds no Service there, and fails
+    # attestation with "no children to pick from".
+    namespaceOverride: spire-server
+  workloadAttestors:
+    k8s:
+      # Already the chart default at 0.30.1. Restated so an upstream change
+      # shows up here as a conflict.
+      enabled: true
+      # Every control-plane node runs Kata. A Kata workload runs inside a VM,
+      # where the agent cannot walk the caller's cgroup back to a container ID.
+      # Container-scoped selectors come back empty and the workload gets no
+      # SVID. Pod-scoped selectors still resolve, and every identity below
+      # registers on pod UID.
+      #
+      # The cost is granularity. Two containers in one pod are the same to
+      # SPIRE. Nothing here registers that finely.
+      disableContainerSelectors: true
+  # PodMonitor for the agent, so NKTP scrapes it. See spire-server.telemetry.
+  telemetry:
+    prometheus:
+      podMonitor:
+        enabled: true
+
+spire-server:
+  namespaceOverride: spire-server
+  bundlePublisher:
+    k8sConfigMap:
+      # The bundle ConfigMap the agent mounts has to land where the agent
+      # runs, or the agent sits at Init:0/2 forever.
+      namespace: spire-system
+  # Placeholder trust domain. See the header. The path is a constant,
+  # /nvke-service/nvke-controller. It matches the nvke-service ClusterSPIFFEID
+  # below and the prefixes the node agent admits.
+  adminIDs:
+    - spiffe://example.org/nvke-service/nvke-controller
+  controllerManager:
+    # The chart applies its ClusterSPIFFEID objects in the same release that
+    # creates the controller manager serving the webhook that validates them.
+    # On a fresh install the API server calls a webhook that is not listening
+    # yet. With failurePolicy Fail the install rolls back:
+    #
+    #   failed calling webhook "vclusterspiffeid.kb.io": ... connection refused
+    #
+    # It is a race. It passes on a warm machine and fails on a cold one.
+    # Ignore lets admission through while the webhook starts. The webhook
+    # still validates once it is up.
+    validatingWebhookConfiguration:
+      failurePolicy: Ignore
+    className: spire-mgmt-spire
+    identities:
+      clusterSPIFFEIDs:
+        default:
+          # NVKE workloads use the nvke-service identity below. Keep the
+          # chart's fallback identity out of their namespace.
+          namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: NotIn
+                values:
+                  - nvke-controller
+        # The identity NVKE's own services present.
+        #
+        # type raw is required. Every other type makes the chart append its
+        # own expression to namespaceSelector and merge a podSelector in. raw
+        # passes these through verbatim.
+        #
+        # The chart names the CR <release namespace>-<release>-nvke-service.
+        # Nothing reads it by name. The SPIFFE ID is what matters. It has to
+        # keep matching adminIDs above and the prefixes the node agent admits.
+        #
+        # Two CRs share the template. nvke-service covers the controller's own
+        # namespace, so the admin ID in adminIDs is only mintable there.
+        # capi-exec-auth covers the Cluster API controllers, which present a
+        # nvke-service identity to the API through the SPIFFE exec-auth plugin.
+        # Their service accounts have their own names, so they never match the
+        # admin ID. A distinct path for them is a follow-up that also changes
+        # what the API accepts.
+        nvke-service:
+          type: raw
+          spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nvke-service/{{.PodSpec.ServiceAccountName}}"
+          namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  - nvke-controller
+        capi-exec-auth:
+          type: raw
+          spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nvke-service/{{.PodSpec.ServiceAccountName}}"
+          namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  - capi-system
+                  - capi-kubeadm-control-plane-system
+                  - capi-kubeadm-bootstrap-system
+  nodeAttestor:
+    k8sPSAT:
+      # The agent runs in spire-system, so the server must accept it from
+      # there. The default allowlist is empty and attestation fails with
+      # "is not an allowed service account".
+      serviceAccountAllowList: ["spire-system:spire-agent"]
+    tpmDirect:
+      # TPM EK thumbprint attestation for the nodes the controller provisions.
+      enabled: true
+  # The allowlist the tpmDirect attestor reads. manifests/tpm-pubhashes.yaml
+  # creates it empty, and the controller fills it. Mounted optional so an
+  # absent ConfigMap is not a startup failure.
+  extraVolumes:
+    - name: tpm-pubhashes
+      configMap:
+        name: tpm-pubhashes
+        optional: true
+  extraVolumeMounts:
+    - name: tpm-pubhashes
+      mountPath: /run/spire/data/tpm-direct/hashes
+      readOnly: true
+  # PodMonitors for the server and the agent, so NKTP scrapes them. The
+  # recommended layout already turns on Prometheus telemetry on port 9988. The
+  # monitors need the monitoring CRDs, which the nktp release installs before
+  # this one.
+  telemetry:
+    prometheus:
+      podMonitor:
+        enabled: true
+
+spiffe-oidc-discovery-provider:
+  enabled: true
+  namespaceOverride: spire-server
+  replicaCount: 2
+  tls:
+    spire:
+      enabled: false
+    certManager:
+      enabled: true
+      issuer:
+        # manifests/oidc-upstream-ca.yaml owns the Issuer.
+        create: false
+      certificate:
+        duration: 2160h
+        privateKey:
+          algorithm: ECDSA
+          size: 256
+        dnsNames:
+          - nvke.site-controller.internal
+          - localhost
+        issuerRef:
+          group: cert-manager.io
+          kind: Issuer
+          name: nvke-oidc-upstream-ca
+  config:
+    # The provider rejects any request whose Host header is not on this list.
+    # A tenant kube-apiserver fetches the discovery document by IP, not by
+    # the logical issuer host. The generated overlay restates this list and
+    # appends the site's addresses. A values file replaces a list, so the
+    # overlay must repeat these three.
+    additionalDomains:
+      - "nvke.site-controller.internal"
+      - "localhost"
+      - "127.0.0.1"

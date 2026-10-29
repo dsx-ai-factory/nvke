@@ -26,7 +26,7 @@ type ClusterOIDCProvider struct {
 }
 
 // ClusterOIDCProvidersFromConfig converts the fleet-wide providers from
-// nke-controller-config into the stored shape. The result is empty rather than
+// nvke-controller-config into the stored shape. The result is empty rather than
 // nil when there are none, and shares no slice or map with providers.
 func ClusterOIDCProvidersFromConfig(providers []controllerconfig.OIDCProvider) []ClusterOIDCProvider {
 	out := make([]ClusterOIDCProvider, 0, len(providers))

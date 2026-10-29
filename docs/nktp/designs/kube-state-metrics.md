@@ -2,7 +2,7 @@
 
 ## Purpose
 
-NVKE telemetry pipelines (NKTP) uses stock kube-state-metrics (KSM) to expose Kubernetes object state.
+NVKE telemetry pipeline (NKTP) uses stock kube-state-metrics (KSM) to expose Kubernetes object state.
 In AI-scale Kubernetes clusters, KSM must balance scrape response size, its own per-pod and aggregate CPU and memory use, Kubernetes API server load,
 and concurrent API watches. The designs below compare ways to address these scaling pressures and the tradeoffs of each.
 
