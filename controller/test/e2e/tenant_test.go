@@ -316,8 +316,10 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
 			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
-		options:  nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
-		validate: validations{scale: true, reboot: true},
+		options: nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
+		// This lane installs the branch-built agent on real systemd hosts, so it
+		// can verify both the durable audit file and its journald mirror.
+		validate: validations{scale: true, reboot: true, agentTrace: true},
 	}),
 	Entry("nico-vms k8s upgrade", Ordered, ContinueOnFailure, Label("nico-vms", "happy-path", "upgrade"), testSpec{
 		buildSpec: nicoVMSSpec,
@@ -550,6 +552,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			}
 			if spec.validate.nodeAgentUpgrade {
 				validateNodeAgentUpgrade(&test)
+			}
+			if spec.validate.agentTrace {
+				validateAgentTracePostCreate(&test)
 			}
 			if spec.validate.openVSwitch {
 				validateOpenVSwitchPostCreate(&test)
@@ -810,6 +815,9 @@ type validations struct {
 	// and the shared tenant-access cleanup check.
 	provisioningOnly bool
 	nodeAgentUpgrade bool
+	// agentTrace observes a ProvisionNode workflow's trace ID in both the
+	// agent audit file and the service journal on every tenant node.
+	agentTrace bool
 	// postReadyChecks verifies intended cluster state after the initial CAPD
 	// cluster and all desired nodes are Ready.
 	postReadyChecks bool
