@@ -4,7 +4,6 @@
 package e2e
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/hex"
@@ -113,15 +112,13 @@ func controllerWorkflowTraceID(ctx context.Context, clientset kubernetes.Interfa
 
 func traceIDsForWorkflow(logs []byte, workflowID string) []string {
 	var traceIDs []string
-	scanner := bufio.NewScanner(bytes.NewReader(logs))
-	scanner.Buffer(make([]byte, 64<<10), 1<<20)
-	for scanner.Scan() {
+	for line := range bytes.SplitSeq(logs, []byte{'\n'}) {
 		var record struct {
 			WorkflowID string `json:"workflow_id"`
 			TraceID    string `json:"trace_id"`
 			Event      string `json:"event"`
 		}
-		if json.Unmarshal(scanner.Bytes(), &record) != nil || record.WorkflowID != workflowID || record.Event != "workflow.started" || !validTraceID(record.TraceID) {
+		if json.Unmarshal(line, &record) != nil || record.WorkflowID != workflowID || record.Event != "workflow.started" || !validTraceID(record.TraceID) {
 			continue
 		}
 		traceIDs = append(traceIDs, record.TraceID)
@@ -158,13 +155,14 @@ func agentTraceProbe(nodeName, traceID string) *corev1.Pod {
 				Args: []string{fmt.Sprintf(`
 needle='"trace_id":"'"${TRACE_ID}"'"'
 audit=/host%s
-grep -Fq "$needle" "$audit" || {
-  echo "trace ID not found in $audit; recent audit trace IDs:" >&2
+audit_record="$(grep -F "$needle" "$audit" | grep -F '"msg":"grpc request received"' | tail -n 1 || true)"
+test -n "$audit_record" || {
+  echo "agent audit record not found in $audit; recent audit trace IDs:" >&2
   grep -o '"trace_id":"[0-9a-f]*"' "$audit" | tail -n 10 >&2 || true
   exit 1
 }
-chroot /host /usr/bin/journalctl -u nvke-agent --no-pager -o cat | grep -Fq "$needle" || {
-  echo "trace ID not found in the nvke-agent journal" >&2
+chroot /host /usr/bin/journalctl -u nvke-agent --no-pager -o cat | grep -Fqx "$audit_record" || {
+  echo "agent audit record not found in the nvke-agent journal" >&2
   exit 1
 }
 printf 'found trace %%s in the agent audit file and journal\n' "$TRACE_ID" > /dev/termination-log
