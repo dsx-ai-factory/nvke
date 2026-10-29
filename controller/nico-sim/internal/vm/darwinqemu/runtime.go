@@ -314,17 +314,7 @@ func (r *darwinQEMU) TPMEKCert(_ context.Context, machineID string) (string, err
 func (r *darwinQEMU) Delete(_ context.Context, machineID string) error {
 	paths := r.pathsForInstance(machineID)
 
-	var qemuErr error
-	if vmnetPID, err := readPIDFile(paths.VMNetClientPIDFile); err == nil {
-		if stopErr := stopProcessGroup(vmnetPID); stopErr != nil {
-			if pidErr := stopPIDFileProcess(paths.PIDFile); pidErr != nil {
-				qemuErr = fmt.Errorf("failed stopping process group (pgid %d): %w; pidfile fallback also failed: %v",
-					vmnetPID, stopErr, pidErr)
-			}
-		}
-	} else {
-		_ = stopPIDFileProcess(paths.PIDFile)
-	}
+	qemuErr := stopVMProcesses(paths)
 
 	// swtpm is outside the vmnet-run process group, so it needs its own
 	// shutdown, after QEMU is confirmed gone — run it even if stopping QEMU
@@ -339,9 +329,6 @@ func (r *darwinQEMU) Delete(_ context.Context, machineID string) error {
 		return errors.Join(qemuErr, tpmErr)
 	}
 
-	_ = os.Remove(paths.PIDFile)
-	_ = os.Remove(paths.VMNetClientPIDFile)
-	_ = os.Remove(paths.QMPSock)
 	_ = os.Remove(paths.ManifestFile)
 	return nil
 }
@@ -411,17 +398,20 @@ func (r *darwinQEMU) LookupDHCPLease(context.Context, string, string) (string, b
 // --- process helpers ---
 
 // stopVMProcesses tears down the vmnet-client process group (which includes
-// QEMU) and cleans up stale PID/socket files in preparation for a relaunch. It
-// returns an error, and leaves the files in place, when QEMU may still be running.
+// QEMU), then independently stops the QEMU recorded in its pidfile, and cleans
+// up stale PID/socket files in preparation for a relaunch. The pidfile check
+// always runs because stopProcessGroup only tracks the group leader: QEMU can
+// outlive an already-exited vmnet-client. It returns an error, and leaves the
+// files in place so a retry can find QEMU, when QEMU may still be running.
 func stopVMProcesses(paths darwinInstancePaths) error {
+	var groupErr error
 	if vmnetPID, err := readPIDFile(paths.VMNetClientPIDFile); err == nil {
-		if stopErr := stopProcessGroup(vmnetPID); stopErr != nil {
-			if pidErr := stopPIDFileProcess(paths.PIDFile); pidErr != nil {
-				return fmt.Errorf("stop QEMU: process group %d: %w; pidfile fallback: %w", vmnetPID, stopErr, pidErr)
-			}
+		if err := stopProcessGroup(vmnetPID); err != nil {
+			groupErr = fmt.Errorf("process group %d: %w", vmnetPID, err)
 		}
-	} else {
-		_ = stopPIDFileProcess(paths.PIDFile)
+	}
+	if err := stopPIDFileProcess(paths.PIDFile); err != nil {
+		return fmt.Errorf("stop QEMU: %w", errors.Join(groupErr, fmt.Errorf("pidfile: %w", err)))
 	}
 	_ = os.Remove(paths.QMPSock)
 	_ = os.Remove(paths.PIDFile)
