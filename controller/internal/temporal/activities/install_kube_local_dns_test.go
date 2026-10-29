@@ -106,6 +106,13 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 	require.Contains(t, daemonSet.Spec.Template.Spec.Containers[0].Image, "registry.k8s.io/dns/k8s-dns-node-cache:")
 	require.Equal(t, dnsRoleClusterDNS, daemonSet.Spec.Template.Labels[dnsRoleLabelKey])
 	require.False(t, daemonSet.Spec.Template.Spec.HostNetwork)
+	require.NotNil(t, daemonSet.Spec.Template.Spec.Affinity)
+	require.NotNil(t, daemonSet.Spec.Template.Spec.Affinity.NodeAffinity)
+	require.NotNil(t, daemonSet.Spec.Template.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution)
+	// Node selector terms are ORed, so any extra term could let KWOK nodes back in.
+	require.Equal(t, []corev1.NodeSelectorTerm{{
+		MatchExpressions: []corev1.NodeSelectorRequirement{{Key: "type", Operator: corev1.NodeSelectorOpNotIn, Values: []string{"kwok"}}},
+	}}, daemonSet.Spec.Template.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms)
 	require.Equal(t, []string{
 		"-localip", "0.0.0.0",
 		"-conf", "/config/Corefile",
