@@ -848,9 +848,23 @@ bootstrap_pid=$!
 # exits. Signalling the group reaches the go test, which stops nvkectl and the
 # kind, nerdctl and helm it drives before it goes. Otherwise the EXIT trap would
 # delete the cluster the command is still driving.
+#
+# `go` exits on SIGTERM while the test binary it started is still stopping
+# nvkectl and checking the output, so this waits for the whole group. The bound
+# is the test's 20s stop grace and 2 minute output check, with margin.
+ABORT_GROUP_WAIT=180
 abort_bootstrap() {
+  local waited=0
   kill -- "-${bootstrap_pid}" 2>/dev/null || kill "${bootstrap_pid}" 2>/dev/null || true
   wait "${bootstrap_pid}" 2>/dev/null || true
+  while kill -0 -- "-${bootstrap_pid}" 2>/dev/null; do
+    if [ "${waited}" -ge "${ABORT_GROUP_WAIT}" ]; then
+      log "the bootstrap test is still running after ${ABORT_GROUP_WAIT}s; continuing without it"
+      break
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
   print_run_logs "${BOOTSTRAP_LOG}" "${BOOTSTRAP_GO_TEST_LOG}"
   exit 1
 }
