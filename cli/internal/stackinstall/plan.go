@@ -1,0 +1,242 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package stackinstall
+
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"net/netip"
+	"sort"
+	"strings"
+	"unicode"
+
+	"github.com/dsx-ai-factory/nvke/cli/internal/artifacts"
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/controllerdeploy"
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
+)
+
+// Target is the cluster a plan installs on and its platform, such as
+// "linux/amd64" or "linux/arm64".
+type Target struct {
+	Kind     TargetKind
+	Platform string
+}
+
+// StackConfig holds the stack config keys the plan reads. Mirror is a
+// registry host[:port][/prefix] that serves the spire, postgresql and
+// temporal images. ClientNetworks are the CIDRs admitted to the NVKE API.
+type StackConfig struct {
+	Mirror         string
+	ClientNetworks []string
+}
+
+// Inputs is everything NewPlan reads. Artifacts is the decoded artifact file.
+type Inputs struct {
+	Site      *sitespec.SiteSpec
+	Stack     StackConfig
+	Artifacts *artifacts.Release
+	Target    Target
+}
+
+// Release is one Helm release. Name is the Helm release name. Chart is the
+// artifact file output that holds the chart. ValuesFiles are embedded paths
+// passed in order, and Overlay is passed after them; Overlay is nil when the
+// chart takes no input-derived values.
+type Release struct {
+	Name        string
+	Chart       artifacts.Output
+	ValuesFiles []string
+	Overlay     map[string]any
+}
+
+// Manifest is one glue manifest. Path is the embedded path with ".tmpl"
+// dropped; Content is rendered.
+type Manifest struct {
+	Path    string
+	Content []byte
+}
+
+// Plan is what an install applies to one target. Releases are sorted by name
+// and Manifests by path.
+type Plan struct {
+	Releases  []Release
+	Manifests []Manifest
+}
+
+// placeholderTrustDomain is the trust domain values/spire.yaml carries.
+const placeholderTrustDomain = "example.org"
+
+// inputs are the checked values the overlays and templates are built from.
+type inputs struct {
+	kind        TargetKind
+	trustDomain string
+	address     string
+	clusterName string
+	checksum    string
+	upstreamCA  bool
+	mirror      string
+	networks    []string
+	cwe         string
+	capnico     string
+	hasNico     bool
+	art         *artifacts.Release
+}
+
+// NewPlan checks the inputs and builds the plan for in.Target. It reports
+// every input problem at once and returns no plan when there is one.
+func NewPlan(in Inputs) (*Plan, error) {
+	v, err := check(in)
+	if err != nil {
+		return nil, err
+	}
+	p := &Plan{}
+	for _, c := range charts {
+		if !c.planned(v.kind, v.hasNico) {
+			continue
+		}
+		rel := Release{Name: c.release, Chart: *v.art.Output(c.output)}
+		if c.values != "" {
+			rel.ValuesFiles = valuesFiles(c.values, v.kind)
+			if rel.Overlay, err = overlay(c.values, v); err != nil {
+				return nil, fmt.Errorf("%s: %w", c.release, err)
+			}
+		}
+		if c.values == "spire" {
+			merged, err := mergedValues(rel)
+			if err != nil {
+				return nil, err
+			}
+			if err := checkPlaceholder(merged); err != nil {
+				return nil, err
+			}
+		}
+		p.Releases = append(p.Releases, rel)
+	}
+	sort.Slice(p.Releases, func(i, j int) bool { return p.Releases[i].Name < p.Releases[j].Name })
+	if p.Manifests, err = manifests(v); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// check validates in and resolves what the overlays read.
+func check(in Inputs) (inputs, error) {
+	if in.Site == nil || in.Artifacts == nil {
+		return inputs{}, errors.New("the site spec and the artifact file are both required")
+	}
+	spec, stack := in.Site, in.Stack
+	v := inputs{
+		kind:        in.Target.Kind,
+		trustDomain: spec.Spire.TrustDomain,
+		upstreamCA:  spec.Spire.UpstreamCA,
+		mirror:      stack.Mirror,
+		art:         in.Artifacts,
+		hasNico:     in.Artifacts.Output("nico") != nil,
+	}
+	var problems []error
+	add := func(format string, a ...any) { problems = append(problems, fmt.Errorf(format, a...)) }
+
+	if !spec.IsNico() {
+		add("site spec: infra.provider is %q; the stack install needs %q", spec.Infra.Provider, sitespec.ProviderNico)
+	}
+	switch v.trustDomain {
+	case "":
+		add("site spec: spire.trustDomain is required")
+	case placeholderTrustDomain:
+		add("site spec: spire.trustDomain is the placeholder %s", placeholderTrustDomain)
+	}
+
+	switch v.kind {
+	case Site:
+		addr, err := spec.ControllerEndpoint()
+		if err != nil {
+			add("site spec: %w", err)
+		}
+		v.address, v.clusterName = addr, spec.ClusterName
+		if v.clusterName == "" {
+			add("site spec: clusterName is required")
+		} else if !templateSafe(v.clusterName) {
+			add("site spec: clusterName %s", unsafeChar)
+		}
+	case Seed:
+		v.address, v.clusterName = spec.Spire.ExternalAddress, sitespec.DefaultBootstrapClusterName
+		if v.address == "" {
+			add("site spec: spire.externalAddress is required on the seed; nodes reach the seed's SPIRE server there")
+		}
+	default:
+		add("target kind %q is neither %q nor %q", v.kind, Seed, Site)
+	}
+
+	v.checksum = controllerdeploy.SpireTPMDirectChecksum(strings.TrimPrefix(in.Target.Platform, "linux/"))
+	if v.checksum == "" {
+		add("target platform %q has no SPIRE TPM attestor checksum", in.Target.Platform)
+	}
+
+	image := func(name string) string {
+		out := in.Artifacts.Output(name)
+		switch {
+		case out == nil:
+			add("artifact file: no %s output", name)
+			return ""
+		case !strings.Contains(out.Reference, "@sha256:"):
+			add("artifact file: %s reference %q is not pinned by a sha256 digest", name, out.Reference)
+		case !templateSafe(out.Reference):
+			add("artifact file: %s reference %s", name, unsafeChar)
+		}
+		return out.Reference
+	}
+	v.cwe, v.capnico = image("cwe"), image("capnico-controller")
+
+	seen := map[string]bool{}
+	for _, c := range charts {
+		if !c.planned(v.kind, v.hasNico) || seen[c.output] {
+			continue
+		}
+		seen[c.output] = true
+		if in.Artifacts.Output(c.output) == nil {
+			add("artifact file: no %s output for the %s release", c.output, c.release)
+		}
+	}
+
+	if len(stack.ClientNetworks) == 0 {
+		add("stack config: clientNetworks is empty; nothing outside the cluster could reach the NVKE API")
+	}
+	for i, cidr := range stack.ClientNetworks {
+		prefix, err := netip.ParsePrefix(cidr)
+		if err != nil {
+			add("stack config: clientNetworks[%d] %q is not a CIDR", i, cidr)
+			continue
+		}
+		v.networks = append(v.networks, prefix.String())
+	}
+	switch {
+	case strings.Contains(v.mirror, "://"):
+		add("stack config: mirror %q is a host[:port][/prefix], not a URL", v.mirror)
+	case !templateSafe(v.mirror):
+		add("stack config: mirror %s", unsafeChar)
+	}
+	return v, errors.Join(problems...)
+}
+
+const unsafeChar = "holds a quote, a backslash or a control character, which the templates cannot carry"
+
+// templateSafe reports whether value can go into a template, which does no
+// escaping.
+func templateSafe(value string) bool {
+	return !strings.ContainsAny(value, "\"\\") && !strings.ContainsFunc(value, unicode.IsControl)
+}
+
+// valuesFiles is values/<name>.yaml, then values/kind/<name>.yaml on the seed
+// when it exists.
+func valuesFiles(name string, kind TargetKind) []string {
+	files := []string{"values/" + name + ".yaml"}
+	if kind == Seed {
+		kindFile := "values/kind/" + name + ".yaml"
+		if _, err := fs.Stat(stackFS, kindFile); err == nil {
+			files = append(files, kindFile)
+		}
+	}
+	return files
+}
