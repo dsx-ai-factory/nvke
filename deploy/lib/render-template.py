@@ -97,10 +97,13 @@ def truthy(ctx, path, where):
 
 
 def resolve_ifs(text, ctx, where):
-    """Drop the branch not taken, innermost-last.
+    """Drop the branch not taken, innermost-first.
 
-    Repeated until no block is left so that two sibling ifs both resolve;
-    the pattern refuses a nested one, so this terminates.
+    Repeated until no block is left so that two sibling ifs both resolve.
+    A nested if is not matched at the outer position, because the then
+    group refuses one: the inner block resolves first and the outer
+    follows. Nesting is not refused, only reordered, and each pass removes
+    one block, so this terminates.
     """
     while True:
         match = IF_BLOCK.search(text)
