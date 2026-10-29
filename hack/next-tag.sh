@@ -38,12 +38,21 @@ function next_version() {
     # puts the sign-off in a paragraph after it, and a squash merge joins every
     # commit's message into one body. A line inside a fenced code block is an
     # example rather than a footer, and each commit starts outside a fence, so
-    # one left open cannot hide the next commit's footer.
+    # one left open cannot hide the next commit's footer. As in CommonMark, a
+    # fence closes only on the opener's character, at least as many of it, and
+    # nothing after them, so an example of a fence does not end the block.
     local subjects bodies
     subjects="$(git log --format='%s' "${range}")"
     bodies="$(git log --format='%x1e%n%b' "${range}" | awk -v commit=$'\036' '
         $0 == commit { fenced = 0; next }
-        /^ *(```|~~~)/ { fenced = !fenced; next }
+        /^ *(```|~~~)/ {
+            line = $0; sub(/^ */, "", line)
+            ch = substr(line, 1, 1); n = 0
+            while (substr(line, n + 1, 1) == ch) n++
+            if (!fenced) { fenced = 1; fch = ch; flen = n }
+            else if (ch == fch && n >= flen && substr(line, n + 1) ~ /^[ \t]*$/) fenced = 0
+            next
+        }
         !fenced')"
     if grep -Eq '^(feat(\([^)]*\))?!?|[a-z]+(\([^)]*\))?!):' <<< "${subjects}" \
         || grep -Eq '^BREAKING[ -]CHANGE: ' <<< "${bodies}"; then

@@ -98,6 +98,22 @@ class NextTagTest(unittest.TestCase):
                 self.commit("fix: a")
                 self.assert_next_tag("v0.22.1", "main")
 
+    def test_a_fence_closes_only_on_a_matching_fence(self):
+        examples = (
+            "````\n```\nBREAKING CHANGE: the v1 field is gone.\n```\n````",
+            "```\n~~~\nBREAKING CHANGE: the v1 field is gone.\n```",
+            "```\n```text\nBREAKING CHANGE: the v1 field is gone.\n```",
+        )
+        for example in examples:
+            with self.subTest(example=example):
+                self.git("reset", "--quiet", "--hard", "v0.22.0")
+                self.commit(f"docs: show nested fences\n\n{example}\n")
+                self.assert_nothing_releasable("main")
+
+    def test_a_footer_after_a_closed_fence_is_a_breaking_change(self):
+        self.commit("refactor(api): remove a public field\n\n```\nan example\n```\n\nBREAKING CHANGE: the v1 field is gone.")
+        self.assert_next_tag("v0.23.0", "main")
+
     def test_an_unclosed_fence_does_not_hide_the_next_commits_footer(self):
         self.commit("refactor(api): remove a public field\n\nBREAKING CHANGE: the v1 field is gone.")
         self.commit("docs: a\n\n```\nnever closed")
