@@ -334,13 +334,16 @@ CAPNICO_MANIFEST := internal/bootstrap/controllerdeploy/manifests/capnico.yaml
 # The stack directory's copy is a template: the image line takes the
 # capnico-controller reference from the artifact file.
 CAPNICO_TEMPLATE := internal/stackinstall/stack/manifests/capnico.yaml.tmpl
-CAPNICO_TEMPLATE_SED := 's|^\( *image: \)ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:.*$$|\1{{ .CAPNICoImage }}|'
+CAPNICO_TEMPLATE_SED := 's|^\( *image: \)ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller[:@].*$$|\1{{ .CAPNICoImage }}|'
+CAPNICO_PLACEHOLDERS = $$(grep -c '{{ .CAPNICoImage }}' $(1))
 
 capnico-manifest: ## Copy the deploy path's CAPNICo manifest into the embedded manifests.
 	@cp $(CAPNICO_SOURCE) $(CAPNICO_MANIFEST)
 	@echo "  wrote $(CAPNICO_MANIFEST)"
-	@sed $(CAPNICO_TEMPLATE_SED) $(CAPNICO_SOURCE) > $(CAPNICO_TEMPLATE)
-	@grep -q '{{ .CAPNICoImage }}' $(CAPNICO_TEMPLATE) || { echo "ERROR: no image line matched in $(CAPNICO_SOURCE)"; exit 1; }
+	@sed $(CAPNICO_TEMPLATE_SED) $(CAPNICO_SOURCE) > $(CAPNICO_TEMPLATE).tmp
+	@test "$(call CAPNICO_PLACEHOLDERS,$(CAPNICO_TEMPLATE).tmp)" = 1 \
+		|| { rm -f $(CAPNICO_TEMPLATE).tmp; echo "ERROR: expected exactly one CAPNICo controller image line in $(CAPNICO_SOURCE)"; exit 1; }
+	@mv $(CAPNICO_TEMPLATE).tmp $(CAPNICO_TEMPLATE)
 	@echo "  wrote $(CAPNICO_TEMPLATE)"
 
 capnico-manifest-check: ## Verify the embedded CAPNICo manifests are the deploy path's.
@@ -350,6 +353,8 @@ capnico-manifest-check: ## Verify the embedded CAPNICo manifests are the deploy 
 		|| { echo "ERROR: $(CAPNICO_MANIFEST) differs from deploy/nico/capnico/capnico.yaml. Run 'make -C cli capnico-manifest' and commit it."; exit 1; }
 	@sed $(CAPNICO_TEMPLATE_SED) $(CAPNICO_SOURCE) | cmp -s - $(CAPNICO_TEMPLATE) \
 		|| { echo "ERROR: $(CAPNICO_TEMPLATE) differs from deploy/nico/capnico/capnico.yaml with the image templated. Run 'make -C cli capnico-manifest' and commit it."; exit 1; }
+	@test "$(call CAPNICO_PLACEHOLDERS,$(CAPNICO_TEMPLATE))" = 1 \
+		|| { echo "ERROR: $(CAPNICO_TEMPLATE) must template exactly one image line."; exit 1; }
 	@echo "  $(CAPNICO_MANIFEST) and $(CAPNICO_TEMPLATE) are up to date."
 
 provider-manifest-check: capnico-manifest-check ## Verify the embedded provider manifests are up to date.
