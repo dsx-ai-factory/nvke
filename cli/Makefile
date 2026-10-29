@@ -337,24 +337,25 @@ CAPNICO_TEMPLATE := internal/stackinstall/stack/manifests/capnico.yaml.tmpl
 CAPNICO_TEMPLATE_SED := 's|^\( *image: \)ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller[:@].*$$|\1{{ .CAPNICoImage }}|'
 CAPNICO_PLACEHOLDERS = $$(grep -c '{{ .CAPNICoImage }}' $(1))
 # The template drops the source's header, which describes the deploy path, and
-# carries its own. The manifest body starts at the first apiVersion line.
+# carries its own. The manifest body starts at the first line that is not a
+# comment or blank.
 define CAPNICO_TEMPLATE_RENDER
 { sed -n '1,2p' $(CAPNICO_SOURCE); \
   printf '%s\n' '#' \
     '# CAPNICo, its released infrastructure-components.yaml with the image taken' \
     '# from the artifact file. Generated from deploy/nico/capnico/capnico.yaml by' \
     '# make -C cli capnico-manifest. Do not edit.' ''; \
-  awk 'f || /^apiVersion:/ { f = 1; print }' $(CAPNICO_SOURCE) | sed $(CAPNICO_TEMPLATE_SED); }
+  awk 'f || (!/^#/ && !/^$$/) { f = 1; print }' $(CAPNICO_SOURCE) | sed $(CAPNICO_TEMPLATE_SED); }
 endef
 
 capnico-manifest: ## Copy the deploy path's CAPNICo manifest into the embedded manifests.
-	@cp $(CAPNICO_SOURCE) $(CAPNICO_MANIFEST)
-	@echo "  wrote $(CAPNICO_MANIFEST)"
-	@$(CAPNICO_TEMPLATE_RENDER) > $(CAPNICO_TEMPLATE).tmp
+	@$(CAPNICO_TEMPLATE_RENDER) > $(CAPNICO_TEMPLATE).tmp || { rm -f $(CAPNICO_TEMPLATE).tmp; exit 1; }
 	@test "$(call CAPNICO_PLACEHOLDERS,$(CAPNICO_TEMPLATE).tmp)" = 1 \
 		|| { rm -f $(CAPNICO_TEMPLATE).tmp; echo "ERROR: expected exactly one CAPNICo controller image line in $(CAPNICO_SOURCE)"; exit 1; }
 	@mv $(CAPNICO_TEMPLATE).tmp $(CAPNICO_TEMPLATE)
 	@echo "  wrote $(CAPNICO_TEMPLATE)"
+	@cp $(CAPNICO_SOURCE) $(CAPNICO_MANIFEST)
+	@echo "  wrote $(CAPNICO_MANIFEST)"
 
 capnico-manifest-check: ## Verify the embedded CAPNICo manifests are the deploy path's.
 	@git ls-files --error-unmatch $(CAPNICO_MANIFEST) $(CAPNICO_TEMPLATE) > /dev/null 2>&1 \
