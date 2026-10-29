@@ -460,24 +460,38 @@ add_known_secret() {
 
 # learn_generated_secrets adds the secrets bootstrap generates to KNOWN_SECRETS: the
 # Postgres password, read from the bootstrap cluster, and the etcd key, read from
-# the saved key file as stored (base64) and decoded. It returns 1 if either could
-# not be read. A value already read is kept and not read again, so it still
-# succeeds after the lane deletes the cluster. The values are never printed.
+# the saved key file as stored (base64) and decoded. A value already read is kept
+# and not read again, so it still succeeds after the lane deletes the cluster. The
+# values are never printed.
+#
+# It returns 1 if a value is not there to read yet, as when bootstrap failed before
+# it made the secret, and 2 if a secret is there but could not be read: the search
+# for it is then missing a value that may be in the output.
 learn_generated_secrets() {
-  local kubeconfig pg_password="" etcd_key="" etcd_key_text="" rc=0
+  local kubeconfig kubectl_err pg_b64 pg_password="" pg_unreadable=false
+  local etcd_key="" etcd_key_text="" rc=0
   if [ "${PG_PASSWORD_KNOWN}" != true ]; then
     kubeconfig="$(mktemp)"
+    kubectl_err="$(mktemp)"
     if KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name "${BOOTSTRAP_KIND_CLUSTER}" >"${kubeconfig}" 2>/dev/null; then
-      pg_password="$(kubectl --kubeconfig "${kubeconfig}" --request-timeout=10s -n postgres get secret postgres-postgresql \
-        -o 'jsonpath={.data.password}' 2>/dev/null | base64 -d 2>/dev/null)" || pg_password=""
+      if pg_b64="$(kubectl --kubeconfig "${kubeconfig}" --request-timeout=10s -n postgres get secret postgres-postgresql \
+        -o 'jsonpath={.data.password}' 2>"${kubectl_err}")"; then
+        pg_password="$(printf '%s' "${pg_b64}" | base64 -d 2>/dev/null)" || pg_password=""
+        pg_unreadable=true
+      elif ! grep -q 'NotFound' "${kubectl_err}"; then
+        pg_unreadable=true
+      fi
     fi
-    rm -f "${kubeconfig}"
+    rm -f "${kubeconfig}" "${kubectl_err}"
     if [ -n "${pg_password}" ]; then
       add_known_secret "${pg_password}"
       PG_PASSWORD_KNOWN=true
-    else
+    elif [ "${pg_unreadable}" = true ]; then
       log "the generated Postgres password could not be read from the bootstrap cluster"
-      rc=1
+      rc=2
+    else
+      log "the generated Postgres password is not in the bootstrap cluster"
+      [ "${rc}" -eq 2 ] || rc=1
     fi
   fi
   if [ "${ETCD_KEY_KNOWN}" != true ]; then
@@ -491,9 +505,12 @@ learn_generated_secrets() {
         add_known_secret "${etcd_key_text}"
       fi
       ETCD_KEY_KNOWN=true
-    else
+    elif [ -f "${ETCD_KEY_FILE}" ]; then
       log "the etcd key could not be read from ${ETCD_KEY_FILE}"
-      rc=1
+      rc=2
+    else
+      log "the etcd key file ${ETCD_KEY_FILE} does not exist"
+      [ "${rc}" -eq 2 ] || rc=1
     fi
   fi
   return "${rc}"
@@ -541,14 +558,18 @@ scan_for_known_secrets() {
 }
 
 # print_run_logs prints the bootstrap log and the Go test log it is given, unless a
-# scan of both finds a credential or a known secret value in them. Their output
+# scan of both finds a credential or a known secret value in them, or a generated
+# secret exists that the scan could not read to search for. Their output
 # goes to the CI log, which is public, and the scan at exit comes too late for
 # that. It prints a notice instead, and the scan at exit fails the run.
 print_run_logs() {
-  local file scan_rc=0
-  # The generated secrets exist once the bootstrap cluster does.
-  learn_generated_secrets >/dev/null 2>&1 || true
-  if command -v gitleaks >/dev/null 2>&1; then
+  local file scan_rc=0 learn_rc=0
+  # The generated secrets exist once the bootstrap cluster does. One that is not
+  # there yet is no reason to hold the logs back, one that cannot be read is.
+  learn_generated_secrets >/dev/null 2>&1 || learn_rc=$?
+  if [ "${learn_rc}" -eq 2 ]; then
+    scan_rc=1
+  elif command -v gitleaks >/dev/null 2>&1; then
     scan_run_output "${BOOTSTRAP_LOG}" "" "${BOOTSTRAP_GO_TEST_LOG}" >/dev/null 2>&1 || scan_rc=$?
   elif [ "${NVKECTL_E2E_REQUIRE_SECRET_SCAN:-}" = 1 ]; then
     scan_rc=1
@@ -581,8 +602,12 @@ cleanup() {
   # A leak turns a passing run red; a run that already failed stays failed.
   local scan_failed=0
   # Read here, not when bootstrap succeeds, so a run that fails after generating
-  # them is searched for them too. A run that succeeded must have them.
-  if ! learn_generated_secrets && [ "${status}" -eq 0 ]; then
+  # them is searched for them too. A run that succeeded must have them, and a
+  # secret that exists but cannot be read fails a failed run too. A run that
+  # failed before it made one has nothing to search for.
+  local learn_rc=0
+  learn_generated_secrets || learn_rc=$?
+  if [ "${learn_rc}" -eq 2 ] || { [ "${learn_rc}" -ne 0 ] && [ "${status}" -eq 0 ]; }; then
     log "FAIL: the generated secrets could not be read, so the search for them proves nothing"
     scan_failed=1
   fi
