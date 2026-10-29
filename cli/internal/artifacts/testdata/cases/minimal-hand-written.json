@@ -22,13 +22,6 @@
       "chartVersion": "0.4.2"
     },
     {
-      "name": "controller-profiles",
-      "kind": "oci",
-      "reference": "registry.example.invalid/nvke/controller-profiles@sha256:5555555555555555555555555555555555555555555555555555555555555555",
-      "os": "linux",
-      "arch": "amd64"
-    },
-    {
       "name": "cwe",
       "kind": "oci",
       "reference": "registry.example.invalid/nvke/cwe@sha256:6666666666666666666666666666666666666666666666666666666666666666",

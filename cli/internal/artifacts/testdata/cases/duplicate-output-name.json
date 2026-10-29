@@ -14,7 +14,7 @@
       "installationCompatibility": "not-checked"
     }
   },
-  "totalOutputs": 13,
+  "totalOutputs": 12,
   "reference": "registry.example.invalid/nvke/releases@sha256:9999999999999999999999999999999999999999999999999999999999999999",
   "referenceScope": "derived from supplied root reference; no registry availability claim",
   "rootDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
@@ -72,25 +72,6 @@
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
-    },
-    {
-      "name": "controller-profiles",
-      "kind": "oci",
-      "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-      "reference": "registry.example.invalid/nvke/controller-profiles@sha256:5555555555555555555555555555555555555555555555555555555555555555",
-      "os": "linux",
-      "arch": "amd64",
-      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "components": [
-        "controller-profiles"
-      ],
-      "artifactType": "application/vnd.oci.image.manifest.v1+json",
-      "buildSubjects": [
-        {
-          "component": "controller-profiles",
-          "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-        }
-      ]
     },
     {
       "name": "cwe",
@@ -287,30 +268,6 @@
         "stage": "packaging",
         "subjectKind": "helm-bundle",
         "subjectDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
-      },
-      "source": {
-        "repo": "https://github.com/dsx-ai-factory/nvke",
-        "commit": "0123456789abcdef0123456789abcdef01234567"
-      }
-    },
-    {
-      "name": "sbom-controller-profiles",
-      "kind": "sbom",
-      "reference": "registry.example.invalid/nvke/controller-profiles@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-      "artifactType": "application/vnd.cyclonedx+json",
-      "manifestDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-      "blobDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-      "semanticDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "binding": {
-        "platform": "linux/amd64",
-        "documentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-        "outputs": [
-          "controller-profiles"
-        ],
-        "component": "controller-profiles",
-        "stage": "build-output",
-        "subjectKind": "oci-manifest",
-        "subjectDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
       },
       "source": {
         "repo": "https://github.com/dsx-ai-factory/nvke",

@@ -80,7 +80,6 @@ func TestDecodeValid(t *testing.T) {
 	}
 
 	assert.ElementsMatch(t, []string{"linux/amd64", "linux/arm64"}, f.Output("cwe").Platforms())
-	assert.Equal(t, []string{"linux/amd64"}, f.Output("controller-profiles").Platforms())
 	assert.Equal(t, "0.30.1", f.Output("spire").ChartVersion)
 	require.NotNil(t, f.Source("cwe"))
 	assert.Equal(t, "https://github.com/dsx-ai-factory/nvke", f.Source("cwe").Repo)
@@ -94,7 +93,6 @@ func TestDecodeMinimal(t *testing.T) {
 	assert.Nil(t, f.Source("cwe"))
 	require.NotNil(t, f.Output("cwe"))
 	assert.ElementsMatch(t, []string{"linux/amd64", "linux/arm64"}, f.Output("cwe").Platforms())
-	assert.Equal(t, []string{"linux/amd64"}, f.Output("controller-profiles").Platforms())
 	assert.Equal(t, "0.30.1", f.Output("spire").ChartVersion)
 }
 

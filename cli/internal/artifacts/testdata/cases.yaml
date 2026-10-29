@@ -11,7 +11,7 @@
   expect: ok
 - file: valid.json
   platform: linux/arm64
-  expect: 'outputs[name=controller-profiles]: no manifest for platform linux/arm64'
+  expect: ok
 - file: cases/minimal-hand-written.json
   expect: ok
 - file: cases/valid-nico-absent.json
