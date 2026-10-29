@@ -241,7 +241,7 @@ func (c *Controller) publish(ctx context.Context, cluster db.Cluster, adminConf 
 	}
 
 	// Ordered last because a valid Cluster.spec.controlPlaneEndpoint is what makes CAPI's own reconcileKubeconfig
-	// reachable, and that path mints <cluster>-kubeconfig by signing with a CA private key NKE does not hold.
+	// reachable, and that path mints <cluster>-kubeconfig by signing with a CA private key NVKE does not hold.
 	// It only acts when the Secret is absent, so the endpoint is applied only after the kubeconfig Secret exists.
 	if err := c.publishCAPIBootstrapContract(ctx, live, adminConf); err != nil {
 		return fmt.Errorf("publishing CAPI bootstrap contract for cluster %s: %w", live.Name, err)
