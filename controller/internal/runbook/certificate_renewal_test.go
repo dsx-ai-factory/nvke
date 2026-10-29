@@ -859,6 +859,7 @@ func TestCertificateRenewalRunbookConcurrentRetryWaitsForCompletion(t *testing.T
 	harness.setEnv("FAKE_RESIDUAL", "1d")
 	harness.setEnv("FAKE_RENEW_SLEEP", "1")
 	harness.setEnv("OPERATION_ID", "concurrent-cycle")
+	harness.setEnv("LOCK_TIMEOUT", "60")
 
 	firstCmd := exec.CommandContext(t.Context(), "bash", harness.scriptPath)
 	firstCmd.Env = harness.env
