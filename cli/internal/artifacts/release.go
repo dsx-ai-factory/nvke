@@ -6,8 +6,10 @@
 // fields are decoded and every other key is dropped, so an unmodified
 // release export from nvkr (github.com/dsx-ai-factory/nvkr) and a
 // hand-written file with only outputs both satisfy it. Output names are the
-// ones in nvkr's NVKE definition (inputs/definitions/nvke/definition.yaml)
-// plus nico, nico-prereqs and local-path-provisioner.
+// ones in nvkr's combined NVKE definition
+// (inputs/definitions/nvke/definition.yaml). nico and nico-prereqs are in the
+// core family (inputs/definitions/nvke/core.yaml) only, and
+// local-path-provisioner is in neither.
 //
 // cli/internal/bootstrap/nvkrrelease reads the same document for the deploy
 // path.
