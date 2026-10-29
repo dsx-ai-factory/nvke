@@ -19,6 +19,12 @@ import (
 // server and waits until each node's agent holds an SVID from it.
 func (h *handover) repointNodes(ctx context.Context) error {
 	target := api.SpireServer{Address: h.cfg.SiteSpireAddress, Port: h.cfg.SiteSpirePort}
+	// A repeated request starts another update that moves every node again.
+	if status, err := h.cfg.Controller.GetClusterSpireServer(ctx, h.cfg.ClusterID); err == nil &&
+		len(status.Nodes) > 0 && len(pendingNodes(status.Nodes, target)) == 0 {
+		h.log.Info("every node already holds an SVID from the site SPIRE server", "nodes", len(status.Nodes))
+		return nil
+	}
 	if err := h.cfg.Controller.UpdateClusterSpireServer(ctx, h.cfg.ClusterID, target); err != nil {
 		var status *clients.StatusError
 		if !errors.As(err, &status) || status.StatusCode != http.StatusConflict {
