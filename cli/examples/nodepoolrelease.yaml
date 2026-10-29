@@ -37,7 +37,7 @@ spec:
           layout: us
         locale: en_US.UTF-8
         ssh:
-          allow-pw: true
+          allow-pw: false
           install-server: true
         storage:
           layout:
