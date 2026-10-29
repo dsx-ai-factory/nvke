@@ -41,7 +41,7 @@ CAPNICo checks the credentials Secret that each `NicoIdentity` names: it authent
 A result describes the `NicoIdentity` as it is now only when two things hold:
 
 - The `Ready` condition's `observedGeneration` equals the object's `metadata.generation`. A lower `observedGeneration` is the result for an earlier spec, for example before `spec.credentialsRef` changed.
-- `status.lastCheckedTime` is recent. CAPNICo checks each `NicoIdentity` again four to five minutes after the last check finished, including a failed one, so a time older than two check intervals, 10 minutes, means nothing is checking it. `nvkectl get providers` reports `STALE` from that age.
+- `status.lastCheckedTime` is recent. CAPNICo checks each `NicoIdentity` again four to five minutes after the last check finished, including a failed one, so a time older than two check intervals, 10 minutes, usually means nothing is checking it. `nvkectl get providers` reports `STALE` from that age.
 
 The condition's `lastTransitionTime` is not a freshness signal: it changes only when `status` changes, and a `NicoIdentity` that has failed the same way for a day keeps the time of its first failure.
 
@@ -113,7 +113,7 @@ A result is stale when no check has finished for more than 10 minutes. The `Nico
 
    The Deployment shows all replicas ready. If it does not, read the pod's state with `kubectl -n capnico-system get pods`.
 
-   A CAPNICo manager that serves `NicoIdentity` exits at startup when the `NicoIdentity` custom resource definition (CRD) is missing. Its log then shows `unable to create controller` with `"controller":"NicoIdentity"`, and the pod restarts in `CrashLoopBackOff`; while it does, CAPNICo reconciles nothing. Install the CRD from the same CAPNICo release. On an NVKE management cluster, CAPNICo comes from [`deploy/nico/capnico/capnico.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/capnico/capnico.yaml), re-running the NVKE install applies the release pinned there, and a newer release follows the "To bump" procedure in that file, as in step 3. The next restart succeeds, or restart the Deployment to skip the restart delay:
+   A CAPNICo manager that serves `NicoIdentity` exits at startup when the `NicoIdentity` custom resource definition (CRD) is missing. Its log then shows `unable to create controller` with `"controller":"NicoIdentity"`, and the pod restarts in `CrashLoopBackOff`; while it does, CAPNICo reconciles nothing. Install the CRD from the same CAPNICo release. On an NVKE management cluster, the CRDs and the manager come from the same file; see step 3. The next restart succeeds, or restart the Deployment to skip the restart delay:
 
    ```bash
    kubectl -n capnico-system rollout restart deploy/controller-manager
@@ -138,7 +138,7 @@ A result is stale when no check has finished for more than 10 minutes. The `Nico
 
      The label change starts a check within seconds.
 
-3. The manager's image serves `NicoIdentity`. A manager from an earlier CAPNICo release, such as `v0.0.45`, has no `NicoIdentity` controller and never checks one, even when the CRD is installed. Upgrade CAPNICo as a whole, CRDs and manager from the same release. On an NVKE management cluster, follow the "To bump" procedure in [`deploy/nico/capnico/capnico.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/capnico/capnico.yaml): take the new release's `infrastructure-components.yaml`, keep the manager's `--reboot-annotation` and `--repair-annotation` arguments, and move the reference in `controller/go.mod`. The upstream release starts the manager without those arguments, and it then ignores every NVKE reboot and repair request. Re-running the NVKE install applies the release pinned in that file.
+3. The manager's image serves `NicoIdentity`. A manager from an earlier CAPNICo release, such as `v0.0.45`, has no `NicoIdentity` controller and never checks one, even when the CRD is installed. Upgrade CAPNICo as a whole, CRDs and manager from the same release. On an NVKE management cluster, CAPNICo comes from [`deploy/nico/capnico/capnico.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/capnico/capnico.yaml). A CAPNICo release that serves `NicoIdentity` arrives with an NVKE build or release that bumps `capnico.yaml`, the image tag in [`deploy/nico/capnico/release.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/capnico/release.yaml) and `controller/go.mod` together, and keeps the manager's `--reboot-annotation` and `--repair-annotation` arguments. The upstream release starts the manager without those arguments, and it then ignores every NVKE reboot and repair request. When you install with `--release`, the manager image comes from the release's `capnico-controller` artifact. Re-running the NVKE install applies whatever CAPNICo that build or release carries.
 
 During a NICo outage a round of checks takes longer: CAPNICo checks one `NicoIdentity` at a time, and each check can run for the full validation timeout. With many `NicoIdentity` objects, a gap longer than 10 minutes can then mean slow checks rather than stopped ones; the `checked NicoIdentity credentials` lines in the [manager log](#read-the-capnico-manager-log) tell the two apart.
 
@@ -196,7 +196,7 @@ The `NicoIdentity` status and the manager log are the only places a check report
      | jq -cR 'fromjson? | select(.msg == "checked NicoIdentity credentials")'
    ```
 
-   Each line names the `NicoIdentity` in `namespace` and `name`, and carries the result in `ready` and `reason`. If the log has no line for a `NicoIdentity` in the last 10 minutes, the manager is not checking it; see [The result is stale](#the-result-is-stale).
+   Each line names the `NicoIdentity` in `namespace` and `name`, and carries the result in `ready` and `reason`. If the log has no line for a `NicoIdentity` in the last 10 minutes, the manager is usually not checking it; see [The result is stale](#the-result-is-stale), which also covers slow checks during a NICo outage.
 
 2. Show the Secret read errors.
 
