@@ -129,7 +129,8 @@ type KindCluster struct {
 }
 
 // Connect returns a client for the cluster's API. It fails when kind cannot
-// return the cluster's kubeconfig, which includes the cluster not existing.
+// return the cluster's kubeconfig, which includes the cluster not existing, and
+// when the API server does not answer.
 func (c KindCluster) Connect(ctx context.Context) (kubernetes.Interface, error) {
 	run := c.Run
 	if run == nil {
@@ -146,7 +147,16 @@ func (c KindCluster) Connect(ctx context.Context) (kubernetes.Interface, error) 
 	// Bounded, so a cluster that stopped answering fails the read rather than
 	// hanging the run.
 	config.Timeout = 10 * time.Second
-	return kubernetes.NewForConfig(config)
+	kube, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("creating a client for kind cluster %s: %w", c.Name, err)
+	}
+	// kind returns a kubeconfig as soon as the node exists, before the API
+	// server is up, and a cluster is only worth reading once it answers.
+	if _, err := kube.Discovery().ServerVersion(); err != nil {
+		return nil, fmt.Errorf("the API server of kind cluster %s did not answer: %w", c.Name, err)
+	}
+	return kube, nil
 }
 
 func runKind(ctx context.Context, args ...string) ([]byte, error) {

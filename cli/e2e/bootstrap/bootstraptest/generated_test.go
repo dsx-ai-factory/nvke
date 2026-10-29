@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -159,12 +161,14 @@ func TestVerifyControllerOTLPHeaders(t *testing.T) {
 }
 
 func TestKindClusterConnect(t *testing.T) {
-	const kubeconfig = `apiVersion: v1
+	// kubeconfigFor is what kind returns for a cluster whose API server is at url.
+	kubeconfigFor := func(url string) []byte {
+		return []byte(`apiVersion: v1
 kind: Config
 clusters:
 - name: kind-x
   cluster:
-    server: https://127.0.0.1:1
+    server: ` + url + `
 contexts:
 - name: kind-x
   context: {cluster: kind-x, user: kind-x}
@@ -172,17 +176,51 @@ current-context: kind-x
 users:
 - name: kind-x
   user: {token: not-a-real-token}
-`
-	t.Run("a cluster kind can read", func(t *testing.T) {
+`)
+	}
+	apiServer := func(t *testing.T, status int) *httptest.Server {
+		t.Helper()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/version" {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"major":"1","minor":"32","gitVersion":"v1.32.0"}`))
+		}))
+		t.Cleanup(srv.Close)
+		return srv
+	}
+	run := func(kubeconfig []byte) func(context.Context, ...string) ([]byte, error) {
+		return func(context.Context, ...string) ([]byte, error) { return kubeconfig, nil }
+	}
+
+	t.Run("a cluster whose API server answers", func(t *testing.T) {
+		srv := apiServer(t, http.StatusOK)
 		var got []string
 		cluster := KindCluster{Name: "nvkectl-bootstrap", Run: func(_ context.Context, args ...string) ([]byte, error) {
 			got = args
-			return []byte(kubeconfig), nil
+			return kubeconfigFor(srv.URL), nil
 		}}
 		kube, err := cluster.Connect(context.Background())
 		require.NoError(t, err)
 		assert.NotNil(t, kube)
 		assert.Equal(t, []string{"get", "kubeconfig", "--name", "nvkectl-bootstrap"}, got)
+	})
+	t.Run("kind returns a kubeconfig before the API server is up", func(t *testing.T) {
+		srv := apiServer(t, http.StatusOK)
+		url := srv.URL
+		srv.Close() // nothing is listening: the node exists and the API server does not answer yet
+		kube, err := KindCluster{Name: "x", Run: run(kubeconfigFor(url))}.Connect(context.Background())
+		require.Error(t, err, "a kubeconfig alone does not mean the cluster answered")
+		assert.Nil(t, kube)
+		assert.Contains(t, err.Error(), "did not answer")
+	})
+	t.Run("the API server answers with an error", func(t *testing.T) {
+		srv := apiServer(t, http.StatusServiceUnavailable)
+		_, err := KindCluster{Name: "x", Run: run(kubeconfigFor(srv.URL))}.Connect(context.Background())
+		assert.Error(t, err)
 	})
 	t.Run("kind fails", func(t *testing.T) {
 		cluster := KindCluster{Name: "nvkectl-bootstrap", Run: func(context.Context, ...string) ([]byte, error) {
@@ -193,8 +231,7 @@ users:
 		assert.Nil(t, kube)
 	})
 	t.Run("kind returns something that is not a kubeconfig", func(t *testing.T) {
-		cluster := KindCluster{Name: "x", Run: func(context.Context, ...string) ([]byte, error) { return []byte("not yaml: ["), nil }}
-		_, err := cluster.Connect(context.Background())
+		_, err := KindCluster{Name: "x", Run: run([]byte("not yaml: ["))}.Connect(context.Background())
 		assert.Error(t, err)
 	})
 }
