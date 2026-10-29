@@ -6,8 +6,8 @@
 // fields are decoded and every other key is dropped, so an unmodified nvkr release
 // export and a hand-written file with only outputs both satisfy it. Output
 // names are the ones in nvkr's NVKE definition
-// (inputs/definitions/nvke/definition.yaml) plus controller-profiles, nico and
-// nico-prereqs.
+// (inputs/definitions/nvke/definition.yaml) plus controller-profiles, nico,
+// nico-prereqs and local-path-provisioner.
 package artifacts
 
 import (
@@ -28,19 +28,21 @@ type Expectation struct {
 }
 
 // Expected is every output nvkectl reads. nico-prereqs is required when nico
-// is present.
+// is present. local-path-provisioner is required when the target cluster has
+// no default StorageClass.
 var Expected = map[string]Expectation{
-	"cwe":                 {Kind: KindImage, Required: true},
-	"controller-profiles": {Kind: KindImage, Required: true},
-	"capnico-controller":  {Kind: KindImage, Required: true},
-	"controller-chart":    {Kind: KindChart, Required: true},
-	"nktp":                {Kind: KindChart, Required: true},
-	"postgresql":          {Kind: KindChart, Required: true},
-	"spire-crds":          {Kind: KindChart, Required: true},
-	"spire":               {Kind: KindChart, Required: true},
-	"temporal":            {Kind: KindChart, Required: true},
-	"nico":                {Kind: KindChart},
-	"nico-prereqs":        {Kind: KindChart},
+	"cwe":                    {Kind: KindImage, Required: true},
+	"controller-profiles":    {Kind: KindImage, Required: true},
+	"capnico-controller":     {Kind: KindImage, Required: true},
+	"controller-chart":       {Kind: KindChart, Required: true},
+	"nktp":                   {Kind: KindChart, Required: true},
+	"postgresql":             {Kind: KindChart, Required: true},
+	"spire-crds":             {Kind: KindChart, Required: true},
+	"spire":                  {Kind: KindChart, Required: true},
+	"temporal":               {Kind: KindChart, Required: true},
+	"nico":                   {Kind: KindChart},
+	"nico-prereqs":           {Kind: KindChart},
+	"local-path-provisioner": {Kind: KindChart},
 }
 
 type Release struct {

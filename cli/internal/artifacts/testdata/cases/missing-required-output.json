@@ -14,7 +14,7 @@
       "installationCompatibility": "not-checked"
     }
   },
-  "totalOutputs": 10,
+  "totalOutputs": 11,
   "reference": "registry.example.invalid/nvke/releases@sha256:9999999999999999999999999999999999999999999999999999999999999999",
   "referenceScope": "derived from supplied root reference; no registry availability claim",
   "rootDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
@@ -184,6 +184,16 @@
       "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "reference": "registry.example.invalid/nvke/charts/temporal@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "chartVersion": "0.74.0",
+      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+      "buildSubjects": []
+    },
+    {
+      "name": "local-path-provisioner",
+      "kind": "helm-oci",
+      "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "reference": "registry.example.invalid/nvke/charts/local-path-provisioner@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "chartVersion": "0.0.31",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
@@ -401,6 +411,25 @@
         "stage": "packaging",
         "subjectKind": "helm-bundle",
         "subjectDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    },
+    {
+      "name": "sbom-local-path-provisioner",
+      "kind": "sbom",
+      "reference": "registry.example.invalid/nvke/local-path-provisioner@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "artifactType": "application/vnd.cyclonedx+json",
+      "manifestDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "blobDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "semanticDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "binding": {
+        "documentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "outputs": [
+          "local-path-provisioner"
+        ],
+        "component": "local-path-provisioner",
+        "stage": "packaging",
+        "subjectKind": "helm-bundle",
+        "subjectDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
       }
     }
   ]

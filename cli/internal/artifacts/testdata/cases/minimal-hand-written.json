@@ -84,6 +84,12 @@
       "kind": "helm-oci",
       "reference": "registry.example.invalid/nvke/charts/temporal@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "chartVersion": "0.74.0"
+    },
+    {
+      "name": "local-path-provisioner",
+      "kind": "helm-oci",
+      "reference": "registry.example.invalid/nvke/charts/local-path-provisioner@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "chartVersion": "0.0.31"
     }
   ]
 }
