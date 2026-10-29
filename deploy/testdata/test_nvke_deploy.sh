@@ -451,6 +451,24 @@ out="$(bash "${EXECUTOR}" install --deploy-path "${WORK}/broken-release" --confi
 expect "malformed release.yaml is named" "item postgresql: cannot parse ${WORK}/broken-release/postgresql/release.yaml" "${out}"
 reject "no helm call for the item with the malformed release.yaml" 'helm upgrade --install postgres ' "${out}"
 
+# nvke-deploy.yaml items are inline or block YAML; both parse the same.
+ITEMS_PY="${DEPLOY_DIR}/lib/nvke-deploy-items.py"
+printf 'items:\n  - {name: nvke-base-config, type: template}\n  # a comment\n  - {name: cert-manager.crds, type: manifest}\n  - {name: postgresql, type: helm}\n' >"${WORK}/items-inline.yaml"
+printf 'items:\n  - name: nvke-base-config\n    type: template\n  # a comment\n  - name: cert-manager.crds\n    type: manifest\n  - name: postgresql\n    type: helm\n' >"${WORK}/items-block.yaml"
+printf 'items:\n  - name: nvke-base-config\n    type: template\n  - {name: cert-manager.crds, type: manifest}\n  - name: postgresql\n    type: helm\n' >"${WORK}/items-mixed.yaml"
+inline_out="$(python3 "${ITEMS_PY}" items "${WORK}/items-inline.yaml" 2>&1)" || fail "inline items exited non-zero: ${inline_out}"
+block_out="$(python3 "${ITEMS_PY}" items "${WORK}/items-block.yaml" 2>&1)" || fail "block items exited non-zero: ${block_out}"
+mixed_out="$(python3 "${ITEMS_PY}" items "${WORK}/items-mixed.yaml" 2>&1)" || fail "mixed items exited non-zero: ${mixed_out}"
+expect "inline items parse to name and type" $'^postgresql\thelm$' "${inline_out}"
+[[ -n "${block_out}" && "${block_out}" == "${inline_out}" ]] && pass "block items parse as the inline ones do" || fail "block items differ from inline: ${block_out}"
+[[ -n "${mixed_out}" && "${mixed_out}" == "${inline_out}" ]] && pass "mixed items parse as the inline ones do" || fail "mixed items differ from inline: ${mixed_out}"
+printf 'items:\n  - name: nvke-base-config\n  - name: postgresql\n    type: helm\n' >"${WORK}/items-notype.yaml"
+out="$(python3 "${ITEMS_PY}" items "${WORK}/items-notype.yaml" 2>&1)" && fail "a block item without a type exited 0"
+expect "a block item without a type is named" 'items-notype.yaml:2: item nvke-base-config has no type' "${out}"
+printf 'items:\n  - name: x\n    type: bogus\n' >"${WORK}/items-bogus.yaml"
+out="$(python3 "${ITEMS_PY}" items "${WORK}/items-bogus.yaml" 2>&1)" && fail "a block item of an unknown type exited 0"
+expect "a block item of an unknown type is refused" 'items-bogus.yaml:3: unrecognised:.*type: bogus' "${out}"
+
 # Errors name their cause.
 out="$(bash "${EXECUTOR}" install --config "${CONFIG}" --dry-run 2>&1)" && fail "no --deploy-path exited 0"
 expect "missing --deploy-path is named" 'deploy-path is required' "${out}"
