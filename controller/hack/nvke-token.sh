@@ -257,7 +257,7 @@ if [[ "${api_auth_enabled}" == "true" ]]; then
   discovered_audience="$(api_auth_audience "${controller_config}")"
 else
   audience_source="configmap ${NVKE_CONTROLLER_NAMESPACE}/${NVKE_AUTH_CONFIGMAP}"
-  discovered_audience="$(cwe_discover_audience)"
+  discovered_audience="$(cwe_discover_audience)" || discovered_audience=""
 fi
 
 # --audience lets other scripts reuse this discovery rather than growing a copy.
