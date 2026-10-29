@@ -1025,14 +1025,30 @@ jobs:
           # filename directly: -e2e.environment names a file, not a backend,
           # and collapsing the two would rule out a second environment for
           # one provider -- a staging Forge beside the production one.
+          #
+          # tenant_exclude is the other half of the same mapping. At
+          # -e2e.site-stage full the site lane registers one tenant entry per
+          # dialect and selects them all with one label filter, so an entry
+          # built for another provider reaches this run and fails: each site
+          # declaration decodes strictly, and a DSX environment is "unknown
+          # field api" to Forge's decoder (the reverse holds too). Naming what
+          # to leave out keeps the site-level specs, which carry
+          # site-controller and no nico-* label and would be dropped by a
+          # filter that required one.
+          #
+          # A provider added here needs a tenant_exclude on every other arm as
+          # well as its own. That is the cost of excluding by name; the arms
+          # are at least all in this one block, and an unknown provider
+          # already fails below rather than running the wrong tenant.
           case "${PROVIDER}" in
-            forge) environment=forge ;;
-            dsx)   environment=dsx ;;
+            forge) environment=forge; tenant_exclude=nico-dsx ;;
+            dsx)   environment=dsx;   tenant_exclude=nico-forge ;;
             "")    echo "::error::the stream names no provider capability"; exit 1 ;;
             *)     echo "::error::provider is ${PROVIDER}, which this workflow has no environment for"; exit 1 ;;
           esac
           echo "SITE_ENVIRONMENT=${environment}" >> "${GITHUB_ENV}"
-          echo "environment: ${environment}"
+          echo "SITE_TENANT_EXCLUDE=${tenant_exclude}" >> "${GITHUB_ENV}"
+          echo "environment: ${environment}, tenant entries excluded: ${tenant_exclude}"
 
           # Joined here rather than taken as a string, so each key is set and
           # validated on its own. Empty keys are left out: the suite reads an
@@ -1732,6 +1748,7 @@ jobs:
           if [ "${DRY_RUN}" = "true" ]; then
             {
               echo "dry run: ginkgo is not run. It would have run with:"
+              echo "  -ginkgo.label-filter=site-controller && !${SITE_TENANT_EXCLUDE}"
               echo "  -e2e.site-stage=${SITE_STAGE}"
               echo "  -e2e.versions=controller=${SITE_NVKE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}"
               echo "  -e2e.capabilities=${CAPABILITIES}"
@@ -1739,7 +1756,7 @@ jobs:
             } | tee qualify-e2e.log
           else
             go test -v -timeout 220m . -args \
-              -ginkgo.label-filter=site-controller \
+              -ginkgo.label-filter="site-controller && !${SITE_TENANT_EXCLUDE}" \
               -ginkgo.timeout=150m \
               -ginkgo.v \
               -ginkgo.fail-on-empty \
