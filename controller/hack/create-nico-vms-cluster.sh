@@ -21,7 +21,9 @@
 #     provisioning is enabled, which is the default.
 #   - The worker pool is always included; set WORKER_DESIRED_COUNT=0 to create a
 #     control-plane-only cluster.
-#   - CNI defaults to ovn-kubernetes. Set CNI_PLUGIN=calico to use Calico instead.
+#   - CNI defaults to ovn-kubernetes. Set CNI_PLUGIN=calico to use Calico instead
+#     (Linux only: on macOS the script needs a custom POD_CIDR, which the controller
+#     accepts only with ovn-kubernetes, so calico fails fast there).
 #     CNI_VERSION is optional; when empty the controller API applies the plugin default
 #     (2.4.2 for OVN, 3.30.1 for Calico).
 
@@ -76,6 +78,12 @@ else
 fi
 CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}"
 CNI_VERSION="${CNI_VERSION:-}"
+# The controller accepts a custom podCIDR only with OVN-Kubernetes, and macOS
+# needs one, so Calico cannot be created there.
+if [[ "$(uname -s)" == Darwin && "${CNI_PLUGIN}" == calico ]]; then
+  echo "CNI_PLUGIN=calico is not supported on macOS: the vmnet node network overlaps Calico's default pod CIDR and the controller only accepts a custom pod CIDR with ovn-kubernetes. Use CNI_PLUGIN=ovn-kubernetes." >&2
+  exit 1
+fi
 
 case "$(uname -m)" in
   x86_64) PROFILE_ARCH=amd64 ;;
