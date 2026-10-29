@@ -804,6 +804,23 @@ control-plane VIP, and encryption (check 20) where it records encryption at
 rest. Each set stops at its first failure, so
 a broken site does not wait out every later check.
 
+`-e2e.tenant-gpu-runtime`, off by default, gives the tenant a GPU runtime so
+checks 36 and 37 run there too. Before the tenant checks, two specs labeled
+`gpu` and `gpu-runtime` install the runtime with [AICR](https://github.com/NVIDIA/aicr)
+and then run AICR's deployment checks against it. The checks' results go in the
+spec's report entry. The tenant checks then expect every worker to advertise
+`nvidia.com/gpu`. The recipe is AICR's generic Ubuntu training recipe for the
+run's `gpu` capability; [`aicr/`](aicr/) holds the overlay AICR's own catalog
+has no leaf for, passed with `--data`. The install needs `aicr`, `helm` and
+`kubectl` on `PATH`, and reaches the tenant as its admin through the lane's
+relay. `aicr` is pinned in `make/tool-versions.mk`. A run with no `gpu`, a
+`gpu` that has no recipe (only `gb200` has one), or an `ubuntu` capability other
+than `24.04` gets one skipped spec saying which, and the GPU checks stay off.
+Neither spec runs once an earlier check on the tenant failed. In the
+`qualify-e2e` workflow the switch is the `tenant-gpu-runtime` dispatch input or
+the `QUALIFY_E2E_TENANT_GPU_RUNTIME` repository variable. Either one installs the
+three tools and adds 65 minutes to each clock.
+
 Both lanes create the same `nico-forge` tenant and both entries carry that
 label, so pick between them with `site-controller`, which only the lane that
 builds a site carries. Measured against this tree with `-ginkgo.dry-run` and
@@ -814,6 +831,9 @@ builds a site carries. Measured against this tree with `-ginkgo.dry-run` and
 | `nico-forge && !site-controller` | 42 | the tenant, against the site controller in the kube context |
 | `site-controller` | 80 | the lane that builds a site, tenant included |
 | `nico-forge` | 84 | both |
+
+`-e2e.tenant-gpu-runtime` adds one spec to each lane's tenant, or two with
+`-e2e.capabilities=gpu=gb200,ubuntu=24.04`.
 
 `-e2e.site-stage`, not the label, is what decides whether a machine is
 provisioned: the site lane's tenant entries are built only when it is set, so
