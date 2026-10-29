@@ -633,7 +633,17 @@ jobs:
       # names it, because nvkectl is published as one artifact per platform and
       # the cli version below names none of them.
       CLI_REF: ${{ matrix.cli_ref }}
-      SITE_NVKE_CONTROLLER_VERSION: ${{ matrix.controller }}
+      # The plan's controller, unless a stream's environment names another.
+      # QUALIFY_E2E_CONTROLLER_VERSION cannot do this: it feeds the plan, which
+      # runs under ci-shared, so it is repository-wide and lands on every
+      # concurrent run. This one is read here, where the environment the stream
+      # selected is attached, so a value set on dsx is invisible to forge.
+      #
+      # It overrides what is INSTALLED, not what the plan RECORDS, so a run
+      # using it reports the plan's controller while the node runs another.
+      # That is a deliberate hole for bringing up a lane against an unreleased
+      # controller; a qualification anyone relies on sets nothing here.
+      SITE_NVKE_CONTROLLER_VERSION: ${{ vars.QUALIFY_E2E_SITE_CONTROLLER_VERSION || matrix.controller }}
       # How the controller's version was resolved, and the commit a described
       # one was taken at. Together they say what the deploy path is exported
       # from, which is a tag for one and a commit for the other.
