@@ -29,9 +29,9 @@
 # runs on success and on failure, so a change that starts printing a secret turns
 # the run red. CI sets NVKECTL_E2E_REQUIRE_SECRET_SCAN=1, which makes a missing
 # gitleaks a failure; a developer running this locally without it only sees a
-# warning. `bootstrap site` runs with a fake OTLP header token, and the scan also
-# fails the run if that token, or the Postgres password or etcd key it reads back
-# from the cluster, appears in the same output.
+# warning. TestE2E_BootstrapSite also gives `bootstrap site` a fake OTLP header
+# token, and the exit trap fails the run if that token, or the Postgres password
+# or etcd key, appears in the same output: see bootstraptest.SecretScan.
 #
 # Everything created is registered for teardown as it is created, and the EXIT
 # trap runs those registrations in reverse, whatever the exit. A failing exit
@@ -100,17 +100,9 @@ BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap.log"
 # own output is not in here: it goes to BOOTSTRAP_LOG, so there is one copy of
 # it and the credential scan covers that copy.
 BOOTSTRAP_GO_TEST_LOG="${SCRIPT_DIR}/.bootstrap-go-test.log"
-# The OTLP settings `bootstrap site` runs with, for the credential scan. The
-# values are random, so none sits in this repository.
-OTLP_TOKEN="e2e$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-OTLP_TENANT="e2e$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-OTLP_ENDPOINT="http://192.0.2.1:4317"
-OTLP_HEADERS="authorization=Bearer ${OTLP_TOKEN},x-tenant=${OTLP_TENANT}"
-# The values the scan searches for as exact strings. The lane adds the ones it can
-# only read from the cluster once bootstrap has finished.
-KNOWN_SECRETS=("${OTLP_TOKEN}" "x-tenant=${OTLP_TENANT}")
-PG_PASSWORD_KNOWN=false
-ETCD_KEY_KNOWN=false
+# Where TestE2E_BootstrapSite saves the secret values it knows, for the search at
+# exit. A run that never started the test leaves no file.
+KNOWN_SECRETS_FILE="${SCRIPT_DIR}/.bootstrap-known-secrets.json"
 GO="${GO:-go}"
 # The lane runs `bootstrap site` through the Go tests in bootstraptest. Those
 # tests carry two marks: the e2e_bootstrap build tag, which keeps them out of
@@ -194,8 +186,7 @@ fi
 # scan_output_for_secrets scans the bootstrap log, the Go test log and the
 # diagnostics bundle for credentials, and returns 1 if it finds one or cannot
 # tell. It prints the scanner's findings with the secret redacted and never the
-# secret itself: this output goes to a public CI log. It also searches them for
-# the secret values the lane knows, which gitleaks has no rule for.
+# secret itself: this output goes to a public CI log.
 #
 # It first proves the rules work, because a clean result from a scanner that
 # matches nothing means nothing. Each shape the rules target must be flagged when
@@ -217,16 +208,14 @@ scan_output_for_secrets() {
       return 1
     fi
     log "gitleaks is not on PATH: skipping the scan of the bootstrap output for credentials (CI requires it)"
-    # The search for known secret values needs no scanner.
-    scan_for_known_secrets "${BOOTSTRAP_LOG}" "${BOOTSTRAP_GO_TEST_LOG}" "${DIAGNOSTICS_DIR}"
-    return
+    return 0
   fi
   if [ ! -f "${BOOTSTRAP_LOG}" ]; then
     log "no bootstrap output to scan: bootstrap site was never started"
     return 0
   fi
 
-  local work rc name shape fingerprint join_token leaked plog trace_hex span_hex i found
+  local work rc name shape fingerprint join_token leaked plog trace_hex span_hex found
   work="$(mktemp -d)"
 
   # The rules, proved on a sample of each shape: flagged with a value, clean with
@@ -328,7 +317,7 @@ scan_output_for_secrets() {
   # in the log, in a file of the diagnostics bundle, and in a pod log inside it
   # (the controller's, in the real bundle) must each fail it, and the same
   # files without it must pass.
-  local planted clean_log diag where glog
+  local planted clean_log diag where
   planted="$(sed 's/PLACEHOLDER/aaaa-bbbb-cccc/' <<<'helm upgrade --install demo chart --set-string auth.password=PLACEHOLDER')"
   clean_log="${work}/clean.log"
   printf 'msg="nothing to see" trace_id=%032x\n' 1 >"${clean_log}"
@@ -359,44 +348,6 @@ scan_output_for_secrets() {
     fi
   done
 
-  # The search for known secret values, driven the same way. Each plant must fail
-  # the scan with the search's own message, so a gitleaks finding cannot hide a
-  # search that finds nothing.
-  local gotest_log="${work}/go-test.log"
-  printf 'msg="nothing to see"\n' >"${gotest_log}"
-  for where in log go-test-log diagnostics-file pod-log encoded-token tenant-pair; do
-    reset_diag
-    plog="${clean_log}"
-    glog="${gotest_log}"
-    case "${where}" in
-      log) printf 'msg=x value=%s\n' "${OTLP_TOKEN}" >"${work}/planted.log"; plog="${work}/planted.log" ;;
-      go-test-log) printf 'msg=x value=%s\n' "${OTLP_TOKEN}" >"${work}/planted-go-test.log"; glog="${work}/planted-go-test.log" ;;
-      diagnostics-file) printf 'msg=x value=%s\n' "${OTLP_TOKEN}" >"${diag}/all-resources.txt" ;;
-      pod-log) printf 'msg=x value=%s\n' "${OTLP_TOKEN}" >"${diag}/nvke/controller/logs.txt" ;;
-      encoded-token) printf 'OTEL_EXPORTER_OTLP_HEADERS: authorization=Bearer%%20%s\n' "${OTLP_TOKEN}" >"${diag}/all-resources.txt" ;;
-      tenant-pair) printf 'OTEL_EXPORTER_OTLP_HEADERS: x-tenant=%s\n' "${OTLP_TENANT}" >"${diag}/all-resources.txt" ;;
-    esac
-    rc=0
-    found="$(scan_run_output "${plog}" "${diag}" "${glog}" 2>&1)" || rc=$?
-    if [ "${rc}" -eq 0 ] || ! grep -q "known secret value" <<<"${found}"; then
-      log "FAIL: the search for known secret values missed one planted in the ${where}, so a clean result proves nothing"
-      rm -rf "${work}"
-      return 1
-    fi
-  done
-  # Each value read from the cluster after bootstrap, planted alone.
-  for ((i = 2; i < ${#KNOWN_SECRETS[@]}; i++)); do
-    reset_diag
-    printf 'msg=x value=%s\n' "${KNOWN_SECRETS[i]}" >"${diag}/all-resources.txt"
-    rc=0
-    found="$(scan_run_output "${clean_log}" "${diag}" "${gotest_log}" 2>&1)" || rc=$?
-    if [ "${rc}" -eq 0 ] || ! grep -q "known secret value" <<<"${found}"; then
-      log "FAIL: the search for known secret values missed one read from the cluster (number $((i + 1))), so a clean result proves nothing"
-      rm -rf "${work}"
-      return 1
-    fi
-  done
-
   rc=0
   scan_run_output "${BOOTSTRAP_LOG}" "${DIAGNOSTICS_DIR}" "${BOOTSTRAP_GO_TEST_LOG}" || rc=$?
   rm -rf "${work}"
@@ -404,10 +355,10 @@ scan_output_for_secrets() {
 }
 
 # scan_run_output scans a bootstrap log, a diagnostics directory (which may not
-# exist) and optionally the Go test log with gitleaks, and searches them for the
-# secret values the lane knows. It returns 1 on a finding or a scanner failure.
+# exist) and optionally the Go test log with gitleaks. It returns 1 on a finding
+# or a scanner failure.
 scan_run_output() {
-  local log_file="$1" diag_dir="$2" go_test_log="${3:-}" out rc values_rc=0
+  local log_file="$1" diag_dir="$2" go_test_log="${3:-}" out rc
   out="$(mktemp -d)"
   mkdir -p "${out}/output"
   if [ -f "${log_file}" ]; then
@@ -432,154 +383,28 @@ scan_run_output() {
       return 1
     }
   fi
-  scan_for_known_secrets "${out}/output" || values_rc=1
   rc=0
   # --verbose names each finding: rule, file and line, with the secret redacted.
   gitleaks_scan "${out}/output" --verbose || rc=$?
   rm -rf "${out}"
   case "${rc}" in
-    0)
-      [ "${values_rc}" -eq 0 ] || return 1
-      log "PASS: no credential or known secret value in the bootstrap output or its diagnostics"
-      ;;
+    0) log "PASS: no credential in the bootstrap output or its diagnostics" ;;
     2) log "FAIL: gitleaks found a credential in the bootstrap output; the findings above are redacted" ; return 1 ;;
     *) log "FAIL: gitleaks could not scan the bootstrap output (exit ${rc})" ; return 1 ;;
   esac
 }
 
-# add_known_secret adds its argument to KNOWN_SECRETS unless it is already there.
-add_known_secret() {
-  local known
-  for known in "${KNOWN_SECRETS[@]}"; do
-    if [ "${known}" = "$1" ]; then
-      return 0
-    fi
-  done
-  KNOWN_SECRETS+=("$1")
-}
-
-# learn_generated_secrets adds the secrets bootstrap generates to KNOWN_SECRETS: the
-# Postgres password, read from the bootstrap cluster, and the etcd key, read from
-# the saved key file (base64, and decoded). A value already read is kept, so it
-# still succeeds after the lane deletes the cluster. It never prints a value.
-#
-# It returns 1 if a secret is not there yet, as when bootstrap failed before it
-# made one, and 2 if it is there but could not be read, so the search is missing a
-# value.
-learn_generated_secrets() {
-  local kubeconfig kubectl_err clusters pg_b64 pg_password="" pg_unreadable=false
-  local etcd_key="" etcd_key_text="" rc=0
-  if [ "${PG_PASSWORD_KNOWN}" != true ]; then
-    kubeconfig="$(mktemp)"
-    kubectl_err="$(mktemp)"
-    if KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name "${BOOTSTRAP_KIND_CLUSTER}" >"${kubeconfig}" 2>/dev/null; then
-      if pg_b64="$(kubectl --kubeconfig "${kubeconfig}" --request-timeout=10s -n postgres get secret postgres-postgresql \
-        -o 'jsonpath={.data.password}' 2>"${kubectl_err}")"; then
-        pg_password="$(printf '%s' "${pg_b64}" | base64 -d 2>/dev/null)" || pg_password=""
-        pg_unreadable=true
-      elif ! grep -q 'NotFound' "${kubectl_err}"; then
-        pg_unreadable=true
-      fi
-    else
-      # No kubeconfig for a cluster that exists is a read that failed. Captured,
-      # not piped: grep -q would end the pipe early and pipefail report it.
-      clusters="$(KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get clusters 2>/dev/null)" || clusters=""
-      if grep -qx "${BOOTSTRAP_KIND_CLUSTER}" <<<"${clusters}"; then
-        pg_unreadable=true
-      fi
-    fi
-    rm -f "${kubeconfig}" "${kubectl_err}"
-    if [ -n "${pg_password}" ]; then
-      add_known_secret "${pg_password}"
-      PG_PASSWORD_KNOWN=true
-    elif [ "${pg_unreadable}" = true ]; then
-      log "the generated Postgres password could not be read from the bootstrap cluster"
-      rc=2
-    else
-      log "the generated Postgres password is not in the bootstrap cluster"
-      [ "${rc}" -eq 2 ] || rc=1
-    fi
-  fi
-  if [ "${ETCD_KEY_KNOWN}" != true ]; then
-    if [ -f "${ETCD_KEY_FILE}" ]; then
-      etcd_key="$(sed -n 's/^ *"active": *"\([^"]*\)".*/\1/p' "${ETCD_KEY_FILE}")"
-    fi
-    if [ -n "${etcd_key}" ]; then
-      add_known_secret "${etcd_key}"
-      etcd_key_text="$(printf '%s' "${etcd_key}" | base64 -d 2>/dev/null | tr -d '\0')" || etcd_key_text=""
-      if printf '%s' "${etcd_key_text}" | LC_ALL=C grep -qE '^[[:print:]]{16,}$'; then
-        add_known_secret "${etcd_key_text}"
-      fi
-      ETCD_KEY_KNOWN=true
-    elif [ -f "${ETCD_KEY_FILE}" ]; then
-      log "the etcd key could not be read from ${ETCD_KEY_FILE}"
-      rc=2
-    else
-      log "the etcd key file ${ETCD_KEY_FILE} does not exist"
-      [ "${rc}" -eq 2 ] || rc=1
-    fi
-  fi
-  return "${rc}"
-}
-
-# scan_for_known_secrets returns 1 if a file or directory it is given holds one of
-# the values in KNOWN_SECRETS. A path that does not exist is skipped. It prints
-# the names of the files that hold a value, never the value: this output goes to a
-# public CI log.
-#
-# The OTLP token is searched alone, so its encoded form in the cluster,
-# authorization=Bearer%20<token>, is found too. nvkectl masks the tenant header
-# only as the pair x-tenant=<value>, so that pair is searched.
-scan_for_known_secrets() {
-  local needles path secret hits rc=0
-  local paths=()
-  for path in "$@"; do
-    if [ -e "${path}" ]; then
-      paths+=("${path}")
-    fi
-  done
-  [ "${#paths[@]}" -gt 0 ] || return 0
-  needles="$(mktemp)"
-  for secret in "${KNOWN_SECRETS[@]}"; do
-    # An empty line would match every line.
-    if [ -n "${secret}" ]; then
-      printf '%s\n' "${secret}" >>"${needles}"
-    fi
-  done
-  hits="$(grep -rlF -f "${needles}" -- "${paths[@]}")" || rc=$?
-  rm -f "${needles}"
-  case "${rc}" in
-    0)
-      log "FAIL: a known secret value is in:"
-      printf '%s\n' "${hits}" | while IFS= read -r path; do log "  ${path}"; done
-      return 1
-      ;;
-    1) return 0 ;;
-    *)
-      log "FAIL: could not search for the known secret values (grep exit ${rc})"
-      return 1
-      ;;
-  esac
-}
-
-# print_run_logs prints the bootstrap log and the Go test log it is given, unless a
-# scan of both finds a credential or a known secret value in them, or cannot read
-# a generated secret to search for. The CI log is public and the scan at exit
-# comes too late, so it prints a notice instead; the scan at exit still fails the
-# run.
+# print_run_logs prints the bootstrap log and the Go test log it is given, unless
+# gitleaks finds a credential in them or cannot run. Their output goes to the CI
+# log, which is public, and the scan at exit comes too late for that. It prints a
+# notice instead, and the scan at exit fails the run. TestE2E_BootstrapSite has
+# already replaced a bootstrap log that holds a known secret value.
 print_run_logs() {
-  local file scan_rc=0 learn_rc=0
-  # The generated secrets exist once the bootstrap cluster does. Withhold the logs
-  # only for one that exists and cannot be read.
-  learn_generated_secrets >/dev/null 2>&1 || learn_rc=$?
-  if [ "${learn_rc}" -eq 2 ]; then
-    scan_rc=1
-  elif command -v gitleaks >/dev/null 2>&1; then
+  local file scan_rc=0
+  if command -v gitleaks >/dev/null 2>&1; then
     scan_run_output "${BOOTSTRAP_LOG}" "" "${BOOTSTRAP_GO_TEST_LOG}" >/dev/null 2>&1 || scan_rc=$?
   elif [ "${NVKECTL_E2E_REQUIRE_SECRET_SCAN:-}" = 1 ]; then
     scan_rc=1
-  else
-    scan_for_known_secrets "${BOOTSTRAP_LOG}" "${BOOTSTRAP_GO_TEST_LOG}" >/dev/null 2>&1 || scan_rc=$?
   fi
   if [ "${scan_rc}" -ne 0 ]; then
     log "the bootstrap output holds a credential or could not be scanned, so it is not printed to the CI log"
@@ -588,6 +413,33 @@ print_run_logs() {
   for file in "$@"; do
     cat "${file}" || true
   done
+}
+
+# scan_known_secrets searches the bootstrap log, the Go test log and the
+# diagnostics for the secret values TestE2E_BootstrapSite saved, with the test
+# that does it. It prints file names, never a value. A run that failed before
+# that test started saved none and has nothing to search for; a run that passed
+# must have.
+scan_known_secrets() {
+  local run_status="$1" out rc=0
+  if [ ! -f "${KNOWN_SECRETS_FILE}" ]; then
+    [ "${run_status}" -ne 0 ] && return 0
+    log "FAIL: the bootstrap test saved no secret values, so the search for them proves nothing"
+    return 1
+  fi
+  out="$(env \
+    NVKECTL_E2E_KNOWN_SECRETS_FILE="${KNOWN_SECRETS_FILE}" \
+    NVKECTL_E2E_BOOTSTRAP_LOG="${BOOTSTRAP_LOG}" \
+    NVKECTL_E2E_GO_TEST_LOG="${BOOTSTRAP_GO_TEST_LOG}" \
+    NVKECTL_E2E_DIAGNOSTICS_DIR="${DIAGNOSTICS_DIR}" \
+    "${GO}" test -C "${CLI_DIR}" -tags e2e_bootstrap -count=1 \
+    -run '^TestScanBootstrapOutputs$' ./e2e/bootstrap/bootstraptest/ 2>&1)" || rc=$?
+  if [ "${rc}" -ne 0 ]; then
+    log "FAIL: a known secret value is in the bootstrap output, or it could not be searched"
+    printf '%s\n' "${out}"
+    return 1
+  fi
+  log "PASS: no known secret value in the bootstrap output or its diagnostics"
 }
 
 # defer registers a command for the EXIT trap, which runs registrations in
@@ -606,16 +458,8 @@ cleanup() {
   # Before anything is removed: the log and the diagnostics are what is scanned.
   # A leak turns a passing run red; a run that already failed stays failed.
   local scan_failed=0
-  # Read here, so a run that fails after generating them is searched for them too.
-  # A passing run must have them. A failed run fails only for a secret that exists
-  # and cannot be read: one it never made has nothing to search for.
-  local learn_rc=0
-  learn_generated_secrets || learn_rc=$?
-  if [ "${learn_rc}" -eq 2 ] || { [ "${learn_rc}" -ne 0 ] && [ "${status}" -eq 0 ]; }; then
-    log "FAIL: the generated secrets could not be read, so the search for them proves nothing"
-    scan_failed=1
-  fi
   scan_output_for_secrets || scan_failed=1
+  scan_known_secrets "${status}" || scan_failed=1
   # CI uploads this directory when the job fails, and a failed scan is a failed
   # job. The bundle is redacted in the scan's output but not on disk, so it is
   # removed rather than published with the credential the scan reported. A
@@ -637,7 +481,7 @@ cleanup() {
     chown -R "${SUDO_UID}:${SUDO_GID:-${SUDO_UID}}" "${DIAGNOSTICS_DIR}" || true
   fi
 
-  rm -f "${TENANT_KUBECONFIG}" "${ETCD_KEY_FILE}" "${BOOTSTRAP_LOG}"
+  rm -f "${TENANT_KUBECONFIG}" "${ETCD_KEY_FILE}" "${BOOTSTRAP_LOG}" "${KNOWN_SECRETS_FILE}"
   rm -rf "${KUBECONFIG_DIR}" "${CNI_BUNDLE_DIR}" "${BGP_RENDER_DIR}"
   if [ "${scan_failed}" -ne 0 ] && [ "${status}" -eq 0 ]; then
     exit 1
@@ -938,7 +782,7 @@ fi
 # public hardened charts, needing no registry credential of their own.
 # The command never overwrites a key file and refuses to start over one, so a
 # leftover from an interrupted run has to go first.
-rm -f "${ETCD_KEY_FILE}"
+rm -f "${ETCD_KEY_FILE}" "${KNOWN_SECRETS_FILE}"
 
 log "running: nvkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 15m" \
   "via the e2e_bootstrap TestE2E_ tests" \
@@ -991,8 +835,10 @@ setsid env \
   NVKECTL_E2E_BOOTSTRAP_TIMEOUT=15m \
   NVKECTL_E2E_KEEP_BOOTSTRAP_CLUSTER=1 \
   NVKECTL_E2E_VERBOSE=1 \
-  OTEL_EXPORTER_OTLP_ENDPOINT="${OTLP_ENDPOINT}" \
-  OTEL_EXPORTER_OTLP_HEADERS="${OTLP_HEADERS}" \
+  NVKECTL_E2E_DIAGNOSTICS_DIR="${DIAGNOSTICS_DIR}" \
+  NVKECTL_E2E_KNOWN_SECRETS_FILE="${KNOWN_SECRETS_FILE}" \
+  NVKECTL_E2E_BOOTSTRAP_CLUSTER="${BOOTSTRAP_KIND_CLUSTER}" \
+  NVKECTL_E2E_CONTROLLER_NAME="${CONTROLLER_NAME}" \
   "${GO}" test -C "${CLI_DIR}" -tags e2e_bootstrap -timeout 0 -count=1 -v \
   ./e2e/bootstrap/bootstraptest/ -run '^TestE2E_' \
   >"${BOOTSTRAP_GO_TEST_LOG}" 2>&1 &
@@ -1186,17 +1032,6 @@ sa="$(bk -n "${CONTROLLER_NAME}" get deployment "${CONTROLLER_NAME}" \
 endpoints="$(bk -n "${CONTROLLER_NAME}" get endpoints "${CONTROLLER_NAME}-external" \
   -o 'jsonpath={.subsets[*].addresses[*].ip}')"
 [ -n "${endpoints}" ] || fail "Service ${CONTROLLER_NAME}-external has no endpoints"
-# The headers the lane gave nvkectl reached the controller. Without this the
-# scan could pass only because the token never left nvkectl. The value is
-# compared and not printed.
-otlp_env="$(bk -n "${CONTROLLER_NAME}" get deployment "${CONTROLLER_NAME}" \
-  -o 'jsonpath={.spec.template.spec.containers[*].env[?(@.name=="OTEL_EXPORTER_OTLP_HEADERS")].value}')"
-[ "${otlp_env}" = "authorization=Bearer%20${OTLP_TOKEN},x-tenant=${OTLP_TENANT}" ] ||
-  fail "the controller's OTEL_EXPORTER_OTLP_HEADERS is not the headers the lane gave bootstrap site," \
-    "so the scan for them proves nothing about the controller's output"
-# Read now: the lane deletes the bootstrap cluster before the scan at exit.
-learn_generated_secrets ||
-  fail "the generated secrets could not be read, so the search for them proves nothing"
 spiffe_id="spiffe://${SPIRE_TRUST_DOMAIN}/nvke-service/${CONTROLLER_NAME}"
 bk -n spire-server exec spire-server-0 -c spire-server -- \
   /opt/spire/bin/spire-server entry show -spiffeID "${spiffe_id}" | grep -q "Entry ID" ||

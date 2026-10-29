@@ -6,7 +6,9 @@
 //
 // It owns starting and supervising the command, and the assertions moved here
 // from the lanes so far: VerifySiteStack checks the NVKE stack on the site
-// cluster. It adds no lane: cli/e2e/bootstrap/run.sh and run-nico.sh remain the
+// cluster, and SecretScan checks that the OTLP header credential and the
+// secrets bootstrap generates stay out of its output. It adds no lane:
+// cli/e2e/bootstrap/run.sh and run-nico.sh remain the
 // two lanes, they still build the fixtures, bridge the networks and make the
 // rest of the assertions about what the run produced, by watching the log file
 // and grepping it afterwards. New assertions belong here rather than in the
