@@ -14,9 +14,29 @@ func TestDSXRecipeValidation(t *testing.T) {
 	pendingUbuntuVersions(t, "run RelEng's section 10 acceptance criteria on the shared DSX pool and record the qualification results")
 }
 
-// TestDSXHardwareSmoke reserves candidate-image boot and hardware checks.
+// TestDSXHardwareSmoke checks candidate images on explicitly supplied nodes.
 func TestDSXHardwareSmoke(t *testing.T) {
-	pendingUbuntuVersions(t, "provision the candidate image through NICo and verify image identity, boot, cloud-init networking, and applicable hardware drivers")
+	configPath := os.Getenv("DSX_SMOKE_CONFIG")
+	if configPath == "" {
+		pendingUbuntuVersions(t, "set DSX_SMOKE_CONFIG to check provisioned nodes; unattended NICo provisioning is not implemented")
+		return
+	}
+	cfg, err := loadSmokeConfig(configPath, os.Getenv("DSX_MACHINE_TYPE_ID"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range cfg.Targets {
+		t.Run("ubuntu-"+target.Expected.Ubuntu, func(t *testing.T) {
+			facts, err := probeSSH(t.Context(), target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := checkSmoke(target, facts); err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("Host checks passed for build %s; allocation and image artifact verification are outside this test", target.Expected.BuildID)
+		})
+	}
 }
 
 // TestDSXFDEEndToEnd reserves the real-TPM FDE provisioning and cluster checks.
