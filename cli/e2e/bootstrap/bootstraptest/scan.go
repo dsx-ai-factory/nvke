@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -127,18 +128,13 @@ func (s *SecretScan) watchCluster(ctx context.Context) {
 	if interval <= 0 {
 		interval = clusterPollInterval
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		if _, err := s.Connect(ctx); err == nil {
-			s.clusterSeen.Store(true)
-			return
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
+	// Checks at once, then every interval, until the cluster answers or ctx ends.
+	err := wait.PollUntilContextCancel(ctx, interval, true, func(ctx context.Context) (bool, error) {
+		_, err := s.Connect(ctx)
+		return err == nil, nil
+	})
+	if err == nil {
+		s.clusterSeen.Store(true)
 	}
 }
 

@@ -275,6 +275,20 @@ func TestSecretScanWatchesForTheCluster(t *testing.T) {
 	require.Error(t, f.scan.Finish(ctx, errBootstrapFailed))
 }
 
+func TestSecretScanWatchEndsWithoutSeeingTheCluster(t *testing.T) {
+	f := newScanFixture(t)
+	f.reachable.Store(false)
+	ctx, cancel := context.WithCancel(context.Background())
+	require.NoError(t, f.scan.Begin(ctx))
+	time.Sleep(20 * time.Millisecond) // a few polls
+	cancel()
+	time.Sleep(20 * time.Millisecond)
+
+	f.reachable.Store(true)
+	time.Sleep(20 * time.Millisecond)
+	assert.False(t, f.scan.clusterSeen.Load(), "a watch that has ended records nothing, and a cluster never seen is not an unreadable one")
+}
+
 func TestSecretScanBeginSavesTheOTLPValues(t *testing.T) {
 	f := newScanFixture(t)
 	f.scan.Known = &SecretSet{}
