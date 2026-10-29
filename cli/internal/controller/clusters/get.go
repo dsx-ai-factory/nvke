@@ -29,8 +29,14 @@ func NewGetCmd(clientFn ControllerClientFn) *cobra.Command {
 
 Naming clusters narrows the listing to them, in the order given.
 
+With -o json or -o yaml, one name prints that cluster as a single object. No
+name, or several, prints a list of clusters.
+
 Example — every cluster:
   nvkectl get clusters
+
+Example — one cluster, as JSON:
+  nvkectl get clusters prod -o json
 
 Example — two clusters, as YAML:
   nvkectl get clusters prod staging -o yaml`,
@@ -49,6 +55,14 @@ Example — two clusters, as YAML:
 				return err
 			}
 			if f != util.FormatTable {
+				// Like kubectl: one name is one object; no name or several
+				// names are a list.
+				if len(args) == 1 {
+					if len(cls) == 0 {
+						return notFoundError(missing)
+					}
+					return util.Print(cmd.OutOrStdout(), f, cls[0])
+				}
 				if err := util.Print(cmd.OutOrStdout(), f, cls); err != nil {
 					return err
 				}

@@ -8,7 +8,7 @@
 #
 # clusterID is the one field you must fill in. Read it from the cluster:
 #
-#   nvkectl get clusters my-cluster -o json | jq -r '.[0].id'
+#   nvkectl get clusters my-cluster -o json | jq -r '.id'
 #
 # The other UUIDs are nico-mock's seeded identifiers and work as-is.
 

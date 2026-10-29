@@ -107,9 +107,31 @@ func (r *Runner) GetClusterByName(ctx context.Context, name string) (*api.Cluste
 		return nil, err
 	}
 
+	cluster, err := decodeNamedCluster(out, name)
+	if err != nil {
+		return nil, err
+	}
+	r.clusterNames[cluster.ID] = cluster.Name
+	return cluster, nil
+}
+
+// decodeNamedCluster decodes the output of `get clusters <name> -o json`,
+// which is one cluster object, and requires it to be the named cluster. It
+// also accepts a one-element list, which is what nvkectl printed for one name
+// before it printed one object, so the suite can drive an older binary.
+func decodeNamedCluster(out, name string) (*api.Cluster, error) {
+	trimmed := strings.TrimSpace(out)
 	var clusters []api.Cluster
-	if err := json.Unmarshal([]byte(out), &clusters); err != nil {
-		return nil, fmt.Errorf("parsing `get clusters %s -o json`: %w: %s", name, err, strings.TrimSpace(out))
+	if strings.HasPrefix(trimmed, "[") {
+		if err := json.Unmarshal([]byte(trimmed), &clusters); err != nil {
+			return nil, fmt.Errorf("parsing `get clusters %s -o json`: %w: %s", name, err, trimmed)
+		}
+	} else {
+		var cluster api.Cluster
+		if err := json.Unmarshal([]byte(trimmed), &cluster); err != nil {
+			return nil, fmt.Errorf("parsing `get clusters %s -o json`: %w: %s", name, err, trimmed)
+		}
+		clusters = []api.Cluster{cluster}
 	}
 	if len(clusters) != 1 {
 		return nil, fmt.Errorf("`get clusters %s -o json` returned %d clusters, want exactly 1", name, len(clusters))
@@ -117,7 +139,6 @@ func (r *Runner) GetClusterByName(ctx context.Context, name string) (*api.Cluste
 	if clusters[0].Name != name {
 		return nil, fmt.Errorf("`get clusters %s -o json` returned cluster %q", name, clusters[0].Name)
 	}
-	r.clusterNames[clusters[0].ID] = clusters[0].Name
 	return &clusters[0], nil
 }
 
