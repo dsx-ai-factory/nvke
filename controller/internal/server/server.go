@@ -33,6 +33,7 @@ import (
 
 const (
 	ReadHeaderTimeout = 5 * time.Second
+	versionPath       = "/api/version"
 )
 
 // Option configures NewServer and NewServerImpl.
@@ -141,7 +142,7 @@ func NewServer(
 		}
 	})
 
-	m.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) {
+	m.HandleFunc("GET "+versionPath, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		resp := map[string]any{
 			"version":           version.Version,
@@ -186,10 +187,11 @@ func NewServer(
 	handler = otelx.ExposeTraceID(loggingMiddleware(handler, logger))
 	handler = otelhttp.NewHandler(handler, "cloud-workflow-engine",
 		otelhttp.WithFilter(func(r *http.Request) bool {
-			// Skip operational probes (/healthz, /readyz, /metrics). /metrics is
-			// served on a separate listen address today, but is excluded here too
-			// so it stays consistent with isOperationalPath.
-			return !isOperationalPath(pathpkg.Clean(r.URL.Path))
+			// Skip operational probes (/healthz, /readyz, /metrics) and the version
+			// probe. /metrics is served on a separate listen address today, but is
+			// excluded here too so it stays consistent with isOperationalPath.
+			path := pathpkg.Clean(r.URL.Path)
+			return !isOperationalPath(path) && path != versionPath
 		}),
 	)
 	handler = requestLogStateMiddleware(handler)

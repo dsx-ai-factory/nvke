@@ -157,6 +157,20 @@ func TestRequestSpanUsesMatchedRoute(t *testing.T) {
 	require.Contains(t, spanNames, "POST /api/clusters")
 }
 
+func TestVersionProbeDoesNotCreateSpan(t *testing.T) {
+	recorder := installTracerProvider(t)
+
+	srv, err := server.NewServer(config.Config{ProfilesDir: "./profiles"}, slog.Default(), &testutil.MockDB{}, nil, nil, nil)
+	require.NoError(t, err)
+
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/version", nil)
+	response := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	require.Empty(t, recorder.Ended())
+}
+
 func TestRequestCompletedLogClassifiesInvalidClusterNetwork(t *testing.T) {
 	installTracerProvider(t)
 	request := openAPIForgeCreateClusterRequest()
