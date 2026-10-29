@@ -144,6 +144,13 @@ func TestSecretSetFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, got, 1, "a loaded set searches for the same values")
 
+	assert.Empty(t, loaded.Incomplete())
+	set.MarkIncomplete("the Postgres password: could not be read")
+	require.NoError(t, set.WriteFile(path))
+	loaded, err = LoadSecretSet(path)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"the Postgres password: could not be read"}, loaded.Incomplete(), "incompleteness survives the file")
+
 	_, err = LoadSecretSet(filepath.Join(t.TempDir(), "missing.json"))
 	assert.Error(t, err)
 	require.NoError(t, os.WriteFile(path, []byte("not json"), 0o600))

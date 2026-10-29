@@ -13,18 +13,18 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 )
 
 // SecretSet holds secret values a run must not print or save, to search for as
-// exact strings. It is safe for concurrent use.
-//
-// Nothing a SecretSet returns or reports holds a value: its output goes to a
-// public CI log.
+// exact strings, and the reasons a value it should hold could not be learned. It
+// is safe for concurrent use. Nothing it returns or reports holds a value.
 type SecretSet struct {
-	mu     sync.Mutex
-	values []string
+	mu         sync.Mutex
+	values     []string
+	incomplete []string
 }
 
 // Add adds value to the set. An empty value is ignored, because it would match
@@ -41,6 +41,22 @@ func (s *SecretSet) Add(value string) {
 		}
 	}
 	s.values = append(s.values, value)
+}
+
+// MarkIncomplete records that a value the set should hold could not be learned.
+// The reason must not hold a secret. A set with a reason is incomplete, and a
+// clean search of it proves nothing.
+func (s *SecretSet) MarkIncomplete(reason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.incomplete = append(s.incomplete, reason)
+}
+
+// Incomplete returns the reasons given to MarkIncomplete.
+func (s *SecretSet) Incomplete() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.incomplete)
 }
 
 // Len reports how many values the set holds.
@@ -98,11 +114,17 @@ func (s *SecretSet) snapshot() [][]byte {
 	return needles
 }
 
+// savedSecrets is the form a SecretSet is saved in.
+type savedSecrets struct {
+	Values     []string `json:"values"`
+	Incomplete []string `json:"incomplete,omitempty"`
+}
+
 // WriteFile saves the set to path, readable by its owner only, so a later
 // process can search for the same values. It replaces what is there.
 func (s *SecretSet) WriteFile(path string) error {
 	s.mu.Lock()
-	data, err := json.Marshal(s.values)
+	data, err := json.Marshal(savedSecrets{Values: s.values, Incomplete: s.incomplete})
 	s.mu.Unlock()
 	if err != nil {
 		return fmt.Errorf("encoding the known secret values: %w", err)
@@ -119,12 +141,12 @@ func LoadSecretSet(path string) (*SecretSet, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading the known secret values from %s: %w", path, err)
 	}
-	var values []string
-	if err := json.Unmarshal(data, &values); err != nil {
+	var saved savedSecrets
+	if err := json.Unmarshal(data, &saved); err != nil {
 		return nil, fmt.Errorf("decoding the known secret values in %s: %w", path, err)
 	}
-	set := &SecretSet{}
-	for _, v := range values {
+	set := &SecretSet{incomplete: saved.Incomplete}
+	for _, v := range saved.Values {
 		set.Add(v)
 	}
 	return set, nil
@@ -146,8 +168,7 @@ type OTLPSettings struct {
 // loopback, so bootstrap site passes the headers on to the controller.
 const otlpEndpoint = "http://192.0.2.1:4317"
 
-// NewOTLPSettings returns settings with a random token and tenant, so no
-// credential-shaped value sits in the repository.
+// NewOTLPSettings returns settings with a random token and tenant.
 func NewOTLPSettings() (OTLPSettings, error) {
 	token, err := randomValue()
 	if err != nil {
@@ -187,9 +208,10 @@ func (o OTLPSettings) Env() []string {
 	}
 }
 
-// Secrets returns the values to search the output for. The token is searched
-// alone, so its encoded form in the cluster is found too. nvkectl masks the
-// tenant header only as the pair x-tenant=<value>, so that pair is searched.
+// Secrets returns the values to search the output for: the token, and the
+// tenant header as the pair x-tenant=<value>.
 func (o OTLPSettings) Secrets() []string {
+	// The token alone, so its encoded form in the cluster is found too. The
+	// tenant as a pair, because nvkectl masks that header only as a pair.
 	return []string{o.Token, "x-tenant=" + o.Tenant}
 }

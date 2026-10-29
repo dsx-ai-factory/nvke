@@ -417,9 +417,9 @@ print_run_logs() {
 
 # scan_known_secrets searches the bootstrap log, the Go test log and the
 # diagnostics for the secret values TestE2E_BootstrapSite saved, with the test
-# that does it. It prints file names, never a value. A run that failed before
-# that test started saved none and has nothing to search for; a run that passed
-# must have.
+# that does it. It prints file names, never a value. It fails on a hit and when
+# the saved set is incomplete. A run that failed before that test started saved
+# none and has nothing to search for; a run that passed must have.
 scan_known_secrets() {
   local run_status="$1" out rc=0
   if [ ! -f "${KNOWN_SECRETS_FILE}" ]; then
@@ -435,7 +435,7 @@ scan_known_secrets() {
     "${GO}" test -C "${CLI_DIR}" -tags e2e_bootstrap -count=1 \
     -run '^TestScanBootstrapOutputs$' ./e2e/bootstrap/bootstraptest/ 2>&1)" || rc=$?
   if [ "${rc}" -ne 0 ]; then
-    log "FAIL: a known secret value is in the bootstrap output, or it could not be searched"
+    log "FAIL: a known secret value is in the bootstrap output, or the search for them was incomplete or failed"
     printf '%s\n' "${out}"
     return 1
   fi

@@ -35,17 +35,15 @@ const (
 // clusterPollInterval is how often the run looks for the bootstrap cluster.
 const clusterPollInterval = 5 * time.Second
 
-// withheldLog replaces a bootstrap log that holds a known secret value, so a
-// lane that prints the log afterwards prints this instead.
-const withheldLog = "the bootstrap output held a known secret value, or could not be searched for one, " +
-	"so it is not kept; the test log names the files\n"
+// withheldLog replaces a bootstrap log that holds a known secret value or could
+// not be searched for one, so a lane that prints the log prints this instead.
+const withheldLog = "the bootstrap output held a known secret value, or could not be fully searched for one, " +
+	"so it is not kept; the test log names why\n"
 
-// SecretScan checks that a bootstrap run keeps its secrets out of its output.
-//
-// The run gives nvkectl OTLP settings with a random token, which reach the
-// controller, and learns the secrets bootstrap site generates. Finish then
-// searches the bootstrap log and the diagnostics for every value as an exact
-// string, which finds a secret in any form no pattern anticipated.
+// SecretScan checks that a bootstrap run keeps its secrets out of its output. It
+// gives nvkectl OTLP settings with a random token, learns the secrets bootstrap
+// site generates, and searches the bootstrap log and the diagnostics for every
+// value as an exact string.
 type SecretScan struct {
 	// OTLP are the settings the run gives nvkectl.
 	OTLP OTLPSettings
@@ -65,6 +63,8 @@ type SecretScan struct {
 	// means every five seconds.
 	PollInterval time.Duration
 
+	// clusterSeen is set once the bootstrap cluster has answered, so a later
+	// failure to reach it is a failure to read, not a cluster never built.
 	clusterSeen atomic.Bool
 }
 
@@ -110,8 +110,7 @@ func NewSecretScanFromEnv(opts BootstrapOptions) (*SecretScan, error) {
 func (s *SecretScan) Env() []string { return s.OTLP.Env() }
 
 // Begin saves the OTLP values and starts watching for the bootstrap cluster
-// until ctx ends. The watch is what tells a cluster that was never built from
-// one that was built and can no longer be read.
+// until ctx ends.
 func (s *SecretScan) Begin(ctx context.Context) error {
 	for _, v := range s.OTLP.Secrets() {
 		s.Known.Add(v)
@@ -144,17 +143,15 @@ func (s *SecretScan) watchCluster(ctx context.Context) {
 }
 
 // Finish learns the generated secrets, saves every value, and searches the
-// bootstrap log and the diagnostics for them. bootstrapErr is how bootstrap
-// site ended, nil when it passed.
+// bootstrap log and the diagnostics for them. bootstrapErr is how bootstrap site
+// ended, nil when it passed. The error it returns names files, never values.
 //
-// A passing run must have every generated secret. A failed one is held to it
-// only for a secret that exists and could not be read: one it never got far
-// enough to make has nothing to search for. It also checks, on a pass, that the
-// controller got the OTLP headers.
-//
-// When a value is in the log, or the log could not be searched, the log is
-// replaced with a notice, so a lane that prints it afterwards prints nothing
-// that holds a secret. The error names files, never values.
+// A passing run must have every generated secret and the controller must hold
+// the OTLP headers. A failed run is held to a secret only if it exists and could
+// not be read. When a required secret could not be read the search is
+// incomplete: Finish records that in the saved set, so ScanKnownSecrets fails
+// too, and replaces the bootstrap log with a notice, as it does when a value is
+// in the log or the log could not be searched.
 func (s *SecretScan) Finish(ctx context.Context, bootstrapErr error) error {
 	passed := bootstrapErr == nil
 	kube, connErr := s.Connect(ctx)
@@ -163,13 +160,16 @@ func (s *SecretScan) Finish(ctx context.Context, bootstrapErr error) error {
 	}
 
 	var problems []error
+	var incomplete []error
 	for _, err := range s.learn(ctx, kube, connErr) {
 		if errors.Is(err, ErrUnreadable) || (passed && errors.Is(err, ErrNotGenerated)) {
-			problems = append(problems, err)
+			incomplete = append(incomplete, err)
+			s.Known.MarkIncomplete(err.Error())
 		}
 	}
-	if len(problems) > 0 {
-		problems = append([]error{errors.New("the generated secrets could not be read, so the search for them proves nothing")}, problems...)
+	if len(incomplete) > 0 {
+		problems = append(problems, errors.New("the generated secrets could not be read, so the search for them proves nothing"))
+		problems = append(problems, incomplete...)
 	}
 	if passed {
 		if err := s.verifyController(ctx, kube, connErr); err != nil {
@@ -180,15 +180,15 @@ func (s *SecretScan) Finish(ctx context.Context, bootstrapErr error) error {
 		problems = append(problems, err)
 	}
 
-	hits, err := s.Known.FindIn(s.LogFile, s.DiagnosticsDir)
-	switch {
-	case err != nil:
-		problems = append(problems, err, s.withhold())
-	case len(hits) > 0:
+	hits, searchErr := s.Known.FindIn(s.LogFile, s.DiagnosticsDir)
+	if searchErr != nil {
+		problems = append(problems, searchErr)
+	}
+	if len(hits) > 0 {
 		problems = append(problems, fmt.Errorf("a known secret value is in: %s", strings.Join(hits, ", ")))
-		if slices.Contains(hits, s.LogFile) {
-			problems = append(problems, s.withhold())
-		}
+	}
+	if len(incomplete) > 0 || searchErr != nil || slices.Contains(hits, s.LogFile) {
+		problems = append(problems, s.withhold())
 	}
 	return errors.Join(problems...)
 }
@@ -239,8 +239,9 @@ func (s *SecretScan) withhold() error {
 
 // ScanKnownSecrets searches paths for the values saved in file, as Finish
 // searches the bootstrap output, and returns an error naming the files that
-// hold one. It is what the lane runs at its end, over what the run printed and
-// saved, including files collected after bootstrap site had finished.
+// hold one. It also fails when the saved set is incomplete, because a clean
+// search of it proves nothing. The lane runs it at its end, over what the run
+// printed and saved, including files collected after bootstrap site finished.
 func ScanKnownSecrets(file string, paths ...string) error {
 	known, err := LoadSecretSet(file)
 	if err != nil {
@@ -249,14 +250,18 @@ func ScanKnownSecrets(file string, paths ...string) error {
 	if known.Len() == 0 {
 		return fmt.Errorf("%s holds no secret values, so a clean search proves nothing", file)
 	}
+	var problems []error
+	if reasons := known.Incomplete(); len(reasons) > 0 {
+		problems = append(problems, fmt.Errorf("the search is incomplete, so a clean result proves nothing: %s", strings.Join(reasons, "; ")))
+	}
 	hits, err := known.FindIn(paths...)
 	if err != nil {
-		return err
+		problems = append(problems, err)
 	}
 	if len(hits) > 0 {
-		return fmt.Errorf("a known secret value is in: %s", strings.Join(hits, ", "))
+		problems = append(problems, fmt.Errorf("a known secret value is in: %s", strings.Join(hits, ", ")))
 	}
-	return nil
+	return errors.Join(problems...)
 }
 
 // ScanKnownSecretsFromEnv runs ScanKnownSecrets over the bootstrap log, the Go

@@ -149,13 +149,12 @@ func (c *credentialCheck) finish(bootstrapErr error) error {
 	return c.err
 }
 
-// TestScanBootstrapOutputs searches the bootstrap log, this test run's own log
-// and the diagnostics for the secret values TestE2E_BootstrapSite saved. The
-// lane runs it at its end, when the bundle holds what the lane collected after
-// the bootstrap finished, and fails on a hit.
+// TestScanBootstrapOutputs searches the bootstrap log, the Go test log and the
+// diagnostics for the secret values TestE2E_BootstrapSite saved, and fails on a
+// hit or an incomplete search. The lane runs it at its end.
 //
-// It does not carry the TestE2E_ prefix: the lanes select that with the
-// bootstrap, and this has to run after it.
+// It has no TestE2E_ prefix: the lanes select that with the bootstrap, and this
+// has to run after it.
 func TestScanBootstrapOutputs(t *testing.T) {
 	if err := bootstraptest.ScanKnownSecretsFromEnv(); err != nil {
 		t.Fatal(err)

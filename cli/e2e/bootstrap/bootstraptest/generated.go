@@ -38,12 +38,11 @@ const (
 )
 
 var (
-	// ErrNotGenerated reports a secret that is not there to read yet, as when
-	// bootstrap failed before it made one. A run that failed that early has
-	// nothing to search for.
+	// ErrNotGenerated reports a secret that does not exist yet, as when
+	// bootstrap failed before it made one.
 	ErrNotGenerated = errors.New("not generated yet")
 	// ErrUnreadable reports a secret that exists, or may, and could not be
-	// read: the search for it is missing a value that may be in the output.
+	// read.
 	ErrUnreadable = errors.New("could not be read")
 )
 
@@ -102,8 +101,7 @@ func EtcdKeyValues(path string) ([]string, error) {
 }
 
 // VerifyControllerOTLPHeaders checks that the controller's Deployment carries
-// OTEL_EXPORTER_OTLP_HEADERS set to want. Without it a clean search could mean
-// only that the header never left nvkectl. Neither value is in the error.
+// OTEL_EXPORTER_OTLP_HEADERS set to want. The error holds neither value.
 func VerifyControllerOTLPHeaders(ctx context.Context, kube kubernetes.Interface, namespace, name, want string) error {
 	deployment, err := kube.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {

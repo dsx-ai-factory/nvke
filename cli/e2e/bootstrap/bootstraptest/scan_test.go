@@ -241,12 +241,20 @@ func TestSecretScanFinishUnreadable(t *testing.T) {
 			f := newScanFixture(t)
 			tt.arrange(t, f)
 			err := f.scan.Finish(context.Background(), tt.bootstrap)
+			known, loadErr := LoadSecretSet(f.scan.KnownFile)
+			require.NoError(t, loadErr)
 			if !tt.wantErr {
 				require.NoError(t, err)
+				assert.NotEqual(t, withheldLog, f.logText(t))
+				assert.Empty(t, known.Incomplete())
+				assert.NoError(t, ScanKnownSecrets(f.scan.KnownFile, f.log, f.diag))
 				return
 			}
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "the search for them proves nothing")
+			assert.Equal(t, withheldLog, f.logText(t), "a log that could not be fully searched is not kept")
+			assert.NotEmpty(t, known.Incomplete(), "the incomplete search is saved for the search at the end of the lane")
+			assert.Error(t, ScanKnownSecrets(f.scan.KnownFile, f.log, f.diag))
 		})
 	}
 }
@@ -347,4 +355,19 @@ func TestNewSecretScanFromEnv(t *testing.T) {
 			assert.Error(t, err, name)
 		}
 	})
+}
+
+func TestSecretScanUnreadablePasswordInOutputs(t *testing.T) {
+	f := newScanFixture(t)
+	f.failGet = true
+	f.writeLog(t, "time=x msg=y field="+pgPassword+"\n")
+	f.writeDiag(t, "v="+pgPassword)
+
+	require.Error(t, f.scan.Finish(context.Background(), errBootstrapFailed))
+	assert.Equal(t, withheldLog, f.logText(t), "the password could not be read, so the log cannot be called clean")
+
+	err := ScanKnownSecrets(f.scan.KnownFile, f.log, f.diag)
+	require.Error(t, err, "the search at the end of the lane runs against an incomplete set, and must not pass")
+	assert.Contains(t, err.Error(), "incomplete")
+	assert.NotContains(t, err.Error(), pgPassword)
 }
