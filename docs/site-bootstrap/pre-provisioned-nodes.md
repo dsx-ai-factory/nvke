@@ -39,6 +39,7 @@ After bootstrap completes:
 - SSH access to all nodes with sudo privileges
 - Nodes can reach the internet for downloading packages and artifacts
 - Network connectivity between all nodes
+- containerd 2.1.0 or later on every node. The CAPI SPIFFE exec-auth overlay ([Install the management plane](../operate/install-management-plane.md)) mounts its plugin as an image volume, which older containerd cannot run
 - If self-managed, a storage provisioner for the cluster's default StorageClass before you install the management plane. The bootstrap installs none, and the management plane's database claims a 40 GiB volume
 - Registry credentials only if you pull the two images below from a private registry, logged in with `nerdctl login` on the init node; an NGC API key only if that registry is a private `nvcr.io` repository. Images you build on the init node need none
 - On the **init node**: `kind` binary and `nerdctl` with containerd installed — `nvkectl` uses these to create the ephemeral bootstrap Kind cluster. Docker is not supported. kind states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the version CI exercises
@@ -93,10 +94,17 @@ curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.34/deb/Release.key | \
 echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.34/deb/ /' | \
   sudo tee /etc/apt/sources.list.d/kubernetes.list
 
+# Check for an existing containerd (e.g. installed via DOCA or a
+# pre-baked OS image). Keep it only if it reports 2.1.0 or later: the
+# CAPI SPIFFE exec-auth overlay mounts an image volume, and older
+# containerd fails those pods with 'failed to mkdir ""'. The NVKE reference
+# packages pin containerd 2.3.0 for Kubernetes 1.36.3
+# (os-image/packages/kubeadm-distro/lock/amd64/v1.36.3.lock).
+containerd --version
+
 # Add Docker repository (for containerd.io).
-# Skip this block if containerd is already present on your nodes
-# (e.g. installed via DOCA or a pre-baked OS image) — use whatever
-# version is already there and proceed to the configuration step below.
+# Skip the Docker repository and drop containerd.io from the
+# apt-get install line only if the check above reports 2.1.0 or later.
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
   sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 
@@ -107,6 +115,9 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.
 sudo apt-get update
 sudo apt-get install -y kubelet kubeadm kubectl containerd.io conntrack cri-tools
 sudo apt-mark hold kubelet kubeadm kubectl
+
+# Confirm the installed containerd is 2.1.0 or later.
+containerd --version
 ```
 
 > **Warning:** The repository minor version (`v1.34` above) determines which `kubeadm` is installed, and it must match `cluster.k8sVersion` in your bootstrap configuration. `kubeadm` refuses to create a control plane more than one minor version older than itself.
