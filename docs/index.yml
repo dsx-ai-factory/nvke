@@ -75,6 +75,8 @@ navigation:
             path: operate/observe.md
           - page: Troubleshoot
             path: operate/troubleshoot.md
+          - page: Debug NicoIdentity credential health
+            path: operate/debug-nicoidentity-credentials.md
           - page: Migrating CRs to the internal.nvke.nvidia.com group
             path: operations/crd-group-migration.md
           - page: The NVKE label and annotation domain

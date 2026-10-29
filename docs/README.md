@@ -32,6 +32,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [Workload cluster Kubernetes certificate renewal](../controller/docs/certificate-renewal.md) | Scheduled and forced leaf certificate renewal, failure diagnostics and ownership-checked recovery |
 | [operate/observe.md](operate/observe.md) | Metrics, dashboards, logs and status for NVKE and its clusters |
 | [operate/troubleshoot.md](operate/troubleshoot.md) | Symptoms, causes and fixes for common failures |
+| [operate/debug-nicoidentity-credentials.md](operate/debug-nicoidentity-credentials.md) | Reading CAPNICo's credential check on a `NicoIdentity` with `kubectl`: whether the result is current, what each reason means, and why a result is stale or missing |
 
 ## Start here
 
