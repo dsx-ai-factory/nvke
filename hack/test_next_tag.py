@@ -110,6 +110,10 @@ class NextTagTest(unittest.TestCase):
                 self.commit(f"docs: show nested fences\n\n{example}\n")
                 self.assert_nothing_releasable("main")
 
+    def test_four_space_indented_code_is_not_a_fence(self):
+        self.commit("refactor(api): remove a public field\n\n    ````\n    ```\n\nBREAKING CHANGE: the v1 field is gone.")
+        self.assert_next_tag("v0.23.0", "main")
+
     def test_a_footer_after_a_closed_fence_is_a_breaking_change(self):
         self.commit("refactor(api): remove a public field\n\n```\nan example\n```\n\nBREAKING CHANGE: the v1 field is gone.")
         self.assert_next_tag("v0.23.0", "main")
