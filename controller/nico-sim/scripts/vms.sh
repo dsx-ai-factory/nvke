@@ -49,7 +49,9 @@ host_tsv() {
 			"${virsh[@]}" list --all --name | sed -n 's/^nico-vm-//p' |
 				while read -r id; do printf '%s\t%s\n' "$id" "$("${virsh[@]}" domid "nico-vm-$id" 2>/dev/null || echo -)"; done
 		fi
-		[[ -d $dir ]] && find "$dir" -mindepth 1 -maxdepth 1 -exec basename {} \; | awk '{ print $0 "\t-" }'
+		if [[ -d $dir ]]; then
+			find "$dir" -mindepth 1 -maxdepth 1 -exec basename {} \; | awk '{ print $0 "\t-" }'
+		fi
 	} | sort -t$'\t' -k1,1 -k2,2r | awk -F'\t' '!seen[$1]++'
 }
 
