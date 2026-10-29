@@ -13,6 +13,8 @@ import (
 	"go.temporal.io/sdk/activity"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 type WaitForNodeUptimeInput struct {
@@ -58,6 +60,7 @@ func (a *Activities) waitForNodeUptime(ctx context.Context, input WaitForNodeUpt
 	heartbeatCancel := startActivityHeartbeat(ctx)
 	defer heartbeatCancel()
 	sleepDuration := 1 * time.Minute
+	pollCtx := db.WithoutQuerySpans(ctx)
 
 	for {
 		select {
@@ -70,7 +73,7 @@ func (a *Activities) waitForNodeUptime(ctx context.Context, input WaitForNodeUpt
 			// It also smooths out the first check if it occurs before the node actually starts rebooting.
 		}
 
-		bootTime, err := a.getBootTime(ctx, input.NodeID)
+		bootTime, err := a.getBootTime(pollCtx, input.NodeID)
 		if err != nil {
 			// It is normal for the boot-info check to return errors during the early phases of the node reboot.
 			logger.Debug("Boot-info check returned error, this is likely normal", "nodeID", input.NodeID, "error", err)

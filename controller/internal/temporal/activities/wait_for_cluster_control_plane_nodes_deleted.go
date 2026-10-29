@@ -48,13 +48,14 @@ func (a *Activities) waitForClusterControlPlaneNodesDeleted(
 	logger := activity.GetLogger(ctx)
 
 	logger.Info("Waiting for cluster-level control-plane nodes to be deleted", "clusterID", input.ClusterID)
+	pollCtx := db.WithoutQuerySpans(ctx)
 
 	for {
 		// Record heartbeat to prevent activity timeout
 		activity.RecordHeartbeat(ctx)
 
 		cpTrue := true
-		nodes, err := a.db.ListNodes(ctx, db.NodeFilters{
+		nodes, err := a.db.ListNodes(pollCtx, db.NodeFilters{
 			ClusterID:    &input.ClusterID,
 			ControlPlane: &cpTrue,
 		})

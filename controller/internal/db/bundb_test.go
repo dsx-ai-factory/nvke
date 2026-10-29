@@ -25,6 +25,7 @@ import (
 	"go.opentelemetry.io/otel/metric/noop"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type recordingMeterProvider struct {
@@ -136,6 +137,30 @@ func TestTracingHookDoesNotCreateRootSpans(t *testing.T) {
 
 	assert.Empty(t, recorder.Ended())
 	assert.Equal(t, 1, meterProvider.histogram.records)
+}
+
+func TestTracingHookSuppressesOptedOutQuerySpan(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+	meterProvider := newRecordingMeterProvider()
+	connector := pgdriver.NewConnector(pgdriver.WithDSN("postgres://postgres:postgres@localhost:5432/nvke-controller?sslmode=disable"))
+	hook := newTracingHook(connector, bunotel.WithTracerProvider(tp), bunotel.WithMeterProvider(meterProvider))
+
+	bdb := bun.NewDB(sql.OpenDB(connector), pgdialect.New())
+	t.Cleanup(func() { _ = bdb.Close() })
+	event := &bun.QueryEvent{DB: bdb, Query: "SELECT 1", StartTime: time.Now()}
+	ctx, parent := tp.Tracer("test").Start(context.Background(), "parent")
+	queryCtx := hook.BeforeQuery(WithoutQuerySpans(ctx), event)
+	hook.AfterQuery(queryCtx, event)
+
+	assert.Empty(t, recorder.Ended(), "the query hook must not end the parent activity span")
+	assert.Equal(t, parent.SpanContext(), trace.SpanContextFromContext(queryCtx))
+	assert.Equal(t, 1, meterProvider.histogram.records)
+
+	parent.End()
+	require.Len(t, recorder.Ended(), 1)
+	assert.Equal(t, "parent", recorder.Ended()[0].Name())
 }
 
 type queryLogRow struct {

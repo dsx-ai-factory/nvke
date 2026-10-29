@@ -66,12 +66,13 @@ func (a *Activities) waitForParentNodePoolProvisioned(
 
 	nodePoolID := nodePool.ID
 	logger.Info("Waiting for node pool to be provisioned", "nodePoolID", nodePoolID)
+	pollCtx := db.WithoutQuerySpans(ctx)
 
 	for {
 		// Record heartbeat to prevent activity timeout
 		activity.RecordHeartbeat(ctx)
 
-		nodePool, err := a.db.GetNodePool(ctx, nodePoolID)
+		nodePool, err := a.db.GetNodePool(pollCtx, nodePoolID)
 		if err != nil {
 			return WaitForParentNodePoolProvisionedResult{}, fmt.Errorf("failed to get node pool: %w", err)
 		}
