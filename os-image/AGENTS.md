@@ -78,7 +78,9 @@ repository's `bin/`, and `make version-check` runs it with `--version`.
   Package builds execute Linux kubeadm; matching Linux hosts build locally,
   while Linux and Apple Silicon macOS hosts otherwise use the separate NixOS
   package-builder VM (`package-builder.sh` rejects Intel macOS). The shared
-  QEMU helper also supports HVF for boot tools on macOS.
+  QEMU helper also supports HVF for boot tools on macOS, and image bakes accept
+  `ACCELERATOR=hvf` on Apple silicon as a development-only path that defaults
+  to the `linux-generic` kernel (see `README.md`).
 - Preserve `packages/spire-agent/` installation and the current package builders.
   `flake.nix` and `nix/` define the NixOS package-builder fallback; see `nix/README.md` for the integration status and Ubuntu-linkage checks.
 - Run `make test-qemu` for QEMU selection and build-entrypoint changes; the

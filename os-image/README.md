@@ -121,9 +121,15 @@ host before Packer uploads them to its separate Ubuntu guest.
 
 `image-native` requires usable KVM. The generic `image` target and the existing
 `packer/` targets allow `ACCELERATOR=tcg` for development. Emulated builds are
-much slower. Image builds accept `kvm` or `tcg` and nothing else —
-`check-acceleration` rejects `ACCELERATOR=hvf`, which exists only for `run-vm`
-and `boot-smoke`. Make stages artifacts in its owned `packer/artifacts/`
+much slower. Image builds accept `kvm`, `hvf` or `tcg` and nothing else;
+`check-acceleration` rejects any other `ACCELERATOR`. On an arm64 Mac with
+`kern.hv_support`, the default is `hvf`. HVF bakes are a development path for
+the nico-sim VM backend, not a release path: they default `KERNEL_PACKAGE` to
+`linux-generic`, because Apple silicon has no 64K page granule and the
+`linux-nvidia-64k` kernel cannot boot there. Release images keep the
+architecture default kernel. See
+[Full NVKE stack on macOS](../controller/nico-sim/README.md#full-nvke-stack-on-macos).
+Make stages artifacts in its owned `packer/artifacts/`
 directory; Packer uploads them to `/var/tmp/nke-image`, which the provisioner removes before
 finishing the image. Installer ISOs remain in their separate cache.
 
@@ -144,9 +150,10 @@ make run-vm QCOW=packer/output-non-fde/nvke-node-non-fde-ubuntu-26.04.1-amd64.qc
 emulation, and an explicit unavailable `ACCELERATOR=kvm` or `hvf` fails early.
 
 On Apple Silicon, `run-vm` and `boot-smoke` can use HVF with an already-built
-compatible arm64 image. The production arm64 kernel is `linux-nvidia-64k`;
-compatibility with a particular Mac/QEMU combination still needs live
-validation. Apple Silicon macOS package builds use the NixOS VM; image baking still needs the
+compatible arm64 image. The production arm64 kernel is `linux-nvidia-64k`,
+which does not boot under HVF on Apple silicon; use an image baked with
+`linux-generic` (the HVF bake default). Compatibility with a particular
+Mac/QEMU combination still needs live validation. Apple Silicon macOS package builds use the NixOS VM; image baking still needs the
 host Packer/ISO tools. The boot scripts also need `cloud-localds`, SSH and, for
 smoke tests, `timeout`.
 Run `make -C os-image test-qemu` for the selection and build-entrypoint tests
