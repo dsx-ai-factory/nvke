@@ -467,7 +467,7 @@ add_known_secret() {
 # made one, and 2 if it is there but could not be read, so the search is missing a
 # value.
 learn_generated_secrets() {
-  local kubeconfig kubectl_err pg_b64 pg_password="" pg_unreadable=false
+  local kubeconfig kubectl_err clusters pg_b64 pg_password="" pg_unreadable=false
   local etcd_key="" etcd_key_text="" rc=0
   if [ "${PG_PASSWORD_KNOWN}" != true ]; then
     kubeconfig="$(mktemp)"
@@ -478,6 +478,13 @@ learn_generated_secrets() {
         pg_password="$(printf '%s' "${pg_b64}" | base64 -d 2>/dev/null)" || pg_password=""
         pg_unreadable=true
       elif ! grep -q 'NotFound' "${kubectl_err}"; then
+        pg_unreadable=true
+      fi
+    else
+      # No kubeconfig for a cluster that exists is a read that failed. Captured,
+      # not piped: grep -q would end the pipe early and pipefail report it.
+      clusters="$(KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get clusters 2>/dev/null)" || clusters=""
+      if grep -qx "${BOOTSTRAP_KIND_CLUSTER}" <<<"${clusters}"; then
         pg_unreadable=true
       fi
     fi
