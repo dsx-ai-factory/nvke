@@ -2,12 +2,12 @@
 
 This page describes how to read the credential check that CAPNICo, the Cluster API (CAPI) infrastructure provider for NVIDIA Infra Controller (NICo), publishes on a `NicoIdentity` object, and what to do when the result is not healthy. Use it when you read `NicoIdentity` objects with `kubectl` instead of `nvkectl get providers`, or when the `CREDENTIALS` column of `nvkectl get providers` does not say enough.
 
-CAPNICo checks the credentials Secret that each `NicoIdentity` names: it authenticates with the credentials and reads the current tenant of the organization in the Secret from the NICo API. It writes the result to the `Ready` condition and `status.lastCheckedTime` of the `NicoIdentity`. The check never changes which credentials provisioning uses. `nvkectl get providers` reads the same status; [Infrastructure providers](https://github.com/dsx-ai-factory/nvke/blob/main/cli/README.md#infrastructure-providers) lists its `CREDENTIALS` values.
+CAPNICo checks the credentials Secret that each `NicoIdentity` names: it authenticates with the credentials and reads the current tenant of the organization in the Secret from the NICo API. It writes the result to the `Ready` condition and `status.lastCheckedTime` of the `NicoIdentity`. The check itself never changes which credentials provisioning uses; `spec.credentialsRef` does. `nvkectl get providers` reads the same status; [Infrastructure providers](https://github.com/dsx-ai-factory/nvke/blob/main/cli/README.md#infrastructure-providers) lists its `CREDENTIALS` values.
 
 ## Before you begin
 
 - You have completed [Configure an infrastructure provider: NICo](provider-nico.md).
-- To have a result to read, the CAPNICo release on the management cluster must serve `NicoIdentity`. The release the NVIDIA Kubernetes Engine (NVKE) install deploys, `v0.0.45` in `deploy/nico/capnico/release.yaml`, does not, and `nvkectl get providers` reports `CREDENTIALS` as `UNSUPPORTED` with it.
+- To have a result to read, the CAPNICo release on the management cluster must serve `NicoIdentity`. The release the NVIDIA Kubernetes Engine (NVKE) install deploys, `v0.0.45` in [`deploy/nico/capnico/capnico.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/capnico/capnico.yaml), does not, and `nvkectl get providers` reports `CREDENTIALS` as `UNSUPPORTED` with it.
 - `kubectl` uses the management cluster's admin kubeconfig, for example with `export KUBECONFIG=<CLUSTER_NAME>.kubeconfig`. A narrower kubeconfig needs `get` and `list` on `nicoidentities.infrastructure.cluster.x-k8s.io` to read results, and read access to the `controller-manager` Deployment, its pods and their logs in `capnico-system` to read the manager log.
 - You have `jq`, for the log commands.
 
@@ -89,25 +89,17 @@ The condition's `lastTransitionTime` is not a freshness signal: it changes only 
 
    | Status | Reason | Message | Fix |
    |---|---|---|---|
-   | `True` | `ValidationSucceeded` | `Authentication and current-tenant lookup succeeded.` | Nothing. The check does not test provisioning permissions or capacity. If the message adds `TLS certificate verification is disabled.`, the Secret sets `insecureSkipTLSVerify`. |
-   | `False` | `CredentialsNotFound` | `Credential Secret was not found.` | Create the Secret that `spec.credentialsRef.name` names, in the namespace of the `NicoIdentity`, or correct the name. For `nico-credentials`, see [Manage the NICo credentials](provider-nico.md#manage-the-nico-credentials). |
+   | `True` | `ValidationSucceeded` | `Authentication and current-tenant lookup succeeded.` | Nothing. The check does not test provisioning permissions or capacity. If the message adds `TLS certificate verification is disabled.`, the Secret sets `insecureSkipTLSVerify` and CAPNICo sends the credentials without verifying the server certificate: add the NICo CA bundle to the Secret as `ca.crt` and remove `insecureSkipTLSVerify`. |
+   | `False` | `CredentialsNotFound` | `Credential Secret was not found.` | Create the Secret that `spec.credentialsRef.name` names, in the namespace of the `NicoIdentity`, or correct the name. For `nico-credentials`, see [Manage the NICo credentials](provider-nico.md#manage-the-nico-credentials). Prefer creating the missing Secret: changing `spec.credentialsRef` also changes the credentials of every `NicoCluster` whose `identityRef` names this `NicoIdentity`, and a Secret for another NICo organization can orphan their instances. If you rename, name a Secret for the same NICo organization. |
    | `False` | `InvalidConfiguration` | One of: `Credential configuration is missing required fields or contains incompatible or invalid values.`, `Credential endpoint configuration requires absolute HTTP or HTTPS URLs.`, `Credential TLS configuration does not contain a usable CA bundle.`, `Credential client configuration is invalid.` | Correct the Secret. It needs `endpoint` and `orgID`, and either `token` or all of `tokenURL`, `clientID` and `clientSecret`, not both. `endpoint` and `tokenURL` are absolute `http` or `https` URLs, and `ca.crt`, if set, is a PEM CA bundle. `insecureSkipTLSVerify`, if set, is `true` or `false`. |
    | `False` | `AuthenticationFailed` | `Current-tenant lookup rejected the access token.` or `Token issuer rejected the client credentials.` | NICo, or the OAuth token issuer, rejected the credentials. Replace the token, or the client ID and secret, as described in [Manage the NICo credentials](provider-nico.md#manage-the-nico-credentials). |
    | `False` | `AccessDenied` | `Current-tenant lookup was forbidden.` | NICo accepted the credentials and refused the request for the organization in `orgID`. Check `orgID`, and the access of the principal the credentials belong to in NICo. |
-   | `Unknown` | `SecretReadFailed` | `Credential Secret could not be read.` | The CAPNICo manager could not read the Secret, for example because its role does not allow it in that namespace. Read the error in the [manager log](#read-the-capnico-manager-log). |
+   | `Unknown` | `SecretReadFailed` | `Credential Secret could not be read.` | The CAPNICo manager's direct read of the Secret failed, for example with an API server error or a timeout. Read the `error` key in the [manager log](#read-the-capnico-manager-log). |
    | `Unknown` | `ValidationFailed` | `<step> exceeded the validation deadline.`, `<step> failed TLS certificate verification.` or `<step> could not establish credential health.` | `<step>` is `Token acquisition`, `Current-tenant lookup` or `Credential validation`. Check `endpoint` and `tokenURL`, the network path from the management cluster to NICo, and `ca.crt` for a TLS failure. A check stops after `--provider-identity-validation-timeout`, 30 seconds by default. `could not establish credential health` also covers an unexpected response from NICo or the token issuer. |
 
-   CAPNICo writes no NICo client error to the status or the log, because such an error can contain credentials. The message is the most detail a check reports.
+   The `NicoIdentity` check writes no NICo client error to its status or the log, because such an error can contain credentials. The message is the most detail a check reports.
 
 3. After you change the Secret, check the result again as in [Check that the result is current](#check-that-the-result-is-current). Creating, changing or deleting the Secret starts a check of the `NicoIdentity` objects that name it within seconds.
-
-To check a manager's access to Secrets, run this command with the namespace and the manager's service account, `controller-manager` in `capnico-system` for the CAPNICo release bundle:
-
-```bash
-kubectl auth can-i get secrets -n <NAMESPACE> --as=system:serviceaccount:capnico-system:controller-manager
-```
-
-The command prints `yes` when the manager can read Secrets in `<NAMESPACE>`. A CAPNICo chart installed with `rbac.namespaced=true` grants it only in the release namespace.
 
 ## The result is stale
 
@@ -121,11 +113,13 @@ A result is stale when no check has finished for more than 10 minutes. The `Nico
 
    The Deployment shows all replicas ready. If it does not, read the pod's state with `kubectl -n capnico-system get pods`.
 
-   A CAPNICo manager that serves `NicoIdentity` exits at startup when the `NicoIdentity` custom resource definition (CRD) is missing. Its log then shows `unable to create controller` with `"controller":"NicoIdentity"`, and the pod restarts in `CrashLoopBackOff`; while it does, CAPNICo reconciles nothing. Install the CRD from the same CAPNICo release. The next restart succeeds, or restart the Deployment to skip the restart delay:
+   A CAPNICo manager that serves `NicoIdentity` exits at startup when the `NicoIdentity` custom resource definition (CRD) is missing. Its log then shows `unable to create controller` with `"controller":"NicoIdentity"`, and the pod restarts in `CrashLoopBackOff`; while it does, CAPNICo reconciles nothing. Install the CRD from the same CAPNICo release. On an NVKE management cluster, CAPNICo comes from [`deploy/nico/capnico/capnico.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/capnico/capnico.yaml), re-running the NVKE install applies the release pinned there, and a newer release follows the "To bump" procedure in that file, as in step 3. The next restart succeeds, or restart the Deployment to skip the restart delay:
 
    ```bash
    kubectl -n capnico-system rollout restart deploy/controller-manager
    ```
+
+   A manager without `list` and `watch` on Secrets in its scope also fails to start its controllers and exits, so missing Secret access shows up as a restarting pod, not as a `SecretReadFailed` result.
 
    A manager that starts checks every `NicoIdentity` in its scope.
 
@@ -144,9 +138,9 @@ A result is stale when no check has finished for more than 10 minutes. The `Nico
 
      The label change starts a check within seconds.
 
-3. The manager's image serves `NicoIdentity`. A manager from an earlier CAPNICo release, such as `v0.0.45`, has no `NicoIdentity` controller and never checks one, even when the CRD is installed. Upgrade CAPNICo as a whole, CRDs and manager from the same release.
+3. The manager's image serves `NicoIdentity`. A manager from an earlier CAPNICo release, such as `v0.0.45`, has no `NicoIdentity` controller and never checks one, even when the CRD is installed. Upgrade CAPNICo as a whole, CRDs and manager from the same release. On an NVKE management cluster, follow the "To bump" procedure in [`deploy/nico/capnico/capnico.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/capnico/capnico.yaml): take the new release's `infrastructure-components.yaml`, keep the manager's `--reboot-annotation` and `--repair-annotation` arguments, and move the reference in `controller/go.mod`. The upstream release starts the manager without those arguments, and it then ignores every NVKE reboot and repair request. Re-running the NVKE install applies the release pinned in that file.
 
-During a NICo outage a round of checks takes longer: CAPNICo checks one `NicoIdentity` at a time, and each check can run for the full validation timeout.
+During a NICo outage a round of checks takes longer: CAPNICo checks one `NicoIdentity` at a time, and each check can run for the full validation timeout. With many `NicoIdentity` objects, a gap longer than 10 minutes can then mean slow checks rather than stopped ones; the `checked NicoIdentity credentials` lines in the [manager log](#read-the-capnico-manager-log) tell the two apart.
 
 ## No result at all
 
@@ -211,11 +205,11 @@ The `NicoIdentity` status and the manager log are the only places a check report
      | jq -cR 'fromjson? | select(.msg == "failed to read NicoIdentity credential Secret")'
    ```
 
-   The `error` key holds the error the Kubernetes API returned for a `SecretReadFailed` result, for example that the manager is forbidden to get the Secret.
+   The `error` key holds the error the Kubernetes API returned for a `SecretReadFailed` result, for example an API server error or a timeout.
 
 ## Verify
 
-Run `kubectl get nicoidentities -A`. The `NicoIdentity` that names your credentials Secret shows `READY` as `True` and `LASTCHECKED` under 10 minutes, and the jsonpath command in [Check that the result is current](#check-that-the-result-is-current) prints the same number twice. If you use `nvkectl get providers`, its `CREDENTIALS` column reads `HEALTHY`.
+Run `kubectl get nicoidentities -A`. The `NicoIdentity` that names your credentials Secret shows `READY` as `True` and `LASTCHECKED` under 10 minutes, and the jsonpath command in [Check that the result is current](#check-that-the-result-is-current) prints the same number twice. If the Secret is the provider's credentials Secret, `nico-credentials` in `capnico-system` by default, the `CREDENTIALS` column of `nvkectl get providers` reads `HEALTHY`; `nvkectl` reports on no other Secret.
 
 ## Next steps
 
