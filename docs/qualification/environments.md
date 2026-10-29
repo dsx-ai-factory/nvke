@@ -50,7 +50,7 @@ infrastructure:          # opaque to the loader; the forge provider decodes it
       instanceTypes:
         - name: cpu.arm
           id: "${FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID:-}"
-          provides: {machineType: cpu, arch: arm64}
+          provides: {machineType: gpu, arch: amd64}
         - name: gpu.gb200.h05.ibx4.dpux2
           id: "${FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID:-}"
           provides: {machineType: gpu, arch: arm64, gpu: gb200}

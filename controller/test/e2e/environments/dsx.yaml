@@ -88,10 +88,11 @@ infrastructure:
       # assigned to an Instance` while six other machines were free and idle.
       #
       # This datahall has NO CPU-only machines: every one of its boxes is a
-      # Lenovo SR675 V3 OVX carrying eight L40S. The type below binds four of
-      # them. One machine is enough for stage=provision, which places one node
-      # and is what the qualify-e2e-dsx label defaults to; a full run places
-      # three at once, which the four bound here cover.
+      # Lenovo SR675 V3 OVX carrying eight L40S. The type below binds eight of
+      # them. One machine is enough for stage=provision; a full run places
+      # three at once -- a site controller, a tenant control plane and a
+      # worker -- which the allocation's reservation has to cover as well as
+      # the binding does.
       #
       # `provides` says gpu rather than cpu because that is what the hardware
       # is. The site controller runs on accelerator hardware here for the same

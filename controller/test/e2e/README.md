@@ -847,20 +847,22 @@ There is no cluster fallback: an unset client fails the run naming both
 variables. The names derive from the datahall key, so a credential scoped to
 one datahall cannot be picked up by a run against another.
 
-Use `-e2e.site-stage=provision` or `bootstrap`. `full` is refused before a
-machine is taken: its tenant half decodes the environment as a Forge
-declaration, which a DSX one is not.
+Every stage runs, `full` included: the datahall has its own tenant spec, so a
+`full` run builds the site and then a control plane and a worker on it. The
+site lane registers one tenant entry per dialect and each decodes the
+environment strictly, so a hand-run selects its own with
+`-ginkgo.label-filter="site-controller && !nico-forge"`; the workflow does the
+same from the provider it resolved.
 
-the DSX datahall is **arm64 only**, and an absent `arch` capability defaults
-to amd64, so a hand-run has to ask for arm64 and stage arm64 OS images --- the
-command above passes no `-e2e.capabilities` and would fail in `Resolve` with
-"no declared site offers a amd64 CPU shape":
+The DSX datahall is **amd64 only**, which is what an absent `arch` capability
+already defaults to, so the capability below is explicit rather than required.
+Stage amd64 OS images to match:
 
 ```bash
 go test -timeout 5h . -args \
   -ginkgo.label-filter=site-controller -ginkgo.v \
   -e2e.config=e2e-config.yaml -e2e.environment=dsx -e2e.site-stage=provision \
-  -e2e.capabilities=arch=arm64 \
+  -e2e.capabilities=arch=amd64 \
   -e2e.versions=controller=<…>,os-image=<arm64 url>,os-image-bootloader=<arm64 url>,…
 ``` Build the inputs, then run; with the `site-inputs` defaults
 no `site:` block is needed at all:

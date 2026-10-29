@@ -69,15 +69,15 @@ A beta tag is cut once a night, so it adds one run rather than a stream of them.
 |---|---|
 | `qualify-e2e` | `QUALIFY_E2E_SCOPE`, or `golden-path` when that is unset: Ubuntu 24.04 on GB200, both arches |
 | `qualify-e2e-l40s` | the `l40s` scope: Ubuntu 24.04 on L40S at site-1, amd64 |
-| `qualify-e2e-dsx` | the `dsx` scope: the the DSX datahall datahall, at stage `provision` |
+| `qualify-e2e-dsx` | the `dsx` scope: the DSX datahall, at stage `full` |
 | `qualify-e2e-dry-run` | everything except joining Teleport and running the suite |
 
-The DSX label names its scope and stage outright, where `qualify-e2e` takes
-whatever `QUALIFY_E2E_SCOPE` says. The stage is pinned to `provision` because
-that datahall has one CPU machine bound, which is enough to place a node and
-reach it; a `full` run places three at once, and its tenant half speaks Forge
-only, so it is refused before a machine is taken. The dsx stream is outside the
-`full` scope for that reason.
+The DSX label names its scope outright, where `qualify-e2e` takes whatever
+`QUALIFY_E2E_SCOPE` says. It no longer pins a stage: the datahall binds eight
+machines and the suite has a DSX tenant spec, so a `full` run places its three
+--- a site controller, a tenant control plane and a worker --- the same as any
+other lane. A lane that wants a shorter stage sets `QUALIFY_E2E_STAGE` in its
+own environment.
 
 A run starts with a `plan` job that runs `qualify plan` and uploads
 `plan.json`, and then a single `qualify-run` job runs once for each stream of
