@@ -180,6 +180,8 @@ VIP    172.31.0.0/24:  nvke-controller allocates cluster VIPs; reached via BGP /
 
 On startup the speaker installs a covering `blackhole` route for the VIP range (so traffic for a VIP that no CP is currently announcing is dropped locally rather than leaking to the host default route), plus a more-specific `/32` ECMP route per announced VIP. The Tiltfile sets `NICO_VMS_VIP_CIDR`, registers the site with nvke-controller, and passes it as the speaker's allowlist; the layout is printed at `tilt up` time.
 
+The above describes Linux. On macOS the speaker listens on port 179 directly and installs a single-next-hop host route with `sudo route`; see [Full NVKE stack on macOS](#full-nvke-stack-on-macos).
+
 ### Libvirt-Network Mode
 
 For shared hosts where nico-vms must not create host networking of its own — most notably a hostNetwork Kubernetes pod.
@@ -249,10 +251,10 @@ Ranges used by a nico-vms deployment and the tenant clusters it creates — keep
 | Variable | Default | Description |
 |---|---|---|
 | `NICO_VMS_BGP_ENABLED` | `true` | Enable/disable the BGP speaker |
-| `NICO_VMS_BGP_LISTEN_PORT` | `10179` | Speaker listen port (179 is redirected here) |
+| `NICO_VMS_BGP_LISTEN_PORT` | `10179` (`179` on macOS) | Speaker listen port (on Linux, 179 is redirected here) |
 | `NICO_VMS_BGP_LOCAL_ASN` | `4294967000` | Host-side ASN |
 | `NICO_VMS_BGP_PEER_ASN` | `65100` | kube-vip ASN |
-| `NICO_VMS_BGP_VIP_CIDRS` | `""` (Tilt sets it to the VIP range) | VIP CIDRs the speaker accepts and installs a covering blackhole for |
+| `NICO_VMS_BGP_VIP_CIDRS` | `""` (Tilt sets it to the VIP range; `172.31.0.0/24` on macOS) | VIP CIDRs the speaker accepts and installs a covering blackhole for (not on macOS) |
 | `NICO_VMS_BGP_HOLD_TIME` | `9` | BGP hold timer (seconds) |
 | `NICO_VMS_BGP_KEEPALIVE` | `3` | BGP keepalive interval (seconds) |
 | `NICO_VMS_DHCP_RANGE_END` | last usable bridge host | Last DHCP IP (Tilt derives it from the bridge CIDR) |
@@ -324,13 +326,19 @@ curl http://localhost:18080/v2/org/novxwn552ssc/carbide/instance/<id>/diagnostic
 
 ### TPM Support
 
-The libvirt backend automatically provisions a software TPM 2.0 (swtpm) for each VM when `swtpm_setup` is available on the host. The EK certificate is captured during provisioning and stored in the database, accessible via the instance API.
+Both the libvirt and darwin-qemu backends automatically provision a software TPM 2.0 (swtpm) for each VM when `swtpm` and `swtpm_setup` are available on the host. The EK certificate is captured during provisioning and stored in the database, accessible via the instance API.
 
-Requirements:
+Requirements (Linux/libvirt):
 - `swtpm` and `swtpm-tools` installed (the setup script handles this)
 - AppArmor configured to allow swtpm access to the working directory (also handled by the setup script)
 
-If `swtpm_setup` is not found in `$PATH`, VMs are created without a TPM — no error, no configuration needed.
+Requirements (macOS/darwin-qemu):
+- `swtpm` installed — `brew install swtpm`, or add it to `.flox/env/manifest.toml` (`aarch64-darwin` is a supported system)
+- No AppArmor equivalent needed; state lives under the instance directory, which is already user-owned
+
+If `swtpm_setup` is not found in `$PATH` (or `NICO_VMS_SWTPM_SETUP_PATH`/`NICO_VMS_SWTPM_PATH` are unset and nothing resolves), a **new** instance is created without a TPM — no error, no configuration needed. An instance whose TPM state is already seeded is different: an already-bound FDE guest cannot boot without its TPM, so a missing swtpm there is a hard error rather than a silent downgrade.
+
+**On darwin-qemu, TPM state (`<instance-dir>/tpm/`) is the only thing that makes a bound FDE guest bootable again.** NVKE's FDE node image seals its LUKS key to the TPM on first boot and removes the plaintext passphrase slot entirely — every boot after that needs the *same* swtpm state to unseal the disk. `swtpm_setup` runs exactly once per instance (gated on `tpm/tpm2-00.permall` already existing); a second run would mint a different EK and permanently lock the guest out of its own disk. **Never delete `<instance-dir>/tpm/` for a running FDE VM outside of `Delete`.** Rebooting (QMP `system_reset`) does not touch it and does not relaunch swtpm either: QEMU's `-chardev socket` has no reconnect, so if swtpm has died while QEMU is still running, the guest's TPM is unusable until the instance is recreated; an FDE guest then fails its readiness check after the reboot.
 
 ## nico-containers
 
@@ -726,14 +734,33 @@ Run with `NICO_SIM_LOG_FORMAT=text` (the default for `make run`) for human-reada
 - `bgp` — BGP speaker route announcements and peer events
 - `promtail-targets` — Promtail targets file writer
 
-### Cleaning Up Stuck VMs
+### Managing VMs
+
+One script (`scripts/vms.sh`) lists, stops, starts and deletes VMs on macOS
+(darwin-qemu) and Linux (libvirt), including orphans: VMs the host still holds
+that nico-sim no longer knows about.
 
 ```bash
-# macOS: list and kill orphaned QEMU processes
-make darwin-qemu-list
-make darwin-qemu-clean
+make vms                        # nico-sim's view joined with the host's; orphans flagged
+make vm-stop VM="name-or-id"    # shut down, keeping disk and TPM state (vms-stop for all)
+make vm-start VM="name-or-id"   # boot from the same disk (vms-start for all)
+make vm-delete VM="a b"         # delete through nico-sim, or clean up an orphan
+make vms-clean                  # delete every orphan
+```
 
-# Linux (Lima): list and destroy orphaned libvirt domains
+Stop and start go through nico-sim (`nico-simctl instance stop|start`), so a
+stopped VM is not rebuilt by drift detection. `NICO_SIM_DB_PATH` (default: the
+Tilt database under `.dev/`) locates the instance directories and
+`NICO_SIM_URL` (default `http://localhost:18080`) nico-sim. When nico-sim is not
+running, `make vms` lists the host's view only.
+
+A running VM that still has no DHCP lease 5 minutes after it started is
+power-cycled once; if it has none 5 minutes after that, nico-sim marks the
+instance Error, since the guest likely failed to boot (see its console log).
+
+To clean up libvirt domains inside the Lima VM used by the integration tests:
+
+```bash
 make lima-libvirt-list
 make lima-libvirt-clean   # LIMA_VM_NAME=nico-vms by default
 ```
@@ -744,13 +771,15 @@ The server also detects orphaned VMs on startup. Set `NICO_VMS_CLEANUP_ORPHANED_
 
 ### macOS
 
-One command installs all dependencies (QEMU, vmnet-helper, cloud-localds):
+One command installs all dependencies (QEMU, vmnet-helper, cloud-localds, swtpm):
 
 ```bash
 make install-deps-homebrew
 ```
 
-The `darwin-qemu` backend runs QEMU via `vmnet-client --unprivileged` — no sudo needed on macOS 26+. On macOS 15 and earlier, vmnet-client uses sudo only to create the vmnet interface, then drops privileges.
+The `darwin-qemu` backend runs QEMU via `vmnet-run` — no sudo needed on macOS 26+. On macOS 15 and earlier, vmnet-run uses sudo only to create the vmnet interface, then drops privileges.
+
+swtpm is optional: without it, VMs boot with no TPM (fine for non-FDE images; an FDE image falls back to its passphrase-slot boot path — see [TPM Support](#tpm-support)). With it, TPM state lives at `<instance-dir>/tpm/`, alongside the disk overlay and seed ISO — not in `$TMPDIR`, and not touched by anything except `Delete`.
 
 ### Linux
 
@@ -821,7 +850,7 @@ For one-shot nico-vms integration tests, sync just this tree and run on the remo
 | `scripts/setup-linux.sh`           | Full Linux environment setup (bridge, dnsmasq, iptables, swtpm)   |
 | `scripts/teardown-linux.sh`        | Tear down bridge + iptables + dnsmasq and wipe the nico-vms DB    |
 | `scripts/install-deps-homebrew.sh` | Install macOS dependencies via Homebrew                           |
-| `scripts/darwin-qemu-machines.sh`  | `list` / `clean` QEMU processes on macOS                          |
+| `scripts/vms.sh`                   | List, stop, start, delete VMs and clean up orphans                |
 | `scripts/lima-libvirt-machines.sh` | `list` / `clean` libvirt domains inside a Lima VM                 |
 | `scripts/sync-to-remote.sh`        | Rsync codebase to a remote test machine                           |
 
@@ -838,7 +867,7 @@ For one-shot nico-vms integration tests, sync just this tree and run on the remo
 | `internal/lifecycle/`        | Reconciliation engine. Drives `new → provisioning → running → ready` transitions. DHCP lease reading. Orphan detection. |
 | `internal/state/`            | SQLite persistence via `bun` ORM. Models, queries, IPAM allocation. Single `Store` interface for all DB access.         |
 | `internal/vm/`               | `Runtime` interface + mock implementation.                                                                              |
-| `internal/vm/darwinqemu/`    | macOS QEMU backend. Process management, QMP control, vmnet-client networking.                                           |
+| `internal/vm/darwinqemu/`    | macOS QEMU backend. Process management, QMP control, vmnet-run networking.                                           |
 | `internal/vm/libvirt/`       | Linux libvirt backend. Domain XML generation, virsh CLI wrapper.                                                        |
 | `internal/vm/artifacts/`     | Builds disk overlays (`qemu-img`) and cloud-init seed ISOs (`cloud-localds`). Static vs DHCP network-config.            |
 | `internal/cloudinit/`        | Metadata server: EC2, NoCloud-net, and production NoCloud endpoints. Phone-home handler.                                |
@@ -939,3 +968,121 @@ This starts:
 At startup, Tilt prints the network layout (DHCP pool, VIP pool) derived from `NICO_VMS_BRIDGE_CIDR`.
 
 Grafana is available at `http://localhost:3000` (admin/admin). VM console logs appear under the `vm_console` job with per-instance `instance_name` and `instance_id` labels.
+
+## Testing a locally built image on macOS
+
+Use a native-architecture **non-FDE** image built with `linux-generic` on Apple
+Silicon. Production ARM64 `linux-nvidia-64k` and TPM/FDE acceptance remain Linux
+KVM tests. The VM runtime does not require Flox or Nix.
+
+From the repository root:
+
+```sh
+flox activate                            # exposes the pinned QEMU, Go and ISO tools
+make -C controller/nico-sim nico-vms-test ARCH=arm64 IMAGE=/absolute/path/to/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2
+make -C controller/nico-sim nico-vms-up ARCH=arm64 IMAGE=/absolute/path/to/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2
+```
+
+`nico-vms-test` creates isolated overlays and tests create/delete, SSH, reboot and
+bidirectional VM traffic. `make -C controller/nico-sim nico-vms-test-cluster IMAGE=...` additionally
+boots two VMs, installs the image's staged Kubernetes/Calico packages, and checks
+that both nodes and CoreDNS become ready. It then runs a digest-pinned BusyBox
+pod on each VM to verify bidirectional pod traffic and cluster DNS. The BusyBox
+test image is pulled from Docker Hub, so this cluster test requires registry
+access. Use an image with Calico manifest package revision 2 or later, which
+includes the separate operator CRDs. This test bootstraps Kubernetes directly;
+NVKE/CAPI and SPIRE integration are the next layer of validation.
+
+The tests disable orphan cleanup so other sessions' VMs are
+left alone. `nico-vms-up` runs the simulator in the foreground; its per-checkout
+state is under `.dev/mac`. Stopping the server leaves its VMs intact for later
+reconciliation. Delete individual instances through `nico-simctl` before stopping
+it when you want them removed. The base image is never modified.
+
+Install QEMU (including EDK2 firmware), Go and an ISO builder (`cdrtools`, or
+`cloud-utils`) through Flox or your platform's package manager. `flox activate`
+installs the pinned `qemu` and `cdrtools` packages, but vmnet-helper is not yet
+in the Flox catalog — install it with Homebrew instead (below).
+
+On macOS 26+ use Homebrew's QEMU, cdrtools and
+`nirs/vmnet-helper/vmnet-helper` packages. See the
+[upstream installation guide](https://github.com/nirs/vmnet-helper#installation)
+for macOS 15 and earlier, which requires the upstream root-owned helper and its
+sudoers setup. Do not create Homebrew-to-`/opt` privileged symlinks. Nix-managed
+hosts should use their declarative configuration instead of Homebrew.
+
+Tool discovery uses `PATH` and conventional upstream/Homebrew locations.
+`NICO_VMS_VMNET_RUN_PATH` and `NICO_VMS_VMNET_HELPER_PATH` override helper discovery.
+Firmware comes from the selected QEMU's `-L help` directories. For custom firmware,
+set both `NICO_VMS_EFI_CODE` and `NICO_VMS_EFI_VARS_TEMPLATE`; each VM receives a
+private writable copy of the latter, preserved across reboot.
+
+The Mac lane discovers Apple's shared-network subnet and uses its DHCP. Leave
+`NICO_VMS_BRIDGE_CIDR` unset; an explicit value must match the discovered subnet.
+It reads `/var/db/dhcpd_leases`;
+it never changes that file or Linux dnsmasq reservations. Seeds preserve the NIC
+name and request a MAC DHCP identifier. Cloud-init data comes from the attached
+NoCloud ISO. The BGP speaker runs on this path too; see
+[Sudoers rule for VIP routes](#sudoers-rule-for-vip-routes) for its prerequisite.
+
+### Full NVKE stack on macOS
+
+`controller/hack/mac-vm-dev-up.sh` walks through the whole bring-up, explaining
+and pausing at each step (`--yes` runs straight through):
+
+1. it bakes the arm64 node image under HVF, if one is not already built;
+2. it writes local, gitignored config;
+3. it starts Colima and kind with CAPI core;
+4. it runs `tilt up` with `nico_sim_backends: ["vm"]`;
+5. it creates a one control-plane, one worker OVN cluster, and checks
+   cross-node pod traffic and DNS.
+
+`controller/hack/mac-vm-dev-e2e.sh` runs the nico-vms e2e specs against that
+stack, with the arm64 CI lane's label filter less `parallel-lifecycle` (see the
+script for why) unless `LABEL_FILTER` is set.
+`controller/hack/mac-vm-dev-down.sh` tears it all down again. The management
+plane runs in kind; only the tenant nodes are VMs. To list, stop, start or
+delete the VMs (including lost ones), see [Managing VMs](#managing-vms).
+
+How the darwin path differs from the Linux bridge:
+
+- **Metadata.** CWE's user-data posts `phone_home` to `169.254.169.254:7777`,
+  which only root can assign on macOS. nico-sim rewrites that URL in the seed to
+  the vmnet gateway, and serves metadata on `:7777` to the vmnet subnet only.
+  Any VM on that subnet, including ones from UTM or Lima, can therefore read
+  user-data by instance ID.
+- **Control-plane VIPs.** As on Linux, VIPs come from `172.31.0.0/24`
+  (`172.31.0.10` first), off-link. kube-vip announces the VIP over BGP to the
+  vmnet gateway on port 179, which nico-sim's speaker listens on (all
+  interfaces, since the gateway address only exists while a VM holds vmnet up).
+  The speaker installs a host route on the Mac to the control plane holding the
+  VIP, and macOS only lets root change routes, so see
+  [Sudoers rule for VIP routes](#sudoers-rule-for-vip-routes). macOS has no
+  ECMP here: the route has one next hop, and failover moves it when kube-vip's
+  leader changes. No covering blackhole route is installed.
+- **Node size.** The arm64 generic kernel reserves 512Mi for crashkernel, so
+  darwin clusters default to the `cpu4-mem8gb` instance type, which leaves room
+  for OVN.
+
+#### Sudoers rule for VIP routes
+
+nico-sim installs the VIP host routes by running `sudo -n /sbin/route`, which
+needs a one-time passwordless rule. It survives reboots. Put it in
+`/etc/sudoers.d/nvke-nico-sim` with `sudo visudo -f /etc/sudoers.d/nvke-nico-sim`:
+
+```
+%admin ALL=(root) NOPASSWD: /sbin/route -n add -host 172.31.0.*, /sbin/route -n delete -host 172.31.0.*
+```
+
+sudoers `*` also matches spaces, so this limits the destination to
+`172.31.0.x` host routes, not the gateway or other arguments. nico-sim and
+`mac-vm-dev-up.sh` check the rule first and stop with an error pointing here if
+it is missing. To remove it, run `sudo rm /etc/sudoers.d/nvke-nico-sim`.
+
+On nix-darwin, declare it instead:
+
+```nix
+security.sudo.extraConfig = ''
+  %admin ALL=(root) NOPASSWD: /sbin/route -n add -host 172.31.0.*, /sbin/route -n delete -host 172.31.0.*
+'';
+```

@@ -37,6 +37,7 @@ const (
 	startRetryDelay  = 10 * time.Second
 	defineAttempts   = 6
 	defineRetryDelay = 30 * time.Second
+	stopTimeout      = 60 * time.Second
 )
 
 func (r *virsh) EnsureBridge(ctx context.Context, bridgeName, bridgeCIDR string) error {
@@ -151,6 +152,31 @@ func (r *virsh) Reboot(ctx context.Context, machineID string) error {
 		}
 	}
 	return nil
+}
+
+// Stop asks the guest to shut down via ACPI and forces it off if it has not
+// stopped after a minute. The domain definition, disk and TPM state stay.
+func (r *virsh) Stop(ctx context.Context, machineID string) error {
+	if _, err := r.runVirsh(ctx, "shutdown", machineID); err != nil {
+		return err
+	}
+	for deadline := time.Now().Add(stopTimeout); time.Now().Before(deadline); {
+		if state, _ := r.GetState(ctx, machineID); state == vm.MachineStateShutOff {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+	_, err := r.runVirsh(ctx, "destroy", machineID)
+	return err
+}
+
+func (r *virsh) Start(ctx context.Context, machineID string) error {
+	_, err := r.runVirsh(ctx, "start", machineID)
+	return err
 }
 
 func (r *virsh) Delete(ctx context.Context, machineID string) error {

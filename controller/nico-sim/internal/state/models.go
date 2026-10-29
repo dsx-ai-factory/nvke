@@ -14,6 +14,7 @@ import (
 const (
 	DesiredStatePresent = "present"
 	DesiredStateAbsent  = "absent"
+	DesiredStateStopped = "stopped"
 
 	ObservedStateNew          = "new"
 	ObservedStateProvisioning = "provisioning"

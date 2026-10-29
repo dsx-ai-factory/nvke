@@ -37,8 +37,9 @@ locals {
   # The requested architecture is validated against the authenticated material
   # manifest before it selects QEMU, firmware, console, and guest packages.
   # ARM uses virt, AAVMF, the PL011 serial console, and the NVIDIA 64K-page
-  # kernel. AMD64 uses q35, OVMF, ttyS0, and linux-nvidia.
-  nvidia_kernel_package = local.architecture == "arm64" ? "linux-nvidia-64k" : "linux-nvidia"
+  # kernel. AMD64 uses q35, OVMF, ttyS0, and linux-nvidia. var.kernel_package
+  # overrides the kernel, e.g. linux-generic for Apple-silicon HVF guests.
+  nvidia_kernel_package = var.kernel_package != "" ? var.kernel_package : (local.architecture == "arm64" ? "linux-nvidia-64k" : "linux-nvidia")
   # The INSTALLED system's console only. boot_command below keeps the installer
   # on the first UART, because the build VM maps `-serial file:` there and
   # moving it would blank the log used to diagnose a stuck bake. Overridable

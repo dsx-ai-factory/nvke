@@ -47,6 +47,16 @@ func (r *MockRuntime) Reboot(_ context.Context, machineID string) error {
 	return nil
 }
 
+func (r *MockRuntime) Stop(_ context.Context, machineID string) error {
+	r.SetState(machineID, MachineStateShutOff)
+	return nil
+}
+
+func (r *MockRuntime) Start(_ context.Context, machineID string) error {
+	r.SetState(machineID, MachineStateRunning)
+	return nil
+}
+
 func (r *MockRuntime) Delete(_ context.Context, machineID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

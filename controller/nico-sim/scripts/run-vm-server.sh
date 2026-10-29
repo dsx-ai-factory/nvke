@@ -55,30 +55,21 @@ export NICO_VMS_BASE_IMAGE
 
 if [[ "${NICO_VMS_VM_BACKEND}" == "darwin-qemu" ]]; then
 	if [[ -z "${NICO_VMS_QEMU_SYSTEM_PATH:-}" ]]; then
-		if command -v qemu-system-aarch64 >/dev/null 2>&1; then
-			NICO_VMS_QEMU_SYSTEM_PATH="$(command -v qemu-system-aarch64)"
-		elif command -v qemu-system-x86_64 >/dev/null 2>&1; then
-			NICO_VMS_QEMU_SYSTEM_PATH="$(command -v qemu-system-x86_64)"
-		else
-			echo "No qemu-system binary found. Install dependencies first:"
-			echo "  make install-deps-homebrew"
+		case "$(uname -m)" in
+		arm64) qemu=qemu-system-aarch64 ;;
+		x86_64) qemu=qemu-system-x86_64 ;;
+		*) echo "Unsupported Mac architecture: $(uname -m)" >&2; exit 1 ;;
+		esac
+		NICO_VMS_QEMU_SYSTEM_PATH="$(command -v "$qemu")" || {
+			echo "Missing $qemu; see README.md macOS setup" >&2
 			exit 1
-		fi
+		}
 	fi
 	export NICO_VMS_QEMU_SYSTEM_PATH
 
-	if [[ -z "${NICO_VMS_CLOUD_LOCALDS_PATH:-}" ]]; then
-		if command -v cloud-localds >/dev/null 2>&1; then
-			NICO_VMS_CLOUD_LOCALDS_PATH="$(command -v cloud-localds)"
-		elif [[ -x "${repo_root}/scripts/bin/cloud-localds" ]]; then
-			NICO_VMS_CLOUD_LOCALDS_PATH="${repo_root}/scripts/bin/cloud-localds"
-		else
-			echo "cloud-localds not found. Install dependencies first:"
-			echo "  make install-deps-homebrew"
-			exit 1
-		fi
-	fi
-	export NICO_VMS_CLOUD_LOCALDS_PATH
+	# The artifact builder can use mkisofs/genisoimage directly when
+	# cloud-localds is absent. Do not require the Linux helper on macOS.
+
 fi
 
 echo "Starting nico-sim with the nico-vms backend"

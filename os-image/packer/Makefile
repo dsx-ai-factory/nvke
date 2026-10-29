@@ -150,14 +150,21 @@ HOST_ARCH := $(shell uname -m)
 #
 # -w as well as -c: a present but unwritable /dev/kvm fails inside QEMU, later
 # and less legibly than falling back here.
-ACCELERATOR ?= $(shell if [ "$(HOST_ARCH)" = "$(ARCH_UNAME)" ] && [ -c /dev/kvm ] && [ -w /dev/kvm ]; then echo kvm; else echo tcg; fi)
+#
+# macOS: the Hypervisor framework accelerates a same-arch guest, which makes an
+# arm64 bake practical on Apple silicon. kern.hv_support is the documented probe.
+ACCELERATOR ?= $(shell \
+	if [ "$$(uname -s)" = Darwin ] && [ "$(ARCH)" = arm64 ] && [ "$(HOST_ARCH)" = arm64 ] && \
+		[ "$$(sysctl -n kern.hv_support 2>/dev/null)" = 1 ]; then echo hvf; \
+	elif [ "$(HOST_ARCH)" = "$(ARCH_UNAME)" ] && [ -c /dev/kvm ] && [ -w /dev/kvm ]; then echo kvm; \
+	else echo tcg; fi)
 
 # "host" needs KVM to be meaningful; "max" is the safe choice under TCG. On an
 # arm64 host "max" also turns on pointer authentication, which tcg emulates so
 # slowly that the live installer's userspace stalls (2 h of wall time bought
 # 20 min of guest uptime); pauth-impdef=on keeps the feature and makes it cheap.
 comma := ,
-CPU_MODEL ?= $(if $(filter kvm,$(ACCELERATOR)),host,$(if $(filter arm64,$(ARCH)),max$(comma)pauth-impdef=on,max))
+CPU_MODEL ?= $(if $(filter kvm hvf,$(ACCELERATOR)),host,$(if $(filter arm64,$(ARCH)),max$(comma)pauth-impdef=on,max))
 
 # Emulated boot is minutes, not seconds. Overridable, so a slow runner can
 # raise it without editing this file. 60m wasn't enough under tcg: a real CI
@@ -173,7 +180,7 @@ CPU_MODEL ?= $(if $(filter kvm,$(ACCELERATOR)),host,$(if $(filter arm64,$(ARCH))
 # either: with pauth-impdef=on the install runs at roughly 10x the KVM pace
 # (14 min under KVM, so ~140 min), and run 34771011057 was six packages into
 # postinstall when it hit that wall.
-SSH_TIMEOUT ?= $(if $(filter kvm,$(ACCELERATOR)),30m,180m)
+SSH_TIMEOUT ?= $(if $(filter kvm hvf,$(ACCELERATOR)),30m,180m)
 
 # Guest vCPUs. More is not faster under tcg: every broadcast TLB invalidate
 # has to synchronise all vCPU threads, and run 34791670173 with 8 was still
@@ -187,7 +194,12 @@ GUEST_MEMORY_MIB ?= 8192
 # this just needs to comfortably exceed BIOS+GRUB boot time under tcg — it
 # no longer has to land inside a narrow window. See boot_wait's comment in
 # nvke-node-fde.pkr.hcl.
-BOOT_WAIT ?= $(if $(filter kvm,$(ACCELERATOR)),10s,30s)
+BOOT_WAIT ?= $(if $(filter kvm hvf,$(ACCELERATOR)),10s,30s)
+
+# Guest kernel package. Empty keeps the architecture default (linux-nvidia, or
+# linux-nvidia-64k on arm64). Apple silicon has no 64K page granule, so an HVF
+# bake, which has to boot the image it builds, defaults to linux-generic.
+KERNEL_PACKAGE ?= $(if $(filter hvf,$(ACCELERATOR)),linux-generic,)
 
 # Firmware and acceleration checks share the boot harness selection, including
 # QEMU's firmware directory on hosts without /usr/share/OVMF or AAVMF. The
@@ -323,15 +335,14 @@ prepare-installer-iso: preflight
 	mkdir -p $(ISO_CACHE)
 	ISO_URL=$(ISO_URL) ISO_CHECKSUM=$(ISO_CHECKSUM) OUT_DIR=$(ISO_CACHE) ./scripts/prepare-installer-iso.sh
 
-# Image builds run the Ubuntu installer, so they need kvm or tcg. The shared
-# boot harness also knows about hvf, but that is for run-vm/boot-smoke on
-# macOS; check-deps picks the host or VM package builder separately.
+# Image builds run the Ubuntu installer under kvm, hvf (arm64 on Apple silicon)
+# or tcg; check-deps picks the host or VM package builder separately.
 # Make writes ARCH into the material manifest, so require the acquired ISO
 # filename to agree with the architecture Packer will read from that manifest.
 check-acceleration:
 	@case "$(ACCELERATOR)" in \
-		kvm|tcg) ;; \
-		*) echo "ACCELERATOR=$(ACCELERATOR) is not supported for image builds: they run under kvm or tcg. hvf is for run-vm/boot-smoke only." >&2; exit 1 ;; \
+		kvm|hvf|tcg) ;; \
+		*) echo "ACCELERATOR=$(ACCELERATOR) is not supported for image builds: they run under kvm, hvf or tcg." >&2; exit 1 ;; \
 	esac
 	@ARCH=$(ARCH) ISO_URL=$(ISO_URL) bash -ec '\
 		if [[ "$$ISO_URL" =~ ubuntu-[0-9.]+-live-server-(amd64|arm64)\.iso$$ ]]; then \
@@ -584,6 +595,7 @@ _os-image-fde: prepare-image-build
 		-var "boot_wait=$(BOOT_WAIT)" \
 		-var "root_fs_label=$(ROOT_FS_LABEL)" \
 		-var "serial_console=$(SERIAL_CONSOLE)" \
+		-var "kernel_package=$(KERNEL_PACKAGE)" \
 		"$(PACKER_PROJECT)"
 	mkdir "$(CURDIR)/output-fde"
 	mv "$(PACKER_OUTPUT_DIRECTORY_FDE)/fde/nvke-node.qcow2" \
@@ -626,6 +638,7 @@ _os-image-non-fde: prepare-image-build
 		-var "boot_wait=$(BOOT_WAIT)" \
 		-var "root_fs_label=$(ROOT_FS_LABEL)" \
 		-var "serial_console=$(SERIAL_CONSOLE)" \
+		-var "kernel_package=$(KERNEL_PACKAGE)" \
 		"$(PACKER_PROJECT)"
 	mkdir "$(CURDIR)/output-non-fde"
 	mv "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)/non-fde/nvke-node.qcow2" \
