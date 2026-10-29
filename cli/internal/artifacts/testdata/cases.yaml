@@ -18,8 +18,6 @@
   expect: ok
 - file: cases/valid-local-path-absent.json
   expect: ok
-- file: cases/valid-source-absent.json
-  expect: ok
 - file: cases/valid-extra-outputs-and-keys.json
   expect: ok
 - file: nvkr/helm-export.json

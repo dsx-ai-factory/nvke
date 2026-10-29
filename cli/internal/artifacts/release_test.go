@@ -45,12 +45,10 @@ func TestDecodeNVKRExport(t *testing.T) {
 		require.NotNil(t, apt)
 		assert.Equal(t, "apt-repository", apt.Kind)
 
-		require.Len(t, f.Evidence, 2)
-		assert.Nil(t, f.Source("gpu-runtime"))
 		assert.Nil(t, f.Output("cwe"))
 	})
 
-	t.Run("executables with per-output source", func(t *testing.T) {
+	t.Run("executables", func(t *testing.T) {
 		f := decodeRelease(t, "nvkr/exec-export.json")
 		require.Len(t, f.Outputs, 4)
 
@@ -58,12 +56,7 @@ func TestDecodeNVKRExport(t *testing.T) {
 		require.NotNil(t, alpha)
 		assert.Equal(t, "executable", alpha.Kind)
 		assert.Equal(t, []string{"linux/amd64"}, alpha.Platforms())
-
-		require.NotNil(t, f.Source("alpha"))
-		assert.Equal(t, "https://example.test/one", f.Source("alpha").Repo)
-		assert.Equal(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", f.Source("alpha").Commit)
-		assert.Equal(t, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", f.Source("beta").Commit)
-		assert.Nil(t, f.Source("omega"))
+		assert.Equal(t, []string{"linux/arm64"}, f.Output("beta").Platforms())
 	})
 }
 
@@ -85,16 +78,11 @@ func TestDecodeValid(t *testing.T) {
 
 	assert.ElementsMatch(t, []string{"linux/amd64", "linux/arm64"}, f.Output("cwe").Platforms())
 	assert.Equal(t, "0.30.1", f.Output("spire").ChartVersion)
-	require.NotNil(t, f.Source("cwe"))
-	assert.Equal(t, "https://github.com/dsx-ai-factory/nvke", f.Source("cwe").Repo)
-	assert.Nil(t, f.Source("spire"))
 }
 
 func TestDecodeMinimal(t *testing.T) {
 	f := decodeRelease(t, "cases/minimal-hand-written.json")
 	assert.Empty(t, f.RootDigest)
-	assert.Empty(t, f.Evidence)
-	assert.Nil(t, f.Source("cwe"))
 	require.NotNil(t, f.Output("cwe"))
 	assert.ElementsMatch(t, []string{"linux/amd64", "linux/arm64"}, f.Output("cwe").Platforms())
 	assert.Equal(t, "0.30.1", f.Output("spire").ChartVersion)
@@ -150,17 +138,6 @@ func TestPlatforms(t *testing.T) {
 			assert.Equal(t, c.want, c.out.Platforms())
 		})
 	}
-}
-
-func TestSource(t *testing.T) {
-	src := &Source{Repo: "https://example.test/repo", Commit: "0123456789abcdef0123456789abcdef01234567"}
-	rel := &Release{Evidence: []Evidence{
-		{Binding: EvidenceBinding{Outputs: []string{"cwe"}}},
-		{Binding: EvidenceBinding{Outputs: []string{"nktp", "cwe"}}, Source: src},
-	}}
-	assert.Equal(t, src, rel.Source("cwe"))
-	assert.Equal(t, src, rel.Source("nktp"))
-	assert.Nil(t, rel.Source("spire"))
 }
 
 // Every case file is listed in cases.yaml and every listed file exists.

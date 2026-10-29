@@ -55,9 +55,8 @@ var Expected = []Expectation{
 type Release struct {
 	// RootDigest identifies the release the file describes. It is recorded
 	// in the install record, not verified against the content.
-	RootDigest string     `json:"rootDigest"`
-	Outputs    []Output   `json:"outputs"`
-	Evidence   []Evidence `json:"evidence"`
+	RootDigest string   `json:"rootDigest"`
+	Outputs    []Output `json:"outputs"`
 }
 
 // Output is one image or chart. Reference is the digest-pinned OCI
@@ -80,24 +79,6 @@ type ImageIndex struct {
 // ImageIndexChild is one manifest of an image index.
 type ImageIndexChild struct {
 	Platform string `json:"platform"`
-}
-
-// Evidence is one attestation nvkr bound to outputs. nvkectl reads only the
-// source it names.
-type Evidence struct {
-	Binding EvidenceBinding `json:"binding"`
-	Source  *Source         `json:"source"`
-}
-
-// EvidenceBinding names the outputs an evidence entry covers.
-type EvidenceBinding struct {
-	Outputs []string `json:"outputs"`
-}
-
-// Source is the repository and commit an output was built from.
-type Source struct {
-	Repo   string `json:"repo"`
-	Commit string `json:"commit"`
 }
 
 // Decode reads one JSON object and rejects anything after it. It does not
@@ -125,22 +106,6 @@ func (rel *Release) Output(name string) *Output {
 	for i := range rel.Outputs {
 		if rel.Outputs[i].Name == name {
 			return &rel.Outputs[i]
-		}
-	}
-	return nil
-}
-
-// Source returns the source an evidence entry binds to the output, or nil.
-// Entries bound to one output share a source, so the first match is enough.
-func (rel *Release) Source(name string) *Source {
-	for _, e := range rel.Evidence {
-		if e.Source == nil {
-			continue
-		}
-		for _, o := range e.Binding.Outputs {
-			if o == name {
-				return e.Source
-			}
 		}
 	}
 	return nil
