@@ -77,6 +77,32 @@ class NextTagTest(unittest.TestCase):
                     self.commit(f"{subject}\n\nRemoves it.\n\n{footer}\nSigned-off-by: fixture <fixture@example.com>")
                     self.assert_next_tag("v0.23.0", "main")
 
+    def test_a_footer_before_the_sign_off_paragraph_is_a_breaking_change(self):
+        bodies = (
+            "Removes it.\n\nBREAKING CHANGE: the v1 field is gone.\n\nSigned-off-by: fixture <fixture@example.com>",
+            "* refactor(api): remove a public field\n\nBREAKING CHANGE: the v1 field is gone.\n\n"
+            "Signed-off-by: fixture <fixture@example.com>\n\n* docs: say so\n\nSigned-off-by: fixture <fixture@example.com>",
+        )
+        for body in bodies:
+            with self.subTest(body=body):
+                self.git("reset", "--quiet", "--hard", "v0.22.0")
+                self.commit(f"refactor(api): remove a public field (#1)\n\n{body}")
+                self.assert_next_tag("v0.23.0", "main")
+
+    def test_a_footer_in_a_fenced_example_is_not_a_breaking_change(self):
+        for fence in ("```", "~~~", "  ```text"):
+            with self.subTest(fence=fence):
+                self.git("reset", "--quiet", "--hard", "v0.22.0")
+                self.commit(f"docs: show the footer\n\nWrite it as:\n\n{fence}\nBREAKING CHANGE: the v1 field is gone.\n{fence.strip()[:3]}\n")
+                self.assert_nothing_releasable("main")
+                self.commit("fix: a")
+                self.assert_next_tag("v0.22.1", "main")
+
+    def test_an_unclosed_fence_does_not_hide_the_next_commits_footer(self):
+        self.commit("refactor(api): remove a public field\n\nBREAKING CHANGE: the v1 field is gone.")
+        self.commit("docs: a\n\n```\nnever closed")
+        self.assert_next_tag("v0.23.0", "main")
+
     def test_a_footer_lookalike_is_not_a_breaking_change(self):
         self.commit(
             "docs: a\n\nThis is not a BREAKING CHANGE: it only mentions one.",

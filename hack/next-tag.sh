@@ -9,8 +9,9 @@ set -euo pipefail
 # The version is read from the conventional commits since the latest GA tag. A
 # feat, or a breaking change of any type, bumps the minor; a fix bumps the patch.
 # A breaking change is a ! after the type, or a BREAKING CHANGE footer in the
-# body. The major is never bumped: 1.0 is cut by hand. With neither, nothing is
-# releasable, and the script exits 3 having printed nothing on stdout.
+# body outside a fenced code block. The major is never bumped: 1.0 is cut by
+# hand. With neither, nothing is releasable, and the script exits 3 having
+# printed nothing on stdout.
 #
 # next_version prints the next release tag for a branch or commit.
 # Args:
@@ -31,9 +32,19 @@ function next_version() {
     # Read into variables rather than piped: grep -q exits on the first match,
     # and git log, killed by SIGPIPE, would fail the pipeline under pipefail.
     # The footer token is uppercase, and BREAKING-CHANGE is its synonym.
+    #
+    # The footer is looked for on any line of a body, not only in its last
+    # paragraph. Git does not read BREAKING CHANGE as a trailer, so commit -s
+    # puts the sign-off in a paragraph after it, and a squash merge joins every
+    # commit's message into one body. A line inside a fenced code block is an
+    # example rather than a footer, and each commit starts outside a fence, so
+    # one left open cannot hide the next commit's footer.
     local subjects bodies
     subjects="$(git log --format='%s' "${range}")"
-    bodies="$(git log --format='%b' "${range}")"
+    bodies="$(git log --format='%x1e%n%b' "${range}" | awk -v commit=$'\036' '
+        $0 == commit { fenced = 0; next }
+        /^ *(```|~~~)/ { fenced = !fenced; next }
+        !fenced')"
     if grep -Eq '^(feat(\([^)]*\))?!?|[a-z]+(\([^)]*\))?!):' <<< "${subjects}" \
         || grep -Eq '^BREAKING[ -]CHANGE: ' <<< "${bodies}"; then
         minor=$((minor+1))
