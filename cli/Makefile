@@ -331,17 +331,26 @@ provider-manifest: ## Regenerate the embedded provisioned-provider manifest.
 # module and the bootstrap has to work from the binary alone, without a checkout.
 CAPNICO_SOURCE   := ../deploy/nico/capnico/capnico.yaml
 CAPNICO_MANIFEST := internal/bootstrap/controllerdeploy/manifests/capnico.yaml
+# The stack directory's copy is a template: the image line takes the
+# capnico-controller reference from the artifact file.
+CAPNICO_TEMPLATE := internal/stackinstall/stack/manifests/capnico.yaml.tmpl
+CAPNICO_TEMPLATE_SED := 's|^\( *image: \)ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:.*$$|\1{{ .CAPNICoImage }}|'
 
 capnico-manifest: ## Copy the deploy path's CAPNICo manifest into the embedded manifests.
 	@cp $(CAPNICO_SOURCE) $(CAPNICO_MANIFEST)
 	@echo "  wrote $(CAPNICO_MANIFEST)"
+	@sed $(CAPNICO_TEMPLATE_SED) $(CAPNICO_SOURCE) > $(CAPNICO_TEMPLATE)
+	@grep -q '{{ .CAPNICoImage }}' $(CAPNICO_TEMPLATE) || { echo "ERROR: no image line matched in $(CAPNICO_SOURCE)"; exit 1; }
+	@echo "  wrote $(CAPNICO_TEMPLATE)"
 
-capnico-manifest-check: ## Verify the embedded CAPNICo manifest is the deploy path's.
-	@git ls-files --error-unmatch $(CAPNICO_MANIFEST) > /dev/null 2>&1 \
-		|| { echo "$(CAPNICO_MANIFEST) is not tracked by git. Run 'make -C cli capnico-manifest' and commit it."; exit 1; }
+capnico-manifest-check: ## Verify the embedded CAPNICo manifests are the deploy path's.
+	@git ls-files --error-unmatch $(CAPNICO_MANIFEST) $(CAPNICO_TEMPLATE) > /dev/null 2>&1 \
+		|| { echo "$(CAPNICO_MANIFEST) or $(CAPNICO_TEMPLATE) is not tracked by git. Run 'make -C cli capnico-manifest' and commit them."; exit 1; }
 	@cmp -s $(CAPNICO_SOURCE) $(CAPNICO_MANIFEST) \
 		|| { echo "ERROR: $(CAPNICO_MANIFEST) differs from deploy/nico/capnico/capnico.yaml. Run 'make -C cli capnico-manifest' and commit it."; exit 1; }
-	@echo "  $(CAPNICO_MANIFEST) is up to date."
+	@sed $(CAPNICO_TEMPLATE_SED) $(CAPNICO_SOURCE) | cmp -s - $(CAPNICO_TEMPLATE) \
+		|| { echo "ERROR: $(CAPNICO_TEMPLATE) differs from deploy/nico/capnico/capnico.yaml with the image templated. Run 'make -C cli capnico-manifest' and commit it."; exit 1; }
+	@echo "  $(CAPNICO_MANIFEST) and $(CAPNICO_TEMPLATE) are up to date."
 
 provider-manifest-check: capnico-manifest-check ## Verify the embedded provider manifests are up to date.
 	@# Tracking first, as notices-check does: git diff says nothing about an

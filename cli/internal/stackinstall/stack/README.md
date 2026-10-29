@@ -74,8 +74,6 @@ own layout and goes straight to that chart.
 
 ## What is installed outside this directory
 
-- CAPNICo. The artifact file lists it as a manifest, and the command applies
-  it.
 - cert-manager and Cluster API. `clusterctl init` installs both, with the
   kubeadm providers.
 - A default StorageClass. Which provisioner is right depends on the hardware.
@@ -100,6 +98,7 @@ own layout and goes straight to that chart.
 | File | Input |
 |---|---|
 | `manifests/nktp-cluster.yaml.tmpl` | `.ClusterName`, the site's name from the site spec |
+| `manifests/capnico.yaml.tmpl` | `.CAPNICoImage`, the `capnico-controller` reference from the artifact file. The rest of the file is CAPNICo's released `infrastructure-components.yaml`, generated from `deploy/nico/capnico/capnico.yaml` by `make -C cli capnico-manifest`; do not edit it here. |
 | `manifests/nvke-api-clients.yaml.tmpl` | `.ClientNetworks`, the CIDRs from the site spec that may reach the API: the host that runs `nvkectl` and the tenant node network. The controller chart's NetworkPolicy admits pods only, so without this policy nothing outside the cluster reaches the API. |
 
 Every other file under `manifests/` is plain YAML.
