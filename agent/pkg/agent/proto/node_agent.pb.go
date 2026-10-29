@@ -846,9 +846,10 @@ const (
 	//
 	// The quorum floor is a property of the cluster rather than a caller
 	// setting: the agent probes each voting member and requires
-	// max(3, registered_voters/2 + 2) of them to answer, which is what leaves a
-	// quorum once this member goes down. One- and two-member clusters cannot
-	// satisfy that at all, and are refused on every call.
+	// registered_voters/2 + 2 of them to answer, which is one more than the
+	// quorum that has to survive this member going down. One- and two-member
+	// clusters need more voters than they have, so they are refused on every
+	// call.
 	GetEtcdDefragStatusResponse_OUTCOME_REFUSED GetEtcdDefragStatusResponse_Outcome = 3
 	// The node is still out of service and needs intervention. Either etcd was
 	// restarted and did not return healthy - in which case kube-apiserver and

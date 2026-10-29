@@ -739,17 +739,24 @@ func (s *NodeAgentServer) restartStaticPodContainer(
 // parked out of its own park directory and into the shared one, which is how
 // the sequence stops owing a restore.
 //
-// It is for the one branch that leaves this node out of service on purpose:
-// etcd did not come back healthy, and putting kube-apiserver or kube-vip back
-// would route traffic to a member that cannot answer. The parent directory
-// already means "parked, and a caller owns the restore" - it is where a
-// graceful shutdown leaves a node held for recycling - so moving them there
-// says exactly that, and leaves StartKubeVipRestore able to undo it once an
-// operator has dealt with the member.
+// It is for the branches that leave this node out of service on purpose: etcd
+// did not come back healthy, and putting kube-apiserver or kube-vip back would
+// route traffic to a member that cannot answer. The parent directory already
+// means "parked, and a caller owns the restore" - it is where a graceful
+// shutdown leaves a node held for recycling - so moving them there says exactly
+// that.
 //
 // Without this the startup reconciler would find them still sitting in the
 // defragmentation park directory and put them straight back, overruling the
 // decision on the next restart.
+//
+// Only kube-vip has an RPC that undoes this: StartKubeVipRestore. Nothing
+// restores kube-apiserver from here, which is the same position a graceful
+// shutdown with stop_kube_apiserver leaves a node in, and is why the outcome
+// this accompanies is documented as needing an operator. An etcd that will not
+// start from its own unmodified manifest is not something the agent can fix, so
+// the node stays down either way; what this guarantees is that it stays down
+// deliberately rather than being handed back by the next restart.
 func (s *NodeAgentServer) handOffParkedManifestsToCaller() error {
 	var moved []string
 	var errs []error
