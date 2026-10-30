@@ -4,6 +4,7 @@
 package kubeadmconfig
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -259,6 +260,92 @@ func TestNewJoinConfigFromString(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+var (
+	testJoinTokenSecret    = strings.Repeat("b", 16)
+	testJoinToken          = "aaaaaa." + testJoinTokenSecret
+	testJoinCertificateKey = strings.Repeat("c", 64)
+	testJoinCACertHash     = "sha256:" + strings.Repeat("d", 64)
+)
+
+// TestNewJoinConfigFromStringErrorsCarryNoCredentials pins that a rejected join
+// string is quoted into the error with its credentials masked. The join activity
+// writes the error into the node's Provisioning condition, and Temporal records
+// it in the workflow history.
+func TestNewJoinConfigFromStringErrorsCarryNoCredentials(t *testing.T) {
+	tests := []struct {
+		name       string
+		joinString string
+		wantShown  []string
+	}{
+		{
+			name:       "a warning glued in front of the command",
+			joinString: "W1030 12:00:00.000000 1 warnings.go:70] notice kubeadm join 1.2.3.4:6443 --token " + testJoinToken + " --discovery-token-ca-cert-hash sha256:123456 --control-plane --certificate-key " + testJoinCertificateKey,
+			wantShown: []string{
+				"W1030 12:00:00.000000 1 warnings.go:70] notice kubeadm join 1.2.3.4:6443",
+				"--token <redacted>",
+				"--discovery-token-ca-cert-hash sha256:123456",
+				"--certificate-key <redacted>",
+			},
+		},
+		{
+			name:       "too few parts",
+			joinString: "kubeadm join " + testJoinToken + " " + testJoinCertificateKey,
+			wantShown:  []string{"got 2", `"<redacted> <redacted>"`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewJoinConfigFromString("10.0.0.2", "cp-1", tt.joinString)
+
+			require.ErrorIs(t, err, ErrInvalidJoinString)
+			assert.NotContains(t, err.Error(), testJoinTokenSecret)
+			assert.NotContains(t, err.Error(), testJoinCertificateKey)
+			for _, want := range tt.wantShown {
+				assert.Contains(t, err.Error(), want)
+			}
+		})
+	}
+}
+
+func TestRedactJoinString(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "control-plane join command",
+			in:   "kubeadm join 1.2.3.4:6443 --token " + testJoinToken + " --discovery-token-ca-cert-hash " + testJoinCACertHash + " --control-plane --certificate-key " + testJoinCertificateKey,
+			want: "kubeadm join 1.2.3.4:6443 --token <redacted> --discovery-token-ca-cert-hash " + testJoinCACertHash + " --control-plane --certificate-key <redacted>",
+		},
+		{
+			name: "flag=value form",
+			in:   "kubeadm join 1.2.3.4:6443 --token=" + testJoinToken + " --certificate-key=" + testJoinCertificateKey,
+			want: "kubeadm join 1.2.3.4:6443 --token=<redacted> --certificate-key=<redacted>",
+		},
+		{
+			name: "values of any shape after the other credential flags",
+			in:   "kubeadm join 1.2.3.4:6443 --discovery-token not-a-token-shape --tls-bootstrap-token also-not",
+			want: "kubeadm join 1.2.3.4:6443 --discovery-token <redacted> --tls-bootstrap-token <redacted>",
+		},
+		{
+			name: "credential-shaped words without a flag",
+			in:   "kubeadm join " + testJoinToken + " " + testJoinCertificateKey,
+			want: "kubeadm join <redacted> <redacted>",
+		},
+		{
+			name: "a credential flag with its value missing keeps the next flag",
+			in:   "kubeadm join 1.2.3.4:6443 --token --discovery-token-ca-cert-hash " + testJoinCACertHash,
+			want: "kubeadm join 1.2.3.4:6443 --token --discovery-token-ca-cert-hash " + testJoinCACertHash,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, redactJoinString(tt.in))
 		})
 	}
 }
