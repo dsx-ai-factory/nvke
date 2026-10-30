@@ -95,7 +95,7 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 			"(--bootstrap-only fails on this): %v\n", bootstrapErr)
 	}
 	if domain, defaulted := spec.TrustDomain(); defaulted {
-		fmt.Fprintf(out, "spire.trustDomain: not set; a bootstrap with the default cluster name and the controller stack install both use %s\n", domain)
+		fmt.Fprintf(out, "spire.trustDomain: not set; %s is used\n", domain)
 	}
 	fmt.Fprintln(out, "valid")
 	return nil

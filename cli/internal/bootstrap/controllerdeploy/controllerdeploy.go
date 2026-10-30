@@ -236,7 +236,7 @@ type Config struct {
 	SPIFFEClusterName string
 
 	// SPIFFETrustDomain is the trust domain used for the controller's workload identity.
-	// Empty defaults to <SPIFFEClusterName>.nke.local.
+	// Empty defaults to <SPIFFEClusterName>.nvke.local.
 	SPIFFETrustDomain string
 
 	// SPIFFEUpstreamCACertPath and SPIFFEUpstreamCAKeyPath are a CA the
@@ -541,7 +541,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	}
 	spireTrustDomain := cfg.SPIFFETrustDomain
 	if spireTrustDomain == "" {
-		spireTrustDomain = spireClusterName + ".nke.local"
+		spireTrustDomain = spireClusterName + sitespec.DefaultTrustDomainSuffix
 	}
 	cwePort := effectiveCWEPort(cfg)
 

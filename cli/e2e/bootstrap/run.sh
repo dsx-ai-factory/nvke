@@ -80,10 +80,9 @@ NODE_AGENT_PORT=15005
 export NVKECTL_E2E_ATTESTATION_BASELINE="${CLI_DIR}/.local/attestation-baseline.json"
 # Where the node images' spire-agents were built to look for the SPIRE server.
 SPIRE_VIP="${NVKECTL_E2E_SPIRE_SERVER_ADDRESS:-172.26.0.2}"
-# Use a value that differs from bootstrap's derived
-# "<bootstrap-cluster>.nke.local" default. The generated site spec and the
-# pre-provisioned agents must receive this same explicit trust domain, or node
-# attestation fails.
+# Differs from the <clusterName>.nvke.local default on purpose. The generated
+# site spec and the pre-provisioned agents must receive this same explicit
+# trust domain, or node attestation fails.
 SPIRE_TRUST_DOMAIN="${NVKECTL_E2E_SPIRE_TRUST_DOMAIN:-nvkectl-e2e.example.test}"
 export NVKECTL_E2E_SPIRE_TRUST_DOMAIN="${SPIRE_TRUST_DOMAIN}"
 # First CSV node, used for Traefik access. The controller may initialize another node.

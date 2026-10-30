@@ -54,7 +54,7 @@ func TestValidateSiteSpec_GeneratedFile(t *testing.T) {
 	}
 	// generate sitespec leaves the spire block commented out; the default
 	// trust domain is reported, not required.
-	if !strings.Contains(stdout, "spire.trustDomain: not set; a bootstrap with the default cluster name and the controller stack install both use nvkectl-bootstrap.nke.local") {
+	if !strings.Contains(stdout, "spire.trustDomain: not set; my-tier0-site.nvke.local is used") {
 		t.Errorf("default trust domain not reported:\n%s", stdout)
 	}
 	if !strings.HasSuffix(stdout, "valid\n") {
