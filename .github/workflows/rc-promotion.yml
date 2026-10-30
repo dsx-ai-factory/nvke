@@ -128,7 +128,7 @@ jobs:
           # next-tag.sh reads the version from the history the beta was numbered
           # from, so the two agree unless a GA tag has been cut since.
           status=0
-          rc="$(hack/next-tag.sh "${BETA_SHA}" rc)" || status=$?
+          rc="$(release/hack/next-tag.sh "${BETA_SHA}" rc)" || status=$?
           if [ "${status}" != 0 ] && [ "${status}" != 3 ]; then
             exit "${status}"
           fi

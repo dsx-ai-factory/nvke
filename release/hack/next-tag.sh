@@ -4,7 +4,7 @@
 set -euo pipefail
 
 # Prints the next release tag for a branch or commit without creating it.
-# usage: hack/next-tag.sh <BRANCH> [<PRE-RELEASE>]
+# usage: release/hack/next-tag.sh <BRANCH> [<PRE-RELEASE>]
 #
 # The version is read from the conventional commits since the latest GA tag. A
 # feat, or a breaking change of any type, bumps the minor; a fix bumps the patch.
@@ -82,7 +82,7 @@ function next_version() {
 }
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
-    echo "usage: hack/next-tag.sh <BRANCH> [<PRE-RELEASE>]" >&2
+    echo "usage: release/hack/next-tag.sh <BRANCH> [<PRE-RELEASE>]" >&2
     exit 1
 fi
 
