@@ -97,6 +97,23 @@ func (c *Client) UpdateControlPlaneDesiredCount(ctx context.Context, id openapi_
 	return resp.JSON200, nil
 }
 
+// SetControlPlaneAutoScaleDownDisabled patches the cluster-level switch for
+// automatic control-plane scale-down and returns the updated cluster.
+func (c *Client) SetControlPlaneAutoScaleDownDisabled(ctx context.Context, id openapi_types.UUID, disabled bool) (*api.Cluster, error) {
+	resp, err := c.api.UpdateClusterWithResponse(ctx, id, api.UpdateClusterRequest{
+		ControlPlaneConfig: &api.UpdateClusterControlPlaneConfig{
+			AutoScaleDownDisabled: &disabled,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("setting cluster %s control-plane autoScaleDownDisabled to %t: %w", id, disabled, err)
+	}
+	if resp.StatusCode() != 200 || resp.JSON200 == nil {
+		return nil, fmt.Errorf("setting cluster %s control-plane autoScaleDownDisabled to %t: unexpected status %s: %s", id, disabled, resp.Status(), resp.Body)
+	}
+	return resp.JSON200, nil
+}
+
 // UpdateControlPlaneDesiredCountExpectingRefusal requires a cluster-level
 // desired-count update to fail with 400 and returns the validation message.
 func (c *Client) UpdateControlPlaneDesiredCountExpectingRefusal(ctx context.Context, id openapi_types.UUID, desired int) (string, error) {

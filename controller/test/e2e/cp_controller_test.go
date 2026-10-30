@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
@@ -267,6 +268,19 @@ func validateControllerManagedControlPlaneSerializedDelete(test *tenantTest) {
 			"the quorum floor counts joined nodes, so the delete must not race the Joined write")
 		By("Verifying the four-node control plane is balanced before scale-down")
 		assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerDeleteSurgeCount, nil)
+
+		// Lowering the desired count would otherwise start automatic scale-down,
+		// which races this spec's own delete for the one node above the floor.
+		By("Disabling automatic control-plane scale-down so this spec's delete is the only one")
+		cluster := expectSucceed(test.nvke.GetCluster(ctx, test.cluster.ID))
+		Expect(cluster.ControlPlaneConfig).NotTo(BeNil(), "the cluster should report its control-plane config")
+		originalAutoScaleDownDisabled := ptr.Deref(cluster.ControlPlaneConfig.AutoScaleDownDisabled, false)
+		// Registered first so a PATCH that commits but loses its response is still
+		// undone; restoring the original value is harmless if it never applied.
+		DeferCleanup(func(ctx context.Context) {
+			expectSucceed(test.nvke.SetControlPlaneAutoScaleDownDisabled(ctx, test.cluster.ID, originalAutoScaleDownDisabled))
+		}, NodeTimeout(time.Minute))
+		expectSucceed(test.nvke.SetControlPlaneAutoScaleDownDisabled(ctx, test.cluster.ID, true))
 
 		By("Lowering the desired count so the delete shrinks the control plane instead of replacing the node")
 		expectSucceed(test.nvke.UpdateControlPlaneDesiredCount(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount))
