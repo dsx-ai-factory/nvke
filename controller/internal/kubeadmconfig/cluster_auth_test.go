@@ -221,17 +221,17 @@ func TestLoadOperatorJWTPolicy(t *testing.T) {
 		},
 		{
 			// The manifest is there under its own name; a caller still on the
-			// default reserves nothing and leaves those identities claimable.
-			name:        "a manifest under another name is not read",
+			// default would reserve nothing and leave those identities claimable.
+			name:        "a manifest under another name is an error",
 			reader:      clusterAuthClient(pinnedRBAC),
 			trustDomain: clusterAuthTrustDomain,
-			want:        OperatorJWTPolicy{ManagementJWTTrustDomain: clusterAuthTrustDomain},
+			wantErr:     constants.LegacyManagementNamespace + "/" + nvkerbac.LegacyConfigMapName,
 		},
 		{
-			name:        "no nke-rbac reserves the trust domain only",
+			name:        "no nke-rbac with a trust domain is an error",
 			reader:      clusterAuthClient(),
 			trustDomain: clusterAuthTrustDomain,
-			want:        OperatorJWTPolicy{ManagementJWTTrustDomain: clusterAuthTrustDomain},
+			wantErr:     "not found",
 		},
 		{
 			name:   "no nke-rbac and no SPIFFE reserves nothing extra",

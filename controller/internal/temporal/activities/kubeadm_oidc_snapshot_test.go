@@ -82,7 +82,7 @@ func TestOIDCSnapshotInitUsesPinnedProviders(t *testing.T) {
 	cluster.OIDCProviders = []db.ClusterOIDCProvider{snapshotOperatorProvider()}
 	database := snapshotInitDatabase(cluster, initialNode, nodeSet, nodePool)
 	agent := &snapshotWiringAgent{FakeClient: &agenttest.FakeClient{}, initStatus: true}
-	a := snapshotActivities(database, agent, snapshotSharedConfig())
+	a := snapshotActivities(database, agent, snapshotSharedConfig(), nvkeRBACConfigMap("spiffe://exchange.example/capi"))
 
 	err := executeSnapshotInit(t, a, KubeadmInitInput{
 		ClusterID:     cluster.ID,

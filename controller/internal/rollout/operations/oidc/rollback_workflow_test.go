@@ -13,15 +13,19 @@ import (
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
 	"google.golang.org/grpc"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
 
 	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nvkerbac"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 	adapter "github.com/dsx-ai-factory/nvke/controller/internal/rollout/adapters/controller"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/operations/oidc"
@@ -57,7 +61,10 @@ func TestRollout_LaterNodeFailureRestoresAuthentication(t *testing.T) {
 		{name: "anonymous failed not restored", outcome: nvkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_NOT_RESTORED},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			policy := kubeadmconfig.OperatorJWTPolicy{ManagementJWTTrustDomain: "jwt.example.com"}
+			policy := kubeadmconfig.OperatorJWTPolicy{
+				ManagementJWTTrustDomain: "jwt.example.com",
+				ReservedSubjects:         []string{"spiffe://jwt.example.com/capi"},
+			}
 			provider := controllerconfig.OIDCProvider{
 				Name: "workforce", IssuerURL: "https://workforce.example.com", Audiences: []string{"tenant"},
 				UsernameClaim: "sub", UsernamePrefix: "workforce:", GroupsClaim: "groups", GroupsPrefix: "workforce:",
@@ -80,7 +87,11 @@ func TestRollout_LaterNodeFailureRestoresAuthentication(t *testing.T) {
 			untouched := &recordingAgent{outcome: nvkeproto.PatchAPIServerManifestResponse_OUTCOME_APPLIED}
 			agents := map[string]*recordingAgent{"cp-0": first, "cp-1": later, "cp-2": untouched}
 			op := oidc.NewEnableOIDCOperation(
-				oidc.WithClient(fake.NewClientBuilder().Build()),
+				oidc.WithClient(fake.NewClientBuilder().WithObjects(&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.LegacyConfigMapName},
+					Data:       map[string]string{nvkerbac.ConfigMapKey: "kind: ClusterRoleBinding\nsubjects:\n  - {kind: User, name: spiffe://jwt.example.com/capi}\n"},
+				}).Build()),
+				oidc.WithRBACConfigMap(nvkerbac.Source{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.LegacyConfigMapName}),
 				oidc.WithTrustDomain(policy.ManagementJWTTrustDomain),
 				oidc.WithOIDCConfig(&config.NvkeOIDCAuth{Enabled: true, IssuerURL: "https://shared.example.com"}),
 				oidc.WithMethodSupportChecker(func(context.Context, rollout.Node, string) error { return nil }),
