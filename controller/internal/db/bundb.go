@@ -100,9 +100,10 @@ type querySpansDisabledKey struct{}
 
 // WithoutQuerySpans returns a context that keeps trace correlation for logs but
 // asks the Bun tracing hook not to create spans for database queries. Temporal
-// wait and poll loops should wrap their repeated reads with this context. Use it
-// for other repetitive queries only when their individual spans add no
-// diagnostic value.
+// wait and poll loops should wrap their repeated read-only queries with this
+// context. Do not pass it through mixed read/write transactions, because it
+// suppresses spans for every query in the transaction. Use it for other
+// repetitive queries only when their individual spans add no diagnostic value.
 func WithoutQuerySpans(ctx context.Context) context.Context {
 	return context.WithValue(ctx, querySpansDisabledKey{}, true)
 }
