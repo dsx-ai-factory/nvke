@@ -7,9 +7,6 @@
 # SPIRE stays on and the attestation method stays tpm. A kind node has no TPM,
 # but nothing on the seed attests by TPM. The seed's own workloads attest with
 # k8sPSAT. The TPM allowlist is read only for nodes the controller provisions.
-#
-# The seed runs no NKTP. The ServiceMonitor needs its CRDs, and nothing
-# receives the traces.
 resources:
   requests:
     cpu: 100m

@@ -6,8 +6,6 @@
 # The tpmDirect node attestor stays on. A kind node has no TPM, but the seed's
 # own workloads attest with k8sPSAT, and the TPM allowlist is read only for
 # nodes the controller provisions.
-#
-# The seed runs no NKTP. The PodMonitors need its CRDs.
 spire-agent:
   telemetry:
     prometheus:
