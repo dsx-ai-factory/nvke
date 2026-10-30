@@ -53,7 +53,7 @@ type Org struct {
 type Site struct {
 	// Key is the datahall this site is filed under, populated on lookup so
 	// callers can report which site answered without threading the name
-	// alongside. Endpoint derives the API host from it.
+	// alongside. The API host is declared in `api`, not derived from it.
 	Key string `json:"-"`
 
 	// API is the carbide host this datahall answers on. Required: the key is
@@ -61,7 +61,7 @@ type Site struct {
 	// would dial a name that does not resolve.
 	API string `json:"api"`
 
-	// ID is the site id. Recorded, not sent: the host derived from Key already
+	// ID is the site id. Recorded, not sent: the declared API host already
 	// names the datahall, and no request this package builds carries it. Kept
 	// because it is what the datahall is called in the DSX APIs and in a
 	// bring-up procedure, so a reader comparing the two has it.

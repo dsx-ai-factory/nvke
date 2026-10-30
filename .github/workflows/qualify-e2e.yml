@@ -516,12 +516,14 @@ jobs:
     # took `forge` would read them as empty, and an unset identifier skips the
     # site rather than failing, so the lane would report "no declared site
     # offers" -- a missing variable wearing the costume of missing hardware.
-    # The scope the plan resolved, not a second derivation of it: the env
-    # context is unavailable here but `needs` is, and re-deriving drops
-    # SCOPE's own precedence -- a push ignores QUALIFY_E2E_SCOPE and the l40s
-    # label outranks it, so either would attach `dsx` to a Forge run.
+    # The stream's own provider, not the scope it arrived in. A scope is
+    # single-provider only by convention, and release/policy.yaml invites the
+    # `full` selector to come off now that a DSX tenant spec exists -- the day
+    # it does, scope is `full` and every dsx leg takes `forge`. `matrix` is
+    # available in a job-level `environment`, and matrix.provider is already
+    # what the env block below keys PROVIDER off.
     environment: >-
-      ${{ (needs.plan.outputs.scope == 'dsx' && 'dsx')
+      ${{ (matrix.provider == 'dsx' && 'dsx')
           || (github.event_name == 'push' && 'forge-nightly')
           || 'forge' }}
     # Composed of two budgets that used to be separate jobs: up to 90 minutes

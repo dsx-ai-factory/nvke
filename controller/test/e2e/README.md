@@ -863,7 +863,7 @@ Stage amd64 OS images to match:
 
 ```bash
 go test -timeout 5h . -args \
-  -ginkgo.label-filter=site-controller -ginkgo.v \
+  -ginkgo.label-filter="site-controller && !nico-forge" -ginkgo.v \
   -e2e.config=e2e-config.yaml -e2e.environment=dsx -e2e.site-stage=provision \
   -e2e.capabilities=arch=amd64 \
   -e2e.versions=controller=<…>,os-image=<amd64 url>,os-image-bootloader=<amd64 url>,…
