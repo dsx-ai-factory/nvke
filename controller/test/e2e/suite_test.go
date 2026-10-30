@@ -214,7 +214,9 @@ var _ = AfterSuite(func() {
 })
 
 func TestE2E(t *testing.T) {
-	RegisterFailHandler(Fail)
+	// Ginkgo's Fail, after recording what the failing assertion's error says
+	// as a report entry, which the JUnit report carries (failure_format_test.go).
+	RegisterFailHandler(failWithCause)
 	// controller-runtime discards its own logs until a logger is set, and says
 	// so once with a stack trace the first time a client is built. Point it at
 	// Ginkgo's so its diagnostics land in the run log with everything else:

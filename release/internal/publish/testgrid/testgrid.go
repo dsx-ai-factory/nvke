@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package testgrid is the TestGrid Destination: it writes started.json, a
-// copy of the JUnit report, then finished.json to the shape TestGrid's
+// Package testgrid is the TestGrid Destination: it writes started.json, the
+// JUnit report, then finished.json to the shape TestGrid's
 // updater reads (groups/{group}/{dashboard}/{tab}/{build}/), with group as
 // the subject, dashboard as the full stream name (e.g.
 // forge-gb200-amd64-ubuntu-24.04-kube-1.36), and tab as the Ginkgo suite
@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -103,12 +104,16 @@ type meta struct {
 	Commit        string `json:"repo-commit,omitempty"`
 }
 
-// Publish writes started.json, a copy of the JUnit report, then finished.json
+// Publish writes started.json, the JUnit report, then finished.json
 // (in that order -- finished.json is never written unless everything ahead of
 // it uploaded successfully) under a build prefix derived from result's
 // combination and stream. Capabilities (gpu/kube/arch/ubuntu) come from
 // result's own Status.Combination.Stream.Capabilities, stamped there by
 // `qualify result` -- not looked up separately.
+//
+// Each failure in the JUnit report is rewritten to lead with its cause before
+// upload (summarizeFailures): TestGrid keeps only 140 bytes of a failure, and
+// as Ginkgo writes it those bytes are framing and a file location.
 //
 // junitPath may not exist: a run that never produced a Ginkgo report (a Forge
 // provisioning failure, a wedged runner) has no JUnit either, and `qualify
@@ -167,6 +172,15 @@ func (d *Destination) Publish(ctx context.Context, result *qualification.Result,
 	case err != nil:
 		return fmt.Errorf("reading JUnit report: %w", err)
 	default:
+		// A report that does not parse is uploaded as it is: TestGrid reads it
+		// on its own terms, and a missing summary costs less than a missing
+		// result. The warning is the only sign that its failures went
+		// unsummarized.
+		if summarized, err := summarizeFailures(junitBytes); err == nil {
+			junitBytes = summarized
+		} else {
+			slog.Warn("uploading the JUnit report without failure summaries", "path", junitPath, "err", err)
+		}
 		if err := d.Uploader.Upload(ctx, prefix+"artifacts/junit.xml", junitBytes, "application/xml"); err != nil {
 			return fmt.Errorf("uploading junit.xml: %w", err)
 		}
