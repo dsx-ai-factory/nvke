@@ -94,9 +94,9 @@ test-unit: fmt vet ## Run unit tests without a Kubernetes API server.
 
 .PHONY: test-integration
 test-integration: ENVTEST_K8S_VERSION=1.37.0
-test-integration: fmt vet setup-envtest ## Run resource integration tests with an isolated envtest API server.
+test-integration: fmt vet setup-envtest ginkgo ## Run resource integration tests with an isolated envtest API server.
 	@$(COVERAGE_MKDIR)
-	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" $(GO) test $(GO_TEST_FLAGS) -tags=integration_test -race -coverprofile=$(call coverprofile,integration) -covermode=$(GO_COVER_MODE) ./pkg/resource
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" "$(GINKGO)" --tags=integration_test --race --procs=$(TEST_PROCS) --cover --covermode=$(GO_COVER_MODE) --output-dir=$(COVERAGE_DIR) --coverprofile=$(call coverprofile_name,integration) ./pkg/resource ./pkg/publicapi
 
 .PHONY: test-api
 # Separate test invocations need distinct profiles to avoid overwriting coverage.
@@ -113,7 +113,7 @@ test-controller: test-unit manifests generate fmt vet setup-envtest ginkgo ## Ru
 
 .PHONY: test-update
 test-update: export TESTUTIL_UPDATE_EXPECTED=true
-test-update: test-controller ## Run controller tests and update expected fixture goldens.
+test-update: test-controller test-integration ## Run controller and resource integration tests and update expected fixture goldens.
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter

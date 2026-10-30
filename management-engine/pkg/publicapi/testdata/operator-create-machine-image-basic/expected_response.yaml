@@ -1,0 +1,27 @@
+body:
+  metadata:
+    creationTimestamp: "1970-01-01T00:00:00Z"
+    name: ubuntu-2404-amd64
+    uid: UID
+  spec:
+    architecture: amd64
+    buildDate: "2026-01-01"
+    nico:
+      ipxeScript: |
+        #!ipxe
+        echo NVKE test image
+    operatingSystem:
+      family: ubuntu
+      version: "24.04"
+headers:
+  Cache-Control:
+  - no-store
+  Content-Length:
+  - "298"
+  Content-Type:
+  - application/json
+  Date:
+  - DATE
+  Etag:
+  - '"RESOURCE_VERSION"'
+statusCode: 201
