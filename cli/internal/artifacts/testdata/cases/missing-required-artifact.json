@@ -14,7 +14,7 @@
       "installationCompatibility": "not-checked"
     }
   },
-  "totalOutputs": 12,
+  "totalOutputs": 10,
   "reference": "registry.example.invalid/nvke/releases@sha256:9999999999999999999999999999999999999999999999999999999999999999",
   "referenceScope": "derived from supplied root reference; no registry availability claim",
   "rootDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
@@ -68,45 +68,9 @@
       "kind": "helm-oci",
       "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
       "reference": "registry.example.invalid/nvke/charts/controller-chart@sha256:4444444444444444444444444444444444444444444444444444444444444444",
-      "chartVersion": "0.4.2",
+      "chartVersion": "0.22.0",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
-      "buildSubjects": []
-    },
-    {
-      "name": "cwe",
-      "kind": "oci",
-      "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
-      "reference": "registry.example.invalid/nvke/cwe@sha256:6666666666666666666666666666666666666666666666666666666666666666",
-      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "components": [
-        "cwe"
-      ],
-      "imageIndex": {
-        "requiredPlatforms": [
-          "linux/amd64",
-          "linux/arm64"
-        ],
-        "children": [
-          {
-            "platform": "linux/amd64",
-            "manifestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-            "size": 1024,
-            "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "component": "cwe",
-            "buildSubject": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-          },
-          {
-            "platform": "linux/arm64",
-            "manifestDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
-            "size": 1025,
-            "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "component": "cwe",
-            "buildSubject": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-          }
-        ]
-      },
-      "artifactType": "application/vnd.oci.image.index.v1+json",
       "buildSubjects": []
     },
     {
@@ -150,7 +114,7 @@
       "kind": "helm-oci",
       "digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
       "reference": "registry.example.invalid/nvke/charts/nico@sha256:7777777777777777777777777777777777777777777777777777777777777777",
-      "chartVersion": "0.12.0",
+      "chartVersion": "2.2.2",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
@@ -160,7 +124,7 @@
       "kind": "helm-oci",
       "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
       "reference": "registry.example.invalid/nvke/charts/nico-prereqs@sha256:8888888888888888888888888888888888888888888888888888888888888888",
-      "chartVersion": "0.12.0",
+      "chartVersion": "18.5.15",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
@@ -170,7 +134,7 @@
       "kind": "helm-oci",
       "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
       "reference": "registry.example.invalid/nvke/charts/nktp@sha256:9999999999999999999999999999999999999999999999999999999999999999",
-      "chartVersion": "0.9.0",
+      "chartVersion": "0.22.0",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
@@ -181,16 +145,6 @@
       "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "reference": "registry.example.invalid/nvke/charts/postgresql@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "chartVersion": "18.5.15",
-      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "artifactType": "application/vnd.nvkr.helm-bundle.v1",
-      "buildSubjects": []
-    },
-    {
-      "name": "spire",
-      "kind": "helm-oci",
-      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "reference": "registry.example.invalid/nvke/charts/spire@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "chartVersion": "0.30.1",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
@@ -376,25 +330,6 @@
         "stage": "packaging",
         "subjectKind": "helm-bundle",
         "subjectDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
-    },
-    {
-      "name": "sbom-spire",
-      "kind": "sbom",
-      "reference": "registry.example.invalid/nvke/spire@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-      "artifactType": "application/vnd.cyclonedx+json",
-      "manifestDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-      "blobDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-      "semanticDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "binding": {
-        "documentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-        "outputs": [
-          "spire"
-        ],
-        "component": "spire",
-        "stage": "packaging",
-        "subjectKind": "helm-bundle",
-        "subjectDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }
     },
     {

@@ -4,6 +4,7 @@
 package artifacts
 
 import (
+	"cmp"
 	"errors"
 	"io"
 	"os"
@@ -32,39 +33,39 @@ func TestDecodeNVKRExport(t *testing.T) {
 	t.Run("helm chart and apt repository", func(t *testing.T) {
 		f := decodeRelease(t, "nvkr/helm-export.json")
 		assert.Equal(t, "sha256:3f92237e0617d36f56df83a0de80bcc76c3cee27ac2770b9ee119627400f58ac", f.RootDigest)
-		require.Len(t, f.Outputs, 2)
+		require.Len(t, f.Artifacts, 2)
 
-		chart := f.Output("gpu-runtime")
+		chart := f.Artifact("gpu-runtime")
 		require.NotNil(t, chart)
 		assert.Equal(t, KindChart, chart.Kind)
 		assert.Equal(t, "1.0.0", chart.ChartVersion)
 		assert.True(t, strings.HasSuffix(chart.Reference, "@sha256:3c5490c74f24352b9dc8da0bb032dea92b5c531ef4fa7a640ecbd08f7cbe8888"))
 		assert.Nil(t, chart.Platforms())
 
-		apt := f.Output("worker-apt")
+		apt := f.Artifact("worker-apt")
 		require.NotNil(t, apt)
 		assert.Equal(t, "apt-repository", apt.Kind)
 
-		assert.Nil(t, f.Output("cwe"))
+		assert.Nil(t, f.Artifact("cwe"))
 	})
 
 	t.Run("executables", func(t *testing.T) {
 		f := decodeRelease(t, "nvkr/exec-export.json")
-		require.Len(t, f.Outputs, 4)
+		require.Len(t, f.Artifacts, 4)
 
-		alpha := f.Output("alpha")
+		alpha := f.Artifact("alpha")
 		require.NotNil(t, alpha)
 		assert.Equal(t, "executable", alpha.Kind)
 		assert.Equal(t, []string{"linux/amd64"}, alpha.Platforms())
-		assert.Equal(t, []string{"linux/arm64"}, f.Output("beta").Platforms())
+		assert.Equal(t, []string{"linux/arm64"}, f.Artifact("beta").Platforms())
 	})
 }
 
 func TestDecodeValid(t *testing.T) {
 	f := decodeRelease(t, "valid.json")
-	require.Len(t, f.Outputs, len(Expected))
+	require.Len(t, f.Artifacts, len(Expected))
 	for _, want := range Expected {
-		o := f.Output(want.Name)
+		o := f.Artifact(want.Name)
 		require.NotNil(t, o, want.Name)
 		assert.Equal(t, want.Kind, o.Kind, want.Name)
 		if want.Kind == KindChart {
@@ -76,41 +77,16 @@ func TestDecodeValid(t *testing.T) {
 		}
 	}
 
-	assert.ElementsMatch(t, []string{"linux/amd64", "linux/arm64"}, f.Output("cwe").Platforms())
-	assert.Equal(t, "0.30.1", f.Output("spire").ChartVersion)
+	assert.ElementsMatch(t, []string{"linux/amd64", "linux/arm64"}, f.Artifact("cwe").Platforms())
+	assert.Equal(t, "0.30.1", f.Artifact("spire").ChartVersion)
 }
 
 func TestDecodeMinimal(t *testing.T) {
 	f := decodeRelease(t, "cases/minimal-hand-written.json")
 	assert.Empty(t, f.RootDigest)
-	require.NotNil(t, f.Output("cwe"))
-	assert.ElementsMatch(t, []string{"linux/amd64", "linux/arm64"}, f.Output("cwe").Platforms())
-	assert.Equal(t, "0.30.1", f.Output("spire").ChartVersion)
-}
-
-func TestDecodeCases(t *testing.T) {
-	decodeErrors := map[string]string{
-		"not-json.json":         "not valid JSON",
-		"null.json":             "not a JSON object",
-		"trailing-content.json": "content after the JSON object",
-	}
-	files, err := filepath.Glob(filepath.Join("testdata", "cases", "*.json"))
-	require.NoError(t, err)
-	require.NotEmpty(t, files)
-	for _, path := range files {
-		name := filepath.Base(path)
-		t.Run(name, func(t *testing.T) {
-			r, err := os.Open(path)
-			require.NoError(t, err)
-			defer r.Close()
-			_, err = Decode(r)
-			if want, ok := decodeErrors[name]; ok {
-				require.ErrorContains(t, err, want)
-				return
-			}
-			require.NoError(t, err)
-		})
-	}
+	require.NotNil(t, f.Artifact("cwe"))
+	assert.ElementsMatch(t, []string{"linux/amd64", "linux/arm64"}, f.Artifact("cwe").Platforms())
+	assert.Equal(t, "0.30.1", f.Artifact("spire").ChartVersion)
 }
 
 func TestDecodeReadError(t *testing.T) {
@@ -123,16 +99,16 @@ func TestDecodeReadError(t *testing.T) {
 func TestPlatforms(t *testing.T) {
 	index := &ImageIndex{Children: []ImageIndexChild{{Platform: "linux/amd64"}, {Platform: "linux/arm64"}}}
 	cases := map[string]struct {
-		out  Output
+		out  Artifact
 		want []string
 	}{
-		"index":              {Output{ImageIndex: index}, []string{"linux/amd64", "linux/arm64"}},
-		"index wins over os": {Output{ImageIndex: index, OS: "linux", Arch: "amd64"}, []string{"linux/amd64", "linux/arm64"}},
-		"empty index":        {Output{ImageIndex: &ImageIndex{}}, nil},
-		"os and arch":        {Output{OS: "linux", Arch: "arm64"}, []string{"linux/arm64"}},
-		"os only":            {Output{OS: "linux"}, nil},
-		"arch only":          {Output{Arch: "arm64"}, nil},
-		"chart":              {Output{Kind: KindChart, ChartVersion: "1.0.0"}, nil},
+		"index":              {Artifact{ImageIndex: index}, []string{"linux/amd64", "linux/arm64"}},
+		"index wins over os": {Artifact{ImageIndex: index, OS: "linux", Arch: "amd64"}, []string{"linux/amd64", "linux/arm64"}},
+		"empty index":        {Artifact{ImageIndex: &ImageIndex{}}, nil},
+		"os and arch":        {Artifact{OS: "linux", Arch: "arm64"}, []string{"linux/arm64"}},
+		"os only":            {Artifact{OS: "linux"}, nil},
+		"arch only":          {Artifact{Arch: "arm64"}, nil},
+		"chart":              {Artifact{Kind: KindChart, ChartVersion: "1.0.0"}, nil},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -141,19 +117,47 @@ func TestPlatforms(t *testing.T) {
 	}
 }
 
-// Every case file is listed in cases.yaml and every listed file exists.
-func TestCasesListed(t *testing.T) {
+type validationCase struct {
+	File     string `yaml:"file"`
+	Platform string `yaml:"platform"`
+	Expect   string `yaml:"expect"`
+}
+
+func readCases(t *testing.T) []validationCase {
+	t.Helper()
 	data, err := os.ReadFile(filepath.Join("testdata", "cases.yaml"))
 	require.NoError(t, err)
-	var cases []struct {
-		File     string `yaml:"file"`
-		Platform string `yaml:"platform"`
-		Expect   string `yaml:"expect"`
-	}
+	var cases []validationCase
 	require.NoError(t, yaml.Unmarshal(data, &cases))
+	require.NotEmpty(t, cases)
+	return cases
+}
 
+// Each file decodes and validates with the result cases.yaml lists for it.
+func TestValidateCases(t *testing.T) {
+	for _, c := range readCases(t) {
+		platform := cmp.Or(c.Platform, "linux/amd64")
+		t.Run(c.File+" "+platform, func(t *testing.T) {
+			r, err := os.Open(filepath.Join("testdata", c.File))
+			require.NoError(t, err)
+			defer r.Close()
+			rel, err := Decode(r)
+			if err == nil {
+				err = Validate(rel, platform)
+			}
+			if c.Expect == "ok" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, c.Expect)
+		})
+	}
+}
+
+// Every case file is listed in cases.yaml and every listed file exists.
+func TestCasesListed(t *testing.T) {
 	listed := map[string]bool{}
-	for _, c := range cases {
+	for _, c := range readCases(t) {
 		assert.NotEmpty(t, c.Expect, c.File)
 		_, err := os.Stat(filepath.Join("testdata", c.File))
 		assert.NoError(t, err, c.File)
