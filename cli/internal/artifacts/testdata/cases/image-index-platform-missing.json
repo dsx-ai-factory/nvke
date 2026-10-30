@@ -14,7 +14,7 @@
       "installationCompatibility": "not-checked"
     }
   },
-  "totalOutputs": 11,
+  "totalOutputs": 12,
   "reference": "registry.example.invalid/nvke/releases@sha256:9999999999999999999999999999999999999999999999999999999999999999",
   "referenceScope": "derived from supplied root reference; no registry availability claim",
   "rootDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
@@ -99,6 +99,21 @@
       },
       "artifactType": "application/vnd.oci.image.index.v1+json",
       "buildSubjects": []
+    },
+    {
+      "name": "nico-core-image",
+      "kind": "oci",
+      "reference": "registry.example.invalid/nvke/nico@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "imageIndex": {
+        "children": [
+          {
+            "platform": "linux/amd64"
+          },
+          {
+            "platform": "linux/arm64"
+          }
+        ]
+      }
     },
     {
       "name": "nico",

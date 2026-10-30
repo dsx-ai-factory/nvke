@@ -48,6 +48,8 @@
   expect: 'required artifact "spire" is missing'
 - file: cases/nico-without-prereqs.json
   expect: 'artifact "nico-prereqs" is required when "nico" is present'
+- file: cases/nico-without-core-image.json
+  expect: 'artifact "nico-core-image" is required when "nico" is present'
 - file: cases/image-wrong-kind.json
   expect: 'artifact "cwe": kind "executable", want "oci"'
 - file: cases/chart-wrong-kind.json

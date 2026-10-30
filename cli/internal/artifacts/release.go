@@ -9,8 +9,8 @@
 // that list outputs; Decode reads either key. Artifact names are the output
 // names in nvkr's combined NVKE definition
 // (inputs/definitions/nvke/definition.yaml). nico and nico-prereqs are in the
-// core family (inputs/definitions/nvke/core.yaml) only, and
-// local-path-provisioner is in neither.
+// core family (inputs/definitions/nvke/core.yaml) only, nico-core-image is
+// proposed for it, and local-path-provisioner is in neither.
 //
 // cli/internal/bootstrap/nvkrrelease reads the same document for the deploy
 // path.
@@ -43,7 +43,8 @@ type Expectation struct {
 }
 
 // Expected lists every artifact nvkectl reads, in the order validation reports
-// them. local-path-provisioner is required when the target cluster has no
+// them. nico-core-image is the image behind the NICo chart's global.image.
+// local-path-provisioner is required when the target cluster has no
 // default StorageClass; preflight checks that, not Validate.
 var Expected = []Expectation{
 	{Name: "cwe", Kind: KindImage, Required: true},
@@ -54,6 +55,7 @@ var Expected = []Expectation{
 	{Name: "spire-crds", Kind: KindChart, Required: true, ChartVersions: versions("0.6.1", "0.7.0")},
 	{Name: "spire", Kind: KindChart, Required: true, ChartVersions: versions("0.30.1", "0.31.0")},
 	{Name: "temporal", Kind: KindChart, Required: true, ChartVersions: versions("0.74.0", "0.75.0")},
+	{Name: "nico-core-image", Kind: KindImage, RequiredWith: "nico"},
 	{Name: "nico", Kind: KindChart, ChartVersions: versions("2.2.2", "3.0.0")},
 	// stack/values/nico-prereqs.yaml targets the Bitnami postgresql chart.
 	{Name: "nico-prereqs", Kind: KindChart, RequiredWith: "nico", ChartVersions: versions("18.5.15", "19.0.0")},
