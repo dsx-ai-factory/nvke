@@ -452,7 +452,7 @@ func nicoForgeTenant() testSpec {
 			// Cluster-level rather than a control-plane node pool: the site's controller
 			// rejects such a pool at create.
 			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
-			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			// No workerPools: the builder reads -e2e.tenant-workers, which is unparsed when this runs.
 		},
 		// Generous next to the simulator lanes: these timeouts cover a bare
 		// machine booting an OS image over the network and installing
@@ -491,14 +491,22 @@ func nicoForgeTenant() testSpec {
 	}
 }
 
+// tenantWorkerPools returns the hardware tenant's one worker pool, or an error below one worker.
+func tenantWorkerPools(workers int) ([]nvke.NodePoolSpec, error) {
+	if workers < 1 {
+		return nil, fmt.Errorf("-e2e.tenant-workers is %d, and a hardware tenant needs at least 1", workers)
+	}
+	return []nvke.NodePoolSpec{{DesiredNodeCount: workers}}, nil
+}
+
 // nicoDSXTenant is nicoForgeTenant on a DSX datahall: one control-plane node
-// and one worker, provisioned and deleted, validating nothing that needs a
-// cluster held open.
+// and the -e2e.tenant-workers workers, provisioned and deleted, validating
+// nothing that needs a cluster held open.
 //
 // The shape is the same because the constraint is the same. At a datahall
-// whose every machine is a GPU tray both roles land on one, so this holds two
-// trays for the run rather than a tray and a CPU box, and the prefix it
-// draws /31s from leaves one address spare behind the site controller.
+// whose every machine is a GPU tray both roles land on one, so one worker
+// means two trays for the run rather than a tray and a CPU box, and the
+// prefix it draws /31s from leaves one address spare behind the site controller.
 func nicoDSXTenant() testSpec {
 	spec := nicoForgeTenant()
 	spec.buildSpec = nicoDSXSpec
@@ -1716,6 +1724,10 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nvke.Cluste
 	}, kubernetesVersion, versions[versionCNIOVN])
 	Expect(err).NotTo(HaveOccurred(), "should render the Forge node payloads")
 
+	// The worker count comes from -e2e.tenant-workers rather than shape.workerPools.
+	pools, err := tenantWorkerPools(tenantWorkers)
+	Expect(err).NotTo(HaveOccurred(), "should build the tenant's worker pool")
+
 	return nvke.ClusterSpec{
 		Name:              name,
 		Backend:           nvke.BackendNicoForge,
@@ -1742,7 +1754,7 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nvke.Cluste
 			// hosts, and a real site has no equivalent to borrow from.
 			ControlPlaneVIP: shape.controlPlaneVIP,
 		},
-		Workers: forgeNodePoolSpecs(shape.workerPools, "worker", "w", site, workerType),
+		Workers: forgeNodePoolSpecs(pools, "worker", "w", site, workerType),
 	}
 }
 
@@ -2001,6 +2013,10 @@ func nicoDSXSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterS
 	}, kubernetesVersion, versions[versionCNIOVN])
 	Expect(err).NotTo(HaveOccurred(), "should render the node payloads")
 
+	// The worker count comes from -e2e.tenant-workers rather than shape.workerPools.
+	pools, err := tenantWorkerPools(tenantWorkers)
+	Expect(err).NotTo(HaveOccurred(), "should build the tenant's worker pool")
+
 	return nvke.ClusterSpec{
 		Name:              name,
 		Backend:           nvke.BackendNicoForge,
@@ -2020,7 +2036,7 @@ func nicoDSXSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterS
 			// prefix has no spare address for a VIP to take.
 			ControlPlaneVIP: shape.controlPlaneVIP,
 		},
-		Workers: dsxNodePoolSpecs(shape.workerPools, "worker", "w", site, workerType),
+		Workers: dsxNodePoolSpecs(pools, "worker", "w", site, workerType),
 	}
 }
 

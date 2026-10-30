@@ -14,9 +14,11 @@ provider. [hardware-qualification-design.md](hardware-qualification-design.md) c
 happens after a machine is chosen.
 
 Files live in `controller/test/e2e/environments/`, one per environment, named
-by the value of `-e2e.environment`. There are two: `forge.yaml`, and `dsx.yaml`
-for the DSX datahalls. One file per *provider* — a datahall or site is an
-entry inside one, not a file of its own.
+by the value of `-e2e.environment`. There are three: `forge.yaml`,
+`forge-perf.yaml` for the Forge site for performance runs, and `dsx.yaml` for
+the DSX datahalls. One file per *provider and org*: a datahall or site is an
+entry inside one, not a file of its own, and the perf environment has its own
+because its site sits in another org.
 
 ## The shape
 
@@ -144,6 +146,15 @@ Their values are on the repository's Actions variables page. Unit tests need
 none of this: they substitute synthetic values, so
 `TestCheckedInEnvironmentsParse` still checks that this file is well-formed
 wherever it runs.
+
+For `forge-perf.yaml`, where `FORGE_PERF_INSTANCE_TYPE_CPU_ID` is the id of the
+high memory CPU type `cpu.himem.t1`:
+
+```bash
+export FORGE_PERF_ORG_ID=… FORGE_PERF_SITE_ID=… FORGE_PERF_VPC_ID=… FORGE_PERF_SUBNET_ID=…
+export FORGE_PERF_SSH_KEY_GROUP_ID=… FORGE_PERF_JUMP_HOST=… FORGE_PERF_TELEPORT_LOGIN=…
+export FORGE_PERF_INSTANCE_TYPE_CPU_ID=…
+```
 
 ## What is deliberately absent
 

@@ -805,6 +805,9 @@ control-plane VIP, and encryption (check 20) where it records encryption at
 rest. Each set stops at its first failure, so
 a broken site does not wait out every later check.
 
+In either lane the tenant gets one worker, or N with `-e2e.tenant-workers=N`,
+and the site lane's capacity check asks for the same N.
+
 Both lanes create the same `nico-forge` tenant and both entries carry that
 label, so pick between them with `site-controller`, which only the lane that
 builds a site carries. At `full` the site lane also registers one tenant entry

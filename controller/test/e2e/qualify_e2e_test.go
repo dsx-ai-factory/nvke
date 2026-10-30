@@ -225,7 +225,7 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 			var placed []string
 			stack, placed = expectSucceed2(newStack(cfg, capabilities[infra.CapabilityArch]))
 			secrets = append(secrets, placed...)
-			Expect(requireRunCapacity(context.Background(), provider)).To(Succeed())
+			Expect(requireRunCapacity(context.Background(), provider, siteStage, tenantWorkers)).To(Succeed())
 		}
 	})
 
@@ -513,13 +513,14 @@ func siteCapabilities(run map[string]string) map[string]string {
 
 // requireRunCapacity asks the substrate whether the shapes this run will create
 // have usable allocations: the site node and, at the full stage, the tenant
-// control plane on the CPU shape, and one worker on the worker shape. A
+// control plane on the CPU shape, and its workers on the worker shape. A
 // deployment run builds the site node and no tenant, so it asks for one machine.
+// A tenant run with fewer than one worker fails before the substrate is asked.
 //
 // Duck-typed rather than part of infra.Provider: a substrate that cannot answer
 // should not have to implement a method that lies, and one that can answers the
 // same question in its own API's terms.
-func requireRunCapacity(ctx context.Context, provider infra.Provider) error {
+func requireRunCapacity(ctx context.Context, provider infra.Provider, stage string, workers int) error {
 	checker, ok := provider.(interface {
 		RequireCapacity(ctx context.Context, selector map[string]string, cpu, workers int) error
 	})
@@ -530,10 +531,13 @@ func requireRunCapacity(ctx context.Context, provider infra.Provider) error {
 	if err != nil {
 		return err
 	}
-	if siteStage == siteStageDeployment {
+	if stage == siteStageDeployment {
 		return checker.RequireCapacity(ctx, capabilities, 1, 0)
 	}
-	return checker.RequireCapacity(ctx, capabilities, 2, 1)
+	if _, err := tenantWorkerPools(workers); err != nil {
+		return err
+	}
+	return checker.RequireCapacity(ctx, capabilities, 2, workers)
 }
 
 // newInfraProvider builds what creates this run's site node, as the run's

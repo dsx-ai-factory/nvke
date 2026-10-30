@@ -38,6 +38,9 @@ var (
 	// running the suite by hand against the simulators.
 	versionsFlag     string
 	capabilitiesFlag string
+
+	// tenantWorkers is how many workers the hardware tenant on Forge or DSX gets.
+	tenantWorkers int
 )
 
 func init() {
@@ -45,6 +48,7 @@ func init() {
 	flag.StringVar(&envName, "e2e.environment", "", "name of an environment in environments/ describing real infrastructure (required by nico-forge)")
 	flag.StringVar(&versionsFlag, "e2e.versions", "", "component versions under qualification, e.g. controller=v1.4.0-rc.1,os-image=v0.9.1,cli=v0.3.0")
 	flag.StringVar(&capabilitiesFlag, "e2e.capabilities", "", "capabilities the run requires, e.g. gpu=gb200,arch=amd64,kube=1.37")
+	flag.IntVar(&tenantWorkers, "e2e.tenant-workers", 1, "worker nodes in the hardware tenant the nico-forge, nico-dsx and site lanes create")
 }
 
 // The flags are parsed once and shared. Specs read them through the accessors

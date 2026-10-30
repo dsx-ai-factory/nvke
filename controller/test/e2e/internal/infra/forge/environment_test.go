@@ -5,6 +5,7 @@ package forge
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -68,6 +69,49 @@ func TestCheckedInEnvironmentsParse(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCheckedInEnvironmentsParseForgePerf(t *testing.T) {
+	const idVariable = "FORGE_PERF_INSTANCE_TYPE_CPU_ID"
+	path := filepath.Join(checkedInDir, "forge-perf.yaml")
+	setSynthetic(t, path)
+
+	t.Run("the site declares the high memory CPU type", func(t *testing.T) {
+		env, err := environment.LoadPath("forge-perf", path)
+		if err != nil {
+			t.Fatalf("loading %s: %v", path, err)
+		}
+		forge, err := Decode(env.Infrastructure)
+		if err != nil {
+			t.Fatalf("decoding %s as forge: %v", path, err)
+		}
+		site, err := forge.Site("site-1")
+		if err != nil {
+			t.Fatalf("site-1 is not usable: %v", err)
+		}
+		if len(site.InstanceTypes) == 0 {
+			t.Fatal("site-1 declares no instance types")
+		}
+		got := site.InstanceTypes[0]
+		if got.Name != "cpu.himem.t1" {
+			t.Errorf("first instance type is %q, want cpu.himem.t1", got.Name)
+		}
+		want := map[string]string{infra.CapabilityMachineType: "cpu", infra.CapabilityArch: "amd64"}
+		if !maps.Equal(got.Provides, want) {
+			t.Errorf("%s provides %v, want %v", got.Name, got.Provides, want)
+		}
+	})
+
+	t.Run("an unset instance type id fails at load naming the variable", func(t *testing.T) {
+		t.Setenv(idVariable, "")
+		_, err := environment.LoadPath("forge-perf", path)
+		if err == nil {
+			t.Fatalf("loading %s with %s unset should have failed", path, idVariable)
+		}
+		if !strings.Contains(err.Error(), idVariable) {
+			t.Errorf("error should name %s, got %v", idVariable, err)
+		}
+	})
 }
 
 // envReference matches the ${NAME} and ${NAME:-default} forms an environment
