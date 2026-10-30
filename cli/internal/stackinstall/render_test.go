@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var update = flag.Bool("update", false, "rewrite the golden files")
+var update = flag.Bool("update", false, "rewrite the expected files")
 
 func TestRenderWritesTree(t *testing.T) {
 	p := mustPlan(t, testInputs(t, Site, "linux/amd64", true))
@@ -69,8 +69,8 @@ func TestRenderWritesTree(t *testing.T) {
 	require.ErrorContains(t, err, "is not empty")
 }
 
-// goldenCases are the plans whose overlays and rendered templates are pinned.
-var goldenCases = map[string]func(t *testing.T) Inputs{
+// expectedCases are the plans whose overlays and rendered templates are pinned.
+var expectedCases = map[string]func(t *testing.T) Inputs{
 	"site-amd64": func(t *testing.T) Inputs {
 		return testInputs(t, Site, "linux/amd64", true)
 	},
@@ -92,9 +92,9 @@ var goldenCases = map[string]func(t *testing.T) Inputs{
 	},
 }
 
-// goldenFiles returns the overlays and rendered templates under dir, except
+// expectedFiles returns the overlays and rendered templates under dir, except
 // the CAPNICo manifest, which is CAPNICo's own release file.
-func goldenFiles(t *testing.T, dir string) map[string][]byte {
+func expectedFiles(t *testing.T, dir string) map[string][]byte {
 	t.Helper()
 	files := map[string][]byte{}
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
@@ -121,27 +121,27 @@ func goldenFiles(t *testing.T, dir string) map[string][]byte {
 	return files
 }
 
-func TestGolden(t *testing.T) {
-	names := make([]string, 0, len(goldenCases))
-	for name := range goldenCases {
+func TestExpected(t *testing.T) {
+	names := make([]string, 0, len(expectedCases))
+	for name := range expectedCases {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "out")
-			require.NoError(t, mustPlan(t, goldenCases[name](t)).Render(out))
-			got := goldenFiles(t, out)
-			goldenDir := filepath.Join("testdata", "golden", name)
+			require.NoError(t, mustPlan(t, expectedCases[name](t)).Render(out))
+			got := expectedFiles(t, out)
+			expectedDir := filepath.Join("testdata", "expected", name)
 			if *update {
-				require.NoError(t, os.RemoveAll(goldenDir))
+				require.NoError(t, os.RemoveAll(expectedDir))
 				for rel, data := range got {
-					path := filepath.Join(goldenDir, filepath.FromSlash(rel))
+					path := filepath.Join(expectedDir, filepath.FromSlash(rel))
 					require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
 					require.NoError(t, os.WriteFile(path, data, 0o644))
 				}
 			}
-			want := goldenFiles(t, goldenDir)
+			want := expectedFiles(t, expectedDir)
 			require.NotEmpty(t, want)
 			assert.ElementsMatch(t, keys(want), keys(got), "the generated file set")
 			for rel, data := range want {
