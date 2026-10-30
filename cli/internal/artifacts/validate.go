@@ -91,7 +91,7 @@ func artifactProblems(a *Artifact, want Expectation, platform string) []string {
 	var problems []string
 	if a.Reference == "" {
 		problems = append(problems, "reference is missing")
-	} else if i := strings.LastIndex(a.Reference, "@"); i < 0 || digest.Digest(a.Reference[i+1:]).Validate() != nil {
+	} else if _, d, ok := strings.Cut(a.Reference, "@"); !ok || digest.Digest(d).Validate() != nil {
 		problems = append(problems, "reference has no digest")
 	}
 	if want.Kind == KindImage {

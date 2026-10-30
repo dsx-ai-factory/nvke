@@ -5,8 +5,9 @@
 # platform defaults to linux/amd64. Each file under cases/ breaks one rule of
 # valid.json, except the valid-* files and minimal-hand-written.json, which are
 # the valid shapes. minimal-hand-written.json lists its artifacts under
-# artifacts; the others use nvkr's key, outputs. nvkr/ holds unmodified nvkr
-# release exports with no NVKE artifact.
+# artifacts, and the two both-keys files add outputs to it; the other
+# files use nvkr's key, outputs. nvkr/ holds unmodified nvkr release exports
+# with no NVKE artifact.
 
 - file: valid.json
   expect: ok
@@ -21,6 +22,8 @@
   expect: ok
 - file: cases/valid-extra-artifacts-and-keys.json
   expect: ok
+- file: cases/empty-object.json
+  expect: 'required artifact "cwe" is missing'
 - file: nvkr/helm-export.json
   expect: 'required artifact "cwe" is missing'
 - file: nvkr/exec-export.json
@@ -33,6 +36,10 @@
   expect: 'content after the JSON object'
 - file: cases/both-list-keys.json
   expect: 'has both "artifacts" and "outputs"'
+- file: cases/null-list-beside-outputs.json
+  expect: 'has both "artifacts" and "outputs"'
+- file: cases/list-not-an-array.json
+  expect: 'cannot unmarshal object'
 - file: cases/duplicate-artifact-name.json
   expect: 'artifact "cwe": appears twice'
 - file: cases/missing-required-artifact.json

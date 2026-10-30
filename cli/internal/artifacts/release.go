@@ -55,7 +55,7 @@ var Expected = []Expectation{
 	{Name: "spire", Kind: KindChart, Required: true, ChartVersions: VersionRange{Version{0, 30, 1}, Version{0, 31, 0}}},
 	{Name: "temporal", Kind: KindChart, Required: true, ChartVersions: VersionRange{Version{0, 74, 0}, Version{0, 75, 0}}},
 	{Name: "nico", Kind: KindChart, ChartVersions: VersionRange{Version{2, 2, 2}, Version{3, 0, 0}}},
-	// values/nico-prereqs.yaml targets the Bitnami postgresql chart.
+	// stack/values/nico-prereqs.yaml targets the Bitnami postgresql chart.
 	{Name: "nico-prereqs", Kind: KindChart, RequiredWith: "nico", ChartVersions: VersionRange{Version{18, 5, 15}, Version{19, 0, 0}}},
 	{Name: "local-path-provisioner", Kind: KindChart, ChartVersions: VersionRange{Version{0, 0, 31}, Version{0, 1, 0}}},
 }
@@ -68,12 +68,11 @@ type Release struct {
 	Artifacts  []Artifact `json:"artifacts"`
 }
 
-// releaseFile is the JSON shape Decode reads. outputs is nvkr's name for
-// the artifacts list.
+// releaseFile is the JSON shape Decode reads.
 type releaseFile struct {
-	RootDigest string      `json:"rootDigest"`
-	Artifacts  *[]Artifact `json:"artifacts"`
-	Outputs    *[]Artifact `json:"outputs"`
+	RootDigest string          `json:"rootDigest"`
+	Artifacts  json.RawMessage `json:"artifacts"`
+	Outputs    json.RawMessage `json:"outputs"`
 }
 
 // Artifact is one image or chart. Reference is the digest-pinned OCI
@@ -120,13 +119,18 @@ func Decode(r io.Reader) (*Release, error) {
 		return nil, fmt.Errorf("artifact file: %w", err)
 	}
 	rel := &Release{RootDigest: f.RootDigest}
+	list := f.Artifacts
 	switch {
 	case f.Artifacts != nil && f.Outputs != nil:
 		return nil, errors.New(`artifact file has both "artifacts" and "outputs"`)
-	case f.Artifacts != nil:
-		rel.Artifacts = *f.Artifacts
-	case f.Outputs != nil:
-		rel.Artifacts = *f.Outputs
+	case f.Artifacts == nil:
+		list = f.Outputs
+	}
+	if list == nil {
+		return rel, nil
+	}
+	if err := json.Unmarshal(list, &rel.Artifacts); err != nil {
+		return nil, fmt.Errorf("artifact file: %w", err)
 	}
 	return rel, nil
 }

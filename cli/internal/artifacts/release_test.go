@@ -133,7 +133,6 @@ func readCases(t *testing.T) []validationCase {
 	return cases
 }
 
-// Each file decodes and validates with the result cases.yaml lists for it.
 func TestValidateCases(t *testing.T) {
 	for _, c := range readCases(t) {
 		platform := cmp.Or(c.Platform, "linux/amd64")
