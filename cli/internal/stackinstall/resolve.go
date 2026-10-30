@@ -42,14 +42,14 @@ type Inputs struct {
 	Target    Target
 }
 
-// Release is one Helm release: its name, the artifact output that holds the
-// chart, the embedded values files in order, and the overlay passed last (nil
-// when the chart takes no input-derived values).
-type Release struct {
-	Name        string
-	Chart       artifacts.Output
-	ValuesFiles []string
-	Overlay     map[string]any
+// HelmRelease is one release: its name, the artifact output that holds the
+// chart, the embedded values files in order, and the values overlay passed
+// last (nil when the chart takes no input-derived values).
+type HelmRelease struct {
+	Name          string
+	Chart         artifacts.Output
+	ValuesFiles   []string
+	ValuesOverlay map[string]any
 }
 
 // Manifest is one glue manifest. Path is the embedded path with ".tmpl"
@@ -63,7 +63,7 @@ type Manifest struct {
 // manifests. Releases are sorted by name
 // and Manifests by path.
 type NVKEControllerStack struct {
-	Releases  []Release
+	Releases  []HelmRelease
 	Manifests []Manifest
 }
 
@@ -97,10 +97,10 @@ func Resolve(in Inputs) (*NVKEControllerStack, error) {
 		if !c.planned(v.kind, v.hasNico) {
 			continue
 		}
-		rel := Release{Name: c.release, Chart: *in.Artifacts.Output(c.output)}
+		rel := HelmRelease{Name: c.release, Chart: *in.Artifacts.Output(c.output)}
 		if c.values != "" {
 			rel.ValuesFiles = valuesFiles(c.values, v.kind)
-			if rel.Overlay, err = overlay(c.values, v); err != nil {
+			if rel.ValuesOverlay, err = valuesOverlay(c.values, v); err != nil {
 				return nil, fmt.Errorf("%s: %w", c.release, err)
 			}
 		}

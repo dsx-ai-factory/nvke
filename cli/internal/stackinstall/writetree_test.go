@@ -33,7 +33,7 @@ func TestWriteTree(t *testing.T) {
 		for _, file := range rel.ValuesFiles {
 			want[file] = true
 		}
-		if rel.Overlay != nil {
+		if rel.ValuesOverlay != nil {
 			want["overlays/"+rel.Name+".yaml"] = true
 		}
 	}

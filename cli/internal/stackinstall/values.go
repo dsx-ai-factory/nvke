@@ -31,24 +31,24 @@ var temporalImages = map[string]string{
 	"web":        "temporalio/ui",
 }
 
-// overlay returns the input-derived values for the chart that takes
+// valuesOverlay returns the input-derived values for the chart that takes
 // values/<values>.yaml, or nil when it takes none.
-func overlay(values string, v inputs) (map[string]any, error) {
+func valuesOverlay(values string, v inputs) (map[string]any, error) {
 	switch values {
 	case "controller":
-		return controllerOverlay(v), nil
+		return controllerValues(v), nil
 	case "spire":
-		return spireOverlay(v)
+		return spireValues(v)
 	case "postgresql", "nico-prereqs":
-		return postgresqlOverlay(v.mirror), nil
+		return postgresqlValues(v.mirror), nil
 	case "temporal":
-		return temporalOverlay(v.mirror), nil
+		return temporalValues(v.mirror), nil
 	default:
 		return nil, nil
 	}
 }
 
-func controllerOverlay(v inputs) map[string]any {
+func controllerValues(v inputs) map[string]any {
 	return map[string]any{
 		"image":        imageValues(v.cwe),
 		"spiffe":       map[string]any{"trustDomain": v.trustDomain, "spire": map[string]any{"serverAddress": v.address}},
@@ -56,7 +56,7 @@ func controllerOverlay(v inputs) map[string]any {
 	}
 }
 
-func spireOverlay(v inputs) (map[string]any, error) {
+func spireValues(v inputs) (map[string]any, error) {
 	admin, err := adminID(v.trustDomain)
 	if err != nil {
 		return nil, err
@@ -123,9 +123,9 @@ func spireOverlay(v inputs) (map[string]any, error) {
 	}, nil
 }
 
-// postgresqlOverlay serves the Bitnami chart from the mirror. The chart
+// postgresqlValues serves the Bitnami chart from the mirror. The chart
 // refuses an image outside its own registry unless told so.
-func postgresqlOverlay(mirror string) map[string]any {
+func postgresqlValues(mirror string) map[string]any {
 	if mirror == "" {
 		return nil
 	}
@@ -135,7 +135,7 @@ func postgresqlOverlay(mirror string) map[string]any {
 	}}
 }
 
-func temporalOverlay(mirror string) map[string]any {
+func temporalValues(mirror string) map[string]any {
 	if mirror == "" {
 		return nil
 	}

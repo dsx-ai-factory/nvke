@@ -63,7 +63,7 @@ func mustResolve(t *testing.T, in Inputs) *NVKEControllerStack {
 	return p
 }
 
-func release(t *testing.T, p *NVKEControllerStack, name string) Release {
+func release(t *testing.T, p *NVKEControllerStack, name string) HelmRelease {
 	t.Helper()
 	for _, rel := range p.Releases {
 		if rel.Name == name {
@@ -71,7 +71,7 @@ func release(t *testing.T, p *NVKEControllerStack, name string) Release {
 		}
 	}
 	require.Failf(t, "release not planned", "%s", name)
-	return Release{}
+	return HelmRelease{}
 }
 
 func releaseNames(p *NVKEControllerStack) []string {
@@ -281,7 +281,7 @@ func TestSeedTurnsMonitorsAndTracingOff(t *testing.T) {
 
 func TestAdminIDMatchesClusterSPIFFEID(t *testing.T) {
 	p := mustResolve(t, testInputs(t, Site, "linux/amd64", true))
-	spire := release(t, p, "spire").Overlay
+	spire := release(t, p, "spire").ValuesOverlay
 	adminIDs := dig(spire, "spire-server", "adminIDs").([]string)
 	require.Len(t, adminIDs, 1)
 
@@ -320,7 +320,7 @@ func TestTPMChecksumAMD64IsChartDefault(t *testing.T) {
 	// spire chart 0.30.1, spire-server nodeAttestor.tpmDirect.checksum (plugin v1.9.0).
 	const chartDefault = "46d0caad8c25a027dd11c93e18b58a8bc6fbd9f1fe2e36fa2a0dd440986de4dc"
 	p := mustResolve(t, testInputs(t, Site, "linux/amd64", true))
-	assert.Equal(t, chartDefault, dig(release(t, p, "spire").Overlay, "spire-server", "nodeAttestor", "tpmDirect", "checksum"))
+	assert.Equal(t, chartDefault, dig(release(t, p, "spire").ValuesOverlay, "spire-server", "nodeAttestor", "tpmDirect", "checksum"))
 }
 
 func TestImageValues(t *testing.T) {
@@ -410,9 +410,9 @@ func TestIdentityMatchesSeedAndSite(t *testing.T) {
 	}
 	for name, paths := range same {
 		for _, path := range paths {
-			want := dig(release(t, site, name).Overlay, path...)
+			want := dig(release(t, site, name).ValuesOverlay, path...)
 			require.NotNil(t, want, "%s %v", name, path)
-			assert.Equal(t, want, dig(release(t, seed, name).Overlay, path...), "%s %v", name, path)
+			assert.Equal(t, want, dig(release(t, seed, name).ValuesOverlay, path...), "%s %v", name, path)
 		}
 	}
 	differ := map[string][][]string{
@@ -421,10 +421,10 @@ func TestIdentityMatchesSeedAndSite(t *testing.T) {
 	}
 	for name, paths := range differ {
 		for _, path := range paths {
-			assert.NotEqual(t, dig(release(t, site, name).Overlay, path...), dig(release(t, seed, name).Overlay, path...), "%s %v", name, path)
+			assert.NotEqual(t, dig(release(t, site, name).ValuesOverlay, path...), dig(release(t, seed, name).ValuesOverlay, path...), "%s %v", name, path)
 		}
 	}
-	assert.Equal(t, sitespec.DefaultBootstrapClusterName, dig(release(t, seed, "spire").Overlay, "global", "spire", "clusterName"))
+	assert.Equal(t, sitespec.DefaultBootstrapClusterName, dig(release(t, seed, "spire").ValuesOverlay, "global", "spire", "clusterName"))
 }
 
 // leaves returns the dotted path of every non-map value, lists included.
@@ -441,7 +441,7 @@ func leaves(values map[string]any, prefix string) []string {
 	return out
 }
 
-func TestOverlayDoesNotRestateCommitted(t *testing.T) {
+func TestValuesOverlayDoesNotRestateCommitted(t *testing.T) {
 	// Lists Helm would replace whole and the placeholder the overlay must replace.
 	restated := []string{
 		"global.spire.trustDomain",
@@ -468,13 +468,13 @@ func TestOverlayDoesNotRestateCommitted(t *testing.T) {
 		in.Site.Spire.UpstreamCA = true
 		in.Stack.Mirror = "mirror.example.internal:5000/nvke"
 		for _, rel := range mustResolve(t, in).Releases {
-			paths := leaves(rel.Overlay, "")
-			if rel.Overlay == nil {
+			paths := leaves(rel.ValuesOverlay, "")
+			if rel.ValuesOverlay == nil {
 				assert.NotContains(t, want, rel.Name, "%s %s has no overlay", kind, rel.Name)
 				continue
 			}
 			assert.Equal(t, want[rel.Name], paths, "%s %s", kind, rel.Name)
-			base, err := mergedValues(Release{ValuesFiles: rel.ValuesFiles})
+			base, err := mergedValues(HelmRelease{ValuesFiles: rel.ValuesFiles})
 			require.NoError(t, err)
 			for _, path := range paths {
 				if slices.Contains(restated, path) {
@@ -489,7 +489,7 @@ func TestOverlayDoesNotRestateCommitted(t *testing.T) {
 func TestSeedDNSAddress(t *testing.T) {
 	in := testInputs(t, Seed, "linux/amd64", false)
 	in.Site.Spire.ExternalAddress = "seed.example.internal"
-	spire := release(t, mustResolve(t, in), "spire").Overlay
+	spire := release(t, mustResolve(t, in), "spire").ValuesOverlay
 	cert := dig(spire, "spiffe-oidc-discovery-provider", "tls", "certManager", "certificate").(map[string]any)
 	assert.NotContains(t, cert, "ipAddresses")
 	assert.Equal(t, []string{"nvke.site-controller.internal", "localhost", "seed.example.internal"}, cert["dnsNames"])
@@ -499,7 +499,7 @@ func TestSeedDNSAddress(t *testing.T) {
 
 // mergedValues layers a release's values files and overlay as Helm does:
 // maps merge key by key, anything else replaces.
-func mergedValues(rel Release) (map[string]any, error) {
+func mergedValues(rel HelmRelease) (map[string]any, error) {
 	out := map[string]any{}
 	for _, file := range rel.ValuesFiles {
 		var values map[string]any
@@ -508,7 +508,7 @@ func mergedValues(rel Release) (map[string]any, error) {
 		}
 		out = mergeValues(out, values)
 	}
-	return mergeValues(out, rel.Overlay), nil
+	return mergeValues(out, rel.ValuesOverlay), nil
 }
 
 func mergeValues(dst, src map[string]any) map[string]any {
