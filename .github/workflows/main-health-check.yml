@@ -1,0 +1,314 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Files a tracking issue while a required gate member is failing on `main`.
+#
+# WHAT GAP THIS FILLS
+#
+# Every required member already owns its post-merge `main` run (invariant 2 in
+# README.md), so a broken `main` does produce a red run. Nothing reads it. #2023
+# is the worked example: two pull requests each passed against a `main` that did
+# not yet contain the other, the second merge turned `Controller Unit Tests` red
+# on `main`, and the only thing that noticed was a contributor whose own pull
+# request could no longer merge -- `gate` is required and every open pull request
+# builds against `refs/pull/<n>/merge`, so one red member blocks all of them at
+# once. A further commit merged into the red `main` before the issue was filed.
+#
+# The Actions tab and ci-dashboard.yml both show this, and both have to be
+# opened. This workflow pushes instead of waiting to be pulled.
+#
+# It reports a red `main`; it does not prevent one. What prevents one is a merge
+# queue, which re-tests the combination at merge time. merge-gate.yml already
+# carries the `merge_group` trigger for that, inert until the setting is turned
+# on.
+#
+# WHY A SWEEP AND NOT `workflow_run`
+#
+# The same reason ci-failure-check.yml gives: `workflow_run` needs a literal
+# `workflows:` list, so a renamed or added member silently stops feeding it. A
+# sweep reads the true state each time and has no list to go stale. The cost is
+# latency, which does not matter for an issue nobody blocks on.
+#
+# WHY THE MEMBER LIST COMES OUT OF merge-gate.yml
+#
+# "Required member" is exactly "called by merge-gate.yml", and that file already
+# says so. Reading its `uses:` lines at run time means adding a member needs no
+# edit here, and a member dropped from the gate stops filing issues on its own.
+# A hand-maintained copy of the list is the thing that goes stale -- the same
+# failure mode as a `workflows:` filter, one file further along.
+#
+# Advisory lanes are deliberately out of scope. They are slow, privileged or
+# infrastructure-dependent, they fail for reasons that block no merge, and an
+# issue per flake is how a bot gets muted.
+name: Main Branch Health
+
+on:
+  schedule:
+    # Twenty past and ten to: off the hour, where the E2E crons sit, and off the
+    # quarters, where ci-failure-check.yml sweeps.
+    - cron: '20,50 * * * *'
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  # A literal name, for the reason in README.md: ${{ github.workflow }} resolves
+  # to the CALLER's name inside a called workflow. Two sweeps racing would file
+  # the issue twice, so the newer one wins outright.
+  group: Main Branch Health
+  cancel-in-progress: true
+
+jobs:
+  sweep:
+    name: Check main for failing required members
+    if: github.repository_id == '1323115536'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    timeout-minutes: 10
+    steps:
+      - name: Check out the workflow definitions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/workflows
+          persist-credentials: false
+
+      - name: Read the required member list out of merge-gate.yml
+        id: members
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A workflow run reports the member's FILE in `path`, so the gate's
+          # own `uses:` lines are already in the form the comparison needs. The
+          # `name:` would need a second lookup and changes without the file
+          # changing.
+          paths=$(yq eval -o=json '[.jobs[].uses | select(type == "!!str")]' \
+            .github/workflows/merge-gate.yml |
+            jq -c '[.[] | select(startswith("./.github/workflows/")) | ltrimstr("./")]')
+
+          count=$(jq -r 'length' <<<"${paths}")
+          if [ "${count}" -eq 0 ]; then
+            echo "::error::no members found in merge-gate.yml; the sweep would call main green whatever happened"
+            exit 1
+          fi
+
+          while read -r file; do
+            [ -f "${file}" ] || {
+              echo "::error::merge-gate.yml calls ${file}, which does not exist"
+              exit 1
+            }
+          done < <(jq -r '.[]' <<<"${paths}")
+
+          echo "paths=${paths}" >> "${GITHUB_OUTPUT}"
+          echo "  ${count} required members: ${paths}"
+
+      - name: File or close the tracking issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          MEMBER_PATHS: ${{ steps.members.outputs.paths }}
+        with:
+          script: |
+            // The anchor for finding this workflow's own issue again. A triager
+            // may edit the title or the labels; a marker in the body is not
+            // something anyone changes by accident.
+            const MARKER = '<!-- main-health-check -->';
+            const members = new Set(JSON.parse(process.env.MEMBER_PATHS));
+
+            // Two pages of runs cover well over a day of merges. A lane with a
+            // path filter can have its newest run several commits back, and
+            // that verdict still stands: nothing has re-tested it since.
+            let pages = 0;
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRunsForRepo,
+              { ...context.repo, branch: 'main', event: 'push', per_page: 100 },
+              (response, done) => {
+                if (++pages >= 2) done();
+                return response.data;
+              },
+            );
+
+            // Newest CONCLUSIVE run per member. A lane that is re-running has
+            // its previous verdict read instead, so a re-run in flight cannot
+            // read as a pass. `cancelled` and `skipped` prove nothing either --
+            // concurrency cancels runs constantly and a path filter skips them
+            // -- and they are dropped HERE rather than after the fact, so an
+            // inconclusive run newer than a failure cannot displace it.
+            // `startup_failure` is a verdict: the workflow file itself did not
+            // parse, so the lane ran nothing and the gate cannot pass.
+            const FAILING = ['failure', 'timed_out', 'startup_failure'];
+            const CONCLUSIVE = ['success', ...FAILING];
+            const newest = new Map();
+            for (const run of runs) {
+              // The REST docs give `path` as `.github/workflows/build.yml@main`
+              // for a referenced workflow; a push run in this repo carries the
+              // bare path. Strip either way -- a mismatch here reads as green.
+              const path = run.path.split('@')[0];
+              if (!members.has(path) || run.status !== 'completed') continue;
+              if (!CONCLUSIVE.includes(run.conclusion)) continue;
+              const seen = newest.get(path);
+              if (!seen || run.created_at > seen.created_at) newest.set(path, run);
+            }
+
+            // A member whose last `main` run fell outside the window above gets
+            // one targeted lookup rather than being carried as unknown until it
+            // next runs. At most one call per missing member, and only a lane
+            // that has genuinely never concluded on `main` stays unknown.
+            for (const path of members) {
+              if (newest.has(path)) continue;
+              const { data } = await github.rest.actions.listWorkflowRuns({
+                ...context.repo,
+                workflow_id: path.split('/').pop(),
+                branch: 'main',
+                event: 'push',
+                status: 'completed',
+                per_page: 30,
+              });
+              const run = data.workflow_runs.find((candidate) =>
+                CONCLUSIVE.includes(candidate.conclusion),
+              );
+              if (run) newest.set(path, run);
+            }
+
+            const failed = [...newest.values()]
+              .filter((run) => FAILING.includes(run.conclusion))
+              .sort((a, b) => a.name.localeCompare(b.name));
+
+            // A member with no conclusive run in the window is UNKNOWN, not
+            // green: a newly added lane, or one whose path filter leaves its
+            // last run past the window. Reporting green on that is the silent
+            // pass this workflow exists to catch, so the issue is held open.
+            const unknown = [...members].filter((path) => !newest.has(path)).sort();
+
+            // Found by MARKER, not by label: the labels are triager-editable,
+            // and losing one would strand the open issue and file a second
+            // alongside it. The author check is there because the marker is
+            // plain text in the body a person can copy into an issue of their
+            // own; `type` rather than a literal login, so changing the token
+            // this runs under cannot orphan the issue. listForRepo also returns
+            // pull requests.
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              ...context.repo, state: 'open', per_page: 100,
+            });
+            const tracking = open.find(
+              (issue) => !issue.pull_request &&
+                issue.user?.type === 'Bot' &&
+                (issue.body ?? '').includes(MARKER),
+            );
+
+            const workflow = `https://github.com/${context.repo.owner}/${context.repo.repo}` +
+              '/blob/main/.github/workflows/main-health-check.yml';
+            const footer = `Filed and closed by [main-health-check.yml](${workflow}). It closes ` +
+              'itself once every member is green again, and its body is rewritten each sweep, so ' +
+              'it always names the lanes failing or unverified now.';
+            const unknownLanes = unknown.map((path) => `- \`${path}\``).join('\n');
+
+            // Green is every member conclusive AND none of them failing. An
+            // unknown member holds the issue open, but the body is rewritten
+            // first -- otherwise it goes on naming lanes that have since gone
+            // green, for as long as the unknown lane takes to run.
+            if (failed.length === 0 && unknown.length === 0) {
+              if (!tracking) {
+                core.info(`main is green across ${newest.size} required members`);
+                return;
+              }
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: tracking.number,
+                body: `\`main\` is green again across all ${newest.size} required members. Closing.`,
+              });
+              await github.rest.issues.update({
+                ...context.repo,
+                issue_number: tracking.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+              core.info(`#${tracking.number}: closed, main is green`);
+              return;
+            }
+
+            let title;
+            let body;
+            if (failed.length > 0) {
+              const lanes = failed.map((run) =>
+                `- **${run.name}** — ${run.conclusion} on [\`${run.head_sha.slice(0, 9)}\`](${run.html_url})`,
+              ).join('\n');
+              title = `main is red: ${failed.map((run) => run.name).join(', ')}`;
+              body = [
+                MARKER,
+                `${failed.length} required gate member${failed.length === 1 ? ' is' : 's are'} ` +
+                  'failing on `main`:',
+                '',
+                lanes,
+                ...(unknown.length === 0 ? [] : [
+                  '',
+                  `${unknown.length} further member${unknown.length === 1 ? ' has' : 's have'} no ` +
+                    'conclusive `main` run, so ' +
+                    `${unknown.length === 1 ? 'its state is' : 'their states are'} unknown:`,
+                  '',
+                  unknownLanes,
+                ]),
+                '',
+                '`gate` requires every member to report `success`, and a pull request builds ' +
+                  'against `refs/pull/<n>/merge`. Until this is green, no pull request whose ' +
+                  'merge ref contains the failing commit can merge on its own checks, whatever ' +
+                  'it changes. A stack based on a branch that predates the failure is ' +
+                  'unaffected until it rebases.',
+                '',
+                footer,
+              ].join('\n');
+            } else {
+              // Nothing is failing, but not everything has reported. Held open
+              // rather than filed: a lane that has never concluded on `main` is
+              // a new lane, and a P0 for one is noise.
+              core.warning(
+                `no conclusive \`main\` run for ${unknown.length} required member` +
+                  `${unknown.length === 1 ? '' : 's'}: ${unknown.join(', ')}. ` +
+                  'Reporting unknown rather than green.',
+              );
+              if (!tracking) {
+                core.info('no tracking issue open; nothing to hold open');
+                return;
+              }
+              title = `main health unknown: ${unknown.join(', ')}`;
+              body = [
+                MARKER,
+                'No required gate member is failing on `main`, but ' +
+                  `${unknown.length} ${unknown.length === 1 ? 'has' : 'have'} no conclusive ` +
+                  '`main` run, so this issue is held open rather than closed:',
+                '',
+                unknownLanes,
+                '',
+                'A member reads as unknown when it has never concluded on `main` -- a newly ' +
+                  'added lane, or one whose last run predates the window this sweep reads. ' +
+                  'This closes itself once every member has reported green.',
+                '',
+                footer,
+              ].join('\n');
+            }
+
+            if (tracking) {
+              // Rewritten rather than commented on: a sweep every half hour
+              // would otherwise bury the issue it exists to make readable.
+              if (tracking.title === title && tracking.body === body) {
+                core.info(`#${tracking.number}: unchanged, still open`);
+                return;
+              }
+              await github.rest.issues.update({
+                ...context.repo, issue_number: tracking.number, title, body,
+              });
+              core.info(
+                `#${tracking.number}: updated, ${failed.length} failing, ${unknown.length} unknown`,
+              );
+              return;
+            }
+
+            // priority/P0 by docs/issue-triage.md: no workaround, and nothing
+            // merges until it is fixed. `needs-triage` is deliberately absent --
+            // setting a priority IS the triage, and issue-triage-check.yml
+            // removes the label once one is present.
+            const created = await github.rest.issues.create({
+              ...context.repo, title, body, labels: ['bug', 'area/ci-build', 'priority/P0'],
+            });
+            core.info(`#${created.data.number}: filed, ${failed.length} failing`);
