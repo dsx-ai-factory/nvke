@@ -572,6 +572,71 @@ func TestNVKEClusterAuthenticationCreateOnly(t *testing.T) {
 	}
 }
 
+func TestNVKEClusterAPIServerEndpointAddress(t *testing.T) {
+	schema := loadResourceSchema(t, "nvkeclusters")
+
+	for _, tt := range []struct {
+		name    string
+		address string
+		invalid bool
+	}{
+		{name: "private IPv4", address: "10.0.0.10"},
+		{name: "public IPv4", address: "203.0.113.10"},
+		{name: "not an IP", address: "api.example.com", invalid: true},
+		{name: "IPv6", address: "2001:db8::10", invalid: true},
+		{name: "loopback", address: "127.0.0.1", invalid: true},
+		{name: "unspecified", address: "0.0.0.0", invalid: true},
+		{name: "inside pod network", address: "192.168.1.10", invalid: true},
+		{name: "inside service network", address: "10.96.0.10", invalid: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			schema.check(t, tt.invalid, clusterWithAPIServerAddress(t, tt.address), nil)
+		})
+	}
+}
+
+func TestNVKEClusterAPIServerEndpointLockedByStatus(t *testing.T) {
+	schema := loadResourceSchema(t, "nvkeclusters")
+	const address, replacement = "10.0.0.10", "10.0.0.11"
+
+	for _, tt := range []struct {
+		name       string
+		reported   bool
+		oldAddress string
+		newAddress string
+		invalid    bool
+	}{
+		{name: "add before reported", newAddress: address},
+		{name: "change before reported", oldAddress: address, newAddress: replacement},
+		{name: "remove before reported", oldAddress: address},
+		{name: "unchanged after reported", reported: true, oldAddress: address, newAddress: address},
+		{name: "change after reported", reported: true, oldAddress: address, newAddress: replacement, invalid: true},
+		{name: "remove after reported", reported: true, oldAddress: address, invalid: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			old := clusterWithAPIServerAddress(t, tt.oldAddress)
+			if tt.reported {
+				setField(old, []string{"status", "apiServerEndpoint"}, map[string]any{"address": tt.oldAddress})
+			}
+			schema.admit(t, old, nil)
+			obj := clusterWithAPIServerAddress(t, tt.newAddress)
+			if status, ok := old["status"]; ok {
+				obj["status"] = status
+			}
+			schema.check(t, tt.invalid, obj, old)
+		})
+	}
+}
+
+func clusterWithAPIServerAddress(t *testing.T, address string) map[string]any {
+	t.Helper()
+	obj := baseResource(t, "nvkeclusters")
+	if address != "" {
+		setField(obj, []string{"spec", "apiServerEndpoint"}, map[string]any{"address": address})
+	}
+	return obj
+}
+
 func TestResourceCollectionUniqueness(t *testing.T) {
 	schema := loadResourceSchema(t, "nvkeclusters")
 	serviceCIDRs := []string{"spec", "clusterNetwork", "services", "cidrBlocks"}
