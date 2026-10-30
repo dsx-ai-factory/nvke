@@ -3,8 +3,7 @@
 
 # Values for the nvke-controller chart.
 #
-# Site identity is not in this file. The generated overlay supplies it at
-# render time:
+# Site identity is not in this file. The generated overlay supplies it:
 #   image.repository, image.digest and an empty image.tag
 #                                      the cwe output of the artifact file
 #   spiffe.spire.serverAddress         the target's address
@@ -33,8 +32,7 @@ nvkeSystemNamespace:
 image:
   pullPolicy: IfNotPresent
 
-# Empty. A site that pulls the controller from a registry adds its own Secret
-# in nvke-controller through the generated overlay.
+# Empty. No overlay sets a pull Secret yet.
 imagePullSecrets: []
 
 # Named Secret, not a chart-built connection string. With dbSecretName set the

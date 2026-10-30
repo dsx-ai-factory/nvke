@@ -69,7 +69,7 @@ func TestWriteTree(t *testing.T) {
 	require.ErrorContains(t, err, "is not empty")
 }
 
-// expectedCases are the plans whose overlays and rendered templates are pinned.
+// expectedCases are the inputs whose overlays and rendered templates are pinned.
 var expectedCases = map[string]func(t *testing.T) Inputs{
 	"site-amd64": func(t *testing.T) Inputs {
 		return testInputs(t, Site, "linux/amd64", true)

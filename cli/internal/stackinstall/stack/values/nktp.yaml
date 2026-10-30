@@ -9,8 +9,8 @@
 # and controller releases each create a monitor that needs them.
 #
 # The exporters stay pointed at the bundled development backend. It keeps
-# data in memory and has no authentication. A site with its own backend sets
-# the backend keys through the generated overlay. "Set a backend" in
+# data in memory and has no authentication. No overlay sets a backend yet;
+# "Set a backend" in
 # docs/nktp/getting-started.md lists them.
 #
 # Helm merges maps key by key but replaces lists whole. Every list below is

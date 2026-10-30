@@ -38,8 +38,8 @@ The install order and the seed/site membership live in Go, not here. There
 is no order file in this directory. A values file says what a chart gets. Go
 says when, and whether a seed or a site gets it.
 
-Every chart listed by the artifact file is installed as a Helm release. The
-artifact file pins the chart. The values file here is passed to
+Every chart in the release table that the target selects is installed as a
+Helm release. The artifact file pins the chart. The values file here is passed to
 `helm upgrade --install` with `--values`.
 
 The seed is a kind cluster. It runs NICo when the artifact file has the
@@ -47,8 +47,8 @@ The seed is a kind cluster. It runs NICo when the artifact file has the
 provider and the NetworkPolicy stay on. The kind layer changes sizing and
 turns the monitors and tracing off, since their CRDs and their receiver come
 with NKTP. The kind layer applies to the seed only: `values/kind/<name>.yaml`
-is passed as a second `--values` after `values/<name>.yaml`. The file is named after the values file, not the
-chart. The Bitnami `postgresql` chart has two, `kind/postgresql.yaml` and
+is passed as a second `--values` after `values/<name>.yaml`. The file is
+named after the values file, not the chart. The Bitnami `postgresql` chart has two, `kind/postgresql.yaml` and
 `kind/nico-prereqs.yaml`. Helm merges maps key by key, so a kind file
 restates only what changes.
 
@@ -84,8 +84,8 @@ own layout and goes straight to that chart.
 
 - Values files are pure Helm values. No Go templating, no placeholders that a
   render step fills in.
-- Input-derived values go into a generated overlay at render time. The site
-  spec and the stack config supply them. The overlay is passed as a later
+- Input-derived values go into a generated overlay. The site spec, the stack
+  config and the artifact file supply them. The overlay is passed as a later
   `--values`, so it wins. Each values file lists in its header what the
   overlay supplies.
 - Glue manifests are plain Kubernetes manifests. The few that need an input

@@ -19,7 +19,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 )
 
-// Target is the cluster a plan installs on and its platform, such as
+// Target is the cluster the stack installs on and its platform, such as
 // "linux/amd64" or "linux/arm64".
 type Target struct {
 	Kind     TargetKind
@@ -60,8 +60,7 @@ type Manifest struct {
 }
 
 // NVKEControllerStack is what one target installs: its Helm releases and glue
-// manifests. Releases are sorted by name
-// and Manifests by path.
+// manifests. Releases are sorted by name and Manifests by path.
 type NVKEControllerStack struct {
 	Releases  []HelmRelease
 	Manifests []Manifest
@@ -86,7 +85,7 @@ type inputs struct {
 }
 
 // Resolve checks the inputs and builds the stack for in.Target. It reports
-// every input problem at once and returns no plan when there is one.
+// every input problem at once and returns no stack when there is one.
 func Resolve(in Inputs) (*NVKEControllerStack, error) {
 	v, err := check(in)
 	if err != nil {
@@ -113,7 +112,6 @@ func Resolve(in Inputs) (*NVKEControllerStack, error) {
 	return p, nil
 }
 
-// check validates in and resolves what the overlays read.
 func check(in Inputs) (inputs, error) {
 	if in.Site == nil || in.Artifacts == nil {
 		return inputs{}, errors.New("the site spec and the artifact file are both required")
@@ -202,11 +200,8 @@ func check(in Inputs) (inputs, error) {
 		}
 		v.networks = append(v.networks, prefix.String())
 	}
-	switch {
-	case strings.Contains(v.mirror, "://"):
-		add("stack config: mirror %q is a host[:port][/prefix], not a URL", v.mirror)
-	case !templateSafe(v.mirror):
-		add("stack config: mirror %q holds a quote, a backslash or a control character", v.mirror)
+	if v.mirror != "" && !mirrorPrefix.MatchString(v.mirror) {
+		add("stack config: mirror %q is not a host[:port][/prefix]", v.mirror)
 	}
 	return v, errors.Join(problems...)
 }

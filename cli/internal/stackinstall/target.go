@@ -7,6 +7,6 @@ package stackinstall
 type TargetKind string
 
 const (
-	Seed TargetKind = "seed"
-	Site TargetKind = "site"
+	Seed TargetKind = "seed" // the ephemeral kind cluster
+	Site TargetKind = "site" // the permanent cluster
 )

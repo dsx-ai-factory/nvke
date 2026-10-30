@@ -15,9 +15,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// A registry host[:port], then path segments: at least one for an image
+// repository, none or more for a mirror prefix.
+const (
+	registryHost = `[a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?`
+	pathSegment  = `/[a-z0-9]+([._-][a-z0-9]+)*`
+)
+
 var (
 	imageDigest     = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
-	imageRepository = regexp.MustCompile(`^[a-z0-9][a-z0-9._:/-]*$`)
+	imageRepository = regexp.MustCompile(`^` + registryHost + `(` + pathSegment + `)+$`)
+	mirrorPrefix    = regexp.MustCompile(`^` + registryHost + `(` + pathSegment + `)*$`)
 )
 
 // oidcNodePort is the NodePort of manifests/spire-oidc-provider-nodeport.yaml.
@@ -151,11 +159,11 @@ func temporalValues(mirror string) map[string]any {
 // falls back to appVersion and the digest governs the pull.
 func imageValues(ref string) map[string]any {
 	repo, digest, ok := strings.Cut(ref, "@")
-	if !ok || !imageDigest.MatchString(digest) || !imageRepository.MatchString(repo) {
-		return nil
-	}
 	if colon := strings.LastIndex(repo, ":"); colon > strings.LastIndex(repo, "/") {
 		repo = repo[:colon]
+	}
+	if !ok || !imageDigest.MatchString(digest) || !imageRepository.MatchString(repo) {
+		return nil
 	}
 	return map[string]any{"repository": repo, "digest": digest, "tag": ""}
 }

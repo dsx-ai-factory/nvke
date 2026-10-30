@@ -5,8 +5,7 @@
 # subcharts: spire-server, spire-agent, spiffe-csi-driver and
 # spiffe-oidc-discovery-provider. Helm merges global into every one of them.
 #
-# Site identity is not in this file. The generated overlay supplies it at
-# render time:
+# Site identity is not in this file. The generated overlay supplies it:
 #   global.spire.trustDomain                             from the site spec
 #   spire-server.adminIDs                                the trust domain plus
 #                                                        the controller's path
@@ -55,7 +54,8 @@ global:
       enabled: true
       # strictMode would reject the placeholder trust domain and demand a
       # clusterName and a CA subject as well. Off, so the file renders on its
-      # own. The install validates the overlay instead.
+      # own. The install refuses a site spec whose trust domain is unset or
+      # the placeholder.
       strictMode: false
     # Placeholder. See the header.
     trustDomain: example.org

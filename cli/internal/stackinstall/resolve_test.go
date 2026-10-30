@@ -70,7 +70,7 @@ func release(t *testing.T, p *NVKEControllerStack, name string) HelmRelease {
 			return rel
 		}
 	}
-	require.Failf(t, "release not planned", "%s", name)
+	require.Failf(t, "release not in the stack", "%s", name)
 	return HelmRelease{}
 }
 
@@ -97,7 +97,7 @@ func manifestContent(t *testing.T, p *NVKEControllerStack, path string) string {
 			return string(m.Content)
 		}
 	}
-	require.Failf(t, "manifest not planned", "%s", path)
+	require.Failf(t, "manifest not in the stack", "%s", path)
 	return ""
 }
 
@@ -133,8 +133,9 @@ func TestResolveRefuses(t *testing.T) {
 		{"unknown target kind", "tenant", func(*Inputs) {}, "target kind \"tenant\""},
 		{"cluster name with a quote", Site, func(in *Inputs) { in.Site.ClusterName = `site"a` }, "clusterName holds a quote"},
 		{"cluster name unset", Site, func(in *Inputs) { in.Site.ClusterName = "" }, "clusterName is required"},
-		{"mirror is a URL", Site, func(in *Inputs) { in.Stack.Mirror = "https://mirror.example.internal" }, "not a URL"},
-		{"mirror with a control character", Site, func(in *Inputs) { in.Stack.Mirror = "mirror\n" }, "holds a quote, a backslash or a control character"},
+		{"mirror is a URL", Site, func(in *Inputs) { in.Stack.Mirror = "https://mirror.example.internal" }, "is not a host[:port][/prefix]"},
+		{"mirror with a control character", Site, func(in *Inputs) { in.Stack.Mirror = "mirror\n" }, "is not a host[:port][/prefix]"},
+		{"mirror with a trailing slash", Site, func(in *Inputs) { in.Stack.Mirror = "mirror.example.internal/" }, "is not a host[:port][/prefix]"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -152,10 +153,15 @@ func TestResolveRefuses(t *testing.T) {
 }
 
 func TestResolveRefusesMissingInputs(t *testing.T) {
-	in := testInputs(t, Site, "linux/amd64", true)
-	in.Site = nil
-	_, err := Resolve(in)
-	require.ErrorContains(t, err, "site spec and the artifact file are both required")
+	for name, clear := range map[string]func(*Inputs){
+		"site":      func(in *Inputs) { in.Site = nil },
+		"artifacts": func(in *Inputs) { in.Artifacts = nil },
+	} {
+		in := testInputs(t, Site, "linux/amd64", true)
+		clear(&in)
+		_, err := Resolve(in)
+		require.ErrorContains(t, err, "site spec and the artifact file are both required", name)
+	}
 }
 
 func dropOutput(in *Inputs, name string) {
@@ -337,6 +343,9 @@ func TestImageValues(t *testing.T) {
 		{"short digest", "registry.example.invalid/nvke/cwe@sha256:" + strings.Repeat("a", 63), nil},
 		{"space in repository", "registry.example.invalid/x #@" + digest, nil},
 		{"neither", "registry.example.invalid/nvke/cwe", nil},
+		{"trailing slash", "registry.example.invalid/nvke/cwe/@" + digest, nil},
+		{"double dot", "registry.example.invalid/nvke/c..we@" + digest, nil},
+		{"port without path", "localhost:5000@" + digest, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -366,7 +375,7 @@ func TestEveryStackFileIsPlanned(t *testing.T) {
 	for _, root := range []string{"values", "manifests"} {
 		require.NoError(t, fs.WalkDir(stackFS, root, func(path string, d fs.DirEntry, err error) error {
 			if err == nil && !d.IsDir() {
-				assert.True(t, planned[path], "%s is in no plan", path)
+				assert.True(t, planned[path], "%s is in no stack", path)
 			}
 			return err
 		}))
