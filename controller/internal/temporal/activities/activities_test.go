@@ -4,11 +4,15 @@
 package activities
 
 import (
+	"context"
 	"encoding/base64"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/sdk/testsuite"
+
+	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
@@ -86,4 +90,35 @@ func TestUnit_NodeAgentBootstrapFiles(t *testing.T) {
 			assert.Equal(t, params.wantArgs, agentFile.Content)
 		})
 	}
+}
+
+// fixedVerifier is the smallest shared.ImageVerifier: every image gets the
+// same answer.
+type fixedVerifier struct{ err error }
+
+func (f fixedVerifier) VerifyImage(context.Context, *enginev1.MachineImage) error {
+	return f.err
+}
+
+func TestUnit_ActivitiesRegisterWithATemporalWorker(t *testing.T) {
+	t.Parallel()
+
+	// worker.RegisterActivity reflects over every exported method of
+	// *Activities and panics on any whose signature is not an activity's. A
+	// chainable exported setter once crashed the worker at startup; no unit
+	// test caught it because none registered the struct. The test environment
+	// runs the same validation as the real worker.
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestActivityEnvironment()
+	require.NotPanics(t, func() {
+		env.RegisterActivity(NewActivities(config.Config{}, nil, nil, nil, "", nil, ""))
+	})
+}
+
+func TestUnit_WithImageVerifierSetsThePreflightSource(t *testing.T) {
+	t.Parallel()
+
+	verifier := fixedVerifier{}
+	a := NewActivities(config.Config{}, nil, nil, nil, "", nil, "", WithImageVerifier(verifier))
+	assert.Equal(t, verifier, a.imageVerifier)
 }

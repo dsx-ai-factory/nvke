@@ -127,6 +127,13 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 		return err
 	}
 
+	// Image-verification pre-flight: refuse (or warn about) an image that
+	// fails verification before any object is applied. Off by default; see
+	// imageverify.go for the modes and the fail-closed rule.
+	if err := verifyImage(ctx, deps.Config.ImageVerificationMode, deps.ImageVerifier, resolved.image, node.ID.String(), cluster.ID.String()); err != nil {
+		return err
+	}
+
 	infraMachineObj, err := c.renderInfraMachine(resolved.image.Spec.NICo.IPXEScript, deps.Namespace, node, nodeSet, nodePool, cluster)
 	if err != nil {
 		return err

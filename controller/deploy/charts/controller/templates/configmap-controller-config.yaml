@@ -166,3 +166,5 @@ data:
       issuers: []
       {{- end }}
       permissive: {{ and .Values.apiAuth.enabled .Values.apiAuth.permissive }}
+    imageVerification:
+      mode: {{ .Values.imageVerification.mode | default "off" | quote }}

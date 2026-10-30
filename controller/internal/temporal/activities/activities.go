@@ -14,6 +14,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
@@ -37,6 +38,21 @@ type Activities struct {
 	// certificateRenewalReleaseBackoff overrides the first release retry wait
 	// when non-zero, so tests need not wait the real backoff.
 	certificateRenewalReleaseBackoff time.Duration
+	imageVerifier                    shared.ImageVerifier
+}
+
+// Option configures an optional Activities dependency at construction. Options
+// exist because worker.RegisterActivity reflects over every exported method of
+// *Activities and refuses any that is not an activity, so a chainable exported
+// setter would panic the worker at startup.
+type Option func(*Activities)
+
+// WithImageVerifier sets the verifier the nico CreateMachine pre-flight
+// consults. Unset, the pre-flight sees a nil verifier: a no-op in mode off,
+// reported in warn and refused fail-closed in enforce (see
+// internal/clients/nico/imageverify.go).
+func WithImageVerifier(v shared.ImageVerifier) Option {
+	return func(a *Activities) { a.imageVerifier = v }
 }
 
 func NewActivities(
@@ -47,8 +63,9 @@ func NewActivities(
 	trustDomain string,
 	tenantClientProvider TenantClientProvider,
 	controllerClientCABundle string,
+	opts ...Option,
 ) *Activities {
-	return &Activities{
+	a := &Activities{
 		cfg:                      cfg,
 		db:                       database,
 		k8sClient:                k8sClient,
@@ -59,6 +76,10 @@ func NewActivities(
 		getTrustDomainBundle:     spiffe.GetTrustDomainAndBundle,
 		credentialAudit:          credentialaudit.NewRecorder(database, nil, metrics.RecordCredentialAuditWrite),
 	}
+	for _, opt := range opts {
+		opt(a)
+	}
+	return a
 }
 
 func (a *Activities) nodeAgentBootstrapFiles(node db.Node) ([]db.CloudInitFile, error) {
