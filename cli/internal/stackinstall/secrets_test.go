@@ -136,6 +136,27 @@ func TestConnectionStringEscapes(t *testing.T) {
 	assert.Equal(t, "disable", u.Query().Get("sslmode"))
 }
 
+func TestSecretsRefusesPartialCredentials(t *testing.T) {
+	tests := []struct {
+		field string
+		creds Credentials
+	}{
+		{"DatabasePassword", Credentials{NicoToken: "t", NodeUser: "u", NodePassword: "p"}},
+		{"NicoToken", Credentials{DatabasePassword: "d", NodeUser: "u", NodePassword: "p"}},
+		{"NodeUser", Credentials{DatabasePassword: "d", NicoToken: "t", NodePassword: "p"}},
+		{"NodePassword", Credentials{DatabasePassword: "d", NicoToken: "t", NodeUser: "u"}},
+		{"SpireCAKey", Credentials{DatabasePassword: "d", NicoToken: "t", NodeUser: "u", NodePassword: "p", SpireCACert: []byte("c")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.field, func(t *testing.T) {
+			_, err := Secrets(tt.creds, testNICo)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.field)
+		})
+	}
+}
+
 func TestSecretsRefusesEmptyNICoAPI(t *testing.T) {
 	tests := []struct {
 		field string

@@ -49,13 +49,20 @@ type NICoAPI struct {
 // values in data, not stringData, so a server-side apply can update it.
 func Secrets(c Credentials, nico NICoAPI) ([]*corev1.Secret, error) {
 	for _, f := range []struct{ name, value string }{
-		{"Endpoint", nico.Endpoint},
-		{"OrgID", nico.OrgID},
-		{"APIName", nico.APIName},
+		{"NICoAPI.Endpoint", nico.Endpoint},
+		{"NICoAPI.OrgID", nico.OrgID},
+		{"NICoAPI.APIName", nico.APIName},
+		{"Credentials.DatabasePassword", c.DatabasePassword},
+		{"Credentials.NicoToken", c.NicoToken},
+		{"Credentials.NodeUser", c.NodeUser},
+		{"Credentials.NodePassword", c.NodePassword},
 	} {
 		if f.value == "" {
-			return nil, fmt.Errorf("stackinstall: NICoAPI.%s is required for the %s Secret", f.name, nicoSecret)
+			return nil, fmt.Errorf("stackinstall: %s is required", f.name)
 		}
+	}
+	if (len(c.SpireCACert) > 0) != (len(c.SpireCAKey) > 0) {
+		return nil, fmt.Errorf("stackinstall: Credentials.SpireCACert and SpireCAKey must be set together")
 	}
 	password := []byte(c.DatabasePassword)
 	secrets := []*corev1.Secret{
