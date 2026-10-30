@@ -18,20 +18,33 @@ const (
 	// NodeAgentAudience, so the controller accepts both whatever the release
 	// order.
 	//
-	// Slated for v0.25.0. The agent picks its audience with
-	// --controller-audience, which defaults to this constant and falls back to
-	// it when empty (agent/cmd/agent/main.go). Since #2039,
-	// nodeAgentBootstrapFiles passes the flag for a node whose agent version
-	// reaches nodecontract.NewFormMinAgentVersion, so a node provisioned from
-	// then on requests NodeAgentAudience instead.
+	// Slated for v0.25.0, and nothing requests the renamed audience yet. The
+	// agent picks its audience with --controller-audience, which defaults to
+	// this constant and falls back to it when empty (agent/cmd/agent/main.go).
+	// #2039 taught nodeAgentBootstrapFiles to pass the flag for a node whose
+	// agent version reaches nodecontract.NewFormMinAgentVersion, but no node
+	// reaches it at the point the flag is written: agent_version carries the
+	// version observed from a running agent, and the env file is rendered
+	// before the node has booted one. So every TLS/JWT node, new or old, still
+	// requests this audience.
+	//
+	// The gate cannot simply read the requested target version instead. The
+	// first agent on a node is the one the image installed, and
+	// EnsureNodeAgentVersion only upgrades it afterwards over RPC. Agent
+	// v0.2.1 accepts --grpc-auth-mode=tls-jwt but predates
+	// --controller-audience, which arrived in v0.3.0; handed a flag it does
+	// not know, it exits during flag.Parse and never comes up far enough to be
+	// upgraded. The gate has to know what the bootstrap binary accepts, which
+	// nothing in the node record records today, or the audience has to be set
+	// after an agent has been seen running.
 	//
 	// Gate: no TLS/JWT node still requests this audience. That is narrower than
 	// an agent_version sweep, because the flag lives in the env file, which is
 	// written once at bootstrap: an agent upgraded in place keeps the arguments
 	// it was provisioned with, and agent/scripts/migrate-agent-paths.sh
-	// preserves them across the rename. A node provisioned before #2039 goes on
-	// requesting this audience however new its agent, so the fleet has to turn
-	// over, or something has to rewrite the env file on existing nodes.
+	// preserves them across the rename. So a node goes on requesting this
+	// audience however new its agent, and the fleet has to turn over, or
+	// something has to rewrite the env file on existing nodes.
 	//
 	// Flipping the agent's default instead is not the path; #1565 rejected that
 	// because it imposes a release order. Removed before the gate, every node
