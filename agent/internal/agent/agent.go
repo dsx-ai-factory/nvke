@@ -156,6 +156,8 @@ type NodeAgentServer struct {
 	operationStartMu               sync.Mutex          // serializes generic operation start persistence and publish.
 	agentUpgradeMu                 sync.Mutex          // serializes durable self-upgrade admission on this node.
 	nodeAgentCfgMu                 sync.Mutex          // serializes NodeSpec/config.yaml writes
+	nodeAgentArgsMu                sync.Mutex          // serializes AGENT_ARGS environment-file rewrites
+	runningArgs                    []string            // overrides the running process arguments in tests
 	openVSwitchMu                  sync.Mutex          // serializes host network configuration changes
 	openVSwitchSettleDelay         time.Duration       // overrides the post-netplan settle delay in tests
 	openVSwitchConvergenceDelay    time.Duration       // overrides the asynchronous convergence poll delay in tests
