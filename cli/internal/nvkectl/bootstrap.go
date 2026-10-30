@@ -4,15 +4,18 @@
 package nvkectl
 
 import (
+	"bytes"
 	"context"
-	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +27,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
+	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/controllerdeploy"
 	// Aliased: this file has a local variable named engine.
@@ -39,6 +43,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/config"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 const (
@@ -129,6 +134,10 @@ type bootstrapSiteOptions struct {
 	// Nil uses a net.Dialer; tests substitute it so no real host is dialled.
 	dialContext                 func(ctx context.Context, network, address string) (net.Conn, error)
 	allowControlPlaneWithoutVIP bool
+
+	// resume continues an earlier bootstrap of the same site spec from what its
+	// bootstrap and site clusters show.
+	resume bool
 }
 
 const (
@@ -180,6 +189,16 @@ Postgres, Temporal, SPIRE, Cluster API with CAPNICo, and the NVKE controller,
 with SPIRE published at the control-plane VIP. A site without a default
 StorageClass gets local-path-provisioner. The site's nodes pull the controller
 image, so --nvke-controller-image must name a registry they can reach.
+The management plane then moves from the bootstrap cluster onto the site
+cluster, and the bootstrap cluster is deleted.
+
+A bootstrap that stops part of the way keeps its bootstrap cluster. With nico,
+--resume continues it: run the same command, with the same site spec, flags and
+working directory, plus --resume. Each step checks what the bootstrap and site
+clusters already show and does only what is missing. Without --resume the
+command refuses to start while a bootstrap cluster exists. A site spec field
+that cannot change once the cluster is built, such as cluster.controlPlaneVIP,
+is compared with the cluster, and a difference stops the run.
 
 See the bundled examples/sitespec.yaml and docs/sitespec.md for the
 site spec file format.`,
@@ -188,6 +207,9 @@ site spec file format.`,
 
   # Validate only — load, check, and print the site spec without dispatching
   nvkectl bootstrap site -f sitespec.yaml --dry-run
+
+  # Continue a nico bootstrap that stopped part of the way
+  nvkectl bootstrap site -f sitespec.yaml --resume
 
   # Deploy images you pushed to a registry instead of the local build
   nvkectl bootstrap site -f sitespec.yaml \
@@ -247,6 +269,9 @@ site spec file format.`,
 	cmd.Flags().BoolVar(&opts.allowControlPlaneWithoutVIP, "allow-control-plane-without-vip", false,
 		"Permit a multi-node control plane without a VIP and enable the override in the temporary NVKE controller. "+
 			"Development only; replacing the initializing node can break API access.")
+	cmd.Flags().BoolVar(&opts.resume, "resume", false,
+		"Continue an earlier bootstrap of this site spec that stopped part of the way, from what its bootstrap and "+
+			"site clusters show. Only with infra.provider nico.")
 	cmd.Flags().BoolVar(&opts.keepBootstrapKind, "keep-bootstrap-cluster", false,
 		"Leave the ephemeral bootstrap Kind cluster running after the command exits, for debugging")
 	cmd.Flags().DurationVar(&opts.clusterTimeout, "timeout",
@@ -391,6 +416,21 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 
 	engine := bootstrapengine.New(opts.bootstrapRunner, logger)
 
+	if opts.resume && !inv.IsNico() {
+		return errors.New("--resume continues a bootstrap with infra.provider nico only")
+	}
+	// A resumed run takes over the bootstrap cluster an earlier run left. With
+	// none, there is nothing to continue and it starts like any other run.
+	adopt := false
+	if opts.resume {
+		if adopt, err = engine.Exists(ctx, cfg.ClusterName); err != nil {
+			return fmt.Errorf("checking for the bootstrap cluster to resume: %w", err)
+		}
+		if !adopt {
+			logger.Info("no bootstrap cluster to resume; starting a new bootstrap", "bootstrap_kind_cluster", cfg.ClusterName)
+		}
+	}
+
 	// Last checks before anything is built. Each refuses a state a fresh
 	// bootstrap cannot run over, names it, and says what to do; each costs a
 	// message here and a Kind cluster plus half an hour anywhere later. None of
@@ -399,41 +439,41 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	//
 	// A bootstrap cluster still running is the strongest sign of an earlier
 	// attempt, and may hold that attempt's encryption key.
-	releaseSteps := ""
-	if inv.IsNico() {
-		releaseSteps = nicoReleaseSteps(inv.ClusterName, cfg.ClusterName, "<its kubeconfig file>", cweCfg.CWEPort)
-	}
-	if err := requireNoBootstrapCluster(ctx, engine, cfg.ClusterName, releaseSteps); err != nil {
-		return err
-	}
-	// After the check above: a retained bootstrap cluster owns the runtime's
-	// bridge config, and its own message says how to recover it before anything
-	// is deleted. Bridge-removal advice here would pre-empt that.
-	if err := requireIsolatedRuntimeCNI(sharedCNIConfDir); err != nil {
-		return err
-	}
-	// A key file already at the output path belongs to an earlier bootstrap of
-	// this cluster name. It is never overwritten, so the run would fail at the
-	// very end.
-	if inv.Cluster.EtcdEncryptionEnabled() {
-		if err := requireNoKeyFile(etcdKeyPath(opts, inv.ClusterName)); err != nil {
+	// A resumed run is over exactly the state these refuse: its own bootstrap
+	// cluster, key file and site.
+	if !adopt {
+		if err := requireNoBootstrapCluster(ctx, engine, cfg.ClusterName, inv.IsNico()); err != nil {
 			return err
 		}
-	}
-	// A host that already serves a control plane is either a retry over a
-	// half-built site or a site spec pointed at a live cluster; provisioning
-	// over either ends badly.
-	// Nothing to probe when the machines are allocated rather than listed: they
-	// do not exist yet, and have no addresses to dial.
-	if !inv.IsNico() {
-		if err := requireNoControlPlane(ctx, inv.Cluster.Nodes, opts.dialContext); err != nil {
+		// After the check above: a retained bootstrap cluster owns the runtime's
+		// bridge config, and its own message says how to recover it before anything
+		// is deleted. Bridge-removal advice here would pre-empt that.
+		if err := requireIsolatedRuntimeCNI(sharedCNIConfDir); err != nil {
 			return err
 		}
-	} else if err := requireNoSiteAtVIP(ctx, inv.Cluster.ControlPlaneVIP, opts.dialContext); err != nil {
-		// The VIP is the one address a nico site's control plane is known by
-		// before it exists, and the only thing that tells a second bootstrap of
-		// the same spec from a first.
-		return err
+		// A key file already at the output path belongs to an earlier bootstrap of
+		// this cluster name. It is never overwritten, so the run would fail at the
+		// very end.
+		if inv.Cluster.EtcdEncryptionEnabled() {
+			if err := requireNoKeyFile(etcdKeyPath(opts, inv.ClusterName)); err != nil {
+				return err
+			}
+		}
+		// A host that already serves a control plane is either a retry over a
+		// half-built site or a site spec pointed at a live cluster; provisioning
+		// over either ends badly.
+		// Nothing to probe when the machines are allocated rather than listed: they
+		// do not exist yet, and have no addresses to dial.
+		if !inv.IsNico() {
+			if err := requireNoControlPlane(ctx, inv.Cluster.Nodes, opts.dialContext); err != nil {
+				return err
+			}
+		} else if err := requireNoSiteAtVIP(ctx, inv.Cluster.ControlPlaneVIP, opts.dialContext); err != nil {
+			// The VIP is the one address a nico site's control plane is known by
+			// before it exists, and the only thing that tells a second bootstrap of
+			// the same spec from a first.
+			return err
+		}
 	}
 	// The two images this repository builds are side-loaded, not pulled. A
 	// build that was never made fails here, before the cluster exists.
@@ -447,12 +487,24 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	}
 
 	ctx = phases.enter(phaseBootstrapCluster, nil)
-	logger.Info("creating ephemeral bootstrap kind cluster", "bootstrap_kind_cluster", cfg.ClusterName)
-	cluster, err := engine.Create(ctx, cfg)
-	if err != nil {
-		return fmt.Errorf("standing up bootstrap kind cluster: %w", err)
+	var cluster *bootstrapengine.Cluster
+	if adopt {
+		logger.Info("resuming with the bootstrap kind cluster an earlier run left", "bootstrap_kind_cluster", cfg.ClusterName)
+		kubeconfig, err := engine.Kubeconfig(ctx, cfg.ClusterName)
+		if err != nil {
+			return fmt.Errorf("reading the kubeconfig of bootstrap kind cluster %s: %w", cfg.ClusterName, err)
+		}
+		cluster = &bootstrapengine.Cluster{Name: cfg.ClusterName, KubeconfigPath: kubeconfig}
+	} else {
+		logger.Info("creating ephemeral bootstrap kind cluster", "bootstrap_kind_cluster", cfg.ClusterName)
+		if cluster, err = engine.Create(ctx, cfg); err != nil {
+			return fmt.Errorf("standing up bootstrap kind cluster: %w", err)
+		}
 	}
-	siteClusterCreated := false
+	// A bootstrap cluster a resumed run took over may hold the site's
+	// management plane, so like one past site-cluster creation it is kept on
+	// any failure.
+	siteClusterCreated := adopt
 	// handedOver is set once the site cluster and every artifact the operator
 	// needs are on disk. A failure after that is about the site cluster, so
 	// without -v the bootstrap cluster's diagnostics are not collected and it
@@ -517,6 +569,35 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		}
 	}()
 
+	kubeconfigPath := siteKubeconfigPath(inv.ClusterName, opts)
+	cweURL := fmt.Sprintf("http://127.0.0.1:%d", cweCfg.CWEPort)
+	controller, err := clients.New(config.SiteConfig{URL: cweURL})
+	if err != nil {
+		return fmt.Errorf("building the controller client for %s: %w", cweURL, err)
+	}
+
+	// Once the pivot has started, the stack installs before it would undo what
+	// it did, and the bootstrap cluster's controller may be stopped.
+	if adopt {
+		started, err := pivotStarted(ctx, controllerdeploy.New(opts.cweRunner, logger), cluster.KubeconfigPath, kubeconfigPath, logger)
+		if err != nil {
+			return err
+		}
+		if started {
+			handedOver = true
+			ctx = phases.enter(phaseFinish, nil)
+			if err := requireSiteVIP(kubeconfigPath, inv.Cluster.ControlPlaneVIP); err != nil {
+				return err
+			}
+			logger.Info("the pivot to the site cluster has started; continuing it")
+			if err := pivotToSite(ctx, inv, cluster.KubeconfigPath, kubeconfigPath, cweCfg, controller, uuid.Nil, logger); err != nil {
+				return pivotFailedError(err, cluster)
+			}
+			fmt.Fprintf(out, "\nCluster %q is ready. Talk to it with:\n  kubectl --kubeconfig %s get nodes\n", inv.ClusterName, kubeconfigPath)
+			return nil
+		}
+	}
+
 	// Step 3: deploy Postgres, Temporal, SPIRE, Cluster API, and the controller onto the bootstrap
 	// cluster and wait for the controller to report healthy on /readyz before going any
 	// further — there is nothing to dispatch a workflow to otherwise.
@@ -530,14 +611,9 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	// objects that the provisioned infrastructure provider binds to the
 	// site spec's hosts.
 	ctx = phases.enter(phaseSiteCluster, nil)
-	cweURL := fmt.Sprintf("http://127.0.0.1:%d", cweCfg.CWEPort)
-	controller, err := clients.New(config.SiteConfig{URL: cweURL})
-	if err != nil {
-		return fmt.Errorf("building the controller client for %s: %w", cweURL, err)
-	}
-	var siteClusterID uuid.UUID
-	siteClusterID, siteClusterCreated, err = createSiteCluster(ctx, cluster, inv, opts, controller, logger)
-	if err != nil && siteClusterCreated {
+	siteClusterID, created, err := createSiteCluster(ctx, cluster, inv, opts, controller, logger)
+	siteClusterCreated = siteClusterCreated || created
+	if err != nil && created {
 		return retainedClusterError(err, inv, cluster, cweCfg.CWEPort)
 	}
 	if err == nil && !cweCfg.DisableMTLS {
@@ -560,7 +636,6 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 
 	handedOver = true
 	ctx = phases.enter(phaseFinish, nil)
-	kubeconfigPath := siteKubeconfigPath(inv.ClusterName, opts)
 	if inv.Cluster.EtcdEncryptionEnabled() {
 		fmt.Fprintf(out, "\nThe etcd encryption key of cluster %q is at %s. Move that file off this host "+
 			"and keep it with the cluster's other credentials.\n", inv.ClusterName, etcdKeyPath(opts, inv.ClusterName))
@@ -634,10 +709,6 @@ func deploySiteStack(
 	if err := cwe.EnsureDefaultStorageClass(ctx, siteKubeconfig); err != nil {
 		return fmt.Errorf("site cluster: %w", err)
 	}
-	// A retry must reuse the database password the first attempt installed.
-	if cfg.PostgresPassword == "" {
-		cfg.PostgresPassword = rand.Text()
-	}
 	// The site API is reached through a VIP that has only just come up, and one
 	// dropped connection fails a helm call. Every step is an idempotent
 	// upgrade --install or apply, so the install is repeated after one; any
@@ -676,7 +747,7 @@ func siteDeployConfig(inv *sitespec.SiteSpec, seed controllerdeploy.Config) cont
 // site's management plane, so the advice is to keep it.
 func seedManagesSiteError(err error, cluster *bootstrapengine.Cluster) error {
 	return &recoveryError{fmt.Errorf("%w; bootstrap cluster %q still manages the site cluster until the pivot completes, "+
-		"so it was retained and is not to be deleted (kubeconfig: %s)", err, cluster.Name, cluster.KubeconfigPath)}
+		"so it was retained and is not to be deleted (kubeconfig: %s); %s", err, cluster.Name, cluster.KubeconfigPath, resumeAdvice)}
 }
 
 // pivotFailedError wraps err, from the pivot, which names the step that
@@ -684,8 +755,11 @@ func seedManagesSiteError(err error, cluster *bootstrapengine.Cluster) error {
 // advice is to keep both clusters as they are.
 func pivotFailedError(err error, cluster *bootstrapengine.Cluster) error {
 	return &recoveryError{fmt.Errorf("%w; the pivot to the site cluster did not complete, so bootstrap cluster %q was "+
-		"retained: keep it and the site cluster as they are (kubeconfig: %s)", err, cluster.Name, cluster.KubeconfigPath)}
+		"retained: keep it and the site cluster as they are (kubeconfig: %s); %s", err, cluster.Name, cluster.KubeconfigPath, resumeAdvice)}
 }
+
+// resumeAdvice says how to continue a nico bootstrap that stopped part of the way.
+const resumeAdvice = "run this command again with --resume to continue the bootstrap"
 
 // pivotToSite moves the management plane of the cluster clusterID from the
 // bootstrap cluster, whose controller is controller, onto the site cluster,
@@ -743,6 +817,10 @@ func makeControlPlaneSchedulable(
 	defer cancel()
 	changed, err := run(untaintCtx, kubeconfigPath, logger)
 	if err != nil {
+		if inv.IsNico() {
+			return &recoveryError{fmt.Errorf("making the control-plane nodes schedulable: %w; the cluster is up and its kubeconfig is at %s, "+
+				"and the bootstrap cluster still manages it: %s", err, kubeconfigPath, resumeAdvice)}
+		}
 		return &recoveryError{fmt.Errorf("making the control-plane nodes schedulable: %w; the cluster is up and its kubeconfig is at %s, "+
 			"finish by hand with `%s --kubeconfig %s`", err, kubeconfigPath, untaint.ManualCommand, kubeconfigPath)}
 	}
@@ -780,12 +858,28 @@ func createSiteCluster(
 	client sitecluster.ClusterAPI,
 	logger *slog.Logger,
 ) (uuid.UUID, bool, error) {
-	created, err := sitecluster.Create(ctx, client, inv, logger)
-	if err != nil {
-		// With nico, a create the controller may have accepted may already be
-		// allocating NICo instances, which deleting the bootstrap cluster would
-		// leave unmanaged; it is kept as after any failure past the create.
-		return uuid.Nil, inv.IsNico() && errors.Is(err, sitecluster.ErrCreateUnconfirmed), err
+	var created *api.Cluster
+	if opts.resume {
+		found, err := sitecluster.Find(ctx, client, inv)
+		if err != nil {
+			return uuid.Nil, false, err
+		}
+		if found != nil {
+			if err := sitecluster.CheckUnchanged(inv, found); err != nil {
+				return uuid.Nil, false, err
+			}
+			logger.Info("resuming the cluster an earlier run created", "cluster", found.Name, "id", found.ID)
+			created = found
+		}
+	}
+	if created == nil {
+		var err error
+		if created, err = sitecluster.Create(ctx, client, inv, logger); err != nil {
+			// With nico, a create the controller may have accepted may already be
+			// allocating NICo instances, which deleting the bootstrap cluster would
+			// leave unmanaged; it is kept as after any failure past the create.
+			return uuid.Nil, inv.IsNico() && errors.Is(err, sitecluster.ErrCreateUnconfirmed), err
+		}
 	}
 
 	// One budget spans both waits, because --timeout bounds the whole
@@ -900,7 +994,21 @@ func saveEtcdEncryptionKey(
 		return fail(err)
 	}
 	if err := etcdkey.Write(path, manifest); err != nil {
-		return fail(err)
+		if !opts.resume || !errors.Is(err, etcdkey.ErrExists) {
+			return fail(err)
+		}
+		saved, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return fail(readErr)
+		}
+		// By key data, so a copy saved by hand with kubectl matches too.
+		var secret struct {
+			Data map[string][]byte `json:"data"`
+		}
+		if json.Unmarshal(saved, &secret) != nil || !maps.EqualFunc(secret.Data, data, bytes.Equal) {
+			return fail(fmt.Errorf("%s already holds a different key from the one the cluster uses", path))
+		}
+		logger.Info("the etcd encryption key the earlier run wrote is the cluster's", "path", path)
 	}
 
 	logger.Info("wrote the etcd encryption key", "path", path, "sha256", etcdkey.Fingerprint(data))
@@ -939,8 +1047,8 @@ type keyCaptureError struct {
 
 func (e *keyCaptureError) Error() string {
 	return fmt.Sprintf("cluster %q is up and its etcd data is encrypted, but its encryption key was not saved to %s: %v. "+
-		"Its kubeconfig is at %s. The bootstrap cluster still holds the key: do not delete it, and do not re-run "+
-		"bootstrap, until the key is saved. Save it, as the Secret the bootstrap cluster holds, with: %s",
+		"Its kubeconfig is at %s. The bootstrap cluster still holds the key: do not delete it until the key is saved. "+
+		"Save it, as the Secret the bootstrap cluster holds, with: %s",
 		e.clusterName, e.keyPath, e.err, e.kubeconfigPath, e.recover)
 }
 
@@ -1021,51 +1129,37 @@ func nicoSetSiteCommand(bootstrapCluster, kubeconfig string, port int32) string 
 
 // retainedClusterError wraps err, from a failure after the site cluster was
 // created, with what to do about the bootstrap cluster that was kept for
-// recovery. With nico the advice leads with releasing the allocated instances,
-// but only for a failure before every control-plane node joined: after that the
-// site cluster is working, and deleting it would destroy it and its NICo
-// machines, so the advice is to recover the outputs and delete only Kind.
+// recovery. With nico that cluster manages the site until the pivot completes,
+// so the advice is to continue with --resume; a run that never got every
+// control-plane node to join may instead be abandoned by releasing the
+// allocated instances first.
 func retainedClusterError(err error, inv *sitespec.SiteSpec, cluster *bootstrapengine.Cluster, port int32) error {
 	var capture *keyCaptureError
 	var joined *clusterJoinedError
 	built := errors.As(err, &capture) || errors.As(err, &joined)
-	release := ""
-	if inv.IsNico() && !built {
-		release = nicoReleaseSteps(inv.ClusterName, cluster.Name, cluster.KubeconfigPath, port)
-	}
+	kept := fmt.Errorf("%w; bootstrap cluster %q was retained (kubeconfig: %s)", err, cluster.Name, cluster.KubeconfigPath)
 	// The env prefix is not optional: kind resolves a cluster through the
 	// provider that created it, so without it the command reports the
 	// cluster as missing rather than deleting it.
 	deleteCommand := fmt.Sprintf(
 		"KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s", cluster.Name,
 	)
-	// The advice below ends with the command that deletes the bootstrap
-	// cluster. When the key was not saved, that cluster holds the only copy
-	// the operator does not have, and the error says so instead.
-	if capture != nil {
-		kept := fmt.Errorf("%w (bootstrap cluster %q kept; its kubeconfig is %s)", err, cluster.Name, cluster.KubeconfigPath)
-		if inv.IsNico() {
-			kept = fmt.Errorf("%w; once the key is saved, delete only the bootstrap cluster with `%s`: the site cluster is up "+
-				"and its NICo machines belong to it", kept, deleteCommand)
-		}
-		return &recoveryError{kept}
-	}
-	if joined != nil && inv.IsNico() {
-		return &recoveryError{fmt.Errorf("%w; every control-plane node joined, so the site cluster is up and is not to be deleted; "+
-			"bootstrap cluster %q was retained to recover what this run could not write (kubeconfig: %s); once you have, delete only "+
-			"the bootstrap cluster with `%s`", err, cluster.Name, cluster.KubeconfigPath, deleteCommand)}
-	}
-	if release != "" && errors.Is(err, sitecluster.ErrCreateUnconfirmed) {
-		return &recoveryError{fmt.Errorf("%w; no answer from the controller confirmed or refused the create, so site cluster %q "+
-			"may exist and be allocating NICo instances, and bootstrap cluster %q was retained (kubeconfig: %s); %s; then delete "+
-			"the bootstrap cluster with `%s`",
-			err, inv.ClusterName, cluster.Name, cluster.KubeconfigPath,
+	switch {
+	case inv.IsNico() && built:
+		return &recoveryError{fmt.Errorf("%w; every control-plane node joined and the site cluster is up, but the bootstrap cluster "+
+			"still manages it and is not to be deleted: %s", kept, resumeAdvice)}
+	case inv.IsNico() && errors.Is(err, sitecluster.ErrCreateUnconfirmed):
+		return &recoveryError{fmt.Errorf("%w; no answer from the controller confirmed or refused the create of site cluster %q: %s. "+
+			"To abandon it instead, %s; then delete the bootstrap cluster with `%s`", kept, inv.ClusterName, resumeAdvice,
 			nicoUnconfirmedSteps(inv.ClusterName, cluster.Name, cluster.KubeconfigPath, port), deleteCommand)}
-	}
-	if release != "" {
-		return &recoveryError{fmt.Errorf("%w; site cluster creation has started, so bootstrap cluster %q was retained for recovery "+
-			"(kubeconfig: %s); %s; then delete it with `%s`",
-			err, cluster.Name, cluster.KubeconfigPath, release, deleteCommand)}
+	case inv.IsNico():
+		return &recoveryError{fmt.Errorf("%w; site cluster creation has started: %s. To abandon it instead, %s; then delete "+
+			"the bootstrap cluster with `%s`", kept, resumeAdvice,
+			nicoReleaseSteps(inv.ClusterName, cluster.Name, cluster.KubeconfigPath, port), deleteCommand)}
+	case capture != nil:
+		// The bootstrap cluster holds the only copy of the key the operator
+		// does not have, so the advice stops short of deleting it.
+		return &recoveryError{fmt.Errorf("%w (bootstrap cluster %q kept; its kubeconfig is %s)", err, cluster.Name, cluster.KubeconfigPath)}
 	}
 	return &recoveryError{fmt.Errorf("%w; site cluster creation has started, so bootstrap cluster %q was retained for recovery "+
 		"(kubeconfig: %s); delete it after recovery with `%s`",
@@ -1081,13 +1175,9 @@ func retainedClusterError(err error, inv *sitespec.SiteSpec, cluster *bootstrape
 // the natural response to "already exists" is the delete that loses it. The
 // message leads with saving the key. Nothing is deleted or reused here.
 //
-// With nico this is the re-run guard for a bootstrap that never got as far as a
-// VIP to probe, and the leftover may hold a working site cluster rather than a
-// failed one. releaseSteps, when set, is nicoReleaseSteps for this cluster: the
-// message then separates a run that failed before every control-plane node
-// joined, which is released and re-run, from one that succeeded or failed
-// later, which is not re-run at all.
-func requireNoBootstrapCluster(ctx context.Context, engine *bootstrapengine.Engine, name, releaseSteps string) error {
+// With nico the leftover may hold the site's management plane until the pivot
+// completes, so the message says to continue with --resume rather than delete it.
+func requireNoBootstrapCluster(ctx context.Context, engine *bootstrapengine.Engine, name string, nico bool) error {
 	exists, err := engine.Exists(ctx, name)
 	if err != nil {
 		return fmt.Errorf("checking for a bootstrap cluster from an earlier run: %w", err)
@@ -1095,19 +1185,58 @@ func requireNoBootstrapCluster(ctx context.Context, engine *bootstrapengine.Engi
 	if !exists {
 		return nil
 	}
-	deleteCommand := "KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name " + name
-	saveKey := fmt.Sprintf("bootstrap cluster %q from an earlier run is still running. If that run built an encrypted "+
+	if nico {
+		return fmt.Errorf("bootstrap cluster %q from an earlier run is still running, and may manage the site cluster "+
+			"that run built: continue that bootstrap by running this command again with --resume. Do not delete it", name)
+	}
+	return fmt.Errorf("bootstrap cluster %q from an earlier run is still running. If that run built an encrypted "+
 		"site cluster and did not save its key, the key is in this cluster: get its kubeconfig with "+
 		"`KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name %s`, save every etcd-encryption-key-* Secret it "+
-		"holds from the namespace it is in (`kubectl get secrets -A | grep etcd-encryption-key-`), ", name, name)
-	if releaseSteps == "" {
-		return fmt.Errorf("%sthen delete it with `%s` and re-run", saveKey, deleteCommand)
+		"holds from the namespace it is in (`kubectl get secrets -A | grep etcd-encryption-key-`), then delete it with "+
+		"`KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s` and re-run", name, name, name)
+}
+
+// pivotStarted reports whether the pivot to the site cluster has stopped
+// anything an install would start again: the seed's SPIRE server at the SPIRE
+// handover, the seed's controller at quiesce-seed, or the site's controller,
+// which is held at zero until activate-site. The site is read only once its
+// kubeconfig exists.
+func pivotStarted(ctx context.Context, cwe *controllerdeploy.Engine, seedKubeconfig, siteKubeconfig string, logger *slog.Logger) (bool, error) {
+	for _, read := range []func(context.Context, string) (string, error){cwe.ControllerReplicas, cwe.SPIREServerReplicas} {
+		replicas, err := read(ctx, seedKubeconfig)
+		if err != nil || replicas == "0" {
+			return replicas == "0", err
+		}
 	}
-	return fmt.Errorf("%sthen: if that run failed before every control-plane node joined, %s, delete the bootstrap cluster with "+
-		"`%s`, and re-run; if it succeeded, or failed after every control-plane node joined, the site cluster is working: "+
-		"recover from this cluster whatever that run did not write, delete only this cluster with `%s`, and do not re-run, "+
-		"because a re-run allocates another set of NICo machines and brings up a second control plane advertising the "+
-		"same controlPlaneVIP", saveKey, releaseSteps, deleteCommand, deleteCommand)
+	if _, err := os.Stat(siteKubeconfig); err != nil {
+		return false, nil
+	}
+	replicas, err := cwe.ControllerReplicas(ctx, siteKubeconfig)
+	if err != nil {
+		// Either a kubeconfig an earlier bootstrap left, which this run replaces,
+		// or a site that is down. Neither has a pivot the seed shows: until the
+		// SPIRE handover stops the seed's server, the installs before it are safe.
+		logger.Warn("the site cluster's kubeconfig does not reach it; continuing from before the pivot", "kubeconfig", siteKubeconfig, "err", err)
+		return false, nil
+	}
+	return replicas == "0", nil
+}
+
+// requireSiteVIP refuses a site spec whose control-plane VIP is not the address
+// the site cluster's kubeconfig, from the run being resumed, reaches it at.
+func requireSiteVIP(kubeconfigPath, vip string) error {
+	cfg, err := clientcmd.LoadFromFile(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("reading the site cluster's kubeconfig %s, which the run being resumed wrote: %w; "+
+			"pass the same --kubeconfig-out, from the same directory", kubeconfigPath, err)
+	}
+	for _, c := range cfg.Clusters {
+		if u, err := url.Parse(c.Server); err == nil && u.Hostname() != vip {
+			return fmt.Errorf("the site cluster was built with control-plane VIP %s, but the site spec says %s, "+
+				"and the VIP cannot change", u.Hostname(), vip)
+		}
+	}
+	return nil
 }
 
 // requireNoSiteAtVIP refuses to bootstrap a nico site whose control-plane VIP

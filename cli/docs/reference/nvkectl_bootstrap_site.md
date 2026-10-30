@@ -48,6 +48,16 @@ Postgres, Temporal, SPIRE, Cluster API with CAPNICo, and the NVKE controller,
 with SPIRE published at the control-plane VIP. A site without a default
 StorageClass gets local-path-provisioner. The site's nodes pull the controller
 image, so --nvke-controller-image must name a registry they can reach.
+The management plane then moves from the bootstrap cluster onto the site
+cluster, and the bootstrap cluster is deleted.
+
+A bootstrap that stops part of the way keeps its bootstrap cluster. With nico,
+--resume continues it: run the same command, with the same site spec, flags and
+working directory, plus --resume. Each step checks what the bootstrap and site
+clusters already show and does only what is missing. Without --resume the
+command refuses to start while a bootstrap cluster exists. A site spec field
+that cannot change once the cluster is built, such as cluster.controlPlaneVIP,
+is compared with the cluster, and a difference stops the run.
 
 See the bundled examples/sitespec.yaml and docs/sitespec.md for the
 site spec file format.
@@ -64,6 +74,9 @@ nvkectl bootstrap site [flags]
 
   # Validate only — load, check, and print the site spec without dispatching
   nvkectl bootstrap site -f sitespec.yaml --dry-run
+
+  # Continue a nico bootstrap that stopped part of the way
+  nvkectl bootstrap site -f sitespec.yaml --resume
 
   # Deploy images you pushed to a registry instead of the local build
   nvkectl bootstrap site -f sitespec.yaml \
@@ -91,6 +104,7 @@ nvkectl bootstrap site [flags]
       --otlp-insecure                       Send to --otlp-endpoint without TLS; requires --otlp-endpoint
       --provisioned-provider-image string   Provisioned-provider image to deploy (overrides NVKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)
       --release string                      NVKR release description whose capnico-controller artifact replaces the bootstrap CAPNICo image with its pinned digest, as "render deploy-path --release" does for the management cluster's CAPNICo. The release description is not verified: run "nvkr release verify" on the same reference first. Only with infra.provider nico.
+      --resume                              Continue an earlier bootstrap of this site spec that stopped part of the way, from what its bootstrap and site clusters show. Only with infra.provider nico.
   -f, --sitespec string                     Path to the site spec YAML file (required)
       --timeout duration                    How long to wait for the cluster to finish provisioning, which includes every control plane node joining. Overrides NVKECTL_BOOTSTRAP_CLUSTER_TIMEOUT. (default 30m0s)
 ```

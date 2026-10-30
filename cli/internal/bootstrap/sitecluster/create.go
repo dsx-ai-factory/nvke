@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -37,6 +38,7 @@ const DefaultWaitTimeout = 30 * time.Minute
 // one that never finishes.
 type ClusterAPI interface {
 	CreateCluster(ctx context.Context, req api.CreateClusterJSONRequestBody) (*api.Cluster, error)
+	ListClusters(ctx context.Context, params *api.ListClustersParams) ([]api.Cluster, error)
 	GetCluster(ctx context.Context, id openapi_types.UUID) (*api.Cluster, error)
 	ListControlPlaneNodes(ctx context.Context, clusterID openapi_types.UUID) ([]api.Node, error)
 }
@@ -78,6 +80,83 @@ func Create(ctx context.Context, client ClusterAPI, inv *sitespec.SiteSpec, log 
 	}
 	log.Info("cluster created", "cluster", cluster.Name, "id", cluster.ID)
 	return cluster, nil
+}
+
+// Find returns the cluster the controller holds by the site spec's cluster
+// name, or nil when it holds none.
+func Find(ctx context.Context, client ClusterAPI, inv *sitespec.SiteSpec) (*api.Cluster, error) {
+	clusters, err := client.ListClusters(ctx, &api.ListClustersParams{Name: &inv.ClusterName})
+	if err != nil {
+		return nil, fmt.Errorf("sitecluster: looking up cluster %q: %w", inv.ClusterName, err)
+	}
+	for i := range clusters {
+		if clusters[i].Name == inv.ClusterName {
+			return &clusters[i], nil
+		}
+	}
+	return nil, nil
+}
+
+// CheckUnchanged returns an error naming each site spec field that a cluster
+// cannot change once built and that differs from built, the cluster the
+// controller holds.
+func CheckUnchanged(inv *sitespec.SiteSpec, built *api.Cluster) error {
+	req, err := ClusterRequest(inv)
+	if err != nil {
+		return err
+	}
+	var diffs []string
+	compare := func(field string, spec, got any) {
+		if spec != got {
+			diffs = append(diffs, fmt.Sprintf("%s is %v in the site spec but %v in the cluster", field, spec, got))
+		}
+	}
+	compare("cluster.k8sVersion", req.ControlPlaneKubernetesVersion, built.ControlPlaneKubernetesVersion)
+	compare("cluster.cniName", string(req.CniPlugin), built.CniPlugin)
+	if req.CniVersion != nil {
+		compare("cluster.cniVersion", *req.CniVersion, built.CniVersion)
+	}
+	vip := ""
+	if built.ControlPlaneVIP != nil {
+		vip = *built.ControlPlaneVIP
+	}
+	compare("cluster.controlPlaneVIP", req.ControlPlaneVIP, vip)
+	compare("cluster.etcdEncryption", req.EtcdEncrypted, built.EtcdEncrypted)
+	if req.Network != nil {
+		compare("cluster.podCidr", canonicalCIDRs(req.Network.PodCIDR), canonicalCIDRs(built.Network.PodCIDR))
+		compare("cluster.serviceCidr", canonicalCIDRs(req.Network.ServiceCIDR), canonicalCIDRs(built.Network.ServiceCIDR))
+	}
+	if req.Nico != nil {
+		var got api.NicoClusterProvider
+		if built.Nico != nil {
+			got = *built.Nico
+		}
+		compare("infra.nico.orgID", req.Nico.OrgID, got.OrgID)
+		compare("infra.nico.remote.siteID", req.Nico.SiteID, got.SiteID)
+		compare("infra.nico.remote.vpcID", req.Nico.VpcID, got.VpcID)
+	}
+	if req.ControlPlaneConfig != nil && built.ControlPlaneConfig != nil {
+		compare("the control-plane node count", req.ControlPlaneConfig.DesiredCount, built.ControlPlaneConfig.DesiredCount)
+	}
+	if len(diffs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("cluster %q was built from a different site spec, and these fields cannot change: %s",
+		inv.ClusterName, strings.Join(diffs, "; "))
+}
+
+// canonicalCIDRs is a comma-separated CIDR list as the controller stores it:
+// each prefix masked, joined without spaces.
+func canonicalCIDRs(list string) string {
+	var out []string
+	for _, cidr := range strings.Split(list, ",") {
+		cidr = strings.TrimSpace(cidr)
+		if prefix, err := netip.ParsePrefix(cidr); err == nil {
+			cidr = prefix.Masked().String()
+		}
+		out = append(out, cidr)
+	}
+	return strings.Join(out, ",")
 }
 
 // notCreated reports whether a CreateCluster error proves the controller did

@@ -50,6 +50,7 @@ type Config struct {
 	// Controller is the client of the NVKE controller on the seed.
 	Controller spirehandover.Controller
 	// ClusterID and ClusterName identify the site cluster in the seed controller and in Cluster API.
+	// A zero ClusterID is read from the seed's database by name.
 	ClusterID   openapi_types.UUID
 	ClusterName string
 	// SiteSpireAddress is where the nodes reach the site SPIRE server: the control-plane VIP.
@@ -92,6 +93,10 @@ type pivot struct {
 // site, in the steps named by the Step constants. The site must already run
 // the NVKE stack. Run does not delete the seed; it leaves the seed's NVKE
 // controller and SPIRE server scaled to zero.
+//
+// Run continues a pivot an earlier Run left unfinished: it skips each step
+// whose result the clusters already show, and once the site's controller
+// holds the cluster it only finishes activating and verifying the site.
 func Run(ctx context.Context, cfg Config) error {
 	if cfg.SeedKubeconfig == "" || cfg.SiteKubeconfig == "" {
 		return errors.New("pivot: seed and site kubeconfigs are required")
@@ -141,21 +146,51 @@ func newPivot(cfg Config, seed, site *cluster) *pivot {
 }
 
 func (p *pivot) run(ctx context.Context) error {
+	if p.cfg.ClusterID == (openapi_types.UUID{}) {
+		id, err := p.clusterID(ctx)
+		if err != nil {
+			return fmt.Errorf("pivot: %w", err)
+		}
+		p.cfg.ClusterID = id
+	}
+	// done, when set, reports that an earlier run already finished the step.
 	steps := []struct {
 		name string
+		done func(context.Context) (bool, error)
 		do   func(context.Context) error
 	}{
-		{StepCheckCAPI, p.checkCAPI},
-		{StepStopSiteController, p.stopSiteController},
-		{StepSpireHandover, p.spireHandover},
-		{StepQuiesceSeed, p.quiesceSeed},
-		{StepMoveCAPI, p.moveCAPI},
-		{StepMoveDatabase, p.moveDatabase},
-		{StepCopySecrets, p.copySecrets},
-		{StepActivateSite, p.activateSite},
-		{StepVerify, p.verify},
+		{StepCheckCAPI, p.capiMoved, p.checkCAPI},
+		{StepStopSiteController, nil, p.stopSiteController},
+		// The handover precedes quiesce-seed, and its repoint needs the seed controller.
+		{StepSpireHandover, p.seedQuiesced, p.spireHandover},
+		{StepQuiesceSeed, nil, p.quiesceSeed},
+		{StepMoveCAPI, nil, p.moveCAPI},
+		{StepMoveDatabase, p.databaseMoved, p.moveDatabase},
+		{StepCopySecrets, nil, p.copySecrets},
+		{StepActivateSite, nil, p.activateSite},
+		{StepVerify, nil, p.verify},
+	}
+	active, err := p.siteActive(ctx)
+	if err != nil {
+		return fmt.Errorf("pivot: %w", err)
+	}
+	if active {
+		// The site controller works on its own database now; the earlier steps
+		// would stop it or overwrite that database.
+		p.log.Info("the site controller already manages the cluster; finishing the pivot")
+		steps = steps[len(steps)-2:]
 	}
 	for _, s := range steps {
+		if s.done != nil {
+			done, err := s.done(ctx)
+			if err != nil {
+				return fmt.Errorf("pivot %s: %w", s.name, err)
+			}
+			if done {
+				p.log.Info("pivot step already done", "step", s.name)
+				continue
+			}
+		}
 		p.log.Info("pivot", "step", s.name)
 		if err := s.do(ctx); err != nil {
 			return fmt.Errorf("pivot %s: %w", s.name, err)

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -30,6 +31,8 @@ import (
 )
 
 const vip = "192.0.2.10"
+
+var clusterUUID = uuid.MustParse("6f1c5a52-3c55-4d64-9a8e-0f2a2b1e7c11")
 
 // fakeRunner answers kubectl and clusterctl calls by the first rule whose
 // substring the command line contains, and records every call. The fixture
@@ -184,7 +187,7 @@ func newFixture(t *testing.T, seedObjs, siteObjs, seedCAPI, siteCAPI []runtime.O
 	f.seedDyn.PrependReactor("patch", "*", record("seed"))
 	f.siteDyn.PrependReactor("patch", "*", record("site"))
 	f.p = newPivot(Config{
-		ClusterName: "site", SiteSpireAddress: vip, PollInterval: time.Millisecond,
+		ClusterName: "site", ClusterID: clusterUUID, SiteSpireAddress: vip, PollInterval: time.Millisecond,
 		Runner: f.runner, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	},
 		&cluster{name: "seed", kubeconfig: "seed.kubeconfig", kube: f.seed, dyn: f.seedDyn},
@@ -334,11 +337,12 @@ func TestCheckCAPI(t *testing.T) {
 }
 
 func TestRunChecksCAPIBeforeStoppingAnything(t *testing.T) {
-	f := newFixture(t, clusterObjects(),
-		[]runtime.Object{
-			deployment("capi-system", "capi-controller-manager", "capi:1", nil),
-			deployment("capnico-system", "controller-manager", "capnico:2", nil),
-		}, readyToMove(), nil)
+	f := newFixture(t, clusterObjects(), clusterObjects(), readyToMove(), nil)
+	capnico, err := f.site.AppsV1().Deployments("capnico-system").Get(context.Background(), "controller-manager", metav1.GetOptions{})
+	require.NoError(t, err)
+	capnico.Spec.Template.Spec.Containers[0].Image = "capnico:2"
+	_, err = f.site.AppsV1().Deployments("capnico-system").Update(context.Background(), capnico, metav1.UpdateOptions{})
+	require.NoError(t, err)
 	f.happyPath()
 
 	require.ErrorContains(t, f.p.run(context.Background()), "capnico:1 on the seed but capnico:2 on the site")
@@ -408,4 +412,93 @@ func TestCopySecretsUpdatesASecretAlreadyOnTheSite(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []byte("rotated"), got.Data["active"], "the site takes the seed's data")
 	require.Equal(t, "kept", got.Labels["site"], "the site's metadata is kept")
+}
+
+// stopController scales the controller on c to zero, as the pivot leaves a controller it stopped.
+func stopController(t *testing.T, c *fake.Clientset) {
+	t.Helper()
+	d, err := c.AppsV1().Deployments(controllerNamespace).Get(context.Background(), controllerName, metav1.GetOptions{})
+	require.NoError(t, err)
+	zero := int32(0)
+	d.Spec.Replicas = &zero
+	_, err = c.AppsV1().Deployments(controllerNamespace).Update(context.Background(), d, metav1.UpdateOptions{})
+	require.NoError(t, err)
+}
+
+func TestRunResumes(t *testing.T) {
+	t.Run("after the database moved, it copies the Secrets and activates the site", func(t *testing.T) {
+		etcdKey := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Namespace: controllerNamespace, Name: etcdKeyPrefix + "x"},
+			Data:       map[string][]byte{"active": []byte("k")},
+		}
+		f := newFixture(t, clusterObjects(etcdKey), clusterObjects(), []runtime.Object{crd("machines.cluster.x-k8s.io")},
+			[]runtime.Object{capiCluster("True")})
+		stopController(t, f.seed)
+		stopController(t, f.site)
+		f.runner.on("site.kubeconfig -n postgres exec postgres-0 -- psql -U postgres -d nvke-controller -v ON_ERROR_STOP=1 -tAc SELECT count(*)", "0")
+		f.runner.on("site.kubeconfig -n postgres exec postgres-0 -- psql -U postgres -d nvke-controller -v ON_ERROR_STOP=1 -tAc SELECT 'cluster '", "cluster a\nnode b")
+		f.happyPath()
+
+		require.NoError(t, f.p.run(context.Background()))
+
+		require.Nil(t, f.handedOver, "the handover is not repeated once the seed is quiesced")
+		for _, call := range []string{"clusterctl move", "pg_dump", "pg_restore"} {
+			require.Equal(t, -1, f.runner.index(call), "%q repeated: %v", call, f.runner.calls)
+		}
+		copied, err := f.site.CoreV1().Secrets(controllerNamespace).Get(context.Background(), etcdKeyPrefix+"x", metav1.GetOptions{})
+		require.NoError(t, err)
+		require.Equal(t, []byte("k"), copied.Data["active"])
+		require.NotEqual(t, -1, f.runner.index(`site patch deployments nvke-controller {"spec":{"replicas":1}}`))
+	})
+	t.Run("once the site controller is active, it only finishes activating and verifying", func(t *testing.T) {
+		f := newFixture(t, clusterObjects(), clusterObjects(), nil, []runtime.Object{capiCluster("True")})
+		stopController(t, f.seed)
+		f.runner.on("SELECT count(*) FROM clusters WHERE id = '"+clusterUUID.String()+"'", "1")
+		f.happyPath()
+
+		require.NoError(t, f.p.run(context.Background()))
+
+		for _, call := range []string{"clusterctl move", "pg_restore", "workflow_outbox", "patch deployments nvke-controller {\"spec\":{\"replicas\":0}}"} {
+			require.Equal(t, -1, f.runner.index(call), "%q run on an active site: %v", call, f.runner.calls)
+		}
+		require.NotEqual(t, -1, f.runner.index("get --raw"), "the site is verified")
+	})
+	t.Run("it reads the cluster ID from the seed when none is given", func(t *testing.T) {
+		f := newFixture(t, clusterObjects(), clusterObjects(), readyToMove(), nil)
+		f.runner.on("SELECT id FROM clusters WHERE name = 'site'", clusterUUID.String())
+		f.happyPath()
+		f.p.cfg.ClusterID = uuid.UUID{}
+
+		require.NoError(t, f.p.run(context.Background()))
+		require.Equal(t, clusterUUID, f.handedOver.ClusterID)
+	})
+}
+
+func TestMoveCAPIAfterAnInterruptedMove(t *testing.T) {
+	paused := func() *unstructured.Unstructured {
+		c := capiCluster("True")
+		c.Object["spec"] = map[string]any{"paused": true}
+		return c
+	}
+	t.Run("a paused seed Cluster is unpaused and moved again", func(t *testing.T) {
+		f := newFixture(t, clusterObjects(), clusterObjects(), []runtime.Object{paused(), crd("machines.cluster.x-k8s.io")}, nil)
+		f.happyPath()
+		require.NoError(t, f.p.moveCAPI(context.Background()))
+		unpause := f.runner.index(`seed patch clusters site {"spec":{"paused":false}}`)
+		require.NotEqual(t, -1, unpause)
+		require.Greater(t, f.runner.index("clusterctl move"), unpause)
+	})
+	t.Run("a paused seed Cluster that lost Machines to the move is left paused", func(t *testing.T) {
+		f := newFixture(t, clusterObjects(), clusterObjects(), []runtime.Object{paused()},
+			[]runtime.Object{paused(), capiMachine("site-cp-a", "site-cp-a")})
+		require.ErrorContains(t, f.p.moveCAPI(context.Background()), "the seed no longer holds Machines site-cp-a")
+		require.Equal(t, -1, f.runner.index(`seed patch clusters site {"spec":{"paused":false}}`), "the seed would rebuild site-cp-a")
+		require.Equal(t, -1, f.runner.index("clusterctl move"))
+	})
+	t.Run("a paused site Cluster the seed no longer holds is unpaused, not moved", func(t *testing.T) {
+		f := newFixture(t, clusterObjects(), clusterObjects(), nil, []runtime.Object{paused()})
+		require.NoError(t, f.p.moveCAPI(context.Background()))
+		require.NotEqual(t, -1, f.runner.index(`site patch clusters site {"spec":{"paused":false}}`))
+		require.Equal(t, -1, f.runner.index("clusterctl move"))
+	})
 }

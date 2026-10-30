@@ -9,8 +9,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -225,6 +228,42 @@ func (p *pivot) checkCAPI(ctx context.Context) error {
 
 // moveCAPI moves the cluster's Cluster API objects to the site with clusterctl move.
 func (p *pivot) moveCAPI(ctx context.Context) error {
+	seedCluster, err := p.capiCluster(ctx, p.seed)
+	if err != nil {
+		return err
+	}
+	if seedCluster == nil {
+		// A move cut short after it deleted the seed's objects leaves the site's paused.
+		siteCluster, err := p.capiCluster(ctx, p.site)
+		if err != nil {
+			return err
+		}
+		if siteCluster == nil {
+			return fmt.Errorf("neither the seed nor the site holds the Cluster API Cluster %s/%s", managementNamespace, p.cfg.ClusterName)
+		}
+		p.log.Info("the Cluster API objects are already on the site", "cluster", p.cfg.ClusterName)
+		return p.unpause(ctx, p.site, siteCluster)
+	}
+	// clusterctl move refuses a paused Cluster, which is what a move cut short
+	// before it deleted the seed's objects leaves; it updates what it already
+	// created on the site.
+	if paused, _, _ := unstructured.NestedBool(seedCluster.Object, "spec", "paused"); paused {
+		// Once the move started deleting the seed's objects, an unpaused seed
+		// would recreate the Machines it lost and allocate more instances.
+		missing, err := p.machinesOnlyOnSite(ctx)
+		if err != nil {
+			return err
+		}
+		if len(missing) > 0 {
+			return fmt.Errorf("an earlier clusterctl move stopped while deleting the seed's Cluster API objects (the seed no longer "+
+				"holds Machines %s), so the seed's Cluster %s/%s is left paused; finish the move by hand: delete what is left of the "+
+				"cluster in %s on the seed, then set spec.paused to false on the site's Cluster", strings.Join(missing, ", "),
+				managementNamespace, p.cfg.ClusterName, managementNamespace)
+		}
+		if err := p.unpause(ctx, p.seed, seedCluster); err != nil {
+			return err
+		}
+	}
 	// clusterctl move only moves kinds whose CRD carries its label, and
 	// the CAPNICo manifest does not set it.
 	list, err := p.seed.dyn.Resource(crds).List(ctx, metav1.ListOptions{})
@@ -281,15 +320,127 @@ func (p *pivot) capiNotReady(ctx context.Context) (string, error) {
 }
 
 func (p *pivot) hasCAPICluster(ctx context.Context, c *cluster) (bool, error) {
-	_, err := c.dyn.Resource(capiClusters).Namespace(managementNamespace).Get(ctx, p.cfg.ClusterName, metav1.GetOptions{})
+	obj, err := p.capiCluster(ctx, c)
+	return obj != nil, err
+}
+
+// capiCluster returns the cluster's Cluster API Cluster on c, or nil when c does not hold it.
+func (p *pivot) capiCluster(ctx context.Context, c *cluster) (*unstructured.Unstructured, error) {
+	obj, err := c.dyn.Resource(capiClusters).Namespace(managementNamespace).Get(ctx, p.cfg.ClusterName, metav1.GetOptions{})
 	switch {
 	case err == nil:
-		return true, nil
+		return obj, nil
 	case apierrors.IsNotFound(err):
-		return false, nil
+		return nil, nil
 	default:
-		return false, fmt.Errorf("%s: reading Cluster %s/%s: %w", c.name, managementNamespace, p.cfg.ClusterName, err)
+		return nil, fmt.Errorf("%s: reading Cluster %s/%s: %w", c.name, managementNamespace, p.cfg.ClusterName, err)
 	}
+}
+
+// unpause clears spec.paused on the Cluster API Cluster obj on c.
+func (p *pivot) unpause(ctx context.Context, c *cluster, obj *unstructured.Unstructured) error {
+	if paused, _, _ := unstructured.NestedBool(obj.Object, "spec", "paused"); !paused {
+		return nil
+	}
+	p.log.Info("unpausing the Cluster API Cluster an earlier move left paused", "cluster", c.name)
+	if _, err := c.dyn.Resource(capiClusters).Namespace(managementNamespace).Patch(ctx, p.cfg.ClusterName,
+		types.MergePatchType, []byte(`{"spec":{"paused":false}}`), metav1.PatchOptions{}); err != nil {
+		return fmt.Errorf("%s: unpausing Cluster %s/%s: %w", c.name, managementNamespace, p.cfg.ClusterName, err)
+	}
+	return nil
+}
+
+// machinesOnlyOnSite names the cluster's Machines the site holds and the seed does not.
+func (p *pivot) machinesOnlyOnSite(ctx context.Context) ([]string, error) {
+	names := func(c *cluster) (map[string]bool, error) {
+		list, err := c.dyn.Resource(capiMachines).Namespace(managementNamespace).List(ctx,
+			metav1.ListOptions{LabelSelector: clusterNameLabel + "=" + p.cfg.ClusterName})
+		if err != nil {
+			return nil, fmt.Errorf("%s: listing Machines: %w", c.name, err)
+		}
+		set := map[string]bool{}
+		for _, m := range list.Items {
+			set[m.GetName()] = true
+		}
+		return set, nil
+	}
+	onSeed, err := names(p.seed)
+	if err != nil {
+		return nil, err
+	}
+	onSite, err := names(p.site)
+	if err != nil {
+		return nil, err
+	}
+	var missing []string
+	for name := range onSite {
+		if !onSeed[name] {
+			missing = append(missing, name)
+		}
+	}
+	slices.Sort(missing)
+	return missing, nil
+}
+
+// capiMoved reports whether the site holds the cluster's Cluster API Cluster and the seed does not.
+func (p *pivot) capiMoved(ctx context.Context) (bool, error) {
+	onSeed, err := p.hasCAPICluster(ctx, p.seed)
+	if err != nil || onSeed {
+		return false, err
+	}
+	return p.hasCAPICluster(ctx, p.site)
+}
+
+// seedQuiesced reports whether quiesce-seed has scaled the seed controller to zero.
+func (p *pivot) seedQuiesced(ctx context.Context) (bool, error) {
+	replicas, err := p.controllerReplicas(ctx, p.seed)
+	return replicas == 0, err
+}
+
+// siteActive reports whether the site controller runs with the cluster in its
+// database: activate-site has started it after the database moved.
+func (p *pivot) siteActive(ctx context.Context) (bool, error) {
+	replicas, err := p.controllerReplicas(ctx, p.site)
+	if err != nil || replicas == 0 {
+		return false, err
+	}
+	count, err := p.psql(ctx, p.site, fmt.Sprintf("SELECT count(*) FROM clusters WHERE id = '%s'", p.cfg.ClusterID))
+	return count == "1", err
+}
+
+// databaseMoved reports whether the site database already holds the seed's cluster and node records.
+func (p *pivot) databaseMoved(ctx context.Context) (bool, error) {
+	seedRecords, err := p.records(ctx, p.seed)
+	if err != nil {
+		return false, err
+	}
+	siteRecords, err := p.records(ctx, p.site)
+	return seedRecords != "" && siteRecords == seedRecords, err
+}
+
+// controllerReplicas returns the replicas the controller Deployment on c asks for.
+func (p *pivot) controllerReplicas(ctx context.Context, c *cluster) (int32, error) {
+	d, err := c.kube.AppsV1().Deployments(controllerNamespace).Get(ctx, controllerName, metav1.GetOptions{})
+	if err != nil {
+		return 0, fmt.Errorf("%s: reading deployment %s/%s: %w", c.name, controllerNamespace, controllerName, err)
+	}
+	if d.Spec.Replicas == nil {
+		return 1, nil
+	}
+	return *d.Spec.Replicas, nil
+}
+
+// clusterID reads the cluster's ID by name from the seed's database.
+func (p *pivot) clusterID(ctx context.Context) (openapi_types.UUID, error) {
+	out, err := p.psql(ctx, p.seed, fmt.Sprintf("SELECT id FROM clusters WHERE name = '%s'", strings.ReplaceAll(p.cfg.ClusterName, "'", "''")))
+	if err != nil {
+		return openapi_types.UUID{}, err
+	}
+	id, err := uuid.Parse(out)
+	if err != nil {
+		return openapi_types.UUID{}, fmt.Errorf("seed: the controller database holds no cluster %q (%q)", p.cfg.ClusterName, out)
+	}
+	return id, nil
 }
 
 func (p *pivot) image(ctx context.Context, c *cluster, namespace, name string) (string, error) {

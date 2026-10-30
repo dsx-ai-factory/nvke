@@ -24,12 +24,14 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -246,8 +248,9 @@ func startFakeCWEAPI(t *testing.T, provisioned bool) {
 // provisioning. It is how a test holds a control plane short of the count the
 // site spec asked for, which is the state the cluster's own Provisioned
 // condition cannot distinguish from a finished one.
-func startFakeCWEAPIWithNodes(t *testing.T, provisioned bool, total, joined int) {
+func startFakeCWEAPIWithNodes(t *testing.T, provisioned bool, total, joined int) *fakeCWEAPI {
 	t.Helper()
+	fake := &fakeCWEAPI{}
 
 	id := uuid.New()
 	status := api.ConditionStatusTrue
@@ -269,9 +272,20 @@ func startFakeCWEAPIWithNodes(t *testing.T, provisioned bool, total, joined int)
 		w.WriteHeader(http.StatusOK)
 	})
 	mux.HandleFunc("POST /api/clusters", func(w http.ResponseWriter, _ *http.Request) {
+		fake.posts.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(cluster)
+	})
+	mux.HandleFunc("GET /api/clusters", func(w http.ResponseWriter, _ *http.Request) {
+		listed := []api.Cluster{}
+		if fake.listed != nil {
+			built := *fake.listed
+			built.ID, built.Conditions = id, cluster.Conditions
+			listed = append(listed, built)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(api.ListClustersResponse{Clusters: listed})
 	})
 	mux.HandleFunc("GET /api/clusters/{id}", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -310,6 +324,16 @@ func startFakeCWEAPIWithNodes(t *testing.T, provisioned bool, total, joined int)
 		t.Fatalf("parsing the test server address %q: %v", srv.URL, err)
 	}
 	t.Setenv("NVKECTL_NVKE_CONTROLLER_PORT", port)
+	return fake
+}
+
+// fakeCWEAPI is what a test can set and read on the fake controller API.
+type fakeCWEAPI struct {
+	// posts counts create requests.
+	posts atomic.Int32
+	// listed, when set before the run, is the cluster the API lists: an
+	// earlier run's, with the ID and state the API serves.
+	listed *api.Cluster
 }
 
 // fakeBootstrapRunner is a scripted bootstrapengine.CommandRunner so
@@ -1772,11 +1796,10 @@ func TestRunBootstrapSiteDryRunReportsBootstrapProblemsTogether(t *testing.T) {
 	}
 }
 
-// TestRunBootstrapSiteNicoLeftoverClusterSaysToReleaseInstancesFirst: with nico
-// the leftover-cluster refusal is the only re-run guard, and the "delete it and
-// re-run" it ends with would orphan the NICo instances an earlier run
-// allocated. The refusal names the release step before the delete.
-func TestRunBootstrapSiteNicoLeftoverClusterSaysToReleaseInstancesFirst(t *testing.T) {
+// TestRunBootstrapSiteNicoLeftoverClusterSaysToResume: with nico a leftover
+// bootstrap cluster may manage the site until the pivot completes, so the
+// re-run guard says to continue with --resume and never to delete it.
+func TestRunBootstrapSiteNicoLeftoverClusterSaysToResume(t *testing.T) {
 	setBootstrapEnv(t)
 
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
@@ -1788,31 +1811,16 @@ func TestRunBootstrapSiteNicoLeftoverClusterSaysToReleaseInstancesFirst(t *testi
 		dialContext:         refuseDial,
 		untaintControlPlane: skipUntaint,
 	})
-	if err == nil {
-		t.Fatal("expected an error while an earlier bootstrap cluster is still running")
-	}
-	msg := err.Error()
-	for _, want := range []string{"`nvkectl delete cluster nvke-site`", "nvkectl config set-site --name nvkectl-bootstrap --url http://127.0.0.1:30080", "no longer lists it"} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("error %q does not contain %q", msg, want)
-		}
-	}
-	if strings.Index(msg, "nvkectl delete cluster") > strings.Index(msg, "kind delete cluster") {
-		t.Errorf("error %q tells the operator to delete the Kind cluster before it releases the instances", msg)
-	}
-	// A leftover may hold a working site cluster, for which "delete it and
-	// re-run" allocates a second set of machines behind the same VIP.
-	for _, want := range []string{"succeeded, or failed after every control-plane node joined", "delete only this cluster", "do not re-run", "second control plane"} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("error %q does not contain %q", msg, want)
-		}
-	}
+	require.Error(t, err, "an earlier bootstrap cluster is still running")
+	require.ErrorContains(t, err, "--resume")
+	require.NotContains(t, err.Error(), "kind delete cluster")
 }
 
 // TestRunBootstrapSiteNicoSpireDumpFailureIsAdvisedAsAJoinedCluster: the SPIRE
 // export runs after the site cluster is built. A failure there leaves a working
-// site, so the error says to delete only the bootstrap cluster, not to release
-// the NICo instances (which would delete the site and its machines).
+// site that the bootstrap cluster still manages, so the error says to continue
+// with --resume, not to release the NICo instances (which would delete the site
+// and its machines) or to delete the bootstrap cluster.
 func TestRunBootstrapSiteNicoSpireDumpFailureIsAdvisedAsAJoinedCluster(t *testing.T) {
 	setBootstrapEnv(t)
 	startFakeCWEAPIWithNodes(t, true, 3, 3)
@@ -1836,14 +1844,13 @@ func TestRunBootstrapSiteNicoSpireDumpFailureIsAdvisedAsAJoinedCluster(t *testin
 	}
 	msg := err.Error()
 	for _, want := range []string{
-		"writing SPIRE bootstrap resources", "the site cluster is up and is not to be deleted",
-		"delete only the bootstrap cluster with `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`",
+		"writing SPIRE bootstrap resources", "the site cluster is up", "is not to be deleted", "--resume",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error %q does not contain %q", msg, want)
 		}
 	}
-	for _, reject := range []string{"nvkectl delete cluster", "release the NICo instances", "set-site"} {
+	for _, reject := range []string{"nvkectl delete cluster", "release the NICo instances", "set-site", "kind delete cluster"} {
 		if strings.Contains(msg, reject) {
 			t.Errorf("error %q contains %q, which would delete a working site cluster", msg, reject)
 		}
@@ -2068,28 +2075,29 @@ func TestRetainedClusterError(t *testing.T) {
 			t.Errorf("advice %q deletes the site cluster before checking it exists", msg)
 		}
 	})
-	// After every node joined the site cluster is working: following the release
-	// steps would delete it and its NICo machines, so they are not given.
+	// After every node joined the site cluster is working and the bootstrap
+	// cluster still manages it: releasing the instances would delete the site,
+	// and deleting the bootstrap cluster would lose its management plane.
 	t.Run("nico with the key unsaved", func(t *testing.T) {
 		capture := &keyCaptureError{clusterName: "nvke-site", keyPath: "k.json", kubeconfigPath: "/tmp/kc", recover: "save-it", err: cause}
 		msg := retainedClusterError(capture, nico, cluster, 30080).Error()
-		for _, reject := range []string{"nvkectl delete cluster", "release the NICo instances", "set-site"} {
+		for _, reject := range []string{"nvkectl delete cluster", "release the NICo instances", "set-site", "kind delete cluster"} {
 			if strings.Contains(msg, reject) {
 				t.Errorf("key-unsaved advice %q contains %q, which would delete a working site cluster", msg, reject)
 			}
 		}
-		if !strings.Contains(msg, "once the key is saved, delete only the bootstrap cluster with `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`") {
-			t.Errorf("key-unsaved advice does not say to delete only the bootstrap cluster: %q", msg)
+		if !strings.Contains(msg, "--resume") {
+			t.Errorf("key-unsaved advice does not say to continue with --resume: %q", msg)
 		}
 	})
 	t.Run("nico with the kubeconfig unwritten", func(t *testing.T) {
 		msg := retainedClusterError(&clusterJoinedError{cause}, nico, cluster, 30080).Error()
-		for _, reject := range []string{"nvkectl delete cluster", "release the NICo instances", "set-site"} {
+		for _, reject := range []string{"nvkectl delete cluster", "release the NICo instances", "set-site", "kind delete cluster"} {
 			if strings.Contains(msg, reject) {
 				t.Errorf("post-join advice %q contains %q, which would delete a working site cluster", msg, reject)
 			}
 		}
-		for _, want := range []string{"site cluster is up", "delete only the bootstrap cluster", "kind delete cluster --name nvkectl-bootstrap"} {
+		for _, want := range []string{"site cluster is up", "not to be deleted", "--resume"} {
 			if !strings.Contains(msg, want) {
 				t.Errorf("post-join advice %q does not contain %q", msg, want)
 			}
@@ -2880,7 +2888,11 @@ func TestControllerTracing(t *testing.T) {
 // to the site's VIP does, and records the Postgres password each install passed.
 type flakySiteRunner struct {
 	controllerInstalls int
-	passwords          []string
+	postgresInstalls   int
+	// postgresPassword is what Postgres was installed with; passwords holds the
+	// values file each Temporal install was given.
+	postgresPassword string
+	passwords        []string
 	// failure is the output of the failed install; a dropped connection when empty.
 	failure string
 }
@@ -2892,12 +2904,25 @@ func (r *flakySiteRunner) Run(_ context.Context, name string, args ...string) (s
 		return "true\n", nil
 	case strings.Contains(line, "get --raw"):
 		return `{"status":"ok"}`, nil
+	case strings.Contains(line, "get secret/postgres-postgresql deployment/postgres-postgresql"):
+		if r.postgresPassword == "" {
+			return "", nil
+		}
+		return "Secret=" + base64.StdEncoding.EncodeToString([]byte(r.postgresPassword)) + "\nDeployment=\n", nil
 	case strings.Contains(line, "upgrade --install postgres"):
-		for i, arg := range args {
-			if arg == "--values" && i+1 < len(args) {
-				if b, err := os.ReadFile(args[i+1]); err == nil && strings.Contains(string(b), "password") {
-					r.passwords = append(r.passwords, string(b))
-				}
+		r.postgresInstalls++
+		for _, values := range valuesFiles(args) {
+			var v struct {
+				Auth struct{ Password string } `yaml:"auth"`
+			}
+			if yaml.Unmarshal([]byte(values), &v) == nil && v.Auth.Password != "" {
+				r.postgresPassword = v.Auth.Password
+			}
+		}
+	case strings.Contains(line, "upgrade --install temporal"):
+		for _, values := range valuesFiles(args) {
+			if r.postgresPassword != "" && strings.Contains(values, r.postgresPassword) {
+				r.passwords = append(r.passwords, values)
 			}
 		}
 	case strings.Contains(line, "upgrade --install nvke-controller"):
@@ -2910,6 +2935,19 @@ func (r *flakySiteRunner) Run(_ context.Context, name string, args ...string) (s
 		}
 	}
 	return "", nil
+}
+
+// valuesFiles returns the contents of each --values file in helm args.
+func valuesFiles(args []string) []string {
+	var files []string
+	for i, arg := range args {
+		if arg == "--values" && i+1 < len(args) {
+			if b, err := os.ReadFile(args[i+1]); err == nil {
+				files = append(files, string(b))
+			}
+		}
+	}
+	return files
 }
 
 func TestDeploySiteStackRetriesWithTheSamePassword(t *testing.T) {
@@ -2926,8 +2964,11 @@ func TestDeploySiteStackRetriesWithTheSamePassword(t *testing.T) {
 	if runner.controllerInstalls != 2 {
 		t.Fatalf("controller installs = %d, want a retry after the failed one", runner.controllerInstalls)
 	}
-	if len(runner.passwords) != 2 || runner.passwords[0] != runner.passwords[1] {
-		t.Fatalf("each attempt must pass Postgres the same password, got %d differing values", len(runner.passwords))
+	if runner.postgresInstalls != 1 {
+		t.Fatalf("postgres installs = %d, want the retry to leave the installed one alone", runner.postgresInstalls)
+	}
+	if len(runner.passwords) != 2 {
+		t.Fatalf("Temporal got the password Postgres was installed with %d times, want on both attempts", len(runner.passwords))
 	}
 }
 

@@ -632,8 +632,63 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 	}
 }
 
+func TestDeploy_ReusesAnInstalledPostgres(t *testing.T) {
+	runner := &fakeRunner{outputs: []fakeOutput{
+		{output: "Secret=" + base64.StdEncoding.EncodeToString([]byte("first-password")) + "\nDeployment=\n"},
+		{},
+	}}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", testConfig(t)); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	for _, call := range runner.calls {
+		if call.name == "helm" && strings.Contains(joinArgs(call.args), "upgrade --install postgres ") {
+			t.Errorf("an installed Postgres was upgraded: %s", joinArgs(call.args))
+		}
+	}
+	if got := runner.secretValue(t, temporalReleaseName, "server", "config", "persistence", "default", "sql", "password"); got != "first-password" {
+		t.Errorf("temporal password = %q, want the one Postgres was installed with", got)
+	}
+}
+
+func TestDeploy_InstallsAPostgresWhoseInstallStoppedBeforeTheDeployment(t *testing.T) {
+	runner := &fakeRunner{outputs: []fakeOutput{
+		{output: "Secret=" + base64.StdEncoding.EncodeToString([]byte("first-password")) + "\n"},
+		{},
+	}}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", testConfig(t)); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	if got := runner.secretValue(t, postgresReleaseName, "auth", "password"); got != "test-password" {
+		t.Errorf("postgres password = %q, want Postgres installed afresh", got)
+	}
+}
+
+func TestHelmClearsAPendingRelease(t *testing.T) {
+	for _, tt := range []struct{ status, undo string }{
+		{"pending-install", "uninstall temporal"},
+		{"pending-upgrade", "rollback temporal"},
+	} {
+		t.Run(tt.status, func(t *testing.T) {
+			runner := &fakeRunner{outputs: []fakeOutput{
+				{output: "Error: UPGRADE FAILED: another operation (install/upgrade/rollback) is in progress", err: errors.New("exit status 1")},
+				{output: `[{"revision":1,"status":"` + tt.status + `"}]`},
+				{}, // the undo
+				{}, // the repeated upgrade
+			}}
+			if _, err := New(runner, nil).helm(context.Background(), "/tmp/kubeconfig",
+				"upgrade", "--install", "temporal", "temporal", "--namespace", "temporal"); err != nil {
+				t.Fatalf("helm: %v", err)
+			}
+			if len(runner.calls) != 4 || !strings.Contains(joinArgs(runner.calls[2].args), "--namespace temporal "+tt.undo) {
+				t.Fatalf("calls = %v, want the upgrade, the history, %q and the upgrade again", runner.calls, tt.undo)
+			}
+		})
+	}
+}
+
 func TestDeploy_PropagatesHelmError(t *testing.T) {
 	runner := &fakeRunner{outputs: []fakeOutput{
+		{}, // no Postgres installed yet
 		{output: "Error: INSTALLATION FAILED", err: errors.New("exit status 1")},
 	}}
 	e := New(runner, nil)

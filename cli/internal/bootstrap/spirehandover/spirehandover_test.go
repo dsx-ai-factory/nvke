@@ -307,7 +307,9 @@ func (f fixture) build() *built {
 		return true, obj, nil
 	})
 
-	b.controller = &fakeController{status: [][]api.NodeSpireAgentStatus{{onSite("node-a")}}}
+	b.controller = &fakeController{status: [][]api.NodeSpireAgentStatus{
+		{{Name: "node-a", Reachable: true, HasValidSVID: true}}, {onSite("node-a")},
+	}}
 	srv := httptest.NewServer(b.controller)
 	t.Cleanup(srv.Close)
 	client, err := clients.New(config.SiteConfig{URL: srv.URL})
@@ -551,17 +553,17 @@ func TestRepointNodes(t *testing.T) {
 		{
 			name: "409 from the same SPIRE update is joined", patchCode: http.StatusConflict,
 			inProgress: api.UpdateInProgressTypeSpireServerUpdate, requested: &target,
-			status: [][]api.NodeSpireAgentStatus{{onSite("node-a")}},
+			status: [][]api.NodeSpireAgentStatus{{stale}, {onSite("node-a")}},
 		},
 		{
 			name: "409 from an update to another server fails", patchCode: http.StatusConflict,
 			inProgress: api.UpdateInProgressTypeSpireServerUpdate, requested: &other,
-			status: [][]api.NodeSpireAgentStatus{{onSite("node-a")}}, wantErr: "another operation is in progress",
+			status: [][]api.NodeSpireAgentStatus{{stale}, {onSite("node-a")}}, wantErr: "another operation is in progress",
 		},
 		{
 			name: "409 from another operation fails", patchCode: http.StatusConflict,
 			inProgress: api.UpdateInProgressTypeK8SUpgrade, requested: &target,
-			status: [][]api.NodeSpireAgentStatus{{onSite("node-a")}}, wantErr: "another operation is in progress",
+			status: [][]api.NodeSpireAgentStatus{{stale}, {onSite("node-a")}}, wantErr: "another operation is in progress",
 		},
 	}
 	for _, tt := range tests {
@@ -577,6 +579,12 @@ func TestRepointNodes(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+	t.Run("nodes already on the site server are not moved again", func(t *testing.T) {
+		b := fixture{t: t}.build()
+		b.controller.status = [][]api.NodeSpireAgentStatus{{onSite("node-a"), onSite("node-b")}}
+		require.NoError(t, b.h.repointNodes(context.Background()))
+		assert.Zero(t, b.controller.patches)
+	})
 }
 
 func ptr[T any](v T) *T { return &v }

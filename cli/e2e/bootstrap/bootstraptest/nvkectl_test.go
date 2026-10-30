@@ -408,3 +408,30 @@ func TestLineWriterForwardsWholeLines(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"first line", "second line"}, lines())
 }
+
+func TestStartInterrupted(t *testing.T) {
+	interruptPollInterval = 10 * time.Millisecond
+	// Each run says whether it was resumed, then reaches two markers.
+	binary := fakeNvkectl(t, `case "$*" in *--resume*) echo resumed;; esac
+echo first; sleep 0.3; echo second; sleep 0.3; echo done`)
+
+	t.Run("kills at each marker and resumes", func(t *testing.T) {
+		logFile := filepath.Join(t.TempDir(), "bootstrap.log")
+		b, err := StartInterrupted(context.Background(), BootstrapOptions{Binary: binary, SiteSpec: "s.yaml", LogFile: logFile},
+			[]string{"first", "second"}, nil)
+		require.NoError(t, err)
+		require.NoError(t, b.Wait())
+		log, err := os.ReadFile(logFile)
+		require.NoError(t, err)
+		// The first run is killed at "first", the second, resumed, at "second",
+		// and the third, resumed, finishes.
+		assert.Equal(t, 2, strings.Count(string(log), "resumed"))
+		assert.Equal(t, 1, strings.Count(string(log), "done"))
+	})
+	t.Run("fails when the run exits before a marker", func(t *testing.T) {
+		_, err := StartInterrupted(context.Background(), BootstrapOptions{
+			Binary: binary, SiteSpec: "s.yaml", LogFile: filepath.Join(t.TempDir(), "bootstrap.log"),
+		}, []string{"never"}, nil)
+		require.ErrorContains(t, err, `before its log showed "never"`)
+	})
+}

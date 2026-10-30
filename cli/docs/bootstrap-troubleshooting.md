@@ -192,13 +192,11 @@ delete it when you are done.
 
 With `infra.provider: nico`, the kept cluster also holds the
 NICo token and the tenant password as Secrets (`nico-credentials` in
-`capnico-system`, `dgxc-tenant-credentials` in `nvke-controller`), so delete it
-when you are done. After a failure past site cluster creation but before every
-control-plane node joined, it also holds the machines for the NICo instances
-CAPNICo allocated, and those must be released before the cluster is deleted: see
-[Release the NICo instances first](#release-the-nico-instances-first). After
-every node joined the site cluster is up and working: recover what the run could
-not write and delete only the bootstrap cluster.
+`capnico-system`, `dgxc-tenant-credentials` in `nvke-controller`). It also
+manages the site cluster until the pivot to the site completes, so do not delete
+it: [continue the bootstrap with `--resume`](#continue-a-nico-bootstrap-with---resume).
+To abandon a run that failed before every control-plane node joined instead,
+[release the NICo instances first](#release-the-nico-instances-first).
 
 Use that kubeconfig to look at the live state, which is more than the dump
 captures:
@@ -256,13 +254,39 @@ then kept, and the failure message says the create was not confirmed. Run
 delete it and wait as above. If it does not, nothing was allocated. Either way,
 then delete the Kind cluster.
 
-None of this applies once every control-plane node joined, whether the run then
-failed writing the kubeconfig or saving the key, or succeeded and was kept with
-`--keep-bootstrap-cluster`: the instances are then the new cluster's nodes, and
-`nvkectl delete cluster` would destroy the working site cluster and its NICo
-machines. Recover the kubeconfig and the
-[encryption key](#the-encryption-key-was-not-saved) from the retained cluster,
-then delete only the Kind cluster. The failure message says which case you are in.
+None of this applies once every control-plane node joined: the instances are
+then the new cluster's nodes, and `nvkectl delete cluster` would destroy the
+working site cluster and its NICo machines.
+[Continue the bootstrap with `--resume`](#continue-a-nico-bootstrap-with---resume)
+instead. The failure message says which case you are in.
+
+#### Continue a nico bootstrap with --resume
+
+With `infra.provider: nico`, run the same command again, with the same site
+spec, flags, environment and working directory, plus `--resume`:
+
+```bash
+nvkectl bootstrap site -f sitespec.yaml --resume
+```
+
+It takes over the retained bootstrap cluster and goes through every step from
+the top. Each step checks what the bootstrap and site clusters already show and
+does only what is missing, so a finished step costs only its check: the site
+cluster is found by name rather than created again, an installed Postgres keeps
+its password and is not upgraded, the kubeconfig and encryption key already on
+disk are kept, and each pivot step looks for its result on whichever cluster
+holds it. Once the pivot has started, the installs before it are skipped, and
+once the site's controller manages the cluster, the run only finishes activating
+and verifying it. A failure keeps the bootstrap cluster again, so `--resume` can
+be repeated.
+
+Fields that cannot change once the cluster is built, such as
+`cluster.controlPlaneVIP`, the Kubernetes version, the CIDRs, etcd encryption,
+the NICo site and VPC, and the control-plane count, are compared with the
+cluster the bootstrap cluster's controller holds, and a difference stops the
+run. Once the pivot has started that controller may be stopped, and only
+`cluster.controlPlaneVIP` is compared, with the site cluster's kubeconfig. Without a bootstrap cluster there is
+nothing to continue, and `--resume` starts a new bootstrap.
 
 #### Delete the cluster
 
@@ -324,13 +348,10 @@ from source, `make -C cli images` builds the default local images.
 
 Inspect the retained cluster before deleting it. If the earlier run created
 a site cluster, follow the [recovery guidance](#when-it-is-safe-to-run-bootstrap-again)
-first. With `infra.provider: nico`, if the earlier run failed before every
-control-plane node joined, [release the NICo instances](#release-the-nico-instances-first)
-it allocated before you delete the cluster: deleting it alone leaves them
-allocated. If it succeeded, or failed after every node joined, the site cluster
-is working: recover from the Kind cluster whatever that run did not write,
-delete only the Kind cluster, and do not re-run, because a re-run allocates
-another set of NICo machines. Bootstrap does not reuse an existing Kind cluster.
+first. With `infra.provider: nico`, the cluster may manage the site cluster that
+run built: do not delete it, and
+[continue the bootstrap with `--resume`](#continue-a-nico-bootstrap-with---resume).
+Without `--resume`, bootstrap does not reuse an existing Kind cluster.
 
 **`the control-plane VIP ... is accepting connections on port 6443`**
 
@@ -536,7 +557,9 @@ bootstrap again for this failure.
 
 A timeout or cancellation stops the CLI's wait; workflows in a retained
 bootstrap cluster can continue. Inspect their progress before deciding to
-abandon the attempt. Bootstrap starts fresh; it does not resume an existing site.
+abandon the attempt. With `infra.provider: nico`,
+[`--resume` continues it](#continue-a-nico-bootstrap-with---resume) instead;
+otherwise bootstrap starts fresh.
 
 What to do per failure phase is in the table under [How to read the error](#how-to-read-the-error).
 

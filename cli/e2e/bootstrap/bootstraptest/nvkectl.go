@@ -69,6 +69,10 @@ type BootstrapOptions struct {
 
 	// Env is added to the environment the command inherits, as "K=V" entries.
 	Env []string
+
+	// Resume passes --resume, and appends to LogFile rather than truncating
+	// it, so the file holds every run of one bootstrap.
+	Resume bool
 }
 
 // stopGrace is the effective StopGrace, applying the default.
@@ -104,6 +108,9 @@ func (o BootstrapOptions) args() []string {
 	}
 	if o.DiagnosticsDir != "" {
 		args = append(args, "--diagnostics-dir", o.DiagnosticsDir)
+	}
+	if o.Resume {
+		args = append(args, "--resume")
 	}
 	return args
 }
@@ -161,7 +168,11 @@ func StartBootstrap(ctx context.Context, opts BootstrapOptions, logf Logf) (*Boo
 		sink    io.Writer
 	)
 	if opts.LogFile != "" {
-		f, err := os.Create(opts.LogFile)
+		flag := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+		if opts.Resume {
+			flag = os.O_CREATE | os.O_WRONLY | os.O_APPEND
+		}
+		f, err := os.OpenFile(opts.LogFile, flag, 0o644)
 		if err != nil {
 			return nil, fmt.Errorf("creating bootstrap log file %q: %w", opts.LogFile, err)
 		}
@@ -269,6 +280,64 @@ func (b *Bootstrap) Stop() {
 	})
 	_ = b.Wait()
 }
+
+// StartInterrupted runs one bootstrap that is killed as each marker in turn
+// first appears in its log, the way a crash would stop it, and continued with
+// --resume after each. It returns the last run, which is not interrupted. With
+// no markers it is StartBootstrap. opts.LogFile is required with markers.
+// Cancelling ctx stops whichever run is going.
+func StartInterrupted(ctx context.Context, opts BootstrapOptions, markers []string, logf Logf) (*Bootstrap, error) {
+	if len(markers) > 0 && opts.LogFile == "" {
+		return nil, errors.New("bootstraptest: interrupting a bootstrap needs a LogFile to watch")
+	}
+	for _, marker := range markers {
+		offset := int64(0)
+		if info, err := os.Stat(opts.LogFile); err == nil && opts.Resume {
+			offset = info.Size()
+		}
+		b, err := StartBootstrap(ctx, opts, logf)
+		if err != nil {
+			return nil, err
+		}
+		if err := b.killAt(ctx, opts.LogFile, offset, marker); err != nil {
+			b.Stop()
+			return nil, err
+		}
+		if logf != nil {
+			logf("bootstraptest: killed the bootstrap at %q; continuing it with --resume", marker)
+		}
+		opts.Resume = true
+	}
+	return StartBootstrap(ctx, opts, logf)
+}
+
+// killAt kills the process group once marker appears in logFile past offset.
+// It is an error for the command to exit first.
+func (b *Bootstrap) killAt(ctx context.Context, logFile string, offset int64, marker string) error {
+	ticker := time.NewTicker(interruptPollInterval)
+	defer ticker.Stop()
+	for {
+		if data, err := os.ReadFile(logFile); err == nil && int64(len(data)) > offset &&
+			strings.Contains(string(data[offset:]), marker) {
+			killProcessGroup(b.cmd)
+			_ = b.Wait()
+			return nil
+		}
+		select {
+		case <-b.finished:
+			if data, err := os.ReadFile(logFile); err == nil && int64(len(data)) > offset && strings.Contains(string(data[offset:]), marker) {
+				return fmt.Errorf("bootstraptest: the bootstrap reached %q and exited %d before it could be killed there", marker, b.ExitCode())
+			}
+			return fmt.Errorf("bootstraptest: the bootstrap exited %d before its log showed %q", b.ExitCode(), marker)
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+// interruptPollInterval is how often killAt reads the log.
+var interruptPollInterval = time.Second
 
 // The bootstrap e2e lanes run on Linux, and nvkectl ships for linux and darwin
 // only, so these use the unix syscalls directly rather than through a

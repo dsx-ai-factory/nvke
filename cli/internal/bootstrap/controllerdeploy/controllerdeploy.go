@@ -74,7 +74,9 @@ const (
 	// deploy path's 35-dgxc-tenant-credentials template renders.
 	dgxcTenantSecret = "dgxc-tenant-credentials"
 
-	postgresReleaseName  = "postgres"
+	postgresReleaseName = "postgres"
+	// postgresSecretName is the chart's Secret that holds the database password.
+	postgresSecretName   = "postgres-postgresql"
 	temporalReleaseName  = "temporal"
 	spireCRDsReleaseName = "spire-crds"
 	spireReleaseName     = "spire"
@@ -521,7 +523,16 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return fmt.Errorf("controllerdeploy: writing out the postgres chart: %w", err)
 	}
 
+	installedPassword, err := e.installedPostgres(ctx, kubeconfigPath)
+	if err != nil {
+		return err
+	}
+	// Postgres keeps the password it was first installed with, so a repeated
+	// deploy must hand Temporal and the controller that one.
 	password := cfg.PostgresPassword
+	if installedPassword != "" {
+		password = installedPassword
+	}
 	if password == "" {
 		password = rand.Text()
 	}
@@ -562,15 +573,21 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	}
 	defer postgresSecretsCleanup()
 
-	e.log.Info("installing postgres", "namespace", postgresNamespace, "chart", postgresChartPath)
-	if _, err := e.helm(ctx, kubeconfigPath,
-		"upgrade", "--install", postgresReleaseName, postgresChartPath,
-		"--namespace", postgresNamespace, "--create-namespace",
-		"--values", postgresValues,
-		"--values", postgresSecrets,
-		"--wait", "--timeout", helmTimeout.String(),
-	); err != nil {
-		return fmt.Errorf("controllerdeploy: installing postgres: %w", err)
+	// An installed Postgres holds the only copy of the management plane's
+	// database, and an upgrade that changes its pod can lose it.
+	if installedPassword != "" {
+		e.log.Info("postgres is already installed; leaving it as it is", "namespace", postgresNamespace)
+	} else {
+		e.log.Info("installing postgres", "namespace", postgresNamespace, "chart", postgresChartPath)
+		if _, err := e.helm(ctx, kubeconfigPath,
+			"upgrade", "--install", postgresReleaseName, postgresChartPath,
+			"--namespace", postgresNamespace, "--create-namespace",
+			"--values", postgresValues,
+			"--values", postgresSecrets,
+			"--wait", "--timeout", helmTimeout.String(),
+		); err != nil {
+			return fmt.Errorf("controllerdeploy: installing postgres: %w", err)
+		}
 	}
 
 	temporalValues, cleanup, err := writeEmbeddedFile(temporalValuesFile)
@@ -1012,6 +1029,96 @@ func (e *Engine) WaitReady(ctx context.Context, kubeconfigPath string, timeout t
 	}
 }
 
+// ControllerReplicas returns the replicas the NVKE controller Deployment on the
+// cluster asks for, or "" when there is no such Deployment.
+func (e *Engine) ControllerReplicas(ctx context.Context, kubeconfigPath string) (string, error) {
+	return e.replicas(ctx, kubeconfigPath, cweNamespace, "deployment", cweReleaseName)
+}
+
+// SPIREServerReplicas returns the replicas the SPIRE server StatefulSet on the
+// cluster asks for, or "" when there is no such StatefulSet.
+func (e *Engine) SPIREServerReplicas(ctx context.Context, kubeconfigPath string) (string, error) {
+	return e.replicas(ctx, kubeconfigPath, spireNamespace, "statefulset", spireReleaseName+"-server")
+}
+
+func (e *Engine) replicas(ctx context.Context, kubeconfigPath, namespace, kind, name string) (string, error) {
+	out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
+		"get", kind, name, "--ignore-not-found", "-o", "jsonpath={.spec.replicas}")
+	if err != nil {
+		return "", fmt.Errorf("controllerdeploy: reading %s %s/%s: %w\n%s", kind, namespace, name, err, out)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// installedPostgres returns the password of the Postgres an earlier deploy
+// installed on the cluster, or "" when there is none: no Secret, or a Secret
+// without the Deployment an interrupted install had yet to create.
+func (e *Engine) installedPostgres(ctx context.Context, kubeconfigPath string) (string, error) {
+	out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", postgresNamespace,
+		"get", "secret/"+postgresSecretName, "deployment/"+postgresSecretName, "--ignore-not-found",
+		"-o", `jsonpath={range .items[*]}{.kind}={.data.password}{"\n"}{end}`)
+	if err != nil {
+		return "", fmt.Errorf("controllerdeploy: reading the Postgres in %s: %w\n%s", postgresNamespace, err, out)
+	}
+	var encoded string
+	deployed := false
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		kind, value, _ := strings.Cut(line, "=")
+		switch kind {
+		case "Secret":
+			encoded = value
+		case "Deployment":
+			deployed = true
+		}
+	}
+	if !deployed {
+		return "", nil
+	}
+	password, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", fmt.Errorf("controllerdeploy: %s/%s holds a password that is not base64: %w", postgresNamespace, postgresSecretName, err)
+	}
+	return string(password), nil
+}
+
+// helmPendingRelease is how helm refuses a release that an interrupted
+// install, upgrade or rollback left pending.
+const helmPendingRelease = "another operation (install/upgrade/rollback) is in progress"
+
+// clearPendingRelease undoes the pending revision of release in namespace: a
+// pending first install is uninstalled, and a pending upgrade or rollback is
+// rolled back to the revision before it.
+func (e *Engine) clearPendingRelease(ctx context.Context, kubeconfigPath, release, namespace string) error {
+	base := []string{"--kubeconfig", kubeconfigPath, "--namespace", namespace}
+	out, err := e.Runner.Run(ctx, "helm", append(base, "history", release, "--max", "1", "--output", "json")...)
+	if err != nil {
+		return fmt.Errorf("reading the history of release %s: %w\n%s", release, err, out)
+	}
+	var history []struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(out), &history); err != nil || len(history) == 0 {
+		return fmt.Errorf("reading the history of release %s: %q", release, out)
+	}
+	undo := []string{"rollback", release}
+	if history[0].Status == "pending-install" {
+		undo = []string{"uninstall", release}
+	}
+	e.log.Warn("an earlier run left the release pending; undoing it", "release", release, "status", history[0].Status, "action", undo[0])
+	if out, err := e.Runner.Run(ctx, "helm", append(base, undo...)...); err != nil {
+		return fmt.Errorf("helm %s %s: %w\n%s", undo[0], release, err, out)
+	}
+	return nil
+}
+
+// flagValue returns the value that follows flag in args, or "".
+func flagValue(args []string, flag string) string {
+	if i := slices.Index(args, flag); i >= 0 && i+1 < len(args) {
+		return args[i+1]
+	}
+	return ""
+}
+
 // helm runs the helm CLI with kubeconfigPath and args.
 func (e *Engine) helm(ctx context.Context, kubeconfigPath string, args ...string) (string, error) {
 	fullArgs := append([]string{"--kubeconfig", kubeconfigPath}, args...)
@@ -1023,6 +1130,13 @@ func (e *Engine) helm(ctx context.Context, kubeconfigPath string, args ...string
 		out = redact.Text(out)
 		if err == nil {
 			return out, nil
+		}
+		// An install or upgrade killed part of the way leaves its release pending.
+		if attempt == 1 && strings.Contains(out, helmPendingRelease) && len(args) > 2 && args[0] == "upgrade" {
+			if clearErr := e.clearPendingRelease(ctx, kubeconfigPath, args[2], flagValue(args, "--namespace")); clearErr != nil {
+				return out, fmt.Errorf("helm %s: %w\n%s", shown, errors.Join(err, clearErr), out)
+			}
+			continue
 		}
 		// GitHub's release downloads answer 5xx now and then; nothing was installed yet, so the same command is safe to repeat.
 		if attempt == helmFetchAttempts || !chartFetchServerError.MatchString(out) {
