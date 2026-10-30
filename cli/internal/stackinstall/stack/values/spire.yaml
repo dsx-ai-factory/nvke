@@ -5,10 +5,17 @@
 # subcharts: spire-server, spire-agent, spiffe-csi-driver and
 # spiffe-oidc-discovery-provider. Helm merges global into every one of them.
 #
-# Site identity is not in this file. The generated overlay supplies it at
-# render time:
-#   global.spire.trustDomain and spire-server.adminIDs   from the site spec
-#   global.spire.clusterName                             from the site spec
+# Site identity is not in this file. The generated overlay supplies it:
+#   global.spire.trustDomain                             from the site spec, or
+#                                                        <clusterName>.nvke.local
+#   spire-server.adminIDs                                the trust domain plus
+#                                                        the controller's path
+#                                                        and service account
+#                                                        from values/controller.yaml
+#   global.spire.caSubject.commonName                    the trust domain
+#   global.spire.clusterName                             the site's name, or
+#                                                        nvkectl-bootstrap on
+#                                                        the seed
 #   global.spire.image.registry                          the mirror, when the
 #                                                        stack config names one
 #   spire-server.nodeAttestor.tpmDirect.checksum         per architecture; the
@@ -22,17 +29,22 @@
 #                                                        spire-upstream-ca, and
 #                                                        the node agent trusts
 #                                                        that CA
-#   spiffe-oidc-discovery-provider.config.jwksUri        https://<site address>:30443/keys
+#   spiffe-oidc-discovery-provider.config.jwksUri        https://<target address>:30443/keys
 #   spiffe-oidc-discovery-provider.tls.certManager.certificate.ipAddresses
-#                                                        the site's addresses
+#                                                        the target's address,
+#                                                        when it is an IP
+#   spiffe-oidc-discovery-provider.tls.certManager.certificate.dnsNames
+#                                                        this list plus the
+#                                                        target's address, when
+#                                                        it is a DNS name
 #   spiffe-oidc-discovery-provider.config.additionalDomains
 #                                                        this list plus the
-#                                                        site's addresses
+#                                                        target's address
 # The two trust-domain values must agree. An adminID whose trust domain is not
 # the server's matches nothing, and the controller silently has no admin
 # access to SPIRE. example.org below is a placeholder. With strict mode off
-# the chart renders it without complaint, so the install checks that the
-# overlay replaces it before anything is applied.
+# the chart renders it without complaint, so the overlay always sets both and
+# the install refuses a site spec whose trust domain is the placeholder.
 
 global:
   spire:
@@ -43,7 +55,8 @@ global:
       enabled: true
       # strictMode would reject the placeholder trust domain and demand a
       # clusterName and a CA subject as well. Off, so the file renders on its
-      # own. The install validates the overlay instead.
+      # own. The install refuses a site spec whose trust domain is the
+      # placeholder.
       strictMode: false
     # Placeholder. See the header.
     trustDomain: example.org
@@ -228,7 +241,7 @@ spiffe-oidc-discovery-provider:
     # The provider rejects any request whose Host header is not on this list.
     # A tenant kube-apiserver fetches the discovery document by IP, not by
     # the logical issuer host. The generated overlay restates this list and
-    # appends the site's addresses. A values file replaces a list, so the
+    # appends the target's address. A values file replaces a list, so the
     # overlay must repeat these three.
     additionalDomains:
       - "nvke.site-controller.internal"

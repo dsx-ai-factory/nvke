@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What the seed changes about temporal. Layered over values/temporal.yaml.
+server:
+  metrics:
+    serviceMonitor:
+      enabled: false

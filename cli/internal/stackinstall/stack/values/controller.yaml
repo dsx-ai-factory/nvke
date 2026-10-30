@@ -3,14 +3,13 @@
 
 # Values for the nvke-controller chart.
 #
-# Site identity is not in this file. The generated overlay supplies it at
-# render time:
-#   image.repository and image.tag     from the artifact file
-#   profiles.image.repository and .tag from the artifact file
-#   spiffe.spire.serverAddress         the control-plane address of the site
-#   spiffe.trustDomain                 from the site spec; must equal the
-#                                      SPIRE server's trust domain
-#   nvkeOIDCAuth.discoveryURL          https://<site address>:30443/.well-known/openid-configuration
+# Site identity is not in this file. The generated overlay supplies it:
+#   image.repository, image.digest and an empty image.tag
+#                                      the cwe output of the artifact file
+#   spiffe.spire.serverAddress         the target's address
+#   spiffe.trustDomain                 the SPIRE server's trust domain: from
+#                                      the site spec, or <clusterName>.nvke.local
+#   nvkeOIDCAuth.discoveryURL          https://<target address>:30443/.well-known/openid-configuration
 #
 # No credential is in this file. The command creates the nvke-database and
 # dgxc-tenant-credentials Secrets and the chart reads them by name.
@@ -33,8 +32,7 @@ nvkeSystemNamespace:
 image:
   pullPolicy: IfNotPresent
 
-# Empty. A site that pulls the controller from a registry adds its own Secret
-# in nvke-controller through the generated overlay.
+# Empty. No overlay sets a pull Secret yet.
 imagePullSecrets: []
 
 # Named Secret, not a chart-built connection string. With dbSecretName set the
@@ -94,7 +92,7 @@ apiAuth:
 nvkeOIDCAuth:
   enabled: false
   # The logical issuer, string-compared against the JWT iss claim. It does not
-  # have to resolve. The discovery URL does, and comes from the site address.
+  # have to resolve. The discovery URL does, and comes from the target's address.
   issuerURL: "https://nvke.site-controller.internal"
   # The CA that signs the OIDC provider's leaf. manifests/oidc-upstream-ca.yaml
   # publishes it.
@@ -154,7 +152,7 @@ env:
 # address. The chart's NetworkPolicy admits the API port from in-cluster
 # namespaces only, and it has no key for anything else. External clients are
 # admitted by the glue policy manifests/nvke-api-clients.yaml.tmpl, rendered
-# from the site spec's client networks.
+# from the stack config's client networks.
 service:
   port: 8080
   nodePort: 30080
@@ -167,17 +165,17 @@ service:
 nodeAgent:
   spireAttestationMethod: tpm
 
-# Fleet profiles are a separate content image. An init container copies them
-# into /profiles. Without it /api/releases returns 500 and nothing can be
-# provisioned. The chart refuses to render with enabled=true and no tag or
-# digest, so the generated overlay must supply them.
+# Fleet profiles are an optional content image. The stack runs without it.
 profiles:
   path: /profiles
   image:
-    enabled: true
+    enabled: false
 
 spiffe:
   enabled: true
+  # The SPIFFE ID path segment. It matches the nvke-service ClusterSPIFFEID in
+  # values/spire.yaml and the admin ID the overlay writes.
+  servicePathSegment: nvke-service
   endpointSocket: unix:///spiffe-workload-api/spire-agent.sock
   spire:
     serverNamespace: spire-server
