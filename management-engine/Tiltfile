@@ -7,11 +7,17 @@ load("ext://uibutton", "cmd_button", "text_input")
 version_settings(constraint=">=0.36.0")
 
 def register(ctx):
-    docker_build(
-        "management-engine",
-        os.path.join(ctx.provider_dir, ".."),
-        dockerfile=os.path.join(ctx.provider_dir, "Dockerfile"),
-    )
+    for image, target in [
+        ("management-engine", "manager"),
+        ("management-engine-tenant-api", "tenant-api"),
+        ("management-engine-operator-api", "operator-api"),
+    ]:
+        docker_build(
+            image,
+            os.path.join(ctx.provider_dir, ".."),
+            dockerfile=os.path.join(ctx.provider_dir, "Dockerfile"),
+            target=target,
+        )
     k8s_yaml(kustomize(os.path.join(ctx.provider_dir, "config/dev")))
     metrics_port = os.getenv("METRICS_LOCAL_PORT", "")
     controller_log_url = "http://localhost:" + os.getenv("TILT_PORT", "10350") + "/r/management-engine/overview?source=runtime&term=%22controller%22%3A%22"

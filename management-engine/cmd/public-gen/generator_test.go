@@ -12,11 +12,11 @@ import (
 )
 
 func TestGenerate(t *testing.T) {
-	const source = "package v1\ntype WidgetSpec struct { Enabled bool `json:\"enabled,omitempty\"` }\n" +
+	const baseSource = "package v1\ntype WidgetSpec struct { Enabled bool `json:\"enabled,omitempty\"` }\n" +
 		"type Widget struct { Spec WidgetSpec `json:\"spec\"` }\n"
 	for _, tt := range []struct {
-		name, change, metadata, validation, module, extraConfig, wantError string
-		stale, deepcopy                                                    bool
+		name, change, metadata, validation, module, extraMarkers, wantError string
+		stale, deepcopy                                                     bool
 	}{
 		{name: "missing output and default validation"},
 		{name: "changed spec with stale public output", change: "rename", stale: true},
@@ -51,15 +51,15 @@ func TestGenerate(t *testing.T) {
 			name: "stale deepcopy cannot hide unresolved selected spec", change: "invalid-spec", deepcopy: true,
 			wantError: "undefined: Missing",
 		},
-		{name: "selected type must resolve", change: "missing", wantError: "source Widget must be a declared struct"},
+		{name: "annotated type must be a struct", change: "non-struct", wantError: "source Widget must be a declared struct"},
 		{name: "private metadata rejected", metadata: "namespace", wantError: "unsupported or duplicate metadata"},
 		{
-			name: "unknown configuration key rejected", extraConfig: "  unsupported: true\n",
-			wantError: `unknown field "unsupported"`,
+			name: "unknown marker rejected", extraMarkers: "// +nvke:public:unsupported=true\n",
+			wantError: `unknown public marker "unsupported"`,
 		},
 		{
-			name: "duplicate configuration key rejected", extraConfig: "  source: Widget\n",
-			wantError: `key "source" already set`,
+			name: "duplicate marker rejected", extraMarkers: "// +nvke:public:name=Other\n",
+			wantError: `duplicate public marker "name"`,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -85,8 +85,9 @@ func TestGenerate(t *testing.T) {
 			if metadata == "" {
 				metadata = "name"
 			}
-			write("config/public-resources.yaml", "- source: Widget\n  public: PublicWidget\n  path: /widgets\n"+
-				"  metadata: ["+metadata+"]\n"+tt.extraConfig)
+			markers := "// +nvke:public:name=PublicWidget\n// +nvke:public:path=/widgets\n" +
+				"// +nvke:public:metadata=" + metadata + "\n" + tt.extraMarkers
+			source := strings.Replace(baseSource, "type Widget struct", markers+"type Widget struct", 1)
 			write("config/crd/bases/widgets.yaml", `spec:
   group: example.test
   names: {kind: Widget, plural: widgets}
@@ -118,8 +119,9 @@ func TestGenerate(t *testing.T) {
 				write("apis/v1/widget.go", strings.ReplaceAll(source, "WidgetSpec", "ChangedSpec")+"var broken Missing\n")
 			case "invalid-spec":
 				write("apis/v1/widget.go", strings.Replace(source, "Spec WidgetSpec", "Spec Missing", 1))
-			case "missing":
-				write("apis/v1/widget.go", strings.ReplaceAll(source, "type Widget struct", "type Renamed struct"))
+			case "non-struct":
+				write("apis/v1/widget.go", strings.ReplaceAll(source,
+					"type Widget struct { Spec WidgetSpec `json:\"spec\"` }", "type Widget string"))
 			}
 			previous := map[string][]byte{}
 			for _, path := range []string{publicOutput, registryOutput} {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package public
+package publicapi
 
 import (
 	"context"
@@ -23,7 +23,7 @@ func TestSurfaces(t *testing.T) {
 	responses := map[string]any{}
 	discovery := metav1.APIResourceList{GroupVersion: "internal.nvke.nvidia.com/v1"}
 	for _, name := range []string{"nvkeclusters", "clusterreleases", "machineimages"} {
-		data, err := os.ReadFile("../config/crd/bases/internal.nvke.nvidia.com_" + name + ".yaml")
+		data, err := os.ReadFile("../../config/crd/bases/internal.nvke.nvidia.com_" + name + ".yaml")
 		require.NoError(t, err)
 		var crd apiextensionsv1.CustomResourceDefinition
 		require.NoError(t, yaml.Unmarshal(data, &crd))

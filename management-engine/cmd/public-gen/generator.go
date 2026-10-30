@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
@@ -20,14 +21,14 @@ import (
 )
 
 type resourceModel struct {
-	Source   string   `json:"source"`
-	Public   string   `json:"public"`
-	Path     string   `json:"path"`
-	Metadata []string `json:"metadata"`
+	Source   string
+	Public   string
+	Path     string
+	Metadata []string
 
-	Fields                                                            []metadataField `json:"-"`
-	Spec, Status, SpecTag, StatusTag, Group, Version, Resource, Scope string          `json:"-"`
-	NeedsSourceValidation, NeedsPublicValidation, HasStatus           bool            `json:"-"`
+	Fields                                                            []metadataField
+	Spec, Status, SpecTag, StatusTag, Group, Version, Resource, Scope string
+	NeedsSourceValidation, NeedsPublicValidation, HasStatus           bool
 }
 
 type metadataField struct{ Name, Type, Tag string }
@@ -38,29 +39,28 @@ type model struct {
 	UsesTime, UsesUID bool
 }
 
-const specField = "Spec"
+const (
+	specField         = "Spec"
+	publicNameKey     = "name"
+	publicPathKey     = "path"
+	publicMetadataKey = "metadata"
+)
 
 // readModel limits projection to approved roots and metadata. Nested spec/status types are reused.
 func readModel(root string) (model, error) {
 	var result model
-	data, err := os.ReadFile(filepath.Join(root, "config/public-resources.yaml"))
+	declarations, validations, resources, err := readSource(root)
 	if err != nil {
 		return result, err
 	}
-	if err := yaml.UnmarshalStrict(data, &result.Resources); err != nil {
-		return result, err
-	}
-	declarations, validations, err := readSource(root)
-	if err != nil {
-		return result, err
-	}
+	result.Resources = resources
 	crds, err := readCRDs(root)
 	if err != nil {
 		return result, err
 	}
 	seen := map[string]bool{}
 	allowed := map[string]metadataField{
-		"name":              {"Name", "string", "name,omitempty"},
+		publicNameKey:       {"Name", "string", "name,omitempty"},
 		"creationTimestamp": {"CreationTimestamp", "metav1.Time", "creationTimestamp,omitempty,omitzero"},
 		"deletionTimestamp": {"DeletionTimestamp", "*metav1.Time", "deletionTimestamp,omitempty"},
 		"uid":               {"UID", "types.UID", "uid,omitempty"},
@@ -132,40 +132,101 @@ func (r *resourceModel) readFields(structure *ast.StructType) error {
 }
 
 // readSource ignores previous output so removed or renamed input types can regenerate.
-func readSource(root string) (map[string]ast.Expr, map[string]bool, error) {
+func readSource(root string) (map[string]ast.Expr, map[string]bool, []resourceModel, error) {
 	declarations, validations := map[string]ast.Expr{}, map[string]bool{}
+	var resources []resourceModel
 	files, err := filepath.Glob(filepath.Join(root, "apis/v1/*.go"))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	for _, filename := range files {
 		if filepath.Base(filename) == filepath.Base(publicOutput) || strings.HasSuffix(filename, "_test.go") {
 			continue
 		}
-		file, err := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
+		file, err := parser.ParseFile(token.NewFileSet(), filename, nil, parser.ParseComments)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		for _, declaration := range file.Decls {
 			switch declaration := declaration.(type) {
 			case *ast.GenDecl:
+				if declaration.Tok != token.TYPE {
+					continue
+				}
 				for _, spec := range declaration.Specs {
 					if spec, ok := spec.(*ast.TypeSpec); ok {
 						declarations[spec.Name.Name] = spec.Type
+						if len(declaration.Specs) > 1 {
+							for line := range strings.SplitSeq(declaration.Doc.Text(), "\n") {
+								if strings.HasPrefix(strings.TrimSpace(line), "+nvke:public") {
+									return nil, nil, nil, fmt.Errorf(
+										"%s: public markers on grouped declarations must attach to individual types", filename)
+								}
+							}
+						}
+						r, marked, err := readPublicMarkers(spec.Name.Name, declaration.Doc, spec.Doc)
+						if err != nil {
+							return nil, nil, nil, fmt.Errorf("%s: %w", filename, err)
+						}
+						if marked {
+							resources = append(resources, r)
+						}
 					}
 				}
 			case *ast.FuncDecl:
 				if declaration.Name.Name == "Validate" && declaration.Recv != nil {
 					name, ok := declaration.Recv.List[0].Type.(*ast.Ident)
 					if !ok {
-						return nil, nil, fmt.Errorf("%s: Validate must have a value receiver", filename)
+						return nil, nil, nil, fmt.Errorf("%s: Validate must have a value receiver", filename)
 					}
 					validations[name.Name] = true
 				}
 			}
 		}
 	}
-	return declarations, validations, nil
+	// Public names give stable output regardless of source filenames or declaration order.
+	slices.SortFunc(resources, func(a, b resourceModel) int { return strings.Compare(a.Public, b.Public) })
+	return declarations, validations, resources, nil
+}
+
+// readPublicMarkers makes a complete set of type-local markers the explicit opt-in.
+func readPublicMarkers(source string, groups ...*ast.CommentGroup) (resourceModel, bool, error) {
+	r := resourceModel{Source: source}
+	values := map[string]string{}
+	for _, group := range groups {
+		for line := range strings.SplitSeq(group.Text(), "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "+nvke:public") {
+				continue
+			}
+			marker, ok := strings.CutPrefix(line, "+nvke:public:")
+			key, value, hasValue := strings.Cut(marker, "=")
+			value = strings.TrimSpace(value)
+			if !ok || !hasValue || value == "" {
+				return r, false, fmt.Errorf("%s: invalid public marker %q", source, line)
+			}
+			if key != publicNameKey && key != publicPathKey && key != publicMetadataKey {
+				return r, false, fmt.Errorf("%s: unknown public marker %q", source, key)
+			}
+			if _, exists := values[key]; exists {
+				return r, false, fmt.Errorf("%s: duplicate public marker %q", source, key)
+			}
+			values[key] = value
+		}
+	}
+	if len(values) == 0 {
+		return r, false, nil
+	}
+	for _, key := range []string{publicNameKey, publicPathKey, publicMetadataKey} {
+		if _, exists := values[key]; !exists {
+			return r, false, fmt.Errorf("%s: missing public marker %q", source, key)
+		}
+	}
+	r.Public, r.Path = values[publicNameKey], values[publicPathKey]
+	for field := range strings.SplitSeq(values[publicMetadataKey], ",") {
+		r.Metadata = append(r.Metadata, strings.TrimSpace(field))
+	}
+	return r, true, nil
 }
 
 // readCRDs derives storage identity and scope from existing generated CRDs.

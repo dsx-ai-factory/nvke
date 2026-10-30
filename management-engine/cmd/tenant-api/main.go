@@ -12,8 +12,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/validation"
 
+	"github.com/dsx-ai-factory/nvke/management-engine/pkg/publicapi"
 	"github.com/dsx-ai-factory/nvke/management-engine/pkg/resource"
-	"github.com/dsx-ai-factory/nvke/management-engine/public"
 )
 
 var version = "dev"
@@ -36,7 +36,7 @@ func main() {
 			return namespace, nil
 		},
 	}
-	if err := public.Run(version, public.Tenant(), cfg); err != nil {
+	if err := publicapi.Run(version, publicapi.Tenant(), cfg); err != nil {
 		slog.Error("tenant API stopped", "error", err)
 		os.Exit(1)
 	}
