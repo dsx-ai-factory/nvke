@@ -4,54 +4,28 @@
 package artifacts
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/opencontainers/go-digest"
+	"k8s.io/apimachinery/pkg/util/version"
 )
-
-// Version is a chart version of the form MAJOR.MINOR.PATCH.
-type Version struct {
-	Major, Minor, Patch uint64
-}
-
-// String returns the version as MAJOR.MINOR.PATCH.
-func (v Version) String() string {
-	return fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch)
-}
-
-func (v Version) compare(w Version) int {
-	return cmp.Or(cmp.Compare(v.Major, w.Major), cmp.Compare(v.Minor, w.Minor), cmp.Compare(v.Patch, w.Patch))
-}
 
 // VersionRange holds the chart versions from Min up to, not including, Max.
 // Min is the version the embedded values are written for; Max is the next
 // version semver lets break them.
 type VersionRange struct {
-	Min, Max Version
+	Min, Max *version.Version
 }
 
-func (r VersionRange) contains(v Version) bool {
-	return v.compare(r.Min) >= 0 && v.compare(r.Max) < 0
+func versions(min, max string) VersionRange {
+	return VersionRange{version.MustParseSemantic(min), version.MustParseSemantic(max)}
 }
 
-func parseVersion(s string) (Version, error) {
-	parts := strings.Split(s, ".")
-	if len(parts) != 3 {
-		return Version{}, fmt.Errorf("%q is not MAJOR.MINOR.PATCH", s)
-	}
-	var n [3]uint64
-	for i, p := range parts {
-		var err error
-		if n[i], err = strconv.ParseUint(p, 10, 64); err != nil {
-			return Version{}, fmt.Errorf("%q is not MAJOR.MINOR.PATCH", s)
-		}
-	}
-	return Version{n[0], n[1], n[2]}, nil
+func (r VersionRange) contains(v *version.Version) bool {
+	return v.AtLeast(r.Min) && v.LessThan(r.Max)
 }
 
 // Validate checks the artifacts in Expected, in that order, for an install on
@@ -103,10 +77,10 @@ func artifactProblems(a *Artifact, want Expectation, platform string) []string {
 	if a.ChartVersion == "" {
 		return append(problems, "chartVersion is missing")
 	}
-	v, err := parseVersion(a.ChartVersion)
+	v, err := version.ParseSemantic(a.ChartVersion)
 	switch {
 	case err != nil:
-		problems = append(problems, "chartVersion "+err.Error())
+		problems = append(problems, fmt.Sprintf("chartVersion %q is not a semantic version", a.ChartVersion))
 	case !want.ChartVersions.contains(v):
 		problems = append(problems, fmt.Sprintf("chartVersion %q is outside the supported range >=%s, <%s",
 			a.ChartVersion, want.ChartVersions.Min, want.ChartVersions.Max))

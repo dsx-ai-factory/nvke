@@ -48,16 +48,16 @@ type Expectation struct {
 var Expected = []Expectation{
 	{Name: "cwe", Kind: KindImage, Required: true},
 	{Name: "capnico-controller", Kind: KindImage, Required: true},
-	{Name: "controller-chart", Kind: KindChart, Required: true, ChartVersions: VersionRange{Version{0, 22, 0}, Version{0, 24, 0}}},
-	{Name: "nktp", Kind: KindChart, Required: true, ChartVersions: VersionRange{Version{0, 22, 0}, Version{0, 24, 0}}},
-	{Name: "postgresql", Kind: KindChart, Required: true, ChartVersions: VersionRange{Version{18, 5, 15}, Version{19, 0, 0}}},
-	{Name: "spire-crds", Kind: KindChart, Required: true, ChartVersions: VersionRange{Version{0, 6, 1}, Version{0, 7, 0}}},
-	{Name: "spire", Kind: KindChart, Required: true, ChartVersions: VersionRange{Version{0, 30, 1}, Version{0, 31, 0}}},
-	{Name: "temporal", Kind: KindChart, Required: true, ChartVersions: VersionRange{Version{0, 74, 0}, Version{0, 75, 0}}},
-	{Name: "nico", Kind: KindChart, ChartVersions: VersionRange{Version{2, 2, 2}, Version{3, 0, 0}}},
+	{Name: "controller-chart", Kind: KindChart, Required: true, ChartVersions: versions("0.22.0", "0.24.0")},
+	{Name: "nktp", Kind: KindChart, Required: true, ChartVersions: versions("0.22.0", "0.24.0")},
+	{Name: "postgresql", Kind: KindChart, Required: true, ChartVersions: versions("18.5.15", "19.0.0")},
+	{Name: "spire-crds", Kind: KindChart, Required: true, ChartVersions: versions("0.6.1", "0.7.0")},
+	{Name: "spire", Kind: KindChart, Required: true, ChartVersions: versions("0.30.1", "0.31.0")},
+	{Name: "temporal", Kind: KindChart, Required: true, ChartVersions: versions("0.74.0", "0.75.0")},
+	{Name: "nico", Kind: KindChart, ChartVersions: versions("2.2.2", "3.0.0")},
 	// stack/values/nico-prereqs.yaml targets the Bitnami postgresql chart.
-	{Name: "nico-prereqs", Kind: KindChart, RequiredWith: "nico", ChartVersions: VersionRange{Version{18, 5, 15}, Version{19, 0, 0}}},
-	{Name: "local-path-provisioner", Kind: KindChart, ChartVersions: VersionRange{Version{0, 0, 31}, Version{0, 1, 0}}},
+	{Name: "nico-prereqs", Kind: KindChart, RequiredWith: "nico", ChartVersions: versions("18.5.15", "19.0.0")},
+	{Name: "local-path-provisioner", Kind: KindChart, ChartVersions: versions("0.0.31", "0.1.0")},
 }
 
 // Release is the decoded artifact file.
