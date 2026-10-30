@@ -121,9 +121,13 @@ nvkeSystemNamespace:
 # newest controller release on GHCR, not this checkout's build. Bump it when a
 # release is cut.
 #
-# NOTE THE REPOSITORY. #827 renamed the published image to nke-controller, so
-# rc.7 onward are at <registry>/nke-controller and rc.6 and earlier ONLY at
-# .../nke/controller. Moving between them changes both lines.
+# NOTE THE REPOSITORY. The published image has been renamed twice, and each
+# name holds a different span of tags, so the repository and the tag move
+# together or the pull 404s:
+#   .../nke/controller   rc.6 and earlier only
+#   .../nke-controller   rc.7 through controller/v0.2.0 (#827)
+#   .../nvke-controller  controller/v0.3.0-rc.1 onward (#1950)
+# Images under the older names stay in place; nothing is removed.
 #
 # This block becomes redundant once the item installs a published chart rather
 # than ../charts/controller: the chart carries the repository as its default
@@ -131,8 +135,8 @@ nvkeSystemNamespace:
 # switch yet -- no published chart has the NodePort Service template this path
 # relies on, and Helm ignores an unknown value silently.
 image:
-  repository: ghcr.io/dsx-ai-factory/nvke/nke-controller
-  tag: v0.2.0-rc.2
+  repository: ghcr.io/dsx-ai-factory/nvke/nvke-controller
+  tag: v0.3.0-rc.1
   pullPolicy: IfNotPresent
 
 # EMPTY, and it must stay empty. The controller image is staged into the node's
