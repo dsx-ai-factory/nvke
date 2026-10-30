@@ -37,7 +37,7 @@ func TestResolveKubeVipAddressPrefersManifest(t *testing.T) {
 		loopbackVIPRunner("1: lo inet 192.168.101.0/32 scope host lo\n"),
 	}}
 
-	vip, err := server.resolveKubeVipAddress(runner)
+	vip, err := server.resolveKubeVipAddress(runner, defaultStaticPodBackupDir)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "192.168.100.0", vip)
@@ -46,11 +46,11 @@ func TestResolveKubeVipAddressPrefersManifest(t *testing.T) {
 func TestResolveKubeVipAddressUsesBackupManifest(t *testing.T) {
 	st := newGracefulShutdownTestState(t, true)
 	server := &NodeAgentServer{RootPath: st.tmp}
-	backup := server.kubeVipDrainedManifestPath()
+	backup := server.kubeVipParkedManifestPath(defaultStaticPodBackupDir)
 	assert.NoError(t, os.MkdirAll(filepath.Dir(backup), 0o755))
 	assert.NoError(t, os.Rename(st.manifest, backup))
 
-	vip, err := server.resolveKubeVipAddress(&MockRunner{})
+	vip, err := server.resolveKubeVipAddress(&MockRunner{}, defaultStaticPodBackupDir)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "192.168.100.0", vip)
@@ -63,7 +63,7 @@ func TestResolveKubeVipAddressFallsBackToLoopbackWhenManifestMissing(t *testing.
 		loopbackVIPRunner("1: lo inet 192.168.100.0/32 scope host lo\n"),
 	}}
 
-	vip, err := server.resolveKubeVipAddress(runner)
+	vip, err := server.resolveKubeVipAddress(runner, defaultStaticPodBackupDir)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "192.168.100.0", vip)
@@ -75,7 +75,7 @@ func TestResolveKubeVipAddressRejectsUnsupportedManifestInterface(t *testing.T) 
 	assert.NoError(t, os.MkdirAll(filepath.Dir(st.manifest), 0o755))
 	assert.NoError(t, os.WriteFile(st.manifest, []byte(kubeVipManifestWith("192.168.100.0", "eth0", "32")), 0o644))
 
-	_, err := server.resolveKubeVipAddress(&MockRunner{})
+	_, err := server.resolveKubeVipAddress(&MockRunner{}, defaultStaticPodBackupDir)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), `unsupported vip_interface "eth0"`)
@@ -206,7 +206,7 @@ func TestK8SControlPlaneNodeGracefulShutdown(t *testing.T) {
 			},
 		},
 		{
-			name:           "start stops apiserver after draining vip when requested",
+			name:           "start stops apiserver after withdrawing the vip when requested",
 			createManifest: true,
 			runner: func(st *gracefulShutdownTestState) *MockRunner {
 				return &MockRunner{Runners: []runner{
@@ -401,10 +401,10 @@ func TestK8SControlPlaneNodeGracefulShutdown(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			st := newGracefulShutdownTestState(t, tc.createManifest)
 			server := &NodeAgentServer{
-				NodeStatus:                    tc.nodeStatus,
-				RootPath:                      st.tmp,
-				drainKubeVipPollInterval:      time.Millisecond,
-				drainKubeVipSocketQuietWindow: time.Millisecond,
+				NodeStatus:               tc.nodeStatus,
+				RootPath:                 st.tmp,
+				controlPlanePollInterval: time.Millisecond,
+				kubeVipSocketQuietWindow: time.Millisecond,
 			}
 			if tc.runner != nil {
 				server.Runner = tc.runner(st)
@@ -582,11 +582,11 @@ func TestKubeVipRestore(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			st := newGracefulShutdownTestState(t, tc.createManifest)
 			server := &NodeAgentServer{
-				RootPath:                      st.tmp,
-				Persister:                     &JSONFilePersister{Path: st.stateFile},
-				drainKubeVipPollInterval:      time.Millisecond,
-				drainKubeVipSocketQuietWindow: time.Millisecond,
-				staticPodStartTimeout:         time.Millisecond,
+				RootPath:                 st.tmp,
+				Persister:                &JSONFilePersister{Path: st.stateFile},
+				controlPlanePollInterval: time.Millisecond,
+				kubeVipSocketQuietWindow: time.Millisecond,
+				staticPodStartTimeout:    time.Millisecond,
 			}
 			if tc.runner != nil {
 				server.Runner = tc.runner(st)

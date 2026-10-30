@@ -34,8 +34,8 @@ API.**
 - **Kubernetes API/etcd secrets encryption at rest** — initialize, promote
   providers, key rotation, and object rewrite, all coordinated across control-plane
   nodes.
-- **Control-plane graceful shutdown / kube-vip drain & restore** — cordon this
-  node's control-plane traffic without disrupting cluster availability.
+- **Control-plane graceful shutdown / kube-vip withdrawal & restore** — stop this
+  node serving the control-plane VIP without disrupting cluster availability.
 - **Node introspection & support** — status, node info, support-bundle collection,
   arbitrary (audited) script execution, file upload.
 

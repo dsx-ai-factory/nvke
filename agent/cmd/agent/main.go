@@ -373,6 +373,23 @@ func startSecureServer(ctx context.Context, cfg AgentConfig, agentServer *server
 	s := grpc.NewServer(serverOptions...)
 
 	grpcserver.Register(s, agentServer)
+
+	// Put back any static-pod manifest an operation parked and then died
+	// without restoring, before the listening port is even open. A node that
+	// lost its agent mid-defragmentation is out of the control plane until this
+	// runs, so it goes ahead of anything that would let a caller send the next
+	// instruction to a node still in that state.
+	//
+	// The bound covers the worst case with room to spare: three waits at the
+	// per-pod start timeout of a minute each, one each for kube-apiserver and
+	// kube-vip plus the VIP returning to loopback. Serving late beats not
+	// serving, so overrunning it logs and carries on rather than exiting.
+	reconcileCtx, cancelReconcile := context.WithTimeout(ctx, 5*time.Minute)
+	if err := agentServer.ReconcileInterruptedStaticPodParks(reconcileCtx); err != nil {
+		slog.Error("failed to restore static-pod manifests parked by an interrupted operation", "err", err)
+	}
+	cancelReconcile()
+
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", cfg.NodeServerListenPort))
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)

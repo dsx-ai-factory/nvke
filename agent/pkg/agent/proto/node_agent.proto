@@ -93,6 +93,76 @@ service NodeAgent {
   // absent target as success.
   rpc RemoveEtcdMember(RemoveEtcdMemberRequest) returns (RemoveEtcdMemberResponse) {}
 
+  // GetEtcdStatus reports the local etcd member's backend sizing and role.
+  // Read-only and side-effect free: it uses etcd's Status and MemberList
+  // maintenance APIs and reads the static-pod manifest, never the key/value
+  // API, so it is safe to poll.
+  //
+  // The caller decides whether defragmentation is warranted; this RPC only
+  // reports. reclaimable_bytes (db_total_size - db_total_size_in_use) is the
+  // figure to gate on, not db_total_size: a large file backed by live data is
+  // not reclaimable and defragmentation would not shrink it.
+  rpc GetEtcdStatus(GetEtcdStatusRequest) returns (GetEtcdStatusResponse) {}
+
+  // StartEtcdDefrag starts an asynchronous offline defragmentation of the local
+  // etcd member by restarting it so etcd defragments during bootstrap. It never
+  // calls `etcdctl defrag`, which blocks the member while it runs.
+  //
+  // The etcd manifest is never moved or modified. The restart is `crictl stop`
+  // on the etcd container, and kubelet starts a replacement from the manifest
+  // that stayed in place. etcd then defragments during bootstrap if its
+  // configured threshold is met.
+  //
+  // Because the threshold is what decides whether the restart accomplishes
+  // anything, the agent reads it from the manifest and refuses up front when
+  // reclaimable_bytes is below it, reporting OUTCOME_REFUSED without touching
+  // etcd. A restart that cannot defragment is pure downtime, so it is not
+  // attempted. The agent never edits the threshold - it is set by kubeadm when
+  // the node is provisioned - so the configured value is always honored.
+  //
+  // THE CALLER MUST NOT TAKE THIS NODE OUT OF SERVICE FIRST. The agent performs
+  // the whole per-node sequence, including the withdrawal and the return:
+  // health preflight, voting member check, leadership transfer away from the
+  // local member if it is leader, withdrawal from the control-plane VIP,
+  // stopping kube-apiserver, the etcd restart, the wait for etcd to return
+  // healthy, then kube-apiserver and kube-vip back in that order. The caller
+  // sequences members; it does not orchestrate within one. Bracketing this RPC
+  // with a withdrawal of its own would take out a node that is about to do it
+  // anyway and restore one that has already come back - in the rollout
+  // framework that means no kube-vip NodeGuard around this call.
+  //
+  // kube-apiserver is stopped as well as the VIP withdrawn because two separate
+  // paths reach this node's apiserver, and the VIP is only one of them. The
+  // kubernetes.default Service resolves to control-plane node IPs rather than
+  // to the VIP, so withdrawing the VIP alone leaves kube-proxy load balancing
+  // in-cluster clients onto an apiserver whose only etcd backend is down.
+  // Stopping the apiserver closes that path too, and the endpoint reconciler
+  // prunes and republishes this node's IP on its own as the apiserver stops and
+  // resumes renewing its masterlease - neither direction needs a caller.
+  //
+  // "Withdrawal" is not a drain in the kubectl sense. No workload is evicted
+  // and the node is not cordoned. What stops is this node's participation in
+  // serving the Kubernetes API.
+  //
+  // A member that fails to return healthy after the restart is left withdrawn
+  // on purpose, with kube-apiserver and kube-vip still parked, and reports
+  // OUTCOME_FAILED_NOT_RESTORED. Returning either one would route traffic to an
+  // apiserver with no etcd behind it rather than leaving the remaining members
+  // to carry the cluster. That case needs an operator: no agent-side action
+  // recovers an etcd that will not start from its own unmodified manifest.
+  //
+  // An agent that dies mid-sequence restores what it parked on next startup,
+  // before it serves any RPC, so an interrupted defragmentation does not leave
+  // a node permanently out of the control plane.
+  //
+  // The operation_id is an idempotency key; retrying with the same operation_id
+  // returns the existing operation instead of restarting etcd a second time.
+  rpc StartEtcdDefrag(StartEtcdDefragRequest) returns (StartEtcdDefragResponse) {}
+
+  // GetEtcdDefragStatus returns the current status for a previously started
+  // asynchronous etcd defragmentation, including how many bytes were reclaimed.
+  rpc GetEtcdDefragStatus(GetEtcdDefragStatusRequest) returns (GetEtcdDefragStatusResponse) {}
+
   // StartK8sControlPlaneNodeGracefulShutdown starts an asynchronous
   // control-plane node graceful shutdown operation. The operation_id is an
   // idempotency key; retrying with the same operation_id returns the existing
@@ -1199,6 +1269,132 @@ message RemoveEtcdMemberRequest {
 }
 
 message RemoveEtcdMemberResponse {}
+
+message GetEtcdStatusRequest {}
+
+message GetEtcdStatusResponse {
+  // Backend file size on disk. StatusResponse.DbSize, equivalently the
+  // etcd_mvcc_db_total_size_in_bytes metric.
+  int64 db_total_size_bytes = 1;
+  // Live data actually in use. StatusResponse.DbSizeInUse, equivalently the
+  // etcd_mvcc_db_total_size_in_use_in_bytes metric.
+  int64 db_total_size_in_use_bytes = 2;
+  // Space defragmentation could reclaim: db_total_size - db_total_size_in_use.
+  // Gate remediation on this, not on db_total_size.
+  int64 reclaimable_bytes = 3;
+  // The effective backend quota, so a caller can express thresholds as a
+  // fraction of quota rather than an absolute size.
+  //
+  // Source precedence: StatusResponse.DbSizeQuota when the server reports a
+  // nonzero value, otherwise the --quota-backend-bytes flag from the
+  // static-pod manifest. etcd only began reporting DbSizeQuota in 3.6, so on
+  // etcd 3.5 (Kubernetes <= 1.33) the manifest is the live source. A nonzero
+  // value therefore does not imply the flag is set, and this field must not be
+  // used to infer manifest contents.
+  //
+  // Zero means neither source supplied a quota, so etcd's built-in default
+  // applies and the real value is unknown to the agent. Callers must treat
+  // zero as "unknown" and decline to act, not divide by it: a ratio computed
+  // against zero would make every member look infinitely over threshold and
+  // trigger remediation fleet-wide.
+  int64 quota_backend_bytes = 4;
+  // True when the local member is the cluster leader. Reported for visibility
+  // and member ordering; StartEtcdDefrag transfers leadership away itself, so
+  // a caller does not have to act on this before requesting a defragmentation.
+  bool is_leader = 5;
+  // Voting (non-learner) members REGISTERED in the cluster. This is membership,
+  // not liveness: an offline voter is still counted, so this must not be used
+  // on its own to decide a restart is safe. StartEtcdDefrag probes each member
+  // separately and gates on how many answer.
+  int32 voting_member_count = 6;
+  // Hexadecimal ID of the local member.
+  string member_id = 7;
+  // Whether the local member is answering, can see a leader, and is carrying no
+  // alarm OF ITS OWN. Alarms are cluster-wide - the store is replicated by raft,
+  // so every member reports the whole set and only the member ID attached to an
+  // alarm says who raised it. A member here reads healthy while a peer is in
+  // NOSPACE, which is deliberate: that is the member a caller can still
+  // defragment.
+  bool healthy = 8;
+  // The bootstrap-defrag threshold this member is configured with, read from
+  // --bootstrap-defrag-threshold-megabytes in the static-pod manifest and
+  // converted to bytes. etcd evaluates it only at startup, so it is what
+  // decides whether restarting this member defragments anything.
+  //
+  // ZERO MEANS A RESTART WOULD DEFRAGMENT NOTHING, at any size: the flag is
+  // absent, or set to zero or less, which etcd treats as disabled. A caller
+  // must skip such a member rather than restart it, and StartEtcdDefrag
+  // refuses it for the same reason. This is how a node provisioned before the
+  // threshold was configured identifies itself, so a caller can leave it alone
+  // without having to call StartEtcdDefrag to be told no.
+  //
+  // Compare it against reclaimable_bytes to predict the outcome: below the
+  // threshold etcd declines to defragment and the restart is pure downtime.
+  // Note that clearing the threshold only means the restart WOULD defragment,
+  // not that it SHOULD - a member sitting a little over its threshold is the
+  // normal steady state, not a problem to remediate.
+  int64 bootstrap_defrag_threshold_bytes = 9;
+}
+
+message StartEtcdDefragRequest {
+  // Idempotency key. Retrying with the same value returns the in-flight or
+  // completed operation rather than restarting etcd again.
+  string operation_id = 1;
+}
+
+message StartEtcdDefragResponse {
+  NodeAgentOperationStatus operation = 1;
+}
+
+message GetEtcdDefragStatusRequest {
+  string operation_id = 1;
+}
+
+message GetEtcdDefragStatusResponse {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    // etcd restarted, came back healthy, and reclaimed space.
+    OUTCOME_RECLAIMED = 1;
+    // etcd restarted and came back healthy but reclaimed nothing: the backend
+    // was no smaller afterwards. Usually that means it is mostly live data,
+    // which defragmentation cannot shrink, so callers should surface this
+    // rather than loop. Note it also covers a backend that grew between the two
+    // measurements, so a defragmentation outrun by incoming writes reports the
+    // same thing as one that found nothing to reclaim.
+    OUTCOME_NOT_RECLAIMED = 2;
+    // A precondition failed and etcd was never restarted, so the node is
+    // untouched: the local member was unhealthy, too few voting members
+    // answered a probe to keep a quorum through the restart, leadership could
+    // not be transferred away to a reachable member, or
+    // reclaimable_bytes was below the manifest's configured bootstrap-defrag
+    // threshold so the restart could not have reclaimed anything.
+    //
+    // The quorum floor is a property of the cluster rather than a caller
+    // setting: the agent probes each voting member and requires
+    // registered_voters/2 + 2 of them to answer, which is one more than the
+    // quorum that has to survive this member going down. One- and two-member
+    // clusters need more voters than they have, so they are refused on every
+    // call.
+    OUTCOME_REFUSED = 3;
+    // The node is still out of service and needs intervention. Either etcd was
+    // restarted and did not return healthy - in which case kube-apiserver and
+    // kube-vip are deliberately left parked, because an apiserver with no etcd
+    // behind it is worse than one fewer endpoint - or the agent could not
+    // confirm the node back in service afterwards.
+    OUTCOME_FAILED_NOT_RESTORED = 4;
+    // The sequence failed after the node was taken out of service, but it was
+    // put back and the local member verified healthy again. No defragmentation
+    // happened and the node is in its pre-call state, so a rollout may stop
+    // cleanly rather than treating this member as damaged.
+    OUTCOME_FAILED_RESTORED = 5;
+  }
+  NodeAgentOperationStatus operation = 1;
+  Outcome outcome = 2;
+  string error_message = 3;
+  int64 db_total_size_bytes_before = 4;
+  int64 db_total_size_bytes_after = 5;
+  int64 reclaimed_bytes = 6;
+}
 
 message OpenVSwitchReconciliationResult {
   enum Outcome {
