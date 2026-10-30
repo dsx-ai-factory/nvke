@@ -76,9 +76,8 @@ func CredentialsFromEnv(kind TargetKind, spire sitespec.Spire) (Credentials, err
 	if len(problems) > 0 {
 		return Credentials{}, errors.New(strings.Join(problems, "\n"))
 	}
-	// Secret data is base64, so both forms are masked. The connection string
-	// is registered whole: base64 of the URL does not contain base64 of the password.
-	for _, v := range []string{c.DatabasePassword, connectionString(c.DatabasePassword), c.NicoToken, c.NodePassword, string(c.SpireCAKey)} {
+	// Secret data is base64, so both forms are masked.
+	for _, v := range []string{c.DatabasePassword, c.NicoToken, c.NodePassword, string(c.SpireCAKey)} {
 		redact.RegisterSecret(v)
 		redact.RegisterSecret(base64.StdEncoding.EncodeToString([]byte(v)))
 	}

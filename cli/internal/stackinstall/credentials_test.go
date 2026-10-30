@@ -184,7 +184,7 @@ func TestCredentialsFromEnvRegistersWithRedact(t *testing.T) {
 	_, err := CredentialsFromEnv(Site, spire)
 	require.NoError(t, err)
 
-	for _, v := range []string{"redact-db-pw-7f3a", connectionString("redact-db-pw-7f3a"), "redact-token-7f3a", "redact-node-pw-7f3a", "redact-key-7f3a"} {
+	for _, v := range []string{"redact-db-pw-7f3a", "redact-token-7f3a", "redact-node-pw-7f3a", "redact-key-7f3a"} {
 		assert.Equal(t, redact.Placeholder, redact.Text(v), v)
 		encoded := base64.StdEncoding.EncodeToString([]byte(v))
 		assert.Equal(t, redact.Placeholder, redact.Text(encoded), encoded)

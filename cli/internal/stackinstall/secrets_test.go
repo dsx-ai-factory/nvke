@@ -5,6 +5,7 @@ package stackinstall
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"io"
 	"maps"
@@ -20,6 +21,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/yaml"
+
+	"github.com/dsx-ai-factory/nvke/cli/internal/redact"
 )
 
 var (
@@ -82,16 +85,16 @@ func TestCredentialSecretsSite(t *testing.T) {
 				assert.Equal(t, "Secret", s.Kind)
 				assert.Equal(t, corev1.SecretTypeOpaque, s.Type)
 			}
-			assert.Equal(t, []byte("secrets-db-pw"), find(t, secrets, postgresNamespace, databaseSecret).Data[postgresPasswordKey])
-			tenant := find(t, secrets, controllerNamespace, tenantSecret)
+			assert.Equal(t, []byte("secrets-db-pw"), find(t, secrets, "postgres", "nvke-database").Data["postgres-password"])
+			tenant := find(t, secrets, "nvke-controller", "dgxc-tenant-credentials")
 			assert.Equal(t, []byte("secrets-user"), tenant.Data["user"])
 			assert.Equal(t, []byte("secrets-node-pw"), tenant.Data["password"])
-			nico := find(t, secrets, capnicoNamespace, nicoSecret)
+			nico := find(t, secrets, "capnico-system", "nico-credentials")
 			assert.Equal(t, map[string][]byte{
 				"endpoint": []byte(testNICo.Endpoint), "orgID": []byte(testNICo.OrgID), "apiName": []byte(testNICo.APIName), "token": []byte("secrets-token"),
 			}, nico.Data)
 			if tt.creds.SpireCACert != nil {
-				ca := find(t, secrets, spireNamespace, spireCASecret)
+				ca := find(t, secrets, "spire-server", "spire-upstream-ca")
 				assert.Equal(t, ca.Data["tls.crt"], ca.Data["bundle.crt"])
 				assert.Equal(t, []byte("secrets-ca-key"), ca.Data["tls.key"])
 			}
@@ -103,9 +106,9 @@ func TestCredentialSecretsTemporalKey(t *testing.T) {
 	secrets, err := CredentialSecrets(testCredentials, testNICo)
 	require.NoError(t, err)
 
-	temporal := find(t, secrets, temporalNamespace, databaseSecret)
+	temporal := find(t, secrets, "temporal", "nvke-database")
 
-	assert.Equal(t, map[string][]byte{postgresPasswordKey: []byte("secrets-db-pw")}, temporal.Data)
+	assert.Equal(t, map[string][]byte{"postgres-password": []byte("secrets-db-pw")}, temporal.Data)
 	assert.NotContains(t, temporal.Data, "password")
 }
 
@@ -124,7 +127,9 @@ func TestCredentialSecretsUseData(t *testing.T) {
 func TestConnectionStringEscapes(t *testing.T) {
 	password := "p@ss:w/o?r#d%"
 
-	u, err := url.Parse(connectionString(password))
+	r, err := readSecretRefs()
+	require.NoError(t, err)
+	u, err := url.Parse(r.connectionString(password))
 
 	require.NoError(t, err)
 	got, ok := u.User.Password()
@@ -176,85 +181,25 @@ func TestCredentialSecretsRefusesEmptyNICoAPI(t *testing.T) {
 	}
 }
 
-// TestCredentialSecretsMatchStack keeps the Go constants equal to what the values files
-// and the namespaces manifest say.
-func TestCredentialSecretsMatchStack(t *testing.T) {
-	var postgresql struct {
-		NamespaceOverride string `json:"namespaceOverride"`
-		FullnameOverride  string `json:"fullnameOverride"`
-		Auth              struct {
-			Username       string `json:"username"`
-			ExistingSecret string `json:"existingSecret"`
-			SecretKeys     struct {
-				AdminPasswordKey string `json:"adminPasswordKey"`
-			} `json:"secretKeys"`
-		} `json:"auth"`
-	}
-	readValues(t, "postgresql.yaml", &postgresql)
-	assert.Equal(t, postgresNamespace, postgresql.NamespaceOverride)
-	assert.Equal(t, postgresql.FullnameOverride+"."+postgresNamespace+".svc.cluster.local:5432", dbHost)
-	assert.Equal(t, dbUser, postgresql.Auth.Username)
-	assert.Equal(t, databaseSecret, postgresql.Auth.ExistingSecret)
-	assert.Equal(t, postgresPasswordKey, postgresql.Auth.SecretKeys.AdminPasswordKey)
-
-	type sql struct {
-		ExistingSecret string `json:"existingSecret"`
-		SecretKey      string `json:"secretKey"`
-	}
-	var temporal struct {
-		Server struct {
-			Config struct {
-				Persistence struct {
-					Default struct {
-						SQL sql `json:"sql"`
-					} `json:"default"`
-					Visibility struct {
-						SQL sql `json:"sql"`
-					} `json:"visibility"`
-				} `json:"persistence"`
-			} `json:"config"`
-		} `json:"server"`
-	}
-	readValues(t, "temporal.yaml", &temporal)
-	for _, store := range []sql{temporal.Server.Config.Persistence.Default.SQL, temporal.Server.Config.Persistence.Visibility.SQL} {
-		assert.Equal(t, sql{databaseSecret, postgresPasswordKey}, store)
-	}
-
-	var controller struct {
-		NamespaceOverride string `json:"namespaceOverride"`
-		Secrets           struct {
-			DBSecretName             string `json:"dbSecretName"`
-			DBSecretKey              string `json:"dbSecretKey"`
-			DgxcTenantCredSecretName string `json:"dgxcTenantCredSecretName"`
-		} `json:"secrets"`
-		AppDB struct {
-			URL          string `json:"url"`
-			DBName       string `json:"dbName"`
-			PostgresUser string `json:"postgresUser"`
-			SSLMode      string `json:"sslMode"`
-		} `json:"appDb"`
-	}
-	readValues(t, "controller.yaml", &controller)
-	assert.Equal(t, controllerNamespace, controller.NamespaceOverride)
-	assert.Equal(t, databaseSecret, controller.Secrets.DBSecretName)
-	assert.Equal(t, connectionStringKey, controller.Secrets.DBSecretKey)
-	assert.Equal(t, tenantSecret, controller.Secrets.DgxcTenantCredSecretName)
-	assert.Equal(t, dbHost, controller.AppDB.URL)
-	assert.Equal(t, dbName, controller.AppDB.DBName)
-	assert.Equal(t, dbUser, controller.AppDB.PostgresUser)
-	assert.Equal(t, dbSSLMode, controller.AppDB.SSLMode)
-
+// TestCredentialSecretsNamespacesExist checks every Secret lands in a
+// namespace that manifests/namespaces.yaml creates.
+func TestCredentialSecretsNamespacesExist(t *testing.T) {
+	secrets, err := CredentialSecrets(withCA(testCredentials), testNICo)
+	require.NoError(t, err)
 	namespaces := manifestNamespaces(t)
-	for _, ns := range []string{postgresNamespace, temporalNamespace, controllerNamespace, capnicoNamespace, spireNamespace} {
-		assert.Contains(t, namespaces, ns)
+	for _, s := range secrets {
+		assert.Contains(t, namespaces, s.Namespace, s.Name)
 	}
 }
 
-func readValues(t *testing.T, name string, into any) {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join("stack", "values", name))
+func TestCredentialSecretsRegisterConnectionString(t *testing.T) {
+	_, err := CredentialSecrets(testCredentials, testNICo)
 	require.NoError(t, err)
-	require.NoError(t, yaml.Unmarshal(data, into), name)
+	r, err := readSecretRefs()
+	require.NoError(t, err)
+	conn := r.connectionString(testCredentials.DatabasePassword)
+	assert.Equal(t, redact.Placeholder, redact.Text(conn))
+	assert.Equal(t, redact.Placeholder, redact.Text(base64.StdEncoding.EncodeToString([]byte(conn))))
 }
 
 func manifestNamespaces(t *testing.T) []string {
