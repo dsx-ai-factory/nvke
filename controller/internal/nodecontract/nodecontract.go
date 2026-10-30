@@ -16,6 +16,8 @@ import (
 
 	"github.com/blang/semver/v4"
 
+	"github.com/dsx-ai-factory/nvke/auth/authn"
+
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 )
 
@@ -38,6 +40,12 @@ type Contracts struct {
 	CNIPackagePrefix string
 	// ControllerCABundlePath is where the controller client CA bundle lands on the node.
 	ControllerCABundlePath string
+	// ControllerAudience is the JWT audience the agent requests in TLS/JWT mode,
+	// passed as --controller-audience. It is empty for the old form: that flag
+	// arrived with the new form in #1565, and an agent older than that rejects
+	// an unknown flag and fails to start. An empty value means pass no flag and
+	// let the agent keep its own default, which is the legacy audience.
+	ControllerAudience string
 }
 
 func oldForm() Contracts {
@@ -47,6 +55,7 @@ func oldForm() Contracts {
 		EnvFilePath:            config.NodeAgentConfigPath,
 		CNIPackagePrefix:       "nke-cni-",
 		ControllerCABundlePath: config.NodeAgentControllerCAPath,
+		ControllerAudience:     "",
 	}
 }
 
@@ -57,6 +66,7 @@ func newForm() Contracts {
 		EnvFilePath:            "/etc/default/nvke-agent",
 		CNIPackagePrefix:       "nvke-cni-",
 		ControllerCABundlePath: "/etc/nvke/controller-ca.crt",
+		ControllerAudience:     authn.NodeAgentAudience,
 	}
 }
 

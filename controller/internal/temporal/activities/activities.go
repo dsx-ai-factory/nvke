@@ -81,6 +81,11 @@ func (a *Activities) nodeAgentBootstrapFiles(node db.Node) ([]db.CloudInitFile, 
 	}
 	if node.NodeAgentTLSJWTEnabled {
 		args = append(args, "--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url="+a.cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)
+		// Only a new-form agent understands the flag, so an empty audience means
+		// send none and let the agent keep requesting the legacy one.
+		if contracts.ControllerAudience != "" {
+			args = append(args, "--controller-audience="+contracts.ControllerAudience)
+		}
 	}
 	// The controller dials such a node in plaintext, so the agent must serve plaintext too.
 	if !node.SpiffeEnabled && !node.NodeAgentExternalMTLSEnabled {
