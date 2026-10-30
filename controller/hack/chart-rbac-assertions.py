@@ -28,7 +28,7 @@ def granted(rule_set, api_group, resource, verb, resource_name=None):
             continue
         if verb not in (rule.get("verbs") or []):
             continue
-        if resource_name is not None and rule.get("resourceNames") != [resource_name]:
+        if resource_name is not None and resource_name not in (rule.get("resourceNames") or []):
             continue
         return True
     return False
@@ -85,6 +85,8 @@ def main():
     ]
     command = [
         *base_command,
+        "--set",
+        "controllers.bootstrap.enabled=true",
         "--set",
         "spiffe.capiManagerSubject=spiffe://exchange.example/capi-manager",
         "--set",
@@ -244,11 +246,11 @@ def main():
             return 1
 
     roles = {
-        (document.get("kind"), document["metadata"]["name"]): document
+        (document.get("kind"), document["metadata"].get("namespace", ""), document["metadata"]["name"]): document
         for document in inner
         if document and document.get("kind") in ("ClusterRole", "Role")
     }
-    cluster_role = roles.get(("ClusterRole", tenant_rbac_name))
+    cluster_role = roles.get(("ClusterRole", "", tenant_rbac_name))
     if cluster_role is None:
         print(f"ERROR: no {tenant_rbac_name} ClusterRole in the {RBAC_CONFIG_MAP} manifest", file=sys.stderr)
         return 1
@@ -437,6 +439,41 @@ def main():
             "kubernetes.io/kubelet-serving",
             "kubelet-serving approval",
         ),
+        (
+            "rbac.authorization.k8s.io",
+            "clusterrolebindings",
+            "create",
+            None,
+            "bootstrap ClusterRoleBinding creation",
+        ),
+        (
+            "rbac.authorization.k8s.io",
+            "clusterrolebindings",
+            "get",
+            "nvke-bootstrap-node-bootstrapper",
+            "bootstrap ClusterRoleBinding reconciliation",
+        ),
+        (
+            "rbac.authorization.k8s.io",
+            "clusterrolebindings",
+            "patch",
+            "nvke-bootstrap-kubeadm-get-nodes",
+            "bootstrap ClusterRoleBinding reconciliation",
+        ),
+        (
+            "rbac.authorization.k8s.io",
+            "clusterroles",
+            "bind",
+            "system:node-bootstrapper",
+            "bootstrap ClusterRoleBinding creation",
+        ),
+        (
+            "rbac.authorization.k8s.io",
+            "clusterroles",
+            "bind",
+            "kubeadm:get-nodes",
+            "bootstrap ClusterRoleBinding creation",
+        ),
     ]
     missing = [
         f"{group or '<core>'}/{resource} ({verb}) - needed by {reason}"
@@ -454,7 +491,128 @@ def main():
             print(f"ERROR: {tenant_rbac_name} ClusterRole is missing {permission}", file=sys.stderr)
         return 1
 
+    namespaced_required = {
+        "kube-system": (
+            (
+                "rolebindings",
+                ("create", None),
+                ("get", "nvke-bootstrap-kubeadm-nodes-kubeadm-config"),
+                ("patch", "nvke-bootstrap-kube-proxy"),
+            ),
+            (
+                "roles",
+                ("bind", "kubeadm:nodes-kubeadm-config"),
+                ("bind", "kubeadm:kubelet-config"),
+                ("bind", "kube-proxy"),
+            ),
+        ),
+        "kube-public": (
+            (
+                "rolebindings",
+                ("create", None),
+                ("get", "nvke-bootstrap-kubeadm-bootstrap-signer-clusterinfo"),
+                ("patch", "nvke-bootstrap-kubeadm-bootstrap-signer-clusterinfo"),
+            ),
+            (
+                "roles",
+                ("bind", "kubeadm:bootstrap-signer-clusterinfo"),
+            ),
+        ),
+    }
+    for namespace, resources in namespaced_required.items():
+        role = roles.get(("Role", namespace, tenant_rbac_name))
+        if role is None:
+            print(f"ERROR: no {tenant_rbac_name} Role in namespace {namespace}", file=sys.stderr)
+            return 1
+        for resource in resources:
+            for verb, resource_name in resource[1:]:
+                if not granted(
+                    role.get("rules") or [],
+                    "rbac.authorization.k8s.io",
+                    resource[0],
+                    verb,
+                    resource_name,
+                ):
+                    print(
+                        f"ERROR: {tenant_rbac_name} Role in {namespace} is missing "
+                        f"rbac.authorization.k8s.io/{resource[0]} ({verb}, {resource_name or '*'})",
+                        file=sys.stderr,
+                    )
+                    return 1
+
+    disabled_rendered = subprocess.run(base_command, check=False, capture_output=True, text=True)
+    if disabled_rendered.returncode != 0:
+        sys.stderr.write(disabled_rendered.stderr)
+        return disabled_rendered.returncode
+    disabled_documents = [document for document in yaml.safe_load_all(disabled_rendered.stdout) if document]
+    disabled_config_map = next(
+        document
+        for document in disabled_documents
+        if document.get("kind") == "ConfigMap" and document["metadata"]["name"] == RBAC_CONFIG_MAP
+    )
+    disabled_inner = [
+        document for document in yaml.safe_load_all(disabled_config_map["data"]["manifest.yaml"]) if document
+    ]
+    disabled_roles = {
+        (document.get("kind"), document["metadata"].get("namespace", ""), document["metadata"]["name"]): document
+        for document in disabled_inner
+        if document.get("kind") in ("ClusterRole", "Role")
+    }
+    bootstrap_permissions = {
+        ("ClusterRole", ""): (
+            ("clusterrolebindings", "create", None),
+            ("clusterrolebindings", "get", "nvke-bootstrap-node-bootstrapper"),
+            ("clusterrolebindings", "patch", "nvke-bootstrap-kubeadm-get-nodes"),
+            ("clusterroles", "bind", "system:node-bootstrapper"),
+            ("clusterroles", "bind", "kubeadm:get-nodes"),
+        ),
+        ("Role", "kube-system"): (
+            ("rolebindings", "create", None),
+            ("rolebindings", "get", "nvke-bootstrap-kubeadm-nodes-kubeadm-config"),
+            ("rolebindings", "patch", "nvke-bootstrap-kube-proxy"),
+            ("roles", "bind", "kubeadm:nodes-kubeadm-config"),
+            ("roles", "bind", "kubeadm:kubelet-config"),
+            ("roles", "bind", "kube-proxy"),
+        ),
+    }
+    for (kind, namespace), permissions in bootstrap_permissions.items():
+        role = disabled_roles.get((kind, namespace, tenant_rbac_name))
+        if role is None:
+            print(f"ERROR: no {tenant_rbac_name} {kind} in namespace {namespace}", file=sys.stderr)
+            return 1
+        for resource, verb, resource_name in permissions:
+            if granted(
+                role.get("rules") or [],
+                "rbac.authorization.k8s.io",
+                resource,
+                verb,
+                resource_name,
+            ):
+                print(
+                    f"ERROR: {tenant_rbac_name} {kind} in {namespace or '<cluster>'} grants "
+                    f"bootstrap permission {resource} ({verb}, {resource_name or '*'}) "
+                    "when controllers.bootstrap.enabled=false",
+                    file=sys.stderr,
+                )
+                return 1
+
+    disabled_kube_public_objects = [
+        document
+        for document in disabled_inner
+        if document.get("kind") in ("Role", "RoleBinding")
+        and document["metadata"].get("namespace") == "kube-public"
+        and document["metadata"]["name"] == tenant_rbac_name
+    ]
+    if disabled_kube_public_objects:
+        print(
+            f"ERROR: {tenant_rbac_name} kube-public Role and RoleBinding must not render "
+            "when controllers.bootstrap.enabled=false",
+            file=sys.stderr,
+        )
+        return 1
+
     print(f"{tenant_rbac_name} ClusterRole grants all {len(required)} required permissions")
+    print("bootstrap tenant RBAC follows controllers.bootstrap.enabled")
     print("nvke:capi-cluster-admin uses all configured CAPI controller subjects")
     print("token exchange requires explicit subjects for every CAPI controller")
     print(f"{tenant_rbac_name} bindings take spiffe.controllerSubject over spiffe.cweSubject, render the same for either, and need one with token exchange")
