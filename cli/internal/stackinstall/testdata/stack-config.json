@@ -1,0 +1,12 @@
+{
+  "mirror": "mirror.example.internal:5000/nvke",
+  "clientNetworks": ["10.0.0.0/24", "192.0.2.0/24"],
+  "credentials": {
+    "databasePasswordFile": "/run/secrets/nvke/database-password",
+    "nicoTokenFile": "/run/secrets/nvke/nico-token",
+    "nodeUser": "nvke",
+    "nodePasswordFile": "/run/secrets/nvke/node-password",
+    "spireCACertFile": "/run/secrets/nvke/spire-ca.crt",
+    "spireCAKeyFile": "/run/secrets/nvke/spire-ca.key"
+  }
+}

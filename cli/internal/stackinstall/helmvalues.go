@@ -87,7 +87,7 @@ func spireValues(v inputs) (map[string]any, error) {
 		// false it writes no Secret.
 		server["upstreamAuthority"] = map[string]any{"disk": map[string]any{
 			"enabled": true,
-			"secret":  map[string]any{"create": false, "name": "spire-upstream-ca", "data": map[string]any{"bundle": "bundle.crt"}},
+			"secret":  map[string]any{"create": false, "name": spireCASecret, "data": map[string]any{"bundle": "bundle.crt"}},
 		}}
 	}
 	// A values file replaces a list, so the committed entries are restated.
