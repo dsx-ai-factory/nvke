@@ -1,0 +1,34 @@
+NVKE is installed.
+
+  Controller   {{ .Values.namespaces.controller }}
+  Temporal     {{ .Release.Namespace }}
+{{- if .Values.postgresql.enabled }}
+  PostgreSQL   {{ .Values.namespaces.postgres }}  ({{ .Values.database.host }})
+{{- end }}
+
+Check it:
+
+  kubectl -n {{ .Values.namespaces.controller }} rollout status deployment/nke-controller
+  kubectl -n {{ .Values.namespaces.controller }} exec deploy/nke-controller -- \
+    wget -qO- http://localhost:8080/readyz
+
+/readyz reports PostgreSQL and Temporal, so an "ok" there means both are
+actually reachable. The API also answers on any node address at port
+{{ (index .Values "nvke-controller").service.nodePort }}.
+
+{{- if and .Values.tenantCredentials.create (not (index .Values "nvke-controller").secrets.dgxcTenantCredSecretName) }}
+
+WARNING: tenantCredentials.create is on, but
+nvke-controller.secrets.dgxcTenantCredSecretName is empty — so the Secret is
+written and never read, and every tenant create will fail at user-data
+rendering with "User-data rendering refused". Set it to
+"{{ .Values.tenantCredentials.name }}".
+{{- end }}
+{{- if ne .Release.Namespace "nvke-system" }}
+
+NOTE: this release is in {{ .Release.Namespace }}, not nvke-system. Temporal's
+chart has no namespaceOverride, so Temporal landed here too — which means
+nvke-controller.temporal.host must be
+temporal-frontend.{{ .Release.Namespace }}.svc.cluster.local. It is currently
+{{ (index .Values "nvke-controller").temporal.host }}.
+{{- end }}

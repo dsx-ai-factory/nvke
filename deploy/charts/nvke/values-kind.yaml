@@ -1,0 +1,47 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What a kind cluster changes. Layer over values.yaml:
+#
+#   helm upgrade --install nvke deploy/charts/nvke \
+#     --namespace nvke-system --create-namespace \
+#     --values deploy/charts/nvke/values.yaml \
+#     --values deploy/charts/nvke/values-kind.yaml \
+#     --set database.password=<pick one> \
+#     --set nvke-controller.profiles.image.repository=<repo> \
+#     --set nvke-controller.profiles.image.tag=<tag>
+#
+# SPIRE is NOT turned off here, and the attestation method is left at tpm. A
+# kind node has no TPM, but nothing on a kind cluster attests by TPM: the
+# seed's own workloads attest with k8sPSAT, and the TPM allowlist is only read
+# for nodes the controller provisions. This is the configuration the CAPD
+# end-to-end lane runs, so it is the one known to come up on kind.
+#
+# The controller does block on "no identity issued" until SPIRE has issued its
+# SVID, so install ../spire first and wait for it. That is step 1 of the
+# sequence; this chart is step 2.
+
+postgresql:
+  primary:
+    persistence:
+      # kind ships the rancher local-path provisioner as the default
+      # StorageClass. 40Gi on a laptop is not wanted.
+      size: 8Gi
+    resources:
+      limits:
+        memory: 512Mi
+      requests:
+        memory: 128Mi
+
+temporal:
+  server:
+    # One node, so extra replicas only sit Pending.
+    replicaCount: 1
+  web:
+    replicaCount: 1
+
+nvke-controller:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi

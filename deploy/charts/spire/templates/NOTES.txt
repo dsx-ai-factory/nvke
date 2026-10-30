@@ -1,0 +1,27 @@
+SPIRE is installed.
+
+  Trust domain   {{ .Values.global.spire.trustDomain }}
+  JWT issuer     {{ .Values.global.spire.jwtIssuer }}
+  Server         {{ .Values.namespaces.server }}
+  Agent, CSI     {{ .Values.namespaces.system }}
+
+Check it:
+
+  kubectl -n {{ .Values.namespaces.server }} rollout status statefulset/spire-server
+  kubectl -n {{ .Values.namespaces.system }} rollout status daemonset/spire-agent
+{{- if .Values.oidcUpstreamCA.create }}
+  kubectl -n {{ .Values.namespaces.server }} wait --for=condition=Ready certificate/{{ .Values.oidcUpstreamCA.name }}
+{{- end }}
+{{- if eq .Values.global.spire.trustDomain "example.org" }}
+
+The trust domain is still the placeholder example.org. Set a real one on BOTH
+global.spire.trustDomain and spire.spire-server.adminIDs — an adminID whose
+trust domain is not the server's matches nothing, and the NVKE controller then
+has no admin access to SPIRE without saying so.
+{{- end }}
+{{- if and (dig "spire-server" "nodeAttestor" "tpmDirect" "enabled" false .Values.spire) (not .Values.tpmPubhashes.create) }}
+
+WARNING: the tpmDirect node attestor is on but the tpm-pubhashes ConfigMap is
+not created here. The attestor mounts it optional, so this is not a startup
+failure — but nothing will attest until something creates it.
+{{- end }}
