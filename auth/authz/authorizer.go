@@ -1,18 +1,21 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package authz holds the NVKE API authorization: the client an API calls, the
-// Authorizer interface every backend implements, and the isolation check and
-// tenant ID rules every backend shares.
+// Package authz holds the NVKE API authorization: the Client an API calls to
+// authorize each request, the Authorizer interface every backend implements,
+// and the isolation check and tenant ID rules every backend shares. WriteError
+// answers a Client's refusals over net/http.
 //
 // A backend is the Authorizer a Client asks for each decision, such as
 // LocalBundle (authz/localbundle), which evaluates Cedar policy from files the
 // deployer mounts.
 //
+// An API describes each request as a Target and calls Client.Check. The Client
+// turns it into a Query for the backend, and the backend answers with a
+// Decision. An API never builds a Query or reads a Decision.
+//
 // The backend owns tenancy. It reads the caller's tenant, decides who is an
-// operator, and refuses a cross-tenant request before any policy runs. The
-// client never reads the caller's token: it checks the query, calls the
-// backend, and turns the outcome into an error.
+// operator, and refuses a cross-tenant request before any policy runs.
 package authz
 
 import (
@@ -100,13 +103,13 @@ const (
 type Decision struct {
 	Outcome Outcome
 
-	// Caller is the caller's tenancy. On an allow, the API uses it to filter a
-	// list, record a create's owner and log by tenant. On a refusal, it is for
-	// logs only.
+	// Caller is the caller's tenancy. On an allow, Check puts it on the
+	// context, and the API uses it to filter a list, record a create's owner
+	// and log by tenant. On a refusal, it is for logs only.
 	Caller Caller
 
-	// Reasons name the policies behind the outcome. The API logs them and
-	// never returns them to the caller.
+	// Reasons name the policies behind the outcome. Check logs them and never
+	// returns them to the caller.
 	Reasons []string
 }
 
