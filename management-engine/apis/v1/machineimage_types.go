@@ -67,6 +67,9 @@ type NICoBoot struct {
 // +kubebuilder:printcolumn:name="Arch",type=string,JSONPath=".spec.architecture"
 // +kubebuilder:printcolumn:name="Variant",type=string,JSONPath=".spec.variant"
 // +kubebuilder:printcolumn:name="Built",type=string,JSONPath=".spec.buildDate"
+// +nvke:public:name=PublicMachineImage
+// +nvke:public:path=/v1/machine-images
+// +nvke:public:metadata=name,creationTimestamp,deletionTimestamp,uid
 type MachineImage struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

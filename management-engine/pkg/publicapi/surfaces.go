@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package public hosts the tenant and operator APIs and selects their resources.
+// Package publicapi hosts the tenant and operator APIs and selects their resources.
 // Generated registrations bind public types to datastore resources.
 // Tenant and Operator choose which registrations each server mounts.
-package public
+package publicapi
 
 import "github.com/dsx-ai-factory/nvke/management-engine/pkg/resource"
 

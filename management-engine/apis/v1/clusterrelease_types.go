@@ -27,6 +27,9 @@ type ClusterReleaseSpec struct {
 // +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=".spec.machineImageRef.name"
 // +kubebuilder:printcolumn:name="Deprecated",type=boolean,JSONPath=".spec.lifecycle.deprecated"
+// +nvke:public:name=PublicClusterRelease
+// +nvke:public:path=/v1/cluster-releases
+// +nvke:public:metadata=name,creationTimestamp,deletionTimestamp,uid
 type ClusterRelease struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

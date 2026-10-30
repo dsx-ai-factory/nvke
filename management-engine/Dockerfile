@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Build the manager and REST binaries
+# Share dependencies and source across the manager and REST builds.
 FROM golang:1.27.3@sha256:957861185dbf29d93668ace41e011d091c6e779953d47f0316ef2cc58e28fe2b AS builder
 ENV GOPROXY=https://proxy.golang.org|direct
 ARG VERSION=dev
@@ -20,16 +20,30 @@ COPY management-engine/ ./
 COPY controller/api/ /workspace/controller/api/
 
 # Build for the requested platform; an unset TARGETARCH uses the builder architecture.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -buildvcs=false -trimpath -ldflags "-X main.version=${VERSION} -s -w -buildid=" -o manager ./cmd
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -buildvcs=false -trimpath -ldflags "-X main.version=${VERSION} -s -w -buildid=" -o tenant-api ./cmd/tenant-api
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -buildvcs=false -trimpath -ldflags "-X main.version=${VERSION} -s -w -buildid=" -o operator-api ./cmd/operator-api
+FROM builder AS manager-builder
+RUN --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -buildvcs=false -trimpath -ldflags "-X main.version=${VERSION} -s -w -buildid=" -o manager ./cmd
 
-# Use distroless as minimal base image to package the manager binary
+FROM builder AS tenant-api-builder
+RUN --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -buildvcs=false -trimpath -ldflags "-X main.version=${VERSION} -s -w -buildid=" -o tenant-api ./cmd/tenant-api
+
+FROM builder AS operator-api-builder
+RUN --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -buildvcs=false -trimpath -ldflags "-X main.version=${VERSION} -s -w -buildid=" -o operator-api ./cmd/operator-api
+
+# Each runtime image contains only its service binary.
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/static:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
+FROM gcr.io/distroless/static:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3 AS runtime
 WORKDIR /
-COPY --from=builder /workspace/management-engine/manager .
-COPY --from=builder /workspace/management-engine/tenant-api /workspace/management-engine/operator-api ./
 USER 65532:65532
 
+FROM runtime AS tenant-api
+COPY --from=tenant-api-builder /workspace/management-engine/tenant-api .
+ENTRYPOINT ["/tenant-api"]
+
+FROM runtime AS operator-api
+COPY --from=operator-api-builder /workspace/management-engine/operator-api .
+ENTRYPOINT ["/operator-api"]
+
+# Keep manager last so builds without --target preserve the existing manager image.
+FROM runtime AS manager
+COPY --from=manager-builder /workspace/management-engine/manager .
 ENTRYPOINT ["/manager"]

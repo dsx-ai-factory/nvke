@@ -158,6 +158,9 @@ type NVKEClusterStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
+// +nvke:public:name=Cluster
+// +nvke:public:path=/v1/clusters
+// +nvke:public:metadata=name,creationTimestamp,deletionTimestamp,uid
 type NVKECluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

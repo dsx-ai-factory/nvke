@@ -12,8 +12,9 @@ MANAGER_LDFLAGS := -X 'main.version=$(VERSION)' $(RELEASE_LDFLAGS)
 GO_TEST_FLAGS ?=
 .DEFAULT_GOAL := help
 
-# Image URL to use all building/pushing image targets
-IMG ?= management-engine:dev
+# Runtime target and image used by the container build/push targets.
+DOCKER_TARGET ?= manager
+IMG ?= management-engine$(if $(filter-out manager,$(DOCKER_TARGET)),-$(DOCKER_TARGET)):dev
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -89,7 +90,7 @@ test: test-api test-integration test-controller ## Run API, unit, resource integ
 .PHONY: test-unit
 test-unit: fmt vet ## Run unit tests without a Kubernetes API server.
 	@$(COVERAGE_MKDIR)
-	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,unit) -covermode=$(GO_COVER_MODE) ./internal/... ./cmd/... ./pkg/... ./public/...
+	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,unit) -covermode=$(GO_COVER_MODE) ./internal/... ./cmd/... ./pkg/...
 
 .PHONY: test-integration
 test-integration: ENVTEST_K8S_VERSION=1.37.0
@@ -143,8 +144,8 @@ run: build ## Run against the management API selected by MANAGER_ARGS.
 	$(BIN_DIR)/management-engine $(MANAGER_ARGS)
 
 .PHONY: docker-build
-docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -f Dockerfile --build-arg VERSION=$(VERSION) -t ${IMG} ..
+docker-build: ## Build the selected runtime image (DOCKER_TARGET defaults to manager).
+	$(CONTAINER_TOOL) build -f Dockerfile --target $(DOCKER_TARGET) --build-arg VERSION=$(VERSION) -t ${IMG} ..
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.

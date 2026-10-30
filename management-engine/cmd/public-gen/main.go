@@ -1,31 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // public-gen generates public API types and registrations from Go types in apis/v1,
-// CRDs in config/crd/bases, and resource selections in config/public-resources.yaml.
+// CRDs in config/crd/bases, and +nvke:public markers on the selected source types.
 // Run from the module root. The -check flag reports generated-file drift without writing files.
 package main
 
 import (
 	"bytes"
-	_ "embed"
 	"flag"
 	"fmt"
 	"go/format"
 	"os"
 	"path/filepath"
-	"text/template"
 )
 
 const (
 	publicOutput   = "apis/v1/zz_generated.public.go"
-	registryOutput = "public/zz_generated.registrations.go"
+	registryOutput = "pkg/publicapi/zz_generated.registrations.go"
 )
-
-//go:embed public.go.tmpl
-var publicTemplate string
-
-//go:embed registrations.go.tmpl
-var registryTemplate string
 
 // main selects generation or drift checking from the module working directory.
 func main() {
@@ -39,24 +31,23 @@ func main() {
 
 // generate validates all input before checking or replacing either generated file.
 func generate(root string, check bool) error {
-	model, err := readModel(root)
+	m, err := readModel(root)
 	if err != nil {
 		return err
 	}
 	outputs := map[string][]byte{}
-	for _, output := range []struct{ path, source string }{
-		{publicOutput, publicTemplate}, {registryOutput, registryTemplate},
+	for _, output := range []struct {
+		path string
+		emit func(model) []byte
+	}{
+		{publicOutput, emitPublic}, {registryOutput, emitRegistrations},
 	} {
-		var buffer bytes.Buffer
-		if err := template.Must(template.New(output.path).Parse(output.source)).Execute(&buffer, model); err != nil {
-			return err
-		}
-		outputs[output.path], err = format.Source(buffer.Bytes())
+		outputs[output.path], err = format.Source(output.emit(m))
 		if err != nil {
 			return fmt.Errorf("format %s: %w", output.path, err)
 		}
 		if output.path == publicOutput {
-			model.SourceImport, err = checkTypes(root, outputs[publicOutput], model.Resources)
+			m.SourceImport, err = checkTypes(root, outputs[publicOutput], m.Resources)
 			if err != nil {
 				return err
 			}
