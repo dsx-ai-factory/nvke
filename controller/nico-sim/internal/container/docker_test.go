@@ -4,8 +4,14 @@
 package container
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestUnit_InstanceStatusForContainer(t *testing.T) {
@@ -87,4 +93,78 @@ func TestUnit_DecodeCloudConfigContent(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUnit_CloudConfigScript(t *testing.T) {
+	type parameters struct {
+		commands []string
+		status   string
+		output   string
+		wantErr  bool
+	}
+	tests := map[string]parameters{
+		"commands run in order":              {commands: []string{"printf first", "printf second"}, status: "done", output: "firstsecond"},
+		"failure stops later commands":       {commands: []string{"echo failed >&2; exit 42", "echo should-not-run"}, status: "error", output: "failed\n", wantErr: true},
+		"quotes and newlines survive":        {commands: []string{"printf '%s' \"a 'quoted' value\"\nprintf '%s' '$(not-executed)'"}, status: "done", output: "a 'quoted' value$(not-executed)"},
+		"command environments stay separate": {commands: []string{"export NVKE_TEST_VALUE=first", "printf '%s' \"${NVKE_TEST_VALUE-unset}\""}, status: "done", output: "unset"},
+		"empty cloud config":                 {commands: []string{"", "  "}, status: "done"},
+	}
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			status := filepath.Join(dir, "status")
+			script := filepath.Join(dir, "runcmd.sh")
+			require.NoError(t, os.WriteFile(status, []byte("running\n"), 0o644))
+			require.NoError(t, os.WriteFile(script, []byte(cloudConfigScript(params.commands)), 0o644))
+			err := exec.Command("sh", script, status).Run()
+			if params.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			got, err := os.ReadFile(status)
+			require.NoError(t, err)
+			require.Equal(t, params.status+"\n", string(got))
+			output, err := os.ReadFile(filepath.Join(dir, "output.log"))
+			require.NoError(t, err)
+			require.Equal(t, params.output, string(output))
+		})
+	}
+}
+
+func TestUnit_CloudConfigScript_BlockingGate(t *testing.T) {
+	dir := t.TempDir()
+	status := filepath.Join(dir, "status")
+	started := filepath.Join(dir, "started")
+	release := filepath.Join(dir, "release")
+	script := filepath.Join(dir, "runcmd.sh")
+	command := "touch '" + started + "'; while [ ! -f '" + release + "' ]; do sleep 0.01; done"
+	require.NoError(t, os.WriteFile(status, []byte("running\n"), 0o644))
+	require.NoError(t, os.WriteFile(script, []byte(cloudConfigScript([]string{command})), 0o644))
+	cmd := exec.Command("sh", script, status)
+	require.NoError(t, cmd.Start())
+	completed := make(chan error, 1)
+	go func() { defer close(completed); completed <- cmd.Wait() }()
+	t.Cleanup(func() {
+		_ = os.WriteFile(release, nil, 0o644)
+		select {
+		case <-completed:
+		case <-time.After(5 * time.Second):
+			_ = cmd.Process.Kill()
+		}
+	})
+	require.Eventually(t, func() bool { _, err := os.Stat(started); return err == nil }, 2*time.Second, 10*time.Millisecond)
+	got, err := os.ReadFile(status)
+	require.NoError(t, err)
+	require.Equal(t, "running\n", string(got))
+	require.NoError(t, os.WriteFile(release, nil, 0o644))
+	select {
+	case err := <-completed:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("cloud-init did not finish after gate release")
+	}
+	got, err = os.ReadFile(status)
+	require.NoError(t, err)
+	require.Equal(t, "done\n", string(got))
 }
