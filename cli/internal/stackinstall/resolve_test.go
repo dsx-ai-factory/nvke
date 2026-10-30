@@ -56,14 +56,14 @@ func testInputs(t *testing.T, kind TargetKind, platform string, withNico bool) I
 	}
 }
 
-func mustPlan(t *testing.T, in Inputs) *Plan {
+func mustResolve(t *testing.T, in Inputs) *NVKEControllerStack {
 	t.Helper()
-	p, err := NewPlan(in)
+	p, err := Resolve(in)
 	require.NoError(t, err)
 	return p
 }
 
-func release(t *testing.T, p *Plan, name string) Release {
+func release(t *testing.T, p *NVKEControllerStack, name string) Release {
 	t.Helper()
 	for _, rel := range p.Releases {
 		if rel.Name == name {
@@ -74,7 +74,7 @@ func release(t *testing.T, p *Plan, name string) Release {
 	return Release{}
 }
 
-func releaseNames(p *Plan) []string {
+func releaseNames(p *NVKEControllerStack) []string {
 	var names []string
 	for _, rel := range p.Releases {
 		names = append(names, rel.Name)
@@ -82,7 +82,7 @@ func releaseNames(p *Plan) []string {
 	return names
 }
 
-func manifestPaths(p *Plan) []string {
+func manifestPaths(p *NVKEControllerStack) []string {
 	var paths []string
 	for _, m := range p.Manifests {
 		paths = append(paths, m.Path)
@@ -90,7 +90,7 @@ func manifestPaths(p *Plan) []string {
 	return paths
 }
 
-func manifestContent(t *testing.T, p *Plan, path string) string {
+func manifestContent(t *testing.T, p *NVKEControllerStack, path string) string {
 	t.Helper()
 	for _, m := range p.Manifests {
 		if m.Path == path {
@@ -101,7 +101,7 @@ func manifestContent(t *testing.T, p *Plan, path string) string {
 	return ""
 }
 
-func TestPlanRefuses(t *testing.T) {
+func TestResolveRefuses(t *testing.T) {
 	cases := []struct {
 		name   string
 		kind   TargetKind
@@ -140,7 +140,7 @@ func TestPlanRefuses(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			in := testInputs(t, tc.kind, "linux/amd64", true)
 			tc.mutate(&in)
-			p, err := NewPlan(in)
+			p, err := Resolve(in)
 			require.Error(t, err)
 			assert.Nil(t, p)
 			assert.Contains(t, err.Error(), tc.want)
@@ -151,10 +151,10 @@ func TestPlanRefuses(t *testing.T) {
 	}
 }
 
-func TestPlanRefusesMissingInputs(t *testing.T) {
+func TestResolveRefusesMissingInputs(t *testing.T) {
 	in := testInputs(t, Site, "linux/amd64", true)
 	in.Site = nil
-	_, err := NewPlan(in)
+	_, err := Resolve(in)
 	require.ErrorContains(t, err, "site spec and the artifact file are both required")
 }
 
@@ -167,7 +167,7 @@ func setReference(in *Inputs, name, ref string) {
 }
 
 func TestSiteHasNoNico(t *testing.T) {
-	p := mustPlan(t, testInputs(t, Site, "linux/amd64", true))
+	p := mustResolve(t, testInputs(t, Site, "linux/amd64", true))
 	assert.NotContains(t, releaseNames(p), "nico")
 	assert.NotContains(t, releaseNames(p), "nico-prereqs")
 	for _, path := range manifestPaths(p) {
@@ -176,7 +176,7 @@ func TestSiteHasNoNico(t *testing.T) {
 }
 
 func TestSeedWithoutNico(t *testing.T) {
-	p := mustPlan(t, testInputs(t, Seed, "linux/amd64", false))
+	p := mustResolve(t, testInputs(t, Seed, "linux/amd64", false))
 	assert.NotContains(t, releaseNames(p), "nico")
 	assert.NotContains(t, releaseNames(p), "nico-prereqs")
 	for _, path := range manifestPaths(p) {
@@ -185,7 +185,7 @@ func TestSeedWithoutNico(t *testing.T) {
 }
 
 func TestSeedWithNico(t *testing.T) {
-	p := mustPlan(t, testInputs(t, Seed, "linux/arm64", true))
+	p := mustResolve(t, testInputs(t, Seed, "linux/arm64", true))
 	assert.Contains(t, releaseNames(p), "nico")
 	assert.Contains(t, releaseNames(p), "nico-prereqs")
 	assert.Contains(t, manifestPaths(p), "manifests/nico/namespace.yaml")
@@ -194,10 +194,10 @@ func TestSeedWithNico(t *testing.T) {
 
 func TestNKTPSiteOnly(t *testing.T) {
 	for _, withNico := range []bool{false, true} {
-		seed := mustPlan(t, testInputs(t, Seed, "linux/amd64", withNico))
+		seed := mustResolve(t, testInputs(t, Seed, "linux/amd64", withNico))
 		assert.NotContains(t, releaseNames(seed), "nktp")
 		assert.NotContains(t, manifestPaths(seed), "manifests/nktp-cluster.yaml")
-		site := mustPlan(t, testInputs(t, Site, "linux/amd64", withNico))
+		site := mustResolve(t, testInputs(t, Site, "linux/amd64", withNico))
 		assert.Contains(t, releaseNames(site), "nktp")
 		assert.Contains(t, manifestPaths(site), "manifests/nktp-cluster.yaml")
 	}
@@ -216,7 +216,7 @@ func TestReleaseCharts(t *testing.T) {
 	}
 	got := map[string]string{}
 	for _, in := range []Inputs{testInputs(t, Seed, "linux/amd64", true), testInputs(t, Site, "linux/amd64", true)} {
-		for _, rel := range mustPlan(t, in).Releases {
+		for _, rel := range mustResolve(t, in).Releases {
 			got[rel.Name] = rel.Chart.Name
 			assert.Equal(t, in.Artifacts.Output(rel.Chart.Name).Reference, rel.Chart.Reference)
 		}
@@ -225,14 +225,14 @@ func TestReleaseCharts(t *testing.T) {
 }
 
 func TestSeedTakesKindLayer(t *testing.T) {
-	seed := mustPlan(t, testInputs(t, Seed, "linux/amd64", true))
+	seed := mustResolve(t, testInputs(t, Seed, "linux/amd64", true))
 	assert.Equal(t, []string{"values/postgresql.yaml", "values/kind/postgresql.yaml"}, release(t, seed, "postgres").ValuesFiles)
 	assert.Equal(t, []string{"values/nico-prereqs.yaml", "values/kind/nico-prereqs.yaml"}, release(t, seed, "nico-prereqs").ValuesFiles)
 	assert.Equal(t, []string{"values/temporal.yaml", "values/kind/temporal.yaml"}, release(t, seed, "temporal").ValuesFiles)
 	assert.Equal(t, []string{"values/nico.yaml"}, release(t, seed, "nico").ValuesFiles)
 	assert.Empty(t, release(t, seed, "spire-crds").ValuesFiles)
 
-	site := mustPlan(t, testInputs(t, Site, "linux/amd64", true))
+	site := mustResolve(t, testInputs(t, Site, "linux/amd64", true))
 	for _, rel := range site.Releases {
 		for _, file := range rel.ValuesFiles {
 			assert.NotContains(t, file, "/kind/", rel.Name)
@@ -259,14 +259,14 @@ func monitorSwitches(values map[string]any, prefix string) []string {
 }
 
 func TestSeedTurnsMonitorsAndTracingOff(t *testing.T) {
-	seed := mustPlan(t, testInputs(t, Seed, "linux/amd64", true))
+	seed := mustResolve(t, testInputs(t, Seed, "linux/amd64", true))
 	for _, rel := range seed.Releases {
 		merged, err := mergedValues(rel)
 		require.NoError(t, err)
 		assert.Empty(t, monitorSwitches(merged, ""), rel.Name)
 	}
 
-	site := mustPlan(t, testInputs(t, Site, "linux/amd64", true))
+	site := mustResolve(t, testInputs(t, Site, "linux/amd64", true))
 	want := map[string][]string{
 		"nvke-controller": {"serviceMonitor", "tracing"},
 		"spire":           {"spire-agent.telemetry.prometheus.podMonitor", "spire-server.telemetry.prometheus.podMonitor"},
@@ -280,7 +280,7 @@ func TestSeedTurnsMonitorsAndTracingOff(t *testing.T) {
 }
 
 func TestAdminIDMatchesClusterSPIFFEID(t *testing.T) {
-	p := mustPlan(t, testInputs(t, Site, "linux/amd64", true))
+	p := mustResolve(t, testInputs(t, Site, "linux/amd64", true))
 	spire := release(t, p, "spire").Overlay
 	adminIDs := dig(spire, "spire-server", "adminIDs").([]string)
 	require.Len(t, adminIDs, 1)
@@ -319,7 +319,7 @@ func TestAdminIDMatchesClusterSPIFFEID(t *testing.T) {
 func TestTPMChecksumAMD64IsChartDefault(t *testing.T) {
 	// spire chart 0.30.1, spire-server nodeAttestor.tpmDirect.checksum (plugin v1.9.0).
 	const chartDefault = "46d0caad8c25a027dd11c93e18b58a8bc6fbd9f1fe2e36fa2a0dd440986de4dc"
-	p := mustPlan(t, testInputs(t, Site, "linux/amd64", true))
+	p := mustResolve(t, testInputs(t, Site, "linux/amd64", true))
 	assert.Equal(t, chartDefault, dig(release(t, p, "spire").Overlay, "spire-server", "nodeAttestor", "tpmDirect", "checksum"))
 }
 
@@ -348,7 +348,7 @@ func TestImageValues(t *testing.T) {
 func TestEveryStackFileIsPlanned(t *testing.T) {
 	planned := map[string]bool{}
 	for _, in := range []Inputs{testInputs(t, Seed, "linux/arm64", true), testInputs(t, Site, "linux/amd64", true)} {
-		p := mustPlan(t, in)
+		p := mustResolve(t, in)
 		for _, rel := range p.Releases {
 			for _, file := range rel.ValuesFiles {
 				planned[file] = true
@@ -375,7 +375,7 @@ func TestEveryStackFileIsPlanned(t *testing.T) {
 
 func TestCAPNICoImageRendered(t *testing.T) {
 	in := testInputs(t, Site, "linux/amd64", true)
-	content := manifestContent(t, mustPlan(t, in), "manifests/capnico.yaml")
+	content := manifestContent(t, mustResolve(t, in), "manifests/capnico.yaml")
 	assert.Equal(t, 1, strings.Count(content, "image: "+in.Artifacts.Output("capnico-controller").Reference+"\n"))
 	assert.NotContains(t, content, "{{")
 }
@@ -387,7 +387,7 @@ func TestIdentityMatchesSeedAndSite(t *testing.T) {
 		in.Stack.Mirror = "mirror.example.internal:5000/nvke"
 		return in
 	}
-	seed, site := mustPlan(t, inputs(Seed)), mustPlan(t, inputs(Site))
+	seed, site := mustResolve(t, inputs(Seed)), mustResolve(t, inputs(Site))
 
 	for _, rel := range site.Releases {
 		if rel.Name == "nktp" {
@@ -467,7 +467,7 @@ func TestOverlayDoesNotRestateCommitted(t *testing.T) {
 		in := testInputs(t, kind, "linux/arm64", true)
 		in.Site.Spire.UpstreamCA = true
 		in.Stack.Mirror = "mirror.example.internal:5000/nvke"
-		for _, rel := range mustPlan(t, in).Releases {
+		for _, rel := range mustResolve(t, in).Releases {
 			paths := leaves(rel.Overlay, "")
 			if rel.Overlay == nil {
 				assert.NotContains(t, want, rel.Name, "%s %s has no overlay", kind, rel.Name)
@@ -489,7 +489,7 @@ func TestOverlayDoesNotRestateCommitted(t *testing.T) {
 func TestSeedDNSAddress(t *testing.T) {
 	in := testInputs(t, Seed, "linux/amd64", false)
 	in.Site.Spire.ExternalAddress = "seed.example.internal"
-	spire := release(t, mustPlan(t, in), "spire").Overlay
+	spire := release(t, mustResolve(t, in), "spire").Overlay
 	cert := dig(spire, "spiffe-oidc-discovery-provider", "tls", "certManager", "certificate").(map[string]any)
 	assert.NotContains(t, cert, "ipAddresses")
 	assert.Equal(t, []string{"nvke.site-controller.internal", "localhost", "seed.example.internal"}, cert["dnsNames"])

@@ -34,7 +34,7 @@ type StackConfig struct {
 	ClientNetworks []string
 }
 
-// Inputs is everything NewPlan reads. Artifacts is the decoded artifact file.
+// Inputs is everything Resolve reads. Artifacts is the decoded artifact file.
 type Inputs struct {
 	Site      *sitespec.SiteSpec
 	Stack     StackConfig
@@ -59,9 +59,10 @@ type Manifest struct {
 	Content []byte
 }
 
-// Plan is what an install applies to one target. Releases are sorted by name
+// NVKEControllerStack is what one target installs: its Helm releases and glue
+// manifests. Releases are sorted by name
 // and Manifests by path.
-type Plan struct {
+type NVKEControllerStack struct {
 	Releases  []Release
 	Manifests []Manifest
 }
@@ -84,14 +85,14 @@ type inputs struct {
 	hasNico     bool
 }
 
-// NewPlan checks the inputs and builds the plan for in.Target. It reports
+// Resolve checks the inputs and builds the stack for in.Target. It reports
 // every input problem at once and returns no plan when there is one.
-func NewPlan(in Inputs) (*Plan, error) {
+func Resolve(in Inputs) (*NVKEControllerStack, error) {
 	v, err := check(in)
 	if err != nil {
 		return nil, err
 	}
-	p := &Plan{}
+	p := &NVKEControllerStack{}
 	for _, c := range charts {
 		if !c.planned(v.kind, v.hasNico) {
 			continue

@@ -18,12 +18,12 @@ import (
 
 var update = flag.Bool("update", false, "rewrite the expected files")
 
-func TestRenderWritesTree(t *testing.T) {
-	p := mustPlan(t, testInputs(t, Site, "linux/amd64", true))
+func TestWriteTree(t *testing.T) {
+	p := mustResolve(t, testInputs(t, Site, "linux/amd64", true))
 	dir := filepath.Join(t.TempDir(), "out")
 	// An existing empty directory is tightened to 0700.
 	require.NoError(t, os.Mkdir(dir, 0o755))
-	require.NoError(t, p.Render(dir))
+	require.NoError(t, p.WriteTree(dir))
 	dirInfo, statErr := os.Stat(dir)
 	require.NoError(t, statErr)
 	assert.Equal(t, fs.FileMode(0o700), dirInfo.Mode().Perm())
@@ -65,7 +65,7 @@ func TestRenderWritesTree(t *testing.T) {
 	assert.True(t, got["overlays/spire.yaml"])
 	assert.False(t, got["overlays/postgres.yaml"], "no overlay without a mirror")
 
-	err := p.Render(dir)
+	err := p.WriteTree(dir)
 	require.ErrorContains(t, err, "is not empty")
 }
 
@@ -130,7 +130,7 @@ func TestExpected(t *testing.T) {
 	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "out")
-			require.NoError(t, mustPlan(t, expectedCases[name](t)).Render(out))
+			require.NoError(t, mustResolve(t, expectedCases[name](t)).WriteTree(out))
 			got := expectedFiles(t, out)
 			expectedDir := filepath.Join("testdata", "expected", name)
 			if *update {

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package stackinstall plans the install of the NVKE stack on a seed or a
+// Package stackinstall resolves the NVKE controller stack for a seed or a
 // site: the Helm releases with their values and overlays, and the glue
 // manifests, from the embedded stack directory.
 package stackinstall
