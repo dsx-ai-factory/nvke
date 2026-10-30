@@ -68,7 +68,7 @@
       "kind": "helm-oci",
       "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
       "reference": "registry.example.invalid/nvke/charts/controller-chart@sha256:4444444444444444444444444444444444444444444444444444444444444444",
-      "chartVersion": "0.4.2",
+      "chartVersion": "0.22.0",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
@@ -114,7 +114,7 @@
       "kind": "helm-oci",
       "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
       "reference": "registry.example.invalid/nvke/charts/nktp@sha256:9999999999999999999999999999999999999999999999999999999999999999",
-      "chartVersion": "0.9.0",
+      "chartVersion": "0.22.0",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []

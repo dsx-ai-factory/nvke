@@ -68,7 +68,7 @@
       "kind": "helm-oci",
       "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
       "reference": "registry.example.invalid/nvke/charts/controller-chart@sha256:4444444444444444444444444444444444444444444444444444444444444444",
-      "chartVersion": "0.4.2",
+      "chartVersion": "0.23.0-rc.2",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
@@ -110,47 +110,26 @@
       "buildSubjects": []
     },
     {
-      "name": "cwe",
+      "name": "nico-core-image",
       "kind": "oci",
-      "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
-      "reference": "registry.example.invalid/nvke/cwe@sha256:6666666666666666666666666666666666666666666666666666666666666666",
-      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "components": [
-        "cwe"
-      ],
+      "reference": "registry.example.invalid/nvke/nico@sha256:4444444444444444444444444444444444444444444444444444444444444444",
       "imageIndex": {
-        "requiredPlatforms": [
-          "linux/amd64",
-          "linux/arm64"
-        ],
         "children": [
           {
-            "platform": "linux/amd64",
-            "manifestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-            "size": 1024,
-            "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "component": "cwe",
-            "buildSubject": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            "platform": "linux/amd64"
           },
           {
-            "platform": "linux/arm64",
-            "manifestDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
-            "size": 1025,
-            "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "component": "cwe",
-            "buildSubject": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            "platform": "linux/arm64"
           }
         ]
-      },
-      "artifactType": "application/vnd.oci.image.index.v1+json",
-      "buildSubjects": []
+      }
     },
     {
       "name": "nico",
       "kind": "helm-oci",
       "digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
       "reference": "registry.example.invalid/nvke/charts/nico@sha256:7777777777777777777777777777777777777777777777777777777777777777",
-      "chartVersion": "0.12.0",
+      "chartVersion": "2.2.2",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
@@ -160,7 +139,7 @@
       "kind": "helm-oci",
       "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
       "reference": "registry.example.invalid/nvke/charts/nico-prereqs@sha256:8888888888888888888888888888888888888888888888888888888888888888",
-      "chartVersion": "0.12.0",
+      "chartVersion": "18.5.15",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
@@ -170,7 +149,7 @@
       "kind": "helm-oci",
       "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
       "reference": "registry.example.invalid/nvke/charts/nktp@sha256:9999999999999999999999999999999999999999999999999999999999999999",
-      "chartVersion": "0.9.0",
+      "chartVersion": "0.22.0",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
