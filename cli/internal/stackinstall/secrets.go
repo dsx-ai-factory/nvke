@@ -45,9 +45,9 @@ type NICoAPI struct {
 	APIName  string
 }
 
-// Secrets returns the Secrets the stack's charts read. Each carries its
-// values in data, not stringData, so a server-side apply can update it.
-func Secrets(c Credentials, nico NICoAPI) ([]*corev1.Secret, error) {
+// CredentialSecrets returns the Secrets the stack's charts read. Each carries
+// its values in data, not stringData, so a server-side apply can update it.
+func CredentialSecrets(c Credentials, nico NICoAPI) ([]*corev1.Secret, error) {
 	for _, f := range []struct{ name, value string }{
 		{"NICoAPI.Endpoint", nico.Endpoint},
 		{"NICoAPI.OrgID", nico.OrgID},

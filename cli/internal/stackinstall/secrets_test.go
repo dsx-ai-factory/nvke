@@ -55,7 +55,7 @@ func find(t *testing.T, secrets []*corev1.Secret, namespace, name string) *corev
 	return secrets[i]
 }
 
-func TestSecretsSite(t *testing.T) {
+func TestCredentialSecretsSite(t *testing.T) {
 	base := []string{
 		"postgres/nvke-database {postgres-password}",
 		"temporal/nvke-database {postgres-password}",
@@ -73,7 +73,7 @@ func TestSecretsSite(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			secrets, err := Secrets(tt.creds, testNICo)
+			secrets, err := CredentialSecrets(tt.creds, testNICo)
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, layout(secrets))
@@ -99,8 +99,8 @@ func TestSecretsSite(t *testing.T) {
 	}
 }
 
-func TestSecretsTemporalKey(t *testing.T) {
-	secrets, err := Secrets(testCredentials, testNICo)
+func TestCredentialSecretsTemporalKey(t *testing.T) {
+	secrets, err := CredentialSecrets(testCredentials, testNICo)
 	require.NoError(t, err)
 
 	temporal := find(t, secrets, temporalNamespace, databaseSecret)
@@ -109,8 +109,8 @@ func TestSecretsTemporalKey(t *testing.T) {
 	assert.NotContains(t, temporal.Data, "password")
 }
 
-func TestSecretsUseData(t *testing.T) {
-	secrets, err := Secrets(withCA(testCredentials), testNICo)
+func TestCredentialSecretsUseData(t *testing.T) {
+	secrets, err := CredentialSecrets(withCA(testCredentials), testNICo)
 	require.NoError(t, err)
 
 	for _, s := range secrets {
@@ -136,7 +136,7 @@ func TestConnectionStringEscapes(t *testing.T) {
 	assert.Equal(t, "disable", u.Query().Get("sslmode"))
 }
 
-func TestSecretsRefusesPartialCredentials(t *testing.T) {
+func TestCredentialSecretsRefusesPartialCredentials(t *testing.T) {
 	tests := []struct {
 		field string
 		creds Credentials
@@ -149,7 +149,7 @@ func TestSecretsRefusesPartialCredentials(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.field, func(t *testing.T) {
-			_, err := Secrets(tt.creds, testNICo)
+			_, err := CredentialSecrets(tt.creds, testNICo)
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.field)
@@ -157,7 +157,7 @@ func TestSecretsRefusesPartialCredentials(t *testing.T) {
 	}
 }
 
-func TestSecretsRefusesEmptyNICoAPI(t *testing.T) {
+func TestCredentialSecretsRefusesEmptyNICoAPI(t *testing.T) {
 	tests := []struct {
 		field string
 		nico  NICoAPI
@@ -168,7 +168,7 @@ func TestSecretsRefusesEmptyNICoAPI(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.field, func(t *testing.T) {
-			_, err := Secrets(testCredentials, tt.nico)
+			_, err := CredentialSecrets(testCredentials, tt.nico)
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "NICoAPI."+tt.field)
@@ -176,9 +176,9 @@ func TestSecretsRefusesEmptyNICoAPI(t *testing.T) {
 	}
 }
 
-// TestSecretsMatchStack keeps the Go constants equal to what the values files
+// TestCredentialSecretsMatchStack keeps the Go constants equal to what the values files
 // and the namespaces manifest say.
-func TestSecretsMatchStack(t *testing.T) {
+func TestCredentialSecretsMatchStack(t *testing.T) {
 	var postgresql struct {
 		NamespaceOverride string `json:"namespaceOverride"`
 		FullnameOverride  string `json:"fullnameOverride"`

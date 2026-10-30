@@ -34,11 +34,11 @@ type Credentials struct {
 	SpireCAKey  []byte
 }
 
-// ReadCredentials reads the credentials for an install on the given target
-// from the environment and the files it names. The seed's database password is
+// CredentialsFromEnv reads the credentials for an install on the given
+// target from the environment and the files it names. The seed's database password is
 // generated. The error names every missing or unusable input, one per line,
 // and carries no value. The secret values are registered with redact.
-func ReadCredentials(kind TargetKind, spire sitespec.Spire) (Credentials, error) {
+func CredentialsFromEnv(kind TargetKind, spire sitespec.Spire) (Credentials, error) {
 	var c Credentials
 	var problems []string
 	switch kind {
@@ -76,9 +76,8 @@ func ReadCredentials(kind TargetKind, spire sitespec.Spire) (Credentials, error)
 	if len(problems) > 0 {
 		return Credentials{}, errors.New(strings.Join(problems, "\n"))
 	}
-	// The Secrets carry the values base64-encoded, so both forms are masked.
-	// The connection string is registered whole: base64 of the URL does not
-	// contain base64 of the password.
+	// Secret data is base64, so both forms are masked. The connection string
+	// is registered whole: base64 of the URL does not contain base64 of the password.
 	for _, v := range []string{c.DatabasePassword, connectionString(c.DatabasePassword), c.NicoToken, c.NodePassword, string(c.SpireCAKey)} {
 		redact.RegisterSecret(v)
 		redact.RegisterSecret(base64.StdEncoding.EncodeToString([]byte(v)))
