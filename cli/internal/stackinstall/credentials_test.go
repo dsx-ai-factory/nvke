@@ -13,28 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
-	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 	"github.com/dsx-ai-factory/nvke/cli/internal/redact"
 )
-
-var credentialEnvs = []string{
-	envDatabasePassword,
-	envNicoToken,
-	sitespec.NicoCredentialsEnv,
-	"NVKECTL_NODE_USER",
-	"NVKECTL_NODE_PASSWORD",
-}
-
-// clearEnv empties every credential variable under its current and previous name,
-// so the developer's shell cannot feed a test.
-func clearEnv(t *testing.T) {
-	t.Helper()
-	for _, env := range credentialEnvs {
-		t.Setenv(env, "")
-		t.Setenv(envalias.Old(env), "")
-	}
-}
 
 func writeFile(t *testing.T, name, content string) string {
 	t.Helper()
@@ -43,163 +23,145 @@ func writeFile(t *testing.T, name, content string) string {
 	return path
 }
 
-func TestCredentialsFromEnvSite(t *testing.T) {
-	clearEnv(t)
-	t.Setenv(envDatabasePassword, " site-db-pw-1 ")
-	t.Setenv(envNicoToken, "site-token-1\n")
-	t.Setenv("NVKECTL_NODE_USER", "site-user-1")
-	t.Setenv("NVKECTL_NODE_PASSWORD", "site-node-pw-1")
-
-	c, err := CredentialsFromEnv(Site, sitespec.Spire{})
-
-	require.NoError(t, err)
-	assert.Equal(t, Credentials{
-		DatabasePassword: "site-db-pw-1",
-		NicoToken:        "site-token-1",
-		NodeUser:         "site-user-1",
-		NodePassword:     "site-node-pw-1",
-	}, c)
+// testSources writes one file per credential, each value prefixed so a leak
+// into an error is recognisable.
+func testSources(t *testing.T, prefix string) CredentialSources {
+	t.Helper()
+	return CredentialSources{
+		DatabasePasswordFile: writeFile(t, "db", " "+prefix+"-db-pw\n"),
+		NicoTokenFile:        writeFile(t, "token", prefix+"-token\n"),
+		NodeUser:             prefix + "-user",
+		NodePasswordFile:     writeFile(t, "node", prefix+"-node-pw"),
+	}
 }
 
-func TestCredentialsFromEnvSeed(t *testing.T) {
-	clearEnv(t)
-	t.Setenv(envDatabasePassword, "x")
-	t.Setenv(sitespec.NicoCredentialsEnv, writeFile(t, "token", "seed-token-1\n"))
-	t.Setenv("NVKECTL_NODE_USER", "seed-user-1")
-	t.Setenv("NVKECTL_NODE_PASSWORD", "seed-node-pw-1")
+func withCAFiles(t *testing.T, src CredentialSources, prefix string) CredentialSources {
+	t.Helper()
+	src.SpireCACertFile = writeFile(t, "ca.crt", prefix+"-cert\n")
+	src.SpireCAKeyFile = writeFile(t, "ca.key", prefix+"-key\n")
+	return src
+}
 
-	first, err := CredentialsFromEnv(Seed, sitespec.Spire{})
+func TestReadCredentialsSite(t *testing.T) {
+	c, err := ReadCredentials(Site, false, testSources(t, "site"))
+
 	require.NoError(t, err)
-	second, err := CredentialsFromEnv(Seed, sitespec.Spire{})
+	assert.Equal(t, Credentials{DatabasePassword: "site-db-pw", NicoToken: "site-token", NodeUser: "site-user", NodePassword: "site-node-pw"}, c)
+}
+
+func TestReadCredentialsSeed(t *testing.T) {
+	src := testSources(t, "seed")
+	src.DatabasePasswordFile = ""
+
+	first, err := ReadCredentials(Seed, false, src)
+	require.NoError(t, err)
+	second, err := ReadCredentials(Seed, false, src)
 	require.NoError(t, err)
 
 	assert.NotEmpty(t, first.DatabasePassword)
-	assert.NotEqual(t, "x", first.DatabasePassword)
-	assert.NotEqual(t, first.DatabasePassword, second.DatabasePassword)
-	assert.Equal(t, "seed-token-1", first.NicoToken)
+	assert.NotEqual(t, first.DatabasePassword, second.DatabasePassword, "generated per run")
+	assert.Equal(t, "seed-token", first.NicoToken)
+
+	src.DatabasePasswordFile = writeFile(t, "db", "ignored")
+	_, err = ReadCredentials(Seed, false, src)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "databasePasswordFile is not read on the seed")
 }
 
-func TestCredentialsFromEnvMissing(t *testing.T) {
+func TestReadCredentialsMissing(t *testing.T) {
 	tests := []struct {
 		name  string
 		kind  TargetKind
-		unset []string
+		unset func(*CredentialSources)
+		want  string
 	}{
-		{"site database password", Site, []string{envDatabasePassword}},
-		{"site token", Site, []string{envNicoToken}},
-		{"seed token file", Seed, []string{sitespec.NicoCredentialsEnv}},
-		{"node user", Site, []string{"NVKECTL_NODE_USER"}},
-		{"node password", Seed, []string{"NVKECTL_NODE_PASSWORD"}},
-		{"site, all", Site, []string{envDatabasePassword, envNicoToken, "NVKECTL_NODE_USER", "NVKECTL_NODE_PASSWORD"}},
-		{"seed, all", Seed, []string{sitespec.NicoCredentialsEnv, "NVKECTL_NODE_USER", "NVKECTL_NODE_PASSWORD"}},
+		{"database password file", Site, func(s *CredentialSources) { s.DatabasePasswordFile = "" }, "credentials.databasePasswordFile is not set"},
+		{"token file", Site, func(s *CredentialSources) { s.NicoTokenFile = "" }, "credentials.nicoTokenFile is not set"},
+		{"node user", Seed, func(s *CredentialSources) { s.NodeUser = " " }, "credentials.nodeUser is not set"},
+		{"node password file", Seed, func(s *CredentialSources) { s.NodePasswordFile = "" }, "credentials.nodePasswordFile is not set"},
+		{"missing file", Site, func(s *CredentialSources) { s.NodePasswordFile = filepath.Join(t.TempDir(), "absent") }, "credentials.nodePasswordFile: no such file"},
+		{"empty file", Site, func(s *CredentialSources) { s.DatabasePasswordFile = writeFile(t, "db", " \n") }, "credentials.databasePasswordFile names an empty file"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			clearEnv(t)
-			t.Setenv(envDatabasePassword, "missing-db-pw")
-			t.Setenv(envNicoToken, "missing-token")
-			t.Setenv(sitespec.NicoCredentialsEnv, writeFile(t, "token", "missing-file-token"))
-			t.Setenv("NVKECTL_NODE_USER", "missing-user")
-			t.Setenv("NVKECTL_NODE_PASSWORD", "missing-node-pw")
-			for _, env := range tt.unset {
-				t.Setenv(env, "")
+			src := testSources(t, "missing")
+			if tt.kind == Seed {
+				src.DatabasePasswordFile = ""
 			}
+			tt.unset(&src)
 
-			_, err := CredentialsFromEnv(tt.kind, sitespec.Spire{})
+			_, err := ReadCredentials(tt.kind, false, src)
 
 			require.Error(t, err)
 			lines := strings.Split(err.Error(), "\n")
-			require.Len(t, lines, len(tt.unset))
-			for i, env := range tt.unset {
-				assert.Contains(t, lines[i], env)
-			}
+			require.Len(t, lines, 1)
+			assert.Contains(t, lines[0], tt.want)
 		})
 	}
 }
 
-func TestCredentialsFromEnvErrorsCarryNoValue(t *testing.T) {
-	clearEnv(t)
-	t.Setenv(sitespec.NicoCredentialsEnv, writeFile(t, "token", "leak-tok leak-en"))
-	t.Setenv("NVKECTL_NODE_USER", "leak-user")
-	t.Setenv("NVKECTL_NODE_PASSWORD", `leak"node-pw`)
-	emptyKey := writeFile(t, "ca.key", " \n")
-	spire := sitespec.Spire{
-		UpstreamCA: true,
-		CACertFile: writeFile(t, "ca.crt", "leak-cert-body"),
-		CAKeyFile:  emptyKey,
-	}
-
-	_, err := CredentialsFromEnv(Seed, spire)
+func TestReadCredentialsAllMissing(t *testing.T) {
+	_, err := ReadCredentials(Site, false, CredentialSources{})
 
 	require.Error(t, err)
-	for _, v := range []string{"leak-tok", "leak-en", `leak"node-pw`, "leak-cert-body", emptyKey} {
+	assert.Len(t, strings.Split(err.Error(), "\n"), 4)
+}
+
+func TestReadCredentialsErrorsCarryNoValueOrPath(t *testing.T) {
+	src := testSources(t, "leak")
+	src.NicoTokenFile = writeFile(t, "token", "leak-tok leak-en")
+	src.NodeUser = `leak"user`
+	src.NodePasswordFile = writeFile(t, "node", `leak"node-pw`)
+	src = withCAFiles(t, src, "leak")
+	src.SpireCAKeyFile = "-----BEGIN PRIVATE KEY-----leak-pasted-key"
+
+	_, err := ReadCredentials(Site, true, src)
+
+	require.Error(t, err)
+	for _, v := range []string{"leak-tok", "leak-en", `leak"user`, `leak"node-pw`, "leak-pasted-key", "leak-cert", src.NicoTokenFile, src.NodePasswordFile, src.SpireCACertFile} {
 		assert.NotContains(t, err.Error(), v)
 	}
-	assert.Contains(t, err.Error(), sitespec.EnvSpireCAKeyFile)
-
-	// A key pasted into the variable instead of a path must not be echoed.
-	spire.CAKeyFile = "-----BEGIN PRIVATE KEY-----leak-pasted-key"
-	_, err = CredentialsFromEnv(Seed, spire)
-	require.Error(t, err)
-	assert.NotContains(t, err.Error(), "leak-pasted-key")
-	assert.Contains(t, err.Error(), sitespec.EnvSpireCAKeyFile)
+	for _, key := range []string{"credentials.nicoTokenFile", "credentials.nodeUser", "credentials.nodePasswordFile", "credentials.spireCAKeyFile"} {
+		assert.Contains(t, err.Error(), key)
+	}
 }
 
-func TestCredentialsFromEnvSpireCA(t *testing.T) {
-	clearEnv(t)
-	t.Setenv(envDatabasePassword, "ca-db-pw")
-	t.Setenv(envNicoToken, "ca-token")
-	t.Setenv("NVKECTL_NODE_USER", "ca-user")
-	t.Setenv("NVKECTL_NODE_PASSWORD", "ca-node-pw")
-	spire := sitespec.Spire{
-		UpstreamCA: true,
-		CACertFile: writeFile(t, "ca.crt", "ca-cert-pem\n"),
-		CAKeyFile:  writeFile(t, "ca.key", "ca-key-pem\n"),
-	}
+func TestReadCredentialsSpireCA(t *testing.T) {
+	src := withCAFiles(t, testSources(t, "ca"), "ca")
 
-	c, err := CredentialsFromEnv(Site, spire)
+	c, err := ReadCredentials(Site, true, src)
 	require.NoError(t, err)
-	assert.Equal(t, []byte("ca-cert-pem\n"), c.SpireCACert)
-	assert.Equal(t, []byte("ca-key-pem\n"), c.SpireCAKey)
+	assert.Equal(t, "ca-cert\n", string(c.SpireCACert))
+	assert.Equal(t, "ca-key\n", string(c.SpireCAKey))
 
-	spire.CAKeyFile = writeFile(t, "empty.key", "")
-	_, err = CredentialsFromEnv(Site, spire)
+	_, err = ReadCredentials(Site, false, src)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), sitespec.EnvSpireCAKeyFile)
-	assert.NotContains(t, err.Error(), sitespec.EnvSpireCACertFile)
+	assert.Contains(t, err.Error(), "does not set spire.upstreamCA")
+
+	src.SpireCAKeyFile = ""
+	_, err = ReadCredentials(Site, true, src)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "credentials.spireCAKeyFile is not set")
 }
 
-func TestCredentialsFromEnvRegistersWithRedact(t *testing.T) {
-	clearEnv(t)
-	t.Setenv(envDatabasePassword, "redact-db-pw-7f3a")
-	t.Setenv(envNicoToken, "redact-token-7f3a")
-	t.Setenv("NVKECTL_NODE_USER", "redact-user-7f3a")
-	t.Setenv("NVKECTL_NODE_PASSWORD", "redact-node-pw-7f3a")
-	spire := sitespec.Spire{
-		UpstreamCA: true,
-		CACertFile: writeFile(t, "ca.crt", "redact-cert-7f3a"),
-		CAKeyFile:  writeFile(t, "ca.key", "redact-key-7f3a"),
-	}
+func TestReadCredentialsRegistersWithRedact(t *testing.T) {
+	src := withCAFiles(t, testSources(t, "redact-7f3a"), "redact-7f3a")
 
-	_, err := CredentialsFromEnv(Site, spire)
+	_, err := ReadCredentials(Site, true, src)
 	require.NoError(t, err)
 
-	for _, v := range []string{"redact-db-pw-7f3a", "redact-token-7f3a", "redact-node-pw-7f3a", "redact-key-7f3a"} {
+	for _, v := range []string{"redact-7f3a-db-pw", "redact-7f3a-token", "redact-7f3a-node-pw", "redact-7f3a-key\n"} {
 		assert.Equal(t, redact.Placeholder, redact.Text(v), v)
 		encoded := base64.StdEncoding.EncodeToString([]byte(v))
 		assert.Equal(t, redact.Placeholder, redact.Text(encoded), encoded)
 	}
-	assert.Equal(t, "redact-user-7f3a", redact.Text("redact-user-7f3a"))
-	assert.Equal(t, "redact-cert-7f3a", redact.Text("redact-cert-7f3a"))
+	assert.Equal(t, "redact-7f3a-user", redact.Text("redact-7f3a-user"))
+	assert.Equal(t, "redact-7f3a-cert", redact.Text("redact-7f3a-cert"))
 }
 
-func TestCredentialsFromEnvUnknownKind(t *testing.T) {
-	clearEnv(t)
-	t.Setenv("NVKECTL_NODE_USER", "kind-user")
-	t.Setenv("NVKECTL_NODE_PASSWORD", "kind-node-pw")
-
-	_, err := CredentialsFromEnv("cloud", sitespec.Spire{})
+func TestReadCredentialsUnknownKind(t *testing.T) {
+	_, err := ReadCredentials(TargetKind("other"), false, testSources(t, "kind"))
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), `"cloud"`)
+	assert.Contains(t, err.Error(), `unknown install target "other"`)
 }
