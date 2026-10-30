@@ -53,3 +53,51 @@ func TestNodeAgentBootstrapFilesGatedOnAgentVersion(t *testing.T) {
 		})
 	}
 }
+
+// The JWT audience follows the same agent-version gate, but asymmetrically: a
+// new-form agent is told to request the renamed audience, and an older one is
+// sent no flag at all, because it predates --controller-audience and would
+// refuse to start. Without the flag it keeps requesting the legacy audience,
+// which the controller still accepts.
+func TestNodeAgentBootstrapFilesSelectsAudienceOnAgentVersion(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		agentVersion string
+		tlsJWT       bool
+		wantAudience string
+	}{
+		"empty version gets no audience flag":     {"", true, ""},
+		"below the cutover gets no audience flag": {"v0.2.0", true, ""},
+		"unparseable version gets no flag":        {"garbage", true, ""},
+		"at the cutover selects the rename":       {"v0.3.0", true, "nvke-controller"},
+		"cutover describe output selects rename":  {"v0.3.0-3-gabc1234", true, "nvke-controller"},
+		"later version selects the rename":        {"v1.0.0", true, "nvke-controller"},
+		"no audience flag without TLS/JWT":        {"v0.3.0", false, ""},
+	}
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			activities := &Activities{
+				cfg: config.Config{
+					NodeAgent: config.NodeAgentConfig{
+						Port:   "15005",
+						TLSJWT: config.TLSJWTConfig{Enabled: params.tlsJWT, DSXIdentityExchangeURL: "https://identity.example.test/v1/exchange"},
+					},
+				},
+			}
+			files, err := activities.nodeAgentBootstrapFiles(db.Node{
+				NodeAgentTLSJWTEnabled: params.tlsJWT,
+				SpiffeEnabled:          true,
+				AgentVersion:           params.agentVersion,
+			})
+			require.NoError(t, err)
+			require.Len(t, files, 1)
+			if params.wantAudience == "" {
+				assert.NotContains(t, files[0].Content, "--controller-audience")
+				return
+			}
+			assert.Contains(t, files[0].Content, "--controller-audience="+params.wantAudience)
+		})
+	}
+}

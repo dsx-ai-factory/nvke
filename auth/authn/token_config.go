@@ -18,19 +18,25 @@ const (
 	// NodeAgentAudience, so the controller accepts both whatever the release
 	// order.
 	//
-	// Slated for v0.25.0, but nothing has opened the path to it yet. The agent
-	// picks its audience with --controller-audience, which defaults to this
-	// constant and falls back to it when empty (agent/cmd/agent/main.go), and
-	// nodeAgentBootstrapFiles never passes the flag
-	// (controller/internal/temporal/activities). So every TLS/JWT agent
-	// requests the legacy audience whatever version it reports, and
-	// agent_version does not gate this window.
+	// Slated for v0.25.0. The agent picks its audience with
+	// --controller-audience, which defaults to this constant and falls back to
+	// it when empty (agent/cmd/agent/main.go). Since #2039,
+	// nodeAgentBootstrapFiles passes the flag for a node whose agent version
+	// reaches nodecontract.NewFormMinAgentVersion, so a node provisioned from
+	// then on requests NodeAgentAudience instead.
 	//
-	// Gate: the controller selects NodeAgentAudience per node, tracked in
-	// #2039, and the fleet has rolled onto it. Flipping the agent's default
-	// instead is not the path; #1565 rejected that because it imposes a
-	// release order. Removed before the gate, every TLS/JWT node fails closed
-	// in controller/internal/agent/tlsjwt.go, which is enforcing-only.
+	// Gate: no TLS/JWT node still requests this audience. That is narrower than
+	// an agent_version sweep, because the flag lives in the env file, which is
+	// written once at bootstrap: an agent upgraded in place keeps the arguments
+	// it was provisioned with, and agent/scripts/migrate-agent-paths.sh
+	// preserves them across the rename. A node provisioned before #2039 goes on
+	// requesting this audience however new its agent, so the fleet has to turn
+	// over, or something has to rewrite the env file on existing nodes.
+	//
+	// Flipping the agent's default instead is not the path; #1565 rejected that
+	// because it imposes a release order. Removed before the gate, every node
+	// still on this audience fails closed in
+	// controller/internal/agent/tlsjwt.go, which is enforcing-only.
 	NodeAgentAudienceLegacy = "nke-controller"
 )
 
