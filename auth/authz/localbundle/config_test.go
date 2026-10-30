@@ -168,7 +168,8 @@ func TestNewRefusesABadConfig(t *testing.T) {
         name:
         grants: [reader]
 `,
-			wantErr: "issuers.cluster-sa.serviceAccounts[0]: name is null",
+			wantErr: `issuers.cluster-sa.serviceAccounts[0]: name is null; ` +
+				`remove the key to match any service account in namespace "ci", or set a name`,
 		},
 		{
 			name:    "a service account mapping with no grants",

@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nvke/auth/authn"
 )
@@ -286,6 +287,17 @@ issuers:
     admit:
       serviceAccounts: [{namespace: nke-clients, serviceAccountName: runner}]`),
 			wantErr: `unknown field "issuers[0].admit.serviceAccounts[0].serviceAccountName"`,
+		},
+		{
+			// Name has its own UnmarshalJSON; key matching stays strict.
+			name: "case-variant name inside a serviceAccounts rule",
+			yaml: issuerConfig(`name: k8s
+    issuer: "https://kubernetes.default.svc.cluster.local"
+    jwks: {uri: "https://kubernetes.default.svc/openid/v1/jwks"}
+    algorithms: [RS256]
+    admit:
+      serviceAccounts: [{namespace: nke-clients, Name: runner}]`),
+			wantErr: `unknown field "issuers[0].admit.serviceAccounts[0].Name"`,
 		},
 		{
 			name: "unknown field inside spiffe",
@@ -1165,6 +1177,68 @@ func TestLoadValidationAdmit(t *testing.T) {
 			yaml: spiffeConfig(`{trustDomain: example.org, pathPrefixes: ["/"]}`),
 		},
 	})
+}
+
+// Each YAML and JSON spelling of a null name is refused at load. The rule under
+// test is the second, so the error must name its index.
+func TestLoadRefusesNullServiceAccountName(t *testing.T) {
+	t.Parallel()
+
+	const wantErr = `issuers[0] (k8s): admit: serviceAccounts[1]: name is null; ` +
+		`remove the key to match any service account in namespace "nke-clients", or set a name`
+	secondRule := func(nameLine string) string {
+		return issuerConfig(`name: k8s
+    issuer: "https://k8s.example.com"
+    jwks: {uri: "https://kubernetes.default.svc/openid/v1/jwks"}
+    algorithms: [RS256]
+    admit:
+      serviceAccounts:
+        - {namespace: other, name: x}
+        - namespace: nke-clients
+          ` + nameLine)
+	}
+
+	tests := []struct {
+		name string
+		doc  string
+	}{
+		{"name:", secondRule("name:")},
+		{"name: ~", secondRule("name: ~")},
+		{"name: null", secondRule("name: null")},
+		{"a JSON null", `{"apiVersion": "auth.nke.nvidia.com/v1alpha1", "kind": "AuthenticationConfiguration",
+"audiences": ["https://cwe.example.com"],
+"issuers": [{"name": "k8s", "issuer": "https://k8s.example.com",
+  "jwks": {"uri": "https://kubernetes.default.svc/openid/v1/jwks"}, "algorithms": ["RS256"],
+  "admit": {"serviceAccounts": [{"namespace": "other", "name": "x"}, {"namespace": "nke-clients", "name": null}]}}]}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg, err := authn.Load(writeConfig(t, tt.doc))
+			require.ErrorContains(t, err, wantErr)
+			assert.Nil(t, cfg)
+		})
+	}
+}
+
+// A loaded config marshals back to one that loads the same: an absent name
+// stays absent, and a set one stays a string.
+func TestServiceAccountRuleNameRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := authn.Load(writeConfig(t, issuerConfig(`name: k8s
+    issuer: "https://k8s.example.com"
+    jwks: {uri: "https://kubernetes.default.svc/openid/v1/jwks"}
+    algorithms: [RS256]
+    admit: {serviceAccounts: [{namespace: nke-clients}, {namespace: nke-clients, name: runner}]}`)))
+	require.NoError(t, err)
+
+	encoded, err := yaml.Marshal(cfg)
+	require.NoError(t, err)
+	reloaded, err := authn.Load(writeConfig(t, string(encoded)))
+	require.NoError(t, err)
+	assert.Equal(t, cfg, reloaded)
 }
 
 func TestIssuerEffectiveAudiences(t *testing.T) {

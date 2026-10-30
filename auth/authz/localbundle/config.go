@@ -4,7 +4,6 @@
 package localbundle
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -76,30 +75,14 @@ type claimMapping struct {
 // serviceAccountMapping matches a Kubernetes service account in Namespace,
 // with Name if it's set, and grants it Grants.
 type serviceAccountMapping struct {
-	Namespace string             `json:"namespace"`
-	Name      serviceAccountName `json:"name"`
-	Grants    []string           `json:"grants"`
-}
-
-// serviceAccountName is a service account mapping's optional name. A *string
-// can't tell an absent name from a null one, and both match every service
-// account in the namespace. Null records a null name, so the load can refuse
-// it: in YAML, `name:` with no value is null.
-type serviceAccountName struct {
-	// Value is nil for both an absent and a null name, so Null is the test.
-	Value *string
-	Null  bool
-}
-
-// UnmarshalJSON records whether the name is null, and decodes it as a string.
-func (n *serviceAccountName) UnmarshalJSON(raw []byte) error {
-	n.Null = string(raw) == "null"
-	return json.Unmarshal(raw, &n.Value)
+	Namespace string                   `json:"namespace"`
+	Name      authn.ServiceAccountName `json:"name,omitzero"`
+	Grants    []string                 `json:"grants"`
 }
 
 // rule returns m's match as the authN library's service account rule.
 func (m serviceAccountMapping) rule() authn.ServiceAccountRule {
-	return authn.ServiceAccountRule{Namespace: m.Namespace, Name: m.Name.Value}
+	return authn.ServiceAccountRule{Namespace: m.Namespace, Name: m.Name}
 }
 
 // compiledConfig is a checked configFile in the form Authorize reads, built
@@ -235,10 +218,7 @@ func (c authorizationConfig) checkIssuer(name string, issuers []string, declared
 	}
 	for j, m := range i.ServiceAccounts {
 		mapping := fmt.Sprintf("%s.serviceAccounts[%d]", path, j)
-		if m.Name.Null {
-			errs = append(errs, fmt.Errorf("%s: name is null; remove the key to match any service account "+
-				"in the namespace, or set a name", mapping))
-		} else if err := m.rule().Validate(); err != nil {
+		if err := m.rule().Validate(); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", mapping, err))
 		}
 		errs = append(errs, checkGrants(mapping, m.Grants, declared)...)

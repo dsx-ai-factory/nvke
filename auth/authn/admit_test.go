@@ -4,6 +4,7 @@
 package authn_test
 
 import (
+	"encoding/json"
 	"strconv"
 	"testing"
 
@@ -36,10 +37,10 @@ func spiffePrincipal(id string) *authn.Principal {
 func TestAdmitServiceAccounts(t *testing.T) {
 	t.Parallel()
 
-	// Name is a pointer so "any name in the namespace" stays distinct from "this
-	// one name".
 	runner := "runner"
-	runnerRule := authn.ServiceAccountRule{Namespace: "nke-clients", Name: &runner}
+	runnerRule := authn.ServiceAccountRule{Namespace: "nke-clients", Name: authn.ServiceAccountName{Value: &runner}}
+	var nullNameRule authn.ServiceAccountRule
+	require.NoError(t, json.Unmarshal([]byte(`{"namespace": "nke-clients", "name": null}`), &nullNameRule))
 
 	tests := []struct {
 		name      string
@@ -52,6 +53,12 @@ func TestAdmitServiceAccounts(t *testing.T) {
 			admit:     &authn.Admit{ServiceAccounts: []authn.ServiceAccountRule{{Namespace: "nke-clients"}}},
 			principal: serviceAccountPrincipal("nke-clients", "anything-at-all"),
 			want:      true,
+		},
+		{
+			name:      "a rule with a null name admits nobody",
+			admit:     &authn.Admit{ServiceAccounts: []authn.ServiceAccountRule{nullNameRule}},
+			principal: serviceAccountPrincipal("nke-clients", "anything-at-all"),
+			want:      false,
 		},
 		{
 			name:      "a named rule admits the matching service account",
