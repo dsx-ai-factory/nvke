@@ -18,14 +18,56 @@ def register(ctx):
     k8s_resource(
         "management-engine-controller-manager",
         new_name="management-engine",
-        objects=["management-engine-controller-manager:serviceaccount"],
-        resource_deps=["nvke-controller"],
+        resource_deps=["nvke-controller", "management-engine-rest-config"],
         port_forwards=[metrics_port + ":8443"] if metrics_port else [],
         labels=["management-engine"],
         links=[
             link(controller_log_url + "nvkecluster%22", "NVKECluster logs"),
         ],
     )
+
+    k8s_yaml(encode_yaml({
+        "apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "tenant-test"},
+    }))
+    # Reconciliation reads the same infrastructure templates in the tenant namespace.
+    template = read_yaml(os.path.join(ctx.provider_dir, "config/dev/infra-templates.yaml"))
+    template["metadata"]["name"] = "management-engine-" + template["metadata"]["name"]
+    template["metadata"]["namespace"] = "tenant-test"
+    k8s_yaml(encode_yaml(template))
+    # Keep the namespace and manager identity in their existing group.
+    # Moving them between Tilt groups deletes the live objects.
+    k8s_resource(
+        new_name="management-engine-rest-config",
+        objects=[
+            "management-engine-controller-manager:serviceaccount",
+            "tenant-test:namespace",
+            "management-engine-infra-templates:configmap:tenant-test",
+        ],
+        labels=["management-engine"],
+    )
+    for surface, port in [("tenant", 8082), ("operator", 8083)]:
+        api = read_yaml(os.path.join(ctx.provider_dir, "config/dev/" + surface + "-api.yaml"))
+        name = api["metadata"]["name"]
+        k8s_yaml(read_file(os.path.join(ctx.provider_dir, "config/dev/" + surface + "-api-rbac.yaml")))
+        role_kind = "role" if surface == "tenant" else "clusterrole"
+        k8s_resource(
+            new_name=name + "-config",
+            objects=[
+                name + ":serviceaccount:management-engine-system",
+                name + ":" + role_kind,
+                name + ":" + role_kind + "binding",
+            ],
+            resource_deps=["management-engine-rest-config"] if surface == "tenant" else [],
+            labels=["management-engine"],
+        )
+        k8s_yaml(encode_yaml(api))
+        k8s_resource(
+            name,
+            resource_deps=[name + "-config"],
+            port_forwards=[port_forward(port, 8080, host="127.0.0.1")],
+            labels=["management-engine"],
+            links=[link("http://localhost:%d/v1/%s" % (port, "clusters" if surface == "tenant" else "cluster-releases"), surface + " API")],
+        )
     cmd_button(
         "management-engine-create-nvkecluster",
         argv=["bash", "-c", """

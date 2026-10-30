@@ -98,9 +98,9 @@ cd nvke
 make build
 ```
 
-This builds the workspace and writes seven binaries to `bin/`: `agent`,
+This builds the workspace and writes nine binaries to `bin/`: `agent`,
 `updater`, `controller`, `nvkectl`, `capd-reboot-controller`,
-`nvke-os-image-check` and `management-engine`. Building does not start a
+`nvke-os-image-check`, `management-engine`, `tenant-api` and `operator-api`. Building does not start a
 management plane or create a cluster. The node agent runs on Linux.
 
 The [workspace guide](docs/go-workspace.md) explains the modules and outputs.

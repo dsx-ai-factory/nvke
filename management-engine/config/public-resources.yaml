@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+
+- source: NVKECluster
+  public: Cluster
+  path: /v1/clusters
+  metadata: [name, creationTimestamp, deletionTimestamp, uid]
+- source: ClusterRelease
+  public: PublicClusterRelease
+  path: /v1/cluster-releases
+  metadata: [name, creationTimestamp, deletionTimestamp, uid]
+- source: MachineImage
+  public: PublicMachineImage
+  path: /v1/machine-images
+  metadata: [name, creationTimestamp, deletionTimestamp, uid]
