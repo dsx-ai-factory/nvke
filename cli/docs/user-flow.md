@@ -23,7 +23,7 @@ the reference it points at.
 | `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at an NVKE management plane. `use-site` switches between entries, `view` prints the config. | Available |
 | `nvkectl get providers` | Lists the Cluster API infrastructure providers the management plane can use, with their state. Alpha. | Available |
 | `nvkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
-| `nvkectl get clusters [name ...]` | Lists tenant clusters. Names narrow to those clusters. `-o json\|yaml` changes the format. | Available |
+| `nvkectl get clusters [name ...]` | Lists tenant clusters. Names narrow to those clusters. `-o json\|yaml` changes the format; with one name it prints that cluster as a single object, otherwise a list. | Available |
 | `nvkectl get kubeconfig <name>` | Fetches a tenant cluster's admin kubeconfig. `--output-file` writes it to a file instead of stdout. | Available |
 | `nvkectl delete cluster <name>` | Deletes a tenant cluster. | Available |
 | `nvkectl patch cluster <name>` | PATCHes a mutable cluster property (Kubernetes version, etcd encryption, remote access, control plane config). `--patch` takes an inline YAML document, `--patch-file` a file (or stdin via `-`). | Available |

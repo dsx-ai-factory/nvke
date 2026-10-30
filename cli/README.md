@@ -72,7 +72,8 @@ nvkectl get providers -o json
 # Tenant cluster lifecycle
 nvkectl get clusters                    # table with AGE and status
 nvkectl get clusters -o json            # JSON output
-nvkectl get clusters <name>... -o yaml  # full detail for named clusters
+nvkectl get clusters <name> -o yaml     # one name: that cluster, as a single object
+nvkectl get clusters <name>... -o yaml  # several names: a list of those clusters
 nvkectl create cluster -f <spec-file>   # or: cat spec.yaml | nvkectl create cluster -f -
 nvkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: 1.31.0'
 nvkectl patch cluster my-cluster --patch-file patch.yaml
