@@ -28,6 +28,12 @@ func (p *Plan) Render(dir string) error {
 	case len(entries) > 0:
 		return fmt.Errorf("%s is not empty", dir)
 	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return err
+	}
 	files := map[string][]byte{}
 	for _, rel := range p.Releases {
 		for _, path := range rel.ValuesFiles {

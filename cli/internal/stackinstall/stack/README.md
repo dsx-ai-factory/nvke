@@ -42,12 +42,12 @@ Every chart listed by the artifact file is installed as a Helm release. The
 artifact file pins the chart. The values file here is passed to
 `helm upgrade --install` with `--values`.
 
-The seed is a kind cluster that runs NICo. It gets the same stack as a site,
-without NKTP. The OIDC provider and the NetworkPolicy stay on there. The kind
-layer changes sizing and turns the monitors and tracing off, since their CRDs
-and their receiver come with NKTP. It is applied on top for the seed cluster
-only: `values/kind/<name>.yaml` is passed as a second `--values`
-after `values/<name>.yaml`. The file is named after the values file, not the
+The seed is a kind cluster. It runs NICo when the artifact file has the
+`nico` output. It gets the same stack as a site, without NKTP; the OIDC
+provider and the NetworkPolicy stay on. The kind layer changes sizing and
+turns the monitors and tracing off, since their CRDs and their receiver come
+with NKTP. The kind layer applies to the seed only: `values/kind/<name>.yaml`
+is passed as a second `--values` after `values/<name>.yaml`. The file is named after the values file, not the
 chart. The Bitnami `postgresql` chart has two, `kind/postgresql.yaml` and
 `kind/nico-prereqs.yaml`. Helm merges maps key by key, so a kind file
 restates only what changes.

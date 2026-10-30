@@ -7,10 +7,16 @@ import (
 	"fmt"
 	"io/fs"
 	"net/netip"
+	"regexp"
 	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+)
+
+var (
+	imageDigest     = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	imageRepository = regexp.MustCompile(`^[a-z0-9][a-z0-9._:/-]*$`)
 )
 
 // oidcNodePort is the NodePort of manifests/spire-oidc-provider-nodeport.yaml.
@@ -126,11 +132,12 @@ func temporalOverlay(mirror string) map[string]any {
 	return values
 }
 
-// imageValues splits a digest reference into the chart's image values. The
-// tag is cleared so the digest alone pins the pull.
+// imageValues splits <repository>@sha256:<digest> into the chart's image
+// values, or returns nil for any other shape. The tag is cleared; the chart
+// falls back to appVersion and the digest governs the pull.
 func imageValues(ref string) map[string]any {
 	repo, digest, ok := strings.Cut(ref, "@")
-	if !ok || !strings.HasPrefix(digest, "sha256:") {
+	if !ok || !imageDigest.MatchString(digest) || !imageRepository.MatchString(repo) {
 		return nil
 	}
 	if colon := strings.LastIndex(repo, ":"); colon > strings.LastIndex(repo, "/") {
@@ -183,8 +190,8 @@ func committedList(file string, keys ...string) ([]string, error) {
 	return list, nil
 }
 
-// committedNode reads a value from an embedded values file as a node, since
-// Helm accepts a repeated key and the last one wins.
+// committedNode reads a value from an embedded values file as a node, so a
+// scalar keeps its text.
 func committedNode(file string, keys ...string) (*yaml.Node, error) {
 	data, err := fs.ReadFile(stackFS, file)
 	if err != nil {
@@ -207,6 +214,7 @@ func committedNode(file string, keys ...string) (*yaml.Node, error) {
 		for i := 0; i+1 < len(node.Content); i += 2 {
 			if node.Content[i].Value == key {
 				found = node.Content[i+1]
+				break
 			}
 		}
 		node = found

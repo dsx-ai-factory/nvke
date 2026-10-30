@@ -40,10 +40,9 @@ type Inputs struct {
 	Target    Target
 }
 
-// Release is one Helm release. Name is the Helm release name. Chart is the
-// artifact file output that holds the chart. ValuesFiles are embedded paths
-// passed in order, and Overlay is passed after them; Overlay is nil when the
-// chart takes no input-derived values.
+// Release is one Helm release: its name, the artifact output that holds the
+// chart, the embedded values files in order, and the overlay passed last (nil
+// when the chart takes no input-derived values).
 type Release struct {
 	Name        string
 	Chart       artifacts.Output
@@ -81,7 +80,6 @@ type inputs struct {
 	cwe         string
 	capnico     string
 	hasNico     bool
-	art         *artifacts.Release
 }
 
 // NewPlan checks the inputs and builds the plan for in.Target. It reports
@@ -96,7 +94,7 @@ func NewPlan(in Inputs) (*Plan, error) {
 		if !c.planned(v.kind, v.hasNico) {
 			continue
 		}
-		rel := Release{Name: c.release, Chart: *v.art.Output(c.output)}
+		rel := Release{Name: c.release, Chart: *in.Artifacts.Output(c.output)}
 		if c.values != "" {
 			rel.ValuesFiles = valuesFiles(c.values, v.kind)
 			if rel.Overlay, err = overlay(c.values, v); err != nil {
@@ -132,7 +130,6 @@ func check(in Inputs) (inputs, error) {
 		trustDomain: spec.Spire.TrustDomain,
 		upstreamCA:  spec.Spire.UpstreamCA,
 		mirror:      stack.Mirror,
-		art:         in.Artifacts,
 		hasNico:     in.Artifacts.Output("nico") != nil,
 	}
 	var problems []error
@@ -164,6 +161,8 @@ func check(in Inputs) (inputs, error) {
 		v.address, v.clusterName = spec.Spire.ExternalAddress, sitespec.DefaultBootstrapClusterName
 		if v.address == "" {
 			add("site spec: spire.externalAddress is required on the seed; nodes reach the seed's SPIRE server there")
+		} else if ip, err := netip.ParseAddr(v.address); err == nil && !ip.Is4() {
+			add("site spec: spire.externalAddress %q must be an IPv4 address or a DNS name", v.address)
 		}
 	default:
 		add("target kind %q is neither %q nor %q", v.kind, Seed, Site)
@@ -180,10 +179,8 @@ func check(in Inputs) (inputs, error) {
 		case out == nil:
 			add("artifact file: no %s output", name)
 			return ""
-		case !strings.Contains(out.Reference, "@sha256:"):
-			add("artifact file: %s reference %q is not pinned by a sha256 digest", name, out.Reference)
-		case !templateSafe(out.Reference):
-			add("artifact file: %s reference %s", name, unsafeChar)
+		case imageValues(out.Reference) == nil:
+			add("artifact file: %s reference %q is not <repository>@sha256:<64 hex digits>", name, out.Reference)
 		}
 		return out.Reference
 	}
@@ -215,7 +212,7 @@ func check(in Inputs) (inputs, error) {
 	case strings.Contains(v.mirror, "://"):
 		add("stack config: mirror %q is a host[:port][/prefix], not a URL", v.mirror)
 	case !templateSafe(v.mirror):
-		add("stack config: mirror %s", unsafeChar)
+		add("stack config: mirror %q holds a quote, a backslash or a control character", v.mirror)
 	}
 	return v, errors.Join(problems...)
 }

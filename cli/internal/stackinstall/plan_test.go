@@ -115,10 +115,14 @@ func TestPlanRefuses(t *testing.T) {
 		{"cwe by tag", Site, func(in *Inputs) { setReference(in, "cwe", "registry.example.invalid/nvke/cwe:1.0") }, "cwe reference"},
 		{"capnico by tag", Site, func(in *Inputs) {
 			setReference(in, "capnico-controller", "registry.example.invalid/nvke/capnico-controller:1.0")
-		}, "not pinned by a sha256 digest"},
-		{"capnico reference with a quote", Site, func(in *Inputs) {
-			setReference(in, "capnico-controller", `registry.example.invalid/x"y@sha256:`+strings.Repeat("b", 64))
-		}, "capnico-controller reference holds a quote"},
+		}, "is not <repository>@sha256:<64 hex digits>"},
+		{"capnico reference with a comment", Site, func(in *Inputs) {
+			setReference(in, "capnico-controller", "registry.example.invalid/x #@sha256:"+strings.Repeat("b", 64))
+		}, "capnico-controller reference"},
+		{"capnico digest too short", Site, func(in *Inputs) {
+			setReference(in, "capnico-controller", "registry.example.invalid/x@sha256:"+strings.Repeat("b", 63))
+		}, "capnico-controller reference"},
+		{"seed with an IPv6 address", Seed, func(in *Inputs) { in.Site.Spire.ExternalAddress = "2001:db8::10" }, "must be an IPv4 address or a DNS name"},
 		{"missing chart output", Site, func(in *Inputs) { dropOutput(in, "temporal") }, "no temporal output for the temporal release"},
 		{"missing nktp output on the site", Site, func(in *Inputs) { dropOutput(in, "nktp") }, "no nktp output"},
 		{"empty client networks", Site, func(in *Inputs) { in.Stack.ClientNetworks = nil }, "clientNetworks is empty"},
@@ -130,7 +134,7 @@ func TestPlanRefuses(t *testing.T) {
 		{"cluster name with a quote", Site, func(in *Inputs) { in.Site.ClusterName = `site"a` }, "clusterName holds a quote"},
 		{"cluster name unset", Site, func(in *Inputs) { in.Site.ClusterName = "" }, "clusterName is required"},
 		{"mirror is a URL", Site, func(in *Inputs) { in.Stack.Mirror = "https://mirror.example.internal" }, "not a URL"},
-		{"mirror with a control character", Site, func(in *Inputs) { in.Stack.Mirror = "mirror\n" }, "mirror holds a quote"},
+		{"mirror with a control character", Site, func(in *Inputs) { in.Stack.Mirror = "mirror\n" }, "holds a quote, a backslash or a control character"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -312,6 +316,8 @@ func TestImageValues(t *testing.T) {
 		{"tag and digest", "registry.example.invalid/nvke/cwe:1.0@" + digest, map[string]any{"repository": "registry.example.invalid/nvke/cwe", "digest": digest, "tag": ""}},
 		{"registry with a port", "mirror.example.internal:5000/cwe@" + digest, map[string]any{"repository": "mirror.example.internal:5000/cwe", "digest": digest, "tag": ""}},
 		{"tag only", "registry.example.invalid/nvke/cwe:1.0", nil},
+		{"short digest", "registry.example.invalid/nvke/cwe@sha256:" + strings.Repeat("a", 63), nil},
+		{"space in repository", "registry.example.invalid/x #@" + digest, nil},
 		{"neither", "registry.example.invalid/nvke/cwe", nil},
 	}
 	for _, tc := range cases {
@@ -387,7 +393,7 @@ func TestEveryStackFileIsPlanned(t *testing.T) {
 func TestCAPNICoImageRendered(t *testing.T) {
 	in := testInputs(t, Site, "linux/amd64", true)
 	content := manifestContent(t, mustPlan(t, in), "manifests/capnico.yaml")
-	assert.Equal(t, 1, strings.Count(content, "image: "+in.Artifacts.Output("capnico-controller").Reference))
+	assert.Equal(t, 1, strings.Count(content, "image: "+in.Artifacts.Output("capnico-controller").Reference+"\n"))
 	assert.NotContains(t, content, "{{")
 }
 

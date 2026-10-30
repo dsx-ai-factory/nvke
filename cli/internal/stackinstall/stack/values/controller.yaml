@@ -5,7 +5,8 @@
 #
 # Site identity is not in this file. The generated overlay supplies it at
 # render time:
-#   image.repository and image.digest  the cwe output of the artifact file
+#   image.repository, image.digest and an empty image.tag
+#                                      the cwe output of the artifact file
 #   spiffe.spire.serverAddress         the target's address
 #   spiffe.trustDomain                 from the site spec; must equal the
 #                                      SPIRE server's trust domain

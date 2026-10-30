@@ -21,7 +21,12 @@ var update = flag.Bool("update", false, "rewrite the golden files")
 func TestRenderWritesTree(t *testing.T) {
 	p := mustPlan(t, testInputs(t, Site, "linux/amd64", true))
 	dir := filepath.Join(t.TempDir(), "out")
+	// An existing empty directory is tightened to 0700.
+	require.NoError(t, os.Mkdir(dir, 0o755))
 	require.NoError(t, p.Render(dir))
+	dirInfo, statErr := os.Stat(dir)
+	require.NoError(t, statErr)
+	assert.Equal(t, fs.FileMode(0o700), dirInfo.Mode().Perm())
 
 	want := map[string]bool{}
 	for _, rel := range p.Releases {
