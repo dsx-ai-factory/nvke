@@ -8,18 +8,17 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"io/fs"
 	"maps"
 	"net/url"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	yamlv3 "gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
-	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/redact"
@@ -181,8 +180,6 @@ func TestCredentialSecretsRefusesEmptyNICoAPI(t *testing.T) {
 	}
 }
 
-// TestCredentialSecretsNamespacesExist checks every Secret lands in a
-// namespace that manifests/namespaces.yaml creates.
 func TestCredentialSecretsNamespacesExist(t *testing.T) {
 	secrets, err := CredentialSecrets(withCA(testCredentials), testNICo)
 	require.NoError(t, err)
@@ -204,16 +201,16 @@ func TestCredentialSecretsRegisterConnectionString(t *testing.T) {
 
 func manifestNamespaces(t *testing.T) []string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("stack", "manifests", "namespaces.yaml"))
+	data, err := fs.ReadFile(stackFS, "manifests/namespaces.yaml")
 	require.NoError(t, err)
-	dec := utilyaml.NewYAMLOrJSONDecoder(bytes.NewReader(data), 4096)
+	dec := yamlv3.NewDecoder(bytes.NewReader(data))
 	var names []string
 	for {
 		var doc struct {
-			Kind     string `json:"kind"`
+			Kind     string `yaml:"kind"`
 			Metadata struct {
-				Name string `json:"name"`
-			} `json:"metadata"`
+				Name string `yaml:"name"`
+			} `yaml:"metadata"`
 		}
 		err := dec.Decode(&doc)
 		if errors.Is(err, io.EOF) {

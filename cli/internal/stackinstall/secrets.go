@@ -62,12 +62,8 @@ type secretRefs struct {
 		Server struct {
 			Config struct {
 				Persistence struct {
-					Default struct {
-						SQL struct {
-							ExistingSecret string `yaml:"existingSecret"`
-							SecretKey      string `yaml:"secretKey"`
-						} `yaml:"sql"`
-					} `yaml:"default"`
+					Default    temporalStore `yaml:"default"`
+					Visibility temporalStore `yaml:"visibility"`
 				} `yaml:"persistence"`
 			} `yaml:"config"`
 		} `yaml:"server"`
@@ -79,23 +75,37 @@ type secretRefs struct {
 	}
 }
 
+// temporalStore is one Temporal datastore's Secret reference.
+type temporalStore struct {
+	SQL struct {
+		ExistingSecret string `yaml:"existingSecret"`
+		SecretKey      string `yaml:"secretKey"`
+	} `yaml:"sql"`
+}
+
 func readSecretRefs() (*secretRefs, error) {
 	var r secretRefs
-	for file, into := range map[string]any{
-		"values/controller.yaml": &r.controller,
-		"values/postgresql.yaml": &r.postgresql,
-		"values/temporal.yaml":   &r.temporal,
-		"values/spire.yaml":      &r.spire,
+	for _, f := range []struct {
+		file string
+		into any
+	}{
+		{"values/controller.yaml", &r.controller},
+		{"values/postgresql.yaml", &r.postgresql},
+		{"values/temporal.yaml", &r.temporal},
+		{"values/spire.yaml", &r.spire},
 	} {
-		if err := readValues(file, into); err != nil {
+		if err := readValues(f.file, f.into); err != nil {
 			return nil, err
 		}
+	}
+	// One Secret serves both Temporal stores.
+	if p := r.temporal.Server.Config.Persistence; p.Visibility != p.Default {
+		return nil, errors.New("values/temporal.yaml: the visibility store must read the default store's Secret and key")
 	}
 	return &r, nil
 }
 
-// CredentialSecrets returns the Secrets the stack's charts read. Each carries
-// its values in data, not stringData, so a server-side apply can update it.
+// CredentialSecrets returns the Secrets the stack's charts read.
 func CredentialSecrets(c Credentials, nico NICoAPI) ([]*corev1.Secret, error) {
 	for _, f := range []struct{ name, value string }{
 		{"NICoAPI.Endpoint", nico.Endpoint},
@@ -148,7 +158,8 @@ func secret(namespace, name string, data map[string][]byte) *corev1.Secret {
 		TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
 		Type:       corev1.SecretTypeOpaque,
-		Data:       data,
+		// data, not stringData, so a server-side apply can update it.
+		Data: data,
 	}
 }
 

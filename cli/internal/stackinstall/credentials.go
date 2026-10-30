@@ -23,24 +23,8 @@ type Credentials struct {
 	NicoToken        string
 	NodeUser         string
 	NodePassword     string
-	// SpireCACert and SpireCAKey are nil unless the site spec sets spire.upstreamCA.
-	SpireCACert []byte
-	SpireCAKey  []byte
-}
-
-// CredentialSources names where the credentials are read from. The stack
-// config carries it. The node user is the only value in it; the rest are
-// paths of files that hold one value each.
-type CredentialSources struct {
-	// DatabasePasswordFile is read on the site. The seed generates its password.
-	DatabasePasswordFile string
-	NicoTokenFile        string
-	NodeUser             string
-	NodePasswordFile     string
-	// SpireCACertFile and SpireCAKeyFile are read when the site spec sets
-	// spire.upstreamCA, and must be unset otherwise.
-	SpireCACertFile string
-	SpireCAKeyFile  string
+	SpireCACert      []byte // nil unless the site spec sets spire.upstreamCA
+	SpireCAKey       []byte
 }
 
 // ReadCredentials reads the files src names for an install on the given
@@ -49,8 +33,8 @@ type CredentialSources struct {
 // registered with redact.
 func ReadCredentials(kind TargetKind, upstreamCA bool, src CredentialSources) (Credentials, error) {
 	var c Credentials
-	var problems []string
-	add := func(format string, a ...any) { problems = append(problems, fmt.Sprintf(format, a...)) }
+	var problems []error
+	add := func(format string, a ...any) { problems = append(problems, fmt.Errorf(format, a...)) }
 
 	switch kind {
 	case Seed:
@@ -66,7 +50,7 @@ func ReadCredentials(kind TargetKind, upstreamCA bool, src CredentialSources) (C
 	if src.NicoTokenFile == "" {
 		add("credentials.nicoTokenFile is not set: CAPNICo reads the token")
 	} else if token, err := sitespec.ReadNicoToken(src.NicoTokenFile); err != nil {
-		add("credentials.nicoTokenFile: %v", err)
+		add("credentials.nicoTokenFile: %w", err)
 	} else {
 		c.NicoToken = token
 	}
@@ -89,8 +73,8 @@ func ReadCredentials(kind TargetKind, upstreamCA bool, src CredentialSources) (C
 	case src.SpireCACertFile != "" || src.SpireCAKeyFile != "":
 		add("credentials.spireCACertFile and spireCAKeyFile are set, but the site spec does not set spire.upstreamCA")
 	}
-	if len(problems) > 0 {
-		return Credentials{}, errors.New(strings.Join(problems, "\n"))
+	if err := errors.Join(problems...); err != nil {
+		return Credentials{}, err
 	}
 	// Secret data is base64, so both forms are masked.
 	for _, v := range []string{c.DatabasePassword, c.NicoToken, c.NodePassword, string(c.SpireCAKey)} {
@@ -114,7 +98,7 @@ func readFile(add func(string, ...any), key, path string) []byte {
 		if errors.As(err, &pathErr) {
 			err = pathErr.Err
 		}
-		add("%s: %v", key, err)
+		add("%s: %w", key, err)
 		return nil
 	}
 	if len(bytes.TrimSpace(data)) == 0 {

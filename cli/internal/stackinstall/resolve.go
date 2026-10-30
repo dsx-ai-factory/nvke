@@ -26,14 +26,6 @@ type Target struct {
 	Platform string
 }
 
-// StackConfig holds the stack config keys the plan reads. Mirror is a
-// registry host[:port][/prefix] that serves the spire, postgresql and
-// temporal images. ClientNetworks are the CIDRs admitted to the NVKE API.
-type StackConfig struct {
-	Mirror         string
-	ClientNetworks []string
-}
-
 // Inputs is everything Resolve reads. Artifacts is the decoded artifact file.
 type Inputs struct {
 	Site      *sitespec.SiteSpec
