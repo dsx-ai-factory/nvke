@@ -20,8 +20,8 @@ type VersionRange struct {
 	Min, Max *version.Version
 }
 
-func versions(min, max string) VersionRange {
-	return VersionRange{version.MustParseSemantic(min), version.MustParseSemantic(max)}
+func versions(minVersion, maxVersion string) VersionRange {
+	return VersionRange{version.MustParseSemantic(minVersion), version.MustParseSemantic(maxVersion)}
 }
 
 func (r VersionRange) contains(v *version.Version) bool {
