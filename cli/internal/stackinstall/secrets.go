@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// The Secrets the charts read by name. values/*.yaml reference the same names.
+// The Secret names and keys the values files reference.
 const (
 	databaseSecret = "nvke-database"
 	tenantSecret   = "dgxc-tenant-credentials"
@@ -30,7 +30,7 @@ const (
 	spireNamespace      = "spire-server"
 )
 
-// The controller's database, as values/controller.yaml appDb records it.
+// The NVKE controller's database, as values/controller.yaml appDb records it.
 const (
 	dbHost    = "nvke-postgresql.postgres.svc.cluster.local:5432"
 	dbName    = "nvke-controller"

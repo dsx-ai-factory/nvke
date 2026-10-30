@@ -122,18 +122,26 @@ func TestReadCredentialsErrorsCarryNoValue(t *testing.T) {
 	t.Setenv(sitespec.NicoCredentialsEnv, writeFile(t, "token", "leak-tok leak-en"))
 	t.Setenv("NVKECTL_NODE_USER", "leak-user")
 	t.Setenv("NVKECTL_NODE_PASSWORD", `leak"node-pw`)
+	emptyKey := writeFile(t, "ca.key", " \n")
 	spire := sitespec.Spire{
 		UpstreamCA: true,
 		CACertFile: writeFile(t, "ca.crt", "leak-cert-body"),
-		CAKeyFile:  writeFile(t, "ca.key", " \n"),
+		CAKeyFile:  emptyKey,
 	}
 
 	_, err := ReadCredentials(Seed, spire)
 
 	require.Error(t, err)
-	for _, v := range []string{"leak-tok", "leak-en", `leak"node-pw`, "leak-cert-body"} {
+	for _, v := range []string{"leak-tok", "leak-en", `leak"node-pw`, "leak-cert-body", emptyKey} {
 		assert.NotContains(t, err.Error(), v)
 	}
+	assert.Contains(t, err.Error(), sitespec.EnvSpireCAKeyFile)
+
+	// A key pasted into the variable instead of a path must not be echoed.
+	spire.CAKeyFile = "-----BEGIN PRIVATE KEY-----leak-pasted-key"
+	_, err = ReadCredentials(Seed, spire)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "leak-pasted-key")
 	assert.Contains(t, err.Error(), sitespec.EnvSpireCAKeyFile)
 }
 
@@ -176,7 +184,7 @@ func TestReadCredentialsRegistersWithRedact(t *testing.T) {
 	_, err := ReadCredentials(Site, spire)
 	require.NoError(t, err)
 
-	for _, v := range []string{"redact-db-pw-7f3a", "redact-token-7f3a", "redact-node-pw-7f3a", "redact-key-7f3a"} {
+	for _, v := range []string{"redact-db-pw-7f3a", connectionString("redact-db-pw-7f3a"), "redact-token-7f3a", "redact-node-pw-7f3a", "redact-key-7f3a"} {
 		assert.Equal(t, redact.Placeholder, redact.Text(v), v)
 		encoded := base64.StdEncoding.EncodeToString([]byte(v))
 		assert.Equal(t, redact.Placeholder, redact.Text(encoded), encoded)

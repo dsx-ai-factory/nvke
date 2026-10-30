@@ -7,11 +7,11 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 
@@ -42,11 +42,7 @@ func withCA(c Credentials) Credentials {
 func layout(secrets []*corev1.Secret) []string {
 	var out []string
 	for _, s := range secrets {
-		keys := make([]string, 0, len(s.Data))
-		for k := range s.Data {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
+		keys := slices.Sorted(maps.Keys(s.Data))
 		out = append(out, s.Namespace+"/"+s.Name+" {"+strings.Join(keys, ", ")+"}")
 	}
 	return out
@@ -54,13 +50,9 @@ func layout(secrets []*corev1.Secret) []string {
 
 func find(t *testing.T, secrets []*corev1.Secret, namespace, name string) *corev1.Secret {
 	t.Helper()
-	for _, s := range secrets {
-		if s.Namespace == namespace && s.Name == name {
-			return s
-		}
-	}
-	t.Fatalf("no Secret %s/%s", namespace, name)
-	return nil
+	i := slices.IndexFunc(secrets, func(s *corev1.Secret) bool { return s.Namespace == namespace && s.Name == name })
+	require.NotEqualf(t, -1, i, "no Secret %s/%s", namespace, name)
+	return secrets[i]
 }
 
 func TestSecretsSite(t *testing.T) {
@@ -85,11 +77,7 @@ func TestSecretsSite(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, layout(secrets))
-			seen := map[string]bool{}
 			for _, s := range secrets {
-				id := s.Namespace + "/" + s.Name
-				assert.False(t, seen[id], "duplicate Secret %s", id)
-				seen[id] = true
 				assert.Equal(t, "v1", s.APIVersion)
 				assert.Equal(t, "Secret", s.Kind)
 				assert.Equal(t, corev1.SecretTypeOpaque, s.Type)
@@ -172,6 +160,7 @@ func TestSecretsRefusesEmptyNICoAPI(t *testing.T) {
 func TestSecretsMatchStack(t *testing.T) {
 	var postgresql struct {
 		NamespaceOverride string `json:"namespaceOverride"`
+		FullnameOverride  string `json:"fullnameOverride"`
 		Auth              struct {
 			Username       string `json:"username"`
 			ExistingSecret string `json:"existingSecret"`
@@ -182,6 +171,7 @@ func TestSecretsMatchStack(t *testing.T) {
 	}
 	readValues(t, "postgresql.yaml", &postgresql)
 	assert.Equal(t, postgresNamespace, postgresql.NamespaceOverride)
+	assert.Equal(t, postgresql.FullnameOverride+"."+postgresNamespace+".svc.cluster.local:5432", dbHost)
 	assert.Equal(t, dbUser, postgresql.Auth.Username)
 	assert.Equal(t, databaseSecret, postgresql.Auth.ExistingSecret)
 	assert.Equal(t, postgresPasswordKey, postgresql.Auth.SecretKeys.AdminPasswordKey)

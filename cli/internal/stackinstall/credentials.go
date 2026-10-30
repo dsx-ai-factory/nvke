@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -54,7 +55,7 @@ func ReadCredentials(kind TargetKind, spire sitespec.Spire) (Credentials, error)
 	case Site:
 		c.DatabasePassword = strings.TrimSpace(envalias.Get(envDatabasePassword))
 		if c.DatabasePassword == "" {
-			problems = append(problems, envDatabasePassword+" is not set: PostgreSQL, Temporal and the controller read it")
+			problems = append(problems, envDatabasePassword+" is not set: PostgreSQL, Temporal and the NVKE controller read it")
 		}
 		c.NicoToken = strings.TrimSpace(envalias.Get(envNicoToken))
 		if c.NicoToken == "" {
@@ -65,7 +66,7 @@ func ReadCredentials(kind TargetKind, spire sitespec.Spire) (Credentials, error)
 	}
 	user, password, err := sitespec.NodeLoginFromEnv()
 	if err != nil {
-		problems = append(problems, strings.Split(err.Error(), "\n")...)
+		problems = append(problems, err.Error())
 	}
 	c.NodeUser, c.NodePassword = user, password
 	if spire.UpstreamCA {
@@ -76,11 +77,11 @@ func ReadCredentials(kind TargetKind, spire sitespec.Spire) (Credentials, error)
 		return Credentials{}, errors.New(strings.Join(problems, "\n"))
 	}
 	// The Secrets carry the values base64-encoded, so both forms are masked.
-	for _, v := range []string{c.DatabasePassword, c.NicoToken, c.NodePassword, string(c.SpireCAKey)} {
+	// The connection string is registered whole: base64 of the URL does not
+	// contain base64 of the password.
+	for _, v := range []string{c.DatabasePassword, connectionString(c.DatabasePassword), c.NicoToken, c.NodePassword, string(c.SpireCAKey)} {
 		redact.RegisterSecret(v)
-		if v != "" {
-			redact.RegisterSecret(base64.StdEncoding.EncodeToString([]byte(v)))
-		}
+		redact.RegisterSecret(base64.StdEncoding.EncodeToString([]byte(v)))
 	}
 	return c, nil
 }
@@ -93,11 +94,16 @@ func readFile(problems *[]string, env, path string) []byte {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
+		// The variable may hold a pasted key instead of a path; drop the path.
+		var pathErr *fs.PathError
+		if errors.As(err, &pathErr) {
+			err = pathErr.Err
+		}
 		*problems = append(*problems, fmt.Sprintf("%s: %v", env, err))
 		return nil
 	}
 	if len(bytes.TrimSpace(data)) == 0 {
-		*problems = append(*problems, fmt.Sprintf("%s: %s is empty", env, path))
+		*problems = append(*problems, env+" names an empty file")
 		return nil
 	}
 	return data
