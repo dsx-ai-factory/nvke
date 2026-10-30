@@ -333,16 +333,9 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err := dumpSiteSpec(out, inv); err != nil {
 		return err
 	}
-	// Said as soon as the default is known, dry run included: the controller
-	// stack install shares it only for the default bootstrap cluster name.
-	if inv.Spire.TrustDomain == "" {
-		bootstrapCluster := bootstrapengine.DefaultConfig().ClusterName
-		if bootstrapCluster == sitespec.DefaultBootstrapClusterName {
-			logger.Info("spire.trustDomain is not set; using the default the controller stack install shares", "trustDomain", inv.EffectiveTrustDomain(bootstrapCluster))
-		} else {
-			logger.Warn("spire.trustDomain is not set; derived from the bootstrap cluster name. Set spire.trustDomain to this value before the controller stack install, whose default differs",
-				"trustDomain", inv.EffectiveTrustDomain(bootstrapCluster), "installDefault", inv.EffectiveTrustDomain(sitespec.DefaultBootstrapClusterName))
-		}
+	// Said as soon as the default is known, dry run included.
+	if domain, defaulted := inv.TrustDomain(); defaulted {
+		logger.Info("spire.trustDomain is not set; using the default", "trustDomain", domain)
 	}
 
 	// Before the dry-run return, so a profiles image the deploy would refuse
@@ -1245,7 +1238,7 @@ func controllerTracing(ctx context.Context, logger *slog.Logger) controllerdeplo
 // that then has to be torn down.
 //
 // clusterName is the ephemeral cluster's name, which is settled before the
-// cluster is created; SPIRE is told it, and it seeds the default trust domain.
+// cluster is created; SPIRE is told it.
 func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS bool, controllerImage, provisionedImage string) (controllerdeploy.Config, error) {
 	cfg := controllerdeploy.DefaultConfig()
 	// Flag, then variable, then the manifest default.
@@ -1281,14 +1274,12 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 		return cfg, errors.New("--provisioned-provider-image and NVKECTL_CAPI_PROVISIONED_IMAGE are not set and the bootstrap manifest carries no default provisioned-provider image")
 	}
 
-	// SPIRE is told the Kind cluster's own name. The identity trust domain comes
-	// from the site spec, including its environment override, or is derived from
-	// the bootstrap cluster name when the operator did not set one.
+	// SPIRE is told the Kind cluster's own name. The trust domain is
+	// spire.trustDomain as Load resolved it (NVKECTL_SPIFFE_TRUST_DOMAIN
+	// overrides the file), else the default derived from clusterName.
 	cfg.SPIFFEClusterName = clusterName
-	if inv.Spire.TrustDomain != "" {
-		cfg.SPIFFETrustDomain = inv.Spire.TrustDomain
-	} else if cfg.SPIFFETrustDomain == "" {
-		cfg.SPIFFETrustDomain = clusterName + ".nke.local"
+	if domain, defaulted := inv.TrustDomain(); !defaulted || cfg.SPIFFETrustDomain == "" {
+		cfg.SPIFFETrustDomain = domain
 	}
 
 	// The CA SPIRE chains to, from NVKECTL_SPIRE_CA_CERT_FILE and NVKECTL_SPIRE_CA_KEY_FILE.

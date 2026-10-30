@@ -1079,10 +1079,10 @@ func TestRender_TrustDomainDefaultsWithAWarning(t *testing.T) {
 		t.Fatal(err)
 	}
 	env, _ := os.ReadFile(filepath.Join(out, "site.env"))
-	if !strings.Contains(string(env), "SITE_TRUST_DOMAIN=nvkectl-bootstrap.nke.local\n") {
+	if !strings.Contains(string(env), "SITE_TRUST_DOMAIN=nvke-site.nvke.local\n") {
 		t.Errorf("site.env:\n%s", env)
 	}
-	if !strings.Contains(log.String(), "warning: spire.trustDomain is not set; using nvkectl-bootstrap.nke.local") {
+	if !strings.Contains(log.String(), "warning: spire.trustDomain is not set; using nvke-site.nvke.local") {
 		t.Errorf("no warning in the log:\n%s", log.String())
 	}
 }
