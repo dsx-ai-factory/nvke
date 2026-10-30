@@ -7,8 +7,8 @@
 #   image.repository, image.digest and an empty image.tag
 #                                      the cwe output of the artifact file
 #   spiffe.spire.serverAddress         the target's address
-#   spiffe.trustDomain                 from the site spec; must equal the
-#                                      SPIRE server's trust domain
+#   spiffe.trustDomain                 the SPIRE server's trust domain: from
+#                                      the site spec, or <clusterName>.nvke.local
 #   nvkeOIDCAuth.discoveryURL          https://<target address>:30443/.well-known/openid-configuration
 #
 # No credential is in this file. The command creates the nvke-database and

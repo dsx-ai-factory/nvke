@@ -67,7 +67,11 @@ type NVKEControllerStack struct {
 }
 
 // placeholderTrustDomain is the trust domain values/spire.yaml carries.
-const placeholderTrustDomain = "example.org"
+// trustDomainSuffix completes the default <clusterName>.nvke.local.
+const (
+	placeholderTrustDomain = "example.org"
+	trustDomainSuffix      = ".nvke.local"
+)
 
 // inputs are the checked values the overlays and templates are built from.
 type inputs struct {
@@ -130,11 +134,12 @@ func check(in Inputs) (inputs, error) {
 	if !spec.IsNico() {
 		add("site spec: infra.provider is %q; the stack install needs %q", spec.Infra.Provider, sitespec.ProviderNico)
 	}
-	switch v.trustDomain {
-	case "":
-		add("site spec: spire.trustDomain is required")
-	case placeholderTrustDomain:
+	switch {
+	case v.trustDomain == placeholderTrustDomain:
 		add("site spec: spire.trustDomain is the placeholder %s", placeholderTrustDomain)
+	case v.trustDomain == "" && spec.ClusterName != "":
+		// The same on the seed and the site, and different per site.
+		v.trustDomain = spec.ClusterName + trustDomainSuffix
 	}
 
 	switch v.kind {

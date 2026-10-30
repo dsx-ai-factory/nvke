@@ -108,7 +108,6 @@ func TestResolveRefuses(t *testing.T) {
 		mutate func(*Inputs)
 		want   string
 	}{
-		{"trust domain unset", Site, func(in *Inputs) { in.Site.Spire.TrustDomain = "" }, "spire.trustDomain is required"},
 		{"trust domain placeholder", Site, func(in *Inputs) { in.Site.Spire.TrustDomain = "example.org" }, "placeholder example.org"},
 		{"platform without TPM checksum", Site, func(in *Inputs) { in.Target.Platform = "linux/s390x" }, "no SPIRE TPM attestor checksum"},
 		{"missing cwe", Site, func(in *Inputs) { dropOutput(in, "cwe") }, "no cwe output"},
@@ -387,6 +386,15 @@ func TestCAPNICoImageRendered(t *testing.T) {
 	content := manifestContent(t, mustResolve(t, in), "manifests/capnico.yaml")
 	assert.Equal(t, 1, strings.Count(content, "image: "+in.Artifacts.Output("capnico-controller").Reference+"\n"))
 	assert.NotContains(t, content, "{{")
+}
+
+func TestDefaultTrustDomain(t *testing.T) {
+	for _, kind := range []TargetKind{Seed, Site} {
+		in := testInputs(t, kind, "linux/amd64", true)
+		in.Site.Spire.TrustDomain = ""
+		spire := release(t, mustResolve(t, in), "spire").ValuesOverlay
+		assert.Equal(t, in.Site.ClusterName+".nvke.local", dig(spire, "global", "spire", "trustDomain"), kind)
+	}
 }
 
 func TestIdentityMatchesSeedAndSite(t *testing.T) {
