@@ -101,15 +101,6 @@ func NewPlan(in Inputs) (*Plan, error) {
 				return nil, fmt.Errorf("%s: %w", c.release, err)
 			}
 		}
-		if c.values == "spire" {
-			merged, err := mergedValues(rel)
-			if err != nil {
-				return nil, err
-			}
-			if err := checkPlaceholder(merged); err != nil {
-				return nil, err
-			}
-		}
 		p.Releases = append(p.Releases, rel)
 	}
 	sort.Slice(p.Releases, func(i, j int) bool { return p.Releases[i].Name < p.Releases[j].Name })

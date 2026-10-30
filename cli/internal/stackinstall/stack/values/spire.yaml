@@ -43,8 +43,8 @@
 # The two trust-domain values must agree. An adminID whose trust domain is not
 # the server's matches nothing, and the controller silently has no admin
 # access to SPIRE. example.org below is a placeholder. With strict mode off
-# the chart renders it without complaint, so the install checks that the
-# overlay replaces it before anything is applied.
+# the chart renders it without complaint, so the overlay always sets both and
+# the install refuses a site spec whose trust domain is the placeholder.
 
 global:
   spire:

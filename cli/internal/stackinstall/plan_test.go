@@ -282,15 +282,33 @@ func TestSeedTurnsMonitorsAndTracingOff(t *testing.T) {
 func TestAdminIDMatchesClusterSPIFFEID(t *testing.T) {
 	p := mustPlan(t, testInputs(t, Site, "linux/amd64", true))
 	spire := release(t, p, "spire").Overlay
-	adminIDs := stringList(dig(spire, "spire-server", "adminIDs"))
+	adminIDs := dig(spire, "spire-server", "adminIDs").([]string)
 	require.Len(t, adminIDs, 1)
 
-	account, err := committedScalar("values/controller.yaml", "serviceAccount", "name")
-	require.NoError(t, err)
-	segment, err := committedScalar("values/controller.yaml", "spiffe", "servicePathSegment")
-	require.NoError(t, err)
-	tmpl, err := committedScalar("values/spire.yaml", "spire-server", "controllerManager", "identities", "clusterSPIFFEIDs", "nvke-service", "spiffeIDTemplate")
-	require.NoError(t, err)
+	var controller struct {
+		ServiceAccount struct {
+			Name string `yaml:"name"`
+		} `yaml:"serviceAccount"`
+		Spiffe struct {
+			ServicePathSegment string `yaml:"servicePathSegment"`
+		} `yaml:"spiffe"`
+	}
+	require.NoError(t, readValues("values/controller.yaml", &controller))
+	var spireValues struct {
+		Server struct {
+			ControllerManager struct {
+				Identities struct {
+					ClusterSPIFFEIDs map[string]struct {
+						SpiffeIDTemplate string `yaml:"spiffeIDTemplate"`
+					} `yaml:"clusterSPIFFEIDs"`
+				} `yaml:"identities"`
+			} `yaml:"controllerManager"`
+		} `yaml:"spire-server"`
+	}
+	require.NoError(t, readValues("values/spire.yaml", &spireValues))
+	account, segment := controller.ServiceAccount.Name, controller.Spiffe.ServicePathSegment
+	tmpl := spireValues.Server.ControllerManager.Identities.ClusterSPIFFEIDs["nvke-service"].SpiffeIDTemplate
+	require.NotEmpty(t, tmpl)
 
 	fromTemplate := strings.NewReplacer("{{.TrustDomain}}", testTrustDomain, "{{.PodSpec.ServiceAccountName}}", account).Replace(tmpl)
 	assert.Equal(t, fromTemplate, adminIDs[0])
@@ -325,41 +343,6 @@ func TestImageValues(t *testing.T) {
 			assert.Equal(t, tc.want, imageValues(tc.ref))
 		})
 	}
-}
-
-func TestMergeValues(t *testing.T) {
-	base := map[string]any{
-		"a":    map[string]any{"b": 1, "c": map[string]any{"d": "x"}},
-		"list": []any{"one", "two"},
-		"s":    "base",
-	}
-	layer := map[string]any{
-		"a":    map[string]any{"c": map[string]any{"e": "y"}},
-		"list": []string{"three"},
-		"s":    map[string]any{"now": "a map"},
-	}
-	got := mergeValues(base, layer)
-	assert.Equal(t, map[string]any{
-		"a":    map[string]any{"b": 1, "c": map[string]any{"d": "x", "e": "y"}},
-		"list": []string{"three"},
-		"s":    map[string]any{"now": "a map"},
-	}, got)
-	assert.Equal(t, map[string]any{"d": "x"}, base["a"].(map[string]any)["c"], "inputs are not modified")
-}
-
-func TestCheckPlaceholder(t *testing.T) {
-	values := map[string]any{
-		"global":       map[string]any{"spire": map[string]any{"trustDomain": "example.org"}},
-		"spire-server": map[string]any{"adminIDs": []any{"spiffe://site.example/a", "spiffe://example.org/nvke-service/x"}},
-		"other":        "spiffe://example.org/elsewhere",
-	}
-	err := checkPlaceholder(values)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "at global.spire.trustDomain, spire-server.adminIDs[1]")
-
-	values["global"] = map[string]any{"spire": map[string]any{"trustDomain": "site.example"}}
-	values["spire-server"] = map[string]any{"adminIDs": []string{"spiffe://site.example/a"}}
-	assert.NoError(t, checkPlaceholder(values))
 }
 
 func TestEveryStackFileIsPlanned(t *testing.T) {
@@ -512,4 +495,47 @@ func TestSeedDNSAddress(t *testing.T) {
 	assert.Equal(t, []string{"nvke.site-controller.internal", "localhost", "seed.example.internal"}, cert["dnsNames"])
 	assert.Equal(t, []string{"nvke.site-controller.internal", "localhost", "127.0.0.1", "seed.example.internal"},
 		dig(spire, "spiffe-oidc-discovery-provider", "config", "additionalDomains"))
+}
+
+// mergedValues layers a release's values files and overlay as Helm does:
+// maps merge key by key, anything else replaces.
+func mergedValues(rel Release) (map[string]any, error) {
+	out := map[string]any{}
+	for _, file := range rel.ValuesFiles {
+		var values map[string]any
+		if err := readValues(file, &values); err != nil {
+			return nil, err
+		}
+		out = mergeValues(out, values)
+	}
+	return mergeValues(out, rel.Overlay), nil
+}
+
+func mergeValues(dst, src map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range dst {
+		out[k] = v
+	}
+	for k, v := range src {
+		srcMap, ok := v.(map[string]any)
+		dstMap, had := out[k].(map[string]any)
+		if ok && had {
+			out[k] = mergeValues(dstMap, srcMap)
+		} else {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func dig(values map[string]any, keys ...string) any {
+	var v any = values
+	for _, key := range keys {
+		m, ok := v.(map[string]any)
+		if !ok {
+			return nil
+		}
+		v = m[key]
+	}
+	return v
 }

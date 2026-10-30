@@ -4,6 +4,7 @@
 package stackinstall
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/netip"
@@ -82,18 +83,31 @@ func spireOverlay(v inputs) (map[string]any, error) {
 		}}
 	}
 	// A values file replaces a list, so the committed entries are restated.
-	domains, err := committedList("values/spire.yaml", "spiffe-oidc-discovery-provider", "config", "additionalDomains")
-	if err != nil {
+	var committed struct {
+		Provider struct {
+			Config struct {
+				AdditionalDomains []string `yaml:"additionalDomains"`
+			} `yaml:"config"`
+			TLS struct {
+				CertManager struct {
+					Certificate struct {
+						DNSNames []string `yaml:"dnsNames"`
+					} `yaml:"certificate"`
+				} `yaml:"certManager"`
+			} `yaml:"tls"`
+		} `yaml:"spiffe-oidc-discovery-provider"`
+	}
+	if err := readValues("values/spire.yaml", &committed); err != nil {
 		return nil, err
+	}
+	domains, names := committed.Provider.Config.AdditionalDomains, committed.Provider.TLS.CertManager.Certificate.DNSNames
+	if len(domains) == 0 || len(names) == 0 {
+		return nil, errors.New("values/spire.yaml: the OIDC provider needs additionalDomains and dnsNames")
 	}
 	certificate := map[string]any{}
 	if _, err := netip.ParseAddr(v.address); err == nil {
 		certificate["ipAddresses"] = []string{v.address}
 	} else {
-		names, err := committedList("values/spire.yaml", "spiffe-oidc-discovery-provider", "tls", "certManager", "certificate", "dnsNames")
-		if err != nil {
-			return nil, err
-		}
 		certificate["dnsNames"] = appendMissing(names, v.address)
 	}
 	return map[string]any{
@@ -146,18 +160,23 @@ func imageValues(ref string) map[string]any {
 	return map[string]any{"repository": repo, "digest": digest, "tag": ""}
 }
 
-// adminID is the controller's SPIFFE ID: the path segment and the service
-// account come from values/controller.yaml.
+// adminID is the controller's SPIFFE ID, from values/controller.yaml.
 func adminID(trustDomain string) (string, error) {
-	segment, err := committedScalar("values/controller.yaml", "spiffe", "servicePathSegment")
-	if err != nil {
+	var c struct {
+		ServiceAccount struct {
+			Name string `yaml:"name"`
+		} `yaml:"serviceAccount"`
+		Spiffe struct {
+			ServicePathSegment string `yaml:"servicePathSegment"`
+		} `yaml:"spiffe"`
+	}
+	if err := readValues("values/controller.yaml", &c); err != nil {
 		return "", err
 	}
-	account, err := committedScalar("values/controller.yaml", "serviceAccount", "name")
-	if err != nil {
-		return "", err
+	if c.Spiffe.ServicePathSegment == "" || c.ServiceAccount.Name == "" {
+		return "", errors.New("values/controller.yaml: spiffe.servicePathSegment and serviceAccount.name are required")
 	}
-	return "spiffe://" + trustDomain + "/" + segment + "/" + account, nil
+	return "spiffe://" + trustDomain + "/" + c.Spiffe.ServicePathSegment + "/" + c.ServiceAccount.Name, nil
 }
 
 func appendMissing(list []string, value string) []string {
@@ -167,60 +186,14 @@ func appendMissing(list []string, value string) []string {
 	return append(list, value)
 }
 
-func committedScalar(file string, keys ...string) (string, error) {
-	n, err := committedNode(file, keys...)
-	if err != nil {
-		return "", err
-	}
-	if n.Kind != yaml.ScalarNode || n.Value == "" {
-		return "", fmt.Errorf("%s: %s is not a non-empty string", file, strings.Join(keys, "."))
-	}
-	return n.Value, nil
-}
-
-func committedList(file string, keys ...string) ([]string, error) {
-	n, err := committedNode(file, keys...)
-	if err != nil {
-		return nil, err
-	}
-	var list []string
-	if err := n.Decode(&list); err != nil || len(list) == 0 {
-		return nil, fmt.Errorf("%s: %s is not a non-empty list of strings", file, strings.Join(keys, "."))
-	}
-	return list, nil
-}
-
-// committedNode reads a value from an embedded values file as a node, so a
-// scalar keeps its text.
-func committedNode(file string, keys ...string) (*yaml.Node, error) {
+// readValues decodes an embedded values file into v.
+func readValues(file string, v any) error {
 	data, err := fs.ReadFile(stackFS, file)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("%s: %w", file, err)
+	if err := yaml.Unmarshal(data, v); err != nil {
+		return fmt.Errorf("%s: %w", file, err)
 	}
-	node := &doc
-	if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
-		node = node.Content[0]
-	}
-	for _, key := range keys {
-		if node == nil || node.Kind != yaml.MappingNode {
-			node = nil
-			break
-		}
-		var found *yaml.Node
-		for i := 0; i+1 < len(node.Content); i += 2 {
-			if node.Content[i].Value == key {
-				found = node.Content[i+1]
-				break
-			}
-		}
-		node = found
-	}
-	if node == nil {
-		return nil, fmt.Errorf("%s has no %s", file, strings.Join(keys, "."))
-	}
-	return node, nil
+	return nil
 }
