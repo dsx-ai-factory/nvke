@@ -945,6 +945,17 @@ type terminationWaiter interface {
 // healthy path needs.
 const tenantTerminating = 15 * time.Minute
 
+// Every bare-metal provider must satisfy terminationWaiter. The assertion in
+// site_controller_test.go discards its error, so a provider that stops
+// satisfying it does not fail: mgmt.Instances goes nil and the delete wait
+// silently falls back to waiting for the cluster record, which cannot finish
+// until the machines are released. That cost a run most of an hour on
+// 2026-10-31. Checked here so it is a compile error instead.
+var (
+	_ terminationWaiter = (*forge.Provider)(nil)
+	_ terminationWaiter = (*dsx.Provider)(nil)
+)
+
 // terminatingTenants are the tenant clusters whose machines Forge has already
 // confirmed Terminating. The site sweep reads it so it does not wait a second
 // time on a tenant whose release Forge already owns.
