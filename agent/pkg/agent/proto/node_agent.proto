@@ -196,6 +196,14 @@ service NodeAgent {
   // (NodeSpec) using an atomic write and serializes concurrent callers on this agent.
   rpc WriteNodeAgentConfig(WriteNodeAgentConfigRequest) returns (WriteNodeAgentConfigResponse) {}
 
+  // ReconfigureNodeAgentArgs replaces AGENT_ARGS in the agent's own environment
+  // file, which is otherwise written once at bootstrap and never again. The
+  // agent reads its arguments only at startup, so this changes nothing until it
+  // restarts; the response reports whether that restart is still pending. The
+  // write is deliberately not accompanied by a restart, because restarting the
+  // agent breaks the caller's connection to the node and has to be coordinated.
+  rpc ReconfigureNodeAgentArgs(ReconfigureNodeAgentArgsRequest) returns (ReconfigureNodeAgentArgsResponse) {}
+
   rpc StreamExecuteScript(ExecuteScriptRequest) returns (stream ScriptOutputChunk) {}
 
   rpc InstallBundle(InstallBundleRequest) returns (InstallBundleResponse) {}
@@ -721,6 +729,30 @@ message WriteNodeAgentConfigResponse {
   string message = 1;
   // HTTP-style code for parity with UploadStatus (e.g. 200 = success).
   int32 code = 2;
+}
+
+message ReconfigureNodeAgentArgsRequest {
+  // The complete argument list to run with, replacing whatever the environment
+  // file holds. Not a patch: an argument left out here is dropped.
+  repeated string args = 1;
+}
+
+message ReconfigureNodeAgentArgsResponse {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    // The environment file already held exactly these arguments; nothing written.
+    OUTCOME_UNCHANGED = 1;
+    // The environment file was rewritten.
+    OUTCOME_APPLIED = 2;
+  }
+  Outcome outcome = 1;
+  // Whether the running process is still on its previous arguments. The agent
+  // reads them only at startup, so this is true after any real change and
+  // stays true until the agent restarts.
+  bool restart_pending = 2;
+  // The arguments the running process actually started with, so a caller can
+  // tell convergence from a file that was rewritten but never applied.
+  repeated string running_args = 3;
 }
 
 message ScriptOutputChunk {

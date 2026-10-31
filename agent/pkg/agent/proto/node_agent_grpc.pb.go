@@ -57,6 +57,7 @@ const (
 	NodeAgent_RemovePlainTextSecondaryEncryptionEntry_FullMethodName      = "/proto.NodeAgent/RemovePlainTextSecondaryEncryptionEntry"
 	NodeAgent_UploadFileBundle_FullMethodName                             = "/proto.NodeAgent/UploadFileBundle"
 	NodeAgent_WriteNodeAgentConfig_FullMethodName                         = "/proto.NodeAgent/WriteNodeAgentConfig"
+	NodeAgent_ReconfigureNodeAgentArgs_FullMethodName                     = "/proto.NodeAgent/ReconfigureNodeAgentArgs"
 	NodeAgent_StreamExecuteScript_FullMethodName                          = "/proto.NodeAgent/StreamExecuteScript"
 	NodeAgent_InstallBundle_FullMethodName                                = "/proto.NodeAgent/InstallBundle"
 	NodeAgent_GetBundleStatus_FullMethodName                              = "/proto.NodeAgent/GetBundleStatus"
@@ -232,6 +233,13 @@ type NodeAgentClient interface {
 	// WriteNodeAgentConfig replaces /etc/agent/config.yaml with the given YAML
 	// (NodeSpec) using an atomic write and serializes concurrent callers on this agent.
 	WriteNodeAgentConfig(ctx context.Context, in *WriteNodeAgentConfigRequest, opts ...grpc.CallOption) (*WriteNodeAgentConfigResponse, error)
+	// ReconfigureNodeAgentArgs replaces AGENT_ARGS in the agent's own environment
+	// file, which is otherwise written once at bootstrap and never again. The
+	// agent reads its arguments only at startup, so this changes nothing until it
+	// restarts; the response reports whether that restart is still pending. The
+	// write is deliberately not accompanied by a restart, because restarting the
+	// agent breaks the caller's connection to the node and has to be coordinated.
+	ReconfigureNodeAgentArgs(ctx context.Context, in *ReconfigureNodeAgentArgsRequest, opts ...grpc.CallOption) (*ReconfigureNodeAgentArgsResponse, error)
 	StreamExecuteScript(ctx context.Context, in *ExecuteScriptRequest, opts ...grpc.CallOption) (NodeAgent_StreamExecuteScriptClient, error)
 	InstallBundle(ctx context.Context, in *InstallBundleRequest, opts ...grpc.CallOption) (*InstallBundleResponse, error)
 	GetBundleStatus(ctx context.Context, in *GetBundleStatusRequest, opts ...grpc.CallOption) (*GetBundleStatusResponse, error)
@@ -673,6 +681,16 @@ func (c *nodeAgentClient) WriteNodeAgentConfig(ctx context.Context, in *WriteNod
 	return out, nil
 }
 
+func (c *nodeAgentClient) ReconfigureNodeAgentArgs(ctx context.Context, in *ReconfigureNodeAgentArgsRequest, opts ...grpc.CallOption) (*ReconfigureNodeAgentArgsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReconfigureNodeAgentArgsResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_ReconfigureNodeAgentArgs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *nodeAgentClient) StreamExecuteScript(ctx context.Context, in *ExecuteScriptRequest, opts ...grpc.CallOption) (NodeAgent_StreamExecuteScriptClient, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &NodeAgent_ServiceDesc.Streams[1], NodeAgent_StreamExecuteScript_FullMethodName, cOpts...)
@@ -1004,6 +1022,13 @@ type NodeAgentServer interface {
 	// WriteNodeAgentConfig replaces /etc/agent/config.yaml with the given YAML
 	// (NodeSpec) using an atomic write and serializes concurrent callers on this agent.
 	WriteNodeAgentConfig(context.Context, *WriteNodeAgentConfigRequest) (*WriteNodeAgentConfigResponse, error)
+	// ReconfigureNodeAgentArgs replaces AGENT_ARGS in the agent's own environment
+	// file, which is otherwise written once at bootstrap and never again. The
+	// agent reads its arguments only at startup, so this changes nothing until it
+	// restarts; the response reports whether that restart is still pending. The
+	// write is deliberately not accompanied by a restart, because restarting the
+	// agent breaks the caller's connection to the node and has to be coordinated.
+	ReconfigureNodeAgentArgs(context.Context, *ReconfigureNodeAgentArgsRequest) (*ReconfigureNodeAgentArgsResponse, error)
 	StreamExecuteScript(*ExecuteScriptRequest, NodeAgent_StreamExecuteScriptServer) error
 	InstallBundle(context.Context, *InstallBundleRequest) (*InstallBundleResponse, error)
 	GetBundleStatus(context.Context, *GetBundleStatusRequest) (*GetBundleStatusResponse, error)
@@ -1171,6 +1196,9 @@ func (UnimplementedNodeAgentServer) UploadFileBundle(NodeAgent_UploadFileBundleS
 }
 func (UnimplementedNodeAgentServer) WriteNodeAgentConfig(context.Context, *WriteNodeAgentConfigRequest) (*WriteNodeAgentConfigResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method WriteNodeAgentConfig not implemented")
+}
+func (UnimplementedNodeAgentServer) ReconfigureNodeAgentArgs(context.Context, *ReconfigureNodeAgentArgsRequest) (*ReconfigureNodeAgentArgsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReconfigureNodeAgentArgs not implemented")
 }
 func (UnimplementedNodeAgentServer) StreamExecuteScript(*ExecuteScriptRequest, NodeAgent_StreamExecuteScriptServer) error {
 	return status.Errorf(codes.Unimplemented, "method StreamExecuteScript not implemented")
@@ -1868,6 +1896,24 @@ func _NodeAgent_WriteNodeAgentConfig_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeAgent_ReconfigureNodeAgentArgs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReconfigureNodeAgentArgsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).ReconfigureNodeAgentArgs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_ReconfigureNodeAgentArgs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).ReconfigureNodeAgentArgs(ctx, req.(*ReconfigureNodeAgentArgsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _NodeAgent_StreamExecuteScript_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(ExecuteScriptRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -2283,6 +2329,10 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "WriteNodeAgentConfig",
 			Handler:    _NodeAgent_WriteNodeAgentConfig_Handler,
+		},
+		{
+			MethodName: "ReconfigureNodeAgentArgs",
+			Handler:    _NodeAgent_ReconfigureNodeAgentArgs_Handler,
 		},
 		{
 			MethodName: "InstallBundle",
