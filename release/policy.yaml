@@ -113,8 +113,9 @@ spec:
     # resolves to nothing here even though the trays are accelerator hardware.
     #
     # 26.04 where the datahall above is 24.04, so the two DSX streams differ in
-    # series as well as arch. Unproven twice over: no run has completed on this
-    # substrate, and the published qcow index carries no 26.04 image for either
-    # architecture yet --- the same state the forge 26.04 streams are in.
+    # series as well as arch. The image is there: os-image-artifact builds and
+    # publishes 26.04 for both arches on every beta, under
+    # nvke-packages/os-image/releases/<version>/<arch>/. Unproven only in that
+    # no run has completed on this substrate.
     - name: dsx-arm64-ubuntu-26.04-kube-1.36
       capabilities: {provider: dsx, arch: arm64, ubuntu: "26.04", kube: "1.36"}
