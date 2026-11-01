@@ -688,6 +688,16 @@ jobs:
       DSX_DATAHALL_1_NODE_USER: ${{ vars.DSX_DATAHALL_1_NODE_USER }}
       DSX_DATAHALL_1_TELEPORT_LOGIN: ${{ vars.DSX_DATAHALL_1_TELEPORT_LOGIN }}
       DSX_DATAHALL_1_JUMP_HOST: ${{ secrets.DSX_DATAHALL_1_JUMP_HOST }}
+      DSX_DATAHALL_2_API: ${{ secrets.DSX_DATAHALL_2_API }}
+      DSX_DATAHALL_2_SITE_ID: ${{ vars.DSX_DATAHALL_2_SITE_ID }}
+      DSX_DATAHALL_2_TENANT_ID: ${{ vars.DSX_DATAHALL_2_TENANT_ID }}
+      DSX_DATAHALL_2_VPC_ID: ${{ vars.DSX_DATAHALL_2_VPC_ID }}
+      DSX_DATAHALL_2_VPC_PREFIX_ID: ${{ vars.DSX_DATAHALL_2_VPC_PREFIX_ID }}
+      DSX_DATAHALL_2_SSH_KEY_GROUP_ID: ${{ vars.DSX_DATAHALL_2_SSH_KEY_GROUP_ID }}
+      DSX_DATAHALL_2_INSTANCE_TYPE_ID: ${{ vars.DSX_DATAHALL_2_INSTANCE_TYPE_ID }}
+      DSX_DATAHALL_2_NODE_USER: ${{ vars.DSX_DATAHALL_2_NODE_USER }}
+      DSX_DATAHALL_2_TELEPORT_LOGIN: ${{ vars.DSX_DATAHALL_2_TELEPORT_LOGIN }}
+      DSX_DATAHALL_2_JUMP_HOST: ${{ secrets.DSX_DATAHALL_2_JUMP_HOST }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1233,6 +1243,8 @@ jobs:
           SSA_ISSUER: ${{ secrets.SSA_ISSUER }}
           DSX_DATAHALL_1_SSA_CLIENT_ID: ${{ secrets.DSX_DATAHALL_1_SSA_CLIENT_ID }}
           DSX_DATAHALL_1_SSA_CLIENT_SECRET: ${{ secrets.DSX_DATAHALL_1_SSA_CLIENT_SECRET }}
+          DSX_DATAHALL_2_SSA_CLIENT_ID: ${{ secrets.DSX_DATAHALL_2_SSA_CLIENT_ID }}
+          DSX_DATAHALL_2_SSA_CLIENT_SECRET: ${{ secrets.DSX_DATAHALL_2_SSA_CLIENT_SECRET }}
           # JUMP_HOST_PASSWORD is deliberately absent: its presence is what
           # switches the suite off the Teleport relay and onto plain SSH.
         run: release/hack/qualify-e2e.sh run
