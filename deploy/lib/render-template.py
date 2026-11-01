@@ -84,6 +84,11 @@ def truthy(ctx, path, where):
 
     An empty value is false for the same reason, which is the whole point of
     testing it.
+
+    Numeric zero is false too, because Go's `if` says so and this renderer
+    exists to agree with the Go one. A replica count or a port of 0 is the
+    case that matters: Python would call it falsy anyway, but spelling it out
+    keeps the rule next to the others rather than leaving it to coincidence.
     """
     node = ctx
     for part in path.split("."):
@@ -93,7 +98,7 @@ def truthy(ctx, path, where):
     if isinstance(node, (dict, list)):
         die("%s: {{ if .%s }} tests a %s, not a scalar."
             % (where, path, type(node).__name__))
-    return node is not None and node != "" and node is not False
+    return node is not None and node != "" and node is not False and node != 0
 
 
 def resolve_ifs(text, ctx, where):

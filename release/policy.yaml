@@ -28,9 +28,10 @@ spec:
       selector: {ubuntu: "24.04", gpu: l40s}
 
     # The DSX datahall on its own. The dsx stream declares no gpu, so
-    # golden-path does not reach it, and `full` would take four contended GB200
-    # machines to exercise one CPU substrate. A provider selector is the only
-    # one that separates the two lanes, which is what this scope is for.
+    # golden-path does not reach it, even though the hardware is accelerator
+    # hardware: the datahall advertises no GPU model, so a stream asking for
+    # one resolves to nothing. A provider selector is the only one that
+    # separates the two lanes, which is what this scope is for.
     dsx:
       selector: {provider: dsx}
 
@@ -39,13 +40,18 @@ spec:
     #
     # It selects on provider rather than carrying no selector, which is what it
     # used to do, because `full` also decides the stage: a dispatch defaults to
-    # stage full, and the suite refuses a full run on any provider whose tenant
-    # it cannot build --- today that is everything except Forge. A scope that
-    # matched every stream therefore put a lane into every weekly run that
-    # could only fail, whatever the versions under test.
+    # stage full, and a scope that matched every stream put a lane into every
+    # weekly run that could only fail, whatever the versions under test.
     #
     # So this is not "every stream" but "every stream a full run can finish".
-    # The day a DSX tenant spec exists, the selector comes off.
+    # A DSX tenant spec now exists --- nicoDSXTenant --- so the obstacle is no
+    # longer that the suite cannot build one. It is that no DSX tenant has yet
+    # reached provisioned on the lane: every run so far has stalled in
+    # NodePreflight, the node healthy and its agent reachable, with cloud-init
+    # reporting a runcmd that failed. Taking the selector off before that is
+    # green would put a known-red lane into every weekly run, which is the
+    # thing this selector exists to prevent. It comes off when the lane
+    # finishes a tenant, not when the spec exists.
     full:
       selector: {provider: forge}
 

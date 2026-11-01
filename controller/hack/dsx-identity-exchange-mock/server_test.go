@@ -55,10 +55,10 @@ func TestUnit_ExchangeSubject(t *testing.T) {
 			wantService:  "dpu-agent",
 			wantResource: []resourceClaim{{"dpu", "host-1"}, {"process", "agent"}},
 		},
-		"az51 node agent maps to the exact node UUID": {
-			region:       "az51-dev4",
-			input:        "spiffe://az51-dev4.nke.local/tenant/tenant-a/service/dsx/bm/45f59791-87df-4e85-9430-e565166ad020",
-			want:         "spiffe://tenant-a.az51-dev4.dsx.nvid.id/bm/45f59791-87df-4e85-9430-e565166ad020",
+		"DSX node agent maps to the exact node UUID": {
+			region:       "datahall-1",
+			input:        "spiffe://datahall-1.nke.local/tenant/tenant-a/service/dsx/bm/45f59791-87df-4e85-9430-e565166ad020",
+			want:         "spiffe://tenant-a.datahall-1.dsx.nvid.id/bm/45f59791-87df-4e85-9430-e565166ad020",
 			wantTenant:   "tenant-a",
 			wantService:  "dsx",
 			wantResource: []resourceClaim{{"bm", "45f59791-87df-4e85-9430-e565166ad020"}},
