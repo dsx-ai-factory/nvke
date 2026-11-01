@@ -34,6 +34,15 @@ spec:
     dsx:
       selector: {provider: dsx}
 
+    # One datahall each. `dsx` selects on provider alone, so it now fans out to
+    # both DSX streams; these name one, which is what a run against a single
+    # datahall wants -- bringing a new one up, or keeping a known-good lane off
+    # hardware that is still being proven.
+    dsx-amd64:
+      selector: {provider: dsx, arch: amd64}
+    dsx-arm64:
+      selector: {provider: dsx, arch: arm64}
+
     # Every Forge stream. What the weekly run covers, and adding a Forge minor
     # is adding a stream rather than editing this.
     #
