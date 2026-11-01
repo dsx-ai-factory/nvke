@@ -118,10 +118,22 @@ spec:
     #
     # amd64 because that is what the hardware is, not a choice --- every
     # machine the datahall owns is a Lenovo SR675 V3 OVX, AMD EPYC carrying
-    # eight L40S. A datahall offering arm64 would be a second site and a
-    # second stream beside this one.
+    # eight L40S. The arm64 stream below is that second site and second
+    # stream: a different datahall, with its own ids and its own API host.
     #
     # kube 1.36 matches the Forge streams. The recorded DSX exercise reached
     # CoreDNS on a 1.34.2 tenant, so 1.36 is unproven on this substrate.
     - name: dsx-amd64-ubuntu-24.04-kube-1.36
       capabilities: {provider: dsx, arch: amd64, ubuntu: "24.04", kube: "1.36"}
+
+    # The second DSX datahall, arm64 because every machine it owns is a Vera
+    # Rubin NVL72 tray on an Olympus CPU. No gpu for the same reason as above:
+    # the datahall declares no GPU model, so a stream asking for an accelerator
+    # resolves to nothing here even though the trays are accelerator hardware.
+    #
+    # 26.04 where the datahall above is 24.04, so the two DSX streams differ in
+    # series as well as arch. Unproven twice over: no run has completed on this
+    # substrate, and the published qcow index carries no 26.04 image for either
+    # architecture yet --- the same state the forge 26.04 streams are in.
+    - name: dsx-arm64-ubuntu-26.04-kube-1.36
+      capabilities: {provider: dsx, arch: arm64, ubuntu: "26.04", kube: "1.36"}
