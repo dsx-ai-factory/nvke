@@ -168,7 +168,12 @@ Deleting a worker node removes it from the cluster and returns the machine to NI
 
    If the node no longer responds, add `"forceUnreachable": true` to the body so that NVKE tolerates failures while it shuts the node down.
 
-Before it removes a worker, NVKE cordons the node and evicts its pods through the Kubernetes eviction API, which honors PodDisruptionBudgets. Pods still on the node after 100 seconds are deleted without further waiting, so schedule the delete when the customer's disruption policy allows it.
+Before it removes a worker, NVKE cordons the node and evicts its pods through the Kubernetes eviction API, which honors PodDisruptionBudgets. NVKE also evicts pods that have no controller. It does not evict DaemonSet pods, static pods, or pods in the phase `Succeeded` or `Failed`. Each pod stops in its own termination grace period. NVKE deletes all pods on the node with no grace period if one of these is true:
+
+- A pod that NVKE must evict is still on the node 100 seconds after the evictions start.
+- The eviction of the pods stops because of an error.
+
+Schedule the delete when the customer's disruption policy allows it.
 
 ## Delete a node pool
 

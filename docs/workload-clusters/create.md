@@ -239,6 +239,19 @@ nvkectl patch cluster <WORKLOAD_CLUSTER> --patch 'enableCPNodeRecycling: false'
 
 Already-enqueued teardown workflows may still finish.
 
+### Control-plane node removal
+
+Before NVKE removes a control-plane node, it evicts the pods of the node with the eviction rules in [Manage node pools](node-pools.md#replace-a-node). If the drain cannot complete, NVKE tries again within 5 minutes after each failed attempt, with no time limit. For example, a PodDisruptionBudget can refuse an eviction. NVKE does not wait for a pod that is more than 5 minutes after its deletion timestamp.
+
+NVKE force-deletes the pods of a control-plane node only if one of these is true:
+
+- The delete request has `"forceUnreachable": true`.
+- NVKE accepted a delete request, a scale-down or a remediation for the node. When NVKE accepted or started the removal, the `kubernetesReady` or `nodeAgentReady` condition of the node was not `True`.
+- The removal of the node stopped, and NVKE started it again.
+- An etcd key rotation removes the node because the node is lost.
+
+In these removals, NVKE deletes all pods on the node if their eviction does not complete in 100 seconds or stops because of an error.
+
 ## Delete a workload cluster
 
 1. Delete the cluster.
