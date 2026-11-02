@@ -1154,23 +1154,20 @@ jobs:
         with:
           version: ${{ steps.oras.outputs.version }}
 
-      # nvke-controller is the name everywhere now, but GHCR keeps releases from
-      # before the rename under nke-controller. Probed here, after the logins,
-      # because the GHCR package is private. site-inputs and the e2e config
-      # both read the result, which is what keeps the name on the node's
-      # archive and the name the Helm values ask for the same.
+      # nvke-controller is the only name on GHCR; images under nke-controller
+      # are gone, so a release from before the rename cannot be pulled from
+      # GHCR. Probed here so a missing tag fails before a machine is taken.
+      # site-inputs and the e2e config both read the result, which is what
+      # keeps the name on the node's archive and the name the Helm values ask
+      # for the same.
       - name: Resolve the controller image name
         shell: bash
         run: |
           set -Eeuo pipefail
           repository=nvke-controller
           if [ "${SITE_NVKE_CONTROLLER_BUILD}" != 1 ] && [ "${SITE_IMAGE_REGISTRY}" = ghcr ]; then
-            if docker manifest inspect "${SITE_IMAGES}/nvke-controller:${SITE_NVKE_CONTROLLER_VERSION}" >/dev/null 2>&1; then
-              :
-            elif docker manifest inspect "${SITE_IMAGES}/nke-controller:${SITE_NVKE_CONTROLLER_VERSION}" >/dev/null 2>&1; then
-              repository=nke-controller
-            else
-              echo "::error::${SITE_NVKE_CONTROLLER_VERSION} is on GHCR as neither nvke-controller nor nke-controller"
+            if ! docker manifest inspect "${SITE_IMAGES}/nvke-controller:${SITE_NVKE_CONTROLLER_VERSION}" >/dev/null 2>&1; then
+              echo "::error::${SITE_IMAGES}/nvke-controller:${SITE_NVKE_CONTROLLER_VERSION} is not on GHCR"
               exit 1
             fi
           fi

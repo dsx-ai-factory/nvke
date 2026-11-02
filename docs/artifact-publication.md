@@ -163,12 +163,11 @@ image exists nowhere. Later releases land under `ghcr.io/dsx-ai-factory/nvke`.
 ### Image repository and pull secret names
 
 The controller image is `nvke-controller` on every registry. The chart is `nvke-controller`
-on GHCR and `nvke-controller-chart` on NVCR. Releases
-cut before this rename were promoted to `ghcr.io/dsx-ai-factory/nvke/nke-controller`,
-which stays in place so existing pins keep resolving; nothing is republished under the new
-name. A pin moves to `nvke-controller` only once its tag exists there.
-`qualify-e2e.yml` probes GHCR for `nvke-controller` first and falls back to `nke-controller`, so
-it qualifies releases from either side of the rename.
+on GHCR and `nvke-controller-chart` on NVCR. The GHCR packages for releases cut before
+this rename, `nke-controller` and `charts/nke-controller`, no longer exist, and nothing
+was republished under the new name. GHCR holds the controller from `controller/v0.3.0-rc.1`
+on, so a pin on an earlier tag or on `nke-controller` does not resolve there, and
+`qualify-e2e.yml` cannot qualify an earlier release from GHCR.
 
 The pull secret `svc-nke-ngc-imagepull` keeps its name. It is an NGC service account
 provisioned outside this repository, so a rename means re-provisioning it on every site in

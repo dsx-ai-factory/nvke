@@ -84,7 +84,8 @@ jobs:
       github.repository_id == '1323115536' &&
       startsWith(github.ref, 'refs/tags/controller/v') &&
       contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',controller,')
-    timeout-minutes: 10
+    # Includes up to 30 minutes waiting for image-nvcr.yml to promote the image.
+    timeout-minutes: 40
     permissions:
       contents: read
       packages: write
@@ -145,15 +146,18 @@ jobs:
           set -euo pipefail
           image="ghcr.io/dsx-ai-factory/nvke/nvke-controller"
 
-          # A manual run from a tag cut before the rename names an image that
-          # GHCR still holds as nke-controller. Probed, not guessed from the
-          # tag, because the rename boundary is not a version.
-          if ! docker manifest inspect "${image}:${APP_VERSION}" >/dev/null 2>&1; then
-            legacy="ghcr.io/dsx-ai-factory/nvke/nke-controller"
-            docker manifest inspect "${legacy}:${APP_VERSION}" >/dev/null 2>&1 \
-              || { echo "::error::${APP_VERSION} is on GHCR as neither nvke-controller nor nke-controller"; exit 1; }
-            image="${legacy}"
-          fi
+          # The same tag push starts image-nvcr.yml, whose Promote to GHCR job
+          # creates this image several minutes after this job starts. Wait for
+          # it rather than failing the race.
+          deadline=$((SECONDS + 30 * 60))
+          until docker manifest inspect "${image}:${APP_VERSION}" >/dev/null 2>&1; do
+            if (( SECONDS >= deadline )); then
+              echo "::error::${image}:${APP_VERSION} did not appear on GHCR within 30 minutes; check image-nvcr.yml's Promote to GHCR job"
+              exit 1
+            fi
+            echo "waiting for ${image}:${APP_VERSION}"
+            sleep 30
+          done
 
           # Anchored at exactly two spaces so this hits image.repository and
           # NOT profiles.image.repository, which is nested one level deeper and
