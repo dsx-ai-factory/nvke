@@ -281,7 +281,7 @@ The install stops at the component that failed. Fix the cause and run the same c
 
 - **Symptom:** The `nico` row reads `CONFIGURED`, but `CREDENTIALS` is not `HEALTHY`. The `DETAIL` column says why.
 - **Cause:** `UNSUPPORTED` is expected with the CAPNICo release the install deploys, which does not serve `NicoIdentity`. With a release that does, `NO-IDENTITY` means no `NicoIdentity` names `nico-credentials`, and `FAILING` or `UNKNOWN` carries the reason from CAPNICo's last check.
-- **Fix:** [Infrastructure providers](https://github.com/dsx-ai-factory/nvke/blob/main/cli/README.md#infrastructure-providers) explains each value. For `FAILING`, correct the credentials as described in [Configure an infrastructure provider: NICo](provider-nico.md#manage-the-nico-credentials).
+- **Fix:** [Infrastructure providers](https://github.com/dsx-ai-factory/nvke/blob/main/cli/README.md#infrastructure-providers) explains each value. For `FAILING`, correct the credentials as described in [Configure an infrastructure provider: NICo](provider-nico.md#manage-the-nico-credentials). [Debug NicoIdentity credential health](debug-nicoidentity-credentials.md) gives the fix for each reason, and the checks for a `STALE` or missing result.
 
 ### Machines are not delivered
 
