@@ -29,6 +29,10 @@ type MachineHealthIssue = nodes.MachineHealthIssue
 const (
 	drainNodeActivityTimeout = 3 * time.Minute
 
+	// forceDrainMaxAttempts is the maximum number of attempts of a drain that can
+	// force-delete pods.
+	forceDrainMaxAttempts = 3
+
 	// forceUnreachableHookMaxAttempts bounds teardown-hook retries when the node
 	// is being force-deleted as unreachable, so a hook that can never succeed
 	// against a dead node fails fast instead of retrying forever.
@@ -299,17 +303,8 @@ func drainNode(ctx workflow.Context, input TeardownNodeInput, node db.Node, isCo
 	forceDrainOnFailure := !isControlPlane || input.ForceUnreachable
 
 	logger.Info("Draining node", "nodeID", input.NodeID, "nodeName", node.Name, "forceDrainOnFailure", forceDrainOnFailure)
-	activityOptions := workflow.ActivityOptions{
-		StartToCloseTimeout: drainNodeActivityTimeout,
-		HeartbeatTimeout:    1 * time.Minute,
-		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval: 1 * time.Minute,
-			MaximumInterval: 5 * time.Minute,
-			MaximumAttempts: 3,
-		},
-	}
 	if err := workflow.ExecuteActivity(
-		workflow.WithActivityOptions(ctx, activityOptions),
+		workflow.WithActivityOptions(ctx, drainActivityOptions(forceDrainOnFailure)),
 		a.DrainKubeNode,
 		activities.DrainKubeNodeInput{
 			NodeID:              input.NodeID,
@@ -325,6 +320,26 @@ func drainNode(ctx workflow.Context, input TeardownNodeInput, node db.Node, isCo
 
 	logger.Info("Node drained successfully", "nodeID", input.NodeID, "nodeName", node.Name)
 	return nil
+}
+
+// drainActivityOptions returns the options of the drain activity. A drain that
+// cannot force-delete pods retries with no limit. A failed control-plane teardown
+// starts again with ForceUnreachable, and that drain force-deletes pods.
+func drainActivityOptions(forceDrainOnFailure bool) workflow.ActivityOptions {
+	maximumAttempts := int32(0)
+	if forceDrainOnFailure {
+		maximumAttempts = forceDrainMaxAttempts
+	}
+
+	return workflow.ActivityOptions{
+		StartToCloseTimeout: drainNodeActivityTimeout,
+		HeartbeatTimeout:    1 * time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval: 1 * time.Minute,
+			MaximumInterval: 5 * time.Minute,
+			MaximumAttempts: maximumAttempts,
+		},
+	}
 }
 
 func deleteKubeNode(ctx workflow.Context, input TeardownNodeInput) error {
