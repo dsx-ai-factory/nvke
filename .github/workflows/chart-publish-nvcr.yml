@@ -131,9 +131,7 @@ jobs:
             exit 1
           fi
 
-          describe_match='controller/v*'
-          [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]] && describe_match='controller/v*-rc.*'
-          describe="$(git describe --match "${describe_match}" --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          describe="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           describe="${describe#controller/}"
           version="${describe#v}"
           repo="nvcr.io/${ORG_TEAM}"
