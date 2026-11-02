@@ -37,7 +37,7 @@ const (
 	kubeVipContainerKubeconfig = "/etc/kubernetes/admin.conf"
 	kubeVipCACertPath          = "/etc/kubernetes/pki/ca.crt"
 	defaultForgeFMDSASNURL     = "http://169.254.169.254:7777/latest/meta-data/asn"
-	kubeVipImage               = "ghcr.io/kube-vip/kube-vip:v1.2.0@sha256:fe8c7b6641ba7633a12b337821e9e83a6456e8edc3434f97577058edd4eecaf6"
+	kubeVipImage               = "ghcr.io/kube-vip/kube-vip:v1.2.4@sha256:dde4c0669d9058c74c69c0bc2f0122e26900e1e4b913c03577cb6e4e28083079"
 	kubeVipLocalAPIServer      = "https://kubernetes:6443"
 	kubeVipFMDSConnectTimeout  = 10 * time.Second
 	kubeVipFMDSRequestTimeout  = 30 * time.Second
@@ -475,7 +475,7 @@ func renderKubeVipManifest(
 				IP:        "127.0.0.1",
 				Hostnames: []string{"kubernetes"},
 			}},
-			// v1.2.0 introduced the control-plane health check used below. Keep
+			// v1.2.4 fixes control-plane health-check response retention. Keep
 			// the readable tag and immutable multi-arch digest together.
 			Containers: []corev1.Container{{
 				Name:            kubeVipContainerName,
