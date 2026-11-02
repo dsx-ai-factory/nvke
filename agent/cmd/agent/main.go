@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -106,6 +107,7 @@ type AgentConfig struct {
 	DSXIdentityTimeout       time.Duration
 	ControllerClientCABundle string
 	ControllerAudience       string
+	AuditLogFileName         string
 }
 
 // validateConfig rejects settings this agent cannot start with, so a
@@ -115,7 +117,44 @@ func validateConfig(cfg AgentConfig) error {
 	if err := validateListenPort(cfg.NodeServerListenPort); err != nil {
 		return err
 	}
+	if err := validateAuditLogPath(cfg.AuditLogFileName); err != nil {
+		return err
+	}
 	return validateAuthConfig(cfg)
+}
+
+// validateAuditLogPath rejects a path main could not open for the audit log,
+// which it treats as fatal. The check never creates the file: a candidate
+// argument list may still be rejected, and a validation run should leave
+// nothing behind.
+func validateAuditLogPath(path string) error {
+	if path == "" {
+		return errors.New("--audit-log-file must not be empty")
+	}
+	info, err := os.Stat(path)
+	switch {
+	case err == nil:
+		if info.IsDir() {
+			return fmt.Errorf("--audit-log-file %q is a directory", path)
+		}
+		f, openErr := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+		if openErr != nil {
+			return fmt.Errorf("--audit-log-file %q cannot be appended to: %w", path, openErr)
+		}
+		return f.Close()
+	case os.IsNotExist(err):
+		dir := filepath.Dir(path)
+		dirInfo, dirErr := os.Stat(dir)
+		if dirErr != nil {
+			return fmt.Errorf("--audit-log-file %q is not in an existing directory: %w", path, dirErr)
+		}
+		if !dirInfo.IsDir() {
+			return fmt.Errorf("--audit-log-file %q is not in an existing directory", path)
+		}
+		return nil
+	default:
+		return fmt.Errorf("--audit-log-file %q cannot be used: %w", path, err)
+	}
 }
 
 // validateListenPort rejects a port net.Listen could not bind, and port 0,
@@ -162,7 +201,7 @@ func validateAuthConfig(cfg AgentConfig) error {
 		}
 		// The exchange client applies these checks when the server starts, where
 		// a rejection costs the node its connection to the controller.
-		if err := tlsjwt.ValidateExchangeConfig(cfg.DSXIdentityExchangeURL, cfg.DSXIdentityTimeout); err != nil {
+		if err := tlsjwt.ValidateExchangeConfig(cfg.DSXIdentityExchangeURL, cfg.DSXIdentityCABundle, cfg.DSXIdentityTimeout); err != nil {
 			return err
 		}
 		return nil
@@ -623,6 +662,7 @@ func agentConfigFromFlags(f *agentFlags) AgentConfig {
 		DSXIdentityTimeout:       *f.dsxIdentityTimeout,
 		ControllerClientCABundle: *f.controllerClientCABundle,
 		ControllerAudience:       *f.controllerAudience,
+		AuditLogFileName:         *f.auditLogFileName,
 	}
 }
 
@@ -635,7 +675,14 @@ func main() {
 		os.Exit(0)
 	}
 
-	auditFile, err := os.OpenFile(*f.auditLogFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	// Build config from flags and build-time vars, and reject one this agent
+	// cannot start with before anything acts on it.
+	cfg := agentConfigFromFlags(f)
+	if err := validateConfig(cfg); err != nil {
+		log.Fatalf("invalid configuration: %v", err)
+	}
+
+	auditFile, err := os.OpenFile(cfg.AuditLogFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		log.Fatalf("failed to open audit log file: %v", err)
 	}
@@ -644,20 +691,10 @@ func main() {
 		log.Fatalf("failed to open script execution log file: %v", err)
 	}
 	// Create audit logger, script execution logger, and default logger
-	auditLogger := newAuditLogger(auditFile, os.Stdout, slog.New(slog.NewJSONHandler(os.Stderr, nil)))
-	scriptExecutionLogger := slog.New(slog.NewJSONHandler(scriptExecLogFile, nil))
+	cfg.AuditLogger = newAuditLogger(auditFile, os.Stdout, slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	cfg.ScriptExecutionLogger = slog.New(slog.NewJSONHandler(scriptExecLogFile, nil))
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
-
-	// Build config from flags and build-time vars
-	cfg := agentConfigFromFlags(f)
-	cfg.AuditLogger = auditLogger
-	cfg.ScriptExecutionLogger = scriptExecutionLogger
-
-	if err := validateConfig(cfg); err != nil {
-		slog.Error("invalid authentication configuration", "err", err)
-		os.Exit(1)
-	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

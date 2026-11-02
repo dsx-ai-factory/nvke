@@ -51,7 +51,7 @@ type ExchangeClient struct {
 // ValidateExchangeConfig reports whether NewExchangeClient would accept these
 // settings. The agent checks a candidate AGENT_ARGS list against it before
 // saving one, because a rejection at startup leaves the node unreachable.
-func ValidateExchangeConfig(endpoint string, timeout time.Duration) error {
+func ValidateExchangeConfig(endpoint, caBundlePath string, timeout time.Duration) error {
 	parsed, err := url.Parse(endpoint)
 	if err != nil {
 		return fmt.Errorf("parsing dsx identity exchange endpoint: %w", err)
@@ -62,6 +62,11 @@ func ValidateExchangeConfig(endpoint string, timeout time.Duration) error {
 	if timeout <= 0 {
 		return fmt.Errorf("dsx identity exchange timeout must be positive, got %s", timeout)
 	}
+	// A bundle that cannot be read or holds no certificates fails the same way
+	// at startup, where nothing is left to repair it.
+	if _, err := exchangeTransport(caBundlePath); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -70,7 +75,7 @@ func ValidateExchangeConfig(endpoint string, timeout time.Duration) error {
 // certificate must chain to the supplied bundle, so a misconfigured bundle
 // fails the exchange rather than falling back to system roots.
 func NewExchangeClient(endpoint, caBundlePath string, timeout time.Duration) (*ExchangeClient, error) {
-	if err := ValidateExchangeConfig(endpoint, timeout); err != nil {
+	if err := ValidateExchangeConfig(endpoint, caBundlePath, timeout); err != nil {
 		return nil, err
 	}
 

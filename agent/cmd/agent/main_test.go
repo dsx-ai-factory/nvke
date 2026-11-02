@@ -12,6 +12,8 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -483,12 +485,15 @@ func TestAuditLogCarriesIncomingTraceContext(t *testing.T) {
 // cannot parse has to be rejected while the node is still reachable rather than
 // at the restart that applies it.
 func TestValidateAgentArgs(t *testing.T) {
+	// The cases that must pass name their own audit log, so the result does not
+	// depend on /var/log being writable where the tests run.
+	auditLog := "--audit-log-file=" + filepath.Join(t.TempDir(), "audit.log")
 	tests := map[string]struct {
 		args    []string
 		wantErr bool
 	}{
 		"the arguments a provisioned node runs with": {
-			args: []string{"--secure-server-port", "15005", "--controller-audience=nvke-controller"},
+			args: []string{auditLog, "--secure-server-port", "15005", "--controller-audience=nvke-controller"},
 		},
 		"an unknown flag": {
 			args:    []string{"--secure-server-port", "15005", "--not-a-flag"},
@@ -531,7 +536,7 @@ func TestValidateAgentArgs(t *testing.T) {
 			wantErr: true,
 		},
 		"an https identity exchange endpoint": {
-			args: []string{"--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url=https://identity.example"},
+			args: []string{auditLog, "--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url=https://identity.example"},
 		},
 		"a listener port outside the valid range": {
 			args:    []string{"--secure-server-port=65536"},
@@ -543,6 +548,22 @@ func TestValidateAgentArgs(t *testing.T) {
 		},
 		"port 0, which binds an arbitrary port the controller cannot find": {
 			args:    []string{"--secure-server-port=0"},
+			wantErr: true,
+		},
+		"an audit-log path in a directory that does not exist": {
+			args:    []string{"--audit-log-file=/no-such-directory/audit.log"},
+			wantErr: true,
+		},
+		"an audit-log path that is a directory": {
+			args:    []string{"--audit-log-file=" + os.TempDir()},
+			wantErr: true,
+		},
+		"an identity CA bundle that does not exist": {
+			args: []string{
+				"--grpc-auth-mode=tls-jwt",
+				"--dsx-identity-exchange-url=https://identity.example",
+				"--dsx-identity-ca-bundle=/no-such-directory/ca.crt",
+			},
 			wantErr: true,
 		},
 	}
