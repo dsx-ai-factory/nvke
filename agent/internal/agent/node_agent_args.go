@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -24,6 +25,11 @@ import (
 // The old nke-agent spelling is a symlink to it after migrate-agent-paths.sh,
 // so writing here reaches both names.
 const nodeAgentEnvFilePath = "/etc/default/nvke-agent"
+
+// legacyNodeAgentEnvFilePath is the pre-rename spelling. migrate-agent-paths.sh
+// turns it into a symlink to nodeAgentEnvFilePath, so on a migrated node the two
+// names are the same file.
+const legacyNodeAgentEnvFilePath = "/etc/default/nke-agent"
 
 // agentArgsKey is the variable the unit's ExecStart expands.
 const agentArgsKey = "AGENT_ARGS"
@@ -56,8 +62,16 @@ func (s *NodeAgentServer) ReconfigureNodeAgentArgs(
 		return nil, status.Errorf(codes.InvalidArgument, "args has %d entries, more than the %d allowed", len(args), maxNodeAgentArgs)
 	}
 	for _, arg := range args {
-		if strings.ContainsAny(arg, "\n\r") {
-			return nil, status.Error(codes.InvalidArgument, "an argument contains a newline, which would split the environment file")
+		// The whole list is one value that systemd re-splits on whitespace, so
+		// an argument carrying any would reach the agent as several and the
+		// running list could never match what was asked for.
+		if arg == "" || strings.ContainsFunc(arg, unicode.IsSpace) {
+			return nil, status.Error(codes.InvalidArgument, "an argument is empty or contains whitespace, which systemd would split into separate arguments")
+		}
+	}
+	if s.ValidateArgs != nil {
+		if err := s.ValidateArgs(args); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "args do not parse as agent flags: %v", err)
 		}
 	}
 
@@ -70,6 +84,9 @@ func (s *NodeAgentServer) ReconfigureNodeAgentArgs(
 	}
 
 	path := s.resolveFilePath(nodeAgentEnvFilePath)
+	if err := s.checkLegacyEnvFile(path); err != nil {
+		return nil, err
+	}
 	existing, err := os.ReadFile(path) //nolint:gosec // a fixed path under the agent's own root
 	if err != nil && !os.IsNotExist(err) {
 		return nil, status.Errorf(codes.Internal, "read %s: %v", nodeAgentEnvFilePath, err)
@@ -83,7 +100,15 @@ func (s *NodeAgentServer) ReconfigureNodeAgentArgs(
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return nil, status.Errorf(codes.Internal, "create directory for %s: %v", nodeAgentEnvFilePath, err)
 		}
-		if err := atomicWriteFile(path, []byte(updated), 0o644); err != nil {
+		// A bootstrap profile may have written the file stricter than 0644;
+		// rewriting its contents is not a reason to widen it.
+		perm := os.FileMode(0o644)
+		if info, statErr := os.Stat(path); statErr == nil {
+			perm = info.Mode().Perm()
+		} else if !os.IsNotExist(statErr) {
+			return nil, status.Errorf(codes.Internal, "stat %s: %v", nodeAgentEnvFilePath, statErr)
+		}
+		if err := atomicWriteFile(path, []byte(updated), perm); err != nil {
 			return nil, status.Errorf(codes.Internal, "write %s: %v", nodeAgentEnvFilePath, err)
 		}
 		outcome = pb.ReconfigureNodeAgentArgsResponse_OUTCOME_APPLIED
@@ -104,6 +129,28 @@ func (s *NodeAgentServer) ReconfigureNodeAgentArgs(
 		RestartPending: pending,
 		RunningArgs:    running,
 	}, nil
+}
+
+// checkLegacyEnvFile refuses the rewrite when the pre-rename environment file
+// is still a regular file of its own rather than a symlink to the current one.
+// Writing would leave the node with two independent files, and the next package
+// upgrade's migrate-agent-paths.sh refuses to choose between them.
+func (s *NodeAgentServer) checkLegacyEnvFile(path string) error {
+	legacy, err := os.Lstat(s.resolveFilePath(legacyNodeAgentEnvFilePath))
+	if err == nil && legacy.Mode().IsRegular() {
+		// A migrated node reaches the same inode through both names, so only a
+		// legacy file of its own is a collision.
+		current, statErr := os.Stat(path)
+		if statErr != nil || !os.SameFile(current, legacy) {
+			return status.Errorf(
+				codes.FailedPrecondition,
+				"%s is a separate regular file; install the agent package so it becomes a symlink to %s before reconfiguring arguments",
+				legacyNodeAgentEnvFilePath,
+				nodeAgentEnvFilePath,
+			)
+		}
+	}
+	return nil
 }
 
 // processArgs is the argument list this process started with, which is what the

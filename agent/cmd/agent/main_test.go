@@ -476,3 +476,39 @@ func TestAuditLogCarriesIncomingTraceContext(t *testing.T) {
 	assert.NotContains(t, untracedStreamRecord, "span_id")
 	assert.Equal(t, "/grpc.health.v1.Health/Watch", untracedStreamRecord["method"])
 }
+
+// The controller rewrites AGENT_ARGS on a running node, so a list this binary
+// cannot parse has to be rejected while the node is still reachable rather than
+// at the restart that applies it.
+func TestValidateAgentArgs(t *testing.T) {
+	tests := map[string]struct {
+		args    []string
+		wantErr bool
+	}{
+		"the arguments a provisioned node runs with": {
+			args: []string{"--secure-server-port", "15005", "--controller-audience=nvke-controller"},
+		},
+		"an unknown flag": {
+			args:    []string{"--secure-server-port", "15005", "--not-a-flag"},
+			wantErr: true,
+		},
+		"a value the flag's type rejects": {
+			args:    []string{"--dsx-identity-timeout=soon"},
+			wantErr: true,
+		},
+		"a positional argument the agent would ignore": {
+			args:    []string{"--disable-mtls", "init"},
+			wantErr: true,
+		},
+	}
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := validateAgentArgs(params.args)
+			if params.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}

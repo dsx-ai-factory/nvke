@@ -410,6 +410,9 @@ func initializeNodeServer(cfg AgentConfig) *server.NodeAgentServer {
 		cfg)
 	agentServer := server.NewNodeAgentServer(cfg.MLX5Rescan, cfg.BundleServerURL, cfg.IndexFileURL, cfg.CniImageRegistry)
 	agentServer.ScriptExecutionLogger = cfg.ScriptExecutionLogger
+	// Reject a candidate AGENT_ARGS list this binary could not parse, while the
+	// controller can still reach the node.
+	agentServer.ValidateArgs = validateAgentArgs
 	// The SPIRE RPCs read SVIDs from the socket whether or not the gRPC server uses mTLS.
 	agentServer.SPIFFESocketPath = cfg.SPIFFESocketPath
 	agentServer.NodeStatus.ListenStatus = "pending"
@@ -475,65 +478,111 @@ func newAuditLogger(fileOutput, serviceOutput io.Writer, diagnostics *slog.Logge
 	}, nil))
 }
 
-func main() {
-	disableMLX5Rescan := flag.Bool("disable-mlx5-rescan", false, "Disable mlx5 rescan (disables the init routine mlx5 reset proc)")
-	disableMTLS := flag.Bool("disable-mtls", false, "Disable mTLS / use plaintext gRPC (development only)")
-	spiffeSocketPath := flag.String("spiffe-socket-path", "unix:///tmp/spire-agent/public/api.sock", "Path to the SPIFFE workload API socket, used for the gRPC server's mTLS unless --disable-mtls is set and always for the SPIRE agent RPCs")
-	grpcAuthMode := flag.String(
+// agentFlags holds the pointers registerAgentFlags hands back, so one set of
+// flag definitions backs both the real command line and the dry parse that
+// validateAgentArgs runs over a candidate list.
+type agentFlags struct {
+	disableMLX5Rescan        *bool
+	disableMTLS              *bool
+	spiffeSocketPath         *string
+	grpcAuthMode             *string
+	dsxIdentityExchangeURL   *string
+	dsxIdentityCABundle      *string
+	dsxIdentityTimeout       *time.Duration
+	controllerClientCABundle *string
+	versionFlag              *bool
+	auditLogFileName         *string
+	secureServerPort         *string
+	bundleServerURL          *string
+	indexFileURL             *string
+	cniImageRegistry         *string
+	controllerAudience       *string
+}
+
+// registerAgentFlags defines the agent's command-line flags on fs.
+func registerAgentFlags(fs *flag.FlagSet) *agentFlags {
+	f := &agentFlags{}
+	f.disableMLX5Rescan = fs.Bool("disable-mlx5-rescan", false, "Disable mlx5 rescan (disables the init routine mlx5 reset proc)")
+	f.disableMTLS = fs.Bool("disable-mtls", false, "Disable mTLS / use plaintext gRPC (development only)")
+	f.spiffeSocketPath = fs.String("spiffe-socket-path", "unix:///tmp/spire-agent/public/api.sock", "Path to the SPIFFE workload API socket, used for the gRPC server's mTLS unless --disable-mtls is set and always for the SPIRE agent RPCs")
+	f.grpcAuthMode = fs.String(
 		"grpc-auth-mode",
 		authModeSPIFFEMTLS,
 		fmt.Sprintf("gRPC authentication mode: %q serves SPIFFE mTLS alone, %q also sends a DSX identity token "+
 			"to the controller before gRPC starts", authModeSPIFFEMTLS, authModeTLSJWT),
 	)
-	dsxIdentityExchangeURL := flag.String(
+	f.dsxIdentityExchangeURL = fs.String(
 		"dsx-identity-exchange-url",
 		envOr("NKE_DSX_IDENTITY_EXCHANGE_URL", ""),
 		"DSX Identity token-exchange endpoint, required by --grpc-auth-mode=tls-jwt. Also set via NKE_DSX_IDENTITY_EXCHANGE_URL. "+
 			"Example: https://dsx-identity.example.com/v1/exchange",
 	)
-	dsxIdentityCABundle := flag.String(
+	f.dsxIdentityCABundle = fs.String(
 		"dsx-identity-ca-bundle",
 		envOr("NKE_DSX_IDENTITY_CA_BUNDLE", ""),
 		"PEM CA bundle authenticating the DSX Identity endpoint. When empty, the system trust store is used. "+
 			"Also set via NKE_DSX_IDENTITY_CA_BUNDLE",
 	)
-	dsxIdentityTimeout := flag.Duration(
+	f.dsxIdentityTimeout = fs.Duration(
 		"dsx-identity-timeout",
 		defaultDSXIdentityTimeout,
 		"Timeout for one DSX Identity token-exchange request",
 	)
-	controllerClientCABundle := registerControllerClientCABundleFlag(flag.CommandLine)
-	versionFlag := flag.Bool("version", false, "Print the version and exit")
-	auditLogFileName := flag.String(
+	f.controllerClientCABundle = registerControllerClientCABundleFlag(fs)
+	f.versionFlag = fs.Bool("version", false, "Print the version and exit")
+	f.auditLogFileName = fs.String(
 		"audit-log-file",
 		"/var/log/nvke-agent-audit.log",
 		"The audit log file name",
 	)
-	secureServerPort := flag.String("secure-server-port", DefaultNodeServerListenPort, "The port for the gRPC server")
-	bundleServerURL := flag.String(
+	f.secureServerPort = fs.String("secure-server-port", DefaultNodeServerListenPort, "The port for the gRPC server")
+	f.bundleServerURL = fs.String(
 		"bundle-server-url",
 		envOr("NKE_BUNDLE_SERVER_URL", ""),
 		"Optional bundle source URL for InstallBundle/InstallCollection(.json). Supports http://, https://, file://, or oci://. Also set via NKE_BUNDLE_SERVER_URL. Prefer apt repos when unset. Example: https://artifacts.example.com/ or oci://registry.example.com/nvke/bundles",
 	)
-	indexFileURL := flag.String(
+	f.indexFileURL = fs.String(
 		"index-file-url",
 		envOr("NKE_BUNDLE_INDEX_URL", ""),
 		"Full URL to a custom index file. When empty, derived as <bundle-server-url>/nke_bundles/ubuntu_<version>_index.json. Also set via NKE_BUNDLE_INDEX_URL",
 	)
-	cniImageRegistry := flag.String(
+	f.cniImageRegistry = fs.String(
 		"cni-image-registry",
 		envOr("NKE_CNI_IMAGE_REGISTRY", ""),
 		"OCI registry prefix for CNI component images (e.g. registry.example.com/nvke). When set, passed to the CNI helm chart as --set global.registry=<value>. Also set via NKE_CNI_IMAGE_REGISTRY",
 	)
-	controllerAudience := flag.String("controller-audience", tlsjwt.LegacyControllerAudience, "JWT audience: select nvke-controller once the controller accepts the renamed contract")
+	f.controllerAudience = fs.String("controller-audience", tlsjwt.LegacyControllerAudience, "JWT audience: select nvke-controller once the controller accepts the renamed contract")
+	return f
+}
+
+// validateAgentArgs reports whether args would parse as this agent's command
+// line. ReconfigureNodeAgentArgs rewrites AGENT_ARGS on a running node, and a
+// list this binary cannot parse fails only at the next restart -- by which
+// point the agent is gone and the controller cannot reach the node to put the
+// old arguments back.
+func validateAgentArgs(args []string) error {
+	fs := flag.NewFlagSet("nvke-agent", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	registerAgentFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("unexpected positional argument %q", fs.Arg(0))
+	}
+	return nil
+}
+
+func main() {
+	f := registerAgentFlags(flag.CommandLine)
 	flag.Parse()
 
-	if *versionFlag {
+	if *f.versionFlag {
 		fmt.Printf("NVKE Agent Version: %s\n", VERSION)
 		os.Exit(0)
 	}
 
-	auditFile, err := os.OpenFile(*auditLogFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	auditFile, err := os.OpenFile(*f.auditLogFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		log.Fatalf("failed to open audit log file: %v", err)
 	}
@@ -550,21 +599,21 @@ func main() {
 	// Build config from flags and build-time vars
 	cfg := AgentConfig{
 		Version:                  VERSION,
-		NodeServerListenPort:     *secureServerPort,
-		MLX5Rescan:               !*disableMLX5Rescan,
-		BundleServerURL:          *bundleServerURL,
-		IndexFileURL:             *indexFileURL,
-		CniImageRegistry:         *cniImageRegistry,
+		NodeServerListenPort:     *f.secureServerPort,
+		MLX5Rescan:               !*f.disableMLX5Rescan,
+		BundleServerURL:          *f.bundleServerURL,
+		IndexFileURL:             *f.indexFileURL,
+		CniImageRegistry:         *f.cniImageRegistry,
 		AuditLogger:              auditLogger,
 		ScriptExecutionLogger:    scriptExecutionLogger,
-		DisableMTLS:              *disableMTLS,
-		SPIFFESocketPath:         *spiffeSocketPath,
-		GRPCAuthMode:             *grpcAuthMode,
-		DSXIdentityExchangeURL:   *dsxIdentityExchangeURL,
-		DSXIdentityCABundle:      *dsxIdentityCABundle,
-		DSXIdentityTimeout:       *dsxIdentityTimeout,
-		ControllerClientCABundle: *controllerClientCABundle,
-		ControllerAudience:       *controllerAudience,
+		DisableMTLS:              *f.disableMTLS,
+		SPIFFESocketPath:         *f.spiffeSocketPath,
+		GRPCAuthMode:             *f.grpcAuthMode,
+		DSXIdentityExchangeURL:   *f.dsxIdentityExchangeURL,
+		DSXIdentityCABundle:      *f.dsxIdentityCABundle,
+		DSXIdentityTimeout:       *f.dsxIdentityTimeout,
+		ControllerClientCABundle: *f.controllerClientCABundle,
+		ControllerAudience:       *f.controllerAudience,
 	}
 
 	if err := validateAuthConfig(cfg); err != nil {
