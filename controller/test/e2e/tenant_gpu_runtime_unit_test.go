@@ -72,7 +72,7 @@ func TestAICRRecipeLeavesTheFabricOut(t *testing.T) {
 		t.Skip("aicr is not on PATH")
 	}
 	output := filepath.Join(t.TempDir(), "recipe.yaml")
-	command := exec.Command("aicr", aicrRecipeArgs("gb200", aicrDataDir, output)...)
+	command := exec.CommandContext(t.Context(), "aicr", aicrRecipeArgs("gb200", aicrDataDir, output)...)
 	command.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
 	if out, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("aicr recipe: %v\n%s", err, out)

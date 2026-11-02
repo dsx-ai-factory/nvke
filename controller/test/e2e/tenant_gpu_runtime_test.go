@@ -169,8 +169,10 @@ func newAICRRun(ctx context.Context, test *tenantTest, plan tenantGPURuntimePlan
 }
 
 func aicrRecipeArgs(accelerator, data, output string) []string {
-	return []string{"recipe", "--service", aicrService, "--accelerator", accelerator, "--os", "ubuntu",
-		"--intent", "training", "--data", data, "--output", output}
+	return []string{
+		"recipe", "--service", aicrService, "--accelerator", accelerator, "--os", "ubuntu",
+		"--intent", "training", "--data", data, "--output", output,
+	}
 }
 
 func (r *aicrRun) aicr(ctx context.Context, args ...string) {
