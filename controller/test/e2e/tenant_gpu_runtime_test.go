@@ -31,8 +31,12 @@ func init() {
 
 const (
 	// aicrDataDir is the --data directory, relative to this package, holding
-	// the overlays AICR's embedded catalog has no leaf for.
+	// the overlay that takes the InfiniBand fabric out of AICR's NVKE leaf.
 	aicrDataDir = "aicr"
+	// aicrService is AICR's service for NVKE tenants. A snapshot would infer
+	// it from the nodes' nico:// provider IDs; naming it keeps the recipe
+	// rendering offline.
+	aicrService = "nvke"
 	// aicrUbuntu is the one series AICR's os-ubuntu mixin admits. Its
 	// readiness pre-flight fails any other before a check runs.
 	aicrUbuntu = "24.04"
@@ -46,8 +50,8 @@ const (
 )
 
 // aicrAccelerators maps the run's gpu capability to the AICR accelerator
-// whose generic Ubuntu training leaf aicrDataDir or the embedded catalog
-// provides. A GPU missing here has no recipe to install.
+// with an NVKE Ubuntu training leaf. A GPU missing here has no recipe to
+// install.
 var aicrAccelerators = map[string]string{"gb200": "gb200"}
 
 // tenantGPURuntimePlan is whether a run installs the GPU runtime on its
@@ -160,9 +164,13 @@ func newAICRRun(ctx context.Context, test *tenantTest, plan tenantGPURuntimePlan
 
 	By("Rendering the AICR recipe for " + plan.accelerator)
 	run.recipe = filepath.Join(run.dir, "recipe.yaml")
-	run.aicr(ctx, "recipe", "--service", "generic", "--accelerator", plan.accelerator, "--os", "ubuntu",
-		"--intent", "training", "--data", run.data, "--output", run.recipe)
+	run.aicr(ctx, aicrRecipeArgs(plan.accelerator, run.data, run.recipe)...)
 	return run
+}
+
+func aicrRecipeArgs(accelerator, data, output string) []string {
+	return []string{"recipe", "--service", aicrService, "--accelerator", accelerator, "--os", "ubuntu",
+		"--intent", "training", "--data", data, "--output", output}
 }
 
 func (r *aicrRun) aicr(ctx context.Context, args ...string) {

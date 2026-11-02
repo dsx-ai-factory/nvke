@@ -5,9 +5,13 @@ package e2e
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
@@ -56,6 +60,49 @@ func TestTenantGPURuntimePlanSetsTheGPUCountOnlyWhenItInstalls(t *testing.T) {
 		if got := plan.tenantSettings(laneTenantSettings, shape); got.gpuNodes != nil {
 			t.Errorf("plan %+v set gpuNodes = %d; the GPU checks need a runtime to run against", plan, *got.gpuNodes)
 		}
+	}
+}
+
+// TestAICRRecipeLeavesTheFabricOut renders the recipe the install spec renders
+// and checks that the overlay in aicrDataDir still lands on AICR's NVKE leaf.
+// An aicr bump that renames the leaf or a fabric component fails here rather
+// than on hardware. Rendering is offline; it needs only aicr on PATH.
+func TestAICRRecipeLeavesTheFabricOut(t *testing.T) {
+	if _, err := exec.LookPath("aicr"); err != nil {
+		t.Skip("aicr is not on PATH")
+	}
+	output := filepath.Join(t.TempDir(), "recipe.yaml")
+	command := exec.Command("aicr", aicrRecipeArgs("gb200", aicrDataDir, output)...)
+	command.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+	if out, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("aicr recipe: %v\n%s", err, out)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recipe struct {
+		Metadata struct {
+			AppliedOverlays []string `json:"appliedOverlays"`
+		} `json:"metadata"`
+		DeploymentOrder []string `json:"deploymentOrder"`
+	}
+	if err := yaml.Unmarshal(data, &recipe); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, overlay := range []string{"gb200-nvke-ubuntu-training", "gb200-nvke-ubuntu-training-no-fabric"} {
+		if !slices.Contains(recipe.Metadata.AppliedOverlays, overlay) {
+			t.Errorf("applied overlays %v do not include %s", recipe.Metadata.AppliedOverlays, overlay)
+		}
+	}
+	for _, component := range []string{"network-operator", "sriov-ib-networks", "rdma-modules"} {
+		if slices.Contains(recipe.DeploymentOrder, component) {
+			t.Errorf("deployment order %v still installs %s", recipe.DeploymentOrder, component)
+		}
+	}
+	if !slices.Contains(recipe.DeploymentOrder, "gpu-operator") {
+		t.Errorf("deployment order %v does not install gpu-operator", recipe.DeploymentOrder)
 	}
 }
 

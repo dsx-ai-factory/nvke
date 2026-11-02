@@ -817,9 +817,13 @@ checks 36 and 37 run there too. Before the tenant checks, two specs labeled
 `gpu` and `gpu-runtime` install the runtime with [AICR](https://github.com/NVIDIA/aicr)
 and then run AICR's deployment checks against it. The checks' results go in the
 spec's report entry. The tenant checks then expect every worker to advertise
-`nvidia.com/gpu`. The recipe is AICR's generic Ubuntu training recipe for the
-run's `gpu` capability; [`aicr/`](aicr/) holds the overlay AICR's own catalog
-has no leaf for, passed with `--data`. The install needs `aicr`, `helm` and
+`nvidia.com/gpu`. The recipe is AICR's NVKE Ubuntu training recipe for the
+run's `gpu` capability ([setup guide](https://github.com/NVIDIA/aicr/blob/main/docs/integrator/nvke-gb200-setup.md)),
+without its InfiniBand fabric: [`aicr/`](aicr/) holds the overlay, passed with
+`--data`, that turns off `network-operator`, `sriov-ib-networks` and
+`rdma-modules`. The tenant has one GPU worker and no RDMA checks, and the
+fabric needs ConnectX-7 firmware and partition setup the lane has not
+qualified. The install needs `aicr`, `helm` and
 `kubectl` on `PATH`, and reaches the tenant as its admin through the lane's
 relay. `aicr` is pinned in `make/tool-versions.mk`. A run with no `gpu`, a
 `gpu` that has no recipe (only `gb200` has one), or an `ubuntu` capability other
