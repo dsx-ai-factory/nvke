@@ -40,9 +40,15 @@ as controller configuration.
 It does not create or mount an
 additional Secret or ConfigMap for this feature. The controller accepts either
 JWT audience, `nvke-controller` or `nke-controller`, and requires the token to
-carry exactly one of them. Every agent requests `nke-controller` today, because
-that is the default of its `--controller-audience` flag and nothing overrides
-it; see `authn.NodeAgentAudienceLegacy` for how that window closes.
+carry exactly one of them.
+
+Which one an agent requests is the agent's own choice, not the controller's.
+The controller never passes `--controller-audience`, because it renders
+`AGENT_ARGS` before the node has booted an agent and so cannot know what the
+image-installed binary accepts. An agent requests `nvke-controller` unless it
+predates that default or its env file names the legacy audience, which a node
+provisioned earlier still does — nothing rewrites that file. See
+`authn.NodeAgentAudienceLegacy` for the sweep that closes the window.
 
 ## Node bootstrap and authentication
 

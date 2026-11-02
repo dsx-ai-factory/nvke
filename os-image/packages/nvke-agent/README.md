@@ -35,9 +35,14 @@ Migration stops if old and new state trees both contain files, or if two
 independent agent environment files exist. Resolve that conflict before retrying;
 the package does not overwrite either copy.
 
-Controller-side version selection remains in #1496. This change preserves the
-legacy controller restart command and JWT audience, while the new agent accepts
-both controller URI SANs, both SPIFFE naming forms, and both RBAC RPC names.
-The agent supports `--controller-audience=nvke-controller` for #1496 to select
-per node. It defaults to the legacy audience until the controller accepts the
-renamed contract; changing that default alone would impose a release order.
+This change preserves the legacy controller restart command, while the new
+agent accepts both controller URI SANs, both SPIFFE naming forms, and both RBAC
+RPC names.
+
+**Superseded (#2039).** The JWT audience was to be selected per node by the
+controller, tracked in #1496 and then #2039, and the agent defaulted to the
+legacy audience meanwhile. The controller cannot select it: `AGENT_ARGS` is
+rendered before the node has booted an agent, so it has no signal for what the
+image-installed binary accepts. The agent now requests `nvke-controller` by
+default, and `--controller-audience=nke-controller` reaches a controller older
+than the dual-accept release.

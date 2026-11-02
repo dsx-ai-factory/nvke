@@ -18,12 +18,7 @@ const (
 	// NodeAgentAudience, so the controller accepts both whatever the release
 	// order.
 	//
-	// Every TLS/JWT agent requests this audience today. The agent picks its
-	// audience with --controller-audience, which defaults to this constant and
-	// falls back to it when empty (agent/cmd/agent/main.go), and nothing passes
-	// the flag.
-	//
-	// The audience moves by flipping that default, not by the controller
+	// The audience moves by the agent's own default, not by the controller
 	// selecting it per node (#2039). The controller cannot select it: AGENT_ARGS
 	// is rendered before the node has booted an agent, so it has no signal for
 	// what the image-installed binary accepts, and agent v0.2.1 takes
@@ -31,12 +26,17 @@ const (
 	// in v0.3.0. Handed a flag it does not know, that agent exits during
 	// flag.Parse and never comes up far enough to be upgraded over RPC.
 	//
+	// So an agent requests this audience when it predates the flipped default,
+	// or when its frozen AGENT_ARGS names it: the env file is written once at
+	// bootstrap, and agent/scripts/migrate-agent-paths.sh preserves its contents
+	// across the rename rather than re-rendering them.
+	//
 	// Gate: every node reports an agent_version at or past the release that
-	// flips the default. That is an ordinary fleet sweep over the observed
-	// version, because the flip needs no env-file rewrite — nothing is written
-	// per node, so the frozen-AGENT_ARGS problem in #2052 does not gate this
-	// window. Removed before the gate, every node still on this audience fails
-	// closed in controller/internal/agent/tlsjwt.go, which is enforcing-only.
+	// carries the flipped default. That is an ordinary sweep over the observed
+	// version — the flip writes nothing per node, so the frozen-AGENT_ARGS
+	// problem in #2052 does not gate this window. Removed before the gate, every
+	// node still on this audience fails closed in
+	// controller/internal/agent/tlsjwt.go, which is enforcing-only.
 	NodeAgentAudienceLegacy = "nke-controller"
 )
 

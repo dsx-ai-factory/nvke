@@ -247,6 +247,17 @@ func buildSpiffeMtlsConfig(ctx context.Context, socketPath string) (*tls.Config,
 	return tlsconfig.MTLSServerConfig(source, source, authorizer), nil
 }
 
+// controllerAudience is the JWT-SVID audience the agent requests. It is the
+// renamed audience unless the node's AGENT_ARGS names the legacy one, which a
+// node provisioned before the rename still does. An empty value reaches here
+// only from a hand-built AgentConfig, since the flag carries the same default.
+func controllerAudience(cfg AgentConfig) string {
+	if cfg.ControllerAudience == "" {
+		return tlsjwt.ControllerAudience
+	}
+	return cfg.ControllerAudience
+}
+
 // buildTLSJWTCredentials wraps base with the pre-gRPC authentication exchange.
 // It builds the token source but does not mint a token: the first connection
 // does that, so an unreachable SPIRE or DSX Identity leaves the agent listening
@@ -266,11 +277,7 @@ func buildTLSJWTCredentials(
 		return nil, fmt.Errorf("failed to create dsx identity exchange client: %w", err)
 	}
 
-	audience := cfg.ControllerAudience
-	if audience == "" {
-		audience = tlsjwt.LegacyControllerAudience
-	}
-	tokens, err := tlsjwt.NewCachingTokenSource(tlsjwt.WorkloadAPISVIDs(jwtSource), exchanger, audience)
+	tokens, err := tlsjwt.NewCachingTokenSource(tlsjwt.WorkloadAPISVIDs(jwtSource), exchanger, controllerAudience(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create node-agent token source: %w", err)
 	}
@@ -508,7 +515,8 @@ func main() {
 		envOr("NKE_CNI_IMAGE_REGISTRY", ""),
 		"OCI registry prefix for CNI component images (e.g. registry.example.com/nvke). When set, passed to the CNI helm chart as --set global.registry=<value>. Also set via NKE_CNI_IMAGE_REGISTRY",
 	)
-	controllerAudience := flag.String("controller-audience", tlsjwt.LegacyControllerAudience, "JWT audience: select nvke-controller once the controller accepts the renamed contract")
+	controllerAudience := flag.String("controller-audience", tlsjwt.ControllerAudience,
+		"JWT audience the agent requests. Set nke-controller only to reach a controller older than the dual-accept release")
 	flag.Parse()
 
 	if *versionFlag {
