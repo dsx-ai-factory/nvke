@@ -508,6 +508,68 @@ func (p *Provider) waitAddressed(ctx context.Context, id string) (string, error)
 	}
 }
 
+// WaitTerminating returns once the datahall reports every one of ids as
+// Terminating or no longer has it. That is the point the site owns the
+// release: the machine is out of the tenant's hands and comes back to the pool
+// without anything else asking, which release() below records as taking up to
+// forty-five minutes.
+//
+// Implemented for the same reason Forge implements it. Without it the delete
+// wait falls through to WaitForClusterDeleted, which cannot finish until the
+// datahall has actually released the machines -- so a run holds a GitHub
+// runner for the whole of that release, and a teardown that stalls holds it
+// until the spec's budget runs out. A tenant teardown on 2026-10-31 sat in
+// Terminating for over an hour on exactly this path.
+//
+// Polled by id for the reason waitAddressed is. An instance still in any other
+// state when ctx ends is reported with the last status the site gave for it.
+func (p *Provider) WaitTerminating(ctx context.Context, ids []string) error {
+	pending := slices.Clone(ids)
+	slices.Sort(pending)
+	pending = slices.Compact(pending)
+	last := map[string]string{}
+	for {
+		// Authorized per poll, as waitAddressed is: this loop outlives a
+		// token.
+		actx, err := p.authorize(ctx)
+		if err != nil {
+			return err
+		}
+		var next []string
+		for _, id := range pending {
+			inst, resp, err := p.client.InstanceAPI.GetInstance(actx, p.opts.Env.Org.ID, id).Execute()
+			closeBody(resp)
+			switch {
+			case resp != nil && resp.StatusCode == http.StatusNotFound:
+			case err != nil:
+				// A read cut off by our own deadline says nothing about the
+				// instance, so it does not replace what the site last said.
+				if ctx.Err() == nil || last[id] == "" {
+					last[id] = apiError(err).Error()
+				}
+				next = append(next, id)
+			case inst.GetStatus() == standard.INSTANCESTATUS_TERMINATING:
+			default:
+				last[id] = string(inst.GetStatus())
+				next = append(next, id)
+			}
+		}
+		pending = next
+		if len(pending) == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			states := make([]string, 0, len(pending))
+			for _, id := range pending {
+				states = append(states, fmt.Sprintf("%s (last %s)", id, last[id]))
+			}
+			return fmt.Errorf("dsx: instances not terminating: %s: %w", strings.Join(states, ", "), ctx.Err())
+		case <-time.After(p.opts.PollInterval):
+		}
+	}
+}
+
 func (p *Provider) release(ctx context.Context, id string) error {
 	ctx, err := p.authorize(ctx)
 	if err != nil {
