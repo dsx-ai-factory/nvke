@@ -48,20 +48,30 @@ type ExchangeClient struct {
 	now      func() time.Time
 }
 
+// ValidateExchangeConfig reports whether NewExchangeClient would accept these
+// settings. The agent checks a candidate AGENT_ARGS list against it before
+// saving one, because a rejection at startup leaves the node unreachable.
+func ValidateExchangeConfig(endpoint string, timeout time.Duration) error {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("parsing dsx identity exchange endpoint: %w", err)
+	}
+	if parsed.Scheme != "https" || parsed.Host == "" {
+		return fmt.Errorf("dsx identity exchange endpoint must be an absolute https url, got %q", endpoint)
+	}
+	if timeout <= 0 {
+		return fmt.Errorf("dsx identity exchange timeout must be positive, got %s", timeout)
+	}
+	return nil
+}
+
 // NewExchangeClient returns a client for the DSX Identity exchange endpoint.
 // An empty caBundlePath uses the system trust store; otherwise the endpoint's
 // certificate must chain to the supplied bundle, so a misconfigured bundle
 // fails the exchange rather than falling back to system roots.
 func NewExchangeClient(endpoint, caBundlePath string, timeout time.Duration) (*ExchangeClient, error) {
-	parsed, err := url.Parse(endpoint)
-	if err != nil {
-		return nil, fmt.Errorf("parsing dsx identity exchange endpoint: %w", err)
-	}
-	if parsed.Scheme != "https" || parsed.Host == "" {
-		return nil, fmt.Errorf("dsx identity exchange endpoint must be an absolute https url, got %q", endpoint)
-	}
-	if timeout <= 0 {
-		return nil, fmt.Errorf("dsx identity exchange timeout must be positive, got %s", timeout)
+	if err := ValidateExchangeConfig(endpoint, timeout); err != nil {
+		return nil, err
 	}
 
 	transport, err := exchangeTransport(caBundlePath)

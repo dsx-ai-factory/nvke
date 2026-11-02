@@ -233,6 +233,7 @@ func TestValidateAuthConfig(t *testing.T) {
 			cfg: AgentConfig{
 				GRPCAuthMode:           authModeTLSJWT,
 				DSXIdentityExchangeURL: "https://identity.example.test/v1/exchange",
+				DSXIdentityTimeout:     defaultDSXIdentityTimeout,
 			},
 		},
 		{
@@ -264,6 +265,7 @@ func TestValidateAuthConfig(t *testing.T) {
 			cfg: AgentConfig{
 				GRPCAuthMode:             authModeTLSJWT,
 				DSXIdentityExchangeURL:   "https://identity.example.test/v1/exchange",
+				DSXIdentityTimeout:       defaultDSXIdentityTimeout,
 				ControllerClientCABundle: "/etc/nke/controller-ca.crt",
 			},
 		},
@@ -514,6 +516,33 @@ func TestValidateAgentArgs(t *testing.T) {
 		},
 		"an audience the startup check rejects": {
 			args:    []string{"--controller-audience=someone-else"},
+			wantErr: true,
+		},
+		"a plaintext identity exchange endpoint the client rejects": {
+			args:    []string{"--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url=http://identity.example"},
+			wantErr: true,
+		},
+		"an identity exchange timeout the client rejects": {
+			args: []string{
+				"--grpc-auth-mode=tls-jwt",
+				"--dsx-identity-exchange-url=https://identity.example",
+				"--dsx-identity-timeout=0s",
+			},
+			wantErr: true,
+		},
+		"an https identity exchange endpoint": {
+			args: []string{"--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url=https://identity.example"},
+		},
+		"a listener port outside the valid range": {
+			args:    []string{"--secure-server-port=65536"},
+			wantErr: true,
+		},
+		"a listener port that is not a number": {
+			args:    []string{"--secure-server-port=grpc"},
+			wantErr: true,
+		},
+		"port 0, which binds an arbitrary port the controller cannot find": {
+			args:    []string{"--secure-server-port=0"},
 			wantErr: true,
 		},
 	}

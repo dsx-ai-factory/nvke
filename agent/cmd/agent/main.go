@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -107,6 +108,26 @@ type AgentConfig struct {
 	ControllerAudience       string
 }
 
+// validateConfig rejects settings this agent cannot start with, so a
+// misconfiguration fails here rather than at the listener or the first
+// handshake.
+func validateConfig(cfg AgentConfig) error {
+	if err := validateListenPort(cfg.NodeServerListenPort); err != nil {
+		return err
+	}
+	return validateAuthConfig(cfg)
+}
+
+// validateListenPort rejects a port net.Listen could not bind, and port 0,
+// which would bind an arbitrary port the controller cannot find.
+func validateListenPort(port string) error {
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("--secure-server-port must be a number from 1 to 65535, got %q", port)
+	}
+	return nil
+}
+
 // validateAuthConfig rejects authentication settings that cannot work, so a
 // misconfigured agent fails at startup with a readable message instead of
 // failing every handshake.
@@ -138,6 +159,11 @@ func validateAuthConfig(cfg AgentConfig) error {
 		}
 		if cfg.DSXIdentityExchangeURL == "" {
 			return fmt.Errorf("--grpc-auth-mode=%s requires --dsx-identity-exchange-url", authModeTLSJWT)
+		}
+		// The exchange client applies these checks when the server starts, where
+		// a rejection costs the node its connection to the controller.
+		if err := tlsjwt.ValidateExchangeConfig(cfg.DSXIdentityExchangeURL, cfg.DSXIdentityTimeout); err != nil {
+			return err
 		}
 		return nil
 	default:
@@ -575,7 +601,7 @@ func validateAgentArgs(args []string) error {
 	if *f.versionFlag {
 		return errors.New("--version prints the version and exits instead of serving")
 	}
-	return validateAuthConfig(agentConfigFromFlags(f))
+	return validateConfig(agentConfigFromFlags(f))
 }
 
 // agentConfigFromFlags builds the config main runs with, minus the loggers it
@@ -628,7 +654,7 @@ func main() {
 	cfg.AuditLogger = auditLogger
 	cfg.ScriptExecutionLogger = scriptExecutionLogger
 
-	if err := validateAuthConfig(cfg); err != nil {
+	if err := validateConfig(cfg); err != nil {
 		slog.Error("invalid authentication configuration", "err", err)
 		os.Exit(1)
 	}
