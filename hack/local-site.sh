@@ -119,6 +119,10 @@ check_host() {
   esac
   [[ "$(id -u)" == 0 ]] || die "run as root: the node containers need iptables rules and a bridge address (sudo -i)"
   [[ -c /dev/vtpmx ]] || die "/dev/vtpmx is missing; load tpm_vtpm_proxy (make -C controller host-up)"
+  # The nodes share the host's inotify instances; at 128 a tenant kube-apiserver cannot watch its files.
+  if (($(</proc/sys/fs/inotify/max_user_instances) < 8192)); then
+    sysctl -qw fs.inotify.max_user_instances=8192
+  fi
   local missing=()
   # dpkg-scanpackages (dpkg-dev) indexes the OVN packages the node image carries.
   for tool in nerdctl kind kubectl helm clusterctl oras curl jq python3 go gcc git make docker openssl iptables dpkg-scanpackages; do
