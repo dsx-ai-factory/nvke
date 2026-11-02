@@ -126,7 +126,7 @@ jobs:
           # string stamped into the binary and the string in the registry tag
           # cannot disagree. On an untagged commit this is v0.2.0-4-gdeadbee;
           # with no agent/v* tag reachable at all, the short sha.
-          version="$(git describe --match 'agent/v*-rc.*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          version="$(git describe --match 'agent/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           version="${version#agent/}"
 
           # A tag ref carries a slash (agent/v0.3.0), which is not legal in a

@@ -103,7 +103,7 @@ jobs:
           fi
           repo="nvcr.io/${NVKE_NGC_ORG}/nvke-agent"
 
-          version="$(git describe --match 'agent/v*-rc.*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          version="$(git describe --match 'agent/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           version="${version#agent/}"
 
           aliases=("sha-${GITHUB_SHA}")

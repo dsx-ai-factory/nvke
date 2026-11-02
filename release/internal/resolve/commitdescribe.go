@@ -71,8 +71,10 @@ func (c CommitDescribe) Resolve(map[string]string) (map[string]string, error) {
 	return map[string]string{ResultVersionKey: described, ResultRefKey: commit}, nil
 }
 
-// describe runs git describe the way the publishers do, so the version this
-// returns is the one they tagged the artifact with.
+// describe runs git describe against the prefix's release-candidate tags only,
+// so a beta is qualified against the rc it was cut from. The publishers match
+// every tag under the prefix, so for a commit past a final release this can
+// differ from the version they tagged the artifact with.
 func (c CommitDescribe) describe() (string, error) {
 	cmd := exec.Command("git", "describe", "--tags", "--always", "--match", c.TagPrefix+"v*-rc.*", c.Commit)
 	cmd.Dir = c.Dir

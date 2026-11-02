@@ -114,7 +114,7 @@ jobs:
           BETA=false
           if [[ -z "${DIR}" && "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
             BETA=true
-            VERSION="$(git describe --match 'cli/v*-rc.*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+            VERSION="$(git describe --match 'cli/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
             VERSION="${VERSION#cli/}"
           elif [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
             echo "::error::${TAG} carries version '${VERSION}', which is neither vX.Y.Z nor vX.Y.Z-rc.N."

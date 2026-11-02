@@ -100,7 +100,7 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/controller/v* ]]; then
             version="${GITHUB_REF_NAME}"
           else
-            version="$(git describe --match 'controller/v*-rc.*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+            version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           fi
           version="${version#controller/}"
 
