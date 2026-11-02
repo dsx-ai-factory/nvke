@@ -292,8 +292,9 @@ func TestRotateNicoMachineNetworkCandidate(t *testing.T) {
 		wantAllFull       bool
 		// nodePool defaults to the node set's lists; set it to model a pool
 		// updated after the node was created.
-		nodePool     *db.NodePool
-		wantWalkFrom string
+		nodePool         *db.NodePool
+		wantWalkFrom     string
+		wantAllFullSince string
 	}
 
 	nicoNodeSet := func(subnetIDs, vpcPrefixIDs []uuid.UUID) db.NodeSet {
@@ -469,6 +470,20 @@ func TestRotateNicoMachineNetworkCandidate(t *testing.T) {
 			wantVpcPrefixID: firstVpcPrefixID.String(),
 			wantAllFull:     true,
 		},
+		"keeps the first all-full time on a single vpc prefix": {
+			nicoMachine: withVpcPrefixWalk(testNicoMachineForRotation(nicoMachineRotationParameters{
+				Interface: nicov1.NicoMachineInterface{
+					VPCPrefixID: firstVpcPrefixID.String(),
+				},
+				Generation:         1,
+				ObservedGeneration: 1,
+				Message:            vpcPrefixExhaustionMessage,
+			}), []uuid.UUID{firstVpcPrefixID}, firstVpcPrefixID, true),
+			nodeSet:          nicoNodeSet(nil, []uuid.UUID{firstVpcPrefixID}),
+			wantVpcPrefixID:  firstVpcPrefixID.String(),
+			wantAllFull:      true,
+			wantAllFullSince: "2026-10-29T00:00:00Z",
+		},
 	}
 
 	for name, params := range tests {
@@ -502,6 +517,9 @@ func TestRotateNicoMachineNetworkCandidate(t *testing.T) {
 			if params.wantWalkFrom != "" {
 				assert.Equal(t, params.wantWalkFrom, keys.VPCPrefixWalkStart.Value(nicoMachine.GetAnnotations()))
 				assert.Equal(t, joinVpcPrefixIDs(nodePool.Nico.VpcPrefixIDs), keys.VPCPrefixWalkCandidates.Value(nicoMachine.GetAnnotations()))
+			}
+			if params.wantAllFullSince != "" {
+				assert.Equal(t, params.wantAllFullSince, keys.VPCPrefixesAllFull.Value(nicoMachine.GetAnnotations()))
 			}
 		})
 	}

@@ -132,7 +132,10 @@ func rotateNicoMachineNetworkCandidate(ctx context.Context, k8sClient client.Cli
 // back to the first, so a node that waits picks up a prefix that frees up or
 // is added later. When the walk comes back to the candidate it started on,
 // every candidate was full in this pass, and the VPCPrefixesAllFull
-// annotation records that for the node's pending message.
+// annotation records when that first happened, for the node's pending
+// message. It is written once: with a single candidate the spec never
+// changes, so the generation guard does not stop the next poll from
+// rotating again.
 func rotateNicoMachineVpcPrefix(ctx context.Context, k8sClient client.Client, nicoMachine *nicov1.NicoMachine, vpcPrefixIDs []uuid.UUID) error {
 	currentVpcPrefixID := nicoMachine.Spec.Interfaces[0].VPCPrefixID
 	walk := readVpcPrefixWalk(nicoMachine, vpcPrefixIDs)
@@ -149,7 +152,7 @@ func rotateNicoMachineVpcPrefix(ctx context.Context, k8sClient client.Client, ni
 		annotations[keys.VPCPrefixWalkCandidates.String()] = joinVpcPrefixIDs(vpcPrefixIDs)
 		annotations[keys.VPCPrefixWalkStart.String()] = nextVpcPrefixID
 		keys.VPCPrefixesAllFull.Delete(annotations)
-	case next == walk.start:
+	case next == walk.start && !walk.allFull:
 		annotations[keys.VPCPrefixesAllFull.String()] = time.Now().UTC().Format(time.RFC3339)
 	}
 	nicoMachine.SetAnnotations(annotations)
