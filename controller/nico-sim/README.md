@@ -353,8 +353,12 @@ parts required by node bootstrap:
    `/var/lib/nico-containers/cloud-init/status`.
 2. It parses `write_files` entries, creates their parent directories, writes
    their contents, and applies optional permissions and ownership.
-3. It runs each `runcmd` string inside the container with `sh -lc`.
-4. It writes `done`, or `error` when parsing or execution fails.
+3. It starts a detached runner inside the container, which runs each `runcmd`
+   string in order with `sh -lc`. Creation returns without waiting for these commands.
+4. It writes `done`, or `error` when parsing or execution fails. Command output
+   is saved in `/var/lib/nico-containers/cloud-init/output.log`.
+
+The runner survives simulator restarts. Deleting the node container stops it.
 
 The node image replaces `cloud-init` with a small status shim. Calling
 `cloud-init status` reads that file and prints the normal `status: running`,
