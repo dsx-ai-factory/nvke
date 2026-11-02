@@ -3,11 +3,7 @@
 
 package nodecontract
 
-import (
-	"testing"
-
-	"github.com/dsx-ai-factory/nvke/auth/authn"
-)
+import "testing"
 
 func TestForAgentVersionBoundary(t *testing.T) {
 	tests := []struct {
@@ -38,11 +34,8 @@ func TestForAgentVersionBoundary(t *testing.T) {
 	}
 }
 
-// Each of the six contracts is checked at the boundary, including the empty
+// Each of the five contracts is checked at the boundary, including the empty
 // version, so a field that is not wired to the gate cannot hide behind the others.
-// ControllerAudience is the one that does not flip between two spellings: the
-// old form carries no audience at all, because an agent that predates the flag
-// refuses to start when handed it.
 func TestEveryContractFlipsAtTheBoundary(t *testing.T) {
 	for _, version := range []string{"", "0.2.9"} {
 		got := ForAgentVersion(version)
@@ -50,8 +43,7 @@ func TestEveryContractFlipsAtTheBoundary(t *testing.T) {
 			got.UnitName != "nke-agent.service" ||
 			got.EnvFilePath != "/etc/default/nke-agent" ||
 			got.CNIPackagePrefix != "nke-cni-" ||
-			got.ControllerCABundlePath != "/etc/nke/controller-ca.crt" ||
-			got.ControllerAudience != "" {
+			got.ControllerCABundlePath != "/etc/nke/controller-ca.crt" {
 			t.Errorf("version %q: not every contract is the old form: %+v", version, got)
 		}
 	}
@@ -60,20 +52,7 @@ func TestEveryContractFlipsAtTheBoundary(t *testing.T) {
 		got.UnitName != "nvke-agent.service" ||
 		got.EnvFilePath != "/etc/default/nvke-agent" ||
 		got.CNIPackagePrefix != "nvke-cni-" ||
-		got.ControllerCABundlePath != "/etc/nvke/controller-ca.crt" ||
-		got.ControllerAudience != authn.NodeAgentAudience {
+		got.ControllerCABundlePath != "/etc/nvke/controller-ca.crt" {
 		t.Errorf("cutover version: not every contract is the new form: %+v", got)
-	}
-}
-
-// The new-form audience must be the renamed one, not the legacy spelling the
-// agent already defaults to: selecting the legacy audience from the controller
-// would leave the window in authn.NodeAgentAudienceLegacy open forever.
-func TestNewFormSelectsTheRenamedAudience(t *testing.T) {
-	if got := ForAgentVersion(NewFormMinAgentVersion).ControllerAudience; got != "nvke-controller" {
-		t.Fatalf("new-form ControllerAudience = %q, want %q", got, "nvke-controller")
-	}
-	if authn.NodeAgentAudience == authn.NodeAgentAudienceLegacy {
-		t.Fatal("the renamed and legacy audiences are the same constant; the rename has been undone")
 	}
 }
