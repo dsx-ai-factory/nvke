@@ -103,13 +103,22 @@ jobs:
           fi
           repo="nvcr.io/${NVKE_NGC_ORG}/nvke-agent"
 
-          version="$(git describe --match 'agent/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          beta=false
+          if [[ "${GITHUB_REF}" == refs/tags/* && "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            beta=true
+          fi
+
+          describe_match='agent/v*'
+          if [[ "${beta}" == true ]]; then
+            describe_match='agent/v*-rc.*'
+          fi
+          version="$(git describe --match "${describe_match}" --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           version="${version#agent/}"
 
           aliases=("sha-${GITHUB_SHA}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             aliases+=("edge")
-          elif [[ "${GITHUB_REF}" == refs/tags/* && ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+          elif [[ "${GITHUB_REF}" == refs/tags/* && "${beta}" != true ]]; then
             # A bare beta tag only triggers the run; it must not become an alias.
             aliases+=("${GITHUB_REF_NAME#agent/}")
           fi

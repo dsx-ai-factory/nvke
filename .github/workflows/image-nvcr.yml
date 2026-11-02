@@ -132,7 +132,9 @@ jobs:
 
           # Nearest controller/v* tag, prefix stripped: v0.1.0 on a release
           # commit, v0.1.0-4-gabcdef between releases.
-          version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          describe_match='controller/v*'
+          [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]] && describe_match='controller/v*-rc.*'
+          version="$(git describe --match "${describe_match}" --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           version="${version#controller/}"
 
           tags=("sha-${GITHUB_SHA}" "${version}")
@@ -223,7 +225,9 @@ jobs:
             exit 1
           fi
 
-          version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          describe_match='controller/v*'
+          [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]] && describe_match='controller/v*-rc.*'
+          version="$(git describe --match "${describe_match}" --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           version="${version#controller/}"
 
           tags=("sha-${GITHUB_SHA}" "${version}")
@@ -556,7 +560,9 @@ jobs:
             exit 1
           fi
 
-          image_version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          describe_match='controller/v*'
+          [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]] && describe_match='controller/v*-rc.*'
+          image_version="$(git describe --match "${describe_match}" --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           image_version="${image_version#controller/}"
           # By digest, so this promotes the index the manifest job just created
           # rather than whatever the version tag resolves to now.

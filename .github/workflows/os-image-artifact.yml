@@ -183,7 +183,9 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/os-image/* ]]; then
             version="${GITHUB_REF_NAME#os-image/}"
           else
-            version="$(git describe --match 'os-image/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+            describe_match='os-image/v*'
+            [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]] && describe_match='os-image/v*-rc.*'
+            version="$(git describe --match "${describe_match}" --tags --always 2>/dev/null || git rev-parse --short HEAD)"
             version="${version#os-image/}"
           fi
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
@@ -447,7 +449,9 @@ jobs:
 
           # The agent is built from this same checkout; describe it the way
           # agent/Makefile stamps main.VERSION.
-          agent_version="$(git describe --match 'agent/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          describe_match='agent/v*'
+          [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]] && describe_match='agent/v*-rc.*'
+          agent_version="$(git describe --match "${describe_match}" --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           agent_version="${agent_version#agent/}"
 
           {
