@@ -111,7 +111,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref || github.sha }}
-          # DEB_VERSION comes from `git describe --match 'agent/v*'`; a shallow
+          # DEB_VERSION comes from `git describe --match 'agent/v*-rc.*'`; a shallow
           # clone would stamp the wrong version into a release package.
           fetch-depth: 0
           persist-credentials: false
@@ -127,7 +127,7 @@ jobs:
           if [[ "${SOURCE_REF}" == agent/v* ]]; then
             version="${SOURCE_REF#agent/}"
           else
-            version="$(git describe --match 'agent/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+            version="$(git describe --match 'agent/v*-rc.*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
             version="${version#agent/}"
           fi
           echo "version=${version}" >> "${GITHUB_OUTPUT}"

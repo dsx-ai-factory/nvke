@@ -74,7 +74,7 @@ func (c CommitDescribe) Resolve(map[string]string) (map[string]string, error) {
 // describe runs git describe the way the publishers do, so the version this
 // returns is the one they tagged the artifact with.
 func (c CommitDescribe) describe() (string, error) {
-	cmd := exec.Command("git", "describe", "--tags", "--always", "--match", c.TagPrefix+"v*", c.Commit)
+	cmd := exec.Command("git", "describe", "--tags", "--always", "--match", c.TagPrefix+"v*-rc.*", c.Commit)
 	cmd.Dir = c.Dir
 	out, err := cmd.Output()
 	if err != nil {

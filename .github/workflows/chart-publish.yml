@@ -114,7 +114,7 @@ jobs:
           set -euo pipefail
           # Strip "controller/" prefix; keep "v" for appVersion, drop it for
           # the chart version (OCI chart tags are plain semver without v).
-          describe="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          describe="$(git describe --match 'controller/v*-rc.*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           describe="${describe#controller/}"   # → v0.1.0 or v0.1.0-4-gabcdef
           version="${describe#v}"              # → 0.1.0 or 0.1.0-4-gabcdef
           echo "version=${version}" >> "${GITHUB_OUTPUT}"

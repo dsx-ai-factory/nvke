@@ -132,7 +132,7 @@ jobs:
 
           # Nearest controller/v* tag, prefix stripped: v0.1.0 on a release
           # commit, v0.1.0-4-gabcdef between releases.
-          version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          version="$(git describe --match 'controller/v*-rc.*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           version="${version#controller/}"
 
           tags=("sha-${GITHUB_SHA}" "${version}")
@@ -223,7 +223,7 @@ jobs:
             exit 1
           fi
 
-          version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          version="$(git describe --match 'controller/v*-rc.*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           version="${version#controller/}"
 
           tags=("sha-${GITHUB_SHA}" "${version}")
@@ -556,7 +556,7 @@ jobs:
             exit 1
           fi
 
-          image_version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          image_version="$(git describe --match 'controller/v*-rc.*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           image_version="${image_version#controller/}"
           # By digest, so this promotes the index the manifest job just created
           # rather than whatever the version tag resolves to now.

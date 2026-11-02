@@ -34,7 +34,7 @@ func TestCommitDescribeResolve(t *testing.T) {
 	beforeAnyTag := head(t, dir)
 
 	commit(t, dir, "the release")
-	tag(t, dir, "controller/v0.2.0-rc.1", "cli/v0.1.0")
+	tag(t, dir, "controller/v0.2.0-rc.1", "cli/v0.1.0-rc.1")
 	atTheTag := head(t, dir)
 
 	commit(t, dir, "after the release")
@@ -64,7 +64,7 @@ func TestCommitDescribeResolve(t *testing.T) {
 			name:   "the prefix chooses which tags are measured against",
 			prefix: "cli/",
 			commit: pastTheTag,
-			want:   "v0.1.0-2-g",
+			want:   "v0.1.0-rc.1-2-g",
 		},
 		{
 			name:   "a commit before the first tag describes as the commit alone",

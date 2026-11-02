@@ -139,7 +139,7 @@ jobs:
           # Nearest cluster-api-provider-provisioned/v* tag, prefix stripped:
           # v0.1.0 on a release commit, v0.1.0-4-gabcdef between releases, and
           # the short sha while no such tag exists at all.
-          version="$(git describe --match 'cluster-api-provider-provisioned/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          version="$(git describe --match 'cluster-api-provider-provisioned/v*-rc.*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           version="${version#cluster-api-provider-provisioned/}"
 
           tags=("sha-${GITHUB_SHA}" "${version}")
@@ -238,7 +238,7 @@ jobs:
             exit 1
           fi
 
-          version="$(git describe --match 'cluster-api-provider-provisioned/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          version="$(git describe --match 'cluster-api-provider-provisioned/v*-rc.*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           version="${version#cluster-api-provider-provisioned/}"
 
           tags=("sha-${GITHUB_SHA}" "${version}")
@@ -571,7 +571,7 @@ jobs:
             exit 1
           fi
 
-          image_version="$(git describe --match 'cluster-api-provider-provisioned/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          image_version="$(git describe --match 'cluster-api-provider-provisioned/v*-rc.*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           image_version="${image_version#cluster-api-provider-provisioned/}"
           # By digest, so this promotes the index the manifest job just created
           # rather than whatever the version tag resolves to now.
