@@ -59,7 +59,6 @@
 #   images:
 #     controller:
 #       repository: ghcr.io/dsx-ai-factory/nvke/nvke-controller   # or nvcr.io/<org>/nvke-controller
-#                   # a release cut before the rename is under nke-controller
 #       archive: ~/.cache/nke-e2e/site/controller.tar
 #     capi-provisioned:
 #       repository: ghcr.io/dsx-ai-factory/nvke/cluster-api-provider-provisioned

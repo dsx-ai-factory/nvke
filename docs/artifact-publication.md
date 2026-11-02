@@ -163,12 +163,18 @@ image exists nowhere. Later releases land under `ghcr.io/dsx-ai-factory/nvke`.
 ### Image repository and pull secret names
 
 The controller image is `nvke-controller` on every registry. The chart is `nvke-controller`
-on GHCR and `nvke-controller-chart` on NVCR. Releases
-cut before this rename were promoted to `ghcr.io/dsx-ai-factory/nvke/nke-controller`,
-which stays in place so existing pins keep resolving; nothing is republished under the new
-name. A pin moves to `nvke-controller` only once its tag exists there.
-`qualify-e2e.yml` probes GHCR for `nvke-controller` first and falls back to `nke-controller`, so
-it qualifies releases from either side of the rename.
+on GHCR and `nvke-controller-chart` on NVCR. Releases cut before this rename were promoted
+to `ghcr.io/dsx-ai-factory/nvke/nke-controller`, but that package no longer exists: the
+packages API returns 404 for it and the registry returns `NAME_UNKNOWN`, anonymously and
+authenticated alike. `nvke-controller` is the only controller repository GHCR holds, and
+`controller/v0.3.0-rc.1` is the first release promoted into it.
+
+A GHCR pin on an earlier tag therefore resolves nowhere, and moving it means moving the
+repository and the tag together, to a release at or after `controller/v0.3.0-rc.1`. NVCR is
+unaffected: it carried `nvke-controller` before the GHCR rename, so every tag is still
+pullable there. `chart-publish.yml` and `qualify-e2e.yml` fail the run when the version they
+are given is not on GHCR under `nvke-controller`, rather than falling back to a name that
+cannot answer.
 
 The pull secret `svc-nke-ngc-imagepull` keeps its name. It is an NGC service account
 provisioned outside this repository, so a rename means re-provisioning it on every site in
@@ -176,7 +182,8 @@ step with the chart reference. `chart-publish-nvcr.yml` adds it only to the NVCR
 chart; the GHCR chart defaults to no pull secret.
 
 A new GHCR package is created `internal`. Make it public in the package settings after the
-first release that publishes it.
+first release that publishes it. `nvke-controller` was created by
+`controller/v0.3.0-rc.1` and is already public.
 
 DSX receives the controller image from `image-nvcr.yml`, after the NVKE multi-arch
 manifest exists. It receives the controller chart from `chart-publish-nvcr.yml`,

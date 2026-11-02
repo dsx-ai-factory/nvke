@@ -145,15 +145,13 @@ jobs:
           set -euo pipefail
           image="ghcr.io/dsx-ai-factory/nvke/nvke-controller"
 
-          # A manual run from a tag cut before the rename names an image that
-          # GHCR still holds as nke-controller. Probed, not guessed from the
-          # tag, because the rename boundary is not a version.
-          if ! docker manifest inspect "${image}:${APP_VERSION}" >/dev/null 2>&1; then
-            legacy="ghcr.io/dsx-ai-factory/nvke/nke-controller"
-            docker manifest inspect "${legacy}:${APP_VERSION}" >/dev/null 2>&1 \
-              || { echo "::error::${APP_VERSION} is on GHCR as neither nvke-controller nor nke-controller"; exit 1; }
-            image="${legacy}"
-          fi
+          # nvke-controller is the only controller repository GHCR holds. The
+          # pre-rename nke-controller package no longer exists, so a manual run
+          # from a tag cut before controller/v0.3.0-rc.1 has no image to point
+          # at and fails here rather than packaging a chart that resolves
+          # nowhere.
+          docker manifest inspect "${image}:${APP_VERSION}" >/dev/null 2>&1 \
+            || { echo "::error::${APP_VERSION} is not on GHCR as nvke-controller"; exit 1; }
 
           # Anchored at exactly two spaces so this hits image.repository and
           # NOT profiles.image.repository, which is nested one level deeper and
