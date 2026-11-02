@@ -144,22 +144,13 @@ jobs:
           # exists in the NGC org; the binaries inside it are nvkectl.
           repo="nvcr.io/${NGC_ORG}/nvkectl"
 
-          beta=false
-          if [[ "${GITHUB_REF}" == refs/tags/* && "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
-            beta=true
-          fi
-
-          describe_match='cli/v*'
-          if [[ "${beta}" == true ]]; then
-            describe_match='cli/v*-rc.*'
-          fi
-          version="$(git describe --match "${describe_match}" --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          version="$(git describe --match 'cli/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           version="${version#cli/}"
 
           aliases=("sha-${GITHUB_SHA}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             aliases+=("edge")
-          elif [[ "${beta}" == true ]]; then
+          elif [[ "${GITHUB_REF}" == refs/tags/* && "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
             # A bare beta tag only triggers the run; it must not become an
             # alias. The build is named by its describe version instead, the
             # one the binary reports, so qualification can pull it by version.

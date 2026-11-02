@@ -83,9 +83,7 @@ jobs:
           set -euo pipefail
           repo="ghcr.io/${GITHUB_REPOSITORY,,}/cli"
 
-          describe_match='cli/v*'
-          [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]] && describe_match='cli/v*-rc.*'
-          version="$(git describe --match "${describe_match}" --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          version="$(git describe --match 'cli/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           version="${version#cli/}"
 
           # sha- and edge stay as the CI hand-off; the version alias is the
