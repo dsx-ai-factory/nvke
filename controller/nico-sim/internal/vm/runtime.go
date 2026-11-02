@@ -17,11 +17,20 @@ const (
 	MachineStateNotFound MachineState = "notfound"
 )
 
+// Power reboots, stops and starts a VM without deleting it.
+type Power interface {
+	Reboot(ctx context.Context, machineID string) error
+	// Stop shuts the VM down but keeps its disk, TPM state and definition so
+	// Start can boot it again.
+	Stop(ctx context.Context, machineID string) error
+	Start(ctx context.Context, machineID string) error
+}
+
 // Runtime abstracts the hypervisor backend used to manage VMs.
 type Runtime interface {
+	Power
 	EnsureBridge(ctx context.Context, bridgeName, bridgeCIDR string) error
 	CreateAndStart(ctx context.Context, spec InstanceSpec) (string, error)
-	Reboot(ctx context.Context, machineID string) error
 	Delete(ctx context.Context, machineID string) error
 	IsRunning(ctx context.Context, machineID string) (bool, error)
 	GetState(ctx context.Context, machineID string) (MachineState, error)

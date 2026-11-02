@@ -151,11 +151,22 @@ variable "root_fs_label" {
 variable "accelerator" {
   type        = string
   default     = "kvm"
-  description = "QEMU accelerator: kvm for hardware virtualization or tcg for software emulation."
+  description = "QEMU accelerator: kvm or hvf for hardware virtualization, tcg for software emulation."
 
   validation {
-    condition     = contains(["kvm", "tcg"], var.accelerator)
-    error_message = "The accelerator value must be kvm or tcg."
+    condition     = contains(["kvm", "hvf", "tcg"], var.accelerator)
+    error_message = "The accelerator value must be kvm, hvf or tcg."
+  }
+}
+
+variable "kernel_package" {
+  type        = string
+  default     = ""
+  description = "Guest kernel package. Empty selects the architecture default (linux-nvidia on amd64, linux-nvidia-64k on arm64)."
+
+  validation {
+    condition     = var.kernel_package == "" || can(regex("^linux-[a-z0-9.-]+$", var.kernel_package))
+    error_message = "The kernel_package value must be empty or a linux-* package name."
   }
 }
 
