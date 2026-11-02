@@ -226,13 +226,27 @@ func prepareNodeForInfrastructureDeletion(
 	}
 
 	if isControlPlane {
-		logger.Info("Start and wait for control-plane graceful shutdown", "nodeID", input.NodeID, "nodeName", node.Name)
-		if err := waitForControlPlaneGracefulShutdown(ctx, input); err != nil {
-			if input.ForceUnreachable {
-				logger.Warn("control-plane graceful shutdown failed, continuing due to force_unreachable", "error", err)
-			} else {
-				return false, fmt.Errorf("failed to wait for control-plane graceful shutdown: %w", err)
+		// Graceful shutdown stops the kube-apiserver and etcd on the target before
+		// its etcd member is removed, so a node that is actually serving quorum
+		// leaves cleanly. A control-plane node that never joined has no running
+		// kube-apiserver or etcd to stop and -- when it also never provisioned, as a
+		// rebalance surge that could not resolve a release -- no reachable agent to
+		// receive the RPC. Attempting it there dials an agent that never existed and
+		// retries to the activity's schedule-to-close, failing the teardown, which
+		// the control-plane controller then restarts in a loop. Skip it; the etcd
+		// member removal below still runs against a surviving member and is a no-op
+		// when the member is absent.
+		if node.Conditions.Joined.Status == db.ConditionStatusTrue {
+			logger.Info("Start and wait for control-plane graceful shutdown", "nodeID", input.NodeID, "nodeName", node.Name)
+			if err := waitForControlPlaneGracefulShutdown(ctx, input); err != nil {
+				if input.ForceUnreachable {
+					logger.Warn("control-plane graceful shutdown failed, continuing due to force_unreachable", "error", err)
+				} else {
+					return false, fmt.Errorf("failed to wait for control-plane graceful shutdown: %w", err)
+				}
 			}
+		} else {
+			logger.Info("Skipping control-plane graceful shutdown: node never joined", "nodeID", input.NodeID, "nodeName", node.Name)
 		}
 
 		if err := removeControlPlaneEtcdMember(ctx, input, cluster.ID, node); err != nil {

@@ -20,6 +20,25 @@ const (
 	defaultControlPlaneNodePrefix = "cp"
 )
 
+// pendingNodeOption mutates a pending control-plane node before it is created.
+// Scale-up and rollout surges pass none; the rebalance step passes
+// withRebalanceReplacement so its surge is marked and pinned to a capped config.
+type pendingNodeOption func(*db.Node)
+
+// withRebalanceReplacement marks a pending node as a rebalance surge and pins it
+// to a preference-capped control-plane-config snapshot. The marker holds the
+// node out of scale-down until it joins; the pinned snapshot bounds how far the
+// provider's instance-type walk may fall back from the primary type. Both are
+// self-resolving: the rebalance step clears the marker and re-pins the node to
+// the cluster's current config once it joins.
+func withRebalanceReplacement(configurationID uuid.UUID) pendingNodeOption {
+	return func(n *db.Node) {
+		n.ControlPlaneConfigurationID = configurationID
+		n.Conditions.ControlPlanePreferredReplacement = db.NewCondition(true,
+			"Rebalance surge: moving the control plane to a more-preferred instance type")
+	}
+}
+
 // scaleUp creates pending control-plane nodes and returns the number created.
 // An allocator seeded with eligible domains spreads new nodes across them.
 // Instance-type selection remains the control plane node scheduler's
@@ -31,6 +50,7 @@ func (r *reconciler) scaleUp(
 	reason string,
 	allocator domainAllocator,
 	newNodeProvider clients.NewNodeProvider,
+	opts ...pendingNodeOption,
 ) (int, error) {
 	if count <= 0 {
 		return 0, nil
@@ -44,7 +64,7 @@ func (r *reconciler) scaleUp(
 	created := 0
 	for range count {
 		failureDomain := allocator.take()
-		createdNode, err := r.createPendingNode(ctx, cluster, existingNodeNames, failureDomain, newNodeProvider)
+		createdNode, err := r.createPendingNode(ctx, cluster, existingNodeNames, failureDomain, newNodeProvider, opts...)
 		if err != nil {
 			return created, err
 		}
@@ -69,6 +89,7 @@ func (r *reconciler) createPendingNode(
 	existingNodeNames []string,
 	failureDomain string,
 	newNodeProvider clients.NewNodeProvider,
+	opts ...pendingNodeOption,
 ) (db.Node, error) {
 	if cluster.ControlPlaneConfig.ConfigurationID == uuid.Nil {
 		return db.Node{}, fmt.Errorf("missing control plane configuration ID for pending control-plane node")
@@ -95,6 +116,12 @@ func (r *reconciler) createPendingNode(
 	nodes.PinAgentProfile(&pendingNode, r.cfg)
 
 	newNodeProvider.ApplyPlaceholderNodePayload(&pendingNode)
+
+	// Options run last so a rebalance surge's marker and capped-config pin win
+	// over the defaults set above.
+	for _, opt := range opts {
+		opt(&pendingNode)
+	}
 
 	createdNode, err := r.db.CreateNode(ctx, &pendingNode)
 	if err != nil {

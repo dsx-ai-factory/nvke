@@ -664,3 +664,125 @@ func TestReconcileControlPlaneScaleDown_ShedsNotYetJoinedSurplusFirst(t *testing
 	// Only the pending node's row is touched; the joined members are left alone.
 	mockTx.AssertNumberOfCalls(t, "UpdateNode", 1)
 }
+
+// TestScaleDownRemovable_HoldsOutInFlightRebalanceSurge pins the marker rule:
+// a rebalance surge node still coming up is held out of the removable set (so it
+// neither counts toward surplus nor is selected as a victim), while one that has
+// become a clean joined member rejoins the set and is ranked like any other node.
+func TestScaleDownRemovable_HoldsOutInFlightRebalanceSurge(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	base := time.Now()
+
+	joined := healthyCPNode(clusterID, "cp-a", base)
+
+	// A surge node still coming up: marked and not yet joined.
+	surgeComingUp := healthyCPNode(clusterID, "cp-surge-up", base)
+	surgeComingUp.Conditions.Joined = db.NewCondition(false, "Not joined")
+	surgeComingUp.Conditions.Pending = db.NewCondition(true, "Pending")
+	surgeComingUp.Conditions.ControlPlanePreferredReplacement = db.NewCondition(true, "Rebalance surge")
+
+	// A surge node that has joined and is healthy: the marker no longer holds it out.
+	surgeJoined := healthyCPNode(clusterID, "cp-surge-joined", base)
+	surgeJoined.Conditions.ControlPlanePreferredReplacement = db.NewCondition(true, "Rebalance surge")
+
+	cp := &controlPlane{nodes: []db.Node{joined, surgeComingUp, surgeJoined}}
+	removable := cp.scaleDownRemovable()
+
+	got := map[uuid.UUID]bool{}
+	for _, n := range removable {
+		got[n.ID] = true
+	}
+	assert.True(t, got[joined.ID], "a plain joined member is removable")
+	assert.False(t, got[surgeComingUp.ID], "a rebalance surge node still coming up is held out of the removable set")
+	assert.True(t, got[surgeJoined.ID], "once the surge node is a clean joined member it rejoins the removable set")
+}
+
+// TestReconcileControlPlaneScaleDown_HoldsWhileRebalanceSurgeComingUp pins the
+// first half of the exclusion: the +1 a surge node adds must not trigger a
+// shrink while it is coming up, or scale-down would shed a healthy joined member
+// before the replacement is ready. With the surge node held out, removable
+// equals desiredCount and nothing is recorded.
+func TestReconcileControlPlaneScaleDown_HoldsWhileRebalanceSurgeComingUp(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	base := time.Now()
+	cluster := db.Cluster{ID: clusterID, Name: "test-cluster", ControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3}}
+
+	a := healthyCPNode(clusterID, "cp-a", base)
+	b := healthyCPNode(clusterID, "cp-b", base)
+	c := healthyCPNode(clusterID, "cp-c", base)
+	surge := healthyCPNode(clusterID, "cp-surge", base)
+	surge.Conditions.Joined = db.NewCondition(false, "Not joined")
+	surge.Conditions.Pending = db.NewCondition(true, "Pending")
+	surge.Conditions.ControlPlanePreferredReplacement = db.NewCondition(true, "Rebalance surge")
+	all := []db.Node{a, b, c, surge}
+
+	mockTx := &testutil.MockTx{}
+	r := &reconciler{db: mockTx, logger: slog.Default()}
+	cp := &controlPlane{nodes: all, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
+
+	err := r.reconcileControlPlaneScaleDown(context.Background(), cluster, cp)
+	require.NoError(t, err)
+
+	// Surplus is zero once the surge node is held out, so the delete path is never reached.
+	mockTx.AssertNotCalled(t, "GetNodeForUpdate", mock.Anything, mock.Anything)
+	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+}
+
+// TestReconcileControlPlaneScaleDown_ShedsOldNodeAfterRebalanceSurgeJoins pins the
+// second half: once the surge node is a clean joined member on the preferred type
+// (rank 0), it rejoins the removable set but rank-ordered scale-down sheds the old
+// less-preferred node (rank > 0), not the replacement.
+func TestReconcileControlPlaneScaleDown_ShedsOldNodeAfterRebalanceSurgeJoins(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	base := time.Now()
+	preferredType := uuid.New()
+	worseType := uuid.New()
+
+	var spec db.ControlPlaneConfigSpec
+	spec.SetNico(db.NicoControlPlaneProvider{InstanceTypePreference: []uuid.UUID{preferredType, worseType}})
+	cluster := db.Cluster{
+		ID:                 clusterID,
+		Name:               "test-cluster",
+		ControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3, ControlPlaneConfigSpec: spec},
+	}
+
+	a := healthyCPNode(clusterID, "cp-a", base.Add(-2*time.Hour))
+	a.SetNico(db.NicoNodeProvider{InstanceTypeID: preferredType})
+	b := healthyCPNode(clusterID, "cp-b", base.Add(-time.Hour))
+	b.SetNico(db.NicoNodeProvider{InstanceTypeID: preferredType})
+	// The rebalance target: oldest, on the less-preferred type.
+	old := healthyCPNode(clusterID, "cp-old", base.Add(-3*time.Hour))
+	old.SetNico(db.NicoNodeProvider{InstanceTypeID: worseType})
+	// The surge node, now joined and healthy on the preferred type.
+	surge := healthyCPNode(clusterID, "cp-surge", base)
+	surge.SetNico(db.NicoNodeProvider{InstanceTypeID: preferredType})
+	surge.Conditions.ControlPlanePreferredReplacement = db.NewCondition(true, "Rebalance surge")
+	all := []db.Node{a, b, old, surge}
+
+	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNode", mock.Anything, old.ID).Return(old, nil)
+	mockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(cluster, nil)
+	mockTx.On("GetNodeForUpdate", mock.Anything, old.ID).Return(old, nil)
+	mockTx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil)
+	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(all, nil)
+	var written db.Node
+	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(n *db.Node) bool {
+		written = *n
+		return true
+	})).Return(old, nil)
+
+	r := &reconciler{db: mockTx, logger: slog.Default()}
+	cp := &controlPlane{nodes: all, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
+
+	err := r.reconcileControlPlaneScaleDown(context.Background(), cluster, cp)
+	require.NoError(t, err)
+
+	assert.Equal(t, old.ID, written.ID, "the least-preferred joined node is shed, not the rebalance replacement")
+	assert.True(t, nodes.IsDeleteRequested(written), "scale-down records intent")
+}
