@@ -50,8 +50,10 @@ TELEPORT_SHA256_AMD64 ?= 8d3dba03ea6b6e0d72c97e190da0595e8f0d70f5573c3a26b1908cf
 # aicr installs and validates the GPU runtime on the Forge lane's tenant. It
 # runs on the lane's amd64 runner whatever the tenant's architecture, so amd64
 # is the only platform needed. aicr_<version>_linux_amd64.tar.gz.
-AICR_VERSION ?= 1.1.2
-AICR_SHA256_AMD64 ?= 6350c5a50e7866569ec746b87b4c1c5e836f9ffba2b9505eb24241852f52e350
+# 1.2.0 is the first release with the NVKE recipe (gb200-nvke-ubuntu-training).
+# REVERT-WHEN-aicr-1.2.0-ga: move to 1.2.0 before this reaches main.
+AICR_VERSION ?= 1.2.0-rc2
+AICR_SHA256_AMD64 ?= ffc7a4a8db7e9dd83b8f68d8c4e663d52d9ca008eb8ca2a782096aa2ea414c38
 
 KUBECONFORM_VERSION ?= v0.7.0
 # .github/actions/setup-kubeconform installs it for chart.yml and nktp-chart.yml,
