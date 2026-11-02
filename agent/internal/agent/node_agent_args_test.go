@@ -5,13 +5,17 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
@@ -168,6 +172,9 @@ func TestReconfigureNodeAgentArgs_Validation(t *testing.T) {
 		"an empty list is refused for the same reason":   {Args: []string{}},
 		"a newline would split the file":                 {Args: []string{"--secure-server-port", "15005\nAGENT_ARGS=\"--disable-mtls\""}},
 		"more arguments than the cap allows":             {Args: make([]string, maxNodeAgentArgs+1)},
+		"an embedded space would become two arguments":   {Args: []string{"--secure-server-port", "150 05"}},
+		"a tab splits the same way a space does":         {Args: []string{"--secure-server-port\t15005"}},
+		"an empty argument would simply vanish":          {Args: []string{"--secure-server-port", "15005", ""}},
 	}
 	for name, req := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -186,4 +193,80 @@ func TestReconfigureNodeAgentArgs_NilRequest(t *testing.T) {
 	srv := &NodeAgentServer{RootPath: t.TempDir()}
 	_, err := srv.ReconfigureNodeAgentArgs(context.Background(), nil)
 	assert.Error(t, err)
+}
+
+// A list the agent cannot parse exits it at the next restart, by which point
+// the controller has no way back onto the node.
+func TestReconfigureNodeAgentArgs_RejectsArgumentsTheAgentCannotParse(t *testing.T) {
+	root := t.TempDir()
+	writeEnvFile(t, root, "AGENT_ARGS=\"--secure-server-port 15005\"\n")
+	srv := &NodeAgentServer{
+		RootPath: root,
+		ValidateArgs: func(args []string) error {
+			if slices.Contains(args, "--not-a-flag") {
+				return errors.New("flag provided but not defined: -not-a-flag")
+			}
+			return nil
+		},
+	}
+
+	_, err := srv.ReconfigureNodeAgentArgs(context.Background(), &pb.ReconfigureNodeAgentArgsRequest{
+		Args: []string{"--secure-server-port", "15005", "--not-a-flag"},
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	got, err := os.ReadFile(envFilePath(root))
+	require.NoError(t, err)
+	assert.Equal(t, "AGENT_ARGS=\"--secure-server-port 15005\"\n", string(got), "a rejected list was written anyway")
+}
+
+// On a node that never ran migrate-agent-paths.sh the old name is a regular
+// file; writing the new one beside it is what makes the next upgrade refuse.
+func TestReconfigureNodeAgentArgs_RefusesAnUnmigratedLegacyFile(t *testing.T) {
+	root := t.TempDir()
+	legacy := filepath.Join(root, "etc", "default", "nke-agent")
+	require.NoError(t, os.MkdirAll(filepath.Dir(legacy), 0o755))
+	require.NoError(t, os.WriteFile(legacy, []byte("AGENT_ARGS=\"--secure-server-port 15005\"\n"), 0o644))
+	srv := &NodeAgentServer{RootPath: root}
+
+	_, err := srv.ReconfigureNodeAgentArgs(context.Background(), &pb.ReconfigureNodeAgentArgsRequest{
+		Args: []string{"--secure-server-port", "15006"},
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
+	assert.NoFileExists(t, envFilePath(root), "a second independent env file was created")
+}
+
+// After the migration the old name is a symlink to the new one, which is the
+// normal state and must not be mistaken for the unmigrated one.
+func TestReconfigureNodeAgentArgs_AcceptsAMigratedLegacySymlink(t *testing.T) {
+	root := t.TempDir()
+	path := writeEnvFile(t, root, "AGENT_ARGS=\"--secure-server-port 15005\"\n")
+	require.NoError(t, os.Symlink(path, filepath.Join(root, "etc", "default", "nke-agent")))
+	srv := &NodeAgentServer{RootPath: root}
+
+	resp, err := srv.ReconfigureNodeAgentArgs(context.Background(), &pb.ReconfigureNodeAgentArgsRequest{
+		Args: []string{"--secure-server-port", "15006"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, pb.ReconfigureNodeAgentArgsResponse_OUTCOME_APPLIED, resp.GetOutcome())
+}
+
+// A bootstrap profile may ship the file stricter than the default; rewriting
+// the value it holds is not a reason to widen it.
+func TestReconfigureNodeAgentArgs_PreservesTheExistingMode(t *testing.T) {
+	root := t.TempDir()
+	path := writeEnvFile(t, root, "AGENT_ARGS=\"--secure-server-port 15005\"\n")
+	require.NoError(t, os.Chmod(path, 0o600))
+	srv := &NodeAgentServer{RootPath: root}
+
+	_, err := srv.ReconfigureNodeAgentArgs(context.Background(), &pb.ReconfigureNodeAgentArgsRequest{
+		Args: []string{"--secure-server-port", "15006"},
+	})
+	require.NoError(t, err)
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }
