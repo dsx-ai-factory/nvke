@@ -17,7 +17,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -43,6 +42,11 @@ import (
 
 const (
 	DefaultNodeServerListenPort = "15005"
+
+	// auditLogFileMode is the mode main creates the audit log with, and the
+	// mode validateAuditLogPath creates its throwaway probe with, so the two
+	// cannot disagree about whether a path is usable.
+	auditLogFileMode = 0o644
 
 	// authModeSPIFFEMTLS serves gRPC over SPIFFE mTLS alone: the agent's X.509
 	// SVID is its identity to the controller.
@@ -124,33 +128,44 @@ func validateConfig(cfg AgentConfig) error {
 }
 
 // validateAuditLogPath rejects a path main could not open for the audit log,
-// which it treats as fatal. The check never creates the file: a candidate
-// argument list may still be rejected, and a validation run should leave
-// nothing behind.
+// which it treats as fatal. A missing file is created the way main creates it
+// and then removed again, because a candidate argument list may still be
+// rejected and a validation run should leave nothing behind.
 func validateAuditLogPath(path string) error {
 	if path == "" {
 		return errors.New("--audit-log-file must not be empty")
 	}
+
 	info, err := os.Stat(path)
 	switch {
 	case err == nil:
 		if info.IsDir() {
 			return fmt.Errorf("--audit-log-file %q is a directory", path)
 		}
-		f, openErr := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+		// A FIFO, device or socket is not an audit log, and opening a reader-less
+		// FIFO write-only blocks forever -- here, and again at every startup.
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("--audit-log-file %q is not a regular file", path)
+		}
+		f, openErr := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, auditLogFileMode)
 		if openErr != nil {
 			return fmt.Errorf("--audit-log-file %q cannot be appended to: %w", path, openErr)
 		}
 		return f.Close()
 	case os.IsNotExist(err):
-		dir := filepath.Dir(path)
-		dirInfo, dirErr := os.Stat(dir)
-		if dirErr != nil {
-			return fmt.Errorf("--audit-log-file %q is not in an existing directory: %w", path, dirErr)
+		// An existing parent directory is not enough: it may be read-only, or on
+		// a read-only filesystem. O_EXCL keeps the probe from adopting a file
+		// something else created since the stat above.
+		f, createErr := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_EXCL|os.O_WRONLY, auditLogFileMode)
+		if createErr != nil {
+			return fmt.Errorf("--audit-log-file %q cannot be created: %w", path, createErr)
 		}
-		if !dirInfo.IsDir() {
-			return fmt.Errorf("--audit-log-file %q is not in an existing directory", path)
+		if closeErr := f.Close(); closeErr != nil {
+			return fmt.Errorf("--audit-log-file %q cannot be created: %w", path, closeErr)
 		}
+		// A probe left behind is the file main would have created anyway, so a
+		// failed removal does not make the path unusable.
+		_ = os.Remove(path)
 		return nil
 	default:
 		return fmt.Errorf("--audit-log-file %q cannot be used: %w", path, err)
@@ -682,7 +697,7 @@ func main() {
 		log.Fatalf("invalid configuration: %v", err)
 	}
 
-	auditFile, err := os.OpenFile(cfg.AuditLogFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	auditFile, err := os.OpenFile(cfg.AuditLogFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, auditLogFileMode)
 	if err != nil {
 		log.Fatalf("failed to open audit log file: %v", err)
 	}

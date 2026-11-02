@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -558,6 +559,10 @@ func TestValidateAgentArgs(t *testing.T) {
 			args:    []string{"--audit-log-file=" + os.TempDir()},
 			wantErr: true,
 		},
+		"an audit-log path that is not a regular file": {
+			args:    []string{"--audit-log-file=/dev/null"},
+			wantErr: true,
+		},
 		"an identity CA bundle that does not exist": {
 			args: []string{
 				"--grpc-auth-mode=tls-jwt",
@@ -577,4 +582,45 @@ func TestValidateAgentArgs(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+// A candidate audit-log path has to be checked without side effects: the
+// argument list may still be rejected for another reason, and main treats an
+// unopenable audit log as fatal.
+func TestValidateAuditLogPath(t *testing.T) {
+	t.Run("creates no file while probing a path that does not exist yet", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "audit.log")
+		require.NoError(t, validateAuditLogPath(path))
+		_, err := os.Stat(path)
+		assert.True(t, os.IsNotExist(err), "the probe left a file behind at %s", path)
+	})
+
+	t.Run("keeps a file that already exists", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "audit.log")
+		require.NoError(t, os.WriteFile(path, []byte("existing\n"), 0o644))
+		require.NoError(t, validateAuditLogPath(path))
+		contents, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, "existing\n", string(contents))
+	})
+
+	t.Run("rejects a FIFO, which would block the open forever", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "audit.fifo")
+		require.NoError(t, syscall.Mkfifo(path, 0o644))
+		require.Error(t, validateAuditLogPath(path))
+	})
+
+	t.Run("rejects a path it could not create", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root ignores the directory permissions this case relies on")
+		}
+		dir := t.TempDir()
+		require.NoError(t, os.Chmod(dir, 0o500))
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+		require.Error(t, validateAuditLogPath(filepath.Join(dir, "audit.log")))
+	})
+
+	t.Run("rejects an empty path", func(t *testing.T) {
+		require.Error(t, validateAuditLogPath(""))
+	})
 }
