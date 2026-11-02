@@ -307,6 +307,7 @@ func assertKubeVipPod(t *testing.T, manifest []byte, peerASN uint32) {
 	require.NoError(t, yaml.Unmarshal(manifest, &pod))
 	require.Len(t, pod.Spec.Containers, 1)
 	container := pod.Spec.Containers[0]
+	assert.Equal(t, "ghcr.io/kube-vip/kube-vip:v1.2.4@sha256:dde4c0669d9058c74c69c0bc2f0122e26900e1e4b913c03577cb6e4e28083079", container.Image)
 	environment := make(map[string]string, len(container.Env))
 	for _, variable := range container.Env {
 		environment[variable.Name] = variable.Value
