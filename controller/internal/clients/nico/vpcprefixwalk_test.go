@@ -34,23 +34,23 @@ var (
 const walkExhaustionMessage = "Internal error: IP address exhausted: 7.243.43.64/26 (type: Error, retryable: true)"
 
 type walkNicoMachineParameters struct {
-	name            string
-	nodePoolID      uuid.UUID
-	vpcPrefixID     uuid.UUID
-	provisioned     metav1.ConditionStatus
-	provisionedAt   time.Time
-	walkCandidates  []uuid.UUID
-	walkStart       *uuid.UUID
-	allFull         bool
-	reason          string
-	message         string
-	generation      int64
-	observedGen     int64
-	clusterNameAttr string
+	name           string
+	nodePoolID     uuid.UUID
+	vpcPrefixID    uuid.UUID
+	provisioned    metav1.ConditionStatus
+	provisionedAt  time.Time
+	walkCandidates []uuid.UUID
+	walkStart      *uuid.UUID
+	allFull        bool
+	reason         string
+	message        string
+	generation     int64
+	observedGen    int64
+	clusterName    string
 }
 
 func testWalkNicoMachine(params walkNicoMachineParameters) *nicov1.NicoMachine {
-	clusterName := params.clusterNameAttr
+	clusterName := params.clusterName
 	if clusterName == "" {
 		clusterName = "cluster-a"
 	}
@@ -136,7 +136,7 @@ func TestStartVpcPrefix(t *testing.T) {
 			objects: []ctrlclient.Object{
 				testWalkNicoMachine(walkNicoMachineParameters{
 					name: "w-1", nodePoolID: walkPool, vpcPrefixID: walkPrefixC, provisioned: metav1.ConditionTrue,
-					provisionedAt: later, clusterNameAttr: "cluster-b",
+					provisionedAt: later, clusterName: "cluster-b",
 				}),
 			},
 			wantPrefix:     walkPrefixA,
@@ -360,7 +360,7 @@ func TestClient_DescribeStuckMachine(t *testing.T) {
 		subnetIDs    []uuid.UUID
 		want         string
 	}{
-		"vpc prefix node set gets the walk message": {
+		"vpc prefix node pool gets the walk message": {
 			vpcPrefixIDs: []uuid.UUID{walkPrefixA, walkPrefixB},
 			want:         "VPC prefix " + walkPrefixA.String() + " has no free IP addresses; trying the next configured VPC prefix (2 of 2).",
 		},

@@ -501,8 +501,7 @@ func TestRotateNicoMachineNetworkCandidate(t *testing.T) {
 			assert.Equal(t, params.wantAllFull, allFull)
 			if params.wantWalkFrom != "" {
 				assert.Equal(t, params.wantWalkFrom, keys.VPCPrefixWalkStart.Value(nicoMachine.GetAnnotations()))
-				pool := nodePool.Nico
-				assert.Equal(t, joinVpcPrefixIDs(pool.VpcPrefixIDs), keys.VPCPrefixWalkCandidates.Value(nicoMachine.GetAnnotations()))
+				assert.Equal(t, joinVpcPrefixIDs(nodePool.Nico.VpcPrefixIDs), keys.VPCPrefixWalkCandidates.Value(nicoMachine.GetAnnotations()))
 			}
 		})
 	}

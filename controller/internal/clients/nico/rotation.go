@@ -148,9 +148,7 @@ func rotateNicoMachineVpcPrefix(ctx context.Context, k8sClient client.Client, ni
 	case walk.restarted:
 		annotations[keys.VPCPrefixWalkCandidates.String()] = joinVpcPrefixIDs(vpcPrefixIDs)
 		annotations[keys.VPCPrefixWalkStart.String()] = nextVpcPrefixID
-		for _, key := range keys.VPCPrefixesAllFull.All() {
-			delete(annotations, key)
-		}
+		keys.VPCPrefixesAllFull.Delete(annotations)
 	case next == walk.start:
 		annotations[keys.VPCPrefixesAllFull.String()] = time.Now().UTC().Format(time.RFC3339)
 	}

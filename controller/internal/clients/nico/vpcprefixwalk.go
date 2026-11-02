@@ -61,11 +61,7 @@ func uniqueVpcPrefixIDs(vpcPrefixIDs []uuid.UUID) []uuid.UUID {
 }
 
 func joinVpcPrefixIDs(vpcPrefixIDs []uuid.UUID) string {
-	ids := make([]string, len(vpcPrefixIDs))
-	for i, id := range vpcPrefixIDs {
-		ids[i] = id.String()
-	}
-	return strings.Join(ids, ",")
+	return strings.Join(uuidStrings(vpcPrefixIDs), ",")
 }
 
 // vpcPrefixWalk is where a NicoMachine stands in its walk through the node
@@ -198,11 +194,8 @@ func (*Client) DescribeStuckMachine(ctx context.Context, deps shared.MachineAdva
 	return describeVpcPrefixWalk(nicoMachine, uniqueVpcPrefixIDs(nicoNodePoolProvider.VpcPrefixIDs)), nil
 }
 
-const (
-	fullVpcPrefixFormat = "VPC prefix %s has no free IP addresses; trying the next configured VPC prefix (%d of %d)."
-)
-
 func describeVpcPrefixWalk(nicoMachine *nicov1.NicoMachine, vpcPrefixIDs []uuid.UUID) string {
+	const full = "VPC prefix %s has no free IP addresses; trying the next configured VPC prefix (%d of %d)."
 	if len(nicoMachine.Spec.Interfaces) == 0 || nicoMachine.Spec.Interfaces[0].VPCPrefixID == "" {
 		return ""
 	}
@@ -227,7 +220,7 @@ func describeVpcPrefixWalk(nicoMachine *nicov1.NicoMachine, vpcPrefixIDs []uuid.
 	case walk.allFull || (failedOnCurrent && !walk.restarted && walk.position(walk.current) == count):
 		return allVpcPrefixesFullMessage(vpcPrefixIDs)
 	case failedOnCurrent:
-		return fmt.Sprintf(fullVpcPrefixFormat, vpcPrefixIDs[walk.current], walk.position(walk.next()), count)
+		return fmt.Sprintf(full, vpcPrefixIDs[walk.current], walk.position(walk.next()), count)
 	case walk.restarted:
 		// The pool's list changed after the last rotation. The count
 		// starts again once this prefix fails or lands.
@@ -236,7 +229,7 @@ func describeVpcPrefixWalk(nicoMachine *nicov1.NicoMachine, vpcPrefixIDs []uuid.
 	case walk.position(walk.current) > 1:
 		// Past the walk's first step, the previous candidate is the one that
 		// failed: keep its message until CAPNICo retries on this one.
-		return fmt.Sprintf(fullVpcPrefixFormat, vpcPrefixIDs[(walk.current-1+count)%count], walk.position(walk.current), count)
+		return fmt.Sprintf(full, vpcPrefixIDs[(walk.current-1+count)%count], walk.position(walk.current), count)
 	default:
 		return fmt.Sprintf("Trying configured VPC prefix %s (%d of %d); the previous one has no free IP addresses.",
 			vpcPrefixIDs[walk.current], walk.position(walk.current), count)
@@ -249,5 +242,5 @@ func allVpcPrefixesFullMessage(vpcPrefixIDs []uuid.UUID) string {
 		return fmt.Sprintf("The configured VPC prefix %s has no free IP addresses. %s", vpcPrefixIDs[0], action)
 	}
 	return fmt.Sprintf("All %d configured VPC prefixes have no free IP addresses (%s). %s",
-		len(vpcPrefixIDs), strings.ReplaceAll(joinVpcPrefixIDs(vpcPrefixIDs), ",", ", "), action)
+		len(vpcPrefixIDs), strings.Join(uuidStrings(vpcPrefixIDs), ", "), action)
 }

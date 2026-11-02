@@ -252,7 +252,6 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 			// Only a clearer message; must never block provisioning.
 			logger.Warn("Could not describe stuck CAPI machine; keeping the infrastructure message",
 				"nodeID", input.NodeID, "machine", machine.Name, "error", err)
-			stuckMessage = ""
 		}
 	}
 	if err := a.updateCAPIMachineWaitNodeCondition(ctx, input.NodeID, machine, input.NodeProvisioningConditionMessage, stuckMessage); err != nil {
