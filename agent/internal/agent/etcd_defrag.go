@@ -406,6 +406,26 @@ func (s *NodeAgentServer) returnEtcdDefragNodeToService(
 	if err := s.restoreKubeAPIServerLocked(ctx, runner, progress, defaultEtcdDefragParkDir); err != nil {
 		restoreErrs = append(restoreErrs, fmt.Errorf("restoring kube-apiserver failed: %w", err))
 	}
+
+	// Readiness, not just a running container, and before kube-vip rather than
+	// after. kube-vip gates its BGP announcement on this same /readyz and
+	// announces on its first successful probe, so starting it against an
+	// apiserver that is already ready means the route goes out on that first
+	// probe instead of a poll period later.
+	//
+	// It also fixes what this RPC returning means. The caller sequences members,
+	// so reporting success while this apiserver is still 15-30s from serving
+	// lets it take the next member down against a control plane that is one
+	// endpoint short of what it believes.
+	progress.SetStep(stepWaitingKubeAPIServerReady)
+	if err := s.waitForAPIServerReady(ctx); err != nil {
+		restoreErrs = append(restoreErrs, fmt.Errorf("kube-apiserver did not become ready: %w", err))
+	}
+
+	// Attempted even when readiness failed. kube-vip will not announce the route
+	// until its own probe passes, so putting the manifest back cannot draw
+	// traffic to an apiserver that is not serving - while leaving it parked
+	// would need a human to undo.
 	if err := s.restoreKubeVipLocked(ctx, runner, progress, defaultEtcdDefragParkDir, withdrawn); err != nil {
 		restoreErrs = append(restoreErrs, fmt.Errorf("rejoining the control-plane VIP failed: %w", err))
 	}

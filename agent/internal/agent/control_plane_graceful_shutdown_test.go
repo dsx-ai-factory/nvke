@@ -6,6 +6,8 @@ package agent
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -588,6 +591,7 @@ func TestKubeVipRestore(t *testing.T) {
 				kubeVipSocketQuietWindow: time.Millisecond,
 				staticPodStartTimeout:    time.Millisecond,
 			}
+			stubAPIServerReadyz(t, server, http.StatusOK)
 			if tc.runner != nil {
 				server.Runner = tc.runner(st)
 			}
@@ -635,6 +639,24 @@ type gracefulShutdownTestState struct {
 	killed                  []string
 	order                   []string
 	removedVIP              bool
+}
+
+// stubAPIServerReadyz points the local readiness probe at an httptest server
+// returning statusCode, and shrinks the poll budget to one attempt so a probe
+// that is meant to fail costs a millisecond rather than the production ~100s.
+//
+// Without a registry the probe cannot even be attempted, which reads as "not
+// ready" and burns the whole budget - so every test touching a restore path
+// needs this, not only the ones asserting on readiness.
+func stubAPIServerReadyz(t *testing.T, s *NodeAgentServer, statusCode int) {
+	t.Helper()
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(statusCode)
+	}))
+	t.Cleanup(httpServer.Close)
+	s.clientRegistry = &fakeLocalClientRegistry{localClient: newTestClientset(t, httpServer.URL)}
+	s.apiServerReadyMaxAttempts = 1
+	s.apiServerReadyPollInterval = time.Millisecond
 }
 
 func newGracefulShutdownTestState(t *testing.T, createManifest bool) *gracefulShutdownTestState {
@@ -753,6 +775,43 @@ func startGracefulShutdownWithKubeAPIServerStop(server *NodeAgentServer) (*pb.No
 		return nil, err
 	}
 	return resp.GetOperation(), err
+}
+
+// StartKubeVipRestore used to document "restore only once the apiserver is
+// ready" as a caller obligation and then trust it. Nothing in the agent restores
+// kube-apiserver, so the caller really does own that - but the agent can check
+// it, and the check is the same /readyz kube-vip itself polls before announcing
+// the route.
+//
+// The manifest goes back either way. kube-vip announces nothing until its own
+// probe passes, so restoring cannot draw traffic to an apiserver that is not
+// serving, and a manifest left parked would need another RPC to undo where this
+// one recovers by itself once the apiserver is up.
+func TestKubeVipRestoreReportsAnUnreadyAPIServerAndRestoresAnyway(t *testing.T) {
+	st := newGracefulShutdownTestState(t, false)
+	server := &NodeAgentServer{
+		RootPath:                 st.tmp,
+		Persister:                &JSONFilePersister{Path: st.stateFile},
+		controlPlanePollInterval: time.Millisecond,
+		kubeVipSocketQuietWindow: time.Millisecond,
+		staticPodStartTimeout:    time.Millisecond,
+	}
+	stubAPIServerReadyz(t, server, http.StatusServiceUnavailable)
+	writeKubeVipBackupManifest(t, st)
+	server.Runner = &MockRunner{Runners: []runner{
+		staticPodExitedThenRunningRunner("kube-vip", &st.kubeVipListCalls),
+		loopbackVIPRunner("1: lo    inet 192.168.100.0/32 scope host lo\\       valid_lft forever preferred_lft forever\n"),
+	}}
+
+	op, err := startKubeVipRestore(server)
+	require.NoError(t, err, "the RPC accepts the request; the outcome is on the operation")
+	require.NotNil(t, op)
+
+	sts := waitForKubeVipRestoreStatus(t, server, "op-1")
+	require.NotNil(t, sts)
+	assert.Equal(t, pb.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED, sts.GetPhase())
+	assert.Contains(t, sts.GetErrorMessage(), "did not become ready")
+	assert.FileExists(t, st.manifest, "kube-vip must be restored despite the unready apiserver")
 }
 
 func startKubeVipRestore(server *NodeAgentServer) (*pb.NodeAgentOperationStatus, error) {

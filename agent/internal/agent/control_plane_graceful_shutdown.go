@@ -70,6 +70,7 @@ const (
 	stepWaitingKubeAPIServerExit    = "waiting_for_kube_apiserver_exit"
 	stepRestoringKubeAPIServer      = "restoring_kube_apiserver"
 	stepWaitingKubeAPIServerStart   = "waiting_for_kube_apiserver_start"
+	stepWaitingKubeAPIServerReady   = "waiting_for_kube_apiserver_ready"
 	stepStoppingKubeVip             = "stopping_kube_vip"
 	stepWaitingKubeVipExit          = "waiting_for_kube_vip_exit"
 	stepRestoringKubeVip            = "restoring_kube_vip"
@@ -326,10 +327,16 @@ func (s *NodeAgentServer) withdrawKubeVip(
 
 // runKubeVipRestore reverses the kube-vip manifest move performed by
 // runK8sControlPlaneNodeGracefulShutdown. It intentionally does not touch
-// kube-apiserver; callers must restore kube-vip only after the local apiserver
-// is ready to serve requests. When kube-vip is not configured on this node
-// (mirroring the withdrawal-side skip in runK8sControlPlaneNodeGracefulShutdown),
-// there is nothing to restore and this is a no-op.
+// kube-apiserver - nothing in the agent restores that - so the local apiserver
+// has to be back by other means before this is called. When kube-vip is not
+// configured on this node (mirroring the withdrawal-side skip in
+// runK8sControlPlaneNodeGracefulShutdown), there is nothing to restore and this
+// is a no-op.
+//
+// That precondition used to be documented and trusted. It is now verified: the
+// apiserver readiness wait below is the same /readyz kube-vip itself polls, so
+// a caller that restores too early is told so rather than quietly getting a
+// node that sits outside the ECMP set until its apiserver catches up.
 func (s *NodeAgentServer) runKubeVipRestore(
 	ctx context.Context,
 	progress nodeAgentOperationProgress,
@@ -341,9 +348,23 @@ func (s *NodeAgentServer) runKubeVipRestore(
 	if runner == nil {
 		runner = &nvkeutils.ExecRunner{}
 	}
+
+	var errs []error
+	progress.SetStep(stepWaitingKubeAPIServerReady)
+	if err := s.waitForAPIServerReady(ctx); err != nil {
+		// Reported, not returned. The restore still runs: kube-vip announces
+		// nothing until its own probe passes, so a parked manifest is the worse
+		// of the two outcomes - it needs a second RPC to undo, where this one
+		// recovers on its own the moment the apiserver comes back.
+		errs = append(errs, fmt.Errorf("kube-apiserver did not become ready: %w", err))
+	}
+
 	// No withdrawal happened in this call, so the address is re-resolved from
 	// the manifest the graceful shutdown parked.
-	return s.restoreKubeVipLocked(ctx, runner, progress, defaultStaticPodBackupDir, kubeVipWithdrawal{})
+	if err := s.restoreKubeVipLocked(ctx, runner, progress, defaultStaticPodBackupDir, kubeVipWithdrawal{}); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }
 
 // restoreKubeVipLocked is runKubeVipRestore without the lock, for callers that
@@ -451,8 +472,12 @@ func (s *NodeAgentServer) stopKubeAPIServerLocked(
 // the container to run again. Callers must already hold staticPodMutationMu.
 //
 // Restore this before kube-vip, and only once the local etcd member is serving:
-// the apiserver cannot republish its masterlease until etcd is back, and the VIP
-// must not be advertised from a node whose apiserver is not yet ready.
+// the apiserver cannot republish its masterlease until etcd is back.
+//
+// "Running again" is a new container in `crictl ps`, which is weaker than
+// serving - the apiserver takes a further 15-30s to bind 6443 and pass its own
+// checks. Callers that are about to send traffic here, or to report this node
+// back in service, must follow this with waitForAPIServerReady.
 func (s *NodeAgentServer) restoreKubeAPIServerLocked(
 	ctx context.Context,
 	runner nvkeutils.CommandRunner,

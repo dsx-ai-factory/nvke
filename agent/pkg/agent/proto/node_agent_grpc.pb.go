@@ -209,6 +209,19 @@ type NodeAgentClient interface {
 	// before it serves any RPC, so an interrupted defragmentation does not leave
 	// a node permanently out of the control plane.
 	//
+	// Success means the local apiserver answered GET /readyz with 200 and the VIP
+	// is back on loopback. It does not mean this node is carrying VIP traffic
+	// again. kube-vip speaks BGP in-process and announces the route on its own
+	// first successful /readyz probe, so nothing on the node can observe whether
+	// the upstream peer has installed it - the metrics kube-vip exports cover the
+	// peer session state, not which prefixes are advertised. Returning to service
+	// is therefore reported as "every local precondition for announcement now
+	// holds", and a caller that needs proof the node is in the ECMP set has to
+	// check the VIP from off the node.
+	//
+	// Readiness is waited for before kube-vip is restored rather than after,
+	// because that first probe is the one that decides when the route goes out.
+	//
 	// The operation_id is an idempotency key; retrying with the same operation_id
 	// returns the existing operation instead of restarting etcd a second time.
 	StartEtcdDefrag(ctx context.Context, in *StartEtcdDefragRequest, opts ...grpc.CallOption) (*StartEtcdDefragResponse, error)
@@ -224,11 +237,22 @@ type NodeAgentClient interface {
 	// a previously started asynchronous control-plane node graceful shutdown.
 	GetK8SControlPlaneNodeGracefulShutdownStatus(ctx context.Context, in *GetK8SControlPlaneNodeGracefulShutdownStatusRequest, opts ...grpc.CallOption) (*GetK8SControlPlaneNodeGracefulShutdownStatusResponse, error)
 	// StartKubeVipRestore starts an asynchronous restore for kube-vip on a node
-	// previously prepared by StartK8sControlPlaneNodeGracefulShutdown. It
-	// restores the kube-vip static pod manifest and waits for the VIP to appear
-	// on loopback again. The operation_id is an idempotency key; retrying with the
-	// same operation_id returns the existing operation instead of starting
-	// duplicate work.
+	// previously prepared by StartK8sControlPlaneNodeGracefulShutdown. It waits
+	// for the local apiserver to answer GET /readyz with 200, restores the
+	// kube-vip static pod manifest, and waits for the VIP to appear on loopback
+	// again. The operation_id is an idempotency key; retrying with the same
+	// operation_id returns the existing operation instead of starting duplicate
+	// work.
+	//
+	// Nothing in the agent restores kube-apiserver, so the caller owns bringing it
+	// back before calling this. The readiness wait verifies that rather than
+	// assuming it: an apiserver that never becomes ready fails the operation, but
+	// the kube-vip manifest is restored anyway, because kube-vip announces no
+	// route until its own /readyz probe passes and a manifest left parked would
+	// need another call to undo.
+	//
+	// As with StartEtcdDefrag, success does not prove the upstream peer has
+	// installed the route; that is only observable from off the node.
 	StartKubeVipRestore(ctx context.Context, in *StartKubeVipRestoreRequest, opts ...grpc.CallOption) (*StartKubeVipRestoreResponse, error)
 	// InstallCNI deploys packaged CNI charts or manifests into the cluster (helm install /
 	// kubectl apply). It assumes the charts/manifest Debian package is already installed
@@ -1078,6 +1102,19 @@ type NodeAgentServer interface {
 	// before it serves any RPC, so an interrupted defragmentation does not leave
 	// a node permanently out of the control plane.
 	//
+	// Success means the local apiserver answered GET /readyz with 200 and the VIP
+	// is back on loopback. It does not mean this node is carrying VIP traffic
+	// again. kube-vip speaks BGP in-process and announces the route on its own
+	// first successful /readyz probe, so nothing on the node can observe whether
+	// the upstream peer has installed it - the metrics kube-vip exports cover the
+	// peer session state, not which prefixes are advertised. Returning to service
+	// is therefore reported as "every local precondition for announcement now
+	// holds", and a caller that needs proof the node is in the ECMP set has to
+	// check the VIP from off the node.
+	//
+	// Readiness is waited for before kube-vip is restored rather than after,
+	// because that first probe is the one that decides when the route goes out.
+	//
 	// The operation_id is an idempotency key; retrying with the same operation_id
 	// returns the existing operation instead of restarting etcd a second time.
 	StartEtcdDefrag(context.Context, *StartEtcdDefragRequest) (*StartEtcdDefragResponse, error)
@@ -1093,11 +1130,22 @@ type NodeAgentServer interface {
 	// a previously started asynchronous control-plane node graceful shutdown.
 	GetK8SControlPlaneNodeGracefulShutdownStatus(context.Context, *GetK8SControlPlaneNodeGracefulShutdownStatusRequest) (*GetK8SControlPlaneNodeGracefulShutdownStatusResponse, error)
 	// StartKubeVipRestore starts an asynchronous restore for kube-vip on a node
-	// previously prepared by StartK8sControlPlaneNodeGracefulShutdown. It
-	// restores the kube-vip static pod manifest and waits for the VIP to appear
-	// on loopback again. The operation_id is an idempotency key; retrying with the
-	// same operation_id returns the existing operation instead of starting
-	// duplicate work.
+	// previously prepared by StartK8sControlPlaneNodeGracefulShutdown. It waits
+	// for the local apiserver to answer GET /readyz with 200, restores the
+	// kube-vip static pod manifest, and waits for the VIP to appear on loopback
+	// again. The operation_id is an idempotency key; retrying with the same
+	// operation_id returns the existing operation instead of starting duplicate
+	// work.
+	//
+	// Nothing in the agent restores kube-apiserver, so the caller owns bringing it
+	// back before calling this. The readiness wait verifies that rather than
+	// assuming it: an apiserver that never becomes ready fails the operation, but
+	// the kube-vip manifest is restored anyway, because kube-vip announces no
+	// route until its own /readyz probe passes and a manifest left parked would
+	// need another call to undo.
+	//
+	// As with StartEtcdDefrag, success does not prove the upstream peer has
+	// installed the route; that is only observable from off the node.
 	StartKubeVipRestore(context.Context, *StartKubeVipRestoreRequest) (*StartKubeVipRestoreResponse, error)
 	// InstallCNI deploys packaged CNI charts or manifests into the cluster (helm install /
 	// kubectl apply). It assumes the charts/manifest Debian package is already installed

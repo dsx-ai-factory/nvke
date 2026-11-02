@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -658,6 +659,7 @@ func etcdRestartTestServer(t *testing.T, client *fakeEtcdMemberClient) (*NodeAge
 	s.staticPodExitTimeout = 100 * time.Millisecond
 	s.controlPlanePollInterval = time.Millisecond
 	s.kubeVipSocketQuietWindow = time.Millisecond
+	stubAPIServerReadyz(t, s, http.StatusOK)
 	return s, node
 }
 
@@ -763,6 +765,10 @@ func TestRunEtcdDefragRestartSequence(t *testing.T) {
 			stepEtcdDefragReturningToService,
 			stepRestoringKubeAPIServer,
 			stepWaitingKubeAPIServerStart,
+			// Readiness before kube-vip, not after: kube-vip announces the
+			// route on its first successful /readyz probe, so this ordering is
+			// what makes that first probe the one that succeeds.
+			stepWaitingKubeAPIServerReady,
 			// No second resolve: the restore is handed the address the
 			// withdrawal resolved, because by now the withdrawal has removed
 			// what resolving reads.
@@ -1043,6 +1049,59 @@ func TestRunEtcdDefragPutsEveryManifestBackWhenCrictlFails(t *testing.T) {
 	result := decodeDefragResult(t, progress)
 	assert.Equal(t, int32(pb.GetEtcdDefragStatusResponse_OUTCOME_FAILED_NOT_RESTORED), result.Outcome)
 	assertNodeInService(t, s)
+}
+
+// A container in `crictl ps` is not an apiserver that serves: kubeadm's takes a
+// further 15-30s to bind 6443 and pass its own checks. Returning before that
+// tells the caller - which is sequencing members - that this node is back, and
+// it can take the next member down against a control plane one endpoint short
+// of what it believes.
+//
+// The failure is reported rather than returned early, and kube-vip is restored
+// regardless. kube-vip announces nothing until its own /readyz probe passes, so
+// the manifest going back cannot draw traffic to an apiserver that is not
+// serving, while leaving it parked would need a second RPC to undo.
+func TestRunEtcdDefragWaitsForAPIServerReadinessBeforeKubeVip(t *testing.T) {
+	const mib = int64(1024 * 1024)
+	newServer := func(t *testing.T, readyzStatus int) (*NodeAgentServer, *fakeOperationProgress) {
+		t.Helper()
+		client := &fakeEtcdMemberClient{
+			members:     testEtcdMembersThree(),
+			localID:     2,
+			leaderID:    1,
+			dbSize:      500 * mib,
+			dbSizeInUse: 100 * mib,
+		}
+		s, _ := etcdRestartTestServer(t, client)
+		stubAPIServerReadyz(t, s, readyzStatus)
+		return s, &fakeOperationProgress{}
+	}
+
+	t.Run("a ready apiserver lets the sequence complete", func(t *testing.T) {
+		s, progress := newServer(t, http.StatusOK)
+
+		require.NoError(t, s.runEtcdDefrag(context.Background(), progress))
+
+		// NOT_RECLAIMED rather than RECLAIMED because this fake reports a fixed
+		// backend size, so the restart cannot shrink it. The measurement is
+		// covered elsewhere; what matters here is that the gate let the
+		// sequence through to its end.
+		assert.Equal(t, int32(pb.GetEtcdDefragStatusResponse_OUTCOME_NOT_RECLAIMED),
+			decodeDefragResult(t, progress).Outcome)
+		assertNodeInService(t, s)
+	})
+
+	t.Run("an apiserver that never becomes ready fails the operation but still returns kube-vip", func(t *testing.T) {
+		s, progress := newServer(t, http.StatusServiceUnavailable)
+
+		err := s.runEtcdDefrag(context.Background(), progress)
+
+		require.Error(t, err, "a node whose apiserver is not serving must not report success")
+		assert.Contains(t, err.Error(), "did not become ready")
+		assert.True(t, staticPodManifestIsActive(t, s, defaultKubeVipManifestName),
+			"kube-vip must go back anyway; it announces nothing until its own probe passes")
+		assert.True(t, staticPodManifestIsActive(t, s, defaultKubeAPIServerManifestName))
+	})
 }
 
 // The other way into leaving this node out of service: something failed after
