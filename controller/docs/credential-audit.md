@@ -225,6 +225,20 @@ step its own `--operation` suffix (for example `example-maintenance-run/renew-2`
 whenever any step, including a renewal or approval, is repeated with otherwise
 unchanged fields.
 
+When the [rotation demo](https://github.com/dsx-ai-factory/nvke/blob/main/hack/rotation-demo/README.md) observes T1
+maintenance, its collector also requires `--cluster` to be the exact
+`kube-system` namespace UID of the site-management cluster (the example above
+uses a placeholder name), `--node` to be the configured node name (not
+`--node-id`), and `--operation` to be its configured
+`manual_operation` or that value with a per-step suffix `/<action>-<n>`, for
+example `example-maintenance-run/renew-2`, where `<action>` is `check`,
+`approve`, `renew`, `rotate` or `verify` and `<n>` is 1 through 99 without
+leading zeros. Rows with a different cluster or operation fail with
+`manual_audit_target_or_run_mismatch`. A row recorded with `--node-id` or a
+different node name does not count toward that node, and the run fails with
+`per_node_audit_coverage_incomplete`. Keep the original audit records; do not
+delete rows or repeat maintenance to manufacture matching evidence.
+
 For public certificate evidence, add `--certificate /path/to/public-certificate.pem`
 to `check` and `verify` observations. Maximum input is 1 MiB and 32 certificates.
 Take public certificate-only copies without exporting private keys or kubeconfig

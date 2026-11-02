@@ -1,19 +1,14 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-apiVersion: kubeadm.k8s.io/v1beta3
+apiVersion: kubeadm.k8s.io/v1beta4
 kind: JoinConfiguration
 controlPlane:
+  # The API server's encryption flag and volume come from the cluster's ClusterConfiguration
+  # (see kubeadm-init.yaml). Before joining, copy /etc/kubernetes/encryption-config.yaml, with the
+  # same keys, from an existing control-plane node; a new key would leave Secrets unreadable.
   localAPIEndpoint:
     advertiseAddress: 10.85.140.173
-  extraArgs:
-    encryption-provider-config: /etc/kubernetes/encryption-config.yaml
-  extraVolumes:
-    - name: encryptionconfig
-      hostPath: /etc/kubernetes/encryption-config.yaml
-      mountPath: /etc/kubernetes/encryption-config.yaml
-      readOnly: true
-      pathType: File
 discovery:
   bootstrapToken:
     token: "7etwj3.sbb6cevgpvbnbgfi"

@@ -17,6 +17,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -103,10 +104,7 @@ func validatePostReadyKubeVipRouteWithdrawal(test *tenantTest) {
 		Expect(restoreKubeAPIServerManifest(ctx, target.name)).To(Succeed())
 		manifestRemoved = false
 		Eventually(func(ctx context.Context) error {
-			return assertKubeAPIServerContainerRunning(ctx, target.name)
-		}).WithContext(ctx).WithTimeout(2 * time.Minute).WithPolling(2 * time.Second).Should(Succeed())
-		Eventually(func(ctx context.Context) error {
-			return assertKubeAPIServerReady(ctx, tenantClient, target.name)
+			return assertKubeAPIServerRestarted(ctx, tenantClient, target.name)
 		}).WithContext(ctx).WithTimeout(2 * time.Minute).WithPolling(2 * time.Second).Should(Succeed())
 		Eventually(func(ctx context.Context) ([]string, error) {
 			return bgpNextHops(ctx, bgpContainer, vip)
@@ -241,17 +239,6 @@ func assertKubeAPIServerContainerStopped(ctx context.Context, container string) 
 	return nil
 }
 
-func assertKubeAPIServerContainerRunning(ctx context.Context, container string) error {
-	ids, err := kubeAPIServerContainerIDs(ctx, container)
-	if err != nil {
-		return err
-	}
-	if len(ids) != 1 {
-		return fmt.Errorf("kube-apiserver on %s has %d running container IDs, want 1: %v", container, len(ids), ids)
-	}
-	return nil
-}
-
 func kubeAPIServerContainerIDs(ctx context.Context, container string) ([]string, error) {
 	command := exec.CommandContext(
 		ctx,
@@ -266,18 +253,16 @@ func kubeAPIServerContainerIDs(ctx context.Context, container string) ([]string,
 	return strings.Fields(string(output)), nil
 }
 
-func assertKubeAPIServerReady(ctx context.Context, tenantClient client.Client, nodeName string) error {
-	ready, err := kubeAPIServerReadyOnNode(ctx, tenantClient, nodeName)
+// assertKubeAPIServerRestarted checks that exactly one kube-apiserver container
+// runs on nodeName and that its mirror pod is Ready and reports that container.
+func assertKubeAPIServerRestarted(ctx context.Context, tenantClient client.Client, nodeName string) error {
+	ids, err := kubeAPIServerContainerIDs(ctx, nodeName)
 	if err != nil {
 		return err
 	}
-	if !ready {
-		return fmt.Errorf("kube-apiserver on %s is not Ready", nodeName)
+	if len(ids) != 1 {
+		return fmt.Errorf("kube-apiserver on %s has %d running container IDs, want 1: %v", nodeName, len(ids), ids)
 	}
-	return nil
-}
-
-func kubeAPIServerReadyOnNode(ctx context.Context, tenantClient client.Client, nodeName string) (bool, error) {
 	var pods corev1.PodList
 	if err := tenantClient.List(
 		ctx,
@@ -285,14 +270,32 @@ func kubeAPIServerReadyOnNode(ctx context.Context, tenantClient client.Client, n
 		client.InNamespace(kubeSystemNamespace),
 		client.MatchingLabels{"component": "kube-apiserver"},
 	); err != nil {
-		return false, fmt.Errorf("listing kube-apiserver mirror pods: %w", err)
+		return fmt.Errorf("listing kube-apiserver mirror pods: %w", err)
 	}
 	for i := range pods.Items {
 		if pods.Items[i].Spec.NodeName == nodeName {
-			return podReady(&pods.Items[i]), nil
+			return kubeAPIServerPodReports(&pods.Items[i], ids[0])
 		}
 	}
-	return false, nil
+	return fmt.Errorf("kube-apiserver on %s has no mirror pod", nodeName)
+}
+
+// kubeAPIServerPodReports checks that pod is Ready and that its container
+// status names the CRI container containerID, such as "containerd://<id>".
+func kubeAPIServerPodReports(pod *corev1.Pod, containerID string) error {
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name != "kube-apiserver" {
+			continue
+		}
+		if _, id, _ := strings.Cut(status.ContainerID, "://"); id != containerID {
+			return fmt.Errorf("kube-apiserver pod %s reports container %q, want running container %s", pod.Name, status.ContainerID, containerID)
+		}
+		if !podReady(pod) {
+			return fmt.Errorf("kube-apiserver pod %s is not Ready", pod.Name)
+		}
+		return nil
+	}
+	return fmt.Errorf("kube-apiserver pod %s has no kube-apiserver container status", pod.Name)
 }
 
 func TestUnit_ParseBGPNextHops(t *testing.T) {
@@ -312,5 +315,42 @@ func TestUnit_ParseBGPNextHops(t *testing.T) {
 	want := []string{"172.18.0.11", "172.18.0.12"}
 	if fmt.Sprint(hops) != fmt.Sprint(want) {
 		t.Fatalf("parseBGPNextHops() = %v, want %v", hops, want)
+	}
+}
+
+func TestUnit_KubeAPIServerPodReports(t *testing.T) {
+	pod := func(containerID string, ready corev1.ConditionStatus) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-cp-1"},
+			Status: corev1.PodStatus{
+				Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: ready}},
+				ContainerStatuses: []corev1.ContainerStatus{
+					{Name: "kube-apiserver", ContainerID: containerID},
+				},
+			},
+		}
+	}
+	tests := map[string]struct {
+		pod     *corev1.Pod
+		wantErr string
+	}{
+		"ready with the running container": {pod: pod("containerd://new", corev1.ConditionTrue)},
+		"ready with the stopped container": {pod: pod("containerd://old", corev1.ConditionTrue), wantErr: "want running container new"},
+		"running container not yet ready":  {pod: pod("containerd://new", corev1.ConditionFalse), wantErr: "is not Ready"},
+		"no container status":              {pod: &corev1.Pod{}, wantErr: "has no kube-apiserver container status"},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := kubeAPIServerPodReports(test.pod, "new")
+			if test.wantErr == "" {
+				if err != nil {
+					t.Fatalf("kubeAPIServerPodReports() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("kubeAPIServerPodReports() error = %v, want %q", err, test.wantErr)
+			}
+		})
 	}
 }

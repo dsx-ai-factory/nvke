@@ -13,7 +13,7 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: nke-controller
+  name: nvke-controller
 ---
 apiVersion: v1
 kind: Namespace

@@ -31,4 +31,4 @@ auth:
 initdb:
   scripts:
     init-cwe.sql: |
-      CREATE DATABASE "nke-controller";
+      CREATE DATABASE "nvke-controller";

@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# This module holds the NVKE API authentication library (authn). It is its own
-# module, like controller/api, so a component other than the controller can
-# import it.
+# This module holds the NVKE API authentication and authorization libraries
+# (authn, authz). It is its own module, like controller/api, so a component
+# other than the controller can import it.
 
 GO ?= go
 

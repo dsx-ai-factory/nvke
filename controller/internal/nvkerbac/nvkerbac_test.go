@@ -25,7 +25,7 @@ func TestReadManifest(t *testing.T) {
 
 	t.Run("absent ConfigMap is NotFound", func(t *testing.T) {
 		t.Parallel()
-		_, err := nvkerbac.ReadManifest(ctx, fake.NewClientBuilder().WithScheme(clientgoscheme.Scheme).Build(), constants.LegacyManagementNamespace)
+		_, err := nvkerbac.ReadManifest(ctx, fake.NewClientBuilder().WithScheme(clientgoscheme.Scheme).Build(), nvkerbac.Source{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.LegacyConfigMapName})
 		require.Error(t, err)
 		assert.True(t, apierrors.IsNotFound(err))
 	})
@@ -33,12 +33,44 @@ func TestReadManifest(t *testing.T) {
 	t.Run("returns the trimmed manifest", func(t *testing.T) {
 		t.Parallel()
 		cm := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.ConfigMapName},
+			ObjectMeta: metav1.ObjectMeta{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.LegacyConfigMapName},
 			Data:       map[string]string{nvkerbac.ConfigMapKey: "\nkind: ClusterRole\n\n"},
 		}
-		got, err := nvkerbac.ReadManifest(ctx, fake.NewClientBuilder().WithScheme(clientgoscheme.Scheme).WithObjects(cm).Build(), constants.LegacyManagementNamespace)
+		got, err := nvkerbac.ReadManifest(ctx, fake.NewClientBuilder().WithScheme(clientgoscheme.Scheme).WithObjects(cm).Build(), nvkerbac.Source{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.LegacyConfigMapName})
 		require.NoError(t, err)
 		assert.Equal(t, "kind: ClusterRole", string(got))
+	})
+
+	t.Run("reads the configured name, not the legacy one", func(t *testing.T) {
+		t.Parallel()
+		// Both ConfigMaps exist, as they would on a site mid-rename. Only the
+		// one the Source names may be read: reading the other would apply RBAC
+		// the operator has stopped maintaining.
+		pinned := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "nvke-system", Name: "nvke-rbac"},
+			Data:       map[string]string{nvkerbac.ConfigMapKey: "kind: ClusterRole\nmetadata:\n  name: pinned\n"},
+		}
+		legacy := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "nvke-system", Name: nvkerbac.LegacyConfigMapName},
+			Data:       map[string]string{nvkerbac.ConfigMapKey: "kind: ClusterRole\nmetadata:\n  name: legacy\n"},
+		}
+		c := fake.NewClientBuilder().WithScheme(clientgoscheme.Scheme).WithObjects(pinned, legacy).Build()
+		got, err := nvkerbac.ReadManifest(ctx, c, nvkerbac.Source{Namespace: "nvke-system", Name: "nvke-rbac"})
+		require.NoError(t, err)
+		assert.Contains(t, string(got), "name: pinned")
+		assert.NotContains(t, string(got), "name: legacy")
+	})
+
+	t.Run("a name in the wrong namespace is NotFound", func(t *testing.T) {
+		t.Parallel()
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "nvke-system", Name: "nvke-rbac"},
+			Data:       map[string]string{nvkerbac.ConfigMapKey: "kind: ClusterRole\n"},
+		}
+		c := fake.NewClientBuilder().WithScheme(clientgoscheme.Scheme).WithObjects(cm).Build()
+		_, err := nvkerbac.ReadManifest(ctx, c, nvkerbac.Source{Namespace: constants.LegacyManagementNamespace, Name: "nvke-rbac"})
+		require.Error(t, err)
+		assert.True(t, apierrors.IsNotFound(err))
 	})
 }
 

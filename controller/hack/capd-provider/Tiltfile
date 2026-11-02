@@ -16,8 +16,8 @@ def register(ctx):
         new_name=CAPD_CWE_RBAC_RESOURCE,
         labels=["5-capd"],
         objects=[
-            "nke-controller-capd:clusterrole",
-            "nke-controller-capd:clusterrolebinding",
+            "nvke-controller-capd:clusterrole",
+            "nvke-controller-capd:clusterrolebinding",
         ],
         resource_deps=["check-management-cluster"],
         pod_readiness="ignore",

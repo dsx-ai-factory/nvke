@@ -96,9 +96,28 @@ type parentedTracingHook struct {
 	*bunotel.QueryHook
 }
 
+type querySpansDisabledKey struct{}
+
+// WithoutQuerySpans returns a context that keeps trace correlation for logs but
+// asks the Bun tracing hook not to create spans for database queries. Temporal
+// wait and poll loops should wrap their repeated read-only queries with this
+// context. Do not pass it through mixed read/write transactions, because it
+// suppresses spans for every query in the transaction. Use it for other
+// repetitive queries only when their individual spans add no diagnostic value.
+func WithoutQuerySpans(ctx context.Context) context.Context {
+	return context.WithValue(ctx, querySpansDisabledKey{}, true)
+}
+
 func (h *parentedTracingHook) BeforeQuery(ctx context.Context, event *bun.QueryEvent) context.Context {
-	if !trace.SpanContextFromContext(ctx).IsValid() {
+	spanContext := trace.SpanContextFromContext(ctx)
+	if !spanContext.IsValid() {
 		return ctx
+	}
+	if disabled, _ := ctx.Value(querySpansDisabledKey{}).(bool); disabled {
+		// Preserve the trace and span IDs for query logs, but replace the
+		// recording parent so bunotel.AfterQuery records only the metric and
+		// cannot mutate or end the activity span.
+		return trace.ContextWithSpanContext(ctx, spanContext)
 	}
 	return h.QueryHook.BeforeQuery(ctx, event)
 }

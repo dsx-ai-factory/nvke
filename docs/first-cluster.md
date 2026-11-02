@@ -313,7 +313,7 @@ bootstrap side-loads them by default. To use images you pushed to a registry
 instead, name them:
 
 ```bash
-export NVKECTL_NVKE_CONTROLLER_IMAGE=<nke-controller image>
+export NVKECTL_NVKE_CONTROLLER_IMAGE=<nvke-controller image>
 export NVKECTL_CAPI_PROVISIONED_IMAGE=<provisioned provider image>
 ```
 
@@ -403,7 +403,9 @@ That kubeconfig is also how `nvkectl` authenticates to CWE once the site has API
 authentication on. The CLI always mints for `nke-clients/nke-client` and reads
 the audience from `apiAuth` in ConfigMap `nvke-controller-config`, or from
 ConfigMap `nvke-auth-config` when that section is off, in namespace
-`nke-controller`, or in `cloud-workflow-engine` when that is absent. Create that service
+`nvke-controller`, then in `nke-controller` for a site installed before the
+`nvke` rename, then in `cloud-workflow-engine`, and uses the first it can read.
+Create that service
 account, admit it, and grant the kubeconfig identity the permissions in
 [Configuring NVKE API Authentication](../controller/docs/configuring-api-authentication.md).
 Without them, `get clusters` fails at minting or CWE returns 403.

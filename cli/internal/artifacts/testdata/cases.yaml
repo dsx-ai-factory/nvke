@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Expected validator result per file: ok, or a substring of the error.
+# platform defaults to linux/amd64. Each file under cases/ breaks one rule of
+# valid.json, except the valid-* files and minimal-hand-written.json, which are
+# the valid shapes. nvkr/ holds unmodified nvkr release exports with no NVKE
+# output.
+
+- file: valid.json
+  expect: ok
+- file: valid.json
+  platform: linux/arm64
+  expect: ok
+- file: cases/minimal-hand-written.json
+  expect: ok
+- file: cases/valid-nico-absent.json
+  expect: ok
+- file: cases/valid-local-path-absent.json
+  expect: ok
+- file: cases/valid-extra-outputs-and-keys.json
+  expect: ok
+- file: nvkr/helm-export.json
+  expect: 'required output "cwe" is missing'
+- file: nvkr/exec-export.json
+  expect: 'required output "cwe" is missing'
+- file: cases/not-json.json
+  expect: 'not valid JSON'
+- file: cases/null.json
+  expect: 'not a JSON object'
+- file: cases/trailing-content.json
+  expect: 'content after the JSON object'
+- file: cases/duplicate-output-name.json
+  expect: 'outputs[name=cwe]: appears twice'
+- file: cases/missing-required-output.json
+  expect: 'required output "spire" is missing'
+- file: cases/nico-without-prereqs.json
+  expect: 'output "nico-prereqs" is required when "nico" is present'
+- file: cases/image-wrong-kind.json
+  expect: 'outputs[name=cwe]: kind "executable", want "oci"'
+- file: cases/chart-wrong-kind.json
+  expect: 'outputs[name=spire]: kind "oci", want "helm-oci"'
+- file: cases/reference-missing.json
+  expect: 'outputs[name=cwe]: reference is missing'
+- file: cases/reference-without-digest.json
+  expect: 'outputs[name=cwe]: reference has no digest'
+- file: cases/image-platform-missing.json
+  expect: 'outputs[name=cwe]: no manifest for platform linux/amd64'
+- file: cases/image-index-platform-missing.json
+  expect: 'outputs[name=cwe]: no manifest for platform linux/amd64'
+- file: cases/chart-without-version.json
+  expect: 'outputs[name=temporal]: chartVersion is missing'
+- file: cases/chart-version-out-of-range.json
+  expect: 'outputs[name=postgresql]: chartVersion "17.0.0" is outside the supported range'

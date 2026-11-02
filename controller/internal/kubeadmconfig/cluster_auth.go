@@ -30,9 +30,9 @@ type ClusterAuthentication struct {
 	SharedEnabled bool
 	Providers     []controllerconfig.OIDCProvider
 	TrustDomain   string
-	// ManagementNamespace is where the nke-rbac ConfigMap lives
-	// (config.Config.ManagementNamespaceOrDefault).
-	ManagementNamespace string
+	// RBACConfigMap is the operator-managed RBAC ConfigMap whose User subjects
+	// are reserved (config.Config.RBACConfigMapSource).
+	RBACConfigMap nvkerbac.Source
 }
 
 // Needed reports whether the cluster has any OIDC provider.
@@ -62,7 +62,7 @@ func BuildClusterAuthenticationConfig(ctx context.Context, c client.Client, in C
 		}
 	}
 
-	policy, err := LoadOperatorJWTPolicy(ctx, c, in.TrustDomain, in.ManagementNamespace)
+	policy, err := LoadOperatorJWTPolicy(ctx, c, in.TrustDomain, in.RBACConfigMap)
 	if err != nil {
 		return nil, err
 	}
@@ -74,14 +74,15 @@ func BuildClusterAuthenticationConfig(ctx context.Context, c client.Client, in C
 }
 
 // LoadOperatorJWTPolicy reserves the management SPIFFE trust domain and the User
-// subjects nke-rbac binds. With nke-rbac present, the trust domain is required.
-func LoadOperatorJWTPolicy(ctx context.Context, reader client.Reader, trustDomain, managementNamespace string) (OperatorJWTPolicy, error) {
+// subjects the RBAC manifest binds. With the manifest present, the trust domain
+// is required.
+func LoadOperatorJWTPolicy(ctx context.Context, reader client.Reader, trustDomain string, src nvkerbac.Source) (OperatorJWTPolicy, error) {
 	if reader == nil {
-		return OperatorJWTPolicy{}, errors.New("reading nke-rbac needs a management-cluster client")
+		return OperatorJWTPolicy{}, errors.New("reading the RBAC manifest needs a management-cluster client")
 	}
 	policy := OperatorJWTPolicy{ManagementJWTTrustDomain: trustDomain}
 
-	manifest, err := nvkerbac.ReadManifest(ctx, reader, managementNamespace)
+	manifest, err := nvkerbac.ReadManifest(ctx, reader, src)
 	if apierrors.IsNotFound(err) {
 		return policy, nil
 	}
@@ -89,7 +90,7 @@ func LoadOperatorJWTPolicy(ctx context.Context, reader client.Reader, trustDomai
 		return OperatorJWTPolicy{}, fmt.Errorf("reading the identities fleet-wide OIDC providers must not claim: %w", err)
 	}
 	if trustDomain == "" {
-		return OperatorJWTPolicy{}, errors.New("nke-rbac binds NVKE identities, but the management SPIFFE trust domain is unknown")
+		return OperatorJWTPolicy{}, fmt.Errorf("ConfigMap %s/%s binds NVKE identities, but the management SPIFFE trust domain is unknown", src.Namespace, src.Name)
 	}
 
 	policy.ReservedSubjects, err = nvkerbac.UserSubjects(manifest)

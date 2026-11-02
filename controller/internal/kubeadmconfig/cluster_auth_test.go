@@ -65,7 +65,7 @@ func nvkeRBAC(users ...string) *corev1.ConfigMap {
 		manifest += "  - {kind: User, name: " + user + "}\n"
 	}
 	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.ConfigMapName},
+		ObjectMeta: metav1.ObjectMeta{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.LegacyConfigMapName},
 		Data:       map[string]string{nvkerbac.ConfigMapKey: manifest},
 	}
 }
@@ -115,7 +115,7 @@ func TestBuildClusterAuthenticationConfig(t *testing.T) {
 			Providers:     []controllerconfig.OIDCProvider{clusterAuthOperator()},
 			TrustDomain:   clusterAuthTrustDomain,
 
-			ManagementNamespace: constants.LegacyManagementNamespace,
+			RBACConfigMap: nvkerbac.Source{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.LegacyConfigMapName},
 		})
 		require.NoError(t, err)
 		require.Len(t, got.JWT, 2)
@@ -166,12 +166,12 @@ subjects:
   - {kind: User, name: system:admin}
 `
 	got, err := BuildClusterAuthenticationConfig(context.Background(), clusterAuthClient(clusterAuthCASecret(), cm), ClusterAuthentication{
-		ClusterName:         "tenant-1",
-		Shared:              clusterAuthShared(),
-		SharedEnabled:       true,
-		Providers:           []controllerconfig.OIDCProvider{clusterAuthOperator()},
-		TrustDomain:         clusterAuthTrustDomain,
-		ManagementNamespace: constants.LegacyManagementNamespace,
+		ClusterName:   "tenant-1",
+		Shared:        clusterAuthShared(),
+		SharedEnabled: true,
+		Providers:     []controllerconfig.OIDCProvider{clusterAuthOperator()},
+		TrustDomain:   clusterAuthTrustDomain,
+		RBACConfigMap: nvkerbac.Source{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.LegacyConfigMapName},
 	})
 	require.NoError(t, err)
 	require.Len(t, got.JWT, 2)
@@ -194,13 +194,39 @@ func TestLoadOperatorJWTPolicy(t *testing.T) {
 		},
 	}).Build()
 
+	// A site that pinned a name other than the default. The ConfigMap carries a
+	// name the legacy fixture never uses, so a caller that read the legacy one
+	// would reserve nothing and the case would fail rather than pass quietly.
+	pinnedSrc := nvkerbac.Source{Namespace: constants.LegacyManagementNamespace, Name: "pinned-rbac"}
+	pinnedRBAC := nvkeRBAC("spiffe://exchange.example/pinned")
+	pinnedRBAC.Name = pinnedSrc.Name
+
 	tests := []struct {
 		name        string
 		reader      client.Reader
 		trustDomain string
+		src         nvkerbac.Source
 		want        OperatorJWTPolicy
 		wantErr     string
 	}{
+		{
+			name:        "the configured name is the one read",
+			reader:      clusterAuthClient(pinnedRBAC),
+			trustDomain: clusterAuthTrustDomain,
+			src:         pinnedSrc,
+			want: OperatorJWTPolicy{
+				ManagementJWTTrustDomain: clusterAuthTrustDomain,
+				ReservedSubjects:         []string{"spiffe://exchange.example/pinned"},
+			},
+		},
+		{
+			// The manifest is there under its own name; a caller still on the
+			// default reserves nothing and leaves those identities claimable.
+			name:        "a manifest under another name is not read",
+			reader:      clusterAuthClient(pinnedRBAC),
+			trustDomain: clusterAuthTrustDomain,
+			want:        OperatorJWTPolicy{ManagementJWTTrustDomain: clusterAuthTrustDomain},
+		},
 		{
 			name:        "no nke-rbac reserves the trust domain only",
 			reader:      clusterAuthClient(),
@@ -240,7 +266,11 @@ func TestLoadOperatorJWTPolicy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := LoadOperatorJWTPolicy(ctx, tt.reader, tt.trustDomain, constants.LegacyManagementNamespace)
+			src := tt.src
+			if src == (nvkerbac.Source{}) {
+				src = nvkerbac.Source{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.LegacyConfigMapName}
+			}
+			got, err := LoadOperatorJWTPolicy(ctx, tt.reader, tt.trustDomain, src)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				return

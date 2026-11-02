@@ -59,6 +59,7 @@ os-image/efi/output/
 # Editor / OS
 .idea/
 .vscode/
+*.code-workspace
 *.swp
 *.swo
 *~
@@ -69,6 +70,8 @@ os-image/efi/output/
 # ignores its own .local/; make/golangci.mk puts the golangci-lint cache in this
 # one so two checkouts cannot replay each other's issues.
 .local/
+# Python bytecode from running the hack/ scripts and their tests locally.
+__pycache__/
 
 # workspace local applies to a workspace that papers over module boundaries
 # during development; this one is the build definition for every module that
@@ -81,6 +84,9 @@ os-image/efi/output/
 *-etcd-encryption-key.json
 .*-etcd-encryption-key.json.*
 cli/e2e/bootstrap/.etcd-encryption-key.json
+
+# The secret values the bootstrap E2E's Go test saves, in clear. See cli/.gitignore.
+cli/e2e/bootstrap/.bootstrap-known-secrets.json
 
 # nvkectl and the three image archives `make site-inputs` stages for the Forge
 # site-controller lane. The lane points SITE_INPUTS here, inside the checkout,

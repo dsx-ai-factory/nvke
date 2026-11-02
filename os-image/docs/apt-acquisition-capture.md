@@ -49,6 +49,10 @@ acquisition time is not implemented.
 
 This is not complete OS inventory or a full disk SBOM. Base ISO content,
 non-APT downloads and package events after the export window are not covered.
+That includes Open vSwitch: `provision.sh` installs DOCA's
+`doca-openvswitch-switch` after the export, so neither the DOCA debs (pinned by
+`packages/doca-ovs/lock/` instead) nor the Ubuntu archive packages they pull in
+are in the capture.
 The hook's installer-to-target behavior still requires a real NVKE image build;
 native APT container tests and Packer validation alone do not prove that handoff.
 Captured archives whose exact repository metadata has disappeared, or whose

@@ -49,7 +49,7 @@ var nonAlphanumeric = regexp.MustCompile(`[^A-Z0-9]+`)
 // derived from the datahall's own name.
 //
 // Per datahall, not global, because the client is: each site keeps its own, and
-// one scoped to az51-dev2-dh2 means nothing at redstone-dev1-dh2. Deriving the
+// one scoped to one datahall means nothing at another. Deriving the
 // name from the key rather than declaring it also means a second datahall needs
 // no code and no new convention to remember.
 //
@@ -181,10 +181,9 @@ func (s *tokenSource) exchange(ctx context.Context, credentials clientCredential
 // MintToken returns a bearer token for a datahall, for a caller that needs the
 // credential itself rather than a provider.
 //
-// The deploy writes this into a Secret CAPNICo reads, where it is a static
-// string: a DSX token lives fifteen minutes and CAPNICo has no refresh path,
-// so the install completes -- it needs no live authentication -- and a tenant
-// create afterwards fails on an expired token until the Secret is patched.
+// For the e2e process's own API calls. The site's CAPNICo is given the client
+// instead -- see SSAClient -- because a token lives fifteen minutes and a site
+// controller outlives the run that built it.
 func MintToken(ctx context.Context, site Site) (string, error) {
 	source := newTokenSource(&http.Client{Timeout: time.Minute}, os.Getenv(EnvIssuer), site.Key)
 	token, err := source.Token(ctx)
@@ -192,4 +191,40 @@ func MintToken(ctx context.Context, site Site) (string, error) {
 		return "", fmt.Errorf("dsx: %w", err)
 	}
 	return token, nil
+}
+
+// SSAClient is the datahall's OAuth client, for a caller that wants tokens
+// minted on demand rather than once.
+//
+// CAPNICo accepts either a static token or these four fields and refuses a
+// Secret carrying both, so handing it the client is what turns a credential
+// that expires during a run into one that lasts as long as the site.
+type SSAClient struct {
+	TokenURL     string
+	ClientID     string
+	ClientSecret string
+	Scope        string
+}
+
+// SSAClientFor is the client a datahall's tokens are minted from.
+//
+// The URL is built here rather than by the caller because EnvIssuer is the
+// issuer base and the exchange is at issuer + "/token"; a caller appending it
+// a second time posts to .../token/token, which answers as a rejected client
+// and so reads as a bad secret rather than a bad URL.
+func SSAClientFor(site Site) (SSAClient, error) {
+	issuer := strings.TrimRight(strings.TrimSpace(os.Getenv(EnvIssuer)), "/")
+	if issuer == "" {
+		return SSAClient{}, fmt.Errorf("dsx: %s is not set, so CAPNICo has nothing to mint tokens with", EnvIssuer)
+	}
+	credentials, err := newTokenSource(nil, issuer, site.Key).credentials()
+	if err != nil {
+		return SSAClient{}, fmt.Errorf("dsx: %w", err)
+	}
+	return SSAClient{
+		TokenURL:     issuer + "/token",
+		ClientID:     credentials.ID,
+		ClientSecret: credentials.Secret,
+		Scope:        tokenScope,
+	}, nil
 }

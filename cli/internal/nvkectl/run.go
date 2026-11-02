@@ -12,6 +12,8 @@ import (
 	"os/signal"
 	"sync/atomic"
 	"syscall"
+
+	"github.com/dsx-ai-factory/nvke/cli/internal/redact"
 )
 
 // The exit codes nvkectl promises its callers. They are part of the CLI's
@@ -94,7 +96,7 @@ func Run(ver, commit, treeState, date string) int {
 // The trace ID is kept either way.
 func reportFailure(w io.Writer, err error, canceled bool, sig syscall.Signal) int {
 	if !canceled {
-		fmt.Fprintln(w, "Error:", err)
+		fmt.Fprintln(w, "Error:", redact.Text(err.Error()))
 		return exitError
 	}
 	fmt.Fprintln(w, "nvkectl: canceled")
@@ -103,7 +105,7 @@ func reportFailure(w io.Writer, err error, canceled bool, sig syscall.Signal) in
 	switch {
 	case errors.As(err, &recovery):
 		// err's text already ends with the trace ID.
-		fmt.Fprintln(w, "Error:", err)
+		fmt.Fprintln(w, "Error:", redact.Text(err.Error()))
 	case errors.As(err, &traced):
 		// An interrupted request may already have reached the controller, so
 		// the operator keeps the ID to find out what became of it.

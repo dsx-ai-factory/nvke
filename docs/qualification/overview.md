@@ -69,15 +69,15 @@ A beta tag is cut once a night, so it adds one run rather than a stream of them.
 |---|---|
 | `qualify-e2e` | `QUALIFY_E2E_SCOPE`, or `golden-path` when that is unset: Ubuntu 24.04 on GB200, both arches |
 | `qualify-e2e-l40s` | the `l40s` scope: Ubuntu 24.04 on L40S at site-1, amd64 |
-| `qualify-e2e-dsx` | the `dsx` scope: the redstone-dev1-dh2 datahall, at stage `provision` |
+| `qualify-e2e-dsx` | the `dsx` scope: the DSX datahall, at stage `full` |
 | `qualify-e2e-dry-run` | everything except joining Teleport and running the suite |
 
-The DSX label names its scope and stage outright, where `qualify-e2e` takes
-whatever `QUALIFY_E2E_SCOPE` says. The stage is pinned to `provision` because
-that datahall has one CPU machine bound, which is enough to place a node and
-reach it; a `full` run places three at once, and its tenant half speaks Forge
-only, so it is refused before a machine is taken. The dsx stream is outside the
-`full` scope for that reason.
+The DSX label names its scope outright, where `qualify-e2e` takes whatever
+`QUALIFY_E2E_SCOPE` says. It no longer pins a stage: the datahall binds eight
+machines and the suite has a DSX tenant spec, so a `full` run places its three
+--- a site controller, a tenant control plane and a worker --- the same as any
+other lane. A lane that wants a shorter stage sets `QUALIFY_E2E_STAGE` in its
+own environment.
 
 A run starts with a `plan` job that runs `qualify plan` and uploads
 `plan.json`, and then a single `qualify-run` job runs once for each stream of
@@ -104,6 +104,13 @@ release rather than with what that commit built. A tag push therefore asks for
 `resolution: commitDescribe`, which describes each component at the commit the
 tag marks, and the commit is derived from the version being qualified rather
 than given.
+
+A tag push also ignores the `QUALIFY_E2E_*` variables that stand in for a
+dispatch input on a labelled run: the scope, the stage, keep-site, the image
+registry and the version overrides. They hold whatever the last labelled run
+asked for, so a beta qualifies `golden-path` at stage `full` from NVCR and keeps
+no machine, whatever they say. The run's resolved inputs name any of them that
+was set and not applied.
 
 `commitDescribe` is also the default, because a beta is what this lane
 qualifies nightly. A release qualification therefore has to select `gitTag`,
@@ -133,7 +140,8 @@ and its jobs are named `<stream> (dry run)`.
 |---|---|---|
 | `provision` | a Forge node, reachable, then released | 20 min |
 | `bootstrap` | vanilla Kubernetes via `nvkectl bootstrap site` | 45 min |
-| `full` | the NVKE stack, the engine, and a tenant cluster | 80 min |
+| `deployment` | the NVKE stack and the engine | 60 min |
+| `full` | a tenant cluster | 80 min |
 
 ## Reading a result
 

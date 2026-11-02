@@ -94,6 +94,22 @@ if [[ -z "${spire_agent_deb}" ]]; then
 fi
 sudo dpkg -i "${spire_agent_deb}"
 
+# NVIDIA's DOCA Open vSwitch in kernel mode, in place of Ubuntu's
+# openvswitch-switch (which it Provides, with the same units). ovn-kubernetes
+# runs against the host's OVS (values-nke.yaml: ovs-node false). It is baked in
+# because installing OVS on a live node disrupts host networking. The DOCA debs
+# come from the local repo staged above; their remaining dependencies come from
+# the Ubuntu archive.
+sudo apt-get update
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y doca-openvswitch-switch
+# DOCA adds ovs-exporter.service, which its postinst enables, wanted by
+# ovs-vswitchd: a Prometheus endpoint on TCP 6103 on every interface, with no
+# authentication. Stock Open vSwitch has no such listener; keep the node's open
+# ports what they were.
+sudo systemctl mask ovs-exporter.service
+# Ubuntu's package enables openvswitch-switch.service; DOCA's postinst does not.
+sudo systemctl enable openvswitch-switch.service
+
 # Give cloud-image importers a stable root-filesystem identifier. Do not rely
 # on a device path because it can change between the build VM and a target.
 root_device="$(findmnt -n -o SOURCE /)"

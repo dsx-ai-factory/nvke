@@ -193,6 +193,16 @@ spec:
       serviceAccount: node-local-dns
       serviceAccountName: node-local-dns
       terminationGracePeriodSeconds: 30
+      # Pods on KWOK fake nodes get unreachable IPs that would become kube-dns endpoints.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: type
+                    operator: NotIn
+                    values:
+                      - kwok
       tolerations:
         - key: CriticalAddonsOnly
           operator: Exists

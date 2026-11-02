@@ -41,14 +41,15 @@ CHART=...   # your NVKE chart reference
 helm show values "$CHART" | grep apiAuth
 ```
 
-On an existing site, where the controller runs as `cloud-workflow-engine`,
-replace `nke-controller` with `cloud-workflow-engine` in every command on this
-page.
+On an existing site, the controller runs under the name it was installed with:
+`nke-controller` for a site installed before the `nvke` rename,
+`cloud-workflow-engine` for anything older. Replace `nvke-controller` with that
+name in every command on this page.
 
 The commands below use `$NS` for the namespace NVKE runs in:
 
 ```bash
-NS=nke-controller   # your release namespace
+NS=nvke-controller   # your release namespace
 ```
 
 ## Recipe: your cluster's own API server
@@ -101,8 +102,9 @@ controller reading `AUTH_CONFIG_PATH` or one older than the section, it falls
 back to the authentication ConfigMap: `nvke-auth-config`, then
 `nke-auth-config` for a site that keeps the older name by pinning
 `apiAuth.configMap.name`. Each search tries both names in namespace
-`nke-controller`, then both in `cloud-workflow-engine`, and uses the first it
-can read.
+`nvke-controller`, then both in `nke-controller` for a site installed before the
+`nvke` rename, then both in `cloud-workflow-engine`, and uses the first it can
+read.
 
 A ConfigMap it is not permitted to read does not stop the command: the search
 moves to the next candidate, so a kubeconfig scoped to the pinned names alone
@@ -205,7 +207,7 @@ Set one or the other. Setting `config` without `create`, or `create` without
 ### 5. Check it came up
 
 ```bash
-kubectl -n "$NS" logs deploy/nke-controller | grep 'API authentication'
+kubectl -n "$NS" logs deploy/nvke-controller | grep 'API authentication'
 ```
 
 ```json
@@ -372,7 +374,7 @@ Watch the counter, not the log. Successful reads are logged at debug level,
 so the log will undercount them:
 
 ```bash
-kubectl -n "$NS" exec deploy/nke-controller -- \
+kubectl -n "$NS" exec deploy/nvke-controller -- \
   wget -qO- http://127.0.0.1:9090/metrics | grep '^nvke_auth_requests_total'
 ```
 
@@ -386,7 +388,7 @@ label says what each one needs: usually a token, or a subject added to your
 allow-list. Rejections are also logged in full:
 
 ```bash
-kubectl -n "$NS" logs deploy/nke-controller | grep '"logger":"auth"'
+kubectl -n "$NS" logs deploy/nvke-controller | grep '"logger":"auth"'
 ```
 
 When `would_reject` stops climbing, set `apiAuth.permissive: false`.
@@ -415,7 +417,7 @@ a warning.
 The configuration is read once at startup, so restart NVKE after you change it:
 
 ```bash
-kubectl -n "$NS" rollout restart deploy/nke-controller
+kubectl -n "$NS" rollout restart deploy/nvke-controller
 ```
 
 Values are matched exactly: leading or trailing whitespace is an error, not
@@ -510,7 +512,7 @@ nothing NVKE enforces. Change the chart values, or edit
 NVKE says so at startup, and names where it read the configuration:
 
 ```bash
-kubectl -n "$NS" logs deploy/nke-controller | grep 'API authentication is'
+kubectl -n "$NS" logs deploy/nvke-controller | grep 'API authentication is'
 ```
 
 `"source":"nvke-controller-config"` means the chart rendered it;

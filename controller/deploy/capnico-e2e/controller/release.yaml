@@ -9,11 +9,11 @@
 # the templates as they were when that artifact was cut. The image itself is
 # repointed with --set at install time.
 chart:
-  name: nke-controller
+  name: nvke-controller
   path: ../charts/controller
 release:
-  name: nke-controller
-  namespace: nke-controller
+  name: nvke-controller
+  namespace: nvke-controller
 values:
   - values.yaml
   - overlay.yaml

@@ -6,14 +6,17 @@ package e2e
 import (
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/klog/v2"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/environment"
@@ -211,13 +214,21 @@ var _ = AfterSuite(func() {
 })
 
 func TestE2E(t *testing.T) {
-	RegisterFailHandler(Fail)
+	// Ginkgo's Fail, after recording what the failing assertion's error says
+	// as a report entry, which the JUnit report carries (failure_format_test.go).
+	RegisterFailHandler(failWithCause)
 	// controller-runtime discards its own logs until a logger is set, and says
 	// so once with a stack trace the first time a client is built. Point it at
 	// Ginkgo's so its diagnostics land in the run log with everything else:
 	// the tenant client talks to a machine through a relay, and its retries
 	// and REST-layer warnings are what a slow or flaky run needs explained.
 	ctrllog.SetLogger(GinkgoLogr)
+	// client-go logs through klog and the port-forward through slog. Both
+	// write to stderr by default, which a serial run does not capture per
+	// spec, so their warnings would reach neither a spec's report nor the
+	// JUnit file.
+	klog.SetLogger(GinkgoLogr)
+	slog.SetDefault(slog.New(logr.ToSlogHandler(GinkgoLogr)))
 
 	suiteConfig, reporterConfig := GinkgoConfiguration()
 	if !labelFilterGiven() {

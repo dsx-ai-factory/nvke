@@ -24,7 +24,7 @@ func TestUnit_SiteValidateFromEnvDefaults(t *testing.T) {
 	require.Equal(t, "default", settings.checks.probeNamespace)
 	require.Equal(t, probeImage{ref: kube.KubectlImage}, settings.checks.probeImage)
 	require.Empty(t, settings.checks.excusedNamespace, "outside a pod there is no runner namespace to excuse, and default is checked")
-	require.False(t, settings.inPod)
+	require.False(t, settings.checkIdentity)
 }
 
 func TestUnit_SiteValidateFromEnvOverrides(t *testing.T) {
@@ -57,7 +57,7 @@ func TestUnit_SiteValidateExcusesOnlyOwnNamespace(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "probes", settings.checks.probeNamespace)
 	require.Equal(t, "validation-runner", settings.checks.excusedNamespace)
-	require.True(t, settings.inPod)
+	require.True(t, settings.checkIdentity)
 }
 
 func TestUnit_SiteValidateProbeDefaultsToOwnNamespace(t *testing.T) {

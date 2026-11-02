@@ -830,8 +830,8 @@
       {
         "id": 13,
         "type": "timeseries",
-        "title": "Node drain errors / sec",
-        "description": "",
+        "title": "Pod eviction processing errors / sec",
+        "description": "Node Drainer processing errors from PDB-blocked pod eviction, immediate or timed eviction, and forced pod deletion, grouped by error type.",
         "gridPos": {
           "x": 12,
           "y": 53,
@@ -845,7 +845,7 @@
         "targets": [
           {
             "refId": "A",
-            "expr": "sum by (k8s_cluster_name,error_type) (rate(node_drainer_node_drain_errors_total{k8s_cluster_name=~\"$cluster\"}[$__rate_interval]))",
+            "expr": "sum by (k8s_cluster_name,error_type) (rate(node_drainer_processing_errors_total{k8s_cluster_name=~\"$cluster\",error_type=~\"PDB_blocking_eviction_error|immediate_eviction_error|timeout_eviction_error|pods_force_deletion_error\"}[$__rate_interval]))",
             "legendFormat": "{{k8s_cluster_name}} / {{error_type}}",
             "instant": false,
             "range": true
@@ -884,8 +884,8 @@
       {
         "id": 14,
         "type": "timeseries",
-        "title": "Event-processing errors / sec",
-        "description": "",
+        "title": "All processing errors / sec",
+        "description": "All Node Drainer processing errors, including pod eviction, event evaluation, serialization, and status updates.",
         "gridPos": {
           "x": 0,
           "y": 61,

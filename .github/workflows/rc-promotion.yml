@@ -1,0 +1,160 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: RC promotion
+
+# A beta that passes its own qualification becomes a release candidate. When a
+# Qualify e2e run started by a beta tag push succeeds at scope golden-path and
+# stage full, this tags the same commit as the next vX.Y.Z-rc.N, which
+# release.yml publishes as a pre-release. Until the NVKE_AUTO_RC repository
+# variable is true, it only says what it would tag.
+#
+# The push must NOT use GITHUB_TOKEN, whose events never start other workflows,
+# so release.yml would not run. Like nightly-beta-tag.yml, it uses an
+# installation token for the release bot GitHub App, which must be a bypass
+# actor on the "Protect release tags" ruleset.
+on:
+  workflow_run:
+    workflows: [Qualify e2e]
+    types: [completed]
+
+permissions:
+  contents: read
+  # Reads the qualification run's jobs and artifacts.
+  actions: read
+
+# Every Qualify e2e run that finishes starts this workflow, so each gets a group
+# of its own: GitHub keeps one pending run per group and cancels it when the
+# next arrives, which would let a pull request's qualification cancel a beta's
+# promotion. A re-run keeps its run's ID, so it waits for the earlier attempt
+# and sees its tag. Two betas of one version qualifying at the same moment race
+# for the same rc.N; the second push is refused and its job fails.
+concurrency:
+  group: rc-promotion-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  # Only the run a beta tag push started counts. A dispatch can override what it
+  # qualifies, and a pull request's run qualifies the pull request. The tag name
+  # is checked here only so that no write token is minted for a run that is not
+  # a beta's; the check step's pattern is the one that decides.
+  rc:
+    name: Tag a qualified beta as a release candidate
+    if: >-
+      github.repository_id == '1323115536' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'v') &&
+      contains(github.event.workflow_run.head_branch, '-beta.')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Mint the release bot token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT }}
+          private-key: ${{ secrets.RELEASE_BOT_SECRET }}
+          permission-contents: write
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          # next-tag.sh reads every tag and the history back to the latest GA tag.
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ steps.app-token.outputs.token }}
+          # Credentials stay configured: the push step uses them.
+          persist-credentials: true
+
+      - name: Check the qualification
+        id: check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          # A push run's head_branch is the tag that started it.
+          BETA: ${{ github.event.workflow_run.head_branch }}
+          BETA_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          skip() {
+            echo "$1" | tee -a "${GITHUB_STEP_SUMMARY}"
+            echo "selected=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          }
+
+          if ! [[ "${BETA}" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+)-beta\.[0-9]+$ ]]; then
+            skip "Qualify e2e run ${RUN_ID} was not started by a beta tag; nothing to do."
+          fi
+          version="${BASH_REMATCH[1]}"
+          if [ "$(git rev-parse --verify --quiet "refs/tags/${BETA}^{commit}" || true)" != "${BETA_SHA}" ]; then
+            echo "::error::${BETA} does not name ${BETA_SHA:0:9}, the commit run ${RUN_ID} qualified."
+            exit 1
+          fi
+
+          # What the run qualified is read from the run itself, not from the
+          # QUALIFY_E2E_* variables, which may have changed since it started.
+          gh run download "${RUN_ID}" --repo "${REPOSITORY}" \
+            --name "qualify-plan-${RUN_ID}" --dir "${RUNNER_TEMP}/plan"
+          qualified="$(jq -r .version "${RUNNER_TEMP}/plan/plan.json")"
+          scope="$(jq -r .scope "${RUNNER_TEMP}/plan/plan.json")"
+          [ "${qualified}" = "${BETA}" ] || skip "Run ${RUN_ID} qualified ${qualified}, not ${BETA}."
+          [ "${scope}" = golden-path ] || skip "Run ${RUN_ID} qualified scope ${scope}; a release candidate needs golden-path."
+
+          # Each stream uploads forge-site-<stage>-<stream>-<run>-<attempt>.
+          # Every attempt counts: a re-run of the failed streams keeps the
+          # artifacts of the streams that had already passed.
+          stages="$(gh api --paginate "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts?per_page=100" \
+            --jq '.artifacts[].name | select(startswith("forge-site-")) | split("-")[2]' | sort -u | paste -sd ' ' -)"
+          [ "${stages}" = full ] || skip "Run ${RUN_ID} ran at stage ${stages:-none}; a release candidate needs full."
+
+          # A tag push cannot ask for a dry run, but a dry run's streams pass
+          # without running the suite, so one must never count.
+          dry="$(gh api --paginate "repos/${REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            --jq '.jobs[] | select(.name | endswith("(dry run)")) | .name' | wc -l | tr -d ' ')"
+          [ "${dry}" = 0 ] || skip "Run ${RUN_ID} was a dry run."
+
+          existing="$(git tag --points-at "${BETA_SHA}" \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$' | head -n1 || true)"
+          [ -z "${existing}" ] || skip "${existing} already names ${BETA_SHA:0:9}; nothing new to tag."
+          if git rev-parse --verify --quiet "refs/tags/${version}" >/dev/null; then
+            skip "${version} is already released, so ${BETA} is no candidate for it."
+          fi
+
+          # next-tag.sh reads the version from the history the beta was numbered
+          # from, so the two agree unless a GA tag has been cut since.
+          status=0
+          rc="$(release/hack/next-tag.sh "${BETA_SHA}" rc)" || status=$?
+          if [ "${status}" != 0 ] && [ "${status}" != 3 ]; then
+            exit "${status}"
+          fi
+          if [ "${status}" = 3 ] || [ "${rc%-rc.*}" != "${version}" ]; then
+            skip "${version} is no longer the next release, so ${BETA} is no candidate for it."
+          fi
+
+          echo "${BETA} passed run ${RUN_ID}; ${BETA_SHA:0:9} becomes ${rc}." | tee -a "${GITHUB_STEP_SUMMARY}"
+          echo "selected=true" >> "${GITHUB_OUTPUT}"
+          echo "tag=${rc}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create and push the release candidate tag
+        if: steps.check.outputs.selected == 'true'
+        shell: bash
+        env:
+          AUTO_RC: ${{ vars.NVKE_AUTO_RC }}
+          RC: ${{ steps.check.outputs.tag }}
+          BETA_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "${AUTO_RC}" != "true" ]; then
+            echo "Would tag ${BETA_SHA} as ${RC}; NVKE_AUTO_RC is not true." | tee -a "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          git tag "${RC}" "${BETA_SHA}"
+          git push origin "refs/tags/${RC}"
+          echo "Pushed ${RC} at ${BETA_SHA}." | tee -a "${GITHUB_STEP_SUMMARY}"

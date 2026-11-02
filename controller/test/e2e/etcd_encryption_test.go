@@ -291,8 +291,8 @@ func runEtcdEncryptionKeyRotation(ctx context.Context, c client.Client, clusterI
 		{Name: "E2E_CLUSTER_ID", Value: clusterID},
 		{Name: "E2E_WORKFLOW_ID", Value: workflowID},
 		{Name: "E2E_TEMPORAL_ADDRESS", Value: envOrDefault("E2E_TEMPORAL_ADDRESS", "temporal-frontend."+temporalNamespace+".svc.cluster.local:7233")},
-		{Name: "E2E_TEMPORAL_NAMESPACE", Value: envOrDefault("E2E_TEMPORAL_NAMESPACE", "nke-controller")},
-		{Name: "E2E_TEMPORAL_TASK_QUEUE", Value: envOrDefault("E2E_TEMPORAL_TASK_QUEUE", "nke-controller-tasks")},
+		{Name: "E2E_TEMPORAL_NAMESPACE", Value: envOrDefault("E2E_TEMPORAL_NAMESPACE", "nvke-controller")},
+		{Name: "E2E_TEMPORAL_TASK_QUEUE", Value: envOrDefault("E2E_TEMPORAL_TASK_QUEUE", "nvke-controller-tasks")},
 	}...)
 
 	if _, _, err := kube.RunPod(ctx, c, pod, adminToolsContainer, 15*time.Minute); err != nil {

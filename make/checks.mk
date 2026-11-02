@@ -71,10 +71,18 @@ internal-config-check: ## Check the tree names no internal infrastructure. (run 
 # mode summarises and exits 0; the gate ran that way until 2026-10-11, while
 # the tree still carried the name. A dead allowlist entry fails in either mode.
 NAME_CHECK_MODE ?= fail
-name-check: ## Fail on tokens that carry a banned name outside the allowlist. (run by the merge gate)
+name-check: ## Fail on tokens that carry a banned name outside the allowlist, and run the offline hack/rotation-demo tests. (run by the merge gate)
 	@$(call require_command,python3)
 	@python3 -B ./hack/test_name_check.py
+	@$(MAKE) --no-print-directory -C hack/rotation-demo test
 	@python3 -B ./hack/name-check.py --mode $(NAME_CHECK_MODE)
+
+# The version every nightly beta and release candidate is tagged with. A wrong
+# answer is pushed as a tag rather than reported, so the bump rules are tested
+# against fixture repositories.
+next-tag-test: ## Test the release version rules in release/hack/next-tag.sh. (run by the merge gate)
+	@$(call require_command,python3)
+	@python3 -B ./release/hack/test_next_tag.py
 
 CHART_CRDS_KUSTOMIZE := controller/deploy/release-crds
 CHART_CRDS_FILE := $(CHART)/files/crds.yaml
@@ -155,7 +163,7 @@ chart-package-check: ## Assert that chart packaging replaces placeholder version
 	@$(call require_tool,helm,$(HELM_VERSION))
 	@CHART="$(CHART)" ./controller/hack/chart-package-assertions.sh
 
-# The chart package is named nke-controller while everything it renders stays
+# The chart package is named nvke-controller while everything it renders stays
 # cloud-workflow-engine, held there by nameOverride. helm lint and kubeconform
 # both pass if that pin is dropped, so this is the only check that would catch it.
 chart-identity-check: ## Assert the chart still renders the deployed identities it must preserve.

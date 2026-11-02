@@ -64,7 +64,7 @@ var siteNamespaces = []siteNamespace{
 	// agent and CSI driver here, so no deploy path file names it as a release.
 	{name: "spire-system", source: "the spire chart's layout for its agent"},
 	{name: "nktp", source: "deploy path item nktp"},
-	// NVKE_CONTROLLER_NAMESPACE where the controller is not in nke-controller,
+	// NVKE_CONTROLLER_NAMESPACE where the controller is not in nvke-controller,
 	// as for every other check that finds it.
 	{name: controller.Namespace(), source: "deploy path item controller"},
 }
@@ -104,6 +104,20 @@ type siteChecks struct {
 	// excusedNamespace is left out of the pod check: the runner's own, where
 	// an earlier run's pods may be left Failed or not Ready. "" excuses none.
 	excusedNamespace string
+	// restConfig, when set, reaches the cluster to check in place of the
+	// site's kubeconfig or the suite's in-cluster config.
+	restConfig func() (*rest.Config, error)
+	// tenant marks the cluster as a tenant: the specs that only a site
+	// controller can pass skip.
+	tenant bool
+	// declaredTaints, set for a tenant, maps each node to the taints its node
+	// pool declares. The node check lets a tenant's nodes carry those and,
+	// on a control-plane node, kubeadm's taint; any other taint that keeps
+	// pods off a node fails.
+	declaredTaints func(ctx context.Context) (map[string][]corev1.Taint, error)
+	// certManager requires cert-manager: its Certificates checked, and an
+	// Issuer tried.
+	certManager bool
 }
 
 // siteLaneChecks are the site lane's: the stack's namespaces, and fail fast
@@ -113,6 +127,7 @@ var siteLaneChecks = siteChecks{
 	failFast:       true,
 	probeNamespace: "default",
 	probeImage:     probeImage{ref: kube.KubectlImage},
+	certManager:    true,
 }
 
 // probeImage is what every probe and server pod runs, and the Secrets its
@@ -183,7 +198,11 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool), chec
 		if c != nil {
 			return
 		}
-		restConfig = expectSucceed(kube.RESTConfigWithInClusterFallback(cluster.Kubeconfig, ""))
+		if checks.restConfig != nil {
+			restConfig = expectSucceed(checks.restConfig())
+		} else {
+			restConfig = expectSucceed(kube.RESTConfigWithInClusterFallback(cluster.Kubeconfig, ""))
+		}
 		c = expectSucceed(siteClient(restConfig))
 	}
 
@@ -194,7 +213,14 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool), chec
 			if err := c.List(ctx, &nodes); err != nil {
 				return err
 			}
-			return joinProblems("nodes", nodeProblems(nodes.Items))
+			var declared map[string][]corev1.Taint
+			if checks.declaredTaints != nil {
+				var err error
+				if declared, err = checks.declaredTaints(ctx); err != nil {
+					return err
+				}
+			}
+			return joinProblems("nodes", nodeProblems(nodes.Items, declared))
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
 	}, Label("readiness", "site-software"), NodeTimeout(siteCheck+time.Minute))
 
@@ -240,6 +266,9 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool), chec
 
 	It("has issued every cert-manager certificate", func(ctx SpecContext) {
 		connect()
+		if !checks.certManager {
+			Skip("the cluster is not expected to run cert-manager")
+		}
 		Eventually(func(ctx context.Context) error {
 			certificates := &unstructured.UnstructuredList{}
 			certificates.SetGroupVersionKind(schema.GroupVersionKind{Group: "cert-manager.io", Version: "v1", Kind: "CertificateList"})
@@ -252,6 +281,9 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool), chec
 
 	It("lists clusters through the controller API", func(ctx SpecContext) {
 		connect()
+		if checks.tenant {
+			Skip("a tenant runs no controller")
+		}
 		var clusters int
 		Eventually(func(ctx context.Context) error {
 			api, err := nvke.NewClient(ctx, restConfig, nvke.Options{Poll: sitePoll})
@@ -355,14 +387,19 @@ func joinProblems(what string, problems []string) error {
 // controlPlaneTaint is the taint kubeadm puts on a control-plane node.
 const controlPlaneTaint = "node-role.kubernetes.io/control-plane"
 
-func nodeProblems(nodes []corev1.Node) []string {
+// nodeProblems reports nodes not Ready or cordoned, and nodes carrying a
+// taint that keeps pods off them. declared is nil for a site. For a tenant it
+// holds the taints each node's pool declares: a tenant's nodes may carry
+// those, and its control-plane nodes kubeadm's taint, since its pools take
+// the work.
+func nodeProblems(nodes []corev1.Node, declared map[string][]corev1.Taint) []string {
 	if len(nodes) == 0 {
 		return []string{"the cluster has no nodes"}
 	}
 	var problems []string
 	for _, node := range nodes {
-		if !nodeConditionTrue(node, corev1.NodeReady) {
-			problems = append(problems, node.Name+": not Ready")
+		if !nodeReady(node) {
+			problems = append(problems, node.Name+": not Ready"+notReadyDetail(node))
 		}
 		if node.Spec.Unschedulable {
 			problems = append(problems, node.Name+": cordoned")
@@ -375,7 +412,15 @@ func nodeProblems(nodes []corev1.Node) []string {
 			if !hardTaint(taint) {
 				continue
 			}
-			if taint.Key == controlPlaneTaint && schedulableOtherThan(nodes, node.Name) {
+			if declared != nil {
+				_, controlPlane := node.Labels[controlPlaneTaint]
+				kubeadm := taint.Key == controlPlaneTaint && taint.Value == "" && taint.Effect == corev1.TaintEffectNoSchedule
+				if kubeadm && controlPlane || slices.ContainsFunc(declared[node.Name], func(d corev1.Taint) bool {
+					return d.Key == taint.Key && d.Value == taint.Value && d.Effect == taint.Effect
+				}) {
+					continue
+				}
+			} else if taint.Key == controlPlaneTaint && schedulableOtherThan(nodes, node.Name) {
 				continue
 			}
 			problems = append(problems, fmt.Sprintf("%s: tainted %s:%s", node.Name, taint.Key, taint.Effect))
@@ -428,7 +473,7 @@ func hardTaint(taint corev1.Taint) bool {
 // uncordoned and carries no taint that keeps pods off it.
 func schedulableOtherThan(nodes []corev1.Node, name string) bool {
 	for _, node := range nodes {
-		if node.Name == name || node.Spec.Unschedulable || !nodeConditionTrue(node, corev1.NodeReady) ||
+		if node.Name == name || node.Spec.Unschedulable || !nodeReady(node) ||
 			slices.ContainsFunc(node.Spec.Taints, hardTaint) {
 			continue
 		}
@@ -437,9 +482,19 @@ func schedulableOtherThan(nodes []corev1.Node, name string) bool {
 	return false
 }
 
-func nodeConditionTrue(node corev1.Node, condition corev1.NodeConditionType) bool {
+// notReadyDetail is the reason a node's Ready condition gives, as a suffix.
+func notReadyDetail(node corev1.Node) string {
 	for _, c := range node.Status.Conditions {
-		if c.Type == condition {
+		if c.Type == corev1.NodeReady {
+			return " (" + strings.TrimSpace(fmt.Sprintf("%s %s: %s", c.Status, c.Reason, c.Message)) + ")"
+		}
+	}
+	return " (no Ready condition)"
+}
+
+func nodeReady(node corev1.Node) bool {
+	for _, c := range node.Status.Conditions {
+		if c.Type == corev1.NodeReady {
 			return c.Status == corev1.ConditionTrue
 		}
 	}
@@ -462,8 +517,8 @@ func workloadProblems(required []siteNamespace, deployments []appsv1.Deployment,
 		s := d.Status
 		populated[d.Namespace] = populated[d.Namespace] || s.AvailableReplicas > 0
 		if s.ObservedGeneration < d.Generation || s.UpdatedReplicas < want || s.AvailableReplicas < want {
-			problems = append(problems, fmt.Sprintf("Deployment %s/%s: %d of %d available, %d updated",
-				d.Namespace, d.Name, s.AvailableReplicas, want, s.UpdatedReplicas))
+			problems = append(problems, fmt.Sprintf("Deployment %s/%s: %d of %d available, %d updated%s",
+				d.Namespace, d.Name, s.AvailableReplicas, want, s.UpdatedReplicas, deploymentConditions(d)))
 		}
 	}
 	for _, st := range statefulSets {
@@ -490,6 +545,24 @@ func workloadProblems(required []siteNamespace, deployments []appsv1.Deployment,
 	}
 	slices.Sort(problems)
 	return problems
+}
+
+// deploymentConditions is what a Deployment's conditions say is wrong, as a
+// suffix: Available or Progressing false, or a ReplicaFailure, which is where
+// a quota or admission refusal to create its pods shows.
+func deploymentConditions(d appsv1.Deployment) string {
+	var details []string
+	for _, c := range d.Status.Conditions {
+		failing := (c.Type == appsv1.DeploymentReplicaFailure && c.Status == corev1.ConditionTrue) ||
+			((c.Type == appsv1.DeploymentAvailable || c.Type == appsv1.DeploymentProgressing) && c.Status == corev1.ConditionFalse)
+		if failing {
+			details = append(details, strings.TrimSpace(fmt.Sprintf("%s %s: %s", c.Type, c.Reason, c.Message)))
+		}
+	}
+	if len(details) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(details, "; ") + ")"
 }
 
 // replicas is a workload's desired count, which the API defaults to one when
@@ -537,7 +610,7 @@ func podProblems(pods []corev1.Pod, jobs []batchv1.Job) []string {
 	var problems []string
 	for _, pod := range pods {
 		if reason := stuckContainer(pod); reason != "" {
-			problems = append(problems, fmt.Sprintf("%s/%s: %s", pod.Namespace, pod.Name, reason))
+			problems = append(problems, fmt.Sprintf("%s/%s: %s%s", pod.Namespace, pod.Name, reason, restartDetail(pod)))
 			continue
 		}
 		switch pod.Status.Phase {
@@ -547,7 +620,7 @@ func podProblems(pods []corev1.Pod, jobs []batchv1.Job) []string {
 			if podReady(&pod) {
 				continue
 			}
-			problems = append(problems, fmt.Sprintf("%s/%s: Running, not Ready", pod.Namespace, pod.Name))
+			problems = append(problems, fmt.Sprintf("%s/%s: Running, not Ready%s", pod.Namespace, pod.Name, notReadyContainers(pod)))
 		case corev1.PodFailed:
 			if owner := jobOwner(pod); owner != "" && completed[pod.Namespace+"/"+owner] {
 				continue
@@ -555,15 +628,50 @@ func podProblems(pods []corev1.Pod, jobs []batchv1.Job) []string {
 			if pod.Status.Reason == "Evicted" && metav1.GetControllerOf(&pod) != nil {
 				continue
 			}
-			problems = append(problems, fmt.Sprintf("%s/%s: Failed %s", pod.Namespace, pod.Name, pod.Status.Reason))
+			problems = append(problems, strings.TrimSpace(fmt.Sprintf("%s/%s: Failed %s", pod.Namespace, pod.Name, pod.Status.Reason))+podDetails(&pod))
 		case corev1.PodPending, corev1.PodUnknown:
-			problems = append(problems, fmt.Sprintf("%s/%s: %s", pod.Namespace, pod.Name, pod.Status.Phase))
+			problems = append(problems, fmt.Sprintf("%s/%s: %s%s", pod.Namespace, pod.Name, pod.Status.Phase, podDetails(&pod)))
 		default:
 			problems = append(problems, fmt.Sprintf("%s/%s: phase %q", pod.Namespace, pod.Name, pod.Status.Phase))
 		}
 	}
 	slices.Sort(problems)
 	return problems
+}
+
+// restartDetail is how often a pod's containers restarted and how each last
+// exited, as a suffix, or "" where none did.
+func restartDetail(pod corev1.Pod) string {
+	var details []string
+	for _, status := range slices.Concat(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses) {
+		if status.RestartCount == 0 {
+			continue
+		}
+		detail := fmt.Sprintf("container %s restarted %d times", status.Name, status.RestartCount)
+		if last := status.LastTerminationState.Terminated; last != nil {
+			detail += fmt.Sprintf(", last exit %d %s", last.ExitCode, last.Reason)
+		}
+		details = append(details, strings.TrimSpace(detail))
+	}
+	if len(details) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(details, "; ") + ")"
+}
+
+// notReadyContainers names a Running pod's containers that are not Ready, as
+// a suffix, with what else its containers report.
+func notReadyContainers(pod corev1.Pod) string {
+	var names []string
+	for _, status := range pod.Status.ContainerStatuses {
+		if !status.Ready {
+			names = append(names, status.Name)
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return " (containers " + strings.Join(names, ", ") + ")" + restartDetail(pod)
 }
 
 // stuckContainer names the first container, init containers included, that is

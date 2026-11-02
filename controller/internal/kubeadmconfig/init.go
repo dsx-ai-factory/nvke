@@ -101,9 +101,10 @@ func (config *InitConfig) Render() (*BootstrapArtifacts, error) {
 		return nil, fmt.Errorf("building init configuration: %w", err)
 	}
 
+	initDocument, clusterDocument := initKubeadmDocuments(initConfig, clusterConfiguration(&cfg), cfg.KubernetesVersion)
 	configYAML, err := renderYAMLDocuments(
-		initConfig,
-		clusterConfiguration(&cfg),
+		initDocument,
+		clusterDocument,
 		kubeProxyConfiguration(cfg.KubeadmContainerMode),
 		initKubeletConfiguration(cfg.KubeadmContainerMode, cfg.KubernetesVersion),
 	)

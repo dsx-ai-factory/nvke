@@ -1,7 +1,7 @@
 {
   "ginkgoSpecs": {
     "management-engine/controllers/nvkecluster_controller_test.go": 7,
-    "management-engine/controllers/suite_test.go": 0
+    "management-engine/controllers/suite_test.go": 1
   },
   "ordinaryGoTests": [
     "TestControllers"

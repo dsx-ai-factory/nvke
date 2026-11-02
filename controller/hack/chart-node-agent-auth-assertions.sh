@@ -62,7 +62,7 @@ tls_jwt_values=(
 out="$(helm template cwe "${CHART}" "${tls_jwt_values[@]}")"
 setting "capability is true" nodeAgent.tlsJWT.enabled true "${out}"
 absent "no token configuration ConfigMap" 'name: nke-node-agent-auth' "${out}"
-absent "no client identity Secret" 'secretName: nke-controller-agent-client-tls' "${out}"
+absent "no client identity Secret" 'secretName: nvke-controller-agent-client-tls' "${out}"
 absent "no client identity mount" 'name: node-agent-client-tls' "${out}"
 setting "JWT issuer comes from controller config" nodeAgent.tlsJWT.issuer https://identity.example.test "${out}"
 setting "JWT key source comes from controller config" nodeAgent.tlsJWT.jwksURI https://identity.example.test/.well-known/jwks.json "${out}"
@@ -78,7 +78,7 @@ if whitespace_out="$(helm template cwe "${CHART}" "${tls_jwt_values[@]}" \
 else
   want "whitespace-only identity exchange URL is rejected" 'nodeAgent.tlsJwt.dsxIdentityExchangeURL is required' "${whitespace_out}"
 fi
-absent "no certificate Secret reload" 'secret.reloader.stakater.com/reload: "nke-controller-agent-client-tls"' "${out}"
+absent "no certificate Secret reload" 'secret.reloader.stakater.com/reload: "nvke-controller-agent-client-tls"' "${out}"
 absent "no certificate mount" 'mountPath: /etc/nvke/node-agent-client-tls' "${out}"
 
 if ((failures > 0)); then

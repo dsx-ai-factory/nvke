@@ -318,3 +318,50 @@ func TestFinishAllowsProcessorCallbacksToReadTheTraceID(t *testing.T) {
 	assert.Equal(t, run.TraceID(), processor.endID, "OnEnd saw the trace ID")
 	assert.Equal(t, run.TraceID(), processor.shutdownID, "Shutdown saw the trace ID")
 }
+
+type taggedError struct{ msg string }
+
+func (e *taggedError) Error() string { return e.msg }
+
+// Finish records the error as it is, which keeps its type, and the exporter
+// masks its text.
+func TestFinishKeepsTheErrorsTypeAndTheExporterMasksItsText(t *testing.T) {
+	const token = "finish-token-6e7f8a9b"
+	RegisterHeaderSecrets(map[string]string{"authorization": "Bearer " + token})
+	for name, tt := range map[string]struct {
+		err      error
+		wantType string
+		wantText string
+	}{
+		"nothing to mask": {&taggedError{"plain failure"}, "*telemetry.taggedError", "plain failure"},
+		"masked":          {&taggedError{"failure with " + token}, "*telemetry.taggedError", "failure with <redacted>"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			collector := newFakeCollector(t)
+			run := NewRun("dev")
+			require.NoError(t, run.EnableOTLP(OTLPConfig{Endpoint: collector.addr, Insecure: true}))
+			run.Start(context.Background(), "nvkectl get clusters")
+
+			original := tt.err.Error()
+			run.Finish(tt.err)
+
+			spans := collector.receivedSpans()
+			require.NotEmpty(t, spans)
+			var types, messages []string
+			for _, event := range spans[0].GetEvents() {
+				for _, kv := range event.GetAttributes() {
+					switch kv.GetKey() {
+					case "exception.type":
+						types = append(types, kv.GetValue().GetStringValue())
+					case "exception.message":
+						messages = append(messages, kv.GetValue().GetStringValue())
+					}
+				}
+			}
+			assert.Equal(t, []string{tt.wantType}, types)
+			assert.Equal(t, []string{tt.wantText}, messages)
+			assert.Equal(t, tt.wantText, spans[0].GetStatus().GetMessage())
+			assert.Equal(t, original, tt.err.Error(), "the error itself is untouched")
+		})
+	}
+}

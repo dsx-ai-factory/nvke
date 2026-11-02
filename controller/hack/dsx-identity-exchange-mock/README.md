@@ -77,7 +77,7 @@ The E2E lane verifies these concrete mappings:
 
 | Workload | Tenant username |
 |---|---|
-| Controller | `spiffe://nke.capd.nke-controller.nvid.id/bm/cwe` |
+| Controller | `spiffe://nke.capd.nvke-controller.nvid.id/bm/cwe` |
 | CAPI manager | `spiffe://nke.capd.capi-manager.nvid.id/bm/cwe` |
 | Kubeadm control-plane manager | `spiffe://nke.capd.capi-kubeadm-control-plane-manager.nvid.id/bm/cwe` |
 | Kubeadm bootstrap manager | `spiffe://nke.capd.capi-kubeadm-bootstrap-manager.nvid.id/bm/cwe` |
@@ -86,6 +86,19 @@ The E2E lane verifies these concrete mappings:
 `region=capd` and `partition=nvid.id` are test inputs. The subject-rewrite code
 also preserves a validated `dpu` or `vm` resource suffix, although this CAPD
 lane exercises the `bm/cwe` workload identities above.
+
+Like the real exchange, the mock also writes each component of the new subject
+as a claim. For the controller identity above:
+
+```json
+{
+  "dsx.nvidia.com/tenant": "nke",
+  "dsx.nvidia.com/region": "capd",
+  "dsx.nvidia.com/service": "nvke-controller",
+  "dsx.nvidia.com/partition": "nvid.id",
+  "dsx.nvidia.com/resource": [{"resource_type": "bm", "resource_id": "cwe"}]
+}
+```
 
 ## What the E2E lane proves
 

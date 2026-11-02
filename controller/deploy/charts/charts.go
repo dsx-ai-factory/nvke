@@ -20,7 +20,7 @@ import (
 )
 
 // The chart directories, so a caller names one by constant rather than by
-// literal. These are directory names: the nke-controller chart lives in
+// literal. These are directory names: the nvke-controller chart lives in
 // controller/, because a chart is named for the OCI repository it publishes
 // to rather than for where it is kept.
 const (

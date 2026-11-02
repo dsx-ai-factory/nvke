@@ -30,7 +30,7 @@ spire-agent:
 
 spire-server:
   adminIDs:
-    - spiffe://example.org/nvke-service/nke-controller
+    - spiffe://example.org/nvke-service/nvke-controller
   controllerManager:
     className: spire-mgmt-spire
     identities:
@@ -43,7 +43,7 @@ spire-server:
               - key: kubernetes.io/metadata.name
                 operator: NotIn
                 values:
-                  - nke-controller
+                  - nvke-controller
   nodeAttestor:
     tpmDirect:
       enabled: true

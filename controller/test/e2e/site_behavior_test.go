@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"net"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -41,6 +42,13 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
+)
+
+// sitePrefix and tenantPrefix begin the names a site's and a tenant's
+// expectations are read from: a tenant's components are NVKE_TENANT_COMPONENTS.
+const (
+	sitePrefix   = "NVKE_SITE_"
+	tenantPrefix = "NVKE_TENANT_"
 )
 
 // What a site is expected to have beyond what every NVKE site has. Each is
@@ -80,16 +88,24 @@ const (
 	componentCNPG     = "cnpg"
 	componentTeleport = "teleport"
 	componentKubeVIP  = "kube-vip"
+	// componentCertManager is listed only for a tenant: every site runs
+	// cert-manager, and the site checks require it.
+	componentCertManager = "cert-manager"
 )
 
 // siteComponentNamespaces are the optional components and the namespace each
 // is looked for in unless the run names another.
 var siteComponentNamespaces = map[string]string{
-	componentArgoCD:   "argocd",
-	componentCNPG:     "cnpg-system",
-	componentTeleport: "teleport-agent",
-	componentKubeVIP:  kubeSystemNamespace,
+	componentArgoCD:      "argocd",
+	componentCNPG:        "cnpg-system",
+	componentTeleport:    "teleport-agent",
+	componentKubeVIP:     kubeSystemNamespace,
+	componentCertManager: "cert-manager",
 }
+
+// certManagerWorkloads are parts of a workload name every cert-manager
+// install has.
+var certManagerWorkloads = []string{"cainjector", "webhook"}
 
 // argoCDWorkloads are parts of a workload name every Argo CD install has,
 // whatever its release prefix.
@@ -124,6 +140,8 @@ type workloadRef struct {
 }
 
 type siteExpectations struct {
+	// prefix begins the names the expectations were read from.
+	prefix           string
 	components       map[string]string
 	storageClasses   []string
 	pvcStorageClass  string
@@ -134,15 +152,16 @@ type siteExpectations struct {
 	reservedMemory   *resource.Quantity
 }
 
-func siteExpectationsFromEnv(getenv func(string) string) (siteExpectations, error) {
-	var expect siteExpectations
+func siteExpectationsFromEnv(getenv func(string) string, prefix string) (siteExpectations, error) {
+	expect := siteExpectations{prefix: prefix}
+	env := expect.env
 
-	for _, entry := range splitList(getenv(siteComponentsEnv), ",") {
+	for _, entry := range splitList(getenv(env(siteComponentsEnv)), ",") {
 		name, namespace, _ := strings.Cut(entry, "=")
 		name, namespace = strings.TrimSpace(name), strings.TrimSpace(namespace)
 		defaultNamespace, known := siteComponentNamespaces[name]
 		if !known {
-			return siteExpectations{}, fmt.Errorf("%s: unknown component %q (known: %s)", siteComponentsEnv, name, strings.Join(slices.Sorted(maps.Keys(siteComponentNamespaces)), ", "))
+			return siteExpectations{}, fmt.Errorf("%s: unknown component %q (known: %s)", env(siteComponentsEnv), name, strings.Join(slices.Sorted(maps.Keys(siteComponentNamespaces)), ", "))
 		}
 		if namespace == "" {
 			namespace = defaultNamespace
@@ -153,33 +172,33 @@ func siteExpectationsFromEnv(getenv func(string) string) (siteExpectations, erro
 		expect.components[name] = namespace
 	}
 
-	expect.storageClasses = splitList(getenv(siteStorageClassesEnv), ",")
-	expect.pvcStorageClass = strings.TrimSpace(getenv(sitePVCStorageClassEnv))
+	expect.storageClasses = splitList(getenv(env(siteStorageClassesEnv)), ",")
+	expect.pvcStorageClass = strings.TrimSpace(getenv(env(sitePVCStorageClassEnv)))
 
-	for _, entry := range splitList(getenv(siteWorkloadVersionsEnv), ",") {
+	for _, entry := range splitList(getenv(env(siteWorkloadVersionsEnv)), ",") {
 		workload, version, _ := strings.Cut(entry, "=")
 		namespace, name, _ := strings.Cut(strings.TrimSpace(workload), "/")
 		version = strings.TrimSpace(version)
 		if namespace == "" || name == "" || version == "" {
-			return siteExpectations{}, fmt.Errorf("%s: %q is not namespace/workload=version", siteWorkloadVersionsEnv, entry)
+			return siteExpectations{}, fmt.Errorf("%s: %q is not namespace/workload=version", env(siteWorkloadVersionsEnv), entry)
 		}
 		expect.workloadVersions = append(expect.workloadVersions, workloadVersion{namespace: namespace, name: name, version: version})
 	}
 
-	for _, entry := range splitList(getenv(siteRequiredWorkloadsEnv), ",") {
+	for _, entry := range splitList(getenv(env(siteRequiredWorkloadsEnv)), ",") {
 		namespace, name, _ := strings.Cut(entry, "/")
 		namespace, name = strings.TrimSpace(namespace), strings.TrimSpace(name)
 		if namespace == "" || name == "" || strings.Contains(name, "/") {
-			return siteExpectations{}, fmt.Errorf("%s: %q is not namespace/workload", siteRequiredWorkloadsEnv, entry)
+			return siteExpectations{}, fmt.Errorf("%s: %q is not namespace/workload", env(siteRequiredWorkloadsEnv), entry)
 		}
 		expect.workloads = append(expect.workloads, workloadRef{namespace: namespace, name: name})
 	}
 
-	for _, entry := range splitList(getenv(siteAPIServerFlagsEnv), ";") {
+	for _, entry := range splitList(getenv(env(siteAPIServerFlagsEnv)), ";") {
 		name, value, ok := strings.Cut(entry, "=")
 		name = strings.TrimPrefix(strings.TrimSpace(name), "--")
 		if !ok || name == "" {
-			return siteExpectations{}, fmt.Errorf("%s: %q is not name=value", siteAPIServerFlagsEnv, entry)
+			return siteExpectations{}, fmt.Errorf("%s: %q is not name=value", env(siteAPIServerFlagsEnv), entry)
 		}
 		if expect.apiServerFlags == nil {
 			expect.apiServerFlags = map[string]string{}
@@ -187,20 +206,93 @@ func siteExpectationsFromEnv(getenv func(string) string) (siteExpectations, erro
 		expect.apiServerFlags[name] = strings.TrimSpace(value)
 	}
 
-	encrypted, err := parseRequireEnv(siteEtcdEncryptedEnv, getenv(siteEtcdEncryptedEnv))
+	encrypted, err := parseRequireEnv(env(siteEtcdEncryptedEnv), getenv(env(siteEtcdEncryptedEnv)))
 	if err != nil {
 		return siteExpectations{}, err
 	}
 	expect.etcdEncrypted = encrypted
 
-	if raw := strings.TrimSpace(getenv(siteReservedMemoryEnv)); raw != "" {
+	if raw := strings.TrimSpace(getenv(env(siteReservedMemoryEnv))); raw != "" {
 		quantity, err := resource.ParseQuantity(raw)
 		if err != nil {
-			return siteExpectations{}, fmt.Errorf("%s=%q: %w", siteReservedMemoryEnv, raw, err)
+			return siteExpectations{}, fmt.Errorf("%s=%q: %w", env(siteReservedMemoryEnv), raw, err)
 		}
 		expect.reservedMemory = &quantity
 	}
 	return expect, nil
+}
+
+// env names the variable an expectation is read from: name, which begins
+// with sitePrefix, under the expectations' own prefix.
+func (e siteExpectations) env(name string) string {
+	if e.prefix == "" {
+		return name
+	}
+	return e.prefix + strings.TrimPrefix(name, sitePrefix)
+}
+
+// describe lists what the run set, one variable a line, for the report.
+// None of it is secret.
+func (e siteExpectations) describe() []string {
+	var lines []string
+	add := func(name, value string) {
+		if value != "" {
+			lines = append(lines, e.env(name)+"="+value)
+		}
+	}
+	components := make([]string, 0, len(e.components))
+	for _, name := range slices.Sorted(maps.Keys(e.components)) {
+		components = append(components, name+"="+e.components[name])
+	}
+	add(siteComponentsEnv, strings.Join(components, ","))
+	workloads := make([]string, 0, len(e.workloads))
+	for _, w := range e.workloads {
+		workloads = append(workloads, w.namespace+"/"+w.name)
+	}
+	add(siteRequiredWorkloadsEnv, strings.Join(workloads, ","))
+	versions := make([]string, 0, len(e.workloadVersions))
+	for _, v := range e.workloadVersions {
+		versions = append(versions, v.namespace+"/"+v.name+"="+v.version)
+	}
+	add(siteWorkloadVersionsEnv, strings.Join(versions, ","))
+	flags := make([]string, 0, len(e.apiServerFlags))
+	for _, name := range slices.Sorted(maps.Keys(e.apiServerFlags)) {
+		flags = append(flags, name+"="+e.apiServerFlags[name])
+	}
+	add(siteAPIServerFlagsEnv, strings.Join(flags, ";"))
+	if e.etcdEncrypted {
+		add(siteEtcdEncryptedEnv, "true")
+	}
+	if e.reservedMemory != nil {
+		add(siteReservedMemoryEnv, e.reservedMemory.String())
+	}
+	add(siteStorageClassesEnv, strings.Join(e.storageClasses, ","))
+	add(sitePVCStorageClassEnv, e.pvcStorageClass)
+	return lines
+}
+
+// describe lists where the checks run and what with, for the report.
+func (c siteChecks) describe() []string {
+	names := make([]string, 0, len(c.namespaces))
+	for _, ns := range c.namespaces {
+		names = append(names, ns.name)
+	}
+	lines := []string{
+		"required namespaces: " + strings.Join(names, ", "),
+		"probe namespace: " + c.probeNamespace,
+		"probe image: " + c.probeImage.ref,
+	}
+	if len(c.probeImage.pullSecrets) > 0 {
+		secrets := make([]string, 0, len(c.probeImage.pullSecrets))
+		for _, secret := range c.probeImage.pullSecrets {
+			secrets = append(secrets, secret.Name)
+		}
+		lines = append(lines, "probe pull secrets: "+strings.Join(secrets, ", "))
+	}
+	if keepOnFailure() {
+		lines = append(lines, keepOnFailureEnv+"=true")
+	}
+	return lines
 }
 
 // splitList splits raw on sep, trimming each entry and dropping empty ones.
@@ -236,7 +328,11 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	connect := func() siteExpectations {
 		settings = resolve()
 		if c == nil {
-			restConfig = expectSucceed(kube.RESTConfigWithInClusterFallback("", ""))
+			if settings.checks.restConfig != nil {
+				restConfig = expectSucceed(settings.checks.restConfig())
+			} else {
+				restConfig = expectSucceed(kube.RESTConfigWithInClusterFallback("", ""))
+			}
 			clientset = expectSucceed(kubernetes.NewForConfig(restConfig))
 			c = expectSucceed(siteBehaviorClient(restConfig))
 		}
@@ -245,7 +341,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	component := func(name string) string {
 		namespace, ok := connect().components[name]
 		if !ok {
-			Skip(fmt.Sprintf("%s does not list %s", siteComponentsEnv, name))
+			Skip(fmt.Sprintf("%s does not list %s", settings.expect.env(siteComponentsEnv), name))
 		}
 		return namespace
 	}
@@ -260,7 +356,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("runs Argo CD", func(ctx SpecContext) {
 		namespace := component(componentArgoCD)
 		Eventually(func(ctx context.Context) error {
-			return componentWorkloadProblems(ctx, c, componentArgoCD, namespace, argoCDWorkloads)
+			return componentWorkloadProblems(ctx, c, settings.expect.env(siteComponentsEnv), componentArgoCD, namespace, argoCDWorkloads)
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
 	}, Label("site-software", "component"), NodeTimeout(siteCheck+time.Minute))
 
@@ -279,7 +375,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("runs the CloudNativePG operator with every database cluster healthy", func(ctx SpecContext) {
 		namespace := component(componentCNPG)
 		Eventually(func(ctx context.Context) error {
-			if err := componentWorkloadProblems(ctx, c, componentCNPG, namespace, nil); err != nil {
+			if err := componentWorkloadProblems(ctx, c, settings.expect.env(siteComponentsEnv), componentCNPG, namespace, nil); err != nil {
 				return err
 			}
 			clusters := &unstructured.UnstructuredList{}
@@ -294,7 +390,14 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("runs the Teleport agent", func(ctx SpecContext) {
 		namespace := component(componentTeleport)
 		Eventually(func(ctx context.Context) error {
-			return componentWorkloadProblems(ctx, c, componentTeleport, namespace, nil)
+			return componentWorkloadProblems(ctx, c, settings.expect.env(siteComponentsEnv), componentTeleport, namespace, nil)
+		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
+	}, Label("site-software", "component"), NodeTimeout(siteCheck+time.Minute))
+
+	It("runs cert-manager", func(ctx SpecContext) {
+		namespace := component(componentCertManager)
+		Eventually(func(ctx context.Context) error {
+			return componentWorkloadProblems(ctx, c, settings.expect.env(siteComponentsEnv), componentCertManager, namespace, certManagerWorkloads)
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
 	}, Label("site-software", "component"), NodeTimeout(siteCheck+time.Minute))
 
@@ -318,7 +421,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("runs every workload the run requires", func(ctx SpecContext) {
 		expect := connect()
 		if len(expect.workloads) == 0 {
-			Skip(siteRequiredWorkloadsEnv + " is unset")
+			Skip(settings.expect.env(siteRequiredWorkloadsEnv) + " is unset")
 		}
 		Eventually(func(ctx context.Context) error {
 			var (
@@ -338,7 +441,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("runs the workload versions the run expects", func(ctx SpecContext) {
 		expect := connect()
 		if len(expect.workloadVersions) == 0 {
-			Skip(siteWorkloadVersionsEnv + " is unset")
+			Skip(settings.expect.env(siteWorkloadVersionsEnv) + " is unset")
 		}
 		var (
 			deployments  appsv1.DeploymentList
@@ -357,7 +460,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		kubeadmFlags := expectSucceed(kubeadmAPIServerExtraArgs(configuration))
 		var pods corev1.PodList
 		Expect(c.List(ctx, &pods, client.InNamespace(kubeSystemNamespace), client.MatchingLabels{"component": "kube-apiserver"})).To(Succeed())
-		Expect(joinProblems("API server flags", apiServerFlagProblems(kubeadmFlags, expect.apiServerFlags, pods.Items))).To(Succeed())
+		Expect(joinProblems("API server flags", apiServerFlagProblems(kubeadmFlags, expect.apiServerFlags, expect.env(siteAPIServerFlagsEnv), pods.Items))).To(Succeed())
 	}, Label("site-distro"), NodeTimeout(2*time.Minute))
 
 	// Only that a config is given: which provider it writes with is in a file
@@ -365,7 +468,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	// first provider is identity stores Secrets in plain text and passes.
 	It("runs every API server with an encryption provider config", func(ctx SpecContext) {
 		if !connect().etcdEncrypted {
-			Skip(siteEtcdEncryptedEnv + " is not true")
+			Skip(settings.expect.env(siteEtcdEncryptedEnv) + " is not true")
 		}
 		var pods corev1.PodList
 		Expect(c.List(ctx, &pods, client.InNamespace(kubeSystemNamespace), client.MatchingLabels{"component": "kube-apiserver"})).To(Succeed())
@@ -387,7 +490,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("reserves the memory the run expects on every node", func(ctx SpecContext) {
 		want := connect().reservedMemory
 		if want == nil {
-			Skip(siteReservedMemoryEnv + " is unset")
+			Skip(settings.expect.env(siteReservedMemoryEnv) + " is unset")
 		}
 		var nodes corev1.NodeList
 		Expect(c.List(ctx, &nodes)).To(Succeed())
@@ -397,30 +500,28 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("has every StorageClass the run expects", func(ctx SpecContext) {
 		expect := connect()
 		if len(expect.storageClasses) == 0 {
-			Skip(siteStorageClassesEnv + " is unset")
+			Skip(settings.expect.env(siteStorageClassesEnv) + " is unset")
 		}
 		var classes storagev1.StorageClassList
 		Expect(c.List(ctx, &classes)).To(Succeed())
 		Expect(joinProblems("StorageClasses", storageClassProblems(expect.storageClasses, classes.Items))).To(Succeed())
 	}, Label("site-distro"), NodeTimeout(2*time.Minute))
 
-	// The site's part is what it grants a request with no credential. The
-	// identity's part holds the image's service account to the README's
-	// RBAC; outside a pod the identity is whoever runs the suite, often an
-	// admin, and says nothing about the site, so it is left out.
+	// The cluster's part is what it grants a request with no credential. The
+	// identity's part holds the suite's identity to the README's RBAC where
+	// that identity is one the README grants. Elsewhere it is whoever runs
+	// the suite, or a lane's admin, and says nothing about the cluster, so
+	// it is left out.
 	It("refuses anonymous access and holds the validation identity to read access", func(ctx SpecContext) {
 		connect()
 		var problems []string
-		if settings.inPod {
-			for _, attributes := range rbacDenied {
+		if settings.checkIdentity {
+			problems = identityProblems(func(attributes authorizationv1.ResourceAttributes) bool {
 				review := &authorizationv1.SelfSubjectAccessReview{Spec: authorizationv1.SelfSubjectAccessReviewSpec{ResourceAttributes: ptr.To(attributes)}}
-				result := expectSucceed(clientset.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, review, metav1.CreateOptions{}))
-				if result.Status.Allowed {
-					problems = append(problems, "the validation identity may "+describeAttributes(attributes)+": it should hold read access only")
-				}
-			}
+				return expectSucceed(clientset.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, review, metav1.CreateOptions{})).Status.Allowed
+			})
 		} else {
-			GinkgoLogr.Info("RBAC check leaves out the suite's own identity: it runs outside a pod")
+			GinkgoLogr.Info("RBAC check leaves out the suite's own identity: it is not one the README grants")
 		}
 		anonymous := expectSucceed(kubernetes.NewForConfig(rest.AnonymousClientConfig(restConfig)))
 		_, err := anonymous.CoreV1().Secrets(kubeSystemNamespace).List(ctx, metav1.ListOptions{Limit: 1})
@@ -484,6 +585,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 			GinkgoLogr.Info("control-plane endpoint probe: no kube-vip lease names a node, so the probe may share the endpoint's node", "holder", holder)
 		}
 		GinkgoLogr.Info("control-plane endpoint probe", "endpoint", endpoint, "holder", holder, "from", node.Name, "awayFromHolder", away)
+		By("reaching " + endpoint + " from " + node.Name)
 		pod := endpointProbePod(namespace, image, labels, node, endpoint)
 		_, message, err := kube.RunPodWithLogs(ctx, c, clientset, pod, podCIDRProbeContainer, siteCreateTimeout)
 		deleteOnExit(ctx, c, pod)
@@ -501,6 +603,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 			targets = targets[:2]
 		}
 
+		By("starting a server pod on each node")
 		servers := make([]*corev1.Pod, 0, len(targets))
 		for _, node := range targets {
 			server := siteServerPod(namespace, image, labels, "traffic", node)
@@ -513,6 +616,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		deleteOnExit(ctx, c, service)
 
 		for i, node := range targets {
+			By("reaching the server pods and the Service from " + node.Name)
 			urls := []string{
 				podCIDRURL(servers[i].Status.PodIP, podCIDRServerPort),
 				podCIDRURL(servers[(i+1)%len(servers)].Status.PodIP, podCIDRServerPort),
@@ -542,6 +646,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 			Skip(fmt.Sprintf("NetworkPolicy %s/%s already selects this check's pods, so it decides their traffic; set %s to a namespace without one", namespace, name, siteProbeNamespaceEnv))
 		}
 
+		By("starting the target and control pods")
 		target := siteServerPod(namespace, image, labels, ovnPolicyTargetRole, node)
 		control := siteServerPod(namespace, image, labels, ovnPolicyControlRole, node)
 		for _, pod := range []*corev1.Pod{target, control} {
@@ -579,12 +684,14 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		targets := probeNodes(nodes.Items)
 		Expect(targets).NotTo(BeEmpty(), "no Ready, schedulable node to run pods on")
 
+		By("creating a headless Service and a StatefulSet behind it")
 		service := siteService(namespace, labels, "headless", true)
 		Expect(c.Create(ctx, service)).To(Succeed())
 		deleteOnExit(ctx, c, service)
 		statefulSet := siteStatefulSet(namespace, image, labels, service.Name, targets[0])
 		Expect(c.Create(ctx, statefulSet)).To(Succeed())
 		deleteOnExit(ctx, c, statefulSet)
+		By("waiting for the StatefulSet's pod to be ready")
 		Eventually(func(ctx context.Context) error {
 			if err := c.Get(ctx, client.ObjectKeyFromObject(statefulSet), statefulSet); err != nil {
 				return err
@@ -595,6 +702,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 			return nil
 		}).WithContext(ctx).WithTimeout(siteCreateTimeout).WithPolling(2 * time.Second).Should(Succeed())
 
+		By("reaching the pod by its headless Service name")
 		probe := siteProbePod(namespace, image, labels, siteHeadlessClientRole, targets[0], []string{podCIDRURL(statefulSet.Name+"-0."+service.Name, podCIDRServerPort)})
 		_, _, err := kube.RunPodWithLogs(ctx, c, clientset, probe, podCIDRProbeContainer, siteCreateTimeout)
 		deleteOnExit(ctx, c, probe)
@@ -607,11 +715,13 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		Expect(c.List(ctx, &classes)).To(Succeed())
 		class := pvcStorageClass(settings.expect.pvcStorageClass, classes.Items)
 		if class == "" {
-			Skip(sitePVCStorageClassEnv + " is unset and the site has no default StorageClass")
+			Skip(settings.expect.env(sitePVCStorageClassEnv) + " is unset and the site has no default StorageClass")
 		}
+		By("creating a PersistentVolumeClaim of StorageClass " + class)
 		claim := sitePVC(namespace, labels, class)
 		Expect(c.Create(ctx, claim)).To(Succeed())
 		deleteOnExit(ctx, c, claim)
+		By("writing to it from a pod and reading it back")
 		pod := siteVolumePod(namespace, image, labels, claim.Name)
 		_, message, err := kube.RunPodWithLogs(ctx, c, clientset, pod, podCIDRProbeContainer, siteCreateTimeout)
 		deleteOnExit(ctx, c, pod)
@@ -623,12 +733,17 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 
 	It("issues a certificate from a new cert-manager Issuer", func(ctx SpecContext) {
 		namespace, _, labels := work()
+		if !settings.checks.certManager {
+			Skip("the cluster is not expected to run cert-manager")
+		}
 		name := "nvke-validate-" + labels[siteRunLabel]
+		By("creating an Issuer and a Certificate from it")
 		issuer, certificate := siteCertificate(namespace, name, labels)
 		Expect(c.Create(ctx, issuer)).To(Succeed())
 		deleteOnExit(ctx, c, issuer)
 		Expect(c.Create(ctx, certificate)).To(Succeed())
 		deleteOnExit(ctx, c, certificate, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}})
+		By("waiting for the Certificate to be issued")
 		Eventually(func(ctx context.Context) error {
 			if err := c.Get(ctx, client.ObjectKeyFromObject(certificate), certificate); err != nil {
 				return err
@@ -655,10 +770,30 @@ func siteBehaviorClient(restConfig *rest.Config) (client.Client, error) {
 	return client.New(restConfig, client.Options{Scheme: scheme})
 }
 
+// keepOnFailureEnv, when true, leaves a failed spec's objects in place to be
+// inspected. The pod check leaves out the probe namespace, but the workload
+// and certificate checks read the whole cluster, so a kept StatefulSet or
+// Certificate fails the next run until it is deleted by its siteRunLabel.
+const keepOnFailureEnv = "NVKE_E2E_KEEP_ON_FAILURE"
+
+// keepOnFailure reads keepOnFailureEnv. The settings already rejected a value
+// that does not parse, so here one reads as false.
+func keepOnFailure() bool {
+	keep, err := parseRequireEnv(keepOnFailureEnv, os.Getenv(keepOnFailureEnv))
+	return err == nil && keep
+}
+
 // deleteOnExit deletes objects when the spec ends, passed or failed, in the
-// foreground so that a StatefulSet's pods go with it.
+// foreground so that a StatefulSet's pods go with it, unless the spec failed
+// and keepOnFailureEnv is set.
 func deleteOnExit(ctx context.Context, c client.Client, objects ...client.Object) {
 	DeferCleanup(func() {
+		if CurrentSpecReport().Failed() && keepOnFailure() {
+			for _, object := range objects {
+				GinkgoLogr.Info("kept for inspection", "kind", fmt.Sprintf("%T", object), "namespace", object.GetNamespace(), "name", object.GetName(), "env", keepOnFailureEnv)
+			}
+			return
+		}
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), siteCleanup)
 		defer cancel()
 		for _, object := range objects {
@@ -672,7 +807,7 @@ func deleteOnExit(ctx context.Context, c client.Client, objects ...client.Object
 // componentWorkloadProblems requires a component's namespace to run at least
 // one ready pod, every workload in it to be available, and a workload whose
 // name holds each of required.
-func componentWorkloadProblems(ctx context.Context, c client.Client, component, namespace string, required []string) error {
+func componentWorkloadProblems(ctx context.Context, c client.Client, source, component, namespace string, required []string) error {
 	var (
 		deployments  appsv1.DeploymentList
 		statefulSets appsv1.StatefulSetList
@@ -683,7 +818,7 @@ func componentWorkloadProblems(ctx context.Context, c client.Client, component, 
 			return err
 		}
 	}
-	problems := workloadProblems([]siteNamespace{{name: namespace, source: siteComponentsEnv + " " + component}}, deployments.Items, statefulSets.Items, daemonSets.Items)
+	problems := workloadProblems([]siteNamespace{{name: namespace, source: source + " " + component}}, deployments.Items, statefulSets.Items, daemonSets.Items)
 	var names []string
 	for _, d := range deployments.Items {
 		names = append(names, d.Name)
@@ -950,7 +1085,7 @@ func controlPlaneEndpoint(configuration string) (string, error) {
 
 // apiServerFlagProblems requires at least one API server, and each to run
 // every flag kubeadm and the run set, with their values.
-func apiServerFlagProblems(kubeadmFlags, runFlags map[string]string, pods []corev1.Pod) []string {
+func apiServerFlagProblems(kubeadmFlags, runFlags map[string]string, runSource string, pods []corev1.Pod) []string {
 	if len(pods) == 0 {
 		return []string{"no kube-apiserver pod in " + kubeSystemNamespace}
 	}
@@ -962,10 +1097,10 @@ func apiServerFlagProblems(kubeadmFlags, runFlags map[string]string, pods []core
 	var problems []string
 	for name, value := range runFlags {
 		if kubeadm, ok := want[name]; ok && kubeadm != value {
-			problems = append(problems, fmt.Sprintf("--%s: kubeadm-config sets %q, %s wants %q", name, kubeadm, siteAPIServerFlagsEnv, value))
+			problems = append(problems, fmt.Sprintf("--%s: kubeadm-config sets %q, %s wants %q", name, kubeadm, runSource, value))
 			continue
 		}
-		want[name], sources[name] = value, siteAPIServerFlagsEnv
+		want[name], sources[name] = value, runSource
 	}
 	for _, pod := range pods {
 		for _, name := range slices.Sorted(maps.Keys(want)) {
@@ -1092,6 +1227,18 @@ var rbacDenied = []authorizationv1.ResourceAttributes{
 	{Verb: "*", Group: "*", Resource: "*"},
 }
 
+// identityProblems names each of rbacDenied that allowed, which reviews the
+// suite's own identity, permits.
+func identityProblems(allowed func(authorizationv1.ResourceAttributes) bool) []string {
+	var problems []string
+	for _, attributes := range rbacDenied {
+		if allowed(attributes) {
+			problems = append(problems, "the validation identity may "+describeAttributes(attributes)+": it should hold read access only")
+		}
+	}
+	return problems
+}
+
 func describeAttributes(a authorizationv1.ResourceAttributes) string {
 	what := a.Resource
 	if a.Group != "" {
@@ -1202,7 +1349,7 @@ func webhookProblems(services []webhookService, endpointSlices []discoveryv1.End
 func probeNodes(nodes []corev1.Node) []corev1.Node {
 	var usable []corev1.Node
 	for _, node := range nodes {
-		if !nodeConditionTrue(node, corev1.NodeReady) || node.Spec.Unschedulable || node.Labels[corev1.LabelHostname] == "" {
+		if !nodeReady(node) || node.Spec.Unschedulable || node.Labels[corev1.LabelHostname] == "" {
 			continue
 		}
 		if slices.ContainsFunc(node.Spec.Taints, func(t corev1.Taint) bool {

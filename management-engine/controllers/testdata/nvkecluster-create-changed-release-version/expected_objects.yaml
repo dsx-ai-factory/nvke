@@ -1,0 +1,109 @@
+---
+items:
+- apiVersion: internal.nvke.nvidia.com/v1
+  kind: NVKECluster
+  metadata:
+    creationTimestamp: null
+    finalizers:
+    - internal.nvke.nvidia.com/cluster-cleanup
+    generation: 1
+    name: cluster-1
+    namespace: default
+  spec:
+    apiServerAccess:
+      publicAccessEnabled: false
+    clusterNetwork:
+      pods:
+        cidrBlocks:
+        - 10.244.0.0/16
+      serviceDomain: cluster.local
+      services:
+        cidrBlocks:
+        - 10.96.0.0/12
+    controlPlaneClass: standard
+    network:
+      vpcID: 22222222-2222-4222-8222-222222222222
+    release:
+      channel:
+        name: stable
+        version: "1.36"
+  status:
+    conditions:
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 1
+      reason: Available
+      status: "True"
+      type: Available
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 1
+      reason: ReconcileSucceeded
+      status: "True"
+      type: ClusterReconciled
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 1
+      reason: Ready
+      status: "True"
+      type: ControlPlaneReady
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 1
+      reason: NotDeleting
+      status: "False"
+      type: Deleting
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 1
+      reason: NotYetReported
+      status: Unknown
+      type: NVKEControllerCPNodesRecycling
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 1
+      reason: NotYetReported
+      status: Unknown
+      type: NVKEControllerControlPlaneUpgrading
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 1
+      reason: Reported
+      status: "False"
+      type: NVKEControllerDeleting
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 1
+      reason: Reported
+      status: "True"
+      type: NVKEControllerProvisioned
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 1
+      reason: Reported
+      status: "False"
+      type: NVKEControllerProvisioning
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 1
+      reason: NotYetReported
+      status: Unknown
+      type: NVKEControllerUpdateFailed
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 1
+      reason: Ready
+      status: "True"
+      type: Ready
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 1
+      reason: Synced
+      status: "True"
+      type: Synced
+    id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    observedGeneration: 1
+    resolvedRelease:
+      name: latest-release
+      version: 1.36.1
+metadata: {}

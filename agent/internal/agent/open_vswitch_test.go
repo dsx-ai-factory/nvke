@@ -394,6 +394,59 @@ iface eth0 inet static
 	assert.Contains(t, string(bridge), "ovs_ports eth0")
 }
 
+func TestEnsureOpenVSwitchServiceAcceptsEitherPackage(t *testing.T) {
+	const (
+		stockQuery = "dpkg-query --show --showformat=${db:Status-Abbrev} openvswitch-switch"
+		docaQuery  = "dpkg-query --show --showformat=${db:Status-Abbrev} doca-openvswitch-switch"
+		enable     = "systemctl enable --now openvswitch-switch"
+	)
+	unknown := openVSwitchCommandResult{err: errors.New("dpkg-query: no packages found matching")}
+	tests := []struct {
+		name      string
+		responses map[string][]openVSwitchCommandResult
+		wantCalls []string
+		wantCode  codes.Code
+	}{
+		{
+			name:      "stock package installed",
+			responses: map[string][]openVSwitchCommandResult{stockQuery: {{output: []byte("ii ")}}, enable: {{}}},
+			wantCalls: []string{stockQuery, enable},
+		},
+		{
+			name:      "DOCA package installed",
+			responses: map[string][]openVSwitchCommandResult{stockQuery: {unknown}, docaQuery: {{output: []byte("ii ")}}, enable: {{}}},
+			wantCalls: []string{stockQuery, docaQuery, enable},
+		},
+		{
+			name:      "stock package removed but not purged, DOCA installed",
+			responses: map[string][]openVSwitchCommandResult{stockQuery: {{output: []byte("rc ")}}, docaQuery: {{output: []byte("ii ")}}, enable: {{}}},
+			wantCalls: []string{stockQuery, docaQuery, enable},
+		},
+		{
+			name:      "neither package installed",
+			responses: map[string][]openVSwitchCommandResult{stockQuery: {unknown}, docaQuery: {unknown}},
+			wantCalls: []string{stockQuery, docaQuery},
+			wantCode:  codes.FailedPrecondition,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &openVSwitchTestRunner{t: t, responses: tt.responses}
+			server := &NodeAgentServer{Runner: runner}
+			err := server.ensureOpenVSwitchService()
+			assert.Equal(t, tt.wantCalls, runner.calls)
+			if tt.wantCode == codes.OK {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Equal(t, tt.wantCode, status.Code(err))
+			assert.Contains(t, err.Error(), "openvswitch-switch")
+			assert.Contains(t, err.Error(), "doca-openvswitch-switch")
+		})
+	}
+}
+
 func TestOpenVSwitchReconciliationDoesNotHideOperationalErrors(t *testing.T) {
 	runner := newOpenVSwitchTestRunner(t, map[string][]openVSwitchCommandResult{
 		"dpkg-query --show --showformat=${db:Status-Abbrev} openvswitch-switch": {{output: []byte("ii ")}},

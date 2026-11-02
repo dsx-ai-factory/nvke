@@ -15,9 +15,9 @@ import (
 // under. Spelled out rather than computed, so a change to the derivation shows
 // up here as a failure rather than agreeing with itself.
 const (
-	testSite            = "az51-dev2-dh2"
-	testClientIDVar     = "DSX_AZ51_DEV2_DH2_SSA_CLIENT_ID"
-	testClientSecretVar = "DSX_AZ51_DEV2_DH2_SSA_CLIENT_SECRET" // #nosec G101 -- a variable name
+	testSite            = "datahall-1"
+	testClientIDVar     = "DSX_DATAHALL_1_SSA_CLIENT_ID"
+	testClientSecretVar = "DSX_DATAHALL_1_SSA_CLIENT_SECRET" // #nosec G101 -- a variable name
 )
 
 // issuerStub answers the token endpoint, recording what it was presented.
@@ -81,9 +81,11 @@ func TestClientEnvNamesFollowTheDatahall(t *testing.T) {
 	// The whole point of deriving the name: a credential scoped to one
 	// datahall cannot be picked up by a run against another.
 	for site, want := range map[string]string{
-		"az51-dev2-dh2":     "DSX_AZ51_DEV2_DH2_SSA_CLIENT_ID",
-		"az51-dev3-dh1":     "DSX_AZ51_DEV3_DH1_SSA_CLIENT_ID",
-		"redstone-dev1-dh2": "DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID",
+		"datahall-1": "DSX_DATAHALL_1_SSA_CLIENT_ID",
+		"datahall-2": "DSX_DATAHALL_2_SSA_CLIENT_ID",
+		// Still derived from whatever the key is, so a key that is not of the
+		// datahall-N shape keeps working.
+		"other.key-3": "DSX_OTHER_KEY_3_SSA_CLIENT_ID",
 	} {
 		id, secret := ClientEnvNames(site)
 		if id != want {
@@ -94,7 +96,7 @@ func TestClientEnvNamesFollowTheDatahall(t *testing.T) {
 		}
 	}
 	// And it is nothing a LaunchLayer credential would be found under.
-	id, _ := ClientEnvNames("az51-dev2-dh2")
+	id, _ := ClientEnvNames("datahall-1")
 	if id == "SSA_CLIENT_ID" {
 		t.Error("the derived name collides with ll-check-creds.sh's bare variable")
 	}

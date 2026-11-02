@@ -15,6 +15,7 @@ import (
 	"github.com/caarlos0/env/v11"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nvkerbac"
 )
 
 const (
@@ -281,13 +282,20 @@ type Config struct {
 	ManagedByLabelValue string `controllerconfig:"managedByLabelValue"`
 
 	// ManagementNamespace is the shared management-plane namespace holding the
-	// tenant-access Secrets, the nke-rbac ConfigMap and the OIDC-mode CAPI
+	// tenant-access Secrets, the RBAC ConfigMap and the OIDC-mode CAPI
 	// objects. Empty means constants.LegacyManagementNamespace, so a config.yaml
 	// written before this key existed keeps today's behavior exactly. Read it
 	// through ManagementNamespaceOrDefault rather than directly: unlike the
 	// label keys, the old namespace is not also read, so an empty value reaching
 	// a client would address the wrong namespace rather than fall back.
 	ManagementNamespace string `controllerconfig:"managementNamespace"`
+
+	// RBACConfigMapName is the operator-managed ConfigMap in ManagementNamespace
+	// holding the RBAC manifest applied into tenant clusters. Empty means
+	// nvkerbac.LegacyConfigMapName, for the same reason ManagementNamespace
+	// falls back. Read it through RBACConfigMapSource, which pairs it with the
+	// namespace it is resolved against.
+	RBACConfigMapName string `controllerconfig:"rbacConfigMapName"`
 
 	// SpiffeEnabled is a feature flag to enable SPIFFE support.
 	SpiffeEnabled bool `controllerconfig:"spire.spiffeEnabled"`
@@ -596,6 +604,19 @@ func (c Config) ManagementNamespaceOrDefault() string {
 		return constants.LegacyManagementNamespace
 	}
 	return c.ManagementNamespace
+}
+
+// RBACConfigMapSource returns the ConfigMap holding the tenant RBAC manifest:
+// the management namespace and the name together, because a name resolved
+// against the wrong namespace reads nothing. The name falls back to
+// nvkerbac.LegacyConfigMapName when unset, for the reason
+// ManagementNamespaceOrDefault gives.
+func (c Config) RBACConfigMapSource() nvkerbac.Source {
+	name := c.RBACConfigMapName
+	if name == "" {
+		name = nvkerbac.LegacyConfigMapName
+	}
+	return nvkerbac.Source{Namespace: c.ManagementNamespaceOrDefault(), Name: name}
 }
 
 // Validate checks the settings the environment supplies. nvke-controller-config

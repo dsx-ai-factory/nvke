@@ -18,12 +18,12 @@ limitations under the License.
 // SPDX-License-Identifier: Apache-2.0
 
 // Package v1beta4 contains local copies of the kubeadm v1beta4 config structs,
-// tracking the upstream kubeadm file as closely as practical. Only the
-// ClusterConfiguration subtree is copied: brownfield kubeadm-config reconciliation
-// reads and rewrites that persisted document, and a typed round-trip drops any
-// field absent from these structs — so this copy must stay faithful to upstream.
-// The greenfield path renders InitConfiguration/JoinConfiguration in v1beta3,
-// which is why only ClusterConfiguration is needed here.
+// tracking the upstream kubeadm file as closely as practical. Brownfield
+// kubeadm-config reconciliation reads and rewrites the persisted
+// ClusterConfiguration, and a typed round-trip drops any field absent from these
+// structs — so this copy must stay faithful to upstream. The greenfield path
+// renders InitConfiguration/JoinConfiguration in v1beta4 for Kubernetes 1.31 and
+// newer, the first release whose kubeadm reads it.
 //
 // Source (Kubernetes v1.34.0, commit f28b4c9efbca5c5c0af716d9f2d5702667ee8a45):
 //
@@ -32,20 +32,40 @@ limitations under the License.
 // The revision is inferred; see THIRD_PARTY_NOTICES.md.
 //
 // Local changes:
-//   - only the ClusterConfiguration subtree is copied
-//   - APIVersion and ClusterConfigurationKind are added
-//   - most field doc comments are omitted
+//   - ResetConfiguration, UpgradeConfiguration and ExternalEtcd.HTTPEndpoints
+//     (added upstream in v1.35) are not copied
+//   - bootstraptoken/v1 is imported from the local copy
+//   - APIVersion and the *Kind constants are added
+//   - datapolicy struct tags and most field doc comments are omitted
 package v1beta4
 
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	bootstraptokenv1 "github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig/thirdparty/bootstraptoken/v1"
 )
 
 const (
 	APIVersion               = "kubeadm.k8s.io/v1beta4"
+	InitConfigurationKind    = "InitConfiguration"
 	ClusterConfigurationKind = "ClusterConfiguration"
+	JoinConfigurationKind    = "JoinConfiguration"
 )
+
+// InitConfiguration contains a list of elements that is specific "kubeadm init"-only runtime information.
+type InitConfiguration struct {
+	metav1.TypeMeta `json:",inline"`
+
+	BootstrapTokens  []bootstraptokenv1.BootstrapToken `json:"bootstrapTokens,omitempty"`
+	DryRun           bool                              `json:"dryRun,omitempty"`
+	NodeRegistration NodeRegistrationOptions           `json:"nodeRegistration,omitempty"`
+	LocalAPIEndpoint APIEndpoint                       `json:"localAPIEndpoint,omitempty"`
+	CertificateKey   string                            `json:"certificateKey,omitempty"`
+	SkipPhases       []string                          `json:"skipPhases,omitempty"`
+	Patches          *Patches                          `json:"patches,omitempty"`
+	Timeouts         *Timeouts                         `json:"timeouts,omitempty"`
+}
 
 // ClusterConfiguration contains cluster-wide configuration for a kubeadm cluster.
 type ClusterConfiguration struct {
@@ -156,3 +176,77 @@ type ExternalEtcd struct {
 // EncryptionAlgorithmType defines the asymmetric encryption algorithm used for
 // keys and certificates (e.g. "RSA-2048", "ECDSA-P256").
 type EncryptionAlgorithmType string
+
+// APIEndpoint struct contains elements of API server instance deployed on a node.
+type APIEndpoint struct {
+	AdvertiseAddress string `json:"advertiseAddress,omitempty"`
+	BindPort         int32  `json:"bindPort,omitempty"`
+}
+
+// NodeRegistrationOptions holds fields that relate to registering a new control-plane or node to the cluster.
+type NodeRegistrationOptions struct {
+	Name                  string            `json:"name,omitempty"`
+	CRISocket             string            `json:"criSocket,omitempty"`
+	Taints                []corev1.Taint    `json:"taints"`
+	KubeletExtraArgs      []Arg             `json:"kubeletExtraArgs,omitempty"`
+	IgnorePreflightErrors []string          `json:"ignorePreflightErrors,omitempty"`
+	ImagePullPolicy       corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+	ImagePullSerial       *bool             `json:"imagePullSerial,omitempty"`
+}
+
+// JoinConfiguration contains elements describing a particular node.
+type JoinConfiguration struct {
+	metav1.TypeMeta `json:",inline"`
+
+	DryRun           bool                    `json:"dryRun,omitempty"`
+	NodeRegistration NodeRegistrationOptions `json:"nodeRegistration,omitempty"`
+	CACertPath       string                  `json:"caCertPath,omitempty"`
+	Discovery        Discovery               `json:"discovery"`
+	ControlPlane     *JoinControlPlane       `json:"controlPlane,omitempty"`
+	SkipPhases       []string                `json:"skipPhases,omitempty"`
+	Patches          *Patches                `json:"patches,omitempty"`
+	Timeouts         *Timeouts               `json:"timeouts,omitempty"`
+}
+
+// JoinControlPlane contains elements describing an additional control plane instance to be deployed on the joining node.
+type JoinControlPlane struct {
+	LocalAPIEndpoint APIEndpoint `json:"localAPIEndpoint,omitempty"`
+	CertificateKey   string      `json:"certificateKey,omitempty"`
+}
+
+// Discovery specifies the options for the kubelet to use during the TLS Bootstrap process.
+type Discovery struct {
+	BootstrapToken    *BootstrapTokenDiscovery `json:"bootstrapToken,omitempty"`
+	File              *FileDiscovery           `json:"file,omitempty"`
+	TLSBootstrapToken string                   `json:"tlsBootstrapToken,omitempty"`
+}
+
+// BootstrapTokenDiscovery is used to set the options for bootstrap token based discovery.
+type BootstrapTokenDiscovery struct {
+	Token                    string   `json:"token"`
+	APIServerEndpoint        string   `json:"apiServerEndpoint,omitempty"`
+	CACertHashes             []string `json:"caCertHashes,omitempty"`
+	UnsafeSkipCAVerification bool     `json:"unsafeSkipCAVerification,omitempty"`
+}
+
+// FileDiscovery is used to specify a file or URL to a kubeconfig file from which to load cluster information.
+type FileDiscovery struct {
+	KubeConfigPath string `json:"kubeConfigPath"`
+}
+
+// Patches contains options related to applying patches to components deployed by kubeadm.
+type Patches struct {
+	Directory string `json:"directory,omitempty"`
+}
+
+// Timeouts holds various timeouts that apply to kubeadm commands. In v1beta3
+// these lived on APIServer.TimeoutForControlPlane and Discovery.Timeout.
+type Timeouts struct {
+	ControlPlaneComponentHealthCheck *metav1.Duration `json:"controlPlaneComponentHealthCheck,omitempty"`
+	KubeletHealthCheck               *metav1.Duration `json:"kubeletHealthCheck,omitempty"`
+	KubernetesAPICall                *metav1.Duration `json:"kubernetesAPICall,omitempty"`
+	EtcdAPICall                      *metav1.Duration `json:"etcdAPICall,omitempty"`
+	TLSBootstrap                     *metav1.Duration `json:"tlsBootstrap,omitempty"`
+	Discovery                        *metav1.Duration `json:"discovery,omitempty"`
+	UpgradeManifests                 *metav1.Duration `json:"upgradeManifests,omitempty"`
+}

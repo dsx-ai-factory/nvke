@@ -40,7 +40,7 @@ func validateRegistryMirror(mirror string) error {
 func (e *Engine) configureDockerHubMirror(ctx context.Context, cfg Config) error {
 	node := cfg.ClusterName + "-control-plane"
 	e.log.Info("routing the bootstrap cluster's docker.io pulls through a mirror",
-		"cluster", cfg.ClusterName, "mirror", cfg.DockerHubMirror)
+		"bootstrap_kind_cluster", cfg.ClusterName, "mirror", cfg.DockerHubMirror)
 
 	hostsTOML := fmt.Sprintf("server = \"https://%[1]s\"\n\n[host.\"https://%[1]s\"]\n  capabilities = [\"pull\", \"resolve\"]\n", cfg.DockerHubMirror)
 	for _, registry := range dockerHubRegistries {

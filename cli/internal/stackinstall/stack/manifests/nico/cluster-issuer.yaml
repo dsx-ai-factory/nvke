@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# A cert-manager CA chain under the name NICo expects of its Vault PKI issuer.
+# NICo signs every service certificate through a ClusterIssuer named
+# vault-nico-issuer. The seed has no Vault, so cert-manager signs from a
+# self-signed CA under the same name. NICo cannot tell the difference. It only
+# names the issuer.
+#
+# Not a substitute for Vault PKI on a real site. There is no revocation, no
+# audit trail and no rotation. The CA private key is a Secret in the cluster.
+#
+# The CA Secret is in cert-manager's --cluster-resource-namespace, which is
+# where a ClusterIssuer of type ca reads from. That is cert-manager's own
+# namespace by default.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: nico-ca-bootstrap
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: nico-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: "NICo CA"
+  duration: 87600h
+  renewBefore: 720h
+  secretName: nico-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 384
+  issuerRef:
+    name: nico-ca-bootstrap
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: vault-nico-issuer
+spec:
+  ca:
+    secretName: nico-ca

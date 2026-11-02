@@ -24,6 +24,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/cluster-api-provider-nico/pkg/test/fixture"
@@ -66,6 +67,7 @@ func newEnvironment(*fixture.Case) *envtest.Environment {
 }
 
 func controllerCaseSet(description, dirPrefix string, defineSteps func(*fixture.Case, fixture.CaseSet)) fixture.CaseSet {
+	completed := make(map[*fixture.Case]chan struct{})
 	return fixture.CaseSet{
 		Description:          description,
 		DirPrefix:            dirPrefix,
@@ -95,13 +97,29 @@ func controllerCaseSet(description, dirPrefix string, defineSteps func(*fixture.
 			tc.AddGolden("expected_nvke_controller.yaml", func(context.Context) (string, error) {
 				return backend.Dump()
 			})
-			setupWithManager(ctx, tc, nvkeControllerClient)
+			setupWithManager(ctx, tc, nvkeControllerClient, completed[tc])
 		},
-		DefineSteps: defineSteps,
+		DefineSteps: func(tc *fixture.Case, set fixture.CaseSet) {
+			done := make(chan struct{}, 1)
+			completed[tc] = done
+			defineSteps(tc, set)
+			It("waits for reconciliation to complete", func(ctx SpecContext) {
+				waitCtx, cancel := context.WithTimeout(ctx, timeout)
+
+				// Block until the current reconcile, if any, completes to ensure all
+				// writes to the object under test have completed
+				defer cancel()
+				select {
+				case <-done:
+				case <-waitCtx.Done():
+					Fail("waiting for reconciliation: " + waitCtx.Err().Error())
+				}
+			})
+		},
 	}
 }
 
-func setupWithManager(ctx SpecContext, tc *fixture.Case, nvkeControllerClient NVKEControllerClient) {
+func setupWithManager(ctx SpecContext, tc *fixture.Case, nvkeControllerClient NVKEControllerClient, completed chan struct{}) {
 	mgr, err := ctrl.NewManager(tc.Config, ctrl.Options{
 		Scheme:     tc.Scheme,
 		Metrics:    metricsserver.Options{BindAddress: "0"},
@@ -114,6 +132,23 @@ func setupWithManager(ctx SpecContext, tc *fixture.Case, nvkeControllerClient NV
 		PollInterval:               pollInterval,
 		InfraTemplateConfigMapName: "infra-template",
 	}
-	Expect(reconciler.SetupWithManager(mgr)).To(Succeed())
+	wrap := func(next reconcile.Reconciler) reconcile.Reconciler {
+		return reconcile.Func(func(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+			// Lock the tests from firing a golden update while a reconcile is underway
+			select {
+			case <-completed:
+			default:
+			}
+
+			result, err := next.Reconcile(ctx, req)
+
+			select {
+			case completed <- struct{}{}:
+			default:
+			}
+			return result, err
+		})
+	}
+	Expect(reconciler.SetupWithManager(mgr, wrap)).To(Succeed())
 	tc.StartManager(ctx, mgr)
 }

@@ -506,7 +506,7 @@ jobs:
 
             controller/v*)
               echo "Controller tag ${GITHUB_REF_NAME}:"
-              echo "  - image → Image NVCR (nvcr.io source, promoted to ghcr.io/dsx-ai-factory/nvke/nke-controller and DSX NVCR)"
+              echo "  - image → Image NVCR (nvcr.io source, promoted to ghcr.io/dsx-ai-factory/nvke/nvke-controller and DSX NVCR)"
               echo "  - chart → Chart Publish / Chart Publish NVCR"
               ;;
 

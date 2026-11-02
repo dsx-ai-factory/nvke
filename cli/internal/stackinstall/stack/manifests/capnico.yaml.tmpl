@@ -1,0 +1,1621 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# CAPNICo, its released infrastructure-components.yaml with the image taken
+# from the artifact file. Generated from deploy/nico/capnico/capnico.yaml by
+# make -C cli capnico-manifest. Do not edit.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: capnico-system
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  labels:
+    cluster.x-k8s.io/v1beta2: v1alpha1
+  name: nicoclusters.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: NicoCluster
+    listKind: NicoClusterList
+    plural: nicoclusters
+    shortNames:
+    - nicoc
+    singular: nicocluster
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Current cluster infrastructure availability
+      jsonPath: .status.conditions[?(@.type=='Available')].status
+      name: Available
+      type: string
+    - description: Cluster infrastructure reconciled
+      jsonPath: .status.conditions[?(@.type=='Synced')].status
+      name: Synced
+      type: string
+    - description: Initial cluster infrastructure provisioning completed
+      jsonPath: .status.initialization.provisioned
+      name: Provisioned
+      type: string
+    - description: NICo site
+      jsonPath: .spec.siteID
+      name: Site
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: NicoCluster is the Schema for the nicoclusters API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: NicoClusterSpec defines the desired state of NicoCluster.
+            properties:
+              failureDomainLabelKey:
+                description: |-
+                  FailureDomainLabelKey is the NICo Machine label key that carries the failure
+                  domain name. It is read to publish status.failureDomains and sent as the
+                  machine label selector key when placing an instance. Leaving it unset
+                  disables failure domain support for this cluster: no domains are published,
+                  and a Machine that requests one fails rather than being placed anywhere.
+                  Sites that follow the NICo convention set it to "failure_domain".
+                maxLength: 255
+                minLength: 1
+                type: string
+              identityRef:
+                description: |-
+                  IdentityRef points to the Secret with NICo endpoint and authentication settings.
+                  When unset, the controller falls back to the provider-level credentials Secret
+                  in the manager namespace.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              siteID:
+                description: SiteID is the site where this provider should create
+                  and look up instances.
+                type: string
+            required:
+            - siteID
+            type: object
+          status:
+            description: NicoClusterStatus defines the observed state of NicoCluster.
+            properties:
+              conditions:
+                description: Conditions describes the current cluster state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                maxItems: 32
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              failureDomains:
+                description: FailureDomains are the placement domains NICo exposes
+                  for this cluster's site.
+                items:
+                  description: |-
+                    FailureDomain is the Schema for Cluster API failure domains.
+                    It allows controllers to understand how many failure domains a cluster can optionally span across.
+                  properties:
+                    attributes:
+                      additionalProperties:
+                        type: string
+                      description: attributes is a free form map of attributes an
+                        infrastructure provider might use or require.
+                      type: object
+                    controlPlane:
+                      description: controlPlane determines if this failure domain
+                        is suitable for use by control plane machines.
+                      type: boolean
+                    name:
+                      description: name is the name of the failure domain.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  type: object
+                maxItems: 100
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              initialization:
+                description: Initialization provides provisioning observations for
+                  this NICo-backed cluster.
+                minProperties: 1
+                properties:
+                  provisioned:
+                    description: Provisioned is true once the provider has validated
+                      NICo access for this cluster.
+                    type: boolean
+                type: object
+              ready:
+                description: Ready is true once the provider can reach NICo and resolve
+                  tenant context for this cluster.
+                type: boolean
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  labels:
+    cluster.x-k8s.io/v1beta2: v1alpha1
+  name: nicoclustertemplates.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: NicoClusterTemplate
+    listKind: NicoClusterTemplateList
+    plural: nicoclustertemplates
+    shortNames:
+    - nicoct
+    singular: nicoclustertemplate
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: NicoClusterTemplate is the Schema for the nicoclustertemplates
+          API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: NicoClusterTemplateSpec defines the desired state of NicoClusterTemplate.
+            properties:
+              template:
+                description: NicoClusterTemplateResource describes the data needed
+                  to create a NicoCluster from a template.
+                properties:
+                  metadata:
+                    description: Standard object's metadata.
+                    minProperties: 1
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          annotations is an unstructured key value map stored with a resource that may be
+                          set by external tools to store and retrieve arbitrary metadata. They are not
+                          queryable and should be preserved when modifying objects.
+                          More info: http://kubernetes.io/docs/user-guide/annotations
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          labels is a map of string keys and values that can be used to organize and categorize
+                          (scope and select) objects. May match selectors of replication controllers
+                          and services.
+                          More info: http://kubernetes.io/docs/user-guide/labels
+                        type: object
+                    type: object
+                  spec:
+                    description: NicoClusterSpec defines the desired state of NicoCluster.
+                    properties:
+                      failureDomainLabelKey:
+                        description: |-
+                          FailureDomainLabelKey is the NICo Machine label key that carries the failure
+                          domain name. It is read to publish status.failureDomains and sent as the
+                          machine label selector key when placing an instance. Leaving it unset
+                          disables failure domain support for this cluster: no domains are published,
+                          and a Machine that requests one fails rather than being placed anywhere.
+                          Sites that follow the NICo convention set it to "failure_domain".
+                        maxLength: 255
+                        minLength: 1
+                        type: string
+                      identityRef:
+                        description: |-
+                          IdentityRef points to the Secret with NICo endpoint and authentication settings.
+                          When unset, the controller falls back to the provider-level credentials Secret
+                          in the manager namespace.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      siteID:
+                        description: SiteID is the site where this provider should
+                          create and look up instances.
+                        type: string
+                    required:
+                    - siteID
+                    type: object
+                required:
+                - spec
+                type: object
+            required:
+            - template
+            type: object
+        type: object
+    served: true
+    storage: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  labels:
+    cluster.x-k8s.io/v1beta2: v1alpha1
+  name: nicomachines.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: NicoMachine
+    listKind: NicoMachineList
+    plural: nicomachines
+    shortNames:
+    - nicom
+    singular: nicomachine
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Current machine infrastructure availability
+      jsonPath: .status.conditions[?(@.type=='Available')].status
+      name: Available
+      type: string
+    - description: Machine infrastructure reconciled
+      jsonPath: .status.conditions[?(@.type=='Synced')].status
+      name: Synced
+      type: string
+    - description: Initial machine infrastructure provisioning completed
+      jsonPath: .status.initialization.provisioned
+      name: Provisioned
+      type: string
+    - description: NICo instance
+      jsonPath: .status.instanceID
+      name: Instance
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          NicoMachine is the Schema for the nicomachines API. Once ProviderID is
+          assigned, the spec is immutable because the controller does not reconcile
+          these create-time settings onto an existing instance.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: NicoMachineSpec defines the desired state of NicoMachine.
+            properties:
+              allowUnhealthyMachine:
+                description: AllowUnhealthyMachine allows targeted instance creation
+                  on a machine in Error status.
+                type: boolean
+              cloudInitInjectHostname:
+                description: CloudInitInjectHostname prepends hostname directives
+                  to the bootstrap cloud-config.
+                type: boolean
+              infinibandInterfaces:
+                description: |-
+                  InfinibandInterfaces requests that one or more InfiniBand Partitions be attached
+                  to the instance.
+                items:
+                  description: NicoMachineInfiniBandInterface defines one NICo InfiniBand
+                    interface attachment request.
+                  properties:
+                    device:
+                      description: Device is the name of the InfiniBand device to
+                        use.
+                      type: string
+                    deviceInstance:
+                      description: DeviceInstance is the index of the device, used
+                        to identify which interface card to attach the Partition to.
+                      format: int32
+                      type: integer
+                    isPhysical:
+                      description: IsPhysical specifies whether this Partition should
+                        be attached to the Instance over physical interface.
+                      type: boolean
+                    partitionID:
+                      description: PartitionID is the ID of the Partition the Interface
+                        should attach to.
+                      minLength: 1
+                      type: string
+                    vendor:
+                      description: Vendor is the name of the InfiniBand device vendor,
+                        optional.
+                      type: string
+                    virtualFunctionID:
+                      description: VirtualFunctionID must be specified if isPhysical
+                        is false.
+                      format: int32
+                      type: integer
+                  required:
+                  - partitionID
+                  type: object
+                type: array
+              infinibandPartitionID:
+                description: |-
+                  InfinibandPartitionID requests that the partition be attached to every active
+                  InfiniBand device exposed by InstanceTypeID.
+                  Set this instead of InfinibandInterfaces when every device should use the same partition.
+                minLength: 1
+                type: string
+              instanceTypeID:
+                description: |-
+                  InstanceTypeID is the instance type ID to provision.
+                  Exactly one of InstanceTypeID or MachineID must be set.
+                minLength: 1
+                type: string
+              interfaces:
+                description: |-
+                  Interfaces are the interface attachment requests for the instance.
+                  Use subnet-based attachments for Ethernet network virtualization and VPC prefix-based attachments for next-generation networking.
+                items:
+                  description: NicoMachineInterface defines one NICo interface attachment
+                    request.
+                  properties:
+                    device:
+                      description: Device is the device name to use for this attachment.
+                      type: string
+                    deviceInstance:
+                      description: DeviceInstance is the device instance index to
+                        use for this attachment.
+                      format: int32
+                      type: integer
+                    ipAddress:
+                      description: |-
+                        IPAddress is the explicitly requested IP address for this interface.
+                        This is only supported for VPCPrefixID-based interfaces. NICo requires the least-significant host bit to be 1.
+                      type: string
+                    physical:
+                      description: Physical requests this attachment over a physical
+                        interface.
+                      type: boolean
+                    subnetID:
+                      description: |-
+                        SubnetID is the subnet ID for this attachment.
+                        Use SubnetID for Ethernet network virtualization.
+                        Exactly one of SubnetID or VPCPrefixID must be set.
+                      minLength: 1
+                      type: string
+                    vpcPrefixID:
+                      description: |-
+                        VPCPrefixID is the VPC prefix ID for this attachment.
+                        Use VPCPrefixID for next-generation networking.
+                        Exactly one of SubnetID or VPCPrefixID must be set.
+                      minLength: 1
+                      type: string
+                  type: object
+                  x-kubernetes-validations:
+                  - message: exactly one of subnetID or vpcPrefixID must be set
+                    rule: has(self.subnetID) != has(self.vpcPrefixID)
+                  - message: ipAddress is only supported with vpcPrefixID interfaces
+                    rule: '!(has(self.ipAddress) && has(self.subnetID))'
+                minItems: 1
+                type: array
+              ipxeScript:
+                description: IpxeScript is the iPXE script used to boot this instance.
+                type: string
+              labels:
+                additionalProperties:
+                  type: string
+                description: Labels are applied to the instance.
+                type: object
+              machineID:
+                description: |-
+                  MachineID is the machine ID for targeted instance creation.
+                  Exactly one of InstanceTypeID or MachineID must be set.
+                minLength: 1
+                type: string
+              nvLinkInterfaces:
+                description: |-
+                  NVLinkInterfaces requests that one or more NVLink Logical Partitions be attached
+                  to the instance.
+                items:
+                  description: NicoMachineNVLinkInterface defines one NICo NVLink
+                    interface attachment request.
+                  properties:
+                    deviceInstance:
+                      description: DeviceInstance is the GPU index for this NVLink
+                        interface. Must be non-negative, unique within the request,
+                        and within the GPU count exposed by the selected Machine or
+                        Instance Type.
+                      format: int32
+                      type: integer
+                    nvLinkLogicalPartitionID:
+                      description: NVLinkLogicalPartitionID is the ID of the NVLink
+                        Logical Partition the Interface should attach to.
+                      minLength: 1
+                      type: string
+                  required:
+                  - nvLinkLogicalPartitionID
+                  type: object
+                type: array
+              nvLinkLogicalPartitionID:
+                description: |-
+                  NVLinkLogicalPartitionID requests that the logical partition be attached to
+                  every active NVLink device exposed by InstanceTypeID.
+                  Set this instead of NVLinkInterfaces when every device should use the same logical partition.
+                minLength: 1
+                type: string
+              providerID:
+                description: ProviderID is set to `nico://<instance-id>` after the
+                  NICo instance is created.
+                maxLength: 512
+                minLength: 1
+                type: string
+              sshKeyGroupIDs:
+                description: SSHKeyGroupIDs are the allowed SSH key group IDs for
+                  Serial over LAN access.
+                items:
+                  type: string
+                type: array
+              vpcID:
+                description: VPCID is the VPC where this provider should create the
+                  instance.
+                minLength: 1
+                type: string
+            required:
+            - interfaces
+            - vpcID
+            type: object
+            x-kubernetes-validations:
+            - message: exactly one of instanceTypeID or machineID must be set
+              rule: has(self.instanceTypeID) != has(self.machineID)
+            - message: infinibandPartitionID and infinibandInterfaces are mutually
+                exclusive
+              rule: '!(has(self.infinibandPartitionID) && has(self.infinibandInterfaces))'
+            - message: infinibandPartitionID requires instanceTypeID
+              rule: '!has(self.infinibandPartitionID) || has(self.instanceTypeID)'
+            - message: nvLinkLogicalPartitionID and nvLinkInterfaces are mutually
+                exclusive
+              rule: '!(has(self.nvLinkLogicalPartitionID) && has(self.nvLinkInterfaces))'
+            - message: nvLinkLogicalPartitionID requires instanceTypeID
+              rule: '!has(self.nvLinkLogicalPartitionID) || has(self.instanceTypeID)'
+          status:
+            description: NicoMachineStatus defines the observed state of NicoMachine.
+            properties:
+              addresses:
+                description: Addresses contains addresses observed on the backing
+                  instance.
+                items:
+                  description: MachineAddress contains information for the node's
+                    address.
+                  properties:
+                    address:
+                      description: address is the machine address.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                    type:
+                      description: type is the machine address type, one of Hostname,
+                        ExternalIP, InternalIP, ExternalDNS or InternalDNS.
+                      enum:
+                      - Hostname
+                      - ExternalIP
+                      - InternalIP
+                      - ExternalDNS
+                      - InternalDNS
+                      type: string
+                  required:
+                  - address
+                  - type
+                  type: object
+                type: array
+              conditions:
+                description: Conditions describes the current machine state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                maxItems: 32
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              failureDomain:
+                description: FailureDomain is the domain NICo reports the backing
+                  instance was placed in.
+                maxLength: 256
+                minLength: 1
+                type: string
+              initialization:
+                description: Initialization provides provisioning observations for
+                  the backing instance.
+                minProperties: 1
+                properties:
+                  provisioned:
+                    description: Provisioned is true once the backing instance has
+                      been created.
+                    type: boolean
+                type: object
+              instanceID:
+                description: InstanceID is the instance identifier backing this machine.
+                type: string
+              machineID:
+                description: MachineID is the machine ID for this machine.
+                type: string
+              ready:
+                description: Ready is true once the backing instance reaches Ready.
+                type: boolean
+              siteID:
+                description: SiteID is the observed Forge/Carbide site ID for this
+                  machine.
+                type: string
+              siteName:
+                description: SiteName is the observed Forge/Carbide site name for
+                  this machine.
+                type: string
+              tpmEkPubHash:
+                description: TpmEkPubHash is the TPM EK public hash for this machine.
+                type: string
+              vpcID:
+                description: VPCID is the observed Forge/Carbide VPC ID for this machine.
+                type: string
+              vpcName:
+                description: VPCName is the observed Forge/Carbide VPC name for this
+                  machine.
+                type: string
+            type: object
+        type: object
+        x-kubernetes-validations:
+        - message: spec.vpcID is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || self.spec.vpcID == oldSelf.spec.vpcID'
+        - message: spec.instanceTypeID is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.instanceTypeID) ==
+            has(oldSelf.spec.instanceTypeID) && (!has(self.spec.instanceTypeID) ||
+            self.spec.instanceTypeID == oldSelf.spec.instanceTypeID))'
+        - message: spec.interfaces is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || self.spec.interfaces == oldSelf.spec.interfaces'
+        - message: spec.infinibandInterfaces is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.infinibandInterfaces)
+            == has(oldSelf.spec.infinibandInterfaces) && (!has(self.spec.infinibandInterfaces)
+            || self.spec.infinibandInterfaces == oldSelf.spec.infinibandInterfaces))'
+        - message: spec.infinibandPartitionID is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.infinibandPartitionID)
+            == has(oldSelf.spec.infinibandPartitionID) && (!has(self.spec.infinibandPartitionID)
+            || self.spec.infinibandPartitionID == oldSelf.spec.infinibandPartitionID))'
+        - message: spec.nvLinkInterfaces is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.nvLinkInterfaces)
+            == has(oldSelf.spec.nvLinkInterfaces) && (!has(self.spec.nvLinkInterfaces)
+            || self.spec.nvLinkInterfaces == oldSelf.spec.nvLinkInterfaces))'
+        - message: spec.nvLinkLogicalPartitionID is immutable after providerID is
+            set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.nvLinkLogicalPartitionID)
+            == has(oldSelf.spec.nvLinkLogicalPartitionID) && (!has(self.spec.nvLinkLogicalPartitionID)
+            || self.spec.nvLinkLogicalPartitionID == oldSelf.spec.nvLinkLogicalPartitionID))'
+        - message: spec.sshKeyGroupIDs is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.sshKeyGroupIDs) ==
+            has(oldSelf.spec.sshKeyGroupIDs) && (!has(self.spec.sshKeyGroupIDs) ||
+            self.spec.sshKeyGroupIDs == oldSelf.spec.sshKeyGroupIDs))'
+        - message: spec.ipxeScript is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.ipxeScript) == has(oldSelf.spec.ipxeScript)
+            && (!has(self.spec.ipxeScript) || self.spec.ipxeScript == oldSelf.spec.ipxeScript))'
+        - message: spec.cloudInitInjectHostname is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.cloudInitInjectHostname)
+            == has(oldSelf.spec.cloudInitInjectHostname) && (!has(self.spec.cloudInitInjectHostname)
+            || self.spec.cloudInitInjectHostname == oldSelf.spec.cloudInitInjectHostname))'
+        - message: spec.labels is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.labels) == has(oldSelf.spec.labels)
+            && (!has(self.spec.labels) || self.spec.labels == oldSelf.spec.labels))'
+        - message: spec.machineID is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.machineID) == has(oldSelf.spec.machineID)
+            && (!has(self.spec.machineID) || self.spec.machineID == oldSelf.spec.machineID))'
+        - message: spec.allowUnhealthyMachine is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.allowUnhealthyMachine)
+            == has(oldSelf.spec.allowUnhealthyMachine) && (!has(self.spec.allowUnhealthyMachine)
+            || self.spec.allowUnhealthyMachine == oldSelf.spec.allowUnhealthyMachine))'
+        - message: spec.providerID is immutable after it is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.providerID) && self.spec.providerID
+            == oldSelf.spec.providerID)'
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  labels:
+    cluster.x-k8s.io/v1beta2: v1alpha1
+  name: nicomachinetemplates.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: NicoMachineTemplate
+    listKind: NicoMachineTemplateList
+    plural: nicomachinetemplates
+    shortNames:
+    - nicomt
+    singular: nicomachinetemplate
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: NicoMachineTemplate is the Schema for the nicomachinetemplates
+          API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: NicoMachineTemplateSpec defines the desired state of NicoMachineTemplate.
+            properties:
+              template:
+                description: NicoMachineTemplateResource describes the data needed
+                  to create a NicoMachine from a template.
+                properties:
+                  metadata:
+                    description: Standard object's metadata.
+                    minProperties: 1
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          annotations is an unstructured key value map stored with a resource that may be
+                          set by external tools to store and retrieve arbitrary metadata. They are not
+                          queryable and should be preserved when modifying objects.
+                          More info: http://kubernetes.io/docs/user-guide/annotations
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          labels is a map of string keys and values that can be used to organize and categorize
+                          (scope and select) objects. May match selectors of replication controllers
+                          and services.
+                          More info: http://kubernetes.io/docs/user-guide/labels
+                        type: object
+                    type: object
+                  spec:
+                    description: NicoMachineSpec defines the desired state of NicoMachine.
+                    properties:
+                      allowUnhealthyMachine:
+                        description: AllowUnhealthyMachine allows targeted instance
+                          creation on a machine in Error status.
+                        type: boolean
+                      cloudInitInjectHostname:
+                        description: CloudInitInjectHostname prepends hostname directives
+                          to the bootstrap cloud-config.
+                        type: boolean
+                      infinibandInterfaces:
+                        description: |-
+                          InfinibandInterfaces requests that one or more InfiniBand Partitions be attached
+                          to the instance.
+                        items:
+                          description: NicoMachineInfiniBandInterface defines one
+                            NICo InfiniBand interface attachment request.
+                          properties:
+                            device:
+                              description: Device is the name of the InfiniBand device
+                                to use.
+                              type: string
+                            deviceInstance:
+                              description: DeviceInstance is the index of the device,
+                                used to identify which interface card to attach the
+                                Partition to.
+                              format: int32
+                              type: integer
+                            isPhysical:
+                              description: IsPhysical specifies whether this Partition
+                                should be attached to the Instance over physical interface.
+                              type: boolean
+                            partitionID:
+                              description: PartitionID is the ID of the Partition
+                                the Interface should attach to.
+                              minLength: 1
+                              type: string
+                            vendor:
+                              description: Vendor is the name of the InfiniBand device
+                                vendor, optional.
+                              type: string
+                            virtualFunctionID:
+                              description: VirtualFunctionID must be specified if
+                                isPhysical is false.
+                              format: int32
+                              type: integer
+                          required:
+                          - partitionID
+                          type: object
+                        type: array
+                      infinibandPartitionID:
+                        description: |-
+                          InfinibandPartitionID requests that the partition be attached to every active
+                          InfiniBand device exposed by InstanceTypeID.
+                          Set this instead of InfinibandInterfaces when every device should use the same partition.
+                        minLength: 1
+                        type: string
+                      instanceTypeID:
+                        description: |-
+                          InstanceTypeID is the instance type ID to provision.
+                          Exactly one of InstanceTypeID or MachineID must be set.
+                        minLength: 1
+                        type: string
+                      interfaces:
+                        description: |-
+                          Interfaces are the interface attachment requests for the instance.
+                          Use subnet-based attachments for Ethernet network virtualization and VPC prefix-based attachments for next-generation networking.
+                        items:
+                          description: NicoMachineInterface defines one NICo interface
+                            attachment request.
+                          properties:
+                            device:
+                              description: Device is the device name to use for this
+                                attachment.
+                              type: string
+                            deviceInstance:
+                              description: DeviceInstance is the device instance index
+                                to use for this attachment.
+                              format: int32
+                              type: integer
+                            ipAddress:
+                              description: |-
+                                IPAddress is the explicitly requested IP address for this interface.
+                                This is only supported for VPCPrefixID-based interfaces. NICo requires the least-significant host bit to be 1.
+                              type: string
+                            physical:
+                              description: Physical requests this attachment over
+                                a physical interface.
+                              type: boolean
+                            subnetID:
+                              description: |-
+                                SubnetID is the subnet ID for this attachment.
+                                Use SubnetID for Ethernet network virtualization.
+                                Exactly one of SubnetID or VPCPrefixID must be set.
+                              minLength: 1
+                              type: string
+                            vpcPrefixID:
+                              description: |-
+                                VPCPrefixID is the VPC prefix ID for this attachment.
+                                Use VPCPrefixID for next-generation networking.
+                                Exactly one of SubnetID or VPCPrefixID must be set.
+                              minLength: 1
+                              type: string
+                          type: object
+                          x-kubernetes-validations:
+                          - message: exactly one of subnetID or vpcPrefixID must be
+                              set
+                            rule: has(self.subnetID) != has(self.vpcPrefixID)
+                          - message: ipAddress is only supported with vpcPrefixID
+                              interfaces
+                            rule: '!(has(self.ipAddress) && has(self.subnetID))'
+                        minItems: 1
+                        type: array
+                      ipxeScript:
+                        description: IpxeScript is the iPXE script used to boot this
+                          instance.
+                        type: string
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: Labels are applied to the instance.
+                        type: object
+                      machineID:
+                        description: |-
+                          MachineID is the machine ID for targeted instance creation.
+                          Exactly one of InstanceTypeID or MachineID must be set.
+                        minLength: 1
+                        type: string
+                      nvLinkInterfaces:
+                        description: |-
+                          NVLinkInterfaces requests that one or more NVLink Logical Partitions be attached
+                          to the instance.
+                        items:
+                          description: NicoMachineNVLinkInterface defines one NICo
+                            NVLink interface attachment request.
+                          properties:
+                            deviceInstance:
+                              description: DeviceInstance is the GPU index for this
+                                NVLink interface. Must be non-negative, unique within
+                                the request, and within the GPU count exposed by the
+                                selected Machine or Instance Type.
+                              format: int32
+                              type: integer
+                            nvLinkLogicalPartitionID:
+                              description: NVLinkLogicalPartitionID is the ID of the
+                                NVLink Logical Partition the Interface should attach
+                                to.
+                              minLength: 1
+                              type: string
+                          required:
+                          - nvLinkLogicalPartitionID
+                          type: object
+                        type: array
+                      nvLinkLogicalPartitionID:
+                        description: |-
+                          NVLinkLogicalPartitionID requests that the logical partition be attached to
+                          every active NVLink device exposed by InstanceTypeID.
+                          Set this instead of NVLinkInterfaces when every device should use the same logical partition.
+                        minLength: 1
+                        type: string
+                      providerID:
+                        description: ProviderID is set to `nico://<instance-id>` after
+                          the NICo instance is created.
+                        maxLength: 512
+                        minLength: 1
+                        type: string
+                      sshKeyGroupIDs:
+                        description: SSHKeyGroupIDs are the allowed SSH key group
+                          IDs for Serial over LAN access.
+                        items:
+                          type: string
+                        type: array
+                      vpcID:
+                        description: VPCID is the VPC where this provider should create
+                          the instance.
+                        minLength: 1
+                        type: string
+                    required:
+                    - interfaces
+                    - vpcID
+                    type: object
+                    x-kubernetes-validations:
+                    - message: spec.template.spec is immutable
+                      rule: self == oldSelf
+                    - message: exactly one of instanceTypeID or machineID must be
+                        set
+                      rule: has(self.instanceTypeID) != has(self.machineID)
+                    - message: infinibandPartitionID and infinibandInterfaces are
+                        mutually exclusive
+                      rule: '!(has(self.infinibandPartitionID) && has(self.infinibandInterfaces))'
+                    - message: infinibandPartitionID requires instanceTypeID
+                      rule: '!has(self.infinibandPartitionID) || has(self.instanceTypeID)'
+                    - message: nvLinkLogicalPartitionID and nvLinkInterfaces are mutually
+                        exclusive
+                      rule: '!(has(self.nvLinkLogicalPartitionID) && has(self.nvLinkInterfaces))'
+                    - message: nvLinkLogicalPartitionID requires instanceTypeID
+                      rule: '!has(self.nvLinkLogicalPartitionID) || has(self.instanceTypeID)'
+                required:
+                - spec
+                type: object
+            required:
+            - template
+            type: object
+        type: object
+    served: true
+    storage: true
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: controller-manager
+  namespace: capnico-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: leader-election-role
+  namespace: capnico-system
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cluster.x-k8s.io
+  resources:
+  - clusters
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cluster.x-k8s.io
+  resources:
+  - machines
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoclusters
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoclusters/finalizers
+  - nicomachines/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoclusters/status
+  - nicomachines/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicomachines
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: metrics-auth-role
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: metrics-reader
+rules:
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster-api-provider-nico
+  name: nicocluster-admin-role
+rules:
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoclusters
+  verbs:
+  - '*'
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoclusters/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster-api-provider-nico
+  name: nicocluster-editor-role
+rules:
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoclusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoclusters/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster-api-provider-nico
+  name: nicocluster-viewer-role
+rules:
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoclusters
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoclusters/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster-api-provider-nico
+  name: nicoclustertemplate-admin-role
+rules:
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoclustertemplates
+  verbs:
+  - '*'
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoclustertemplates/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster-api-provider-nico
+  name: nicoclustertemplate-editor-role
+rules:
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoclustertemplates
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoclustertemplates/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster-api-provider-nico
+  name: nicoclustertemplate-viewer-role
+rules:
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoclustertemplates
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoclustertemplates/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster-api-provider-nico
+  name: nicomachine-admin-role
+rules:
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicomachines
+  verbs:
+  - '*'
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicomachines/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster-api-provider-nico
+  name: nicomachine-editor-role
+rules:
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicomachines
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicomachines/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster-api-provider-nico
+  name: nicomachine-viewer-role
+rules:
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicomachines
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicomachines/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster-api-provider-nico
+  name: nicomachinetemplate-admin-role
+rules:
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicomachinetemplates
+  verbs:
+  - '*'
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicomachinetemplates/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster-api-provider-nico
+  name: nicomachinetemplate-editor-role
+rules:
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicomachinetemplates
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicomachinetemplates/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster-api-provider-nico
+  name: nicomachinetemplate-viewer-role
+rules:
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicomachinetemplates
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicomachinetemplates/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cluster-api-provider-nico-leader-election-rolebinding
+  namespace: capnico-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: controller-manager
+  namespace: capnico-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-api-provider-nico-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: manager-role
+subjects:
+- kind: ServiceAccount
+  name: controller-manager
+  namespace: capnico-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: metrics-auth-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: metrics-auth-role
+subjects:
+- kind: ServiceAccount
+  name: controller-manager
+  namespace: capnico-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster-api-provider-nico
+    control-plane: controller-manager
+  name: controller-manager-metrics-service
+  namespace: capnico-system
+spec:
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: metrics
+  selector:
+    app.kubernetes.io/name: cluster-api-provider-nico
+    control-plane: controller-manager
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: cluster-api-provider-nico
+    control-plane: controller-manager
+  name: controller-manager
+  namespace: capnico-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cluster-api-provider-nico
+        control-plane: controller-manager
+    spec:
+      containers:
+      - args:
+        - --leader-elect
+        - --reboot-annotation=nvke.nvidia.com/reboot
+        - --repair-annotation=nvke.nvidia.com/machine-health-issue
+        command:
+        - /manager
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        image: {{ .CAPNICoImage }}
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: probes
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        ports:
+        - containerPort: 8080
+          name: metrics
+        - containerPort: 8081
+          name: probes
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: probes
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: controller-manager
+      terminationGracePeriodSeconds: 10

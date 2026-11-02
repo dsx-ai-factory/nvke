@@ -30,7 +30,7 @@ certificates for each pair, as described in
 NKTP uses an existing cert-manager installation to issue and renew the
 Operator's admission webhook certificate by default. The upstream Operator
 chart documents the available approaches under
-[TLS Certificate Requirement](https://github.com/open-telemetry/opentelemetry-helm-charts/blob/opentelemetry-operator-0.123.0/charts/opentelemetry-operator/README.md#tls-certificate-requirement).
+[TLS Certificate Requirement](https://github.com/open-telemetry/opentelemetry-helm-charts/blob/opentelemetry-operator-0.126.0/charts/opentelemetry-operator/README.md#tls-certificate-requirement).
 
 ### Internal mTLS
 
@@ -98,6 +98,8 @@ certificates as described below; these values alone are not sufficient.
 certManager:
   internalTLS:
     enabled: false
+  targetAllocators:
+    enabled: false
 opentelemetry-kube-stack:
   opentelemetry-operator:
     admissionWebhooks:
@@ -120,9 +122,11 @@ together. You are responsible for issuing and renewing these certificates.
 
 ### User-provided Target Allocator certificates
 
-Set `useCertManager: false` and reference certificates that
-already exist in the release namespace. Apply the same `mtls` block under each
-enabled allocator at `watchdog.kubernetes.targetAllocator`,
+Set `certManager.targetAllocators.enabled: false`, which sets
+`mtls.useCertManager: false` on the watchdog, DaemonSet, and large-target
+allocators, and reference certificates that already exist in the release
+namespace. `mtls.enabled` stays a per-allocator setting. Apply the same `tls`
+block under each enabled allocator at `watchdog.kubernetes.targetAllocator`,
 `daemonset.kubernetes.targetAllocator`, and
 `large_target_metrics.kubernetes.targetAllocator`. For example:
 
@@ -132,7 +136,6 @@ daemonset:
     targetAllocator:
       mtls:
         enabled: true
-        useCertManager: false
         tls:
           certificateAuthorityCertificate:
             configMap:
@@ -164,7 +167,7 @@ To provide your own webhook certificate instead, also set
 `admissionWebhooks.autoGenerateCert.enabled: false` and supply the upstream
 chart's `admissionWebhooks.certFile`, `keyFile`, and `caFile` values under
 `opentelemetry-kube-stack.opentelemetry-operator`. See the upstream chart's
-[TLS Certificate Requirement](https://github.com/open-telemetry/opentelemetry-helm-charts/blob/opentelemetry-operator-0.123.0/charts/opentelemetry-operator/README.md#tls-certificate-requirement).
+[TLS Certificate Requirement](https://github.com/open-telemetry/opentelemetry-helm-charts/blob/opentelemetry-operator-0.126.0/charts/opentelemetry-operator/README.md#tls-certificate-requirement).
 
 ### Switching internal traffic to plaintext
 

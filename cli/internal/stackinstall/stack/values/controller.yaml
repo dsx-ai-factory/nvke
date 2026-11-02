@@ -1,0 +1,197 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Values for the nvke-controller chart.
+#
+# Site identity is not in this file. The generated overlay supplies it at
+# render time:
+#   image.repository and image.tag     from the artifact file
+#   profiles.image.repository and .tag from the artifact file
+#   spiffe.spire.serverAddress         the control-plane address of the site
+#   spiffe.trustDomain                 from the site spec; must equal the
+#                                      SPIRE server's trust domain
+#   nvkeOIDCAuth.discoveryURL          https://<site address>:30443/.well-known/openid-configuration
+#
+# No credential is in this file. The command creates the nvke-database and
+# dgxc-tenant-credentials Secrets and the chart reads them by name.
+
+# The chart pins nameOverride (the pod name label) and serviceAccount.name
+# (the SPIRE admin ID and the controller's SPIFFE ID) instead of deriving them
+# from the fullname. All four are set together.
+fullnameOverride: nvke-controller
+nameOverride: nvke-controller
+namespaceOverride: nvke-controller
+serviceAccount:
+  name: nvke-controller
+
+# manifests/namespaces.yaml owns nvke-system.
+nvkeSystemNamespace:
+  create: false
+
+# The node stages its images before the install, so an image resolves from
+# containerd without a pull secret. Do not re-pull it.
+image:
+  pullPolicy: IfNotPresent
+
+# Empty. A site that pulls the controller from a registry adds its own Secret
+# in nvke-controller through the generated overlay.
+imagePullSecrets: []
+
+# Named Secret, not a chart-built connection string. With dbSecretName set the
+# chart reads the connection string from the Secret and nothing from appDb.
+secrets:
+  createDbSecret: false
+  dbSecretName: nvke-database
+  dbSecretKey: database-connection-string
+  # The tenant node login the controller renders into every tenant's
+  # cloud-init. The Secret carries keys user and password. Without it every
+  # tenant create fails at user-data rendering.
+  dgxcTenantCredSecretName: dgxc-tenant-credentials
+
+# Not read by the chart while dbSecretName is set. Kept as the record of what
+# the connection string in nvke-database must contain: this host, this
+# database, this user, sslmode disable.
+appDb:
+  url: nvke-postgresql.postgres.svc.cluster.local:5432
+  dbName: nvke-controller
+  postgresUser: postgres
+  sslMode: disable
+
+temporal:
+  host: temporal-frontend.temporal.svc.cluster.local
+  port: 7233
+  cloudWorkflow:
+    namespace: nvke-controller
+    queue: nvke-controller-tasks
+
+# An accept-list validated at startup. nico is the NICo provider. infra is the
+# provider-agnostic input. The value renders nothing else; CAPI permissions
+# come from capi.rbac.create.
+supportedInfraProviders: nico,infra
+capi:
+  rbac:
+    create: true
+
+tenantAccess:
+  enabled: true
+
+cni:
+  installAfterInit: true
+
+# Off. apiAuth is REST tokens; spiffe below is controller-to-agent mTLS. They
+# are separate axes. Enabling apiAuth needs a real apiAuth.config with
+# apiAuth.configMap.create=true. Enabled without one, the chart mounts a
+# ConfigMap nothing creates and the controller does not start.
+apiAuth:
+  enabled: false
+  permissive: false
+
+# Off, with its settings kept. The spire release still installs the OIDC
+# discovery provider, and manifests/ still publishes the upstream CA. Turning
+# this on needs spiffe.trustDomain and nvkeOIDCAuth.discoveryURL from the
+# overlay as well. The chart refuses to render it enabled without the trust
+# domain.
+nvkeOIDCAuth:
+  enabled: false
+  # The logical issuer, string-compared against the JWT iss claim. It does not
+  # have to resolve. The discovery URL does, and comes from the site address.
+  issuerURL: "https://nvke.site-controller.internal"
+  # The CA that signs the OIDC provider's leaf. manifests/oidc-upstream-ca.yaml
+  # publishes it.
+  caBundleSecret:
+    namespace: spire-server
+    name: oidc-provider-upstream-ca
+    key: ca.crt
+
+# Telemetry to NKTP, which installs before this release. Its node Collectors
+# scrape the ServiceMonitor, the NetworkPolicy admits their namespace, and
+# traces go to the node Collector on the controller's node.
+#
+# insecure is plaintext gRPC inside the cluster. The node Collector's OTLP
+# receiver takes plaintext from workloads and forwards to the traces gateway
+# over mTLS.
+metrics:
+  networkPolicy:
+    enabled: true
+    additionalNamespaces:
+      - nktp
+serviceMonitor:
+  enabled: true
+  name: nvke-controller-metrics
+tracing:
+  enabled: true
+  serviceName: nvke-controller
+  endpoint: nktp-daemonset-collector.nktp.svc.cluster.local:4317
+  insecure: true
+
+# /readyz, not /api/version. /api/version proves only that HTTP is serving.
+# /readyz returns {"status":"ok","checks":{"database":"ok","temporal":"ok"}},
+# so Ready means PostgreSQL and Temporal are reachable.
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 20
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# The port nvke-agent listens on. It has to agree with the site spec used at
+# bootstrap, with os-image/SPEC.md and with the agent drop-in the node's
+# cloud-init writes. It is set explicitly rather than inherited.
+env:
+  - name: NODE_AGENT_PORT
+    value: "15005"
+
+# service.port is the cluster-IP port and stays the chart default. The
+# container listens on 8080. nodePort renders a second Service beside the
+# ClusterIP one. That is how the API is published without a cluster route,
+# for the host running nvkectl and for an operator reaching /api on a node
+# address. The chart's NetworkPolicy admits the API port from in-cluster
+# namespaces only, and it has no key for anything else. External clients are
+# admitted by the glue policy manifests/nvke-api-clients.yaml.tmpl, rendered
+# from the site spec's client networks.
+service:
+  port: 8080
+  nodePort: 30080
+
+# TPM, explicitly. The chart defaults to this and validates the value. The
+# alternative, joinToken, is for clusters whose nodes have no TPM. The
+# identity chain here runs from NicoMachine.status.tpmEkPubHash to the
+# tpm-pubhashes ConfigMap to SPIRE's tpmDirect attestor, so tpm is the
+# requirement.
+nodeAgent:
+  spireAttestationMethod: tpm
+
+# Fleet profiles are a separate content image. An init container copies them
+# into /profiles. Without it /api/releases returns 500 and nothing can be
+# provisioned. The chart refuses to render with enabled=true and no tag or
+# digest, so the generated overlay must supply them.
+profiles:
+  path: /profiles
+  image:
+    enabled: true
+
+spiffe:
+  enabled: true
+  endpointSocket: unix:///spiffe-workload-api/spire-agent.sock
+  spire:
+    serverNamespace: spire-server
+    className: spire-mgmt-spire
+    tpmPubhashesConfigMapName: tpm-pubhashes
+    # Must match manifests/spire-server-nodeport.yaml.
+    serverPort: "30440"
+
+# The greenfield names. The chart's legacy defaults do not carry them.
+identity:
+  fieldManagerName: nvke-controller
+  fieldManagerRebootMachineName: nvke-controller-reboot-machine
+  fieldManagerMachineHealthIssueName: nvke-controller-machine-health-issue
+  managedByLabelValue: nvke-controller
+teleport:
+  managedByLabelValue: nvke-controller
+  tokenNamePrefix: nvke-controller-

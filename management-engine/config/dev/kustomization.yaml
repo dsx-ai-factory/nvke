@@ -9,5 +9,6 @@ resources:
 - namespace.yaml
 - manager.yaml
 - infra-templates.yaml
+- cluster-config.yaml
 - ../crd
 - ../rbac

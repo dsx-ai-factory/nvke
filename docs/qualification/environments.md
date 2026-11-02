@@ -213,34 +213,40 @@ infrastructure:
   org:
     id: "${DSX_ORG_ID:-ncx}"          # a name, where Forge's is numeric
   sites:
-    redstone-dev1-dh2:                # the key IS the API host
-      id:          "${DSX_REDSTONE_DEV1_DH2_SITE_ID:-}"
-      tenantID:    "${DSX_REDSTONE_DEV1_DH2_TENANT_ID:-}"   # no Forge equivalent
-      vpcPrefixID: "${DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID:-}"
+    datahall-1:                       # generic; `api` carries the host
+      api:         "${DSX_DATAHALL_1_API:-}"
+      id:          "${DSX_DATAHALL_1_SITE_ID:-}"
+      tenantID:    "${DSX_DATAHALL_1_TENANT_ID:-}"   # no Forge equivalent
+      vpcPrefixID: "${DSX_DATAHALL_1_VPC_PREFIX_ID:-}"
       instanceTypes:
-        - name: redstone-dev1-dh2-nvke-tenant
-          id: "${DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID:-}"
-          provides: {machineType: cpu, arch: arm64}
+        - name: datahall-1-nvke-tenant
+          id: "${DSX_DATAHALL_1_INSTANCE_TYPE_ID:-}"
+          provides: {machineType: gpu, arch: amd64}
 ```
 
 Three differences are load-bearing rather than cosmetic.
 
-**The key is the API host.** A request goes to
-`carbide-rest-api-<key>.dev.dsx.nvidia.com`, so there is no site-lookup call
-the way Forge needs one. Two datahalls at one site hold completely disjoint
-UUIDs for the same kinds of object, and nothing in a response says which one an
-id came from — so a second datahall is a second key, never a reused one.
+**Each datahall declares its own API host.** `api` is required and there is no
+site-lookup call the way Forge needs one — the host addresses the datahall
+directly. The key itself is generic, as `forge.yaml`'s `site-1` and `site-2`
+are, so which datahall this is stays in a variable. Two datahalls at one site
+hold completely disjoint UUIDs for the same kinds of object, and nothing in a
+response says which one an id came from — so a second datahall is a second key,
+never a reused one.
 
 **Credentials are per datahall.** The names are derived from the key:
 `DSX_<DATAHALL>_SSA_CLIENT_ID` and `_SECRET`, exchanged for a bearer token at
 the issuer in `SSA_ISSUER`. A client scoped to one datahall cannot be picked up
 by a run against another, and a second datahall needs no code.
 
-**`full` is refused.** The tenant half of a `full` run decodes the environment
-as a Forge declaration, so a DSX run at `-e2e.site-stage full` fails before a
-machine is taken. `provision` and `bootstrap` both run; the `qualify-e2e-dsx`
-label pins `provision`, which is what the datahall's bound capacity can place.
-The dsx stream is kept out of the `full` scope for the same reason.
+**`full` runs, and picks its own tenant.** Every stage runs on DSX: the
+datahall has its own tenant spec, so a `full` run builds the site and then a
+control plane and worker on it. The site lane registers one tenant entry per
+dialect and each decodes the environment strictly, so the lane excludes the
+entries belonging to other providers by label --- `site-controller &&
+!nico-forge` here --- rather than requiring its own, which would also drop
+every site-level spec. A provider added later needs an exclusion on the other
+lanes as well as its own; the mapping is one `case` block in `qualify-e2e.yml`.
 
 Capability matching is the provider's job rather than generic code, which is
 what makes this work: a provider that has no concept of an "instance type" is

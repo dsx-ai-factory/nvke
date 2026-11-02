@@ -1263,21 +1263,7 @@ jobs:
             os-image ${{ steps.meta.outputs.version }}: the FDE and non-FDE Packer
             node images for amd64 and arm64, built and validated against nvke-agent
             `${{ steps.meta.outputs.agent_version }}` (built from source at this
-            commit). Each is published in two Ubuntu flavors: 26.04 under the
-            plain tag, and 24.04 under a `-ubuntu24.04` tag.
-
-            Pull the qcow2s with oras (not docker):
-
-            ```
-            oras pull ghcr.io/dsx-ai-factory/nvke/os-image-fde:${{ steps.meta.outputs.version }}-amd64 --platform linux/amd64
-            oras pull ghcr.io/dsx-ai-factory/nvke/os-image-fde:${{ steps.meta.outputs.version }}-arm64 --platform linux/arm64
-            oras pull ghcr.io/dsx-ai-factory/nvke/os-image-non-fde:${{ steps.meta.outputs.version }}-amd64 --platform linux/amd64
-            oras pull ghcr.io/dsx-ai-factory/nvke/os-image-non-fde:${{ steps.meta.outputs.version }}-arm64 --platform linux/arm64
-            ```
-
-            For the Ubuntu 24.04 flavor, insert `-ubuntu24.04` before the
-            architecture, for example
-            `os-image-fde:${{ steps.meta.outputs.version }}-ubuntu24.04-amd64`.
+            commit). Each is available in two Ubuntu flavors: 26.04 and 24.04.
 
             **FDE security note**: this image's `LUKS_PASSPHRASE` is the shared,
             documented build-time placeholder (`changeit`), baked into both a LUKS
@@ -1289,8 +1275,7 @@ jobs:
             TPM-only unlock in production.
 
             `checksums.txt` covers all eight qcow2s, their SBOMs and the checker
-            binary. The disks themselves are the OCI artifacts above; they are
-            too large to attach here.
+            binary. The disks are too large to attach here.
 
             Each disk has an SPDX 2.3 SBOM attached beside it, named after the
             disk it describes -- `nvke-node-fde-ubuntu-26.04.1-amd64.spdx.json`

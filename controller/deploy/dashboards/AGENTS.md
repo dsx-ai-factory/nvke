@@ -71,7 +71,7 @@ exporters already define `cluster` as something else — CNPG's `cluster` is the
 |---|---|---|
 | Kubernetes cluster identity | `k8s_cluster_name=~"$cluster"` | A bare `cluster=` label, `$env`, or a hardcoded cluster-name regex |
 | NVKE controller lifecycle | Filter `tenant_cluster`, `node_type`; give-ups use `cluster_name`. Query `nvke_controller_*` metrics directly. | Invent `env`; keep phase labels that are not in `lifecycle.go` |
-| Workloads | Match `cloud-workflow-engine\|nke-controller` for the controller Deployment/container; SPIRE as above | Query SWE or `job="process-exporter"` |
+| Workloads | Match `cloud-workflow-engine\|nke-controller\|nvke-controller` for the controller Deployment/container; SPIRE as above | Query SWE or `job="process-exporter"` |
 
 Controller metrics carry `tenant_cluster`, not `k8s_cluster_name`. A pure-controller board
 (the provisioning dashboard) should filter `tenant_cluster` directly. Only when joining

@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The site's name, for NKTP to label its telemetry with k8s.cluster.name.
+#
+# Nothing in the cluster knows it. NVKE's kubeadm configuration names every
+# cluster "kubernetes". The site spec does, so this is a template. The
+# Collectors that export to the backend read it through K8S_CLUSTER_NAME in
+# values/nktp.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nktp-cluster
+  namespace: nktp
+data:
+  name: "{{ .ClusterName }}"

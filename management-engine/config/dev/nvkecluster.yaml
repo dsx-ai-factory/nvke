@@ -17,8 +17,8 @@ spec:
     serviceDomain: cluster.local
   release:
     channel:
-      name: stable
-  controlPlaneClass: standard
+      name: management-engine-stable
+  controlPlaneClass: management-engine-standard
   network:
     vpcID: 22222222-2222-4222-8222-222222222222
   nodePools:
@@ -26,4 +26,4 @@ spec:
       instanceType: docker
       replicas: 1
       vpcSubnetID: 44444444-4444-4444-8444-444444444444
-      nodeProfile: "docker:1.36.1"
+      nodeProfile: "docker:1.34.8"

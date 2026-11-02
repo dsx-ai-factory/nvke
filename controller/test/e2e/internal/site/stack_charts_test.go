@@ -194,10 +194,10 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 		}
 	}
 	for release, file := range map[string]string{
-		"nke-controller": "controller.yaml",
-		"spire":          "spire.yaml",
-		"postgres":       "postgresql.yaml",
-		"temporal":       "temporal.yaml",
+		"nvke-controller": "controller.yaml",
+		"spire":           "spire.yaml",
+		"postgres":        "postgresql.yaml",
+		"temporal":        "temporal.yaml",
 	} {
 		install, ok := installs[release]
 		if !ok {
@@ -210,7 +210,7 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 	}
 
 	t.Run("controller chart", func(t *testing.T) {
-		install, ok := installs["nke-controller"]
+		install, ok := installs["nvke-controller"]
 		if !ok {
 			t.Skip("no controller install")
 		}

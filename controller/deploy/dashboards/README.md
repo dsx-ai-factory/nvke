@@ -41,8 +41,8 @@ with "Dashboard refresh interval is too low".
 For sites running CloudNativePG, use its
 [official Grafana dashboard](https://github.com/cloudnative-pg/grafana-dashboards/blob/main/charts/cluster/grafana-dashboard.json).
 
-Controller series use the `nvke_controller_*` prefix. Management cluster Ready/Version/Restarts match both
-`cloud-workflow-engine` and `nke-controller` workload names.
+Controller series use the `nvke_controller_*` prefix. Management cluster Ready/Version/Restarts match the
+`cloud-workflow-engine`, `nke-controller` and `nvke-controller` workload names.
 
 ## Editing
 

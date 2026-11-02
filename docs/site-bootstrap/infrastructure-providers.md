@@ -27,14 +27,14 @@ Install in this order:
 2. The infrastructure providers: CAPNICo, [CAPLL](#launchlayer), or both
 3. The management plane (the NVKE controller)
 
-**The NVKE controller must come last.** It reads the `Machine`, `NicoMachine` and `LaunchLayerMachine` CRDs once, at process start, and silently skips four controllers when they are absent — the machine SPIRE entry controller, the NICo TPM SPIFFE controller, the NICo provider-ID controller, and the LaunchLayer SPIFFE controller. They are warnings, not failures, and there is no retry. If the controller is already running, restart it after the provider lands. Find it by the
+**The NVKE controller must come last.** It reads the `Machine`, `NicoMachine` and `LaunchLayerMachine` CRDs once, at process start, and there is no retry. A missing `Machine` CRD stops the process. A missing `NicoMachine` CRD stops the process while `controllers.nico.enabled` is true. A missing `LaunchLayerMachine` CRD skips the LaunchLayer SPIFFE controller. If the controller is already running, restart it after the provider lands. Find it by the
 chart's own label rather than a hardcoded name, since the deployment name
 depends on the Helm release name your controller install used:
 
 On an existing site, where the controller runs as `cloud-workflow-engine`, use `cloud-workflow-engine` for both the namespace and the label in the command below.
 
 ```bash
-kubectl rollout restart deployment -n nke-controller -l app.kubernetes.io/name=nke-controller
+kubectl rollout restart deployment -n nvke-controller -l app.kubernetes.io/name=nvke-controller
 ```
 
 ## 1. Check the Control-Plane Taint Is Gone

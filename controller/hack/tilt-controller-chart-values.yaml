@@ -1,12 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-fullnameOverride: nke-controller
-namespaceOverride: nke-controller
-nameOverride: nke-controller
+fullnameOverride: nvke-controller
+namespaceOverride: nvke-controller
+nameOverride: nvke-controller
 
 serviceAccount:
-  name: nke-controller
+  name: nvke-controller
 
 nvkeSystemNamespace:
   create: false
@@ -46,7 +46,7 @@ readinessProbe:
 
 appDb:
   url: postgres-postgresql.postgres.svc.cluster.local:5432
-  dbName: nke-controller
+  dbName: nvke-controller
   postgresUser: postgres
   # postgresPassword is supplied by the Tiltfile from CNPG_SUPERUSER_PASSWORD —
   # do not hardcode it here.
@@ -59,18 +59,18 @@ temporal:
   host: temporal-frontend.temporal.svc.cluster.local
   port: 7233
   cloudWorkflow:
-    namespace: nke-controller
-    queue: nke-controller-tasks
+    namespace: nvke-controller
+    queue: nvke-controller-tasks
 
 identity:
-  fieldManagerName: nke-controller
-  fieldManagerRebootMachineName: nke-controller-reboot-machine
-  fieldManagerMachineHealthIssueName: nke-controller-machine-health-issue
-  managedByLabelValue: nke-controller
+  fieldManagerName: nvke-controller
+  fieldManagerRebootMachineName: nvke-controller-reboot-machine
+  fieldManagerMachineHealthIssueName: nvke-controller-machine-health-issue
+  managedByLabelValue: nvke-controller
 
 teleport:
-  managedByLabelValue: nke-controller
-  tokenNamePrefix: nke-controller-
+  managedByLabelValue: nvke-controller
+  tokenNamePrefix: nvke-controller-
 
 profiles:
   path: /profiles

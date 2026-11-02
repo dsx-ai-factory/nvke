@@ -1,3 +1,44 @@
+apiVersion: internal.nvke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: test-image
+spec:
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  architecture: amd64
+  buildDate: "2026-10-01"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      chain https://images.example.com/nvke/boot.ipxe
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ClusterReleaseChannel
+metadata:
+  name: stable
+spec:
+  releases:
+    "1.36":
+      - name: test-release
+        minimumUpgradeAge: 0s
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ClusterRelease
+metadata:
+  name: test-release
+  annotations:
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.36.1"
+spec:
+  machineImageRef:
+    name: test-image
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+    infra:
+      bootstrapFiles: []
+      preKubeadmCommands: []
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,23 +48,31 @@ data:
   clusterTmpl: |
     {
       "cluster": {
-        "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
-        "kind": "DockerCluster",
-        "spec": {}
+        "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
+        "kind": "NicoCluster",
+        "spec": {"siteID": "11111111-1111-4111-8111-111111111111"}
       }
     }
-  nodepoolTmpl: |
+  nodepoolTmpl: &machineTemplate |
     {
+      "bootstrapFiles": {{ .BootstrapFilesJSON }},
+      "preKubeadmCommands": {{ .PreKubeadmCommandsJSON }},
       "machineTemplate": {
-        "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
-        "kind": "DockerMachineTemplate",
+        "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
+        "kind": "NicoMachineTemplate",
         "spec": {
           "template": {
-            "spec": {}
+            "spec": {
+              "vpcID": "{{ .VPCID }}",
+              "instanceTypeID": "{{ .InstanceType }}",
+              "interfaces": [{"subnetID": "44444444-4444-4444-8444-444444444444"}],
+              "ipxeScript": {{ .IPXEScript }}
+            }
           }
         }
       }
     }
+  controlplaneTmpl: *machineTemplate
 ---
 apiVersion: internal.nvke.nvidia.com/v1
 kind: NVKECluster

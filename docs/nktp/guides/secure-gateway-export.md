@@ -2,7 +2,7 @@
 
 NVKE telemetry pipeline (NKTP) exports to its bundled LGTM backend over plaintext OTLP/gRPC at
 `lgtm:4317` by default. LGTM already enables both
-[gRPC and HTTP ingestion](https://github.com/grafana/docker-otel-lgtm/blob/v0.32.0/docker/otelcol-config.yaml).
+[gRPC and HTTP ingestion](https://github.com/grafana/docker-otel-lgtm/blob/v0.38.0/docker/otelcol-config.yaml).
 This backend is intended only for local development. Configure TLS before
 sending logs, metrics and traces to a production backend.
 

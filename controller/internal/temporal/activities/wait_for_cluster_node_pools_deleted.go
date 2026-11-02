@@ -45,12 +45,13 @@ func (a *Activities) waitForClusterNodePoolsDeleted(
 	logger := activity.GetLogger(ctx)
 
 	logger.Info("Waiting for cluster node pools to be deleted", "clusterID", input.ClusterID)
+	pollCtx := db.WithoutQuerySpans(ctx)
 
 	for {
 		// Record heartbeat to prevent activity timeout
 		activity.RecordHeartbeat(ctx)
 
-		nodePools, err := a.db.ListNodePools(ctx, db.NodePoolFilters{
+		nodePools, err := a.db.ListNodePools(pollCtx, db.NodePoolFilters{
 			ClusterID: &input.ClusterID,
 		})
 		if err != nil {

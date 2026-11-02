@@ -295,7 +295,7 @@ restart_controller() {
   local err answered=false deadline=$((SECONDS + 120))
   # The node may have just started, and its API server takes a minute.
   while ((SECONDS < deadline)); do
-    if err="$(kubectl --kubeconfig "${KUBECONFIG_FILE}" --request-timeout=10s -n nke-controller get deployment nke-controller -o name 2>&1 >/dev/null)"; then
+    if err="$(kubectl --kubeconfig "${KUBECONFIG_FILE}" --request-timeout=10s -n nvke-controller get deployment nvke-controller -o name 2>&1 >/dev/null)"; then
       answered=true
       break
     fi
@@ -304,9 +304,9 @@ restart_controller() {
   done
   [[ "${answered}" == true ]] || die "the site did not answer for two minutes, so the controller still runs the old images; run setup again once it does (${err})"
   log "restarting the controller on the restaged images"
-  kubectl --kubeconfig "${KUBECONFIG_FILE}" -n nke-controller rollout restart deployment/nke-controller >/dev/null
-  kubectl --kubeconfig "${KUBECONFIG_FILE}" -n nke-controller rollout status deployment/nke-controller --timeout=5m >/dev/null ||
-    die "the controller did not come up on the restaged images (kubectl -n nke-controller get pods); run setup again to restart it"
+  kubectl --kubeconfig "${KUBECONFIG_FILE}" -n nvke-controller rollout restart deployment/nvke-controller >/dev/null
+  kubectl --kubeconfig "${KUBECONFIG_FILE}" -n nvke-controller rollout status deployment/nvke-controller --timeout=5m >/dev/null ||
+    die "the controller did not come up on the restaged images (kubectl -n nvke-controller get pods); run setup again to restart it"
 }
 
 # stage_images stages the two images into the node, and again whenever the
@@ -530,7 +530,7 @@ status() {
   printf 'images:      %s\n' "$([[ "${running}" == true ]] && node_has_image "${CONTROLLER_IMAGE}" && node_has_image "${PROFILES_IMAGE}" && echo "staged in the node" || echo "not staged")"
   if [[ -f "${KUBECONFIG_FILE}" ]] && kubectl --kubeconfig "${KUBECONFIG_FILE}" get nodes >/dev/null 2>&1; then
     printf 'management:  up (%s)\n' "${KUBECONFIG_FILE}"
-    printf 'stack:       %s\n' "$(kubectl --kubeconfig "${KUBECONFIG_FILE}" -n nke-controller get deployment nke-controller -o jsonpath='{.status.readyReplicas}' 2>/dev/null | grep -q '^[1-9]' && echo up || echo "not installed")"
+    printf 'stack:       %s\n' "$(kubectl --kubeconfig "${KUBECONFIG_FILE}" -n nvke-controller get deployment nvke-controller -o jsonpath='{.status.readyReplicas}' 2>/dev/null | grep -q '^[1-9]' && echo up || echo "not installed")"
   else
     printf 'management:  down\n'
   fi

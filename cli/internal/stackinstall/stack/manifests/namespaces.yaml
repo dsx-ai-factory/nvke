@@ -1,0 +1,63 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The namespaces the stack lands in. The charts create none of them, and
+# helm --create-namespace makes only the release namespace.
+#
+# cert-manager, capi-system and the kubeadm provider namespaces are not here.
+# clusterctl init creates them.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nvke-controller
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nvke-system
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nktp
+  labels:
+    # The node Collector runs as root with SYS_CHROOT and mounts /var/log/pods,
+    # /proc, /var/log and the node's journal from the host.
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: postgres
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: temporal
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spire-server
+  labels:
+    # spire-server, the controller manager and the OIDC discovery provider.
+    # None of them needs more.
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spire-system
+  labels:
+    # spire-agent and spiffe-csi-driver need hostNetwork, hostPID and
+    # privileged containers.
+    pod-security.kubernetes.io/enforce: privileged
+---
+# CAPNICo's namespace. The CAPNICo manifest declares it too. The command
+# creates the nico-credentials Secret here, so the namespace is applied first.
+# Two server-side applies of the same bare Namespace do not conflict.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: capnico-system

@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Values for the Bitnami postgresql chart, as NICo's database on the seed.
+# NICo expects its database, its credentials and its certificate issuer to be
+# in place before it installs. The database is this release. The ClusterIssuer
+# is manifests/nico/cluster-issuer.yaml. The credentials are Secrets the
+# command creates.
+#
+# No password is in this file. The chart reads the admin and user passwords
+# from the nico-postgresql-auth Secret. nico-api reads the same password from
+# the nico.forge-pg-cluster.credentials Secret. The command writes both from
+# one value.
+
+# The chart names its Service after the fullname. Pinning it keeps the host
+# nico-postgresql.forge-system.svc.cluster.local stable. values/nico.yaml
+# dials that host as DB_HOST.
+fullnameOverride: nico-postgresql
+namespaceOverride: forge-system
+
+auth:
+  username: nico
+  # The chart creates this database for the user above.
+  database: nico
+  existingSecret: nico-postgresql-auth
+  secretKeys:
+    adminPasswordKey: postgres-password
+    userPasswordKey: password
+  # Inert. Not a credential, and never written anywhere.
+  #
+  # The chart refuses an upgrade when auth.username is not postgres and
+  # auth.password is empty, because it cannot tell whether it is about to
+  # rotate a password it manages. It does not manage this one. existingSecret
+  # is set, so the chart writes no Secret of its own. Without this line a
+  # fresh install renders and an upgrade of the same values does not.
+  password: "unused-see-comment-above"
+
+primary:
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: ""
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      memory: 256Mi
+  # The two databases NICo's own Temporal needs. Created now because initdb
+  # runs once, on an empty data directory. Two empty databases cost nothing.
+  # The stack does not install NICo's Temporal.
+  initdb:
+    scripts:
+      init-temporal.sql: |
+        CREATE DATABASE temporal;
+        CREATE DATABASE temporal_visibility;
+
+# Pinned by digest, for the same reason as values/postgresql.yaml.
+image:
+  digest: "sha256:b74b23f091dcc87041bcae557d840c36458af46b955279cb13aedec4c32d7f71"

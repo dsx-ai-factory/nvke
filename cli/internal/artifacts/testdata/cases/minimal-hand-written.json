@@ -1,0 +1,88 @@
+{
+  "outputs": [
+    {
+      "name": "capnico-controller",
+      "kind": "oci",
+      "reference": "registry.example.invalid/nvke/capnico-controller@sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "imageIndex": {
+        "children": [
+          {
+            "platform": "linux/amd64"
+          },
+          {
+            "platform": "linux/arm64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "controller-chart",
+      "kind": "helm-oci",
+      "reference": "registry.example.invalid/nvke/charts/controller-chart@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "chartVersion": "0.4.2"
+    },
+    {
+      "name": "cwe",
+      "kind": "oci",
+      "reference": "registry.example.invalid/nvke/cwe@sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "imageIndex": {
+        "children": [
+          {
+            "platform": "linux/amd64"
+          },
+          {
+            "platform": "linux/arm64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "nico",
+      "kind": "helm-oci",
+      "reference": "registry.example.invalid/nvke/charts/nico@sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "chartVersion": "0.12.0"
+    },
+    {
+      "name": "nico-prereqs",
+      "kind": "helm-oci",
+      "reference": "registry.example.invalid/nvke/charts/nico-prereqs@sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "chartVersion": "0.12.0"
+    },
+    {
+      "name": "nktp",
+      "kind": "helm-oci",
+      "reference": "registry.example.invalid/nvke/charts/nktp@sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "chartVersion": "0.9.0"
+    },
+    {
+      "name": "postgresql",
+      "kind": "helm-oci",
+      "reference": "registry.example.invalid/nvke/charts/postgresql@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "chartVersion": "18.5.15"
+    },
+    {
+      "name": "spire",
+      "kind": "helm-oci",
+      "reference": "registry.example.invalid/nvke/charts/spire@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "chartVersion": "0.30.1"
+    },
+    {
+      "name": "spire-crds",
+      "kind": "helm-oci",
+      "reference": "registry.example.invalid/nvke/charts/spire-crds@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "chartVersion": "0.6.1"
+    },
+    {
+      "name": "temporal",
+      "kind": "helm-oci",
+      "reference": "registry.example.invalid/nvke/charts/temporal@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "chartVersion": "0.74.0"
+    },
+    {
+      "name": "local-path-provisioner",
+      "kind": "helm-oci",
+      "reference": "registry.example.invalid/nvke/charts/local-path-provisioner@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "chartVersion": "0.0.31"
+    }
+  ]
+}

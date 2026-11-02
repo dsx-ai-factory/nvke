@@ -50,6 +50,22 @@ type tokenExchangeError struct {
 	ErrorDescription string `json:"error_description,omitempty"`
 }
 
+// subjectClaims mirrors the DSX subject claims the real exchange writes beside
+// sub, such as "dsx.nvidia.com/tenant": "nke".
+type subjectClaims struct {
+	Tenant    string          `json:"dsx.nvidia.com/tenant"`
+	Region    string          `json:"dsx.nvidia.com/region"`
+	Service   string          `json:"dsx.nvidia.com/service"`
+	Partition string          `json:"dsx.nvidia.com/partition"`
+	Resource  []resourceClaim `json:"dsx.nvidia.com/resource"`
+}
+
+// resourceClaim is one type/ID pair of the exchanged path, such as bm/cwe.
+type resourceClaim struct {
+	ResourceType string `json:"resource_type"`
+	ResourceID   string `json:"resource_id"`
+}
+
 type validatedToken struct {
 	ID       spiffeid.ID
 	Audience []string
@@ -102,8 +118,8 @@ type exchangeServer struct {
 	jwksURL string
 
 	// region and partition form the rewritten DSX trust domain. For example,
-	// spiffe://capd.nke.local/tenant/nke/service/nke-controller/bm/cwe
-	// becomes spiffe://nke.capd.nke-controller.nvid.id/bm/cwe when region
+	// spiffe://capd.nke.local/tenant/nke/service/nvke-controller/bm/cwe
+	// becomes spiffe://nke.capd.nvke-controller.nvid.id/bm/cwe when region
 	// is "capd" and partition is "nvid.id".
 	region    string
 	partition string
@@ -221,13 +237,13 @@ func (s *exchangeServer) handleTokenExchange(w http.ResponseWriter, r *http.Requ
 		writeTokenError(w, http.StatusUnauthorized, "invalid_grant", "subject_token validation failed")
 		return
 	}
-	exchangedID, err := exchangeSubject(s.region, s.partition, validated.ID)
+	exchangedID, subject, err := exchangeSubject(s.region, s.partition, validated.ID)
 	if err != nil {
 		slog.WarnContext(r.Context(), "Rejected test token exchange", "reason", "unsupported_subject", "error", err)
 		writeTokenError(w, http.StatusBadRequest, "invalid_request", "subject_token subject is not supported")
 		return
 	}
-	token, err := s.resign(validated, exchangedID)
+	token, err := s.resign(validated, exchangedID, subject)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "Failed to sign test exchange token", "error", err)
 		writeTokenError(w, http.StatusInternalServerError, "server_error", "failed to sign JWT")
@@ -244,7 +260,7 @@ func (s *exchangeServer) handleTokenExchange(w http.ResponseWriter, r *http.Requ
 	slog.InfoContext(r.Context(), "Accepted test token exchange", "subject", exchangedID.String(), "audience_count", len(validated.Audience))
 }
 
-func (s *exchangeServer) resign(validated validatedToken, subject spiffeid.ID) (string, error) {
+func (s *exchangeServer) resign(validated validatedToken, subject spiffeid.ID, subjectClaims subjectClaims) (string, error) {
 	claims := make(map[string]any, 7)
 	for _, name := range []string{"aud", "iat", "jti", "nbf"} {
 		if value, ok := validated.Claims[name]; ok {
@@ -254,39 +270,47 @@ func (s *exchangeServer) resign(validated validatedToken, subject spiffeid.ID) (
 	claims["exp"] = validated.Expiry.Unix()
 	claims["iss"] = s.issuer
 	claims["sub"] = subject.String()
-	token, err := jwt.Signed(s.signer).Claims(claims).Serialize()
+	// Later claims win, so write the subject claims first.
+	token, err := jwt.Signed(s.signer).Claims(subjectClaims).Claims(claims).Serialize()
 	if err != nil {
 		return "", fmt.Errorf("sign JWT: %w", err)
 	}
 	return token, nil
 }
 
-func exchangeSubject(region, partition string, id spiffeid.ID) (spiffeid.ID, error) {
+func exchangeSubject(region, partition string, id spiffeid.ID) (spiffeid.ID, subjectClaims, error) {
 	path := strings.TrimPrefix(id.Path(), "/")
 	segments := strings.Split(path, "/")
 	if len(segments) < 6 || segments[0] != "tenant" || segments[2] != "service" {
-		return spiffeid.ID{}, fmt.Errorf("invalid local SPIFFE identity path %q", id.Path())
+		return spiffeid.ID{}, subjectClaims{}, fmt.Errorf("invalid local SPIFFE identity path %q", id.Path())
 	}
 	tenant, service := segments[1], segments[3]
 	if len(validation.IsDNS1123Label(tenant)) != 0 || len(validation.IsDNS1123Label(service)) != 0 {
-		return spiffeid.ID{}, errors.New("tenant and service must be DNS labels")
+		return spiffeid.ID{}, subjectClaims{}, errors.New("tenant and service must be DNS labels")
 	}
 	if resourceType := segments[4]; resourceType != "bm" && resourceType != "dpu" && resourceType != "vm" {
-		return spiffeid.ID{}, fmt.Errorf("unsupported resource type %q", resourceType)
+		return spiffeid.ID{}, subjectClaims{}, fmt.Errorf("unsupported resource type %q", resourceType)
 	}
 	if !resourceIDPattern.MatchString(segments[5]) {
-		return spiffeid.ID{}, fmt.Errorf("invalid resource ID %q", segments[5])
+		return spiffeid.ID{}, subjectClaims{}, fmt.Errorf("invalid resource ID %q", segments[5])
+	}
+	if len(segments)%2 != 0 {
+		return spiffeid.ID{}, subjectClaims{}, errors.New("resource path requires complete type/ID pairs")
 	}
 
 	trustDomain, err := spiffeid.TrustDomainFromString(strings.Join([]string{tenant, region, service, partition}, "."))
 	if err != nil {
-		return spiffeid.ID{}, fmt.Errorf("build exchanged trust domain: %w", err)
+		return spiffeid.ID{}, subjectClaims{}, fmt.Errorf("build exchanged trust domain: %w", err)
 	}
 	exchanged, err := spiffeid.FromSegments(trustDomain, segments[4:]...)
 	if err != nil {
-		return spiffeid.ID{}, fmt.Errorf("build exchanged SPIFFE ID: %w", err)
+		return spiffeid.ID{}, subjectClaims{}, fmt.Errorf("build exchanged SPIFFE ID: %w", err)
 	}
-	return exchanged, nil
+	claims := subjectClaims{Tenant: tenant, Region: region, Service: service, Partition: partition}
+	for i := 4; i < len(segments); i += 2 {
+		claims.Resource = append(claims.Resource, resourceClaim{ResourceType: segments[i], ResourceID: segments[i+1]})
+	}
+	return exchanged, claims, nil
 }
 
 func (s *exchangeServer) handleJWKS(w http.ResponseWriter, _ *http.Request) {

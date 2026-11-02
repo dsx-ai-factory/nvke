@@ -218,6 +218,9 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 			if req.Body.ControlPlaneConfig.MaxSurge != nil {
 				dbCluster.ControlPlaneConfig.MaxSurge = *req.Body.ControlPlaneConfig.MaxSurge
 			}
+			if req.Body.ControlPlaneConfig.AutoScaleDownDisabled != nil {
+				dbCluster.ControlPlaneConfig.AutoScaleDownDisabled = *req.Body.ControlPlaneConfig.AutoScaleDownDisabled
+			}
 		}
 
 		createdCluster, err = tx.CreateCluster(ctx, &dbCluster)
@@ -916,6 +919,10 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 		}
 		cluster.ControlPlaneConfig.MaxSurge = *req.MaxSurge
 	}
+	// AutoScaleDownDisabled is cluster-level only, same as MaxSurge.
+	if req.AutoScaleDownDisabled != nil {
+		cluster.ControlPlaneConfig.AutoScaleDownDisabled = *req.AutoScaleDownDisabled
+	}
 	controlPlaneConfigSpec := db.ConfigSpecFromFull(cluster.ControlPlaneConfig)
 	// KubernetesVersion lives in the spec row and should track the current
 	// cluster control-plane version selected in this PATCH.
@@ -1144,12 +1151,14 @@ func dedupeUUIDsPreserveOrder(ids []uuid.UUID) []uuid.UUID {
 
 func apiControlPlaneConfigFromDB(cfg db.ControlPlaneConfig) *api.ControlPlaneConfig {
 	maxSurge := cfg.MaxSurge
+	autoScaleDownDisabled := cfg.AutoScaleDownDisabled
 	provisioningMonitorDisabled := cfg.ProvisioningMonitorDisabled
 	teleportEnabled := cfg.TeleportEnabled
 	return &api.ControlPlaneConfig{
 		ConfigurationID:             cfg.ConfigurationID,
 		DesiredCount:                cfg.DesiredCount,
 		MaxSurge:                    &maxSurge,
+		AutoScaleDownDisabled:       &autoScaleDownDisabled,
 		ProvisioningMonitorDisabled: &provisioningMonitorDisabled,
 		SystemReservedMemory:        cfg.SystemReservedMemory,
 		NodeLabels:                  maps.Clone(cfg.NodeLabels),

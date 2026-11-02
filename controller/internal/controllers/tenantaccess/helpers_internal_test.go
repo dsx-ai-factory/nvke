@@ -27,6 +27,7 @@ import (
 	crfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nvkerbac"
 )
 
 // update regenerates the golden files instead of asserting against them:
@@ -105,7 +106,7 @@ func TestReadAndApplyRBACManifest(t *testing.T) {
 
 			ctx := context.Background()
 			cm := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{Namespace: constants.LegacyManagementNamespace, Name: rbacConfigMapName},
+				ObjectMeta: metav1.ObjectMeta{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.LegacyConfigMapName},
 				Data:       map[string]string{rbacConfigMapKey: tc.manifest},
 			}
 			c := crfake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(cm).Build()
@@ -136,7 +137,7 @@ func TestReadRBACManifestMissingKey(t *testing.T) {
 	t.Parallel()
 
 	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: constants.LegacyManagementNamespace, Name: rbacConfigMapName},
+		ObjectMeta: metav1.ObjectMeta{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.LegacyConfigMapName},
 		Data:       map[string]string{"other.yaml": "irrelevant"},
 	}
 	c := crfake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(cm).Build()

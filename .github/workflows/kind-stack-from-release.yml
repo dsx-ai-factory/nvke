@@ -173,7 +173,7 @@ jobs:
           kubectl get pods -A -o wide > "${out}/pods.txt" 2>&1 || true
           kubectl describe pods -A > "${out}/describe-pods.txt" 2>&1 || true
           kubectl get events -A --sort-by=.lastTimestamp > "${out}/events.txt" 2>&1 || true
-          for ns in nke-controller capnico-system spire-server; do
+          for ns in nvke-controller capnico-system spire-server; do
             kubectl -n "${ns}" logs --all-containers --tail=500 --prefix -l app.kubernetes.io/name > "${out}/${ns}.log" 2>&1 || true
           done
           docker exec -i nvke-release-smoke-control-plane ctr -n k8s.io images ls > "${out}/containerd-images.txt" 2>&1 || true

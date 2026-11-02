@@ -73,9 +73,9 @@ func CollectClusterState(ctx context.Context, s infra.Session, dest string, secr
 // deleted. A script with no newlines in it has nothing to lose that way. Run
 // 37582097398 collected all nine sections with it in place.
 //
-// controller.Namespace() and not the nke-controller that nvkectl's bootstrap cluster
+// controller.Namespace() and not the nvke-controller that nvkectl's bootstrap cluster
 // uses: run 37582097398 found the controller running in controller.Namespace() on the site
-// cluster and nothing at all in nke-controller. The two deploy paths do not
+// cluster and nothing at all in nvke-controller. The two deploy paths do not
 // agree on where the controller goes, and this one follows the site.
 func clusterStateScript() string {
 	kubectl := "kubectl --kubeconfig " + shellQuote(kubeconfigPath)

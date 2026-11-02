@@ -259,11 +259,12 @@ func TestDeploy_NicoInstallsCAPNICoInsteadOfTheProvisionedProvider(t *testing.T)
 // chart's supportedInfraProviders must follow the infrastructure in use.
 func TestDeploy_CWEAcceptsTheProviderPayloadTheBootstrapSends(t *testing.T) {
 	for name, tt := range map[string]struct {
-		cfg  Config
-		want string
+		cfg                 Config
+		wantProvider        string
+		wantNicoControllers string
 	}{
-		"provisioned": {testConfig(t), "supportedInfraProviders=infra"},
-		"nico":        {nicoTestConfig(t), "supportedInfraProviders=nico"},
+		"provisioned": {testConfig(t), "supportedInfraProviders=infra", "controllers.nico.enabled=false"},
+		"nico":        {nicoTestConfig(t), "supportedInfraProviders=nico", "controllers.nico.enabled=true"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			runner := &fakeRunner{}
@@ -271,8 +272,14 @@ func TestDeploy_CWEAcceptsTheProviderPayloadTheBootstrapSends(t *testing.T) {
 				t.Fatalf("Deploy: %v", err)
 			}
 			cwe := callIndex(runner, "upgrade --install "+cweReleaseName)
-			if cwe < 0 || !strings.Contains(joinArgs(runner.calls[cwe].args), tt.want) {
-				t.Errorf("cwe install args do not contain %q", tt.want)
+			if cwe < 0 {
+				t.Fatal("controller install call not found")
+			}
+			args := joinArgs(runner.calls[cwe].args)
+			for _, want := range []string{tt.wantProvider, tt.wantNicoControllers} {
+				if !strings.Contains(args, want) {
+					t.Errorf("controller install args do not contain %q", want)
+				}
 			}
 		})
 	}

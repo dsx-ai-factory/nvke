@@ -1,7 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Replace the example boot URL with your site's configuration.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -10,31 +9,50 @@ data:
   clusterTmpl: |
     {
       "cluster": {
-        "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
-        "kind": "NicoCluster",
+        "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
+        "kind": "DockerCluster",
+        "spec": {}
+      }
+    }
+  controlplaneTmpl: |
+    {
+      "bootstrapFiles": {{ .BootstrapFilesJSON }},
+      "preKubeadmCommands": {{ .PreKubeadmCommandsJSON }},
+      "machineTemplate": {
+        "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
+        "kind": "DockerMachineTemplate",
         "spec": {
-          "identityRef": {"name": "nico-credentials"},
-          "siteID": "00000000-0000-0000-0000-000000000000"
+          "template": {
+            "metadata": {},
+            "spec": {
+              "customImage": "cwe-capd-kindest-node:local",
+              "extraMounts": [
+                {
+                  "containerPath": "/var/run/docker.sock",
+                  "hostPath": "/var/run/docker.sock"
+                }
+              ]
+            }
+          }
         }
       }
     }
   nodepoolTmpl: |
     {
+      "bootstrapFiles": {{ .BootstrapFilesJSON }},
+      "preKubeadmCommands": {{ .PreKubeadmCommandsJSON }},
       "machineTemplate": {
-        "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
-        "kind": "NicoMachineTemplate",
-        "metadata": {
-          "name": "nico-nodepool-template"
-        },
+        "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
+        "kind": "DockerMachineTemplate",
         "spec": {
           "template": {
             "spec": {
-              "instanceTypeID": "{{ .InstanceType }}",
-              "vpcID": "{{ .VPCID }}",
-              "cloudInitInjectHostname": true,
-              "ipxeScript": "#!ipxe\nchain https://images.example.com/nvke/boot.ipxe\n",
-              "interfaces": [
-                {"subnetID": "00000000-0000-0000-0000-000000000000"}
+              "customImage": "cwe-capd-kindest-node:local",
+              "extraMounts": [
+                {
+                  "containerPath": "/var/run/docker.sock",
+                  "hostPath": "/var/run/docker.sock"
+                }
               ]
             }
           }

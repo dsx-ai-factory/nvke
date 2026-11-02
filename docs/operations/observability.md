@@ -21,7 +21,7 @@ kubectl port-forward -n temporal svc/temporal-web 8233:8080 \
   --kubeconfig <sitename>.kubeconfig
 ```
 
-Then open http://localhost:8233 in a browser. Workflows are organized by namespace; NVKE workflows run in the `nke-controller` namespace.
+Then open http://localhost:8233 in a browser. Workflows are organized by namespace; NVKE workflows run in the `nvke-controller` namespace.
 
 **What to look for:**
 - Workflows stuck in `Running` with no recent activity — usually a stalled infrastructure operation, a node that isn't responding, or a timeout waiting for NICo
@@ -33,7 +33,7 @@ Then open http://localhost:8233 in a browser. Workflows are organized by namespa
 The NVKE controller emits structured JSON logs. Fetch them from the management cluster:
 
 ```bash
-kubectl logs -n nke-controller deploy/nke-controller \
+kubectl logs -n nvke-controller deploy/nvke-controller \
   --kubeconfig <sitename>.kubeconfig -f
 ```
 

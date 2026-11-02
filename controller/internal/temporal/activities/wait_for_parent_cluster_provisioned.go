@@ -53,13 +53,14 @@ func (a *Activities) waitForParentClusterProvisioned(
 	}
 
 	logger.Info("Waiting for cluster to be provisioned", "clusterID", nodePool.ClusterID)
+	pollCtx := db.WithoutQuerySpans(ctx)
 
 	for {
 		// Record heartbeat to prevent activity timeout
 		activity.RecordHeartbeat(ctx)
 
 		// Get the cluster
-		cluster, err := a.db.GetCluster(ctx, nodePool.ClusterID)
+		cluster, err := a.db.GetCluster(pollCtx, nodePool.ClusterID)
 		if err != nil {
 			return WaitForParentClusterProvisionedResult{}, fmt.Errorf("failed to get cluster: %w", err)
 		}

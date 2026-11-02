@@ -42,10 +42,11 @@ applies when running the prepared VM.
 Run from the repository root:
 
 ```bash
-nix run ./os-image#build-packages-arm64 -- --output "$PWD/artifacts/arm64"
+NKE_TARGET_UBUNTU_SERIES=26.04 nix run ./os-image#build-packages-arm64 -- --output "$PWD/artifacts/arm64"
 ```
 
-Use `build-packages-amd64` for x86 packages. The command starts the VM, copies
+`NKE_TARGET_UBUNTU_SERIES` is the image's Ubuntu release; it selects the DOCA
+Open vSwitch build. Use `build-packages-amd64` for x86 packages. The command starts the VM, copies
 in your checkout, builds the packages, copies the results to your output
 directory, and shuts down the VM. The first build takes longer; later builds
 reuse a persistent disk containing the Nix store and compiler/download caches.

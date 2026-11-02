@@ -1486,39 +1486,6 @@ func TestNicoExampleLoads(t *testing.T) {
 	}
 }
 
-// TestNicoVIPWarning: only a nico site spec without cluster.controlPlaneVIP is
-// warned about, since its stack install is refused and the VIP cannot be added
-// once the site cluster exists.
-func TestNicoVIPWarning(t *testing.T) {
-	tests := []struct {
-		name string
-		spec SiteSpec
-		want bool
-	}{
-		{name: "provisioned without a VIP", spec: SiteSpec{}},
-		{name: "nico with a VIP", spec: SiteSpec{Infra: Infra{Provider: ProviderNico}, Cluster: Cluster{ControlPlaneVIP: "10.0.0.100"}}},
-		{name: "nico without a VIP", spec: SiteSpec{Infra: Infra{Provider: ProviderNico}}, want: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := tt.spec.NicoVIPWarning()
-			if tt.want != (got != "") {
-				t.Fatalf("NicoVIPWarning() = %q, want a warning: %v", got, tt.want)
-			}
-			if tt.want && (!strings.Contains(got, pathControlPlaneVIP) || !strings.Contains(got, "cannot be added once the site cluster exists")) {
-				t.Errorf("NicoVIPWarning() = %q; want it to name %s and say it cannot be added later", got, pathControlPlaneVIP)
-			}
-			if tt.want {
-				for _, detail := range []string{"render deploy-path", "controller endpoint", "allowControlPlaneWithoutVIP setting does not supply that endpoint"} {
-					if !strings.Contains(got, detail) {
-						t.Errorf("NicoVIPWarning() = %q; want it to explain %q", got, detail)
-					}
-				}
-			}
-		})
-	}
-}
-
 // TestCheckBootstrapMode: the SPIRE address CAPNICo nodes read from userdata is
 // required with mTLS and unused without it.
 func TestCheckBootstrapMode(t *testing.T) {
@@ -1567,7 +1534,8 @@ func TestValidate_NicoControlPlaneVIP(t *testing.T) {
 	}{
 		{"three nodes without a VIP", 3, "", true},
 		{"three nodes with a VIP", 3, "10.0.0.100", false},
-		{"one node without a VIP", 1, "", false},
+		{"one node without a VIP", 1, "", true},
+		{"one node with a VIP", 1, "10.0.0.100", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inv := minimalValid()
@@ -1883,16 +1851,16 @@ func TestNodeLoginFromEnv(t *testing.T) {
 	}
 }
 
-// TestControllerEndpoint_NicoNeedsTheVIP: one nico node without a VIP
-// bootstraps, but the stack install has no address for the controller, and
-// says so for nico instead of claiming the spec has several nodes.
+// TestControllerEndpoint_NicoNeedsTheVIP: one nico node without a VIP fails
+// validation, and the controller endpoint says so for nico instead of claiming
+// the spec has several nodes.
 func TestControllerEndpoint_NicoNeedsTheVIP(t *testing.T) {
 	spec := baseSpec(t)
 	makeNico(spec)
 	spec.Infra.Nico.ControlPlane.Count = 1
 	spec.Cluster.ControlPlaneVIP = ""
-	if err := spec.Validate(); err != nil {
-		t.Fatalf("one nico node without a VIP must validate for the bootstrap: %v", err)
+	if err := spec.Validate(); err == nil || !strings.Contains(err.Error(), "cluster.controlPlaneVIP is required") {
+		t.Fatalf("Validate = %v, want cluster.controlPlaneVIP is required for one nico node", err)
 	}
 	if _, err := spec.ControllerEndpoint(); err == nil || !strings.Contains(err.Error(), "cluster.controlPlaneVIP") || strings.Contains(err.Error(), "several nodes") {
 		t.Errorf("ControllerEndpoint error = %v, want one naming cluster.controlPlaneVIP for nico", err)
@@ -1949,14 +1917,8 @@ func TestLoadNicoControlPlaneVIPOverride(t *testing.T) {
 	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "controlPlaneVIP") {
 		t.Fatalf("default NICo validation = %v, want a VIP requirement", err)
 	}
-	spec, err := Load(path, WithAllowControlPlaneWithoutVIP(true))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if spec.ControlPlaneCount() != 3 || spec.Cluster.ControlPlaneVIP != "" {
-		t.Fatalf("override changed NICo capacity or supplied a VIP: %+v", spec.Cluster)
-	}
-	if strings.Contains(spec.NicoVIPWarning(), "one-node") {
-		t.Fatal("the warning describes a three-node dev site as one node")
+	// A nico site always needs its VIP, so the dev override does not lift it.
+	if _, err := Load(path, WithAllowControlPlaneWithoutVIP(true)); err == nil || !strings.Contains(err.Error(), "controlPlaneVIP") {
+		t.Fatalf("NICo validation with the override = %v, want a VIP requirement", err)
 	}
 }

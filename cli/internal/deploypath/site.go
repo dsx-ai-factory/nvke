@@ -33,8 +33,8 @@ const oidcNodePort = 30443
 
 // controllerAdminPath is the SPIFFE path the controller presents:
 // /nvke-service/<ServiceAccount>, and the deploy path names the ServiceAccount
-// nke-controller. It must match spire-server.adminIDs in spire/values.yaml.
-const controllerAdminPath = "/nvke-service/nke-controller"
+// nvke-controller. It must match spire-server.adminIDs in spire/values.yaml.
+const controllerAdminPath = "/nvke-service/nvke-controller"
 
 // temporalImages are the repositories the Temporal chart defaults to; the
 // chart has no registry key, so a mirror is written into the repository.
@@ -47,8 +47,15 @@ var temporalImages = map[string]string{"server": "temporalio/server", "admintool
 // refused.
 type TemplateContext struct {
 	ClusterName string
-	Nico        struct{ Endpoint, OrgID, Token, APIName string }
-	Tenant      struct{ User, Password string }
+	// Nico carries both credential forms CAPNICo accepts, because the
+	// credentials template branches on Token and Go evaluates the fields of
+	// the branch it takes. A context without the OAuth fields therefore fails
+	// to render the moment Token is empty -- which is every external render,
+	// whose whole point is to produce a tree holding no credential. They stay
+	// empty here until nvkectl has somewhere to read them from; what fills
+	// them is a separate question from whether the template can name them.
+	Nico   struct{ Endpoint, OrgID, Token, APIName, TokenURL, ClientID, ClientSecret, Scope string }
+	Tenant struct{ User, Password string }
 }
 
 // site writes the site values and renders the template items.

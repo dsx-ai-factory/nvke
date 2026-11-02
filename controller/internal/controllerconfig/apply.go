@@ -52,6 +52,7 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.FieldManagerMachineHealthIssueName = c.FieldManager.MachineHealthIssueName
 	cfg.ManagedByLabelValue = c.ManagedByLabelValue
 	cfg.ManagementNamespace = c.ManagementNamespace
+	cfg.RBACConfigMapName = c.RBACConfigMapName
 	cfg.MetricsListenAddress = c.MetricsListenAddress
 	cfg.SupportedInfraProviders = slices.Clone(c.SupportedInfraProviders)
 	cfg.NodeMetadataAllowlistedLabelKeys = slices.Clone(c.NodeMetadataAllowlistedLabelKeys)

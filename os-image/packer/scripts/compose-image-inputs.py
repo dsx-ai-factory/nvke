@@ -18,7 +18,7 @@ import tarfile
 import tempfile
 
 
-ARCHIVE_BINDINGS = ("calico", "kubeadm-distro", "ovn", "spire-agent")
+ARCHIVE_BINDINGS = ("calico", "kubeadm-distro", "ovn", "spire-agent", "doca-ovs")
 MAX_ARCHIVE_MEMBERS = 16384
 MAX_PACKAGES = 16384
 MAX_PACKAGE_BYTES = 1 << 30
@@ -272,6 +272,9 @@ def main() -> None:
                 require_architecture(debs / name, args.architecture)
         if len(list(debs.glob("spire-agent_*.deb"))) != 1:
             raise SystemExit("image inputs must contain exactly one spire-agent_*.deb across all bindings")
+        # provision.sh installs it by name; two versions would make the pick apt's.
+        if len(list(debs.glob("doca-openvswitch-switch_*.deb"))) != 1:
+            raise SystemExit("image inputs must contain exactly one doca-openvswitch-switch_*.deb across all bindings")
         if len(list(debs.glob("nvke-cni-calico-manifests-*.deb"))) > 1:
             raise SystemExit("calico inputs must contain at most one nvke-cni-calico-manifests-*.deb")
 

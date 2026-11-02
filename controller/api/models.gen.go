@@ -349,6 +349,9 @@ type ConfigProfile struct {
 
 // ControlPlaneConfig The control-plane configuration in effect, including the desired node-agent version.
 type ControlPlaneConfig struct {
+	// AutoScaleDownDisabled When true, automatic control-plane scale-down is disabled, so decreasing desiredCount leaves the surplus nodes in place. When scale-down is enabled it never reduces the control plane below the fault-tolerant floor of three nodes.
+	AutoScaleDownDisabled *bool `json:"autoScaleDownDisabled,omitempty"`
+
 	// ConfigurationID ID of the current configuration snapshot.
 	ConfigurationID openapi_types.UUID `json:"configurationId,omitempty"`
 
@@ -515,6 +518,9 @@ type ControlPlaneStatus struct {
 // `nico` carries the NICo settings for the control-plane nodes; it is required
 // for a NICo cluster. `launchLayer` is required for a LaunchLayer cluster.
 type CreateClusterControlPlaneConfig struct {
+	// AutoScaleDownDisabled When true, automatic control-plane scale-down is disabled, so decreasing desiredCount leaves the surplus nodes in place. When scale-down is enabled it never reduces the control plane below the fault-tolerant floor of three nodes.
+	AutoScaleDownDisabled *bool `json:"autoScaleDownDisabled,omitempty"`
+
 	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1. Values above 1 require controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
 	DesiredCount int `json:"desiredCount"`
 
@@ -1595,6 +1601,9 @@ type SpireServer struct {
 // allowControlPlaneWithoutVIP setting is enabled. maxSurge alone does not
 // trigger a rollout and remains mutable without a VIP.
 type UpdateClusterControlPlaneConfig struct {
+	// AutoScaleDownDisabled When true, automatic control-plane scale-down is disabled, so decreasing desiredCount leaves the surplus nodes in place. When scale-down is enabled it never reduces the control plane below the fault-tolerant floor of three nodes.
+	AutoScaleDownDisabled *bool `json:"autoScaleDownDisabled,omitempty"`
+
 	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1.
 	// Increasing the count above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
 	DesiredCount *int `json:"desiredCount,omitempty"`

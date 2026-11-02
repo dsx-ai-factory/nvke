@@ -439,3 +439,31 @@ func TestSummarizeGinkgoReportCountsAgainstSpecsThatWillRun(t *testing.T) {
 		t.Errorf("summarizeGinkgoReport = %q, want %q (2 passed Its against the 2 specs the filter selected, not the whole suite binary)", got, "2/2 passed")
 	}
 }
+
+// A re-run keeps the run's ID, and the bare run URL opens on the latest
+// attempt, so a result has to link the attempt that produced it or it can
+// land on another attempt's green jobs. Outside a run there is nothing to link.
+func TestRunURLFromEnvLinksTheAttempt(t *testing.T) {
+	cases := []struct {
+		name    string
+		runID   string
+		attempt string
+		want    string
+	}{
+		{name: "a re-run links its own attempt", runID: "7", attempt: "2", want: "https://github.com/o/r/actions/runs/7/attempts/2"},
+		{name: "a first attempt is linked as one", runID: "7", attempt: "1", want: "https://github.com/o/r/actions/runs/7/attempts/1"},
+		{name: "no attempt in the environment links the run", runID: "7", attempt: "", want: "https://github.com/o/r/actions/runs/7"},
+		{name: "outside a run there is no link", runID: "", attempt: "1", want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("GITHUB_SERVER_URL", "https://github.com")
+			t.Setenv("GITHUB_REPOSITORY", "o/r")
+			t.Setenv("GITHUB_RUN_ID", tc.runID)
+			t.Setenv("GITHUB_RUN_ATTEMPT", tc.attempt)
+			if got := runURLFromEnv(); got != tc.want {
+				t.Errorf("runURLFromEnv() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

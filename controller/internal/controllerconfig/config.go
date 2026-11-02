@@ -41,6 +41,7 @@ type Config struct {
 	FieldManager                             FieldManagerConfig         `json:"fieldManager"`
 	ManagedByLabelValue                      string                     `json:"managedByLabelValue"`
 	ManagementNamespace                      string                     `json:"managementNamespace"`
+	RBACConfigMapName                        string                     `json:"rbacConfigMapName"`
 	MetricsListenAddress                     string                     `json:"metricsListenAddress"`
 	SupportedInfraProviders                  []string                   `json:"supportedInfraProviders"`
 	NodeMetadataAllowlistedLabelKeys         []string                   `json:"nodeMetadataAllowlistedLabelKeys"`
@@ -416,6 +417,12 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	if c.RBACConfigMapName != "" {
+		if errs := validation.IsDNS1123Subdomain(c.RBACConfigMapName); len(errs) > 0 {
+			return fmt.Errorf("rbacConfigMapName %q is not a valid ConfigMap name: %s", c.RBACConfigMapName, strings.Join(errs, "; "))
+		}
+	}
+
 	if c.Spire.JoinTokenTTL.Duration <= 0 {
 		return errors.New("spire.joinTokenTTL must be greater than 0")
 	}
@@ -760,6 +767,20 @@ func validateDiscoveryURL(issuerURL, discoveryURL string) error {
 // Kubernetes, kubeadm, NVKE and NVIDIA own. kube-apiserver rejects any identity
 // a fleet-wide provider maps into one, and Validate refuses a provider whose
 // own prefix already lies inside one, since every login through it would fail.
+//
+// These are identity namespaces, not object namespaces: they bound a
+// provider's usernamePrefix and groupsPrefix here, and
+// kubeadmconfig.injectReservedNamespaceValidation compiles the same list into
+// the tenant apiserver's CEL user-validation rules. Nothing here reserves
+// Role or ClusterRole names.
+//
+// "nke:" is removed in v0.25.0, which relaxes both and regenerates that
+// config. Gate: tenantaccess.pruneLegacyRBAC has run on every site, so that
+// no platform-owned RBAC still carries the nke: name once a fleet-wide
+// provider may mint nke: usernames and groups. cli/internal/bootstrap/sitespec
+// and controller/test/e2e/internal/oidc each keep their own copy of this list,
+// and controller/test/e2e/internal/oidc/testdata/auth-config.yaml pins the
+// generated rules, so all three move with it.
 func ReservedIdentityPrefixes() []string {
 	return []string{"system:", "kubeadm:", "nke:", "nvke:", "nvidia:"}
 }

@@ -94,9 +94,6 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 		fmt.Fprintf(out, "bootstrap: not ready for nvkectl bootstrap site on this host "+
 			"(--bootstrap-only fails on this): %v\n", bootstrapErr)
 	}
-	if warning := spec.NicoVIPWarning(); warning != "" {
-		fmt.Fprintf(out, "warning: %s\n", warning)
-	}
 	if domain, defaulted := spec.TrustDomain(); defaulted {
 		fmt.Fprintf(out, "spire.trustDomain: not set; a bootstrap with the default cluster name and the controller stack install both use %s\n", domain)
 	}

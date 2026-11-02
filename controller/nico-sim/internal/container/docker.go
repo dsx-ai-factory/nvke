@@ -21,6 +21,7 @@ import (
 
 const (
 	mockCloudInitStatusPath = "/var/lib/nico-containers/cloud-init/status"
+	mockCloudInitScriptPath = "/var/lib/nico-containers/cloud-init/runcmd.sh"
 	statusUpdateTimeout     = 5 * time.Second
 )
 
@@ -133,8 +134,8 @@ func (s *Service) tpmEKCertificate(ctx context.Context, containerID string) (str
 }
 
 func (s *Service) applyCloudConfig(ctx context.Context, containerID, userData string) (retErr error) {
-	// The node agent waits for cloud-init to finish before continuing bootstrap,
-	// so expose the progress of this synchronous mock implementation.
+	// Publish running before returning the instance so bootstrap checks cannot
+	// mistake a newly allocated node for one whose cloud-init has finished.
 	if err := s.writeMockCloudInitStatus(ctx, containerID, "running"); err != nil {
 		return fmt.Errorf("set mock cloud-init status to running: %w", err)
 	}
@@ -149,12 +150,12 @@ func (s *Service) applyCloudConfig(ctx context.Context, containerID, userData st
 		}
 	}()
 
+	var cfg cloudConfig
 	userData = strings.TrimSpace(userData)
 	if userData != "" {
 		userData = strings.TrimPrefix(userData, "#cloud-config\n")
 		userData = strings.TrimPrefix(userData, "#cloud-config\r\n")
 
-		var cfg cloudConfig
 		if err := yaml.Unmarshal([]byte(userData), &cfg); err != nil {
 			return fmt.Errorf("parse cloud-config userData: %w", err)
 		}
@@ -183,20 +184,40 @@ func (s *Service) applyCloudConfig(ctx context.Context, containerID, userData st
 				}
 			}
 		}
-		for _, command := range cfg.RunCmd {
-			if strings.TrimSpace(command) == "" {
-				continue
-			}
-			if err := s.execInContainer(ctx, containerID, "sh", "-lc", command); err != nil {
-				return fmt.Errorf("run cloud-config command %q: %w", command, err)
-			}
-		}
 	}
 
-	if err := s.writeMockCloudInitStatus(ctx, containerID, "done"); err != nil {
-		return fmt.Errorf("set mock cloud-init status to done: %w", err)
+	if err := s.copyFileToContainer(ctx, containerID, mockCloudInitScriptPath, cloudConfigScript(cfg.RunCmd)); err != nil {
+		return fmt.Errorf("write cloud-init runner: %w", err)
+	}
+	// The node owns cloud-init, just as it does on NICo. A blocking runcmd must
+	// not hold the create response; removing the container stops it naturally.
+	if _, err := s.runDocker(ctx, "exec", "--detach", containerID, "sh", mockCloudInitScriptPath, mockCloudInitStatusPath); err != nil {
+		return fmt.Errorf("start cloud-init runner: %w", err)
 	}
 	return nil
+}
+
+func cloudConfigScript(commands []string) string {
+	var script strings.Builder
+	script.WriteString(`#!/bin/sh
+set -eu
+status_file="$1"
+write_status() {
+    status_tmp="${status_file}.tmp.$$"
+    printf '%s\n' "$1" > "$status_tmp"
+    chmod 0644 "$status_tmp"
+    mv -f "$status_tmp" "$status_file"
+}
+trap 'write_status error' EXIT
+exec >"${status_file%/*}/output.log" 2>&1
+`)
+	for _, command := range commands {
+		if strings.TrimSpace(command) != "" {
+			script.WriteString("sh -lc " + singleQuote(command) + "\n")
+		}
+	}
+	script.WriteString("write_status done\ntrap - EXIT\n")
+	return script.String()
 }
 
 func decodeCloudConfigContent(file cloudConfigWriteFile) (string, error) {

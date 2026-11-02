@@ -8,9 +8,10 @@ The install is a short sequence of commands. `clusterctl init` installs Cluster 
 
 - You have read [Plan your installation](plan-installation.md) and completed [Bootstrap the management cluster](bootstrap-management-cluster.md). You have the site spec the bootstrap ran with and `<CLUSTER_NAME>.kubeconfig`.
 - The management cluster has exactly one default StorageClass, from the Container Storage Interface (CSI) driver for your storage. The bootstrap installs none, and the management plane's database claims a 40 GiB volume.
-- You run every command on the install host, from the root of an `nvke/` checkout at the release you install, with the site spec, `<CLUSTER_NAME>.kubeconfig` and, if you install from one, `release.json` in the directory above it. The bootstrap host can be the install host.
+- You run every command on the install host, from the root of an `nvke/` checkout at the release you install, with the site spec, `<CLUSTER_NAME>.kubeconfig` and, if you install from one, `release.json` in the directory above it. Use the bootstrap host as the install host: it holds the controller image the bootstrap ran with, and [Stage the controller images](#stage-the-controller-images-on-the-management-nodes) copies that image from it to the nodes.
 - The install host has `nvkectl` on `PATH`, built as in [Install nvkectl](bootstrap-management-cluster.md#install-nvkectl), and Helm `v4.2.4`, `kubectl`, `clusterctl` `v1.13.6`, `curl` and `python3`.
-- The install host and the management cluster reach the registries and chart repositories the deploy path pulls from: `ghcr.io`, `quay.io`, `registry.k8s.io`, Docker Hub (`registry-1.docker.io`), `go.temporal.io`, `spiffe.github.io` and the NKTP chart dependencies on `kubernetes-sigs.github.io`, `open-telemetry.github.io` and `prometheus-community.github.io`. `clusterctl` also reads the Cluster API releases from `github.com`, `api.github.com` and `objects.githubusercontent.com`. A `mirror` in the stack config replaces the upstream registries for external images.
+- Unless you install from a release, you can log in to every management node with `ssh` as a user who can run `sudo` without a password. The node image accepts no password logins, so the user data you wrote in [Prepare the nodes](prepare-nodes.md#write-the-user-data) must have added that user and your SSH key.
+- The install host and the management cluster reach the registries and chart repositories the deploy path pulls from: `ghcr.io`, `quay.io`, `registry.k8s.io`, Docker Hub (`registry-1.docker.io`), `go.temporal.io`, `spiffe.github.io` and the NKTP chart dependencies on `kubernetes-sigs.github.io`, `open-telemetry.github.io` and `prometheus-community.github.io`. `clusterctl` also reads the Cluster API releases from `github.com`, `api.github.com` and `objects.githubusercontent.com`. A `mirror` in the stack config replaces the upstream registries for external images. `ghcr.io` serves the NVKE controller image only to authenticated callers, so the nodes do not pull it; [Stage the controller images](#stage-the-controller-images-on-the-management-nodes) puts it on the nodes instead.
 - You have the NVIDIA Infra Controller (NICo) API endpoint, organization ID, API name and API token, and your SPIRE certificate authority (CA) certificate and key files, as listed in [Fill in your values](plan-installation.md#fill-in-your-values).
 
 ## Set the install inputs
@@ -30,8 +31,8 @@ The install reads the site spec, a stack config file for what only the managemen
    | `nico.endpoint` | The NICo API base URL, `http` or `https`, with no user or password. |
    | `nico.orgID` | Your NICo organization ID. |
    | `nico.apiName` | The API name in the NICo API path, such as `forge`. |
-   | `images.profiles` | The profile content image reference. Required without a release description; with one, leave it empty to use the release's `controller-profiles` artifact. |
-   | `images.controller` | Optional. Overrides the controller image. Empty uses the release's image, or without a release the image the deploy path pins. |
+   | `images.profiles` | The profile content image reference, with a tag or digest. Without a release description, set it to the name you stage in [Stage the controller images](#stage-the-controller-images-on-the-management-nodes). With one, leave it empty to use the release's `controller-profiles` artifact. |
+   | `images.controller` | The controller image reference, with a tag or digest. Without a release description, set it to the name you stage; the image the deploy path pins otherwise is in a registry the nodes cannot pull from without a credential. With a release, leave it empty to use the release's image. |
    | `mirror` | Optional. A registry to pull external images from instead of their upstream registries, as `host[:port][/prefix]`. |
 
    The install refuses a file that still holds a `REPLACE_*` value, or that has a key the example does not have.
@@ -62,6 +63,49 @@ The install reads the site spec, a stack config file for what only the managemen
 
 4. If you install from an NVIDIA Kubernetes Recipes (NVKR) release, put its description in `../release.json`, exported with `nvkr release export` from a release reference that `nvkr release verify` accepted. The install then pulls every chart and image the release carries by digest. Without it, the charts come from this checkout and their public repositories.
 
+## Stage the controller images on the management nodes
+
+Without a release description, the controller item runs two images that no registry serves without a credential: the NVKE controller and a profile content image. The deploy path installs them with `imagePullPolicy: IfNotPresent` and no pull secret, so they must already be in every management node's containerd, in the `k8s.io` namespace the kubelet reads. The bootstrap loaded the controller image only into its temporary seed cluster, which it deleted. Skip this section if you install from a release: the nodes then pull both images by digest from the registries the release names.
+
+`<ARCH>` below is the nodes' CPU architecture, `amd64` or `arm64`. The controller image you tag must be built for it.
+
+1. Tag the controller image the bootstrap ran with under the name the install uses. `<CONTROLLER_IMAGE>` is `nke-controller:latest` if you built it with `make -C nvke/cli images`, or the reference you passed as `--nvke-controller-image`.
+
+   ```bash
+   nerdctl tag <CONTROLLER_IMAGE> nvke.local/nke-controller:site
+   ```
+
+2. Build the profile content image. The example profiles in `controller/profiles/example` are a starting point; [controller/profiles/README.md](https://github.com/dsx-ai-factory/nvke/blob/main/controller/profiles/README.md) describes how to build an image from your own profiles.
+
+   ```bash
+   nerdctl build --platform linux/<ARCH> -t nvke.local/controller-profiles:site -f controller/profiles/example/Dockerfile controller/profiles/example
+   ```
+
+3. Import both images into every management node's containerd. Run the command once for each node. `<NODE_USER>` is the account on the node that can run `sudo`, and `<NODE_ADDRESS>` is the node's IP address. The controller pod can run on any node, so do not skip one.
+
+   ```bash
+   nerdctl save --platform linux/<ARCH> nvke.local/nke-controller:site nvke.local/controller-profiles:site | ssh <NODE_USER>@<NODE_ADDRESS> sudo ctr -n k8s.io images import -
+   ```
+
+4. Check that each node lists both images.
+
+   ```bash
+   ssh <NODE_USER>@<NODE_ADDRESS> sudo ctr -n k8s.io images ls -q | grep nvke.local/
+   ```
+
+   The output names `nvke.local/nke-controller:site` and `nvke.local/controller-profiles:site`. Use namespace `k8s.io`: an image imported into another containerd namespace is invisible to the kubelet, which reports it as an image pull failure.
+
+5. Name the two images in `../stack-config.json`.
+
+   ```json
+   "images": {
+     "controller": "nvke.local/nke-controller:site",
+     "profiles": "nvke.local/controller-profiles:site"
+   }
+   ```
+
+   The names have no registry host: the nodes never pull them. Keep a tag other than `latest`, which Kubernetes pulls on every start. To run a new build later, import it on every node under a new tag, name the new tag here and run the install again.
+
 ## Check the site
 
 1. Run the site check.
@@ -72,7 +116,7 @@ The install reads the site spec, a stack config file for what only the managemen
 
    Add `--release ../release.json` if you install from a release. `<CLUSTER_NAME>` is the management cluster's name.
 
-   The check changes nothing. It prints one line for each finding, `PASS`, `WARN`, `SKIP` or `FAIL`, and every `FAIL` names its fix. It covers the tools and their versions, the checkout, Cluster API, the site spec, the stack config and credentials, the release, the cluster's nodes, taint and default StorageClass, outbound access and free disk.
+   The check changes nothing. It prints one line for each finding, `PASS`, `WARN`, `SKIP` or `FAIL`, and every `FAIL` names its fix. It covers the tools and their versions, the checkout, Cluster API, the site spec, the stack config and credentials, the release, the cluster's nodes, taint and default StorageClass, outbound access and free disk. It does not look inside the nodes' containerd, so it cannot tell whether the controller images are staged.
 
 2. Fix each `FAIL` and run the check again until none remain. When everything passes, the check prints the commands that remain, with your paths.
 
@@ -122,7 +166,9 @@ The controller chart admits the NVKE API only from pods in the management cluste
    cp deploy/examples/local-site/nvke-api-clients.yaml ../nvke-api-clients.yaml
    ```
 
-2. In `../nvke-api-clients.yaml`, replace `REPLACE_HOST_CIDR` with the network your API callers use, such as the network of the hosts you run `nvkectl` on, and `REPLACE_TENANT_CIDR` with the network your workload cluster nodes come up on. Admit only trusted networks: the API serves plain HTTP, and with authentication off it serves every caller it admits.
+2. In `../nvke-api-clients.yaml`, replace `REPLACE_HOST_CIDR` with the management cluster's node network, and add an `ipBlock` for each other network that calls the API, such as the network of the hosts you run `nvkectl` on. Replace `REPLACE_TENANT_CIDR` with the network your workload cluster nodes come up on. Admit only trusted networks: the API serves plain HTTP, and with authentication off it serves every caller it admits.
+
+   A request can reach the controller from a management node's address rather than the caller's own, because the NVKE API's NodePort forwards it from the node that receives it. Admitting the node network covers that. Filter port 30080 at your network edge as well, since the policy alone may not tell callers apart.
 
 3. Apply the policy.
 
@@ -142,13 +188,16 @@ The controller chart admits the NVKE API only from pods in the management cluste
 
 ## Verify
 
-1. Check that the NVKE API answers from the install host.
+1. Check that the NVKE API answers.
 
    ```bash
-   curl -s http://<MANAGEMENT_ADDRESS>:30080/healthz
+   curl -sS --max-time 10 http://<MANAGEMENT_ADDRESS>:30080/healthz
    ```
 
-   The output is `{"status":"ok"}`. If the request times out, check that the NetworkPolicy admits the network the install host calls from.
+   Run it from a host you admitted, not from a management node. The output is `{"status":"ok"}`. If it times out:
+
+   - Check that the policy admits the network the host calls from and the management node network.
+   - If it still times out, the request reaches the controller from the OVN-Kubernetes join network, `100.64.0.0/16`, which NVKE does not change. Add an `ipBlock` for it and check again. The policy then admits every caller that can reach port 30080, so limit that port to your operator networks at your network edge or the hosts' firewalls.
 
 2. Check that CAPNICo is configured.
 
@@ -168,7 +217,7 @@ The controller chart admits the NVKE API only from pods in the management cluste
 
 ## Run the install again
 
-Changing a management plane setting later, such as API authentication, telemetry or the controller image, means running the same `deploy/nvke-deploy.sh install` command again. Each item is upgraded in place.
+Changing a management plane setting later, such as API authentication, telemetry or the controller image, means running the same `deploy/nvke-deploy.sh install` command again. Each item is upgraded in place. To change the controller or profile image, stage the new build on every node under a new tag first, as in [Stage the controller images](#stage-the-controller-images-on-the-management-nodes), then name the new tag in the stack config.
 
 - Export the same `NVKECTL_*` values, including the same `NVKECTL_DATABASE_PASSWORD`.
 - Pass the same flags, and every `--values-for <ITEM>=<FILE>` you used before. A file you leave out stops applying, so a later install without `--values-for controller=<FILE>` turns off the settings that file carried.

@@ -187,8 +187,14 @@ func summarizeGinkgoReport(report types.Report) string {
 	return fmt.Sprintf("%d/%d passed", passed, total)
 }
 
-// runURLFromEnv builds the GitHub Actions run URL from the environment.
-// Empty outside a GitHub Actions run.
+// runURLFromEnv builds the URL of this attempt of the GitHub Actions run from
+// the environment. Empty outside a GitHub Actions run.
+//
+// The attempt is part of it because a re-run keeps the run's ID, and the bare
+// run URL opens on whichever attempt ran last. A result from attempt 1 linked
+// that way lands on attempt 2's jobs, which can all be green beside a red
+// result that none of them produced. Without GITHUB_RUN_ATTEMPT it is the bare
+// run URL.
 func runURLFromEnv() string {
 	server := os.Getenv("GITHUB_SERVER_URL")
 	repo := os.Getenv("GITHUB_REPOSITORY")
@@ -196,7 +202,11 @@ func runURLFromEnv() string {
 	if server == "" || repo == "" || runID == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s/%s/actions/runs/%s", server, repo, runID)
+	url := fmt.Sprintf("%s/%s/actions/runs/%s", server, repo, runID)
+	if attempt := os.Getenv("GITHUB_RUN_ATTEMPT"); attempt != "" {
+		url += "/attempts/" + attempt
+	}
+	return url
 }
 
 // identityFromEnv reads the run's identity from the GitHub Actions

@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What the seed changes about spire. Layered over values/spire.yaml.
+#
+# The tpmDirect node attestor stays on. A kind node has no TPM, but the seed's
+# own workloads attest with k8sPSAT, and the TPM allowlist is read only for
+# nodes the controller provisions.
+spiffe-oidc-discovery-provider:
+  # One node. A second replica only sits Pending.
+  replicaCount: 1

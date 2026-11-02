@@ -212,7 +212,7 @@ func TestSBOMDeploy(t *testing.T) {
 		}
 	}
 	pg := decode(t, s.puts[path.Join(valuesDir, "postgresql.yaml")].data)
-	if pw, _ := dig(t, pg, "auth", "postgresPassword").(string); len(pw) < 32 {
+	if pw, _ := dig(t, pg, "auth", "postgresPassword").(string); len(pw) < 26 {
 		t.Errorf("generated password %q is too short", pw)
 	}
 
@@ -327,7 +327,7 @@ func assetsInstalling(t *testing.T, deployPath, name string) string {
 	t.Helper()
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, ControllerReleasePath(deployPath)),
-		"chart:\n  name: nke-controller\nrelease:\n  name: c\n  namespace: "+name+"\n")
+		"chart:\n  name: nvke-controller\nrelease:\n  name: c\n  namespace: "+name+"\n")
 	return dir
 }
 

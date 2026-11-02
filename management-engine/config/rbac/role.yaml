@@ -17,6 +17,17 @@ rules:
 - apiGroups:
   - internal.nvke.nvidia.com
   resources:
+  - clusterreleasechannels
+  - clusterreleases
+  - controlplaneclasses
+  - machineimages
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - internal.nvke.nvidia.com
+  resources:
   - nvkeclusters
   verbs:
   - get

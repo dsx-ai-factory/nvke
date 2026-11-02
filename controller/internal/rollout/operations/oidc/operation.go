@@ -27,6 +27,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nvkerbac"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
 )
@@ -52,7 +53,7 @@ type EnableOIDCOperation struct {
 	k8sClient             client.Client
 	oidcConfig            *config.NvkeOIDCAuth
 	trustDomain           string
-	managementNamespace   string
+	rbacConfigMap         nvkerbac.Source
 	// methodChecker verifies each control-plane agent implements the OIDC
 	// RPCs (gRPC reflection) before any node is touched — the reusable capability
 	// gate in place of an agent version floor.
@@ -186,7 +187,7 @@ func (op *EnableOIDCOperation) BuildApplyToNodePayload(ctx context.Context, clus
 		Providers:     cluster.OIDCProviders(),
 		TrustDomain:   op.trustDomain,
 
-		ManagementNamespace: op.managementNamespace,
+		RBACConfigMap: op.rbacConfigMap,
 	}
 	cfg, err := kubeadmconfig.BuildClusterAuthenticationConfig(ctx, op.k8sClient, authn)
 	if err != nil {

@@ -16,36 +16,53 @@ clusters:
       status: "True"
   controlPlaneConfig:
     configurationId: 00000000-0000-0000-0000-000000000000
-    desiredCount: 1
+    desiredCount: 3
     infra:
+      bootstrapFiles:
+      - content: |
+          message="quoted value"
+          literal={{ leave_this_untouched }}
+        owner: root:root
+        path: /etc/nvke-bootstrap-example.conf
+        permissions: "0644"
       machineTemplate:
-        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
-        kind: DockerMachineTemplate
+        apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+        kind: NicoMachineTemplate
         spec:
           template:
-            metadata: {}
+            metadata:
+              annotations:
+                cluster.x-k8s.io/paused: "true"
+              labels:
+                instance-type: 33333333-3333-4333-8333-333333333333
+                vpc-id: 22222222-2222-4222-8222-222222222222
             spec:
-              customImage: cwe-capd-kindest-node:local
-              extraMounts:
-              - containerPath: /var/run/docker.sock
-                hostPath: /var/run/docker.sock
+              instanceTypeID: 33333333-3333-4333-8333-333333333333
+              interfaces:
+              - subnetID: 44444444-4444-4444-8444-444444444444
+              ipxeScript: |-
+                #!ipxe
+                chain https://images.example.com/nvke/boot.ipxe
+              vpcID: 22222222-2222-4222-8222-222222222222
       preKubeadmCommands:
       - mkdir -p /run/cluster-api
       - echo success > /run/cluster-api/bootstrap-success.complete
-    provisioningMonitorDisabled: true
-    systemReservedMemory: 1Gi
+    maxSurge: 0
+    provisioningMonitorDisabled: false
+    systemReservedMemory: 4Gi
   controlPlaneKubernetesVersion: 1.36.1
   createdAt: "0001-01-01T00:00:00Z"
   etcdEncrypted: true
   id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
   infra:
     cluster:
-      apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
-      kind: DockerCluster
+      apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+      kind: NicoCluster
       metadata:
         labels:
           vpc-id: 22222222-2222-4222-8222-222222222222
-      spec: {}
+      spec:
+        siteID: 11111111-1111-4111-8111-111111111111
   name: cluster-1-34bd578c-mgmt-eng
   network:
     podCIDR: 10.244.0.0/16
@@ -72,9 +89,16 @@ nodePools:
   desiredNodeCount: 1
   id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
   infra:
+    bootstrapFiles:
+    - content: |
+        message="quoted value"
+        literal={{ leave_this_untouched }}
+      owner: root:root
+      path: /etc/nvke-bootstrap-example.conf
+      permissions: "0644"
     machineTemplate:
-      apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
-      kind: DockerMachineTemplate
+      apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+      kind: NicoMachineTemplate
       spec:
         template:
           metadata:
@@ -83,7 +107,17 @@ nodePools:
             labels:
               instance-type: 33333333-3333-4333-8333-333333333333
               vpc-id: 22222222-2222-4222-8222-222222222222
-          spec: {}
+          spec:
+            instanceTypeID: 33333333-3333-4333-8333-333333333333
+            interfaces:
+            - subnetID: 44444444-4444-4444-8444-444444444444
+            ipxeScript: |-
+              #!ipxe
+              chain https://images.example.com/nvke/boot.ipxe
+            vpcID: 22222222-2222-4222-8222-222222222222
+    preKubeadmCommands:
+    - mkdir -p /run/cluster-api
+    - echo success > /run/cluster-api/bootstrap-success.complete
   kubernetesVersion: ""
   name: workers
   nodeLabels: null
@@ -96,34 +130,51 @@ requests:
 - create:
     cniPlugin: ovn-kubernetes
     controlPlaneConfig:
-      desiredCount: 1
+      desiredCount: 3
       infra:
+        bootstrapFiles:
+        - content: |
+            message="quoted value"
+            literal={{ leave_this_untouched }}
+          owner: root:root
+          path: /etc/nvke-bootstrap-example.conf
+          permissions: "0644"
         machineTemplate:
-          apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
-          kind: DockerMachineTemplate
+          apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+          kind: NicoMachineTemplate
           spec:
             template:
-              metadata: {}
+              metadata:
+                annotations:
+                  cluster.x-k8s.io/paused: "true"
+                labels:
+                  instance-type: 33333333-3333-4333-8333-333333333333
+                  vpc-id: 22222222-2222-4222-8222-222222222222
               spec:
-                customImage: cwe-capd-kindest-node:local
-                extraMounts:
-                - containerPath: /var/run/docker.sock
-                  hostPath: /var/run/docker.sock
+                instanceTypeID: 33333333-3333-4333-8333-333333333333
+                interfaces:
+                - subnetID: 44444444-4444-4444-8444-444444444444
+                ipxeScript: |-
+                  #!ipxe
+                  chain https://images.example.com/nvke/boot.ipxe
+                vpcID: 22222222-2222-4222-8222-222222222222
         preKubeadmCommands:
         - mkdir -p /run/cluster-api
         - echo success > /run/cluster-api/bootstrap-success.complete
-      provisioningMonitorDisabled: true
-      systemReservedMemory: 1Gi
+      maxSurge: 0
+      provisioningMonitorDisabled: false
+      systemReservedMemory: 4Gi
     controlPlaneKubernetesVersion: 1.36.1
     etcdEncrypted: true
     infra:
       cluster:
-        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
-        kind: DockerCluster
+        apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+        kind: NicoCluster
         metadata:
           labels:
             vpc-id: 22222222-2222-4222-8222-222222222222
-        spec: {}
+        spec:
+          siteID: 11111111-1111-4111-8111-111111111111
     name: cluster-1-34bd578c-mgmt-eng
     network:
       podCIDR: 10.244.0.0/16
@@ -134,9 +185,16 @@ requests:
     clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     desiredNodeCount: 1
     infra:
+      bootstrapFiles:
+      - content: |
+          message="quoted value"
+          literal={{ leave_this_untouched }}
+        owner: root:root
+        path: /etc/nvke-bootstrap-example.conf
+        permissions: "0644"
       machineTemplate:
-        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
-        kind: DockerMachineTemplate
+        apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+        kind: NicoMachineTemplate
         spec:
           template:
             metadata:
@@ -145,7 +203,17 @@ requests:
               labels:
                 instance-type: 33333333-3333-4333-8333-333333333333
                 vpc-id: 22222222-2222-4222-8222-222222222222
-            spec: {}
+            spec:
+              instanceTypeID: 33333333-3333-4333-8333-333333333333
+              interfaces:
+              - subnetID: 44444444-4444-4444-8444-444444444444
+              ipxeScript: |-
+                #!ipxe
+                chain https://images.example.com/nvke/boot.ipxe
+              vpcID: 22222222-2222-4222-8222-222222222222
+      preKubeadmCommands:
+      - mkdir -p /run/cluster-api
+      - echo success > /run/cluster-api/bootstrap-success.complete
     name: workers
     nodeNamePrefix: workers
     provisioningMonitorDisabled: true

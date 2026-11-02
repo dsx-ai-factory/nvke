@@ -91,7 +91,7 @@ A chart comes from `chart.path` (a checkout directory, `helm dependency build` f
 | `PHASE_TIMEOUT`, `--timeout` | `15m` | `helm --wait` timeout per release |
 | `REQUIRE_TIMEOUT` | `180s` | `kubectl wait` and rollout timeout |
 | `CAPI_VERSION` | `make/tool-versions.mk` | The Cluster API version `check-site.sh` expects and prints the `clusterctl init` for |
-| `CONTROLLER_NAMESPACE` | `nke-controller` | Where `check-site.sh --diagnostics` reads the controller logs |
+| `CONTROLLER_NAMESPACE` | `nvke-controller` | Where `check-site.sh --diagnostics` reads the controller logs |
 
 ## Test
 

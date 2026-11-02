@@ -48,6 +48,7 @@ func (a *Activities) waitForControlPlaneNodeReadyToJoin(
 	logger := activity.GetLogger(ctx)
 
 	logger.Info("Waiting for a control plane node to be ready to join", "clusterID", input.ClusterID)
+	pollCtx := db.WithoutQuerySpans(ctx)
 
 	for {
 		// Record heartbeat to prevent activity timeout
@@ -55,7 +56,7 @@ func (a *Activities) waitForControlPlaneNodeReadyToJoin(
 
 		// Get all control plane nodes for this cluster
 		controlPlane := true
-		nodes, err := a.db.ListNodes(ctx, db.NodeFilters{
+		nodes, err := a.db.ListNodes(pollCtx, db.NodeFilters{
 			ClusterID:    &input.ClusterID,
 			ControlPlane: &controlPlane,
 		})

@@ -1,0 +1,117 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Values for the NICo umbrella chart, on the seed.
+#
+# The generated overlay supplies global.image.repository and global.image.tag
+# from the artifact file. NICo publishes its own images and this file names no
+# registry.
+#
+# The nico-prereqs release and manifests/nico/ come first. NICo's config
+# ConfigMap and its schema migration Job read the namespace, the database and
+# the credentials Secret.
+
+global:
+  image:
+    repository: ""
+    tag: ""
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  certificate:
+    issuerRef:
+      kind: ClusterIssuer
+      # manifests/nico/cluster-issuer.yaml creates it under this name.
+      name: vault-nico-issuer
+      group: cert-manager.io
+  spiffe:
+    # NICo's own trust domain, separate from the controller's. The two SPIFFE
+    # deployments do not federate.
+    trustDomain: nico.local
+
+# Every subchart below is pinned to forge-system. Each NICo subchart resolves
+# its namespace from its own namespaceOverride, else the release namespace.
+# There is no global that sets them all. One that disagrees lands where the
+# Secrets and ConfigMaps are not.
+
+nico-api:
+  namespaceOverride: forge-system
+  # The Secret nico-api reads its credentials from. The command creates it.
+  # The chart's own default names a namespace this deployment does not use.
+  envFrom:
+    databaseCredentials:
+      secretName: nico.forge-pg-cluster.credentials
+  # The NICo chart creates both ConfigMaps when these are non-empty. DB_HOST
+  # must match the host in values/nico-prereqs.yaml.
+  databaseConfig:
+    DB_HOST: nico-postgresql.forge-system.svc.cluster.local
+    DB_PORT: "5432"
+    DB_NAME: nico
+  # Without this the vault-cluster-info ConfigMap is never created, and every
+  # NICo service that mounts it sits at ContainerCreating. The values are read
+  # only when NICo calls Vault, so a seed with no Vault leaves VAULT_SERVICE
+  # empty.
+  vaultClusterInfo:
+    VAULT_SERVICE: ""
+    NICO_VAULT_MOUNT: secrets
+    NICO_VAULT_PKI_MOUNT: forgeca
+  # nico-api exits at startup without resource pools, so siteConfig is not
+  # optional. The four pools are the required minimum. The ranges are
+  # placeholders. The generated overlay replaces them with the site's address
+  # plan. dhcp_servers takes IPv4 addresses, so the base leaves it empty and
+  # the overlay fills it.
+  siteConfig:
+    enabled: true
+    nicoApiSiteConfig: |
+      dhcp_servers = []
+      enable_route_servers = true
+      initial_domain_name = "site.example.com"
+      sitename = "site"
+
+      [pools.lo-ip]
+      type = "ipv4"
+      ranges = [{ start = "10.0.0.0", end = "10.0.1.0" }]
+
+      [pools.vlan-id]
+      type = "integer"
+      ranges = [{ start = "100", end = "501" }]
+
+      [pools.vni]
+      type = "integer"
+      ranges = [{ start = "1024500", end = "1024800" }]
+
+      [pools.vpc-vni]
+      type = "integer"
+      ranges = [{ start = "0", end = "100" }]
+
+nico-bmc-proxy:
+  namespaceOverride: forge-system
+nico-dhcp:
+  namespaceOverride: forge-system
+nico-dns:
+  namespaceOverride: forge-system
+nico-hardware-health:
+  namespaceOverride: forge-system
+nico-pxe:
+  namespaceOverride: forge-system
+nico-ssh-console-rs:
+  namespaceOverride: forge-system
+
+# A seed runs a reduced NICo. The optional subcharts stay off. They keep the
+# namespace pin so turning one on later does not move it.
+nico-dsx-exchange-consumer:
+  enabled: false
+  namespaceOverride: forge-system
+nico-ntp:
+  enabled: false
+  namespaceOverride: forge-system
+unbound:
+  enabled: false
+  namespaceOverride: forge-system
+# This subchart reads global.namespaceOverride rather than its own. A global
+# would reach every other subchart too, so it is not set. Turned on, it lands
+# in the release namespace.
+nico-machine-a-tron:
+  enabled: false
+nico-postgres-exporter:
+  enabled: false
+  namespaceOverride: forge-system

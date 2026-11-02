@@ -155,7 +155,7 @@ func TestEveryChartIsComplete(t *testing.T) {
 		}
 		// That it declares a name, not which one: the directory is the key
 		// this package indexes by, and the Helm chart name is independent of
-		// it. controller/ holds the chart named nke-controller, after the OCI
+		// it. controller/ holds the chart named nvke-controller, after the OCI
 		// repository it publishes to.
 		if !chartName.Match(meta) {
 			t.Errorf("chart %s: Chart.yaml declares no name:\n%s", name, meta)

@@ -111,6 +111,21 @@ func (c ControlPlaneConfigSpec) LaunchLayerProvider() (LaunchLayerControlPlanePr
 	return *cloneLaunchLayerControlPlaneProvider(c.LaunchLayer), nil
 }
 
+// activeProvider returns the single provider set on the spec as an opaque
+// value, or nil when none is set. It is the one place that knows the provider
+// union; capability accessors like ScaleDownRanker type-assert against it.
+func (c ControlPlaneConfigSpec) activeProvider() any {
+	switch {
+	case c.Nico != nil:
+		return *c.Nico
+	case c.Capi != nil:
+		return *c.Capi
+	case c.LaunchLayer != nil:
+		return *c.LaunchLayer
+	}
+	return nil
+}
+
 // ControlPlaneConfig is the cluster control plane configuration shape used by
 // API and controller logic. It contains cluster-level fields (configuration ID,
 // desired count, max surge) plus the current snapshot spec loaded from
@@ -120,6 +135,7 @@ type ControlPlaneConfig struct {
 	ConfigurationCreatedAt time.Time `json:"configuration_created_at,omitempty" bun:"-"`
 	DesiredCount           int       `json:"desired_count" bun:"cp_desired_count,notnull,default:0"`
 	MaxSurge               int       `json:"max_surge,omitempty" bun:"cp_max_surge,notnull,default:0"`
+	AutoScaleDownDisabled  bool      `json:"auto_scale_down_disabled,omitempty" bun:"cp_auto_scale_down_disabled,notnull,default:false"`
 	ControlPlaneConfigSpec
 }
 
@@ -150,6 +166,7 @@ func BuildControlPlaneConfig(cluster Cluster, snapshotCfg ControlPlaneConfigSpec
 		ConfigurationCreatedAt: createdAt,
 		DesiredCount:           cluster.ControlPlaneConfig.DesiredCount,
 		MaxSurge:               cluster.ControlPlaneConfig.MaxSurge,
+		AutoScaleDownDisabled:  cluster.ControlPlaneConfig.AutoScaleDownDisabled,
 		ControlPlaneConfigSpec: snapshotCfg,
 	}
 }
@@ -343,9 +360,10 @@ func LoadClusterControlPlaneConfig(ctx context.Context, q Queries, cluster *Clus
 	}
 	if cluster.ControlPlaneConfig.ConfigurationID == uuid.Nil {
 		cluster.ControlPlaneConfig = ControlPlaneConfig{
-			ConfigurationID: cluster.ControlPlaneConfig.ConfigurationID,
-			DesiredCount:    cluster.ControlPlaneConfig.DesiredCount,
-			MaxSurge:        cluster.ControlPlaneConfig.MaxSurge,
+			ConfigurationID:       cluster.ControlPlaneConfig.ConfigurationID,
+			DesiredCount:          cluster.ControlPlaneConfig.DesiredCount,
+			MaxSurge:              cluster.ControlPlaneConfig.MaxSurge,
+			AutoScaleDownDisabled: cluster.ControlPlaneConfig.AutoScaleDownDisabled,
 		}
 		return nil
 	}
@@ -376,9 +394,10 @@ func LoadClustersControlPlaneConfig(ctx context.Context, q Queries, clusters []C
 		row, ok := byID[clusters[i].ControlPlaneConfig.ConfigurationID]
 		if !ok {
 			clusters[i].ControlPlaneConfig = ControlPlaneConfig{
-				ConfigurationID: clusters[i].ControlPlaneConfig.ConfigurationID,
-				DesiredCount:    clusters[i].ControlPlaneConfig.DesiredCount,
-				MaxSurge:        clusters[i].ControlPlaneConfig.MaxSurge,
+				ConfigurationID:       clusters[i].ControlPlaneConfig.ConfigurationID,
+				DesiredCount:          clusters[i].ControlPlaneConfig.DesiredCount,
+				MaxSurge:              clusters[i].ControlPlaneConfig.MaxSurge,
+				AutoScaleDownDisabled: clusters[i].ControlPlaneConfig.AutoScaleDownDisabled,
 			}
 			continue
 		}
@@ -467,5 +486,6 @@ func LegacyControlPlaneConfigFromJSON(raw json.RawMessage) (ControlPlaneConfig, 
 func (c ControlPlaneConfig) Equal(other ControlPlaneConfig) bool {
 	return c.DesiredCount == other.DesiredCount &&
 		c.MaxSurge == other.MaxSurge &&
+		c.AutoScaleDownDisabled == other.AutoScaleDownDisabled &&
 		c.ControlPlaneConfigSpec.Equal(other.ControlPlaneConfigSpec)
 }

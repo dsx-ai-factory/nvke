@@ -101,7 +101,7 @@ func NewController(
 
 // secretsNamespace is the management-cluster namespace that holds the
 // per-cluster Secrets this controller owns (kubeconfig + trust bundle) and the
-// nke-rbac ConfigMap it reads. The chart creates the namespace and scopes the
+// RBAC ConfigMap it reads. The chart creates the namespace and scopes the
 // controller's Secret grant to it, so the two must be configured together.
 func (c *Controller) secretsNamespace() string {
 	return c.cfg.ManagementNamespaceOrDefault()
@@ -236,7 +236,18 @@ func (c *Controller) publish(ctx context.Context, cluster db.Cluster, adminConf 
 	} else {
 		publishErr = c.upsertKubeconfigSecret(ctx, live, KubeconfigSecretName(live.Name), adminConf, constants.LabelValueKubeconfigModeAdmin)
 	}
-	return errors.Join(publishErr, c.publishBreakglass(ctx, live, adminConf))
+	if err := errors.Join(publishErr, c.publishBreakglass(ctx, live, adminConf)); err != nil {
+		return err
+	}
+
+	// Ordered last because a valid Cluster.spec.controlPlaneEndpoint is what makes CAPI's own reconcileKubeconfig
+	// reachable, and that path mints <cluster>-kubeconfig by signing with a CA private key NVKE does not hold.
+	// It only acts when the Secret is absent, so the endpoint is applied only after the kubeconfig Secret exists.
+	if err := c.publishCAPIBootstrapContract(ctx, live, adminConf); err != nil {
+		return fmt.Errorf("publishing CAPI bootstrap contract for cluster %s: %w", live.Name, err)
+	}
+
+	return nil
 }
 
 // publishBreakglass stores the nvke:breakglass kubeconfig in the admin Secret.
@@ -355,15 +366,17 @@ func (c *Controller) publishSPIRE(ctx context.Context, cluster db.Cluster, admin
 	return c.upsertSecret(ctx, cluster, trustBundleSecret)
 }
 
-// applyRBAC server-side applies the operator-managed nke-rbac manifest into the
+// applyRBAC server-side applies the operator-managed RBAC manifest into the
 // tenant cluster.
 func (c *Controller) applyRBAC(ctx context.Context, cluster db.Cluster, adminConf []byte) error {
 	manifest, err := c.readRBACManifest(ctx)
 	if apierrors.IsNotFound(err) {
 		// Do not publish a SPIRE kubeconfig that cannot authenticate as nvke:cwe /
 		// CAPI SPIFFE IDs. The chart renders this ConfigMap when spiffe.trustDomain
-		// is set, independent of the live OIDC flag.
-		return fmt.Errorf("nke-rbac ConfigMap not found; refusing to publish SPIRE kubeconfig for cluster %s: %w", cluster.Name, err)
+		// is set, independent of the live OIDC flag. The name is per-site
+		// configurable, so say which one was looked for.
+		src := c.cfg.RBACConfigMapSource()
+		return fmt.Errorf("RBAC ConfigMap %s/%s not found; refusing to publish SPIRE kubeconfig for cluster %s: %w", src.Namespace, src.Name, cluster.Name, err)
 	}
 	if err != nil {
 		return err

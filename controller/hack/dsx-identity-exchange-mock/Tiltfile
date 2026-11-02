@@ -75,7 +75,7 @@ def register(ctx):
           kubectl -n spire-server get secret oidc-provider-upstream-ca \
             -o go-template='{{ index .data "ca.crt" | base64decode }}' >"${ca_file}"
           test -s "${ca_file}"
-          for namespace in nke-controller capi-system capi-kubeadm-control-plane-system capi-kubeadm-bootstrap-system capd-system; do
+          for namespace in nvke-controller capi-system capi-kubeadm-control-plane-system capi-kubeadm-bootstrap-system capd-system; do
             kubectl -n "${namespace}" create configmap %s \
               --from-file=ca.crt="${ca_file}" --dry-run=client -o yaml | kubectl apply -f -
           done
@@ -117,7 +117,7 @@ def register(ctx):
         },
         controller_chart_flags=[
             "--set-string", "spiffe.jwtExchangeEndpoint=%s" % exchange_endpoint,
-            "--set-string", "spiffe.controllerSubject=spiffe://nke.capd.nke-controller.nvid.id/bm/cwe",
+            "--set-string", "spiffe.controllerSubject=spiffe://nke.capd.nvke-controller.nvid.id/bm/cwe",
             "--set-string", "spiffe.capiManagerSubject=spiffe://nke.capd.capi-manager.nvid.id/bm/cwe",
             "--set-string", "spiffe.capiKubeadmControlPlaneManagerSubject=spiffe://nke.capd.capi-kubeadm-control-plane-manager.nvid.id/bm/cwe",
             "--set-string", "spiffe.capiKubeadmBootstrapManagerSubject=spiffe://nke.capd.capi-kubeadm-bootstrap-manager.nvid.id/bm/cwe",

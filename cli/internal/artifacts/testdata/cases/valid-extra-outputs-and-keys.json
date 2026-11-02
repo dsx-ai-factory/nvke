@@ -1,0 +1,461 @@
+{
+  "schemaVersion": "nvkr.dev/release-description/v1",
+  "inspection": "metadata inspection; payloads, signatures and policy not verified",
+  "inspectionDetails": {
+    "scope": "metadata-only",
+    "metadataClosure": "complete",
+    "outputSelection": "all",
+    "checks": {
+      "metadataIntegrity": "checked",
+      "payloadIntegrity": "not-checked",
+      "signatures": "not-checked",
+      "consumerPolicy": "not-checked",
+      "registryAvailability": "not-checked",
+      "installationCompatibility": "not-checked"
+    }
+  },
+  "totalOutputs": 13,
+  "reference": "registry.example.invalid/nvke/releases@sha256:9999999999999999999999999999999999999999999999999999999999999999",
+  "referenceScope": "derived from supplied root reference; no registry availability claim",
+  "rootDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+  "declaredQualification": "qualified",
+  "metadata": {
+    "invocationId": "workflow-run-42-attempt-1",
+    "definitionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "environmentDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "planDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "contentSubject": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "outputs": [
+    {
+      "name": "agent-apt",
+      "kind": "apt-repository",
+      "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "reference": "registry.example.invalid/nvke/agent-apt@sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "components": [
+        "agent"
+      ],
+      "artifactType": "application/vnd.nvkr.apt-repository.v1",
+      "buildSubjects": [
+        {
+          "component": "agent",
+          "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ]
+    },
+    {
+      "name": "capnico-controller",
+      "kind": "oci",
+      "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "reference": "registry.example.invalid/nvke/capnico-controller@sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "components": [
+        "capnico-controller"
+      ],
+      "imageIndex": {
+        "requiredPlatforms": [
+          "linux/amd64",
+          "linux/arm64"
+        ],
+        "children": [
+          {
+            "platform": "linux/amd64",
+            "manifestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "size": 1024,
+            "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "component": "capnico-controller",
+            "buildSubject": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          {
+            "platform": "linux/arm64",
+            "manifestDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "size": 1025,
+            "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "component": "capnico-controller",
+            "buildSubject": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        ]
+      },
+      "artifactType": "application/vnd.oci.image.index.v1+json",
+      "buildSubjects": []
+    },
+    {
+      "name": "controller-chart",
+      "kind": "helm-oci",
+      "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "reference": "registry.example.invalid/nvke/charts/controller-chart@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "chartVersion": "0.4.2",
+      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+      "buildSubjects": []
+    },
+    {
+      "name": "cwe",
+      "kind": "oci",
+      "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "reference": "registry.example.invalid/nvke/cwe@sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "components": [
+        "cwe"
+      ],
+      "imageIndex": {
+        "requiredPlatforms": [
+          "linux/amd64",
+          "linux/arm64"
+        ],
+        "children": [
+          {
+            "platform": "linux/amd64",
+            "manifestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "size": 1024,
+            "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "component": "cwe",
+            "buildSubject": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          {
+            "platform": "linux/arm64",
+            "manifestDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "size": 1025,
+            "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "component": "cwe",
+            "buildSubject": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        ]
+      },
+      "artifactType": "application/vnd.oci.image.index.v1+json",
+      "buildSubjects": []
+    },
+    {
+      "name": "local-path-provisioner",
+      "kind": "helm-oci",
+      "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "reference": "registry.example.invalid/nvke/charts/local-path-provisioner@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "chartVersion": "0.0.31",
+      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+      "buildSubjects": []
+    },
+    {
+      "name": "nico",
+      "kind": "helm-oci",
+      "digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "reference": "registry.example.invalid/nvke/charts/nico@sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "chartVersion": "0.12.0",
+      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+      "buildSubjects": []
+    },
+    {
+      "name": "nico-prereqs",
+      "kind": "helm-oci",
+      "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "reference": "registry.example.invalid/nvke/charts/nico-prereqs@sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "chartVersion": "0.12.0",
+      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+      "buildSubjects": []
+    },
+    {
+      "name": "nktp",
+      "kind": "helm-oci",
+      "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "reference": "registry.example.invalid/nvke/charts/nktp@sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "chartVersion": "0.9.0",
+      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+      "buildSubjects": []
+    },
+    {
+      "name": "nvkectl-linux-amd64",
+      "kind": "executable",
+      "digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "reference": "registry.example.invalid/nvke/nvkectl-linux-amd64@sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "os": "linux",
+      "arch": "amd64",
+      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "components": [
+        "nvkectl"
+      ],
+      "artifactType": "application/vnd.nvkr.binary-bundle.v1",
+      "buildSubjects": [
+        {
+          "component": "nvkectl",
+          "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ],
+      "signedBy": "a key a later nvkr adds"
+    },
+    {
+      "name": "postgresql",
+      "kind": "helm-oci",
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "reference": "registry.example.invalid/nvke/charts/postgresql@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "chartVersion": "18.5.15",
+      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+      "buildSubjects": []
+    },
+    {
+      "name": "spire",
+      "kind": "helm-oci",
+      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "reference": "registry.example.invalid/nvke/charts/spire@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "chartVersion": "0.30.1",
+      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+      "buildSubjects": []
+    },
+    {
+      "name": "spire-crds",
+      "kind": "helm-oci",
+      "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "reference": "registry.example.invalid/nvke/charts/spire-crds@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "chartVersion": "0.6.1",
+      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+      "buildSubjects": []
+    },
+    {
+      "name": "temporal",
+      "kind": "helm-oci",
+      "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "reference": "registry.example.invalid/nvke/charts/temporal@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "chartVersion": "0.74.0",
+      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+      "buildSubjects": []
+    }
+  ],
+  "evidence": [
+    {
+      "name": "sbom-capnico-controller",
+      "kind": "sbom",
+      "reference": "registry.example.invalid/nvke/capnico-controller@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "artifactType": "application/vnd.cyclonedx+json",
+      "manifestDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "blobDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "semanticDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "binding": {
+        "platform": "linux/amd64",
+        "documentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "outputs": [
+          "capnico-controller"
+        ],
+        "component": "capnico-controller",
+        "stage": "build-output",
+        "subjectKind": "oci-manifest",
+        "subjectDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "source": {
+        "repo": "https://github.com/dsx-ai-factory/cluster-api-provider-nico",
+        "commit": "89abcdef0123456789abcdef0123456789abcdef"
+      }
+    },
+    {
+      "name": "sbom-controller-chart",
+      "kind": "sbom",
+      "reference": "registry.example.invalid/nvke/controller-chart@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "artifactType": "application/vnd.cyclonedx+json",
+      "manifestDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "blobDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "semanticDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "binding": {
+        "documentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "outputs": [
+          "controller-chart"
+        ],
+        "component": "controller-chart",
+        "stage": "packaging",
+        "subjectKind": "helm-bundle",
+        "subjectDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "source": {
+        "repo": "https://github.com/dsx-ai-factory/nvke",
+        "commit": "0123456789abcdef0123456789abcdef01234567"
+      }
+    },
+    {
+      "name": "sbom-cwe",
+      "kind": "sbom",
+      "reference": "registry.example.invalid/nvke/cwe@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "artifactType": "application/vnd.cyclonedx+json",
+      "manifestDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "blobDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "semanticDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "binding": {
+        "platform": "linux/amd64",
+        "documentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "outputs": [
+          "cwe"
+        ],
+        "component": "cwe",
+        "stage": "build-output",
+        "subjectKind": "oci-manifest",
+        "subjectDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+      },
+      "source": {
+        "repo": "https://github.com/dsx-ai-factory/nvke",
+        "commit": "0123456789abcdef0123456789abcdef01234567"
+      }
+    },
+    {
+      "name": "sbom-nico",
+      "kind": "sbom",
+      "reference": "registry.example.invalid/nvke/nico@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "artifactType": "application/vnd.cyclonedx+json",
+      "manifestDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "blobDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "semanticDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "binding": {
+        "documentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "outputs": [
+          "nico"
+        ],
+        "component": "nico",
+        "stage": "packaging",
+        "subjectKind": "helm-bundle",
+        "subjectDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+      }
+    },
+    {
+      "name": "sbom-nico-prereqs",
+      "kind": "sbom",
+      "reference": "registry.example.invalid/nvke/nico-prereqs@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "artifactType": "application/vnd.cyclonedx+json",
+      "manifestDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "blobDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "semanticDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "binding": {
+        "documentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "outputs": [
+          "nico-prereqs"
+        ],
+        "component": "nico-prereqs",
+        "stage": "packaging",
+        "subjectKind": "helm-bundle",
+        "subjectDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+      }
+    },
+    {
+      "name": "sbom-nktp",
+      "kind": "sbom",
+      "reference": "registry.example.invalid/nvke/nktp@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "artifactType": "application/vnd.cyclonedx+json",
+      "manifestDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "blobDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "semanticDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "binding": {
+        "documentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "outputs": [
+          "nktp"
+        ],
+        "component": "nktp",
+        "stage": "packaging",
+        "subjectKind": "helm-bundle",
+        "subjectDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+      },
+      "source": {
+        "repo": "https://github.com/dsx-ai-factory/nvke",
+        "commit": "0123456789abcdef0123456789abcdef01234567"
+      }
+    },
+    {
+      "name": "sbom-postgresql",
+      "kind": "sbom",
+      "reference": "registry.example.invalid/nvke/postgresql@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "artifactType": "application/vnd.cyclonedx+json",
+      "manifestDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "blobDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "semanticDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "binding": {
+        "documentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "outputs": [
+          "postgresql"
+        ],
+        "component": "postgresql",
+        "stage": "packaging",
+        "subjectKind": "helm-bundle",
+        "subjectDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "sbom-spire",
+      "kind": "sbom",
+      "reference": "registry.example.invalid/nvke/spire@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "artifactType": "application/vnd.cyclonedx+json",
+      "manifestDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "blobDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "semanticDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "binding": {
+        "documentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "outputs": [
+          "spire"
+        ],
+        "component": "spire",
+        "stage": "packaging",
+        "subjectKind": "helm-bundle",
+        "subjectDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    {
+      "name": "sbom-spire-crds",
+      "kind": "sbom",
+      "reference": "registry.example.invalid/nvke/spire-crds@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "artifactType": "application/vnd.cyclonedx+json",
+      "manifestDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "blobDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "semanticDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "binding": {
+        "documentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "outputs": [
+          "spire-crds"
+        ],
+        "component": "spire-crds",
+        "stage": "packaging",
+        "subjectKind": "helm-bundle",
+        "subjectDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    },
+    {
+      "name": "sbom-temporal",
+      "kind": "sbom",
+      "reference": "registry.example.invalid/nvke/temporal@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "artifactType": "application/vnd.cyclonedx+json",
+      "manifestDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "blobDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "semanticDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "binding": {
+        "documentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "outputs": [
+          "temporal"
+        ],
+        "component": "temporal",
+        "stage": "packaging",
+        "subjectKind": "helm-bundle",
+        "subjectDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    },
+    {
+      "name": "sbom-local-path-provisioner",
+      "kind": "sbom",
+      "reference": "registry.example.invalid/nvke/local-path-provisioner@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "artifactType": "application/vnd.cyclonedx+json",
+      "manifestDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "blobDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "semanticDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "binding": {
+        "documentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "outputs": [
+          "local-path-provisioner"
+        ],
+        "component": "local-path-provisioner",
+        "stage": "packaging",
+        "subjectKind": "helm-bundle",
+        "subjectDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  ],
+  "selectedOutput": "",
+  "publisherNote": "a key a later nvkr adds"
+}

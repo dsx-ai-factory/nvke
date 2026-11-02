@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
@@ -250,6 +252,16 @@ func TestNodePoolService_ListNodePools(t *testing.T) {
 }
 
 func TestNodePoolService_CreateNodePool(t *testing.T) {
+	provider := sdktrace.NewTracerProvider()
+	t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.Background())) })
+	requestCtx, requestSpan := provider.Tracer("test").Start(t.Context(), "create-node-pool")
+	defer requestSpan.End()
+	wantTraceID := requestSpan.SpanContext().TraceID()
+	requestTrace := mock.MatchedBy(func(ctx context.Context) bool {
+		spanContext := trace.SpanContextFromContext(ctx)
+		return spanContext.TraceID() == wantTraceID && spanContext.SpanID().IsValid()
+	})
+
 	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
 	siteID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")
 	nodePoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
@@ -315,7 +327,7 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 					NodeNamePrefix: "test-pool-prefix",
 				}, nil)
 
-				tx.On("CreateWorkflowOutboxEntry", mock.Anything, "ProvisionNodePool", mock.Anything, mock.MatchedBy(func(input interface{}) bool {
+				tx.On("CreateWorkflowOutboxEntry", requestTrace, "ProvisionNodePool", mock.Anything, mock.MatchedBy(func(input interface{}) bool {
 					m, ok := input.(map[string]interface{})
 					return ok && m["nodePoolID"] == nodePoolID
 				})).Return(db.WorkflowOutbox{}, nil)
@@ -449,7 +461,7 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 					NodeNamePrefix: "test-pool-vpc-prefix",
 				}, nil)
 
-				tx.On("CreateWorkflowOutboxEntry", mock.Anything, "ProvisionNodePool", mock.Anything, mock.MatchedBy(func(input interface{}) bool {
+				tx.On("CreateWorkflowOutboxEntry", requestTrace, "ProvisionNodePool", mock.Anything, mock.MatchedBy(func(input interface{}) bool {
 					m, ok := input.(map[string]interface{})
 					return ok && m["nodePoolID"] == nodePoolID
 				})).Return(db.WorkflowOutbox{}, nil)
@@ -487,7 +499,7 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 
 			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil)
 
-			resp, err := service.CreateNodePool(context.Background(), api.CreateNodePoolRequestObject{
+			resp, err := service.CreateNodePool(requestCtx, api.CreateNodePoolRequestObject{
 				Body: &tt.request,
 			})
 

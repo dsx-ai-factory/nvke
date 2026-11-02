@@ -25,7 +25,7 @@ const (
 	testTenant   = "tenant-uuid"
 	testInstance = "instance-uuid"
 	testMachine  = "machine-uuid"
-	testDatahall = "az51-dev2-dh2"
+	testDatahall = "datahall-1"
 )
 
 // fakeNico stands in for a datahall's nico API, and for the SSA issuer in
@@ -154,12 +154,12 @@ func testEnv(api string) *Environment {
 				VpcPrefixID:   "prefix-uuid",
 				SSHKeyGroupID: "keygroup-uuid",
 				NodeUser:      "dgxc-admin",
-				JumpHost:      "az51-dev2-dh2-node01",
+				JumpHost:      "datahall-1-node01",
 				Machines: []Machine{
 					{Name: "J701L43T", ID: testMachine, Provides: map[string]string{infra.CapabilityArch: "amd64"}},
 				},
 				InstanceTypes: []InstanceType{
-					{Name: "az51-dev2-dh2-nvke-tenant", ID: "tenant-type-uuid", Provides: map[string]string{infra.CapabilityMachineType: "cpu", infra.CapabilityArch: "amd64"}},
+					{Name: "datahall-1-nvke-tenant", ID: "tenant-type-uuid", Provides: map[string]string{infra.CapabilityMachineType: "cpu", infra.CapabilityArch: "amd64"}},
 				},
 			},
 		},
@@ -289,7 +289,7 @@ func TestProvisionNodeDialsBeforeReady(t *testing.T) {
 		t.Fatal("nothing was dialed")
 	}
 	target := dialer.targets[0]
-	if target.JumpHost != "az51-dev2-dh2-node01" {
+	if target.JumpHost != "datahall-1-node01" {
 		t.Errorf("dialed through %q, want the datahall's jump host", target.JumpHost)
 	}
 	if target.User != "dgxc-admin" {

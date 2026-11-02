@@ -280,7 +280,7 @@ func (e *Engine) Create(ctx context.Context, cfg Config) (*Cluster, error) {
 		args = append(args, "--wait", cfg.WaitReady.String())
 	}
 
-	e.log.Info("creating bootstrap kind cluster", "cluster", cfg.ClusterName)
+	e.log.Info("creating bootstrap kind cluster", "bootstrap_kind_cluster", cfg.ClusterName)
 	if out, err := e.Runner.Run(ctx, kindEnv(), "kind", args...); err != nil {
 		// A SIGINT during `kind create` cancels ctx, and the runner execs
 		// through exec.CommandContext, so reusing ctx would skip the
@@ -295,10 +295,10 @@ func (e *Engine) Create(ctx context.Context, cfg Config) (*Cluster, error) {
 		defer cancelDelete()
 		if cfg.KeepFailedCluster {
 			e.log.Warn("--keep-bootstrap-cluster set: leaving the failed bootstrap kind cluster in place",
-				"cluster", cfg.ClusterName)
+				"bootstrap_kind_cluster", cfg.ClusterName)
 		} else if deleteErr := e.Delete(deleteCtx, cfg.ClusterName); deleteErr != nil {
 			e.log.Error("could not clean up after a failed create",
-				"cluster", cfg.ClusterName, "err", deleteErr)
+				"bootstrap_kind_cluster", cfg.ClusterName, "err", deleteErr)
 		}
 		return nil, fmt.Errorf("kind create cluster %s: %w\n%s", cfg.ClusterName, err, out)
 	}
@@ -319,7 +319,7 @@ func (e *Engine) Create(ctx context.Context, cfg Config) (*Cluster, error) {
 		return nil, fmt.Errorf("bootstrap kind cluster %s created but kubeconfig fetch failed: %w", cfg.ClusterName, err)
 	}
 
-	e.log.Info("bootstrap kind cluster ready", "cluster", cfg.ClusterName)
+	e.log.Info("bootstrap kind cluster ready", "bootstrap_kind_cluster", cfg.ClusterName)
 	return &Cluster{
 		Name:           cfg.ClusterName,
 		KubeconfigPath: kubeconfigPath,
@@ -334,7 +334,7 @@ func (e *Engine) Delete(ctx context.Context, clusterName string) error {
 		return fmt.Errorf("bootstrapengine: clusterName is required")
 	}
 
-	e.log.Info("deleting bootstrap kind cluster", "cluster", clusterName)
+	e.log.Info("deleting bootstrap kind cluster", "bootstrap_kind_cluster", clusterName)
 	out, err := e.Runner.Run(ctx, kindEnv(), "kind", "delete", "cluster", "--name", clusterName)
 	if err != nil {
 		return fmt.Errorf("kind delete cluster %s: %w\n%s", clusterName, err, out)
@@ -410,7 +410,7 @@ func (e *Engine) LoadImage(ctx context.Context, clusterName, image string) error
 		return fmt.Errorf("bootstrapengine: image is required")
 	}
 	e.log.Info("loading image into bootstrap kind cluster",
-		"cluster", clusterName, "image", image)
+		"bootstrap_kind_cluster", clusterName, "image", image)
 
 	archivePath, cleanup, err := saveImageArchive(ctx, e.Runner, e.log, image)
 	if err != nil {

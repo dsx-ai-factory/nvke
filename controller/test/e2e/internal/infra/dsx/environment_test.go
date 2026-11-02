@@ -61,6 +61,7 @@ func TestCheckedInEnvironmentsParse(t *testing.T) {
 			if err != nil {
 				t.Fatalf("decoding %s as dsx: %v", path, err)
 			}
+			seen := map[string]string{}
 			for siteName := range decoded.Sites {
 				// Site validates every identifier a cluster cannot be created
 				// without, so this is what stops a half-filled environment
@@ -70,11 +71,15 @@ func TestCheckedInEnvironmentsParse(t *testing.T) {
 					t.Errorf("site %q is not usable: %v", siteName, err)
 					continue
 				}
-				// A datahall addresses itself, so a site whose endpoint does
-				// not carry its own key is pointed at another one.
-				if !strings.Contains(site.Endpoint(), siteName) {
-					t.Errorf("site %q resolves to endpoint %q, which does not name it", siteName, site.Endpoint())
+				// The key is generic, so nothing ties it to a host and the
+				// check that a site addresses itself cannot be made here. What
+				// can: two sites sharing one endpoint, which is a copy-paste of
+				// the wrong variable and would silently run both streams
+				// against one datahall.
+				if other, dup := seen[site.Endpoint()]; dup {
+					t.Errorf("sites %q and %q both resolve to %q", other, siteName, site.Endpoint())
 				}
+				seen[site.Endpoint()] = siteName
 				for _, machine := range site.Machines {
 					if machine.Arch() == "" {
 						t.Errorf("site %q machine %q declares no arch, so nothing can select it", siteName, machine.Name)
@@ -116,6 +121,7 @@ func TestDecodeRejectsAnUnknownField(t *testing.T) {
 // thing about it.
 func completeSite() Site {
 	return Site{
+		API:           "https://carbide-rest-api-x.example",
 		ID:            "site",
 		TenantID:      "tenant",
 		VpcID:         "vpc",
@@ -130,18 +136,32 @@ func completeSite() Site {
 	}
 }
 
-func TestEndpointDerivesFromTheKey(t *testing.T) {
-	site := Site{Key: "az51-dev2-dh2"}
-	want := "https://carbide-rest-api-az51-dev2-dh2.dev.dsx.nvidia.com"
-	if got := site.Endpoint(); got != want {
-		t.Errorf("Endpoint() = %q, want %q", got, want)
+// The key is generic, so nothing is derived from it: the host is declared.
+// A trailing slash is trimmed because the callers append a rooted path.
+func TestEndpointIsTheDeclaredAPI(t *testing.T) {
+	for name, tc := range map[string]struct{ api, want string }{
+		"as declared":       {api: "https://carbide-rest-api-x.example", want: "https://carbide-rest-api-x.example"},
+		"trailing slash":    {api: "https://elsewhere.example/", want: "https://elsewhere.example"},
+		"surrounding space": {api: "  https://elsewhere.example  ", want: "https://elsewhere.example"},
+		// A run of slashes, not one: trimming a single suffix would leave the
+		// endpoint slash-terminated and read as a second datahall.
+		"repeated slashes": {api: "https://elsewhere.example///", want: "https://elsewhere.example"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := (Site{Key: "datahall-1", API: tc.api}).Endpoint(); got != tc.want {
+				t.Errorf("Endpoint() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
-func TestEndpointPrefersAnExplicitAPI(t *testing.T) {
-	site := Site{Key: "az51-dev2-dh2", API: "https://elsewhere.example/"}
-	if got := site.Endpoint(); got != "https://elsewhere.example" {
-		t.Errorf("Endpoint() = %q, want the declared API with no trailing slash", got)
+// api is required: the key names no host, so an unset one would dial nothing.
+func TestValidateRequiresTheAPI(t *testing.T) {
+	site := completeSite()
+	site.Key = "dh"
+	site.API = ""
+	if err := site.validate(); err == nil || !strings.Contains(err.Error(), "api") {
+		t.Errorf("validate() = %v, want it to name the missing api", err)
 	}
 }
 
@@ -150,7 +170,7 @@ func TestValidateNamesEveryMissingField(t *testing.T) {
 	if err == nil {
 		t.Fatal("a site declaring nothing should not validate")
 	}
-	for _, want := range []string{"tenantID", "vpcID", "vpcPrefixID", "sshKeyGroupID", "instanceTypes"} {
+	for _, want := range []string{"api", "tenantID", "vpcID", "vpcPrefixID", "sshKeyGroupID", "instanceTypes"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should name %s, got %v", want, err)
 		}

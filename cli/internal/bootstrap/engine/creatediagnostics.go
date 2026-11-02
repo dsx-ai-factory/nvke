@@ -46,7 +46,7 @@ func (e *Engine) dumpCreateFailure(ctx context.Context, cfg Config) {
 
 	node := controlPlaneNode(cfg.ClusterName)
 	e.log.Info("collecting diagnostics from the failed bootstrap kind cluster",
-		"cluster", cfg.ClusterName, "node", node, "dir", cfg.DiagnosticsDir)
+		"bootstrap_kind_cluster", cfg.ClusterName, "node", node, "dir", cfg.DiagnosticsDir)
 
 	var report strings.Builder
 	for _, probe := range createFailureProbes(node) {

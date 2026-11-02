@@ -9,6 +9,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nvkerbac"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
 )
@@ -46,10 +47,10 @@ func WithTrustDomain(trustDomain string) Option {
 	return func(op *EnableOIDCOperation) { op.trustDomain = trustDomain }
 }
 
-// WithManagementNamespace injects the shared management-plane namespace, where
-// the nke-rbac ConfigMap lives (config.Config.ManagementNamespaceOrDefault).
-func WithManagementNamespace(namespace string) Option {
-	return func(op *EnableOIDCOperation) { op.managementNamespace = namespace }
+// WithRBACConfigMap injects the operator-managed RBAC ConfigMap whose User
+// subjects are reserved (config.Config.RBACConfigMapSource).
+func WithRBACConfigMap(src nvkerbac.Source) Option {
+	return func(op *EnableOIDCOperation) { op.rbacConfigMap = src }
 }
 
 // WithMethodSupportChecker injects the reusable agent capability check

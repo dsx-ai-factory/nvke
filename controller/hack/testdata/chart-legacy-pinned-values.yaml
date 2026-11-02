@@ -26,6 +26,12 @@ nvkeSystemNamespace:
 controllerConfig:
   name: "nke-controller-config"
 
+# The controller reads only the name set here, so renaming the ConfigMap leaves
+# the live manifest unread and every tenant cluster without the RBAC the
+# management plane authenticates against.
+rbacConfigMap:
+  name: "nke-rbac"
+
 # Same again for the authentication ConfigMap, which the chart mounts whether
 # or not it created it. An install that supplies its own (configMap.create
 # false) must keep naming the one it supplies.

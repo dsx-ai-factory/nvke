@@ -188,4 +188,7 @@ items:
       id: dddddddd-dddd-4ddd-8ddd-dddddddddddd
       name: workers-c
     observedGeneration: 1
+    resolvedRelease:
+      name: test-release
+      version: 1.36.1
 metadata: {}

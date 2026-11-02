@@ -16,4 +16,4 @@
 # the controller at HEAD and loads it into kind, so it overrides repository and
 # tag and never pulls from a registry. Keeping cloud-workflow-engine a subchart
 # with live values is what makes that possible.
-namespaceOverride: nke-controller
+namespaceOverride: nvke-controller

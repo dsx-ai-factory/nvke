@@ -223,6 +223,7 @@ publications; it does not replace them.
 | [`internal/qualification/`](internal/qualification/) | Reading and checking the three files, and turning them into a plan |
 | [`internal/resolve/`](internal/resolve/) | The resolution strategies. Of this repository it takes only `internal/artifact` |
 | [`internal/artifact/`](internal/artifact/) | Asking whether a location holds something, over HTTPS or a registry, and waiting for one that is still publishing |
+| [`hack/next-tag.sh`](hack/next-tag.sh) | The version the next beta or release candidate tag gets, from the commits since the latest GA tag. [`test_next_tag.py`](hack/test_next_tag.py) tests it against fixture repositories |
 
 Each file has one concern. A component that is qualified on its own would carry
 its own `<component>/qualification.yaml` next to its code, using the same

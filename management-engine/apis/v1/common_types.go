@@ -59,6 +59,37 @@ type MachineInit struct {
 	// +kubebuilder:validation:XValidation:rule="self.startsWith('#cloud-config\\n') || self.startsWith('#cloud-config\\r\\n') || self.startsWith('#!') || self.startsWith('#include') || self.startsWith('#cloud-boothook') || self.startsWith('#part-handler') || self.startsWith('#cloud-config-archive') || self.startsWith('Content-Type:')",message="userDataTemplate must begin with a cloud-init header"
 	// +kubebuilder:validation:XValidation:rule="self.split('{{').size() == self.split('}}').size()",message="userDataTemplate has unbalanced Go template delimiters"
 	UserDataTemplate string `json:"userDataTemplate"`
+	// Infra supplies concrete bootstrap additions for the generic infra provider.
+	// +optional
+	Infra *InfraBootstrap `json:"infra,omitempty"`
+}
+
+// InfraBootstrap carries additional cloud-init files and commands without template rendering.
+type InfraBootstrap struct {
+	// +optional
+	// +listType=atomic
+	BootstrapFiles []BootstrapFile `json:"bootstrapFiles,omitempty"`
+	// +optional
+	// +listType=atomic
+	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
+}
+
+// BootstrapFile describes a cloud-init write_files entry supported by the generic infra API.
+type BootstrapFile struct {
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=512
+	Path string `json:"path"`
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	Owner string `json:"owner,omitempty"`
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=16
+	Permissions string `json:"permissions,omitempty"`
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=10240
+	Content string `json:"content"`
 }
 
 // ReleaseLifecycle is how an operator manages an already-published Release

@@ -36,7 +36,7 @@ name: Chart Publish
 # The chart names the GHCR controller image, and image-nvcr.yml promotes to
 # GHCR only for release tags -- NVCR gets every main commit, GHCR does not. A
 # chart built from main would therefore carry an appVersion like
-# v0.1.0-4-gabcdef and point at ghcr.io/dsx-ai-factory/nvke/nke-controller:v0.1.0-4-gabcdef,
+# v0.1.0-4-gabcdef and point at ghcr.io/dsx-ai-factory/nvke/nvke-controller:v0.1.0-4-gabcdef,
 # which does not exist. Publishing only what the image side publishes keeps the
 # two in step.
 on:
@@ -76,7 +76,7 @@ jobs:
     # The ref check is not redundant with the `on:` filter above: it also covers
     # workflow_dispatch, which accepts any ref. Dispatched from main this job
     # would package something like 0.1.1-rc.0-2-g068156e and point it at
-    # ghcr.io/dsx-ai-factory/nvke/nke-controller:v0.1.1-rc.0-2-g068156e, a tag promotion never
+    # ghcr.io/dsx-ai-factory/nvke/nvke-controller:v0.1.1-rc.0-2-g068156e, a tag promotion never
     # creates -- a chart naming an image that does not exist.
     # NVKE_GITHUB_PUBLISH names the components whose releases go to GitHub;
     # see docs/artifact-publication.md. Unset means every component but os-image.
@@ -121,6 +121,17 @@ jobs:
           echo "app_version=${describe}" >> "${GITHUB_OUTPUT}"
           echo "Chart version: ${version}  appVersion: ${describe}"
 
+      # Ahead of the image rewrite because the GHCR package is private and the
+      # rewrite probes it. helm keeps its own registry config rather than
+      # writing docker's, so the helm login below is invisible to docker and
+      # crane; this is the same token, in the place every other tool looks.
+      - name: Log in to GHCR for crane
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       # values.yaml already defaults to this image, so the rewrite is normally a
       # no-op. It is here so the packaged chart cannot silently inherit a
       # different default if someone edits values.yaml, and so this job states
@@ -128,9 +139,21 @@ jobs:
       # not own.
       - name: Point the chart at the GHCR image
         shell: bash
+        env:
+          APP_VERSION: ${{ steps.meta.outputs.app_version }}
         run: |
           set -euo pipefail
-          image="ghcr.io/dsx-ai-factory/nvke/nke-controller"
+          image="ghcr.io/dsx-ai-factory/nvke/nvke-controller"
+
+          # A manual run from a tag cut before the rename names an image that
+          # GHCR still holds as nke-controller. Probed, not guessed from the
+          # tag, because the rename boundary is not a version.
+          if ! docker manifest inspect "${image}:${APP_VERSION}" >/dev/null 2>&1; then
+            legacy="ghcr.io/dsx-ai-factory/nvke/nke-controller"
+            docker manifest inspect "${legacy}:${APP_VERSION}" >/dev/null 2>&1 \
+              || { echo "::error::${APP_VERSION} is on GHCR as neither nvke-controller nor nke-controller"; exit 1; }
+            image="${legacy}"
+          fi
 
           # Anchored at exactly two spaces so this hits image.repository and
           # NOT profiles.image.repository, which is nested one level deeper and
@@ -164,17 +187,6 @@ jobs:
           set -euo pipefail
           echo "${GHCR_TOKEN}" | helm registry login ghcr.io \
             --username "${{ github.actor }}" --password-stdin
-
-      # helm keeps its own registry config rather than writing docker's, so
-      # the login above is invisible to crane. record-digest below needs a
-      # credential it can see; this is the same token, in the place every
-      # other tool looks for it.
-      - name: Log in to GHCR for crane
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push chart
         shell: bash

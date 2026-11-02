@@ -78,7 +78,7 @@ spire-server:
     k8sConfigMap:
       namespace: spire-system
   adminIDs:
-    - spiffe://example.org/nvke-service/nke-controller
+    - spiffe://example.org/nvke-service/nvke-controller
   controllerManager:
     # The chart applies its ClusterSPIFFEID objects as part of the same release
     # that creates the controller manager serving the webhook that validates
@@ -110,14 +110,14 @@ spire-server:
     identities:
       clusterSPIFFEIDs:
         default:
-          # nke-controller workloads use a dedicated nvke-service
+          # nvke-controller workloads use a dedicated nvke-service
           # identity. Keep the fallback from racing it during reconciliation.
           namespaceSelector:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: NotIn
                 values:
-                  - nke-controller
+                  - nvke-controller
 
         # The identity NVKE's own services present. This was a loose manifest in
         # controller/deploy/k8s, which the CAPD lane had to apply between two
@@ -143,7 +143,7 @@ spire-server:
               - key: kubernetes.io/metadata.name
                 operator: In
                 values:
-                  - nke-controller
+                  - nvke-controller
                   - capi-system
                   - capi-kubeadm-control-plane-system
                   - capi-kubeadm-bootstrap-system

@@ -56,6 +56,11 @@ const (
 
 	// NamespaceNVKESystem is the shared management-plane namespace for tenant-access
 	// Secrets and OIDC-mode CAPI objects. The Helm chart creates it unconditionally.
+	//
+	// The value lags the name on purpose. The authoritative default is the
+	// chart's nvkeSystemNamespace.name; this is only the compiled fallback, and
+	// it has to stay "nke-system" for the same reason as
+	// LegacyManagementNamespace below. It is not renamed with the product.
 	NamespaceNVKESystem = "nke-system"
 
 	// LegacyManagementNamespace is the shared management-plane namespace every

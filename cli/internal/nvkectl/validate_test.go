@@ -4,6 +4,7 @@
 package nvkectl
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -163,32 +164,14 @@ func TestValidateSiteSpec_NicoNeedsTheSpireAddressUnlessMTLSIsOff(t *testing.T) 
 	}
 }
 
-// TestValidateSiteSpec_NicoOneNodeWithoutVIP: the file is valid and the
-// bootstrap can run, but the stack install needs a VIP that cannot be added
-// once the site cluster exists, so both checks warn.
+// TestValidateSiteSpec_NicoOneNodeWithoutVIP: a nico site spec needs its
+// control-plane VIP even with one node, so both checks refuse it.
 func TestValidateSiteSpec_NicoOneNodeWithoutVIP(t *testing.T) {
 	path := nicoStackSiteSpec(t, oneNicoNodeNoVIP(t))
-	dir := filepath.Dir(path)
-	if err := os.WriteFile(filepath.Join(dir, "nico.token"), []byte("example-token\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("NVKECTL_NICO_CREDENTIALS", filepath.Join(dir, "nico.token"))
-	t.Setenv("NVKECTL_NODE_USER", "example-user")
-	t.Setenv("NVKECTL_NODE_PASSWORD", "example-password")
-	if err := os.Mkdir(filepath.Join(dir, "bootstrap-releases"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	const releases = "apiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n---\napiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-ubuntu-24.04-amd64\nspec:\n  machineImageRef:\n    name: img\n"
-	if err := os.WriteFile(filepath.Join(dir, "bootstrap-releases", "r.yaml"), []byte(releases), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	const warning = "warning: cluster.controlPlaneVIP is not set"
 	for _, bootstrapOnly := range []bool{false, true} {
-		var out strings.Builder
-		err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: bootstrapOnly})
-		if got := out.String(); err != nil || !strings.Contains(got, warning) || !strings.HasSuffix(got, "valid\n") {
-			t.Errorf("bootstrapOnly=%v: err = %v, output %q; want it valid with %q", bootstrapOnly, err, got, warning)
+		err := runValidateSiteSpec(io.Discard, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: bootstrapOnly})
+		if err == nil || !strings.Contains(err.Error(), "cluster.controlPlaneVIP is required") {
+			t.Errorf("bootstrapOnly=%v: err = %v, want cluster.controlPlaneVIP is required", bootstrapOnly, err)
 		}
 	}
 }

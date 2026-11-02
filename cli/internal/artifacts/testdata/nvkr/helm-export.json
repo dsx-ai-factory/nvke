@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "nvkr.dev/release-description/v1",
+  "inspection": "metadata inspection; payloads, signatures and policy not verified",
+  "inspectionDetails": {
+    "scope": "metadata-only",
+    "metadataClosure": "complete",
+    "outputSelection": "all",
+    "checks": {
+      "metadataIntegrity": "checked",
+      "payloadIntegrity": "not-checked",
+      "signatures": "not-checked",
+      "consumerPolicy": "not-checked",
+      "registryAvailability": "not-checked",
+      "installationCompatibility": "not-checked"
+    }
+  },
+  "totalOutputs": 2,
+  "reference": "registry.example.test/product@sha256:3f92237e0617d36f56df83a0de80bcc76c3cee27ac2770b9ee119627400f58ac",
+  "referenceScope": "derived from supplied root reference; no registry availability claim",
+  "rootDigest": "sha256:3f92237e0617d36f56df83a0de80bcc76c3cee27ac2770b9ee119627400f58ac",
+  "declaredQualification": "diagnostic",
+  "metadata": {
+    "definitionDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "environmentDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+    "planDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+    "contentSubject": "sha256:28bb270eb441130a221e44f6a9f019a7fd721946d780097b3e875c5359af06b9"
+  },
+  "outputs": [
+    {
+      "name": "gpu-runtime",
+      "kind": "helm-oci",
+      "digest": "sha256:3c5490c74f24352b9dc8da0bb032dea92b5c531ef4fa7a640ecbd08f7cbe8888",
+      "reference": "registry.example.test/gpu-runtime@sha256:3c5490c74f24352b9dc8da0bb032dea92b5c531ef4fa7a640ecbd08f7cbe8888",
+      "chartVersion": "1.0.0",
+      "buildDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+      "buildSubjects": []
+    },
+    {
+      "name": "worker-apt",
+      "kind": "apt-repository",
+      "digest": "sha256:59defde9289dabe0b298e4e32666a8af0492b219c8dea54f84c0df00f05c19c3",
+      "reference": "registry.example.test/worker-apt@sha256:3692369e5c94ae8f4e489a9037acf048f0da3bbe378561bed8a773543dccabb9",
+      "buildDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "components": [
+        "agent"
+      ],
+      "artifactType": "application/vnd.nvkr.apt-repository.v1",
+      "buildSubjects": [
+        {
+          "component": "agent",
+          "digest": "sha256:094647564a4186ffe5d6481d39ab5a3f7ac4bf4355e27ca93cb0645683605d86"
+        }
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "name": "sbom-07d713aac7392d65668252f8aead6bbae787eb7926ba013e74331811d1510d1e",
+      "kind": "sbom",
+      "reference": "registry.example.test/worker-apt@sha256:411e82a911b2dbd0386988a66078b3e8811acc80a111b95eacea988c5a4435df",
+      "artifactType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+      "manifestDigest": "sha256:411e82a911b2dbd0386988a66078b3e8811acc80a111b95eacea988c5a4435df",
+      "blobDigest": "sha256:48500b6ce6973c58fef12ae8a0535ca9de38f5e6c12f2162f9781b205bbc163c",
+      "semanticDigest": "sha256:07d713aac7392d65668252f8aead6bbae787eb7926ba013e74331811d1510d1e",
+      "binding": {
+        "documentDigest": "sha256:732fa3eb736af034417b75279d5c31d07670f6436f91f7ad8fa6dd9ab7cd6daf",
+        "outputs": [
+          "worker-apt"
+        ],
+        "component": "agent",
+        "stage": "build-output",
+        "subjectKind": "file",
+        "subjectDigest": "sha256:094647564a4186ffe5d6481d39ab5a3f7ac4bf4355e27ca93cb0645683605d86"
+      }
+    },
+    {
+      "name": "sbom-e7963152952aa73f36f9e7e8beb29445a88c28785f7883b047dc0f68d9c9750d",
+      "kind": "sbom",
+      "reference": "registry.example.test/gpu-runtime@sha256:39681c1c08731c9fd00bb64ce156cde032e28c82e0212319711de1942cc934e0",
+      "artifactType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+      "manifestDigest": "sha256:39681c1c08731c9fd00bb64ce156cde032e28c82e0212319711de1942cc934e0",
+      "blobDigest": "sha256:4686c871b584bcfcb5b9b5704f4092b91b2cec0c144432b78c7cf31c21575f36",
+      "semanticDigest": "sha256:e7963152952aa73f36f9e7e8beb29445a88c28785f7883b047dc0f68d9c9750d",
+      "binding": {
+        "documentDigest": "sha256:186e4d4d5a26d6e845da467c58caa546ebb936610f91c77b5a829cf1c61b6691",
+        "outputs": [
+          "gpu-runtime"
+        ],
+        "component": "gpu-runtime",
+        "stage": "packaging",
+        "subjectKind": "helm-bundle",
+        "subjectDigest": "sha256:3c5490c74f24352b9dc8da0bb032dea92b5c531ef4fa7a640ecbd08f7cbe8888",
+        "inspectionInputDigest": "sha256:d1092cf1f949b801d2add96177096b32bb3eabb14234ecb417ea32d2eebb23de"
+      }
+    }
+  ]
+}

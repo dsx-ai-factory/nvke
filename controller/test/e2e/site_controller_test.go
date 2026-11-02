@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/rest"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/environment"
@@ -39,9 +40,10 @@ import (
 
 // The stages of the site controller run, each doing everything the one before it did.
 const (
-	siteStageProvision = "provision" // a node, reachable, then released
-	siteStageBootstrap = "bootstrap" // plus vanilla Kubernetes from nvkectl
-	siteStageFull      = "full"      // plus the NVKE stack, the controller, and a tenant
+	siteStageProvision  = "provision"  // a node, reachable, then released
+	siteStageBootstrap  = "bootstrap"  // plus vanilla Kubernetes from nvkectl
+	siteStageDeployment = "deployment" // plus the NVKE stack and the controller
+	siteStageFull       = "full"       // plus a tenant
 )
 
 // Secrets the site controller run reads from the environment. They are never written to
@@ -191,13 +193,13 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 		switch siteStage {
 		case "":
 			Skip("-e2e.site-stage is not set")
-		case siteStageProvision, siteStageBootstrap:
+		case siteStageProvision, siteStageBootstrap, siteStageDeployment:
 		case siteStageFull:
 			if err := fullStageSupported(expectSucceed(runEnvironment()).Provider); err != nil {
 				Fail(err.Error())
 			}
 		default:
-			Fail(fmt.Sprintf("-e2e.site-stage %q is not provision, bootstrap or full", siteStage))
+			Fail(fmt.Sprintf("-e2e.site-stage %q is not provision, bootstrap, deployment or full", siteStage))
 		}
 		// An archive an earlier run left behind describes another node.
 		if err := os.Remove(siteDiagnostics); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -219,7 +221,7 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 		// its whole provision timeout reporting that. The site node has not
 		// been asked for yet, so a shortfall here releases nothing.
 		secrets = withheldFromEnvironment()
-		if siteStage == siteStageFull {
+		if siteStage == siteStageDeployment || siteStage == siteStageFull {
 			var placed []string
 			stack, placed = expectSucceed2(newStack(cfg, capabilities[infra.CapabilityArch]))
 			secrets = append(secrets, placed...)
@@ -274,7 +276,7 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 	// that stops earlier runs fewer specs rather than running the same spec
 	// with a collaborator neutered, which is what a do-nothing deployer and a
 	// substitute probe used to express.
-	if siteStage == siteStageBootstrap || siteStage == siteStageFull {
+	if siteStage == siteStageBootstrap || siteStage == siteStageDeployment || siteStage == siteStageFull {
 		It("bootstraps the site controller", func(ctx SpecContext) {
 			if session == nil {
 				Skip("no node")
@@ -308,7 +310,7 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 		}, NodeTimeout(5*time.Minute))
 	}
 
-	if siteStage == siteStageFull {
+	if siteStage == siteStageDeployment || siteStage == siteStageFull {
 		It("deploys the stack", func(ctx SpecContext) {
 			if cluster.Kubeconfig == "" || session == nil {
 				Skip("the site controller was not bootstrapped")
@@ -346,6 +348,20 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 		validateSitePostDeploy(func() (site.Cluster, site.Spec, bool) {
 			return cluster, spec, deployed
 		}, siteLaneChecks)
+		// The validation image's behavior checks, on the site this run built.
+		// They skip after any failure, as the checks above do, so a broken
+		// site keeps the minutes its teardown needs.
+		validateSiteBehavior(func() siteValidateSettings {
+			if !deployed {
+				Skip("the stack was not deployed")
+			}
+			if failed {
+				Skip("an earlier site check failed")
+			}
+			checks := siteLaneChecks
+			checks.restConfig = func() (*rest.Config, error) { return kube.RESTConfig(cluster.Kubeconfig, "") }
+			return siteValidateSettings{enabled: true, kubernetesVersion: spec.KubernetesVersion, checks: checks}
+		})
 
 		It("delivers the site's telemetry through NKTP", func(ctx SpecContext) {
 			if !deployed {
@@ -394,6 +410,10 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 			// -e2e.site-stage, not the absence of a label: unset, BeforeAll
 			// skips this whole container before any machine is asked for.
 			Entry("nico-forge", Label("nico-forge"), nicoForgeTenant()),
+			// The DSX datahall's own tenant. Reached only when the site lane
+			// resolved a DSX environment, which is what -e2e.environment
+			// already decided before any of this was built.
+			Entry("nico-dsx", Label("nico-dsx"), nicoDSXTenant()),
 		)
 	}
 
@@ -491,19 +511,27 @@ func siteCapabilities(run map[string]string) map[string]string {
 	return node
 }
 
-// requireRunCapacity asks Forge whether the shapes this full run will create
-// have usable allocations: the site node and the tenant control plane on the
-// CPU shape, and one worker on the worker shape.
+// requireRunCapacity asks the substrate whether the shapes this run will create
+// have usable allocations: the site node and, at the full stage, the tenant
+// control plane on the CPU shape, and one worker on the worker shape. A
+// deployment run builds the site node and no tenant, so it asks for one machine.
+//
+// Duck-typed rather than part of infra.Provider: a substrate that cannot answer
+// should not have to implement a method that lies, and one that can answers the
+// same question in its own API's terms.
 func requireRunCapacity(ctx context.Context, provider infra.Provider) error {
 	checker, ok := provider.(interface {
 		RequireCapacity(ctx context.Context, selector map[string]string, cpu, workers int) error
 	})
 	if !ok {
-		return fmt.Errorf("provider %T cannot check Forge allocation stats", provider)
+		return fmt.Errorf("provider %T cannot check allocation stats", provider)
 	}
 	capabilities, err := runCapabilities()
 	if err != nil {
 		return err
+	}
+	if siteStage == siteStageDeployment {
+		return checker.RequireCapacity(ctx, capabilities, 1, 0)
 	}
 	return checker.RequireCapacity(ctx, capabilities, 2, 1)
 }
@@ -538,26 +566,29 @@ func newInfraProvider(cfg config.Config) (infra.Provider, error) {
 // fullStageSupported reports whether a full run can build this provider's
 // tenant, which is what separates it from bootstrap.
 //
-// The tenant half is nicoForgeSpec, and it decodes the environment as a Forge
-// declaration with unknown fields rejected. A DSX environment carries
-// tenantID and nodeUser, which that decoder refuses, so the tenant fails every
-// time however healthy the datahall is.
+// A tenant spec decodes the environment as its own provider's declaration with
+// unknown fields rejected, so a provider without one fails every time however
+// healthy its hardware is: a DSX environment carries tenantID and nodeUser,
+// which Forge's decoder refuses, and the reverse holds too.
 //
-// Checked here because the cost is the point. Without it a full run takes a
-// machine, provisions it and installs the whole stack --- forty minutes, and
-// on redstone-dev1-dh2 the only CPU machine there is, so nothing else can run
-// meanwhile --- to reach a failure that was certain before it started.
+// Checked here because the cost is the point. Without it a full run takes
+// machines, provisions them and installs the whole stack --- forty minutes,
+// and on a datahall whose every machine is a GPU tray that is capacity
+// nothing else can use meanwhile --- to reach a failure that was certain
+// before it started.
 //
-// Not Forge rather than is-DSX: the limitation is that the tenant spec speaks
-// one dialect, so a third provider meets the same wall, and naming DSX would
-// wave it through to the same deterministic failure.
+// A list rather than a not-Forge test: the limitation is that each tenant spec
+// speaks one dialect, so a provider that gains one is added here, and a
+// provider that has none meets the same wall as before.
 func fullStageSupported(provider string) error {
-	if provider == forge.ProviderName {
+	switch provider {
+	case forge.ProviderName, dsx.ProviderName:
 		return nil
 	}
-	return fmt.Errorf("-e2e.site-stage full needs a tenant spec for provider %q, and the only one is Forge's: "+
-		"the tenant half decodes the environment as a Forge declaration, which a %s environment is not. "+
-		"Run this provider at stage provision or bootstrap until a tenant spec for it exists", provider, provider)
+	return fmt.Errorf("-e2e.site-stage full needs a tenant spec for provider %q, and the ones that exist are "+
+		"Forge's and DSX's: the tenant half decodes the environment as one of those declarations, which a %s "+
+		"environment is not. Run this provider at stage provision, bootstrap or deployment until a tenant spec for it exists",
+		provider, provider)
 }
 
 // newDeployConfig builds what the Cluster API provider the stack installs
@@ -753,13 +784,12 @@ func newDSXProvider(cfg config.Config, env *environment.Environment) (infra.Prov
 // newDSXNicoConfig is how the site's CAPNICo reaches the same datahall the
 // provider created the site node in.
 //
-// The token is minted once and written into a Secret, where it lives as a
-// static string. On this substrate it expires in fifteen minutes, and CAPNICo
-// has no refresh path: the install itself needs no live authentication, so it
-// completes, but a tenant create afterwards will fail on an expired token
-// until the Secret is patched. The fix is a credential that outlives the
-// run, which is a provisioning question rather than a code one -- see the
-// note on dsx.MintToken.
+// It is handed the SSA client, not a token. A DSX token lives fifteen minutes
+// and nothing refreshes the Secret it would be written into, so a site given
+// one stops being able to create machines a quarter of an hour after an
+// install that needs no live authentication to finish -- the failure lands on
+// the first tenant create, a long way from its cause. With the client,
+// CAPNICo mints its own and keeps minting for as long as the site stands.
 func newDSXNicoConfig(env *environment.Environment) (site.CAPIProviderConfig, error) {
 	dsxEnv, err := dsx.Decode(env.Infrastructure)
 	if err != nil {
@@ -775,11 +805,19 @@ func newDSXNicoConfig(env *environment.Environment) (site.CAPIProviderConfig, er
 	}
 	dsxSite := selection.Site
 
-	token, err := dsx.MintToken(context.Background(), dsxSite)
+	client, err := dsx.SSAClientFor(dsxSite)
 	if err != nil {
 		return nil, err
 	}
-	return site.NewNico(dsxSite.Endpoint(), dsxEnv.Org.ID, token, dsx.APIName), nil
+	return site.NewNicoClient(
+		dsxSite.Endpoint(),
+		dsxEnv.Org.ID,
+		dsx.APIName,
+		client.TokenURL,
+		client.ClientID,
+		client.ClientSecret,
+		client.Scope,
+	), nil
 }
 
 // keepReason names which setting held the node, so the log says what to
@@ -1205,9 +1243,9 @@ func (c terminatingAware) WaitForClusterDeleted(ctx context.Context, id openapi_
 }
 
 func inRepo(repo, path string) string {
-	if rest, ok := strings.CutPrefix(path, "~/"); ok {
+	if relative, ok := strings.CutPrefix(path, "~/"); ok {
 		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, rest)
+			return filepath.Join(home, relative)
 		}
 	}
 	if filepath.IsAbs(path) {

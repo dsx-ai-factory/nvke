@@ -15,7 +15,7 @@ This page describes how to check the health of the NVIDIA Kubernetes Engine (NVK
 1. Check that the management plane is rolled out.
 
    ```bash
-   kubectl rollout status deployment/nke-controller -n nke-controller
+   kubectl rollout status deployment/nvke-controller -n nvke-controller
    ```
 
    The output ends with `successfully rolled out`.
@@ -34,7 +34,7 @@ This page describes how to check the health of the NVIDIA Kubernetes Engine (NVK
    kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded
    ```
 
-   A healthy management cluster prints `No resources found`. The management plane depends on the pods in the `nke-controller`, `postgres`, `temporal`, `spire-server`, `spire-system` and `capnico-system` namespaces.
+   A healthy management cluster prints `No resources found`. The management plane depends on the pods in the `nvke-controller`, `postgres`, `temporal`, `spire-server`, `spire-system` and `capnico-system` namespaces.
 
 4. Check the infrastructure provider.
 
@@ -59,14 +59,14 @@ The management plane writes one JSON object per log line to standard output, wit
 1. Show recent warnings and errors.
 
    ```bash
-   kubectl logs deployment/nke-controller -n nke-controller --since=1h \
+   kubectl logs deployment/nvke-controller -n nvke-controller --since=1h \
      | jq -cR 'fromjson? | select(.level == "WARN" or .level == "ERROR")'
    ```
 
 2. Follow the logs while you reproduce a problem.
 
    ```bash
-   kubectl logs deployment/nke-controller -n nke-controller -f
+   kubectl logs deployment/nvke-controller -n nvke-controller -f
    ```
 
 The default level is `info`. To log at `debug`, save these values as `controller-log.yaml` in the directory above the `nvke/` checkout:
@@ -97,7 +97,7 @@ The management plane serves Prometheus metrics at `/metrics` on port 9090 of its
 1. Forward the metrics port to your machine.
 
    ```bash
-   kubectl port-forward -n nke-controller deployment/nke-controller 9090:9090
+   kubectl port-forward -n nvke-controller deployment/nvke-controller 9090:9090
    ```
 
 2. In a second shell, list the NVKE series.
@@ -188,7 +188,7 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
 
 ## Find the management cluster's telemetry
 
-The install deploys NKTP in the `nktp` namespace of the management cluster. NKTP collects the cluster's logs, metrics and Kubernetes Events, scrapes the management plane through the ServiceMonitor `nke-controller-metrics`, receives its traces, and labels everything with `k8s.cluster.name` set to the management cluster's name.
+The install deploys NKTP in the `nktp` namespace of the management cluster. NKTP collects the cluster's logs, metrics and Kubernetes Events, scrapes the management plane through the ServiceMonitor `nvke-controller-metrics`, receives its traces, and labels everything with `k8s.cluster.name` set to the management cluster's name.
 
 By default NKTP exports to a bundled development backend, with Grafana, Prometheus, Loki and Tempo in one pod that keeps data in memory. To look at it, forward Grafana to your machine and open `http://127.0.0.1:3000`. This Grafana gives every anonymous user the Admin role, so keep the port forward bound to `127.0.0.1` and use it only for evaluation.
 

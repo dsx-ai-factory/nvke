@@ -31,33 +31,52 @@ func (v staticValidator) Validate(string) (validatedToken, error) {
 func TestUnit_ExchangeSubject(t *testing.T) {
 	t.Parallel()
 	type parameters struct {
-		region string
-		input  string
-		want   string
+		region       string
+		input        string
+		want         string
+		wantTenant   string
+		wantService  string
+		wantResource []resourceClaim
 	}
 	tests := map[string]parameters{
 		"bare metal controller": {
-			region: "capd",
-			input:  "spiffe://capd.nke.local/tenant/nke/service/nke-controller/bm/cwe",
-			want:   "spiffe://nke.capd.nke-controller.nvid.id/bm/cwe",
+			region:       "capd",
+			input:        "spiffe://capd.nke.local/tenant/nke/service/nvke-controller/bm/cwe",
+			want:         "spiffe://nke.capd.nvke-controller.nvid.id/bm/cwe",
+			wantTenant:   "nke",
+			wantService:  "nvke-controller",
+			wantResource: []resourceClaim{{"bm", "cwe"}},
 		},
 		"DPU suffix is preserved": {
-			region: "capd",
-			input:  "spiffe://capd.nke.local/tenant/operator/service/dpu-agent/dpu/host-1/process/agent",
-			want:   "spiffe://operator.capd.dpu-agent.nvid.id/dpu/host-1/process/agent",
+			region:       "capd",
+			input:        "spiffe://capd.nke.local/tenant/operator/service/dpu-agent/dpu/host-1/process/agent",
+			want:         "spiffe://operator.capd.dpu-agent.nvid.id/dpu/host-1/process/agent",
+			wantTenant:   "operator",
+			wantService:  "dpu-agent",
+			wantResource: []resourceClaim{{"dpu", "host-1"}, {"process", "agent"}},
 		},
-		"az51 node agent maps to the exact node UUID": {
-			region: "az51-dev4",
-			input:  "spiffe://az51-dev4.nke.local/tenant/tenant-a/service/dsx/bm/45f59791-87df-4e85-9430-e565166ad020",
-			want:   "spiffe://tenant-a.az51-dev4.dsx.nvid.id/bm/45f59791-87df-4e85-9430-e565166ad020",
+		"DSX node agent maps to the exact node UUID": {
+			region:       "datahall-1",
+			input:        "spiffe://datahall-1.nke.local/tenant/tenant-a/service/dsx/bm/45f59791-87df-4e85-9430-e565166ad020",
+			want:         "spiffe://tenant-a.datahall-1.dsx.nvid.id/bm/45f59791-87df-4e85-9430-e565166ad020",
+			wantTenant:   "tenant-a",
+			wantService:  "dsx",
+			wantResource: []resourceClaim{{"bm", "45f59791-87df-4e85-9430-e565166ad020"}},
 		},
 	}
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			got, err := exchangeSubject(params.region, "nvid.id", spiffeid.RequireFromString(params.input))
+			got, claims, err := exchangeSubject(params.region, "nvid.id", spiffeid.RequireFromString(params.input))
 			require.NoError(t, err)
 			require.Equal(t, params.want, got.String())
+			require.Equal(t, subjectClaims{
+				Tenant:    params.wantTenant,
+				Region:    params.region,
+				Service:   params.wantService,
+				Partition: "nvid.id",
+				Resource:  params.wantResource,
+			}, claims)
 		})
 	}
 }
@@ -71,11 +90,12 @@ func TestUnit_ExchangeSubjectRejectsUnsupportedSource(t *testing.T) {
 	tests := map[string]parameters{
 		"unrelated workload": {path: "/nke-service/nke-controller", wantErr: "invalid local SPIFFE identity path"},
 		"legacy node agent":  {path: "/host/45f59791-87df-4e85-9430-e565166ad020", wantErr: "invalid local SPIFFE identity path"},
+		"unpaired suffix":    {path: "/tenant/nke/service/nvke-controller/bm/cwe/role", wantErr: "complete type/ID pairs"},
 	}
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			_, err := exchangeSubject("capd", "nvid.id", spiffeid.RequireFromString("spiffe://capd.nke.local"+params.path))
+			_, _, err := exchangeSubject("capd", "nvid.id", spiffeid.RequireFromString("spiffe://capd.nke.local"+params.path))
 			require.ErrorContains(t, err, params.wantErr)
 		})
 	}
@@ -86,12 +106,12 @@ func TestTokenExchangeRewritesAndResignsValidatedSVID(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0).UTC()
 	expiry := now.Add(10 * time.Minute)
 	server := newTestServer(t, staticValidator{token: validatedToken{
-		ID:       spiffeid.RequireFromString("spiffe://capd.nke.local/tenant/nke/service/nke-controller/bm/cwe"),
+		ID:       spiffeid.RequireFromString("spiffe://capd.nke.local/tenant/nke/service/nvke-controller/bm/cwe"),
 		Audience: []string{"tenant-a"},
 		Expiry:   expiry,
 		Claims: map[string]any{
 			"iss":                  "https://local-spire.invalid",
-			"sub":                  "spiffe://capd.nke.local/tenant/nke/service/nke-controller/bm/cwe",
+			"sub":                  "spiffe://capd.nke.local/tenant/nke/service/nvke-controller/bm/cwe",
 			"aud":                  "tenant-a",
 			"exp":                  expiry.Unix(),
 			"iat":                  now.Add(-time.Minute).Unix(),
@@ -123,7 +143,12 @@ func TestTokenExchangeRewritesAndResignsValidatedSVID(t *testing.T) {
 	var claims map[string]any
 	require.NoError(t, parsed.Claims(server.publicKey.Key, &claims))
 	require.Equal(t, "https://capd.dsx.nvid.id", claims["iss"])
-	require.Equal(t, "spiffe://nke.capd.nke-controller.nvid.id/bm/cwe", claims["sub"])
+	require.Equal(t, "spiffe://nke.capd.nvke-controller.nvid.id/bm/cwe", claims["sub"])
+	require.Equal(t, "nke", claims["dsx.nvidia.com/tenant"])
+	require.Equal(t, "capd", claims["dsx.nvidia.com/region"])
+	require.Equal(t, "nvke-controller", claims["dsx.nvidia.com/service"])
+	require.Equal(t, "nvid.id", claims["dsx.nvidia.com/partition"])
+	require.Equal(t, []any{map[string]any{"resource_type": "bm", "resource_id": "cwe"}}, claims["dsx.nvidia.com/resource"])
 	require.Equal(t, "tenant-a", claims["aud"])
 	require.Equal(t, "source-token", claims["jti"])
 	require.NotContains(t, claims, "private_source_claim")

@@ -31,35 +31,38 @@ infrastructure:
     id: "${DSX_ORG_ID:-ncx}"
 
   sites:
-    # THE KEY IS THE DATAHALL, and it is also the API host: a request goes to
-    # carbide-rest-api-<key>.dev.dsx.nvidia.com, so there is no GET /site
-    # lookup the way Forge needs one.
+    # The key names the datahall without identifying it, the way forge.yaml's
+    # site-1 and site-2 do: which datahall this is belongs in a variable, not
+    # in a file this repository publishes. `api` carries the host that the key
+    # used to imply, and is required for the same reason.
     #
     # Every identifier below belongs to one datahall and only that one. Two
     # datahalls at one site hold completely disjoint UUIDs for the same kinds of
     # object, and nothing in an API response says which one an id came from --
-    # the az51 run log is itself named for dh1 while recording a dh2 run, which
-    # is how close that mistake sits. A second datahall is a second key here,
+    # a recorded run log is itself named for one datahall while describing a run
+    # in another, which is how close that mistake sits. A second datahall is a
+    # second key here,
     # and the resolver picks between them on capabilities.
     #
-    # Every machine redstone-dev1-dh2 owns is aarch64 --- the VR NVL72 trays
-    # and both CPU boxes alike --- which is why the stream it answers is arm64.
-    # A datahall offering amd64 would be a second key beside this one, with its
-    # own disjoint UUIDs and its own API host; nothing here is shared.
-    redstone-dev1-dh2:
-      id: "${DSX_REDSTONE_DEV1_DH2_SITE_ID:-}"
-      tenantID: "${DSX_REDSTONE_DEV1_DH2_TENANT_ID:-}"
-      vpcID: "${DSX_REDSTONE_DEV1_DH2_VPC_ID:-}"
+    # Every machine this datahall owns is amd64 --- Lenovo SR675 V3 OVX boxes,
+    # AMD EPYC with L40S accelerators --- which is why the stream it answers is
+    # amd64. A datahall offering arm64 would be a second key beside this one,
+    # with its own disjoint UUIDs and its own API host; nothing here is shared.
+    datahall-1:
+      api: "${DSX_DATAHALL_1_API:-}"
+      id: "${DSX_DATAHALL_1_SITE_ID:-}"
+      tenantID: "${DSX_DATAHALL_1_TENANT_ID:-}"
+      vpcID: "${DSX_DATAHALL_1_VPC_ID:-}"
 
       # FNN here too, so a prefix. The one filed under this key is a /29 ---
       # four nodes at a /31 each, which is a site controller plus a tenant
       # control plane and worker with one to spare, and no address left over
       # for a control-plane VIP.
-      vpcPrefixID: "${DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID:-}"
+      vpcPrefixID: "${DSX_DATAHALL_1_VPC_PREFIX_ID:-}"
 
-      # SOL console only, as at az51-dev2-dh2. The group this datahall uses
+      # SOL console only, as at every datahall so far. The group this one uses
       # was created with the datahall and is already associated with the site.
-      sshKeyGroupID: "${DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID:-}"
+      sshKeyGroupID: "${DSX_DATAHALL_1_SSH_KEY_GROUP_ID:-}"
 
       # Empty, so the account falls through to the os-image default. The lane
       # boots the OSS release, which bakes `ubuntu`.
@@ -70,32 +73,34 @@ infrastructure:
       # nobody, and the run spends its whole ReachTimeout being refused on
       # publickey with nothing saying why: the dial is what failed, so there is
       # no session to collect cloud-init diagnostics over.
-      nodeUser: "${DSX_REDSTONE_DEV1_DH2_NODE_USER:-}"
+      nodeUser: "${DSX_DATAHALL_1_NODE_USER:-}"
 
       # Enrolled in Teleport 2026-10-13. Named by the variable rather than
       # here: the workflow holds the host as a secret and scrubs it from
       # uploaded artifacts, which writing it down would undo. The nodes this
       # lane creates are not enrolled themselves and sit behind it.
-      jumpHost: "${DSX_REDSTONE_DEV1_DH2_JUMP_HOST:-}"
-      teleportLogin: "${DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN:-}"
+      jumpHost: "${DSX_DATAHALL_1_JUMP_HOST:-}"
+      teleportLogin: "${DSX_DATAHALL_1_TELEPORT_LOGIN:-}"
 
       # No machines declared, deliberately. Pinning one is what a hand bring-up
       # wants and what wedges a lane: on 2026-10-12 a pinned machine sat held
       # by a teardown that would not finish and every run failed `409 ... is
       # assigned to an Instance` while six other machines were free and idle.
       #
-      # The type below binds ONE machine: the ARS-221GL-FNB-NC24B, with a
-      # compute allocation reserving it. That is the whole CPU capacity this
-      # type has, because the datahall has two CPU machines in total and a
-      # Super Server carries the jump host. Enough for stage=provision, which
-      # places one node and is what the qualify-e2e-dsx label pins; a full run
-      # places three at once and needs more hardware bound here.
+      # This datahall has NO CPU-only machines: every one of its boxes is a
+      # Lenovo SR675 V3 OVX carrying eight L40S. The type below binds eight of
+      # them. One machine is enough for stage=provision; a full run places
+      # three at once -- a site controller, a tenant control plane and a
+      # worker -- which the allocation's reservation has to cover as well as
+      # the binding does.
       #
-      # The other 34 machines are VR NVL72 and are deliberately NOT bound: the
-      # provides below says cpu, and binding GPU trays would make that false
-      # and put a site controller on accelerator hardware the GB200 streams
-      # exist to exercise.
+      # `provides` says gpu rather than cpu because that is what the hardware
+      # is. The site controller runs on accelerator hardware here for the same
+      # reason it did at the previous datahall -- there is nothing else --
+      # where a datahall with CPU boxes would declare cpu and keep the
+      # accelerators for the streams that exercise them. Resolve falls back to
+      # a GPU shape when a datahall declares no CPU one.
       instanceTypes:
-        - name: redstone-dev1-dh2-nvke-tenant
-          id: "${DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID:-}"
-          provides: {machineType: cpu, arch: arm64}
+        - name: datahall-1-nvke-tenant
+          id: "${DSX_DATAHALL_1_INSTANCE_TYPE_ID:-}"
+          provides: {machineType: gpu, arch: amd64}

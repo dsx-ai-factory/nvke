@@ -191,7 +191,7 @@ func (c *Config) applyDefaults() {
 	// The same repositories and archive names `gmake site-inputs` defaults
 	// to, so a local run after it needs no site block at all.
 	images := &c.Site.Images
-	setDefault(&images.Controller.Repository, "ghcr.io/dsx-ai-factory/nvke/nke-controller")
+	setDefault(&images.Controller.Repository, "ghcr.io/dsx-ai-factory/nvke/nvke-controller")
 	setDefault(&images.Controller.Archive, DefaultSiteInputs+"/controller.tar")
 	setDefault(&images.CAPIProvisioned.Repository, "ghcr.io/dsx-ai-factory/nvke/cluster-api-provider-provisioned")
 	setDefault(&images.CAPIProvisioned.Archive, DefaultSiteInputs+"/capi-provisioned.tar")

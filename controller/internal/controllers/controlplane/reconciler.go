@@ -132,6 +132,12 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		}
 	}
 
+	// Last, and records intent only: scale-up, remediation and rollout grow
+	// first, so the control plane never shrinks while it owes a replacement.
+	if err := r.reconcileControlPlaneScaleDown(ctx, cluster, controlPlane); err != nil {
+		return fmt.Errorf("reconciling control plane scale-down: %w", err)
+	}
+
 	// Promote the oldest accepted delete into a teardown, one at a time.
 	if _, err := r.reconcileRequestedDeletes(ctx, cluster, controlPlane); err != nil {
 		return fmt.Errorf("reconciling requested control plane deletes: %w", err)

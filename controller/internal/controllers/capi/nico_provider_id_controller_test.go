@@ -23,11 +23,15 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
 )
 
-const providerIDTestNodeName = "worker-0"
+const (
+	providerIDTestNodeName            = "worker-0"
+	providerIDTestManagedByLabelValue = "nvke-controller"
+)
 
 func TestNicoProviderIDControllerReconcilePatchesTenantNodeProviderID(t *testing.T) {
 	controller, tenantClient := newNicoProviderIDControllerForTest(
@@ -316,6 +320,118 @@ func TestNicoProviderIDControllerReconcileSkipsWhenCAPIClusterIsGone(t *testing.
 	require.Equal(t, 0, tenantProvider.calls)
 }
 
+func TestNicoProviderIDControllerReconcileChecksNVKEOwnershipOfCAPICluster(t *testing.T) {
+	tests := []struct {
+		name               string
+		clusterLabels      map[string]string
+		providerErr        error
+		wantErr            bool
+		wantProviderCalls  int
+		wantNodeProviderID string
+	}{
+		{
+			name:               "cluster without managed-by label is skipped",
+			clusterLabels:      nil,
+			wantProviderCalls:  0,
+			wantNodeProviderID: "",
+		},
+		{
+			name:               "cluster managed by another value is skipped",
+			clusterLabels:      map[string]string{keys.ManagedBy.String(): "someone-else"},
+			wantProviderCalls:  0,
+			wantNodeProviderID: "",
+		},
+		{
+			name:               "cluster with legacy-domain managed-by label is reconciled",
+			clusterLabels:      map[string]string{keys.ManagedBy.Legacy(): providerIDTestManagedByLabelValue},
+			wantProviderCalls:  1,
+			wantNodeProviderID: "nico://instance-1",
+		},
+		{
+			name:          "NVKE-managed cluster without a cluster row keeps the missing-record error",
+			clusterLabels: map[string]string{keys.ManagedBy.String(): providerIDTestManagedByLabelValue},
+			providerErr: fmt.Errorf("no cluster row found for CAPI cluster %s/%s: %w",
+				"cluster-test", "test-cluster", db.ErrNotFound),
+			wantErr:            true,
+			wantProviderCalls:  1,
+			wantNodeProviderID: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cluster := newCAPIClusterForProviderIDTest()
+			cluster.Labels = tt.clusterLabels
+
+			tenantClient := fake.NewClientBuilder().
+				WithScheme(newTenantClientProviderIDTestScheme(t)).
+				WithObjects(newTenantNodeForProviderIDTest("")).
+				Build()
+			tenantProvider := &fakeTenantClusterClientProvider{
+				tenantClient: tenantClient,
+				err:          tt.providerErr,
+			}
+			controller := newNicoProviderIDControllerForTestWithProvider(
+				t,
+				[]client.Object{
+					cluster,
+					newMachineForProviderIDTest(),
+					newNicoMachineForProviderIDTest("nico://instance-1", providerIDTestNodeName),
+				},
+				tenantProvider,
+			)
+
+			result, err := controller.Reconcile(context.Background(), providerIDReconcileRequest())
+			if tt.wantErr {
+				require.ErrorIs(t, err, db.ErrNotFound)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, ctrl.Result{}, result)
+			require.Equal(t, tt.wantProviderCalls, tenantProvider.calls)
+
+			node := getTenantNodeForProviderIDTest(t, tenantClient)
+			require.Equal(t, tt.wantNodeProviderID, node.Spec.ProviderID)
+		})
+	}
+}
+
+func TestIsNVKEManagedCluster(t *testing.T) {
+	tests := []struct {
+		name            string
+		clusterLabels   map[string]string
+		configuredValue string
+		want            bool
+	}{
+		{
+			name:            "matching label is managed",
+			clusterLabels:   map[string]string{keys.ManagedBy.String(): providerIDTestManagedByLabelValue},
+			configuredValue: providerIDTestManagedByLabelValue,
+			want:            true,
+		},
+		{
+			name:            "empty configured value does not match an unlabeled cluster",
+			clusterLabels:   nil,
+			configuredValue: "",
+			want:            false,
+		},
+		{
+			name:            "empty configured value does not match an empty label",
+			clusterLabels:   map[string]string{keys.ManagedBy.String(): ""},
+			configuredValue: "",
+			want:            false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cluster := newCAPIClusterForProviderIDTest()
+			cluster.Labels = tt.clusterLabels
+			require.Equal(t, tt.want, isNVKEManagedCluster(cluster, tt.configuredValue))
+		})
+	}
+}
+
 func TestNicoProviderIDControllerReconcileWaitsForTenantNode(t *testing.T) {
 	controller, _ := newNicoProviderIDControllerForTest(
 		t,
@@ -405,6 +521,7 @@ func newNicoProviderIDControllerForTestWithProvider(
 		k8sClient:            managementClient,
 		tenantClientProvider: tenantProvider,
 		logger:               slog.New(slog.DiscardHandler),
+		managedByLabelValue:  providerIDTestManagedByLabelValue,
 	}
 }
 
@@ -436,6 +553,7 @@ func newCAPIClusterForProviderIDTest() *clusterv1.Cluster {
 			Name:      "test-cluster",
 			Namespace: "cluster-test",
 			UID:       types.UID("test-cluster-uid"),
+			Labels:    map[string]string{keys.ManagedBy.String(): providerIDTestManagedByLabelValue},
 		},
 	}
 }

@@ -19,8 +19,9 @@ UNAME_M := $(shell uname -m)
 include ../../../make/tool-versions.mk
 
 # The newest patch of each of the three newest Kubernetes minors. Bump them
-# here; see README.md.
-K8S_VERSIONS ?= v1.36.3 v1.35.3 v1.34.2
+# here; see README.md. v1.34.2 stays as a fourth until the CI and dev
+# defaults move off it.
+K8S_VERSIONS ?= v1.37.2 v1.36.3 v1.35.3 v1.34.2
 
 # The bundle directories and download URLs are all leading-v, so accept
 # 1.36.3 as well as v1.36.3. Package names drop the v again.

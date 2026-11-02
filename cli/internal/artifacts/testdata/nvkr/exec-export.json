@@ -1,0 +1,196 @@
+{
+  "schemaVersion": "nvkr.dev/release-description/v1",
+  "inspection": "metadata inspection; payloads, signatures and policy not verified",
+  "inspectionDetails": {
+    "scope": "metadata-only",
+    "metadataClosure": "complete",
+    "outputSelection": "all",
+    "checks": {
+      "metadataIntegrity": "checked",
+      "payloadIntegrity": "not-checked",
+      "signatures": "not-checked",
+      "consumerPolicy": "not-checked",
+      "registryAvailability": "not-checked",
+      "installationCompatibility": "not-checked"
+    }
+  },
+  "totalOutputs": 4,
+  "reference": "registry.example.test/product/releases@sha256:f544b5e3c563633e0a79fa8325a98ef573752a2469cac24f8e53689396f02c48",
+  "referenceScope": "derived from supplied root reference; no registry availability claim",
+  "rootDigest": "sha256:f544b5e3c563633e0a79fa8325a98ef573752a2469cac24f8e53689396f02c48",
+  "declaredQualification": "diagnostic",
+  "metadata": {
+    "definitionDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "environmentDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+    "planDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+    "contentSubject": "sha256:b4e29bc273c82db0f477bc2f0916653ad1ca2c7196254328ba3e9063c6975adf"
+  },
+  "outputs": [
+    {
+      "name": "alpha",
+      "kind": "executable",
+      "digest": "sha256:6277555fc63fa856f36613104462e96e4b130a3046cf828b488e71f98e765aeb",
+      "reference": "registry.example.test/product/alpha@sha256:6277555fc63fa856f36613104462e96e4b130a3046cf828b488e71f98e765aeb",
+      "os": "linux",
+      "arch": "amd64",
+      "buildDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "components": [
+        "alpha"
+      ],
+      "artifactType": "application/vnd.nvkr.binary-bundle.v1",
+      "buildSubjects": [
+        {
+          "component": "alpha",
+          "digest": "sha256:3c670724e7bfe881487c025b1fe06083bb008e43e3884116df41a840d87a8060"
+        }
+      ]
+    },
+    {
+      "name": "beta",
+      "kind": "executable",
+      "digest": "sha256:07e40b79bb2493472b121d6bfbb7ea1025d64c7c99a2fe6902890a607751b3a7",
+      "reference": "registry.example.test/product/beta@sha256:07e40b79bb2493472b121d6bfbb7ea1025d64c7c99a2fe6902890a607751b3a7",
+      "os": "linux",
+      "arch": "arm64",
+      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "components": [
+        "beta"
+      ],
+      "artifactType": "application/vnd.nvkr.binary-bundle.v1",
+      "buildSubjects": [
+        {
+          "component": "beta",
+          "digest": "sha256:30455d9dac656b2eacdcc80dd45773706290b05999f513fde25c4d87483c5873"
+        }
+      ]
+    },
+    {
+      "name": "gamma",
+      "kind": "executable",
+      "digest": "sha256:8b8d3d85d7ec325a2edb69031f35923f564e8a883c46c9e9db397b4eae5aafca",
+      "reference": "registry.example.test/product/gamma@sha256:8b8d3d85d7ec325a2edb69031f35923f564e8a883c46c9e9db397b4eae5aafca",
+      "os": "linux",
+      "arch": "amd64",
+      "buildDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "components": [
+        "gamma"
+      ],
+      "artifactType": "application/vnd.nvkr.binary-bundle.v1",
+      "buildSubjects": [
+        {
+          "component": "gamma",
+          "digest": "sha256:02cd01572d4f5d1edfc71d972ebbadaaf66aab957d6c2c94235b4dd5367454b9"
+        }
+      ]
+    },
+    {
+      "name": "omega",
+      "kind": "executable",
+      "digest": "sha256:9258c8a9f67fe5c9f9d807dbcc5a21b0ac40c066f80a54262740aeb612d6aebe",
+      "reference": "registry.example.test/product/omega@sha256:9258c8a9f67fe5c9f9d807dbcc5a21b0ac40c066f80a54262740aeb612d6aebe",
+      "os": "linux",
+      "arch": "arm64",
+      "buildDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "components": [
+        "omega"
+      ],
+      "artifactType": "application/vnd.nvkr.binary-bundle.v1",
+      "buildSubjects": [
+        {
+          "component": "omega",
+          "digest": "sha256:ee165e0170ec2f6197c31d2a407d60abbfeb5c7ad07a2ec87bfc5374604e6f2e"
+        }
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "name": "sbom-13b5c420339630e6f2144cf0477e17c5ed4ea37d426f637598c51a50c893a118",
+      "kind": "sbom",
+      "reference": "registry.example.test/product/omega@sha256:3308b633cd919c0fb32110b262ee6a33d60e209003d3b1b52cbc77e50db77124",
+      "artifactType": "application/vnd.cyclonedx+json",
+      "manifestDigest": "sha256:3308b633cd919c0fb32110b262ee6a33d60e209003d3b1b52cbc77e50db77124",
+      "blobDigest": "sha256:5318bc35d755acd93231d2acda3044a5078a8b7cf3ee536d45f847e66fb2bf52",
+      "semanticDigest": "sha256:13b5c420339630e6f2144cf0477e17c5ed4ea37d426f637598c51a50c893a118",
+      "binding": {
+        "documentDigest": "sha256:5318bc35d755acd93231d2acda3044a5078a8b7cf3ee536d45f847e66fb2bf52",
+        "outputs": [
+          "omega"
+        ],
+        "component": "omega",
+        "stage": "build-output",
+        "subjectKind": "file",
+        "subjectDigest": "sha256:ee165e0170ec2f6197c31d2a407d60abbfeb5c7ad07a2ec87bfc5374604e6f2e"
+      }
+    },
+    {
+      "name": "sbom-3c650aac697bac9474cd956559113f35884924d6d40af3a120f0a629bbe7cb99",
+      "kind": "sbom",
+      "reference": "registry.example.test/product/alpha@sha256:6dc5b1005b961b8852ed2def756368be8ee3c619d2e08fd004029a7f78a396c9",
+      "artifactType": "application/vnd.cyclonedx+json",
+      "manifestDigest": "sha256:6dc5b1005b961b8852ed2def756368be8ee3c619d2e08fd004029a7f78a396c9",
+      "blobDigest": "sha256:dd04c35ebe195e1d25f1f3de0df2d8511db08eab7bab92ccfac57ecf2e2023de",
+      "semanticDigest": "sha256:3c650aac697bac9474cd956559113f35884924d6d40af3a120f0a629bbe7cb99",
+      "binding": {
+        "documentDigest": "sha256:dd04c35ebe195e1d25f1f3de0df2d8511db08eab7bab92ccfac57ecf2e2023de",
+        "outputs": [
+          "alpha"
+        ],
+        "component": "alpha",
+        "stage": "build-output",
+        "subjectKind": "file",
+        "subjectDigest": "sha256:3c670724e7bfe881487c025b1fe06083bb008e43e3884116df41a840d87a8060"
+      },
+      "source": {
+        "repo": "https://example.test/one",
+        "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "sbom-721e45459fe9c8793fc68d8ffe0e1b2e2930f5a6f2f22248c83dfa72fdc90f2c",
+      "kind": "sbom",
+      "reference": "registry.example.test/product/gamma@sha256:11bf9b8713812f4a580146dc27812fe913d22e5dd09f9630f0cdb016795ed616",
+      "artifactType": "application/vnd.cyclonedx+json",
+      "manifestDigest": "sha256:11bf9b8713812f4a580146dc27812fe913d22e5dd09f9630f0cdb016795ed616",
+      "blobDigest": "sha256:be26cda05313c7ea6f7cc3099b09310fa90b137b6f3e097e5dcd940020184444",
+      "semanticDigest": "sha256:721e45459fe9c8793fc68d8ffe0e1b2e2930f5a6f2f22248c83dfa72fdc90f2c",
+      "binding": {
+        "documentDigest": "sha256:be26cda05313c7ea6f7cc3099b09310fa90b137b6f3e097e5dcd940020184444",
+        "outputs": [
+          "gamma"
+        ],
+        "component": "gamma",
+        "stage": "build-output",
+        "subjectKind": "file",
+        "subjectDigest": "sha256:02cd01572d4f5d1edfc71d972ebbadaaf66aab957d6c2c94235b4dd5367454b9"
+      },
+      "source": {
+        "repo": "https://example.test/two",
+        "commit": "cccccccccccccccccccccccccccccccccccccccc"
+      }
+    },
+    {
+      "name": "sbom-7f5bec752c385381bda54d7ac23a1f5d1d2d63295cba823f389369863c45d3f2",
+      "kind": "sbom",
+      "reference": "registry.example.test/product/beta@sha256:7053a8df04e77e6f344b5ba798757239d9525beee9d5dc69fedb9df29bfd390e",
+      "artifactType": "application/vnd.cyclonedx+json",
+      "manifestDigest": "sha256:7053a8df04e77e6f344b5ba798757239d9525beee9d5dc69fedb9df29bfd390e",
+      "blobDigest": "sha256:eabca2f8dbf4e0a638b6e0ffbce8e765b71ed70377917d063b36aef2c70bbe5d",
+      "semanticDigest": "sha256:7f5bec752c385381bda54d7ac23a1f5d1d2d63295cba823f389369863c45d3f2",
+      "binding": {
+        "documentDigest": "sha256:eabca2f8dbf4e0a638b6e0ffbce8e765b71ed70377917d063b36aef2c70bbe5d",
+        "outputs": [
+          "beta"
+        ],
+        "component": "beta",
+        "stage": "build-output",
+        "subjectKind": "file",
+        "subjectDigest": "sha256:30455d9dac656b2eacdcc80dd45773706290b05999f513fde25c4d87483c5873"
+      },
+      "source": {
+        "repo": "https://example.test/one",
+        "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  ]
+}

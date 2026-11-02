@@ -26,9 +26,11 @@ import (
 )
 
 // authConfigNamespaces are the namespaces the controller runs in, in the order
-// they are searched: a greenfield site's name first, then the name every
-// earlier site keeps. The first that holds the ConfigMap is used.
-var authConfigNamespaces = []string{"nke-controller", "cloud-workflow-engine"}
+// they are searched: a greenfield site's name first, then the names earlier
+// sites keep — nke-controller for one installed from the greenfield stacks
+// before the nvke rename, cloud-workflow-engine for anything older. The first
+// that holds the ConfigMap is used.
+var authConfigNamespaces = []string{"nvke-controller", "nke-controller", "cloud-workflow-engine"}
 
 // authConfigMaps are the names the chart gives the authentication ConfigMap,
 // in the order they are searched: a greenfield site's name first, then the

@@ -119,25 +119,25 @@ func probeController(ctx context.Context, kubeconfig string) (string, error) {
 }
 
 // ControllerTraceID makes a request the controller traces and returns the
-// trace ID it reports in X-Trace-ID: /api/version is traced, the probes are
-// not.
+// trace ID it reports in X-Trace-ID. The OpenAPI document is unauthenticated
+// but is not an operational probe, so it remains traced.
 func ControllerTraceID(ctx context.Context, kubeconfig string) (string, error) {
 	forwarder, err := controllerForwarder(kubeconfig)
 	if err != nil {
 		return "", err
 	}
 	defer forwarder.Close()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, forwarder.BaseURL()+"/api/version", http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, forwarder.BaseURL()+"/openapi.yaml", http.NoBody)
 	if err != nil {
 		return "", err
 	}
 	resp, err := forwarder.HTTPClient().Do(req)
 	if err != nil {
-		return "", fmt.Errorf("GET /api/version: %w", err)
+		return "", fmt.Errorf("GET /openapi.yaml: %w", err)
 	}
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("GET /api/version returned %d", resp.StatusCode)
+		return "", fmt.Errorf("GET /openapi.yaml returned %d", resp.StatusCode)
 	}
 	id := resp.Header.Get("X-Trace-ID")
 	if id == "" {

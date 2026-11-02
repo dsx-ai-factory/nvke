@@ -21,11 +21,11 @@
 # The four names below are controllerdeploy's cweNamespace. nameOverride sets the pod
 # label controller-nodeport.yaml selects on, and the chart pins serviceAccount.name
 # rather than deriving it, so both are set here alongside the fullname.
-fullnameOverride: nke-controller
-nameOverride: nke-controller
-namespaceOverride: nke-controller
+fullnameOverride: nvke-controller
+nameOverride: nvke-controller
+namespaceOverride: nvke-controller
 serviceAccount:
-  name: nke-controller
+  name: nvke-controller
 
 metrics:
   networkPolicy:
@@ -52,7 +52,7 @@ readinessProbe:
 
 appDb:
   url: postgres-postgresql.postgres.svc.cluster.local:5432
-  dbName: nke-controller
+  dbName: nvke-controller
   postgresUser: postgres
   sslMode: disable
 

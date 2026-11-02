@@ -45,8 +45,8 @@ nodePools:
   id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
   infra:
     machineTemplate:
-      apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
-      kind: DockerMachineTemplate
+      apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+      kind: NicoMachineTemplate
       spec:
         template:
           metadata:
@@ -55,7 +55,14 @@ nodePools:
             labels:
               instance-type: 33333333-3333-4333-8333-333333333333
               vpc-id: 22222222-2222-4222-8222-222222222222
-          spec: {}
+          spec:
+            instanceTypeID: 33333333-3333-4333-8333-333333333333
+            interfaces:
+            - subnetID: 44444444-4444-4444-8444-444444444444
+            ipxeScript: |-
+              #!ipxe
+              chain https://images.example.com/nvke/boot.ipxe
+            vpcID: 22222222-2222-4222-8222-222222222222
   kubernetesVersion: ""
   name: workers
   nodeLabels: null
@@ -70,8 +77,8 @@ requests:
     desiredNodeCount: 1
     infra:
       machineTemplate:
-        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
-        kind: DockerMachineTemplate
+        apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+        kind: NicoMachineTemplate
         spec:
           template:
             metadata:
@@ -80,7 +87,14 @@ requests:
               labels:
                 instance-type: 33333333-3333-4333-8333-333333333333
                 vpc-id: 22222222-2222-4222-8222-222222222222
-            spec: {}
+            spec:
+              instanceTypeID: 33333333-3333-4333-8333-333333333333
+              interfaces:
+              - subnetID: 44444444-4444-4444-8444-444444444444
+              ipxeScript: |-
+                #!ipxe
+                chain https://images.example.com/nvke/boot.ipxe
+              vpcID: 22222222-2222-4222-8222-222222222222
     name: workers
     nodeNamePrefix: workers
     provisioningMonitorDisabled: true

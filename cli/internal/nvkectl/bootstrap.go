@@ -5,6 +5,7 @@ package nvkectl
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -28,6 +30,7 @@ import (
 	bootstrapengine "github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/engine"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/etcdkey"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/pivot"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitecluster"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/spireentrydump"
@@ -172,6 +175,12 @@ spire.externalAddress is required unless --disable-mtls is set. The nodes'
 names and addresses are not printed; read them with "kubectl get nodes -o wide"
 on the finished cluster.
 
+With nico, the NVKE stack is then installed on the site cluster the same way:
+Postgres, Temporal, SPIRE, Cluster API with CAPNICo, and the NVKE controller,
+with SPIRE published at the control-plane VIP. A site without a default
+StorageClass gets local-path-provisioner. The site's nodes pull the controller
+image, so --nvke-controller-image must name a registry they can reach.
+
 See the bundled examples/sitespec.yaml and docs/sitespec.md for the
 site spec file format.`,
 		Example: `  # Validate and bootstrap from a site spec file
@@ -183,7 +192,10 @@ site spec file format.`,
   # Deploy images you pushed to a registry instead of the local build
   nvkectl bootstrap site -f sitespec.yaml \
     --nvke-controller-image nvcr.io/<org>/nvke-controller:edge \
-    --provisioned-provider-image nvcr.io/<org>/cluster-api-provider-provisioned:edge`,
+    --provisioned-provider-image nvcr.io/<org>/cluster-api-provider-provisioned:edge
+
+  # Export this run's spans and log records to a collector the cluster can reach
+  nvkectl bootstrap site -f sitespec.yaml --otlp-endpoint collector.example.com:4317`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -210,6 +222,12 @@ site spec file format.`,
 		"NVKE controller image to deploy (overrides NVKECTL_NVKE_CONTROLLER_IMAGE and the manifest default)")
 	cmd.Flags().StringVar(&opts.provisionedProviderImage, "provisioned-provider-image", "",
 		"Provisioned-provider image to deploy (overrides NVKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)")
+	// resolveOTLP reads these two through the flag set, before RunE; they have no field.
+	cmd.Annotations = map[string]string{bootstrapExportAnnotation: "true"}
+	cmd.Flags().String(otlpEndpointFlag, "",
+		"OTLP/gRPC endpoint, a host:port or an http(s):// URL (http implies --"+otlpInsecureFlag+"), that receives this run's spans and log records. "+
+			"The temporary controller in the bootstrap cluster exports there too, so a loopback address is rejected")
+	cmd.Flags().Bool(otlpInsecureFlag, false, "Send to --"+otlpEndpointFlag+" without TLS; requires --"+otlpEndpointFlag)
 	cmd.Flags().StringVar(&opts.release, "release", "",
 		"NVKR release description whose "+controllerdeploy.CAPNICoArtifact+" artifact replaces the bootstrap CAPNICo image "+
 			"with its pinned digest, as \"render deploy-path --release\" does for the management cluster's CAPNICo. "+
@@ -282,6 +300,11 @@ func bootstrapPortMappings(cweCfg controllerdeploy.Config) []bootstrapengine.Por
 
 func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	logger := slog.Default().With("component", "bootstrap-site")
+	run := telemetry.RunFrom(ctx)
+	run.SetLogFields(operationBootstrapSite, "")
+	phases := newPhaseTracker(ctx)
+	ctx = phases.enter(phasePreflight, nil)
+	defer func() { phases.close(err) }()
 	for _, s := range envalias.Deprecated(bootstrapSettings()...) {
 		logger.Warn(s.Warning(), "deprecated", s.Old, "replacement", s.New)
 	}
@@ -291,14 +314,12 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err != nil {
 		return err
 	}
+	run.SetLogFields(operationBootstrapSite, inv.ClusterName)
 	logger.Info("loaded site spec", "path", opts.siteSpec, "cluster", inv.ClusterName)
 	// Checked before the dry-run return so --dry-run is the complete pre-flight,
 	// and together so one run reports every problem.
 	if err := errors.Join(inv.CheckBootstrapMode(opts.disableMTLS), inv.ValidateBootstrapReferences()); err != nil {
 		return fmt.Errorf("site spec file %s: %w", opts.siteSpec, err)
-	}
-	if warning := inv.NicoVIPWarning(); warning != "" {
-		logger.Warn(warning)
 	}
 	// Resolved here too, so a bad --release or --arch fails the dry run.
 	capnicoImage, err := capnicoReleaseImage(inv, opts.release, opts.arch)
@@ -360,6 +381,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 
 	cweCfg.CAPNICoImage = capnicoImage
 	cweCfg.AllowControlPlaneWithoutVIP = opts.allowControlPlaneWithoutVIP
+	cweCfg.Tracing = controllerTracing(ctx, logger)
 
 	// The controller API has to be reachable from this host: this command deploys it
 	// and then calls it. A host port mapping rather than the node container's
@@ -418,8 +440,14 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err := requireLocalImages(ctx, engine, nvkeImages(cweCfg)...); err != nil {
 		return err
 	}
+	if inv.IsNico() {
+		if err := requireSitePullableImages(cweCfg); err != nil {
+			return err
+		}
+	}
 
-	logger.Info("creating ephemeral bootstrap kind cluster", "cluster", cfg.ClusterName)
+	ctx = phases.enter(phaseBootstrapCluster, nil)
+	logger.Info("creating ephemeral bootstrap kind cluster", "bootstrap_kind_cluster", cfg.ClusterName)
 	cluster, err := engine.Create(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("standing up bootstrap kind cluster: %w", err)
@@ -431,6 +459,9 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	// is torn down.
 	handedOver := false
 	defer func() {
+		// Everything from here is cleanup after the run, so it is timed as the
+		// finish phase. On a failure this ends the phase that failed first.
+		ctx = phases.enter(phaseFinish, err)
 		// Collect diagnostics before anything is torn down: this cluster is
 		// removed on every exit path, so this is the only moment the evidence
 		// still exists. Only on failure, or on any outcome under -v: a
@@ -456,30 +487,40 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 			cancelDiagnostics()
 		}
 
+		// Once the site cluster exists, any failure keeps the bootstrap cluster for recovery.
 		if opts.keepBootstrapKind || (siteClusterCreated && err != nil) {
 			if siteClusterCreated && err != nil {
 				logger.Warn("bootstrap failed after site cluster creation; retaining the bootstrap kind cluster for recovery",
-					"cluster", cluster.Name, "kubeconfig", cluster.KubeconfigPath)
+					"bootstrap_kind_cluster", cluster.Name, "kubeconfig", cluster.KubeconfigPath)
 			} else {
 				logger.Info("--keep-bootstrap-cluster set: leaving the bootstrap kind cluster running",
-					"cluster", cluster.Name, "kubeconfig", cluster.KubeconfigPath)
+					"bootstrap_kind_cluster", cluster.Name, "kubeconfig", cluster.KubeconfigPath)
 			}
 			return
 		}
-		logger.Info("tearing down bootstrap kind cluster", "cluster", cluster.Name)
+		logger.Info("tearing down bootstrap kind cluster", "bootstrap_kind_cluster", cluster.Name)
 		deleteCtx, cancelDelete := context.WithTimeout(
 			context.WithoutCancel(ctx), cleanupTimeout,
 		)
 		defer cancelDelete()
 		if deleteErr := engine.Delete(deleteCtx, cluster.Name); deleteErr != nil {
 			logger.Error("failed to tear down bootstrap kind cluster",
-				"cluster", cluster.Name, "err", deleteErr)
+				"bootstrap_kind_cluster", cluster.Name, "err", deleteErr)
+			// The teardown is part of finish, so it fails that phase. The command
+			// still returns err: a teardown failure is logged, not returned. When
+			// an earlier phase failed, err is that phase's, not finish's.
+			finishErr := deleteErr
+			if !phases.failed {
+				finishErr = errors.Join(err, deleteErr)
+			}
+			phases.leave(finishErr)
 		}
 	}()
 
 	// Step 3: deploy Postgres, Temporal, SPIRE, Cluster API, and the controller onto the bootstrap
 	// cluster and wait for the controller to report healthy on /readyz before going any
 	// further — there is nothing to dispatch a workflow to otherwise.
+	ctx = phases.enter(phaseEngineDeploy, nil)
 	if err := deployAndWaitForCWE(ctx, engine, cluster, cweCfg, opts.cweRunner, logger); err != nil {
 		return err
 	}
@@ -488,7 +529,14 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	// kubeadm on each host through nvke-agent and reconciles the Cluster API
 	// objects that the provisioned infrastructure provider binds to the
 	// site spec's hosts.
-	siteClusterCreated, err = createSiteCluster(ctx, cluster, inv, opts, cweCfg.CWEPort, logger)
+	ctx = phases.enter(phaseSiteCluster, nil)
+	cweURL := fmt.Sprintf("http://127.0.0.1:%d", cweCfg.CWEPort)
+	controller, err := clients.New(config.SiteConfig{URL: cweURL})
+	if err != nil {
+		return fmt.Errorf("building the controller client for %s: %w", cweURL, err)
+	}
+	var siteClusterID uuid.UUID
+	siteClusterID, siteClusterCreated, err = createSiteCluster(ctx, cluster, inv, opts, controller, logger)
 	if err != nil && siteClusterCreated {
 		return retainedClusterError(err, inv, cluster, cweCfg.CWEPort)
 	}
@@ -510,10 +558,8 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		return err
 	}
 
-	// Everything recovery needs is on disk by now, so the bootstrap cluster is
-	// torn down even if the untaint fails.
-	siteClusterCreated = false
 	handedOver = true
+	ctx = phases.enter(phaseFinish, nil)
 	kubeconfigPath := siteKubeconfigPath(inv.ClusterName, opts)
 	if inv.Cluster.EtcdEncryptionEnabled() {
 		fmt.Fprintf(out, "\nThe etcd encryption key of cluster %q is at %s. Move that file off this host "+
@@ -522,11 +568,148 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err := makeControlPlaneSchedulable(ctx, inv, kubeconfigPath, opts, logger); err != nil {
 		return err
 	}
+	if inv.IsNico() {
+		if err := deploySiteStack(ctx, inv, kubeconfigPath, cweCfg, opts.cweRunner, logger); err != nil {
+			return seedManagesSiteError(err, cluster)
+		}
+		if err := pivotToSite(ctx, inv, cluster.KubeconfigPath, kubeconfigPath, cweCfg, controller, siteClusterID, logger); err != nil {
+			return pivotFailedError(err, cluster)
+		}
+	}
 
 	// Nico mode does not list the allocated nodes here; kubectl get nodes shows them.
 	fmt.Fprintf(out, "\nCluster %q is ready. Talk to it with:\n  kubectl --kubeconfig %s get nodes\n",
 		inv.ClusterName, kubeconfigPath)
 	return nil
+}
+
+// siteDeployAttempts bounds how often deploySiteStack runs the install.
+const siteDeployAttempts = 3
+
+// connectionErrors are what a dropped or refused connection to the API server
+// leaves in the output of helm and kubectl. A helm --wait that times out reports
+// a deadline instead, and is not among them.
+var connectionErrors = []string{
+	"broken pipe", "connection reset by peer", "connection refused", "i/o timeout", "unexpected EOF",
+	"TLS handshake timeout", "http2: client connection lost", "use of closed network connection",
+}
+
+// isConnectionError reports whether err comes from a lost connection to the API server.
+func isConnectionError(err error) bool {
+	msg := err.Error()
+	return slices.ContainsFunc(connectionErrors, func(s string) bool { return strings.Contains(msg, s) })
+}
+
+// requireSitePullableImages returns an error naming every image the site
+// cluster's nodes would have to pull that names no registry. Those images are
+// side-loaded into the bootstrap cluster only.
+func requireSitePullableImages(cweCfg controllerdeploy.Config) error {
+	var bare []string
+	for _, image := range nvkeImages(cweCfg) {
+		if !hasRegistryHost(image) {
+			bare = append(bare, image)
+		}
+	}
+	if len(bare) == 0 {
+		return nil
+	}
+	return fmt.Errorf("with infra.provider nico the NVKE stack is installed on the site cluster, whose nodes pull "+
+		"its images themselves; these images name no registry: %s. Pass images the nodes can pull with "+
+		"--nvke-controller-image (NVKECTL_NVKE_CONTROLLER_IMAGE) and NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE", strings.Join(bare, ", "))
+}
+
+// deploySiteStack installs the NVKE stack on the site cluster as the bootstrap
+// cluster runs it, and waits for the site's controller to report healthy.
+func deploySiteStack(
+	ctx context.Context,
+	inv *sitespec.SiteSpec,
+	siteKubeconfig string,
+	cweCfg controllerdeploy.Config,
+	runner controllerdeploy.CommandRunner,
+	logger *slog.Logger,
+) error {
+	cfg := siteDeployConfig(inv, cweCfg)
+	cwe := controllerdeploy.New(runner, logger)
+	logger.Info("installing the NVKE stack on the site cluster", "kubeconfig", siteKubeconfig, "image", cfg.CWEImage)
+	if err := cwe.EnsureDefaultStorageClass(ctx, siteKubeconfig); err != nil {
+		return fmt.Errorf("site cluster: %w", err)
+	}
+	// A retry must reuse the database password the first attempt installed.
+	if cfg.PostgresPassword == "" {
+		cfg.PostgresPassword = rand.Text()
+	}
+	// The site API is reached through a VIP that has only just come up, and one
+	// dropped connection fails a helm call. Every step is an idempotent
+	// upgrade --install or apply, so the install is repeated after one; any
+	// other failure is reported at once.
+	var err error
+	for attempt := 1; ; attempt++ {
+		err = cwe.Deploy(ctx, siteKubeconfig, cfg)
+		if err == nil || attempt == siteDeployAttempts || !isConnectionError(err) {
+			break
+		}
+		logger.Warn("installing the NVKE stack on the site cluster lost its connection; retrying",
+			"attempt", attempt, "of", siteDeployAttempts, "err", err)
+	}
+	if err != nil {
+		return fmt.Errorf("installing the NVKE stack on the site cluster: %w", err)
+	}
+	if err := cwe.WaitReady(ctx, siteKubeconfig, cfg.ReadyTimeout); err != nil {
+		return fmt.Errorf("waiting for the site cluster's controller to become healthy: %w", err)
+	}
+	logger.Info("the NVKE stack on the site cluster is healthy")
+	return nil
+}
+
+// siteDeployConfig is the bootstrap cluster's deploy configuration as the site
+// cluster needs it: SPIRE names the site cluster, and nodes the site's
+// controller creates reach SPIRE at the control-plane VIP.
+func siteDeployConfig(inv *sitespec.SiteSpec, seed controllerdeploy.Config) controllerdeploy.Config {
+	cfg := seed
+	cfg.SPIFFEClusterName = inv.ClusterName
+	cfg.SPIREExternalAddress = inv.Cluster.ControlPlaneVIP
+	return cfg
+}
+
+// seedManagesSiteError wraps err, from a failure after the site cluster was
+// built and before the pivot started. The bootstrap cluster then holds the
+// site's management plane, so the advice is to keep it.
+func seedManagesSiteError(err error, cluster *bootstrapengine.Cluster) error {
+	return &recoveryError{fmt.Errorf("%w; bootstrap cluster %q still manages the site cluster until the pivot completes, "+
+		"so it was retained and is not to be deleted (kubeconfig: %s)", err, cluster.Name, cluster.KubeconfigPath)}
+}
+
+// pivotFailedError wraps err, from the pivot, which names the step that
+// failed. Part of the management plane may already be on the site, so the
+// advice is to keep both clusters as they are.
+func pivotFailedError(err error, cluster *bootstrapengine.Cluster) error {
+	return &recoveryError{fmt.Errorf("%w; the pivot to the site cluster did not complete, so bootstrap cluster %q was "+
+		"retained: keep it and the site cluster as they are (kubeconfig: %s)", err, cluster.Name, cluster.KubeconfigPath)}
+}
+
+// pivotToSite moves the management plane of the cluster clusterID from the
+// bootstrap cluster, whose controller is controller, onto the site cluster,
+// which already runs the NVKE stack.
+func pivotToSite(
+	ctx context.Context,
+	inv *sitespec.SiteSpec,
+	seedKubeconfig, siteKubeconfig string,
+	cweCfg controllerdeploy.Config,
+	controller *clients.ControllerClient,
+	clusterID uuid.UUID,
+	logger *slog.Logger,
+) error {
+	logger.Info("moving the management plane onto the site cluster", "kubeconfig", siteKubeconfig)
+	return pivot.Run(ctx, pivot.Config{
+		SeedKubeconfig:   seedKubeconfig,
+		SiteKubeconfig:   siteKubeconfig,
+		Controller:       controller,
+		ClusterID:        clusterID,
+		ClusterName:      inv.ClusterName,
+		SiteSpireAddress: inv.Cluster.ControlPlaneVIP,
+		DisableMTLS:      cweCfg.DisableMTLS,
+		Logger:           logger,
+	})
 }
 
 // untaintTimeout bounds the whole untaint: one List and a few Updates.
@@ -583,34 +766,26 @@ func dumpSpireBootstrapEntries(
 	return dumper.Dump(ctx, outputDir)
 }
 
-// createSiteCluster posts the cluster to the controller, waits for it to come up, and
-// writes out its kubeconfig and etcd encryption key. The boolean reports
-// whether the controller accepted the create request, after which callers must preserve
-// the management cluster on failure so the in-progress site cluster remains
-// recoverable.
-//
-// The controller client is built here rather than being passed in because its address
-// is only settled once the bootstrap cluster exists: it is the host port the
-// NodePort Service was mapped to.
+// createSiteCluster posts the cluster to the controller through client, waits
+// for it to come up, and writes out its kubeconfig and etcd encryption key. It
+// returns the cluster's ID once the controller has created it. The boolean
+// reports whether the controller accepted the create request, after which
+// callers must preserve the management cluster on failure so the in-progress
+// site cluster remains recoverable.
 func createSiteCluster(
 	ctx context.Context,
 	bootstrapCluster *bootstrapengine.Cluster,
 	inv *sitespec.SiteSpec,
 	opts *bootstrapSiteOptions,
-	cwePort int32,
+	client sitecluster.ClusterAPI,
 	logger *slog.Logger,
-) (bool, error) {
-	cweURL := fmt.Sprintf("http://127.0.0.1:%d", cwePort)
-	client, err := clients.New(config.SiteConfig{URL: cweURL})
-	if err != nil {
-		return false, fmt.Errorf("building the controller client for %s: %w", cweURL, err)
-	}
+) (uuid.UUID, bool, error) {
 	created, err := sitecluster.Create(ctx, client, inv, logger)
 	if err != nil {
 		// With nico, a create the controller may have accepted may already be
 		// allocating NICo instances, which deleting the bootstrap cluster would
 		// leave unmanaged; it is kept as after any failure past the create.
-		return inv.IsNico() && errors.Is(err, sitecluster.ErrCreateUnconfirmed), err
+		return uuid.Nil, inv.IsNico() && errors.Is(err, sitecluster.ErrCreateUnconfirmed), err
 	}
 
 	// One budget spans both waits, because --timeout bounds the whole
@@ -623,11 +798,10 @@ func createSiteCluster(
 
 	// Logged after the default is applied, so the line states the budget the
 	// command will actually keep to rather than the bare flag value.
-	logger.Info("waiting for the cluster to finish provisioning",
-		"cluster", created.Name, "timeout", timeout)
+	logger.Info("waiting for the cluster to finish provisioning", "cluster", created.Name, "timeout", timeout)
 
 	if _, err := sitecluster.WaitProvisioned(ctx, client, created.ID, time.Until(deadline), logger); err != nil {
-		return true, err
+		return created.ID, true, err
 	}
 	logger.Info("cluster provisioned", "cluster", created.Name, "id", created.ID)
 
@@ -638,7 +812,7 @@ func createSiteCluster(
 	if err := sitecluster.WaitControlPlaneJoined(
 		ctx, client, created.ID, inv.ControlPlaneCount(), time.Until(deadline), logger,
 	); err != nil {
-		return true, err
+		return created.ID, true, err
 	}
 	logger.Info("all control plane nodes joined", "cluster", created.Name, "nodes", inv.ControlPlaneCount())
 
@@ -646,7 +820,7 @@ func createSiteCluster(
 	// the operator holding the admin credential of the cluster that was built.
 	kubeconfigPath, err := writeTenantKubeconfig(ctx, bootstrapCluster, created.Name, opts, logger)
 	if err != nil {
-		return true, &clusterJoinedError{err}
+		return created.ID, true, &clusterJoinedError{err}
 	}
 
 	// Every control-plane node holds the key now, and this is the last moment
@@ -655,10 +829,10 @@ func createSiteCluster(
 	if inv.Cluster.EtcdEncryptionEnabled() {
 		if err := saveEtcdEncryptionKey(ctx, bootstrapCluster, created.ID, inv.ClusterName,
 			etcdKeyPath(opts, inv.ClusterName), kubeconfigPath, opts, logger); err != nil {
-			return true, err
+			return created.ID, true, err
 		}
 	}
-	return true, nil
+	return created.ID, true, nil
 }
 
 // etcdKeyPath is where the cluster's etcd encryption key is written.
@@ -1041,6 +1215,27 @@ func envOrDefault(key, fallback string) string {
 	return fallback
 }
 
+// controllerTracing returns the tracing settings for the temporary controller:
+// the collector this run exports to, with the run's headers. It returns the zero
+// value when the run does not export, or when the endpoint, which can come from
+// the environment, is a loopback address the bootstrap cluster cannot reach; the
+// latter is logged once.
+func controllerTracing(ctx context.Context, logger *slog.Logger) controllerdeploy.TracingConfig {
+	run := telemetry.RunFrom(ctx)
+	if run == nil {
+		return controllerdeploy.TracingConfig{}
+	}
+	otlp, ok := run.OTLP()
+	if !ok {
+		return controllerdeploy.TracingConfig{}
+	}
+	if telemetry.RejectLoopback(otlp.Endpoint) != nil {
+		logger.Warn("the controller in the bootstrap cluster cannot reach " + otlp.Endpoint + "; its spans are not exported")
+		return controllerdeploy.TracingConfig{}
+	}
+	return controllerdeploy.TracingConfig{Endpoint: otlp.Endpoint, Insecure: otlp.Insecure, Headers: otlp.Headers}
+}
+
 // cweDeployConfig assembles everything the controller deploy needs into one value,
 // from the site spec, the flags and the environment, before any of it is used.
 //
@@ -1149,7 +1344,7 @@ func deployAndWaitForCWE(
 	}
 
 	cwe := controllerdeploy.New(cweRunner, logger)
-	logger.Info("deploying the controller onto bootstrap kind cluster", "cluster", cluster.Name, "image", cweCfg.CWEImage)
+	logger.Info("deploying the controller onto bootstrap kind cluster", "bootstrap_kind_cluster", cluster.Name, "image", cweCfg.CWEImage)
 	if err := cwe.Deploy(ctx, cluster.KubeconfigPath, cweCfg); err != nil {
 		return fmt.Errorf("deploying the controller: %w", err)
 	}

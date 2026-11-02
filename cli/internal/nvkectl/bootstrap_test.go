@@ -28,6 +28,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,7 +44,10 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitecluster"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
+	"github.com/dsx-ai-factory/nvke/cli/internal/clients"
+	"github.com/dsx-ai-factory/nvke/cli/internal/config"
 	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
+	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
@@ -677,6 +682,68 @@ func TestCWEDeployConfigUsesSiteSpecTrustDomain(t *testing.T) {
 	}
 	if cfg.SPIFFETrustDomain != "site.example.com" {
 		t.Errorf("SPIFFETrustDomain = %q, want site-spec value %q", cfg.SPIFFETrustDomain, "site.example.com")
+	}
+}
+
+func TestSiteDeployConfigNamesTheSite(t *testing.T) {
+	seed := controllerdeploy.Config{
+		CWEImage: "registry.example.com/nvke-controller:1", SPIFFEClusterName: "nvkectl-bootstrap",
+		SPIFFETrustDomain: "site.example.com", SPIREExternalAddress: "192.0.2.1",
+	}
+	inv := &sitespec.SiteSpec{ClusterName: "site", Cluster: sitespec.Cluster{ControlPlaneVIP: "192.0.2.100"}}
+	cfg := siteDeployConfig(inv, seed)
+	if cfg.SPIFFEClusterName != "site" || cfg.SPIREExternalAddress != "192.0.2.100" {
+		t.Errorf("SPIFFEClusterName, SPIREExternalAddress = %q, %q; want the site's name and VIP",
+			cfg.SPIFFEClusterName, cfg.SPIREExternalAddress)
+	}
+	if cfg.SPIFFETrustDomain != seed.SPIFFETrustDomain || cfg.CWEImage != seed.CWEImage {
+		t.Errorf("the site must keep the bootstrap cluster's trust domain and image, got %q and %q",
+			cfg.SPIFFETrustDomain, cfg.CWEImage)
+	}
+}
+
+func TestRequireSitePullableImages(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      controllerdeploy.Config
+		wantBare []string
+	}{
+		{
+			name: "every image names a registry",
+			cfg: controllerdeploy.Config{
+				CWEImage:      "registry.example.com/nvke-controller:1",
+				ProfilesImage: "registry.example.com/profiles:1", NicoInfrastructure: true,
+			},
+		},
+		{
+			name:     "a bare controller image",
+			cfg:      controllerdeploy.Config{CWEImage: "nvke-controller:1", NicoInfrastructure: true},
+			wantBare: []string{"nvke-controller:1"},
+		},
+		{
+			name: "a bare profiles image",
+			cfg: controllerdeploy.Config{
+				CWEImage:      "registry.example.com/nvke-controller:1",
+				ProfilesImage: "profiles:e2e", NicoInfrastructure: true,
+			},
+			wantBare: []string{"profiles:e2e"},
+		},
+		{
+			name:     "every image bare",
+			cfg:      controllerdeploy.Config{CWEImage: "nvke-controller:1", ProfilesImage: "profiles:e2e", NicoInfrastructure: true},
+			wantBare: []string{"nvke-controller:1", "profiles:e2e"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := requireSitePullableImages(tt.cfg)
+			if len(tt.wantBare) == 0 {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "name no registry: "+strings.Join(tt.wantBare, ", ")+".")
+		})
 	}
 }
 
@@ -1485,7 +1552,7 @@ func TestRunBootstrapSiteRetainsClusterWhenKeyCaptureFails(t *testing.T) {
 		"kubeconfig is at " + kubeconfigOut,
 		"do not delete it",
 		"umask 077 && kubectl --kubeconfig",
-		"-n nke-controller get secret etcd-encryption-key-",
+		"-n nvke-controller get secret etcd-encryption-key-",
 		"-o json > " + keyOut,
 	} {
 		if !strings.Contains(err.Error(), want) {
@@ -1786,6 +1853,73 @@ func TestRunBootstrapSiteNicoSpireDumpFailureIsAdvisedAsAJoinedCluster(t *testin
 	}
 }
 
+func TestPivotFailedErrorKeepsBothClusters(t *testing.T) {
+	err := pivotFailedError(errors.New("pivot move-database: restore failed"),
+		&bootstrapengine.Cluster{Name: "nvkectl-bootstrap", KubeconfigPath: "/tmp/kind.kubeconfig"})
+	var recovery *recoveryError
+	require.ErrorAs(t, err, &recovery)
+	for _, want := range []string{
+		"pivot move-database", `bootstrap cluster "nvkectl-bootstrap" was retained`,
+		"keep it and the site cluster as they are", "/tmp/kind.kubeconfig",
+	} {
+		assert.Contains(t, err.Error(), want)
+	}
+	assert.NotContains(t, err.Error(), "still manages the site", "part of the management plane may already be on the site")
+}
+
+// siteCallsFail passes the bootstrap cluster's commands to next and fails
+// every command against the site cluster's kubeconfig.
+type siteCallsFail struct {
+	next controllerdeploy.CommandRunner
+	site string
+}
+
+func (r siteCallsFail) Run(ctx context.Context, name string, args ...string) (string, error) {
+	if slices.Contains(args, r.site) {
+		return "", errors.New("site unreachable")
+	}
+	return r.next.Run(ctx, name, args...)
+}
+
+// TestRunBootstrapSiteNicoStackFailureKeepsTheSeed: until the pivot completes,
+// the bootstrap cluster is the site's only management plane. A failure
+// installing the stack on the site keeps it and says not to delete it.
+func TestRunBootstrapSiteNicoStackFailureKeepsTheSeed(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPIWithNodes(t, true, 3, 3)
+
+	siteKubeconfig := filepath.Join(t.TempDir(), "nvke-site.kubeconfig")
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec:            nicoSiteSpecFile(t),
+		bootstrapRunner:     runner,
+		cweRunner:           siteCallsFail{next: newFakeCWERunner(t), site: siteKubeconfig},
+		kubeconfigOut:       siteKubeconfig,
+		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
+		dumpSpireEntries:    func(context.Context, string, string) (int, error) { return 1, nil },
+	})
+	if err == nil {
+		t.Fatal("expected the site stack install to fail")
+	}
+	var recovery *recoveryError
+	if !errors.As(err, &recovery) {
+		t.Errorf("error %q carries no recovery advice", err)
+	}
+	if !strings.Contains(err.Error(), `bootstrap cluster "nvkectl-bootstrap" still manages the site cluster until the pivot completes, `+
+		"so it was retained and is not to be deleted") {
+		t.Errorf("error %q does not say to keep the bootstrap cluster", err)
+	}
+	if strings.Contains(err.Error(), "kind delete cluster") {
+		t.Errorf("error %q tells the operator to delete the bootstrap cluster", err)
+	}
+	if runner.sawArgs("delete", "cluster") {
+		t.Error("bootstrap cluster was deleted while it still managed the site")
+	}
+}
+
 // TestRunBootstrapSiteNicoRefusesWhenTheVIPAlreadyAnswers: the one address a
 // nico site's control plane is known by before it exists. When it answers, a
 // site for this spec is running, and a second bootstrap would allocate another
@@ -1870,7 +2004,11 @@ func TestCreateSiteCluster_KeepsKindAfterAnUnconfirmedNicoCreate(t *testing.T) {
 			defer srv.Close()
 			port := srv.Listener.Addr().(*net.TCPAddr).Port
 
-			kept, err := createSiteCluster(context.Background(), nil, tt.inv, &bootstrapSiteOptions{}, int32(port), slog.New(slog.DiscardHandler))
+			client, err := clients.New(config.SiteConfig{URL: fmt.Sprintf("http://127.0.0.1:%d", port)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, kept, err := createSiteCluster(context.Background(), nil, tt.inv, &bootstrapSiteOptions{}, client, slog.New(slog.DiscardHandler))
 			if err == nil {
 				t.Fatal("expected createSiteCluster to fail")
 			}
@@ -2064,8 +2202,8 @@ func TestRunBootstrapSiteReportsAnUntaintFailure(t *testing.T) {
 	if !spireEntriesDumped {
 		t.Error("the SPIRE export did not run; the untaint must come after it")
 	}
-	if !runner.sawArgs("delete", "cluster") {
-		t.Errorf("the bootstrap kind cluster was kept after the untaint failed, though nothing in it is needed; calls: %v", runner.calls)
+	if runner.sawArgs("delete", "cluster") {
+		t.Errorf("the bootstrap kind cluster was deleted after the untaint failed; calls: %v", runner.calls)
 	}
 	if cwe.saw("all,events") {
 		t.Errorf("bootstrap cluster diagnostics were collected for a failure in the site cluster; calls: %v", cwe.calls)
@@ -2542,5 +2680,269 @@ func TestBootstrapControlPlaneVIPOverrideReachesController(t *testing.T) {
 	}
 	if !runner.saw("--set allowControlPlaneWithoutVIP=true") {
 		t.Fatal("bootstrap did not enable the VIP override in the temporary controller")
+	}
+}
+
+// runBootstrapDryRun runs "bootstrap site --dry-run" through execute with extra
+// flags, returning stdout, stderr and the error execute reports. These tests
+// run commands through execute, so none is parallel.
+func runBootstrapDryRun(t *testing.T, extra ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	return runBootstrapDryRunEnv(t, nil, extra...)
+}
+
+// runBootstrapDryRunEnv is runBootstrapDryRun with environment variables set
+// after the OTLP ones are cleared.
+func runBootstrapDryRunEnv(t *testing.T, env map[string]string, extra ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	// The OTLP configuration under test comes from flags alone, so a shell's own
+	// does not leak in.
+	for _, name := range []string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_HEADERS", "OTEL_EXPORTER_OTLP_INSECURE",
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_INSECURE",
+		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "OTEL_EXPORTER_OTLP_LOGS_HEADERS",
+	} {
+		t.Setenv(name, "")
+	}
+	for name, value := range env {
+		t.Setenv(name, value)
+	}
+	root := NewRootCmd("test", "test", "test", "test")
+	root.SetArgs(append([]string{"bootstrap", "site", "-f", writeSiteSpec(t, validSiteSpec), "--dry-run"}, extra...))
+	var out, errOut bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+
+	// The logger the command installs writes to the process's stderr, where the
+	// export warning goes, so capture that too.
+	r, w, pipeErr := os.Pipe()
+	require.NoError(t, pipeErr)
+	realStderr, realLogger := os.Stderr, slog.Default()
+	t.Cleanup(func() { os.Stderr = realStderr; slog.SetDefault(realLogger) })
+	os.Stderr = w
+	var logs bytes.Buffer
+	copied := make(chan struct{})
+	go func() { _, _ = io.Copy(&logs, r); close(copied) }()
+	err = execute(context.Background(), root, "test", &errOut)
+	os.Stderr = realStderr
+	slog.SetDefault(realLogger)
+	require.NoError(t, w.Close())
+	<-copied
+	require.NoError(t, r.Close())
+	return out.String(), errOut.String() + logs.String(), err
+}
+
+// exportWarning is the start of the warning a run logs, once, when it cannot
+// export telemetry.
+const exportWarning = "could not export telemetry"
+
+// A flag value nvkectl cannot use is an error that names the flag, before
+// bootstrap starts: --otlp-insecure without an endpoint, an endpoint that names
+// no host or port or cannot be parsed, or one the temporary controller cannot
+// reach.
+func TestBootstrapSiteOTLPFlagErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"insecure without an endpoint", []string{"--otlp-insecure"}, "--otlp-endpoint"},
+		{"insecure with an https endpoint", []string{"--otlp-endpoint", "https://collector.example:4317", "--otlp-insecure"}, "https"},
+		{"unparsable endpoint", []string{"--otlp-endpoint", "http://"}, "--otlp-endpoint"},
+		{"loopback", []string{"--otlp-endpoint", "localhost:4317"}, "loopback"},
+		{"zoned loopback", []string{"--otlp-endpoint", "[::1%25lo0]:4317"}, "loopback"},
+		{"no host", []string{"--otlp-endpoint", ":4317"}, "--otlp-endpoint"},
+		{"no host with a scheme", []string{"--otlp-endpoint", "http://:4317"}, "--otlp-endpoint"},
+		{"no port", []string{"--otlp-endpoint", "collector.example:"}, "--otlp-endpoint"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := runBootstrapDryRun(t, tc.args...)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "--otlp-endpoint")
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Regexp(t, `(?m)^Trace ID: [0-9a-f]{32}$`, err.Error(), "a failure still carries the trace ID")
+		})
+	}
+}
+
+// A bad endpoint in the environment is one warning that says what to do; on
+// "bootstrap site" it also offers the flag. The command runs as without it.
+func TestBootstrapSiteOTLPBadEnvironmentWarnsAndRuns(t *testing.T) {
+	baseOut, _, err := runBootstrapDryRun(t)
+	require.NoError(t, err)
+
+	stdout, stderr, err := runBootstrapDryRunEnv(t, map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://user:secret@"})
+
+	require.NoError(t, err)
+	assert.Equal(t, baseOut, stdout, "stdout is unchanged")
+	assert.Equal(t, 1, strings.Count(stderr, "nvkectl sends no telemetry"), "one warning:\n%s", stderr)
+	assert.Contains(t, stderr, "nvkectl sends no telemetry because OTEL_EXPORTER_OTLP_ENDPOINT is not a usable OTLP/gRPC endpoint; "+
+		"fix or unset the variable, or pass --otlp-endpoint to export from this command")
+	assert.NotContains(t, stderr, "secret")
+}
+
+func TestBootstrapSiteOTLPFlagUnreachableNeverFailsTheCommand(t *testing.T) {
+	lis, err := net.Listen("tcp", nonLoopbackIPv4(t, false)+":0")
+	require.NoError(t, err)
+	closed := lis.Addr().String()
+	require.NoError(t, lis.Close())
+
+	baseOut, baseErr, err := runBootstrapDryRun(t)
+	require.NoError(t, err)
+	assert.Zero(t, strings.Count(baseErr, exportWarning), "no flag, no export warning")
+
+	started := time.Now()
+	stdout, stderr, err := runBootstrapDryRun(t, "--otlp-endpoint", closed, "--otlp-insecure")
+
+	require.NoError(t, err)
+	assert.Less(t, time.Since(started), 6*time.Second, "the flush is bounded")
+	assert.Equal(t, baseOut, stdout, "stdout is unchanged")
+	assert.Regexp(t, traceIDLineRE, stderr)
+	assert.Equal(t, 1, strings.Count(stderr, exportWarning), "one warning for the unreachable endpoint:\n%s", stderr)
+}
+
+func TestBootstrapSiteOTLPFlagWinsOverEnvironment(t *testing.T) {
+	flagCollector := newOTLPCollector(t)
+	envCollector := newOTLPCollector(t)
+	// The helper clears these variables first, so they are passed through it.
+	env := map[string]string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://" + envCollector.addr,
+		"OTEL_EXPORTER_OTLP_HEADERS":  "authorization=Bearer example-token",
+	}
+
+	_, _, err := runBootstrapDryRunEnv(t, env, "--otlp-endpoint", "http://"+flagCollector.addr)
+	require.NoError(t, err)
+
+	spans, md := flagCollector.received()
+	assert.NotEmpty(t, spans, "the flag's collector receives the run's spans")
+	assert.Equal(t, []string{"Bearer example-token"}, md.Get("authorization"), "the environment's headers still apply")
+	envSpans, _ := envCollector.received()
+	assert.Empty(t, envSpans, "the environment's endpoint receives nothing")
+}
+
+// controllerTracing hands the run's OTLP endpoint and headers to the controller
+// deploy. A loopback endpoint is not handed over, and with it go no headers.
+func TestControllerTracing(t *testing.T) {
+	tests := []struct {
+		name         string
+		cfg          *telemetry.OTLPConfig
+		want         controllerdeploy.TracingConfig
+		wantWarnings int
+		wantMessage  string
+	}{
+		{name: "export off"},
+		{
+			name: "endpoint",
+			cfg:  &telemetry.OTLPConfig{Endpoint: "collector.example:4317", Insecure: true},
+			want: controllerdeploy.TracingConfig{Endpoint: "collector.example:4317", Insecure: true},
+		},
+		{
+			name: "endpoint with headers",
+			cfg:  &telemetry.OTLPConfig{Endpoint: "collector.example:4317", Headers: map[string]string{"authorization": "Bearer example-token"}},
+			want: controllerdeploy.TracingConfig{
+				Endpoint: "collector.example:4317",
+				Headers:  map[string]string{"authorization": "Bearer example-token"},
+			},
+		},
+		{
+			name:         "loopback endpoint from the environment",
+			cfg:          &telemetry.OTLPConfig{Endpoint: "127.0.0.1:4317", Insecure: true, Headers: map[string]string{"authorization": "Bearer example-token"}},
+			wantWarnings: 1,
+			wantMessage:  "the controller in the bootstrap cluster cannot reach 127.0.0.1:4317; its spans are not exported",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			run := telemetry.NewRun("test")
+			if tt.cfg != nil {
+				require.NoError(t, run.EnableOTLP(*tt.cfg))
+			}
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&buf, nil))
+
+			got := controllerTracing(telemetry.ContextWithRun(context.Background(), run), logger)
+
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantWarnings, strings.Count(buf.String(), "level=WARN"), buf.String())
+			if tt.wantWarnings > 0 {
+				assert.Contains(t, buf.String(), tt.wantMessage)
+			}
+			assert.NotContains(t, buf.String(), "example-token", "a warning never holds a header value")
+		})
+	}
+	// A context without a run, as a test or library caller has, exports nothing.
+	assert.Equal(t, controllerdeploy.TracingConfig{}, controllerTracing(context.Background(), slog.New(slog.NewTextHandler(io.Discard, nil))))
+}
+
+// flakySiteRunner fails the first controller install, as a dropped connection
+// to the site's VIP does, and records the Postgres password each install passed.
+type flakySiteRunner struct {
+	controllerInstalls int
+	passwords          []string
+	// failure is the output of the failed install; a dropped connection when empty.
+	failure string
+}
+
+func (r *flakySiteRunner) Run(_ context.Context, name string, args ...string) (string, error) {
+	line := name + " " + strings.Join(args, " ")
+	switch {
+	case strings.Contains(line, "get storageclass"):
+		return "true\n", nil
+	case strings.Contains(line, "get --raw"):
+		return `{"status":"ok"}`, nil
+	case strings.Contains(line, "upgrade --install postgres"):
+		for i, arg := range args {
+			if arg == "--values" && i+1 < len(args) {
+				if b, err := os.ReadFile(args[i+1]); err == nil && strings.Contains(string(b), "password") {
+					r.passwords = append(r.passwords, string(b))
+				}
+			}
+		}
+	case strings.Contains(line, "upgrade --install nvke-controller"):
+		r.controllerInstalls++
+		if r.controllerInstalls == 1 {
+			if r.failure != "" {
+				return r.failure, errors.New("exit status 1")
+			}
+			return "write tcp 192.0.2.10:54586->192.0.2.100:6443: write: broken pipe", errors.New("exit status 1")
+		}
+	}
+	return "", nil
+}
+
+func TestDeploySiteStackRetriesWithTheSamePassword(t *testing.T) {
+	runner := &flakySiteRunner{}
+	cfg := controllerdeploy.Config{
+		CWEImage: "registry.example.com/nvke-controller:1", ProvisionedProviderImage: "registry.example.com/provisioned:1",
+		DisableMTLS: true, ReadyTimeout: time.Second,
+	}
+	inv := &sitespec.SiteSpec{ClusterName: "site", Cluster: sitespec.Cluster{ControlPlaneVIP: "192.0.2.100"}}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if err := deploySiteStack(context.Background(), inv, "site.kubeconfig", cfg, runner, logger); err != nil {
+		t.Fatalf("deploySiteStack: %v", err)
+	}
+	if runner.controllerInstalls != 2 {
+		t.Fatalf("controller installs = %d, want a retry after the failed one", runner.controllerInstalls)
+	}
+	if len(runner.passwords) != 2 || runner.passwords[0] != runner.passwords[1] {
+		t.Fatalf("each attempt must pass Postgres the same password, got %d differing values", len(runner.passwords))
+	}
+}
+
+func TestDeploySiteStackReportsOtherFailuresAtOnce(t *testing.T) {
+	runner := &flakySiteRunner{failure: "Error: context deadline exceeded"}
+	cfg := controllerdeploy.Config{
+		CWEImage: "registry.example.com/nvke-controller:1", ProvisionedProviderImage: "registry.example.com/provisioned:1",
+		DisableMTLS: true, ReadyTimeout: time.Second,
+	}
+	inv := &sitespec.SiteSpec{ClusterName: "site", Cluster: sitespec.Cluster{ControlPlaneVIP: "192.0.2.100"}}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if err := deploySiteStack(context.Background(), inv, "site.kubeconfig", cfg, runner, logger); err == nil {
+		t.Fatal("deploySiteStack succeeded, want the failed install reported")
+	}
+	if runner.controllerInstalls != 1 {
+		t.Fatalf("controller installs = %d, want no retry after a failure that is not a lost connection", runner.controllerInstalls)
 	}
 }

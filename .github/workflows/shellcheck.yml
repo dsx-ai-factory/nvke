@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Lints the shell scripts.
+# Lints the shell scripts, and tests release/hack/next-tag.sh, the one that
+# versions releases.
 #
 # actionlint already runs shellcheck, but only over `run:` blocks inside
 # workflow YAML. The 100 standalone .sh files in this tree had nothing checking
@@ -102,6 +103,13 @@ jobs:
       # `find` lines by hand.
       - name: Lint shell scripts
         run: make lint-shell
+
+      # release/hack/next-tag.sh decides the version every nightly beta and
+      # release candidate is tagged with, and a wrong one is pushed rather than
+      # reported. Tested here rather than in a gate member of its own: it is a
+      # shell script, and this job already gates every pull request.
+      - name: Test release/hack/next-tag.sh
+        run: make next-tag-test
 
       # Reported, not enforced, so the size of the backlog is visible without
       # gating on it. Remove when the gate above moves to -S warning.

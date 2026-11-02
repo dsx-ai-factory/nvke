@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Asserts what the chart renders for supportedInfraProviders and the per-provider
-# RBAC toggles. The controller binary owns value validation at startup; this only
-# checks the chart's default and opt-in rendering.
+# RBAC toggles, and that it refuses a provider list the controller would refuse
+# at startup.
 
 set -euo pipefail
 
@@ -26,6 +26,21 @@ setting() {
     printf '  ok    %s\n' "$1"
   else
     printf '  FAIL  %s (expected %s = %s, got %s)\n' "$1" "$2" "$3" "${got}" >&2
+    failures=$((failures + 1))
+  fi
+}
+
+wantfail() {
+  local description="$1" pattern="$2"
+  shift 2
+  local output
+  if output="$(render "$@" 2>&1)"; then
+    printf '  FAIL  %s (render succeeded; expected it to fail)\n' "${description}" >&2
+    failures=$((failures + 1))
+  elif grep -qF "${pattern}" <<<"${output}"; then
+    printf '  ok    %s\n' "${description}"
+  else
+    printf '  FAIL  %s (failed, but not with: %s)\n' "${description}" "${pattern}" >&2
     failures=$((failures + 1))
   fi
 }
@@ -52,6 +67,12 @@ out="$(render --set-string 'supportedInfraProviders=nico\,infra')"
 setting "renders both providers when requested" supportedInfraProviders "nico,infra" "${out}"
 out="$(render --set-string 'supportedInfraProviders=nico\,infra\,launchLayer')"
 setting "renders launchLayer appended to the overlay value" supportedInfraProviders "nico,infra,launchLayer" "${out}"
+wantfail "rejects an unknown provider" \
+  'supportedInfraProviders: "launchlayer" is not a supported provider' \
+  --set-string 'supportedInfraProviders=nico\,launchlayer'
+wantfail "rejects a repeated provider" \
+  'supportedInfraProviders: "nico" is listed more than once' \
+  --set-string 'supportedInfraProviders=nico\, nico'
 
 echo "provider RBAC toggles:"
 out="$(render --set capi.rbac.create=true)"

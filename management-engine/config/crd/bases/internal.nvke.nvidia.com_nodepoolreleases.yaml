@@ -99,6 +99,43 @@ spec:
                   It lives on the Release rather than the MachineImage so one image can back
                   several Releases whose initialization differs.
                 properties:
+                  infra:
+                    description: Infra supplies concrete bootstrap additions for the
+                      generic infra provider.
+                    properties:
+                      bootstrapFiles:
+                        items:
+                          description: BootstrapFile describes a cloud-init write_files
+                            entry supported by the generic infra API.
+                          properties:
+                            content:
+                              maxLength: 10240
+                              minLength: 1
+                              type: string
+                            owner:
+                              maxLength: 256
+                              minLength: 1
+                              type: string
+                            path:
+                              maxLength: 512
+                              minLength: 1
+                              type: string
+                            permissions:
+                              maxLength: 16
+                              minLength: 1
+                              type: string
+                          required:
+                          - content
+                          - path
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      preKubeadmCommands:
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: atomic
+                    type: object
                   userDataTemplate:
                     description: |-
                       UserDataTemplate is rendered with machine-specific values, such as the

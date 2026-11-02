@@ -22,7 +22,7 @@ The node image is not a ready Kubernetes node. It carries the node agent and the
 | `spire-agent`, its TPM attestor and `get_tpm_pubhash` | Installed and enabled. | The SPIRE server address, trust domain and trust bundle, in user data. |
 | Kubernetes packages: kubeadm, kubelet, kubectl and containerd | Staged in a local package repository at `/usr/lib/nvke/debs`, one `nvke-kubeadm-distro-<version>` package per Kubernetes version. | Install the package for your Kubernetes version. |
 | OVN-Kubernetes CNI packages | Staged in the same repository, for version 2.4.2. | Install the charts and images packages. |
-| Open vSwitch (`openvswitch-switch`) | Installed. | Nothing. |
+| Open vSwitch (`doca-openvswitch-switch`) | Installed. This is NVIDIA's DOCA build of Open vSwitch, from the DOCA apt repository, running in kernel mode. | Nothing. |
 
 ## Write the user data
 
@@ -49,11 +49,13 @@ The node image is not a ready Kubernetes node. It carries the node agent and the
    - `<BOOTSTRAP_HOST_IP>`: the IP address the nodes use to reach the bootstrap host. During the bootstrap, the SPIRE server listens there on port 30081.
    - `<TRUST_DOMAIN>`: your SPIFFE trust domain. Set the same value as `spire.trustDomain` in the site spec. If the site spec leaves it unset, `nvkectl` uses `nvkectl-bootstrap.nke.local`, so set it explicitly in both places.
    - `<SPIRE_CA_CERT_PEM>`: the PEM contents of the CA certificate you pass as `NVKECTL_SPIRE_CA_CERT_FILE`, with every line indented to match the placeholder.
-   - `<K8S_VERSION>`: the Kubernetes version you set as `cluster.k8sVersion` in the site spec, without a leading `v`: `1.36.3`, the supported version. The image also stages 1.34.2 and 1.35.3, which are not supported; see [Supported platforms and versions](../overview/supported-platforms.md).
+   - `<K8S_VERSION>`: the Kubernetes version you set as `cluster.k8sVersion` in the site spec, without a leading `v`: `1.36.3`, the supported version. The image also stages 1.34.2, 1.35.3 and 1.37.2, which are not supported; see [Supported platforms and versions](../overview/supported-platforms.md).
 
    The image stages OVN-Kubernetes 2.4.2, the version the bootstrap uses when the site spec leaves `cluster.cniVersion` unset.
 
    Do not set `SPIRE_JOIN_TOKEN`. Without it, the SPIRE agent attests with the node's TPM, which is how the bootstrap's SPIRE server admits nodes; it issues no join tokens. Install the Kubernetes package before the CNI images package: the images package loads its image into containerd, which the Kubernetes package provides.
+
+   If you install the management plane without a release description, you later copy two container images to each node over `ssh`; see [Install the management plane](install-management-plane.md#stage-the-controller-images-on-the-management-nodes). Add a `users:` entry for that with your SSH public key in `ssh_authorized_keys` and `sudo: ALL=(ALL) NOPASSWD:ALL`. The image accepts no password logins.
 
 2. Boot each node from the image with the user data.
 
@@ -81,7 +83,7 @@ Each component the bootstrap needs is a Debian package. If a check in [Verify](#
 | SPIRE agent, TPM attestor and `get_tpm_pubhash` | `spire-agent` |
 | Kubernetes for one version | `nvke-kubeadm-distro-<K8S_VERSION>` |
 | OVN-Kubernetes | `nvke-cni-ovn-charts-2.4.2` and `nvke-cni-ovn-images-2.4.2` |
-| Open vSwitch | `openvswitch-switch` |
+| Open vSwitch | `doca-openvswitch-switch`. The agent also accepts the stock `openvswitch-switch` package. |
 
 If `nvke-kubeadm-distro-<K8S_VERSION>` is the missing package, the image was built without that Kubernetes version. Choose a staged version, or rebuild the image with it.
 
@@ -102,10 +104,10 @@ Run these checks on every node, as root.
 2. Check that the packages are installed.
 
    ```bash
-   dpkg -l nvke-agent spire-agent openvswitch-switch 'nvke-kubeadm-distro-*' 'nvke-cni-ovn-*'
+   dpkg -l nvke-agent spire-agent '*openvswitch-switch' 'nvke-kubeadm-distro-*' 'nvke-cni-ovn-*'
    ```
 
-   Each package is listed with status `ii`, including `nvke-kubeadm-distro-<K8S_VERSION>`, `nvke-cni-ovn-charts-2.4.2` and `nvke-cni-ovn-images-2.4.2`. A staged package that is not installed is not listed, and `dpkg` reports that no package matches.
+   Each package is listed with status `ii`, including `doca-openvswitch-switch` (or `openvswitch-switch` on a node you prepared with the stock package), `nvke-kubeadm-distro-<K8S_VERSION>`, `nvke-cni-ovn-charts-2.4.2` and `nvke-cni-ovn-images-2.4.2`. A staged package that is not installed is not listed, and `dpkg` reports that no package matches.
 
    ```bash
    kubeadm version -o short

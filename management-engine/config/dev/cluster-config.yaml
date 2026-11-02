@@ -1,0 +1,64 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: internal.nvke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: docker-node
+spec:
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  architecture: arm64
+  buildDate: "2026-01-01"
+  # CAPD uses the Docker image in infra-templates.yaml instead of iPXE.
+  nico:
+    ipxeScript: |
+      #!ipxe
+      echo CAPD does not use iPXE
+      exit 1
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ClusterRelease
+metadata:
+  name: docker-1.34.8
+  annotations:
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.8"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+spec:
+  machineImageRef:
+    name: management-engine-docker-node
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+    infra:
+      bootstrapFiles: []
+      preKubeadmCommands:
+        - mkdir -p /run/cluster-api
+        - echo success > /run/cluster-api/bootstrap-success.complete
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ClusterReleaseChannel
+metadata:
+  name: stable
+spec:
+  releases:
+    "1.34":
+      - name: management-engine-docker-1.34.8
+        minimumUpgradeAge: 0s
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ControlPlaneClass
+metadata:
+  name: standard
+spec:
+  controlPlane:
+    replicas: 1
+    instanceTypePreferences:
+      - docker
+    systemReservedMemory: 1Gi
+  rollout:
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 1

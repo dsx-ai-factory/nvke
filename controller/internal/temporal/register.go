@@ -216,7 +216,7 @@ func NewWorker(
 	preflights.RegisterDefaults(rolloutRegistry, rolloutDialer)
 	rolloutkubevip.RegisterDefaults(rolloutRegistry, rolloutDialer)
 	rolloutetcd.RegisterDefaults(rolloutRegistry, rolloutDialer, k8sClient, cfg.PodNamespace)
-	rolloutoidc.RegisterDefaults(rolloutRegistry, rolloutDialer, rolloutMethodChecker, k8sClient, cfg.NvkeOIDCAuth, trustDomain, cfg.ManagementNamespaceOrDefault())
+	rolloutoidc.RegisterDefaults(rolloutRegistry, rolloutDialer, rolloutMethodChecker, k8sClient, cfg.NvkeOIDCAuth, trustDomain, cfg.RBACConfigMapSource())
 	rollouttemporal.NewActivities(rolloutLoader, rolloutRegistry).Register(w)
 	rollouttemporal.NewClusterLoaderActivity(rolloutLoader, cfg.NodeAgent.Port).Register(w)
 

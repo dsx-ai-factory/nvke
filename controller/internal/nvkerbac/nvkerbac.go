@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package nvkerbac reads the operator-managed nke-rbac manifest.
+// Package nvkerbac reads the operator-managed tenant RBAC manifest.
 package nvkerbac
 
 import (
@@ -20,18 +20,31 @@ import (
 )
 
 const (
-	ConfigMapName = "nke-rbac"
-	ConfigMapKey  = "manifest.yaml"
+	// LegacyConfigMapName is the name the chart rendered before the ConfigMap
+	// name became a value, and so the name every site installed before it keeps.
+	// It is what config.Config.RBACConfigMapSource falls back to: a site that has
+	// not pinned a name must not be moved to a new one by a binary upgrade alone.
+	LegacyConfigMapName = "nke-rbac"
+	ConfigMapKey        = "manifest.yaml"
 	// IdentitySourceAnnotation distinguishes operator-issued users from management identities.
 	IdentitySourceAnnotation = "nvke.nvidia.com/identity-source"
 )
 
-// ReadManifest returns the manifest from the ConfigMap in namespace, the
-// shared management-plane namespace (config.Config.ManagementNamespaceOrDefault).
+// Source locates the operator-managed RBAC ConfigMap. Both fields are
+// per-site configurable (nvkeSystemNamespace.name and rbacConfigMap.name), and
+// a name resolved against the wrong namespace reads nothing, so they travel
+// together rather than as two strings a caller can pair up wrongly.
+// config.Config.RBACConfigMapSource builds the one every caller uses.
+type Source struct {
+	Namespace string
+	Name      string
+}
+
+// ReadManifest returns the manifest from the ConfigMap src names.
 // A missing ConfigMap gives an apierrors.IsNotFound error.
-func ReadManifest(ctx context.Context, reader ctrlclient.Reader, namespace string) ([]byte, error) {
+func ReadManifest(ctx context.Context, reader ctrlclient.Reader, src Source) ([]byte, error) {
 	var cm corev1.ConfigMap
-	key := types.NamespacedName{Namespace: namespace, Name: ConfigMapName}
+	key := types.NamespacedName{Namespace: src.Namespace, Name: src.Name}
 	if err := reader.Get(ctx, key, &cm); err != nil {
 		return nil, fmt.Errorf("getting NVKE RBAC ConfigMap %s/%s: %w", key.Namespace, key.Name, err)
 	}

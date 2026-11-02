@@ -1,0 +1,97 @@
+---
+items:
+- apiVersion: internal.nvke.nvidia.com/v1
+  kind: NVKECluster
+  metadata:
+    creationTimestamp: null
+    finalizers:
+    - internal.nvke.nvidia.com/cluster-cleanup
+    generation: 1
+    name: cluster-1
+    namespace: default
+  spec:
+    apiServerAccess:
+      publicAccessEnabled: false
+    clusterNetwork:
+      pods:
+        cidrBlocks:
+        - 10.244.0.0/16
+      serviceDomain: cluster.local
+      services:
+        cidrBlocks:
+        - 10.96.0.0/12
+    controlPlaneClass: standard
+    network:
+      vpcID: 22222222-2222-4222-8222-222222222222
+    nodePools:
+    - instanceType: 33333333-3333-4333-8333-333333333333
+      name: workers
+      nodeProfile: example:1.36.1
+      replicas: 1
+      vpcSubnetID: 44444444-4444-4444-8444-444444444444
+    release:
+      channel:
+        name: stable
+  status:
+    conditions:
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: |-
+        * ControlPlaneReady:
+          * NVKEControllerProvisioned: Condition not yet reported
+          * NVKEControllerProvisioning: Condition not yet reported
+          * NVKEControllerDeleting: Condition not yet reported
+      observedGeneration: 1
+      reason: AvailableUnknown
+      status: Unknown
+      type: Available
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: 'get MachineImage "missing-image" for ClusterRelease "test-release":
+        MachineImage.internal.nvke.nvidia.com "missing-image" not found'
+      observedGeneration: 1
+      reason: ReconcileFailed
+      status: "False"
+      type: ClusterReconciled
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: |-
+        * NVKEControllerProvisioned: Condition not yet reported
+        * NVKEControllerProvisioning: Condition not yet reported
+        * NVKEControllerDeleting: Condition not yet reported
+      observedGeneration: 1
+      reason: ReadyUnknown
+      status: Unknown
+      type: ControlPlaneReady
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 1
+      reason: NotDeleting
+      status: "False"
+      type: Deleting
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: |-
+        * Available:
+          * ControlPlaneReady:
+            * NVKEControllerProvisioned: Condition not yet reported
+            * NVKEControllerProvisioning: Condition not yet reported
+            * NVKEControllerDeleting: Condition not yet reported
+        * Synced:
+          * ClusterReconciled: get MachineImage "missing-image" for ClusterRelease "test-release": MachineImage.internal.nvke.nvidia.com "missing-image" not found
+          * ControlPlaneReady:
+            * NVKEControllerProvisioned: Condition not yet reported
+            * NVKEControllerProvisioning: Condition not yet reported
+            * NVKEControllerDeleting: Condition not yet reported
+      observedGeneration: 1
+      reason: NotReady
+      status: "False"
+      type: Ready
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: |-
+        * ClusterReconciled: get MachineImage "missing-image" for ClusterRelease "test-release": MachineImage.internal.nvke.nvidia.com "missing-image" not found
+        * ControlPlaneReady:
+          * NVKEControllerProvisioned: Condition not yet reported
+          * NVKEControllerProvisioning: Condition not yet reported
+          * NVKEControllerDeleting: Condition not yet reported
+      observedGeneration: 1
+      reason: NotSynced
+      status: "False"
+      type: Synced
+metadata: {}

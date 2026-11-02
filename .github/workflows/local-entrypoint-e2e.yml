@@ -95,7 +95,7 @@ jobs:
             runner: linux-amd64-cpu16
             install_cni_after_init: true
           - arch: arm64
-            runner: arc-arm64-cpu16
+            runner: linux-arm64-cpu16
             install_cni_after_init: false
     env:
       INSTALL_CNI_AFTER_INIT: ${{ matrix.install_cni_after_init }}
@@ -109,7 +109,7 @@ jobs:
       # Same override as backend-e2e.yml (capd-e2e, nico-e2e).
       NODE_REBOOT_SOFT_REBOOT_ENABLED: false
       # A public pull-through mirror: dc.local.gha-runners.nvidia.com resolves
-      # only on the self-hosted fleet, and the arm64 leg now runs on ARC.
+      # only on the NV fleet, not on ARC, and this mirror works from both.
       # Same host as backend-e2e.yml, os-image-artifact.yml and
       # nvkectl-bootstrap-e2e.yml, each of which had to make this change when
       # it moved. helm needs the shim below to honour it for OCI charts,

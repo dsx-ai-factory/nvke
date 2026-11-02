@@ -1,0 +1,139 @@
+---
+items:
+- apiVersion: internal.nvke.nvidia.com/v1
+  kind: NVKECluster
+  metadata:
+    creationTimestamp: null
+    finalizers:
+    - internal.nvke.nvidia.com/cluster-cleanup
+    generation: 2
+    name: cluster-1
+    namespace: default
+  spec:
+    apiServerAccess:
+      publicAccessEnabled: false
+    clusterNetwork:
+      pods:
+        cidrBlocks:
+        - 10.244.0.0/16
+      serviceDomain: cluster.local
+      services:
+        cidrBlocks:
+        - 10.96.0.0/12
+    controlPlaneClass: standard
+    network:
+      vpcID: 22222222-2222-4222-8222-222222222222
+    nodePools:
+    - instanceType: 33333333-3333-4333-8333-333333333333
+      name: workers
+      nodeProfile: example:1.34.8
+      replicas: 1
+      vpcSubnetID: 44444444-4444-4444-8444-444444444444
+    release:
+      channel:
+        name: stable
+        version: "1.34"
+  status:
+    conditions:
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
+      reason: Available
+      status: "True"
+      type: Available
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
+      reason: ReconcileSucceeded
+      status: "True"
+      type: ClusterReconciled
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
+      reason: Ready
+      status: "True"
+      type: ControlPlaneReady
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
+      reason: NotDeleting
+      status: "False"
+      type: Deleting
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
+      reason: NotYetReported
+      status: Unknown
+      type: NVKEControllerCPNodesRecycling
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
+      reason: NotYetReported
+      status: Unknown
+      type: NVKEControllerControlPlaneUpgrading
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
+      reason: Reported
+      status: "False"
+      type: NVKEControllerDeleting
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
+      reason: Reported
+      status: "True"
+      type: NVKEControllerProvisioned
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
+      reason: Reported
+      status: "False"
+      type: NVKEControllerProvisioning
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
+      reason: NotYetReported
+      status: Unknown
+      type: NVKEControllerUpdateFailed
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
+      reason: Ready
+      status: "True"
+      type: Ready
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
+      reason: Synced
+      status: "True"
+      type: Synced
+    id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    nodePools:
+    - conditions:
+      - message: ""
+        observedGeneration: 2
+        reason: Ready
+        status: "True"
+        type: Ready
+      - message: ""
+        observedGeneration: 2
+        reason: Reported
+        status: "False"
+        type: NVKEControllerDeleting
+      - message: ""
+        observedGeneration: 2
+        reason: Reported
+        status: "True"
+        type: NVKEControllerProvisioned
+      - message: ""
+        observedGeneration: 2
+        reason: Reported
+        status: "False"
+        type: NVKEControllerProvisioning
+      id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+      name: workers
+    observedGeneration: 2
+    resolvedRelease:
+      name: pinned-release
+      version: 1.34.8
+metadata: {}

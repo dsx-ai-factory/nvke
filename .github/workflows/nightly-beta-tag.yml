@@ -8,8 +8,8 @@ name: Nightly beta tag
 # provisioned provider, os-image, nvkectl) that publish to NVCR and S3, and for
 # os-image GHCR; this workflow only creates the tag.
 #
-# The version comes from hack/next-tag.sh, which only prints it. This workflow
-# chooses the commit, creates the tag and pushes it.
+# The version comes from release/hack/next-tag.sh, which only prints it. This
+# workflow chooses the commit, creates the tag and pushes it.
 #
 # The push must NOT use GITHUB_TOKEN. Events caused by GITHUB_TOKEN never start
 # other workflows, so the beta builds would silently not run. It uses an
@@ -17,6 +17,9 @@ name: Nightly beta tag
 # private key, RELEASE_BOT_SECRET), minted per run with contents: write on this
 # repository only. The App must be a bypass actor on the "Protect release
 # tags" ruleset, which restricts creating v* tags.
+#
+# A beta that passes its own qualification is promoted to a release candidate
+# by rc-promotion.yml.
 on:
   schedule:
     # Nightly 02:00 UTC. Scheduled runs always use the default branch.
@@ -27,6 +30,12 @@ on:
         description: Print the tag that would be created, without creating it.
         type: boolean
         default: false
+      commit:
+        description: >-
+          A commit SHA on main to tag, whatever its publishers reported. Empty
+          selects the newest commit whose publishers all passed.
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -78,6 +87,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ inputs.commit }}
         run: |
           set -euo pipefail
 
@@ -93,7 +103,28 @@ jobs:
           )
 
           selected=""
-          while read -r sha; do
+
+          # A commit given by hand is tagged whatever its publishers reported,
+          # but only from main, because a beta tag enters forge-nightly with no
+          # reviewer, and only once it carries the publishers' beta triggers.
+          if [ -n "${COMMIT}" ]; then
+            if ! [[ "${COMMIT}" =~ ^[0-9a-f]{7,40}$ ]] \
+              || ! selected="$(git rev-parse --verify --quiet "${COMMIT}^{commit}")"; then
+              echo "::error::The commit input is not a commit SHA in this repository."
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "${selected}" main; then
+              echo "::error::${selected:0:9} is not on main."
+              exit 1
+            fi
+            if ! git cat-file -e "${selected}:.github/workflows/nightly-beta-tag.yml" 2>/dev/null; then
+              echo "::error::${selected:0:9} predates the beta publishers, so its tag would start nothing."
+              exit 1
+            fi
+            echo "${selected:0:9}: given by hand; its publishers are not checked."
+          fi
+
+          while [ -z "${selected}" ] && read -r sha; do
             # The publishers' beta triggers landed with this file, so a commit
             # without it would take a tag that starts nothing -- and every
             # commit older than it predates them too.
@@ -139,6 +170,10 @@ jobs:
           existing="$(git tag --points-at "${selected}" \
             | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$' | head -n1 || true)"
           if [ -n "${existing}" ]; then
+            if [ -n "${COMMIT}" ]; then
+              echo "::error::${existing} already names ${selected:0:9}."
+              exit 1
+            fi
             echo "${existing} already names ${selected:0:9}; nothing new to tag." \
               | tee -a "${GITHUB_STEP_SUMMARY}"
             echo "selected=false" >> "${GITHUB_OUTPUT}"
@@ -156,12 +191,25 @@ jobs:
         env:
           DRY_RUN: ${{ inputs.dry_run || false }}
           SELECTED_SHA: ${{ steps.select.outputs.sha }}
+          COMMIT: ${{ inputs.commit }}
         run: |
           set -euo pipefail
 
           # next-tag.sh takes any committish: passing the selected commit rather
-          # than main keeps the feat/fix scan to the history being tagged.
-          tag="$(hack/next-tag.sh "${SELECTED_SHA}" beta)"
+          # than main keeps the feat/fix scan to the history being tagged. It
+          # exits 3 when that history has no feat or fix to release.
+          status=0
+          tag="$(release/hack/next-tag.sh "${SELECTED_SHA}" beta)" || status=$?
+          if [ "${status}" = 3 ]; then
+            echo "Nothing releasable at ${SELECTED_SHA:0:9}: no feat or fix since the latest GA tag." \
+              | tee -a "${GITHUB_STEP_SUMMARY}"
+            if [ -n "${COMMIT}" ]; then
+              echo "::error::${SELECTED_SHA:0:9} was given by hand, and has nothing to release."
+              exit 1
+            fi
+            exit 0
+          fi
+          [ "${status}" = 0 ] || exit "${status}"
 
           if [ "${DRY_RUN}" = "true" ]; then
             echo "Would tag ${SELECTED_SHA} as ${tag}." | tee -a "${GITHUB_STEP_SUMMARY}"

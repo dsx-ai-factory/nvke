@@ -33,21 +33,28 @@ const (
 // instance identity from NicoMachine.spec.providerID, but kubelet registers the
 // tenant Node without that providerID. This controller copies the identity onto
 // the tenant Node so CAPI can set Machine.status.nodeRef and transition to Ready.
+//
+// It only acts on CAPI Clusters NVKE manages, identified by the managed-by
+// label set to managedByLabelValue. CAPNICo clusters created outside NVKE have
+// no cluster row to resolve a tenant client from, so they are skipped.
 type NicoProviderIDController struct {
 	k8sClient            client.Client
 	tenantClientProvider kube.TenantClientProvider
 	logger               *slog.Logger
+	managedByLabelValue  string
 }
 
 func NewNicoProviderIDController(
 	k8sClient client.Client,
 	tenantClientProvider kube.TenantClientProvider,
 	logger *slog.Logger,
+	managedByLabelValue string,
 ) *NicoProviderIDController {
 	return &NicoProviderIDController{
 		k8sClient:            k8sClient,
 		tenantClientProvider: tenantClientProvider,
 		logger:               logger,
+		managedByLabelValue:  managedByLabelValue,
 	}
 }
 
@@ -108,6 +115,10 @@ func (c *NicoProviderIDController) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to get CAPI cluster: %w", err)
 	}
+	if !isNVKEManagedCluster(cluster, c.managedByLabelValue) {
+		logger.Debug("CAPI Cluster is not managed by NVKE, skipping provider ID reconciliation", "clusterName", cluster.Name)
+		return ctrl.Result{}, nil
+	}
 
 	tenantClient, err := c.tenantClientProvider.ClientForCluster(ctx, cluster)
 	if err != nil {
@@ -150,6 +161,18 @@ func (c *NicoProviderIDController) Reconcile(ctx context.Context, req ctrl.Reque
 
 	logger.Info("Patched tenant Node metadata", "nodeName", node.Name, "providerID", node.Spec.ProviderID)
 	return ctrl.Result{}, nil
+}
+
+// isNVKEManagedCluster reports whether NVKE created the CAPI Cluster, which it
+// marks with the managed-by label in either label domain. An empty configured
+// value matches nothing, so a misconfiguration cannot make an unlabeled Cluster
+// look NVKE-managed.
+func isNVKEManagedCluster(cluster *clusterv1.Cluster, managedByLabelValue string) bool {
+	if managedByLabelValue == "" {
+		return false
+	}
+	value, ok := keys.ManagedBy.Get(cluster.Labels)
+	return ok && value == managedByLabelValue
 }
 
 func reconcileNodeMetadata(node *corev1.Node, nicoMachine *nicov1.NicoMachine) bool {

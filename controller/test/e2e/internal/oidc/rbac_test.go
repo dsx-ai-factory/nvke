@@ -17,7 +17,7 @@ import (
 func TestReservedUsersReadsAllBindingDocuments(t *testing.T) {
 	t.Parallel()
 	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: nvkeRBACConfigMap},
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: ConfigMapName()},
 		Data: map[string]string{nvkeRBACKey: `apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 subjects:
@@ -46,7 +46,7 @@ subjects:
 func TestReservedUsersFailsWhenManifestHasNoUsers(t *testing.T) {
 	t.Parallel()
 	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: nvkeRBACConfigMap},
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: ConfigMapName()},
 		Data:       map[string]string{nvkeRBACKey: "kind: ClusterRole\n"},
 	}
 	client := fake.NewClientBuilder().WithObjects(configMap).Build()

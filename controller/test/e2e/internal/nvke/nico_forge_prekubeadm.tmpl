@@ -28,11 +28,13 @@ for the same reason — OVN runs Open vSwitch on the host, and the agent checks
 for ovs-vsctl before helm. Both were observed on real Forge hardware before
 they were read out of the agent source.
 
-openvswitch-switch comes from the autoinstall package list rather than the
-local repo, so its install is a no-op that asserts it is there. --no-upgrade
-keeps it one: without it an install can pull a newer Open vSwitch than the one
-the image was baked and smoke-tested with, which is the same defect this file
-fixes for the NVKE packages.
+The image installs Open vSwitch at bake time, so this install is a no-op that
+asserts it is there. Older images carry Ubuntu's openvswitch-switch; current
+ones carry DOCA's doca-openvswitch-switch, which Provides it, and apt
+selects that as the only provider. --no-upgrade keeps it a no-op: without it an
+install can pull a newer Open vSwitch than the one the image was baked and
+smoke-tested with, which is the same defect this file fixes for the NVKE
+packages.
 
 nke-agent and spire-agent are deliberately absent. The image builds both as
 .debs from this checkout's source at bake time and installs them with dpkg, so
@@ -61,7 +63,7 @@ before it is sent: none of them reads a shell variable.
 There is no apt-get update. os-image/packer/scripts/provision.sh indexes the
 local repo at bake time and clears the Ubuntu archive lists, precisely so
 "cluster create needs no apt-get update of its own". Running one here would
-refresh the archive again and let the openvswitch-switch install upgrade past
+refresh the archive again and let the Open vSwitch install upgrade past
 the baked build, which is the defect this file fixes for the NVKE packages.
 
 The route wait stays, because nke-agent.service is restarted at the end of

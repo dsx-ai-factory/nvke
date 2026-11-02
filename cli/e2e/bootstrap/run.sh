@@ -29,7 +29,9 @@
 # runs on success and on failure, so a change that starts printing a secret turns
 # the run red. CI sets NVKECTL_E2E_REQUIRE_SECRET_SCAN=1, which makes a missing
 # gitleaks a failure; a developer running this locally without it only sees a
-# warning.
+# warning. TestE2E_BootstrapSite also gives `bootstrap site` a fake OTLP header
+# token, and the exit trap fails the run if that token, or the Postgres password
+# or etcd key, appears in the same output: see bootstraptest.SecretScan.
 #
 # Everything created is registered for teardown as it is created, and the EXIT
 # trap runs those registrations in reverse, whatever the exit. A failing exit
@@ -63,7 +65,7 @@ E2E_CLUSTER_NAME="nke-e2e"
 BOOTSTRAP_KIND_CLUSTER="${NVKECTL_BOOTSTRAP_CLUSTER_NAME:-nvkectl-bootstrap}"
 BOOTSTRAP_CONTROL_PLANE="${BOOTSTRAP_KIND_CLUSTER}-control-plane"
 # The namespace and Deployment `bootstrap site` installs the controller under.
-CONTROLLER_NAME=nke-controller
+CONTROLLER_NAME=nvke-controller
 # The fake-node fixture, as the substrate package names it: N containers on one
 # private network, named by prefix and index. The defaults here mirror
 # substrate.DefaultConfig; override the same variables to change both.
@@ -98,6 +100,9 @@ BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap.log"
 # own output is not in here: it goes to BOOTSTRAP_LOG, so there is one copy of
 # it and the credential scan covers that copy.
 BOOTSTRAP_GO_TEST_LOG="${SCRIPT_DIR}/.bootstrap-go-test.log"
+# Where TestE2E_BootstrapSite saves the secret values it knows, for the search at
+# exit. A run that never started the test leaves no file.
+KNOWN_SECRETS_FILE="${SCRIPT_DIR}/.bootstrap-known-secrets.json"
 GO="${GO:-go}"
 # The lane runs `bootstrap site` through the Go tests in bootstraptest. Those
 # tests carry two marks: the e2e_bootstrap build tag, which keeps them out of
@@ -178,10 +183,10 @@ if [ "${netconfpath%/}" = /etc/cni/net.d ]; then
     "unset it, or point it at /etc/containerd-nerdctl/net.d"
 fi
 
-# scan_output_for_secrets scans the bootstrap log and the diagnostics bundle for
-# credentials, and returns 1 if it finds one or cannot tell. It prints the
-# scanner's findings with the secret redacted and never the secret itself: this
-# output goes to a public CI log.
+# scan_output_for_secrets scans the bootstrap log, the Go test log and the
+# diagnostics bundle for credentials, and returns 1 if it finds one or cannot
+# tell. It prints the scanner's findings with the secret redacted and never the
+# secret itself: this output goes to a public CI log.
 #
 # It first proves the rules work, because a clean result from a scanner that
 # matches nothing means nothing. Each shape the rules target must be flagged when
@@ -210,7 +215,7 @@ scan_output_for_secrets() {
     return 0
   fi
 
-  local work rc name shape fingerprint join_token leaked plog trace_hex span_hex
+  local work rc name shape fingerprint join_token leaked plog trace_hex span_hex found
   work="$(mktemp -d)"
 
   # The rules, proved on a sample of each shape: flagged with a value, clean with
@@ -221,7 +226,10 @@ scan_output_for_secrets() {
     'url|{"env":[{"name":"DATABASE_URL","value":"postgres://cloud:PLACEHOLDER@db.example:5432/cloud"}]}' \
     'field|{"auth":{"username":"cloud","password":"PLACEHOLDER"}}' \
     'unquoted|      POSTGRES_PASSWORD:  PLACEHOLDER' \
-    'env|{"env":[{"name":"POSTGRES_PASSWORD","value":"PLACEHOLDER"}]}'; do
+    'env|{"env":[{"name":"POSTGRES_PASSWORD","value":"PLACEHOLDER"}]}' \
+    'slog|time=x level=ERROR msg="connect failed" db_password=PLACEHOLDER' \
+    'otlp-env|{"env":[{"name":"OTEL_EXPORTER_OTLP_HEADERS","value":"PLACEHOLDER"}]}' \
+    'otlp-describe|      OTEL_EXPORTER_OTLP_HEADERS:  PLACEHOLDER'; do
     name="${shape%%|*}"
     printf '%s\n' "${shape#*|}" | sed 's/PLACEHOLDER/aaaa-bbbb-cccc/' >"${work}/flagged/${name}.txt"
     printf '%s\n' "${shape#*|}" | sed 's/PLACEHOLDER/<redacted>/' >"${work}/clean/${name}.txt"
@@ -232,11 +240,13 @@ scan_output_for_secrets() {
   printf "      POSTGRES_PASSWORD:  <set to the key 'password' in secret 'pg'>  Optional: false\n" >"${work}/clean/describe-secret.txt"
   printf 'spec:\n  usePassword: true\n  password: null\n' >"${work}/clean/password-state.txt"
   printf '{"env":[{"name":"POSTGRES_PASSWORD","valueFrom":{"secretKeyRef":{"name":"pg","key":"password"}}}]}\n' >"${work}/clean/env-secretref.txt"
+  printf 'time=x level=INFO msg="chart values" usePassword=true\n' >"${work}/clean/password-flag.txt"
+  printf 'time=x level=WARN msg="OTEL_EXPORTER_OTLP_HEADERS is sent to the OTLP endpoint without TLS; use an https endpoint if the headers hold a credential"\n' >"${work}/clean/otlp-warning.txt"
   # The one line the rules allow, and the same line under another message, which
   # they must not allow. The hash is computed here, not written in this file: a
   # literal would trip the Secrets workflow just as it trips the default rules.
   fingerprint="$(printf '%s' sample | sha256sum | cut -d' ' -f1)"
-  printf 'time=x level=INFO msg="wrote the etcd encryption key" component=x path=/x/.etcd-encryption-key.json sha256=%s trace_id=%032x span_id=%016x\n' \
+  printf 'time=x level=INFO msg="wrote the etcd encryption key" component=x path=/x/.etcd-encryption-key.json sha256=%s trace_id=%032x span_id=%016x operation=bootstrap_site cluster=x phase=site_cluster\n' \
     "${fingerprint}" 1 1 >"${work}/clean/etcd-fingerprint.txt"
   printf 'time=x level=INFO msg="wrote the file" component=x path=/x/.etcd-encryption-key.json sha256=%s trace_id=%032x span_id=%016x\n' \
     "${fingerprint}" 1 1 >"${work}/flagged/etcd-other.txt"
@@ -247,7 +257,7 @@ scan_output_for_secrets() {
   # prove nothing.
   trace_hex="$(printf t | sha256sum | cut -c1-32)"
   span_hex="$(printf s | sha256sum | cut -c1-16)"
-  printf 'time=x level=INFO msg="SPIRE upstream CA from the environment" component=x cert=/w/cli/.local/spire-ca/ca.crt key=/w/cli/.local/spire-ca/ca.key trace_id=%s span_id=%s\n' \
+  printf 'time=x level=INFO msg="SPIRE upstream CA from the environment" component=x cert=/w/cli/.local/spire-ca/ca.crt key=/w/cli/.local/spire-ca/ca.key trace_id=%s span_id=%s operation=bootstrap_site cluster=x phase=preflight\n' \
     "${trace_hex}" "${span_hex}" >"${work}/clean/spire-ca-paths.txt"
   printf 'time=x level=INFO msg="SPIRE upstream CA from the environment" component=x cert=/w/cli/.local/spire-ca/ca.crt key=/w/cli/.local/spire-ca/ca.key trace_id=%s span_id=%s extra=%s\n' \
     "${trace_hex}" "${span_hex}" "${fingerprint}" >"${work}/flagged/spire-ca-extra.txt"
@@ -271,6 +281,21 @@ scan_output_for_secrets() {
     "${leaked}" >"${work}/flagged/spire-field-before-cert.txt"
   printf 'api_key=%s time=x level=INFO msg="SPIRE upstream CA from the environment" component=x cert=/w/ca.crt key=/w/ca.key\n' \
     "${leaked}" >"${work}/flagged/spire-field-before-msg.txt"
+  # A header value holds a space, plain or as %20. A finding prints the text beside
+  # the secret it found, so the value must be inside the secret.
+  for name in otlp-spaced:' ' otlp-encoded:'%20'; do
+    printf '      OTEL_EXPORTER_OTLP_HEADERS:  authorization=Bearer%sPLACEHOLDER\n' "${name#*:}" |
+      sed 's/PLACEHOLDER/aaaa-bbbb-cccc/' >"${work}/flagged/${name%%:*}.txt"
+  done
+  for name in "${work}"/flagged/otlp-spaced.txt "${work}"/flagged/otlp-encoded.txt; do
+    # Captured, not piped: gitleaks exits 2 on a finding, which pipefail would report.
+    found="$(gitleaks_scan "${name}" --verbose 2>&1 || true)"
+    if grep -q 'aaaa-bbbb-cccc' <<<"${found}"; then
+      log "FAIL: the secret scan printed the value of ${name##*/}, so its output is not safe for a public CI log"
+      rm -rf "${work}"
+      return 1
+    fi
+  done
   for name in "${work}"/flagged/*; do
     rc=0
     gitleaks_scan "${name}" >/dev/null 2>&1 || rc=$?
@@ -303,7 +328,7 @@ scan_output_for_secrets() {
     printf 'no secret here\n' >"${diag}/nvke/controller/logs.txt"
   }
   reset_diag
-  if ! scan_run_output "${clean_log}" "${diag}" >/dev/null 2>&1; then
+  if ! scan_run_output "${clean_log}" "${diag}" "${clean_log}" >/dev/null 2>&1; then
     log "FAIL: the scan failed a log and diagnostics bundle with no secret in them"
     rm -rf "${work}"
     return 1
@@ -324,18 +349,32 @@ scan_output_for_secrets() {
   done
 
   rc=0
-  scan_run_output "${BOOTSTRAP_LOG}" "${DIAGNOSTICS_DIR}" || rc=$?
+  scan_run_output "${BOOTSTRAP_LOG}" "${DIAGNOSTICS_DIR}" "${BOOTSTRAP_GO_TEST_LOG}" || rc=$?
   rm -rf "${work}"
   return "${rc}"
 }
 
-# scan_run_output scans a bootstrap log and a diagnostics directory, which may
-# not exist, with gitleaks. It returns 1 on a finding or a scanner failure.
+# scan_run_output scans a bootstrap log, a diagnostics directory (which may not
+# exist) and optionally the Go test log with gitleaks. It returns 1 on a finding
+# or a scanner failure.
 scan_run_output() {
-  local log_file="$1" diag_dir="$2" out rc
+  local log_file="$1" diag_dir="$2" go_test_log="${3:-}" out rc
   out="$(mktemp -d)"
   mkdir -p "${out}/output"
-  cp "${log_file}" "${out}/output/bootstrap.log"
+  if [ -f "${log_file}" ]; then
+    cp "${log_file}" "${out}/output/bootstrap.log" || {
+      log "FAIL: could not read ${log_file}, so it was not scanned for credentials"
+      rm -rf "${out}"
+      return 1
+    }
+  fi
+  if [ -f "${go_test_log}" ]; then
+    cp "${go_test_log}" "${out}/output/go-test.log" || {
+      log "FAIL: could not read ${go_test_log}, so it was not scanned for credentials"
+      rm -rf "${out}"
+      return 1
+    }
+  fi
   if [ -d "${diag_dir}" ]; then
     mkdir -p "${out}/output/diagnostics"
     cp -R "${diag_dir}/." "${out}/output/diagnostics/" || {
@@ -349,10 +388,58 @@ scan_run_output() {
   gitleaks_scan "${out}/output" --verbose || rc=$?
   rm -rf "${out}"
   case "${rc}" in
-    0) log "PASS: no credential in the bootstrap log or its diagnostics" ;;
+    0) log "PASS: no credential in the bootstrap output or its diagnostics" ;;
     2) log "FAIL: gitleaks found a credential in the bootstrap output; the findings above are redacted" ; return 1 ;;
     *) log "FAIL: gitleaks could not scan the bootstrap output (exit ${rc})" ; return 1 ;;
   esac
+}
+
+# print_run_logs prints the bootstrap log and the Go test log it is given, unless
+# gitleaks finds a credential in them or cannot run. Their output goes to the CI
+# log, which is public, and the scan at exit comes too late for that. It prints a
+# notice instead, and the scan at exit fails the run. TestE2E_BootstrapSite has
+# already replaced a bootstrap log that holds a known secret value.
+print_run_logs() {
+  local file scan_rc=0
+  if command -v gitleaks >/dev/null 2>&1; then
+    scan_run_output "${BOOTSTRAP_LOG}" "" "${BOOTSTRAP_GO_TEST_LOG}" >/dev/null 2>&1 || scan_rc=$?
+  elif [ "${NVKECTL_E2E_REQUIRE_SECRET_SCAN:-}" = 1 ]; then
+    scan_rc=1
+  fi
+  if [ "${scan_rc}" -ne 0 ]; then
+    log "the bootstrap output holds a credential or could not be scanned, so it is not printed to the CI log"
+    return 0
+  fi
+  for file in "$@"; do
+    cat "${file}" || true
+  done
+}
+
+# scan_known_secrets searches the bootstrap log, the Go test log and the
+# diagnostics for the secret values TestE2E_BootstrapSite saved, with the test
+# that does it. It prints file names, never a value. It fails on a hit and when
+# the saved set is incomplete. A run that failed before that test started saved
+# none and has nothing to search for; a run that passed must have.
+scan_known_secrets() {
+  local run_status="$1" out rc=0
+  if [ ! -f "${KNOWN_SECRETS_FILE}" ]; then
+    [ "${run_status}" -ne 0 ] && return 0
+    log "FAIL: the bootstrap test saved no secret values, so the search for them proves nothing"
+    return 1
+  fi
+  out="$(env \
+    NVKECTL_E2E_KNOWN_SECRETS_FILE="${KNOWN_SECRETS_FILE}" \
+    NVKECTL_E2E_BOOTSTRAP_LOG="${BOOTSTRAP_LOG}" \
+    NVKECTL_E2E_GO_TEST_LOG="${BOOTSTRAP_GO_TEST_LOG}" \
+    NVKECTL_E2E_DIAGNOSTICS_DIR="${DIAGNOSTICS_DIR}" \
+    "${GO}" test -C "${CLI_DIR}" -tags e2e_bootstrap -count=1 \
+    -run '^TestScanBootstrapOutputs$' ./e2e/bootstrap/bootstraptest/ 2>&1)" || rc=$?
+  if [ "${rc}" -ne 0 ]; then
+    log "FAIL: a known secret value is in the bootstrap output, or the search for them was incomplete or failed"
+    printf '%s\n' "${out}"
+    return 1
+  fi
+  log "PASS: no known secret value in the bootstrap output or its diagnostics"
 }
 
 # defer registers a command for the EXIT trap, which runs registrations in
@@ -372,6 +459,7 @@ cleanup() {
   # A leak turns a passing run red; a run that already failed stays failed.
   local scan_failed=0
   scan_output_for_secrets || scan_failed=1
+  scan_known_secrets "${status}" || scan_failed=1
   # CI uploads this directory when the job fails, and a failed scan is a failed
   # job. The bundle is redacted in the scan's output but not on disk, so it is
   # removed rather than published with the credential the scan reported. A
@@ -393,7 +481,7 @@ cleanup() {
     chown -R "${SUDO_UID}:${SUDO_GID:-${SUDO_UID}}" "${DIAGNOSTICS_DIR}" || true
   fi
 
-  rm -f "${TENANT_KUBECONFIG}" "${ETCD_KEY_FILE}" "${BOOTSTRAP_LOG}"
+  rm -f "${TENANT_KUBECONFIG}" "${ETCD_KEY_FILE}" "${BOOTSTRAP_LOG}" "${KNOWN_SECRETS_FILE}"
   rm -rf "${KUBECONFIG_DIR}" "${CNI_BUNDLE_DIR}" "${BGP_RENDER_DIR}"
   if [ "${scan_failed}" -ne 0 ] && [ "${status}" -eq 0 ]; then
     exit 1
@@ -694,7 +782,7 @@ fi
 # public hardened charts, needing no registry credential of their own.
 # The command never overwrites a key file and refuses to start over one, so a
 # leftover from an interrupted run has to go first.
-rm -f "${ETCD_KEY_FILE}"
+rm -f "${ETCD_KEY_FILE}" "${KNOWN_SECRETS_FILE}"
 
 log "running: nvkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 15m" \
   "via the e2e_bootstrap TestE2E_ tests" \
@@ -747,6 +835,10 @@ setsid env \
   NVKECTL_E2E_BOOTSTRAP_TIMEOUT=15m \
   NVKECTL_E2E_KEEP_BOOTSTRAP_CLUSTER=1 \
   NVKECTL_E2E_VERBOSE=1 \
+  NVKECTL_E2E_DIAGNOSTICS_DIR="${DIAGNOSTICS_DIR}" \
+  NVKECTL_E2E_KNOWN_SECRETS_FILE="${KNOWN_SECRETS_FILE}" \
+  NVKECTL_E2E_BOOTSTRAP_CLUSTER="${BOOTSTRAP_KIND_CLUSTER}" \
+  NVKECTL_E2E_CONTROLLER_NAME="${CONTROLLER_NAME}" \
   "${GO}" test -C "${CLI_DIR}" -tags e2e_bootstrap -timeout 0 -count=1 -v \
   ./e2e/bootstrap/bootstraptest/ -run '^TestE2E_' \
   >"${BOOTSTRAP_GO_TEST_LOG}" 2>&1 &
@@ -756,11 +848,24 @@ bootstrap_pid=$!
 # exits. Signalling the group reaches the go test, which stops nvkectl and the
 # kind, nerdctl and helm it drives before it goes. Otherwise the EXIT trap would
 # delete the cluster the command is still driving.
+#
+# `go` exits on SIGTERM while the test binary it started is still stopping
+# nvkectl and checking the output, so this waits for the whole group. The bound
+# is the test's 20s stop grace and 2 minute output check, with margin.
+ABORT_GROUP_WAIT=180
 abort_bootstrap() {
+  local waited=0
   kill -- "-${bootstrap_pid}" 2>/dev/null || kill "${bootstrap_pid}" 2>/dev/null || true
   wait "${bootstrap_pid}" 2>/dev/null || true
-  cat "${BOOTSTRAP_LOG}" || true
-  cat "${BOOTSTRAP_GO_TEST_LOG}" || true
+  while kill -0 -- "-${bootstrap_pid}" 2>/dev/null; do
+    if [ "${waited}" -ge "${ABORT_GROUP_WAIT}" ]; then
+      log "the bootstrap test is still running after ${ABORT_GROUP_WAIT}s; continuing without it"
+      break
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  print_run_logs "${BOOTSTRAP_LOG}" "${BOOTSTRAP_GO_TEST_LOG}"
   exit 1
 }
 
@@ -876,13 +981,13 @@ fi
 
 status=0
 wait "${bootstrap_pid}" || status=$?
-cat "${BOOTSTRAP_LOG}"
+print_run_logs "${BOOTSTRAP_LOG}"
 output="$(cat "${BOOTSTRAP_LOG}")"
 
 if [ "${status}" -ne 0 ]; then
   # The go test exit status says only that the run failed. What nvkectl exited
   # with, or that it could not be started at all, is in its log.
-  cat "${BOOTSTRAP_GO_TEST_LOG}" || true
+  print_run_logs "${BOOTSTRAP_GO_TEST_LOG}"
   fail "nvkectl bootstrap site failed; see ${BOOTSTRAP_GO_TEST_LOG}"
 fi
 if ! grep -q "controller deployment healthy" <<<"${output}"; then

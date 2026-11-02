@@ -6,7 +6,7 @@
 #   docker build --build-arg BASE_REGISTRY=dockerhub.nvidia.com .
 ARG BASE_REGISTRY=docker.io
 
-FROM ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:1.0.0@sha256:e30e90774e5951f84eb6dfb36f972fead08b64c3bfdc0912c5b15f988e79de3a AS spiffe-jwt-exec-auth
+FROM ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:1.0.1@sha256:ac41337c043e986596dcabc961d569daf9f16a261fe307e665e0562238c30fb3 AS spiffe-jwt-exec-auth
 
 FROM ${BASE_REGISTRY}/alpine:3.24.1
 

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -24,6 +25,12 @@ var (
 	ErrMissingToken             = errors.New("missing token in join string")
 	ErrMissingHash              = errors.New("missing discovery token CA cert hash in join string")
 	ErrMissingCertificateKey    = errors.New("missing certificate key in join string")
+
+	joinCredentialShape = regexp.MustCompile(`^(?:[a-z0-9]{6}\.[a-z0-9]{16}|[0-9a-fA-F]{64})$`)
+)
+
+const (
+	redactedJoinCredential = "<redacted>"
 )
 
 // JoinConfig represents the configuration for kubeadm join.
@@ -51,7 +58,8 @@ type JoinConfig struct {
 	SystemReservedMemory string
 	// KubernetesVersion is the joining cluster's Kubernetes version. It decides
 	// whether the kubelet needs the KEP-4639 image volume feature gate set
-	// explicitly; an empty value leaves the gate unset.
+	// explicitly, and whether the kubeadm config renders as v1beta4. An empty
+	// value leaves the gate unset and keeps v1beta3.
 	KubernetesVersion string
 	// KubeReservedMemory is the memory reserved for Kubernetes processes by the
 	// kubelet configuration patch. It defaults to 2Gi when empty.
@@ -67,13 +75,13 @@ func NewJoinConfigFromString(nodeIP, nodeName, joinString string) (*JoinConfig, 
 	joinString = strings.TrimSpace(joinString)
 
 	if !strings.HasPrefix(joinString, "kubeadm join ") {
-		return nil, fmt.Errorf("%w: join string must start with 'kubeadm join', got %q", ErrInvalidJoinString, joinString)
+		return nil, fmt.Errorf("%w: join string must start with 'kubeadm join', got %q", ErrInvalidJoinString, redactJoinString(joinString))
 	}
 
 	joinString = strings.TrimPrefix(joinString, "kubeadm join ")
 	parts := strings.Fields(joinString)
 	if len(parts) < 3 { // 3 is the minimum number of parts required
-		return nil, fmt.Errorf("%w: expected at least 3 parts, got %d. Join string: %q", ErrInvalidJoinString, len(parts), joinString)
+		return nil, fmt.Errorf("%w: expected at least 3 parts, got %d. Join string: %q", ErrInvalidJoinString, len(parts), redactJoinString(joinString))
 	}
 
 	apiServerEndpoint := parts[0]
@@ -138,6 +146,39 @@ func NewJoinConfigFromString(nodeIP, nodeName, joinString string) (*JoinConfig, 
 	return config, nil
 }
 
+// redactJoinString returns joinString for an error message, with the value of
+// every credential flag, in either the "--flag value" or the "--flag=value"
+// form, and any word shaped like a bootstrap token or certificate key replaced.
+// The endpoint, the CA cert hash and any text around the command are kept, so
+// the message still shows what the parser rejected.
+func redactJoinString(joinString string) string {
+	fields := strings.Fields(joinString)
+	for i, field := range fields {
+		if isJoinCredentialFlag(field) && i+1 < len(fields) && !strings.HasPrefix(fields[i+1], "--") {
+			fields[i+1] = redactedJoinCredential
+			continue
+		}
+		if flag, _, found := strings.Cut(field, "="); found && isJoinCredentialFlag(flag) {
+			fields[i] = flag + "=" + redactedJoinCredential
+			continue
+		}
+		if joinCredentialShape.MatchString(field) {
+			fields[i] = redactedJoinCredential
+		}
+	}
+	return strings.Join(fields, " ")
+}
+
+// isJoinCredentialFlag reports whether flag is a kubeadm join flag whose value is
+// a credential. --discovery-token-ca-cert-hash is a hash of the public CA and is not one.
+func isJoinCredentialFlag(flag string) bool {
+	switch flag {
+	case "--token", "--discovery-token", "--tls-bootstrap-token", "--certificate-key":
+		return true
+	}
+	return false
+}
+
 // Render generates the bootstrap artifacts for kubeadm join.
 func (config *JoinConfig) Render() (*BootstrapArtifacts, error) {
 	if err := config.Validate(); err != nil {
@@ -145,7 +186,7 @@ func (config *JoinConfig) Render() (*BootstrapArtifacts, error) {
 	}
 
 	configYAML, err := renderYAMLDocuments(
-		joinConfiguration(config),
+		joinKubeadmDocument(joinConfiguration(config), config.KubernetesVersion),
 		kubeProxyConfiguration(false),
 		joinKubeletConfiguration(config.KubernetesVersion),
 	)

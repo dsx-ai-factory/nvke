@@ -93,7 +93,7 @@ Workflow activities queue further work the same way, through
 
 ### The reconcilers
 
-Alongside the workflow engine, the controller runs fifteen controller-runtime
+Alongside the workflow engine, the controller runs controller-runtime
 reconcilers under `internal/controllers/`. They cover node pools, control plane
 and node scheduling, certificate renewal, tenant access and secrets, TPM and
 SPIFFE identity for CAPI machines, and Teleport tokens.
@@ -158,6 +158,14 @@ The Cluster API infrastructure provider is a third deployed piece. It is a
 installable by `clusterctl`. It owns the `ProvisionedCluster` and
 `ProvisionedHostClaim` types, and it reconciles hosts that NVKE has already
 provisioned so that Cluster API can bootstrap them.
+
+### Machine agent connectivity
+
+When creating or reapplying a Machine, NVKE publishes the node's persisted
+transport mode in `nvke.nvidia.com/agent-connection`: `plaintext`, `spiffe`,
+`spiffe-jwt`, `external-mtls`, or `external-mtls-jwt`. The host UUID is published
+separately in `nvke.nvidia.com/host-id`. Operator-supplied Machine metadata cannot
+override the connection annotation.
 
 ## Further reading
 

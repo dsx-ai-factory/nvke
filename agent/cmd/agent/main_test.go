@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"io"
 	"log/slog"
@@ -26,6 +27,100 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
 )
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) {
+	return f(p)
+}
+
+func TestAuditLoggerMirrorsStructuredRecords(t *testing.T) {
+	t.Parallel()
+
+	var fileOutput bytes.Buffer
+	var serviceOutput bytes.Buffer
+	logger := newAuditLogger(&fileOutput, &serviceOutput, slog.New(slog.DiscardHandler))
+
+	interceptor := newAuditLogUnaryInterceptor(logger)
+	_, err := interceptor(
+		context.Background(),
+		struct{}{},
+		&grpc.UnaryServerInfo{FullMethod: "/nvke.NodeAgent/NodePreflight"},
+		func(context.Context, any) (any, error) { return struct{}{}, nil },
+	)
+	require.NoError(t, err)
+
+	if !bytes.Equal(fileOutput.Bytes(), serviceOutput.Bytes()) {
+		t.Fatalf("audit outputs differ:\nfile: %s\nservice: %s", fileOutput.Bytes(), serviceOutput.Bytes())
+	}
+
+	var record map[string]any
+	if err := json.Unmarshal(fileOutput.Bytes(), &record); err != nil {
+		t.Fatalf("audit output is not JSON: %v", err)
+	}
+	if got := record["msg"]; got != "grpc request received" {
+		t.Errorf("msg = %v, want %q", got, "grpc request received")
+	}
+	if got := record["method"]; got != "/nvke.NodeAgent/NodePreflight" {
+		t.Errorf("method = %v, want %q", got, "/nvke.NodeAgent/NodePreflight")
+	}
+}
+
+func TestFanoutWriterAttemptsEveryOutput(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("audit file unavailable")
+	var serviceOutput bytes.Buffer
+	var diagnosticOutput bytes.Buffer
+	errorWriter := writerFunc(func([]byte) (int, error) { return 0, wantErr })
+	writer := fanoutWriter{
+		outputs: []fanoutOutput{
+			{name: "file", writer: errorWriter},
+			{name: "service", writer: &serviceOutput},
+		},
+		diagnostics: slog.New(slog.NewJSONHandler(&diagnosticOutput, nil)),
+	}
+	input := []byte("audit record")
+
+	n, err := writer.Write(input)
+
+	if n != len(input) {
+		t.Errorf("Write() count = %d, want %d", n, len(input))
+	}
+	if !errors.Is(err, wantErr) {
+		t.Errorf("Write() error = %v, want an error wrapping %v", err, wantErr)
+	}
+	if !bytes.Equal(serviceOutput.Bytes(), input) {
+		t.Errorf("service output = %q, want %q", serviceOutput.Bytes(), input)
+	}
+
+	var diagnostic map[string]any
+	require.NoError(t, json.Unmarshal(diagnosticOutput.Bytes(), &diagnostic))
+	assert.Equal(t, "failed to write audit output", diagnostic["msg"])
+	assert.Equal(t, "file", diagnostic["output"])
+	assert.Equal(t, float64(0), diagnostic["output_index"])
+	assert.Contains(t, diagnostic["err"], wantErr.Error())
+}
+
+func TestFanoutWriterReportsShortWrite(t *testing.T) {
+	t.Parallel()
+
+	shortWriter := writerFunc(func([]byte) (int, error) { return 0, nil })
+	writer := fanoutWriter{
+		outputs: []fanoutOutput{
+			{name: "file", writer: io.Discard},
+			{name: "service", writer: shortWriter},
+		},
+		diagnostics: slog.New(slog.DiscardHandler),
+	}
+	input := []byte("audit record")
+
+	_, err := writer.Write(input)
+
+	if !errors.Is(err, io.ErrShortWrite) {
+		t.Errorf("Write() error = %v, want an error wrapping %v", err, io.ErrShortWrite)
+	}
+}
 
 type synchronizedBuffer struct {
 	mu sync.Mutex

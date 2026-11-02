@@ -33,7 +33,7 @@ primary:
   initdb:
     scripts:
       init-cwe.sql: |
-        CREATE DATABASE "nke-controller";
+        CREATE DATABASE "nvke-controller";
       init-temporal.sql: |
         CREATE DATABASE temporal;
         CREATE DATABASE temporal_visibility;

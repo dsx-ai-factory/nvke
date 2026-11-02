@@ -79,14 +79,54 @@ func TestUnit_SiteNodeProblems(t *testing.T) {
 		{
 			name:  "not ready and cordoned",
 			nodes: []corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "n"}, Spec: corev1.NodeSpec{Unschedulable: true}}},
-			want:  []string{"n: not Ready", "n: cordoned"},
+			want:  []string{"n: not Ready (no Ready condition)", "n: cordoned"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, nodeProblems(tt.nodes))
+			require.Equal(t, tt.want, nodeProblems(tt.nodes, nil))
 		})
 	}
+}
+
+func TestUnit_TenantNodeProblemsTaints(t *testing.T) {
+	ready := corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}}
+	gpuTaint := corev1.Taint{Key: "nvidia.com/gpu", Value: "present", Effect: corev1.TaintEffectNoSchedule}
+	gpuPool := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "gpu-1"}, Spec: corev1.NodeSpec{Taints: []corev1.Taint{gpuTaint}}, Status: ready}
+	controlPlane := corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "cp-1", Labels: map[string]string{controlPlaneTaint: ""}},
+		Spec:       corev1.NodeSpec{Taints: []corev1.Taint{{Key: controlPlaneTaint, Effect: corev1.TaintEffectNoSchedule}}},
+		Status:     ready,
+	}
+	declared := map[string][]corev1.Taint{"gpu-1": {gpuTaint}}
+
+	require.Equal(t, []string{"gpu-1: tainted nvidia.com/gpu:NoSchedule"}, nodeProblems([]corev1.Node{gpuPool}, nil), "a site declares no pool taints")
+	require.Empty(t, nodeProblems([]corev1.Node{gpuPool, controlPlane}, declared), "a declared pool taint and kubeadm's control-plane taint are expected")
+
+	undeclared := corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker-1"},
+		Spec:       corev1.NodeSpec{Taints: []corev1.Taint{{Key: "example.com/drain", Effect: corev1.TaintEffectNoSchedule}}},
+		Status:     ready,
+	}
+	require.Equal(t, []string{"worker-1: tainted example.com/drain:NoSchedule"}, nodeProblems([]corev1.Node{gpuPool, undeclared}, declared))
+
+	otherValue := gpuPool
+	otherValue.Spec.Taints = []corev1.Taint{{Key: gpuTaint.Key, Value: "absent", Effect: gpuTaint.Effect}}
+	require.Equal(t, []string{"gpu-1: tainted nvidia.com/gpu:NoSchedule"}, nodeProblems([]corev1.Node{otherValue}, declared), "a taint differing from its pool's is not excused")
+
+	evicting := controlPlane
+	evicting.Spec.Taints = []corev1.Taint{{Key: controlPlaneTaint, Effect: corev1.TaintEffectNoExecute}}
+	require.Equal(t, []string{"cp-1: tainted node-role.kubernetes.io/control-plane:NoExecute"}, nodeProblems([]corev1.Node{evicting}, declared), "only kubeadm's NoSchedule taint is excused")
+	declaredEvicting := map[string][]corev1.Taint{"cp-1": evicting.Spec.Taints}
+	require.Empty(t, nodeProblems([]corev1.Node{evicting}, declaredEvicting), "a pool may declare another effect")
+
+	worker := controlPlane
+	worker.Labels = nil
+	require.Equal(t, []string{"cp-1: tainted node-role.kubernetes.io/control-plane:NoSchedule"}, nodeProblems([]corev1.Node{worker}, declared), "kubeadm's taint is excused only on a control-plane node")
+
+	cordoned := gpuPool
+	cordoned.Spec.Unschedulable = true
+	require.Equal(t, []string{"gpu-1: cordoned"}, nodeProblems([]corev1.Node{cordoned}, declared))
 }
 
 func TestUnit_SiteWorkloadProblems(t *testing.T) {
@@ -315,6 +355,59 @@ func TestUnit_SitePodProblemsCatchStuckAndEvicted(t *testing.T) {
 		"ns/loop: container app CrashLoopBackOff",
 		"ns/pull: container init ImagePullBackOff",
 	}, podProblems([]corev1.Pod{crashLooping, initPull, evictedOwned, evictedBare}, nil))
+}
+
+func TestUnit_SiteProblemsSayWhy(t *testing.T) {
+	looping := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "loop"},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{{
+				Name:                 "app",
+				State:                corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+				RestartCount:         7,
+				LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1, Reason: "Error"}},
+			}},
+		},
+	}
+	unready := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "unready"},
+		Status: corev1.PodStatus{
+			Phase:             corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{{Name: "app", Ready: true}, {Name: "sidecar"}},
+		},
+	}
+	pending := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "pending"},
+		Status: corev1.PodStatus{
+			Phase:      corev1.PodPending,
+			Conditions: []corev1.PodCondition{{Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: "Unschedulable", Message: "0/2 nodes are available"}},
+		},
+	}
+	require.Equal(t, []string{
+		"ns/loop: container app CrashLoopBackOff (container app restarted 7 times, last exit 1 Error)",
+		"ns/pending: Pending: PodScheduled=False Unschedulable (0/2 nodes are available)",
+		"ns/unready: Running, not Ready (containers sidecar)",
+	}, podProblems([]corev1.Pod{looping, unready, pending}, nil))
+
+	node := corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "w-1"},
+		Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+			Type: corev1.NodeReady, Status: corev1.ConditionFalse, Reason: "KubeletNotReady", Message: "container runtime network not ready",
+		}}},
+	}
+	require.Equal(t, []string{"w-1: not Ready (False KubeletNotReady: container runtime network not ready)"}, nodeProblems([]corev1.Node{node}, nil))
+
+	stuck := appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "api"}}
+	stuck.Status.Conditions = []appsv1.DeploymentCondition{
+		{Type: appsv1.DeploymentAvailable, Status: corev1.ConditionFalse, Reason: "MinimumReplicasUnavailable", Message: "Deployment does not have minimum availability."},
+		{Type: appsv1.DeploymentProgressing, Status: corev1.ConditionTrue, Reason: "ReplicaSetUpdated"},
+		{Type: appsv1.DeploymentReplicaFailure, Status: corev1.ConditionTrue, Reason: "FailedCreate", Message: `pods "api-1" is forbidden: violates PodSecurity "restricted:latest"`},
+	}
+	require.Equal(t, []string{
+		`Deployment ns/api: 0 of 1 available, 0 updated (Available MinimumReplicasUnavailable: Deployment does not have minimum availability.; ` +
+			`ReplicaFailure FailedCreate: pods "api-1" is forbidden: violates PodSecurity "restricted:latest")`,
+	}, workloadProblems(nil, []appsv1.Deployment{stuck}, nil, nil))
 }
 
 // The deploy path is what the required namespaces are copied from, so a

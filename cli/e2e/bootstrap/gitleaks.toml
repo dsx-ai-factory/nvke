@@ -68,11 +68,40 @@ regex = '''(?i)"name"\s*:\s*"[\w.-]*passw(?:or)?d"\s*,\s*"value"\s*:\s*"([^"<]{4
 secretGroup = 1
 keywords = ["passw"]
 
-# Values that name a state, not a credential. The unquoted rule reads
-# "usePassword: true" as a password field.
+# A password written as name=value with no quotes, which is how nvkectl's own log
+# lines print an attribute. The field rules above need quotes or a line of their
+# own, so they miss "db_password=value".
+[[rules]]
+id = "nvkectl-password-attribute"
+description = "A password attribute with an unquoted literal value, as a log line prints it"
+regex = '''(?i)\b[\w.-]*passw(?:or)?d=([^\s"'<][^\s"']{3,})'''
+secretGroup = 1
+keywords = ["passw"]
+
+# nvkectl masks an OTEL_EXPORTER_OTLP_HEADERS value with <redacted>, so a literal
+# one was not masked, and it can hold a token. The first rule reads it as a field,
+# assignment or describe line; the second as a pod spec's separate name and value.
+# The first runs to the end of the line, because a value can hold a space (gitleaks
+# also decodes %20) and a finding prints the text beside the secret.
+[[rules]]
+id = "nvkectl-otlp-headers-value"
+description = "A literal OTEL_EXPORTER_OTLP_HEADERS value, which can hold an authorization token"
+regex = '''(?i)OTEL_EXPORTER_OTLP_HEADERS["']?[ \t]*[:=][ \t]*["']?([^"'<\s{\[][^"'\r\n]{3,})'''
+secretGroup = 1
+keywords = ["otel_exporter_otlp_headers"]
+
+[[rules]]
+id = "nvkectl-otlp-headers-env"
+description = "A literal OTEL_EXPORTER_OTLP_HEADERS environment variable in a pod spec"
+regex = '''(?i)"name"\s*:\s*"OTEL_EXPORTER_OTLP_HEADERS"\s*,\s*"value"\s*:\s*"([^"<]{4,})"'''
+secretGroup = 1
+keywords = ["otel_exporter_otlp_headers"]
+
+# Values that name a state, not a credential. The unquoted and attribute rules
+# read "usePassword: true" and "usePassword=true" as a password.
 [[allowlists]]
 description = "a boolean or null where a password field is expected"
-targetRules = ["nvkectl-password-unquoted"]
+targetRules = ["nvkectl-password-unquoted", "nvkectl-password-attribute"]
 regexTarget = "secret"
 regexes = [
   '''^(?i:true|false|null|none|nil)$''',
@@ -94,7 +123,7 @@ description = "the etcd encryption key's fingerprint that nvkectl logs"
 targetRules = ["generic-api-key"]
 regexTarget = "line"
 regexes = [
-  '''(?m)^time=\S+ level=\S+ msg="wrote the etcd encryption key" component=\S+ path=\S+ sha256=[0-9a-f]{64}( trace_id=[0-9a-f]{32} span_id=[0-9a-f]{16})?$''',
+  '''(?m)^time=\S+ level=\S+ msg="wrote the etcd encryption key" component=\S+ path=\S+ sha256=[0-9a-f]{64}( trace_id=[0-9a-f]{32} span_id=[0-9a-f]{16}( operation=bootstrap_site cluster=\S+ phase=[a-z_]+)?)?$''',
 ]
 
 # nvkectl logs where the upstream SPIRE CA's certificate and key files are, when
@@ -107,7 +136,7 @@ description = "the paths of the upstream SPIRE CA files that nvkectl logs"
 targetRules = ["generic-api-key"]
 regexTarget = "line"
 regexes = [
-  '''(?m)^time=\S+ level=\S+ msg="SPIRE upstream CA from the environment" component=\S+ cert=\S+ key=\S+( trace_id=[0-9a-f]{32} span_id=[0-9a-f]{16})?$''',
+  '''(?m)^time=\S+ level=\S+ msg="SPIRE upstream CA from the environment" component=\S+ cert=\S+ key=\S+( trace_id=[0-9a-f]{32} span_id=[0-9a-f]{16}( operation=bootstrap_site cluster=\S+ phase=[a-z_]+)?)?$''',
 ]
 
 # Two more hashes the default generic-api-key rule reads as credentials.

@@ -66,7 +66,7 @@ func (a *Activities) clusterAuthentication(cluster db.Cluster) kubeadmconfig.Clu
 		Providers:     db.ClusterOIDCProvidersToConfig(cluster.OIDCProviders),
 		TrustDomain:   a.trustDomain,
 
-		ManagementNamespace: a.cfg.ManagementNamespaceOrDefault(),
+		RBACConfigMap: a.cfg.RBACConfigMapSource(),
 	}
 }
 

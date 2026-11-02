@@ -72,7 +72,7 @@ gRPC reflection is enabled on the same port (useful with `grpcurl`).
 
 | Path | Purpose |
 |------|---------|
-| `/var/log/nvke-agent-audit.log` | Audit log (`--audit-log-file`) |
+| `/var/log/nvke-agent-audit.log` | Audit log (`--audit-log-file`); records are also mirrored to the service journal |
 | `/var/log/nvke-execute-scripts.log` | `ExecuteScript` / `StreamExecuteScript` results |
 | `journalctl -u nvke-agent` | Service journal |
 

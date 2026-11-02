@@ -114,6 +114,23 @@ spec:
                 required:
                 - publicAccessEnabled
                 type: object
+              apiServerEndpoint:
+                description: |-
+                  APIServerEndpoint gives the API server a stable address that survives control-plane node changes.
+                  Required for more than one control-plane node and for upgrades; it is fixed once reported in status.
+                properties:
+                  address:
+                    description: |-
+                      Address is the IPv4 virtual IP the control-plane nodes announce for the API server.
+                      Use an address assigned by your operator that no other cluster uses.
+                    maxLength: 15
+                    type: string
+                    x-kubernetes-validations:
+                    - message: must be a unicast IPv4 address
+                      rule: isIP(self) && ip(self).family() == 4 && ip(self).isGlobalUnicast()
+                required:
+                - address
+                type: object
               authentication:
                 description: |-
                   Authentication configures additional JWT issuers for cluster access.
@@ -542,10 +559,27 @@ spec:
                 || self.authentication == oldSelf.authentication)
             - message: network is required when nodePools are configured
               rule: '!has(self.nodePools) || self.nodePools.size() == 0 || has(self.network)'
+            - message: apiServerEndpoint.address must not be inside the pod or service
+                networks
+              rule: '!has(self.apiServerEndpoint) || (self.clusterNetwork.pods.cidrBlocks.all(c,
+                !cidr(c).containsIP(ip(self.apiServerEndpoint.address))) && self.clusterNetwork.services.cidrBlocks.all(c,
+                !cidr(c).containsIP(ip(self.apiServerEndpoint.address))))'
           status:
             description: NVKEClusterStatus reports the observed state of the control
               plane and node pools.
             properties:
+              apiServerEndpoint:
+                description: |-
+                  APIServerEndpoint reports the address clients use to reach the API server,
+                  so tools can build connection details without reading the spec.
+                properties:
+                  address:
+                    description: Address is the IPv4 virtual IP the API server is
+                      served on.
+                    type: string
+                required:
+                - address
+                type: object
               conditions:
                 description: |-
                   Conditions report readiness and progress, with details in reason and message.
@@ -727,6 +761,13 @@ spec:
         required:
         - spec
         type: object
+        x-kubernetes-validations:
+        - message: spec.apiServerEndpoint cannot change once status.apiServerEndpoint
+            is set
+          rule: '!has(oldSelf.status) || !has(oldSelf.status.apiServerEndpoint) ||
+            (has(self.spec.apiServerEndpoint) == has(oldSelf.spec.apiServerEndpoint)
+            && (!has(self.spec.apiServerEndpoint) || self.spec.apiServerEndpoint ==
+            oldSelf.spec.apiServerEndpoint))'
     served: true
     storage: true
     subresources:

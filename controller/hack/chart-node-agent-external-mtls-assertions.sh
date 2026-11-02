@@ -53,7 +53,7 @@ enabled="$(helm template cwe "${chart}" \
   --set nodeAgent.externalMTLS.secret.privateKeyKey=client-key.pem \
   --set nodeAgent.externalMTLS.secret.caBundleKey=trust.pem)"
 setting "enabled flag" nodeAgent.externalMTLSEnabled true "${enabled}"
-absent "controller-owned client Certificate" 'name: nke-controller-agent-client' "${enabled}"
+absent "controller-owned client Certificate" 'name: nvke-controller-agent-client' "${enabled}"
 want "client identity Secret" 'secretName: dsx-controller-client' "${enabled}"
 want "certificate Secret key" 'key: client.pem' "${enabled}"
 want "private-key Secret key" 'key: client-key.pem' "${enabled}"

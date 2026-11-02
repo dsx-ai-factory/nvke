@@ -90,7 +90,8 @@ version=${VERSION:-$(git -C "$repo" describe --match 'agent/v*' --tags --always 
 {
   printf 'export ARCH=%q ARTIFACTS_DIR=%q REPO_ROOT=%q VERSION=%q\n' \
     "$arch" "$work/artifacts" "$work/src" "${version#agent/}"
-  for name in K8S_VERSIONS CALICO_VERSIONS OVN_STREAMS NGC_API_KEY SPIRE_VERSION TPM_PLUGIN_VERSION; do
+  for name in K8S_VERSIONS CALICO_VERSIONS OVN_STREAMS NGC_API_KEY SPIRE_VERSION TPM_PLUGIN_VERSION \
+    NKE_TARGET_UBUNTU_SERIES DOCA_VERSION; do
     if [[ -n "${!name+x}" ]]; then printf 'export %s=%q\n' "$name" "${!name}"; fi
   done
   cat "$guest_script"

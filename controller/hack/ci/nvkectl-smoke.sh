@@ -24,8 +24,8 @@
 # exec into the Actions runner's hostname.
 
 # The controller service the suite deploys.
-NVKECTL_SMOKE_CONTROLLER_NAMESPACE=nke-controller
-NVKECTL_SMOKE_CONTROLLER_SERVICE=nke-controller
+NVKECTL_SMOKE_CONTROLLER_NAMESPACE=nvke-controller
+NVKECTL_SMOKE_CONTROLLER_SERVICE=nvke-controller
 NVKECTL_SMOKE_CONTROLLER_PORT=8080
 # A name no lane creates. Used by every negative assertion, so a rename here
 # cannot leave one of them silently matching a real object.
