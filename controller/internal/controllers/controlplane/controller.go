@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/client"
@@ -86,8 +87,12 @@ func nodeClusterKeys(_ context.Context, node db.Node) ([]dbreconcile.Key, error)
 
 // Reconcile reconciles one cluster's control plane from a ClusterID root key.
 func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconcile.Result, error) {
-	var cluster db.Cluster
+	var (
+		cluster db.Cluster
+		requeue time.Duration
+	)
 	err := c.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		requeue = 0
 		// Re-read under a row lock: the cluster may have been enqueued from a stale
 		// event, so the reconciler could otherwise act on a stale snapshot and race
 		// teardown (e.g. re-provision CP nodes for a cluster being deleted).
@@ -106,10 +111,27 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 
 		cluster = lockedCluster
 		reconciler := newReconciler(c.cfg, c.logger, tx, c.controllerTemporalClient, c.k8sClient, c.k8sReader)
-		return reconciler.reconcile(ctx, lockedCluster)
+		if err := reconciler.reconcile(ctx, lockedCluster); err != nil {
+			return err
+		}
+		requeue = reconciler.requeue
+		return nil
 	})
 	if err != nil {
 		return reconcile.Result{}, err
 	}
-	return c.reconcileNodeAgentUpgrade(ctx, cluster)
+	result, err := c.reconcileNodeAgentUpgrade(ctx, cluster)
+	if err != nil {
+		return result, err
+	}
+	return mergeRequeue(result, requeue), nil
+}
+
+// mergeRequeue folds a control-plane check-back into result, keeping the
+// sooner of the two non-zero RequeueAfter values.
+func mergeRequeue(result reconcile.Result, requeue time.Duration) reconcile.Result {
+	if requeue > 0 && (result.RequeueAfter == 0 || requeue < result.RequeueAfter) {
+		result.RequeueAfter = requeue
+	}
+	return result
 }
