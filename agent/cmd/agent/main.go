@@ -563,14 +563,41 @@ func registerAgentFlags(fs *flag.FlagSet) *agentFlags {
 func validateAgentArgs(args []string) error {
 	fs := flag.NewFlagSet("nvke-agent", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	registerAgentFlags(fs)
+	f := registerAgentFlags(fs)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() > 0 {
 		return fmt.Errorf("unexpected positional argument %q", fs.Arg(0))
 	}
-	return nil
+	// main prints the version and exits before it serves, so an agent
+	// restarted with --version never comes back.
+	if *f.versionFlag {
+		return errors.New("--version prints the version and exits instead of serving")
+	}
+	return validateAuthConfig(agentConfigFromFlags(f))
+}
+
+// agentConfigFromFlags builds the config main runs with, minus the loggers it
+// opens itself. validateAgentArgs uses it to run a candidate argument list
+// through the same startup checks.
+func agentConfigFromFlags(f *agentFlags) AgentConfig {
+	return AgentConfig{
+		Version:                  VERSION,
+		NodeServerListenPort:     *f.secureServerPort,
+		MLX5Rescan:               !*f.disableMLX5Rescan,
+		BundleServerURL:          *f.bundleServerURL,
+		IndexFileURL:             *f.indexFileURL,
+		CniImageRegistry:         *f.cniImageRegistry,
+		DisableMTLS:              *f.disableMTLS,
+		SPIFFESocketPath:         *f.spiffeSocketPath,
+		GRPCAuthMode:             *f.grpcAuthMode,
+		DSXIdentityExchangeURL:   *f.dsxIdentityExchangeURL,
+		DSXIdentityCABundle:      *f.dsxIdentityCABundle,
+		DSXIdentityTimeout:       *f.dsxIdentityTimeout,
+		ControllerClientCABundle: *f.controllerClientCABundle,
+		ControllerAudience:       *f.controllerAudience,
+	}
 }
 
 func main() {
@@ -597,24 +624,9 @@ func main() {
 	slog.SetDefault(logger)
 
 	// Build config from flags and build-time vars
-	cfg := AgentConfig{
-		Version:                  VERSION,
-		NodeServerListenPort:     *f.secureServerPort,
-		MLX5Rescan:               !*f.disableMLX5Rescan,
-		BundleServerURL:          *f.bundleServerURL,
-		IndexFileURL:             *f.indexFileURL,
-		CniImageRegistry:         *f.cniImageRegistry,
-		AuditLogger:              auditLogger,
-		ScriptExecutionLogger:    scriptExecutionLogger,
-		DisableMTLS:              *f.disableMTLS,
-		SPIFFESocketPath:         *f.spiffeSocketPath,
-		GRPCAuthMode:             *f.grpcAuthMode,
-		DSXIdentityExchangeURL:   *f.dsxIdentityExchangeURL,
-		DSXIdentityCABundle:      *f.dsxIdentityCABundle,
-		DSXIdentityTimeout:       *f.dsxIdentityTimeout,
-		ControllerClientCABundle: *f.controllerClientCABundle,
-		ControllerAudience:       *f.controllerAudience,
-	}
+	cfg := agentConfigFromFlags(f)
+	cfg.AuditLogger = auditLogger
+	cfg.ScriptExecutionLogger = scriptExecutionLogger
 
 	if err := validateAuthConfig(cfg); err != nil {
 		slog.Error("invalid authentication configuration", "err", err)

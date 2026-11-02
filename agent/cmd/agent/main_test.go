@@ -500,6 +500,22 @@ func TestValidateAgentArgs(t *testing.T) {
 			args:    []string{"--disable-mtls", "init"},
 			wantErr: true,
 		},
+		"--version, which prints and exits instead of serving": {
+			args:    []string{"--version"},
+			wantErr: true,
+		},
+		"an auth combination the startup check rejects": {
+			args:    []string{"--disable-mtls", "--grpc-auth-mode=tls-jwt"},
+			wantErr: true,
+		},
+		"an unknown gRPC auth mode": {
+			args:    []string{"--grpc-auth-mode=none"},
+			wantErr: true,
+		},
+		"an audience the startup check rejects": {
+			args:    []string{"--controller-audience=someone-else"},
+			wantErr: true,
+		},
 	}
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {
