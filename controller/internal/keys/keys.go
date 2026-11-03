@@ -184,6 +184,16 @@ const (
 	// node whose agent uses TLS-JWT, for example "spiffe-jwt".
 	MachineAgentConnectionJWTSuffix = "-jwt"
 
+	// Annotations on NicoMachines. The controller is the only reader and
+	// writer: they track its walk through a node pool's VPC prefix
+	// candidates. VPCPrefixWalkCandidates is the candidate list the walk
+	// began with; VPCPrefixWalkStart is the candidate it began on;
+	// VPCPrefixesAllFull is when the walk last came back to it with every
+	// candidate full.
+	VPCPrefixWalkCandidates Key = "vpc-prefix-walk-candidates"
+	VPCPrefixWalkStart      Key = "vpc-prefix-walk-start"
+	VPCPrefixesAllFull      Key = "vpc-prefixes-all-full"
+
 	// Taints.
 	MaintenanceTaint  Key = "maintenance"
 	ProvisioningTaint Key = "provisioning"

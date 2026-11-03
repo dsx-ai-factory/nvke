@@ -15,6 +15,12 @@ import (
 // TryAdvanceStuckMachine is always a no-op: CAPLL has no controller-pinned
 // candidate list to rotate through, and reimage is explicitly not used as an
 // automatic repair action by CAPLL itself.
-func (*Client) TryAdvanceStuckMachine(_ context.Context, _ shared.MachineAdvanceDeps, _ db.Node, _ db.NodeSet, _ *clusterv1.Machine) (bool, error) {
+func (*Client) TryAdvanceStuckMachine(_ context.Context, _ shared.MachineAdvanceDeps, _ db.Node, _ db.NodeSet, _ db.NodePool, _ *clusterv1.Machine) (bool, error) {
 	return false, nil
+}
+
+// DescribeStuckMachine always returns "": with nothing to advance, CAPLL's
+// own message is the most specific one.
+func (*Client) DescribeStuckMachine(_ context.Context, _ shared.MachineAdvanceDeps, _ db.NodePool, _ *clusterv1.Machine) (string, error) {
+	return "", nil
 }
