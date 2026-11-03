@@ -82,7 +82,7 @@ The published chart is self-contained: it is stamped at publish time with the ma
 ```bash
 helm install capi-provider-nico \
   oci://ghcr.io/dsx-ai-factory/cluster-api-provider-nico/charts/capi-provider-nico \
-  --version 0.0.45 \
+  --version 0.1.0 \
   --namespace capnico-system --create-namespace \
   --wait
 ```

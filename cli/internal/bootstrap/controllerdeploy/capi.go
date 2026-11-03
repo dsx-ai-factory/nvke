@@ -61,6 +61,9 @@ const (
 	// cluster-api-provider-provisioned/hack/release-manifests.sh does for a
 	// clusterctl provider release.
 	provisionedDefaultImage = "docker.io/library/cluster-api-provider-provisioned:latest"
+
+	// certManagerNamespace is where `clusterctl init` installs cert-manager.
+	certManagerNamespace = "cert-manager"
 )
 
 // installCAPI puts Cluster API and the provisioned infrastructure provider on
@@ -156,6 +159,10 @@ func (e *Engine) installCAPNICo(ctx context.Context, kubeconfigPath string, cfg 
 	}
 	defer cleanupManifest()
 
+	if err := e.waitForCertManager(ctx, kubeconfigPath, timeout); err != nil {
+		return err
+	}
+
 	e.log.Info("installing CAPNICo", "namespace", capnicoNamespace, "image", image, "release", cfg.CAPNICoImage != "")
 	for _, file := range []string{secretsFile, manifestFile} {
 		// Server-side apply: the CRDs are large enough that a client-side apply
@@ -170,6 +177,27 @@ func (e *Engine) installCAPNICo(ctx context.Context, kubeconfigPath string, cfg 
 		"-n", capnicoNamespace, "rollout", "status", "deployment/"+capnicoDeployment,
 		"--timeout", timeout.String()); err != nil {
 		return fmt.Errorf("controllerdeploy: waiting for CAPNICo: %w\n%s", err, out)
+	}
+	return nil
+}
+
+// waitForCertManager returns an error unless the cert-manager CRDs that CAPNICo's
+// manifest uses are established and the cert-manager Deployments are available.
+func (e *Engine) waitForCertManager(ctx context.Context, kubeconfigPath string, timeout time.Duration) error {
+	// installCAPICore skips clusterctl init, and with it cert-manager, on a kept
+	// cluster that already runs CAPI, so cert-manager may be missing or not ready.
+	// Certificate and Issuer are the cert-manager kinds the manifest creates.
+	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"wait", "--for=condition=Established", "--timeout", timeout.String(),
+		"crd/certificates.cert-manager.io", "crd/issuers.cert-manager.io"); err != nil {
+		return fmt.Errorf("controllerdeploy: CAPNICo needs cert-manager, and its CRDs are not established: %w\n%s", err, out)
+	}
+	// All three must run to issue the webhook certificate and inject its CA bundle.
+	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"-n", certManagerNamespace, "wait", "--for=condition=Available", "--timeout", timeout.String(),
+		"deployment/cert-manager", "deployment/cert-manager-cainjector", "deployment/cert-manager-webhook"); err != nil {
+		return fmt.Errorf("controllerdeploy: CAPNICo needs cert-manager, and it is not available in %s: %w\n%s",
+			certManagerNamespace, err, out)
 	}
 	return nil
 }

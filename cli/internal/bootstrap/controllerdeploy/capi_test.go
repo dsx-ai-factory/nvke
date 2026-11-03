@@ -385,6 +385,15 @@ func TestInstallCAPNICo_AppliesSecretsThenTheManifest(t *testing.T) {
 	if rollout < 0 {
 		t.Errorf("did not wait for the CAPNICo rollout; calls: %+v", runner.calls)
 	}
+
+	// cert-manager is checked before anything is applied, because a kept
+	// cluster that already runs CAPI skips the clusterctl init that installs it.
+	crds := callIndex(runner, "wait --for=condition=Established")
+	deployments := callIndex(runner, "-n "+certManagerNamespace+" wait --for=condition=Available")
+	firstApply := callIndex(runner, "apply")
+	if crds < 0 || deployments < 0 || crds > firstApply || deployments > firstApply {
+		t.Errorf("want cert-manager checked before the first apply; calls: %+v", runner.calls)
+	}
 }
 
 // TestInstallCAPNICo_RunsTheManifestsDigestByDefault: the embedded manifest
@@ -512,9 +521,21 @@ func TestInstallCAPNICo_Errors(t *testing.T) {
 			wantErr: "CAPNICo.Token",
 		},
 		{
+			name:    "cert-manager CRDs missing",
+			mutate:  func(*Config) {},
+			outputs: []fakeOutput{{err: errors.New("not found")}},
+			wantErr: "cert-manager, and its CRDs are not established",
+		},
+		{
+			name:    "cert-manager not available",
+			mutate:  func(*Config) {},
+			outputs: []fakeOutput{{}, {err: errors.New("timed out")}},
+			wantErr: "cert-manager, and it is not available",
+		},
+		{
 			name:    "apply failure",
 			mutate:  func(*Config) {},
-			outputs: []fakeOutput{{err: errors.New("boom")}},
+			outputs: []fakeOutput{{}, {}, {err: errors.New("boom")}},
 			wantErr: "applying CAPNICo",
 		},
 	}
