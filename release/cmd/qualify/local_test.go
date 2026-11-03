@@ -235,8 +235,12 @@ func TestStepForwardsOneInterruptToTheSuite(t *testing.T) {
 	if err := os.WriteFile(envFile, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	l := &steps{root: root, out: io.Discard, envFile: envFile,
-		env: append(os.Environ(), "TRAPPED="+trapped, "READY="+ready, "STOP="+stop)}
+	l := &steps{
+		root:    root,
+		out:     io.Discard,
+		envFile: envFile,
+		env:     append(os.Environ(), "TRAPPED="+trapped, "READY="+ready, "STOP="+stop),
+	}
 
 	// Registered here too, so the interrupts sent below never reach the
 	// test binary's default handler, which would end the test.
