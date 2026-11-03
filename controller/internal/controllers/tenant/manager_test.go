@@ -6,6 +6,7 @@ package tenant
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -39,12 +40,50 @@ func TestManagerFactoryAppliesConservativeClientLimitsBeforeProbe(t *testing.T) 
 	require.ErrorIs(t, err, stopProbe)
 }
 
+// Start parses the Secret with kube.NewRESTConfigFromKubeconfig, so it rejects
+// an exec plugin other than the SPIRE command before the probe would run it.
+func TestManagerFactoryDoesNotRunExecPluginFromSecret(t *testing.T) {
+	t.Parallel()
+
+	marker := filepath.Join(t.TempDir(), "ran")
+	kubeconfig := []byte(`apiVersion: v1
+kind: Config
+clusters:
+- name: tenant
+  cluster:
+    server: https://127.0.0.1:1
+contexts:
+- name: tenant
+  context:
+    cluster: tenant
+    user: tenant
+current-context: tenant
+users:
+- name: tenant
+  user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1
+      command: /bin/sh
+      args: ["-c", "touch ` + marker + `"]
+      interactiveMode: Never
+`)
+
+	_, err := NewManagerFactory(nil).Start(context.Background(), Target{
+		ClusterID:   uuid.New(),
+		ClusterName: "tenant",
+		Kubeconfig:  kubeconfig,
+	})
+	require.Error(t, err)
+	require.NoFileExists(t, marker)
+}
+
 var testKubeconfig = []byte(`apiVersion: v1
 kind: Config
 clusters:
 - name: tenant
   cluster:
     server: https://127.0.0.1:6443
+    certificate-authority-data: dGVzdC1jYQ==
 contexts:
 - name: tenant
   context:
