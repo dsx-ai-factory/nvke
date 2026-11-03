@@ -628,15 +628,23 @@ func (l *steps) collect(dir string) error {
 	return nil
 }
 
+var rename = os.Rename
+
 // move renames src to dst, or copies and removes it where the two are on
-// different volumes, as a --run-dir on another disk is.
+// different volumes, as a --run-dir on another disk is. Whatever dst holds,
+// from an earlier run in a reused --run-dir, is replaced.
 func move(src, dst string) error {
-	err := os.Rename(src, dst)
-	if !errors.Is(err, syscall.EXDEV) {
-		return err
-	}
 	info, err := os.Stat(src)
 	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		if err := os.RemoveAll(dst); err != nil {
+			return err
+		}
+	}
+	err = rename(src, dst)
+	if !errors.Is(err, syscall.EXDEV) {
 		return err
 	}
 	if info.IsDir() {
@@ -650,7 +658,7 @@ func move(src, dst string) error {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
 	if err != nil {
 		return err
 	}

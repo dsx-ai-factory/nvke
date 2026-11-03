@@ -327,3 +327,61 @@ func TestJumpHostTakesTheFirstSiteSet(t *testing.T) {
 		t.Errorf("jumpHost = %q, %q, %q; want site 2's", v, h, l)
 	}
 }
+
+// A reused --run-dir already holds the earlier run's files, on the same
+// volume or another one.
+func TestMoveReplacesAnEarlierRunsFiles(t *testing.T) {
+	write := func(path, body string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func(path string) string {
+		t.Helper()
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	cases := map[string]func(src, dst string) error{
+		"same volume": os.Rename,
+		"another volume": func(src, dst string) error {
+			return &os.LinkError{Op: "rename", Old: src, New: dst, Err: syscall.EXDEV}
+		},
+	}
+	for name, r := range cases {
+		t.Run(name, func(t *testing.T) {
+			defer func(was func(string, string) error) { rename = was }(rename)
+			rename = r
+			src, dst := t.TempDir(), t.TempDir()
+			write(filepath.Join(src, "qualify-e2e.log"), "new")
+			write(filepath.Join(src, "site-bundle", "state.txt"), "new")
+			write(filepath.Join(dst, "qualify-e2e.log"), "earlier run, and longer")
+			write(filepath.Join(dst, "site-bundle", "state.txt"), "earlier")
+			write(filepath.Join(dst, "site-bundle", "stale.txt"), "earlier")
+
+			for _, f := range []string{"qualify-e2e.log", "site-bundle"} {
+				if err := move(filepath.Join(src, f), filepath.Join(dst, f)); err != nil {
+					t.Fatalf("move %s: %v", f, err)
+				}
+				if _, err := os.Stat(filepath.Join(src, f)); !os.IsNotExist(err) {
+					t.Errorf("%s is still in the source: %v", f, err)
+				}
+			}
+			if got := read(filepath.Join(dst, "qualify-e2e.log")); got != "new" {
+				t.Errorf("log = %q, want new", got)
+			}
+			if got := read(filepath.Join(dst, "site-bundle", "state.txt")); got != "new" {
+				t.Errorf("site-bundle/state.txt = %q, want new", got)
+			}
+			if _, err := os.Stat(filepath.Join(dst, "site-bundle", "stale.txt")); !os.IsNotExist(err) {
+				t.Errorf("the earlier run's site-bundle/stale.txt survived: %v", err)
+			}
+		})
+	}
+}
