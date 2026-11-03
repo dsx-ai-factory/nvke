@@ -127,10 +127,11 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 	return mergeRequeue(result, requeue), nil
 }
 
-// mergeRequeue folds a control-plane check-back into result, keeping the
-// sooner of the two positive RequeueAfter values.
+// mergeRequeue schedules a control-plane check-back only when the node-agent
+// upgrade scheduled none. A cluster with a node-agent version already requeues
+// within agentUpgradeRetryDelay, so the check-back matters only without one.
 func mergeRequeue(result reconcile.Result, requeue time.Duration) reconcile.Result {
-	if requeue > 0 && (result.RequeueAfter <= 0 || requeue < result.RequeueAfter) {
+	if requeue > 0 && result.RequeueAfter <= 0 {
 		result.RequeueAfter = requeue
 	}
 	return result
