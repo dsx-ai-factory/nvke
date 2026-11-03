@@ -14,6 +14,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/spiffe"
 )
 
 type Node struct {
@@ -101,10 +103,7 @@ func (n Node) IsManagedByControlPlaneController() bool {
 
 // GetSpiffeID returns the local workload identity registered for the node agent.
 func (n *Node) GetSpiffeID(trustDomain, subjectTenant, subjectService string) string {
-	if n.NodeAgentTLSJWTEnabled {
-		return fmt.Sprintf("spiffe://%s/tenant/%s/service/%s/bm/%s", trustDomain, subjectTenant, subjectService, n.ID.String())
-	}
-	return fmt.Sprintf("spiffe://%s/host/%s", trustDomain, n.ID.String())
+	return spiffe.NodeAgentID(trustDomain, subjectTenant, subjectService, n.ID, n.NodeAgentTLSJWTEnabled)
 }
 
 type NodeConditions struct {

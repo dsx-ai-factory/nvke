@@ -140,16 +140,17 @@ func forbiddenKeyError(field, key string) error {
 // explicitly configured keys under those domains.
 func validateMachineMetadata(annotations, labels map[string]string, allowlistedAnnotations, allowlistedLabels []string) error {
 	completeAnnotations := db.CloneStringMap(annotations)
-	// Use the longest transport mode; the zero UUID has the same length as an allocated host ID.
+	// Use the longest value of each controller-owned annotation; the zero UUID has the same length as an allocated host ID.
 	maps.Copy(completeAnnotations, shared.MachineAnnotations(db.Node{
 		NodeAgentExternalMTLSEnabled: true,
 		NodeAgentTLSJWTEnabled:       true,
+		SpireAttestationMethod:       db.SpireAttestationMethodJoinToken,
 	}))
 	if errs := apivalidation.ValidateAnnotations(completeAnnotations, field.NewPath("machineAnnotations")); len(errs) > 0 {
 		return errs.ToAggregate()
 	}
 	for _, key := range slices.Sorted(maps.Keys(annotations)) {
-		if keys.MachineAgentConnection.Matches(key) {
+		if keys.MachineAgentConnection.Matches(key) || keys.MachineSpireAttestationMethod.Matches(key) || keys.MachineSpiffeEnabled.Matches(key) {
 			return fmt.Errorf("machineAnnotations: key %q is controller-owned", key)
 		}
 		if err := validateMachineMetadataKey("machineAnnotations", key, allowlistedAnnotations); err != nil {

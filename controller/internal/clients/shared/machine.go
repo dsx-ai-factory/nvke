@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -250,7 +251,7 @@ func MachineAnnotations(node db.Node) map[string]string {
 		mode = "spiffe"
 	}
 	if node.NodeAgentTLSJWTEnabled {
-		mode += "-jwt"
+		mode += keys.MachineAgentConnectionJWTSuffix
 	}
 	// The controller owns drain / kube Node removal in teardown workflows. Tell CAPI to skip its
 	// drain and volume-detach waits so Machine deletion is not blocked when the
@@ -258,6 +259,8 @@ func MachineAnnotations(node db.Node) map[string]string {
 	return map[string]string{
 		keys.MachineAgentConnection.String():               mode,
 		keys.MachineHostID.String():                        node.ID.String(),
+		keys.MachineSpireAttestationMethod.String():        string(node.SpireAttestationMethod),
+		keys.MachineSpiffeEnabled.String():                 strconv.FormatBool(node.SpiffeEnabled),
 		clusterv1.ExcludeNodeDrainingAnnotation:            "cwe-controlled",
 		clusterv1.ExcludeWaitForNodeVolumeDetachAnnotation: "cwe-controlled",
 	}

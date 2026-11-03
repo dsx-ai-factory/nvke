@@ -177,6 +177,12 @@ const (
 	MachineReboot                  Key = "reboot"
 	MachineHealthIssue             Key = "machine-health-issue"
 	MachineSpireAgentSpiffeIDPath  Key = "spire-agent-spiffe-id-path"
+	MachineSpireAttestationMethod  Key = "spire-attestation-method"
+	MachineSpiffeEnabled           Key = "spiffe-enabled"
+
+	// MachineAgentConnectionJWTSuffix ends the MachineAgentConnection value of a
+	// node whose agent uses TLS-JWT, for example "spiffe-jwt".
+	MachineAgentConnectionJWTSuffix = "-jwt"
 
 	// Taints.
 	MaintenanceTaint  Key = "maintenance"

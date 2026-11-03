@@ -164,8 +164,15 @@ provisioned so that Cluster API can bootstrap them.
 When creating or reapplying a Machine, NVKE publishes the node's persisted
 transport mode in `nvke.nvidia.com/agent-connection`: `plaintext`, `spiffe`,
 `spiffe-jwt`, `external-mtls`, or `external-mtls-jwt`. The host UUID is published
-separately in `nvke.nvidia.com/host-id`. Operator-supplied Machine metadata cannot
-override the connection annotation.
+separately in `nvke.nvidia.com/host-id`. The node's pinned SPIRE attestation is
+published in `nvke.nvidia.com/spire-attestation-method` (`tpm`, `joinToken`, or
+`dsxImds`) and `nvke.nvidia.com/spiffe-enabled` (`true` or `false`). The SPIFFE
+controllers read these annotations instead of the database. Operator-supplied
+Machine metadata cannot override any of them.
+
+The `machine-annotations` controller copies these annotations from the node
+record onto Machines created before NVKE published them. It changes only those
+keys, and only on a Machine whose `host-id` names the node.
 
 ## Further reading
 

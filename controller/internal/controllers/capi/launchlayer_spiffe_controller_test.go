@@ -4,11 +4,9 @@
 package capi
 
 import (
-	"context"
 	"log/slog"
 	"testing"
 
-	"github.com/google/uuid"
 	spirev1alpha1 "github.com/spiffe/spire-controller-manager/api/v1alpha1"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,7 +21,6 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
@@ -38,14 +35,14 @@ func TestUnit_LaunchLayerSpiffeControllerReconcile(t *testing.T) {
 	t.Parallel()
 
 	type parameters struct {
-		method        db.SpireAttestationMethod
+		method        config.SpireAttestationMethod
+		spiffeOff     bool
 		instanceID    string
 		existingPath  string
 		ownerRef      bool
 		deleting      bool
 		missingHostID bool
 		invalidHostID bool
-		dbErr         error
 		wantErr       string
 		wantRequeue   bool
 		wantPath      string
@@ -53,36 +50,38 @@ func TestUnit_LaunchLayerSpiffeControllerReconcile(t *testing.T) {
 
 	tests := map[string]parameters{
 		"writes the path the provider client resolves": {
-			method: db.SpireAttestationMethodDSXIMDS, instanceID: "instance-123", ownerRef: true,
+			method: config.SpireAttestationMethodDSXIMDS, instanceID: "instance-123", ownerRef: true,
 			wantPath: launchLayerSpiffeTestPath,
 		},
-		"writes nothing when the provider client supplies no path": {
-			method: db.SpireAttestationMethodTPM, instanceID: "instance-123", ownerRef: true,
+		"writes nothing for a node attesting another way": {
+			method: config.SpireAttestationMethodTPM, instanceID: "instance-123", ownerRef: true,
+		},
+		"writes nothing for a dsxImds node without SPIFFE": {
+			method: config.SpireAttestationMethodDSXIMDS, spiffeOff: true, instanceID: "instance-123", ownerRef: true,
 		},
 		"requeues while the path is pending": {
-			method: db.SpireAttestationMethodDSXIMDS, ownerRef: true, wantRequeue: true,
+			method: config.SpireAttestationMethodDSXIMDS, ownerRef: true, wantRequeue: true,
 		},
 		"keeps a path already on the Machine": {
-			method: db.SpireAttestationMethodDSXIMDS, instanceID: "instance-123", ownerRef: true,
+			method: config.SpireAttestationMethodDSXIMDS, instanceID: "instance-123", ownerRef: true,
 			existingPath: constants.JoinTokenAlternateSpireAgentPath + launchLayerSpiffeTestHostID,
 			wantPath:     constants.JoinTokenAlternateSpireAgentPath + launchLayerSpiffeTestHostID,
 		},
 		"waits for a Machine owner reference": {
-			method: db.SpireAttestationMethodDSXIMDS, instanceID: "instance-123",
+			method: config.SpireAttestationMethodDSXIMDS, instanceID: "instance-123",
+		},
+		"waits for the SPIRE attestation annotations": {
+			instanceID: "instance-123", ownerRef: true,
 		},
 		"skips a deleting LaunchLayerMachine": {
-			method: db.SpireAttestationMethodDSXIMDS, instanceID: "instance-123", ownerRef: true, deleting: true,
+			method: config.SpireAttestationMethodDSXIMDS, instanceID: "instance-123", ownerRef: true, deleting: true,
 		},
 		"skips a Machine without a host ID": {
-			method: db.SpireAttestationMethodDSXIMDS, instanceID: "instance-123", ownerRef: true, missingHostID: true,
+			method: config.SpireAttestationMethodDSXIMDS, instanceID: "instance-123", ownerRef: true, missingHostID: true,
 		},
 		"rejects an invalid host ID": {
-			method: db.SpireAttestationMethodDSXIMDS, instanceID: "instance-123", ownerRef: true, invalidHostID: true,
+			method: config.SpireAttestationMethodDSXIMDS, instanceID: "instance-123", ownerRef: true, invalidHostID: true,
 			wantErr: "invalid host ID",
-		},
-		"retries when the node is absent from the database": {
-			method: db.SpireAttestationMethodDSXIMDS, instanceID: "instance-123", ownerRef: true, dbErr: db.ErrNotFound,
-			wantErr: "get node " + launchLayerSpiffeTestHostID,
 		},
 	}
 
@@ -90,7 +89,10 @@ func TestUnit_LaunchLayerSpiffeControllerReconcile(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			machine := newMachineForLaunchLayerSpiffeTest(params.existingPath)
+			machine := newMachineForLaunchLayerSpiffeTest(params.existingPath, params.method)
+			if params.spiffeOff {
+				machine.Annotations[keys.MachineSpiffeEnabled.String()] = "false"
+			}
 			if params.missingHostID {
 				keys.MachineHostID.Delete(machine.Annotations)
 			}
@@ -98,8 +100,7 @@ func TestUnit_LaunchLayerSpiffeControllerReconcile(t *testing.T) {
 				machine.Annotations[keys.MachineHostID.String()] = "not-a-uuid"
 			}
 			launchLayerMachine := newLaunchLayerMachineForSpiffeTest(params.instanceID, params.ownerRef, params.deleting)
-			reader := &launchLayerSpiffeReaderStub{node: db.Node{SpiffeEnabled: true, SpireAttestationMethod: params.method}, err: params.dbErr}
-			controller := newLaunchLayerSpiffeControllerForTest(t, reader, machine, launchLayerMachine)
+			controller := newLaunchLayerSpiffeControllerForTest(t, machine, launchLayerMachine)
 
 			result, err := controller.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(launchLayerMachine)})
 			if params.wantErr != "" {
@@ -126,7 +127,7 @@ func TestUnit_LaunchLayerSpiffeControllerReconcile(t *testing.T) {
 
 func TestUnit_LaunchLayerSpiffeControllerReconcileIgnoresMissingLaunchLayerMachine(t *testing.T) {
 	t.Parallel()
-	controller := newLaunchLayerSpiffeControllerForTest(t, &launchLayerSpiffeReaderStub{})
+	controller := newLaunchLayerSpiffeControllerForTest(t)
 
 	_, err := controller.Reconcile(t.Context(), ctrl.Request{NamespacedName: types.NamespacedName{
 		Namespace: "cluster-test",
@@ -157,7 +158,7 @@ func TestUnit_LaunchLayerSpiffeControllerMachineWatchMapping(t *testing.T) {
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			var obj client.Object = newMachineForLaunchLayerSpiffeTest("")
+			var obj client.Object = newMachineForLaunchLayerSpiffeTest("", config.SpireAttestationMethodDSXIMDS)
 			if params.other {
 				obj = newLaunchLayerMachineForSpiffeTest("", false, false)
 			} else {
@@ -184,18 +185,12 @@ func TestUnit_LaunchLayerSpiffeControllerMachineWatchMapping(t *testing.T) {
 // MachineSpireEntryController turns it into the entry's parent ID.
 func TestUnit_LaunchLayerSpiffeControllerMachineGetsClusterStaticEntry(t *testing.T) {
 	t.Parallel()
-	machine := newMachineForLaunchLayerSpiffeTest("")
+	machine := newMachineForLaunchLayerSpiffeTest("", config.SpireAttestationMethodDSXIMDS)
 	launchLayerMachine := newLaunchLayerMachineForSpiffeTest("instance-123", true, false)
-	reader := &launchLayerSpiffeReaderStub{node: db.Node{
-		ID:                     uuid.MustParse(launchLayerSpiffeTestHostID),
-		SpiffeEnabled:          true,
-		SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS,
-	}}
-	controller := newLaunchLayerSpiffeControllerForTest(t, reader, machine, launchLayerMachine)
+	controller := newLaunchLayerSpiffeControllerForTest(t, machine, launchLayerMachine)
 	entryController := &MachineSpireEntryController{
 		cfg:         config.Config{SpireClassName: "spire"},
 		k8sClient:   controller.k8sClient,
-		nodes:       reader,
 		logger:      slog.New(slog.DiscardHandler),
 		trustDomain: "example.org",
 	}
@@ -213,8 +208,15 @@ func TestUnit_LaunchLayerSpiffeControllerMachineGetsClusterStaticEntry(t *testin
 	require.Equal(t, "spiffe://example.org/host/"+launchLayerSpiffeTestHostID, cse.Spec.SPIFFEID)
 }
 
-func newMachineForLaunchLayerSpiffeTest(existingPath string) *clusterv1.Machine {
-	annotations := map[string]string{keys.MachineHostID.String(): launchLayerSpiffeTestHostID}
+func newMachineForLaunchLayerSpiffeTest(existingPath string, method config.SpireAttestationMethod) *clusterv1.Machine {
+	annotations := map[string]string{
+		keys.MachineHostID.String():          launchLayerSpiffeTestHostID,
+		keys.MachineAgentConnection.String(): "spiffe",
+		keys.MachineSpiffeEnabled.String():   "true",
+	}
+	if method != "" {
+		annotations[keys.MachineSpireAttestationMethod.String()] = string(method)
+	}
 	if existingPath != "" {
 		annotations[keys.MachineSpireAgentSpiffeIDPath.String()] = existingPath
 	}
@@ -262,7 +264,7 @@ func newLaunchLayerMachineForSpiffeTest(instanceID string, ownerRef, deleting bo
 // newLaunchLayerSpiffeControllerForTest seeds the CAPI Cluster and the
 // LaunchLayerCluster (organization org-1) the provider client resolves the
 // organization through.
-func newLaunchLayerSpiffeControllerForTest(t *testing.T, reader launchLayerSpiffeReader, objects ...client.Object) *LaunchLayerSpiffeController {
+func newLaunchLayerSpiffeControllerForTest(t *testing.T, objects ...client.Object) *LaunchLayerSpiffeController {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	require.NoError(t, clusterv1.AddToScheme(scheme))
@@ -281,21 +283,7 @@ func newLaunchLayerSpiffeControllerForTest(t *testing.T, reader launchLayerSpiff
 	}
 
 	return &LaunchLayerSpiffeController{
-		db:        reader,
 		k8sClient: fake.NewClientBuilder().WithScheme(scheme).WithObjects(append(objects, cluster, launchLayerCluster)...).Build(),
 		logger:    slog.New(slog.DiscardHandler),
 	}
-}
-
-type launchLayerSpiffeReaderStub struct {
-	node db.Node
-	err  error
-}
-
-func (s *launchLayerSpiffeReaderStub) GetNode(context.Context, uuid.UUID) (db.Node, error) {
-	return s.node, s.err
-}
-
-func (s *launchLayerSpiffeReaderStub) GetCluster(_ context.Context, id uuid.UUID) (db.Cluster, error) {
-	return db.Cluster{ID: id, ProviderType: db.ProviderTypeLaunchLayer}, nil
 }

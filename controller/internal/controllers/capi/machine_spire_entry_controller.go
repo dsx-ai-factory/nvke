@@ -19,33 +19,21 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
+	"github.com/dsx-ai-factory/nvke/controller/internal/spiffe"
 )
-
-type machineSpireEntryNodeReader interface {
-	GetNode(ctx context.Context, id uuid.UUID) (db.Node, error)
-}
 
 type MachineSpireEntryController struct {
 	cfg         config.Config
 	k8sClient   client.Client
-	nodes       machineSpireEntryNodeReader
 	logger      *slog.Logger
 	trustDomain string
 }
 
-func NewMachineSpireEntryController(
-	cfg config.Config,
-	k8sClient client.Client,
-	nodes machineSpireEntryNodeReader,
-	logger *slog.Logger,
-	trustDomain string,
-) *MachineSpireEntryController {
+func NewMachineSpireEntryController(cfg config.Config, k8sClient client.Client, logger *slog.Logger, trustDomain string) *MachineSpireEntryController {
 	return &MachineSpireEntryController{
 		cfg:         cfg,
 		k8sClient:   k8sClient,
-		nodes:       nodes,
 		logger:      logger,
 		trustDomain: trustDomain,
 	}
@@ -92,17 +80,20 @@ func (c *MachineSpireEntryController) Reconcile(ctx context.Context, req ctrl.Re
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("invalid host ID %q: %w", hostID, err)
 	}
-	node, err := c.nodes.GetNode(ctx, nodeID)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("get node %s: %w", nodeID, err)
+	agentConnection, ok := keys.MachineAgentConnection.Get(machine.GetAnnotations())
+	if !ok {
+		logger.Info("Waiting for agent-connection annotation to be set on Machine", "hostID", hostID)
+		return ctrl.Result{}, nil
 	}
 
 	logger.Info("Applying ClusterStaticEntry for machine", "hostID", hostID, "parentID", parentID)
 	cseName := machineSpireEntryName(hostID)
-	workloadSpiffeID := node.GetSpiffeID(
+	workloadSpiffeID := spiffe.NodeAgentID(
 		c.trustDomain,
 		c.cfg.NodeAgent.TLSJWT.SubjectTenant,
 		c.cfg.NodeAgent.TLSJWT.SubjectService,
+		nodeID,
+		strings.HasSuffix(agentConnection, keys.MachineAgentConnectionJWTSuffix),
 	)
 	if err := c.applyClusterStaticEntry(ctx, cseName, workloadSpiffeID, parentID); err != nil {
 		return ctrl.Result{}, err

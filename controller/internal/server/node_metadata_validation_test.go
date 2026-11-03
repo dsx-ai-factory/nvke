@@ -235,7 +235,11 @@ func TestValidateMachineMetadata_Inputs(t *testing.T) {
 	t.Parallel()
 	const sizeTestKey = "example.com/large"
 	maxValueBytes := apivalidation.TotalAnnotationSizeLimitB - len(sizeTestKey)
-	for key, value := range shared.MachineAnnotations(db.Node{NodeAgentExternalMTLSEnabled: true, NodeAgentTLSJWTEnabled: true}) {
+	for key, value := range shared.MachineAnnotations(db.Node{
+		NodeAgentExternalMTLSEnabled: true,
+		NodeAgentTLSJWTEnabled:       true,
+		SpireAttestationMethod:       db.SpireAttestationMethodJoinToken,
+	}) {
 		maxValueBytes -= len(key) + len(value)
 	}
 	type parameters struct {
@@ -305,8 +309,10 @@ func TestValidateMachineMetadata_Inputs(t *testing.T) {
 }
 
 func TestMachineMetadata_ConnectionContractReserved(t *testing.T) {
-	for _, key := range keys.MachineAgentConnection.All() {
-		err := validateMachineMetadata(map[string]string{key: "forged"}, nil, []string{key}, nil)
-		require.ErrorContains(t, err, "controller-owned")
+	for _, owned := range []keys.Key{keys.MachineAgentConnection, keys.MachineSpireAttestationMethod, keys.MachineSpiffeEnabled} {
+		for _, key := range owned.All() {
+			err := validateMachineMetadata(map[string]string{key: "forged"}, nil, []string{key}, nil)
+			require.ErrorContains(t, err, "controller-owned")
+		}
 	}
 }
