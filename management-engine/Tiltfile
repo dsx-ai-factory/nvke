@@ -12,16 +12,25 @@ def register(ctx):
         os.path.join(ctx.provider_dir, ".."),
         dockerfile=os.path.join(ctx.provider_dir, "Dockerfile"),
     )
-    k8s_yaml(kustomize(os.path.join(ctx.provider_dir, "config/dev")))
+    manifests = kustomize(os.path.join(ctx.provider_dir, "config/dev"))
+    k8s_yaml(manifests)
+    k8s_resource(
+        new_name="management-engine-config",
+        objects=[
+            obj["metadata"]["name"] + ":" + obj["kind"].lower()
+            for obj in decode_yaml_stream(manifests)
+            if obj["kind"] != "Deployment"
+        ],
+        labels=["3-management-engine"],
+    )
     metrics_port = os.getenv("METRICS_LOCAL_PORT", "")
     controller_log_url = "http://localhost:" + os.getenv("TILT_PORT", "10350") + "/r/management-engine/overview?source=runtime&term=%22controller%22%3A%22"
     k8s_resource(
         "management-engine-controller-manager",
         new_name="management-engine",
-        objects=["management-engine-controller-manager:serviceaccount"],
-        resource_deps=["nvke-controller"],
+        resource_deps=["nvke-controller", "management-engine-config"],
         port_forwards=[metrics_port + ":8443"] if metrics_port else [],
-        labels=["management-engine"],
+        labels=["3-management-engine"],
         links=[
             link(controller_log_url + "nvkecluster%22", "NVKECluster logs"),
         ],
