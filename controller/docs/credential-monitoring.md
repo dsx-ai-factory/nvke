@@ -135,6 +135,12 @@ metrics from database state.
 writes by result; [Credential lifecycle audit evidence](credential-audit.md#sink-and-failure-behavior)
 gives its alert expression for `sink_failed`, `invalid_event` and `rate_limited`.
 
+`nvke_controller_tenant_kubeconfig_rejected_total` counts tenant kubeconfigs the
+controller refused to load, by `source`: `node_agent` for an `admin.conf` a
+control-plane node returned, `secret` for a published kubeconfig Secret. A node
+or Secret is never a label; the controller logs the cluster, node and Secret
+with each rejection.
+
 A renewal due timestamp is a scheduling timestamp. It is never substituted for
 certificate expiry. Unknown rotation state means no recorded rotation and is
 not itself a failed operation.
@@ -212,6 +218,7 @@ nodes, while seven days catches rotation that has stopped working.
 | `NVKEEtcdKeyRotationFailed` | latest rotation failed for `5m` | follow [phase-specific recovery](etcd-encryption-key-rotation.md#phase-aware-recovery): a released `prepare` failure needs a new workflow ID; later phases retain the original owner |
 | `NVKEEtcdKeyRotationStuck` | no phase progress for two hours for `15m` | inspect workflow/rewrite before reset or key removal; large rewrites may need longer investigation |
 | `NVKECredentialMetricsCollectionFailed` | inventory query failure for `5m` | restore controller database connectivity; absent cluster series do not prove health |
+| `NVKETenantKubeconfigRejected` | any rejected tenant kubeconfig in the last `10m` | find the cluster and node, or Secret, in the controller warning log; inspect `/etc/kubernetes/admin.conf` on that node, which kubeadm writes with only a server, CA data and a client certificate |
 
 Alert summaries and responses are shipped in each rule. Renewal or rotation
 failure does not establish that the agent stopped mutating state. Do not release
