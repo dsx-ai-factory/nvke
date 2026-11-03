@@ -121,7 +121,7 @@ check_host() {
   [[ -c /dev/vtpmx ]] || die "/dev/vtpmx is missing; load tpm_vtpm_proxy (make -C controller host-up)"
   # The nodes share the host's inotify instances; at 128 a tenant kube-apiserver cannot watch its files.
   if (($(</proc/sys/fs/inotify/max_user_instances) < 8192)); then
-    sysctl -qw fs.inotify.max_user_instances=8192
+    echo 8192 >/proc/sys/fs/inotify/max_user_instances
   fi
   local missing=()
   # dpkg-scanpackages (dpkg-dev) indexes the OVN packages the node image carries.
