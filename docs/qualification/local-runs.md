@@ -22,8 +22,10 @@ can be run and debugged from a workstation, with every file the run wrote kept
 locally, instead of pushing and waiting on CI for each try. `--keep-site` and
 `--keep-tenant` leave the machines up to inspect afterwards.
 
-With `--from-source` it builds every image the site needs from the checkout
-and pulls none, so it needs no registry credential at all.
+With `--from-source` it builds the controller, capi-provisioned and nvkectl
+from the checkout and pulls nothing from a registry, so it needs no registry
+credential at all. The OS image is never built: the one the stream names must
+still be published.
 
 Run it only on code you wrote, or have reviewed as you would before approving
 a `forge` deployment. The checkout's script, Makefiles, Dockerfiles and suite
@@ -65,7 +67,7 @@ then moves into the run directory.
 From the repository root, with a current Teleport login:
 
 ```bash
-tsh login --proxy=<teleport proxy> --ttl=720
+tsh login --proxy="$FORGE_TELEPORT_PROXY" --ttl=720
 ```
 
 ```bash
@@ -288,7 +290,7 @@ over what it runs, to debug a spec or develop the suite.
 |---|---|---|
 | Choose versions | `qualify plan`, or `--plan`, `--version` or `--overrides` | you write the `-e2e.versions` string |
 | Choose the machine | the stream's capabilities, from the plan | you write `-e2e.capabilities` |
-| Checks before a machine is taken | the tools are on `PATH`, the plan's inputs are set, `tsh status`, and every artifact the plan names is published, the OS image included (asked through the jump host) | none; a missing artifact or a lapsed login fails partway through, with a machine already taken |
+| Checks before a machine is taken | the tools are on `PATH`, the plan's inputs are set, `tsh status`, and every artifact the plan names that `--build` does not build is published, the OS image included (asked through the jump host) | none; a missing artifact or a lapsed login fails partway through, with a machine already taken |
 | Build what the node needs | the lane's `resolve`, `controller-image` and `site-inputs` steps: the controller and capi-provisioned archives, the profiles, and nvkectl for the node's architecture | you build each archive and nvkectl, and put them where the config points |
 | E2E config | written by the lane's `config` step | you write it: the nvkectl binary, the image archives and repositories, `deployPathRef`, the lifecycle |
 | Environment and tenants | from the stream's provider, with the other provider's tenant entries excluded | you pick `-e2e.environment`, and a label filter that excludes the other provider's tenant |
@@ -419,13 +421,15 @@ site:
       archive: <run dir>/site-inputs/profiles.tar
 ```
 
-Without `--from-source`, the resolve step keeps the plan's published versions,
-and `make site-inputs` pulls those images, with `SITE_*_BUILD=0` and the
-registry `--registry` names, instead of building them. The Forge API key and
-the site ids never appear in these commands: the suite reads them from the
-environment, through `environments/forge.yaml`. The workflow runs the same
-`$SCRIPT` steps; it differs in using a `tbot` identity instead of `tsh status`,
-and in running `qualify verify` and `qualify result` as steps of their own.
+Without `--from-source`, each component `--build` does not name keeps the
+plan's published version, and `make site-inputs` pulls its image, with its
+`SITE_*_BUILD=0` and the registry `--registry` names, instead of building it.
+A component `--build` names is built as above, with its `SITE_*_BUILD=1`. The
+Forge API key and the site ids never appear in these commands: the suite reads
+them from the environment, through `environments/forge.yaml`. The workflow
+runs the same `$SCRIPT` steps; it differs in using a `tbot` identity instead
+of `tsh status`, and in running `qualify verify` and `qualify result` as steps
+of their own.
 
 ## Known limits
 
