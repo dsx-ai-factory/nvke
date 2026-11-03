@@ -24,6 +24,8 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	crfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/dsx-ai-factory/nke/controller/internal/kube"
 )
 
 // update regenerates the golden files instead of asserting against them:
@@ -60,6 +62,30 @@ func TestBuildSpireKubeconfig(t *testing.T) {
 			require.NoError(t, err)
 
 			assertGolden(t, tc.golden, out)
+		})
+	}
+}
+
+// The tenant client and tenant controller managers read the SPIRE kubeconfig
+// back with kube.NewRESTConfigFromKubeconfig, so every form
+// buildSpireKubeconfig writes must load there.
+func TestBuildSpireKubeconfigLoadsAsTenantKubeconfig(t *testing.T) {
+	t.Parallel()
+
+	for name, exchange := range map[string]string{
+		"without exchange": "",
+		"with exchange":    "https://exchange.example/token",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			out, err := buildSpireKubeconfig("alpha", "https://1.2.3.4:6443", []byte(testCAPEM), testEndpointSocket, exchange)
+			require.NoError(t, err)
+
+			restConfig, err := kube.NewRESTConfigFromKubeconfig(out, "alpha")
+			require.NoError(t, err)
+			require.NotNil(t, restConfig.ExecProvider)
+			assert.Equal(t, kube.SPIREExecCommand, restConfig.ExecProvider.Command)
 		})
 	}
 }

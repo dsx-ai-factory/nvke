@@ -6,7 +6,9 @@
 package framework
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
@@ -60,19 +62,23 @@ func StartTenantAPIServer(t testing.TB) *TenantAPIServer {
 	fixture.store(coreDNSDeploymentPath, newGofailCoreDNSDeployment())
 	fixture.store(coreDNSPodPath, newGofailCoreDNSPod())
 	fixture.store(kubeDNSServicePath, newGofailKubeDNSService())
-	fixture.server = httptest.NewServer(fixture)
+	// TLS, because the controller accepts a tenant kubeconfig only with an https
+	// server and inline CA data.
+	fixture.server = httptest.NewTLSServer(fixture)
 	t.Cleanup(fixture.server.Close)
 	return fixture
 }
 
 // Kubeconfig returns client configuration for the tenant API fixture.
 func (s *TenantAPIServer) Kubeconfig() string {
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: s.server.Certificate().Raw})
 	return fmt.Sprintf(`apiVersion: v1
 kind: Config
 clusters:
 - name: gofail-tenant
   cluster:
     server: %s
+    certificate-authority-data: %s
 contexts:
 - name: gofail-tenant
   context:
@@ -82,7 +88,7 @@ current-context: gofail-tenant
 users:
 - name: gofail-tenant
   user: {}
-`, s.server.URL)
+`, s.server.URL, base64.StdEncoding.EncodeToString(caPEM))
 }
 
 // WriteKubeconfig writes client configuration for CWE's management-client bootstrap.

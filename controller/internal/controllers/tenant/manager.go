@@ -49,7 +49,7 @@ func NewManagerFactory(logger *slog.Logger, registrars ...Registrar) *ManagerFac
 }
 
 func (f *ManagerFactory) Start(ctx context.Context, target Target) (Runtime, error) {
-	restConfig, err := kube.NewRESTConfigFromKubeconfig(target.Kubeconfig)
+	restConfig, err := kube.NewRESTConfigFromKubeconfig(target.Kubeconfig, target.ClusterName)
 	if err != nil {
 		return nil, fmt.Errorf("parsing tenant kubeconfig: %w", err)
 	}
