@@ -221,6 +221,9 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 			if req.Body.ControlPlaneConfig.AutoScaleDownDisabled != nil {
 				dbCluster.ControlPlaneConfig.AutoScaleDownDisabled = *req.Body.ControlPlaneConfig.AutoScaleDownDisabled
 			}
+			if req.Body.ControlPlaneConfig.NodeRebalanceDisabled != nil {
+				dbCluster.ControlPlaneConfig.NodeRebalanceDisabled = *req.Body.ControlPlaneConfig.NodeRebalanceDisabled
+			}
 		}
 
 		createdCluster, err = tx.CreateCluster(ctx, &dbCluster)
@@ -923,6 +926,10 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 	if req.AutoScaleDownDisabled != nil {
 		cluster.ControlPlaneConfig.AutoScaleDownDisabled = *req.AutoScaleDownDisabled
 	}
+	// NodeRebalanceDisabled is cluster-level only, same as AutoScaleDownDisabled.
+	if req.NodeRebalanceDisabled != nil {
+		cluster.ControlPlaneConfig.NodeRebalanceDisabled = *req.NodeRebalanceDisabled
+	}
 	controlPlaneConfigSpec := db.ConfigSpecFromFull(cluster.ControlPlaneConfig)
 	// KubernetesVersion lives in the spec row and should track the current
 	// cluster control-plane version selected in this PATCH.
@@ -1152,6 +1159,7 @@ func dedupeUUIDsPreserveOrder(ids []uuid.UUID) []uuid.UUID {
 func apiControlPlaneConfigFromDB(cfg db.ControlPlaneConfig) *api.ControlPlaneConfig {
 	maxSurge := cfg.MaxSurge
 	autoScaleDownDisabled := cfg.AutoScaleDownDisabled
+	nodeRebalanceDisabled := cfg.NodeRebalanceDisabled
 	provisioningMonitorDisabled := cfg.ProvisioningMonitorDisabled
 	teleportEnabled := cfg.TeleportEnabled
 	return &api.ControlPlaneConfig{
@@ -1159,6 +1167,7 @@ func apiControlPlaneConfigFromDB(cfg db.ControlPlaneConfig) *api.ControlPlaneCon
 		DesiredCount:                cfg.DesiredCount,
 		MaxSurge:                    &maxSurge,
 		AutoScaleDownDisabled:       &autoScaleDownDisabled,
+		NodeRebalanceDisabled:       &nodeRebalanceDisabled,
 		ProvisioningMonitorDisabled: &provisioningMonitorDisabled,
 		SystemReservedMemory:        cfg.SystemReservedMemory,
 		NodeLabels:                  maps.Clone(cfg.NodeLabels),

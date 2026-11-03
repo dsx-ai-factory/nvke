@@ -270,3 +270,30 @@ func TestUnit_NodeConditionsAllCoversEveryField(t *testing.T) {
 		})
 	}
 }
+
+// TestNode_HasAllocatedInstance pins the provider-neutral allocation signal: a
+// node reports an allocated instance once, and only once, the provider has
+// stamped a backing instance or machine identifier.
+func TestNode_HasAllocatedInstance(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		node db.Node
+		want bool
+	}{
+		{"no provider payload", db.Node{}, false},
+		{"nico without forge identifiers", db.Node{Nico: &db.NicoNodeProvider{InstanceTypeID: uuid.New()}}, false},
+		{"nico with forge instance", db.Node{Nico: &db.NicoNodeProvider{ForgeInstanceID: "i-123"}}, true},
+		{"nico with forge machine", db.Node{Nico: &db.NicoNodeProvider{ForgeMachineID: "m-123"}}, true},
+		{"launch layer without identifiers", db.Node{LaunchLayer: &db.LaunchLayerNodeProvider{RackID: "rack-1"}}, false},
+		{"launch layer with instance", db.Node{LaunchLayer: &db.LaunchLayerNodeProvider{InstanceID: "ll-123"}}, true},
+		{"launch layer with machine", db.Node{LaunchLayer: &db.LaunchLayerNodeProvider{MachineID: "ll-m-123"}}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, tt.node.HasAllocatedInstance())
+		})
+	}
+}

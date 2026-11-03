@@ -888,11 +888,13 @@ func TestClusterService_DeleteCluster(t *testing.T) {
 func defaultAPIControlPlaneConfig() *api.ControlPlaneConfig {
 	maxSurge := 0
 	autoScaleDownDisabled := false
+	nodeRebalanceDisabled := false
 	provisioningMonitorDisabled := false
 	teleportEnabled := false
 	return &api.ControlPlaneConfig{
 		MaxSurge:                    &maxSurge,
 		AutoScaleDownDisabled:       &autoScaleDownDisabled,
+		NodeRebalanceDisabled:       &nodeRebalanceDisabled,
 		ProvisioningMonitorDisabled: &provisioningMonitorDisabled,
 		TeleportEnabled:             &teleportEnabled,
 	}

@@ -388,6 +388,15 @@ func (m *MockTx) ListControlPlaneConfigurationsByIDs(ctx context.Context, ids []
 	return v, args.Error(1)
 }
 
+func (m *MockTx) ListControlPlaneConfigurationsByCluster(ctx context.Context, clusterID uuid.UUID) ([]db.ControlPlaneConfiguration, error) {
+	args := m.Called(ctx, clusterID)
+	v, ok := args.Get(0).([]db.ControlPlaneConfiguration)
+	if !ok {
+		return nil, args.Error(1)
+	}
+	return v, args.Error(1)
+}
+
 func (m *MockTx) ListNodePools(ctx context.Context, filters db.NodePoolFilters) ([]db.NodePool, error) {
 	args := m.Called(ctx, filters)
 	v, ok := args.Get(0).([]db.NodePool)

@@ -136,6 +136,14 @@ type ControlPlaneConfig struct {
 	DesiredCount           int       `json:"desired_count" bun:"cp_desired_count,notnull,default:0"`
 	MaxSurge               int       `json:"max_surge,omitempty" bun:"cp_max_surge,notnull,default:0"`
 	AutoScaleDownDisabled  bool      `json:"auto_scale_down_disabled,omitempty" bun:"cp_auto_scale_down_disabled,notnull,default:false"`
+	// NodeRebalanceDisabled turns off steady-state control-plane rebalancing. When
+	// unset (the default) rebalancing is on: when a joined control-plane node runs
+	// on a less-preferred instance type, the controller surges a more-preferred
+	// replacement and then sheds the old node through the control-plane delete
+	// path. Rebalance sheds the old node itself, so it is independent of
+	// AutoScaleDownDisabled. Cluster-level only, same as MaxSurge; existing
+	// clusters are opted out at migration time.
+	NodeRebalanceDisabled bool `json:"node_rebalance_disabled,omitempty" bun:"cp_node_rebalance_disabled,notnull,default:false"`
 	ControlPlaneConfigSpec
 }
 
@@ -167,6 +175,7 @@ func BuildControlPlaneConfig(cluster Cluster, snapshotCfg ControlPlaneConfigSpec
 		DesiredCount:           cluster.ControlPlaneConfig.DesiredCount,
 		MaxSurge:               cluster.ControlPlaneConfig.MaxSurge,
 		AutoScaleDownDisabled:  cluster.ControlPlaneConfig.AutoScaleDownDisabled,
+		NodeRebalanceDisabled:  cluster.ControlPlaneConfig.NodeRebalanceDisabled,
 		ControlPlaneConfigSpec: snapshotCfg,
 	}
 }
@@ -364,6 +373,7 @@ func LoadClusterControlPlaneConfig(ctx context.Context, q Queries, cluster *Clus
 			DesiredCount:          cluster.ControlPlaneConfig.DesiredCount,
 			MaxSurge:              cluster.ControlPlaneConfig.MaxSurge,
 			AutoScaleDownDisabled: cluster.ControlPlaneConfig.AutoScaleDownDisabled,
+			NodeRebalanceDisabled: cluster.ControlPlaneConfig.NodeRebalanceDisabled,
 		}
 		return nil
 	}
@@ -398,6 +408,7 @@ func LoadClustersControlPlaneConfig(ctx context.Context, q Queries, clusters []C
 				DesiredCount:          clusters[i].ControlPlaneConfig.DesiredCount,
 				MaxSurge:              clusters[i].ControlPlaneConfig.MaxSurge,
 				AutoScaleDownDisabled: clusters[i].ControlPlaneConfig.AutoScaleDownDisabled,
+				NodeRebalanceDisabled: clusters[i].ControlPlaneConfig.NodeRebalanceDisabled,
 			}
 			continue
 		}
@@ -460,6 +471,36 @@ func createControlPlaneConfigRowIfChanged(
 	return nil
 }
 
+// FindOrCreateControlPlaneConfiguration returns the ID of a snapshot row for the
+// cluster whose config equals spec, inserting one if none exists. Unlike
+// CreateControlPlaneConfigRowIfChanged it does not move the cluster's current
+// configuration pointer: the rebalance step uses it to mint a transient,
+// preference-capped snapshot and pin a surge node to it, without changing the
+// cluster's own control-plane configuration. Reuse keeps repeated surges at the
+// same cap from accumulating identical rows. The snapshot differs from the
+// cluster's current one only in the (capped) instance-type preference, which is
+// not a rollout-triggering field, so a node pinned to it is not seen as drifted.
+func FindOrCreateControlPlaneConfiguration(ctx context.Context, q Queries, clusterID uuid.UUID, spec ControlPlaneConfigSpec, reason string) (uuid.UUID, error) {
+	existing, err := q.ListControlPlaneConfigurationsByCluster(ctx, clusterID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("listing control plane configurations: %w", err)
+	}
+	for _, row := range existing {
+		if row.Config.Equal(spec) {
+			return row.ID, nil
+		}
+	}
+	created, err := q.CreateControlPlaneConfiguration(ctx, &ControlPlaneConfiguration{
+		ClusterID:    clusterID,
+		Config:       spec,
+		ChangeReason: reason,
+	})
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("creating control plane configuration: %w", err)
+	}
+	return created.ID, nil
+}
+
 func configSpecFromMergedPools(merged *ControlPlaneConfig) ControlPlaneConfigSpec {
 	if merged == nil {
 		return ControlPlaneConfigSpec{}
@@ -487,5 +528,6 @@ func (c ControlPlaneConfig) Equal(other ControlPlaneConfig) bool {
 	return c.DesiredCount == other.DesiredCount &&
 		c.MaxSurge == other.MaxSurge &&
 		c.AutoScaleDownDisabled == other.AutoScaleDownDisabled &&
+		c.NodeRebalanceDisabled == other.NodeRebalanceDisabled &&
 		c.ControlPlaneConfigSpec.Equal(other.ControlPlaneConfigSpec)
 }

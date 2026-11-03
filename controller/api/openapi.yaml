@@ -1226,6 +1226,9 @@ components:
         autoScaleDownDisabled:
           type: boolean
           description: When true, automatic control-plane scale-down is disabled, so decreasing desiredCount leaves the surplus nodes in place. When scale-down is enabled it never reduces the control plane below the fault-tolerant floor of three nodes.
+        nodeRebalanceDisabled:
+          type: boolean
+          description: When true, steady-state control-plane instance-type rebalancing is disabled. When unset (the default) the controller surges a more-preferred replacement for a node on a less-preferred instance type and sheds the old node through the control-plane delete path, independent of autoScaleDownDisabled. Existing clusters are opted out at migration time.
         provisioningMonitorDisabled:
           type: boolean
           description: When true, nodes stuck in provisioning past the timeout are not replaced automatically.
@@ -1390,6 +1393,10 @@ components:
           type: boolean
           default: false
           description: When true, automatic control-plane scale-down is disabled, so decreasing desiredCount leaves the surplus nodes in place. When scale-down is enabled it never reduces the control plane below the fault-tolerant floor of three nodes.
+        nodeRebalanceDisabled:
+          type: boolean
+          default: false
+          description: When true, steady-state control-plane instance-type rebalancing is disabled. When unset (the default) the controller surges a more-preferred replacement for a node on a less-preferred instance type and sheds the old node through the control-plane delete path, independent of autoScaleDownDisabled. Existing clusters are opted out at migration time.
         provisioningMonitorDisabled:
           type: boolean
           default: false
@@ -1474,6 +1481,9 @@ components:
         autoScaleDownDisabled:
           type: boolean
           description: When true, automatic control-plane scale-down is disabled, so decreasing desiredCount leaves the surplus nodes in place. When scale-down is enabled it never reduces the control plane below the fault-tolerant floor of three nodes.
+        nodeRebalanceDisabled:
+          type: boolean
+          description: When true, steady-state control-plane instance-type rebalancing is disabled. When unset (the default) the controller surges a more-preferred replacement for a node on a less-preferred instance type and sheds the old node through the control-plane delete path, independent of autoScaleDownDisabled. Existing clusters are opted out at migration time.
         provisioningMonitorDisabled:
           type: boolean
           description: When true, nodes stuck in provisioning past the timeout are not replaced automatically.
@@ -2814,6 +2824,10 @@ components:
             - $ref: "#/components/schemas/Condition"
         controlPlaneRolloutRequired:
           description: Control-plane nodes only. True when the node differs from the desired configuration.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
+        controlPlanePreferredReplacement:
+          description: Control-plane nodes only. True while the node is a control-plane rebalance surge — a more-preferred replacement brought up to shed a less-preferred member.
           allOf:
             - $ref: "#/components/schemas/Condition"
         deleteRequested:
