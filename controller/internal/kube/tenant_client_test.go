@@ -61,6 +61,21 @@ func TestDBClusterTenantClientProviderErrorsWhenCAPIClusterHasNoRow(t *testing.T
 	require.ErrorIs(t, err, db.ErrNotFound)
 }
 
+func TestDBClusterTenantClientProviderRejectsCAPIClusterOutsideManagementNamespace(t *testing.T) {
+	database := &testutil.MockDB{}
+	provider := NewDBClusterTenantClientProvider(database, nil, nil, true, constants.LegacyManagementNamespace)
+
+	_, err := provider.ClientForCluster(context.Background(), &clusterv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "tenant-a", Namespace: "other-namespace"},
+	})
+	require.EqualError(
+		t,
+		err,
+		`CAPI cluster other-namespace/tenant-a is outside configured management namespace "nke-system"`,
+	)
+	database.AssertNotCalled(t, "ListClusters", mock.Anything, mock.Anything)
+}
+
 func TestNewRESTConfigFromKubeconfigPreservesExecProvider(t *testing.T) {
 	restConfig, err := NewRESTConfigFromKubeconfig(newTenantClientProviderExecKubeconfig())
 	require.NoError(t, err)
