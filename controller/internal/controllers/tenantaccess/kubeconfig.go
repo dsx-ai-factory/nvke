@@ -16,6 +16,8 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
@@ -36,11 +38,10 @@ const (
 	// Secret (OIDC clusters only).
 	TrustBundleSecretKey = "ca.crt"
 
-	// SPIRE exec-auth constants. The JWT audience (per-cluster name), the SPIFFE
-	// endpoint socket and the token-exchange endpoint (both from config) are
-	// supplied at build time.
+	// spireExecAPIVersion is the exec credential API the SPIRE plugin speaks. The
+	// JWT audience (per-cluster name), the SPIFFE endpoint socket and the
+	// token-exchange endpoint (both from config) are supplied at build time.
 	spireExecAPIVersion = "client.authentication.k8s.io/v1"
-	spireExecCommand    = "/opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth"
 )
 
 // TrustBundleSecretName returns the Secret name that holds the per-cluster
@@ -49,8 +50,9 @@ func TrustBundleSecretName(clusterName string) string {
 	return clusterName + "-cluster-trust-bundle"
 }
 
-// fetchAdminKubeconfig retrieves the verbatim admin.conf from a healthy
-// control-plane node via the agent GetKubeconfig RPC. The second return
+// fetchAdminKubeconfig retrieves admin.conf from a healthy control-plane node
+// via the agent GetKubeconfig RPC, keeping only its server, CA and client
+// certificate (kube.SanitizeAdminKubeconfig). The second return
 // value reports whether a ready control-plane node served a kubeconfig; when
 // false with a nil error, the cluster's control plane is not yet reachable and
 // the caller should skip this reconcile pass.
@@ -91,7 +93,15 @@ func (c *Controller) fetchAdminKubeconfig(ctx context.Context, cluster db.Cluste
 			candidateErrs = append(candidateErrs, fmt.Errorf("node %s returned an empty kubeconfig", node.ID))
 			continue
 		}
-		return []byte(kubeconfigBytes), true, nil
+		adminConf, err := kube.SanitizeAdminKubeconfig([]byte(kubeconfigBytes))
+		if err != nil {
+			metrics.RecordTenantKubeconfigRejected(metrics.TenantKubeconfigSourceNodeAgent)
+			c.logger.Warn("Control-plane node returned a kubeconfig the controller does not accept",
+				"clusterID", cluster.ID, "clusterName", cluster.Name, "nodeID", node.ID, "error", err)
+			candidateErrs = append(candidateErrs, fmt.Errorf("node %s returned an invalid kubeconfig: %w", node.ID, err))
+			continue
+		}
+		return adminConf, true, nil
 	}
 
 	return nil, false, fmt.Errorf("failed to extract kubeconfig from %d control plane candidates: %w", len(candidates), errors.Join(candidateErrs...))
@@ -122,16 +132,16 @@ func buildSpireKubeconfig(clusterName, server string, caData []byte, spiffeSocke
 		CertificateAuthorityData: caData,
 	}
 	env := []clientcmdapi.ExecEnvVar{
-		{Name: "SPIFFE_ENDPOINT_SOCKET", Value: spiffeSocket},
-		{Name: "SPIFFE_JWT_AUDIENCE", Value: clusterName},
+		{Name: kube.SPIREEndpointSocketEnv, Value: spiffeSocket},
+		{Name: kube.SPIREJWTAudienceEnv, Value: clusterName},
 	}
 	if exchangeEndpoint != "" {
-		env = append(env, clientcmdapi.ExecEnvVar{Name: "SPIFFE_JWT_EXCHANGE_ENDPOINT", Value: exchangeEndpoint})
+		env = append(env, clientcmdapi.ExecEnvVar{Name: kube.SPIREJWTExchangeEndpointEnv, Value: exchangeEndpoint})
 	}
 	cfg.AuthInfos["spiffe-user"] = &clientcmdapi.AuthInfo{
 		Exec: &clientcmdapi.ExecConfig{
 			APIVersion:      spireExecAPIVersion,
-			Command:         spireExecCommand,
+			Command:         kube.SPIREExecCommand,
 			InteractiveMode: clientcmdapi.NeverExecInteractiveMode,
 			Env:             env,
 		},

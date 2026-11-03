@@ -5,6 +5,7 @@ package tenant
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 )
 
 const (
@@ -49,8 +51,13 @@ func NewManagerFactory(logger *slog.Logger, registrars ...Registrar) *ManagerFac
 }
 
 func (f *ManagerFactory) Start(ctx context.Context, target Target) (Runtime, error) {
-	restConfig, err := kube.NewRESTConfigFromKubeconfig(target.Kubeconfig)
+	restConfig, err := kube.NewRESTConfigFromKubeconfig(target.Kubeconfig, target.ClusterName)
 	if err != nil {
+		if errors.Is(err, kube.ErrInvalidKubeconfig) {
+			metrics.RecordTenantKubeconfigRejected(metrics.TenantKubeconfigSourceSecret)
+			f.logger.Warn("Tenant kubeconfig Secret holds a kubeconfig the controller does not accept",
+				"clusterID", target.ClusterID, "clusterName", target.ClusterName, "secret", target.KubeconfigSecretRef, "error", err)
+		}
 		return nil, fmt.Errorf("parsing tenant kubeconfig: %w", err)
 	}
 	restConfig.QPS = tenantManagerQPS
