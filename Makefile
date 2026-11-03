@@ -763,6 +763,10 @@ secrets-check: ## Scan the commits on this branch for credentials, as the secret
 	   echo "no commits ahead of origin/main — nothing was scanned"; \
 	   exit 1; \
 	 fi; \
+	 if [ -n "$$(git rev-list --min-parents=3 origin/main..HEAD)" ]; then \
+	   echo "an octopus merge is on this branch — remerge cannot scan it; merge one branch at a time"; \
+	   exit 1; \
+	 fi; \
 	 echo "Scanning $$count commit(s) on this branch..."
 	@gitleaks git . --no-banner --redact --verbose \
 	  --log-opts="origin/main..HEAD --diff-merges=remerge"
