@@ -27,6 +27,10 @@ const (
 	SPIREJWTExchangeEndpointEnv = "SPIFFE_JWT_EXCHANGE_ENDPOINT"
 )
 
+// ErrInvalidKubeconfig wraps every error that rejects a kubeconfig's content,
+// so callers can count rejections apart from other failures.
+var ErrInvalidKubeconfig = errors.New("invalid tenant kubeconfig")
+
 // adminKubeconfig is the part of a kubeadm admin.conf the controller uses.
 type adminKubeconfig struct {
 	clusterName string
@@ -47,7 +51,7 @@ type adminKubeconfig struct {
 func SanitizeAdminKubeconfig(raw []byte) ([]byte, error) {
 	admin, err := loadAdminKubeconfig(raw)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrInvalidKubeconfig, err)
 	}
 
 	out := clientcmdapi.NewConfig()
@@ -69,7 +73,7 @@ func SanitizeAdminKubeconfig(raw []byte) ([]byte, error) {
 func NewRESTConfigFromAdminKubeconfig(raw []byte) (*rest.Config, error) {
 	admin, err := loadAdminKubeconfig(raw)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrInvalidKubeconfig, err)
 	}
 	return admin.restConfig(), nil
 }
@@ -79,6 +83,14 @@ func NewRESTConfigFromAdminKubeconfig(raw []byte) (*rest.Config, error) {
 // SanitizeAdminKubeconfig writes, or a SPIRE exec kubeconfig whose audience is
 // clusterName.
 func NewRESTConfigFromKubeconfig(raw []byte, clusterName string) (*rest.Config, error) {
+	restConfig, err := restConfigFromTenantKubeconfig(raw, clusterName)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidKubeconfig, err)
+	}
+	return restConfig, nil
+}
+
+func restConfigFromTenantKubeconfig(raw []byte, clusterName string) (*rest.Config, error) {
 	cfg, err := loadKubeconfig(raw)
 	if err != nil {
 		return nil, err
