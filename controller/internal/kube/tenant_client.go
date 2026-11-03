@@ -144,8 +144,12 @@ func (p *DBClusterTenantClientProvider) ClientForDBCluster(ctx context.Context, 
 // it rather than reading a kubeconfig out of the Cluster's namespace directly.
 //
 // clusters.name is uniquely indexed, and every CAPI Cluster the controller creates is named
-// after its row, so the name is an unambiguous key.
+// after its row in the configured management namespace, so the name is an unambiguous key.
 func (p *DBClusterTenantClientProvider) ClientForCluster(ctx context.Context, cluster *clusterv1.Cluster) (client.Client, error) {
+	if cluster.Namespace != p.kubeconfigNamespace {
+		return nil, fmt.Errorf("CAPI cluster %s/%s is outside configured management namespace %q", cluster.Namespace, cluster.Name, p.kubeconfigNamespace)
+	}
+
 	clusters, err := p.database.ListClusters(ctx, db.ClusterFilters{Name: &cluster.Name})
 	if err != nil {
 		return nil, fmt.Errorf("failed to look up cluster row for CAPI cluster %s/%s: %w", cluster.Namespace, cluster.Name, err)
