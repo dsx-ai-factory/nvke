@@ -79,6 +79,9 @@ fullnameOverride: ""
 namespaceOverride: ""
 
 controllers:
+  bootstrap:
+    # -- Run the Kubernetes-native bootstrap controllers. Each runs only for Machines that opt in by label.
+    enabled: false
   nico:
     # -- Run controllers that watch NICo infrastructure resources.
     enabled: true

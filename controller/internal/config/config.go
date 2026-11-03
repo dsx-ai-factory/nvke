@@ -188,6 +188,12 @@ type Config struct {
 	// NicoControllersEnabled enables controllers that watch NICo infrastructure
 	// resources. Disable it when the controller manages only provisioned infrastructure.
 	NicoControllersEnabled bool `controllerconfig:"nicoControllersEnabled"`
+
+	// BootstrapControllersEnabled enables the Kubernetes-native bootstrap
+	// controllers, each of which runs only for Machines that opt in by label. It
+	// requires the Cluster API KubeadmConfig CRD.
+	BootstrapControllersEnabled bool `controllerconfig:"bootstrapControllersEnabled"`
+
 	// KubeVipFMDSEndpoint is the full Forge Metadata Service URL used to resolve
 	// the per-node DPU ASN on native-networking sites. When empty, CAPI and
 	// subnet-based NICo pools use the static Forge peer ASN.
