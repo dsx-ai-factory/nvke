@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -45,6 +46,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
@@ -456,6 +458,28 @@ users:
 	assert.Equal(t, want, got)
 	assert.NotEqual(t, nodeAdminConf, string(got))
 	assert.NotContains(t, string(got), "other")
+}
+
+// A node's reply that fails kube.SanitizeAdminKubeconfig is counted, so the
+// rejection can alert even when another node then serves a valid kubeconfig.
+func TestFetchAdminKubeconfigCountsRejectedNodeKubeconfig(t *testing.T) {
+	clusterID := uuid.New()
+	badID := uuid.MustParse("00000000-0000-4000-8000-000000000001")
+	goodID := uuid.MustParse("00000000-0000-4000-8000-000000000002")
+	mockDB := &testutil.MockDB{}
+	mockDB.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{joinedCPNode(badID, clusterID), joinedCPNode(goodID, clusterID)}, nil)
+	nodeAgentClient := &agenttest.FakeClient{Kubeconfigs: map[uuid.UUID]string{
+		badID:  strings.Replace(testKubeconfig, "  user: {}\n", "  user:\n    token: abc\n", 1),
+		goodID: testKubeconfig,
+	}}
+	c := newTestController(config.Config{TenantAccessEnabled: true}, mockDB, nil, nodeAgentClient)
+
+	before := tenantKubeconfigRejected(t, metrics.TenantKubeconfigSourceNodeAgent)
+	got, ready, err := c.fetchAdminKubeconfig(context.Background(), db.Cluster{ID: clusterID, Name: "c"})
+	require.NoError(t, err)
+	require.True(t, ready)
+	assert.Equal(t, testKubeconfig, string(got))
+	assert.InDelta(t, before+1, tenantKubeconfigRejected(t, metrics.TenantKubeconfigSourceNodeAgent), 0)
 }
 
 // Each probe must carry its own deadline: the controller-manager passes the
@@ -1285,4 +1309,26 @@ func TestPublish_SkipsClusterThatStartsDeletingBeforeTheWrite(t *testing.T) {
 
 	require.NoError(t, c.publish(ctx, cluster, []byte(testKubeconfig)))
 	assertSecret(t, ctx, k8sClient, cluster, false)
+}
+
+// tenantKubeconfigRejected reads nvke_controller_tenant_kubeconfig_rejected_total
+// for source from the default registry.
+func tenantKubeconfigRejected(t *testing.T, source string) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() != "nvke_controller_tenant_kubeconfig_rejected_total" {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			for _, label := range metric.GetLabel() {
+				if label.GetName() == "source" && label.GetValue() == source {
+					return metric.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	t.Fatalf("no %s series for source %q", "nvke_controller_tenant_kubeconfig_rejected_total", source)
+	return 0
 }
