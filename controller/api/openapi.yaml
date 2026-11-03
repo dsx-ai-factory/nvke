@@ -1965,7 +1965,6 @@ components:
           description: |
             Nodes allowed above desiredNodeCount during a rollout. 0 means sequential: each
             node is torn down before its replacement is provisioned.
-          default: 0
         teleportEnabled:
           x-fern-ignore: true
           type: boolean
