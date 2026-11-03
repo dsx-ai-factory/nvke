@@ -114,6 +114,49 @@ func (c *Client) UpdateControlPlaneDesiredCountExpectingRefusal(ctx context.Cont
 	return resp.JSON400.Message, nil
 }
 
+// EnableControlPlaneRebalanceWithPreference enables steady-state control-plane
+// instance-type rebalancing and sets the NICo instance-type preference it ranks
+// by, in one PATCH. Index 0 is the most preferred type; a joined node on a
+// less-preferred type is what the controller surges a replacement for. It is
+// NICo-only, for a control plane managed from the cluster-level config.
+func (c *Client) EnableControlPlaneRebalanceWithPreference(ctx context.Context, id openapi_types.UUID, preference []openapi_types.UUID) (*api.Cluster, error) {
+	disabled := false
+	resp, err := c.api.UpdateClusterWithResponse(ctx, id, api.UpdateClusterRequest{
+		ControlPlaneConfig: &api.UpdateClusterControlPlaneConfig{
+			NodeRebalanceDisabled: &disabled,
+			Nico: &api.NicoControlPlaneProviderUpdate{
+				InstanceTypePreference: preference,
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("enabling control-plane rebalance for cluster %s: %w", id, err)
+	}
+	if resp.StatusCode() != 200 || resp.JSON200 == nil {
+		return nil, fmt.Errorf("enabling control-plane rebalance for cluster %s: unexpected status %s: %s", id, resp.Status(), resp.Body)
+	}
+	return resp.JSON200, nil
+}
+
+// DisableControlPlaneRebalance turns steady-state control-plane rebalancing off.
+// An in-flight surge still resolves (it joins, then sheds the old node); the
+// controller simply starts no new surge, which bounds a test to a single round.
+func (c *Client) DisableControlPlaneRebalance(ctx context.Context, id openapi_types.UUID) (*api.Cluster, error) {
+	disabled := true
+	resp, err := c.api.UpdateClusterWithResponse(ctx, id, api.UpdateClusterRequest{
+		ControlPlaneConfig: &api.UpdateClusterControlPlaneConfig{
+			NodeRebalanceDisabled: &disabled,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("disabling control-plane rebalance for cluster %s: %w", id, err)
+	}
+	if resp.StatusCode() != 200 || resp.JSON200 == nil {
+		return nil, fmt.Errorf("disabling control-plane rebalance for cluster %s: unexpected status %s: %s", id, resp.Status(), resp.Body)
+	}
+	return resp.JSON200, nil
+}
+
 // UpdateControlPlaneConfigProfile patches the cluster-level control-plane config
 // profile and enables control-plane node recycling, returning the updated
 // cluster. Changing the config profile bumps the control-plane configuration
