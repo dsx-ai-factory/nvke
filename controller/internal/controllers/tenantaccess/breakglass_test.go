@@ -366,7 +366,12 @@ func TestIssueAdminBreakglassReusesValidCert(t *testing.T) {
 			return client, nil
 		},
 	}
-	existing := kubeconfigWithClientCert(t, breakglassGroup, time.Now().Add(200*24*time.Hour))
+	stored := kubeconfigWithClientCert(t, breakglassGroup, time.Now().Add(200*24*time.Hour))
+	storedCfg, err := clientcmd.Load(stored)
+	require.NoError(t, err)
+	user := storedCfg.AuthInfos[breakglassUser]
+	existing, err := writeBreakglassKubeconfig(testServer, []byte("test-ca"), user.ClientCertificateData, user.ClientKeyData)
+	require.NoError(t, err)
 
 	got, err := c.issueAdminBreakglass(ctx, []byte(testAdminConf), testBreakglassCluster(), existing)
 	require.NoError(t, err)
@@ -377,6 +382,38 @@ func TestIssueAdminBreakglassReusesValidCert(t *testing.T) {
 	require.Len(t, binding.Subjects, 1)
 	assert.Equal(t, breakglassGroup, binding.Subjects[0].Name)
 	assert.Equal(t, breakglassRoleName, binding.RoleRef.Name)
+}
+
+// A reused kubeconfig keeps only the breakglass user. Any other user or context
+// in the stored Secret is dropped before the kubeconfig is published again.
+func TestIssueAdminBreakglassReuseKeepsOnlyBreakglassUser(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientBuilder().WithScheme(breakglassTenantScheme(t)).Build()
+	c := &Controller{
+		cfg: config.Config{CertRenewalThresholdDays: 30},
+		tenantClientFor: func([]byte) (ctrlclient.Client, error) {
+			return client, nil
+		},
+	}
+	existing := kubeconfigWithClientCert(t, breakglassGroup, time.Now().Add(200*24*time.Hour))
+	existingCfg, err := clientcmd.Load(existing)
+	require.NoError(t, err)
+	existingCfg.AuthInfos["other"] = &clientcmdapi.AuthInfo{
+		Exec: &clientcmdapi.ExecConfig{APIVersion: "client.authentication.k8s.io/v1", Command: "/bin/true"},
+	}
+	existingCfg.Contexts["other"] = &clientcmdapi.Context{Cluster: existingCfg.Contexts[existingCfg.CurrentContext].Cluster, AuthInfo: "other"}
+	existingCfg.CurrentContext = "other"
+	existing, err = clientcmd.Write(*existingCfg)
+	require.NoError(t, err)
+
+	got, err := c.issueAdminBreakglass(ctx, []byte(testAdminConf), testBreakglassCluster(), existing)
+	require.NoError(t, err)
+	gotCfg, err := clientcmd.Load(got)
+	require.NoError(t, err)
+	assert.Equal(t, breakglassUser, gotCfg.CurrentContext)
+	require.Len(t, gotCfg.AuthInfos, 1)
+	assert.Equal(t, existingCfg.AuthInfos[breakglassUser].ClientCertificateData, gotCfg.AuthInfos[breakglassUser].ClientCertificateData)
+	assert.Nil(t, gotCfg.AuthInfos[breakglassUser].Exec)
 }
 
 func TestIssueAdminBreakglassRebuildsChangedClusterAccess(t *testing.T) {
