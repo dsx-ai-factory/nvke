@@ -43,7 +43,7 @@ Three of the four change on the next minor version. Gates move every release, so
 - Operators set beta and GA gates at creation on a cluster's control-plane components, on its control-plane kubelets, and on each node pool's kubelets.
 - Gates carry over through node replacement, scale-out and upgrades.
 - A gate that would stop a component from starting is rejected in the request that introduced it, with a 400 that names the gate and the reason.
-- An upgrade never changes a gate's effective value unless the operator agreed to it in the upgrade request.
+- An upgrade never changes the effective value of a gate the operator set unless the operator agreed to it in the upgrade request. Gates the operator didn't set follow the target version's upstream defaults, as they do on any Kubernetes upgrade; pinning one means setting it.
 
 ## Non-goals
 
