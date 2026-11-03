@@ -12,7 +12,7 @@ require (
 	github.com/uptrace/bun v1.3.0
 	github.com/uptrace/bun/dialect/sqlitedialect v1.3.0
 	github.com/vishvananda/netlink v1.3.1
-	go.yaml.in/yaml/v4 v4.0.0-rc.6
+	go.yaml.in/yaml/v4 v4.0.0-rc.7
 	golang.org/x/crypto v0.58.0
 )
 

@@ -3,8 +3,8 @@ module github.com/dsx-ai-factory/nvke/auth
 go 1.27.3
 
 require (
-	github.com/cedar-policy/cedar-go v1.8.0
-	github.com/go-jose/go-jose/v4 v4.1.6
+	github.com/cedar-policy/cedar-go v1.9.0
+	github.com/go-jose/go-jose/v4 v4.1.7
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/spiffe/go-spiffe/v2 v2.9.0
 	github.com/stretchr/testify v1.12.1
@@ -17,6 +17,7 @@ require (
 
 require (
 	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
+	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kr/text v0.2.0 // indirect

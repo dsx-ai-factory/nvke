@@ -35,9 +35,9 @@ notices-check` verifies it is up to date.
 | `github.com/felixge/httpsnoop` | MIT | `github.com/felixge/httpsnoop@v1.1.0` | https://github.com/felixge/httpsnoop/blob/v1.1.0/LICENSE.txt |
 | `github.com/fsnotify/fsnotify` | BSD-3-Clause | `github.com/fsnotify/fsnotify@v1.9.0` | https://github.com/fsnotify/fsnotify/blob/v1.9.0/LICENSE |
 | `github.com/fxamacker/cbor/v2` | MIT | `github.com/fxamacker/cbor/v2@v2.9.1` | https://github.com/fxamacker/cbor/blob/v2.9.1/LICENSE |
-| `github.com/getkin/kin-openapi` | MIT | `github.com/getkin/kin-openapi@v0.151.0` | https://github.com/getkin/kin-openapi/blob/v0.151.0/LICENSE |
-| `github.com/go-jose/go-jose/v4` | Apache-2.0 | `github.com/go-jose/go-jose/v4@v4.1.6` | https://github.com/go-jose/go-jose/blob/v4.1.6/LICENSE |
-| `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | `github.com/go-jose/go-jose/v4@v4.1.6` | https://github.com/go-jose/go-jose/blob/v4.1.6/json/LICENSE |
+| `github.com/getkin/kin-openapi` | MIT | `github.com/getkin/kin-openapi@v0.152.0` | https://github.com/getkin/kin-openapi/blob/v0.152.0/LICENSE |
+| `github.com/go-jose/go-jose/v4` | Apache-2.0 | `github.com/go-jose/go-jose/v4@v4.1.7` | https://github.com/go-jose/go-jose/blob/v4.1.7/LICENSE |
+| `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | `github.com/go-jose/go-jose/v4@v4.1.7` | https://github.com/go-jose/go-jose/blob/v4.1.7/json/LICENSE |
 | `github.com/go-logr/logr` | Apache-2.0 | `github.com/go-logr/logr@v1.4.4` | https://github.com/go-logr/logr/blob/v1.4.4/LICENSE |
 | `github.com/go-logr/stdr` | Apache-2.0 | `github.com/go-logr/stdr@v1.2.2` | https://github.com/go-logr/stdr/blob/v1.2.2/LICENSE |
 | `github.com/go-openapi/jsonpointer` | Apache-2.0 | `github.com/go-openapi/jsonpointer@v1.0.1` | https://github.com/go-openapi/jsonpointer/blob/v1.0.1/LICENSE |
@@ -78,17 +78,18 @@ notices-check` verifies it is up to date.
 | `github.com/munnerz/goautoneg` | BSD-3-Clause | `github.com/munnerz/goautoneg@v0.0.0-20191010083416-a7dc8b61c822` | https://github.com/munnerz/goautoneg/blob/a7dc8b61c822/LICENSE |
 | `github.com/nexus-rpc/nexus-proto-annotations/go/nexusannotations/v1` | MIT | `github.com/nexus-rpc/nexus-proto-annotations@v0.1.1-0.20260629224650-76486e7cc189` | https://github.com/nexus-rpc/nexus-proto-annotations/blob/76486e7cc189/LICENSE |
 | `github.com/nexus-rpc/sdk-go/nexus` | MIT | `github.com/nexus-rpc/sdk-go@v0.7.0` | https://github.com/nexus-rpc/sdk-go/blob/v0.7.0/LICENSE |
-| `github.com/oapi-codegen/nethttp-middleware` | Apache-2.0 | `github.com/oapi-codegen/nethttp-middleware@v1.2.0` | https://github.com/oapi-codegen/nethttp-middleware/blob/v1.2.0/LICENSE |
-| `github.com/oapi-codegen/runtime` | Apache-2.0 | `github.com/oapi-codegen/runtime@v1.7.0` | https://github.com/oapi-codegen/runtime/blob/v1.7.0/LICENSE |
+| `github.com/oapi-codegen/nethttp-middleware` | Apache-2.0 | `github.com/oapi-codegen/nethttp-middleware@v1.3.1` | https://github.com/oapi-codegen/nethttp-middleware/blob/v1.3.1/LICENSE |
+| `github.com/oapi-codegen/runtime` | Apache-2.0 | `github.com/oapi-codegen/runtime@v1.8.0` | https://github.com/oapi-codegen/runtime/blob/v1.8.0/LICENSE |
 | `github.com/oasdiff/yaml` | BSD-3-Clause / MIT | `github.com/oasdiff/yaml@v0.1.1` | https://github.com/oasdiff/yaml/blob/v0.1.1/LICENSE |
 | `github.com/oasdiff/yaml3` | MIT | `github.com/oasdiff/yaml3@v0.0.14` | https://github.com/oasdiff/yaml3/blob/v0.0.14/LICENSE |
 | `github.com/onsi/gomega` | MIT | `github.com/onsi/gomega@v1.44.0` | https://github.com/onsi/gomega/blob/v1.44.0/LICENSE |
+| `github.com/pandatix/go-abnf` | MIT | `github.com/pandatix/go-abnf@v0.5.3` | https://github.com/pandatix/go-abnf/blob/v0.5.3/LICENSE |
 | `github.com/pkg/errors` | BSD-2-Clause | `github.com/pkg/errors@v0.9.1` | https://github.com/pkg/errors/blob/v0.9.1/LICENSE |
 | `github.com/pmezard/go-difflib/difflib` | BSD-3-Clause | `github.com/pmezard/go-difflib@v1.0.1-0.20181226105442-5d4384ee4fb2` | https://github.com/pmezard/go-difflib/blob/5d4384ee4fb2/LICENSE |
 | `github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil` | BSD-3-Clause | `github.com/prometheus/client_golang@v1.25.0` | https://github.com/prometheus/client_golang/blob/v1.25.0/internal/github.com/golang/gddo/LICENSE |
 | `github.com/prometheus/client_golang/prometheus` | Apache-2.0 | `github.com/prometheus/client_golang@v1.25.0` | https://github.com/prometheus/client_golang/blob/v1.25.0/LICENSE |
 | `github.com/prometheus/client_model/go` | Apache-2.0 | `github.com/prometheus/client_model@v0.6.3` | https://github.com/prometheus/client_model/blob/v0.6.3/LICENSE |
-| `github.com/prometheus/common` | Apache-2.0 | `github.com/prometheus/common@v0.72.1` | https://github.com/prometheus/common/blob/v0.72.1/LICENSE |
+| `github.com/prometheus/common` | Apache-2.0 | `github.com/prometheus/common@v0.73.1` | https://github.com/prometheus/common/blob/v0.73.1/LICENSE |
 | `github.com/prometheus/procfs` | Apache-2.0 | `github.com/prometheus/procfs@v0.22.0` | https://github.com/prometheus/procfs/blob/v0.22.0/LICENSE |
 | `github.com/puzpuzpuz/xsync/v3` | Apache-2.0 | `github.com/puzpuzpuz/xsync/v3@v3.5.1` | https://github.com/puzpuzpuz/xsync/blob/v3.5.1/LICENSE |
 | `github.com/robfig/cron` | MIT | `github.com/robfig/cron@v1.2.0` | https://github.com/robfig/cron/blob/v1.2.0/LICENSE |
@@ -128,9 +129,9 @@ notices-check` verifies it is up to date.
 | `go.opentelemetry.io/otel/metric` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/metric@v1.47.0` | https://github.com/open-telemetry/opentelemetry-go/blob/metric/v1.47.0/metric/LICENSE |
 | `go.opentelemetry.io/otel/sdk` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/sdk@v1.47.0` | https://github.com/open-telemetry/opentelemetry-go/blob/sdk/v1.47.0/sdk/LICENSE |
 | `go.opentelemetry.io/otel/trace` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/trace@v1.47.0` | https://github.com/open-telemetry/opentelemetry-go/blob/trace/v1.47.0/trace/LICENSE |
-| `go.opentelemetry.io/proto/otlp` | Apache-2.0 | `go.opentelemetry.io/proto/otlp@v1.11.0` | https://github.com/open-telemetry/opentelemetry-proto-go/blob/otlp/v1.11.0/otlp/LICENSE |
-| `go.temporal.io/api` | MIT | `go.temporal.io/api@v1.64.0` | https://github.com/temporalio/api-go/blob/v1.64.0/LICENSE |
-| `go.temporal.io/api/internal/protojson` | BSD-3-Clause | `go.temporal.io/api@v1.64.0` | https://github.com/temporalio/api-go/blob/v1.64.0/internal/protojson/LICENSE |
+| `go.opentelemetry.io/proto/otlp` | Apache-2.0 | `go.opentelemetry.io/proto/otlp@v1.11.1` | https://github.com/open-telemetry/opentelemetry-proto-go/blob/otlp/v1.11.1/otlp/LICENSE |
+| `go.temporal.io/api` | MIT | `go.temporal.io/api@v1.64.1` | https://github.com/temporalio/api-go/blob/v1.64.1/LICENSE |
+| `go.temporal.io/api/internal/protojson` | BSD-3-Clause | `go.temporal.io/api@v1.64.1` | https://github.com/temporalio/api-go/blob/v1.64.1/internal/protojson/LICENSE |
 | `go.temporal.io/sdk` | MIT | `go.temporal.io/sdk@v1.50.0` | https://github.com/temporalio/sdk-go/blob/v1.50.0/LICENSE |
 | `go.temporal.io/sdk/contrib/opentelemetry` | MIT | `go.temporal.io/sdk/contrib/opentelemetry@v0.8.1` | https://github.com/temporalio/sdk-go/blob/contrib/opentelemetry/v0.8.1/contrib/opentelemetry/LICENSE |
 | `go.temporal.io/sdk/contrib/tally` | MIT | `go.temporal.io/sdk/contrib/tally@v0.2.0` | https://github.com/temporalio/sdk-go/blob/contrib/tally/v0.2.0/contrib/tally/LICENSE |
@@ -138,7 +139,7 @@ notices-check` verifies it is up to date.
 | `go.uber.org/automaxprocs` | MIT | `go.uber.org/automaxprocs@v1.6.0` | https://github.com/uber-go/automaxprocs/blob/v1.6.0/LICENSE |
 | `go.yaml.in/yaml/v2` | Apache-2.0 | `go.yaml.in/yaml/v2@v2.4.4` | https://github.com/yaml/go-yaml/blob/v2.4.4/LICENSE |
 | `go.yaml.in/yaml/v3` | MIT | `go.yaml.in/yaml/v3@v3.0.5` | https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE |
-| `go.yaml.in/yaml/v4` | Apache-2.0 | `go.yaml.in/yaml/v4@v4.0.0-rc.6` | https://github.com/yaml/go-yaml/blob/v4.0.0-rc.6/LICENSE |
+| `go.yaml.in/yaml/v4` | Apache-2.0 | `go.yaml.in/yaml/v4@v4.0.0-rc.7` | https://github.com/yaml/go-yaml/blob/v4.0.0-rc.7/LICENSE |
 | `golang.org/x/crypto` | BSD-3-Clause | `golang.org/x/crypto@v0.58.0` | https://cs.opensource.google/go/x/crypto/+/v0.58.0:LICENSE |
 | `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.61.0` | https://cs.opensource.google/go/x/net/+/v0.61.0:LICENSE |
 | `golang.org/x/oauth2` | BSD-3-Clause | `golang.org/x/oauth2@v0.37.0` | https://cs.opensource.google/go/x/oauth2/+/v0.37.0:LICENSE |
@@ -149,8 +150,8 @@ notices-check` verifies it is up to date.
 | `golang.org/x/time/rate` | BSD-3-Clause | `golang.org/x/time@v0.16.0` | https://cs.opensource.google/go/x/time/+/v0.16.0:LICENSE |
 | `gomodules.xyz/jsonpatch/v2` | Apache-2.0 | `gomodules.xyz/jsonpatch/v2@v2.5.0` | https://github.com/gomodules/jsonpatch/blob/v2.5.0/LICENSE |
 | `google.golang.org/genproto/googleapis/api` | Apache-2.0 | `google.golang.org/genproto/googleapis/api@v0.0.0-20261012220534-4341edf3f941` | https://github.com/googleapis/go-genproto/blob/4341edf3f941/googleapis/api/LICENSE |
-| `google.golang.org/genproto/googleapis/rpc` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20261005182115-fad411399dd8` | https://github.com/googleapis/go-genproto/blob/fad411399dd8/googleapis/rpc/LICENSE |
-| `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.84.0` | https://github.com/grpc/grpc-go/blob/v1.84.0/LICENSE |
+| `google.golang.org/genproto/googleapis/rpc` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20261019180522-ce908d29299b` | https://github.com/googleapis/go-genproto/blob/ce908d29299b/googleapis/rpc/LICENSE |
+| `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.85.0` | https://github.com/grpc/grpc-go/blob/v1.85.0/LICENSE |
 | `google.golang.org/protobuf` | BSD-3-Clause | `google.golang.org/protobuf@v1.36.12` | https://github.com/protocolbuffers/protobuf-go/blob/v1.36.12/LICENSE |
 | `gopkg.in/evanphx/json-patch.v4` | BSD-3-Clause | `gopkg.in/evanphx/json-patch.v4@v4.13.0` | https://github.com/evanphx/json-patch/blob/v4.13.0/LICENSE |
 | `gopkg.in/inf.v0` | BSD-3-Clause | `gopkg.in/inf.v0@v0.9.1` | https://github.com/go-inf/inf/blob/v0.9.1/LICENSE |
@@ -911,7 +912,7 @@ SOFTWARE.
 
 ### github.com/getkin/kin-openapi
 
-_MIT — github.com/getkin/kin-openapi@v0.151.0_
+_MIT — github.com/getkin/kin-openapi@v0.152.0_
 
 #### LICENSE
 
@@ -942,7 +943,7 @@ SOFTWARE.
 
 ### github.com/go-jose/go-jose/v4
 
-_Apache-2.0 — github.com/go-jose/go-jose/v4@v4.1.6_
+_Apache-2.0 — github.com/go-jose/go-jose/v4@v4.1.7_
 
 #### LICENSE
 
@@ -1154,7 +1155,7 @@ _Apache-2.0 — github.com/go-jose/go-jose/v4@v4.1.6_
 
 ### github.com/go-jose/go-jose/v4/json
 
-_BSD-3-Clause — github.com/go-jose/go-jose/v4@v4.1.6_
+_BSD-3-Clause — github.com/go-jose/go-jose/v4@v4.1.7_
 
 #### LICENSE
 
@@ -7071,7 +7072,7 @@ SOFTWARE.
 
 ### github.com/oapi-codegen/nethttp-middleware
 
-_Apache-2.0 — github.com/oapi-codegen/nethttp-middleware@v1.2.0_
+_Apache-2.0 — github.com/oapi-codegen/nethttp-middleware@v1.3.1_
 
 #### LICENSE
 
@@ -7282,7 +7283,7 @@ _Apache-2.0 — github.com/oapi-codegen/nethttp-middleware@v1.2.0_
 
 ### github.com/oapi-codegen/runtime
 
-_Apache-2.0 — github.com/oapi-codegen/runtime@v1.7.0_
+_Apache-2.0 — github.com/oapi-codegen/runtime@v1.8.0_
 
 #### LICENSE
 
@@ -7657,6 +7658,37 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
 LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+```
+
+### github.com/pandatix/go-abnf
+
+_MIT — github.com/pandatix/go-abnf@v0.5.3_
+
+#### LICENSE
+
+```text
+MIT License
+
+Copyright (c) 2024 Lucas TESSON - PandatiX <lucastesson@protonmail.com>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ```
 
@@ -8226,7 +8258,7 @@ SoundCloud Ltd. (http://soundcloud.com/).
 
 ### github.com/prometheus/common
 
-_Apache-2.0 — github.com/prometheus/common@v0.72.1_
+_Apache-2.0 — github.com/prometheus/common@v0.73.1_
 
 #### LICENSE
 
@@ -13548,7 +13580,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### go.opentelemetry.io/proto/otlp
 
-_Apache-2.0 — go.opentelemetry.io/proto/otlp@v1.11.0_
+_Apache-2.0 — go.opentelemetry.io/proto/otlp@v1.11.1_
 
 #### LICENSE
 
@@ -13759,7 +13791,7 @@ _Apache-2.0 — go.opentelemetry.io/proto/otlp@v1.11.0_
 
 ### go.temporal.io/api
 
-_MIT — go.temporal.io/api@v1.64.0_
+_MIT — go.temporal.io/api@v1.64.1_
 
 #### LICENSE
 
@@ -13789,7 +13821,7 @@ THE SOFTWARE.
 
 ### go.temporal.io/api/internal/protojson
 
-_BSD-3-Clause — go.temporal.io/api@v1.64.0_
+_BSD-3-Clause — go.temporal.io/api@v1.64.1_
 
 #### LICENSE
 
@@ -14288,7 +14320,7 @@ limitations under the License.
 
 ### go.yaml.in/yaml/v4
 
-_Apache-2.0 — go.yaml.in/yaml/v4@v4.0.0-rc.6_
+_Apache-2.0 — go.yaml.in/yaml/v4@v4.0.0-rc.7_
 
 #### LICENSE
 
@@ -15247,7 +15279,7 @@ _Apache-2.0 — google.golang.org/genproto/googleapis/api@v0.0.0-20261012220534-
 
 ### google.golang.org/genproto/googleapis/rpc
 
-_Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20261005182115-fad411399dd8_
+_Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20261019180522-ce908d29299b_
 
 #### LICENSE
 
@@ -15459,7 +15491,7 @@ _Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20261005182115-
 
 ### google.golang.org/grpc
 
-_Apache-2.0 — google.golang.org/grpc@v1.84.0_
+_Apache-2.0 — google.golang.org/grpc@v1.85.0_
 
 #### LICENSE
 
