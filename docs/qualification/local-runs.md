@@ -25,6 +25,12 @@ locally, instead of pushing and waiting on CI for each try. `--keep-site` and
 With `--from-source` it builds every image the site needs from the checkout
 and pulls none, so it needs no registry credential at all.
 
+Run it only on code you wrote, or have reviewed as you would before approving
+a `forge` deployment. The checkout's script, Makefiles, Dockerfiles and suite
+run with your whole environment, including `FORGE_API_KEY`, `NGC_API_KEY` and
+`GITHUB_TOKEN`, and your Teleport login. In CI the `forge` environment's
+approval is what gates that access for code from a fork; here nothing does.
+
 [hardware-lane.md](hardware-lane.md) is the operator's guide, and
 [hardware-lane-design.md](hardware-lane-design.md) says what each step of the
 lane does and why. This page is the reference for `qualify local`: every flag,
@@ -84,7 +90,7 @@ go run ./release/cmd/qualify local --stream forge-l40s-amd64-ubuntu-24.04-kube-1
 | `--registry` | `nvcr`, or `local` with `--from-source` | where the site images are pulled from: `nvcr`, `ghcr`, or `local` when every image is built |
 | `--ngc-org` | `$QUALIFY_E2E_NGC_ORG` | the NGC org the NVCR images are published under |
 | `--node-user` | `$QUALIFY_E2E_NODE_USER` | the account the OS image bakes; empty for the OSS images |
-| `--wait` | `0` | how long to keep asking for an artifact that is not published yet |
+| `--wait` | `0` | how long to keep asking for an artifact that is not published yet, registry images and CDN files alike, every 30 seconds |
 | `--run-dir DIR` | under the user cache | where the run's files are kept |
 
 The OS images are never built here. Even with `--from-source`, a stream names
@@ -226,7 +232,9 @@ By default, a new directory under the user cache:
 `~/.cache/nvke/qualify-local/<time>-<stream>/` on Linux. It holds `plan.json`
 (unless `--plan` named one), `steps.env` (what each step resolved),
 `e2e-config.yaml`, `site-inputs/`, `qualify-e2e.log`, the JUnit and JSON
-reports, any diagnostics, and `qualify-result.json`. A dry run writes no
+reports, any diagnostics, and `qualify-result.json`. A run that fails once
+its stream is chosen still writes `qualify-result.json`, errored when the suite
+never wrote a report, as the workflow's record step does. A dry run writes no
 `e2e-config.yaml` and no result. The jump hosts and the token issuer are
 scrubbed from the text files (the log, the JUnit and JSON reports,
 `tenant-diagnostics.json` and `site-cluster-state.txt`) before they are moved

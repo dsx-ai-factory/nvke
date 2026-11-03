@@ -111,7 +111,7 @@ docs/qualification/local-runs.md.`,
 	f.BoolVar(&o.keepSite, "keep-site", false, "keep the site node after the run, and a tenant whose specs failed; they must then be deleted by hand")
 	f.BoolVar(&o.keepTenant, "keep-tenant", false, "keep every tenant after the run, passed or not, and the site node they hang off; skips the spec that deletes the tenant, and they must then be deleted by hand")
 	f.BoolVar(&o.dryRun, "dry-run", false, "plan, verify, resolve and stage, and print the suite's arguments without taking a machine")
-	f.DurationVar(&o.wait, "wait", 0, "how long to keep asking for an artifact that is not published yet")
+	f.DurationVar(&o.wait, "wait", 0, "how long to keep asking for an artifact that is not published yet, registry images and CDN files alike")
 	f.StringVar(&o.runDir, "run-dir", "", "where the run's files are kept (default: a new directory under the user cache)")
 	_ = cmd.MarkFlagRequired("stream")
 	_ = cmd.MarkFlagRequired("stage")
@@ -201,16 +201,6 @@ func runLocal(ctx context.Context, out io.Writer, o localOptions) error {
 	if err != nil {
 		return err
 	}
-	// Verify asks the CDN through the jump host, and the suite relays as
-	// whoever is logged in, where it cannot prompt for a login that has
-	// lapsed. A dry run verifies too, so it is checked either way.
-	status := exec.CommandContext(ctx, "tsh", "status")
-	if b, err := status.CombinedOutput(); err != nil {
-		return fmt.Errorf("tsh status: %w: %s; run tsh login first", err, strings.TrimSpace(string(b)))
-	}
-	if err := verifyLocal(ctx, out, combo, stream, o.planned(), o.wait); err != nil {
-		return err
-	}
 
 	l := &steps{root: root, out: out, envFile: filepath.Join(o.runDir, "steps.env")}
 	l.env = append(os.Environ(),
@@ -241,45 +231,79 @@ func runLocal(ctx context.Context, out io.Writer, o localOptions) error {
 	if err := os.WriteFile(l.envFile, nil, 0o600); err != nil {
 		return err
 	}
+	// A --run-dir used before may hold an earlier run's report, which a run
+	// that fails before the suite would otherwise record as its own.
+	if err := os.Remove(filepath.Join(o.runDir, "qualify-e2e.report.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	ranSuite, runErr := runStream(ctx, out, o, l, planAt, combo, stream)
+	if o.dryRun {
+		return runErr
+	}
+	if err := recordLocal(ctx, out, o, planAt, l.envFile, combo.ID, stream.Name, startedAt, ranSuite); err != nil {
+		return errors.Join(runErr, err)
+	}
+	return runErr
+}
+
+// runStream is everything after the stream is chosen, up to collecting what
+// the suite wrote. It reports whether the suite was started, which is when
+// the resolve step has recorded what was built.
+func runStream(ctx context.Context, out io.Writer, o localOptions, l *steps, planAt string, combo *qualification.Combination, stream *qualification.Stream) (bool, error) {
+	// Verify asks the CDN through the jump host, and the suite relays as
+	// whoever is logged in, where it cannot prompt for a login that has
+	// lapsed. A dry run verifies too, so it is checked either way.
+	status := exec.CommandContext(ctx, "tsh", "status")
+	if b, err := status.CombinedOutput(); err != nil {
+		return false, fmt.Errorf("tsh status: %w: %s; run tsh login first", err, strings.TrimSpace(string(b)))
+	}
+	if err := verifyLocal(ctx, out, combo, stream, o.planned(), o.wait); err != nil {
+		return false, err
+	}
 
 	if err := l.step("stream-env", planAt, combo.ID, stream.Name); err != nil {
-		return err
+		return false, err
 	}
 	// Built rather than pulled is what an empty version means to the
 	// resolve step, as it does for a workflow run that names none.
 	for _, b := range buildable {
 		if slices.Contains(o.build, b.name) {
 			if err := l.set(b.version, ""); err != nil {
-				return err
+				return false, err
 			}
 		}
 	}
-	steps := []string{"resolve", "controller-image", "site-inputs"}
+	names := []string{"resolve", "controller-image", "site-inputs"}
 	if !o.dryRun {
-		steps = append(steps, "config")
+		names = append(names, "config")
 	}
-	for _, s := range steps {
+	for _, s := range names {
 		if err := l.step(s); err != nil {
-			return err
+			return false, err
 		}
 	}
 
 	runErr := l.step("run")
 	if err := l.step("withhold"); err != nil {
-		return errors.Join(runErr, err)
+		return true, errors.Join(runErr, err)
 	}
 	if err := l.collect(o.runDir); err != nil {
-		return errors.Join(runErr, err)
+		return true, errors.Join(runErr, err)
 	}
-	if o.dryRun {
-		return runErr
-	}
+	return true, runErr
+}
 
+// recordLocal writes qualify-result.json for a run that got as far as
+// choosing its stream, as the workflow's record step does whatever failed:
+// errored when the suite wrote no report. Before the suite started, a built
+// component may have no recorded version yet, and is named as built with none.
+func recordLocal(ctx context.Context, out io.Writer, o localOptions, planAt, envFile, combo, stream, startedAt string, ranSuite bool) error {
 	resultPlan := planAt
 	if len(o.build) > 0 {
 		resultPlan = filepath.Join(o.runDir, "plan-as-run.json")
-		if err := writeAsBuilt(planAt, resultPlan, l.envFile, o.build); err != nil {
-			return errors.Join(runErr, err)
+		if err := writeAsBuilt(planAt, resultPlan, envFile, o.build, combo, stream, ranSuite); err != nil {
+			return err
 		}
 	}
 	result := resultCmd()
@@ -287,16 +311,16 @@ func runLocal(ctx context.Context, out io.Writer, o localOptions) error {
 	result.SetArgs([]string{
 		"--plan", resultPlan,
 		"--report", filepath.Join(o.runDir, "qualify-e2e.report.json"),
-		"--combination", combo.ID,
-		"--stream", stream.Name,
+		"--combination", combo,
+		"--stream", stream,
 		"--started-at", startedAt,
 		"--output", filepath.Join(o.runDir, "qualify-result.json"),
 	})
 	if err := result.ExecuteContext(context.WithoutCancel(ctx)); err != nil {
-		return errors.Join(runErr, err)
+		return err
 	}
 	fmt.Fprintf(out, "result: %s\n", filepath.Join(o.runDir, "qualify-result.json"))
-	return runErr
+	return nil
 }
 
 // planLocal plans the way the workflow's plan job does, after fetching
@@ -408,6 +432,7 @@ func verifyLocal(ctx context.Context, out io.Writer, combo *qualification.Combin
 		}
 	}
 	var errs []error
+	deadline := time.Now().Add(wait)
 	checker := artifact.Checker{Auth: artifact.EnvAuth(registryCredentials...)}
 	if len(registry) > 0 {
 		if err := checker.WaitFor(ctx, out, registry, wait, artifact.DefaultPoll); err != nil {
@@ -420,24 +445,55 @@ func verifyLocal(ctx context.Context, out io.Writer, combo *qualification.Combin
 			return errors.Join(append(errs, errors.New("the CDN answers only the sites; set FORGE_JUMP_HOST to ask it from there"))...)
 		}
 		fmt.Fprintf(out, "asking the CDN from the site, through $%s\n", hostVar)
+		ask := func(ctx context.Context, url string) (string, error) {
+			code, err := fromSite(ctx, host, login, url)
+			if err != nil {
+				err = errors.New(strings.ReplaceAll(err.Error(), host, "$"+hostVar))
+			}
+			return code, err
+		}
+		if err := askCDN(ctx, out, web, ask, time.Until(deadline), artifact.DefaultPoll); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// askCDN asks for each web location through ask, and again every poll for
+// the ones not yet published, until all are or wait has passed, as
+// artifact.Checker.WaitFor does for registry locations.
+func askCDN(ctx context.Context, out io.Writer, web []artifact.Location, ask func(context.Context, string) (string, error), wait, poll time.Duration) error {
+	deadline := time.Now().Add(wait)
+	for {
+		var pending []artifact.Location
 		var missing []string
 		for _, l := range web {
-			code, err := fromSite(ctx, host, login, l.URL)
+			code, err := ask(ctx, l.URL)
 			if err == nil && strings.HasPrefix(code, "2") {
 				fmt.Fprintf(out, "published: %s (%s)\n", l.URL, strings.Join(l.Wanted, ", "))
 				continue
 			}
 			reason := "HTTP " + code
 			if err != nil {
-				reason = strings.ReplaceAll(err.Error(), host, "$"+hostVar)
+				reason = err.Error()
 			}
+			pending = append(pending, l)
 			missing = append(missing, fmt.Sprintf("  %s (%s): %s from the site", l.URL, strings.Join(l.Wanted, ", "), reason))
 		}
-		if len(missing) > 0 {
-			errs = append(errs, fmt.Errorf("%d of the CDN artifacts the plan names are not published:\n%s", len(missing), strings.Join(missing, "\n")))
+		if len(pending) == 0 {
+			return nil
 		}
+		if time.Now().Add(poll).After(deadline) {
+			return fmt.Errorf("%d of the CDN artifacts the plan names are not published:\n%s", len(missing), strings.Join(missing, "\n"))
+		}
+		fmt.Fprintf(out, "%d CDN artifacts not published yet; asking again in %s\n", len(pending), poll)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(poll):
+		}
+		web = pending
 	}
-	return errors.Join(errs...)
 }
 
 // jumpHost is the first site jump host set in the environment, with the
@@ -615,8 +671,11 @@ const builtStrategy = "builtFromCheckout"
 // writeAsBuilt copies the plan to outAt with each built component's entries
 // naming the version the run built, which the resolve step recorded, and no
 // location, since nothing was pulled. The result is written from it, so it
-// records what ran rather than what the plan would have pulled.
-func writeAsBuilt(planAt, outAt, envFile string, built []string) error {
+// records what ran rather than what the plan would have pulled. Only the
+// combination and stream that ran are rewritten; the rest stay as planned.
+// requireVersions refuses a built component with no recorded version, which
+// a run that started the suite always has.
+func writeAsBuilt(planAt, outAt, envFile string, built []string, combo, stream string, requireVersions bool) error {
 	resolved, err := readEnvFile(envFile)
 	if err != nil {
 		return err
@@ -632,7 +691,7 @@ func writeAsBuilt(planAt, outAt, envFile string, built []string) error {
 			continue
 		}
 		v := values[b.version]
-		if v == "" {
+		if v == "" && requireVersions {
 			return fmt.Errorf("the run built %s but recorded no %s", b.name, b.version)
 		}
 		for _, w := range b.planned {
@@ -652,10 +711,15 @@ func writeAsBuilt(planAt, outAt, envFile string, built []string) error {
 	}
 	for i := range p.Combinations {
 		c := &p.Combinations[i]
+		if c.ID != combo {
+			continue
+		}
 		asBuilt(c.Components)
 		asBuilt(c.Dependencies)
 		for j := range c.Streams {
-			asBuilt(c.Streams[j].Dependencies)
+			if c.Streams[j].Name == stream {
+				asBuilt(c.Streams[j].Dependencies)
+			}
 		}
 	}
 	b, err := json.MarshalIndent(p, "", "  ")

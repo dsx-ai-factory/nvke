@@ -8,11 +8,15 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
+	"github.com/dsx-ai-factory/nvke/release/internal/artifact"
 	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
 )
 
@@ -110,9 +114,19 @@ func TestWriteAsBuiltNamesWhatRan(t *testing.T) {
 			{Name: "cli", Version: "v1.0.0", VersionStrategy: "gitTag"},
 		},
 		Dependencies: []qualification.ComponentVersion{{Name: "kube", Version: "1.36.3"}},
-		Streams: []qualification.Stream{{Name: "s1", Dependencies: []qualification.ComponentVersion{
-			{Name: "cli-arm64", URL: "oci://example.com/nvkectl:v1.0.0-linux-arm64"},
-		}}},
+		Streams: []qualification.Stream{
+			{Name: "s1", Dependencies: []qualification.ComponentVersion{
+				{Name: "cli-arm64", URL: "oci://example.com/nvkectl:v1.0.0-linux-arm64"},
+			}},
+			{Name: "s2", Dependencies: []qualification.ComponentVersion{
+				{Name: "cli-amd64", URL: "oci://example.com/nvkectl:v1.0.0-linux-amd64"},
+			}},
+		},
+	}, {
+		ID: "c2",
+		Components: []qualification.ComponentVersion{
+			{Name: "controller", Version: "v1.0.0", URL: "oci://example.com/nvke-controller:v1.0.0", VersionStrategy: "gitTag"},
+		},
 	}}}
 	b, err := json.Marshal(planned)
 	if err != nil {
@@ -126,7 +140,7 @@ func TestWriteAsBuiltNamesWhatRan(t *testing.T) {
 	if err := os.WriteFile(envAt, []byte(resolved), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeAsBuilt(planAt, outAt, envAt, []string{"controller"}); err != nil {
+	if err := writeAsBuilt(planAt, outAt, envAt, []string{"controller"}, "c1", "s1", true); err != nil {
 		t.Fatal(err)
 	}
 	got, err := qualification.LoadPlan(outAt)
@@ -141,12 +155,121 @@ func TestWriteAsBuiltNamesWhatRan(t *testing.T) {
 	if c.Components[1] != planned.Combinations[0].Components[1] || c.Streams[0].Dependencies[0] != planned.Combinations[0].Streams[0].Dependencies[0] {
 		t.Errorf("what was pulled changed: %+v", c)
 	}
+	if got.Combinations[1].Components[0] != planned.Combinations[1].Components[0] {
+		t.Errorf("a combination that did not run changed: %+v", got.Combinations[1])
+	}
+
+	if err := os.WriteFile(envAt, []byte("CLI_VERSION=deadbeef\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAsBuilt(planAt, outAt, envAt, []string{"cli"}, "c1", "s1", true); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = qualification.LoadPlan(outAt); err != nil {
+		t.Fatal(err)
+	}
+	if d := got.Combinations[0].Streams; d[0].Dependencies[0].Version != "deadbeef" || d[1].Dependencies[0] != planned.Combinations[0].Streams[1].Dependencies[0] {
+		t.Errorf("cli entries = %+v, want only s1's rewritten", d)
+	}
 
 	if err := os.WriteFile(envAt, []byte("CLI_VERSION=\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeAsBuilt(planAt, outAt, envAt, []string{"cli"}); err == nil || !strings.Contains(err.Error(), "recorded no CLI_VERSION") {
+	if err := writeAsBuilt(planAt, outAt, envAt, []string{"cli"}, "c1", "s1", true); err == nil || !strings.Contains(err.Error(), "recorded no CLI_VERSION") {
 		t.Errorf("writeAsBuilt with no recorded version = %v", err)
+	}
+	// A run that failed before the suite records the build without a version.
+	if err := writeAsBuilt(planAt, outAt, envAt, []string{"cli"}, "c1", "s1", false); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = qualification.LoadPlan(outAt); err != nil {
+		t.Fatal(err)
+	}
+	if e := got.Combinations[0].Components[1]; e != (qualification.ComponentVersion{Name: "cli", VersionStrategy: builtStrategy}) {
+		t.Errorf("cli before the suite = %+v, want built with no version", e)
+	}
+}
+
+func TestAskCDNAsksAgainUntilPublished(t *testing.T) {
+	web := []artifact.Location{
+		{URL: "https://cdn.example/a.qcow2", Wanted: []string{"os-image-amd64"}},
+		{URL: "https://cdn.example/b.qcow2", Wanted: []string{"os-image-bootloader-amd64"}},
+	}
+	asked := map[string]int{}
+	ask := func(_ context.Context, url string) (string, error) {
+		asked[url]++
+		if url == web[1].URL && asked[url] < 3 {
+			return "403", nil
+		}
+		return "200", nil
+	}
+	if err := askCDN(context.Background(), io.Discard, web, ask, time.Second, time.Millisecond); err != nil {
+		t.Fatalf("askCDN = %v, want both published", err)
+	}
+	if asked[web[0].URL] != 1 || asked[web[1].URL] != 3 {
+		t.Errorf("asked %v, want the published one once and the other until it was", asked)
+	}
+
+	never := func(context.Context, string) (string, error) { return "403", nil }
+	if err := askCDN(context.Background(), io.Discard, web[:1], never, 0, time.Millisecond); err == nil || !strings.Contains(err.Error(), "1 of the CDN artifacts") {
+		t.Errorf("askCDN with no wait = %v, want it to fail at once", err)
+	}
+}
+
+// The suite's step is interrupted once, however many times the terminal is,
+// so that Ginkgo tears the node down rather than abandoning it.
+func TestStepForwardsOneInterruptToTheSuite(t *testing.T) {
+	root := t.TempDir()
+	trapped, ready, stop := filepath.Join(root, "trapped"), filepath.Join(root, "ready"), filepath.Join(root, "stop")
+	script := filepath.Join(root, e2eScript)
+	if err := os.MkdirAll(filepath.Dir(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// wait, unlike a foreground sleep, returns on each trapped signal, so
+	// every interrupt that reaches the script is counted.
+	body := "trap 'echo INT >>\"$TRAPPED\"' INT\n: >\"$READY\"\nwhile [ ! -e \"$STOP\" ]; do sleep 0.05 & wait $!; done\n"
+	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(root, "steps.env")
+	if err := os.WriteFile(envFile, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l := &steps{root: root, out: io.Discard, envFile: envFile,
+		env: append(os.Environ(), "TRAPPED="+trapped, "READY="+ready, "STOP="+stop)}
+
+	// Registered here too, so the interrupts sent below never reach the
+	// test binary's default handler, which would end the test.
+	signals := make(chan os.Signal, 8)
+	signal.Notify(signals, os.Interrupt)
+	defer signal.Stop(signals)
+
+	done := make(chan error, 1)
+	go func() { done <- l.step("run") }()
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the stand-in suite never started")
+		}
+	}
+	for range 3 {
+		if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if err := os.WriteFile(stop, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := <-done
+	if err == nil || !strings.Contains(err.Error(), "interrupted") {
+		t.Errorf("step(run) = %v, want it to say it was interrupted", err)
+	}
+	b, _ := os.ReadFile(trapped)
+	if n := strings.Count(string(b), "INT"); n != 1 {
+		t.Errorf("the suite trapped %d interrupts, want 1", n)
 	}
 }
 

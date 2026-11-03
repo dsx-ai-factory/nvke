@@ -144,9 +144,13 @@ environment, which needs no approval. A beta is cut once a night.
 
 `qualify local` runs one stream through the workflow's steps from your own
 clone: plan, check, build, provision, suite, teardown, record. It uses the
-same lane script as the workflow, so the steps and flags are CI's.
+same script as the workflow, so the steps and flags are CI's.
 [local-runs.md](local-runs.md) is its full reference: every flag, every
 variable, and where it differs from CI.
+
+Run it only on code you wrote, or have reviewed as you would before approving
+a `forge` deployment. It runs the checkout's script, Makefiles, Dockerfiles
+and suite with your Forge key, your registry tokens and your Teleport login.
 
 ### 1. Get the site's values
 
