@@ -766,7 +766,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			// cannot fit between -ginkgo.timeout and the go-test backstop --
 			// and that backstop panics without unwinding, which leaks the
 			// site's instance. See the three nested timeouts in
-			// qualify-e2e.yml.
+			// release/hack/qualify-e2e.sh.
 		}, NodeTimeout(15*time.Minute))
 	}
 }

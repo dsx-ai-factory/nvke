@@ -25,7 +25,7 @@ test: ## Run tests. (run by the merge gate)
 	@$(COVERAGE_MKDIR)
 	$(GO) test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) -skip '^TestE2E$$' . ./internal/...
 
-# What the site lane (site_controller_test.go) stages onto its node. The image
+# What the qualification spec (qualify_e2e_test.go) stages onto its node. The image
 # archives are written outside the clone so they can't be committed.
 REPO_ROOT := $(abspath ../../..)
 SITE_ARCH ?= amd64
@@ -48,7 +48,7 @@ SITE_PROVISIONED_VERSION ?= v0.1.0-rc.1
 # under the earlier nke-controller name. capi-provisioned carries the same
 # name on both.
 #
-# The controller name also has to match what qualify-e2e.yml writes into the
+# The controller name also has to match what release/hack/qualify-e2e.sh writes into the
 # e2e config as site.images.controller.repository. The node's containerd knows
 # the image only by the name inside controller.tar, so a disagreement leaves
 # the Helm values asking for an image that is not on the node.
@@ -72,6 +72,14 @@ SITE_PROFILES_IMAGE ?= nke-e2e-profiles:local
 #
 # Set to 0 to qualify a published tag, once one is cut past #850.
 SITE_NVKE_CONTROLLER_BUILD ?= 1
+
+# Build capi-provisioned from this checkout instead of pulling
+# SITE_PROVISIONED_IMAGE, for either SITE_ARCH: buildx loads the one platform
+# into docker, where docker save finds it. SITE_PROVISIONED_VERSION is the tag
+# and the version baked in. Its final stage runs SITE_ARCH's binaries, so a
+# SITE_ARCH other than the host's needs QEMU registered with binfmt, which
+# Docker Desktop has and Linux Docker Engine does not by default.
+SITE_PROVISIONED_BUILD ?= 0
 
 # Build nvkectl from this checkout. Set to 0 to stage the published
 # SITE_CLI_REF instead: hack/fetch-nvkectl.sh pulls nvkectl-linux-$(SITE_ARCH)
@@ -100,7 +108,7 @@ endif
 # Passed through as GIT_VERSION, which the controller Makefile takes from
 # CI_COMMIT_SHA whenever CI is set. That is GitLab's variable: under GitHub
 # Actions CI is set and CI_COMMIT_SHA is not, so GIT_VERSION comes out empty
-# and the build dies on `invalid tag "nvcr.io/j7sbcjl3qgta/nvke-controller:"`.
+# and the build dies on `invalid tag "nvcr.io/<org>/nvke-controller:"`.
 # image-nvcr.yml passes GITHUB_SHA for the same reason.
 #
 # BUILD_VERSION is a different thing: GIT_VERSION only names the image, while
@@ -127,12 +135,15 @@ else
 	"$(CURDIR)/hack/fetch-nvkectl.sh" "$${SITE_CLI_VERSION}" "$(SITE_ARCH)" "$(dir $(SITE_NVKECTL))"
 endif
 ifeq ($(SITE_NVKE_CONTROLLER_BUILD),1)
-	@test "$(SITE_ARCH)" = amd64 || { echo "SITE_NVKE_CONTROLLER_BUILD=1 builds linux/amd64 only (docker build --load takes one platform); set SITE_NVKE_CONTROLLER_BUILD=0 for $(SITE_ARCH)" >&2; exit 1; }
-	$(MAKE) -C "$(REPO_ROOT)/controller" docker-build-local IMG=$(SITE_NVKE_CONTROLLER_IMAGE) GIT_VERSION=$(SITE_NVKE_CONTROLLER_COMMIT) BUILD_VERSION=$(SITE_NVKE_CONTROLLER_VERSION)
+	$(MAKE) -C "$(REPO_ROOT)/controller" docker-build-local LOCAL_PLATFORM=linux/$(SITE_ARCH) IMG=$(SITE_NVKE_CONTROLLER_IMAGE) GIT_VERSION=$(SITE_NVKE_CONTROLLER_COMMIT) BUILD_VERSION=$(SITE_NVKE_CONTROLLER_VERSION)
 else
 	docker pull --platform linux/$(SITE_ARCH) $(SITE_NVKE_CONTROLLER_IMAGE)
 endif
+ifeq ($(SITE_PROVISIONED_BUILD),1)
+	$(MAKE) -C "$(REPO_ROOT)/cluster-api-provider-provisioned" docker-build IMG=$(SITE_PROVISIONED_IMAGE) PLATFORMS=linux/$(SITE_ARCH) BUILDX_OUTPUT=type=docker BUILD_VERSION=$(SITE_PROVISIONED_VERSION)
+else
 	docker pull --platform linux/$(SITE_ARCH) $(SITE_PROVISIONED_IMAGE)
+endif
 	docker buildx build --platform linux/$(SITE_ARCH) --load -t $(SITE_PROFILES_IMAGE) ../fixtures
 	docker save --platform linux/$(SITE_ARCH) -o "$(SITE_INPUTS)/controller.tar" $(SITE_NVKE_CONTROLLER_IMAGE)
 	docker save --platform linux/$(SITE_ARCH) -o "$(SITE_INPUTS)/capi-provisioned.tar" $(SITE_PROVISIONED_IMAGE)

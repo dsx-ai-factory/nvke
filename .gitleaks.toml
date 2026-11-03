@@ -117,3 +117,20 @@ paths = [
 regexes = [
   '''NVKECTL_E2E_ENCRYPTION_KEY_OUT''',
 ]
+
+[[allowlists]]
+description = """The qualify-e2e.sh tests' table rows name the stream they plan, and
+several set NGC_API_KEY or name capi-provisioned in the row before it.
+generic-api-key takes either as the keyword and the stream id
+forge-l40s-amd64 that follows as the secret. It is a stream from the
+qualification matrix, not a credential.
+
+Scoped to that one literal in that one file rather than to the file as a whole,
+so a real credential added beside it is still caught."""
+condition = "AND"
+paths = [
+  '''^release/internal/qualification/script_test\.go$''',
+]
+regexes = [
+  '''forge-l40s-amd64''',
+]

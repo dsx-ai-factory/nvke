@@ -24,7 +24,7 @@ const (
 	// commit is on no branch and a clone without `refs/pull/812/head` cannot
 	// resolve it. The site lane stages from the controller's own commit
 	// instead, since the deploy path carries the controller's chart; see
-	// deployPathRef in site_controller_test.go.
+	// deployPathRef in qualify_e2e_test.go.
 	DeployPathRef = "HEAD"
 
 	// deployDir holds the e2e deploy paths and the charts every path installs

@@ -167,8 +167,8 @@ on GHCR and `nvke-controller-chart` on NVCR. The GHCR packages for releases cut 
 this rename no longer exist: the images `nke-controller` and `controller` and the charts
 `charts/cloud-workflow-engine`, `charts/controller` and `charts/nke-controller`. Nothing
 was republished under the new name. GHCR holds the controller from `controller/v0.3.0-rc.1`
-on, so a pin on an earlier tag or on `nke-controller` does not resolve there, and
-`qualify-e2e.yml` cannot qualify an earlier release from GHCR.
+on, so a pin on an earlier tag or on `nke-controller` does not resolve there, and the
+hardware lane cannot qualify an earlier release from GHCR.
 
 The pull secret `svc-nke-ngc-imagepull` keeps its name. It is an NGC service account
 provisioned outside this repository, so a rename means re-provisioning it on every site in

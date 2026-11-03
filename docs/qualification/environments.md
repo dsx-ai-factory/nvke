@@ -10,8 +10,8 @@ one, asks it for a machine with certain capabilities, and gets back an instance
 type the site actually offers.
 
 Read this before adding a site, adding an instance type, or adding a second
-provider. [hardware-lane.md](hardware-lane.md) covers what happens after a
-machine is chosen.
+provider. [hardware-lane-design.md](hardware-lane-design.md) covers what
+happens after a machine is chosen.
 
 Files live in `controller/test/e2e/environments/`, one per environment, named
 by the value of `-e2e.environment`. There are two: `forge.yaml`, and `dsx.yaml`
@@ -246,7 +246,8 @@ dialect and each decodes the environment strictly, so the lane excludes the
 entries belonging to other providers by label --- `site-controller &&
 !nico-forge` here --- rather than requiring its own, which would also drop
 every site-level spec. A provider added later needs an exclusion on the other
-lanes as well as its own; the mapping is one `case` block in `qualify-e2e.yml`.
+lanes as well as its own; the mapping is one `case` block in
+`resolve_capabilities` in `release/hack/qualify-e2e.sh`.
 
 Capability matching is the provider's job rather than generic code, which is
 what makes this work: a provider that has no concept of an "instance type" is

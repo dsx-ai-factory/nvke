@@ -356,8 +356,8 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool), chec
 	//
 	// The tenant suite's probe, despite its name: it resolves a name from a
 	// pod and asserts nothing about NodeLocal DNSCache, which this spec does
-	// not establish is on the site. A failed attempt keeps its pod for
-	// debugging, so a retry can leave one behind in default.
+	// not establish is on the site. Every attempt's pod is deleted when the
+	// spec ends, unless it failed with keepOnFailureEnv set.
 	It("resolves cluster DNS from a pod", func(ctx SpecContext) {
 		connect()
 		Eventually(runDNSProbe).WithContext(ctx).WithArguments(c, checks.probeNamespace, checks.probeImage).

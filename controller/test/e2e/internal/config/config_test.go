@@ -5,6 +5,7 @@ package config
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -27,26 +28,30 @@ func TestLoadAcceptsShippedConfigs(t *testing.T) {
 	}
 }
 
-// The document qualify-e2e.yml generates. It is written by a
-// heredoc in the workflow rather than from this struct, so nothing but a test
-// keeps the two in step.
+// The document the qualification run generates. It is written by a heredoc
+// in release/hack/qualify-e2e.sh rather than from this struct, so this runs that
+// step and loads what it wrote.
 func TestLoadAcceptsTheGeneratedSiteConfig(t *testing.T) {
-	doc := `site:
-  images:
-    controller:
-      repository: nvcr.io/example-org/nvke-controller
-      archive: /w/.site-inputs/controller.tar
-    capi-provisioned:
-      repository: nvcr.io/example-org/cluster-api-provider-provisioned
-      archive: /w/.site-inputs/capi-provisioned.tar
-    profiles:
-      repository: nke-e2e-profiles
-      tag: local
-      archive: /w/.site-inputs/profiles.tar
-`
-	cfg, err := Load(write(t, doc))
+	path := filepath.Join(t.TempDir(), "e2e-config.yaml")
+	cmd := exec.CommandContext(t.Context(), "bash", "../../../../../release/hack/qualify-e2e.sh", "config")
+	cmd.Env = append(os.Environ(),
+		"STEP_ENV=/dev/null",
+		"E2E_CONFIG="+path,
+		"NODE_USER=ubuntu",
+		"SITE_NVKECTL=/w/.site-inputs/nvkectl/nvkectl-linux-amd64",
+		"SITE_DEPLOY_PATH_REF=",
+		"SITE_IMAGES=nvcr.io/example-org",
+		"SITE_NVKE_CONTROLLER_REPOSITORY=nvke-controller",
+		"SITE_INPUTS=/w/.site-inputs",
+		"KEEP_SITE=true",
+		"KEEP_TENANT=false",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("writing the config: %v\n%s", err, out)
+	}
+	cfg, err := Load(path)
 	if err != nil {
-		t.Fatalf("the config the workflow writes no longer loads: %v", err)
+		t.Fatalf("the config the lane writes no longer loads: %v", err)
 	}
 	if got := cfg.Site.Images.CAPIProvisioned.Repository; got != "nvcr.io/example-org/cluster-api-provider-provisioned" {
 		t.Errorf("capi-provisioned repository = %q, want the one written", got)

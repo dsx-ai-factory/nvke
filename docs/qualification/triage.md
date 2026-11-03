@@ -10,7 +10,8 @@ defect or the site's?"** Of the first three real runs, two failed on
 infrastructure and one on a code defect, and each took hours to tell apart.
 This is how to do it faster.
 
-[hardware-lane.md](hardware-lane.md) describes what the lane does. This
+[hardware-lane.md](hardware-lane.md) says how to run the lane, and
+[hardware-lane-design.md](hardware-lane-design.md) what it does. This
 describes what to do when it stops doing it.
 
 ## Start with the artifacts

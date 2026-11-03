@@ -103,6 +103,10 @@ printf '%s' "` + dnsProbeSuccessMessage + `" > /dev/termination-log`},
 	}
 	image.apply(&pod.Spec)
 	_, message, err := kube.RunPod(ctx, c, pod, dnsProbeContainerName, 2*time.Minute)
+	// RunPod keeps a pod that failed, and every retry makes a new one.
+	if pod.Name != "" {
+		deleteOnExit(ctx, c, pod)
+	}
 	if err != nil {
 		return err
 	}

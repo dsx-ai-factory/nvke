@@ -174,9 +174,11 @@ Deeper module documentation:
 | [../controller/test/e2e/README.md](../controller/test/e2e/README.md) | The end to end suite |
 | [../hack/rotation-demo/README.md](../hack/rotation-demo/README.md) | Credential renewal/key-rotation evidence collector (no live evidence included) |
 | [qualification/overview.md](qualification/overview.md) | Release qualification: what it is, what a run proves, and what is not covered yet |
-| [qualification/hardware-lane.md](qualification/hardware-lane.md) | How a candidate is qualified on real hardware, layer by layer |
+| [qualification/hardware-lane.md](qualification/hardware-lane.md) | Running the hardware lane: starting a run, following it, and reading its results |
+| [qualification/hardware-lane-design.md](qualification/hardware-lane-design.md) | How a candidate is qualified on real hardware, layer by layer, and why |
 | [qualification/environments.md](qualification/environments.md) | Declaring the infrastructure a run can execute against |
 | [qualification/triage.md](qualification/triage.md) | Telling a site fault from a code defect on a failed hardware run |
+| [qualification/local-runs.md](qualification/local-runs.md) | Running the hardware lane from a workstation with `qualify local` |
 | [../controller/integration-test/README.md](../controller/integration-test/README.md) | The integration tests |
 | [../controller/nico-sim/docs/e2e-testing.md](../controller/nico-sim/docs/e2e-testing.md) | End-to-end testing for nico-sim's VM backend |
 

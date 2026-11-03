@@ -780,9 +780,9 @@ trust bundle (`nvke-system/<cluster>-kubeconfig` and the trust-bundle Secret); t
 verifier pod fetches the `k8s-spiffe-workload-jwt-exec-auth` plugin itself, so no
 plugin needs to be present in the test image.
 
-## Site controller lane
+## Hardware qualification
 
-`site_controller_test.go` (label `site-controller`) builds its own site controller
+`qualify_e2e_test.go` (label `site-controller`) builds its own site controller
 on a Forge node and runs the `nico-forge` tenant against it, instead of using the
 management cluster in the kube context. `-e2e.site-stage` picks how far it goes;
 without it the lane is skipped:
@@ -824,12 +824,49 @@ provisioned: the site lane's tenant entries are built only when it is set, so
 a bare `nico-forge` without it selects 42 specs and reaches no hardware.
 
 The node is torn down afterwards (tenants are deleted first). `-e2e.keep-site`, or
-`lifecycle.preserveOnFailure` with a failed spec, keeps it.
+`lifecycle.preserveOnFailure` with a failed spec, keeps it. `lifecycle.skipDelete`
+keeps every tenant as well, passed or not, and skips the spec that deletes one;
+`qualify local --keep-tenant` sets it, and the workflow never does.
 
-Prerequisites: a way to reach the jump host (below), the jump host in
-`FORGE_JUMP_HOST` (read by `environments/forge.yaml`) and `FORGE_API_KEY`.
-Neither the proxy nor the jump host is checked in; secrets are read only from
-the environment.
+Prerequisites, all read from the shell that runs the suite. Neither the proxy
+nor the jump host nor any identifier is checked in, and secrets are read only
+from the environment; the lane's maintainers can give you the values.
+
+- **A Teleport login** to the cluster the jump host is enrolled in, current for
+  the whole run: a `full` run takes over an hour, and its teardown still dials
+  the node. See [Reaching the jump host](#reaching-the-jump-host).
+- **The Forge site.** The suite reads the API key, and `environments/forge.yaml`
+  reads the rest. An unset one of these fails the run before a machine exists:
+
+  | Name | What it is |
+  |---|---|
+  | `FORGE_API_KEY` | The Forge API key. Secret. |
+  | `FORGE_ORG_ID` | The org the machines are created in |
+  | `FORGE_SITE_ID`, `FORGE_VPC_ID`, `FORGE_SUBNET_ID` | Site-1, and the VPC and subnet its machines attach to |
+  | `FORGE_SSH_KEY_GROUP_ID` | Site-1's key group, for serial console access |
+  | `FORGE_INSTANCE_TYPE_CPU_ID`, `FORGE_INSTANCE_TYPE_GPU_ID` | Site-1's CPU and GPU (L40S) machine types |
+
+  These default to empty, and a site run stops on an empty jump host:
+
+  | Name | What it is |
+  |---|---|
+  | `FORGE_JUMP_HOST` | The jump host in front of site-1's machines |
+  | `FORGE_TELEPORT_LOGIN` | Your login on it, one of the Logins `tsh status` lists. Empty is tsh's default. |
+
+  A GB200 stream runs at site-2, which is skipped unless all of its
+  `FORGE_SITE_2_*` names in `environments/forge.yaml` are set.
+- **A registry login** for what `site-inputs` pulls: capi-provisioned unless
+  `SITE_PROVISIONED_BUILD=1`, and the controller or nvkectl when they are not
+  built. GHCR is the default,
+  and its packages are private, so `docker login ghcr.io` with a token that
+  can read them; NVCR is below.
+- **The versions** `-e2e.versions` names. `qualify plan`, run from the
+  repository root, resolves them the way a qualification run does (see
+  [Running one](../../../docs/qualification/overview.md#running-one)):
+
+  ```bash
+  go run ./release/cmd/qualify plan --subject nvke --scope l40s --output plan.json
+  ```
 
 **On DSX** (`-e2e.environment=dsx`) the credential is different and the stage
 is limited. Each datahall carries its own SSA client, named for the key it is
@@ -867,11 +904,15 @@ go test -timeout 5h . -args \
   -e2e.config=e2e-config.yaml -e2e.environment=dsx -e2e.site-stage=provision \
   -e2e.capabilities=arch=amd64 \
   -e2e.versions=controller=<…>,os-image=<amd64 url>,os-image-bootloader=<amd64 url>,…
-``` Build the inputs, then run; with the `site-inputs` defaults
-no `site:` block is needed at all:
+```
+
+**On Forge** (`-e2e.environment=forge`), build the inputs, then run. With the
+`site-inputs` defaults no `site:` block is needed at all, and
+`SITE_PROVISIONED_VERSION` has to be the same capi-provisioned version as
+`-e2e.versions` names:
 
 ```bash
-gmake site-inputs SITE_NVKE_CONTROLLER_VERSION=$(git rev-parse --short=12 HEAD)
+gmake site-inputs SITE_NVKE_CONTROLLER_VERSION=$(git rev-parse --short=12 HEAD) SITE_PROVISIONED_VERSION=<version>
 go test -timeout 5h . -args \
   -ginkgo.label-filter="site-controller && !nico-dsx" -ginkgo.v \
   -e2e.config=e2e-config.yaml -e2e.environment=forge -e2e.site-stage=full \
@@ -919,7 +960,22 @@ is a client of the CWE it bootstraps, so the two have to be one commit; the
 newest CWE on GHCR predates #850 and rejects this checkout's nvkectl at
 "creating the site cluster". `SITE_NVKE_CONTROLLER_BUILD=0` pulls
 `SITE_NVKE_CONTROLLER_VERSION` as a published tag instead, for qualifying a release
-once one is cut past #850.
+once one is cut past #850. The controller is built for `SITE_ARCH`, either
+architecture, cross-compiled on the host's.
+
+capi-provisioned is pulled by default. `SITE_PROVISIONED_BUILD=1` builds it from
+the checkout for `SITE_ARCH` instead, tagged and versioned
+`SITE_PROVISIONED_VERSION`, which is then what `-e2e.versions=capi-provisioned=`
+has to say. With all three built, nothing in `site-inputs` pulls, and
+`SITE_IMAGE_REGISTRY` is only the prefix the images are named under:
+
+```bash
+gmake site-inputs SITE_IMAGE_REGISTRY=localhost/nvke \
+  SITE_NVKE_CONTROLLER_VERSION=<commit> SITE_PROVISIONED_BUILD=1 SITE_PROVISIONED_VERSION=<commit>
+```
+
+`qualify local --from-source` does this, with the commit under test as each
+version.
 
 To stage a published nvkectl instead, set `SITE_CLI_BUILD=0` and name the
 artifact. `site-inputs` pulls `nvkectl-linux-$(SITE_ARCH)` out of it into

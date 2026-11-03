@@ -4,7 +4,9 @@
 package resolve
 
 import (
+	"errors"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -152,5 +154,65 @@ func TestCommitDescribeExpandsTheCommit(t *testing.T) {
 	}
 	if got[ResultRefKey] != sha {
 		t.Errorf("ref = %q, want the full hash %q", got[ResultRefKey], sha)
+	}
+}
+
+func TestAbbrevForIsGitsDefault(t *testing.T) {
+	for count, want := range map[int]int{
+		0: 0, 1: 7, 16383: 7, 16384: 8, 57075: 8, 65535: 8, 65536: 9, 262144: 10,
+	} {
+		if got := abbrevFor(count); got != want {
+			t.Errorf("abbrevFor(%d) = %d, want %d", count, got, want)
+		}
+	}
+}
+
+// The length comes from what origin holds, not from this clone's settings or
+// whatever else it has fetched, because the publishers describe in a fresh
+// clone of origin.
+func TestCommitDescribeUsesTheLengthOfAFreshCloneOfOrigin(t *testing.T) {
+	upstream := newRepo(t)
+	tag(t, upstream, "controller/v0.2.0-rc.1")
+	commit(t, upstream, "after the release")
+
+	clone := t.TempDir()
+	git(t, clone, "clone", "-q", upstream, ".")
+	git(t, clone, "config", "core.abbrev", "12")
+	sha := head(t, clone)
+
+	got, err := CommitDescribe{Dir: clone, TagPrefix: "controller/", Commit: sha}.Resolve(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "v0.2.0-rc.1-1-g" + sha[:7]; got[ResultVersionKey] != want {
+		t.Errorf("version = %q, want %q", got[ResultVersionKey], want)
+	}
+}
+
+// A clone made to work from a fork has the fork as origin and upstream under
+// some other name, so upstream is found by what its URL names.
+func TestUpstreamRemoteIsFoundByURL(t *testing.T) {
+	dir := newRepo(t)
+	if _, err := UpstreamRemote(dir); !errors.Is(err, ErrNoUpstreamRemote) {
+		t.Errorf("with no remotes, UpstreamRemote error = %v; want ErrNoUpstreamRemote", err)
+	}
+
+	git(t, dir, "remote", "add", "origin", "git@github.com:someone/nvke.git")
+	if _, err := UpstreamRemote(dir); !errors.Is(err, ErrNoUpstreamRemote) {
+		t.Errorf("with only a fork, UpstreamRemote error = %v; want ErrNoUpstreamRemote", err)
+	}
+	git(t, dir, "remote", "add", "nvidia", "https://github.com/dsx-ai-factory/nvke.git")
+	if got, err := UpstreamRemote(dir); err != nil || got != "nvidia" {
+		t.Errorf("UpstreamRemote = %q, %v; want nvidia", got, err)
+	}
+
+	git(t, dir, "remote", "remove", "nvidia")
+	git(t, dir, "remote", "add", "up", "git@github.com:dsx-ai-factory/nvke")
+	if got, err := UpstreamRemote(dir); err != nil || got != "up" {
+		t.Errorf("UpstreamRemote = %q, %v; want up", got, err)
+	}
+
+	if _, err := UpstreamRemote(filepath.Join(dir, "missing")); err == nil || errors.Is(err, ErrNoUpstreamRemote) {
+		t.Errorf("where git cannot run, UpstreamRemote error = %v; want a failure, not ErrNoUpstreamRemote", err)
 	}
 }

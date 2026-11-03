@@ -29,11 +29,12 @@ type Config struct {
 		// keeps are Forge instances that site owns.
 		SkipDelete bool `json:"skipDelete"`
 
-		// PreserveOnFailure keeps a failed run's machines. A preserved site
-		// node can be logged into, because the provider writes this run's key
-		// to it. A preserved tenant node cannot: nothing puts a key there and
-		// the image locks the account, so the serial console, which carries
-		// cloud-init's output, is the only way in.
+		// PreserveOnFailure keeps a failed run's machines. Neither can be
+		// logged into once the run ends: a preserved site node holds this
+		// run's public key, whose private half never leaves the process, and
+		// a preserved tenant node holds none and the image locks the account.
+		// The serial console, which carries cloud-init's output, is the only
+		// way in.
 		PreserveOnFailure bool `json:"preserveOnFailure"`
 
 		ReuseCluster string `json:"reuseCluster"` // non-empty -> skip create, verify this cluster

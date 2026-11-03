@@ -53,7 +53,8 @@ func root() *cobra.Command {
   result     record what one stream of one combination qualified
   publish    ship a stream's result and JUnit report to a destination
   verify     check that everything a plan names is published
-  summary    render a plan, or the streams' JUnit reports, as Markdown`,
+  summary    render a plan, or the streams' JUnit reports, as Markdown
+  local      run one stream on hardware from this checkout, as the workflow does`,
 		SilenceUsage: true,
 	}
 	cmd.AddCommand(planCmd())
@@ -61,5 +62,6 @@ func root() *cobra.Command {
 	cmd.AddCommand(publishCmd())
 	cmd.AddCommand(verifyCmd())
 	cmd.AddCommand(summaryCmd())
+	cmd.AddCommand(localCmd())
 	return cmd
 }

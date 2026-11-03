@@ -119,7 +119,7 @@ var (
 
 func init() {
 	flag.StringVar(&siteStage, "e2e.site-stage", "",
-		"build a site controller up to this stage: provision, bootstrap or full (empty skips the site controller)")
+		"build a site controller up to this stage: provision, bootstrap, deployment or full (empty skips these specs)")
 	flag.BoolVar(&keepSite, "e2e.keep-site", false,
 		"keep the site controller's node after the run, for debugging")
 }
@@ -146,7 +146,7 @@ var siteReaches = []string{
 // shape every stream in release/policy.yaml names. On the container rather
 // than the tenant entry because the site outlives every spec beneath it, and
 // the provider takes the maximum per machine type, not the sum.
-var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-controller", "needs:cpu=2", "needs:gpu=1"), func() {
+var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("site-controller", "needs:cpu=2", "needs:gpu=1"), func() {
 	var (
 		cfg config.Config
 		// provider creates the site node. Settled before anything is created,
@@ -671,6 +671,9 @@ func newForgeProvider(cfg config.Config, env *environment.Environment) (infra.Pr
 			return nil, jerr
 		}
 	}
+	if cerr := dialer.CheckJumpHost(context.Background(), forgeSite.JumpHost); cerr != nil {
+		return nil, cerr
+	}
 
 	versions, err := requireVersions(versionKube, versionCNIOVN, versionNerdctl, versionKind, versionClusterctl)
 	if err != nil {
@@ -754,6 +757,9 @@ func newDSXProvider(cfg config.Config, env *environment.Environment) (infra.Prov
 		}); jerr != nil {
 			return nil, jerr
 		}
+	}
+	if cerr := dialer.CheckJumpHost(context.Background(), dsxSite.JumpHost); cerr != nil {
+		return nil, cerr
 	}
 
 	versions, err := requireVersions(versionKube, versionCNIOVN, versionNerdctl, versionKind, versionClusterctl)
