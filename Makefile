@@ -755,6 +755,6 @@ secrets-check: ## Scan the commits on this branch for credentials, as the secret
 	  exit 1; \
 	 }
 	@echo "Scanning $(shell git rev-list --count origin/main..HEAD 2>/dev/null || echo 0) commit(s) on this branch..."
-	@gitleaks git . --no-banner --redact \
-	  --log-opts="origin/main..HEAD --diff-merges=first-parent"
+	@gitleaks git . --no-banner --redact --verbose \
+	  --log-opts="origin/main..HEAD --diff-merges=remerge"
 	@echo "gitleaks: no credential found in the commits on this branch."

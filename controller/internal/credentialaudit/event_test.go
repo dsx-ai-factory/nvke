@@ -83,7 +83,7 @@ func TestNewRejectsUnallowlistedAndPrivateFields(t *testing.T) {
 			e.Credential = TypeEtcdKey
 			e.Fingerprints = []string{Hash("secret", "REDACTED")}
 		}},
-		{"raw PEM fingerprint", func(e *Event) { e.Fingerprints = []string{"-----BEGIN PRIVATE KEY-----"} }},
+		{"raw PEM fingerprint", func(e *Event) { e.Fingerprints = []string{"-----BEGIN PRIVATE KEY-----"} }}, // gitleaks:allow
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
