@@ -154,7 +154,7 @@ type operatorJWTStaticKeySet struct {
 
 // VerifySignature checks the token's RS256 signature before returning its claims.
 func (s operatorJWTStaticKeySet) VerifySignature(_ context.Context, token string) ([]byte, error) {
-	signed, err := jose.ParseSigned(token, []jose.SignatureAlgorithm{jose.RS256})
+	signed, err := jose.ParseSignedCompact(token, []jose.SignatureAlgorithm{jose.RS256})
 	if err != nil {
 		return nil, err
 	}
