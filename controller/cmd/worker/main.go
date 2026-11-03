@@ -29,6 +29,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/automode"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/bootstrap"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/capi"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/certificates"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/certrenewal"
@@ -66,7 +67,7 @@ const (
 	ServerGracefulShutdownTimeout = 30 * time.Second
 )
 
-//nolint:gocyclo,maintidx // This isn't real complexity, it's just a lot of "exit if error"
+//nolint:gocyclo,maintidx,funlen // This isn't real complexity, it's just a lot of "exit if error"
 func main() {
 	// Before ParseConfigFromEnv, so --version answers without a configured env.
 	versionFlag := flag.Bool("version", false, "Print the version and exit")
@@ -310,6 +311,7 @@ func main() {
 	logger.Info("Kubernetes controller-runtime manager configuration",
 		"enableNodeProvisioningMonitor", enableNodeProvisioningMonitor,
 		"enableNicoControllers", cfg.NicoControllersEnabled,
+		"enableBootstrapControllers", cfg.BootstrapControllersEnabled,
 		"enableSpiffe", cfg.SpiffeEnabled,
 		"enableTenantAccess", cfg.TenantAccessEnabled)
 
@@ -394,6 +396,20 @@ func main() {
 		}
 	} else {
 		logger.Info("NICo controllers disabled by configuration")
+	}
+
+	if cfg.BootstrapControllersEnabled {
+		kubeadmConfigCRDInstalled, err := bootstrap.KubeadmConfigCRDInstalled(k8sControllerManager.GetRESTMapper())
+		if err != nil {
+			logger.Error("Failed to look up the KubeadmConfig CRD", "error", err)
+			os.Exit(1)
+		}
+		if !kubeadmConfigCRDInstalled {
+			logger.Error("Required KubeadmConfig CRD is not installed while bootstrap controllers are enabled; install Cluster API before starting the NVKE controller")
+			os.Exit(1)
+		}
+	} else {
+		logger.Info("Bootstrap controllers disabled by configuration")
 	}
 
 	var teleportClient teleport.Client

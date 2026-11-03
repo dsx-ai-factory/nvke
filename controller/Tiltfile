@@ -1043,6 +1043,11 @@ _controller_auth_enabled = os.getenv(
     "NKE_AUTH_ENABLED", _tilt_env.get("NKE_AUTH_ENABLED", "true")) == "true"
 _controller_permissive_mode = os.getenv(
     "NKE_PERMISSIVE_MODE", _tilt_env.get("NKE_PERMISSIVE_MODE", "false")) == "true"
+# Off unless a developer opts in. The controller reads this from its config
+# file at startup, so changing it needs the process to start again.
+_controller_bootstrap_enabled = os.getenv(
+    "BOOTSTRAP_CONTROLLERS_ENABLED",
+    _tilt_env.get("BOOTSTRAP_CONTROLLERS_ENABLED", "false")) == "true"
 
 _controller_chart_extra_env_names = [
     "NODE_PROVISIONING_TIMEOUT",
@@ -1093,6 +1098,7 @@ _controller_chart_flags = [
     "--create-namespace",
     "--set", "cni.installAfterInit=%s" % ("true" if _controller_install_cni_after_init == "true" else "false"),
     "--values", "hack/tilt-controller-chart-values.yaml",
+    "--set", "controllers.bootstrap.enabled=%s" % ("true" if _controller_bootstrap_enabled else "false"),
     "--set-string", "appDb.postgresPassword=%s" % _postgres_superuser_password,
     "--set", "apiAuth.enabled=%s" % ("true" if _controller_auth_enabled else "false"),
     "--set", "apiAuth.permissive=%s" % ("true" if _controller_permissive_mode else "false"),

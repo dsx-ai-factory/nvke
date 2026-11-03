@@ -85,6 +85,7 @@ data:
     allowLegacyCalicoClusterCreation: {{ .Values.cni.allowLegacyCalicoClusterCreation }}
     allowControlPlaneWithoutVIP: {{ .Values.allowControlPlaneWithoutVIP }}
     nicoControllersEnabled: {{ include "controller.controllerConfig.orGoDefault" (list .Values.controllers.nico.enabled true) }}
+    bootstrapControllersEnabled: {{ include "controller.controllerConfig.orGoDefault" (list .Values.controllers.bootstrap.enabled false) }}
     profilesDir: {{ .Values.profiles.path | default "./profiles" | quote }}
     runbooksDir: {{ include "controller.runbooksDir" . | quote }}
     tenantAccessEnabled: {{ .Values.tenantAccess.enabled }}

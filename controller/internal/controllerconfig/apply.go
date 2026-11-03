@@ -76,6 +76,7 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.CNIImageRegistry = c.CNIImageRegistry
 	cfg.InstallCNIAfterInit = c.InstallCNIAfterInit
 	cfg.NicoControllersEnabled = c.NicoControllersEnabled
+	cfg.BootstrapControllersEnabled = c.BootstrapControllersEnabled
 	cfg.ProfilesDir = c.ProfilesDir
 	cfg.RunbooksDir = c.RunbooksDir
 	cfg.TenantAccessEnabled = c.TenantAccessEnabled

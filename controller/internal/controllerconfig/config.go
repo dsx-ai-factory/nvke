@@ -53,6 +53,7 @@ type Config struct {
 	InstallCNIAfterInit                      bool                       `json:"installCNIAfterInit"`
 	AllowLegacyCalicoClusterCreation         bool                       `json:"allowLegacyCalicoClusterCreation"`
 	NicoControllersEnabled                   bool                       `json:"nicoControllersEnabled"`
+	BootstrapControllersEnabled              bool                       `json:"bootstrapControllersEnabled"`
 	ProfilesDir                              string                     `json:"profilesDir"`
 	RunbooksDir                              string                     `json:"runbooksDir"`
 	TenantAccessEnabled                      bool                       `json:"tenantAccessEnabled"`

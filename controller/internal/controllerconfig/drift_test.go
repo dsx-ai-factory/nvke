@@ -109,6 +109,7 @@ var configMapOnly = []string{
 	// fleets set when they still create Calico clusters.
 	"allowLegacyCalicoClusterCreation",
 	"allowControlPlaneWithoutVIP",
+	"bootstrapControllersEnabled",
 	"nodeMetadataAllowlistedLabelKeys",
 	"machineMetadataAllowlistedLabelKeys",
 	"machineMetadataAllowlistedAnnotationKeys",

@@ -48,6 +48,7 @@ installCNIAfterInit: false
 allowLegacyCalicoClusterCreation: false
 allowControlPlaneWithoutVIP: false
 nicoControllersEnabled: false
+bootstrapControllersEnabled: false
 profilesDir: test/fixtures/profiles
 runbooksDir: test/fixtures/runbooks
 tenantAccessEnabled: false
