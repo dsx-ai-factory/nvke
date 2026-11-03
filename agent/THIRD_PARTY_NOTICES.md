@@ -31,8 +31,8 @@ commands are not listed, because they are not distributed.
 | [github.com/davecgh/go-spew/spew](https://pkg.go.dev/github.com/davecgh/go-spew@v1.1.2-0.20180830191138-d8f796af33cc) | ISC | github.com/davecgh/go-spew@v1.1.2-0.20180830191138-d8f796af33cc |
 | [github.com/emicklei/go-restful/v3](https://pkg.go.dev/github.com/emicklei/go-restful/v3@v3.13.0) | MIT | github.com/emicklei/go-restful/v3@v3.13.0 |
 | [github.com/fxamacker/cbor/v2](https://pkg.go.dev/github.com/fxamacker/cbor/v2@v2.9.1) | MIT | github.com/fxamacker/cbor/v2@v2.9.1 |
-| [github.com/go-jose/go-jose/v4](https://pkg.go.dev/github.com/go-jose/go-jose/v4@v4.1.6) | Apache-2.0 | github.com/go-jose/go-jose/v4@v4.1.6 |
-| [github.com/go-jose/go-jose/v4/json](https://pkg.go.dev/github.com/go-jose/go-jose/v4@v4.1.6) | BSD-3-Clause | github.com/go-jose/go-jose/v4@v4.1.6 |
+| [github.com/go-jose/go-jose/v4](https://pkg.go.dev/github.com/go-jose/go-jose/v4@v4.1.7) | Apache-2.0 | github.com/go-jose/go-jose/v4@v4.1.7 |
+| [github.com/go-jose/go-jose/v4/json](https://pkg.go.dev/github.com/go-jose/go-jose/v4@v4.1.7) | BSD-3-Clause | github.com/go-jose/go-jose/v4@v4.1.7 |
 | [github.com/go-logr/logr](https://pkg.go.dev/github.com/go-logr/logr@v1.4.4) | Apache-2.0 | github.com/go-logr/logr@v1.4.4 |
 | [github.com/go-logr/stdr](https://pkg.go.dev/github.com/go-logr/stdr@v1.2.2) | Apache-2.0 | github.com/go-logr/stdr@v1.2.2 |
 | [github.com/go-openapi/jsonpointer](https://pkg.go.dev/github.com/go-openapi/jsonpointer@v1.0.1) | Apache-2.0 | github.com/go-openapi/jsonpointer@v1.0.1 |
@@ -60,15 +60,16 @@ commands are not listed, because they are not distributed.
 | [github.com/munnerz/goautoneg](https://pkg.go.dev/github.com/munnerz/goautoneg@v0.0.0-20191010083416-a7dc8b61c822) | BSD-3-Clause | github.com/munnerz/goautoneg@v0.0.0-20191010083416-a7dc8b61c822 |
 | [github.com/opencontainers/go-digest](https://pkg.go.dev/github.com/opencontainers/go-digest@v1.0.0) | Apache-2.0 | github.com/opencontainers/go-digest@v1.0.0 |
 | [github.com/opencontainers/image-spec/specs-go](https://pkg.go.dev/github.com/opencontainers/image-spec@v1.1.1) | Apache-2.0 | github.com/opencontainers/image-spec@v1.1.1 |
+| [github.com/pandatix/go-abnf](https://pkg.go.dev/github.com/pandatix/go-abnf@v0.5.3) | MIT | github.com/pandatix/go-abnf@v0.5.3 |
 | [github.com/prometheus/client_model/go](https://pkg.go.dev/github.com/prometheus/client_model@v0.6.3) | Apache-2.0 | github.com/prometheus/client_model@v0.6.3 |
-| [github.com/prometheus/common](https://pkg.go.dev/github.com/prometheus/common@v0.72.1) | Apache-2.0 | github.com/prometheus/common@v0.72.1 |
+| [github.com/prometheus/common](https://pkg.go.dev/github.com/prometheus/common@v0.73.1) | Apache-2.0 | github.com/prometheus/common@v0.73.1 |
 | [github.com/spf13/pflag](https://pkg.go.dev/github.com/spf13/pflag@v1.0.10) | BSD-3-Clause | github.com/spf13/pflag@v1.0.10 |
 | [github.com/spiffe/go-spiffe/v2](https://pkg.go.dev/github.com/spiffe/go-spiffe/v2@v2.9.0) | Apache-2.0 | github.com/spiffe/go-spiffe/v2@v2.9.0 |
 | [github.com/sqids/sqids-go](https://pkg.go.dev/github.com/sqids/sqids-go@v0.4.1) | MIT | github.com/sqids/sqids-go@v0.4.1 |
 | [github.com/x448/float16](https://pkg.go.dev/github.com/x448/float16@v0.8.4) | MIT | github.com/x448/float16@v0.8.4 |
-| [go.etcd.io/etcd/api/v3](https://pkg.go.dev/go.etcd.io/etcd/api/v3@v3.7.2) | Apache-2.0 | go.etcd.io/etcd/api/v3@v3.7.2 |
-| [go.etcd.io/etcd/client/pkg/v3](https://pkg.go.dev/go.etcd.io/etcd/client/pkg/v3@v3.7.2) | Apache-2.0 | go.etcd.io/etcd/client/pkg/v3@v3.7.2 |
-| [go.etcd.io/etcd/client/v3](https://pkg.go.dev/go.etcd.io/etcd/client/v3@v3.7.2) | Apache-2.0 | go.etcd.io/etcd/client/v3@v3.7.2 |
+| [go.etcd.io/etcd/api/v3](https://pkg.go.dev/go.etcd.io/etcd/api/v3@v3.7.3) | Apache-2.0 | go.etcd.io/etcd/api/v3@v3.7.3 |
+| [go.etcd.io/etcd/client/pkg/v3](https://pkg.go.dev/go.etcd.io/etcd/client/pkg/v3@v3.7.3) | Apache-2.0 | go.etcd.io/etcd/client/pkg/v3@v3.7.3 |
+| [go.etcd.io/etcd/client/v3](https://pkg.go.dev/go.etcd.io/etcd/client/v3@v3.7.3) | Apache-2.0 | go.etcd.io/etcd/client/v3@v3.7.3 |
 | [go.opentelemetry.io/auto/sdk](https://pkg.go.dev/go.opentelemetry.io/auto/sdk@v1.2.1) | Apache-2.0 | go.opentelemetry.io/auto/sdk@v1.2.1 |
 | [go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc](https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc@v0.72.0) | Apache-2.0 / BSD-3-Clause | go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc@v0.72.0 |
 | [go.opentelemetry.io/otel](https://pkg.go.dev/go.opentelemetry.io/otel@v1.47.0) | Apache-2.0 / BSD-3-Clause | go.opentelemetry.io/otel@v1.47.0 |
@@ -87,8 +88,8 @@ commands are not listed, because they are not distributed.
 | [golang.org/x/text](https://pkg.go.dev/golang.org/x/text@v0.43.0) | BSD-3-Clause | golang.org/x/text@v0.43.0 |
 | [golang.org/x/time/rate](https://pkg.go.dev/golang.org/x/time@v0.16.0) | BSD-3-Clause | golang.org/x/time@v0.16.0 |
 | [google.golang.org/genproto/googleapis/api](https://pkg.go.dev/google.golang.org/genproto/googleapis/api@v0.0.0-20261012220534-4341edf3f941) | Apache-2.0 | google.golang.org/genproto/googleapis/api@v0.0.0-20261012220534-4341edf3f941 |
-| [google.golang.org/genproto/googleapis/rpc/status](https://pkg.go.dev/google.golang.org/genproto/googleapis/rpc@v0.0.0-20261005182115-fad411399dd8) | Apache-2.0 | google.golang.org/genproto/googleapis/rpc@v0.0.0-20261005182115-fad411399dd8 |
-| [google.golang.org/grpc](https://pkg.go.dev/google.golang.org/grpc@v1.84.0) | Apache-2.0 | google.golang.org/grpc@v1.84.0 |
+| [google.golang.org/genproto/googleapis/rpc/status](https://pkg.go.dev/google.golang.org/genproto/googleapis/rpc@v0.0.0-20261019180522-ce908d29299b) | Apache-2.0 | google.golang.org/genproto/googleapis/rpc@v0.0.0-20261019180522-ce908d29299b |
+| [google.golang.org/grpc](https://pkg.go.dev/google.golang.org/grpc@v1.85.0) | Apache-2.0 | google.golang.org/grpc@v1.85.0 |
 | [google.golang.org/protobuf](https://pkg.go.dev/google.golang.org/protobuf@v1.36.12) | BSD-3-Clause | google.golang.org/protobuf@v1.36.12 |
 | [gopkg.in/evanphx/json-patch.v4](https://pkg.go.dev/gopkg.in/evanphx/json-patch.v4@v4.13.0) | BSD-3-Clause | gopkg.in/evanphx/json-patch.v4@v4.13.0 |
 | [gopkg.in/inf.v0](https://pkg.go.dev/gopkg.in/inf.v0@v0.9.1) | BSD-3-Clause | gopkg.in/inf.v0@v0.9.1 |
@@ -103,7 +104,7 @@ commands are not listed, because they are not distributed.
 | [k8s.io/kube-openapi/pkg/validation/spec](https://pkg.go.dev/k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad) | Apache-2.0 | k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad |
 | [k8s.io/utils](https://pkg.go.dev/k8s.io/utils@v0.0.0-20260626114624-be93311217bd) | Apache-2.0 | k8s.io/utils@v0.0.0-20260626114624-be93311217bd |
 | [k8s.io/utils/internal/third_party/forked/golang/net](https://pkg.go.dev/k8s.io/utils@v0.0.0-20260626114624-be93311217bd) | BSD-3-Clause | k8s.io/utils@v0.0.0-20260626114624-be93311217bd |
-| [oras.land/oras-go/v2](https://pkg.go.dev/oras.land/oras-go/v2@v2.6.4) | Apache-2.0 | oras.land/oras-go/v2@v2.6.4 |
+| [oras.land/oras-go/v2](https://pkg.go.dev/oras.land/oras-go/v2@v2.7.0) | Apache-2.0 | oras.land/oras-go/v2@v2.7.0 |
 | [sigs.k8s.io/json](https://pkg.go.dev/sigs.k8s.io/json@v0.0.0-20250730193827-2d320260d730) | Apache-2.0 / BSD-3-Clause | sigs.k8s.io/json@v0.0.0-20250730193827-2d320260d730 |
 | [sigs.k8s.io/randfill](https://pkg.go.dev/sigs.k8s.io/randfill@v1.0.0) | Apache-2.0 | sigs.k8s.io/randfill@v1.0.0 |
 | [sigs.k8s.io/structured-merge-diff/v6](https://pkg.go.dev/sigs.k8s.io/structured-merge-diff/v6@v6.4.2) | Apache-2.0 | sigs.k8s.io/structured-merge-diff/v6@v6.4.2 |
@@ -5788,6 +5789,35 @@ _Apache-2.0_
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+```
+
+### github.com/pandatix/go-abnf
+
+_MIT_
+
+```
+MIT License
+
+Copyright (c) 2024 Lucas TESSON - PandatiX <lucastesson@protonmail.com>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ```
 
