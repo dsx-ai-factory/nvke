@@ -25,9 +25,9 @@ const (
 	kubeadmConfigMapUpgradedMessagePrefix = "kubeadm configmap upgraded to "
 
 	// upgradeWaitRequeueInterval is how often a control-plane upgrade that is
-	// waiting on a workflow or on node recycling checks back. Workflow
-	// completion writes nothing to the DB, so without this the next look is the
-	// 15-minute DB source resync.
+	// waiting on a workflow checks back. Workflow completion writes nothing to
+	// the DB, so without this the next look is the 15-minute DB source resync.
+	// Node recycling needs no requeue: node and cluster row updates enqueue it.
 	upgradeWaitRequeueInterval = 15 * time.Second
 )
 
@@ -77,7 +77,6 @@ func (r *reconciler) reconcileUpgradeInProgress(
 
 	if !upgradeComplete {
 		// Upgrade still in progress, nothing to do
-		r.requeueAfter(upgradeWaitRequeueInterval)
 		return nil
 	}
 
