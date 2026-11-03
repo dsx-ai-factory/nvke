@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	temporalclient "go.temporal.io/sdk/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,6 +35,19 @@ type reconciler struct {
 	// passes the specific capability each downstream function needs, rather
 	// than each one resolving its own.
 	providerClient func(db.Cluster) (clients.ProviderClient, error)
+
+	// requeue is the soonest check-back a step asked for while waiting on
+	// something that does not write to the DB (a Temporal workflow). Zero means
+	// none; the DB sources and resync drive the next reconcile.
+	requeue time.Duration
+}
+
+// requeueAfter asks for the cluster to be reconciled again within d. The
+// soonest request in one reconcile wins.
+func (r *reconciler) requeueAfter(d time.Duration) {
+	if d > 0 && (r.requeue == 0 || d < r.requeue) {
+		r.requeue = d
+	}
 }
 
 func newReconciler(
