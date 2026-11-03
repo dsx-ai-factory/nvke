@@ -398,8 +398,11 @@ func (c *Controller) adminKubeconfigSecret(ctx context.Context, clusterName stri
 	return secret, nil
 }
 
-// reuseBreakglassKubeconfig returns the kubeconfig to keep. The boolean is false
-// when admin.conf's CA differs, so the caller reissues the client cert.
+// reuseBreakglassKubeconfig returns the kubeconfig to keep, rebuilt from the
+// stored breakglass certificate and key and admin.conf's server and CA. Only the
+// breakglass user carries over, so nothing else in the stored Secret reaches
+// operators. The boolean is false when admin.conf's CA differs, so the caller
+// reissues the client cert.
 func reuseBreakglassKubeconfig(existing, adminConf []byte) ([]byte, bool, error) {
 	cfg, err := clientcmd.Load(existing)
 	if err != nil {
@@ -409,19 +412,16 @@ func reuseBreakglassKubeconfig(existing, adminConf []byte) ([]byte, bool, error)
 	if err != nil {
 		return nil, false, fmt.Errorf("parsing admin kubeconfig: %w", err)
 	}
-	server, ca, err := getClusterAccess(cfg)
+	_, ca, err := getClusterAccess(cfg)
 	adminServer, adminCA, adminErr := getClusterAccess(admin)
 	if adminErr != nil {
 		return nil, false, adminErr
 	}
-	if err != nil || !bytes.Equal(ca, adminCA) {
+	user := cfg.AuthInfos[breakglassUser]
+	if err != nil || user == nil || !bytes.Equal(ca, adminCA) {
 		return nil, false, nil
 	}
-	if server == adminServer {
-		return existing, true, nil
-	}
-	cfg.Clusters[cfg.Contexts[cfg.CurrentContext].Cluster].Server = adminServer
-	raw, err := clientcmd.Write(*cfg)
+	raw, err := writeBreakglassKubeconfig(adminServer, adminCA, user.ClientCertificateData, user.ClientKeyData)
 	if err != nil {
 		return nil, false, err
 	}
@@ -466,6 +466,12 @@ func assembleBreakglassKubeconfig(adminKubeconfig, certPEM, keyPEM []byte) ([]by
 		return nil, err
 	}
 
+	return writeBreakglassKubeconfig(server, ca, certPEM, keyPEM)
+}
+
+// writeBreakglassKubeconfig serializes the breakglass kubeconfig: one cluster,
+// the breakglass user, and a context naming both.
+func writeBreakglassKubeconfig(server string, ca, certPEM, keyPEM []byte) ([]byte, error) {
 	out := clientcmdapi.NewConfig()
 	out.Clusters["cluster"] = &clientcmdapi.Cluster{
 		Server:                   server,
