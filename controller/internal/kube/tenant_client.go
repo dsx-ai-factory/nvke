@@ -22,6 +22,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/capi"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/metrics"
 )
 
 const (
@@ -203,6 +204,9 @@ func (p *DBClusterTenantClientProvider) clientFromSecretVersion(
 
 	tenantClient, err := NewClientFromKubeconfig(kubeconfigBytes, cluster.Name)
 	if err != nil {
+		if errors.Is(err, ErrInvalidKubeconfig) {
+			metrics.RecordTenantKubeconfigRejected(metrics.TenantKubeconfigSourceSecret)
+		}
 		return nil, err
 	}
 
@@ -242,6 +246,7 @@ func (p *DBClusterTenantClientProvider) clientFromControlPlaneNodeAgent(ctx cont
 
 		restConfig, err := NewRESTConfigFromAdminKubeconfig([]byte(kubeconfig))
 		if err != nil {
+			metrics.RecordTenantKubeconfigRejected(metrics.TenantKubeconfigSourceNodeAgent)
 			errs = append(errs, fmt.Errorf("node %s: %w", node.Name, err))
 			continue
 		}
