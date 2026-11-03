@@ -96,7 +96,7 @@ const (
 	NamespaceNKESystem = "nke-system"
 
 	// LabelKeyKubeconfigMode records whether a published kubeconfig Secret holds
-	// SPIRE exec-auth or a verbatim admin.conf. The mode is rewritten in place when
+	// SPIRE exec-auth or a kubeconfig rebuilt from admin.conf. The mode is rewritten in place when
 	// EnableOIDC flips a cluster, so it is descriptive, not an ownership key:
 	// publish and delete key off cluster-id alone, and the consume path checks the
 	// payload itself rather than this label.

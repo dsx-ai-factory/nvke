@@ -191,7 +191,8 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 // reconcileCluster fetches a control-plane node's admin kubeconfig and publishes
-// it into the tenant-access Secret plane (admin.conf, or SPIRE when OIDC is on).
+// it into the tenant-access Secret plane (the sanitized admin.conf, or SPIRE when
+// OIDC is on).
 func (c *Controller) reconcileCluster(ctx context.Context, cluster db.Cluster) error {
 	adminConf, ready, err := c.fetchAdminKubeconfig(ctx, cluster)
 	if err != nil {
@@ -356,7 +357,7 @@ func (c *Controller) applyRBAC(ctx context.Context, cluster db.Cluster, adminCon
 // discovery) and every subsequent apply would otherwise block on the
 // long-lived reconcile context.
 func newTenantClient(adminConf []byte) (ctrlclient.Client, error) {
-	restConfig, err := kube.NewRESTConfigFromKubeconfig(adminConf)
+	restConfig, err := kube.NewRESTConfigFromAdminKubeconfig(adminConf)
 	if err != nil {
 		return nil, err
 	}

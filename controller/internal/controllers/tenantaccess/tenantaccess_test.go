@@ -16,10 +16,12 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -43,28 +45,32 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/kube"
+	"github.com/dsx-ai-factory/nke/controller/internal/metrics"
 	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
 )
 
 const (
-	testKubeconfig = "kubeconfig-data"
+	// testKubeconfig is a second admin.conf for tests that only pass it through.
+	// Both fixtures are in the form kube.SanitizeAdminKubeconfig writes, so
+	// fetchAdminKubeconfig returns them unchanged.
+	testKubeconfig = "apiVersion: v1\nclusters:\n- cluster:\n    certificate-authority-data: dGVzdC1jYQ==\n    server: https://203.0.113.20:6443\n  name: c\ncontexts:\n- context:\n    cluster: c\n    user: u\n  name: ctx\ncurrent-context: ctx\nkind: Config\nusers:\n- name: u\n  user: {}\n"
 
-	// testAdminConf is a minimal but parseable admin.conf: the OIDC path loads it
-	// to extract the CA (base64 "test-ca") and server URL. testServer is that URL.
+	// testAdminConf is a minimal admin.conf: the OIDC path loads it to extract
+	// the CA (base64 "test-ca") and server URL. testServer is that URL.
 	testServer    = "https://198.51.100.10:6443"
 	testAdminConf = `apiVersion: v1
-kind: Config
 clusters:
-- name: cluster
-  cluster:
-    server: https://198.51.100.10:6443
+- cluster:
     certificate-authority-data: dGVzdC1jYQ==
+    server: https://198.51.100.10:6443
+  name: cluster
 contexts:
-- name: ctx
-  context:
+- context:
     cluster: cluster
     user: admin
+  name: ctx
 current-context: ctx
+kind: Config
 users:
 - name: admin
   user: {}
@@ -353,6 +359,17 @@ func TestFetchAdminKubeconfig(t *testing.T) {
 			wantProbes: 2,
 		},
 		{
+			name:  "kubeconfig with an exec plugin falls through to the next",
+			nodes: []db.Node{bad, good},
+			kubeconfig: map[uuid.UUID]string{
+				badID:  strings.Replace(testKubeconfig, "  user: {}\n", "  user:\n    exec:\n      apiVersion: client.authentication.k8s.io/v1\n      command: /bin/sh\n", 1),
+				goodID: testKubeconfig,
+			},
+			want:       testKubeconfig,
+			wantReady:  true,
+			wantProbes: 2,
+		},
+		{
 			name:       "unhealthy joined node is still used as a fallback",
 			nodes:      []db.Node{unhealthy},
 			kubeconfig: map[uuid.UUID]string{unhealthy.ID: testKubeconfig},
@@ -389,6 +406,76 @@ func TestFetchAdminKubeconfig(t *testing.T) {
 			assert.Len(t, nodeAgentClient.GetKubeconfigCalls, tc.wantProbes)
 		})
 	}
+}
+
+// A node's admin.conf is published in the form kube.SanitizeAdminKubeconfig
+// writes: entries the current context does not name are dropped, and the
+// fields are re-serialized, so the Secret never holds the node's bytes.
+func TestFetchAdminKubeconfigRewritesNodeKubeconfig(t *testing.T) {
+	clusterID := uuid.New()
+	nodeID := uuid.New()
+	nodeAdminConf := `apiVersion: v1
+kind: Config
+current-context: kubernetes-admin@kubernetes
+clusters:
+- name: kubernetes
+  cluster:
+    server: https://198.51.100.10:6443
+    certificate-authority-data: dGVzdC1jYQ==
+contexts:
+- name: kubernetes-admin@kubernetes
+  context:
+    cluster: kubernetes
+    user: kubernetes-admin
+- name: other
+  context:
+    cluster: kubernetes
+    user: other
+users:
+- name: kubernetes-admin
+  user:
+    client-certificate-data: Y2VydA==
+    client-key-data: a2V5
+- name: other
+  user:
+    token: abc
+`
+	want, err := kube.SanitizeAdminKubeconfig([]byte(nodeAdminConf))
+	require.NoError(t, err)
+
+	mockDB := &testutil.MockDB{}
+	mockDB.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{joinedCPNode(nodeID, clusterID)}, nil)
+	nodeAgentClient := &agenttest.FakeClient{Kubeconfigs: map[uuid.UUID]string{nodeID: nodeAdminConf}}
+	c := newTestController(config.Config{TenantAccessEnabled: true}, mockDB, nil, nodeAgentClient)
+
+	got, ready, err := c.fetchAdminKubeconfig(context.Background(), db.Cluster{ID: clusterID, Name: "c"})
+	require.NoError(t, err)
+	require.True(t, ready)
+	assert.Equal(t, want, got)
+	assert.NotEqual(t, nodeAdminConf, string(got))
+	assert.NotContains(t, string(got), "other")
+}
+
+// A node's reply that fails kube.SanitizeAdminKubeconfig is counted, so the
+// rejection can alert even when another node then serves a valid kubeconfig.
+func TestFetchAdminKubeconfigCountsRejectedNodeKubeconfig(t *testing.T) {
+	clusterID := uuid.New()
+	badID := uuid.MustParse("00000000-0000-4000-8000-000000000001")
+	goodID := uuid.MustParse("00000000-0000-4000-8000-000000000002")
+	mockDB := &testutil.MockDB{}
+	mockDB.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{joinedCPNode(badID, clusterID), joinedCPNode(goodID, clusterID)}, nil)
+	nodeAgentClient := &agenttest.FakeClient{Kubeconfigs: map[uuid.UUID]string{
+		badID:  strings.Replace(testKubeconfig, "  user: {}\n", "  user:\n    token: abc\n", 1),
+		goodID: testKubeconfig,
+	}}
+	c := newTestController(config.Config{TenantAccessEnabled: true}, mockDB, nil, nodeAgentClient)
+
+	before := tenantKubeconfigRejected(t, metrics.TenantKubeconfigSourceNodeAgent)
+	got, ready, err := c.fetchAdminKubeconfig(context.Background(), db.Cluster{ID: clusterID, Name: "c"})
+	require.NoError(t, err)
+	require.True(t, ready)
+	assert.Equal(t, testKubeconfig, string(got))
+	assert.InDelta(t, before+1, tenantKubeconfigRejected(t, metrics.TenantKubeconfigSourceNodeAgent), 0)
 }
 
 // Each probe must carry its own deadline: the controller-manager passes the
@@ -480,7 +567,7 @@ func TestController_ReconcileOIDC(t *testing.T) {
 	assert.Equal(t, testServer, spireCfg.Clusters["cluster"].Server)
 	require.NotNil(t, spireCfg.AuthInfos["spiffe-user"])
 	require.NotNil(t, spireCfg.AuthInfos["spiffe-user"].Exec)
-	assert.Equal(t, spireExecCommand, spireCfg.AuthInfos["spiffe-user"].Exec.Command)
+	assert.Equal(t, kube.SPIREExecCommand, spireCfg.AuthInfos["spiffe-user"].Exec.Command)
 	assert.Equal(t, spireExecAPIVersion, spireCfg.AuthInfos["spiffe-user"].Exec.APIVersion)
 	var audience, socket string
 	for _, e := range spireCfg.AuthInfos["spiffe-user"].Exec.Env {
@@ -816,9 +903,9 @@ func TestFetchAdminKubeconfigPicksTheSameNodeRegardlessOfRowOrder(t *testing.T) 
 
 	// Every node serves its own admin.conf, as kubeadm issues it.
 	kubeconfigs := map[uuid.UUID]string{
-		first.ID:  "admin-conf-aa",
-		second.ID: "admin-conf-bb",
-		third.ID:  "admin-conf-cc",
+		first.ID:  strings.Replace(testKubeconfig, "203.0.113.20", "203.0.113.170", 1),
+		second.ID: strings.Replace(testKubeconfig, "203.0.113.20", "203.0.113.187", 1),
+		third.ID:  strings.Replace(testKubeconfig, "203.0.113.20", "203.0.113.204", 1),
 	}
 
 	// The same three rows in three different orders, as Postgres may return them.
@@ -840,7 +927,7 @@ func TestFetchAdminKubeconfigPicksTheSameNodeRegardlessOfRowOrder(t *testing.T) 
 		require.True(t, ready)
 
 		// Lowest node ID wins every time, so the published bytes are stable.
-		assert.Equal(t, "admin-conf-aa", string(got))
+		assert.Equal(t, kubeconfigs[first.ID], string(got))
 		assert.Equal(t, []uuid.UUID{first.ID}, nodeAgentClient.GetKubeconfigCalls)
 	}
 }
@@ -1139,4 +1226,26 @@ func TestPublish_SkipsClusterThatStartsDeletingBeforeTheWrite(t *testing.T) {
 
 	require.NoError(t, c.publish(ctx, cluster, []byte(testKubeconfig)))
 	assertSecret(t, ctx, k8sClient, cluster, false)
+}
+
+// tenantKubeconfigRejected reads nvke_controller_tenant_kubeconfig_rejected_total
+// for source from the default registry.
+func tenantKubeconfigRejected(t *testing.T, source string) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() != "nvke_controller_tenant_kubeconfig_rejected_total" {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			for _, label := range metric.GetLabel() {
+				if label.GetName() == "source" && label.GetValue() == source {
+					return metric.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	t.Fatalf("no %s series for source %q", "nvke_controller_tenant_kubeconfig_rejected_total", source)
+	return 0
 }

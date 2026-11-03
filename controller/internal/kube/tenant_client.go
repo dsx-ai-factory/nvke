@@ -15,7 +15,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -23,6 +22,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/capi"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/metrics"
 )
 
 const (
@@ -39,8 +39,10 @@ type TenantClientProvider interface {
 	ClientForCluster(ctx context.Context, cluster *clusterv1.Cluster) (client.Client, error)
 }
 
-func NewClientFromKubeconfig(kubeconfigBytes []byte, addToSchemes ...AddToSchemeFunc) (client.Client, error) {
-	restConfig, err := NewRESTConfigFromKubeconfig(kubeconfigBytes)
+// NewClientFromKubeconfig builds a client from a published tenant kubeconfig
+// Secret for clusterName. See NewRESTConfigFromKubeconfig for what it accepts.
+func NewClientFromKubeconfig(kubeconfigBytes []byte, clusterName string, addToSchemes ...AddToSchemeFunc) (client.Client, error) {
+	restConfig, err := NewRESTConfigFromKubeconfig(kubeconfigBytes, clusterName)
 	if err != nil {
 		return nil, err
 	}
@@ -51,15 +53,6 @@ func NewClientFromKubeconfig(kubeconfigBytes []byte, addToSchemes ...AddToScheme
 	}
 
 	return tenantClient, nil
-}
-
-func NewRESTConfigFromKubeconfig(kubeconfigBytes []byte) (*rest.Config, error) {
-	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse kubeconfig: %w", err)
-	}
-
-	return restConfig, nil
 }
 
 func NewClientFromRESTConfig(restConfig *rest.Config, addToSchemes ...AddToSchemeFunc) (client.Client, error) {
@@ -209,8 +202,11 @@ func (p *DBClusterTenantClientProvider) clientFromSecretVersion(
 		return cached.client, nil
 	}
 
-	tenantClient, err := NewClientFromKubeconfig(kubeconfigBytes)
+	tenantClient, err := NewClientFromKubeconfig(kubeconfigBytes, cluster.Name)
 	if err != nil {
+		if errors.Is(err, ErrInvalidKubeconfig) {
+			metrics.RecordTenantKubeconfigRejected(metrics.TenantKubeconfigSourceSecret)
+		}
 		return nil, err
 	}
 
@@ -248,8 +244,9 @@ func (p *DBClusterTenantClientProvider) clientFromControlPlaneNodeAgent(ctx cont
 			continue
 		}
 
-		restConfig, err := NewRESTConfigFromKubeconfig([]byte(kubeconfig))
+		restConfig, err := NewRESTConfigFromAdminKubeconfig([]byte(kubeconfig))
 		if err != nil {
+			metrics.RecordTenantKubeconfigRejected(metrics.TenantKubeconfigSourceNodeAgent)
 			errs = append(errs, fmt.Errorf("node %s: %w", node.Name, err))
 			continue
 		}
