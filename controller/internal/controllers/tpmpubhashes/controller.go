@@ -75,7 +75,7 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		Complete(c)
 }
 
-// Reconcile the tpm-pubhashes configmap, for each Machine-owned ClusterStaticEntry:
+// Reconcile the tpm-pubhashes configmap, for each Machine-owned or bootstrap-owned ClusterStaticEntry:
 // - If the ClusterStaticEntry has a parentID that is a tpm spire agent path (/spire/agent/tpm/), add the pubhash to the configmap.
 func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	logger := c.logger.With("requestNamespace", req.Namespace, "requestName", req.Name)
@@ -88,32 +88,34 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 }
 
 func (c *Controller) reconcileTpmPubhashesCm(ctx context.Context) error {
-	// List ClusterStaticEntries managed by the controller's machine-spire-entry-controller.
+	// List ClusterStaticEntries that authorize SPIRE agents backed by Machine TPMs.
 	//
 	// A label selector matches one key, so both domains need their own List:
 	// an entry applied before the nvke.nvidia.com rename carries the legacy
 	// label until its Machine is reconciled again, and missing it here would
 	// drop that node's pubhash out of the ConfigMap and break its attestation.
 	desiredPubHashes := make(map[string]struct{})
-	for _, managedBy := range keys.ManagedBy.All() {
-		clusterStaticEntries := &spirev1alpha1.ClusterStaticEntryList{}
-		if err := c.k8sClient.List(ctx, clusterStaticEntries, client.MatchingLabels{
-			managedBy: constants.FieldManagerMachineSpireEntry,
-		}); err != nil {
-			return fmt.Errorf("failed to list cluster static entries by %s: %w", managedBy, err)
-		}
-
-		for _, clusterStaticEntry := range clusterStaticEntries.Items {
-			// Only process entries for our SPIRE installation.
-			if clusterStaticEntry.Spec.ClassName != c.cfg.SpireClassName {
-				continue
+	for _, manager := range []string{constants.FieldManagerMachineSpireEntry, constants.FieldManagerSpireNicoTPMBootstrapIdentity} {
+		for _, managedBy := range keys.ManagedBy.All() {
+			clusterStaticEntries := &spirev1alpha1.ClusterStaticEntryList{}
+			if err := c.k8sClient.List(ctx, clusterStaticEntries, client.MatchingLabels{
+				managedBy: manager,
+			}); err != nil {
+				return fmt.Errorf("failed to list cluster static entries by %s: %w", managedBy, err)
 			}
 
-			pubHash := extractTPMPubHash(clusterStaticEntry.Spec.ParentID)
-			if pubHash == "" {
-				continue
+			for _, clusterStaticEntry := range clusterStaticEntries.Items {
+				// Only process entries for our SPIRE installation.
+				if clusterStaticEntry.Spec.ClassName != c.cfg.SpireClassName {
+					continue
+				}
+
+				pubHash := extractTPMPubHash(clusterStaticEntry.Spec.ParentID)
+				if pubHash == "" {
+					continue
+				}
+				desiredPubHashes[pubHash] = struct{}{}
 			}
-			desiredPubHashes[pubHash] = struct{}{}
 		}
 	}
 

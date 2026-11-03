@@ -19,6 +19,7 @@ import (
 	"go.temporal.io/sdk/worker"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/sync/errgroup"
+	kubeadmv1 "sigs.k8s.io/cluster-api/api/bootstrap/kubeadm/v1beta2"
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
@@ -225,6 +226,7 @@ func main() {
 			SecretCacheNamespace:    cfg.ManagementNamespaceOrDefault(),
 		},
 		spirev1alpha1.AddToScheme,
+		kubeadmv1.AddToScheme,
 		nicov1.AddToScheme,
 		enginev1.AddToScheme,
 	)
@@ -418,6 +420,21 @@ func main() {
 		if !kubeadmConfigCRDInstalled {
 			logger.Error("Required KubeadmConfig CRD is not installed while bootstrap controllers are enabled; install Cluster API before starting the NVKE controller")
 			os.Exit(1)
+		}
+
+		if cfg.SpiffeEnabled && cfg.NicoControllersEnabled {
+			spireNicoTPMBootstrapIdentityController := bootstrap.NewSpireNicoTPMBootstrapIdentityController(
+				cfg,
+				k8sControllerManager.GetClient(),
+				logger.With("logger", "spire-nico-tpm-bootstrap-identity-controller"),
+				trustDomain,
+			)
+			if err := spireNicoTPMBootstrapIdentityController.SetupWithManager(k8sControllerManager); err != nil {
+				logger.Error("Failed to set up SPIRE NICo TPM bootstrap identity controller", "error", err)
+				os.Exit(1)
+			}
+		} else {
+			logger.Info("SPIRE NICo TPM bootstrap identity controller disabled by configuration")
 		}
 	} else {
 		logger.Info("Bootstrap controllers disabled by configuration")

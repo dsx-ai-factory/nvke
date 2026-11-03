@@ -84,14 +84,17 @@ const (
 	LabelValueKubeconfigModeSPIRE = "spire"
 	LabelValueKubeconfigModeAdmin = "admin"
 
+	LabelValueBootstrapIdentityResolverSpireNicoTPM = "spire-nico-tpm"
+
 	// NVKE Field Managers for server-side apply. This controller's own three
 	// (config.Config.FieldManagerName, FieldManagerRebootMachineName,
 	// FieldManagerMachineHealthIssueName) are per-install configurable, not
 	// constants here. The NICo manager retains its existing identity when the
 	// controller starts managing DSX IMDS entries too, avoiding SSA ownership churn.
-	FieldManagerNicoSpiffe        = "nico-tpm-spiffe-controller"
-	FieldManagerLaunchLayerSpiffe = "launchlayer-spiffe-controller"
-	FieldManagerMachineSpireEntry = "machine-spire-entry-controller"
+	FieldManagerNicoSpiffe                    = "nico-tpm-spiffe-controller"
+	FieldManagerLaunchLayerSpiffe             = "launchlayer-spiffe-controller"
+	FieldManagerMachineSpireEntry             = "machine-spire-entry-controller"
+	FieldManagerSpireNicoTPMBootstrapIdentity = "spire-nico-tpm-bootstrap-identity-controller"
 
 	LabelValueTerminateStatusInProgress = "InProgress"
 	LabelValueTerminateStatusNotAllowed = "NotAllowed"
@@ -102,6 +105,7 @@ const (
 	TPMSpireAgentPath                = "/spire/agent/tpm/"
 	DSXIMDSSpireAgentPath            = "/spire/agent/dsx_imds/tenant/"
 	JoinTokenAlternateSpireAgentPath = "/join-token-spire-agent/host-id/" //nolint:gosec // This is a SPIFFE path prefix, not a credential.
+	BootstrapSpiffeIDPathPrefix      = "/bootstrap/"
 
 	CAPISpireAgentConfigPath = "/etc/spire-agent/agent.conf"
 	CAPISpireTrustBundlePath = "/etc/spire-agent/initial-trust-bundle.pem"

@@ -67,6 +67,19 @@ func TestController_ReconcileRendersLegacyLabelledClusterStaticEntries(t *testin
 	})
 }
 
+func TestController_ReconcileRendersBootstrapClusterStaticEntries(t *testing.T) {
+	controller := newControllerForTest(t,
+		newTPMClusterStaticEntryForTest("bootstrap-a", constants.FieldManagerSpireNicoTPMBootstrapIdentity, "hash-bootstrap"),
+	)
+
+	_, err := controller.Reconcile(context.Background(), ctrl.Request{})
+	require.NoError(t, err)
+
+	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
+		"hash-bootstrap": keys.ManagedBy.String() + "=" + constants.FieldManagerMachineSpireEntry,
+	})
+}
+
 func TestController_ReconcileFiltersClusterStaticEntries(t *testing.T) {
 	controller := newControllerForTest(t,
 		newTPMClusterStaticEntryForTest("host-valid", constants.FieldManagerMachineSpireEntry, "hash-valid"),
