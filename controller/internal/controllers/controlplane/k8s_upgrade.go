@@ -23,6 +23,12 @@ import (
 
 const (
 	kubeadmConfigMapUpgradedMessagePrefix = "kubeadm configmap upgraded to "
+
+	// upgradeWaitRequeueInterval is how often a control-plane upgrade that is
+	// waiting on a workflow checks back. Workflow completion writes nothing to
+	// the DB, so without this the next look is the 15-minute DB source resync.
+	// Node recycling needs no requeue: node and cluster row updates enqueue it.
+	upgradeWaitRequeueInterval = 15 * time.Second
 )
 
 // isWorkflowNotFoundError checks if an error is a Temporal "workflow not found" error.
@@ -82,6 +88,7 @@ func (r *reconciler) reconcileUpgradeInProgress(
 	}
 	if !addonsComplete {
 		logger.Info("Add-ons upgrade workflow is in progress - waiting for completion")
+		r.requeueAfter(upgradeWaitRequeueInterval)
 		return nil
 	}
 	logger.Info("Add-ons upgrade workflow completed successfully", "kubernetesVersion", cluster.KubernetesVersion)
@@ -111,6 +118,7 @@ func (r *reconciler) startK8sUpgrade(
 	}
 	if !configMapComplete {
 		logger.Info("K8s upgrade workflow in progress - will check status on next reconcile")
+		r.requeueAfter(upgradeWaitRequeueInterval)
 		return nil
 	}
 	logger.Info("Updated kubeadm ConfigMap", "kubernetesVersion", cluster.KubernetesVersion)

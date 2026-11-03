@@ -44,11 +44,9 @@ SITE_PROVISIONED_VERSION ?= v0.1.0-rc.1
 # NVCR at nvcr.io/<NGC org>. NVCR needs a docker login with an NGC key, and the
 # username is the literal $oauthtoken.
 #
-# The controller is nvke-controller on both registries. GHCR also holds
-# releases from before the rename under nke-controller; qualify-e2e.yml probes
-# for the tag and passes SITE_NVKE_CONTROLLER_REPOSITORY, and a local run of
-# one of those tags sets it by hand. capi-provisioned carries the same name on
-# both.
+# The controller is nvke-controller on both registries; GHCR holds no images
+# under the earlier nke-controller name. capi-provisioned carries the same
+# name on both.
 #
 # The controller name also has to match what qualify-e2e.yml writes into the
 # e2e config as site.images.controller.repository. The node's containerd knows

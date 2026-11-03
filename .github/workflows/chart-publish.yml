@@ -10,10 +10,9 @@ name: Chart Publish
 #   ghcr.io/dsx-ai-factory/nvke/charts/nvke-controller:0.1.0-rc.1   <- release candidate
 #
 # The last path segment is the chart's `name:`, not anything set here.
-# Through controller/v0.1.1-rc.1 the chart was named cloud-workflow-engine,
-# and from there through the last release before this rename it was named
-# controller; both stay published at their old paths, so anything reaching
-# for an older version wants the old path.
+# Earlier releases published the chart as cloud-workflow-engine, controller
+# and nke-controller. None of those GHCR packages exists any more, so
+# charts/nvke-controller holds only controller/v0.3.0-rc.1 and later.
 #
 # Release tags only. The NVCR mirror in chart-publish-nvcr.yml is the one that
 # also runs on main.
@@ -84,7 +83,8 @@ jobs:
       github.repository_id == '1323115536' &&
       startsWith(github.ref, 'refs/tags/controller/v') &&
       contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',controller,')
-    timeout-minutes: 10
+    # Includes up to 30 minutes waiting for image-nvcr.yml to promote the image.
+    timeout-minutes: 40
     permissions:
       contents: read
       packages: write
@@ -145,15 +145,28 @@ jobs:
           set -euo pipefail
           image="ghcr.io/dsx-ai-factory/nvke/nvke-controller"
 
-          # A manual run from a tag cut before the rename names an image that
-          # GHCR still holds as nke-controller. Probed, not guessed from the
-          # tag, because the rename boundary is not a version.
-          if ! docker manifest inspect "${image}:${APP_VERSION}" >/dev/null 2>&1; then
-            legacy="ghcr.io/dsx-ai-factory/nvke/nke-controller"
-            docker manifest inspect "${legacy}:${APP_VERSION}" >/dev/null 2>&1 \
-              || { echo "::error::${APP_VERSION} is on GHCR as neither nvke-controller nor nke-controller"; exit 1; }
-            image="${legacy}"
-          fi
+          # The same tag push starts image-nvcr.yml, whose Promote to GHCR job
+          # creates this image several minutes after this job starts. Wait for
+          # it rather than failing the race. Only a missing manifest or a hung
+          # probe means "not yet"; auth, rate-limit and other errors fail now.
+          deadline=$((SECONDS + 30 * 60))
+          while :; do
+            rc=0
+            out="$(timeout 60 docker manifest inspect "${image}:${APP_VERSION}" 2>&1)" || rc=$?
+            if (( rc == 0 )); then
+              break
+            fi
+            if (( rc != 124 )) && ! grep -qiE 'manifest unknown|no such manifest' <<<"${out}"; then
+              echo "::error::probing ${image}:${APP_VERSION} failed: ${out}"
+              exit 1
+            fi
+            if (( SECONDS >= deadline )); then
+              echo "::error::${image}:${APP_VERSION} did not appear on GHCR within 30 minutes; check image-nvcr.yml's Promote to GHCR job"
+              exit 1
+            fi
+            echo "waiting for ${image}:${APP_VERSION}"
+            sleep 30
+          done
 
           # Anchored at exactly two spaces so this hits image.repository and
           # NOT profiles.image.repository, which is nested one level deeper and

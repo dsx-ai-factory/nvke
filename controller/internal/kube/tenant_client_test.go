@@ -61,14 +61,33 @@ func TestDBClusterTenantClientProviderErrorsWhenCAPIClusterHasNoRow(t *testing.T
 	require.ErrorIs(t, err, db.ErrNotFound)
 }
 
+func TestDBClusterTenantClientProviderRejectsCAPIClusterOutsideManagementNamespace(t *testing.T) {
+	database := &testutil.MockDB{}
+	provider := NewDBClusterTenantClientProvider(database, nil, nil, true, constants.LegacyManagementNamespace)
+
+	_, err := provider.ClientForCluster(context.Background(), &clusterv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "tenant-a", Namespace: "other-namespace"},
+	})
+	require.EqualError(
+		t,
+		err,
+		`CAPI cluster other-namespace/tenant-a is outside configured management namespace "nke-system"`,
+	)
+	database.AssertNotCalled(t, "ListClusters", mock.Anything, mock.Anything)
+}
+
 func TestNewRESTConfigFromKubeconfigPreservesExecProvider(t *testing.T) {
-	restConfig, err := NewRESTConfigFromKubeconfig(newTenantClientProviderExecKubeconfig())
+	restConfig, err := NewRESTConfigFromKubeconfig(newTenantClientProviderExecKubeconfig(), "tenant-a")
 	require.NoError(t, err)
 	require.Equal(t, "/opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth", restConfig.ExecProvider.Command)
 	require.Equal(t, []clientcmdapi.ExecEnvVar{
 		{Name: "SPIFFE_ENDPOINT_SOCKET", Value: "unix:///spiffe-workload-api/spire-agent.sock"},
 		{Name: "SPIFFE_JWT_AUDIENCE", Value: "tenant-a"},
 	}, restConfig.ExecProvider.Env)
+	require.Equal(t, clientcmdapi.PluginPolicy{
+		PolicyType: clientcmdapi.PluginPolicyAllowlist,
+		Allowlist:  []clientcmdapi.AllowlistEntry{{Command: SPIREExecCommand}},
+	}, restConfig.ExecProvider.PluginPolicy)
 }
 
 func TestDBClusterTenantClientProviderReturnsNotReadyForMissingPublishedSecret(t *testing.T) {
@@ -222,7 +241,7 @@ func TestDBClusterTenantClientProviderKeepsNodeAgentFallbackWhenTenantAccessDisa
 func TestDBClusterTenantClientProviderCAPIUsesPublishedSecret(t *testing.T) {
 	cluster := db.Cluster{
 		ID:              uuid.New(),
-		Name:            "test-cluster",
+		Name:            "tenant-a",
 		OIDCAuthEnabled: true,
 		ProviderType:    db.ProviderTypeCAPI,
 		Capi: &db.CAPIClusterProvider{
@@ -274,12 +293,17 @@ func newTenantClientProviderTestScheme(t *testing.T) *runtime.Scheme {
 	return scheme
 }
 
+// testCAData is a self-signed test CA certificate, base64-encoded as a
+// kubeconfig's certificate-authority-data.
+const testCAData = "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJpVENDQVMrZ0F3SUJBZ0lVYndXbGNmaTdzSFRKUGNUVGo1RXJMWTNZM1FBd0NnWUlLb1pJemowRUF3SXcKR1RFWE1CVUdBMVVFQXd3T2RHVnVZVzUwTFhSbGMzUXRZMkV3SUJjTk1qWXhNVEF6TVRRMU5ETTNXaGdQTWpFeQpOakV3TVRBeE5EVTBNemRhTUJreEZ6QVZCZ05WQkFNTURuUmxibUZ1ZEMxMFpYTjBMV05oTUZrd0V3WUhLb1pJCnpqMENBUVlJS29aSXpqMERBUWNEUWdBRUp0N2p5SzcwdjVwOURFWmFuNmtTSjJzV3diT2VwOVY3cDNFb0F5OUQKdktqdmtaYUVLSnlQemhCUUJDMWpvSjhHOTNvYVE2eGd6eFJkaDcxUUg3WW1IcU5UTUZFd0hRWURWUjBPQkJZRQpGRlFiRU84c0xzYURDV2N3c3Z6RW5yaEZpQW15TUI4R0ExVWRJd1FZTUJhQUZGUWJFTzhzTHNhRENXY3dzdnpFCm5yaEZpQW15TUE4R0ExVWRFd0VCL3dRRk1BTUJBZjh3Q2dZSUtvWkl6ajBFQXdJRFNBQXdSUUlnRDk0QlpnUU8KTkNBMitkNEU2MTlOaGtUMXl6R0ZuOEhVOU00Y3VoWFYzUGtDSVFEZE8wUCttNmxmc0V1OWtTNzdqMEozVy9HOApaMnZYbFpLNllGS0Q1Y0RpOXc9PQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg=="
+
 func newTenantClientProviderExecKubeconfig() []byte {
 	return []byte(`apiVersion: v1
 kind: Config
 clusters:
 - cluster:
     server: https://tenant.example:6443
+    certificate-authority-data: ` + testCAData + `
   name: tenant
 contexts:
 - context:

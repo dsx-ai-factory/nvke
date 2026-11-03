@@ -72,9 +72,11 @@ token:nke-controller-config
 # and the release fixtures shaped like it. #1554 does not move it.
 token:nke-controller-chart
 
-# The image under its old name: the GHCR repository of releases cut before the
-# rename (docs/artifact-publication.md) and the local build tags the bootstrap
-# and hack/local-site.sh side-load.
+# The image under its old name: the record that GHCR no longer holds it
+# (docs/artifact-publication.md), the local build tags the bootstrap and
+# hack/local-site.sh side-load, and the NVCR image's release-manifest key in
+# image-nvcr.yml. That key is read outside this repository, so it does not
+# move, for the same reason nke-controller-chart above does not.
 token:(^|[/:-])nke-controller($|[:@.])
 
 # The name a site installed from the greenfield stacks before this rename

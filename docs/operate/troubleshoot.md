@@ -346,8 +346,8 @@ The install stops at the component that failed. Fix the cause and run the same c
 
 ### The cluster stays in Deleting
 
-- **Symptom:** The cluster stays `Deleting`, and its `deleting` condition message starts with `Workflow failed:`.
-- **Cause:** Teardown failed.
+- **Symptom:** The cluster stays `Deleting`. Its `deleting` condition message starts with `Workflow failed:` or with `Waiting for control-plane nodes to be deleted`.
+- **Cause:** For `Workflow failed:`, the teardown failed. For `Waiting for control-plane nodes to be deleted`, the teardown waits for a control-plane node that NVKE does not remove. One cause is a control-plane node whose drain waited when the cluster deletion started, as described in [Create a workload cluster](../workload-clusters/create.md#delete-a-workload-cluster).
 - **Fix:** [Report the problem](#get-help) with the cluster's YAML, the management-plane log and the Cluster API objects. Do not delete the cluster's objects in `nvke-system` by hand.
 
 ## Node pools and nodes
@@ -357,6 +357,19 @@ The install stops at the component that failed. Fix the cause and run the same c
 - **Symptom:** A provisioning worker node is replaced, and `nvke_controller_node_provisioning_giveups_total` increases.
 - **Cause:** The node provisioned for longer than the timeout, 2 hours by default.
 - **Fix:** Fix what the replacement node's step message waits on. To keep a stuck node for diagnosis, set `provisioningMonitorDisabled` on the pool, as described in [Manage node pools](../workload-clusters/node-pools.md#control-automatic-node-replacement).
+
+### A control-plane node removal does not complete
+
+- **Symptom:** The `deleting` condition of a control-plane node stays `True`, and its message starts with `Draining Kubernetes node`. Between attempts, the message gives the last error. For example, the error gives the pods that NVKE waits for and the PodDisruptionBudget that refuses an eviction. While NVKE removes a node, it does not update the `kubernetesReady`, `kubernetesUnschedulable` and `nodeAgentReady` conditions of the node. To see the message and the ID of the node, list the control-plane nodes:
+
+  ```bash
+  curl -s "http://<MANAGEMENT_ADDRESS>:30080/api/nodes?clusterName=<WORKLOAD_CLUSTER>" \
+    | jq -r '.nodes[] | select(.controlPlane) | [.id, .name, .conditions.deleting.message] | @tsv'
+  ```
+
+  `<MANAGEMENT_ADDRESS>` and `<WORKLOAD_CLUSTER>` are as in [Cluster and node state](#cluster-and-node-state).
+- **Cause:** In this removal, NVKE does not force-delete the pods of the node. It tries the drain again with no time limit, as described in [Create a workload cluster](../workload-clusters/create.md#control-plane-node-removal).
+- **Fix:** Remove the cause that the error gives.
 
 ## Workload cluster access
 

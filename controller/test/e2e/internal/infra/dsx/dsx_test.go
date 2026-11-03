@@ -445,3 +445,89 @@ func TestProvisionNodePlacesOnAnInstanceTypeWhenNoMachineIsDeclared(t *testing.T
 		t.Error("the node should still carry the architecture, which chooses its images")
 	}
 }
+
+// terminatingNico serves GetInstance per id, so one instance can be
+// Terminating while another is not. The shared fakeNico serves a single
+// instance's statuses in order, which cannot express that.
+type terminatingNico struct {
+	t *testing.T
+
+	mu     sync.Mutex
+	status map[string]string // "" is 404, the datahall having released it
+}
+
+func (f *terminatingNico) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.URL.Path == "/token" {
+		_, _ = w.Write([]byte(`{"access_token":"minted"}`))
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/v2/org/"+testOrg+"/nico/instance/")
+	f.mu.Lock()
+	s, ok := f.status[id]
+	f.mu.Unlock()
+	if r.Method != http.MethodGet || !ok {
+		f.t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		http.NotFound(w, r)
+		return
+	}
+	if s == "" {
+		http.NotFound(w, r)
+		return
+	}
+	_, _ = w.Write([]byte(`{"id":"` + id + `","status":"` + s + `"}`))
+}
+
+func (f *terminatingNico) set(id, status string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.status[id] = status
+}
+
+func TestWaitTerminating(t *testing.T) {
+	nico := &terminatingNico{t: t, status: map[string]string{
+		"cp-uuid":     "Ready",
+		"worker-uuid": "Terminating",
+	}}
+	// Built here rather than through newTestProvider, which takes the shared
+	// fakeNico.
+	srv := httptest.NewServer(nico)
+	t.Cleanup(srv.Close)
+	t.Setenv(testClientIDVar, "nvssa-prd-test")
+	t.Setenv(testClientSecretVar, "ssap-test")
+	provider, err := New(Options{
+		Env:      testEnv(srv.URL),
+		SiteName: testDatahall,
+		Issuer:   srv.URL,
+		Images: func(_, arch string) (string, string, error) {
+			return "https://cdn.example/imager-" + arch + ".efi", "https://cdn.example/node-" + arch + ".qcow2", nil
+		},
+		Dialer:       &fakeDialer{},
+		Node:         nvke.NodeInputs{KubernetesVersion: "1.36.3", CNIVersion: "1.4.0"},
+		Tools:        provision.HostTools{NerdctlVersion: "2.3.5", KindVersion: "v0.32.0", ClusterctlVersion: "v1.12.3"},
+		PollInterval: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Repeated deliberately: the wait is by id, and a duplicate must not make
+	// it poll the same instance twice or name it twice.
+	ids := []string{"cp-uuid", "worker-uuid", "cp-uuid"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err = provider.WaitTerminating(ctx, ids)
+	if err == nil {
+		t.Fatal("an instance still Ready was accepted as terminating")
+	}
+	if !strings.Contains(err.Error(), "cp-uuid (last Ready)") || strings.Contains(err.Error(), "worker-uuid") {
+		t.Errorf("the error should name only the Ready instance and its status:\n%v", err)
+	}
+
+	// Gone is as good as Terminating: the datahall has already released it.
+	nico.set("cp-uuid", "")
+	if err := provider.WaitTerminating(context.Background(), ids); err != nil {
+		t.Fatalf("one Terminating and one gone: %v", err)
+	}
+}
