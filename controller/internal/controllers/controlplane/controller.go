@@ -128,9 +128,9 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 }
 
 // mergeRequeue folds a control-plane check-back into result, keeping the
-// sooner of the two non-zero RequeueAfter values.
+// sooner of the two positive RequeueAfter values.
 func mergeRequeue(result reconcile.Result, requeue time.Duration) reconcile.Result {
-	if requeue > 0 && (result.RequeueAfter == 0 || requeue < result.RequeueAfter) {
+	if requeue > 0 && (result.RequeueAfter <= 0 || requeue < result.RequeueAfter) {
 		result.RequeueAfter = requeue
 	}
 	return result
