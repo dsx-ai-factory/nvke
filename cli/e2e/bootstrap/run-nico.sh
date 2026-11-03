@@ -122,6 +122,11 @@ BOOTSTRAP_GO_TEST_LOG="${SCRIPT_DIR}/.bootstrap-nico-go-test.log"
 SITE_STACK_NAMESPACES="local-path-storage,postgres,temporal,spire-server,capi-system,capi-kubeadm-bootstrap-system"
 SITE_STACK_NAMESPACES+=",capi-kubeadm-control-plane-system,capnico-system,${CONTROLLER_NAMESPACE}"
 GO="${GO:-go}"
+# Where the bootstrap is killed, as a crash would stop it, and continued with
+# --resume: once the site cluster's control plane joined, and as the pivot
+# starts moving the database. Stage 7 resumes the finished bootstrap too. An
+# empty value runs the bootstrap through without a stop.
+INTERRUPT_AT="${NVKECTL_E2E_INTERRUPT_AT-all control plane nodes joined,step=move-database}"
 # The lane runs `bootstrap site` through the Go tests in bootstraptest. Those
 # tests carry two marks: the e2e_bootstrap build tag, which keeps them out of
 # `make test` by leaving them unbuilt, and the TestE2E_ name prefix, which is
@@ -616,6 +621,7 @@ setsid env \
   NVKECTL_E2E_KEEP_BOOTSTRAP_CLUSTER=1 \
   NVKECTL_E2E_SITE_STACK_NAMESPACES="${SITE_STACK_NAMESPACES}" \
   NVKECTL_E2E_PIVOT_CLUSTER="${E2E_CLUSTER_NAME}" \
+  NVKECTL_E2E_INTERRUPT_AT="${INTERRUPT_AT}" \
   "${GO}" test -C "${CLI_DIR}" -tags e2e_bootstrap -timeout 0 -count=1 -v \
   ./e2e/bootstrap/bootstraptest/ -run '^TestE2E_' \
   >"${BOOTSTRAP_GO_TEST_LOG}" 2>&1 &
@@ -878,7 +884,7 @@ sim_node_count() { nerdctl ps -aq --filter "label=${SIM_LABEL}" | wc -l | tr -d 
 nodes_before="$(sim_node_count)"
 rerun_args=(bootstrap site -f "${RENDERED_SITESPEC}" --timeout 2m
   --kubeconfig-out "${SIM_STATE_DIR}/rerun.kubeconfig" --encryption-key-out "${SIM_STATE_DIR}/rerun-key.json")
-expect_refusal "a re-run with the first bootstrap cluster still there" "do not re-run" "${NVKECTL}" "${rerun_args[@]}"
+expect_refusal "a re-run with the first bootstrap cluster still there" "--resume" "${NVKECTL}" "${rerun_args[@]}"
 # A regression that stops refusing would create this cluster, and the assertion
 # below would then fail the run before anything else removed it.
 RERUN_KIND_CLUSTER=nvkectl-e2e-rerun
@@ -896,3 +902,15 @@ fi
 [ "$(sim_node_count)" = "${nodes_before}" ] ||
   fail "the refused re-run changed the number of NICo machines: ${nodes_before} before, $(sim_node_count) after"
 log "PASS: a second bootstrap is refused, and allocates no machines"
+
+# Resuming a finished bootstrap finds the site in charge, only checks it, and
+# allocates nothing. It writes to the first run's outputs, which it reads back.
+resume_log="${SIM_STATE_DIR}/resume-finished.log"
+"${NVKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" --resume --keep-bootstrap-cluster --timeout 5m \
+  --kubeconfig-out "${TENANT_KUBECONFIG}" --encryption-key-out "${ETCD_KEY_FILE}" >"${resume_log}" 2>&1 ||
+  fail "resuming the finished bootstrap failed" "$(tail -n 30 "${resume_log}")"
+grep -q "the site controller already manages the cluster" "${resume_log}" ||
+  fail "resuming the finished bootstrap did not find the site in charge" "$(tail -n 30 "${resume_log}")"
+[ "$(sim_node_count)" = "${nodes_before}" ] ||
+  fail "resuming the finished bootstrap changed the number of NICo machines: ${nodes_before} before, $(sim_node_count) after"
+log "PASS: resuming the finished bootstrap only checks the site, and allocates no machines"

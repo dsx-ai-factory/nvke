@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -36,7 +37,22 @@ const (
 	EnvDisableMTLS = "NVKECTL_E2E_DISABLE_MTLS"
 	// EnvVerbose passes -v, so a successful run writes its diagnostics bundle.
 	EnvVerbose = "NVKECTL_E2E_VERBOSE"
+	// EnvInterruptAt is a comma-separated list of log substrings. The run is
+	// killed as each first appears and continued with --resume; see
+	// StartInterrupted.
+	EnvInterruptAt = "NVKECTL_E2E_INTERRUPT_AT"
 )
+
+// InterruptMarkersFromEnv returns the markers EnvInterruptAt lists.
+func InterruptMarkersFromEnv() []string {
+	var markers []string
+	for _, m := range strings.Split(os.Getenv(EnvInterruptAt), ",") {
+		if m = strings.TrimSpace(m); m != "" {
+			markers = append(markers, m)
+		}
+	}
+	return markers
+}
 
 // BootstrapOptionsFromEnv reads a run from the environment, resolving the
 // nvkectl binary under cliDir. It reports an error when a required variable is

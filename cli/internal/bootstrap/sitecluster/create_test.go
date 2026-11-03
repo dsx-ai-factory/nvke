@@ -43,6 +43,9 @@ type fakeClusterAPI struct {
 	nodeStates [][]api.Node
 	listErrs   []error
 	lists      int
+
+	// listed is what ListClusters returns.
+	listed []api.Cluster
 }
 
 func (f *fakeClusterAPI) CreateCluster(
@@ -54,6 +57,10 @@ func (f *fakeClusterAPI) CreateCluster(
 		return nil, f.createErr
 	}
 	return &api.Cluster{Name: req.Name, ID: uuid.New()}, nil
+}
+
+func (f *fakeClusterAPI) ListClusters(_ context.Context, _ *api.ListClustersParams) ([]api.Cluster, error) {
+	return f.listed, nil
 }
 
 func (f *fakeClusterAPI) GetCluster(_ context.Context, _ openapi_types.UUID) (*api.Cluster, error) {
