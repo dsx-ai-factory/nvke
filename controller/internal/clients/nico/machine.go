@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
 	"text/template"
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
@@ -141,7 +142,10 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 			return err
 		}
 		nicoMachine.Spec.Interfaces[0].VPCPrefixID = vpcPrefixID
-		nicoMachine.Annotations = walkAnnotations
+		if nicoMachine.Annotations == nil {
+			nicoMachine.Annotations = map[string]string{}
+		}
+		maps.Copy(nicoMachine.Annotations, walkAnnotations)
 	}
 	if err := deps.K8sClient.Patch(ctx, nicoMachine, client.Apply, client.FieldOwner(deps.FieldManagerName), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply NicoMachine %s: %w", nicoMachine.Name, err)
