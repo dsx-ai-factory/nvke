@@ -503,6 +503,12 @@ func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *inte
 			update.ControlPlaneKubernetesVersion = &desired.ControlPlaneKubernetesVersion
 		}
 		var configUpdate api.UpdateClusterControlPlaneConfig
+		if currentConfig.DesiredCount != desired.ControlPlaneConfig.DesiredCount {
+			configUpdate.DesiredCount = &desired.ControlPlaneConfig.DesiredCount
+		}
+		if currentConfig.SystemReservedMemory != desired.ControlPlaneConfig.SystemReservedMemory {
+			configUpdate.SystemReservedMemory = &desired.ControlPlaneConfig.SystemReservedMemory
+		}
 		if !apiequality.Semantic.DeepEqual(currentConfig.Infra, desired.ControlPlaneConfig.Infra) {
 			configUpdate.Infra = &api.InfraControlPlaneProviderUpdate{
 				BootstrapFiles:     append([]api.CloudInitFile{}, desired.ControlPlaneConfig.Infra.BootstrapFiles...),

@@ -5,6 +5,7 @@ requests:
   path: /api/clusters/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
   update:
     controlPlaneConfig:
+      desiredCount: 1
       infra:
         bootstrapFiles: []
         machineTemplate:
@@ -28,6 +29,7 @@ requests:
                 vpcID: 22222222-2222-4222-8222-222222222222
         preKubeadmCommands: []
       maxSurge: 1
+      systemReservedMemory: 1Gi
     controlPlaneKubernetesVersion: 1.36.1
 - createNodePool:
     clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa

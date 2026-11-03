@@ -291,6 +291,12 @@ func (s *Server) updateCluster(w http.ResponseWriter, r *http.Request) {
 		if cluster.ControlPlaneConfig == nil {
 			cluster.ControlPlaneConfig = &api.ControlPlaneConfig{}
 		}
+		if config.DesiredCount != nil {
+			cluster.ControlPlaneConfig.DesiredCount = *config.DesiredCount
+		}
+		if config.SystemReservedMemory != nil {
+			cluster.ControlPlaneConfig.SystemReservedMemory = *config.SystemReservedMemory
+		}
 		if config.MaxSurge != nil {
 			cluster.ControlPlaneConfig.MaxSurge = config.MaxSurge
 		}
