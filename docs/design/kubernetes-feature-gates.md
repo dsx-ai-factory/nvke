@@ -201,7 +201,7 @@ kubeadm stores this configuration in the cluster's `kube-system/kubeadm-config` 
 
 ### Kubelet
 
-Every node gets a kubelet patch at `/etc/kubernetes/patches/kubeletconfiguration0+merge.yaml`, rendered when the node joins. It gets a `featureGates` map: from the pool's `kubeletFeatureGates`, or the control plane's for a control-plane node. Because the patch is rendered from the database on every join, replacement, scale-out and upgraded nodes all get the current gates.
+Every node gets a kubelet patch at `/etc/kubernetes/patches/kubeletconfiguration0+merge.yaml`, rendered when the node joins. Its `featureGates` map is the pool's `kubeletFeatureGates`, or the control plane's for a control-plane node, merged with the gates NVKE sets on the kubelet for that version (today `imageVolumeKubeletFeatureGates` in `render.go`, which returns `ImageVolume` below 1.36). NVKE's value takes precedence, as in [Validation](#validation). Because the patch is rendered from the database on every join, replacement, scale-out and upgraded nodes all get the current gates.
 
 ## Upgrades
 
