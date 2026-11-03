@@ -162,6 +162,14 @@ func apiNodeFromDB(dbNode *db.Node) api.Node {
 		nodeConditions.ControlPlaneRolloutRequired = &cond
 	}
 
+	// ControlPlanePreferredReplacement is optional — only include when the node has
+	// a meaningful state (a control-plane rebalance surge).
+	if dbNode.Conditions.ControlPlanePreferredReplacement.Status != "" &&
+		dbNode.Conditions.ControlPlanePreferredReplacement.Status != db.ConditionStatusUnknown {
+		cond := apiConditionFromDB(dbNode.Conditions.ControlPlanePreferredReplacement)
+		nodeConditions.ControlPlanePreferredReplacement = &cond
+	}
+
 	return api.Node{
 		ID:           dbNode.ID,
 		NodePoolID:   dbNode.NodePoolID,

@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/google/uuid"
 	spirev1alpha1 "github.com/spiffe/spire-controller-manager/api/v1alpha1"
 	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -20,7 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
@@ -29,15 +27,16 @@ func TestMachineSpireEntryControllerReconcileCreatesClusterStaticEntry(t *testin
 	const nodeID = "45f59791-87df-4e85-9430-e565166ad020"
 
 	tests := map[string]struct {
-		tlsJWT       bool
-		wantSpiffeID string
+		agentConnection string
+		wantSpiffeID    string
 	}{
 		"legacy SPIFFE node keeps host path": {
-			wantSpiffeID: "spiffe://example.org/host/" + nodeID,
+			agentConnection: "spiffe",
+			wantSpiffeID:    "spiffe://example.org/host/" + nodeID,
 		},
 		"TLS JWT node uses canonical DSX exchange path": {
-			tlsJWT:       true,
-			wantSpiffeID: "spiffe://example.org/tenant/nke/service/node-agent/bm/" + nodeID,
+			agentConnection: "spiffe-jwt",
+			wantSpiffeID:    "spiffe://example.org/tenant/nke/service/node-agent/bm/" + nodeID,
 		},
 	}
 	for name, test := range tests {
@@ -54,13 +53,10 @@ func TestMachineSpireEntryControllerReconcileCreatesClusterStaticEntry(t *testin
 					Annotations: map[string]string{
 						keys.MachineHostID.String():                 nodeID,
 						keys.MachineSpireAgentSpiffeIDPath.String(): "/spire/agent/tpm/test-hash",
+						keys.MachineAgentConnection.String():        test.agentConnection,
 					},
 				},
 			}
-			nodes := &machineSpireEntryNodeReaderStub{node: db.Node{
-				ID:                     uuid.MustParse(nodeID),
-				NodeAgentTLSJWTEnabled: test.tlsJWT,
-			}}
 			controller := &MachineSpireEntryController{
 				cfg: config.Config{
 					SpireClassName: "spire",
@@ -70,7 +66,6 @@ func TestMachineSpireEntryControllerReconcileCreatesClusterStaticEntry(t *testin
 					}},
 				},
 				k8sClient:   fake.NewClientBuilder().WithScheme(scheme).WithObjects(machine).Build(),
-				nodes:       nodes,
 				logger:      slog.New(slog.DiscardHandler),
 				trustDomain: "example.org",
 			}
@@ -80,8 +75,6 @@ func TestMachineSpireEntryControllerReconcileCreatesClusterStaticEntry(t *testin
 				Name:      "worker-0",
 			}})
 			require.NoError(t, err)
-			require.Equal(t, 1, nodes.calls)
-			require.Equal(t, uuid.MustParse(nodeID), nodes.gotID)
 
 			cse := &spirev1alpha1.ClusterStaticEntry{}
 			err = controller.k8sClient.Get(t.Context(), types.NamespacedName{
@@ -133,15 +126,38 @@ func TestMachineSpireEntryControllerReconcileDeletesClusterStaticEntryWhenMachin
 	require.True(t, apierrors.IsNotFound(err))
 }
 
-type machineSpireEntryNodeReaderStub struct {
-	node  db.Node
-	err   error
-	calls int
-	gotID uuid.UUID
-}
+// TestMachineSpireEntryControllerReconcileWaitsForAgentConnection covers a
+// Machine created before the controller wrote agent-connection: it gets no
+// entry until the backfill sets the annotation, whose update reconciles it.
+func TestMachineSpireEntryControllerReconcileWaitsForAgentConnection(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clusterv1.AddToScheme(scheme))
+	require.NoError(t, spirev1alpha1.AddToScheme(scheme))
 
-func (s *machineSpireEntryNodeReaderStub) GetNode(_ context.Context, id uuid.UUID) (db.Node, error) {
-	s.calls++
-	s.gotID = id
-	return s.node, s.err
+	const nodeID = "45f59791-87df-4e85-9430-e565166ad020"
+	machine := &clusterv1.Machine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "worker-0",
+			Namespace: "cluster-test",
+			Annotations: map[string]string{
+				keys.MachineHostID.String():                 nodeID,
+				keys.MachineSpireAgentSpiffeIDPath.String(): "/spire/agent/tpm/test-hash",
+			},
+		},
+	}
+	controller := &MachineSpireEntryController{
+		k8sClient:   fake.NewClientBuilder().WithScheme(scheme).WithObjects(machine).Build(),
+		logger:      slog.New(slog.DiscardHandler),
+		trustDomain: "example.org",
+	}
+
+	result, err := controller.Reconcile(t.Context(), ctrl.Request{NamespacedName: types.NamespacedName{
+		Namespace: "cluster-test",
+		Name:      "worker-0",
+	}})
+	require.NoError(t, err)
+	require.Equal(t, ctrl.Result{}, result)
+
+	err = controller.k8sClient.Get(t.Context(), types.NamespacedName{Name: machineSpireEntryName(nodeID)}, &spirev1alpha1.ClusterStaticEntry{})
+	require.True(t, apierrors.IsNotFound(err))
 }

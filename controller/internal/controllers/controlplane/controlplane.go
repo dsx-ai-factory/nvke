@@ -121,6 +121,18 @@ func (c *controlPlane) surgeBudget() int {
 		len(c.nodesNeedingRollout(c.clusterControlPlaneConfig.ControlPlaneConfigSpec)))
 }
 
+// rebalanceSurge returns the control plane's in-flight rebalance surge node --
+// the one carrying the rebalance marker -- if any. At most one surge runs at a
+// time, so the first match is returned.
+func (c *controlPlane) rebalanceSurge() (db.Node, bool) {
+	for _, node := range c.nodes {
+		if isRebalanceReplacement(node) {
+			return node, true
+		}
+	}
+	return db.Node{}, false
+}
+
 // countControllerManagedNodes returns the number of control plane nodes owned by
 // the control-plane controller.
 func (c *controlPlane) countControllerManagedNodes() int {
@@ -254,6 +266,14 @@ func isPending(node db.Node) bool {
 // isMarkedForRecycling returns true if the node has a MarkedForRecycling condition that is true.
 func isMarkedForRecycling(node db.Node) bool {
 	return node.Conditions.MarkedForRecycling.Status == db.ConditionStatusTrue
+}
+
+// isRebalanceReplacement returns true if the node is a surge node the rebalance
+// step created to move the control plane onto a more-preferred instance type.
+// Scale-down excludes such a node from both its surplus count and its victim set
+// until it joins, so the surge neither triggers a shrink nor is shed itself.
+func isRebalanceReplacement(node db.Node) bool {
+	return node.Conditions.ControlPlanePreferredReplacement.Status == db.ConditionStatusTrue
 }
 
 // isMarkedForDeletion returns true if the node has a Deleting condition that is true.

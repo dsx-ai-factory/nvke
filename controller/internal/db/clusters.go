@@ -459,6 +459,8 @@ func preserveClusterControlPlaneOverrides(existing Cluster, merged *ControlPlane
 	merged.MaxSurge = existing.ControlPlaneConfig.MaxSurge
 	// AutoScaleDownDisabled is cluster-level only, same as MaxSurge.
 	merged.AutoScaleDownDisabled = existing.ControlPlaneConfig.AutoScaleDownDisabled
+	// NodeRebalanceDisabled is cluster-level only, same as AutoScaleDownDisabled.
+	merged.NodeRebalanceDisabled = existing.ControlPlaneConfig.NodeRebalanceDisabled
 	merged.ProvisioningMonitorDisabled = existing.ControlPlaneConfig.ProvisioningMonitorDisabled
 
 	// The instance type preference an operator set on the cluster outranks the one
@@ -534,6 +536,13 @@ type ClusterConditions struct {
 	CertificateRenewal *CertificateRenewalStatus `json:"certificateRenewal,omitempty"`
 	EtcdKeyRotation    *EtcdKeyRotationStatus    `json:"etcdKeyRotation,omitempty"`
 	CredentialCSRs     *CredentialCSRObservation `json:"credentialCSRs,omitempty"`
+	// ControlPlaneRebalanceBackoff records when the controller last abandoned a
+	// rebalance surge for lack of preferred capacity; the step reads its
+	// LastTransitionTime to back off re-probing to once per
+	// rebalanceBackoffInterval. A surge that joins and sheds its old node is
+	// progress, not a failure, and records nothing here, so successful rounds are
+	// never throttled. Timestamp marker: status is always true once recorded.
+	ControlPlaneRebalanceBackoff Condition `json:"controlPlaneRebalanceBackoff,omitempty"`
 }
 
 type ClusterFilters struct {

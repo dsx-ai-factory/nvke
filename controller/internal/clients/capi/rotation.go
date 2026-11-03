@@ -15,6 +15,12 @@ import (
 // TryAdvanceStuckMachine is always a no-op: a template-backed CAPI machine's
 // infrastructure comes from a caller-supplied template, with no controller-pinned
 // candidate list to rotate through.
-func (*Client) TryAdvanceStuckMachine(_ context.Context, _ shared.MachineAdvanceDeps, _ db.Node, _ db.NodeSet, _ *clusterv1.Machine) (bool, error) {
+func (*Client) TryAdvanceStuckMachine(_ context.Context, _ shared.MachineAdvanceDeps, _ db.Node, _ db.NodeSet, _ db.NodePool, _ *clusterv1.Machine) (bool, error) {
 	return false, nil
+}
+
+// DescribeStuckMachine always returns "": with nothing to advance, the
+// infrastructure provider's own message is the most specific one.
+func (*Client) DescribeStuckMachine(_ context.Context, _ shared.MachineAdvanceDeps, _ db.NodePool, _ *clusterv1.Machine) (string, error) {
+	return "", nil
 }

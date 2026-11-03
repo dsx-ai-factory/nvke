@@ -222,3 +222,29 @@ func TestUnit_MachineAnnotations(t *testing.T) {
 		})
 	}
 }
+
+func TestUnit_MachineAnnotationsCarrySpireAttestation(t *testing.T) {
+	id := uuid.MustParse("60000000-0000-0000-0000-000000000001")
+	for name, params := range map[string]struct {
+		node         db.Node
+		wantMethod   string
+		wantSpiffeOn string
+	}{
+		"SPIFFE with dsxImds": {
+			node:         db.Node{ID: id, SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS},
+			wantMethod:   "dsxImds",
+			wantSpiffeOn: "true",
+		},
+		"SPIFFE off keeps the pinned method": {
+			node:         db.Node{ID: id, SpireAttestationMethod: db.SpireAttestationMethodTPM},
+			wantMethod:   "tpm",
+			wantSpiffeOn: "false",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			annotations := shared.MachineAnnotations(params.node)
+			require.Equal(t, params.wantMethod, annotations[keys.MachineSpireAttestationMethod.String()])
+			require.Equal(t, params.wantSpiffeOn, annotations[keys.MachineSpiffeEnabled.String()])
+		})
+	}
+}

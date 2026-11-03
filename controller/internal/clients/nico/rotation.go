@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // TryAdvanceStuckMachine advances a templateless NicoMachine in place: it
@@ -26,13 +28,13 @@ import (
 // so a node whose preferred types are all unavailable keeps probing them in
 // preference order and converges on the highest-preference type once
 // capacity returns.
-func (*Client) TryAdvanceStuckMachine(ctx context.Context, deps shared.MachineAdvanceDeps, node db.Node, nodeSet db.NodeSet, machine *clusterv1.Machine) (bool, error) {
+func (*Client) TryAdvanceStuckMachine(ctx context.Context, deps shared.MachineAdvanceDeps, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, machine *clusterv1.Machine) (bool, error) {
 	shouldRotateNet, err := shouldRotateNicoMachineNetworkCandidate(ctx, deps.K8sClient, machine)
 	if err != nil {
 		return false, err
 	}
 	if shouldRotateNet {
-		if err := rotateNicoMachineNetworkCandidate(ctx, deps.K8sClient, nodeSet, machine); err != nil {
+		if err := rotateNicoMachineNetworkCandidate(ctx, deps.K8sClient, nodeSet, nodePool, machine); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -81,7 +83,7 @@ func shouldRotateNicoMachineNetworkCandidate(ctx context.Context, k8sClient clie
 	return true, nil
 }
 
-func rotateNicoMachineNetworkCandidate(ctx context.Context, k8sClient client.Client, nodeSet db.NodeSet, machine *clusterv1.Machine) error {
+func rotateNicoMachineNetworkCandidate(ctx context.Context, k8sClient client.Client, nodeSet db.NodeSet, nodePool db.NodePool, machine *clusterv1.Machine) error {
 	nicoMachine := &nicov1.NicoMachine{}
 	if err := k8sClient.Get(ctx, client.ObjectKey{
 		Namespace: machine.Namespace,
@@ -93,21 +95,29 @@ func rotateNicoMachineNetworkCandidate(ctx context.Context, k8sClient client.Cli
 		return nil
 	}
 
-	nicoNodeSetProvider, err := nodeSet.NicoProvider()
-	if err != nil {
-		return err
-	}
-
 	currentInterface := nicoMachine.Spec.Interfaces[0]
 	// Template-backed CAPI owns its network config inside the infra template; the controller only
 	// rotates candidates when the template-less Forge-CAPI path supplied them.
 	if currentInterface.VPCPrefixID != "" {
-		if len(nicoNodeSetProvider.VpcPrefixIDs) == 0 {
+		// The node pool's current list, not the node set's: see vpcprefixwalk.go.
+		nicoNodePoolProvider, err := nodePool.NicoProvider()
+		if err != nil {
+			return err
+		}
+		if len(nicoNodePoolProvider.VpcPrefixIDs) == 0 {
 			return nil
 		}
-		return rotateNicoMachineVpcPrefix(ctx, k8sClient, nicoMachine, nicoNodeSetProvider.VpcPrefixIDs)
+		return rotateNicoMachineVpcPrefix(ctx, k8sClient, nicoMachine, uniqueVpcPrefixIDs(nicoNodePoolProvider.VpcPrefixIDs))
 	}
+	// Subnet candidates keep the linear walk that stops on the last one.
+	// Subnet-based sites are fully built out, so a new subnet is rarely added
+	// to a running pool; VPC-prefix sites are newer and still growing, which
+	// is where prefixes fill up and get added while nodes wait.
 	if currentInterface.SubnetID != "" {
+		nicoNodeSetProvider, err := nodeSet.NicoProvider()
+		if err != nil {
+			return err
+		}
 		if len(nicoNodeSetProvider.SubnetIDs) == 0 {
 			return nil
 		}
@@ -117,28 +127,35 @@ func rotateNicoMachineNetworkCandidate(ctx context.Context, k8sClient client.Cli
 	return nil
 }
 
+// rotateNicoMachineVpcPrefix moves a NicoMachine whose VPC prefix is full to
+// the next candidate. The walk is cyclic: after the last candidate it goes
+// back to the first, so a node that waits picks up a prefix that frees up or
+// is added later. When the walk comes back to the candidate it started on,
+// every candidate was full in this pass, and the VPCPrefixesAllFull
+// annotation records when that first happened, for the node's pending
+// message. It is written once: with a single candidate the spec never
+// changes, so the generation guard does not stop the next poll from
+// rotating again.
 func rotateNicoMachineVpcPrefix(ctx context.Context, k8sClient client.Client, nicoMachine *nicov1.NicoMachine, vpcPrefixIDs []uuid.UUID) error {
 	currentVpcPrefixID := nicoMachine.Spec.Interfaces[0].VPCPrefixID
-	currentIndex := -1
-	for i, vpcPrefixID := range vpcPrefixIDs {
-		if vpcPrefixID.String() == currentVpcPrefixID {
-			currentIndex = i
-			break
-		}
-	}
-	if currentIndex == -1 {
-		return fmt.Errorf("current NicoMachine VPC prefix %s is not in configured VPC prefix candidates", currentVpcPrefixID)
-	}
-	if currentIndex == len(vpcPrefixIDs)-1 {
-		failureMessage := ""
-		if provisionedCondition := nicoMachineProvisionedCondition(nicoMachine.Status.Conditions); provisionedCondition != nil {
-			failureMessage = provisionedCondition.Message
-		}
-		return fmt.Errorf("all %d VPC prefixes are exhausted, error from the last NicoMachine create attempt: %s", len(vpcPrefixIDs), failureMessage)
-	}
-	nextVpcPrefixID := vpcPrefixIDs[currentIndex+1].String()
+	walk := readVpcPrefixWalk(nicoMachine, vpcPrefixIDs)
+	next := walk.next()
+	nextVpcPrefixID := vpcPrefixIDs[next].String()
 
 	patchOpts := client.MergeFromWithOptions(nicoMachine.DeepCopy(), client.MergeFromWithOptimisticLock{})
+	annotations := nicoMachine.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	switch {
+	case walk.restarted:
+		annotations[keys.VPCPrefixWalkCandidates.String()] = joinVpcPrefixIDs(vpcPrefixIDs)
+		annotations[keys.VPCPrefixWalkStart.String()] = nextVpcPrefixID
+		keys.VPCPrefixesAllFull.Delete(annotations)
+	case next == walk.start && !walk.allFull:
+		annotations[keys.VPCPrefixesAllFull.String()] = time.Now().UTC().Format(time.RFC3339)
+	}
+	nicoMachine.SetAnnotations(annotations)
 	nicoMachine.Spec.Interfaces[0].VPCPrefixID = nextVpcPrefixID
 	nicoMachine.Spec.Interfaces[0].SubnetID = ""
 	if err := k8sClient.Patch(ctx, nicoMachine, patchOpts); err != nil {

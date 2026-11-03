@@ -97,31 +97,60 @@ func (r *reconciler) reconcileControlPlaneScaleDown(ctx context.Context, cluster
 // shrink has no replacement coming, so the record-time floor stays authoritative
 // (and harmlessly exempts a not-yet-joined victim, which is not an etcd member).
 func (r *reconciler) recordControlPlaneScaleDownDelete(ctx context.Context, logger *slog.Logger, victim db.Node, surplus int) error {
+	recorded, err := r.recordControlPlaneManagedDelete(ctx, logger, victim, "Control-plane scale-down: desired count decreased")
+	if err != nil {
+		return err
+	}
+	if recorded {
+		logger.With("nodeID", victim.ID, "nodeName", victim.Name).Info(
+			"Recorded control-plane scale-down delete; teardown will start one node at a time",
+			"surplus", surplus,
+		)
+	}
+	return nil
+}
+
+// recordControlPlaneManagedDelete records a controller-initiated delete of a
+// control-plane node through the shared serialized teardown path, and reports
+// whether the delete was recorded. Automatic scale-down and steady-state
+// rebalance both shed a surplus node this way, so the record-time quorum floor
+// bounds either. A floor refusal means the live count is tighter than the
+// snapshot -- the guard working, not a failure -- so it logs and returns
+// (false, nil) rather than erroring the reconcile.
+func (r *reconciler) recordControlPlaneManagedDelete(ctx context.Context, logger *slog.Logger, victim db.Node, reason string) (bool, error) {
 	nodeLogger := logger.With("nodeID", victim.ID, "nodeName", victim.Name)
 
 	if err := nodes.DeleteWithTx(ctx, r.db, victim.ID,
-		nodes.WithReason("Control-plane scale-down: desired count decreased"),
+		nodes.WithReason(reason),
 		nodes.WithAllowCPNode(true),
-		// Preconditions are enforced above; skip guardLiveNodeDelete's live-API
-		// deletion policy. The skip path still locks the cluster row and refuses a
-		// blocked control-plane mutation, reads the node row FOR UPDATE, and applies
-		// the record-time quorum floor.
+		// Preconditions are enforced by the caller; skip guardLiveNodeDelete's
+		// live-API deletion policy. The skip path still locks the cluster row and
+		// refuses a blocked control-plane mutation, reads the node row FOR UPDATE,
+		// and applies the record-time quorum floor.
 		nodes.WithSkipLiveDeleteGuard(),
 	); err != nil {
-		// The record-time floor may still refuse if the live count is tighter
-		// than the snapshot -- that is the guard working, not a failure.
 		var floorErr *nodes.ControlPlaneQuorumFloorError
 		if errors.As(err, &floorErr) {
-			nodeLogger.Warn("Control-plane scale-down refused by the quorum floor at record time", "err", err)
-			return nil
+			nodeLogger.Warn("Control-plane delete refused by the quorum floor at record time", "err", err)
+			return false, nil
 		}
-		return fmt.Errorf("recording control-plane scale-down delete for node %s (%s): %w", victim.ID, victim.Name, err)
+		// A delete already recorded for this node is the desired end state, not a
+		// failure, so treat it as a benign no-op. Both callers -- steady-state
+		// rebalance and automatic scale-down -- select victims from sets that
+		// exclude a node with a delete already in flight, and the reconcile returns
+		// after a rebalance shed before scale-down runs, so the two no longer record
+		// the same node in one pass. This remains a defensive guard: erroring here
+		// would roll back the whole transactional reconcile, undoing a delete that
+		// was legitimately recorded and wedging the shrink in a livelock, so a
+		// repeat record must stay a no-op.
+		if errors.Is(err, nodes.ErrDeleteAlreadyRequested) {
+			nodeLogger.Debug("Control-plane delete already recorded; treating as a no-op")
+			return false, nil
+		}
+		return false, fmt.Errorf("recording control-plane delete for node %s (%s): %w", victim.ID, victim.Name, err)
 	}
 
-	nodeLogger.Info("Recorded control-plane scale-down delete; teardown will start one node at a time",
-		"surplus", surplus,
-	)
-	return nil
+	return true, nil
 }
 
 // upgradeInProgress reports whether the control plane is in an active upgrade:
@@ -143,6 +172,15 @@ func (c *controlPlane) upgradeInProgress(cluster db.Cluster) bool {
 // the superset of scaleDownEligible that also includes not-yet-joined nodes, so
 // surplus is counted the same way scale-up counts toward desiredCount -- without
 // it a not-yet-joined surplus node would be invisible to both and never shed.
+//
+// A rebalance surge node is held out while it is coming up: it must neither count
+// toward surplus (its +1 would otherwise shrink a healthy node before the
+// replacement is ready) nor be selected as a victim (shedding it would undo the
+// rebalance). Because surplus and victim both derive from this set, holding it
+// out here covers both. The hold is self-limiting -- once the surge is a clean
+// joined member the rebalance step sheds the old, less-preferred node itself (not
+// scale-down) and clears the marker, after which the former surge is an ordinary
+// member at rank 0.
 func (c *controlPlane) scaleDownRemovable() []db.Node {
 	var removable []db.Node
 	for _, node := range c.nodes {
@@ -150,6 +188,9 @@ func (c *controlPlane) scaleDownRemovable() []db.Node {
 			continue
 		}
 		if nodes.IsDeleteInFlight(node) || isMarkedForRecycling(node) {
+			continue
+		}
+		if isRebalanceReplacement(node) && !isCleanJoinedControlPlaneMember(node) {
 			continue
 		}
 		removable = append(removable, node)
@@ -198,17 +239,10 @@ const (
 
 // controlPlaneHasNodeBelowPrimaryRank reports whether any eligible node sits
 // below the primary type (ScaleDownRank above primary). It is the steady-state
-// rebalance probe; a nil ranker never reports a candidate.
-//
-// Rebalance follow-up: at steady state (desired == count) the reconciler can use
-// this to trigger a surge-then-shed rebalance -- surge a preferred replacement
-// (only when the scheduler confirms a strictly better-ranked placement, to avoid
-// churn), then shed the least-preferred node once the replacement joins. Note
-// that scale-down sheds not-yet-joined nodes first, so the surge node must be
-// protected from scale-down while it is coming up (a derived "rebalancing" gate
-// bounded by the node's lifecycle, or a per-node marker); otherwise scale-down
-// would shed the new replacement instead of the old node. Once it joins,
-// rank-ordering sheds the old least-preferred node on its own.
+// rebalance probe reconcileControlPlaneRebalance gates on: when it reports a
+// candidate, the rebalance step surges a more-preferred replacement and, once the
+// replacement joins, sheds the least-preferred node. A nil ranker never reports a
+// candidate, so a provider with no ordered preference is never rebalanced.
 func controlPlaneHasNodeBelowPrimaryRank(eligible []db.Node, ranker db.ControlPlaneScaleDownRanker) bool {
 	if ranker == nil {
 		return false
@@ -223,11 +257,26 @@ func controlPlaneHasNodeBelowPrimaryRank(eligible []db.Node, ranker db.ControlPl
 
 // selectControlPlaneNodeToScaleDown picks the surplus node to remove from the
 // removable set: a not-yet-joined node first (pure surplus, not an etcd member),
-// then among joined members the least preferred (higher ScaleDownRank), then
-// oldest, then lowest ID for a stable choice. A nil ranker collapses the joined
-// tie-break to oldest-then-ID. Failure-domain spreading is out of scope; the
-// quorum floor already bounds the shrink.
+// then the least-preferred node. A nil ranker collapses the rank tie-break to
+// oldest-then-ID. Failure-domain spreading is out of scope; the quorum floor
+// already bounds the shrink.
 func selectControlPlaneNodeToScaleDown(removable []db.Node, ranker db.ControlPlaneScaleDownRanker) db.Node {
+	var notJoined []db.Node
+	for _, node := range removable {
+		if !isCleanJoinedControlPlaneMember(node) {
+			notJoined = append(notJoined, node)
+		}
+	}
+	if len(notJoined) > 0 {
+		return leastPreferredControlPlaneNode(notJoined, ranker)
+	}
+	return leastPreferredControlPlaneNode(removable, ranker)
+}
+
+// leastPreferredControlPlaneNode returns the least-preferred node: highest
+// ScaleDownRank (0 is the most preferred type), then oldest, then lowest ID.
+// A nil ranker collapses the rank to oldest-then-ID. nodes must be non-empty.
+func leastPreferredControlPlaneNode(nodes []db.Node, ranker db.ControlPlaneScaleDownRanker) db.Node {
 	rankOf := func(node db.Node) int {
 		if ranker == nil {
 			return 0
@@ -235,13 +284,9 @@ func selectControlPlaneNodeToScaleDown(removable []db.Node, ranker db.ControlPla
 		return ranker.ScaleDownRank(node)
 	}
 
-	sorted := make([]db.Node, len(removable))
-	copy(sorted, removable)
+	sorted := make([]db.Node, len(nodes))
+	copy(sorted, nodes)
 	sort.Slice(sorted, func(i, j int) bool {
-		// Not-yet-joined surplus is shed ahead of any joined member.
-		if ci, cj := isCleanJoinedControlPlaneMember(sorted[i]), isCleanJoinedControlPlaneMember(sorted[j]); ci != cj {
-			return !ci
-		}
 		if ri, rj := rankOf(sorted[i]), rankOf(sorted[j]); ri != rj {
 			return ri > rj // least preferred (higher rank) first
 		}

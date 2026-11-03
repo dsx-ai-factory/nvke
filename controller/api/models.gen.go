@@ -382,6 +382,9 @@ type ControlPlaneConfig struct {
 	// NodeLabels Labels applied to control-plane nodes, as a map of keys to values. Set at creation.
 	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
 
+	// NodeRebalanceDisabled When true, steady-state control-plane instance-type rebalancing is disabled. When unset (the default) the controller surges a more-preferred replacement for a node on a less-preferred instance type and sheds the old node through the control-plane delete path, independent of autoScaleDownDisabled. Existing clusters are opted out at migration time.
+	NodeRebalanceDisabled *bool `json:"nodeRebalanceDisabled,omitempty"`
+
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not replaced automatically.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
 
@@ -550,6 +553,9 @@ type CreateClusterControlPlaneConfig struct {
 
 	// NodeLabels Labels applied to control-plane nodes at creation, as a map of keys to values. Keys under nvke.nvidia.com, nke.nvidia.com (legacy), nke.io (legacy), kubernetes.io, k8s.io and their subdomains are reserved, unless the deployment allows specific Kubernetes keys.
 	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
+
+	// NodeRebalanceDisabled When true, steady-state control-plane instance-type rebalancing is disabled. When unset (the default) the controller surges a more-preferred replacement for a node on a less-preferred instance type and sheds the old node through the control-plane delete path, independent of autoScaleDownDisabled. Existing clusters are opted out at migration time.
+	NodeRebalanceDisabled *bool `json:"nodeRebalanceDisabled,omitempty"`
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not replaced automatically.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
@@ -1289,6 +1295,9 @@ type NodeAgentUpgradeStatusPhase string
 // provisioning, readyToJoin, joined and provisioned; deletion moves through
 // deleteRequested (control-plane nodes) and deleting.
 type NodeConditions struct {
+	// ControlPlanePreferredReplacement Control-plane nodes only. True while the node is a control-plane rebalance surge — a more-preferred replacement brought up to shed a less-preferred member.
+	ControlPlanePreferredReplacement *Condition `json:"controlPlanePreferredReplacement,omitempty"`
+
 	// ControlPlaneRolloutRequired Control-plane nodes only. True when the node differs from the desired configuration.
 	ControlPlaneRolloutRequired *Condition `json:"controlPlaneRolloutRequired,omitempty"`
 
@@ -1627,6 +1636,9 @@ type UpdateClusterControlPlaneConfig struct {
 
 	// NodeAgentConfig Desired control-plane node-agent configuration.
 	NodeAgentConfig *NodeAgentConfig `json:"nodeAgentConfig,omitempty"`
+
+	// NodeRebalanceDisabled When true, steady-state control-plane instance-type rebalancing is disabled. When unset (the default) the controller surges a more-preferred replacement for a node on a less-preferred instance type and sheds the old node through the control-plane delete path, independent of autoScaleDownDisabled. Existing clusters are opted out at migration time.
+	NodeRebalanceDisabled *bool `json:"nodeRebalanceDisabled,omitempty"`
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not replaced automatically.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`

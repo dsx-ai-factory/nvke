@@ -33,6 +33,12 @@ const (
 type etcdMemberClient interface {
 	MemberList(ctx context.Context, opts ...clientv3.OpOption) (*clientv3.MemberListResponse, error)
 	Status(ctx context.Context, endpoint string) (*clientv3.StatusResponse, error)
+	// AlarmList reports every alarm the cluster is carrying, each tagged with
+	// the member that raised it. The alarm store is replicated by raft, so this
+	// returns the same set from any member and the MemberID is the only thing
+	// that says whose alarm it is. StatusResponse.Errors flattens the same data
+	// into strings and loses that distinction.
+	AlarmList(ctx context.Context) (*clientv3.AlarmResponse, error)
 	TransferLeadership(ctx context.Context, leaderEndpoints []string, transfereeID uint64) error
 	MemberRemove(ctx context.Context, id uint64) (*clientv3.MemberRemoveResponse, error)
 	Close() error

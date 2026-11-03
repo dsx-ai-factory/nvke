@@ -566,6 +566,44 @@ func TestTeardownNodeForceUnreachableContinuesAfterGracefulShutdownFailure(t *te
 	require.NoError(t, env.GetWorkflowError())
 }
 
+// A control-plane rebalance surge can be recorded and then fail to provision,
+// so it never joins: there is no kube-apiserver or etcd on it to stop and no
+// agent to receive the graceful-shutdown RPC. Teardown must skip graceful
+// shutdown -- otherwise it dials an agent that never existed and loops, wedging
+// every later control-plane reconcile -- while still removing any etcd
+// membership and deleting the node.
+func TestTeardownNodeSkipsGracefulShutdownWhenCPNeverJoined(t *testing.T) {
+	database, res := setupTestDB(t, seedOpts{
+		clusterProvisioned:  true,
+		cpNodeJoined:        true, // a surviving joined CP peer exists
+		targetCPNeverJoined: true, // the surge under teardown never joined
+		omitConfigProfile:   true,
+	})
+
+	env, _ := setupWorkflowEnv(t, database, res.profilesDir, workflowEnvOpts{})
+
+	var activityNames []string
+	env.SetOnActivityStartedListener(func(activityInfo *activity.Info, _ context.Context, _ converter.EncodedValues) {
+		activityNames = append(activityNames, activityInfo.ActivityType.Name)
+	})
+
+	env.ExecuteWorkflow(TeardownNode, TeardownNodeInput{
+		NodeID:      res.nodeID,
+		AllowCPNode: true,
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.NotContains(t, activityNames, "StartControlPlaneGracefulShutdown",
+		"graceful shutdown must be skipped for a control-plane node that never joined")
+	require.Contains(t, activityNames, "RemoveEtcdMember",
+		"etcd member removal still runs and is a no-op when the member is absent")
+	require.Contains(t, activityNames, "DeleteCAPIMachineForNode")
+
+	_, err := database.GetNode(context.Background(), res.nodeID)
+	require.ErrorIs(t, err, db.ErrNotFound, "the surge node record must be deleted once teardown completes")
+}
+
 func TestTeardownNodeWorkerPoolSkipsEtcdRemoval(t *testing.T) {
 	database, res := setupTestDB(t, seedOpts{
 		clusterProvisioned: true,
@@ -705,6 +743,7 @@ type seedOpts struct {
 	clusterProvisioned        bool
 	cpNodeJoined              bool
 	onlyJoinedCPUnderTeardown bool // primary node is the sole joined CP; no surviving peer
+	targetCPNeverJoined       bool // the CP node under teardown never joined (e.g. a failed rebalance surge)
 	survivingCPDeleting       bool // the peer CP is joined but is itself being torn down
 	clusterDeleting           bool // cluster is being torn down, whatever the workflow input says
 	workerNodePool            bool
@@ -831,7 +870,12 @@ func setupTestDB(t *testing.T, opts seedOpts) (db.DB, seedResult) {
 
 	nodeID := uuid.New()
 	nodeConditions := db.NodeConditions{}
-	if opts.onlyJoinedCPUnderTeardown {
+	// A control-plane node under normal teardown has joined; model that so the
+	// graceful-shutdown step runs against it. onlyJoinedCPUnderTeardown is the
+	// sole-joined-CP case (still joined), while targetCPNeverJoined models a
+	// rebalance surge that was recorded but never joined, so graceful shutdown
+	// must be skipped.
+	if (opts.onlyJoinedCPUnderTeardown || opts.cpNodeJoined) && !opts.targetCPNeverJoined {
 		nodeConditions.Joined = db.NewCondition(true, "Joined")
 	}
 	node := db.Node{

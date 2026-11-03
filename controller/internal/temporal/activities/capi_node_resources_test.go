@@ -484,17 +484,20 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 	})
 
 	t.Run("rotates one network candidate and waits when IP is absent", func(t *testing.T) {
-		k8sClient := newCAPIMachineReadyClient(t,
-			testCAPIMachineWithNicoInfraRef(nil),
-			testNicoMachineForCAPIMachineReady(nicoMachineRotationParameters{
-				Interface: nicov1.NicoMachineInterface{
-					VPCPrefixID: firstVpcPrefixID.String(),
-				},
-				Generation:         1,
-				ObservedGeneration: 1,
-				Message:            exhaustionMessage,
-			}),
-		)
+		nicoMachine := testNicoMachineForCAPIMachineReady(nicoMachineRotationParameters{
+			Interface: nicov1.NicoMachineInterface{
+				VPCPrefixID: firstVpcPrefixID.String(),
+			},
+			Generation:         1,
+			ObservedGeneration: 1,
+			Message:            exhaustionMessage,
+		})
+		// The walk record CreateMachine applies.
+		nicoMachine.SetAnnotations(map[string]string{
+			keys.VPCPrefixWalkCandidates.String(): firstVpcPrefixID.String() + "," + secondVpcPrefixID.String(),
+			keys.VPCPrefixWalkStart.String():      firstVpcPrefixID.String(),
+		})
+		k8sClient := newCAPIMachineReadyClient(t, testCAPIMachineWithNicoInfraRef(nil), nicoMachine)
 		mockDB, mockTx := newCAPIMachineReadyDB(t, node, cluster)
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 		mockTx.On("GetNode", mock.Anything, node.ID).Return(node, nil).Maybe()
@@ -502,6 +505,8 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
 			return nodeForUpdate.ID == node.ID &&
 				nodeForUpdate.Conditions.Pending.Status == db.ConditionStatusTrue &&
+				nodeForUpdate.Conditions.Pending.Message == "VPC prefix "+firstVpcPrefixID.String()+
+					" has no free IP addresses; trying the next configured VPC prefix (2 of 2)." &&
 				nodeForUpdate.Conditions.Provisioning.Status == db.ConditionStatusFalse
 		})).Return(node, nil).Once()
 
@@ -511,7 +516,7 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		require.ErrorContains(t, err, "has no IP addresses in status or infrastructure ref")
 		assert.Empty(t, ipAddress)
 
-		nicoMachine := getTestNicoMachine(t, k8sClient)
+		nicoMachine = getTestNicoMachine(t, k8sClient)
 		require.Len(t, nicoMachine.Spec.Interfaces, 1)
 		assert.Equal(t, secondVpcPrefixID.String(), nicoMachine.Spec.Interfaces[0].VPCPrefixID)
 		assert.Empty(t, nicoMachine.Spec.Interfaces[0].SubnetID)
@@ -532,6 +537,7 @@ func TestActivities_UpdateCAPIMachineWaitNodeCondition(t *testing.T) {
 
 	tests := map[string]struct {
 		machine        *clusterv1.Machine
+		stuckMessage   string
 		expectedStatus db.ConditionStatus
 		expectedType   string
 		expectedMsg    string
@@ -550,6 +556,22 @@ func TestActivities_UpdateCAPIMachineWaitNodeCondition(t *testing.T) {
 			expectedStatus: db.ConditionStatusTrue,
 			expectedType:   "pending",
 			expectedMsg:    "instance type has no unused usable allocations",
+		},
+		"stuck message replaces the infrastructure message while pending": {
+			machine: &clusterv1.Machine{
+				Spec: clusterv1.MachineSpec{},
+				Status: clusterv1.MachineStatus{
+					Conditions: []metav1.Condition{{
+						Type:    clusterv1.MachineInfrastructureReadyCondition,
+						Status:  metav1.ConditionFalse,
+						Message: "Internal error: IP address exhausted: 10.0.0.0/30",
+					}},
+				},
+			},
+			stuckMessage:   "VPC prefix full; trying the next configured VPC prefix (2 of 3).",
+			expectedStatus: db.ConditionStatusTrue,
+			expectedType:   "pending",
+			expectedMsg:    "VPC prefix full; trying the next configured VPC prefix (2 of 3).",
 		},
 		"marks node provisioning after providerID exists": {
 			machine: &clusterv1.Machine{
@@ -589,7 +611,7 @@ func TestActivities_UpdateCAPIMachineWaitNodeCondition(t *testing.T) {
 			})).Return(baseNode, nil)
 
 			a := &Activities{db: mockDB}
-			err := a.updateCAPIMachineWaitNodeCondition(context.Background(), nodeID, tt.machine, "Waiting for CAPI machine to be ready")
+			err := a.updateCAPIMachineWaitNodeCondition(context.Background(), nodeID, tt.machine, "Waiting for CAPI machine to be ready", tt.stuckMessage)
 
 			require.NoError(t, err)
 			mockDB.AssertExpectations(t)

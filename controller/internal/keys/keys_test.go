@@ -115,6 +115,7 @@ func TestEveryKeyIsAValidQualifiedName(t *testing.T) {
 		ManagedBy, KubeconfigMode, NodeMachineHealthIssue,
 		MachineHostID, MachineRebootCompleteTimestamp, MachineReboot,
 		MachineHealthIssue, MachineSpireAgentSpiffeIDPath,
+		VPCPrefixWalkCandidates, VPCPrefixWalkStart, VPCPrefixesAllFull,
 		MaintenanceTaint, ProvisioningTaint, NeedsRecycle, NeedsRepair,
 	}
 	require.NotEmpty(t, all)

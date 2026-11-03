@@ -241,7 +241,21 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 	}, machine); err != nil {
 		return "", fmt.Errorf("failed to get CAPI machine: %w", err)
 	}
-	if err := a.updateCAPIMachineWaitNodeCondition(ctx, input.NodeID, machine, input.NodeProvisioningConditionMessage); err != nil {
+	advanceDeps := shared.MachineAdvanceDeps{
+		K8sClient:                  a.k8sClient,
+		ControlPlaneConfigSnapshot: a.controlPlaneConfigSnapshot,
+	}
+	stuckMessage := ""
+	if machine.Spec.ProviderID == "" {
+		describeMessage, describeErr := provider.MachineMaterialization().DescribeStuckMachine(ctx, advanceDeps, nodePool, machine)
+		if describeErr != nil {
+			// Only a clearer message; must never block provisioning.
+			logger.Warn("Could not describe stuck CAPI machine; keeping the infrastructure message",
+				"nodeID", input.NodeID, "machine", machine.Name, "error", describeErr)
+		}
+		stuckMessage = describeMessage
+	}
+	if err := a.updateCAPIMachineWaitNodeCondition(ctx, input.NodeID, machine, input.NodeProvisioningConditionMessage, stuckMessage); err != nil {
 		return "", err
 	}
 
@@ -263,11 +277,7 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 		}
 	}
 	if ipAddress == "" {
-		advanceDeps := shared.MachineAdvanceDeps{
-			K8sClient:                  a.k8sClient,
-			ControlPlaneConfigSnapshot: a.controlPlaneConfigSnapshot,
-		}
-		if _, err := provider.MachineMaterialization().TryAdvanceStuckMachine(ctx, advanceDeps, node, nodeSet, machine); err != nil {
+		if _, err := provider.MachineMaterialization().TryAdvanceStuckMachine(ctx, advanceDeps, node, nodeSet, nodePool, machine); err != nil {
 			return "", err
 		}
 
@@ -338,12 +348,16 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 	return ipAddress, nil
 }
 
-func (a *Activities) updateCAPIMachineWaitNodeCondition(ctx context.Context, nodeID uuid.UUID, machine *clusterv1.Machine, message string) error {
+// stuckMessage is the provider client's DescribeStuckMachine result; when set,
+// it replaces the infrastructure provider's raw message on Pending.
+func (a *Activities) updateCAPIMachineWaitNodeCondition(ctx context.Context, nodeID uuid.UUID, machine *clusterv1.Machine, message, stuckMessage string) error {
 	// In the legacy NICo path, Pending meant no backing instance existed yet,
 	// commonly because capacity was unavailable. For CAPI, providerID is the
 	// provider-agnostic signal that backing infrastructure has been allocated.
 	if machine.Spec.ProviderID == "" {
-		if conditionMessage := capiMachineInfrastructureReadyMessage(machine); conditionMessage != "" {
+		if stuckMessage != "" {
+			message = stuckMessage
+		} else if conditionMessage := capiMachineInfrastructureReadyMessage(machine); conditionMessage != "" {
 			message = conditionMessage
 		}
 		return a.UpdateNodeConditions(ctx, NodeConditionsUpdate{

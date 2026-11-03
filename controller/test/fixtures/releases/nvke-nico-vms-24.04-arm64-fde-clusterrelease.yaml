@@ -16,7 +16,7 @@ spec:
       hostname: {{ .Hostname }}
       preserve_hostname: false
       manage_etc_hosts: true
-      ssh_pwauth: true
+      ssh_pwauth: false
       package_update: true
       package_upgrade: false
 

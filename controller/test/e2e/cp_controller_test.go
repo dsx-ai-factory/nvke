@@ -16,6 +16,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
@@ -485,4 +486,162 @@ func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 			Expect(replacementDomain).To(Equal(victimDomain), "the replacement should refill the deleted Machine's domain")
 		}
 	}, Label("cp-controller", "cp-delete"), NodeTimeout(60*time.Minute))
+}
+
+// validateControllerManagedControlPlaneRebalance drives one steady-state
+// instance-type rebalance round and asserts the controller converges placement
+// toward preference without ever breaking quorum: it puts a more-preferred
+// instance type at the front of the control-plane preference, then watches the
+// controller surge one more-preferred replacement, join it, and shed a
+// less-preferred node through the serialized delete path, leaving the control
+// plane at its desired count with the surge demoted to an ordinary member.
+//
+// It surges a VM that has to boot and join before the old node sheds, so it is
+// heavy; it carries the "rebalance" label, which is in no CI lane, so it runs
+// only when selected explicitly.
+//
+// Rebalance ranks nodes by the NICo provider's instanceTypePreference, which
+// only the Forge-native (nico-vms) control-plane provider carries; the CAPI
+// provider the container backends use has no ranker, so this is a nico-vms spec.
+// It is bounded to a single round by disabling rebalancing once the surge is in
+// flight: an in-flight surge still resolves (it joins, then sheds) when
+// rebalancing is turned off, but no further surge starts -- which also exercises
+// that resolve-when-disabled path. A full convergence would repeat the round
+// once per remaining less-preferred node.
+func validateControllerManagedControlPlaneRebalance(test *tenantTest) {
+	It("rebalances the controller-managed control plane onto a more-preferred instance type", func(ctx context.Context) {
+		if test.spec.Backend != nvke.BackendNicoVMS {
+			Skip("control-plane rebalance ranks on the NICo instanceTypePreference, which only the nico-vms control-plane provider carries")
+		}
+
+		desired := controlPlaneControllerUpdateDesiredCount
+
+		By("Confirming the control plane is settled at the desired count, all Joined on the current instance type")
+		Eventually(func(ctx context.Context) error {
+			return test.nvke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, desired)
+		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(5*time.Second).
+			Should(Succeed(), "this spec needs a settled control plane before it rebalances")
+		Expect(test.nvke.WaitForJoinedControlPlaneNodes(ctx, test.cluster.ID, desired)).To(Succeed(),
+			"the control plane must be fully joined before the rebalance, since the shed depends on the quorum floor counting joined nodes")
+
+		originalNodes := expectSucceed(test.nvke.ListClusterNodesByControlPlane(ctx, test.cluster.ID, true))
+		Expect(originalNodes).To(HaveLen(desired))
+		originalIDs := make(map[uuid.UUID]struct{}, len(originalNodes))
+		for _, node := range originalNodes {
+			originalIDs[node.ID] = struct{}{}
+			Expect(nodeNicoInstanceType(node)).To(Equal(nicoVMSLargeInstanceID),
+				"the control plane should start on the large instance type before the preference changes")
+		}
+
+		By("Putting a more-preferred instance type at the front of the control-plane preference and enabling rebalance")
+		preference := []uuid.UUID{uuid.MustParse(nicoVMSPreferredInstanceID), uuid.MustParse(nicoVMSLargeInstanceID)}
+		expectSucceed(test.nvke.EnableControlPlaneRebalanceWithPreference(ctx, test.cluster.ID, preference))
+
+		By("Waiting for the controller to surge one more-preferred replacement above the desired count")
+		// Detect the surge by the extra control-plane node the round adds, not by
+		// catching the controlPlanePreferredReplacement marker: that marker is set
+		// only while the surge is in flight and clears the instant it joins, a
+		// window far too narrow to poll reliably. The marker clearing and the
+		// final instance-type split are asserted in the convergence watch below;
+		// here we only assert the marker's placement invariant -- an original node
+		// must never be flagged as the surge.
+		var surgeID uuid.UUID
+		Eventually(func(ctx context.Context) error {
+			cpNodes, err := test.nvke.ListClusterNodesByControlPlane(ctx, test.cluster.ID, true)
+			if err != nil {
+				return err
+			}
+			for _, node := range cpNodes {
+				if _, original := originalIDs[node.ID]; original {
+					if isControlPlaneRebalanceSurge(node) {
+						return StopTrying(fmt.Sprintf("original control-plane node %s is marked as a rebalance surge", node.ID))
+					}
+					continue
+				}
+				surgeID = node.ID
+				return nil
+			}
+			return fmt.Errorf("no control-plane rebalance surge yet (%d control-plane nodes)", len(cpNodes))
+		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(5*time.Second).
+			Should(Succeed(), "the controller should surge a more-preferred replacement when a joined node is below preference")
+
+		By("Disabling rebalance so only this round runs; the in-flight surge still resolves")
+		expectSucceed(test.nvke.DisableControlPlaneRebalance(ctx, test.cluster.ID))
+
+		By("Watching the surge join and the less-preferred node shed, one delete at a time, back to the desired count")
+		Eventually(func(ctx context.Context) error {
+			state, err := test.nvke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID)
+			if err != nil {
+				return err
+			}
+			// Serialization: the shed is the only teardown, and it runs one at a time.
+			Expect(state.Deleting).To(BeNumerically("<=", 1),
+				"at most one control-plane teardown may be in flight at a time")
+			if state.InFlight() {
+				return fmt.Errorf("rebalance shed still in flight: %d deleting, %d requested", state.Deleting, state.DeleteRequested)
+			}
+
+			cpNodes, err := test.nvke.ListClusterNodesByControlPlane(ctx, test.cluster.ID, true)
+			if err != nil {
+				return err
+			}
+			if len(cpNodes) != desired {
+				return fmt.Errorf("control plane has %d nodes; want %d", len(cpNodes), desired)
+			}
+			var preferred, large, marked, joinedReady int
+			surgeStillPresent := false
+			for _, node := range cpNodes {
+				switch nodeNicoInstanceType(node) {
+				case nicoVMSPreferredInstanceID:
+					preferred++
+				case nicoVMSLargeInstanceID:
+					large++
+				}
+				if isControlPlaneRebalanceSurge(node) {
+					marked++
+				}
+				if node.Conditions.Joined.Status == api.ConditionStatusTrue && node.Conditions.KubernetesReady.Status == api.ConditionStatusTrue {
+					joinedReady++
+				}
+				if node.ID == surgeID {
+					surgeStillPresent = true
+				}
+			}
+			if !surgeStillPresent {
+				return StopTrying(fmt.Sprintf("the surge node %s is gone; a round must shed the less-preferred node, not the surge", surgeID))
+			}
+			if marked != 0 {
+				return fmt.Errorf("%d control-plane nodes still carry the rebalance marker; it should clear once the surge is an ordinary member", marked)
+			}
+			if joinedReady != desired {
+				return fmt.Errorf("%d control-plane nodes are Joined and KubernetesReady; want %d", joinedReady, desired)
+			}
+			if preferred != 1 || large != desired-1 {
+				return fmt.Errorf("instance-type split is %d preferred / %d large; want 1 preferred / %d large after one round", preferred, large, desired-1)
+			}
+			return nil
+		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(5*time.Second).
+			Should(Succeed(), "one rebalance round should leave the control plane at the desired count with a single node moved to the preferred type")
+
+		By("Asserting the tenant cluster reports Ready for the rebalanced control plane")
+		assertControlPlaneNodesReadyInTenant(ctx, test, desired)
+	}, Label("cp-controller", "rebalance"), NodeTimeout(45*time.Minute))
+}
+
+// nodeNicoInstanceType returns the node's provisioned NICo instance-type ID, or
+// the empty string when the node carries no NICo placement yet.
+func nodeNicoInstanceType(node api.Node) string {
+	if node.Nico == nil {
+		return ""
+	}
+	return node.Nico.InstanceTypeID.String()
+}
+
+// isControlPlaneRebalanceSurge reports whether the node carries the rebalance
+// surge marker (controlPlanePreferredReplacement=True), set while the controller
+// is moving the control plane onto a more-preferred instance type and cleared
+// once the surge becomes an ordinary member.
+func isControlPlaneRebalanceSurge(node api.Node) bool {
+	cond := node.Conditions.ControlPlanePreferredReplacement
+	return cond != nil && cond.Status == api.ConditionStatusTrue
 }

@@ -14,6 +14,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/spiffe"
 )
 
 type Node struct {
@@ -101,10 +103,7 @@ func (n Node) IsManagedByControlPlaneController() bool {
 
 // GetSpiffeID returns the local workload identity registered for the node agent.
 func (n *Node) GetSpiffeID(trustDomain, subjectTenant, subjectService string) string {
-	if n.NodeAgentTLSJWTEnabled {
-		return fmt.Sprintf("spiffe://%s/tenant/%s/service/%s/bm/%s", trustDomain, subjectTenant, subjectService, n.ID.String())
-	}
-	return fmt.Sprintf("spiffe://%s/host/%s", trustDomain, n.ID.String())
+	return spiffe.NodeAgentID(trustDomain, subjectTenant, subjectService, n.ID, n.NodeAgentTLSJWTEnabled)
 }
 
 type NodeConditions struct {
@@ -132,6 +131,14 @@ type NodeConditions struct {
 	// up to date (False). Zero value (empty status) for nodes not managed by the
 	// control-plane controller.
 	ControlPlaneRolloutRequired Condition `json:"controlPlaneRolloutRequired"`
+	// ControlPlanePreferredReplacement marks a control-plane node the rebalance
+	// step surged to move the control plane onto a more-preferred instance type.
+	// While True, automatic scale-down neither counts the node toward surplus nor
+	// selects it as a victim, so the surge does not trigger a shrink and the node
+	// is not shed before it joins. The marker is self-resolving: once the node
+	// joins, the rebalance step sheds the old node and clears the marker; it dies
+	// with the node if the surge is abandoned.
+	ControlPlanePreferredReplacement Condition `json:"controlPlanePreferredReplacement"`
 }
 
 // NamedCondition pairs a condition with the name it carries in JSON.
@@ -165,6 +172,7 @@ func (c NodeConditions) All() []NamedCondition {
 		{"markedForRepair", c.MarkedForRepair},
 		{"teleportRegistered", c.TeleportRegistered},
 		{"controlPlaneRolloutRequired", c.ControlPlaneRolloutRequired},
+		{"controlPlanePreferredReplacement", c.ControlPlanePreferredReplacement},
 	}
 }
 
@@ -256,6 +264,23 @@ func (n *Node) LaunchLayerProvider() (LaunchLayerNodeProvider, error) {
 		return LaunchLayerNodeProvider{}, fmt.Errorf("%w: node %s launch_layer", ErrMissingProviderPayload, n.ID)
 	}
 	return *n.LaunchLayer, nil
+}
+
+// HasAllocatedInstance reports whether the provider has allocated a backing
+// instance for the node. The provider stamps the instance and machine
+// identifiers only once its own reconciler reports them — a Nico node has no
+// ForgeInstanceID until Forge creates the instance, a LaunchLayer node no
+// InstanceID until CAPLL does — so a non-empty identifier is the
+// provider-neutral signal that infrastructure capacity was actually found, as
+// distinct from a node still waiting on allocation.
+func (n *Node) HasAllocatedInstance() bool {
+	if n.Nico != nil && (n.Nico.ForgeInstanceID != "" || n.Nico.ForgeMachineID != "") {
+		return true
+	}
+	if n.LaunchLayer != nil && (n.LaunchLayer.InstanceID != "" || n.LaunchLayer.MachineID != "") {
+		return true
+	}
+	return false
 }
 
 func (n *Node) SetLaunchLayer(provider LaunchLayerNodeProvider) {

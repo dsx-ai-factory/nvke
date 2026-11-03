@@ -33,7 +33,8 @@ make work-check     # verify workspace and module manifests
 ```
 
 `make build` produces `bin/agent`, `bin/capd-reboot-controller`,
-`bin/controller`, `bin/nvke-os-image-check`, `bin/nvkectl`, and `bin/updater`.
+`bin/controller`, `bin/management-engine`, `bin/nvke-os-image-check`,
+`bin/nvkectl`, `bin/operator-api`, `bin/tenant-api`, and `bin/updater`.
 
 ## Updating dependencies
 

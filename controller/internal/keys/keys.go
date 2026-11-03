@@ -177,6 +177,22 @@ const (
 	MachineReboot                  Key = "reboot"
 	MachineHealthIssue             Key = "machine-health-issue"
 	MachineSpireAgentSpiffeIDPath  Key = "spire-agent-spiffe-id-path"
+	MachineSpireAttestationMethod  Key = "spire-attestation-method"
+	MachineSpiffeEnabled           Key = "spiffe-enabled"
+
+	// MachineAgentConnectionJWTSuffix ends the MachineAgentConnection value of a
+	// node whose agent uses TLS-JWT, for example "spiffe-jwt".
+	MachineAgentConnectionJWTSuffix = "-jwt"
+
+	// Annotations on NicoMachines. The controller is the only reader and
+	// writer: they track its walk through a node pool's VPC prefix
+	// candidates. VPCPrefixWalkCandidates is the candidate list the walk
+	// began with; VPCPrefixWalkStart is the candidate it began on;
+	// VPCPrefixesAllFull is when the walk last came back to it with every
+	// candidate full.
+	VPCPrefixWalkCandidates Key = "vpc-prefix-walk-candidates"
+	VPCPrefixWalkStart      Key = "vpc-prefix-walk-start"
+	VPCPrefixesAllFull      Key = "vpc-prefixes-all-full"
 
 	// Taints.
 	MaintenanceTaint  Key = "maintenance"

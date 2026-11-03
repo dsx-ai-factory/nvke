@@ -245,8 +245,13 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 		},
 		// A healthy create takes about 8.5 minutes, and nothing below gives up on
 		// its own, so this wait is what a broken node costs.
-		options:  nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
-		validate: validations{controlPlaneController: true, controlPlaneControllerUpdate: true, controlPlaneControllerRollingUpdate: true},
+		options: nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
+		validate: validations{
+			controlPlaneController:              true,
+			controlPlaneControllerUpdate:        true,
+			controlPlaneControllerRollingUpdate: true,
+			controlPlaneControllerRebalance:     true,
+		},
 	}),
 	// NICo gets the same bounded pull-request contract as CAPD. Keep this entry
 	// off the broad nico-containers label so scheduled full runs do not repeat
@@ -646,6 +651,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				validateControllerManagedControlPlaneSerializedDelete(&test)
 				validateControllerManagedControlPlaneUnreachableDelete(&test)
 			}
+			if spec.validate.controlPlaneControllerRebalance {
+				validateControllerManagedControlPlaneRebalance(&test)
+			}
 			if spec.validate.nodePoolLifecycle {
 				validateAdditionalNodePool(&test)
 			}
@@ -912,6 +920,17 @@ type validations struct {
 	// controlPlaneControllerRollingUpdate so the control plane is already at three
 	// nodes.
 	controlPlaneControllerDelete bool
+	// controlPlaneControllerRebalance drives one steady-state instance-type
+	// rebalance round: it puts a more-preferred instance type at the front of the
+	// control-plane preference and asserts the controller surges a more-preferred
+	// replacement, joins it, and sheds a less-preferred node through the serialized
+	// delete path, back to the desired count. It ranks on the NICo
+	// instanceTypePreference, which only the nico-vms control-plane provider
+	// carries, so only that entry sets it. The spec carries the "rebalance" label,
+	// which is in no CI lane, so it runs only when selected. Ordered after
+	// controlPlaneControllerUpdate so the control plane is already at three nodes,
+	// which the quorum floor requires for the shed.
+	controlPlaneControllerRebalance bool
 	// controlPlaneNodeLabels asserts the control plane's configured node labels
 	// are on every control-plane node after create and, when the entry runs it,
 	// after the rolling update. The entry must set controlPlaneConfig.NodeLabels.
@@ -1852,17 +1871,22 @@ const (
 	nicoVMSVpcPrefixID     = "a1b2c3d4-0004-4000-8000-000000000001"
 	nicoVMSInstanceTypeID  = "a1b2c3d4-0005-4000-8000-000000000001"
 	nicoVMSLargeInstanceID = "a1b2c3d4-0005-4000-8000-000000000003"
-	nicoVMSSSHKeyGroupID   = "a1b2c3d4-0006-4000-8000-000000000001"
-	nicoVMSCPConfigProfile = "nico-vms-cp"
-	nicoVMSWConfigProfile  = "nico-vms-worker"
-	nicoVMSControlPlaneVIP = "172.31.0.10"
+	// nicoVMSPreferredInstanceID is a second control-plane-capable instance type
+	// (cpu4-mem8gb-disk60gb in the seed), used by the rebalance spec as the
+	// more-preferred type a control plane on nicoVMSLargeInstanceID migrates to.
+	nicoVMSPreferredInstanceID = "a1b2c3d4-0005-4000-8000-000000000006"
+	nicoVMSSSHKeyGroupID       = "a1b2c3d4-0006-4000-8000-000000000001"
+	nicoVMSCPConfigProfile     = "nico-vms-cp"
+	nicoVMSWConfigProfile      = "nico-vms-worker"
+	nicoVMSControlPlaneVIP     = "172.31.0.10"
 )
 
 // nicoVMSInstanceMemory is the memory of the nico-vms instance types the specs
 // use, mirroring memory_gib in the same seed.
 var nicoVMSInstanceMemory = map[string]string{
-	nicoVMSInstanceTypeID:  "2Gi",
-	nicoVMSLargeInstanceID: "6Gi",
+	nicoVMSInstanceTypeID:      "2Gi",
+	nicoVMSLargeInstanceID:     "6Gi",
+	nicoVMSPreferredInstanceID: "8Gi",
 }
 
 // nicoVMSRelease is the profile the nico-vms specs boot. nico-sim takes the

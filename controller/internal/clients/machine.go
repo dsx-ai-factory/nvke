@@ -32,7 +32,15 @@ type MachineMaterialization interface {
 	// advances it to the next pinned option (network candidate or instance
 	// type). Returns true when it advanced (caller should keep waiting for
 	// the new attempt); false when there was nothing to advance.
-	TryAdvanceStuckMachine(ctx context.Context, deps shared.MachineAdvanceDeps, node db.Node, nodeSet db.NodeSet, machine *clusterv1.Machine) (bool, error)
+	// nodePool is the pool as it is now; nodeSet is the snapshot the node was
+	// created from.
+	TryAdvanceStuckMachine(ctx context.Context, deps shared.MachineAdvanceDeps, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, machine *clusterv1.Machine) (bool, error)
+
+	// DescribeStuckMachine returns the pending message for a Machine that is
+	// waiting while TryAdvanceStuckMachine works through its options, in
+	// place of the infrastructure provider's raw error. Returns "" when the
+	// provider has nothing to add; the caller then keeps the raw message.
+	DescribeStuckMachine(ctx context.Context, deps shared.MachineAdvanceDeps, nodePool db.NodePool, machine *clusterv1.Machine) (string, error)
 }
 
 // GetMachineMaterialization selects the MachineMaterialization

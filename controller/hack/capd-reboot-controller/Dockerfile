@@ -3,7 +3,7 @@
 
 # syntax=docker/dockerfile:1
 # An ARG so CI can point the base at a Docker Hub mirror; see dockerhub_build_args.
-ARG GOLANG_IMAGE=docker.io/golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c
+ARG GOLANG_IMAGE=docker.io/golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb
 FROM ${GOLANG_IMAGE}
 ENV GOPROXY=https://proxy.golang.org|direct
 WORKDIR /src

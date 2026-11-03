@@ -20,6 +20,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 type nicoMachineRotationParameters struct {
@@ -271,6 +272,7 @@ func TestShouldRotateNicoMachineNetworkCandidate(t *testing.T) {
 func TestRotateNicoMachineNetworkCandidate(t *testing.T) {
 	firstVpcPrefixID := uuid.New()
 	secondVpcPrefixID := uuid.New()
+	thirdVpcPrefixID := uuid.New()
 	missingVpcPrefixID := uuid.New()
 	firstSubnetID := uuid.New()
 	secondSubnetID := uuid.New()
@@ -287,6 +289,12 @@ func TestRotateNicoMachineNetworkCandidate(t *testing.T) {
 		wantVpcPrefixID   string
 		wantSubnetID      string
 		wantErrorContains []string
+		wantAllFull       bool
+		// nodePool defaults to the node set's lists; set it to model a pool
+		// updated after the node was created.
+		nodePool         *db.NodePool
+		wantWalkFrom     string
+		wantAllFullSince string
 	}
 
 	nicoNodeSet := func(subnetIDs, vpcPrefixIDs []uuid.UUID) db.NodeSet {
@@ -306,6 +314,18 @@ func TestRotateNicoMachineNetworkCandidate(t *testing.T) {
 				Message:            vpcPrefixExhaustionMessage,
 			}),
 			nodeSet:         nicoNodeSet(nil, []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID}),
+			wantVpcPrefixID: secondVpcPrefixID.String(),
+		},
+		"steps past a repeated vpc prefix in the node pool list": {
+			nicoMachine: withVpcPrefixWalk(testNicoMachineForRotation(nicoMachineRotationParameters{
+				Interface: nicov1.NicoMachineInterface{
+					VPCPrefixID: firstVpcPrefixID.String(),
+				},
+				Generation:         1,
+				ObservedGeneration: 1,
+				Message:            vpcPrefixExhaustionMessage,
+			}), []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID}, firstVpcPrefixID, false),
+			nodeSet:         nicoNodeSet(nil, []uuid.UUID{firstVpcPrefixID, firstVpcPrefixID, secondVpcPrefixID}),
 			wantVpcPrefixID: secondVpcPrefixID.String(),
 		},
 		"rotates subnet to next candidate": {
@@ -344,7 +364,7 @@ func TestRotateNicoMachineNetworkCandidate(t *testing.T) {
 			nodeSet:      nicoNodeSet(nil, nil),
 			wantSubnetID: firstSubnetID.String(),
 		},
-		"errors when vpc prefix is not configured candidate": {
+		"moves a vpc prefix the node pool no longer lists to the first candidate": {
 			nicoMachine: testNicoMachineForRotation(nicoMachineRotationParameters{
 				Interface: nicov1.NicoMachineInterface{
 					VPCPrefixID: missingVpcPrefixID.String(),
@@ -354,11 +374,35 @@ func TestRotateNicoMachineNetworkCandidate(t *testing.T) {
 				Message:            vpcPrefixExhaustionMessage,
 			}),
 			nodeSet:         nicoNodeSet(nil, []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID}),
-			wantVpcPrefixID: missingVpcPrefixID.String(),
-			wantErrorContains: []string{
-				"current NicoMachine VPC prefix",
-				"is not in configured VPC prefix candidates",
-			},
+			wantVpcPrefixID: firstVpcPrefixID.String(),
+			wantWalkFrom:    firstVpcPrefixID.String(),
+		},
+		"walks the node pool's current list and restarts the walk when it changed": {
+			nicoMachine: withVpcPrefixWalk(testNicoMachineForRotation(nicoMachineRotationParameters{
+				Interface: nicov1.NicoMachineInterface{
+					VPCPrefixID: secondVpcPrefixID.String(),
+				},
+				Generation:         1,
+				ObservedGeneration: 1,
+				Message:            vpcPrefixExhaustionMessage,
+			}), []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID}, firstVpcPrefixID, true),
+			nodeSet:         nicoNodeSet(nil, []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID}),
+			nodePool:        nicoNodePool([]uuid.UUID{firstVpcPrefixID, secondVpcPrefixID, thirdVpcPrefixID}),
+			wantVpcPrefixID: thirdVpcPrefixID.String(),
+			wantWalkFrom:    thirdVpcPrefixID.String(),
+		},
+		"starts a walk record on a NicoMachine created before walks were recorded": {
+			nicoMachine: testNicoMachineForRotation(nicoMachineRotationParameters{
+				Interface: nicov1.NicoMachineInterface{
+					VPCPrefixID: secondVpcPrefixID.String(),
+				},
+				Generation:         1,
+				ObservedGeneration: 1,
+				Message:            vpcPrefixExhaustionMessage,
+			}),
+			nodeSet:         nicoNodeSet(nil, []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID}),
+			wantVpcPrefixID: firstVpcPrefixID.String(),
+			wantWalkFrom:    firstVpcPrefixID.String(),
 		},
 		"errors when last subnet candidate is exhausted": {
 			nicoMachine: testNicoMachineForRotation(nicoMachineRotationParameters{
@@ -375,20 +419,70 @@ func TestRotateNicoMachineNetworkCandidate(t *testing.T) {
 				"all 2 subnets are exhausted",
 			},
 		},
-		"errors when last vpc prefix candidate is exhausted": {
-			nicoMachine: testNicoMachineForRotation(nicoMachineRotationParameters{
+		"wraps from last vpc prefix to first and marks all full when the walk started on the first": {
+			nicoMachine: withVpcPrefixWalk(testNicoMachineForRotation(nicoMachineRotationParameters{
 				Interface: nicov1.NicoMachineInterface{
 					VPCPrefixID: secondVpcPrefixID.String(),
 				},
 				Generation:         1,
 				ObservedGeneration: 1,
 				Message:            vpcPrefixExhaustionMessage,
-			}),
+			}), []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID}, firstVpcPrefixID, false),
 			nodeSet:         nicoNodeSet(nil, []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID}),
+			wantVpcPrefixID: firstVpcPrefixID.String(),
+			wantAllFull:     true,
+		},
+		"wraps from last vpc prefix to first without all full when the walk started later": {
+			nicoMachine: withVpcPrefixWalk(testNicoMachineForRotation(nicoMachineRotationParameters{
+				Interface: nicov1.NicoMachineInterface{
+					VPCPrefixID: thirdVpcPrefixID.String(),
+				},
+				Generation:         1,
+				ObservedGeneration: 1,
+				Message:            vpcPrefixExhaustionMessage,
+			}), []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID, thirdVpcPrefixID}, secondVpcPrefixID, false),
+			nodeSet:         nicoNodeSet(nil, []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID, thirdVpcPrefixID}),
+			wantVpcPrefixID: firstVpcPrefixID.String(),
+		},
+		"marks all full when the walk comes back to its recorded start": {
+			nicoMachine: withVpcPrefixWalk(testNicoMachineForRotation(nicoMachineRotationParameters{
+				Interface: nicov1.NicoMachineInterface{
+					VPCPrefixID: firstVpcPrefixID.String(),
+				},
+				Generation:         1,
+				ObservedGeneration: 1,
+				Message:            vpcPrefixExhaustionMessage,
+			}), []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID, thirdVpcPrefixID}, secondVpcPrefixID, false),
+			nodeSet:         nicoNodeSet(nil, []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID, thirdVpcPrefixID}),
 			wantVpcPrefixID: secondVpcPrefixID.String(),
-			wantErrorContains: []string{
-				"all 2 VPC prefixes are exhausted",
-			},
+			wantAllFull:     true,
+		},
+		"keeps a single full vpc prefix and marks all full": {
+			nicoMachine: withVpcPrefixWalk(testNicoMachineForRotation(nicoMachineRotationParameters{
+				Interface: nicov1.NicoMachineInterface{
+					VPCPrefixID: firstVpcPrefixID.String(),
+				},
+				Generation:         1,
+				ObservedGeneration: 1,
+				Message:            vpcPrefixExhaustionMessage,
+			}), []uuid.UUID{firstVpcPrefixID}, firstVpcPrefixID, false),
+			nodeSet:         nicoNodeSet(nil, []uuid.UUID{firstVpcPrefixID}),
+			wantVpcPrefixID: firstVpcPrefixID.String(),
+			wantAllFull:     true,
+		},
+		"keeps the first all-full time on a single vpc prefix": {
+			nicoMachine: withVpcPrefixWalk(testNicoMachineForRotation(nicoMachineRotationParameters{
+				Interface: nicov1.NicoMachineInterface{
+					VPCPrefixID: firstVpcPrefixID.String(),
+				},
+				Generation:         1,
+				ObservedGeneration: 1,
+				Message:            vpcPrefixExhaustionMessage,
+			}), []uuid.UUID{firstVpcPrefixID}, firstVpcPrefixID, true),
+			nodeSet:          nicoNodeSet(nil, []uuid.UUID{firstVpcPrefixID}),
+			wantVpcPrefixID:  firstVpcPrefixID.String(),
+			wantAllFull:      true,
+			wantAllFullSince: "2026-10-29T00:00:00Z",
 		},
 	}
 
@@ -396,7 +490,13 @@ func TestRotateNicoMachineNetworkCandidate(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			k8sClient := newNicoMachineRotationClient(t, params.nicoMachine)
 
-			err := rotateNicoMachineNetworkCandidate(context.Background(), k8sClient, params.nodeSet, testCAPINicoMachine())
+			nodePool := db.NodePool{}
+			if params.nodePool != nil {
+				nodePool = *params.nodePool
+			} else if provider, err := params.nodeSet.NicoProvider(); err == nil {
+				nodePool.SetNico(provider)
+			}
+			err := rotateNicoMachineNetworkCandidate(context.Background(), k8sClient, params.nodeSet, nodePool, testCAPINicoMachine())
 			for _, errMessage := range params.wantErrorContains {
 				require.ErrorContains(t, err, errMessage)
 			}
@@ -412,8 +512,37 @@ func TestRotateNicoMachineNetworkCandidate(t *testing.T) {
 			require.Len(t, nicoMachine.Spec.Interfaces, 1)
 			assert.Equal(t, params.wantVpcPrefixID, nicoMachine.Spec.Interfaces[0].VPCPrefixID)
 			assert.Equal(t, params.wantSubnetID, nicoMachine.Spec.Interfaces[0].SubnetID)
+			_, allFull := keys.VPCPrefixesAllFull.Get(nicoMachine.GetAnnotations())
+			assert.Equal(t, params.wantAllFull, allFull)
+			if params.wantWalkFrom != "" {
+				assert.Equal(t, params.wantWalkFrom, keys.VPCPrefixWalkStart.Value(nicoMachine.GetAnnotations()))
+				assert.Equal(t, joinVpcPrefixIDs(nodePool.Nico.VpcPrefixIDs), keys.VPCPrefixWalkCandidates.Value(nicoMachine.GetAnnotations()))
+			}
+			if params.wantAllFullSince != "" {
+				assert.Equal(t, params.wantAllFullSince, keys.VPCPrefixesAllFull.Value(nicoMachine.GetAnnotations()))
+			}
 		})
 	}
+}
+
+func nicoNodePool(vpcPrefixIDs []uuid.UUID) *db.NodePool {
+	nodePool := &db.NodePool{}
+	nodePool.SetNico(db.NicoNodePoolProvider{VpcPrefixIDs: vpcPrefixIDs})
+	return nodePool
+}
+
+// withVpcPrefixWalk records the walk a NicoMachine is on, as CreateMachine and
+// earlier rotations would have.
+func withVpcPrefixWalk(nicoMachine *nicov1.NicoMachine, candidates []uuid.UUID, walkStart uuid.UUID, allFull bool) *nicov1.NicoMachine {
+	annotations := map[string]string{
+		keys.VPCPrefixWalkCandidates.String(): joinVpcPrefixIDs(candidates),
+		keys.VPCPrefixWalkStart.String():      walkStart.String(),
+	}
+	if allFull {
+		annotations[keys.VPCPrefixesAllFull.String()] = "2026-10-29T00:00:00Z"
+	}
+	nicoMachine.SetAnnotations(annotations)
+	return nicoMachine
 }
 
 func TestShouldRotateNicoMachineInstanceType(t *testing.T) {
@@ -600,7 +729,7 @@ func TestClient_TryAdvanceStuckMachine_NoOpWithoutFailure(t *testing.T) {
 		},
 	}
 
-	advanced, err := New().TryAdvanceStuckMachine(context.Background(), deps, db.Node{}, db.NodeSet{}, testCAPINicoMachine())
+	advanced, err := New().TryAdvanceStuckMachine(context.Background(), deps, db.Node{}, db.NodeSet{}, db.NodePool{}, testCAPINicoMachine())
 	require.NoError(t, err)
 	assert.False(t, advanced)
 }
@@ -630,7 +759,7 @@ func TestClient_TryAdvanceStuckMachine_ReturnsFalseWhenInstanceTypeRotationNoOps
 		},
 	}
 
-	advanced, err := New().TryAdvanceStuckMachine(context.Background(), deps, node, db.NodeSet{}, testCAPINicoMachine())
+	advanced, err := New().TryAdvanceStuckMachine(context.Background(), deps, node, db.NodeSet{}, db.NodePool{}, testCAPINicoMachine())
 	require.NoError(t, err)
 	assert.False(t, advanced)
 }

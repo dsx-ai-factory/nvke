@@ -12,8 +12,9 @@ MANAGER_LDFLAGS := -X 'main.version=$(VERSION)' $(RELEASE_LDFLAGS)
 GO_TEST_FLAGS ?=
 .DEFAULT_GOAL := help
 
-# Image URL to use all building/pushing image targets
-IMG ?= management-engine:dev
+# Runtime target and image used by the container build/push targets.
+DOCKER_TARGET ?= manager
+IMG ?= management-engine$(if $(filter-out manager,$(DOCKER_TARGET)),-$(DOCKER_TARGET)):dev
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -45,7 +46,8 @@ license: ## Add the repository's license header to source files.
 	$(GO) run github.com/google/addlicense@v1.1.1 -f ../hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" -ignore 'bin/**' -ignore 'dist/**' .
 
 .PHONY: manifests-state manifests
-manifests-state: controller-gen generate ## Generate datastore CRDs and RBAC.
+manifests-state: controller-gen ## Generate internal deepcopy methods, datastore CRDs, and RBAC.
+	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=hack/boilerplate.yaml.txt paths=./apis/... output:crd:artifacts:config=config/crd/bases
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role,headerFile=hack/boilerplate.yaml.txt paths=./controllers/... output:rbac:artifacts:config=config/rbac
 
@@ -63,9 +65,14 @@ manifests: manifests-state kustomize kubebuilder ## Generate state, the runtime 
 	@rmdir .github/workflows .github 2>/dev/null || true
 	$(GO) run github.com/google/addlicense@v1.1.1 -f ../hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" chart
 
-.PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
+.PHONY: generate generate-public generate-public-check
+generate: generate-public ## Generate internal schemas, public projections, and registration wiring.
+
+generate-public: manifests-state ## Generate the explicitly selected public resources and registrations.
+	$(GO) run ./cmd/public-gen
+
+generate-public-check: ## Verify public projections match their source types and configuration.
+	$(GO) run ./cmd/public-gen -check
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -78,12 +85,18 @@ vet: ## Run go vet against code.
 TEST_PROCS ?= 5
 
 .PHONY: test
-test: test-api test-controller ## Run API, client, startup, and controller tests.
+test: test-api test-integration test-controller ## Run API, unit, resource integration, and controller tests.
 
 .PHONY: test-unit
-test-unit: fmt vet ## Run client and startup unit tests.
+test-unit: fmt vet ## Run unit tests without a Kubernetes API server.
 	@$(COVERAGE_MKDIR)
-	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,unit) -covermode=$(GO_COVER_MODE) ./internal/... ./cmd/...
+	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,unit) -covermode=$(GO_COVER_MODE) ./internal/... ./cmd/... ./pkg/...
+
+.PHONY: test-integration
+test-integration: ENVTEST_K8S_VERSION=1.37.0
+test-integration: fmt vet setup-envtest ## Run resource integration tests with an isolated envtest API server.
+	@$(COVERAGE_MKDIR)
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" $(GO) test $(GO_TEST_FLAGS) -tags=integration_test -race -coverprofile=$(call coverprofile,integration) -covermode=$(GO_COVER_MODE) ./pkg/resource
 
 .PHONY: test-api
 # Separate test invocations need distinct profiles to avoid overwriting coverage.
@@ -117,20 +130,22 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 ##@ Build
 
 .PHONY: build build-bin
-build: manifests generate fmt vet build-bin ## Build manager binary.
+build: manifests generate fmt vet build-bin ## Build manager and REST binaries.
 
 # The generate steps in `build` exceed the Go Build job timeout.
-build-bin: ## Compile the manager binary without regenerating.
+build-bin: ## Compile the manager and REST binaries without regenerating.
 	$(GO) build ./...
 	CGO_ENABLED=0 $(GO) build -buildvcs=false -trimpath -ldflags "$(MANAGER_LDFLAGS)" -o $(BIN_DIR)/management-engine ./cmd
+	CGO_ENABLED=0 $(GO) build -buildvcs=false -trimpath -ldflags "$(MANAGER_LDFLAGS)" -o $(BIN_DIR)/tenant-api ./cmd/tenant-api
+	CGO_ENABLED=0 $(GO) build -buildvcs=false -trimpath -ldflags "$(MANAGER_LDFLAGS)" -o $(BIN_DIR)/operator-api ./cmd/operator-api
 
 .PHONY: run
 run: build ## Run against the management API selected by MANAGER_ARGS.
 	$(BIN_DIR)/management-engine $(MANAGER_ARGS)
 
 .PHONY: docker-build
-docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -f Dockerfile --build-arg VERSION=$(VERSION) -t ${IMG} ..
+docker-build: ## Build the selected runtime image (DOCKER_TARGET defaults to manager).
+	$(CONTAINER_TOOL) build -f Dockerfile --target $(DOCKER_TARGET) --build-arg VERSION=$(VERSION) -t ${IMG} ..
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -155,7 +170,9 @@ require-state-context:
 TILT_PORT ?= 10351
 export TILT_PORT
 
-.PHONY: tilt-up
+.PHONY: dev tilt-up
+dev: tilt-up ## Start the existing Tilt development stack.
+
 tilt-up: ## Start the controller Tilt stack with providers selected in controller/tilt_config.json.
 	cd ../controller && tilt up --port "$(TILT_PORT)"
 

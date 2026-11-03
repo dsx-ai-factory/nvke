@@ -36,6 +36,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/controlplane"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/controlplanenodescheduler"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/machineannotations"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/nodeagentreadiness"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/nodepool"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/nodepoolnodescheduler"
@@ -329,12 +330,24 @@ func main() {
 	machineSpireEntryController := capi.NewMachineSpireEntryController(
 		cfg,
 		k8sControllerManager.GetClient(),
-		dbInstance,
 		logger.With("logger", "machine-spire-entry-controller"),
 		trustDomain,
 	)
 	if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
+		os.Exit(1)
+	}
+
+	// Sets agent-connection on Machines created before the controller wrote it,
+	// which MachineSpireEntryController waits for.
+	machineAnnotationsController := machineannotations.NewController(
+		cfg,
+		logger.With("logger", "machine-annotations-controller"),
+		dbInstance,
+		k8sControllerManager.GetClient(),
+	)
+	if err := machineAnnotationsController.SetupWithManager(k8sControllerManager); err != nil {
+		logger.Error("Failed to set up machine annotations controller", "error", err)
 		os.Exit(1)
 	}
 
@@ -350,7 +363,6 @@ func main() {
 	}
 	if launchLayerCRDInstalled {
 		launchLayerSpiffeController := capi.NewLaunchLayerSpiffeController(
-			dbInstance,
 			k8sControllerManager.GetClient(),
 			logger.With("logger", "launchlayer-spiffe-controller"),
 		)
@@ -375,7 +387,6 @@ func main() {
 
 		nicoSpiffeController := capi.NewNicoSpiffeController(
 			cfg,
-			dbInstance,
 			k8sControllerManager.GetClient(),
 			logger.With("logger", "nico-spiffe-controller"),
 		)

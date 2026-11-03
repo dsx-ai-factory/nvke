@@ -26,25 +26,18 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
-type nicoSpiffeNodeReader interface {
-	GetNode(ctx context.Context, id uuid.UUID) (db.Node, error)
-}
-
 type NicoSpiffeController struct {
 	cfg       config.Config
-	nodes     nicoSpiffeNodeReader
 	k8sClient client.Client
 	logger    *slog.Logger
 }
 
-func NewNicoSpiffeController(cfg config.Config, nodes nicoSpiffeNodeReader, k8sClient client.Client, logger *slog.Logger) *NicoSpiffeController {
+func NewNicoSpiffeController(cfg config.Config, k8sClient client.Client, logger *slog.Logger) *NicoSpiffeController {
 	return &NicoSpiffeController{
 		cfg:       cfg,
-		nodes:     nodes,
 		k8sClient: k8sClient,
 		logger:    logger,
 	}
@@ -56,21 +49,26 @@ func (c *NicoSpiffeController) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&clusterv1.Machine{},
 			handler.EnqueueRequestsFromMapFunc(nicoMachineRequestsForMachine),
-			builder.WithPredicates(machineHostIDWatchPredicate()),
+			builder.WithPredicates(machineIdentityWatchPredicate()),
 		).
 		Named("nico-spiffe").
 		Complete(c)
 }
 
-func machineHostIDWatchPredicate() predicate.Predicate {
+func machineIdentityWatchPredicate() predicate.Predicate {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return keys.MachineHostID.Value(e.Object.GetAnnotations()) != ""
 		},
 		// Ignore updates from this controller's own SPIRE agent-path annotation.
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return keys.MachineHostID.Value(e.ObjectOld.GetAnnotations()) !=
-				keys.MachineHostID.Value(e.ObjectNew.GetAnnotations())
+			oldAnnotations, newAnnotations := e.ObjectOld.GetAnnotations(), e.ObjectNew.GetAnnotations()
+			for _, key := range []keys.Key{keys.MachineHostID, keys.MachineSpireAttestationMethod, keys.MachineSpiffeEnabled} {
+				if key.Value(oldAnnotations) != key.Value(newAnnotations) {
+					return true
+				}
+			}
+			return false
 		},
 		DeleteFunc:  func(event.DeleteEvent) bool { return false },
 		GenericFunc: func(event.GenericEvent) bool { return false },
@@ -119,18 +117,18 @@ func (c *NicoSpiffeController) Reconcile(ctx context.Context, req ctrl.Request) 
 		logger.Debug("Machine has no host-id annotation, skipping SPIRE agent path reconciliation")
 		return ctrl.Result{}, nil
 	}
-	nodeID, err := uuid.Parse(hostID)
-	if err != nil {
+	if _, err := uuid.Parse(hostID); err != nil {
 		return ctrl.Result{}, fmt.Errorf("invalid host ID %q on Machine %s/%s: %w", hostID, machine.Namespace, machine.Name, err)
 	}
-	node, err := c.nodes.GetNode(ctx, nodeID)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("get node %s for Machine %s/%s: %w", nodeID, machine.Namespace, machine.Name, err)
+	attestationMethod, ok := keys.MachineSpireAttestationMethod.Get(machine.GetAnnotations())
+	if !ok {
+		logger.Info("Waiting for spire-attestation-method annotation to be set on Machine", "hostID", hostID)
+		return ctrl.Result{}, nil
 	}
-	method := node.SpireAttestationMethod
+	method := config.SpireAttestationMethod(attestationMethod)
 	spireAgentSpiffeIDPath, expectedPathPrefix := c.spireAgentSpiffeIDPath(nicoMachine, method)
 	if spireAgentSpiffeIDPath == "" {
-		if method == db.SpireAttestationMethodJoinToken {
+		if method == config.SpireAttestationMethodJoinToken {
 			return ctrl.Result{}, nil // The join-token path is set when the Machine is created.
 		}
 		logger.Info("Waiting for SPIRE agent identity source on NicoMachine", "attestationMethod", method)
@@ -165,16 +163,16 @@ func (c *NicoSpiffeController) Reconcile(ctx context.Context, req ctrl.Request) 
 	return ctrl.Result{}, nil
 }
 
-func (c *NicoSpiffeController) spireAgentSpiffeIDPath(nicoMachine *nicov1.NicoMachine, method db.SpireAttestationMethod) (string, string) {
+func (c *NicoSpiffeController) spireAgentSpiffeIDPath(nicoMachine *nicov1.NicoMachine, method config.SpireAttestationMethod) (string, string) {
 	switch method {
-	case db.SpireAttestationMethodJoinToken:
+	case config.SpireAttestationMethodJoinToken:
 		return "", ""
-	case db.SpireAttestationMethodTPM:
+	case config.SpireAttestationMethodTPM:
 		if nicoMachine.Status.TpmEkPubHash == "" {
 			return "", constants.TPMSpireAgentPath
 		}
 		return constants.TPMSpireAgentPath + nicoMachine.Status.TpmEkPubHash, constants.TPMSpireAgentPath
-	case db.SpireAttestationMethodDSXIMDS:
+	case config.SpireAttestationMethodDSXIMDS:
 		if nicoMachine.Status.PrimaryDPUMachineID == "" {
 			return "", constants.DSXIMDSSpireAgentPath
 		}
