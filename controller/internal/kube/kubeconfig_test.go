@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,6 +20,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 )
 
 // testAdminKubeconfig is shaped like a kubeadm admin.conf.
@@ -236,9 +238,11 @@ func TestClientFromControlPlaneNodeAgentDoesNotRunExecPlugin(t *testing.T) {
 	nodeAgentClient := &agenttest.FakeClient{Kubeconfigs: map[uuid.UUID]string{node.ID: shellExecKubeconfig(marker)}}
 	provider := NewDBClusterTenantClientProvider(nil, nil, nodeAgentClient, false, constants.LegacyManagementNamespace)
 
+	before := tenantKubeconfigRejected(t, metrics.TenantKubeconfigSourceNodeAgent)
 	_, err := provider.clientFromControlPlaneNodeAgent(context.Background(), cluster, []db.Node{node})
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidKubeconfig)
 	require.NoFileExists(t, marker)
+	require.InDelta(t, before+1, tenantKubeconfigRejected(t, metrics.TenantKubeconfigSourceNodeAgent), 0)
 }
 
 func TestClientFromTenantAccessSecretDoesNotRunExecPlugin(t *testing.T) {
@@ -257,7 +261,31 @@ func TestClientFromTenantAccessSecretDoesNotRunExecPlugin(t *testing.T) {
 		Build()
 	provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, true, constants.LegacyManagementNamespace)
 
+	before := tenantKubeconfigRejected(t, metrics.TenantKubeconfigSourceSecret)
 	_, err := provider.ClientForDBCluster(context.Background(), cluster)
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidKubeconfig)
 	require.NoFileExists(t, marker)
+	require.InDelta(t, before+1, tenantKubeconfigRejected(t, metrics.TenantKubeconfigSourceSecret), 0)
+}
+
+// tenantKubeconfigRejected reads nvke_controller_tenant_kubeconfig_rejected_total
+// for source from the default registry.
+func tenantKubeconfigRejected(t *testing.T, source string) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() != "nvke_controller_tenant_kubeconfig_rejected_total" {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			for _, label := range metric.GetLabel() {
+				if label.GetName() == "source" && label.GetValue() == source {
+					return metric.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	t.Fatalf("no %s series for source %q", "nvke_controller_tenant_kubeconfig_rejected_total", source)
+	return 0
 }

@@ -17,6 +17,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
@@ -94,6 +95,9 @@ func (c *Controller) fetchAdminKubeconfig(ctx context.Context, cluster db.Cluste
 		}
 		adminConf, err := kube.SanitizeAdminKubeconfig([]byte(kubeconfigBytes))
 		if err != nil {
+			metrics.RecordTenantKubeconfigRejected(metrics.TenantKubeconfigSourceNodeAgent)
+			c.logger.Warn("Control-plane node returned a kubeconfig the controller does not accept",
+				"clusterID", cluster.ID, "clusterName", cluster.Name, "nodeID", node.ID, "error", err)
 			candidateErrs = append(candidateErrs, fmt.Errorf("node %s returned an invalid kubeconfig: %w", node.ID, err))
 			continue
 		}
