@@ -164,7 +164,7 @@ image exists nowhere. Later releases land under `ghcr.io/dsx-ai-factory/nvke`.
 
 The controller image is `nvke-controller` on every registry. The chart is `nvke-controller`
 on GHCR and `nvke-controller-chart` on NVCR. The GHCR packages for releases cut before
-this rename no longer exist: the image `nke-controller` and the charts
+this rename no longer exist: the images `nke-controller` and `controller` and the charts
 `charts/cloud-workflow-engine`, `charts/controller` and `charts/nke-controller`. Nothing
 was republished under the new name. GHCR holds the controller from `controller/v0.3.0-rc.1`
 on, so a pin on an earlier tag or on `nke-controller` does not resolve there, and

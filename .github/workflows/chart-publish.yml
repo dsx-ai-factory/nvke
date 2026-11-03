@@ -147,9 +147,19 @@ jobs:
 
           # The same tag push starts image-nvcr.yml, whose Promote to GHCR job
           # creates this image several minutes after this job starts. Wait for
-          # it rather than failing the race.
+          # it rather than failing the race. Only a missing manifest or a hung
+          # probe means "not yet"; auth, rate-limit and other errors fail now.
           deadline=$((SECONDS + 30 * 60))
-          until docker manifest inspect "${image}:${APP_VERSION}" >/dev/null 2>&1; do
+          while :; do
+            rc=0
+            out="$(timeout 60 docker manifest inspect "${image}:${APP_VERSION}" 2>&1)" || rc=$?
+            if (( rc == 0 )); then
+              break
+            fi
+            if (( rc != 124 )) && ! grep -qiE 'manifest unknown|no such manifest' <<<"${out}"; then
+              echo "::error::probing ${image}:${APP_VERSION} failed: ${out}"
+              exit 1
+            fi
             if (( SECONDS >= deadline )); then
               echo "::error::${image}:${APP_VERSION} did not appear on GHCR within 30 minutes; check image-nvcr.yml's Promote to GHCR job"
               exit 1
