@@ -40,6 +40,9 @@ const (
 	NodeAgent_StartKubernetesCertificateRenewalV2_FullMethodName          = "/proto.NodeAgent/StartKubernetesCertificateRenewalV2"
 	NodeAgent_GetKubernetesCertificateRenewalStatus_FullMethodName        = "/proto.NodeAgent/GetKubernetesCertificateRenewalStatus"
 	NodeAgent_RemoveEtcdMember_FullMethodName                             = "/proto.NodeAgent/RemoveEtcdMember"
+	NodeAgent_GetEtcdStatus_FullMethodName                                = "/proto.NodeAgent/GetEtcdStatus"
+	NodeAgent_StartEtcdDefrag_FullMethodName                              = "/proto.NodeAgent/StartEtcdDefrag"
+	NodeAgent_GetEtcdDefragStatus_FullMethodName                          = "/proto.NodeAgent/GetEtcdDefragStatus"
 	NodeAgent_StartK8SControlPlaneNodeGracefulShutdown_FullMethodName     = "/proto.NodeAgent/StartK8sControlPlaneNodeGracefulShutdown"
 	NodeAgent_GetK8SControlPlaneNodeGracefulShutdownStatus_FullMethodName = "/proto.NodeAgent/GetK8sControlPlaneNodeGracefulShutdownStatus"
 	NodeAgent_StartKubeVipRestore_FullMethodName                          = "/proto.NodeAgent/StartKubeVipRestore"
@@ -145,6 +148,86 @@ type NodeAgentClient interface {
 	// leadership to the local member before removing a leader, and treats an
 	// absent target as success.
 	RemoveEtcdMember(ctx context.Context, in *RemoveEtcdMemberRequest, opts ...grpc.CallOption) (*RemoveEtcdMemberResponse, error)
+	// GetEtcdStatus reports the local etcd member's backend sizing and role.
+	// Read-only and side-effect free: it uses etcd's Status and MemberList
+	// maintenance APIs and reads the static-pod manifest, never the key/value
+	// API, so it is safe to poll.
+	//
+	// The caller decides whether defragmentation is warranted; this RPC only
+	// reports. reclaimable_bytes (db_total_size - db_total_size_in_use) is the
+	// figure to gate on, not db_total_size: a large file backed by live data is
+	// not reclaimable and defragmentation would not shrink it.
+	GetEtcdStatus(ctx context.Context, in *GetEtcdStatusRequest, opts ...grpc.CallOption) (*GetEtcdStatusResponse, error)
+	// StartEtcdDefrag starts an asynchronous offline defragmentation of the local
+	// etcd member by restarting it so etcd defragments during bootstrap. It never
+	// calls `etcdctl defrag`, which blocks the member while it runs.
+	//
+	// The etcd manifest is never moved or modified. The restart is `crictl stop`
+	// on the etcd container, and kubelet starts a replacement from the manifest
+	// that stayed in place. etcd then defragments during bootstrap if its
+	// configured threshold is met.
+	//
+	// Because the threshold is what decides whether the restart accomplishes
+	// anything, the agent reads it from the manifest and refuses up front when
+	// reclaimable_bytes is below it, reporting OUTCOME_REFUSED without touching
+	// etcd. A restart that cannot defragment is pure downtime, so it is not
+	// attempted. The agent never edits the threshold - it is set by kubeadm when
+	// the node is provisioned - so the configured value is always honored.
+	//
+	// THE CALLER MUST NOT TAKE THIS NODE OUT OF SERVICE FIRST. The agent performs
+	// the whole per-node sequence, including the withdrawal and the return:
+	// health preflight, voting member check, leadership transfer away from the
+	// local member if it is leader, withdrawal from the control-plane VIP,
+	// stopping kube-apiserver, the etcd restart, the wait for etcd to return
+	// healthy, then kube-apiserver and kube-vip back in that order. The caller
+	// sequences members; it does not orchestrate within one. Bracketing this RPC
+	// with a withdrawal of its own would take out a node that is about to do it
+	// anyway and restore one that has already come back - in the rollout
+	// framework that means no kube-vip NodeGuard around this call.
+	//
+	// kube-apiserver is stopped as well as the VIP withdrawn because two separate
+	// paths reach this node's apiserver, and the VIP is only one of them. The
+	// kubernetes.default Service resolves to control-plane node IPs rather than
+	// to the VIP, so withdrawing the VIP alone leaves kube-proxy load balancing
+	// in-cluster clients onto an apiserver whose only etcd backend is down.
+	// Stopping the apiserver closes that path too, and the endpoint reconciler
+	// prunes and republishes this node's IP on its own as the apiserver stops and
+	// resumes renewing its masterlease - neither direction needs a caller.
+	//
+	// "Withdrawal" is not a drain in the kubectl sense. No workload is evicted
+	// and the node is not cordoned. What stops is this node's participation in
+	// serving the Kubernetes API.
+	//
+	// A member that fails to return healthy after the restart is left withdrawn
+	// on purpose, with kube-apiserver and kube-vip still parked, and reports
+	// OUTCOME_FAILED_NOT_RESTORED. Returning either one would route traffic to an
+	// apiserver with no etcd behind it rather than leaving the remaining members
+	// to carry the cluster. That case needs an operator: no agent-side action
+	// recovers an etcd that will not start from its own unmodified manifest.
+	//
+	// An agent that dies mid-sequence restores what it parked on next startup,
+	// before it serves any RPC, so an interrupted defragmentation does not leave
+	// a node permanently out of the control plane.
+	//
+	// Success means the local apiserver answered GET /readyz with 200 and the VIP
+	// is back on loopback. It does not mean this node is carrying VIP traffic
+	// again. kube-vip speaks BGP in-process and announces the route on its own
+	// first successful /readyz probe, so nothing on the node can observe whether
+	// the upstream peer has installed it - the metrics kube-vip exports cover the
+	// peer session state, not which prefixes are advertised. Returning to service
+	// is therefore reported as "every local precondition for announcement now
+	// holds", and a caller that needs proof the node is in the ECMP set has to
+	// check the VIP from off the node.
+	//
+	// Readiness is waited for before kube-vip is restored rather than after,
+	// because that first probe is the one that decides when the route goes out.
+	//
+	// The operation_id is an idempotency key; retrying with the same operation_id
+	// returns the existing operation instead of restarting etcd a second time.
+	StartEtcdDefrag(ctx context.Context, in *StartEtcdDefragRequest, opts ...grpc.CallOption) (*StartEtcdDefragResponse, error)
+	// GetEtcdDefragStatus returns the current status for a previously started
+	// asynchronous etcd defragmentation, including how many bytes were reclaimed.
+	GetEtcdDefragStatus(ctx context.Context, in *GetEtcdDefragStatusRequest, opts ...grpc.CallOption) (*GetEtcdDefragStatusResponse, error)
 	// StartK8sControlPlaneNodeGracefulShutdown starts an asynchronous
 	// control-plane node graceful shutdown operation. The operation_id is an
 	// idempotency key; retrying with the same operation_id returns the existing
@@ -154,11 +237,22 @@ type NodeAgentClient interface {
 	// a previously started asynchronous control-plane node graceful shutdown.
 	GetK8SControlPlaneNodeGracefulShutdownStatus(ctx context.Context, in *GetK8SControlPlaneNodeGracefulShutdownStatusRequest, opts ...grpc.CallOption) (*GetK8SControlPlaneNodeGracefulShutdownStatusResponse, error)
 	// StartKubeVipRestore starts an asynchronous restore for kube-vip on a node
-	// previously prepared by StartK8sControlPlaneNodeGracefulShutdown. It
-	// restores the kube-vip static pod manifest and waits for the VIP to appear
-	// on loopback again. The operation_id is an idempotency key; retrying with the
-	// same operation_id returns the existing operation instead of starting
-	// duplicate work.
+	// previously prepared by StartK8sControlPlaneNodeGracefulShutdown. It waits
+	// for the local apiserver to answer GET /readyz with 200, restores the
+	// kube-vip static pod manifest, and waits for the VIP to appear on loopback
+	// again. The operation_id is an idempotency key; retrying with the same
+	// operation_id returns the existing operation instead of starting duplicate
+	// work.
+	//
+	// Nothing in the agent restores kube-apiserver, so the caller owns bringing it
+	// back before calling this. The readiness wait verifies that rather than
+	// assuming it: an apiserver that never becomes ready fails the operation, but
+	// the kube-vip manifest is restored anyway, because kube-vip announces no
+	// route until its own /readyz probe passes and a manifest left parked would
+	// need another call to undo.
+	//
+	// As with StartEtcdDefrag, success does not prove the upstream peer has
+	// installed the route; that is only observable from off the node.
 	StartKubeVipRestore(ctx context.Context, in *StartKubeVipRestoreRequest, opts ...grpc.CallOption) (*StartKubeVipRestoreResponse, error)
 	// InstallCNI deploys packaged CNI charts or manifests into the cluster (helm install /
 	// kubectl apply). It assumes the charts/manifest Debian package is already installed
@@ -472,6 +566,36 @@ func (c *nodeAgentClient) RemoveEtcdMember(ctx context.Context, in *RemoveEtcdMe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RemoveEtcdMemberResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_RemoveEtcdMember_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) GetEtcdStatus(ctx context.Context, in *GetEtcdStatusRequest, opts ...grpc.CallOption) (*GetEtcdStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetEtcdStatusResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_GetEtcdStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) StartEtcdDefrag(ctx context.Context, in *StartEtcdDefragRequest, opts ...grpc.CallOption) (*StartEtcdDefragResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartEtcdDefragResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_StartEtcdDefrag_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) GetEtcdDefragStatus(ctx context.Context, in *GetEtcdDefragStatusRequest, opts ...grpc.CallOption) (*GetEtcdDefragStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetEtcdDefragStatusResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_GetEtcdDefragStatus_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -917,6 +1041,86 @@ type NodeAgentServer interface {
 	// leadership to the local member before removing a leader, and treats an
 	// absent target as success.
 	RemoveEtcdMember(context.Context, *RemoveEtcdMemberRequest) (*RemoveEtcdMemberResponse, error)
+	// GetEtcdStatus reports the local etcd member's backend sizing and role.
+	// Read-only and side-effect free: it uses etcd's Status and MemberList
+	// maintenance APIs and reads the static-pod manifest, never the key/value
+	// API, so it is safe to poll.
+	//
+	// The caller decides whether defragmentation is warranted; this RPC only
+	// reports. reclaimable_bytes (db_total_size - db_total_size_in_use) is the
+	// figure to gate on, not db_total_size: a large file backed by live data is
+	// not reclaimable and defragmentation would not shrink it.
+	GetEtcdStatus(context.Context, *GetEtcdStatusRequest) (*GetEtcdStatusResponse, error)
+	// StartEtcdDefrag starts an asynchronous offline defragmentation of the local
+	// etcd member by restarting it so etcd defragments during bootstrap. It never
+	// calls `etcdctl defrag`, which blocks the member while it runs.
+	//
+	// The etcd manifest is never moved or modified. The restart is `crictl stop`
+	// on the etcd container, and kubelet starts a replacement from the manifest
+	// that stayed in place. etcd then defragments during bootstrap if its
+	// configured threshold is met.
+	//
+	// Because the threshold is what decides whether the restart accomplishes
+	// anything, the agent reads it from the manifest and refuses up front when
+	// reclaimable_bytes is below it, reporting OUTCOME_REFUSED without touching
+	// etcd. A restart that cannot defragment is pure downtime, so it is not
+	// attempted. The agent never edits the threshold - it is set by kubeadm when
+	// the node is provisioned - so the configured value is always honored.
+	//
+	// THE CALLER MUST NOT TAKE THIS NODE OUT OF SERVICE FIRST. The agent performs
+	// the whole per-node sequence, including the withdrawal and the return:
+	// health preflight, voting member check, leadership transfer away from the
+	// local member if it is leader, withdrawal from the control-plane VIP,
+	// stopping kube-apiserver, the etcd restart, the wait for etcd to return
+	// healthy, then kube-apiserver and kube-vip back in that order. The caller
+	// sequences members; it does not orchestrate within one. Bracketing this RPC
+	// with a withdrawal of its own would take out a node that is about to do it
+	// anyway and restore one that has already come back - in the rollout
+	// framework that means no kube-vip NodeGuard around this call.
+	//
+	// kube-apiserver is stopped as well as the VIP withdrawn because two separate
+	// paths reach this node's apiserver, and the VIP is only one of them. The
+	// kubernetes.default Service resolves to control-plane node IPs rather than
+	// to the VIP, so withdrawing the VIP alone leaves kube-proxy load balancing
+	// in-cluster clients onto an apiserver whose only etcd backend is down.
+	// Stopping the apiserver closes that path too, and the endpoint reconciler
+	// prunes and republishes this node's IP on its own as the apiserver stops and
+	// resumes renewing its masterlease - neither direction needs a caller.
+	//
+	// "Withdrawal" is not a drain in the kubectl sense. No workload is evicted
+	// and the node is not cordoned. What stops is this node's participation in
+	// serving the Kubernetes API.
+	//
+	// A member that fails to return healthy after the restart is left withdrawn
+	// on purpose, with kube-apiserver and kube-vip still parked, and reports
+	// OUTCOME_FAILED_NOT_RESTORED. Returning either one would route traffic to an
+	// apiserver with no etcd behind it rather than leaving the remaining members
+	// to carry the cluster. That case needs an operator: no agent-side action
+	// recovers an etcd that will not start from its own unmodified manifest.
+	//
+	// An agent that dies mid-sequence restores what it parked on next startup,
+	// before it serves any RPC, so an interrupted defragmentation does not leave
+	// a node permanently out of the control plane.
+	//
+	// Success means the local apiserver answered GET /readyz with 200 and the VIP
+	// is back on loopback. It does not mean this node is carrying VIP traffic
+	// again. kube-vip speaks BGP in-process and announces the route on its own
+	// first successful /readyz probe, so nothing on the node can observe whether
+	// the upstream peer has installed it - the metrics kube-vip exports cover the
+	// peer session state, not which prefixes are advertised. Returning to service
+	// is therefore reported as "every local precondition for announcement now
+	// holds", and a caller that needs proof the node is in the ECMP set has to
+	// check the VIP from off the node.
+	//
+	// Readiness is waited for before kube-vip is restored rather than after,
+	// because that first probe is the one that decides when the route goes out.
+	//
+	// The operation_id is an idempotency key; retrying with the same operation_id
+	// returns the existing operation instead of restarting etcd a second time.
+	StartEtcdDefrag(context.Context, *StartEtcdDefragRequest) (*StartEtcdDefragResponse, error)
+	// GetEtcdDefragStatus returns the current status for a previously started
+	// asynchronous etcd defragmentation, including how many bytes were reclaimed.
+	GetEtcdDefragStatus(context.Context, *GetEtcdDefragStatusRequest) (*GetEtcdDefragStatusResponse, error)
 	// StartK8sControlPlaneNodeGracefulShutdown starts an asynchronous
 	// control-plane node graceful shutdown operation. The operation_id is an
 	// idempotency key; retrying with the same operation_id returns the existing
@@ -926,11 +1130,22 @@ type NodeAgentServer interface {
 	// a previously started asynchronous control-plane node graceful shutdown.
 	GetK8SControlPlaneNodeGracefulShutdownStatus(context.Context, *GetK8SControlPlaneNodeGracefulShutdownStatusRequest) (*GetK8SControlPlaneNodeGracefulShutdownStatusResponse, error)
 	// StartKubeVipRestore starts an asynchronous restore for kube-vip on a node
-	// previously prepared by StartK8sControlPlaneNodeGracefulShutdown. It
-	// restores the kube-vip static pod manifest and waits for the VIP to appear
-	// on loopback again. The operation_id is an idempotency key; retrying with the
-	// same operation_id returns the existing operation instead of starting
-	// duplicate work.
+	// previously prepared by StartK8sControlPlaneNodeGracefulShutdown. It waits
+	// for the local apiserver to answer GET /readyz with 200, restores the
+	// kube-vip static pod manifest, and waits for the VIP to appear on loopback
+	// again. The operation_id is an idempotency key; retrying with the same
+	// operation_id returns the existing operation instead of starting duplicate
+	// work.
+	//
+	// Nothing in the agent restores kube-apiserver, so the caller owns bringing it
+	// back before calling this. The readiness wait verifies that rather than
+	// assuming it: an apiserver that never becomes ready fails the operation, but
+	// the kube-vip manifest is restored anyway, because kube-vip announces no
+	// route until its own /readyz probe passes and a manifest left parked would
+	// need another call to undo.
+	//
+	// As with StartEtcdDefrag, success does not prove the upstream peer has
+	// installed the route; that is only observable from off the node.
 	StartKubeVipRestore(context.Context, *StartKubeVipRestoreRequest) (*StartKubeVipRestoreResponse, error)
 	// InstallCNI deploys packaged CNI charts or manifests into the cluster (helm install /
 	// kubectl apply). It assumes the charts/manifest Debian package is already installed
@@ -1120,6 +1335,15 @@ func (UnimplementedNodeAgentServer) GetKubernetesCertificateRenewalStatus(contex
 }
 func (UnimplementedNodeAgentServer) RemoveEtcdMember(context.Context, *RemoveEtcdMemberRequest) (*RemoveEtcdMemberResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveEtcdMember not implemented")
+}
+func (UnimplementedNodeAgentServer) GetEtcdStatus(context.Context, *GetEtcdStatusRequest) (*GetEtcdStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetEtcdStatus not implemented")
+}
+func (UnimplementedNodeAgentServer) StartEtcdDefrag(context.Context, *StartEtcdDefragRequest) (*StartEtcdDefragResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartEtcdDefrag not implemented")
+}
+func (UnimplementedNodeAgentServer) GetEtcdDefragStatus(context.Context, *GetEtcdDefragStatusRequest) (*GetEtcdDefragStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetEtcdDefragStatus not implemented")
 }
 func (UnimplementedNodeAgentServer) StartK8SControlPlaneNodeGracefulShutdown(context.Context, *StartK8SControlPlaneNodeGracefulShutdownRequest) (*StartK8SControlPlaneNodeGracefulShutdownResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartK8SControlPlaneNodeGracefulShutdown not implemented")
@@ -1550,6 +1774,60 @@ func _NodeAgent_RemoveEtcdMember_Handler(srv interface{}, ctx context.Context, d
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodeAgentServer).RemoveEtcdMember(ctx, req.(*RemoveEtcdMemberRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_GetEtcdStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetEtcdStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).GetEtcdStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_GetEtcdStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).GetEtcdStatus(ctx, req.(*GetEtcdStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_StartEtcdDefrag_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartEtcdDefragRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).StartEtcdDefrag(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_StartEtcdDefrag_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).StartEtcdDefrag(ctx, req.(*StartEtcdDefragRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_GetEtcdDefragStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetEtcdDefragStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).GetEtcdDefragStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_GetEtcdDefragStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).GetEtcdDefragStatus(ctx, req.(*GetEtcdDefragStatusRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2219,6 +2497,18 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveEtcdMember",
 			Handler:    _NodeAgent_RemoveEtcdMember_Handler,
+		},
+		{
+			MethodName: "GetEtcdStatus",
+			Handler:    _NodeAgent_GetEtcdStatus_Handler,
+		},
+		{
+			MethodName: "StartEtcdDefrag",
+			Handler:    _NodeAgent_StartEtcdDefrag_Handler,
+		},
+		{
+			MethodName: "GetEtcdDefragStatus",
+			Handler:    _NodeAgent_GetEtcdDefragStatus_Handler,
 		},
 		{
 			MethodName: "StartK8sControlPlaneNodeGracefulShutdown",
