@@ -141,10 +141,10 @@ The site cluster has no storage class after bootstrap. Install a storage provisi
 
 ```bash
 # Verify the manifest before applying
-curl -sL https://github.com/rancher/local-path-provisioner/releases/download/v0.0.37/local-path-storage.yaml \
+curl -sL https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.37/deploy/local-path-storage.yaml \
   | sha256sum
 # Apply once verified
-kubectl apply -f https://github.com/rancher/local-path-provisioner/releases/download/v0.0.37/local-path-storage.yaml \
+kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.37/deploy/local-path-storage.yaml \
   --kubeconfig <sitename>.kubeconfig
 ```
 
