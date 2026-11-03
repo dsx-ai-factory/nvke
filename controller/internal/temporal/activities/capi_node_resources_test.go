@@ -484,8 +484,9 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 	})
 
 	t.Run("rotates one network candidate and waits when IP is absent", func(t *testing.T) {
+		machine := withMachineInfrastructureReadyMessage(testCAPIMachineWithNicoInfraRef(nil), exhaustionMessage)
 		k8sClient := newCAPIMachineReadyClient(t,
-			testCAPIMachineWithNicoInfraRef(nil),
+			machine,
 			testNicoMachineForCAPIMachineReady(nicoMachineRotationParameters{
 				Interface: nicov1.NicoMachineInterface{
 					VPCPrefixID: firstVpcPrefixID.String(),
@@ -502,19 +503,51 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
 			return nodeForUpdate.ID == node.ID &&
 				nodeForUpdate.Conditions.Pending.Status == db.ConditionStatusTrue &&
+				nodeForUpdate.Conditions.Pending.Message == exhaustionMessage &&
 				nodeForUpdate.Conditions.Provisioning.Status == db.ConditionStatusFalse
 		})).Return(node, nil).Once()
 
 		a := &Activities{db: mockDB, k8sClient: k8sClient}
 
 		ipAddress, err := executeWaitForCAPIMachineReadyActivity(t, a, WaitForCAPIMachineReadyInput{NodeID: nodeID})
-		require.ErrorContains(t, err, "has no IP addresses in status or infrastructure ref")
+		require.ErrorContains(t, err, "has no IP addresses in status or infrastructure ref: "+exhaustionMessage)
 		assert.Empty(t, ipAddress)
 
 		nicoMachine := getTestNicoMachine(t, k8sClient)
 		require.Len(t, nicoMachine.Spec.Interfaces, 1)
 		assert.Equal(t, secondVpcPrefixID.String(), nicoMachine.Spec.Interfaces[0].VPCPrefixID)
 		assert.Empty(t, nicoMachine.Spec.Interfaces[0].SubnetID)
+		mockDB.AssertExpectations(t)
+		mockTx.AssertExpectations(t)
+	})
+
+	t.Run("returns InfrastructureReady condition message while waiting for IP", func(t *testing.T) {
+		conditionMsg := "400 Bad Request: {\"error\":\"vpc not found\"}"
+		k8sClient := newCAPIMachineReadyClient(t,
+			withMachineInfrastructureReadyMessage(testCAPIMachineWithNicoInfraRef(nil), conditionMsg),
+			testNicoMachineForCAPIMachineReady(nicoMachineRotationParameters{
+				Interface: nicov1.NicoMachineInterface{
+					VPCPrefixID: firstVpcPrefixID.String(),
+				},
+				Generation:         1,
+				ObservedGeneration: 1,
+			}),
+		)
+		mockDB, mockTx := newCAPIMachineReadyDB(t, node, cluster)
+		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		mockTx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil)
+		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
+			return nodeForUpdate.ID == node.ID &&
+				nodeForUpdate.Conditions.Pending.Status == db.ConditionStatusTrue &&
+				nodeForUpdate.Conditions.Pending.Message == conditionMsg &&
+				nodeForUpdate.Conditions.Provisioning.Status == db.ConditionStatusFalse
+		})).Return(node, nil).Once()
+
+		a := &Activities{db: mockDB, k8sClient: k8sClient}
+
+		ipAddress, err := executeWaitForCAPIMachineReadyActivity(t, a, WaitForCAPIMachineReadyInput{NodeID: nodeID})
+		require.ErrorContains(t, err, "has no IP addresses in status or infrastructure ref: "+conditionMsg)
+		assert.Empty(t, ipAddress)
 		mockDB.AssertExpectations(t)
 		mockTx.AssertExpectations(t)
 	})
@@ -619,6 +652,15 @@ func testCAPIMachineWithNicoInfraRef(addresses clusterv1.MachineAddresses) *clus
 			Addresses: addresses,
 		},
 	}
+}
+
+func withMachineInfrastructureReadyMessage(machine *clusterv1.Machine, conditionMsg string) *clusterv1.Machine {
+	machine.Status.Conditions = []metav1.Condition{{
+		Type:    clusterv1.MachineInfrastructureReadyCondition,
+		Status:  metav1.ConditionFalse,
+		Message: conditionMsg,
+	}}
+	return machine
 }
 
 type nicoMachineRotationParameters struct {
