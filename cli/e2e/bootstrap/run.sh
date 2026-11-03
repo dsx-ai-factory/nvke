@@ -86,6 +86,8 @@ SPIRE_VIP="${NVKECTL_E2E_SPIRE_SERVER_ADDRESS:-172.26.0.2}"
 # attestation fails.
 SPIRE_TRUST_DOMAIN="${NVKECTL_E2E_SPIRE_TRUST_DOMAIN:-nvkectl-e2e.example.test}"
 export NVKECTL_E2E_SPIRE_TRUST_DOMAIN="${SPIRE_TRUST_DOMAIN}"
+# The SPIFFE ID SPIRE on the bootstrap cluster issues the controller.
+CONTROLLER_SPIFFE_ID="spiffe://${SPIRE_TRUST_DOMAIN}/nvke-service/${CONTROLLER_NAME}"
 # First CSV node, used for Traefik access. The controller may initialize another node.
 INIT_NODE_IP="${NVKECTL_E2E_INIT_NODE_IP:-172.26.0.10}"
 # Where Traefik is published on the new cluster, and where stage 5 asks for the
@@ -839,6 +841,7 @@ setsid env \
   NVKECTL_E2E_KNOWN_SECRETS_FILE="${KNOWN_SECRETS_FILE}" \
   NVKECTL_E2E_BOOTSTRAP_CLUSTER="${BOOTSTRAP_KIND_CLUSTER}" \
   NVKECTL_E2E_CONTROLLER_NAME="${CONTROLLER_NAME}" \
+  NVKECTL_E2E_CONTROLLER_SPIFFE_ID="${CONTROLLER_SPIFFE_ID}" \
   "${GO}" test -C "${CLI_DIR}" -tags e2e_bootstrap -timeout 0 -count=1 -v \
   ./e2e/bootstrap/bootstraptest/ -run '^TestE2E_' \
   >"${BOOTSTRAP_GO_TEST_LOG}" 2>&1 &
@@ -1033,31 +1036,12 @@ log "PASS: a successful run wrote its diagnostics bundle for the credential scan
 # The controller reached this point by answering /readyz through its Service
 # and the host through its external NodePort. What that does not show is that
 # it runs under the name greenfield sites use, as the ServiceAccount its
-# SPIFFE ID names, with SPIRE registered to issue that ID.
-bootstrap_kubeconfig="$(mktemp)"
-KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name "${BOOTSTRAP_KIND_CLUSTER}" \
-  > "${bootstrap_kubeconfig}" || fail "could not read the bootstrap cluster's kubeconfig"
-bk() { kubectl --kubeconfig "${bootstrap_kubeconfig}" "$@"; }
-sa="$(bk -n "${CONTROLLER_NAME}" get deployment "${CONTROLLER_NAME}" \
-  -o 'jsonpath={.spec.template.spec.serviceAccountName}')" ||
-  fail "no deployment ${CONTROLLER_NAME} in namespace ${CONTROLLER_NAME}"
-[ "${sa}" = "${CONTROLLER_NAME}" ] ||
-  fail "the controller runs as ServiceAccount ${sa}, not ${CONTROLLER_NAME}"
-endpoints="$(bk -n "${CONTROLLER_NAME}" get endpoints "${CONTROLLER_NAME}-external" \
-  -o 'jsonpath={.subsets[*].addresses[*].ip}')"
-[ -n "${endpoints}" ] || fail "Service ${CONTROLLER_NAME}-external has no endpoints"
-spiffe_id="spiffe://${SPIRE_TRUST_DOMAIN}/nvke-service/${CONTROLLER_NAME}"
-bk -n spire-server exec spire-server-0 -c spire-server -- \
-  /opt/spire/bin/spire-server entry show -spiffeID "${spiffe_id}" | grep -q "Entry ID" ||
-  fail "SPIRE has no entry for ${spiffe_id}"
-# With a supplied CA, it is the root SPIRE publishes to the agents.
-if [[ -n "${NVKECTL_SPIRE_CA_CERT_FILE:-}" ]]; then
-  ca_line="$(sed -n 2p "${NVKECTL_SPIRE_CA_CERT_FILE}")"
-  bk -n spire-server exec spire-server-0 -c spire-server -- /opt/spire/bin/spire-server bundle show |
-    grep -qF "${ca_line}" || fail "SPIRE's bundle does not hold the CA from NVKECTL_SPIRE_CA_CERT_FILE"
-fi
-rm -f "${bootstrap_kubeconfig}"
-log "PASS: the controller runs as ${CONTROLLER_NAME} and SPIRE issues ${spiffe_id}"
+# SPIFFE ID names, with SPIRE registered to issue that ID. TestE2E_BootstrapSite
+# checked that (bootstraptest.VerifyControllerIdentity); make sure it did,
+# rather than skipped it for want of the SPIFFE ID.
+grep -q "bootstraptest: the controller runs as ${CONTROLLER_NAME} and SPIRE issues ${CONTROLLER_SPIFFE_ID}" \
+  "${BOOTSTRAP_GO_TEST_LOG}" || fail "TestE2E_BootstrapSite did not check the controller's identity"
+log "PASS: the controller runs as ${CONTROLLER_NAME} and SPIRE issues ${CONTROLLER_SPIFFE_ID}"
 
 # ── Stage 3: every node attested to SPIRE over TPM ──────────────────────
 
@@ -1177,9 +1161,12 @@ check_saved_key_matches_nodes "${ETCD_KEY_FILE}" "${control_plane_containers[@]}
 # it received, so "Hostname:" in the body is the pod talking, not Traefik's own
 # error page. The request carries the Ingress host name so it has to match a
 # rule Traefik read from the Ingress rather than falling through to a default.
+# The body is captured for the same reason as the SPIRE entry check's output.
 hello_world_served() {
-  curl -fsS --max-time 5 -H "Host: hello.nke.local" \
-    "http://${INIT_NODE_IP}:${TRAEFIK_NODE_PORT}/" | grep -q "Hostname:"
+  local body
+  body="$(curl -fsS --max-time 5 -H "Host: hello.nke.local" \
+    "http://${INIT_NODE_IP}:${TRAEFIK_NODE_PORT}/")" || return 1
+  grep -q "Hostname:" <<<"${body}"
 }
 
 # ── Stage 4c: the control-plane taint is gone ───────────────────────────

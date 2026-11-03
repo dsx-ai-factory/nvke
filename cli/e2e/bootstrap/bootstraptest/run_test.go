@@ -44,12 +44,13 @@ var errStopped = errors.New("stopped on a signal")
 //
 // The lane configures the run through the environment; see env.go. It is not a
 // lane of its own. With EnvSiteStackNamespaces set it also checks the NVKE
-// stack on the site cluster, and with EnvPivotCluster set that the management
-// plane moved there. With EnvKnownSecretsFile set it gives nvkectl an OTLP
-// header credential and, once the command exits, searches its log and
-// diagnostics for that and the secrets bootstrap generated. Everything else
-// asserted about the run is still asserted by the lane, over
-// NVKECTL_E2E_BOOTSTRAP_LOG.
+// stack on the site cluster, with EnvPivotCluster set that the management
+// plane moved there, and with EnvControllerSPIFFEID set that the controller on
+// the bootstrap cluster runs under that identity. With EnvKnownSecretsFile set
+// it gives nvkectl an OTLP header credential and, once the command exits,
+// searches its log and diagnostics for that and the secrets bootstrap
+// generated. Everything else asserted about the run is still asserted by the
+// lane, over NVKECTL_E2E_BOOTSTRAP_LOG.
 //
 // The TestE2E_ prefix is how the lanes select it; see the package comment.
 //
@@ -62,6 +63,10 @@ func TestE2E_BootstrapSite(t *testing.T) {
 	opts, err := bootstraptest.BootstrapOptionsFromEnv("../../..")
 	if err != nil {
 		t.Fatalf("reading the run configuration: %v", err)
+	}
+	controllerIdentity, err := bootstraptest.ControllerIdentityFromEnv()
+	if err != nil {
+		t.Fatalf("reading the controller identity to check: %v", err)
 	}
 
 	check, err := startCredentialCheck(t, &opts)
@@ -92,6 +97,34 @@ func TestE2E_BootstrapSite(t *testing.T) {
 	if clusterName := os.Getenv(bootstraptest.EnvPivotCluster); clusterName != "" {
 		verifyPivot(t, opts.KubeconfigOut, clusterName)
 	}
+	if controllerIdentity.SPIFFEID != "" {
+		verifyControllerIdentity(t, os.Getenv(bootstraptest.EnvBootstrapCluster), controllerIdentity)
+	}
+}
+
+// verifyControllerIdentity checks that the controller on the bootstrap Kind
+// cluster clusterName, which the lane keeps, runs under want.
+func verifyControllerIdentity(t *testing.T, clusterName string, want bootstraptest.ControllerIdentity) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), siteStackCheckTimeout)
+	defer cancel()
+	kubeconfig, err := bootstrapengine.New(nil, nil).Kubeconfig(ctx, clusterName)
+	if err != nil {
+		t.Fatalf("reading the bootstrap cluster's kubeconfig: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(kubeconfig)) })
+	restConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if err != nil {
+		t.Fatalf("loading kubeconfig %s: %v", kubeconfig, err)
+	}
+	kube, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		t.Fatalf("creating a client for %s: %v", kubeconfig, err)
+	}
+	if err := bootstraptest.VerifyControllerIdentity(ctx, kube, bootstraptest.SpireServerExec(restConfig, kube), want); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("bootstraptest: the controller runs as %s and SPIRE issues %s", want.Name, want.SPIFFEID)
 }
 
 // verifyPivot checks that the bootstrap moved clusterName's management plane
