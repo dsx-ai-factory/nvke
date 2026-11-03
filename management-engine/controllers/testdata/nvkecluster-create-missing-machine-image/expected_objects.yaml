@@ -75,21 +75,14 @@ items:
             * NVKEControllerDeleting: Condition not yet reported
         * Synced:
           * ClusterReconciled: get MachineImage "missing-image" for ClusterRelease "test-release": MachineImage.internal.nvke.nvidia.com "missing-image" not found
-          * ControlPlaneReady:
-            * NVKEControllerProvisioned: Condition not yet reported
-            * NVKEControllerProvisioning: Condition not yet reported
-            * NVKEControllerDeleting: Condition not yet reported
       observedGeneration: 1
       reason: NotReady
       status: "False"
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: |-
-        * ClusterReconciled: get MachineImage "missing-image" for ClusterRelease "test-release": MachineImage.internal.nvke.nvidia.com "missing-image" not found
-        * ControlPlaneReady:
-          * NVKEControllerProvisioned: Condition not yet reported
-          * NVKEControllerProvisioning: Condition not yet reported
-          * NVKEControllerDeleting: Condition not yet reported
+      message: '* ClusterReconciled: get MachineImage "missing-image" for ClusterRelease
+        "test-release": MachineImage.internal.nvke.nvidia.com "missing-image" not
+        found'
       observedGeneration: 1
       reason: NotSynced
       status: "False"
