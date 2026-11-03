@@ -24,10 +24,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/launchlayer"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
@@ -50,25 +50,18 @@ func newLaunchLayerMachine() *unstructured.Unstructured {
 	return obj
 }
 
-type launchLayerSpiffeReader interface {
-	GetNode(ctx context.Context, id uuid.UUID) (db.Node, error)
-	GetCluster(ctx context.Context, id uuid.UUID) (db.Cluster, error)
-}
-
 // LaunchLayerSpiffeController writes the SPIRE agent ID path onto a
 // LaunchLayer-backed Machine, so MachineSpireEntryController registers its
 // ClusterStaticEntry before the node joins. It is the LaunchLayer counterpart
-// of NicoSpiffeController; the path itself comes from the cluster's
-// SpireAgentPathProvider, resolved through its ProviderClient.
+// of NicoSpiffeController; the path itself comes from the LaunchLayer client's
+// DSXImdsAgentPath.
 type LaunchLayerSpiffeController struct {
-	db        launchLayerSpiffeReader
 	k8sClient client.Client
 	logger    *slog.Logger
 }
 
-func NewLaunchLayerSpiffeController(database launchLayerSpiffeReader, k8sClient client.Client, logger *slog.Logger) *LaunchLayerSpiffeController {
+func NewLaunchLayerSpiffeController(k8sClient client.Client, logger *slog.Logger) *LaunchLayerSpiffeController {
 	return &LaunchLayerSpiffeController{
-		db:        database,
 		k8sClient: k8sClient,
 		logger:    logger,
 	}
@@ -86,7 +79,7 @@ func (c *LaunchLayerSpiffeController) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&clusterv1.Machine{},
 			handler.EnqueueRequestsFromMapFunc(launchLayerMachineRequestsForMachine),
-			builder.WithPredicates(machineHostIDWatchPredicate()),
+			builder.WithPredicates(machineIdentityWatchPredicate()),
 		).
 		Named("launchlayer-spiffe").
 		Complete(c)
@@ -135,33 +128,26 @@ func (c *LaunchLayerSpiffeController) Reconcile(ctx context.Context, req ctrl.Re
 		logger.Debug("Machine has no host-id annotation, skipping SPIRE agent path reconciliation")
 		return ctrl.Result{}, nil
 	}
-	nodeID, err := uuid.Parse(hostID)
-	if err != nil {
+	if _, err := uuid.Parse(hostID); err != nil {
 		return ctrl.Result{}, fmt.Errorf("invalid host ID %q on Machine %s/%s: %w", hostID, machine.Namespace, machine.Name, err)
 	}
-	node, err := c.db.GetNode(ctx, nodeID)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("get node %s for Machine %s/%s: %w", nodeID, machine.Namespace, machine.Name, err)
+	attestationMethod, methodSet := keys.MachineSpireAttestationMethod.Get(machine.GetAnnotations())
+	spiffeEnabled, spiffeSet := keys.MachineSpiffeEnabled.Get(machine.GetAnnotations())
+	if !methodSet || !spiffeSet {
+		logger.Info("Waiting for SPIRE attestation annotations to be set on Machine", "hostID", hostID)
+		return ctrl.Result{}, nil
 	}
-	cluster, err := c.db.GetCluster(ctx, node.ClusterID)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("get cluster %s for node %s: %w", node.ClusterID, nodeID, err)
+	if spiffeEnabled != "true" || config.SpireAttestationMethod(attestationMethod) != config.SpireAttestationMethodDSXIMDS {
+		logger.Info("Node has no SPIRE agent ID path to record", "attestationMethod", attestationMethod, "spiffeEnabled", spiffeEnabled)
+		return ctrl.Result{}, nil
 	}
-	provider, err := clients.GetProviderClient(cluster)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	spireAgentSpiffeIDPath, err := provider.SpireAgentPathProvider().SpireAgentPath(ctx, c.k8sClient, node, machine)
+	spireAgentSpiffeIDPath, err := launchlayer.DSXImdsAgentPath(ctx, c.k8sClient, machine)
 	if errors.Is(err, shared.ErrSpireAgentPathPending) {
 		logger.Info("Waiting for the SPIRE agent ID path", "reason", err)
 		return ctrl.Result{RequeueAfter: launchLayerSpireAgentPathRequeue}, nil
 	}
 	if err != nil {
 		return ctrl.Result{}, err
-	}
-	if spireAgentSpiffeIDPath == "" {
-		logger.Info("Node has no SPIRE agent ID path to record", "attestationMethod", node.SpireAttestationMethod)
-		return ctrl.Result{}, nil
 	}
 	if existingPath := keys.MachineSpireAgentSpiffeIDPath.Value(machine.GetAnnotations()); existingPath != "" {
 		if existingPath != spireAgentSpiffeIDPath {

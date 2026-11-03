@@ -4,11 +4,9 @@
 package capi
 
 import (
-	"context"
 	"log/slog"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -24,7 +22,6 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
@@ -34,78 +31,74 @@ func TestUnit_NicoSpiffeControllerReconcile(t *testing.T) {
 	t.Parallel()
 
 	type parameters struct {
-		method        db.SpireAttestationMethod
+		method        config.SpireAttestationMethod
 		status        nicov1.NicoMachineStatus
 		existingPath  string
 		ownerRef      bool
 		deleting      bool
 		missingHostID bool
 		invalidHostID bool
-		dbErr         error
 		wantErr       string
 		wantPath      string
 	}
 
 	tests := map[string]parameters{
 		"annotates a TPM machine from its EK public hash": {
-			method:   db.SpireAttestationMethodTPM,
+			method:   config.SpireAttestationMethodTPM,
 			status:   nicov1.NicoMachineStatus{TpmEkPubHash: "hash-current", PrimaryDPUMachineID: "dpu-123"},
 			ownerRef: true,
 			wantPath: constants.TPMSpireAgentPath + "hash-current",
 		},
 		"annotates a DSX IMDS machine from its primary DPU ID": {
-			method:   db.SpireAttestationMethodDSXIMDS,
+			method:   config.SpireAttestationMethodDSXIMDS,
 			status:   nicov1.NicoMachineStatus{TpmEkPubHash: "hash-current", PrimaryDPUMachineID: "dpu-123"},
 			ownerRef: true,
 			wantPath: constants.DSXIMDSSpireAgentPath + "operator-1/bm/dpu-123",
 		},
 		"preserves an annotation for another attestation method": {
-			method:       db.SpireAttestationMethodDSXIMDS,
+			method:       config.SpireAttestationMethodDSXIMDS,
 			status:       nicov1.NicoMachineStatus{PrimaryDPUMachineID: "dpu-123"},
 			existingPath: constants.JoinTokenAlternateSpireAgentPath + "host-123",
 			ownerRef:     true,
 			wantPath:     constants.JoinTokenAlternateSpireAgentPath + "host-123",
 		},
 		"preserves an existing join-token path from a migrated node": {
-			method:       db.SpireAttestationMethodJoinToken,
+			method:       config.SpireAttestationMethodJoinToken,
 			status:       nicov1.NicoMachineStatus{TpmEkPubHash: "hash-current", PrimaryDPUMachineID: "dpu-123"},
 			existingPath: constants.JoinTokenAlternateSpireAgentPath + nicoSpiffeTestHostID,
 			ownerRef:     true,
 			wantPath:     constants.JoinTokenAlternateSpireAgentPath + nicoSpiffeTestHostID,
 		},
 		"waits for the configured identity source": {
-			method:   db.SpireAttestationMethodDSXIMDS,
+			method:   config.SpireAttestationMethodDSXIMDS,
+			ownerRef: true,
+		},
+		"waits for the attestation method annotation": {
+			status:   nicov1.NicoMachineStatus{TpmEkPubHash: "hash-current"},
 			ownerRef: true,
 		},
 		"waits for a Machine owner reference": {
-			method: db.SpireAttestationMethodDSXIMDS,
+			method: config.SpireAttestationMethodDSXIMDS,
 			status: nicov1.NicoMachineStatus{PrimaryDPUMachineID: "dpu-123"},
 		},
 		"skips a deleting NicoMachine": {
-			method:   db.SpireAttestationMethodDSXIMDS,
+			method:   config.SpireAttestationMethodDSXIMDS,
 			status:   nicov1.NicoMachineStatus{PrimaryDPUMachineID: "dpu-123"},
 			ownerRef: true,
 			deleting: true,
 		},
 		"skips a Machine without a host ID": {
-			method:        db.SpireAttestationMethodTPM,
+			method:        config.SpireAttestationMethodTPM,
 			status:        nicov1.NicoMachineStatus{TpmEkPubHash: "hash-current"},
 			ownerRef:      true,
 			missingHostID: true,
 		},
 		"rejects an invalid host ID": {
-			method:        db.SpireAttestationMethodTPM,
+			method:        config.SpireAttestationMethodTPM,
 			status:        nicov1.NicoMachineStatus{TpmEkPubHash: "hash-current"},
 			ownerRef:      true,
 			invalidHostID: true,
 			wantErr:       "invalid host ID",
-		},
-		"retries when the node is absent from the database": {
-			method:   db.SpireAttestationMethodTPM,
-			status:   nicov1.NicoMachineStatus{TpmEkPubHash: "hash-current"},
-			ownerRef: true,
-			dbErr:    db.ErrNotFound,
-			wantErr:  "get node " + nicoSpiffeTestHostID,
 		},
 	}
 
@@ -113,7 +106,7 @@ func TestUnit_NicoSpiffeControllerReconcile(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			machine := newMachineForNicoSpiffeTest(params.existingPath)
+			machine := newMachineForNicoSpiffeTest(params.existingPath, params.method)
 			if params.missingHostID {
 				keys.MachineHostID.Delete(machine.Annotations)
 			}
@@ -121,8 +114,7 @@ func TestUnit_NicoSpiffeControllerReconcile(t *testing.T) {
 				machine.Annotations[keys.MachineHostID.String()] = "not-a-uuid"
 			}
 			nicoMachine := newNicoMachineForSpiffeTest(params.status, params.ownerRef, params.deleting)
-			nodes := &nicoSpiffeNodeReaderStub{node: db.Node{SpireAttestationMethod: params.method}, err: params.dbErr}
-			controller := newNicoSpiffeControllerForTest(t, nodes, machine, nicoMachine)
+			controller := newNicoSpiffeControllerForTest(t, machine, nicoMachine)
 
 			_, err := controller.Reconcile(t.Context(), ctrl.Request{NamespacedName: types.NamespacedName{
 				Namespace: nicoMachine.Namespace,
@@ -132,12 +124,6 @@ func TestUnit_NicoSpiffeControllerReconcile(t *testing.T) {
 				require.ErrorContains(t, err, params.wantErr)
 			} else {
 				require.NoError(t, err)
-			}
-			if params.ownerRef && !params.deleting && !params.missingHostID && !params.invalidHostID {
-				require.Equal(t, 1, nodes.calls)
-				require.Equal(t, uuid.MustParse(nicoSpiffeTestHostID), nodes.gotID)
-			} else {
-				require.Zero(t, nodes.calls)
 			}
 
 			gotMachine := &clusterv1.Machine{}
@@ -153,7 +139,7 @@ func TestUnit_NicoSpiffeControllerReconcile(t *testing.T) {
 
 func TestUnit_NicoSpiffeControllerReconcileIgnoresMissingNicoMachine(t *testing.T) {
 	t.Parallel()
-	controller := newNicoSpiffeControllerForTest(t, &nicoSpiffeNodeReaderStub{})
+	controller := newNicoSpiffeControllerForTest(t)
 
 	_, err := controller.Reconcile(t.Context(), ctrl.Request{NamespacedName: types.NamespacedName{
 		Namespace: "cluster-test",
@@ -165,16 +151,22 @@ func TestUnit_NicoSpiffeControllerReconcileIgnoresMissingNicoMachine(t *testing.
 
 func TestUnit_NicoSpiffeControllerMachineWatchPredicate(t *testing.T) {
 	t.Parallel()
-	pred := machineHostIDWatchPredicate()
-	machine := newMachineForNicoSpiffeTest("")
+	pred := machineIdentityWatchPredicate()
+	machine := newMachineForNicoSpiffeTest("", config.SpireAttestationMethodTPM)
 	withoutHostID := machine.DeepCopy()
 	keys.MachineHostID.Delete(withoutHostID.Annotations)
 	withAgentPath := machine.DeepCopy()
 	withAgentPath.Annotations[keys.MachineSpireAgentSpiffeIDPath.String()] = constants.TPMSpireAgentPath + "hash"
+	withoutMethod := machine.DeepCopy()
+	keys.MachineSpireAttestationMethod.Delete(withoutMethod.Annotations)
+	spiffeToggled := machine.DeepCopy()
+	spiffeToggled.Annotations[keys.MachineSpiffeEnabled.String()] = "false"
 
 	require.False(t, pred.Create(event.CreateEvent{Object: withoutHostID}))
 	require.True(t, pred.Create(event.CreateEvent{Object: machine}))
 	require.True(t, pred.Update(event.UpdateEvent{ObjectOld: withoutHostID, ObjectNew: machine}))
+	require.True(t, pred.Update(event.UpdateEvent{ObjectOld: withoutMethod, ObjectNew: machine}))
+	require.True(t, pred.Update(event.UpdateEvent{ObjectOld: machine, ObjectNew: spiffeToggled}))
 	require.False(t, pred.Update(event.UpdateEvent{ObjectOld: machine, ObjectNew: withAgentPath}))
 	require.False(t, pred.Delete(event.DeleteEvent{Object: machine}))
 }
@@ -214,7 +206,7 @@ func TestUnit_NicoSpiffeControllerMachineWatchMapping(t *testing.T) {
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			var obj client.Object = newMachineForNicoSpiffeTest("")
+			var obj client.Object = newMachineForNicoSpiffeTest("", config.SpireAttestationMethodTPM)
 			if params.other {
 				obj = newNicoMachineForSpiffeTest(nicov1.NicoMachineStatus{}, false, false)
 			} else {
@@ -239,7 +231,7 @@ func TestUnit_NicoSpiffeControllerMachineWatchMapping(t *testing.T) {
 
 func TestUnit_NicoSpiffeControllerReconcileAfterMachineHostIDAdded(t *testing.T) {
 	t.Parallel()
-	machine := newMachineForNicoSpiffeTest("")
+	machine := newMachineForNicoSpiffeTest("", config.SpireAttestationMethodTPM)
 	keys.MachineHostID.Delete(machine.Annotations)
 	machine.Spec.InfrastructureRef = clusterv1.ContractVersionedObjectReference{
 		APIGroup: nicov1.GroupVersion.Group,
@@ -247,9 +239,7 @@ func TestUnit_NicoSpiffeControllerReconcileAfterMachineHostIDAdded(t *testing.T)
 		Name:     "worker-0",
 	}
 	nicoMachine := newNicoMachineForSpiffeTest(nicov1.NicoMachineStatus{TpmEkPubHash: "hash-current"}, true, false)
-	controller := newNicoSpiffeControllerForTest(t, &nicoSpiffeNodeReaderStub{
-		node: db.Node{SpireAttestationMethod: db.SpireAttestationMethodTPM},
-	}, machine, nicoMachine)
+	controller := newNicoSpiffeControllerForTest(t, machine, nicoMachine)
 	req := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: nicoMachine.Namespace, Name: nicoMachine.Name}}
 
 	_, err := controller.Reconcile(t.Context(), req)
@@ -257,9 +247,9 @@ func TestUnit_NicoSpiffeControllerReconcileAfterMachineHostIDAdded(t *testing.T)
 
 	updated := &clusterv1.Machine{}
 	require.NoError(t, controller.k8sClient.Get(t.Context(), client.ObjectKeyFromObject(machine), updated))
-	updated.Annotations = map[string]string{keys.MachineHostID.String(): nicoSpiffeTestHostID}
+	updated.Annotations[keys.MachineHostID.String()] = nicoSpiffeTestHostID
 	require.NoError(t, controller.k8sClient.Update(t.Context(), updated))
-	require.True(t, machineHostIDWatchPredicate().Update(event.UpdateEvent{ObjectOld: machine, ObjectNew: updated}))
+	require.True(t, machineIdentityWatchPredicate().Update(event.UpdateEvent{ObjectOld: machine, ObjectNew: updated}))
 	require.Equal(t, []reconcile.Request{req}, nicoMachineRequestsForMachine(t.Context(), updated))
 
 	_, err = controller.Reconcile(t.Context(), req)
@@ -269,8 +259,14 @@ func TestUnit_NicoSpiffeControllerReconcileAfterMachineHostIDAdded(t *testing.T)
 		updated.Annotations[keys.MachineSpireAgentSpiffeIDPath.String()])
 }
 
-func newMachineForNicoSpiffeTest(existingPath string) *clusterv1.Machine {
-	annotations := map[string]string{keys.MachineHostID.String(): nicoSpiffeTestHostID}
+func newMachineForNicoSpiffeTest(existingPath string, method config.SpireAttestationMethod) *clusterv1.Machine {
+	annotations := map[string]string{
+		keys.MachineHostID.String():        nicoSpiffeTestHostID,
+		keys.MachineSpiffeEnabled.String(): "true",
+	}
+	if method != "" {
+		annotations[keys.MachineSpireAttestationMethod.String()] = string(method)
+	}
 	if existingPath != "" {
 		annotations[keys.MachineSpireAgentSpiffeIDPath.String()] = existingPath
 	}
@@ -307,20 +303,7 @@ func newNicoMachineForSpiffeTest(status nicov1.NicoMachineStatus, ownerRef, dele
 	return nicoMachine
 }
 
-type nicoSpiffeNodeReaderStub struct {
-	node  db.Node
-	err   error
-	calls int
-	gotID uuid.UUID
-}
-
-func (s *nicoSpiffeNodeReaderStub) GetNode(_ context.Context, id uuid.UUID) (db.Node, error) {
-	s.calls++
-	s.gotID = id
-	return s.node, s.err
-}
-
-func newNicoSpiffeControllerForTest(t *testing.T, nodes nicoSpiffeNodeReader, objects ...client.Object) *NicoSpiffeController {
+func newNicoSpiffeControllerForTest(t *testing.T, objects ...client.Object) *NicoSpiffeController {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	require.NoError(t, clusterv1.AddToScheme(scheme))
@@ -335,7 +318,6 @@ func newNicoSpiffeControllerForTest(t *testing.T, nodes nicoSpiffeNodeReader, ob
 				},
 			},
 		},
-		nodes:     nodes,
 		k8sClient: fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build(),
 		logger:    slog.New(slog.DiscardHandler),
 	}
