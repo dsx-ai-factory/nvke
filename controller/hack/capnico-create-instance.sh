@@ -64,7 +64,7 @@ if [[ -n "${OS_PROFILE:-}" ]]; then
   echo "OS_PROFILE is no longer read; this script takes RELEASE (the NodePoolRelease name)." >&2
   exit 1
 fi
-RELEASE="${RELEASE:-nke-260611-24.04-amd64-fde}"
+RELEASE="${RELEASE:-nvke-260625-24.04-x86-fde}"
 DISK_SELECTION_STRATEGY="${DISK_SELECTION_STRATEGY:-smallest}"
 
 # Seed resources for the selected backend.
@@ -171,7 +171,7 @@ esac
 IMAGE_NAME="$(kubectl get nodepoolrelease "${RELEASE}" -o jsonpath='{.spec.machineImageRef.name}' 2>/dev/null || true)"
 if [ -z "${IMAGE_NAME}" ]; then
   echo "NodePoolRelease '${RELEASE}' is not installed in the cluster kubectl points at." >&2
-  echo "Apply the releases first (nke-site-deploy/cwe-profiles/releases, or make releases-install)." >&2
+  echo "Apply the releases first (nke-site-deploy/cwe-profiles/releases-nvke, or make releases-install)." >&2
   exit 1
 fi
 IPXE_TEMPLATE="$(kubectl get machineimage "${IMAGE_NAME}" -o jsonpath='{.spec.nico.ipxeScript}' 2>/dev/null || true)"
