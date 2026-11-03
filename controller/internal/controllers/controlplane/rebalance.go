@@ -14,6 +14,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
 const (
@@ -102,6 +103,12 @@ func (r *reconciler) reconcileControlPlaneRebalance(
 		return false, nil
 	}
 	if cp.countNodesNeedingRollout() > 0 {
+		return false, nil
+	}
+	// A control plane below the fault-tolerant floor can never shed the node a
+	// surge adds: the quorum floor refuses the shed, so it would sit one node
+	// above desired forever. Leave a sub-floor control plane alone.
+	if cluster.ControlPlaneConfig.DesiredCount < nodes.MinFaultTolerantControlPlaneNodes {
 		return false, nil
 	}
 	if cp.size() != cluster.ControlPlaneConfig.DesiredCount {

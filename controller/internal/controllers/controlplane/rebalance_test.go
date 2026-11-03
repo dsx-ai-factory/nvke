@@ -155,6 +155,16 @@ func TestReconcileControlPlaneRebalance_NoOps(t *testing.T) {
 	coolingDown := rebalanceCluster(clusterID, configID, []uuid.UUID{primaryType, worseType}, true, false)
 	coolingDown.Conditions.ControlPlaneRebalanceBackoff = db.NewCondition(true, "recent abandoned surge")
 
+	// A control plane whose desiredCount is below the fault-tolerant floor can
+	// never shed the node a surge would add -- the quorum floor refuses the shed --
+	// so it must not surge in the first place, even with a less-preferred node.
+	subFloor := rebalanceCluster(clusterID, configID, []uuid.UUID{primaryType, worseType}, true, false)
+	subFloor.ControlPlaneConfig.DesiredCount = nodes.MinFaultTolerantControlPlaneNodes - 1
+	subFloorNodes := []db.Node{
+		cpNodeOnType(clusterID, configID, "cp-a", primaryType, base),
+		cpNodeOnType(clusterID, configID, "cp-old", worseType, base),
+	}
+
 	tests := []struct {
 		name    string
 		cluster db.Cluster
@@ -164,6 +174,7 @@ func TestReconcileControlPlaneRebalance_NoOps(t *testing.T) {
 		{name: "provider has no ranker", cluster: capiCluster, nodes: unbalanced},
 		{name: "already balanced on the primary type", cluster: rebalanceCluster(clusterID, configID, []uuid.UUID{primaryType, worseType}, true, false), nodes: balanced},
 		{name: "backing off after an abandoned surge", cluster: coolingDown, nodes: unbalanced},
+		{name: "desiredCount below the fault-tolerant floor", cluster: subFloor, nodes: subFloorNodes},
 	}
 
 	for _, tt := range tests {

@@ -28,9 +28,9 @@ type pendingNodeOption func(*db.Node)
 // withRebalanceReplacement marks a pending node as a rebalance surge and pins it
 // to a preference-capped control-plane-config snapshot. The marker holds the
 // node out of scale-down until it joins; the pinned snapshot bounds how far the
-// provider's instance-type walk may fall back from the primary type. Both are
-// self-resolving: the rebalance step clears the marker and re-pins the node to
-// the cluster's current config once it joins.
+// provider's instance-type walk may fall back from the primary type. The marker
+// is self-resolving: the rebalance step clears it once the node joins, and the
+// node keeps its capped snapshot (see clearRebalanceMarker).
 func withRebalanceReplacement(configurationID uuid.UUID) pendingNodeOption {
 	return func(n *db.Node) {
 		n.ControlPlaneConfigurationID = configurationID
