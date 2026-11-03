@@ -2483,7 +2483,7 @@ func TestEnsureDefaultStorageClass(t *testing.T) {
 				}
 				return
 			}
-			if len(runner.applied) != 1 || !strings.Contains(runner.applied[0], "rancher/local-path-provisioner:v0.0.31") {
+			if len(runner.applied) != 1 || !strings.Contains(runner.applied[0], "rancher/local-path-provisioner:v0.0.37") {
 				t.Fatalf("want the local-path manifest applied, got %d manifests", len(runner.applied))
 			}
 			want := "annotate storageclass local-path storageclass.kubernetes.io/is-default-class=true --overwrite"

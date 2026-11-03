@@ -89,9 +89,36 @@ spec:
                 type: string
               identityRef:
                 description: |-
-                  IdentityRef points to the Secret with NICo endpoint and authentication settings.
-                  When unset, the controller falls back to the provider-level credentials Secret
-                  in the manager namespace.
+                  IdentityRef names the credentials for this cluster's NICo requests: a
+                  Secret with the NICo endpoint and authentication settings, or a
+                  NicoIdentity whose credentialsRef names that Secret. Both must be in the
+                  NicoCluster's namespace. When unset, the controller falls back to the
+                  provider-level credentials Secret in the manager namespace. A NicoIdentity's
+                  status never selects or blocks these credentials.
+                properties:
+                  kind:
+                    description: Kind is Secret or NicoIdentity. When omitted, Name
+                      names a Secret.
+                    enum:
+                    - Secret
+                    - NicoIdentity
+                    type: string
+                  name:
+                    default: ""
+                    description: |-
+                      Name is the Secret or NicoIdentity in the NicoCluster's namespace. An empty
+                      Name uses the provider-level credentials Secret, and is allowed only when
+                      Kind is omitted.
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+                x-kubernetes-validations:
+                - message: name is required when kind is set
+                  rule: '!has(self.kind) || (has(self.name) && size(self.name) > 0)'
+              powerControlIdentityRef:
+                description: |-
+                  PowerControlIdentityRef names a Secret with provider credentials for NICo
+                  Machine power control. When unset, IdentityRef is used.
                 properties:
                   name:
                     default: ""
@@ -318,9 +345,37 @@ spec:
                         type: string
                       identityRef:
                         description: |-
-                          IdentityRef points to the Secret with NICo endpoint and authentication settings.
-                          When unset, the controller falls back to the provider-level credentials Secret
-                          in the manager namespace.
+                          IdentityRef names the credentials for this cluster's NICo requests: a
+                          Secret with the NICo endpoint and authentication settings, or a
+                          NicoIdentity whose credentialsRef names that Secret. Both must be in the
+                          NicoCluster's namespace. When unset, the controller falls back to the
+                          provider-level credentials Secret in the manager namespace. A NicoIdentity's
+                          status never selects or blocks these credentials.
+                        properties:
+                          kind:
+                            description: Kind is Secret or NicoIdentity. When omitted,
+                              Name names a Secret.
+                            enum:
+                            - Secret
+                            - NicoIdentity
+                            type: string
+                          name:
+                            default: ""
+                            description: |-
+                              Name is the Secret or NicoIdentity in the NicoCluster's namespace. An empty
+                              Name uses the provider-level credentials Secret, and is allowed only when
+                              Kind is omitted.
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                        x-kubernetes-validations:
+                        - message: name is required when kind is set
+                          rule: '!has(self.kind) || (has(self.name) && size(self.name)
+                            > 0)'
+                      powerControlIdentityRef:
+                        description: |-
+                          PowerControlIdentityRef names a Secret with provider credentials for NICo
+                          Machine power control. When unset, IdentityRef is used.
                         properties:
                           name:
                             default: ""
@@ -349,6 +404,170 @@ spec:
         type: object
     served: true
     storage: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  labels:
+    cluster.x-k8s.io/v1beta2: v1alpha1
+  name: nicoidentities.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: NicoIdentity
+    listKind: NicoIdentityList
+    plural: nicoidentities
+    singular: nicoidentity
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Result of the last completed credential validation
+      jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - description: Completion time of the reported validation attempt
+      jsonPath: .status.lastCheckedTime
+      name: LastChecked
+      type: date
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          NicoIdentity names a Secret with NICo credentials and reports the result of checking it.
+          A NicoCluster can take its credentials from an Identity; the Identity's status never
+          gates or selects them. Status stays absent until the controller completes a check;
+          absent status is not a successful check.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              NicoIdentitySpec names the Secret this Identity checks. NicoClusters whose
+              identityRef names this Identity take their credentials from that Secret.
+            properties:
+              credentialsRef:
+                description: |-
+                  CredentialsRef names the Secret in this Identity's namespace. The reference is mutable:
+                  changing it changes the credentials of every NicoCluster that names this Identity.
+                properties:
+                  name:
+                    description: Name is the name of the Secret containing NICo connection
+                      and authentication settings.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - credentialsRef
+            type: object
+          status:
+            description: NicoIdentityStatus records the last completed credential
+              validation attempt.
+            properties:
+              conditions:
+                description: |-
+                  Conditions contains Ready for the latest completed validation. Ready's
+                  observedGeneration identifies the spec checked. Missing or outdated conditions
+                  do not establish current health. Additional condition types may be added.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                maxItems: 32
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              lastCheckedTime:
+                description: |-
+                  LastCheckedTime is when the reported attempt completed, including failures.
+                  It is absent before the first completed attempt. Readers must check its age;
+                  a condition's lastTransitionTime does not establish observation freshness.
+                format: date-time
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -427,6 +646,29 @@ spec:
                 description: CloudInitInjectHostname prepends hostname directives
                   to the bootstrap cloud-config.
                 type: boolean
+              failureDomainLabelKey:
+                description: |-
+                  FailureDomainLabelKey is the NICo Machine label key used for placement.
+                  Requires SiteID. When unset, failure domain placement is disabled.
+                maxLength: 255
+                minLength: 1
+                type: string
+              identityRef:
+                description: |-
+                  IdentityRef names the Secret in this machine's namespace for NICo access.
+                  Requires SiteID. When unset, the provider-level credentials Secret is used.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               infinibandInterfaces:
                 description: |-
                   InfinibandInterfaces requests that one or more InfiniBand Partitions be attached
@@ -527,7 +769,9 @@ spec:
                 minItems: 1
                 type: array
               ipxeScript:
-                description: IpxeScript is the iPXE script used to boot this instance.
+                description: |-
+                  IpxeScript is the iPXE script used to boot this instance.
+                  Mutually exclusive with OperatingSystemID.
                 type: string
               labels:
                 additionalProperties:
@@ -571,10 +815,38 @@ spec:
                   Set this instead of NVLinkInterfaces when every device should use the same logical partition.
                 minLength: 1
                 type: string
+              operatingSystemID:
+                description: |-
+                  OperatingSystemID is the ID of a registered NICo operating system used to boot this instance.
+                  Mutually exclusive with IpxeScript.
+                minLength: 1
+                type: string
+              powerControlIdentityRef:
+                description: |-
+                  PowerControlIdentityRef names the Secret in this machine's namespace for NICo power control.
+                  Requires SiteID. When unset, the ordinary NICo identity is used.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               providerID:
                 description: ProviderID is set to `nico://<instance-id>` after the
                   NICo instance is created.
                 maxLength: 512
+                minLength: 1
+                type: string
+              siteID:
+                description: |-
+                  SiteID overrides NicoCluster settings with this machine's site and identity settings.
+                  When set, the controller does not read a NicoCluster.
                 minLength: 1
                 type: string
               sshKeyGroupIDs:
@@ -605,6 +877,14 @@ spec:
               rule: '!(has(self.nvLinkLogicalPartitionID) && has(self.nvLinkInterfaces))'
             - message: nvLinkLogicalPartitionID requires instanceTypeID
               rule: '!has(self.nvLinkLogicalPartitionID) || has(self.instanceTypeID)'
+            - message: ipxeScript and operatingSystemID are mutually exclusive
+              rule: '!(has(self.ipxeScript) && has(self.operatingSystemID))'
+            - message: identityRef requires siteID
+              rule: '!has(self.identityRef) || has(self.siteID)'
+            - message: powerControlIdentityRef requires siteID
+              rule: '!has(self.powerControlIdentityRef) || has(self.siteID)'
+            - message: failureDomainLabelKey requires siteID
+              rule: '!has(self.failureDomainLabelKey) || has(self.siteID)'
           status:
             description: NicoMachineStatus defines the observed state of NicoMachine.
             properties:
@@ -718,9 +998,65 @@ spec:
               machineID:
                 description: MachineID is the machine ID for this machine.
                 type: string
+              primaryDPUMachineID:
+                description: |-
+                  PrimaryDPUMachineID is the NICo machine ID of the DPU attached to the
+                  host's primary interface.
+                type: string
               ready:
                 description: Ready is true once the backing instance reaches Ready.
                 type: boolean
+              reboot:
+                description: Reboot records the latest annotation-driven reboot request
+                  and its outcome.
+                properties:
+                  annotation:
+                    description: Annotation is the request annotation on the owning
+                      Machine.
+                    type: string
+                  annotationValue:
+                    description: AnnotationValue identifies the accepted request when
+                      the annotation changes.
+                    type: string
+                  bootID:
+                    description: BootID is the workload Node boot ID observed before
+                      the request.
+                    type: string
+                  completedAt:
+                    description: CompletedAt is when CAPNICo finished handling the
+                      request.
+                    format: date-time
+                    type: string
+                  deadline:
+                    description: Deadline is when CAPNICo stops waiting for graceful
+                      reboot recovery.
+                    format: date-time
+                    type: string
+                  message:
+                    description: Message summarizes the most recent outcome without
+                      sensitive API data.
+                    type: string
+                  mode:
+                    description: Mode is graceful-fallback, graceful-only, or hard.
+                    type: string
+                  path:
+                    description: Path is graceful, hard, or none after the request
+                      completes.
+                    type: string
+                  phase:
+                    description: Phase is prepared, graceful-dispatched, hard-dispatched,
+                      or completed.
+                    type: string
+                  startedAt:
+                    description: StartedAt is when CAPNICo observed the request.
+                    format: date-time
+                    type: string
+                required:
+                - annotation
+                - mode
+                - phase
+                - startedAt
+                type: object
               siteID:
                 description: SiteID is the observed Forge/Carbide site ID for this
                   machine.
@@ -742,6 +1078,20 @@ spec:
             type: object
         type: object
         x-kubernetes-validations:
+        - message: spec.siteID is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.siteID) == has(oldSelf.spec.siteID)
+            && (!has(self.spec.siteID) || self.spec.siteID == oldSelf.spec.siteID))'
+        - message: spec.identityRef is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.identityRef) == has(oldSelf.spec.identityRef)
+            && (!has(self.spec.identityRef) || self.spec.identityRef == oldSelf.spec.identityRef))'
+        - message: spec.powerControlIdentityRef is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.powerControlIdentityRef)
+            == has(oldSelf.spec.powerControlIdentityRef) && (!has(self.spec.powerControlIdentityRef)
+            || self.spec.powerControlIdentityRef == oldSelf.spec.powerControlIdentityRef))'
+        - message: spec.failureDomainLabelKey is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.failureDomainLabelKey)
+            == has(oldSelf.spec.failureDomainLabelKey) && (!has(self.spec.failureDomainLabelKey)
+            || self.spec.failureDomainLabelKey == oldSelf.spec.failureDomainLabelKey))'
         - message: spec.vpcID is immutable after providerID is set
           rule: '!has(oldSelf.spec.providerID) || self.spec.vpcID == oldSelf.spec.vpcID'
         - message: spec.instanceTypeID is immutable after providerID is set
@@ -774,6 +1124,10 @@ spec:
         - message: spec.ipxeScript is immutable after providerID is set
           rule: '!has(oldSelf.spec.providerID) || (has(self.spec.ipxeScript) == has(oldSelf.spec.ipxeScript)
             && (!has(self.spec.ipxeScript) || self.spec.ipxeScript == oldSelf.spec.ipxeScript))'
+        - message: spec.operatingSystemID is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.operatingSystemID)
+            == has(oldSelf.spec.operatingSystemID) && (!has(self.spec.operatingSystemID)
+            || self.spec.operatingSystemID == oldSelf.spec.operatingSystemID))'
         - message: spec.cloudInitInjectHostname is immutable after providerID is set
           rule: '!has(oldSelf.spec.providerID) || (has(self.spec.cloudInitInjectHostname)
             == has(oldSelf.spec.cloudInitInjectHostname) && (!has(self.spec.cloudInitInjectHostname)
@@ -881,6 +1235,29 @@ spec:
                         description: CloudInitInjectHostname prepends hostname directives
                           to the bootstrap cloud-config.
                         type: boolean
+                      failureDomainLabelKey:
+                        description: |-
+                          FailureDomainLabelKey is the NICo Machine label key used for placement.
+                          Requires SiteID. When unset, failure domain placement is disabled.
+                        maxLength: 255
+                        minLength: 1
+                        type: string
+                      identityRef:
+                        description: |-
+                          IdentityRef names the Secret in this machine's namespace for NICo access.
+                          Requires SiteID. When unset, the provider-level credentials Secret is used.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
                       infinibandInterfaces:
                         description: |-
                           InfinibandInterfaces requests that one or more InfiniBand Partitions be attached
@@ -985,8 +1362,9 @@ spec:
                         minItems: 1
                         type: array
                       ipxeScript:
-                        description: IpxeScript is the iPXE script used to boot this
-                          instance.
+                        description: |-
+                          IpxeScript is the iPXE script used to boot this instance.
+                          Mutually exclusive with OperatingSystemID.
                         type: string
                       labels:
                         additionalProperties:
@@ -1031,10 +1409,38 @@ spec:
                           Set this instead of NVLinkInterfaces when every device should use the same logical partition.
                         minLength: 1
                         type: string
+                      operatingSystemID:
+                        description: |-
+                          OperatingSystemID is the ID of a registered NICo operating system used to boot this instance.
+                          Mutually exclusive with IpxeScript.
+                        minLength: 1
+                        type: string
+                      powerControlIdentityRef:
+                        description: |-
+                          PowerControlIdentityRef names the Secret in this machine's namespace for NICo power control.
+                          Requires SiteID. When unset, the ordinary NICo identity is used.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
                       providerID:
                         description: ProviderID is set to `nico://<instance-id>` after
                           the NICo instance is created.
                         maxLength: 512
+                        minLength: 1
+                        type: string
+                      siteID:
+                        description: |-
+                          SiteID overrides NicoCluster settings with this machine's site and identity settings.
+                          When set, the controller does not read a NicoCluster.
                         minLength: 1
                         type: string
                       sshKeyGroupIDs:
@@ -1053,8 +1459,6 @@ spec:
                     - vpcID
                     type: object
                     x-kubernetes-validations:
-                    - message: spec.template.spec is immutable
-                      rule: self == oldSelf
                     - message: exactly one of instanceTypeID or machineID must be
                         set
                       rule: has(self.instanceTypeID) != has(self.machineID)
@@ -1068,6 +1472,14 @@ spec:
                       rule: '!(has(self.nvLinkLogicalPartitionID) && has(self.nvLinkInterfaces))'
                     - message: nvLinkLogicalPartitionID requires instanceTypeID
                       rule: '!has(self.nvLinkLogicalPartitionID) || has(self.instanceTypeID)'
+                    - message: ipxeScript and operatingSystemID are mutually exclusive
+                      rule: '!(has(self.ipxeScript) && has(self.operatingSystemID))'
+                    - message: identityRef requires siteID
+                      rule: '!has(self.identityRef) || has(self.siteID)'
+                    - message: powerControlIdentityRef requires siteID
+                      rule: '!has(self.powerControlIdentityRef) || has(self.siteID)'
+                    - message: failureDomainLabelKey requires siteID
+                      rule: '!has(self.failureDomainLabelKey) || has(self.siteID)'
                 required:
                 - spec
                 type: object
@@ -1141,6 +1553,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+  - update
+- apiGroups:
   - infrastructure.cluster.x-k8s.io
   resources:
   - nicoclusters
@@ -1161,11 +1581,20 @@ rules:
   - infrastructure.cluster.x-k8s.io
   resources:
   - nicoclusters/status
+  - nicoidentities/status
   - nicomachines/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoidentities
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - infrastructure.cluster.x-k8s.io
   resources:
@@ -1345,6 +1774,77 @@ rules:
   - infrastructure.cluster.x-k8s.io
   resources:
   - nicoclustertemplates/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster-api-provider-nico
+  name: nicoidentity-admin-role
+rules:
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoidentities
+  verbs:
+  - '*'
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoidentities/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster-api-provider-nico
+  name: nicoidentity-editor-role
+rules:
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoidentities
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoidentities/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster-api-provider-nico
+  name: nicoidentity-viewer-role
+rules:
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoidentities
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - nicoidentities/status
   verbs:
   - get
 ---
@@ -1549,6 +2049,18 @@ spec:
     app.kubernetes.io/name: cluster-api-provider-nico
     control-plane: controller-manager
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-service
+  namespace: capnico-system
+spec:
+  ports:
+  - port: 443
+    targetPort: webhook-server
+  selector:
+    control-plane: controller-manager
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1590,6 +2102,9 @@ spec:
           periodSeconds: 20
         name: manager
         ports:
+        - containerPort: 9443
+          name: webhook-server
+          protocol: TCP
         - containerPort: 8080
           name: metrics
         - containerPort: 8081
@@ -1613,9 +2128,69 @@ spec:
             drop:
             - ALL
           readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp/k8s-webhook-server/serving-certs
+          name: webhook-certs
+          readOnly: true
       securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
+      volumes:
+      - name: webhook-certs
+        secret:
+          defaultMode: 420
+          secretName: webhook-server-cert
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: serving-cert
+  namespace: capnico-system
+spec:
+  dnsNames:
+  - webhook-service.capnico-system.svc
+  - webhook-service.capnico-system.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: selfsigned-issuer
+  secretName: webhook-server-cert
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-issuer
+  namespace: capnico-system
+spec:
+  selfSigned: {}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  annotations:
+    cert-manager.io/inject-ca-from: capnico-system/serving-cert
+  name: capnico-validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: capnico-system
+      path: /validate-infrastructure-cluster-x-k8s-io-v1alpha1-nicomachinetemplate
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: validation.nicomachinetemplate.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - nicomachinetemplates
+  sideEffects: None

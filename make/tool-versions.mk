@@ -115,7 +115,7 @@ CLUSTERCTL_SHA256_ARM64 ?= c3fe61fd44fa63d2efcee2a93432619527909b210a84cda7ee86e
 CERT_MANAGER_VERSION ?= v1.21.1
 # Rancher's local-path-provisioner, the lab StorageClass of the local site
 # (deploy/nvke-deploy-local.sh); a real site brings its own CSI driver.
-LOCAL_PATH_PROVISIONER_VERSION ?= v0.0.31
+LOCAL_PATH_PROVISIONER_VERSION ?= v0.0.37
 # kind drives it as its container provider in the nvkectl bootstrap e2e, which
 # installs the nerdctl-full release for this version. release/ reads this pin
 # for the qualification plan.
