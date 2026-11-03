@@ -128,9 +128,9 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 			return fmt.Errorf("reconciling k8s upgrade: %w", err)
 		}
 
-		// FIXME: https://github.com/dsx-ai-factory/nvke/issues/784 - reconcileNodesNeedingRollout
-		// still tears a node down directly instead of recording intent and letting the
-		// promotion below start it, so rollout teardowns bypass the serialized path.
+		// Rollout records delete intent and reconcileRequestedDeletes (below) starts
+		// the teardown, so a rollout teardown serializes in the same loop as user
+		// deletes, remediation and scale-down.
 		if err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane, allocator, provider.NewNodeProvider()); err != nil {
 			return fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
 		}

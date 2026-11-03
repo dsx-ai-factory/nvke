@@ -81,11 +81,19 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 		}
 	}
 
-	for _, nodeNeedingRollout := range nodesNeedingRollout {
-		if nodes.IsDeleteInFlight(nodeNeedingRollout) {
-			logger.Info("Skipping node for deletion - node delete already in progress", "nodeID", nodeNeedingRollout.ID, "nodeName", nodeNeedingRollout.Name)
-			return nil
-		}
+	// A delete already in flight anywhere on the control plane -- recorded and
+	// waiting behind the serialized delete loop, or already tearing down -- means
+	// this pass has nothing to do. reconcileRequestedDeletes drains one teardown at
+	// a time, and the next reconcile picks the rollout back up once it clears. This
+	// also keeps the step idempotent: the node stays in nodesNeedingRollout until
+	// it is gone, so once the intent below is recorded, this check skips it rather
+	// than recording it twice.
+	if inFlight, ok := cp.nodeWithDeleteInFlight(); ok {
+		logger.Info("Skipping rollout teardown: a control-plane node delete is already in flight",
+			"inFlightNodeID", inFlight.ID,
+			"inFlightNodeName", inFlight.Name,
+		)
+		return nil
 	}
 
 	targetNode := nodesNeedingRollout[0]
@@ -95,26 +103,24 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 		"nodeName", targetNode.Name,
 	)
 
-	nodeLogger.Info("Processing node for deletion in rolling upgrade")
+	nodeLogger.Info("Recording rollout delete for control-plane node")
 
-	// Teardown old node. A delete already in flight is a skip, not a failure: the
-	// next reconcile picks this up once that teardown finishes.
-	started, err := r.teardownOldNode(
-		ctx,
-		cp,
-		targetNode,
-		"OS version upgrade - replacing with new version",
-		"os-version-upgrade",
-		nodeLogger,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to teardown old node: %w", err)
-	}
-	if !started {
-		return nil
+	// Record the delete as intent and let reconcileRequestedDeletes start the
+	// teardown -- the same path as a user delete, remediation and scale-down, so
+	// every control-plane delete serializes in that one loop. Controllers enforce
+	// their own preconditions: the surge-inclusive health check above is the
+	// rollout's, so skip the live-API guard and the quorum floor (rollout replaces
+	// the node rather than shrinking the control plane).
+	if err := nodes.DeleteWithTx(ctx, r.db, targetNode.ID,
+		nodes.WithReason("os-version-upgrade"),
+		nodes.WithAllowCPNode(true),
+		nodes.WithSkipLiveDeleteGuard(),
+		nodes.WithSkipQuorumFloor(),
+	); err != nil {
+		return fmt.Errorf("recording rollout delete for node %s (%s): %w", targetNode.ID, targetNode.Name, err)
 	}
 
-	nodeLogger.Info("Node marked for deletion - will be replaced on next reconcile")
+	nodeLogger.Info("Recorded rollout delete; the serialized delete loop will start the teardown")
 
 	return nil
 }
@@ -200,9 +206,14 @@ func (r *reconciler) countHealthyControlPlaneNodes(ctx context.Context, clusterI
 }
 
 func isHealthyControlPlaneNode(node db.Node) bool {
+	// A node with an accepted delete -- recorded and waiting behind the serialized
+	// delete loop, or already tearing down -- is on its way out, so it does not
+	// count toward the healthy nodes the rollout needs before it tears the next one
+	// down. Excluding only Deleting here would let a node the rollout just queued
+	// still count as healthy until its teardown started.
 	return node.Conditions.KubernetesReady.Status == db.ConditionStatusTrue &&
 		node.Conditions.Provisioned.Status == db.ConditionStatusTrue &&
-		node.Conditions.Deleting.Status != db.ConditionStatusTrue &&
+		!nodes.IsDeleteInFlight(node) &&
 		node.Conditions.Pending.Status != db.ConditionStatusTrue
 }
 
