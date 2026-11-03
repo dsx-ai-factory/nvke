@@ -10,7 +10,7 @@ one, asks it for a machine with certain capabilities, and gets back an instance
 type the site actually offers.
 
 Read this before adding a site, adding an instance type, or adding a second
-provider. [hardware-lane-design.md](hardware-lane-design.md) covers what
+provider. [hardware-qualification-design.md](hardware-qualification-design.md) covers what
 happens after a machine is chosen.
 
 Files live in `controller/test/e2e/environments/`, one per environment, named

@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 How the hardware lane, NVKE's end-to-end qualification on real machines, works
 inside, step by step, and why it is built
 the way it is. It is a reference for changing the lane. To run it, read
-[hardware-lane.md](hardware-lane.md), the operator's guide.
+[hardware-qualification.md](hardware-qualification.md), the operator's guide.
 
 The code it describes lives in `controller/test/e2e/`, and paths below are
 relative to the repository root.

@@ -87,7 +87,7 @@ Everything the run writes is kept in --run-dir. Press Ctrl-C once to stop:
 the node is torn down before the command exits.
 
 The credentials and tools a run needs are listed in
-docs/qualification/local-runs.md.`,
+docs/qualification/hardware-qualification.md.`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
