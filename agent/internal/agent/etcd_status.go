@@ -31,13 +31,16 @@ const (
 	// alarm and goes read-only when the file reaches it.
 	etcdQuotaBackendBytesFlag = "quota-backend-bytes"
 
-	// The stable spelling, as of etcd 3.6 (Kubernetes >= 1.34). etcd 3.5 took
-	// it as --experimental-bootstrap-defrag-threshold-megabytes, which is
-	// deliberately not read here: the only thing that sets this flag is kubeadm
-	// when a node is provisioned, and nothing provisions a node old enough to
-	// need the experimental name. Reading one spelling is also what keeps a
-	// manifest from ever carrying both, which would raise a precedence question
-	// this code is in no position to answer.
+	// The stable spelling, added in etcd 3.6 (Kubernetes 1.34). etcd 3.5 took it
+	// as --experimental-bootstrap-defrag-threshold-megabytes and rejects this
+	// one outright - an unknown flag exits etcd before it serves - so nothing
+	// configures the threshold below 1.34, in either spelling.
+	//
+	// A member on 3.5 therefore reports no threshold and is refused by the
+	// defragmentation preflight. That is the intended scope: those clusters pick
+	// the flag up by recycling control-plane nodes onto a newer Kubernetes
+	// rather than by being patched in place, so reading the experimental
+	// spelling as a fallback would have nothing to find.
 	etcdBootstrapDefragFlag = "bootstrap-defrag-threshold-megabytes"
 
 	// mebibyte converts the threshold flag's megabyte unit to the bytes the

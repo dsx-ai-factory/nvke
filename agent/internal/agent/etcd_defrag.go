@@ -452,7 +452,8 @@ func (s *NodeAgentServer) etcdDefragPreflight(
 	}
 	if !found {
 		return 0, nil, fmt.Errorf(
-			"etcd manifest does not set --%s to a positive value, so a restart would not defragment at any size",
+			"etcd manifest does not set --%s to a positive value, so a restart would not defragment at any size;"+
+				" a member on etcd 3.5 (Kubernetes below 1.34) never carries this flag, so a refusal there is expected",
 			etcdBootstrapDefragFlag,
 		)
 	}

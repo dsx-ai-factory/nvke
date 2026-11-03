@@ -99,7 +99,11 @@ spec:
 				dbSizeInUse: 100 * mib,
 			},
 			wantRefused: true,
-			wantReason:  "would not defragment at any size",
+			// The 3.5 half of the message: a member with no flag at all is the
+			// pre-1.34 fleet, where refusing is the contract rather than a
+			// misconfiguration to go and fix. The threshold-of-zero case below
+			// pins the other half.
+			wantReason: "a refusal there is expected",
 		},
 		{
 			name:     "refuses below the voting member floor",
