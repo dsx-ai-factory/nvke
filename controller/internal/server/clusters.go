@@ -17,6 +17,8 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
+	"github.com/dsx-ai-factory/nvke/auth/authz"
+
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
@@ -104,6 +106,8 @@ type clusterService struct {
 	// nodeAgentClient reads live node state; nil reports nodes unreachable.
 	nodeAgentClient             agent.Client
 	allowControlPlaneWithoutVIP bool
+	// authzEnabled filters lists to the authorized caller's tenant.
+	authzEnabled bool
 }
 
 func NewClusterService(
@@ -170,8 +174,13 @@ func (s *clusterService) applyNodePoolDefaults(req *api.CreateNodePoolRequest, c
 }
 
 func (s *clusterService) ListClusters(ctx context.Context, req api.ListClustersRequestObject) (api.ListClustersResponseObject, error) {
+	tenant, err := listTenant(ctx, s.authzEnabled, s.logger)
+	if err != nil {
+		return nil, err
+	}
 	filters := db.ClusterFilters{
-		Name: req.Params.Name,
+		Name:   req.Params.Name,
+		Tenant: tenant,
 	}
 
 	dbClusters, err := s.db.ListClusters(ctx, filters)
@@ -210,6 +219,11 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 		}
 		dbCluster.PodCIDR = network.podCIDR
 		dbCluster.ServiceCIDR = network.serviceCIDR.String()
+		// The authorized caller's tenant owns the cluster. With authorization
+		// off, or a permissive refusal with no caller, the cluster has no owner.
+		if caller, ok := authz.CallerFromContext(ctx); ok {
+			dbCluster.Tenant = caller.Tenant
+		}
 
 		// Persist the desired count and max surge as columns up front; the config
 		// snapshot row is created after the cluster row exists (it needs the cluster ID).

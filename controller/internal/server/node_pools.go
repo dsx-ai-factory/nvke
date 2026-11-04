@@ -64,6 +64,8 @@ type nodePoolService struct {
 	// nodeAgentProfile carries the node-agent settings nodes.PinAgentProfile
 	// stamps on every node this deployment creates.
 	nodeAgentProfile db.Node
+	// authzEnabled filters lists to the authorized caller's tenant.
+	authzEnabled bool
 }
 
 func NewNodePoolService(
@@ -95,10 +97,15 @@ func (s *nodePoolService) applyNodePoolDefaults(req *api.CreateNodePoolRequest, 
 }
 
 func (s *nodePoolService) ListNodePools(ctx context.Context, req api.ListNodePoolsRequestObject) (api.ListNodePoolsResponseObject, error) {
+	tenant, err := listTenant(ctx, s.authzEnabled, s.logger)
+	if err != nil {
+		return nil, err
+	}
 	filters := db.NodePoolFilters{
 		ClusterID:   req.Params.ClusterID,
 		Name:        req.Params.Name,
 		ClusterName: req.Params.ClusterName,
+		Tenant:      tenant,
 	}
 
 	dbNodePools, err := s.db.ListNodePools(ctx, filters)

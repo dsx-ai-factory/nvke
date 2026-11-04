@@ -1,0 +1,5 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+@id("admins-may-do-anything")
+permit(principal in NVKE::Role::"admin", action, resource);

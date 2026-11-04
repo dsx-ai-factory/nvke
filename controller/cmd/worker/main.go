@@ -27,6 +27,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/auth/authn"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
+	"github.com/dsx-ai-factory/nvke/controller/internal/apiauthz"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/automode"
@@ -140,7 +141,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	metrics.SetAuthMode(authMode(authenticator, cfg.PermissiveMode))
+	metrics.SetAuthMode(authMode(authenticator != nil, cfg.PermissiveMode))
 
 	// Get cloud-workflow-engine workload trust domain and bundle
 	trustDomain, err := getSpiffeTrustDomain(ctx, cfg, logger)
@@ -607,6 +608,28 @@ func main() {
 		logger.Info("Cert renewal controller disabled")
 	}
 
+	serverOpts := []server.Option{
+		server.WithFleetOIDC(&controllerCfg.OIDC),
+		server.WithAllowLegacyCalicoClusterCreation(controllerCfg.AllowLegacyCalicoClusterCreation),
+		server.WithNodeAgentClient(nodeAgentClient),
+	}
+	var issuers []string
+	if authenticator != nil {
+		issuers = authenticator.IssuerNames()
+	}
+	authorizer, err := apiauthz.Setup(ctx, apiauthz.Options{
+		Config:  controllerCfg.APIAuthz,
+		Issuers: issuers,
+		Tenants: dbInstance,
+	}, logger)
+	if err != nil {
+		logger.Error("Failed to set up API authorization", "error", err)
+		os.Exit(1)
+	}
+	metrics.SetAuthzMode(authMode(authorizer != nil, controllerCfg.APIAuthz.Permissive))
+	if authorizer != nil {
+		serverOpts = append(serverOpts, server.WithAuthorization(authorizer.Strict))
+	}
 	httpServer, err := server.NewServer(
 		cfg,
 		serverLogger,
@@ -614,9 +637,7 @@ func main() {
 		temporalClient,
 		authenticator,
 		managementK8sClient,
-		server.WithFleetOIDC(&controllerCfg.OIDC),
-		server.WithAllowLegacyCalicoClusterCreation(controllerCfg.AllowLegacyCalicoClusterCreation),
-		server.WithNodeAgentClient(nodeAgentClient),
+		serverOpts...,
 	)
 	if err != nil {
 		logger.Error("Failed to construct HTTP server", "error", err)
@@ -741,11 +762,10 @@ func main() {
 	}
 }
 
-// authMode is the nvke_auth_enabled mode label. Setup builds no
-// authenticator exactly when authentication is off.
-func authMode(authenticator *authn.Authenticator, permissive bool) string {
+// authMode is the mode label of nvke_auth_enabled and nvke_authz_enabled.
+func authMode(on, permissive bool) string {
 	switch {
-	case authenticator == nil:
+	case !on:
 		return "off"
 	case permissive:
 		return "permissive"

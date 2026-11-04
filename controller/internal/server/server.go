@@ -43,6 +43,7 @@ type options struct {
 	fleetOIDC                        *controllerconfig.OIDCConfig
 	allowLegacyCalicoClusterCreation bool
 	nodeAgentClient                  agent.Client
+	authorize                        api.StrictMiddlewareFunc
 }
 
 // WithFleetOIDC sets the nvke-controller-config OIDC section new clusters are pinned from.
@@ -60,6 +61,12 @@ func WithAllowLegacyCalicoClusterCreation(allow bool) Option {
 // state. Without it, such handlers report every node unreachable.
 func WithNodeAgentClient(c agent.Client) Option {
 	return func(o *options) { o.nodeAgentClient = c }
+}
+
+// WithAuthorization authorizes every API operation with authorize, and filters
+// lists to the authorized caller's tenant. Without it, authorization is off.
+func WithAuthorization(authorize api.StrictMiddlewareFunc) Option {
+	return func(o *options) { o.authorize = authorize }
 }
 
 // NewServer builds the API's HTTP server. A nil authn leaves the authentication
@@ -86,7 +93,11 @@ func NewServer(
 		return nil, fmt.Errorf("building Swagger UI OpenAPI document: %w", err)
 	}
 	serverImpl := NewServerImpl(cfg, logger, database, temporalClient, k8sReader, opts...)
-	strictHandler := api.NewStrictHandlerWithOptions(serverImpl, nil, api.StrictHTTPServerOptions{
+	var strictMiddlewares []api.StrictMiddlewareFunc
+	if serverImpl.authorize != nil {
+		strictMiddlewares = append(strictMiddlewares, serverImpl.authorize)
+	}
+	strictHandler := api.NewStrictHandlerWithOptions(serverImpl, strictMiddlewares, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			logger.Error("OpenAPI StrictServer request error", "error", err)
 			recordRejectionReason(w, rejectionReasonRequestParsingFailed)
@@ -278,19 +289,26 @@ func NewServerImpl(
 	clusterService.fleetOIDC = o.fleetOIDC
 	clusterService.nodeAgentClient = o.nodeAgentClient
 	clusterService.allowControlPlaneWithoutVIP = cfg.AllowControlPlaneWithoutVIP
+	authzEnabled := o.authorize != nil
+	clusterService.authzEnabled = authzEnabled
+	nodePoolService.authzEnabled = authzEnabled
 	nodes.PinAgentProfile(&clusterService.nodeAgentProfile, cfg)
 	nodes.PinAgentProfile(&nodePoolService.nodeAgentProfile, cfg)
 
 	nodeService := NewNodeService(logger, database)
 	nodeService.allowControlPlaneWithoutVIP = cfg.AllowControlPlaneWithoutVIP
+	nodeService.authzEnabled = authzEnabled
+	nodeSetService := NewNodeSetService(logger, database, temporalClient)
+	nodeSetService.authzEnabled = authzEnabled
 
 	return &serverImpl{
 		clusterService:       *clusterService,
 		nodePoolService:      *nodePoolService,
-		nodeSetService:       *NewNodeSetService(logger, database, temporalClient),
+		nodeSetService:       *nodeSetService,
 		nodeService:          *nodeService,
 		releaseService:       *NewReleaseService(logger, k8sReader),
 		configProfileService: *NewConfigProfileService(cfg, logger),
+		authorize:            o.authorize,
 	}
 }
 
@@ -301,4 +319,7 @@ type serverImpl struct {
 	nodeService
 	releaseService
 	configProfileService
+
+	// authorize is the WithAuthorization middleware, or nil.
+	authorize api.StrictMiddlewareFunc
 }

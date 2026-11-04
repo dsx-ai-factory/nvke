@@ -20,6 +20,8 @@ type nodeSetService struct {
 	logger         *slog.Logger
 	db             db.DB
 	temporalClient client.Client
+	// authzEnabled filters lists to the authorized caller's tenant.
+	authzEnabled bool
 }
 
 func NewNodeSetService(logger *slog.Logger, database db.DB, temporalClient client.Client) *nodeSetService {
@@ -31,8 +33,13 @@ func NewNodeSetService(logger *slog.Logger, database db.DB, temporalClient clien
 }
 
 func (s *nodeSetService) ListNodeSets(ctx context.Context, req api.ListNodeSetsRequestObject) (api.ListNodeSetsResponseObject, error) {
+	tenant, err := listTenant(ctx, s.authzEnabled, s.logger)
+	if err != nil {
+		return nil, err
+	}
 	filters := db.NodeSetFilters{
 		NodePoolID: req.Params.NodePoolID,
+		Tenant:     tenant,
 	}
 
 	dbNodeSets, err := s.db.ListNodeSets(ctx, filters)

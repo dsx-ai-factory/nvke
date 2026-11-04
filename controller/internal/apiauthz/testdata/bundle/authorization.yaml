@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: auth.nvke.nvidia.com/v1alpha1
+kind: AuthorizationConfiguration
+operatorTenant: ops
+issuers:
+  idp:
+    tenant: {claim: tenant}
+    operators: true
+    claims:
+      - {name: role, value: admin, grants: [admin]}

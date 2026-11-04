@@ -608,6 +608,9 @@ paths:
         or `nico.release`; not exactly one of
         `subnetIDs` and `vpcPrefixIDs`; a pod CIDR too small for the requested
         nodes.
+
+        With API authorization on, a parent cluster that doesn't exist, or
+        that the caller can't reach, returns 404 instead.
       requestBody:
         required: true
         description: The node pool to create.
@@ -649,6 +652,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericError"
+        "404":
+          description: With API authorization on, the parent cluster doesn't exist or the caller can't reach it. No body is returned.
         "409":
           description: The parent cluster is being deleted
           content:

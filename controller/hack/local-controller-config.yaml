@@ -114,3 +114,11 @@ apiAuth:
   audiences: []
   issuers: []
   permissive: false
+# Off for host-local runs. To authorize API requests, turn on apiAuth, set
+# enabled, and point dir at a LocalBundle directory.
+apiAuthz:
+  enabled: false
+  permissive: false
+  authorizer:
+    localBundle:
+      dir: ""

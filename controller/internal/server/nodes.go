@@ -21,6 +21,8 @@ type nodeService struct {
 	logger                      *slog.Logger
 	db                          db.DB
 	allowControlPlaneWithoutVIP bool
+	// authzEnabled filters lists to the authorized caller's tenant.
+	authzEnabled bool
 }
 
 func NewNodeService(logger *slog.Logger, database db.DB) *nodeService {
@@ -31,12 +33,17 @@ func NewNodeService(logger *slog.Logger, database db.DB) *nodeService {
 }
 
 func (s *nodeService) ListNodes(ctx context.Context, req api.ListNodesRequestObject) (api.ListNodesResponseObject, error) {
+	tenant, err := listTenant(ctx, s.authzEnabled, s.logger)
+	if err != nil {
+		return nil, err
+	}
 	filters := db.NodeFilters{
 		ClusterID:    req.Params.ClusterID,
 		NodePoolID:   req.Params.NodePoolID,
 		ClusterName:  req.Params.ClusterName,
 		Name:         req.Params.Name,
 		ControlPlane: req.Params.ControlPlane,
+		Tenant:       tenant,
 	}
 
 	dbNodes, err := s.db.ListNodes(ctx, filters)

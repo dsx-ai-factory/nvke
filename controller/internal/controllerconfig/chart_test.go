@@ -285,6 +285,19 @@ func TestLoadStartupConfig(t *testing.T) {
 		_, _, err = controllerconfig.LoadStartupConfig()
 		require.ErrorContains(t, err, "configured twice")
 	})
+
+	t.Run("authorization without authentication is refused", func(t *testing.T) {
+		local, err := controllerconfig.Load(localControllerConfig)
+		require.NoError(t, err)
+		local.APIAuthz.Enabled = true
+		local.APIAuthz.Authorizer.LocalBundle.Dir = "/etc/nvke/authz"
+		encoded, err := yaml.Marshal(local)
+		require.NoError(t, err)
+		t.Setenv("CONTROLLER_CONFIG_PATH", writeConfig(t, string(encoded)))
+
+		_, _, err = controllerconfig.LoadStartupConfig()
+		require.ErrorContains(t, err, "API authentication is off")
+	})
 }
 
 // localOnly lists the keys where hack/local-controller-config.yaml deliberately
