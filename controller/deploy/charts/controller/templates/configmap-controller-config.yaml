@@ -167,3 +167,11 @@ data:
       issuers: []
       {{- end }}
       permissive: {{ and .Values.apiAuth.enabled .Values.apiAuth.permissive }}
+    {{- /* The bundle is mounted at controller.apiAuthz.mountPath. */}}
+    {{- $authz := .Values.apiAuthz }}
+    apiAuthz:
+      enabled: {{ $authz.enabled }}
+      permissive: {{ and $authz.enabled $authz.permissive }}
+      authorizer:
+        localBundle:
+          dir: {{ if $authz.enabled }}{{ include "controller.apiAuthz.mountPath" . | quote }}{{ else }}""{{ end }}

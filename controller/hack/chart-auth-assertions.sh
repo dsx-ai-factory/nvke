@@ -355,6 +355,81 @@ echo "extraFiles is inert without create:"
 wantfail "and says so rather than ignoring it" 'apiAuth\.configMap\.extraFiles is set but would not be rendered' \
   --set apiAuth.enabled=true --set 'apiAuth.configMap.extraFiles.spire-ca\.crt=x'
 
+authz_values="$(dirname "${values}")/authz-values.yaml"
+cat > "${authz_values}" <<'YAML'
+apiAuth:
+  enabled: true
+apiAuthz:
+  enabled: true
+  config:
+    operatorTenant: nca-0000000000000000
+    issuers:
+      local-kubernetes:
+        tenant: {fixed: nca-0000000000000000}
+        operators: true
+        serviceAccounts:
+          - {namespace: nvke-ops, name: fleet, grants: [admin]}
+YAML
+
+echo "apiAuthz disabled (the default):"
+out="$(render)"
+setting "apiAuthz is off"                     apiAuthz.enabled false                  "${out}"
+setting "and not permissive"                  apiAuthz.permissive false               "${out}"
+setting "with no bundle directory"            apiAuthz.authorizer.localBundle.dir ""  "${out}"
+absent "no bundle ConfigMap"                  '^# Source: .*/templates/configmap-authz\.yaml$' "${out}"
+absent "no bundle volume"                     'name: nvke-authz-bundle'               "${out}"
+
+echo "apiAuthz enabled, the chart's bundle:"
+out="$(render -f "${authz_values}")"
+setting "apiAuthz is on"                      apiAuthz.enabled true                   "${out}"
+setting "and enforcing"                       apiAuthz.permissive false               "${out}"
+setting "reading the mounted bundle"          apiAuthz.authorizer.localBundle.dir /etc/nvke/authz "${out}"
+want   "from the chart's ConfigMap"           '^# Source: .*/templates/configmap-authz\.yaml$' "${out}"
+want   "apiVersion is supplied"               'apiVersion: auth\.nvke\.nvidia\.com/v1alpha1' "${out}"
+want   "kind is supplied"                     'kind: AuthorizationConfiguration'      "${out}"
+want   "config reaches authorization.yaml"    'name: fleet'                           "${out}"
+want   "the default policies are carried"     'admins-may-do-anything'                "${out}"
+absent "Reloader leaves the bundle alone"     'reload: ".*nvke-authz-bundle'          "${out}"
+
+echo "apiAuthz permissive behind permissive apiAuth:"
+out="$(render -f "${authz_values}" --set apiAuth.permissive=true --set apiAuthz.permissive=true)"
+setting "apiAuthz.permissive is true"         apiAuthz.permissive true                "${out}"
+
+echo "apiAuthz.configMap.create=false mounts a ConfigMap managed elsewhere:"
+out="$(render --set apiAuth.enabled=true --set apiAuthz.enabled=true \
+  --set apiAuthz.configMap.create=false --set apiAuthz.configMap.name=site-authz)"
+absent "renders no ConfigMap of its own"      '^# Source: .*/templates/configmap-authz\.yaml$' "${out}"
+want   "mounts the named one"                 'name: site-authz'                      "${out}"
+setting "which the controller reads"          apiAuthz.authorizer.localBundle.dir /etc/nvke/authz "${out}"
+
+echo "apiAuthz must match apiAuth:"
+wantfail "authorization without authentication is refused" 'apiAuthz\.enabled is true but apiAuth\.enabled is false' \
+  -f "${authz_values}" --set apiAuth.enabled=false
+wantfail "enforcing authorization behind permissive authentication is refused" 'apiAuthz\.permissive is false but apiAuth\.permissive is true' \
+  -f "${authz_values}" --set apiAuth.permissive=true
+
+echo "apiAuthz.config and apiAuthz.configMap must agree:"
+wantfail "create without config is refused"   'apiAuthz\.configMap\.create is true but apiAuthz\.config is empty' \
+  --set apiAuth.enabled=true --set apiAuthz.enabled=true
+wantfail "config without create is refused"   'apiAuthz\.config is set but would not be rendered' \
+  -f "${authz_values}" --set apiAuthz.configMap.create=false
+wantfail "config while authorization is off is refused" 'apiAuthz\.config is set but would not be rendered' \
+  -f "${authz_values}" --set apiAuthz.enabled=false
+wantfail "a config that is not a map is refused" 'apiAuthz\.config must be a map' \
+  --set apiAuth.enabled=true --set apiAuthz.enabled=true --set apiAuthz.config=oops
+wantfail "apiVersion in config is refused"    'apiAuthz\.config must not carry apiVersion or kind' \
+  -f "${authz_values}" --set-string apiAuthz.config.apiVersion=auth.nvke.nvidia.com/v1alpha1
+wantfail "the controller config's name is refused" 'apiAuthz\.configMap\.name is "nvke-controller-config", the controller config' \
+  -f "${authz_values}" --set apiAuthz.configMap.name=nvke-controller-config
+wantfail "the rendered apiAuth ConfigMap's name is refused" 'apiAuthz\.configMap\.name is "nvke-auth-config", the same as apiAuth\.configMap\.name' \
+  -f "${values}" -f "${authz_values}" --set apiAuthz.configMap.name=nvke-auth-config
+wantfail "the controller config's name is refused without create" 'apiAuthz\.configMap\.name is "nvke-controller-config", the controller config' \
+  --set apiAuth.enabled=true --set apiAuthz.enabled=true \
+  --set apiAuthz.configMap.create=false --set apiAuthz.configMap.name=nvke-controller-config
+wantfail "the apiAuth ConfigMap's name is refused without create" 'apiAuthz\.configMap\.name is "nvke-auth-config", the same as apiAuth\.configMap\.name' \
+  --set apiAuth.enabled=true --set apiAuthz.enabled=true \
+  --set apiAuthz.configMap.create=false --set apiAuthz.configMap.name=nvke-auth-config
+
 if [[ "${failures}" -ne 0 ]]; then
   echo "${failures} chart assertion(s) failed" >&2
   exit 1
