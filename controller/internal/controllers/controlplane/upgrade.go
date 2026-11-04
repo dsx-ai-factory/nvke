@@ -103,6 +103,33 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 		"nodeName", targetNode.Name,
 	)
 
+	// The surge-inclusive health check above proves the replacement is Ready, not
+	// that it has Joined etcd, and this path skips the live-delete guard. Without a
+	// joined-survivor check, a rollout delete could be promoted while the
+	// replacement is still only Ready and then remove the last joined member,
+	// breaking quorum with the teardown's etcd member removal skipped. Require the
+	// joined control-plane survivors (excluding the target and pending nodes) to
+	// keep etcd quorum before recording intent. Mirrors canStartRemediation's
+	// quorum precondition, but keyed on Joined rather than KubernetesReady.
+	totalMembers, joinedMembers := 0, 0
+	for _, node := range cp.nodes {
+		if node.ID == targetNode.ID || isPending(node) {
+			continue
+		}
+		totalMembers++
+		if node.Conditions.Joined.Status == db.ConditionStatusTrue {
+			joinedMembers++
+		}
+	}
+	if quorum := (totalMembers / 2) + 1; joinedMembers < quorum {
+		nodeLogger.Info("Skipping rollout teardown: joined control-plane survivors would not keep etcd quorum",
+			"joinedMembers", joinedMembers,
+			"totalMembers", totalMembers,
+			"quorum", quorum,
+		)
+		return nil
+	}
+
 	nodeLogger.Info("Recording rollout delete for control-plane node")
 
 	// Record the delete as intent and let reconcileRequestedDeletes start the

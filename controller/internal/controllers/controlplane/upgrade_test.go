@@ -221,6 +221,72 @@ func TestReconcileNodesNeedingRolloutRecordsIntentAfterSurgeExists(t *testing.T)
 	mockTx.AssertExpectations(t)
 }
 
+// TestReconcileNodesNeedingRolloutSkipsWhenReplacementNotJoined pins the
+// joined-survivor precondition: the surge-inclusive health check proves the
+// replacement is Ready, but until it has Joined etcd, removing the old node would
+// drop the joined members below quorum -- and this path skips the live-delete
+// guard, so nothing else catches it. The rollout must record nothing and wait for
+// the replacement to join.
+func TestReconcileNodesNeedingRolloutSkipsWhenReplacementNotJoined(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	oldConfigID := uuid.New()
+	currentConfigID := uuid.New()
+	desiredSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.31.0"}
+	desiredSpec.SetNico(db.NicoControlPlaneProvider{Release: "new-os"})
+	pinnedSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.31.0"}
+	pinnedSpec.SetNico(db.NicoControlPlaneProvider{Release: "old-os"})
+	cluster := db.Cluster{
+		ID:                    clusterID,
+		Name:                  "single-no-vip",
+		EnableCPNodeRecycling: true,
+		ControlPlaneConfig: db.ControlPlaneConfig{
+			ControlPlaneConfigSpec: desiredSpec,
+			DesiredCount:           1,
+			MaxSurge:               1,
+		},
+		Conditions: db.ClusterConditions{
+			CPNodesRecycling: db.Condition{Status: db.ConditionStatusTrue},
+		},
+	}
+	oldNode := makeHealthyNode("cp-old", uuid.Nil)
+	oldNode.ID = uuid.New()
+	oldNode.ClusterID = clusterID
+	oldNode.ControlPlane = true
+	oldNode.ControlPlaneConfigurationID = oldConfigID
+	newNode := makeHealthyNode("cp-new", uuid.Nil)
+	newNode.ID = uuid.New()
+	newNode.ClusterID = clusterID
+	newNode.ControlPlane = true
+	newNode.ControlPlaneConfigurationID = currentConfigID
+	// The replacement is Ready (so the surge-inclusive health check passes) but has
+	// not joined etcd yet, so it is not a live member that can keep quorum.
+	newNode.Conditions.Joined = db.Condition{Status: db.ConditionStatusFalse}
+	cp := &controlPlane{
+		nodes:                     []db.Node{oldNode, newNode},
+		clusterControlPlaneConfig: cluster.ControlPlaneConfig,
+		nodePinnedControlPlaneConfigs: map[uuid.UUID]db.ControlPlaneConfigSpec{
+			oldConfigID:     pinnedSpec,
+			currentConfigID: desiredSpec,
+		},
+	}
+	mockTx := &testutil.MockTx{}
+	cpTrue := true
+	mockTx.On("ListNodes", mock.Anything, db.NodeFilters{
+		ClusterID:    &clusterID,
+		ControlPlane: &cpTrue,
+	}).Return([]db.Node{oldNode, newNode}, nil)
+	r := &reconciler{cfg: config.Config{}, db: mockTx, logger: slog.Default()}
+
+	err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
+
+	require.NoError(t, err)
+	mockTx.AssertNotCalled(t, "GetClusterForUpdate", mock.Anything, mock.Anything)
+	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+	mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
 // TestReconcileNodesNeedingRolloutSkipsWhenDeleteInFlight pins the serialization:
 // when any control-plane node already has an accepted delete -- queued behind the
 // serialized loop or already tearing down, as a concurrent remediation or user

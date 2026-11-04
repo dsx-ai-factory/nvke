@@ -115,9 +115,19 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		return fmt.Errorf("reconciling control plane scale-up: %w", err)
 	}
 
-	// Records delete intent only; the teardown itself is started at the bottom.
-	if _, err := r.remediateMachines(ctx, cluster, controlPlane); err != nil {
+	// Records delete intent only; the teardown is started at the bottom of a later
+	// pass. When remediation records a delete, end this pass: controlPlane still
+	// holds the pre-remediation snapshot, so the rollout and scale-down steps below
+	// would not see the new intent and could queue a second delete without
+	// accounting for it. The node write re-enqueues the cluster, and the next
+	// reconcile reads a fresh snapshot where the delete is in flight -- rollout and
+	// scale-down then defer to it and reconcileRequestedDeletes promotes it.
+	remediated, err := r.remediateMachines(ctx, cluster, controlPlane)
+	if err != nil {
 		return err
+	}
+	if remediated {
+		return nil
 	}
 
 	// Agent replacement can interrupt join and kubeadm RPCs. Deletion and repair

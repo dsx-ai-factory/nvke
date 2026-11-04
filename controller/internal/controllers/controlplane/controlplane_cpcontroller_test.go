@@ -41,6 +41,7 @@ func makeCPControllerNode(name string, configID uuid.UUID) db.Node {
 			KubernetesReady: db.Condition{Status: db.ConditionStatusTrue},
 			Provisioned:     db.Condition{Status: db.ConditionStatusTrue},
 			NodeAgentReady:  db.Condition{Status: db.ConditionStatusTrue},
+			Joined:          db.Condition{Status: db.ConditionStatusTrue},
 			Deleting:        db.Condition{Status: db.ConditionStatusFalse},
 		},
 	}
