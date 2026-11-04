@@ -15,7 +15,8 @@ import (
 // in the nico package, so Activities can hold and thread one through
 // MachineCreateDeps without importing a provider package. Implementations wrap
 // definitive rejections in the nico package's ErrImageRejected; anything else
-// reads as a retryable operational failure.
+// reads as a retryable operational failure. VerifyImage must honor ctx: the
+// pre-flight gives each call a short deadline.
 type ImageVerifier interface {
 	VerifyImage(ctx context.Context, image *enginev1.MachineImage) error
 }

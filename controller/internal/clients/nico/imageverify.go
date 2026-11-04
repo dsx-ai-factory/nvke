@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 
@@ -31,6 +32,11 @@ const (
 	// pre-flight fails. Fail-closed: an unverifiable image is treated the
 	// same as a failing one.
 	ImageVerificationEnforce = "enforce"
+)
+
+const (
+	// imageVerificationTimeout stays well inside the two-minute budget of the activity that calls CreateMachine.
+	imageVerificationTimeout = 30 * time.Second
 )
 
 // ErrImageVerificationFailed marks a machine creation refused by the image
@@ -68,7 +74,7 @@ func verifyImage(ctx context.Context, mode string, verifier ImageVerifier, image
 		return fmt.Errorf("unknown image verification mode %q", mode)
 	}
 
-	err := runVerifier(ctx, verifier, image)
+	err := runVerifier(ctx, verifier, image, imageVerificationTimeout)
 	result := "pass"
 	if err != nil {
 		result = "fail"
@@ -94,9 +100,15 @@ func verifyImage(ctx context.Context, mode string, verifier ImageVerifier, image
 	return refusal
 }
 
-func runVerifier(ctx context.Context, verifier ImageVerifier, image *enginev1.MachineImage) error {
+func runVerifier(ctx context.Context, verifier ImageVerifier, image *enginev1.MachineImage, timeout time.Duration) error {
 	if verifier == nil {
 		return errors.New("no image verifier is configured")
 	}
-	return verifier.VerifyImage(ctx, image)
+	verifyCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	err := verifier.VerifyImage(verifyCtx, image)
+	if err != nil && ctx.Err() == nil && verifyCtx.Err() != nil {
+		return fmt.Errorf("image verifier did not finish within %s: %w", timeout, err)
+	}
+	return err
 }

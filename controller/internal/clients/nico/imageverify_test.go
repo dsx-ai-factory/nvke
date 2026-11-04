@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -116,4 +117,64 @@ func TestEnforceDistinguishesRejectionFromOutage(t *testing.T) {
 	require.ErrorIs(t, err, ErrImageVerificationFailed, "an outage still refuses fail-closed")
 	_, terminal = shared.AsTerminal(err)
 	assert.False(t, terminal, "an operational failure must stay retryable")
+}
+
+type slowVerifier struct{}
+
+func (slowVerifier) VerifyImage(ctx context.Context, _ *enginev1.MachineImage) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+type recordingVerifier struct {
+	deadline    time.Time
+	hasDeadline bool
+}
+
+func (r *recordingVerifier) VerifyImage(ctx context.Context, _ *enginev1.MachineImage) error {
+	r.deadline, r.hasDeadline = ctx.Deadline()
+	return nil
+}
+
+func TestVerifyImageBoundsTheVerifier(t *testing.T) {
+	image := &enginev1.MachineImage{ObjectMeta: metav1.ObjectMeta{Name: "img"}}
+
+	t.Run("each call gets the pre-flight deadline", func(t *testing.T) {
+		verifier := &recordingVerifier{}
+		start := time.Now()
+		require.NoError(t, verifyImage(context.Background(), ImageVerificationEnforce, verifier, image, "node-test-id", "cluster-test-id"))
+		require.True(t, verifier.hasDeadline, "the verifier must be called with a deadline")
+		assert.WithinDuration(t, start.Add(imageVerificationTimeout), verifier.deadline, time.Second)
+	})
+
+	t.Run("running out of time names the deadline and stays retryable", func(t *testing.T) {
+		err := runVerifier(context.Background(), slowVerifier{}, image, 10*time.Millisecond)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.ErrorContains(t, err, "did not finish within 10ms")
+		require.NotErrorIs(t, err, ErrImageRejected, "a timeout is not a rejection")
+	})
+
+	t.Run("a caller deadline is reported as the caller's", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		defer cancel()
+		err := runVerifier(ctx, slowVerifier{}, image, time.Minute)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.NotContains(t, err.Error(), "did not finish within", "the pre-flight's own deadline did not end this call")
+	})
+
+	t.Run("warn proceeds when the verifier runs out of time", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		defer cancel()
+		require.NoError(t, verifyImage(ctx, ImageVerificationWarn, slowVerifier{}, image, "node-test-id", "cluster-test-id"))
+	})
+
+	t.Run("enforce refuses a timed-out attempt but keeps it retryable", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		defer cancel()
+		err := verifyImage(ctx, ImageVerificationEnforce, slowVerifier{}, image, "node-test-id", "cluster-test-id")
+		require.ErrorIs(t, err, ErrImageVerificationFailed)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		_, terminal := shared.AsTerminal(err)
+		assert.False(t, terminal, "a timeout must stay retryable")
+	})
 }
