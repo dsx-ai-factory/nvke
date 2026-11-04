@@ -1844,7 +1844,7 @@ func TestNodeLoginFromEnv(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tt.name+": the value holds a character") {
 				t.Errorf("NodeLoginFromEnv error = %v; want %s refused as the stack install refuses it", err, tt.name)
 			}
-			if _, stackErr := stackconfig.CredentialsFromEnv(); stackErr == nil {
+			if _, stackErr := (&stackconfig.Config{}).CredentialsFromEnv(); stackErr == nil {
 				t.Errorf("stackconfig.CredentialsFromEnv accepted what NodeLoginFromEnv refuses")
 			}
 		})

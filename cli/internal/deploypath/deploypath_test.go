@@ -10,8 +10,10 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,6 +33,7 @@ import (
 
 var (
 	nico         = filepath.Join("..", "..", "..", "deploy", "nico")
+	launchLayer  = filepath.Join("..", "..", "..", "deploy", "launchlayer")
 	example      = filepath.Join("..", "..", "examples", "sitespec.yaml")
 	stackExample = filepath.Join("..", "..", "..", "deploy", "examples", "stack-config.json")
 )
@@ -413,6 +416,118 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	}
 	if ignore, err := os.ReadFile(filepath.Join(out, ".gitignore")); err != nil || string(ignore) != "*\n" {
 		t.Errorf(".gitignore: %q %v", ignore, err)
+	}
+}
+
+// TestLaunchLayerPathMatchesNico keeps deploy/launchlayer's copies of
+// deploy/nico in step: a file both paths hold is identical, except the ones
+// the LaunchLayer path changes on purpose. A pin bump in deploy/nico that
+// misses deploy/launchlayer fails here.
+func TestLaunchLayerPathMatchesNico(t *testing.T) {
+	differ := map[string]bool{
+		"README.md":                           true,
+		"nvke-deploy.yaml":                    true,
+		"controller/overlay.yaml":             true,
+		"nvke-base-config/00-namespaces.yaml": true,
+	}
+	shared := 0
+	err := filepath.WalkDir(launchLayer, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(launchLayer, path)
+		if err != nil {
+			return err
+		}
+		theirs, err := os.ReadFile(filepath.Join(nico, rel))
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		ours, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		shared++
+		same := bytes.Equal(ours, theirs)
+		switch rel = filepath.ToSlash(rel); {
+		case differ[rel] && same:
+			t.Errorf("%s now matches deploy/nico; drop it from the intended differences", rel)
+		case !differ[rel] && !same:
+			t.Errorf("%s differs from deploy/nico; copy the change across, or list it as an intended difference", rel)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shared == 0 {
+		t.Fatal("deploy/launchlayer shares no file with deploy/nico")
+	}
+}
+
+// TestRender_LaunchLayerPath renders deploy/launchlayer: CAPLL's manager gets
+// the stack config's LaunchLayer API and identity Secret, and nothing of NICo's
+// is required or rendered.
+func TestRender_LaunchLayerPath(t *testing.T) {
+	spec, _ := filledInputs(t, false, nil)
+	t.Setenv(stackconfig.EnvNicoToken, "")
+	t.Setenv(stackconfig.EnvLaunchLayerClientSecret, "ll-secret")
+	text, err := os.ReadFile(filepath.Join(filepath.Dir(stackExample), "stack-config-launchlayer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := strings.NewReplacer(
+		"REPLACE_LAUNCHLAYER_BASE_URL", "https://launchlayer.example.com",
+		"REPLACE_LAUNCHLAYER_ISSUER_URL", "https://issuer.example.com",
+		"REPLACE_LAUNCHLAYER_CLIENT_ID", "capll",
+		`"computeURL": ""`, `"computeURL": "https://compute.example.com"`,
+	).Replace(string(text))
+	stackPath := filepath.Join(t.TempDir(), "stack-config.json")
+	if err := os.WriteFile(stackPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stack, err := stackconfig.Load(stackPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stack.Images.Profiles = "ghcr.io/example/controller-profiles:v1"
+	opts := siteRender(spec, stack, filepath.Join(t.TempDir(), "rendered"))
+	opts.DeployPath = launchLayer
+	if _, err := Render(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+
+	capll, err := os.ReadFile(filepath.Join(opts.Out, "capll", "capll.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, arg := range []string{"- --base-url=https://launchlayer.example.com\n", "- --compute-url=https://compute.example.com\n", "- --identity-secret=launchlayer-credentials\n"} {
+		if !strings.Contains(string(capll), arg) {
+			t.Errorf("capll manager args lack %q", arg)
+		}
+	}
+	// CAPLL reads bootstrap Secrets in nvke-system only with the path's grant.
+	if grant, err := os.ReadFile(filepath.Join(opts.Out, "capll", "secret-reader.yaml")); err != nil || !strings.Contains(string(grant), "namespace: nvke-system") {
+		t.Errorf("capll secret-reader grant: %v", err)
+	}
+	// An empty override inherits baseURL rather than passing an empty flag.
+	if strings.Contains(string(capll), "--vpc-url") || strings.Contains(string(capll), "--sg-url") {
+		t.Error("capll passes an override the stack config left empty")
+	}
+	secret, err := os.ReadFile(filepath.Join(opts.Out, "nvke-base-config", "20-launchlayer-credentials.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{"namespace: capll-system", `issuerURL: "https://issuer.example.com"`, `clientID: "capll"`, `clientSecret: "ll-secret"`, `scopes: ""`} {
+		if !strings.Contains(string(secret), line) {
+			t.Errorf("rendered launchlayer-credentials lacks %q:\n%s", line, secret)
+		}
+	}
+	if matches, _ := filepath.Glob(filepath.Join(opts.Out, "nvke-base-config", "*nico*")); len(matches) != 0 {
+		t.Errorf("NICo credentials rendered on the LaunchLayer path: %v", matches)
 	}
 }
 

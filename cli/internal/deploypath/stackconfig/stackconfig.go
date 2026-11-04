@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package stackconfig loads the controller stack install's inputs: the stack
-// config file, which names the NICo API and the optional image overrides and
-// mirror, and the credentials, which come from the environment. The site spec
+// config file, which names the NICo or LaunchLayer API and the optional image
+// overrides and mirror, and the credentials, which come from the environment.
+// The site spec
 // holds the facts the bootstrap owns, such as the site name, the control-plane
 // VIP and the SPIRE trust domain; the stack config holds what only the stack
 // reads. deploy/examples/stack-config.json is the operator's starting point.
@@ -29,6 +30,8 @@ import (
 type Config struct {
 	// Nico is the NICo API CAPNICo calls.
 	Nico Nico `json:"nico"`
+	// LaunchLayer is the LaunchLayer API CAPLL calls.
+	LaunchLayer LaunchLayer `json:"launchLayer"`
 	// Images overrides the controller and profiles images, which default to
 	// the release's artifacts.
 	Images Images `json:"images"`
@@ -38,6 +41,8 @@ type Config struct {
 
 	// path is the absolute path of the file, set by Load and by nothing else.
 	path string
+	// hasNico and hasLaunchLayer record which provider objects the file holds.
+	hasNico, hasLaunchLayer bool
 }
 
 // Nico is the NICo API CAPNICo calls.
@@ -45,6 +50,21 @@ type Nico struct {
 	Endpoint string `json:"endpoint"`
 	OrgID    string `json:"orgID"`
 	APIName  string `json:"apiName"`
+}
+
+// LaunchLayer is the LaunchLayer API CAPLL calls, and the OAuth2 client it
+// calls it as. The client secret comes from EnvLaunchLayerClientSecret.
+type LaunchLayer struct {
+	// BaseURL is the address every LaunchLayer service resolves against.
+	BaseURL string `json:"baseURL"`
+	// VPCURL, ComputeURL and SGURL override BaseURL for one service.
+	VPCURL     string `json:"vpcURL"`
+	ComputeURL string `json:"computeURL"`
+	SGURL      string `json:"sgURL"`
+	IssuerURL  string `json:"issuerURL"`
+	ClientID   string `json:"clientID"`
+	// Scopes is space-separated.
+	Scopes string `json:"scopes"`
 }
 
 // Images overrides images that default to the release's artifacts.
@@ -59,7 +79,7 @@ const placeholderPrefix = "REPLACE_"
 
 // objectKeys are the top-level keys that hold an object. UnmarshalStrict
 // reads null into an empty object, so null is refused by name.
-var objectKeys = []string{"nico", "images"}
+var objectKeys = []string{"nico", "launchLayer", "images"}
 
 // field is one value of the file with its JSON path.
 type field struct {
@@ -71,12 +91,28 @@ type field struct {
 	template bool
 }
 
+// usesNico reports whether the config names the NICo API: it holds a nico
+// object, or no launchLayer object, which is every stack config written before
+// LaunchLayer.
+func (c *Config) usesNico() bool { return c.hasNico || !c.hasLaunchLayer }
+
+// usesLaunchLayer reports whether the config holds a launchLayer object.
+func (c *Config) usesLaunchLayer() bool { return c.hasLaunchLayer }
+
 // fields lists every value in file order.
 func (c *Config) fields() []field {
+	nico, launchLayer := c.usesNico(), c.usesLaunchLayer()
 	return []field{
-		{path: "nico.endpoint", value: c.Nico.Endpoint, required: true, template: true},
-		{path: "nico.orgID", value: c.Nico.OrgID, required: true, template: true},
-		{path: "nico.apiName", value: c.Nico.APIName, required: true, template: true},
+		{path: "nico.endpoint", value: c.Nico.Endpoint, required: nico, template: true},
+		{path: "nico.orgID", value: c.Nico.OrgID, required: nico, template: true},
+		{path: "nico.apiName", value: c.Nico.APIName, required: nico, template: true},
+		{path: "launchLayer.baseURL", value: c.LaunchLayer.BaseURL, required: launchLayer, template: true},
+		{path: "launchLayer.vpcURL", value: c.LaunchLayer.VPCURL, template: true},
+		{path: "launchLayer.computeURL", value: c.LaunchLayer.ComputeURL, template: true},
+		{path: "launchLayer.sgURL", value: c.LaunchLayer.SGURL, template: true},
+		{path: "launchLayer.issuerURL", value: c.LaunchLayer.IssuerURL, required: launchLayer, template: true},
+		{path: "launchLayer.clientID", value: c.LaunchLayer.ClientID, required: launchLayer, template: true},
+		{path: "launchLayer.scopes", value: c.LaunchLayer.Scopes, template: true},
 		{path: "images.controller", value: c.Images.Controller},
 		{path: "images.profiles", value: c.Images.Profiles},
 		{path: "mirror", value: c.Mirror},
@@ -86,9 +122,12 @@ func (c *Config) fields() []field {
 // Load reads the stack config file at path and returns it validated. The
 // file must be one JSON object; an unknown, duplicate or differently cased
 // key is refused, as is null for an object. No value may still be a
-// REPLACE_* placeholder, every required value must be set, the NICo
-// endpoint must be an http or https URL with no user or password, and the
-// mirror must carry no scheme. Load reads nothing but the file.
+// REPLACE_* placeholder, every required value must be set, the NICo endpoint
+// and every LaunchLayer URL must be an http or https URL with no user or
+// password, and the mirror must carry no scheme. The nico values are required
+// unless the file holds a launchLayer object and no nico object; the
+// launchLayer values are required when it holds a launchLayer object. Load
+// reads nothing but the file.
 //
 // Every problem is reported at once, one per line as "<json path>:
 // <problem>" with no file name in front; a problem with the file as a
@@ -152,6 +191,8 @@ func (c *Config) decode(data []byte) (problems []string, valuesRead bool) {
 				valuesRead = false
 			}
 		}
+		_, c.hasNico = raw["nico"]
+		_, c.hasLaunchLayer = raw["launchLayer"]
 	}
 	return problems, valuesRead
 }
@@ -190,20 +231,46 @@ func (c *Config) problems() []string {
 			problems = append(problems, f.path+": the value holds a character the templates cannot carry (a quote, a backslash or a control character)")
 		}
 	}
-	if ep := c.Nico.Endpoint; ep != "" && !strings.HasPrefix(ep, placeholderPrefix) {
-		u, err := url.Parse(ep)
-		switch {
-		case err == nil && u.User != nil:
-			// The value is not printed: the userinfo may be a password.
-			problems = append(problems, "nico.endpoint: must carry no user or password; the token comes from "+EnvNicoToken)
-		case err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https"):
-			problems = append(problems, fmt.Sprintf("nico.endpoint: %q must be an http or https URL", ep))
+	const nicoCredential = "the token comes from " + EnvNicoToken
+	const launchLayerCredential = "the client secret comes from " + EnvLaunchLayerClientSecret
+	for _, u := range []struct{ path, value, credential string }{
+		{"nico.endpoint", c.Nico.Endpoint, nicoCredential},
+		{"launchLayer.baseURL", c.LaunchLayer.BaseURL, launchLayerCredential},
+		{"launchLayer.vpcURL", c.LaunchLayer.VPCURL, launchLayerCredential},
+		{"launchLayer.computeURL", c.LaunchLayer.ComputeURL, launchLayerCredential},
+		{"launchLayer.sgURL", c.LaunchLayer.SGURL, launchLayerCredential},
+		{"launchLayer.issuerURL", c.LaunchLayer.IssuerURL, launchLayerCredential},
+	} {
+		if problem := urlProblem(u.path, u.value, u.credential); problem != "" {
+			problems = append(problems, problem)
 		}
 	}
 	if c.Mirror != "" && strings.Contains(c.Mirror, "://") {
 		problems = append(problems, fmt.Sprintf("mirror: %q is a host[:port][/prefix], not a URL", c.Mirror))
 	}
 	return problems
+}
+
+// urlProblem returns what is wrong with the URL value at path, or "" for an
+// empty value, a placeholder or an http or https URL with a host and no
+// userinfo. credential says where the credential comes from instead.
+func urlProblem(path, value, credential string) string {
+	if value == "" || strings.HasPrefix(value, placeholderPrefix) {
+		return ""
+	}
+	u, err := url.Parse(value)
+	switch {
+	case err != nil:
+		// The value is not printed: malformed userinfo fails the parse, and
+		// may be a password.
+		return path + ": must be an http or https URL"
+	case u.User != nil:
+		// The value is not printed: the userinfo may be a password.
+		return path + ": must carry no user or password; " + credential
+	case u.Host == "" || (u.Scheme != "http" && u.Scheme != "https"):
+		return fmt.Sprintf("%s: %q must be an http or https URL", path, value)
+	}
+	return ""
 }
 
 // The environment variables the controller stack install reads its
@@ -214,25 +281,18 @@ const (
 	EnvNodeUser         = "NVKECTL_NODE_USER"
 	EnvNodePassword     = "NVKECTL_NODE_PASSWORD"     //nolint:gosec // G101: an env var name, not a credential
 	EnvDatabasePassword = "NVKECTL_DATABASE_PASSWORD" //nolint:gosec // G101: an env var name, not a credential
+
+	EnvLaunchLayerClientSecret = "NVKECTL_LAUNCHLAYER_CLIENT_SECRET" //nolint:gosec // G101: an env var name, not a credential
 )
 
 // Credentials are the controller stack install's credentials. NodeUser and
 // NodePassword are the login rendered into every tenant node's cloud-init.
 type Credentials struct {
-	NicoToken        string
-	NodeUser         string
-	NodePassword     string
-	DatabasePassword string
-}
-
-// envs pairs each credential's environment variable with its value.
-func (s *Credentials) envs() [][2]string {
-	return [][2]string{
-		{EnvNicoToken, s.NicoToken},
-		{EnvNodeUser, s.NodeUser},
-		{EnvNodePassword, s.NodePassword},
-		{EnvDatabasePassword, s.DatabasePassword},
-	}
+	NicoToken               string
+	NodeUser                string
+	NodePassword            string
+	DatabasePassword        string
+	LaunchLayerClientSecret string
 }
 
 // TemplateSafe reports whether value can go into the deploy path templates,
@@ -243,19 +303,31 @@ func TemplateSafe(value string) bool {
 
 // CredentialsFromEnv reads the controller stack install's credentials from
 // the environment, trimmed, and names every one that is unset, one problem
-// per line. The NICo token and the node login land in templates that carry
-// no escaping, so a quote, a backslash or a control character in them is
-// refused too. No value is ever part of the error.
-func CredentialsFromEnv() (Credentials, error) {
+// per line: the node login and database password always, the NICo token when
+// the config names the NICo API, and the LaunchLayer client secret when it
+// names the LaunchLayer API. The provider credentials and the node login land
+// in templates that carry no escaping, so a quote, a backslash or a control
+// character in them is refused too. No value is ever part of the error.
+func (c *Config) CredentialsFromEnv() (Credentials, error) {
+	nico, launchLayer := c.usesNico(), c.usesLaunchLayer()
 	s := Credentials{
-		NicoToken:        strings.TrimSpace(envalias.Get(EnvNicoToken)),
 		NodeUser:         strings.TrimSpace(envalias.Get(EnvNodeUser)),
 		NodePassword:     strings.TrimSpace(envalias.Get(EnvNodePassword)),
 		DatabasePassword: strings.TrimSpace(envalias.Get(EnvDatabasePassword)),
 	}
-	templated := map[string]bool{EnvNicoToken: true, EnvNodeUser: true, EnvNodePassword: true}
+	var envs [][2]string
+	if nico {
+		s.NicoToken = strings.TrimSpace(envalias.Get(EnvNicoToken))
+		envs = append(envs, [2]string{EnvNicoToken, s.NicoToken})
+	}
+	envs = append(envs, [2]string{EnvNodeUser, s.NodeUser}, [2]string{EnvNodePassword, s.NodePassword}, [2]string{EnvDatabasePassword, s.DatabasePassword})
+	if launchLayer {
+		s.LaunchLayerClientSecret = strings.TrimSpace(envalias.Get(EnvLaunchLayerClientSecret))
+		envs = append(envs, [2]string{EnvLaunchLayerClientSecret, s.LaunchLayerClientSecret})
+	}
+	templated := map[string]bool{EnvNicoToken: true, EnvNodeUser: true, EnvNodePassword: true, EnvLaunchLayerClientSecret: true}
 	var problems []string
-	for _, env := range s.envs() {
+	for _, env := range envs {
 		switch {
 		case env[1] == "":
 			problems = append(problems, env[0]+" is not set")

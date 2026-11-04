@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What this target changes about spire, applied over values.yaml.
+
+# The hostnames the OIDC discovery provider will answer to, minus the two this
+# run computes. A tenant kube-apiserver fetches the discovery document by IP,
+# and the provider rejects any request whose Host header is not on this list.
+#
+# Stated here, not just in components/spire.yaml, so the deploy path describes
+# its own deployment: the chart is not part of the generated tree, so a reader
+# of this directory alone could not otherwise see them. deploy-stack.sh reads this
+# list and appends MANAGEMENT_VIP and the kind bridge gateway, because a values
+# file replaces a list rather than appending to it.
+spiffe-oidc-discovery-provider:
+  config:
+    additionalDomains:
+      - "nke.site-controller.internal"
+      - "localhost"
+      - "127.0.0.1"
+
+# PodMonitors for the server and the agent, so the nktp item scrapes them.
+# Their metrics endpoints are already on: global.spire.recommendations in
+# values.yaml turns on Prometheus telemetry on port 9988, named "prom". The
+# monitors are off by default because they need the monitoring CRDs, which the
+# nktp item installs before this one.
+spire-server:
+  telemetry:
+    prometheus:
+      podMonitor:
+        enabled: true
+spire-agent:
+  telemetry:
+    prometheus:
+      podMonitor:
+        enabled: true
