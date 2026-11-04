@@ -17,25 +17,35 @@ var ErrNoCaller = errors.New("request has no authorized caller with a valid tena
 // callerContextKey is unexported so no other package can collide with it.
 type callerContextKey struct{}
 
+// permissiveContextKey marks a request a permissive Client let through. Only
+// Client sets it, so no other package can make ListTenant list every tenant.
+type permissiveContextKey struct{}
+
 // ContextWithCaller returns a copy of ctx carrying c as the authorized caller.
-// Client.Check calls it on an allow. Elsewhere, use it only in tests.
+// Client.Check calls it. Elsewhere, use it only in tests.
 func ContextWithCaller(ctx context.Context, c Caller) context.Context {
 	return context.WithValue(ctx, callerContextKey{}, c)
 }
 
 // CallerFromContext returns the authorized caller on ctx, and false if there
-// is none.
+// is none. A request a permissive Client let through may have none; see
+// Client.Check.
 func CallerFromContext(ctx context.Context) (Caller, bool) {
 	c, ok := ctx.Value(callerContextKey{}).(Caller)
 	return c, ok
 }
 
-// ListTenant says which tenant's objects a list may hold. It returns the
-// caller's tenant and false, or "" and true for an operator, who sees every
-// tenant. It returns ErrNoCaller if ctx has no authorized caller, or the
-// caller has no valid tenant. On an error it returns "" and false, so a caller
-// that drops the error lists nothing.
+// ListTenant says which tenant's objects a list may hold. It returns "" and
+// true for an operator, who sees every tenant, and for any request a
+// permissive Client let through. Otherwise it returns the caller's tenant and
+// false, or ErrNoCaller if ctx has no authorized caller or the caller has no
+// valid tenant. On an error it returns "" and false, so a caller that drops
+// the error lists nothing. Behind permissive authN and a permissive Client, an
+// unauthenticated request lists every tenant.
 func ListTenant(ctx context.Context) (string, bool, error) {
+	if permissive, _ := ctx.Value(permissiveContextKey{}).(bool); permissive {
+		return "", true, nil
+	}
 	c, ok := CallerFromContext(ctx)
 	if !ok {
 		return "", false, ErrNoCaller

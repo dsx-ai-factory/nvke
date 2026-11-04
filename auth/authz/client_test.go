@@ -110,11 +110,14 @@ func (d *decisions) all() []string {
 	return append([]string(nil), d.seen...)
 }
 
-// newClient returns a Client over backend, and what it counts.
-func newClient(t *testing.T, backend authz.Authorizer) (*authz.Client, *decisions) {
+// modes holds each mode, for tests that run in both.
+var modes = []authn.Mode{authn.ModeEnforcing, authn.ModePermissive}
+
+// newClient returns a Client over backend in mode, and what it counts.
+func newClient(t *testing.T, backend authz.Authorizer, mode authn.Mode) (*authz.Client, *decisions) {
 	t.Helper()
 	var counted decisions
-	client, err := authz.NewClient(backend, slog.New(slog.DiscardHandler), counted.record)
+	client, err := authz.NewClient(backend, mode, slog.New(slog.DiscardHandler), counted.record)
 	require.NoError(t, err)
 	return client, &counted
 }
@@ -133,15 +136,16 @@ func check(client *authz.Client, p *authn.Principal, target authz.Target) (conte
 func TestNewClientRefusesANilBackend(t *testing.T) {
 	t.Parallel()
 
-	_, err := authz.NewClient(nil, nil, nil)
+	_, err := authz.NewClient(nil, authn.ModeEnforcing, nil, nil)
 	require.ErrorContains(t, err, "backend is nil")
 
-	_, err = authz.NewClient((*stubBackend)(nil), nil, nil)
+	_, err = authz.NewClient((*stubBackend)(nil), authn.ModeEnforcing, nil, nil)
 	assert.ErrorContains(t, err, "backend is a nil *authz_test.stubBackend")
 }
 
 // TestClientCheck checks Check's answer, counted outcome and caller for each
-// kind of caller and target.
+// kind of caller and target, in each mode. Both modes count the same outcome;
+// only the error and the context differ.
 func TestClientCheck(t *testing.T) {
 	t.Parallel()
 
@@ -152,27 +156,30 @@ func TestClientCheck(t *testing.T) {
 		target      authz.Target
 		wantErr     error // nil for an allow
 		wantOutcome authz.Outcome
-		wantCaller  authz.Caller
+
+		// wantCaller is the Caller on the context: on an allow, and on a
+		// permissive refusal with a valid Caller. nil for none.
+		wantCaller *authz.Caller
 	}{
 		{
 			name: "no principal", principal: nil,
 			target:  authz.Target{Action: allowedAction, Resource: cluster("acme")},
-			wantErr: authz.ErrDenied, wantOutcome: authz.OutcomeError,
+			wantErr: authz.ErrDenied, wantOutcome: authz.OutcomeUnauthenticated,
 		},
 		{
 			name: "allow", principal: inAcme,
 			target:      authz.Target{Action: allowedAction, Resource: cluster("acme")},
-			wantOutcome: authz.OutcomeAllow, wantCaller: authz.Caller{Tenant: "acme"},
+			wantOutcome: authz.OutcomeAllow, wantCaller: &authz.Caller{Tenant: "acme"},
 		},
 		{
 			name: "deny", principal: inAcme,
 			target:  authz.Target{Action: deniedAction, Resource: cluster("acme")},
-			wantErr: authz.ErrDenied, wantOutcome: authz.OutcomeDeny,
+			wantErr: authz.ErrDenied, wantOutcome: authz.OutcomeDeny, wantCaller: &authz.Caller{Tenant: "acme"},
 		},
 		{
 			name: "another tenant's object", principal: inAcme,
 			target:  authz.Target{Action: allowedAction, Resource: cluster("globex")},
-			wantErr: authz.ErrNotFound, wantOutcome: authz.OutcomeNotFound,
+			wantErr: authz.ErrNotFound, wantOutcome: authz.OutcomeNotFound, wantCaller: &authz.Caller{Tenant: "acme"},
 		},
 		{
 			name: "no tenant", principal: noTenant,
@@ -192,7 +199,7 @@ func TestClientCheck(t *testing.T) {
 		{
 			name: "a missing object, no principal", principal: nil,
 			target:  authz.Target{Action: allowedAction, Resource: cluster(""), Missing: true},
-			wantErr: authz.ErrDenied, wantOutcome: authz.OutcomeError,
+			wantErr: authz.ErrDenied, wantOutcome: authz.OutcomeUnauthenticated,
 		},
 		{
 			name: "an operator on a missing object", principal: operator,
@@ -202,36 +209,136 @@ func TestClientCheck(t *testing.T) {
 		{
 			name: "an operator on another tenant's object", principal: operator,
 			target:      authz.Target{Action: allowedAction, Resource: cluster("acme")},
-			wantOutcome: authz.OutcomeAllow, wantCaller: authz.Caller{Tenant: "nvidia-ops", Operator: true},
+			wantOutcome: authz.OutcomeAllow, wantCaller: &authz.Caller{Tenant: "nvidia-ops", Operator: true},
 		},
+	}
+	for _, tt := range tests {
+		for _, mode := range modes {
+			t.Run(tt.name+", "+string(mode), func(t *testing.T) {
+				t.Parallel()
+
+				backend := tt.backend
+				if backend == nil {
+					backend = &fakeBackend{}
+				}
+				client, counted := newClient(t, backend, mode)
+				ctx, err := check(client, tt.principal, tt.target)
+				assert.Equal(t, []string{string(tt.wantOutcome) + " " + tt.target.Action}, counted.all())
+
+				got, ok := authz.CallerFromContext(ctx)
+				if tt.wantErr == nil || mode == authn.ModePermissive {
+					require.NoError(t, err)
+					assert.Equal(t, tt.wantCaller != nil, ok, "the caller on the context")
+					if tt.wantCaller != nil {
+						assert.Equal(t, *tt.wantCaller, got)
+					}
+					return
+				}
+				require.ErrorIs(t, err, tt.wantErr)
+				assert.False(t, ok, "a refusal puts no caller on the context")
+				// A refusal is the bare sentinel; failing closed wraps ErrDenied.
+				if tt.wantOutcome == authz.OutcomeError || tt.wantOutcome == authz.OutcomeUnauthenticated {
+					assert.NotSame(t, tt.wantErr, err)
+				} else {
+					assert.Same(t, tt.wantErr, err)
+				}
+			})
+		}
+	}
+}
+
+// TestClientCheckListTenant checks the tenant a list is filtered to after
+// Check: every tenant for any request a permissive Client lets through, and
+// the caller's tenant after an enforcing allow.
+func TestClientCheckListTenant(t *testing.T) {
+	t.Parallel()
+
+	list := authz.Resource{Type: "Collection", ID: "clusters", Scope: authz.ScopeList}
+	tests := []struct {
+		name       string
+		mode       authn.Mode
+		principal  *authn.Principal
+		action     string
+		wantTenant string
+		wantAll    bool
+		wantErr    error
+	}{
+		{name: "enforcing, allowed", mode: authn.ModeEnforcing, principal: inAcme, action: allowedAction, wantTenant: "acme"},
+		{name: "enforcing, refused", mode: authn.ModeEnforcing, principal: inAcme, action: deniedAction, wantErr: authz.ErrNoCaller},
+		{name: "permissive, allowed", mode: authn.ModePermissive, principal: inAcme, action: allowedAction, wantAll: true},
+		{name: "permissive, refused", mode: authn.ModePermissive, principal: inAcme, action: deniedAction, wantAll: true},
+		{name: "permissive, no principal", mode: authn.ModePermissive, action: allowedAction, wantAll: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			backend := tt.backend
-			if backend == nil {
-				backend = &fakeBackend{}
-			}
-			client, counted := newClient(t, backend)
-			ctx, err := check(client, tt.principal, tt.target)
-			assert.Equal(t, []string{string(tt.wantOutcome) + " " + tt.target.Action}, counted.all())
-
-			got, ok := authz.CallerFromContext(ctx)
-			if tt.wantErr == nil {
-				require.NoError(t, err)
-				assert.True(t, ok, "an allow puts the caller on the context")
-				assert.Equal(t, tt.wantCaller, got)
-				return
-			}
+			client, _ := newClient(t, &fakeBackend{}, tt.mode)
+			ctx, _ := check(client, tt.principal, authz.Target{Action: tt.action, Resource: list})
+			tenant, all, err := authz.ListTenant(ctx)
 			require.ErrorIs(t, err, tt.wantErr)
-			assert.False(t, ok, "a refusal puts no caller on the context")
-			// A refusal is the bare sentinel; failing closed wraps ErrDenied.
-			if tt.wantOutcome == authz.OutcomeError {
-				assert.NotSame(t, tt.wantErr, err)
-			} else {
-				assert.Same(t, tt.wantErr, err)
-			}
+			assert.Equal(t, tt.wantTenant, tenant)
+			assert.Equal(t, tt.wantAll, all)
+		})
+	}
+}
+
+// TestClientCheckHidesAnEarlierPermissiveMark checks that an enforcing allow
+// lists only the caller's tenant, even on a context a permissive Check passed.
+func TestClientCheckHidesAnEarlierPermissiveMark(t *testing.T) {
+	t.Parallel()
+
+	permissive, _ := newClient(t, &fakeBackend{}, authn.ModePermissive)
+	enforcing, _ := newClient(t, &fakeBackend{}, authn.ModeEnforcing)
+	list := authz.Target{Action: allowedAction, Resource: authz.Resource{Type: "Collection", ID: "clusters", Scope: authz.ScopeList}}
+
+	ctx, err := check(permissive, inAcme, list)
+	require.NoError(t, err)
+	ctx, err = enforcing.Check(ctx, list)
+	require.NoError(t, err)
+	tenant, all, err := authz.ListTenant(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "acme", tenant)
+	assert.False(t, all)
+}
+
+// TestNewClientEnforcesUnlessPermissive checks that every mode but
+// authn.ModePermissive enforces.
+func TestNewClientEnforcesUnlessPermissive(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []authn.Mode{"", authn.Mode("Permissive")} {
+		client, _ := newClient(t, &fakeBackend{}, mode)
+		_, err := check(client, inAcme, authz.Target{Action: deniedAction, Resource: cluster("acme")})
+		assert.ErrorIs(t, err, authz.ErrDenied, "mode %q", mode)
+	}
+}
+
+// TestClientCheckLogs checks the level and message Check logs a refusal or a
+// missing principal with, in each mode.
+func TestClientCheckLogs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		mode      authn.Mode
+		principal *authn.Principal
+		want      string
+	}{
+		{name: "a refusal, enforcing", mode: authn.ModeEnforcing, principal: inAcme, want: `level=INFO msg="refused request"`},
+		{name: "no principal, enforcing", mode: authn.ModeEnforcing, principal: nil, want: `level=ERROR msg="failed to authorize request"`},
+		{name: "a refusal, permissive", mode: authn.ModePermissive, principal: inAcme, want: `level=WARN msg="authorization would have refused this request"`},
+		{name: "no principal, permissive", mode: authn.ModePermissive, principal: nil, want: `level=WARN msg="authorization would have refused this request"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var logs bytes.Buffer
+			client, err := authz.NewClient(&fakeBackend{}, tt.mode, slog.New(slog.NewTextHandler(&logs, nil)), nil)
+			require.NoError(t, err)
+			_, _ = check(client, tt.principal, authz.Target{Action: deniedAction, Resource: cluster("acme")})
+			assert.Contains(t, logs.String(), tt.want)
 		})
 	}
 }
@@ -257,7 +364,7 @@ func TestClientCheckDoesNotAskAboutAMissingObject(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			client, counted := newClient(t, unreachable{t})
+			client, counted := newClient(t, unreachable{t}, authn.ModeEnforcing)
 			// A valid query, so that only Check keeps it from the backend.
 			_, err := check(client, p, authz.Target{Action: allowedAction, Resource: cluster("acme"), Missing: true})
 			assert.Same(t, authz.ErrNotFound, err)
@@ -271,7 +378,7 @@ func TestClientCheckDoesNotAskAboutAMissingObject(t *testing.T) {
 func refusalRecord(t *testing.T, backend authz.Authorizer, p *authn.Principal, target authz.Target) map[string]any {
 	t.Helper()
 	var log bytes.Buffer
-	client, err := authz.NewClient(backend, slog.New(slog.NewJSONHandler(&log, nil)), nil)
+	client, err := authz.NewClient(backend, authn.ModeEnforcing, slog.New(slog.NewJSONHandler(&log, nil)), nil)
 	require.NoError(t, err)
 	_, err = check(client, p, target)
 	require.Error(t, err)
@@ -395,7 +502,7 @@ func TestClientWithNoBackendRefuses(t *testing.T) {
 func TestClientReady(t *testing.T) {
 	t.Parallel()
 
-	client, err := authz.NewClient(&stubBackend{readyErr: errors.New("no policy loaded")}, nil, nil)
+	client, err := authz.NewClient(&stubBackend{readyErr: errors.New("no policy loaded")}, authn.ModeEnforcing, nil, nil)
 	require.NoError(t, err)
 	assert.ErrorContains(t, client.Ready(t.Context()), "stub: no policy loaded")
 }
@@ -451,7 +558,7 @@ func TestAuthorize(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			client, err := authz.NewClient(&stubBackend{decision: tt.decision, err: tt.err}, nil, nil)
+			client, err := authz.NewClient(&stubBackend{decision: tt.decision, err: tt.err}, authn.ModeEnforcing, nil, nil)
 			require.NoError(t, err)
 			d, err := authz.Authorize(client, t.Context(), validQuery())
 			assert.Equal(t, tt.wantOutcome, d.Outcome)
@@ -495,7 +602,7 @@ func TestAuthorizeChecksTheCallerTenantOnAnAllow(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			client, err := authz.NewClient(&stubBackend{decision: authz.Decision{Outcome: authz.OutcomeAllow, Caller: tt.caller}}, nil, nil)
+			client, err := authz.NewClient(&stubBackend{decision: authz.Decision{Outcome: authz.OutcomeAllow, Caller: tt.caller}}, authn.ModeEnforcing, nil, nil)
 			require.NoError(t, err)
 			d, err := authz.Authorize(client, t.Context(), tt.query)
 			if tt.wantErr == nil {
@@ -515,7 +622,7 @@ func TestAuthorizeRefusesAnInvalidQuery(t *testing.T) {
 	t.Parallel()
 
 	backend := &stubBackend{decision: authz.Decision{Outcome: authz.OutcomeAllow}}
-	client, err := authz.NewClient(backend, nil, nil)
+	client, err := authz.NewClient(backend, authn.ModeEnforcing, nil, nil)
 	require.NoError(t, err)
 
 	q := validQuery()
