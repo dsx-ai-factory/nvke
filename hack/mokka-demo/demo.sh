@@ -102,8 +102,14 @@ for node in $nodes; do
   alloc="$(kubectl get node "$node" -o jsonpath='{.status.allocatable.nvidia\.com/gpu}')"
   product="$(kubectl get node "$node" -o jsonpath='{.metadata.labels.nvidia\.com/gpu\.product}')"
   if [[ "${alloc:-0}" -gt 0 ]]; then pass "${node}: allocatable nvidia.com/gpu=${alloc} (${product})"; else fail "${node}: no allocatable nvidia.com/gpu"; fi
-  validator="$(kubectl -n gpu-operator get pods -l app=nvidia-operator-validator -o name --field-selector "spec.nodeName=${node}" | head -1)"
-  steps="$(kubectl -n gpu-operator get "$validator" -o jsonpath='{range .status.initContainerStatuses[*]}{.name}={.state.terminated.reason}{" "}{end}' 2>/dev/null || true)"
+  # The validator's steps run in turn after the GPUs show up; wait for the last.
+  while :; do
+    validator="$(kubectl -n gpu-operator get pods -l app=nvidia-operator-validator -o name --field-selector "spec.nodeName=${node}" | head -1)"
+    steps="$(kubectl -n gpu-operator get "$validator" -o jsonpath='{range .status.initContainerStatuses[*]}{.name}={.state.terminated.reason}{" "}{end}' 2>/dev/null || true)"
+    [[ -n "$steps" && "$steps" != *"= "* ]] && break
+    ((SECONDS < deadline)) || break
+    sleep 10
+  done
   if [[ -n "$steps" && "$steps" != *"="[!C]* && "$steps" != *"= "* ]]; then pass "${node}: validator ${steps% }"; else fail "${node}: validator not complete: ${steps:-none}"; fi
 done
 
