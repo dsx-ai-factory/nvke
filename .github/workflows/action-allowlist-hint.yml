@@ -1,0 +1,161 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Comments on a pull request that adds a third-party action pin not used
+# anywhere on the base branch, with a link to the enterprise allowlist.
+#
+# An action that is not on the NVIDIA enterprise allowlist rejects the whole run
+# before any job starts. GitHub reports that as `startup_failure` with "This run
+# likely failed because of a workflow file issue", and no step ever runs, so the
+# blocked workflow cannot say why. #2083 bumped setup-oras that way and every
+# workflow using it failed at startup on `main` until the new SHA was added.
+#
+# Advisory, not a gate. It cannot tell whether a pin is already allowlisted --
+# that is an enterprise-admin API -- only that it is new to this repository.
+#
+# Uses only actions/github-script, which the enterprise always allows, so this
+# check cannot itself be blocked. pull_request_target so it can comment on fork
+# and Dependabot pull requests. Safe only because it has no checkout and runs
+# no pull request code: it reads file contents as text. Do not add a checkout.
+
+name: Action Allowlist Hint
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+    paths:
+      - ".github/**"
+
+permissions: {}
+
+concurrency:
+  # A literal name, not ${{ github.workflow }}. See merge-gate.yml.
+  group: Action Allowlist Hint-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  hint:
+    name: action-allowlist-hint
+    if: github.repository_id == '1323115536'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Flag new third-party action pins
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const ALLOWLIST_URL = 'https://github-onboarding.nvidia.com/actions-allowlist';
+            const MARKER = '<!-- action-allowlist-hint -->';
+            const pr = context.payload.pull_request;
+            const isYaml = (path) => /^\.github\/.*\.ya?ml$/.test(path);
+
+            // owner/repo[/path]@ref, keyed as owner/repo@ref: the allowlist
+            // takes that form, and a path wildcard covers the rest.
+            // `actions` and `github` are allowed enterprise-wide.
+            function pins(text) {
+              const found = new Map();
+              const re = /^[\s-]*uses:\s*['"]?([^\s'"#]+)/gm;
+              for (const [, ref] of text.matchAll(re)) {
+                const m = ref.match(/^([^./][^/]*)\/([^/@]+)(?:\/[^@]*)?@(.+)$/);
+                if (!m) continue; // ./local or docker://
+                const [, owner, repo, version] = m;
+                if (['actions', 'github'].includes(owner.toLowerCase())) continue;
+                const key = `${owner}/${repo}@${version}`.toLowerCase();
+                if (!found.has(key)) found.set(key, { owner, repo, version });
+              }
+              return found;
+            }
+
+            async function blobText(sha) {
+              const { data } = await github.rest.git.getBlob({ ...context.repo, file_sha: sha });
+              return Buffer.from(data.content, 'base64').toString('utf8');
+            }
+
+            // Pins in the files this pull request adds or changes, at its head.
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...context.repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            const headPins = new Map();
+            const where = new Map();
+            for (const f of files) {
+              if (f.status === 'removed' || !isYaml(f.filename)) continue;
+              for (const [key, pin] of pins(await blobText(f.sha))) {
+                headPins.set(key, pin);
+                if (!where.has(key)) where.set(key, []);
+                where.get(key).push(f.filename);
+              }
+            }
+
+            // Pins already used anywhere under .github/ on the base branch.
+            // Those are known to pass the allowlist.
+            const basePins = new Set();
+            if (headPins.size > 0) {
+              const { data: tree } = await github.rest.git.getTree({
+                ...context.repo,
+                tree_sha: pr.base.sha,
+                recursive: 'true',
+              });
+              for (const entry of tree.tree) {
+                if (entry.type !== 'blob' || !isYaml(entry.path)) continue;
+                for (const key of pins(await blobText(entry.sha)).keys()) basePins.add(key);
+              }
+            }
+
+            const fresh = [...headPins].filter(([key]) => !basePins.has(key));
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo,
+              issue_number: pr.number,
+              per_page: 100,
+            });
+            const existing = comments.find((c) => c.body?.includes(MARKER));
+
+            if (fresh.length === 0) {
+              core.info('No new third-party action pins.');
+              if (existing) {
+                await github.rest.issues.deleteComment({ ...context.repo, comment_id: existing.id });
+              }
+              return;
+            }
+
+            const rows = fresh.map(([key, p]) => {
+              const sha = /^[0-9a-f]{40}$/i.test(p.version);
+              const note = sha ? '' : ' — **not a 40-character SHA; the allowlist rejects tags and branches**';
+              const files = where.get(key).map((f) => `\`${f}\``).join(', ');
+              core.warning(
+                `New action pin ${p.owner}/${p.repo}@${p.version}. If workflows using it end in ` +
+                `startup_failure, add it at ${ALLOWLIST_URL}`,
+              );
+              return `| \`${p.owner}/${p.repo}@${p.version}\`${note} | ${files} |`;
+            });
+
+            const body = [
+              MARKER,
+              '### New third-party action pins',
+              '',
+              'This pull request uses action versions that nothing on the base branch uses yet. ' +
+                'An action missing from the NVIDIA enterprise allowlist does not fail a step: the ' +
+                'whole run is rejected before any job starts, shown as **`startup_failure`** with ' +
+                '"This run likely failed because of a workflow file issue".',
+              '',
+              '| Pin | Used in |',
+              '| --- | --- |',
+              ...rows,
+              '',
+              `If those workflows fail at startup, add each pin at **${ALLOWLIST_URL}** before ` +
+                'merging. The commit must be more than 24 hours old. Pins already on the list need ' +
+                'nothing.',
+            ].join('\n');
+
+            await core.summary.addRaw(body.replace(MARKER, '')).write();
+
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: pr.number, body });
+            }
