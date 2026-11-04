@@ -343,9 +343,10 @@ func TestUnit_SpireNicoTPMBootstrapIdentityControllerReconcileReportsUnresolvedN
 	t.Parallel()
 
 	tests := map[string]struct {
-		includeNico bool
-		mutate      func(*clusterv1.Machine, *nicov1.NicoMachine)
-		reason      string
+		includeNico    bool
+		workloadConfig string
+		mutate         func(*clusterv1.Machine, *nicov1.NicoMachine)
+		reason         string
 	}{
 		"infrastructure ref is not a NicoMachine": {
 			includeNico: true,
@@ -354,8 +355,9 @@ func TestUnit_SpireNicoTPMBootstrapIdentityControllerReconcileReportsUnresolvedN
 			},
 			reason: BootstrapIdentityInfrastructureInvalidReason,
 		},
-		"NicoMachine does not exist yet": {
-			reason: BootstrapIdentityWaitingForInfrastructureReason,
+		"missing NicoMachine takes precedence over invalid workload config": {
+			workloadConfig: `{`,
+			reason:         BootstrapIdentityWaitingForInfrastructureReason,
 		},
 		"NicoMachine is not controlled by the Machine": {
 			includeNico: true,
@@ -371,14 +373,21 @@ func TestUnit_SpireNicoTPMBootstrapIdentityControllerReconcileReportsUnresolvedN
 			t.Parallel()
 
 			machine := newMachineForSpireNicoTPMBootstrapIdentityTest()
+			machine.Annotations[keys.MachineBootstrapIdentity.String()] = "spiffe://example.org/bootstrap/machine-uid"
+			machine.Finalizers = []string{spireNicoTPMBootstrapIdentityFinalizer}
 			kubeadmConfig := newKubeadmConfigForSpireNicoTPMBootstrapIdentityTest(map[string]string{
 				keys.BootstrapIdentityResolver.String(): constants.LabelValueBootstrapIdentityResolverSpireNicoTPM,
 			})
+			if test.workloadConfig != "" {
+				kubeadmConfig.Annotations = map[string]string{
+					keys.BootstrapIdentitySpireWorkloadEntryConfig.String(): test.workloadConfig,
+				}
+			}
 			nicoMachine := newNicoMachineForSpireNicoTPMBootstrapIdentityTest("hash-current")
 			if test.mutate != nil {
 				test.mutate(machine, nicoMachine)
 			}
-			objects := []client.Object{machine, kubeadmConfig}
+			objects := []client.Object{machine, kubeadmConfig, newClusterStaticEntryForSpireNicoTPMBootstrapIdentityTest(machine)}
 			if test.includeNico {
 				objects = append(objects, nicoMachine)
 			}
@@ -390,6 +399,7 @@ func TestUnit_SpireNicoTPMBootstrapIdentityControllerReconcileReportsUnresolvedN
 			gotMachine := &clusterv1.Machine{}
 			require.NoError(t, controller.k8sClient.Get(t.Context(), client.ObjectKeyFromObject(machine), gotMachine))
 			require.False(t, keys.MachineBootstrapIdentity.Has(gotMachine.Annotations))
+			require.NotContains(t, gotMachine.Finalizers, spireNicoTPMBootstrapIdentityFinalizer)
 			assertBootstrapIdentityCondition(t, gotMachine, metav1.ConditionFalse, test.reason)
 
 			err = controller.k8sClient.Get(t.Context(), types.NamespacedName{Name: clusterStaticEntryName(machine)}, &spirev1alpha1.ClusterStaticEntry{})

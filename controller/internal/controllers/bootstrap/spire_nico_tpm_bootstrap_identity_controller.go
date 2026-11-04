@@ -187,6 +187,27 @@ func (c *SpireNicoTPMBootstrapIdentityController) Reconcile(ctx context.Context,
 		return ctrl.Result{}, c.cleanupBootstrapIdentity(ctx, machine)
 	}
 
+	parentIDResolution, err := c.resolveSpireAgentParentID(ctx, machine)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if parentIDResolution.parentID == "" {
+		logger.Info("SPIRE agent parent ID not resolved", "reason", parentIDResolution.reason, "message", parentIDResolution.message)
+		// The NicoMachine may have been deleted after publication, so remove any bootstrap authorization tied to it.
+		if err := c.cleanupBootstrapIdentity(ctx, machine); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, SetBootstrapIdentityResolvedCondition(
+			ctx,
+			c.k8sClient,
+			machine,
+			metav1.ConditionFalse,
+			parentIDResolution.reason,
+			parentIDResolution.message,
+			constants.FieldManagerSpireNicoTPMBootstrapIdentity,
+		)
+	}
+
 	workloadEntryConfig, err := spireWorkloadEntryConfigForKubeadmConfig(kubeadmConfig)
 	if err != nil {
 		// The invalid annotation requires a KubeadmConfig update. Set the condition without requeuing.
@@ -197,23 +218,6 @@ func (c *SpireNicoTPMBootstrapIdentityController) Reconcile(ctx context.Context,
 			metav1.ConditionFalse,
 			BootstrapIdentityConfigurationInvalidReason,
 			err.Error(),
-			constants.FieldManagerSpireNicoTPMBootstrapIdentity,
-		)
-	}
-
-	parentIDResolution, err := c.resolveSpireAgentParentID(ctx, machine)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if parentIDResolution.parentID == "" {
-		logger.Info("SPIRE agent parent ID not resolved", "reason", parentIDResolution.reason, "message", parentIDResolution.message)
-		return ctrl.Result{}, SetBootstrapIdentityResolvedCondition(
-			ctx,
-			c.k8sClient,
-			machine,
-			metav1.ConditionFalse,
-			parentIDResolution.reason,
-			parentIDResolution.message,
 			constants.FieldManagerSpireNicoTPMBootstrapIdentity,
 		)
 	}
