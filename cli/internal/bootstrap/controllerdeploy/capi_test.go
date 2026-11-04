@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -549,6 +550,64 @@ func TestInstallCAPNICo_Errors(t *testing.T) {
 				t.Fatalf("installCAPNICo error = %v, want one containing %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestInstallCAPNICo_RetriesWhileTheCertManagerWebhookRefuses: the cert-manager
+// Deployments report Available before the cainjector has finished writing the
+// caBundle, so the first apply of the manifest's Certificate and Issuer can be
+// rejected. The install waits that out instead of failing the bootstrap.
+func TestInstallCAPNICo_RetriesWhileTheCertManagerWebhookRefuses(t *testing.T) {
+	capnicoApplyRetryInterval = time.Millisecond
+	t.Cleanup(func() { capnicoApplyRetryInterval = 5 * time.Second })
+
+	const refused = `Internal error occurred: failed calling webhook "webhook.cert-manager.io": ` +
+		`Post "https://cert-manager-webhook.cert-manager.svc:443/validate": x509: certificate signed by unknown authority`
+	runner := &fakeRunner{outputs: []fakeOutput{
+		{},
+		{}, // the two cert-manager waits
+		{}, // the Secrets
+		{output: refused, err: errors.New("exit status 1")},
+		{output: refused, err: errors.New("exit status 1")},
+		{}, // the manifest, once the webhook admits it
+	}}
+	if err := New(runner, nil).installCAPNICo(context.Background(), "/tmp/kubeconfig", nicoTestConfig(t), time.Minute); err != nil {
+		t.Fatalf("installCAPNICo: %v", err)
+	}
+	applies := 0
+	for _, call := range runner.calls {
+		if slices.Contains(call.args, "apply") {
+			applies++
+		}
+	}
+	if applies != 4 {
+		t.Errorf("applies = %d, want 4: the Secrets plus three attempts at the manifest", applies)
+	}
+}
+
+// TestInstallCAPNICo_DoesNotRetryOtherApplyFailures: a rejection by the
+// cert-manager webhook clears on its own; a bad manifest does not. Retrying one
+// that cannot succeed would hold the bootstrap open for no reason.
+func TestInstallCAPNICo_DoesNotRetryOtherApplyFailures(t *testing.T) {
+	capnicoApplyRetryInterval = time.Millisecond
+	t.Cleanup(func() { capnicoApplyRetryInterval = 5 * time.Second })
+
+	runner := &fakeRunner{outputs: []fakeOutput{
+		{}, {}, // the two cert-manager waits
+		{output: "error: no objects passed to apply", err: errors.New("exit status 1")},
+	}}
+	err := New(runner, nil).installCAPNICo(context.Background(), "/tmp/kubeconfig", nicoTestConfig(t), time.Minute)
+	if err == nil || !strings.Contains(err.Error(), "applying CAPNICo") {
+		t.Fatalf("installCAPNICo error = %v, want one containing %q", err, "applying CAPNICo")
+	}
+	applies := 0
+	for _, call := range runner.calls {
+		if slices.Contains(call.args, "apply") {
+			applies++
+		}
+	}
+	if applies != 1 {
+		t.Errorf("applies = %d, want 1: the failure is not retried", applies)
 	}
 }
 

@@ -165,12 +165,8 @@ func (e *Engine) installCAPNICo(ctx context.Context, kubeconfigPath string, cfg 
 
 	e.log.Info("installing CAPNICo", "namespace", capnicoNamespace, "image", image, "release", cfg.CAPNICoImage != "")
 	for _, file := range []string{secretsFile, manifestFile} {
-		// Server-side apply: the CRDs are large enough that a client-side apply
-		// can exceed the last-applied-configuration annotation limit. It also
-		// makes a re-run against a kept cluster replace the Secrets.
-		if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-			"apply", "--server-side", "--force-conflicts", "-f", file); err != nil {
-			return fmt.Errorf("controllerdeploy: applying CAPNICo: %w\n%s", err, out)
+		if err := e.applyCAPNICoFile(ctx, kubeconfigPath, file); err != nil {
+			return err
 		}
 	}
 	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
@@ -180,6 +176,52 @@ func (e *Engine) installCAPNICo(ctx context.Context, kubeconfigPath string, cfg 
 	}
 	return nil
 }
+
+// applyCAPNICoFile server-side applies one of the CAPNICo files, retrying while
+// cert-manager's webhook is still refusing admission.
+//
+// Server-side apply: the CRDs are large enough that a client-side apply can
+// exceed the last-applied-configuration annotation limit. It also makes a re-run
+// against a kept cluster replace the Secrets.
+//
+// waitForCertManager proves the cert-manager Deployments are Available, which is
+// not the same as the webhook admitting requests: the cainjector can still be
+// writing the caBundle onto the webhook configurations, and until it has, an
+// apply of the manifest's Certificate and Issuer is rejected. The apply is
+// idempotent -- --force-conflicts makes a repeat of a partially applied file
+// safe -- so the rejection is waited out rather than returned.
+func (e *Engine) applyCAPNICoFile(ctx context.Context, kubeconfigPath, file string) error {
+	for attempt := 1; ; attempt++ {
+		out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"apply", "--server-side", "--force-conflicts", "-f", file)
+		if err == nil {
+			return nil
+		}
+		if attempt == capnicoApplyAttempts || !certManagerAdmissionError.MatchString(out) {
+			return fmt.Errorf("controllerdeploy: applying CAPNICo: %w\n%s", err, out)
+		}
+		e.log.Warn("CAPNICo apply rejected by the cert-manager webhook, retrying", "attempt", attempt, "err", err)
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("controllerdeploy: applying CAPNICo: %w\n%s", ctx.Err(), out)
+		case <-time.After(capnicoApplyRetryInterval):
+		}
+	}
+}
+
+// capnicoApplyAttempts bounds the retries of a CAPNICo apply the cert-manager
+// webhook rejected.
+const capnicoApplyAttempts = 6
+
+// capnicoApplyRetryInterval is the delay between those attempts; a var so tests
+// can shorten it.
+var capnicoApplyRetryInterval = 5 * time.Second
+
+// certManagerAdmissionError matches the API server's report of an apply that the
+// cert-manager webhook could not admit: it is unreachable, or its caBundle is
+// not injected yet and the served certificate does not verify. Both clear on
+// their own, and they are the only apply failures a retry fixes.
+var certManagerAdmissionError = regexp.MustCompile(`failed calling webhook "[^"]*cert-manager[^"]*"`)
 
 // waitForCertManager returns an error unless the cert-manager CRDs that CAPNICo's
 // manifest uses are established and the cert-manager Deployments are available.
