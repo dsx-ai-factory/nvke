@@ -113,7 +113,7 @@ Authentication has three modes. Off is the default.
 
    To keep the certificate as a file instead, list it under `apiAuth.configMap.extraFiles`, which places it in `/etc/nke/auth/`, and point `jwks.caBundlePath` at it, for example `/etc/nke/auth/idp-ca.crt`. Set `caBundle` or `caBundlePath`, not both.
 
-3. Run the install command from [Install the management plane](install-management-plane.md) again, as described in [Run the install again](install-management-plane.md#run-the-install-again), with the same flags, including any `--values-for nktp=<FILE>`, and `--values-for controller=../auth-values.yaml` added.
+3. Run the install command again, as described in [Run the install again](install-management-plane.md#run-the-install-again), with the same flags, including any `--values-for nktp=<FILE>`, and `--values-for controller=../auth-values.yaml` added.
 
    ```bash
    deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec ../sitespec.yaml --stack-config ../stack-config.json --kubeconfig ../<CLUSTER_NAME>.kubeconfig \

@@ -89,7 +89,7 @@ If `nvke-kubeadm-distro-<K8S_VERSION>` is the missing package, the image was bui
 
 Do not add `--disable-mtls` to `AGENT_ARGS` in `/etc/default/nvke-agent` to work around a missing SPIRE agent. Plaintext gRPC is for development only.
 
-> **Note:** NVKE release qualification does not run the mTLS bootstrap these pages describe. The hardware qualification lane runs on NICo-managed machines, which do not report a TPM endorsement-key thumbprint, so a node cannot attest with its TPM at bootstrap. The lane therefore bootstraps with `--disable-mtls`, with `nvke-agent` set to match, and turns SPIRE and TPM attestation on when it installs the management plane. See [Hardware qualification design](../qualification/hardware-qualification-design.md).
+> **Note:** NVKE release qualification does not run the mTLS bootstrap these pages describe. The hardware qualification lane runs on NICo-managed machines, which do not report a TPM endorsement-key thumbprint, so a node cannot attest with its TPM at bootstrap. The lane therefore bootstraps with `--disable-mtls`, with `nvke-agent` set to match, and turns SPIRE and TPM attestation on when it installs the management plane.
 
 ## Verify
 
