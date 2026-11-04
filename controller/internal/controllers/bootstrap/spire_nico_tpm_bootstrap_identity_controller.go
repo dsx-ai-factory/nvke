@@ -152,7 +152,7 @@ func nicoMachineTPMHashChanged() predicate.Predicate {
 			}
 			return oldMachine.Status.TpmEkPubHash != newMachine.Status.TpmEkPubHash
 		},
-		DeleteFunc:  func(event.DeleteEvent) bool { return false },
+		DeleteFunc:  func(event.DeleteEvent) bool { return true },
 		GenericFunc: func(event.GenericEvent) bool { return false },
 	}
 }

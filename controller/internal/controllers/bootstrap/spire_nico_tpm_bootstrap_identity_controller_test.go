@@ -626,7 +626,7 @@ func TestUnit_SpireNicoTPMBootstrapIdentityControllerNicoMachinePredicate(t *tes
 	require.True(t, pred.Create(event.CreateEvent{Object: oldMachine}))
 	require.True(t, pred.Update(event.UpdateEvent{ObjectOld: oldMachine, ObjectNew: newMachine}))
 	require.False(t, pred.Update(event.UpdateEvent{ObjectOld: oldMachine, ObjectNew: sameHashMachine}))
-	require.False(t, pred.Delete(event.DeleteEvent{Object: oldMachine}))
+	require.True(t, pred.Delete(event.DeleteEvent{Object: oldMachine}))
 }
 
 func newMachineForSpireNicoTPMBootstrapIdentityTest() *clusterv1.Machine {
