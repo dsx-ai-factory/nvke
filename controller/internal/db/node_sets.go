@@ -127,6 +127,7 @@ type NodeSetFilters struct {
 	NodeSetID  *uuid.UUID
 	NodePoolID *uuid.UUID
 	SiteID     *uuid.UUID
+	Tenant     *TenantFilter
 }
 
 type NodeSetQueries interface {
@@ -153,8 +154,12 @@ func (q *queriesImpl) ListNodeSets(ctx context.Context, filters NodeSetFilters) 
 	if filters.SiteID != nil {
 		query = query.Where("c.nico->>'site_id' = ?", filters.SiteID.String())
 	}
+	query, err := filters.Tenant.where(query, "c")
+	if err != nil {
+		return nil, err
+	}
 
-	err := query.Scan(ctx)
+	err = query.Scan(ctx)
 	return nodeSets, err
 }
 
