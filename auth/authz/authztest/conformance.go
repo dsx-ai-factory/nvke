@@ -173,6 +173,7 @@ func cases(f Fixture) []testCase {
 			{name: "cross tenant", action: allow, resource: object("Cluster", "x1", otherTenant), want: authz.OutcomeNotFound},
 			{name: "cross tenant, another type", action: allow, resource: object("NodePool", "x1", otherTenant), want: authz.OutcomeNotFound},
 			{name: "cross tenant, denied action", action: deny, resource: object("Cluster", "x1", otherTenant), want: authz.OutcomeNotFound},
+			{name: "an object with no owner", action: allow, resource: object("Cluster", "u1", ""), want: authz.OutcomeNotFound},
 			{name: "create naming its own tenant", action: allow, resource: create(own), want: authz.OutcomeAllow},
 			{name: "create naming no tenant", action: allow, resource: create(""), want: authz.OutcomeAllow},
 			{name: "create in another tenant", action: allow, resource: create(otherTenant), want: authz.OutcomeNotFound},
@@ -198,12 +199,14 @@ func cases(f Fixture) []testCase {
 	b := f.TenantB
 	cs = append(cs,
 		testCase{name: "operator, cross tenant", caller: f.Operator, role: operator, action: allow, resource: object("Cluster", "b1", b), want: authz.OutcomeAllow},
+		testCase{name: "operator, an object with no owner", caller: f.Operator, role: operator, action: allow, resource: object("Cluster", "u1", ""), want: authz.OutcomeAllow},
 		testCase{name: "operator, denied action", caller: f.Operator, role: operator, action: deny, resource: object("Cluster", "b1", b), want: authz.OutcomeDeny},
 		testCase{name: "operator, create in another tenant", caller: f.Operator, role: operator, action: allow, resource: create(b), want: authz.OutcomeAllow},
 		testCase{name: "operator, create naming no tenant", caller: f.Operator, role: operator, action: allow, resource: create(""), want: authz.OutcomeAllow},
 		testCase{name: "operator, a list", caller: f.Operator, role: operator, action: allow, resource: collection(authz.ScopeList), want: authz.OutcomeAllow},
 
 		testCase{name: "no tenant, an object", caller: f.NoTenant, role: noTenant, action: allow, resource: object("Cluster", "a1", f.TenantA), want: authz.OutcomeNoTenant},
+		testCase{name: "no tenant, an object with no owner", caller: f.NoTenant, role: noTenant, action: allow, resource: object("Cluster", "u1", ""), want: authz.OutcomeNoTenant},
 		testCase{name: "no tenant, denied action", caller: f.NoTenant, role: noTenant, action: deny, resource: object("Cluster", "a1", f.TenantA), want: authz.OutcomeNoTenant},
 		testCase{name: "no tenant, create", caller: f.NoTenant, role: noTenant, action: allow, resource: create(""), want: authz.OutcomeNoTenant},
 		testCase{name: "no tenant, a list", caller: f.NoTenant, role: noTenant, action: allow, resource: collection(authz.ScopeList), want: authz.OutcomeNoTenant},
@@ -222,6 +225,7 @@ func cases(f Fixture) []testCase {
 		p := *refusedCaller.p
 		cs = append(cs,
 			testCase{name: refusedCaller.name + ", cross tenant", caller: p, role: other, action: allow, resource: object("Cluster", "b1", b), want: refused},
+			testCase{name: refusedCaller.name + ", an object with no owner", caller: p, role: other, action: allow, resource: object("Cluster", "u1", ""), want: refused},
 			testCase{name: refusedCaller.name + ", create", caller: p, role: other, action: allow, resource: create(""), want: refused},
 			testCase{name: refusedCaller.name + ", a list", caller: p, role: other, action: allow, resource: collection(authz.ScopeList), want: refused},
 		)

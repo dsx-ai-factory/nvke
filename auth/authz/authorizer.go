@@ -15,7 +15,8 @@
 // Decision. An API never builds a Query or reads a Decision.
 //
 // The backend owns tenancy. It reads the caller's tenant, decides who is an
-// operator, and refuses a cross-tenant request before any policy runs.
+// operator, and refuses a cross-tenant request, or one for an object with no
+// owner, before any policy runs.
 package authz
 
 import (
@@ -44,9 +45,10 @@ type Query struct {
 type Scope string
 
 const (
-	// ScopeObject is an existing object. Resource.Tenant is required and names
-	// the tenant that owns the object. The backend lets a caller reach the object
-	// only if the caller belongs to that tenant or is an operator.
+	// ScopeObject is an existing object. Resource.Tenant names the tenant that
+	// owns it, or is empty for an object with no owner. The backend lets a
+	// caller reach the object only if the caller belongs to that tenant or is
+	// an operator.
 	ScopeObject Scope = "object"
 
 	// ScopeCreate is a new object. Resource.Tenant is the tenant it will
@@ -87,10 +89,11 @@ const (
 	// OutcomeDeny refuses an action the policy doesn't allow.
 	OutcomeDeny Outcome = "deny"
 
-	// OutcomeNotFound refuses a request for another tenant's object from a
-	// caller who isn't an operator. It also refuses a Resource whose Tenant
-	// doesn't fit its Scope. The API answers as if the object didn't exist, so
-	// a caller can't probe for other tenants' objects.
+	// OutcomeNotFound refuses a request for another tenant's object, or an
+	// object with no owner, from a caller who isn't an operator. It also
+	// refuses a Resource whose Tenant doesn't fit its Scope. The API answers as
+	// if the object didn't exist, so a caller can't probe for other tenants'
+	// objects.
 	OutcomeNotFound Outcome = "not_found"
 
 	// OutcomeNoTenant refuses a caller with no tenant, for a resource that
@@ -137,7 +140,7 @@ var ErrInvalidQuery = errors.New("authorization query is not valid")
 
 // Validate reports whether q may go to a backend. It refuses a name it can't
 // log exactly, rather than cleaning it. It also refuses a Resource whose
-// Tenant doesn't fit its Scope, such as an object with no owner.
+// Tenant doesn't fit its Scope, such as a list that names a tenant.
 func (q Query) Validate() error {
 	for _, field := range []struct{ name, value string }{
 		{"principal subject", q.Principal.Subject},
@@ -156,16 +159,13 @@ func (q Query) Validate() error {
 	return nil
 }
 
-// validateScope checks that Tenant fits Scope: an object names its owner,
-// a list or a global resource names none, and a create may name one.
+// validateScope checks that Tenant fits Scope: an object or a create may
+// name a tenant, and a list or a global resource names none.
 func (r Resource) validateScope() error {
 	switch r.Scope {
-	case ScopeObject:
-		if r.Tenant == "" {
-			return errors.New("resource tenant is empty on an object")
-		}
-	case ScopeCreate:
-		// Tenant is optional: empty means the caller's own tenant.
+	case ScopeObject, ScopeCreate:
+		// Tenant is optional. Empty means an object has no owner, or a create
+		// belongs to the caller's own tenant.
 	case ScopeList, ScopeGlobal:
 		if r.Tenant != "" {
 			return fmt.Errorf("resource tenant is set on scope %s", r.Scope)

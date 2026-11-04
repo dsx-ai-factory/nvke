@@ -35,6 +35,7 @@ func TestQueryValidate(t *testing.T) {
 		wantErr string
 	}{
 		{name: "an object", mutate: func(*authz.Query) {}},
+		{name: "an object with no owner", mutate: setScope(authz.ScopeObject, "")},
 		{name: "a create naming a tenant", mutate: setScope(authz.ScopeCreate, "acme")},
 		{name: "a create naming no tenant", mutate: setScope(authz.ScopeCreate, "")},
 		{name: "a list", mutate: setScope(authz.ScopeList, "")},
@@ -52,7 +53,6 @@ func TestQueryValidate(t *testing.T) {
 			wantErr: "principal subject is 2049 bytes, longer than 2048",
 		},
 		{name: "no scope", mutate: setScope("", "acme"), wantErr: `resource scope "" is not object, create, list or global`},
-		{name: "an object with no owning tenant", mutate: setScope(authz.ScopeObject, ""), wantErr: "resource tenant is empty on an object"},
 		{name: "a list naming a tenant", mutate: setScope(authz.ScopeList, "acme"), wantErr: "resource tenant is set on scope list"},
 		{name: "a global resource naming a tenant", mutate: setScope(authz.ScopeGlobal, "acme"), wantErr: "resource tenant is set on scope global"},
 		{name: "a padded owning tenant", mutate: setScope(authz.ScopeObject, " acme"), wantErr: "resource tenant has leading or trailing whitespace"},

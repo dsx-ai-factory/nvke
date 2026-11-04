@@ -43,9 +43,9 @@ type Recorder func(outcome Outcome, action string)
 // works both out from the request. Action is also a metric label, so take it
 // from the API's own list of actions, never from request input.
 //
-// Every existing object needs an owner tenant and a valid ID. Check refuses
-// an object with no tenant for every caller, so an API with objects that
-// predate tenancy must give them owners first.
+// Set Resource.Tenant from the object's stored owner. An empty tenant means
+// the object has no owner, and only an operator can reach it, so never default
+// it to empty.
 type Target struct {
 	Action   string
 	Resource Resource
@@ -107,10 +107,10 @@ func NewClient(backend Authorizer, mode authn.Mode, logger *slog.Logger, record 
 // the object unowned.
 //
 // A missing object gets ErrNotFound, the same answer a caller gets for another
-// tenant's object, so the caller can't tell the two apart. That holds for every
-// caller with a tenant except an operator, who can reach every tenant's
-// objects. A caller with no tenant, or one the backend refuses before the
-// isolation check, gets a 403 for another tenant's object.
+// tenant's object or an object with no owner, so the caller can't tell them
+// apart. That holds for every caller with a tenant except an operator, who can
+// reach every object. A caller with no tenant, or one the backend refuses
+// before the isolation check, gets a 403 instead.
 func (c *Client) Check(ctx context.Context, t Target) (context.Context, error) {
 	if c == nil || c.backend == nil {
 		return ctx, fmt.Errorf("%w: client has no backend", ErrDenied)
