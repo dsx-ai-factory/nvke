@@ -15,14 +15,19 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
-// reconcileNodesNeedingRollout tears down control plane nodes needing rollout during rolling upgrades.
+// reconcileNodesNeedingRollout records delete intent for control-plane nodes that
+// need rollout during rolling upgrades. It reports whether it recorded a delete:
+// when true the caller must end the reconcile pass, because the in-memory
+// controlPlane snapshot does not yet reflect the recorded delete, so the steps
+// below -- joins, rebalance (whose abandon path starts a teardown directly) and
+// scale-down -- would otherwise act on a stale view and could start a second one.
 func (r *reconciler) reconcileNodesNeedingRollout(
 	ctx context.Context,
 	cluster db.Cluster,
 	cp *controlPlane,
 	allocator domainAllocator,
 	newNodeProvider clients.NewNodeProvider,
-) error {
+) (bool, error) {
 	logger := r.logger.With(
 		"clusterID", cluster.ID,
 		"clusterName", cluster.Name,
@@ -35,13 +40,13 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 		// If there are no nodes needing rollout and we were recycling, mark recycling completed.
 		if cluster.Conditions.CPNodesRecycling.Status == db.ConditionStatusTrue {
 			if err := r.updateClusterCPNodesRecyclingCondition(ctx, cluster.ID, false, "Control plane nodes recycling completed successfully", logger); err != nil {
-				return err
+				return false, err
 			}
 		}
-		return nil
+		return false, nil
 	}
 	if !cluster.EnableCPNodeRecycling {
-		return nil
+		return false, nil
 	}
 
 	if cluster.ControlPlaneConfig.MaxSurge > 0 {
@@ -52,14 +57,14 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 			if r.controlPlaneReplacementBlocked(cluster) {
 				logger.Warn("Skipping control plane scale-up because controlPlaneVIP is not configured",
 					"nodesNeedingRolloutCount", len(nodesNeedingRollout))
-				return nil
+				return false, nil
 			}
 			created, err := r.scaleUp(ctx, cluster, deficit, "surge nodes during upgrade", allocator, newNodeProvider)
 			if err != nil {
-				return fmt.Errorf("failed to scale up control plane before recycling: %w", err)
+				return false, fmt.Errorf("failed to scale up control plane before recycling: %w", err)
 			}
 			if created < deficit {
-				return nil
+				return false, nil
 			}
 		}
 	}
@@ -67,17 +72,17 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 	// During recycling/teardown, enforce surge-inclusive health before marking recycling.
 	healthy, err := r.isControlPlaneHealthy(ctx, cluster, cp, logger)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !healthy {
 		logger.Info("Control plane not ready for node recycling - waiting for sufficient healthy nodes",
 			"nodesNeedingRolloutCount", len(nodesNeedingRollout))
-		return nil
+		return false, nil
 	}
 
 	if cluster.Conditions.CPNodesRecycling.Status != db.ConditionStatusTrue {
 		if err := r.updateClusterCPNodesRecyclingCondition(ctx, cluster.ID, true, "Control plane nodes recycling in progress", logger); err != nil {
-			return err
+			return false, err
 		}
 	}
 
@@ -93,7 +98,7 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 			"inFlightNodeID", inFlight.ID,
 			"inFlightNodeName", inFlight.Name,
 		)
-		return nil
+		return false, nil
 	}
 
 	targetNode := nodesNeedingRollout[0]
@@ -108,16 +113,17 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 	// joined-survivor check, a rollout delete could be promoted while the
 	// replacement is still only Ready and then remove the last joined member,
 	// breaking quorum with the teardown's etcd member removal skipped. Require the
-	// joined control-plane survivors (excluding the target and pending nodes) to
-	// keep etcd quorum before recording intent. Mirrors canStartRemediation's
-	// quorum precondition, but keyed on Joined rather than KubernetesReady.
+	// surviving control-plane members (excluding the target and pending nodes) to
+	// keep etcd quorum before recording intent. A survivor counts only when it is
+	// both Joined and KubernetesReady: a joined member whose etcd is down must not
+	// prop up the quorum count. Mirrors canStartRemediation's quorum precondition.
 	totalMembers, joinedMembers := 0, 0
 	for _, node := range cp.nodes {
 		if node.ID == targetNode.ID || isPending(node) {
 			continue
 		}
 		totalMembers++
-		if node.Conditions.Joined.Status == db.ConditionStatusTrue {
+		if node.Conditions.Joined.Status == db.ConditionStatusTrue && isKubernetesReady(node) {
 			joinedMembers++
 		}
 	}
@@ -127,7 +133,7 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 			"totalMembers", totalMembers,
 			"quorum", quorum,
 		)
-		return nil
+		return false, nil
 	}
 
 	nodeLogger.Info("Recording rollout delete for control-plane node")
@@ -144,12 +150,12 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 		nodes.WithSkipLiveDeleteGuard(),
 		nodes.WithSkipQuorumFloor(),
 	); err != nil {
-		return fmt.Errorf("recording rollout delete for node %s (%s): %w", targetNode.ID, targetNode.Name, err)
+		return false, fmt.Errorf("recording rollout delete for node %s (%s): %w", targetNode.ID, targetNode.Name, err)
 	}
 
 	nodeLogger.Info("Recorded rollout delete; the serialized delete loop will start the teardown")
 
-	return nil
+	return true, nil
 }
 
 // teardownOldNode marks a control-plane node for deletion and queues its

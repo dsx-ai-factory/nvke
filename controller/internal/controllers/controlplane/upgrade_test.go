@@ -136,7 +136,7 @@ func TestReconcileNodesNeedingRolloutWithoutControlPlaneVIP(t *testing.T) {
 			}
 			r := &reconciler{cfg: config.Config{AllowControlPlaneWithoutVIP: allow}, db: mockTx, logger: slog.Default()}
 
-			err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
+			_, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
 
 			if allow {
 				require.ErrorIs(t, err, surgeError)
@@ -212,9 +212,10 @@ func TestReconcileNodesNeedingRolloutRecordsIntentAfterSurgeExists(t *testing.T)
 	}).Return(oldNode, nil)
 	r := &reconciler{cfg: config.Config{}, db: mockTx, logger: slog.Default()}
 
-	err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
+	recorded, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
 
 	require.NoError(t, err)
+	assert.True(t, recorded, "reconcileNodesNeedingRollout should report that it recorded a delete")
 	assert.True(t, nodes.IsDeleteRequested(written), "rollout should record delete intent")
 	assert.False(t, nodes.IsDeleting(written), "the teardown must wait for the serialized delete loop")
 	mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
@@ -279,9 +280,10 @@ func TestReconcileNodesNeedingRolloutSkipsWhenReplacementNotJoined(t *testing.T)
 	}).Return([]db.Node{oldNode, newNode}, nil)
 	r := &reconciler{cfg: config.Config{}, db: mockTx, logger: slog.Default()}
 
-	err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
+	recorded, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
 
 	require.NoError(t, err)
+	assert.False(t, recorded, "reconcileNodesNeedingRollout must not report a recorded delete when the replacement has not joined")
 	mockTx.AssertNotCalled(t, "GetClusterForUpdate", mock.Anything, mock.Anything)
 	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 	mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
@@ -348,9 +350,10 @@ func TestReconcileNodesNeedingRolloutSkipsWhenDeleteInFlight(t *testing.T) {
 				nodePinnedControlPlaneConfigs: configs,
 			}
 
-			err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
+			recorded, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
 
 			require.NoError(t, err)
+			assert.False(t, recorded, "reconcileNodesNeedingRollout must not report a recorded delete when a delete is already in flight")
 			mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 			mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 		})

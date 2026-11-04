@@ -400,11 +400,21 @@ func leastPreferredControlPlaneNodeToShed(cp *controlPlane, surge db.Node, ranke
 	return victim, true
 }
 
-// abandonRebalanceSurge tears the surge down through the serialized teardown
-// path, the same one scale-down and rollout use. It reports whether this pass
-// started the teardown: teardownOldNode is a no-op when a delete is already in
-// flight for the surge, and the caller must not then short-circuit the reconcile,
-// so that reconcileRequestedDeletes can promote the already-recorded delete.
+// abandonRebalanceSurge tears down a not-yet-joined rebalance surge so the step
+// yields to a higher-priority operation. It goes through teardownOldNode, which
+// starts the teardown directly (sets Deleting) rather than recording DeleteRequested
+// for reconcileRequestedDeletes to promote. This is the one deliberate exception to
+// routing every control-plane teardown through the serialized delete queue: the
+// surge is a provisioning node that never joined etcd, not a live member, so it
+// needs neither the queue's quorum floor nor its FIFO ordering, and abandonment has
+// to be immediate to clear the way rather than wait behind unrelated deletes.
+// teardownOldNode still serializes against any other in-flight delete through the
+// nodeWithDeleteInFlight check, so no two control-plane teardowns ever overlap.
+//
+// It reports whether this pass started the teardown: teardownOldNode is a no-op
+// when a delete is already in flight for the surge, and the caller must not then
+// short-circuit the reconcile, so that reconcileRequestedDeletes can promote the
+// already-recorded delete.
 func (r *reconciler) abandonRebalanceSurge(ctx context.Context, cp *controlPlane, surge db.Node, reason string, logger *slog.Logger) (bool, error) {
 	started, err := r.teardownOldNode(ctx, cp, surge, "Rebalance surge abandoned: "+reason, "rebalance-abandon", logger)
 	if err != nil {

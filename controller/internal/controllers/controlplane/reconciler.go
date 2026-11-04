@@ -141,8 +141,18 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		// Rollout records delete intent and reconcileRequestedDeletes (below) starts
 		// the teardown, so a rollout teardown serializes in the same loop as user
 		// deletes, remediation and scale-down.
-		if err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane, allocator, provider.NewNodeProvider()); err != nil {
+		rolloutRecorded, err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane, allocator, provider.NewNodeProvider())
+		if err != nil {
 			return fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
+		}
+		if rolloutRecorded {
+			// Same reason as the remediation return above: controlPlane still holds
+			// the pre-rollout snapshot, so the rebalance step below (whose abandon
+			// path starts a teardown directly) and scale-down could act without
+			// seeing the just-recorded delete. End the pass; the node write
+			// re-enqueues the cluster and the next reconcile reads a fresh snapshot
+			// where the delete is in flight and every step defers to it.
+			return nil
 		}
 
 		// Grow before shrink: join a ready host if one is waiting, and leave any
