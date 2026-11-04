@@ -12,6 +12,7 @@ import (
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	kubeadmv1 "sigs.k8s.io/cluster-api/api/bootstrap/kubeadm/v1beta2"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -124,7 +125,11 @@ func machineRequestForNicoMachine(ctx context.Context, obj client.Object) []reco
 
 func machineRequestForControllerOwner(obj client.Object) []reconcile.Request {
 	owner := metav1.GetControllerOf(obj)
-	if owner == nil || owner.APIVersion != clusterv1.GroupVersion.String() || owner.Kind != "Machine" || owner.Name == "" {
+	if owner == nil || owner.Kind != "Machine" || owner.Name == "" {
+		return nil
+	}
+	ownerGroupVersion, err := schema.ParseGroupVersion(owner.APIVersion)
+	if err != nil || ownerGroupVersion.Group != clusterv1.GroupVersion.Group || ownerGroupVersion.Version == "" {
 		return nil
 	}
 	return []reconcile.Request{{NamespacedName: client.ObjectKey{

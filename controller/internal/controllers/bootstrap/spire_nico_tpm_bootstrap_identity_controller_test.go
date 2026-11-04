@@ -551,6 +551,69 @@ func TestUnit_SpireNicoTPMBootstrapIdentityControllerNicoMachineWatchMapping(t *
 	}}}, requests)
 }
 
+func TestUnit_SpireNicoTPMBootstrapIdentityControllerWatchMappingValidatesMachineOwner(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		apiVersion string
+		kind       string
+		name       string
+		want       bool
+	}{
+		"accepts another Cluster API version": {
+			apiVersion: clusterv1.GroupVersion.Group + "/v1beta1",
+			kind:       "Machine",
+			name:       testMachineName,
+			want:       true,
+		},
+		"rejects invalid API version": {
+			apiVersion: clusterv1.GroupVersion.Group + "/v1beta1/invalid",
+			kind:       "Machine",
+			name:       testMachineName,
+		},
+		"rejects an empty API version": {
+			apiVersion: clusterv1.GroupVersion.Group + "/",
+			kind:       "Machine",
+			name:       testMachineName,
+		},
+		"rejects another API group": {
+			apiVersion: "example.com/v1beta1",
+			kind:       "Machine",
+			name:       testMachineName,
+		},
+		"rejects another kind": {
+			apiVersion: clusterv1.GroupVersion.String(),
+			kind:       "MachineSet",
+			name:       testMachineName,
+		},
+		"rejects an empty name": {
+			apiVersion: clusterv1.GroupVersion.String(),
+			kind:       "Machine",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			kubeadmConfig := newKubeadmConfigForSpireNicoTPMBootstrapIdentityTest(nil)
+			kubeadmConfig.OwnerReferences[0].APIVersion = test.apiVersion
+			kubeadmConfig.OwnerReferences[0].Kind = test.kind
+			kubeadmConfig.OwnerReferences[0].Name = test.name
+
+			requests := machineRequestForKubeadmConfig(t.Context(), kubeadmConfig)
+
+			if test.want {
+				require.Equal(t, []reconcile.Request{{NamespacedName: types.NamespacedName{
+					Namespace: testNamespace, Name: testMachineName,
+				}}}, requests)
+				return
+			}
+			require.Empty(t, requests)
+		})
+	}
+}
+
 func TestUnit_SpireNicoTPMBootstrapIdentityControllerNicoMachinePredicate(t *testing.T) {
 	t.Parallel()
 
