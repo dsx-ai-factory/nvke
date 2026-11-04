@@ -1705,19 +1705,20 @@ func baseSpec(t *testing.T) *SiteSpec {
 	return spec
 }
 
-func TestEffectiveTrustDomainAndEndpoint(t *testing.T) {
+func TestTrustDomainAndEndpoint(t *testing.T) {
 	spec := baseSpec(t)
 	spec.Spire.TrustDomain = ""
-	if got := spec.EffectiveTrustDomain("nvkectl-bootstrap"); got != "nvkectl-bootstrap.nke.local" {
-		t.Errorf("default trust domain: %s", got)
-	}
-	if domain, defaulted := spec.TrustDomain(); domain != "nvkectl-bootstrap.nke.local" || !defaulted {
+	if domain, defaulted := spec.TrustDomain(); domain != "my-tier0-site.nvke.local" || !defaulted {
 		t.Errorf("TrustDomain default: %s %v", domain, defaulted)
 	}
-	spec.Spire.TrustDomain = "site.example.com"
-	if got := spec.EffectiveTrustDomain("ignored"); got != "site.example.com" {
-		t.Errorf("explicit trust domain: %s", got)
+	other := baseSpec(t)
+	other.ClusterName, other.Spire.TrustDomain = "second-site", ""
+	first, _ := spec.TrustDomain()
+	second, _ := other.TrustDomain()
+	if first == second {
+		t.Errorf("two sites with unset spire.trustDomain share the default %s", first)
 	}
+	spec.Spire.TrustDomain = "site.example.com"
 	if domain, defaulted := spec.TrustDomain(); domain != "site.example.com" || defaulted {
 		t.Errorf("TrustDomain explicit: %s %v", domain, defaulted)
 	}

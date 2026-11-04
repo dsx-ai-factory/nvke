@@ -284,7 +284,7 @@ applies every file in `infra.nico.releases`.
 | `cluster.kubeletConfig.systemReservedMemory` | string | no | e.g. `16Gi`. |
 | `cluster.oidcProviders` | list | no | OIDC providers for site cluster. Cannot be modified afterwards. Ignored when absent. Rejected when `cluster.k8sVersion` is older than `1.34.0`. Each entry needs `name`, `issuerURL`, `audiences`, `usernameClaim`, `usernamePrefix`, and `caBundle` (inline PEM). Optional: `groupsClaim`, `groupsPrefix`, `requiredClaims`, `discoveryURL`.|
 | `spire.upstreamCA` | bool | no | `true` when the site's SPIRE chains to a CA you bring. Every `bootstrap site`, `validate sitespec` and install run then requires `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`, and the variables are refused without it. See "The SPIRE CA". |
-| `spire.trustDomain` | string | no | SPIFFE trust domain, shared by the bootstrap and the controller stack install. Set it once, before the bootstrap, or leave it unset: both then use `nvkectl-bootstrap.nke.local`, and the install says so. A bootstrap run with `NVKECTL_BOOTSTRAP_CLUSTER_NAME` set derives another, so set it then. |
+| `spire.trustDomain` | string | no | SPIFFE trust domain, shared by the bootstrap and the controller stack install. Set it once, before the bootstrap, or leave it unset: both then use `<clusterName>.nvke.local`, and the install says so. |
 
 The version (image/chart tag) is baked into the `nvkectl` build, so it is not
 part of the site spec.
@@ -439,10 +439,8 @@ visible reason.
 
 `spire.trustDomain` sets the SPIFFE trust domain for the bootstrap server and
 for the controller stack install. It must be a lowercase DNS name. If it is
-absent, both use `<bootstrap-cluster>.nke.local`, which is
-`nvkectl-bootstrap.nke.local` unless `NVKECTL_BOOTSTRAP_CLUSTER_NAME` renames
-the bootstrap cluster; then set the field so the install matches. The site
-SPIRE server that replaces the bootstrap server uses the same value.
+absent, both use `<clusterName>.nvke.local`. The site SPIRE server that
+replaces the bootstrap server uses the same value.
 
 `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE` name a CA the
 operator brings to the bootstrap, on the machine that runs `bootstrap site` or

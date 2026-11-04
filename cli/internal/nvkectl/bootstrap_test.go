@@ -751,12 +751,12 @@ func TestCWEDeployConfigDefaultsTrustDomain(t *testing.T) {
 	setBootstrapEnv(t)
 	t.Setenv("NVKECTL_SPIFFE_TRUST_DOMAIN", "")
 
-	cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "bootstrap-cluster", false, "", "")
+	cfg, err := cweDeployConfig(&sitespec.SiteSpec{ClusterName: "site-a"}, "bootstrap-cluster", false, "", "")
 	if err != nil {
 		t.Fatalf("cweDeployConfig: %v", err)
 	}
-	if cfg.SPIFFETrustDomain != "bootstrap-cluster.nke.local" {
-		t.Errorf("SPIFFETrustDomain = %q, want derived value %q", cfg.SPIFFETrustDomain, "bootstrap-cluster.nke.local")
+	if cfg.SPIFFETrustDomain != "site-a.nvke.local" {
+		t.Errorf("SPIFFETrustDomain = %q, want the site's default %q, not one from the kind cluster name", cfg.SPIFFETrustDomain, "site-a.nvke.local")
 	}
 }
 

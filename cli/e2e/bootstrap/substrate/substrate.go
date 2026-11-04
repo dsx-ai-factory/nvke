@@ -110,7 +110,7 @@ func DefaultConfig() Config {
 
 		SpireServerAddress: envOr("NVKECTL_E2E_SPIRE_SERVER_ADDRESS", DefaultSpireServerAddress),
 		SpireServerPort:    envOr("NVKECTL_E2E_SPIRE_SERVER_PORT", DefaultSpireServerPort),
-		SpireTrustDomain:   envOr("NVKECTL_E2E_SPIRE_TRUST_DOMAIN", "nvkectl-bootstrap.nke.local"),
+		SpireTrustDomain:   envOr("NVKECTL_E2E_SPIRE_TRUST_DOMAIN", "nvkectl-e2e.example.test"),
 		CacheDir:           envOr("NVKECTL_E2E_CACHE_DIR", defaultCacheDir()),
 		CADir:              envOr("NVKECTL_E2E_CA_DIR", defaultCADir()),
 		NamePrefix:         envOr("NVKECTL_E2E_NAME_PREFIX", "node"),

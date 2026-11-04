@@ -106,13 +106,11 @@ func (r *renderer) site() {
 		return
 	}
 	// The stack joins the trust domain the nodes were bootstrapped with. The
-	// default is the one a bootstrap with the default cluster name derives;
-	// a bootstrap that was given another name needs spire.trustDomain set.
-	// The warning is written now, not noted: it matters even when the render
+	// warning is written now, not noted: it matters even when the render
 	// fails later.
 	trustDomain, defaulted := spec.TrustDomain()
 	if defaulted {
-		fmt.Fprintf(r.opts.Log, "warning: spire.trustDomain is not set; using %s, the domain a bootstrap with the default cluster name used. A bootstrap run under another cluster name printed a different one; the install has to use that.\n", trustDomain)
+		fmt.Fprintf(r.opts.Log, "warning: spire.trustDomain is not set; using %s. A site bootstrapped with another trust domain needs spire.trustDomain set to that value.\n", trustDomain)
 	}
 	checksum := controllerdeploy.SpireTPMDirectChecksum(archOf(r.opts.Arch))
 	if checksum == "" {
