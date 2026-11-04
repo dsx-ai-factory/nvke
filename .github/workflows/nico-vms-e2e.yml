@@ -10,10 +10,9 @@
 # on is covered by the twice-daily schedule. Mirror-branch pushes are the PR
 # trigger; self-hosted runners get no pull_request events.
 #
-# Two legs, one per architecture. amd64 uses the hosted GPU label, the only
-# hosted one with /dev/kvm; arm64 uses the self-hosted fleet, which gained
-# nested KVM in #797. Both resolve their node image from GHCR rather than the
-# profile's CloudFront URL, which the fleet answers 403 to. Both went green in
+# Two legs, one per architecture, both on the self-hosted fleet's KVM scale
+# sets (arm64 gained nested KVM in #797). Both resolve their node image from
+# GHCR rather than the profile's CloudFront URL, which the fleet answers 403 to. Both went green in
 # #804, so a failure on either is a regression.
 
 name: NICo VMs E2E
@@ -100,13 +99,14 @@ jobs:
     strategy:
       # One architecture failing must not hide the other's result.
       fail-fast: false
-      # amd64 is linux-amd64-gpu-l4-latest-1, the one hosted label with
-      # /dev/kvm; see kubeadm-bringup-e2e.yml. arm64 is arc-arm64-kvm on the
-      # RelEng EKS fleet.
+      # Both legs run on the ARC KVM scale sets of the RelEng EKS fleet,
+      # arc-amd64-kvm and arc-arm64-kvm. amd64 used linux-amd64-gpu-l4-latest-1,
+      # a 12-vCPU VM that nested the tenant VMs and held a GPU this lane never
+      # uses, because the GPU specs are filtered out below.
       matrix:
         include:
           - arch: amd64
-            runner: linux-amd64-gpu-l4-latest-1
+            runner: arc-amd64-kvm
             # !gpu and not !tpm-attestation: the guests carry an emulated TPM
             # (swtpm) and no GPU.
             label_filter: 'nico-vms && (happy-path || multi-pod-cidrs) && !gpu'
