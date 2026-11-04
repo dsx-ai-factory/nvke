@@ -117,7 +117,7 @@ type Cluster struct {
 
 	// Tenant owns the cluster and its node pools, node sets and nodes. It is
 	// set only at creation; UpdateCluster never writes it. Empty is stored as
-	// NULL, and the tenant queries read NULL as the operator tenant.
+	// NULL, which means the cluster is unowned.
 	Tenant string `bun:"tenant,type:text,nullzero"`
 }
 
@@ -554,7 +554,7 @@ type ClusterFilters struct {
 	ID     *uuid.UUID
 	Name   *string
 	SiteID *uuid.UUID
-	Tenant *TenantFilter
+	Tenant *string
 }
 
 type CniPlugin string
@@ -634,7 +634,7 @@ func (q *queriesImpl) ListClusters(ctx context.Context, filters ClusterFilters) 
 	if filters.SiteID != nil {
 		query = query.Where("nico->>'site_id' = ?", filters.SiteID.String())
 	}
-	query, err := filters.Tenant.where(query, "cluster")
+	query, err := whereTenant(query, "cluster", filters.Tenant)
 	if err != nil {
 		return nil, err
 	}

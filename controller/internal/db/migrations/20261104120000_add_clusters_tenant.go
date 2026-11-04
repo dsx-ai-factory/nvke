@@ -10,8 +10,8 @@ import (
 	"github.com/uptrace/bun"
 )
 
-// clusters.tenant is the tenant that owns a cluster. The tenant queries read
-// NULL as the operator tenant.
+// clusters.tenant is the tenant that owns a cluster. NULL means the cluster is
+// unowned.
 //
 //nolint:gochecknoinits // Bun registers migrations at package initialization.
 func init() {
