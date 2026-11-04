@@ -22,7 +22,7 @@ name: Action Allowlist Hint
 
 on:
   pull_request_target:
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, synchronize, edited]
     paths:
       - ".github/**"
 
@@ -52,14 +52,15 @@ jobs:
             const pr = context.payload.pull_request;
             const isYaml = (path) => /^\.github\/.*\.ya?ml$/.test(path);
 
-            // owner/repo[/path]@ref, keyed as owner/repo@ref: the allowlist
-            // takes that form, and a path wildcard covers the rest.
+            // owner/repo[/path]@ref, kept whole: an allowlist entry for
+            // owner/repo@ref may not cover a sub-path action or reusable workflow.
             // `actions` and `github` are allowed enterprise-wide.
             function pins(text) {
               const found = new Map();
               const re = /^[\s-]*uses:\s*['"]?([^\s'"#]+)/gm;
               for (const [, ref] of text.matchAll(re)) {
-                const m = ref.match(/^([^./][^/]*)\/([^/@]+)(?:\/[^@]*)?@(.+)$/);
+                // `repo` keeps any sub-path, e.g. sbom-action/download-syft.
+                const m = ref.match(/^([^./][^/]*)\/([^/@][^@]*)@(.+)$/);
                 if (!m) continue; // ./local or docker://
                 const [, owner, repo, version] = m;
                 if (['actions', 'github'].includes(owner.toLowerCase())) continue;
@@ -100,6 +101,7 @@ jobs:
                 tree_sha: pr.base.sha,
                 recursive: 'true',
               });
+              if (tree.truncated) core.warning('Base tree truncated; existing pins may be reported as new.');
               for (const entry of tree.tree) {
                 if (entry.type !== 'blob' || !isYaml(entry.path)) continue;
                 for (const key of pins(await blobText(entry.sha)).keys()) basePins.add(key);
