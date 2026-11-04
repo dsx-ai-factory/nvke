@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-name: Release
+name: Tag publish
 
 on:
   push:
@@ -33,7 +33,7 @@ concurrency:
   # expression is the CALLER's name, so any workflow merge-gate.yml calls would
   # share a group with its siblings and cancel them. 8 of 9 calls died that way,
   # reported as failures with no jobs and no error message.
-  group: Release-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  group: Tag publish-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
   cancel-in-progress: false
 
 jobs:

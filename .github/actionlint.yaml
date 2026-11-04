@@ -3,7 +3,7 @@
 #
 # actionlint fails on any runs-on label it does not know. Without this file it
 # reports every workflow that uses a self-hosted runner as broken, which is all
-# of them except release.yml, and that makes it useless locally.
+# of them except tag-publish.yml, and that makes it useless locally.
 
 self-hosted-runner:
   labels:

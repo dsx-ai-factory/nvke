@@ -12,9 +12,9 @@ name: CLI Artifact GHCR
 # use in this repo is linux-only, so this is the first time that flag sees a
 # `darwin/*` value. Watch the first real run.
 
-# Called by release.yml after its build, so a cli/v* tag produces one set of
+# Called by tag-publish.yml after its build, so a cli/v* tag produces one set of
 # binaries rather than four independent ones, and this runs behind the licence
-# gate release.yml already enforces. The tag trigger is gone for that reason.
+# gate tag-publish.yml already enforces. The tag trigger is gone for that reason.
 #
 # workflow_dispatch still works and still builds: dist_artifact is empty there,
 # so the build step below runs instead of the download.
@@ -22,7 +22,7 @@ on:
   workflow_call:
     inputs:
       dist_artifact:
-        description: Artifact holding the binaries release.yml built. Empty means build here.
+        description: Artifact holding the binaries tag-publish.yml built. Empty means build here.
         type: string
         required: false
         default: ""
@@ -101,7 +101,7 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
           echo "Publishing ${repo} ${version} as: ${aliases[*]}"
 
-      # One build per release. release.yml builds; this consumes exactly those
+      # One build per release. tag-publish.yml builds; this consumes exactly those
       # bytes, so every channel ships the same binaries.
       - name: Download the release build
         if: inputs.dist_artifact != ''

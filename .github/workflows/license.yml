@@ -4,8 +4,8 @@
 # Checks dependency licenses, source headers and shipped license copies.
 # Dependency checks use the same module list and command as local checks.
 #
-# Release gate: the release workflow calls this workflow via workflow_call and
-# gates publish jobs on it via `needs`.  See .github/workflows/release.yml.
+# Release gate: the tag publish workflow calls this workflow via workflow_call and
+# gates publish jobs on it via `needs`.  See .github/workflows/tag-publish.yml.
 name: License Checks
 
 on:
@@ -30,16 +30,16 @@ on:
       - '.github/workflows/license.yml'
   # No `pull_request:` trigger. Pull requests reach this through merge-gate.yml,
   # which calls it as a reusable workflow, so it runs once rather than twice.
-  # release.yml also calls it, which is why workflow_call was already here.
+  # tag-publish.yml also calls it, which is why workflow_call was already here.
   workflow_call:
 
 # Every job here only reads the checkout. Declared rather than inherited: a
-# called workflow with no permissions block takes the caller's, and release.yml
+# called workflow with no permissions block takes the caller's, and tag-publish.yml
 # calls this one, so without this it would run with that job's grant.
 permissions: {}
 
 # The group is a fixed literal, NOT ${{ github.workflow }}. In a called
-# workflow that context resolves to the CALLER's name, so release.yml and this
+# workflow that context resolves to the CALLER's name, so tag-publish.yml and this
 # file would share a group on a tag push: the caller holds it, the called
 # workflow queues behind its own caller, and the release never finishes.
 #
@@ -51,7 +51,7 @@ permissions: {}
 # refs are already unique, and a new update should replace a stale pull-request
 # run.
 #
-# Not cancelled on a tag. release.yml calls this as its publish gate, and
+# Not cancelled on a tag. tag-publish.yml calls this as its publish gate, and
 # cancelling the gate fails the release.
 concurrency:
   group: license-checks-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}

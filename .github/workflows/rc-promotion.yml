@@ -9,7 +9,7 @@ name: RC promotion
 # variable is true, it only says what it would tag.
 #
 # The push must NOT use GITHUB_TOKEN, whose events never start other workflows,
-# so release.yml would not run. Like nightly-beta-tag.yml, it uses an
+# so tag-publish.yml would not run. Like nightly-beta-tag.yml, it uses an
 # installation token for the release bot GitHub App, which must be a bypass
 # actor on the "Protect release tags" ruleset.
 on:
