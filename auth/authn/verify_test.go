@@ -533,7 +533,7 @@ func TestNewVerifier(t *testing.T) {
 			wantErr: `key source "teleport"`,
 		},
 		{
-			name: "an invalid config is rejected here too, not only by Load",
+			name: "an invalid config is rejected here too, not only at startup",
 			cfg: func() *authn.Config {
 				cfg := testConfig()
 				cfg.Audiences = []string{k8sIssuer}

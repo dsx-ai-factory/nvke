@@ -5,6 +5,7 @@ package controllerconfig
 
 import (
 	"fmt"
+	"os"
 	"slices"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
@@ -15,6 +16,9 @@ import (
 // validated together. It also returns the file, for the settings config.Config
 // does not carry, such as oidc.providers and apiAuth.
 func LoadStartupConfig() (config.Config, *Config, error) {
+	if err := refuseRetiredAuthConfigPath(); err != nil {
+		return config.Config{}, nil, err
+	}
 	cfg, err := config.ParseConfigFromEnv()
 	if err != nil {
 		return config.Config{}, nil, err
@@ -27,18 +31,21 @@ func LoadStartupConfig() (config.Config, *Config, error) {
 	if err := cfg.Validate(); err != nil {
 		return config.Config{}, nil, fmt.Errorf("config validation failed: %w", err)
 	}
-	if err := file.CheckAuthSource(cfg.AuthConfigPath); err != nil {
-		return config.Config{}, nil, err
-	}
 	return cfg, file, nil
 }
 
-// CheckAuthSource refuses a deployment that configures API authentication in
-// both places: apiAuth in this file, and the file AUTH_CONFIG_PATH names.
-// Neither wins, because the two could disagree about who is admitted.
-func (c *Config) CheckAuthSource(authConfigPath string) error {
-	if c.APIAuth.Enabled && authConfigPath != "" {
-		return fmt.Errorf("API authentication is configured twice: apiAuth.enabled is true in nvke-controller-config and AUTH_CONFIG_PATH is %q; use one", authConfigPath)
+const (
+	// retiredAuthConfigPath named a file holding the API authentication
+	// configuration, which apiAuth in nvke-controller-config replaced.
+	retiredAuthConfigPath = "AUTH_CONFIG_PATH"
+)
+
+// refuseRetiredAuthConfigPath fails startup when AUTH_CONFIG_PATH is set. The
+// controller no longer reads that file, and ignoring the variable would start
+// a deployment that asked for authentication without any.
+func refuseRetiredAuthConfigPath() error {
+	if path := os.Getenv(retiredAuthConfigPath); path != "" {
+		return fmt.Errorf("%s is set to %q, but the controller no longer reads an authentication file. Move its audiences and issuers to apiAuth in nvke-controller-config (the chart's apiAuth.config), set apiAuth.enabled, and remove the variable", retiredAuthConfigPath, path)
 	}
 	return nil
 }

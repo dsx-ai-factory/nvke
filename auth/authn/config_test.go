@@ -5,29 +5,26 @@ package authn_test
 
 import (
 	"encoding/pem"
-	"io/fs"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	kjson "sigs.k8s.io/json"
+	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nvke/auth/authn"
 )
 
-// configHeader is the apiVersion/kind preamble every valid file carries.
-const configHeader = `apiVersion: auth.nke.nvidia.com/v1alpha1
-kind: AuthenticationConfiguration
-`
-
-// exampleConfig is what a real deployment writes: one Kubernetes issuer and one
-// SPIRE issuer, the second overriding the audience.
+// exampleConfig is what a real deployment writes under apiAuth in
+// nvke-controller-config: one Kubernetes issuer and one SPIRE issuer, the second
+// overriding the audience.
 const exampleConfig = `
-` + configHeader + `audiences: ["https://cwe.example.com"]
+audiences: ["https://cwe.example.com"]
 issuers:
   - name: local-kubernetes
     issuer: "https://kubernetes.default.svc.cluster.local"
@@ -49,7 +46,7 @@ issuers:
 `
 
 // exampleStructConfig is exampleConfig's first issuer built in Go, the shape
-// nvke-controller-config's apiAuth section arrives in: no apiVersion or kind.
+// nvke-controller-config's apiAuth section arrives in at authn.Setup.
 func exampleStructConfig() *authn.Config {
 	return &authn.Config{
 		Audiences: []string{"https://cwe.example.com"},
@@ -65,14 +62,15 @@ func exampleStructConfig() *authn.Config {
 	}
 }
 
-// The helpers below vary one thing at a time against an otherwise-valid file. A
+// The helpers below vary one thing at a time against an otherwise-valid
+// configuration. A
 // case needing two issuers, or a missing top-level key, writes its own YAML.
 
 // audiencesConfig varies the deployment-wide allow-list and the issuer URL it is
 // compared against, both raw YAML.
 func audiencesConfig(audiences, issuer string) string {
 	return `
-` + configHeader + `audiences: ` + audiences + `
+audiences: ` + audiences + `
 issuers:
   - name: k8s
     issuer: ` + issuer + `
@@ -85,7 +83,7 @@ issuers:
 // issuerConfig varies the sole issuer entry; fields are its YAML mapping keys.
 func issuerConfig(fields string) string {
 	return `
-` + configHeader + `audiences: ["https://cwe.example.com"]
+audiences: ["https://cwe.example.com"]
 issuers:
   - ` + fields + "\n"
 }
@@ -108,18 +106,36 @@ func spiffeConfig(rule string) string {
     admit: {spiffe: ` + rule + `}`)
 }
 
-// writeConfig writes contents to a fresh temp dir and returns the path.
-func writeConfig(t *testing.T, contents string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "authentication.yaml")
-	require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
-	return path
+// parseConfig turns YAML into a validated Config the way controllerconfig.Load
+// treats the apiAuth section of nvke-controller-config: strict YAML (duplicate
+// keys fatal), then sigs.k8s.io/json's strict, case-sensitive decode (unknown
+// and case-variant keys fatal), then ValidateStartup. The authoritative tests of
+// that decoding live with controllerconfig.Load; this mirrors it so the
+// validation rules below are exercised on the input production sees. A failure
+// returns a nil Config.
+func parseConfig(contents string) (*authn.Config, error) {
+	jsonBytes, err := yaml.YAMLToJSONStrict([]byte(contents))
+	if err != nil {
+		return nil, fmt.Errorf("parse apiAuth: %w", err)
+	}
+	var cfg authn.Config
+	strictErrs, err := kjson.UnmarshalStrict(jsonBytes, &cfg)
+	if err != nil {
+		return nil, fmt.Errorf("parse apiAuth: %w", err)
+	}
+	if err := errors.Join(strictErrs...); err != nil {
+		return nil, fmt.Errorf("parse apiAuth: %w", err)
+	}
+	if err := cfg.ValidateStartup(); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
 }
 
-func TestLoadExampleConfig(t *testing.T) {
+func TestExampleConfig(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := authn.Load(writeConfig(t, exampleConfig))
+	cfg, err := parseConfig(exampleConfig)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 
@@ -150,232 +166,10 @@ func TestLoadExampleConfig(t *testing.T) {
 	assert.Equal(t, []string{"/nke-service/"}, spire.Admit.SPIFFE.PathPrefixes)
 }
 
-// The rule most easily got backwards: an unset path disables authentication, a
-// set-but-unreadable path is fatal.
-func TestLoadPathContract(t *testing.T) {
-	t.Parallel()
-
-	t.Run("empty path returns ErrEmptyPath so the caller can disable", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := authn.Load("")
-		require.ErrorIs(t, err, authn.ErrEmptyPath)
-	})
-
-	t.Run("whitespace-only path returns ErrEmptyPath", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := authn.Load("   ")
-		require.ErrorIs(t, err, authn.ErrEmptyPath)
-	})
-
-	t.Run("missing file errors and is not ErrEmptyPath", func(t *testing.T) {
-		t.Parallel()
-
-		path := filepath.Join(t.TempDir(), "does-not-exist.yaml")
-		_, err := authn.Load(path)
-		require.Error(t, err)
-		require.NotErrorIs(t, err, authn.ErrEmptyPath,
-			"a typo'd mountPath must be fatal, not silently disabled")
-		require.ErrorIs(t, err, fs.ErrNotExist)
-	})
-
-	t.Run("unreadable file errors and is not ErrEmptyPath", func(t *testing.T) {
-		t.Parallel()
-
-		if os.Getuid() == 0 {
-			t.Skip("running as root: file mode does not deny reads")
-		}
-		path := writeConfig(t, exampleConfig)
-		require.NoError(t, os.Chmod(path, 0o000))
-		_, err := authn.Load(path)
-		require.Error(t, err)
-		require.NotErrorIs(t, err, authn.ErrEmptyPath)
-		require.ErrorIs(t, err, fs.ErrPermission)
-	})
-
-	t.Run("empty file errors", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := authn.Load(writeConfig(t, ""))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "is empty")
-	})
-
-	t.Run("malformed YAML errors", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := authn.Load(writeConfig(t, "audience: \"unterminated\nissuers: [\n"))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "parse authentication config")
-	})
-
-	t.Run("second YAML document errors", func(t *testing.T) {
-		t.Parallel()
-
-		// A decoder would silently drop the second document.
-		_, err := authn.Load(writeConfig(t, exampleConfig+"\n---\naudience: \"https://elsewhere.example.com\"\n"))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "more than one YAML document")
-	})
-}
-
-// Strict decoding at every nesting depth. Strictness does not reach into
-// map[string]any and does not survive a custom unmarshaler, so each case asserts
-// something about the shape of the types. A decoder that stops rejecting is a
-// regression, not a case to weaken.
-func TestLoadRejectsUnknownFields(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		yaml    string
-		wantErr string
-	}{
-		{
-			// The only unknown field at the top level.
-			name: "unknown top-level field",
-			yaml: `
-audiences: ["https://cwe.example.com"]
-audiance: "typo"
-issuers:
-  - name: k8s
-    issuer: "https://kubernetes.default.svc.cluster.local"
-    jwks: {uri: "https://kubernetes.default.svc/openid/v1/jwks"}
-    algorithms: [RS256]
-    admit: {serviceAccounts: [{namespace: nke-clients}]}
-`,
-			wantErr: `unknown field "audiance"`,
-		},
-		{
-			name: "unknown field inside an issuer",
-			yaml: issuerConfig(`name: k8s
-    issuer: "https://kubernetes.default.svc.cluster.local"
-    jwksURI: "https://elsewhere.example.com/keys"
-    jwks: {uri: "https://kubernetes.default.svc/openid/v1/jwks"}
-    algorithms: [RS256]
-    admit: {serviceAccounts: [{namespace: nke-clients}]}`),
-			wantErr: `unknown field "issuers[0].jwksURI"`,
-		},
-		{
-			name: "unknown field inside jwks",
-			yaml: issuerConfig(`name: k8s
-    issuer: "https://kubernetes.default.svc.cluster.local"
-    jwks: {uri: "https://k8s.example.com/keys", oidc: {}}
-    algorithms: [RS256]
-    admit: {serviceAccounts: [{namespace: nke-clients}]}`),
-			wantErr: `unknown field "issuers[0].jwks.oidc"`,
-		},
-		{
-			name: "unknown field inside admit",
-			yaml: issuerConfig(`name: k8s
-    issuer: "https://kubernetes.default.svc.cluster.local"
-    jwks: {uri: "https://kubernetes.default.svc/openid/v1/jwks"}
-    algorithms: [RS256]
-    admit:
-      serviceAccounts: [{namespace: nke-clients}]
-      users: [alice]`),
-			wantErr: `unknown field "issuers[0].admit.users"`,
-		},
-		{
-			name: "unknown field inside a serviceAccounts rule",
-			yaml: issuerConfig(`name: k8s
-    issuer: "https://kubernetes.default.svc.cluster.local"
-    jwks: {uri: "https://kubernetes.default.svc/openid/v1/jwks"}
-    algorithms: [RS256]
-    admit:
-      serviceAccounts: [{namespace: nke-clients, serviceAccountName: runner}]`),
-			wantErr: `unknown field "issuers[0].admit.serviceAccounts[0].serviceAccountName"`,
-		},
-		{
-			name: "unknown field inside spiffe",
-			yaml: issuerConfig(`name: spire
-    issuer: "https://spire.example.com"
-    jwks: {uri: "https://spire.example.com/keys"}
-    algorithms: [RS256]
-    admit:
-      spiffe:
-        trustDomain: example.org
-        pathPrefixes: ["/nke-service/"]
-        paths: ["/anything/"]`),
-			wantErr: `unknown field "issuers[0].admit.spiffe.paths"`,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			_, err := authn.Load(writeConfig(t, tt.yaml))
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.wantErr)
-		})
-	}
-}
-
-// Case-sensitive key matching. Under a case-insensitive decoder a rule carrying
-// both pathPrefixes and pathprefixes loads clean, the lowercase spelling wins,
-// and the file reads as narrowly scoped while admitting the whole trust domain.
-func TestLoadRejectsCaseVariantKeys(t *testing.T) {
-	t.Parallel()
-
-	spire := func(rule string) string {
-		return issuerConfig(`name: spire
-    issuer: "https://spire.example.com"
-    jwks: {uri: "https://spire.example.com/keys"}
-    algorithms: [RS256]
-    admit:
-      spiffe:
-        trustDomain: example.org
-` + rule)
-	}
-
-	tests := []struct {
-		name string
-		yaml string
-	}{
-		{
-			// Both spellings present: the wrong one wins, invisibly.
-			name: "a case-variant duplicate that would widen a SPIFFE rule",
-			yaml: spire(`        pathPrefixes: ["/nke-service/"]
-        pathprefixes: ["/"]`),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			_, err := authn.Load(writeConfig(t, tt.yaml))
-			require.Error(t, err, "a case-variant key must not load")
-			assert.Contains(t, err.Error(), "unknown field",
-				"the error has to name the key so an operator can find the typo")
-		})
-	}
-}
-
-// The exactly-cased duplicate, which the YAML layer catches before the JSON layer
-// sees it.
-func TestLoadRejectsDuplicateKeys(t *testing.T) {
-	t.Parallel()
-
-	_, err := authn.Load(writeConfig(t, `
-`+configHeader+`audiences: ["https://cwe.example.com"]
-audiences: ["https://cwe.other.example.com"]
-issuers:
-  - name: k8s
-    issuer: "https://k8s.example.com"
-    jwks: {uri: "https://kubernetes.default.svc/openid/v1/jwks"}
-    algorithms: [RS256]
-    admit: {serviceAccounts: [{namespace: nke-clients}]}
-`))
-	require.Error(t, err, "a duplicate key must not resolve to last-wins")
-}
-
 // Admission rules naming an identity that cannot exist. Without this a rule
 // reading `name: MyRunner` loads and then matches nothing for ever, because
 // Kubernetes has no such service account and never will.
-func TestLoadRejectsNamesKubernetesWouldRefuse(t *testing.T) {
+func TestRejectsNamesKubernetesWouldRefuse(t *testing.T) {
 	t.Parallel()
 
 	rule := func(ns, name string) string {
@@ -401,7 +195,7 @@ func TestLoadRejectsNamesKubernetesWouldRefuse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := authn.Load(writeConfig(t, tt.yaml))
+			_, err := parseConfig(tt.yaml)
 			if tt.wantErr == "" {
 				require.NoError(t, err)
 				return
@@ -415,12 +209,10 @@ func TestLoadRejectsNamesKubernetesWouldRefuse(t *testing.T) {
 // Whitespace on the identity-bearing fields. Nothing trims before use, so
 // `algorithms: ["RS256 "]` would load and then match no token. Values are quoted
 // because YAML strips a trailing space from a plain scalar.
-func TestLoadRejectsPaddedValues(t *testing.T) {
+func TestRejectsPaddedValues(t *testing.T) {
 	t.Parallel()
 
-	const base = `apiVersion: auth.nke.nvidia.com/v1alpha1
-kind: AuthenticationConfiguration
-audiences: [AUD]
+	const base = `audiences: [AUD]
 issuers:
   - name: NAME
     issuer: ISS
@@ -449,109 +241,12 @@ issuers:
 				content = strings.ReplaceAll(content, token, value)
 			}
 
-			_, err := authn.Load(writeConfig(t, content))
+			_, err := parseConfig(content)
 			require.Error(t, err, "a padded %s must not load", field)
 			assert.Contains(t, err.Error(), "whitespace",
 				"the error has to name the cause; a padded value is invisible in a diff")
 		})
 	}
-}
-
-// The two fields that say what the document is; checked in Load.
-func TestLoadTypeMeta(t *testing.T) {
-	t.Parallel()
-
-	// The body below the preamble, so each case supplies its own.
-	const body = `audiences: ["https://cwe.example.com"]
-issuers:
-  - name: k8s
-    issuer: "https://kubernetes.default.svc.cluster.local"
-    jwks: {uri: "https://kubernetes.default.svc/openid/v1/jwks"}
-    algorithms: [RS256]
-    admit: {serviceAccounts: [{namespace: nke-clients}]}
-`
-
-	tests := []struct {
-		name    string
-		header  string
-		wantErr string
-	}{
-		{
-			name:   "the legacy apiVersion loads",
-			header: configHeader,
-		},
-		{
-			name:   "the current apiVersion loads",
-			header: "apiVersion: " + authn.ConfigAPIVersion + "\nkind: AuthenticationConfiguration\n",
-		},
-		{
-			name:    "apiVersion absent",
-			header:  "kind: AuthenticationConfiguration\n",
-			wantErr: "apiVersion is required",
-		},
-		{
-			name:    "kind absent",
-			header:  "apiVersion: auth.nke.nvidia.com/v1alpha1\n",
-			wantErr: "kind is required",
-		},
-		{
-			// The apiserver's own AuthenticationConfiguration shares this kind and
-			// is the file most likely to be mounted here by mistake.
-			name:    "the right kind from another group",
-			header:  "apiVersion: apiserver.config.k8s.io/v1\nkind: AuthenticationConfiguration\n",
-			wantErr: `apiVersion "apiserver.config.k8s.io/v1" is not supported`,
-		},
-		{
-			name:    "a version of this group that does not exist yet",
-			header:  "apiVersion: auth.nke.nvidia.com/v1\nkind: AuthenticationConfiguration\n",
-			wantErr: `apiVersion "auth.nke.nvidia.com/v1" is not supported`,
-		},
-		{
-			name:    "the wrong kind in the right group",
-			header:  "apiVersion: auth.nke.nvidia.com/v1alpha1\nkind: AuthorizationConfiguration\n",
-			wantErr: `kind "AuthorizationConfiguration" is not supported`,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			cfg, err := authn.Load(writeConfig(t, tt.header+body))
-			if tt.wantErr == "" {
-				require.NoError(t, err)
-				assert.Contains(t, []string{authn.ConfigAPIVersion, authn.ConfigAPIVersionLegacy}, cfg.APIVersion)
-				assert.Equal(t, authn.ConfigKind, cfg.Kind)
-				return
-			}
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.wantErr)
-			// Every rejection names what would be accepted.
-			assert.Contains(t, err.Error(), "this build accepts",
-				"the error has to say what would be accepted")
-		})
-	}
-}
-
-// apiVersion and kind describe a document on disk, so a Config built in Go
-// neither carries them nor needs them, and NewVerifier calls Validate.
-func TestValidateDoesNotRequireTypeMeta(t *testing.T) {
-	t.Parallel()
-
-	cfg := &authn.Config{
-		Audiences: []string{"https://cwe.example.com"},
-		Issuers: []authn.Issuer{{
-			Name:       "k8s",
-			Issuer:     "https://kubernetes.default.svc.cluster.local",
-			JWKS:       &authn.JWKSKeys{URI: "https://kubernetes.default.svc/openid/v1/jwks"},
-			Algorithms: []string{"RS256"},
-			Admit: &authn.Admit{
-				ServiceAccounts: []authn.ServiceAccountRule{{Namespace: "nke-clients"}},
-			},
-		}},
-	}
-
-	require.NoError(t, cfg.Validate())
 }
 
 // caBundle is an inline alternative to caBundlePath, so it must hold a
@@ -599,9 +294,9 @@ func TestValidateInlineCABundle(t *testing.T) {
 	}
 }
 
-// ValidateStartup is how nvke-controller-config's apiAuth section, which has no
-// file of its own, reaches the rules Load applies. It must refuse what Load
-// refuses, including an issuer with no admit block, which Validate allows.
+// ValidateStartup is the gate every configuration passes before the controller
+// serves with it: Validate's rules, plus an admit block on every issuer, which
+// Validate alone allows to be absent.
 func TestValidateStartup(t *testing.T) {
 	t.Parallel()
 
@@ -610,7 +305,7 @@ func TestValidateStartup(t *testing.T) {
 		mutate  func(*authn.Config)
 		wantErr string
 	}{
-		{name: "a valid configuration without apiVersion or kind passes"},
+		{name: "a valid configuration passes"},
 		{
 			name:    "an issuer without admit is refused",
 			mutate:  func(c *authn.Config) { c.Issuers[0].Admit = nil },
@@ -658,7 +353,7 @@ func runValidationCases(t *testing.T, tests []validationCase) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			cfg, err := authn.Load(writeConfig(t, tt.yaml))
+			cfg, err := parseConfig(tt.yaml)
 			if tt.wantErr == "" {
 				require.NoError(t, err)
 				assert.NotNil(t, cfg)
@@ -676,7 +371,7 @@ func runValidationCases(t *testing.T, tests []validationCase) {
 // golang-jwt checks "aud" only when given an audience to expect, so an empty
 // effective list is a check that does not happen, and both a missing
 // deployment-wide list and `audiences: []` produce one.
-func TestLoadValidationAudience(t *testing.T) {
+func TestValidationAudience(t *testing.T) {
 	t.Parallel()
 
 	const k8sIssuerURL = `"https://kubernetes.default.svc.cluster.local"`
@@ -685,7 +380,7 @@ func TestLoadValidationAudience(t *testing.T) {
 		{
 			// No audiences key at all, so it cannot come from audiencesConfig.
 			name: "audiences absent",
-			yaml: "\n" + configHeader + `issuers:
+			yaml: "\n" + `issuers:
   - name: k8s
     issuer: "https://kubernetes.default.svc.cluster.local"
     jwks: {uri: "https://kubernetes.default.svc/openid/v1/jwks"}
@@ -735,8 +430,8 @@ func TestLoadValidationAudience(t *testing.T) {
 			wantErr: "contains a wildcard",
 		},
 		{
-			name: "audience equals an issuer declared later in the file",
-			yaml: "\n" + configHeader + `audiences: ["https://spire.example.com"]
+			name: "audience equals an issuer declared later in the list",
+			yaml: "\n" + `audiences: ["https://spire.example.com"]
 issuers:
   - name: k8s
     issuer: "https://k8s.example.com"
@@ -824,18 +519,18 @@ issuers:
 }
 
 // The issuer list and the discriminated keys block.
-func TestLoadValidationIssuersAndKeys(t *testing.T) {
+func TestValidationIssuersAndKeys(t *testing.T) {
 	t.Parallel()
 
 	runValidationCases(t, []validationCase{
 		{
 			name:    "issuers absent",
-			yaml:    configHeader + "audiences: [\"https://cwe.example.com\"]\n",
+			yaml:    "audiences: [\"https://cwe.example.com\"]\n",
 			wantErr: "issuers is required",
 		},
 		{
 			name: "issuers empty",
-			yaml: "\n" + configHeader + `audiences: ["https://cwe.example.com"]
+			yaml: "\n" + `audiences: ["https://cwe.example.com"]
 issuers: []
 `,
 			wantErr: "issuers is required",
@@ -858,7 +553,7 @@ issuers: []
 		},
 		{
 			name: "duplicate issuer name",
-			yaml: "\n" + configHeader + `audiences: ["https://cwe.example.com"]
+			yaml: "\n" + `audiences: ["https://cwe.example.com"]
 issuers:
   - name: k8s
     issuer: "https://k8s-a.example.com"
@@ -875,7 +570,7 @@ issuers:
 		},
 		{
 			name: "duplicate issuer url",
-			yaml: "\n" + configHeader + `audiences: ["https://cwe.example.com"]
+			yaml: "\n" + `audiences: ["https://cwe.example.com"]
 issuers:
   - name: k8s-a
     issuer: "https://k8s.example.com"
@@ -933,7 +628,7 @@ issuers:
 }
 
 // The signing-algorithm allow-list.
-func TestLoadValidationAlgorithms(t *testing.T) {
+func TestValidationAlgorithms(t *testing.T) {
 	t.Parallel()
 
 	runValidationCases(t, []validationCase{
@@ -993,7 +688,7 @@ func TestLoadValidationAlgorithms(t *testing.T) {
 }
 
 // The admission rules. An absent or empty admit block is a startup failure.
-func TestLoadValidationAdmit(t *testing.T) {
+func TestValidationAdmit(t *testing.T) {
 	t.Parallel()
 
 	runValidationCases(t, []validationCase{
@@ -1222,7 +917,7 @@ func TestIssuerEffectiveAudiences(t *testing.T) {
 func TestValidateDoesNotMutate(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := authn.Load(writeConfig(t, exampleConfig))
+	cfg, err := parseConfig(exampleConfig)
 	require.NoError(t, err)
 
 	before := *cfg.Issuers[1].Admit.SPIFFE

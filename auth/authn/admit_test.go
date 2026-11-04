@@ -314,7 +314,7 @@ func TestAdmitGroups(t *testing.T) {
 // The rule sets that must admit nobody, plus what a set carrying both rule kinds
 // does. The "both" case shows that a SPIFFE rule beside a service account rule
 // restricts nothing, which is why Admit.validate refuses the combination at
-// startup rather than why it is supported. See TestLoadValidationAdmit.
+// startup rather than why it is supported. See TestValidationAdmit.
 func TestAdmitDefaultDeny(t *testing.T) {
 	t.Parallel()
 
@@ -374,18 +374,18 @@ func TestUnparseableTrustDomainFailsAtStartupNotPerRequest(t *testing.T) {
 
 	admitted := "spiffe://example.org/nke-service/cloud-workflow-engine"
 
-	// The other unparseable spellings are TestLoadValidationAdmit's business; what
+	// The other unparseable spellings are TestValidationAdmit's business; what
 	// matters here is what admission does with one that got through.
 	const td = "EXAMPLE.ORG"
 
-	_, err := authn.Load(writeConfig(t, spiffeConfig(
-		`{trustDomain: "`+td+`", pathPrefixes: ["/nke-service/"]}`,
-	)))
+	_, err := parseConfig(spiffeConfig(
+		`{trustDomain: "` + td + `", pathPrefixes: ["/nke-service/"]}`,
+	))
 	require.Error(t, err, "an unparseable trust domain must be a startup failure")
 	assert.Contains(t, err.Error(), td, "the message has to name the value to fix")
 
 	// What it would do instead: no error, nobody admitted. Built directly,
-	// because Load refuses.
+	// because startup validation refuses it.
 	rule := &authn.Admit{SPIFFE: &authn.SPIFFERule{
 		TrustDomain:  td,
 		PathPrefixes: []string{"/nke-service/"},
@@ -408,12 +408,12 @@ func TestSlashPrefixesAcrossValidationAndAdmission(t *testing.T) {
 		t.Run("prefix "+strconv.Quote(prefix), func(t *testing.T) {
 			t.Parallel()
 
-			_, err := authn.Load(writeConfig(t, spiffeConfig(
-				`{trustDomain: example.org, pathPrefixes: ["`+prefix+`"]}`,
-			)))
+			_, err := parseConfig(spiffeConfig(
+				`{trustDomain: example.org, pathPrefixes: ["` + prefix + `"]}`,
+			))
 			require.Error(t, err, "an all-slash prefix must not survive startup")
 
-			// Built directly, because Load refuses to produce one. Only the
+			// Built directly, because startup validation refuses one. Only the
 			// deliberate "/" means the whole trust domain; everything else that
 			// trims to empty is a malformed rule and admits nobody.
 			rule := &authn.Admit{SPIFFE: &authn.SPIFFERule{

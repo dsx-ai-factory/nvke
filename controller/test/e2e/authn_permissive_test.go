@@ -55,8 +55,8 @@ var _ = Describe("NVKE API authentication in permissive mode", Ordered, Label("a
 		}
 		if mode == authnModeDisabled {
 			authnAbsentf(
-				"authentication is OFF: neither %s on Deployment %s/%s nor apiAuth.enabled in nvke-controller-config is set, so there is no middleware to put into permissive mode",
-				authnConfigPathEnv, controller.Namespace(), controller.Deployment(),
+				"authentication is OFF: apiAuth.enabled in %s/%s is false, so there is no middleware to put into permissive mode",
+				controller.Namespace(), nvke.ControllerConfigMap,
 			)
 		}
 
