@@ -265,6 +265,7 @@ func TestClientCheckListTenant(t *testing.T) {
 		{name: "enforcing, refused", mode: authn.ModeEnforcing, principal: inAcme, action: deniedAction, wantErr: authz.ErrNoCaller},
 		{name: "permissive, allowed", mode: authn.ModePermissive, principal: inAcme, action: allowedAction, wantAll: true},
 		{name: "permissive, refused", mode: authn.ModePermissive, principal: inAcme, action: deniedAction, wantAll: true},
+		{name: "permissive, no principal", mode: authn.ModePermissive, action: allowedAction, wantAll: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -28,7 +28,8 @@ func ContextWithCaller(ctx context.Context, c Caller) context.Context {
 }
 
 // CallerFromContext returns the authorized caller on ctx, and false if there
-// is none.
+// is none. A request a permissive Client let through may have none; see
+// Client.Check.
 func CallerFromContext(ctx context.Context) (Caller, bool) {
 	c, ok := ctx.Value(callerContextKey{}).(Caller)
 	return c, ok

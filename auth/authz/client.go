@@ -101,7 +101,10 @@ func NewClient(backend Authorizer, mode authn.Mode, logger *slog.Logger, record 
 //
 // In permissive mode, Check counts and logs the same outcome but never returns
 // an error. The context it returns carries the decision's Caller when that
-// Caller has a valid tenant, and makes ListTenant list every tenant.
+// Caller has a valid tenant, and makes ListTenant list every tenant. A refused
+// request may carry no Caller, such as one with no principal. Its lists still
+// hold every tenant, and an API that records an owner from the Caller leaves
+// the object unowned.
 //
 // A missing object gets ErrNotFound, the same answer a caller gets for another
 // tenant's object, so the caller can't tell the two apart. That holds for every
