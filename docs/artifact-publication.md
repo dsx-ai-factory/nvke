@@ -59,7 +59,7 @@ workflows below:
 | Tag | Workflow | What ships |
 |---|---|---|
 | `agent/vX.Y.Z` | `agent-deb-publish.yml` (+ `agent-artifact.yml`) | `.deb`s to the apt intake, GHCR binary and `.deb`, NVCR binary + `.deb`, S3/CloudFront `.deb` |
-| `os-image/vX.Y.Z` | `os-image-artifact.yml` | qcow2, SBOMs and `nvke-os-image-check` on NVCR and S3/CloudFront; version-tagged qcow2s on GHCR only when `NVKE_GITHUB_PUBLISH` names `os-image` |
+| `os-image/vX.Y.Z` | `os-image-artifact.yml` | qcow2s on NVCR; qcow2s with their SBOMs and checksums, and `nvke-os-image-check`, on S3/CloudFront; version-tagged qcow2s on GHCR only when `NVKE_GITHUB_PUBLISH` names `os-image` |
 | `nktp/vX.Y.Z` | `nktp-chart-publish.yml` | Helm chart on GHCR |
 | `cli/vX.Y.Z` | `tag-publish.yml` (+ `cli-artifact.yml`, `cli-artifact-nvcr.yml`, `cli-s3-publish.yml`) | binaries on GHCR, NVCR, S3/CloudFront |
 | `controller/vX.Y.Z` | `image-nvcr.yml`, `chart-publish.yml`, `chart-publish-nvcr.yml` | image and chart; see below |
@@ -170,8 +170,10 @@ the same chart artifact name used for the NVKE NVCR chart, and pushed to
 string without the leading `v`, while `appVersion` keeps the leading `v` so the
 rendered Deployment pulls the same image tag promoted by `image-nvcr.yml`.
 
-Push tags to `upstream`. `tag-publish.yml` has no repository guard, so a tag
-pushed to a fork runs its publishers there.
+Push tags to `upstream`. A tag pushed to a fork still starts `tag-publish.yml`
+there, which runs the license checks (and, for a `cli/` tag, builds nvkectl),
+but publishes nothing: every publisher guards its publish jobs on this
+repository's ID.
 
 ### 2. Verify artifacts
 

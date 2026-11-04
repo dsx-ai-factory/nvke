@@ -14,7 +14,7 @@ scripting them; the right commands depend on your image.
 
 ## Cloud-Init Example
 
-Below is a complete cloud-init configuration for bootstrapping a tier-0 cluster on a custom base OS. This installs Kubernetes components, `nvke-agent`, and `nvkectl`, then runs the bootstrap on first boot.
+Below is a complete cloud-init configuration for bootstrapping a tier-0 cluster on a custom base OS. This installs Kubernetes components and `nvke-agent`, then runs the bootstrap on first boot. It does not install `nvkectl`: build it from source and place it on the bootstrap host's `PATH` before first boot, for example in your image.
 
 ```yaml
 #cloud-config
@@ -101,10 +101,11 @@ autoinstall:
       # clusterctl here. nvkectl checks for nerdctl before it starts; a missing kind
       # fails pre-flight, and helm, kubectl or clusterctl fail mid-bootstrap.
 
-      # Install nvkectl (bootstrap host only). It is not published as a
-      # download: build it from a checkout with `make -C cli build`, cli/v0.2.0
-      # or later (earlier releases do not take --nvke-controller-image), and
-      # copy cli/bin/nvkectl onto the host, for example with write_files.
+      # nvkectl must already be on PATH (bootstrap host only). It is not
+      # published as a download and this config does not install it: build it
+      # from a checkout with `make -C cli build`, cli/v0.2.0 or later (earlier
+      # releases do not take --nvke-controller-image), and put cli/bin/nvkectl
+      # in the host's image.
 
       # Run bootstrap (bootstrap host only). --disable-mtls matches the plaintext
       # agents configured above; this is the development-only mode, not a
@@ -123,7 +124,7 @@ finished and delete it from the host. See
 
 - **Kubernetes Installation**: Adds the Kubernetes apt repository and installs kubelet, kubeadm, and kubectl. Marks packages held to prevent automatic upgrades.
 - **nvke-agent**: Installed from the NVKE apt repository; configured with `--disable-mtls` and `--secure-server-port 15005` for pre-provisioned node bootstrap.
-- **nvkectl**: Install it only on the **bootstrap host**, together with its container runtime and CLI dependencies. It is run with `--disable-mtls` to match the agents, and with the two image flags set. Omit the nvkectl download and bootstrap commands on other nodes.
+- **nvkectl**: Install it only on the **bootstrap host**, together with its container runtime and CLI dependencies. It is run with `--disable-mtls` to match the agents, and with the two image flags set. Leave `nvkectl` and the bootstrap command off other nodes.
 
 > **Plaintext mode is development only.** With `--disable-mtls` on both sides there is no SPIRE and no attestation. For the attested path — `spire-agent` on every node, a TPM EK thumbprint per host, a SPIRE CA from `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE` — follow [Your First Cluster, Real Site](../first-cluster.md#real-site).
 
@@ -135,10 +136,10 @@ finished and delete it from the host. See
 | nvke-agent | ✓ | ✓ |
 | nerdctl, kind, helm, clusterctl | ✓ | ✗ |
 | `/etc/nvkectl/sitespec.yaml` | ✓ | ✗ |
-| `nvkectl` download + bootstrap run | ✓ | ✗ |
+| `nvkectl` binary + bootstrap run | ✓ | ✗ |
 
-On other nodes, omit the `write_files` section and the last two `runcmd` lines
-(the nvkectl download and bootstrap run).
+On other nodes, omit the `write_files` section and the last `runcmd` line
+(the bootstrap run).
 
 ## Customizing
 

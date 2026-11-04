@@ -507,8 +507,8 @@ make run-vm QCOW=packer/output-non-fde/nvke-node-non-fde-ubuntu-26.04.1-arm64.qc
 An `os-image/vX.Y.Z` tag (or `os-image/vX.Y.Z-rc.N`) runs
 `.github/workflows/os-image-artifact.yml`, which builds and validates the FDE
 and non-FDE images for both architectures and, only if that succeeds, publishes
-the qcow2s to NVCR and S3, each with its SBOM and checksums beside it, and
-`nvke-os-image-check` to S3. GHCR
+the qcow2s to NVCR, and to S3 with each one's SBOM and checksums beside it
+and `nvke-os-image-check`. GHCR
 gets them as OCI artifacts under arch-suffixed `sha-<commit>` tags
 (`main-sha-<commit>` from a run on `main`) — not one multi-platform manifest
 shared across arches, see the workflow's header comment for why. The version
