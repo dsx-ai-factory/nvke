@@ -102,9 +102,10 @@ func (b *fakeBackend) isolate(c authz.Caller, r authz.Resource) authz.Outcome {
 	}
 	cross := refusal == authz.OutcomeNotFound
 	letThrough := map[string]bool{
-		"prefix match":            cross && strings.HasPrefix(r.Tenant, c.Tenant),
-		"isolation for acme only": cross && c.Tenant != "acme",
-		"list without a tenant":   refusal == authz.OutcomeNoTenant && r.Scope == authz.ScopeList,
+		"prefix match":                    cross && strings.HasPrefix(r.Tenant, c.Tenant),
+		"isolation for acme only":         cross && c.Tenant != "acme",
+		"list without a tenant":           refusal == authz.OutcomeNoTenant && r.Scope == authz.ScopeList,
+		"unowned object for every tenant": cross && r.Scope == authz.ScopeObject && r.Tenant == "",
 	}
 	if letThrough[b.broken] {
 		return ""
@@ -166,6 +167,7 @@ func TestSuiteCatchesBrokenBackends(t *testing.T) {
 		"prefix match",
 		"isolation for acme only",
 		"list without a tenant",
+		"unowned object for every tenant",
 		"operator from any issuer",
 		"operator needs no tenant",
 		"operator reports the resource's tenant",

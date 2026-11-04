@@ -25,22 +25,23 @@ type Caller struct {
 	// Tenant is the caller's tenant ID. Empty if the caller has none.
 	Tenant string
 
-	// Operator lets the caller act in any tenant. The caller still needs a
-	// valid tenant of its own.
+	// Operator lets the caller act in any tenant and on an object with no
+	// owner. The caller still needs a valid tenant of its own.
 	Operator bool
 }
 
 // CheckIsolation is the isolation check every backend shares. A backend calls
-// it before any policy, so no policy can allow a cross-tenant request. It
-// returns the refusing outcome, or "" if the request may go on to policy:
+// it before any policy, so no policy can allow a cross-tenant request, or one
+// for an object with no owner. It returns the refusing outcome, or "" if the
+// request may go on to policy:
 //
 //   - A caller whose tenant ID is set and invalid gets OutcomeNoTenant, even
 //     for a global resource, so a malformed ID never reaches policy.
 //   - ScopeGlobal needs no tenant.
 //   - A caller with no tenant gets OutcomeNoTenant.
-//   - An operator may act in any tenant.
+//   - An operator may act in any tenant and on an object with no owner.
 //   - Anyone else gets OutcomeNotFound for an object or create in another
-//     tenant, compared byte for byte.
+//     tenant, compared byte for byte, and for an object with no owner.
 //
 // It also returns OutcomeNotFound for a Resource whose Tenant doesn't fit its
 // Scope, so a backend called without the Client still refuses it.
@@ -56,6 +57,8 @@ func CheckIsolation(c Caller, r Resource) Outcome {
 		return OutcomeNoTenant
 	case c.Operator:
 		return ""
+	case r.Scope == ScopeObject && r.Tenant == "":
+		return OutcomeNotFound
 	case r.Tenant != "" && r.Tenant != c.Tenant:
 		return OutcomeNotFound
 	default:

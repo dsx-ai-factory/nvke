@@ -77,12 +77,6 @@ func TestCheckIsolation(t *testing.T) {
 			want:     authz.OutcomeNoTenant,
 		},
 		{
-			name:     "an object with no owning tenant",
-			caller:   inA,
-			resource: authz.Resource{Type: "Cluster", ID: "2", Scope: authz.ScopeObject},
-			want:     authz.OutcomeNotFound,
-		},
-		{
 			name:     "a global resource naming a tenant",
 			caller:   inA,
 			resource: authz.Resource{Type: "Cluster", ID: "2", Scope: authz.ScopeGlobal, Tenant: "b"},
