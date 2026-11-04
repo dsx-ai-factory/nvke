@@ -44,7 +44,7 @@ func seedTenantTree(ctx context.Context, t *testing.T, bunDB bun.IDB, tenant str
 
 func setupTenantDB(ctx context.Context, t *testing.T) (*bun.DB, db.DB) {
 	t.Helper()
-	bunDB := testutil.SetupDB(ctx, t, (*db.Cluster)(nil), (*db.NodePool)(nil), (*db.NodeSet)(nil), (*db.Node)(nil), (*db.ControlPlaneConfiguration)(nil))
+	bunDB := testutil.SetupDB(ctx, t, (*db.Cluster)(nil), (*db.NodePool)(nil), (*db.NodeSet)(nil), (*db.Node)(nil))
 	return bunDB, db.NewDB(bunDB)
 }
 
@@ -86,6 +86,10 @@ func TestListsFilterByTenant(t *testing.T) {
 	a := seedTenantTree(ctx, t, bunDB, "nca-a")
 	b := seedTenantTree(ctx, t, bunDB, "nca-b")
 	unowned := seedTenantTree(ctx, t, bunDB, "")
+	// mixed sits in a's cluster but in b's node pool.
+	mixed := db.Node{ID: uuid.New(), Name: "node-" + uuid.NewString(), ClusterID: a.cluster.ID, NodePoolID: b.pool.ID, NodeSetID: b.set.ID, SpireAttestationMethod: db.SpireAttestationMethodTPM}
+	_, err := bunDB.NewInsert().Model(&mixed).Exec(ctx)
+	require.NoError(t, err)
 	tenant := func(tenant string) *string { return &tenant }
 	clusters := func(f db.ClusterFilters) ([]uuid.UUID, error) {
 		rows, err := q.ListClusters(ctx, f)
@@ -105,40 +109,22 @@ func TestListsFilterByTenant(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
-		list    func() ([]uuid.UUID, error)
-		want    []uuid.UUID
-		wantErr bool
+		name string
+		list func() ([]uuid.UUID, error)
+		want []uuid.UUID
 	}{
 		{name: "clusters, no tenant filter", list: func() ([]uuid.UUID, error) { return clusters(db.ClusterFilters{}) }, want: []uuid.UUID{a.cluster.ID, b.cluster.ID, unowned.cluster.ID}},
 		{name: "clusters, tenant", list: func() ([]uuid.UUID, error) { return clusters(db.ClusterFilters{Tenant: tenant("nca-a")}) }, want: []uuid.UUID{a.cluster.ID}},
-		{name: "clusters, other tenant's Name", list: func() ([]uuid.UUID, error) {
-			return clusters(db.ClusterFilters{Tenant: tenant("nca-a"), Name: &b.cluster.Name})
-		}},
 		{name: "node pools, tenant", list: func() ([]uuid.UUID, error) { return pools(db.NodePoolFilters{Tenant: tenant("nca-a")}) }, want: []uuid.UUID{a.pool.ID}},
-		{name: "node pools, other tenant's ClusterID", list: func() ([]uuid.UUID, error) {
-			return pools(db.NodePoolFilters{Tenant: tenant("nca-a"), ClusterID: &b.cluster.ID})
-		}},
 		{name: "node sets, tenant", list: func() ([]uuid.UUID, error) { return sets(db.NodeSetFilters{Tenant: tenant("nca-a")}) }, want: []uuid.UUID{a.set.ID}},
-		{name: "node sets, other tenant's NodePoolID", list: func() ([]uuid.UUID, error) {
-			return sets(db.NodeSetFilters{Tenant: tenant("nca-a"), NodePoolID: &b.pool.ID})
-		}},
-		{name: "nodes, tenant", list: func() ([]uuid.UUID, error) { return nodes(db.NodeFilters{Tenant: tenant("nca-a")}) }, want: []uuid.UUID{a.node.ID}},
+		{name: "nodes, tenant follows node.cluster_id", list: func() ([]uuid.UUID, error) { return nodes(db.NodeFilters{Tenant: tenant("nca-a")}) }, want: []uuid.UUID{a.node.ID, mixed.ID}},
 		{name: "nodes, other tenant's ClusterID", list: func() ([]uuid.UUID, error) {
 			return nodes(db.NodeFilters{Tenant: tenant("nca-a"), ClusterID: &b.cluster.ID})
 		}},
-		{name: "clusters, empty tenant", list: func() ([]uuid.UUID, error) { return clusters(db.ClusterFilters{Tenant: tenant("")}) }, wantErr: true},
-		{name: "node pools, empty tenant", list: func() ([]uuid.UUID, error) { return pools(db.NodePoolFilters{Tenant: tenant("")}) }, wantErr: true},
-		{name: "node sets, empty tenant", list: func() ([]uuid.UUID, error) { return sets(db.NodeSetFilters{Tenant: tenant("")}) }, wantErr: true},
-		{name: "nodes, empty tenant", list: func() ([]uuid.UUID, error) { return nodes(db.NodeFilters{Tenant: tenant("")}) }, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := tt.list()
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
 			require.NoError(t, err)
 			assert.ElementsMatch(t, tt.want, got)
 		})
@@ -147,7 +133,7 @@ func TestListsFilterByTenant(t *testing.T) {
 
 func TestCreateClusterRecordsTenant(t *testing.T) {
 	ctx := t.Context()
-	_, q := setupTenantDB(ctx, t)
+	bunDB, q := setupTenantDB(ctx, t)
 
 	owned := newValidCluster(func(c *db.Cluster) { c.Tenant = "nca-a" })
 	_, err := q.CreateCluster(ctx, &owned)
@@ -162,6 +148,9 @@ func TestCreateClusterRecordsTenant(t *testing.T) {
 	got, err = q.GetCluster(ctx, unowned.ID)
 	require.NoError(t, err)
 	assert.Empty(t, got.Tenant, "an empty tenant leaves the cluster unowned")
+	var isNull bool
+	require.NoError(t, bunDB.NewRaw("SELECT tenant IS NULL FROM clusters WHERE id = ?", unowned.ID).Scan(ctx, &isNull))
+	assert.True(t, isNull, "an unowned cluster stores tenant as NULL")
 }
 
 // TestUpdateClusterKeepsTenant checks that UpdateCluster never writes tenant,

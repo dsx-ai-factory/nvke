@@ -389,12 +389,9 @@ func (q *queriesImpl) ListNodes(ctx context.Context, filters NodeFilters) ([]Nod
 		query = whereNodeConditionStatus(query, "teleportRegistered", *filters.TeleportRegistered)
 	}
 	if filters.Tenant != nil {
-		// Join clusters again on node.cluster_id alone, matching GetNodeTenant;
-		// c resolves through the node pool and can differ.
-		var err error
-		if query, err = whereTenant(query.Join("JOIN clusters tc ON tc.id = node.cluster_id"), "tc", filters.Tenant); err != nil {
-			return nil, err
-		}
+		// Join clusters on node.cluster_id, as GetNodeTenant does. c resolves
+		// through the node pool and can differ.
+		query = whereTenant(query.Join("JOIN clusters tc ON tc.id = node.cluster_id"), "tc", filters.Tenant)
 	}
 	if filters.Pending != nil {
 		query = whereNodeConditionStatus(query, "pending", *filters.Pending)

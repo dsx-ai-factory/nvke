@@ -22,17 +22,13 @@ type TenantQueries interface {
 	GetNodeTenant(ctx context.Context, id uuid.UUID) (string, error)
 }
 
-// whereTenant limits query to rows whose cluster, aliased alias, tenant owns.
-// A nil tenant leaves query unchanged. An empty tenant is an error, and an
-// unowned cluster matches no tenant.
-func whereTenant(query *bun.SelectQuery, alias string, tenant *string) (*bun.SelectQuery, error) {
+// whereTenant keeps rows whose cluster, joined as alias, the tenant owns. A nil
+// tenant leaves query unchanged. An unowned cluster matches no tenant.
+func whereTenant(query *bun.SelectQuery, alias string, tenant *string) *bun.SelectQuery {
 	if tenant == nil {
-		return query, nil
+		return query
 	}
-	if *tenant == "" {
-		return nil, errors.New("tenant filter is empty")
-	}
-	return query.Where("?.tenant = ?", bun.Ident(alias), *tenant), nil
+	return query.Where("?.tenant = ?", bun.Ident(alias), *tenant)
 }
 
 func (q *queriesImpl) GetClusterTenant(ctx context.Context, id uuid.UUID) (string, error) {
@@ -66,5 +62,8 @@ func scanTenant(ctx context.Context, query *bun.SelectQuery) (string, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrNotFound
 	}
-	return tenant.String, err
+	if err != nil {
+		return "", err
+	}
+	return tenant.String, nil
 }

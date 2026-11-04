@@ -634,12 +634,9 @@ func (q *queriesImpl) ListClusters(ctx context.Context, filters ClusterFilters) 
 	if filters.SiteID != nil {
 		query = query.Where("nico->>'site_id' = ?", filters.SiteID.String())
 	}
-	query, err := whereTenant(query, "cluster", filters.Tenant)
-	if err != nil {
-		return nil, err
-	}
+	query = whereTenant(query, "cluster", filters.Tenant)
 
-	err = query.Scan(ctx)
+	err := query.Scan(ctx)
 	if err != nil {
 		return nil, err
 	}

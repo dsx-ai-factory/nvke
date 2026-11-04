@@ -24,6 +24,6 @@ func init() {
 		}
 		return nil
 	}, func(context.Context, *bun.DB) error {
-		return fmt.Errorf("down migration not supported")
+		return fmt.Errorf("down migration not implemented")
 	})
 }

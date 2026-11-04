@@ -396,12 +396,9 @@ func (q *queriesImpl) ListNodePools(ctx context.Context, filters NodePoolFilters
 	if filters.ClusterName != nil {
 		query = query.Where("c.name = ?", filters.ClusterName)
 	}
-	query, err := whereTenant(query, "c", filters.Tenant)
-	if err != nil {
-		return nil, err
-	}
+	query = whereTenant(query, "c", filters.Tenant)
 
-	err = query.Scan(ctx)
+	err := query.Scan(ctx)
 	return nodePools, err
 }
 
