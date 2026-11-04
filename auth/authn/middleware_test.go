@@ -675,3 +675,100 @@ func TestMiddlewareRejectionLogIsBounded(t *testing.T) {
 		}
 	}
 }
+
+// TestMiddlewareNeverLogsTheToken sends a known token down every rejection
+// path, in both modes, and checks that no 16-byte window of it reaches the log.
+func TestMiddlewareNeverLogsTheToken(t *testing.T) {
+	t.Parallel()
+
+	notAJWT := func(*testing.T, fixture) string { return "secret-credential-not-a-jwt" }
+
+	tests := []struct {
+		name         string
+		token        func(*testing.T, fixture) string
+		headerSuffix string
+		prepare      func(fixture)
+		wantReason   auth.FailureReason
+	}{
+		{name: "a bearer header with an extra field", token: admittedToken, headerSuffix: " extra", wantReason: auth.ReasonNoToken},
+		{name: "a string that is not a JWT", token: notAJWT, wantReason: auth.ReasonBadSignature},
+		{name: "a forged signature", token: forgedToken, wantReason: auth.ReasonBadSignature},
+		{
+			name:       "a kid no source serves",
+			token:      spoiled(func(_ fixture, spec *TokenSpec) { spec.KeyID = "no-such-kid" }),
+			wantReason: auth.ReasonBadSignature,
+		},
+		{name: "an unknown issuer", token: unknownIssuerToken, wantReason: auth.ReasonUnknownIssuer},
+		{
+			name:       "a disallowed algorithm",
+			token:      spoiled(func(f fixture, spec *TokenSpec) { spec.Key = f.elliptic }),
+			wantReason: auth.ReasonAlgorithmNotAllowed,
+		},
+		{name: "an expired token", token: expiredToken, wantReason: auth.ReasonExpired},
+		{
+			name: "a token not yet valid",
+			token: spoiled(func(_ fixture, spec *TokenSpec) {
+				spec.NotBefore = At(time.Now().Add(time.Hour))
+			}),
+			wantReason: auth.ReasonNotYetValid,
+		},
+		{name: "the wrong audience", token: wrongAudienceToken, wantReason: auth.ReasonAudienceMismatch},
+		{
+			name:       "a stale key set",
+			token:      admittedToken,
+			prepare:    func(f fixture) { f.k8sKeys.Err = auth.ErrKeysStale },
+			wantReason: auth.ReasonJWKSStale,
+		},
+		{name: "a service account not admitted", token: unadmittedToken, wantReason: auth.ReasonNotAdmitted},
+	}
+
+	for _, tt := range tests {
+		for _, mode := range []auth.Mode{auth.ModeEnforcing, auth.ModePermissive} {
+			t.Run(tt.name+", "+string(mode), func(t *testing.T) {
+				t.Parallel()
+
+				var log bytes.Buffer
+				f := newFixture(t)
+				if tt.prepare != nil {
+					tt.prepare(f)
+				}
+				recorder := &callRecorder{}
+				authn, err := auth.NewAuthenticator(f.verifier, mode,
+					slog.New(slog.NewJSONHandler(&log, &slog.HandlerOptions{Level: slog.LevelDebug})), recorder.Record)
+				require.NoError(t, err)
+
+				token := tt.token(t, f)
+				req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, probePath, http.NoBody)
+				req.Header.Set("Authorization", "Bearer "+token+tt.headerSuffix)
+				authn.Wrap(&spyHandler{}).ServeHTTP(httptest.NewRecorder(), req)
+
+				calls := recorder.Calls()
+				require.Len(t, calls, 1)
+				require.Equal(t, tt.wantReason, calls[0].Reason, "the request took a different path")
+				require.NotZero(t, log.Len(), "the rejection wasn't logged")
+				assertTokenNotLogged(t, log.String(), token)
+			})
+		}
+	}
+}
+
+// assertTokenNotLogged fails if any 16 consecutive bytes of token appear in log.
+func assertTokenNotLogged(t *testing.T, log, token string) {
+	t.Helper()
+	const window = 16
+	if len(token) <= window {
+		assert.NotContains(t, log, token)
+		return
+	}
+	for start := 0; start+window <= len(token); start++ {
+		assert.NotContains(t, log, token[start:start+window], "the log holds the token's bytes %d to %d", start, start+window)
+	}
+}
+
+// spoiled returns a minter for a Kubernetes token that spoil changes.
+func spoiled(spoil func(fixture, *TokenSpec)) func(*testing.T, fixture) string {
+	return func(t *testing.T, f fixture) string {
+		t.Helper()
+		return mintSpoiled(t, f, spoil)
+	}
+}

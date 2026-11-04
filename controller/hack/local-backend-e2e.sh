@@ -353,7 +353,7 @@ fi
 local_e2e_providers="${LOCAL_NKE_E2E_PROVIDERS:-${E2E_CAPD_PROVIDERS}}"
 e2e_write_tilt_config "${tilt_config}" \
   "${local_e2e_providers}" \
-  "${LOCAL_CWE_IMAGE:-}" "${management_vip}" "${BGP_CONTAINER_NAME:-bgp-containers}"
+  "${LOCAL_NVKE_CONTROLLER_IMAGE:-}" "${management_vip}" "${BGP_CONTAINER_NAME:-bgp-containers}"
 tilt_config_staged=true
 
 # `|` makes go fall back to a direct fetch on any proxy error; the default

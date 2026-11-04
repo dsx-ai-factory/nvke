@@ -131,12 +131,12 @@ not the authentication specs, which build their own token per case.
 | Variable | Description | Default |
 | --- | --- | --- |
 | `KUBECONFIG` | Kubeconfig used to reach the management cluster (clientcmd default loading rules). | Unset (falls back to in-cluster configuration) |
-| `NVKE_CONTROLLER_NAMESPACE` | Namespace containing the controller. The old names `NKE_CONTROLLER_NAMESPACE` and `CWE_NAMESPACE` are deprecated and still read when this is unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes them. | `nvke-controller` |
-| `NVKE_CONTROLLER_SERVICE` | Controller Service whose backing pod is port-forwarded to; also the name of its Deployment, container and ServiceAccount. The old names `NKE_CONTROLLER_SERVICE` and `CWE_SERVICE` are deprecated and still read when this is unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes them. | `nvke-controller` |
-| `NVKE_CONTROLLER_SERVICE_PORT` | Controller Service port, by name or number; the pod-side port is resolved from its `targetPort`. The old names `NKE_CONTROLLER_SERVICE_PORT` and `CWE_SERVICE_PORT` are deprecated and still read when this is unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes them. | `8080` |
-| `NVKE_CONTROLLER_EXPECTED_VERSION` | Required controller version; when unset, the version spec is skipped. The old names `NKE_CONTROLLER_EXPECTED_VERSION` and `CWE_EXPECTED_VERSION` are deprecated and still read when this is unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes them. | Unset |
+| `NVKE_CONTROLLER_NAMESPACE` | Namespace containing the controller. | `nvke-controller` |
+| `NVKE_CONTROLLER_SERVICE` | Controller Service whose backing pod is port-forwarded to; also the name of its Deployment, container and ServiceAccount. | `nvke-controller` |
+| `NVKE_CONTROLLER_SERVICE_PORT` | Controller Service port, by name or number; the pod-side port is resolved from its `targetPort`. | `8080` |
+| `NVKE_CONTROLLER_EXPECTED_VERSION` | Required controller version; when unset, the version spec is skipped. | Unset |
 | `NVKE_E2E_REQUIRE_EXPECTED_VERSION` | When true, an unset `NVKE_CONTROLLER_EXPECTED_VERSION` fails the version spec instead of skipping it. The validation image sets it. | Unset |
-| `NVKE_CONTROLLER_HEALTH_TIMEOUT` | Per-spec context timeout. The old names `NKE_CONTROLLER_HEALTH_TIMEOUT` and `CWE_HEALTH_TIMEOUT` are deprecated and still read when this is unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes them. | `60s` |
+| `NVKE_CONTROLLER_HEALTH_TIMEOUT` | Per-spec context timeout. | `60s` |
 | `NKE_E2E_AUTH_DISABLE` | Turns the token source off, so the suite sends no `Authorization` header. Against an enforcing NVKE every spec then fails with 401. | Unset |
 | `NKE_E2E_AUDIENCE` | Overrides the audience the suite mints for. Normally discovered in `NVKE_CONTROLLER_NAMESPACE`: from `apiAuth` in the controller's settings ConfigMap (`nvke-controller-config`, or `nke-controller-config` on a site that pins the older name) when that section is enabled, otherwise from the authentication ConfigMap (`nvke-auth-config`, or `nke-auth-config`). | Discovered |
 | `NKE_E2E_TOKEN_NAMESPACE` | Namespace of the service account the suite presents. | `nke-clients` |
@@ -606,10 +606,7 @@ fleet releases (NodePoolReleases that are not deprecated, and the
 MachineImages they reference), which is maintained outside this repository.
 If `NVKE_CONTROLLER_RELEASES_DIR` is set, it is used exclusively and must
 contain at least one YAML release manifest. A missing or empty explicit
-directory causes suite initialization to fail. The old name
-`NKE_CONTROLLER_RELEASES_DIR` is deprecated and still read when the new one is
-unset, until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399)
-removes it.
+directory causes suite initialization to fail.
 
 When the variable is unset, releases are resolved in this order:
 

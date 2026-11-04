@@ -337,8 +337,8 @@ func assetsInstalling(t *testing.T, deployPath, name string) string {
 func TestCheckControllerName(t *testing.T) {
 	deployPath := CurrentLayout().DeployPath
 	for _, env := range []string{
-		controller.EnvNamespace, controller.PreviousEnvNamespace, controller.LegacyEnvNamespace,
-		controller.EnvService, controller.PreviousEnvService, controller.LegacyEnvService,
+		controller.EnvNamespace,
+		controller.EnvService,
 	} {
 		t.Setenv(env, "")
 	}

@@ -238,19 +238,19 @@ kubectl get deployment nvke-controller -n nvke-controller -o jsonpath='{.spec.te
 
 ## Management-plane install
 
-The install stops at the component that failed. Fix the cause and run the same command again, as described in [Run NVKE end to end on one machine](../get-started/local-site.md).
+The install stops at the component that failed. Fix the cause and run the same command again, as described in [Run the install again](install-management-plane.md#run-the-install-again).
 
 ### The stack config is not ready
 
 - **Symptom:** The install stops with `stack config <FILE>:` followed by one line per problem, such as `nico.endpoint: still a REPLACE_* placeholder; fill it in` or `environment: NVKECTL_NICO_TOKEN is not set`.
 - **Cause:** A value in the stack config is still a `REPLACE_*` placeholder, a required key is empty, the file carries a key it must not, or one of the `NVKECTL_*` variables is not exported in the shell you run from.
-- **Fix:** Edit the key or export the variable as described in [Run NVKE end to end on one machine](../get-started/local-site.md), then run the check again until the stack config passes.
+- **Fix:** Edit the key or export the variable as described in [Set the install inputs](install-management-plane.md#set-the-install-inputs), then run the check again until the stack config passes.
 
 ### The install refuses the release
 
 - **Symptom:** The install stops before it changes the cluster with `<ITEM>: <ROLE> <ARTIFACT> is not in the release`, for example for `controller-profiles` or `capnico-controller`.
 - **Cause:** The release description does not carry an artifact that the deploy path names, for the management nodes' CPU architecture.
-- **Fix:** Use a release that carries the artifact, or install without `--release` and name the images in the stack config's `images`, as described in [Run NVKE end to end on one machine](../get-started/local-site.md).
+- **Fix:** Use a release that carries the artifact, or install without `--release` and name the images in the stack config's `images`, as described in [Set the install inputs](install-management-plane.md#set-the-install-inputs).
 
 ### A volume claim stays Pending
 
@@ -330,7 +330,7 @@ The install stops at the component that failed. Fix the cause and run the same c
 
 - **Symptom:** Nodes do not progress, and the management-plane log contains `resolving release "<NAME>"`.
 - **Cause:** The control plane must name an existing cluster release and each node pool an existing node pool release.
-- **Fix:** Check the names with `nvkectl get clusterreleases` and `nvkectl get nodepoolreleases`. Apply the missing releases as in [Run NVKE end to end on one machine](../get-started/local-site.md), or delete the cluster and create it again with names that exist.
+- **Fix:** Check the names with `nvkectl get clusterreleases` and `nvkectl get nodepoolreleases`. Create the missing releases as in [Register the image for provisioning](build-node-images.md#create-the-objects-on-the-management-cluster), or delete the cluster and create it again with names that exist.
 
 ### The cluster shows ProvisioningFailed
 

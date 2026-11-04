@@ -214,18 +214,7 @@ CAPI_PROVISIONED_IMAGE ?= cluster-api-provider-provisioned:latest
 # The tags below are the defaults `bootstrap site` uses when neither the image
 # flags nor NVKECTL_NVKE_CONTROLLER_IMAGE / NVKECTL_CAPI_PROVISIONED_IMAGE name an image; the
 # bootstrap manifest pins them.
-# CONTROLLER_IMAGE is the tag `images` gives the controller image. CWE_IMAGE
-# is its deprecated name. When CONTROLLER_IMAGE is unset or empty and
-# CWE_IMAGE is set, `images` uses CWE_IMAGE and make prints a warning. When
-# both are set, CONTROLLER_IMAGE wins and there is no warning. `override` is
-# needed because an empty CONTROLLER_IMAGE= on the command line otherwise
-# blocks the assignment. #1399 removes CWE_IMAGE support.
-ifneq ($(CWE_IMAGE),)
-ifeq ($(CONTROLLER_IMAGE),)
-$(warning CWE_IMAGE is deprecated and #1399 removes it; set CONTROLLER_IMAGE instead)
-override CONTROLLER_IMAGE := $(CWE_IMAGE)
-endif
-endif
+# CONTROLLER_IMAGE is the tag `images` gives the controller image.
 CONTROLLER_IMAGE ?= nke-controller:latest
 
 # Set by cli/e2e/bootstrap/run.sh to point the images' Docker Hub bases at a

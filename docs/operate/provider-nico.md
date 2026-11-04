@@ -29,7 +29,7 @@ export KUBECONFIG=$PWD/<CLUSTER_NAME>.kubeconfig
    nvkectl get providers
    ```
 
-   The `nico` row reads `CONFIGURED`: the CAPNICo custom resource definitions (CRDs) are established, the CAPNICo controller is available and the `nico-credentials` Secret exists. `CREDENTIALS` reads `UNSUPPORTED`; see the note after these steps. `NOT-INSTALLED` or `NOT-CONFIGURED` means the install did not complete; run it again as described in [Run NVKE end to end on one machine](../get-started/local-site.md). `DEGRADED` means the CAPNICo controller is not available; check the `controller-manager` Deployment in `capnico-system`. `UNKNOWN` usually means the kubeconfig that `nvkectl` uses cannot read Secrets in `capnico-system`.
+   The `nico` row reads `CONFIGURED`: the CAPNICo custom resource definitions (CRDs) are established, the CAPNICo controller is available and the `nico-credentials` Secret exists. `CREDENTIALS` reads `UNSUPPORTED`; see the note after these steps. `NOT-INSTALLED` or `NOT-CONFIGURED` means the install did not complete; run it again as described in [Run the install again](install-management-plane.md#run-the-install-again). `DEGRADED` means the CAPNICo controller is not available; check the `controller-manager` Deployment in `capnico-system`. `UNKNOWN` usually means the kubeconfig that `nvkectl` uses cannot read Secrets in `capnico-system`.
 
    With API authentication on, this command fails. Check CAPNICo with `kubectl` instead:
 
@@ -111,7 +111,7 @@ The management plane holds no site-wide NICo settings. Each workload cluster req
 | `sshKeyGroupIDs` | Control plane and node pool `nico` | Optional. SSH key groups for node access. |
 | `infinibandPartitionID`, `nvLinkLogicalPartitionID` | Node pool `nico` | Optional. An InfiniBand partition and an NVLink logical partition. Fixed when the node pool is created. |
 
-The `orgID`, `siteID` and `vpcID` of a cluster are fixed when the cluster is created. The control plane and each node pool select one of the releases you applied in [Run NVKE end to end on one machine](../get-started/local-site.md) with `nico.release` and, optionally, a config profile with `nico.configProfile`. [Create a workload cluster](../workload-clusters/create.md) shows a full request.
+The `orgID`, `siteID` and `vpcID` of a cluster are fixed when the cluster is created. The control plane and each node pool select one of the releases you created in [Register the image for provisioning](build-node-images.md#create-the-objects-on-the-management-cluster) with `nico.release` and, optionally, a config profile with `nico.configProfile`. [Create a workload cluster](../workload-clusters/create.md) shows a full request.
 
 ## Verify
 

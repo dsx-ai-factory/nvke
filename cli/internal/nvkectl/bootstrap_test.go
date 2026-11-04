@@ -1108,49 +1108,6 @@ func TestMakefileImageTagsMatchTheManifest(t *testing.T) {
 	}
 }
 
-// TestMakefileControllerImageFallsBackToTheOldName drives `make -n images`:
-// CONTROLLER_IMAGE wins, CWE_IMAGE is used with a warning when
-// CONTROLLER_IMAGE is unset or empty, from the environment or the command
-// line, and neither gives the manifest default. #1399 removes CWE_IMAGE and
-// this test with it.
-func TestMakefileControllerImageFallsBackToTheOldName(t *testing.T) {
-	makeBin, err := exec.LookPath("make")
-	if err != nil {
-		t.Skip("make is not on PATH")
-	}
-	const warning = "CWE_IMAGE is deprecated"
-	for _, tc := range []struct {
-		desc      string
-		env, args []string
-		wantTag   string
-		wantWarn  bool
-	}{
-		{"neither", nil, nil, "nke-controller:latest", false},
-		{"new name", nil, []string{"CONTROLLER_IMAGE=new:1"}, "new:1", false},
-		{"old name from the environment", []string{"CWE_IMAGE=old:1"}, nil, "old:1", true},
-		{"old name on the command line", nil, []string{"CWE_IMAGE=old:1"}, "old:1", true},
-		{"both names", []string{"CWE_IMAGE=old:1"}, []string{"CONTROLLER_IMAGE=new:1"}, "new:1", false},
-		{"old name with the new one empty on the command line", []string{"CWE_IMAGE=old:1"}, []string{"CONTROLLER_IMAGE="}, "old:1", true},
-	} {
-		t.Run(tc.desc, func(t *testing.T) {
-			cmd := exec.Command(makeBin, append([]string{"-n", "-C", filepath.Join("..", ".."), "images"}, tc.args...)...)
-			cmd.Env = append(slices.DeleteFunc(os.Environ(), func(kv string) bool {
-				return strings.HasPrefix(kv, "CWE_IMAGE=") || strings.HasPrefix(kv, "CONTROLLER_IMAGE=")
-			}), tc.env...)
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				t.Fatalf("make -n images: %v\n%s", err, out)
-			}
-			if !strings.Contains(string(out), "nerdctl build -t "+tc.wantTag+" ") {
-				t.Errorf("controller image is not tagged %s:\n%s", tc.wantTag, out)
-			}
-			if got := strings.Contains(string(out), warning); got != tc.wantWarn {
-				t.Errorf("deprecation warning printed = %v, want %v:\n%s", got, tc.wantWarn, out)
-			}
-		})
-	}
-}
-
 // TestHasRegistryHost pins the rule: the first path component names a registry
 // when it holds a dot or a colon, is localhost, or has an upper-case letter
 // (the reference parser reads it as a domain). Docker Hub short names such as

@@ -8,7 +8,7 @@ This page describes how to bring the management cluster's nodes from a first boo
 - You have a node image built as described in [Build and host node OS images](build-node-images.md), for the CPU architecture of your nodes.
 - You have an odd number of machines, such as one, three or five, that meet [Supported platforms and versions](../overview/supported-platforms.md). Each has a TPM 2.0 device, and your provisioning system can boot it from the image and pass it cloud-init user data.
 - Each node keeps the same IP address across reboots. The image configures every `e*` network interface with DHCP and disables cloud-init network configuration, so reserve each node's address in DHCP.
-- You have chosen the bootstrap host and know the IP address the nodes use to reach it. It can be one of the nodes.
+- You have chosen the bootstrap host and know the IP address the nodes use to reach it. Normally it is one of the nodes; a separate host also works.
 - You have chosen a SPIFFE trust domain, such as `mgmt.example.com`, and have your SPIRE certificate authority (CA) certificate and key as files. The node image's SPIRE agent does not start without a trust bundle, and the SPIRE server that `nvkectl` deploys has no certificate the nodes could trust until the bootstrap runs, so nodes that attest with their TPM need a CA you bring. The install also makes this CA the upstream authority of the management cluster's SPIRE server, so workload cluster nodes trust it through the bundle NVKE puts in their user data; see [Register node images for provisioning](build-node-images.md#what-nvke-puts-in-the-user-data).
 - Your network lets the bootstrap host reach every node on the `nvke-agent` port (15005 by default), and lets every node reach the bootstrap host on 30081.
 
@@ -55,7 +55,7 @@ The node image is not a ready Kubernetes node. It carries the node agent and the
 
    Do not set `SPIRE_JOIN_TOKEN`. Without it, the SPIRE agent attests with the node's TPM, which is how the bootstrap's SPIRE server admits nodes; it issues no join tokens. Install the Kubernetes package before the CNI images package: the images package loads its image into containerd, which the Kubernetes package provides.
 
-   If you install the management plane without a release description, you later copy two container images to each node over `ssh`; see [Install the management plane](install-management-plane.md#stage-the-controller-images-on-the-management-nodes). Add a `users:` entry for that with your SSH public key in `ssh_authorized_keys` and `sudo: ALL=(ALL) NOPASSWD:ALL`. The image accepts no password logins.
+   If you install the management plane without a release description, you later copy two container images to each node over `ssh`; see [Install the management plane](install-management-plane.md#stage-the-controller-images-on-the-management-nodes). Add a `users:` entry for that with your SSH public key in `ssh_authorized_keys` and `sudo: ALL=(ALL) NOPASSWD:ALL`. The image accepts no password logins. Its `ubuntu` user has a locked password, so a serial console shows boot and cloud-init output but cannot log you in; reach the nodes over SSH.
 
 2. Boot each node from the image with the user data.
 
@@ -88,6 +88,8 @@ Each component the bootstrap needs is a Debian package. If a check in [Verify](#
 If `nvke-kubeadm-distro-<K8S_VERSION>` is the missing package, the image was built without that Kubernetes version. Choose a staged version, or rebuild the image with it.
 
 Do not add `--disable-mtls` to `AGENT_ARGS` in `/etc/default/nvke-agent` to work around a missing SPIRE agent. Plaintext gRPC is for development only.
+
+> **Note:** NVKE release qualification does not run the mTLS bootstrap these pages describe. The hardware qualification lane runs on NICo-managed machines, which do not report a TPM endorsement-key thumbprint, so a node cannot attest with its TPM at bootstrap. The lane therefore bootstraps with `--disable-mtls`, with `nvke-agent` set to match, and turns SPIRE and TPM attestation on when it installs the management plane.
 
 ## Verify
 

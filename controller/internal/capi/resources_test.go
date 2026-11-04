@@ -13,8 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	kubeadmv1 "sigs.k8s.io/cluster-api/api/bootstrap/kubeadm/v1beta2"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -216,6 +219,112 @@ func TestResources_ParseManifest(t *testing.T) {
 			assert.Equal(t, params.wantKind, obj.GetKind())
 		})
 	}
+}
+
+func TestResources_IsKubeadmConfigRef(t *testing.T) {
+	validRef := clusterv1.ContractVersionedObjectReference{
+		APIGroup: kubeadmv1.GroupVersion.Group,
+		Kind:     "KubeadmConfig",
+		Name:     "worker-bootstrap",
+	}
+
+	assert.True(t, capi.IsKubeadmConfigRef(validRef))
+
+	wrongKind := validRef
+	wrongKind.Kind = "NicoMachine"
+	assert.False(t, capi.IsKubeadmConfigRef(wrongKind))
+
+	wrongGroup := validRef
+	wrongGroup.APIGroup = "other.example.com"
+	assert.False(t, capi.IsKubeadmConfigRef(wrongGroup))
+
+	missingName := validRef
+	missingName.Name = ""
+	assert.False(t, capi.IsKubeadmConfigRef(missingName))
+}
+
+func TestResources_IsNicoMachineRef(t *testing.T) {
+	validRef := clusterv1.ContractVersionedObjectReference{
+		APIGroup: nicov1.GroupVersion.Group,
+		Kind:     "NicoMachine",
+		Name:     "worker",
+	}
+
+	assert.True(t, capi.IsNicoMachineRef(validRef))
+
+	wrongKind := validRef
+	wrongKind.Kind = "KubeadmConfig"
+	assert.False(t, capi.IsNicoMachineRef(wrongKind))
+
+	wrongGroup := validRef
+	wrongGroup.APIGroup = "other.example.com"
+	assert.False(t, capi.IsNicoMachineRef(wrongGroup))
+
+	missingName := validRef
+	missingName.Name = ""
+	assert.False(t, capi.IsNicoMachineRef(missingName))
+}
+
+func TestResources_IsControlledByMachine(t *testing.T) {
+	machine := &clusterv1.Machine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "worker",
+			UID:  types.UID("worker-uid"),
+		},
+	}
+
+	tests := map[string]struct {
+		mutateOwner func(*metav1.OwnerReference)
+		want        bool
+	}{
+		"matching controller": {
+			want: true,
+		},
+		"different CAPI version": {
+			mutateOwner: func(owner *metav1.OwnerReference) {
+				owner.APIVersion = clusterv1.GroupVersion.Group + "/v1beta1"
+			},
+			want: true,
+		},
+		"wrong UID": {
+			mutateOwner: func(owner *metav1.OwnerReference) {
+				owner.UID = types.UID("other-uid")
+			},
+		},
+		"wrong API group": {
+			mutateOwner: func(owner *metav1.OwnerReference) {
+				owner.APIVersion = "other.example.com/v1beta2"
+			},
+		},
+		"wrong kind": {
+			mutateOwner: func(owner *metav1.OwnerReference) {
+				owner.Kind = "MachineSet"
+			},
+		},
+		"wrong name": {
+			mutateOwner: func(owner *metav1.OwnerReference) {
+				owner.Name = "other-worker"
+			},
+		},
+		"not the controller": {
+			mutateOwner: func(owner *metav1.OwnerReference) {
+				owner.Controller = nil
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			owner := metav1.NewControllerRef(machine, clusterv1.GroupVersion.WithKind("Machine"))
+			if test.mutateOwner != nil {
+				test.mutateOwner(owner)
+			}
+			obj := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{*owner}}}
+			assert.Equal(t, test.want, capi.IsControlledByMachine(obj, machine))
+		})
+	}
+
+	assert.False(t, capi.IsControlledByMachine(&corev1.ConfigMap{}, machine))
 }
 
 func hasNicoCluster(ctx context.Context, t *testing.T, k8sClient client.Client, namespace, name, wantSiteID string) bool {

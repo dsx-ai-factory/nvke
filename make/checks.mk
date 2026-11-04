@@ -70,12 +70,16 @@ internal-config-check: ## Check the tree names no internal infrastructure. (run 
 # lists every hit outside hack/name-check-allowlist.txt and exits 1. Report
 # mode summarises and exits 0; the gate ran that way until 2026-10-11, while
 # the tree still carried the name. A dead allowlist entry fails in either mode.
+# hack/removed-settings-check.py fails on the controller setting names that
+# #1399 removed, so that no reader of an old name comes back.
 NAME_CHECK_MODE ?= fail
-name-check: ## Fail on tokens that carry a banned name outside the allowlist, and run the offline hack/rotation-demo tests. (run by the merge gate)
+name-check: ## Fail on tokens that carry a banned name outside the allowlist, or a removed controller setting name, and run the offline hack/rotation-demo tests. (run by the merge gate)
 	@$(call require_command,python3)
 	@python3 -B ./hack/test_name_check.py
+	@python3 -B ./hack/test_removed_settings_check.py
 	@$(MAKE) --no-print-directory -C hack/rotation-demo test
 	@python3 -B ./hack/name-check.py --mode $(NAME_CHECK_MODE)
+	@python3 -B ./hack/removed-settings-check.py
 
 # The version every nightly beta and release candidate is tagged with. A wrong
 # answer is pushed as a tag rather than reported, so the bump rules are tested

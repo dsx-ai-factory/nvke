@@ -194,9 +194,11 @@ looking for a rootless containerd.
 
 **mTLS.** The lane currently bootstraps with `--disable-mtls`, which has to
 agree with the node agent's `AGENT_ARGS` or every dial fails as an opaque TLS
-handshake error. This mirrors the documented provisioning procedure, which
-brings SPIRE and TPM attestation up in the management-plane install rather than
-at bootstrap.
+handshake error. Forge does not report a node's TPM endorsement-key thumbprint,
+so a node cannot attest at bootstrap; the lane brings SPIRE and TPM attestation
+up in the management-plane install instead. This is not the operator procedure.
+The operator procedure, from [Prepare nodes](../operate/prepare-nodes.md)
+onward, bootstraps with mTLS on; this lane does not exercise that path.
 
 **Verification is not "nvkectl exited 0".** The breakglass admin kubeconfig is forwarded
 off the node to the runner, the controller is polled on `/healthz` and then `/api/version`,

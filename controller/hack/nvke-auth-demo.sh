@@ -45,13 +45,12 @@ EOF
 }
 
 KUBE_CONTEXT="${KUBE_CONTEXT:-kind-controller-capi}"
-# The NKE_CONTROLLER_ and CWE_ names (NAMESPACE, HTTP_PORT) are deprecated aliases for the NVKE_CONTROLLER_ names; #1399 removes them.
-NVKE_CONTROLLER_NAMESPACE="${NVKE_CONTROLLER_NAMESPACE:-${NKE_CONTROLLER_NAMESPACE:-${CWE_NAMESPACE:-}}}"
+NVKE_CONTROLLER_NAMESPACE="${NVKE_CONTROLLER_NAMESPACE:-}"
 # controllerConfig.name in the chart; an install that pins the old name sets this to nke-controller-config.
 NVKE_CONTROLLER_CONFIGMAP="${NVKE_CONTROLLER_CONFIGMAP:-nvke-controller-config}"
 NVKE_AUTH_CONFIGMAP="${NVKE_AUTH_CONFIGMAP:-nvke-auth-config}"
 NKE_DEPLOYMENT="${NKE_DEPLOYMENT:-}"
-NVKE_CONTROLLER_HTTP_PORT="${NVKE_CONTROLLER_HTTP_PORT:-${NKE_CONTROLLER_HTTP_PORT:-${CWE_HTTP_PORT:-8080}}}"
+NVKE_CONTROLLER_HTTP_PORT="${NVKE_CONTROLLER_HTTP_PORT:-8080}"
 NKE_HTTP_URL="${NKE_HTTP_URL:-http://127.0.0.1:${NVKE_CONTROLLER_HTTP_PORT}}"
 # Metrics are a separate listener (metricsListenAddress, chart default
 # 0.0.0.0:9090) that neither the Service nor Tilt publishes, so this script
