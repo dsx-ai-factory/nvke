@@ -756,7 +756,20 @@ secrets-check: ## Scan the commits on this branch for credentials, as the secret
 	  echo "gitleaks not found. Install v$(GITLEAKS_VERSION): https://github.com/gitleaks/gitleaks/releases"; \
 	  exit 1; \
 	 }
-	@echo "Scanning $(shell git rev-list --count origin/main..HEAD 2>/dev/null || echo 0) commit(s) on this branch..."
-	@gitleaks git . --no-banner --redact \
-	  --log-opts="origin/main..HEAD --diff-merges=first-parent"
+	@git rev-parse --verify --quiet origin/main >/dev/null || { \
+	  echo "origin/main is missing — cannot work out the range to scan"; \
+	  exit 1; \
+	 }
+	@count="$$(git rev-list --count origin/main..HEAD)" || exit 1; \
+	 if [ "$$count" -eq 0 ]; then \
+	   echo "no commits ahead of origin/main — nothing was scanned"; \
+	   exit 1; \
+	 fi; \
+	 if [ -n "$$(git rev-list --min-parents=3 origin/main..HEAD)" ]; then \
+	   echo "an octopus merge is on this branch — remerge cannot scan it; merge one branch at a time"; \
+	   exit 1; \
+	 fi; \
+	 echo "Scanning $$count commit(s) on this branch..."
+	@gitleaks git . --no-banner --redact --verbose \
+	  --log-opts="origin/main..HEAD --diff-merges=remerge"
 	@echo "gitleaks: no credential found in the commits on this branch."
