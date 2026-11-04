@@ -103,7 +103,12 @@ func (c *Client) Check(ctx context.Context, t Target) (context.Context, error) {
 	if !ok {
 		err := fmt.Errorf("%w: no authenticated principal", ErrDenied)
 		c.record(OutcomeError, t.Action)
-		c.logger.ErrorContext(ctx, "failed to authorize request", "action", t.Action, "error", err)
+		c.logger.ErrorContext(ctx, "failed to authorize request",
+			"action", t.Action,
+			"resource_type", t.Resource.Type,
+			"resource_id", loggableID(t.Resource.ID),
+			"error", err,
+		)
 		return ctx, err
 	}
 
@@ -114,6 +119,9 @@ func (c *Client) Check(ctx context.Context, t Target) (context.Context, error) {
 			"outcome", string(OutcomeNotFound),
 			"missing", true,
 			"issuer", principal.IssuerName,
+			"subject", principal.Subject,
+			"resource_type", t.Resource.Type,
+			"resource_id", loggableID(t.Resource.ID),
 		)
 		return ctx, ErrNotFound
 	}
@@ -136,11 +144,23 @@ func (c *Client) Check(ctx context.Context, t Target) (context.Context, error) {
 		"action", t.Action,
 		"outcome", string(outcome),
 		"issuer", principal.IssuerName,
+		"subject", principal.Subject,
 		"tenant", d.Caller.Tenant,
+		"resource_type", t.Resource.Type,
+		"resource_id", loggableID(t.Resource.ID),
 		"reasons", d.Reasons,
 		"error", err,
 	)
 	return ctx, err
+}
+
+// loggableID returns id if Query.Validate accepts it, and "<invalid>" otherwise,
+// so a refusal log never holds an oversized or unprintable ID.
+func loggableID(id string) string {
+	if checkString(id, maxNameBytes) != nil {
+		return "<invalid>"
+	}
+	return id
 }
 
 // Ready reports whether the backend can answer. See Authorizer.Ready.
