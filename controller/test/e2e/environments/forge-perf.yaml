@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The Forge site for performance runs, selected with `-e2e.environment forge-perf`.
+# Its own file because the site sits in another org, and an environment declares one org.
+# Every ${...} is read from the process environment at load time.
+
+provider: forge
+
+infrastructure:
+  org:
+    id: "${FORGE_PERF_ORG_ID}"
+
+  sites:
+    site-1:
+      id: "${FORGE_PERF_SITE_ID}"
+      vpcID: "${FORGE_PERF_VPC_ID}"
+      subnetID: "${FORGE_PERF_SUBNET_ID}"
+      sshKeyGroupID: "${FORGE_PERF_SSH_KEY_GROUP_ID}"
+
+      # Optional: a tenant lane against an existing site controller never dials it.
+      jumpHost: "${FORGE_PERF_JUMP_HOST:-}"
+      # Defaults to root, the CI bot's only login.
+      teleportLogin: "${FORGE_PERF_TELEPORT_LOGIN:-root}"
+
+      # Performance runs use the high memory CPU type.
+      instanceTypes:
+        - name: cpu.himem.t1
+          id: "${FORGE_PERF_INSTANCE_TYPE_CPU_ID}"
+          provides: {machineType: cpu, arch: amd64}
