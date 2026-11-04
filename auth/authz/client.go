@@ -157,7 +157,7 @@ func (c *Client) Check(ctx context.Context, t Target) (context.Context, error) {
 // loggableID returns id if Query.Validate accepts it, and "<invalid>" otherwise,
 // so a refusal log never holds an oversized or unprintable ID.
 func loggableID(id string) string {
-	if id != "" && checkString(id, maxNameBytes) != nil {
+	if checkString(id, maxNameBytes) != nil {
 		return "<invalid>"
 	}
 	return id

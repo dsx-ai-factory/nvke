@@ -355,21 +355,23 @@ func TestClientCheckLogsTheCallerAndTheResource(t *testing.T) {
 func TestClientCheckDoesNotLogAnInvalidResourceID(t *testing.T) {
 	t.Parallel()
 
-	resource := cluster("acme")
-	resource.ID = strings.Repeat("x", 4096)
-	for name, tt := range map[string]struct {
-		principal *authn.Principal
-		target    authz.Target
-	}{
-		"backend":        {inAcme, authz.Target{Action: allowedAction, Resource: resource}},
-		"missing object": {inAcme, authz.Target{Action: allowedAction, Resource: resource, Missing: true}},
-		"no principal":   {nil, authz.Target{Action: allowedAction, Resource: resource}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			record := refusalRecord(t, &fakeBackend{}, tt.principal, tt.target)
-			assert.Equal(t, "<invalid>", record["resource_id"])
-		})
+	for idName, id := range map[string]string{"oversized": strings.Repeat("x", 4096), "empty": ""} {
+		resource := cluster("acme")
+		resource.ID = id
+		for name, tt := range map[string]struct {
+			principal *authn.Principal
+			target    authz.Target
+		}{
+			"backend":        {inAcme, authz.Target{Action: allowedAction, Resource: resource}},
+			"missing object": {inAcme, authz.Target{Action: allowedAction, Resource: resource, Missing: true}},
+			"no principal":   {nil, authz.Target{Action: allowedAction, Resource: resource}},
+		} {
+			t.Run(idName+", "+name, func(t *testing.T) {
+				t.Parallel()
+				record := refusalRecord(t, &fakeBackend{}, tt.principal, tt.target)
+				assert.Equal(t, "<invalid>", record["resource_id"])
+			})
+		}
 	}
 }
 
