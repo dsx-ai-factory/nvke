@@ -23,15 +23,20 @@ var (
 	ErrNoTenant = errors.New("caller has no tenant")
 )
 
+// Outcomes only Check counts; a backend never returns them.
 const (
-	// OutcomeError counts a request Check refused without a decision:
-	// it had no authenticated caller, or the backend failed. A backend never
-	// returns it.
+	// OutcomeError counts a request Check refused without a decision, for
+	// example because the backend failed.
 	OutcomeError Outcome = "error"
+
+	// OutcomeUnauthenticated counts a request with no authenticated caller,
+	// which permissive authN passes on.
+	OutcomeUnauthenticated Outcome = "unauthenticated"
 )
 
 // Recorder counts each Check, by outcome and action.
 // It's a function so that this package doesn't depend on a metrics library.
+// The API's Recorder adds the mode as a label.
 type Recorder func(outcome Outcome, action string)
 
 // Target is the action a request takes and the resource it acts on. The API
@@ -52,16 +57,17 @@ type Target struct {
 
 // Client is what an API calls to authorize a request. Check asks the backend
 // for a decision, counts it, logs refusals, and on an allow returns a context
-// carrying the authorized Caller. It doesn't depend on HTTP or gRPC, and it's
-// safe for concurrent use.
+// carrying the authorized Caller. In permissive mode it lets every request
+// through. It doesn't depend on HTTP or gRPC, and it's safe for concurrent use.
 type Client struct {
 	backend Authorizer
+	mode    authn.Mode
 	logger  *slog.Logger
 	record  Recorder
 }
 
 // NewClient returns a Client that asks backend. logger and record may be nil.
-func NewClient(backend Authorizer, logger *slog.Logger, record Recorder) (*Client, error) {
+func NewClient(backend Authorizer, mode authn.Mode, logger *slog.Logger, record Recorder) (*Client, error) {
 	if backend == nil {
 		return nil, errors.New("backend is nil")
 	}
@@ -74,7 +80,10 @@ func NewClient(backend Authorizer, logger *slog.Logger, record Recorder) (*Clien
 	if record == nil {
 		record = func(Outcome, string) {}
 	}
-	return &Client{backend: backend, logger: logger, record: record}, nil
+	if mode != authn.ModePermissive {
+		mode = authn.ModeEnforcing
+	}
+	return &Client{backend: backend, mode: mode, logger: logger, record: record}, nil
 }
 
 // Check authorizes one request, for the caller that auth/authn put on ctx. On
@@ -86,9 +95,13 @@ func NewClient(backend Authorizer, logger *slog.Logger, record Recorder) (*Clien
 //   - An error wrapping ErrDenied: the request couldn't be decided, for
 //     example because the backend failed. It's counted as OutcomeError.
 //
-// A request with no authenticated caller is refused. So authN must enforce on
-// every route Check guards: in permissive mode, authN passes a rejected
-// request on with no caller.
+// A request with no authenticated caller is refused, and counted as
+// OutcomeUnauthenticated. Behind permissive authN, enforcing mode answers an
+// unauthenticated request with 403, not 401, so enforce authN first.
+//
+// In permissive mode, Check counts and logs the same outcome but never returns
+// an error. The context it returns carries the decision's Caller when that
+// Caller has a valid tenant, and makes ListTenant list every tenant.
 //
 // A missing object gets ErrNotFound, the same answer a caller gets for another
 // tenant's object, so the caller can't tell the two apart. That holds for every
@@ -102,20 +115,31 @@ func (c *Client) Check(ctx context.Context, t Target) (context.Context, error) {
 	principal, ok := authn.PrincipalFromContext(ctx)
 	if !ok {
 		err := fmt.Errorf("%w: no authenticated principal", ErrDenied)
-		c.record(OutcomeError, t.Action)
-		c.logger.ErrorContext(ctx, "failed to authorize request", "action", t.Action, "error", err)
-		return ctx, err
+		c.record(OutcomeUnauthenticated, t.Action)
+		level, message := c.refusalLog()
+		if c.mode != authn.ModePermissive {
+			// In enforcing mode, a missing principal means authN isn't
+			// enforcing on the route.
+			level, message = slog.LevelError, "failed to authorize request"
+		}
+		c.logger.Log(ctx, level, message,
+			"action", t.Action,
+			"outcome", string(OutcomeUnauthenticated),
+			"error", err,
+		)
+		return c.refuse(ctx, nil, err)
 	}
 
 	if t.Missing {
 		c.record(OutcomeNotFound, t.Action)
-		c.logger.InfoContext(ctx, "refused request",
+		level, message := c.refusalLog()
+		c.logger.Log(ctx, level, message,
 			"action", t.Action,
 			"outcome", string(OutcomeNotFound),
 			"missing", true,
 			"issuer", principal.IssuerName,
 		)
-		return ctx, ErrNotFound
+		return c.refuse(ctx, nil, ErrNotFound)
 	}
 
 	d, err := c.authorize(ctx, Query{Principal: *principal, Action: t.Action, Resource: t.Resource})
@@ -125,10 +149,10 @@ func (c *Client) Check(ctx context.Context, t Target) (context.Context, error) {
 	}
 	c.record(outcome, t.Action)
 	if err == nil {
-		return ContextWithCaller(ctx, d.Caller), nil
+		return c.pass(ctx, &d.Caller), nil
 	}
 
-	level, message := slog.LevelInfo, "refused request"
+	level, message := c.refusalLog()
 	if outcome == OutcomeError {
 		level, message = slog.LevelError, "failed to authorize request"
 	}
@@ -140,7 +164,38 @@ func (c *Client) Check(ctx context.Context, t Target) (context.Context, error) {
 		"reasons", d.Reasons,
 		"error", err,
 	)
-	return ctx, err
+	return c.refuse(ctx, &d.Caller, err)
+}
+
+// refuse returns what Check returns for a refusal: ctx and err, or in
+// permissive mode a context that lets the request through. That context
+// carries caller only if caller isn't nil and has a valid tenant.
+func (c *Client) refuse(ctx context.Context, caller *Caller, err error) (context.Context, error) {
+	if c.mode != authn.ModePermissive {
+		return ctx, err
+	}
+	if caller != nil && CheckTenantID(caller.Tenant) != nil {
+		caller = nil
+	}
+	return c.pass(ctx, caller), nil
+}
+
+// pass returns ctx carrying caller, if caller isn't nil. In permissive mode it
+// also adds the mark that makes ListTenant list every tenant. In enforcing mode
+// it hides any mark an earlier permissive Check added.
+func (c *Client) pass(ctx context.Context, caller *Caller) context.Context {
+	if caller != nil {
+		ctx = ContextWithCaller(ctx, *caller)
+	}
+	return context.WithValue(ctx, permissiveContextKey{}, c.mode == authn.ModePermissive)
+}
+
+// refusalLog returns the log level and message for a refusal in c's mode.
+func (c *Client) refusalLog() (slog.Level, string) {
+	if c.mode == authn.ModePermissive {
+		return slog.LevelWarn, "authorization would have refused this request"
+	}
+	return slog.LevelInfo, "refused request"
 }
 
 // Ready reports whether the backend can answer. See Authorizer.Ready.
@@ -193,7 +248,7 @@ func (c *Client) authorize(ctx context.Context, q Query) (Decision, error) {
 	case OutcomeNoTenant:
 		return d, ErrNoTenant
 	default:
-		// An unknown outcome, or OutcomeError, which only Check counts.
+		// An unknown outcome, or one only Check counts.
 		unknown := d.Outcome
 		d.Outcome = OutcomeDeny
 		return d, fmt.Errorf("%w: %s returned an unknown outcome %q", ErrDenied, c.backend.Name(), unknown)
