@@ -4,10 +4,13 @@
 package authz_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -259,6 +262,90 @@ func TestClientCheckDoesNotAskAboutAMissingObject(t *testing.T) {
 			_, err := check(client, p, authz.Target{Action: allowedAction, Resource: cluster("acme"), Missing: true})
 			assert.Same(t, authz.ErrNotFound, err)
 			assert.Equal(t, []string{"not_found " + allowedAction}, counted.all())
+		})
+	}
+}
+
+// refusalRecord runs one refused Check as p with a JSON logger, and returns
+// the one record it wrote.
+func refusalRecord(t *testing.T, backend authz.Authorizer, p *authn.Principal, target authz.Target) map[string]any {
+	t.Helper()
+	var log bytes.Buffer
+	client, err := authz.NewClient(backend, slog.New(slog.NewJSONHandler(&log, nil)), nil)
+	require.NoError(t, err)
+	_, err = check(client, p, target)
+	require.Error(t, err)
+
+	lines := strings.Split(strings.TrimSpace(log.String()), "\n")
+	require.Len(t, lines, 1, "a refused Check writes one record")
+	var record map[string]any
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &record))
+	return record
+}
+
+// TestClientCheckLogsTheCallerAndTheResource checks that every record Check
+// writes names the resource's type and ID, and the caller's subject when there
+// is one.
+func TestClientCheckLogsTheCallerAndTheResource(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		backend    authz.Authorizer // the fakeBackend if nil
+		principal  *authn.Principal
+		target     authz.Target
+		wantTenant string // "" skips the tenant check
+	}{
+		{
+			name: "deny", principal: inAcme,
+			target: authz.Target{Action: deniedAction, Resource: cluster("acme")}, wantTenant: "acme",
+		},
+		{
+			name: "another tenant's object", principal: inAcme,
+			target: authz.Target{Action: allowedAction, Resource: cluster("globex")}, wantTenant: "acme",
+		},
+		{
+			name: "no tenant", principal: noTenant,
+			target: authz.Target{Action: allowedAction, Resource: cluster("acme")},
+		},
+		{
+			name: "an invalid query", principal: inAcme,
+			target: authz.Target{Action: "", Resource: cluster("acme")},
+		},
+		{
+			name: "a backend error", backend: &stubBackend{err: errors.New("policy store unreachable")}, principal: inAcme,
+			target: authz.Target{Action: allowedAction, Resource: cluster("acme")},
+		},
+		{
+			name:      "a missing object",
+			principal: inAcme,
+			target:    authz.Target{Action: allowedAction, Resource: cluster(""), Missing: true},
+		},
+		{
+			name:   "no principal",
+			target: authz.Target{Action: allowedAction, Resource: cluster("acme")},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			backend := tt.backend
+			if backend == nil {
+				backend = &fakeBackend{}
+			}
+			record := refusalRecord(t, backend, tt.principal, tt.target)
+			if tt.principal == nil {
+				assert.NotContains(t, record, "subject")
+			} else {
+				assert.Equal(t, tt.principal.IssuerName, record["issuer"])
+				assert.Equal(t, tt.principal.Subject, record["subject"])
+			}
+			assert.Equal(t, "Cluster", record["resource_type"])
+			assert.Equal(t, "c-1", record["resource_id"])
+			if tt.wantTenant != "" {
+				assert.Equal(t, tt.wantTenant, record["tenant"])
+			}
 		})
 	}
 }
