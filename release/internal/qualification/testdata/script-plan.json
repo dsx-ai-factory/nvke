@@ -1,0 +1,46 @@
+{
+  "subject": "nvke",
+  "version": "v1.2.0-rc.1",
+  "scope": "full",
+  "commit": "COMMIT",
+  "combinations": [
+    {
+      "id": "combo-1",
+      "components": [
+        {"name": "controller", "version": "v0.2.0-3-gabcdef12", "versionStrategy": "commitDescribe", "locationStrategy": "ociTag", "url": "oci://registry.example/org/nvke-controller:v0.2.0-3-gabcdef12"},
+        {"name": "cli", "version": "v0.3.0-3-gabcdef12", "versionStrategy": "commitDescribe"},
+        {"name": "os-image", "version": "v0.4.0", "versionStrategy": "gitTag"},
+        {"name": "capi-provisioned", "version": "v0.1.0-3-gabcdef12", "versionStrategy": "commitDescribe", "locationStrategy": "ociTag", "url": "oci://registry.example/org/cluster-api-provider-provisioned:v0.1.0-3-gabcdef12"}
+      ],
+      "dependencies": [
+        {"name": "cni-ovn", "version": "1.2.3"},
+        {"name": "os-image-bootloader-amd64", "version": "v0.4.0", "url": "https://cdn.example/bootloader-amd64.raw"},
+        {"name": "os-image-bootloader-arm64", "version": "v0.4.0", "url": "https://cdn.example/bootloader-arm64.raw"},
+        {"name": "cli-amd64", "version": "v0.3.0-3-gabcdef12", "url": "oci://registry.example/org/nvkectl:v0.3.0-3-gabcdef12-linux-amd64"},
+        {"name": "cli-arm64", "version": "v0.3.0-3-gabcdef12", "url": "oci://registry.example/org/nvkectl:v0.3.0-3-gabcdef12-linux-arm64"},
+        {"name": "kind", "version": "v0.30.0"},
+        {"name": "clusterctl", "version": "v1.11.0"},
+        {"name": "nerdctl", "version": "2.1.0"}
+      ],
+      "streams": [
+        {
+          "name": "forge-l40s-amd64",
+          "capabilities": {"arch": "amd64", "gpu": "l40s", "provider": "forge"},
+          "dependencies": [
+            {"name": "kube", "version": "v1.36.0"},
+            {"name": "os-image-amd64", "version": "v0.4.0", "url": "https://cdn.example/image-amd64.qcow2"},
+            {"name": "os-image-arm64", "version": "v0.4.0", "url": "https://cdn.example/image-arm64.qcow2"}
+          ]
+        },
+        {
+          "name": "dsx-cpu-arm64",
+          "capabilities": {"arch": "arm64", "provider": "dsx"},
+          "dependencies": [
+            {"name": "kube", "version": "v1.36.0"},
+            {"name": "os-image-arm64", "version": "v0.4.0", "url": "https://cdn.example/image-arm64.qcow2"}
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -27,7 +27,7 @@ are reading about:
 ```mermaid
 flowchart LR
     Q["qualification<br/>decides what to prove,<br/>records what was proven"]
-    E["environment provisioning<br/>makes a real system exist,<br/>then releases it<br/>this document, hardware-lane.md"]
+    E["environment provisioning<br/>makes a real system exist,<br/>then releases it<br/>hardware-qualification.md"]
     S["the e2e suite<br/>asserts behaviour, identically<br/>on every backend<br/>controller/test/e2e/README.md"]
 
     Q -->|"a cell: versions and capabilities"| E
@@ -54,8 +54,9 @@ Four steps, each built on the one before:
 4. **Bring up its node pools** on real machines, assert every node reaches
    Ready, then tear everything down.
 
-[hardware-lane.md](hardware-lane.md) explains each step and why the awkward
-parts are the way they are.
+[hardware-qualification.md](hardware-qualification.md) says how to start and follow a run, and
+[hardware-qualification-design.md](hardware-qualification-design.md) explains each step and why
+the awkward parts are the way they are.
 
 ## Running one
 
@@ -191,10 +192,10 @@ through create, node readiness, and delete.
 
 | Document | Read it when |
 |---|---|
-| [hardware-lane.md](hardware-lane.md) | you want to know how a run works, step by step, and what it deliberately does not cover |
+| [hardware-qualification.md](hardware-qualification.md) | you want to start a run, in CI or from your own checkout with `qualify local`, follow it, and read what it leaves behind |
+| [hardware-qualification-design.md](hardware-qualification-design.md) | you want to know how a run works inside, step by step, and what it deliberately does not cover |
 | [environments.md](environments.md) | you are adding a site, an instance type, or a second infrastructure provider |
 | [triage.md](triage.md) | a run went red and you need to know whether it is ours or the site's |
-
 Related, outside this directory:
 
 | Path | Contents |

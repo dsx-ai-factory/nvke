@@ -19,8 +19,10 @@ ARG RUNTIME_IMAGE=gcr.io/distroless/static-debian12:debug-nonroot@sha256:d5563cc
 
 FROM ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:1.0.1@sha256:ac41337c043e986596dcabc961d569daf9f16a261fe307e665e0562238c30fb3 AS spiffe-jwt-exec-auth
 
-# Set up golang build container
-FROM ${GOLANG_IMAGE} AS builder
+# Set up golang build container. It runs on the build platform and
+# cross-compiles for the target, so an image for the other architecture is
+# not built under emulation.
+FROM --platform=${BUILDPLATFORM} ${GOLANG_IMAGE} AS builder
 ENV GOPROXY=https://proxy.golang.org|direct
 ARG TARGETOS
 ARG TARGETARCH

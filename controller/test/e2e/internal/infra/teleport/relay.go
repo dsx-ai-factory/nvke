@@ -4,6 +4,7 @@
 package teleport
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -17,6 +18,15 @@ const (
 	// diagnosticsLimit bounds what is kept of the relay's stderr. It is
 	// tsh's and the relay's complaints, not session traffic.
 	diagnosticsLimit = 8 << 10
+
+	// defaultTSH is the tsh run when the dialer names none.
+	defaultTSH = "tsh"
+
+	// checkTimeout bounds CheckJumpHost. An expired personal login makes tsh
+	// open a browser sign-in, which reads nothing from stdin and so can finish
+	// in this time even under go test. Where no browser can open, as on a
+	// runner, the check fails at the timeout instead.
+	checkTimeout = 2 * time.Minute
 )
 
 // relayCommand runs on the jump host and joins its stdio to address's sshd.
@@ -49,11 +59,35 @@ func (d *Dialer) tshArgs(jumpHost, command string) []string {
 // detached from the dial's cancellation: the stream has to outlive the dial,
 // and Close is what ends it.
 func (d *Dialer) tshRelay(ctx context.Context, jumpHost, address string) (net.Conn, error) {
-	binary := d.TSH
-	if binary == "" {
-		binary = "tsh"
-	}
+	binary := cmp.Or(d.TSH, defaultTSH)
 	return startRelay(exec.CommandContext(context.WithoutCancel(ctx), binary, d.tshArgs(jumpHost, relayCommand(address))...))
+}
+
+// CheckJumpHost runs a no-op on the jump host through tsh, so a login that is
+// expired, wrong or not allowed there fails before a machine is created
+// rather than after one is waiting to be reached. A dialer that jumps over
+// plain SSH does not use tsh, and has nothing to check here.
+func (d *Dialer) CheckJumpHost(ctx context.Context, jumpHost string) error {
+	if d.relay != nil {
+		return nil
+	}
+	if jumpHost == "" {
+		return fmt.Errorf("no jump host: the site's jumpHost is empty")
+	}
+	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
+	defer cancel()
+	var stderr boundedBuffer
+	binary := cmp.Or(d.TSH, defaultTSH)
+	cmd := exec.CommandContext(ctx, binary, d.tshArgs(jumpHost, "true")...)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		login := d.Login
+		if login == "" {
+			login = "tsh's default login"
+		}
+		return fmt.Errorf("cannot reach the jump host as %s through Teleport (check tsh login and the site's teleportLogin): %w%s", login, err, suffix(stderr.String()))
+	}
+	return nil
 }
 
 func startRelay(cmd *exec.Cmd) (*processConn, error) {

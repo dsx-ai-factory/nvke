@@ -3,11 +3,12 @@ SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All 
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Qualifying a candidate on real hardware
+# The hardware lane: design
 
-How the site controller lane works, step by step. The
-[e2e README](../../controller/test/e2e/README.md#site-controller-lane) says how
-to run it and what to set; this says what it does and why it does it that way.
+How the hardware lane, NVKE's end-to-end qualification on real machines, works
+inside, step by step, and why it is built
+the way it is. It is a reference for changing the lane. To run it, read
+[hardware-qualification.md](hardware-qualification.md), the operator's guide.
 
 The code it describes lives in `controller/test/e2e/`, and paths below are
 relative to the repository root.
@@ -107,10 +108,11 @@ Steps 5 and 7 are the "two waits" below, and step 10 exists only because of
 step 1's `phoneHomeEnabled=false`.
 
 **Where the identifiers come from.** `environments/forge.yaml` declares the
-org, site, VPC, subnet, SSH key group and instance types. Nothing secret is in
-it, and the jump host is deliberately absent too, so the access path is not
-published alongside the site. The Forge API key and the Teleport join come from
-the environment.
+org, site, VPC, subnet, SSH key group and instance types, and reads every one
+of their ids from the environment, as it does the jump host and the Teleport
+login, so neither the site nor the access path is published in the
+repository. Nothing secret is in it either: the Forge API key and the Teleport
+join come from the environment too.
 
 **Choosing a machine.** A run asks for capabilities rather than naming a type.
 `ForgeSite.MatchInstanceType` walks the declared types in order and returns the
