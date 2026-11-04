@@ -4,7 +4,6 @@
 package e2e
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -327,8 +326,7 @@ func resolveReleasesDir() (string, error) {
 	// An explicit directory is authoritative. Falling back from it would run the
 	// matrix against releases the caller did not name, and the error below is
 	// not errOSProfileMetadataUnavailable, so it fails rather than skips.
-	// NKE_CONTROLLER_RELEASES_DIR is a deprecated alias for NVKE_CONTROLLER_RELEASES_DIR; #1399 removes it.
-	if dir := cmp.Or(os.Getenv("NVKE_CONTROLLER_RELEASES_DIR"), os.Getenv("NKE_CONTROLLER_RELEASES_DIR")); dir != "" {
+	if dir := os.Getenv("NVKE_CONTROLLER_RELEASES_DIR"); dir != "" {
 		matches, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
 		if err != nil {
 			return "", fmt.Errorf("listing NVKE_CONTROLLER_RELEASES_DIR %s: %w", dir, err)

@@ -130,10 +130,10 @@ e2e_stop_bundle_mirror() {
 
 # tilt_config.json, written the same way for both entrypoints.
 e2e_write_tilt_config() {
-  local out="$1" providers="$2" cwe_image="$3" vip="$4" bgp_container="$5"
+  local out="$1" providers="$2" nvke_controller_image="$3" vip="$4" bgp_container="$5"
   local dsx_identity_exchange_image="${6:-}"
   jq -n \
-    --arg nvke_controller_image "${cwe_image}" \
+    --arg nvke_controller_image "${nvke_controller_image}" \
     --arg site_controller_vip "${vip}" \
     --arg bgp_container_name "${bgp_container}" \
     --arg dsx_identity_exchange_image "${dsx_identity_exchange_image}" \

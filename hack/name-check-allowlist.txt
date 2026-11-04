@@ -230,8 +230,7 @@ token:(?i)nkectl|^\.nke$
 
 # ---- CI, build and development surfaces (Tier 3) ----
 
-# Environment variables: the controller's NKE_CONTROLLER_*, the e2e and
-# bring-up harness, the OS image build.
+# Environment variables: the e2e and bring-up harness, the OS image build.
 token:(^|[./:@-])NKE_[A-Z0-9_]+([:./].*)?$|^LOCAL_NKE_
 
 # The product mailbox in the deb Maintainer fields.

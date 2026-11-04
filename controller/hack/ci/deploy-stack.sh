@@ -329,8 +329,7 @@ fi
 
 # Applies the releases the controller resolves every OS image from. The controller chart
 # installs their CRDs, so this waits for the CRDs before applying.
-# NKE_CONTROLLER_RELEASES_DIR is a deprecated alias for NVKE_CONTROLLER_RELEASES_DIR; #1399 removes it.
-NVKE_CONTROLLER_RELEASES_DIR="${NVKE_CONTROLLER_RELEASES_DIR:-${NKE_CONTROLLER_RELEASES_DIR:-/workspace/cloud-workflow-engine/test/fixtures/releases}}"
+NVKE_CONTROLLER_RELEASES_DIR="${NVKE_CONTROLLER_RELEASES_DIR:-/workspace/cloud-workflow-engine/test/fixtures/releases}"
 [[ -d "${NVKE_CONTROLLER_RELEASES_DIR}" ]] || { echo "releases not found at ${NVKE_CONTROLLER_RELEASES_DIR}; set NVKE_CONTROLLER_RELEASES_DIR" >&2; exit 1; }
 
 apply_releases() {

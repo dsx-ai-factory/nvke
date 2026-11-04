@@ -25,44 +25,33 @@ type IntegrationTestConfig struct {
 	ControlPlaneVIP           string `env:"CONTROL_PLANE_VIP"`
 }
 
-const (
-	// previousControllerAPIURLEnv and legacyControllerAPIURLEnv are deprecated aliases
-	// for NVKE_CONTROLLER_API_URL; #1399 removes them.
-	previousControllerAPIURLEnv = "NKE_CONTROLLER_API_URL"
-	legacyControllerAPIURLEnv   = "CWE_API_URL"
-	defaultControllerAPIURL     = "http://localhost:8080/api"
-)
+const defaultControllerAPIURL = "http://localhost:8080/api"
 
 // loadIntegrationTestConfig parses the suite's settings from the environment.
-// The env library takes one name per field, so the deprecated names and the
-// default for ControllerAPIURL are applied here. An empty value counts as unset.
+// The default for ControllerAPIURL is applied here. An empty value counts as unset.
 func loadIntegrationTestConfig() (IntegrationTestConfig, error) {
 	config, err := env.ParseAs[IntegrationTestConfig]()
 	if err != nil {
 		return config, fmt.Errorf("parsing the integration test settings: %w", err)
 	}
-	config.ControllerAPIURL = cmp.Or(config.ControllerAPIURL, os.Getenv(previousControllerAPIURLEnv), os.Getenv(legacyControllerAPIURLEnv), defaultControllerAPIURL)
+	config.ControllerAPIURL = cmp.Or(config.ControllerAPIURL, defaultControllerAPIURL)
 	return config, nil
 }
 
 func TestControllerAPIURL(t *testing.T) {
-	const newName, newURL, previousURL, oldURL = "NVKE_CONTROLLER_API_URL", "http://new:8080/api", "http://previous:8080/api", "http://old:8080/api"
+	const newName, newURL = "NVKE_CONTROLLER_API_URL", "http://new:8080/api"
 	tests := []struct {
 		name string
 		env  map[string]string // names left out are unset
 		want string
 	}{
-		{name: "new name only", env: map[string]string{newName: newURL}, want: newURL},
-		{name: "NKE_CONTROLLER name only", env: map[string]string{previousControllerAPIURLEnv: previousURL}, want: previousURL},
-		{name: "CWE name only", env: map[string]string{legacyControllerAPIURLEnv: oldURL}, want: oldURL},
+		{name: "new name", env: map[string]string{newName: newURL}, want: newURL},
 		{name: "no names", want: defaultControllerAPIURL},
-		{name: "new name wins over deprecated names", env: map[string]string{newName: newURL, previousControllerAPIURLEnv: previousURL, legacyControllerAPIURLEnv: oldURL}, want: newURL},
-		{name: "NKE_CONTROLLER name wins over CWE name", env: map[string]string{previousControllerAPIURLEnv: previousURL, legacyControllerAPIURLEnv: oldURL}, want: previousURL},
-		{name: "empty new name does not hide deprecated names", env: map[string]string{newName: "", previousControllerAPIURLEnv: previousURL, legacyControllerAPIURLEnv: oldURL}, want: previousURL},
+		{name: "empty new name", env: map[string]string{newName: ""}, want: defaultControllerAPIURL},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			for _, name := range []string{newName, previousControllerAPIURLEnv, legacyControllerAPIURLEnv} {
+			for _, name := range []string{newName} {
 				t.Setenv(name, "") // restores the caller's value afterwards
 				require.NoError(t, os.Unsetenv(name))
 			}

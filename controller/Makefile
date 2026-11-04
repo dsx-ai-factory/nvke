@@ -10,16 +10,15 @@ export GOTOOLCHAIN
 WORKER_BIN_NAME			?= controller
 TEMPORAL_CLI_DOWNLOAD_DIR	?= $(CURDIR)/.go/temporal-cli
 # The e2e-gofail settings are NVKE_CONTROLLER_GOFAIL_E2E_*. An empty value counts as unset.
-# NKE_CONTROLLER_GOFAIL_E2E_* and CWE_GOFAIL_E2E_* are deprecated aliases for them; #1399 removes them.
-gofail_e2e_worker_binary	= $(or $(NVKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY),$(NKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY),$(CWE_GOFAIL_E2E_WORKER_BINARY),$(CURDIR)/.go/bin/cwe-worker-gofail)
+gofail_e2e_worker_binary	= $(or $(NVKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY),$(CURDIR)/.go/bin/cwe-worker-gofail)
 GOFAIL				?= $(shell go env GOPATH)/bin/gofail
 SETUP_ENVTEST			?= $(shell go env GOPATH)/bin/setup-envtest
 # Explicit store, so CI can cache a known path instead of guessing setup-envtest's
 # platform-dependent default.
 ENVTEST_BIN_DIR			?= $(CURDIR)/.go/envtest
 OIDC_LIVE_CAPD_NODE_IMAGE	?= cwe-capd-kindest-node:oidc-acceptance-jointoken
-gofail_e2e_cluster_crds		= $(or $(NVKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS),$(NKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS),$(CWE_GOFAIL_E2E_CLUSTER_CRDS),$(shell go env GOMODCACHE)/sigs.k8s.io/cluster-api@$(shell go list -m -f '{{.Version}}' sigs.k8s.io/cluster-api)/config/crd/bases)
-gofail_e2e_capnico_crds		= $(or $(NVKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS),$(NKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS),$(CWE_GOFAIL_E2E_CAPNICO_CRDS),$(shell go env GOMODCACHE)/github.com/dsx-ai-factory/cluster-api-provider-nico@$(shell go list -m -f '{{.Version}}' github.com/dsx-ai-factory/cluster-api-provider-nico)/config/crd/bases)
+gofail_e2e_cluster_crds		= $(or $(NVKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS),$(shell go env GOMODCACHE)/sigs.k8s.io/cluster-api@$(shell go list -m -f '{{.Version}}' sigs.k8s.io/cluster-api)/config/crd/bases)
+gofail_e2e_capnico_crds		= $(or $(NVKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS),$(shell go env GOMODCACHE)/github.com/dsx-ai-factory/cluster-api-provider-nico@$(shell go list -m -f '{{.Version}}' github.com/dsx-ai-factory/cluster-api-provider-nico)/config/crd/bases)
 
 # The licence header template lives once, at the repository root.
 REPO_ROOT ?= $(shell git rev-parse --show-toplevel)
