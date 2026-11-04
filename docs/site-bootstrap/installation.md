@@ -2,12 +2,13 @@
 
 `nvkectl` is the NVKE control-plane CLI. You use it to validate and bootstrap a management cluster from a declarative site spec file, and to manage tenant cluster lifecycle.
 
-Releases are published under `cli/v*` tags at https://github.com/dsx-ai-factory/nvke/releases.
+Releases are published under `cli/v*` tags at https://github.com/dsx-ai-factory/nvke/releases. Not every `cli/` tag has a release with binaries: choose one whose assets list `nvkectl-<os>-<arch>`, or [build from source](#build-from-source).
 
 ## Download
 
 ```bash
-# Set RELEASE to a cli/ tag listed at https://github.com/dsx-ai-factory/nvke/releases
+# Set RELEASE to a cli/ release at https://github.com/dsx-ai-factory/nvke/releases
+# whose assets list nvkectl-<os>-<arch>
 export RELEASE=cli/vX.Y.Z
 
 # Detects linux/darwin and amd64/arm64 (uname reports x86_64, aarch64, or arm64)
