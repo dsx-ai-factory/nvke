@@ -610,7 +610,7 @@ directory causes suite initialization to fail.
 
 When the variable is unset, releases are resolved in this order:
 
-1. sibling `../nke-site-deploy/cwe-profiles/releases`
+1. sibling `../nke-site-deploy/cwe-profiles/releases-nvke`
    (an NVIDIA-internal fleet repository; external contributors use the
    environment variable above instead)
 2. the stub mirror in `test/fixtures/fleet-releases`
@@ -632,7 +632,7 @@ Every entry also carries its full release name as a label, so a new or failing
 release can be validated independently:
 
 ```bash
-make test-e2e ARGS='--label-filter="releases && nke-260625-24.04-x86-fde"'
+make test-e2e ARGS='--label-filter="releases && nvke-260625-24.04-x86-fde"'
 ```
 
 When adding a release:

@@ -518,7 +518,7 @@ controlPlaneConfig:
       - 00000000-0000-0000-0000-000000000000
     sshKeyGroupIDs:
       - 00000000-0000-0000-0000-000000000000
-    release: nke-260625-24.04-x86-fde
+    release: nvke-260625-24.04-x86-fde
     configProfile: default-cp
 ```
 

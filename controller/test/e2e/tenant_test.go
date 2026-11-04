@@ -390,8 +390,8 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 				{Name: "worker-old-agent", NodeNamePrefix: "wold", DesiredNodeCount: 1, Release: "nvke-nico-vms-24.04-amd64-fde-old-agent"},
 				// nicoVMSNodePoolSpec defaults kube/system reserved memory to 250Mi so the
 				// default nico-vms instance type has enough allocatable memory.
-				{Name: "worker-260625-24.04", NodeNamePrefix: "w260625", DesiredNodeCount: 1, Release: "nke-260625-24.04-x86-fde"},
-				{Name: "worker-260602-24.04", NodeNamePrefix: "w260602", DesiredNodeCount: 1, Release: "nke-260602-24.04-x86-fde"},
+				{Name: "worker-260625-24.04", NodeNamePrefix: "w260625", DesiredNodeCount: 1, Release: "nvke-260625-24.04-x86-fde"},
+				{Name: "worker-260602-24.04", NodeNamePrefix: "w260602", DesiredNodeCount: 1, Release: "nvke-260602-24.04-x86-fde"},
 			},
 		},
 		options: nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
