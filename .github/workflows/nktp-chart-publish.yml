@@ -54,7 +54,7 @@ jobs:
       - name: Set up kubeconform
         uses: ./.github/actions/setup-kubeconform
 
-      # The same format rule release.yml enforces on every other tag.
+      # The same format rule release.yml enforces on cli/v* tags.
       - name: Take the version from the tag
         id: version
         run: |

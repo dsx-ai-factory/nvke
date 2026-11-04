@@ -444,7 +444,6 @@ jobs:
           {
             echo "version=${version}"
             echo "aliases=${aliases[*]}"
-            echo "agent_version=${agent_version}"
           } >> "${GITHUB_OUTPUT}"
           echo "Publishing ${version} as: ${aliases[*]}"
           echo "Baking nvke-agent ${agent_version} from source"
