@@ -86,9 +86,9 @@ autoinstall:
       - [sh, -c, "apt-mark hold kubelet kubeadm kubectl"]
 
       # Known limitation at preview: the NVKE apt repository is not published, so
-      # the key download and apt-get commands below fail. Instead, install the
-      # nvke-agent_<version>_<arch>.deb attached to an agent/ release from
-      # agent/v0.3.0-rc.2 on, at https://github.com/dsx-ai-factory/nvke/releases.
+      # the key download and apt-get commands below fail. Instead, build the
+      # .deb from a checkout (make -C agent deb-amd64) and install it from a
+      # local path.
       # Install nvke-agent from the NVKE apt repository
       - [sh, -c, "curl -fsSL -o /etc/apt/keyrings/nke.asc https://packages.nvidia.com/nvke/nvke-apt-public.key"]
       - [sh, -c, "echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://packages.nvidia.com/nvke/apt nvke-noble main' | tee /etc/apt/sources.list.d/nke-apt.list"]
@@ -101,13 +101,10 @@ autoinstall:
       # clusterctl here. nvkectl checks for nerdctl before it starts; a missing kind
       # fails pre-flight, and helm, kubectl or clusterctl fail mid-bootstrap.
 
-      # Download and install nvkectl (bootstrap host only). Replace cli/vX.Y.Z
-      # with a cli/ release at https://github.com/dsx-ai-factory/nvke/releases,
-      # cli/v0.2.0 or later, whose assets list nvkectl-linux-amd64; earlier
-      # releases do not take --nvke-controller-image. Not every cli/ tag has a
-      # release with binaries. Without one, build nvkectl from source
-      # (docs/site-bootstrap/installation.md) and copy it to the host instead.
-      - [sh, -c, "curl -fsSL -o /usr/local/bin/nvkectl https://github.com/dsx-ai-factory/nvke/releases/download/cli/vX.Y.Z/nvkectl-linux-amd64 && chmod +x /usr/local/bin/nvkectl"]
+      # Install nvkectl (bootstrap host only). It is not published as a
+      # download: build it from a checkout with `make -C cli build`, cli/v0.2.0
+      # or later (earlier releases do not take --nvke-controller-image), and
+      # copy cli/bin/nvkectl onto the host, for example with write_files.
 
       # Run bootstrap (bootstrap host only). --disable-mtls matches the plaintext
       # agents configured above; this is the development-only mode, not a

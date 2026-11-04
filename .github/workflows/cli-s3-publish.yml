@@ -131,8 +131,8 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
           echo "Publishing nvkectl release ${release} to ${S3_URI}"
 
-      # One build per release. release.yml builds and checksums; this consumes
-      # exactly those bytes, so checksums.txt describes what ships here too.
+      # One build per release. release.yml builds; this consumes exactly those
+      # bytes, so every channel ships the same binaries.
       - name: Download the release build
         if: inputs.dist_artifact != ''
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333

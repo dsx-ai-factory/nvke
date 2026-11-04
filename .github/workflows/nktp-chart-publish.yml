@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Releases the NKTP Helm chart on an nktp/vX.Y.Z tag: pushes it to
-# oci://ghcr.io/dsx-ai-factory/nvke/charts/nktp and cuts the GitHub Release.
-# release.yml skips nktp/ tags, because nktp/ is not a Go module.
+# oci://ghcr.io/dsx-ai-factory/nvke/charts/nktp.
 #
 # The chart version is the tag's, as for the controller chart: Chart.yaml
 # carries a 0.0.0 placeholder and `helm package --version` sets the real one.
@@ -38,8 +37,6 @@ jobs:
       packages: write
       actions: read  # upload-sarif reads the workflow run
       security-events: write  # the malware scan uploads SARIF
-    outputs:
-      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -79,7 +76,7 @@ jobs:
           set -euo pipefail
           helm package "${CHART}" --version "${VERSION}" --destination dist
 
-      - name: Malware scan the release artifacts
+      - name: Malware scan the chart archive
         uses: ./.github/actions/malware-scan
         with:
           scan_path: 'dist'
@@ -88,9 +85,9 @@ jobs:
 
       # A GHCR tag is mutable and `helm package` is not byte-reproducible, so a
       # rerun would replace the published chart with different bytes than the
-      # release attests. As image-nvcr.yml does for images: reuse a published
+      # first run pushed. As image-nvcr.yml does for images: reuse a published
       # version whose contents match, fail on one that does not.
-      # NVKE_GITHUB_PUBLISH names the components whose releases go to GitHub;
+      # NVKE_GITHUB_PUBLISH names the components whose releases go to GHCR;
       # see docs/artifact-publication.md. Unset means every component but os-image.
       - name: Push to GHCR
         if: contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',nktp,')
@@ -120,8 +117,6 @@ jobs:
             cat pull.err >&2
             exit 1
           fi
-          ( cd dist && sha256sum -- "nktp-${VERSION}.tgz" > checksums.txt )
-          cat dist/checksums.txt
 
       # helm keeps its own registry config rather than writing docker's, so
       # the login in the step above is invisible to crane. record-digest
@@ -133,108 +128,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # checksums.txt hashes the local .tgz, which is a different claim from
-      # the digest GHCR serves -- and the reuse branch above can publish
-      # nothing at all, leaving a checksum of a file that was never pushed.
-      # This records what is actually addressable, on both branches.
+      # The reuse branch above can publish nothing at all, so the digest is
+      # read back from GHCR. This records what is actually addressable, on
+      # both branches.
       - name: Record the published digest
         if: contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',nktp,')
         uses: ./.github/actions/record-digest
         with:
           references: ghcr.io/dsx-ai-factory/nvke/charts/nktp:${{ steps.version.outputs.version }}
           component: nktp-chart
-
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: nktp-chart-${{ github.run_id }}-${{ github.run_attempt }}
-          path: dist
-          retention-days: 1
-
-  # A separate job so no job holds both packages:write and contents:write.
-  release:
-    name: Cut the GitHub Release
-    needs: publish
-    if: contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',nktp,')
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write         # creates the GitHub release
-      id-token: write         # the OIDC token the attestation is signed against
-      attestations: write     # writes the provenance attestation
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: nktp-chart-${{ github.run_id }}-${{ github.run_attempt }}
-          path: dist
-
-      # The helm push stores the chart archive as-is, so checksums.txt also
-      # names the digest of what GHCR serves.
-      - name: Attest the release checksums
-        id: attest
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: dist/checksums.txt
-
-      - name: Attach the attestation bundle
-        env:
-          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
-        run: cp "${BUNDLE}" dist/checksums.txt.sigstore.json
-
-      # A draft, so the assets upload before publishing seals the release.
-      - name: Create GitHub Release
-        id: release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: nktp ${{ needs.publish.outputs.version }}
-          draft: true
-          prerelease: ${{ contains(github.ref_name, '-rc.') }}
-          make_latest: false
-          generate_release_notes: false
-          body: |
-            The NKTP Helm chart, version ${{ needs.publish.outputs.version }}.
-
-            ```
-            kubectl create namespace nktp
-            kubectl label namespace nktp pod-security.kubernetes.io/enforce=privileged
-            helm install nktp oci://ghcr.io/dsx-ai-factory/nvke/charts/nktp \
-              --version ${{ needs.publish.outputs.version }} --namespace nktp
-            ```
-
-            `checksums.txt.sigstore.json` is the build-provenance attestation
-            over `checksums.txt`; see [RELEASE.md](RELEASE.md).
-          files: |
-            dist/nktp-${{ needs.publish.outputs.version }}.tgz
-            dist/checksums.txt
-            dist/checksums.txt.sigstore.json
-          fail_on_unmatched_files: true
-
-      - name: Verify the release assets
-        uses: ./.github/actions/verify-release-assets
-        with:
-          release-id: ${{ steps.release.outputs.id }}
-          checksums: dist/checksums.txt
-          expected-count: "3"
-          github-token: ${{ github.token }}
-
-      - name: Publish the release
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
-        env:
-          RELEASE_ID: ${{ steps.release.outputs.id }}
-        with:
-          retries: 3
-          script: |
-            const release_id = Number(process.env.RELEASE_ID);
-            const { data: rel } = await github.rest.repos.getRelease({
-              ...context.repo, release_id,
-            });
-            if (rel.draft) {
-              await github.rest.repos.updateRelease({
-                ...context.repo, release_id, draft: false, make_latest: 'false',
-              });
-            }
-            core.info(`Published ${context.ref.replace('refs/tags/', '')} with ${rel.assets.length} assets.`);

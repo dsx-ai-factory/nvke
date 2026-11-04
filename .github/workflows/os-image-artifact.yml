@@ -12,9 +12,7 @@ name: OS Image Artifact
 # pushes and the schedule stop there; NVCR and S3 stay tag/dispatch only and
 # read the alias their own run pushed), and on a real tag, when
 # NVKE_GITHUB_PUBLISH names os-image (it does not by default), adds the version
-# tags on GHCR and cuts a GitHub Release carrying nvke-os-image-check +
-# checksums covering all nine files. The GitHub Release is created here (not
-# in release.yml) so a failed bake or validation never cuts a release.
+# tags on GHCR.
 #
 # FDE security note: its build-time LUKS_PASSPHRASE defaults to a shared,
 # documented placeholder ("changeit", see
@@ -52,15 +50,12 @@ name: OS Image Artifact
 # Both arches run on the ARC KVM scale sets (arc-amd64-kvm, arc-arm64-kvm).
 # Each matrix job builds one variant, so FDE and non-FDE bake in parallel.
 #
-# The Release is cut by the "release" job, not by a matrix leg: legs run
-# concurrently and none can see another's checksums.
-#
 # A bare vX.Y.Z-beta.N tag only triggers the run. It bakes that commit's
 # non-FDE images only -- Ubuntu 26.04 and 24.04, amd64 and arm64 -- and versions
 # it by the os-image/v* describe, like any other build of it: GHCR gets
 # sha-<commit> (and the describe version when NVKE_GITHUB_PUBLISH names
 # os-image), NVCR and the prod S3 path get the describe version. The beta tag
-# name is not published, and there is no Release.
+# name is not published.
 #
 # Distinct from image.yml, which compiles controller Dockerfiles and pushes
 # nothing. Distinct from image-nvcr.yml, which publishes the controller
@@ -86,8 +81,6 @@ on:
       - .github/workflows/os-image-artifact.yml
       - .github/workflows/e2e-pr-path-filter.yml
       - hack/e2e-path-filter.py
-      # The release job checks the published assets with it.
-      - .github/actions/verify-release-assets/**
   # Twice a day from main's HEAD, for what changes without an os-image/
   # commit: the agent baked from source and the apt packages. The e2e lanes
   # boot the newest published image built from a commit on their branch (see
@@ -233,13 +226,12 @@ jobs:
           # bake in parallel. The default flavor's tag_suffix is empty, so its
           # tags stay byte-identical to what this workflow published before
           # 24.04 existed. Keep that default in step with UBUNTU_RELEASE in the
-          # packer Makefile: its amd64 non-FDE build also carries the shared
-          # release assets.
+          # packer Makefile: its amd64 non-FDE build also carries the checker
+          # binary.
           #
           # A beta is qualified on non-FDE images only, but on every Ubuntu
           # flavor a qualification stream runs -- the 26.04 streams as well as
-          # the 24.04 golden path -- so it keeps the non-FDE legs of both. The
-          # Release the shared assets feed is not cut for a beta.
+          # the 24.04 golden path -- so it keeps the non-FDE legs of both.
           legs="$(jq -c -n --argjson arches "${arches}" --argjson beta "${BETA:-false}" '
             [{ubuntu_release:"26.04.1",tag_suffix:""},
              {ubuntu_release:"24.04.5",tag_suffix:"-ubuntu24.04"}] as $flavors
@@ -346,7 +338,6 @@ jobs:
     # #695 for one confirmed cause of slow builds: a bloated golden image).
     # The KVM gate below fails fast if /dev/kvm ever regresses.
     timeout-minutes: ${{ matrix.timeout_minutes }}
-    # contents: read, not write -- the Release is cut by the "release" job.
     permissions:
       contents: read
       packages: write
@@ -429,7 +420,7 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ needs.matrix.outputs.version }}
-          # NVKE_GITHUB_PUBLISH names the components whose releases go to GitHub;
+          # NVKE_GITHUB_PUBLISH names the components whose releases go to GHCR;
           # see docs/artifact-publication.md. Unset means every component but os-image.
           GITHUB_PUBLISH: ${{ contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',os-image,') }}
         run: |
@@ -439,7 +430,7 @@ jobs:
 
           # The sha- alias (main-sha- on main) is the hand-off the NVCR and S3
           # publishers and the NICo VMs lane read. The version alias is the
-          # GitHub publication.
+          # GHCR publication.
           aliases=("${SHA_ALIAS}")
           if [[ "${GITHUB_REF}" == refs/tags/* && "${GITHUB_PUBLISH}" == "true" ]]; then
             aliases+=("${version}")
@@ -901,32 +892,25 @@ jobs:
           REPO: ${{ matrix.variant == 'fde' && env.REPO_FDE || env.REPO_NON_FDE }}
         run: oras manifest fetch --pretty "${REPO}:${SHA_ALIAS}${{ matrix.tag_suffix }}-${{ matrix.arch }}"
 
-      # One file per leg; the release job concatenates them. The checker
-      # binary and the version metadata come from a single build -- amd64,
-      # default flavor, non-FDE -- or several would write the same two
-      # shared files.
+      # One checksums file per leg, which publish-s3 uploads beside the disk.
+      # The checker binary comes from a single build -- amd64, default flavor,
+      # non-FDE -- or several would upload the same file.
       - name: Prepare release assets
         env:
           BUILD: ${{ matrix.arch }}${{ matrix.tag_suffix }}-${{ matrix.variant }}
           DISK: ${{ steps.disks.outputs.disk }}
-          VERSION: ${{ steps.meta.outputs.version }}
-          AGENT_VERSION: ${{ steps.meta.outputs.agent_version }}
         run: |
           set -euo pipefail
           mkdir -p assets
           ( cd dist && sha256sum "${DISK}" ) > "assets/checksums-${BUILD}.txt"
-          # The SBOM is small enough to attach, unlike the disk it describes,
-          # so it is both hashed here and copied into the upload.
+          # The SBOM is hashed here and copied into the upload, so publish-s3
+          # can put it beside the disk it describes.
           sbom="${DISK%.qcow2}.spdx.json"
           ( cd dist && sha256sum "${sbom}" ) >> "assets/checksums-${BUILD}.txt"
           cp "dist/${sbom}" "assets/${sbom}"
           if [[ "${BUILD}" == "amd64-non-fde" ]]; then
             cp os-image/bin/nvke-os-image-check assets/nvke-os-image-check
             ( cd assets && sha256sum nvke-os-image-check >> "checksums-${BUILD}.txt" )
-            {
-              echo "version=${VERSION}"
-              echo "agent_version=${AGENT_VERSION}"
-            } > assets/release-meta.env
           fi
           cat "assets/checksums-${BUILD}.txt"
 
@@ -938,7 +922,6 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Fans the matrix back in: checksums.txt covers every disk all builds made.
   # Separate jobs, not more steps in "publish": that job also runs on
   # pull-request/* mirror branches with no publish step, and an
   # `environment:` gate would apply to the whole job, not just the push
@@ -1154,8 +1137,7 @@ jobs:
         run: |
           set -euo pipefail
           # The SBOM, this leg's checksums and (amd64 non-FDE only) the checker
-          # binary travel with the disk, so S3 holds them when
-          # NVKE_GITHUB_PUBLISH leaves os-image off the GitHub Release.
+          # binary travel with the disk.
           shopt -s nullglob
           for f in dist/*.qcow2 expected/*.spdx.json expected/checksums-*.txt expected/nvke-os-image-check; do
             # nullglob drops only an unmatched pattern. The checker is a literal
@@ -1193,188 +1175,3 @@ jobs:
             url="https://${CF_DOMAIN}/${key}"
             echo "OK s3://${bucket}/${key} (${url})"
           done
-
-  release:
-    needs: publish
-    # NVKE_GITHUB_PUBLISH names the components whose releases go to GitHub;
-    # see docs/artifact-publication.md. Unset means every component but os-image.
-    if: >-
-      github.repository_id == '1323115536' &&
-      startsWith(github.ref, 'refs/tags/os-image/') &&
-      contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',os-image,')
-    name: Cut the GitHub Release
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: write
-      id-token: write       # the OIDC token the attestation is signed against
-      attestations: write   # writes the provenance attestation
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Download every leg's assets
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: release-assets-*
-          merge-multiple: true
-          path: dist
-
-      - name: Merge the per-arch checksums
-        id: meta
-        run: |
-          set -euo pipefail
-          cat dist/checksums-*.txt | sort -k2 > dist/checksums.txt
-          rm -f dist/checksums-*.txt
-          # Already key=value, written by the amd64 leg.
-          cat dist/release-meta.env >> "$GITHUB_OUTPUT"
-          rm -f dist/release-meta.env
-          echo "::group::checksums"
-          cat dist/checksums.txt
-          echo "::endgroup::"
-
-      # Provenance over the merged checksums.txt, made after every leg is in.
-      # It covers the eight qcow2s as well: they ship as OCI artifacts because
-      # they are too large to attach here, but checksums.txt names them, so
-      # attesting it binds their digests too.
-      - name: Attest the release checksums
-        id: attest
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: dist/checksums.txt
-
-      - name: Attach the attestation bundle
-        shell: bash
-        env:
-          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
-        run: cp "${BUNDLE}" dist/checksums.txt.sigstore.json
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/os-image/')
-        id: release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: os-image ${{ steps.meta.outputs.version }}
-          draft: true
-          body: |
-            os-image ${{ steps.meta.outputs.version }}: the FDE and non-FDE Packer
-            node images for amd64 and arm64, built and validated against nvke-agent
-            `${{ steps.meta.outputs.agent_version }}` (built from source at this
-            commit). Each is available in two Ubuntu flavors: 26.04 and 24.04.
-
-            **FDE security note**: this image's `LUKS_PASSPHRASE` is the shared,
-            documented build-time placeholder (`changeit`), baked into both a LUKS
-            passphrase slot and GRUB's `luks.key=` kernel parameter until a node's
-            first real boot completes a verified TPM bind (see
-            `os-image/docs/full-disk-encryption.md`). Anyone with console/physical
-            access to an unbound node can read it and unlock the volume with it.
-            Verify a node closed that window with `luks-tpm-verify` before trusting
-            TPM-only unlock in production.
-
-            `checksums.txt` covers all eight qcow2s, their SBOMs and the checker
-            binary. The disks are too large to attach here.
-
-            Each disk has an SPDX 2.3 SBOM attached beside it, named after the
-            disk it describes -- `nvke-node-fde-ubuntu-26.04.1-amd64.spdx.json`
-            for `nvke-node-fde-ubuntu-26.04.1-amd64.qcow2`, and so on. It lists
-            the image's dpkg package set, read out of the built disk rather
-            than derived from the Packer templates.
-
-            `checksums.txt.sigstore.json` is the build-provenance attestation
-            over `checksums.txt`; see [RELEASE.md](RELEASE.md) for the verify
-            commands.
-          files: |
-            dist/nvke-os-image-check
-            dist/*.spdx.json
-            dist/checksums.txt
-            dist/checksums.txt.sigstore.json
-          fail_on_unmatched_files: true
-          prerelease: ${{ contains(github.ref_name, '-rc.') }}
-          make_latest: false
-          generate_release_notes: false
-
-      # The name-and-size check below proves an asset arrived, not that it
-      # arrived whole. The shared action hashes what the release carries
-      # against checksums.txt, which is the bar release.yml already held.
-      # require-all is false because the same file also covers the eight
-      # qcow2s, which ship as OCI artifacts rather than release assets.
-      #
-      # expected-count is a floor, so it has to name every attachment or a
-      # release missing all eight SBOMs still clears it on the three others:
-      # eight .spdx.json, the checker binary, checksums.txt and its
-      # attestation.
-      - name: Verify the release assets
-        if: startsWith(github.ref, 'refs/tags/os-image/')
-        uses: ./.github/actions/verify-release-assets
-        with:
-          release-id: ${{ steps.release.outputs.id }}
-          checksums: dist/checksums.txt
-          expected-count: "11"
-          require-all: "false"
-          github-token: ${{ github.token }}
-
-      - name: Publish the release
-        if: startsWith(github.ref, 'refs/tags/os-image/')
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          RELEASE_ID: ${{ steps.release.outputs.id }}
-          CHECKSUMS: dist/checksums.txt
-        with:
-          retries: 3
-          script: |
-            const fs = require('fs');
-            const release_id = Number(process.env.RELEASE_ID);
-
-            const { data: rel } = await github.rest.repos.getRelease({
-              ...context.repo, release_id,
-            });
-
-            const names = rel.assets
-              .filter(a => a.state === 'uploaded' && a.size > 0)
-              .map(a => a.name)
-              .sort();
-
-            // Name every asset the release must carry, rather than trusting
-            // the count the verify step enforces: that is a floor, so one
-            // stray attachment would let it stand in for a missing SBOM.
-            //
-            // The list comes out of checksums.txt instead of being spelled
-            // here, so adding an Ubuntu flavor or an architecture to the
-            // matrix does not need a second edit. The eight build legs each
-            // append their own disk and SBOM to it, so it names all eight
-            // .spdx.json and nvke-os-image-check. The qcow2s are dropped: they
-            // ship as OCI artifacts, too large to attach. checksums.txt and
-            // its attestation do not appear inside it, so they stay explicit.
-            const listed = fs.readFileSync(process.env.CHECKSUMS, 'utf8')
-              .split('\n')
-              .map(l => l.replace(/^[0-9a-f]+\s+[ *]?/, '').trim())
-              .filter(n => n && !n.endsWith('.qcow2'));
-            const sboms = listed.filter(n => n.endsWith('.spdx.json'));
-            if (sboms.length !== 8) {
-              core.setFailed(
-                `checksums.txt names ${sboms.length} SBOMs, expected 8 ` +
-                `(one per matrix leg). The release is left as an unpublished draft.`);
-              return;
-            }
-
-            const want = [...new Set([
-              ...listed, 'checksums.txt', 'checksums.txt.sigstore.json',
-            ])].sort();
-            const missing = want.filter(n => !names.includes(n));
-            if (missing.length > 0) {
-              core.setFailed(
-                `Release ${release_id} is missing ${missing.join(', ')} ` +
-                `(has [${names.join(', ') || 'nothing'}]). ` +
-                `It is left as an unpublished draft.`);
-              return;
-            }
-
-            if (rel.draft) {
-              await github.rest.repos.updateRelease({
-                ...context.repo, release_id, draft: false, make_latest: 'false',
-              });
-            }
-            core.info(`Published ${context.ref.replace('refs/tags/', '')} with ${names.length} assets.`);

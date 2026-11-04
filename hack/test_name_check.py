@@ -99,12 +99,11 @@ class NameCheckTest(unittest.TestCase):
             "vendor/x.txt": "nke-agent\n",
             "a/vendor/y.txt": "nke-agent\n",
             "a/generated/z.txt": "nke-agent\n",
-            "CHANGELOG.md": "nke-agent\n",
             "poetry.lock": "nke-agent\n",
         }
         result = self.run_check(files)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        # The six fixtures plus the check's own script and allowlist, which the
+        # The five fixtures plus the check's own script and allowlist, which the
         # fixture repository tracks too.
         self.assertIn(f"{len(files) + 2} excluded by path", result.stdout)
 
