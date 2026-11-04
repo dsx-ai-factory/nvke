@@ -22,7 +22,8 @@ const ControllerAudience = "nvke-controller"
 // default flipped. It stays selectable through --controller-audience, because a
 // controller older than the dual-accept release requires it and rejects
 // ControllerAudience outright — which costs that controller its node agent, not
-// just the token. Remove it once no such controller is deployed.
+// just the token. Remove it only after no such controller is deployed and no
+// persisted AGENT_ARGS explicitly selects this legacy audience.
 const LegacyControllerAudience = "nke-controller"
 
 // DefaultRefreshBefore is how far ahead of expiry a cached token is replaced,

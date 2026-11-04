@@ -46,3 +46,7 @@ rendered before the node has booted an agent, so it has no signal for what the
 image-installed binary accepts. The agent now requests `nvke-controller` by
 default, and `--controller-audience=nke-controller` reaches a controller older
 than the dual-accept release.
+
+Before installing this package on an existing node, upgrade the controller to
+the dual-accept release. If that is not possible, add
+`--controller-audience=nke-controller` to the preserved `AGENT_ARGS` first.
