@@ -115,9 +115,19 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		return fmt.Errorf("reconciling control plane scale-up: %w", err)
 	}
 
-	// Records delete intent only; the teardown itself is started at the bottom.
-	if _, err := r.remediateMachines(ctx, cluster, controlPlane); err != nil {
+	// Records delete intent only; the teardown is started at the bottom of a later
+	// pass. When remediation records a delete, end this pass: controlPlane still
+	// holds the pre-remediation snapshot, so the rollout and scale-down steps below
+	// would not see the new intent and could queue a second delete without
+	// accounting for it. The node write re-enqueues the cluster, and the next
+	// reconcile reads a fresh snapshot where the delete is in flight -- rollout and
+	// scale-down then defer to it and reconcileRequestedDeletes promotes it.
+	remediated, err := r.remediateMachines(ctx, cluster, controlPlane)
+	if err != nil {
 		return err
+	}
+	if remediated {
+		return nil
 	}
 
 	// Agent replacement can interrupt join and kubeadm RPCs. Deletion and repair
@@ -128,11 +138,21 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 			return fmt.Errorf("reconciling k8s upgrade: %w", err)
 		}
 
-		// FIXME: https://github.com/dsx-ai-factory/nvke/issues/784 - reconcileNodesNeedingRollout
-		// still tears a node down directly instead of recording intent and letting the
-		// promotion below start it, so rollout teardowns bypass the serialized path.
-		if err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane, allocator, provider.NewNodeProvider()); err != nil {
+		// Rollout records delete intent and reconcileRequestedDeletes (below) starts
+		// the teardown, so a rollout teardown serializes in the same loop as user
+		// deletes, remediation and scale-down.
+		rolloutRecorded, err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane, allocator, provider.NewNodeProvider())
+		if err != nil {
 			return fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
+		}
+		if rolloutRecorded {
+			// Same reason as the remediation return above: controlPlane still holds
+			// the pre-rollout snapshot, so the rebalance step below (whose abandon
+			// path starts a teardown directly) and scale-down could act without
+			// seeing the just-recorded delete. End the pass; the node write
+			// re-enqueues the cluster and the next reconcile reads a fresh snapshot
+			// where the delete is in flight and every step defers to it.
+			return nil
 		}
 
 		// Grow before shrink: join a ready host if one is waiting, and leave any

@@ -40,6 +40,12 @@ const (
 	// extra node does not stay when automatic scale-down is off.
 	rebalanceUndoSurgeReason = "Control-plane rebalance: removing a surge that joined no better than the members it was meant to replace"
 
+	// rebalanceYieldSurgeReason is recorded when a surge that already joined etcd
+	// is given up to yield to a higher-priority control-plane operation. Because
+	// it is a live member, it leaves through the quorum-floor-guarded delete path
+	// rather than a direct teardown.
+	rebalanceYieldSurgeReason = "Control-plane rebalance: removing a joined surge to yield to a control-plane upgrade or rollout"
+
 	// rebalanceBackoffInterval rate-limits re-probing after a surge is abandoned
 	// for lack of preferred capacity: the step records the abandonment and skips
 	// starting another surge until this elapses, so a cluster with no preferred
@@ -202,9 +208,22 @@ func (r *reconciler) reconcileRebalanceSurge(ctx context.Context, cluster db.Clu
 		return r.finishRebalanceSurge(ctx, cluster, cp, surge, nodeLogger)
 	}
 
-	// Not yet joined: yield to any higher-priority operation by abandoning the
-	// surge (its pin and marker die with the node).
+	// Yield to any higher-priority operation by giving the surge up. A surge that
+	// has not joined etcd is abandoned directly: it is a provisioning node, not a
+	// live member, so its teardown needs no quorum floor. A surge that already
+	// joined but is no longer a clean member (readiness lost, so the check above
+	// fell through) is a real etcd member, so it must leave through the
+	// quorum-floor-guarded delete path rather than a direct teardown.
 	if cp.upgradeInProgress(cluster) || cp.countNodesNeedingRollout() > 0 {
+		if surge.Conditions.Joined.Status == db.ConditionStatusTrue {
+			recorded, err := r.recordControlPlaneManagedDelete(ctx, nodeLogger, surge, rebalanceYieldSurgeReason)
+			if err != nil {
+				return false, err
+			}
+			// A floor refusal or an already-recorded delete comes back false; report
+			// no change so the reconcile continues to reconcileRequestedDeletes.
+			return recorded, nil
+		}
 		started, err := r.abandonRebalanceSurge(ctx, cp, surge, "yielding to a control-plane upgrade or rollout", nodeLogger)
 		if err != nil {
 			return false, err
@@ -400,11 +419,24 @@ func leastPreferredControlPlaneNodeToShed(cp *controlPlane, surge db.Node, ranke
 	return victim, true
 }
 
-// abandonRebalanceSurge tears the surge down through the serialized teardown
-// path, the same one scale-down and rollout use. It reports whether this pass
-// started the teardown: teardownOldNode is a no-op when a delete is already in
-// flight for the surge, and the caller must not then short-circuit the reconcile,
-// so that reconcileRequestedDeletes can promote the already-recorded delete.
+// abandonRebalanceSurge tears down a not-yet-joined rebalance surge so the step
+// yields to a higher-priority operation. It goes through teardownOldNode, which
+// starts the teardown directly (sets Deleting) rather than recording DeleteRequested
+// for reconcileRequestedDeletes to promote. This is the one deliberate exception to
+// routing every control-plane teardown through the serialized delete queue: the
+// surge is a provisioning node that never joined etcd, not a live member, so it
+// needs neither the queue's quorum floor nor its FIFO ordering, and abandonment has
+// to be immediate to clear the way rather than wait behind unrelated deletes.
+// reconcileRebalanceSurge enforces that precondition: a surge that already joined
+// goes through the quorum-floor-guarded delete path instead, so this only ever
+// tears down a node that is not a live etcd member.
+// teardownOldNode still serializes against any other in-flight delete through the
+// nodeWithDeleteInFlight check, so no two control-plane teardowns ever overlap.
+//
+// It reports whether this pass started the teardown: teardownOldNode is a no-op
+// when a delete is already in flight for the surge, and the caller must not then
+// short-circuit the reconcile, so that reconcileRequestedDeletes can promote the
+// already-recorded delete.
 func (r *reconciler) abandonRebalanceSurge(ctx context.Context, cp *controlPlane, surge db.Node, reason string, logger *slog.Logger) (bool, error) {
 	started, err := r.teardownOldNode(ctx, cp, surge, "Rebalance surge abandoned: "+reason, "rebalance-abandon", logger)
 	if err != nil {

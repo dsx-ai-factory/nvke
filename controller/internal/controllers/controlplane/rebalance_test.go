@@ -656,6 +656,60 @@ func TestReconcileControlPlaneRebalance_AbandonsSurgeOnUpgrade(t *testing.T) {
 	mockTx.AssertNotCalled(t, "UpdateCluster", mock.Anything, mock.Anything)
 }
 
+// TestReconcileControlPlaneRebalance_RoutesJoinedSurgeThroughGuardedDeleteOnUpgrade
+// pins that a surge which already joined etcd but then lost readiness is given up
+// through the quorum-floor-guarded delete path, not a direct teardown, when an
+// upgrade starts. Only a not-yet-joined surge may be abandoned directly; a joined
+// surge is a live etcd member, so its removal must respect the quorum floor.
+func TestReconcileControlPlaneRebalance_RoutesJoinedSurgeThroughGuardedDeleteOnUpgrade(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	configID := uuid.New()
+	cappedID := uuid.New()
+	base := time.Now()
+	primaryType := uuid.New()
+	cluster := rebalanceCluster(clusterID, configID, []uuid.UUID{primaryType}, true, true)
+	cluster.Conditions.ControlPlaneUpgrading = db.NewCondition(true, "Upgrading")
+
+	// The surge joined etcd but is no longer ready, so it is not a clean joined
+	// member and falls through the clean-member check. It is still a live etcd
+	// member, so removal must go through the quorum-floor-guarded delete path.
+	surge := cpNodeOnType(clusterID, cappedID, "cp-surge", primaryType, base)
+	surge.Conditions.KubernetesReady = db.NewCondition(false, "Kubelet down")
+	surge.Conditions.ControlPlanePreferredReplacement = db.NewCondition(true, "Rebalance surge")
+	nodesList := []db.Node{
+		cpNodeOnType(clusterID, configID, "cp-a", primaryType, base),
+		cpNodeOnType(clusterID, configID, "cp-b", primaryType, base),
+		cpNodeOnType(clusterID, configID, "cp-c", primaryType, base),
+		surge,
+	}
+
+	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNode", mock.Anything, surge.ID).Return(surge, nil)
+	mockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(cluster, nil)
+	mockTx.On("GetNodeForUpdate", mock.Anything, surge.ID).Return(surge, nil)
+	mockTx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil)
+	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodesList, nil)
+	var written db.Node
+	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
+		written = *node
+		return true
+	})).Return(surge, nil)
+
+	r := newRebalanceReconciler(mockTx)
+	cp := &controlPlane{nodes: nodesList, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
+
+	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, domainAllocator{}, nil)
+	require.NoError(t, err)
+	assert.True(t, acted, "recording the surge delete changes membership, so the pass owns the reconcile")
+
+	assert.Equal(t, surge.ID, written.ID)
+	assert.True(t, nodes.IsDeleteRequested(written), "a joined surge leaves through the guarded delete path")
+	assert.False(t, nodes.IsDeleting(written), "a joined surge must not be torn down directly, bypassing the quorum floor")
+	mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
 // TestReconcileControlPlaneRebalance_BacksOffWhenSurgeHasNoCapacity pins the
 // backoff rule: a surge that never joins within the timeout is abandoned for lack
 // of capacity and records a backoff, so the next round re-probes slowly instead of
