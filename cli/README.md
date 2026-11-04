@@ -331,10 +331,7 @@ which turns a safety check off and so answers only to its own name, and the
 `NVKECTL_NVKE_CONTROLLER_*` settings, was named
 `NKECTL_*` while the binary was called `nkectl`. The old names still work for one release: when only the old
 name is set, `nvkectl` uses it and logs a warning naming the replacement. When
-both are set, the new name wins. Likewise
-`make -C cli images` reads
-`CONTROLLER_IMAGE`, and still reads `CWE_IMAGE` with a warning until
-[nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes it.
+both are set, the new name wins.
 
 The controller and Postgres charts are carried in the binary and are never
 pulled, so they have no variable. For the three that are pulled, the chart

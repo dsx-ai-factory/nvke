@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -22,16 +23,13 @@ import (
 const (
 	ControllerGofailPostgresDSNEnv = "NVKE_CONTROLLER_GOFAIL_E2E_DB_CONNECTION_STRING"
 	postgresReadyTimeout           = 15 * time.Second
-	// previousPostgresDSNEnv and legacyPostgresDSNEnv are deprecated aliases; #1399 removes them.
-	previousPostgresDSNEnv = "NKE_CONTROLLER_GOFAIL_E2E_DB_CONNECTION_STRING"
-	legacyPostgresDSNEnv   = "CWE_GOFAIL_E2E_DB_CONNECTION_STRING"
 )
 
 // StartPostgres returns the CI-provided PostgreSQL DSN or starts an ephemeral local server.
 func StartPostgres(t testing.TB) string {
 	t.Helper()
 
-	if dsn := getenvWithLegacy(ControllerGofailPostgresDSNEnv, previousPostgresDSNEnv, legacyPostgresDSNEnv); dsn != "" {
+	if dsn := os.Getenv(ControllerGofailPostgresDSNEnv); dsn != "" {
 		waitForPostgres(t, dsn)
 		return dsn
 	}

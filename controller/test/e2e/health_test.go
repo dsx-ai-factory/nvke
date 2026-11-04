@@ -36,9 +36,7 @@ type healthConfig struct {
 const expectedVersionRequireEnv = "NVKE_E2E_REQUIRE_EXPECTED_VERSION"
 
 func loadHealthConfig() (healthConfig, error) {
-	// NKE_CONTROLLER_HEALTH_TIMEOUT, NKE_CONTROLLER_EXPECTED_VERSION, CWE_HEALTH_TIMEOUT and
-	// CWE_EXPECTED_VERSION are deprecated aliases for the NVKE_CONTROLLER_ names; #1399 removes them.
-	timeout, err := time.ParseDuration(envOrDefaultLegacy("60s", "NVKE_CONTROLLER_HEALTH_TIMEOUT", "NKE_CONTROLLER_HEALTH_TIMEOUT", "CWE_HEALTH_TIMEOUT"))
+	timeout, err := time.ParseDuration(cmp.Or(os.Getenv("NVKE_CONTROLLER_HEALTH_TIMEOUT"), "60s"))
 	if err != nil {
 		return healthConfig{}, fmt.Errorf("parsing NVKE_CONTROLLER_HEALTH_TIMEOUT: %w", err)
 	}
@@ -55,44 +53,10 @@ func loadHealthConfig() (healthConfig, error) {
 		Namespace:              controller.Namespace(),
 		Service:                controller.Service(),
 		ServicePort:            controller.Port(),
-		ExpectedVersion:        envOrDefaultLegacy("", "NVKE_CONTROLLER_EXPECTED_VERSION", "NKE_CONTROLLER_EXPECTED_VERSION", "CWE_EXPECTED_VERSION"),
+		ExpectedVersion:        os.Getenv("NVKE_CONTROLLER_EXPECTED_VERSION"),
 		RequireExpectedVersion: requireVersion,
 		Timeout:                timeout,
 	}, nil
-}
-
-// envOrDefaultLegacy reads key, then each of legacyKeys (deprecated spellings
-// of key, still honored, in order), then def. An empty value counts as unset,
-// so an empty key does not hide a set legacy key.
-func envOrDefaultLegacy(def, key string, legacyKeys ...string) string {
-	value := os.Getenv(key)
-	for _, legacyKey := range legacyKeys {
-		value = cmp.Or(value, os.Getenv(legacyKey))
-	}
-	return cmp.Or(value, def)
-}
-
-func TestUnit_EnvOrDefaultLegacy(t *testing.T) {
-	const key, previousKey, cweKey = "NKE_E2E_TEST_NEW", "NKE_E2E_TEST_NKE", "NKE_E2E_TEST_OLD"
-	for _, tc := range []struct {
-		name, value, previous, legacy, want string
-	}{
-		{name: "default when none is set", want: "def"},
-		{name: "legacy name when only it is set", legacy: "old", want: "old"},
-		{name: "NKE_CONTROLLER name when only it is set", previous: "nke", want: "nke"},
-		{name: "new name wins over legacy names", value: "new", previous: "nke", legacy: "old", want: "new"},
-		{name: "NKE_CONTROLLER name wins over CWE name", previous: "nke", legacy: "old", want: "nke"},
-		{name: "empty new name does not hide legacy names", value: "", previous: "", legacy: "old", want: "old"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv(key, tc.value)
-			t.Setenv(previousKey, tc.previous)
-			t.Setenv(cweKey, tc.legacy)
-			if got := envOrDefaultLegacy("def", key, previousKey, cweKey); got != tc.want {
-				t.Errorf("envOrDefaultLegacy = %q, want %q", got, tc.want)
-			}
-		})
-	}
 }
 
 func TestLoadHealthConfigRequireExpectedVersion(t *testing.T) {

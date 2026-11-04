@@ -510,8 +510,7 @@ def register(ctx):
     # Convenience button: create a sample nico-vms-backed NVKE cluster.
     # Defaults to 1 control-plane + 1 worker node using the seed resources.
     # -----------------------------------------------------------------------
-    # NKE_CONTROLLER_HTTP_PORT and CWE_HTTP_PORT are deprecated aliases for NVKE_CONTROLLER_HTTP_PORT; #1399 removes them.
-    _controller_port = os.getenv("NVKE_CONTROLLER_HTTP_PORT", "") or os.getenv("NKE_CONTROLLER_HTTP_PORT", "") or os.getenv("CWE_HTTP_PORT", "") or "8080"
+    _controller_port = os.getenv("NVKE_CONTROLLER_HTTP_PORT", "") or "8080"
     if _vm_backend_enabled:
         cmd_button(
             "5-create-sample-nico-vms-cluster",

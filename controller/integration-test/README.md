@@ -15,7 +15,7 @@ Before you begin you need a test environment and usable forge instances. Current
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `NVKE_CONTROLLER_API_URL` | URL of the controller API. The old names `NKE_CONTROLLER_API_URL` and `CWE_API_URL` keep working until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes them, after the first controller and nvkectl GA releases that include the new names. | `http://localhost:8080/api` |
+| `NVKE_CONTROLLER_API_URL` | URL of the controller API. | `http://localhost:8080/api` |
 | `CREATE_CLUSTER_REQUEST_PATH` | Path to JSON file | `testdata/default/create-cluster-request.json` (placeholder IDs; override for a live run) |
 | `CREATE_NODE_POOL_REQUEST_PATH` | Path to JSON file | `testdata/default/create-nodepool-request.json` (placeholder IDs; override for a live run) |
 | `SKIP_CLEANUP` | Don't tear down any provisioned resources | `false` |

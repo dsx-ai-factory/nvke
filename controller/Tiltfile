@@ -80,10 +80,6 @@ cfg = _tilt_config
 # CI can preload immutable images into Kind and bypass the local Docker builds.
 # Local development keeps the existing build behavior when these are unset.
 CONTROLLER_IMAGE = cfg.get("nvke_controller_image", "")
-# cwe_image is the deprecated name of nvke_controller_image, read for one release.
-if not CONTROLLER_IMAGE and cfg.get("cwe_image", ""):
-    warn("tilt_config.json: cwe_image is deprecated; rename it to nvke_controller_image.")
-    CONTROLLER_IMAGE = cfg["cwe_image"]
 SITE_CONTROLLER_VIP_OVERRIDE = cfg.get("site_controller_vip", "")
 
 _provider_entries = cfg.get("providers", [
@@ -160,9 +156,8 @@ TEMPORAL_NAMESPACE = "temporal"
 POSTGRES_NAMESPACE = "postgres"
 SPIRE_NAMESPACE = "spire-server"
 CONTROLLER_LOCAL_DEBUG_MARKER = ".tilt-cwe-debug-local"
-# NKE_CONTROLLER_HTTP_PORT, NKE_CONTROLLER_TEMPORAL_UI_PORT, CWE_HTTP_PORT and CWE_TEMPORAL_UI_PORT are deprecated aliases for the NVKE_CONTROLLER_ names; #1399 removes them.
-CONTROLLER_HTTP_PORT = os.getenv("NVKE_CONTROLLER_HTTP_PORT", "") or os.getenv("NKE_CONTROLLER_HTTP_PORT", "") or os.getenv("CWE_HTTP_PORT", "") or "8080"
-CONTROLLER_TEMPORAL_UI_PORT = os.getenv("NVKE_CONTROLLER_TEMPORAL_UI_PORT", "") or os.getenv("NKE_CONTROLLER_TEMPORAL_UI_PORT", "") or os.getenv("CWE_TEMPORAL_UI_PORT", "") or "8081"
+CONTROLLER_HTTP_PORT = os.getenv("NVKE_CONTROLLER_HTTP_PORT", "") or "8080"
+CONTROLLER_TEMPORAL_UI_PORT = os.getenv("NVKE_CONTROLLER_TEMPORAL_UI_PORT", "") or "8081"
 
 # Tilt UI links open in the browser of whoever views the Tilt UI. When Tilt runs
 # on a remote host accessed via forwarded ports (e.g. Mutagen forwards a target
@@ -1170,13 +1165,12 @@ _controller_compile_script = """
 #
 # Point NVKE_CONTROLLER_PROFILES_DIR at nke-site-deploy/cwe-profiles/profiles to exercise
 # the fleet profiles.
-# NKE_CONTROLLER_PROFILES_DIR, NKE_CONTROLLER_PROFILES_PRELOADED, CWE_PROFILES_DIR and CWE_PROFILES_PRELOADED are deprecated aliases for the NVKE_CONTROLLER_ names; #1399 removes them.
-_controller_profiles_dir = (os.getenv("NVKE_CONTROLLER_PROFILES_DIR", "") or os.getenv("NKE_CONTROLLER_PROFILES_DIR", "") or os.getenv("CWE_PROFILES_DIR", "") or _tilt_env.get("NVKE_CONTROLLER_PROFILES_DIR", "") or _tilt_env.get("NKE_CONTROLLER_PROFILES_DIR", "") or _tilt_env.get("CWE_PROFILES_DIR", "")).strip()
+_controller_profiles_dir = (os.getenv("NVKE_CONTROLLER_PROFILES_DIR", "") or _tilt_env.get("NVKE_CONTROLLER_PROFILES_DIR", "")).strip()
 if _controller_profiles_dir == "":
     _controller_profiles_dir = os.path.abspath(os.path.join(config.main_dir, "test", "fixtures", "profiles"))
 elif not _controller_profiles_dir.startswith("/"):
     _controller_profiles_dir = os.path.abspath(os.path.join(config.main_dir, _controller_profiles_dir))
-_controller_profiles_preloaded = (os.getenv("NVKE_CONTROLLER_PROFILES_PRELOADED", "") or os.getenv("NKE_CONTROLLER_PROFILES_PRELOADED", "") or os.getenv("CWE_PROFILES_PRELOADED", "")) == "true"
+_controller_profiles_preloaded = os.getenv("NVKE_CONTROLLER_PROFILES_PRELOADED", "") == "true"
 # Starlark's os.path has exists/join but not isdir.
 if not _controller_profiles_preloaded and not _controller_profiles_dir:
     fail("NVKE_CONTROLLER_PROFILES_DIR must point to an external profiles directory")
@@ -1300,8 +1294,7 @@ local_resource(
 )
 
 # Applies the releases the controller resolves every OS image from.
-# NKE_CONTROLLER_RELEASES_DIR is a deprecated alias for NVKE_CONTROLLER_RELEASES_DIR; #1399 removes it.
-_nke_release_dir = (os.getenv("NVKE_CONTROLLER_RELEASES_DIR", "") or os.getenv("NKE_CONTROLLER_RELEASES_DIR", "") or _tilt_env.get("NVKE_CONTROLLER_RELEASES_DIR", "") or _tilt_env.get("NKE_CONTROLLER_RELEASES_DIR", "")).strip()
+_nke_release_dir = (os.getenv("NVKE_CONTROLLER_RELEASES_DIR", "") or _tilt_env.get("NVKE_CONTROLLER_RELEASES_DIR", "")).strip()
 if _nke_release_dir == "":
     _nke_release_dir = os.path.join(_controller_profiles_context, "releases")
 elif not _nke_release_dir.startswith("/"):
