@@ -56,7 +56,7 @@ infrastructure:
       # site controller never dials it; the site lane fails on an empty one
       # before a machine exists. The CI bot's only login is root.
       jumpHost: "${FORGE_JUMP_HOST:-}"
-      teleportLogin: "${FORGE_TELEPORT_LOGIN:-}"
+      teleportLogin: "${FORGE_TELEPORT_LOGIN:-root}"
 
       # Only the two types below have actually carried a tenant here. The site
       # offers more: GET /v2/org/<org>/forge/instance/type?pageSize=100 lists
@@ -101,7 +101,7 @@ infrastructure:
       vpcPrefixID: "${FORGE_SITE_2_VPC_PREFIX_ID:-}"
       sshKeyGroupID: "${FORGE_SITE_2_SSH_KEY_GROUP_ID:-}"
       jumpHost: "${FORGE_SITE_2_JUMP_HOST:-}"
-      teleportLogin: "${FORGE_SITE_2_TELEPORT_LOGIN:-}"
+      teleportLogin: "${FORGE_SITE_2_TELEPORT_LOGIN:-root}"
       # Both CPU architectures, because the site controller and the tenants it
       # hosts are different machines and need not agree. A GB200 tenant is
       # arm64 throughout, while the site controller in front of it can be
