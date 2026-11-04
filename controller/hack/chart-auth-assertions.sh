@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Asserts what the chart renders for apiAuth in each state, which `helm lint`
-# does not check.
+# Asserts what the chart renders for apiAuth and apiAuthz in each state, which
+# `helm lint` does not check.
 #
 # Needs helm and yq. Resolves the chart relative to this script, so it runs from
 # anywhere; CHART overrides that, which is how the workflow points it at

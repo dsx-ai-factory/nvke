@@ -336,8 +336,9 @@ at fault.
 
 {{/*
 Refuse apiAuthz without apiAuth, enforcing apiAuthz behind permissive apiAuth,
-and a config the chart would not render. Called from deployment.yaml, like
-controller.apiAuth.validate. Emits nothing.
+a config the chart would not render or that carries apiVersion or kind, and a
+bundle ConfigMap named like another ConfigMap the controller mounts. Called from
+deployment.yaml, like controller.apiAuth.validate. Emits nothing.
 */}}
 {{- define "controller.apiAuthz.validate" -}}
 {{- $authz := .Values.apiAuthz -}}
@@ -367,7 +368,7 @@ controller.apiAuth.validate. Emits nothing.
 {{- if eq $authz.configMap.name $controllerConfig -}}
 {{- fail (printf "apiAuthz.configMap.name is %q, the controller config ConfigMap's name. The bundle and the controller config cannot share a ConfigMap. Choose another name." $controllerConfig) -}}
 {{- end -}}
-{{- if and .Values.apiAuth.enabled (eq $authz.configMap.name .Values.apiAuth.configMap.name) -}}
+{{- if eq $authz.configMap.name .Values.apiAuth.configMap.name -}}
 {{- fail (printf "apiAuthz.configMap.name is %q, the same as apiAuth.configMap.name. The bundle and the authentication configuration cannot share a ConfigMap. Choose another name." $authz.configMap.name) -}}
 {{- end -}}
 {{- end -}}
