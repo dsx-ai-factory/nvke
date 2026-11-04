@@ -42,7 +42,7 @@ A management cluster with an odd number of nodes, each a control-plane node that
 
 ### Network
 
-- **A Kubernetes API virtual IP address (VIP)** for the management cluster when it has more than one node, and for each workload cluster with more than one control-plane node. Each VIP is an unused, routable IPv4 address outside the cluster's pod and service networks. A single-node management cluster uses its node's IP instead.
+- **A Kubernetes API virtual IP address (VIP)** for the management cluster when it has more than one node, and for each workload cluster with more than one control-plane node. Each VIP is an unused, routable IPv4 address outside the cluster's pod and service networks. A single-node management cluster built from your own nodes, as on these pages, uses its node's IP instead. A site spec with `infra.provider: nico`, whose nodes NICo allocates, needs the VIP even for one node; see [`cluster.controlPlaneVIP`](../site-bootstrap/configuration.md).
 - **Border Gateway Protocol (BGP) peering for each VIP.** Every control-plane node advertises the VIP from local autonomous system (AS) 65100 to the node's default gateway, with peer AS 4294967000. The local AS is fixed. The peer AS has two exceptions, both for workload clusters: a control plane that uses VPC prefix IDs reads its peer AS from NICo's metadata service on each node, and setting `KUBE_VIP_FMDS_ENDPOINT` in the management plane's `env` makes every workload cluster read it from that URL. Your network must accept the route and carry it to the cluster's API callers.
 - **Pod and service networks** for each cluster that do not overlap each other or your node network.
 - **Outbound access** from the bootstrap host and the management cluster to the registries and chart repositories listed in [Install the management plane](install-management-plane.md).
@@ -76,13 +76,14 @@ All connections are TCP; traffic between the nodes of one cluster is not listed.
 
 - **A container registry you control**, only if you supply the controller or profile content image from one, with an account that can push to it. If pulling needs credentials, the management cluster needs them too.
 - CAPNICo's published image is public on `ghcr.io`, so it needs no credentials.
+- **Where a release's artifacts come from.** An NVKE release page at `https://github.com/dsx-ai-factory/nvke/releases` lists the versions a release was built from; it is not a download location for them. You check out the release tag in your `nvke` clone and build the node image and `nvkectl` from it, as described in [Build and host node OS images](build-node-images.md) and [Install nvkectl](bootstrap-management-cluster.md#install-nvkectl). The install takes the controller and profile images from `images.controller` and `images.profiles` in the stack config, or every chart and image by digest from an NVKR release description; see [Install the management plane](install-management-plane.md).
 
 ### Hosts and tools
 
 | Host | Needs |
 |---|---|
 | Node-image build host | Linux matching the target architecture, with KVM access and the tools listed in [Build the OS image](../../os-image/README.md#build-the-os-image). |
-| Bootstrap host | Linux, run as root, with rootful `nerdctl` and containerd, `kind`, `helm`, `kubectl`, `clusterctl`, Go and GNU Make. Docker is not supported. It can be a management cluster node. |
+| Bootstrap host | Linux, run as root, with rootful `nerdctl` and containerd, `kind`, `helm`, `kubectl`, `clusterctl`, Go and GNU Make. Docker is not supported. Normally this is one of the management cluster nodes; a separate host also works. |
 | Install host | `nvkectl`, `helm` v4.2.4, `kubectl`, `clusterctl` v1.13.6, `curl`, `python3` and `git`. It can be the bootstrap host. |
 | API workstation | `nvkectl`, `curl` and `jq`; with API authentication, also the `kubectl oidc-login` plugin and `python3`. |
 
@@ -103,7 +104,7 @@ NVKE admits callers by group but does no authorization: every admitted caller ca
 |---|---|---|
 | Management cluster node count | Bootstrap | An odd number. The management cluster cannot add or replace nodes, so size it for the life of the installation. |
 | Management cluster etcd encryption | Bootstrap | On by default. A management cluster bootstrapped without it stays unencrypted. |
-| Management cluster API VIP | Bootstrap | Required for more than one node. |
+| Management cluster API VIP | Bootstrap | Required for more than one node, and for one node with `infra.provider: nico`. |
 | SPIFFE trust domain | Node preparation | One value in the node user data, the site spec and the install values. If the site spec leaves it unset, `nvkectl` uses `nvkectl-bootstrap.nke.local`, which does not match your nodes. |
 | Node CPU architecture | Image build | The node image and the SPIRE TPM attestor checksum are per architecture. |
 | Workload cluster Container Network Interface (CNI) plugin and networks | Cluster creation | `ovn-kubernetes`. Pod and service ranges default to `192.168.0.0/16` and `10.96.0.0/12`. |
@@ -137,6 +138,7 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 |---|---|---|---|
 | Registry host and namespace | `<REGISTRY_HOST>`, `<NAMESPACE>` | Build, Bootstrap, Install | |
 | Registry account that can push | `<REGISTRY_USER>`, `<REGISTRY_TOKEN>` | Build | |
+| NVKE release tag, such as `v0.23.1` | `<NVKE_RELEASE>` | Build, Bootstrap, Install | |
 | Optional NVKR release description; see [Install the management plane](install-management-plane.md) | `release.json` | Install | |
 | Controller image reference | `<CONTROLLER_IMAGE>` | Bootstrap; Install without a release | |
 | Provisioned infrastructure provider image | `<PROVISIONED_PROVIDER_IMAGE>` | Bootstrap | |

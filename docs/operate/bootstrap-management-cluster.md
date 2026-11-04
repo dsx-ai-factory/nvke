@@ -9,7 +9,7 @@ This page describes how to turn your prepared nodes into the management cluster,
 - You have an odd number of nodes, such as one, three or five, and you know each node's name, IP address and TPM endorsement-key (EK) thumbprint.
 - You have an IPv4 virtual IP address (VIP) for the Kubernetes API, routed to the nodes over BGP. A single-node cluster can omit it and use its node's IP.
 - You have your SPIRE CA certificate and key as files on the bootstrap host, and the certificate is already on each node.
-- You have a Linux bootstrap host that reaches every node on the `nvke-agent` port (15005 by default) and reaches the Kubernetes API address on 6443. Nodes with a TPM thumbprint must reach the bootstrap host on 30081. You can use one of the nodes as the bootstrap host.
+- You have a Linux bootstrap host that reaches every node on the `nvke-agent` port (15005 by default) and reaches the Kubernetes API address on 6443. Nodes with a TPM thumbprint must reach the bootstrap host on 30081. Normally the bootstrap host is one of the nodes; a separate host also works.
 - The bootstrap host has rootful `nerdctl` with containerd, plus `kind`, `helm`, `kubectl` and `clusterctl` on `PATH`. Docker is not supported. Only `nerdctl` is checked before the run starts, so a missing `helm`, `kubectl` or `clusterctl` fails the run part-way through.
 - The bootstrap host's `/etc/nerdctl/nerdctl.toml` sets `cni_netconfpath = "/etc/containerd-nerdctl/net.d"`, so nerdctl keeps its network configs out of `/etc/cni/net.d`, the directory a node's containerd reads for pod networking. The bootstrap stops if `/etc/cni/net.d` already holds `nerdctl-*.conflist` files; [Troubleshoot](troubleshoot.md#the-node-cni-directory-holds-nerdctl-network-configs) gives the fix.
 - The bootstrap host has Go and GNU Make to build `nvkectl`, and outbound access to the registries and chart repositories the bootstrap pulls from.
@@ -18,11 +18,17 @@ Run every command on this page on the bootstrap host, as root, in a session that
 
 ## Install nvkectl
 
-1. Clone the repository and build `nvkectl` with Make.
+1. Clone the repository, check out the NVKE release you install, and build `nvkectl` with Make.
 
    ```bash
    git clone https://github.com/dsx-ai-factory/nvke.git
    ```
+
+   ```bash
+   git -C nvke checkout <NVKE_RELEASE>
+   ```
+
+   `<NVKE_RELEASE>` is the release tag, such as `v0.23.1`. A binary built from another commit carries that commit's version and Cluster API provider manifests, not the release's.
 
    ```bash
    make -C nvke/cli build
@@ -231,7 +237,7 @@ To retry after the second case:
    kubectl --kubeconfig <CLUSTER_NAME>.kubeconfig get nodes
    ```
 
-   Every node in the site spec is listed with the `control-plane` role and status `Ready`.
+   Every node in the site spec is listed with the `control-plane` role and status `Ready`. The bootstrap names each node `<CLUSTER_NAME>-cp-<SUFFIX>`, with a random eight-character suffix, not the `name` column of `hosts.csv`. To match a node to its `hosts.csv` row, compare the `INTERNAL-IP` column of `get nodes -o wide`.
 
 2. Check that the control-plane taint is gone.
 

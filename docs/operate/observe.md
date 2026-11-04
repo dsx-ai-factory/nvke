@@ -1,13 +1,13 @@
 # Observe NVKE and its clusters
 
-This page describes how to check the health of the NVIDIA Kubernetes Engine (NVKE) management plane and the workload clusters it manages, and where to find their logs, metrics and dashboards. You use it after [Run NVKE end to end on one machine](../get-started/local-site.md), and whenever you need to know whether NVKE and its clusters are working.
+This page describes how to check the health of the NVIDIA Kubernetes Engine (NVKE) management plane and the workload clusters it manages, and where to find their logs, metrics and dashboards. You use it after [Install the management plane](install-management-plane.md) or [Run NVKE end to end on one machine](../get-started/local-site.md), and whenever you need to know whether NVKE and its clusters are working.
 
 ## Before you begin
 
 - You have completed [Install the management plane](install-management-plane.md), and `nvkectl config set-site` points `nvkectl` at your NVKE API and the management cluster's kubeconfig. If API authentication is on, `nvkectl` points at an OpenID Connect (OIDC) kubeconfig instead, as described in [Secure the NVKE API](api-authentication.md). With that kubeconfig, `nvkectl get providers` and `nvkectl get kubeconfig` fail, because they read the management cluster's Kubernetes API, which does not accept your identity provider's tokens; the steps that use them give a `kubectl` alternative.
 - `kubectl` uses the management cluster's admin kubeconfig, for example with `export KUBECONFIG=<CLUSTER_NAME>.kubeconfig`, where `<CLUSTER_NAME>` is the management cluster's name.
 - You have `curl` and `jq`.
-- If you change the management plane's values below, run the install from a shell with the `NVKECTL_*` variables exported, as described in [Run NVKE end to end on one machine](../get-started/local-site.md).
+- If you change the management plane's values below, run the install from a shell with the `NVKECTL_*` variables exported, as described in [Run the install again](install-management-plane.md#run-the-install-again).
 - You know `<MANAGEMENT_ADDRESS>`, the management cluster's API virtual IP address (VIP), or the node IP of a single-node management cluster. The NVKE API is at `http://<MANAGEMENT_ADDRESS>:30080`. If API authentication is on, add `-H "Authorization: Bearer <TOKEN>"` to each `curl` command that calls `/api/`, where `<TOKEN>` is a JSON Web Token (JWT) from your identity provider, as described in [Secure the NVKE API](api-authentication.md). `/healthz` and `/readyz` need no token.
 
 ## Check the management plane
@@ -79,7 +79,7 @@ env:
     value: debug
 ```
 
-Then run the install command from [Run NVKE end to end on one machine](../get-started/local-site.md) again, with the same flags and `--values-for controller=../controller-log.yaml` added. Your `env` list replaces the deploy path's list, which sets `NODE_AGENT_PORT`, so keep that entry. `LOG_LEVEL` accepts `debug`, `info`, `warn` and `error`. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md). If you passed `--values-for nktp=<FILE>` when you installed, pass it again, or NKTP goes back to the bundled development backend.
+Then run the install command again, as described in [Run the install again](install-management-plane.md#run-the-install-again), with the same flags and `--values-for controller=../controller-log.yaml` added. Your `env` list replaces the deploy path's list, which sets `NODE_AGENT_PORT`, so keep that entry. `LOG_LEVEL` accepts `debug`, `info`, `warn` and `error`. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md). If you passed `--values-for nktp=<FILE>` when you installed, pass it again, or NKTP goes back to the bundled development backend.
 
 Database queries appear in the `query` key with a `?` for each value, and a PostgreSQL error appears by its severity and code without its message, at every log level. The values can include content you supplied, such as cloud-init files in a cluster's `infra` settings, and an error message can repeat a rejected value. To log the values and messages while you debug a query, add this entry to the `env` list in `controller-log.yaml` and run the install command again as above:
 
@@ -196,7 +196,7 @@ By default NKTP exports to a bundled development backend, with Grafana, Promethe
 kubectl -n nktp port-forward svc/lgtm 3000:3000 --address 127.0.0.1
 ```
 
-To keep the data, send it to your own backend: write a values file as described under "Set a backend" in [Getting started with NKTP](../nktp/getting-started.md), and run the install from [Run NVKE end to end on one machine](../get-started/local-site.md) again with `--values-for nktp=<FILE>` added. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
+To keep the data, send it to your own backend: write a values file as described under "Set a backend" in [Getting started with NKTP](../nktp/getting-started.md), and run the install again, as described in [Run the install again](install-management-plane.md#run-the-install-again), with `--values-for nktp=<FILE>` added. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
 
 NVKE installs neither NKTP nor cert-manager in workload clusters. NKTP collects only from the management cluster, where the install deploys it; for workload clusters you have the management plane's metrics, which describe each cluster, node pool and node as NVKE tracks them. [Getting started with NKTP](../nktp/getting-started.md) describes NKTP itself.
 
