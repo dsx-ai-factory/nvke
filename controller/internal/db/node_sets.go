@@ -138,6 +138,8 @@ type NodeSetQueries interface {
 	DeleteNodeSet(ctx context.Context, id uuid.UUID) error
 }
 
+// ListNodeSets returns the node sets that match every set filter. A Tenant
+// filter keeps only the node sets whose cluster that tenant owns.
 func (q *queriesImpl) ListNodeSets(ctx context.Context, filters NodeSetFilters) ([]NodeSet, error) {
 	var nodeSets []NodeSet
 	query := q.db.NewSelect().Model(&nodeSets).

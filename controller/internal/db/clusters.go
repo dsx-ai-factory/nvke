@@ -619,6 +619,8 @@ type ClusterQueries interface {
 	SyncClusterControlPlaneConfigFromCPNodePools(ctx context.Context, clusterID uuid.UUID) error
 }
 
+// ListClusters returns the clusters that match every set filter. A Tenant
+// filter keeps only the clusters that tenant owns.
 func (q *queriesImpl) ListClusters(ctx context.Context, filters ClusterFilters) ([]Cluster, error) {
 	var clusters []Cluster
 	query := q.db.NewSelect().Model(&clusters)
@@ -687,6 +689,9 @@ func (q *queriesImpl) CreateCluster(ctx context.Context, cluster *Cluster) (Clus
 	return *cluster, nil
 }
 
+// UpdateCluster writes every column of cluster except oidc_providers and
+// tenant, and reads those two back, so an update never moves a cluster to
+// another tenant.
 func (q *queriesImpl) UpdateCluster(ctx context.Context, cluster *Cluster) (Cluster, error) {
 	cluster.UpdatedAt = time.Now()
 	res, err := q.db.NewUpdate().Model(cluster).
