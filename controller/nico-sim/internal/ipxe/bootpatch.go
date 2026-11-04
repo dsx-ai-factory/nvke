@@ -38,11 +38,14 @@ const (
 	gptEntryMinBytes = 128
 )
 
-// nvidiaKernelPattern matches nvidia-64k kernel filenames in /boot and grub.cfg.
-var nvidiaKernelPattern = regexp.MustCompile(`vmlinuz-\S*nvidia-64k`)
+// nvidiaKernelPattern matches nvidia-64k and nvidia-bos-64k kernel filenames
+// in /boot and grub.cfg. The BOS series is a separate package line, not a
+// newer nvidia-64k, so its name does not contain "nvidia-64k".
+var nvidiaKernelPattern = regexp.MustCompile(`vmlinuz-\S*nvidia(?:-bos)?-64k`)
 
-// nvidiaInitrdPattern matches nvidia-64k initrd filenames in /boot and grub.cfg.
-var nvidiaInitrdPattern = regexp.MustCompile(`initrd\.img-\S*nvidia-64k`)
+// nvidiaInitrdPattern matches nvidia-64k and nvidia-bos-64k initrd filenames
+// in /boot and grub.cfg.
+var nvidiaInitrdPattern = regexp.MustCompile(`initrd\.img-\S*nvidia(?:-bos)?-64k`)
 
 // BootPatcher modifies the /boot partition inside a qcow2 overlay to swap
 // an incompatible kernel (e.g., nvidia-64k with 64KB pages) with a generic
