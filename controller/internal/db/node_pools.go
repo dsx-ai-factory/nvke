@@ -375,6 +375,8 @@ type NodePoolQueries interface {
 	DeleteNodePool(ctx context.Context, id uuid.UUID) error
 }
 
+// ListNodePools returns the node pools that match every set filter. A Tenant
+// filter keeps only the node pools whose cluster that tenant owns.
 func (q *queriesImpl) ListNodePools(ctx context.Context, filters NodePoolFilters) ([]NodePool, error) {
 	var nodePools []NodePool
 	query := q.db.NewSelect().

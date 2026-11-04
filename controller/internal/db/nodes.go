@@ -354,6 +354,8 @@ type NodeQueries interface {
 	ListNodeLifecycleElapsed(ctx context.Context) ([]NodeLifecycleElapsed, error)
 }
 
+// ListNodes returns the nodes that match every set filter. A Tenant filter
+// keeps only the nodes whose cluster, by nodes.cluster_id, that tenant owns.
 func (q *queriesImpl) ListNodes(ctx context.Context, filters NodeFilters) ([]Node, error) {
 	var nodes []Node
 	query := q.db.NewSelect().Model(&nodes).
