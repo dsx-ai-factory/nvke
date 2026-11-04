@@ -56,6 +56,9 @@ type TemplateContext struct {
 	// them is a separate question from whether the template can name them.
 	Nico   struct{ Endpoint, OrgID, Token, APIName, TokenURL, ClientID, ClientSecret, Scope string }
 	Tenant struct{ User, Password string }
+	// LaunchLayer is the LaunchLayer API CAPLL calls and the OAuth2 client it
+	// calls it as. The optional URLs stay empty when the stack config omits them.
+	LaunchLayer struct{ BaseURL, VPCURL, ComputeURL, SGURL, IssuerURL, ClientID, ClientSecret, Scopes string }
 }
 
 // site writes the site values and renders the template items.
@@ -65,7 +68,7 @@ func (r *renderer) site() {
 	external := r.opts.Credentials == CredentialsExternal
 	var creds stackconfig.Credentials
 	if !external {
-		loaded, err := stackconfig.CredentialsFromEnv()
+		loaded, err := cs.CredentialsFromEnv()
 		if err != nil {
 			for _, line := range strings.Split(err.Error(), "\n") {
 				r.problem("environment: %s", line)
@@ -97,9 +100,21 @@ func (r *renderer) site() {
 	}
 	var ctx TemplateContext
 	ctx.ClusterName = spec.ClusterName
-	ctx.Nico.Endpoint = check("nico.endpoint", cs.Nico.Endpoint)
-	ctx.Nico.OrgID = check("nico.orgID", cs.Nico.OrgID)
-	ctx.Nico.APIName = check("nico.apiName", cs.Nico.APIName)
+	// Each provider's values are required by the deploy path that installs it.
+	if r.hasItem(capnicoItem, TypeManifest) {
+		ctx.Nico.Endpoint = check("nico.endpoint", cs.Nico.Endpoint)
+		ctx.Nico.OrgID = check("nico.orgID", cs.Nico.OrgID)
+		ctx.Nico.APIName = check("nico.apiName", cs.Nico.APIName)
+	}
+	if r.hasItem(capllItem, TypeTemplate) {
+		ll := cs.LaunchLayer
+		ctx.LaunchLayer.BaseURL = check("launchLayer.baseURL", ll.BaseURL)
+		ctx.LaunchLayer.IssuerURL = check("launchLayer.issuerURL", ll.IssuerURL)
+		ctx.LaunchLayer.ClientID = check("launchLayer.clientID", ll.ClientID)
+		// Optional: empty inherits baseURL, or asks for no scope.
+		ctx.LaunchLayer.VPCURL, ctx.LaunchLayer.ComputeURL, ctx.LaunchLayer.SGURL, ctx.LaunchLayer.Scopes = ll.VPCURL, ll.ComputeURL, ll.SGURL, ll.Scopes
+		ctx.LaunchLayer.ClientSecret = creds.LaunchLayerClientSecret
+	}
 	// CredentialsFromEnv applies the same rule to the credentials.
 	ctx.Nico.Token, ctx.Tenant.User, ctx.Tenant.Password = creds.NicoToken, creds.NodeUser, creds.NodePassword
 	if len(r.problems) > 0 {
@@ -483,6 +498,15 @@ const (
 	databaseSecret = "nvke-database"
 	// spireCASecret is the upstream CA Secret the spire item mounts.
 	spireCASecret = "spire-upstream-ca"
+)
+
+// The provider items a deploy path installs. A path's stack config values are
+// required for the provider items it has.
+const (
+	// capnicoItem is CAPNICo's manifest item.
+	capnicoItem = "capnico"
+	// capllItem is CAPLL's template item.
+	capllItem = "capll"
 )
 
 // connectionStringKey is the key the controller reads its database URL from.

@@ -1,0 +1,281 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What this target changes about controller, applied over values.yaml.
+
+# OFF, matching an NVKE management cluster on NICo that provisioned a real tenant.
+#
+# Not a recommendation for a production site -- a deliberate choice for the
+# first run on this path, which is already changing one thing that has never
+# been exercised on NICo (spiffe.enabled). API authentication is a separate
+# axis: apiAuth is REST tokens, spiffe is controller-to-agent mTLS. Turning both on at
+# once means a failure could be either.
+#
+# It also cannot simply be flipped true here. Enabling it needs a real
+# apiAuth.config with apiAuth.configMap.create=true: the e2e lanes admit the
+# ServiceAccounts their nke-auth-dev item creates, and that item is test
+# scaffolding (nke-client, nke-outsider and nke-e2e) that a site has no
+# business installing. Enabled without a configuration, the chart mounts a
+# ConfigMap nothing creates, and the controller does not start.
+#
+# To turn it on later: set apiAuth.configMap.create=true and supply real
+# apiAuth.config.
+apiAuth:
+  enabled: false
+  permissive: false
+
+# LaunchLayer only: this path installs CAPLL and no CAPNICo, so the controller
+# accepts launchLayer cluster requests and refuses nico ones. capi.rbac.launchLayer
+# defaults to true; the NICo grant and controllers are off, since no NICo CRDs
+# are installed.
+supportedInfraProviders: launchLayer
+capi:
+  rbac:
+    create: true
+    nico: false
+controllers:
+  nico:
+    enabled: false
+
+tenantAccess:
+  enabled: true
+
+# OFF, for the same reason and matching that same site.
+#
+# The settings below are kept, not deleted: the SPIRE OIDC discovery provider
+# and its nodeport are still installed by this path, and the CA chain in
+# nvke-base-config still publishes oidc-provider-upstream-ca -- the spire item
+# waits on that Certificate regardless. So turning this true is a one-line
+# change once the SPIRE half is proven, with nothing else to reassemble.
+nvkeOIDCAuth:
+  enabled: false
+  # Logical issuer, string-compared against the JWT's iss claim; it does not
+  # have to resolve. discoveryURL does, and is VIP-derived, so it is passed in.
+  issuerURL: "https://nke.site-controller.internal"
+  # The CA the OIDC provider's leaf is signed by, published by the chain in
+  # controller/deploy/k8s/oidc-upstream-ca.yaml.
+  caBundleSecret:
+    namespace: spire-server
+    name: oidc-provider-upstream-ca
+    key: ca.crt
+
+# The CAPD lane installs the CNI as part of cluster creation rather than after
+# init; the node-pool lane differs and overrides this.
+cni:
+  installAfterInit: true
+
+# ---------------------------------------------------------------------------
+# Moved here from controller/hack/tilt-controller-chart-values.yaml, which the lane
+# used to read off disk and pass as a second --values file. It is static
+# configuration -- the same on every run -- so it belongs in the overlay: a
+# deploy path that does not carry it under-describes the deployment, and a
+# reader of the generated tree could not tell how the controller was configured.
+#
+# The Tiltfile still reads that file (controller/Tiltfile:1018,1197), so this
+# is a second copy and the two can drift. Verified equivalent at the time of
+# the move by rendering the controller chart from each and diffing: identical.
+#
+# Two things deliberately NOT copied, because the run supplies them:
+# image.repository/tag (the locally built controller) and
+# spiffe.spire.serverAddress (the kind VIP). image.pullPolicy IS kept -- the
+# image is side-loaded into kind, so it must not be re-pulled.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+fullnameOverride: nvke-controller
+namespaceOverride: nvke-controller
+# The chart pins nameOverride (the pod name label) and serviceAccount.name
+# (which the SPIRE admin ID and the controller's SPIFFE ID name) instead of
+# deriving them from the fullname, so both are set alongside it.
+nameOverride: nvke-controller
+serviceAccount:
+  name: nvke-controller
+
+nvkeSystemNamespace:
+  create: false
+
+# PINNED, unlike the e2e targets. A site is not building the controller from
+# source, so "whatever the lane just built" is not a meaningful default here:
+# with these unset the chart falls back to its own repository plus appVersion
+# 0.0.0, which is not a published image and fails to pull.
+#
+# THE TAG HERE MUST BE ONE THE SITE HAS STAGED. With imagePullSecrets empty
+# (see below) the only images that resolve are those already in the node's
+# containerd, so bumping this without staging the new image first gives
+# ImagePullBackOff, not an upgrade. Verified the hard way on a live site: pinning
+# rc.8, which the node had never seen, took the controller down until it was reverted.
+#
+# Staging a newer build, in the k8s.io namespace the kubelet reads:
+#   ctr -n k8s.io images import <saved-image>.tar
+#
+# Used only when the stack config leaves images.controller empty or
+# `nvke-deploy.sh install` runs with neither --sitespec nor --release; a
+# release's imageArtifact or the stack config wins otherwise. The tag is the
+# newest controller release on GHCR, not this checkout's build. Bump it when a
+# release is cut.
+#
+# NOTE THE REPOSITORY. The published image has been renamed twice:
+#   .../nke/controller   rc.6 and earlier
+#   .../nke-controller   rc.7 through controller/v0.2.0 (#827)
+#   .../nvke-controller  controller/v0.3.0-rc.1 onward (#1950)
+# The two older repositories no longer exist on GHCR, so only nvke-controller
+# resolves, and only for controller/v0.3.0-rc.1 and later.
+#
+# This block becomes redundant once the item installs a published chart rather
+# than ../charts/controller: the chart carries the repository as its default
+# and its appVersion as the tag, so one version would pin both. It cannot
+# switch yet -- no published chart has the NodePort Service template this path
+# relies on, and Helm ignores an unknown value silently.
+image:
+  repository: ghcr.io/dsx-ai-factory/nvke/nvke-controller
+  tag: v0.3.0-rc.1
+  pullPolicy: IfNotPresent
+
+# EMPTY, and it must stay empty. The controller image is staged into the node's
+# containerd before the install -- the node IS the cluster, so it resolves under
+# pullPolicy: IfNotPresent with no credential. This path renders no pull
+# secret at all.
+#
+# A site that pulls the controller from a registry instead needs its own secret
+# in nvke-controller, supplied with --values-for.
+imagePullSecrets: []
+
+# Telemetry to the nktp item, which installs before this one: its node
+# Collectors scrape the ServiceMonitor, the metrics NetworkPolicy admits their
+# namespace, and traces go to the node Collector on the controller's node. The
+# chart defaults the first two on; the e2e targets turn them off because their
+# clusters have no monitoring CRDs.
+#
+# insecure is plaintext gRPC inside the cluster: the node Collector's OTLP
+# receiver takes plaintext from workloads and forwards to the traces gateway
+# over mTLS. The gateways accept only Collectors' client certificates.
+metrics:
+  networkPolicy:
+    enabled: true
+    additionalNamespaces:
+      - nktp
+# Named like the controller, as on a greenfield site; the chart defaults to the
+# legacy names.
+serviceMonitor:
+  enabled: true
+  name: nvke-controller-metrics
+tracing:
+  enabled: true
+  serviceName: nvke-controller
+  endpoint: nktp-daemonset-collector.nktp.svc.cluster.local:4317
+  insecure: true
+
+# /readyz, not /api/version. /api/version proves only that HTTP is serving;
+# /readyz returns {"status":"ok","checks":{"database":"ok","temporal":"ok"}},
+# so readiness means Postgres and Temporal are actually reachable. With the
+# weaker probe a pod reports Ready while both are down, which is how the first
+# run of this path looked healthy without having been checked.
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 20
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+appDb:
+  url: postgres-postgresql.postgres.svc.cluster.local:5432
+  dbName: nvke-controller
+  postgresUser: postgres
+  # No postgresPassword: the render builds the connection string from these
+  # values and NVKECTL_DATABASE_PASSWORD into the nvke-database Secret and
+  # names it in secrets.dbSecretName. A hand install sets the password here
+  # and on BOTH of temporal's datastores, or the Temporal schema job
+  # crash-loops with "password authentication failed". Change appDb here, not
+  # with --values-for: once the Secret is named, the chart ignores appDb, and
+  # nvke-deploy.sh refuses a --values-for file that sets it.
+  sslMode: disable
+
+# The port nvke-agent listens on, and it has to agree with three other places:
+# the sitespec used at bootstrap (nvkectl's default, cli/internal/bootstrap/sitespec),
+# os-image/SPEC.md's contract, and the agent drop-in the node's cloud-init
+# writes. A real site sets it explicitly rather than relying on a default, and
+# so does this.
+env:
+  - name: NODE_AGENT_PORT
+    value: "15005"
+
+# service.port is the CLUSTER-IP port and must stay the chart default: the
+# container listens on 8080, and setting port: 30080 here only renames the
+# in-cluster port while leaving nothing reachable from the node. That is the
+# mistake this file made on its first run -- a live site's release shows
+# service.port: 30080, but it reaches the controller through the separate NodePort
+# Service nvkectl's bootstrap applies (controller-nodeport.yaml), not through that.
+#
+# nodePort renders a SECOND Service beside the ClusterIP one, which is the
+# chart's supported way to publish the API without a cluster route -- for the
+# host running nvkectl, or an operator reaching /api on a node address.
+service:
+  port: 8080
+  nodePort: 30080
+
+secrets:
+  # Names the Secret ../nvke-base-config/35-dgxc-tenant-credentials.yaml.tmpl
+  # renders. Empty means the controller never receives DGXC_TENANT_USER and
+  # DGXC_TENANT_PASSWORD, and every tenant create fails at user-data rendering
+  # -- one of that run's eleven failures. The chart injects them only
+  # when this names a Secret carrying keys `user` and `password`.
+  dgxcTenantCredSecretName: dgxc-tenant-credentials
+
+# dsxImds: a LaunchLayer node attests to SPIRE only through DSX IMDS, and the
+# controller refuses LaunchLayer requests under any other method. The chart also
+# needs nodeAgent.dsxImds.operatorTenant, which is the site's: pass it with
+# --values-for controller=FILE. The SPIRE server's dsx_imds attestor is likewise
+# the site's, passed with --values-for spire=FILE. See README.md.
+nodeAgent:
+  spireAttestationMethod: dsxImds
+
+temporal:
+  host: temporal-frontend.temporal.svc.cluster.local
+  port: 7233
+  cloudWorkflow:
+    namespace: nvke-controller
+    queue: nvke-controller-tasks
+
+profiles:
+  path: /profiles
+  # Profiles are a separate content image, materialised by an init container.
+  # Without it /api/releases returns 500 and nothing can be provisioned --
+  # the profiles directory may be empty at startup, but it must exist by the
+  # time a cluster is created.
+  #
+  # NOT pinned, unlike image above: fleet profile content is maintained outside
+  # this repository, so there is no tag here that would mean the same thing on
+  # another site. The reference run staged a locally built profiles image into
+  # the node's containerd -- a bare name with no registry, which is why it needs
+  # no credential and why pinning it here would not be portable.
+  #
+  # Name it in the stack config's images.profiles, or render against a release
+  # whose controller item carries a profilesArtifact. Without either, the
+  # render stops before any --values-for file is read.
+  image:
+    enabled: true
+
+spiffe:
+  enabled: true
+  endpointSocket: unix:///spiffe-workload-api/spire-agent.sock
+  spire:
+    serverNamespace: spire-server
+    className: spire-mgmt-spire
+    tpmPubhashesConfigMapName: tpm-pubhashes
+    serverPort: "30440"
+
+# The greenfield site profile, which the chart's legacy defaults do not carry.
+identity:
+  fieldManagerName: nvke-controller
+  fieldManagerRebootMachineName: nvke-controller-reboot-machine
+  fieldManagerMachineHealthIssueName: nvke-controller-machine-health-issue
+  managedByLabelValue: nvke-controller
+teleport:
+  managedByLabelValue: nvke-controller
+  tokenNamePrefix: nvke-controller-

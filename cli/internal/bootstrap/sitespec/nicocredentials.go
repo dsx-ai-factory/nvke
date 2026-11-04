@@ -73,7 +73,7 @@ func ReadNicoToken(path string) (string, error) {
 // NodeLoginFromEnv reads the login rendered into every node CAPNICo creates
 // from NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD, trimmed. It names each one
 // that is unset or holds a character the templates cannot carry, one problem
-// per line, applying the same rules as stackconfig.CredentialsFromEnv, so the
+// per line, applying the same rules as stackconfig.Config.CredentialsFromEnv, so the
 // bootstrap and the stack install accept the same login.
 func NodeLoginFromEnv() (user, password string, err error) {
 	user = strings.TrimSpace(envalias.Get(stackconfig.EnvNodeUser))
