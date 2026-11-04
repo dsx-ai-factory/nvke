@@ -30,6 +30,7 @@ type Queries interface {
 	WorkflowOutboxQueries
 	NodeSetQueries
 	CredentialAuditQueries
+	TenantQueries
 }
 
 func NewDB(db *bun.DB) *dbImpl {

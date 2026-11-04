@@ -350,6 +350,7 @@ type NodePoolFilters struct {
 	SiteID       *uuid.UUID
 	Name         *string
 	ClusterName  *string
+	Tenant       *string
 }
 
 // NodePoolMetrics represents aggregated metrics for a node pool
@@ -395,6 +396,7 @@ func (q *queriesImpl) ListNodePools(ctx context.Context, filters NodePoolFilters
 	if filters.ClusterName != nil {
 		query = query.Where("c.name = ?", filters.ClusterName)
 	}
+	query = whereTenant(query, "c", filters.Tenant)
 
 	err := query.Scan(ctx)
 	return nodePools, err

@@ -114,6 +114,11 @@ type Cluster struct {
 	// SpireServer is the SPIRE server last requested for the cluster's nodes.
 	// Nil means none was requested.
 	SpireServer *ClusterSpireServer `bun:"spire_server,type:jsonb"`
+
+	// Tenant owns the cluster and its node pools, node sets and nodes. It is
+	// set only at creation; UpdateCluster never writes it. Empty is stored as
+	// NULL, which means the cluster is unowned.
+	Tenant string `bun:"tenant,type:text,nullzero"`
 }
 
 // ClusterSpireServer is a SPIRE server address requested for a cluster's
@@ -549,6 +554,7 @@ type ClusterFilters struct {
 	ID     *uuid.UUID
 	Name   *string
 	SiteID *uuid.UUID
+	Tenant *string
 }
 
 type CniPlugin string
@@ -628,6 +634,7 @@ func (q *queriesImpl) ListClusters(ctx context.Context, filters ClusterFilters) 
 	if filters.SiteID != nil {
 		query = query.Where("nico->>'site_id' = ?", filters.SiteID.String())
 	}
+	query = whereTenant(query, "cluster", filters.Tenant)
 
 	err := query.Scan(ctx)
 	if err != nil {
@@ -683,8 +690,8 @@ func (q *queriesImpl) CreateCluster(ctx context.Context, cluster *Cluster) (Clus
 func (q *queriesImpl) UpdateCluster(ctx context.Context, cluster *Cluster) (Cluster, error) {
 	cluster.UpdatedAt = time.Now()
 	res, err := q.db.NewUpdate().Model(cluster).
-		ExcludeColumn("oidc_providers").
-		WherePK().Returning("oidc_providers").Exec(ctx)
+		ExcludeColumn("oidc_providers", "tenant").
+		WherePK().Returning("oidc_providers, tenant").Exec(ctx)
 	if err != nil {
 		return Cluster{}, err
 	}
