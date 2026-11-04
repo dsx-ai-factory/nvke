@@ -23,8 +23,8 @@ name: Action Allowlist Hint
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, edited]
-    paths:
-      - ".github/**"
+  # No paths filter: a retarget or push that drops the .github changes must
+  # still run, or the stale comment is never deleted.
 
 permissions: {}
 
