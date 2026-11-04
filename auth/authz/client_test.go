@@ -350,6 +350,29 @@ func TestClientCheckLogsTheCallerAndTheResource(t *testing.T) {
 	}
 }
 
+// TestClientCheckDoesNotLogAnInvalidResourceID checks that a refusal log
+// replaces an ID that Query.Validate refuses, on every path that logs it.
+func TestClientCheckDoesNotLogAnInvalidResourceID(t *testing.T) {
+	t.Parallel()
+
+	resource := cluster("acme")
+	resource.ID = strings.Repeat("x", 4096)
+	for name, tt := range map[string]struct {
+		principal *authn.Principal
+		target    authz.Target
+	}{
+		"backend":        {inAcme, authz.Target{Action: allowedAction, Resource: resource}},
+		"missing object": {inAcme, authz.Target{Action: allowedAction, Resource: resource, Missing: true}},
+		"no principal":   {nil, authz.Target{Action: allowedAction, Resource: resource}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			record := refusalRecord(t, &fakeBackend{}, tt.principal, tt.target)
+			assert.Equal(t, "<invalid>", record["resource_id"])
+		})
+	}
+}
+
 // TestClientWithNoBackendRefuses checks that a nil or empty Client refuses
 // every request instead of panicking.
 func TestClientWithNoBackendRefuses(t *testing.T) {
