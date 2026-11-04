@@ -2,8 +2,9 @@
 
 Ubuntu image that ships `nvke-agent` and `spire-agent` so a site
 controller can reach the node over SPIFFE mTLS, built on Ubuntu's
-NVIDIA-tuned kernel flavor (`linux-nvidia`/`linux-nvidia-64k`), not the
-generic default. The contract is [SPEC.md](SPEC.md).
+NVIDIA-tuned kernel flavor (`linux-nvidia` on amd64, a `linux-nvidia-64k`
+flavor on arm64 — the BOS series on 26.04), not the generic default. The
+contract is [SPEC.md](SPEC.md).
 
 > **Canonical licensing:** For internal/dev use only - contact Canonical
 > before commercial production use.
@@ -144,7 +145,8 @@ make run-vm QCOW=packer/output-non-fde/nvke-node-non-fde-ubuntu-26.04.1-amd64.qc
 emulation, and an explicit unavailable `ACCELERATOR=kvm` or `hvf` fails early.
 
 On Apple Silicon, `run-vm` and `boot-smoke` can use HVF with an already-built
-compatible arm64 image. The production arm64 kernel is `linux-nvidia-64k`;
+compatible arm64 image. The production arm64 kernel is
+`linux-nvidia-64k-hwe-26.04` on 26.04 and `linux-nvidia-64k` on 24.04;
 compatibility with a particular Mac/QEMU combination still needs live
 validation. Apple Silicon macOS package builds use the NixOS VM; image baking still needs the
 host Packer/ISO tools. The boot scripts also need `cloud-localds`, SSH and, for

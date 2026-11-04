@@ -8,7 +8,7 @@ For HTTP(S) hosting and provisioning after the build, see [Build and host node O
 
 > **Note:** The image is built from Canonical Ubuntu. For internal/dev use only - contact Canonical before commercial production use.
 
-The build produces one QCOW2 disk image: Ubuntu Server with the NVIDIA-tuned kernel (`linux-nvidia` on amd64, `linux-nvidia-64k` on arm64), `nvke-agent` and the SPIRE agent. It is not a ready Kubernetes node: `nvke-agent` installs Kubernetes later, and the NVIDIA GPU Operator installs GPU drivers. The agent is built from your checkout's `agent/` source. [SPEC](https://github.com/dsx-ai-factory/nvke/blob/main/os-image/SPEC.md) is the image contract.
+The build produces one QCOW2 disk image: Ubuntu Server with the NVIDIA-tuned kernel (`linux-nvidia` on amd64; on arm64 `linux-nvidia-64k-hwe-26.04` for 26.04 and `linux-nvidia-64k` for 24.04), `nvke-agent` and the SPIRE agent. It is not a ready Kubernetes node: `nvke-agent` installs Kubernetes later, and the NVIDIA GPU Operator installs GPU drivers. The agent is built from your checkout's `agent/` source. [SPEC](https://github.com/dsx-ai-factory/nvke/blob/main/os-image/SPEC.md) is the image contract.
 
 ## Before you begin
 

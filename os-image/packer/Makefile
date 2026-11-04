@@ -95,7 +95,8 @@ ARCH ?= amd64
 # UBUNTU_RELEASE picks the point release, and with it the image flavor. 24.04 is
 # published alongside 26.04 because the DSX CSC DPU stack installs Ubuntu 24.04
 # host packages onto the node and no ubuntu2604 DOCA host package exists.
-# Nothing else is per-release: linux-nvidia(-64k) and the split linux-firmware-*
+# The arm64 kernel is per-release: 26.04 takes linux-nvidia-64k-hwe-26.04 (the
+# BOS series) and 24.04 takes linux-nvidia-64k. The split linux-firmware-*
 # packages are in noble-updates too, and the FDE variant's initramfs-tools
 # install is a no-op on 24.04.
 #
