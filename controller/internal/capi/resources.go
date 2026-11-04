@@ -8,11 +8,14 @@ import (
 	"encoding/json"
 	"fmt"
 
+	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
+	kubeadmv1 "sigs.k8s.io/cluster-api/api/bootstrap/kubeadm/v1beta2"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
@@ -117,4 +120,19 @@ func ParseManifest(raw []byte) (*unstructured.Unstructured, error) {
 		return nil, fmt.Errorf("manifest must include apiVersion and kind")
 	}
 	return u, nil
+}
+
+// IsControlledByMachine reports whether obj's controller owner reference points at machine.
+func IsControlledByMachine(obj client.Object, machine *clusterv1.Machine) bool {
+	return metav1.IsControlledBy(obj, machine) && util.IsControlledBy(obj, machine, clusterv1.GroupVersion.WithKind("Machine").GroupKind())
+}
+
+// IsKubeadmConfigRef reports whether ref identifies a KubeadmConfig.
+func IsKubeadmConfigRef(ref clusterv1.ContractVersionedObjectReference) bool {
+	return ref.Name != "" && ref.GroupKind() == kubeadmv1.GroupVersion.WithKind("KubeadmConfig").GroupKind()
+}
+
+// IsNicoMachineRef reports whether ref identifies a NicoMachine.
+func IsNicoMachineRef(ref clusterv1.ContractVersionedObjectReference) bool {
+	return ref.Name != "" && ref.GroupKind() == nicov1.GroupVersion.WithKind("NicoMachine").GroupKind()
 }

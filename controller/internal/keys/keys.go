@@ -160,6 +160,10 @@ const (
 	// exec-auth or a verbatim admin.conf.
 	KubeconfigMode Key = "kubeconfig-mode"
 
+	// Bootstrap controls on concrete Cluster API bootstrap resources.
+	BootstrapIdentityResolver                 Key = "bootstrap-identity-resolver"
+	BootstrapIdentitySpireWorkloadEntryConfig Key = "bootstrap-identity-spire-workload-entry-config"
+
 	// NodeMachineHealthIssue is the health-issue annotation on a Kubernetes
 	// Node.
 	NodeMachineHealthIssue Key = "machine-health-issue"
@@ -179,6 +183,7 @@ const (
 	MachineSpireAgentSpiffeIDPath  Key = "spire-agent-spiffe-id-path"
 	MachineSpireAttestationMethod  Key = "spire-attestation-method"
 	MachineSpiffeEnabled           Key = "spiffe-enabled"
+	MachineBootstrapIdentity       Key = "bootstrap-identity"
 
 	// MachineAgentConnectionJWTSuffix ends the MachineAgentConnection value of a
 	// node whose agent uses TLS-JWT, for example "spiffe-jwt".
