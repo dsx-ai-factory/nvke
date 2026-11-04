@@ -429,20 +429,27 @@ func TestCalicoCustomResourcesApplyPath(t *testing.T) {
 }
 
 func TestCalicoKubectlEnv(t *testing.T) {
+	// calicoKubectlEnv appends to os.Environ(), so a KUBECONFIG inherited from
+	// the developer's shell is still in the slice ahead of the one it sets.
+	// Pin it to a sentinel rather than assuming the ambient environment is
+	// clean, so these assertions mean the same thing everywhere they run.
+	t.Setenv("KUBECONFIG", "/ambient/inherited.conf")
+
 	t.Run("sets kubeconfig only when pod cidr empty", func(t *testing.T) {
 		env := calicoKubectlEnv("")
-		foundKube := false
+		var kube string
 		foundCalico := false
 		for _, e := range env {
+			// Last writer wins: os/exec deduplicates Env this way, so the
+			// effective value is the final match, not the inherited one.
 			if strings.HasPrefix(e, "KUBECONFIG=") {
-				foundKube = true
-				assert.Equal(t, "KUBECONFIG="+KubeConfig, e)
+				kube = e
 			}
 			if strings.HasPrefix(e, "CALICO_POD_CIDR=") {
 				foundCalico = true
 			}
 		}
-		assert.True(t, foundKube)
+		assert.Equal(t, "KUBECONFIG="+KubeConfig, kube)
 		assert.False(t, foundCalico)
 	})
 
