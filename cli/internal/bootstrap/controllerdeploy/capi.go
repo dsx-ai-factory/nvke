@@ -61,6 +61,9 @@ const (
 	// cluster-api-provider-provisioned/hack/release-manifests.sh does for a
 	// clusterctl provider release.
 	provisionedDefaultImage = "docker.io/library/cluster-api-provider-provisioned:latest"
+
+	// certManagerNamespace is where `clusterctl init` installs cert-manager.
+	certManagerNamespace = "cert-manager"
 )
 
 // installCAPI puts Cluster API and the provisioned infrastructure provider on
@@ -156,20 +159,87 @@ func (e *Engine) installCAPNICo(ctx context.Context, kubeconfigPath string, cfg 
 	}
 	defer cleanupManifest()
 
+	if err := e.waitForCertManager(ctx, kubeconfigPath, timeout); err != nil {
+		return err
+	}
+
 	e.log.Info("installing CAPNICo", "namespace", capnicoNamespace, "image", image, "release", cfg.CAPNICoImage != "")
 	for _, file := range []string{secretsFile, manifestFile} {
-		// Server-side apply: the CRDs are large enough that a client-side apply
-		// can exceed the last-applied-configuration annotation limit. It also
-		// makes a re-run against a kept cluster replace the Secrets.
-		if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-			"apply", "--server-side", "--force-conflicts", "-f", file); err != nil {
-			return fmt.Errorf("controllerdeploy: applying CAPNICo: %w\n%s", err, out)
+		if err := e.applyCAPNICoFile(ctx, kubeconfigPath, file); err != nil {
+			return err
 		}
 	}
 	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"-n", capnicoNamespace, "rollout", "status", "deployment/"+capnicoDeployment,
 		"--timeout", timeout.String()); err != nil {
 		return fmt.Errorf("controllerdeploy: waiting for CAPNICo: %w\n%s", err, out)
+	}
+	return nil
+}
+
+// applyCAPNICoFile server-side applies one of the CAPNICo files, retrying while
+// cert-manager's webhook is still refusing admission.
+//
+// Server-side apply: the CRDs are large enough that a client-side apply can
+// exceed the last-applied-configuration annotation limit. It also makes a re-run
+// against a kept cluster replace the Secrets.
+//
+// waitForCertManager proves the cert-manager Deployments are Available, which is
+// not the same as the webhook admitting requests: the cainjector can still be
+// writing the caBundle onto the webhook configurations, and until it has, an
+// apply of the manifest's Certificate and Issuer is rejected. The apply is
+// idempotent -- --force-conflicts makes a repeat of a partially applied file
+// safe -- so the rejection is waited out rather than returned.
+func (e *Engine) applyCAPNICoFile(ctx context.Context, kubeconfigPath, file string) error {
+	for attempt := 1; ; attempt++ {
+		out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"apply", "--server-side", "--force-conflicts", "-f", file)
+		if err == nil {
+			return nil
+		}
+		if attempt == capnicoApplyAttempts || !certManagerAdmissionError.MatchString(out) {
+			return fmt.Errorf("controllerdeploy: applying CAPNICo: %w\n%s", err, out)
+		}
+		e.log.Warn("CAPNICo apply rejected by the cert-manager webhook, retrying", "attempt", attempt, "err", err)
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("controllerdeploy: applying CAPNICo: %w\n%s", ctx.Err(), out)
+		case <-time.After(capnicoApplyRetryInterval):
+		}
+	}
+}
+
+// capnicoApplyAttempts bounds the retries of a CAPNICo apply the cert-manager
+// webhook rejected.
+const capnicoApplyAttempts = 6
+
+// capnicoApplyRetryInterval is the delay between those attempts; a var so tests
+// can shorten it.
+var capnicoApplyRetryInterval = 5 * time.Second
+
+// certManagerAdmissionError matches the API server's report of an apply that the
+// cert-manager webhook could not admit: it is unreachable, or its caBundle is
+// not injected yet and the served certificate does not verify. Both clear on
+// their own, and they are the only apply failures a retry fixes.
+var certManagerAdmissionError = regexp.MustCompile(`failed calling webhook "[^"]*cert-manager[^"]*"`)
+
+// waitForCertManager returns an error unless the cert-manager CRDs that CAPNICo's
+// manifest uses are established and the cert-manager Deployments are available.
+func (e *Engine) waitForCertManager(ctx context.Context, kubeconfigPath string, timeout time.Duration) error {
+	// installCAPICore skips clusterctl init, and with it cert-manager, on a kept
+	// cluster that already runs CAPI, so cert-manager may be missing or not ready.
+	// Certificate and Issuer are the cert-manager kinds the manifest creates.
+	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"wait", "--for=condition=Established", "--timeout", timeout.String(),
+		"crd/certificates.cert-manager.io", "crd/issuers.cert-manager.io"); err != nil {
+		return fmt.Errorf("controllerdeploy: CAPNICo needs cert-manager, and its CRDs are not established: %w\n%s", err, out)
+	}
+	// All three must run to issue the webhook certificate and inject its CA bundle.
+	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"-n", certManagerNamespace, "wait", "--for=condition=Available", "--timeout", timeout.String(),
+		"deployment/cert-manager", "deployment/cert-manager-cainjector", "deployment/cert-manager-webhook"); err != nil {
+		return fmt.Errorf("controllerdeploy: CAPNICo needs cert-manager, and it is not available in %s: %w\n%s",
+			certManagerNamespace, err, out)
 	}
 	return nil
 }

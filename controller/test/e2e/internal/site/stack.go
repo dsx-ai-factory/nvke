@@ -25,7 +25,7 @@ import (
 const (
 	// defaultStorageClassManifest is rancher local-path, what the reference
 	// site used because its instance type has one NVMe with root on it.
-	defaultStorageClassManifest = "https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.31/deploy/local-path-storage.yaml"
+	defaultStorageClassManifest = "https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.37/deploy/local-path-storage.yaml"
 	defaultStorageClassName     = "local-path"
 
 	// oidcPort is the OIDC discovery provider's NodePort.

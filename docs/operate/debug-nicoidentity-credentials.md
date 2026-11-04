@@ -7,7 +7,7 @@ CAPNICo checks the credentials Secret that each `NicoIdentity` names: it authent
 ## Before you begin
 
 - You have completed [Configure an infrastructure provider: NICo](provider-nico.md).
-- To have a result to read, the CAPNICo release on the management cluster must serve `NicoIdentity`. The release the NVIDIA Kubernetes Engine (NVKE) install deploys, `v0.0.45` in [`deploy/nico/capnico/capnico.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/capnico/capnico.yaml), does not, and `nvkectl get providers` reports `CREDENTIALS` as `UNSUPPORTED` with it.
+- To have a result to read, the CAPNICo release on the management cluster must serve `NicoIdentity`. The release the NVIDIA Kubernetes Engine (NVKE) install deploys, `v0.1.0` in [`deploy/nico/capnico/capnico.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/capnico/capnico.yaml), serves it. An earlier release, such as `v0.0.45`, does not, and `nvkectl get providers` reports `CREDENTIALS` as `UNSUPPORTED` with it.
 - `kubectl` uses the management cluster's admin kubeconfig, for example with `export KUBECONFIG=<CLUSTER_NAME>.kubeconfig`. A narrower kubeconfig needs `get` and `list` on `nicoidentities.infrastructure.cluster.x-k8s.io` to read results, and read access to the `controller-manager` Deployment, its pods and their logs in `capnico-system` to read the manager log.
 - You have `jq`, for the log commands.
 

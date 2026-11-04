@@ -137,14 +137,14 @@ kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- \
 
 ### Database pods are `Pending` — no persistent volumes available
 
-The site cluster has no storage class after bootstrap. Install a storage provisioner before deploying the NVKE component stack. Example using local-path-provisioner v0.0.31:
+The site cluster has no storage class after bootstrap. Install a storage provisioner before deploying the NVKE component stack. Example using local-path-provisioner v0.0.37:
 
 ```bash
 # Verify the manifest before applying
-curl -sL https://github.com/rancher/local-path-provisioner/releases/download/v0.0.31/local-path-storage.yaml \
+curl -sL https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.37/deploy/local-path-storage.yaml \
   | sha256sum
 # Apply once verified
-kubectl apply -f https://github.com/rancher/local-path-provisioner/releases/download/v0.0.31/local-path-storage.yaml \
+kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.37/deploy/local-path-storage.yaml \
   --kubeconfig <sitename>.kubeconfig
 ```
 

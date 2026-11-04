@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -385,6 +386,15 @@ func TestInstallCAPNICo_AppliesSecretsThenTheManifest(t *testing.T) {
 	if rollout < 0 {
 		t.Errorf("did not wait for the CAPNICo rollout; calls: %+v", runner.calls)
 	}
+
+	// cert-manager is checked before anything is applied, because a kept
+	// cluster that already runs CAPI skips the clusterctl init that installs it.
+	crds := callIndex(runner, "wait --for=condition=Established")
+	deployments := callIndex(runner, "-n "+certManagerNamespace+" wait --for=condition=Available")
+	firstApply := callIndex(runner, "apply")
+	if crds < 0 || deployments < 0 || crds > firstApply || deployments > firstApply {
+		t.Errorf("want cert-manager checked before the first apply; calls: %+v", runner.calls)
+	}
 }
 
 // TestInstallCAPNICo_RunsTheManifestsDigestByDefault: the embedded manifest
@@ -512,9 +522,21 @@ func TestInstallCAPNICo_Errors(t *testing.T) {
 			wantErr: "CAPNICo.Token",
 		},
 		{
+			name:    "cert-manager CRDs missing",
+			mutate:  func(*Config) {},
+			outputs: []fakeOutput{{err: errors.New("not found")}},
+			wantErr: "cert-manager, and its CRDs are not established",
+		},
+		{
+			name:    "cert-manager not available",
+			mutate:  func(*Config) {},
+			outputs: []fakeOutput{{}, {err: errors.New("timed out")}},
+			wantErr: "cert-manager, and it is not available",
+		},
+		{
 			name:    "apply failure",
 			mutate:  func(*Config) {},
-			outputs: []fakeOutput{{err: errors.New("boom")}},
+			outputs: []fakeOutput{{}, {}, {err: errors.New("boom")}},
 			wantErr: "applying CAPNICo",
 		},
 	}
@@ -528,6 +550,64 @@ func TestInstallCAPNICo_Errors(t *testing.T) {
 				t.Fatalf("installCAPNICo error = %v, want one containing %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestInstallCAPNICo_RetriesWhileTheCertManagerWebhookRefuses: the cert-manager
+// Deployments report Available before the cainjector has finished writing the
+// caBundle, so the first apply of the manifest's Certificate and Issuer can be
+// rejected. The install waits that out instead of failing the bootstrap.
+func TestInstallCAPNICo_RetriesWhileTheCertManagerWebhookRefuses(t *testing.T) {
+	capnicoApplyRetryInterval = time.Millisecond
+	t.Cleanup(func() { capnicoApplyRetryInterval = 5 * time.Second })
+
+	const refused = `Internal error occurred: failed calling webhook "webhook.cert-manager.io": ` +
+		`Post "https://cert-manager-webhook.cert-manager.svc:443/validate": x509: certificate signed by unknown authority`
+	runner := &fakeRunner{outputs: []fakeOutput{
+		{},
+		{}, // the two cert-manager waits
+		{}, // the Secrets
+		{output: refused, err: errors.New("exit status 1")},
+		{output: refused, err: errors.New("exit status 1")},
+		{}, // the manifest, once the webhook admits it
+	}}
+	if err := New(runner, nil).installCAPNICo(context.Background(), "/tmp/kubeconfig", nicoTestConfig(t), time.Minute); err != nil {
+		t.Fatalf("installCAPNICo: %v", err)
+	}
+	applies := 0
+	for _, call := range runner.calls {
+		if slices.Contains(call.args, "apply") {
+			applies++
+		}
+	}
+	if applies != 4 {
+		t.Errorf("applies = %d, want 4: the Secrets plus three attempts at the manifest", applies)
+	}
+}
+
+// TestInstallCAPNICo_DoesNotRetryOtherApplyFailures: a rejection by the
+// cert-manager webhook clears on its own; a bad manifest does not. Retrying one
+// that cannot succeed would hold the bootstrap open for no reason.
+func TestInstallCAPNICo_DoesNotRetryOtherApplyFailures(t *testing.T) {
+	capnicoApplyRetryInterval = time.Millisecond
+	t.Cleanup(func() { capnicoApplyRetryInterval = 5 * time.Second })
+
+	runner := &fakeRunner{outputs: []fakeOutput{
+		{}, {}, // the two cert-manager waits
+		{output: "error: no objects passed to apply", err: errors.New("exit status 1")},
+	}}
+	err := New(runner, nil).installCAPNICo(context.Background(), "/tmp/kubeconfig", nicoTestConfig(t), time.Minute)
+	if err == nil || !strings.Contains(err.Error(), "applying CAPNICo") {
+		t.Fatalf("installCAPNICo error = %v, want one containing %q", err, "applying CAPNICo")
+	}
+	applies := 0
+	for _, call := range runner.calls {
+		if slices.Contains(call.args, "apply") {
+			applies++
+		}
+	}
+	if applies != 1 {
+		t.Errorf("applies = %d, want 1: the failure is not retried", applies)
 	}
 }
 
@@ -577,8 +657,8 @@ func TestBootstrapManifest_NamesTheEmbeddedCAPNICoImage(t *testing.T) {
 //	crane digest <ref>
 func TestBootstrapManifest_CAPNICoDigestIsTheTagsDigest(t *testing.T) {
 	const (
-		ref    = "ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:v0.0.45"
-		digest = "sha256:bca9d77a25e605a5c39faf0a71b45b484d363edc4535f8a37aa811a639738595"
+		ref    = "ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:v0.1.0"
+		digest = "sha256:4b6db5ce0b7f9e29f9c5257c4dc4831d23d6ff130790580d820dffb08b26d24c"
 	)
 	listed := manifest.Load().Components[manifest.ComponentCAPNICo].Images[manifest.ImageCAPNICo]
 	if listed.Ref != ref || listed.Digest != digest {

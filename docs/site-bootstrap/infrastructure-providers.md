@@ -82,7 +82,7 @@ The published chart is self-contained: it is stamped at publish time with the ma
 ```bash
 helm install capi-provider-nico \
   oci://ghcr.io/dsx-ai-factory/cluster-api-provider-nico/charts/capi-provider-nico \
-  --version 0.0.45 \
+  --version 0.1.0 \
   --namespace capnico-system --create-namespace \
   --wait
 ```
@@ -98,12 +98,12 @@ Every CAPNICo release publishes `infrastructure-components.yaml` and `metadata.y
 ```yaml
 providers:
   - name: nico
-    url: https://github.com/dsx-ai-factory/cluster-api-provider-nico/releases/download/v0.0.45/infrastructure-components.yaml
+    url: https://github.com/dsx-ai-factory/cluster-api-provider-nico/releases/download/v0.1.0/infrastructure-components.yaml
     type: InfrastructureProvider
 ```
 
 ```bash
-clusterctl init --infrastructure nico:v0.0.45 --config ./clusterctl.yaml --wait-providers
+clusterctl init --infrastructure nico:v0.1.0 --config ./clusterctl.yaml --wait-providers
 ```
 
 > **Pass `--config` explicitly.** `clusterctl` resolves its default configuration path through the OS convention, so `~/.config/cluster-api/clusterctl.yaml` is **not** read on macOS — it looks in `~/Library/Application Support/cluster-api/` instead. The failure is unhelpful: `failed to get configuration for the InfrastructureProvider with name nico`. Using `--config`, or `~/.cluster-api/clusterctl.yaml`, works on both.
