@@ -624,6 +624,9 @@ func (r *NVKEClusterReconciler) resolveNVKEControllerRequest(ctx context.Context
 	request.CniPlugin = api.CreateClusterRequestCniPluginOvnKubernetes
 	request.EtcdEncrypted = true
 	request.ControlPlaneKubernetesVersion = kubernetesVersion
+	if endpoint := cluster.Spec.APIServerEndpoint; endpoint != nil {
+		request.ControlPlaneVIP = endpoint.Address
+	}
 	pod, err := nvkeControllerNetworkPrefix(cluster.Spec.ClusterNetwork.Pods.CIDRBlocks)
 	if err != nil {
 		return empty, fmt.Errorf("resolve pod network: %w", err)

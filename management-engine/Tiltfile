@@ -59,7 +59,7 @@ def register(ctx):
             "management-engine-infra-templates:configmap:tenant-test",
         ],
         resource_deps=["management-engine-config"],
-        labels=["management-engine"],
+        labels=["3-management-engine"],
     )
     for surface, port in [("tenant", 8082), ("operator", 8083)]:
         api = read_yaml(os.path.join(ctx.provider_dir, "config/dev/" + surface + "-api.yaml"))
@@ -74,21 +74,24 @@ def register(ctx):
                 name + ":" + role_kind + "binding",
             ],
             resource_deps=["management-engine-rest-config"] if surface == "tenant" else ["management-engine-config"],
-            labels=["management-engine"],
+            labels=["3-management-engine"],
         )
         k8s_yaml(encode_yaml(api))
         k8s_resource(
             name,
             resource_deps=[name + "-config"],
             port_forwards=[port_forward(port, 8080, host="127.0.0.1")],
-            labels=["management-engine"],
+            labels=["3-management-engine"],
             links=[link("http://localhost:%d/v1/%s" % (port, "clusters" if surface == "tenant" else "cluster-releases"), surface + " API")],
         )
     cmd_button(
         "management-engine-create-nvkecluster",
         argv=["bash", "-c", """
           set -euo pipefail
-          jq --arg name "$CLUSTER_NAME" '.metadata.name = $name' <<< "$NVKECLUSTER_TEMPLATE" |
+          : "${API_SERVER_IP:?API server IP is required}"
+          jq --arg name "$CLUSTER_NAME" --arg ip "$API_SERVER_IP" '
+            .metadata.name = $name | .spec.apiServerEndpoint.address = $ip
+          ' <<< "$NVKECLUSTER_TEMPLATE" |
             kubectl --context "$K8S_CONTEXT" apply -f -
         """],
         env={
@@ -98,7 +101,10 @@ def register(ctx):
         resource="management-engine",
         icon_name="add_box",
         text="Create NVKECluster",
-        inputs=[text_input("CLUSTER_NAME", label="Cluster name", default="test-docker")],
+        inputs=[
+            text_input("CLUSTER_NAME", label="Cluster name", default="test-docker"),
+            text_input("API_SERVER_IP", label="API server IP (required)", default=""),
+        ],
     )
     return struct(
         controller_resource_deps=[],
