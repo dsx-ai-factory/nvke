@@ -38,6 +38,7 @@ The demo reads the workload cluster's kubeconfig through `nvkectl get kubeconfig
 | `BASE_POOL` | the first worker pool | Pool whose infrastructure settings the new pool copies |
 | `LABEL_KEY` | `mokka.example/simulated-gpu` | Node label that selects Mokka |
 | `GPU_PROFILE` | `gb300` | Mokka GPU profile: `a100`, `b200`, `gb200`, `gb300`, `h100`, `l40s` or `t4` |
+| `MOKKA_RELEASE` | `nvml-mock` | Helm release name for Mokka. Give each GPU profile its own release to mix profiles in one cluster. |
 | `MOKKA_VERSION` / `GPU_OPERATOR_VERSION` | `0.6.0` / `v26.3.3` | Chart versions |
 | `TIMEOUT` | `20m` | Helm and readiness timeout |
 

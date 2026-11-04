@@ -17,6 +17,7 @@ NODE_COUNT="${NODE_COUNT:-1}"
 BASE_POOL="${BASE_POOL:-}"
 GPU_PROFILE="${GPU_PROFILE:-gb300}"
 LABEL_KEY="${LABEL_KEY:-mokka.example/simulated-gpu}"
+MOKKA_RELEASE="${MOKKA_RELEASE:-nvml-mock}"
 MOKKA_VERSION="${MOKKA_VERSION:-0.6.0}"
 GPU_OPERATOR_VERSION="${GPU_OPERATOR_VERSION:-v26.3.3}"
 TIMEOUT="${TIMEOUT:-20m}"
@@ -75,7 +76,7 @@ else
 fi
 
 step "Mokka ${MOKKA_VERSION} (profile ${GPU_PROFILE}) on the labeled nodes"
-helm upgrade --install nvml-mock oci://ghcr.io/nvidia/k8s-test-infra/chart/nvml-mock --version "$MOKKA_VERSION" \
+helm upgrade --install "$MOKKA_RELEASE" oci://ghcr.io/nvidia/k8s-test-infra/chart/nvml-mock --version "$MOKKA_VERSION" \
   --namespace mokka --create-namespace --set "gpu.profile=${GPU_PROFILE}" \
   --set-string "nodeSelector.${LABEL_KEY//./\\.}=true" --wait --timeout "$TIMEOUT" >/dev/null
 for node in $nodes; do
