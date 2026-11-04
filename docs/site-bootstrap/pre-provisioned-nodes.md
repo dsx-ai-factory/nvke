@@ -39,7 +39,7 @@ After bootstrap completes:
 - SSH access to all nodes with sudo privileges
 - Nodes can reach the internet for downloading packages and artifacts
 - Network connectivity between all nodes
-- A storage provisioner for the cluster's default StorageClass. The bootstrap installs none, and the management plane's database claims a 40 GiB volume
+- If self-managed, a storage provisioner for the cluster's default StorageClass before you install the management plane. The bootstrap installs none, and the management plane's database claims a 40 GiB volume
 - Registry credentials only if you pull the two images below from a private registry, logged in with `nerdctl login` on the init node; an NGC API key only if that registry is a private `nvcr.io` repository. Images you build on the init node need none
 - On the **init node**: `kind` binary and `nerdctl` with containerd installed — `nvkectl` uses these to create the ephemeral bootstrap Kind cluster. Docker is not supported. kind states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the version CI exercises
 - The two images `nvkectl` side-loads: `make -C cli images` builds them on the init node. To use images from a registry instead, pass `--nvke-controller-image` and `--provisioned-provider-image`, or set `NVKECTL_NVKE_CONTROLLER_IMAGE` (e.g. `nvcr.io/<org>/nvke-controller:edge`) and `NVKECTL_CAPI_PROVISIONED_IMAGE` (e.g. `nvcr.io/<org>/cluster-api-provider-provisioned:edge`)

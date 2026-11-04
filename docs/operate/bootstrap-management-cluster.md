@@ -18,11 +18,17 @@ Run every command on this page on the bootstrap host, as root, in a session that
 
 ## Install nvkectl
 
-1. Clone the repository and build `nvkectl` with Make.
+1. Clone the repository, check out the NVKE release you install, and build `nvkectl` with Make.
 
    ```bash
    git clone https://github.com/dsx-ai-factory/nvke.git
    ```
+
+   ```bash
+   git -C nvke checkout <NVKE_RELEASE>
+   ```
+
+   `<NVKE_RELEASE>` is the release tag, such as `v0.23.1`. A binary built from another commit carries that commit's version and Cluster API provider manifests, not the release's.
 
    ```bash
    make -C nvke/cli build
