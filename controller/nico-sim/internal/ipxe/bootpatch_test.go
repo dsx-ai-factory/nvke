@@ -104,6 +104,17 @@ func TestBootFindFilenameByPattern(t *testing.T) {
 			isInit: true,
 		},
 		{
+			name:  "finds nvidia-bos-64k kernel",
+			input: " 393218 100644  0   0  14832640 03-Nov-2026 08:14 vmlinuz-7.0.0-2022-nvidia-bos-64k\n",
+			want:  "vmlinuz-7.0.0-2022-nvidia-bos-64k",
+		},
+		{
+			name:   "finds nvidia-bos-64k initrd",
+			input:  " 393219 100644  0   0  98765432 03-Nov-2026 08:14 initrd.img-7.0.0-2022-nvidia-bos-64k\n",
+			want:   "initrd.img-7.0.0-2022-nvidia-bos-64k",
+			isInit: true,
+		},
+		{
 			name:  "no match returns empty",
 			input: " 393218 100644  0   0  14832640 23-Oct-2024 08:14 vmlinuz-5.15.0-generic\n",
 			want:  "",

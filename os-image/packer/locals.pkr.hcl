@@ -36,9 +36,17 @@ locals {
 
   # The requested architecture is validated against the authenticated material
   # manifest before it selects QEMU, firmware, console, and guest packages.
-  # ARM uses virt, AAVMF, the PL011 serial console, and the NVIDIA 64K-page
+  # ARM uses virt, AAVMF, the PL011 serial console, and an NVIDIA 64K-page
   # kernel. AMD64 uses q35, OVMF, ttyS0, and linux-nvidia.
-  nvidia_kernel_package = local.architecture == "arm64" ? "linux-nvidia-64k" : "linux-nvidia"
+  # arm64 on 26.04 takes the BOS series (7.0.0-20xx), which is distinct from
+  # linux-nvidia-64k (7.0.0-10xx) rather than newer than it, and is the only
+  # one carrying the Vera platform support Vera Rubin needs to bring up its
+  # GPUs. hwe-26.04 is that series' metapackage: same source
+  # (linux-meta-nvidia-bos) and version as linux-nvidia-bos-64k. 24.04 has no
+  # BOS series, so it keeps linux-nvidia-64k.
+  nvidia_kernel_package = (local.architecture == "arm64"
+    ? (var.ubuntu_series == "26.04" ? "linux-nvidia-64k-hwe-26.04" : "linux-nvidia-64k")
+    : "linux-nvidia")
   # The INSTALLED system's console only. boot_command below keeps the installer
   # on the first UART, because the build VM maps `-serial file:` there and
   # moving it would blank the log used to diagnose a stuck bake. Overridable

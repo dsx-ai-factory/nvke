@@ -38,11 +38,14 @@ const (
 	gptEntryMinBytes = 128
 )
 
-// nvidiaKernelPattern matches nvidia-64k kernel filenames in /boot and grub.cfg.
-var nvidiaKernelPattern = regexp.MustCompile(`vmlinuz-\S*nvidia-64k`)
+// nvidiaKernelPattern matches nvidia-64k and nvidia-bos-64k kernel filenames
+// in /boot and grub.cfg. The BOS series is a separate package line, not a
+// newer nvidia-64k, so its name does not contain "nvidia-64k".
+var nvidiaKernelPattern = regexp.MustCompile(`vmlinuz-\S*nvidia(?:-bos)?-64k`)
 
-// nvidiaInitrdPattern matches nvidia-64k initrd filenames in /boot and grub.cfg.
-var nvidiaInitrdPattern = regexp.MustCompile(`initrd\.img-\S*nvidia-64k`)
+// nvidiaInitrdPattern matches nvidia-64k and nvidia-bos-64k initrd filenames
+// in /boot and grub.cfg.
+var nvidiaInitrdPattern = regexp.MustCompile(`initrd\.img-\S*nvidia(?:-bos)?-64k`)
 
 // BootPatcher modifies the /boot partition inside a qcow2 overlay to swap
 // an incompatible kernel (e.g., nvidia-64k with 64KB pages) with a generic
@@ -696,7 +699,7 @@ func (p *BootPatcher) writePartition(ctx context.Context, srcPath, overlayPath s
 func (p *BootPatcher) patchBootPartition(ctx context.Context, bootRaw, kernelPath, _, tmpDir string) error {
 	log := p.Logger
 
-	// Step 1: List files in /boot root to find the nvidia-64k kernel/initrd names.
+	// Step 1: List files in /boot root to find the NVIDIA 64K kernel/initrd names.
 	lsOutput, err := p.runDebugFS(ctx, bootRaw, "ls -l /")
 	if err != nil {
 		return fmt.Errorf("debugfs ls: %w", err)
@@ -705,10 +708,10 @@ func (p *BootPatcher) patchBootPartition(ctx context.Context, bootRaw, kernelPat
 	oldKernel := findFilenameByPattern(lsOutput, nvidiaKernelPattern)
 	oldInitrd := findFilenameByPattern(lsOutput, nvidiaInitrdPattern)
 	if oldKernel == "" {
-		return fmt.Errorf("no nvidia-64k kernel found in boot partition (ls output: %s)", lsOutput)
+		return fmt.Errorf("no nvidia-64k or nvidia-bos-64k kernel found in boot partition (ls output: %s)", lsOutput)
 	}
 	if oldInitrd == "" {
-		return fmt.Errorf("no nvidia-64k initrd found in boot partition (ls output: %s)", lsOutput)
+		return fmt.Errorf("no nvidia-64k or nvidia-bos-64k initrd found in boot partition (ls output: %s)", lsOutput)
 	}
 	log.Info("Boot patcher: found existing kernel files",
 		"kernel", oldKernel, "initrd", oldInitrd)

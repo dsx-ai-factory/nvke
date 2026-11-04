@@ -54,7 +54,7 @@ The NVKE API and the site spec have no field to change a feature gate. The [Kube
 |---|---|---|
 | Operating system | Ubuntu 26.04 LTS or Ubuntu 24.04 LTS | No other release is supported. The reference Make build defaults to Ubuntu 26.04.1; set `UBUNTU_RELEASE` to select the installer point release. See the image build guide for release selection and verification. |
 | CPU architectures | amd64, arm64 | Set `ARCH=amd64` or `ARCH=arm64` on the repository image Make target; `image-native` requires a matching Linux/KVM host. |
-| Kernel | `linux-nvidia` on amd64, `linux-nvidia-64k` on arm64 | Ubuntu's NVIDIA-tuned kernel flavors. |
+| Kernel | `linux-nvidia` on amd64; on arm64 `linux-nvidia-64k-hwe-26.04` (26.04) or `linux-nvidia-64k` (24.04) | Ubuntu's NVIDIA-tuned kernel flavors. The 26.04 arm64 package is the BOS series. |
 | Full-disk encryption (FDE) | Opt-in reference build, amd64 and arm64, for evaluation only | `VARIANT=fde`; follow the separate [build and verification instructions](../../os-image/README.md#full-disk-encryption-fde-variant). NVKR's hosted pipeline also selects FDE images for both architectures; its local `scripts/nvke-os-local.sh` path builds only non-FDE. Nodes built from one FDE image share its volume encryption key, so the image does not protect data at rest; see [Preview status and known limitations](preview-status.md#building-artifacts). |
 | SPIFFE Runtime Environment (SPIRE) agent | 1.14.1, with TPM plugin 1.9.0 | Pinned. Installed on the node image for TPM node attestation. |
 | Node agent (`nvke-agent`) | Built from the NVKE checkout used for the image | Installed and enabled on the node image. Listens on port 15005. |
