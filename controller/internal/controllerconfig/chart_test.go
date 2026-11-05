@@ -26,6 +26,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/apiauthz"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 )
@@ -59,7 +60,7 @@ func TestRenderedChart(t *testing.T) {
 
 			raw, err := os.ReadFile(render)
 			require.NoError(t, err)
-			document, environment, deployment := splitRender(t, raw)
+			document, environment, deployment, bundle := splitRender(t, raw)
 			checkMounted(t, deployment, environment)
 
 			fromFile, err := controllerconfig.Load(writeConfig(t, document))
@@ -90,6 +91,21 @@ func TestRenderedChart(t *testing.T) {
 
 			// Both sources at once is a startup failure, so no render may produce it.
 			require.NoError(t, fromFile.CheckAuthSource(environment["AUTH_CONFIG_PATH"]))
+			require.NoError(t, fromFile.CheckAuthzNeedsAuthn(environment["AUTH_CONFIG_PATH"]))
+			checkBundleMounted(t, deployment, fromFile.APIAuthz)
+
+			if filepath.Base(render) == "api-authz.yaml" {
+				dir := t.TempDir()
+				for name, content := range bundle {
+					require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600))
+				}
+				issuers := make([]string, 0, len(fromFile.APIAuth.Issuers))
+				for _, issuer := range fromFile.APIAuth.Issuers {
+					issuers = append(issuers, issuer.Name)
+				}
+				_, err := apiauthz.NewLocalBundle(dir, issuers)
+				require.NoError(t, err, "the controller does not load the chart's bundle")
+			}
 
 			if filepath.Base(render) == "api-auth-inline.yaml" {
 				require.True(t, fromFile.APIAuth.Enabled, "the controller reads the chart's apiAuth.config from config.yaml")
@@ -124,13 +140,14 @@ func TestRenderedChart(t *testing.T) {
 }
 
 // splitRender returns the nvke-controller-config document, the controller
-// container's literal environment variables, and the controller Deployment from
-// one `helm template` output. Variables set through valueFrom are left out:
-// none of them migrate.
-func splitRender(t *testing.T, raw []byte) (string, map[string]string, *appsv1.Deployment) {
+// container's literal environment variables, the controller Deployment, and
+// the nvke-authz-bundle files, if rendered, from one `helm template` output.
+// Variables set through valueFrom are left out: none of them migrate.
+func splitRender(t *testing.T, raw []byte) (string, map[string]string, *appsv1.Deployment, map[string]string) {
 	t.Helper()
 
 	var document string
+	var bundle map[string]string
 	var environment map[string]string
 	var controller *appsv1.Deployment
 	reader := utilyaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(raw)))
@@ -151,6 +168,9 @@ func splitRender(t *testing.T, raw []byte) (string, map[string]string, *appsv1.D
 				require.Empty(t, document, "the render has more than one nvke-controller-config")
 				document = configMap.Data["config.yaml"]
 			}
+			if configMap.Name == "nvke-authz-bundle" {
+				bundle = configMap.Data
+			}
 		case "Deployment":
 			require.Nil(t, environment, "the render has more than one Deployment")
 			var deployment appsv1.Deployment
@@ -168,7 +188,31 @@ func splitRender(t *testing.T, raw []byte) (string, map[string]string, *appsv1.D
 	}
 	require.NotEmpty(t, document, "the render has no nvke-controller-config")
 	require.NotNil(t, environment, "the render has no controller Deployment")
-	return document, environment, controller
+	return document, environment, controller, bundle
+}
+
+// checkBundleMounted requires the Deployment to mount a ConfigMap, read-only,
+// at authorizer.localBundle.dir when apiAuthz is enabled.
+func checkBundleMounted(t *testing.T, deployment *appsv1.Deployment, authz controllerconfig.APIAuthzConfig) {
+	t.Helper()
+
+	if !authz.Enabled {
+		return
+	}
+	pod := deployment.Spec.Template.Spec
+	for _, m := range pod.Containers[0].VolumeMounts {
+		if m.MountPath != authz.Authorizer.LocalBundle.Dir {
+			continue
+		}
+		require.True(t, m.ReadOnly, "the authorization bundle is mounted writable")
+		for _, v := range pod.Volumes {
+			if v.Name == m.Name {
+				require.NotNil(t, v.ConfigMap, "the authorization bundle volume is not a ConfigMap")
+				return
+			}
+		}
+	}
+	t.Fatalf("nothing is mounted at authorizer.localBundle.dir %q", authz.Authorizer.LocalBundle.Dir)
 }
 
 // checkMounted requires the Deployment to mount nvke-controller-config, read-only
@@ -284,6 +328,19 @@ func TestLoadStartupConfig(t *testing.T) {
 
 		_, _, err = controllerconfig.LoadStartupConfig()
 		require.ErrorContains(t, err, "configured twice")
+	})
+
+	t.Run("authorization without authentication is refused", func(t *testing.T) {
+		local, err := controllerconfig.Load(localControllerConfig)
+		require.NoError(t, err)
+		local.APIAuthz.Enabled = true
+		local.APIAuthz.Authorizer.LocalBundle.Dir = "/etc/nvke/authz"
+		encoded, err := yaml.Marshal(local)
+		require.NoError(t, err)
+		t.Setenv("CONTROLLER_CONFIG_PATH", writeConfig(t, string(encoded)))
+
+		_, _, err = controllerconfig.LoadStartupConfig()
+		require.ErrorContains(t, err, "API authentication is off")
 	})
 }
 

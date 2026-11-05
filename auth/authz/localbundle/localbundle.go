@@ -21,9 +21,10 @@
 //
 // The actions are the API's actions, from Options.Actions. A caller holds the
 // roles of every claim and service account mapping it matches. A caller from
-// an issuer authorization.yaml doesn't list has no tenant and no roles. A
-// caller in the operator tenant is an operator if its issuer sets operators,
-// and is refused as an impostor otherwise.
+// an issuer with no tenant source has no tenant, and reaches only global
+// resources. A caller from an issuer authorization.yaml doesn't list has no
+// tenant and no roles. A caller in the operator tenant is an operator if its
+// issuer sets operators, and is refused as an impostor otherwise.
 package localbundle
 
 import (

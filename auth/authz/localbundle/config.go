@@ -54,7 +54,7 @@ type issuerConfig struct {
 	ServiceAccounts []serviceAccountMapping `json:"serviceAccounts"`
 }
 
-// tenantSource says where a caller's tenant comes from. Exactly one of Claim
+// tenantSource says where a caller's tenant comes from. At most one of Claim
 // and Fixed is set.
 type tenantSource struct {
 	// Claim names a top-level claim holding the tenant ID as a string.
@@ -246,17 +246,17 @@ func (c authorizationConfig) checkIssuer(name string, issuers []string, declared
 	return errs
 }
 
-// checkTenantSource refuses a tenant source that would give no caller a
-// tenant, or that the caller controls.
+// checkTenantSource refuses a tenant source that sets both claim and fixed, or
+// whose tenant the caller controls.
 func checkTenantSource(src tenantSource) error {
 	switch {
-	case (src.Claim == "") == (src.Fixed == ""):
-		return errors.New("set exactly one of claim and fixed")
+	case src.Claim != "" && src.Fixed != "":
+		return errors.New("set at most one of claim and fixed")
 	case src.Claim != "":
 		if err := checkClaimName(src.Claim); err != nil {
 			return fmt.Errorf("claim %w", err)
 		}
-	default:
+	case src.Fixed != "":
 		if err := authz.CheckTenantID(src.Fixed); err != nil {
 			return fmt.Errorf("fixed %w", err)
 		}
@@ -275,6 +275,8 @@ func checkOperators(i issuerConfig, operatorTenant string) error {
 		return nil
 	}
 	switch {
+	case i.Tenant == (tenantSource{}):
+		return errors.New("operators is set, but tenant isn't, so no caller would be an operator")
 	case operatorTenant == "":
 		return errors.New("operators is set, but operatorTenant isn't, so no caller would be an operator")
 	case fixed != "" && fixed != operatorTenant:
