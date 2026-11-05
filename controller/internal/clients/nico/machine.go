@@ -12,6 +12,7 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 	"github.com/google/uuid"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -147,6 +148,9 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 		}
 		maps.Copy(nicoMachine.Annotations, walkAnnotations)
 	}
+	if err := keepExistingNVLinkPartition(ctx, deps.K8sClient, nicoMachine); err != nil {
+		return err
+	}
 	if err := deps.K8sClient.Patch(ctx, nicoMachine, client.Apply, client.FieldOwner(deps.FieldManagerName), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply NicoMachine %s: %w", nicoMachine.Name, err)
 	}
@@ -172,6 +176,23 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 		return err
 	}
 
+	return nil
+}
+
+// keepExistingNVLinkPartition gives a NicoMachine that already exists the NVLink partition it
+// was created with. The pool's partition can change between a create and its retry, and
+// CAPNICo rejects a partition change once the instance exists, so only a node rendered for
+// the first time takes the pool's current partition.
+func keepExistingNVLinkPartition(ctx context.Context, k8sClient client.Client, nicoMachine *nicov1.NicoMachine) error {
+	existing := &nicov1.NicoMachine{}
+	err := k8sClient.Get(ctx, client.ObjectKeyFromObject(nicoMachine), existing)
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to get NicoMachine %s/%s: %w", nicoMachine.Namespace, nicoMachine.Name, err)
+	}
+	nicoMachine.Spec.NVLinkLogicalPartitionID = existing.Spec.NVLinkLogicalPartitionID
 	return nil
 }
 

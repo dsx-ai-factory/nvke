@@ -109,9 +109,61 @@ The management plane holds no site-wide NICo settings. Each workload cluster req
 | `instanceTypeID` | Node pool `nico` | One instance type ID. Fixed when the node pool is created. |
 | `vpcPrefixIDs` or `subnetIDs` | Control plane and node pool `nico` | Exactly one of the two: VPC prefixes for a site with native networking, subnets otherwise. |
 | `sshKeyGroupIDs` | Control plane and node pool `nico` | Optional. SSH key groups for node access. |
-| `infinibandPartitionID`, `nvLinkLogicalPartitionID` | Node pool `nico` | Optional. An InfiniBand partition and an NVLink logical partition. Fixed when the node pool is created. |
+| `infinibandPartitionID` | Node pool `nico` | Optional. An InfiniBand partition. Fixed when the node pool is created. |
+| `nvLinkLogicalPartitionID` | Node pool `nico` | Optional. An NVLink logical partition. A node pool update can set or replace it, but not clear it; nodes created after the update attach to it, and existing nodes keep their partition. |
 
 The `orgID`, `siteID` and `vpcID` of a cluster are fixed when the cluster is created. The control plane and each node pool select one of the releases you created in [Register the image for provisioning](build-node-images.md#create-the-objects-on-the-management-cluster) with `nico.release` and, optionally, a config profile with `nico.configProfile`. [Create a workload cluster](../workload-clusters/create.md) shows a full request.
+
+## Attach existing nodes to an NVLink partition
+
+Setting `nvLinkLogicalPartitionID` on a node pool with a node pool update attaches the nodes the pool creates after the update. Nodes that already exist keep their NVLink configuration. To attach them, update their NICo instances directly. NICo:
+
+- accepts the update only while the instance is `Ready`, so a node that is still provisioning returns 400 until it is;
+- replaces all of the instance's NVLink interfaces with the ones you send;
+- rejects the update if the VPC has a default NVLink logical partition and the instance already has NVLink interfaces.
+
+While NICo applies the change the instance is `Configuring`, and workloads on the node that use NVLink can be interrupted. Drain the node first if that matters.
+
+Use the endpoint, organization ID, API name and token from [the NICo credentials](#manage-the-nico-credentials). Send one interface per GPU of the instance type, with `deviceInstance` from 0 to the GPU count minus one; a GB200 or GB300 compute tray has 4 GPUs.
+
+1. Set the values for your site. `NICO_TOKEN` holds your NICo API token.
+
+   ```bash
+   NICO_API="<NICO_ENDPOINT>/v2/org/<NICO_ORG_ID>/<NICO_API_NAME>"
+   PARTITION="<NVLINK_LOGICAL_PARTITION_ID>"
+   GPUS=4
+   ```
+
+2. Update one instance. The instance ID is the part of the NicoMachine's `spec.providerID` after `nico://`.
+
+   ```bash
+   curl -sS -X PATCH "${NICO_API}/instance/<INSTANCE_ID>" \
+     -H "Authorization: Bearer ${NICO_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d "$(jq -n --arg p "${PARTITION}" --argjson n "${GPUS}" \
+       '{nvLinkInterfaces: [range(0; $n) | {nvLinkLogicalPartitionId: $p, deviceInstance: .}]}')"
+   ```
+
+3. To update every node of a node pool, list the pool's instances from its NicoMachines on the management cluster. Older controllers label them with `nke.nvidia.com/node-pool-id` instead of `nvke.nvidia.com/node-pool-id`; the filter accepts both.
+
+   ```bash
+   kubectl get nicomachines -A -o json \
+     | jq -r --arg pool "<NODE_POOL_ID>" '.items[]
+         | select((.spec.labels["nvke.nvidia.com/node-pool-id"] // .spec.labels["nke.nvidia.com/node-pool-id"]) == $pool)
+         | .spec.providerID // empty | sub("^nico://"; "")' > instances.txt
+   ```
+
+   ```bash
+   while read -r instance; do
+     curl -sS -o /dev/null -w "%{http_code} ${instance}\n" -X PATCH "${NICO_API}/instance/${instance}" \
+       -H "Authorization: Bearer ${NICO_TOKEN}" \
+       -H "Content-Type: application/json" \
+       -d "$(jq -n --arg p "${PARTITION}" --argjson n "${GPUS}" \
+         '{nvLinkInterfaces: [range(0; $n) | {nvLinkLogicalPartitionId: $p, deviceInstance: .}]}')"
+   done < instances.txt
+   ```
+
+   Run the loop again for any instance that did not return 200. An update with the same partition replaces the interfaces with the same ones, so repeating it is safe.
 
 ## Verify
 

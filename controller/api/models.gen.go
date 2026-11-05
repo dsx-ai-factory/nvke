@@ -1163,7 +1163,7 @@ type NicoNodePoolProvider struct {
 	// InstanceTypeID NICo instance type. Fixed at creation.
 	InstanceTypeID openapi_types.UUID `json:"instanceTypeID,omitempty"`
 
-	// NvLinkLogicalPartitionID NVLink logical partition. Fixed at creation.
+	// NvLinkLogicalPartitionID NVLink logical partition. Can be set or replaced by an update; nodes created after the update use it.
 	NvLinkLogicalPartitionID *openapi_types.UUID `json:"nvLinkLogicalPartitionID,omitempty"`
 
 	// Release Name of a release the Operator has supplied to the management plane.
@@ -1179,7 +1179,7 @@ type NicoNodePoolProvider struct {
 	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
 }
 
-// NicoNodePoolProviderUpdate Fields fixed at creation (instanceTypeID, partitions, sshKeyGroupIDs) cannot be
+// NicoNodePoolProviderUpdate Fields fixed at creation (instanceTypeID, infinibandPartitionID, sshKeyGroupIDs) cannot be
 // sent: a request carrying one is rejected with 400. A body echoed from GET must
 // have them stripped.
 type NicoNodePoolProviderUpdate struct {
@@ -1189,6 +1189,10 @@ type NicoNodePoolProviderUpdate struct {
 
 	// DiskSelectionStrategy Which disk the OS is installed on. Default smallest.
 	DiskSelectionStrategy *DiskSelectionStrategy `json:"diskSelectionStrategy,omitempty"`
+
+	// NvLinkLogicalPartitionID Sets or replaces the NVLink logical partition. Nodes created after the update
+	// attach to it; existing nodes keep their partition. It cannot be cleared.
+	NvLinkLogicalPartitionID *openapi_types.UUID `json:"nvLinkLogicalPartitionID,omitempty"`
 
 	// Release Name of a release. Changing it rolls the pool's nodes to the new release. An
 	// empty string is rejected: a pool always has a release.
@@ -1757,7 +1761,7 @@ type UpdateNodePoolRequest struct {
 	// node is torn down before its replacement is provisioned.
 	MaxSurge *int `json:"maxSurge,omitempty"`
 
-	// Nico Fields fixed at creation (instanceTypeID, partitions, sshKeyGroupIDs) cannot be
+	// Nico Fields fixed at creation (instanceTypeID, infinibandPartitionID, sshKeyGroupIDs) cannot be
 	// sent: a request carrying one is rejected with 400. A body echoed from GET must
 	// have them stripped.
 	Nico *NicoNodePoolProviderUpdate `json:"nico,omitempty"`

@@ -150,6 +150,48 @@ func TestClient_CreateMachine_ResolvesByRole(t *testing.T) {
 	}
 }
 
+// A pool's NVLink partition can change between a create and its retry. The retried
+// node keeps the partition it was created with, and only a node created after the
+// change takes the new one.
+func TestClient_CreateMachine_NVLinkPartitionAfterPoolUpdate(t *testing.T) {
+	const release = "test-os"
+	partitionA := uuid.MustParse("70000000-0000-0000-0000-0000000000a1")
+	partitionB := uuid.MustParse("70000000-0000-0000-0000-0000000000b1")
+	k8sClient := newMachineCreateClient(t, testNodePoolRelease(release, "#!ipxe\n", "#cloud-config\n")...)
+
+	nodeSet := db.NodeSet{KubernetesVersion: "1.32.1"}
+	nodeSet.SetNico(db.NicoNodePoolProvider{Release: release, DiskSelectionStrategy: db.DiskSelectionStrategySmallest})
+	poolWithPartition := func(partitionID *uuid.UUID) db.NodePool {
+		nodePool := db.NodePool{}
+		nodePool.SetNico(db.NicoNodePoolProvider{
+			InstanceTypeID:           uuid.MustParse("70000000-0000-0000-0000-000000000005"),
+			SubnetIDs:                []uuid.UUID{uuid.MustParse("70000000-0000-0000-0000-000000000007")},
+			NvLinkLogicalPartitionID: partitionID,
+		})
+		return nodePool
+	}
+	cluster := db.Cluster{Name: "cluster-a", CniPlugin: db.CNICalico}
+	cluster.SetNicoProvider(db.NicoClusterProvider{VpcID: uuid.MustParse("70000000-0000-0000-0000-000000000006")})
+
+	ctx := context.Background()
+	create := func(nodeName string, nodePool db.NodePool) string {
+		node := db.Node{Name: nodeName, Nico: &db.NicoNodeProvider{}}
+		require.NoError(t, New().CreateMachine(ctx, testMachineCreateDeps(k8sClient), node, nodeSet, nodePool, cluster))
+		nicoMachine := &nicov1.NicoMachine{}
+		require.NoError(t, k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: constants.LegacyManagementNamespace, Name: nodeName}, nicoMachine))
+		return nicoMachine.Spec.NVLinkLogicalPartitionID
+	}
+
+	assert.Equal(t, partitionA.String(), create("node-0", poolWithPartition(&partitionA)), "first create")
+	assert.Equal(t, partitionA.String(), create("node-0", poolWithPartition(&partitionB)), "retry after the pool update")
+	assert.Equal(t, partitionB.String(), create("node-1", poolWithPartition(&partitionB)), "node created after the pool update")
+
+	// A pool that had no partition: its existing node stays without one.
+	assert.Empty(t, create("node-2", poolWithPartition(nil)), "first create without a partition")
+	assert.Empty(t, create("node-2", poolWithPartition(&partitionB)), "retry after the partition is set")
+	assert.Equal(t, partitionB.String(), create("node-3", poolWithPartition(&partitionB)), "node created after the partition is set")
+}
+
 func newMachineCreateClient(t *testing.T, objects ...ctrlclient.Object) ctrlclient.Client {
 	t.Helper()
 

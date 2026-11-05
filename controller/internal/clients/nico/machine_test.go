@@ -148,6 +148,32 @@ func TestResolveNodeConfig(t *testing.T) {
 				NVLinkLogicalPartitionID: &nvLinkLogicalPartitionID,
 			},
 		},
+		"worker uses the pool's partition when the node set snapshot predates a partition update": {
+			nodeSet: func() db.NodeSet {
+				nodeSet := db.NodeSet{KubernetesVersion: "1.33.0", TeleportEnabled: true}
+				previousPartitionID := uuid.New()
+				nodeSet.SetNico(db.NicoNodePoolProvider{
+					Release:                  "worker-os",
+					DiskSelectionStrategy:    db.DiskSelectionStrategyLargest,
+					NvLinkLogicalPartitionID: &previousPartitionID,
+				})
+				return nodeSet
+			}(),
+			nodePool: workerNodePool,
+			want: NodeConfig{
+				Release:                  "worker-os",
+				DiskSelectionStrategy:    db.DiskSelectionStrategyLargest,
+				KubernetesVersion:        "1.33.0",
+				TeleportEnabled:          true,
+				InstanceTypeID:           workerInstanceTypeID,
+				SSHKeyGroupIDs:           []uuid.UUID{uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")},
+				VpcPrefixIDs:             []uuid.UUID{workerVpcPrefixID},
+				NodePoolID:               workerNodePoolID,
+				IsControlPlaneRole:       false,
+				InfinibandPartitionID:    &infinibandPartitionID,
+				NVLinkLogicalPartitionID: &nvLinkLogicalPartitionID,
+			},
+		},
 	}
 
 	for name, params := range tests {

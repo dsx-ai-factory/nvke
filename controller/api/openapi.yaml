@@ -3106,7 +3106,7 @@ components:
         nvLinkLogicalPartitionID:
           type: string
           format: uuid
-          description: NVLink logical partition. Fixed at creation.
+          description: NVLink logical partition. Can be set or replaced by an update; nodes created after the update use it.
         sshKeyGroupIDs:
           type: array
           items:
@@ -3132,7 +3132,7 @@ components:
       type: object
       additionalProperties: false
       description: |
-        Fields fixed at creation (instanceTypeID, partitions, sshKeyGroupIDs) cannot be
+        Fields fixed at creation (instanceTypeID, infinibandPartitionID, sshKeyGroupIDs) cannot be
         sent: a request carrying one is rejected with 400. A body echoed from GET must
         have them stripped.
       properties:
@@ -3164,6 +3164,12 @@ components:
             may have no config profile.
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategy"
+        nvLinkLogicalPartitionID:
+          type: string
+          format: uuid
+          description: |
+            Sets or replaces the NVLink logical partition. Nodes created after the update
+            attach to it; existing nodes keep their partition. It cannot be cleared.
 
     NicoNodeSetProvider:
       type: object

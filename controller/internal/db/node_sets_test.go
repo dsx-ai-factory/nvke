@@ -109,6 +109,14 @@ func TestNodePoolNeedsNewNodeSet(t *testing.T) {
 			pool.Nico = &provider
 			return pool
 		}(), want: true},
+		{name: "nvlink logical partition changed alone", pool: func() db.NodePool {
+			pool := basePool
+			provider := *pool.Nico
+			partitionID := uuid.New()
+			provider.NvLinkLogicalPartitionID = &partitionID
+			pool.Nico = &provider
+			return pool
+		}()},
 		{name: "reserved memory changed", pool: func() db.NodePool {
 			pool := basePool
 			pool.SystemReservedMemory = "2Gi"
