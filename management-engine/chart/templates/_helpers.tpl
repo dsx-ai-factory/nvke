@@ -75,3 +75,13 @@ Otherwise, use the standard resourceName helper with "controller-manager" suffix
 {{- end -}}
 {{- $namespace -}}
 {{- end -}}
+
+{{/* Select canonical rules from a role or mixed development RBAC bundle. */}}
+{{- define "management-engine.roleRules" -}}
+{{- $rules := list -}}
+{{- range splitList "\n---\n" (.root.Files.Get (printf "files/%s.yaml" .file)) -}}
+{{- $role := fromYaml . -}}
+{{- if eq $role.kind $.kind -}}{{- $rules = $role.rules -}}{{- end -}}
+{{- end -}}
+{{- required (printf "missing %s rules in %s" .kind .file) $rules | toYaml -}}
+{{- end -}}

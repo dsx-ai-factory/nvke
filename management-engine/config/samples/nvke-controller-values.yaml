@@ -1,19 +1,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Optional NVKE controller connection: replace the endpoint and supply the referenced Secret.
+# Optional backend credentials. Merge with runtime-values.yaml.
 manager:
-  args:
-    - --leader-elect
-    - --leader-election-namespace=$(STATE_NAMESPACE)
-    - --namespace=project-a
-    - --nvke-controller-endpoint=https://controller.example.com/api
-    - --nvke-controller-token-file=/etc/nvke-controller/auth/token
-  extraVolumeMounts:
-    - name: nvke-controller-token
-      mountPath: /etc/nvke-controller/auth
-      readOnly: true
-  extraVolumes:
-    - name: nvke-controller-token
-      secret:
-        secretName: management-nvke-controller-token
+  nvkeController:
+    tokenSecret:
+      name: management-nvke-controller-token
+      key: bearer-token

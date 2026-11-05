@@ -4,6 +4,8 @@
 # Combined installation. Replace infrastructure templates for your provider.
 manager:
   infrastructureTemplateConfigMap: infra-templates
+  nvkeController:
+    endpoint: http://nvke-controller.nvke-controller.svc.cluster.local:8080/api
 state:
   configMaps:
     - name: infra-templates

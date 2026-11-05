@@ -28,6 +28,7 @@ make test-controller # controller integration tests (envtest)
 make -C .. chart-crds # after changing MachineImage, ClusterRelease, or NodePoolRelease
 make -C .. chart-crds-check # verify the NVKE controller chart's generated CRDs
 make chart-check # refresh generated assets and test all Helm installation modes
+make chart-assets-check # verify committed chart assets match their canonical sources
 ```
 
 For a drift check, start with a clean working tree before regeneration.

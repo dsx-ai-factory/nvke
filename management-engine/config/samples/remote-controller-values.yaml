@@ -6,6 +6,8 @@ state:
 manager:
   stateNamespace: management-state-system
   infrastructureTemplateConfigMap: infra-templates
+  nvkeController:
+    endpoint: http://nvke-controller.nvke-controller.svc.cluster.local:8080/api
   stateAccess:
     mode: remote
     kubeconfigSecret:

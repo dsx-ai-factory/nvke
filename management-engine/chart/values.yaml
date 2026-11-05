@@ -19,6 +19,9 @@ state:
   # State-only installations can bind existing ServiceAccounts or Kubernetes Users.
   rbac:
     subjects: []
+    # Optional state-side permissions for existing API identities.
+    tenantAPIBindings: []
+    operatorAPISubjects: []
   # Bootstrap ConfigMaps: name, tenant namespace, and literal data (not Helm expressions).
   configMaps: []
 
@@ -44,7 +47,6 @@ manager:
   ##
   args:
     - --leader-elect
-    - --leader-election-namespace=$(STATE_NAMESPACE)
 
   # Existing state namespace; defaults to state.namespace or the release namespace.
   stateNamespace: ""
@@ -55,6 +57,11 @@ manager:
       key: kubeconfig
   # Required unless --infra-template-configmap is supplied through args.
   infrastructureTemplateConfigMap: ""
+  nvkeController:
+    endpoint: ""
+    tokenSecret:
+      name: ""
+      key: token
   env: []
 
   extraVolumeMounts: []

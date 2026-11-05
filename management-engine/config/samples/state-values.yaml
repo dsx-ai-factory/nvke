@@ -13,3 +13,13 @@ state:
       - kind: User
         apiGroup: rbac.authorization.k8s.io
         name: spiffe://example.org/management-engine
+    tenantAPIBindings:
+      - namespace: tenant-a
+        subjects:
+          - kind: User
+            apiGroup: rbac.authorization.k8s.io
+            name: spiffe://example.org/tenant-api
+    operatorAPISubjects:
+      - kind: User
+        apiGroup: rbac.authorization.k8s.io
+        name: spiffe://example.org/operator-api

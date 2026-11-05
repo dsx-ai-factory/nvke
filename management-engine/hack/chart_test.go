@@ -5,6 +5,7 @@ package hack
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -19,8 +20,25 @@ import (
 
 func renderChart(t *testing.T, values string) ([]unstructured.Unstructured, string, error) {
 	t.Helper()
+	var input map[string]any
+	if err := json.Unmarshal([]byte(values), &input); err != nil {
+		t.Fatal(err)
+	}
+	manager, ok := input["manager"].(map[string]any)
+	if input["manager"] == nil {
+		manager = map[string]any{}
+		input["manager"] = manager
+		ok = true
+	}
+	if ok && manager["nvkeController"] == nil {
+		manager["nvkeController"] = map[string]any{"endpoint": "https://backend.example.invalid/api"}
+	}
+	data, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
 	file := filepath.Join(t.TempDir(), "values.json")
-	if err := os.WriteFile(file, []byte(values), 0o600); err != nil {
+	if err := os.WriteFile(file, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	helm := os.Getenv("HELM")
@@ -73,6 +91,18 @@ func TestChartModes(t *testing.T) {
 		{"state only", `{
   "controller": {
     "enabled": false
+  },
+  "manager": {
+    "image": {
+      "repository": ""
+    },
+    "nvkeController": {
+      "endpoint": "",
+      "tokenSecret": {
+        "name": "",
+        "key": ""
+      }
+    }
   }
 }`, false, true, false},
 		{"legacy manager disabled", `{
@@ -303,6 +333,117 @@ func TestChartValidation(t *testing.T) {
   }
 }`, "boolean"},
 		{`{}`, "infra-template-configmap"},
+		{`{"manager":{"nvkeController":{"endpoint":"https:///api"}}}`, "must include a host"},
+		{`{
+  "state": {
+    "enabled": false
+  },
+  "manager": {
+    "infrastructureTemplateConfigMap": "infra",
+    "stateNamespace": "state",
+    "stateAccess": {
+      "mode": "remote",
+      "kubeconfigSecret": {
+        "name": "client",
+        "key": "/config"
+      }
+    }
+  }
+}`, "key"},
+		{`{
+  "controller": {
+    "enabled": false
+  },
+  "state": {
+    "rbac": {
+      "tenantAPIBindings": [
+        {
+          "namespace": "tenant-a",
+          "subjects": [
+            {
+              "kind": "ServiceAccount",
+              "name": "first",
+              "namespace": "runtime"
+            }
+          ]
+        },
+        {
+          "namespace": "tenant-a",
+          "subjects": [
+            {
+              "kind": "ServiceAccount",
+              "name": "second",
+              "namespace": "runtime"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}`, "one state.rbac.tenantAPIBindings entry per namespace"},
+		{`{"manager":{"nvkeController":{"endpoint":""}}}`, "manager.nvkeController.endpoint"},
+		{`{"manager":{"nvkeController":{"endpoint":"invalid"}}}`, "endpoint"},
+		{`{
+  "manager": {
+    "infrastructureTemplateConfigMap": "infra",
+    "nvkeController": {
+      "endpoint": "https://backend.example.invalid/api",
+      "tokenSecret": {
+        "name": "client",
+        "key": ""
+      }
+    }
+  }
+}`, "tokenSecret.key"},
+		{`{
+  "manager": {
+    "infrastructureTemplateConfigMap": "infra",
+    "nvkeController": {
+      "endpoint": "https://backend.example.invalid/api",
+      "tokenSecret": {
+        "name": "client",
+        "key": "/token"
+      }
+    }
+  }
+}`, "key"},
+		{`{
+  "manager": {
+    "infrastructureTemplateConfigMap": "infra",
+    "args": [
+      "--leader-elect",
+      "--leader-election-namespace=wrong"
+    ]
+  }
+}`, "the chart sets --leader-election-namespace"},
+		{`{
+  "manager": {
+    "infrastructureTemplateConfigMap": "infra",
+    "args": [
+      "--nvke-controller-endpoint=https://wrong.example.invalid"
+    ]
+  }
+}`, "manager.nvkeController"},
+		{`{
+  "controller": {
+    "enabled": false
+  },
+  "state": {
+    "rbac": {
+      "tenantAPIBindings": [
+        {
+          "subjects": [
+            {
+              "kind": "ServiceAccount",
+              "name": "api",
+              "namespace": "runtime"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}`, "namespace"},
 		{`{
   "manager": {
     "image": {
@@ -359,20 +500,19 @@ func TestChartValidation(t *testing.T) {
 
 func TestChartExamples(t *testing.T) {
 	for _, sample := range []string{
-		"runtime-values.yaml", "state-values.yaml", "remote-controller-values.yaml", "nvke-controller-values.yaml",
+		"runtime-values.yaml", "state-values.yaml", "remote-controller-values.yaml",
+		"nvke-controller-values.yaml", "dsx-values.yaml",
 	} {
 		t.Run(sample, func(t *testing.T) {
 			helm := os.Getenv("HELM")
 			if helm == "" {
 				helm = "helm"
 			}
-			args := []string{
-				"template", "management-engine", "../chart", "--namespace", "management-engine-system",
-				"-f", "../config/samples/" + sample,
-			}
-			if sample == "nvke-controller-values.yaml" {
+			args := []string{"template", "management-engine", "../chart", "--namespace", "management-engine-system"}
+			if sample == "nvke-controller-values.yaml" || sample == "dsx-values.yaml" {
 				args = append(args, "-f", "../config/samples/runtime-values.yaml")
 			}
+			args = append(args, "-f", "../config/samples/"+sample)
 			output, err := exec.Command(helm, args...).CombinedOutput()
 			if err != nil {
 				t.Fatalf("%v\n%s", err, output)
@@ -402,5 +542,233 @@ func TestChartExamples(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestChartBackendCredentials(t *testing.T) {
+	for _, mode := range []string{"inCluster", "remote"} {
+		t.Run(mode, func(t *testing.T) {
+			values := fmt.Sprintf(`{
+     "state":{"enabled":false},
+     "manager":{
+       "infrastructureTemplateConfigMap":"infra",
+       "stateNamespace":"state",
+       "args":["--leader-elect"],
+       "stateAccess":{"mode":%q,"kubeconfigSecret":{"name":"state-client","key":"config"}},
+       "nvkeController":{
+         "endpoint":"https://backend.example.invalid/api",
+         "tokenSecret":{"name":"backend-client","key":"bearer"}
+       }
+     }
+   }`, mode)
+			objects, output, err := renderChart(t, values)
+			if err != nil {
+				t.Fatalf("%v\n%s", err, output)
+			}
+			pod, _, _ := unstructured.NestedMap(objectsOfKind(objects, "Deployment")[0].Object, "spec", "template", "spec")
+			container := pod["containers"].([]any)[0].(map[string]any)
+			args, _, _ := unstructured.NestedStringSlice(container, "args")
+			for _, wanted := range []string{
+				"--nvke-controller-endpoint=https://backend.example.invalid/api",
+				"--nvke-controller-token-file=/etc/nvke-controller/auth/token",
+				"--leader-election-namespace=$(STATE_NAMESPACE)",
+			} {
+				count := 0
+				for _, arg := range args {
+					if arg == wanted {
+						count++
+					}
+				}
+				if count != 1 {
+					t.Fatalf("want one %q, got %v", wanted, args)
+				}
+			}
+			volumes, _, _ := unstructured.NestedSlice(pod, "volumes")
+			found := false
+			for _, volume := range volumes {
+				v := volume.(map[string]any)
+				if v["name"] != "nvke-controller-token" {
+					continue
+				}
+				found = true
+				secret := v["secret"].(map[string]any)
+				item := secret["items"].([]any)[0].(map[string]any)
+				if secret["secretName"] != "backend-client" || item["key"] != "bearer" || item["path"] != "token" {
+					t.Fatalf("wrong backend credential reference: %v", secret)
+				}
+			}
+			if !found {
+				t.Fatal("missing backend credentials volume")
+			}
+			mounts, _, _ := unstructured.NestedSlice(container, "volumeMounts")
+			found = false
+			for _, mount := range mounts {
+				m := mount.(map[string]any)
+				if m["name"] == "nvke-controller-token" {
+					found = m["mountPath"] == "/etc/nvke-controller/auth" && m["readOnly"] == true
+				}
+			}
+			if !found {
+				t.Fatal("missing read-only backend credentials mount")
+			}
+		})
+	}
+}
+
+func TestChartRemoteNamespaceAlias(t *testing.T) {
+	objects, output, err := renderChart(t, `{
+  "state": {
+    "enabled": false,
+    "namespace": "existing-state"
+  },
+  "manager": {
+    "infrastructureTemplateConfigMap": "infra",
+    "stateAccess": {
+      "mode": "remote",
+      "kubeconfigSecret": {
+        "name": "client",
+        "key": "config"
+      }
+    }
+  }
+}`)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, output)
+	}
+	env, _, _ := unstructured.NestedSlice(objectsOfKind(objects, "Deployment")[0].Object,
+		"spec", "template", "spec", "containers")
+	container := env[0].(map[string]any)
+	variables, _, _ := unstructured.NestedSlice(container, "env")
+	if variables[0].(map[string]any)["value"] != "existing-state" {
+		t.Fatalf("wrong state namespace: %v", variables)
+	}
+}
+
+func TestChartAPIBindings(t *testing.T) {
+	objects, output, err := renderChart(t, `{
+  "controller": {
+    "enabled": false
+  },
+  "state": {
+    "rbac": {
+      "tenantAPIBindings": [
+        {
+          "namespace": "tenant-a",
+          "subjects": [
+            {
+              "kind": "ServiceAccount",
+              "name": "tenant-api",
+              "namespace": "runtime"
+            }
+          ]
+        }
+      ],
+      "operatorAPISubjects": [
+        {
+          "kind": "User",
+          "apiGroup": "rbac.authorization.k8s.io",
+          "name": "spiffe://example.org/operator-api"
+        }
+      ]
+    }
+  }
+}`)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, output)
+	}
+	if len(objectsOfKind(objects, "Deployment")) != 0 || len(objectsOfKind(objects, "ServiceAccount")) != 0 {
+		t.Fatal("state bindings installed workloads or runtime identities")
+	}
+	var tenantRole, operatorRole bool
+	for _, role := range append(objectsOfKind(objects, "Role"), objectsOfKind(objects, "ClusterRole")...) {
+		if !strings.HasSuffix(role.GetName(), "-api") {
+			continue
+		}
+		rules, _, _ := unstructured.NestedSlice(role.Object, "rules")
+		if len(rules) != 1 {
+			t.Fatalf("unexpected API rules: %v", rules)
+		}
+		resources, _, _ := unstructured.NestedStringSlice(rules[0].(map[string]any), "resources")
+		if strings.HasSuffix(role.GetName(), "tenant-api") {
+			tenantRole = role.GetNamespace() == "tenant-a" && len(resources) == 1 && resources[0] == "nvkeclusters"
+		} else {
+			operatorRole = role.GetKind() == "ClusterRole" && strings.Join(resources, ",") == "clusterreleases,machineimages"
+		}
+	}
+	if len(objectsOfKind(objects, "RoleBinding")) != 1 || len(objectsOfKind(objects, "ClusterRoleBinding")) != 1 {
+		t.Fatal("missing or excessive API bindings")
+	}
+	if !tenantRole || !operatorRole {
+		t.Fatal("API permissions do not match existing registrations")
+	}
+	for _, kind := range []string{"RoleBinding", "ClusterRoleBinding"} {
+		for _, binding := range objectsOfKind(objects, kind) {
+			if !strings.HasSuffix(binding.GetName(), "-api") {
+				continue
+			}
+			subjects, _, _ := unstructured.NestedSlice(binding.Object, "subjects")
+			subject := subjects[0].(map[string]any)
+			if strings.HasSuffix(binding.GetName(), "tenant-api") {
+				if binding.GetNamespace() != "tenant-a" ||
+					subject["kind"] != "ServiceAccount" || subject["namespace"] != "runtime" {
+					t.Fatalf("wrong tenant binding: %v", binding)
+				}
+			} else if subject["kind"] != "User" || subject["name"] != "spiffe://example.org/operator-api" {
+				t.Fatalf("wrong operator binding: %v", binding)
+			}
+		}
+	}
+}
+
+func TestChartImages(t *testing.T) {
+	for _, tc := range []struct{ repository, tag, want string }{
+		{"registry.example.invalid/manager", "reviewed", "registry.example.invalid/manager:reviewed"},
+		{"registry.example.invalid/manager@sha256:" + strings.Repeat("a", 64), "ignored",
+			"registry.example.invalid/manager@sha256:" + strings.Repeat("a", 64)},
+	} {
+		t.Run(tc.tag, func(t *testing.T) {
+			values := fmt.Sprintf(`{
+    "manager":{"infrastructureTemplateConfigMap":"infra","image":{"repository":%q,"tag":%q}}
+   }`, tc.repository, tc.tag)
+			objects, output, err := renderChart(t, values)
+			if err != nil {
+				t.Fatalf("%v\n%s", err, output)
+			}
+			containers, _, _ := unstructured.NestedSlice(objectsOfKind(objects, "Deployment")[0].Object,
+				"spec", "template", "spec", "containers")
+			if containers[0].(map[string]any)["image"] != tc.want {
+				t.Fatalf("wrong image: %v", containers[0])
+			}
+		})
+	}
+}
+
+func TestChartExistingManagerIdentity(t *testing.T) {
+	objects, output, err := renderChart(t, `{
+  "serviceAccount": {
+    "enabled": false,
+    "name": "existing-manager"
+  },
+  "manager": {
+    "infrastructureTemplateConfigMap": "infra"
+  }
+}`)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, output)
+	}
+	if len(objectsOfKind(objects, "ServiceAccount")) != 0 {
+		t.Fatal("existing identity was recreated")
+	}
+	deployment := objectsOfKind(objects, "Deployment")[0]
+	name, _, _ := unstructured.NestedString(deployment.Object, "spec", "template", "spec", "serviceAccountName")
+	if name != "existing-manager" {
+		t.Fatalf("wrong runtime identity: %s", name)
+	}
+	for _, binding := range objectsOfKind(objects, "ClusterRoleBinding") {
+		subjects, _, _ := unstructured.NestedSlice(binding.Object, "subjects")
+		subject := subjects[0].(map[string]any)
+		if subject["name"] != "existing-manager" || subject["namespace"] != "runtime" {
+			t.Fatalf("state grants do not match existing runtime identity: %v", subject)
+		}
 	}
 }

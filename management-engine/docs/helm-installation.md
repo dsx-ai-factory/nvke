@@ -18,7 +18,8 @@ resources. State-only rendering needs no image or credential configuration.
 ## Generate manifests
 
 From `management-engine/`, run `make chart-check` to refresh the generated CRD
-and RBAC assets, lint the chart, and test its rendered resources. It uses Helm
+and RBAC assets, lint the chart, and test its rendered resources. CI also runs
+`make chart-assets-check` to reject uncommitted asset drift. These checks use Helm
 and the module's pinned Go tools without connecting to a Kubernetes cluster.
 
 For a combined installation:
@@ -39,11 +40,34 @@ looks up that name in each NVKECluster's tenant namespace. Supply one entry per
 tenant namespace, reusing the same ConfigMap name; when reusing state, publish
 those ConfigMaps on the datastore cluster before creating tenant clusters.
 
-Set `manager.image.repository` and `manager.image.tag` to your published image,
-or use a digest reference as the repository. Configure the existing provisioning
-service with `--nvke-controller-endpoint` and, where required, the token-file
-argument and an explicit Secret volume. See `config/samples/nvke-controller-values.yaml`.
-Examples render configuration; they do not demonstrate an authenticated deployment.
+Set `manager.image.repository` and `manager.image.tag` to a published image,
+or use a digest reference as the repository. Set `manager.nvkeController.endpoint`
+to the existing provisioning service. If it requires a bearer token, supply
+`manager.nvkeController.tokenSecret.name` and `.key`; the chart mounts that key
+as `/etc/nvke-controller/auth/token` and sets the corresponding argument. The
+Secret must already exist in the runtime namespace. An example credential overlay
+is in `config/samples/nvke-controller-values.yaml`.
+
+For a DSX CSC render, merge the working template example with site settings:
+
+```sh
+helm template cluster-service chart --namespace cluster-service-system \
+  -f config/samples/runtime-values.yaml -f config/samples/dsx-values.yaml > dsx.yaml
+```
+
+Replace the example registry, image tag, endpoint and tenant namespace with
+reviewed site inputs. The manager needs network access to the datastore's
+Kubernetes API and the configured NVKE controller endpoint. Scrapers need access
+to the optional metrics Service. Tenant API Services, gateway routing, `/v1/`,
+TLS and DNS follow the [API exposure contract](https://nvidia.atlassian.net/browse/NKX-19411);
+the operator API remains internal. The chart owns backend, kubeconfig and election namespace
+arguments. `manager.args` supplies additional options such as `--namespace`;
+if used, that namespace must match the tenant ConfigMaps and requests.
+
+Use Helm's `--create-namespace` during installation, or arrange namespace creation
+through the installer; `helm template` sets namespace references but creates
+nothing. Tenant namespaces and any explicitly separate state namespace must exist.
+The examples demonstrate rendering; live reconciliation is validated separately.
 
 ## Separate installations
 
@@ -59,7 +83,11 @@ use a ServiceAccount name and namespace. An authenticated external SPIFFE
 identity can use a Kubernetes `User` subject, according to the datastore's
 authentication mapping. A SPIFFE URI in a binding does not itself establish trust.
 Bindings grant the generated manager permissions and namespace-scoped leader
-election permissions. They do not grant tenant or operator API permissions.
+election permissions. `state.rbac.tenantAPIBindings` accepts a namespace and
+subjects per tenant; `state.rbac.operatorAPISubjects` binds existing operator API
+identities. These optional bindings reuse the current API roles, independently
+of API workload packaging. Empty lists grant no API permissions. Use one tenant
+binding entry per namespace and list all its identities together.
 
 For a controller in the same cluster, disable state, set
 `manager.stateNamespace`, and bind its ServiceAccount in the state release.
@@ -98,8 +126,8 @@ operator configuration; disable metrics until they are configured.
 Chart version `0.2.0` changes the default from remote manager-only to combined
 local installation. Existing remote users must explicitly set `state.enabled=false`
 and configure `manager.stateAccess`, including their Secret and namespace.
-Remove manually supplied `--kubeconfig` and `--context` arguments; the chart
-owns these options. The examples use development image tags; pin a compatible
+Remove manually supplied kubeconfig, context, election-namespace and backend
+arguments/volumes; use the named state-access and backend inputs instead. The examples use development image tags; pin a compatible
 published image and chart revision for an installation.
 
 CRDs come from `config/crd`, and manager RBAC comes from the generated controller

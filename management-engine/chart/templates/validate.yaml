@@ -4,25 +4,43 @@
 {{- if not (or .Values.state.enabled (and .Values.controller.enabled .Values.manager.enabled)) -}}
 {{- fail "enable state.enabled or controller.enabled" -}}
 {{- end -}}
+{{- $tenantNamespaces := dict -}}
+{{- range .Values.state.rbac.tenantAPIBindings -}}
+{{- if hasKey $tenantNamespaces .namespace -}}{{- fail "use one state.rbac.tenantAPIBindings entry per namespace; combine its subjects" -}}{{- end -}}
+{{- $_ := set $tenantNamespaces .namespace true -}}
+{{- end -}}
 {{- if and .Values.controller.enabled .Values.manager.enabled -}}
 {{- $_ := required "manager.image.repository is required" .Values.manager.image.repository -}}
+{{- $_ := required "manager.nvkeController.endpoint is required" .Values.manager.nvkeController.endpoint -}}
+{{- $backendURL := urlParse .Values.manager.nvkeController.endpoint -}}
+{{- $_ := required "manager.nvkeController.endpoint must include a host" $backendURL.host -}}
+{{- if $backendURL.userinfo -}}{{- fail "use manager.nvkeController.tokenSecret instead of endpoint userinfo" -}}{{- end -}}
+{{- if .Values.manager.nvkeController.tokenSecret.name -}}
+{{- $_ := required "backend credentials require manager.nvkeController.tokenSecret.key" .Values.manager.nvkeController.tokenSecret.key -}}
+{{- end -}}
 {{- $mode := .Values.manager.stateAccess.mode -}}
 {{- if not (has $mode (list "inCluster" "remote")) -}}
 {{- fail "manager.stateAccess.mode must be inCluster or remote" -}}
 {{- end -}}
 {{- if eq $mode "remote" -}}
 {{- if .Values.state.enabled -}}{{- fail "remote state access requires state.enabled=false" -}}{{- end -}}
-{{- $explicitNamespace := .Values.manager.stateNamespace -}}
+{{- $explicitNamespace := coalesce .Values.manager.stateNamespace .Values.state.namespace -}}
 {{- range .Values.manager.env -}}
 {{- if eq .name "STATE_NAMESPACE" -}}{{- $explicitNamespace = .value -}}{{- end -}}
 {{- end -}}
-{{- $_ := required "remote access requires manager.stateNamespace or env STATE_NAMESPACE" $explicitNamespace -}}
+{{- $_ := required "remote access requires manager.stateNamespace or state.namespace or env STATE_NAMESPACE" $explicitNamespace -}}
 {{- $_ := required "remote access requires manager.stateAccess.kubeconfigSecret.name" .Values.manager.stateAccess.kubeconfigSecret.name -}}
 {{- $_ := required "remote access requires manager.stateAccess.kubeconfigSecret.key" .Values.manager.stateAccess.kubeconfigSecret.key -}}
 {{- end -}}
 {{- $hasTemplate := not (empty .Values.manager.infrastructureTemplateConfigMap) -}}
 {{- range .Values.manager.args -}}
 {{- if hasPrefix "--infra-template-configmap=" . -}}{{- $hasTemplate = ne . "--infra-template-configmap=" -}}{{- end -}}
+{{- if hasPrefix "--leader-election-namespace" . -}}
+{{- fail "the chart sets --leader-election-namespace from manager.stateNamespace" -}}
+{{- end -}}
+{{- if or (hasPrefix "--nvke-controller-endpoint" .) (hasPrefix "--nvke-controller-token-file" .) -}}
+{{- fail "configure backend access with manager.nvkeController, not manager.args" -}}
+{{- end -}}
 {{- if or (hasPrefix "--kubeconfig" .) (hasPrefix "--context" .) -}}
 {{- fail "configure datastore access with manager.stateAccess, not manager.args" -}}
 {{- end -}}

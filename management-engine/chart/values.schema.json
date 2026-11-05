@@ -56,54 +56,35 @@
           "type": "object",
           "properties": {
             "subjects": {
+              "$ref": "#/definitions/subjects"
+            },
+            "operatorAPISubjects": {
+              "$ref": "#/definitions/subjects"
+            },
+            "tenantAPIBindings": {
               "type": "array",
               "items": {
                 "type": "object",
                 "required": [
-                  "kind",
-                  "name"
+                  "namespace",
+                  "subjects"
                 ],
                 "properties": {
-                  "kind": {
-                    "enum": [
-                      "ServiceAccount",
-                      "User",
-                      "Group"
-                    ]
-                  },
-                  "name": {
+                  "namespace": {
                     "type": "string",
+                    "maxLength": 63,
+                    "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
                     "minLength": 1
                   },
-                  "namespace": {
-                    "type": "string"
-                  },
-                  "apiGroup": {
-                    "type": "string"
-                  }
-                },
-                "allOf": [
-                  {
-                    "if": {
-                      "properties": {
-                        "kind": {
-                          "const": "ServiceAccount"
-                        }
+                  "subjects": {
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/subjects"
                       }
-                    },
-                    "then": {
-                      "required": [
-                        "namespace"
-                      ],
-                      "properties": {
-                        "namespace": {
-                          "type": "string",
-                          "minLength": 1
-                        }
-                      }
-                    }
+                    ],
+                    "minItems": 1
                   }
-                ]
+                }
               }
             }
           }
@@ -137,10 +118,14 @@
               "type": "object",
               "properties": {
                 "name": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 253,
+                  "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
                 },
                 "key": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 253,
+                  "pattern": "^[a-zA-Z0-9._-]*$"
                 }
               }
             }
@@ -204,6 +189,48 @@
               "boolean"
             ]
           }
+        },
+        "nvkeController": {
+          "type": "object",
+          "properties": {
+            "endpoint": {
+              "type": "string",
+              "pattern": "^$|^https?://[^\\s]+$"
+            },
+            "tokenSecret": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 253,
+                  "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+                },
+                "key": {
+                  "type": "string",
+                  "maxLength": 253,
+                  "pattern": "^[a-zA-Z0-9._-]*$"
+                }
+              }
+            }
+          }
+        },
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "pullPolicy": {
+              "enum": [
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ]
+            }
+          }
         }
       }
     },
@@ -237,6 +264,88 @@
         "enabled": {
           "type": "boolean"
         }
+      }
+    }
+  },
+  "definitions": {
+    "subjects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "name"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "ServiceAccount",
+              "User",
+              "Group"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "apiGroup": {
+            "type": "string"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "ServiceAccount"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "namespace"
+              ],
+              "properties": {
+                "namespace": {
+                  "type": "string",
+                  "maxLength": 63,
+                  "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "User",
+                    "Group"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "apiGroup"
+              ],
+              "properties": {
+                "apiGroup": {
+                  "const": "rbac.authorization.k8s.io"
+                }
+              },
+              "not": {
+                "required": [
+                  "namespace"
+                ]
+              }
+            }
+          }
+        ]
       }
     }
   }

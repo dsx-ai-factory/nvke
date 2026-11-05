@@ -59,6 +59,8 @@ manifests: manifests-state kustomize ## Generate runtime manifests and chart ass
 	cp config/rbac/role.yaml chart/files/manager-role.yaml
 	cp config/rbac/leader_election_role.yaml chart/files/leader-election-role.yaml
 	cp config/rbac/metrics_auth_role.yaml chart/files/metrics-auth-role.yaml
+	cp config/dev/tenant-api-rbac.yaml chart/files/tenant-api-rbac.yaml
+	cp config/dev/operator-api-rbac.yaml chart/files/operator-api-rbac.yaml
 
 .PHONY: generate generate-public generate-public-check
 generate: generate-public ## Generate internal schemas, public projections, and registration wiring.
@@ -318,3 +320,8 @@ helm-uninstall: require-host-context ## Uninstall the Helm release from the K8s 
 chart-check: manifests ## Lint and test combined, state-only, and controller-only Helm installations.
 	$(HELM) lint chart -f config/samples/runtime-values.yaml
 	HELM="$(HELM)" $(GO) test $(GO_TEST_FLAGS) ./hack -run TestChart -count=1
+
+.PHONY: chart-assets-check
+chart-assets-check: manifests ## Fail when committed chart assets differ from their canonical sources.
+	git diff --exit-code -- chart/files
+	@test -z "$$(git ls-files --others --exclude-standard -- chart/files)" || { echo "Commit generated chart/files assets"; exit 1; }
