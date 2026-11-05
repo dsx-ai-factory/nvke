@@ -163,8 +163,8 @@ spec:
                   rule: self == oldSelf
               profile:
                 description: |-
-                  Profile is the name half of the <profile>:<tag> node profile a pool selects
-                  this release by. It is set together with tag and cannot change.
+                  Profile names the family of images this release belongs to, such as
+                  "ubuntu-gpu". A node pool selects a release with nodeProfile <profile>:<tag>.
                 maxLength: 253
                 pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                 type: string
@@ -173,8 +173,8 @@ spec:
                   rule: self == oldSelf
               tag:
                 description: |-
-                  Tag is the version half of the <profile>:<tag> node profile a pool selects
-                  this release by. It is set together with profile and cannot change.
+                  Tag identifies this release within its profile, such as "1.36.4". The
+                  profile and tag pair should be unique across releases.
                 maxLength: 128
                 pattern: ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$
                 type: string

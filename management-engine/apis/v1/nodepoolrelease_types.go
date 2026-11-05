@@ -14,15 +14,15 @@ import (
 // +kubebuilder:validation:XValidation:rule="has(self.profile) == has(oldSelf.profile)",message="profile is immutable"
 // +kubebuilder:validation:XValidation:rule="has(self.tag) == has(oldSelf.tag)",message="tag is immutable"
 type NodePoolReleaseSpec struct {
-	// Profile is the name half of the <profile>:<tag> node profile a pool selects
-	// this release by. It is set together with tag and cannot change.
+	// Profile names the family of images this release belongs to, such as
+	// "ubuntu-gpu". A node pool selects a release with nodeProfile <profile>:<tag>.
 	// +optional
 	// +kubebuilder:validation:MaxLength=253
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="profile is immutable"
 	Profile string `json:"profile,omitempty"`
-	// Tag is the version half of the <profile>:<tag> node profile a pool selects
-	// this release by. It is set together with profile and cannot change.
+	// Tag identifies this release within its profile, such as "1.36.4". The
+	// profile and tag pair should be unique across releases.
 	// +optional
 	// +kubebuilder:validation:MaxLength=128
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$`
