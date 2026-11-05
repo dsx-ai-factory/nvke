@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Replaces AICR's embedded GPU-stack base: this tree deploys the NVKE management plane only.
+kind: RecipeMetadata
+apiVersion: aicr.run/v1beta1
+metadata:
+  name: base
+spec:
+  componentRefs: []
