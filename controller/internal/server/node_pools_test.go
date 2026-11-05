@@ -1204,6 +1204,150 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 	}
 }
 
+// A node pool's NVLink logical partition can be set or replaced, but not cleared.
+func TestNodePoolService_UpdateNodePool_NVLinkLogicalPartition(t *testing.T) {
+	nodePoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
+	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
+	vpcPrefixID1 := uuid.MustParse("550e8400-e29b-41d4-a716-446655440020")
+	currentNodeSetID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440030")
+	nvLinkPartitionID1 := uuid.MustParse("550e8400-e29b-41d4-a716-446655440040")
+	nvLinkPartitionID2 := uuid.MustParse("550e8400-e29b-41d4-a716-446655440041")
+	now := time.Now()
+
+	tests := []struct {
+		name             string
+		nodePoolID       uuid.UUID
+		body             api.UpdateNodePoolRequest
+		setupMockDB      func(*mockDB, *mockTx)
+		wantResponseType any
+		verifyUpdatePool func(t *testing.T, n *db.NodePool)
+	}{
+		{
+			name:       "nvLinkLogicalPartitionID sets the partition and keeps other nico fields",
+			nodePoolID: nodePoolID,
+			body: api.UpdateNodePoolRequest{
+				Nico: &api.NicoNodePoolProviderUpdate{NvLinkLogicalPartitionID: &nvLinkPartitionID1},
+			},
+			setupMockDB: func(_ *mockDB, tx *mockTx) {
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+					ID:               nodePoolID,
+					ClusterID:        clusterID,
+					CurrentNodeSetID: &currentNodeSetID,
+					Conditions:       mockDBNodePoolConditions(now),
+					Nico: &db.NicoNodePoolProvider{
+						VpcPrefixIDs: []uuid.UUID{vpcPrefixID1},
+						Release:      "os-v1",
+					},
+				}, nil)
+				tx.On("UpdateNodePool", mock.Anything, mock.AnythingOfType("*db.NodePool")).Return(db.NodePool{
+					ID: nodePoolID,
+					Nico: &db.NicoNodePoolProvider{
+						VpcPrefixIDs:             []uuid.UUID{vpcPrefixID1},
+						Release:                  "os-v1",
+						NvLinkLogicalPartitionID: &nvLinkPartitionID1,
+					},
+				}, nil)
+			},
+			wantResponseType: api.UpdateNodePool200JSONResponse{},
+			verifyUpdatePool: func(t *testing.T, n *db.NodePool) {
+				t.Helper()
+				nico, err := n.NicoProvider()
+				require.NoError(t, err)
+				require.NotNil(t, nico.NvLinkLogicalPartitionID)
+				assert.Equal(t, nvLinkPartitionID1, *nico.NvLinkLogicalPartitionID)
+				assert.Equal(t, []uuid.UUID{vpcPrefixID1}, nico.VpcPrefixIDs)
+				assert.Equal(t, "os-v1", nico.Release)
+				assert.Equal(t, currentNodeSetID, *n.CurrentNodeSetID)
+			},
+		},
+		{
+			name:       "nvLinkLogicalPartitionID replaces an existing partition",
+			nodePoolID: nodePoolID,
+			body: api.UpdateNodePoolRequest{
+				Nico: &api.NicoNodePoolProviderUpdate{NvLinkLogicalPartitionID: &nvLinkPartitionID2},
+			},
+			setupMockDB: func(_ *mockDB, tx *mockTx) {
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+					ID:         nodePoolID,
+					ClusterID:  clusterID,
+					Conditions: mockDBNodePoolConditions(now),
+					Nico: &db.NicoNodePoolProvider{
+						VpcPrefixIDs:             []uuid.UUID{vpcPrefixID1},
+						NvLinkLogicalPartitionID: &nvLinkPartitionID1,
+					},
+				}, nil)
+				tx.On("UpdateNodePool", mock.Anything, mock.AnythingOfType("*db.NodePool")).Return(db.NodePool{
+					ID: nodePoolID,
+					Nico: &db.NicoNodePoolProvider{
+						VpcPrefixIDs:             []uuid.UUID{vpcPrefixID1},
+						NvLinkLogicalPartitionID: &nvLinkPartitionID2,
+					},
+				}, nil)
+			},
+			wantResponseType: api.UpdateNodePool200JSONResponse{},
+			verifyUpdatePool: func(t *testing.T, n *db.NodePool) {
+				t.Helper()
+				nico, err := n.NicoProvider()
+				require.NoError(t, err)
+				require.NotNil(t, nico.NvLinkLogicalPartitionID)
+				assert.Equal(t, nvLinkPartitionID2, *nico.NvLinkLogicalPartitionID)
+			},
+		},
+		{
+			name:       "nil-UUID nvLinkLogicalPartitionID cannot clear the partition and returns 400",
+			nodePoolID: nodePoolID,
+			body: api.UpdateNodePoolRequest{
+				Nico: &api.NicoNodePoolProviderUpdate{NvLinkLogicalPartitionID: testutil.PtrTo(uuid.Nil)},
+			},
+			setupMockDB: func(_ *mockDB, tx *mockTx) {
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+					ID:         nodePoolID,
+					ClusterID:  clusterID,
+					Conditions: mockDBNodePoolConditions(now),
+					Nico: &db.NicoNodePoolProvider{
+						NvLinkLogicalPartitionID: &nvLinkPartitionID1,
+					},
+				}, nil)
+			},
+			wantResponseType: api.UpdateNodePool400JSONResponse{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockDB := &mockDB{}
+			mockDB.MockTx = &mockTx{}
+			tt.setupMockDB(mockDB, mockDB.MockTx)
+			mockDB.MockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{ID: nodePoolID, ClusterID: clusterID}, nil).Maybe()
+			mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Maybe().Return(db.Cluster{
+				ID:           clusterID,
+				ProviderType: db.ProviderTypeNico,
+				Nico:         &db.NicoClusterProvider{OrgID: testOrgID},
+			}, nil)
+			mockDB.On("RunInTx", mock.Anything, mock.Anything).Maybe().Return(nil)
+
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil)
+			resp, err := service.UpdateNodePool(context.Background(), api.UpdateNodePoolRequestObject{NodePoolID: tt.nodePoolID, Body: &tt.body})
+
+			require.NoError(t, err)
+			assert.IsType(t, tt.wantResponseType, resp)
+			var updated *db.NodePool
+			for _, call := range mockDB.MockTx.Calls {
+				if call.Method == "UpdateNodePool" {
+					updated = call.Arguments[1].(*db.NodePool)
+				}
+			}
+			if tt.verifyUpdatePool == nil {
+				assert.Nil(t, updated, "a rejected update must not write the node pool")
+			} else {
+				require.NotNil(t, updated, "UpdateNodePool was not called")
+				tt.verifyUpdatePool(t, updated)
+			}
+			mockDB.MockTx.AssertExpectations(t)
+		})
+	}
+}
+
 func TestNodePoolService_UpdateNodePool_RejectsPodCIDRCapacityExceeded(t *testing.T) {
 	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
 	nodePoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
