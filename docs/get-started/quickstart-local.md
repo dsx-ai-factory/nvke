@@ -23,7 +23,7 @@ The example passwords, the simulated NICo and the Tilt-managed management plane 
 - Docker Engine with BuildKit, usable by your user without `sudo`.
 - These tools on `PATH`: `git`, GNU Make, Go 1.27.3 or later, a C compiler such as `gcc`, `kind` v0.32.0, `kubectl`, Helm 4, `tilt`, `jq`, `curl`, `nc`, `dpkg-deb` and `dpkg-scanpackages`. On Debian and Ubuntu, `dpkg-scanpackages` is in the `dpkg-dev` package. An older Go downloads 1.27.3 automatically unless `GOTOOLCHAIN=local` is set. You do not need `clusterctl`: the setup installs the pinned version into the repository.
 - `fs.inotify.max_user_instances` at 1024 or more. Tilt restarts the management plane with a file watcher, and with a lower limit, such as the common default of 128, the management plane restarts in a loop with `entr: cannot create kqueue: No file descriptors available` in its log. [Prepare the machine](#prepare-the-machine) checks and raises the limit.
-- Nothing else listening on ports 179, 5432, 7233, 8080, 8081, 10350, 18080, 30440 or 30443.
+- Nothing else listening on ports 179, 2222, 5432, 7233, 8080, 8081, 10350, 18080, 30440 or 30443. Port 2222 is mock-NICo's console SSH server; if an `sshd` already uses it, as is common under WSL2, start Tilt with `NICO_VMS_CONSOLE_SSH_PORT=0` to auto-assign a port.
 - Outbound internet access to GitHub, the Go module proxy and public container registries.
 
 ## Prepare the machine

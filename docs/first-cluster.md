@@ -34,7 +34,7 @@ cd nvke
 | `dpkg-deb` | Mock NICo (macOS) | `brew install dpkg`; the bundle mirror build needs it |
 | [Flox](https://flox.dev/) | optional | Pins the whole toolchain; never required |
 
-macOS or Linux; Windows is not supported.
+macOS or Linux, including Ubuntu under WSL2 (see [WSL2](getting-started.md#wsl2)); native Windows is not supported.
 
 **Prepare the Docker host once, before Kind or Tilt.** On macOS, use Colima
 rather than Docker Desktop. `controller/Makefile.dev` points every `kind`,
@@ -62,8 +62,12 @@ CWE against a local Postgres and Temporal, with a self-signed token instead of
 NGC authentication. No tenant clusters, no hardware.
 
 ```bash
-# Any cluster will do. CWE watches one and exits at startup without a kubeconfig.
-kind create cluster
+# A kind cluster with Cluster API core installed. CWE watches it and exits at startup
+# without the Cluster API Machine CRD.
+make -C controller capi-core-up
+
+# The release CRDs and fixture releases CWE reads.
+make -C controller releases-install
 
 # Postgres, Temporal, then CWE.
 make -C controller run-local
