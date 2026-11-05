@@ -76,7 +76,7 @@ inputs() {
       ;;
     config)
       echo NODE_USER SITE_NVKECTL SITE_DEPLOY_PATH_REF SITE_IMAGES SITE_NVKE_CONTROLLER_REPOSITORY \
-        SITE_INPUTS KEEP_SITE KEEP_TENANT NODE_KEY_DIR
+        SITE_INPUTS KEEP_SITE KEEP_TENANT NODE_KEY_DIR DRY_RUN
       ;;
     # The controller's name is the suite's, not this script's: empty leaves it
     # on nvke-controller, and a release from before the rename needs it named.
@@ -600,7 +600,10 @@ EOF
   # an uploaded artifact.
   if [ -n "${NODE_KEY_DIR:-}" ]; then
     lifecycle+="  nodeKeyDir: ${NODE_KEY_DIR}"$'\n'
-    warn "the site node's SSH key is written under ${NODE_KEY_DIR}; it logs into the node, which holds the site's admin kubeconfig, so delete it with the node"
+    # A dry run takes no machine, so it writes no key.
+    if [ "${DRY_RUN}" != "true" ]; then
+      warn "the site node's SSH key is written under ${NODE_KEY_DIR}; it logs into the node, which holds the site's admin kubeconfig, so delete it with the node"
+    fi
   fi
   if [ -n "${lifecycle}" ]; then
     printf 'lifecycle:\n%s' "${lifecycle}" >>"${config}"

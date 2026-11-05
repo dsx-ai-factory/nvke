@@ -46,6 +46,7 @@ func TestLoadAcceptsTheGeneratedSiteConfig(t *testing.T) {
 		"KEEP_SITE=true",
 		"KEEP_TENANT=false",
 		"NODE_KEY_DIR=/w/node-keys",
+		"DRY_RUN=false",
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("writing the config: %v\n%s", err, out)

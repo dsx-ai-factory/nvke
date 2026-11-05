@@ -8,28 +8,34 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 )
 
-// The key is written only when asked for, readable only by its owner, and is
-// the private half of the public key the node is given.
-func TestNewKeyWritesTheKeyOnlyWhenAsked(t *testing.T) {
+// The saved key is readable only by its owner, and is the private half of the
+// public key the node is given.
+func TestKeySave(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "node-keys")
 
-	if _, _, err := NewKey("test", "", "site-a"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(dir); !os.IsNotExist(err) {
-		t.Fatalf("no key dir was given, but %s exists (err %v)", dir, err)
-	}
-
-	signer, authorized, err := NewKey("test", dir, "site-a")
+	key, err := NewKey("test")
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		t.Fatalf("nothing was saved, but %s exists (err %v)", dir, statErr)
+	}
+	err = CheckKeyPath(dir, "site-a")
+	if err != nil {
+		t.Fatalf("a free path was refused: %v", err)
+	}
+	err = key.Save(dir, "site-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, authorized := key.Signer, key.Authorized
 	path := KeyPath(dir, "site-a")
 	info, err := os.Stat(path)
 	if err != nil {
@@ -60,13 +66,34 @@ func TestNewKeyWritesTheKeyOnlyWhenAsked(t *testing.T) {
 		t.Errorf("saved key's public half = %q, want the authorized key %q", got, authorized)
 	}
 
-	if _, _, err := NewKey("test", dir, "site-a"); err == nil {
+	// Checked before a machine is made, and saying why, since the key there
+	// may still log into a kept node.
+	if err := CheckKeyPath(dir, "site-a"); err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "still kept") {
+		t.Errorf("CheckKeyPath on a taken path = %v, want the path named and why it is kept", err)
+	}
+	if err := key.Save(dir, "site-a"); err == nil {
 		t.Error("a second key for the same node overwrote the first")
 	}
 	for _, name := range []string{"", ".", "..", "../x", "a/b"} {
-		if _, _, err := NewKey("test", dir, name); err == nil {
+		if err := CheckKeyPath(dir, name); err == nil {
 			t.Errorf("node name %q was accepted as a file name", name)
 		}
+		if err := key.Save(dir, name); err == nil {
+			t.Errorf("node name %q was saved as a file name", name)
+		}
+	}
+
+	if err := RemoveKey(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("%s survived RemoveKey (err %v)", path, err)
+	}
+	if err := RemoveKey(path); err != nil {
+		t.Errorf("removing a key already gone: %v", err)
+	}
+	if err := RemoveKey(""); err != nil {
+		t.Errorf("removing no key: %v", err)
 	}
 }
 

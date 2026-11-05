@@ -397,6 +397,31 @@ func TestConfigKeepsWhatItIsAskedTo(t *testing.T) {
 	}
 }
 
+// The key warning says a key is written, so it is given only when one will be:
+// a dry run takes no machine.
+func TestConfigWarnsOfTheNodeKeyOnlyWhenOneIsWritten(t *testing.T) {
+	for _, dryRun := range []string{"true", "false"} {
+		for _, sh := range shells(t) {
+			l := newSteps(t, sh, map[string]string{
+				"E2E_CONFIG":                      filepath.Join(t.TempDir(), "e2e-config.yaml"),
+				"NODE_USER":                       "",
+				"SITE_NVKECTL":                    "/w/nvkectl",
+				"SITE_DEPLOY_PATH_REF":            "",
+				"SITE_IMAGES":                     "localhost/nvke",
+				"SITE_NVKE_CONTROLLER_REPOSITORY": "nvke-controller",
+				"KEEP_SITE":                       "true",
+				"KEEP_TENANT":                     "false",
+				"NODE_KEY_DIR":                    "/r/node-keys",
+				"DRY_RUN":                         dryRun,
+			})
+			out := l.step(true, "config")
+			if warned := strings.Contains(out, "SSH key is written"); warned == (dryRun == "true") {
+				t.Errorf("%s dry-run=%s: warned = %t\n%s", sh, dryRun, warned, out)
+			}
+		}
+	}
+}
+
 // bash reads a script as it runs it. A step must not read past its own
 // dispatch, or a run that outlives an edit to the script resumes in the
 // edited text: here, a line appended after the dispatch.
