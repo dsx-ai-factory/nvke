@@ -513,6 +513,30 @@ Arguments that change where things come from, not what, keep the digest:
 Any other change, such as the platforms or attestations added with
 `--provenance` or `--sbom`, gives a different digest.
 
+### Keeping a site's image current
+
+A site needs one image per controller version it runs, not the newest one.
+Build each controller release tag, `controller/vX.Y.Z` or
+`controller/vX.Y.Z-rc.N`, when it appears, and push it to the site's registry
+under that version:
+
+```bash
+git ls-remote --tags --refs https://github.com/dsx-ai-factory/nvke.git 'controller/v*'
+git clone --branch controller/v0.2.0 --depth 1 https://github.com/dsx-ai-factory/nvke.git
+make -C nvke/controller/test/e2e validate-image-push VALIDATE_VERSION=v0.2.0 \
+  VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS=v0.2.0
+```
+
+A run picks the image whose tag is the site's controller version and sets
+`NVKE_CONTROLLER_EXPECTED_VERSION` to the image's tag. The image requires
+that variable, so a run against a site whose controller is another version
+fails the version check rather than passing on the wrong tests. Upgrading a
+site's controller means running the next tag.
+
+Rebuilding a tag gives the same digest, so a retried job pushes the same
+image again. A job can also rebuild a tag it has already pushed and compare
+the digests, to check that nothing in its own build path changed.
+
 ### Extending the image
 
 To add tools, certificates or wrapper scripts, start from the image built from
