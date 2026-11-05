@@ -746,7 +746,7 @@ log "generating the site spec: nvkectl generate sitespec ${E2E_CLUSTER_NAME} --n
 RENDERED_SITESPEC="${SCRIPT_DIR}/.sitespec.rendered.yaml"
 "${NVKECTL}" generate sitespec "${E2E_CLUSTER_NAME}" \
   --nodes "${NVKECTL_E2E_HOSTS_CSV}" \
-  --set cluster.k8sVersion=1.34.8 \
+  --set cluster.k8sVersion=1.36.4 \
   --set cluster.cniName=ovn-kubernetes \
   --set cluster.cniVersion=2.4.2 \
   --set cluster.podCidr=192.168.0.0/16 \

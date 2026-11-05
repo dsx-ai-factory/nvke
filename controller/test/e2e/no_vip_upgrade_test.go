@@ -15,7 +15,7 @@ func validateNoVIPUpgradeRefused(test *tenantTest) {
 	It("refuses a control-plane upgrade without kube-vip", func(ctx context.Context) {
 		assertNoKubeVIP(ctx, test)
 		currentVersion := test.cluster.ControlPlaneKubernetesVersion
-		targetVersion := upgradeKubernetesVersionChain[0]
+		targetVersion := controlPlaneControllerRollKubernetesVersion
 		Expect(currentVersion).NotTo(Equal(targetVersion), "upgrade rejection requires a newer target version")
 
 		By("Attempting a control-plane Kubernetes upgrade with maxSurge set to one")

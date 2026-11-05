@@ -117,7 +117,7 @@ jobs:
           # Any resolvable node image parses it, and kindest/node is the image
           # capd-kindest-node derives that local one from in the first place.
           check cli/e2e/bootstrap/substrate/node/Dockerfile       cli/e2e/bootstrap/substrate/node \
-                --build-arg BASE_IMAGE=kindest/node:v1.34.8
+                --build-arg BASE_IMAGE=kindest/node:v1.36.4
           # Tiltfile builds controller.tilt from a temporary directory holding bin/,
           # profiles/ and ui/, so its real context does not exist in the tree.
           # Using controller/ instead fails on CopyIgnoredFile, because

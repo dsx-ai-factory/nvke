@@ -16,7 +16,7 @@ repo_root="$(cd "${script_dir}/../.." && pwd)"
 . "$(cd "${script_dir}/../../.." && pwd)/hack/read-tool-version.sh"
 
 : "${CAPD_KINDEST_NODE_IMAGE:=cwe-capd-kindest-node:local}"
-: "${CAPD_KINDEST_NODE_TAG:=v1.34.8}"
+: "${CAPD_KINDEST_NODE_TAG:=v1.36.4}"
 : "${CAPD_NODE_AGENT_LOCAL_BUILD:=auto}"
 : "${CAPD_SPIRE_ATTESTATION_METHOD:=tpm}"
 : "${DSX_IMDS_AGENT_PLUGIN_PATH:=}"

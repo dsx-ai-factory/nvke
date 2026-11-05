@@ -449,7 +449,7 @@ infra:
     releases: ${RELEASES_DIR}
 cluster:
 ${vip_line}
-  k8sVersion: "1.34.8"
+  k8sVersion: "1.36.4"
   cniName: ovn-kubernetes
   cniVersion: "2.4.2"
   podCidr: "192.168.0.0/16"
