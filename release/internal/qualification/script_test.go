@@ -365,8 +365,10 @@ func TestConfigKeepsWhatItIsAskedTo(t *testing.T) {
 		{"true", "false", "", "lifecycle:\n  preserveOnFailure: true\n"},
 		{"false", "true", "", "lifecycle:\n  skipDelete: true\n"},
 		{"true", "true", "", "lifecycle:\n  skipDelete: true\n"},
-		{"false", "true", "/r/node-keys", "lifecycle:\n  skipDelete: true\n  nodeKeyDir: /r/node-keys\n"},
-		{"false", "false", "/r/node-keys", "lifecycle:\n  nodeKeyDir: /r/node-keys\n"},
+		{"false", "true", "/r/node-keys", "lifecycle:\n  skipDelete: true\n  nodeKeyDir: '/r/node-keys'\n"},
+		{"false", "false", "/r/node-keys", "lifecycle:\n  nodeKeyDir: '/r/node-keys'\n"},
+		// Unquoted, YAML would read " #1..." as a comment.
+		{"false", "false", "/r/run #1/ron's/node-keys", "lifecycle:\n  nodeKeyDir: '/r/run #1/ron''s/node-keys'\n"},
 	} {
 		for _, sh := range shells(t) {
 			config := filepath.Join(t.TempDir(), "e2e-config.yaml")

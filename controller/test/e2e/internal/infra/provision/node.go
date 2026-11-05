@@ -264,21 +264,53 @@ func (k Key) Save(keyDir, node string) error {
 	if err != nil {
 		return err
 	}
-	err = os.MkdirAll(keyDir, 0o700)
+	err = privateDir(keyDir)
 	if err != nil {
 		return err
 	}
 	// O_EXCL: a key already there belongs to another node of the same name,
 	// possibly still kept, and overwriting it locks that node out.
-	f, err := os.OpenFile(KeyPath(keyDir, node), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	path := KeyPath(keyDir, node)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
 	}
-	if err := pem.Encode(f, block); err != nil {
-		_ = f.Close()
+	err = pem.Encode(f, block)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		// A partial key logs into nothing, and left in place it would make
+		// CheckKeyPath refuse the next run as if a kept node still used it.
+		_ = os.Remove(path)
 		return err
 	}
-	return f.Close()
+	return nil
+}
+
+// privateDir makes dir, or restricts an existing one, to its owner alone.
+// MkdirAll leaves an existing directory's mode as it was, and a key in a
+// directory others can list is not readable only by the runner's user.
+func privateDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory, so no key is saved there", dir)
+	}
+	if info.Mode().Perm() != 0o700 {
+		// Fails for a directory the runner does not own, which then holds
+		// no key either.
+		err = os.Chmod(dir, 0o700)
+		if err != nil {
+			return fmt.Errorf("%s must be readable only by its owner to hold a key: %w", dir, err)
+		}
+	}
+	return nil
 }
 
 // RemoveKey deletes a saved key once its node is released, since it logs into

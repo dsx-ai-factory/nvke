@@ -97,6 +97,45 @@ func TestKeySave(t *testing.T) {
 	}
 }
 
+// A key directory that already exists is restricted to its owner before a key
+// goes in, and a key directory that is not a directory holds no key.
+func TestKeySaveExistingDir(t *testing.T) {
+	key, err := NewKey("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := filepath.Join(t.TempDir(), "node-keys")
+	err = os.Mkdir(dir, 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Mkdir is subject to the umask; make the starting mode the open one.
+	err = os.Chmod(dir, 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = key.Save(dir, "site-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o700 {
+		t.Errorf("existing key dir mode = %o after Save, want 700", mode)
+	}
+
+	notDir := filepath.Join(t.TempDir(), "node-keys")
+	if err := os.WriteFile(notDir, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := key.Save(notDir, "site-a"); err == nil {
+		t.Error("a key was saved under a file")
+	}
+}
+
 // WithTimeout raises a timeout that is too short and leaves everything else
 // alone. Zero is the case worth a test: it means "no timeout", so raising it
 // to the floor would be lowering it from infinity, and a caller that left the

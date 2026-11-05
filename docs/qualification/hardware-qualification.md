@@ -435,6 +435,10 @@ ssh -i <run-dir>/node-keys/<node>.key \
 sudo KUBECONFIG=/var/lib/nke-e2e/site.kubeconfig kubectl get nodes
 ```
 
+That is site-1's route. For a node kept on site-2, as a GB200 run's is, use
+`FORGE_SITE_2_JUMP_HOST` and `FORGE_SITE_2_TELEPORT_LOGIN` in the
+`ProxyCommand` instead.
+
 `scp` takes the same `-i` and `-o ProxyCommand`. The workflow never writes the
 key. A tenant node holds no key at all, and the image locks the account; its
 serial console, which carries cloud-init's output, is the way in.

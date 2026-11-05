@@ -345,7 +345,9 @@ account. That account needs:
 - where the controller authenticates its API, `create` on
   `serviceaccounts/token` for the identity it presents there,
   `NKE_E2E_TOKEN_NAMESPACE`/`NKE_E2E_TOKEN_SERVICE_ACCOUNT`. A controller
-  with no authentication ConfigMap is sent no token, and needs no grant
+  is sent no token, and needs no grant, only where neither source turns
+  authentication on: `apiAuth` is off or absent in its settings ConfigMap,
+  and it has no authentication ConfigMap
 - in the probe namespace, by default the pod's own, `create`, `get` and
   `delete` on Pods; and for the `creates` specs, the same on Services,
   StatefulSets, PersistentVolumeClaims, NetworkPolicies and `cert-manager.io`
@@ -382,7 +384,8 @@ authenticates as `NKE_E2E_TOKEN_NAMESPACE`/`NKE_E2E_TOKEN_SERVICE_ACCOUNT`,
 whose defaults are the development identity in
 `deploy/k8s/nvke-auth-dev.yaml`. A production site has no such identity: set
 both to one the site's controller authorizes to list clusters. Where it does
-not, the suite finds no authentication ConfigMap and sends no token.
+not, because `apiAuth` is off or absent and there is no authentication
+ConfigMap, the suite sends no token.
 
 `NVKE_CONTROLLER_NAMESPACE` matters wherever the controller is not installed in
 `nke-controller`, and `NVKE_CONTROLLER_SERVICE` wherever its release is not
