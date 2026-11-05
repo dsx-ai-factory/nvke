@@ -48,7 +48,8 @@ def register(ctx):
         CAPLL_PROVIDER_RESOURCE,
         labels=labels,
         cmd=install_cmd,
-        resource_deps=["check-management-cluster"],
+        # nvke-system-namespace: the install grants CAPLL Secret get there.
+        resource_deps=["check-management-cluster", "nvke-system-namespace"],
         deps=[install_script, source_dir],
         allow_parallel=True,
     )
