@@ -124,12 +124,14 @@ Setting `nvLinkLogicalPartitionID` on a node pool with a node pool update attach
 
 While NICo applies the change the instance is `Configuring`, and workloads on the node that use NVLink can be interrupted. Drain the node first if that matters.
 
-Use the endpoint, organization ID, API name and token from [the NICo credentials](#manage-the-nico-credentials). Send one interface per GPU of the instance type, with `deviceInstance` from 0 to the GPU count minus one; a GB200 or GB300 compute tray has 4 GPUs.
+Send one interface per GPU of the instance type, with `deviceInstance` from 0 to the GPU count minus one; a GB200 or GB300 compute tray has 4 GPUs.
 
-1. Set the values for your site. `NICO_TOKEN` holds your NICo API token.
+1. Read the NICo API path and token from [the NICo credentials](#manage-the-nico-credentials), and set the partition and the GPU count.
 
    ```bash
-   NICO_API="<NICO_ENDPOINT>/v2/org/<NICO_ORG_ID>/<NICO_API_NAME>"
+   NICO_API="$(kubectl -n capnico-system get secret nico-credentials \
+     -o go-template='{{.data.endpoint | base64decode}}/v2/org/{{.data.orgID | base64decode}}/{{.data.apiName | base64decode}}')"
+   NICO_TOKEN="$(kubectl -n capnico-system get secret nico-credentials -o go-template='{{.data.token | base64decode}}')"
    PARTITION="<NVLINK_LOGICAL_PARTITION_ID>"
    GPUS=4
    ```
@@ -144,14 +146,24 @@ Use the endpoint, organization ID, API name and token from [the NICo credentials
        '{nvLinkInterfaces: [range(0; $n) | {nvLinkLogicalPartitionId: $p, deviceInstance: .}]}')"
    ```
 
-3. To update every node of a node pool, list the pool's instances from its NicoMachines on the management cluster. Older controllers label them with `nke.nvidia.com/node-pool-id` instead of `nvke.nvidia.com/node-pool-id`; the filter accepts both.
+3. To update every node of a node pool, collect the pool's NicoMachines on the management cluster. Older controllers label them with `nke.nvidia.com/node-pool-id` instead of `nvke.nvidia.com/node-pool-id`; the filter accepts both.
 
    ```bash
    kubectl get nicomachines -A -o json \
-     | jq -r --arg pool "<NODE_POOL_ID>" '.items[]
-         | select((.spec.labels["nvke.nvidia.com/node-pool-id"] // .spec.labels["nke.nvidia.com/node-pool-id"]) == $pool)
-         | .spec.providerID // empty | sub("^nico://"; "")' > instances.txt
+     | jq --arg pool "<NODE_POOL_ID>" '[.items[]
+         | select((.spec.labels["nvke.nvidia.com/node-pool-id"] // .spec.labels["nke.nvidia.com/node-pool-id"]) == $pool)]' > pool-machines.json
    ```
+
+   Write the instance IDs to a file, and list the machines that have no instance yet.
+
+   ```bash
+   jq -r '.[] | .spec.providerID // empty | sub("^nico://"; "")' pool-machines.json > instances.txt
+   jq -r '.[] | select(.spec.providerID == null) | "\(.metadata.namespace)/\(.metadata.name)"' pool-machines.json
+   ```
+
+   A machine in the second list is still creating its instance, with the partition the pool had when the machine was created. Repeat this procedure for it once it has a provider ID.
+
+4. Update each instance.
 
    ```bash
    while read -r instance; do
@@ -164,6 +176,18 @@ Use the endpoint, organization ID, API name and token from [the NICo credentials
    ```
 
    Run the loop again for any instance that did not return 200. An update with the same partition replaces the interfaces with the same ones, so repeating it is safe.
+
+5. A 200 means NICo accepted the update, not that it is applied. Check that each instance is back to `Ready` with every NVLink interface on the partition.
+
+   ```bash
+   while read -r instance; do
+     curl -sS "${NICO_API}/instance/${instance}" -H "Authorization: Bearer ${NICO_TOKEN}" \
+       | jq -r --arg p "${PARTITION}" --argjson n "${GPUS}" \
+         '"\(.id) \(.status) " + (if ([.nvLinkInterfaces[]?.nvLinkLogicalPartitionId] | length == $n and all(. == $p)) then "attached" else "not attached" end)'
+   done < instances.txt
+   ```
+
+   An instance that is still `Configuring` has not finished; check it again later. Update again any instance that is `Ready` but reports `not attached`.
 
 ## Verify
 
