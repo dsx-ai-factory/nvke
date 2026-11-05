@@ -57,9 +57,9 @@ helm template cluster-service chart --namespace cluster-service-system \
 Replace the example registry, image tag, endpoint and tenant namespace with
 reviewed site inputs. The manager needs network access to the datastore's
 Kubernetes API and the configured NVKE controller endpoint. Scrapers need access
-to the optional metrics Service. Tenant API Services, gateway routing, `/v1/`,
-TLS and DNS follow the [API exposure contract](https://nvidia.atlassian.net/browse/NKX-19411);
-the operator API remains internal. The chart owns backend, kubeconfig and election namespace
+to the optional metrics Service. Coordinate API Services and gateway exposure with the site integration. Tenant
+routes use `/v1/`, with TLS and DNS managed by the site. Keep operator API access
+internal. The chart owns backend, kubeconfig and election namespace
 arguments. `manager.args` supplies additional options such as `--namespace`;
 if used, that namespace must match the tenant ConfigMaps and requests.
 
