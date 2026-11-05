@@ -295,9 +295,14 @@ func (r *NVKEClusterReconciler) resolveReleaseTemplateVariables(ctx context.Cont
 	if err := r.Get(ctx, client.ObjectKey{Name: imageName}, &image); err != nil {
 		return nil, fmt.Errorf("get MachineImage %q for ClusterRelease %q: %w", imageName, release.Name, err)
 	}
+	return releaseTemplateVariables(release.Spec.MachineInit, &image)
+}
+
+// releaseTemplateVariables builds the infra template variables a release and its image supply.
+func releaseTemplateVariables(machineInit internalv1.MachineInit, image *internalv1.MachineImage) (map[string]any, error) {
 	files := []internalv1.BootstrapFile{}
 	commands := []string{}
-	if bootstrap := release.Spec.MachineInit.Infra; bootstrap != nil {
+	if bootstrap := machineInit.Infra; bootstrap != nil {
 		files = append(files, bootstrap.BootstrapFiles...)
 		commands = append(commands, bootstrap.PreKubeadmCommands...)
 	}
