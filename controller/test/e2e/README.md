@@ -428,10 +428,10 @@ checks 11–23, 30 and 31 in [What it checks](#what-it-checks). One differs:
 `NVKE_TENANT_PVC_STORAGE_CLASS` picks the StorageClass check 30 claims from,
 and nothing else; check 23 reads `NVKE_TENANT_STORAGE_CLASSES`.
 
-Each controller release publishes the image built from the same commit, as
-`nvke-validate:v<version>` beside `nvke-controller` (see
-`.github/workflows/image-validate-nvcr.yml`), so the tests a site runs are the
-tests that shipped with its controller.
+The image is not published. A site builds it from its controller's release
+tag, as [Building the image yourself](#building-the-image-yourself)
+describes, so the tests it runs are the tests that shipped with its
+controller.
 
 The entrypoint sets `-ginkgo.timeout=3h`. A healthy site finishes far sooner,
 but on a broken one each check waits out its own limit, and a suite timeout
@@ -466,11 +466,10 @@ docker run --rm --user "$(id -u):$(id -g)" \
 
 ### Building the image yourself
 
-The build is reproducible: the same commit built with the same arguments gives
-the published image's digest, so a site can build it in its own pipeline and
-still check it against the release. CI proves this on every change by
-building it twice, the second time with no cache and every file's mtime
-changed.
+This is how a site gets the image. The build is reproducible: the same commit
+built with the same arguments gives the same digest wherever it is built. CI
+proves this on every change by building it twice, the second time with no
+cache and every file's mtime changed.
 
 Build from the release tag of the controller the site runs,
 `controller/v<version>`, the same version the site pins. Never build from
@@ -484,15 +483,8 @@ cat controller/test/e2e/bin/validate-image-digest.txt
 ```
 
 `validate-image-push VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS=v0.2.0`
-pushes it instead. Either target derives the rest from the checkout. Compare
-the digest with the published one; when they match, the release's build
-provenance covers this build too:
-
-```bash
-crane digest nvcr.io/<dsx-org-team>/nvke-validate:v0.2.0
-gh attestation verify oci://nvcr.io/<dsx-org-team>/nvke-validate:v0.2.0 --repo dsx-ai-factory/nvke \
-  --signer-workflow dsx-ai-factory/nvke/.github/workflows/image-validate-nvcr.yml
-```
+pushes it to the site's own registry instead. Either target derives the rest
+from the checkout.
 
 Without a checkout, BuildKit can take the tag as a remote context. Then the
 arguments make derives must be given by hand, from the tagged commit:
@@ -519,15 +511,16 @@ Arguments that change where things come from, not what, keep the digest:
 | `GOLANG_IMAGE`, `ALPINE_IMAGE` | (`--build-arg` in `VALIDATE_BUILDX_ARGS`) | A mirror of the base images. Keep the `@sha256:` digests from the Dockerfile; another digest is another image. |
 
 Any other change, such as the platforms or attestations added with
-`--provenance` or `--sbom`, gives a different digest that no release attested.
+`--provenance` or `--sbom`, gives a different digest.
 
 ### Extending the image
 
-To add tools, certificates or wrapper scripts, start from the published image
-rather than editing this Dockerfile, so the suite stays the one that shipped:
+To add tools, certificates or wrapper scripts, start from the image built from
+the release tag rather than editing this Dockerfile, so the suite stays the one
+that shipped:
 
 ```dockerfile
-FROM nvcr.io/<dsx-org-team>/nvke-validate:v0.2.0
+FROM <repository>/nvke-validate:v0.2.0
 USER 0
 RUN apk add --no-cache curl
 USER 65532:65532
