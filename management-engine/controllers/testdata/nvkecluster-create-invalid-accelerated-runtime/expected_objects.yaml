@@ -114,13 +114,15 @@ items:
             * NVKEControllerDeleting: NotYetReported
         * Synced:
           * ClusterReconciled: resolve controller request: terminal error: validate cluster spec: Accelerated runtime configuration is not supported
+          * NodePoolsReconciled: Condition not yet reported
       observedGeneration: 1
       reason: NotReady
       status: "False"
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: '* ClusterReconciled: resolve controller request: terminal error: validate
-        cluster spec: Accelerated runtime configuration is not supported'
+      message: |-
+        * ClusterReconciled: resolve controller request: terminal error: validate cluster spec: Accelerated runtime configuration is not supported
+        * NodePoolsReconciled: Condition not yet reported
       observedGeneration: 1
       reason: NotSynced
       status: "False"

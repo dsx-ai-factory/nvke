@@ -29,7 +29,7 @@ var _ = fixture.DescribeCaseSet(controllerCaseSet(
 				cluster := &internalv1.NVKECluster{}
 				g.Expect(tc.Client.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: testCluster}, cluster)).To(gomega.Succeed())
 				g.Expect(cluster.Generation).To(gomega.Equal(int64(1)))
-				if conditions.IsTrue(cluster, internalv1.ClusterReconciledCondition) {
+				if conditions.IsTrue(cluster, internalv1.SyncedCondition) {
 					g.Expect(cluster.Status.ObservedGeneration).To(gomega.Equal(cluster.Generation))
 				}
 				synced := conditions.Get(cluster, internalv1.SyncedCondition)
@@ -53,7 +53,7 @@ var _ = fixture.DescribeCaseSet(controllerCaseSet(
 				cluster := &internalv1.NVKECluster{}
 				g.Expect(tc.Client.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: testCluster}, cluster)).To(gomega.Succeed())
 				g.Expect(cluster.Generation).To(gomega.Equal(int64(1)))
-				if conditions.IsTrue(cluster, internalv1.ClusterReconciledCondition) {
+				if conditions.IsTrue(cluster, internalv1.SyncedCondition) {
 					g.Expect(cluster.Status.ObservedGeneration).To(gomega.Equal(cluster.Generation))
 				}
 				synced := conditions.Get(cluster, internalv1.SyncedCondition)
@@ -70,7 +70,7 @@ var _ = fixture.DescribeCaseSet(controllerCaseSet(
 				cluster := &internalv1.NVKECluster{}
 				g.Expect(tc.Client.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: testCluster}, cluster)).To(gomega.Succeed())
 				g.Expect(cluster.Generation).To(gomega.Equal(int64(2)))
-				if conditions.IsTrue(cluster, internalv1.ClusterReconciledCondition) {
+				if conditions.IsTrue(cluster, internalv1.SyncedCondition) {
 					g.Expect(cluster.Status.ObservedGeneration).To(gomega.Equal(cluster.Generation))
 				}
 				synced := conditions.Get(cluster, internalv1.SyncedCondition)
@@ -93,7 +93,7 @@ var _ = fixture.DescribeCaseSet(controllerCaseSet(
 				cluster := &internalv1.NVKECluster{}
 				g.Expect(tc.Client.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: testCluster}, cluster)).To(gomega.Succeed())
 				g.Expect(cluster.Generation).To(gomega.Equal(int64(1)))
-				if conditions.IsTrue(cluster, internalv1.ClusterReconciledCondition) {
+				if conditions.IsTrue(cluster, internalv1.SyncedCondition) {
 					g.Expect(cluster.Status.ObservedGeneration).To(gomega.Equal(cluster.Generation))
 				}
 				synced := conditions.Get(cluster, internalv1.SyncedCondition)

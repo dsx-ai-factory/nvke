@@ -67,13 +67,15 @@ items:
             * NVKEControllerDeleting: Condition not yet reported
         * Synced:
           * ClusterReconciled: infrastructure template ConfigMap default/infra-template must contain non-empty data.nodepoolTmpl
+          * NodePoolsReconciled: Condition not yet reported
       observedGeneration: 1
       reason: NotReady
       status: "False"
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: '* ClusterReconciled: infrastructure template ConfigMap default/infra-template
-        must contain non-empty data.nodepoolTmpl'
+      message: |-
+        * ClusterReconciled: infrastructure template ConfigMap default/infra-template must contain non-empty data.nodepoolTmpl
+        * NodePoolsReconciled: Condition not yet reported
       observedGeneration: 1
       reason: NotSynced
       status: "False"

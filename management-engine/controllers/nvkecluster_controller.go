@@ -212,19 +212,38 @@ func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *i
 		return ctrl.Result{}, err
 	}
 
-	observedCluster, err := r.ensureCluster(ctx, cluster, &clusterInfra, controlPlaneTemplate, variables, kubernetesVersion.String())
+	observedCluster, clusterErr := r.ensureCluster(ctx, cluster, &clusterInfra, controlPlaneTemplate, variables, kubernetesVersion.String())
 	propagateNVKEControllerConditions(cluster, observedCluster)
-	if err != nil {
+	if clusterErr != nil {
 		conditions.Set(cluster, metav1.Condition{
 			Type:    internalv1.ClusterReconciledCondition,
 			Status:  metav1.ConditionFalse,
 			Reason:  internalv1.ReconcileFailedReason,
-			Message: err.Error(),
+			Message: clusterErr.Error(),
 		})
-		return ctrl.Result{}, fmt.Errorf("ensure nvke controller cluster: %w", err)
+		if observedCluster == nil {
+			return ctrl.Result{}, fmt.Errorf("ensure nvke controller cluster: %w", clusterErr)
+		}
 	}
-	cluster.Status.ResolvedRelease = &internalv1.ReleaseReference{
-		Name: internalv1.ResourceName(release.Name), Version: kubernetesVersion.String(),
+	if observedCluster.Conditions.Deleting.Status == api.ConditionStatus("True") {
+		deleteErr := errors.Join(clusterErr, fmt.Errorf("NVKE controller cluster %q is deleting", observedCluster.Name))
+		conditions.Set(cluster, metav1.Condition{
+			Type:    internalv1.ClusterReconciledCondition,
+			Status:  metav1.ConditionFalse,
+			Reason:  internalv1.ReconcileFailedReason,
+			Message: deleteErr.Error(),
+		})
+		return ctrl.Result{}, deleteErr
+	}
+	if clusterErr == nil {
+		cluster.Status.ResolvedRelease = &internalv1.ReleaseReference{
+			Name: internalv1.ResourceName(release.Name), Version: kubernetesVersion.String(),
+		}
+		conditions.Set(cluster, metav1.Condition{
+			Type:   internalv1.ClusterReconciledCondition,
+			Status: metav1.ConditionTrue,
+			Reason: internalv1.ReconcileSucceededReason,
+		})
 	}
 	var poolErr error
 	desiredPools := make(map[internalv1.ResourceName]bool, len(cluster.Spec.NodePools))
@@ -252,18 +271,21 @@ func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *i
 	cluster.Status.NodePools = remainingPools
 	if poolErr != nil {
 		conditions.Set(cluster, metav1.Condition{
-			Type:    internalv1.ClusterReconciledCondition,
+			Type:    internalv1.NodePoolsReconciledCondition,
 			Status:  metav1.ConditionFalse,
 			Reason:  internalv1.ReconcileFailedReason,
 			Message: poolErr.Error(),
 		})
-		return ctrl.Result{}, poolErr
+		return ctrl.Result{}, errors.Join(clusterErr, poolErr)
 	}
 	conditions.Set(cluster, metav1.Condition{
-		Type:   internalv1.ClusterReconciledCondition,
+		Type:   internalv1.NodePoolsReconciledCondition,
 		Status: metav1.ConditionTrue,
 		Reason: internalv1.ReconcileSucceededReason,
 	})
+	if clusterErr != nil {
+		return ctrl.Result{}, clusterErr
+	}
 	return ctrl.Result{RequeueAfter: r.PollInterval}, nil
 }
 
@@ -722,6 +744,7 @@ var nvkeClusterOwnedConditions = []string{
 	internalv1.NVKEControllerCPNodesRecyclingCondition,
 	internalv1.NVKEControllerUpdateFailedCondition,
 	internalv1.ClusterReconciledCondition,
+	internalv1.NodePoolsReconciledCondition,
 }
 
 var nvkeControllerNegativeConditionTypes = []string{
@@ -858,7 +881,7 @@ func setNVKEClusterConditions(cluster *internalv1.NVKECluster) error {
 		cluster,
 		cluster,
 		internalv1.SyncedCondition,
-		conditions.ForConditionTypes{internalv1.ClusterReconciledCondition},
+		conditions.ForConditionTypes{internalv1.ClusterReconciledCondition, internalv1.NodePoolsReconciledCondition},
 		conditions.CustomMergeStrategy{
 			MergeStrategy: conditions.DefaultMergeStrategy(
 				conditions.ComputeReasonFunc(conditions.GetDefaultComputeMergeReasonFunc(
