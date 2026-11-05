@@ -332,7 +332,25 @@ func TestChartValidation(t *testing.T) {
     "enabled": "false"
   }
 }`, "boolean"},
-		{`{}`, "infra-template-configmap"},
+		{`{}`, "manager.infrastructureTemplateConfigMap"},
+		{`{"manager":{"infrastructureTemplateConfigMap":"invalid/name"}}`, "infrastructureTemplateConfigMap"},
+		{`{
+  "controller": {
+    "enabled": false
+  },
+  "state": {
+    "rbac": {
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "manager",
+          "namespace": "runtime",
+          "apiGroup": "invalid"
+        }
+      ]
+    }
+  }
+}`, "apiGroup"},
 		{`{"manager":{"nvkeController":{"endpoint":"https:///api"}}}`, "must include a host"},
 		{`{
   "state": {
@@ -770,5 +788,42 @@ func TestChartExistingManagerIdentity(t *testing.T) {
 		if subject["name"] != "existing-manager" || subject["namespace"] != "runtime" {
 			t.Fatalf("state grants do not match existing runtime identity: %v", subject)
 		}
+	}
+}
+
+func TestChartOwnedFlags(t *testing.T) {
+	for _, name := range []string{
+		"leader-election-namespace", "nvke-controller-endpoint", "nvke-controller-token-file",
+		"infra-template-configmap", "kubeconfig", "context",
+	} {
+		for _, prefix := range []string{"-", "--"} {
+			t.Run(prefix+name, func(t *testing.T) {
+				values := fmt.Sprintf(`{
+      "manager":{"infrastructureTemplateConfigMap":"infra","args":[%q]}
+     }`, prefix+name+"=override")
+				_, output, err := renderChart(t, values)
+				if err == nil || !strings.Contains(output, "manager.") {
+					t.Fatalf("protected argument accepted: %v\n%s", err, output)
+				}
+			})
+		}
+	}
+}
+
+func TestChartEndpointValidation(t *testing.T) {
+	for _, endpoint := range []string{
+		"http://:8080/api", "https://@backend.example.invalid/api",
+		"https://backend.example.invalid/api?key=placeholder", "https://backend.example.invalid/api?",
+		"https://backend.example.invalid/api#fragment",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			values := fmt.Sprintf(`{
+    "manager":{"infrastructureTemplateConfigMap":"infra","nvkeController":{"endpoint":%q}}
+   }`, endpoint)
+			_, output, err := renderChart(t, values)
+			if err == nil || !strings.Contains(output, "manager.nvkeController") {
+				t.Fatalf("invalid backend endpoint accepted: %v\n%s", err, output)
+			}
+		})
 	}
 }

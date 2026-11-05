@@ -34,8 +34,7 @@ The sample delivers a development infrastructure template ConfigMap through
 Create the tenant namespace (`tenant-a` in the sample) before installation, and
 replace the contents with the templates for your provider.
 Go template expressions inside those strings remain literal for the manager to
-interpret. `manager.infrastructureTemplateConfigMap` names that ConfigMap; an
-existing `--infra-template-configmap=...` argument is also accepted. The manager
+interpret. `manager.infrastructureTemplateConfigMap` names that ConfigMap. The manager
 looks up that name in each NVKECluster's tenant namespace. Supply one entry per
 tenant namespace, reusing the same ConfigMap name; when reusing state, publish
 those ConfigMaps on the datastore cluster before creating tenant clusters.
@@ -109,11 +108,13 @@ renders references only. Set an explicit state namespace; install state and its
 RBAC first. Kubernetes API access, DNS and network connectivity must work between
 the runtime and datastore clusters.
 
-`state.namespace` defaults to the Helm release namespace. If overridden, that
-namespace must exist. In a combined installation the manager uses that same
-namespace; in a controller-only installation it names the existing datastore
-namespace. Resources and connection references are validated during rendering;
-Helm cannot verify external objects or caller permissions without a live cluster.
+`state.namespace` selects the namespace for state-side election permissions and
+defaults to the Helm release namespace. `manager.stateNamespace` selects the
+manager's election namespace, defaulting to `state.namespace` or the release
+namespace. They must agree in a combined installation. Tenant requests and
+templates remain in tenant namespaces; release catalog resources are cluster-scoped.
+Any overridden namespace must exist. Rendering validates references and namespace
+agreement; external objects and caller permissions require installation checks.
 
 Secure manager metrics use the datastore API for TokenReview and
 SubjectAccessReview. The state release includes those permissions when
@@ -126,8 +127,9 @@ operator configuration; disable metrics until they are configured.
 Chart version `0.2.0` changes the default from remote manager-only to combined
 local installation. Existing remote users must explicitly set `state.enabled=false`
 and configure `manager.stateAccess`, including their Secret and namespace.
-Remove manually supplied kubeconfig, context, election-namespace and backend
-arguments/volumes; use the named state-access and backend inputs instead. The examples use development image tags; pin a compatible
+Remove manually supplied kubeconfig, context, election-namespace, backend and
+infrastructure-template arguments and their credential volumes; use the named
+chart inputs instead. The examples use development image tags; pin a compatible
 published image and chart revision for an installation.
 
 CRDs come from `config/crd`, and manager RBAC comes from the generated controller

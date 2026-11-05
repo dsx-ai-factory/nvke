@@ -33,9 +33,9 @@
             "properties": {
               "name": {
                 "type": "string",
-                "minLength": 1,
                 "maxLength": 253,
-                "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+                "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$",
+                "minLength": 1
               },
               "namespace": {
                 "type": "string",
@@ -231,6 +231,11 @@
               ]
             }
           }
+        },
+        "infrastructureTemplateConfigMap": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
         }
       }
     },
@@ -314,6 +319,15 @@
                   "maxLength": 63,
                   "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
                   "minLength": 1
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 253,
+                  "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$",
+                  "minLength": 1
+                },
+                "apiGroup": {
+                  "const": ""
                 }
               }
             }

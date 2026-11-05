@@ -12,9 +12,15 @@
 {{- if and .Values.controller.enabled .Values.manager.enabled -}}
 {{- $_ := required "manager.image.repository is required" .Values.manager.image.repository -}}
 {{- $_ := required "manager.nvkeController.endpoint is required" .Values.manager.nvkeController.endpoint -}}
-{{- $backendURL := urlParse .Values.manager.nvkeController.endpoint -}}
-{{- $_ := required "manager.nvkeController.endpoint must include a host" $backendURL.host -}}
-{{- if $backendURL.userinfo -}}{{- fail "use manager.nvkeController.tokenSecret instead of endpoint userinfo" -}}{{- end -}}
+{{- $endpoint := .Values.manager.nvkeController.endpoint -}}
+{{- $backendURL := urlParse $endpoint -}}
+{{- $_ := required "manager.nvkeController.endpoint must include a host" $backendURL.hostname -}}
+{{- if or $backendURL.userinfo (regexMatch "^https?://[^/?#]*@" $endpoint) -}}
+{{- fail "use manager.nvkeController.tokenSecret instead of endpoint userinfo" -}}
+{{- end -}}
+{{- if or (contains "?" $endpoint) (contains "#" $endpoint) -}}
+{{- fail "manager.nvkeController.endpoint must not contain a query or fragment" -}}
+{{- end -}}
 {{- if .Values.manager.nvkeController.tokenSecret.name -}}
 {{- $_ := required "backend credentials require manager.nvkeController.tokenSecret.key" .Values.manager.nvkeController.tokenSecret.key -}}
 {{- end -}}
@@ -32,20 +38,22 @@
 {{- $_ := required "remote access requires manager.stateAccess.kubeconfigSecret.name" .Values.manager.stateAccess.kubeconfigSecret.name -}}
 {{- $_ := required "remote access requires manager.stateAccess.kubeconfigSecret.key" .Values.manager.stateAccess.kubeconfigSecret.key -}}
 {{- end -}}
-{{- $hasTemplate := not (empty .Values.manager.infrastructureTemplateConfigMap) -}}
+{{- $_ := required "manager.infrastructureTemplateConfigMap is required" .Values.manager.infrastructureTemplateConfigMap -}}
 {{- range .Values.manager.args -}}
-{{- if hasPrefix "--infra-template-configmap=" . -}}{{- $hasTemplate = ne . "--infra-template-configmap=" -}}{{- end -}}
-{{- if hasPrefix "--leader-election-namespace" . -}}
+{{- $flag := trimAll "-" (first (splitList "=" .)) -}}
+{{- if eq $flag "leader-election-namespace" -}}
 {{- fail "the chart sets --leader-election-namespace from manager.stateNamespace" -}}
 {{- end -}}
-{{- if or (hasPrefix "--nvke-controller-endpoint" .) (hasPrefix "--nvke-controller-token-file" .) -}}
+{{- if eq $flag "infra-template-configmap" -}}
+{{- fail "configure infrastructure templates with manager.infrastructureTemplateConfigMap, not manager.args" -}}
+{{- end -}}
+{{- if has $flag (list "nvke-controller-endpoint" "nvke-controller-token-file") -}}
 {{- fail "configure backend access with manager.nvkeController, not manager.args" -}}
 {{- end -}}
-{{- if or (hasPrefix "--kubeconfig" .) (hasPrefix "--context" .) -}}
+{{- if has $flag (list "kubeconfig" "context") -}}
 {{- fail "configure datastore access with manager.stateAccess, not manager.args" -}}
 {{- end -}}
 {{- end -}}
-{{- if not $hasTemplate -}}{{- fail "manager.infrastructureTemplateConfigMap or --infra-template-configmap is required" -}}{{- end -}}
 {{- if and .Values.state.enabled (ne (include "management-engine.stateNamespace" .) (default .Release.Namespace .Values.state.namespace)) -}}
 {{- fail "combined installation requires manager and state namespaces to agree" -}}
 {{- end -}}

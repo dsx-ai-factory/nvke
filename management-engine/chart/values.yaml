@@ -48,14 +48,14 @@ manager:
   args:
     - --leader-elect
 
-  # Existing state namespace; defaults to state.namespace or the release namespace.
+  # Datastore election namespace; defaults to state.namespace or the release namespace.
   stateNamespace: ""
   stateAccess:
     mode: inCluster
     kubeconfigSecret:
       name: ""
       key: kubeconfig
-  # Required unless --infra-template-configmap is supplied through args.
+  # ConfigMap name, looked up in each tenant namespace.
   infrastructureTemplateConfigMap: ""
   nvkeController:
     endpoint: ""
