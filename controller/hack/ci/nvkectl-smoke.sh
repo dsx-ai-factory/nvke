@@ -33,7 +33,7 @@ NVKECTL_SMOKE_ABSENT=nvkectl-smoke-absent
 # Name the rejection bodies carry; asserted absent afterwards.
 NVKECTL_SMOKE_REJECT_CLUSTER=nvkectl-smoke-reject
 # The suite's default; create validation checks only the semver shape.
-NVKECTL_SMOKE_KUBERNETES_VERSION="${NVKECTL_SMOKE_KUBERNETES_VERSION:-1.34.2}"
+NVKECTL_SMOKE_KUBERNETES_VERSION="${NVKECTL_SMOKE_KUBERNETES_VERSION:-1.36.3}"
 # Name the round trip creates and deletes.
 NVKECTL_SMOKE_WRITE_CLUSTER=nvkectl-smoke-write
 # The worker pool the round trip adds to that cluster, then removes.

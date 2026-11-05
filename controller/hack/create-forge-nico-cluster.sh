@@ -11,7 +11,7 @@ API_URL="${API_URL:-http://localhost:${NVKE_CONTROLLER_HTTP_PORT}/api}"
 CLUSTERS_API_URL="${API_URL%/}/clusters"
 
 CLUSTER_NAME="${CLUSTER_NAME:-$(whoami)-capnico-forge}"
-KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}"
+KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.36.3}"
 # CNI defaults to ovn-kubernetes. Set CNI_PLUGIN=calico to use Calico instead.
 CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}"
 case "${CNI_PLUGIN}" in

@@ -155,7 +155,7 @@ jobs:
       # newest published image for each architecture. Only a dispatch pins one.
       NKE_E2E_OS_IMAGE_TAG: ${{ github.event.inputs.os-image-tag }}
       NKE_E2E_GINKGO_TIMEOUT: 270m
-      # One upgrade hop (1.34 -> 1.35); the second recycles all three control-plane nodes again, ~45 min.
+      # One upgrade hop (1.35 -> 1.36), which recycles all three control-plane nodes, ~45 min.
       NKE_E2E_UPGRADE_HOPS: "1"
       # OVN-Kubernetes is this lane's default, so entries that do not pin a CNI
       # run it. Calico coverage stays on the entries that pin it explicitly

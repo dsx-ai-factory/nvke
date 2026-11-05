@@ -1379,7 +1379,7 @@ cmd_button(
       set -euo pipefail
       API_URL="http://localhost:%s/api/clusters" \
       CLUSTER_NAME="${CLUSTER_NAME:-capd}" \
-      KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}" \
+      KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.36.3}" \
       CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-3}" \
       WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}" \
       ETCD_ENCRYPTED="${ETCD_ENCRYPTED:-false}" \
@@ -1390,7 +1390,7 @@ cmd_button(
     text="Create sample CAPD cluster",
     inputs=[
         text_input("CLUSTER_NAME", default="capd"),
-        text_input("KUBERNETES_VERSION", default="1.34.2"),
+        text_input("KUBERNETES_VERSION", default="1.36.3"),
         text_input("CONTROL_PLANE_DESIRED_COUNT", default="3"),
         text_input("WORKER_DESIRED_COUNT", default="1"),
         text_input("ETCD_ENCRYPTED", default="false"),

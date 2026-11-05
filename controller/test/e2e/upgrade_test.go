@@ -22,9 +22,9 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/api"
 )
 
-const upgradeStartingKubernetesVersion = "1.34.2"
+const upgradeStartingKubernetesVersion = "1.35.3"
 
-var upgradeKubernetesVersionChain = []string{"1.35.3", "1.36.0"}
+var upgradeKubernetesVersionChain = []string{"1.36.3"}
 
 // upgradeHops returns the leading part of the chain a run walks. NKE_E2E_UPGRADE_HOPS
 // caps it; unset, zero or invalid means the whole chain. Each hop recycles every
