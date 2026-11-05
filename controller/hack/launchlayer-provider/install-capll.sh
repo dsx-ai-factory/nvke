@@ -78,7 +78,7 @@ helm upgrade --install "${CAPLL_RELEASE}" "${CAPLL_STAGED_CHART_DIR}" \
 # CAPI objects. Its chart grants Secret get only in its own namespace (CAPLL's
 # docs/authentication.md, "Secret access"), so grant it there as well. The
 # ServiceAccount is read from the Deployment: the chart names it after the release.
-capll_sa="$(kubectl -n "${CAPLL_NAMESPACE}" get deployment -o jsonpath='{.items[0].spec.template.spec.serviceAccountName}')"
+capll_sa="$(kubectl -n "${CAPLL_NAMESPACE}" get deployment -l "app.kubernetes.io/instance=${CAPLL_RELEASE}" -o jsonpath='{.items[0].spec.template.spec.serviceAccountName}')"
 kubectl -n "${CAPLL_WORKLOAD_NAMESPACE}" create role capll-secret-reader --verb=get --resource=secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n "${CAPLL_WORKLOAD_NAMESPACE}" create rolebinding capll-secret-reader --role=capll-secret-reader \
