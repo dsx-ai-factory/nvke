@@ -56,9 +56,9 @@ type TemplateContext struct {
 	// them is a separate question from whether the template can name them.
 	Nico   struct{ Endpoint, OrgID, Token, APIName, TokenURL, ClientID, ClientSecret, Scope string }
 	Tenant struct{ User, Password string }
-	// LaunchLayer is the LaunchLayer API CAPLL calls and the OAuth2 client it
-	// calls it as. The optional URLs stay empty when the stack config omits them.
-	LaunchLayer struct{ BaseURL, VPCURL, ComputeURL, SGURL, IssuerURL, ClientID, ClientSecret, Scopes string }
+	// LaunchLayer is the OAuth2 client CAPLL calls LaunchLayer as. Scopes stays
+	// empty when the stack config omits it.
+	LaunchLayer struct{ IssuerURL, ClientID, ClientSecret, Scopes string }
 }
 
 // site writes the site values and renders the template items.
@@ -106,14 +106,22 @@ func (r *renderer) site() {
 		ctx.Nico.OrgID = check("nico.orgID", cs.Nico.OrgID)
 		ctx.Nico.APIName = check("nico.apiName", cs.Nico.APIName)
 	}
-	if r.hasItem(capllItem, TypeTemplate) {
+	// capllArgs replaces the CAPLL chart's manager.args, so it repeats the
+	// chart's --leader-elect.
+	var capllArgs []string
+	if r.hasItem(capllItem, TypeHelm) {
 		ll := cs.LaunchLayer
-		ctx.LaunchLayer.BaseURL = check("launchLayer.baseURL", ll.BaseURL)
+		capllArgs = []string{"--leader-elect", "--base-url=" + check("launchLayer.baseURL", ll.BaseURL)}
+		// An omitted URL leaves its flag off, and CAPLL calls baseURL instead.
+		for _, f := range []struct{ flag, url string }{{"--vpc-url", ll.VPCURL}, {"--compute-url", ll.ComputeURL}, {"--sg-url", ll.SGURL}} {
+			if f.url != "" {
+				capllArgs = append(capllArgs, f.flag+"="+f.url)
+			}
+		}
+		capllArgs = append(capllArgs, "--identity-secret="+launchLayerSecret)
 		ctx.LaunchLayer.IssuerURL = check("launchLayer.issuerURL", ll.IssuerURL)
 		ctx.LaunchLayer.ClientID = check("launchLayer.clientID", ll.ClientID)
-		// Optional: empty inherits baseURL, or asks for no scope.
-		ctx.LaunchLayer.VPCURL, ctx.LaunchLayer.ComputeURL, ctx.LaunchLayer.SGURL, ctx.LaunchLayer.Scopes = ll.VPCURL, ll.ComputeURL, ll.SGURL, ll.Scopes
-		ctx.LaunchLayer.ClientSecret = creds.LaunchLayerClientSecret
+		ctx.LaunchLayer.Scopes, ctx.LaunchLayer.ClientSecret = ll.Scopes, creds.LaunchLayerClientSecret
 	}
 	// CredentialsFromEnv applies the same rule to the credentials.
 	ctx.Nico.Token, ctx.Tenant.User, ctx.Tenant.Password = creds.NicoToken, creds.NodeUser, creds.NodePassword
@@ -160,6 +168,9 @@ func (r *renderer) site() {
 		r.problem("stack config: images.profiles is required: the deploy path enables profiles.image and nothing else names the image")
 	}
 	r.siteValues("controller", controller)
+	if capllArgs != nil {
+		r.siteValues(capllItem, map[string]any{"manager": map[string]any{"args": capllArgs}})
+	}
 
 	// spire: site identity, the controller's admin ID, the TPM attestor
 	// checksum for the architecture, the bootstrap CA when the environment
@@ -505,8 +516,11 @@ const (
 const (
 	// capnicoItem is CAPNICo's manifest item.
 	capnicoItem = "capnico"
-	// capllItem is CAPLL's template item.
+	// capllItem is CAPLL's helm item.
 	capllItem = "capll"
+	// launchLayerSecret is the Secret nvke-base-config renders the OAuth2
+	// client into, in CAPLL's namespace.
+	launchLayerSecret = "launchlayer-credentials"
 )
 
 // connectionStringKey is the key the controller reads its database URL from.
