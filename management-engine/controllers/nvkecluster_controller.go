@@ -62,6 +62,9 @@ type NVKEControllerClient interface {
 // NVKEClusterReconciler coordinates cluster provisioning from declarative intent.
 type NVKEClusterReconciler struct {
 	client.Client
+	// APIReader reads the NVKECluster without the informer cache, so a reconcile never starts from a status older
+	// than the previous reconcile's write. When nil, the cached client is used.
+	APIReader                  client.Reader
 	NVKEController             NVKEControllerClient
 	PollInterval               time.Duration
 	InfraTemplateConfigMapName string
@@ -77,7 +80,11 @@ func (r *NVKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	log.V(1).Info("reconciling NVKECluster")
 
 	var cluster internalv1.NVKECluster
-	if err := r.Get(ctx, req.NamespacedName, &cluster); err != nil {
+	var reader client.Reader = r.Client
+	if r.APIReader != nil {
+		reader = r.APIReader
+	}
+	if err := reader.Get(ctx, req.NamespacedName, &cluster); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -977,6 +984,9 @@ func (r *NVKEClusterReconciler) resolveNVKEControllerClass(ctx context.Context, 
 func (r *NVKEClusterReconciler) SetupWithManager(mgr ctrl.Manager, wrappers ...func(reconcile.Reconciler) reconcile.Reconciler) error {
 	if r.PollInterval <= 0 {
 		r.PollInterval = defaultPollInterval
+	}
+	if r.APIReader == nil {
+		r.APIReader = mgr.GetAPIReader()
 	}
 	var reconciler reconcile.Reconciler = r
 	for _, wrap := range wrappers {
