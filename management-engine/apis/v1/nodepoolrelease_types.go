@@ -10,7 +10,24 @@ import (
 
 // NodePoolReleaseSpec is the published content of a worker release: the machine
 // image its nodes boot and the initialization applied to them.
+// +kubebuilder:validation:XValidation:rule="has(self.profile) == has(self.tag)",message="profile and tag must be set together"
+// +kubebuilder:validation:XValidation:rule="has(self.profile) == has(oldSelf.profile)",message="profile is immutable"
+// +kubebuilder:validation:XValidation:rule="has(self.tag) == has(oldSelf.tag)",message="tag is immutable"
 type NodePoolReleaseSpec struct {
+	// Profile is the name half of the <profile>:<tag> node profile a pool selects
+	// this release by. It is set together with tag and cannot change.
+	// +optional
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="profile is immutable"
+	Profile string `json:"profile,omitempty"`
+	// Tag is the version half of the <profile>:<tag> node profile a pool selects
+	// this release by. It is set together with profile and cannot change.
+	// +optional
+	// +kubebuilder:validation:MaxLength=128
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="tag is immutable"
+	Tag string `json:"tag,omitempty"`
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="machineImageRef is immutable"
 	MachineImageRef MachineImageReference `json:"machineImageRef"`
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="machineInit is immutable"

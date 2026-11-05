@@ -813,6 +813,78 @@ func TestReleaseImmutabilityBoundary(t *testing.T) {
 	}
 }
 
+// profile and tag are set together on a NodePoolRelease so that a pool's
+// <profile>:<tag> node profile can be matched against them.
+func TestNodePoolReleaseProfileTagAdmission(t *testing.T) {
+	const resource = "nodepoolreleases"
+	schema := loadResourceSchema(t, resource)
+	setPair := func(profile, tag string) func(map[string]any) {
+		return func(s map[string]any) { s["profile"], s["tag"] = profile, tag }
+	}
+	for _, tt := range []struct {
+		name    string
+		change  func(spec map[string]any)
+		invalid bool
+	}{
+		{name: "neither set", change: func(map[string]any) {}},
+		{name: "both set", change: setPair("nvke-nico-vms", "24.04-amd64-fde")},
+		{name: "dotted profile", change: setPair("gpu.nvke-nico", "v1.2.3")},
+		{name: "tag starting with underscore", change: setPair("nvke", "_x.y-z")},
+		{name: "profile without tag", change: func(s map[string]any) { s["profile"] = "nvke-nico-vms" }, invalid: true},
+		{name: "tag without profile", change: func(s map[string]any) { s["tag"] = "24.04" }, invalid: true},
+		{name: "uppercase profile", change: setPair("Nvke", "24.04"), invalid: true},
+		{name: "profile ending in a dash", change: setPair("nvke-", "24.04"), invalid: true},
+		{name: "profile containing a colon", change: setPair("nvke:x", "24.04"), invalid: true},
+		{name: "empty profile", change: setPair("", "24.04"), invalid: true},
+		{name: "empty tag", change: setPair("nvke", ""), invalid: true},
+		{name: "tag starting with a dash", change: setPair("nvke", "-24.04"), invalid: true},
+		{name: "tag with a space", change: setPair("nvke", "24 04"), invalid: true},
+		{name: "tag of 128 characters", change: setPair("nvke", strings.Repeat("a", 128))},
+		{name: "tag of 129 characters", change: setPair("nvke", strings.Repeat("a", 129)), invalid: true},
+		{name: "profile of 254 characters", change: setPair(strings.Repeat("a", 63)+"."+strings.Repeat("a", 63)+"."+strings.Repeat("a", 63)+"."+strings.Repeat("a", 62), "t"), invalid: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			schema.check(t, tt.invalid, mutate(t, resource, tt.change), nil)
+		})
+	}
+}
+
+// A published release never changes, so profile and tag are fixed at creation:
+// they cannot change, be removed, or be added to an object that lacks them.
+func TestNodePoolReleaseProfileTagImmutable(t *testing.T) {
+	const resource = "nodepoolreleases"
+	schema := loadResourceSchema(t, resource)
+	withPair := func(profile, tag string) map[string]any {
+		return mutate(t, resource, func(s map[string]any) { s["profile"], s["tag"] = profile, tag })
+	}
+	published := withPair("nvke-nico-vms", "24.04")
+	schema.admit(t, published, nil)
+
+	for _, tt := range []struct {
+		name    string
+		updated map[string]any
+		old     map[string]any
+		invalid bool
+	}{
+		{name: "unchanged", updated: withPair("nvke-nico-vms", "24.04"), old: published},
+		{name: "deprecate", old: published, updated: mutate(t, resource, func(s map[string]any) {
+			s["profile"], s["tag"] = "nvke-nico-vms", "24.04"
+			s["lifecycle"] = map[string]any{"deprecated": true}
+		})},
+		{name: "change profile", updated: withPair("other", "24.04"), old: published, invalid: true},
+		{name: "change tag", updated: withPair("nvke-nico-vms", "24.05"), old: published, invalid: true},
+		{name: "remove both", updated: baseResource(t, resource), old: published, invalid: true},
+		{name: "remove profile", old: published, invalid: true, updated: mutate(t, resource, func(s map[string]any) { s["tag"] = "24.04" })},
+		{name: "remove tag", old: published, invalid: true, updated: mutate(t, resource, func(s map[string]any) { s["profile"] = "nvke-nico-vms" })},
+		{name: "add both to a release without them", updated: withPair("nvke-nico-vms", "24.04"), old: baseResource(t, resource), invalid: true},
+		{name: "unchanged without them", updated: baseResource(t, resource), old: baseResource(t, resource)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			schema.check(t, tt.invalid, tt.updated, runtime.DeepCopyJSON(tt.old))
+		})
+	}
+}
+
 // mutableReleaseField is the single field a published release may still change.
 const mutableReleaseField = "lifecycle"
 
