@@ -466,10 +466,12 @@ docker run --rm --user "$(id -u):$(id -g)" \
 
 ### Building the image yourself
 
-This is how a site gets the image. The build is reproducible: the same commit
-built with the same arguments gives the same digest wherever it is built. CI
-proves this on every change by building it twice, the second time with no
-cache and every file's mtime changed.
+This is how a site gets the image. The build is meant to be reproducible: the
+base images are pinned by digest, and the timestamps, version and revision come
+from the commit, so the same commit built with the same arguments should give
+the same digest. CI checks this on every change by building it twice on one
+runner, the second time with no cache and every file's mtime changed. It does
+not compare builds across machines or BuildKit versions.
 
 Build from the release tag of the controller the site runs,
 `controller/v<version>`, the same version the site pins. Never build from
@@ -533,9 +535,10 @@ that variable, so a run against a site whose controller is another version
 fails the version check rather than passing on the wrong tests. Upgrading a
 site's controller means running the next tag.
 
-Rebuilding a tag gives the same digest, so a retried job pushes the same
-image again. A job can also rebuild a tag it has already pushed and compare
-the digests, to check that nothing in its own build path changed.
+Rebuilding a tag on the same builder gives the same digest, so a retried job
+pushes the same image again. A job can also rebuild a tag it has already
+pushed and compare the digests, to check that nothing in its own build path
+changed.
 
 ### Extending the image
 

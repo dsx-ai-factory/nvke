@@ -163,9 +163,9 @@ validate-image: ## Build the site validation image into the local docker image s
 # architectures come from one build: the binary is cross-compiled and the final
 # stage runs nothing, so neither needs emulation or its own runner.
 #
-# The build is reproducible, so every build of a commit gets the same digest.
-# Everything that reaches the image's bytes is derived
-# from the commit here: the timestamps (SOURCE_DATE_EPOCH, applied to layer
+# The build is meant to be reproducible. Everything that reaches the image's
+# bytes is derived from the commit here: the timestamps (SOURCE_DATE_EPOCH,
+# applied to layer
 # contents by rewrite-timestamp), the version and revision labels, and the
 # platforms. Overriding any of them gives a different digest.
 VALIDATE_REPO ?=

@@ -361,8 +361,8 @@ jobs:
       #
       # Built twice, the second time with no cache and every file's mtime
       # changed, as a fresh checkout elsewhere would have it. The two index
-      # digests must match, so every site that builds a release tag gets the
-      # same image.
+      # digests must match, which shows the build depends on neither file
+      # times nor the cache.
       - name: Build validation image (amd64 and arm64), twice
         shell: bash
         run: |
