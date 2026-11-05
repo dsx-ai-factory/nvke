@@ -136,8 +136,16 @@ items:
         reason: Reported
         status: "False"
         type: NVKEControllerProvisioning
+      - message: ""
+        observedGeneration: 2
+        reason: ReconcileSucceeded
+        status: "True"
+        type: NodePoolReleaseResolved
       id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
       name: workers
+      resolvedRelease:
+        name: worker-preview-release
+        version: 1.34.8
     observedGeneration: 2
     resolvedRelease:
       name: preview-release

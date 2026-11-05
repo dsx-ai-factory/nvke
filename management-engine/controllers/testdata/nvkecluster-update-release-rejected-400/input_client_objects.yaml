@@ -57,6 +57,20 @@ spec:
       #cloud-config
       write_files: []
 ---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: worker-release
+  annotations:
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.8"
+spec:
+  profile: example
+  tag: "1.34.8"
+  machineImageRef:
+    name: test-image
+  machineInit:
+    userDataTemplate: "#cloud-config\n"
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
