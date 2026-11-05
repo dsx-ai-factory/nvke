@@ -95,6 +95,7 @@ const (
 	FieldManagerLaunchLayerSpiffe             = "launchlayer-spiffe-controller"
 	FieldManagerMachineSpireEntry             = "machine-spire-entry-controller"
 	FieldManagerSpireNicoTPMBootstrapIdentity = "spire-nico-tpm-bootstrap-identity-controller"
+	FieldManagerBootstrapAuthorization        = "bootstrap-authorization-controller"
 
 	LabelValueTerminateStatusInProgress = "InProgress"
 	LabelValueTerminateStatusNotAllowed = "NotAllowed"

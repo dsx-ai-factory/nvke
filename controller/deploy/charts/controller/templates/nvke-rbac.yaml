@@ -108,8 +108,12 @@ metadata:
 {{- range $kind := list "ClusterRole" "ClusterRoleBinding" }}
 {{- $_ := set $rbacIdentities (printf "%s//%s" $kind $tenantRbacName) true }}
 {{- end }}
+{{- $tenantRbacNamespaces := list "kube-system" "kube-node-lease" }}
+{{- if .Values.controllers.bootstrap.enabled }}
+{{- $tenantRbacNamespaces = append $tenantRbacNamespaces "kube-public" }}
+{{- end }}
 {{- range $kind := list "Role" "RoleBinding" }}
-{{- range $namespace := list "kube-system" "kube-node-lease" }}
+{{- range $namespace := $tenantRbacNamespaces }}
 {{- $_ := set $rbacIdentities (printf "%s/%s/%s" $kind $namespace $tenantRbacName) true }}
 {{- end }}
 {{- end }}
@@ -191,6 +195,23 @@ data:
         resources: ["signers"]
         resourceNames: ["kubernetes.io/kubelet-serving"]
         verbs: ["approve"]
+    {{- if .Values.controllers.bootstrap.enabled }}
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["clusterrolebindings"]
+        verbs: ["create"]
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["clusterrolebindings"]
+        resourceNames:
+          - nvke-bootstrap-node-bootstrapper
+          - nvke-bootstrap-kubeadm-get-nodes
+        verbs: ["get", "patch"]
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["clusterroles"]
+        resourceNames:
+          - system:node-bootstrapper
+          - kubeadm:get-nodes
+        verbs: ["bind"]
+    {{- end }}
     ---
     apiVersion: rbac.authorization.k8s.io/v1
     kind: Role
@@ -218,6 +239,25 @@ data:
       - apiGroups: ["apps"]
         resources: ["daemonsets", "deployments"]
         verbs: ["get", "create", "patch", "update"]
+    {{- if .Values.controllers.bootstrap.enabled }}
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["rolebindings"]
+        verbs: ["create"]
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["rolebindings"]
+        resourceNames:
+          - nvke-bootstrap-kubeadm-nodes-kubeadm-config
+          - nvke-bootstrap-kubeadm-kubelet-config
+          - nvke-bootstrap-kube-proxy
+        verbs: ["get", "patch"]
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["roles"]
+        resourceNames:
+          - kubeadm:nodes-kubeadm-config
+          - kubeadm:kubelet-config
+          - kube-proxy
+        verbs: ["bind"]
+    {{- end }}
     ---
     apiVersion: rbac.authorization.k8s.io/v1
     kind: Role
@@ -269,6 +309,42 @@ data:
       kind: Role
       name: {{ $tenantRbacName }}
       apiGroup: rbac.authorization.k8s.io
+    {{- if .Values.controllers.bootstrap.enabled }}
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      name: {{ $tenantRbacName }}
+      namespace: kube-public
+    rules:
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["rolebindings"]
+        verbs: ["create"]
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["rolebindings"]
+        resourceNames:
+          - nvke-bootstrap-kubeadm-bootstrap-signer-clusterinfo
+        verbs: ["get", "patch"]
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["roles"]
+        resourceNames:
+          - kubeadm:bootstrap-signer-clusterinfo
+        verbs: ["bind"]
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: {{ $tenantRbacName }}
+      namespace: kube-public
+    subjects:
+      - kind: User
+        name: {{ $controllerSubject | quote }}
+        apiGroup: rbac.authorization.k8s.io
+    roleRef:
+      kind: Role
+      name: {{ $tenantRbacName }}
+      apiGroup: rbac.authorization.k8s.io
+    {{- end }}
     ---
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding

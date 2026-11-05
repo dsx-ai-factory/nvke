@@ -163,6 +163,7 @@ const (
 	// Bootstrap controls on concrete Cluster API bootstrap resources.
 	BootstrapIdentityResolver                 Key = "bootstrap-identity-resolver"
 	BootstrapIdentitySpireWorkloadEntryConfig Key = "bootstrap-identity-spire-workload-entry-config"
+	SyncBootstrapAuthorization                Key = "sync-bootstrap-authorization"
 
 	// NodeMachineHealthIssue is the health-issue annotation on a Kubernetes
 	// Node.
