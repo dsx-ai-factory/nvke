@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+kind: RecipeMetadata
+apiVersion: aicr.run/v1beta1
+metadata:
+  name: nvke-kind
+spec:
+  base: base
+  criteria:
+    service: nvke-kind
+  componentRefs:
+    - {name: postgres, type: Helm, valuesFile: components/postgres/values.yaml}
+    - {name: temporal, type: Helm, valuesFile: components/temporal/values.yaml, dependencyRefs: [postgres]}
+    - {name: nke-controller, type: Helm, valuesFile: components/nke-controller/values.yaml, dependencyRefs: [postgres, temporal]}

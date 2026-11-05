@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Shadows AICR's wildcard overlay of the same name, which would add prometheus-adapter to every recipe.
+kind: RecipeMetadata
+apiVersion: aicr.run/v1beta1
+metadata:
+  name: monitoring-hpa
+spec:
+  base: base
+  criteria:
+    intent: any
+  componentRefs: []

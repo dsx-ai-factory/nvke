@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: nvkr.dev/environment/v1
+kind: Environment
+metadata:
+  description: Native Linux arm64 utility execution for local builds; publication remains opt-in.
+  name: nvke-local-arm64
+publication:
+  anonymous: true
+  plainHTTP: true
+  repositoryPrefix: 127.0.0.1:5000/nvke
+runtime:
+  runtime: docker
+signing:
+  identity: ^local$
+  issuer: https://nvkr.dev/local
+  mode: dry-run
+utilityContainer: golang@sha256:6c2a5538f964f1c82f97ad14988bf05de100d922d159d0e398b54c7b0ca0c6c9
+utilityPlatform: linux/arm64

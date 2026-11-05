@@ -1,0 +1,38 @@
+# Adapted from deploy/nico/controller/{values,overlay}.yaml for a kind cluster:
+# no SPIRE, no monitoring stack, no profiles image, no API auth.
+namespaceOverride: nke-controller
+fullnameOverride: nke-controller
+nameOverride: nke-controller
+serviceAccount:
+  name: nke-controller
+apiAuth: {enabled: false, permissive: false}
+# kind has no NICo, so CAPNICo is not installed and its controllers are off.
+supportedInfraProviders: infra
+controllers:
+  nico: {enabled: false}
+capi:
+  rbac: {create: true, nico: false}
+tenantAccess: {enabled: false}
+nvkeOIDCAuth: {enabled: false}
+cni: {installAfterInit: true}
+nvkeSystemNamespace: {create: false}
+metrics:
+  networkPolicy: {enabled: false}
+serviceMonitor: {enabled: false}
+tracing: {enabled: false}
+appDb:
+  url: postgres-postgresql.postgres.svc.cluster.local:5432
+  dbName: nke-controller
+  postgresUser: postgres
+  sslMode: disable
+secrets:
+  dbSecretName: nvke-database
+env:
+  - {name: NODE_AGENT_PORT, value: "15005"}
+temporal:
+  host: temporal-frontend.temporal.svc.cluster.local
+  port: 7233
+  cloudWorkflow: {namespace: nke-controller, queue: nke-controller-tasks}
+profiles: {path: /profiles, image: {enabled: false}}
+spiffe: {enabled: false}
+nodeAgent: {spireAttestationMethod: tpm}

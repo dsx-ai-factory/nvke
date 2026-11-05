@@ -1,0 +1,66 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Everything NVKR must build or acquire for an AICR-deployed NVKE management plane:
+# the controller chart and image, CAPNICo's image, and the NKTP, PostgreSQL, SPIRE,
+# SPIRE CRDs and Temporal charts. Experiment: catalogs are read from a sibling NVKR checkout.
+apiVersion: nvkr.dev/definition/v5
+kind: Definition
+metadata:
+  name: nvke-aicr
+  description: Charts and images for the AICR-deployed NVKE management plane, arm64.
+catalog:
+  base: ../../../nvkr/inputs/catalogs/nvke/module-tags
+cosignTool: cosign
+outputs:
+  - name: capnico-controller
+    platform: linux/arm64
+    catalog:
+      base: ../../../nvkr/inputs/catalogs/nvke/release-components
+    format: oci
+    components: [capnico-controller]
+  - name: controller-chart
+    platform: linux/arm64
+    catalog:
+      base: ../../../nvkr/inputs/catalogs/nvke/release
+    format: helm-oci
+    components: [nvke-controller-chart]
+    helm:
+      images:
+        controller: cwe
+  - name: cwe
+    platform: linux/arm64
+    catalog:
+      base: ../../../nvkr/inputs/catalogs/nvke/release
+    format: oci
+    components: [nvke-controller]
+  - name: nktp
+    platform: linux/arm64
+    catalog:
+      base: ../../../nvkr/inputs/catalogs/nvke/release-components
+    format: helm-oci
+    components: [nktp-chart]
+  - name: postgresql
+    platform: linux/arm64
+    catalog:
+      base: ../../../nvkr/inputs/catalogs/nvke/release
+    format: helm-oci
+    components: [postgresql-chart]
+  - name: spire
+    platform: linux/arm64
+    catalog:
+      base: ../../../nvkr/inputs/catalogs/nvke/release
+    format: helm-oci
+    components: [spire-chart]
+  - name: spire-crds
+    platform: linux/arm64
+    catalog:
+      base: ../../../nvkr/inputs/catalogs/nvke/release
+    format: helm-oci
+    components: [spire-crds-chart]
+  - name: temporal
+    platform: linux/arm64
+    catalog:
+      base: ../../../nvkr/inputs/catalogs/nvke/release
+    format: helm-oci
+    components: [temporal-chart]

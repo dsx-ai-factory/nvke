@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# NVKE management-plane components for AICR. Chart repository and version are
+# release-derived: `deploy.sh` fills @REPOSITORY@ and @VERSION:<chart>@ from the
+# NVKR Release into a copy of this tree. The component name is the Helm release name.
+apiVersion: aicr.run/v1beta1
+kind: ComponentRegistry
+components:
+  - name: postgres
+    displayName: PostgreSQL
+    class: core
+    valueOverrideKeys: [postgres]
+    helm:
+      defaultRepository: "@REPOSITORY@"
+      defaultChart: postgresql
+      defaultVersion: "@VERSION:postgresql@"
+      defaultNamespace: postgres
+  - name: temporal
+    displayName: Temporal
+    class: core
+    valueOverrideKeys: [temporal]
+    helm:
+      defaultRepository: "@REPOSITORY@"
+      defaultChart: temporal
+      defaultVersion: "@VERSION:temporal@"
+      defaultNamespace: temporal
+  - name: nke-controller
+    displayName: NKE controller
+    class: core
+    valueOverrideKeys: [nkecontroller]
+    helm:
+      defaultRepository: "@REPOSITORY@"
+      defaultChart: nvke-controller
+      defaultVersion: "@VERSION:controller-chart@"
+      defaultNamespace: nke-controller
