@@ -1,5 +1,5 @@
 {
-  "outputs": [
+  "artifacts": [
     {
       "name": "capnico-controller",
       "kind": "oci",
@@ -19,7 +19,7 @@
       "name": "controller-chart",
       "kind": "helm-oci",
       "reference": "registry.example.invalid/nvke/charts/controller-chart@sha256:4444444444444444444444444444444444444444444444444444444444444444",
-      "chartVersion": "0.4.2"
+      "chartVersion": "0.22.0"
     },
     {
       "name": "cwe",
@@ -37,22 +37,37 @@
       }
     },
     {
+      "name": "nico-core-image",
+      "kind": "oci",
+      "reference": "registry.example.invalid/nvke/nico@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "imageIndex": {
+        "children": [
+          {
+            "platform": "linux/amd64"
+          },
+          {
+            "platform": "linux/arm64"
+          }
+        ]
+      }
+    },
+    {
       "name": "nico",
       "kind": "helm-oci",
       "reference": "registry.example.invalid/nvke/charts/nico@sha256:7777777777777777777777777777777777777777777777777777777777777777",
-      "chartVersion": "0.12.0"
+      "chartVersion": "2.2.2"
     },
     {
       "name": "nico-prereqs",
       "kind": "helm-oci",
       "reference": "registry.example.invalid/nvke/charts/nico-prereqs@sha256:8888888888888888888888888888888888888888888888888888888888888888",
-      "chartVersion": "0.12.0"
+      "chartVersion": "18.5.15"
     },
     {
       "name": "nktp",
       "kind": "helm-oci",
       "reference": "registry.example.invalid/nvke/charts/nktp@sha256:9999999999999999999999999999999999999999999999999999999999999999",
-      "chartVersion": "0.9.0"
+      "chartVersion": "0.22.0"
     },
     {
       "name": "postgresql",

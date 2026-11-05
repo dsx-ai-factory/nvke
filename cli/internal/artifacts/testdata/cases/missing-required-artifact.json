@@ -14,7 +14,7 @@
       "installationCompatibility": "not-checked"
     }
   },
-  "totalOutputs": 13,
+  "totalOutputs": 11,
   "reference": "registry.example.invalid/nvke/releases@sha256:9999999999999999999999999999999999999999999999999999999999999999",
   "referenceScope": "derived from supplied root reference; no registry availability claim",
   "rootDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
@@ -27,23 +27,6 @@
     "contentSubject": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
   },
   "outputs": [
-    {
-      "name": "agent-apt",
-      "kind": "apt-repository",
-      "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-      "reference": "registry.example.invalid/nvke/agent-apt@sha256:5555555555555555555555555555555555555555555555555555555555555555",
-      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "components": [
-        "agent"
-      ],
-      "artifactType": "application/vnd.nvkr.apt-repository.v1",
-      "buildSubjects": [
-        {
-          "component": "agent",
-          "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-        }
-      ]
-    },
     {
       "name": "capnico-controller",
       "kind": "oci",
@@ -85,7 +68,7 @@
       "kind": "helm-oci",
       "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
       "reference": "registry.example.invalid/nvke/charts/controller-chart@sha256:4444444444444444444444444444444444444444444444444444444444444444",
-      "chartVersion": "0.4.2",
+      "chartVersion": "0.22.0",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
@@ -127,21 +110,26 @@
       "buildSubjects": []
     },
     {
-      "name": "local-path-provisioner",
-      "kind": "helm-oci",
-      "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-      "reference": "registry.example.invalid/nvke/charts/local-path-provisioner@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-      "chartVersion": "0.0.31",
-      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "artifactType": "application/vnd.nvkr.helm-bundle.v1",
-      "buildSubjects": []
+      "name": "nico-core-image",
+      "kind": "oci",
+      "reference": "registry.example.invalid/nvke/nico@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "imageIndex": {
+        "children": [
+          {
+            "platform": "linux/amd64"
+          },
+          {
+            "platform": "linux/arm64"
+          }
+        ]
+      }
     },
     {
       "name": "nico",
       "kind": "helm-oci",
       "digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
       "reference": "registry.example.invalid/nvke/charts/nico@sha256:7777777777777777777777777777777777777777777777777777777777777777",
-      "chartVersion": "0.12.0",
+      "chartVersion": "2.2.2",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
@@ -151,7 +139,7 @@
       "kind": "helm-oci",
       "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
       "reference": "registry.example.invalid/nvke/charts/nico-prereqs@sha256:8888888888888888888888888888888888888888888888888888888888888888",
-      "chartVersion": "0.12.0",
+      "chartVersion": "18.5.15",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
@@ -161,30 +149,10 @@
       "kind": "helm-oci",
       "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
       "reference": "registry.example.invalid/nvke/charts/nktp@sha256:9999999999999999999999999999999999999999999999999999999999999999",
-      "chartVersion": "0.9.0",
+      "chartVersion": "0.22.0",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
-    },
-    {
-      "name": "nvkectl-linux-amd64",
-      "kind": "executable",
-      "digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
-      "reference": "registry.example.invalid/nvke/nvkectl-linux-amd64@sha256:7777777777777777777777777777777777777777777777777777777777777777",
-      "os": "linux",
-      "arch": "amd64",
-      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "components": [
-        "nvkectl"
-      ],
-      "artifactType": "application/vnd.nvkr.binary-bundle.v1",
-      "buildSubjects": [
-        {
-          "component": "nvkectl",
-          "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-        }
-      ],
-      "signedBy": "a key a later nvkr adds"
     },
     {
       "name": "postgresql",
@@ -192,16 +160,6 @@
       "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "reference": "registry.example.invalid/nvke/charts/postgresql@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "chartVersion": "18.5.15",
-      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "artifactType": "application/vnd.nvkr.helm-bundle.v1",
-      "buildSubjects": []
-    },
-    {
-      "name": "spire",
-      "kind": "helm-oci",
-      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "reference": "registry.example.invalid/nvke/charts/spire@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "chartVersion": "0.30.1",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
@@ -222,6 +180,16 @@
       "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "reference": "registry.example.invalid/nvke/charts/temporal@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "chartVersion": "0.74.0",
+      "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+      "buildSubjects": []
+    },
+    {
+      "name": "local-path-provisioner",
+      "kind": "helm-oci",
+      "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "reference": "registry.example.invalid/nvke/charts/local-path-provisioner@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "chartVersion": "0.0.31",
       "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "artifactType": "application/vnd.nvkr.helm-bundle.v1",
       "buildSubjects": []
@@ -380,25 +348,6 @@
       }
     },
     {
-      "name": "sbom-spire",
-      "kind": "sbom",
-      "reference": "registry.example.invalid/nvke/spire@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-      "artifactType": "application/vnd.cyclonedx+json",
-      "manifestDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-      "blobDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-      "semanticDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "binding": {
-        "documentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-        "outputs": [
-          "spire"
-        ],
-        "component": "spire",
-        "stage": "packaging",
-        "subjectKind": "helm-bundle",
-        "subjectDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      }
-    },
-    {
       "name": "sbom-spire-crds",
       "kind": "sbom",
       "reference": "registry.example.invalid/nvke/spire-crds@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
@@ -455,7 +404,5 @@
         "subjectDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
       }
     }
-  ],
-  "selectedOutput": "",
-  "publisherNote": "a key a later nvkr adds"
+  ]
 }
