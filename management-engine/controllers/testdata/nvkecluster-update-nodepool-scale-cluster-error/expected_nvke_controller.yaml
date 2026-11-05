@@ -1,0 +1,136 @@
+clusters:
+- cniPlugin: ovn-kubernetes
+  cniVersion: ""
+  conditions:
+    deleting:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "False"
+    provisioned:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "True"
+    provisioning:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "False"
+  controlPlaneConfig:
+    configurationId: 00000000-0000-0000-0000-000000000000
+    desiredCount: 1
+    infra:
+      machineTemplate:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        kind: DockerMachineTemplate
+        spec:
+          template:
+            spec:
+              customImage: example-node
+    maxSurge: 1
+    provisioningMonitorDisabled: false
+    systemReservedMemory: 1Gi
+  controlPlaneKubernetesVersion: 1.34.8
+  controlPlaneVIP: 10.0.0.10
+  createdAt: "0001-01-01T00:00:00Z"
+  etcdEncrypted: true
+  id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+  infra:
+    cluster:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+      kind: DockerCluster
+      spec: {}
+  name: cluster-1-34bd578c-mgmt-eng
+  network:
+    podCIDR: 10.244.0.0/16
+    serviceCIDR: 10.96.0.0/12
+nodePools:
+- autoModeDisabled: false
+  autoProvisionDisabled: false
+  clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+  conditions:
+    deleting:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "False"
+    provisioned:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "True"
+    provisioning:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "False"
+  controlPlane: false
+  currentNodeSetID: null
+  desiredNodeCount: 3
+  id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+  infra:
+    machineTemplate:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+      kind: DockerMachineTemplate
+      spec:
+        template:
+          spec:
+            customImage: example-node
+  kubernetesVersion: ""
+  name: workers
+  nodeLabels: null
+  nodeNamePrefix: workers
+  nodeTaints: null
+  provisioningMonitorDisabled: true
+  recycleBudget: 0
+  systemReservedMemory: 1Gi
+requests:
+- create:
+    cniPlugin: ovn-kubernetes
+    controlPlaneConfig:
+      desiredCount: 1
+      infra:
+        machineTemplate:
+          apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+          kind: DockerMachineTemplate
+          spec:
+            template:
+              spec:
+                customImage: example-node
+      maxSurge: 1
+      provisioningMonitorDisabled: false
+      systemReservedMemory: 1Gi
+    controlPlaneKubernetesVersion: 1.34.8
+    controlPlaneVIP: 10.0.0.10
+    etcdEncrypted: true
+    infra:
+      cluster:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        kind: DockerCluster
+        spec: {}
+    name: cluster-1-34bd578c-mgmt-eng
+    network:
+      podCIDR: 10.244.0.0/16
+      serviceCIDR: 10.96.0.0/12
+  method: POST
+  path: /api/clusters
+- createNodePool:
+    clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    desiredNodeCount: 1
+    infra:
+      machineTemplate:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        kind: DockerMachineTemplate
+        spec:
+          template:
+            spec:
+              customImage: example-node
+    name: workers
+    nodeNamePrefix: workers
+    provisioningMonitorDisabled: true
+    systemReservedMemory: 1Gi
+  method: POST
+  path: /api/nodePools
+- method: PATCH
+  path: /api/clusters/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+  update:
+    controlPlaneKubernetesVersion: 1.35.2
+- method: PATCH
+  path: /api/nodePools/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+  updateNodePool:
+    desiredNodeCount: 3

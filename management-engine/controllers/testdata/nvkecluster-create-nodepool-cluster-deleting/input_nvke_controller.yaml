@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+clusters:
+  resources:
+    - id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+      name: cluster-1-34bd578c-mgmt-eng
+      controlPlaneKubernetesVersion: "1.34.8"
+      controlPlaneVIP: 10.0.0.10
+      controlPlaneConfig:
+        desiredCount: 1
+        maxSurge: 1
+        provisioningMonitorDisabled: false
+        systemReservedMemory: 1Gi
+        infra:
+          machineTemplate:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+            kind: DockerMachineTemplate
+            spec:
+              template:
+                spec: {customImage: example-node}
+      conditions:
+        provisioned: {status: "True"}
+        provisioning: {status: "False"}
+        deleting: {status: "True"}
+nodePools:
+  resources:
+    - id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+      clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+      name: workers
+      desiredNodeCount: 1
+      conditions:
+        provisioned: {status: "True"}
+        provisioning: {status: "False"}
+        deleting: {status: "False"}
