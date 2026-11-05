@@ -28,8 +28,8 @@ NVKE does no authorization. Every admitted caller can call every endpoint.
 
 `issuers` is a list. Add an entry for each identity provider. `name` and `issuer`
 are each unique in the file. An issuer's `audiences` replaces the top-level
-list for that issuer. An issuer carries one of `serviceAccounts`, `spiffe`, or
-`groups`.
+list for that issuer. An issuer carries one of `serviceAccounts`, `spiffe`,
+`groups`, or `claims`.
 
 ## Before you start
 
@@ -324,7 +324,7 @@ issuers:
 `pathPrefixes` is required and cannot be `/`. A trust domain on its own would
 admit every workload in it, which is rarely what you want.
 
-An issuer uses one of `serviceAccounts`, `spiffe`, or `groups`.
+An issuer uses one of `serviceAccounts`, `spiffe`, `groups`, or `claims`.
 
 ### 4. Tell callers what to ask for
 
@@ -360,6 +360,21 @@ issuers:
 
 A token is admitted when its `groups` claim contains any listed group. The
 group names are matched exactly.
+
+For a token with no `groups` claim, admit by another top-level claim instead:
+
+```yaml
+    admit:
+      claims:
+        - name: roles
+          value: nvke-admin
+```
+
+A token is admitted when, for any listed rule, its claim `name` is the string
+`value` or a string array holding it. Use a claim the identity provider sets,
+not one users can edit. `iss`, `aud`, `nonce`, `jti`, `exp`, `nbf`, `iat` and
+`typ` can't be used: they describe the token, not the caller, so a rule on one
+admits every token from the issuer or a value the caller chooses.
 
 When the identity provider's certificate is signed by a private CA, put the
 PEM bundle inline as `jwks.caBundle`, or in `extraFiles` with `jwks.caBundlePath`,
@@ -412,7 +427,7 @@ a warning.
 | `issuers[].jwks.caBundlePath` | no | CA file inside the container, usually one you listed under `apiAuth.configMap.extraFiles`. At most one of `caBundle` and `caBundlePath`. |
 | `issuers[].jwks.bearerTokenPath` | no | Token file, if the keys endpoint needs one. Re-read on every fetch. |
 | `issuers[].algorithms` | yes | `RS256` and `ES256` cover most issuers. Asymmetric only. |
-| `issuers[].admit` | yes | One of `serviceAccounts`, `spiffe`, or `groups`. |
+| `issuers[].admit` | yes | One of `serviceAccounts`, `spiffe`, `groups`, or `claims`. |
 
 The configuration is read once at startup, so restart NVKE after you change it:
 

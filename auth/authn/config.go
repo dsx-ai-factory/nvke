@@ -116,11 +116,41 @@ type JWKSKeys struct {
 }
 
 // Admit is the per-issuer admission rule set. One of serviceAccounts, spiffe,
-// or groups; see Admit.validate.
+// groups, or claims; see Admit.validate.
 type Admit struct {
 	ServiceAccounts []ServiceAccountRule `json:"serviceAccounts,omitempty"`
 	SPIFFE          *SPIFFERule          `json:"spiffe,omitempty"`
 	Groups          []string             `json:"groups,omitempty"`
+	Claims          []ClaimRule          `json:"claims,omitempty"`
+}
+
+// ClaimRule matches a token whose top-level claim Name is the string Value, or
+// a string array holding it. "dsx.nvidia.com/tenant" is one key, not a path.
+type ClaimRule struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// Matches reports whether claims hold the rule's value under its name. Verified
+// claims decode JSON arrays to []any, and an array holding anything but strings
+// doesn't match.
+func (r ClaimRule) Matches(claims map[string]any) bool {
+	switch v := claims[r.Name].(type) {
+	case string:
+		return v == r.Value
+	case []any:
+		found := false
+		for _, elem := range v {
+			s, ok := elem.(string)
+			if !ok {
+				return false
+			}
+			found = found || s == r.Value
+		}
+		return found
+	default:
+		return false
+	}
 }
 
 // ServiceAccountRule matches Kubernetes service accounts.
@@ -390,14 +420,17 @@ func (a *Admit) validate() error {
 	if len(a.Groups) > 0 {
 		kinds++
 	}
-	if kinds == 0 {
-		return errors.New("must contain at least one rule: serviceAccounts, spiffe, or groups")
+	if len(a.Claims) > 0 {
+		kinds++
 	}
-	// Either match admits, so a set carrying more than one rule kind restricts nothing.
+	if kinds == 0 {
+		return errors.New("must contain at least one rule: serviceAccounts, spiffe, groups, or claims")
+	}
+	// Any match admits, so a set carrying more than one rule kind restricts nothing.
 	if kinds > 1 {
 		return errors.New(
-			"must not set more than one of serviceAccounts, spiffe, and groups on one issuer: they are " +
-				"alternatives and either match admits, so neither restricts the other. An issuer mints one " +
+			"must not set more than one of serviceAccounts, spiffe, groups, and claims on one issuer: they are " +
+				"alternatives and any match admits, so none restricts the others. An issuer mints one " +
 				"shape of identity; give it the one rule kind that matches",
 		)
 	}
@@ -414,6 +447,12 @@ func (a *Admit) validate() error {
 	for i, r := range a.ServiceAccounts {
 		if err := r.Validate(); err != nil {
 			return fmt.Errorf("serviceAccounts[%d]: %w", i, err)
+		}
+	}
+
+	for i, r := range a.Claims {
+		if err := r.Validate(); err != nil {
+			return fmt.Errorf("claims[%d]: %w", i, err)
 		}
 	}
 
@@ -450,6 +489,25 @@ func (r ServiceAccountRule) Validate() error {
 		return fmt.Errorf("name %q is not a valid service account name: %s", *r.Name, strings.Join(msgs, "; "))
 	}
 	return nil
+}
+
+// Validate refuses a claim that describes the token rather than the caller: a
+// rule on it admits every token from the issuer, or a value the caller chooses.
+func (r ClaimRule) Validate() error {
+	if strings.TrimSpace(r.Name) == "" {
+		return errors.New("name is required and must not be empty")
+	}
+	if err := requireUnpadded("name", r.Name); err != nil {
+		return err
+	}
+	switch r.Name {
+	case "iss", "aud", "nonce", "jti", "exp", "nbf", "iat", "typ":
+		return fmt.Errorf("name %q describes the token, not the caller", r.Name)
+	}
+	if strings.TrimSpace(r.Value) == "" {
+		return errors.New("value is required and must not be empty")
+	}
+	return requireUnpadded("value", r.Value)
 }
 
 func (s *SPIFFERule) validate() error {
