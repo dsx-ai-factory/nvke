@@ -40,9 +40,8 @@ its own, listed as a `path` hit, because a rename leaves those to `git mv`.
 WHAT IS NOT SCANNED. Only tracked files (`git ls-files`), never untracked or
 ignored ones. Excluded by path, as hack/docs-check.sh Check 7 does: sum and
 lock files (content-addressed upstream artifacts), vendor/ and generated/
-directories (third-party or regenerated), CHANGELOG.md (generated from
-history, which is public anyway) and this check's own files, which have to
-name what they forbid. Binary files are skipped.
+directories (third-party or regenerated) and this check's own files, which
+have to name what they forbid. Binary files are skipped.
 
 THE ALLOWLIST. hack/name-check-allowlist.txt, one entry per line:
   path:<glob>    every hit in a file matching the glob is allowed, and so is
@@ -69,7 +68,6 @@ from pathlib import Path
 DEFAULT_NAME = "nke"
 ALLOWLIST = "hack/name-check-allowlist.txt"
 OWN_FILES = ("hack/name-check.py", "hack/name-check-allowlist.txt", "hack/test_name_check.py")
-EXCLUDED_FILES = ("CHANGELOG.md",)
 EXCLUDED_SUFFIXES = (".sum", ".lock")
 EXCLUDED_DIRS = ("vendor", "generated")
 # Lower-case continuations after a lower-case or capitalised name that make
@@ -130,7 +128,7 @@ def product_shaped(token, name_re):
 
 def excluded(path):
     parts = path.split("/")
-    if path in OWN_FILES or parts[-1] in EXCLUDED_FILES or parts[-1].endswith(EXCLUDED_SUFFIXES):
+    if path in OWN_FILES or parts[-1].endswith(EXCLUDED_SUFFIXES):
         return True
     return any(part in EXCLUDED_DIRS for part in parts[:-1])
 

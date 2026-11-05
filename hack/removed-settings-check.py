@@ -17,8 +17,7 @@ The NVKE_CONTROLLER_* names, CONTROLLER_IMAGE, LOCAL_NVKE_CONTROLLER_IMAGE,
 `nvke_controller_image`, `--controller-api` and `controller-name` are the
 names to use.
 
-WHAT IS NOT SCANNED. Untracked files, binary files, CHANGELOG.md (generated
-from commit messages, which name the removal) and this check's own files.
+WHAT IS NOT SCANNED. Untracked files, binary files and this check's own files.
 
 ALLOWED lists a token, in one file, that is spelled like a removed name but is
 not a controller setting. Write the reason next to each entry.
@@ -33,7 +32,6 @@ import sys
 from pathlib import Path
 
 OWN_FILES = ("hack/removed-settings-check.py", "hack/test_removed_settings_check.py")
-EXCLUDED_FILES = ("CHANGELOG.md",)
 
 # The suffixes that the CWE_ and NKE_CONTROLLER_ prefixes carried.
 SUFFIXES = (
@@ -76,7 +74,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     root = Path(args.root).resolve() if args.root else Path(__file__).resolve().parent.parent
 
-    paths = [p for p in tracked_files(root) if p not in OWN_FILES and p.split("/")[-1] not in EXCLUDED_FILES]
+    paths = [p for p in tracked_files(root) if p not in OWN_FILES]
     hits = []
     for path in paths:
         full = root / path

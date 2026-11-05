@@ -7,9 +7,9 @@ is not an acceptance requirement for this source release.
 
 This is the maintainer procedure for releasing NVKE itself. The separate
 [artifact publication reference](docs/artifact-publication.md) describes the
-existing build, registry and binary-release automation. A source tag does not
-disable those workflows: review their tag triggers before pushing a tag.
-Changing this document does not change publication behavior.
+existing build and registry automation. No workflow creates a GitHub Release. A
+source tag does not disable those workflows: review their tag triggers before
+pushing a tag. Changing this document does not change publication behavior.
 
 ## Version and source identity
 
@@ -82,9 +82,7 @@ This procedure does not grant repository access or replace live branch rules.
 Before tagging, the owner must:
 
 1. Freeze the candidate commit and version. Finish release-note and dependency
-   changes before collecting final evidence. Use the existing
-   [changelog procedure](docs/artifact-publication.md#1-update-changelogmd);
-   do not hand-edit generated changelog entries.
+   changes before collecting final evidence.
 2. Check that the candidate has the required repository checks and reviews.
    Record actual check names, result links and the full tested commit. Missing,
    skipped or cancelled required checks are not passes.
@@ -142,7 +140,7 @@ the required reports are available, mark this release requirement incomplete.
 After approval, the release owner creates a signed annotated tag targeting the
 approved full commit. Verify the local tag target before pushing the exact tag
 to the canonical repository. Review
-[the existing publication triggers](docs/artifact-publication.md#2-tag-the-release)
+[the existing publication triggers](docs/artifact-publication.md#1-tag-the-release)
 first: component and beta tags can launch artifact publication. A tag must not
 be used as a supposedly source-only switch for workflows that publish binaries.
 

@@ -67,10 +67,6 @@ class RemovedSettingsCheckTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("removed-settings-check: clean", result.stdout)
 
-    def test_changelog_is_not_scanned(self):
-        result = self.run_check({"CHANGELOG.md": "- **BREAKING** CWE_HTTP_PORT and NKE_CONTROLLER_HTTP_PORT are removed\n"})
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
     def test_allowed_token_passes_only_in_its_file(self):
         line = 'CWE_API_URL="${2%/}"\n'
         allowed = self.run_check({"controller/scripts/cwe-to-platform-crs.sh": line})

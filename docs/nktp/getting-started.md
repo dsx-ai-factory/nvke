@@ -64,10 +64,8 @@ helm install nktp ./nktp/deploy/charts/nktp --namespace nktp --values my-values.
   with `kubectl describe certificate -n nktp`.
 - **`my-values.yaml`** holds your settings from the sections below. Leave it
   out to install with the defaults.
-- **Versions:** each release is an `nktp/vX.Y.Z` tag, published as the GitHub
-  release `nktp X.Y.Z` on the repository's
-  [Releases](https://github.com/dsx-ai-factory/nvke/releases) page. Pass `X.Y.Z`
-  to `--version`. [RELEASE.md](https://github.com/dsx-ai-factory/nvke/blob/main/RELEASE.md)
+- **Versions:** each release is an `nktp/vX.Y.Z` tag, published as chart
+  version `X.Y.Z`. Pass `X.Y.Z` to `--version`. [RELEASE.md](https://github.com/dsx-ai-factory/nvke/blob/main/RELEASE.md)
   describes the process.
 
 <details>

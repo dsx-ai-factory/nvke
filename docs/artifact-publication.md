@@ -34,41 +34,7 @@ patch requires an immediate out-of-band release.
 
 ## Creating a release
 
-### 1. Update CHANGELOG.md
-
-`CHANGELOG.md` is generated from commit subjects by
-[git-cliff](https://git-cliff.org), configured in `cliff.toml`. **Do not edit it
-by hand.**
-
-```bash
-# 1. Drop the pending [Unreleased] section. Without this, --prepend leaves it
-#    in place holding the same entries the new section just claimed, so the
-#    file lists everything twice and keeps a stale [Unreleased] forever.
-awk '/^## \[Unreleased\]/{s=1} /^## \[[0-9]/{s=0} !s' CHANGELOG.md > /tmp/cl && mv /tmp/cl CHANGELOG.md
-
-# 2. Prepend the new section. --prepend leaves published sections byte-identical;
-#    regenerating the whole file re-derives their dates and rewrites history.
-git-cliff --unreleased --tag v0.2.0 --prepend CHANGELOG.md
-```
-
-Run this in a **full clone**. On a shallow one git-cliff emits a near-empty
-section and exits 0, so nothing fails.
-
-```bash
-git commit -s -m "chore: update CHANGELOG.md for v0.2.0"
-```
-
-**The heading carries no `v` prefix.** `.github/workflows/release.yml` reads the
-section back by that heading and does not fail when it finds nothing — it emits
-a fallback line — so a mismatch ships a release with no notes rather than an
-error.
-
-A component tag never matches. `cliff.toml` sets `tag_pattern = "^v[0-9]"`, so
-git-cliff writes sections for bare tags only, and a `cli/v0.2.0` release falls
-back to the one-line body. Write the notes by hand afterwards if the release
-needs them.
-
-### 2. Tag the release
+### 1. Tag the release
 
 A bare tag releases the whole repository:
 
@@ -86,64 +52,61 @@ git push upstream cli/v0.2.0
 
 The prefix is the module's directory because Go requires it: the module
 `github.com/dsx-ai-factory/nvke/cli` can only be resolved by a tag named `cli/vX.Y.Z`.
-`.github/workflows/release.yml` reads the directory back off the tag and checks
-it against `go.work`, so a prefix naming no module fails the run.
 
-Some prefixes skip that workflow's GitHub Release job and cut the release
-themselves, after they have built and verified the real artifacts:
+No workflow creates a GitHub Release. A tag publishes artifacts through the
+workflows below:
 
 | Tag | Workflow | What ships |
 |---|---|---|
-| `agent/vX.Y.Z` | `agent-deb-publish.yml` (+ `agent-artifact.yml`) | `.deb`s, GitHub Release assets, GHCR binary, NVCR binary + `.deb`, S3/CloudFront `.deb` |
-| `os-image/vX.Y.Z` | `os-image-artifact.yml` | qcow2 on NVCR and S3/CloudFront; on GHCR, with `nvke-os-image-check` on the GitHub Release, only when `NVKE_GITHUB_PUBLISH` names `os-image` |
-| `nktp/vX.Y.Z` | `nktp-chart-publish.yml` | Helm chart on GHCR and the GitHub Release |
-| `cli/vX.Y.Z` | `release.yml` (+ `cli-artifact.yml`, `cli-artifact-nvcr.yml`, `cli-s3-publish.yml`) | binaries on GitHub Release, GHCR, NVCR, S3/CloudFront |
+| `agent/vX.Y.Z` | `agent-deb-publish.yml` (+ `agent-artifact.yml`) | `.deb`s to the apt intake, GHCR binary and `.deb`, NVCR binary + `.deb`, S3/CloudFront `.deb` |
+| `os-image/vX.Y.Z` | `os-image-artifact.yml` | qcow2s on NVCR; qcow2s with their SBOMs and checksums, and `nvke-os-image-check`, on S3/CloudFront; version-tagged qcow2s on GHCR only when `NVKE_GITHUB_PUBLISH` names `os-image` |
+| `nktp/vX.Y.Z` | `nktp-chart-publish.yml` | Helm chart on GHCR |
+| `cli/vX.Y.Z` | `tag-publish.yml` (+ `cli-artifact.yml`, `cli-artifact-nvcr.yml`, `cli-s3-publish.yml`) | binaries on GHCR, NVCR, S3/CloudFront |
+| `controller/vX.Y.Z` | `image-nvcr.yml`, `chart-publish.yml`, `chart-publish-nvcr.yml` | image and chart; see below |
 
-### Switching GitHub publishing off
+A bare `vX.Y.Z` tag publishes nothing; `tag-publish.yml` runs only the license
+checks for it.
 
-The Actions variable `NVKE_GITHUB_PUBLISH` lists the components whose releases
-go to GitHub: the GitHub Release record and assets, and the release-tagged
-artifacts on GHCR. Unset, it means
+### Switching GHCR publishing off
+
+The Actions variable `NVKE_GITHUB_PUBLISH` lists the components whose
+release-tagged artifacts go to GHCR. Unset, it means
 `root,controller,cli,agent,cluster-api-provider-provisioned,nktp`, so every
 component but `os-image`, whose qcow2s go to NVCR and S3 only. Set it to `none`
-to stop every GitHub publication, or list the components you want. NVCR, S3 and
+to stop every GHCR release publication, or list the components you want. NVCR, S3 and
 CloudFront are not affected, and neither is the CI hand-off on GHCR: the `sha-`
 and `edge` aliases of `agent` and `cli` and the `sha-` and `main-sha-` tagged
 qcow2s of `os-image` keep flowing, because `agent/Makefile`, the NVCR and S3
-publishers and the NICo VMs lane read them. Only the version-tagged aliases, the GitHub
-Releases and their attestations stop. The variable must be a repository or
-organization variable; an environment variable is not visible to the job
-conditions. With `os-image` off, each leg's SBOM, checksums file and the
-checker binary are published to S3 beside the disk instead.
+publishers and the NICo VMs lane read them. Only the version-tagged aliases
+stop. The variable must be a repository or organization variable; an
+environment variable is not visible to the job conditions.
 
 Set it under the repository's Settings, Actions, Variables, or with
 `gh variable set NVKE_GITHUB_PUBLISH --body 'controller,cli'`. An empty value
 counts as unset and gives the default list; only `none` means nothing. The
 names, comma-separated with no spaces:
 
-| Name | Tag | What GitHub gets when the name is listed |
+| Name | Tag | What GHCR gets when the name is listed |
 |---|---|---|
-| `root` | bare `vX.Y.Z` | the GitHub Release with the product manifest and SBOM |
-| `controller` | `controller/v*` | the GitHub Release, the `nvke-controller` image and the `charts/nvke-controller` chart on GHCR |
-| `cli` | `cli/v*` | the GitHub Release with the binaries, `cli` binaries on GHCR |
-| `agent` | `agent/v*` | the GitHub Release with the `.deb`s, `agent` and `agent-deb` on GHCR |
-| `cluster-api-provider-provisioned` | `cluster-api-provider-provisioned/v*` | the provider image on GHCR |
-| `nktp` | `nktp/v*` | the GitHub Release and the chart on GHCR |
-| `os-image` | `os-image/v*` | the GitHub Release and the version-tagged qcow2s on GHCR |
+| `root` | bare `vX.Y.Z` | nothing; accepted so existing values keep working |
+| `controller` | `controller/v*` | the `nvke-controller` image and the `charts/nvke-controller` chart |
+| `cli` | `cli/v*` | the `cli` binaries |
+| `agent` | `agent/v*` | `agent` and `agent-deb` |
+| `cluster-api-provider-provisioned` | `cluster-api-provider-provisioned/v*` | the provider image |
+| `nktp` | `nktp/v*` | the chart |
+| `os-image` | `os-image/v*` | the version-tagged qcow2s |
 
 An `os-image/` tag that fails Packer or the boot-smoke test never publishes the
-OCI artifact and never promotes the GitHub Release out of draft.
+OCI artifact.
 
 An `nktp/` tag releases the NVKE telemetry pipeline (NKTP) Helm chart. The chart version is the tag's:
 `nktp/vX.Y.Z` packages the chart as `X.Y.Z` and `nktp/vX.Y.Z-rc.1` as
 `X.Y.Z-rc.1`, the way the NVKE controller chart takes its version from
 `controller/v*`. `version:` in `nktp/deploy/charts/nktp/Chart.yaml` is a
 placeholder, so nothing needs editing before tagging. The workflow pushes
-`oci://ghcr.io/dsx-ai-factory/nvke/charts/nktp:<version>` and writes the release
-body itself, because git-cliff has no section for a component tag.
+`oci://ghcr.io/dsx-ai-factory/nvke/charts/nktp:<version>`.
 
-A `controller/vX.Y.Z` tag goes through `release.yml` like any other component and
-additionally publishes the controller image and Helm chart:
+A `controller/vX.Y.Z` tag publishes the controller image and Helm chart:
 
 | Workflow | What it publishes |
 |---|---|
@@ -207,74 +170,28 @@ the same chart artifact name used for the NVKE NVCR chart, and pushed to
 string without the leading `v`, while `appVersion` keeps the leading `v` so the
 rendered Deployment pulls the same image tag promoted by `image-nvcr.yml`.
 
-Push tags to `upstream`. The release workflow has no repository guard, so a tag
-pushed to a fork cuts a real release there.
+Push tags to `upstream`. A tag pushed to a fork still starts `tag-publish.yml`
+there, which runs the license checks (and, for a `cli/` tag, builds nvkectl),
+but publishes nothing: every publisher guards its publish jobs on this
+repository's ID.
 
-### 3. Wait for the release workflow
-
-The tag push creates the GitHub release. `.github/workflows/release.yml` builds
-the component's artifacts, attaches them with a `checksums.txt`, and takes the
-body from `CHANGELOG.md`. Nothing is created by hand.
-
-### 4. Verify artifacts
+### 2. Verify artifacts
 
 After the tag push, confirm that any CI release pipelines complete
 successfully (node OS-image bake, chart publish, etc.). For `os-image/v*`, that is
 the **OS Image Artifact** check: Packer, boot-smoke, then the NVCR and S3
-publishers (GHCR and the GitHub Release only when `NVKE_GITHUB_PUBLISH` names
-`os-image`). For `controller/v*`, confirm the **Image
+publishers (GHCR only when `NVKE_GITHUB_PUBLISH` names `os-image`). For `controller/v*`, confirm the **Image
 NVCR** check, and, when `NVKE_GITHUB_PUBLISH` names `controller`, the **Chart
 Publish** check and the promoted image at
 `ghcr.io/dsx-ai-factory/nvke/nvke-controller:<version>`. For `nktp/v*`, confirm the
 **NKTP Chart Publish** check.
 
-## Verifying a release
+## Verifying a published image
 
-Every release attaches a `checksums.txt` and a `checksums.txt.sigstore.json`
-beside it. The checksums file binds every artifact by SHA-256; the bundle is a
+Container images carry a
 [build-provenance attestation](https://docs.github.com/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds)
-over that file. Verifying the attestation and then running `sha256sum -c`
-covers everything the release ships, including the `os-image` qcow2s that
-are distributed as OCI artifacts rather than attached. An `os-image` release
-exists only when `NVKE_GITHUB_PUBLISH` names `os-image`; otherwise each leg's
-`checksums-<arch>[-ubuntu24.04]-<variant>.txt` sits on S3 beside its disk,
-without an attestation.
-
-A checksums file on its own proves a download arrived intact. It does not prove
-who produced it: whoever can replace the archive can replace the checksums file
-next to it. The attestation is what makes the claim attributable — and it says
-more than "someone vouched for these bytes", because it records the workflow,
-the ref and the commit that built them.
-
-### Release assets
-
-```bash
-gh attestation verify checksums.txt --repo dsx-ai-factory/nvke
-sha256sum -c checksums.txt
-```
-
-Before disconnecting, obtain the trusted roots on an online machine:
-
-```bash
-gh attestation trusted-root > trusted_root.jsonl
-```
-
-Transfer that file, the attached bundle, `checksums.txt`, the artifacts to
-verify, and the GitHub CLI into the offline environment. Refresh the trusted
-roots when importing new signed material; an offline copy cannot report later
-key revocations. Follow [GitHub's offline verification guide](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/verify-attestations-offline)
-for repository identity checks when using an attached bundle.
-
-Verify offline using the local bundle and trusted roots:
-
-```bash
-gh attestation verify checksums.txt \
-  --bundle checksums.txt.sigstore.json \
-  --custom-trusted-root trusted_root.jsonl \
-  --repo dsx-ai-factory/nvke
-```
-
-### Published images
+over their index digest. It records the workflow, the ref and the commit that
+built the image.
 
 ```bash
 gh attestation verify \
@@ -293,14 +210,12 @@ The format is **SPDX 2.3, as JSON**,
 generated by [syft](https://github.com/anchore/syft) at the version pinned in
 `make/tool-versions.mk` — `make print-SYFT_VERSION`. One document describes one
 artifact, and every document is generated from the built artifact rather than
-from this source tree, so it records what the release actually contains and not
-what a build of this commit ought to select.
+from this source tree, so it records what was actually built and not what a
+build of this commit ought to select.
 
 | Artifact | Document | Subject granularity | Where |
 |---|---|---|---|
-| `nvkectl-<os>-<arch>` | `nvkectl-<os>-<arch>.spdx.json` | Go modules, from the binary's embedded build info | GitHub Release asset |
-| `nvke-agent_<version>_<arch>.deb` | `nvke-agent_<version>_<arch>.spdx.json` | Go modules, from the binary inside the package | GitHub Release asset |
-| `nvke-node-{fde,non-fde}-ubuntu-<rel>-<arch>.qcow2` | `nvke-node-…-<arch>.spdx.json` | dpkg packages, from the image's own package database | S3, beside the disk; a GitHub Release asset too when `NVKE_GITHUB_PUBLISH` names `os-image` |
+| `nvke-node-{fde,non-fde}-ubuntu-<rel>-<arch>.qcow2` | `nvke-node-…-<arch>.spdx.json` | dpkg packages, from the image's own package database | S3, beside the disk |
 | `nvke-controller` image | `controller-sbom-linux-<arch>.spdx.json` | image contents, scanned from the pushed image | workflow artifact on the **Image NVCR** run |
 | `cluster-api-provider-provisioned` image | `cluster-api-provider-provisioned-sbom-linux-<arch>.spdx.json` | image contents, scanned from the pushed image | workflow artifact on the **Image Provisioned NVCR** run |
 
@@ -310,37 +225,17 @@ that image's SBOM is the row above. An SBOM of the chart archive would list the
 archive.
 
 The granularity differs by artifact because the useful question differs. For a
-Go binary it is "which module versions are linked into this", so the document
-is a module list read back out of the binary. For a node image it is "does this
-image carry <component>", and everything that reaches the image — archive
-packages and our own `.deb`s alike — is a dpkg entry, so the document is the
-image's package set. The agent's own module graph is not repeated in the image
-SBOM; it is the SBOM attached to the agent `.deb`.
+node image it is "does this image carry <component>", and everything that
+reaches the image — archive packages and our own `.deb`s alike — is a dpkg
+entry, so the document is the image's package set. For a container image it is
+the image's contents.
+
+`nvkectl` and the agent `.deb`s have no published SBOM.
 
 ### Retrieving one
 
-The binary, `.deb` and node-image SBOMs are release assets, so `gh release
-download` fetches them by name:
-
-```bash
-gh release download cli/v0.2.0 --repo dsx-ai-factory/nvke \
-  --pattern 'nvkectl-linux-amd64.spdx.json'
-
-gh release download agent/v0.2.0 --repo dsx-ai-factory/nvke \
-  --pattern '*.spdx.json'
-
-gh release download os-image/v0.2.0 --repo dsx-ai-factory/nvke \
-  --pattern 'nvke-node-fde-ubuntu-26.04.1-amd64.spdx.json'
-```
-
-Each is named in that release's `checksums.txt`, and `checksums.txt` carries a
-build-provenance attestation, so the same two commands under "Verifying a
-release" above establish that an SBOM is the one this repository published:
-
-```bash
-gh attestation verify checksums.txt --repo dsx-ai-factory/nvke
-sha256sum -c checksums.txt --ignore-missing
-```
+A node-image SBOM sits on S3 beside its disk, with the same name as the disk
+and `.spdx.json` in place of `.qcow2`.
 
 Answering "which of our artifacts contains `<component>`" is then a query over
 the downloaded documents, for example with `jq`:
@@ -351,10 +246,9 @@ jq -r --arg c openssl \
   *.spdx.json
 ```
 
-The two container images are scanned by their publish workflows rather than by
-a release job, so their documents are build artifacts on the run, not release
-assets — `gh run download <run-id> --name controller-sbom-linux-amd64.spdx.json`.
-They are covered by neither `checksums.txt` nor its attestation.
+The two container images are scanned by their publish workflows, so their
+documents are build artifacts on the run —
+`gh run download <run-id> --name controller-sbom-linux-amd64.spdx.json`.
 
 Verify images **by digest, not by tag**. A tag is a mutable pointer; the
 attestation is over the digest, so a tag that moves no longer names the thing
@@ -369,8 +263,6 @@ the artifact was built by some GitHub workflow somewhere. Use
 
 | Artifact | Attested subject | Where the attestation lives |
 |---|---|---|
-| Release assets (`nvkectl`, agent `.deb`s, `nvke-os-image-check`, the NKTP chart archive) | `checksums.txt`, which names each by digest | GitHub, plus the attached bundle |
-| `os-image` qcow2 OCI artifacts | the same `checksums.txt` | GitHub, plus the attached bundle, when `NVKE_GITHUB_PUBLISH` names `os-image`; otherwise unattested |
 | `nvke-controller`, `cluster-api-provider-provisioned` on GHCR | the multi-arch index digest | attached to the image in GHCR as an OCI referrer |
 | the same two images on NVCR | the same index digest | GitHub's attestation store only |
 
@@ -402,8 +294,7 @@ the run has not finished vouching for. Nothing in either path rebuilds the
 artifact it promotes: `crane copy` and `crane push` move the index the
 `manifest` job created, and the digest is asserted equal on the far side.
 
-This is the image equivalent of the asset re-hash `release.yml` runs before it
-publishes a release, and it fails the same way: closed.
+It fails closed.
 
 ### Why GitHub attestations rather than cosign signatures
 
@@ -450,12 +341,9 @@ all — it shares the index digest, so the command above covers it, but only
 because the digests match. Closing this properly needs either referrers support
 from NGC or a second mechanism for those registries.
 
-The other artifacts NVKE publishes to GHCR — the Helm charts, the `agent` and
-`cli` OCI artifacts, `agent-deb`, and the `os-image-*` repositories — are not
-attested individually yet. The `os-image` disks and the NKTP chart are covered
-transitively through `checksums.txt`, which names the chart archive whose
-digest is the chart layer on GHCR; the rest are follow-up work along the pattern in
-`image-nvcr.yml`.
+The other artifacts NVKE publishes — the Helm charts, the `agent` and `cli`
+OCI artifacts, `agent-deb`, the `os-image` disks and their S3 copies — are not
+attested. That is follow-up work along the pattern in `image-nvcr.yml`.
 
 ## Hotfix releases
 
@@ -463,7 +351,7 @@ For security patches that cannot wait for the next regular release:
 
 1. Branch from the tag that needs patching: `git checkout -b fix/v0.1.1 v0.1.0`
 2. Cherry-pick or apply the fix.
-3. Follow steps 1–4 above with the patch version incremented.
+3. Follow steps 1–2 above with the patch version incremented.
 4. Backport to `main` if the fix applies there too.
 
 ## Pre-releases
@@ -487,14 +375,7 @@ does not apply to it. The signed annotated tag
 [RELEASE.md](../RELEASE.md#publish-and-verify) requires is for the approved
 release, which the release owner creates.
 
-**The dot in `-rc.N` is load-bearing.** `.github/workflows/release.yml` marks
-the release as a pre-release by looking for `-rc.`, so `v0.2.0-rc1` without it
-would publish as a full release and take the repository's "Latest release"
-badge. The workflow rejects that spelling rather than releasing it. The dot also
-gives the right ordering: `rc.2` sorts before `rc.10`, while `rc2` sorts after
-`rc10`, because SemVer compares an all-digit identifier as a number and anything
-else as text.
-
-GitHub does not infer any of this from the tag name. Releases created through
-the API are full releases unless the caller says otherwise, and the workflow is
-the only thing that says otherwise.
+**The dot in `-rc.N` is load-bearing.** The publishing workflows reject
+`v0.2.0-rc1`. The dot also gives the right ordering: `rc.2` sorts before
+`rc.10`, while `rc2` sorts after `rc10`, because SemVer compares an all-digit
+identifier as a number and anything else as text.

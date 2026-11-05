@@ -57,7 +57,7 @@ For planned renewal of site-management cluster certificates, use the
 
 ## Next Steps
 
-- [Installation](installation.md) — download and install `nvkectl`
+- [Installation](installation.md) — build and install `nvkectl`
 - [Configuration](configuration.md) — write your site site spec file
 - [Pre-Provisioned Nodes](pre-provisioned-nodes.md) — prepare nodes and run the bootstrap
 - [Custom Base OS](custom-base-os.md) — cloud-init based node preparation

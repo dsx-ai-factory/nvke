@@ -1,10 +1,8 @@
 ## Summary
 
 <!-- What changed? Keep it short (1-2 sentences). -->
-<!-- Note: CHANGELOG.md is generated from commit subjects by git-cliff.
-     This repository squash-merges, so the pull request TITLE becomes the
-     single commit subject on main and therefore the changelog entry.
-     Write it for a reader. -->
+<!-- Note: this repository squash-merges, so the pull request TITLE becomes
+     the single commit subject on main. Write it for a reader. -->
 
 ## Motivation / Context
 
