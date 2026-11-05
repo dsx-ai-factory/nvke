@@ -22,11 +22,33 @@
           }
         },
         "configMaps": {
-          "type": "object",
-          "additionalProperties": {
+          "type": "array",
+          "items": {
             "type": "object",
-            "additionalProperties": {
-              "type": "string"
+            "required": [
+              "name",
+              "namespace",
+              "data"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 253,
+                "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+              },
+              "namespace": {
+                "type": "string",
+                "maxLength": 63,
+                "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "minLength": 1
+              },
+              "data": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
             }
           }
         },

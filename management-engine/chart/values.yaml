@@ -19,8 +19,8 @@ state:
   # State-only installations can bind existing ServiceAccounts or Kubernetes Users.
   rbac:
     subjects: []
-  # ConfigMap name -> data. Template contents are literal, not Helm expressions.
-  configMaps: {}
+  # Bootstrap ConfigMaps: name, tenant namespace, and literal data (not Helm expressions).
+  configMaps: []
 
 controller:
   enabled: true

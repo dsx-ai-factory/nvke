@@ -65,9 +65,21 @@ func TestChartModes(t *testing.T) {
 		name, values              string
 		controller, state, remote bool
 	}{
-		{"combined", `{"manager":{"infrastructureTemplateConfigMap":"infra"}}`, true, true, false},
-		{"state only", `{"controller":{"enabled":false}}`, false, true, false},
-		{"legacy manager disabled", `{"manager":{"enabled":false}}`, false, true, false},
+		{"combined", `{
+  "manager": {
+    "infrastructureTemplateConfigMap": "infra"
+  }
+}`, true, true, false},
+		{"state only", `{
+  "controller": {
+    "enabled": false
+  }
+}`, false, true, false},
+		{"legacy manager disabled", `{
+  "manager": {
+    "enabled": false
+  }
+}`, false, true, false},
 		{"existing local state", `{
   "state": {
     "enabled": false
@@ -185,11 +197,15 @@ func TestChartStateConfiguration(t *testing.T) {
   },
   "state": {
     "namespace": "state",
-    "configMaps": {
-      "infra": {
-        "clusterTmpl": "{{ .BootstrapFilesJSON }}"
+    "configMaps": [
+      {
+        "name": "infra",
+        "namespace": "tenant-a",
+        "data": {
+          "clusterTmpl": "{{ .BootstrapFilesJSON }}"
+        }
       }
-    },
+    ],
     "rbac": {
       "subjects": [
         {
@@ -222,7 +238,7 @@ func TestChartStateConfiguration(t *testing.T) {
 		}
 	}
 	maps := objectsOfKind(objects, "ConfigMap")
-	if len(maps) != 1 || maps[0].GetNamespace() != "state" {
+	if len(maps) != 1 || maps[0].GetNamespace() != "tenant-a" {
 		t.Fatalf("wrong ConfigMaps: %v", maps)
 	}
 	value, _, _ := unstructured.NestedString(maps[0].Object, "data", "clusterTmpl")
@@ -274,10 +290,26 @@ func TestChartValidation(t *testing.T) {
     }
   }
 }`, "kubeconfigSecret.name"},
-		{`{"manager":{"stateAccess":{"mode":"invalid"}}}`, "mode"},
-		{`{"state":{"enabled":"false"}}`, "boolean"},
+		{`{
+  "manager": {
+    "stateAccess": {
+      "mode": "invalid"
+    }
+  }
+}`, "mode"},
+		{`{
+  "state": {
+    "enabled": "false"
+  }
+}`, "boolean"},
 		{`{}`, "infra-template-configmap"},
-		{`{"manager":{"image":{"repository":""}}}`, "manager.image.repository"},
+		{`{
+  "manager": {
+    "image": {
+      "repository": ""
+    }
+  }
+}`, "manager.image.repository"},
 		{`{
   "manager": {
     "infrastructureTemplateConfigMap": "infra",

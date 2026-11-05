@@ -29,11 +29,15 @@ helm template management-engine chart --namespace management-engine-system \
 ```
 
 The sample delivers a development infrastructure template ConfigMap through
-`state.configMaps`. Replace its contents with the templates for your provider.
+`state.configMaps`, a list of objects with `name`, `namespace` and `data`.
+Create the tenant namespace (`tenant-a` in the sample) before installation, and
+replace the contents with the templates for your provider.
 Go template expressions inside those strings remain literal for the manager to
 interpret. `manager.infrastructureTemplateConfigMap` names that ConfigMap; an
-existing `--infra-template-configmap=...` argument is also accepted. When
-reusing state, the referenced ConfigMap must already exist in the state namespace.
+existing `--infra-template-configmap=...` argument is also accepted. The manager
+looks up that name in each NVKECluster's tenant namespace. Supply one entry per
+tenant namespace, reusing the same ConfigMap name; when reusing state, publish
+those ConfigMaps on the datastore cluster before creating tenant clusters.
 
 Set `manager.image.repository` and `manager.image.tag` to your published image,
 or use a digest reference as the repository. Configure the existing provisioning

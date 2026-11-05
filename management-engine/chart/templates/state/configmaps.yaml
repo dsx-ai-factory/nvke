@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 {{- if .Values.state.enabled }}
-{{- range $name, $data := .Values.state.configMaps }}
+{{- range .Values.state.configMaps }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ $name | quote }}
-  namespace: {{ default $.Release.Namespace $.Values.state.namespace }}
+  name: {{ .name | quote }}
+  namespace: {{ .namespace | quote }}
 data:
-  {{- toYaml $data | nindent 2 }}
+  {{- toYaml .data | nindent 2 }}
 {{- end }}
 {{- end }}
