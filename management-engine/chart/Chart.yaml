@@ -6,12 +6,9 @@ name: management-engine
 description: A Helm chart to distribute management-engine
 type: application
 
-version: 0.1.2
+version: 0.2.0
 appVersion: "dev"
 
 keywords:
   - kubernetes
   - operator
-
-annotations:
-  kubebuilder.io/generated-by: kubebuilder

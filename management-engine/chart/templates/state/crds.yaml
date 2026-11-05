@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+{{- if and .Values.state.enabled .Values.state.crds.install }}
+{{- range $document := splitList "\n---\n" (.Files.Get "files/crds.yaml") }}
+{{- $crd := fromYaml $document }}
+{{- if $crd.kind }}
+{{- $_ := set $crd.metadata "annotations" (merge (dict "helm.sh/resource-policy" "keep") (default dict $crd.metadata.annotations)) }}
+---
+{{ toYaml $crd }}
+{{- end }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+{{- if .Values.state.enabled }}
+{{- $subjects := .Values.state.rbac.subjects }}
+{{- if and (empty $subjects) .Values.controller.enabled .Values.manager.enabled (eq .Values.manager.stateAccess.mode "inCluster") }}
+{{- $subjects = list (dict "kind" "ServiceAccount" "name" (include "management-engine.serviceAccountName" .) "namespace" .Release.Namespace) }}
+{{- end }}
+{{- $roles := list (dict "file" "manager-role" "kind" "ClusterRole") (dict "file" "leader-election-role" "kind" "Role") }}
+{{- if and .Values.metrics.enabled .Values.metrics.secure }}
+{{- $roles = append $roles (dict "file" "metrics-auth-role" "kind" "ClusterRole") }}
+{{- end }}
+{{- range $role := $roles }}
+{{- $name := include "management-engine.resourceName" (dict "suffix" $role.file "context" $) }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: {{ $role.kind }}
+metadata:
+  name: {{ $name }}
+  {{- if eq $role.kind "Role" }}
+  namespace: {{ default $.Release.Namespace $.Values.state.namespace }}
+  {{- end }}
+rules:
+  {{- (fromYaml ($.Files.Get (printf "files/%s.yaml" $role.file))).rules | toYaml | nindent 2 }}
+{{- if $subjects }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: {{ $role.kind }}Binding
+metadata:
+  name: {{ $name }}
+  {{- if eq $role.kind "Role" }}
+  namespace: {{ default $.Release.Namespace $.Values.state.namespace }}
+  {{- end }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: {{ $role.kind }}
+  name: {{ $name }}
+subjects:
+  {{- toYaml $subjects | nindent 2 }}
+{{- end }}
+{{- end }}
+{{- end }}

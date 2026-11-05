@@ -27,10 +27,13 @@ git diff --exit-code -- apis/v1 config/crd/bases config/rbac/role.yaml chart # c
 make test-controller # controller integration tests (envtest)
 make -C .. chart-crds # after changing MachineImage, ClusterRelease, or NodePoolRelease
 make -C .. chart-crds-check # verify the NVKE controller chart's generated CRDs
-make chart-check # generate, lint, and render the management-engine chart
+make chart-check # refresh generated assets and test all Helm installation modes
 ```
 
 For a drift check, start with a clean working tree before regeneration.
+Helm templates and values are maintained directly; `make manifests` refreshes
+only their CRD and RBAC assets from the canonical generated manifests.
+See [Helm installation](docs/helm-installation.md) for chart values and topology examples.
 `make test` includes `test-controller`; the separate command runs that suite alone.
 
 ### Tilt provider

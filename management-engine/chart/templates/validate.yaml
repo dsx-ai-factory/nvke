@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+{{- if not (or .Values.state.enabled (and .Values.controller.enabled .Values.manager.enabled)) -}}
+{{- fail "enable state.enabled or controller.enabled" -}}
+{{- end -}}
+{{- if and .Values.controller.enabled .Values.manager.enabled -}}
+{{- $_ := required "manager.image.repository is required" .Values.manager.image.repository -}}
+{{- $mode := .Values.manager.stateAccess.mode -}}
+{{- if not (has $mode (list "inCluster" "remote")) -}}
+{{- fail "manager.stateAccess.mode must be inCluster or remote" -}}
+{{- end -}}
+{{- if eq $mode "remote" -}}
+{{- if .Values.state.enabled -}}{{- fail "remote state access requires state.enabled=false" -}}{{- end -}}
+{{- $explicitNamespace := .Values.manager.stateNamespace -}}
+{{- range .Values.manager.env -}}
+{{- if eq .name "STATE_NAMESPACE" -}}{{- $explicitNamespace = .value -}}{{- end -}}
+{{- end -}}
+{{- $_ := required "remote access requires manager.stateNamespace or env STATE_NAMESPACE" $explicitNamespace -}}
+{{- $_ := required "remote access requires manager.stateAccess.kubeconfigSecret.name" .Values.manager.stateAccess.kubeconfigSecret.name -}}
+{{- $_ := required "remote access requires manager.stateAccess.kubeconfigSecret.key" .Values.manager.stateAccess.kubeconfigSecret.key -}}
+{{- end -}}
+{{- $hasTemplate := not (empty .Values.manager.infrastructureTemplateConfigMap) -}}
+{{- range .Values.manager.args -}}
+{{- if hasPrefix "--infra-template-configmap=" . -}}{{- $hasTemplate = ne . "--infra-template-configmap=" -}}{{- end -}}
+{{- if or (hasPrefix "--kubeconfig" .) (hasPrefix "--context" .) -}}
+{{- fail "configure datastore access with manager.stateAccess, not manager.args" -}}
+{{- end -}}
+{{- end -}}
+{{- if not $hasTemplate -}}{{- fail "manager.infrastructureTemplateConfigMap or --infra-template-configmap is required" -}}{{- end -}}
+{{- if and .Values.state.enabled (ne (include "management-engine.stateNamespace" .) (default .Release.Namespace .Values.state.namespace)) -}}
+{{- fail "combined installation requires manager and state namespaces to agree" -}}
+{{- end -}}
+{{- if hasKey (default dict .Values.manager.envOverrides) "STATE_NAMESPACE" -}}{{- fail "set manager.stateNamespace instead of envOverrides.STATE_NAMESPACE" -}}{{- end -}}
+{{- end -}}

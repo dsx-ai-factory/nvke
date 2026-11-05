@@ -9,8 +9,23 @@
 ##
 # fullnameOverride: ""
 
+# Both components share one chart. Disable state for an existing datastore.
+state:
+  enabled: true
+  namespace: ""
+  crds:
+    install: true
+  # Empty uses the local manager ServiceAccount in a combined installation.
+  # State-only installations can bind existing ServiceAccounts or Kubernetes Users.
+  rbac:
+    subjects: []
+  # ConfigMap name -> data. Template contents are literal, not Helm expressions.
+  configMaps: {}
+
+controller:
+  enabled: true
+
 ## Configure the controller manager deployment
-##
 manager:
   ## Set to false to skip manager installation
   ##
@@ -30,12 +45,17 @@ manager:
   args:
     - --leader-elect
     - --leader-election-namespace=$(STATE_NAMESPACE)
-    - --kubeconfig=/etc/management-api/kubeconfig
 
-  # Required: the election namespace in the datastore cluster, not the Pod namespace.
-  env:
-    - name: STATE_NAMESPACE
-      value: management-state-system
+  # Existing state namespace; defaults to state.namespace or the release namespace.
+  stateNamespace: ""
+  stateAccess:
+    mode: inCluster
+    kubeconfigSecret:
+      name: ""
+      key: kubeconfig
+  # Required unless --infra-template-configmap is supplied through args.
+  infrastructureTemplateConfigMap: ""
+  env: []
 
   extraVolumeMounts: []
   extraVolumes: []
