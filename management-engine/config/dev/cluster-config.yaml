@@ -38,6 +38,27 @@ spec:
         - echo success > /run/cluster-api/bootstrap-success.complete
 ---
 apiVersion: internal.nvke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: docker-1.36.4
+  annotations:
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.36.4"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+spec:
+  profile: docker
+  tag: "1.36.4"
+  machineImageRef:
+    name: management-engine-docker-node
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+    infra:
+      bootstrapFiles: []
+      preKubeadmCommands:
+        - mkdir -p /run/cluster-api
+        - echo success > /run/cluster-api/bootstrap-success.complete
+---
+apiVersion: internal.nvke.nvidia.com/v1
 kind: ClusterReleaseChannel
 metadata:
   name: stable
