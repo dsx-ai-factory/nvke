@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"maps"
 	"net/netip"
+	"slices"
 	"strings"
 	"text/template"
 	"time"
@@ -72,7 +73,7 @@ type NVKEClusterReconciler struct {
 
 // +kubebuilder:rbac:groups=internal.nvke.nvidia.com,resources=nvkeclusters,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=internal.nvke.nvidia.com,resources=nvkeclusters/status,verbs=update;patch
-// +kubebuilder:rbac:groups=internal.nvke.nvidia.com,resources=controlplaneclasses;clusterreleases;clusterreleasechannels;machineimages,verbs=get;list;watch
+// +kubebuilder:rbac:groups=internal.nvke.nvidia.com,resources=controlplaneclasses;clusterreleases;clusterreleasechannels;machineimages;nodepoolreleases,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
 func (r *NVKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, retErr error) {
@@ -257,7 +258,7 @@ func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *i
 	for i := range cluster.Spec.NodePools {
 		pool := &cluster.Spec.NodePools[i]
 		desiredPools[pool.Name] = true
-		if err := r.reconcileNodePool(ctx, cluster, pool, nodePoolTemplate, observedCluster, variables); err != nil {
+		if err := r.reconcileNodePool(ctx, cluster, pool, nodePoolTemplate, observedCluster); err != nil {
 			poolErr = errors.Join(poolErr, fmt.Errorf("reconcile node pool %q: %w", pool.Name, err))
 		}
 	}
@@ -395,6 +396,82 @@ func clusterReleaseKubernetesVersion(release *internalv1.ClusterRelease) (*versi
 	return parsed, nil
 }
 
+// splitNodeProfile splits a pool's <profile>:<tag> node profile into its two halves.
+func splitNodeProfile(ref internalv1.NodeProfileReference) (profile, tag string, err error) {
+	profile, tag, found := strings.Cut(string(ref), ":")
+	if !found {
+		return "", "", fmt.Errorf("node profile %q must be <profile>:<tag>", ref)
+	}
+	if profile == "" || tag == "" {
+		return "", "", fmt.Errorf("node profile %q must have a non-empty profile and tag", ref)
+	}
+	return profile, tag, nil
+}
+
+// resolveNodePoolRelease selects the worker release and image a pool renders from.
+// A pinned release is fetched by name and may be deprecated. Without a pin, the pool's
+// node profile must match exactly one release that is not deprecated.
+func (r *NVKEClusterReconciler) resolveNodePoolRelease(ctx context.Context, pool *internalv1.NodePool, pinned *internalv1.ReleaseReference) (*internalv1.NodePoolRelease, *internalv1.MachineImage, error) {
+	var release *internalv1.NodePoolRelease
+	var err error
+	if pinned != nil {
+		release, err = r.getPinnedNodePoolRelease(ctx, pinned)
+	} else {
+		release, err = r.matchNodePoolRelease(ctx, pool)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	var image internalv1.MachineImage
+	imageName := string(release.Spec.MachineImageRef.Name)
+	if err := r.Get(ctx, client.ObjectKey{Name: imageName}, &image); err != nil {
+		return nil, nil, fmt.Errorf("get MachineImage %q for NodePoolRelease %q: %w", imageName, release.Name, err)
+	}
+	return release, &image, nil
+}
+
+func (r *NVKEClusterReconciler) getPinnedNodePoolRelease(ctx context.Context, pinned *internalv1.ReleaseReference) (*internalv1.NodePoolRelease, error) {
+	var release internalv1.NodePoolRelease
+	if err := r.Get(ctx, client.ObjectKey{Name: string(pinned.Name)}, &release); err != nil {
+		return nil, fmt.Errorf("get pinned NodePoolRelease %q: %w", pinned.Name, err)
+	}
+	return &release, nil
+}
+
+func (r *NVKEClusterReconciler) matchNodePoolRelease(ctx context.Context, pool *internalv1.NodePool) (*internalv1.NodePoolRelease, error) {
+	profile, tag, err := splitNodeProfile(pool.NodeProfile)
+	if err != nil {
+		return nil, fmt.Errorf("resolve node profile: %w", err)
+	}
+	var list internalv1.NodePoolReleaseList
+	if err := r.List(ctx, &list); err != nil {
+		return nil, fmt.Errorf("list NodePoolReleases for node profile %q: %w", pool.NodeProfile, err)
+	}
+	var matches []*internalv1.NodePoolRelease
+	for i := range list.Items {
+		if spec := list.Items[i].Spec; string(spec.Profile) == profile && spec.Tag == tag {
+			matches = append(matches, &list.Items[i])
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Errorf("no NodePoolRelease matches node profile %q", pool.NodeProfile)
+	case 1:
+	default:
+		names := make([]string, 0, len(matches))
+		for _, match := range matches {
+			names = append(names, match.Name)
+		}
+		// List order is not stable, and the message must not depend on it.
+		slices.Sort(names)
+		return nil, fmt.Errorf("node profile %q is ambiguous: NodePoolReleases %s all match", pool.NodeProfile, strings.Join(names, ", "))
+	}
+	if matches[0].Spec.Lifecycle.Deprecated {
+		return nil, fmt.Errorf("NodePoolRelease %q for node profile %q is deprecated", matches[0].Name, pool.NodeProfile)
+	}
+	return matches[0], nil
+}
+
 func renderInfraTemplate(name, body string, variables map[string]any, target any) error {
 	tmpl, err := template.New(name).Option("missingkey=error").Parse(body)
 	if err != nil {
@@ -410,6 +487,8 @@ func renderInfraTemplate(name, body string, variables map[string]any, target any
 	return nil
 }
 
+// infraTemplateVariables starts from the variables of the release the template renders for: the cluster
+// release for the cluster and control plane, the pool's worker release for a pool.
 func infraTemplateVariables(cluster *internalv1.NVKECluster, pool *internalv1.NodePool, releaseVariables map[string]any) map[string]any {
 	variables := maps.Clone(releaseVariables)
 	if cluster.Spec.Network != nil && cluster.Spec.Network.VPCID != "" {
@@ -427,7 +506,7 @@ func infraTemplateVariables(cluster *internalv1.NVKECluster, pool *internalv1.No
 	return variables
 }
 
-func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, observedCluster *api.Cluster, variables map[string]any) error {
+func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, observedCluster *api.Cluster) error {
 	var status *internalv1.NodePoolStatus
 	for i := range cluster.Status.NodePools {
 		if cluster.Status.NodePools[i].Name == pool.Name {
@@ -444,17 +523,41 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 
 	observedPool, err := r.NVKEController.FindNodePool(ctx, observedCluster.Name, string(pool.Name))
 	if errors.Is(err, nvkecontroller.ErrNotFound) {
+		release, image, err := r.resolveNodePoolRelease(ctx, pool, status.ResolvedRelease)
+		if err != nil {
+			conditions.Set(target, metav1.Condition{
+				Type:    internalv1.NodePoolReleaseResolvedCondition,
+				Status:  metav1.ConditionFalse,
+				Reason:  internalv1.ReconcileFailedReason,
+				Message: err.Error(),
+			})
+			if summaryErr := setNodePoolConditions(target); summaryErr != nil {
+				err = errors.Join(err, summaryErr)
+			}
+			return err
+		}
+		workerVariables, err := releaseTemplateVariables(release.Spec.MachineInit, image)
+		if err != nil {
+			return err
+		}
 		request, err := resolveNodePoolRequest(observedCluster.ID, pool)
 		if err != nil {
 			return fmt.Errorf("resolve node pool %q request: %w", pool.Name, err)
 		}
 		var infra api.InfraNodePoolProvider
-		if err := renderInfraTemplate(nodePoolTemplateKey, nodePoolTemplate, infraTemplateVariables(cluster, pool, variables), &infra); err != nil {
+		if err := renderInfraTemplate(nodePoolTemplateKey, nodePoolTemplate, infraTemplateVariables(cluster, pool, workerVariables), &infra); err != nil {
 			return err
 		}
 		if len(infra.MachineTemplate) == 0 {
 			return fmt.Errorf("%s must contain a machineTemplate manifest", nodePoolTemplateKey)
 		}
+		// Pin the release before creating the pool so the deferred status patch records it on every return.
+		status.ResolvedRelease = &internalv1.ReleaseReference{Name: internalv1.ResourceName(release.Name), Version: release.Spec.Tag}
+		conditions.Set(target, metav1.Condition{
+			Type:   internalv1.NodePoolReleaseResolvedCondition,
+			Status: metav1.ConditionTrue,
+			Reason: internalv1.ReconcileSucceededReason,
+		})
 		request.Infra = &infra
 		observedPool, err := r.NVKEController.CreateNodePool(ctx, request)
 		if err != nil {
@@ -832,7 +935,10 @@ func setNodePoolConditions(pool conditions.Setter) error {
 			internalv1.NVKEControllerProvisionedCondition,
 			internalv1.NVKEControllerProvisioningCondition,
 			internalv1.NVKEControllerDeletingCondition,
+			internalv1.NodePoolReleaseResolvedCondition,
 		},
+		// Pools created before worker release resolution have no such condition and are not backfilled.
+		conditions.IgnoreTypesIfMissing{internalv1.NodePoolReleaseResolvedCondition},
 		conditions.NegativePolarityConditionTypes(nvkeControllerNegativeConditionTypes),
 		conditions.CustomMergeStrategy{
 			MergeStrategy: conditions.DefaultMergeStrategy(
