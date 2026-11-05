@@ -182,6 +182,11 @@ on:
         options:
           - ghcr
           - nvcr
+      perf-lane:
+        description: Run the perf lane on the NVKE Scale Forge site
+        type: boolean
+        required: false
+        default: false
   # The only way to run this lane against a change before that change is on
   # main, and for now the only way to run it at all: workflow_dispatch reads
   # its definition from the default branch, so this file is not dispatchable
@@ -457,6 +462,8 @@ jobs:
   qualify-run:
     name: ${{ matrix.stream }}${{ needs.plan.outputs.dry-run == 'true' && ' (dry run)' || '' }}
     needs: plan
+    # A perf-lane dispatch runs the perf lane alone.
+    if: ${{ inputs.perf-lane != true }}
     strategy:
       # Never cancel a sibling. A cancelled lane dies before its teardown and
       # leaks a bare-metal instance, so one stream failing must not take the
@@ -995,6 +1002,7 @@ jobs:
           IN_RESOLUTION: ${{ inputs.resolution }}
           VAR_RESOLUTION: ${{ vars.QUALIFY_E2E_RESOLUTION }}
           IN_KEEP_SITE: ${{ inputs.keep-site }}
+          IN_PERF_LANE: ${{ inputs.perf-lane }}
           VAR_KEEP_SITE: ${{ vars.QUALIFY_E2E_KEEP_SITE }}
           IN_IMAGE_REGISTRY: ${{ inputs.image-registry }}
           VAR_IMAGE_REGISTRY: ${{ vars.QUALIFY_E2E_IMAGE_REGISTRY }}
@@ -1090,6 +1098,14 @@ jobs:
             "site-2 amd64 cpu instance type|FORGE_SITE_2_INSTANCE_TYPE_CPU_AMD64_ID||FORGE_SITE_2_INSTANCE_TYPE_CPU_AMD64_ID|FORGE_SITE_2_INSTANCE_TYPE_CPU_AMD64_ID"
             "site-2 arm64 cpu instance type|FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID||FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID|FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID"
             "site-2 gb200 instance type|FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID||FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID|FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID"
+            "perf lane|IN_PERF_LANE|IN_PERF_LANE||"
+            "perf Forge org|FORGE_PERF_ORG_ID||FORGE_PERF_ORG_ID|FORGE_PERF_ORG_ID"
+            "perf Forge site|FORGE_PERF_SITE_ID||FORGE_PERF_SITE_ID|FORGE_PERF_SITE_ID"
+            "perf Forge VPC|FORGE_PERF_VPC_ID||FORGE_PERF_VPC_ID|FORGE_PERF_VPC_ID"
+            "perf Forge subnet|FORGE_PERF_SUBNET_ID||FORGE_PERF_SUBNET_ID|FORGE_PERF_SUBNET_ID"
+            "perf Forge SSH key group|FORGE_PERF_SSH_KEY_GROUP_ID||FORGE_PERF_SSH_KEY_GROUP_ID|FORGE_PERF_SSH_KEY_GROUP_ID"
+            "perf CPU instance type|FORGE_PERF_INSTANCE_TYPE_CPU_ID||FORGE_PERF_INSTANCE_TYPE_CPU_ID|FORGE_PERF_INSTANCE_TYPE_CPU_ID"
+            "perf jump host|FORGE_PERF_JUMP_HOST|||"
           )
 
           # A row nobody remembers to add is the whole failure mode: the
@@ -1378,7 +1394,8 @@ jobs:
     if: >-
       !cancelled() &&
       needs.plan.result == 'success' &&
-      needs.plan.outputs.dry-run != 'true'
+      needs.plan.outputs.dry-run != 'true' &&
+      inputs.perf-lane != true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # The run's conclusion is the qualification's verdict, and a card that did
@@ -1465,3 +1482,346 @@ jobs:
           done < <(jq -r '[.combinations[].streams[].name] | unique[]' plan.json)
 
           go run ./release/cmd/qualify summary results --plan plan.json "${reports[@]}" >> "${GITHUB_STEP_SUMMARY}"
+
+  # Fails a perf-lane dispatch the perf lane cannot run, so the run does not end green.
+  perf-lane-gate:
+    name: perf lane gate
+    if: ${{ inputs.perf-lane == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check the perf lane can run
+        shell: bash
+        env:
+          ENABLED: ${{ vars.NVKE_PERF_LANE }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          NVKE_VERSION: ${{ inputs.nvke-version }}
+        run: |
+          set -Eeuo pipefail
+          fail=0
+          if [ "${ENABLED}" != true ]; then
+            echo "::error::the repository variable NVKE_PERF_LANE is not 'true', so the perf lane is off"
+            fail=1
+          fi
+          # forge-nightly's deployment policy admits these tags and nothing else.
+          case "${REF}" in
+            refs/tags/v*-beta.*)
+              # A dispatch takes its version from nvke-version, never from the tag it runs on.
+              if [ "${NVKE_VERSION}" != "${REF_NAME}" ]; then
+                echo "::error::nvke-version is '${NVKE_VERSION}'; set it to ${REF_NAME}, the tag this run checks out"
+                fail=1
+              fi
+              ;;
+            *)
+              echo "::error::running from ${REF}; the forge-nightly environment admits only v*-beta.* tags." \
+                   "Dispatch on a beta tag with nvke-version set to that tag."
+              fail=1
+              ;;
+          esac
+          exit "${fail}"
+
+  # Site lane on the forge-perf environment, with a three-worker tenant on the CPU type.
+  perf-lane:
+    name: perf lane
+    needs: [plan, perf-lane-gate]
+    runs-on: arc-amd64-cpu16
+    # One perf run at a time on the az41 site.
+    concurrency:
+      group: ${{ github.workflow }} perf-lane ${{ inputs.dry-run == true && 'dry-run' || 'run' }}
+      cancel-in-progress: false
+    # Holds the Forge secrets with no reviewer and admits only v*-beta.* tags.
+    environment: forge-nightly
+    # Covers the 90-minute artifact wait, the 285-minute go test backstop and the build before it.
+    timeout-minutes: 400
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    env:
+      SITE_STAGE: full
+      DRY_RUN: ${{ needs.plan.outputs.dry-run }}
+      QUALIFY_E2E_SITE_CONTROLLER_VERSION: ${{ vars.QUALIFY_E2E_SITE_CONTROLLER_VERSION }}
+      SITE_DEPLOY_PATH_REF: ${{ inputs.deploy-path-ref || vars.QUALIFY_E2E_DEPLOY_PATH_REF }}
+      NVKE_CONTROLLER_NAMESPACE: ${{ inputs.controller-name || vars.NVKE_CONTROLLER_NAMESPACE }}
+      NVKE_CONTROLLER_SERVICE: ${{ inputs.controller-name || vars.NVKE_CONTROLLER_SERVICE }}
+      NODE_USER: ${{ vars.QUALIFY_E2E_NODE_USER }}
+      KEEP_SITE: false
+      KEEP_TENANT: false
+      SITE_IMAGE_REGISTRY: ${{ inputs.image-registry || (github.event_name != 'push' && vars.QUALIFY_E2E_IMAGE_REGISTRY) || 'nvcr' }}
+      QUALIFY_E2E_NGC_ORG: ${{ vars.QUALIFY_E2E_NGC_ORG }}
+      SITE_INPUTS: ${{ github.workspace }}/.site-inputs
+      FORGE_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
+      FORGE_TELEPORT_JOIN_TOKEN: ${{ vars.FORGE_TELEPORT_JOIN_TOKEN }}
+      FORGE_PERF_ORG_ID: ${{ vars.FORGE_PERF_ORG_ID }}
+      FORGE_PERF_SITE_ID: ${{ vars.FORGE_PERF_SITE_ID }}
+      FORGE_PERF_VPC_ID: ${{ vars.FORGE_PERF_VPC_ID }}
+      FORGE_PERF_SUBNET_ID: ${{ vars.FORGE_PERF_SUBNET_ID }}
+      FORGE_PERF_SSH_KEY_GROUP_ID: ${{ vars.FORGE_PERF_SSH_KEY_GROUP_ID }}
+      FORGE_PERF_INSTANCE_TYPE_CPU_ID: ${{ vars.FORGE_PERF_INSTANCE_TYPE_CPU_ID }}
+      # A secret, so the log masks it.
+      FORGE_PERF_JUMP_HOST: ${{ secrets.FORGE_PERF_JUMP_HOST }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Record the run's start time
+        id: start-time
+        shell: bash
+        run: echo "started-at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_OUTPUT}"
+
+      - name: Report disk space
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          df -h "${GITHUB_WORKSPACE}" /tmp
+          docker system df || true
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      - name: Download the plan
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: qualify-plan-${{ github.run_id }}
+
+      # Versions come from the plan's first amd64 Forge stream.
+      - name: Pick the amd64 Forge stream
+        shell: bash
+        env:
+          MATRIX: ${{ needs.plan.outputs.matrix }}
+          SCOPE: ${{ needs.plan.outputs.scope }}
+        run: |
+          set -Eeuo pipefail
+          entry="$(jq -c 'first(.include[] | select(.provider == "forge" and .arch == "amd64")) // empty' <<<"${MATRIX}")"
+          if [ -z "${entry}" ]; then
+            echo "::error::scope ${SCOPE} has no amd64 Forge stream for the perf lane to take its versions from"
+            exit 1
+          fi
+          jq -r '"STREAM=\(.stream)", "COMBINATION=\(.combination)"' <<<"${entry}" | tee -a "${GITHUB_ENV}"
+
+      - name: Read the stream from the plan
+        shell: bash
+        run: release/hack/qualify-e2e.sh stream-env plan.json "${COMBINATION}" "${STREAM}"
+
+      # forge-perf declares CPU machines only.
+      - name: Clear the GPU
+        shell: bash
+        run: echo "GPU=" >> "${GITHUB_ENV}"
+
+      - name: Check every artifact the plan names
+        shell: bash
+        env:
+          # Both registries hold private repositories, so neither answers
+          # anonymously. These are the same credentials the lanes log in with.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
+          # A commit-resolved plan may have been made by the tag push that
+          # started the publishers, so give them time. A tag-resolved one asks
+          # once.
+          #
+          # A dry run asks once either way. The wait is there to keep a run from
+          # failing on an artifact that is still publishing, and a dry run takes
+          # no machine to protect, so waiting out a bake would only make the
+          # cheap way of exercising this the slow one.
+          WAIT: >-
+            ${{ (needs.plan.outputs.dry-run != 'true'
+                 && needs.plan.outputs.commit != '' && '90m') || '0' }}
+        run: |
+          set -euo pipefail
+          go run ./release/cmd/qualify verify --plan plan.json --wait "${WAIT}"
+
+      - name: Resolve the stream
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
+          E2E_ENVIRONMENT: forge-perf
+        run: release/hack/qualify-e2e.sh resolve
+
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read the pinned ORAS version
+        id: oras
+        if: env.SITE_CLI_REF != ''
+        shell: bash
+        run: echo "version=$(make --no-print-directory print-ORAS_VERSION)" >> "${GITHUB_OUTPUT}"
+
+      - name: Log in to NVCR
+        if: env.SITE_IMAGE_REGISTRY == 'nvcr'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: nvcr.io
+          # `$oauthtoken` is NGC's literal username, not a variable reference.
+          username: $oauthtoken
+          password: ${{ secrets.NGC_API_KEY }}
+
+      - name: Set up ORAS
+        if: env.SITE_CLI_REF != ''
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
+        with:
+          version: ${{ steps.oras.outputs.version }}
+
+      - name: Resolve the controller image name
+        shell: bash
+        run: release/hack/qualify-e2e.sh controller-image
+
+      - name: Build the site inputs
+        shell: bash
+        env:
+          # Only the published-nvkectl path reads it: the repository is
+          # private, so release assets come through the API with a token.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: release/hack/qualify-e2e.sh site-inputs
+
+      - name: Install tsh and tbot
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          version="$(make --no-print-directory print-TELEPORT_VERSION)"
+          # A committed digest, not the CDN's own .sha256 -- same host, so the
+          # same compromise boundary. make/tool-versions.mk owns both, next to
+          # each other, so a bump cannot move one without the other.
+          expected="$(make --no-print-directory print-TELEPORT_SHA256_AMD64)"
+          tar="teleport-v${version}-linux-amd64-bin.tar.gz"
+          tmp="$(mktemp -d)"
+
+          curl -fsSL --connect-timeout 20 --max-time 300 --retry 8 --retry-all-errors --retry-max-time 240 \
+            -o "${tmp}/${tar}" "https://cdn.teleport.dev/${tar}"
+          if [ -z "${expected}" ]; then
+            echo "::error::no checksum entry for ${tar}"
+            exit 1
+          fi
+          actual="$(sha256sum "${tmp}/${tar}" | awk '{print $1}')"
+          if [ "${actual}" != "${expected}" ]; then
+            echo "::error::checksum mismatch for ${tar}"
+            exit 1
+          fi
+
+          tar -C "${tmp}" -xzf "${tmp}/${tar}" teleport/tsh teleport/tbot
+          mkdir -p "${HOME}/.local/bin"
+          install -m 0755 "${tmp}/teleport/tsh" "${tmp}/teleport/tbot" "${HOME}/.local/bin/"
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+          "${HOME}/.local/bin/tsh" version
+
+      - name: Start the Teleport identity daemon
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        env:
+          TBOT_DIR: ${{ runner.temp }}/tbot
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "${TBOT_DIR}"
+          cat > "${RUNNER_TEMP}/tbot.yaml" <<EOF
+          version: v2
+          proxy_server: ${FORGE_TELEPORT_PROXY}
+          onboarding:
+            join_method: github
+            token: ${FORGE_TELEPORT_JOIN_TOKEN}
+          storage:
+            type: memory
+          credential_lifetime:
+            ttl: 1h
+            renewal_interval: 20m
+          services:
+            - type: identity
+              destination:
+                type: directory
+                path: ${TBOT_DIR}
+          EOF
+
+          tbot start -c "${RUNNER_TEMP}/tbot.yaml" >"${RUNNER_TEMP}/tbot.log" 2>&1 &
+          echo $! > "${RUNNER_TEMP}/tbot.pid"
+
+          for _ in $(seq 1 30); do
+            [ -s "${TBOT_DIR}/identity" ] && break
+            sleep 2
+          done
+          if [ ! -s "${TBOT_DIR}/identity" ]; then
+            echo "::error::tbot wrote no identity in 60s; the run cannot reach the jump host"
+            sed 's/^/  /' "${RUNNER_TEMP}/tbot.log"
+            exit 1
+          fi
+
+          {
+            echo "TELEPORT_PROXY=${FORGE_TELEPORT_PROXY}"
+            echo "TELEPORT_IDENTITY_FILE=${TBOT_DIR}/identity"
+          } >> "${GITHUB_ENV}"
+          tsh --proxy "${FORGE_TELEPORT_PROXY}" --identity "${TBOT_DIR}/identity" status
+
+      - name: Write the e2e config
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        run: release/hack/qualify-e2e.sh config
+
+      - name: Run the e2e suite${{ env.DRY_RUN == 'true' && ' (dry run)' || '' }}
+        shell: bash
+        env:
+          FORGE_API_KEY: ${{ secrets.FORGE_PERF_API_KEY }}
+          E2E_TENANT_WORKERS: "3"
+          GO_TEST_TIMEOUT: 285m
+          GINKGO_TIMEOUT: 215m
+        run: release/hack/qualify-e2e.sh run
+
+      - name: Withhold credentials from the run log
+        if: always()
+        shell: bash
+        run: release/hack/qualify-e2e.sh withhold
+
+      - name: Record the qualification result
+        if: always() && env.DRY_RUN != 'true' && env.STREAM != ''
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          go run ./release/cmd/qualify result \
+            --plan plan.json \
+            --report controller/test/e2e/qualify-e2e.report.json \
+            --combination "${COMBINATION}" \
+            --stream "${STREAM}" \
+            --started-at "${{ steps.start-time.outputs.started-at }}" \
+            --output qualify-result.json
+
+      - name: Upload the run log
+        if: always() && env.STREAM != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: perf-lane-${{ env.STREAM }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            controller/test/e2e/qualify-e2e.log
+            controller/test/e2e/qualify-e2e.junit.xml
+            controller/test/e2e/nvkectl-diagnostics.tar.gz
+            controller/test/e2e/tenant-diagnostics.json
+            controller/test/e2e/site-cluster-state.txt
+            controller/test/e2e/site-bundle*
+            qualify-result.json
+            ${{ runner.temp }}/tbot.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Stop the Teleport identity daemon
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [ -f "${RUNNER_TEMP}/tbot.pid" ] || exit 0
+          kill "$(cat "${RUNNER_TEMP}/tbot.pid")" 2>/dev/null || true
+
+      - name: Remove the Teleport identity
+        if: always()
+        shell: bash
+        run: rm -rf -- "${RUNNER_TEMP}/tbot"

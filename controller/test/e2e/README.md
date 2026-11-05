@@ -1092,6 +1092,15 @@ If the Docker host already runs, set `LOCAL_NVKE_E2E_REUSE_DOCKER_HOST=true`
 to reuse it without changing the host configuration. The test repairs only its
 private fixture artifact. It does not change a released bundle.
 
+### Perf lane
+
+`perf-lane` runs the site lane on the NVKE Scale Forge site and reads these from the `forge-nightly` environment:
+
+- secrets `FORGE_PERF_API_KEY` and `FORGE_PERF_JUMP_HOST`;
+- variables `FORGE_PERF_ORG_ID`, `FORGE_PERF_SITE_ID`, `FORGE_PERF_VPC_ID`, `FORGE_PERF_SUBNET_ID`, `FORGE_PERF_SSH_KEY_GROUP_ID` and `FORGE_PERF_INSTANCE_TYPE_CPU_ID`.
+
+Repository variable `NVKE_PERF_LANE` turns the lane on.
+
 ## OIDC acceptance
 
 From `controller/`, run `make test-oidc-reference` to check NVKE's rendered

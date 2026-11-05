@@ -34,6 +34,10 @@ cd "${root}"
 STEP_ENV="${STEP_ENV:-${GITHUB_ENV:-/dev/stdout}}"
 # The config the suite reads, relative to the suite's package or absolute.
 E2E_CONFIG="${E2E_CONFIG:-e2e-config.yaml}"
+E2E_ENVIRONMENT="${E2E_ENVIRONMENT:-}"
+E2E_TENANT_WORKERS="${E2E_TENANT_WORKERS:-}"
+GO_TEST_TIMEOUT="${GO_TEST_TIMEOUT:-220m}"
+GINKGO_TIMEOUT="${GINKGO_TIMEOUT:-150m}"
 
 say() { echo "$*" >&2; }
 fail() {
@@ -360,6 +364,7 @@ resolve_capabilities() {
     "") fail "the stream names no provider capability" ;;
     *) fail "provider is ${PROVIDER}, which this workflow has no environment for" ;;
   esac
+  [ -z "${E2E_ENVIRONMENT}" ] || environment="${E2E_ENVIRONMENT}"
   emit SITE_ENVIRONMENT "${environment}"
   emit SITE_TENANT_EXCLUDE "${tenant_exclude}"
   say "environment: ${environment}, tenant entries excluded: ${tenant_exclude}"
@@ -608,23 +613,23 @@ log_to() {
 # Three nested timeouts, shortest first, because only the shortest one
 # tears the node down:
 #
-#   -ginkgo.timeout 150m  fails the suite and runs its cleanup, which
-#                         is what releases the Forge instance.
-#   -timeout        220m  go's own backstop. It panics rather than
-#                         unwinding, so deferred teardown does NOT run
-#                         and the instance leaks -- reaching this means
-#                         Ginkgo itself is wedged.
-#   timeout-minutes       the job's, in qualify-e2e.yml: the runner is
-#                         killed. Same leak, no log.
+#   -ginkgo.timeout  fails the suite and runs its cleanup, which
+#                    is what releases the Forge instance.
+#   -timeout         go's own backstop. It panics rather than
+#                    unwinding, so deferred teardown does NOT run
+#                    and the instance leaks -- reaching this means
+#                    Ginkgo itself is wedged.
+#   timeout-minutes  the job's, in qualify-e2e.yml: the runner is
+#                    killed. Same leak, no log.
 #
-# The 70 minutes between the first two is cleanup's, and it is sized
-# against cleanup rather than picked. A cleanup node entered after the
-# suite is already interrupted is granted its whole NodeTimeout again,
-# so the worst case is every one of them end to end: the tenant
-# AfterAll's 15 minutes and the site AfterAll's 45, which is 60, plus
-# ten for the unwind itself. Shorten this gap below that sum and the
-# backstop starts firing during a teardown that was going to succeed --
-# which is the one failure that leaks the instance.
+# -ginkgo.timeout stays 70 minutes under -timeout. That gap
+# is cleanup's, and it is sized against cleanup rather than picked. A
+# cleanup node entered after the suite is already interrupted is granted
+# its whole NodeTimeout again, so the worst case is every one of them end
+# to end: the tenant AfterAll's 15 minutes and the site AfterAll's 45,
+# which is 60, plus ten for the unwind itself. Shorten this gap below that
+# sum and the backstop starts firing during a teardown that was going to
+# succeed -- which is the one failure that leaks the instance.
 #
 # There is no fourth clock. The bot certificate expires in an hour, but
 # tbot rewrites it every twenty minutes for as long as the job runs --
@@ -645,6 +650,8 @@ step_run() {
   if [ "${KEEP_TENANT:-}" = "true" ]; then
     warn "lifecycle.skipDelete is set; every tenant and the site node survive this run and must be deleted by hand, and tenant deletion is not tested"
   fi
+  local workers=()
+  [ -z "${E2E_TENANT_WORKERS}" ] || workers=(-e2e.tenant-workers="${E2E_TENANT_WORKERS}")
   # -v so a green run keeps its output. Without it `go test` buffers a
   # passing package's stdout and throws it away, which is what run
   # 36033032946 did: the first successful bootstrap on hardware, and
@@ -681,15 +688,16 @@ step_run() {
       echo "  -e2e.site-stage=${SITE_STAGE}"
       echo "  -e2e.versions=${versions}"
       echo "  -e2e.capabilities=${CAPABILITIES}"
+      [ -z "${workers[*]:-}" ] || echo "  ${workers[*]}"
       echo "  keep: ${keep[*]:-no}"
       echo "  keep tenants: ${KEEP_TENANT}"
     } | tee qualify-e2e.log
     return
   fi
   [ -z "${JUMP_HOST_PASSWORD:-}" ] || fail "JUMP_HOST_PASSWORD is set, which takes the suite off the Teleport relay; unset it"
-  go test -v -timeout 220m . -args \
+  go test -v -timeout "${GO_TEST_TIMEOUT}" . -args \
     -ginkgo.label-filter="site-controller && !${SITE_TENANT_EXCLUDE}" \
-    -ginkgo.timeout=150m \
+    -ginkgo.timeout="${GINKGO_TIMEOUT}" \
     -ginkgo.v \
     -ginkgo.fail-on-empty \
     -ginkgo.no-color \
@@ -700,7 +708,7 @@ step_run() {
     -e2e.site-stage="${SITE_STAGE}" \
     -e2e.versions="${versions}" \
     -e2e.capabilities="${CAPABILITIES}" \
-    ${keep[@]+"${keep[@]}"} 2>&1 | log_to qualify-e2e.log
+    ${keep[@]+"${keep[@]}"} ${workers[@]+"${workers[@]}"} 2>&1 | log_to qualify-e2e.log
 }
 
 # The suite names the jump host in its own errors ("not reachable

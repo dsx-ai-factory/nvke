@@ -302,6 +302,19 @@ func TestResolveMapsTheDSXProvider(t *testing.T) {
 	}
 }
 
+func TestResolveTakesTheEnvironmentOverride(t *testing.T) {
+	p := plan(t)
+	for _, sh := range shells(t) {
+		l := newSteps(t, sh, map[string]string{"E2E_ENVIRONMENT": "forge-perf"})
+		l.step(true, "stream-env", p, "", "forge-l40s-amd64")
+		l.step(true, "resolve")
+		expect(t, l.values(), map[string]string{
+			"SITE_ENVIRONMENT":    "forge-perf",
+			"SITE_TENANT_EXCLUDE": "nico-dsx",
+		})
+	}
+}
+
 func TestResolveRefuses(t *testing.T) {
 	p := plan(t)
 	for _, tc := range []struct {
@@ -391,6 +404,59 @@ func TestConfigKeepsWhatItIsAskedTo(t *testing.T) {
 				t.Errorf("%s keep-site=%s keep-tenant=%s: lifecycle = %q, want %q", sh, tc.site, tc.tenant, got, tc.want)
 			}
 		}
+	}
+}
+
+// Runs from a copy because the run step clears and writes the suite's outputs beside it.
+func TestRunPassesTenantWorkersOnlyWhenSet(t *testing.T) {
+	b, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	copied := filepath.Join(root, "release", "hack", "qualify-e2e.sh")
+	for _, dir := range []string{filepath.Dir(copied), filepath.Join(root, "controller", "test", "e2e")} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(copied, b, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, workers string
+		want          bool
+	}{
+		{"three workers", "3", true},
+		{"unset", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, sh := range shells(t) {
+				cmd := exec.CommandContext(t.Context(), sh, copied, "run")
+				cmd.Env = []string{
+					"PATH=" + os.Getenv("PATH"), "HOME=" + os.Getenv("HOME"),
+					"STEP_ENV=" + filepath.Join(t.TempDir(), "steps.env"),
+					"DRY_RUN=true", "KEEP_SITE=false", "KEEP_TENANT=false",
+					"SITE_TENANT_EXCLUDE=nico-dsx", "SITE_STAGE=full", "SITE_ENVIRONMENT=forge-perf",
+					"SITE_NVKE_CONTROLLER_VERSION=v0.3.0", "CLI_VERSION=v0.3.0", "CAPI_PROVISIONED_VERSION=v0.3.0",
+					"OS_IMAGE_VERSIONS=os-image-amd64=https://cdn.example/image-amd64.qcow2", "CAPABILITIES=arch=amd64",
+					"NVKE_CONTROLLER_NAMESPACE=", "NVKE_CONTROLLER_SERVICE=",
+				}
+				if tc.workers != "" {
+					cmd.Env = append(cmd.Env, "E2E_TENANT_WORKERS="+tc.workers)
+				}
+				out, err := cmd.CombinedOutput()
+				if err != nil {
+					t.Fatalf("%s run: %v\n%s", sh, err, out)
+				}
+				if got := strings.Contains(string(out), "-e2e.tenant-workers"); got != tc.want {
+					t.Errorf("%s run: tenant-workers in the dry run = %t, want %t\n%s", sh, got, tc.want, out)
+				}
+				if tc.want && !strings.Contains(string(out), "  -e2e.tenant-workers=3\n") {
+					t.Errorf("%s run: output = %q, want the line -e2e.tenant-workers=3", sh, out)
+				}
+			}
+		})
 	}
 }
 
