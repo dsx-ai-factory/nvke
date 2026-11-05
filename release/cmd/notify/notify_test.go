@@ -51,11 +51,11 @@ func TestTriggerDryRun(t *testing.T) {
 	t.Setenv("GITHUB_ACTIONS", "")
 	t.Setenv("GITHUB_TOKEN", "ghs_must-not-print")
 	out, err := run(t, "trigger", "qualification:stream-failed", "--dry-run", "--config", shipped,
-		"--data", "stream=nke-gb200", "--data", "stage=bootstrap")
+		"--data", "stream=nvke-gb200", "--data", "stage=bootstrap")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"C0CF37FNXV1", "Stream failed", "nke-gb200", "bootstrap"} {
+	for _, want := range []string{"C0CF37FNXV1", "Stream failed", "nvke-gb200", "bootstrap"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
