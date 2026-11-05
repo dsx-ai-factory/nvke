@@ -11,6 +11,9 @@
 # from the nico-postgresql-auth Secret. nico-api reads the same password from
 # the nico.forge-pg-cluster.credentials Secret. The command writes both from
 # one value.
+#
+# The generated overlay supplies global.imageRegistry and
+# global.security.allowInsecureImages when the stack config names a mirror.
 
 # The chart names its Service after the fullname. Pinning it keeps the host
 # nico-postgresql.forge-system.svc.cluster.local stable. values/nico.yaml

@@ -6,6 +6,16 @@
 # The tpmDirect node attestor stays on. A kind node has no TPM, but the seed's
 # own workloads attest with k8sPSAT, and the TPM allowlist is read only for
 # nodes the controller provisions.
+spire-agent:
+  telemetry:
+    prometheus:
+      podMonitor:
+        enabled: false
+spire-server:
+  telemetry:
+    prometheus:
+      podMonitor:
+        enabled: false
 spiffe-oidc-discovery-provider:
   # One node. A second replica only sits Pending.
   replicaCount: 1

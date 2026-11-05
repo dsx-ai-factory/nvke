@@ -10,6 +10,9 @@
 #
 # No password is in this file. Both datastores read the nvke-database Secret
 # that the command creates in the release namespace.
+#
+# The generated overlay supplies the server, admintools and web image
+# repositories under the mirror when the stack config names one.
 
 # Pinned so the Service names do not follow the release name.
 fullnameOverride: temporal

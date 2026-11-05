@@ -8,6 +8,9 @@
 # and the chart reads the admin password from it. Temporal reads the same key
 # of the same Secret. The controller reads a connection string from it that
 # the command builds with the same password.
+#
+# The generated overlay supplies global.imageRegistry and
+# global.security.allowInsecureImages when the stack config names a mirror.
 
 # The chart names its Service after the fullname. Pinning it keeps the host
 # nvke-postgresql.postgres.svc.cluster.local stable whatever the release is

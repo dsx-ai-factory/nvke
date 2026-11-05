@@ -18,14 +18,14 @@ can run them by hand with `helm` and `kubectl`.
 
 | Path | What it is | Passed to |
 |---|---|---|
-| `values/nktp.yaml` | The telemetry pipeline | the `nktp` chart |
+| `values/nktp.yaml` | The telemetry pipeline, site only | the `nktp` chart |
 | `values/postgresql.yaml` | PostgreSQL for the controller and Temporal | the Bitnami `postgresql` chart |
 | `values/temporal.yaml` | Temporal | the `temporal` chart |
 | `values/spire.yaml` | SPIRE, the OIDC discovery provider | the SPIFFE hardened `spire` chart |
 | `values/controller.yaml` | The NVKE controller | the `nvke-controller` chart |
 | `values/nico-prereqs.yaml` | NICo's database, seed only | the Bitnami `postgresql` chart |
 | `values/nico.yaml` | NICo, seed only | the `nico` umbrella chart |
-| `values/kind/<values file>.yaml` | Smaller sizing for the seed, one file per values file that needs it | the same chart, after its values file |
+| `values/kind/<values file>.yaml` | What the seed changes: sizing, monitors and tracing; one file per values file that needs it | the same chart, after its values file |
 | `manifests/*.yaml` | Glue the charts do not create | `kubectl apply --server-side` |
 | `manifests/nico/*.yaml` | Glue for NICo, seed only | `kubectl apply --server-side` |
 | `manifests/*.yaml.tmpl` | Glue that needs an input value | rendered, then `kubectl apply --server-side` |
@@ -38,16 +38,17 @@ The install order and the seed/site membership live in Go, not here. There
 is no order file in this directory. A values file says what a chart gets. Go
 says when, and whether a seed or a site gets it.
 
-Every chart listed by the artifact file is installed as a Helm release. The
-artifact file pins the chart. The values file here is passed to
+Every chart in the release table that the target selects is installed as a
+Helm release. The artifact file pins the chart. The values file here is passed to
 `helm upgrade --install` with `--values`.
 
-The seed is a kind cluster that runs NICo. It gets the same stack as a site,
-NKTP included, so the monitors, the OIDC provider and the NetworkPolicy stay
-on there. The kind layer changes sizing only. It is applied on top for the
-seed cluster only: `values/kind/<name>.yaml` is passed as a second `--values`
-after `values/<name>.yaml`. The file is named after the values file, not the
-chart. The Bitnami `postgresql` chart has two, `kind/postgresql.yaml` and
+The seed is a kind cluster. It runs NICo when the artifact file has the
+`nico` output. It gets the same stack as a site, without NKTP; the OIDC
+provider and the NetworkPolicy stay on. The kind layer changes sizing and
+turns the monitors and tracing off, since their CRDs and their receiver come
+with NKTP. The kind layer applies to the seed only: `values/kind/<name>.yaml`
+is passed as a second `--values` after `values/<name>.yaml`. The file is
+named after the values file, not the chart. The Bitnami `postgresql` chart has two, `kind/postgresql.yaml` and
 `kind/nico-prereqs.yaml`. Helm merges maps key by key, so a kind file
 restates only what changes.
 
@@ -83,8 +84,8 @@ own layout and goes straight to that chart.
 
 - Values files are pure Helm values. No Go templating, no placeholders that a
   render step fills in.
-- Input-derived values go into a generated overlay at render time. The site
-  spec and the stack config supply them. The overlay is passed as a later
+- Input-derived values go into a generated overlay. The site spec, the stack
+  config and the artifact file supply them. The overlay is passed as a later
   `--values`, so it wins. Each values file lists in its header what the
   overlay supplies.
 - Glue manifests are plain Kubernetes manifests. The few that need an input
@@ -97,9 +98,9 @@ own layout and goes straight to that chart.
 
 | File | Input |
 |---|---|
-| `manifests/nktp-cluster.yaml.tmpl` | `.ClusterName`, the site's name from the site spec |
+| `manifests/nktp-cluster.yaml.tmpl` | `.ClusterName`, the site's name from the site spec. Site only. |
 | `manifests/capnico.yaml.tmpl` | `.CAPNICoImage`, the `capnico-controller` reference from the artifact file. The rest of the file is CAPNICo's released `infrastructure-components.yaml`, generated from `deploy/nico/capnico/capnico.yaml` by `make -C cli capnico-manifest`; do not edit it here. |
-| `manifests/nvke-api-clients.yaml.tmpl` | `.ClientNetworks`, the CIDRs from the site spec that may reach the API: the host that runs `nvkectl` and the tenant node network. The controller chart's NetworkPolicy admits pods only, so without this policy nothing outside the cluster reaches the API. |
+| `manifests/nvke-api-clients.yaml.tmpl` | `.ClientNetworks`, the CIDRs from the stack config that may reach the API: the host that runs `nvkectl` and the tenant node network. The controller chart's NetworkPolicy admits pods only, so without this policy nothing outside the cluster reaches the API. |
 
 Every other file under `manifests/` is plain YAML.
 
