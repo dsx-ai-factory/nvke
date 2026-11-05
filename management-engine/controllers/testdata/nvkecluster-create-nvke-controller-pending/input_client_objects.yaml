@@ -52,6 +52,32 @@ spec:
         - "mkdir -p /run/cluster-api"
         - "echo success > /run/cluster-api/bootstrap-success.complete"
 ---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: worker-test-release
+  annotations:
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.36.1"
+spec:
+  profile: example
+  tag: "1.36.1"
+  machineImageRef:
+    name: test-image
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+    infra:
+      bootstrapFiles:
+        - path: /etc/nvke-bootstrap-example.conf
+          owner: root:root
+          permissions: "0644"
+          content: |
+            message="quoted value"
+            literal={{ leave_this_untouched }}
+      preKubeadmCommands:
+        - "mkdir -p /run/cluster-api"
+        - "echo success > /run/cluster-api/bootstrap-success.complete"
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
