@@ -254,10 +254,6 @@ path:agent/pkg/agentupgrade/updater_test.go
 # The package qualification builds a legacy agent fixture with its old version line.
 path:os-image/packages/nvke-agent/test/install.sh
 
-# The NGC organisation these two workflows publish to is named NKE.
-path:.github/workflows/cli-artifact-nvcr.yml
-path:.github/workflows/agent-artifact-nvcr.yml
-
 # The nico-sim seed tenant, whose display name the simulator's tests look up.
 token:^Forge-Tenant-NKE$
 

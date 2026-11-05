@@ -9,10 +9,9 @@ name: OS Image Artifact
 # os-image/v* tag, a manual dispatch, a main push that touches os-image/ or
 # the 12-hourly schedule, pushes all eight qcow2s to GHCR as OCI artifacts
 # under sha-<commit> tags, or main-sha-<commit> when the run is on main (main
-# pushes and the schedule stop there; NVCR and S3 stay tag/dispatch only and
-# read the alias their own run pushed), and on a real tag, when
-# NVKE_GITHUB_PUBLISH names os-image (it does not by default), adds the version
-# tags on GHCR.
+# pushes and the schedule stop there; S3 stays tag/dispatch only and reads the
+# alias its own run pushed). The version tags on GHCR and the NVCR copy are
+# artifact-os-image.yml, which bakes on its own triggers.
 #
 # FDE security note: its build-time LUKS_PASSPHRASE defaults to a shared,
 # documented placeholder ("changeit", see
@@ -53,13 +52,12 @@ name: OS Image Artifact
 # A bare vX.Y.Z-beta.N tag only triggers the run. It bakes that commit's
 # non-FDE images only -- Ubuntu 26.04 and 24.04, amd64 and arm64 -- and versions
 # it by the os-image/v* describe, like any other build of it: GHCR gets
-# sha-<commit> (and the describe version when NVKE_GITHUB_PUBLISH names
-# os-image), NVCR and the prod S3 path get the describe version. The beta tag
+# sha-<commit> and the prod S3 path gets the describe version. The beta tag
 # name is not published.
 #
 # Distinct from image.yml, which compiles controller Dockerfiles and pushes
-# nothing. Distinct from image-nvcr.yml, which publishes the controller
-# container.
+# nothing. Distinct from artifact-nvke-controller.yml, which publishes the
+# controller container.
 on:
   push:
     tags:
@@ -165,8 +163,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # The one place the version is resolved. The bake, and the NVCR copy and S3
-      # publish of a tagged build, all take it, so they cannot disagree. A beta
+      # The one place the version is resolved. The bake and the S3 publish of
+      # a tagged build both take it, so they cannot disagree. A beta
       # tag matches no os-image/v* tag, so it resolves by describe like a branch.
       - name: Resolve the version
         id: version
@@ -420,21 +418,15 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ needs.matrix.outputs.version }}
-          # NVKE_GITHUB_PUBLISH names the components whose releases go to GHCR;
-          # see docs/artifact-publication.md. Unset means every component but os-image.
-          GITHUB_PUBLISH: ${{ contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',os-image,') }}
         run: |
           set -euo pipefail
 
           version="${VERSION}"
 
-          # The sha- alias (main-sha- on main) is the hand-off the NVCR and S3
-          # publishers and the NICo VMs lane read. The version alias is the
-          # GHCR publication.
+          # The sha- alias (main-sha- on main) is the hand-off the S3
+          # publisher and the NICo VMs lane read. The version tags are
+          # artifact-os-image.yml's.
           aliases=("${SHA_ALIAS}")
-          if [[ "${GITHUB_REF}" == refs/tags/* && "${GITHUB_PUBLISH}" == "true" ]]; then
-            aliases+=("${version}")
-          fi
 
           # The agent is built from this same checkout; describe it the way
           # agent/Makefile stamps main.VERSION.
@@ -921,96 +913,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Separate jobs, not more steps in "publish": that job also runs on
+  # A separate job, not more steps in "publish": that job also runs on
   # pull-request/* mirror branches with no publish step, and an
-  # `environment:` gate would apply to the whole job, not just the push
-  # step. Pulls the qcow2 just pushed to GHCR instead of rebuilding it.
-  publish-nvcr:
-    needs: [matrix, publish]
-    if: >-
-      github.repository_id == '1323115536' &&
-      github.event.inputs.dry_run != 'true' &&
-      (startsWith(github.ref, 'refs/tags/os-image/') ||
-       (startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.')) ||
-       github.event_name == 'workflow_dispatch')
-    name: Publish to NVCR (${{ matrix.arch }}, ubuntu ${{ matrix.ubuntu_release }}, ${{ matrix.variant }})
-    runs-on: ubuntu-latest
-    environment: nvcr
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.matrix.outputs.legs) }}
-    permissions:
-      contents: read
-      packages: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Read pinned tool versions
-        id: versions
-        run: |
-          echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)" >> "$GITHUB_OUTPUT"
-
-      - name: Set up ORAS
-        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
-        with:
-          version: ${{ steps.versions.outputs.oras_version }}
-
-      - name: Resolve tag
-        id: meta
-        env:
-          ARCH: ${{ matrix.arch }}
-          SUFFIX: ${{ matrix.tag_suffix }}
-          NVKE_NGC_ORG: ${{ vars.NVKE_NGC_ORG }}
-          VERSION: ${{ needs.matrix.outputs.version }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${NVKE_NGC_ORG}" ]]; then
-            echo "::error::NVKE_NGC_ORG is not set in the nvcr environment"
-            exit 1
-          fi
-          # The source is always this run's sha- or main-sha- alias: the version
-          # alias exists on GHCR only when NVKE_GITHUB_PUBLISH names os-image.
-          source_tag="${SHA_ALIAS}${SUFFIX}-${ARCH}"
-          tag="${source_tag}"
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            tag="${VERSION}${SUFFIX}-${ARCH}"
-          fi
-          {
-            echo "source_tag=${source_tag}"
-            echo "tag=${tag}"
-            echo "nvcr_repo=nvcr.io/${NVKE_NGC_ORG}/nvke-os-image-${{ matrix.variant }}"
-          } >> "${GITHUB_OUTPUT}"
-
-      - name: Log in to GHCR (pull) and NVCR (push)
-        shell: bash
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE }}
-        run: |
-          set -euo pipefail
-          echo "${GHCR_TOKEN}" | oras login ghcr.io \
-            --username "${{ github.actor }}" --password-stdin
-          # shellcheck disable=SC2016
-          echo "${NGC_TOKEN}" | oras login nvcr.io \
-            --username '$oauthtoken' --password-stdin
-
-      - name: Copy GHCR to NVCR
-        shell: bash
-        env:
-          SOURCE_TAG: ${{ steps.meta.outputs.source_tag }}
-          TAG: ${{ steps.meta.outputs.tag }}
-          REPO: ${{ matrix.variant == 'fde' && env.REPO_FDE || env.REPO_NON_FDE }}
-          NVCR_REPO: ${{ steps.meta.outputs.nvcr_repo }}
-        run: oras cp "${REPO}:${SOURCE_TAG}" "${NVCR_REPO}:${TAG}"
-
-  # Same "separate job" reasoning as publish-nvcr. Downloads the qcow2 from
-  # GHCR rather than the runner's local disk, since this job doesn't share a
-  # filesystem with the "publish" matrix leg that built it.
+  # `environment:` gate would apply to the whole job, not just the upload.
+  # Downloads the qcow2 from GHCR rather than the runner's local disk, since
+  # this job doesn't share a filesystem with the "publish" matrix leg that
+  # built it.
   publish-s3:
     needs: [matrix, publish]
     if: >-
@@ -1080,9 +988,8 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             release="${VERSION}"
           fi
-          # Pull this run's sha- or main-sha- alias: the version alias exists on
-          # GHCR only when NVKE_GITHUB_PUBLISH names os-image. The S3 path keeps
-          # the version.
+          # Pull this run's sha- or main-sha- alias, the only tag this workflow
+          # pushes. The S3 path keeps the version.
           mkdir -p dist
           oras pull "${REPO}:${SHA_ALIAS}${SUFFIX}-${ARCH}" -o dist
           {

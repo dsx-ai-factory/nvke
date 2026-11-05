@@ -1,0 +1,413 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Artifact NVKE Agent Deb
+
+# Builds the nvke-agent .debs and publishes them as OCI artifacts, joined by a
+# multi-arch index:
+#
+#   <repo>:<version>            <- OCI image index
+#     |-- <repo>:<version>-amd64   platform linux/amd64   layer: nvke-agent.deb
+#     `-- <repo>:<version>-arm64   platform linux/arm64   layer: nvke-agent.deb
+#
+#   ghcr.io/dsx-ai-factory/nvke/agent-deb          on vX.Y.Z and vX.Y.Z-beta.N
+#   nvcr.io/<NVKE_NGC_ORG>/nvke-agent-deb          on vX.Y.Z and vX.Y.Z-beta.N
+#   nvcr.io/<DSX_NGC_ORG_TEAM>/nvke-agent-deb      on vX.Y.Z only
+#
+# The Packer reference OS image pulls from here with oras (see
+# os-image/packer/scripts/fetch-artifacts.sh). The layer is always named
+# nvke-agent.deb so `oras pull` writes a stable path.
+#
+# <version> is `git describe --tags --always --match 'v*'`. A push runs only
+# for a vX.Y.Z or vX.Y.Z-beta.N tag. A dispatch or a call runs on any ref, and
+# on any other ref every push step skips itself, so the run builds and pushes
+# nothing:
+#
+#   gh workflow run artifact-nvke-agent-deb.yml --ref pull-request/123
+#
+# The apt-publisher intake and the dev S3 prefix are agent-deb-publish.yml,
+# which builds the same packages on its own triggers.
+#
+# Both architectures are built natively (amd64 on ubuntu-24.04, arm64 on
+# ubuntu-24.04-arm) for the same reason as deb.yml: cross-compiling flips CGO
+# off and produces a static binary that still claims Depends: libc6. The
+# package job writes both packages and the index into one OCI layout, and
+# every registry is pushed from that layout, so all of them serve the same
+# digests.
+#
+# A caller of this workflow grants every permission its jobs request:
+# contents: read, packages: write, actions: read and security-events: write.
+# The NVCR jobs read their NGC org and token from the `nvcr` environment.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
+  workflow_dispatch: {}
+  workflow_call: {}
+
+permissions: {}
+
+concurrency:
+  # A literal name, NOT ${{ github.workflow }}. Inside a called workflow that
+  # expression is the CALLER's name, so two artifact workflows called from one
+  # caller would share a group and cancel each other.
+  group: Artifact NVKE Agent Deb-${{ github.ref }}
+  # Never cancel a publish midway: a registry left with an index but not its
+  # artifacts would disagree with the others.
+  cancel-in-progress: false
+
+env:
+  GHCR_REPO: ghcr.io/dsx-ai-factory/nvke/agent-deb
+
+jobs:
+  resolve:
+    if: github.repository_id == '1323115536'
+    name: Resolve version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0          # git describe needs history and tags
+          persist-credentials: false
+
+      # On a vX.Y.Z or vX.Y.Z-beta.N tag this is the tag; between tags, a
+      # describe such as v0.24.0-beta.5-3-gabcdef0. With two v* tags on one
+      # commit describe names only one, so a tag run that would publish under
+      # the other name fails instead.
+      - name: Resolve the version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
+          if [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ && "${version}" != "${GITHUB_REF_NAME}" ]]; then
+            echo "::error::git describe resolved ${version} for tag ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "Version ${version}"
+
+  build:
+    name: Build the ${{ matrix.arch }} package
+    needs: [resolve]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read  # upload-sarif reads the workflow run
+      security-events: write  # the malware scan uploads SARIF
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      - name: Install the Debian packaging tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fakeroot dpkg-dev
+          dpkg-deb --version | head -1
+
+      # VERSION is passed rather than left to agent/Makefile, whose own
+      # describe matches agent/v* tags only. The Makefile drops the "v" for
+      # the package version.
+      - name: Build the package
+        working-directory: agent
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: make deb-${{ matrix.arch }} VERSION="${VERSION}"
+
+      - name: Inspect what was produced
+        working-directory: agent
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          debs=(bin/*.deb)
+          if [ ${#debs[@]} -ne 1 ]; then
+            echo "::error::expected exactly 1 package from 'make deb-${ARCH}', found ${#debs[@]}"
+            printf '    %s\n' "${debs[@]}"
+            exit 1
+          fi
+          deb="${debs[0]}"
+
+          echo "::group::${deb}"
+          dpkg-deb -I "$deb"
+          dpkg-deb -c "$deb"
+          echo "::endgroup::"
+
+          pkg=$(dpkg-deb -f "$deb" Package)
+          ver=$(dpkg-deb -f "$deb" Version)
+          arch=$(dpkg-deb -f "$deb" Architecture)
+
+          [ "$pkg" = "nvke-agent" ] \
+            || { echo "::error::${deb}: Package is '${pkg}', expected 'nvke-agent'"; exit 1; }
+
+          case "$ver" in
+            [0-9]*) ;;
+            *) echo "::error::${deb}: Version '${ver}' does not start with a digit"; exit 1 ;;
+          esac
+
+          [ "$arch" = "${ARCH}" ] \
+            || { echo "::error::${deb}: Architecture is '${arch}', expected '${ARCH}'"; exit 1; }
+
+          contents=$(dpkg-deb -c "$deb")
+          printf '%s\n' "$contents" | grep -q './usr/local/bin/nvke-agent' \
+            || { echo "::error::${deb}: does not contain /usr/local/bin/nvke-agent"; exit 1; }
+          printf '%s\n' "$contents" | grep -q './etc/systemd/system/.*\.service' \
+            || { echo "::error::${deb}: contains no systemd unit"; exit 1; }
+
+          dpkg-deb --fsys-tarfile "$deb" | tar -xO ./usr/local/bin/nvke-agent > "${RUNNER_TEMP}/nvke-agent"
+          linkage=$(file -b "${RUNNER_TEMP}/nvke-agent")
+          echo "  linkage: ${linkage}"
+          case "$linkage" in
+            *"dynamically linked"*) ;;
+            *) echo "::error::${deb}: the binary is not dynamically linked, so this build was not native and 'Depends: libc6' is wrong for it: ${linkage}"; exit 1 ;;
+          esac
+
+          echo "OK  ${deb}  package=${pkg} version=${ver} arch=${arch}"
+
+      - name: Malware scan the package
+        uses: ./.github/actions/malware-scan
+        with:
+          scan_path: 'agent/bin'
+          # Per architecture: this job is a matrix, and two uploads sharing one
+          # category would overwrite each other in the Security tab.
+          category: 'clamav-agent-deb-oci-${{ matrix.arch }}'
+          output_file: 'clamav-agent-deb.sarif'
+
+      # Renamed so the push job finds each architecture at a fixed path.
+      - name: Stage the package
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p "dist/${ARCH}"
+          cp agent/bin/*.deb "dist/${ARCH}/nvke-agent.deb"
+
+      - name: Upload the package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nvke-agent-deb-${{ matrix.arch }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 1
+
+  # Joins the two packages into the one OCI layout every registry is pushed
+  # from. The index is created here, once, so its digest is the same
+  # everywhere.
+  #
+  # --artifact-platform is still marked experimental in the ORAS CLI. It is
+  # load-bearing: without it the manifest has no platform in its config and
+  # `oras manifest index create` cannot tell the two packages apart.
+  package:
+    name: Package the layout
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned tool versions
+        id: versions
+        run: echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
+        with:
+          version: ${{ steps.versions.outputs.oras_version }}
+
+      - name: Download the packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: nvke-agent-deb-*
+          merge-multiple: true
+          path: dist
+
+      - name: Package the layout
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          layout="${GITHUB_WORKSPACE}/layout"
+          for arch in amd64 arm64; do
+            ( cd "dist/${arch}" && oras push --oci-layout "${layout}:${VERSION}-${arch}" \
+                --artifact-type application/vnd.nvidia.nvke.agent.deb.v1 \
+                --artifact-platform "linux/${arch}" \
+                --annotation "org.opencontainers.image.source=${SOURCE_URL}" \
+                --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+                --annotation "org.opencontainers.image.version=${VERSION}" \
+                --annotation "org.opencontainers.image.licenses=Apache-2.0" \
+                --annotation "org.opencontainers.image.title=nvke-agent.deb" \
+                nvke-agent.deb:application/vnd.debian.binary-package )
+          done
+          oras manifest index create --oci-layout "${layout}:${VERSION}" \
+            --annotation "org.opencontainers.image.source=${SOURCE_URL}" \
+            --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --annotation "org.opencontainers.image.version=${VERSION}" \
+            "${VERSION}-amd64" "${VERSION}-arm64"
+          oras manifest fetch --oci-layout --pretty "${layout}:${VERSION}"
+
+      - name: Upload the layout
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nvke-agent-deb-oci
+          path: layout
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-ghcr:
+    name: Publish to GHCR
+    needs: [resolve, package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned tool versions
+        id: versions
+        run: echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
+        with:
+          version: ${{ steps.versions.outputs.oras_version }}
+
+      - name: Download the layout
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: nvke-agent-deb-oci
+          path: layout
+
+      # GHCR takes vX.Y.Z and vX.Y.Z-beta.N tags. Expressions have no regex, so
+      # the condition is looser than that: a push is already held to those
+      # tags by `on:`, and a dispatch on another v* tag pushes only if the tag
+      # has no "-" or carries "-beta.".
+      - name: Push to GHCR
+        id: push
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && (!contains(github.ref_name, '-') || contains(github.ref_name, '-beta.'))
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | oras login ghcr.io --username "${ACTOR}" --password-stdin
+          ./scripts/push-oci-layout.sh layout "${GHCR_REPO}" \
+            "${VERSION}-amd64" "${VERSION}-arm64" "${VERSION}"
+
+      - name: Record the published digest
+        if: steps.push.outcome == 'success'
+        uses: ./.github/actions/record-digest
+        with:
+          references: ${{ env.GHCR_REPO }}:${{ needs.resolve.outputs.version }}
+          component: nvke-agent-deb
+
+  publish-nvcr:
+    name: Publish to NVCR (${{ matrix.destination }})
+    needs: [resolve, package]
+    runs-on: ubuntu-latest
+    environment: nvcr
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        destination: [nvke, dsx]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned tool versions
+        id: versions
+        run: echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
+        with:
+          version: ${{ steps.versions.outputs.oras_version }}
+
+      - name: Download the layout
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: nvke-agent-deb-oci
+          path: layout
+
+      # NVKE takes vX.Y.Z and vX.Y.Z-beta.N tags; DSX takes vX.Y.Z only. See the
+      # GHCR push for why the condition is looser than that.
+      # `$oauthtoken` is NGC's literal username, not a variable reference.
+      - name: Push to NVCR (${{ matrix.destination }})
+        id: push
+        if: >-
+          (matrix.destination == 'nvke' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && (!contains(github.ref_name, '-') || contains(github.ref_name, '-beta.'))) ||
+          (matrix.destination == 'dsx' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && !contains(github.ref_name, '-'))
+        shell: bash
+        env:
+          ORG: ${{ matrix.destination == 'dsx' && vars.DSX_NGC_ORG_TEAM || vars.NVKE_NGC_ORG }}
+          ORG_VAR: ${{ matrix.destination == 'dsx' && 'DSX_NGC_ORG_TEAM' || 'NVKE_NGC_ORG' }}
+          NGC_TOKEN: ${{ matrix.destination == 'dsx' && secrets.NGC_REGISTRY_TOKEN_DSX || secrets.NGC_REGISTRY_TOKEN_NVKE }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ORG}" ]]; then
+            echo "::error::${ORG_VAR} is not set in the nvcr environment"
+            exit 1
+          fi
+          repo="nvcr.io/${ORG}/nvke-agent-deb"
+          # shellcheck disable=SC2016
+          echo "${NGC_TOKEN}" | oras login nvcr.io --username '$oauthtoken' --password-stdin
+          ./scripts/push-oci-layout.sh layout "${repo}" \
+            "${VERSION}-amd64" "${VERSION}-arm64" "${VERSION}"
+          echo "repo=${repo}" >> "${GITHUB_OUTPUT}"
+
+      - name: Record the published digest
+        if: steps.push.outcome == 'success'
+        uses: ./.github/actions/record-digest
+        with:
+          references: ${{ steps.push.outputs.repo }}:${{ needs.resolve.outputs.version }}
+          component: nvke-agent-deb-${{ matrix.destination }}

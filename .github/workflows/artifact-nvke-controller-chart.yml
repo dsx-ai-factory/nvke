@@ -1,0 +1,329 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Artifact NVKE Controller Chart
+
+# Packages the NVKE controller Helm chart and publishes it as an OCI artifact:
+#
+#   ghcr.io/dsx-ai-factory/nvke/charts/nvke-controller:<chart version>   on vX.Y.Z and vX.Y.Z-beta.N
+#   nvcr.io/<NVKE_NGC_ORG>/nvke-controller-chart:<chart version>         on vX.Y.Z and vX.Y.Z-beta.N
+#   nvcr.io/<DSX_NGC_ORG_TEAM>/nvke-controller-chart:<chart version>     on vX.Y.Z only
+#
+# <version> is `git describe --tags --always --match 'v*'`. The chart version is <version> without its "v", as OCI chart tags
+# carry none; the appVersion, which the deployment uses as the image tag, keeps
+# it, so each chart names the controller image artifact-nvke-controller.yml
+# publishes for the same commit in the same registry.
+#
+# A push runs only for a vX.Y.Z or vX.Y.Z-beta.N tag. A dispatch or a call runs
+# on any ref, and on any other ref every push step skips itself, so the run
+# packages and checks every chart and pushes nothing:
+#
+#   gh workflow run artifact-nvke-controller-chart.yml --ref pull-request/123
+#
+# Each registry gets its own package, because the chart names the image in
+# that registry:
+#
+#   - GHCR: the image repository is rewritten to the GHCR image.
+#   - NVCR: the chart is renamed nvke-controller-chart, and the image
+#     repository and pull secret point at that org. NVCR cannot take the
+#     `charts/` path segment: an NGC reference has at most one middle segment
+#     and it names a team, and helm push takes the last segment from `name:`,
+#     so without the rename the chart would land in the image's repository.
+#
+# The GHCR package needs nothing secret, so the build job makes it. The NVCR
+# packages need the NGC org, which only the `nvcr` environment holds, so each
+# NVCR job packages its own. Each registry is pushed from its local package.
+#
+# A caller of this workflow grants every permission its jobs request:
+# contents: read and packages: write. The NVCR jobs read their NGC org and
+# token from the `nvcr` environment.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
+  workflow_dispatch: {}
+  workflow_call: {}
+
+permissions: {}
+
+concurrency:
+  # A literal name, NOT ${{ github.workflow }}. Inside a called workflow that
+  # expression is the CALLER's name, so two artifact workflows called from one
+  # caller would share a group and cancel each other.
+  group: Artifact NVKE Controller Chart-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CHART: controller/deploy/charts/controller
+  GHCR_CHARTS: ghcr.io/dsx-ai-factory/nvke/charts
+  GHCR_IMAGE: ghcr.io/dsx-ai-factory/nvke/nvke-controller
+
+jobs:
+  resolve:
+    if: github.repository_id == '1323115536'
+    name: Resolve version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      chart_version: ${{ steps.version.outputs.chart_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0          # git describe needs history and tags
+          persist-credentials: false
+
+      # On a vX.Y.Z or vX.Y.Z-beta.N tag this is the tag; between tags, a
+      # describe such as v0.24.0-beta.5-3-gabcdef0. With two v* tags on one
+      # commit describe names only one, so a tag run that would publish under
+      # the other name fails instead. The chart version drops the "v", as OCI
+      # chart tags carry none.
+      - name: Resolve the version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
+          if [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ && "${version}" != "${GITHUB_REF_NAME}" ]]; then
+            echo "::error::git describe resolved ${version} for tag ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          {
+            echo "version=${version}"
+            echo "chart_version=${version#v}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Version ${version}"
+
+  build:
+    name: Package for GHCR
+    needs: [resolve]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned tool versions
+        id: versions
+        run: echo "helm_version=$(make --no-print-directory print-HELM_VERSION)" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ steps.versions.outputs.helm_version }}
+
+      # values.yaml already defaults to this image, so the rewrite is normally a
+      # no-op. It is here so the packaged chart cannot silently inherit a
+      # different default if someone edits values.yaml.
+      - name: Package
+        shell: bash
+        env:
+          CHART_VERSION: ${{ needs.resolve.outputs.chart_version }}
+          APP_VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Anchored at exactly two spaces so this hits image.repository and
+          # NOT profiles.image.repository, which is nested one level deeper and
+          # names an image nke-site-deploy builds.
+          sed -i -e "s#^  repository: .*#  repository: ${GHCR_IMAGE}#" "${CHART}/values.yaml"
+          grep -q "^  repository: ${GHCR_IMAGE}\$" "${CHART}/values.yaml" \
+            || { echo "::error::image rewrite did not apply"; exit 1; }
+          grep -q "^    repository: nvcr.io/.*/cwe-profiles\$" "${CHART}/values.yaml" \
+            || { echo "::error::profiles image was rewritten and should not be"; exit 1; }
+
+          helm package "${CHART}" \
+            --version "${CHART_VERSION}" \
+            --app-version "${APP_VERSION}" \
+            --destination dist
+
+          package="dist/nvke-controller-${CHART_VERSION}.tgz"
+          helm template nvke-controller "${package}" > "${RUNNER_TEMP}/rendered.yaml"
+          grep -Fq "image: \"${GHCR_IMAGE}:${APP_VERSION}\"" "${RUNNER_TEMP}/rendered.yaml" \
+            || { echo "::error::rendered chart does not reference ${GHCR_IMAGE}:${APP_VERSION}"; exit 1; }
+          ls -lh dist
+
+      - name: Upload the chart
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: controller-chart-ghcr
+          path: dist/nvke-controller-${{ needs.resolve.outputs.chart_version }}.tgz
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-ghcr:
+    name: Publish to GHCR
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned tool versions
+        id: versions
+        run: echo "helm_version=$(make --no-print-directory print-HELM_VERSION)" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ steps.versions.outputs.helm_version }}
+
+      - name: Download the chart
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: controller-chart-ghcr
+          path: dist
+
+      # GHCR takes vX.Y.Z and vX.Y.Z-beta.N tags. Expressions have no regex, so
+      # the condition is looser than that: a push is already held to those
+      # tags by `on:`, and a dispatch on another v* tag pushes only if the tag
+      # has no "-" or carries "-beta.". helm keeps its own registry
+      # config rather than writing docker's, so crane, which record-digest
+      # uses, needs a docker login as well.
+      - name: Push to GHCR
+        id: push
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && (!contains(github.ref_name, '-') || contains(github.ref_name, '-beta.'))
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+          CHART_VERSION: ${{ needs.resolve.outputs.chart_version }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | helm registry login ghcr.io --username "${ACTOR}" --password-stdin
+          echo "${GHCR_TOKEN}" | docker login ghcr.io --username "${ACTOR}" --password-stdin
+          # helm package is not byte-reproducible, so a second run would
+          # publish different bytes under a version consumers already resolved.
+          if helm show chart "oci://${GHCR_CHARTS}/nvke-controller" --version "${CHART_VERSION}" >/dev/null 2>&1; then
+            echo "::error::${GHCR_CHARTS}/nvke-controller:${CHART_VERSION} is already published"
+            exit 1
+          fi
+          helm push "dist/nvke-controller-${CHART_VERSION}.tgz" "oci://${GHCR_CHARTS}"
+
+      - name: Record the published digest
+        if: steps.push.outcome == 'success'
+        uses: ./.github/actions/record-digest
+        with:
+          references: ${{ env.GHCR_CHARTS }}/nvke-controller:${{ needs.resolve.outputs.chart_version }}
+          component: nvke-controller-chart
+
+  publish-nvcr:
+    name: Publish to NVCR (${{ matrix.destination }})
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    environment: nvcr
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        destination: [nvke, dsx]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned tool versions
+        id: versions
+        run: echo "helm_version=$(make --no-print-directory print-HELM_VERSION)" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ steps.versions.outputs.helm_version }}
+
+      - name: Package for ${{ matrix.destination }}
+        id: package
+        shell: bash
+        env:
+          ORG: ${{ matrix.destination == 'dsx' && vars.DSX_NGC_ORG_TEAM || vars.NVKE_NGC_ORG }}
+          ORG_VAR: ${{ matrix.destination == 'dsx' && 'DSX_NGC_ORG_TEAM' || 'NVKE_NGC_ORG' }}
+          IMAGE_PULL_SECRET: ${{ matrix.destination == 'dsx' && 'ngc-dsx-registry-creds' || 'svc-nke-ngc-imagepull' }}
+          CHART_NAME: nvke-controller-chart
+          CHART_VERSION: ${{ needs.resolve.outputs.chart_version }}
+          APP_VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ORG}" ]]; then
+            echo "::error::${ORG_VAR} is not set in the nvcr environment"
+            exit 1
+          fi
+          repo="nvcr.io/${ORG}"
+          image="${repo}/nvke-controller"
+
+          sed -i -e "s#^name: nvke-controller\$#name: ${CHART_NAME}#" "${CHART}/Chart.yaml"
+          grep -q "^name: ${CHART_NAME}\$" "${CHART}/Chart.yaml" \
+            || { echo "::error::chart rename did not apply"; exit 1; }
+
+          # Anchored at two spaces for the same reason as the GHCR package.
+          sed -i -e "s#^  repository: .*#  repository: ${image}#" "${CHART}/values.yaml"
+          grep -q "^  repository: ${image}\$" "${CHART}/values.yaml" \
+            || { echo "::error::image rewrite did not apply"; exit 1; }
+
+          sed -i -e "s#^imagePullSecrets: \[\]\$#imagePullSecrets:\n  - name: ${IMAGE_PULL_SECRET}#" "${CHART}/values.yaml"
+          grep -q "^  - name: ${IMAGE_PULL_SECRET}\$" "${CHART}/values.yaml" \
+            || { echo "::error::pull-secret rewrite did not apply"; exit 1; }
+
+          helm package "${CHART}" \
+            --version "${CHART_VERSION}" \
+            --app-version "${APP_VERSION}" \
+            --destination dist
+
+          package="dist/${CHART_NAME}-${CHART_VERSION}.tgz"
+          helm template "${CHART_NAME}" "${package}" > "${RUNNER_TEMP}/rendered.yaml"
+          grep -Fq "image: \"${image}:${APP_VERSION}\"" "${RUNNER_TEMP}/rendered.yaml" \
+            || { echo "::error::rendered chart does not reference ${image}:${APP_VERSION}"; exit 1; }
+
+          {
+            echo "repo=${repo}"
+            echo "package=${package}"
+          } >> "${GITHUB_OUTPUT}"
+
+      # NVKE takes vX.Y.Z and vX.Y.Z-beta.N tags; DSX takes vX.Y.Z only. See the
+      # GHCR push for why the condition is looser than that.
+      # `$oauthtoken` is NGC's literal username, not a variable reference. The
+      # docker login is for crane in record-digest; helm keeps its own.
+      - name: Push to NVCR (${{ matrix.destination }})
+        id: push
+        if: >-
+          (matrix.destination == 'nvke' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && (!contains(github.ref_name, '-') || contains(github.ref_name, '-beta.'))) ||
+          (matrix.destination == 'dsx' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && !contains(github.ref_name, '-'))
+        shell: bash
+        env:
+          NGC_TOKEN: ${{ matrix.destination == 'dsx' && secrets.NGC_REGISTRY_TOKEN_DSX || secrets.NGC_REGISTRY_TOKEN_NVKE }}
+          REPO: ${{ steps.package.outputs.repo }}
+          PACKAGE: ${{ steps.package.outputs.package }}
+          CHART_VERSION: ${{ needs.resolve.outputs.chart_version }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2016
+          echo "${NGC_TOKEN}" | helm registry login nvcr.io --username '$oauthtoken' --password-stdin
+          # shellcheck disable=SC2016
+          echo "${NGC_TOKEN}" | docker login nvcr.io --username '$oauthtoken' --password-stdin
+          if helm show chart "oci://${REPO}/nvke-controller-chart" --version "${CHART_VERSION}" >/dev/null 2>&1; then
+            echo "::error::${REPO}/nvke-controller-chart:${CHART_VERSION} is already published"
+            exit 1
+          fi
+          helm push "${PACKAGE}" "oci://${REPO}"
+
+      - name: Record the published digest
+        if: steps.push.outcome == 'success'
+        uses: ./.github/actions/record-digest
+        with:
+          references: ${{ steps.package.outputs.repo }}/nvke-controller-chart:${{ needs.resolve.outputs.chart_version }}
+          component: nvke-controller-chart-${{ matrix.destination }}

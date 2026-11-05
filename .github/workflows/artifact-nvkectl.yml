@@ -1,0 +1,334 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Artifact nvkectl
+
+# Builds the nvkectl binaries and publishes them as OCI artifacts, one per
+# platform:
+#
+#   ghcr.io/dsx-ai-factory/nvke/cli:<version>-<os>-<arch>       on vX.Y.Z and vX.Y.Z-beta.N
+#   nvcr.io/<NVKE_NGC_ORG>/nvkectl:<version>-<os>-<arch>        on vX.Y.Z and vX.Y.Z-beta.N
+#   nvcr.io/<DSX_NGC_ORG_TEAM>/nvkectl:<version>-<os>-<arch>    on vX.Y.Z only
+#
+# for linux/amd64, linux/arm64, darwin/amd64 and darwin/arm64. There is no
+# index and no bare <version> tag: pull the platform tag directly.
+#
+#   oras pull ghcr.io/dsx-ai-factory/nvke/cli:<version>-linux-amd64
+#
+# <version> is `git describe --tags --always --match 'v*'`. A push runs only
+# for a vX.Y.Z or vX.Y.Z-beta.N tag. A dispatch or a call runs on any ref, and
+# on any other ref every push step skips itself, so the run builds and pushes
+# nothing:
+#
+#   gh workflow run artifact-nvkectl.yml --ref pull-request/123
+#
+# The S3 copy is cli-s3-publish.yml, called by tag-publish.yml on its own
+# triggers.
+#
+# The build job writes the four artifacts into one OCI layout, and every
+# registry is pushed from that layout, so all of them serve the same digests.
+#
+# A caller of this workflow grants every permission its jobs request:
+# contents: read, packages: write, actions: read and security-events: write.
+# The NVCR jobs read their NGC org and token from the `nvcr` environment.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
+  workflow_dispatch: {}
+  workflow_call: {}
+
+permissions: {}
+
+concurrency:
+  # A literal name, NOT ${{ github.workflow }}. Inside a called workflow that
+  # expression is the CALLER's name, so two artifact workflows called from one
+  # caller would share a group and cancel each other.
+  group: Artifact nvkectl-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GHCR_REPO: ghcr.io/dsx-ai-factory/nvke/cli
+  # Must track NVKECTL_PLATFORMS in cli/Makefile.
+  PLATFORMS: linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+
+jobs:
+  resolve:
+    if: github.repository_id == '1323115536'
+    name: Resolve version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0          # git describe needs history and tags
+          persist-credentials: false
+
+      # On a vX.Y.Z or vX.Y.Z-beta.N tag this is the tag; between tags, a
+      # describe such as v0.24.0-beta.5-3-gabcdef0. With two v* tags on one
+      # commit describe names only one, so a tag run that would publish under
+      # the other name fails instead.
+      - name: Resolve the version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
+          if [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ && "${version}" != "${GITHUB_REF_NAME}" ]]; then
+            echo "::error::git describe resolved ${version} for tag ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "Version ${version}"
+
+  build:
+    name: Build
+    needs: [resolve]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read  # upload-sarif reads the workflow run
+      security-events: write  # the malware scan uploads SARIF
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # go.work, not cli/go.mod: setup-go pins GOTOOLCHAIN=local, so the
+      # toolchain must satisfy the workspace, which asks for the highest of
+      # its members.
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      - name: Read pinned tool versions
+        id: versions
+        run: echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
+        with:
+          version: ${{ steps.versions.outputs.oras_version }}
+
+      # NVKECTL_VERSION is passed rather than left to cli/Makefile, whose own
+      # describe prefers cli/v* tags.
+      - name: Build binaries
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: make -C cli build-cross DIST="${GITHUB_WORKSPACE}/dist" NVKECTL_VERSION="${VERSION}"
+
+      # The runner is linux/amd64, so the shipped binary can be asked directly.
+      - name: Check nvkectl reports the version
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          BIN="${GITHUB_WORKSPACE}/dist/nvkectl-linux-amd64"
+
+          # 2>&1 and the exit check, so a binary that dies on start fails here
+          # rather than printing nothing and matching whatever comes last.
+          if ! out="$("${BIN}" version 2>&1)"; then
+            echo "::error::${BIN} version exited non-zero: ${out}"
+            exit 1
+          fi
+
+          # The trailing space is load-bearing: it stops v0.1.0 accepting a
+          # binary that reports v0.1.0-beta.1 or a describe after the tag.
+          case "${out}" in
+            "nvkectl ${VERSION} "*) echo "nvkectl reports ${VERSION}: ${out}" ;;
+            *)
+              echo "::error::This build is versioned ${VERSION}, and the binary reports: ${out}"
+              exit 1
+              ;;
+          esac
+
+      - name: Malware scan
+        uses: ./.github/actions/malware-scan
+        with:
+          scan_path: 'dist'
+          category: 'clamav-cli-artifact'
+          output_file: 'clamav-cli-artifact.sarif'
+
+      # nvkectl ships darwin builds, so --artifact-platform sees darwin/* here
+      # as well as linux/*. There is no index: each platform is its own tag.
+      - name: Package the layout
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          layout="${GITHUB_WORKSPACE}/layout"
+          for platform in ${PLATFORMS}; do
+            os="${platform%/*}"
+            arch="${platform#*/}"
+            ( cd dist && oras push --oci-layout "${layout}:${VERSION}-${os}-${arch}" \
+                --artifact-type application/vnd.nvidia.nvke.cli.v1 \
+                --artifact-platform "${platform}" \
+                --annotation "org.opencontainers.image.source=${SOURCE_URL}" \
+                --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+                --annotation "org.opencontainers.image.version=${VERSION}" \
+                --annotation "org.opencontainers.image.licenses=Apache-2.0" \
+                --annotation "org.opencontainers.image.title=nvkectl" \
+                "nvkectl-${os}-${arch}:application/octet-stream" )
+          done
+
+      - name: Upload the layout
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nvkectl-oci
+          path: layout
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-ghcr:
+    name: Publish to GHCR
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned tool versions
+        id: versions
+        run: echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
+        with:
+          version: ${{ steps.versions.outputs.oras_version }}
+
+      - name: Download the layout
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: nvkectl-oci
+          path: layout
+
+      # GHCR takes vX.Y.Z and vX.Y.Z-beta.N tags. Expressions have no regex, so
+      # the condition is looser than that: a push is already held to those
+      # tags by `on:`, and a dispatch on another v* tag pushes only if the tag
+      # has no "-" or carries "-beta.".
+      - name: Push to GHCR
+        id: push
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && (!contains(github.ref_name, '-') || contains(github.ref_name, '-beta.'))
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | oras login ghcr.io --username "${ACTOR}" --password-stdin
+          tags=()
+          for platform in ${PLATFORMS}; do
+            tags+=("${VERSION}-${platform%/*}-${platform#*/}")
+          done
+          ./scripts/push-oci-layout.sh layout "${GHCR_REPO}" "${tags[@]}"
+          {
+            echo "references<<EOF"
+            printf "${GHCR_REPO}:%s\n" "${tags[@]}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      # Four references, because there is no index: the four platform tags
+      # are the whole of what was published.
+      - name: Record the published digests
+        if: steps.push.outcome == 'success'
+        uses: ./.github/actions/record-digest
+        with:
+          references: ${{ steps.push.outputs.references }}
+          component: nvkectl
+
+  publish-nvcr:
+    name: Publish to NVCR (${{ matrix.destination }})
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    environment: nvcr
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        destination: [nvke, dsx]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned tool versions
+        id: versions
+        run: echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
+        with:
+          version: ${{ steps.versions.outputs.oras_version }}
+
+      - name: Download the layout
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: nvkectl-oci
+          path: layout
+
+      # NVKE takes vX.Y.Z and vX.Y.Z-beta.N tags; DSX takes vX.Y.Z only. See the
+      # GHCR push for why the condition is looser than that.
+      # `$oauthtoken` is NGC's literal username, not a variable reference.
+      - name: Push to NVCR (${{ matrix.destination }})
+        id: push
+        if: >-
+          (matrix.destination == 'nvke' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && (!contains(github.ref_name, '-') || contains(github.ref_name, '-beta.'))) ||
+          (matrix.destination == 'dsx' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && !contains(github.ref_name, '-'))
+        shell: bash
+        env:
+          ORG: ${{ matrix.destination == 'dsx' && vars.DSX_NGC_ORG_TEAM || vars.NVKE_NGC_ORG }}
+          ORG_VAR: ${{ matrix.destination == 'dsx' && 'DSX_NGC_ORG_TEAM' || 'NVKE_NGC_ORG' }}
+          NGC_TOKEN: ${{ matrix.destination == 'dsx' && secrets.NGC_REGISTRY_TOKEN_DSX || secrets.NGC_REGISTRY_TOKEN_NVKE }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ORG}" ]]; then
+            echo "::error::${ORG_VAR} is not set in the nvcr environment"
+            exit 1
+          fi
+          repo="nvcr.io/${ORG}/nvkectl"
+          # shellcheck disable=SC2016
+          echo "${NGC_TOKEN}" | oras login nvcr.io --username '$oauthtoken' --password-stdin
+          tags=()
+          for platform in ${PLATFORMS}; do
+            tags+=("${VERSION}-${platform%/*}-${platform#*/}")
+          done
+          ./scripts/push-oci-layout.sh layout "${repo}" "${tags[@]}"
+          {
+            echo "references<<EOF"
+            printf "${repo}:%s\n" "${tags[@]}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Record the published digests
+        if: steps.push.outcome == 'success'
+        uses: ./.github/actions/record-digest
+        with:
+          references: ${{ steps.push.outputs.references }}
+          component: nvkectl-${{ matrix.destination }}

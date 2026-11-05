@@ -43,14 +43,14 @@ jobs:
     permissions:
       contents: read
 
-  # Builds nvkectl once for the three cli publishers below. Only cli/v* tags
+  # Builds nvkectl for the S3 publisher below. The OCI copies are
+  # artifact-nvkectl.yml, which builds on its own triggers. Only cli/v* tags
   # and bare vX.Y.Z-beta.N tags ship nvkectl; every other tag is published by
   # its own workflow (see the publish job's routing table).
   build-cli:
     name: Build nvkectl
     outputs:
-      # The three cli publishers below consume these, so a cli/v* tag produces
-      # one build rather than four.
+      # cli-s3 consumes these exact bytes rather than building again.
       dist_artifact: cli-dist-${{ github.run_id }}-${{ github.run_attempt }}
       beta: ${{ steps.version.outputs.beta }}
     if: ${{ startsWith(github.ref_name, 'cli/') || (!contains(github.ref_name, '/') && contains(github.ref_name, '-beta.')) }}
@@ -119,8 +119,8 @@ jobs:
           echo "artifacts:"
           find dist -mindepth 1 -maxdepth 1 -printf '  %f\n' | sort
 
-      # Uploaded so the three cli publishers consume these exact bytes rather
-      # than each running build-cross again.
+      # Uploaded so cli-s3 consumes these exact bytes rather than running
+      # build-cross again.
       - name: Upload the built binaries for the publishers
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -165,38 +165,7 @@ jobs:
           category: 'clamav-release'
           output_file: 'clamav-release.sarif'
 
-  # A bare vX.Y.Z-beta.N reaches only cli-nvcr and cli-s3, which publish it
-  # under the cli/v* describe version; cli-ghcr is skipped.
-  #
-  # The three cli channels. They used to trigger on the cli/v* tag themselves,
-  # which meant four independent build-cross runs claiming to be one release,
-  # and three publish paths that never waited for license-checks. Calling them
-  # here fixes both: one build, and everything behind the gate.
-  cli-ghcr:
-    needs: [build-cli]
-    if: ${{ needs.build-cli.outputs.beta != 'true' }}
-    uses: ./.github/workflows/cli-artifact.yml
-    permissions:
-      contents: read
-      packages: write
-      actions: read  # upload-sarif reads the workflow run
-      security-events: write
-    with:
-      dist_artifact: ${{ needs.build-cli.outputs.dist_artifact }}
-
-  cli-nvcr:
-    needs: [build-cli]
-    uses: ./.github/workflows/cli-artifact-nvcr.yml
-    permissions:
-      contents: read
-      actions: read  # upload-sarif reads the workflow run
-      security-events: write
-    secrets:
-      NGC_REGISTRY_TOKEN_NVKE: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE }}
-      NGC_REGISTRY_TOKEN_DSX: ${{ secrets.NGC_REGISTRY_TOKEN_DSX }}
-    with:
-      dist_artifact: ${{ needs.build-cli.outputs.dist_artifact }}
-
+  # A bare vX.Y.Z-beta.N publishes under the cli/v* describe version.
   cli-s3:
     needs: [build-cli]
     uses: ./.github/workflows/cli-s3-publish.yml

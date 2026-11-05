@@ -466,6 +466,26 @@ docker-push-arch: check-img-repo ## Build+push one arch to IMG_REPO, tags <t>-$(
 	@test -s $(DIGEST_FILE) || { echo "ERROR: no containerimage.digest in $(DIGEST_FILE).json"; exit 1; }
 	@echo "pushed $(IMG_REPO)@$$(cat $(DIGEST_FILE))"
 
+# The build docker-push-arch runs, written to an OCI archive instead of a
+# registry. CI's artifact-nvke-controller.yml builds with this, without
+# credentials, and pushes the archive to every registry from the same bytes.
+OCI_ARCHIVE_ARCH ?= $(CURDIR)/bin/image-$(ARCH).oci.tar
+
+.PHONY: docker-build-arch
+docker-build-arch: ## Build one arch into an OCI archive at OCI_ARCHIVE_ARCH, without pushing
+	@mkdir -p $(dir $(DIGEST_FILE)) $(dir $(OCI_ARCHIVE_ARCH))
+	docker buildx build -f Dockerfile \
+	  --platform linux/$(ARCH) --provenance=false --progress=plain \
+	  --output type=oci,dest=$(OCI_ARCHIVE_ARCH) \
+	  --build-arg BUILD_VERSION=${BUILD_VERSION} \
+	  --build-arg GIT_VERSION=${GIT_VERSION} \
+	  $(BUILDX_EXTRA_ARGS) \
+	  --metadata-file $(DIGEST_FILE).json \
+	  ..
+	@sed -n 's/.*"containerimage\.digest": *"\([^"]*\)".*/\1/p' $(DIGEST_FILE).json > $(DIGEST_FILE)
+	@test -s $(DIGEST_FILE) || { echo "ERROR: no containerimage.digest in $(DIGEST_FILE).json"; exit 1; }
+	@echo "built $(OCI_ARCHIVE_ARCH) @$$(cat $(DIGEST_FILE))"
+
 .PHONY: docker-manifest
 docker-manifest: check-img-repo ## Stitch <t>-amd64 + <t>-arm64 into <t> under IMG_REPO
 	@mkdir -p $(dir $(INDEX_DIGEST_FILE))

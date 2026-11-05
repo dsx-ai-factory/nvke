@@ -34,7 +34,7 @@ BUILD_VERSION ?= $(shell \
 
 .DEFAULT_GOAL := help
 .PHONY: help test lint controller-gen generate manifests generate-check docker-build \
-	check-img-repo docker-push-arch docker-manifest
+	check-img-repo docker-push-arch docker-build-arch docker-manifest
 
 help: ## Show the available targets.
 	@echo "Usage: make <target>"
@@ -147,6 +147,28 @@ docker-push-arch: check-img-repo ## Build+push one arch to IMG_REPO, tagged <t>-
 	@sed -n 's/.*"containerimage\.digest": *"\([^"]*\)".*/\1/p' "$(DIGEST_FILE).json" > "$(DIGEST_FILE)"
 	@test -s "$(DIGEST_FILE)" || { echo "ERROR: no containerimage.digest in $(DIGEST_FILE).json"; exit 1; }
 	@echo "pushed $(IMG_REPO)@$$(cat "$(DIGEST_FILE)")"
+
+# The build docker-push-arch runs, written to an OCI archive instead of a
+# registry. CI's artifact-cluster-api-provider-provisioned.yml builds with this,
+# without credentials, and pushes the archive to every registry from the same
+# bytes.
+OCI_ARCHIVE_ARCH ?= $(CURDIR)/bin/image-$(ARCH).oci.tar
+
+docker-build-arch: ## Build one arch into an OCI archive at OCI_ARCHIVE_ARCH, without pushing.
+	@mkdir -p $(dir $(DIGEST_FILE)) $(dir $(OCI_ARCHIVE_ARCH))
+	docker buildx build \
+		--file "$(CURDIR)/Dockerfile" \
+		--platform "linux/$(ARCH)" \
+		--provenance=false \
+		--output "type=oci,dest=$(OCI_ARCHIVE_ARCH)" \
+		--build-arg "BUILD_VERSION=$(BUILD_VERSION)" \
+		$(BUILDX_EXTRA_ARGS) \
+		--metadata-file "$(DIGEST_FILE).json" \
+		--progress plain \
+		"$(REPO_ROOT)"
+	@sed -n 's/.*"containerimage\.digest": *"\([^"]*\)".*/\1/p' "$(DIGEST_FILE).json" > "$(DIGEST_FILE)"
+	@test -s "$(DIGEST_FILE)" || { echo "ERROR: no containerimage.digest in $(DIGEST_FILE).json"; exit 1; }
+	@echo "built $(OCI_ARCHIVE_ARCH) @$$(cat "$(DIGEST_FILE)")"
 
 docker-manifest: check-img-repo ## Stitch <t>-amd64 and <t>-arm64 into <t> under IMG_REPO.
 	@mkdir -p $(dir $(INDEX_DIGEST_FILE))

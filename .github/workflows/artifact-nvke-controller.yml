@@ -1,0 +1,386 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Artifact NVKE Controller
+
+# Builds the NVKE controller image for linux/amd64 and linux/arm64 and publishes
+# a multi-arch index, with a <version>-<arch> tag on each image it joins:
+#
+#   ghcr.io/dsx-ai-factory/nvke/nvke-controller:<version>                on vX.Y.Z and vX.Y.Z-beta.N
+#   nvcr.io/<NVKE_NGC_ORG>/nvke-controller:<version>                     on vX.Y.Z and vX.Y.Z-beta.N
+#   nvcr.io/<DSX_NGC_ORG_TEAM>/nvke-controller:<version>                 on vX.Y.Z only
+#
+# <version> is `git describe --tags --always --match 'v*'`. A push runs only
+# for a vX.Y.Z or vX.Y.Z-beta.N tag. A dispatch or a call runs on any ref, and
+# on any other ref every push step skips itself, so the run builds and pushes
+# nothing:
+#
+#   gh workflow run artifact-nvke-controller.yml --ref pull-request/123
+#
+# The build needs no credentials. Each architecture builds on its own native
+# runner into an OCI archive (make docker-build-arch), and the package job
+# joins the two into one OCI layout with the index. Every registry is pushed
+# from that layout, so all of them serve the same digests. The GHCR copy is
+# attested; NVCR serves no referrers API, and its copies share the digest the
+# attestation in GitHub's store names.
+#
+# A caller of this workflow grants every permission its jobs request:
+# contents: read, packages: write, id-token: write and attestations: write.
+# The NVCR jobs read their NGC org and token from the `nvcr` environment.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
+  workflow_dispatch: {}
+  workflow_call: {}
+
+permissions: {}
+
+concurrency:
+  # A literal name, NOT ${{ github.workflow }}. Inside a called workflow that
+  # expression is the CALLER's name, so two artifact workflows called from one
+  # caller would share a group and cancel each other.
+  group: Artifact NVKE Controller-${{ github.ref }}
+  # Never cancel a publish midway: a registry left with an index but not its
+  # images would disagree with the others.
+  cancel-in-progress: false
+
+env:
+  GHCR_REPO: ghcr.io/dsx-ai-factory/nvke/nvke-controller
+
+jobs:
+  resolve:
+    if: github.repository_id == '1323115536'
+    name: Resolve version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0          # git describe needs history and tags
+          persist-credentials: false
+
+      # On a vX.Y.Z or vX.Y.Z-beta.N tag this is the tag; between tags, a
+      # describe such as v0.24.0-beta.5-3-gabcdef0. With two v* tags on one
+      # commit describe names only one, so a tag run that would publish under
+      # the other name fails instead.
+      - name: Resolve the version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
+          if [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ && "${version}" != "${GITHUB_REF_NAME}" ]]; then
+            echo "::error::git describe resolved ${version} for tag ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "Version ${version}"
+
+  build:
+    name: Build (${{ matrix.arch }})
+    needs: [resolve]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: linux-amd64-cpu16
+          - arch: arm64
+            runner: linux-arm64-cpu16
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The docker-container driver runs BuildKit in its own container, so it
+      # does not inherit the daemon's registry-mirror configuration. NVIDIA
+      # runners ship a prepopulated buildkitd.toml pointing at the local mirror;
+      # use it when present so base-image pulls are cached and not subject to
+      # Docker Hub rate limits.
+      - name: Detect runner BuildKit config
+        id: buildkit
+        shell: bash
+        run: |
+          if [[ -r /etc/buildkit/buildkitd.toml ]]; then
+            echo "config=/etc/buildkit/buildkitd.toml" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          buildkitd-config: ${{ steps.buildkit.outputs.config }}
+
+      # BUILD_VERSION is passed rather than left to controller/Makefile, whose
+      # own describe prefers controller/v* tags.
+      - name: Build (${{ matrix.arch }})
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          make -C controller docker-build-arch \
+            ARCH="${ARCH}" \
+            BUILD_VERSION="${VERSION}" \
+            GIT_VERSION="${GITHUB_SHA}" \
+            BUILDX_EXTRA_ARGS="--label org.opencontainers.image.revision=${GITHUB_SHA}"
+
+      - name: Read the pinned syft version
+        id: versions
+        run: echo "syft_version=$(make --no-print-directory print-SYFT_VERSION)" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: ${{ steps.versions.outputs.syft_version }}
+
+      # From the archive every registry is pushed from, so the SBOM describes
+      # exactly those bytes. An arm64 image scans fine anywhere: syft reads
+      # layers.
+      - name: Generate SPDX SBOM
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          syft scan "oci-archive:controller/bin/image-${ARCH}.oci.tar" \
+            --output "spdx-json=controller/bin/controller-sbom-linux-${ARCH}.spdx.json"
+
+      - name: Upload the SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: controller-sbom-linux-${{ matrix.arch }}.spdx.json
+          path: controller/bin/controller-sbom-linux-${{ matrix.arch }}.spdx.json
+          if-no-files-found: error
+
+      - name: Upload the image
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: controller-image-${{ matrix.arch }}
+          path: |
+            controller/bin/image-${{ matrix.arch }}.oci.tar
+            controller/bin/image-digest-${{ matrix.arch }}.txt
+          if-no-files-found: error
+          retention-days: 1
+
+  # Joins the two architectures into the one OCI layout every registry is
+  # pushed from. The index is created here, once, so its digest is the same
+  # everywhere.
+  package:
+    name: Package the index
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      index_digest: ${{ steps.index.outputs.index_digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned tool versions
+        id: versions
+        run: echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
+        with:
+          version: ${{ steps.versions.outputs.oras_version }}
+
+      - name: Download the images
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: controller-image-*
+          merge-multiple: true
+          path: images
+
+      # By the digest each build recorded, so the layout holds exactly what
+      # was built.
+      - name: Assemble the layout
+        id: index
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            digest="$(cat "images/image-digest-${arch}.txt")"
+            mkdir -p "images/${arch}"
+            tar -xf "images/image-${arch}.oci.tar" -C "images/${arch}"
+            oras cp --from-oci-layout "images/${arch}@${digest}" --to-oci-layout "layout:${VERSION}-${arch}"
+          done
+          oras manifest index create --oci-layout "layout:${VERSION}" \
+            --annotation "org.opencontainers.image.source=${SOURCE_URL}" \
+            --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --annotation "org.opencontainers.image.version=${VERSION}" \
+            "${VERSION}-amd64" "${VERSION}-arm64"
+          index="$(oras resolve --oci-layout "layout:${VERSION}")"
+          echo "index_digest=${index}" >> "${GITHUB_OUTPUT}"
+          echo "- index \`${VERSION}\` is \`${index}\`" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload the layout
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: controller-image-oci
+          path: layout
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-ghcr:
+    name: Publish to GHCR
+    needs: [resolve, package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write       # the OIDC token the attestation is signed against
+      attestations: write   # writes the provenance attestation
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned tool versions
+        id: versions
+        run: echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
+        with:
+          version: ${{ steps.versions.outputs.oras_version }}
+
+      - name: Download the layout
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: controller-image-oci
+          path: layout
+
+      # GHCR takes vX.Y.Z and vX.Y.Z-beta.N tags. Expressions have no regex, so
+      # the condition is looser than that: a push is already held to those
+      # tags by `on:`, and a dispatch on another v* tag pushes only if the tag
+      # has no "-" or carries "-beta.".
+      - name: Push to GHCR
+        id: push
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && (!contains(github.ref_name, '-') || contains(github.ref_name, '-beta.'))
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | oras login ghcr.io --username "${ACTOR}" --password-stdin
+          ./scripts/push-oci-layout.sh layout "${GHCR_REPO}" \
+            "${VERSION}-amd64" "${VERSION}-arm64" "${VERSION}"
+
+      # push-to-registry attaches the attestation to the image as an OCI
+      # referrer, so a consumer verifies against GHCR alone. See RELEASE.md.
+      - name: Attest the published index
+        if: steps.push.outcome == 'success'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.GHCR_REPO }}
+          subject-digest: ${{ needs.package.outputs.index_digest }}
+          push-to-registry: true
+
+      - name: Verify the published index
+        if: steps.push.outcome == 'success'
+        uses: ./.github/actions/verify-attestation
+        with:
+          image: ${{ env.GHCR_REPO }}
+          digest: ${{ needs.package.outputs.index_digest }}
+          signer-workflow: ${{ github.repository }}/.github/workflows/artifact-nvke-controller.yml
+          from-registry: "true"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Record the published digest
+        if: steps.push.outcome == 'success'
+        uses: ./.github/actions/record-digest
+        with:
+          references: ${{ env.GHCR_REPO }}:${{ needs.resolve.outputs.version }}
+          component: nvke-controller
+
+  publish-nvcr:
+    name: Publish to NVCR (${{ matrix.destination }})
+    needs: [resolve, package]
+    runs-on: ubuntu-latest
+    environment: nvcr
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        destination: [nvke, dsx]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned tool versions
+        id: versions
+        run: echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
+        with:
+          version: ${{ steps.versions.outputs.oras_version }}
+
+      - name: Download the layout
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: controller-image-oci
+          path: layout
+
+      # NVKE takes vX.Y.Z and vX.Y.Z-beta.N tags; DSX takes vX.Y.Z only. See the
+      # GHCR push for why the condition is looser than that.
+      # `$oauthtoken` is NGC's literal username, not a variable reference.
+      - name: Push to NVCR (${{ matrix.destination }})
+        id: push
+        if: >-
+          (matrix.destination == 'nvke' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && (!contains(github.ref_name, '-') || contains(github.ref_name, '-beta.'))) ||
+          (matrix.destination == 'dsx' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && !contains(github.ref_name, '-'))
+        shell: bash
+        env:
+          ORG: ${{ matrix.destination == 'dsx' && vars.DSX_NGC_ORG_TEAM || vars.NVKE_NGC_ORG }}
+          ORG_VAR: ${{ matrix.destination == 'dsx' && 'DSX_NGC_ORG_TEAM' || 'NVKE_NGC_ORG' }}
+          NGC_TOKEN: ${{ matrix.destination == 'dsx' && secrets.NGC_REGISTRY_TOKEN_DSX || secrets.NGC_REGISTRY_TOKEN_NVKE }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ORG}" ]]; then
+            echo "::error::${ORG_VAR} is not set in the nvcr environment"
+            exit 1
+          fi
+          repo="nvcr.io/${ORG}/nvke-controller"
+          # shellcheck disable=SC2016
+          echo "${NGC_TOKEN}" | oras login nvcr.io --username '$oauthtoken' --password-stdin
+          ./scripts/push-oci-layout.sh layout "${repo}" \
+            "${VERSION}-amd64" "${VERSION}-arm64" "${VERSION}"
+          echo "repo=${repo}" >> "${GITHUB_OUTPUT}"
+
+      - name: Record the published digest
+        if: steps.push.outcome == 'success'
+        uses: ./.github/actions/record-digest
+        with:
+          references: ${{ steps.push.outputs.repo }}:${{ needs.resolve.outputs.version }}
+          component: nvke-controller-${{ matrix.destination }}
