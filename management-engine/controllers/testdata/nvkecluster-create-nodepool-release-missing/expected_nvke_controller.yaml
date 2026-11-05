@@ -1,0 +1,26 @@
+clusters:
+- cniPlugin: ""
+  cniVersion: ""
+  conditions:
+    deleting:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "False"
+    provisioned:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "True"
+    provisioning:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "False"
+  controlPlaneKubernetesVersion: ""
+  createdAt: "0001-01-01T00:00:00Z"
+  etcdEncrypted: false
+  id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+  name: cluster-1-34bd578c-mgmt-eng
+  network:
+    podCIDR: ""
+    serviceCIDR: ""
+nodePools: []
+requests: []
