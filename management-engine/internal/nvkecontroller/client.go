@@ -33,13 +33,18 @@ var (
 	ErrInvalidResponse = errors.New("NVKE controller returned an invalid cluster response")
 )
 
-// HTTPError reports a rejected request without exposing response contents.
+// HTTPError reports a rejected request with its status and structured API message.
 type HTTPError struct {
 	StatusCode int
+	Message    string
 }
 
 func (e *HTTPError) Error() string {
-	return fmt.Sprintf("NVKE controller request returned HTTP %d", e.StatusCode)
+	message := fmt.Sprintf("NVKE controller request returned HTTP %d", e.StatusCode)
+	if e.Message != "" {
+		message += ": " + e.Message
+	}
+	return message
 }
 
 // Config selects the operator-controlled NVKE controller endpoint and optional bearer token file.
@@ -297,7 +302,12 @@ func readResponse(response *http.Response, requestErr error, expected int, targe
 		return ErrNotFound
 	}
 	if response.StatusCode != expected {
-		return &HTTPError{StatusCode: response.StatusCode}
+		responseErr := &HTTPError{StatusCode: response.StatusCode}
+		var detail api.GenericError
+		if err := json.NewDecoder(response.Body).Decode(&detail); err == nil {
+			responseErr.Message = strings.TrimSpace(detail.Message)
+		}
+		return responseErr
 	}
 	if target == nil {
 		return nil
