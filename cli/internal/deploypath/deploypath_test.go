@@ -429,6 +429,7 @@ func TestLaunchLayerPathMatchesNico(t *testing.T) {
 		"nvke-deploy.yaml":                    true,
 		"controller/overlay.yaml":             true,
 		"nvke-base-config/00-namespaces.yaml": true,
+		"spire/values.yaml":                   true,
 	}
 	shared := 0
 	err := filepath.WalkDir(launchLayer, func(path string, d fs.DirEntry, err error) error {
@@ -500,22 +501,15 @@ func TestRender_LaunchLayerPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	capll, err := os.ReadFile(filepath.Join(opts.Out, "capll", "capll.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, arg := range []string{"- --base-url=https://launchlayer.example.com\n", "- --compute-url=https://compute.example.com\n", "- --identity-secret=launchlayer-credentials\n"} {
-		if !strings.Contains(string(capll), arg) {
-			t.Errorf("capll manager args lack %q", arg)
-		}
+	// An empty override inherits baseURL rather than passing an empty flag.
+	args := readValues(t, filepath.Join(opts.Out, "capll", SiteValuesFile))["manager"].(map[string]any)["args"]
+	want := []any{"--leader-elect", "--base-url=https://launchlayer.example.com", "--compute-url=https://compute.example.com", "--identity-secret=launchlayer-credentials"}
+	if fmt.Sprint(args) != fmt.Sprint(want) {
+		t.Errorf("capll manager args:\n got %v\nwant %v", args, want)
 	}
 	// CAPLL reads bootstrap Secrets in nvke-system only with the path's grant.
-	if grant, err := os.ReadFile(filepath.Join(opts.Out, "capll", "secret-reader.yaml")); err != nil || !strings.Contains(string(grant), "namespace: nvke-system") {
+	if grant, err := os.ReadFile(filepath.Join(opts.Out, "nvke-base-config", "25-capll-secret-reader.yaml")); err != nil || !strings.Contains(string(grant), "namespace: nvke-system") {
 		t.Errorf("capll secret-reader grant: %v", err)
-	}
-	// An empty override inherits baseURL rather than passing an empty flag.
-	if strings.Contains(string(capll), "--vpc-url") || strings.Contains(string(capll), "--sg-url") {
-		t.Error("capll passes an override the stack config left empty")
 	}
 	secret, err := os.ReadFile(filepath.Join(opts.Out, "nvke-base-config", "20-launchlayer-credentials.yaml"))
 	if err != nil {

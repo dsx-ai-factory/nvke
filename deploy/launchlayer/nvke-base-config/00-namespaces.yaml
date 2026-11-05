@@ -55,13 +55,9 @@ kind: Namespace
 metadata:
   name: temporal
 ---
-# CAPLL's controller. ../capll/capll.yaml.tmpl declares this Namespace too --
-# the release asset carries one -- but that item installs later, and
-# launchlayer-credentials lands here first. Two server-side applies of the
-# same bare Namespace is not a conflict; neither claims a field the other owns.
-#
-# No Helm ownership metadata, unlike the e2e lane: nothing installs CAPLL from
-# a chart on this path.
+# CAPLL's controller. launchlayer-credentials lands here before the capll item
+# installs. CAPLL's chart templates no Namespace, so the release needs no Helm
+# ownership metadata on it.
 apiVersion: v1
 kind: Namespace
 metadata:

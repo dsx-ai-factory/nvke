@@ -1,15 +1,16 @@
 # deploy/launchlayer
 
-The deploy path for an NVKE management cluster whose tenant clusters run on LaunchLayer, through CAPLL. It is [`deploy/nico`](../nico/) with CAPNICo swapped for CAPLL: the same items in the same order, run by the same [`nvke-deploy.sh`](../nvke-deploy.sh). Read [`deploy/README.md`](../README.md) for the inputs and the commands; this page covers what differs.
+The deploy path for an NVKE management cluster whose tenant clusters run on LaunchLayer, through CAPLL. It is [`deploy/nico`](../nico/) with CAPNICo swapped for CAPLL, run by the same [`nvke-deploy.sh`](../nvke-deploy.sh). Read [`deploy/README.md`](../README.md) for the inputs and the commands; this page covers what differs.
 
 ## What differs from deploy/nico
 
 | | deploy/nico | deploy/launchlayer |
 |---|---|---|
-| Infrastructure provider | `capnico`, a manifest item | `capll`, a template item: CAPLL's release asset with the manager's flags rendered from the stack config, plus a Secret `get` grant in `nvke-system`, where NVKE writes the bootstrap Secrets CAPLL reads |
+| Infrastructure provider | `capnico`, a manifest item | `capll`, a helm item installing CAPLL's chart after `spire`, with the manager's flags from the stack config and the SPIFFE exec-auth plugin. `nvke-base-config` grants it Secret `get` in `nvke-system`, where NVKE writes the bootstrap Secrets CAPLL reads |
 | Provider credentials | `nico-credentials` in `capnico-system`, from `nico.*` and `NVKECTL_NICO_TOKEN` | `launchlayer-credentials` in `capll-system`, from `launchLayer.*` and `NVKECTL_LAUNCHLAYER_CLIENT_SECRET` |
 | `supportedInfraProviders` | `nico,infra` | `launchLayer` |
 | Node attestation | `tpm` | `dsxImds` |
+| SPIRE `nvke-service` identity | `nvke-controller` and the CAPI namespaces | also `capll-system` |
 
 ## The stack config
 
@@ -36,7 +37,7 @@ The path installs CAPLL and configures the controller for LaunchLayer. Two setti
 
 ## Images
 
-Like `deploy/nico`, the path renders no image pull secret, so the node has to be able to pull every image as named. The controller and profiles images come from the release, or from `images.controller` and `images.profiles`. CAPLL runs the image its release asset names, `ghcr.io/dsx-ai-factory/cluster-api-provider-launchlayer/controller:v0.1.0-rc.15`: no release artifact binds it yet, and the stack config's `mirror` does not apply to it. The overlay's default controller image and CAPLL's are private, so a site without access to `ghcr.io/dsx-ai-factory` loads them into the node's containerd before installing, or configures containerd with a credential or mirror for `ghcr.io`.
+Like `deploy/nico`, the path renders no image pull secret, so the node has to be able to pull every image as named. The controller and profiles images come from the release, or from `images.controller` and `images.profiles`. CAPLL's chart runs the image released with it, `ghcr.io/dsx-ai-factory/cluster-api-provider-launchlayer/controller:v0.1.0-rc.15`: no release artifact binds either yet, and the stack config's `mirror` does not apply to them. While CAPLL's chart and image are private, run `helm registry login ghcr.io` before installing, and load the image into the node's containerd or configure containerd with a credential or mirror for `ghcr.io`. The overlay's default controller image is private too.
 
 ## Install
 
