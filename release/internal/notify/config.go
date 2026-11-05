@@ -122,7 +122,7 @@ func Parse(data []byte) (*Config, error) {
 var (
 	channelID  = regexp.MustCompile(`^[A-Z][A-Z0-9]{8,}$`)
 	mentionRe  = regexp.MustCompile(`^<[@!][^<>\s]+(\|[^<>]*)?>$`)
-	patternRe  = regexp.MustCompile(`^[^\s*]+\*?$`)
+	patternRe  = regexp.MustCompile(`^(\*|[^\s*]+\*?)$`)
 	severities = map[string]bool{SeverityInfo: true, SeveritySuccess: true, SeverityWarning: true, SeverityError: true}
 )
 
@@ -187,7 +187,7 @@ func (c *Config) Validate() error {
 		}
 		for _, e := range sub.Events {
 			if !patternRe.MatchString(e.Name) {
-				fail("subscriptions[%d]: event %q is not a name or a pattern with a single trailing *", i, e.Name)
+				fail("subscriptions[%d]: event %q is not a name, a pattern with a single trailing *, or *", i, e.Name)
 			}
 			if !notifications[e.Notification] {
 				fail("subscriptions[%d]: event %q names notification %q, which is not defined", i, e.Name, e.Notification)
@@ -262,9 +262,9 @@ type Refs struct {
 // it does not parse or reaches past a single key.
 //
 // A template may only name one key at a time, as .Context.run_url. It may not
-// pass .Context or .Event to anything whole, because that is how a template
-// would print every value it holds, and it may not read a Context key outside
-// the allowlist.
+// pass .Context, .Event, or the dot or $ that holds both to anything whole,
+// because that is how a template would print every value it holds, and it may
+// not read a Context key outside the allowlist.
 func References(text string) (Refs, error) {
 	tmpl, err := template.New("t").Option("missingkey=error").Parse(text)
 	if err != nil {
@@ -318,9 +318,17 @@ func References(text string) (Refs, error) {
 			switch n := n.(type) {
 			case *parse.FieldNode:
 				record(n.Ident)
+			case *parse.DotNode:
+				// {{.}} is the whole Data: both maps, with whatever the caller
+				// put in the event.
+				errs = append(errs, errors.New("uses . whole; name one key, such as .Event.stream"))
 			case *parse.VariableNode:
-				// $.Context.x reaches the data the same way .Context.x does.
-				if len(n.Ident) > 1 && n.Ident[0] == "$" {
+				switch {
+				case len(n.Ident) == 1 && n.Ident[0] == "$":
+					// $ is the same whole Data as a bare dot.
+					errs = append(errs, errors.New("uses $ whole; name one key, such as $.Event.stream"))
+				case len(n.Ident) > 1 && n.Ident[0] == "$":
+					// $.Context.x reaches the data the same way .Context.x does.
 					record(n.Ident[1:])
 				}
 			}

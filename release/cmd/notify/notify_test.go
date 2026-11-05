@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dsx-ai-factory/nvke/release/internal/notify"
 )
 
 // run executes the command with args and returns what it printed and its error.
@@ -100,20 +102,43 @@ func TestTriggerWarnsOnAnEventNothingSubscribesTo(t *testing.T) {
 	}
 }
 
-func TestWritesStepOutputs(t *testing.T) {
+// A dry run sends nothing and saves no thread, so it must not say it did: a
+// cache step keyed on state-created would save state that does not exist.
+func TestDryRunWritesNoStepOutputs(t *testing.T) {
 	outputs := filepath.Join(t.TempDir(), "output")
 	t.Setenv("GITHUB_OUTPUT", outputs)
 	t.Setenv("GITHUB_ACTIONS", "")
 	if _, err := run(t, "trigger", "qualification:tag-cut", "--dry-run", "--config", shipped,
-		"--data", "tag=v1.0.0-beta.1", "--data", "commit_short=abc1234"); err != nil {
+		"--data", "tag=v1.0.0-beta.1", "--data", "commit=abc1234def", "--data", "commit_short=abc1234"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(outputs)
+	if err == nil && len(got) != 0 {
+		t.Errorf("a dry run wrote outputs: %q", got)
+	}
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
+func TestWriteOutputs(t *testing.T) {
+	outputs := filepath.Join(t.TempDir(), "output")
+	t.Setenv("GITHUB_OUTPUT", outputs)
+	if err := writeOutputs(notify.Result{Posted: 2, StateCreated: true}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(outputs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(got), "state-created=true") || !strings.Contains(string(got), "posted=1") {
+	if string(got) != "state-created=true\nposted=2\n" {
 		t.Errorf("outputs = %q", got)
+	}
+
+	// Without GITHUB_OUTPUT there is nowhere to write, and that is not an error.
+	t.Setenv("GITHUB_OUTPUT", "")
+	if err := writeOutputs(notify.Result{}); err != nil {
+		t.Errorf("writeOutputs outside Actions: %v", err)
 	}
 }
 

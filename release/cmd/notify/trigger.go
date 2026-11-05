@@ -99,8 +99,13 @@ zero. --strict makes them fatal. A config that does not load is always fatal.
 			if res.Matched == 0 {
 				warn(cmd, fmt.Sprintf("no subscription matches %q, so nothing was sent", event))
 			}
-			if werr := writeOutputs(res); werr != nil {
-				warn(cmd, werr.Error())
+			// A dry run sent nothing and saved no thread, so it reports neither:
+			// a cache step keyed on state-created would save state that is not
+			// there.
+			if !dryRun {
+				if werr := writeOutputs(res); werr != nil {
+					warn(cmd, werr.Error())
+				}
 			}
 			if err != nil {
 				return problem(cmd, strict, err)

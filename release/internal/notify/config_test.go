@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/dsx-ai-factory/nvke/release/internal/notify/githubctx"
 )
 
 // valid is a config every test below breaks in one way.
@@ -50,6 +52,13 @@ func TestParseRejects(t *testing.T) {
 		{"context key outside the allowlist", [2]string{".Context.run_url", ".Context.github_token"}, "not an available key"},
 		{"whole context", [2]string{`"<{{.Context.run_url}}|run>"`, `"{{printf \"%v\" .Context}}"`}, "whole"},
 		{"whole event", [2]string{`"Failed {{.Event.stream}}"`, `"{{.Event}}"`}, "whole"},
+		{"bare dot", [2]string{`"Failed {{.Event.stream}}"`, `"{{.}}"`}, "uses . whole"},
+		{"bare dot in the body", [2]string{`"<{{.Context.run_url}}|run>"`, `"{{.}}"`}, "uses . whole"},
+		{"dollar", [2]string{`"<{{.Context.run_url}}|run>"`, `"{{$}}"`}, "uses $ whole"},
+		{"dot through a function", [2]string{`"<{{.Context.run_url}}|run>"`, `"{{printf \"%v\" .}}"`}, "uses . whole"},
+		{"dollar through a function", [2]string{`"<{{.Context.run_url}}|run>"`, `"{{printf \"%v\" $}}"`}, "uses $ whole"},
+		{"dollar then the whole context", [2]string{`"<{{.Context.run_url}}|run>"`, `"{{$.Context}}"`}, "whole"},
+		{"dot passed to a template", [2]string{`"<{{.Context.run_url}}|run>"`, `"{{define \"x\"}}{{.Event.a}}{{end}}{{template \"x\" .}}"`}, "uses . whole"},
 		{"unknown top-level field", [2]string{".Event.stream", ".Env.stream"}, "only .Context and .Event"},
 		{"pattern with a mid-string wildcard", [2]string{`"qualification:*"`, `"qual*:x"`}, "single trailing *"},
 		{"empty title", [2]string{`"Failed {{.Event.stream}}"`, `""`}, "title is empty"},
@@ -82,6 +91,19 @@ func TestParseReportsEveryProblem(t *testing.T) {
 	_, err := Parse([]byte(src))
 	if err == nil || !strings.Contains(err.Error(), "severity") || !strings.Contains(err.Error(), "nobody") {
 		t.Errorf("err = %v, want both problems", err)
+	}
+}
+
+// The matcher has always accepted a bare *, so the config has to load one.
+func TestCatchAllSubscriptionLoads(t *testing.T) {
+	cfg, err := Parse([]byte(strings.Replace(valid, `"qualification:*"`, `"*"`, 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range []string{"qualification:stream-failed", "anything:else", "x"} {
+		if len(cfg.Match(event)) != 1 {
+			t.Errorf("a catch-all subscription did not match %q", event)
+		}
 	}
 }
 
@@ -157,7 +179,7 @@ func TestShippedConfig(t *testing.T) {
 			}
 		}
 		ctx := map[string]string{}
-		for _, k := range []string{"run_url", "run_number", "commit_url", "sha_short", "ref_name", "event_name", "actor"} {
+		for _, k := range githubctx.Keys() {
 			ctx[k] = "value"
 		}
 		if _, err := Render(n, Data{Context: ctx, Event: event}); err != nil {
@@ -175,5 +197,41 @@ func TestShippedConfig(t *testing.T) {
 		if len(cfg.Match(event)) == 0 {
 			t.Errorf("no subscription for %s", event)
 		}
+	}
+}
+
+// The nightly tags a commit it selected, which need not be the commit it ran on.
+// The announcement has to link the commit it names, not GITHUB_SHA.
+func TestTagCutLinksTheCommitItIsGiven(t *testing.T) {
+	cfg, err := Load("../../notify.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	matches := cfg.Match("qualification:tag-cut")
+	if len(matches) != 1 {
+		t.Fatalf("%d notifications for tag-cut, want 1", len(matches))
+	}
+
+	ctx := githubctx.Collect(func(k string) string {
+		return map[string]string{
+			"GITHUB_REPOSITORY": "dsx-ai-factory/nvke",
+			"GITHUB_SERVER_URL": "https://github.com",
+			"GITHUB_RUN_ID":     "7",
+			"GITHUB_SHA":        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // the commit the run is on
+		}[k]
+	})
+	msg, err := Render(matches[0].Notification, Data{Context: ctx, Event: map[string]string{
+		"tag":          "v0.24.0-beta.3",
+		"commit":       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", // the commit that was tagged
+		"commit_short": "bbbbbbb",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(msg.Body, "/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|bbbbbbb>") {
+		t.Errorf("body = %q, want a link to the tagged commit labelled with its short hash", msg.Body)
+	}
+	if strings.Contains(msg.Body, "aaaaaaa") {
+		t.Errorf("body = %q, links the commit the run is on", msg.Body)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -82,9 +83,16 @@ type response struct {
 // Post sends a message and returns its timestamp.
 //
 // Mentions go in the message's own text and not in the attachment, because
-// Slack notifies for a mention only there. A rate limit and a server error are
-// retried, honouring Retry-After; anything else Slack refuses is final, since
-// asking again gets the same answer.
+// Slack notifies for a mention only there.
+//
+// A post is retried only when the request certainly was not processed: a rate
+// limit (honouring Retry-After), Slack saying it is unavailable, and a failure
+// to connect at all. chat.postMessage takes no idempotency key, so anything that
+// leaves it unknown whether Slack acted, such as a dropped response, a timeout
+// after the request was sent, a 500 or fatal_error, is not retried. A lost
+// notification is the lesser harm: a retry would post the message twice, and
+// orphan the thread root the first copy started. Anything else Slack refuses is
+// final, since asking again gets the same answer.
 func (c *Client) Post(ctx context.Context, m notify.Message) (string, error) {
 	colour, ok := colours[m.Severity]
 	if !ok {
@@ -150,11 +158,12 @@ func (c *Client) once(ctx context.Context, body []byte) (string, time.Duration, 
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		// A cancelled run is not worth retrying; a dropped connection is.
-		if ctx.Err() != nil && errors.Is(ctx.Err(), context.Canceled) {
-			return "", -1, err
+		// Only a failure to connect proves nothing was sent. Any other error
+		// may have come after Slack read the request.
+		if neverSent(err) && ctx.Err() == nil {
+			return "", time.Second, fmt.Errorf("%s: %w", postMessageMethod, err)
 		}
-		return "", time.Second, fmt.Errorf("%s: %w", postMessageMethod, err)
+		return "", -1, fmt.Errorf("%s: %w (not retried: the message may have been delivered)", postMessageMethod, err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
@@ -162,8 +171,10 @@ func (c *Client) once(ctx context.Context, body []byte) (string, time.Duration, 
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests:
 		return "", retryAfter(resp.Header.Get("Retry-After")), fmt.Errorf("%s: rate limited", postMessageMethod)
-	case resp.StatusCode >= http.StatusInternalServerError:
+	case resp.StatusCode == http.StatusServiceUnavailable:
 		return "", time.Second, fmt.Errorf("%s: Slack answered %d", postMessageMethod, resp.StatusCode)
+	case resp.StatusCode >= http.StatusInternalServerError:
+		return "", -1, fmt.Errorf("%s: Slack answered %d (not retried: the message may have been delivered)", postMessageMethod, resp.StatusCode)
 	}
 
 	var out response
@@ -177,10 +188,25 @@ func (c *Client) once(ctx context.Context, body []byte) (string, time.Duration, 
 	switch out.Error {
 	case "ratelimited":
 		return "", retryAfter(resp.Header.Get("Retry-After")), err
-	case "internal_error", "fatal_error", "service_unavailable", "request_timeout":
+	case "service_unavailable", "request_timeout":
+		// Slack did not act on the request.
 		return "", time.Second, err
+	case "internal_error", "fatal_error":
+		// Slack documents that fatal_error can follow a message that was posted.
+		return "", -1, fmt.Errorf("%w (not retried: the message may have been delivered)", err)
 	}
 	return "", -1, err
+}
+
+// neverSent reports whether a request failed before anything reached Slack: the
+// connection was refused, or the name did not resolve.
+func neverSent(err error) bool {
+	var op *net.OpError
+	if errors.As(err, &op) && op.Op == "dial" {
+		return true
+	}
+	var dns *net.DNSError
+	return errors.As(err, &dns)
 }
 
 // hint explains the refusals people meet most.
@@ -200,12 +226,22 @@ func hint(code string) string {
 
 // retryAfter reads a Retry-After header in seconds, bounded so a hostile or
 // broken value cannot hold a CI step for minutes.
+//
+// The bound is applied to the seconds, before they become a Duration: a large
+// enough value overflows the multiplication into a negative wait, which the
+// caller reads as "do not retry".
 func retryAfter(header string) time.Duration {
-	secs, err := strconv.Atoi(strings.TrimSpace(header))
-	if err != nil || secs < 1 {
+	header = strings.TrimSpace(header)
+	secs, err := strconv.ParseInt(header, 10, 64)
+	switch {
+	case errors.Is(err, strconv.ErrRange) && !strings.HasPrefix(header, "-"):
+		return maxRetryAfter
+	case err != nil || secs < 1:
 		return time.Second
+	case secs > int64(maxRetryAfter/time.Second):
+		return maxRetryAfter
 	}
-	return min(time.Duration(secs)*time.Second, maxRetryAfter)
+	return time.Duration(secs) * time.Second
 }
 
 func (c *Client) sleep(ctx context.Context, d time.Duration) error {

@@ -127,20 +127,110 @@ func TestPostRetriesARateLimitHonouringRetryAfter(t *testing.T) {
 }
 
 func TestRetryAfterIsBounded(t *testing.T) {
-	for header, want := range map[string]time.Duration{"3": 3 * time.Second, "9999": maxRetryAfter, "": time.Second, "soon": time.Second, "-5": time.Second} {
+	for header, want := range map[string]time.Duration{
+		"3":    3 * time.Second,
+		"9999": maxRetryAfter,
+		"":     time.Second,
+		"soon": time.Second,
+		"-5":   time.Second,
+		// Large enough that seconds * time.Second overflows int64: it used to come
+		// out negative, which the caller reads as "do not retry".
+		"10000000000":             maxRetryAfter,
+		"9223372036854775807":     maxRetryAfter,
+		"99999999999999999999999": maxRetryAfter,
+		"-99999999999999999999":   time.Second,
+	} {
 		if got := retryAfter(header); got != want {
 			t.Errorf("retryAfter(%q) = %v, want %v", header, got, want)
 		}
 	}
 }
 
-func TestPostRetriesServerErrorsThenGivesUp(t *testing.T) {
-	s := newServer(t, reply{status: http.StatusBadGateway})
-	if _, err := client(s, nil).Post(context.Background(), message); err == nil {
-		t.Fatal("Post succeeded against a server that only fails")
+// Slack saying it did not act is safe to ask again, up to the attempt limit.
+func TestPostRetriesWhenSlackDidNotAct(t *testing.T) {
+	for name, rep := range map[string]reply{
+		"503":                 {status: http.StatusServiceUnavailable},
+		"429":                 {status: http.StatusTooManyRequests},
+		"service_unavailable": {body: `{"ok":false,"error":"service_unavailable"}`},
+		"request_timeout":     {body: `{"ok":false,"error":"request_timeout"}`},
+		"ratelimited":         {body: `{"ok":false,"error":"ratelimited"}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newServer(t, rep)
+			if _, err := client(s, nil).Post(context.Background(), message); err == nil {
+				t.Fatal("Post succeeded against a server that only fails")
+			}
+			if got := s.calls.Load(); got != defaultAttempts {
+				t.Errorf("%d attempts, want %d", got, defaultAttempts)
+			}
+		})
 	}
-	if got := s.calls.Load(); got != defaultAttempts {
-		t.Errorf("%d attempts, want %d", got, defaultAttempts)
+}
+
+// chat.postMessage has no idempotency key, so an outcome that leaves it unknown
+// whether Slack acted must not be retried: the retry would post twice.
+func TestPostDoesNotRetryWhenDeliveryIsUncertain(t *testing.T) {
+	for name, rep := range map[string]reply{
+		"500":            {status: http.StatusInternalServerError},
+		"502":            {status: http.StatusBadGateway},
+		"504":            {status: http.StatusGatewayTimeout},
+		"internal_error": {body: `{"ok":false,"error":"internal_error"}`},
+		"fatal_error":    {body: `{"ok":false,"error":"fatal_error"}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newServer(t, rep)
+			_, err := client(s, nil).Post(context.Background(), message)
+			if err == nil || !strings.Contains(err.Error(), "may have been delivered") {
+				t.Fatalf("err = %v, want one saying the message may have been delivered", err)
+			}
+			if got := s.calls.Load(); got != 1 {
+				t.Errorf("%d attempts, want 1", got)
+			}
+		})
+	}
+}
+
+// The case that started this: Slack accepts the post and the response is lost.
+// Asking again would post the message a second time.
+func TestPostDoesNotRetryALostResponse(t *testing.T) {
+	var accepted atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		accepted.Add(1)
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		conn.Close() // the request arrived; no response ever does
+	}))
+	defer srv.Close()
+
+	c := &Client{Token: "xoxb-test-token", BaseURL: srv.URL, Sleep: func(context.Context, time.Duration) error { return nil }}
+	_, err := c.Post(context.Background(), message)
+	if err == nil || !strings.Contains(err.Error(), "may have been delivered") {
+		t.Fatalf("err = %v, want one saying the message may have been delivered", err)
+	}
+	if got := accepted.Load(); got != 1 {
+		t.Errorf("the server received %d posts, want 1", got)
+	}
+}
+
+// A failure to connect proves nothing was sent, so it is safe to try again.
+func TestPostRetriesAConnectionThatNeverOpened(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	url := srv.URL
+	srv.Close() // nothing listens here any more: connection refused
+
+	var slept []time.Duration
+	c := &Client{Token: "xoxb-test-token", BaseURL: url, Sleep: func(_ context.Context, d time.Duration) error {
+		slept = append(slept, d)
+		return nil
+	}}
+	if _, err := c.Post(context.Background(), message); err == nil {
+		t.Fatal("Post succeeded with nothing listening")
+	}
+	if len(slept) != defaultAttempts-1 {
+		t.Errorf("waited %d times, want %d: one before each retry", len(slept), defaultAttempts-1)
 	}
 }
 
@@ -166,11 +256,28 @@ func TestPostRetriesRatelimitedInTheBody(t *testing.T) {
 	}
 }
 
+// A huge Retry-After used to overflow to a negative wait, which stopped the
+// retry. It is bounded now, so the retry happens, after the longest wait.
+func TestPostRetriesAfterAnOverflowingRetryAfter(t *testing.T) {
+	s := newServer(t,
+		reply{status: http.StatusTooManyRequests, header: map[string]string{"Retry-After": "10000000000"}},
+		reply{body: `{"ok":true,"ts":"1.2"}`},
+	)
+	var slept []time.Duration
+	if _, err := client(s, &slept).Post(context.Background(), message); err != nil {
+		t.Fatal(err)
+	}
+	if len(slept) != 1 || slept[0] != maxRetryAfter {
+		t.Errorf("slept %v, want one wait of %v", slept, maxRetryAfter)
+	}
+}
+
 // The token authenticates the request and must not come back in an error.
 func TestErrorsNeverCarryTheToken(t *testing.T) {
 	for _, rep := range []reply{
 		{body: `{"ok":false,"error":"invalid_auth"}`},
 		{status: http.StatusInternalServerError},
+		{status: http.StatusTooManyRequests},
 		{body: "not json"},
 	} {
 		s := newServer(t, rep)
@@ -185,7 +292,7 @@ func TestErrorsNeverCarryTheToken(t *testing.T) {
 }
 
 func TestPostStopsWhenCancelled(t *testing.T) {
-	s := newServer(t, reply{status: http.StatusBadGateway})
+	s := newServer(t, reply{status: http.StatusTooManyRequests})
 	ctx, cancel := context.WithCancel(context.Background())
 	c := client(s, nil)
 	c.Sleep = func(context.Context, time.Duration) error { cancel(); return ctx.Err() }

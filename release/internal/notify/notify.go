@@ -110,9 +110,10 @@ func (n *Notifier) Trigger(ctx context.Context, event string, data Data, stateKe
 	return res, errors.Join(errs...)
 }
 
-// slackToken is the shape of any Slack token, so one that is not the bot's own
-// is removed as well.
-var slackToken = regexp.MustCompile(`xox[a-z]-[A-Za-z0-9-]+`)
+// slackToken is the shape of a Slack token, so one that is not the bot's own is
+// removed as well: the xox families (bot, user, workspace, refresh, legacy), the
+// xapp- app-level token, and the rotating forms Slack prefixes with xoxe.
+var slackToken = regexp.MustCompile(`(?:xoxe\.)?(?:xox[a-z]|xapp)-[A-Za-z0-9-]+`)
 
 const redacted = "[redacted]"
 

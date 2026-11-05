@@ -12,8 +12,14 @@
 #               run_number, run_attempt, ref_name, ref_type, sha, sha_short,
 #               actor, event_name, server_url, job, run_url, commit_url
 #   .Event.*    what the job passed with --data
+# A template names one key at a time; {{.}}, {{$}} and .Context or .Event on their
+# own are rejected, because they would print every value.
 # Every value is escaped for Slack before it is rendered, so a branch name or an
 # error line cannot become a mention or a link. Link as <{{.Context.run_url}}|text>.
+#
+# commit_url and sha_short describe the commit the workflow ran on. The tag cut
+# does not: the nightly tags a commit it selected, which need not be the one it
+# ran on, so tag-cut links the commit it is passed.
 #
 # A thread starts with the first message of a conversation. The conversation is
 # the beta tag for a tag run, so the tag cut and the qualification it starts
@@ -32,7 +38,7 @@ notifications:
     title: "🏷️ NVKE beta {{.Event.tag}} cut"
     severity: info
     message_template: |
-      Tagged commit <{{.Context.commit_url}}|{{.Event.commit_short}}> · <{{.Context.run_url}}|nightly run #{{.Context.run_number}}>
+      Tagged commit <{{.Context.server_url}}/{{.Context.repository}}/commit/{{.Event.commit}}|{{.Event.commit_short}}> · <{{.Context.run_url}}|nightly run #{{.Context.run_number}}>
 
   - name: qualification-started
     title: "🚀 NVKE qualification started: {{.Context.ref_name}}"

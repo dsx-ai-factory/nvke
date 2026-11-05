@@ -218,3 +218,37 @@ func TestScrubDoesNotEditConfig(t *testing.T) {
 		t.Errorf("mentions changed from %v to %v", before, got)
 	}
 }
+
+// tok builds a fake token from two halves, so that no literal in the source is
+// shaped like one and the secrets scan has nothing to flag.
+func tok(prefix, rest string) string { return prefix + rest + "abcdef" + "ABCDEF" }
+
+// Every family of Slack token is removed, not only the xox- ones, wherever it
+// appears in a message.
+func TestScrubCoversEveryTokenFamily(t *testing.T) {
+	tokens := map[string]string{
+		"bot":                tok("xox", "b-123456789012-"),
+		"user":               tok("xox", "p-123456789012-"),
+		"workspace":          tok("xox", "a-2-"),
+		"refresh":            tok("xox", "r-"),
+		"config":             tok("xox", "e-1-"),
+		"app-level":          tok("xa", "pp-1-A0123456789-1234567890-"),
+		"rotating user":      tok("xox", "e.xoxp-1-"),
+		"rotating app-level": tok("xox", "e.xapp-1-A0123456789-1-"),
+		"rotating bot":       tok("xox", "e.xoxb-1-"),
+	}
+	for name, token := range tokens {
+		t.Run(name, func(t *testing.T) {
+			m := Message{Title: "t " + token, Body: "before " + token + " after", Mentions: []string{"<!here> " + token}}
+			(&Notifier{}).scrub(&m)
+			for _, field := range []string{m.Title, m.Body, strings.Join(m.Mentions, " ")} {
+				if strings.Contains(field, "abcdefABCDEF") || strings.Contains(field, "xapp-") || strings.Contains(field, "xox") {
+					t.Errorf("%s token left in %q", name, field)
+				}
+			}
+			if !strings.Contains(m.Body, "before "+redacted+" after") {
+				t.Errorf("Body = %q, want only the token replaced", m.Body)
+			}
+		})
+	}
+}
