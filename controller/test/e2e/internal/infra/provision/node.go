@@ -21,9 +21,12 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -200,9 +203,16 @@ func CloudInitDiagnostics(ctx context.Context, conn Conn) string {
 }
 
 // NewKey generates the key a run authenticates to its node with. It is made
-// per run and never stored: cloud-init writes the public half into
-// authorized_keys, and the private half does not leave the process.
-func NewKey(provider string) (ssh.Signer, string, error) {
+// per run: cloud-init writes the public half into authorized_keys, and the
+// private half does not leave the process unless keyDir is set.
+//
+// A non-empty keyDir is for a node kept to inspect, which nothing can log into
+// once the run ends without this key. The private half is written to
+// KeyPath(keyDir, node), readable only by the runner's user. It is a login to
+// the node, which holds the site's admin kubeconfig, so it is for a runner
+// whose files stay with whoever started it: `qualify local` sets it, the
+// workflow never does.
+func NewKey(provider, keyDir, node string) (ssh.Signer, string, error) {
 	_, private, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, "", fmt.Errorf("%s: generating the session key: %w", provider, err)
@@ -211,7 +221,42 @@ func NewKey(provider string) (ssh.Signer, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("%s: generating the session key: %w", provider, err)
 	}
+	if keyDir != "" {
+		if err := writeKey(keyDir, node, private); err != nil {
+			return nil, "", fmt.Errorf("%s: saving the session key: %w", provider, err)
+		}
+	}
 	return signer, strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))), nil
+}
+
+// KeyPath is where NewKey writes node's key under keyDir.
+func KeyPath(keyDir, node string) string {
+	return filepath.Join(keyDir, node+".key")
+}
+
+func writeKey(keyDir, node string, private ed25519.PrivateKey) error {
+	if node == "" || filepath.Base(node) != node || node == "." || node == ".." {
+		return fmt.Errorf("node name %q cannot name a file", node)
+	}
+	block, err := ssh.MarshalPrivateKey(private, node)
+	if err != nil {
+		return err
+	}
+	err = os.MkdirAll(keyDir, 0o700)
+	if err != nil {
+		return err
+	}
+	// O_EXCL: a key already there belongs to another node of the same name,
+	// possibly still kept, and overwriting it locks that node out.
+	f, err := os.OpenFile(KeyPath(keyDir, node), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := pem.Encode(f, block); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // Session is a Conn plus the release of the machine it is connected to.

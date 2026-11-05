@@ -94,6 +94,10 @@ type Options struct {
 	// says so, and names the address to reach it at.
 	KeepOnFailure bool
 
+	// KeyDir, when set, is where each node's SSH key is written, so a kept
+	// node can be logged into after the run. See provision.NewKey.
+	KeyDir string
+
 	// DisableMTLS runs the node agent without SPIFFE. `nvkectl bootstrap site`
 	// must be given --disable-mtls to match, and the stack deployed with
 	// spiffe.enabled=false, or every dial fails as a TLS handshake error.
@@ -212,7 +216,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 		return infra.Node{}, nil, fmt.Errorf("dsx: %w", err)
 	}
 
-	signer, authorizedKey, err := provision.NewKey("dsx")
+	signer, authorizedKey, err := provision.NewKey("dsx", p.opts.KeyDir, req.Name)
 	if err != nil {
 		return infra.Node{}, nil, err
 	}
@@ -311,7 +315,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 		return fail(err)
 	}
 
-	return infra.Node{Name: req.Name, IP: address, Arch: place.Arch}, &provision.Session{Conn: conn, Release: release}, nil
+	return infra.Node{Name: req.Name, IP: address, User: p.nodeUser(), Arch: place.Arch}, &provision.Session{Conn: conn, Release: release}, nil
 }
 
 // payloads returns the iPXE script and the cloud-init user data, in that order.

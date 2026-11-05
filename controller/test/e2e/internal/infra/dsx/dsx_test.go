@@ -212,6 +212,9 @@ func TestProvisionNodePinsAMachineWhenTheSiteDeclaresOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = session.Teardown(context.Background()) })
+	if dialed := dialer.targets[len(dialer.targets)-1].User; node.User != dialed {
+		t.Errorf("User = %q, want %q, the login the session dialed with", node.User, dialed)
+	}
 
 	// A site that declares machines pins one, which is the hand bring-up path.
 	// The default is the other way round -- see the pooled case below.

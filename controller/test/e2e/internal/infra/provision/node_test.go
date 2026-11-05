@@ -4,10 +4,71 @@
 package provision
 
 import (
+	"bytes"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
+
+// The key is written only when asked for, readable only by its owner, and is
+// the private half of the public key the node is given.
+func TestNewKeyWritesTheKeyOnlyWhenAsked(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "node-keys")
+
+	if _, _, err := NewKey("test", "", "site-a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("no key dir was given, but %s exists (err %v)", dir, err)
+	}
+
+	signer, authorized, err := NewKey("test", dir, "site-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := KeyPath(dir, "site-a")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Errorf("key mode = %o, want 600", mode)
+	}
+	info, err = os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o700 {
+		t.Errorf("key dir mode = %o, want 700", mode)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := ssh.ParsePrivateKey(b)
+	if err != nil {
+		t.Fatalf("parsing the saved key: %v", err)
+	}
+	if !bytes.Equal(saved.PublicKey().Marshal(), signer.PublicKey().Marshal()) {
+		t.Error("the saved key is not the session's key")
+	}
+	if got := string(bytes.TrimSpace(ssh.MarshalAuthorizedKey(saved.PublicKey()))); got != authorized {
+		t.Errorf("saved key's public half = %q, want the authorized key %q", got, authorized)
+	}
+
+	if _, _, err := NewKey("test", dir, "site-a"); err == nil {
+		t.Error("a second key for the same node overwrote the first")
+	}
+	for _, name := range []string{"", ".", "..", "../x", "a/b"} {
+		if _, _, err := NewKey("test", dir, name); err == nil {
+			t.Errorf("node name %q was accepted as a file name", name)
+		}
+	}
+}
 
 // WithTimeout raises a timeout that is too short and leaves everything else
 // alone. Zero is the case worth a test: it means "no timeout", so raising it

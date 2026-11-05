@@ -220,6 +220,9 @@ func TestProvisionNode(t *testing.T) {
 	if node.Arch != "amd64" {
 		t.Errorf("Arch = %q, want the matched instance type's amd64", node.Arch)
 	}
+	if dialed := dialer.targets[len(dialer.targets)-1].User; node.User != dialed {
+		t.Errorf("User = %q, want %q, the login the session dialed with", node.User, dialed)
+	}
 
 	created := forge.created
 	for field, want := range map[string]any{

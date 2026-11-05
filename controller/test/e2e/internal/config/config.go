@@ -30,12 +30,18 @@ type Config struct {
 		SkipDelete bool `json:"skipDelete"`
 
 		// PreserveOnFailure keeps a failed run's machines. Neither can be
-		// logged into once the run ends: a preserved site node holds this
-		// run's public key, whose private half never leaves the process, and
-		// a preserved tenant node holds none and the image locks the account.
-		// The serial console, which carries cloud-init's output, is the only
-		// way in.
+		// logged into once the run ends unless NodeKeyDir is set: a
+		// preserved site node holds this run's public key, whose private
+		// half otherwise never leaves the process, and a preserved tenant
+		// node holds none and the image locks the account. The serial
+		// console, which carries cloud-init's output, is the other way in.
 		PreserveOnFailure bool `json:"preserveOnFailure"`
+
+		// NodeKeyDir, when set, is where the site node's SSH key is written,
+		// readable only by the runner's user, so a kept node can be logged
+		// into after the run. Only `qualify local` sets it: the key is a
+		// login to a node holding the site's admin kubeconfig.
+		NodeKeyDir string `json:"nodeKeyDir"`
 
 		ReuseCluster string `json:"reuseCluster"` // non-empty -> skip create, verify this cluster
 	} `json:"lifecycle"`

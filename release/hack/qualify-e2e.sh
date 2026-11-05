@@ -76,7 +76,7 @@ inputs() {
       ;;
     config)
       echo NODE_USER SITE_NVKECTL SITE_DEPLOY_PATH_REF SITE_IMAGES SITE_NVKE_CONTROLLER_REPOSITORY \
-        SITE_INPUTS KEEP_SITE KEEP_TENANT
+        SITE_INPUTS KEEP_SITE KEEP_TENANT NODE_KEY_DIR
       ;;
     # The controller's name is the suite's, not this script's: empty leaves it
     # on nvke-controller, and a release from before the rename needs it named.
@@ -589,10 +589,21 @@ EOF
   # instances the site was kept to look at. skipDelete keeps every tenant,
   # passed or not, and the site with them, since it owns their instances;
   # it also skips the spec that deletes the tenant.
+  local lifecycle=""
   if [ "${KEEP_TENANT:-}" = "true" ]; then
-    printf 'lifecycle:\n  skipDelete: true\n' >>"${config}"
+    lifecycle+=$'  skipDelete: true\n'
   elif [ "${KEEP_SITE:-}" = "true" ]; then
-    printf 'lifecycle:\n  preserveOnFailure: true\n' >>"${config}"
+    lifecycle+=$'  preserveOnFailure: true\n'
+  fi
+  # Only qualify local sets this. The key logs into the site node, which
+  # holds the site's admin kubeconfig, and a runner's files can end up in
+  # an uploaded artifact.
+  if [ -n "${NODE_KEY_DIR:-}" ]; then
+    lifecycle+="  nodeKeyDir: ${NODE_KEY_DIR}"$'\n'
+    warn "the site node's SSH key is written under ${NODE_KEY_DIR}; it logs into the node, which holds the site's admin kubeconfig, so delete it with the node"
+  fi
+  if [ -n "${lifecycle}" ]; then
+    printf 'lifecycle:\n%s' "${lifecycle}" >>"${config}"
   fi
   say "--- ${E2E_CONFIG} ---"
   cat "${config}" >&2

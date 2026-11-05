@@ -358,13 +358,15 @@ func TestAStepRefusesAnUnsetInput(t *testing.T) {
 
 func TestConfigKeepsWhatItIsAskedTo(t *testing.T) {
 	for _, tc := range []struct {
-		site, tenant string
-		want         string
+		site, tenant, keyDir string
+		want                 string
 	}{
-		{"false", "false", ""},
-		{"true", "false", "lifecycle:\n  preserveOnFailure: true\n"},
-		{"false", "true", "lifecycle:\n  skipDelete: true\n"},
-		{"true", "true", "lifecycle:\n  skipDelete: true\n"},
+		{"false", "false", "", ""},
+		{"true", "false", "", "lifecycle:\n  preserveOnFailure: true\n"},
+		{"false", "true", "", "lifecycle:\n  skipDelete: true\n"},
+		{"true", "true", "", "lifecycle:\n  skipDelete: true\n"},
+		{"false", "true", "/r/node-keys", "lifecycle:\n  skipDelete: true\n  nodeKeyDir: /r/node-keys\n"},
+		{"false", "false", "/r/node-keys", "lifecycle:\n  nodeKeyDir: /r/node-keys\n"},
 	} {
 		for _, sh := range shells(t) {
 			config := filepath.Join(t.TempDir(), "e2e-config.yaml")
@@ -377,6 +379,7 @@ func TestConfigKeepsWhatItIsAskedTo(t *testing.T) {
 				"SITE_NVKE_CONTROLLER_REPOSITORY": "nvke-controller",
 				"KEEP_SITE":                       tc.site,
 				"KEEP_TENANT":                     tc.tenant,
+				"NODE_KEY_DIR":                    tc.keyDir,
 			})
 			l.step(true, "config")
 			b, err := os.ReadFile(config)
@@ -388,7 +391,7 @@ func TestConfigKeepsWhatItIsAskedTo(t *testing.T) {
 				got = "lifecycle:\n" + got
 			}
 			if got != tc.want {
-				t.Errorf("%s keep-site=%s keep-tenant=%s: lifecycle = %q, want %q", sh, tc.site, tc.tenant, got, tc.want)
+				t.Errorf("%s keep-site=%s keep-tenant=%s node-key-dir=%q: lifecycle = %q, want %q", sh, tc.site, tc.tenant, tc.keyDir, got, tc.want)
 			}
 		}
 	}
