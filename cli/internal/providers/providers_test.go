@@ -55,7 +55,7 @@ func TestSupportedMatchesProviderSources(t *testing.T) {
 		{
 			typ:                  TypeLaunchLayer,
 			crdNames:             []string{"launchlayerclusters.infrastructure.cluster.x-k8s.io", "launchlayermachinetemplates.infrastructure.cluster.x-k8s.io"},
-			appName:              "cluster-api-provider-launchlayer",
+			appName:              "capi-provider-launchlayer",
 			controllerNamespace:  "capll-system",
 			controllerDeployment: "cluster-api-provider-launchlayer-controller-manager",
 			secretNameFlag:       "--identity-secret",

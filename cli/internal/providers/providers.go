@@ -144,10 +144,12 @@ func Supported() []Provider {
 			WatchNamespaceFlag: "--namespace",
 			WatchFilterFlag:    "--watch-filter",
 		},
+		// CAPLL's chart labels its manager with the chart name, AppName; the
+		// fallback names the manager its release YAML installs.
 		{
 			Type:                 TypeLaunchLayer,
 			CRDNames:             []string{"launchlayerclusters." + infrastructureGroup, "launchlayermachinetemplates." + infrastructureGroup},
-			AppName:              "cluster-api-provider-launchlayer",
+			AppName:              "capi-provider-launchlayer",
 			ControllerNamespace:  "capll-system",
 			ControllerDeployment: "cluster-api-provider-launchlayer-controller-manager",
 			SecretNameFlag:       "--identity-secret",
