@@ -482,16 +482,28 @@ not compare builds across machines or BuildKit versions.
 
 Build from the release tag of the controller the site runs,
 `controller/v<version>`, the same version the site pins. Never build from
-`main`: its suite tests the next controller, not the one installed.
+`main`: its suite tests the next controller, not the one installed. The
+Dockerfile first shipped in `controller/v0.3.0`; earlier tags have no image to
+build.
+
+`validate-image-oci` and `validate-image-push` build for two platforms and
+write an OCI archive or push, which Docker's default `docker` builder driver
+cannot do. First create a builder that runs BuildKit in its own container, as
+CI does; otherwise the build fails with "OCI exporter is not supported for the
+docker driver". This is needed once per machine.
 
 ```bash
-git clone --branch controller/v0.2.0 --depth 1 https://github.com/dsx-ai-factory/nvke.git
+docker buildx create --name nvke --driver docker-container --bootstrap --use
+```
+
+```bash
+git clone --branch controller/v0.3.0 --depth 1 https://github.com/dsx-ai-factory/nvke.git
 cd nvke
-make -C controller/test/e2e validate-image-oci VALIDATE_VERSION=v0.2.0
+make -C controller/test/e2e validate-image-oci VALIDATE_VERSION=v0.3.0
 cat controller/test/e2e/bin/validate-image-digest.txt
 ```
 
-`validate-image-push VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS=v0.2.0`
+`validate-image-push VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS=v0.3.0`
 pushes it to the site's own registry instead. Either target derives the rest
 from the checkout.
 
@@ -506,10 +518,10 @@ a token with read access as the `GIT_AUTH_TOKEN` secret; otherwise drop the
 docker buildx build -f controller/test/e2e/Dockerfile \
   --platform linux/amd64,linux/arm64 --provenance=false --sbom=false \
   --build-arg SOURCE_DATE_EPOCH=<commit time> \
-  --build-arg VALIDATE_VERSION=v0.2.0 --build-arg VALIDATE_REVISION=<commit> \
+  --build-arg VALIDATE_VERSION=v0.3.0 --build-arg VALIDATE_REVISION=<commit> \
   --secret id=GIT_AUTH_TOKEN,env=GIT_AUTH_TOKEN \
-  --output type=image,name=<repository>:v0.2.0,push=true,oci-mediatypes=true,rewrite-timestamp=true \
-  'https://github.com/dsx-ai-factory/nvke.git#controller/v0.2.0'
+  --output type=image,name=<repository>:v0.3.0,push=true,oci-mediatypes=true,rewrite-timestamp=true \
+  'https://github.com/dsx-ai-factory/nvke.git#controller/v0.3.0'
 ```
 
 Arguments that change where things come from, not what, keep the digest:
@@ -531,9 +543,9 @@ under that version:
 
 ```bash
 git ls-remote --tags --refs https://github.com/dsx-ai-factory/nvke.git 'controller/v*'
-git clone --branch controller/v0.2.0 --depth 1 https://github.com/dsx-ai-factory/nvke.git
-make -C nvke/controller/test/e2e validate-image-push VALIDATE_VERSION=v0.2.0 \
-  VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS=v0.2.0
+git clone --branch controller/v0.3.0 --depth 1 https://github.com/dsx-ai-factory/nvke.git
+make -C nvke/controller/test/e2e validate-image-push VALIDATE_VERSION=v0.3.0 \
+  VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS=v0.3.0
 ```
 
 A run picks the image whose tag is the site's controller version and sets
@@ -554,7 +566,7 @@ the release tag rather than editing this Dockerfile, so the suite stays the one
 that shipped:
 
 ```dockerfile
-FROM <repository>/nvke-validate:v0.2.0
+FROM <repository>/nvke-validate:v0.3.0
 USER 0
 RUN apk add --no-cache curl
 USER 65532:65532
