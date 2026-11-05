@@ -262,9 +262,21 @@ func (r *NVKEClusterReconciler) resolveReleaseTemplateVariables(ctx context.Cont
 	if err != nil {
 		return nil, err
 	}
+	variables, err := releaseTemplateVariables(release.Spec.MachineInit, &image)
+	if err != nil {
+		return nil, err
+	}
+	cluster.Status.ResolvedRelease = &internalv1.ReleaseReference{
+		Name: internalv1.ResourceName(release.Name), Version: kubernetesVersion.String(),
+	}
+	return variables, nil
+}
+
+// releaseTemplateVariables builds the infra template variables a release and its image supply.
+func releaseTemplateVariables(machineInit internalv1.MachineInit, image *internalv1.MachineImage) (map[string]any, error) {
 	files := []internalv1.BootstrapFile{}
 	commands := []string{}
-	if bootstrap := release.Spec.MachineInit.Infra; bootstrap != nil {
+	if bootstrap := machineInit.Infra; bootstrap != nil {
 		files = append(files, bootstrap.BootstrapFiles...)
 		commands = append(commands, bootstrap.PreKubeadmCommands...)
 	}
@@ -280,9 +292,6 @@ func (r *NVKEClusterReconciler) resolveReleaseTemplateVariables(ctx context.Cont
 	ipxeScript, err := json.Marshal(image.Spec.NICo.IPXEScript)
 	if err != nil {
 		return nil, fmt.Errorf("marshal image iPXE script: %w", err)
-	}
-	cluster.Status.ResolvedRelease = &internalv1.ReleaseReference{
-		Name: internalv1.ResourceName(release.Name), Version: kubernetesVersion.String(),
 	}
 	return map[string]any{
 		"BootstrapFilesJSON":     string(filesJSON),
