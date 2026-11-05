@@ -19,9 +19,8 @@
 # hack/base-image-update.sh.
 #
 # The build is reproducible: the same commit, build args and flags give the same
-# image digest wherever it is built, so a site that builds this itself can
-# compare its digest with the one the release attested. `make
-# validate-image-push` passes the args and flags; "Building the image yourself"
+# image digest wherever it is built. `make validate-image-oci` and
+# `validate-image-push` pass the args and flags; "Building the image yourself"
 # in README.md lists them.
 ARG GOLANG_IMAGE=docker.io/golang:1.27.3@sha256:e519d3b0a5b285e5aa53ab9eef02bc6bbb9cb04608389b743a136a9ce75f0d1e
 ARG ALPINE_IMAGE=docker.io/alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
