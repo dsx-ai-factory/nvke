@@ -1,0 +1,10 @@
+id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+resolvedRelease:
+  name: test-release
+  version: 1.36.1
+nodePools:
+  - name: workers
+    id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+    resolvedRelease:
+      name: worker-test-release
+      version: "1.36.1"

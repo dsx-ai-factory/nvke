@@ -161,10 +161,37 @@ spec:
                 x-kubernetes-validations:
                 - message: machineInit is immutable
                   rule: self == oldSelf
+              profile:
+                description: |-
+                  Profile names the family of images this release belongs to, such as
+                  "ubuntu-gpu". A node pool selects a release with nodeProfile <profile>:<tag>.
+                maxLength: 253
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                type: string
+                x-kubernetes-validations:
+                - message: profile is immutable
+                  rule: self == oldSelf
+              tag:
+                description: |-
+                  Tag identifies this release within its profile, such as "1.36.4". The
+                  profile and tag pair should be unique across releases.
+                maxLength: 128
+                pattern: ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$
+                type: string
+                x-kubernetes-validations:
+                - message: tag is immutable
+                  rule: self == oldSelf
             required:
             - machineImageRef
             - machineInit
             type: object
+            x-kubernetes-validations:
+            - message: profile and tag must be set together
+              rule: has(self.profile) == has(self.tag)
+            - message: profile is immutable
+              rule: has(self.profile) == has(oldSelf.profile)
+            - message: tag is immutable
+              rule: has(self.tag) == has(oldSelf.tag)
         required:
         - spec
         type: object

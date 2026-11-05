@@ -28,3 +28,11 @@ const (
 	NotSyncedReason   = "NotSynced"
 	SyncUnknownReason = "SyncUnknown"
 )
+
+const (
+	NodePoolReleaseResolvedCondition = "NodePoolReleaseResolved"
+	ReleaseResolvedReason            = "ReleaseResolved"
+	ReleaseNotFoundReason            = "ReleaseNotFound"
+	ReleaseInvalidReason             = "ReleaseInvalid"
+	ReleaseDeprecatedReason          = "ReleaseDeprecated"
+)

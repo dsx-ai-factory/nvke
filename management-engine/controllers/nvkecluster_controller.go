@@ -60,6 +60,9 @@ type NVKEControllerClient interface {
 // NVKEClusterReconciler coordinates cluster provisioning from declarative intent.
 type NVKEClusterReconciler struct {
 	client.Client
+	// APIReader reads the NVKECluster without the informer cache, so a reconcile never starts from a status older
+	// than the previous reconcile's write. When nil, the cached client is used.
+	APIReader                  client.Reader
 	NVKEController             NVKEControllerClient
 	PollInterval               time.Duration
 	InfraTemplateConfigMapName string
@@ -67,7 +70,7 @@ type NVKEClusterReconciler struct {
 
 // +kubebuilder:rbac:groups=internal.nvke.nvidia.com,resources=nvkeclusters,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=internal.nvke.nvidia.com,resources=nvkeclusters/status,verbs=update;patch
-// +kubebuilder:rbac:groups=internal.nvke.nvidia.com,resources=controlplaneclasses;clusterreleases;clusterreleasechannels;machineimages,verbs=get;list;watch
+// +kubebuilder:rbac:groups=internal.nvke.nvidia.com,resources=controlplaneclasses;clusterreleases;clusterreleasechannels;machineimages;nodepoolreleases,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
 func (r *NVKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, retErr error) {
@@ -75,7 +78,11 @@ func (r *NVKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	log.V(1).Info("reconciling NVKECluster")
 
 	var cluster internalv1.NVKECluster
-	if err := r.Get(ctx, req.NamespacedName, &cluster); err != nil {
+	var reader client.Reader = r.Client
+	if r.APIReader != nil {
+		reader = r.APIReader
+	}
+	if err := reader.Get(ctx, req.NamespacedName, &cluster); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -212,7 +219,7 @@ func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *i
 	for i := range cluster.Spec.NodePools {
 		pool := &cluster.Spec.NodePools[i]
 		desiredPools[pool.Name] = true
-		if err := r.reconcileNodePool(ctx, cluster, pool, nodePoolTemplate, observedCluster, variables); err != nil {
+		if err := r.reconcileNodePool(ctx, cluster, pool, nodePoolTemplate, observedCluster); err != nil {
 			poolErr = errors.Join(poolErr, fmt.Errorf("reconcile node pool %q: %w", pool.Name, err))
 		}
 	}
@@ -262,9 +269,21 @@ func (r *NVKEClusterReconciler) resolveReleaseTemplateVariables(ctx context.Cont
 	if err != nil {
 		return nil, err
 	}
+	variables, err := releaseTemplateVariables(release.Spec.MachineInit, &image)
+	if err != nil {
+		return nil, err
+	}
+	cluster.Status.ResolvedRelease = &internalv1.ReleaseReference{
+		Name: internalv1.ResourceName(release.Name), Version: kubernetesVersion.String(),
+	}
+	return variables, nil
+}
+
+// releaseTemplateVariables builds the infra template variables a release and its image supply.
+func releaseTemplateVariables(machineInit internalv1.MachineInit, image *internalv1.MachineImage) (map[string]any, error) {
 	files := []internalv1.BootstrapFile{}
 	commands := []string{}
-	if bootstrap := release.Spec.MachineInit.Infra; bootstrap != nil {
+	if bootstrap := machineInit.Infra; bootstrap != nil {
 		files = append(files, bootstrap.BootstrapFiles...)
 		commands = append(commands, bootstrap.PreKubeadmCommands...)
 	}
@@ -280,9 +299,6 @@ func (r *NVKEClusterReconciler) resolveReleaseTemplateVariables(ctx context.Cont
 	ipxeScript, err := json.Marshal(image.Spec.NICo.IPXEScript)
 	if err != nil {
 		return nil, fmt.Errorf("marshal image iPXE script: %w", err)
-	}
-	cluster.Status.ResolvedRelease = &internalv1.ReleaseReference{
-		Name: internalv1.ResourceName(release.Name), Version: kubernetesVersion.String(),
 	}
 	return map[string]any{
 		"BootstrapFilesJSON":     string(filesJSON),
@@ -368,6 +384,8 @@ func renderInfraTemplate(name, body string, variables map[string]any, target any
 	return nil
 }
 
+// infraTemplateVariables starts from the variables of the release the template renders for: the cluster
+// release for the cluster and control plane, the pool's worker release for a pool.
 func infraTemplateVariables(cluster *internalv1.NVKECluster, pool *internalv1.NodePool, releaseVariables map[string]any) map[string]any {
 	variables := maps.Clone(releaseVariables)
 	if cluster.Spec.Network != nil && cluster.Spec.Network.VPCID != "" {
@@ -385,7 +403,7 @@ func infraTemplateVariables(cluster *internalv1.NVKECluster, pool *internalv1.No
 	return variables
 }
 
-func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, observedCluster *api.Cluster, variables map[string]any) error {
+func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, observedCluster *api.Cluster) error {
 	var status *internalv1.NodePoolStatus
 	for i := range cluster.Status.NodePools {
 		if cluster.Status.NodePools[i].Name == pool.Name {
@@ -402,17 +420,43 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 
 	observedPool, err := r.NVKEController.FindNodePool(ctx, observedCluster.Name, string(pool.Name))
 	if errors.Is(err, nvkecontroller.ErrNotFound) {
+		release, image, err := r.resolveNodePoolRelease(ctx, pool, status.ResolvedRelease)
+		if err != nil {
+			if selectionErr, ok := errors.AsType[*ReleaseSelectionError](err); ok {
+				conditions.Set(target, metav1.Condition{
+					Type:    internalv1.NodePoolReleaseResolvedCondition,
+					Status:  metav1.ConditionFalse,
+					Reason:  selectionErr.Reason,
+					Message: selectionErr.Message,
+				})
+				if summaryErr := setNodePoolConditions(target); summaryErr != nil {
+					err = errors.Join(err, summaryErr)
+				}
+			}
+			return err
+		}
+		workerVariables, err := releaseTemplateVariables(release.Spec.MachineInit, image)
+		if err != nil {
+			return err
+		}
 		request, err := resolveNodePoolRequest(observedCluster.ID, pool)
 		if err != nil {
 			return fmt.Errorf("resolve node pool %q request: %w", pool.Name, err)
 		}
 		var infra api.InfraNodePoolProvider
-		if err := renderInfraTemplate(nodePoolTemplateKey, nodePoolTemplate, infraTemplateVariables(cluster, pool, variables), &infra); err != nil {
+		if err := renderInfraTemplate(nodePoolTemplateKey, nodePoolTemplate, infraTemplateVariables(cluster, pool, workerVariables), &infra); err != nil {
 			return err
 		}
 		if len(infra.MachineTemplate) == 0 {
 			return fmt.Errorf("%s must contain a machineTemplate manifest", nodePoolTemplateKey)
 		}
+		// Pin the release before creating the pool so the deferred status patch records it on every return.
+		status.ResolvedRelease = &internalv1.ReleaseReference{Name: internalv1.ResourceName(release.Name), Version: release.Spec.Tag}
+		conditions.Set(target, metav1.Condition{
+			Type:   internalv1.NodePoolReleaseResolvedCondition,
+			Status: metav1.ConditionTrue,
+			Reason: internalv1.ReleaseResolvedReason,
+		})
 		request.Infra = &infra
 		observedPool, err := r.NVKEController.CreateNodePool(ctx, request)
 		if err != nil {
@@ -743,7 +787,10 @@ func setNodePoolConditions(pool conditions.Setter) error {
 			internalv1.NVKEControllerProvisionedCondition,
 			internalv1.NVKEControllerProvisioningCondition,
 			internalv1.NVKEControllerDeletingCondition,
+			internalv1.NodePoolReleaseResolvedCondition,
 		},
+		// Pools created before worker release resolution have no such condition and are not backfilled.
+		conditions.IgnoreTypesIfMissing{internalv1.NodePoolReleaseResolvedCondition},
 		conditions.NegativePolarityConditionTypes(nvkeControllerNegativeConditionTypes),
 		conditions.CustomMergeStrategy{
 			MergeStrategy: conditions.DefaultMergeStrategy(
@@ -896,6 +943,9 @@ func (r *NVKEClusterReconciler) resolveNVKEControllerClass(ctx context.Context, 
 func (r *NVKEClusterReconciler) SetupWithManager(mgr ctrl.Manager, wrappers ...func(reconcile.Reconciler) reconcile.Reconciler) error {
 	if r.PollInterval <= 0 {
 		r.PollInterval = defaultPollInterval
+	}
+	if r.APIReader == nil {
+		r.APIReader = mgr.GetAPIReader()
 	}
 	var reconciler reconcile.Reconciler = r
 	for _, wrap := range wrappers {

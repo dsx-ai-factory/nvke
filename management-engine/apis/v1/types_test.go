@@ -89,6 +89,8 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 			object: &NodePoolRelease{
 				Name: "nvke-nico-vms-24.04-amd64-fde",
 				Spec: NodePoolReleaseSpec{
+					Profile:         "nvke-nico-vms",
+					Tag:             "24.04-amd64-fde",
 					MachineImageRef: MachineImageReference{Name: "nvke-nico-vms-24.04-amd64-fde"},
 					MachineInit:     testMachineInit(),
 				},
