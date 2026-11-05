@@ -748,6 +748,12 @@ spiffe:
   # manager. Defaults to its local SPIFFE ID; set it to the rewritten subject
   # when CAPD uses an exchanged tenant kubeconfig.
   capdManagerSubject: ""
+  # -- Subject the nvke:capll-manager RBAC binding names for the CAPLL manager,
+  # rendered when supportedInfraProviders includes launchLayer. Defaults to
+  # spiffe://<trustDomain>/<servicePathSegment>/capi-provider-launchlayer-controller-manager,
+  # the ServiceAccount of CAPLL's chart under its default release name. With
+  # jwtExchangeEndpoint set, the binding is rendered only when this is set.
+  capllManagerSubject: ""
   # -- SPIRE trust domain. When set, the chart renders ConfigMap rbacConfigMap.name.
   # Required when nvkeOIDCAuth.enabled is true: builds the
   # nvkeOIDCAuth.tenantRbacName SPIFFE subject ID in that ConfigMap. Must equal the

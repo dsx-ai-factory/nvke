@@ -103,6 +103,26 @@ metadata:
 {{- $capiKubeadmControlPlaneManagerSubject := .Values.spiffe.capiKubeadmControlPlaneManagerSubject | default (printf "spiffe://%s/%s/capi-kubeadm-control-plane-manager" $td $seg) }}
 {{- $capiKubeadmBootstrapManagerSubject := .Values.spiffe.capiKubeadmBootstrapManagerSubject | default (printf "spiffe://%s/%s/capi-kubeadm-bootstrap-manager" $td $seg) }}
 {{- $capdManagerSubject := .Values.spiffe.capdManagerSubject | default (printf "spiffe://%s/%s/capd-manager" $td $seg) }}
+{{- /*
+  CAPLL reads each Machine's Node in the tenant cluster and patches its
+  providerID, through the same <cluster>-kubeconfig Secret the CAPI controllers
+  use. Unlike theirs, its subject is not required with token exchange: sites that
+  enabled launchLayer before this binding existed grant CAPLL through
+  tenantAccess.additionalRBAC, and failing the render would stop their upgrade.
+  With exchange and no capllManagerSubject, no default could match, so nothing
+  is rendered.
+*/}}
+{{- $launchLayer := false }}
+{{- range splitList "," (.Values.supportedInfraProviders | default "nico") }}
+{{- if eq (trim .) "launchLayer" }}
+{{- $launchLayer = true }}
+{{- end }}
+{{- end }}
+{{- $capllManagerSubject := .Values.spiffe.capllManagerSubject }}
+{{- if not .Values.spiffe.jwtExchangeEndpoint }}
+{{- $capllManagerSubject = $capllManagerSubject | default (printf "spiffe://%s/%s/capi-provider-launchlayer-controller-manager" $td $seg) }}
+{{- end }}
+{{- $capllManager := and $launchLayer $capllManagerSubject }}
 {{- $tenantRbacName := .Values.nvkeOIDCAuth.tenantRbacName }}
 {{- $rbacIdentities := dict }}
 {{- range $kind := list "ClusterRole" "ClusterRoleBinding" }}
@@ -114,6 +134,10 @@ metadata:
 {{- end }}
 {{- end }}
 {{- $_ := set $rbacIdentities "ClusterRoleBinding//nvke:capi-cluster-admin" true }}
+{{- if $capllManager }}
+{{- $_ := set $rbacIdentities "ClusterRole//nvke:capll-manager" true }}
+{{- $_ := set $rbacIdentities "ClusterRoleBinding//nvke:capll-manager" true }}
+{{- end }}
 {{- range $index, $object := .Values.tenantAccess.additionalRBAC }}
 {{- if not (has ($object.kind | default "") (list "Role" "RoleBinding" "ClusterRole" "ClusterRoleBinding")) }}
 {{- fail (printf "tenantAccess.additionalRBAC[%d]: kind must be Role, RoleBinding, ClusterRole, or ClusterRoleBinding" $index) }}
@@ -291,6 +315,30 @@ data:
       kind: ClusterRole
       name: cluster-admin
       apiGroup: rbac.authorization.k8s.io
+    {{- if $capllManager }}
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: nvke:capll-manager
+    rules:
+      - apiGroups: [""]
+        resources: ["nodes"]
+        verbs: ["get", "list", "patch"]
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: nvke:capll-manager
+    subjects:
+      - kind: User
+        name: {{ $capllManagerSubject | quote }}
+        apiGroup: rbac.authorization.k8s.io
+    roleRef:
+      kind: ClusterRole
+      name: nvke:capll-manager
+      apiGroup: rbac.authorization.k8s.io
+    {{- end }}
     {{- range .Values.tenantAccess.additionalRBAC }}
     ---
     {{- toYaml . | nindent 4 }}
