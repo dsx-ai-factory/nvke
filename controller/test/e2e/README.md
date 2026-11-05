@@ -352,6 +352,8 @@ account. That account needs:
 
 It needs nothing more, and should be given nothing more: the RBAC check fails
 an identity that can read Secrets across the cluster or bind roles.
+[`deploy/validate-site.yaml`](deploy/validate-site.yaml) grants exactly this,
+and [Running it on a site](#running-it-on-a-site) applies it.
 
 ### Validation image variables
 
@@ -460,7 +462,7 @@ container can read your kubeconfig and write `artifacts/`:
 mkdir -p artifacts
 docker run --rm --user "$(id -u):$(id -g)" \
   -v "$PWD/artifacts:/artifacts" -v "$HOME/.kube/config:/kube/config:ro" \
-  -e KUBECONFIG=/kube/config -e NVKE_CONTROLLER_EXPECTED_VERSION=v0.1.1 \
+  -e KUBECONFIG=/kube/config -e NVKE_CONTROLLER_EXPECTED_VERSION=v0.3.0 \
   -e NVKE_SITE_KUBERNETES_VERSION=v1.34.2 nvke-validate:local
 ```
 
@@ -551,6 +553,67 @@ Rebuilding a tag on the same builder gives the same digest, so a retried job
 pushes the same image again. A job can also rebuild a tag it has already
 pushed and compare the digests, to check that nothing in its own build path
 changed.
+
+### Running it on a site
+
+[`deploy/validate-site.yaml`](deploy/validate-site.yaml) runs the site checks
+as a Job in an `nvke-validate` namespace, with the RBAC above, and keeps the
+results on a claim. Fill in its placeholders from the site, with the kube
+context pointing at it:
+
+```bash
+ver=v0.3.0                                  # the site's controller version
+image=<repository>/nvke-validate:${ver}     # built from controller/${ver}
+ctrl_ns=$(kubectl get deploy -A --field-selector metadata.name=nvke-controller \
+  -o jsonpath='{.items[0].metadata.namespace}')
+k8s=$(kubectl version -o json | jq -r .serverVersion.gitVersion)
+token_ns=<namespace> token_sa=<service account>   # see below
+fill() {
+  sed -e "s|__IMAGE__|${image}|g" -e "s|__CONTROLLER_VERSION__|${ver}|g" \
+    -e "s|__KUBERNETES_VERSION__|${k8s}|g" -e "s|__CONTROLLER_NAMESPACE__|${ctrl_ns}|g" \
+    -e "s|__TOKEN_NAMESPACE__|${token_ns}|g" -e "s|__TOKEN_SERVICE_ACCOUNT__|${token_sa}|g" "$1"
+}
+cd nvke/controller/test/e2e/deploy
+fill validate-site-token.yaml | kubectl apply -f -   # only if the controller authenticates
+fill validate-site.yaml | kubectl apply -f -
+```
+
+The controller's image tag gives `ver`:
+`kubectl -n "${ctrl_ns}" get deploy nvke-controller -o jsonpath='{.spec.template.spec.containers[0].image}'`.
+`token_ns`/`token_sa` name the identity the suite presents to the controller
+API, one the controller authorizes to list clusters; `validate-site-token.yaml`
+lets the Job mint its token. A controller with no authentication ConfigMap
+takes no token, so skip that file. Where the registry needs credentials, add
+`imagePullSecrets` to the Job and the artifacts pod. Add any
+[variables](#validation-image-variables) the site's expectations need to the
+Job's `env`.
+
+Follow the run, then read the result. The Job completes when every selected
+spec passed and fails otherwise:
+
+```bash
+kubectl -n nvke-validate logs -f job/nvke-validate
+kubectl -n nvke-validate wait --for=condition=Complete job/nvke-validate --timeout=10s \
+  && echo passed || echo failed
+```
+
+Copy the reports out through a pod that mounts the claim:
+
+```bash
+fill validate-site-artifacts.yaml | kubectl apply -f -
+kubectl -n nvke-validate wait --for=condition=Ready pod/nvke-validate-artifacts --timeout=5m
+kubectl -n nvke-validate cp nvke-validate-artifacts:/artifacts ./artifacts
+kubectl -n nvke-validate delete pod nvke-validate-artifacts
+```
+
+`artifacts/junit-test-report.xml` lists each selected spec and why any failed.
+To run again, delete the Job (`kubectl -n nvke-validate delete job nvke-validate`)
+and apply `validate-site.yaml` again; the next run overwrites the reports. To
+remove everything, `fill` each file into `kubectl delete -f -`.
+
+This validates the site only. Validating a tenant as well needs the runner to
+provision the tenant credential first, as [Tenant checks](#tenant-checks)
+describes.
 
 ### Extending the image
 
