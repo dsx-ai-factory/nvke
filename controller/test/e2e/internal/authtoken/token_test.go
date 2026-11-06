@@ -344,7 +344,7 @@ func TestAudienceFromCluster(t *testing.T) {
 			// Any entry would authenticate; the first is taken to be predictable.
 			// Flow versus block sequence is the YAML decoder's concern.
 			name: "takes the first of several audiences",
-			data: map[string]string{ConfigMapKey: "apiVersion: auth.nke.nvidia.com/v1alpha1\n" +
+			data: map[string]string{ConfigMapKey: "apiVersion: auth.nvke.nvidia.com/v1alpha1\n" +
 				"kind: AuthenticationConfiguration\n" +
 				"audiences: [\"https://nke.tilt.local\", \"https://cwe.next.local\"]\n"},
 			want:   "https://nke.tilt.local",
