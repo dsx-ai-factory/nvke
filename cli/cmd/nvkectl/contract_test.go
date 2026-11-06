@@ -408,6 +408,22 @@ func TestGetClustersOutputFormats(t *testing.T) {
 		}
 	})
 
+	// One name prints that cluster as an object, kubectl-style, so a script
+	// reads `.id` rather than `.[0].id`.
+	t.Run("one name prints one object", func(t *testing.T) {
+		t.Parallel()
+		got := run(t, configHome, "get", "clusters", clusterName, "-o", "json")
+		requireSuccess(t, got)
+
+		var cluster map[string]any
+		if err := json.Unmarshal([]byte(got.stdout), &cluster); err != nil {
+			t.Fatalf("parsing stdout as one JSON object: %v\nstdout: %q", err, got.stdout)
+		}
+		if cluster["name"] != clusterName {
+			t.Errorf("name = %v, want %q", cluster["name"], clusterName)
+		}
+	})
+
 	// The one failing command that writes to stdout: a multi-name get prints
 	// the matches, kubectl-style, then exits 1 for the names that matched
 	// nothing. docs/compatibility.md states the exception.

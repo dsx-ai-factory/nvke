@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
@@ -88,6 +90,78 @@ func TestGetClustersJSONRoundTrips(t *testing.T) {
 	}
 	if got[0].CniPlugin != "calico" {
 		t.Errorf("cniPlugin = %q, want calico", got[0].CniPlugin)
+	}
+}
+
+// TestGetClustersOneNameIsOneObject mirrors kubectl and the operator get
+// commands: with -o json or -o yaml, one name prints that cluster as a single
+// object, while no name or several names print a list.
+func TestGetClustersOneNameIsOneObject(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		wantList  []string
+		wantOne   string
+		wantError string
+	}{
+		{name: "one name as JSON is an object", args: []string{"beta", "-o", "json"}, wantOne: "beta"},
+		{name: "one name as YAML is an object", args: []string{"beta", "-o", "yaml"}, wantOne: "beta"},
+		{name: "no name as JSON is a list", args: []string{"-o", "json"}, wantList: []string{"alpha", "beta"}},
+		{name: "two names as JSON are a list", args: []string{"beta", "alpha", "-o", "json"}, wantList: []string{"beta", "alpha"}},
+		{name: "one missing name prints nothing", args: []string{"nope", "-o", "json"}, wantError: `cluster "nope" not found`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, clientFn := newFakeCWE(t, seedCluster("alpha"), seedCluster("beta"))
+			cmd := NewGetCmd(clientFn)
+			// The nvkectl root silences cobra's usage and error report, and
+			// stderr is kept apart, so an empty stdout means the command
+			// itself printed nothing for the missing name.
+			cmd.SilenceUsage = true
+			cmd.SilenceErrors = true
+			var stdout, stderr strings.Builder
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+			cmd.SetArgs(tt.args)
+			err := cmd.Execute()
+			out := stdout.String()
+
+			if tt.wantError != "" {
+				if err == nil || err.Error() != tt.wantError {
+					t.Fatalf("error = %v, want %q", err, tt.wantError)
+				}
+				if out != "" {
+					t.Errorf("stdout = %q, want nothing for a name that does not exist", out)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("get clusters %v: %v", tt.args, err)
+			}
+			// YAML is a superset of JSON, so one decoder reads both formats.
+			if tt.wantOne != "" {
+				var got map[string]any
+				if err := yaml.Unmarshal([]byte(out), &got); err != nil {
+					t.Fatalf("output is not a single object: %v\n%s", err, out)
+				}
+				if got["name"] != tt.wantOne {
+					t.Errorf("name = %v, want %q", got["name"], tt.wantOne)
+				}
+				return
+			}
+			var got []map[string]any
+			if err := yaml.Unmarshal([]byte(out), &got); err != nil {
+				t.Fatalf("output is not a list: %v\n%s", err, out)
+			}
+			names := make([]string, 0, len(got))
+			for _, c := range got {
+				name, _ := c["name"].(string)
+				names = append(names, name)
+			}
+			if strings.Join(names, ",") != strings.Join(tt.wantList, ",") {
+				t.Errorf("names = %v, want %v", names, tt.wantList)
+			}
+		})
 	}
 }
 
