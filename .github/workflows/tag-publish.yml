@@ -8,7 +8,7 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+'
-      - '*/v[0-9]*'
+      - '*/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
   workflow_dispatch:
 
 # Least privilege by default. Each job is granted what it needs.
