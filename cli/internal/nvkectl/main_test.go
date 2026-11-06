@@ -34,5 +34,7 @@ func TestMain(m *testing.M) {
 	// The machine running the tests may have nerdctl's configs in the real
 	// directory, which the bootstrap preflight would rightly refuse.
 	sharedCNIConfDir = filepath.Join(os.TempDir(), "nvkectl-no-such-cni-conf-dir")
+	// The nico provider is feature-flagged; most tests exercise it.
+	_ = os.Setenv("NVKECTL_ENABLE_NICO", "1")
 	os.Exit(m.Run())
 }

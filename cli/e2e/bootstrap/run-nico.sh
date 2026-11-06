@@ -128,6 +128,8 @@ GO="${GO:-go}"
 # what -run selects once the tag is on.
 DIAGNOSTICS_DIR="${CLI_DIR}/cluster-diagnostics"
 export NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR="${DIAGNOSTICS_DIR}"
+# The nico provider is feature-flagged while it is a work in progress.
+export NVKECTL_ENABLE_NICO=1
 # What this lane adds to the dump nvkectl writes there: the node journals and the
 # nico-sim log, which the bootstrap cannot see.
 DIAGNOSTICS_FILE="${DIAGNOSTICS_DIR}/nico-lane.txt"
