@@ -110,24 +110,20 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref || github.sha }}
-          # DEB_VERSION comes from `git describe --match 'agent/v*'`; a shallow
+          # DEB_VERSION comes from `git describe --match 'v*'`; a shallow
           # clone would stamp the wrong version into a release package.
           fetch-depth: 0
           persist-credentials: false
 
-      # The one place the version is resolved, for the consumers below. A release
-      # tag names it. Anything else is described, the way `make deb` stamps the
-      # package: a beta run arrives here with only its commit (see SOURCE_REF).
+      # The one place the version is resolved, for the consumers below: the
+      # checked-out commit described, the way `make deb` stamps the package,
+      # whichever tag or ref started the run.
       - name: Resolve the version
         id: version
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${SOURCE_REF}" == agent/v* ]]; then
-            version="${SOURCE_REF#agent/}"
-          else
-            version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
-          fi
+          version="$(git describe --tags --always --match 'v*' HEAD)"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
       - name: Set up Go
@@ -422,7 +418,7 @@ jobs:
       # `oras manifest index create` cannot tell the two packages apart.
       - name: Push per-architecture packages
         env:
-          VERSION: ${{ env.SOURCE_REF }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
           version="${VERSION#agent/}"
@@ -458,7 +454,7 @@ jobs:
 
       - name: Show published index
         env:
-          VERSION: ${{ env.SOURCE_REF }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
           version="${VERSION#agent/}"
