@@ -82,8 +82,7 @@ jobs:
           set -euo pipefail
           repo="ghcr.io/${GITHUB_REPOSITORY,,}/cli"
 
-          version="$(git describe --match 'cli/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-          version="${version#cli/}"
+          version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
 
           # sha- and edge stay as the CI hand-off; the version alias is the
           # GitHub publication.

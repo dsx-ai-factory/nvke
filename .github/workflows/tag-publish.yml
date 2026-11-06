@@ -44,7 +44,7 @@ jobs:
       contents: read
 
   # Builds nvkectl once for the three cli publishers below. Only cli/v* tags
-  # and bare vX.Y.Z-beta.N tags ship nvkectl; every other tag is published by
+  # and bare vX.Y.Z and vX.Y.Z-beta.N tags ship nvkectl; every other tag is published by
   # its own workflow (see the publish job's routing table).
   build-cli:
     name: Build nvkectl
@@ -52,8 +52,7 @@ jobs:
       # The three cli publishers below consume these, so a cli/v* tag produces
       # one build rather than four.
       dist_artifact: cli-dist-${{ github.run_id }}-${{ github.run_attempt }}
-      beta: ${{ steps.version.outputs.beta }}
-    if: ${{ startsWith(github.ref_name, 'cli/') || (!contains(github.ref_name, '/') && contains(github.ref_name, '-beta.')) }}
+    if: ${{ startsWith(github.ref_name, 'cli/') || (!contains(github.ref_name, '/') && !contains(github.ref_name, '-rc.')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [license-checks]
@@ -71,7 +70,7 @@ jobs:
       # glob cannot spell "vX.Y.Z", so the rule is enforced here instead. It
       # fails rather than skips: a tighter glob would let a malformed tag push
       # do nothing at all, and silence reads as success.
-      # A bare vX.Y.Z-beta.N is versioned by the bare v* describe.
+      # A bare vX.Y.Z or vX.Y.Z-beta.N is versioned by the bare v* describe.
       - name: Resolve the version from the tag
         id: version
         shell: bash
@@ -79,9 +78,7 @@ jobs:
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
 
-          BETA=false
-          if [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
-            BETA=true
+          if [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
             VERSION="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
           else
             VERSION="${TAG#cli/}"
@@ -93,10 +90,7 @@ jobs:
             fi
           fi
 
-          {
-            echo "beta=${BETA}"
-            echo "version=${VERSION}"
-          } >> "${GITHUB_OUTPUT}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "Building nvkectl ${VERSION} for ${TAG}"
 
       # go.work, not cli/go.mod, like every other workflow here. setup-go pins
@@ -163,16 +157,12 @@ jobs:
           category: 'clamav-release'
           output_file: 'clamav-release.sarif'
 
-  # A bare vX.Y.Z-beta.N reaches only cli-nvcr and cli-s3, which publish it
-  # under the cli/v* describe version; cli-ghcr is skipped.
-  #
   # The three cli channels. They used to trigger on the cli/v* tag themselves,
   # which meant four independent build-cross runs claiming to be one release,
   # and three publish paths that never waited for license-checks. Calling them
   # here fixes both: one build, and everything behind the gate.
   cli-ghcr:
     needs: [build-cli]
-    if: ${{ needs.build-cli.outputs.beta != 'true' }}
     uses: ./.github/workflows/cli-artifact.yml
     permissions:
       contents: read

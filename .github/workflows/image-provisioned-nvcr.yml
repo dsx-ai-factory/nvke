@@ -57,6 +57,7 @@ on:
     tags:
       - "cluster-api-provider-provisioned/v[0-9]+.[0-9]+.[0-9]+"
       - "cluster-api-provider-provisioned/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+"
       - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
   workflow_dispatch: {}
 
@@ -568,8 +569,7 @@ jobs:
             exit 1
           fi
 
-          image_version="$(git describe --match 'cluster-api-provider-provisioned/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-          image_version="${image_version#cluster-api-provider-provisioned/}"
+          image_version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
           # By digest, so this promotes the index the manifest job just created
           # rather than whatever the version tag resolves to now.
           source_digest="${INDEX_DIGEST}"
