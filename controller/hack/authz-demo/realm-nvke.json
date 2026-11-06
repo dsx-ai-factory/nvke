@@ -1,0 +1,213 @@
+{
+  "realm": "nvke",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 300,
+  "groups": [
+    {
+      "name": "nvke-admins"
+    },
+    {
+      "name": "nvke-viewers"
+    },
+    {
+      "name": "nvke-users"
+    }
+  ],
+  "users": [
+    {
+      "id": "00000000-0000-4000-8000-00000000a11c",
+      "username": "alice",
+      "enabled": true,
+      "email": "alice@nvke-demo.local",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Demo",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "alice-demo",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/nvke-admins"
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-8000-00000000fe1a",
+      "username": "vera",
+      "enabled": true,
+      "email": "vera@nvke-demo.local",
+      "emailVerified": true,
+      "firstName": "Vera",
+      "lastName": "Demo",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "vera-demo",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/nvke-viewers"
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-8000-00000000a0ba",
+      "username": "nora",
+      "enabled": true,
+      "email": "nora@nvke-demo.local",
+      "emailVerified": true,
+      "firstName": "Nora",
+      "lastName": "Demo",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "nora-demo",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/nvke-users"
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-8000-0000000002ed",
+      "username": "zed",
+      "enabled": true,
+      "email": "zed@nvke-demo.local",
+      "emailVerified": true,
+      "firstName": "Zed",
+      "lastName": "Demo",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "zed-demo",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-8000-0000000c1b07",
+      "username": "service-account-ci-bot",
+      "enabled": true,
+      "serviceAccountClientId": "ci-bot",
+      "groups": [
+        "/nvke-admins"
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "nvkectl",
+      "name": "nvkectl",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "nvke-controller-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "nvke-controller",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "ci-bot",
+      "name": "ci-bot",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "ci-bot-demo-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "nvke-controller-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "nvke-controller",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "components": {
+    "org.keycloak.keys.KeyProvider": [
+      {
+        "name": "nvke-demo-rs256",
+        "providerId": "rsa",
+        "subComponents": {},
+        "config": {
+          "priority": [
+            "200"
+          ],
+          "enabled": [
+            "true"
+          ],
+          "active": [
+            "true"
+          ],
+          "algorithm": [
+            "RS256"
+          ],
+          "privateKey": [
+            "${NVKE_DEMO_REALM_KEY}"
+          ],
+          "certificate": [
+            "${NVKE_DEMO_REALM_CERT}"
+          ]
+        }
+      }
+    ]
+  }
+}

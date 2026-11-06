@@ -1089,6 +1089,98 @@ _controller_spire_attestation_method = os.getenv(
 # when the flag is true without that CRD.
 _nico_controllers_enabled = "nico" in _provider_names or "nico-vm" in _provider_names
 
+# The authorization demo (hack/authz-demo/README.md), off by default:
+#
+#   NVKE_AUTHZ_DEMO=true tilt up
+#
+# deploys Keycloak in nvke-authz-demo, forwards it to localhost:18443, and
+# installs the controller with apiAuthz enforcing and a keycloak issuer, from
+# the values hack/authz-demo/gen.sh writes. NVKE_AUTHZ_DEMO_TELEPORT=true adds
+# Teleport, forwarded to localhost:3080, and a teleport issuer; it needs the
+# image loaded into kind first. The controller fetches every issuer's JWKS at
+# startup, so it waits for both.
+_authz_demo_enabled = os.getenv(
+    "NVKE_AUTHZ_DEMO", _tilt_env.get("NVKE_AUTHZ_DEMO", "false")) == "true"
+_authz_demo_teleport = os.getenv(
+    "NVKE_AUTHZ_DEMO_TELEPORT", _tilt_env.get("NVKE_AUTHZ_DEMO_TELEPORT", "false")) == "true"
+_authz_demo_flags = []
+_authz_demo_resource_deps = []
+_authz_demo_dir = ""
+
+def _authz_demo_file(name):
+    return str(read_file(os.path.join(_authz_demo_dir, name)))
+
+def _authz_demo_object(kind, name, field, data):
+    return encode_yaml({
+        "apiVersion": "v1",
+        "kind": kind,
+        "metadata": {"name": name, "namespace": "nvke-authz-demo"},
+        field: data,
+    })
+
+if _authz_demo_teleport and not _authz_demo_enabled:
+    fail("NVKE_AUTHZ_DEMO_TELEPORT needs NVKE_AUTHZ_DEMO=true")
+if _authz_demo_enabled:
+    if not _controller_auth_enabled or _controller_permissive_mode:
+        fail("NVKE_AUTHZ_DEMO needs NKE_AUTH_ENABLED=true and NKE_PERMISSIVE_MODE=false: the demo enforces authorization")
+    _authz_demo_dir = str(local(["bash", "hack/authz-demo/gen.sh"], quiet=True)).strip()
+    k8s_yaml([
+        "hack/authz-demo/keycloak.yaml",
+        _authz_demo_object("Secret", "keycloak-tls", "stringData", {
+            "tls.crt": _authz_demo_file("keycloak.crt"),
+            "tls.key": _authz_demo_file("keycloak.key"),
+        }),
+        _authz_demo_object("Secret", "keycloak-realm-key", "stringData", {
+            "NVKE_DEMO_REALM_KEY": _authz_demo_file("realm-key.b64"),
+            "NVKE_DEMO_REALM_CERT": _authz_demo_file("realm.b64"),
+        }),
+        _authz_demo_object("ConfigMap", "keycloak-realm", "data", {
+            "realm-nvke.json": str(read_file("hack/authz-demo/realm-nvke.json")),
+        }),
+    ])
+    k8s_resource(
+        "keycloak",
+        new_name="nvke-authz-demo-keycloak",
+        labels=["1-infra"],
+        objects=[
+            "nvke-authz-demo:namespace",
+            "keycloak-tls:secret:nvke-authz-demo",
+            "keycloak-realm-key:secret:nvke-authz-demo",
+            "keycloak-realm:configmap:nvke-authz-demo",
+        ],
+        port_forwards=["18443:8443"],
+        resource_deps=["check-management-cluster"],
+    )
+    _authz_demo_resource_deps.append("nvke-authz-demo-keycloak")
+    _authz_demo_values = "values.yaml"
+    if _authz_demo_teleport:
+        k8s_yaml([
+            "hack/authz-demo/teleport.yaml",
+            _authz_demo_object("Secret", "teleport-tls", "stringData", {
+                "tls.crt": _authz_demo_file("teleport.crt"),
+                "tls.key": _authz_demo_file("teleport.key"),
+                "ca.crt": _authz_demo_file("ca.crt"),
+            }),
+            _authz_demo_object("ConfigMap", "teleport-resources", "data", {
+                "resources.yaml": str(read_file("hack/authz-demo/teleport-resources.yaml")),
+            }),
+        ])
+        k8s_resource(
+            "teleport",
+            new_name="nvke-authz-demo-teleport",
+            labels=["1-infra"],
+            objects=[
+                "teleport-config:configmap:nvke-authz-demo",
+                "teleport-tls:secret:nvke-authz-demo",
+                "teleport-resources:configmap:nvke-authz-demo",
+            ],
+            port_forwards=["3080:3080"],
+            resource_deps=["nvke-authz-demo-keycloak"],
+        )
+        _authz_demo_resource_deps.append("nvke-authz-demo-teleport")
+        _authz_demo_values = "values-teleport.yaml"
+    _authz_demo_flags = ["--values", os.path.join(_authz_demo_dir, _authz_demo_values)]
+
 _controller_chart_flags = [
     "--create-namespace",
     "--set", "cni.installAfterInit=%s" % ("true" if _controller_install_cni_after_init == "true" else "false"),
@@ -1097,7 +1189,7 @@ _controller_chart_flags = [
     "--set-string", "appDb.postgresPassword=%s" % _postgres_superuser_password,
     "--set", "apiAuth.enabled=%s" % ("true" if _controller_auth_enabled else "false"),
     "--set", "apiAuth.permissive=%s" % ("true" if _controller_permissive_mode else "false"),
-] + (["--values", "hack/tilt-controller-api-auth-values.yaml"] if _controller_auth_enabled else []) + [
+] + (["--values", "hack/tilt-controller-api-auth-values.yaml"] if _controller_auth_enabled else []) + _authz_demo_flags + [
     "--set", "capi.rbac.create=true",
     # machine-engine-crds installs them, so Helm must not try to own them.
     "--set", "releaseCRDs.install=false",
@@ -1138,7 +1230,7 @@ if CONTROLLER_IMAGE:
 
 _controller_local_debug_active = os.path.exists(CONTROLLER_LOCAL_DEBUG_MARKER)
 _controller_tilt_goarch = local_arch()
-_controller_resource_deps = ["postgres", "temporal", "spire-nvke-services-spiffe-id", "spire-tpm-pubhashes", "nvke-system-namespace", "nvke-auth-dev", "machine-engine-releases"] + _all_controller_resource_deps
+_controller_resource_deps = ["postgres", "temporal", "spire-nvke-services-spiffe-id", "spire-tpm-pubhashes", "nvke-system-namespace", "nvke-auth-dev", "machine-engine-releases"] + _authz_demo_resource_deps + _all_controller_resource_deps
 if _controller_oidc_enabled:
     _controller_resource_deps += ["spire-oidc-provider-nodeport", "oidc-upstream-ca-ready"]
 
@@ -1330,7 +1422,7 @@ helm_resource(
       "hack/tilt-controller-chart-values.yaml",
       "hack/tilt-controller-api-auth-values.yaml",
       "deploy/charts/controller",
-    ],
+    ] + _authz_demo_flags[1:],
     flags=_controller_chart_flags,
     resource_deps=_controller_resource_deps,
     port_forwards=[CONTROLLER_HTTP_PORT + ":8080"],
