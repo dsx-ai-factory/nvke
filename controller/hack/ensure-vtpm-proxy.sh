@@ -47,6 +47,52 @@ check_linux_vtpmx() {
   [[ -c "${VTPMX_DEVICE}" && -r "${VTPMX_SYSFS}" ]]
 }
 
+is_wsl() {
+  grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null
+}
+
+WSL_KERNEL_REPO=https://github.com/microsoft/WSL2-Linux-Kernel.git
+WSL_BUILD_ROOT=/var/cache/nvke-wsl-vtpm
+
+# The WSL2 kernel ships without CONFIG_TCG_VTPM_PROXY and no package provides it.
+# Builds the module out of tree from the Microsoft tag that matches the running
+# kernel, using that kernel's own /proc/config.gz so the vermagic and symbol CRCs match.
+build_wsl_vtpm_module() {
+  local release tag work src ext
+  release="$(uname -r)"
+  [[ "${release}" =~ ^([0-9]+(\.[0-9]+)+)-microsoft-standard-WSL2$ ]] || die "unrecognized WSL2 kernel release ${release}"
+  tag="linux-msft-wsl-${BASH_REMATCH[1]}"
+  work="${WSL_BUILD_ROOT}/${release}"
+  src="${work}/src"
+  ext="${work}/ext"
+
+  if [[ ! -f "${ext}/${VTPM_MODULE}.ko" ]]; then
+    command -v apt-get >/dev/null 2>&1 || die "apt-get is unavailable; install build-essential flex bison bc libssl-dev libelf-dev dwarves git to build ${VTPM_MODULE}"
+    info "installing kernel build dependencies"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential git flex bison bc libssl-dev libelf-dev dwarves
+
+    info "building ${VTPM_MODULE} from ${tag}; the first build takes about 10 minutes"
+    rm -rf "${work}"
+    install -d "${ext}"
+    git clone --quiet --depth 1 --branch "${tag}" "${WSL_KERNEL_REPO}" "${src}"
+    (
+      cd "${src}"
+      zcat /proc/config.gz >.config
+      scripts/config --module TCG_VTPM_PROXY
+      make LOCALVERSION= olddefconfig
+      make -j"$(nproc)" LOCALVERSION= vmlinux
+      cp vmlinux.symvers Module.symvers
+      make LOCALVERSION= modules_prepare
+    )
+    cp "${src}/drivers/char/tpm/${VTPM_MODULE}.c" "${src}"/drivers/char/tpm/*.h "${ext}/"
+    echo "obj-m := ${VTPM_MODULE}.o" >"${ext}/Makefile"
+    make -C "${src}" LOCALVERSION= M="${ext}" modules
+  fi
+
+  install -D -m 0644 "${ext}/${VTPM_MODULE}.ko" "/lib/modules/${release}/extra/${VTPM_MODULE}.ko"
+  depmod -a "${release}"
+}
+
 # controller_dir is this file's parent when the script is executed by path.
 # A `bash -s` pipe has no path, and callers there already print their own hint.
 controller_dir() {
@@ -65,6 +111,10 @@ prepare_hint() {
 ensure_linux_vtpmx() {
   if [[ "$(id -u)" -ne 0 ]]; then
     die "must run as root to load ${VTPM_MODULE}.$(prepare_hint)"
+  fi
+
+  if is_wsl && ! modinfo "${VTPM_MODULE}" >/dev/null 2>&1; then
+    build_wsl_vtpm_module
   fi
 
   local release modules_extra_pkg
