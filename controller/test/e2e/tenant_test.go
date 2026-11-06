@@ -231,7 +231,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("nico-vms control-plane controller (no CP node pool)", Ordered, ContinueOnFailure, Label("nico-vms", "cp-controller"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
-			kubernetesVersion: "1.34.2",
+			kubernetesVersion: "1.36.3",
 			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{
 				DesiredCount:         1,
 				InstanceTypeID:       nicoVMSLargeInstanceID,
@@ -315,7 +315,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("nico-vms", Ordered, ContinueOnFailure, Label("nico-vms", "happy-path"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
-			kubernetesVersion: "1.34.2",
+			kubernetesVersion: "1.36.3",
 			// OVN-Kubernetes, via the nico-vms default. Open vSwitch is asserted
 			// on the "nico-vms ovn" entry below. Large instances kept:
 			// cpu2-mem2gb was sized against ovnkube-node.
@@ -346,7 +346,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("nico-vms ovn", Ordered, ContinueOnFailure, Label("nico-vms", "ovn"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
-			kubernetesVersion: "1.34.2",
+			kubernetesVersion: "1.36.3",
 			cniPlugin:         CNIPluginOVN,
 			// Large instances: cpu2-mem2gb was sized against ovnkube-node.
 			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
@@ -399,7 +399,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("nico-vms multi pod CIDRs", Ordered, ContinueOnFailure, Label("nico-vms", "multi-pod-cidrs"), testSpec{
 		buildSpec: nicoVMSMultiPodCIDRSpec,
 		shape: clusterShape{
-			kubernetesVersion: "1.34.2",
+			kubernetesVersion: "1.36.3",
 			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
 			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
@@ -1259,7 +1259,7 @@ func (t *tenantTest) tenantInstances(ctx context.Context) []string {
 // testSpec entries above.
 const (
 	clusterNamePrefix        = "e2e" // CreateCluster appends the backend and a timestamp
-	defaultKubernetesVersion = "1.34.2"
+	defaultKubernetesVersion = "1.36.3"
 	CNIPluginOVN             = "ovn-kubernetes"
 	capdControlPlaneVIP      = "172.31.1.1"
 

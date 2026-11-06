@@ -18,15 +18,27 @@ def register(ctx):
             dockerfile=os.path.join(ctx.provider_dir, "Dockerfile"),
             target=target,
         )
-    k8s_yaml(kustomize(os.path.join(ctx.provider_dir, "config/dev")))
+    manifests = kustomize(os.path.join(ctx.provider_dir, "config/dev"))
+    k8s_yaml(manifests)
+    # Keep the namespace and manager identity in their existing group.
+    # Moving them between Tilt groups deletes the live objects.
+    k8s_resource(
+        new_name="management-engine-config",
+        objects=[
+            obj["metadata"]["name"] + ":" + obj["kind"].lower() + (":" + obj["metadata"]["namespace"] if obj["metadata"].get("namespace") else "")
+            for obj in decode_yaml_stream(manifests)
+            if obj["kind"] != "Deployment"
+        ],
+        labels=["3-management-engine"],
+    )
     metrics_port = os.getenv("METRICS_LOCAL_PORT", "")
     controller_log_url = "http://localhost:" + os.getenv("TILT_PORT", "10350") + "/r/management-engine/overview?source=runtime&term=%22controller%22%3A%22"
     k8s_resource(
         "management-engine-controller-manager",
         new_name="management-engine",
-        resource_deps=["nvke-controller", "management-engine-rest-config"],
+        resource_deps=["nvke-controller", "management-engine-config", "management-engine-rest-config"],
         port_forwards=[metrics_port + ":8443"] if metrics_port else [],
-        labels=["management-engine"],
+        labels=["3-management-engine"],
         links=[
             link(controller_log_url + "nvkecluster%22", "NVKECluster logs"),
         ],
@@ -40,16 +52,14 @@ def register(ctx):
     template["metadata"]["name"] = "management-engine-" + template["metadata"]["name"]
     template["metadata"]["namespace"] = "tenant-test"
     k8s_yaml(encode_yaml(template))
-    # Keep the namespace and manager identity in their existing group.
-    # Moving them between Tilt groups deletes the live objects.
     k8s_resource(
         new_name="management-engine-rest-config",
         objects=[
-            "management-engine-controller-manager:serviceaccount",
             "tenant-test:namespace",
             "management-engine-infra-templates:configmap:tenant-test",
         ],
-        labels=["management-engine"],
+        resource_deps=["management-engine-config"],
+        labels=["3-management-engine"],
     )
     for surface, port in [("tenant", 8082), ("operator", 8083)]:
         api = read_yaml(os.path.join(ctx.provider_dir, "config/dev/" + surface + "-api.yaml"))
@@ -63,22 +73,25 @@ def register(ctx):
                 name + ":" + role_kind,
                 name + ":" + role_kind + "binding",
             ],
-            resource_deps=["management-engine-rest-config"] if surface == "tenant" else [],
-            labels=["management-engine"],
+            resource_deps=["management-engine-rest-config"] if surface == "tenant" else ["management-engine-config"],
+            labels=["3-management-engine"],
         )
         k8s_yaml(encode_yaml(api))
         k8s_resource(
             name,
             resource_deps=[name + "-config"],
             port_forwards=[port_forward(port, 8080, host="127.0.0.1")],
-            labels=["management-engine"],
+            labels=["3-management-engine"],
             links=[link("http://localhost:%d/v1/%s" % (port, "clusters" if surface == "tenant" else "cluster-releases"), surface + " API")],
         )
     cmd_button(
         "management-engine-create-nvkecluster",
         argv=["bash", "-c", """
           set -euo pipefail
-          jq --arg name "$CLUSTER_NAME" '.metadata.name = $name' <<< "$NVKECLUSTER_TEMPLATE" |
+          : "${API_SERVER_IP:?API server IP is required}"
+          jq --arg name "$CLUSTER_NAME" --arg ip "$API_SERVER_IP" '
+            .metadata.name = $name | .spec.apiServerEndpoint.address = $ip
+          ' <<< "$NVKECLUSTER_TEMPLATE" |
             kubectl --context "$K8S_CONTEXT" apply -f -
         """],
         env={
@@ -88,7 +101,10 @@ def register(ctx):
         resource="management-engine",
         icon_name="add_box",
         text="Create NVKECluster",
-        inputs=[text_input("CLUSTER_NAME", label="Cluster name", default="test-docker")],
+        inputs=[
+            text_input("CLUSTER_NAME", label="Cluster name", default="test-docker"),
+            text_input("API_SERVER_IP", label="API server IP (required)", default=""),
+        ],
     )
     return struct(
         controller_resource_deps=[],

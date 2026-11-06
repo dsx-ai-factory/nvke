@@ -249,7 +249,7 @@ def register(ctx):
           set -euo pipefail
           NVKE_CONTROLLER_HTTP_PORT="%s" \
           CLUSTER_NAME="${CLUSTER_NAME:-nico-local}" \
-          KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}" \
+          KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.36.3}" \
           CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}" \
           WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-0}" \
           ./hack/create-local-nico-cluster.sh
@@ -259,7 +259,7 @@ def register(ctx):
         text="Create sample local NICo cluster",
         inputs=[
             text_input("CLUSTER_NAME", label="Cluster name", default="nico-local"),
-            text_input("KUBERNETES_VERSION", label="Kubernetes version", default="1.34.2"),
+            text_input("KUBERNETES_VERSION", label="Kubernetes version", default="1.36.3"),
             text_input("CONTROL_PLANE_DESIRED_COUNT", label="Control-plane nodes", default="1"),
             text_input("WORKER_DESIRED_COUNT", label="Worker nodes", default="0"),
         ],

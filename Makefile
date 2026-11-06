@@ -132,7 +132,7 @@ PRIVATE_MODULES :=
 #
 # The chart copies existed before this and nothing maintained them -- they were
 # committed by hand and happened to match. `licenses-check` now enforces it.
-LICENSE_DESTS := controller/deploy/charts/controller
+LICENSE_DESTS := controller/deploy/charts/controller controller/deploy/charts/nvke-crds
 
 # Chart directories that ship the root LICENSE but keep a NOTICE of their own,
 # which `make licenses` must not overwrite.
@@ -410,7 +410,7 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 	printf '%s\n' "$$changed" | grep -qE '^\.github/workflows/.*\.ya?ml$$' && workflows=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^controller/deploy/charts/|^controller/deploy/monitoring/|^controller/hack/chart-.*-assertions\.(py|sh)$$|^controller/internal/(config|controllerconfig)/|^\.github/workflows/chart\.yml$$' && chart=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^nktp/deploy/charts/|^nktp/hack/chart-.*\.sh$$|^\.github/workflows/nktp-chart\.yml$$' && nktp=yes || true; \
-	printf '%s\n' "$$changed" | grep -qE '^cluster-api-provider-provisioned/config/|^cli/internal/bootstrap/controllerdeploy/manifests/(provisioned-provider|capnico)\.yaml$$|^cli/internal/stackinstall/stack/manifests/capnico\.yaml\.tmpl$$|^deploy/nico/capnico/capnico\.yaml$$' && provider_manifest=yes || true; \
+	printf '%s\n' "$$changed" | grep -qE '^cluster-api-provider-provisioned/config/|^cli/internal/bootstrap/controllerdeploy/manifests/(provisioned-provider|capnico)\.yaml$$|^deploy/nico/capnico/capnico\.yaml$$' && provider_manifest=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^cli/' && cli_docs=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '(^|/)(go\.mod|go\.sum)$$|^go\.work|^vendor/' && workspace=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '\.(go|sh|py|js|css|html|ya?ml)$$' && licences=yes || true; \

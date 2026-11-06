@@ -6,9 +6,10 @@ package v1
 const ControlPlaneReadyCondition = "ControlPlaneReady"
 
 const (
-	ClusterReconciledCondition = "ClusterReconciled"
-	ReconcileSucceededReason   = "ReconcileSucceeded"
-	ReconcileFailedReason      = "ReconcileFailed"
+	ClusterReconciledCondition   = "ClusterReconciled"
+	NodePoolsReconciledCondition = "NodePoolsReconciled"
+	ReconcileSucceededReason     = "ReconcileSucceeded"
+	ReconcileFailedReason        = "ReconcileFailed"
 )
 
 const (

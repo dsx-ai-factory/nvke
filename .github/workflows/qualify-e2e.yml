@@ -121,7 +121,7 @@ on:
         type: string
         required: false
       cli-version:
-        description: Overrides the nvkectl release the plan resolves, e.g. v0.1.0-rc.7 (the cli/<version> GitHub Release).
+        description: Overrides the nvkectl release the plan resolves, e.g. v0.1.0-rc.7 (the cli/<version> tag).
         type: string
         required: false
       deploy-path-ref:

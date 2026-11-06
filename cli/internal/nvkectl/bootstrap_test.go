@@ -685,68 +685,6 @@ func TestCWEDeployConfigUsesSiteSpecTrustDomain(t *testing.T) {
 	}
 }
 
-func TestSiteDeployConfigNamesTheSite(t *testing.T) {
-	seed := controllerdeploy.Config{
-		CWEImage: "registry.example.com/nvke-controller:1", SPIFFEClusterName: "nvkectl-bootstrap",
-		SPIFFETrustDomain: "site.example.com", SPIREExternalAddress: "192.0.2.1",
-	}
-	inv := &sitespec.SiteSpec{ClusterName: "site", Cluster: sitespec.Cluster{ControlPlaneVIP: "192.0.2.100"}}
-	cfg := siteDeployConfig(inv, seed)
-	if cfg.SPIFFEClusterName != "site" || cfg.SPIREExternalAddress != "192.0.2.100" {
-		t.Errorf("SPIFFEClusterName, SPIREExternalAddress = %q, %q; want the site's name and VIP",
-			cfg.SPIFFEClusterName, cfg.SPIREExternalAddress)
-	}
-	if cfg.SPIFFETrustDomain != seed.SPIFFETrustDomain || cfg.CWEImage != seed.CWEImage {
-		t.Errorf("the site must keep the bootstrap cluster's trust domain and image, got %q and %q",
-			cfg.SPIFFETrustDomain, cfg.CWEImage)
-	}
-}
-
-func TestRequireSitePullableImages(t *testing.T) {
-	tests := []struct {
-		name     string
-		cfg      controllerdeploy.Config
-		wantBare []string
-	}{
-		{
-			name: "every image names a registry",
-			cfg: controllerdeploy.Config{
-				CWEImage:      "registry.example.com/nvke-controller:1",
-				ProfilesImage: "registry.example.com/profiles:1", NicoInfrastructure: true,
-			},
-		},
-		{
-			name:     "a bare controller image",
-			cfg:      controllerdeploy.Config{CWEImage: "nvke-controller:1", NicoInfrastructure: true},
-			wantBare: []string{"nvke-controller:1"},
-		},
-		{
-			name: "a bare profiles image",
-			cfg: controllerdeploy.Config{
-				CWEImage:      "registry.example.com/nvke-controller:1",
-				ProfilesImage: "profiles:e2e", NicoInfrastructure: true,
-			},
-			wantBare: []string{"profiles:e2e"},
-		},
-		{
-			name:     "every image bare",
-			cfg:      controllerdeploy.Config{CWEImage: "nvke-controller:1", ProfilesImage: "profiles:e2e", NicoInfrastructure: true},
-			wantBare: []string{"nvke-controller:1", "profiles:e2e"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := requireSitePullableImages(tt.cfg)
-			if len(tt.wantBare) == 0 {
-				require.NoError(t, err)
-				return
-			}
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "name no registry: "+strings.Join(tt.wantBare, ", ")+".")
-		})
-	}
-}
-
 func TestCWEDeployConfigDefaultsTrustDomain(t *testing.T) {
 	setBootstrapEnv(t)
 	t.Setenv("NVKECTL_SPIFFE_TRUST_DOMAIN", "")
@@ -1810,70 +1748,27 @@ func TestRunBootstrapSiteNicoSpireDumpFailureIsAdvisedAsAJoinedCluster(t *testin
 	}
 }
 
-func TestPivotFailedErrorKeepsBothClusters(t *testing.T) {
-	err := pivotFailedError(errors.New("pivot move-database: restore failed"),
-		&bootstrapengine.Cluster{Name: "nvkectl-bootstrap", KubeconfigPath: "/tmp/kind.kubeconfig"})
-	var recovery *recoveryError
-	require.ErrorAs(t, err, &recovery)
-	for _, want := range []string{
-		"pivot move-database", `bootstrap cluster "nvkectl-bootstrap" was retained`,
-		"keep it and the site cluster as they are", "/tmp/kind.kubeconfig",
-	} {
-		assert.Contains(t, err.Error(), want)
-	}
-	assert.NotContains(t, err.Error(), "still manages the site", "part of the management plane may already be on the site")
-}
-
-// siteCallsFail passes the bootstrap cluster's commands to next and fails
-// every command against the site cluster's kubeconfig.
-type siteCallsFail struct {
-	next controllerdeploy.CommandRunner
-	site string
-}
-
-func (r siteCallsFail) Run(ctx context.Context, name string, args ...string) (string, error) {
-	if slices.Contains(args, r.site) {
-		return "", errors.New("site unreachable")
-	}
-	return r.next.Run(ctx, name, args...)
-}
-
-// TestRunBootstrapSiteNicoStackFailureKeepsTheSeed: until the pivot completes,
-// the bootstrap cluster is the site's only management plane. A failure
-// installing the stack on the site keeps it and says not to delete it.
-func TestRunBootstrapSiteNicoStackFailureKeepsTheSeed(t *testing.T) {
+// TestRunBootstrapSiteNicoSuccessKeepsTheSeed: with no pivot, the bootstrap
+// cluster is the only manager of a nico site, so a successful run keeps it.
+func TestRunBootstrapSiteNicoSuccessKeepsTheSeed(t *testing.T) {
 	setBootstrapEnv(t)
 	startFakeCWEAPIWithNodes(t, true, 3, 3)
 
-	siteKubeconfig := filepath.Join(t.TempDir(), "nvke-site.kubeconfig")
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            nicoSiteSpecFile(t),
 		bootstrapRunner:     runner,
-		cweRunner:           siteCallsFail{next: newFakeCWERunner(t), site: siteKubeconfig},
-		kubeconfigOut:       siteKubeconfig,
+		cweRunner:           newFakeCWERunner(t),
+		kubeconfigOut:       filepath.Join(t.TempDir(), "nvke-site.kubeconfig"),
 		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
 		lookPath:            runtimeOnPath,
 		dialContext:         refuseDial,
 		untaintControlPlane: skipUntaint,
 		dumpSpireEntries:    func(context.Context, string, string) (int, error) { return 1, nil },
 	})
-	if err == nil {
-		t.Fatal("expected the site stack install to fail")
-	}
-	var recovery *recoveryError
-	if !errors.As(err, &recovery) {
-		t.Errorf("error %q carries no recovery advice", err)
-	}
-	if !strings.Contains(err.Error(), `bootstrap cluster "nvkectl-bootstrap" still manages the site cluster until the pivot completes, `+
-		"so it was retained and is not to be deleted") {
-		t.Errorf("error %q does not say to keep the bootstrap cluster", err)
-	}
-	if strings.Contains(err.Error(), "kind delete cluster") {
-		t.Errorf("error %q tells the operator to delete the bootstrap cluster", err)
-	}
+	require.NoError(t, err)
 	if runner.sawArgs("delete", "cluster") {
-		t.Error("bootstrap cluster was deleted while it still managed the site")
+		t.Error("bootstrap cluster was deleted while it still manages the nico site")
 	}
 }
 
@@ -2159,8 +2054,8 @@ func TestRunBootstrapSiteReportsAnUntaintFailure(t *testing.T) {
 	if !spireEntriesDumped {
 		t.Error("the SPIRE export did not run; the untaint must come after it")
 	}
-	if runner.sawArgs("delete", "cluster") {
-		t.Errorf("the bootstrap kind cluster was deleted after the untaint failed; calls: %v", runner.calls)
+	if !runner.sawArgs("delete", "cluster") {
+		t.Errorf("the bootstrap kind cluster was kept after the untaint failed, though nothing in it is needed; calls: %v", runner.calls)
 	}
 	if cwe.saw("all,events") {
 		t.Errorf("bootstrap cluster diagnostics were collected for a failure in the site cluster; calls: %v", cwe.calls)
@@ -2831,75 +2726,4 @@ func TestControllerTracing(t *testing.T) {
 	}
 	// A context without a run, as a test or library caller has, exports nothing.
 	assert.Equal(t, controllerdeploy.TracingConfig{}, controllerTracing(context.Background(), slog.New(slog.NewTextHandler(io.Discard, nil))))
-}
-
-// flakySiteRunner fails the first controller install, as a dropped connection
-// to the site's VIP does, and records the Postgres password each install passed.
-type flakySiteRunner struct {
-	controllerInstalls int
-	passwords          []string
-	// failure is the output of the failed install; a dropped connection when empty.
-	failure string
-}
-
-func (r *flakySiteRunner) Run(_ context.Context, name string, args ...string) (string, error) {
-	line := name + " " + strings.Join(args, " ")
-	switch {
-	case strings.Contains(line, "get storageclass"):
-		return "true\n", nil
-	case strings.Contains(line, "get --raw"):
-		return `{"status":"ok"}`, nil
-	case strings.Contains(line, "upgrade --install postgres"):
-		for i, arg := range args {
-			if arg == "--values" && i+1 < len(args) {
-				if b, err := os.ReadFile(args[i+1]); err == nil && strings.Contains(string(b), "password") {
-					r.passwords = append(r.passwords, string(b))
-				}
-			}
-		}
-	case strings.Contains(line, "upgrade --install nvke-controller"):
-		r.controllerInstalls++
-		if r.controllerInstalls == 1 {
-			if r.failure != "" {
-				return r.failure, errors.New("exit status 1")
-			}
-			return "write tcp 192.0.2.10:54586->192.0.2.100:6443: write: broken pipe", errors.New("exit status 1")
-		}
-	}
-	return "", nil
-}
-
-func TestDeploySiteStackRetriesWithTheSamePassword(t *testing.T) {
-	runner := &flakySiteRunner{}
-	cfg := controllerdeploy.Config{
-		CWEImage: "registry.example.com/nvke-controller:1", ProvisionedProviderImage: "registry.example.com/provisioned:1",
-		DisableMTLS: true, ReadyTimeout: time.Second,
-	}
-	inv := &sitespec.SiteSpec{ClusterName: "site", Cluster: sitespec.Cluster{ControlPlaneVIP: "192.0.2.100"}}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := deploySiteStack(context.Background(), inv, "site.kubeconfig", cfg, runner, logger); err != nil {
-		t.Fatalf("deploySiteStack: %v", err)
-	}
-	if runner.controllerInstalls != 2 {
-		t.Fatalf("controller installs = %d, want a retry after the failed one", runner.controllerInstalls)
-	}
-	if len(runner.passwords) != 2 || runner.passwords[0] != runner.passwords[1] {
-		t.Fatalf("each attempt must pass Postgres the same password, got %d differing values", len(runner.passwords))
-	}
-}
-
-func TestDeploySiteStackReportsOtherFailuresAtOnce(t *testing.T) {
-	runner := &flakySiteRunner{failure: "Error: context deadline exceeded"}
-	cfg := controllerdeploy.Config{
-		CWEImage: "registry.example.com/nvke-controller:1", ProvisionedProviderImage: "registry.example.com/provisioned:1",
-		DisableMTLS: true, ReadyTimeout: time.Second,
-	}
-	inv := &sitespec.SiteSpec{ClusterName: "site", Cluster: sitespec.Cluster{ControlPlaneVIP: "192.0.2.100"}}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := deploySiteStack(context.Background(), inv, "site.kubeconfig", cfg, runner, logger); err == nil {
-		t.Fatal("deploySiteStack succeeded, want the failed install reported")
-	}
-	if runner.controllerInstalls != 1 {
-		t.Fatalf("controller installs = %d, want no retry after a failure that is not a lost connection", runner.controllerInstalls)
-	}
 }

@@ -63,7 +63,8 @@ func TestGenerate(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			root := t.TempDir()
+			root := filepath.Join(t.TempDir(), "management-engine")
+			require.NoError(t, os.MkdirAll(root, 0o755))
 			write := func(path, body string) {
 				t.Helper()
 				filename := filepath.Join(root, path)
@@ -88,7 +89,7 @@ func TestGenerate(t *testing.T) {
 			markers := "// +nvke:public:name=PublicWidget\n// +nvke:public:path=/widgets\n" +
 				"// +nvke:public:metadata=" + metadata + "\n" + tt.extraMarkers
 			source := strings.Replace(baseSource, "type Widget struct", markers+"type Widget struct", 1)
-			write("config/crd/bases/widgets.yaml", `spec:
+			write("../controller/deploy/charts/nvke-crds/bases/widgets.yaml", `spec:
   group: example.test
   names: {kind: Widget, plural: widgets}
   scope: Namespaced

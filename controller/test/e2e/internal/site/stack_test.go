@@ -212,7 +212,7 @@ func TestSBOMDeploy(t *testing.T) {
 		}
 	}
 	pg := decode(t, s.puts[path.Join(valuesDir, "postgresql.yaml")].data)
-	if pw, _ := dig(t, pg, "auth", "postgresPassword").(string); len(pw) < 26 {
+	if pw, _ := dig(t, pg, "auth", "postgresPassword").(string); len(pw) < 32 {
 		t.Errorf("generated password %q is too short", pw)
 	}
 

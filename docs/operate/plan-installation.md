@@ -76,7 +76,7 @@ All connections are TCP; traffic between the nodes of one cluster is not listed.
 
 - **A container registry you control**, only if you supply the controller or profile content image from one, with an account that can push to it. If pulling needs credentials, the management cluster needs them too.
 - CAPNICo's published image is public on `ghcr.io`, so it needs no credentials.
-- **Where a release's artifacts come from.** An NVKE release page at `https://github.com/dsx-ai-factory/nvke/releases` lists the versions a release was built from; it is not a download location for them. You check out the release tag in your `nvke` clone and build the node image and `nvkectl` from it, as described in [Build and host node OS images](build-node-images.md) and [Install nvkectl](bootstrap-management-cluster.md#install-nvkectl). The install takes the controller and profile images from `images.controller` and `images.profiles` in the stack config, or every chart and image by digest from an NVKR release description; see [Install the management plane](install-management-plane.md).
+- **Where a release's artifacts come from.** NVKE does not publish release pages or downloads on GitHub. You check out the release tag in your `nvke` clone and build the node image and `nvkectl` from it, as described in [Build and host node OS images](build-node-images.md) and [Install nvkectl](bootstrap-management-cluster.md#install-nvkectl). The install takes the controller and profile images from `images.controller` and `images.profiles` in the stack config, or every chart and image by digest from an NVKR release description; see [Install the management plane](install-management-plane.md).
 
 ### Hosts and tools
 

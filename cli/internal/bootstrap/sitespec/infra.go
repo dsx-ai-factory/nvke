@@ -34,6 +34,9 @@ const (
 	// ProviderNico asks CAPNICo to allocate the machines from a NICo site,
 	// described by infra.nico.
 	ProviderNico Provider = "nico"
+
+	// NicoEnableEnv gates ProviderNico, which is a work in progress.
+	NicoEnableEnv = "NVKECTL_ENABLE_NICO"
 )
 
 // Infra selects the infrastructure provider and holds the settings the
@@ -181,6 +184,11 @@ func (v *validator) checkInfra(inv *SiteSpec) {
 		}
 		v.checkNodes(inv.Cluster)
 	case ProviderNico:
+		if os.Getenv(NicoEnableEnv) != "1" {
+			v.addf("%s %q is a work in progress and not available yet; set %s=1 to enable it",
+				pathInfraProvider, ProviderNico, NicoEnableEnv)
+			return
+		}
 		if len(inv.Cluster.Nodes) > 0 {
 			v.addf("%s must be empty with %s: %q; the nodes are allocated, not listed",
 				pathNodes, pathInfraProvider, ProviderNico)

@@ -15,7 +15,7 @@
 #   3. start that vTPM plumbing before `spire-agent` and `nvke-agent`, so the controller
 #      preflight sees a SPIFFE-enabled node whose TPM identity is already ready
 
-ARG KINDEST_NODE_TAG=v1.34.8
+ARG KINDEST_NODE_TAG=v1.36.4
 ARG CAPD_BASE_PLATFORM=linux/arm64
 # build-image.sh points this at the Docker Hub mirror when one is configured.
 ARG KINDEST_NODE_IMAGE=docker.io/kindest/node

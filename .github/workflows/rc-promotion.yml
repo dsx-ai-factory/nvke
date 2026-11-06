@@ -5,12 +5,11 @@ name: RC promotion
 
 # A beta that passes its own qualification becomes a release candidate. When a
 # Qualify e2e run started by a beta tag push succeeds at scope golden-path and
-# stage full, this tags the same commit as the next vX.Y.Z-rc.N, which
-# release.yml publishes as a pre-release. Until the NVKE_AUTO_RC repository
+# stage full, this tags the same commit as the next vX.Y.Z-rc.N. Until the NVKE_AUTO_RC repository
 # variable is true, it only says what it would tag.
 #
 # The push must NOT use GITHUB_TOKEN, whose events never start other workflows,
-# so release.yml would not run. Like nightly-beta-tag.yml, it uses an
+# so tag-publish.yml would not run. Like nightly-beta-tag.yml, it uses an
 # installation token for the release bot GitHub App, which must be a bypass
 # actor on the "Protect release tags" ruleset.
 on:

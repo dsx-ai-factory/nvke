@@ -11,11 +11,12 @@ import (
 // NVKEClusterSpec configures a cluster's control plane and node pools.
 // +kubebuilder:validation:XValidation:rule="has(self.authentication) == has(oldSelf.authentication) && (!has(self.authentication) || self.authentication == oldSelf.authentication)",message="authentication is only configurable at cluster creation"
 // +kubebuilder:validation:XValidation:rule="!has(self.nodePools) || self.nodePools.size() == 0 || has(self.network)",message="network is required when nodePools are configured"
+// +kubebuilder:validation:XValidation:rule="has(self.apiServerEndpoint) == has(oldSelf.apiServerEndpoint) && (!has(self.apiServerEndpoint) || self.apiServerEndpoint == oldSelf.apiServerEndpoint)",message="apiServerEndpoint is only configurable at cluster creation"
 // +kubebuilder:validation:XValidation:rule="!has(self.apiServerEndpoint) || (self.clusterNetwork.pods.cidrBlocks.all(c, !cidr(c).containsIP(ip(self.apiServerEndpoint.address))) && self.clusterNetwork.services.cidrBlocks.all(c, !cidr(c).containsIP(ip(self.apiServerEndpoint.address))))",message="apiServerEndpoint.address must not be inside the pod or service networks"
 type NVKEClusterSpec struct {
 	APIServerAccess APIServerAccess `json:"apiServerAccess"`
 	// APIServerEndpoint gives the API server a stable address that survives control-plane node changes.
-	// Required for more than one control-plane node and for upgrades; it is fixed once reported in status.
+	// Required for more than one control-plane node and for upgrades.
 	// +optional
 	APIServerEndpoint *APIServerEndpoint `json:"apiServerEndpoint,omitempty"`
 	// Authentication configures additional JWT issuers for cluster access.
@@ -67,12 +68,6 @@ type APIServerEndpoint struct {
 	// Use an address assigned by your operator that no other cluster uses.
 	// +kubebuilder:validation:MaxLength=15
 	// +kubebuilder:validation:XValidation:rule="isIP(self) && ip(self).family() == 4 && ip(self).isGlobalUnicast()",message="must be a unicast IPv4 address"
-	Address string `json:"address"`
-}
-
-// APIServerEndpointStatus reports where clients reach the cluster's Kubernetes API server.
-type APIServerEndpointStatus struct {
-	// Address is the IPv4 virtual IP the API server is served on.
 	Address string `json:"address"`
 }
 
@@ -155,10 +150,6 @@ type NVKEClusterStatus struct {
 	// ResolvedRelease identifies the control-plane release selected for this cluster.
 	// +optional
 	ResolvedRelease *ReleaseReference `json:"resolvedRelease,omitempty"`
-	// APIServerEndpoint reports the address clients use to reach the API server,
-	// so tools can build connection details without reading the spec.
-	// +optional
-	APIServerEndpoint *APIServerEndpointStatus `json:"apiServerEndpoint,omitempty"`
 	// NodePools reports the observed state of each pool, identified by its name in spec.nodePools.
 	// +optional
 	// +listType=map
@@ -180,7 +171,6 @@ type NVKEClusterStatus struct {
 // +kubebuilder:resource:scope=Namespaced,path=nvkeclusters,singular=nvkecluster
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
-// +kubebuilder:validation:XValidation:rule="!has(oldSelf.status) || !has(oldSelf.status.apiServerEndpoint) || (has(self.spec.apiServerEndpoint) == has(oldSelf.spec.apiServerEndpoint) && (!has(self.spec.apiServerEndpoint) || self.spec.apiServerEndpoint == oldSelf.spec.apiServerEndpoint))",message="spec.apiServerEndpoint cannot change once status.apiServerEndpoint is set"
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 // +nvke:public:name=Cluster

@@ -9,7 +9,7 @@ types, generated CRDs, and controller-manager runtime.
 | Path | Purpose |
 | --- | --- |
 | `apis/v1` | Resource types and scheme registration |
-| `config/crd/bases` | Generated CRDs |
+| [Shared CRD chart](../controller/deploy/charts/nvke-crds/README.md) | Canonical generated CRDs |
 | `cmd` | Connection configuration and manager startup |
 | `controllers` | Reconcilers |
 
@@ -23,12 +23,12 @@ Run commands below from `management-engine/`.
 ```sh
 make build test lint
 make generate manifests # after API or RBAC changes
-git diff --exit-code -- apis/v1 config/crd/bases config/rbac/role.yaml chart # check generated-file drift
+git diff --exit-code -- apis/v1 ../controller/deploy/charts/nvke-crds/bases config/rbac/role.yaml chart # check generated-file drift
 make test-controller # controller integration tests (envtest)
-make -C .. chart-crds # after changing MachineImage, ClusterRelease, or NodePoolRelease
-make -C .. chart-crds-check # verify the NVKE controller chart's generated CRDs
-make chart-check # refresh generated assets and test all Helm installation modes
-make chart-assets-check # verify committed chart assets match their canonical sources
+make -C .. chart-crds # render the controller release schemas into ignored build output
+make -C .. chart-crds-check # verify canonical generated CRDs
+make chart-check # refresh canonical assets and test all Helm installation modes
+make chart-assets-check # verify canonical generated assets are current
 ```
 
 For a drift check, start with a clean working tree before regeneration.

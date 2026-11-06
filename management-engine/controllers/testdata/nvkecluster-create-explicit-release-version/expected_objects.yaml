@@ -95,12 +95,14 @@ items:
       status: Unknown
       type: NVKEControllerUpdateFailed
     - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 1
+      reason: ReconcileSucceeded
+      status: "True"
+      type: NodePoolsReconciled
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: |-
         * Available:
-          * ControlPlaneReady:
-            * NVKEControllerProvisioned: Reported
-            * NVKEControllerProvisioning: Reported
-        * Synced:
           * ControlPlaneReady:
             * NVKEControllerProvisioned: Reported
             * NVKEControllerProvisioning: Reported
@@ -109,13 +111,10 @@ items:
       status: "False"
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: |-
-        * ControlPlaneReady:
-          * NVKEControllerProvisioned: Reported
-          * NVKEControllerProvisioning: Reported
+      message: ""
       observedGeneration: 1
-      reason: NotSynced
-      status: "False"
+      reason: Synced
+      status: "True"
       type: Synced
     id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     observedGeneration: 1

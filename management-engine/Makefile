@@ -48,7 +48,7 @@ license: ## Add the repository's license header to source files.
 .PHONY: manifests-state manifests
 manifests-state: controller-gen ## Generate internal deepcopy methods, datastore CRDs, and RBAC.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
-	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=hack/boilerplate.yaml.txt paths=./apis/... output:crd:artifacts:config=config/crd/bases
+	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=hack/boilerplate.yaml.txt paths=./apis/... output:crd:artifacts:config=../controller/deploy/charts/nvke-crds/bases
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role,headerFile=hack/boilerplate.yaml.txt paths=./controllers/... output:rbac:artifacts:config=config/rbac
 
 manifests: manifests-state kustomize ## Generate runtime manifests and chart assets from their canonical sources.
@@ -322,6 +322,10 @@ chart-check: manifests ## Lint and test combined, state-only, and controller-onl
 	HELM="$(HELM)" $(GO) test $(GO_TEST_FLAGS) ./hack -run TestChart -count=1
 
 .PHONY: chart-assets-check
-chart-assets-check: manifests ## Fail when committed chart assets differ from their canonical sources.
+chart-assets-check: manifests ## Fail when canonical generated chart assets are stale.
 	git diff --exit-code -- chart/files
-	@test -z "$$(git ls-files --others --exclude-standard -- chart/files)" || { echo "Commit generated chart/files assets"; exit 1; }
+	@test -z "$$(git ls-files --others --exclude-standard -- chart/files)" || { echo "Commit generated chart assets"; exit 1; }
+
+.PHONY: test-chart-crds
+test-chart-crds: ## Verify the shared CRD chart and its controller dependency.
+	HELM="$(HELM)" $(GO) test $(GO_TEST_FLAGS) ./hack -run TestSharedCRDs -count=1

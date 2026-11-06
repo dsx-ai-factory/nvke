@@ -207,7 +207,7 @@ Open a second terminal in the `nvke` directory for the rest of this page, and ru
    nvkectl create cluster -f cli/examples/nico-mock-cluster.yaml
    ```
 
-   The request creates `my-cluster`: Kubernetes 1.34.8, the version of the node image that `capd-up` built, one control-plane node and a node pool named `worker` with one node, on mock-NICo's seeded site. Its `controlPlaneVIP`, `172.31.2.1`, is routed on your machine by the local Border Gateway Protocol (BGP) peer that Tilt started. The output is:
+   The request creates `my-cluster`: Kubernetes 1.36.4, the version of the node image that `capd-up` built, one control-plane node and a node pool named `worker` with one node, on mock-NICo's seeded site. Its `controlPlaneVIP`, `172.31.2.1`, is routed on your machine by the local Border Gateway Protocol (BGP) peer that Tilt started. The output is:
 
    ```text
    Cluster "my-cluster" created (id: <CLUSTER_ID>)
@@ -224,7 +224,7 @@ Open a second terminal in the `nvke` directory for the rest of this page, and ru
 
    ```text
    NAME         KUBERNETES VERSION   CNI              STATUS        ID             AGE
-   my-cluster   1.34.8               ovn-kubernetes   Provisioned   <CLUSTER_ID>   <AGE>
+   my-cluster   1.36.4               ovn-kubernetes   Provisioned   <CLUSTER_ID>   <AGE>
    ```
 
    The status is `Provisioning` while mock-NICo starts the node containers and NVKE forms the cluster. If it becomes `ProvisioningFailed`, check the `nvke-controller` and `nico-sim` logs in the Tilt UI, and the CAPNICo logs with `kubectl -n capnico-system logs deployment/controller-manager`.

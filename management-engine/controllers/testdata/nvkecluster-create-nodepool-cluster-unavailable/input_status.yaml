@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+observedGeneration: 1
+resolvedRelease:
+  name: pinned-release
+  version: "1.34.8"
+nodePools:
+  - name: workers
+    id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb

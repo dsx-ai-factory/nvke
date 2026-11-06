@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 )
 
 // NodeAgentConfig stores the exact desired agent release.
@@ -274,15 +275,77 @@ func ComputeControlPlaneRolloutChanges(pinned, desired ControlPlaneConfigSpec) [
 	}
 	// A CAPI cluster has no nico payload on either side, so both read as the
 	// zero value and the profile comparisons below are a no-op for it.
-	pinnedNico, _ := pinned.NicoProvider()
-	desiredNico, _ := desired.NicoProvider()
-	if pinnedNico.Release != desiredNico.Release {
-		changes = append(changes, ControlPlaneRolloutChange{Field: "release", From: pinnedNico.Release, To: desiredNico.Release})
+	if pinnedNico, err := pinned.NicoProvider(); err == nil {
+		desiredNico, err := desired.NicoProvider()
+		if err != nil {
+			return changes
+		}
+		if pinnedNico.Release != desiredNico.Release {
+			changes = append(changes, ControlPlaneRolloutChange{Field: "release", From: pinnedNico.Release, To: desiredNico.Release})
+		}
+		if pinnedNico.ConfigProfile != desiredNico.ConfigProfile {
+			changes = append(changes, ControlPlaneRolloutChange{Field: "configProfile", From: pinnedNico.ConfigProfile, To: desiredNico.ConfigProfile})
+		}
 	}
-	if pinnedNico.ConfigProfile != desiredNico.ConfigProfile {
-		changes = append(changes, ControlPlaneRolloutChange{Field: "configProfile", From: pinnedNico.ConfigProfile, To: desiredNico.ConfigProfile})
+	if pinnedCAPI, err := pinned.CAPIProvider(); err == nil {
+		desiredCAPI, err := desired.CAPIProvider()
+		if err != nil {
+			return changes
+		}
+		var pinnedTemplate, desiredTemplate json.RawMessage
+		if len(pinnedCAPI.InfraMachineTemplatePreferences) > 0 {
+			pinnedTemplate = pinnedCAPI.InfraMachineTemplatePreferences[0]
+		}
+		if len(desiredCAPI.InfraMachineTemplatePreferences) > 0 {
+			desiredTemplate = desiredCAPI.InfraMachineTemplatePreferences[0]
+		}
+		if !controlPlaneInfraTemplatesEqual(pinnedTemplate, desiredTemplate) {
+			changes = append(changes, ControlPlaneRolloutChange{
+				Field: "infra.machineTemplate",
+				From:  "previous template",
+				To:    "updated template",
+			})
+		}
+		type bootstrap struct {
+			Files    []CloudInitFile
+			Commands []string
+		}
+		pinnedBootstrap := bootstrap{Files: pinnedCAPI.BootstrapFiles, Commands: pinnedCAPI.PreKubeadmCommands}
+		desiredBootstrap := bootstrap{Files: desiredCAPI.BootstrapFiles, Commands: desiredCAPI.PreKubeadmCommands}
+		if !apiequality.Semantic.DeepEqual(pinnedBootstrap, desiredBootstrap) {
+			changes = append(changes, ControlPlaneRolloutChange{
+				Field: "infra.bootstrap",
+				From:  "previous bootstrap",
+				To:    "updated bootstrap",
+			})
+		}
 	}
 	return changes
+}
+
+func controlPlaneInfraTemplatesEqual(pinned, desired json.RawMessage) bool {
+	var pinnedObject, desiredObject map[string]any
+	if len(bytes.TrimSpace(pinned)) > 0 {
+		if !json.Valid(pinned) {
+			return false
+		}
+		decoder := json.NewDecoder(bytes.NewReader(pinned))
+		decoder.UseNumber()
+		if err := decoder.Decode(&pinnedObject); err != nil {
+			return false
+		}
+	}
+	if len(bytes.TrimSpace(desired)) > 0 {
+		if !json.Valid(desired) {
+			return false
+		}
+		decoder := json.NewDecoder(bytes.NewReader(desired))
+		decoder.UseNumber()
+		if err := decoder.Decode(&desiredObject); err != nil {
+			return false
+		}
+	}
+	return apiequality.Semantic.DeepEqual(pinnedObject, desiredObject)
 }
 
 // IsControlPlaneRolloutRequired reports whether two control-plane config snapshots
