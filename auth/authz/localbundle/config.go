@@ -54,7 +54,7 @@ type issuerConfig struct {
 	ServiceAccounts []serviceAccountMapping `json:"serviceAccounts"`
 }
 
-// tenantSource says where a caller's tenant comes from. Exactly one of Claim
+// tenantSource says where a caller's tenant comes from. At most one of Claim
 // and Fixed is set.
 type tenantSource struct {
 	// Claim names a top-level claim holding the tenant ID as a string.
@@ -132,11 +132,11 @@ type serviceAccountMatch struct {
 	grants []types.EntityUID
 }
 
-// loadConfig decodes raw strictly, then checks it against the authN config's
-// issuers and, unless declared is nil, the declared roles. It returns the
-// config compiled for Authorize. Unless raw doesn't parse or has the wrong
-// apiVersion or kind, the error joins every problem.
-func loadConfig(raw []byte, issuers []string, declared types.EntityMap) (compiledConfig, error) {
+// loadConfig decodes raw strictly, then checks it against opts and, unless
+// declared is nil, the declared roles. It returns the config compiled for
+// Authorize. Unless raw doesn't parse or has the wrong apiVersion or kind, the
+// error joins every problem.
+func loadConfig(raw []byte, opts Options, declared types.EntityMap) (compiledConfig, error) {
 	var c authorizationConfig
 	if err := strictyaml.Decode(configFile, raw, &c); err != nil {
 		return compiledConfig{}, err
@@ -156,8 +156,11 @@ func loadConfig(raw []byte, issuers []string, declared types.EntityMap) (compile
 			errs = append(errs, fmt.Errorf("operatorTenant %w", err))
 		}
 	}
+	if opts.RoleOnly {
+		errs = append(errs, c.checkRoleOnly()...)
+	}
 	for _, name := range slices.Sorted(maps.Keys(c.Issuers)) {
-		errs = append(errs, c.checkIssuer(name, issuers, declared)...)
+		errs = append(errs, c.checkIssuer(name, opts.Issuers, declared)...)
 	}
 	if len(errs) > 0 {
 		return compiledConfig{}, prefixErrors(errs)
@@ -211,6 +214,27 @@ func (c authorizationConfig) checkTypeMeta() []error {
 	return errs
 }
 
+// checkRoleOnly refuses every tenancy key set to a value that could change a
+// decision, for an API that decides by role alone. An empty operatorTenant,
+// an empty tenant or operators: false reads as unset and is accepted.
+func (c authorizationConfig) checkRoleOnly() []error {
+	const why = "this API authorizes by role only, so remove it"
+	var errs []error
+	if c.OperatorTenant != "" {
+		errs = append(errs, errors.New("operatorTenant is set, but "+why))
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.Issuers)) {
+		i := c.Issuers[name]
+		if i.Tenant != (tenantSource{}) {
+			errs = append(errs, fmt.Errorf("issuers.%s.tenant is set, but %s", name, why))
+		}
+		if i.Operators {
+			errs = append(errs, fmt.Errorf("issuers.%s.operators is set, but %s", name, why))
+		}
+	}
+	return errs
+}
+
 // checkIssuer checks one issuer's settings: the issuer is in the authN config,
 // its tenant source is valid, its operator setting can take effect, and each
 // claim and service account mapping is valid. Each error names its path.
@@ -246,17 +270,17 @@ func (c authorizationConfig) checkIssuer(name string, issuers []string, declared
 	return errs
 }
 
-// checkTenantSource refuses a tenant source that would give no caller a
-// tenant, or that the caller controls.
+// checkTenantSource refuses a tenant source that sets both claim and fixed, or
+// whose tenant the caller controls.
 func checkTenantSource(src tenantSource) error {
 	switch {
-	case (src.Claim == "") == (src.Fixed == ""):
-		return errors.New("set exactly one of claim and fixed")
+	case src.Claim != "" && src.Fixed != "":
+		return errors.New("set at most one of claim and fixed")
 	case src.Claim != "":
 		if err := checkClaimName(src.Claim); err != nil {
 			return fmt.Errorf("claim %w", err)
 		}
-	default:
+	case src.Fixed != "":
 		if err := authz.CheckTenantID(src.Fixed); err != nil {
 			return fmt.Errorf("fixed %w", err)
 		}
@@ -275,6 +299,8 @@ func checkOperators(i issuerConfig, operatorTenant string) error {
 		return nil
 	}
 	switch {
+	case i.Tenant == (tenantSource{}):
+		return errors.New("operators is set, but tenant isn't, so no caller would be an operator")
 	case operatorTenant == "":
 		return errors.New("operators is set, but operatorTenant isn't, so no caller would be an operator")
 	case fixed != "" && fixed != operatorTenant:
