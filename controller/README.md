@@ -549,8 +549,8 @@ pod spec can have the kubelet project a token for their own service account,
 naming any audience they choose. No RBAC check applies to that audience. Admission
 rules keep every service account on the cluster from being an NVKE administrator.
 
-NVKE does no authorization: every admitted caller can do everything. That is a
-platform responsibility.
+With [API authorization](#enabling-authorization) off, every admitted caller can do
+everything.
 
 ### Local Development
 
@@ -653,6 +653,32 @@ it was. It suppresses the 403 as well as the 401, so no caller is rejected.
 
 If the configuration is set but unreadable or invalid, from either source, NVKE
 will not start, rather than starting with authentication disabled.
+
+### Enabling Authorization
+
+API authorization gives each admitted caller a role, and checks it before every
+API operation, by `operationId`. It is off by default. With the Helm chart, set
+the `apiAuthz` values:
+
+```yaml
+apiAuthz:
+  enabled: true
+  permissive: true      # count and log refusals, serve anyway
+  config:               # rendered as authorization.yaml
+    issuers:
+      local-kubernetes:
+        serviceAccounts:
+          - {namespace: management-engine-system, name: management-engine-controller-manager, grants: [admin]}
+```
+
+The chart renders the `apiAuthz` section of `nvke-controller-config` (`enabled`,
+`permissive`, `authorizer.localBundle.dir`) and mounts the bundle at
+`/etc/nvke/authz`. Without the chart, set that section and mount a directory
+holding `policies.cedar`, `roles.json` and `authorization.yaml`. NVKE refuses to
+start with authorization on and authentication off, or with authorization
+enforcing behind permissive authentication. The default `admin` and `viewer`
+roles, grants, rollout, logs and metrics are in
+[Authorize API callers by role](../docs/operate/api-authorization.md).
 
 ### Authentication Configuration
 

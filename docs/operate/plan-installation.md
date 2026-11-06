@@ -96,7 +96,7 @@ API authentication is off by default: any caller that reaches port 30080 can cal
 - Puts group membership in a token claim named `groups`.
 - Has an OIDC client for `nvkectl` that needs no client secret.
 
-NVKE admits callers by group but does no authorization: every admitted caller can call every endpoint.
+NVKE admits callers by group. Every admitted caller can call every endpoint until you turn on [authorization](api-authorization.md), which gives each caller a role by a claim such as `groups`.
 
 ## Decide before you install
 

@@ -128,11 +128,11 @@ type serviceAccountMatch struct {
 	grants []types.EntityUID
 }
 
-// loadConfig decodes raw strictly, then checks it against the authN config's
-// issuers and, unless declared is nil, the declared roles. It returns the
-// config compiled for Authorize. Unless raw doesn't parse or has the wrong
-// apiVersion or kind, the error joins every problem.
-func loadConfig(raw []byte, issuers []string, declared types.EntityMap) (compiledConfig, error) {
+// loadConfig decodes raw strictly, then checks it against opts and, unless
+// declared is nil, the declared roles. It returns the config compiled for
+// Authorize. Unless raw doesn't parse or has the wrong apiVersion or kind, the
+// error joins every problem.
+func loadConfig(raw []byte, opts Options, declared types.EntityMap) (compiledConfig, error) {
 	var c authorizationConfig
 	if err := strictyaml.Decode(configFile, raw, &c); err != nil {
 		return compiledConfig{}, err
@@ -152,8 +152,11 @@ func loadConfig(raw []byte, issuers []string, declared types.EntityMap) (compile
 			errs = append(errs, fmt.Errorf("operatorTenant %w", err))
 		}
 	}
+	if opts.RoleOnly {
+		errs = append(errs, c.checkRoleOnly()...)
+	}
 	for _, name := range slices.Sorted(maps.Keys(c.Issuers)) {
-		errs = append(errs, c.checkIssuer(name, issuers, declared)...)
+		errs = append(errs, c.checkIssuer(name, opts.Issuers, declared)...)
 	}
 	if len(errs) > 0 {
 		return compiledConfig{}, prefixErrors(errs)
@@ -203,6 +206,26 @@ func (c authorizationConfig) checkTypeMeta() []error {
 		errs = append(errs, fmt.Errorf("kind is required; this build accepts %q", configKind))
 	default:
 		errs = append(errs, fmt.Errorf("kind %q is not supported; this build accepts %q", c.Kind, configKind))
+	}
+	return errs
+}
+
+// checkRoleOnly refuses every tenancy key, for an API that decides by role
+// alone.
+func (c authorizationConfig) checkRoleOnly() []error {
+	const why = "this API authorizes by role only, so remove it"
+	var errs []error
+	if c.OperatorTenant != "" {
+		errs = append(errs, errors.New("operatorTenant is set, but "+why))
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.Issuers)) {
+		i := c.Issuers[name]
+		if i.Tenant != (tenantSource{}) {
+			errs = append(errs, fmt.Errorf("issuers.%s.tenant is set, but %s", name, why))
+		}
+		if i.Operators {
+			errs = append(errs, fmt.Errorf("issuers.%s.operators is set, but %s", name, why))
+		}
 	}
 	return errs
 }

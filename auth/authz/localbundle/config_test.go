@@ -12,6 +12,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/auth/authn"
 	"github.com/dsx-ai-factory/nvke/auth/authz"
+	"github.com/dsx-ai-factory/nvke/auth/authz/localbundle"
 )
 
 // Each case is an authorization.yaml that New must refuse.
@@ -252,6 +253,32 @@ func TestNewJoinsConfigErrorsWithOtherFiles(t *testing.T) {
 	require.ErrorContains(t, err, "parse roles.json")
 	require.ErrorContains(t, err, "authorization.yaml: issuers.github: isn't an issuer in the authN config")
 	assert.NotContains(t, err.Error(), "isn't a role roles.json declares")
+}
+
+// RoleOnly refuses every tenancy key, and loads a config with none.
+func TestNewRoleOnly(t *testing.T) {
+	t.Parallel()
+
+	load := func(config string) error {
+		f := validBundle()
+		f["authorization.yaml"] = config
+		dir := t.TempDir()
+		writeBundle(t, dir, f)
+		opts := testOptions(dir)
+		opts.RoleOnly = true
+		_, err := localbundle.New(opts)
+		return err
+	}
+	claims := `claims: [{name: groups, value: readers, grants: [reader]}]`
+	require.NoError(t, load(configHeader+`issuers: {keycloak: {`+claims+`}}`))
+
+	err := load(configHeader + "operatorTenant: " + operatorTenant + "\n" +
+		`issuers: {keycloak: {tenant: {claim: org}, operators: true, ` + claims + `}}`)
+	assert.EqualError(t, err, strings.Join([]string{
+		"authorization.yaml: operatorTenant is set, but this API authorizes by role only, so remove it",
+		"authorization.yaml: issuers.keycloak.tenant is set, but this API authorizes by role only, so remove it",
+		"authorization.yaml: issuers.keycloak.operators is set, but this API authorizes by role only, so remove it",
+	}, "\n"))
 }
 
 // Each claim and service account mapping grants its roles only to a matching
