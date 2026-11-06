@@ -108,7 +108,11 @@ func TestReconcileStuckPendingNodes_ReplacesAndMarksDomain(t *testing.T) {
 	})).Return(stuck, nil)
 
 	r := &reconciler{db: mockTx, logger: slog.Default()}
-	cp := &controlPlane{nodes: []db.Node{stuck, healthyB, healthyC}, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
+	cp := &controlPlane{
+		nodes:                     []db.Node{stuck, healthyB, healthyC},
+		clusterControlPlaneConfig: cluster.ControlPlaneConfig,
+		failureDomains:            &failureDomains{eligible: []string{"A", "B", "C"}},
+	}
 
 	acted, err := r.reconcileStuckPendingNodes(context.Background(), cluster, cp)
 	require.NoError(t, err)
@@ -143,6 +147,18 @@ func TestReconcileStuckPendingNodes_NoOps(t *testing.T) {
 		acted, err := r.reconcileStuckPendingNodes(context.Background(), cluster, &controlPlane{nodes: []db.Node{stuck, deleting}})
 		require.NoError(t, err)
 		assert.False(t, acted)
+	})
+
+	t.Run("no other failure domain is placeable", func(t *testing.T) {
+		t.Parallel()
+		stuck := stuckPendingNode(clusterID, "cp-stuck", 2*time.Hour)
+		marked := cluster
+		marked.Conditions.UnplaceableFailureDomains = map[string]time.Time{"B": time.Now()}
+		cp := &controlPlane{nodes: []db.Node{stuck}, failureDomains: &failureDomains{eligible: []string{"A", "B"}}}
+		r := &reconciler{db: &testutil.MockTx{}, logger: slog.Default()}
+		acted, err := r.reconcileStuckPendingNodes(context.Background(), marked, cp)
+		require.NoError(t, err)
+		assert.False(t, acted, "re-placing would land in the same domain again")
 	})
 
 	t.Run("controlPlaneVIP is not configured", func(t *testing.T) {

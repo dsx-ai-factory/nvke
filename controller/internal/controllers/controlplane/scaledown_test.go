@@ -809,6 +809,7 @@ func TestSpreadPreservingCandidates(t *testing.T) {
 	tests := []struct {
 		name      string
 		removable []db.Node
+		active    []db.Node
 		want      []string
 	}{
 		{
@@ -819,6 +820,16 @@ func TestSpreadPreservingCandidates(t *testing.T) {
 				inDomain("c1", "C", 9*time.Hour),
 			},
 			want: []string{"a1", "a2", "b1", "b2"},
+		},
+		{
+			name: "a node scale-down may not remove still counts toward its domain",
+			removable: []db.Node{
+				inDomain("a1", "A", time.Hour), inDomain("b1", "B", time.Hour),
+			},
+			active: []db.Node{
+				inDomain("a1", "A", time.Hour), inDomain("a2", "A", time.Hour), inDomain("b1", "B", time.Hour),
+			},
+			want: []string{"a1"},
 		},
 		{
 			name: "evenly spread keeps every node a candidate",
@@ -854,7 +865,11 @@ func TestSpreadPreservingCandidates(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.ElementsMatch(t, tt.want, names(spreadPreservingCandidates(tt.removable, domainOf)))
+			active := tt.active
+			if active == nil {
+				active = tt.removable
+			}
+			assert.ElementsMatch(t, tt.want, names(spreadPreservingCandidates(tt.removable, active, domainOf)))
 		})
 	}
 }

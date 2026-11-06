@@ -6,8 +6,10 @@ package controlplane
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,10 +24,15 @@ type failureDomains struct {
 	observedByNodeName map[string]string
 }
 
+// errInfrastructureNotProvisioned means the CAPI cluster does not exist yet or has
+// not published its failure domains. The reconcile continues with the steps that
+// place no node; any other discovery error aborts it.
+var errInfrastructureNotProvisioned = errors.New("capi cluster infrastructure is not yet provisioned")
+
 // readFailureDomains returns a complete snapshot of the control-plane-eligible
 // failure domains of a cluster and the domain CAPI already reports for each of
 // its active control-plane Machines. A discovery error is returned with a nil
-// snapshot and aborts reconciliation.
+// snapshot.
 func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster) (*failureDomains, error) {
 	if r.k8sClient == nil {
 		return nil, fmt.Errorf("kubernetes client is not configured")
@@ -36,13 +43,16 @@ func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster)
 		Name:      cluster.Name,
 		Namespace: r.cfg.ManagementNamespaceOrDefault(),
 	}, capiCluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("get CAPI cluster for failure-domain discovery: %w: %w", errInfrastructureNotProvisioned, err)
+		}
 		return nil, fmt.Errorf("get CAPI cluster for failure-domain discovery: %w", err)
 	}
 
 	// An initializing cluster has not published its domains yet, which is not the
 	// same as a provider that has none.
 	if !ptr.Deref(capiCluster.Status.Initialization.InfrastructureProvisioned, false) {
-		return nil, fmt.Errorf("capi cluster infrastructure is not yet provisioned")
+		return nil, errInfrastructureNotProvisioned
 	}
 
 	discovered := &failureDomains{}

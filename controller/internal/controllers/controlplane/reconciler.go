@@ -104,8 +104,11 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	}
 
 	failureDomains, err := r.readFailureDomains(ctx, cluster)
-	if err != nil {
+	if errors.Is(err, errInfrastructureNotProvisioned) {
 		return r.reconcileWithoutFailureDomains(ctx, cluster, controlPlane, err)
+	}
+	if err != nil {
+		return fmt.Errorf("discovering control-plane failure domains: %w", err)
 	}
 	controlPlane.failureDomains = failureDomains
 	failureDomains.eligible = placeableDomains(failureDomains.eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
@@ -211,18 +214,6 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	return nil
 }
 
-// reconcileControlPlaneRolloutRequiredCondition refreshes each
-// control-plane-controller node's ControlPlaneRolloutRequired condition to reflect
-// current drift from the cluster's desired configuration. It maintains the
-// condition on every managed node (True when drifted, False when converged)
-// independent of the recycling gate, so the "drifted but recycling disabled" case
-// is still surfaced.
-//
-// The drift is computed against the in-memory node first, so the steady state
-// (no change) takes no row locks and issues no writes. Only when the condition
-// would actually flip is the node locked and recomputed before the write, so a
-// concurrent condition writer is not clobbered (same pattern as the
-// node-agent-readiness controller).
 // failureDomainRetryInterval is how soon a reconcile that could not read failure
 // domains runs again.
 const (
@@ -230,8 +221,8 @@ const (
 )
 
 // reconcileWithoutFailureDomains runs the steps that place no node -- remediation
-// and promotion of recorded deletes -- when failure-domain discovery fails, so a
-// dead node can still be removed. It returns nil and requeues rather than erroring
+// and promotion of recorded deletes -- while the CAPI cluster has not published its
+// failure domains, so a dead node can still be removed. It returns nil and requeues rather than erroring
 // because an error rolls back the reconcile's transaction, undoing those writes.
 func (r *reconciler) reconcileWithoutFailureDomains(ctx context.Context, cluster db.Cluster, cp *controlPlane, discoveryErr error) error {
 	r.logger.Warn("Control-plane failure-domain discovery failed; running only remediation and recorded deletes",
@@ -251,6 +242,18 @@ func (r *reconciler) reconcileWithoutFailureDomains(ctx context.Context, cluster
 	return nil
 }
 
+// reconcileControlPlaneRolloutRequiredCondition refreshes each
+// control-plane-controller node's ControlPlaneRolloutRequired condition to reflect
+// current drift from the cluster's desired configuration. It maintains the
+// condition on every managed node (True when drifted, False when converged)
+// independent of the recycling gate, so the "drifted but recycling disabled" case
+// is still surfaced.
+//
+// The drift is computed against the in-memory node first, so the steady state
+// (no change) takes no row locks and issues no writes. Only when the condition
+// would actually flip is the node locked and recomputed before the write, so a
+// concurrent condition writer is not clobbered (same pattern as the
+// node-agent-readiness controller).
 func (r *reconciler) reconcileControlPlaneRolloutRequiredCondition(ctx context.Context, cp *controlPlane) error {
 	for i := range cp.nodes {
 		if !cp.nodes[i].IsManagedByControlPlaneController() {

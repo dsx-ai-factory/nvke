@@ -41,12 +41,17 @@ func isStuckPendingInDomain(node db.Node) bool {
 		pendingLongerThan(node, stuckPendingNodeTimeout)
 }
 
+func isMarkedUnplaceable(unplaceable map[string]time.Time, domain string, now time.Time) bool {
+	marked, ok := unplaceable[domain]
+	return ok && now.Sub(marked) < unplaceableDomainTTL
+}
+
 // placeableDomains drops domains the controller recently gave up on. When that
 // would leave none, it returns every eligible domain so placement still proceeds.
 func placeableDomains(eligible []string, unplaceable map[string]time.Time, now time.Time) []string {
 	placeable := make([]string, 0, len(eligible))
 	for _, domain := range eligible {
-		if marked, ok := unplaceable[domain]; ok && now.Sub(marked) < unplaceableDomainTTL {
+		if isMarkedUnplaceable(unplaceable, domain, now) {
 			continue
 		}
 		placeable = append(placeable, domain)
@@ -80,22 +85,41 @@ func (r *reconciler) reconcileStuckPendingNodes(ctx context.Context, cluster db.
 	logger := r.logger.With("clusterID", cluster.ID, "clusterName", cluster.Name, "nodeID", victim.ID, "nodeName", victim.Name,
 		"failureDomain", victim.FailureDomain)
 
+	// Re-placing helps only when another domain can take the node; with every
+	// other domain marked or absent the replacement would land here again.
+	if !hasAlternativeDomain(cp.failureDomains, victim.FailureDomain, cluster.Conditions.UnplaceableFailureDomains, time.Now()) {
+		logger.Debug("Control-plane node stuck pending but no other failure domain is placeable; leaving it")
+		return false, nil
+	}
+
+	recorded, err := r.recordControlPlaneManagedDelete(ctx, logger, victim, stuckPendingReplaceReason)
+	if err != nil || !recorded {
+		return false, err
+	}
 	if err := r.markDomainUnplaceable(ctx, cluster.ID, victim.FailureDomain, logger); err != nil {
 		return false, err
 	}
-	recorded, err := r.recordControlPlaneManagedDelete(ctx, logger, victim, stuckPendingReplaceReason)
-	if err != nil {
-		return false, err
-	}
-	if recorded {
-		logger.Info("Recorded delete of a control-plane node stuck pending in its failure domain")
-	}
-	return recorded, nil
+	logger.Info("Recorded delete of a control-plane node stuck pending in its failure domain")
+	return true, nil
 }
 
-// markDomainUnplaceable stamps the domain and prunes expired entries. It re-reads
-// the cluster (the caller holds the lock) so it extends conditions written earlier
-// in the same reconcile.
+// hasAlternativeDomain reports whether an eligible domain other than domain is
+// not marked unplaceable.
+func hasAlternativeDomain(f *failureDomains, domain string, unplaceable map[string]time.Time, now time.Time) bool {
+	if f == nil {
+		return false
+	}
+	for _, candidate := range f.eligible {
+		if candidate != domain && !isMarkedUnplaceable(unplaceable, candidate, now) {
+			return true
+		}
+	}
+	return false
+}
+
+// markDomainUnplaceable stamps the domain and prunes expired entries. The
+// controller's reconcile transaction already holds the cluster row lock; it re-reads
+// the cluster so it extends conditions written earlier in the same reconcile.
 func (r *reconciler) markDomainUnplaceable(ctx context.Context, clusterID uuid.UUID, domain string, logger *slog.Logger) error {
 	cluster, err := r.db.GetCluster(ctx, clusterID)
 	if err != nil {

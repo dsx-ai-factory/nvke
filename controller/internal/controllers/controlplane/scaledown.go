@@ -58,7 +58,7 @@ func (r *reconciler) reconcileControlPlaneScaleDown(ctx context.Context, cluster
 	// counted, is not an etcd member, and disrupts nothing -- so it is the cheapest
 	// shed and the one that keeps desiredCount converging when the surplus is still
 	// coming up.
-	victim := selectControlPlaneNodeToScaleDown(spreadPreservingCandidates(removable, cp.failureDomains.domainOf), cluster.ControlPlaneConfig.ScaleDownRanker())
+	victim := selectControlPlaneNodeToScaleDown(spreadPreservingCandidates(removable, cp.activeNodes(), cp.failureDomains.domainOf), cluster.ControlPlaneConfig.ScaleDownRanker())
 
 	// Never shrink the joined control plane below the fault-tolerant floor. A
 	// joined node counts toward quorum whether or not it is currently healthy --
@@ -257,18 +257,19 @@ func controlPlaneHasNodeBelowPrimaryRank(eligible []db.Node, ranker db.ControlPl
 
 // spreadPreservingCandidates narrows the removable set to the nodes whose removal
 // keeps the joined control plane evenly spread: those in the most-populated
-// failure domain. A not-yet-joined node is not an etcd member, so when one exists
+// failure domain, counted over every node not being deleted -- including ones
+// scale-down may not remove. A not-yet-joined node is not an etcd member, so when one exists
 // the set is returned unchanged. A node with no known domain counts as its own
 // domain of one, so it is shed only when every domain holds a single node.
-func spreadPreservingCandidates(removable []db.Node, domainOf func(db.Node) string) []db.Node {
+func spreadPreservingCandidates(removable, active []db.Node, domainOf func(db.Node) string) []db.Node {
 	for _, node := range removable {
 		if !isCleanJoinedControlPlaneMember(node) {
 			return removable
 		}
 	}
 
-	counts := make(map[string]int, len(removable))
-	for _, node := range removable {
+	counts := make(map[string]int, len(active))
+	for _, node := range active {
 		counts[domainOf(node)]++
 	}
 	sizeOf := func(node db.Node) int {
@@ -289,6 +290,17 @@ func spreadPreservingCandidates(removable []db.Node, domainOf func(db.Node) stri
 		}
 	}
 	return candidates
+}
+
+// activeNodes returns the control-plane nodes with no delete recorded or in flight.
+func (c *controlPlane) activeNodes() []db.Node {
+	var active []db.Node
+	for _, node := range c.nodes {
+		if !nodes.IsDeleteInFlight(node) {
+			active = append(active, node)
+		}
+	}
+	return active
 }
 
 // selectControlPlaneNodeToScaleDown picks the surplus node to remove from the

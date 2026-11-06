@@ -367,3 +367,25 @@ func TestReconcilePlacesTheNodesItCreatedInTheSamePass(t *testing.T) {
 	assert.ElementsMatch(t, []string{"fd-a", "fd-b", "fd-c"}, placed,
 		"scale-up in the same pass should spread across the eligible domains")
 }
+
+func TestReadFailureDomainsErrorClassification(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a missing client is not the not-yet-provisioned case", func(t *testing.T) {
+		t.Parallel()
+		r := &reconciler{}
+		_, err := r.readFailureDomains(context.Background(), db.Cluster{Name: "c"})
+		require.Error(t, err)
+		assert.NotErrorIs(t, err, errInfrastructureNotProvisioned)
+	})
+
+	t.Run("a CAPI cluster that does not exist yet is", func(t *testing.T) {
+		t.Parallel()
+		scheme := runtime.NewScheme()
+		require.NoError(t, clusterv1.AddToScheme(scheme))
+		k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		r := &reconciler{k8sClient: k8sClient, k8sReader: k8sClient}
+		_, err := r.readFailureDomains(context.Background(), db.Cluster{Name: "c"})
+		assert.ErrorIs(t, err, errInfrastructureNotProvisioned)
+	})
+}
