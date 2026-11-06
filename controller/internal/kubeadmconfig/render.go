@@ -67,7 +67,12 @@ const (
 		"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256," +
 		"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256," +
 		"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
-	defaultProfilingDisabled         = "false"
+	defaultProfilingDisabled = "false"
+	// defaultTerminatedPodGCThreshold is how many terminated pods the
+	// controller manager keeps before deleting the oldest. It is Kubernetes'
+	// own default, set explicitly so the threshold is visible and pinned (CIS
+	// 1.3.1) without changing how many finished pods a cluster keeps.
+	defaultTerminatedPodGCThreshold  = "12500"
 	defaultAPIServerShutdownDelay    = "10s"
 	defaultAPIServerShutdownRetry    = "true"
 	defaultAPIServerShutdownWatch    = "20s"

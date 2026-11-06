@@ -6,6 +6,7 @@ package e2e
 import (
 	"testing"
 
+	"github.com/onsi/ginkgo/v2/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,6 +48,54 @@ func TestUnit_ValidationLabelFilterRejects(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, err := validationLabelFilter(lookupIn(env))
 			require.Error(t, err)
+		})
+	}
+}
+
+// The site scan's pods are privileged and share the host's PID namespace,
+// which the validation image's permissions rule out, so no validation switch
+// may select it.
+func TestUnit_ValidationLabelFilterNeverSelectsTheSiteScan(t *testing.T) {
+	values := []string{"", "true", "false"}
+	for _, site := range values {
+		for _, tenant := range values {
+			env := map[string]string{}
+			if site != "" {
+				env[siteValidateEnv] = site
+			}
+			if tenant != "" {
+				env[tenantValidateEnv] = tenant
+			}
+			filter, err := validationLabelFilter(lookupIn(env))
+			if err != nil || filter == "" {
+				continue
+			}
+			matches, err := types.ParseLabelFilter(filter)
+			require.NoError(t, err)
+			require.False(t, matches([]string{cisSiteLabel}), "%s=%q %s=%q selects %s", siteValidateEnv, site, tenantValidateEnv, tenant, cisSiteLabel)
+		}
+	}
+}
+
+func TestUnit_CISSiteScanRequested(t *testing.T) {
+	for name, tc := range map[string]struct {
+		value string
+		want  bool
+	}{
+		"unset":   {"", false},
+		"true":    {"true", true},
+		"padded":  {" true ", true},
+		"false":   {"false", false},
+		"garbage": {"yes", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			getenv := func(key string) string {
+				if key == cisSiteScanEnv {
+					return tc.value
+				}
+				return ""
+			}
+			require.Equal(t, tc.want, cisSiteScanRequested(getenv))
 		})
 	}
 }

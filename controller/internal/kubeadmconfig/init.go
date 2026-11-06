@@ -279,6 +279,7 @@ func clusterConfiguration(config *InitConfig) kubeadmv1beta3.ClusterConfiguratio
 		ControllerManager: controllerManagerComponent(map[string]string{
 			"secondary-node-eviction-rate": config.SecondaryNodeEvictionRate,
 			"large-cluster-size-threshold": config.LargeClusterSizeThreshold,
+			"terminated-pod-gc-threshold":  defaultTerminatedPodGCThreshold,
 		}),
 		ControlPlaneEndpoint: config.APIServerEndpoint,
 		ClusterName:          defaultClusterName,

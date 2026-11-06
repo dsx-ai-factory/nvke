@@ -1,0 +1,47 @@
+{
+  "Controls": [
+    {
+      "id": "4",
+      "version": "cis-2.0",
+      "text": "Synthetic node checks",
+      "node_type": "node",
+      "tests": [
+        {
+          "section": "4.1",
+          "desc": "Synthetic worker file checks",
+          "results": [
+            {
+              "test_number": "4.1.1",
+              "test_desc": "Synthetic: kubelet unit file mode",
+              "audit": "stat -c %a /etc/systemd/system/kubelet.service",
+              "type": "",
+              "status": "PASS",
+              "actual_value": "644",
+              "scored": true,
+              "expected_result": "permissions has permissions 644, expected 644 or more restrictive",
+              "reason": ""
+            }
+          ]
+        },
+        {
+          "section": "4.2",
+          "desc": "Synthetic kubelet checks",
+          "results": [
+            {
+              "test_number": "4.2.12",
+              "test_desc": "Synthetic: kubelet cipher suites",
+              "audit": "ps -ef | grep kubelet",
+              "type": "manual",
+              "status": "WARN",
+              "actual_value": "",
+              "scored": false,
+              "expected_result": "",
+              "reason": "Test marked as a manual test"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "Totals": {"total_pass": 1, "total_fail": 0, "total_warn": 1, "total_info": 0}
+}

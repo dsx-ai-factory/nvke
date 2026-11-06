@@ -96,6 +96,8 @@ controllerManager:
     value: "false"
   - name: secondary-node-eviction-rate
     value: "0"
+  - name: terminated-pod-gc-threshold
+    value: "12500"
 dns: {}
 etcd:
   local:
