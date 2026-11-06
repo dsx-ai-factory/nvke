@@ -100,6 +100,9 @@ func NewServer(
 	if o.authorize != nil {
 		strictMiddlewares = append(strictMiddlewares, o.authorize)
 	}
+	// The last middleware runs first, so a request authorize rejects still
+	// carries its operation into the audit event.
+	strictMiddlewares = append(strictMiddlewares, recordOperation)
 	serverImpl := NewServerImpl(cfg, logger, database, temporalClient, k8sReader, opts...)
 	strictHandler := api.NewStrictHandlerWithOptions(serverImpl, strictMiddlewares, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
@@ -186,18 +189,20 @@ func NewServer(
 	// produced, so the order below is the reverse of the order a request meets.
 	// A request runs
 	//
-	//	request log state -> tracing -> logging -> authentication -> managed-by -> mux
+	//	request log state -> tracing -> logging -> authentication -> record caller -> managed-by -> mux
 	//
 	// Authentication precedes managed-by so an unauthenticated caller never
 	// reaches it, and follows logging so a rejection still produces the usual
-	// request/response pair. Tracing still wraps request handling, so rejected
-	// requests are spans. Request log state is added before tracing so logging can pass
-	// the instrumented request directly to the mux, preserving its matched route
-	// for the HTTP span name. TestDisabledServerLogsTheManagedByRejection pins the
+	// request/response pair and audit event. Record caller sits inside
+	// authentication, whose principal it copies into the request log state.
+	// Tracing still wraps request handling, so rejected requests are spans.
+	// Request log state is added before tracing so logging can pass the
+	// instrumented request directly to the mux, preserving its matched route for
+	// the HTTP span name. TestDisabledServerLogsTheManagedByRejection pins the
 	// logging and managed-by order.
 	handler := managedByMiddleware(cfg.ManagedByK8sPlatform, logger)(m)
 	if authn != nil {
-		handler = authn.Wrap(handler)
+		handler = authn.Wrap(recordCallerMiddleware(handler))
 	}
 	handler = otelx.ExposeTraceID(loggingMiddleware(handler, logger))
 	handler = otelhttp.NewHandler(handler, "cloud-workflow-engine",
