@@ -105,9 +105,9 @@ infrastructure:
           id: "${DSX_DATAHALL_1_INSTANCE_TYPE_ID:-}"
           provides: {machineType: gpu, arch: amd64}
 
-    # redstone-dev1-dh1. arm64 throughout --- every machine it owns is a Vera
-    # Rubin NVL72 tray on an Olympus CPU --- so this datahall answers the arm64
-    # stream where datahall-1 answers amd64. Its ids are disjoint from that
+    # arm64 throughout --- every machine it owns is a Vera Rubin NVL72 tray on
+    # an Olympus CPU --- so this datahall answers the arm64 stream where
+    # datahall-1 answers amd64. Its ids are disjoint from that
     # one's; nothing above is reused here, including the API host.
     datahall-2:
       api: "${DSX_DATAHALL_2_API:-}"
