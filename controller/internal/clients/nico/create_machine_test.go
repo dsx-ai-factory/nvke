@@ -150,6 +150,46 @@ func TestClient_CreateMachine_ResolvesByRole(t *testing.T) {
 	}
 }
 
+// A pool's NVLink partition can change after a node set is created. The node set's
+// nodes, retries included, keep the node set's partition, so a retry never asks CAPNICo
+// to change the partition of an instance that already exists.
+func TestClient_CreateMachine_NVLinkPartitionFromNodeSet(t *testing.T) {
+	const release = "test-os"
+	partitionA := uuid.MustParse("70000000-0000-0000-0000-0000000000a1")
+	partitionB := uuid.MustParse("70000000-0000-0000-0000-0000000000b1")
+	k8sClient := newMachineCreateClient(t, testNodePoolRelease(release, "#!ipxe\n", "#cloud-config\n")...)
+
+	nodeSetWithPartition := func(partitionID *uuid.UUID) db.NodeSet {
+		nodeSet := db.NodeSet{KubernetesVersion: "1.32.1"}
+		nodeSet.SetNico(db.NicoNodePoolProvider{Release: release, DiskSelectionStrategy: db.DiskSelectionStrategySmallest, NvLinkLogicalPartitionID: partitionID})
+		return nodeSet
+	}
+	// The pool has since moved to partition B.
+	nodePool := db.NodePool{}
+	nodePool.SetNico(db.NicoNodePoolProvider{
+		InstanceTypeID:           uuid.MustParse("70000000-0000-0000-0000-000000000005"),
+		SubnetIDs:                []uuid.UUID{uuid.MustParse("70000000-0000-0000-0000-000000000007")},
+		NvLinkLogicalPartitionID: &partitionB,
+	})
+	cluster := db.Cluster{Name: "cluster-a", CniPlugin: db.CNICalico}
+	cluster.SetNicoProvider(db.NicoClusterProvider{VpcID: uuid.MustParse("70000000-0000-0000-0000-000000000006")})
+
+	ctx := context.Background()
+	create := func(nodeName string, nodeSet db.NodeSet) string {
+		node := db.Node{Name: nodeName, Nico: &db.NicoNodeProvider{}}
+		require.NoError(t, New().CreateMachine(ctx, testMachineCreateDeps(k8sClient), node, nodeSet, nodePool, cluster))
+		nicoMachine := &nicov1.NicoMachine{}
+		require.NoError(t, k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: constants.LegacyManagementNamespace, Name: nodeName}, nicoMachine))
+		return nicoMachine.Spec.NVLinkLogicalPartitionID
+	}
+
+	for range 2 {
+		assert.Equal(t, partitionA.String(), create("node-old-set", nodeSetWithPartition(&partitionA)), "node in a node set with partition A")
+		assert.Empty(t, create("node-unpartitioned-set", nodeSetWithPartition(nil)), "node in a node set without a partition")
+	}
+	assert.Equal(t, partitionB.String(), create("node-new-set", nodeSetWithPartition(&partitionB)), "node in the node set created after the change")
+}
+
 func newMachineCreateClient(t *testing.T, objects ...ctrlclient.Object) ctrlclient.Client {
 	t.Helper()
 
