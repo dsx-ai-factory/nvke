@@ -28,7 +28,7 @@ Each API:
 
 - Calls `Client.Check` for every request. The API supplies the action and the resource's owning tenant. The backend evaluates policy, finds the caller's tenant, and decides whether the caller is an operator. An operator may act in any tenant.
 - Picks its backend from configuration. Changing the backend changes no API code.
-- Runs standalone with `localbundle` and files the deployer mounts. Their schema, `AuthorizationConfiguration` in `auth.nvke.nvidia.com/v1alpha1`, is a public contract. A deployer can write them by hand, or a central IAM service can write them.
+- Runs standalone with `localbundle`. Its typed configuration, `AuthorizationConfiguration` in `auth.nvke.nvidia.com/v1alpha1`, is a public contract. A deployer can write it by hand, or a central IAM service can write it. A ConfigMap carries it today, but the schema is the contract, so a custom resource could carry it later.
 - Publishes its actions and resource types. Policy in every backend names them.
 - Calls `Client.Ready` at startup and exits if the backend cannot answer. In enforcing mode, a backend error refuses the request.
 
