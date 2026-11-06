@@ -149,7 +149,6 @@ func TestRetryAfterIsBounded(t *testing.T) {
 // Slack saying it did not act is safe to ask again, up to the attempt limit.
 func TestPostRetriesWhenSlackDidNotAct(t *testing.T) {
 	for name, rep := range map[string]reply{
-		"503":                 {status: http.StatusServiceUnavailable},
 		"429":                 {status: http.StatusTooManyRequests},
 		"service_unavailable": {body: `{"ok":false,"error":"service_unavailable"}`},
 		"request_timeout":     {body: `{"ok":false,"error":"request_timeout"}`},
@@ -173,6 +172,7 @@ func TestPostDoesNotRetryWhenDeliveryIsUncertain(t *testing.T) {
 	for name, rep := range map[string]reply{
 		"500":            {status: http.StatusInternalServerError},
 		"502":            {status: http.StatusBadGateway},
+		"503":            {status: http.StatusServiceUnavailable},
 		"504":            {status: http.StatusGatewayTimeout},
 		"internal_error": {body: `{"ok":false,"error":"internal_error"}`},
 		"fatal_error":    {body: `{"ok":false,"error":"fatal_error"}`},

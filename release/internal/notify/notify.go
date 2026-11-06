@@ -172,6 +172,24 @@ func (s *MemoryState) Set(key, channel, ts string) error {
 	return nil
 }
 
+// OverlayState reads existing thread state from Base and keeps what Set records
+// in memory, so a dry run sees the threads that exist and writes nothing.
+type OverlayState struct {
+	Base State
+	mem  MemoryState
+}
+
+// Get implements State. A thread recorded in this run wins over the base.
+func (s *OverlayState) Get(key, channel string) (string, error) {
+	if ts, _ := s.mem.Get(key, channel); ts != "" {
+		return ts, nil
+	}
+	return s.Base.Get(key, channel)
+}
+
+// Set implements State. It never touches Base.
+func (s *OverlayState) Set(key, channel, ts string) error { return s.mem.Set(key, channel, ts) }
+
 // WriterPoster prints each message instead of sending it, for a dry run.
 type WriterPoster struct {
 	W io.Writer

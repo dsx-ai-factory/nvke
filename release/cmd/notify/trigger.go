@@ -85,7 +85,9 @@ in parallel, so that only the job meant to open the thread can.`,
 			n := &notify.Notifier{Config: cfg, ReplyOnly: replyOnly}
 			if dryRun {
 				n.Poster = notify.WriterPoster{W: cmd.OutOrStdout()}
-				n.State = &notify.MemoryState{}
+				// Existing threads are read, so a preview shows replies where a real run
+				// would reply. Nothing is written.
+				n.State = &notify.OverlayState{Base: state.File{Dir: stateAt}}
 			} else {
 				token := os.Getenv(tokenEnv)
 				if token == "" {

@@ -171,9 +171,10 @@ func (c *Client) once(ctx context.Context, body []byte) (string, time.Duration, 
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests:
 		return "", retryAfter(resp.Header.Get("Retry-After")), fmt.Errorf("%s: rate limited", postMessageMethod)
-	case resp.StatusCode == http.StatusServiceUnavailable:
-		return "", time.Second, fmt.Errorf("%s: Slack answered %d", postMessageMethod, resp.StatusCode)
 	case resp.StatusCode >= http.StatusInternalServerError:
+		// Includes a bare 503. A proxy in front of Slack can answer 503 after
+		// Slack accepted the post, so only Slack's own JSON error below proves
+		// that nothing was posted.
 		return "", -1, fmt.Errorf("%s: Slack answered %d (not retried: the message may have been delivered)", postMessageMethod, resp.StatusCode)
 	}
 

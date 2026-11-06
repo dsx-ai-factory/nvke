@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/dsx-ai-factory/nvke/release/internal/notify"
+	"github.com/dsx-ai-factory/nvke/release/internal/notify/state"
 )
 
 // run executes the command with args and returns what it printed and its error.
@@ -64,6 +65,36 @@ func TestTriggerDryRun(t *testing.T) {
 	}
 	if strings.Contains(out, "ghs_must-not-print") {
 		t.Error("the runner's token reached the output")
+	}
+}
+
+// A preview must see the threads that exist, so reply-only does not refuse a
+// message that a real run would send, and it must write nothing.
+func TestDryRunReadsExistingThreadsAndWritesNone(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "")
+	t.Setenv("NOTIFY_STATE_KEY", "v1.0.0-beta.1")
+	dir := t.TempDir()
+	if err := (state.File{Dir: dir}).Set("v1.0.0-beta.1", "C0CF37FNXV1", "1700000000.000001"); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadDir(dir)
+
+	out, err := run(t, "trigger", "qualification:stream-passed", "--dry-run", "--reply-only", "--strict",
+		"--config", shipped, "--state-dir", dir, "--data", "stream=nvke-gb200")
+	if err != nil {
+		t.Fatalf("a dry run with an existing thread failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "reply in 1700000000.000001") {
+		t.Errorf("output does not show a reply in the saved thread:\n%s", out)
+	}
+	if after, _ := os.ReadDir(dir); len(after) != len(before) {
+		t.Errorf("a dry run changed the state directory: %d files before, %d after", len(before), len(after))
+	}
+
+	// With no thread, reply-only still refuses, and the preview says so.
+	if _, err := run(t, "trigger", "qualification:stream-passed", "--dry-run", "--reply-only", "--strict",
+		"--config", shipped, "--state-dir", t.TempDir(), "--data", "stream=nvke-gb200"); err == nil {
+		t.Error("reply-only with no thread succeeded")
 	}
 }
 
