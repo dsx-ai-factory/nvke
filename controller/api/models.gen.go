@@ -1163,7 +1163,7 @@ type NicoNodePoolProvider struct {
 	// InstanceTypeID NICo instance type. Fixed at creation.
 	InstanceTypeID openapi_types.UUID `json:"instanceTypeID,omitempty"`
 
-	// NvLinkLogicalPartitionID NVLink logical partition. Can be set or replaced by an update; nodes created after the update use it.
+	// NvLinkLogicalPartitionID NVLink logical partition. An update can set or replace it, which creates a new NodeSet.
 	NvLinkLogicalPartitionID *openapi_types.UUID `json:"nvLinkLogicalPartitionID,omitempty"`
 
 	// Release Name of a release the Operator has supplied to the management plane.
@@ -1190,8 +1190,10 @@ type NicoNodePoolProviderUpdate struct {
 	// DiskSelectionStrategy Which disk the OS is installed on. Default smallest.
 	DiskSelectionStrategy *DiskSelectionStrategy `json:"diskSelectionStrategy,omitempty"`
 
-	// NvLinkLogicalPartitionID Sets or replaces the NVLink logical partition. Nodes created after the update
-	// attach to it; existing nodes keep their partition. It cannot be cleared.
+	// NvLinkLogicalPartitionID Sets or replaces the NVLink logical partition. Like other node configuration,
+	// a change creates a new NodeSet: nodes created after it attach to the new
+	// partition, and existing nodes keep theirs until they are replaced. It cannot
+	// be cleared.
 	NvLinkLogicalPartitionID *openapi_types.UUID `json:"nvLinkLogicalPartitionID,omitempty"`
 
 	// Release Name of a release. Changing it rolls the pool's nodes to the new release. An
@@ -1224,6 +1226,9 @@ type NicoNodeSetProvider struct {
 
 	// DiskSelectionStrategy Which disk the OS is installed on. Default smallest.
 	DiskSelectionStrategy DiskSelectionStrategyCreate `json:"diskSelectionStrategy,omitempty"`
+
+	// NvLinkLogicalPartitionID NVLink logical partition that nodes in this node set attach to.
+	NvLinkLogicalPartitionID *openapi_types.UUID `json:"nvLinkLogicalPartitionID,omitempty"`
 
 	// Release Name of a release the Operator has supplied to the management plane.
 	Release string `json:"release,omitempty"`

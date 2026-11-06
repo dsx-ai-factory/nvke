@@ -3106,7 +3106,7 @@ components:
         nvLinkLogicalPartitionID:
           type: string
           format: uuid
-          description: NVLink logical partition. Can be set or replaced by an update; nodes created after the update use it.
+          description: NVLink logical partition. An update can set or replace it, which creates a new NodeSet.
         sshKeyGroupIDs:
           type: array
           items:
@@ -3168,8 +3168,10 @@ components:
           type: string
           format: uuid
           description: |
-            Sets or replaces the NVLink logical partition. Nodes created after the update
-            attach to it; existing nodes keep their partition. It cannot be cleared.
+            Sets or replaces the NVLink logical partition. Like other node configuration,
+            a change creates a new NodeSet: nodes created after it attach to the new
+            partition, and existing nodes keep theirs until they are replaced. It cannot
+            be cleared.
 
     NicoNodeSetProvider:
       type: object
@@ -3204,6 +3206,10 @@ components:
           x-go-type-skip-optional-pointer: true
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategyCreate"
+        nvLinkLogicalPartitionID:
+          type: string
+          format: uuid
+          description: NVLink logical partition that nodes in this node set attach to.
 
     LaunchLayerSecurityGroupRefs:
       type: object
