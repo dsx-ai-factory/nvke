@@ -13,7 +13,9 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -50,10 +52,10 @@ func (s staticKeySource) KeyFor(context.Context, string) (crypto.PublicKey, erro
 	return s.key, nil
 }
 
-// newAuditTestServer builds the production handler, enforcing and admitting
-// auditGroups[0], with every log line at Debug and above written to the
-// returned buffer. A nil key builds it with authentication off.
-func newAuditTestServer(t *testing.T, key *rsa.PrivateKey) (http.Handler, *bytes.Buffer) {
+// newAuditTestServer builds the production handler, admitting auditGroups[0] in
+// mode, with every log line at Debug and above written to the returned buffer.
+// A nil key builds it with authentication off.
+func newAuditTestServer(t *testing.T, key *rsa.PrivateKey, mode auth.Mode) (http.Handler, *bytes.Buffer) {
 	t.Helper()
 
 	var logged bytes.Buffer
@@ -73,7 +75,7 @@ func newAuditTestServer(t *testing.T, key *rsa.PrivateKey) (http.Handler, *bytes
 		}
 		verifier, err := auth.NewVerifier(cfg, map[string]auth.KeySource{auditIssuerName: staticKeySource{key: &key.PublicKey}})
 		require.NoError(t, err)
-		authn, err = auth.NewAuthenticator(verifier, auth.ModeEnforcing, logger, nil)
+		authn, err = auth.NewAuthenticator(verifier, mode, logger, nil)
 		require.NoError(t, err)
 	}
 
@@ -90,14 +92,14 @@ func newAuditTestServer(t *testing.T, key *rsa.PrivateKey) (http.Handler, *bytes
 	return srv.Handler, &logged
 }
 
-func mintAuditToken(t *testing.T, key *rsa.PrivateKey) string {
+func mintAuditToken(t *testing.T, key *rsa.PrivateKey, subject string, groups []string) string {
 	t.Helper()
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iss":    auditIssuer,
 		"aud":    auditAudience,
-		"sub":    auditSubject,
+		"sub":    subject,
 		"exp":    time.Now().Add(time.Hour).Unix(),
-		"groups": auditGroups,
+		"groups": groups,
 	})
 	token.Header["kid"] = auditKeyID
 	signed, err := token.SignedString(key)
@@ -122,122 +124,167 @@ func auditRecords(t *testing.T, logged *bytes.Buffer) []map[string]any {
 	return records
 }
 
+// auditEvent returns the one audit event in logged, without the fields every
+// log line carries.
+func auditEvent(t *testing.T, logged *bytes.Buffer) map[string]any {
+	t.Helper()
+	records := auditRecords(t, logged)
+	require.Len(t, records, 1, "one audit event per mutating request; log:\n%s", logged)
+	got := records[0]
+	assert.Equal(t, "INFO", got["level"])
+	for _, field := range []string{"time", "level", "msg", "event"} {
+		delete(got, field)
+	}
+	return got
+}
+
 func TestAuditEventNamesTheCaller(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
-	handler, logged := newAuditTestServer(t, key)
-	token := mintAuditToken(t, key)
+	enforcing, enforcingLog := newAuditTestServer(t, key, auth.ModeEnforcing)
+	permissive, permissiveLog := newAuditTestServer(t, key, auth.ModePermissive)
+	admitted := mintAuditToken(t, key, auditSubject, auditGroups)
+	// Verifies, but carries no admitted group.
+	unadmitted := mintAuditToken(t, key, "mallory@example.com", []string{"sre"})
 
 	clusterPath := "/api/clusters/" + auditClusterID
+	admittedCaller := map[string]any{
+		"issuer": auditIssuerName, "subject": auditSubject, "groups": []any{"nvke-admins", "sre"}, "admitted": true,
+	}
+	unadmittedCaller := map[string]any{
+		"issuer": auditIssuerName, "subject": "mallory@example.com", "groups": []any{"sre"}, "admitted": false,
+	}
 	tests := []struct {
-		name   string
-		method string
-		path   string
-		body   string
-		// token is false for a request that authentication refuses.
-		token bool
-		// want is the audit event, without the always-present "event"; nil
-		// means none.
-		want map[string]any
+		name       string
+		permissive bool
+		method     string
+		path       string
+		body       string
+		token      string
+		// request is the event's request fields, and caller its caller fields;
+		// a nil request means no event.
+		request map[string]any
+		caller  map[string]any
 	}{
 		{
-			name: "POST refused by validation", method: http.MethodPost, path: "/api/clusters", body: `{}`, token: true,
-			want: map[string]any{
-				"method": "POST", "path": "/api/clusters", "status": 400.0, "reason": "request_validation_failed",
-				"issuer": auditIssuerName, "subject": auditSubject, "groups": []any{"nvke-admins", "sre"},
-			},
+			name: "POST refused by validation", method: http.MethodPost, path: "/api/clusters", body: `{}`, token: admitted,
+			request: map[string]any{"method": "POST", "path": "/api/clusters", "status": 400.0, "reason": "request_validation_failed"},
+			caller:  admittedCaller,
 		},
 		{
-			name: "PUT with no operation", method: http.MethodPut, path: clusterPath, body: `{}`, token: true,
-			want: map[string]any{
-				"method": "PUT", "path": clusterPath, "status": 405.0, "reason": "client_error",
-				"issuer": auditIssuerName, "subject": auditSubject, "groups": []any{"nvke-admins", "sre"},
-			},
+			name: "PUT with no operation", method: http.MethodPut, path: clusterPath, body: `{}`, token: admitted,
+			request: map[string]any{"method": "PUT", "path": clusterPath, "status": 405.0, "reason": "client_error"},
+			caller:  admittedCaller,
 		},
 		{
-			name: "PATCH", method: http.MethodPatch, path: clusterPath, body: `{}`, token: true,
-			want: map[string]any{
-				"method": "PATCH", "path": clusterPath, "status": 404.0, "reason": "not_found", "operation": "updateCluster",
-				"issuer": auditIssuerName, "subject": auditSubject, "groups": []any{"nvke-admins", "sre"},
-			},
+			name: "PATCH", method: http.MethodPatch, path: clusterPath, body: `{}`, token: admitted,
+			request: map[string]any{"method": "PATCH", "path": clusterPath, "status": 404.0, "reason": "not_found", "operation": "updateCluster"},
+			caller:  admittedCaller,
 		},
 		{
-			name: "DELETE", method: http.MethodDelete, path: clusterPath, token: true,
-			want: map[string]any{
-				"method": "DELETE", "path": clusterPath, "status": 404.0, "reason": "not_found", "operation": "deleteCluster",
-				"issuer": auditIssuerName, "subject": auditSubject, "groups": []any{"nvke-admins", "sre"},
-			},
+			name: "DELETE", method: http.MethodDelete, path: clusterPath, token: admitted,
+			request: map[string]any{"method": "DELETE", "path": clusterPath, "status": 404.0, "reason": "not_found", "operation": "deleteCluster"},
+			caller:  admittedCaller,
 		},
 		{
-			name: "DELETE refused by authentication", method: http.MethodDelete, path: clusterPath,
-			want: map[string]any{
-				"method": "DELETE", "path": clusterPath, "status": 401.0, "reason": "unauthorized",
-			},
+			name: "DELETE with no token", method: http.MethodDelete, path: clusterPath,
+			request: map[string]any{"method": "DELETE", "path": clusterPath, "status": 401.0, "reason": "unauthorized"},
 		},
 		{
-			name: "GET", method: http.MethodGet, path: "/api/clusters", token: true,
+			name: "DELETE refused by admission", method: http.MethodDelete, path: clusterPath, token: unadmitted,
+			request: map[string]any{"method": "DELETE", "path": clusterPath, "status": 403.0, "reason": "forbidden"},
+			caller:  unadmittedCaller,
+		},
+		{
+			name: "permissive DELETE served despite admission", permissive: true, method: http.MethodDelete, path: clusterPath, token: unadmitted,
+			request: map[string]any{"method": "DELETE", "path": clusterPath, "status": 404.0, "reason": "not_found", "operation": "deleteCluster"},
+			caller:  unadmittedCaller,
+		},
+		{
+			name: "GET", method: http.MethodGet, path: "/api/clusters", token: admitted,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			handler, logged := enforcing, enforcingLog
+			if tt.permissive {
+				handler, logged = permissive, permissiveLog
+			}
 			logged.Reset()
 			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", "application/json")
-			if tt.token {
-				req.Header.Set("Authorization", "Bearer "+token)
+			if tt.token != "" {
+				req.Header.Set("Authorization", "Bearer "+tt.token)
 			}
-			rr := httptest.NewRecorder()
-			handler.ServeHTTP(rr, req)
+			handler.ServeHTTP(httptest.NewRecorder(), req)
 
-			records := auditRecords(t, logged)
-			if tt.want == nil {
-				assert.Empty(t, records, "a GET is not audited")
+			if tt.request == nil {
+				assert.Empty(t, auditRecords(t, logged), "a GET is not audited")
 				return
 			}
-			require.Len(t, records, 1, "one audit event per mutating request; log:\n%s", logged)
-			got := records[0]
-			assert.Equal(t, "INFO", got["level"])
-			for _, field := range []string{"time", "level", "msg", "event"} {
-				delete(got, field)
-			}
-			assert.Equal(t, tt.want, got)
+			want := maps.Clone(tt.request)
+			maps.Copy(want, tt.caller)
+			assert.Equal(t, want, auditEvent(t, logged))
 		})
 	}
 }
 
 // With authentication off there is no caller to name, so the event carries no
-// issuer, subject or groups field.
+// caller fields.
 func TestAuditEventWithAuthenticationOff(t *testing.T) {
-	handler, logged := newAuditTestServer(t, nil)
+	handler, logged := newAuditTestServer(t, nil, "")
 
 	path := "/api/clusters/" + auditClusterID
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, httptest.NewRequestWithContext(t.Context(), http.MethodDelete, path, http.NoBody))
-	require.Equal(t, http.StatusNotFound, rr.Code)
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodDelete, path, http.NoBody))
 
-	records := auditRecords(t, logged)
-	require.Len(t, records, 1)
-	got := records[0]
-	for _, field := range []string{"time", "level", "msg", "event"} {
-		delete(got, field)
-	}
 	assert.Equal(t, map[string]any{
 		"method": "DELETE", "path": path, "status": 404.0, "reason": "not_found", "operation": "deleteCluster",
-	}, got)
+	}, auditEvent(t, logged))
 }
 
-// No part of a token reaches the log, at any level: not the admitted token, and
-// not one signed by the wrong key that authentication refuses.
+// The subject and groups are the caller's strings, so the event bounds them.
+func TestAuditEventBoundsTheCaller(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	handler, logged := newAuditTestServer(t, key, auth.ModeEnforcing)
+
+	subject := strings.Repeat("s", 1000)
+	groups := make([]string, 0, 102)
+	groups = append(groups, auditGroups[0], strings.Repeat("g", 1000))
+	for i := range 100 {
+		groups = append(groups, fmt.Sprintf("group-%d", i))
+	}
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/api/clusters/"+auditClusterID, http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+mintAuditToken(t, key, subject, groups))
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	got := auditEvent(t, logged)
+	assert.Equal(t, auth.ElideForLog(subject), got["subject"])
+	assert.Less(t, len(got["subject"].(string)), 200)
+	assert.Equal(t, true, got["groups_truncated"])
+	loggedGroups, ok := got["groups"].([]any)
+	require.True(t, ok)
+	assert.Len(t, loggedGroups, 32)
+	assert.Equal(t, auditGroups[0], loggedGroups[0])
+	assert.Equal(t, auth.ElideForLog(groups[1]), loggedGroups[1])
+	for _, g := range loggedGroups {
+		assert.Less(t, len(g.(string)), 200)
+	}
+}
+
+// No part of a token reaches the log, at any level: not an admitted token, not
+// a verified one that admission refuses, and not one signed by the wrong key.
 func TestAuditLogCarriesNoToken(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	wrongKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
-	handler, logged := newAuditTestServer(t, key)
+	handler, logged := newAuditTestServer(t, key, auth.ModePermissive)
 
 	tokens := map[string]string{
-		"admitted": mintAuditToken(t, key),
-		"forged":   mintAuditToken(t, wrongKey),
+		"admitted":   mintAuditToken(t, key, auditSubject, auditGroups),
+		"unadmitted": mintAuditToken(t, key, auditSubject, []string{"sre"}),
+		"forged":     mintAuditToken(t, wrongKey, auditSubject, auditGroups),
 	}
 	for name, token := range tokens {
 		t.Run(name, func(t *testing.T) {

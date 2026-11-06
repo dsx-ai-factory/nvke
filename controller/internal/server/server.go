@@ -171,12 +171,12 @@ func NewServer(
 	// produced, so the order below is the reverse of the order a request meets.
 	// A request runs
 	//
-	//	request log state -> tracing -> logging -> authentication -> record caller -> managed-by -> mux
+	//	request log state -> tracing -> logging -> authentication -> managed-by -> mux
 	//
 	// Authentication precedes managed-by so an unauthenticated caller never
 	// reaches it, and follows logging so a rejection still produces the usual
-	// request/response pair and audit event. Record caller sits inside
-	// authentication, whose principal it copies into the request log state.
+	// request/response pair and audit event. Authentication tells recordCaller
+	// about each verified caller, so the audit event can name it.
 	// Tracing still wraps request handling, so rejected requests are spans.
 	// Request log state is added before tracing so logging can pass the
 	// instrumented request directly to the mux, preserving its matched route for
@@ -184,7 +184,7 @@ func NewServer(
 	// logging and managed-by order.
 	handler := managedByMiddleware(cfg.ManagedByK8sPlatform, logger)(m)
 	if authn != nil {
-		handler = authn.Wrap(recordCallerMiddleware(handler))
+		handler = authn.WithObserver(recordCaller).Wrap(handler)
 	}
 	handler = otelx.ExposeTraceID(loggingMiddleware(handler, logger))
 	handler = otelhttp.NewHandler(handler, "cloud-workflow-engine",
