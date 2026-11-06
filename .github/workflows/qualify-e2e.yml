@@ -735,6 +735,7 @@ jobs:
       - name: Announce that the stream started
         if: github.event_name == 'push'
         continue-on-error: true
+        timeout-minutes: 5
         uses: ./.github/actions/notify
         with:
           event: qualification:stream-started
@@ -1380,11 +1381,14 @@ jobs:
 
       # The outcome, in the thread. The stage is the first of the steps that
       # matter that failed, so it names where the stream stopped and not only
-      # that it did. A cancelled run posts neither: it has no outcome, and it
+      # that it did. A suite that passed leaves `after the suite`: publishing the
+      # result, the upload or the cleanup failed. `setup` is only a stream whose
+      # suite never ran. A cancelled run posts neither: it has no outcome, and it
       # still needs someone to check Forge for a leaked instance.
       - name: Announce that the stream passed
         if: success() && github.event_name == 'push'
         continue-on-error: true
+        timeout-minutes: 5
         uses: ./.github/actions/notify
         with:
           event: qualification:stream-passed
@@ -1395,13 +1399,14 @@ jobs:
       - name: Announce that the stream failed
         if: failure() && github.event_name == 'push'
         continue-on-error: true
+        timeout-minutes: 5
         uses: ./.github/actions/notify
         with:
           event: qualification:stream-failed
           token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
           data: |
             stream=${{ matrix.stream }}
-            stage=${{ (steps.artifacts.outcome == 'failure' && 'artifact check') || (steps.site-inputs.outcome == 'failure' && 'site inputs') || (steps.teleport.outcome == 'failure' && 'teleport') || (steps.suite.outcome == 'failure' && 'e2e suite') || 'setup' }}
+            stage=${{ (steps.artifacts.outcome == 'failure' && 'artifact check') || (steps.site-inputs.outcome == 'failure' && 'site inputs') || (steps.teleport.outcome == 'failure' && 'teleport') || (steps.suite.outcome == 'failure' && 'e2e suite') || (steps.suite.outcome == 'success' && 'after the suite') || 'setup' }}
 
   # How every stream went, as one card on the run page below the plan's: a row
   # for each stream, then each stream's specs and the failure Ginkgo recorded
@@ -1553,6 +1558,7 @@ jobs:
       # that was tagged.
       - name: Announce the tag
         continue-on-error: true
+        timeout-minutes: 5
         uses: ./.github/actions/notify
         with:
           event: qualification:tag-cut
@@ -1565,6 +1571,7 @@ jobs:
 
       - name: Announce that qualification started
         continue-on-error: true
+        timeout-minutes: 5
         uses: ./.github/actions/notify
         with:
           event: qualification:started
@@ -1612,6 +1619,7 @@ jobs:
 
       - name: Announce the plan
         continue-on-error: true
+        timeout-minutes: 5
         uses: ./.github/actions/notify
         with:
           event: qualification:plan-resolved
@@ -1675,6 +1683,7 @@ jobs:
 
       - name: Announce the result
         continue-on-error: true
+        timeout-minutes: 5
         uses: ./.github/actions/notify
         with:
           event: qualification:${{ steps.verdict.outputs.outcome }}
