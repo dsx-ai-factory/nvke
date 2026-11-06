@@ -83,6 +83,29 @@ func (a *Activities) UpdateKubeadmKubernetesVersion(
 	return UpdateKubeadmKubernetesVersionResult{Changed: changed}, nil
 }
 
+type MergeEtcdDefragKubeadmConfigResult struct {
+	Changed bool
+}
+
+// MergeEtcdDefragKubeadmConfig persists the controller's etcd defragmentation
+// settings in the tenant's kubeadm ClusterConfiguration, so a control-plane
+// node joining later renders an etcd manifest that carries them.
+func (a *Activities) MergeEtcdDefragKubeadmConfig(
+	ctx context.Context,
+	input KubeadmConfigClusterInput,
+) (MergeEtcdDefragKubeadmConfigResult, error) {
+	tenantClient, err := a.tenantClientForClusterID(ctx, input.ClusterID)
+	if err != nil {
+		return MergeEtcdDefragKubeadmConfigResult{}, err
+	}
+
+	changed, err := kubeadmconfig.EnsureBootstrapDefragInClusterConfiguration(ctx, tenantClient)
+	if err != nil {
+		return MergeEtcdDefragKubeadmConfigResult{}, err
+	}
+	return MergeEtcdDefragKubeadmConfigResult{Changed: changed}, nil
+}
+
 func (a *Activities) tenantClientForClusterID(ctx context.Context, clusterID uuid.UUID) (client.Client, error) {
 	cluster, err := a.db.GetCluster(ctx, clusterID)
 	if err != nil {
