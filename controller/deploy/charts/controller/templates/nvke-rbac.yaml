@@ -112,17 +112,11 @@ metadata:
   With exchange and no capllManagerSubject, no default could match, so nothing
   is rendered.
 */}}
-{{- $launchLayer := false }}
-{{- range splitList "," (.Values.supportedInfraProviders | default "nico") }}
-{{- if eq (trim .) "launchLayer" }}
-{{- $launchLayer = true }}
-{{- end }}
-{{- end }}
 {{- $capllManagerSubject := .Values.spiffe.capllManagerSubject }}
 {{- if not .Values.spiffe.jwtExchangeEndpoint }}
 {{- $capllManagerSubject = $capllManagerSubject | default (printf "spiffe://%s/%s/capi-provider-launchlayer-controller-manager" $td $seg) }}
 {{- end }}
-{{- $capllManager := and $launchLayer $capllManagerSubject }}
+{{- $capllManager := and (include "controller.launchLayerEnabled" .) $capllManagerSubject }}
 {{- $tenantRbacName := .Values.nvkeOIDCAuth.tenantRbacName }}
 {{- $rbacIdentities := dict }}
 {{- range $kind := list "ClusterRole" "ClusterRoleBinding" }}

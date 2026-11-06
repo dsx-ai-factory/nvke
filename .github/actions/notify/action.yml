@@ -1,0 +1,99 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Sends one qualification event to Slack through release/cmd/notify, and keeps
+# the Slack thread the run's messages belong to.
+#
+# The caller must already have checked out the repository and set up Go. The
+# caller also passes the bot token, because a composite action cannot read
+# `secrets`. The token reaches the one step that posts and nothing else.
+#
+# THREADS. The first message of a run starts a Slack thread, and its timestamp is
+# the only state. The job that opens the thread (open-thread: true) saves it as
+# a run artifact, and every later job restores it and replies. A job that is not
+# the opener always passes --reply-only: with no thread to reply in it posts
+# nothing, so a job that runs before the thread exists cannot start a second one.
+#
+# A NOTIFICATION IS A COURTESY. Every step here is allowed to fail, and the tool
+# itself turns a missing token, a Slack error or a template error into a warning.
+# A caller should still set continue-on-error on the step that uses this action.
+
+name: Notify
+description: Send a qualification event to Slack, in the run's thread
+
+inputs:
+  event:
+    description: The event name, such as qualification:stream-failed.
+    required: true
+  data:
+    description: One key=value per line, the values the event's template reads.
+    required: false
+    default: ""
+  token:
+    description: The Slack bot token. Empty sends nothing.
+    required: false
+    default: ""
+  open-thread:
+    description: >-
+      Whether this call may start the run's thread. Exactly one job should, and
+      it saves the thread for the others.
+    required: false
+    default: "false"
+  restore-state:
+    description: >-
+      Whether to fetch the saved thread first. Turn it off for a second call in
+      the job that opened the thread, which already holds it.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    # Re-running only the failed jobs continues the thread: they find the
+    # artifact the first attempt saved. Re-running all jobs does not, because
+    # GitHub does not show a previous attempt's artifacts to the new one (checked
+    # on a real run): the opener then starts a new thread for that attempt, and
+    # that attempt's lanes reply in it. The opener never restores, since it
+    # would only ever fail to find anything.
+    - name: Restore the thread
+      if: inputs.open-thread != 'true' && inputs.restore-state == 'true' && inputs.token != ''
+      continue-on-error: true
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: notify-state-${{ github.run_id }}
+        path: ${{ runner.temp }}/notify-state
+
+    - name: Send the notification
+      id: trigger
+      if: inputs.token != ''
+      continue-on-error: true
+      shell: bash
+      env:
+        SLACK_BOT_TOKEN: ${{ inputs.token }}
+        EVENT: ${{ inputs.event }}
+        NOTIFY_DATA: ${{ inputs.data }}
+        OPEN_THREAD: ${{ inputs.open-thread }}
+        STATE_DIR: ${{ runner.temp }}/notify-state
+      run: |
+        set -Eeuo pipefail
+        args=(trigger "${EVENT}" --state-dir "${STATE_DIR}")
+        # Only the opener may start a thread.
+        [ "${OPEN_THREAD}" = "true" ] || args+=(--reply-only)
+        while IFS= read -r line; do
+          [ -n "${line}" ] || continue
+          args+=(--data "${line}")
+        done <<< "${NOTIFY_DATA}"
+        go run ./release/cmd/notify "${args[@]}"
+
+    - name: Save the thread
+      if: inputs.open-thread == 'true' && steps.trigger.outputs.state-created == 'true'
+      continue-on-error: true
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: notify-state-${{ github.run_id }}
+        path: ${{ runner.temp }}/notify-state
+        # Re-running all jobs starts a new thread for the new attempt, which
+        # replaces the saved one.
+        overwrite: true
+        if-no-files-found: warn
+        retention-days: 7

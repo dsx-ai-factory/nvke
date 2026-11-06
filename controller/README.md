@@ -868,12 +868,15 @@ issuers:
         # Any-of against the token's "groups" claim (a JSON string array).
         - nke-operators
 
+  # Teleport sends its app JWT in Teleport-Jwt-Assertion; NVKE reads only
+  # Authorization. Give the Teleport app
+  # rewrite.headers: ["Authorization: Bearer {{internal.jwt}}"].
   - name: teleport
     issuer: "example-cluster"   # Teleport's cluster name, not a URL
     audiences: ["https://nvke.teleport.example.internal"]   # the app's URI
     jwks:
       uri: "https://teleport.example.internal/.well-known/jwks.json"   # on the proxy's public address
-    algorithms: [ES256]
+    algorithms: [RS256, ES256]  # RS256 under the legacy signature_algorithm_suite, ES256 under the others
     admit:
       claims:
         # Any-of: the token's "roles" claim is "nvke-admin", or a string array holding it.

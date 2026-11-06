@@ -118,9 +118,13 @@ refuse "credentialMonitoring.warningDays must exceed scheduledMaintenance.certRe
   --set scheduledMaintenance.certRenewal.thresholdDays=60
 printf '  credential settings the controller would refuse are refused at render\n'
 
+refuse "nodeAgent.spireAttestationMethod must be dsxImds when supportedInfraProviders includes launchLayer and spiffe.enabled is true" \
+  --set spiffe.enabled=true --set-string 'supportedInfraProviders=nico\, launchLayer'
+
 # Padded on purpose: the template must trim these.
 render dsx-imds \
   --set spiffe.enabled=true \
+  --set-string 'supportedInfraProviders=nico\, launchLayer' \
   --set-string nodeAgent.spireAttestationMethod=dsxImds \
   --set-string 'nodeAgent.dsxImds.operatorTenant= operator-1 ' \
   --set-string 'nodeAgent.dsxImds.endpoint= https://metadata.example.test ' \
