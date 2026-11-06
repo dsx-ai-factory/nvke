@@ -167,10 +167,11 @@ data:
       issuers: []
       {{- end }}
       permissive: {{ and .Values.apiAuth.enabled .Values.apiAuth.permissive }}
-    {{- /* The chart mounts no authorization bundle, so API authorization is off. */}}
+    {{- /* The bundle is mounted at controller.apiAuthz.mountPath. */}}
+    {{- $authz := .Values.apiAuthz }}
     apiAuthz:
-      enabled: false
-      permissive: false
+      enabled: {{ $authz.enabled }}
+      permissive: {{ and $authz.enabled $authz.permissive }}
       authorizer:
         localBundle:
-          dir: ""
+          dir: {{ if $authz.enabled }}{{ include "controller.apiAuthz.mountPath" . | quote }}{{ else }}""{{ end }}
