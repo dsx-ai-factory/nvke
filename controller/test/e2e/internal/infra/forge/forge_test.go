@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -207,10 +208,15 @@ func TestProvisionNode(t *testing.T) {
 	forge := &fakeForge{t: t, statuses: []string{"Provisioning", "Ready"}}
 	dialer := &fakeDialer{refusals: 2, conn: &fakeConn{}}
 	p := newTestProvider(t, forge, dialer)
+	p.opts.KeyDir = t.TempDir()
+	keyPath := provision.KeyPath(p.opts.KeyDir, testRequest().Name)
 
 	node, session, err := p.ProvisionNode(context.Background(), testRequest())
 	if err != nil {
 		t.Fatalf("provisioning: %v", err)
+	}
+	if _, err := os.Stat(keyPath); err != nil {
+		t.Errorf("the node's key was not saved: %v", err)
 	}
 	if node.IP != "10.0.0.7" {
 		t.Errorf("IP = %q, want the address without its prefix length", node.IP)
@@ -219,6 +225,9 @@ func TestProvisionNode(t *testing.T) {
 	// the node rather than by holding a Forge type to ask.
 	if node.Arch != "amd64" {
 		t.Errorf("Arch = %q, want the matched instance type's amd64", node.Arch)
+	}
+	if dialed := dialer.targets[len(dialer.targets)-1].User; node.User != dialed {
+		t.Errorf("User = %q, want %q, the login the session dialed with", node.User, dialed)
 	}
 
 	created := forge.created
@@ -275,6 +284,9 @@ func TestProvisionNode(t *testing.T) {
 	if forge.deleted != 1 || !dialer.conn.closed {
 		t.Errorf("teardown deleted %d times, closed=%v; want the instance deleted once and the connection closed", forge.deleted, dialer.conn.closed)
 	}
+	if _, err := os.Stat(keyPath); !os.IsNotExist(err) {
+		t.Errorf("the key outlived its released node (err %v)", err)
+	}
 }
 
 func TestProvisionNodeReleasesOnFailure(t *testing.T) {
@@ -293,6 +305,7 @@ func TestProvisionNodeReleasesOnFailure(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			forge := &fakeForge{t: t, statuses: tc.statuses}
 			p := newTestProvider(t, forge, &fakeDialer{conn: tc.conn})
+			p.opts.KeyDir = t.TempDir()
 			if name == "never ready" {
 				p.opts.ReadyTimeout = 20 * time.Millisecond
 			}
@@ -315,6 +328,9 @@ func TestProvisionNodeReleasesOnFailure(t *testing.T) {
 			}
 			if forge.deleted != 1 {
 				t.Errorf("deleted %d times, want the instance released", forge.deleted)
+			}
+			if _, err := os.Stat(provision.KeyPath(p.opts.KeyDir, testRequest().Name)); !os.IsNotExist(err) {
+				t.Errorf("the key outlived its released node (err %v)", err)
 			}
 		})
 	}
@@ -429,6 +445,7 @@ func TestCreateFailureSaysTheInstanceMayExist(t *testing.T) {
 	forge := &fakeForge{t: t, statuses: []string{"Ready"}, createStatus: http.StatusInternalServerError}
 	dialer := &fakeDialer{conn: &fakeConn{}}
 	p := newSlowCreateProvider(t, forge, dialer, time.Second, 5*time.Second)
+	p.opts.KeyDir = t.TempDir()
 
 	_, _, err := p.ProvisionNode(context.Background(), testRequest())
 	if err == nil {
@@ -438,6 +455,32 @@ func TestCreateFailureSaysTheInstanceMayExist(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error does not mention %q, so nobody will go looking for the instance:\n%v", want, err)
 		}
+	}
+	if _, err := os.Stat(provision.KeyPath(p.opts.KeyDir, testRequest().Name)); !os.IsNotExist(err) {
+		t.Errorf("a key was saved for an instance that was never created (err %v)", err)
+	}
+}
+
+// A key already at the path may log into a node still kept, so the run stops
+// before it creates anything rather than after.
+func TestProvisionNodeRefusesATakenKeyPath(t *testing.T) {
+	forge := &fakeForge{t: t, statuses: []string{"Ready"}}
+	p := newTestProvider(t, forge, &fakeDialer{conn: &fakeConn{}})
+	p.opts.KeyDir = t.TempDir()
+	path := provision.KeyPath(p.opts.KeyDir, testRequest().Name)
+	if err := os.WriteFile(path, []byte("kept"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := p.ProvisionNode(context.Background(), testRequest())
+	if err == nil || !strings.Contains(err.Error(), path) {
+		t.Fatalf("err = %v, want the taken path named", err)
+	}
+	if forge.created != nil {
+		t.Error("an instance was created before the key path was checked")
+	}
+	if b, _ := os.ReadFile(path); string(b) != "kept" {
+		t.Error("the existing key was overwritten")
 	}
 }
 
@@ -595,6 +638,8 @@ func TestProvisionNodeKeepsTheMachineOnFailure(t *testing.T) {
 	provider := newTestProvider(t, forge, dialer)
 	provider.opts.KeepOnFailure = true
 	provider.opts.ReachTimeout = 10 * time.Millisecond
+	provider.opts.KeyDir = t.TempDir()
+	keyPath := provision.KeyPath(provider.opts.KeyDir, testRequest().Name)
 
 	_, _, err := provider.ProvisionNode(context.Background(), testRequest())
 	if err == nil {
@@ -603,9 +648,12 @@ func TestProvisionNodeKeepsTheMachineOnFailure(t *testing.T) {
 	if forge.deleted != 0 {
 		t.Errorf("deleted %d times, want 0 -- the machine was supposed to be kept", forge.deleted)
 	}
-	// Useless if a reader cannot find it again, so the message carries both
-	// the name and where it answered.
-	for _, want := range []string{"KEPT", testInstance, "released by hand", "10.0.0.7"} {
+	if _, statErr := os.Stat(keyPath); statErr != nil {
+		t.Errorf("the kept node's key is gone: %v", statErr)
+	}
+	// Useless if a reader cannot find it again or get in, so the message
+	// carries the name, where it answered, and the login and key to use.
+	for _, want := range []string{"KEPT", testInstance, "released by hand", "10.0.0.7", "login " + provision.DefaultNodeUser, keyPath} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should name %s, got %v", want, err)
 		}

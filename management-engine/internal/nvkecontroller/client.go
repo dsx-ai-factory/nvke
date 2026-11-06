@@ -6,6 +6,7 @@
 package nvkecontroller
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -32,13 +33,18 @@ var (
 	ErrInvalidResponse = errors.New("NVKE controller returned an invalid cluster response")
 )
 
-// HTTPError reports a rejected request without exposing response contents.
+// HTTPError reports a rejected request with its status and structured API message.
 type HTTPError struct {
 	StatusCode int
+	Message    string
 }
 
 func (e *HTTPError) Error() string {
-	return fmt.Sprintf("NVKE controller request returned HTTP %d", e.StatusCode)
+	message := fmt.Sprintf("NVKE controller request returned HTTP %d", e.StatusCode)
+	if e.Message != "" {
+		message += ": " + e.Message
+	}
+	return message
 }
 
 // Config selects the operator-controlled NVKE controller endpoint and optional bearer token file.
@@ -144,6 +150,57 @@ func (c *Client) Create(ctx context.Context, request api.CreateClusterRequest) (
 	return &result, nil
 }
 
+// Update patches cluster configuration and validates the returned cluster identity.
+func (c *Client) Update(ctx context.Context, id string, request api.UpdateClusterRequest) (*api.Cluster, error) {
+	clusterID, err := parseID(id)
+	if err != nil {
+		return nil, err
+	}
+	body, err := marshalClusterUpdate(request)
+	if err != nil {
+		return nil, fmt.Errorf("encode NVKE controller cluster update: %w", err)
+	}
+	response, err := c.api.UpdateClusterWithBody(ctx, clusterID, "application/json", bytes.NewReader(body))
+	var result api.Cluster
+	if err := readResponse(response, err, http.StatusOK, &result); err != nil {
+		return nil, err
+	}
+	if result.ID != clusterID || result.Name == "" {
+		return nil, ErrInvalidResponse
+	}
+	return &result, nil
+}
+
+func marshalClusterUpdate(request api.UpdateClusterRequest) ([]byte, error) {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	if request.ControlPlaneConfig == nil || request.ControlPlaneConfig.Infra == nil {
+		return body, nil
+	}
+	var fields map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&fields); err != nil {
+		return nil, err
+	}
+	config := fields["controlPlaneConfig"].(map[string]any)
+	infra := config["infra"].(map[string]any)
+	requested := request.ControlPlaneConfig.Infra
+	// Generated omitempty tags drop empty collections that PATCH needs to clear stored values.
+	if requested.BootstrapFiles != nil {
+		infra["bootstrapFiles"] = requested.BootstrapFiles
+	}
+	if requested.MachineTemplate != nil {
+		infra["machineTemplate"] = requested.MachineTemplate
+	}
+	if requested.PreKubeadmCommands != nil {
+		infra["preKubeadmCommands"] = requested.PreKubeadmCommands
+	}
+	return json.Marshal(fields)
+}
+
 // Delete requests asynchronous deletion
 func (c *Client) Delete(ctx context.Context, id string) error {
 	clusterID, err := parseID(id)
@@ -245,7 +302,12 @@ func readResponse(response *http.Response, requestErr error, expected int, targe
 		return ErrNotFound
 	}
 	if response.StatusCode != expected {
-		return &HTTPError{StatusCode: response.StatusCode}
+		responseErr := &HTTPError{StatusCode: response.StatusCode}
+		var detail api.GenericError
+		if err := json.NewDecoder(response.Body).Decode(&detail); err == nil {
+			responseErr.Message = strings.TrimSpace(detail.Message)
+		}
+		return responseErr
 	}
 	if target == nil {
 		return nil

@@ -114,7 +114,7 @@ this sequence. It is tied to the increments in [RELEASE.md](https://github.com/d
    keeps its behaviour. Its help text says it is deprecated, says what replaces
    it, and names the release it was deprecated in. Using it writes a one-line
    warning **to stderr** — never to stdout, so a piped `-o json` is unaffected.
-   The `CHANGELOG.md` entry says the same.
+   The release notes say the same.
 2. **Carry it** for at least one further MINOR release. A replacement, where one
    exists, ships in the same release as the announcement, so there is never a
    window in which neither works.

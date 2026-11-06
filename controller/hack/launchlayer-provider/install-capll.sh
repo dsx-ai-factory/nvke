@@ -6,6 +6,7 @@ set -euo pipefail
 
 : "${CAPLL_NAMESPACE:=capll-system}"
 : "${CAPLL_FAKE_NAMESPACE:=fake-ll-api}"
+: "${CAPLL_WORKLOAD_NAMESPACE:=nvke-system}"
 : "${CAPLL_RELEASE:=capi-provider-launchlayer}"
 : "${CAPLL_IMAGE:=cluster-api-provider-launchlayer:local}"
 : "${CAPLL_FAKE_IMAGE:=fake-ll-api-server:local}"
@@ -72,6 +73,16 @@ helm upgrade --install "${CAPLL_RELEASE}" "${CAPLL_STAGED_CHART_DIR}" \
   --set-string "manager.image.repository=${CAPLL_IMAGE%:*}" \
   --set-string "manager.image.tag=${CAPLL_IMAGE##*:}" \
   --wait --timeout 5m
+
+# CAPLL reads each Machine's bootstrap Secret where the controller writes its
+# CAPI objects. Its chart grants Secret get only in its own namespace (CAPLL's
+# docs/authentication.md, "Secret access"), so grant it there as well. The
+# ServiceAccount is read from the Deployment: the chart names it after the release.
+capll_sa="$(kubectl -n "${CAPLL_NAMESPACE}" get deployment -l "app.kubernetes.io/instance=${CAPLL_RELEASE}" -o jsonpath='{.items[0].spec.template.spec.serviceAccountName}')"
+kubectl -n "${CAPLL_WORKLOAD_NAMESPACE}" create role capll-secret-reader --verb=get --resource=secrets \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n "${CAPLL_WORKLOAD_NAMESPACE}" create rolebinding capll-secret-reader --role=capll-secret-reader \
+  --serviceaccount="${CAPLL_NAMESPACE}:${capll_sa}" --dry-run=client -o yaml | kubectl apply -f -
 
 build_and_load "${CAPLL_FAKE_IMAGE}" "Dockerfile.fake"
 

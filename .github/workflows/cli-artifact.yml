@@ -3,8 +3,7 @@
 
 name: CLI Artifact GHCR
 
-# Publishes nvkectl binaries to GHCR as OCI artifacts, alongside the existing
-# GitHub Release. Tags are OS/ARCH-suffixed only (e.g. v0.1.0-linux-amd64),
+# Publishes nvkectl binaries to GHCR as OCI artifacts. Tags are OS/ARCH-suffixed only (e.g. v0.1.0-linux-amd64),
 # same as os-image -- no `oras manifest index create` step, so unlike
 # agent-artifact.yml there is no bare `:version` tag a consumer can pull with
 # `--platform` to auto-select. Pull the suffixed tag directly.
@@ -13,9 +12,9 @@ name: CLI Artifact GHCR
 # use in this repo is linux-only, so this is the first time that flag sees a
 # `darwin/*` value. Watch the first real run.
 
-# Called by release.yml after its build, so a cli/v* tag produces one set of
+# Called by tag-publish.yml after its build, so a cli/v* tag produces one set of
 # binaries rather than four independent ones, and this runs behind the licence
-# gate release.yml already enforces. The tag trigger is gone for that reason.
+# gate tag-publish.yml already enforces. The tag trigger is gone for that reason.
 #
 # workflow_dispatch still works and still builds: dist_artifact is empty there,
 # so the build step below runs instead of the download.
@@ -23,7 +22,7 @@ on:
   workflow_call:
     inputs:
       dist_artifact:
-        description: Artifact holding the binaries release.yml built. Empty means build here.
+        description: Artifact holding the binaries tag-publish.yml built. Empty means build here.
         type: string
         required: false
         default: ""
@@ -76,7 +75,7 @@ jobs:
         id: meta
         shell: bash
         env:
-          # NVKE_GITHUB_PUBLISH names the components whose releases go to GitHub;
+          # NVKE_GITHUB_PUBLISH names the components whose releases go to GHCR;
           # see docs/artifact-publication.md. Unset means every component but os-image.
           GITHUB_PUBLISH: ${{ contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',cli,') }}
         run: |
@@ -102,8 +101,8 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
           echo "Publishing ${repo} ${version} as: ${aliases[*]}"
 
-      # One build per release. release.yml builds and checksums; this consumes
-      # exactly those bytes, so checksums.txt describes what ships here too.
+      # One build per release. tag-publish.yml builds; this consumes exactly those
+      # bytes, so every channel ships the same binaries.
       - name: Download the release build
         if: inputs.dist_artifact != ''
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333

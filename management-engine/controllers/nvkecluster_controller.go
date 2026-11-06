@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/version"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
@@ -55,6 +56,7 @@ type NVKEControllerClient interface {
 	CreateNodePool(ctx context.Context, request api.CreateNodePoolRequest) (*api.NodePool, error)
 	UpdateNodePool(ctx context.Context, id string, request api.UpdateNodePoolRequest) (*api.NodePool, error)
 	DeleteNodePool(ctx context.Context, id string) error
+	Update(ctx context.Context, id string, request api.UpdateClusterRequest) (*api.Cluster, error)
 }
 
 // NVKEClusterReconciler coordinates cluster provisioning from declarative intent.
@@ -177,7 +179,15 @@ func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *i
 		return ctrl.Result{}, err
 	}
 
-	variables, err := r.resolveReleaseTemplateVariables(ctx, cluster)
+	release, err := r.resolveClusterRelease(ctx, cluster)
+	var variables map[string]any
+	if err == nil {
+		variables, err = r.resolveReleaseTemplateVariables(ctx, release)
+	}
+	var kubernetesVersion *version.Version
+	if err == nil {
+		kubernetesVersion, err = clusterReleaseKubernetesVersion(release)
+	}
 	if err != nil {
 		conditions.Set(cluster, metav1.Condition{
 			Type:    internalv1.ClusterReconciledCondition,
@@ -202,10 +212,38 @@ func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *i
 		return ctrl.Result{}, err
 	}
 
-	observedCluster, err := r.ensureCluster(ctx, cluster, &clusterInfra, controlPlaneTemplate, variables)
+	observedCluster, clusterErr := r.ensureCluster(ctx, cluster, &clusterInfra, controlPlaneTemplate, variables, kubernetesVersion.String())
 	propagateNVKEControllerConditions(cluster, observedCluster)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("ensure nvke controller cluster: %w", err)
+	if clusterErr != nil {
+		conditions.Set(cluster, metav1.Condition{
+			Type:    internalv1.ClusterReconciledCondition,
+			Status:  metav1.ConditionFalse,
+			Reason:  internalv1.ReconcileFailedReason,
+			Message: clusterErr.Error(),
+		})
+		if observedCluster == nil {
+			return ctrl.Result{}, fmt.Errorf("ensure nvke controller cluster: %w", clusterErr)
+		}
+	}
+	if observedCluster.Conditions.Deleting.Status == api.ConditionStatus("True") {
+		deleteErr := errors.Join(clusterErr, fmt.Errorf("NVKE controller cluster %q is deleting", observedCluster.Name))
+		conditions.Set(cluster, metav1.Condition{
+			Type:    internalv1.ClusterReconciledCondition,
+			Status:  metav1.ConditionFalse,
+			Reason:  internalv1.ReconcileFailedReason,
+			Message: deleteErr.Error(),
+		})
+		return ctrl.Result{}, deleteErr
+	}
+	if clusterErr == nil {
+		cluster.Status.ResolvedRelease = &internalv1.ReleaseReference{
+			Name: internalv1.ResourceName(release.Name), Version: kubernetesVersion.String(),
+		}
+		conditions.Set(cluster, metav1.Condition{
+			Type:   internalv1.ClusterReconciledCondition,
+			Status: metav1.ConditionTrue,
+			Reason: internalv1.ReconcileSucceededReason,
+		})
 	}
 	var poolErr error
 	desiredPools := make(map[internalv1.ResourceName]bool, len(cluster.Spec.NodePools))
@@ -233,34 +271,29 @@ func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *i
 	cluster.Status.NodePools = remainingPools
 	if poolErr != nil {
 		conditions.Set(cluster, metav1.Condition{
-			Type:    internalv1.ClusterReconciledCondition,
+			Type:    internalv1.NodePoolsReconciledCondition,
 			Status:  metav1.ConditionFalse,
 			Reason:  internalv1.ReconcileFailedReason,
 			Message: poolErr.Error(),
 		})
-		return ctrl.Result{}, poolErr
+		return ctrl.Result{}, errors.Join(clusterErr, poolErr)
 	}
 	conditions.Set(cluster, metav1.Condition{
-		Type:   internalv1.ClusterReconciledCondition,
+		Type:   internalv1.NodePoolsReconciledCondition,
 		Status: metav1.ConditionTrue,
 		Reason: internalv1.ReconcileSucceededReason,
 	})
+	if clusterErr != nil {
+		return ctrl.Result{}, clusterErr
+	}
 	return ctrl.Result{RequeueAfter: r.PollInterval}, nil
 }
 
-func (r *NVKEClusterReconciler) resolveReleaseTemplateVariables(ctx context.Context, cluster *internalv1.NVKECluster) (map[string]any, error) {
-	release, err := r.resolveClusterRelease(ctx, cluster)
-	if err != nil {
-		return nil, err
-	}
+func (r *NVKEClusterReconciler) resolveReleaseTemplateVariables(ctx context.Context, release *internalv1.ClusterRelease) (map[string]any, error) {
 	var image internalv1.MachineImage
 	imageName := string(release.Spec.MachineImageRef.Name)
 	if err := r.Get(ctx, client.ObjectKey{Name: imageName}, &image); err != nil {
 		return nil, fmt.Errorf("get MachineImage %q for ClusterRelease %q: %w", imageName, release.Name, err)
-	}
-	kubernetesVersion, err := clusterReleaseKubernetesVersion(release)
-	if err != nil {
-		return nil, err
 	}
 	files := []internalv1.BootstrapFile{}
 	commands := []string{}
@@ -280,9 +313,6 @@ func (r *NVKEClusterReconciler) resolveReleaseTemplateVariables(ctx context.Cont
 	ipxeScript, err := json.Marshal(image.Spec.NICo.IPXEScript)
 	if err != nil {
 		return nil, fmt.Errorf("marshal image iPXE script: %w", err)
-	}
-	cluster.Status.ResolvedRelease = &internalv1.ReleaseReference{
-		Name: internalv1.ResourceName(release.Name), Version: kubernetesVersion.String(),
 	}
 	return map[string]any{
 		"BootstrapFilesJSON":     string(filesJSON),
@@ -477,18 +507,60 @@ func (r *NVKEClusterReconciler) reconcileNodePoolDelete(ctx context.Context, clu
 	return false, setNodePoolConditions(target)
 }
 
-func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *internalv1.NVKECluster, infra *api.InfraClusterProvider, controlPlaneTemplate string, variables map[string]any) (*api.Cluster, error) {
+func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *internalv1.NVKECluster, infra *api.InfraClusterProvider, controlPlaneTemplate string, variables map[string]any, kubernetesVersion string) (*api.Cluster, error) {
 	name := ClusterRemoteName(cluster)
 	observedCluster, err := r.NVKEController.FindByName(ctx, name)
 	if err == nil {
 		cluster.Status.ID = observedCluster.ID.String()
-		return observedCluster, nil
+		desired := api.CreateClusterRequest{ControlPlaneKubernetesVersion: kubernetesVersion}
+		if err := r.resolveNVKEControllerClass(ctx, cluster, controlPlaneTemplate, variables, &desired); err != nil {
+			return observedCluster, fmt.Errorf("resolve control-plane update: %w", err)
+		}
+		currentConfig := observedCluster.ControlPlaneConfig
+		if currentConfig == nil {
+			currentConfig = &api.ControlPlaneConfig{}
+		}
+		var update api.UpdateClusterRequest
+		if observedCluster.ControlPlaneKubernetesVersion != desired.ControlPlaneKubernetesVersion {
+			update.ControlPlaneKubernetesVersion = &desired.ControlPlaneKubernetesVersion
+		}
+		var configUpdate api.UpdateClusterControlPlaneConfig
+		if currentConfig.DesiredCount != desired.ControlPlaneConfig.DesiredCount {
+			configUpdate.DesiredCount = &desired.ControlPlaneConfig.DesiredCount
+		}
+		if currentConfig.SystemReservedMemory != desired.ControlPlaneConfig.SystemReservedMemory {
+			configUpdate.SystemReservedMemory = &desired.ControlPlaneConfig.SystemReservedMemory
+		}
+		if !apiequality.Semantic.DeepEqual(currentConfig.Infra, desired.ControlPlaneConfig.Infra) {
+			configUpdate.Infra = &api.InfraControlPlaneProviderUpdate{
+				BootstrapFiles:     append([]api.CloudInitFile{}, desired.ControlPlaneConfig.Infra.BootstrapFiles...),
+				MachineTemplate:    desired.ControlPlaneConfig.Infra.MachineTemplate,
+				PreKubeadmCommands: append([]string{}, desired.ControlPlaneConfig.Infra.PreKubeadmCommands...),
+			}
+		}
+		if !apiequality.Semantic.DeepEqual(currentConfig.MaxSurge, desired.ControlPlaneConfig.MaxSurge) {
+			configUpdate.MaxSurge = desired.ControlPlaneConfig.MaxSurge
+		}
+		if configUpdate != (api.UpdateClusterControlPlaneConfig{}) {
+			update.ControlPlaneConfig = &configUpdate
+		}
+		if update == (api.UpdateClusterRequest{}) {
+			return observedCluster, nil
+		}
+		updatedCluster, err := r.NVKEController.Update(ctx, observedCluster.ID.String(), update)
+		if err != nil {
+			return observedCluster, fmt.Errorf("update nvke controller cluster %q: %w", name, err)
+		}
+		if updatedCluster.Name != observedCluster.Name {
+			return observedCluster, fmt.Errorf("update nvke controller cluster %q: %w", name, nvkecontroller.ErrInvalidResponse)
+		}
+		return updatedCluster, nil
 	}
 	if !errors.Is(err, nvkecontroller.ErrNotFound) {
 		return nil, fmt.Errorf("find nvke controller cluster %q: %w", name, err)
 	}
 
-	request, err := r.resolveNVKEControllerRequest(ctx, cluster, controlPlaneTemplate, variables)
+	request, err := r.resolveNVKEControllerRequest(ctx, cluster, controlPlaneTemplate, variables, kubernetesVersion)
 	if err != nil {
 		conditions.Set(cluster, metav1.Condition{
 			Type:    internalv1.ClusterReconciledCondition,
@@ -559,7 +631,7 @@ type InvalidSpecError struct{ Message string }
 
 func (e *InvalidSpecError) Error() string { return e.Message }
 
-func (r *NVKEClusterReconciler) resolveNVKEControllerRequest(ctx context.Context, cluster *internalv1.NVKECluster, controlPlaneTemplate string, variables map[string]any) (api.CreateClusterRequest, error) {
+func (r *NVKEClusterReconciler) resolveNVKEControllerRequest(ctx context.Context, cluster *internalv1.NVKECluster, controlPlaneTemplate string, variables map[string]any, kubernetesVersion string) (api.CreateClusterRequest, error) {
 	var empty api.CreateClusterRequest
 	if err := validateNVKEControllerSpec(cluster); err != nil {
 		return empty, fmt.Errorf("validate cluster spec: %w", err)
@@ -573,6 +645,10 @@ func (r *NVKEClusterReconciler) resolveNVKEControllerRequest(ctx context.Context
 
 	request.CniPlugin = api.CreateClusterRequestCniPluginOvnKubernetes
 	request.EtcdEncrypted = true
+	request.ControlPlaneKubernetesVersion = kubernetesVersion
+	if endpoint := cluster.Spec.APIServerEndpoint; endpoint != nil {
+		request.ControlPlaneVIP = endpoint.Address
+	}
 	pod, err := nvkeControllerNetworkPrefix(cluster.Spec.ClusterNetwork.Pods.CIDRBlocks)
 	if err != nil {
 		return empty, fmt.Errorf("resolve pod network: %w", err)
@@ -668,6 +744,7 @@ var nvkeClusterOwnedConditions = []string{
 	internalv1.NVKEControllerCPNodesRecyclingCondition,
 	internalv1.NVKEControllerUpdateFailedCondition,
 	internalv1.ClusterReconciledCondition,
+	internalv1.NodePoolsReconciledCondition,
 }
 
 var nvkeControllerNegativeConditionTypes = []string{
@@ -804,7 +881,7 @@ func setNVKEClusterConditions(cluster *internalv1.NVKECluster) error {
 		cluster,
 		cluster,
 		internalv1.SyncedCondition,
-		conditions.ForConditionTypes{internalv1.ClusterReconciledCondition, internalv1.ControlPlaneReadyCondition},
+		conditions.ForConditionTypes{internalv1.ClusterReconciledCondition, internalv1.NodePoolsReconciledCondition},
 		conditions.CustomMergeStrategy{
 			MergeStrategy: conditions.DefaultMergeStrategy(
 				conditions.ComputeReasonFunc(conditions.GetDefaultComputeMergeReasonFunc(
@@ -881,7 +958,6 @@ func (r *NVKEClusterReconciler) resolveNVKEControllerClass(ctx context.Context, 
 	if len(infra.MachineTemplate) == 0 {
 		return fmt.Errorf("%s must contain a machineTemplate manifest", controlPlaneTemplateKey)
 	}
-	request.ControlPlaneKubernetesVersion = cluster.Status.ResolvedRelease.Version
 	request.ControlPlaneConfig = &api.CreateClusterControlPlaneConfig{
 		DesiredCount:                int(*config.Replicas),
 		ProvisioningMonitorDisabled: new(false),

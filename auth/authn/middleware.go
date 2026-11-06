@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/dsx-ai-factory/nvke/auth/internal/httperror"
@@ -83,6 +84,16 @@ func NewAuthenticator(verifier *Verifier, mode Mode, logger *slog.Logger, record
 		logger:   logger,
 		record:   record,
 	}, nil
+}
+
+// IssuerNames returns the names of the issuers the Authenticator trusts, sorted.
+func (a *Authenticator) IssuerNames() []string {
+	names := make([]string, 0, len(a.verifier.entries))
+	for _, entry := range a.verifier.entries {
+		names = append(names, entry.name)
+	}
+	slices.Sort(names)
+	return names
 }
 
 // Wrap returns next with authentication in front of it, carrying the *Principal

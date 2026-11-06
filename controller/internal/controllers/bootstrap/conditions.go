@@ -12,6 +12,7 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
@@ -33,6 +34,24 @@ const (
 	BootstrapIdentityConfigurationInvalidReason = "ConfigurationInvalid"
 )
 
+const (
+	// BootstrapAuthorizationSyncedCondition reports whether the Machine's tenant bootstrap grants match its desired state.
+	BootstrapAuthorizationSyncedCondition = keys.Domain + "/BootstrapAuthorizationSynced"
+
+	// BootstrapAuthorizationSyncedReason means the tenant bootstrap bindings contain the desired Machine identities.
+	BootstrapAuthorizationSyncedReason = "BootstrapAuthorizationSynced"
+	// BootstrapAuthorizationWaitingForIdentityReason means the selected Machine has no resolved bootstrap identity yet.
+	BootstrapAuthorizationWaitingForIdentityReason = "WaitingForBootstrapIdentity"
+	// BootstrapAuthorizationWaitingForTenantAccessReason means the tenant Kubernetes API is not reachable yet.
+	BootstrapAuthorizationWaitingForTenantAccessReason = "WaitingForTenantAccess"
+	// BootstrapAuthorizationDuplicateIdentityReason means multiple selected Machines have the same resolved bootstrap identity.
+	BootstrapAuthorizationDuplicateIdentityReason = "DuplicateBootstrapIdentity"
+	// BootstrapAuthorizationSubjectLimitExceededReason means the cluster has more joining identities than the configured authorization subject limit.
+	BootstrapAuthorizationSubjectLimitExceededReason = "BootstrapAuthorizationSubjectLimitExceeded"
+	// BootstrapAuthorizationSyncFailedReason means the tenant bootstrap bindings could not be reconciled.
+	BootstrapAuthorizationSyncFailedReason = "BootstrapAuthorizationSyncFailed"
+)
+
 func SetBootstrapIdentityResolvedCondition(
 	ctx context.Context,
 	k8sClient client.Client,
@@ -42,13 +61,55 @@ func SetBootstrapIdentityResolvedCondition(
 	message string,
 	fieldOwner string,
 ) error {
+	return setMachineCondition(
+		ctx,
+		k8sClient,
+		machine,
+		BootstrapIdentityResolvedCondition,
+		status,
+		reason,
+		message,
+		fieldOwner,
+	)
+}
+
+func setBootstrapAuthorizationSyncedCondition(
+	ctx context.Context,
+	k8sClient client.Client,
+	machine *clusterv1.Machine,
+	status metav1.ConditionStatus,
+	reason string,
+	message string,
+) error {
+	return setMachineCondition(
+		ctx,
+		k8sClient,
+		machine,
+		BootstrapAuthorizationSyncedCondition,
+		status,
+		reason,
+		message,
+		constants.FieldManagerBootstrapAuthorization,
+	)
+}
+
+func setMachineCondition(
+	ctx context.Context,
+	k8sClient client.Client,
+	machine *clusterv1.Machine,
+	conditionType string,
+	status metav1.ConditionStatus,
+	reason string,
+	message string,
+	fieldOwner string,
+) error {
 	conditions := []metav1.Condition{}
-	if current := meta.FindStatusCondition(machine.Status.Conditions, BootstrapIdentityResolvedCondition); current != nil {
+	if current := meta.FindStatusCondition(machine.Status.Conditions, conditionType); current != nil {
 		conditions = append(conditions, *current)
 	}
 
 	if !meta.SetStatusCondition(&conditions, metav1.Condition{
-		Type:               BootstrapIdentityResolvedCondition,
+		Type:               conditionType,
 		Status:             status,
 		ObservedGeneration: machine.Generation,
 		Reason:             reason,
@@ -78,7 +139,7 @@ func SetBootstrapIdentityResolvedCondition(
 		client.FieldOwner(fieldOwner),
 		client.ForceOwnership,
 	); err != nil {
-		return fmt.Errorf("failed to patch Machine %s condition: %w", BootstrapIdentityResolvedCondition, err)
+		return fmt.Errorf("failed to patch Machine %s condition: %w", conditionType, err)
 	}
 
 	return nil

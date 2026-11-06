@@ -103,17 +103,45 @@ metadata:
 {{- $capiKubeadmControlPlaneManagerSubject := .Values.spiffe.capiKubeadmControlPlaneManagerSubject | default (printf "spiffe://%s/%s/capi-kubeadm-control-plane-manager" $td $seg) }}
 {{- $capiKubeadmBootstrapManagerSubject := .Values.spiffe.capiKubeadmBootstrapManagerSubject | default (printf "spiffe://%s/%s/capi-kubeadm-bootstrap-manager" $td $seg) }}
 {{- $capdManagerSubject := .Values.spiffe.capdManagerSubject | default (printf "spiffe://%s/%s/capd-manager" $td $seg) }}
+{{- /*
+  CAPLL reads each Machine's Node in the tenant cluster and patches its
+  providerID, through the same <cluster>-kubeconfig Secret the CAPI controllers
+  use. Unlike theirs, its subject is not required with token exchange: sites that
+  enabled launchLayer before this binding existed grant CAPLL through
+  tenantAccess.additionalRBAC, and failing the render would stop their upgrade.
+  With exchange and no capllManagerSubject, no default could match, so nothing
+  is rendered.
+*/}}
+{{- $launchLayer := false }}
+{{- range splitList "," (.Values.supportedInfraProviders | default "nico") }}
+{{- if eq (trim .) "launchLayer" }}
+{{- $launchLayer = true }}
+{{- end }}
+{{- end }}
+{{- $capllManagerSubject := .Values.spiffe.capllManagerSubject }}
+{{- if not .Values.spiffe.jwtExchangeEndpoint }}
+{{- $capllManagerSubject = $capllManagerSubject | default (printf "spiffe://%s/%s/capi-provider-launchlayer-controller-manager" $td $seg) }}
+{{- end }}
+{{- $capllManager := and $launchLayer $capllManagerSubject }}
 {{- $tenantRbacName := .Values.nvkeOIDCAuth.tenantRbacName }}
 {{- $rbacIdentities := dict }}
 {{- range $kind := list "ClusterRole" "ClusterRoleBinding" }}
 {{- $_ := set $rbacIdentities (printf "%s//%s" $kind $tenantRbacName) true }}
 {{- end }}
+{{- $tenantRbacNamespaces := list "kube-system" "kube-node-lease" }}
+{{- if .Values.controllers.bootstrap.enabled }}
+{{- $tenantRbacNamespaces = append $tenantRbacNamespaces "kube-public" }}
+{{- end }}
 {{- range $kind := list "Role" "RoleBinding" }}
-{{- range $namespace := list "kube-system" "kube-node-lease" }}
+{{- range $namespace := $tenantRbacNamespaces }}
 {{- $_ := set $rbacIdentities (printf "%s/%s/%s" $kind $namespace $tenantRbacName) true }}
 {{- end }}
 {{- end }}
 {{- $_ := set $rbacIdentities "ClusterRoleBinding//nvke:capi-cluster-admin" true }}
+{{- if $capllManager }}
+{{- $_ := set $rbacIdentities "ClusterRole//nvke:capll-manager" true }}
+{{- $_ := set $rbacIdentities "ClusterRoleBinding//nvke:capll-manager" true }}
+{{- end }}
 {{- range $index, $object := .Values.tenantAccess.additionalRBAC }}
 {{- if not (has ($object.kind | default "") (list "Role" "RoleBinding" "ClusterRole" "ClusterRoleBinding")) }}
 {{- fail (printf "tenantAccess.additionalRBAC[%d]: kind must be Role, RoleBinding, ClusterRole, or ClusterRoleBinding" $index) }}
@@ -191,6 +219,23 @@ data:
         resources: ["signers"]
         resourceNames: ["kubernetes.io/kubelet-serving"]
         verbs: ["approve"]
+    {{- if .Values.controllers.bootstrap.enabled }}
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["clusterrolebindings"]
+        verbs: ["create"]
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["clusterrolebindings"]
+        resourceNames:
+          - nvke-bootstrap-node-bootstrapper
+          - nvke-bootstrap-kubeadm-get-nodes
+        verbs: ["get", "patch"]
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["clusterroles"]
+        resourceNames:
+          - system:node-bootstrapper
+          - kubeadm:get-nodes
+        verbs: ["bind"]
+    {{- end }}
     ---
     apiVersion: rbac.authorization.k8s.io/v1
     kind: Role
@@ -218,6 +263,25 @@ data:
       - apiGroups: ["apps"]
         resources: ["daemonsets", "deployments"]
         verbs: ["get", "create", "patch", "update"]
+    {{- if .Values.controllers.bootstrap.enabled }}
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["rolebindings"]
+        verbs: ["create"]
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["rolebindings"]
+        resourceNames:
+          - nvke-bootstrap-kubeadm-nodes-kubeadm-config
+          - nvke-bootstrap-kubeadm-kubelet-config
+          - nvke-bootstrap-kube-proxy
+        verbs: ["get", "patch"]
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["roles"]
+        resourceNames:
+          - kubeadm:nodes-kubeadm-config
+          - kubeadm:kubelet-config
+          - kube-proxy
+        verbs: ["bind"]
+    {{- end }}
     ---
     apiVersion: rbac.authorization.k8s.io/v1
     kind: Role
@@ -269,6 +333,42 @@ data:
       kind: Role
       name: {{ $tenantRbacName }}
       apiGroup: rbac.authorization.k8s.io
+    {{- if .Values.controllers.bootstrap.enabled }}
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      name: {{ $tenantRbacName }}
+      namespace: kube-public
+    rules:
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["rolebindings"]
+        verbs: ["create"]
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["rolebindings"]
+        resourceNames:
+          - nvke-bootstrap-kubeadm-bootstrap-signer-clusterinfo
+        verbs: ["get", "patch"]
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        resources: ["roles"]
+        resourceNames:
+          - kubeadm:bootstrap-signer-clusterinfo
+        verbs: ["bind"]
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: {{ $tenantRbacName }}
+      namespace: kube-public
+    subjects:
+      - kind: User
+        name: {{ $controllerSubject | quote }}
+        apiGroup: rbac.authorization.k8s.io
+    roleRef:
+      kind: Role
+      name: {{ $tenantRbacName }}
+      apiGroup: rbac.authorization.k8s.io
+    {{- end }}
     ---
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
@@ -291,6 +391,30 @@ data:
       kind: ClusterRole
       name: cluster-admin
       apiGroup: rbac.authorization.k8s.io
+    {{- if $capllManager }}
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: nvke:capll-manager
+    rules:
+      - apiGroups: [""]
+        resources: ["nodes"]
+        verbs: ["get", "list", "patch"]
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: nvke:capll-manager
+    subjects:
+      - kind: User
+        name: {{ $capllManagerSubject | quote }}
+        apiGroup: rbac.authorization.k8s.io
+    roleRef:
+      kind: ClusterRole
+      name: nvke:capll-manager
+      apiGroup: rbac.authorization.k8s.io
+    {{- end }}
     {{- range .Values.tenantAccess.additionalRBAC }}
     ---
     {{- toYaml . | nindent 4 }}

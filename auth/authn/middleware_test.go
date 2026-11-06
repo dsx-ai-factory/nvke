@@ -655,6 +655,14 @@ func TestNewAuthenticatorTolerates(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 }
 
+func TestIssuerNames(t *testing.T) {
+	t.Parallel()
+
+	authn, err := auth.NewAuthenticator(newFixture(t).verifier, auth.ModeEnforcing, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{k8sName, spireName}, authn.IssuerNames())
+}
+
 // The one argument that is not tolerated. Disabling authentication means building
 // no Authenticator, never one with nothing behind it.
 func TestNewAuthenticatorRejectsNilVerifier(t *testing.T) {

@@ -5,6 +5,7 @@
 package fake
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -30,6 +31,7 @@ type requestRecord struct {
 	Create         *api.CreateClusterRequest  `json:"create,omitempty"`
 	CreateNodePool *api.CreateNodePoolRequest `json:"createNodePool,omitempty"`
 	UpdateNodePool *api.UpdateNodePoolRequest `json:"updateNodePool,omitempty"`
+	Update         json.RawMessage            `json:"update,omitempty"`
 }
 
 type nodePoolSeed struct {
@@ -38,9 +40,10 @@ type nodePoolSeed struct {
 }
 
 type serverSeed struct {
-	Clusters  resourceCollection[[]api.Cluster] `json:"clusters"`
-	Create    json.RawMessage                   `json:"create,omitempty"`
-	NodePools nodePoolSeed                      `json:"nodePools,omitempty"`
+	Clusters         resourceCollection[[]api.Cluster] `json:"clusters"`
+	Create           json.RawMessage                   `json:"create,omitempty"`
+	NodePools        nodePoolSeed                      `json:"nodePools,omitempty"`
+	UpdateStatusCode int                               `json:"updateStatusCode,omitempty"`
 }
 
 type serverDump struct {
@@ -51,12 +54,13 @@ type serverDump struct {
 
 // Server owns one fixture's external records and write requests.
 type Server struct {
-	mu         sync.Mutex
-	clusters   resourceCollection[map[uuid.UUID]api.Cluster]
-	create     json.RawMessage
-	requests   []requestRecord
-	nodePools  resourceCollection[map[uuid.UUID]api.NodePool]
-	createPool json.RawMessage
+	mu               sync.Mutex
+	clusters         resourceCollection[map[uuid.UUID]api.Cluster]
+	create           json.RawMessage
+	requests         []requestRecord
+	nodePools        resourceCollection[map[uuid.UUID]api.NodePool]
+	createPool       json.RawMessage
+	updateStatusCode int
 }
 
 // New returns an empty fake API with no lifecycle simulation.
@@ -73,6 +77,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/clusters", handle(s, &s.clusters, s.listClusters))
 	mux.HandleFunc("GET /api/clusters/{clusterID}", handle(s, &s.clusters, s.getCluster))
 	mux.HandleFunc("POST /api/clusters", handle(s, &s.clusters, s.createCluster))
+	mux.HandleFunc("PATCH /api/clusters/{clusterID}", handle(s, &s.clusters, s.updateCluster))
 	mux.HandleFunc("DELETE /api/clusters/{clusterID}", handle(s, &s.clusters, s.deleteCluster))
 	mux.HandleFunc("GET /api/nodePools", handle(s, &s.nodePools, s.listNodePools))
 	mux.HandleFunc("GET /api/nodePools/{nodePoolID}", handle(s, &s.nodePools, s.getNodePool))
@@ -135,6 +140,9 @@ func (s *Server) SeedFromYAML(input string) error {
 			return fmt.Errorf("node pool create defaults require nonzero id and clusterID")
 		}
 	}
+	if seed.UpdateStatusCode != 0 && (seed.UpdateStatusCode < 400 || seed.UpdateStatusCode > 599) {
+		return fmt.Errorf("updateStatusCode must be an HTTP error status or zero")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.clusters.StatusCode = seed.Clusters.StatusCode
@@ -147,6 +155,7 @@ func (s *Server) SeedFromYAML(input string) error {
 		s.nodePools.Resources[pool.ID] = pool
 	}
 	s.createPool = seed.NodePools.Create
+	s.updateStatusCode = seed.UpdateStatusCode
 	return nil
 }
 
@@ -247,6 +256,67 @@ func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
 	}
 	s.clusters.Resources[cluster.ID] = cluster
 	writeJSON(w, http.StatusCreated, cluster)
+}
+
+func (s *Server) updateCluster(w http.ResponseWriter, r *http.Request) {
+	var body json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid cluster update request")
+		return
+	}
+	var request api.UpdateClusterRequest
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid cluster update request")
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.requests = append(s.requests, requestRecord{Method: r.Method, Path: r.URL.Path, Update: body})
+	id, err := uuid.Parse(r.PathValue("clusterID"))
+	cluster, exists := s.clusters.Resources[id]
+	if err != nil || !exists {
+		writeError(w, http.StatusNotFound, "cluster not found")
+		return
+	}
+	if s.updateStatusCode != 0 {
+		writeError(w, s.updateStatusCode, http.StatusText(s.updateStatusCode))
+		return
+	}
+	if request.ControlPlaneKubernetesVersion != nil {
+		cluster.ControlPlaneKubernetesVersion = *request.ControlPlaneKubernetesVersion
+	}
+	if config := request.ControlPlaneConfig; config != nil {
+		if cluster.ControlPlaneConfig == nil {
+			cluster.ControlPlaneConfig = &api.ControlPlaneConfig{}
+		}
+		if config.DesiredCount != nil {
+			cluster.ControlPlaneConfig.DesiredCount = *config.DesiredCount
+		}
+		if config.SystemReservedMemory != nil {
+			cluster.ControlPlaneConfig.SystemReservedMemory = *config.SystemReservedMemory
+		}
+		if config.MaxSurge != nil {
+			cluster.ControlPlaneConfig.MaxSurge = config.MaxSurge
+		}
+		if infra := config.Infra; infra != nil {
+			if cluster.ControlPlaneConfig.Infra == nil {
+				cluster.ControlPlaneConfig.Infra = &api.InfraControlPlaneProvider{}
+			}
+			if infra.MachineTemplate != nil {
+				cluster.ControlPlaneConfig.Infra.MachineTemplate = infra.MachineTemplate
+			}
+			if infra.BootstrapFiles != nil {
+				cluster.ControlPlaneConfig.Infra.BootstrapFiles = infra.BootstrapFiles
+			}
+			if infra.PreKubeadmCommands != nil {
+				cluster.ControlPlaneConfig.Infra.PreKubeadmCommands = infra.PreKubeadmCommands
+			}
+		}
+	}
+	s.clusters.Resources[id] = cluster
+	writeJSON(w, http.StatusOK, cluster)
 }
 
 func (s *Server) listNodePools(w http.ResponseWriter, r *http.Request) {

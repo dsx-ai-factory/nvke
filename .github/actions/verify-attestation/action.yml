@@ -7,9 +7,7 @@
 # Promotion is the moment a candidate becomes authoritative, so it is the
 # moment to check rather than to assume: a promotion job otherwise trusts that
 # an earlier job in the same run did its work, which is the assumption an
-# attestation exists to remove. `release.yml` already sets the bar on the
-# binary path -- it re-hashes every uploaded asset before publishing and leaves
-# the release a draft on any mismatch. This is the image equivalent.
+# attestation exists to remove.
 #
 # Fails closed by construction. Every outcome other than "an attestation from
 # the expected signer, over this exact digest, verified" is an error:

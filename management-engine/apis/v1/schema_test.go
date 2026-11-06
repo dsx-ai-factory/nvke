@@ -595,39 +595,6 @@ func TestNVKEClusterAPIServerEndpointAddress(t *testing.T) {
 	}
 }
 
-func TestNVKEClusterAPIServerEndpointLockedByStatus(t *testing.T) {
-	schema := loadResourceSchema(t, "nvkeclusters")
-	const address, replacement = "10.0.0.10", "10.0.0.11"
-
-	for _, tt := range []struct {
-		name       string
-		reported   bool
-		oldAddress string
-		newAddress string
-		invalid    bool
-	}{
-		{name: "add before reported", newAddress: address},
-		{name: "change before reported", oldAddress: address, newAddress: replacement},
-		{name: "remove before reported", oldAddress: address},
-		{name: "unchanged after reported", reported: true, oldAddress: address, newAddress: address},
-		{name: "change after reported", reported: true, oldAddress: address, newAddress: replacement, invalid: true},
-		{name: "remove after reported", reported: true, oldAddress: address, invalid: true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			old := clusterWithAPIServerAddress(t, tt.oldAddress)
-			if tt.reported {
-				setField(old, []string{"status", "apiServerEndpoint"}, map[string]any{"address": tt.oldAddress})
-			}
-			schema.admit(t, old, nil)
-			obj := clusterWithAPIServerAddress(t, tt.newAddress)
-			if status, ok := old["status"]; ok {
-				obj["status"] = status
-			}
-			schema.check(t, tt.invalid, obj, old)
-		})
-	}
-}
-
 func clusterWithAPIServerAddress(t *testing.T, address string) map[string]any {
 	t.Helper()
 	obj := baseResource(t, "nvkeclusters")

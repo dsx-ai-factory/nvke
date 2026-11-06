@@ -58,8 +58,8 @@ helm install nktp oci://ghcr.io/dsx-ai-factory/nvke/charts/nktp \
   --version <version> --namespace nktp --values my-values.yaml --wait
 ```
 
-Released versions are listed on the repository's GitHub Releases, as
-`nktp/vX.Y.Z` tags. `--create-namespace` would create the namespace without the
+Released versions are the repository's `nktp/vX.Y.Z` tags; pass `X.Y.Z` as
+`--version`. `--create-namespace` would create the namespace without the
 Pod Security label. `my-values.yaml` holds your overrides; leave it out to
 install with the defaults. The Operator creates the Collectors after `helm install --wait`
 returns, so check their Pods as well.

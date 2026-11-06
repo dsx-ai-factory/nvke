@@ -30,11 +30,11 @@ name: CLI S3 Publish
 # A bare vX.Y.Z-beta.N tag publishes to nvkectl/releases/<describe>/ from the
 # same `s3-publish` environment, so its deployment policy must admit v*-beta.*
 # tags as well as cli/v*. <describe> is the cli/v* describe version that
-# release.yml stamps into nvkectl.
+# tag-publish.yml stamps into nvkectl.
 
-# Called by release.yml after its build, so a cli/v* tag produces one set of
+# Called by tag-publish.yml after its build, so a cli/v* tag produces one set of
 # binaries rather than four independent ones, and this runs behind the licence
-# gate release.yml already enforces. The tag trigger is gone for that reason.
+# gate tag-publish.yml already enforces. The tag trigger is gone for that reason.
 #
 # workflow_dispatch still works and still builds: dist_artifact is empty there,
 # so the build step below runs instead of the download.
@@ -42,7 +42,7 @@ on:
   workflow_call:
     inputs:
       dist_artifact:
-        description: Artifact holding the binaries release.yml built. Empty means build here.
+        description: Artifact holding the binaries tag-publish.yml built. Empty means build here.
         type: string
         required: false
         default: ""
@@ -111,7 +111,7 @@ jobs:
 
           # The job-level if admits only cli/v* and bare vX.Y.Z-beta.N tags. A
           # beta publishes under the cli/v* describe version, the same one
-          # release.yml stamps into nvkectl.
+          # tag-publish.yml stamps into nvkectl.
           if [[ "${GITHUB_REF_NAME}" == cli/v* ]]; then
             release="${GITHUB_REF_NAME#cli/}"
           elif [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
@@ -131,8 +131,8 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
           echo "Publishing nvkectl release ${release} to ${S3_URI}"
 
-      # One build per release. release.yml builds and checksums; this consumes
-      # exactly those bytes, so checksums.txt describes what ships here too.
+      # One build per release. tag-publish.yml builds; this consumes exactly those
+      # bytes, so every channel ships the same binaries.
       - name: Download the release build
         if: inputs.dist_artifact != ''
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333

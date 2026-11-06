@@ -19,7 +19,7 @@ import (
 const (
 	// KubectlImage is an alpine-based kubectl image carrying sh, wget (TLS),
 	// tar, sha256sum and kubectl.
-	KubectlImage = "alpine/k8s:1.34.1@sha256:ec714df3813b5405292860f8a1c55c5727bf8c33c88992f1e981efad8065547f"
+	KubectlImage = "alpine/k8s:1.36.4@sha256:358ddfc2d6ff3f00dd461dbd79aaa6d6738709f225b8da0945bb63bd4dbc304e"
 
 	// PodLogTailLines is how many lines of a failed container's log
 	// RunPodWithLogs appends to its error.

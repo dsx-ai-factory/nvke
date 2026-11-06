@@ -9,10 +9,9 @@ The NVKE controller rejects more than one control-plane node, upgrades, and cont
 
 ## Decision
 
-We will add an optional `spec.apiServerEndpoint.address`, sent to the controller as `controlPlaneVIP` on create, and report the address the controller holds in `status.apiServerEndpoint.address`.
+We will add an optional `spec.apiServerEndpoint.address`, sent to the controller as `controlPlaneVIP` only on create.
 
 - The address must be unicast IPv4 outside the pod and service networks. The caller ensures no other cluster uses it.
-- The spec is editable until status reports an address, then fixed. If it still drifts from the controller, reconciliation stops and names the address to restore.
 - Errors use the `ClusterReconciled` condition and never name another cluster or tenant.
 - The field sits beside `apiServerAccess`, not inside it: one is where the API server is served, the other is who may reach it.
 

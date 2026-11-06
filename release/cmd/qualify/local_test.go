@@ -36,6 +36,25 @@ func TestReadEnvFileKeepsTheOrderWritten(t *testing.T) {
 	}
 }
 
+// A node key is saved only for a node that is kept: nothing else needs one
+// after the run, and it logs into a node that holds the site's credentials.
+func TestNodeKeyDirIsSetOnlyWhenANodeIsKept(t *testing.T) {
+	for name, tc := range map[string]struct {
+		keepSite, keepTenant bool
+		want                 string
+	}{
+		"no keep flag":  {want: ""},
+		"--keep-site":   {keepSite: true, want: "/r/node-keys"},
+		"--keep-tenant": {keepTenant: true, want: "/r/node-keys"},
+		"both":          {keepSite: true, keepTenant: true, want: "/r/node-keys"},
+	} {
+		got := nodeKeyDir(localOptions{runDir: "/r", keepSite: tc.keepSite, keepTenant: tc.keepTenant})
+		if got != tc.want {
+			t.Errorf("%s: nodeKeyDir = %q, want %q", name, got, tc.want)
+		}
+	}
+}
+
 func TestLocalBuildsOnlyWhatTheLaneCanBuild(t *testing.T) {
 	err := runLocal(context.Background(), io.Discard, localOptions{build: []string{"os-image"}})
 	if err == nil || !strings.Contains(err.Error(), "only controller, cli, capi-provisioned") {

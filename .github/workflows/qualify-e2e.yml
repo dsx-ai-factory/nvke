@@ -121,7 +121,7 @@ on:
         type: string
         required: false
       cli-version:
-        description: Overrides the nvkectl release the plan resolves, e.g. v0.1.0-rc.7 (the cli/<version> GitHub Release).
+        description: Overrides the nvkectl release the plan resolves, e.g. v0.1.0-rc.7 (the cli/<version> tag).
         type: string
         required: false
       deploy-path-ref:
@@ -506,7 +506,12 @@ jobs:
     # the note on the three nested timeouts at the run step. This bound is
     # only ever reached by a run that has already gone wrong; a healthy
     # `full` is about an hour plus whatever the artifact wait cost.
-    timeout-minutes: 335
+    #
+    # 335 is the default suite timeout of 150 minutes plus 185. A stream that
+    # sets suiteTimeoutMinutes in release/policy.yaml gets that plus the same
+    # 185, which the matrix carries, so the job always outlasts the suite and
+    # its cleanup.
+    timeout-minutes: ${{ matrix.job_timeout_minutes }}
     permissions:
       contents: read
       # The runner's own GHCR and NVCR pulls, and the Teleport join. No PAT
@@ -599,6 +604,9 @@ jobs:
       # Keeping a passed tenant skips the spec that deletes it, which a
       # qualification has to run, so only qualify local sets this.
       KEEP_TENANT: false
+      # Writing the site node's SSH key is for a workstation: on a runner it
+      # would sit beside the files the artifacts step uploads.
+      NODE_KEY_DIR: ""
       # ghcr or nvcr. Only the runner pulls from it: every image it names is
       # staged onto the node as an archive. The node's own pull is CAPNICo,
       # which is published to GHCR alone, so the GHCR login below stays either
@@ -668,6 +676,17 @@ jobs:
       FORGE_SITE_2_INSTANCE_TYPE_CPU_AMD64_ID: ${{ vars.FORGE_SITE_2_INSTANCE_TYPE_CPU_AMD64_ID }}
       FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID: ${{ vars.FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID }}
       FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID: ${{ vars.FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID }}
+      # The NVKE Scale site, declared in environments/forge-perf.yaml, which a
+      # stream reaches through its environment parameter. The loader rejects an
+      # unset one, so only a stream that names forge-perf needs them. The jump
+      # host is a secret for the same reason as the others.
+      FORGE_PERF_ORG_ID: ${{ vars.FORGE_PERF_ORG_ID }}
+      FORGE_PERF_SITE_ID: ${{ vars.FORGE_PERF_SITE_ID }}
+      FORGE_PERF_VPC_ID: ${{ vars.FORGE_PERF_VPC_ID }}
+      FORGE_PERF_SUBNET_ID: ${{ vars.FORGE_PERF_SUBNET_ID }}
+      FORGE_PERF_SSH_KEY_GROUP_ID: ${{ vars.FORGE_PERF_SSH_KEY_GROUP_ID }}
+      FORGE_PERF_INSTANCE_TYPE_CPU_ID: ${{ vars.FORGE_PERF_INSTANCE_TYPE_CPU_ID }}
+      FORGE_PERF_JUMP_HOST: ${{ secrets.FORGE_PERF_JUMP_HOST }}
       # DSX_, the second provider. Its identifiers follow the same split as
       # Forge's: the jump host is a secret, read by environments/dsx.yaml
       # beside the rest, and everything else is a variable naming
@@ -1090,6 +1109,16 @@ jobs:
             "site-2 amd64 cpu instance type|FORGE_SITE_2_INSTANCE_TYPE_CPU_AMD64_ID||FORGE_SITE_2_INSTANCE_TYPE_CPU_AMD64_ID|FORGE_SITE_2_INSTANCE_TYPE_CPU_AMD64_ID"
             "site-2 arm64 cpu instance type|FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID||FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID|FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID"
             "site-2 gb200 instance type|FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID||FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID|FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID"
+            "perf Forge org|FORGE_PERF_ORG_ID||FORGE_PERF_ORG_ID|FORGE_PERF_ORG_ID"
+            "perf Forge site|FORGE_PERF_SITE_ID||FORGE_PERF_SITE_ID|FORGE_PERF_SITE_ID"
+            "perf Forge VPC|FORGE_PERF_VPC_ID||FORGE_PERF_VPC_ID|FORGE_PERF_VPC_ID"
+            "perf Forge subnet|FORGE_PERF_SUBNET_ID||FORGE_PERF_SUBNET_ID|FORGE_PERF_SUBNET_ID"
+            "perf Forge SSH key group|FORGE_PERF_SSH_KEY_GROUP_ID||FORGE_PERF_SSH_KEY_GROUP_ID|FORGE_PERF_SSH_KEY_GROUP_ID"
+            "perf CPU instance type|FORGE_PERF_INSTANCE_TYPE_CPU_ID||FORGE_PERF_INSTANCE_TYPE_CPU_ID|FORGE_PERF_INSTANCE_TYPE_CPU_ID"
+            "perf jump host|FORGE_PERF_JUMP_HOST|||"
+            "stream environment|E2E_ENVIRONMENT|||"
+            "tenant workers|E2E_TENANT_WORKERS|||"
+            "suite timeout minutes|SUITE_TIMEOUT_MINUTES|||"
           )
 
           # A row nobody remembers to add is the whole failure mode: the
@@ -1225,6 +1254,11 @@ jobs:
         shell: bash
         env:
           FORGE_API_KEY: ${{ secrets.FORGE_API_KEY }}
+          # The Forge API key is per org, so the NVKE Scale site has its own,
+          # which environments/forge-perf.yaml names as its key variable. The
+          # suite reads it for a stream that runs against that environment and
+          # ignores it for the others.
+          FORGE_PERF_API_KEY: ${{ secrets.FORGE_PERF_API_KEY }}
           # The DSX credential, scoped here for the same reason the Forge key
           # is: this is the only step that reads it, and a job-level secret is
           # one every step sees -- checkout, setup-go, docker login, the

@@ -193,7 +193,6 @@ Deeper module documentation:
 | [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) | Expected conduct |
 | [../RELEASE.md](../RELEASE.md) | Source releases, build instructions, validated SBOM evidence, approval and recovery |
 | [artifact-publication.md](artifact-publication.md) | Existing binary, image and chart publication workflows and artifact verification |
-| [../CHANGELOG.md](../CHANGELOG.md) | Changes not yet released |
 
 ## For coding agents
 

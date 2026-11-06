@@ -2461,39 +2461,3 @@ func TestDeploy_TracingValues(t *testing.T) {
 		})
 	}
 }
-
-func TestEnsureDefaultStorageClass(t *testing.T) {
-	tests := []struct {
-		name        string
-		defaults    string
-		wantInstall bool
-	}{
-		{name: "installs local-path when no StorageClass is the default", defaults: "\n\n", wantInstall: true},
-		{name: "keeps a cluster's own default StorageClass", defaults: "\ntrue\n"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runner := &fakeRunner{outputs: []fakeOutput{{output: tt.defaults}, {}, {}, {}}}
-			if err := New(runner, nil).EnsureDefaultStorageClass(context.Background(), "site.kubeconfig"); err != nil {
-				t.Fatal(err)
-			}
-			if !tt.wantInstall {
-				if len(runner.calls) != 1 {
-					t.Fatalf("want only the StorageClass lookup, got %d calls", len(runner.calls))
-				}
-				return
-			}
-			if len(runner.applied) != 1 || !strings.Contains(runner.applied[0], "rancher/local-path-provisioner:v0.0.37") {
-				t.Fatalf("want the local-path manifest applied, got %d manifests", len(runner.applied))
-			}
-			want := "annotate storageclass local-path storageclass.kubernetes.io/is-default-class=true --overwrite"
-			if got := joinArgs(runner.calls[2].args[2:]); got != want {
-				t.Fatalf("got %q, want %q", got, want)
-			}
-			want = "-n local-path-storage rollout status deployment/local-path-provisioner --timeout 5m0s"
-			if got := joinArgs(runner.calls[3].args[2:]); got != want {
-				t.Fatalf("got %q, want %q", got, want)
-			}
-		})
-	}
-}

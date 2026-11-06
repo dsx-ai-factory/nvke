@@ -182,6 +182,7 @@ func planSummary(plan *qualification.Plan, dryRun bool) string {
 		for _, s := range c.Streams {
 			fmt.Fprintf(&b, "\n##### Stream %s\n", code(s.Name))
 			capabilities(&b, s.Capabilities)
+			parameters(&b, s.Parameters)
 			entries(&b, "Dependency", s.Dependencies, overridden)
 		}
 	}
@@ -192,9 +193,11 @@ func planSummary(plan *qualification.Plan, dryRun bool) string {
 // with the label each is shown under.
 var streamCapabilities = []struct{ key, label string }{
 	{"arch", "arch"},
+	{"machineType", "machine type"},
 	{"gpu", "GPU"},
 	{"ubuntu", "Ubuntu"},
 	{"kube", "Kubernetes"},
+	{"profile", "profile"},
 }
 
 // capabilities writes a stream's capabilities as one line, leaving out any the
@@ -206,6 +209,24 @@ func capabilities(b *strings.Builder, caps map[string]string) {
 		if v := caps[c.key]; v != "" {
 			parts = append(parts, c.label+" `"+v+"`")
 		}
+	}
+	if len(parts) > 0 {
+		fmt.Fprintf(b, "\n%s\n", strings.Join(parts, " · "))
+	}
+}
+
+// parameters writes a stream's run settings as one line, leaving out any the
+// stream does not set, or nothing for none.
+func parameters(b *strings.Builder, p qualification.Parameters) {
+	var parts []string
+	if p.Environment != "" {
+		parts = append(parts, "environment "+code(p.Environment))
+	}
+	if p.TenantWorkers != 0 {
+		parts = append(parts, "tenant workers "+code(strconv.Itoa(p.TenantWorkers)))
+	}
+	if p.SuiteTimeoutMinutes != 0 {
+		parts = append(parts, "suite timeout "+code(strconv.Itoa(p.SuiteTimeoutMinutes)+"m"))
 	}
 	if len(parts) > 0 {
 		fmt.Fprintf(b, "\n%s\n", strings.Join(parts, " · "))

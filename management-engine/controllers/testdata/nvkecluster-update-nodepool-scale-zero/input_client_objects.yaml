@@ -89,6 +89,22 @@ data:
   controlplaneTmpl: *machineTemplate
 ---
 apiVersion: internal.nvke.nvidia.com/v1
+kind: ControlPlaneClass
+metadata:
+  name: standard
+spec:
+  controlPlane:
+    replicas: 1
+    instanceTypePreferences:
+      - 33333333-3333-4333-8333-333333333333
+    systemReservedMemory: 1Gi
+  rollout:
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 1
+---
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NVKECluster
 metadata:
   name: cluster-1
