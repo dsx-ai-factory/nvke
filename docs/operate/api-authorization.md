@@ -58,7 +58,7 @@ Once authorization enforces, every caller that authentication admits needs a rol
           - {namespace: management-engine-system, name: management-engine-controller-manager, grants: [admin]}
 ```
 
-NVKE checks the grants at startup and on every reload. It refuses an issuer that `apiAuth` does not configure, a grant of a role that `apiAuthz.roles` does not declare, and the tenancy keys `operatorTenant`, `tenant` and `operators`, which this API does not use.
+NVKE checks the grants at startup and on every reload. It refuses an issuer that `apiAuth` does not configure, a grant of a role that `apiAuthz.roles` does not declare, and a value for the tenancy keys `operatorTenant`, `tenant` and `operators`, which this API does not use.
 
 ### Teleport application access
 
