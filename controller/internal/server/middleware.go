@@ -46,7 +46,7 @@ func isOperationalPath(path string) bool {
 }
 
 // isMutatingMethod reports whether the HTTP method mutates server state and is therefore
-// subject to the managed-by header check.
+// subject to the managed-by header check and audited.
 func isMutatingMethod(method string) bool {
 	switch method {
 	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
