@@ -352,6 +352,8 @@ account. That account needs:
 
 It needs nothing more, and should be given nothing more: the RBAC check fails
 an identity that can read Secrets across the cluster or bind roles.
+[`deploy/validate-site.yaml`](deploy/validate-site.yaml) grants exactly this,
+and [Running it on a site](#running-it-on-a-site) applies it.
 
 ### Validation image variables
 
@@ -428,10 +430,10 @@ checks 11–23, 30 and 31 in [What it checks](#what-it-checks). One differs:
 `NVKE_TENANT_PVC_STORAGE_CLASS` picks the StorageClass check 30 claims from,
 and nothing else; check 23 reads `NVKE_TENANT_STORAGE_CLASSES`.
 
-Each controller release publishes the image built from the same commit, as
-`nvke-validate:v<version>` beside `nvke-controller` (see
-`.github/workflows/image-validate-nvcr.yml`), so the tests a site runs are the
-tests that shipped with its controller.
+The image is not published. A site builds it from its controller's release
+tag, as [Building the image yourself](#building-the-image-yourself)
+describes, so the tests it runs are the tests that shipped with its
+controller.
 
 The entrypoint sets `-ginkgo.timeout=3h`. A healthy site finishes far sooner,
 but on a broken one each check waits out its own limit, and a suite timeout
@@ -460,39 +462,45 @@ container can read your kubeconfig and write `artifacts/`:
 mkdir -p artifacts
 docker run --rm --user "$(id -u):$(id -g)" \
   -v "$PWD/artifacts:/artifacts" -v "$HOME/.kube/config:/kube/config:ro" \
-  -e KUBECONFIG=/kube/config -e NVKE_CONTROLLER_EXPECTED_VERSION=v0.1.1 \
+  -e KUBECONFIG=/kube/config -e NVKE_CONTROLLER_EXPECTED_VERSION=v0.3.0 \
   -e NVKE_SITE_KUBERNETES_VERSION=v1.34.2 nvke-validate:local
 ```
 
 ### Building the image yourself
 
-The build is reproducible: the same commit built with the same arguments gives
-the published image's digest, so a site can build it in its own pipeline and
-still check it against the release. CI proves this on every change by
-building it twice, the second time with no cache and every file's mtime
-changed.
+This is how a site gets the image. The build is meant to be reproducible: the
+base images are pinned by digest, and the timestamps, version and revision come
+from the commit, so the same commit built with the same arguments should give
+the same digest. CI checks this on every change by building it twice on one
+runner, the second time with no cache and every file's mtime changed. It does
+not compare builds across machines or BuildKit versions.
 
 Build from the release tag of the controller the site runs,
 `controller/v<version>`, the same version the site pins. Never build from
-`main`: its suite tests the next controller, not the one installed.
+`main`: its suite tests the next controller, not the one installed. The
+Dockerfile first shipped in `controller/v0.3.0`; earlier tags have no image to
+build.
+
+`validate-image-oci` and `validate-image-push` build for two platforms and
+write an OCI archive or push, which Docker's default `docker` builder driver
+cannot do. First create a builder that runs BuildKit in its own container, as
+CI does; otherwise the build fails with "OCI exporter is not supported for the
+docker driver". This is needed once per machine.
 
 ```bash
-git clone --branch controller/v0.2.0 --depth 1 https://github.com/dsx-ai-factory/nvke.git
+docker buildx create --name nvke --driver docker-container --bootstrap --use
+```
+
+```bash
+git clone --branch controller/v0.3.0 --depth 1 https://github.com/dsx-ai-factory/nvke.git
 cd nvke
-make -C controller/test/e2e validate-image-oci VALIDATE_VERSION=v0.2.0
+make -C controller/test/e2e validate-image-oci VALIDATE_VERSION=v0.3.0
 cat controller/test/e2e/bin/validate-image-digest.txt
 ```
 
-`validate-image-push VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS=v0.2.0`
-pushes it instead. Either target derives the rest from the checkout. Compare
-the digest with the published one; when they match, the release's build
-provenance covers this build too:
-
-```bash
-crane digest nvcr.io/<dsx-org-team>/nvke-validate:v0.2.0
-gh attestation verify oci://nvcr.io/<dsx-org-team>/nvke-validate:v0.2.0 --repo dsx-ai-factory/nvke \
-  --signer-workflow dsx-ai-factory/nvke/.github/workflows/image-validate-nvcr.yml
-```
+`validate-image-push VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS=v0.3.0`
+pushes it to the site's own registry instead. Either target derives the rest
+from the checkout.
 
 Without a checkout, BuildKit can take the tag as a remote context. Then the
 arguments make derives must be given by hand, from the tagged commit:
@@ -505,10 +513,10 @@ a token with read access as the `GIT_AUTH_TOKEN` secret; otherwise drop the
 docker buildx build -f controller/test/e2e/Dockerfile \
   --platform linux/amd64,linux/arm64 --provenance=false --sbom=false \
   --build-arg SOURCE_DATE_EPOCH=<commit time> \
-  --build-arg VALIDATE_VERSION=v0.2.0 --build-arg VALIDATE_REVISION=<commit> \
+  --build-arg VALIDATE_VERSION=v0.3.0 --build-arg VALIDATE_REVISION=<commit> \
   --secret id=GIT_AUTH_TOKEN,env=GIT_AUTH_TOKEN \
-  --output type=image,name=<repository>:v0.2.0,push=true,oci-mediatypes=true,rewrite-timestamp=true \
-  'https://github.com/dsx-ai-factory/nvke.git#controller/v0.2.0'
+  --output type=image,name=<repository>:v0.3.0,push=true,oci-mediatypes=true,rewrite-timestamp=true \
+  'https://github.com/dsx-ai-factory/nvke.git#controller/v0.3.0'
 ```
 
 Arguments that change where things come from, not what, keep the digest:
@@ -519,15 +527,102 @@ Arguments that change where things come from, not what, keep the digest:
 | `GOLANG_IMAGE`, `ALPINE_IMAGE` | (`--build-arg` in `VALIDATE_BUILDX_ARGS`) | A mirror of the base images. Keep the `@sha256:` digests from the Dockerfile; another digest is another image. |
 
 Any other change, such as the platforms or attestations added with
-`--provenance` or `--sbom`, gives a different digest that no release attested.
+`--provenance` or `--sbom`, gives a different digest.
+
+### Keeping a site's image current
+
+A site needs one image per controller version it runs, not the newest one.
+Build each controller release tag, `controller/vX.Y.Z` or
+`controller/vX.Y.Z-rc.N`, when it appears, and push it to the site's registry
+under that version:
+
+```bash
+git ls-remote --tags --refs https://github.com/dsx-ai-factory/nvke.git 'controller/v*'
+git clone --branch controller/v0.3.0 --depth 1 https://github.com/dsx-ai-factory/nvke.git
+make -C nvke/controller/test/e2e validate-image-push VALIDATE_VERSION=v0.3.0 \
+  VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS=v0.3.0
+```
+
+A run picks the image whose tag is the site's controller version and sets
+`NVKE_CONTROLLER_EXPECTED_VERSION` to the image's tag. The image requires
+that variable, so a run against a site whose controller is another version
+fails the version check rather than passing on the wrong tests. Upgrading a
+site's controller means running the next tag.
+
+Rebuilding a tag on the same builder gives the same digest, so a retried job
+pushes the same image again. A job can also rebuild a tag it has already
+pushed and compare the digests, to check that nothing in its own build path
+changed.
+
+### Running it on a site
+
+[`deploy/validate-site.yaml`](deploy/validate-site.yaml) runs the site checks
+as a Job in an `nvke-validate` namespace, with the RBAC above, and keeps the
+results on a claim. Fill in its placeholders from the site, with the kube
+context pointing at it:
+
+```bash
+ver=v0.3.0                                  # the site's controller version
+image=<repository>/nvke-validate:${ver}     # built from controller/${ver}
+ctrl_ns=$(kubectl get deploy -A --field-selector metadata.name=nvke-controller \
+  -o jsonpath='{.items[0].metadata.namespace}')
+k8s=$(kubectl version -o json | jq -r .serverVersion.gitVersion)
+token_ns=<namespace> token_sa=<service account>   # see below
+fill() {
+  sed -e "s|__IMAGE__|${image}|g" -e "s|__CONTROLLER_VERSION__|${ver}|g" \
+    -e "s|__KUBERNETES_VERSION__|${k8s}|g" -e "s|__CONTROLLER_NAMESPACE__|${ctrl_ns}|g" \
+    -e "s|__TOKEN_NAMESPACE__|${token_ns}|g" -e "s|__TOKEN_SERVICE_ACCOUNT__|${token_sa}|g" "$1"
+}
+cd nvke/controller/test/e2e/deploy
+fill validate-site-token.yaml | kubectl apply -f -   # only if the controller authenticates
+fill validate-site.yaml | kubectl apply -f -
+```
+
+The controller's image tag gives `ver`:
+`kubectl -n "${ctrl_ns}" get deploy nvke-controller -o jsonpath='{.spec.template.spec.containers[0].image}'`.
+`token_ns`/`token_sa` name the identity the suite presents to the controller
+API, one the controller authorizes to list clusters; `validate-site-token.yaml`
+lets the Job mint its token. A controller with no authentication ConfigMap
+takes no token, so skip that file. Where the registry needs credentials, add
+`imagePullSecrets` to the Job and the artifacts pod. Add any
+[variables](#validation-image-variables) the site's expectations need to the
+Job's `env`.
+
+Follow the run, then read the result. The Job completes when every selected
+spec passed and fails otherwise:
+
+```bash
+kubectl -n nvke-validate logs -f job/nvke-validate
+kubectl -n nvke-validate wait --for=condition=Complete job/nvke-validate --timeout=10s \
+  && echo passed || echo failed
+```
+
+Copy the reports out through a pod that mounts the claim:
+
+```bash
+fill validate-site-artifacts.yaml | kubectl apply -f -
+kubectl -n nvke-validate wait --for=condition=Ready pod/nvke-validate-artifacts --timeout=5m
+kubectl -n nvke-validate cp nvke-validate-artifacts:/artifacts ./artifacts
+kubectl -n nvke-validate delete pod nvke-validate-artifacts
+```
+
+`artifacts/junit-test-report.xml` lists each selected spec and why any failed.
+To run again, delete the Job (`kubectl -n nvke-validate delete job nvke-validate`)
+and apply `validate-site.yaml` again; the next run overwrites the reports. To
+remove everything, `fill` each file into `kubectl delete -f -`.
+
+This validates the site only. Validating a tenant as well needs the runner to
+provision the tenant credential first, as [Tenant checks](#tenant-checks)
+describes.
 
 ### Extending the image
 
-To add tools, certificates or wrapper scripts, start from the published image
-rather than editing this Dockerfile, so the suite stays the one that shipped:
+To add tools, certificates or wrapper scripts, start from the image built from
+the release tag rather than editing this Dockerfile, so the suite stays the one
+that shipped:
 
 ```dockerfile
-FROM nvcr.io/<dsx-org-team>/nvke-validate:v0.2.0
+FROM <repository>/nvke-validate:v0.3.0
 USER 0
 RUN apk add --no-cache curl
 USER 65532:65532

@@ -326,8 +326,8 @@ jobs:
         if: always() && steps.ignore.outputs.count != '0'
         run: ./hack/grype-ignore-check.sh --applied image "${{ steps.suppressed.outputs.json }}"
 
-  # The site validation image, built the way image-validate-nvcr.yml publishes
-  # it but not pushed. Its own job, so it neither waits on nor adds to the
+  # The site validation image, built the way a site builds it from a release
+  # tag, and not pushed. Its own job, so it neither waits on nor adds to the
   # controller build above. A real build because its context is an allowlist
   # (controller/test/e2e/Dockerfile.dockerignore): a file the suite embeds that
   # the list misses fails only when the image is built.
@@ -361,8 +361,8 @@ jobs:
       #
       # Built twice, the second time with no cache and every file's mtime
       # changed, as a fresh checkout elsewhere would have it. The two index
-      # digests must match: that is what lets a site build this itself and
-      # check the result against the digest the release attested.
+      # digests must match, which shows the build depends on neither file
+      # times nor the cache.
       - name: Build validation image (amd64 and arm64), twice
         shell: bash
         run: |
@@ -421,5 +421,4 @@ jobs:
 #
 # Nothing is pushed here. Publishing to nvcr.io lives in the per-component
 # workflows: image-nvcr.yml for the controller, image-provisioned-nvcr.yml for
-# cluster-api-provider-provisioned, image-validate-nvcr.yml for the validation
-# image.
+# cluster-api-provider-provisioned. The validation image is published nowhere.

@@ -113,7 +113,6 @@ A `controller/vX.Y.Z` tag publishes the controller image and Helm chart:
 | `image-nvcr.yml` | multi-arch image to `nvcr.io/<org>/nvke-controller`, promotes that released image to DSX as `nvcr.io/<dsx-org-team>/nvke-controller`, and promotes release tags to `ghcr.io/dsx-ai-factory/nvke/nvke-controller` |
 | `chart-publish.yml` | chart to `ghcr.io/dsx-ai-factory/nvke/charts/nvke-controller` |
 | `chart-publish-nvcr.yml` | chart to `nvcr.io/<org>/nvke-controller-chart` and `nvcr.io/<dsx-org-team>/nvke-controller-chart` |
-| `image-validate-nvcr.yml` | multi-arch site validation image (`controller/test/e2e/Dockerfile`) pushed straight to DSX as `nvcr.io/<dsx-org-team>/nvke-validate`, under the controller image's version |
 
 Every `main` commit already publishes the image and chart to NVCR. GHCR receives
 released versions only, which is why a chart built from a tag can safely point at
@@ -142,11 +141,11 @@ A new GHCR package is created `internal`. Make it public in the package settings
 first release that publishes it.
 
 DSX receives the controller image from `image-nvcr.yml`, after the NVKE multi-arch
-manifest exists. It receives the controller chart from `chart-publish-nvcr.yml`,
-and the validation image that tests that controller from
-`image-validate-nvcr.yml`, tagged with the same version so a site that pins a
-controller can run the tests built from the same commit. All three use separate
-credentials from the same protected GitHub environment:
+manifest exists, and the controller chart from `chart-publish-nvcr.yml`. It
+does not receive the site validation image (`controller/test/e2e/Dockerfile`),
+which is published nowhere: a site builds it from its controller's release tag
+(see "Building the image yourself" in `controller/test/e2e/README.md`). Both
+workflows use separate credentials from the same protected GitHub environment:
 
 | Name | Type | Purpose |
 |---|---|---|
