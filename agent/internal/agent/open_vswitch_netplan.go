@@ -155,6 +155,7 @@ func (s *NodeAgentServer) buildOpenVSwitchNetplanPlan(link openVSwitchLink, gate
 		physical := map[string]any{"mtu": link.MTU}
 		if link.Address != "" {
 			physical["match"] = map[string]any{"macaddress": link.Address}
+			physical["set-name"] = link.Name
 		}
 		selected.document.ethernets[link.Name] = physical
 	}
