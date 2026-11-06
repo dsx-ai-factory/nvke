@@ -103,9 +103,9 @@ output.mkdir(parents=True, exist_ok=True)
         self.assertIn("cannot be hardware accelerated", result.stderr)
         self.assertFalse(Path(self.env['PACKER_ARGS']).exists())
 
-    def test_acceleration_preflight_rejects_hvf_and_mismatched_iso_arch(self):
+    def test_acceleration_preflight_rejects_unknown_accelerator_and_mismatched_iso_arch(self):
         cases = (
-            (["ACCELERATOR=hvf"], "not supported for image builds"),
+            (["ACCELERATOR=whpx"], "not supported for image builds"),
             (["ISO_URL=https://example.invalid/ubuntu-26.04.1-live-server-amd64.iso"],
              "does not match ARCH=arm64"),
         )

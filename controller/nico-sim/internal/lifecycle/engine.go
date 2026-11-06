@@ -29,8 +29,17 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/vm/libvirt"
 )
 
+// leaseTimeout is how long a running VM may go without a DHCP lease, both
+// after it starts and after its power-cycle, before reconcileMissingLease acts.
+const leaseTimeout = 5 * time.Minute
+
+// leasePowerCycledReason marks an instance whose VM was power-cycled for
+// lacking a lease. It is cleared when the instance is next patched to ready.
+const leasePowerCycledReason = "Power-cycled: no DHCP lease"
+
 type Engine struct {
 	cfg         config.Config
+	now         func() time.Time
 	store       *state.Store
 	logger      *slog.Logger
 	runtime     vm.Runtime
@@ -58,6 +67,7 @@ func New(cfg config.Config, store *state.Store, logger *slog.Logger) *Engine {
 	}
 	return &Engine{
 		cfg:     cfg,
+		now:     time.Now,
 		store:   store,
 		logger:  logger.With("component", "controller"),
 		runtime: rt,
@@ -252,6 +262,18 @@ func (e *Engine) reconcileInstance(ctx context.Context, instanceID string) error
 		return nil
 	}
 
+	// A stopped VM is never re-provisioned by the drift check in
+	// reconcileRunning: those states are handled here, before it is reached.
+	if vmRecord.DesiredState == state.DesiredStateStopped {
+		if vmRecord.ObservedState == state.ObservedStateStopped {
+			return nil
+		}
+		return e.reconcileStop(ctx, instance, log)
+	}
+	if vmRecord.ObservedState == state.ObservedStateStopped {
+		return e.reconcileStart(ctx, instance, log)
+	}
+
 	if vmRecord.RebootRequested {
 		return e.reconcileReboot(ctx, instance, log)
 	}
@@ -263,12 +285,43 @@ func (e *Engine) reconcileInstance(ctx context.Context, instanceID string) error
 		return e.reconcileRunning(ctx, instance, log)
 	case state.ObservedStateReady:
 		return e.reconcileReady(ctx, instance, log)
-	case state.ObservedStateStopped:
-		// TODO: consider auto-recovery of stopped instances
-		return nil
 	default:
 		return nil
 	}
+}
+
+func (e *Engine) reconcileStop(ctx context.Context, instance state.Instance, log *slog.Logger) error {
+	log.Info("Stopping machine", "machineID", instance.MachineID)
+	if err := e.runtime.Stop(ctx, instance.MachineID); err != nil {
+		return e.markError(ctx, instance.ID, fmt.Errorf("stop failed: %w", err))
+	}
+	return e.store.PatchVMInstanceState(ctx, instance.ID, state.VMInstanceStatePatch{
+		Status:        ptr("stopped"),
+		ObservedState: ptr(state.ObservedStateStopped),
+		ErrorReason:   ptr("Stopped"),
+	})
+}
+
+// reconcileStart boots a stopped machine from its existing disk and hands it
+// to the running state, so the normal lease and readiness probing follows.
+func (e *Engine) reconcileStart(ctx context.Context, instance state.Instance, log *slog.Logger) error {
+	log.Info("Starting machine", "machineID", instance.MachineID)
+	if err := e.runtime.Start(ctx, instance.MachineID); err != nil {
+		return e.markError(ctx, instance.ID, fmt.Errorf("start failed: %w", err))
+	}
+	// A DHCP guest can come back on a different address: only the dnsmasq
+	// bridge pins it with a reservation. Clear the stored IP so reconcileRunning
+	// reads the current lease instead of probing the old address.
+	if e.net.NeedsDHCP(instance) {
+		if err := e.store.UpdateInterfaceIPs(ctx, instance.Interfaces[0].ID, nil); err != nil {
+			return fmt.Errorf("clearing the DHCP address before the lease is re-read: %w", err)
+		}
+	}
+	return e.store.PatchVMInstanceState(ctx, instance.ID, state.VMInstanceStatePatch{
+		Status:        ptr("running"),
+		ObservedState: ptr(state.ObservedStateRunning),
+		ErrorReason:   ptr(""),
+	})
 }
 
 func (e *Engine) reconcileAbsent(ctx context.Context, instance state.Instance, log *slog.Logger) error {
@@ -305,6 +358,19 @@ func (e *Engine) reconcileAbsent(ctx context.Context, instance state.Instance, l
 		log.Info("Removed instance directory", "path", workingDir)
 	}
 	return nil
+}
+
+// localizeUserData adapts the tenant's user-data to this host: it injects the
+// diagnostic SSH user if enabled and, on darwin, retargets phone_home at the
+// vmnet gateway.
+func (e *Engine) localizeUserData(userData, gateway string) string {
+	if e.cfg.DiagSSHEnabled {
+		userData = cloudinit.InjectDiagUser(userData, e.cfg.DiagSSHUser, e.cfg.DiagSSHPassword)
+	}
+	if e.cfg.EffectiveVMBackend() == config.VMBackendDarwinQEMU {
+		userData = darwinUserData(userData, gateway)
+	}
+	return userData
 }
 
 func (e *Engine) reconcileProvisioning(ctx context.Context, instance state.Instance, log *slog.Logger) error {
@@ -381,11 +447,7 @@ func (e *Engine) reconcileProvisioning(ctx context.Context, instance state.Insta
 			return e.markError(ctx, instance.ID, fmt.Errorf("no bootable image available: base image %q does not exist", effectiveImage))
 		}
 	}
-
-	// Inject diagnostic SSH user if enabled.
-	if e.cfg.DiagSSHEnabled {
-		userData = cloudinit.InjectDiagUser(userData, e.cfg.DiagSSHUser, e.cfg.DiagSSHPassword)
-	}
+	userData = e.localizeUserData(userData, gw)
 
 	arch := "x86_64"
 	if runtime.GOARCH == "arm64" {
@@ -415,16 +477,17 @@ func (e *Engine) reconcileProvisioning(ctx context.Context, instance state.Insta
 	// Build artifacts. IPAddress empty → DHCP network-config in seed ISO.
 	workingDir := filepath.Join(e.cfg.WorkingDirectory(), instance.ID)
 	artifactsOut, err := e.artifacts.Build(ctx, artifacts.BuildInput{
-		WorkingDir:   workingDir,
-		InstanceID:   instance.ID,
-		Hostname:     instance.Name,
-		UserData:     userData,
-		NICMAC:       nicMAC,
-		IPAddress:    firstIP,
-		GatewayIP:    gw,
-		PrefixLength: prefixLen,
-		BaseImage:    baseImage,
-		DiskGiB:      diskGiB,
+		PreserveInterfaceName: e.cfg.EffectiveVMBackend() == config.VMBackendDarwinQEMU,
+		WorkingDir:            workingDir,
+		InstanceID:            instance.ID,
+		Hostname:              instance.Name,
+		UserData:              userData,
+		NICMAC:                nicMAC,
+		IPAddress:             firstIP,
+		GatewayIP:             gw,
+		PrefixLength:          prefixLen,
+		BaseImage:             baseImage,
+		DiskGiB:               diskGiB,
 	})
 	if err != nil {
 		return e.markError(ctx, instance.ID, fmt.Errorf("artifact creation failed: %w", err))
@@ -528,12 +591,17 @@ func (e *Engine) reconcileRunning(ctx context.Context, instance state.Instance, 
 		}
 
 		if ip == "" {
-			ip, err := e.resolveInstanceIPFromLease(ctx, instance, instance.Interfaces)
+			ip, err = e.resolveInstanceIPFromLease(ctx, instance, instance.Interfaces)
 			if err != nil {
 				return e.markError(ctx, instance.ID, err)
 			}
 			if ip == "" {
-				return nil // Waiting for DHCP lease; retry next reconcile tick.
+				// Only HVF guests have been seen to hang before DHCP. Elsewhere a
+				// missing lease waits for ReadinessTimeout, as before.
+				if e.cfg.EffectiveVMBackend() != config.VMBackendDarwinQEMU {
+					return nil
+				}
+				return e.reconcileMissingLease(ctx, instance, log)
 			}
 
 			nicMAC := nicMACForInstance(instance.ID)
@@ -681,7 +749,31 @@ func (e *Engine) readinessAge(instance state.Instance) time.Duration {
 }
 
 func (e *Engine) storeNow() time.Time {
-	return time.Now().UTC()
+	return e.now().UTC()
+}
+
+// reconcileMissingLease waits for a DHCP lease on a running VM. A guest that
+// hangs before it starts DHCP (firmware stuck in the bootloader) never gets
+// one, so it is power-cycled once after leaseTimeout and marked errored if the
+// second boot fails the same way.
+func (e *Engine) reconcileMissingLease(ctx context.Context, instance state.Instance, log *slog.Logger) error {
+	waited := e.readinessAge(instance)
+	if waited < leaseTimeout {
+		return nil
+	}
+	if instance.VM.ErrorReason == leasePowerCycledReason {
+		return e.markError(ctx, instance.ID,
+			fmt.Errorf("no DHCP lease %s after a power-cycle; the guest likely failed to boot, see its console log", leaseTimeout))
+	}
+
+	log.Warn("No DHCP lease, power-cycling the VM", "machineID", instance.MachineID, "waited", waited)
+	if err := e.runtime.Stop(ctx, instance.MachineID); err != nil {
+		return e.markError(ctx, instance.ID, fmt.Errorf("power-cycle stop failed: %w", err))
+	}
+	if err := e.runtime.Start(ctx, instance.MachineID); err != nil {
+		return e.markError(ctx, instance.ID, fmt.Errorf("power-cycle start failed: %w", err))
+	}
+	return e.store.PatchVMInstanceState(ctx, instance.ID, state.VMInstanceStatePatch{ErrorReason: ptr(leasePowerCycledReason)})
 }
 
 // resolveBootImage determines the base image and UEFI setting for an instance.

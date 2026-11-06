@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -129,8 +130,24 @@ func runInstanceCommand(action string, args []string) {
 		exitOnErr(doJSON(opts, http.MethodPatch, buildPath(opts, "instance/"+instanceID), payload))
 	case "delete":
 		opts := parseCommon(args)
-		instanceID := requiredStringArg(args, "--instance-id")
-		exitOnErr(doJSON(opts, http.MethodDelete, buildPath(opts, "instance/"+instanceID), map[string]interface{}{}))
+		if id := optionalStringArg(args, "--instance-id"); id != "" {
+			exitOnErr(doJSON(opts, http.MethodDelete, buildPath(opts, "instance/"+id), map[string]interface{}{}))
+			return
+		}
+		for _, id := range resolveInstanceIDs(opts, args) {
+			exitOnErr(doJSON(opts, http.MethodDelete, buildPath(opts, "instance/"+id), map[string]interface{}{}))
+		}
+	case "stop", "start":
+		opts := parseCommon(args)
+		// Try every instance: nico-sim rejects one whose state it cannot act on,
+		// and that should not keep the rest from stopping or starting.
+		var errs []error
+		for _, id := range resolveInstanceIDs(opts, args) {
+			if err := doJSON(opts, http.MethodPost, fmt.Sprintf("%s/sim/instances/%s/%s", opts.BaseURL, id, action), nil); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", id, err))
+			}
+		}
+		exitOnErr(errors.Join(errs...))
 	case "console-log":
 		runConsoleLog(args)
 	case "console-log-local":
@@ -139,6 +156,56 @@ func runInstanceCommand(action string, args []string) {
 		usage()
 		os.Exit(2)
 	}
+}
+
+// resolveInstanceIDs maps the positional <id-or-name> arguments to instance IDs
+// using nico-sim's own VM list, and exits if any of them is unknown.
+func resolveInstanceIDs(opts commonOptions, args []string) []string {
+	var refs []string
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--base-url" || args[i] == "--org" || args[i] == "--token":
+			i++
+		case !strings.HasPrefix(args[i], "-"):
+			refs = append(refs, args[i])
+		}
+	}
+	if len(refs) == 0 {
+		fmt.Fprintln(os.Stderr, "missing <id-or-name> argument")
+		os.Exit(2)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, opts.BaseURL+"/sim/instances", nil)
+	exitOnErr(err)
+	req.Header.Set("Authorization", "Bearer "+opts.Token)
+	res, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	exitOnErr(err)
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		exitOnErr(fmt.Errorf("list VMs: %s", res.Status))
+	}
+	var vms []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	exitOnErr(json.NewDecoder(res.Body).Decode(&vms))
+
+	ids := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		found := false
+		for _, v := range vms {
+			if v.ID == ref || v.Name == ref {
+				ids = append(ids, v.ID)
+				found = true
+				break
+			}
+		}
+		if !found {
+			fmt.Fprintf(os.Stderr, "no instance with id or name %q\n", ref)
+			os.Exit(1)
+		}
+	}
+	return ids
 }
 
 func parseCommon(args []string) commonOptions {
@@ -373,7 +440,9 @@ func usage() {
   nico-simctl instance list --base-url URL --org ORG --token TOKEN [--site-id ID] [--tenant-id ID]
   nico-simctl instance create --base-url URL --org ORG --token TOKEN --name NAME --tenant-id ID --instance-type-id ID --vpc-id ID (--subnet-id ID | --vpc-prefix-id ID | --interfaces "subnet:ID,vpcPrefix:ID")
   nico-simctl instance update --base-url URL --org ORG --token TOKEN --instance-id ID [--label k=v,k2=v2] [--trigger-reboot true]
-  nico-simctl instance delete --base-url URL --org ORG --token TOKEN --instance-id ID
+  nico-simctl instance delete [--base-url URL] [--org ORG] [--token TOKEN] (--instance-id ID | <id-or-name>...)
+  nico-simctl instance stop [--base-url URL] [--token TOKEN] <id-or-name>...
+  nico-simctl instance start [--base-url URL] [--token TOKEN] <id-or-name>...
   nico-simctl instance console-log (--name NAME | --id ID) [--dump] [--base-url URL] [--org ORG] [--token TOKEN] [--site-id ID]
   nico-simctl instance console-log-local [--name NAME | --id ID] [--dir DIR] [--dump] [--lines N]
   nico-simctl instance-type list --base-url URL --org ORG --token TOKEN --site-id ID
