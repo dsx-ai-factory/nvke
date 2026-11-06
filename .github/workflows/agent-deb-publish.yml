@@ -365,7 +365,8 @@ jobs:
     needs: [build]
     if: >-
       github.repository_id == '1323115536' &&
-      startsWith(inputs.ref || github.ref_name, 'agent/v') &&
+      (startsWith(inputs.ref || github.ref_name, 'agent/v') ||
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-beta.'))) &&
       contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',agent,')
     runs-on: ubuntu-latest
     timeout-minutes: 10

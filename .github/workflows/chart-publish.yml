@@ -22,8 +22,8 @@ name: Chart Publish
 # agent binaries. Without that split a chart and an image end up in one OCI
 # repository, told apart only by whether the tag carries a "v".
 #
-# Chart version: git describe output with the "controller/" prefix and leading
-# "v" stripped (OCI chart tags carry no "v" prefix by convention).
+# Chart version: the v* git describe output with the leading "v" stripped (OCI
+# chart tags carry no "v" prefix by convention).
 # AppVersion: the same string with the leading "v" kept, which the deployment
 # template uses as the default image tag.
 #
@@ -42,6 +42,7 @@ on:
   push:
     tags:
       - "controller/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch: {}
 
 permissions: {}
@@ -80,7 +81,7 @@ jobs:
     # see docs/artifact-publication.md. Unset means every component but os-image.
     if: >-
       github.repository_id == '1323115536' &&
-      startsWith(github.ref, 'refs/tags/controller/v') &&
+      (startsWith(github.ref, 'refs/tags/controller/v') || startsWith(github.ref, 'refs/tags/v')) &&
       contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',controller,')
     # Includes up to 30 minutes waiting for image-nvcr.yml to promote the image.
     timeout-minutes: 40
@@ -111,10 +112,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Strip "controller/" prefix; keep "v" for appVersion, drop it for
-          # the chart version (OCI chart tags are plain semver without v).
-          describe="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-          describe="${describe#controller/}"   # → v0.1.0 or v0.1.0-4-gabcdef
+          # Keep "v" for appVersion, drop it for the chart version (OCI chart
+          # tags are plain semver without v).
+          describe="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"   # → v0.1.0 or v0.1.0-4-gabcdef
           version="${describe#v}"              # → 0.1.0 or 0.1.0-4-gabcdef
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "app_version=${describe}" >> "${GITHUB_OUTPUT}"

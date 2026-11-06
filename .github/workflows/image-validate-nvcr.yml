@@ -32,6 +32,7 @@ on:
       - main
     tags:
       - "controller/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch: {}
 
 permissions: {}
@@ -96,12 +97,11 @@ jobs:
           # The controller image's version, so the two pair by tag. A tag run
           # takes the tag that triggered it: an RC and its final release can
           # sit on one commit, and git describe picks the final for both.
-          if [[ "${GITHUB_REF}" == refs/tags/controller/v* ]]; then
-            version="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_REF}" == refs/tags/controller/v* || "${GITHUB_REF}" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#controller/}"
           else
-            version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+            version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
           fi
-          version="${version#controller/}"
 
           # sha-<commit> records what main built. A tag run rebuilds the same
           # commit under a different version label, so a different digest, and
