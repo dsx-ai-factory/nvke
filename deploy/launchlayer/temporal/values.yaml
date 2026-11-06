@@ -1,0 +1,65 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# temporal values for the nke-stack composition. Merged under the `temporal` key of the
+# generated chart's values.yaml -- the top-level key is added by the generator,
+# so it is deliberately absent here.
+
+# ─── temporal ────────────────────────────────────────────────────────────────
+# Owns the release namespace (see the header). The persistence host below is an
+# FQDN into postgresql's namespace, so it stays correct across the split.
+# Pin the service names so temporal-frontend.temporal.svc.cluster.local stays
+# correct regardless of the release name. controller/Tiltfile installs this
+# chart as release "temporal"; inside one umbrella the release is nke-stack,
+# which would rename every service and break the host cloud-workflow-engine
+# dials. Same reason postgresql carries fullnameOverride above.
+fullnameOverride: temporal
+server:
+  configMapsToMount: sprig
+  setConfigFilePath: true
+  config:
+    persistence:
+      driver: sql
+      default:
+        driver: sql
+        sql:
+          driver: postgres12
+          host: postgres-postgresql.postgres.svc.cluster.local
+          port: 5432
+          database: temporal
+          user: postgres
+          maxConns: 10
+          maxIdleConns: 5
+      visibility:
+        driver: sql
+        sql:
+          driver: postgres12
+          host: postgres-postgresql.postgres.svc.cluster.local
+          port: 5432
+          database: temporal_visibility
+          user: postgres
+          maxConns: 10
+          maxIdleConns: 5
+cassandra:
+  enabled: false
+mysql:
+  enabled: false
+# temporal bundles its own postgresql; the composition supplies one instead.
+postgresql:
+  enabled: false
+prometheus:
+  enabled: false
+grafana:
+  enabled: false
+elasticsearch:
+  enabled: false
+schema:
+  createDatabase:
+    enabled: true
+  setup:
+    enabled: true
+  update:
+    enabled: true
+
+# ─── spire-crds ──────────────────────────────────────────────────────────────
+# Cluster-scoped CRDs only; namespace placement does not apply.

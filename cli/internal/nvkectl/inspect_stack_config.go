@@ -23,12 +23,15 @@ func newInspectStackConfigCmd() *cobra.Command {
 		Short: "Validate a stack config file and the install's credentials, and print the facts the install scripts read, as shell assignments",
 		Long: `Read a stack config file the way the render does: strict JSON, no REPLACE_*
 placeholder left, every required value set and well-formed. Then check the
-credentials the install reads from the environment: NVKECTL_NICO_TOKEN,
-NVKECTL_NODE_USER, NVKECTL_NODE_PASSWORD and NVKECTL_DATABASE_PASSWORD must
-be set, and the first three must hold no quote, backslash or control
-character. On success print STACK_CONFIG, STACK_NICO_ENDPOINT and
-STACK_NICO_ORG_ID, one per line, each single-quoted for eval; the path is
-absolute. On a problem print nothing on standard output and exit non-zero,
+credentials the install reads from the environment: NVKECTL_NODE_USER,
+NVKECTL_NODE_PASSWORD and NVKECTL_DATABASE_PASSWORD must be set, and so must
+NVKECTL_NICO_TOKEN when the config names the NICo API and
+NVKECTL_LAUNCHLAYER_CLIENT_SECRET when it names the LaunchLayer API. Every one
+but the database password must hold no quote, backslash or control character.
+On success print STACK_CONFIG, STACK_NICO_ENDPOINT and STACK_NICO_ORG_ID, one
+per line, each single-quoted for eval; the path is absolute, and the NICo
+values are empty for a config without NICo. On a problem print nothing on
+standard output and exit non-zero,
 naming every problem on standard error, the file's as "<key>: <problem>" and
 the environment's as "environment: <variable> ...".`,
 		Args:         cobra.ExactArgs(1),
@@ -38,7 +41,7 @@ the environment's as "environment: <variable> ...".`,
 			if err != nil {
 				return fmt.Errorf("stack config %s:\n%w", args[0], err)
 			}
-			if _, err := stackconfig.CredentialsFromEnv(); err != nil {
+			if _, err := cfg.CredentialsFromEnv(); err != nil {
 				lines := strings.Split(err.Error(), "\n")
 				for i, line := range lines {
 					lines[i] = "environment: " + line

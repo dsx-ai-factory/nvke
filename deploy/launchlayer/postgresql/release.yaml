@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Postgres, backing both the controller's own database and Temporal's persistence store.
+#
+# The BITNAMI chart, not this repository's controller/deploy/charts/postgresql,
+# because that is what a site actually runs: a live site installs
+# oci://registry-1.docker.io/bitnamicharts/postgresql at 18.5.15, and it is what
+# cli/internal/bootstrap/controllerdeploy -- the code path nvkectl ships -- installs too. This
+# repository's own chart is the development instance the e2e lanes use.
+#
+# The release name is load-bearing and must stay `postgres`. The Bitnami chart
+# names its Service <release>-postgresql, and both ../temporal/values.yaml and
+# ../controller/overlay.yaml address it as
+# postgres-postgresql.postgres.svc.cluster.local. Renaming this release
+# silently breaks both.
+chart:
+  name: postgresql
+  version: "18.5.15"
+  repository: oci://registry-1.docker.io/bitnamicharts
+release:
+  name: postgres
+  namespace: postgres
+values:
+  - values.yaml

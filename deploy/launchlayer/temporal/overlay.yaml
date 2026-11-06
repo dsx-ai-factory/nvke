@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What this target changes about temporal, applied over values.yaml.
+
+# One ServiceMonitor per server role, so the nktp item scrapes them. Each
+# role's headless Service already exposes its Prometheus endpoint as port
+# "metrics". The monitors need the monitoring CRDs, which the nktp item
+# installs before this one.
+server:
+  metrics:
+    serviceMonitor:
+      enabled: true
