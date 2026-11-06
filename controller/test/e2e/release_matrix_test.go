@@ -128,7 +128,7 @@ func nicoVMSReleaseTestSpec(profile nicoVMSReleaseEntry, index int) testSpec {
 			// The profile under test is the worker's. The control plane takes the
 			// nico-vms default instance, which leaves room for the controller's kubelet
 			// reservation (see nicoVMSSpec).
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
 			workerPools: []nvke.NodePoolSpec{{
 				Name:             fmt.Sprintf("worker-profile-%02d", index+1),
 				NodeNamePrefix:   fmt.Sprintf("wp%02d", index+1),

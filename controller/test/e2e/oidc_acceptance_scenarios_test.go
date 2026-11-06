@@ -272,8 +272,8 @@ var _ = Describe("NVKE OIDC acceptance", Ordered, Serial, Label("oidc-acceptance
 func createOIDCAcceptanceCluster(ctx context.Context, run *oidcAcceptanceRun, suffix string) {
 	GinkgoHelper()
 	shape := clusterShape{
-		controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
-		workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+		controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
+		workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 	}
 	spec := capdSpec(run.test.cfg, fmt.Sprintf("%s-oidc-%s", clusterNamePrefix, suffix), shape)
 	spec.Name = fmt.Sprintf("%s-%s", spec.Name, spec.Backend)

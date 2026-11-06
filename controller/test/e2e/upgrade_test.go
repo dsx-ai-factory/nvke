@@ -77,7 +77,10 @@ func upgradeControlPlaneTo(test *tenantTest, targetVersion string) func(context.
 		test.cluster = cluster
 
 		By("Verifying recycled control-plane nodes were replaced")
-		Expect(test.nvke.WaitForControlPlaneNodesRolled(ctx, test.cluster.ID, originalDesiredCount, originalControlPlaneNodes)).
+		// The upgrade already waited for recycling to converge above, so the
+		// control plane is effectively rolled by now; the single-create Provision
+		// window is ample for this confirming wait.
+		Expect(test.nvke.WaitForControlPlaneNodesRolled(ctx, test.cluster.ID, originalDesiredCount, originalControlPlaneNodes, test.timeouts.Provision)).
 			To(Succeed(), "controller-managed control plane should finish rolling onto replacement nodes")
 		currentControlPlaneNodes, _ := expectControlPlaneNodes(ctx, test)
 		Expect(currentControlPlaneNodes).To(HaveLen(originalDesiredCount), "control plane should retain its desired node count")
