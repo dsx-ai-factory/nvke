@@ -261,8 +261,8 @@ jobs:
        github.event_name == 'push' ||
        (github.event.pull_request.head.repo.full_name == github.repository &&
         contains(fromJSON('["qualify-e2e","qualify-e2e-dry-run","qualify-e2e-l40s","qualify-e2e-dsx"]'), github.event.label.name)))
-    # The plan's own 15 minutes, plus the three notification steps at up to 3
-    # minutes each. A job timeout cancels the job whatever continue-on-error says,
+    # The plan's own 15 minutes, plus the notification steps (two on a normal run)
+    # at up to 3 minutes each. A job timeout cancels the job whatever continue-on-error says,
     # and a cancelled plan starts no lane, so a stalled notification must not be
     # able to spend the plan's budget.
     timeout-minutes: 25
@@ -464,34 +464,11 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      # SLACK. This job opens the run's thread, and the lanes that need it reply
-      # in it, so a lane cannot post before the thread exists. Each message may
-      # start the thread if the one before it failed to. A notification never
-      # fails the plan; each step is cut off after 3 minutes, which is how long a
-      # stall can hold the lanes back.
-      - name: Name the tagged commit
-        id: commit
-        if: env.NOTIFY == 'true' && github.event_name == 'push'
-        continue-on-error: true
-        shell: bash
-        run: echo "short=${GITHUB_SHA::7}" >> "${GITHUB_OUTPUT}"
-
-      # The tag was pushed at this commit, so this run's own SHA is the commit
-      # that was tagged. Only a tag push has a tag to announce.
-      - name: Announce the tag
-        if: env.NOTIFY == 'true' && github.event_name == 'push'
-        continue-on-error: true
-        timeout-minutes: 3
-        uses: ./.github/actions/notify
-        with:
-          event: release:beta-tag-created
-          token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
-          open-thread: "true"
-          data: |
-            tag=${{ github.ref_name }}
-            commit=${{ github.sha }}
-            commit_short=${{ steps.commit.outputs.short }}
-
+      # SLACK. This job opens the run's thread with "started", titled with the
+      # version, and the lanes that need it reply in it, so a lane cannot post
+      # before the thread exists. Each message may start the thread if the one
+      # before it failed to. A notification never fails the plan; each step is cut
+      # off after 3 minutes, which is how long a stall can hold the lanes back.
       - name: Announce that qualification started
         if: env.NOTIFY == 'true'
         continue-on-error: true
@@ -501,6 +478,8 @@ jobs:
           event: qualification:started
           token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
           open-thread: "true"
+          data: |
+            nvke_version=${{ steps.matrix.outputs.nvke-version }}
 
       - name: Count the streams
         id: streams
