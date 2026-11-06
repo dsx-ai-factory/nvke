@@ -23,7 +23,7 @@ We will authenticate every caller of an NVKE API with a bearer JWT, and set whic
 
 An NVKE API is one that people, automation or other services call over the network, such as the controller's HTTP API. The node agent's gRPC API is out of scope: only the controller calls it, over mutual TLS. The metrics listener is out of scope too.
 
-- The `AuthenticationConfiguration` schema is the public contract for authentication. A new field is optional. Removing or renaming a field needs a new `apiVersion`.
+- The `AuthenticationConfiguration` schema is the public contract for authentication. A new field is optional. Removing or renaming a field needs a new `apiVersion`. A ConfigMap carries the document today, but the schema is the contract, so a custom resource could carry it later.
 - Trusting a new issuer takes only its key-set URL, with no credential store or certificate authority in NVKE.
 - The document lists any number of issuers. Each issuer's keys, algorithms, admit rules and audience override apply only to its own tokens.
 - An API accepts no other credential: no API keys, basic auth, session cookies or token format of its own.
@@ -43,7 +43,7 @@ flowchart LR
 
 Trust changes without a code change or a new build. NVKE reads the document at startup, so a change applies on restart.
 
-Any system that can write a Kubernetes ConfigMap can manage authentication. That system writes against the schema, so a breaking schema change breaks it too.
+Any system that can write the document can manage authentication. That system writes against the schema, so a breaking schema change breaks it too.
 
 Every caller needs a token from a configured issuer. A tool that sends no token, or sends an API key, must change before the deployment enforces.
 
