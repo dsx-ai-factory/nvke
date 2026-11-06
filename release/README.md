@@ -169,8 +169,8 @@ $ go run ./release/cmd/qualify plan --subject nvke --version v0.21.0 --scope ful
   `QUALIFY_E2E_*` repository variables that name a version are passed as
   `--overrides`, so the plan records them and a job never has to guess which of
   the two it was handed. `--resolution` is `commitDescribe` unless `gitTag` is
-  selected by input or by `QUALIFY_E2E_RESOLUTION`, and a beta tag push takes
-  `commitDescribe` whatever the variable says.
+  selected by input or by `QUALIFY_E2E_RESOLUTION`, and a beta or release
+  candidate tag push takes `commitDescribe` whatever the variable says.
   The plan is uploaded as an artifact.
 - `qualify-run` runs once for each stream of each combination, gated behind a
   GitHub environment from its first step. It runs `qualify verify` on that
@@ -186,7 +186,7 @@ $ go run ./release/cmd/qualify plan --subject nvke --version v0.21.0 --scope ful
   on every non-dry-run leg -- including a PR leg and an infrastructure
   failure, so the record exists even when nothing gets published. `qualify
   publish` then ships it, with the JUnit report, to TestGrid -- but only on a
-  trusted ref (`main`, or a release/beta tag), since that is the only
+  trusted ref (`main`, or a release, beta or rc tag), since that is the only
   identity the testgrid repo's WIF provider will exchange a token for. A
   labelled PR leg gets a result record as a workflow artifact and nothing on
   TestGrid.

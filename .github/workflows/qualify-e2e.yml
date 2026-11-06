@@ -28,12 +28,13 @@
 # tests, for a future site whose jump host is not Teleport-enrolled; giving
 # the suite a JUMP_HOST_PASSWORD is still what selects it.
 #
-# ASKED FOR, OR A BETA TAG. A run takes a bare-metal machine for up to an hour,
-# so it starts only when a person asks, by workflow_dispatch or one of the
+# ASKED FOR, OR A TAG. A run takes a bare-metal machine for up to an hour,
+# so it starts when a person asks, by workflow_dispatch or one of the
 # `qualify-e2e`, `qualify-e2e-l40s` or `qualify-e2e-dsx` labels on a pull
-# request from this repository (docs/qualification/overview.md), or when a
-# `vX.Y.Z-beta.N` tag is pushed. It is still not on a schedule and not on every
-# push, for three reasons, and the beta tag answers each of them:
+# request from this repository (docs/qualification/overview.md), when a
+# `vX.Y.Z-beta.N` tag is pushed, or through Qualify perf when a `vX.Y.Z-rc.N`
+# tag is pushed. It is still not on a schedule and not on every push, for
+# three reasons, and the tags answer each of them:
 #
 #   Capacity.  The site's cpu.himem.t1 pool was fully allocated by a single
 #   site controller, which forced that run's tenant onto the GPU pool. See
@@ -50,7 +51,8 @@
 #   a bare-metal instance stays allocated with nothing left to delete it.
 #   `cancel-in-progress: false` and the go-test timeout below both exist for
 #   that reason, and a cancelled run still needs someone to check Forge. A
-#   beta tag is cut once a night, so it adds one run and not a stream of them.
+#   beta tag is cut once a night, and an rc tag at most once for each beta
+#   that passes, so each adds at most one run a night and not a stream of them.
 #
 # NO NODE PASSWORD. The image's baked `dgxc-admin` account is how a person
 # reaches these nodes, and how the manual procedure does it. The harness does
@@ -71,11 +73,11 @@
 # trigger left for a dispatch or label to reach NGC_API_KEY (or anything
 # else) through. `qualify-run` is gated behind a GitHub environment from its
 # first step, so every run -- dry or real -- waits for a required reviewer
-# on `forge` before it can log into a registry or touch a machine. A beta
-# tag push instead resolves `forge-nightly`, which carries the same secrets
-# and no required reviewers -- an unattended nightly cannot wait on a
-# person, so the control is the deployment tag policy (`v*-beta.*`) rather
-# than a reviewer.
+# on `forge` before it can log into a registry or touch a machine. A beta or
+# rc tag push instead resolves `forge-nightly`, which carries the same secrets
+# and no required reviewers: an unattended tag run cannot wait on a person,
+# so the control is the deployment tag policy (`v*-beta.*` and `v*-rc.*`)
+# rather than a reviewer.
 #
 # DRY RUN. A `dry-run` dispatch input, or the `qualify-e2e-dry-run` label on a
 # pull request, does everything except join Teleport and run the suite: the
@@ -191,7 +193,7 @@ on:
   # main, and for now the only way to run it at all: workflow_dispatch reads
   # its definition from the default branch, so this file is not dispatchable
   # until it merges. A pull_request run also carries refs/pull/<n>/merge,
-  # which is one of the two refs the Teleport join token accepts.
+  # which is one of the refs the Teleport join token accepts.
   #
   # `labeled` and nothing else. Adding `qualify-e2e` is the request to run, and adding
   # `qualify-e2e-dry-run` is the request for a dry run. `qualify-e2e-l40s` runs
@@ -213,6 +215,14 @@ on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
+
+  # A called run carries the caller's push event and tag, so it resolves like a beta tag push.
+  workflow_call:
+    inputs:
+      scope:
+        description: "How much of the matrix to cover, a scope from release/policy.yaml. One job runs for each stream the scope selects."
+        type: string
+        required: false
 
 permissions: {}
 
@@ -250,7 +260,7 @@ jobs:
     # reads its own separate copy from forge/forge-nightly, since a job can
     # only have one environment.
     environment: ci-shared
-    # The same gate as the lanes: a dispatch is deliberate, a beta tag was
+    # Same gate as the lanes: a dispatch is deliberate, a beta or rc tag was
     # pushed to this repository, and a pull_request run has to be asked for with
     # the `qualify-e2e` label, the `qualify-e2e-l40s` label for the site-1 L40S
     # scope, or the `qualify-e2e-dry-run` label for a dry run, from a branch in
@@ -299,12 +309,12 @@ jobs:
             || (github.event_name == 'push' && github.ref_name)
             || vars.QUALIFY_E2E_NVKE_VERSION }}
       # commitDescribe is the default because a beta is what this lane
-      # qualifies nightly, and a beta tag carries no component tags. A release
-      # qualification selects gitTag, by input or by the variable.
+      # qualifies nightly, and a beta or rc tag carries no component tags. A
+      # release qualification selects gitTag, by input or by the variable.
       #
-      # The push arm sits ahead of the variable so a beta tag push resolves as
-      # what that commit built whatever the variable says. A variable left on
-      # gitTag would otherwise cost every nightly.
+      # Placing the push arm ahead of the variable makes a beta or rc tag push
+      # resolve as what that commit built whatever the variable says. A
+      # variable left on gitTag would otherwise cost every nightly.
       RESOLUTION: >-
         ${{ inputs.resolution
             || (github.event_name == 'push' && 'commitDescribe')
@@ -315,7 +325,8 @@ jobs:
       # the Teleport ref guard, and a label takes what the variables say.
       # qualify-e2e-dsx is that missing input for the DSX stream, and exists
       # because a workflow_dispatch from a branch cannot reach Teleport at all:
-      # the join token allows only refs/heads/main and refs/pull/*/merge. Until
+      # the join token allows only refs/heads/main, refs/pull/*/merge and
+      # refs/tags/v*. Until
       # this lands on main a label is the only way to run the DSX stream.
       # qualify-e2e-l40s is the same for the site-1 L40S stream.
       #
@@ -366,12 +377,12 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          # A tag push carries no inputs, so anything set here came from a
-          # QUALIFY_E2E_* repository variable, which dispatch and label runs
-          # use. A beta is pushed to be qualified as what its own commit built,
-          # and an override beats the description, so one left set would qualify
-          # a pinned release component under the beta's name. NVKE_VERSION
-          # ignores its variable on this event for the same reason.
+          # A tag push carries no version inputs, so anything set here came
+          # from a QUALIFY_E2E_* repository variable, which dispatch and label
+          # runs use. A beta or rc tag is pushed to be qualified as what its own
+          # commit built, and an override beats the description, so one left set
+          # would qualify a pinned release component under the tag's name.
+          # NVKE_VERSION ignores its variable on this event for the same reason.
           overrides=""
           ignored=()
           add() {
@@ -534,10 +545,15 @@ jobs:
       max-parallel: 3
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: arc-amd64-cpu16
-    # A nightly beta tag qualifies itself unattended, so it cannot wait on a
+    # One real run at a time per named environment, which is a shared site such as NVKE Scale.
+    # A dry run takes no machine, so it gets a group of its own.
+    concurrency:
+      group: ${{ needs.plan.outputs.dry-run != 'true' && matrix.environment != '' && format('qualify-e2e environment {0}', matrix.environment) || format('qualify-e2e {0} {1}', github.run_id, matrix.stream) }}
+      cancel-in-progress: false
+    # A beta or rc tag qualifies itself unattended, so it cannot wait on a
     # required reviewer the way every other real run does: forge-nightly
     # carries the same secrets, no required reviewers, and a deployment tag
-    # policy of v*-beta.* -- the ref pattern is the control, not a person.
+    # policy of v*-beta.* and v*-rc.*, so the ref pattern is the control.
     #
     # No dry-run exemption: a dry run still logs into NVCR and pulls real
     # images with NGC_API_KEY (see "Check every artifact the plan names" and
@@ -597,8 +613,9 @@ jobs:
       # variables instead. The guard step checks the result rather than
       # letting an empty value surface twenty minutes into a run.
       #
-      # A tag push has no inputs either, but it does not fall back to the
-      # QUALIFY_E2E_* variables that stand in for one. Those are how a label
+      # A tag push has no inputs either, apart from the scope a calling
+      # workflow passes, and it does not fall back to the QUALIFY_E2E_*
+      # variables that stand in for one. Those are how a label
       # run asks for what it wants, so they hold whatever the last label run
       # asked for: v0.23.0-beta.6 and beta.9 both took the scope, stage and
       # keep-site left there for DSX label runs and ran the dsx stream instead
@@ -1269,7 +1286,10 @@ jobs:
                 value="<set, withheld>"
               fi
               note=""
-              if [ -n "${input}" ] && [ -n "${!input:-}" ]; then
+              if [ -n "${input}" ] && [ -n "${!input:-}" ] && [ "${GITHUB_EVENT_NAME}" = push ]; then
+                # Only a calling workflow passes inputs on a push.
+                source="calling workflow"
+              elif [ -n "${input}" ] && [ -n "${!input:-}" ]; then
                 source="dispatch input"
               elif { [ "${EVENT_LABEL:-}" = qualify-e2e-dsx ] && [ "${resolved}" = SCOPE ]; } ||
                    { [ "${EVENT_LABEL:-}" = qualify-e2e-l40s ] && [ "${resolved}" = SCOPE ]; }; then
@@ -1308,12 +1328,12 @@ jobs:
               if [ "${resolved}" = "DRY_RUN" ] && [ "${DRY_RUN}" = "true" ] && [ -z "${IN_DRY_RUN:-}" ]; then
                 source="label qualify-e2e-dry-run"
               fi
-              # A push carries no inputs, so the tag named itself as the
-              # version and selected commitDescribe, and neither arm above
-              # named either.
+              # A beta or rc tag push carries no version or resolution input,
+              # so the tag named itself as the version and selected
+              # commitDescribe, and neither arm above named either.
               if { [ "${resolved}" = "RESOLUTION" ] || [ "${resolved}" = "NVKE_VERSION" ]; } &&
                  [ -z "${!input:-}" ] && [ "${GITHUB_EVENT_NAME}" = push ]; then
-                source="beta tag push"
+                source="tag push"
               fi
               # The resolve steps fill these in from the checkout when no
               # published version was asked for, so neither arm above named it.
@@ -1585,9 +1605,10 @@ jobs:
           # of the failed jobs copies every job it does not re-run into the new
           # attempt, under the new attempt's number and the original start time.
           # So it is the earliest attempt holding the stream's latest start.
+          # A called run names its jobs "<caller job> / <job>", so the prefix is dropped first.
           last_runs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=all&per_page=100" \
             --jq '.jobs[] | {name, started_at, run_attempt}' \
-            | jq -rs 'group_by(.name)[]
+            | jq -rs 'map(.name |= sub("^.* / "; "")) | group_by(.name)[]
                 | (map(.started_at) | max) as $last
                 | [.[0].name, (map(select(.started_at == $last) | .run_attempt) | min)] | @tsv')"
           declare -A ran_in=()

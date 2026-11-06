@@ -62,9 +62,12 @@ the awkward parts are the way they are.
 
 The lane never starts on its own. It runs on a `workflow_dispatch`, when one of
 these labels is applied to a pull request from this repository, or when a
-`vX.Y.Z-beta.N` tag is pushed. It is deliberately not on a schedule or on every
+`vX.Y.Z-beta.N` tag is pushed. A `vX.Y.Z-rc.N` tag push runs the `perf` scope
+through the `Qualify perf` workflow while the repository variable
+`NVKE_RC_PERF` is `true`. It is deliberately not on a schedule or on every
 push: it costs hardware, and a run nobody is watching is a run nobody acts on.
-A beta tag is cut once a night, so it adds one run rather than a stream of them.
+A beta tag is cut once a night, and an rc tag at most once for each beta that
+passes, so each adds at most one run a night rather than a stream of them.
 
 | label | what it runs |
 |---|---|
@@ -92,12 +95,13 @@ what the plan resolves.
 every run -- dry or real -- waits for approval before it can touch any
 credential -- including the NGC key it logs into NVCR with -- or a machine.
 A `workflow_dispatch` or a labelled pull request resolves `forge`, which
-carries a required reviewer. A beta tag push instead resolves
-`forge-nightly`, which carries the same secrets but no required reviewer --
-an unattended nightly cannot wait on a person, so the control there is the
-deployment tag policy (`v*-beta.*`) rather than a reviewer. There is no
-ungated job and no ungated trigger left in this lane: a label or a dispatch
-alone, dry run included, cannot reach any credential without an approval.
+carries a required reviewer. A beta or rc tag push instead resolves
+`forge-nightly`, which carries the same secrets but no required reviewer:
+an unattended tag run cannot wait on a person, so the control there is the
+deployment tag policy (`v*-beta.*` and `v*-rc.*`) rather than a reviewer.
+There is no ungated job and no ungated trigger left in this lane: a label or a
+dispatch alone, dry run included, cannot reach any credential without an
+approval.
 
 **Qualifying a beta.** A beta tag names a commit and carries no component tags,
 so resolving the components from their own tags would answer with the last

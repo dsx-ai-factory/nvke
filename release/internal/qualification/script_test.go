@@ -19,6 +19,9 @@ import (
 
 const script = "../../hack/qualify-e2e.sh"
 
+// joinTokenRefs is the list of refs the ref guard names when it refuses one.
+const joinTokenRefs = "refs/heads/main, refs/pull/*/merge and refs/tags/v*."
+
 // shells are the bashes to run the script under: whatever is on PATH, and
 // /bin/bash, which on macOS is 3.2 and is what a workstation runs it with.
 func shells(t *testing.T) []string {
@@ -154,6 +157,11 @@ func expect(t *testing.T, got, want map[string]string) {
 			t.Errorf("%s = %q, want %q", k, got[k], v)
 		}
 	}
+}
+
+// workflowRef is the environment of a workflow run from ref, the only run the ref guard checks.
+func workflowRef(ref string) map[string]string {
+	return map[string]string{"GITHUB_ACTIONS": "true", "DRY_RUN": "false", "GITHUB_REF": ref}
 }
 
 func TestStreamEnvReadsOneStreamFromThePlan(t *testing.T) {
@@ -427,6 +435,8 @@ func TestResolveRefuses(t *testing.T) {
 			"the plan names no capi-provisioned version",
 		},
 		{"a value with a line break", "forge-l40s-amd64", map[string]string{"QUALIFY_E2E_NGC_ORG": "example-org\nBASH_ENV=/tmp/x"}, nil, "has a line break in its value"},
+		{"a feature branch", "forge-l40s-amd64", workflowRef("refs/heads/feature"), nil, joinTokenRefs},
+		{"an rc tag outside the version scheme", "forge-l40s-amd64", workflowRef("refs/tags/x-rc.1"), nil, joinTokenRefs},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, sh := range shells(t) {
@@ -438,6 +448,26 @@ func TestResolveRefuses(t *testing.T) {
 				if out := l.step(false, "resolve"); !strings.Contains(out, tc.want) {
 					t.Errorf("output = %q, want %q in it", out, tc.want)
 				}
+			}
+		})
+	}
+}
+
+// TestResolveAdmitsTheJoinTokensRefs checks that each ref the join token allows passes the guard.
+func TestResolveAdmitsTheJoinTokensRefs(t *testing.T) {
+	p := plan(t)
+	for _, ref := range []string{
+		"refs/heads/main",
+		"refs/pull/2167/merge",
+		"refs/tags/v0.24.0-beta.6",
+		"refs/tags/v0.24.0-rc.5",
+		"refs/tags/v0.24.0",
+	} {
+		t.Run(ref, func(t *testing.T) {
+			for _, sh := range shells(t) {
+				l := newSteps(t, sh, workflowRef(ref))
+				l.step(true, "stream-env", p, "", "forge-l40s-amd64")
+				l.step(true, "resolve")
 			}
 		})
 	}
