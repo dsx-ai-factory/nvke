@@ -45,6 +45,8 @@ func TestLoadAcceptsTheGeneratedSiteConfig(t *testing.T) {
 		"SITE_INPUTS=/w/.site-inputs",
 		"KEEP_SITE=true",
 		"KEEP_TENANT=false",
+		"NODE_KEY_DIR=/w/node-keys",
+		"DRY_RUN=false",
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("writing the config: %v\n%s", err, out)
@@ -55,6 +57,9 @@ func TestLoadAcceptsTheGeneratedSiteConfig(t *testing.T) {
 	}
 	if got := cfg.Site.Images.CAPIProvisioned.Repository; got != "nvcr.io/example-org/cluster-api-provider-provisioned" {
 		t.Errorf("capi-provisioned repository = %q, want the one written", got)
+	}
+	if got := cfg.Lifecycle.NodeKeyDir; got != "/w/node-keys" {
+		t.Errorf("lifecycle.nodeKeyDir = %q, want the one written", got)
 	}
 }
 

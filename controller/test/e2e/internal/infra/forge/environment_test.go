@@ -71,6 +71,10 @@ func TestCheckedInEnvironmentsParse(t *testing.T) {
 	}
 }
 
+// TestCheckedInEnvironmentsParseForgePerf checks that environments/forge-perf.yaml
+// loads and decodes as Forge's dialect: it declares the high memory CPU type,
+// names its own API key variable, and an unset instance type id fails the load
+// by name.
 func TestCheckedInEnvironmentsParseForgePerf(t *testing.T) {
 	const idVariable = "FORGE_PERF_INSTANCE_TYPE_CPU_ID"
 	path := filepath.Join(checkedInDir, "forge-perf.yaml")
@@ -102,6 +106,20 @@ func TestCheckedInEnvironmentsParseForgePerf(t *testing.T) {
 		}
 	})
 
+	t.Run("the org's API key has its own variable", func(t *testing.T) {
+		env, err := environment.LoadPath("forge-perf", path)
+		if err != nil {
+			t.Fatalf("loading %s: %v", path, err)
+		}
+		forge, err := Decode(env.Infrastructure)
+		if err != nil {
+			t.Fatalf("decoding %s as forge: %v", path, err)
+		}
+		if got := forge.APIKeyVariable(); got != "FORGE_PERF_API_KEY" {
+			t.Errorf("API key variable = %q, want FORGE_PERF_API_KEY", got)
+		}
+	})
+
 	t.Run("an unset instance type id fails at load naming the variable", func(t *testing.T) {
 		t.Setenv(idVariable, "")
 		_, err := environment.LoadPath("forge-perf", path)
@@ -129,6 +147,36 @@ func setSynthetic(t *testing.T, path string) {
 	for _, match := range envReference.FindAllSubmatch(data, -1) {
 		name := string(match[1])
 		t.Setenv(name, "synthetic-"+strings.ToLower(name))
+	}
+}
+
+// TestAPIKeyVariable checks that an environment reads FORGE_API_KEY unless it
+// names another variable, and that a name that is not a variable is refused
+// when the environment is decoded.
+func TestAPIKeyVariable(t *testing.T) {
+	const site = `"sites": {"site-1": {"id": "s"}}`
+	for _, tc := range []struct {
+		name, raw, want, wantErr string
+	}{
+		{"none named reads the default", `{"org": {"id": "o"}, ` + site + `}`, DefaultAPIKeyEnv, ""},
+		{"a named variable", `{"org": {"id": "o"}, "apiKeyEnv": "FORGE_PERF_API_KEY", ` + site + `}`, "FORGE_PERF_API_KEY", ""},
+		{"a name that is not a variable", `{"org": {"id": "o"}, "apiKeyEnv": "forge key", ` + site + `}`, "", "not the name of an environment variable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, err := Decode(json.RawMessage(tc.raw))
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("err = %v, want one containing %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := env.APIKeyVariable(); got != tc.want {
+				t.Errorf("API key variable = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

@@ -93,6 +93,11 @@ type ResultStream struct {
 
 	Capabilities map[string]string `json:"capabilities,omitempty"`
 
+	// Parameters are the run settings the stream ran with, copied from its
+	// plan.json Stream.Parameters, so a result says how many workers and how
+	// long a timeout it was produced under.
+	Parameters Parameters `json:"parameters,omitzero"`
+
 	// Dependencies are this stream's resolved per-stream dependency
 	// versions, copied from its plan.json Stream.Dependencies -- the exact
 	// kube patch, OS image build, and similar that ConstraintFrom resolves
