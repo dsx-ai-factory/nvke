@@ -110,6 +110,10 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	controlPlane.failureDomains = failureDomains
 	failureDomains.eligible = placeableDomains(failureDomains.eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
 	allocator := newControlPlaneDomainAllocator(controlPlane.nodes, failureDomains)
+	if unplaced := nodesWithoutKnownDomain(controlPlane.nodes, failureDomains); len(unplaced) > 0 {
+		r.logger.Warn("Control-plane nodes have no known failure domain and are not counted toward the spread",
+			"clusterID", cluster.ID, "clusterName", cluster.Name, "nodes", unplaced)
+	}
 
 	// Host creation only. A pending or in-flight delete must not stall it: the
 	// replacement host is exactly what lets the control plane shrink safely.

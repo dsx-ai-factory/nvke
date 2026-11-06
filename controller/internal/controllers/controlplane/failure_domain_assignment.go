@@ -96,3 +96,19 @@ func newControlPlaneDomainAllocator(cpNodes []db.Node, failureDomains *failureDo
 	}
 	return allocator
 }
+
+// nodesWithoutKnownDomain returns the names of active nodes whose placement is
+// unknown while the cluster has eligible domains. The allocator leaves them
+// uncounted, so new nodes may land in the domain they occupy.
+func nodesWithoutKnownDomain(cpNodes []db.Node, failureDomains *failureDomains) []string {
+	if len(failureDomains.eligible) == 0 {
+		return nil
+	}
+	var names []string
+	for _, node := range cpNodes {
+		if !nodes.IsDeleteInFlight(node) && failureDomains.domainOf(node) == "" {
+			names = append(names, node.Name)
+		}
+	}
+	return names
+}
