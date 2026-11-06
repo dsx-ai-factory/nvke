@@ -1,0 +1,63 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The LaunchLayer variant of nvke-deploy.yaml: the same items in the same
+# order, with capll in capnico's slot. Everything else on this path -- SPIRE,
+# nktp, Postgres, Temporal, the controller -- is unchanged, because nothing
+# below the infrastructure provider knows which one is installed.
+#
+# Read nvke-deploy.yaml first. Its header explains the order, what happens
+# before this path (untaint, clusterctl init, image staging, a default
+# StorageClass) and what happens after (apply-capi-spiffe-exec-auth.sh). All of
+# it applies here unchanged.
+#
+# THE TWO PROVIDERS ARE MUTUALLY EXCLUSIVE, which is why this is a second item
+# list and not a flag on the first one. supportedInfraProviders is a
+# controller-wide accept-list, and adding launchLayer to it while spiffe is on
+# forces nodeAgent.spireAttestationMethod to dsxImds, which applies to EVERY
+# new node the controller creates, NICo-backed ones included. There is no
+# deployment that serves both.
+#
+# HOW TO INSTALL IT. The executor and `nvkectl render deploy-path` both open
+# "nvke-deploy.yaml" by that exact name (deploy/nvke-deploy.sh's install(), and
+# cli/internal/deploypath/deploypath.go:48), so this file is not selected by
+# pointing --deploy-path at this directory. Until they learn a
+# --deploy-file/--items flag, copy this list over the default one in a scratch
+# copy of the path:
+#
+#   cp -R deploy/nico /tmp/nico-ll
+#   cp /tmp/nico-ll/nvke-deploy-ll.yaml /tmp/nico-ll/nvke-deploy.yaml
+#   deploy/nvke-deploy.sh install --deploy-path /tmp/nico-ll \
+#     --values-for controller=deploy/nico/controller/launchlayer.yaml ...
+#
+# --values-for controller IS NOT OPTIONAL. Without it the controller installs
+# with supportedInfraProviders "nico" and NICo's controllers running, against a
+# cluster that has no NICo CRDs: every cluster create is rejected for an
+# unsupported provider block. See controller/launchlayer.yaml.
+#
+# WHY capll STAYS IN capnico's SLOT, before nktp rather than after it. The
+# controller decides at STARTUP whether to run the LaunchLayer SPIFFE
+# controller, by looking up the LaunchLayerMachine CRD
+# (controller/cmd/worker/main.go). If the CRD is not established by then it
+# logs "LaunchLayerMachine CRD not installed; skipping the LaunchLayer SPIFFE
+# controller" and does not run it again until the pod restarts -- a warning,
+# not a failure, so the install stays green and nodes never get their SPIRE
+# agent path. Any slot before the controller item satisfies that; this one also
+# keeps the diff against nvke-deploy.yaml to a single line.
+#
+# NOT CARRIED OVER FROM THE NICO PATH, deliberately: nothing. spire-tpm-pubhashes
+# is still listed even though LaunchLayer nodes do not attest by TPM -- the
+# spire item mounts that ConfigMap with optional: true, and removing the item
+# would be a second change to prove in the same run.
+items:
+  - {name: nvke-base-config, type: template}
+  - {name: spire-tpm-pubhashes, type: manifest}
+  - {name: spire-server-nodeport, type: manifest}
+  - {name: spire-oidc-provider-nodeport, type: manifest}
+  - {name: capll, type: helm}
+  - {name: nktp, type: helm}
+  - {name: postgresql, type: helm}
+  - {name: spire-crds, type: helm}
+  - {name: temporal, type: helm}
+  - {name: spire, type: helm}
+  - {name: controller, type: helm}

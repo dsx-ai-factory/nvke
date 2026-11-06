@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What the controller item changes when the path installs CAPLL instead of
+# CAPNICo. Applied over values.yaml and overlay.yaml:
+#
+#   --values-for controller=deploy/nico/controller/launchlayer.yaml
+#
+# NOT a fourth entry in release.yaml's values list. That list is read by both
+# deploy manifests, so anything added there would reach the NICo path too.
+# --values-for is the mechanism nvke-deploy.sh documents for exactly this, and
+# helm merges it last, so every key below wins over the two files under it.
+
+# launchLayer, not nico. supportedInfraProviders is an accept-list the
+# controller validates at startup against controller/internal/config's names --
+# "launchLayer", camel-cased, is the token; "launchlayer" is not accepted.
+#
+# `infra` is kept for the same reason nvke-deploy.yaml's path keeps it: it is
+# the provider-agnostic escape-hatch input the e2e clients submit, and it is
+# not a NICo thing. `nico` is dropped because this deployment has no NICo CRDs
+# to back it -- leaving it in advertises a provider block whose every create
+# would fail at the CAPI layer instead of being rejected at the API.
+supportedInfraProviders: launchLayer,infra
+
+# Off, with the provider's CRDs absent. These watch NicoMachine; with the CRD
+# gone the manager would log a missing-kind error on every reconcile.
+controllers:
+  nico:
+    enabled: false
+
+# Same two switches the NICo path sets, pointed at the other provider. nico
+# false requires controllers.nico.enabled false, which is set above.
+capi:
+  rbac:
+    create: true
+    nico: false
+    launchLayer: true
+
+# OFF, and this is the item to revisit first.
+#
+# Turning supportedInfraProviders to launchLayer with spiffe.enabled: true
+# forces nodeAgent.spireAttestationMethod: dsxImds -- LaunchLayer nodes attest
+# to SPIRE through the DSX instance metadata service, not a TPM. This path's
+# SPIRE server is not configured for that: deploy/nico/spire/values.yaml
+# enables the tpmDirect node attestor and nothing else, and the only dsx_imds
+# server configuration anywhere in this repository is the Tilt mock under
+# controller/hack/dsx-imds-attestation. A dsxImds node would attest against a
+# server with no such plugin and never join.
+#
+# So the first LaunchLayer run on this path goes out with SPIFFE off, the way
+# the first NICo run went out with apiAuth and nvkeOIDCAuth off: one unproven
+# thing at a time. The spire items still install -- they are what
+# apply-capi-spiffe-exec-auth.sh needs afterwards, and that is a separate axis.
+#
+# To turn it on: add the dsx_imds node attestor to the spire item's server
+# configuration, set nodeAgent.spireAttestationMethod: dsxImds and
+# nodeAgent.dsxImds.operatorTenant to the DSX Identity global.operatorTenant
+# value, then set this true. All four, or nodes do not join.
+spiffe:
+  enabled: false

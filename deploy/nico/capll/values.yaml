@@ -1,0 +1,95 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# capi-provider-launchlayer values for this deploy path.
+
+# NAMED FOR THE PROVIDER, NOT FOR THE CHART, and both keys are needed.
+#
+# nvkectl finds a provider's manager by its app.kubernetes.io/name, falling back
+# to a known namespace and Deployment name (cli/internal/providers/providers.go).
+# For CAPLL it looks for "cluster-api-provider-launchlayer" and
+# "cluster-api-provider-launchlayer-controller-manager" in capll-system -- the
+# names the kustomize route produces, which is what that file was written
+# against. The chart is named capi-provider-launchlayer, so with the chart's own
+# defaults it installs a manager neither lookup matches: `nvkectl get providers`
+# reports CAPLL missing while it is running and healthy.
+#
+# nameOverride fixes the label, fullnameOverride fixes the Deployment name.
+# fullnameOverride also lifts the chart's requirement that the release name
+# equal the chart name -- without it the chart fails to render for any other
+# release name.
+nameOverride: cluster-api-provider-launchlayer
+fullnameOverride: cluster-api-provider-launchlayer
+
+manager:
+  # PINNED, for the reason the controller item pins its own image: a site is not
+  # building CAPLL from source, and the chart's default tag is its appVersion,
+  # which resolves only if that exact image was staged. Must equal the image tag
+  # matching release.yaml's chart.version (that is 0.1.0-rc.16 -> v0.1.0-rc.16).
+  image:
+    repository: ghcr.io/dsx-ai-factory/cluster-api-provider-launchlayer/controller
+    tag: v0.1.0-rc.16
+    # IfNotPresent, so a staged image resolves with no pull secret. The chart
+    # default, restated because this path depends on it.
+    pullPolicy: IfNotPresent
+
+  # THE ONE PER-SITE VALUE. CAPLL reads the LaunchLayer address from a flag, not
+  # from its credentials Secret, so there is no site-independent form of this
+  # file. Override it per site rather than editing here:
+  #
+  #   nvke-deploy.sh install ... --values-for capll=<file setting manager.args>
+  #
+  # An absent --base-url is NOT a startup failure: the manager runs and reports
+  # it once per reconcile, so a wrong or missing value looks like a healthy
+  # provider that never places an instance. `nvkectl get providers` reads this
+  # flag off the running manager, which is the quickest way to see what it got.
+  #
+  # --identity-secret names a Secret in this release's namespace that the chart
+  # DOES NOT CREATE. It must exist before this item installs: the manager does
+  # not reach ready without it, and the executor's `helm upgrade --install
+  # --wait` blocks on exactly that readiness, so a missing Secret fails the
+  # install here rather than at first use. Four keys -- clientID, clientSecret,
+  # scopes, issuerURL (CAPLL docs/authentication.md).
+  #
+  # Omitting the flag entirely is a supported configuration, not a degraded one:
+  # the client is then unauthenticated, which is how CAPLL addresses a fake LL
+  # API. Do that only against a fake.
+  args:
+    - --leader-elect
+    - --base-url=REPLACE_LAUNCHLAYER_BASE_URL
+    - --identity-secret=launchlayer-credentials
+
+# Cluster-scoped, not namespaced: the provider reconciles LaunchLayerClusters
+# and LaunchLayerMachines wherever the controller creates them, which is one
+# namespace per tenant cluster.
+rbac:
+  namespaced: false
+  helpers:
+    enabled: false
+
+# The CRDs come with the chart, and the controller's own startup depends on
+# them being here first -- see the ordering note in nvke-deploy-ll.yaml.
+# keep: a helm uninstall must not take the tenant clusters' infrastructure
+# records with it.
+crd:
+  enabled: true
+  keep: true
+
+metrics:
+  enabled: true
+  # The manager serves plain HTTP and has no --metrics-secure flag; the chart's
+  # values.schema.json pins this false.
+  secure: false
+
+# OFF, matching capnico: this item installs before nktp, so the monitoring CRDs
+# do not exist yet, and a ServiceMonitor here would fail to apply. A provider's
+# monitor belongs with the provider, not with this path -- see README.md.
+prometheus:
+  enabled: false
+
+# Neither is used on this path. certManager is for webhook and metrics
+# certificates, and CAPLL serves no webhook here.
+certManager:
+  enabled: false
+networkPolicy:
+  enabled: false

@@ -67,3 +67,17 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: capnico-system
+---
+# CAPLL's controller, for the nvke-deploy-ll.yaml item list. Created here and
+# not by the chart: capi-provider-launchlayer templates no Namespace, and
+# nvke-deploy.sh installs without --create-namespace, so the capll item has
+# nowhere to land unless this exists first.
+#
+# Created on the NICo path too, where it stays empty. Keeping one namespace
+# list for both item lists is cheaper than a second nvke-base-config, and an
+# unused namespace costs nothing; the reverse is already true of
+# capnico-system above on the LaunchLayer path.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: capll-system

@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# CAPLL, cluster-api-provider-launchlayer, in the slot capnico holds on the
+# NICo path. Installed from the chart the provider publishes, NOT from its
+# infrastructure-components.yaml release asset -- the one structural difference
+# from the capnico item, and the reason this is a helm item where that one is a
+# manifest.
+#
+# WHY A CHART AND NOT THE RELEASE ASSET. CAPNICo takes its endpoint as a key in
+# the credentials Secret, so its components manifest is the same bytes on every
+# site and can be committed. CAPLL takes the LaunchLayer address as a MANAGER
+# FLAG (--base-url), so a committed components manifest would carry one site's
+# URL. The chart exposes manager.args as a value, which is the supported way to
+# set it per site; values.yaml here is the only place it appears.
+#
+# A CREDENTIAL IS REQUIRED EITHER WAY, unlike the NICo path. capnico/release.yaml
+# can say its image is public on GHCR; this one cannot. Measured 2026-11-05:
+#
+#   cluster-api-provider-nico/controller          anonymous token, tags 200
+#   cluster-api-provider-launchlayer/controller   403
+#   .../cluster-api-provider-launchlayer/charts   403
+#
+# The repository is INTERNAL, so the release assets are not anonymously
+# readable either -- the manifest route would need a credential at `gh release
+# download` instead of at `helm pull`, not fewer of them. Two ways out, both
+# already used on this path:
+#   stage it   import the image into the node's containerd and leave
+#              pullPolicy IfNotPresent, exactly as the controller item does.
+#              The chart still has to be pulled once, by the operator running
+#              the install, not by the cluster.
+#   render it  `nvkectl render deploy-path --release` carries the chart as an
+#              archive and the image by digest, and no registry is reached at
+#              install time. artifact/imageArtifact below are what it keys on.
+#
+# Version note: the chart version is the tag with the leading "v" stripped and
+# the image tag is the tag itself -- release.yml packages with
+# `--version ${TAG#v} --app-version ${TAG}`. Keep both in step with
+# values.yaml's manager.image.tag.
+chart:
+  name: capi-provider-launchlayer
+  version: 0.1.0-rc.16
+  repository: oci://ghcr.io/dsx-ai-factory/cluster-api-provider-launchlayer/charts
+  # NVKR artifact names, for a rendered deploy path. The chart artifact
+  # defaults to the item name, which is not the chart name here.
+  artifact: capll-chart
+  imageArtifact: capll-controller
+release:
+  name: capi-provider-launchlayer
+  namespace: capll-system
+values:
+  - values.yaml
