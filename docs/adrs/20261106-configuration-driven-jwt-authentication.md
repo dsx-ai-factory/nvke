@@ -13,7 +13,7 @@ NVKE APIs serve people, automation and other services. Each kind of caller gets 
 
 Which issuers to trust differs per deployment. A standalone deployment may trust one test issuer. A deployment under a central identity system trusts whatever that system manages.
 
-[`auth/authn`](../../auth/authn/config.go) reads its trust settings from a typed document, `AuthenticationConfiguration` in `auth.nvke.nvidia.com/v1alpha1`. It refuses unknown fields. Each issuer entry names a key-set URL (JWKS), signing algorithms and admit rules: the claims a token must carry. A verified token becomes a [`Principal`](../../auth/authn/principal.go) with the issuer name, subject and claims.
+[`auth/authn`](../../auth/authn/config.go) reads its trust settings from a typed document, `AuthenticationConfiguration` in `auth.nvke.nvidia.com/v1alpha1`. It refuses unknown fields. Each issuer entry names a key-set URL (JWKS), signing algorithms and admit rules: the claims a token must carry. A verified token becomes a [`Principal`](../../auth/authn/principal.go) with the issuer name, subject and claims. The library ships [HTTP middleware](../../auth/authn/middleware.go), and no gRPC interceptor.
 
 The controller's HTTP API is the first to use `auth/authn`. Its chart ships with `apiAuth.enabled: false`, and this record keeps that default.
 
@@ -21,7 +21,7 @@ The controller's HTTP API is the first to use `auth/authn`. Its chart ships with
 
 We will authenticate every caller of an NVKE API with a bearer JWT, and set which issuers it trusts through a versioned configuration document, not code. A deployer can write that document by hand, or a central identity system can write it for them.
 
-An NVKE API is one that NVKE serves over the network to people, automation or other services, other than through the Kubernetes API server. The node agent's gRPC API is out of scope: only the controller calls it, over mutual TLS. The metrics listener is out of scope too.
+An NVKE API is one that NVKE serves over the network to people, automation or other services, other than through the Kubernetes API server, over HTTP or gRPC. A gRPC caller sends the bearer JWT in the `authorization` metadata. The node agent's gRPC API is out of scope: only the controller calls it, over mutual TLS. The metrics listener is out of scope too.
 
 - The `AuthenticationConfiguration` schema is the public contract for authentication. A new field is optional. Removing or renaming a field needs a new `apiVersion`. A ConfigMap carries the document today, but the schema is the contract, so a custom resource could carry it later.
 - NVKE issues no tokens and runs no login. A caller gets its token from a configured issuer, as `nvkectl` does today through the kubeconfig's `oidc-login` plugin or a service account token request.
@@ -29,7 +29,7 @@ An NVKE API is one that NVKE serves over the network to people, automation or ot
 - An API accepts no other credential: no API keys, basic auth, session cookies or token format of its own.
 - An API reads the caller only from the `Principal`, and passes it to authorization.
 - Only probes, version and API documentation skip the token. [`routes.go`](../../auth/authn/routes.go) lists them.
-- Permissive mode is a rollout step. It applies to the whole deployment: each failed check is logged and counted, and the request is served.
+- Permissive mode, which logs and counts each failed check and serves the request, applies to the whole deployment.
 
 ```mermaid
 flowchart LR
