@@ -12,6 +12,9 @@
 # Both components share one chart. Disable state for an existing datastore.
 state:
   enabled: true
+  # Management Engine-specific schemas; catalog ownership is configured separately.
+  crds:
+    install: true
   namespace: ""
   # Empty uses the local manager ServiceAccount in a combined installation.
   # State-only installations can bind existing ServiceAccounts or Kubernetes Users.
@@ -23,9 +26,10 @@ state:
   # Bootstrap ConfigMaps: name, tenant namespace, and literal data (not Helm expressions).
   configMaps: []
 
-# Set false when another release owns the full NVKE schema set.
+# Catalog APIs normally come from the NVKE controller or a dedicated catalog release.
+# Enable only when this release will be their sole owner.
 nvke-crds:
-  enabled: true
+  enabled: false
 
 controller:
   enabled: true

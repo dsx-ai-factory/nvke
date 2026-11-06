@@ -99,11 +99,11 @@ chart-deps: ## Build the controller chart's pinned local dependency.
 chart-crds: ## Render the controller's three release schemas into ignored build output.
 	@$(call require_tool,helm,$(HELM_VERSION))
 	@mkdir -p $(dir $(CHART_CRDS_FILE))
-	helm template nvke-crds $(SHARED_CRD_CHART) --set clusterServiceCRDs.enabled=false > $(CHART_CRDS_FILE)
+	helm template nvke-crds $(SHARED_CRD_CHART) > $(CHART_CRDS_FILE)
 
 chart-crds-check: ## Verify canonical generated schemas and shared chart rendering.
 	@$(MAKE) --no-print-directory -C management-engine manifests-state
-	git diff --exit-code -- $(SHARED_CRD_CHART)/bases
+	git diff --exit-code -- $(SHARED_CRD_CHART)/bases management-engine/chart/files/crds
 	@test -z "$$(git ls-files --others --exclude-standard -- $(SHARED_CRD_CHART)/bases)" || { echo "Commit canonical schemas"; exit 1; }
 	@$(call require_tool,kubectl,$(KUBECTL_VERSION))
 	kubectl kustomize management-engine/config/crd > /dev/null

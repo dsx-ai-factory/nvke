@@ -1,38 +1,34 @@
-# Shared NVKE CRDs
+# Shared NVKE catalog CRDs
 
-This chart installs NVKE's Kubernetes API definitions. It runs no controllers.
-The generated YAML under `bases/` is the canonical schema copy: Helm renders
-those files and Management Engine's Kustomize base references the same directory.
+This chart installs MachineImage, ClusterRelease and NodePoolRelease. These are
+catalog APIs used by both NVKE controller and Cluster Service. It runs no workloads.
+Cluster Service's NVKECluster, ControlPlaneClass and ClusterReleaseChannel APIs
+remain with Management Engine.
 
-| Schema set | Types |
-| --- | --- |
-| Always installed | MachineImage, ClusterRelease, NodePoolRelease |
-| `clusterServiceCRDs.enabled=true` (default) | NVKECluster, ControlPlaneClass, ClusterReleaseChannel |
+## Dependencies and ownership
 
-## Installers and ownership
+Choose one Helm release to own the catalog definitions in each cluster. A chart
+dependency packages resources into its parent's release; Helm does not deduplicate
+that dependency across independently installed releases.
 
-Choose one installer for each CRD in a cluster. `enabled=false` suppresses all
-definitions when another installer owns them. Existing controller installations
-keep their release as the owner: the controller chart includes this chart as a
-dependency with `clusterServiceCRDs.enabled=false`, preserving its three-schema
-default. Existing release names and schema specifications are unchanged.
-
-Before adding Cluster Service on that cluster, enable
-`nvke-crds.clusterServiceCRDs.enabled=true` in the controller's values, after
-checking ownership of the additional definitions. The Management Engine chart
-then consumes the installed APIs. For a separate state cluster, install this
-chart independently there.
-
-A new installation can instead give schema ownership to a dedicated release:
+For a new deployment, install one dedicated catalog release before either consumer:
 
 ```sh
-helm upgrade --install nvke-crds controller/deploy/charts/nvke-crds \
+helm upgrade --install nvke-catalog controller/deploy/charts/nvke-crds \
   --namespace nvke-system --create-namespace
 ```
 
-Configure `releaseCRDs.install=false` on the controller when using this model.
-Both applications then reuse the schema release; installing an enabled copy as
-a dependency of each independent application release would create competing owners.
+Disable catalog installation in each consumer: `releaseCRDs.install=false` on the
+NVKE controller and `nvke-crds.enabled=false` on Management Engine. The latter is
+Management Engine's co-install default. Both still require the compatible catalog
+APIs on their datastore cluster. Deployment tooling must order the catalog release
+before consumers and catalog records, and wait for CRD establishment.
+
+Existing controller installations keep their release as the owner through the
+conditional dependency, preserving the original three-schema default. Management
+Engine can reuse those installed APIs without an ownership transfer. Alternatively,
+exactly one consumer can explicitly enable the dependency on a fresh installation.
+`enabled=false` suppresses all definitions in the shared chart.
 
 ## Move an existing owner
 

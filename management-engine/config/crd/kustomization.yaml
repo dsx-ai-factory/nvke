@@ -4,3 +4,4 @@
 # Kustomize and Helm consume the same generated schemas.
 resources:
 - ../../../controller/deploy/charts/nvke-crds
+- ../../chart/files/crds

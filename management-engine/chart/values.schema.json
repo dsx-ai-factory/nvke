@@ -80,6 +80,14 @@
               }
             }
           }
+        },
+        "crds": {
+          "type": "object",
+          "properties": {
+            "install": {
+              "type": "boolean"
+            }
+          }
         }
       }
     },

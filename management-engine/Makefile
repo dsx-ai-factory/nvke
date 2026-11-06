@@ -48,7 +48,10 @@ license: ## Add the repository's license header to source files.
 .PHONY: manifests-state manifests
 manifests-state: controller-gen ## Generate internal deepcopy methods, datastore CRDs, and RBAC.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
-	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=hack/boilerplate.yaml.txt paths=./apis/... output:crd:artifacts:config=../controller/deploy/charts/nvke-crds/bases
+	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=hack/boilerplate.yaml.txt paths=./apis/... output:crd:artifacts:config=chart/files/crds
+	@for kind in machineimages clusterreleases nodepoolreleases; do \
+		mv "chart/files/crds/internal.nvke.nvidia.com_$$kind.yaml" ../controller/deploy/charts/nvke-crds/bases/; \
+	done
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role,headerFile=hack/boilerplate.yaml.txt paths=./controllers/... output:rbac:artifacts:config=chart/files/roles
 
 manifests: manifests-state kustomize ## Generate canonical schemas, RBAC and runtime manifests.

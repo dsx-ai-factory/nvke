@@ -152,7 +152,7 @@ func TestChartModes(t *testing.T) {
 			crds := objectsOfKind(objects, "CustomResourceDefinition")
 			wantCRDs := 0
 			if tc.state {
-				wantCRDs = 6
+				wantCRDs = 3
 			}
 			if len(crds) != wantCRDs {
 				t.Fatalf("unexpected CRDs: %d", len(crds))
@@ -281,7 +281,8 @@ func TestChartStateConfiguration(t *testing.T) {
   },
   "nvke-crds": {
     "enabled": false
-  }
+  },
+  "state": {"crds":{"install":false}}
 }`)
 	if err != nil || len(objectsOfKind(objects, "CustomResourceDefinition")) != 0 {
 		t.Fatalf("external CRD owner ignored: %v %s", err, output)
@@ -823,5 +824,41 @@ func TestChartEndpointValidation(t *testing.T) {
 				t.Fatalf("invalid backend endpoint accepted: %v\n%s", err, output)
 			}
 		})
+	}
+}
+
+func TestChartCatalogOwnership(t *testing.T) {
+	catalog := map[string]bool{
+		"machineimages.internal.nvke.nvidia.com":    true,
+		"clusterreleases.internal.nvke.nvidia.com":  true,
+		"nodepoolreleases.internal.nvke.nvidia.com": true,
+	}
+	for _, includeCatalog := range []bool{false, true} {
+		values := fmt.Sprintf(`{"controller":{"enabled":false},"nvke-crds":{"enabled":%t}}`, includeCatalog)
+		objects, output, err := renderChart(t, values)
+		if err != nil {
+			t.Fatalf("%v\n%s", err, output)
+		}
+		seen := map[string]bool{}
+		catalogCount, localCount := 0, 0
+		for _, crd := range objectsOfKind(objects, "CustomResourceDefinition") {
+			name := crd.GetName()
+			if seen[name] {
+				t.Fatalf("duplicate CRD %s", name)
+			}
+			seen[name] = true
+			if catalog[name] {
+				catalogCount++
+			} else {
+				localCount++
+			}
+		}
+		wantCatalog := 0
+		if includeCatalog {
+			wantCatalog = 3
+		}
+		if catalogCount != wantCatalog || localCount != 3 {
+			t.Fatalf("catalog enabled=%t: got %d catalog and %d local CRDs", includeCatalog, catalogCount, localCount)
+		}
 	}
 }

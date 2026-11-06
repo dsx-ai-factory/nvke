@@ -3,7 +3,3 @@
 
 # Disable when schemas are managed by another installer.
 enabled: true
-
-# Release APIs are installed whenever the chart is enabled. Enable these additional schemas for Cluster Service.
-clusterServiceCRDs:
-  enabled: true
