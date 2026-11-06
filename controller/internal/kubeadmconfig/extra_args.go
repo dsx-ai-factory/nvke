@@ -63,7 +63,7 @@ func nvkeSetFlags(c component) []string {
 			AuthConfigFlagName,
 		}
 	case componentControllerManager:
-		return []string{profilingFlag, bindAddressFlag, "secondary-node-eviction-rate", "large-cluster-size-threshold"}
+		return []string{profilingFlag, bindAddressFlag, "secondary-node-eviction-rate", "large-cluster-size-threshold", "terminated-pod-gc-threshold"}
 	case componentScheduler:
 		return []string{profilingFlag, bindAddressFlag}
 	default:

@@ -1,0 +1,177 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# The kube-bench findings the CI scan accepts, each with its reason. README.md
+# says how to add and retire an entry. Reasons are in our own words; where NVKE
+# meets a check by means kube-bench does not inspect, the reason points at the
+# evidence. An entry applies on every node of every cluster the scan judges, so
+# a reason that differs between the site and tenant clusters says so.
+exceptions:
+  - id: "1.1.9"
+    title: CNI configuration file permissions
+    reason: &cni-files >-
+      kube-bench finds the CNI configuration through the kubelet's --cni-conf-dir
+      flag, which current kubelets no longer have, so its audit finds no files to
+      check.
+  - id: "1.1.10"
+    title: CNI configuration file ownership
+    reason: *cni-files
+  - id: "1.2.1"
+    title: Anonymous requests to the API server
+    reason: >-
+      The API server's authentication configuration admits anonymous requests
+      only to the health and version endpoints and to the public cluster-info
+      ConfigMap kubeadm joins read (anonymousProbeAuthConfig in
+      controller/internal/kubeadmconfig/oidc.go, #975). kube-bench reads only the
+      --anonymous-auth flag, so it cannot see that configuration.
+  - id: "1.2.9"
+    title: Event rate limiting admission
+    reason: >-
+      EventRateLimit is not enabled. Client libraries already filter and
+      aggregate repeated events, API Priority and Fairness bounds any one
+      client's share of the API server, and events expire after an hour. The
+      plugin's configuration API is still v1alpha1, and limits loose enough not
+      to throttle customer workloads would rarely act.
+  - id: "1.2.20"
+    title: API server request timeout
+    reason: >-
+      NVKE keeps the API server's default request timeout of 60 seconds
+      (controller/internal/kubeadmconfig renders no --request-timeout). Whether a
+      timeout suits a cluster is a judgement kube-bench leaves to a person.
+  - id: "1.2.11"
+    title: Pulling every image on every start
+    reason: >-
+      Pulling every image on every container start defeats the images
+      pre-loaded on nodes and air-gapped installs, and multiplies registry load
+      for large GPU images.
+  - id: "3.1.1"
+    title: Client certificates for people
+    reason: &user-auth >-
+      Every cluster keeps a client-certificate administrator kubeconfig, which
+      NVKE issues to the customer; people can also sign in through OIDC
+      (docs/workload-clusters/oidc.md). Service account and bootstrap tokens
+      authenticate components and kubeadm joins, not people.
+  - id: "3.1.2"
+    title: Service account tokens for people
+    reason: *user-auth
+  - id: "3.1.3"
+    title: Bootstrap tokens for people
+    reason: *user-auth
+  - id: "3.2.2"
+    title: Audit policy coverage
+    reason: >-
+      NVKE's audit policy is controller/internal/kubeadmconfig/audit_policy.yaml.
+      kube-bench cannot judge what a policy covers, so it reports the check for a
+      person to review.
+  - id: "4.1.3"
+    title: kube-proxy kubeconfig file permissions
+    reason: &no-kube-proxy >-
+      There is no kube-proxy to check. OVN-Kubernetes replaces it, and NVKE skips
+      kubeadm's kube-proxy addon on OVN-Kubernetes clusters (SkipKubeProxy in
+      controller/internal/temporal/activities/kubeadm_init.go). 4.3.1's audit
+      command fails when no kube-proxy process exists.
+  - id: "4.1.4"
+    title: kube-proxy kubeconfig file ownership
+    reason: *no-kube-proxy
+  - id: "4.3.1"
+    title: kube-proxy metrics address
+    reason: *no-kube-proxy
+  - id: "4.2.9"
+    title: Kubelet serving certificate
+    reason: >-
+      Kubelets get their serving certificates through serverTLSBootstrap and
+      approved certificate signing requests (controller/internal/kubeadmconfig/render.go),
+      not the certificate and key file flags the check reads.
+  - id: "4.2.7"
+    title: Kubelet hostname override
+    reason: >-
+      Only the site cluster reports this. NVKE registers each site node under
+      its own node name (node.Name in the kubeadm init and join configurations,
+      controller/internal/temporal/activities/kubeadm_init.go and
+      kubeadm_join.go), and kubeadm passes --hostname-override to the kubelet
+      when that name differs from the host's hostname. The kubelet's serving
+      certificate is issued for the registered name through serverTLSBootstrap
+      (controller/internal/kubeadmconfig/render.go).
+  - id: "4.2.12"
+    title: Kubelet TLS cipher suites
+    reason: >-
+      kubeletTLSCipherSuites in controller/internal/kubeadmconfig/render.go
+      restricts the kubelet's serving endpoint to AEAD cipher suites with forward
+      secrecy, and names the ChaCha20 suites by their IANA names, ending in
+      _SHA256. The cis-1.12 check's allowlist spells those two suites only
+      without the suffix, so it reports a warning for suites it means to allow.
+      kube-bench's own API server check (1.2.29) accepts both spellings, which is
+      why the API server's identical list passes.
+
+  # Section 5: policy for the workloads a cluster runs. A tenant cluster belongs
+  # to the customer, and what runs in it, under which policy, is theirs to
+  # decide. On the site cluster every workload is Kubernetes' own or NVKE's,
+  # and the automated checks' reasons name what the site's audits found.
+  # Hardening NVKE's own components against section 5 is a follow-up.
+  - id: "5.1.1"
+    title: cluster-admin bindings (5.1)
+    reason: >-
+      On a tenant cluster this is the customer's to decide. On the site cluster
+      the cluster-admin bindings are kubeadm's own kubeadm:cluster-admins, which
+      the admin kubeconfig kubeadm writes on each control-plane node uses, and
+      nvke:breakglass, the operator's break-glass kubeconfig
+      (cli/internal/bootstrap/sitecluster/kubeconfig.go).
+  - id: "5.1.3"
+    title: Wildcards in roles (5.1)
+    reason: >-
+      On a tenant cluster this is the customer's to decide. On the site cluster
+      only roles Kubernetes creates use wildcards: cluster-admin and the
+      built-in system:controller and system:kube-controller-manager roles. NVKE
+      adds none.
+  - id: "5.1.5"
+    title: Default service accounts (5.1)
+    reason: >-
+      On a tenant cluster this is the customer's to decide. On the site cluster
+      Kubernetes creates each namespace's default service account with token
+      mounting unset, and NVKE leaves them as created.
+  - id: "5.1.6"
+    title: Service account token mounts (5.1)
+    reason: &site-system-pods >-
+      On a tenant cluster this is the customer's to decide. On the site cluster
+      the pods flagged are the control-plane static pods (etcd, the API server,
+      the controller manager and the scheduler) and kube-vip, which kubeadm and
+      NVKE run on the host network with no service account, and CoreDNS and
+      OVN-Kubernetes, which read the API with their tokens and program the
+      node's network.
+  - id: "5.1.7"
+    title: RBAC and service accounts (5.1)
+    reason: &workload-policy >-
+      kube-bench leaves this check to a person. It is policy for the workloads a
+      cluster runs: on a tenant cluster the customer's to decide, and on the
+      site cluster every workload is Kubernetes' own or NVKE's.
+  - {id: "5.1.8", title: RBAC and service accounts (5.1), reason: *workload-policy}
+  - {id: "5.1.9", title: RBAC and service accounts (5.1), reason: *workload-policy}
+  - {id: "5.1.10", title: RBAC and service accounts (5.1), reason: *workload-policy}
+  - {id: "5.1.11", title: RBAC and service accounts (5.1), reason: *workload-policy}
+  - {id: "5.1.12", title: RBAC and service accounts (5.1), reason: *workload-policy}
+  - {id: "5.1.13", title: RBAC and service accounts (5.1), reason: *workload-policy}
+  - {id: "5.2.1", title: Pod security admission (5.2), reason: *workload-policy}
+  - id: "5.2.2"
+    title: Privileged containers (5.2)
+    reason: >-
+      On a tenant cluster this is the customer's to decide. On the site cluster
+      the only privileged container is OVN-Kubernetes' ovnkube-controller in
+      ovnkube-node, which programs the node's network.
+  - id: "5.2.5"
+    title: Host network pods (5.2)
+    reason: *site-system-pods
+  - {id: "5.2.7", title: Pod security admission (5.2), reason: *workload-policy}
+  - {id: "5.2.8", title: Pod security admission (5.2), reason: *workload-policy}
+  - {id: "5.2.9", title: Pod security admission (5.2), reason: *workload-policy}
+  - {id: "5.2.10", title: Pod security admission (5.2), reason: *workload-policy}
+  - {id: "5.2.11", title: Pod security admission (5.2), reason: *workload-policy}
+  - {id: "5.2.12", title: Pod security admission (5.2), reason: *workload-policy}
+  - {id: "5.3.1", title: Network policies (5.3), reason: *workload-policy}
+  - {id: "5.3.2", title: Network policies (5.3), reason: *workload-policy}
+  - {id: "5.4.1", title: Secrets (5.4), reason: *workload-policy}
+  - {id: "5.4.2", title: Secrets (5.4), reason: *workload-policy}
+  - {id: "5.5.1", title: Image admission (5.5), reason: *workload-policy}
+  - {id: "5.6.1", title: General workload policy (5.6), reason: *workload-policy}
+  - {id: "5.6.2", title: General workload policy (5.6), reason: *workload-policy}
+  - {id: "5.6.3", title: General workload policy (5.6), reason: *workload-policy}
+  - {id: "5.6.4", title: General workload policy (5.6), reason: *workload-policy}

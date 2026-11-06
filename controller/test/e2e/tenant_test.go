@@ -103,9 +103,12 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 				{Name: "mokka-gb300", NodeNamePrefix: "mg", DesiredNodeCount: 1, NodeLabels: map[string]string{mokkaLabelKey: "gb300"}},
 				{Name: "mokka-h100", NodeNamePrefix: "mh", DesiredNodeCount: 1, NodeLabels: map[string]string{mokkaLabelKey: "h100"}},
 			},
+			// Encrypted, as the create docs' example is, so the CIS scan
+			// checks the encryption configuration NVKE renders.
+			etcdEncrypted: true,
 		},
 		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
-		validate: validations{provisioningOnly: true, mokkaGPU: true},
+		validate: validations{provisioningOnly: true, mokkaGPU: true, cisBenchmark: true},
 	}),
 	Entry("CAPD", Ordered, ContinueOnFailure, Label("capd", "happy-path", "kube-vip-route-withdrawal", "cert-renewal"), testSpec{
 		buildSpec: capdSpec,
@@ -370,8 +373,9 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3},
 			etcdEncrypted:      true,
 		},
-		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
-		validate: validations{etcdEncryption: true},
+		options: nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		// The full runs' CIS scan: an encrypted cluster, like CAPD core's.
+		validate: validations{etcdEncryption: true, cisBenchmark: true},
 	}),
 	Entry("CAPD brownfield etcd encryption", Ordered, ContinueOnFailure, Label("capd", "extended", "encryption", "etcd-encryption-enable"), testSpec{
 		buildSpec: capdSpec,
@@ -584,6 +588,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				validateOIDCPostCreate(&test)
 			}
 			validateNodeReadinessPostCreate(&test)
+			if spec.validate.cisBenchmark {
+				validateCISBenchmarkPostCreate(&test)
+			}
 			if spec.validate.tpmAttestation {
 				validateTPMAttestationPostCreate(&test)
 			}
@@ -974,6 +981,10 @@ type validations struct {
 	// mokkaGPU runs GPU Operator on Mokka's simulated GPUs, on the worker pools
 	// labeled mokkaLabelKey with a profile in mokkaProfiles. The runner needs helm.
 	mokkaGPU bool
+	// cisBenchmark scans the cluster with kube-bench right after it is ready,
+	// before other specs scale, reboot or replace its nodes, and judges the
+	// result against the exception register (internal/kubebench).
+	cisBenchmark bool
 }
 
 // managementCluster is the cluster the controller runs on, which a tenant test reaches

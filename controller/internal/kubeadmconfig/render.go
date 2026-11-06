@@ -73,6 +73,11 @@ const (
 	defaultAPIServerShutdownRetry  = "true"
 	defaultAPIServerShutdownWatch  = "20s"
 	defaultAutoCompactionRetention = "1"
+	// defaultTerminatedPodGCThreshold is how many terminated pods the
+	// controller manager keeps before deleting the oldest. It is Kubernetes'
+	// own default, set explicitly so the threshold is visible and pinned (CIS
+	// 1.3.1) without changing how many finished pods a cluster keeps.
+	defaultTerminatedPodGCThreshold = "12500"
 	// defaultEtcdCompactionInterval pins kube-apiserver's compaction tick instead
 	// of inheriting the upstream default. kube-apiserver performs all effective
 	// MVCC compaction here -- etcd's own hourly auto-compaction trails it by 12x
