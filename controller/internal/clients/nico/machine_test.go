@@ -105,9 +105,18 @@ func TestResolveNodeConfig(t *testing.T) {
 		TeleportEnabled:   true,
 	}
 	workerNodeSet.SetNico(db.NicoNodePoolProvider{
-		Release:               "worker-os",
-		DiskSelectionStrategy: db.DiskSelectionStrategyLargest,
+		Release:                  "worker-os",
+		DiskSelectionStrategy:    db.DiskSelectionStrategyLargest,
+		NvLinkLogicalPartitionID: &nvLinkLogicalPartitionID,
 	})
+
+	// A pool whose partition was replaced after workerNodeSet was created, before the
+	// node pool controller snapshots it into a new node set.
+	updatedPartitionID := uuid.New()
+	updatedWorkerNodePool := workerNodePool
+	updatedWorkerProvider, _ := workerNodePool.NicoProvider()
+	updatedWorkerProvider.NvLinkLogicalPartitionID = &updatedPartitionID
+	updatedWorkerNodePool.SetNico(updatedWorkerProvider)
 
 	type parameters struct {
 		nodeSet  db.NodeSet
@@ -148,18 +157,9 @@ func TestResolveNodeConfig(t *testing.T) {
 				NVLinkLogicalPartitionID: &nvLinkLogicalPartitionID,
 			},
 		},
-		"worker uses the pool's partition when the node set snapshot predates a partition update": {
-			nodeSet: func() db.NodeSet {
-				nodeSet := db.NodeSet{KubernetesVersion: "1.33.0", TeleportEnabled: true}
-				previousPartitionID := uuid.New()
-				nodeSet.SetNico(db.NicoNodePoolProvider{
-					Release:                  "worker-os",
-					DiskSelectionStrategy:    db.DiskSelectionStrategyLargest,
-					NvLinkLogicalPartitionID: &previousPartitionID,
-				})
-				return nodeSet
-			}(),
-			nodePool: workerNodePool,
+		"worker takes the partition from its node set, not from the pool": {
+			nodeSet:  workerNodeSet,
+			nodePool: updatedWorkerNodePool,
 			want: NodeConfig{
 				Release:                  "worker-os",
 				DiskSelectionStrategy:    db.DiskSelectionStrategyLargest,

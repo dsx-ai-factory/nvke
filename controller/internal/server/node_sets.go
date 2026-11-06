@@ -149,11 +149,12 @@ func apiNicoNodeSetProviderFromDB(nicoNodeSetProvider *db.NicoNodePoolProvider) 
 		return nil
 	}
 	return &api.NicoNodeSetProvider{
-		SubnetIDs:             append([]uuid.UUID(nil), nicoNodeSetProvider.SubnetIDs...),
-		VpcPrefixIDs:          append([]uuid.UUID(nil), nicoNodeSetProvider.VpcPrefixIDs...),
-		Release:               nicoNodeSetProvider.Release,
-		ConfigProfile:         nicoNodeSetProvider.ConfigProfile,
-		DiskSelectionStrategy: api.DiskSelectionStrategyCreate(nicoNodeSetProvider.DiskSelectionStrategy),
+		SubnetIDs:                append([]uuid.UUID(nil), nicoNodeSetProvider.SubnetIDs...),
+		VpcPrefixIDs:             append([]uuid.UUID(nil), nicoNodeSetProvider.VpcPrefixIDs...),
+		Release:                  nicoNodeSetProvider.Release,
+		ConfigProfile:            nicoNodeSetProvider.ConfigProfile,
+		DiskSelectionStrategy:    api.DiskSelectionStrategyCreate(nicoNodeSetProvider.DiskSelectionStrategy),
+		NvLinkLogicalPartitionID: clonePtr(nicoNodeSetProvider.NvLinkLogicalPartitionID),
 	}
 }
 

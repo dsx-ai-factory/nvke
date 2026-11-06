@@ -84,7 +84,15 @@ func (n NicoNodePoolProvider) Equal(other NicoNodePoolProvider) bool {
 		n.ConfigProfile == other.ConfigProfile &&
 		n.DiskSelectionStrategy == other.DiskSelectionStrategy &&
 		uuidSlicesSetEqual(n.SubnetIDs, other.SubnetIDs) &&
-		uuidSlicesSetEqual(n.VpcPrefixIDs, other.VpcPrefixIDs)
+		uuidSlicesSetEqual(n.VpcPrefixIDs, other.VpcPrefixIDs) &&
+		uuidPtrEqual(n.NvLinkLogicalPartitionID, other.NvLinkLogicalPartitionID)
+}
+
+func uuidPtrEqual(a, b *uuid.UUID) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // Equal reports whether two CAPINodePoolProvider values represent the same configuration.

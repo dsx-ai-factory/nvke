@@ -110,13 +110,19 @@ The management plane holds no site-wide NICo settings. Each workload cluster req
 | `vpcPrefixIDs` or `subnetIDs` | Control plane and node pool `nico` | Exactly one of the two: VPC prefixes for a site with native networking, subnets otherwise. |
 | `sshKeyGroupIDs` | Control plane and node pool `nico` | Optional. SSH key groups for node access. |
 | `infinibandPartitionID` | Node pool `nico` | Optional. An InfiniBand partition. Fixed when the node pool is created. |
-| `nvLinkLogicalPartitionID` | Node pool `nico` | Optional. An NVLink logical partition. A node pool update can set or replace it, but not clear it; nodes created after the update attach to it, and existing nodes keep their partition. |
+| `nvLinkLogicalPartitionID` | Node pool `nico` | Optional. An NVLink logical partition. A node pool update can set or replace it, but not clear it. Like a release change, the update creates a new node set: nodes created after it attach to the partition, and existing nodes keep theirs until they are replaced. |
 
 The `orgID`, `siteID` and `vpcID` of a cluster are fixed when the cluster is created. The control plane and each node pool select one of the releases you created in [Register the image for provisioning](build-node-images.md#create-the-objects-on-the-management-cluster) with `nico.release` and, optionally, a config profile with `nico.configProfile`. [Create a workload cluster](../workload-clusters/create.md) shows a full request.
 
 ## Attach existing nodes to an NVLink partition
 
-Setting `nvLinkLogicalPartitionID` on a node pool with a node pool update attaches the nodes the pool creates after the update. Nodes that already exist keep their NVLink configuration. To attach them, update their NICo instances directly. NICo:
+Setting or replacing `nvLinkLogicalPartitionID` with a node pool update creates a new node set, as a release change does. Nodes the pool creates after the update, replacements included, attach to the new partition. Nodes that already exist stay in the earlier node set, with their NVLink configuration, until they are replaced:
+
+- With the default `recycleBudget` of 0, NVKE leaves them alone.
+- With `recycleBudget` above 0 and auto mode on, NVKE marks up to `recycleBudget` of them at a time with the condition `nvke.nvidia.com/NeedsRecycle`. It does not drain or terminate them. An operator or a break-fix system does that, as described in [Node lifecycle](../tenant-clusters/node-lifecycle.md), and the pool replaces each terminated node on the new partition.
+- With `maxSurge` above 0, the pool creates up to `maxSurge` extra nodes on the new partition while nodes remain in the earlier node set.
+
+To attach existing nodes without replacing them, update their NICo instances directly. The nodes stay in the earlier node set, so a pool with `recycleBudget` above 0 and auto mode on still marks them for recycling. NICo:
 
 - accepts the update only while the instance is `Ready`, so a node that is still provisioning returns 400 until it is;
 - replaces all of the instance's NVLink interfaces with the ones you send;
@@ -161,7 +167,7 @@ Send one interface per GPU of the instance type, with `deviceInstance` from 0 to
    jq -r '.[] | select(.spec.providerID == null) | "\(.metadata.namespace)/\(.metadata.name)"' pool-machines.json
    ```
 
-   A machine in the second list is still creating its instance, with the partition the pool had when the machine was created. Repeat this procedure for it once it has a provider ID.
+   A machine in the second list is still creating its instance, with the partition of its node set. If that is the earlier node set, repeat this procedure for it once it has a provider ID.
 
 4. Update each instance.
 
