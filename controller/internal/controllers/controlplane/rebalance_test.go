@@ -990,3 +990,32 @@ func TestReconcileControlPlaneRebalance_NoBackoffWhenAbandonDeleteInFlight(t *te
 	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 	mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
+
+func TestLeastPreferredControlPlaneNodeToShed_PrefersTheSurgesDomain(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	base := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	preferredType, mediumType, worstType := uuid.New(), uuid.New(), uuid.New()
+	ranker := db.NicoControlPlaneProvider{InstanceTypePreference: []uuid.UUID{preferredType, mediumType, worstType}}
+
+	node := func(name, domain string, instanceType uuid.UUID, age time.Duration) db.Node {
+		n := healthyCPNode(clusterID, name, base.Add(-age))
+		n.FailureDomain = domain
+		n.Nico = &db.NicoNodeProvider{InstanceTypeID: instanceType}
+		return n
+	}
+	surge := node("cp-surge", "A", preferredType, time.Minute)
+	worstInB := node("cp-worst-b", "B", worstType, time.Hour)
+	mediumInA := node("cp-medium-a", "A", mediumType, 2*time.Hour)
+	cp := &controlPlane{nodes: []db.Node{surge, worstInB, mediumInA}}
+
+	got, ok := leastPreferredControlPlaneNodeToShed(cp, surge, ranker)
+	require.True(t, ok)
+	assert.Equal(t, mediumInA.ID, got.ID, "a worse node in the surge's domain is shed before the worst node elsewhere")
+
+	cp.nodes = []db.Node{surge, worstInB}
+	got, ok = leastPreferredControlPlaneNodeToShed(cp, surge, ranker)
+	require.True(t, ok)
+	assert.Equal(t, worstInB.ID, got.ID, "with no worse node in the surge's domain the least preferred overall is shed")
+}

@@ -104,10 +104,19 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	}
 
 	failureDomains, err := r.readFailureDomains(ctx, cluster)
+	if errors.Is(err, errInfrastructureNotProvisioned) {
+		return r.reconcileWithoutFailureDomains(ctx, cluster, controlPlane, err)
+	}
 	if err != nil {
 		return fmt.Errorf("discovering control-plane failure domains: %w", err)
 	}
+	controlPlane.failureDomains = failureDomains
+	failureDomains.eligible = placeableDomains(failureDomains.eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
 	allocator := newControlPlaneDomainAllocator(controlPlane.nodes, failureDomains)
+	if unplaced := nodesWithoutKnownDomain(controlPlane.nodes, failureDomains); len(unplaced) > 0 {
+		r.logger.Warn("Control-plane nodes have no known failure domain and are not counted toward the spread",
+			"clusterID", cluster.ID, "clusterName", cluster.Name, "nodes", unplaced)
+	}
 
 	// Host creation only. A pending or in-flight delete must not stall it: the
 	// replacement host is exactly what lets the control plane shrink safely.
@@ -122,6 +131,14 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	// accounting for it. The node write re-enqueues the cluster, and the next
 	// reconcile reads a fresh snapshot where the delete is in flight -- rollout and
 	// scale-down then defer to it and reconcileRequestedDeletes promotes it.
+	replaced, err := r.reconcileStuckPendingNodes(ctx, cluster, controlPlane)
+	if err != nil {
+		return fmt.Errorf("reconciling stuck pending control plane nodes: %w", err)
+	}
+	if replaced {
+		return nil
+	}
+
 	remediated, err := r.remediateMachines(ctx, cluster, controlPlane)
 	if err != nil {
 		return err
@@ -194,6 +211,34 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		return fmt.Errorf("reconciling requested control plane deletes: %w", err)
 	}
 
+	return nil
+}
+
+// failureDomainRetryInterval is how soon a reconcile that could not read failure
+// domains runs again.
+const (
+	failureDomainRetryInterval = 30 * time.Second
+)
+
+// reconcileWithoutFailureDomains runs the steps that place no node -- remediation
+// and promotion of recorded deletes -- while the CAPI cluster has not published its
+// failure domains, so a dead node can still be removed. It returns nil and requeues rather than erroring
+// because an error rolls back the reconcile's transaction, undoing those writes.
+func (r *reconciler) reconcileWithoutFailureDomains(ctx context.Context, cluster db.Cluster, cp *controlPlane, discoveryErr error) error {
+	r.logger.Warn("Control-plane failure-domain discovery failed; running only remediation and recorded deletes",
+		"clusterID", cluster.ID, "clusterName", cluster.Name, "err", discoveryErr)
+	r.requeueAfter(failureDomainRetryInterval)
+
+	remediated, err := r.remediateMachines(ctx, cluster, cp)
+	if err != nil {
+		return err
+	}
+	if remediated {
+		return nil
+	}
+	if _, err := r.reconcileRequestedDeletes(ctx, cluster, cp); err != nil {
+		return fmt.Errorf("reconciling requested control plane deletes: %w", err)
+	}
 	return nil
 }
 
