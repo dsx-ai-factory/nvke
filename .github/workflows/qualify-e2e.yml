@@ -1561,7 +1561,7 @@ jobs:
         timeout-minutes: 5
         uses: ./.github/actions/notify
         with:
-          event: qualification:tag-cut
+          event: release:beta-tag-created
           token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
           open-thread: "true"
           data: |
