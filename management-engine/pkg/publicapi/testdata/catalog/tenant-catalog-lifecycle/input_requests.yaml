@@ -1,0 +1,14 @@
+- method: GET
+  path: /v1/cluster-release-channels/hidden-channel
+- method: GET
+  path: /v1/cluster-release-channels
+- method: GET
+  path: /v1/cluster-release-channels/empty-channel
+- method: GET
+  path: /v1/control-plane-classes/hidden-class
+- method: GET
+  path: /v1/control-plane-classes
+- method: GET
+  path: /v1/node-profiles/hidden-profile
+- method: GET
+  path: /v1/node-profiles

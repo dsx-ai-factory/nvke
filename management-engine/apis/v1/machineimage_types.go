@@ -11,12 +11,15 @@ import (
 // MachineImageSpec is the immutable identity of a bootable machine image and
 // the boot contract a provider needs to launch it. The whole spec is immutable.
 // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="machine image spec is immutable; publish a new name instead"
+// +nvke:catalog:view
 type MachineImageSpec struct {
+	// +nvke:catalog:include
 	OperatingSystem OperatingSystem `json:"operatingSystem"`
 	// Architecture is a Go/OCI architecture name such as "amd64" or "arm64".
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=32
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +nvke:catalog:include
 	Architecture string `json:"architecture"`
 	// Variant distinguishes images built from the same operating system for a
 	// different purpose, such as "fde" for full disk encryption.
@@ -37,11 +40,13 @@ type OperatingSystem struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +nvke:catalog:include
 	Family string `json:"family"`
 	// Version is the distribution version, such as "24.04".
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=32
 	// +kubebuilder:validation:Pattern=`^[0-9]+(\.[0-9]+)*$`
+	// +nvke:catalog:include
 	Version string `json:"version"`
 }
 

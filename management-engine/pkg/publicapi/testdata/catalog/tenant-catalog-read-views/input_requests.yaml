@@ -1,0 +1,12 @@
+- method: GET
+  path: /v1/cluster-release-channels/stable
+- method: GET
+  path: /v1/cluster-release-channels
+- method: GET
+  path: /v1/control-plane-classes/standard
+- method: GET
+  path: /v1/control-plane-classes
+- method: GET
+  path: /v1/node-profiles/np-b34
+- method: GET
+  path: /v1/node-profiles

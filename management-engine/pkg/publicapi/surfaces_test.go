@@ -45,8 +45,9 @@ func TestSurfaces(t *testing.T) {
 		name                               string
 		registrations                      []resource.Registration
 		clusters, releases, writes, images bool
+		catalog                            bool
 	}{
-		{name: "tenant", registrations: Tenant(), clusters: true},
+		{name: "tenant", registrations: Tenant(), clusters: true, catalog: true},
 		{name: "operator", registrations: Operator(), releases: true, writes: true, images: true},
 		{name: "custom read-only selection", registrations: []resource.Registration{
 			ClusterRelease(resource.OpGet, resource.OpList),
@@ -72,19 +73,19 @@ func TestSurfaces(t *testing.T) {
 				{"POST", "/v1/cluster-releases", surface.writes},
 				{"GET", "/v1/machine-images", surface.images},
 				{"POST", "/v1/machine-images", surface.images},
-				{"GET", "/v1/control-plane-classes", surface.name == "operator"},
+				{"GET", "/v1/control-plane-classes", surface.catalog || surface.name == "operator"},
 				{"POST", "/v1/control-plane-classes", surface.name == "operator"},
-				{"GET", "/v1/control-plane-classes/{name}", surface.name == "operator"},
+				{"GET", "/v1/control-plane-classes/{name}", surface.catalog || surface.name == "operator"},
 				{"PUT", "/v1/control-plane-classes/{name}", surface.name == "operator"},
 				{"DELETE", "/v1/control-plane-classes/{name}", surface.name == "operator"},
-				{"GET", "/v1/cluster-release-channels", surface.name == "operator"},
+				{"GET", "/v1/cluster-release-channels", surface.catalog || surface.name == "operator"},
 				{"POST", "/v1/cluster-release-channels", surface.name == "operator"},
-				{"GET", "/v1/cluster-release-channels/{name}", surface.name == "operator"},
+				{"GET", "/v1/cluster-release-channels/{name}", surface.catalog || surface.name == "operator"},
 				{"PUT", "/v1/cluster-release-channels/{name}", surface.name == "operator"},
 				{"DELETE", "/v1/cluster-release-channels/{name}", surface.name == "operator"},
-				{"GET", "/v1/node-profiles", surface.name == "operator"},
+				{"GET", "/v1/node-profiles", surface.catalog || surface.name == "operator"},
 				{"POST", "/v1/node-profiles", surface.name == "operator"},
-				{"GET", "/v1/node-profiles/{name}", surface.name == "operator"},
+				{"GET", "/v1/node-profiles/{name}", surface.catalog || surface.name == "operator"},
 				{"PUT", "/v1/node-profiles/{name}", surface.name == "operator"},
 				{"DELETE", "/v1/node-profiles/{name}", surface.name == "operator"},
 				{"GET", "/v1/node-pool-releases", false},

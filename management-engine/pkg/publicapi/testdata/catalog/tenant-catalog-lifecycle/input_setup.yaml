@@ -1,0 +1,123 @@
+# SPDX-License-Identifier: Apache-2.0
+
+- method: POST
+  path: /v1/machine-images
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: img-ubuntu
+    spec:
+      architecture: amd64
+      buildDate: "2026-11-01"
+      nico:
+        ipxeScript: |
+          #!ipxe
+          exit
+      operatingSystem:
+        family: ubuntu
+        version: "24.04"
+- method: POST
+  path: /v1/cluster-release-channels
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: hidden-channel
+    spec:
+      lifecycle:
+        hidden: true
+      releases:
+        "1.35":
+        - minimumUpgradeAge: 0s
+          name: cr-active
+- method: POST
+  path: /v1/cluster-release-channels
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: deprecated-channel
+    spec:
+      lifecycle:
+        deprecated: true
+      releases:
+        "1.35":
+        - minimumUpgradeAge: 0s
+          name: cr-active
+        "1.35.2":
+        - minimumUpgradeAge: 0s
+          name: cr-active
+- method: POST
+  path: /v1/cluster-release-channels
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: empty-channel
+    spec:
+      releases:
+        "1.35":
+        - minimumUpgradeAge: 0s
+          name: cr-deprecated
+        - minimumUpgradeAge: 0s
+          name: cr-hidden
+- method: POST
+  path: /v1/control-plane-classes
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: hidden-class
+    spec:
+      controlPlane:
+        instanceTypePreferences:
+        - standard
+        replicas: 3
+        systemReservedMemory: "0"
+      lifecycle:
+        hidden: true
+      rollout:
+        strategy:
+          rollingUpdate:
+            maxSurge: 1
+          type: RollingUpdate
+- method: POST
+  path: /v1/control-plane-classes
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: deprecated-class
+    spec:
+      controlPlane:
+        instanceTypePreferences:
+        - standard
+        replicas: 3
+        systemReservedMemory: "0"
+      lifecycle:
+        deprecated: true
+        supportedUntil: "2027-06-30T00:00:00Z"
+      rollout:
+        strategy:
+          rollingUpdate:
+            maxSurge: 1
+          type: RollingUpdate
+- method: POST
+  path: /v1/node-profiles
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: hidden-profile
+    spec:
+      lifecycle:
+        hidden: true
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+          {}
+      profile: ubuntu-gpu
+      tag: "2026.11"

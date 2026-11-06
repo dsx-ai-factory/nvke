@@ -10,6 +10,8 @@ VERSION ?= $(shell git describe --always --dirty --match 'management-engine/v[0-
 RELEASE_LDFLAGS ?= -s -w -buildid=
 MANAGER_LDFLAGS := -X 'main.version=$(VERSION)' $(RELEASE_LDFLAGS)
 GO_TEST_FLAGS ?=
+GINKGO_FLAGS ?=
+LINT_FLAGS ?=
 .DEFAULT_GOAL := help
 
 # Runtime target and image used by the container build/push targets.
@@ -94,9 +96,9 @@ test-unit: fmt vet ## Run unit tests without a Kubernetes API server.
 
 .PHONY: test-integration
 test-integration: ENVTEST_K8S_VERSION=1.37.0
-test-integration: fmt vet setup-envtest ginkgo ## Run resource integration tests with an isolated envtest API server.
+test-integration: fmt vet setup-envtest ginkgo ## Run resource and public API integration tests with an isolated envtest API server.
 	@$(COVERAGE_MKDIR)
-	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" "$(GINKGO)" --tags=integration_test --race --procs=$(TEST_PROCS) --cover --covermode=$(GO_COVER_MODE) --output-dir=$(COVERAGE_DIR) --coverprofile=$(call coverprofile_name,integration) ./pkg/resource ./pkg/publicapi
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" "$(GINKGO)" $(GINKGO_FLAGS) --tags=integration_test --race --procs=$(TEST_PROCS) --cover --covermode=$(GO_COVER_MODE) --output-dir=$(COVERAGE_DIR) --coverprofile=$(call coverprofile_name,integration) ./pkg/resource ./pkg/publicapi
 
 .PHONY: test-api
 # Separate test invocations need distinct profiles to avoid overwriting coverage.
@@ -113,15 +115,15 @@ test-controller: test-unit manifests generate fmt vet setup-envtest ginkgo ## Ru
 
 .PHONY: test-update
 test-update: export TESTUTIL_UPDATE_EXPECTED=true
-test-update: test-controller test-integration ## Run controller and resource integration tests and update expected fixture goldens.
+test-update: test-controller test-integration ## Run controller and API integration tests and update expected fixture goldens.
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
-	"$(GOLANGCI_LINT)" run
+	"$(GOLANGCI_LINT)" run $(LINT_FLAGS)
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
-	"$(GOLANGCI_LINT)" run --fix
+	"$(GOLANGCI_LINT)" run --fix $(LINT_FLAGS)
 
 .PHONY: lint-config
 lint-config: golangci-lint ## Verify golangci-lint linter configuration

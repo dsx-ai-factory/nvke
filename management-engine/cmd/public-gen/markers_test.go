@@ -131,7 +131,7 @@ func TestPublicMarkerAssociation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
 			writeMarkerFixture(t, root, "apis/v1/widget.go", "package v1\n"+tt.source)
-			_, _, _, err := readSource(root)
+			_, _, _, _, err := readSource(root)
 			require.ErrorContains(t, err, tt.wantError)
 		})
 	}

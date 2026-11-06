@@ -38,13 +38,22 @@ var resourceRoutes = [...]route{
 }
 
 // Register installs supported operations and JSON 405 fallbacks. Wrap the completed mux with WithLimits.
-// Omitting verbs enables no operations. The server also enforces its registered operations.
-func Register[E any](mux *http.ServeMux, path string, server ResourceServer[E], verbs ...Operation) {
+// Omitting verbs or the corresponding reader/writer disables those operations.
+// Fields are public JSON paths supported by the reader's equality filters.
+func Register[E any](
+	mux *http.ServeMux,
+	path string,
+	reader ResourceReader[E],
+	writer ResourceWriter[E],
+	fields []string,
+	verbs ...Operation,
+) {
 	var collection, item []string
 	for _, route := range resourceRoutes {
-		if slices.Contains(verbs, route.op) {
+		if slices.Contains(verbs, route.op) && ((route.op == OpGet || route.op == OpList) && reader != nil ||
+			(route.op == OpCreate || route.op == OpUpdate || route.op == OpDelete) && writer != nil) {
 			pattern := route.method + " " + path + route.suffix
-			mux.Handle(pattern, operationHandler[E]{server: server, op: route.op})
+			mux.Handle(pattern, operationHandler[E]{reader: reader, writer: writer, fields: fields, op: route.op})
 			if route.op == OpCreate || route.op == OpList {
 				collection = append(collection, route.method)
 			} else {
@@ -67,7 +76,9 @@ func (h methodNotAllowedHandler) ServeHTTP(w http.ResponseWriter, _ *http.Reques
 }
 
 type operationHandler[E any] struct {
-	server ResourceServer[E]
+	reader ResourceReader[E]
+	writer ResourceWriter[E]
+	fields []string
 	op     Operation
 }
 
@@ -96,6 +107,9 @@ func (h operationHandler[E]) dispatch(r *http.Request) (any, int, error) {
 	switch h.op {
 	case OpList:
 		allowed = []string{pageSizeParameter, pageKeyParameter}
+		if len(h.fields) != 0 {
+			allowed = append(allowed, fieldSelectorParameter)
+		}
 	case OpDelete:
 		allowed = []string{propagationPolicyParameter}
 	}
@@ -121,26 +135,29 @@ func (h operationHandler[E]) dispatch(r *http.Request) (any, int, error) {
 			return nil, 0, err
 		}
 		if h.op == OpCreate {
-			value, err := h.server.Create(r.Context(), in)
+			value, err := h.writer.Create(r.Context(), in)
 			return value, http.StatusCreated, err
 		}
-		value, err := h.server.Update(r.Context(), r.PathValue("name"), in)
+		value, err := h.writer.Update(r.Context(), r.PathValue("name"), in)
 		return value, http.StatusOK, err
 	case OpGet:
-		value, err := h.server.Get(r.Context(), r.PathValue("name"))
+		value, err := h.reader.Get(r.Context(), r.PathValue("name"))
 		return value, http.StatusOK, err
 	case OpList:
-		opts := ListOptions{PageKey: values.Get(pageKeyParameter)}
+		opts := ListOptions{PageKey: values.Get(pageKeyParameter), FieldSelector: values.Get(fieldSelectorParameter)}
+		if values.Has(fieldSelectorParameter) && opts.FieldSelector == "" {
+			return nil, 0, invalidSelector()
+		}
 		if values.Has(pageSizeParameter) {
 			opts.PageSize, err = strconv.Atoi(values.Get(pageSizeParameter))
 			if err != nil || opts.PageSize == 0 {
 				return nil, 0, Invalid()
 			}
 		}
-		value, err := h.server.List(r.Context(), opts)
+		value, err := h.reader.List(r.Context(), opts)
 		return value, http.StatusOK, err
 	case OpDelete:
-		err = h.server.Delete(r.Context(), r.PathValue("name"), DeleteOptions{
+		err = h.writer.Delete(r.Context(), r.PathValue("name"), DeleteOptions{
 			PropagationPolicy: values.Get(propagationPolicyParameter),
 		})
 		return nil, http.StatusAccepted, err
