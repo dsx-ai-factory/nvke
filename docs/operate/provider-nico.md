@@ -132,24 +132,28 @@ While NICo applies the change the instance is `Configuring`, and workloads on th
 
 Send one interface per GPU of the instance type, with `deviceInstance` from 0 to the GPU count minus one; a GB200 or GB300 compute tray has 4 GPUs.
 
-1. Read the NICo API path and token from [the NICo credentials](#manage-the-nico-credentials), and set the partition and the GPU count.
+1. Read the NICo API path from [the NICo credentials](#manage-the-nico-credentials), write the `Authorization` header to a file only you can read, and build the request body from the partition and the GPU count. The header file keeps the token out of the command line of every `curl` below.
 
    ```bash
    NICO_API="$(kubectl -n capnico-system get secret nico-credentials \
      -o go-template='{{.data.endpoint | base64decode}}/v2/org/{{.data.orgID | base64decode}}/{{.data.apiName | base64decode}}')"
-   NICO_TOKEN="$(kubectl -n capnico-system get secret nico-credentials -o go-template='{{.data.token | base64decode}}')"
+   NICO_AUTH="$(mktemp)"
+   kubectl -n capnico-system get secret nico-credentials \
+     -o go-template='Authorization: Bearer {{.data.token | base64decode}}' > "${NICO_AUTH}"
    PARTITION="<NVLINK_LOGICAL_PARTITION_ID>"
    GPUS=4
+   BODY="$(jq -n --arg p "${PARTITION}" --argjson n "${GPUS}" \
+     'if $n < 1 then error("GPUS must be at least 1")
+      else {nvLinkInterfaces: [range(0; $n) | {nvLinkLogicalPartitionId: $p, deviceInstance: .}]} end')"
    ```
+
+   If `jq` reports an error, set `GPUS` to the GPU count of the instance type and run the last command again. `mktemp` creates the header file readable only by you; delete it with `rm "${NICO_AUTH}"` when you are done.
 
 2. Update one instance. The instance ID is the part of the NicoMachine's `spec.providerID` after `nico://`.
 
    ```bash
    curl -sS -X PATCH "${NICO_API}/instance/<INSTANCE_ID>" \
-     -H "Authorization: Bearer ${NICO_TOKEN}" \
-     -H "Content-Type: application/json" \
-     -d "$(jq -n --arg p "${PARTITION}" --argjson n "${GPUS}" \
-       '{nvLinkInterfaces: [range(0; $n) | {nvLinkLogicalPartitionId: $p, deviceInstance: .}]}')"
+     -H @"${NICO_AUTH}" -H "Content-Type: application/json" -d "${BODY}"
    ```
 
 3. To update every node of a node pool, collect the pool's NicoMachines on the management cluster. Older controllers label them with `nke.nvidia.com/node-pool-id` instead of `nvke.nvidia.com/node-pool-id`; the filter accepts both.
@@ -169,27 +173,26 @@ Send one interface per GPU of the instance type, with `deviceInstance` from 0 to
 
    A machine in the second list is still creating its instance, with the partition of its node set. If that is the earlier node set, repeat this procedure for it once it has a provider ID.
 
-4. Update each instance.
+4. Update each instance. The loop prints the status code of each update, and the response body of any update that did not return 200.
 
    ```bash
    while read -r instance; do
-     curl -sS -o /dev/null -w "%{http_code} ${instance}\n" -X PATCH "${NICO_API}/instance/${instance}" \
-       -H "Authorization: Bearer ${NICO_TOKEN}" \
-       -H "Content-Type: application/json" \
-       -d "$(jq -n --arg p "${PARTITION}" --argjson n "${GPUS}" \
-         '{nvLinkInterfaces: [range(0; $n) | {nvLinkLogicalPartitionId: $p, deviceInstance: .}]}')"
+     code="$(curl -sS -o response.json -w '%{http_code}' -X PATCH "${NICO_API}/instance/${instance}" \
+       -H @"${NICO_AUTH}" -H "Content-Type: application/json" -d "${BODY}")"
+     echo "${code} ${instance}"
+     if [ "${code}" != 200 ]; then cat response.json; echo; fi
    done < instances.txt
    ```
 
-   Run the loop again for any instance that did not return 200. An update with the same partition replaces the interfaces with the same ones, so repeating it is safe.
+   Read the response body before you run the loop again for an instance. A server error or a timeout can succeed on a retry, and so can a 400 for an instance that was not yet `Ready`. A 400 because the VPC has a default NVLink logical partition fails again on every retry while the VPC keeps that partition. An update with the same partition replaces the interfaces with the same ones, so repeating a successful update is safe.
 
 5. A 200 means NICo accepted the update, not that it is applied. Check that each instance is back to `Ready` with every NVLink interface on the partition.
 
    ```bash
    while read -r instance; do
-     curl -sS "${NICO_API}/instance/${instance}" -H "Authorization: Bearer ${NICO_TOKEN}" \
+     curl -sS "${NICO_API}/instance/${instance}" -H @"${NICO_AUTH}" \
        | jq -r --arg p "${PARTITION}" --argjson n "${GPUS}" \
-         '"\(.id) \(.status) " + (if ([.nvLinkInterfaces[]?.nvLinkLogicalPartitionId] | length == $n and all(. == $p)) then "attached" else "not attached" end)'
+         '"\(.id) \(.status) " + (if $n > 0 and ([.nvLinkInterfaces[]?.nvLinkLogicalPartitionId] | length == $n and all(. == $p)) then "attached" else "not attached" end)'
    done < instances.txt
    ```
 
