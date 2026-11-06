@@ -41,6 +41,10 @@ var (
 
 	// tenantWorkers is how many workers the hardware tenant on Forge or DSX gets.
 	tenantWorkers int
+
+	// artifactsDir is where specs write files for the run to keep, such as
+	// kube-bench scan results. Empty writes none.
+	artifactsDir string
 )
 
 func init() {
@@ -49,6 +53,7 @@ func init() {
 	flag.StringVar(&versionsFlag, "e2e.versions", "", "component versions under qualification, e.g. controller=v1.4.0-rc.1,os-image=v0.9.1,cli=v0.3.0")
 	flag.StringVar(&capabilitiesFlag, "e2e.capabilities", "", "capabilities the run requires, e.g. gpu=gb200,arch=amd64,kube=1.37")
 	flag.IntVar(&tenantWorkers, "e2e.tenant-workers", 1, "worker nodes in the hardware tenant the nico-forge, nico-dsx and site lanes create")
+	flag.StringVar(&artifactsDir, "e2e.artifacts-dir", "", "directory specs write artifacts to, such as kube-bench scan results; empty writes none")
 }
 
 // The flags are parsed once and shared. Specs read them through the accessors

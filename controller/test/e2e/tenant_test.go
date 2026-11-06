@@ -99,9 +99,12 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 		shape: clusterShape{
 			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			// Encrypted, as the create docs' example is, so the CIS scan
+			// checks the encryption configuration NVKE renders.
+			etcdEncrypted: true,
 		},
 		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
-		validate: validations{provisioningOnly: true},
+		validate: validations{provisioningOnly: true, cisBenchmark: true},
 	}),
 	Entry("CAPD", Ordered, ContinueOnFailure, Label("capd", "happy-path", "kube-vip-route-withdrawal", "cert-renewal"), testSpec{
 		buildSpec: capdSpec,
@@ -361,8 +364,9 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
 			etcdEncrypted:     true,
 		},
-		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
-		validate: validations{etcdEncryption: true},
+		options: nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		// The full runs' CIS scan: an encrypted cluster, like CAPD core's.
+		validate: validations{etcdEncryption: true, cisBenchmark: true},
 	}),
 	Entry("CAPD brownfield etcd encryption", Ordered, ContinueOnFailure, Label("capd", "extended", "encryption", "etcd-encryption-enable"), testSpec{
 		buildSpec: capdSpec,
@@ -575,6 +579,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				validateOIDCPostCreate(&test)
 			}
 			validateNodeReadinessPostCreate(&test)
+			if spec.validate.cisBenchmark {
+				validateCISBenchmarkPostCreate(&test)
+			}
 			if spec.validate.tpmAttestation {
 				validateTPMAttestationPostCreate(&test)
 			}
@@ -943,6 +950,10 @@ type validations struct {
 	// are on every control-plane node after create and, when the entry runs it,
 	// after the rolling update. The entry must set controlPlaneConfig.NodeLabels.
 	controlPlaneNodeLabels bool
+	// cisBenchmark scans the cluster with kube-bench right after it is ready,
+	// before other specs scale, reboot or replace its nodes, and judges the
+	// result against the exception register (internal/kubebench).
+	cisBenchmark bool
 }
 
 // managementCluster is the cluster the controller runs on, which a tenant test reaches

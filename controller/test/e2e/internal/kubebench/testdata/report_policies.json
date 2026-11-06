@@ -1,0 +1,41 @@
+{
+  "Controls": [
+    {
+      "id": "5",
+      "version": "cis-2.0",
+      "text": "Synthetic policy checks",
+      "node_type": "policies",
+      "tests": [
+        {
+          "section": "5.1",
+          "desc": "Synthetic access checks",
+          "results": [
+            {
+              "test_number": "5.1.1",
+              "test_desc": "Synthetic: administrator bindings",
+              "audit": "kubectl get clusterrolebindings -o json",
+              "type": "",
+              "status": "WARN",
+              "actual_value": "**role_name: synthetic-admin role_binding: synthetic-admin subject: ops is_compliant: false",
+              "scored": false,
+              "expected_result": "'is_compliant' is equal to 'true'",
+              "reason": ""
+            },
+            {
+              "test_number": "5.6.4",
+              "test_desc": "Synthetic: default namespace",
+              "audit": "",
+              "type": "manual",
+              "status": "WARN",
+              "actual_value": "",
+              "scored": false,
+              "expected_result": "",
+              "reason": "Test marked as a manual test"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "Totals": {"total_pass": 0, "total_fail": 0, "total_warn": 2, "total_info": 0}
+}
