@@ -87,7 +87,10 @@ apiAuthz:
           - {name: roles, value: nvke-viewer, grants: [viewer]}
 ```
 
-`issuer` is the Teleport cluster name, not a URL, and `<APP_URI>` is the application's URI in Teleport. Give each site's application its own URI: the URI is the token's audience, so two applications that share one accept each other's tokens. Teleport sends the token in its `Teleport-Jwt-Assertion` header, so configure the application to rewrite the `Authorization` header to `Bearer {{internal.jwt}}`.
+`issuer` is the Teleport cluster name, not a URL, and `<APP_URI>` is the application's URI in Teleport. Give each site's application its own URI: the URI is the token's audience, so two applications that share one accept each other's tokens. In the Teleport application:
+
+- Leave `rewrite.jwt_claims` at its default, `roles-and-traits`, or set it to `roles`, so the token carries `roles`.
+- Teleport sends the token in its `Teleport-Jwt-Assertion` header, so rewrite the `Authorization` header to `Bearer {{internal.jwt}}`. In `teleport.yaml` that's `rewrite.headers: ["Authorization: Bearer {{internal.jwt}}"]`; in a dynamic `app` resource it's `spec.rewrite.headers: [{name: Authorization, value: "Bearer {{internal.jwt}}"}]`.
 
 ## Turn on authorization in permissive mode
 
