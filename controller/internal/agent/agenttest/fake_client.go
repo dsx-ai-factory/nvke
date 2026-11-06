@@ -96,6 +96,11 @@ type FakeClient struct {
 	// records no calls for them; a hook that needs to must synchronize itself.
 	ReconfigureSpireAgentHook func(ctx context.Context, node db.Node, req *nvkeproto.ReconfigureSpireAgentRequest) (*nvkeproto.ReconfigureSpireAgentResponse, error)
 	GetSpireAgentStatusHook   func(ctx context.Context, node db.Node) (*nvkeproto.GetSpireAgentStatusResponse, error)
+
+	// GetKubeadmStatusHook, when set, produces the response for GetKubeadmStatus
+	// calls, letting tests drive per-node kubeadm state. Without it every node
+	// reports an empty status.
+	GetKubeadmStatusHook func(node db.Node) (*nvkeproto.KubeadmStatusResponse, error)
 }
 
 func (f *FakeClient) GetEtcdEncryptionKeyIdentity(_ context.Context, node db.Node, digest string) (string, error) {
@@ -123,7 +128,10 @@ func (f *FakeClient) SupportsKubeadmFiles(_ context.Context, node db.Node) (bool
 	return !f.KubeadmFilesUnsupported, f.KubeadmFilesSupportErr
 }
 
-func (f *FakeClient) GetKubeadmStatus(context.Context, db.Node) (*nvkeproto.KubeadmStatusResponse, error) {
+func (f *FakeClient) GetKubeadmStatus(_ context.Context, node db.Node) (*nvkeproto.KubeadmStatusResponse, error) {
+	if f.GetKubeadmStatusHook != nil {
+		return f.GetKubeadmStatusHook(node)
+	}
 	return &nvkeproto.KubeadmStatusResponse{}, nil
 }
 
