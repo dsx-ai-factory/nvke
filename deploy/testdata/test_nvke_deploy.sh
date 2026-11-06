@@ -121,6 +121,8 @@ else
 fi
 expect "nktp from the checkout" 'helm upgrade --install nktp .*/nktp/deploy/charts/nktp ' "${out}"
 expect "controller from the checkout" 'helm upgrade --install nvke-controller .*/controller/deploy/charts/controller ' "${out}"
+expect "the controller builds its pinned local chart dependency" 'helm dependency build .*/controller/deploy/charts/controller --skip-refresh' "${out}"
+reject "local dependencies are not Helm repositories" 'helm repo add .*file://' "${out}"
 expect "controller in its release.yaml namespace" 'helm upgrade --install nvke-controller .* --namespace nvke-controller ' "${out}"
 expect "postgresql from its OCI repository" 'helm upgrade --install postgres oci://registry-1.docker.io/bitnamicharts/postgresql --version 18.5.15 ' "${out}"
 expect "spire from its index repository" 'helm upgrade --install spire spire --repo https://spiffe.github.io/helm-charts-hardened/ --version 0.30.1 ' "${out}"

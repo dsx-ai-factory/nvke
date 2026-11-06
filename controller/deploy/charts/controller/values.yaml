@@ -417,6 +417,7 @@ tolerations: []
 
 affinity: {}
 
+
 releaseCRDs:
   # -- Install the MachineImage, ClusterRelease and NodePoolRelease CRDs with
   # the chart.

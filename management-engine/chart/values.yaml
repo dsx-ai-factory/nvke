@@ -9,8 +9,32 @@
 ##
 # fullnameOverride: ""
 
+# Both components share one chart. Disable state for an existing datastore.
+state:
+  enabled: true
+  # Management Engine-specific schemas; catalog ownership is configured separately.
+  crds:
+    install: true
+  namespace: ""
+  # Empty uses the local manager ServiceAccount in a combined installation.
+  # State-only installations can bind existing ServiceAccounts or Kubernetes Users.
+  rbac:
+    subjects: []
+    # Optional state-side permissions for existing API identities.
+    tenantAPIBindings: []
+    operatorAPISubjects: []
+  # Bootstrap ConfigMaps: name, tenant namespace, and literal data (not Helm expressions).
+  configMaps: []
+
+# Catalog APIs normally come from the NVKE controller or a dedicated catalog release.
+# Enable only when this release will be their sole owner.
+nvke-crds:
+  enabled: false
+
+controller:
+  enabled: true
+
 ## Configure the controller manager deployment
-##
 manager:
   ## Set to false to skip manager installation
   ##
@@ -29,13 +53,22 @@ manager:
   ##
   args:
     - --leader-elect
-    - --leader-election-namespace=$(STATE_NAMESPACE)
-    - --kubeconfig=/etc/management-api/kubeconfig
 
-  # Required: the election namespace in the datastore cluster, not the Pod namespace.
-  env:
-    - name: STATE_NAMESPACE
-      value: management-state-system
+  # Datastore election namespace; defaults to state.namespace or the release namespace.
+  stateNamespace: ""
+  stateAccess:
+    mode: inCluster
+    kubeconfigSecret:
+      name: ""
+      key: kubeconfig
+  # ConfigMap name, looked up in each tenant namespace.
+  infrastructureTemplateConfigMap: ""
+  nvkeController:
+    endpoint: ""
+    tokenSecret:
+      name: ""
+      key: token
+  env: []
 
   extraVolumeMounts: []
   extraVolumes: []

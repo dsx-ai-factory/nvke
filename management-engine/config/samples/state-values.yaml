@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+controller:
+  enabled: false
+state:
+  rbac:
+    subjects:
+      - kind: ServiceAccount
+        name: management-engine-controller-manager
+        namespace: management-engine-system
+      # External identities are Kubernetes User subjects after authentication.
+      - kind: User
+        apiGroup: rbac.authorization.k8s.io
+        name: spiffe://example.org/management-engine
+    tenantAPIBindings:
+      - namespace: tenant-a
+        subjects:
+          - kind: User
+            apiGroup: rbac.authorization.k8s.io
+            name: spiffe://example.org/tenant-api
+    operatorAPISubjects:
+      - kind: User
+        apiGroup: rbac.authorization.k8s.io
+        name: spiffe://example.org/operator-api

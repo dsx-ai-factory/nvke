@@ -132,7 +132,7 @@ PRIVATE_MODULES :=
 #
 # The chart copies existed before this and nothing maintained them -- they were
 # committed by hand and happened to match. `licenses-check` now enforces it.
-LICENSE_DESTS := controller/deploy/charts/controller
+LICENSE_DESTS := controller/deploy/charts/controller controller/deploy/charts/nvke-crds
 
 # Chart directories that ship the root LICENSE but keep a NOTICE of their own,
 # which `make licenses` must not overwrite.
