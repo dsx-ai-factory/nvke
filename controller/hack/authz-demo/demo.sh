@@ -182,7 +182,7 @@ refusal_logged() {
     grep -q .
 }
 wait_for 10 refusal_logged "${VERA_SUB}" deleteCluster
-show 'kubectl --context $CTX -n nvke-controller logs deploy/nvke-controller -c nvke-controller --since-time=$START | jq -cR --arg sub "$VERA_SUB" '\''fromjson? | select(.msg == "refused request" and .subject == $sub) | {msg, action, subject, issuer, resource_type, resource_id}'\'''
+show 'kubectl --context $CTX -n nvke-controller logs deploy/nvke-controller -c nvke-controller --since-time=$START | jq -cR --arg sub "$VERA_SUB" '\''fromjson? | select(.msg == "refused request" and .subject == $sub) | {msg, action, subject, issuer, resource_id}'\'' | tail -1'
 check 2c "the refusal is logged with vera's subject and deleteCluster" refusal_logged "${VERA_SUB}" deleteCluster
 
 echo
@@ -204,7 +204,7 @@ not_admitted_logged() {
     jq -cR 'fromjson? | select(.msg == "rejected request" and .reason == "not_admitted" and .issuer == "keycloak")' | grep -q .
 }
 wait_for 10 not_admitted_logged
-show 'kubectl --context $CTX -n nvke-controller logs deploy/nvke-controller -c nvke-controller --since-time=$T3 | jq -cR '\''fromjson? | select(.msg == "rejected request") | {msg, reason, issuer, status}'\'''
+show 'kubectl --context $CTX -n nvke-controller logs deploy/nvke-controller -c nvke-controller --since-time=$T3 | jq -cR '\''fromjson? | select(.msg == "rejected request") | {msg, reason, issuer, status}'\'' | tail -1'
 check 3e "authentication logs zed's rejection with reason not_admitted" not_admitted_logged
 
 echo
@@ -323,15 +323,15 @@ if (( TELEPORT )); then
   show 'curl -s -o take/body.json -w "%{http_code}\n" --cacert ca.crt --resolve nvke.teleport.nvke-demo.local:3080:127.0.0.1 --cert take/ops-viewer.crt --key take/ops-viewer.key -X DELETE "$TP/api/clusters/$CLUSTER_ID"; cat take/body.json' | tee take/code
   check 8b "ops-viewer deletes a cluster: 403" grep -q '^403' take/code
   wait_for 10 refusal_logged ops-viewer deleteCluster
-  show 'kubectl --context $CTX -n nvke-controller logs deploy/nvke-controller -c nvke-controller --since-time=$START | jq -cR '\''fromjson? | select(.msg == "refused request" and .issuer == "teleport") | {msg, action, subject, issuer}'\'''
+  show 'kubectl --context $CTX -n nvke-controller logs deploy/nvke-controller -c nvke-controller --since-time=$START | jq -cR '\''fromjson? | select(.msg == "refused request" and .issuer == "teleport") | {msg, action, subject, issuer}'\'' | tail -1'
   check 8c "the refusal is logged with subject ops-viewer" refusal_logged ops-viewer deleteCluster
   show 'curl -s -o take/body.json -w "%{http_code}\n" --cacert ca.crt --resolve nvke.teleport.nvke-demo.local:3080:127.0.0.1 --cert take/ops-nobody.crt --key take/ops-nobody.key "$TP/api/clusters"; cat take/body.json' | tee take/code
   check 8d "ops-nobody lists clusters: 403 not admitted" grep -q 'Not admitted' take/body.json
 fi
 
 echo
-echo "# 9. Authorization decisions since the controller started."
-show 'kubectl --context $CTX get --raw /api/v1/namespaces/nvke-controller/services/nvke-controller:metrics/proxy/metrics | grep -E "^nvke_authz_(decisions_total|enabled)" > take/metrics.txt; cat take/metrics.txt'
+echo "# 9. Authorization decisions since the controller started, deleteCluster shown."
+show 'kubectl --context $CTX get --raw /api/v1/namespaces/nvke-controller/services/nvke-controller:metrics/proxy/metrics | grep -E "^nvke_authz_(decisions_total|enabled)" > take/metrics.txt; grep -E "enabled|deleteCluster" take/metrics.txt'
 check 9a "nvke_authz_enabled reports enforcing" grep -q '^nvke_authz_enabled{mode="enforcing"} 1' take/metrics.txt
 check 9b "nvke_authz_decisions_total counts deleteCluster denials" grep -q '^nvke_authz_decisions_total{action="deleteCluster",outcome="deny"}' take/metrics.txt
 
