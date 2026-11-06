@@ -23,8 +23,9 @@ test: ## Run this module's tests. (run by the merge gate)
 	@$(COVERAGE_MKDIR)
 	$(GO) test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) ./...
 
-lint: ## Run the repository-pinned Go linter. (run by the merge gate)
+lint: ## Run the repository-pinned Go linter, and check notify.yml. (run by the merge gate)
 	@$(GOLANGCI_LINT_RUN) run --timeout 10m --max-same-issues 0 --max-issues-per-linter 0 ./...
+	@$(GO) run ./cmd/notify validate --config notify.yml
 
 fmt: ## Format this module's sources.
 	$(GO) fmt ./...

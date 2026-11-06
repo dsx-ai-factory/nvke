@@ -169,6 +169,11 @@ on:
         type: boolean
         required: false
         default: false
+      notify:
+        description: Announce this run in Slack, as a beta tag run does. A dry run is never announced.
+        type: boolean
+        required: false
+        default: false
       keep-site:
         description: Keep the site node after the run, and a failed tenant's nodes, for debugging. Remember to delete them by hand.
         type: boolean
@@ -256,7 +261,11 @@ jobs:
        github.event_name == 'push' ||
        (github.event.pull_request.head.repo.full_name == github.repository &&
         contains(fromJSON('["qualify-e2e","qualify-e2e-dry-run","qualify-e2e-l40s","qualify-e2e-dsx"]'), github.event.label.name)))
-    timeout-minutes: 15
+    # The plan's own 15 minutes, plus the notification steps (two on a normal run)
+    # at up to 3 minutes each. A job timeout cancels the job whatever continue-on-error says,
+    # and a cancelled plan starts no lane, so a stalled notification must not be
+    # able to spend the plan's budget.
+    timeout-minutes: 25
     permissions:
       contents: read
     outputs:
@@ -276,6 +285,13 @@ jobs:
       commit: ${{ steps.matrix.outputs.commit }}
     env:
       DRY_RUN: ${{ (inputs.dry-run == true || github.event.label.name == 'qualify-e2e-dry-run') && 'true' || 'false' }}
+      # Whether this run is announced in Slack: a beta tag push always is, and a
+      # dispatch only when asked. A dry run never is. The token is read in the
+      # plan and results jobs from ci-shared and in each lane from its own
+      # environment, so this condition is what keeps a run silent, and every
+      # notify step names it. A labelled pull request has no `inputs`, so it is
+      # silent.
+      NOTIFY: ${{ ((github.event_name == 'push' || inputs.notify == true) && !(inputs.dry-run == true || github.event.label.name == 'qualify-e2e-dry-run')) && 'true' || 'false' }}
       # A tag push qualifies the tag it was pushed for. Its ref_name is only
       # read on that event, so a dispatch from a branch is unaffected.
       NVKE_VERSION: >-
@@ -448,6 +464,59 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # SLACK. This job opens the run's thread with "started", titled with the
+      # version, and the lanes that need it reply in it, so a lane cannot post
+      # before the thread exists. Each message may start the thread if the one
+      # before it failed to. A notification never fails the plan; each step is cut
+      # off after 3 minutes, which is how long a stall can hold the lanes back.
+      - name: Announce that qualification started
+        if: env.NOTIFY == 'true'
+        continue-on-error: true
+        timeout-minutes: 3
+        uses: ./.github/actions/notify
+        with:
+          event: qualification:started
+          token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
+          open-thread: "true"
+          data: |
+            nvke_version=${{ steps.matrix.outputs.nvke-version }}
+
+      - name: Count the streams
+        id: streams
+        if: env.NOTIFY == 'true'
+        continue-on-error: true
+        shell: bash
+        run: echo "count=$(jq -r '[.combinations[].streams[].name] | unique | length' plan.json)" >> "${GITHUB_OUTPUT}"
+
+      - name: Announce the plan
+        if: env.NOTIFY == 'true'
+        continue-on-error: true
+        timeout-minutes: 3
+        uses: ./.github/actions/notify
+        with:
+          event: qualification:plan-resolved
+          token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
+          open-thread: "true"
+          data: |
+            nvke_version=${{ steps.matrix.outputs.nvke-version }}
+            scope=${{ steps.matrix.outputs.scope }}
+            resolution=${{ steps.matrix.outputs.resolution }}
+            stream_count=${{ steps.streams.outputs.count }}
+
+      # A plan that fails never reaches the lanes or the results job, so this is
+      # the only place its failure can be announced.
+      - name: Announce that the plan failed
+        if: failure() && env.NOTIFY == 'true'
+        continue-on-error: true
+        timeout-minutes: 3
+        uses: ./.github/actions/notify
+        with:
+          event: qualification:failed
+          token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
+          open-thread: "true"
+          data: |
+            summary=The plan did not resolve
+
   # Everything the run needs, in one gated job: confirms every artifact the
   # plan names is published, resolves versions and capabilities, builds the
   # image archives and nvkectl, reaches Forge or the jump host, and runs the
@@ -554,6 +623,9 @@ jobs:
       # with every other run in flight.
       SITE_STAGE: ${{ inputs.stage || (github.event_name != 'push' && vars.QUALIFY_E2E_STAGE) || 'full' }}
       DRY_RUN: ${{ needs.plan.outputs.dry-run }}
+      # See the plan job: a beta tag push, or a dispatch that asked, and never a
+      # dry run.
+      NOTIFY: ${{ (github.event_name == 'push' || inputs.notify == true) && needs.plan.outputs.dry-run != 'true' && 'true' || 'false' }}
       # Whether this run's ref is one the nvke WIF provider in the testgrid
       # repo actually trusts (main, or a v<digit> tag -- see wif-nvke.tf
       # there). Only a pre-filter: GCP's own attribute mapping is the real
@@ -748,6 +820,19 @@ jobs:
         with:
           name: qualify-plan-${{ github.run_id }}
 
+      # Slack. The plan job opened the thread, which this job waits for, and a
+      # lane replies in it and starts none.
+      - name: Announce that the stream started
+        if: env.NOTIFY == 'true'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: ./.github/actions/notify
+        with:
+          event: qualification:stream-started
+          token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
+          data: |
+            stream=${{ matrix.stream }}
+
       # This stream's versions, architecture, GPU and provider, from its entry
       # in the plan.
       - name: Read the stream from the plan
@@ -775,6 +860,7 @@ jobs:
       # separate ungated job, which would need its own approval or would put
       # NGC_API_KEY back outside the gate.
       - name: Check every artifact the plan names
+        id: artifacts
         shell: bash
         env:
           # Both registries hold private repositories, so neither answers
@@ -857,6 +943,7 @@ jobs:
       # deploy path out of the checkout. The node has no access to this
       # repository, so everything it runs has to be built here and staged.
       - name: Build the site inputs
+        id: site-inputs
         shell: bash
         env:
           # Only the published-nvkectl path reads it: the repository is
@@ -927,6 +1014,7 @@ jobs:
       # Every element of this config was verified against the cluster's 18.11
       # server by forge-connectivity-probe.yml before the lane was changed.
       - name: Start the Teleport identity daemon
+        id: teleport
         if: env.DRY_RUN != 'true'
         shell: bash
         env:
@@ -1251,6 +1339,7 @@ jobs:
       # not told which.
       # Marked in a dry run, as the job name is, because the suite is not run.
       - name: Run the e2e suite${{ env.DRY_RUN == 'true' && ' (dry run)' || '' }}
+        id: suite
         shell: bash
         env:
           FORGE_API_KEY: ${{ secrets.FORGE_API_KEY }}
@@ -1395,6 +1484,35 @@ jobs:
         shell: bash
         run: rm -rf -- "${RUNNER_TEMP}/tbot"
 
+      # The outcome, in the thread. The stage is the first of the steps that
+      # matter that failed, so it names where the stream stopped and not only
+      # that it did. A suite that passed leaves `after the suite`: publishing the
+      # result, the upload or the cleanup failed. `setup` is only a stream whose
+      # suite never ran. A cancelled run posts neither: it has no outcome, and it
+      # still needs someone to check Forge for a leaked instance.
+      - name: Announce that the stream passed
+        if: success() && env.NOTIFY == 'true'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: ./.github/actions/notify
+        with:
+          event: qualification:stream-passed
+          token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
+          data: |
+            stream=${{ matrix.stream }}
+
+      - name: Announce that the stream failed
+        if: failure() && env.NOTIFY == 'true'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: ./.github/actions/notify
+        with:
+          event: qualification:stream-failed
+          token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
+          data: |
+            stream=${{ matrix.stream }}
+            stage=${{ (steps.artifacts.outcome == 'failure' && 'artifact check') || (steps.site-inputs.outcome == 'failure' && 'site inputs') || (steps.teleport.outcome == 'failure' && 'teleport') || (steps.suite.outcome == 'failure' && 'e2e suite') || (steps.suite.outcome == 'success' && 'after the suite') || 'setup' }}
+
   # How every stream went, as one card on the run page below the plan's: a row
   # for each stream, then each stream's specs and the failure Ginkgo recorded
   # for anything that did not pass. A job of its own because the run page gives
@@ -1414,6 +1532,9 @@ jobs:
       needs.plan.result == 'success' &&
       needs.plan.outputs.dry-run != 'true'
     runs-on: ubuntu-latest
+    # ci-shared has no protection rules, so this adds no approval. It is here so
+    # the verdict can read the Slack token; see NOTIFY in the plan job.
+    environment: ci-shared
     timeout-minutes: 10
     # The run's conclusion is the qualification's verdict, and a card that did
     # not render says nothing about the release.
@@ -1422,6 +1543,9 @@ jobs:
       contents: read
       # Lists and downloads the lanes' run logs.
       actions: read
+    env:
+      # See the plan job. A dry run never reaches this job.
+      NOTIFY: ${{ (github.event_name == 'push' || inputs.notify == true) && 'true' || 'false' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1499,3 +1623,39 @@ jobs:
           done < <(jq -r '[.combinations[].streams[].name] | unique[]' plan.json)
 
           go run ./release/cmd/qualify summary results --plan plan.json "${reports[@]}" >> "${GITHUB_STEP_SUMMARY}"
+
+      # The verdict as the event that carries its colour: every stream passed, at
+      # least one failed, or the run stopped without one. The plan succeeded, or
+      # this job would not run.
+      # !cancelled() and not the implicit success(): the outcome is known from the
+      # lanes' result, so a summary that failed to download or render must not
+      # silence it.
+      - name: Decide the outcome
+        id: verdict
+        if: ${{ !cancelled() && env.NOTIFY == 'true' }}
+        shell: bash
+        env:
+          LANES: ${{ needs.qualify-run.result }}
+        run: |
+          set -Eeuo pipefail
+          case "${LANES}" in
+            success)   outcome=passed;  summary="Every stream passed" ;;
+            failure)   outcome=failed;  summary="At least one stream failed" ;;
+            cancelled) outcome=stopped; summary="The run was cancelled" ;;
+            *)         outcome=stopped; summary="No stream ran" ;;
+          esac
+          {
+            echo "outcome=${outcome}"
+            echo "summary=${summary}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Announce the result
+        if: ${{ !cancelled() && env.NOTIFY == 'true' }}
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: ./.github/actions/notify
+        with:
+          event: qualification:${{ steps.verdict.outputs.outcome }}
+          token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
+          data: |
+            summary=${{ steps.verdict.outputs.summary }}
