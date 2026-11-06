@@ -23,6 +23,7 @@ the lane works inside, and [triage.md](triage.md) covers a failed run.
 | [Dispatch the workflow on `main`](#dispatch-the-workflow) | qualifying a version: a beta, a release candidate, a combination | the published artifacts the plan names, with the suite from `main` | write access to this repository, and an approval |
 | [Label a pull request](#label-a-pull-request) | a change on a branch of this repository | the same, with the suite and workflow from the pull request | triage access, and an approval |
 | [Push a beta tag](#push-a-beta-tag) | the nightly beta | the commit the tag marks | permission to push the tag |
+| [Push a release candidate tag](#push-a-release-candidate-tag) | the perf stream on each release candidate | the commit the tag marks | `NVKE_RC_PERF` set to `true` |
 | [`qualify local` from your fork](#run-it-from-your-fork-with-qualify-local) | a change from a fork, or work on the lane itself | your checkout, built from source, with the OS image from the plan | a Teleport login, and the Forge site's values and API key |
 
 The workflow does not run for a pull request from a fork: a fork cannot reach
@@ -50,8 +51,8 @@ uploads `plan.json`. `qualify-run` runs once for each stream in the plan's
 scope, named for its stream. `results` adds a card to the run page.
 
 **Every run waits for approval**, dry runs included, unless it was started by
-a beta tag. On the run page choose **Review deployments**, select `forge`, and
-approve. A reviewer may approve a run they started.
+a beta or release candidate tag. On the run page choose **Review deployments**,
+select `forge`, and approve. A reviewer may approve a run they started.
 
 ### Dispatch the workflow
 
@@ -125,6 +126,18 @@ plan's, and `QUALIFY_E2E_DEPLOY_PATH_REF` installs another deploy path. Unset
 both after the label run that needed them. `QUALIFY_E2E_NGC_ORG` and
 `QUALIFY_E2E_NODE_USER` apply by design. It runs in the `forge-nightly`
 environment, which needs no approval. A beta is cut once a night.
+
+### Push a release candidate tag
+
+Pushing a `vX.Y.Z-rc.N` tag starts the `Qualify perf` workflow, which runs
+scope `perf` with the same settings as a beta tag push. It runs only while the
+repository variable `NVKE_RC_PERF` is `true`, in the `forge-nightly`
+environment, whose deployment tag policy must admit `v*-rc.*`. One perf run
+holds the NVKE Scale site at a time, and only one more can wait for it: a newer
+perf run, from an rc tag or a `scope=perf` dispatch, cancels the one already
+waiting. A dry run takes no machine and stays out of that queue. To start the
+perf stream by hand,
+[dispatch the workflow](#dispatch-the-workflow) with `-f scope=perf`.
 
 ### What a CI run leaves behind
 
@@ -615,12 +628,13 @@ job; `qualify local` runs the one stream you name.
 | `perf` | the performance stream on the NVKE Scale Forge site: CPU machines only, a three worker tenant |
 | `full` | every Forge stream except the perf one: GB200 and L40S on Ubuntu 24.04 and 26.04 |
 
-The perf stream holds the NVKE Scale site for hours, so only a dispatch that
-names `perf` runs it, and `full` leaves it out. A stream can also carry
-`parameters` in `release/policy.yaml`: the environment file it runs against,
-the workers its tenant gets and the suite's timeout. The plan records them, and
-the stream's result says which it ran with. The job's timeout and the timeout of
-`go test` follow from the suite's, so they cannot be set to disagree.
+Only a dispatch that names `perf` or a release candidate tag runs the perf
+stream, which holds the NVKE Scale site for hours, and `full` leaves it out. A
+stream can also carry `parameters` in `release/policy.yaml`: the environment
+file it runs against, the workers its tenant gets and the suite's timeout. Each
+plan records them, and the stream's result says which it ran with. A job's
+timeout and the timeout of `go test` follow from the suite's, so they cannot be
+set to disagree.
 
 ## Stages
 

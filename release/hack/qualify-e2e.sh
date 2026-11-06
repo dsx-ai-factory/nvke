@@ -294,18 +294,18 @@ resolve_controller() {
 # join token will see, and the values a pull_request event does not
 # supply. Both fail here rather than after a machine exists.
 check_viable() {
-  # The join token allows refs/heads/main, refs/pull/*/merge and a
-  # repo-wide beta tag, and nothing else, so a dispatch from any other
-  # branch mints nothing. The patterns are the token's own, so a
+  # Teleport's join token allows main, pull merge refs and release tags
+  # refs/tags/v* (beta, rc, GA), and nothing else, so a dispatch from any
+  # other branch mints nothing. These patterns are the token's own, so a
   # change there is a change here. Only a workflow joins with it: a person
   # runs on their own Teleport login.
   if [ -n "${GITHUB_ACTIONS:-}" ] && [ "${DRY_RUN:-}" != "true" ]; then
     case "${GITHUB_REF}" in
-      refs/heads/main | refs/pull/*/merge | refs/tags/v*-beta.*) ;;
+      refs/heads/main | refs/pull/*/merge | refs/tags/v*) ;;
       *)
         fail "running from ${GITHUB_REF}; the Teleport join token allows only" \
-          "refs/heads/main, refs/pull/*/merge and refs/tags/v*-beta.*." \
-          "Dispatch from main, label a pull request, or push a beta tag."
+          "refs/heads/main, refs/pull/*/merge and refs/tags/v*." \
+          "Dispatch from main, label a pull request, or push a release tag."
         ;;
     esac
   fi
