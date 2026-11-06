@@ -484,6 +484,100 @@ func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
 	}
 }
 
+// cweCallRecorder records every helm/kubectl/env call controllerdeploy and the
+// deploy command make, then answers as the wrapped runner does.
+type cweCallRecorder struct {
+	next  controllerdeploy.CommandRunner
+	calls [][]string
+}
+
+func (r *cweCallRecorder) Run(ctx context.Context, name string, args ...string) (string, error) {
+	r.calls = append(r.calls, append([]string{name}, args...))
+	return r.next.Run(ctx, name, args...)
+}
+
+// TestRunBootstrapSiteDeployCommandReplacesTheBuiltInDeploy is --deploy-command:
+// the command runs with sh -c and the bootstrap cluster in its environment, no
+// built-in chart is installed, and the bootstrap still goes on to build the
+// cluster.
+func TestRunBootstrapSiteDeployCommandReplacesTheBuiltInDeploy(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPI(t, true)
+
+	recorder := &cweCallRecorder{next: newFakeCWERunner(t)}
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec:            writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:     &recordingRunner{next: fakeBootstrapRunner{}},
+		cweRunner:           recorder,
+		deployCommand:       "deploy-the-stack --now",
+		kubeconfigOut:       filepath.Join(t.TempDir(), "nvke-site.kubeconfig"),
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
+		dumpSpireEntries: func(context.Context, string, string) (int, error) {
+			return 1, nil
+		},
+		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+	})
+	if err != nil {
+		t.Fatalf("runBootstrapSite returned error: %v", err)
+	}
+
+	var ran []string
+	for _, call := range recorder.calls {
+		if call[0] == "helm" {
+			t.Errorf("the built-in deploy ran despite --deploy-command: %v", call)
+		}
+		if call[0] == "env" {
+			ran = call
+		}
+	}
+	if ran == nil {
+		t.Fatalf("--deploy-command was not run; calls: %v", recorder.calls)
+	}
+	joined := strings.Join(ran, " ")
+	for _, want := range []string{"KUBECONFIG=", "NVKECTL_BOOTSTRAP_CLUSTER=", "NVKECTL_SITESPEC=", "sh -c deploy-the-stack --now"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("deploy command call %q does not contain %q", joined, want)
+		}
+	}
+}
+
+// failingDeployRunner fails the --deploy-command call and answers the rest.
+type failingDeployRunner struct{ fakeCWERunner }
+
+func (r failingDeployRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	if name == "env" {
+		return "boom on stderr", errors.New("exit status 3")
+	}
+	return r.fakeCWERunner.Run(ctx, name, args...)
+}
+
+// TestRunBootstrapSiteDeployCommandFailureStopsTheBootstrap: a failing command
+// fails the run with its output, before the controller is waited for.
+func TestRunBootstrapSiteDeployCommandFailureStopsTheBootstrap(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPI(t, true)
+
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec:        writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner: &recordingRunner{next: fakeBootstrapRunner{}},
+		cweRunner:       failingDeployRunner{newFakeCWERunner(t)},
+		deployCommand:   "false",
+		kubeconfigOut:   filepath.Join(t.TempDir(), "nvke-site.kubeconfig"),
+		lookPath:        runtimeOnPath,
+		dialContext:     refuseDial,
+	})
+	if err == nil {
+		t.Fatal("runBootstrapSite succeeded although --deploy-command failed")
+	}
+	for _, want := range []string{"--deploy-command", "exit status 3", "boom on stderr"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+}
+
 func TestRunBootstrapSiteWritesIssuedBreakglassKubeconfig(t *testing.T) {
 	setBootstrapEnv(t)
 	startFakeCWEAPI(t, true)

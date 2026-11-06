@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# OIDC upstream CA chain, the two Issuers. cert-manager generates the CA
+# private key inside the cluster from the one-time SelfSigned Issuer below;
+# the resulting CA Secret (oidc-provider-upstream-ca) is then consumed by the
+# namespace-scoped CA-type Issuer that signs the OIDC discovery provider's
+# leaf serving cert.
+#
+# A ClusterIssuer of type `ca` would read from cert-manager's
+# --cluster-resource-namespace, so we keep this namespace-scoped on purpose.
+#
+# The Certificate that binds them is a separate file, because it is applied
+# only when the site has no CA yet: oidc-upstream-ca-certificate.yaml.
+# These two Issuers carry no key material and are re-applied every install.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: oidc-ca-bootstrap
+  namespace: spire-server
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: nvke-oidc-upstream-ca
+  namespace: spire-server
+spec:
+  ca:
+    secretName: oidc-provider-upstream-ca

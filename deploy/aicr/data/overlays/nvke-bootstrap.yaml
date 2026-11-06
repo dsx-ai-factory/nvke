@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The management plane `nvkectl bootstrap site` builds on its ephemeral kind cluster, for the bootstrap e2e.
+# Same chart sources as nvke-kind; SPIRE and the controller take their bootstrap values, which
+# bootstrap-e2e.sh completes from the site spec. Cluster API and the provisioned provider stay outside
+# AICR, as `clusterctl init` always did.
+kind: RecipeMetadata
+apiVersion: aicr.run/v1beta1
+metadata:
+  name: nvke-bootstrap
+spec:
+  base: base
+  criteria:
+    service: nvke-bootstrap
+  componentRefs:
+    - {name: postgres, type: Helm, valuesFile: components/postgres/nvkr-values.yaml}
+    - {name: spire-crds, type: Helm}
+    - {name: temporal, type: Helm, valuesFile: components/temporal/nvkr-values.yaml, dependencyRefs: [postgres]}
+    - {name: spire, type: Helm, valuesFile: components/spire/bootstrap-values.yaml, dependencyRefs: [spire-crds]}
+    - {name: nvke-bootstrap-config, type: Helm, manifestFiles: [components/nvke-bootstrap-config/manifests/spire-server-external.yaml, components/nvke-bootstrap-config/manifests/nke-controller-external.yaml], dependencyRefs: [spire]}
+    - {name: nke-controller, type: Helm, valuesFile: components/nke-controller/nvkr-values.yaml, dependencyRefs: [postgres, temporal, spire]}

@@ -1,0 +1,107 @@
+# Derived from deploy/nico/spire (comments stripped).
+global:
+  spire:
+    recommendations:
+      enabled: true
+      strictMode: false
+    trustDomain: example.org
+    jwtIssuer: https://nke.site-controller.internal
+  installAndUpgradeHooks:
+    enabled: false
+  deleteHooks:
+    enabled: false
+spiffe-csi-driver: {}
+spire-agent:
+  serviceAccount:
+    name: spire-agent
+  server:
+    namespaceOverride: spire-server
+  workloadAttestors:
+    k8s:
+      enabled: true
+      disableContainerSelectors: true
+  telemetry:
+    prometheus:
+      podMonitor:
+        enabled: true
+spire-server:
+  namespaceOverride: spire-server
+  bundlePublisher:
+    k8sConfigMap:
+      namespace: spire-system
+  adminIDs:
+  - spiffe://example.org/nvke-service/nke-controller
+  controllerManager:
+    validatingWebhookConfiguration:
+      failurePolicy: Ignore
+    className: spire-mgmt-spire
+    identities:
+      clusterSPIFFEIDs:
+        default:
+          namespaceSelector:
+            matchExpressions:
+            - key: kubernetes.io/metadata.name
+              operator: NotIn
+              values:
+              - nke-controller
+        nvke-service:
+          type: raw
+          spiffeIDTemplate: spiffe://{{.TrustDomain}}/nvke-service/{{.PodSpec.ServiceAccountName}}
+          namespaceSelector:
+            matchExpressions:
+            - key: kubernetes.io/metadata.name
+              operator: In
+              values:
+              - nke-controller
+              - capi-system
+              - capi-kubeadm-control-plane-system
+              - capi-kubeadm-bootstrap-system
+  nodeAttestor:
+    k8sPSAT:
+      serviceAccountAllowList:
+      - spire-system:spire-agent
+    tpmDirect:
+      enabled: true
+      # Per-architecture sha256 of the attestor plugin, filled by the pin step. A wrong value crash-loops the server.
+      checksum: "@TPM_CHECKSUM@"
+  extraVolumes:
+  - name: tpm-pubhashes
+    configMap:
+      name: tpm-pubhashes
+      optional: true
+  extraVolumeMounts:
+  - name: tpm-pubhashes
+    mountPath: /run/spire/data/tpm-direct/hashes
+    readOnly: true
+  telemetry:
+    prometheus:
+      podMonitor:
+        enabled: true
+spiffe-oidc-discovery-provider:
+  enabled: true
+  namespaceOverride: spire-server
+  replicaCount: 2
+  tls:
+    spire:
+      enabled: false
+    certManager:
+      enabled: true
+      issuer:
+        create: false
+      certificate:
+        duration: 2160h
+        privateKey:
+          algorithm: ECDSA
+          size: 256
+        dnsNames:
+        - nke.site-controller.internal
+        - localhost
+        issuerRef:
+          group: cert-manager.io
+          kind: Issuer
+          name: nvke-oidc-upstream-ca
+  config:
+    additionalDomains:
+    - nke.site-controller.internal
+    - localhost
+    - 127.0.0.1

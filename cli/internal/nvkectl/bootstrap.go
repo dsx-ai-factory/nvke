@@ -70,6 +70,11 @@ type bootstrapSiteOptions struct {
 	collectDiagnostics bool
 	keepBootstrapKind  bool
 
+	// deployCommand is the --deploy-command flag: a shell command that stands
+	// the controller stack up on the bootstrap cluster in place of the built-in
+	// deploy.
+	deployCommand string
+
 	// release is an NVKR release description. With infra.provider nico its
 	// capnico-controller artifact replaces the CAPNICo image, as the deploy
 	// path's render does. arch selects the artifact's architecture.
@@ -231,6 +236,12 @@ site spec file format.`,
 			"Development only; replacing the initializing node can break API access.")
 	cmd.Flags().BoolVar(&opts.keepBootstrapKind, "keep-bootstrap-cluster", false,
 		"Leave the ephemeral bootstrap Kind cluster running after the command exits, for debugging")
+	cmd.Flags().StringVar(&opts.deployCommand, "deploy-command", os.Getenv("NVKECTL_BOOTSTRAP_DEPLOY_COMMAND"),
+		"Shell command that deploys Postgres, Temporal, SPIRE, Cluster API and the controller onto the bootstrap "+
+			"Kind cluster instead of the built-in deploy. It runs with KUBECONFIG set to the bootstrap cluster, "+
+			"NVKECTL_BOOTSTRAP_CLUSTER to its name and NVKECTL_SITESPEC to the site spec's path. Nothing else the "+
+			"built-in deploy does is done for it, so it must leave the controller reachable on its published port. "+
+			"Development only. Overrides NVKECTL_BOOTSTRAP_DEPLOY_COMMAND.")
 	cmd.Flags().DurationVar(&opts.clusterTimeout, "timeout",
 		envDurationOrDefault("NVKECTL_BOOTSTRAP_CLUSTER_TIMEOUT", 30*time.Minute),
 		"How long to wait for the cluster to finish provisioning, which includes "+
@@ -480,7 +491,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	// Step 3: deploy Postgres, Temporal, SPIRE, Cluster API, and the controller onto the bootstrap
 	// cluster and wait for the controller to report healthy on /readyz before going any
 	// further — there is nothing to dispatch a workflow to otherwise.
-	if err := deployAndWaitForCWE(ctx, engine, cluster, cweCfg, opts.cweRunner, logger); err != nil {
+	if err := deployAndWaitForCWE(ctx, engine, cluster, cweCfg, opts.cweRunner, opts.deployCommand, opts.siteSpec, logger); err != nil {
 		return err
 	}
 
@@ -1140,6 +1151,8 @@ func deployAndWaitForCWE(
 	cluster *bootstrapengine.Cluster,
 	cweCfg controllerdeploy.Config,
 	cweRunner controllerdeploy.CommandRunner,
+	deployCommand string,
+	siteSpecPath string,
 	logger *slog.Logger,
 ) error {
 	for _, image := range nvkeImages(cweCfg) {
@@ -1149,9 +1162,15 @@ func deployAndWaitForCWE(
 	}
 
 	cwe := controllerdeploy.New(cweRunner, logger)
-	logger.Info("deploying the controller onto bootstrap kind cluster", "cluster", cluster.Name, "image", cweCfg.CWEImage)
-	if err := cwe.Deploy(ctx, cluster.KubeconfigPath, cweCfg); err != nil {
-		return fmt.Errorf("deploying the controller: %w", err)
+	if deployCommand != "" {
+		if err := runDeployCommand(ctx, cweRunner, deployCommand, siteSpecPath, cluster, logger); err != nil {
+			return fmt.Errorf("running --deploy-command: %w", err)
+		}
+	} else {
+		logger.Info("deploying the controller onto bootstrap kind cluster", "cluster", cluster.Name, "image", cweCfg.CWEImage)
+		if err := cwe.Deploy(ctx, cluster.KubeconfigPath, cweCfg); err != nil {
+			return fmt.Errorf("deploying the controller: %w", err)
+		}
 	}
 
 	logger.Info("waiting for the controller to report healthy", "timeout", cweCfg.ReadyTimeout)
@@ -1163,6 +1182,35 @@ func deployAndWaitForCWE(
 		return fmt.Errorf("waiting for the published controller api: %w", err)
 	}
 	logger.Info("controller deployment healthy")
+	return nil
+}
+
+// runDeployCommand runs command with sh -c in place of the built-in deploy. The
+// command gets the bootstrap cluster through KUBECONFIG, its name through
+// NVKECTL_BOOTSTRAP_CLUSTER and the site spec's path through NVKECTL_SITESPEC,
+// and must leave the controller stack running: the
+// bootstrap goes on to wait for the controller to report healthy, and nothing
+// more of the built-in deploy is done for it.
+func runDeployCommand(
+	ctx context.Context,
+	runner controllerdeploy.CommandRunner,
+	command string,
+	siteSpecPath string,
+	cluster *bootstrapengine.Cluster,
+	logger *slog.Logger,
+) error {
+	if runner == nil {
+		runner = controllerdeploy.ExecCommandRunner{}
+	}
+	logger.Info("deploying the controller stack with --deploy-command", "cluster", cluster.Name)
+	out, err := runner.Run(ctx, "env",
+		"KUBECONFIG="+cluster.KubeconfigPath,
+		"NVKECTL_BOOTSTRAP_CLUSTER="+cluster.Name,
+		"NVKECTL_SITESPEC="+siteSpecPath,
+		"sh", "-c", command)
+	if err != nil {
+		return fmt.Errorf("%w\n%s", err, out)
+	}
 	return nil
 }
 

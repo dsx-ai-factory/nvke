@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# spire-oidc-provider-nodeport, copied from this repository per manifests/spire-oidc-provider-nodeport.pin.yaml. Applied with kubectl apply --server-side.
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: spire-oidc-provider-np
+    namespace: spire-server
+spec:
+    ports:
+        - name: https
+          nodePort: 30443
+          port: 443
+          protocol: TCP
+          targetPort: https
+    selector:
+        app.kubernetes.io/name: spiffe-oidc-discovery-provider
+    type: NodePort

@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# cert-manager replaces what `clusterctl init` installed first. The CRDs ship with the chart, and the
+# ServiceMonitor stays off: this component installs before nktp, which owns the monitoring CRDs.
+fullnameOverride: cert-manager
+crds:
+  enabled: true
+prometheus:
+  servicemonitor:
+    enabled: false

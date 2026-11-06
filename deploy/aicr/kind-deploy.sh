@@ -34,7 +34,8 @@ REGISTRY_NAME=nvke-aicr-registry
 REGISTRY_PORT=5000
 PREFIX="nvke"
 CHART_PORT=8765
-CHARTS=(postgresql temporal controller-chart)
+CHARTS=(postgresql temporal controller-chart nktp spire spire-crds)
+NICO="${HERE}/../nico"
 # Throwaway credential for the kind cluster only.
 # Kept in .work so a rerun against a kept cluster matches the password Postgres initialised with.
 [ -f "${WORK}/db-password" ] || { mkdir -p "${WORK}"; openssl rand -hex 12 >"${WORK}/db-password"; }
@@ -80,11 +81,28 @@ CHART_PID=$!
 until curl -fs "http://127.0.0.1:${CHART_PORT}/index.yaml" >/dev/null; do sleep 1; done
 cp -R "${HERE}/data" "${WORK}/pinned"
 chart_version() { helm show chart "oci://127.0.0.1:${REGISTRY_PORT}/${PREFIX}/$1" --plain-http | sed -n 's/^version: //p'; }
-sed -i.bak -e "s#@REPOSITORY@#http://127.0.0.1:${CHART_PORT}#" \
-  -e "s#@VERSION:postgresql@#$(chart_version postgresql)#" \
-  -e "s#@VERSION:temporal@#$(chart_version temporal)#" \
-  -e "s#@VERSION:controller-chart@#$(chart_version controller-chart)#" "${WORK}/pinned/registry.yaml"
+sed_args=(-e "s#@REPOSITORY@#http://127.0.0.1:${CHART_PORT}#")
+for c in "${CHARTS[@]}"; do sed_args+=(-e "s#@VERSION:${c}@#$(chart_version "${c}")#"); done
+sed -i.bak "${sed_args[@]}" "${WORK}/pinned/registry.yaml"
 rm -f "${WORK}/pinned/registry.yaml.bak"
+# The SPIRE TPM attestor checksum is per architecture. The values mirror cli/internal/bootstrap/controllerdeploy;
+# the node architecture is the Docker host's, which is what kind runs.
+case "$(docker info --format '{{.Architecture}}')" in
+  aarch64|arm64) tpm_checksum=b69d0153c8241383f24da138bc85429a620d9f962a2f10abb314aa0e39046d16 ;;
+  x86_64|amd64)  tpm_checksum=46d0caad8c25a027dd11c93e18b58a8bc6fbd9f1fe2e36fa2a0dd440986de4dc ;;
+  *) die "unsupported node architecture" ;;
+esac
+sed -i.bak "s#@TPM_CHECKSUM@#${tpm_checksum}#" "${WORK}/pinned/components/spire/values.yaml"
+rm -f "${WORK}/pinned/components/spire/values.yaml.bak"
+sed -i.bak "s#@CLUSTER@#${CLUSTER}#" "${WORK}/pinned/components/nvke-base-config/manifests/nktp-cluster.yaml"
+rm -f "${WORK}/pinned/components/nvke-base-config/manifests/nktp-cluster.yaml.bak"
+# CAPNICo is a manifest, kept in the deploy path rather than copied: drop its Namespace (created below
+# with the others) and let the image resolve to the one staged from the Release.
+mkdir -p "${WORK}/pinned/components/capnico/manifests"
+python3 -c '
+import sys, yaml
+docs = [d for d in yaml.safe_load_all(open(sys.argv[1])) if d and d.get("kind") != "Namespace"]
+print(yaml.safe_dump_all(docs))' "${NICO}/capnico/capnico.yaml" >"${WORK}/pinned/components/capnico/manifests/capnico.yaml"
 
 log "recipe + bundle: aicr, helm deployer"
 rm -rf "${WORK}/bundle" "${WORK}/recipe.yaml"
@@ -113,8 +131,18 @@ docker exec "${CLUSTER}-control-plane" ctr -n k8s.io images tag --force \
 docker exec "${CLUSTER}-control-plane" ctr -n k8s.io images tag --force \
   "${REGISTRY_NAME}:5000/${PREFIX}/cwe@${digest}" "${image_ref%%:*}@${digest}" >/dev/null
 
+log "stage: CAPNICo image from the Release"
+capnico_ref="$(sed -n 's/^image: //p' "${NICO}/capnico/release.yaml")"
+capnico_tag="$(curl -s "http://127.0.0.1:${REGISTRY_PORT}/v2/${PREFIX}/capnico-controller/tags/list" | python3 -c 'import json,sys;print(next(t for t in json.load(sys.stdin)["tags"] if t.startswith("sha256-")))')"
+capnico_digest="sha256:${capnico_tag#sha256-}"
+docker exec "${CLUSTER}-control-plane" ctr -n k8s.io images pull --plain-http \
+  "${REGISTRY_NAME}:5000/${PREFIX}/capnico-controller@${capnico_digest}" >/dev/null
+docker exec "${CLUSTER}-control-plane" ctr -n k8s.io images tag --force \
+  "${REGISTRY_NAME}:5000/${PREFIX}/capnico-controller@${capnico_digest}" "${capnico_ref}" >/dev/null
+
 log "secrets: created out of band, never in the data tree"
-for ns in postgres temporal nke-controller nvke-system; do kubectl create namespace "${ns}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null; done
+# The namespaces keep their Pod Security labels, which Helm's --create-namespace would not set.
+kubectl apply -f "${NICO}/nvke-base-config/00-namespaces.yaml" >/dev/null
 url="postgresql://postgres:${DB_PASSWORD}@postgres-postgresql.postgres.svc.cluster.local:5432/nke-controller?sslmode=disable"
 for ns in postgres temporal nke-controller; do
   kubectl -n "${ns}" create secret generic nvke-database \
@@ -140,6 +168,15 @@ log "deploy: aicr bundle"
 (cd "${WORK}/bundle" && chmod +x deploy.sh && ./deploy.sh)
 
 log "ready: fail unless every component is up (the chart installs do not wait)"
+kubectl -n cert-manager wait --for=condition=Available deployment --all --timeout=300s
+kubectl -n capnico-system wait --for=condition=Available deployment --all --timeout=300s
+kubectl -n spire-server wait --for=condition=Ready certificate --all --timeout=300s
+kubectl -n spire-server wait --for=condition=Available deployment --all --timeout=300s
+kubectl -n spire-server rollout status statefulset/spire-server --timeout=300s
+kubectl -n spire-system rollout status daemonset --timeout=300s
+kubectl -n nktp wait --for=condition=Available deployment --all --timeout=300s
+kubectl -n nktp rollout status daemonset --timeout=300s
+kubectl -n nktp rollout status statefulset --timeout=300s
 kubectl -n postgres wait --for=condition=Ready pod -l app.kubernetes.io/instance=postgres --timeout=300s
 kubectl -n temporal wait --for=condition=Complete job --all --timeout=300s
 kubectl -n temporal wait --for=condition=Available deployment --all --timeout=300s

@@ -34,3 +34,49 @@ components:
       defaultChart: nvke-controller
       defaultVersion: "@VERSION:controller-chart@"
       defaultNamespace: nke-controller
+  - name: nktp
+    displayName: NKTP telemetry pipeline
+    class: core
+    valueOverrideKeys: [nktp]
+    helm:
+      defaultRepository: "@REPOSITORY@"
+      defaultChart: nktp
+      defaultVersion: "@VERSION:nktp@"
+      defaultNamespace: nktp
+  - name: spire-crds
+    displayName: SPIRE CRDs
+    class: core
+    valueOverrideKeys: [spirecrds]
+    helm:
+      defaultRepository: "@REPOSITORY@"
+      defaultChart: spire-crds
+      defaultVersion: "@VERSION:spire-crds@"
+      defaultNamespace: spire-server
+  - name: spire
+    displayName: SPIRE
+    class: core
+    valueOverrideKeys: [spire]
+    helm:
+      defaultRepository: "@REPOSITORY@"
+      defaultChart: spire
+      defaultVersion: "@VERSION:spire@"
+      defaultNamespace: spire-server
+  # Manifest-only: objects that carry no chart. The manifests name their own namespaces.
+  - name: nvke-base-config
+    displayName: NVKE base configuration
+    class: core
+    helm:
+      defaultRepository: ""
+      defaultNamespace: nke-controller
+  - name: capnico
+    displayName: CAPNICo
+    class: core
+    helm:
+      defaultRepository: ""
+      defaultNamespace: capnico-system
+  - name: nvke-bootstrap-config
+    displayName: NVKE bootstrap NodePorts
+    class: core
+    helm:
+      defaultRepository: ""
+      defaultNamespace: nke-controller
