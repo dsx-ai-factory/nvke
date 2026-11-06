@@ -115,6 +115,14 @@ auth.yaml
 {{- end }}
 
 {{/*
+Where the authorization bundle is mounted. Not a value, for the same reason:
+authorizer.localBundle.dir in nvke-controller-config is this path.
+*/}}
+{{- define "controller.apiAuthz.mountPath" -}}
+/etc/nvke/authz
+{{- end }}
+
+{{/*
 The nvke-controller-config ConfigMap, its file key, and where it is mounted.
 CONTROLLER_CONFIG_PATH is the mount and the file joined, so none are values.
 */}}
@@ -321,6 +329,35 @@ at fault.
 {{- if and (ne $file $configFile) (not (hasKey $extra $file)) -}}
 {{- fail (printf "issuer %s sets jwks.caBundlePath to %s, but nothing puts %s there. The chart mounts only the ConfigMap it renders at that path, and that ConfigMap carries %s plus whatever apiAuth.configMap.extraFiles lists. Put the PEM inline as jwks.caBundle instead, add the bundle under extraFiles (key %s), or point caBundlePath somewhere you mount yourself through .Values.volumes." (quote (default "<unnamed>" .name)) $ca $file $configFile $file) -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Refuse apiAuthz without apiAuth, enforcing apiAuthz behind permissive apiAuth,
+and a config the chart would not render or that carries apiVersion or kind.
+Called from deployment.yaml, like controller.apiAuth.validate. Emits nothing.
+*/}}
+{{- define "controller.apiAuthz.validate" -}}
+{{- $authz := .Values.apiAuthz -}}
+{{- $create := and $authz.enabled $authz.configMap.create -}}
+{{- if and $authz.config (not $create) -}}
+{{- fail "apiAuthz.config is set but would not be rendered: it is only used when apiAuthz.enabled and apiAuthz.configMap.create are both true. Set both, or remove apiAuthz.config and put authorization.yaml in the ConfigMap named by apiAuthz.configMap.name yourself." -}}
+{{- end -}}
+{{- if $authz.enabled -}}
+{{- if not .Values.apiAuth.enabled -}}
+{{- fail "apiAuthz.enabled is true but apiAuth.enabled is false. Authorization needs an authenticated caller: enable apiAuth, or set apiAuthz.enabled to false." -}}
+{{- end -}}
+{{- if and .Values.apiAuth.permissive (not $authz.permissive) -}}
+{{- fail "apiAuthz.permissive is false but apiAuth.permissive is true. Permissive authentication passes a request it would reject to authorization with no caller, and enforcing authorization refuses it. Set apiAuthz.permissive to true, or apiAuth.permissive to false." -}}
+{{- end -}}
+{{- if $create -}}
+{{- if not $authz.config -}}
+{{- fail "apiAuthz.configMap.create is true but apiAuthz.config is empty, so no caller would have a role. Populate apiAuthz.config, or set create to false and manage the ConfigMap yourself." -}}
+{{- end -}}
+{{- if or (hasKey $authz.config "apiVersion") (hasKey $authz.config "kind") -}}
+{{- fail "apiAuthz.config must not carry apiVersion or kind. The chart supplies both, so a copy here is a duplicate key the controller refuses at startup." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
