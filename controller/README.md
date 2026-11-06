@@ -791,7 +791,7 @@ values; the full schema and every validation rule live in
 `auth/authn/config.go`. The shape:
 
 ```yaml
-apiVersion: auth.nke.nvidia.com/v1alpha1
+apiVersion: auth.nvke.nvidia.com/v1alpha1
 kind: AuthenticationConfiguration
 
 # Accepted "aud" claims. Any-of, so list two to rotate without downtime. No entry
