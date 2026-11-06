@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/version"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
@@ -446,6 +447,52 @@ func (r *NVKEClusterReconciler) matchNodePoolRelease(ctx context.Context, pool *
 	return matches[0], nil
 }
 
+// reconcileNodePoolRelease keeps a pool's pinned release in step with its node profile once the
+// pool exists. A pin whose release still carries the pool's profile and tag is kept as is, even
+// if the release has since been deprecated. Otherwise the pin is re-resolved from the current
+// profile like an unpinned pool. A failed re-resolution keeps the previous pin and is reported
+// through the NodePoolReleaseResolved condition and the returned error. Only status changes: the
+// pool and its nodes in the NVKE controller are never touched, as for the cluster release.
+func (r *NVKEClusterReconciler) reconcileNodePoolRelease(ctx context.Context, pool *internalv1.NodePool, status *internalv1.NodePoolStatus, target nodePoolConditionTarget) error {
+	release, err := r.currentNodePoolRelease(ctx, pool, status.ResolvedRelease)
+	if err != nil {
+		conditions.Set(target, metav1.Condition{
+			Type:    internalv1.NodePoolReleaseResolvedCondition,
+			Status:  metav1.ConditionFalse,
+			Reason:  internalv1.ReconcileFailedReason,
+			Message: err.Error(),
+		})
+		return err
+	}
+	status.ResolvedRelease = &internalv1.ReleaseReference{Name: internalv1.ResourceName(release.Name), Version: release.Spec.Tag}
+	conditions.Set(target, metav1.Condition{
+		Type:   internalv1.NodePoolReleaseResolvedCondition,
+		Status: metav1.ConditionTrue,
+		Reason: internalv1.ReconcileSucceededReason,
+	})
+	return nil
+}
+
+// currentNodePoolRelease returns the pinned release while it still matches the pool's node profile,
+// and otherwise the release the current node profile resolves to.
+func (r *NVKEClusterReconciler) currentNodePoolRelease(ctx context.Context, pool *internalv1.NodePool, pinned *internalv1.ReleaseReference) (*internalv1.NodePoolRelease, error) {
+	if pinned != nil {
+		profile, tag, err := splitNodeProfile(pool.NodeProfile)
+		if err != nil {
+			return nil, fmt.Errorf("resolve node profile: %w", err)
+		}
+		release, err := r.getPinnedNodePoolRelease(ctx, pinned)
+		switch {
+		case err == nil && release.Spec.Profile == profile && release.Spec.Tag == tag:
+			return release, nil
+		case err != nil && !apierrors.IsNotFound(err):
+			return nil, err
+		}
+	}
+	release, _, err := r.resolveNodePoolRelease(ctx, pool, nil)
+	return release, err
+}
+
 func renderInfraTemplate(name, body string, variables map[string]any, target any) error {
 	tmpl, err := template.New(name).Option("missingkey=error").Parse(body)
 	if err != nil {
@@ -553,19 +600,21 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 		propagateNodePoolConditions(target, observedPool)
 		return setNodePoolConditions(target)
 	}
+	// A failed re-resolution must not block scaling, so its error is returned after the rest of the reconcile.
+	releaseErr := r.reconcileNodePoolRelease(ctx, pool, status, target)
 	if pool.Replicas == nil || *pool.Replicas < 0 {
-		return invalidNVKEControllerRequest("Node pool replicas must be a nonnegative count")
+		return errors.Join(invalidNVKEControllerRequest("Node pool replicas must be a nonnegative count"), releaseErr)
 	}
 	desiredCount := int(*pool.Replicas)
 	if observedPool.DesiredNodeCount != desiredCount {
 		updatedPool, err := r.NVKEController.UpdateNodePool(ctx, observedPool.ID.String(), api.UpdateNodePoolRequest{DesiredNodeCount: &desiredCount})
 		if err != nil {
-			return fmt.Errorf("scale nvke controller node pool %q to %d replicas: %w", pool.Name, desiredCount, err)
+			return errors.Join(fmt.Errorf("scale nvke controller node pool %q to %d replicas: %w", pool.Name, desiredCount, err), releaseErr)
 		}
 		observedPool = updatedPool
 	}
 	propagateNodePoolConditions(target, observedPool)
-	return setNodePoolConditions(target)
+	return errors.Join(releaseErr, setNodePoolConditions(target))
 }
 
 func (r *NVKEClusterReconciler) reconcileNodePoolDelete(ctx context.Context, cluster *internalv1.NVKECluster, pool *internalv1.NodePoolStatus, observedCluster *api.Cluster) (bool, error) {
@@ -864,7 +913,7 @@ func setNodePoolConditions(pool conditions.Setter) error {
 			internalv1.NVKEControllerDeletingCondition,
 			internalv1.NodePoolReleaseResolvedCondition,
 		},
-		// Pools created before worker release resolution have no such condition and are not backfilled.
+		// Pools that are being deleted skip release resolution and have no such condition.
 		conditions.IgnoreTypesIfMissing{internalv1.NodePoolReleaseResolvedCondition},
 		conditions.NegativePolarityConditionTypes(nvkeControllerNegativeConditionTypes),
 		conditions.CustomMergeStrategy{
