@@ -43,6 +43,7 @@ type options struct {
 	fleetOIDC                        *controllerconfig.OIDCConfig
 	allowLegacyCalicoClusterCreation bool
 	nodeAgentClient                  agent.Client
+	authorize                        api.StrictMiddlewareFunc
 }
 
 // WithFleetOIDC sets the nvke-controller-config OIDC section new clusters are pinned from.
@@ -60,6 +61,12 @@ func WithAllowLegacyCalicoClusterCreation(allow bool) Option {
 // state. Without it, such handlers report every node unreachable.
 func WithNodeAgentClient(c agent.Client) Option {
 	return func(o *options) { o.nodeAgentClient = c }
+}
+
+// WithAuthorization authorizes every API operation with authorize. Without it,
+// authorization is off.
+func WithAuthorization(authorize api.StrictMiddlewareFunc) Option {
+	return func(o *options) { o.authorize = authorize }
 }
 
 // NewServer builds the API's HTTP server. A nil authn leaves the authentication
@@ -85,8 +92,16 @@ func NewServer(
 	if err != nil {
 		return nil, fmt.Errorf("building Swagger UI OpenAPI document: %w", err)
 	}
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+	var strictMiddlewares []api.StrictMiddlewareFunc
+	if o.authorize != nil {
+		strictMiddlewares = append(strictMiddlewares, o.authorize)
+	}
 	serverImpl := NewServerImpl(cfg, logger, database, temporalClient, k8sReader, opts...)
-	strictHandler := api.NewStrictHandlerWithOptions(serverImpl, nil, api.StrictHTTPServerOptions{
+	strictHandler := api.NewStrictHandlerWithOptions(serverImpl, strictMiddlewares, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			logger.Error("OpenAPI StrictServer request error", "error", err)
 			recordRejectionReason(w, rejectionReasonRequestParsingFailed)
