@@ -66,7 +66,10 @@ func TestClusterProjection(t *testing.T) {
 }
 
 func TestPublicWriteOmitsUnsetReadOnlyFields(t *testing.T) {
-	for _, value := range []any{v1.Cluster{}, v1.PublicClusterRelease{}, v1.PublicMachineImage{}} {
+	for _, value := range []any{
+		v1.Cluster{}, v1.PublicClusterRelease{}, v1.PublicMachineImage{},
+		v1.PublicControlPlaneClass{}, v1.PublicClusterReleaseChannel{}, v1.PublicNodeProfile{},
+	} {
 		data, err := json.Marshal(value)
 		require.NoError(t, err)
 		var object map[string]any
