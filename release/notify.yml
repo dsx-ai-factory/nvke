@@ -42,7 +42,7 @@ notifications:
     title: "🏷️ NVKE beta {{.Event.tag}} cut"
     severity: info
     message_template: |
-      Tagged commit <{{.Context.server_url}}/{{.Context.repository}}/commit/{{.Event.commit}}|{{.Event.commit_short}}> · <{{.Context.run_url}}|nightly run #{{.Context.run_number}}>
+      Tagged commit <{{.Context.server_url}}/{{.Context.repository}}/commit/{{.Event.commit}}|{{.Event.commit_short}}> · <{{.Context.run_url}}|Run #{{.Context.run_number}}>
 
   - name: qualification-started
     title: "🚀 NVKE qualification started for {{.Event.nvke_version}}"
