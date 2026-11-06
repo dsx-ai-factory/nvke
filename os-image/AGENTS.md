@@ -25,14 +25,13 @@ internal/check/           # dial + gRPC reflection / GetKubeadmStatus
 
 ## Versioning
 
-OS-image releases use component-scoped git tags, same shape as `agent/v*`:
+The OS image is released with the rest of the repository by one `vX.Y.Z` tag.
+An `os-image/vX.Y.Z` tag publishes nothing; an `os-image/vX.Y.Z-rc.N` tag still
+starts `os-image-artifact.yml`, but it versions the image by the nearest `v*`
+tag. See
+[RELEASE.md](../RELEASE.md).
 
-```bash
-git tag -s os-image/v0.1.0 -m "os-image v0.1.0"
-git push origin os-image/v0.1.0
-```
-
-Pushing the tag runs `.github/workflows/os-image-artifact.yml`: Packer bakes the
+A release tag runs `.github/workflows/os-image-artifact.yml`: Packer bakes the
 qcow2, `make boot-smoke` must pass, then the disk is published to NVCR and S3
 (and under its version tag to `ghcr.io/dsx-ai-factory/nvke/os-image-*` only
 when the repository variable `NVKE_GITHUB_PUBLISH` names `os-image`). A failed bake or smoke test does not publish.
@@ -40,10 +39,8 @@ when the repository variable `NVKE_GITHUB_PUBLISH` names `os-image`). A failed b
 `make` stamps `nvke-os-image-check` from:
 
 ```bash
-git describe --match 'os-image/v[0-9]*' --tags
+git describe --tags --always --dirty --match 'v*'
 ```
-
-The `os-image/` prefix is stripped for the binary ldflag.
 
 ## Commands
 
@@ -85,7 +82,7 @@ repository's `bin/`, and `make version-check` runs it with `--version`.
 - `nvke-agent` is built as a Debian package from this checkout's `agent/` source
   at bake time (`make -C agent deb-<arch>` in `fetch-artifacts.sh`) and installed
   by dpkg with `NKE_AGENT_SKIP_START=1`. No prebuilt artifact is pulled. Its
-  version is the checkout's `git describe --match 'agent/v*'`. Keep the image's
+  version is the checkout's `git describe --match 'v*'`. Keep the image's
   SPIRE ordering in `files/nvke-agent-spire.conf`, separate from package-owned units.
 - Checker is a SPIFFE **client**. Do not embed a SPIRE server in the binary.
 - New files need the Apache-2.0 SPDX header (`make license`). Cloud-init

@@ -13,14 +13,17 @@ pushing a tag. Changing this document does not change publication behavior.
 
 ## Version and source identity
 
-Use Semantic Versioning: `vMAJOR.MINOR.PATCH` for the repository and
-`<module-directory>/vMAJOR.MINOR.PATCH` for an independently versioned Go
-module. Component prefixes must follow the module directories in `go.work`.
+Use Semantic Versioning: one `vMAJOR.MINOR.PATCH` tag versions the repository
+and every component built from it. A component release tag such as
+`agent/vMAJOR.MINOR.PATCH` publishes nothing. A component release candidate tag
+still starts its publishers, but they version what they publish by the nearest
+`v*` tag, not by the component tag. The NKTP Helm chart, released by
+`nktp/vMAJOR.MINOR.PATCH`, is the one exception.
 The [CLI compatibility policy](cli/docs/compatibility.md) defines the CLI's
 breaking-change surface. Use `-rc.N` for a release candidate, including the dot.
 
-Nightly beta tags, and the release candidates automation cuts from a qualified
-beta, are unsigned lightweight tags. They mark candidates for qualification,
+Nightly beta tags and release candidates, whether automation or a person cuts
+them, are unsigned lightweight tags. They mark candidates for qualification,
 not releases, so `git verify-tag` does not apply to them. The signed annotated
 tag below is for the approved release; see
 [pre-releases](docs/artifact-publication.md#pre-releases).
@@ -141,7 +144,7 @@ After approval, the release owner creates a signed annotated tag targeting the
 approved full commit. Verify the local tag target before pushing the exact tag
 to the canonical repository. Review
 [the existing publication triggers](docs/artifact-publication.md#1-tag-the-release)
-first: component and beta tags can launch artifact publication. A tag must not
+first: release and beta tags launch artifact publication. A tag must not
 be used as a supposedly source-only switch for workflows that publish binaries.
 
 The release notes must link the tagged build instructions, the validated SBOM,

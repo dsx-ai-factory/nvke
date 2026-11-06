@@ -59,9 +59,11 @@ reporting channel and must not be published.
 
 ## Supported versions
 
-Each component releases on its own tag line (`agent/vX.Y.Z`, `cli/vX.Y.Z`,
-`controller/vX.Y.Z`, `os-image/vX.Y.Z`, `nktp/vX.Y.Z`) and a product release
-`vX.Y.Z` ties them together; the first stable releases shipped on 2026-09-30.
+A product release `vX.Y.Z` versions every component; only the NKTP chart keeps
+its own `nktp/vX.Y.Z` tag line. Earlier releases were tagged per component
+(`agent/vX.Y.Z`, `cli/vX.Y.Z`, `controller/vX.Y.Z`, `os-image/vX.Y.Z`), and
+those tags are no longer used to release; the first stable releases shipped on
+2026-09-30.
 The `controller/api` Go module publishes `v0.0.x` so consumers can pin. There
 are no long-lived release branches: a security fix lands on `main` and ships in
 the next release of the affected component, or as a hotfix release cut from the

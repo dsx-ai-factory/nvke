@@ -472,12 +472,12 @@ still check it against the release. CI proves this on every change by
 building it twice, the second time with no cache and every file's mtime
 changed.
 
-Build from the release tag of the controller the site runs,
-`controller/v<version>`, the same version the site pins. Never build from
+Build from the release tag of the controller the site runs, `v<version>`, the
+same version the site pins. Never build from
 `main`: its suite tests the next controller, not the one installed.
 
 ```bash
-git clone --branch controller/v0.2.0 --depth 1 https://github.com/dsx-ai-factory/nvke.git
+git clone --branch v0.2.0 --depth 1 https://github.com/dsx-ai-factory/nvke.git
 cd nvke
 make -C controller/test/e2e validate-image-oci VALIDATE_VERSION=v0.2.0
 cat controller/test/e2e/bin/validate-image-digest.txt
@@ -508,7 +508,7 @@ docker buildx build -f controller/test/e2e/Dockerfile \
   --build-arg VALIDATE_VERSION=v0.2.0 --build-arg VALIDATE_REVISION=<commit> \
   --secret id=GIT_AUTH_TOKEN,env=GIT_AUTH_TOKEN \
   --output type=image,name=<repository>:v0.2.0,push=true,oci-mediatypes=true,rewrite-timestamp=true \
-  'https://github.com/dsx-ai-factory/nvke.git#controller/v0.2.0'
+  'https://github.com/dsx-ai-factory/nvke.git#v0.2.0'
 ```
 
 Arguments that change where things come from, not what, keep the digest:

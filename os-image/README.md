@@ -168,7 +168,7 @@ and both systemd units. Startup is deferred during the bake with
 `NKE_AGENT_SKIP_START=1`; a systemd drop-in preserves the image's SPIRE ordering
 and socket wait across package upgrades.
 The baked agent is whatever your checkout says — no prebuilt artifact is
-pulled. To bake a released agent, check out its `agent/vX.Y.Z` tag first.
+pulled. To bake a released agent, check out its `vX.Y.Z` tag first.
 The SPIRE agent and TPM tools come from
 the `spire-agent` .deb built at bake time out of
 [`packages/spire-agent/`](packages/spire-agent/), pinned by version and
@@ -506,9 +506,9 @@ make run-vm QCOW=packer/output-non-fde/nvke-node-non-fde-ubuntu-26.04.1-arm64.qc
 
 ## Release
 
-An `os-image/vX.Y.Z` tag (or `os-image/vX.Y.Z-rc.N`) runs
-`.github/workflows/os-image-artifact.yml`, which builds and validates the FDE
-and non-FDE images for both architectures and, only if that succeeds, publishes
+A `vX.Y.Z` release tag runs `.github/workflows/os-image-artifact.yml`, which
+builds and validates the FDE and non-FDE images for both architectures and,
+only if that succeeds, publishes
 the qcow2s to NVCR, and to S3 with each one's SBOM and checksums beside it
 and `nvke-os-image-check`. GHCR
 gets them as OCI artifacts under arch-suffixed `sha-<commit>` tags
