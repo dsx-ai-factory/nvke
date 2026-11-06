@@ -126,8 +126,7 @@ jobs:
           if [[ "${SOURCE_REF}" == agent/v* ]]; then
             version="${SOURCE_REF#agent/}"
           else
-            version="$(git describe --match 'agent/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-            version="${version#agent/}"
+            version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
           fi
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
@@ -149,7 +148,7 @@ jobs:
 
       - name: Build the package
         working-directory: agent
-        run: make deb-${{ matrix.arch }}
+        run: make deb-${{ matrix.arch }} VERSION=${{ steps.version.outputs.version }}
 
       - name: Inspect what was produced
         id: package

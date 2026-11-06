@@ -144,8 +144,7 @@ jobs:
           # exists in the NGC org; the binaries inside it are nvkectl.
           repo="nvcr.io/${NGC_ORG}/nvkectl"
 
-          version="$(git describe --match 'cli/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-          version="${version#cli/}"
+          version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
 
           aliases=("sha-${GITHUB_SHA}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then

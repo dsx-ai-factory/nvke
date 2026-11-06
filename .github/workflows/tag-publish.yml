@@ -71,8 +71,7 @@ jobs:
       # glob cannot spell "vX.Y.Z", so the rule is enforced here instead. It
       # fails rather than skips: a tighter glob would let a malformed tag push
       # do nothing at all, and silence reads as success.
-      # A bare vX.Y.Z-beta.N is versioned like any other build of that commit,
-      # by the cli/v* describe, not by the beta tag name.
+      # A bare vX.Y.Z-beta.N is versioned by the bare v* describe.
       - name: Resolve the version from the tag
         id: version
         shell: bash
@@ -83,8 +82,7 @@ jobs:
           BETA=false
           if [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
             BETA=true
-            VERSION="$(git describe --match 'cli/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-            VERSION="${VERSION#cli/}"
+            VERSION="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
           else
             VERSION="${TAG#cli/}"
             if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
@@ -115,7 +113,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          make -C cli build-cross DIST="${GITHUB_WORKSPACE}/dist"
+          make -C cli build-cross DIST="${GITHUB_WORKSPACE}/dist" NVKECTL_VERSION="${{ steps.version.outputs.version }}"
           echo "artifacts:"
           find dist -mindepth 1 -maxdepth 1 -printf '  %f\n' | sort
 
