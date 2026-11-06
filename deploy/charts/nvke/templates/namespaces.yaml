@@ -1,0 +1,22 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+
+The release namespace is left out: helm --create-namespace already makes it,
+and claiming it here would fight that.
+*/ -}}
+{{- if .Values.namespaces.create }}
+{{- $wanted := list .Values.namespaces.controller .Values.namespaces.system }}
+{{- if .Values.postgresql.enabled }}
+{{- $wanted = append $wanted .Values.namespaces.postgres }}
+{{- end }}
+{{- range $ns := ($wanted | uniq) }}
+{{- if ne $ns $.Release.Namespace }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $ns }}
+{{- end }}
+{{- end }}
+{{- end }}

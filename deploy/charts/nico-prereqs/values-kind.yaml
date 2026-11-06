@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What a kind cluster changes.
+#
+#   ssh-keygen -t ed25519 -f ./ssh_host_ed25519_key -N ""
+#   helm upgrade --install nico-prereqs deploy/charts/nico-prereqs \
+#     --namespace forge-system --create-namespace \
+#     --values deploy/charts/nico-prereqs/values.yaml \
+#     --values deploy/charts/nico-prereqs/values-kind.yaml \
+#     --set database.password=<pick one> \
+#     --set-file sshHostKey.privateKey=./ssh_host_ed25519_key \
+#     --wait
+#
+# The one substantive change is the issuer: a kind cluster has no Vault, so
+# cert-manager signs NICo's service certificates from a self-signed CA under
+# the name NICo expects of its Vault PKI issuer.
+
+certManager:
+  issuer:
+    create: true
+
+database:
+  # The PostgreSQL this chart installs on kind serves no TLS.
+  sslMode: disable
+
+vault:
+  # Create the two Secrets empty. NICo's services mount them whether or not a
+  # Vault exists, so they have to be present; nothing calls Vault on kind.
+  createSecrets: true
+
+postgresql:
+  primary:
+    persistence:
+      size: 8Gi
+    resources:
+      limits:
+        memory: 512Mi
+      requests:
+        memory: 128Mi

@@ -1,0 +1,73 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# This file sets only what belongs to the combination. Everything else stays in
+# the five charts' own values.yaml, which this chart does not restate — a copy
+# here would be a second place to change and a second place to get wrong.
+#
+#   helm upgrade --install nvke-nico-stack deploy/charts/nvke-nico-stack \
+#     --namespace nvke-system --create-namespace \
+#     --set nvke.database.password=<pick one> \
+#     --set nico-prereqs.database.password=<pick one> \
+#     --set-file nico-prereqs.sshHostKey.privateKey=./ssh_host_ed25519_key \
+#     --set nvke-nico.nico.global.image.repository=<repo> \
+#     --set nvke-nico.nico.global.image.tag=<tag> \
+#     --wait
+#
+# cert-manager and Cluster API are PREREQUISITES. `clusterctl init
+# --infrastructure nico` brings all three, including CAPNICo. This release
+# creates Certificate and ClusterIssuer objects, so their CRDs have to exist
+# before it is applied.
+#
+# Release this into nvke-system. Temporal's chart has no namespaceOverride, so
+# the NVKE controller's Temporal lands in the release namespace, and
+# nvke.nvke-controller.temporal.host names it.
+
+global:
+  # Read by the nico chart, which relaxes its "the credentials Secret must
+  # already exist" refusal. That check is right for the sequenced install,
+  # where nico-prereqs is an earlier release; here the Secret is in this
+  # release and no lookup can see it at render time.
+  nvkeNicoStack: true
+
+# ---------------------------------------------------------------------------
+# The five charts
+# ---------------------------------------------------------------------------
+# Each is configured through its own key, with its own values.yaml as the
+# default:
+#
+#   --set nvke.database.password=...
+#   --set nvke-spire.global.spire.trustDomain=...
+#   --set nvke-nico.nico.global.image.tag=...
+
+# Off by default: kind ships a default StorageClass and a cluster with real
+# storage brings the CSI driver for it. Turn it on for a bare cluster that has
+# neither, or every PostgreSQL PVC in this release sits Pending.
+nvke-storage:
+  enabled: false
+
+nvke-spire:
+  enabled: true
+
+nvke:
+  enabled: true
+  nvke-controller:
+    # The release namespace, because Temporal has no namespaceOverride.
+    temporal:
+      host: temporal-frontend.nvke-system.svc.cluster.local
+
+# NICo's database, credentials and certificate issuer. On by default with
+# nvke-nico: NICo cannot start without them, and in one release they are
+# applied before NICo's migration Job by helm's own apply order.
+nico-prereqs:
+  enabled: true
+  # The release is in nvke-system; NICo is not. This must equal every
+  # nvke-nico.nico.<subchart>.namespaceOverride, which default to forge-system.
+  namespace: forge-system
+
+# Off by default. NICo is published separately from NVKE, so turning it on
+# means the `nico` repository alias is registered, the images are reachable,
+# and the NICo chart carries dsx-ai-factory/infra-controller#8270 — without
+# that change its hooks run before everything here and the install fails.
+nvke-nico:
+  enabled: false

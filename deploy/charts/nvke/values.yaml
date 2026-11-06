@@ -1,0 +1,392 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Defaults for a real cluster. For a kind cluster install with
+# `--values values-kind.yaml` as well.
+#
+# ONE value has no default and must be supplied: database.password. Nothing in
+# this file carries a credential.
+
+# ---------------------------------------------------------------------------
+# Namespaces
+# ---------------------------------------------------------------------------
+# helm --create-namespace creates the release namespace only, and the subcharts
+# below land in three others. Turn this off where something else owns them.
+#
+# Temporal is NOT in this list. Its chart has no namespaceOverride, so it lands
+# in the release namespace — release this chart into nvke-system.
+namespaces:
+  create: true
+  controller: nke-controller
+  system: nvke-system
+  postgres: postgres
+
+# ---------------------------------------------------------------------------
+# The database
+# ---------------------------------------------------------------------------
+# One password, three readers: the PostgreSQL chart's own admin user, both of
+# Temporal's datastores, and the NVKE controller's connection string. They must
+# agree, or the Temporal schema job crash-loops with "password authentication
+# failed" — which is why this chart owns the Secret rather than leaving each
+# subchart to be configured separately.
+#
+# The Secret is written into each of the three namespaces that read it, because
+# a Secret is namespace-scoped and nothing copies it across.
+database:
+  # REQUIRED. No default — set it with --set or a values file of your own.
+  # An existing Secret is used instead when existingSecret is set.
+  password: ""
+
+  # Use a Secret created out of band (a PostgreSQL operator, External Secrets,
+  # the Vault Secrets Operator). It must exist in all three namespaces above
+  # and carry all three keys below.
+  existingSecret: ""
+
+  name: nvke-database
+  user: postgres
+  # The database the controller owns. Temporal's two are named under
+  # postgresql.primary.initdb below.
+  dbName: nke-controller
+  sslMode: disable
+  keys:
+    # What the Bitnami chart reads for its admin user.
+    adminPassword: postgres-password
+    # What Temporal reads. Its default key name for an existingSecret.
+    password: password
+    # What the NVKE controller reads.
+    connectionString: database-connection-string
+
+  # Where the controller and Temporal dial PostgreSQL. Derived from
+  # postgresql.fullnameOverride and namespaces.postgres below; restated here
+  # because a subchart cannot read a sibling's values.
+  #
+  # CHANGE ALL THREE TOGETHER: this, postgresql.fullnameOverride, and
+  # namespaces.postgres.
+  host: nvke-postgresql.postgres.svc.cluster.local
+  port: 5432
+
+# ---------------------------------------------------------------------------
+# Credentials the controller needs
+# ---------------------------------------------------------------------------
+# The node login the controller renders into every tenant's cloud-init. Without
+# it a tenant create fails at user-data rendering with "User-data rendering
+# refused": the controller requires DGXC_TENANT_USER and DGXC_TENANT_PASSWORD,
+# and the chart injects them only from a Secret carrying keys `user` and
+# `password`.
+tenantCredentials:
+  create: false
+  name: dgxc-tenant-credentials
+  user: ""
+  password: ""
+
+# CAPNICo's credentials Secret is NOT here. CAPNICo owns it, and
+# `clusterctl init --infrastructure nico` creates the namespace it goes in.
+# Create it after that, with the keys CAPNICo's own getting-started guide
+# lists:
+#
+#   kubectl create secret generic nico-credentials -n capnico-system \
+#     --from-literal=endpoint=<nico-api-base-url> \
+#     --from-literal=orgID=<org> \
+#     --from-literal=apiName=<api> \
+#     --from-literal=token=<token>
+
+# ---------------------------------------------------------------------------
+# PostgreSQL
+# ---------------------------------------------------------------------------
+postgresql:
+  enabled: true
+
+  # Pinned, and load-bearing. The Bitnami chart names its primary Service after
+  # the chart fullname exactly, so this IS the hostname half of database.host
+  # above. Without the override the name would follow the release name, and the
+  # host would change with it.
+  fullnameOverride: nvke-postgresql
+  namespaceOverride: postgres
+
+  auth:
+    username: postgres
+    database: postgres
+    # Filled in by templates/database-secret.yaml, or by database.existingSecret.
+    existingSecret: nvke-database
+    secretKeys:
+      adminPasswordKey: postgres-password
+
+  primary:
+    # primary.persistence, NOT a top-level persistence: the Bitnami chart nests
+    # it here and helm does not reject unknown values, so a top-level
+    # persistence.enabled is accepted and silently ignored. That is how an
+    # earlier install ended up running PostgreSQL on an emptyDir.
+    persistence:
+      enabled: true
+      size: 40Gi
+      # Empty takes whatever the cluster made default. Which provisioner is
+      # right is a property of the hardware — but there must BE a default, or
+      # the PVC sits Pending forever.
+      storageClass: ""
+    resources:
+      limits:
+        memory: 512Mi
+      requests:
+        memory: 256Mi
+
+    # The databases the controller and Temporal expect to exist. Nothing else
+    # creates them. initdb runs once, on an empty data directory only.
+    initdb:
+      scripts:
+        init-controller.sql: |
+          CREATE DATABASE "nke-controller";
+        init-temporal.sql: |
+          CREATE DATABASE temporal;
+          CREATE DATABASE temporal_visibility;
+
+  # PINNED BY DIGEST — the one image here that the chart does not pin for us.
+  #
+  # Bitnami's chart defaults every image to `tag: latest`, and
+  # bitnami/postgresql on Docker Hub no longer publishes version tags at all:
+  # the versioned images moved to bitnamilegacy/postgresql. So there is no
+  # version to pin to, and a digest is the only durable reference.
+  #
+  # Without it the SBOM cannot say which database it installs, and two installs
+  # a week apart get different binaries with nothing in the tree to show it.
+  image:
+    digest: "sha256:b74b23f091dcc87041bcae557d840c36458af46b955279cb13aedec4c32d7f71"
+
+# ---------------------------------------------------------------------------
+# Temporal
+# ---------------------------------------------------------------------------
+temporal:
+  enabled: true
+
+  # Pinned so temporal-frontend.<namespace>.svc.cluster.local stays correct
+  # whatever the release is called. The controller dials that name, and inside
+  # an umbrella the release name would otherwise rename every Service.
+  fullnameOverride: temporal
+
+  server:
+    configMapsToMount: sprig
+    setConfigFilePath: true
+    config:
+      persistence:
+        default:
+          driver: sql
+          sql:
+            driver: postgres12
+            # CHANGE WITH database.host ABOVE.
+            host: nvke-postgresql.postgres.svc.cluster.local
+            port: 5432
+            database: temporal
+            user: postgres
+            existingSecret: nvke-database
+            secretKey: password
+            maxConns: 10
+            maxIdleConns: 5
+        visibility:
+          driver: sql
+          sql:
+            driver: postgres12
+            host: nvke-postgresql.postgres.svc.cluster.local
+            port: 5432
+            database: temporal_visibility
+            user: postgres
+            existingSecret: nvke-database
+            secretKey: password
+            maxConns: 10
+            maxIdleConns: 5
+
+  # Temporal bundles its own datastores and monitoring. This chart supplies
+  # PostgreSQL; the rest is not wanted.
+  cassandra:
+    enabled: false
+  mysql:
+    enabled: false
+  postgresql:
+    enabled: false
+  prometheus:
+    enabled: false
+  grafana:
+    enabled: false
+  elasticsearch:
+    enabled: false
+
+  schema:
+    createDatabase:
+      enabled: true
+    setup:
+      enabled: true
+    update:
+      enabled: true
+
+# ---------------------------------------------------------------------------
+# The NVKE controller
+# ---------------------------------------------------------------------------
+nvke-controller:
+  enabled: true
+
+  fullnameOverride: nke-controller
+  nameOverride: nke-controller
+  namespaceOverride: nke-controller
+  serviceAccount:
+    name: nke-controller
+
+  # namespaces.create above owns it, so the two do not both claim it.
+  nvkeSystemNamespace:
+    create: false
+
+  # PINNED. A cluster is not building the controller from source, and with
+  # these unset the chart falls back to its own repository plus appVersion
+  # 0.0.0, which is not a published image and fails to pull.
+  #
+  # Under pullPolicy: IfNotPresent the only images that resolve without a pull
+  # secret are those already in the node's containerd — so bumping this tag
+  # without staging the image first gives ImagePullBackOff, not an upgrade.
+  image:
+    repository: ghcr.io/dsx-ai-factory/nvke/nke-controller
+    tag: v0.2.0-rc.2
+    pullPolicy: IfNotPresent
+
+  # Empty, and on a cluster that stages its images it must stay empty. A
+  # cluster pulling the controller from a registry instead needs its own
+  # Secret in the controller namespace.
+  imagePullSecrets: []
+
+  # The Secret templates/database-secret.yaml writes into the controller
+  # namespace. Naming it is what stops the chart building a connection string
+  # from appDb — once named, appDb is read for the host and database only.
+  secrets:
+    createDbSecret: false
+    dbSecretName: nvke-database
+    dbSecretKey: database-connection-string
+    dgxcTenantCredSecretName: ""
+
+  appDb:
+    # CHANGE WITH database.host ABOVE.
+    url: nvke-postgresql.postgres.svc.cluster.local:5432
+    dbName: nke-controller
+    postgresUser: postgres
+    sslMode: disable
+
+  temporal:
+    # The release namespace, because Temporal has no namespaceOverride. Change
+    # this if the chart is released anywhere other than nvke-system.
+    host: temporal-frontend.nvke-system.svc.cluster.local
+    port: 7233
+    cloudWorkflow:
+      namespace: nke-controller
+      queue: nke-controller-tasks
+
+  # An accept-list validated at startup. `nico` is the NICo provider; `infra`
+  # is the provider-agnostic escape hatch the e2e suites submit.
+  supportedInfraProviders: nico,infra
+
+  capi:
+    rbac:
+      create: true
+  tenantAccess:
+    enabled: true
+  cni:
+    installAfterInit: true
+
+  # OFF. apiAuth is REST bearer tokens; spiffe below is controller-to-agent
+  # mTLS. They are separate axes, and the chart mounts an `nvke-auth-config`
+  # ConfigMap it does not create. The controller treats a configured but
+  # unreadable AUTH_CONFIG_PATH as a startup failure, never as "disabled", so
+  # turning this on without supplying the ConfigMap does not degrade — it fails
+  # to start.
+  apiAuth:
+    enabled: false
+    permissive: false
+
+  # OFF, with its settings kept rather than deleted: the SPIRE chart still
+  # installs the OIDC discovery provider and publishes the CA, so turning this
+  # true is a one-line change with nothing else to reassemble.
+  nvkeOIDCAuth:
+    enabled: false
+    # Logical issuer, string-compared against the JWT `iss` claim. It does not
+    # have to resolve; the discovery URL does, and is address-derived.
+    issuerURL: "https://nke.site-controller.internal"
+    caBundleSecret:
+      namespace: spire-server
+      name: oidc-provider-upstream-ca
+      key: ca.crt
+
+  # service.port is the CLUSTER-IP port and must stay the chart default: the
+  # container listens on 8080, and setting 30080 here only renames the
+  # in-cluster port while leaving nothing reachable from a node.
+  #
+  # nodePort renders a SECOND Service beside the ClusterIP one. That is how the
+  # API is published without a cluster route — for the host running nvkectl, or
+  # an operator reaching /api on a node address.
+  service:
+    port: 8080
+    nodePort: 30080
+
+  # /readyz, not /api/version. /api/version proves only that HTTP is serving.
+  # /readyz returns {"status":"ok","checks":{"database":"ok","temporal":"ok"}},
+  # so readiness means PostgreSQL and Temporal are actually reachable.
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 15
+    periodSeconds: 20
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+  # The port the node agent listens on. It has to agree with three other
+  # places: the site spec used at bootstrap, os-image/SPEC.md's contract, and
+  # the agent drop-in the node's cloud-init writes.
+  env:
+    - name: NODE_AGENT_PORT
+      value: "15005"
+
+  # TPM, explicitly. The chart defaults to this and validates the value, but it
+  # should be stated rather than inherited: the alternative, joinToken, is what
+  # a cluster without TPMs uses. See values-kind.yaml.
+  nodeAgent:
+    spireAttestationMethod: tpm
+
+  spiffe:
+    enabled: true
+    endpointSocket: unix:///spiffe-workload-api/spire-agent.sock
+    spire:
+      serverNamespace: spire-server
+      className: spire-mgmt-spire
+      tpmPubhashesConfigMapName: tpm-pubhashes
+      # Must match the SPIRE chart's nodePorts.server.nodePort.
+      serverPort: "30440"
+
+  # Fleet profile content is maintained outside this repository, so there is no
+  # tag here that would mean the same thing on another cluster. Supply
+  # repository and tag, or the chart refuses to render.
+  #
+  # Without the profiles image /api/releases returns 500 and nothing can be
+  # provisioned. The directory may be empty at startup, but it must exist by
+  # the time a cluster is created.
+  profiles:
+    path: /profiles
+    image:
+      enabled: true
+
+  # Off by default: they need the Prometheus operator CRDs, which this chart
+  # does not install. NKTP installs them on a cluster that runs it.
+  serviceMonitor:
+    enabled: false
+  metrics:
+    networkPolicy:
+      enabled: false
+  tracing:
+    enabled: false
+
+  # The greenfield names, which the chart's legacy defaults do not carry.
+  identity:
+    fieldManagerName: nke-controller
+    fieldManagerRebootMachineName: nke-controller-reboot-machine
+    fieldManagerMachineHealthIssueName: nke-controller-machine-health-issue
+    managedByLabelValue: nke-controller
+  teleport:
+    managedByLabelValue: nke-controller
+    tokenNamePrefix: nke-controller-

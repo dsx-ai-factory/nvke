@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v2
+name: nvke-spire
+description: SPIRE for an NVKE cluster — the hardened SPIFFE charts, the OIDC upstream CA chain and the NodePorts the agents and tenant API servers reach
+type: application
+version: 0.1.0
+appVersion: "1.15.3"
+keywords:
+  - nvke
+  - spire
+  - spiffe
+home: https://github.com/dsx-ai-factory/nvke
+sources:
+  - https://github.com/dsx-ai-factory/nvke
+
+# The SPIRE CRDs are VENDORED into crds/, not taken as a dependency. helm
+# validates every manifest in a release against the API server before it
+# applies any of them, so a ClusterSPIFFEID and the CRD that defines it cannot
+# be in one release — the install fails with "no matches for kind
+# ClusterSPIFFEID ... ensure CRDs are installed first". A crds/ directory is
+# applied first, with a discovery refresh after it.
+#
+# helm NEVER upgrades a crds/ directory. Refresh it with
+# hack/sync-crds.sh, and apply the result by hand on an existing cluster:
+#   kubectl apply --server-side -f deploy/charts/spire/crds/
+#
+# `helm install --skip-crds` skips them where something else owns them.
+
+dependencies:
+  # The hardened SPIFFE chart. It is itself a chart of subcharts — spire-server,
+  # spire-agent, spiffe-csi-driver, spiffe-oidc-discovery-provider — so the
+  # `global:` block in values.yaml reaches all four.
+  - name: spire
+    version: "0.30.1"
+    repository: https://spiffe.github.io/helm-charts-hardened/
+    condition: spire.enabled

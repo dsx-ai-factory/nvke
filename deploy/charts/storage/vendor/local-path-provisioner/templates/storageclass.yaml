@@ -1,0 +1,29 @@
+{{- $storageClasses := list }}
+{{ if .Values.storageClassConfigs }}
+{{ $storageClasses = .Values.storageClassConfigs }}
+{{- else }}
+{{ $storageClasses = dict .Values.storageClass.name .Values }}
+{{ end }}
+{{- $dot := . }}
+{{- range $name, $values := $storageClasses }}
+{{ if $values.storageClass.create -}}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ $name }}
+  labels:
+{{ include "local-path-provisioner.labels" $dot | indent 4 }}
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "{{ $values.storageClass.defaultClass }}"
+    defaultVolumeType: "{{ $values.storageClass.defaultVolumeType }}"
+provisioner: {{ template "local-path-provisioner.provisionerName" $dot }}
+volumeBindingMode: {{ $values.storageClass.volumeBindingMode }}
+reclaimPolicy: {{ $values.storageClass.reclaimPolicy }}
+allowVolumeExpansion: true
+{{- if $values.storageClass.pathPattern }}
+parameters:
+  pathPattern: {{ $values.storageClass.pathPattern | quote }}
+{{  end -}}
+{{- end }}
+---
+{{- end }}

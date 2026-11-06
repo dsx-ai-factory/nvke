@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# A kind cluster ALREADY HAS this. kind installs Rancher's
+# local-path-provisioner itself, into the local-path-storage namespace, and
+# names the class `standard`. So there is nothing to override for kind, and
+# this chart is off in the umbrella.
+#
+# Installing it on kind anyway hits two things, both verified:
+#
+#   1. templates/validate.yaml refuses it, because `standard` is already the
+#      default and two defaults is not a working configuration.
+#   2. Releasing into local-path-storage fails even after that, because kind's
+#      own objects are there and carry no Helm ownership metadata:
+#
+#        ConfigMap "local-path-config" in namespace "local-path-storage"
+#        exists and cannot be imported into the current release
+#
+# To use this chart on kind — to test it, or to replace kind's class — drop
+# kind's default and release into a namespace of your own:
+#
+#   kubectl annotate storageclass standard \
+#     storageclass.kubernetes.io/is-default-class=false --overwrite
+#   helm upgrade --install nvke-storage deploy/charts/storage \
+#     --namespace nvke-storage --create-namespace
+{}

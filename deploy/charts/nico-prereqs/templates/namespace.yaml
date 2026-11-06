@@ -1,0 +1,18 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+
+Only when NICo's namespace is not this release's -- inside the nvke-nico-stack
+umbrella. Released on its own, `--create-namespace` has already made it.
+
+This is safe only because the NICo chart no longer uses helm hooks. Helm
+applies hooks before every ordinary manifest, so while the migration Job was a
+pre-install hook no Namespace in the same release could ever be early enough.
+See dsx-ai-factory/infra-controller#8270.
+*/ -}}
+{{- if ne (include "nico-prereqs.namespace" .) .Release.Namespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "nico-prereqs.namespace" . }}
+{{- end }}
