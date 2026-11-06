@@ -11,6 +11,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
 // The env file path and the controller CA bundle path follow the node's agent
@@ -52,4 +53,48 @@ func TestNodeAgentBootstrapFilesGatedOnAgentVersion(t *testing.T) {
 			assert.Contains(t, files[1].Content, " "+params.wantCAFlag+"="+params.wantCAPath)
 		})
 	}
+}
+
+// The controller never passes --controller-audience. The audience moves by the
+// agent's own default instead (#2039), and that is deliberate: AGENT_ARGS is
+// rendered during CreateCAPIInfraMachineForNode, before the node has booted an
+// agent, so the controller cannot know what the image-installed binary accepts.
+// Agent v0.2.1 takes --grpc-auth-mode=tls-jwt but predates
+// --controller-audience, which arrived in v0.3.0, and an agent handed an
+// unknown flag exits during flag.Parse — with no RPC route left to upgrade it.
+//
+// This builds the node the way the nodeset controller does, through
+// PinAgentProfile, so the assertion covers a real pending node rather than one
+// with AgentVersion set by hand. It must fail if anything teaches this path to
+// send the flag.
+func TestNodeAgentBootstrapFilesOnAFreshlyCreatedPendingNode(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Config{
+		SpiffeEnabled: true,
+		NodeAgent: config.NodeAgentConfig{
+			Port:                   "15005",
+			SpireAttestationMethod: config.SpireAttestationMethodTPM,
+			TLSJWT: config.TLSJWTConfig{
+				Enabled:                true,
+				DSXIdentityExchangeURL: "https://identity.example.test/v1/exchange",
+			},
+		},
+	}
+
+	// The node as the nodeset controller creates it, before any provisioning.
+	var node db.Node
+	nodes.PinAgentProfile(&node, cfg)
+	require.True(t, node.NodeAgentTLSJWTEnabled, "the pinned profile must be the TLS/JWT one this gate is about")
+	require.Empty(t, node.AgentVersion, "a pending node has never reported an agent version")
+
+	files, err := (&Activities{cfg: cfg}).nodeAgentBootstrapFiles(node)
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+
+	// The old form, down to the env file the old-form agent reads.
+	assert.Equal(t, "/etc/default/nke-agent", files[0].Path)
+	assert.Contains(t, files[0].Content, "--grpc-auth-mode=tls-jwt")
+	assert.NotContains(t, files[0].Content, "--controller-audience",
+		"the controller never selects the audience; no agent may be handed a flag it predates")
 }

@@ -38,8 +38,17 @@ The chart supplies the issuer, JWKS URI, algorithm allow-list, subject trust
 domain, local subject tenant and service, and DSX Identity exchange URL directly
 as controller configuration.
 It does not create or mount an
-additional Secret or ConfigMap for this feature. The controller always requires
-the JWT audience `nke-controller`.
+additional Secret or ConfigMap for this feature. The controller accepts either
+JWT audience, `nvke-controller` or `nke-controller`, and requires the token to
+carry exactly one of them.
+
+Which one an agent requests is the agent's own choice, not the controller's.
+The controller never passes `--controller-audience`, because it renders
+`AGENT_ARGS` before the node has booted an agent and so cannot know what the
+image-installed binary accepts. An agent requests `nvke-controller` unless it
+predates that default or its env file names the legacy audience, which a node
+provisioned earlier still does — nothing rewrites that file. See
+`authn.NodeAgentAudienceLegacy` for the sweep that closes the window.
 
 ## Node bootstrap and authentication
 
@@ -57,8 +66,8 @@ when the caller's context expires sooner. Successful handshakes clear that
 deadline before handing the connection to gRPC.
 
 For each connection, the controller presents its client certificate, reads the
-agent's `NKEAuth` JWT record, and verifies its signature, issuer, fixed audience,
-and required `exp`. When `nbf` is present, it is validated using the same clock
+agent's `NKEAuth` JWT record, and verifies its signature, issuer, audience
+against the accepted pair above, and required `exp`. When `nbf` is present, it is validated using the same clock
 skew policy as API authentication. The verified `sub` must use the configured
 SPIFFE trust domain and exact path `/bm/<node UUID>` for the node being contacted.
 The controller allows gRPC traffic only after those checks succeed.
