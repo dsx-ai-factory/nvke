@@ -115,8 +115,7 @@ jobs:
           if [[ "${GITHUB_REF_NAME}" == cli/v* ]]; then
             release="${GITHUB_REF_NAME#cli/}"
           elif [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
-            release="$(git describe --match 'cli/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-            release="${release#cli/}"
+            release="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
           else
             echo "::error::${GITHUB_REF_NAME} is neither cli/vX.Y.Z nor vX.Y.Z-beta.N"
             exit 1

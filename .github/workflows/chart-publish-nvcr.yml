@@ -131,8 +131,7 @@ jobs:
             exit 1
           fi
 
-          describe="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-          describe="${describe#controller/}"
+          describe="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
           version="${describe#v}"
           repo="nvcr.io/${ORG_TEAM}"
           image="${repo}/nvke-controller"

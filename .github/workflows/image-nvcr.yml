@@ -130,10 +130,9 @@ jobs:
           fi
           IMAGE="nvcr.io/${NVKE_NGC_ORG}/nvke-controller"
 
-          # Nearest controller/v* tag, prefix stripped: v0.1.0 on a release
-          # commit, v0.1.0-4-gabcdef between releases.
-          version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-          version="${version#controller/}"
+          # Nearest v* tag: v0.1.0 on a release commit, v0.1.0-4-gabcdef
+          # between releases.
+          version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
 
           tags=("sha-${GITHUB_SHA}" "${version}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
@@ -141,7 +140,7 @@ jobs:
           fi
 
           echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
-          echo "push_tags=${tags[*]}" >> "${GITHUB_OUTPUT}"
+          printf 'push_tags=%s\nversion=%s\n' "${tags[*]}" "${version}" >> "${GITHUB_OUTPUT}"
           echo "Publishing to ${IMAGE} as: ${tags[*]}"
 
       - name: Build and push (${{ matrix.arch }})
@@ -157,6 +156,7 @@ jobs:
             IMG_REPO="${IMAGE}" \
             PUSH_TAGS="${PUSH_TAGS}" \
             GIT_VERSION="${GITHUB_SHA}" \
+            BUILD_VERSION="${{ steps.meta.outputs.version }}" \
             BUILDX_EXTRA_ARGS="--label org.opencontainers.image.revision=${GITHUB_SHA}"
 
       # The digest of what this leg pushed. Every job after this one used to
@@ -223,8 +223,7 @@ jobs:
             exit 1
           fi
 
-          version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-          version="${version#controller/}"
+          version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
 
           tags=("sha-${GITHUB_SHA}" "${version}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then

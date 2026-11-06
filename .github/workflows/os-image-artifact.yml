@@ -176,8 +176,7 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/os-image/* ]]; then
             version="${GITHUB_REF_NAME#os-image/}"
           else
-            version="$(git describe --match 'os-image/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-            version="${version#os-image/}"
+            version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
           fi
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
@@ -453,7 +452,7 @@ jobs:
       - name: Build nvke-os-image-check
         if: matrix.arch == 'amd64' && matrix.tag_suffix == '' && matrix.variant == 'non-fde'
         working-directory: os-image
-        run: make build
+        run: make build CHECK_VERSION=${{ needs.matrix.outputs.version }}
 
       # qemu-system-arm provides qemu-system-aarch64; qemu-efi-aarch64
       # provides the AAVMF firmware the arm64 leg needs (arm64's equivalent
