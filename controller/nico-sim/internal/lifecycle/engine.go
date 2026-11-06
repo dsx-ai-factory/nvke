@@ -309,6 +309,14 @@ func (e *Engine) reconcileStart(ctx context.Context, instance state.Instance, lo
 	if err := e.runtime.Start(ctx, instance.MachineID); err != nil {
 		return e.markError(ctx, instance.ID, fmt.Errorf("start failed: %w", err))
 	}
+	// A DHCP guest can come back on a different address: only the dnsmasq
+	// bridge pins it with a reservation. Clear the stored IP so reconcileRunning
+	// reads the current lease instead of probing the old address.
+	if e.net.NeedsDHCP(instance) {
+		if err := e.store.UpdateInterfaceIPs(ctx, instance.Interfaces[0].ID, nil); err != nil {
+			return fmt.Errorf("clearing the DHCP address before the lease is re-read: %w", err)
+		}
+	}
 	return e.store.PatchVMInstanceState(ctx, instance.ID, state.VMInstanceStatePatch{
 		Status:        ptr("running"),
 		ObservedState: ptr(state.ObservedStateRunning),

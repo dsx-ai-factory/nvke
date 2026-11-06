@@ -37,6 +37,11 @@ func TestDarwinSharedSubnetOverride(t *testing.T) {
 
 func TestDarwinBGPDefaults(t *testing.T) {
 	stubVMNetHelper(t)
+	// Asserting defaults, so clear any override in the developer's shell; an
+	// empty value reads as unset.
+	for _, key := range []string{"NICO_VMS_VM_BACKEND", "NICO_VMS_LIBVIRT_URI", "NICO_VMS_BGP_ENABLED", "NICO_VMS_BGP_LISTEN_PORT", "NICO_VMS_BGP_VIP_CIDRS"} {
+		t.Setenv(key, "")
+	}
 	cfg, err := Parse(slog.Default())
 	require.NoError(t, err)
 	require.True(t, cfg.BGPEnabled)

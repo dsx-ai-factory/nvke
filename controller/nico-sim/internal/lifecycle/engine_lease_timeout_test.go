@@ -17,10 +17,14 @@ import (
 )
 
 // leaseNet serves a fixed lease (none when empty) and ignores reservations.
+// dhcp is what NeedsDHCP reports.
 type leaseNet struct {
 	NetworkManager
-	ip string
+	ip   string
+	dhcp bool
 }
+
+func (n leaseNet) NeedsDHCP(state.Instance) bool { return n.dhcp }
 
 func (n leaseNet) LookupLease(context.Context, string) (string, bool, error) {
 	return n.ip, n.ip != "", nil

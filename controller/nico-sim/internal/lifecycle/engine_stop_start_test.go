@@ -98,5 +98,52 @@ func newStopStartEngine(t *testing.T, desired, observed string, machineState vm.
 		store:   store,
 		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 		runtime: runtime,
+		net:     leaseNet{},
 	}, instance.ID
+}
+
+// probeRuntime is the mock runtime with the lease and readiness probing a real
+// VM backend gets.
+type probeRuntime struct{ vm.Runtime }
+
+func (probeRuntime) SupportsTCPProbe() bool { return true }
+
+// TestReconcileStartRereadsDHCPLease restarts a stopped VM whose DHCP server
+// handed out a different address while it was off.
+func TestReconcileStartRereadsDHCPLease(t *testing.T) {
+	const oldIP, newIP = "192.0.2.10", "192.0.2.20"
+	tests := []struct {
+		name      string
+		dhcp      bool
+		wantStart string // stored IP once the start has been reconciled
+		wantRun   string // stored IP once the running state has been reconciled
+	}{
+		{"DHCP instance learns its new lease", true, "", newIP},
+		{"static instance keeps its address", false, oldIP, oldIP},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			e, id := newStopStartEngine(t, state.DesiredStatePresent, state.ObservedStateStopped, vm.MachineStateShutOff)
+			e.runtime = probeRuntime{e.runtime}
+			e.net = leaseNet{ip: newIP, dhcp: tt.dhcp}
+			instance, err := e.store.GetInstance(ctx, id)
+			require.NoError(t, err)
+			require.NoError(t, e.store.UpdateInterfaceIPs(ctx, instance.Interfaces[0].ID, []string{oldIP}))
+
+			storedIP := func() string {
+				got, err := e.store.GetInstance(ctx, id)
+				require.NoError(t, err)
+				ip, err := firstInterfaceIP(got.Interfaces)
+				require.NoError(t, err)
+				return ip
+			}
+
+			require.NoError(t, e.reconcileInstance(ctx, id))
+			require.Equal(t, tt.wantStart, storedIP())
+
+			require.NoError(t, e.reconcileInstance(ctx, id))
+			require.Equal(t, tt.wantRun, storedIP())
+		})
+	}
 }
