@@ -581,6 +581,83 @@ apiAuth:
   # needs nothing. Keep it for clusters that removed that default.
   clusterIssuerDiscovery: true
 
+# NVKE API authorization, with the LocalBundle backend. The chart mounts the
+# bundle ConfigMap at /etc/nvke/authz, and creates it too when
+# apiAuthz.configMap.create is set. A bundle change needs no restart. The
+# kubelet updates the mounted ConfigMap within a minute or two, and the
+# controller reloads the bundle every 10 seconds. A failed reload keeps the last
+# bundle and counts nvke_authz_bundle_reload_failures_total.
+apiAuthz:
+  # -- Enable NVKE API authorization. The render fails unless
+  # `apiAuth.enabled` is true too.
+  enabled: false
+  # -- Count what enforcement would have refused but serve the request anyway.
+  # Watch nvke_authz_decisions_total{outcome!="allow"} before enforcing. The
+  # render fails if this is false while `apiAuth.permissive` is true.
+  permissive: false
+  configMap:
+    # -- When `apiAuthz.enabled` is true, render `policies`, `roles` and
+    # `config` into the ConfigMap named below. False mounts a ConfigMap
+    # managed elsewhere, keyed `policies.cedar`, `roles.json` and
+    # `authorization.yaml`.
+    create: true
+    # -- ConfigMap holding the bundle. Created by the chart when
+    # configMap.create=true, mounted either way.
+    name: nvke-authz-bundle
+  # -- The AuthorizationConfiguration, rendered as `authorization.yaml`: which
+  # roles each `apiAuth` issuer's callers hold. Once enforcing, every caller
+  # `apiAuth` admits needs a role, management-engine included, or it gets 403.
+  # The chart supplies apiVersion and kind. Required when
+  # configMap.create=true. The controller checks the rest at startup.
+  #
+  # config:
+  #   issuers:
+  #     keycloak:
+  #       claims:
+  #         - {name: groups, value: nvke-admins, grants: [admin]}
+  #         - {name: groups, value: nvke-viewers, grants: [viewer]}
+  #     local-kubernetes:
+  #       serviceAccounts:
+  #         - {namespace: management-engine-system, name: management-engine-controller-manager, grants: [admin]}
+  #         - {namespace: nvke-ops, name: fleet, grants: [admin]}
+  config: {}
+  # -- The Cedar policies, rendered as `policies.cedar`. `admin` may call every
+  # API operation, and `viewer` every get and list. Only used when
+  # configMap.create=true.
+  # @default -- see values.yaml
+  policies: |
+    @id("admins-may-do-anything")
+    permit(principal in NVKE::Role::"admin", action, resource);
+
+    @id("viewers-may-read")
+    permit(
+      principal in NVKE::Role::"viewer",
+      action in [
+        NVKE::Action::"getCluster",
+        NVKE::Action::"getClusterControlPlane",
+        NVKE::Action::"getClusterControlPlaneConfigHistory",
+        NVKE::Action::"getClusterSpireServer",
+        NVKE::Action::"getNode",
+        NVKE::Action::"getNodePool",
+        NVKE::Action::"getNodeSet",
+        NVKE::Action::"listClusters",
+        NVKE::Action::"listConfigProfiles",
+        NVKE::Action::"listNodePools",
+        NVKE::Action::"listNodeSets",
+        NVKE::Action::"listNodes",
+        NVKE::Action::"listReleases"
+      ],
+      resource
+    );
+  # -- The roles the policies name, rendered as `roles.json`. Only used when
+  # configMap.create=true.
+  # @default -- see values.yaml
+  roles: |
+    [
+      {"uid": {"type": "NVKE::Role", "id": "admin"}},
+      {"uid": {"type": "NVKE::Role", "id": "viewer"}}
+    ]
+
 scheduledMaintenance:
   certRenewal:
     # -- Enable controller-owned periodic Kubernetes control-plane certificate renewal.
