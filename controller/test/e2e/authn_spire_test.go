@@ -322,7 +322,7 @@ func parseProbeReport(message string) map[string]string {
 // present as a skip. The fixture keeps the shape of the real ConfigMap.
 func TestParseSpireAdmission(t *testing.T) {
 	const full = `
-apiVersion: auth.nke.nvidia.com/v1alpha1
+apiVersion: auth.nvke.nvidia.com/v1alpha1
 kind: AuthenticationConfiguration
 audiences: ["https://nke.tilt.local"]
 issuers:
