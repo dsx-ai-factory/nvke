@@ -488,8 +488,14 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		}
 
 		// Once the site cluster exists, any failure keeps the bootstrap cluster for recovery.
-		if opts.keepBootstrapKind || (siteClusterCreated && err != nil) {
-			if siteClusterCreated && err != nil {
+		// A nico site is managed by the bootstrap cluster until a pivot hands it over,
+		// and the pivot is not run, so a successful run keeps it too.
+		keepForSite := inv.IsNico() && err == nil
+		if opts.keepBootstrapKind || keepForSite || (siteClusterCreated && err != nil) {
+			if keepForSite && !opts.keepBootstrapKind {
+				logger.Warn("the bootstrap kind cluster still manages the nico site cluster; retaining it, do not delete it",
+					"bootstrap_kind_cluster", cluster.Name, "kubeconfig", cluster.KubeconfigPath)
+			} else if siteClusterCreated && err != nil {
 				logger.Warn("bootstrap failed after site cluster creation; retaining the bootstrap kind cluster for recovery",
 					"bootstrap_kind_cluster", cluster.Name, "kubeconfig", cluster.KubeconfigPath)
 			} else {
@@ -535,8 +541,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err != nil {
 		return fmt.Errorf("building the controller client for %s: %w", cweURL, err)
 	}
-	var siteClusterID uuid.UUID
-	siteClusterID, siteClusterCreated, err = createSiteCluster(ctx, cluster, inv, opts, controller, logger)
+	_, siteClusterCreated, err = createSiteCluster(ctx, cluster, inv, opts, controller, logger)
 	if err != nil && siteClusterCreated {
 		return retainedClusterError(err, inv, cluster, cweCfg.CWEPort)
 	}
@@ -572,9 +577,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		if err := deploySiteStack(ctx, inv, kubeconfigPath, cweCfg, opts.cweRunner, logger); err != nil {
 			return seedManagesSiteError(err, cluster)
 		}
-		if err := pivotToSite(ctx, inv, cluster.KubeconfigPath, kubeconfigPath, cweCfg, controller, siteClusterID, logger); err != nil {
-			return pivotFailedError(err, cluster)
-		}
+		// The pivot is decoupled until it is ready to ship: the seed keeps managing the site.
 	}
 
 	// Nico mode does not list the allocated nodes here; kubectl get nodes shows them.
@@ -690,6 +693,8 @@ func pivotFailedError(err error, cluster *bootstrapengine.Cluster) error {
 // pivotToSite moves the management plane of the cluster clusterID from the
 // bootstrap cluster, whose controller is controller, onto the site cluster,
 // which already runs the NVKE stack.
+//
+//nolint:unused // the pivot is decoupled from bootstrap site until it ships
 func pivotToSite(
 	ctx context.Context,
 	inv *sitespec.SiteSpec,

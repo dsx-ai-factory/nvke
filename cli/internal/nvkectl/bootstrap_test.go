@@ -1877,6 +1877,30 @@ func TestRunBootstrapSiteNicoStackFailureKeepsTheSeed(t *testing.T) {
 	}
 }
 
+// TestRunBootstrapSiteNicoSuccessKeepsTheSeed: with no pivot, the bootstrap
+// cluster is the only manager of a nico site, so a successful run keeps it.
+func TestRunBootstrapSiteNicoSuccessKeepsTheSeed(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPIWithNodes(t, true, 3, 3)
+
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec:            nicoSiteSpecFile(t),
+		bootstrapRunner:     runner,
+		cweRunner:           newFakeCWERunner(t),
+		kubeconfigOut:       filepath.Join(t.TempDir(), "nvke-site.kubeconfig"),
+		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
+		dumpSpireEntries:    func(context.Context, string, string) (int, error) { return 1, nil },
+	})
+	require.NoError(t, err)
+	if runner.sawArgs("delete", "cluster") {
+		t.Error("bootstrap cluster was deleted while it still manages the nico site")
+	}
+}
+
 // TestRunBootstrapSiteNicoRefusesWhenTheVIPAlreadyAnswers: the one address a
 // nico site's control plane is known by before it exists. When it answers, a
 // site for this spec is running, and a second bootstrap would allocate another

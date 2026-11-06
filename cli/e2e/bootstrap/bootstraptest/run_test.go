@@ -18,7 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -44,8 +43,7 @@ var errStopped = errors.New("stopped on a signal")
 //
 // The lane configures the run through the environment; see env.go. It is not a
 // lane of its own. With EnvSiteStackNamespaces set it also checks the NVKE
-// stack on the site cluster, with EnvPivotCluster set that the management
-// plane moved there, and with EnvControllerSPIFFEID set that the controller on
+// stack on the site cluster, and with EnvControllerSPIFFEID set that the controller on
 // the bootstrap cluster runs under that identity. With EnvKnownSecretsFile set
 // it gives nvkectl an OTLP header credential and, once the command exits,
 // searches its log and diagnostics for that and the secrets bootstrap
@@ -94,9 +92,6 @@ func TestE2E_BootstrapSite(t *testing.T) {
 	if namespaces := bootstraptest.SiteStackNamespacesFromEnv(opts.DisableMTLS); len(namespaces) > 0 {
 		verifySiteStack(t, opts.KubeconfigOut, namespaces)
 	}
-	if clusterName := os.Getenv(bootstraptest.EnvPivotCluster); clusterName != "" {
-		verifyPivot(t, opts.KubeconfigOut, clusterName)
-	}
 	if controllerIdentity.SPIFFEID != "" {
 		verifyControllerIdentity(t, os.Getenv(bootstraptest.EnvBootstrapCluster), controllerIdentity)
 	}
@@ -125,43 +120,6 @@ func verifyControllerIdentity(t *testing.T, clusterName string, want bootstrapte
 		t.Fatal(err)
 	}
 	t.Logf("bootstraptest: the controller runs as %s and SPIRE issues %s", want.Name, want.SPIFFEID)
-}
-
-// verifyPivot checks that the bootstrap moved clusterName's management plane
-// from the bootstrap Kind cluster, which the lane keeps, onto the site cluster
-// that siteKubeconfig reaches.
-func verifyPivot(t *testing.T, siteKubeconfig, clusterName string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), siteStackCheckTimeout)
-	defer cancel()
-	seedKubeconfig, err := bootstrapengine.New(nil, nil).Kubeconfig(ctx, bootstrapengine.DefaultConfig().ClusterName)
-	if err != nil {
-		t.Fatalf("reading the bootstrap cluster's kubeconfig: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(seedKubeconfig)) })
-	seed, site := pivotCluster(t, seedKubeconfig), pivotCluster(t, siteKubeconfig)
-	if err := bootstraptest.VerifyPivot(ctx, seed, site, clusterName); err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("bootstraptest: the pivot moved the management plane of %s to the site", clusterName)
-}
-
-// pivotCluster builds the clients VerifyPivot reads one cluster through.
-func pivotCluster(t *testing.T, kubeconfig string) bootstraptest.PivotCluster {
-	t.Helper()
-	restConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	if err != nil {
-		t.Fatalf("loading kubeconfig %s: %v", kubeconfig, err)
-	}
-	kube, err := kubernetes.NewForConfig(restConfig)
-	if err != nil {
-		t.Fatalf("creating a client for %s: %v", kubeconfig, err)
-	}
-	dyn, err := dynamic.NewForConfig(restConfig)
-	if err != nil {
-		t.Fatalf("creating a dynamic client for %s: %v", kubeconfig, err)
-	}
-	return bootstraptest.PivotCluster{Kube: kube, Dynamic: dyn}
 }
 
 // verifySiteStack checks the NVKE stack the bootstrap installed and reported
