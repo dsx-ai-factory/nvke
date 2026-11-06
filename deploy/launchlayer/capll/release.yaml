@@ -12,7 +12,7 @@
 # from the stack config, as site values.
 chart:
   name: capi-provider-launchlayer
-  version: "0.1.0-rc.15"
+  version: "0.2.0"
   repository: oci://ghcr.io/dsx-ai-factory/cluster-api-provider-launchlayer/charts
 release:
   name: capi-provider-launchlayer

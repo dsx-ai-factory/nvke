@@ -37,7 +37,7 @@ The path installs CAPLL and configures the controller for LaunchLayer. Two setti
 
 ## Images
 
-Like `deploy/nico`, the path renders no image pull secret, so the node has to be able to pull every image as named. The controller and profiles images come from the release, or from `images.controller` and `images.profiles`. CAPLL's chart runs the image released with it, `ghcr.io/dsx-ai-factory/cluster-api-provider-launchlayer/controller:v0.1.0-rc.15`: no release artifact binds either yet, and the stack config's `mirror` does not apply to them. While CAPLL's chart and image are private, run `helm registry login ghcr.io` before installing, and load the image into the node's containerd or configure containerd with a credential or mirror for `ghcr.io`. The overlay's default controller image is private too.
+Like `deploy/nico`, the path renders no image pull secret, so the node has to be able to pull every image as named. The controller and profiles images come from the release, or from `images.controller` and `images.profiles`. CAPLL's chart runs the image released with it, `ghcr.io/dsx-ai-factory/cluster-api-provider-launchlayer/controller:v0.2.0`: no release artifact binds either yet, and the stack config's `mirror` does not apply to them. While CAPLL's chart and image are private, run `helm registry login ghcr.io` before installing, and load the image into the node's containerd or configure containerd with a credential or mirror for `ghcr.io`. The overlay's default controller image is private too.
 
 ## Install
 
