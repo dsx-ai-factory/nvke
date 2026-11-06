@@ -1,6 +1,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Release APIs are always installed. Enable these additional schemas for Cluster Service.
+# Disable when schemas are managed by another installer.
+enabled: true
+
+# Release APIs are installed whenever the chart is enabled. Enable these additional schemas for Cluster Service.
 clusterServiceCRDs:
   enabled: true
