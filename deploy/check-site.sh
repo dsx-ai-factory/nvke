@@ -132,11 +132,11 @@ if [[ -z "${pin}" || "${have}" == "${pin}" ]]; then
 else
   check_warn "helm ${have:-unknown}; the repository pins ${pin} in make/tool-versions.mk"
 fi
-for f in "${DEPLOY_PATH}/nvke-deploy.yaml" "${REPO_ROOT}/controller/deploy/charts/controller/Chart.yaml" "${REPO_ROOT}/nktp/deploy/charts/nktp/Chart.yaml"; do
+for f in "${DEPLOY_PATH}/nvke-deploy.yaml" "${REPO_ROOT}/controller/deploy/charts/controller/Chart.yaml"; do
   if [[ -f "${f}" ]]; then
     check_pass "checkout: ${f}"
   else
-    check_fail "checkout: ${f} is missing; the executor installs the controller and NKTP charts from the tree"
+    check_fail "checkout: ${f} is missing; the executor installs the controller chart from the tree"
   fi
 done
 if [[ -n "${CAPI_VERSION}" ]]; then

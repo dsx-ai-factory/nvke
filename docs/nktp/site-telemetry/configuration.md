@@ -12,17 +12,23 @@ changes and why, and how a site overrides it.
 |---|---|
 | **The Operator's finalizer grant** (`opentelemetry-kube-stack.opentelemetry-operator.extraObjects`) | A Role and RoleBinding granting the Operator `update` on its own Deployment's `deployments/finalizers`. Without it, the Operator crash-loops on NVKE clusters; see [troubleshooting](troubleshooting.md#the-operator-crash-loops-with-cannot-set-blockownerdeletion). |
 | **`k8s.cluster.name`** on the watchdog, its sidecar and the three gateways | A `K8S_CLUSTER_NAME` environment variable read from ConfigMap `nktp-cluster`, which `nvke-base-config` renders from BootstrapConfig's `ClusterName`. The chart's `transform/cluster` processor reads it, and the chart sets it from `global.clusterName` only when the `env` list omits it. NVKE's kubeadm configuration names every cluster `kubernetes`, so the name has to come from outside the cluster. |
-| **The API audit log path** (`filelog/kube-api-audit.include`) | NVKE's kubeadm configuration writes the API server's audit log to `/var/log/kubernetes_audit/audit.log`, not the chart's default path. |
+| **The API audit log path** (`file_log/kube-api-audit.include`) | NVKE's kubeadm configuration writes the API server's audit log to `/var/log/kubernetes_audit/audit.log`, not the chart's default path. |
 | **Control-plane monitors** (`kubeScheduler`, `kubeControllerManager`, `kubeProxy` off) | NVKE binds the scheduler and controller manager to `127.0.0.1`, and OVN clusters run no kube-proxy. Left on, they would show as permanently down targets. The API server, etcd and CoreDNS monitors stay on and work. |
 | **metrics-server on** | Nothing else serves `metrics.k8s.io` on the management cluster, and the Collector autoscalers read it. |
 | **Sizing** | One replica of everything, autoscalers starting at one, small requests and limits for every Collector and Target Allocator, and one kube-state-metrics Deployment for all object types instead of five. Sized for a small management cluster. |
 
-Each gateway has a 1 GiB container memory limit. Its exporter queue holds
-128,849,018 serialized bytes (12% of that limit, about 123 MiB), rather than
-inheriting the base chart's queue sized for a 4 GiB container. `GOMEMLIMIT` is
+Each gateway has a 1 GiB container memory limit and a `GOMEMLIMIT` of
 384 MiB, below the memory limiter's 55% soft refusal threshold. Serialized
-payloads can use several times their size on the heap; tune the queue and
-runtime memory target together when changing the container limit.
+payloads can use several times their size on the heap; tune the runtime memory
+target together with the container limit.
+
+The site values keep the chart's persistent exporter queues. The watchdog and
+each gateway run as a StatefulSet with a 1 GiB PersistentVolumeClaim from the
+default StorageClass, and their queues are sized for that volume rather than
+for container memory. A queued batch therefore survives a Collector restart.
+With a node-local StorageClass such as local-path, each replica is tied to the
+node that holds its volume: if that node is lost, the replica stays `Pending`
+until the node returns or its claim is deleted.
 
 ## Connecting a real backend
 
@@ -32,7 +38,7 @@ backend and turn `lgtm` off:
 
 1. **Write a values file for the site.** The keys are listed in
    [Set a backend](../getting-started.md#set-a-backend):
-   the `otlp` exporter of the watchdog, the watchdog's sidecar and each
+   the `otlp_grpc` exporter of the watchdog, the watchdog's sidecar and each
    gateway, plus `otel-lgtm.enabled: false`.
 2. **Pass it to the deploy path** with `--values-for nktp=<file>`. It is
    applied after the item's own values, so it wins.

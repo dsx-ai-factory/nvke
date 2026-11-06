@@ -138,7 +138,7 @@ A helm item installs one chart as one Helm release. Its `release.yaml` names the
 chart:
   name: temporal            # the chart's name
   version: "0.74.0"         # required for a repository chart; a path chart names none
-  repository: https://go.temporal.io/helm-charts   # or path: ../../nktp/deploy/charts/nktp
+  repository: https://go.temporal.io/helm-charts   # or path: ../../controller/deploy/charts/controller
   artifact: temporal        # NVKR artifact of the chart; default: the item name
   imageArtifact: cwe        # NVKR artifact of the image the chart runs, if any
   profilesArtifact: controller-profiles             # and of its profiles content image

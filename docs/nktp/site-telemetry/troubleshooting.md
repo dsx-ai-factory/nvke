@@ -43,19 +43,26 @@ empty value rather than labeling every signal with nothing.
 
 **Fix:** set `clusterName: <site-name>` in the site spec, or add `"ClusterName": "<site-name>"` to the BootstrapConfig.
 
-## The nktp item fails building chart dependencies
+## The nktp item cannot download the chart
 
-**Cause:** The install runs `helm dependency build` for the chart
-before installing it. That needs egress to `open-telemetry.github.io`,
-`prometheus-community.github.io` and `kubernetes-sigs.github.io`.
+**Cause:** The install pulls the chart from `https://helm.ngc.nvidia.com/nvidia`,
+and the node running it has no egress there.
 
 **Fix:**
 - **Allow that egress,** or
-- **Build the dependencies ahead of time** with `make nktp-chart-deps` in the
-  checkout the path installs from, or
 - **Install from a release.** `nvke-deploy-local.sh install --release …` puts the packaged
-  nktp chart the release carries under `charts/`, and `helm dependency build`
-  is not run for an archive.
+  nktp chart the release carries under `charts/`, and installs from that archive.
+
+## The watchdog or a gateway stays Pending
+
+**Cause:** Their exporter queues are on PersistentVolumes. Either the cluster
+has no default StorageClass, so the claims are never bound, or the claim is
+bound to a node-local volume on a node that is gone.
+
+**Fix:** check `kubectl -n nktp get pvc`. An unbound claim needs a default
+StorageClass. A claim bound to a lost node holds queued telemetry that is
+already unreachable; delete the claim and the Pod, and the StatefulSet
+recreates both on a node that is up.
 
 ## Collectors don't appear, or the Operator's webhook fails
 
@@ -92,7 +99,7 @@ kubectl -n nktp logs -l app.kubernetes.io/component=opentelemetry-collector \
 **Cause:**
 - **Wrong path:** the receiver reads a path that doesn't exist. NVKE writes the
   audit log to `/var/log/kubernetes_audit/audit.log`, and the site values
-  point `filelog/kube-api-audit` there. A cluster that writes it elsewhere
+  point `file_log/kube-api-audit` there. A cluster that writes it elsewhere
   needs the same override.
 - **Logging off:** API audit logging is off, so there is no file at all.
 
