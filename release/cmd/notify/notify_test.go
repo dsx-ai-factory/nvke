@@ -187,6 +187,24 @@ func TestDecodeDataKeepsLargeNumbers(t *testing.T) {
 	}
 }
 
+// json.Unmarshal rejected anything after the object; a decoder does not unless
+// told to, so a second object or stray text must still be an error.
+func TestDecodeDataRejectsTrailingContent(t *testing.T) {
+	for _, in := range []string{
+		`{"summary":"FIRST"} {"summary":"SECOND"}`,
+		`{"summary":"FIRST"} trailing`,
+		`{"summary":"FIRST"}}`,
+	} {
+		if got, err := decodeData([]byte(in)); err == nil {
+			t.Errorf("decodeData(%q) = %v, want an error", in, got)
+		}
+	}
+	// Whitespace after the object is fine.
+	if _, err := decodeData([]byte("{\"summary\":\"ok\"}\n\n")); err != nil {
+		t.Errorf("trailing whitespace rejected: %v", err)
+	}
+}
+
 func TestEventData(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "data.json")
 	if err := os.WriteFile(file, []byte(`{"stream":"a","count":3,"ok":true}`), 0o644); err != nil {

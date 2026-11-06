@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -203,6 +204,12 @@ func decodeData(raw []byte) (map[string]string, error) {
 	var generic map[string]any
 	if err := dec.Decode(&generic); err != nil {
 		return nil, fmt.Errorf("not a JSON object: %w", err)
+	}
+	// A decoder stops after the first value, where json.Unmarshal rejected
+	// anything after it. Without this, `{"a":"1"} {"a":"2"}` quietly used the
+	// first object.
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, errors.New("not a JSON object: unexpected content after the first object")
 	}
 	values := make(map[string]string, len(generic))
 	for k, v := range generic {
