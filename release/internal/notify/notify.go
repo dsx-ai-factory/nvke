@@ -33,6 +33,10 @@ type Notifier struct {
 	// Secrets are values that must never leave in a message, such as the bot
 	// token. They are removed from every message before it is posted.
 	Secrets []string
+	// ReplyOnly never starts a thread. A threaded message with no thread to
+	// reply in is not posted and is reported as an error. Jobs that run in
+	// parallel set it, so only the job that is meant to open the thread can.
+	ReplyOnly bool
 }
 
 // Result says what Trigger did.
@@ -89,6 +93,10 @@ func (n *Notifier) Trigger(ctx context.Context, event string, data Data, stateKe
 				threads[channel], loaded[channel] = ts, true
 			}
 			msg.ThreadTS = threads[channel]
+			if msg.ThreadTS == "" && n.ReplyOnly {
+				errs = append(errs, fmt.Errorf("not posting %q to %s: there is no thread to reply in and reply-only is set", m.Notification.Name, channel))
+				continue
+			}
 		}
 
 		ts, err := n.Poster.Post(ctx, msg)

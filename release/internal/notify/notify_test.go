@@ -252,3 +252,45 @@ func TestScrubCoversEveryTokenFamily(t *testing.T) {
 		})
 	}
 }
+
+// A job that runs in parallel must not open a competing thread.
+func TestReplyOnlyNeverStartsAThread(t *testing.T) {
+	p, s := &fakePoster{}, &MemoryState{}
+	n := notifier(t, twoChannels, p, s)
+	n.ReplyOnly = true
+
+	res, err := n.Trigger(context.Background(), "q:start", Data{}, "v1")
+	if err == nil || res.Posted != 0 || res.StateCreated || len(p.posted) != 0 {
+		t.Fatalf("= %+v, %v, posted %d; want an error and nothing posted", res, err, len(p.posted))
+	}
+	if got, _ := s.Get("v1", "C0000000001"); got != "" {
+		t.Errorf("state = %q, want none", got)
+	}
+}
+
+func TestReplyOnlyRepliesInAnExistingThread(t *testing.T) {
+	p, s := &fakePoster{}, &MemoryState{}
+	n := notifier(t, twoChannels, p, s)
+	if _, err := n.Trigger(context.Background(), "q:start", Data{}, "v1"); err != nil {
+		t.Fatal(err)
+	}
+	root, _ := s.Get("v1", "C0000000001")
+
+	p.posted = nil
+	n.ReplyOnly = true
+	res, err := n.Trigger(context.Background(), "q:fail", Data{Event: map[string]string{"stream": "a"}}, "v1")
+	if err != nil || res.Posted != 1 || p.posted[0].ThreadTS != root {
+		t.Fatalf("= %+v, %v, %+v; want one reply under %q", res, err, p.posted, root)
+	}
+}
+
+// A notification outside threads never needed one, so reply-only leaves it be.
+func TestReplyOnlyStillSendsThreadNone(t *testing.T) {
+	p := &fakePoster{}
+	n := notifier(t, twoChannels, p, &MemoryState{})
+	n.ReplyOnly = true
+	res, err := n.Trigger(context.Background(), "q:loose", Data{}, "v1")
+	if err != nil || res.Posted != 1 {
+		t.Fatalf("= %+v, %v; want the unthreaded message sent", res, err)
+	}
+}

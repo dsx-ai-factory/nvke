@@ -31,12 +31,13 @@ var dataKey = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 func triggerCmd() *cobra.Command {
 	var (
-		configAt string
-		stateAt  string
-		pairs    []string
-		dataAt   string
-		strict   bool
-		dryRun   bool
+		configAt  string
+		stateAt   string
+		pairs     []string
+		dataAt    string
+		strict    bool
+		dryRun    bool
+		replyOnly bool
 	)
 
 	cmd := &cobra.Command{
@@ -60,7 +61,11 @@ only then.
 A notification is a courtesy and a failed one must not fail a run, so a Slack
 error, a missing token or a template error is a warning and the exit status is
 zero. --strict makes them fatal. A config that does not load is always fatal.
---dry-run prints what would be sent, writes nothing and needs no token.`,
+--dry-run prints what would be sent, writes nothing and needs no token.
+
+--reply-only never starts a thread. A threaded message with no thread to reply
+in is not posted and is reported like any other failure. Give it to jobs that run
+in parallel, so that only the job meant to open the thread can.`,
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -77,7 +82,7 @@ zero. --strict makes them fatal. A config that does not load is always fatal.
 			data := notify.Data{Context: githubctx.Collect(os.Getenv), Event: values}
 			key := githubctx.StateKey(os.Getenv)
 
-			n := &notify.Notifier{Config: cfg}
+			n := &notify.Notifier{Config: cfg, ReplyOnly: replyOnly}
 			if dryRun {
 				n.Poster = notify.WriterPoster{W: cmd.OutOrStdout()}
 				n.State = &notify.MemoryState{}
@@ -119,6 +124,7 @@ zero. --strict makes them fatal. A config that does not load is always fatal.
 	cmd.Flags().StringVar(&dataAt, "data-file", "", "a JSON object of values for the templates")
 	cmd.Flags().BoolVar(&strict, "strict", false, "fail when a notification cannot be sent")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be sent, and send nothing")
+	cmd.Flags().BoolVar(&replyOnly, "reply-only", false, "never start a thread; skip a message that has none to reply in")
 	return cmd
 }
 
