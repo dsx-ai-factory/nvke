@@ -130,6 +130,10 @@ work so maintainers can agree on the approach.
 - **Questions:** [GitHub Discussions](https://github.com/dsx-ai-factory/nvke/discussions/categories/q-a).
 - **Chat:** the `#nvke` channel in the DSX AI Factory Slack.
   [Get an invite](https://inviter.co/dsx-ai-factory).
+- **Mailing list:** [nke@dsxaifactory.com](https://groups.google.com/a/dsxaifactory.com/g/nke) for announcements and
+  meeting invites.
+- **Community meeting:** public and recorded. Dates are announced on the
+  mailing list. [Meeting notes](https://docs.google.com/document/d/1l5jWUBUG5ZkuZTFFT55T1qpoIN7VCXoU0dAZu0LE4UQ/edit) and [recordings](https://drive.google.com/drive/folders/1-_ACwWrusc9hSkZ-r8MSc7ood1oIbazU).
 - **Bugs and feature requests:** [GitHub Issues](https://github.com/dsx-ai-factory/nvke/issues).
 - **Security vulnerabilities:** follow [SECURITY.md](SECURITY.md) and report privately.
 - **Community:** [Code of Conduct](CODE_OF_CONDUCT.md), [Governance](GOVERNANCE.md),
