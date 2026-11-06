@@ -5,6 +5,7 @@ package authn
 
 import (
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -127,19 +128,46 @@ type Admit struct {
 type ServiceAccountRule struct {
 	Namespace string `json:"namespace"`
 
-	// Name narrows the rule to one service account. A pointer so that an absent
-	// key ("any name in the namespace") stays distinct from `name: ""`, which
-	// would silently widen a rule the operator meant to narrow.
-	Name *string `json:"name,omitempty"`
+	// Name narrows the rule to one service account. An absent name matches
+	// every service account in the namespace. Validate refuses `name: ""` and a
+	// null name, which YAML writes as `name:`, `~` or `null`.
+	Name ServiceAccountName `json:"name,omitzero"`
+}
+
+// ServiceAccountName is a service account rule's optional name. The zero value
+// is an absent name, which matches every service account in the namespace.
+// Tag a field of this type `omitzero`, or an absent name marshals as null and
+// fails to load.
+type ServiceAccountName struct {
+	// Value is nil for both an absent and a null name.
+	Value *string
+	// null records a null name. Only UnmarshalJSON sets it.
+	null bool
+}
+
+// UnmarshalJSON records whether the name is null, and decodes it as a string.
+func (n *ServiceAccountName) UnmarshalJSON(raw []byte) error {
+	n.null = string(raw) == "null"
+	return json.Unmarshal(raw, &n.Value)
+}
+
+// MarshalJSON writes the name as a string, or null.
+func (n ServiceAccountName) MarshalJSON() ([]byte, error) {
+	return json.Marshal(n.Value)
 }
 
 // AllowsAnyName reports whether the rule matches every name in its namespace.
-func (r ServiceAccountRule) AllowsAnyName() bool { return r.Name == nil }
+// A null name allows none.
+func (r ServiceAccountRule) AllowsAnyName() bool { return r.Name.Value == nil && !r.Name.null }
 
 // Matches reports whether sa is in the rule's namespace and, unless the rule
-// allows any name, has the rule's name.
+// allows any name, has the rule's name. A rule with a null name matches
+// nobody, so an unvalidated rule fails closed.
 func (r ServiceAccountRule) Matches(sa ServiceAccount) bool {
-	return sa.Namespace == r.Namespace && (r.AllowsAnyName() || *r.Name == sa.Name)
+	if sa.Namespace != r.Namespace {
+		return false
+	}
+	return r.AllowsAnyName() || (r.Name.Value != nil && *r.Name.Value == sa.Name)
 }
 
 // SPIFFERule admits SPIFFE IDs. Both fields are required: a trust domain alone
@@ -437,17 +465,21 @@ func (r ServiceAccountRule) Validate() error {
 	if msgs := k8svalidation.NameIsDNSLabel(r.Namespace, false); len(msgs) > 0 {
 		return fmt.Errorf("namespace %q is not a valid namespace name: %s", r.Namespace, strings.Join(msgs, "; "))
 	}
-	if r.Name == nil {
+	if r.Name.null {
+		return fmt.Errorf("name is null; remove the key to match any service account in namespace %q, or set a name", r.Namespace)
+	}
+	name := r.Name.Value
+	if name == nil {
 		return nil
 	}
-	if strings.TrimSpace(*r.Name) == "" {
+	if strings.TrimSpace(*name) == "" {
 		return fmt.Errorf("name is present but empty; remove the key to match any service account in namespace %q", r.Namespace)
 	}
-	if err := requireUnpadded("name", *r.Name); err != nil {
+	if err := requireUnpadded("name", *name); err != nil {
 		return err
 	}
-	if msgs := k8svalidation.NameIsDNSSubdomain(*r.Name, false); len(msgs) > 0 {
-		return fmt.Errorf("name %q is not a valid service account name: %s", *r.Name, strings.Join(msgs, "; "))
+	if msgs := k8svalidation.NameIsDNSSubdomain(*name, false); len(msgs) > 0 {
+		return fmt.Errorf("name %q is not a valid service account name: %s", *name, strings.Join(msgs, "; "))
 	}
 	return nil
 }

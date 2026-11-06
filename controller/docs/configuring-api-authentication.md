@@ -167,7 +167,7 @@ create a pod can have Kubernetes mint a token for their own service account
 naming any audience they like. Verifying the signature is not enough on its own;
 the allow-list is what stops every service account in the cluster from being an
 NVKE administrator. Omitting `name` admits every service account in that
-namespace.
+namespace. A `name` with no value is refused.
 
 The two CA and token paths are files Kubernetes puts in every pod, so they work
 as written.
