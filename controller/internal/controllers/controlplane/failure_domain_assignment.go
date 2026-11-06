@@ -7,6 +7,7 @@ import (
 	"math"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
 // failureDomainSelectionAlgorithm picks the next failure domain from the
@@ -34,6 +35,9 @@ func leastUsedFailureDomainSelection(counts map[string]int) string {
 type domainAllocator struct {
 	machinesPerDomain map[string]int
 	selection         failureDomainSelectionAlgorithm
+	// preferred is the domain the next take returns when it is eligible. It lets a
+	// surge land in the domain of the node it will replace.
+	preferred string
 }
 
 // newDomainAllocator builds an allocator over the eligible domains. Unnamed
@@ -57,24 +61,35 @@ func (a *domainAllocator) record(domain string) {
 	}
 }
 
+// preferNext makes the next take return domain instead of the least-used one,
+// provided the domain is eligible. It applies to one take.
+func (a *domainAllocator) preferNext(domain string) {
+	a.preferred = domain
+}
+
 // take returns the next requested domain and counts it when applicable.
 func (a *domainAllocator) take() string {
 	if len(a.machinesPerDomain) == 0 {
 		return ""
 	}
 	selected := a.selection(a.machinesPerDomain)
+	if _, eligible := a.machinesPerDomain[a.preferred]; eligible {
+		selected = a.preferred
+	}
+	a.preferred = ""
 	a.machinesPerDomain[selected]++
 	return selected
 }
 
-// newControlPlaneDomainAllocator counts active control-plane nodes once each.
+// newControlPlaneDomainAllocator counts active control-plane nodes once each,
+// skipping nodes with a delete recorded or in flight.
 // Prefer the Machine's observed or requested domain; a newly created node may
 // not have a Machine yet, so its persisted decision is the fallback. Legacy
 // nodes with neither are omitted until CAPI reports their placement.
-func newControlPlaneDomainAllocator(nodes []db.Node, failureDomains *failureDomains) domainAllocator {
+func newControlPlaneDomainAllocator(cpNodes []db.Node, failureDomains *failureDomains) domainAllocator {
 	allocator := newDomainAllocator(leastUsedFailureDomainSelection, failureDomains.eligible)
-	for _, node := range nodes {
-		if isMarkedForDeletion(node) {
+	for _, node := range cpNodes {
+		if nodes.IsDeleteInFlight(node) {
 			continue
 		}
 		allocator.record(failureDomains.domainOf(node))

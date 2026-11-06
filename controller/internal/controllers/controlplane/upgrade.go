@@ -59,6 +59,9 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 					"nodesNeedingRolloutCount", len(nodesNeedingRollout))
 				return false, nil
 			}
+			// The surge lands in the domain of the node it replaces, which keeps the
+			// spread unchanged once that node is removed.
+			allocator.preferNext(cp.failureDomains.domainOf(nodesNeedingRollout[0]))
 			created, err := r.scaleUp(ctx, cluster, deficit, "surge nodes during upgrade", allocator, newNodeProvider)
 			if err != nil {
 				return false, fmt.Errorf("failed to scale up control plane before recycling: %w", err)

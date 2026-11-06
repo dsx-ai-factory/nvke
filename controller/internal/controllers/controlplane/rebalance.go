@@ -156,6 +156,9 @@ func (r *reconciler) reconcileControlPlaneRebalance(
 		return false, fmt.Errorf("resolving capped control-plane config snapshot: %w", err)
 	}
 
+	// The surge lands in the domain of the node it will replace, which keeps the
+	// spread unchanged once that node is shed.
+	allocator.preferNext(cp.failureDomains.domainOf(leastPreferredControlPlaneNode(eligible, ranker)))
 	created, err := r.scaleUp(ctx, cluster, 1, "control-plane rebalance surge", allocator, newNodeProvider, withRebalanceReplacement(snapshotID))
 	if err != nil {
 		return false, fmt.Errorf("surging control-plane rebalance replacement: %w", err)
@@ -411,6 +414,18 @@ func leastPreferredControlPlaneNodeToShed(cp *controlPlane, surge db.Node, ranke
 	}
 	if len(candidates) == 0 {
 		return db.Node{}, false
+	}
+	// Prefer a worse node in the surge's own domain so the shed keeps the spread.
+	if domain := cp.failureDomains.domainOf(surge); domain != "" {
+		var sameDomain []db.Node
+		for _, node := range candidates {
+			if cp.failureDomains.domainOf(node) == domain && ranker.ScaleDownRank(node) > ranker.ScaleDownRank(surge) {
+				sameDomain = append(sameDomain, node)
+			}
+		}
+		if len(sameDomain) > 0 {
+			candidates = sameDomain
+		}
 	}
 	victim := leastPreferredControlPlaneNode(candidates, ranker)
 	if ranker.ScaleDownRank(victim) <= ranker.ScaleDownRank(surge) {
