@@ -1,0 +1,66 @@
+{
+  "Controls": [
+    {
+      "id": "1",
+      "version": "cis-2.0",
+      "text": "Synthetic control plane checks",
+      "node_type": "master",
+      "tests": [
+        {
+          "section": "1.1",
+          "desc": "Synthetic file checks",
+          "results": [
+            {
+              "test_number": "1.1.11",
+              "test_desc": "Synthetic: data directory mode",
+              "audit": "stat -c %a /var/lib/etcd",
+              "type": "",
+              "status": "PASS",
+              "actual_value": "700",
+              "scored": true,
+              "expected_result": "'700' is present",
+              "reason": ""
+            },
+            {
+              "test_number": "1.1.12",
+              "test_desc": "Synthetic: data directory owner",
+              "audit": "stat -c %U:%G /var/lib/etcd",
+              "type": "",
+              "status": "FAIL",
+              "actual_value": "root:root",
+              "scored": true,
+              "expected_result": "'etcd:etcd' is present",
+              "reason": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "4",
+      "version": "cis-2.0",
+      "text": "Synthetic node checks",
+      "node_type": "node",
+      "tests": [
+        {
+          "section": "4.2",
+          "desc": "Synthetic kubelet checks",
+          "results": [
+            {
+              "test_number": "4.2.12",
+              "test_desc": "Synthetic: kubelet cipher suites",
+              "audit": "ps -ef | grep kubelet",
+              "type": "manual",
+              "status": "WARN",
+              "actual_value": "",
+              "scored": false,
+              "expected_result": "",
+              "reason": "Test marked as a manual test"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "Totals": {"total_pass": 1, "total_fail": 1, "total_warn": 1, "total_info": 0}
+}

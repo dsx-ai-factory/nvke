@@ -290,7 +290,9 @@ func (s *Substrate) ensureNetwork(ctx context.Context) error {
 //   - /dev/null over /proc/swaps: kubelet's IsSwapOn() runs before the
 //     failSwapOn knob is read, and a container inherits the host's swap state
 //   - tmpfs on /tmp and /run: systemd expects them writable and non-persistent
-//   - tmpfs on /var/lib/etcd: keep short-lived etcd fsyncs off shared CI storage
+//   - tmpfs on /var/lib/etcd: keep short-lived etcd fsyncs off shared CI storage.
+//     Mode 0700, the mode kubeadm gives the directory it creates: kubeadm keeps
+//     an existing directory's mode, and a tmpfs is 1777 by default
 //   - named volumes for /var and /var/lib/containerd: overlayfs on overlayfs
 //     breaks containerd's snapshotter
 func (s *Substrate) startNode(ctx context.Context, node Node) error {
@@ -312,7 +314,7 @@ func (s *Substrate) startNode(ctx context.Context, node Node) error {
 		"--volume", "/dev/null:/proc/swaps:ro",
 		"--tmpfs", "/tmp",
 		"--tmpfs", "/run",
-		"--tmpfs", "/var/lib/etcd:size=1g",
+		"--tmpfs", "/var/lib/etcd:size=1g,mode=0700",
 		"--env", "NODE_NAME=" + node.Name,
 		"--label", "nvkectl-e2e=true",
 	}

@@ -74,6 +74,8 @@ collect_diagnostics() {
 
   if docker inspect "${runner_name}" >/dev/null 2>&1; then
     docker cp "${runner_name}:/state/junit.xml" "${state_dir}/junit.xml" >/dev/null 2>&1 || true
+    # What specs wrote under -e2e.artifacts-dir, such as kube-bench scan results.
+    docker cp "${runner_name}:/state/artifacts" "${state_dir}/" >/dev/null 2>&1 || true
     docker rm -f "${runner_name}" >/dev/null 2>&1 || true
   fi
 
@@ -482,6 +484,7 @@ run_local_e2e() {
   label_filter="(${label_filter}) && !nvkectl"
   e2e_run_ginkgo local_e2e_exec log "${state_dir}" "${label_filter}" || rc=$?
   docker cp "${runner_name}:/state/junit.xml" "${state_dir}/junit.xml" >/dev/null 2>&1 || true
+  docker cp "${runner_name}:/state/artifacts" "${state_dir}/" >/dev/null 2>&1 || true
   return "${rc}"
 }
 
