@@ -64,7 +64,16 @@ type Authenticator struct {
 
 	logger *slog.Logger
 	record Recorder
+
+	// observe is nil unless set by WithObserver.
+	observe Observer
 }
+
+// Observer is told about each caller whose token verified, once admission has
+// been decided. admitted is false for a caller no admission rule matched. Such
+// a principal never reaches the request context and grants nothing; the
+// Observer exists so an audit log can name who sent the request.
+type Observer func(r *http.Request, p *Principal, admitted bool)
 
 // NewAuthenticator builds the middleware around a Verifier. A nil verifier is a
 // wiring bug: disabling authentication means building no Authenticator at all.
@@ -84,6 +93,13 @@ func NewAuthenticator(verifier *Verifier, mode Mode, logger *slog.Logger, record
 		logger:   logger,
 		record:   record,
 	}, nil
+}
+
+// WithObserver returns a copy of a that calls observe for each verified caller.
+func (a *Authenticator) WithObserver(observe Observer) *Authenticator {
+	c := *a
+	c.observe = observe
+	return &c
 }
 
 // IssuerNames returns the names of the issuers the Authenticator trusts, sorted.
@@ -111,7 +127,15 @@ func (a *Authenticator) Wrap(next http.Handler) http.Handler {
 		}
 		path := normalizePath(escaped)
 
-		principal, err := a.verifier.Authenticate(r.Context(), bearerToken(r))
+		// Verify and Admit rather than Authenticate, so the observer also hears
+		// about a verified caller that admission refuses.
+		principal, err := a.verifier.Verify(r.Context(), bearerToken(r))
+		if err == nil {
+			err = a.verifier.Admit(principal)
+			if a.observe != nil {
+				a.observe(r, principal, err == nil)
+			}
+		}
 		if err != nil {
 			a.handleFailure(w, r, next, path, err)
 			return
@@ -124,7 +148,7 @@ func (a *Authenticator) Wrap(next http.Handler) http.Handler {
 			"issuer", principal.IssuerName,
 			"subject", principal.Subject,
 			"method", r.Method,
-			"path", elideForLog(path),
+			"path", ElideForLog(path),
 		)
 		next.ServeHTTP(w, r.WithContext(ContextWithPrincipal(r.Context(), principal)))
 	})
@@ -144,7 +168,7 @@ func (a *Authenticator) handleFailure(
 	status := statusFor(reason)
 
 	// The path is caller-controlled and bounded only by MaxHeaderBytes.
-	loggedPath := elideForLog(path)
+	loggedPath := ElideForLog(path)
 
 	if a.mode == ModePermissive {
 		a.record(OutcomeWouldReject, reason, issuer)

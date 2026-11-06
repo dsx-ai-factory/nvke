@@ -19,6 +19,10 @@ import (
 const (
 	maxUserAgentLogLength = 256
 
+	// maxAuditGroups caps the groups an audit event lists. Each group is also
+	// cut to auth.ElideForLog's bound.
+	maxAuditGroups = 32
+
 	rejectionReasonRequestParsingFailed     = "request_parsing_failed"
 	rejectionReasonRequestValidationFailed  = "request_validation_failed"
 	rejectionReasonManagedByHeaderRequired  = "managed_by_header_required"
@@ -37,10 +41,11 @@ type requestLogState struct {
 	// operation handler.
 	operation string
 
-	// caller is set once authentication admits the request. Nil when
-	// authentication is off, or when it admitted no one and permissive mode
-	// served the request anyway.
-	caller *auth.Principal
+	// caller is set once the caller's token verifies, and admitted once an
+	// admission rule matches it. Nil when authentication is off or no token
+	// verified.
+	caller   *auth.Principal
+	admitted bool
 }
 
 func (s *requestLogState) recordRejectionReason(reason string) {
@@ -107,7 +112,8 @@ func loggingMiddleware(next http.Handler, logger *slog.Logger) http.Handler {
 
 // auditAttrs names the caller from the verified principal's issuer, subject and
 // groups only. It never reads the Authorization header, and never logs the
-// claims wholesale, so no part of the token reaches the log.
+// claims wholesale, so no part of the token reaches the log. The subject and
+// groups are the caller's own strings, so both are bounded.
 func auditAttrs(method, path string, status int, state *requestLogState) []any {
 	attrs := []any{
 		"event", "api.audit",
@@ -119,9 +125,13 @@ func auditAttrs(method, path string, status int, state *requestLogState) []any {
 		attrs = append(attrs, "operation", state.operation)
 	}
 	if p := state.caller; p != nil {
-		attrs = append(attrs, "issuer", p.IssuerName, "subject", p.Subject)
-		if groups, ok := principalGroups(p); ok {
+		attrs = append(attrs, "issuer", p.IssuerName, "subject", auth.ElideForLog(p.Subject), "admitted", state.admitted)
+		if claimed, ok := principalGroups(p); ok {
+			groups, truncated := boundGroups(claimed)
 			attrs = append(attrs, "groups", groups)
+			if truncated {
+				attrs = append(attrs, "groups_truncated", true)
+			}
 		}
 	}
 	if state.rejectionReason != "" {
@@ -148,18 +158,29 @@ func principalGroups(p *auth.Principal) ([]string, bool) {
 	return groups, true
 }
 
-// recordCallerMiddleware copies the principal from the request context into the
-// request log state. It sits inside authentication, whose request context the
-// logging middleware cannot see.
-func recordCallerMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if state := requestLogStateFromContext(r.Context()); state != nil {
-			if p, ok := auth.PrincipalFromContext(r.Context()); ok {
-				state.caller = p
-			}
-		}
-		next.ServeHTTP(w, r)
-	})
+// boundGroups keeps the first maxAuditGroups groups, each elided, and reports
+// whether it dropped or shortened any.
+func boundGroups(groups []string) ([]string, bool) {
+	truncated := len(groups) > maxAuditGroups
+	if truncated {
+		groups = groups[:maxAuditGroups]
+	}
+	bounded := make([]string, len(groups))
+	for i, g := range groups {
+		bounded[i] = auth.ElideForLog(g)
+		truncated = truncated || bounded[i] != g
+	}
+	return bounded, truncated
+}
+
+// recordCaller is the authentication observer. It records the verified caller
+// in the request log state for the audit event, admitted or not; only an
+// admitted caller reaches the request context.
+func recordCaller(r *http.Request, p *auth.Principal, admitted bool) {
+	if state := requestLogStateFromContext(r.Context()); state != nil {
+		state.caller = p
+		state.admitted = admitted
+	}
 }
 
 // recordOperation records the request's OpenAPI operationId. The generated
