@@ -87,8 +87,8 @@ type Options struct {
 	// silently never apply.
 	ResourceTypes []string
 
-	// RoleOnly refuses the tenancy keys in authorization.yaml: operatorTenant,
-	// and an issuer's tenant and operators. Set it for an API that decides by
+	// RoleOnly refuses the tenancy keys in authorization.yaml when set:
+	// operatorTenant, and an issuer's tenant and operators. Set it for an API that decides by
 	// role alone, where a tenant or operator status would change a decision.
 	RoleOnly bool
 }

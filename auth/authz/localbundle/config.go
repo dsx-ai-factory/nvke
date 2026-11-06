@@ -214,8 +214,9 @@ func (c authorizationConfig) checkTypeMeta() []error {
 	return errs
 }
 
-// checkRoleOnly refuses every tenancy key, for an API that decides by role
-// alone.
+// checkRoleOnly refuses every tenancy key set to a value that could change a
+// decision, for an API that decides by role alone. An empty operatorTenant,
+// an empty tenant or operators: false reads as unset and is accepted.
 func (c authorizationConfig) checkRoleOnly() []error {
 	const why = "this API authorizes by role only, so remove it"
 	var errs []error
