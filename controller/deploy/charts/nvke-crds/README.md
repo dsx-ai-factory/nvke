@@ -11,7 +11,8 @@ those files and Management Engine's Kustomize base references the same directory
 
 ## Installers and ownership
 
-Choose one installer for each CRD in a cluster. Existing controller installations
+Choose one installer for each CRD in a cluster. `enabled=false` suppresses all
+definitions when another installer owns them. Existing controller installations
 keep their release as the owner: the controller chart includes this chart as a
 dependency with `clusterServiceCRDs.enabled=false`, preserving its three-schema
 default. Existing release names and schema specifications are unchanged.

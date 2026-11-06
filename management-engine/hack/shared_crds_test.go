@@ -74,6 +74,7 @@ func TestSharedCRDs(t *testing.T) {
 		want        []string
 	}{
 		{"standalone", "nvke-crds", nil, allNames},
+		{"disabled", "nvke-crds", []string{"--set", "enabled=false"}, []string{}},
 		{"release-only", "nvke-crds", []string{"--set", "clusterServiceCRDs.enabled=false"}, releaseNames},
 		{"existing-controller", "controller", nil, releaseNames},
 		{"external-owner", "controller", []string{"--set", "releaseCRDs.install=false"}, []string{}},

@@ -4,7 +4,14 @@
   "properties": {
     "clusterServiceCRDs": {
       "type": "object",
-      "properties": {"enabled": {"type": "boolean"}}
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "enabled": {
+      "type": "boolean"
     }
   }
 }
