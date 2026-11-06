@@ -121,7 +121,8 @@ func actions() ([]string, error) {
 }
 
 // NewLocalBundle loads the bundle in dir for the API's actions. issuers are
-// the names of the issuers authentication trusts.
+// the names of the issuers authentication trusts. The API has no tenants, so
+// the load and every reload refuse authorization.yaml's tenancy keys.
 func NewLocalBundle(dir string, issuers []string) (*localbundle.LocalBundle, error) {
 	ids, err := actions()
 	if err != nil {
@@ -132,6 +133,7 @@ func NewLocalBundle(dir string, issuers []string) (*localbundle.LocalBundle, err
 		Issuers:       issuers,
 		Actions:       ids,
 		ResourceTypes: []string{resourceType},
+		RoleOnly:      true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load the authorization bundle in %s: %w", dir, err)

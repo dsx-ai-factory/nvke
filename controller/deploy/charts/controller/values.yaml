@@ -604,9 +604,10 @@ apiAuthz:
     # configMap.create=true, mounted either way.
     name: nvke-authz-bundle
   # -- The AuthorizationConfiguration, rendered as `authorization.yaml`: which
-  # roles each `apiAuth` issuer's callers hold. The chart supplies apiVersion
-  # and kind. Required when configMap.create=true. The controller checks the
-  # rest at startup.
+  # roles each `apiAuth` issuer's callers hold. Once enforcing, every caller
+  # `apiAuth` admits needs a role, management-engine included, or it gets 403.
+  # The chart supplies apiVersion and kind. Required when
+  # configMap.create=true. The controller checks the rest at startup.
   #
   # config:
   #   issuers:
@@ -616,6 +617,7 @@ apiAuthz:
   #         - {name: groups, value: nvke-viewers, grants: [viewer]}
   #     local-kubernetes:
   #       serviceAccounts:
+  #         - {namespace: management-engine-system, name: management-engine-controller-manager, grants: [admin]}
   #         - {namespace: nvke-ops, name: fleet, grants: [admin]}
   config: {}
   # -- The Cedar policies, rendered as `policies.cedar`. `admin` may call every
