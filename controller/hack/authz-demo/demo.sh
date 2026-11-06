@@ -4,8 +4,7 @@
 
 # The authorization demo's scripted walkthrough. See usage() and README.md.
 #
-# show prints each command as written and evaluates it, so the variables in the
-# single-quoted commands are expanded on purpose, and assigned by eval.
+# show evals its argument, so single-quoted commands expand variables when they run.
 # shellcheck disable=SC2016,SC2153
 
 set -uo pipefail
@@ -20,7 +19,7 @@ demo.sh [--setup] [--with-teleport]
 
 Runs against kind-controller-capi with NVKE_AUTHZ_DEMO=true tilt up. Prints one
 PASS or FAIL line per check. Exits 0 when every check passes, 1 when one fails,
-and 2 when a preflight check fails.
+and 2 when it can't run, such as when the controller isn't ready.
 EOF
 }
 
@@ -50,7 +49,7 @@ export API KC TP CTX
 FAILED=0
 ROGUE_ISS=https://rogue.nvke-demo.local
 
-die() { echo "preflight: $*" >&2; exit 2; }
+die() { echo "demo.sh: $*" >&2; exit 2; }
 
 # show prints a command and runs it in this shell.
 show() {
@@ -70,7 +69,8 @@ check() {
 }
 
 # rfc3339_ago SECONDS: the UTC time SECONDS ago. The kind node's clock can lag
-# the laptop's, so log windows start a little early.
+# the laptop's, so log windows start a minute early. Each log check also
+# filters on the caller and the action.
 rfc3339_ago() {
   local t=$(( $(date +%s) - $1 ))
   date -u -r "${t}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@${t}" +%Y-%m-%dT%H:%M:%SZ
@@ -101,11 +101,14 @@ alice_lists_clusters() {
   token="$(password_token alice)" || return 1
   [[ "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${token}" "${API}/clusters")" == 200 ]]
 }
+build_mint() {
+  (cd "${CONTROLLER_DIR}" && go build -o "${OUT}/mint" ./hack/authz-demo/mint) || die "building the minter failed"
+}
 teleport_app_registered() { teleport tctl apps ls --format=json | grep -q '"name": "nvke"'; }
 
 preflight() {
   local tool
-  for tool in curl jq yq go kubectl; do
+  for tool in curl jq yq go kubectl uuidgen; do
     command -v "${tool}" >/dev/null || die "${tool} is not installed"
   done
   kubectl config get-contexts "${CTX}" >/dev/null 2>&1 || die "no kube context ${CTX}"
@@ -120,15 +123,13 @@ preflight() {
     [[ "$(controller_config | yq '.apiAuth.issuers[] | select(.name == "teleport") | .name')" == teleport ]] ||
       die "the controller has no teleport issuer; run NVKE_AUTHZ_DEMO_TELEPORT=true tilt up"
   fi
-  if [[ ! -x "${OUT}/mint" ]]; then
-    (cd "${CONTROLLER_DIR}" && go build -o "${OUT}/mint" ./hack/authz-demo/mint) || die "building the minter failed"
-  fi
+  build_mint
 }
 
 setup() {
   kubectl config get-contexts "${CTX}" >/dev/null 2>&1 || die "no kube context ${CTX}"
   "${HERE}/gen.sh" >/dev/null || die "gen.sh failed"
-  (cd "${CONTROLLER_DIR}" && go build -o "${OUT}/mint" ./hack/authz-demo/mint) || die "building the minter failed"
+  build_mint
   rm -rf "${OUT}/take"
   mkdir -p "${OUT}/take"
   local start=${SECONDS}
@@ -156,7 +157,7 @@ fi
 preflight
 mkdir -p "${OUT}/take"
 cd "${OUT}" || exit 2
-START="$(rfc3339_ago 5)"
+START="$(rfc3339_ago 60)"
 export START
 
 echo "# 1. alice is in nvke-admins, which grants admin."
@@ -193,7 +194,7 @@ NORA_SUB="$(jq -rR 'split(".")[1] | gsub("-";"+") | gsub("_";"/") | @base64d | f
 wait_for 10 refusal_logged "${NORA_SUB}" listClusters
 check 3b "the refusal is logged as \"refused request\" for listClusters" refusal_logged "${NORA_SUB}" listClusters
 show 'ZED=$(curl -sS --cacert ca.crt -d grant_type=password -d client_id=nvkectl -d username=zed -d password=zed-demo "$KC/protocol/openid-connect/token" | jq -r .access_token)'
-T3="$(rfc3339_ago 5)"
+T3="$(rfc3339_ago 60)"
 export T3
 show 'curl -s -o take/body.json -w "%{http_code}\n" -H "Authorization: Bearer $ZED" "$API/clusters"; cat take/body.json' | tee take/code
 check 3c "zed lists clusters: 403" grep -q '^403' take/code
@@ -211,7 +212,7 @@ echo "# 4. A token from an issuer the controller does not trust."
 export ROGUE_ISS
 show 'ROGUE=$(./mint rogue --key rogue-key.pem --iss $ROGUE_ISS --sub mallory --groups nvke-admins)'
 show 'curl -s -o take/body.json -w "%{http_code}\n" -H "Authorization: Bearer $ROGUE" "$API/clusters"; cat take/body.json' | tee take/code
-check 4 "the rogue issuer's token: 401" grep -q '^401' take/code
+check 4 "the rogue issuer's token: 401 unknown_issuer" grep -q 'unknown_issuer' take/body.json
 
 echo
 echo "# 5. Expired, malformed and tampered tokens."
@@ -223,21 +224,24 @@ check 5a "an expired token: 401" grep -q '^401' take/code
 check 5b "the body says expired" grep -q 'expired' take/body.json
 show 'MALFORMED=$(./mint malformed)'
 show 'curl -s -o take/body.json -w "%{http_code}\n" -H "Authorization: Bearer $MALFORMED" "$API/clusters"; cat take/body.json' | tee take/code
-check 5c "a malformed token: 401" grep -q '^401' take/code
+check 5c "a malformed token: 401 bad_signature" grep -q 'bad_signature' take/body.json
 show 'TAMPERED=$(./mint tamper --token "$VERA" --claim '\''groups=["nvke-admins"]'\'')'
 show 'curl -s -o take/body.json -w "%{http_code}\n" -H "Authorization: Bearer $TAMPERED" "$API/clusters"; cat take/body.json' | tee take/code
-check 5d "vera's token rewritten into nvke-admins: 401" grep -q '^401' take/code
+check 5d "vera's token rewritten into nvke-admins: 401 bad_signature" grep -q 'bad_signature' take/body.json
 show 'for t in "$ALICE" "$VERA" "$NORA" "$ZED" "$ROGUE" "$EXPIRED" "$TAMPERED"; do echo "${t##*.}"; done > take/signatures.txt'
 show 'kubectl --context $CTX -n nvke-controller logs deploy/nvke-controller -c nvke-controller --since-time=$START > take/controller.log'
 show 'grep -cE "eyJ[A-Za-z0-9_-]+\.eyJ" take/controller.log; grep -cFf take/signatures.txt take/controller.log' | tee take/code
-check 5e "no token and no signature appears in the controller's log" [ "$(tail -2 take/code | paste -sd, -)" = "0,0" ]
+check 5e "no token and no signature appears in the controller's log" \
+  [ "$(tail -2 take/code | paste -sd, -)" = "0,0" -a -n "$(grep -m1 'refused request' take/controller.log)" ]
 
 echo
 echo "# 6. Every operation in the API, with no token, as vera and as alice."
-show 'curl -s http://localhost:8080/openapi.yaml -o take/openapi.yaml'
+rm -f take/openapi.yaml take/operations.tsv
+show 'curl -fsS http://localhost:8080/openapi.yaml -o take/openapi.yaml' || die "cannot fetch the API description"
 yq -o=json '.paths' take/openapi.yaml |
   jq -r 'to_entries[] | .key as $p | .value | to_entries[] | select(.key | test("^(get|put|post|patch|delete)$")) | [(.key | ascii_upcase), $p, .value.operationId] | @tsv' \
     > take/operations.tsv
+[[ -s take/operations.tsv ]] || die "found no operations in openapi.yaml; is yq mikefarah/yq?"
 echo "$(wc -l < take/operations.tsv | tr -d ' ') operations. Each runs:"
 echo '  curl -s -o take/body.json -w "%{http_code}" -X <method> -H "Authorization: Bearer <token>" [-H "Content-Type: application/json" -d <body>] "$API<path>"'
 echo "Path IDs are random UUIDs. A 404 from the handler means authorization passed."
@@ -248,7 +252,6 @@ echo "Path IDs are random UUIDs. A 404 from the handler means authorization pass
 UNSUPPORTED="$(controller_config | yq -o=json '.supportedInfraProviders' |
   jq -r '(["launchLayer", "infra", "nico"] - .)[0] // ""')"
 case "${UNSUPPORTED}" in
-  launchLayer) PROVIDER='"launchLayer":{"siteID":"authz-demo"}' ;;
   infra | nico) PROVIDER="\"${UNSUPPORTED}\":{}" ;;
   *) PROVIDER='"launchLayer":{"siteID":"authz-demo"}' ;;
 esac
@@ -264,6 +267,9 @@ body() {
     updateCluster | updateNodePool) echo '{}' ;;
   esac
 }
+
+# authorized CODE: the handler answered, so authorization let the call through.
+authorized() { [[ "$1" =~ ^[2-4][0-9][0-9]$ && "$1" != 401 && "$1" != 403 ]]; }
 
 # call TOKEN METHOD PATH OPERATION: the status code.
 call() {
@@ -287,16 +293,16 @@ while IFS=$'\t' read -r method path op; do
     note="skipped: every provider is supported, so this would create a cluster"
   else
     alice="$(call "${ALICE}" "${method}" "${real_path}" "${op}")"
-    [[ "${method}" != GET && "${alice}" != 401 && "${alice}" != 403 ]] && note="authorized (handler answered ${alice})"
+    [[ "${method}" != GET ]] && authorized "${alice}" && note="authorized (handler answered ${alice})"
   fi
   printf '%-38s %-7s %-9s %-6s %s %s\n' "${op}" "${method}" "${none}" "${vera}" "${alice}" "${note}"
   [[ "${none}" == 401 ]] || sweep_none=1
   if [[ "${method}" == GET ]]; then
-    [[ "${vera}" != 401 && "${vera}" != 403 ]] || sweep_vera=1
+    authorized "${vera}" || sweep_vera=1
   else
     [[ "${vera}" == 403 ]] || sweep_vera=1
   fi
-  [[ "${alice}" != 401 && "${alice}" != 403 ]] || sweep_alice=1
+  [[ "${alice}" == - ]] || authorized "${alice}" || sweep_alice=1
 done < take/operations.tsv
 check 6a "every operation with no token: 401" [ "${sweep_none}" = 0 ]
 check 6b "vera: every GET authorized, every write 403" [ "${sweep_vera}" = 0 ]

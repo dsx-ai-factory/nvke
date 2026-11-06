@@ -153,7 +153,7 @@ apiAuthz:
           - {name: groups, value: nvke-viewers, grants: [viewer]}
       local-kubernetes:
         serviceAccounts:
-          - {namespace: nke-clients, grants: [admin]}
+          - {namespace: nke-clients, name: nke-client, grants: [admin]}
           - {namespace: management-engine-system, name: management-engine-controller-manager, grants: [admin]}
 $3
 EOF
