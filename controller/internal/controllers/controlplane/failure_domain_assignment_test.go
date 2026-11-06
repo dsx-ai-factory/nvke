@@ -221,3 +221,55 @@ func TestNewControlPlaneDomainAllocatorDoesNotBackfillExistingNode(t *testing.T)
 	assert.Empty(t, nodes[0].FailureDomain)
 	assert.Equal(t, "fd-b", allocator.take())
 }
+
+func TestDomainAllocatorPreferNext(t *testing.T) {
+	t.Parallel()
+
+	t.Run("an eligible preferred domain wins once", func(t *testing.T) {
+		t.Parallel()
+		allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"})
+		allocator.record("fd-b")
+		allocator.preferNext("fd-b")
+		assert.Equal(t, "fd-b", allocator.take())
+		assert.Equal(t, "fd-a", allocator.take(), "the preference is consumed by one take")
+	})
+
+	t.Run("an ineligible preferred domain falls back to the least used", func(t *testing.T) {
+		t.Parallel()
+		allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"})
+		allocator.preferNext("fd-gone")
+		assert.Equal(t, "fd-a", allocator.take())
+	})
+}
+
+func TestNewControlPlaneDomainAllocatorSkipsNodesWithDeleteInFlight(t *testing.T) {
+	t.Parallel()
+
+	requested := db.Node{Name: "cp-requested"}
+	requested.Conditions.DeleteRequested = db.NewCondition(true, "requested")
+	allocator := newControlPlaneDomainAllocator([]db.Node{requested, {Name: "cp-live"}}, &failureDomains{
+		eligible:           []string{"fd-a", "fd-b"},
+		observedByNodeName: map[string]string{"cp-requested": "fd-a", "cp-live": "fd-b"},
+	})
+	assert.Equal(t, map[string]int{"fd-a": 0, "fd-b": 1}, allocator.machinesPerDomain)
+}
+
+func TestNodesWithoutKnownDomain(t *testing.T) {
+	t.Parallel()
+
+	deleting := db.Node{Name: "cp-deleting"}
+	deleting.Conditions.Deleting = db.NewCondition(true, "deleting")
+	cpNodes := []db.Node{{Name: "cp-observed"}, {Name: "cp-persisted", FailureDomain: "fd-b"}, {Name: "cp-legacy"}, deleting}
+	observed := map[string]string{"cp-observed": "fd-a"}
+
+	t.Run("lists active nodes with no observed or persisted domain", func(t *testing.T) {
+		t.Parallel()
+		got := nodesWithoutKnownDomain(cpNodes, &failureDomains{eligible: []string{"fd-a", "fd-b"}, observedByNodeName: observed})
+		assert.Equal(t, []string{"cp-legacy"}, got)
+	})
+
+	t.Run("reports nothing when the provider has no eligible domains", func(t *testing.T) {
+		t.Parallel()
+		assert.Empty(t, nodesWithoutKnownDomain(cpNodes, &failureDomains{observedByNodeName: observed}))
+	})
+}
