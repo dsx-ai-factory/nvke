@@ -126,6 +126,30 @@ both after the label run that needed them. `QUALIFY_E2E_NGC_ORG` and
 `QUALIFY_E2E_NODE_USER` apply by design. It runs in the `forge-nightly`
 environment, which needs no approval. A beta is cut once a night.
 
+Every beta tag push also starts the
+[`Qualify perf`](../../.github/workflows/qualify-perf.yml) workflow, which
+checks the day first. On the days named in the repository variable
+`NVKE_PERF_WEEKDAYS` it runs scope `perf` on the NVKE Scale site with the
+settings of a beta tag push, in `forge-nightly`. On any other day its run ends
+after the day check. `NVKE_PERF_WEEKDAYS` holds day names as
+`LC_ALL=C date -u +%a` prints them, separated by spaces, such as `Thu` or
+`Mon Thu`, and no perf run starts while it is unset. Days are UTC. A perf run
+posts its own Slack thread for the tag, records its results under the beta, and
+has no part in RC promotion. A second beta pushed on a perf day starts a second
+perf run. To run a failed perf run again use **Re-run failed jobs**, which
+keeps the day decision; **Re-run all jobs** checks the day again.
+
+Every real perf run shares one queue, whether a beta tag, a dispatch or a label
+run started it. Only one perf run holds the NVKE Scale site, one more can wait,
+and a newer one replaces the one waiting. A dry run takes no machine and stays
+out of that queue.
+[GitHub's concurrency docs](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+do not say whether a job holds its concurrency slot while it waits for
+approval, so a dispatch or label run waiting for approval may keep its place.
+Approve or cancel it promptly, or it can hold up the weekly perf run. To start
+the perf stream by hand, [dispatch the workflow](#dispatch-the-workflow) with
+`-f scope=perf`.
+
 ### What a CI run leaves behind
 
 - **The results card** on the run page: a row for each stream, then its specs
@@ -738,8 +762,11 @@ job; `qualify local` runs the one stream you name.
 | `perf` | the performance stream on the NVKE Scale Forge site: CPU machines only, a three worker tenant |
 | `full` | every Forge stream except the perf one: GB200 and L40S on Ubuntu 24.04 and 26.04 |
 
-The perf stream holds the NVKE Scale site for hours, so only a dispatch that
-names `perf` runs it, and `full` leaves it out. A stream can also carry
+The perf stream holds the NVKE Scale site for hours, so only a beta tag pushed
+on a perf day (through `Qualify perf`), a dispatch that names `perf`, or a run
+that takes its scope from the repository variable `QUALIFY_E2E_SCOPE` while it
+is `perf`, such as a `qualify-e2e` label run, runs it, and `full` leaves it
+out. A stream can also carry
 `parameters` in `release/policy.yaml`: the environment file it runs against,
 the workers its tenant gets and the suite's timeout. The plan records them, and
 the stream's result says which it ran with. The job's timeout and the timeout of
