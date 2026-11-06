@@ -109,6 +109,15 @@ func spiffeConfig(rule string) string {
     admit: {spiffe: ` + rule + `}`)
 }
 
+// claimsConfig varies the claims admission rule on a Teleport-shaped issuer.
+func claimsConfig(rules string) string {
+	return issuerConfig(`name: teleport
+    issuer: teleport.example.local
+    jwks: {uri: "https://teleport.example.local/.well-known/jwks.json"}
+    algorithms: [ES256]
+    admit: {claims: ` + rules + `}`)
+}
+
 // writeConfig writes contents to a fresh temp dir and returns the path.
 func writeConfig(t *testing.T, contents string) string {
 	t.Helper()
@@ -1004,6 +1013,19 @@ func TestLoadValidationAlgorithms(t *testing.T) {
 	})
 }
 
+// Each claim that describes the token is refused as a rule name.
+func TestClaimRuleRefusesTokenClaims(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"iss", "aud", "nonce", "jti", "exp", "nbf", "iat", "typ"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			err := authn.ClaimRule{Name: name, Value: "x"}.Validate()
+			require.ErrorContains(t, err, `name "`+name+`" describes the token`)
+		})
+	}
+}
+
 // The admission rules. An absent or empty admit block is a startup failure.
 func TestLoadValidationAdmit(t *testing.T) {
 	t.Parallel()
@@ -1071,7 +1093,7 @@ func TestLoadValidationAdmit(t *testing.T) {
     admit:
       serviceAccounts: [{namespace: nke-clients}]
       spiffe: {trustDomain: example.org, pathPrefixes: ["/nke-service/"]}`),
-			wantErr: "must not set more than one of serviceAccounts, spiffe, and groups",
+			wantErr: "must not set more than one of serviceAccounts, spiffe, groups, and claims",
 		},
 		{
 			name: "an empty serviceAccounts list beside a spiffe rule is not \"both\"",
@@ -1109,7 +1131,60 @@ func TestLoadValidationAdmit(t *testing.T) {
     admit:
       groups: [nke-operators]
       serviceAccounts: [{namespace: nke-clients}]`),
-			wantErr: "must not set more than one of serviceAccounts, spiffe, and groups",
+			wantErr: "must not set more than one of serviceAccounts, spiffe, groups, and claims",
+		},
+
+		// --- admit.claims ---
+		{
+			name:    "a claims rule loads",
+			yaml:    claimsConfig(`[{name: roles, value: nvke-admin}]`),
+			wantErr: "",
+		},
+		{
+			name:    "a claims rule without a name",
+			yaml:    claimsConfig(`[{value: nvke-admin}]`),
+			wantErr: "claims[0]: name is required",
+		},
+		{
+			name:    "a claims rule without a value",
+			yaml:    claimsConfig(`[{name: roles}]`),
+			wantErr: "claims[0]: value is required",
+		},
+		{
+			name:    "a claims rule with a padded name",
+			yaml:    claimsConfig(`[{name: "roles ", value: nvke-admin}]`),
+			wantErr: "leading or trailing whitespace",
+		},
+		{
+			name:    "a claims rule with a padded value",
+			yaml:    claimsConfig(`[{name: roles, value: " nvke-admin"}]`),
+			wantErr: "leading or trailing whitespace",
+		},
+		{
+			name:    "a claims rule on the caller-chosen audience",
+			yaml:    claimsConfig(`[{name: roles, value: nvke-admin}, {name: aud, value: nvke}]`),
+			wantErr: `claims[1]: name "aud" describes the token`,
+		},
+		{
+			name:    "a claims rule on the issuer",
+			yaml:    claimsConfig(`[{name: iss, value: teleport.example.local}]`),
+			wantErr: `name "iss" describes the token`,
+		},
+		{
+			name:    "a claims rule with an unknown key",
+			yaml:    claimsConfig(`[{name: roles, value: nvke-admin, values: [access]}]`),
+			wantErr: "values",
+		},
+		{
+			name: "admit with both claims and groups is a startup failure",
+			yaml: issuerConfig(`name: teleport
+    issuer: teleport.example.local
+    jwks: {uri: "https://teleport.example.local/.well-known/jwks.json"}
+    algorithms: [ES256]
+    admit:
+      groups: [nke-operators]
+      claims: [{name: roles, value: nvke-admin}]`),
+			wantErr: "must not set more than one of serviceAccounts, spiffe, groups, and claims",
 		},
 
 		// --- admit.spiffe ---

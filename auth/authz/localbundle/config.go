@@ -64,11 +64,9 @@ type tenantSource struct {
 	Fixed string `json:"fixed"`
 }
 
-// claimMapping matches a caller whose top-level claim Name equals Value, or
-// is a string array holding it, and grants it Grants.
+// claimMapping grants Grants to a caller its ClaimRule matches.
 type claimMapping struct {
-	Name   string   `json:"name"`
-	Value  string   `json:"value"`
+	authn.ClaimRule
 	Grants []string `json:"grants"`
 }
 
@@ -101,11 +99,9 @@ type compiledIssuer struct {
 	serviceAccounts []serviceAccountMatch
 }
 
-// claimMatch grants its roles to a caller whose claim name equals value, or is
-// a string array holding it.
+// claimMatch grants its roles to a caller that rule matches.
 type claimMatch struct {
-	name   string
-	value  string
+	rule   authn.ClaimRule
 	grants []types.EntityUID
 }
 
@@ -158,7 +154,7 @@ func (c authorizationConfig) compile() compiledConfig {
 	for name, i := range c.Issuers {
 		issuer := compiledIssuer{tenant: i.Tenant, operators: i.Operators}
 		for _, m := range i.Claims {
-			issuer.claims = append(issuer.claims, claimMatch{name: m.Name, value: m.Value, grants: roleUIDs(m.Grants)})
+			issuer.claims = append(issuer.claims, claimMatch{rule: m.ClaimRule, grants: roleUIDs(m.Grants)})
 		}
 		for _, m := range i.ServiceAccounts {
 			issuer.serviceAccounts = append(issuer.serviceAccounts, serviceAccountMatch{rule: m.rule(), grants: roleUIDs(m.Grants)})
@@ -235,7 +231,7 @@ func (c authorizationConfig) checkIssuer(name string, issuers []string, declared
 	}
 	for j, m := range i.Claims {
 		mapping := fmt.Sprintf("%s.claims[%d]", path, j)
-		if err := checkClaimMapping(m); err != nil {
+		if err := m.Validate(); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", mapping, err))
 		}
 		errs = append(errs, checkGrants(mapping, m.Grants, declared)...)
@@ -291,24 +287,11 @@ func checkOperators(i issuerConfig, operatorTenant string) error {
 	}
 }
 
-// checkClaimMapping refuses a claim mapping that would match no token, or
-// whose claim the caller controls.
-func checkClaimMapping(m claimMapping) error {
-	if err := checkClaimName(m.Name); err != nil {
-		return fmt.Errorf("name %w", err)
-	}
-	if err := checkTrimmed(m.Value); err != nil {
-		return fmt.Errorf("value %w", err)
-	}
-	return nil
-}
-
-// checkClaimName refuses a claim name that would match no claim, or whose
-// claim the caller chooses. The caller prefixes the error with the field. A
-// caller chooses the audiences it asks for, and a token passes when any one
+// checkClaimName refuses a tenant claim name that would match no claim, or
+// whose claim the caller chooses. The caller prefixes the error with the field.
+// A caller chooses the audiences it asks for, and a token passes when any one
 // matches. An OIDC caller chooses the nonce, and the issuer signs it
-// unchanged. So either claim would let a caller grant itself a role or choose
-// its tenant.
+// unchanged. So either claim would let a caller choose its tenant.
 func checkClaimName(name string) error {
 	switch {
 	case name == "":
@@ -397,7 +380,7 @@ func (c compiledConfig) rolesFor(p authn.Principal) []types.EntityUID {
 	var roles []types.EntityUID
 	i := c.issuers[p.IssuerName]
 	for _, m := range i.claims {
-		if claimMatches(p.Claims, m.name, m.value) {
+		if m.rule.Matches(p.Claims) {
 			roles = append(roles, m.grants...)
 		}
 	}
@@ -410,26 +393,4 @@ func (c compiledConfig) rolesFor(p authn.Principal) []types.EntityUID {
 		}
 	}
 	return roles
-}
-
-// claimMatches reports whether the claim name equals value, or is a string
-// array holding it. Verified claims decode JSON arrays to []any, and an array
-// holding anything but strings doesn't match.
-func claimMatches(claims map[string]any, name, value string) bool {
-	switch v := claims[name].(type) {
-	case string:
-		return v == value
-	case []any:
-		found := false
-		for _, elem := range v {
-			s, ok := elem.(string)
-			if !ok {
-				return false
-			}
-			found = found || s == value
-		}
-		return found
-	default:
-		return false
-	}
 }
