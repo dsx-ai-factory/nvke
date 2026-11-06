@@ -15,7 +15,7 @@ NVKE provides that system as open-source software. With NVKE, you can:
 - **Launch a Kubernetes service without building a cluster management system first.** NVKE supplies cluster provisioning, lifecycle, node identity and telemetry. You build the customer-facing service on top of NVKE.
 - **Build customer clusters from pinned, verifiable configurations.** NVKR builds each artifact from pinned sources and records a software bill of materials (SBOM) for it. Releases from NVKR's hosted pipeline are signed and carry build provenance, which you check against your own policy before an artifact reaches a cluster.
 - **Keep control of the service.** You own the build, the registries and the supply chain. You can adopt NVKE whole, integrate parts of it into your own platform, or extend it.
-- **Build on upstream Kubernetes.** NVKE uses upstream Kubernetes, kubeadm and Cluster API. The Cloud Native Computing Foundation (CNCF) [has certified](https://github.com/cncf/k8s-conformance/pull/4492) that NVKE creates conformant Kubernetes clusters, so your customers' workloads, tools and skills carry over from other Kubernetes environments unchanged. NVKE is also [certified](https://github.com/cncf/landscape/pull/5236) as a Kubernetes AI conformance AI Platform.
+- **Build on upstream Kubernetes.** NVKE uses upstream Kubernetes, kubeadm and Cluster API. The Cloud Native Computing Foundation (CNCF) [has certified](https://github.com/cncf/k8s-conformance/pull/4492) that NVKE creates conformant Kubernetes clusters, so your customers' workloads, tools and skills carry over from other Kubernetes environments unchanged. NVKE is a [Certified Kubernetes AI Platform](https://github.com/cncf/landscape/pull/5236).
 
 ## Who NVKE is for
 
