@@ -169,6 +169,11 @@ on:
         type: boolean
         required: false
         default: false
+      notify:
+        description: Announce this run in Slack, as a beta tag run does. A dry run is never announced.
+        type: boolean
+        required: false
+        default: false
       keep-site:
         description: Keep the site node after the run, and a failed tenant's nodes, for debugging. Remember to delete them by hand.
         type: boolean
@@ -276,6 +281,13 @@ jobs:
       commit: ${{ steps.matrix.outputs.commit }}
     env:
       DRY_RUN: ${{ (inputs.dry-run == true || github.event.label.name == 'qualify-e2e-dry-run') && 'true' || 'false' }}
+      # Whether this run is announced in Slack: a beta tag push always is, and a
+      # dispatch only when asked. A dry run never is. The token is read in the
+      # plan and results jobs from ci-shared and in each lane from its own
+      # environment, so this condition is what keeps a run silent, and every
+      # notify step names it. A labelled pull request has no `inputs`, so it is
+      # silent.
+      NOTIFY: ${{ ((github.event_name == 'push' || inputs.notify == true) && !(inputs.dry-run == true || github.event.label.name == 'qualify-e2e-dry-run')) && 'true' || 'false' }}
       # A tag push qualifies the tag it was pushed for. Its ref_name is only
       # read on that event, so a dispatch from a branch is unaffected.
       NVKE_VERSION: >-
@@ -448,6 +460,80 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # SLACK. This job opens the run's thread, and the lanes that need it reply
+      # in it, so a lane cannot post before the thread exists. Each message may
+      # start the thread if the one before it failed to. A notification never
+      # fails the plan; each step is cut off after 3 minutes, which is how long a
+      # stall can hold the lanes back.
+      - name: Name the tagged commit
+        id: commit
+        if: env.NOTIFY == 'true' && github.event_name == 'push'
+        continue-on-error: true
+        shell: bash
+        run: echo "short=${GITHUB_SHA::7}" >> "${GITHUB_OUTPUT}"
+
+      # The tag was pushed at this commit, so this run's own SHA is the commit
+      # that was tagged. Only a tag push has a tag to announce.
+      - name: Announce the tag
+        if: env.NOTIFY == 'true' && github.event_name == 'push'
+        continue-on-error: true
+        timeout-minutes: 3
+        uses: ./.github/actions/notify
+        with:
+          event: release:beta-tag-created
+          token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
+          open-thread: "true"
+          data: |
+            tag=${{ github.ref_name }}
+            commit=${{ github.sha }}
+            commit_short=${{ steps.commit.outputs.short }}
+
+      - name: Announce that qualification started
+        if: env.NOTIFY == 'true'
+        continue-on-error: true
+        timeout-minutes: 3
+        uses: ./.github/actions/notify
+        with:
+          event: qualification:started
+          token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
+          open-thread: "true"
+
+      - name: Count the streams
+        id: streams
+        if: env.NOTIFY == 'true'
+        continue-on-error: true
+        shell: bash
+        run: echo "count=$(jq -r '[.combinations[].streams[].name] | unique | length' plan.json)" >> "${GITHUB_OUTPUT}"
+
+      - name: Announce the plan
+        if: env.NOTIFY == 'true'
+        continue-on-error: true
+        timeout-minutes: 3
+        uses: ./.github/actions/notify
+        with:
+          event: qualification:plan-resolved
+          token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
+          open-thread: "true"
+          data: |
+            nvke_version=${{ steps.matrix.outputs.nvke-version }}
+            scope=${{ steps.matrix.outputs.scope }}
+            resolution=${{ steps.matrix.outputs.resolution }}
+            stream_count=${{ steps.streams.outputs.count }}
+
+      # A plan that fails never reaches the lanes or the results job, so this is
+      # the only place its failure can be announced.
+      - name: Announce that the plan failed
+        if: failure() && env.NOTIFY == 'true'
+        continue-on-error: true
+        timeout-minutes: 3
+        uses: ./.github/actions/notify
+        with:
+          event: qualification:failed
+          token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
+          open-thread: "true"
+          data: |
+            summary=The plan did not resolve
+
   # Everything the run needs, in one gated job: confirms every artifact the
   # plan names is published, resolves versions and capabilities, builds the
   # image archives and nvkectl, reaches Forge or the jump host, and runs the
@@ -549,6 +635,9 @@ jobs:
       # with every other run in flight.
       SITE_STAGE: ${{ inputs.stage || (github.event_name != 'push' && vars.QUALIFY_E2E_STAGE) || 'full' }}
       DRY_RUN: ${{ needs.plan.outputs.dry-run }}
+      # See the plan job: a beta tag push, or a dispatch that asked, and never a
+      # dry run.
+      NOTIFY: ${{ (github.event_name == 'push' || inputs.notify == true) && needs.plan.outputs.dry-run != 'true' && 'true' || 'false' }}
       # Whether this run's ref is one the nvke WIF provider in the testgrid
       # repo actually trusts (main, or a v<digit> tag -- see wif-nvke.tf
       # there). Only a pre-filter: GCP's own attribute mapping is the real
@@ -729,11 +818,10 @@ jobs:
         with:
           name: qualify-plan-${{ github.run_id }}
 
-      # Slack, for a beta tag only: it is the one run that reads this token, in
-      # forge-nightly. It replies in the thread the announce job opened and
-      # starts none, so a lane that gets here first posts nothing.
+      # Slack. The plan job opened the thread, which this job waits for, and a
+      # lane replies in it and starts none.
       - name: Announce that the stream started
-        if: github.event_name == 'push'
+        if: env.NOTIFY == 'true'
         continue-on-error: true
         timeout-minutes: 5
         uses: ./.github/actions/notify
@@ -1386,7 +1474,7 @@ jobs:
       # suite never ran. A cancelled run posts neither: it has no outcome, and it
       # still needs someone to check Forge for a leaked instance.
       - name: Announce that the stream passed
-        if: success() && github.event_name == 'push'
+        if: success() && env.NOTIFY == 'true'
         continue-on-error: true
         timeout-minutes: 5
         uses: ./.github/actions/notify
@@ -1397,7 +1485,7 @@ jobs:
             stream=${{ matrix.stream }}
 
       - name: Announce that the stream failed
-        if: failure() && github.event_name == 'push'
+        if: failure() && env.NOTIFY == 'true'
         continue-on-error: true
         timeout-minutes: 5
         uses: ./.github/actions/notify
@@ -1427,6 +1515,9 @@ jobs:
       needs.plan.result == 'success' &&
       needs.plan.outputs.dry-run != 'true'
     runs-on: ubuntu-latest
+    # ci-shared has no protection rules, so this adds no approval. It is here so
+    # the verdict can read the Slack token; see NOTIFY in the plan job.
+    environment: ci-shared
     timeout-minutes: 10
     # The run's conclusion is the qualification's verdict, and a card that did
     # not render says nothing about the release.
@@ -1435,6 +1526,9 @@ jobs:
       contents: read
       # Lists and downloads the lanes' run logs.
       actions: read
+    env:
+      # See the plan job. A dry run never reaches this job.
+      NOTIFY: ${{ (github.event_name == 'push' || inputs.notify == true) && 'true' || 'false' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1513,168 +1607,22 @@ jobs:
 
           go run ./release/cmd/qualify summary results --plan plan.json "${reports[@]}" >> "${GITHUB_STEP_SUMMARY}"
 
-  # SLACK, FOR A BETA TAG ONLY. Three jobs announce the run and one reports its
-  # verdict; the lanes announce themselves. They run in forge-nightly because
-  # that is the one environment that holds the bot token and accepts a beta tag
-  # ref (v*-beta.*), so a dispatch or a labelled pull request, which run under
-  # `forge`, never reach it. Every one is non-gating: a notification that
-  # cannot be sent must not fail or hold up a qualification, so nothing needs
-  # these jobs, the lanes do not wait for them, and each is continue-on-error.
-  #
-  # The jobs are separate from `plan` and `qualify-run` because a job has one
-  # environment and those have their own.
-  #
-  # This job opens the run's Slack thread, and is the only one that may.
-  announce:
-    name: announce
-    if: github.repository_id == '1323115536' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    environment: forge-nightly
-    timeout-minutes: 10
-    continue-on-error: true
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.work
-          cache: true
-          cache-dependency-path: |
-            go.work.sum
-            **/go.sum
-
-      - name: Name the tagged commit
-        id: commit
-        shell: bash
-        run: echo "short=${GITHUB_SHA::7}" >> "${GITHUB_OUTPUT}"
-
-      # The tag was pushed at this commit, so this run's own SHA is the commit
-      # that was tagged.
-      - name: Announce the tag
-        continue-on-error: true
-        timeout-minutes: 5
-        uses: ./.github/actions/notify
-        with:
-          event: release:beta-tag-created
-          token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
-          open-thread: "true"
-          data: |
-            tag=${{ github.ref_name }}
-            commit=${{ github.sha }}
-            commit_short=${{ steps.commit.outputs.short }}
-
-      - name: Announce that qualification started
-        continue-on-error: true
-        timeout-minutes: 5
-        uses: ./.github/actions/notify
-        with:
-          event: qualification:started
-          token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
-          restore-state: "false"
-
-  announce-plan:
-    name: announce plan
-    needs: [announce, plan]
-    if: >-
-      !cancelled() &&
-      github.repository_id == '1323115536' &&
-      github.event_name == 'push' &&
-      needs.plan.result == 'success'
-    runs-on: ubuntu-latest
-    environment: forge-nightly
-    timeout-minutes: 10
-    continue-on-error: true
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.work
-          cache: true
-          cache-dependency-path: |
-            go.work.sum
-            **/go.sum
-
-      - name: Download the plan
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: qualify-plan-${{ github.run_id }}
-
-      - name: Count the streams
-        id: streams
-        shell: bash
-        run: echo "count=$(jq -r '[.combinations[].streams[].name] | unique | length' plan.json)" >> "${GITHUB_OUTPUT}"
-
-      - name: Announce the plan
-        continue-on-error: true
-        timeout-minutes: 5
-        uses: ./.github/actions/notify
-        with:
-          event: qualification:plan-resolved
-          token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
-          data: |
-            nvke_version=${{ needs.plan.outputs.nvke-version }}
-            scope=${{ needs.plan.outputs.scope }}
-            resolution=${{ needs.plan.outputs.resolution }}
-            stream_count=${{ steps.streams.outputs.count }}
-
-  announce-completed:
-    name: announce result
-    needs: [announce, plan, qualify-run]
-    if: >-
-      !cancelled() &&
-      github.repository_id == '1323115536' &&
-      github.event_name == 'push'
-    runs-on: ubuntu-latest
-    environment: forge-nightly
-    timeout-minutes: 10
-    continue-on-error: true
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.work
-          cache: true
-          cache-dependency-path: |
-            go.work.sum
-            **/go.sum
-
-      # The lanes' combined result, as the event that carries its colour: every
-      # stream passed, at least one failed, or the run stopped without a verdict.
-      # A plan that failed never reached the lanes, which is a failure.
+      # The verdict as the event that carries its colour: every stream passed, at
+      # least one failed, or the run stopped without one. The plan succeeded, or
+      # this job would not run.
       - name: Decide the outcome
         id: verdict
+        if: env.NOTIFY == 'true'
         shell: bash
         env:
-          PLAN: ${{ needs.plan.result }}
           LANES: ${{ needs.qualify-run.result }}
         run: |
           set -Eeuo pipefail
-          case "${PLAN}/${LANES}" in
-            success/success)   outcome=passed;  summary="Every stream passed" ;;
-            success/failure)   outcome=failed;  summary="At least one stream failed" ;;
-            success/cancelled) outcome=stopped; summary="The run was cancelled" ;;
-            success/skipped)   outcome=stopped; summary="No stream ran" ;;
-            *)                 outcome=failed;  summary="The plan did not resolve (${PLAN})" ;;
+          case "${LANES}" in
+            success)   outcome=passed;  summary="Every stream passed" ;;
+            failure)   outcome=failed;  summary="At least one stream failed" ;;
+            cancelled) outcome=stopped; summary="The run was cancelled" ;;
+            *)         outcome=stopped; summary="No stream ran" ;;
           esac
           {
             echo "outcome=${outcome}"
@@ -1682,6 +1630,7 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
 
       - name: Announce the result
+        if: env.NOTIFY == 'true'
         continue-on-error: true
         timeout-minutes: 5
         uses: ./.github/actions/notify
