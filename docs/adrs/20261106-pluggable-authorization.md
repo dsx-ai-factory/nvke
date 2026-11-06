@@ -16,7 +16,7 @@ The [`auth/authz`](../../auth/authz/authorizer.go) package separates an API from
 
 [`localbundle`](../../auth/authz/localbundle/localbundle.go) is the only backend. It evaluates Cedar policy from files the deployer mounts. No API on `main` calls `auth/authz` yet.
 
-Callers reach `auth/authz` already authenticated, as [`20261106-jwt-authentication.md`](20261106-jwt-authentication.md) describes. That record also defines NVKE APIs and permissive mode.
+Callers reach `auth/authz` already authenticated, as [`20261106-authentication-configuration.md`](20261106-authentication-configuration.md) describes. That record also defines NVKE APIs and permissive mode.
 
 ## Decision
 
@@ -28,7 +28,7 @@ Each API:
 
 - Calls `Client.Check` for every request. The API supplies the action and the resource's owning tenant. The backend evaluates policy, finds the caller's tenant, and decides whether the caller is an operator. An operator may act in any tenant.
 - Picks its backend from configuration. Changing the backend changes no API code.
-- Runs standalone with `localbundle` and files the deployer mounts.
+- Runs standalone with `localbundle` and files the deployer mounts. Their schema, `AuthorizationConfiguration` in `auth.nvke.nvidia.com/v1alpha1`, is a public contract. A deployer can write them by hand, or a central IAM service can write them.
 - Publishes its actions and resource types. Policy in every backend names them.
 - Calls `Client.Ready` at startup and exits if the backend cannot answer. In enforcing mode, a backend error refuses the request.
 
