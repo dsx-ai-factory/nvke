@@ -16,7 +16,7 @@ The [`auth/authz`](../../auth/authz/authorizer.go) package separates an API from
 
 [`localbundle`](../../auth/authz/localbundle/localbundle.go) is the only backend. It evaluates Cedar policy from files the deployer mounts. No API on `main` calls `auth/authz` yet.
 
-Callers reach `auth/authz` already authenticated, as [`20261106-authentication-configuration.md`](20261106-authentication-configuration.md) describes. That record also defines NVKE APIs and permissive mode.
+Callers reach `auth/authz` already authenticated, as [`20261106-configuration-driven-jwt-authentication.md`](20261106-configuration-driven-jwt-authentication.md) describes. That record also defines NVKE APIs and permissive mode.
 
 ## Decision
 
