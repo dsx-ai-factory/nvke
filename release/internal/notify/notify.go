@@ -11,33 +11,36 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+
+	"github.com/dsx-ai-factory/nvke/release/internal/notify/provider"
 )
 
-// Poster sends a message and returns the timestamp Slack gave it.
-type Poster interface {
-	Post(ctx context.Context, m Message) (ts string, err error)
-}
-
-// State remembers the thread a conversation lives in, per channel.
+// State remembers the thread a conversation lives in, per recipient.
 type State interface {
-	// Get returns the thread timestamp, or "" when the conversation has none.
-	Get(key, channel string) (string, error)
-	Set(key, channel, ts string) error
+	// Get returns the conversation ID, or "" when the conversation has none.
+	Get(key, recipient string) (string, error)
+	Set(key, recipient, id string) error
 }
 
 // Notifier turns an event into messages.
 type Notifier struct {
 	Config *Config
-	Poster Poster
-	State  State
+	// Providers deliver the messages, by the kind of destination a subscriber
+	// names: "slack". They are passed in, and not looked up in a registry, so a
+	// test or a dry run supplies its own.
+	Providers map[string]provider.Provider
+	State     State
 	// Secrets are values that must never leave in a message, such as the bot
-	// token. They are removed from every message before it is posted.
+	// token. They are removed from every message before it is sent.
 	Secrets []string
 	// ReplyOnly never starts a thread. A threaded message with no thread to
-	// reply in is not posted and is reported as an error. Jobs that run in
+	// reply in is not sent and is reported as an error. Jobs that run in
 	// parallel set it, so only the job that is meant to open the thread can.
 	ReplyOnly bool
 }
+
+// kindSlack is the destination kind of a subscriber with a Slack channel.
+const kindSlack = "slack"
 
 // Result says what Trigger did.
 type Result struct {
@@ -45,77 +48,124 @@ type Result struct {
 	Matched int
 	// Posted is how many were sent.
 	Posted int
-	// StateCreated is true when a message started a thread and its timestamp
-	// was recorded. A caller that persists state between jobs saves it only
-	// then.
+	// StateCreated is true when a message started a thread and its ID was
+	// recorded. A caller that persists state between jobs saves it only then.
 	StateCreated bool
 }
 
-// Trigger sends what the config calls for on an event.
+// Trigger sends what the config calls for on an event: it matches the event and
+// fans out over the notifications that match, each of which sends itself.
 //
-// All messages are attempted. A failure to render or post one is returned with
-// the rest and does not stop the others, so one broken notification does not
-// silence its neighbours.
-//
-// The first message of a conversation in a channel posts as the thread's root
-// and records its timestamp under stateKey. Every later one replies under it. A
-// notification with thread "none" is never part of a thread.
-func (n *Notifier) Trigger(ctx context.Context, event string, data Data, stateKey string) (Result, error) {
+// All of them are attempted. A failure of one is returned with the rest and
+// does not stop the others, so one broken notification does not silence its
+// neighbours.
+func (n *Notifier) Trigger(ctx context.Context, event string, data Data, key string) (Result, error) {
 	matches := n.Config.Match(event)
 	res := Result{Matched: len(matches)}
 
-	var (
-		errs    []error
-		threads = map[string]string{}
-		loaded  = map[string]bool{}
-	)
+	var errs []error
 	for _, m := range matches {
-		channel := m.Subscriber.Channels.Slack.ChannelID
-
-		msg, err := Render(m.Notification, data)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("rendering %q: %w", m.Notification.Name, err))
+		p, ok := n.Providers[kindSlack]
+		if !ok {
+			errs = append(errs, fmt.Errorf("sending %q: no %s provider", m.Notification.Name, kindSlack))
 			continue
 		}
-		msg.Channel = channel
-		msg.Mentions = m.Mentions
-		n.scrub(&msg)
-
-		threaded := m.Notification.Thread != ThreadNone
-		if threaded {
-			if !loaded[channel] {
-				ts, err := n.State.Get(stateKey, channel)
-				if err != nil {
-					// Without the thread this posts as a new root: noisier than
-					// it should be, and better than silence.
-					errs = append(errs, fmt.Errorf("reading the thread for %s: %w", channel, err))
-				}
-				threads[channel], loaded[channel] = ts, true
-			}
-			msg.ThreadTS = threads[channel]
-			if msg.ThreadTS == "" && n.ReplyOnly {
-				errs = append(errs, fmt.Errorf("not posting %q to %s: there is no thread to reply in and reply-only is set", m.Notification.Name, channel))
-				continue
-			}
+		sent, err := m.Notification.Send(ctx, Delivery{
+			Provider:  p,
+			Kind:      kindSlack,
+			Recipient: m.Subscriber.Channels.Slack.ChannelID,
+			Mentions:  m.Mentions,
+			Data:      data,
+			State:     n.State,
+			Key:       key,
+			ReplyOnly: n.ReplyOnly,
+			Secrets:   n.Secrets,
+		})
+		if sent.Posted {
+			res.Posted++
 		}
-
-		ts, err := n.Poster.Post(ctx, msg)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("posting %q to %s: %w", m.Notification.Name, channel, err))
-			continue
-		}
-		res.Posted++
-
-		if threaded && msg.ThreadTS == "" && ts != "" {
-			threads[channel] = ts
-			if err := n.State.Set(stateKey, channel, ts); err != nil {
-				errs = append(errs, fmt.Errorf("recording the thread for %s: %w", channel, err))
-				continue
-			}
+		if sent.StateCreated {
 			res.StateCreated = true
+		}
+		if err != nil {
+			errs = append(errs, err)
 		}
 	}
 	return res, errors.Join(errs...)
+}
+
+// Delivery is where a notification goes, and the conversation it belongs to.
+type Delivery struct {
+	Provider provider.Provider
+	// Kind is the kind of destination, such as "slack". With Recipient it keys
+	// the conversation's saved state, since an ID means nothing across kinds.
+	Kind      string
+	Recipient string
+	Mentions  []string
+	Data      Data
+	// State and Key hold the conversation: the thread the first message of a
+	// Key started, for each Kind and Recipient.
+	State State
+	Key   string
+	// ReplyOnly never starts a conversation; see Notifier.ReplyOnly.
+	ReplyOnly bool
+	// Secrets are removed from the message before it is sent.
+	Secrets []string
+}
+
+// Sent says what a notification did.
+type Sent struct {
+	Posted       bool
+	StateCreated bool
+}
+
+// Send renders the notification, removes secrets from it, and delivers it
+// through the provider: as a reply when the conversation already has a thread,
+// and as the first message of one when it does not, unless the notification's
+// thread policy is "none" or the delivery is reply-only.
+//
+// A failure to read the thread is reported and the message still goes, as a
+// new conversation: noisier than it should be, and better than silence. A
+// failure to record a new thread is reported after the message was sent.
+func (n Notification) Send(ctx context.Context, d Delivery) (Sent, error) {
+	msg, err := Render(n, d.Data)
+	if err != nil {
+		return Sent{}, fmt.Errorf("rendering %q: %w", n.Name, err)
+	}
+	msg.Mentions = d.Mentions
+	scrub(&msg, d.Secrets)
+
+	var errs []error
+	where := d.Kind + ":" + d.Recipient
+	threaded := n.Thread != ThreadNone
+	conversation := ""
+	if threaded {
+		id, err := d.State.Get(d.Key, where)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("reading the thread for %s: %w", d.Recipient, err))
+		}
+		conversation = id
+		if conversation == "" && d.ReplyOnly {
+			errs = append(errs, fmt.Errorf("not posting %q to %s: there is no thread to reply in and reply-only is set", n.Name, d.Recipient))
+			return Sent{}, errors.Join(errs...)
+		}
+	}
+
+	resp, err := d.Provider.Send(ctx, d.Recipient, msg.Title, msg.Body, msg.Severity, conversation, msg.Mentions)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("posting %q to %s: %w", n.Name, d.Recipient, err))
+		return Sent{}, errors.Join(errs...)
+	}
+	sent := Sent{Posted: true}
+
+	if threaded && conversation == "" && resp != nil && resp.ConversationID != "" {
+		if err := d.State.Set(d.Key, where, resp.ConversationID); err != nil {
+			errs = append(errs, fmt.Errorf("recording the thread for %s: %w", d.Recipient, err))
+		} else {
+			sent.StateCreated = true
+		}
+	}
+	return sent, errors.Join(errs...)
 }
 
 // slackToken is the shape of a Slack token, so one that is not the bot's own is
@@ -128,9 +178,9 @@ const redacted = "[redacted]"
 // scrub removes secrets from a message. The templates and the context are built
 // not to carry one; this is the second line, for a value that arrives in an
 // event a workflow passed.
-func (n *Notifier) scrub(m *Message) {
+func scrub(m *Message, secrets []string) {
 	clean := func(s string) string {
-		for _, secret := range n.Secrets {
+		for _, secret := range secrets {
 			if secret != "" {
 				s = strings.ReplaceAll(s, secret, redacted)
 			}
@@ -190,23 +240,26 @@ func (s *OverlayState) Get(key, channel string) (string, error) {
 // Set implements State. It never touches Base.
 func (s *OverlayState) Set(key, channel, ts string) error { return s.mem.Set(key, channel, ts) }
 
-// WriterPoster prints each message instead of sending it, for a dry run.
-type WriterPoster struct {
+// WriterProvider prints each message instead of sending it, for a dry run.
+type WriterProvider struct {
 	W io.Writer
 }
 
-// Post implements Poster.
-func (p WriterPoster) Post(_ context.Context, m Message) (string, error) {
+// Name implements provider.Provider.
+func (p WriterProvider) Name() string { return "dry run" }
+
+// Send implements provider.Provider.
+func (p WriterProvider) Send(_ context.Context, recipientID, title, message, severity, conversationID string, mentions []string) (*provider.Response, error) {
 	thread := "new thread"
-	if m.ThreadTS != "" {
-		thread = "reply in " + m.ThreadTS
+	if conversationID != "" {
+		thread = "reply in " + conversationID
 	}
-	fmt.Fprintf(p.W, "[dry run] %s (%s, %s)\n  %s\n", m.Channel, m.Severity, thread, m.Title)
-	if len(m.Mentions) > 0 {
-		fmt.Fprintf(p.W, "  mentions: %s\n", strings.Join(m.Mentions, " "))
+	fmt.Fprintf(p.W, "[dry run] %s (%s, %s)\n  %s\n", recipientID, severity, thread, title)
+	if len(mentions) > 0 {
+		fmt.Fprintf(p.W, "  mentions: %s\n", strings.Join(mentions, " "))
 	}
-	for _, line := range strings.Split(m.Body, "\n") {
+	for _, line := range strings.Split(message, "\n") {
 		fmt.Fprintf(p.W, "  %s\n", line)
 	}
-	return "0000000000.000001", nil
+	return &provider.Response{ConversationID: "0000000000.000001"}, nil
 }

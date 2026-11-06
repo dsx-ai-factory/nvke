@@ -8,6 +8,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/dsx-ai-factory/nvke/release/internal/notify/provider"
 )
 
 func TestRenderEscapesValuesNotTemplate(t *testing.T) {
@@ -49,20 +51,33 @@ func TestRenderDefaultsSeverityToInfo(t *testing.T) {
 	}
 }
 
-// fakePoster records what it is asked to post and hands out timestamps.
-type fakePoster struct {
-	posted []Message
-	fail   map[string]error // by title
+// sentMessage is a Message and where it went.
+type sentMessage struct {
+	Message
+	Channel  string
+	ThreadTS string
+}
+
+// fakeProvider records what it is asked to send and hands out timestamps.
+type fakeProvider struct {
+	posted []sentMessage
+	fail   map[string]error // by recipient
 	next   int
 }
 
-func (p *fakePoster) Post(_ context.Context, m Message) (string, error) {
-	if err := p.fail[m.Title]; err != nil {
-		return "", err
+func (p *fakeProvider) Name() string { return "fake" }
+
+func (p *fakeProvider) Send(_ context.Context, recipientID, title, message, severity, conversationID string, mentions []string) (*provider.Response, error) {
+	if err := p.fail[recipientID]; err != nil {
+		return nil, err
 	}
-	p.posted = append(p.posted, m)
+	p.posted = append(p.posted, sentMessage{
+		Message:  Message{Title: title, Body: message, Severity: severity, Mentions: mentions},
+		Channel:  recipientID,
+		ThreadTS: conversationID,
+	})
 	p.next++
-	return "1700000000.00000" + string(rune('0'+p.next)), nil
+	return &provider.Response{ConversationID: "1700000000.00000" + string(rune('0'+p.next))}, nil
 }
 
 const twoChannels = `
@@ -89,17 +104,17 @@ subscriptions:
       - {name: "q:start", notification: start}
 `
 
-func notifier(t *testing.T, src string, p Poster, s State, secrets ...string) *Notifier {
+func notifier(t *testing.T, src string, p provider.Provider, s State, secrets ...string) *Notifier {
 	t.Helper()
 	cfg, err := Parse([]byte(src))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Notifier{Config: cfg, Poster: p, State: s, Secrets: secrets}
+	return &Notifier{Config: cfg, Providers: map[string]provider.Provider{"slack": p}, State: s, Secrets: secrets}
 }
 
 func TestTriggerStartsThenRepliesInTheThread(t *testing.T) {
-	p, s := &fakePoster{}, &MemoryState{}
+	p, s := &fakeProvider{}, &MemoryState{}
 	n := notifier(t, twoChannels, p, s)
 	data := Data{Event: map[string]string{"stream": "gb200"}}
 
@@ -119,7 +134,7 @@ func TestTriggerStartsThenRepliesInTheThread(t *testing.T) {
 	if err != nil || res.Posted != 1 || res.StateCreated {
 		t.Fatalf("second trigger = %+v, %v; want one reply and no new thread", res, err)
 	}
-	root, _ := s.Get("v1", "C0000000001")
+	root, _ := s.Get("v1", "slack:C0000000001")
 	if m := p.posted[0]; m.Channel != "C0000000001" || m.ThreadTS != root || root == "" {
 		t.Errorf("reply = %+v, want a reply under %q in channel one", m, root)
 	}
@@ -131,25 +146,25 @@ func TestTriggerStartsThenRepliesInTheThread(t *testing.T) {
 // Each channel has its own thread: a ts means nothing in another channel.
 func TestTriggerKeepsThreadsPerChannel(t *testing.T) {
 	s := &MemoryState{}
-	n := notifier(t, twoChannels, &fakePoster{}, s)
+	n := notifier(t, twoChannels, &fakeProvider{}, s)
 	if _, err := n.Trigger(context.Background(), "q:start", Data{}, "v1"); err != nil {
 		t.Fatal(err)
 	}
-	a, _ := s.Get("v1", "C0000000001")
-	b, _ := s.Get("v1", "C0000000002")
+	a, _ := s.Get("v1", "slack:C0000000001")
+	b, _ := s.Get("v1", "slack:C0000000002")
 	if a == "" || b == "" || a == b {
 		t.Errorf("threads = %q and %q, want one distinct thread per channel", a, b)
 	}
 }
 
 func TestTriggerThreadNoneStaysOutOfTheThread(t *testing.T) {
-	p, s := &fakePoster{}, &MemoryState{}
+	p, s := &fakeProvider{}, &MemoryState{}
 	n := notifier(t, twoChannels, p, s)
 	res, err := n.Trigger(context.Background(), "q:loose", Data{}, "v1")
 	if err != nil || res.StateCreated {
 		t.Fatalf("= %+v, %v; a message outside the thread must not start one", res, err)
 	}
-	if got, _ := s.Get("v1", "C0000000001"); got != "" {
+	if got, _ := s.Get("v1", "slack:C0000000001"); got != "" {
 		t.Errorf("state = %q, want none", got)
 	}
 }
@@ -157,27 +172,36 @@ func TestTriggerThreadNoneStaysOutOfTheThread(t *testing.T) {
 // A failed post must not record a thread that was never created, and must not
 // stop the other messages.
 func TestTriggerFailureDoesNotStopTheRest(t *testing.T) {
-	p := &fakePoster{fail: map[string]error{"Start": errors.New("boom")}}
+	// Both channels fail: nothing posted, nothing recorded.
+	p := &fakeProvider{fail: map[string]error{"C0000000001": errors.New("boom"), "C0000000002": errors.New("boom")}}
 	s := &MemoryState{}
-	n := notifier(t, twoChannels, p, s)
-
-	res, err := n.Trigger(context.Background(), "q:start", Data{}, "v1")
+	res, err := notifier(t, twoChannels, p, s).Trigger(context.Background(), "q:start", Data{}, "v1")
 	if err == nil || res.Posted != 0 || res.StateCreated {
 		t.Fatalf("= %+v, %v; want errors, nothing posted, no state", res, err)
 	}
-	if got, _ := s.Get("v1", "C0000000001"); got != "" {
-		t.Errorf("state = %q after a failed post", got)
+	for _, ch := range []string{"slack:C0000000001", "slack:C0000000002"} {
+		if got, _ := s.Get("v1", ch); got != "" {
+			t.Errorf("state for %s = %q after a failed post", ch, got)
+		}
 	}
 
-	p = &fakePoster{fail: map[string]error{"Fail a": errors.New("boom")}}
-	n = notifier(t, twoChannels, p, &MemoryState{})
-	if _, err := n.Trigger(context.Background(), "q:start", Data{}, "v1"); err != nil {
-		t.Fatal(err)
+	// Only channel one fails: channel two still posts, and gets its thread.
+	p = &fakeProvider{fail: map[string]error{"C0000000001": errors.New("boom")}}
+	s = &MemoryState{}
+	res, err = notifier(t, twoChannels, p, s).Trigger(context.Background(), "q:start", Data{}, "v1")
+	if err == nil || res.Posted != 1 || !res.StateCreated || len(p.posted) != 1 || p.posted[0].Channel != "C0000000002" {
+		t.Fatalf("= %+v, %v, %+v; want an error and one post, to channel two", res, err, p.posted)
+	}
+	if got, _ := s.Get("v1", "slack:C0000000001"); got != "" {
+		t.Errorf("channel one state = %q, want none", got)
+	}
+	if got, _ := s.Get("v1", "slack:C0000000002"); got == "" {
+		t.Error("channel two has no thread state")
 	}
 }
 
 func TestTriggerWithNoMatchSendsNothing(t *testing.T) {
-	p := &fakePoster{}
+	p := &fakeProvider{}
 	res, err := notifier(t, twoChannels, p, &MemoryState{}).Trigger(context.Background(), "q:unknown", Data{}, "v1")
 	if err != nil || res.Matched != 0 || len(p.posted) != 0 {
 		t.Errorf("= %+v, %v, %d posts", res, err, len(p.posted))
@@ -187,7 +211,7 @@ func TestTriggerWithNoMatchSendsNothing(t *testing.T) {
 // The token reaches a message only through a value a workflow passed. It is
 // removed, and so is any other token shaped like Slack's.
 func TestTriggerScrubsSecrets(t *testing.T) {
-	p := &fakePoster{}
+	p := &fakeProvider{}
 	n := notifier(t, twoChannels, p, &MemoryState{}, "super-secret-value")
 	data := Data{Event: map[string]string{"stream": "a super-secret-value xoxb-123-abc xoxp-9-z"}}
 
@@ -209,7 +233,7 @@ func TestTriggerScrubsSecrets(t *testing.T) {
 
 // Scrubbing a message must not edit the config's own mention list.
 func TestScrubDoesNotEditConfig(t *testing.T) {
-	n := notifier(t, twoChannels, &fakePoster{}, &MemoryState{}, "S1")
+	n := notifier(t, twoChannels, &fakeProvider{}, &MemoryState{}, "S1")
 	before := append([]string(nil), n.Config.Subscriptions[1].AdditionalMentions...)
 	if _, err := n.Trigger(context.Background(), "q:fail", Data{Event: map[string]string{"stream": "x"}}, "v1"); err != nil {
 		t.Fatal(err)
@@ -240,7 +264,7 @@ func TestScrubCoversEveryTokenFamily(t *testing.T) {
 	for name, token := range tokens {
 		t.Run(name, func(t *testing.T) {
 			m := Message{Title: "t " + token, Body: "before " + token + " after", Mentions: []string{"<!here> " + token}}
-			(&Notifier{}).scrub(&m)
+			scrub(&m, nil)
 			for _, field := range []string{m.Title, m.Body, strings.Join(m.Mentions, " ")} {
 				if strings.Contains(field, "abcdefABCDEF") || strings.Contains(field, "xapp-") || strings.Contains(field, "xox") {
 					t.Errorf("%s token left in %q", name, field)
@@ -255,7 +279,7 @@ func TestScrubCoversEveryTokenFamily(t *testing.T) {
 
 // A job that runs in parallel must not open a competing thread.
 func TestReplyOnlyNeverStartsAThread(t *testing.T) {
-	p, s := &fakePoster{}, &MemoryState{}
+	p, s := &fakeProvider{}, &MemoryState{}
 	n := notifier(t, twoChannels, p, s)
 	n.ReplyOnly = true
 
@@ -263,18 +287,18 @@ func TestReplyOnlyNeverStartsAThread(t *testing.T) {
 	if err == nil || res.Posted != 0 || res.StateCreated || len(p.posted) != 0 {
 		t.Fatalf("= %+v, %v, posted %d; want an error and nothing posted", res, err, len(p.posted))
 	}
-	if got, _ := s.Get("v1", "C0000000001"); got != "" {
+	if got, _ := s.Get("v1", "slack:C0000000001"); got != "" {
 		t.Errorf("state = %q, want none", got)
 	}
 }
 
 func TestReplyOnlyRepliesInAnExistingThread(t *testing.T) {
-	p, s := &fakePoster{}, &MemoryState{}
+	p, s := &fakeProvider{}, &MemoryState{}
 	n := notifier(t, twoChannels, p, s)
 	if _, err := n.Trigger(context.Background(), "q:start", Data{}, "v1"); err != nil {
 		t.Fatal(err)
 	}
-	root, _ := s.Get("v1", "C0000000001")
+	root, _ := s.Get("v1", "slack:C0000000001")
 
 	p.posted = nil
 	n.ReplyOnly = true
@@ -286,7 +310,7 @@ func TestReplyOnlyRepliesInAnExistingThread(t *testing.T) {
 
 // A notification outside threads never needed one, so reply-only leaves it be.
 func TestReplyOnlyStillSendsThreadNone(t *testing.T) {
-	p := &fakePoster{}
+	p := &fakeProvider{}
 	n := notifier(t, twoChannels, p, &MemoryState{})
 	n.ReplyOnly = true
 	res, err := n.Trigger(context.Background(), "q:loose", Data{}, "v1")

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dsx-ai-factory/nvke/release/internal/notify"
+	"github.com/dsx-ai-factory/nvke/release/internal/notify/provider"
 )
 
 // server answers each request with the next of replies, and records them.
@@ -64,11 +64,11 @@ func client(s *server, slept *[]time.Duration) *Client {
 	}
 }
 
-var message = notify.Message{
+var message = Message{
 	Channel:  "C0123456789",
 	Title:    "Stream failed",
 	Body:     "stage `bootstrap`",
-	Severity: notify.SeverityError,
+	Severity: provider.SeverityError,
 }
 
 func TestPost(t *testing.T) {
@@ -127,22 +127,44 @@ func TestPostRetriesARateLimitHonouringRetryAfter(t *testing.T) {
 }
 
 func TestRetryAfterIsBounded(t *testing.T) {
-	for header, want := range map[string]time.Duration{
-		"3":    3 * time.Second,
-		"9999": maxRetryAfter,
-		"":     time.Second,
-		"soon": time.Second,
-		"-5":   time.Second,
+	for header, want := range map[string]struct {
+		wait time.Duration
+		ok   bool
+	}{
+		"3":    {3 * time.Second, true},
+		"30":   {30 * time.Second, true},
+		"":     {time.Second, true},
+		"soon": {time.Second, true},
+		"-5":   {time.Second, true},
+		// More than this will wait: not capped and retried early, but refused.
+		"31":   {0, false},
+		"120":  {0, false},
+		"9999": {0, false},
 		// Large enough that seconds * time.Second overflows int64: it used to come
 		// out negative, which the caller reads as "do not retry".
-		"10000000000":             maxRetryAfter,
-		"9223372036854775807":     maxRetryAfter,
-		"99999999999999999999999": maxRetryAfter,
-		"-99999999999999999999":   time.Second,
+		"10000000000":             {0, false},
+		"9223372036854775807":     {0, false},
+		"99999999999999999999999": {0, false},
+		"-99999999999999999999":   {time.Second, true},
 	} {
-		if got := retryAfter(header); got != want {
-			t.Errorf("retryAfter(%q) = %v, want %v", header, got, want)
+		got, ok := retryAfter(header)
+		if got != want.wait || ok != want.ok {
+			t.Errorf("retryAfter(%q) = %v, %v, want %v, %v", header, got, ok, want.wait, want.ok)
 		}
+	}
+}
+
+// Slack asking for longer than this will wait is a final failure: retrying
+// early would use the attempts and be refused again.
+func TestPostDoesNotRetryBeforeSlackAllows(t *testing.T) {
+	s := newServer(t, reply{status: http.StatusTooManyRequests, header: map[string]string{"Retry-After": "120"}})
+	var slept []time.Duration
+	_, err := client(s, &slept).Post(context.Background(), message)
+	if err == nil || !strings.Contains(err.Error(), "120") {
+		t.Fatalf("err = %v, want one naming the 120s Slack asked for", err)
+	}
+	if got := s.calls.Load(); got != 1 || len(slept) != 0 {
+		t.Errorf("%d attempts and %v waited, want 1 attempt and no wait", got, slept)
 	}
 }
 
@@ -257,18 +279,20 @@ func TestPostRetriesRatelimitedInTheBody(t *testing.T) {
 }
 
 // A huge Retry-After used to overflow to a negative wait, which stopped the
-// retry. It is bounded now, so the retry happens, after the longest wait.
-func TestPostRetriesAfterAnOverflowingRetryAfter(t *testing.T) {
+// retry by accident. Slack asking for longer than this will wait is now a
+// deliberate final failure, whatever the size of the number.
+func TestPostGivesUpOnAnOverflowingRetryAfter(t *testing.T) {
 	s := newServer(t,
 		reply{status: http.StatusTooManyRequests, header: map[string]string{"Retry-After": "10000000000"}},
 		reply{body: `{"ok":true,"ts":"1.2"}`},
 	)
 	var slept []time.Duration
-	if _, err := client(s, &slept).Post(context.Background(), message); err != nil {
-		t.Fatal(err)
+	_, err := client(s, &slept).Post(context.Background(), message)
+	if err == nil || !strings.Contains(err.Error(), "not retried") {
+		t.Fatalf("err = %v, want a final failure", err)
 	}
-	if len(slept) != 1 || slept[0] != maxRetryAfter {
-		t.Errorf("slept %v, want one wait of %v", slept, maxRetryAfter)
+	if got := s.calls.Load(); got != 1 || len(slept) != 0 {
+		t.Errorf("%d attempts and %v waited, want 1 attempt and no wait", got, slept)
 	}
 }
 

@@ -19,11 +19,13 @@
 #
 # commit_url and sha_short describe the commit the workflow ran on. The tag cut
 # does not: the nightly tags a commit it selected, which need not be the one it
-# ran on, so tag-cut links the commit it is passed.
+# ran on, so beta-tag-created links the commit it is passed.
 #
 # A thread starts with the first message of a conversation. The conversation is
-# the beta tag for a tag run, so the tag cut and the qualification it starts
-# share one thread; any other run has a thread of its own.
+# the beta tag for a run on a tag, so the qualification a tag starts is one
+# thread, opened by the message that announces the tag. A run on a branch, such
+# as the nightly that cuts the tag, has the run id for its conversation, and
+# joins the tag's thread only if it sets NOTIFY_STATE_KEY to the tag.
 
 subscribers:
   - id: nvke-qualification-pipeline
@@ -34,7 +36,7 @@ subscribers:
         channel_id: "C0CF37FNXV1"
 
 notifications:
-  - name: tag-cut
+  - name: beta-tag-created
     title: "🏷️ NVKE beta {{.Event.tag}} cut"
     severity: info
     message_template: |
@@ -116,8 +118,8 @@ subscriptions:
   # Progress and results. No mention.
   - subscriber: nvke-qualification-pipeline
     events:
-      - name: "qualification:tag-cut"
-        notification: tag-cut
+      - name: "release:beta-tag-created"
+        notification: beta-tag-created
       - name: "qualification:started"
         notification: qualification-started
       - name: "qualification:plan-resolved"

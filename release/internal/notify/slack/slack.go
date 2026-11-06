@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dsx-ai-factory/nvke/release/internal/notify"
+	"github.com/dsx-ai-factory/nvke/release/internal/notify/provider"
 )
 
 const (
@@ -49,12 +49,44 @@ type Client struct {
 	Sleep func(context.Context, time.Duration) error
 }
 
+// Message is one message to post.
+type Message struct {
+	Channel  string
+	ThreadTS string
+	Title    string
+	Body     string
+	Severity string
+	Mentions []string
+}
+
+// Name implements provider.Provider.
+func (c *Client) Name() string { return "slack" }
+
+// Send implements provider.Provider: recipientID is a channel ID and
+// conversationID is the thread_ts of the thread to reply in.
+func (c *Client) Send(ctx context.Context, recipientID, title, message, severity, conversationID string, mentions []string) (*provider.Response, error) {
+	ts, err := c.Post(ctx, Message{
+		Channel:  recipientID,
+		ThreadTS: conversationID,
+		Title:    title,
+		Body:     message,
+		Severity: severity,
+		Mentions: mentions,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &provider.Response{ConversationID: ts}, nil
+}
+
+var _ provider.Provider = (*Client)(nil)
+
 // colours by severity, as the hex Slack accepts for an attachment bar.
 var colours = map[string]string{
-	notify.SeverityInfo:    "#36c5f0",
-	notify.SeveritySuccess: "#2eb886",
-	notify.SeverityWarning: "#ecb22e",
-	notify.SeverityError:   "#e01e5a",
+	provider.SeverityInfo:    "#36c5f0",
+	provider.SeveritySuccess: "#2eb886",
+	provider.SeverityWarning: "#ecb22e",
+	provider.SeverityError:   "#e01e5a",
 }
 
 type attachment struct {
@@ -93,10 +125,10 @@ type response struct {
 // notification is the lesser harm: a retry would post the message twice, and
 // orphan the thread root the first copy started. Anything else Slack refuses is
 // final, since asking again gets the same answer.
-func (c *Client) Post(ctx context.Context, m notify.Message) (string, error) {
+func (c *Client) Post(ctx context.Context, m Message) (string, error) {
 	colour, ok := colours[m.Severity]
 	if !ok {
-		colour = colours[notify.SeverityInfo]
+		colour = colours[provider.SeverityInfo]
 	}
 	body, err := json.Marshal(payload{
 		Channel:  m.Channel,
@@ -170,7 +202,8 @@ func (c *Client) once(ctx context.Context, body []byte) (string, time.Duration, 
 
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests:
-		return "", retryAfter(resp.Header.Get("Retry-After")), fmt.Errorf("%s: rate limited", postMessageMethod)
+		wait, err := rateLimited(resp.Header.Get("Retry-After"), fmt.Errorf("%s: rate limited", postMessageMethod))
+		return "", wait, err
 	case resp.StatusCode >= http.StatusInternalServerError:
 		// Includes a bare 503. A proxy in front of Slack can answer 503 after
 		// Slack accepted the post, so only Slack's own JSON error below proves
@@ -188,7 +221,8 @@ func (c *Client) once(ctx context.Context, body []byte) (string, time.Duration, 
 	err = fmt.Errorf("%s: %s%s", postMessageMethod, out.Error, hint(out.Error))
 	switch out.Error {
 	case "ratelimited":
-		return "", retryAfter(resp.Header.Get("Retry-After")), err
+		wait, err := rateLimited(resp.Header.Get("Retry-After"), err)
+		return "", wait, err
 	case "service_unavailable", "request_timeout":
 		// Slack did not act on the request.
 		return "", time.Second, err
@@ -225,24 +259,34 @@ func hint(code string) string {
 	return ""
 }
 
-// retryAfter reads a Retry-After header in seconds, bounded so a hostile or
-// broken value cannot hold a CI step for minutes.
-//
-// The bound is applied to the seconds, before they become a Duration: a large
-// enough value overflows the multiplication into a negative wait, which the
-// caller reads as "do not retry".
-func retryAfter(header string) time.Duration {
+// retryAfter reads a Retry-After header in seconds. It returns how long to wait,
+// and false when Slack asked for longer than this is willing to wait: retrying
+// earlier than Slack allows would spend the attempts and fail the same way, so
+// the caller gives up instead. A header that is missing or not a positive number
+// is one second.
+func retryAfter(header string) (time.Duration, bool) {
 	header = strings.TrimSpace(header)
 	secs, err := strconv.ParseInt(header, 10, 64)
 	switch {
 	case errors.Is(err, strconv.ErrRange) && !strings.HasPrefix(header, "-"):
-		return maxRetryAfter
+		return 0, false
 	case err != nil || secs < 1:
-		return time.Second
+		return time.Second, true
 	case secs > int64(maxRetryAfter/time.Second):
-		return maxRetryAfter
+		return 0, false
 	}
-	return time.Duration(secs) * time.Second
+	return time.Duration(secs) * time.Second, true
+}
+
+// rateLimited is the outcome of a 429 or a ratelimited error: a wait to retry
+// after, or a final failure when Slack asked for longer than this will wait.
+func rateLimited(header string, err error) (time.Duration, error) {
+	wait, ok := retryAfter(header)
+	if !ok {
+		return -1, fmt.Errorf("%w (Slack asked to wait %ss, longer than the %s this waits, so it was not retried)",
+			err, strings.TrimSpace(header), maxRetryAfter)
+	}
+	return wait, err
 }
 
 func (c *Client) sleep(ctx context.Context, d time.Duration) error {

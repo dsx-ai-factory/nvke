@@ -16,6 +16,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/release/internal/notify"
 	"github.com/dsx-ai-factory/nvke/release/internal/notify/githubctx"
+	"github.com/dsx-ai-factory/nvke/release/internal/notify/provider"
 	"github.com/dsx-ai-factory/nvke/release/internal/notify/slack"
 	"github.com/dsx-ai-factory/nvke/release/internal/notify/state"
 )
@@ -51,6 +52,8 @@ The bot token is read from ` + tokenEnv + ` and from nowhere else.
 The first message of a conversation starts a Slack thread and its timestamp is
 written under --state-dir; later messages reply in it. The conversation is the
 tag for a tag run, otherwise the run id, or NOTIFY_STATE_KEY when that is set.
+A workflow that runs on a branch but announces a tag has to set NOTIFY_STATE_KEY to
+that tag, or its messages are a thread of their own.
 When a message started a thread this writes state-created=true to
 $GITHUB_OUTPUT, so a caller that carries the directory between jobs saves it
 only then.
@@ -81,7 +84,7 @@ in parallel, so that only the job meant to open the thread can.`,
 
 			n := &notify.Notifier{Config: cfg, ReplyOnly: replyOnly}
 			if dryRun {
-				n.Poster = notify.WriterPoster{W: cmd.OutOrStdout()}
+				n.Providers = map[string]provider.Provider{"slack": notify.WriterProvider{W: cmd.OutOrStdout()}}
 				// Existing threads are read, so a preview shows replies where a real run
 				// would reply. Nothing is written.
 				n.State = &notify.OverlayState{Base: state.File{Dir: stateAt}}
@@ -90,7 +93,7 @@ in parallel, so that only the job meant to open the thread can.`,
 				if token == "" {
 					return problem(cmd, strict, fmt.Errorf("%s is not set, so nothing was sent (a run without secrets, such as one from a fork, ends here)", tokenEnv))
 				}
-				n.Poster = &slack.Client{Token: token}
+				n.Providers = map[string]provider.Provider{"slack": &slack.Client{Token: token}}
 				n.State = state.File{Dir: stateAt}
 				n.Secrets = []string{token}
 			}
@@ -100,8 +103,12 @@ in parallel, so that only the job meant to open the thread can.`,
 			}
 
 			res, err := n.Trigger(cmd.Context(), event, data, key)
+			// An event nothing subscribes to is the likeliest misconfiguration, a
+			// typo in the name a job passes, so --strict makes it fatal.
 			if res.Matched == 0 {
-				warn(cmd, fmt.Sprintf("no subscription matches %q, so nothing was sent", event))
+				if perr := problem(cmd, strict, fmt.Errorf("no subscription matches %q, so nothing was sent", event)); perr != nil {
+					return perr
+				}
 			}
 			// A dry run sent nothing and saved no thread, so it reports neither:
 			// a cache step keyed on state-created would save state that is not
@@ -204,6 +211,10 @@ func decodeData(raw []byte) (map[string]string, error) {
 	var generic map[string]any
 	if err := dec.Decode(&generic); err != nil {
 		return nil, fmt.Errorf("not a JSON object: %w", err)
+	}
+	// Bare null decodes to a nil map without an error; it is not an object.
+	if generic == nil {
+		return nil, errors.New("not a JSON object: got null")
 	}
 	// A decoder stops after the first value, where json.Unmarshal rejected
 	// anything after it. Without this, `{"a":"1"} {"a":"2"}` quietly used the

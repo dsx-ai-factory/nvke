@@ -22,14 +22,15 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nvke/release/internal/notify/githubctx"
+	"github.com/dsx-ai-factory/nvke/release/internal/notify/provider"
 )
 
 // Severities a notification may carry. They choose the colour of the message.
 const (
-	SeverityInfo    = "info"
-	SeveritySuccess = "success"
-	SeverityWarning = "warning"
-	SeverityError   = "error"
+	SeverityInfo    = provider.SeverityInfo
+	SeveritySuccess = provider.SeveritySuccess
+	SeverityWarning = provider.SeverityWarning
+	SeverityError   = provider.SeverityError
 )
 
 // Thread modes. The default is to reply in the conversation's thread, starting
@@ -300,7 +301,11 @@ func References(text string) (Refs, error) {
 			return
 		}
 		if len(ident) != 2 {
-			errs = append(errs, fmt.Errorf("uses .%s whole; name one key, such as .%s.run_url", strings.Join(ident, "."), ident[0]))
+			example := "stream" // a key an event could carry
+			if ident[0] == "Context" {
+				example = "run_url"
+			}
+			errs = append(errs, fmt.Errorf("uses .%s whole; name one key, such as .%s.%s", strings.Join(ident, "."), ident[0], example))
 			return
 		}
 		if ident[0] == "Event" && !ValidEventKey(ident[1]) {

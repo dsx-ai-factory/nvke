@@ -191,7 +191,7 @@ func TestShippedConfig(t *testing.T) {
 
 	// Every event the ticket names has a notification behind it.
 	for _, event := range []string{
-		"qualification:tag-cut", "qualification:started", "qualification:plan-resolved",
+		"release:beta-tag-created", "qualification:started", "qualification:plan-resolved",
 		"qualification:awaiting-approval", "qualification:artifacts-ready", "qualification:artifacts-timeout",
 		"qualification:stream-started", "qualification:stream-passed", "qualification:stream-failed",
 		"qualification:passed", "qualification:failed", "qualification:stopped",
@@ -199,6 +199,19 @@ func TestShippedConfig(t *testing.T) {
 		if len(cfg.Match(event)) == 0 {
 			t.Errorf("no subscription for %s", event)
 		}
+	}
+}
+
+// The example in "uses .X whole" names a key of the thing that was passed whole,
+// not run_url for both: .Event.run_url validates and can never render.
+func TestWholeUseSuggestsAKeyOfTheRightKind(t *testing.T) {
+	_, err := References(`{{.Event}}`)
+	if err == nil || !strings.Contains(err.Error(), ".Event.stream") || strings.Contains(err.Error(), "run_url") {
+		t.Errorf("err = %v, want a hint to use .Event.stream", err)
+	}
+	_, err = References(`{{.Context}}`)
+	if err == nil || !strings.Contains(err.Error(), ".Context.run_url") {
+		t.Errorf("err = %v, want a hint to use .Context.run_url", err)
 	}
 }
 
@@ -223,14 +236,14 @@ func TestOutcomeSeveritiesDiffer(t *testing.T) {
 
 // The nightly tags a commit it selected, which need not be the commit it ran on.
 // The announcement has to link the commit it names, not GITHUB_SHA.
-func TestTagCutLinksTheCommitItIsGiven(t *testing.T) {
+func TestBetaTagCreatedLinksTheCommitItIsGiven(t *testing.T) {
 	cfg, err := Load("../../notify.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	matches := cfg.Match("qualification:tag-cut")
+	matches := cfg.Match("release:beta-tag-created")
 	if len(matches) != 1 {
-		t.Fatalf("%d notifications for tag-cut, want 1", len(matches))
+		t.Fatalf("%d notifications for beta-tag-created, want 1", len(matches))
 	}
 
 	ctx := githubctx.Collect(func(k string) string {

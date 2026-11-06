@@ -74,7 +74,7 @@ func TestDryRunReadsExistingThreadsAndWritesNone(t *testing.T) {
 	t.Setenv("GITHUB_ACTIONS", "")
 	t.Setenv("NOTIFY_STATE_KEY", "v1.0.0-beta.1")
 	dir := t.TempDir()
-	if err := (state.File{Dir: dir}).Set("v1.0.0-beta.1", "C0CF37FNXV1", "1700000000.000001"); err != nil {
+	if err := (state.File{Dir: dir}).Set("v1.0.0-beta.1", "slack:C0CF37FNXV1", "1700000000.000001"); err != nil {
 		t.Fatal(err)
 	}
 	before, _ := os.ReadDir(dir)
@@ -125,6 +125,20 @@ func TestTriggerWithABadConfigFails(t *testing.T) {
 	}
 }
 
+// A typo in the event name a job passes is the likeliest misconfiguration, and
+// the one case --strict must not let pass.
+func TestStrictFailsOnAnEventNothingSubscribesTo(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "")
+	t.Setenv("NOTIFY_STATE_KEY", "k")
+	if _, err := run(t, "trigger", "qualification:stream_failed", "--dry-run", "--strict", "--config", shipped); err == nil {
+		t.Error("--strict let an event nothing subscribes to pass")
+	}
+	// Without --strict it stays a warning.
+	if _, err := run(t, "trigger", "qualification:stream_failed", "--dry-run", "--config", shipped); err != nil {
+		t.Errorf("a warning failed the step: %v", err)
+	}
+}
+
 func TestTriggerWarnsOnAnEventNothingSubscribesTo(t *testing.T) {
 	t.Setenv("GITHUB_ACTIONS", "")
 	out, err := run(t, "trigger", "qualification:typo", "--dry-run", "--config", shipped)
@@ -139,7 +153,7 @@ func TestDryRunWritesNoStepOutputs(t *testing.T) {
 	outputs := filepath.Join(t.TempDir(), "output")
 	t.Setenv("GITHUB_OUTPUT", outputs)
 	t.Setenv("GITHUB_ACTIONS", "")
-	if _, err := run(t, "trigger", "qualification:tag-cut", "--dry-run", "--config", shipped,
+	if _, err := run(t, "trigger", "release:beta-tag-created", "--dry-run", "--config", shipped,
 		"--data", "tag=v1.0.0-beta.1", "--data", "commit=abc1234def", "--data", "commit_short=abc1234"); err != nil {
 		t.Fatal(err)
 	}
@@ -202,6 +216,16 @@ func TestDecodeDataRejectsTrailingContent(t *testing.T) {
 	// Whitespace after the object is fine.
 	if _, err := decodeData([]byte("{\"summary\":\"ok\"}\n\n")); err != nil {
 		t.Errorf("trailing whitespace rejected: %v", err)
+	}
+}
+
+// Bare null decodes to a nil map without an error; it is not an object, and
+// must fail like any other file that is not one.
+func TestDecodeDataRejectsNull(t *testing.T) {
+	for _, in := range []string{"null", " null\n", `[]`, `"text"`, `1`} {
+		if got, err := decodeData([]byte(in)); err == nil {
+			t.Errorf("decodeData(%q) = %v, want an error", in, got)
+		}
 	}
 }
 

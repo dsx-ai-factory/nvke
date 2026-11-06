@@ -17,10 +17,8 @@ type Data struct {
 	Event   map[string]string
 }
 
-// Message is one message to post.
+// Message is a notification rendered for sending.
 type Message struct {
-	Channel  string
-	ThreadTS string
 	Title    string
 	Body     string
 	Severity string

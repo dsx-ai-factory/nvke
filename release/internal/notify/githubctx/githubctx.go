@@ -84,10 +84,16 @@ func Collect(getenv func(string) string) map[string]string {
 
 // StateKey names the conversation a run's messages belong to.
 //
-// NOTIFY_STATE_KEY wins. Otherwise a tag run is keyed by its tag, which is what
-// groups the nightly's tag cut and the qualification the tag starts, two
-// separate workflow runs, into one thread. Any other run is keyed by its run
-// id: a branch name would put every dispatch from that branch into one thread.
+// NOTIFY_STATE_KEY wins. Otherwise a run on a tag is keyed by its tag, so the
+// jobs of the qualification a beta tag starts, which run on that tag, share one
+// thread. Any other run is keyed by its run id: a branch name would put every
+// dispatch from that branch into one thread.
+//
+// A run on a branch that announces a tag, such as the nightly that cuts it, is
+// therefore in a different conversation from the qualification the tag starts.
+// To join them it has to set NOTIFY_STATE_KEY to the tag. Falling back to the
+// commit would not do it: the nightly tags a commit it selected, which need not
+// be the commit it ran on.
 func StateKey(getenv func(string) string) string {
 	if key := getenv("NOTIFY_STATE_KEY"); key != "" {
 		return key
