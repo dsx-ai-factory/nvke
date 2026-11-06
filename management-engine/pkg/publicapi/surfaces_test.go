@@ -24,6 +24,9 @@ func TestSurfaces(t *testing.T) {
 	discovery := metav1.APIResourceList{GroupVersion: "internal.nvke.nvidia.com/v1"}
 	for _, name := range []string{"nvkeclusters", "clusterreleases", "machineimages"} {
 		path := "../../../controller/deploy/charts/nvke-crds/bases/internal.nvke.nvidia.com_" + name + ".yaml"
+		if name == "nvkeclusters" {
+			path = "../../config/crd/bases/internal.nvke.nvidia.com_" + name + ".yaml"
+		}
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)
 		var crd apiextensionsv1.CustomResourceDefinition

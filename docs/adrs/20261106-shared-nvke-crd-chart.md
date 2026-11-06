@@ -17,15 +17,15 @@ same API definitions.
 
 ## Decision
 
-We will generate one canonical set of schemas inside a shared `nvke-crds` chart
+We will generate one canonical set of catalog schemas inside a shared `nvke-crds` chart
 beside the existing embedded charts. Both Helm and Kustomize will consume those
 files. The schema chart will run no controller workloads.
 
 We will preserve the existing controller chart's three-schema default through a
-conditional local dependency. Operators can enable the full schema set on that
-owner or use one dedicated schema release per cluster and disable the application's
-CRD dependency. Consumers will not automatically claim schemas already managed
-by another installer.
+conditional local dependency. Operators can reuse that owner or use one dedicated
+catalog release per cluster and disable the application dependencies. Cluster
+Service-specific schemas remain with Management Engine. Consumers will not
+automatically claim schemas already managed by another installer.
 
 We will manage schema updates as retained Helm resources, with compatible-version
 selection and explicit ownership transfer. Existing records must survive removal

@@ -2,9 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 resources:
-- bases/internal.nvke.nvidia.com_clusterreleasechannels.yaml
 - bases/internal.nvke.nvidia.com_clusterreleases.yaml
-- bases/internal.nvke.nvidia.com_controlplaneclasses.yaml
 - bases/internal.nvke.nvidia.com_machineimages.yaml
 - bases/internal.nvke.nvidia.com_nodepoolreleases.yaml
-- bases/internal.nvke.nvidia.com_nvkeclusters.yaml

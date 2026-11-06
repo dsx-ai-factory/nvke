@@ -56,8 +56,8 @@ func TestSharedCRDs(t *testing.T) {
 		}
 		maps.Copy(canonical, sharedCRDs(t, data))
 	}
-	if len(canonical) != 6 {
-		t.Fatalf("expected six canonical CRDs, got %d", len(canonical))
+	if len(canonical) != 3 {
+		t.Fatalf("expected three catalog CRDs, got %d", len(canonical))
 	}
 	releaseNames := []string{
 		"clusterreleases.internal.nvke.nvidia.com", "machineimages.internal.nvke.nvidia.com",
@@ -75,10 +75,8 @@ func TestSharedCRDs(t *testing.T) {
 	}{
 		{"standalone", "nvke-crds", nil, allNames},
 		{"disabled", "nvke-crds", []string{"--set", "enabled=false"}, []string{}},
-		{"release-only", "nvke-crds", []string{"--set", "clusterServiceCRDs.enabled=false"}, releaseNames},
 		{"existing-controller", "controller", nil, releaseNames},
 		{"external-owner", "controller", []string{"--set", "releaseCRDs.install=false"}, []string{}},
-		{"controller-all-schemas", "controller", []string{"--set", "nvke-crds.clusterServiceCRDs.enabled=true"}, allNames},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			helm := os.Getenv("HELM")
