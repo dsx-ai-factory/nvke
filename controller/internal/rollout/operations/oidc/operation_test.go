@@ -16,6 +16,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiserverv1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -24,8 +26,10 @@ import (
 	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nvkerbac"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
 )
@@ -310,8 +314,13 @@ func TestBuildApplyToNodePayload_DeterministicAndNonEmpty(t *testing.T) {
 }
 
 func TestBuildApplyToNodePayload_KeepsPinnedProviders(t *testing.T) {
+	src := nvkerbac.Source{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.LegacyConfigMapName}
 	op := NewEnableOIDCOperation(
-		WithClient(fakeK8sClient()),
+		WithClient(fake.NewClientBuilder().WithObjects(&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: src.Namespace, Name: src.Name},
+			Data:       map[string]string{nvkerbac.ConfigMapKey: "kind: ClusterRoleBinding\nsubjects:\n  - {kind: User, name: spiffe://management.example.test/capi}\n"},
+		}).Build()),
+		WithRBACConfigMap(src),
 		WithOIDCConfig(&config.NvkeOIDCAuth{Enabled: true, IssuerURL: "https://issuer.example"}),
 		WithTrustDomain("management.example.test"),
 	)

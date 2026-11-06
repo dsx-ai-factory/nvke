@@ -59,6 +59,10 @@ metadata:
 {{- fail "tenantAccess.enabled must be true when nvkeOIDCAuth.enabled is true (the tenant-access controller applies the RBAC manifest into tenant clusters and publishes their kubeconfig; without it OIDC auth is configured but unusable)" }}
 {{- end }}
 {{- end }}
+{{- $oidcProviders := (.Values.oidc | default dict).providers | default list }}
+{{- if and .Values.spiffe.enabled (gt (len $oidcProviders) 0) (not .Values.spiffe.trustDomain) }}
+{{- fail "spiffe.trustDomain must be set when spiffe.enabled is true and oidc.providers is non-empty" }}
+{{- end }}
 {{- if .Values.spiffe.trustDomain }}
 {{- $td := .Values.spiffe.trustDomain }}
 {{- /*
