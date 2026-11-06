@@ -439,6 +439,12 @@ func (c *Config) Validate() error {
 	if err := validateSupportedInfraProviders(c.SupportedInfraProviders); err != nil {
 		return fmt.Errorf("supportedInfraProviders: %w", err)
 	}
+	// The method is deployment-wide, and a SPIFFE-enabled LaunchLayer node
+	// attests only through dsx_imds, so its first node would be refused.
+	if c.Spire.SpiffeEnabled && c.NodeAgent.SpireAttestationMethod != SpireAttestationMethodDSXIMDS && slices.Contains(c.SupportedInfraProviders, InfraProviderLaunchLayer) {
+		return fmt.Errorf("nodeAgent: spireAttestationMethod must be %q when supportedInfraProviders includes %q and spire.spiffeEnabled is true, got %q",
+			SpireAttestationMethodDSXIMDS, InfraProviderLaunchLayer, c.NodeAgent.SpireAttestationMethod)
+	}
 
 	if err := validateNodeMetadataAllowlistedLabelKeys(c.NodeMetadataAllowlistedLabelKeys); err != nil {
 		return fmt.Errorf("nodeMetadataAllowlistedLabelKeys: %w", err)

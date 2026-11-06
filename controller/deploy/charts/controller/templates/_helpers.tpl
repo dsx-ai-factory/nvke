@@ -132,6 +132,16 @@ that installs clean and then denies the controller at reconcile time.
 {{- required "rbacConfigMap.name must not be empty" .Values.rbacConfigMap.name -}}
 {{- end }}
 
+{{/*
+"true" when supportedInfraProviders includes launchLayer, empty otherwise.
+configmap-controller-config.yaml refuses an unknown or repeated entry.
+*/}}
+{{- define "controller.launchLayerEnabled" -}}
+{{- range splitList "," (.Values.supportedInfraProviders | default "nico") }}
+{{- if eq (trim .) "launchLayer" }}true{{ end }}
+{{- end }}
+{{- end }}
+
 {{- define "controller.controllerConfig.file" -}}
 config.yaml
 {{- end }}

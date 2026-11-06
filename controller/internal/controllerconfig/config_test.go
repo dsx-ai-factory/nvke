@@ -481,9 +481,18 @@ func TestValidateNodeAgentAttestationMethod(t *testing.T) {
 		name          string
 		spiffeEnabled bool
 		method        string
+		providers     string // replaces attestationConfig's [nico] when set
 		wantErr       string
 	}{
 		{name: "tpm needs nothing else", method: "tpm"},
+		{name: "launchLayer without SPIFFE", method: "tpm", providers: "[nico, launchLayer]"},
+		{
+			name:          "launchLayer with SPIFFE and tpm",
+			spiffeEnabled: true,
+			method:        "tpm",
+			providers:     "[nico, launchLayer]",
+			wantErr:       `spireAttestationMethod must be "dsxImds" when supportedInfraProviders includes "launchLayer" and spire.spiffeEnabled is true, got "tpm"`,
+		},
 		{name: "joinToken with SPIFFE", spiffeEnabled: true, method: "joinToken"},
 		{
 			name:    "joinToken without SPIFFE",
@@ -512,7 +521,11 @@ func TestValidateNodeAgentAttestationMethod(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := controllerconfig.Load(writeConfig(t, attestationConfig(tt.spiffeEnabled, tt.method)))
+			yaml := attestationConfig(tt.spiffeEnabled, tt.method)
+			if tt.providers != "" {
+				yaml = strings.Replace(yaml, "supportedInfraProviders: [nico]", "supportedInfraProviders: "+tt.providers, 1)
+			}
+			_, err := controllerconfig.Load(writeConfig(t, yaml))
 			if tt.wantErr == "" {
 				require.NoError(t, err)
 				return
