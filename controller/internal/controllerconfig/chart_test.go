@@ -90,6 +90,7 @@ func TestRenderedChart(t *testing.T) {
 
 			// Both sources at once is a startup failure, so no render may produce it.
 			require.NoError(t, fromFile.CheckAuthSource(environment["AUTH_CONFIG_PATH"]))
+			require.NoError(t, fromFile.CheckAuthzNeedsAuthn(environment["AUTH_CONFIG_PATH"]))
 
 			if filepath.Base(render) == "api-auth-inline.yaml" {
 				require.True(t, fromFile.APIAuth.Enabled, "the controller reads the chart's apiAuth.config from config.yaml")
@@ -284,6 +285,19 @@ func TestLoadStartupConfig(t *testing.T) {
 
 		_, _, err = controllerconfig.LoadStartupConfig()
 		require.ErrorContains(t, err, "configured twice")
+	})
+
+	t.Run("authorization without authentication is refused", func(t *testing.T) {
+		local, err := controllerconfig.Load(localControllerConfig)
+		require.NoError(t, err)
+		local.APIAuthz.Enabled = true
+		local.APIAuthz.Authorizer.LocalBundle.Dir = "/etc/nvke/authz"
+		encoded, err := yaml.Marshal(local)
+		require.NoError(t, err)
+		t.Setenv("CONTROLLER_CONFIG_PATH", writeConfig(t, string(encoded)))
+
+		_, _, err = controllerconfig.LoadStartupConfig()
+		require.ErrorContains(t, err, "API authentication is off")
 	})
 }
 
