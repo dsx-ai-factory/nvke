@@ -376,6 +376,14 @@ not one users can edit. `iss`, `aud`, `nonce`, `jti`, `exp`, `nbf`, `iat` and
 `typ` can't be used: they describe the token, not the caller, so a rule on one
 admits every token from the issuer or a value the caller chooses.
 
+Teleport application access signs a JWT with the user's Teleport roles in
+`roles`, so admit it by that claim. Teleport sends the JWT in its
+`Teleport-Jwt-Assertion` header, and NVKE reads only `Authorization`, so give
+the Teleport app `rewrite.headers: ["Authorization: Bearer {{internal.jwt}}"]`.
+Its `issuer` is the Teleport cluster name, not a URL, and its audience is the
+app's URI. List `algorithms: [RS256, ES256]`: Teleport signs with RS256 under
+the `legacy` `signature_algorithm_suite` and ES256 under the others.
+
 When the identity provider's certificate is signed by a private CA, put the
 PEM bundle inline as `jwks.caBundle`, or in `extraFiles` with `jwks.caBundlePath`,
 as in the SPIRE recipe. Omit both when a public CA signs the certificate.
