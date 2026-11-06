@@ -215,6 +215,29 @@ func TestWholeUseSuggestsAKeyOfTheRightKind(t *testing.T) {
 	}
 }
 
+// The thread opens with qualification:started, and its title names the version,
+// so a reader of the channel can tell which beta a thread is about.
+func TestStartedNamesTheVersion(t *testing.T) {
+	cfg, err := Load("../../notify.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := cfg.Match("qualification:started")
+	if len(m) != 1 {
+		t.Fatalf("%d notifications for started, want 1", len(m))
+	}
+	msg, err := Render(m[0].Notification, Data{
+		Context: githubctx.Collect(func(string) string { return "" }),
+		Event:   map[string]string{"nvke_version": "v0.24.0-beta.3"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(msg.Title, "started for v0.24.0-beta.3") {
+		t.Errorf("Title = %q, want it to name the version", msg.Title)
+	}
+}
+
 // The colour of the outcome says which outcome it was: a failed qualification
 // must not post in the same blue as a pass.
 func TestOutcomeSeveritiesDiffer(t *testing.T) {

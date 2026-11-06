@@ -23,9 +23,9 @@
 #
 # A thread starts with the first message of a conversation. The conversation is
 # the beta tag for a run on a tag, so the qualification a tag starts is one
-# thread, opened by the message that announces the tag. A run on a branch, such
-# as the nightly that cuts the tag, has the run id for its conversation, and
-# joins the tag's thread only if it sets NOTIFY_STATE_KEY to the tag.
+# thread, opened by qualification:started, whose title names the version. A run
+# on a branch has the run id for its conversation, and joins a tag's thread only
+# if it sets NOTIFY_STATE_KEY to the tag.
 
 subscribers:
   - id: nvke-qualification-pipeline
@@ -36,6 +36,8 @@ subscribers:
         channel_id: "C0CF37FNXV1"
 
 notifications:
+  # Not sent by any workflow yet. The nightly that cuts the tag is the right place
+  # for it, once a thread can cross the two runs.
   - name: beta-tag-created
     title: "🏷️ NVKE beta {{.Event.tag}} cut"
     severity: info
@@ -43,7 +45,7 @@ notifications:
       Tagged commit <{{.Context.server_url}}/{{.Context.repository}}/commit/{{.Event.commit}}|{{.Event.commit_short}}> · <{{.Context.run_url}}|nightly run #{{.Context.run_number}}>
 
   - name: qualification-started
-    title: "🚀 NVKE qualification started: {{.Context.ref_name}}"
+    title: "🚀 NVKE qualification started for {{.Event.nvke_version}}"
     severity: info
     message_template: |
       <{{.Context.run_url}}|Run #{{.Context.run_number}}> started by {{.Context.event_name}} ({{.Context.actor}}) · commit <{{.Context.commit_url}}|{{.Context.sha_short}}>
