@@ -8,16 +8,16 @@
 {{- end }}
 {{- $namespace := default .Release.Namespace .Values.state.namespace }}
 {{- $roles := list
-  (dict "file" "manager-role" "kind" "ClusterRole" "subjects" $subjects "namespace" $namespace "suffix" "manager-role")
-  (dict "file" "leader-election-role" "kind" "Role" "subjects" $subjects "namespace" $namespace "suffix" "leader-election-role") }}
+  (dict "file" "roles/role" "kind" "ClusterRole" "subjects" $subjects "namespace" $namespace "suffix" "manager-role")
+  (dict "file" "roles/leader_election_role" "kind" "Role" "subjects" $subjects "namespace" $namespace "suffix" "leader-election-role") }}
 {{- if and .Values.metrics.enabled .Values.metrics.secure }}
-{{- $roles = append $roles (dict "file" "metrics-auth-role" "kind" "ClusterRole" "subjects" $subjects "namespace" $namespace "suffix" "metrics-auth-role") }}
+{{- $roles = append $roles (dict "file" "roles/metrics_auth_role" "kind" "ClusterRole" "subjects" $subjects "namespace" $namespace "suffix" "metrics-auth-role") }}
 {{- end }}
 {{- range .Values.state.rbac.tenantAPIBindings }}
-{{- $roles = append $roles (dict "file" "tenant-api-rbac" "kind" "Role" "subjects" .subjects "namespace" .namespace "suffix" "tenant-api") }}
+{{- $roles = append $roles (dict "file" "api/tenant-api-rbac" "kind" "Role" "subjects" .subjects "namespace" .namespace "suffix" "tenant-api") }}
 {{- end }}
 {{- with .Values.state.rbac.operatorAPISubjects }}
-{{- $roles = append $roles (dict "file" "operator-api-rbac" "kind" "ClusterRole" "subjects" . "suffix" "operator-api") }}
+{{- $roles = append $roles (dict "file" "api/operator-api-rbac" "kind" "ClusterRole" "subjects" . "suffix" "operator-api") }}
 {{- end }}
 {{- range $role := $roles }}
 {{- $name := include "management-engine.resourceName" (dict "suffix" $role.suffix "context" $) }}

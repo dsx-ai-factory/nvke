@@ -1,0 +1,6 @@
+dependencies:
+- name: nvke-crds
+  repository: file://../../controller/deploy/charts/nvke-crds
+  version: 0.1.0
+digest: sha256:95306daebfb24ed1d9fbe8e1acbe2e624dbe7ebec12d2b83ca80d0dcc46f3e52
+generated: "2026-11-06T08:56:19.706001Z"

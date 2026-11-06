@@ -13,14 +13,6 @@
           "maxLength": 63,
           "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
         },
-        "crds": {
-          "type": "object",
-          "properties": {
-            "install": {
-              "type": "boolean"
-            }
-          }
-        },
         "configMaps": {
           "type": "array",
           "items": {
@@ -264,6 +256,14 @@
       }
     },
     "prometheus": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "nvke-crds": {
       "type": "object",
       "properties": {
         "enabled": {

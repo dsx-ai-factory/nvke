@@ -23,7 +23,7 @@ Run commands below from `management-engine/`.
 ```sh
 make build test lint
 make generate manifests # after API or RBAC changes
-git diff --exit-code -- apis/v1 ../controller/deploy/charts/nvke-crds/bases config/rbac/role.yaml chart # check generated-file drift
+git diff --exit-code -- apis/v1 ../controller/deploy/charts/nvke-crds/bases chart # check generated-file drift
 make test-controller # controller integration tests (envtest)
 make -C .. chart-crds # render the controller release schemas into ignored build output
 make -C .. chart-crds-check # verify canonical generated CRDs
@@ -33,7 +33,7 @@ make chart-assets-check # verify canonical generated assets are current
 
 For a drift check, start with a clean working tree before regeneration.
 Helm templates and values are maintained directly; `make manifests` refreshes
-only their CRD and RBAC assets from the canonical generated manifests.
+canonical CRDs and RBAC in place. Kustomize and Helm share those files.
 See [Helm installation](docs/helm-installation.md) for chart values and topology examples.
 `make test` includes `test-controller`; the separate command runs that suite alone.
 

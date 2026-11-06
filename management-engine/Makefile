@@ -49,18 +49,11 @@ license: ## Add the repository's license header to source files.
 manifests-state: controller-gen ## Generate internal deepcopy methods, datastore CRDs, and RBAC.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=hack/boilerplate.yaml.txt paths=./apis/... output:crd:artifacts:config=../controller/deploy/charts/nvke-crds/bases
-	"$(CONTROLLER_GEN)" rbac:roleName=manager-role,headerFile=hack/boilerplate.yaml.txt paths=./controllers/... output:rbac:artifacts:config=config/rbac
+	"$(CONTROLLER_GEN)" rbac:roleName=manager-role,headerFile=hack/boilerplate.yaml.txt paths=./controllers/... output:rbac:artifacts:config=chart/files/roles
 
-manifests: manifests-state kustomize ## Generate runtime manifests and chart assets from their canonical sources.
+manifests: manifests-state kustomize ## Generate canonical schemas, RBAC and runtime manifests.
 	mkdir -p dist chart/files
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
-	head -n 2 config/crd/bases/internal.nvke.nvidia.com_nvkeclusters.yaml > chart/files/crds.yaml
-	"$(KUSTOMIZE)" build config/crd >> chart/files/crds.yaml
-	cp config/rbac/role.yaml chart/files/manager-role.yaml
-	cp config/rbac/leader_election_role.yaml chart/files/leader-election-role.yaml
-	cp config/rbac/metrics_auth_role.yaml chart/files/metrics-auth-role.yaml
-	cp config/dev/tenant-api-rbac.yaml chart/files/tenant-api-rbac.yaml
-	cp config/dev/operator-api-rbac.yaml chart/files/operator-api-rbac.yaml
 
 .PHONY: generate generate-public generate-public-check
 generate: generate-public ## Generate internal schemas, public projections, and registration wiring.
@@ -305,6 +298,7 @@ helm-deploy: require-host-context ## Deploy manager to the K8s cluster via Helm.
 	fi; \
 	$(HELM) --kube-context "$(HOST_CONTEXT)" upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
 		--namespace $(HELM_NAMESPACE) \
+		--dependency-update \
 		--create-namespace \
 		--set-string manager.image.repository="$$repository" \
 		--set-string manager.image.tag="$$tag" \
@@ -316,8 +310,12 @@ helm-deploy: require-host-context ## Deploy manager to the K8s cluster via Helm.
 helm-uninstall: require-host-context ## Uninstall the Helm release from the K8s cluster.
 	$(HELM) --kube-context "$(HOST_CONTEXT)" uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
 
+.PHONY: chart-deps
+chart-deps: ## Stage the pinned shared schema dependency for Helm source operations.
+	$(HELM) dependency build chart --skip-refresh
+
 .PHONY: chart-check
-chart-check: manifests ## Lint and test combined, state-only, and controller-only Helm installations.
+chart-check: manifests chart-deps ## Lint and test combined, state-only, and controller-only Helm installations.
 	$(HELM) lint chart -f config/samples/runtime-values.yaml
 	HELM="$(HELM)" $(GO) test $(GO_TEST_FLAGS) ./hack -run TestChart -count=1
 

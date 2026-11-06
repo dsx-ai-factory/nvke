@@ -13,8 +13,6 @@
 state:
   enabled: true
   namespace: ""
-  crds:
-    install: true
   # Empty uses the local manager ServiceAccount in a combined installation.
   # State-only installations can bind existing ServiceAccounts or Kubernetes Users.
   rbac:
@@ -24,6 +22,10 @@ state:
     operatorAPISubjects: []
   # Bootstrap ConfigMaps: name, tenant namespace, and literal data (not Helm expressions).
   configMaps: []
+
+# Set false when another release owns the full NVKE schema set.
+nvke-crds:
+  enabled: true
 
 controller:
   enabled: true

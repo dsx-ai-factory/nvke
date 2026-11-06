@@ -279,10 +279,8 @@ func TestChartStateConfiguration(t *testing.T) {
   "controller": {
     "enabled": false
   },
-  "state": {
-    "crds": {
-      "install": false
-    }
+  "nvke-crds": {
+    "enabled": false
   }
 }`)
 	if err != nil || len(objectsOfKind(objects, "CustomResourceDefinition")) != 0 {

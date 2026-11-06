@@ -17,8 +17,8 @@ resources. State-only rendering needs no image or credential configuration.
 
 ## Generate manifests
 
-From `management-engine/`, run `make chart-check` to refresh the generated CRD
-and RBAC assets, lint the chart, and test its rendered resources. CI also runs
+From `management-engine/`, run `make chart-check` to regenerate canonical schemas
+and RBAC, stage the shared dependency, and validate the chart. CI also runs
 `make chart-assets-check` to reject uncommitted asset drift. These checks use Helm
 and the module's pinned Go tools without connecting to a Kubernetes cluster.
 
@@ -132,18 +132,21 @@ infrastructure-template arguments and their credential volumes; use the named
 chart inputs instead. The examples use development image tags; pin a compatible
 published image and chart revision for an installation.
 
-CRDs come from `config/crd`, and manager RBAC comes from the generated controller
-markers. `make manifests` updates chart assets; it does not regenerate the
-maintained Helm templates. Commit refreshed assets with their source changes.
+The chart consumes the shared [`nvke-crds` chart](../../controller/deploy/charts/nvke-crds/README.md)
+when `state.enabled=true`. Schemas are generated once in that chart; manager RBAC
+is generated in `chart/files/roles`. Helm and Kustomize consume the same files.
+`make manifests` updates canonical generated output and leaves Helm templates intact.
+Run `make chart-deps` before rendering or packaging chart source; packages include
+the pinned dependency.
 
-Choose one installer for each CRD in a cluster. The NVKE controller chart already
-includes MachineImage, ClusterRelease and NodePoolRelease by default. When this
-chart owns all Management Engine CRDs, disable that chart's `releaseCRDs.install`
-before installation. When an existing installer owns the full CRD set, set
-`state.crds.install=false` here. A second Helm release cannot silently take over
-an existing owner's CRDs; inspect and deliberately migrate ownership first.
-The proposed shared CRD chart can replace this packaging once its ownership
-contract is agreed.
+Choose one installer for each CRD in a cluster. A fresh combined installation can
+own all six through this dependency. If the NVKE controller already owns the
+release schemas, enable its `nvke-crds.clusterServiceCRDs.enabled=true` to provide
+the full set, then set `nvke-crds.enabled=false` here. A dedicated shared-chart
+release is another option. Follow the shared chart's ownership-transfer procedure
+before changing existing owners; disabling a dependency alone does not transfer
+Helm metadata. `state.enabled=false` disables the dependency along with state RBAC
+and bootstrap configuration.
 
 CRDs are rendered as Helm resources with `helm.sh/resource-policy: keep`.
 Helm applies their schemas on upgrades and retains them on uninstall or when
