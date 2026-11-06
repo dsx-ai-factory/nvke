@@ -1162,6 +1162,18 @@ func TestValidate_NicoInfra(t *testing.T) {
 	}
 }
 
+// TestValidate_NicoNeedsTheFeatureFlag: the nico provider is a work in progress
+// and is rejected unless NVKECTL_ENABLE_NICO=1.
+func TestValidate_NicoNeedsTheFeatureFlag(t *testing.T) {
+	inv := minimalValid()
+	makeNico(inv)
+	t.Setenv(NicoEnableEnv, "")
+	err := inv.Validate()
+	if err == nil || !strings.Contains(err.Error(), "work in progress") || !strings.Contains(err.Error(), NicoEnableEnv) {
+		t.Fatalf("Validate error = %v, want the work-in-progress error naming %s", err, NicoEnableEnv)
+	}
+}
+
 // TestValidate_NicoConfigProfileIsOptional: the bootstrap controller serves no
 // config profiles, so a spec that names none is complete.
 func TestValidate_NicoConfigProfileIsOptional(t *testing.T) {
