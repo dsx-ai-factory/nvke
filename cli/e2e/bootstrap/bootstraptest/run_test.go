@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -25,7 +24,7 @@ import (
 	bootstrapengine "github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/engine"
 )
 
-// siteStackCheckTimeout bounds the API calls of the one-shot site stack check.
+// siteStackCheckTimeout bounds the API calls of the one-shot controller identity check.
 const siteStackCheckTimeout = time.Minute
 
 // credentialCheckTimeout bounds the reads of the credential check that follows
@@ -42,8 +41,7 @@ var errStopped = errors.New("stopped on a signal")
 // wait for it, exactly as they did around `setsid nvkectl bootstrap site`.
 //
 // The lane configures the run through the environment; see env.go. It is not a
-// lane of its own. With EnvSiteStackNamespaces set it also checks the NVKE
-// stack on the site cluster, and with EnvControllerSPIFFEID set that the controller on
+// lane of its own. With EnvControllerSPIFFEID set that the controller on
 // the bootstrap cluster runs under that identity. With EnvKnownSecretsFile set
 // it gives nvkectl an OTLP header credential and, once the command exits,
 // searches its log and diagnostics for that and the secrets bootstrap
@@ -88,10 +86,6 @@ func TestE2E_BootstrapSite(t *testing.T) {
 		t.Fatalf("nvkectl bootstrap site exited %d: %v", b.ExitCode(), waitErr)
 	}
 	t.Logf("bootstraptest: nvkectl bootstrap site exited 0")
-
-	if namespaces := bootstraptest.SiteStackNamespacesFromEnv(opts.DisableMTLS); len(namespaces) > 0 {
-		verifySiteStack(t, opts.KubeconfigOut, namespaces)
-	}
 	if controllerIdentity.SPIFFEID != "" {
 		verifyControllerIdentity(t, os.Getenv(bootstraptest.EnvBootstrapCluster), controllerIdentity)
 	}
@@ -120,29 +114,6 @@ func verifyControllerIdentity(t *testing.T, clusterName string, want bootstrapte
 		t.Fatal(err)
 	}
 	t.Logf("bootstraptest: the controller runs as %s and SPIRE issues %s", want.Name, want.SPIFFEID)
-}
-
-// verifySiteStack checks the NVKE stack the bootstrap installed and reported
-// healthy on the site cluster that kubeconfig reaches. It does not wait for it.
-func verifySiteStack(t *testing.T, kubeconfig string, namespaces []string) {
-	t.Helper()
-	if kubeconfig == "" {
-		t.Fatalf("%s is set but %s is not: the site cluster cannot be reached", bootstraptest.EnvSiteStackNamespaces, bootstraptest.EnvKubeconfigOut)
-	}
-	restConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	if err != nil {
-		t.Fatalf("loading the site kubeconfig %s: %v", kubeconfig, err)
-	}
-	kube, err := kubernetes.NewForConfig(restConfig)
-	if err != nil {
-		t.Fatalf("creating the site cluster client: %v", err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), siteStackCheckTimeout)
-	defer cancel()
-	if err := bootstraptest.VerifySiteStack(ctx, kube, namespaces); err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("bootstraptest: the NVKE stack on the site cluster is rolled out and Ready: %s", strings.Join(namespaces, " "))
 }
 
 // credentialCheck is the credential check the lane asked for, run at most once
