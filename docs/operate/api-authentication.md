@@ -10,7 +10,7 @@ Authentication has three modes. Off is the default.
 | Permissive | Every request is checked and counted, then served. Nothing is rejected. |
 | Enforcing | A request without a valid token gets `401`. A valid token that no admission rule matches gets `403`. |
 
-[NVKE does no authorization.](../overview/preview-status.md#api-and-access) Every caller that NVKE admits can call every endpoint, including the ones that create and delete workload clusters.
+Until you turn on [authorization](api-authorization.md), every caller that NVKE admits can call every endpoint, including the ones that create and delete workload clusters. With authorization enforcing, an admitted caller whose roles do not allow the operation gets `403` with `{"message":"Not authorized"}`.
 
 > **Warning:** The NVKE API serves plain HTTP on NodePort 30080, and neither NVKE nor its chart serves it over TLS. Every bearer token a caller sends to `http://<MANAGEMENT_ADDRESS>:30080` crosses the network unencrypted, and anyone who captures it can call the API until it expires. Send tokens only to a TLS endpoint that you put in front of the API, such as a reverse proxy that terminates TLS and forwards to port 30080, or admit to the API, in the NetworkPolicy from [Admit your networks to the NVKE API](install-management-plane.md#admit-your-networks-to-the-nvke-api), only clients on a trusted, isolated network.
 
