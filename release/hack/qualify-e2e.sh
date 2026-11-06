@@ -61,6 +61,14 @@ emit() {
   export "$1=$2"
 }
 upper() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }
+# yaml_str quotes a value for the generated config, so a path under a
+# --run-dir holding " #" or ": " stays one string. The quote is a variable
+# because bash 3.2, macOS's /bin/bash, keeps the backslashes of \' in a
+# replacement.
+yaml_str() {
+  local q="'"
+  printf '%s%s%s' "${q}" "${1//${q}/${q}${q}}" "${q}"
+}
 
 # What each step reads. Every name has to be set, though most may be empty:
 # empty is a choice (build it, no GPU, the default name), unset is a caller
@@ -84,7 +92,7 @@ inputs() {
       ;;
     config)
       echo NODE_USER SITE_NVKECTL SITE_DEPLOY_PATH_REF SITE_IMAGES SITE_NVKE_CONTROLLER_REPOSITORY \
-        SITE_INPUTS KEEP_SITE KEEP_TENANT
+        SITE_INPUTS KEEP_SITE KEEP_TENANT NODE_KEY_DIR DRY_RUN
       ;;
     # The controller's name is the suite's, not this script's: empty leaves it
     # on nvke-controller, and a release from before the rename needs it named.
@@ -596,7 +604,7 @@ step_config() {
 node:
   user: "${NODE_USER:-}"
 nvkectl:
-  binary: ${SITE_NVKECTL}
+  binary: $(yaml_str "${SITE_NVKECTL}")
 site:
   # Empty follows the controller version, which is what a
   # qualification wants: the deploy path carries the controller's own
@@ -607,24 +615,38 @@ site:
   images:
     controller:
       repository: ${SITE_IMAGES}/${SITE_NVKE_CONTROLLER_REPOSITORY}
-      archive: ${SITE_INPUTS}/controller.tar
+      archive: $(yaml_str "${SITE_INPUTS}/controller.tar")
     capi-provisioned:
       repository: ${SITE_IMAGES}/cluster-api-provider-provisioned
-      archive: ${SITE_INPUTS}/capi-provisioned.tar
+      archive: $(yaml_str "${SITE_INPUTS}/capi-provisioned.tar")
     profiles:
       repository: nke-e2e-profiles
       tag: local
-      archive: ${SITE_INPUTS}/profiles.tar
+      archive: $(yaml_str "${SITE_INPUTS}/profiles.tar")
 EOF
   # -e2e.keep-site holds only the site node. The tenant's own cleanup
   # still deletes a failed tenant's cluster, which releases the very
   # instances the site was kept to look at. skipDelete keeps every tenant,
   # passed or not, and the site with them, since it owns their instances;
   # it also skips the spec that deletes the tenant.
+  local lifecycle=""
   if [ "${KEEP_TENANT:-}" = "true" ]; then
-    printf 'lifecycle:\n  skipDelete: true\n' >>"${config}"
+    lifecycle+=$'  skipDelete: true\n'
   elif [ "${KEEP_SITE:-}" = "true" ]; then
-    printf 'lifecycle:\n  preserveOnFailure: true\n' >>"${config}"
+    lifecycle+=$'  preserveOnFailure: true\n'
+  fi
+  # Only qualify local sets this. The key logs into the site node, which
+  # holds the site's admin kubeconfig, and a runner's files can end up in
+  # an uploaded artifact.
+  if [ -n "${NODE_KEY_DIR:-}" ]; then
+    lifecycle+="  nodeKeyDir: $(yaml_str "${NODE_KEY_DIR}")"$'\n'
+    # A dry run takes no machine, so it writes no key.
+    if [ "${DRY_RUN}" != "true" ]; then
+      warn "the site node's SSH key is written under ${NODE_KEY_DIR}; it logs into the node, which holds the site's admin kubeconfig, so delete it with the node"
+    fi
+  fi
+  if [ -n "${lifecycle}" ]; then
+    printf 'lifecycle:\n%s' "${lifecycle}" >>"${config}"
   fi
   say "--- ${E2E_CONFIG} ---"
   cat "${config}" >&2

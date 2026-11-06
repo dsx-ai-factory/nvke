@@ -459,13 +459,17 @@ func TestAStepRefusesAnUnsetInput(t *testing.T) {
 
 func TestConfigKeepsWhatItIsAskedTo(t *testing.T) {
 	for _, tc := range []struct {
-		site, tenant string
-		want         string
+		site, tenant, keyDir string
+		want                 string
 	}{
-		{"false", "false", ""},
-		{"true", "false", "lifecycle:\n  preserveOnFailure: true\n"},
-		{"false", "true", "lifecycle:\n  skipDelete: true\n"},
-		{"true", "true", "lifecycle:\n  skipDelete: true\n"},
+		{"false", "false", "", ""},
+		{"true", "false", "", "lifecycle:\n  preserveOnFailure: true\n"},
+		{"false", "true", "", "lifecycle:\n  skipDelete: true\n"},
+		{"true", "true", "", "lifecycle:\n  skipDelete: true\n"},
+		{"false", "true", "/r/node-keys", "lifecycle:\n  skipDelete: true\n  nodeKeyDir: '/r/node-keys'\n"},
+		{"false", "false", "/r/node-keys", "lifecycle:\n  nodeKeyDir: '/r/node-keys'\n"},
+		// Unquoted, YAML would read " #1..." as a comment.
+		{"false", "false", "/r/run #1/ron's/node-keys", "lifecycle:\n  nodeKeyDir: '/r/run #1/ron''s/node-keys'\n"},
 	} {
 		for _, sh := range shells(t) {
 			config := filepath.Join(t.TempDir(), "e2e-config.yaml")
@@ -478,6 +482,7 @@ func TestConfigKeepsWhatItIsAskedTo(t *testing.T) {
 				"SITE_NVKE_CONTROLLER_REPOSITORY": "nvke-controller",
 				"KEEP_SITE":                       tc.site,
 				"KEEP_TENANT":                     tc.tenant,
+				"NODE_KEY_DIR":                    tc.keyDir,
 			})
 			l.step(true, "config")
 			b, err := os.ReadFile(config)
@@ -489,7 +494,32 @@ func TestConfigKeepsWhatItIsAskedTo(t *testing.T) {
 				got = "lifecycle:\n" + got
 			}
 			if got != tc.want {
-				t.Errorf("%s keep-site=%s keep-tenant=%s: lifecycle = %q, want %q", sh, tc.site, tc.tenant, got, tc.want)
+				t.Errorf("%s keep-site=%s keep-tenant=%s node-key-dir=%q: lifecycle = %q, want %q", sh, tc.site, tc.tenant, tc.keyDir, got, tc.want)
+			}
+		}
+	}
+}
+
+// The key warning says a key is written, so it is given only when one will be:
+// a dry run takes no machine.
+func TestConfigWarnsOfTheNodeKeyOnlyWhenOneIsWritten(t *testing.T) {
+	for _, dryRun := range []string{"true", "false"} {
+		for _, sh := range shells(t) {
+			l := newSteps(t, sh, map[string]string{
+				"E2E_CONFIG":                      filepath.Join(t.TempDir(), "e2e-config.yaml"),
+				"NODE_USER":                       "",
+				"SITE_NVKECTL":                    "/w/nvkectl",
+				"SITE_DEPLOY_PATH_REF":            "",
+				"SITE_IMAGES":                     "localhost/nvke",
+				"SITE_NVKE_CONTROLLER_REPOSITORY": "nvke-controller",
+				"KEEP_SITE":                       "true",
+				"KEEP_TENANT":                     "false",
+				"NODE_KEY_DIR":                    "/r/node-keys",
+				"DRY_RUN":                         dryRun,
+			})
+			out := l.step(true, "config")
+			if warned := strings.Contains(out, "SSH key is written"); warned == (dryRun == "true") {
+				t.Errorf("%s dry-run=%s: warned = %t\n%s", sh, dryRun, warned, out)
 			}
 		}
 	}

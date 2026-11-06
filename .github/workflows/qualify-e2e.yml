@@ -604,6 +604,9 @@ jobs:
       # Keeping a passed tenant skips the spec that deletes it, which a
       # qualification has to run, so only qualify local sets this.
       KEEP_TENANT: false
+      # Writing the site node's SSH key is for a workstation: on a runner it
+      # would sit beside the files the artifacts step uploads.
+      NODE_KEY_DIR: ""
       # ghcr or nvcr. Only the runner pulls from it: every image it names is
       # staged onto the node as an archive. The node's own pull is CAPNICo,
       # which is published to GHCR alone, so the GHCR login below stays either

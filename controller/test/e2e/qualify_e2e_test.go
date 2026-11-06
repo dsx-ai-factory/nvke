@@ -462,6 +462,10 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 			GinkgoLogr.Info("keeping the site controller", "name", node.Name, "ip", node.IP,
 				"kubeconfig", cluster.Kubeconfig,
 				"reason", keepReason(keepSite, cfg.Lifecycle.SkipDelete))
+			if dir := cfg.Lifecycle.NodeKeyDir; dir != "" {
+				GinkgoLogr.Info("the site node can be logged into through its jump host with this run's key",
+					"key", provision.KeyPath(dir, node.Name), "user", node.User, "ip", node.IP)
+			}
 			GinkgoLogr.Info("the instance survives this run and must be released by hand", "name", node.Name)
 			return
 		}
@@ -713,6 +717,7 @@ func newForgeProvider(cfg config.Config, env *environment.Environment) (infra.Pr
 			ClusterctlVersion: versions[versionClusterctl],
 		},
 		KeepOnFailure: keepFailedNode(cfg),
+		KeyDir:        cfg.Lifecycle.NodeKeyDir,
 		DisableMTLS:   siteDisableMTLS,
 	})
 	if err != nil {
@@ -797,6 +802,7 @@ func newDSXProvider(cfg config.Config, env *environment.Environment) (infra.Prov
 			ClusterctlVersion: versions[versionClusterctl],
 		},
 		KeepOnFailure: keepFailedNode(cfg),
+		KeyDir:        cfg.Lifecycle.NodeKeyDir,
 		DisableMTLS:   siteDisableMTLS,
 	})
 }

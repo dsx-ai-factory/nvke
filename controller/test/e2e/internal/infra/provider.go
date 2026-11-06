@@ -69,6 +69,10 @@ type Node struct {
 	Name string
 	IP   string
 
+	// User is the login the provider's sessions to the node use, and so the
+	// account a saved node key logs into.
+	User string
+
 	// Arch is the machine's architecture, as the provider's own catalog
 	// names it. The provider knows it when it picks a machine to satisfy the
 	// request, and a caller that had to ask the provider's types for it would

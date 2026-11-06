@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -212,6 +213,9 @@ func TestProvisionNodePinsAMachineWhenTheSiteDeclaresOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = session.Teardown(context.Background()) })
+	if dialed := dialer.targets[len(dialer.targets)-1].User; node.User != dialed {
+		t.Errorf("User = %q, want %q, the login the session dialed with", node.User, dialed)
+	}
 
 	// A site that declares machines pins one, which is the hand bring-up path.
 	// The default is the other way round -- see the pooled case below.
@@ -300,6 +304,7 @@ func TestProvisionNodeDialsBeforeReady(t *testing.T) {
 func TestProvisionNodeStopsOnError(t *testing.T) {
 	nico := &fakeNico{t: t, statuses: []string{"Error"}, addressAfter: 99}
 	provider := newTestProvider(t, nico, &fakeDialer{conn: &fakeConn{}})
+	provider.opts.KeyDir = t.TempDir()
 
 	_, _, err := provider.ProvisionNode(context.Background(), request(t))
 	if err == nil {
@@ -311,6 +316,33 @@ func TestProvisionNodeStopsOnError(t *testing.T) {
 	// It existed, so it has to be released.
 	if nico.deleted != 1 {
 		t.Errorf("deleted %d times, want 1 -- a failed provision must not leak the machine", nico.deleted)
+	}
+	if _, statErr := os.Stat(provision.KeyPath(provider.opts.KeyDir, request(t).Name)); !os.IsNotExist(statErr) {
+		t.Errorf("the key outlived its released node (err %v)", statErr)
+	}
+}
+
+func TestProvisionNodeKeepsTheMachineOnFailure(t *testing.T) {
+	nico := &fakeNico{t: t, statuses: []string{"Error"}, addressAfter: 99}
+	provider := newTestProvider(t, nico, &fakeDialer{conn: &fakeConn{}})
+	provider.opts.KeepOnFailure = true
+	provider.opts.KeyDir = t.TempDir()
+	keyPath := provision.KeyPath(provider.opts.KeyDir, request(t).Name)
+
+	_, _, err := provider.ProvisionNode(context.Background(), request(t))
+	if err == nil {
+		t.Fatal("an instance that went to Error should fail the run")
+	}
+	if nico.deleted != 0 {
+		t.Errorf("deleted %d times, want 0 -- the machine was supposed to be kept", nico.deleted)
+	}
+	if _, statErr := os.Stat(keyPath); statErr != nil {
+		t.Errorf("the kept node's key is gone: %v", statErr)
+	}
+	for _, want := range []string{"KEPT", testInstance, "login " + provider.nodeUser(), keyPath} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should name %s, got %v", want, err)
+		}
 	}
 }
 
@@ -348,10 +380,14 @@ func TestProvisionNodeAcceptsDegradedCloudInit(t *testing.T) {
 func TestCreateFailureSaysTheInstanceMayExist(t *testing.T) {
 	nico := &fakeNico{t: t, statuses: []string{"Pending"}, createStatus: http.StatusInternalServerError}
 	provider := newTestProvider(t, nico, &fakeDialer{conn: &fakeConn{}})
+	provider.opts.KeyDir = t.TempDir()
 
 	_, _, err := provider.ProvisionNode(context.Background(), request(t))
 	if err == nil {
 		t.Fatal("a rejected create should fail the run")
+	}
+	if _, statErr := os.Stat(provision.KeyPath(provider.opts.KeyDir, request(t).Name)); !os.IsNotExist(statErr) {
+		t.Errorf("a key was saved for an instance that was never created (err %v)", statErr)
 	}
 	// Nothing here can clean up after a create whose id never arrived.
 	if !strings.Contains(err.Error(), "may exist even so") {
