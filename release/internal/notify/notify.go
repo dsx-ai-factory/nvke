@@ -63,6 +63,11 @@ func (n *Notifier) Trigger(ctx context.Context, event string, data Data, key str
 	matches := n.Config.Match(event)
 	res := Result{Matched: len(matches)}
 
+	// The conversation is kept for the rest of this trigger, whether or not
+	// saving it worked: two subscriptions can match one event for the same
+	// channel, and the second message belongs in the thread the first started.
+	state := &retainedState{base: n.State}
+
 	var errs []error
 	for _, m := range matches {
 		p, ok := n.Providers[kindSlack]
@@ -76,7 +81,7 @@ func (n *Notifier) Trigger(ctx context.Context, event string, data Data, key str
 			Recipient: m.Subscriber.Channels.Slack.ChannelID,
 			Mentions:  m.Mentions,
 			Data:      data,
-			State:     n.State,
+			State:     state,
 			Key:       key,
 			ReplyOnly: n.ReplyOnly,
 			Secrets:   n.Secrets,
@@ -92,6 +97,28 @@ func (n *Notifier) Trigger(ctx context.Context, event string, data Data, key str
 		}
 	}
 	return res, errors.Join(errs...)
+}
+
+// retainedState keeps every thread it is given in memory, then saves it to the
+// base. A failed save is reported, and the thread is still remembered for the
+// messages that follow in the same trigger.
+type retainedState struct {
+	base State
+	mem  MemoryState
+}
+
+// Get implements State.
+func (s *retainedState) Get(key, recipient string) (string, error) {
+	if id, _ := s.mem.Get(key, recipient); id != "" {
+		return id, nil
+	}
+	return s.base.Get(key, recipient)
+}
+
+// Set implements State.
+func (s *retainedState) Set(key, recipient, id string) error {
+	_ = s.mem.Set(key, recipient, id)
+	return s.base.Set(key, recipient, id)
 }
 
 // Delivery is where a notification goes, and the conversation it belongs to.

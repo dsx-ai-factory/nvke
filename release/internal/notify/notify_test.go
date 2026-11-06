@@ -200,6 +200,46 @@ func TestTriggerFailureDoesNotStopTheRest(t *testing.T) {
 	}
 }
 
+// failingSet reads fine and cannot save.
+type failingSet struct{ MemoryState }
+
+func (*failingSet) Set(_, _, _ string) error { return errors.New("disk full") }
+
+// Two subscriptions can match one event for the same channel. The second message
+// must reply in the thread the first started even when saving that thread
+// failed: the ID is kept for the rest of the trigger, and the failure is still
+// reported.
+func TestTriggerKeepsTheThreadWhenSavingItFails(t *testing.T) {
+	const twoSubscriptions = `
+subscribers:
+  - id: one
+    channels: {slack: {channel_id: C0000000001}}
+notifications:
+  - {name: first, title: First, message_template: "a"}
+  - {name: second, title: Second, message_template: "b"}
+subscriptions:
+  - subscriber: one
+    events: [{name: "q:x", notification: first}]
+  - subscriber: one
+    events: [{name: "q:x", notification: second}]
+`
+	p := &fakeProvider{}
+	n := notifier(t, twoSubscriptions, p, &failingSet{})
+	res, err := n.Trigger(context.Background(), "q:x", Data{}, "v1")
+	if err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Fatalf("err = %v, want the failed save reported", err)
+	}
+	if res.Posted != 2 || len(p.posted) != 2 {
+		t.Fatalf("posted %d, want 2", res.Posted)
+	}
+	if p.posted[0].ThreadTS != "" || p.posted[1].ThreadTS == "" {
+		t.Errorf("threads = %q then %q, want a root and then a reply in it", p.posted[0].ThreadTS, p.posted[1].ThreadTS)
+	}
+	if res.StateCreated {
+		t.Error("StateCreated is true though nothing was saved")
+	}
+}
+
 func TestTriggerWithNoMatchSendsNothing(t *testing.T) {
 	p := &fakeProvider{}
 	res, err := notifier(t, twoChannels, p, &MemoryState{}).Trigger(context.Background(), "q:unknown", Data{}, "v1")
