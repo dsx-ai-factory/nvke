@@ -110,3 +110,7 @@ controller/test/e2e/site-bundle*
 # hack/coverage.sh reads the directory. Nothing in it is committed: a profile
 # describes one run on one machine, and CI uploads it as an artifact instead.
 /coverage/
+
+# Built Helm dependencies and compatibility render output.
+/controller/deploy/charts/controller/charts/
+/dist/

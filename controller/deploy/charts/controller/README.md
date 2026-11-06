@@ -4,6 +4,12 @@
 
 A Helm chart to deploy the NVKE controller service
 
+The chart includes the [shared NVKE CRD chart](../nvke-crds/README.md) as a local
+dependency. Run `make chart-deps` from the repository root before rendering or
+packaging a source checkout. Its default schema set remains MachineImage,
+ClusterRelease and NodePoolRelease. Set `releaseCRDs.install=false` when a
+separate release owns those schemas.
+
 ## Additional tenant RBAC
 
 `tenantAccess.additionalRBAC` defaults to `[]`. Set it to a list of Kubernetes

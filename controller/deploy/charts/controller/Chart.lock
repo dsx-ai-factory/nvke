@@ -1,0 +1,6 @@
+dependencies:
+- name: nvke-crds
+  repository: file://../nvke-crds
+  version: 0.1.0
+digest: sha256:04918b5bf55cd0b46f3f16b48ac98276bfd357c286c45d497bf8c1185735a04b
+generated: "2026-11-06T08:31:00.683795Z"
