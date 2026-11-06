@@ -438,8 +438,7 @@ jobs:
 
           # The agent is built from this same checkout; describe it the way
           # agent/Makefile stamps main.VERSION.
-          agent_version="$(git describe --match 'agent/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-          agent_version="${agent_version#agent/}"
+          agent_version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
 
           {
             echo "version=${version}"

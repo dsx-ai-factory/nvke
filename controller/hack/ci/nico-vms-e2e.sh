@@ -413,7 +413,7 @@ log "building nvke-agent from ${WORKSPACE_ROOT}/agent"
 make -C "${WORKSPACE_ROOT}/agent" "build-${host_arch}" >"${STATE_DIR}/agent-build.log" 2>&1 ||
   { tail -n 50 "${STATE_DIR}/agent-build.log" >&2; fail "building nvke-agent failed"; }
 install -D -m 0755 "${WORKSPACE_ROOT}/agent/bin/linux_${host_arch}/nvke-agent" "${NICO_SIM_FILES_DIR}/${AGENT_URL_PATH#files/}"
-log "staged nvke-agent for the tenant nodes: $(git -C "${WORKSPACE_ROOT}" describe --match 'agent/v*' --tags --always 2>/dev/null || echo unknown)"
+log "staged nvke-agent for the tenant nodes: $(git -C "${WORKSPACE_ROOT}" describe --tags --always --match 'v*' 2>/dev/null || echo unknown)"
 
 # ── The node image the tenant VMs boot ──────────────────────────────────────
 # Set NKE_E2E_OS_IMAGE_TAG to pin one image. Unset, the newest published one

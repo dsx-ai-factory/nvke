@@ -41,15 +41,12 @@ include ../make/coverage.mk
 
 # Version stamping, mirroring cli/Makefile.
 #
-# --match is not optional, and it is required on the --always fallback too. This
-# is a monorepo whose tags are per-component (agent/v*, controller/v*), so any
-# describe without --match returns whichever family happens to be nearest. No
-# os-image/v* tag exists yet, so an unmatched fallback does not degrade to a
-# commit the way it reads -- it stamps this binary with an agent version.
-# Scoped, the chain is: this module's tag, a plain v* tag, the commit, then
-# v0.0.0 for a build outside a git checkout.
-_CHECK_VERSION_RAW := $(shell git describe --tags --dirty --match 'os-image/v[0-9]*' 2>/dev/null || git describe --tags --dirty --match 'v[0-9]*' 2>/dev/null || git describe --always --dirty --match 'os-image/v[0-9]*' 2>/dev/null || echo "v0.0.0")
-CHECK_VERSION ?= $(patsubst os-image/%,%,$(_CHECK_VERSION_RAW))
+# Every component is versioned by the repository's bare vX.Y.Z tags. --match
+# is not optional: the repository also carries prefixed tags, and an unmatched
+# describe returns whichever is nearest. The chain is the nearest v* tag, the
+# commit, then v0.0.0 for a build outside a git checkout.
+_CHECK_VERSION := $(shell git describe --tags --always --dirty --match 'v*' 2>/dev/null || echo "v0.0.0")
+CHECK_VERSION ?= $(_CHECK_VERSION)
 
 # "main", not the full import path. The variable lives in package main, and for
 # that package the linker matches on the package NAME. Given the import path it
