@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/state"
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/vm"
 )
@@ -46,8 +47,10 @@ func (r *powerRuntime) Start(context.Context, string) error {
 }
 
 func TestReconcileRunningLeaseTimeout(t *testing.T) {
+	darwin, libvirt := config.VMBackendDarwinQEMU, config.VMBackendLibvirt
 	tests := []struct {
 		name         string
+		backend      string
 		waited       time.Duration
 		priorReason  string
 		lease        string
@@ -56,16 +59,18 @@ func TestReconcileRunningLeaseTimeout(t *testing.T) {
 		wantReason   string
 		wantIP       string
 	}{
-		{"within the timeout", leaseTimeout - time.Second, "", "", nil, state.ObservedStateRunning, "", ""},
-		{"past the timeout power-cycles once", leaseTimeout + time.Second, "", "", []string{"stop", "start"}, state.ObservedStateRunning, leasePowerCycledReason, ""},
-		{"within the timeout after a power-cycle", leaseTimeout - time.Second, leasePowerCycledReason, "", nil, state.ObservedStateRunning, leasePowerCycledReason, ""},
-		{"past the timeout after a power-cycle errors", leaseTimeout + time.Second, leasePowerCycledReason, "", nil, state.ObservedStateError, "no DHCP lease 5m0s after a power-cycle; the guest likely failed to boot, see its console log", ""},
-		{"lease found past the timeout", leaseTimeout + time.Second, "", "192.0.2.1", nil, state.ObservedStateRunning, "", "192.0.2.1"},
+		{"within the timeout", darwin, leaseTimeout - time.Second, "", "", nil, state.ObservedStateRunning, "", ""},
+		{"past the timeout power-cycles once", darwin, leaseTimeout + time.Second, "", "", []string{"stop", "start"}, state.ObservedStateRunning, leasePowerCycledReason, ""},
+		{"within the timeout after a power-cycle", darwin, leaseTimeout - time.Second, leasePowerCycledReason, "", nil, state.ObservedStateRunning, leasePowerCycledReason, ""},
+		{"past the timeout after a power-cycle errors", darwin, leaseTimeout + time.Second, leasePowerCycledReason, "", nil, state.ObservedStateError, "no DHCP lease 5m0s after a power-cycle; the guest likely failed to boot, see its console log", ""},
+		{"lease found past the timeout", darwin, leaseTimeout + time.Second, "", "192.0.2.1", nil, state.ObservedStateRunning, "", "192.0.2.1"},
+		{"libvirt past the timeout keeps waiting", libvirt, leaseTimeout + time.Second, "", "", nil, state.ObservedStateRunning, "", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			e, id := newStopStartEngine(t, state.DesiredStatePresent, state.ObservedStateRunning, vm.MachineStateRunning)
+			e.cfg.VMBackend = tt.backend
 			rt := &powerRuntime{Runtime: e.runtime}
 			e.runtime = rt
 			e.net = leaseNet{ip: tt.lease}

@@ -11,7 +11,7 @@ REPO_ROOT="$(cd "${CONTROLLER_DIR}/.." && pwd)"
 STATE_DIR="${CONTROLLER_DIR}/.local/mac-vm-dev"
 
 export COLIMA_PROFILE="${COLIMA_PROFILE:-nvke-mac}"
-export KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-cwe-capi}"
+export KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-controller-capi}"
 TILT_PORT="${TILT_PORT:-10350}"
 NVKE_API="http://localhost:${NVKE_CONTROLLER_HTTP_PORT:-8080}/api"
 

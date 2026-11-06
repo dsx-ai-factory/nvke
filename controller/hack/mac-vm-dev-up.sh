@@ -176,7 +176,7 @@ cat >tilt.d/mac-vm-dev.tilt <<'EOF'
 _capnico = os.getenv("CAPNICO_SOURCE_DIR", "")
 watch_settings(ignore=[
     os.path.join(config.main_dir, "bin", "controller"),
-    os.path.join(config.main_dir, "hack", "Dockerfile.cwe.tilt"),
+    os.path.join(config.main_dir, "hack", "Dockerfile.controller.tilt"),
 ] + ([_capnico] if _capnico else []))
 EOF
 
@@ -211,7 +211,7 @@ pause
 nohup tilt up --stream --port "${TILT_PORT}" >"${STATE_DIR}/tilt.log" 2>&1 &
 tilt_pid=$!
 echo "${tilt_pid}" >"${STATE_DIR}/tilt.pid"
-for resource in nico-sim capnico-provider cwe; do
+for resource in nico-sim capnico-provider nvke-controller; do
   note "waiting for ${resource}"
   # tilt wait fails on a resource the Tiltfile has not registered yet.
   deadline=$((SECONDS + 600))

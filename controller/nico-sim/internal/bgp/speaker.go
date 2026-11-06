@@ -100,6 +100,10 @@ type Speaker struct {
 	bridgeNet   *net.IPNet
 	allowedNets []*net.IPNet
 	listener    net.Listener
+	// routeMu serializes syncRoute from reading vipNexthops to changing the
+	// route, so a resync that read the next hops before a withdrawal cannot
+	// reinstall the route after the withdrawal removed it. Take it before mu.
+	routeMu sync.Mutex
 }
 
 // New creates a new BGP Speaker. Does not start it.
@@ -490,6 +494,9 @@ func (s *Speaker) resyncRoutes() {
 
 // syncRoute computes current nexthops for a VIP and installs or removes the route.
 func (s *Speaker) syncRoute(vip string) {
+	s.routeMu.Lock()
+	defer s.routeMu.Unlock()
+
 	s.mu.Lock()
 	hops := s.vipNexthops[vip]
 	nexthops := make([]net.IP, 0, len(hops))

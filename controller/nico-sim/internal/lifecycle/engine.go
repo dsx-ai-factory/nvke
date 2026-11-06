@@ -588,6 +588,11 @@ func (e *Engine) reconcileRunning(ctx context.Context, instance state.Instance, 
 				return e.markError(ctx, instance.ID, err)
 			}
 			if ip == "" {
+				// Only HVF guests have been seen to hang before DHCP. Elsewhere a
+				// missing lease waits for ReadinessTimeout, as before.
+				if e.cfg.EffectiveVMBackend() != config.VMBackendDarwinQEMU {
+					return nil
+				}
 				return e.reconcileMissingLease(ctx, instance, log)
 			}
 

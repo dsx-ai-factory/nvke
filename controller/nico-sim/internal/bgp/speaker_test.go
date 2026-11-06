@@ -37,6 +37,8 @@ type mockRouteManager struct {
 	mu    sync.Mutex
 	calls []routeCall
 	link  *mockLink
+	// beforeReplace, when set, runs at the start of RouteReplace.
+	beforeReplace func()
 }
 
 func newMockRM() *mockRouteManager {
@@ -46,6 +48,9 @@ func newMockRM() *mockRouteManager {
 }
 
 func (m *mockRouteManager) RouteReplace(route *netlink.Route) error {
+	if m.beforeReplace != nil {
+		m.beforeReplace()
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var nexthops []string
@@ -346,6 +351,41 @@ func TestProcessUpdate_ExplicitWithdrawRemovesRoute(t *testing.T) {
 	call, _ := rm.lastCall()
 	if call.op != "del" {
 		t.Errorf("want del after withdraw, got %s", call.op)
+	}
+}
+
+// A resync that read the next hops just before a withdrawal must not reinstall
+// the route after the withdrawal removed it.
+func TestResyncRoutes_DoesNotReinstallWithdrawnRoute(t *testing.T) {
+	t.Parallel()
+	rm := newMockRM()
+	s := newTestSpeakerDirect(rm)
+	s.processUpdate("192.168.200.10", buildUpdate(testVIP, "192.168.200.10", 32))
+
+	// Hold the resync inside RouteReplace, after it has read the next hops.
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	rm.beforeReplace = func() { once.Do(func() { close(entered); <-release }) }
+
+	resyncDone := make(chan struct{})
+	go func() { s.resyncRoutes(); close(resyncDone) }()
+	<-entered
+
+	withdrawDone := make(chan struct{})
+	go func() { s.processUpdate("192.168.200.10", buildWithdraw(testVIP, 32)); close(withdrawDone) }()
+	// Without serialization the withdrawal finishes here, before the stale
+	// install below. With it, the withdrawal waits for the resync to finish.
+	select {
+	case <-withdrawDone:
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
+	<-resyncDone
+	<-withdrawDone
+
+	call, _ := rm.lastCall()
+	if call.op != "del" {
+		t.Errorf("want the withdrawal's del last, got %s %v", call.op, call.nexthops)
 	}
 }
 
