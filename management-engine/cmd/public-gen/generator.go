@@ -236,6 +236,11 @@ func readCRDs(root string) (map[string]apiextensionsv1.CustomResourceDefinition,
 	if err != nil {
 		return nil, err
 	}
+	local, err := filepath.Glob(filepath.Join(root, "config/crd/bases/*.yaml"))
+	if err != nil {
+		return nil, err
+	}
+	files = append(files, local...)
 	for _, filename := range files {
 		data, err := os.ReadFile(filename)
 		if err != nil {
