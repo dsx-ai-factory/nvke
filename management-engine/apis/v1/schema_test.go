@@ -40,7 +40,7 @@ type resourceSchema struct {
 // and conversion, so tests can read the markers back off the schema.
 func loadCRD(t *testing.T, resource string) apiextensionsv1.CustomResourceDefinition {
 	t.Helper()
-	data, err := os.ReadFile("../../config/crd/bases/internal.nvke.nvidia.com_" + resource + ".yaml")
+	data, err := os.ReadFile("../../../controller/deploy/charts/nvke-crds/bases/internal.nvke.nvidia.com_" + resource + ".yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -417,6 +417,11 @@ tolerations: []
 
 affinity: {}
 
+# Shared chart dependency defaults to the controller's existing three schemas.
+nvke-crds:
+  clusterServiceCRDs:
+    enabled: false
+
 releaseCRDs:
   # -- Install the MachineImage, ClusterRelease and NodePoolRelease CRDs with
   # the chart.

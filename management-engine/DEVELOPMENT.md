@@ -22,7 +22,7 @@ After changing MachineImage, ClusterRelease, or NodePoolRelease, also refresh
 the NVKE controller chart's embedded CRDs:
 
 ```sh
-make -C .. chart-crds
+make -C .. chart-crds # optional standalone render into dist/
 make -C .. chart-crds-check
 ```
 

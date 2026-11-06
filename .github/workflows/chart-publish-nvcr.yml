@@ -181,6 +181,7 @@ jobs:
           grep -q "^  - name: ${IMAGE_PULL_SECRET}\$" "${CHART}/values.yaml" \
             || { echo "::error::pull-secret rewrite did not apply"; exit 1; }
 
+          helm dependency build "${CHART}" --skip-refresh
           helm package "${CHART}" \
             --version "${CHART_VERSION}" \
             --app-version "${APP_VERSION}" \
