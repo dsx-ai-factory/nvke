@@ -109,9 +109,94 @@ The management plane holds no site-wide NICo settings. Each workload cluster req
 | `instanceTypeID` | Node pool `nico` | One instance type ID. Fixed when the node pool is created. |
 | `vpcPrefixIDs` or `subnetIDs` | Control plane and node pool `nico` | Exactly one of the two: VPC prefixes for a site with native networking, subnets otherwise. |
 | `sshKeyGroupIDs` | Control plane and node pool `nico` | Optional. SSH key groups for node access. |
-| `infinibandPartitionID`, `nvLinkLogicalPartitionID` | Node pool `nico` | Optional. An InfiniBand partition and an NVLink logical partition. Fixed when the node pool is created. |
+| `infinibandPartitionID` | Node pool `nico` | Optional. An InfiniBand partition. Fixed when the node pool is created. |
+| `nvLinkLogicalPartitionID` | Node pool `nico` | Optional. An NVLink logical partition. A node pool update can set or replace it, but not clear it. Like a release change, the update creates a new node set: nodes created after it attach to the partition, and existing nodes keep theirs until they are replaced. |
 
 The `orgID`, `siteID` and `vpcID` of a cluster are fixed when the cluster is created. The control plane and each node pool select one of the releases you created in [Register the image for provisioning](build-node-images.md#create-the-objects-on-the-management-cluster) with `nico.release` and, optionally, a config profile with `nico.configProfile`. [Create a workload cluster](../workload-clusters/create.md) shows a full request.
+
+## Attach existing nodes to an NVLink partition
+
+Setting or replacing `nvLinkLogicalPartitionID` with a node pool update creates a new node set, as a release change does. Nodes the pool creates after the update, replacements included, attach to the new partition. Nodes that already exist stay in the earlier node set, with their NVLink configuration, until they are replaced:
+
+- With the default `recycleBudget` of 0, NVKE leaves them alone.
+- With `recycleBudget` above 0 and auto mode on, NVKE marks up to `recycleBudget` of them at a time with the condition `nvke.nvidia.com/NeedsRecycle`. It does not drain or terminate them. An operator or a break-fix system does that, as described in [Node lifecycle](../tenant-clusters/node-lifecycle.md), and the pool replaces each terminated node on the new partition.
+- With `maxSurge` above 0, the pool creates up to `maxSurge` extra nodes on the new partition while nodes remain in the earlier node set.
+
+To attach existing nodes without replacing them, update their NICo instances directly. The nodes stay in the earlier node set, so a pool with `recycleBudget` above 0 and auto mode on still marks them for recycling. NICo:
+
+- accepts the update only while the instance is `Ready`, so a node that is still provisioning returns 400 until it is;
+- replaces all of the instance's NVLink interfaces with the ones you send;
+- rejects the update if the VPC has a default NVLink logical partition and the instance already has NVLink interfaces.
+
+While NICo applies the change the instance is `Configuring`, and workloads on the node that use NVLink can be interrupted. Drain the node first if that matters.
+
+Send one interface per GPU of the instance type, with `deviceInstance` from 0 to the GPU count minus one; a GB200 or GB300 compute tray has 4 GPUs.
+
+1. Read the NICo API path from [the NICo credentials](#manage-the-nico-credentials), write the `Authorization` header to a file only you can read, and build the request body from the partition and the GPU count. The header file keeps the token out of the command line of every `curl` below.
+
+   ```bash
+   NICO_API="$(kubectl -n capnico-system get secret nico-credentials \
+     -o go-template='{{.data.endpoint | base64decode}}/v2/org/{{.data.orgID | base64decode}}/{{.data.apiName | base64decode}}')"
+   NICO_AUTH="$(mktemp)"
+   kubectl -n capnico-system get secret nico-credentials \
+     -o go-template='Authorization: Bearer {{.data.token | base64decode}}' > "${NICO_AUTH}"
+   PARTITION="<NVLINK_LOGICAL_PARTITION_ID>"
+   GPUS=4
+   BODY="$(jq -n --arg p "${PARTITION}" --argjson n "${GPUS}" \
+     'if $n < 1 then error("GPUS must be at least 1")
+      else {nvLinkInterfaces: [range(0; $n) | {nvLinkLogicalPartitionId: $p, deviceInstance: .}]} end')"
+   ```
+
+   If `jq` reports an error, set `GPUS` to the GPU count of the instance type and run the last command again. `mktemp` creates the header file readable only by you; delete it with `rm "${NICO_AUTH}"` when you are done.
+
+2. Update one instance. The instance ID is the part of the NicoMachine's `spec.providerID` after `nico://`.
+
+   ```bash
+   curl -sS -X PATCH "${NICO_API}/instance/<INSTANCE_ID>" \
+     -H @"${NICO_AUTH}" -H "Content-Type: application/json" -d "${BODY}"
+   ```
+
+3. To update every node of a node pool, collect the pool's NicoMachines on the management cluster. Older controllers label them with `nke.nvidia.com/node-pool-id` instead of `nvke.nvidia.com/node-pool-id`; the filter accepts both.
+
+   ```bash
+   kubectl get nicomachines -A -o json \
+     | jq --arg pool "<NODE_POOL_ID>" '[.items[]
+         | select((.spec.labels["nvke.nvidia.com/node-pool-id"] // .spec.labels["nke.nvidia.com/node-pool-id"]) == $pool)]' > pool-machines.json
+   ```
+
+   Write the instance IDs to a file, and list the machines that have no instance yet.
+
+   ```bash
+   jq -r '.[] | .spec.providerID // empty | sub("^nico://"; "")' pool-machines.json > instances.txt
+   jq -r '.[] | select(.spec.providerID == null) | "\(.metadata.namespace)/\(.metadata.name)"' pool-machines.json
+   ```
+
+   A machine in the second list is still creating its instance, with the partition of its node set. If that is the earlier node set, repeat this procedure for it once it has a provider ID.
+
+4. Update each instance. The loop prints the status code of each update, and the response body of any update that did not return 200.
+
+   ```bash
+   while read -r instance; do
+     code="$(curl -sS -o response.json -w '%{http_code}' -X PATCH "${NICO_API}/instance/${instance}" \
+       -H @"${NICO_AUTH}" -H "Content-Type: application/json" -d "${BODY}")"
+     echo "${code} ${instance}"
+     if [ "${code}" != 200 ]; then cat response.json; echo; fi
+   done < instances.txt
+   ```
+
+   Read the response body before you run the loop again for an instance. A server error or a timeout can succeed on a retry, and so can a 400 for an instance that was not yet `Ready`. A 400 because the VPC has a default NVLink logical partition fails again on every retry while the VPC keeps that partition. An update with the same partition replaces the interfaces with the same ones, so repeating a successful update is safe.
+
+5. A 200 means NICo accepted the update, not that it is applied. Check that each instance is back to `Ready` with every NVLink interface on the partition.
+
+   ```bash
+   while read -r instance; do
+     curl -sS "${NICO_API}/instance/${instance}" -H @"${NICO_AUTH}" \
+       | jq -r --arg p "${PARTITION}" --argjson n "${GPUS}" \
+         '"\(.id) \(.status) " + (if $n > 0 and ([.nvLinkInterfaces[]?.nvLinkLogicalPartitionId] | length == $n and all(. == $p)) then "attached" else "not attached" end)'
+   done < instances.txt
+   ```
+
+   An instance that is still `Configuring` has not finished; check it again later. Update again any instance that is `Ready` but reports `not attached`.
 
 ## Verify
 
