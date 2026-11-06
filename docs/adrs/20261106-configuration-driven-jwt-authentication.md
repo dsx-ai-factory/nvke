@@ -15,13 +15,13 @@ Which issuers to trust differs per deployment. A standalone deployment may trust
 
 [`auth/authn`](../../auth/authn/config.go) reads its trust settings from a typed document, `AuthenticationConfiguration` in `auth.nvke.nvidia.com/v1alpha1`. It refuses unknown fields. Each issuer entry names a key-set URL (JWKS), signing algorithms and admit rules: the claims a token must carry. A verified token becomes a [`Principal`](../../auth/authn/principal.go) with the issuer name, subject and claims.
 
-The controller's HTTP API uses `auth/authn`. The controller chart ships with `apiAuth.enabled: false`, and this record keeps that default.
+The controller's HTTP API is the first to use `auth/authn`. Its chart ships with `apiAuth.enabled: false`, and this record keeps that default.
 
 ## Decision
 
 We will authenticate every caller of an NVKE API with a bearer JWT, and set which issuers it trusts through a versioned configuration document, not code. A deployer can write that document by hand, or a central identity system can write it for them.
 
-An NVKE API is one that people, automation or other services call over the network, such as the controller's HTTP API. The node agent's gRPC API is out of scope: only the controller calls it, over mutual TLS. The metrics listener is out of scope too.
+An NVKE API is one that NVKE serves over the network to people, automation or other services, other than through the Kubernetes API server. The node agent's gRPC API is out of scope: only the controller calls it, over mutual TLS. The metrics listener is out of scope too.
 
 - The `AuthenticationConfiguration` schema is the public contract for authentication. A new field is optional. Removing or renaming a field needs a new `apiVersion`. A ConfigMap carries the document today, but the schema is the contract, so a custom resource could carry it later.
 - Trusting a new issuer takes only its key-set URL, with no credential store or certificate authority in NVKE.
