@@ -121,6 +121,10 @@ var configMapOnly = []string{
 	"apiAuth.enabled",
 	"apiAuth.audiences",
 	"apiAuth.issuers",
+	// API authorization started in nvke-controller-config.
+	"apiAuthz.enabled",
+	"apiAuthz.permissive",
+	"apiAuthz.authorizer.localBundle.dir",
 	// Credential monitoring started in nvke-controller-config.
 	"credentialMonitoring.enabled",
 	"credentialMonitoring.inspectionInterval",
