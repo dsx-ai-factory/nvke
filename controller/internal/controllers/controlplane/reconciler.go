@@ -105,7 +105,7 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 
 	failureDomains, err := r.readFailureDomains(ctx, cluster)
 	if err != nil {
-		return fmt.Errorf("discovering control-plane failure domains: %w", err)
+		return r.reconcileWithoutFailureDomains(ctx, cluster, controlPlane, err)
 	}
 	controlPlane.failureDomains = failureDomains
 	failureDomains.eligible = placeableDomains(failureDomains.eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
@@ -219,6 +219,34 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 // would actually flip is the node locked and recomputed before the write, so a
 // concurrent condition writer is not clobbered (same pattern as the
 // node-agent-readiness controller).
+// failureDomainRetryInterval is how soon a reconcile that could not read failure
+// domains runs again.
+const (
+	failureDomainRetryInterval = 30 * time.Second
+)
+
+// reconcileWithoutFailureDomains runs the steps that place no node -- remediation
+// and promotion of recorded deletes -- when failure-domain discovery fails, so a
+// dead node can still be removed. It returns nil and requeues rather than erroring
+// because an error rolls back the reconcile's transaction, undoing those writes.
+func (r *reconciler) reconcileWithoutFailureDomains(ctx context.Context, cluster db.Cluster, cp *controlPlane, discoveryErr error) error {
+	r.logger.Warn("Control-plane failure-domain discovery failed; running only remediation and recorded deletes",
+		"clusterID", cluster.ID, "clusterName", cluster.Name, "err", discoveryErr)
+	r.requeueAfter(failureDomainRetryInterval)
+
+	remediated, err := r.remediateMachines(ctx, cluster, cp)
+	if err != nil {
+		return err
+	}
+	if remediated {
+		return nil
+	}
+	if _, err := r.reconcileRequestedDeletes(ctx, cluster, cp); err != nil {
+		return fmt.Errorf("reconciling requested control plane deletes: %w", err)
+	}
+	return nil
+}
+
 func (r *reconciler) reconcileControlPlaneRolloutRequiredCondition(ctx context.Context, cp *controlPlane) error {
 	for i := range cp.nodes {
 		if !cp.nodes[i].IsManagedByControlPlaneController() {

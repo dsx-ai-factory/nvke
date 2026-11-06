@@ -181,7 +181,7 @@ func TestReadFailureDomainsWithoutAPlacementView(t *testing.T) {
 	}
 }
 
-func TestControllerReturnsErrorWhileClusterInfrastructureIsNotReady(t *testing.T) {
+func TestControllerRequeuesWithoutPlacingWhileClusterInfrastructureIsNotReady(t *testing.T) {
 	t.Parallel()
 
 	clusterID := uuid.New()
@@ -240,8 +240,8 @@ func TestControllerReturnsErrorWhileClusterInfrastructureIsNotReady(t *testing.T
 
 	result, err := controller.Reconcile(context.Background(), dbreconcile.ClusterKey(clusterID))
 
-	require.ErrorContains(t, err, "discovering control-plane failure domains: capi cluster infrastructure is not yet provisioned")
-	assert.Zero(t, result)
+	require.NoError(t, err, "a discovery failure must not roll back the reconcile's remediation and delete writes")
+	assert.Equal(t, failureDomainRetryInterval, result.RequeueAfter)
 	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 	mockDB.AssertExpectations(t)
 	mockTx.AssertExpectations(t)
