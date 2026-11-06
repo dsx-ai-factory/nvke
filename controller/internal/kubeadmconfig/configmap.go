@@ -36,6 +36,15 @@ const (
 	encryptionProviderConfigReloadFlagName = "encryption-provider-config-automatic-reload"
 	encryptionConfigVolumeName             = "enc"
 	etcdQuotaBackendBytesFlagName          = "quota-backend-bytes"
+	etcdCompactionIntervalFlagName         = "etcd-compaction-interval"
+
+	// etcdBootstrapDefragThresholdFlagName is the stable spelling, which etcd
+	// only accepts from 3.6 (Kubernetes 1.34). etcd 3.5 took it as
+	// --experimental-bootstrap-defrag-threshold-megabytes and rejects this one
+	// with an unknown-flag exit, so a member that receives it too early
+	// crashloops instead of ignoring it. supportsBootstrapDefrag is what keeps
+	// that from happening, on both the greenfield and the write-back path.
+	etcdBootstrapDefragThresholdFlagName = "bootstrap-defrag-threshold-megabytes"
 )
 
 // MergeOIDCIntoClusterConfiguration takes the kubeadm ClusterConfiguration YAML
@@ -127,6 +136,79 @@ func mergeOIDCV1beta4(clusterConfigYAML []byte) ([]byte, bool, error) {
 	cc.APIServer.ExtraVolumes = vols
 
 	return marshalMerged(cc, argChanged || volChanged)
+}
+
+// MergeBootstrapDefragIntoClusterConfiguration returns the kubeadm
+// ClusterConfiguration carrying the two etcd settings the greenfield renderer
+// emits: kube-apiserver's pinned --etcd-compaction-interval, and the local
+// etcd member's bootstrap-defrag threshold.
+//
+// This is what turns control-plane recycling into a migration. A joining
+// control-plane node renders its etcd manifest from this ConfigMap, so without
+// the merge a recycled node on an existing cluster comes back exactly as
+// unmigrated as it left, however many times it is replaced.
+//
+// The threshold is gated on the document's own kubernetesVersion rather than a
+// value passed in, and that is load-bearing rather than incidental: the same
+// field selects the etcd image kubeadm renders, so gating on it means the flag
+// cannot be written for an etcd that would reject it and crashloop. A caller
+// changing both must set the version first; see
+// EnsureBootstrapDefragInClusterConfiguration.
+//
+// A cluster with external etcd has no local member to configure and gets the
+// apiserver flag alone.
+func MergeBootstrapDefragIntoClusterConfiguration(clusterConfigYAML []byte) ([]byte, bool, error) {
+	apiVersion, err := clusterConfigurationAPIVersion(clusterConfigYAML)
+	if err != nil {
+		return nil, false, err
+	}
+
+	switch apiVersion {
+	case kubeadmv1beta3.APIVersion:
+		var cc kubeadmv1beta3.ClusterConfiguration
+		if err := yaml.Unmarshal(clusterConfigYAML, &cc); err != nil {
+			return nil, false, fmt.Errorf("parsing v1beta3 ClusterConfiguration: %w", err)
+		}
+
+		args, intervalChanged := setArgV1beta3(cc.APIServer.ExtraArgs, etcdCompactionIntervalFlagName, defaultEtcdCompactionInterval)
+		cc.APIServer.ExtraArgs = args
+
+		thresholdChanged := false
+		if cc.Etcd.Local != nil && supportsBootstrapDefrag(cc.KubernetesVersion) {
+			etcdArgs, changed := setArgV1beta3(
+				cc.Etcd.Local.ExtraArgs,
+				etcdBootstrapDefragThresholdFlagName,
+				defaultBootstrapDefragThresholdMegabytes,
+			)
+			cc.Etcd.Local.ExtraArgs = etcdArgs
+			thresholdChanged = changed
+		}
+
+		return marshalMerged(cc, intervalChanged || thresholdChanged)
+	case kubeadmv1beta4.APIVersion:
+		var cc kubeadmv1beta4.ClusterConfiguration
+		if err := yaml.Unmarshal(clusterConfigYAML, &cc); err != nil {
+			return nil, false, fmt.Errorf("parsing v1beta4 ClusterConfiguration: %w", err)
+		}
+
+		args, intervalChanged := upsertArgV1beta4(cc.APIServer.ExtraArgs, etcdCompactionIntervalFlagName, defaultEtcdCompactionInterval)
+		cc.APIServer.ExtraArgs = args
+
+		thresholdChanged := false
+		if cc.Etcd.Local != nil && supportsBootstrapDefrag(cc.KubernetesVersion) {
+			etcdArgs, changed := upsertArgV1beta4(
+				cc.Etcd.Local.ExtraArgs,
+				etcdBootstrapDefragThresholdFlagName,
+				defaultBootstrapDefragThresholdMegabytes,
+			)
+			cc.Etcd.Local.ExtraArgs = etcdArgs
+			thresholdChanged = changed
+		}
+
+		return marshalMerged(cc, intervalChanged || thresholdChanged)
+	default:
+		panic("clusterConfigurationAPIVersion returned an unsupported apiVersion")
+	}
 }
 
 // MergeEncryptionIntoClusterConfiguration returns the kubeadm

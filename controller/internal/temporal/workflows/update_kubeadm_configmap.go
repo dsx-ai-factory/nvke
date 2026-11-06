@@ -59,12 +59,25 @@ func UpdateKubeadmConfigMap(ctx workflow.Context, input UpdateKubeadmConfigMapIn
 		return UpdateKubeadmConfigMapResult{}, fmt.Errorf("failed to update kubeadm ConfigMap: %w", err)
 	}
 
+	// Strictly after the version update. The bootstrap-defrag threshold is
+	// gated on the kubernetesVersion this ConfigMap now records, so an upgrade
+	// into 1.34 only becomes eligible once the line above has landed.
+	var defragResult activities.MergeEtcdDefragKubeadmConfigResult
+	if err := workflow.ExecuteActivity(
+		workflow.WithActivityOptions(ctx, activityOptions),
+		a.MergeEtcdDefragKubeadmConfig,
+		activities.KubeadmConfigClusterInput{ClusterID: input.ClusterID},
+	).Get(ctx, &defragResult); err != nil {
+		return UpdateKubeadmConfigMapResult{}, fmt.Errorf("failed to merge etcd defragmentation settings: %w", err)
+	}
+
 	logger.Info("Updated kubeadm ConfigMap",
 		"clusterID", input.ClusterID,
 		"kubernetesVersion", input.KubernetesVersion,
-		"changed", result.Changed)
+		"versionChanged", result.Changed,
+		"etcdDefragChanged", defragResult.Changed)
 
 	return UpdateKubeadmConfigMapResult{
-		Changed: result.Changed,
+		Changed: result.Changed || defragResult.Changed,
 	}, nil
 }
