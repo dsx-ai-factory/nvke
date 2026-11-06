@@ -290,7 +290,7 @@ func (p *Planner) combination(s *Subject, picked []pick, streams []StreamDefinit
 		if err != nil {
 			return Combination{}, fmt.Errorf("stream %s: %w", stream.Name, err)
 		}
-		planned = append(planned, Stream{Name: stream.Name, Capabilities: stream.Capabilities, Dependencies: perStream})
+		planned = append(planned, Stream{Name: stream.Name, Capabilities: stream.Capabilities, Parameters: stream.Parameters, Dependencies: perStream})
 	}
 
 	return Combination{

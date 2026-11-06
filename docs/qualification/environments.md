@@ -148,7 +148,9 @@ none of this: they substitute synthetic values, so
 wherever it runs.
 
 For `forge-perf.yaml`, where `FORGE_PERF_INSTANCE_TYPE_CPU_ID` is the id of the
-high memory CPU type `cpu.himem.t1`:
+high memory CPU type `cpu.himem.t1`. A Forge API key belongs to an org, so this
+file sets `apiKeyEnv: FORGE_PERF_API_KEY` and the suite reads the key from that
+variable. A Forge environment that sets none reads `FORGE_API_KEY`.
 
 ```bash
 export FORGE_PERF_ORG_ID=… FORGE_PERF_SITE_ID=… FORGE_PERF_VPC_ID=… FORGE_PERF_SUBNET_ID=…

@@ -333,11 +333,20 @@ node images a run needs.
 
 A **scope** is a named selection over the streams, matched on capabilities.
 `full` selects every Forge stream, `golden-path` narrows to Ubuntu 24.04 on
-GB200, `l40s` to Ubuntu 24.04 on L40S at site-1, and `dsx` to the DSX datahall
-stream; [`policy.yaml`](policy.yaml) says why each is drawn where it is. The
+GB200, `l40s` to Ubuntu 24.04 on L40S at site-1, `dsx` to the DSX datahall
+stream, and `perf` to the performance stream on the NVKE Scale site. A scope can
+also leave streams out with `exclude`, which is how `full` skips the perf
+stream. [`policy.yaml`](policy.yaml) says why each is drawn where it is. The
 set of supported Kubernetes minors is not declared anywhere,
 it is whichever minors have streams, so adding one means adding streams and
 nothing else.
+
+A stream can also carry **parameters**: the settings of its run, which are the
+environment file it runs against, the workers its tenant gets and the suite's
+timeout in minutes. They configure the run and nothing selects on them, which is
+why they are not capabilities. Only those fields are accepted, so a misspelled
+one is an error. The plan copies them for each stream and the stream's result
+records them.
 
 A **combination** is one resolved set of components, qualified against every
 stream in the scope. Its id is the components' `<name>-<version>` pairs sorted

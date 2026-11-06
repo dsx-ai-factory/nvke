@@ -175,6 +175,8 @@ func TestSummaryPlan(t *testing.T) {
 	}
 }
 
+// TestCapabilities checks which capabilities a stream's line shows and in what
+// order.
 func TestCapabilities(t *testing.T) {
 	tests := []struct {
 		name string
@@ -183,12 +185,36 @@ func TestCapabilities(t *testing.T) {
 	}{
 		{name: "every capability, in a fixed order", caps: map[string]string{"kube": "1.36", "ubuntu": "24.04", "gpu": "l40s", "arch": "amd64"}, want: "\narch `amd64` · GPU `l40s` · Ubuntu `24.04` · Kubernetes `1.36`\n"},
 		{name: "one the stream does not declare is left out", caps: map[string]string{"arch": "arm64", "kube": "1.36"}, want: "\narch `arm64` · Kubernetes `1.36`\n"},
+		{name: "the machine type and profile come beside the rest", caps: map[string]string{"profile": "perf", "machineType": "cpu", "arch": "amd64", "kube": "1.36"}, want: "\narch `amd64` · machine type `cpu` · Kubernetes `1.36` · profile `perf`\n"},
 		{name: "none is nothing", caps: nil, want: ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var b strings.Builder
 			capabilities(&b, tc.caps)
+			if b.String() != tc.want {
+				t.Errorf("got %q, want %q", b.String(), tc.want)
+			}
+		})
+	}
+}
+
+// TestParameters checks that a stream's run settings are shown in a fixed
+// order and that the ones it does not set are left out.
+func TestParameters(t *testing.T) {
+	tests := []struct {
+		name string
+		p    qualification.Parameters
+		want string
+	}{
+		{name: "every parameter, in a fixed order", p: qualification.Parameters{SuiteTimeoutMinutes: 215, TenantWorkers: 3, Environment: "forge-perf"}, want: "\nenvironment `forge-perf` · tenant workers `3` · suite timeout `215m`\n"},
+		{name: "one the stream does not set is left out", p: qualification.Parameters{TenantWorkers: 3}, want: "\ntenant workers `3`\n"},
+		{name: "none is nothing", p: qualification.Parameters{}, want: ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var b strings.Builder
+			parameters(&b, tc.p)
 			if b.String() != tc.want {
 				t.Errorf("got %q, want %q", b.String(), tc.want)
 			}

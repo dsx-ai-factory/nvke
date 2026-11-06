@@ -35,6 +35,14 @@ STEP_ENV="${STEP_ENV:-${GITHUB_ENV:-/dev/stdout}}"
 # The config the suite reads, relative to the suite's package or absolute.
 E2E_CONFIG="${E2E_CONFIG:-e2e-config.yaml}"
 
+# The suite's own timeout when a stream sets none, and what the timeouts around
+# it add. See the note on the three nested timeouts at step_run.
+default_suite_minutes=150
+cleanup_minutes=70
+# The wait for the plan's artifacts and the build ahead of the suite, which the
+# job's timeout-minutes covers beyond go test's own.
+setup_minutes=115
+
 say() { echo "$*" >&2; }
 fail() {
   if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::error::$*"; else echo "error: $*" >&2; fi
@@ -66,7 +74,7 @@ inputs() {
         SITE_STAGE DRY_RUN SITE_IMAGE_REGISTRY QUALIFY_E2E_NGC_ORG NGC_API_KEY \
         ARCH PROVIDER GPU OS_IMAGE_AMD64 OS_IMAGE_BOOTLOADER_AMD64 OS_IMAGE_ARM64 OS_IMAGE_BOOTLOADER_ARM64 \
         KUBERNETES_VERSION CNI_OVN_VERSION KIND_VERSION CLUSTERCTL_VERSION NERDCTL_VERSION \
-        CLI_VERSION CLI_REF CAPI_PROVISIONED_VERSION SITE_INPUTS
+        CLI_VERSION CLI_REF CAPI_PROVISIONED_VERSION SITE_INPUTS E2E_ENVIRONMENT
       ;;
     controller-image) echo SITE_NVKE_CONTROLLER_BUILD SITE_IMAGE_REGISTRY SITE_IMAGES SITE_NVKE_CONTROLLER_VERSION ;;
     site-inputs)
@@ -83,7 +91,7 @@ inputs() {
     run)
       echo KEEP_SITE KEEP_TENANT DRY_RUN SITE_TENANT_EXCLUDE SITE_STAGE SITE_NVKE_CONTROLLER_VERSION CLI_VERSION \
         CAPI_PROVISIONED_VERSION OS_IMAGE_VERSIONS CAPABILITIES SITE_ENVIRONMENT \
-        NVKE_CONTROLLER_NAMESPACE NVKE_CONTROLLER_SERVICE
+        NVKE_CONTROLLER_NAMESPACE NVKE_CONTROLLER_SERVICE E2E_TENANT_WORKERS SUITE_TIMEOUT_MINUTES
       ;;
   esac
 }
@@ -104,9 +112,13 @@ artifacts=(qualify-e2e.log qualify-e2e.junit.xml qualify-e2e.report.json
   nvkectl-diagnostics.tar.gz tenant-diagnostics.json site-cluster-state.txt)
 scrubbed=(qualify-e2e.log qualify-e2e.junit.xml qualify-e2e.report.json tenant-diagnostics.json site-cluster-state.txt)
 
-# One entry per stream of every combination.
+# One entry per stream of every combination. A stream's parameters are what
+# its run is configured with: the environment file, the tenant's workers and
+# the suite's timeout. job_timeout_minutes is what the job's timeout-minutes
+# reads, so it is derived here from the suite's timeout with the rest.
 matrix_entries() {
-  jq -c '
+  jq -c --argjson suite "${default_suite_minutes}" \
+    --argjson overhead "$((cleanup_minutes + setup_minutes))" '
     def entry($all; $name): ([$all[] | select(.name == $name)] | first);
     def value($all; $name): entry($all; $name) as $e | ($e.url // $e.version // "");
     def version($all; $name): entry($all; $name) as $e | ($e.version // "");
@@ -136,7 +148,11 @@ matrix_entries() {
           os_image_bootloader_amd64: value($all; "os-image-bootloader-amd64"),
           os_image_bootloader_arm64: value($all; "os-image-bootloader-arm64"),
           cli_ref: url($all; "cli-" + $s.capabilities.arch),
-          controller_version_strategy: versionStrategy($all; "controller")
+          controller_version_strategy: versionStrategy($all; "controller"),
+          environment: ($s.parameters.environment // ""),
+          tenant_workers: (($s.parameters.tenantWorkers // 0) | if . == 0 then "" else tostring end),
+          suite_timeout_minutes: (($s.parameters.suiteTimeoutMinutes // 0) | if . == 0 then "" else tostring end),
+          job_timeout_minutes: (($s.parameters.suiteTimeoutMinutes // $suite) + $overhead)
         }
     ]' "$1"
 }
@@ -194,6 +210,12 @@ step_stream_env() {
   emit PROVIDER "$(field provider)"
   emit GPU "$(field gpu)"
   emit CAPI_PROVISIONED_VERSION "$(field capi_provisioned)"
+  # The stream's run settings. Empty leaves the run as it is for a stream that
+  # names none: the provider's environment, a one worker tenant and the default
+  # suite timeout.
+  emit E2E_ENVIRONMENT "$(field environment)"
+  emit E2E_TENANT_WORKERS "$(field tenant_workers)"
+  emit SUITE_TIMEOUT_MINUTES "$(field suite_timeout_minutes)"
 }
 
 # nvkectl is a client of the controller it bootstraps, so the two have to agree
@@ -360,6 +382,16 @@ resolve_capabilities() {
     "") fail "the stream names no provider capability" ;;
     *) fail "provider is ${PROVIDER}, which this workflow has no environment for" ;;
   esac
+  # A stream may name the environment file it runs against. The file has to
+  # exist and describe the stream's provider, so a name that is misspelled or
+  # belongs to another provider stops the run here and not at the suite.
+  if [ -n "${E2E_ENVIRONMENT}" ]; then
+    local file="${e2e}/environments/${E2E_ENVIRONMENT}.yaml"
+    [ -f "${file}" ] || fail "the stream names environment ${E2E_ENVIRONMENT}, but ${file#"${root}"/} does not exist"
+    grep -qx "provider: ${PROVIDER}" "${file}" ||
+      fail "environment ${E2E_ENVIRONMENT} does not declare provider: ${PROVIDER}, which is the stream's"
+    environment="${E2E_ENVIRONMENT}"
+  fi
   emit SITE_ENVIRONMENT "${environment}"
   emit SITE_TENANT_EXCLUDE "${tenant_exclude}"
   say "environment: ${environment}, tenant entries excluded: ${tenant_exclude}"
@@ -608,14 +640,19 @@ log_to() {
 # Three nested timeouts, shortest first, because only the shortest one
 # tears the node down:
 #
-#   -ginkgo.timeout 150m  fails the suite and runs its cleanup, which
+#   -ginkgo.timeout       fails the suite and runs its cleanup, which
 #                         is what releases the Forge instance.
-#   -timeout        220m  go's own backstop. It panics rather than
+#   -timeout              go's own backstop. It panics rather than
 #                         unwinding, so deferred teardown does NOT run
 #                         and the instance leaks -- reaching this means
 #                         Ginkgo itself is wedged.
 #   timeout-minutes       the job's, in qualify-e2e.yml: the runner is
 #                         killed. Same leak, no log.
+#
+# All three come from one number, the suite's timeout: 150 minutes unless
+# the stream's suiteTimeoutMinutes names another. go test's is that plus the
+# cleanup minutes and the job's is that plus the setup minutes, which
+# matrix_entries computes, so they cannot be set to disagree.
 #
 # The 70 minutes between the first two is cleanup's, and it is sized
 # against cleanup rather than picked. A cleanup node entered after the
@@ -645,6 +682,8 @@ step_run() {
   if [ "${KEEP_TENANT:-}" = "true" ]; then
     warn "lifecycle.skipDelete is set; every tenant and the site node survive this run and must be deleted by hand, and tenant deletion is not tested"
   fi
+  local workers=()
+  [ -z "${E2E_TENANT_WORKERS}" ] || workers=(-e2e.tenant-workers="${E2E_TENANT_WORKERS}")
   # -v so a green run keeps its output. Without it `go test` buffers a
   # passing package's stdout and throws it away, which is what run
   # 36033032946 did: the first successful bootstrap on hardware, and
@@ -673,6 +712,11 @@ step_run() {
   #                  is remote command output, so it stays on the
   #                  runner.
   #
+  local suite="${SUITE_TIMEOUT_MINUTES:-${default_suite_minutes}}"
+  case "${suite}" in
+    '' | *[!0-9]*) fail "SUITE_TIMEOUT_MINUTES is ${suite}, which is not a number of minutes" ;;
+  esac
+  local ginkgo_timeout="${suite}m" go_timeout="$((suite + cleanup_minutes))m"
   local versions="controller=${SITE_NVKE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}"
   if [ "${DRY_RUN:-}" = "true" ]; then
     {
@@ -681,15 +725,17 @@ step_run() {
       echo "  -e2e.site-stage=${SITE_STAGE}"
       echo "  -e2e.versions=${versions}"
       echo "  -e2e.capabilities=${CAPABILITIES}"
+      [ -z "${workers[*]:-}" ] || echo "  ${workers[*]}"
+      echo "  -ginkgo.timeout=${ginkgo_timeout} -timeout ${go_timeout}"
       echo "  keep: ${keep[*]:-no}"
       echo "  keep tenants: ${KEEP_TENANT}"
     } | tee qualify-e2e.log
     return
   fi
   [ -z "${JUMP_HOST_PASSWORD:-}" ] || fail "JUMP_HOST_PASSWORD is set, which takes the suite off the Teleport relay; unset it"
-  go test -v -timeout 220m . -args \
+  go test -v -timeout "${go_timeout}" . -args \
     -ginkgo.label-filter="site-controller && !${SITE_TENANT_EXCLUDE}" \
-    -ginkgo.timeout=150m \
+    -ginkgo.timeout="${ginkgo_timeout}" \
     -ginkgo.v \
     -ginkgo.fail-on-empty \
     -ginkgo.no-color \
@@ -700,7 +746,7 @@ step_run() {
     -e2e.site-stage="${SITE_STAGE}" \
     -e2e.versions="${versions}" \
     -e2e.capabilities="${CAPABILITIES}" \
-    ${keep[@]+"${keep[@]}"} 2>&1 | log_to qualify-e2e.log
+    ${keep[@]+"${keep[@]}"} ${workers[@]+"${workers[@]}"} 2>&1 | log_to qualify-e2e.log
 }
 
 # The suite names the jump host in its own errors ("not reachable
