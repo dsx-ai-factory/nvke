@@ -66,32 +66,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # The cli/v* pattern at the top of this file cannot be strict, because a
-      # glob cannot spell "vX.Y.Z", so the rule is enforced here instead. It
-      # fails rather than skips: a tighter glob would let a malformed tag push
-      # do nothing at all, and silence reads as success.
-      # A bare vX.Y.Z or vX.Y.Z-beta.N is versioned by the bare v* describe.
-      - name: Resolve the version from the tag
+      # The describe version, whichever tag started the run, so the binary
+      # reports the version the cli publishers name it by.
+      - name: Resolve the version
         id: version
         shell: bash
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF_NAME}"
-
-          if [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
-            VERSION="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
-          else
-            VERSION="${TAG#cli/}"
-            if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
-              echo "::error::${TAG} carries version '${VERSION}', which is neither vX.Y.Z nor vX.Y.Z-rc.N."
-              echo "A release candidate needs the dot: v0.1.0-rc.0, not v0.1.0-rc0."
-              echo "Delete the tag, then push a corrected one."
-              exit 1
-            fi
-          fi
-
+          VERSION="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
-          echo "Building nvkectl ${VERSION} for ${TAG}"
+          echo "Building nvkectl ${VERSION} for ${GITHUB_REF_NAME}"
 
       # go.work, not cli/go.mod, like every other workflow here. setup-go pins
       # GOTOOLCHAIN=local, so the toolchain must satisfy the workspace, which

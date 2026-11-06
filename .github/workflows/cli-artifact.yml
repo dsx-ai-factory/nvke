@@ -90,7 +90,7 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             aliases+=("edge")
           elif [[ "${GITHUB_REF}" == refs/tags/* && "${GITHUB_PUBLISH}" == "true" ]]; then
-            aliases+=("${GITHUB_REF_NAME#cli/}")
+            aliases+=("${version}")
           fi
 
           {

@@ -94,14 +94,8 @@ jobs:
             exit 1
           fi
 
-          # The controller image's version, so the two pair by tag. A tag run
-          # takes the tag that triggered it: an RC and its final release can
-          # sit on one commit, and git describe picks the final for both.
-          if [[ "${GITHUB_REF}" == refs/tags/controller/v* || "${GITHUB_REF}" == refs/tags/v* ]]; then
-            version="${GITHUB_REF_NAME#controller/}"
-          else
-            version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
-          fi
+          # The controller image's version, so the two pair by tag.
+          version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
 
           # sha-<commit> records what main built. A tag run rebuilds the same
           # commit under a different version label, so a different digest, and

@@ -28,7 +28,7 @@ name: Chart Publish NVCR
 # does not exist, and the push dies before it reaches the registry:
 
 # A bare vX.Y.Z-beta.N tag only triggers the run. The chart is versioned like any
-# other build of that commit: the controller/v* describe version, with the same
+# other build of that commit: the v* describe version, with the same
 # appVersion as the image tag image-nvcr.yml publishes.
 
 # Through controller/v0.1.1-rc.1 the chart was named cloud-workflow-engine and

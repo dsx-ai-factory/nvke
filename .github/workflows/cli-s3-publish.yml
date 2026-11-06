@@ -29,7 +29,7 @@ name: CLI S3 Publish
 #
 # A bare vX.Y.Z-beta.N tag publishes to nvkectl/releases/<describe>/ from the
 # same `s3-publish` environment, so its deployment policy must admit v*-beta.*
-# tags as well as cli/v*. <describe> is the cli/v* describe version that
+# tags as well as cli/v*. <describe> is the v* describe version that
 # tag-publish.yml stamps into nvkectl.
 
 # Called by tag-publish.yml after its build, so a cli/v* tag produces one set of
@@ -109,17 +109,9 @@ jobs:
             exit 1
           fi
 
-          # The job-level if admits only cli/v* and bare vX.Y.Z-beta.N tags. A
-          # beta publishes under the cli/v* describe version, the same one
-          # tag-publish.yml stamps into nvkectl.
-          if [[ "${GITHUB_REF_NAME}" == cli/v* ]]; then
-            release="${GITHUB_REF_NAME#cli/}"
-          elif [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
-            release="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
-          else
-            echo "::error::${GITHUB_REF_NAME} is neither cli/vX.Y.Z, vX.Y.Z nor vX.Y.Z-beta.N"
-            exit 1
-          fi
+          # Published under the describe version, the same one tag-publish.yml
+          # stamps into nvkectl, whichever tag started the run.
+          release="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
 
           {
             echo "s3_uri=${S3_URI}"
