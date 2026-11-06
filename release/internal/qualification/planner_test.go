@@ -67,7 +67,11 @@ func testPolicy() *Policy {
 			},
 			Streams: []StreamDefinition{
 				{Name: "amd64-1.34", Capabilities: map[string]string{"arch": "amd64", "kube": "1.34"}},
-				{Name: "arm64-1.34", Capabilities: map[string]string{"arch": "arm64", "kube": "1.34"}},
+				{
+					Name:         "arm64-1.34",
+					Capabilities: map[string]string{"arch": "arm64", "kube": "1.34"},
+					Parameters:   Parameters{TenantWorkers: 3, SuiteTimeoutMinutes: 215},
+				},
 				{Name: "amd64-1.35", Capabilities: map[string]string{"arch": "amd64", "kube": "1.35"}},
 			},
 		},
@@ -257,6 +261,27 @@ func TestPlanCarriesStreamCapabilities(t *testing.T) {
 	for _, s := range got.Combinations[0].Streams {
 		if !reflect.DeepEqual(s.Capabilities, want[s.Name]) {
 			t.Errorf("%s carries %v, want %v", s.Name, s.Capabilities, want[s.Name])
+		}
+	}
+}
+
+// TestPlanCarriesStreamParameters checks that each stream in a plan carries the
+// parameters the policy declared for it, and none when it declared none.
+func TestPlanCarriesStreamParameters(t *testing.T) {
+	p := newPlanner(t, testSubject, newResolvers())
+
+	got, err := p.Plan("nvke", "", "active")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]Parameters{
+		"amd64-1.34": {},
+		"arm64-1.34": {TenantWorkers: 3, SuiteTimeoutMinutes: 215},
+	}
+	for _, s := range got.Combinations[0].Streams {
+		if s.Parameters != want[s.Name] {
+			t.Errorf("%s carries %+v, want %+v", s.Name, s.Parameters, want[s.Name])
 		}
 	}
 }

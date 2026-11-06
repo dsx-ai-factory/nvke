@@ -16,6 +16,9 @@ import (
 	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
 )
 
+// resultCmd builds the result command, which records what one stream of one
+// combination qualified from the plan it ran from and the Ginkgo report it
+// wrote.
 func resultCmd() *cobra.Command {
 	var (
 		plan        string
@@ -133,6 +136,7 @@ when the failure was discovered.`,
 						Suite:        suite,
 						RunURL:       runURLFromEnv(),
 						Capabilities: strm.Capabilities,
+						Parameters:   strm.Parameters,
 						Dependencies: strm.Dependencies,
 					},
 				},

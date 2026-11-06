@@ -30,6 +30,7 @@ const resultTestPlan = `{
         {
           "name": "amd64-1.34",
           "capabilities": {"arch": "amd64", "gpu": "h100", "kube": "1.34"},
+          "parameters": {"tenantWorkers": 3, "suiteTimeoutMinutes": 215},
           "dependencies": [{"name": "kube", "version": "1.34.2"}]
         }
       ]
@@ -83,6 +84,9 @@ func runResultCmd(t *testing.T, args ...string) (stdout string, err error) {
 	return buf.String(), err
 }
 
+// TestResultCmdSucceeds runs the result command on a passing report and checks
+// the record it writes, including what it stamps from the plan: the stream's
+// capabilities, parameters and dependencies.
 func TestResultCmdSucceeds(t *testing.T) {
 	plan := writeTestPlan(t)
 	report := writeGinkgoReport(t, true)
@@ -114,6 +118,9 @@ func TestResultCmdSucceeds(t *testing.T) {
 	}
 	if stream.Capabilities["gpu"] != "h100" || stream.Capabilities["kube"] != "1.34" {
 		t.Errorf("capabilities = %v, want gpu=h100 kube=1.34 stamped from plan.json", stream.Capabilities)
+	}
+	if want := (qualification.Parameters{TenantWorkers: 3, SuiteTimeoutMinutes: 215}); stream.Parameters != want {
+		t.Errorf("parameters = %+v, want %+v stamped from plan.json", stream.Parameters, want)
 	}
 	if len(stream.Dependencies) != 1 || stream.Dependencies[0].Name != "kube" || stream.Dependencies[0].Version != "1.34.2" {
 		t.Errorf("dependencies = %+v, want the stream's own kube 1.34.2 stamped from plan.json", stream.Dependencies)

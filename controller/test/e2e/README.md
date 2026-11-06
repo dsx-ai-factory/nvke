@@ -840,7 +840,7 @@ from the environment; the lane's maintainers can give you the values.
 
   | Name | What it is |
   |---|---|
-  | `FORGE_API_KEY` | The Forge API key. Secret. |
+  | `FORGE_API_KEY` | The Forge API key. Secret. An environment in another org names its own variable with `apiKeyEnv`, and `forge-perf` reads `FORGE_PERF_API_KEY`. |
   | `FORGE_ORG_ID` | The org the machines are created in |
   | `FORGE_SITE_ID`, `FORGE_VPC_ID`, `FORGE_SUBNET_ID` | Site-1, and the VPC and subnet its machines attach to |
   | `FORGE_SSH_KEY_GROUP_ID` | Site-1's key group, for serial console access |

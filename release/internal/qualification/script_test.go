@@ -9,6 +9,7 @@ package qualification_test
 
 import (
 	"bufio"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -196,6 +197,8 @@ func TestStreamEnvRefusesAStreamThePlanLacks(t *testing.T) {
 	}
 }
 
+// TestMatrixHasOneEntryPerStream checks that the matrix has an entry for every
+// stream in the plan.
 func TestMatrixHasOneEntryPerStream(t *testing.T) {
 	p := plan(t)
 	for _, sh := range shells(t) {
@@ -203,8 +206,69 @@ func TestMatrixHasOneEntryPerStream(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := strings.Count(string(out), `"stream":`); got != 2 {
-			t.Errorf("matrix has %d entries, want 2: %s", got, out)
+		if got := strings.Count(string(out), `"stream":`); got != 3 {
+			t.Errorf("matrix has %d entries, want 3: %s", got, out)
+		}
+	}
+}
+
+// A stream's parameters reach the steps as the variables they read, and a
+// stream that names none leaves them empty.
+func TestStreamEnvEmitsTheStreamsParameters(t *testing.T) {
+	p := plan(t)
+	for _, sh := range shells(t) {
+		l := newSteps(t, sh, nil)
+		l.step(true, "stream-env", p, "", "forge-cpu-amd64-perf")
+		expect(t, l.values(), map[string]string{
+			"E2E_ENVIRONMENT":       "forge-perf",
+			"E2E_TENANT_WORKERS":    "3",
+			"SUITE_TIMEOUT_MINUTES": "215",
+		})
+
+		l = newSteps(t, sh, nil)
+		l.step(true, "stream-env", p, "", "forge-l40s-amd64")
+		expect(t, l.values(), map[string]string{
+			"E2E_ENVIRONMENT":       "",
+			"E2E_TENANT_WORKERS":    "",
+			"SUITE_TIMEOUT_MINUTES": "",
+		})
+	}
+}
+
+// The job's timeout follows from the suite's: the default suite timeout gives
+// the job timeout the workflow always had.
+func TestMatrixDerivesTheJobTimeout(t *testing.T) {
+	p := plan(t)
+	for _, sh := range shells(t) {
+		out, err := exec.CommandContext(t.Context(), sh, script, "matrix", p).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var matrix struct {
+			Include []struct {
+				Stream            string `json:"stream"`
+				Environment       string `json:"environment"`
+				TenantWorkers     string `json:"tenant_workers"`
+				JobTimeoutMinutes int    `json:"job_timeout_minutes"`
+			} `json:"include"`
+		}
+		if err := json.Unmarshal(out, &matrix); err != nil {
+			t.Fatalf("matrix is not JSON: %v\n%s", err, out)
+		}
+		type entry struct {
+			environment, workers string
+			timeout              int
+		}
+		want := map[string]entry{
+			"forge-l40s-amd64":     {"", "", 335},
+			"dsx-cpu-arm64":        {"", "", 335},
+			"forge-cpu-amd64-perf": {"forge-perf", "3", 400},
+		}
+		for _, e := range matrix.Include {
+			got := entry{e.Environment, e.TenantWorkers, e.JobTimeoutMinutes}
+			if got != want[e.Stream] {
+				t.Errorf("%s: %s matrix entry = %+v, want %+v", sh, e.Stream, got, want[e.Stream])
+			}
 		}
 	}
 }
@@ -302,6 +366,43 @@ func TestResolveMapsTheDSXProvider(t *testing.T) {
 	}
 }
 
+// TestResolveTakesTheStreamsEnvironment checks that a stream naming an
+// environment resolves to it, with its provider's tenant exclusion.
+func TestResolveTakesTheStreamsEnvironment(t *testing.T) {
+	p := plan(t)
+	for _, sh := range shells(t) {
+		l := newSteps(t, sh, nil)
+		l.step(true, "stream-env", p, "", "forge-cpu-amd64-perf")
+		l.step(true, "resolve")
+		expect(t, l.values(), map[string]string{
+			"SITE_ENVIRONMENT":    "forge-perf",
+			"SITE_TENANT_EXCLUDE": "nico-dsx",
+			"CAPABILITIES":        "arch=amd64",
+		})
+	}
+}
+
+// An environment a stream names has to be one the suite has, for the stream's
+// provider.
+func TestResolveRefusesAnEnvironmentThatIsNotTheStreams(t *testing.T) {
+	p := plan(t)
+	for _, tc := range []struct{ name, environment, want string }{
+		{"a file that does not exist", "forge-nope", "does not exist"},
+		{"another provider's environment", "dsx", "does not declare provider: forge"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, sh := range shells(t) {
+				l := newSteps(t, sh, nil)
+				l.step(true, "stream-env", p, "", "forge-l40s-amd64")
+				l.set("E2E_ENVIRONMENT", tc.environment)
+				if out := l.step(false, "resolve"); !strings.Contains(out, tc.want) {
+					t.Errorf("output = %q, want %q in it", out, tc.want)
+				}
+			}
+		})
+	}
+}
+
 func TestResolveRefuses(t *testing.T) {
 	p := plan(t)
 	for _, tc := range []struct {
@@ -390,6 +491,90 @@ func TestConfigKeepsWhatItIsAskedTo(t *testing.T) {
 			if got != tc.want {
 				t.Errorf("%s keep-site=%s keep-tenant=%s: lifecycle = %q, want %q", sh, tc.site, tc.tenant, got, tc.want)
 			}
+		}
+	}
+}
+
+// copiedScript is the script in a copy of the repository's layout, because the
+// run step clears and writes the suite's outputs beside it.
+func copiedScript(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	copied := filepath.Join(root, "release", "hack", "qualify-e2e.sh")
+	for _, dir := range []string{filepath.Dir(copied), filepath.Join(root, "controller", "test", "e2e")} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(copied, b, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return copied
+}
+
+// dryRun runs the run step as a dry run from the copy, with the values a run
+// step reads and the two a stream's parameters set.
+func dryRun(t *testing.T, sh, copied, workers, suite string) (string, error) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), sh, copied, "run")
+	cmd.Env = []string{
+		"PATH=" + os.Getenv("PATH"), "HOME=" + os.Getenv("HOME"),
+		"STEP_ENV=" + filepath.Join(t.TempDir(), "steps.env"),
+		"DRY_RUN=true", "KEEP_SITE=false", "KEEP_TENANT=false",
+		"SITE_TENANT_EXCLUDE=nico-dsx", "SITE_STAGE=full", "SITE_ENVIRONMENT=forge-perf",
+		"SITE_NVKE_CONTROLLER_VERSION=v0.3.0", "CLI_VERSION=v0.3.0", "CAPI_PROVISIONED_VERSION=v0.3.0",
+		"OS_IMAGE_VERSIONS=os-image-amd64=https://cdn.example/image-amd64.qcow2", "CAPABILITIES=arch=amd64",
+		"NVKE_CONTROLLER_NAMESPACE=", "NVKE_CONTROLLER_SERVICE=",
+		"E2E_TENANT_WORKERS=" + workers, "SUITE_TIMEOUT_MINUTES=" + suite,
+	}
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// TestRunDerivesTheTimeoutsAndPassesTheWorkers checks the suite arguments of a
+// dry run: the timeouts follow the suite timeout, and the tenant workers flag is
+// passed only when it is set.
+func TestRunDerivesTheTimeoutsAndPassesTheWorkers(t *testing.T) {
+	copied := copiedScript(t)
+	for _, tc := range []struct {
+		name, workers, suite string
+		want                 []string
+		notWant              string
+	}{
+		{"a stream naming nothing", "", "", []string{"-ginkgo.timeout=150m -timeout 220m"}, "-e2e.tenant-workers"},
+		{"a perf stream", "3", "215", []string{"-ginkgo.timeout=215m -timeout 285m", "  -e2e.tenant-workers=3\n"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, sh := range shells(t) {
+				out, err := dryRun(t, sh, copied, tc.workers, tc.suite)
+				if err != nil {
+					t.Fatalf("%s run: %v\n%s", sh, err, out)
+				}
+				for _, want := range tc.want {
+					if !strings.Contains(out, want) {
+						t.Errorf("%s run: output = %q, want %q in it", sh, out, want)
+					}
+				}
+				if tc.notWant != "" && strings.Contains(out, tc.notWant) {
+					t.Errorf("%s run: output = %q, want no %q in it", sh, out, tc.notWant)
+				}
+			}
+		})
+	}
+}
+
+// TestRunRefusesASuiteTimeoutThatIsNotANumber checks that a suite timeout that
+// is not a number of minutes stops the run step.
+func TestRunRefusesASuiteTimeoutThatIsNotANumber(t *testing.T) {
+	copied := copiedScript(t)
+	for _, sh := range shells(t) {
+		out, err := dryRun(t, sh, copied, "", "abc")
+		if err == nil || !strings.Contains(out, "not a number of minutes") {
+			t.Errorf("%s run: err = %v, output = %q, want it to refuse the timeout", sh, err, out)
 		}
 	}
 }

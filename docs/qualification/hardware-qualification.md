@@ -370,6 +370,10 @@ ids are set, and a GB200 stream needs it.
 | `FORGE_SITE_2_SSH_KEY_GROUP_ID` | site-2 | As for site-1 |
 | `FORGE_SITE_2_INSTANCE_TYPE_CPU_AMD64_ID`, `FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID`, `FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID` | site-2 | The machine types: a site controller of either architecture, and the arm64 GB200 tenant |
 | `FORGE_SITE_2_JUMP_HOST`, `FORGE_SITE_2_TELEPORT_LOGIN` | site-2 | As for site-1 |
+| `FORGE_PERF_API_KEY` | perf | The Forge API key for the NVKE Scale org. Secret. `environments/forge-perf.yaml` names it as its key variable, so a run against that environment reads it in place of `FORGE_API_KEY`. |
+| `FORGE_PERF_ORG_ID`, `FORGE_PERF_SITE_ID`, `FORGE_PERF_VPC_ID`, `FORGE_PERF_SUBNET_ID` | perf | The NVKE Scale org and site, and the VPC and subnet its machines attach to |
+| `FORGE_PERF_SSH_KEY_GROUP_ID`, `FORGE_PERF_INSTANCE_TYPE_CPU_ID` | perf | The key group, and the high memory CPU machine type the stream uses for every node |
+| `FORGE_PERF_JUMP_HOST`, `FORGE_PERF_TELEPORT_LOGIN` | perf | The jump host in front of the machines, and the login on it. The login defaults to `root`. |
 
 #### Registry
 
@@ -608,7 +612,15 @@ job; `qualify local` runs the one stream you name.
 | `golden-path` | Ubuntu 24.04 on GB200, amd64 and arm64 site controllers, at site-2 |
 | `l40s` | Ubuntu 24.04 on L40S, amd64, at site-1 |
 | `dsx` | the DSX datahall |
-| `full` | every Forge stream: GB200 and L40S on Ubuntu 24.04 and 26.04 |
+| `perf` | the performance stream on the NVKE Scale Forge site: CPU machines only, a three worker tenant |
+| `full` | every Forge stream except the perf one: GB200 and L40S on Ubuntu 24.04 and 26.04 |
+
+The perf stream holds the NVKE Scale site for hours, so only a dispatch that
+names `perf` runs it, and `full` leaves it out. A stream can also carry
+`parameters` in `release/policy.yaml`: the environment file it runs against,
+the workers its tenant gets and the suite's timeout. The plan records them, and
+the stream's result says which it ran with. The job's timeout and the timeout of
+`go test` follow from the suite's, so they cannot be set to disagree.
 
 ## Stages
 
