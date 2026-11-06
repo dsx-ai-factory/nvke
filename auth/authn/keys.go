@@ -290,7 +290,7 @@ func (s *jwksKeySource) KeyFor(ctx context.Context, kid string) (crypto.PublicKe
 	case !found:
 		// Elided because "kid" is the caller's.
 		return nil, fmt.Errorf("issuer %q: %w: kid %q is not in the key set at %s",
-			s.issuer, ErrKeyNotFound, elideForLog(kid), s.jwksURL)
+			s.issuer, ErrKeyNotFound, ElideForLog(kid), s.jwksURL)
 	default:
 		return key, nil
 	}

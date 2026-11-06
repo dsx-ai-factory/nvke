@@ -63,9 +63,9 @@ const (
 	maxLoggedValueBytes = 128
 )
 
-// elideForLog truncates s to maxLoggedValueBytes on a rune boundary, reporting
+// ElideForLog truncates s to maxLoggedValueBytes on a rune boundary, reporting
 // the original length so a truncated value is not mistaken for a whole one.
-func elideForLog(s string) string {
+func ElideForLog(s string) string {
 	if len(s) <= maxLoggedValueBytes {
 		return s
 	}
@@ -262,7 +262,7 @@ func (v *Verifier) Verify(ctx context.Context, token string) (*Principal, error)
 	if !ok {
 		// Elided because "iss" is the caller's.
 		return nil, failure(ReasonUnknownIssuer,
-			fmt.Errorf("no configured issuer matches %q", elideForLog(issuer)))
+			fmt.Errorf("no configured issuer matches %q", ElideForLog(issuer)))
 	}
 
 	// Checked before parsing so the failure reports as algorithm_not_allowed.
@@ -319,7 +319,7 @@ func (v *Verifier) Admit(p *Principal) error {
 		// string of unbounded length.
 		return entry.failure(ReasonNotAdmitted,
 			fmt.Errorf("subject %q from issuer %q matches no admission rule",
-				elideForLog(p.Subject), entry.name))
+				ElideForLog(p.Subject), entry.name))
 	}
 	return nil
 }
@@ -342,10 +342,10 @@ func (e *issuerEntry) keyFunc(ctx context.Context) jwt.Keyfunc {
 		key, err := e.keys.KeyFor(ctx, kid)
 		// e.issuer is configured and bounded; kid is the caller's.
 		if err != nil {
-			return nil, fmt.Errorf("no key for issuer %q kid %q: %w", e.issuer, elideForLog(kid), err)
+			return nil, fmt.Errorf("no key for issuer %q kid %q: %w", e.issuer, ElideForLog(kid), err)
 		}
 		if key == nil {
-			return nil, fmt.Errorf("key source for issuer %q returned no key for kid %q", e.issuer, elideForLog(kid))
+			return nil, fmt.Errorf("key source for issuer %q returned no key for kid %q", e.issuer, ElideForLog(kid))
 		}
 		return key, nil
 	}
