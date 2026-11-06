@@ -103,8 +103,8 @@ func TestDryRunReadsExistingThreadsAndWritesNone(t *testing.T) {
 func TestTriggerWithoutATokenWarns(t *testing.T) {
 	t.Setenv(tokenEnv, "")
 	t.Setenv("GITHUB_ACTIONS", "true")
-	out, err := run(t, "trigger", "qualification:completed", "--config", shipped,
-		"--data", "verdict=passed", "--data", "summary=ok")
+	out, err := run(t, "trigger", "qualification:passed", "--config", shipped,
+		"--data", "summary=ok")
 	if err != nil {
 		t.Fatalf("a missing token failed the step: %v", err)
 	}
@@ -112,8 +112,8 @@ func TestTriggerWithoutATokenWarns(t *testing.T) {
 		t.Errorf("output = %q, want an annotation naming the token", out)
 	}
 
-	if _, err := run(t, "trigger", "qualification:completed", "--config", shipped, "--strict",
-		"--data", "verdict=passed", "--data", "summary=ok"); err == nil {
+	if _, err := run(t, "trigger", "qualification:passed", "--config", shipped, "--strict",
+		"--data", "summary=ok"); err == nil {
 		t.Error("--strict let a missing token pass")
 	}
 }
@@ -170,6 +170,20 @@ func TestWriteOutputs(t *testing.T) {
 	t.Setenv("GITHUB_OUTPUT", "")
 	if err := writeOutputs(notify.Result{}); err != nil {
 		t.Errorf("writeOutputs outside Actions: %v", err)
+	}
+}
+
+// A JSON number is kept as written. Through float64 a large one came out in
+// e-notation.
+func TestDecodeDataKeepsLargeNumbers(t *testing.T) {
+	got, err := decodeData([]byte(`{"run_id": 38935409282, "ratio": 0.5, "ok": true, "big": 12345678901234567890, "name": "x"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, want := range map[string]string{"run_id": "38935409282", "ratio": "0.5", "ok": "true", "big": "12345678901234567890", "name": "x"} {
+		if got[k] != want {
+			t.Errorf("%s = %q, want %q", k, got[k], want)
+		}
 	}
 }
 

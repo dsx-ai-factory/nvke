@@ -59,6 +59,8 @@ func TestParseRejects(t *testing.T) {
 		{"dollar through a function", [2]string{`"<{{.Context.run_url}}|run>"`, `"{{printf \"%v\" $}}"`}, "uses $ whole"},
 		{"dollar then the whole context", [2]string{`"<{{.Context.run_url}}|run>"`, `"{{$.Context}}"`}, "whole"},
 		{"dot passed to a template", [2]string{`"<{{.Context.run_url}}|run>"`, `"{{define \"x\"}}{{.Event.a}}{{end}}{{template \"x\" .}}"`}, "uses . whole"},
+		{"event key that can never be set", [2]string{".Event.stream", ".Event.Stream"}, "lower case letters"},
+		{"event key with a dash", [2]string{".Event.stream", ".Event.stream-name"}, "does not parse"},
 		{"unknown top-level field", [2]string{".Event.stream", ".Env.stream"}, "only .Context and .Event"},
 		{"pattern with a mid-string wildcard", [2]string{`"qualification:*"`, `"qual*:x"`}, "single trailing *"},
 		{"empty title", [2]string{`"Failed {{.Event.stream}}"`, `""`}, "title is empty"},
@@ -192,10 +194,29 @@ func TestShippedConfig(t *testing.T) {
 		"qualification:tag-cut", "qualification:started", "qualification:plan-resolved",
 		"qualification:awaiting-approval", "qualification:artifacts-ready", "qualification:artifacts-timeout",
 		"qualification:stream-started", "qualification:stream-passed", "qualification:stream-failed",
-		"qualification:completed",
+		"qualification:passed", "qualification:failed", "qualification:stopped",
 	} {
 		if len(cfg.Match(event)) == 0 {
 			t.Errorf("no subscription for %s", event)
+		}
+	}
+}
+
+// The colour of the outcome says which outcome it was: a failed qualification
+// must not post in the same blue as a pass.
+func TestOutcomeSeveritiesDiffer(t *testing.T) {
+	cfg, err := Load("../../notify.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for event, want := range map[string]string{
+		"qualification:passed":  SeveritySuccess,
+		"qualification:failed":  SeverityError,
+		"qualification:stopped": SeverityWarning,
+	} {
+		m := cfg.Match(event)
+		if len(m) != 1 || m[0].Notification.Severity != want {
+			t.Errorf("%s = %+v, want one notification with severity %s", event, m, want)
 		}
 	}
 }

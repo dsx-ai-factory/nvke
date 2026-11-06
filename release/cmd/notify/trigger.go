@@ -4,11 +4,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -24,10 +24,6 @@ const (
 	defaultConfig  = "release/notify.yml"
 	defaultStateAt = ".notify/cache"
 )
-
-// dataKey is the shape of an event key. Lower case with underscores, so a
-// template reads it as .Event.stream_name.
-var dataKey = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 func triggerCmd() *cobra.Command {
 	var (
@@ -190,7 +186,7 @@ func eventData(pairs []string, file string) (map[string]string, error) {
 		if !ok {
 			return nil, fmt.Errorf("--data %q is not key=value", pair)
 		}
-		if !dataKey.MatchString(k) {
+		if !notify.ValidEventKey(k) {
 			return nil, fmt.Errorf("--data key %q is not lower case letters, digits and underscores", k)
 		}
 		values[k] = v
@@ -200,19 +196,25 @@ func eventData(pairs []string, file string) (map[string]string, error) {
 
 // decodeData reads a JSON object whose values are strings, numbers or booleans.
 func decodeData(raw []byte) (map[string]string, error) {
+	// UseNumber keeps a number as written. Through float64 a large one prints in
+	// e-notation: 38935409282 would become 3.8935409282e+10.
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
 	var generic map[string]any
-	if err := json.Unmarshal(raw, &generic); err != nil {
+	if err := dec.Decode(&generic); err != nil {
 		return nil, fmt.Errorf("not a JSON object: %w", err)
 	}
 	values := make(map[string]string, len(generic))
 	for k, v := range generic {
-		if !dataKey.MatchString(k) {
+		if !notify.ValidEventKey(k) {
 			return nil, fmt.Errorf("key %q is not lower case letters, digits and underscores", k)
 		}
 		switch v := v.(type) {
 		case string:
 			values[k] = v
-		case float64, bool:
+		case json.Number:
+			values[k] = v.String()
+		case bool:
 			values[k] = fmt.Sprint(v)
 		default:
 			return nil, fmt.Errorf("key %q is not a string, number or boolean", k)

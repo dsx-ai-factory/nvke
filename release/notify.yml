@@ -90,9 +90,25 @@ notifications:
     message_template: |
       Stream *{{.Event.stream}}* failed at stage `{{.Event.stage}}` · <{{.Context.run_url}}|Run #{{.Context.run_number}}>
 
-  - name: completed
-    title: "🏁 Qualification {{.Event.verdict}}"
-    severity: info
+  # The outcome, one notification each, so the colour says which it was. The
+  # severity of a notification is fixed, so a single one would show a failure in
+  # the same blue as a pass.
+  - name: qualification-passed
+    title: "🏁 Qualification passed"
+    severity: success
+    message_template: |
+      {{.Event.summary}} · <{{.Context.run_url}}|Run #{{.Context.run_number}}>
+
+  - name: qualification-failed
+    title: "🏁 Qualification failed"
+    severity: error
+    message_template: |
+      {{.Event.summary}} · <{{.Context.run_url}}|Run #{{.Context.run_number}}>
+
+  # Cancelled, or ended without running any stream: no verdict either way.
+  - name: qualification-stopped
+    title: "🏁 Qualification stopped"
+    severity: warning
     message_template: |
       {{.Event.summary}} · <{{.Context.run_url}}|Run #{{.Context.run_number}}>
 
@@ -114,15 +130,19 @@ subscriptions:
         notification: stream-started
       - name: "qualification:stream-passed"
         notification: stream-passed
-      - name: "qualification:completed"
-        notification: completed
+      - name: "qualification:passed"
+        notification: qualification-passed
+      - name: "qualification:stopped"
+        notification: qualification-stopped
 
   # Failures. Add an on-call group here to page it, as
   #   additional_mentions: ["<!subteam^S0123456789|@group-name>"]
-  # which pings on these two events only.
+  # which pings on these three events only.
   - subscriber: nvke-qualification-pipeline
     events:
       - name: "qualification:artifacts-timeout"
         notification: artifacts-timeout
       - name: "qualification:stream-failed"
         notification: stream-failed
+      - name: "qualification:failed"
+        notification: qualification-failed

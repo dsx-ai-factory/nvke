@@ -252,6 +252,14 @@ func matchEvent(pattern, event string) bool {
 	return pattern == event
 }
 
+// eventKey is the shape of an event key. Lower case with underscores, so a
+// template reads it as .Event.stream_name. The command accepts no other key, so
+// a template that names one could never render.
+var eventKey = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// ValidEventKey reports whether name can be an event key.
+func ValidEventKey(name string) bool { return eventKey.MatchString(name) }
+
 // Refs are the keys a template reads.
 type Refs struct {
 	Context []string
@@ -293,6 +301,10 @@ func References(text string) (Refs, error) {
 		}
 		if len(ident) != 2 {
 			errs = append(errs, fmt.Errorf("uses .%s whole; name one key, such as .%s.run_url", strings.Join(ident, "."), ident[0]))
+			return
+		}
+		if ident[0] == "Event" && !ValidEventKey(ident[1]) {
+			errs = append(errs, fmt.Errorf("reads .Event.%s, but event keys are lower case letters, digits and underscores, so it could never be set", ident[1]))
 			return
 		}
 		if ident[0] == "Context" && !allowed[ident[1]] {
