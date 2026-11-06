@@ -169,7 +169,7 @@ want   "a ConfigMap is rendered"              '^kind: ConfigMap'                
 want   "keyed auth.yaml, as the mount expects" '^  auth\.yaml: \|'                    "${out}"
 # Supplied by the chart, never by values: the loader requires both and defaults
 # neither, and the chart ships in lockstep with the build that accepts them.
-want   "apiVersion is injected"                'apiVersion: auth\.nke\.nvidia\.com/v1alpha1' "${out}"
+want   "apiVersion is injected"                'apiVersion: auth\.nvke\.nvidia\.com/v1alpha1' "${out}"
 want   "kind is injected"                      'kind: AuthenticationConfiguration'    "${out}"
 want   "audiences survive"                     'https://nke\.example\.internal'        "${out}"
 # The one that catches a bad nindent: a dropped name widens the rule from one
@@ -229,7 +229,7 @@ wantfail "apiVersion in config is refused"     'apiAuth\.config must not carry a
   --set apiAuth.enabled=true --set apiAuth.configMap.create=true \
   --set 'apiAuth.config.audiences[0]=https://nke.example.internal' \
   --set 'apiAuth.config.issuers[0].name=local-kubernetes' \
-  --set 'apiAuth.config.apiVersion=auth.nke.nvidia.com/v1alpha1'
+  --set 'apiAuth.config.apiVersion=auth.nvke.nvidia.com/v1alpha1'
 wantfail "kind in config is refused"           'apiAuth\.config must not carry apiVersion or kind' \
   --set apiAuth.enabled=true --set apiAuth.configMap.create=true \
   --set 'apiAuth.config.audiences[0]=https://nke.example.internal' \
@@ -244,7 +244,7 @@ wantfail "enabled in config is refused"        'apiAuth\.config must not carry e
   --set 'apiAuth.config.enabled=true'
 # The rendered file carries exactly one of each, whatever the values said.
 out="$(render -f "${values}")"
-if [[ "$(grep -c '^    apiVersion: auth\.nke\.nvidia\.com' <<<"${out}")" -eq 1 ]]; then
+if [[ "$(grep -c '^    apiVersion: auth\.' <<<"${out}")" -eq 1 ]]; then
   printf '  ok    %s\n' "exactly one apiVersion in the rendered file"
 else
   printf '  FAIL  %s\n' "expected exactly one apiVersion line" >&2
