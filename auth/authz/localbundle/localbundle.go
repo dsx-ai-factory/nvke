@@ -3,27 +3,36 @@
 
 // Package localbundle is the LocalBundle authorization backend. It evaluates
 // Cedar policy from policies.cedar, roles.json and authorization.yaml, which
-// the deployer mounts, usually from a ConfigMap. An example authorization.yaml:
+// the deployer mounts, usually from a ConfigMap. An authorization.yaml that
+// grants roles by claim and by service account:
 //
 //	apiVersion: auth.nvke.nvidia.com/v1alpha1
 //	kind: AuthorizationConfiguration
+//	issuers:
+//	  keycloak:
+//	    claims:
+//	      - {name: groups, value: readers, grants: [reader]}
+//	  cluster-sa:
+//	    serviceAccounts:
+//	      - {namespace: nvke-ops, name: fleet, grants: [admin]}
+//
+// An API with tenants also gives issuers a tenant source and operator status,
+// and names the operators' tenant. Options.RoleOnly refuses these keys:
+//
 //	operatorTenant: nca-0000000000000000
 //	issuers:
 //	  keycloak:
 //	    tenant: {claim: organization}
-//	    claims:
-//	      - {name: groups, value: readers, grants: [reader]}
 //	  cluster-sa:
 //	    tenant: {fixed: nca-0000000000000000}
 //	    operators: true
-//	    serviceAccounts:
-//	      - {namespace: nvke-ops, name: fleet, grants: [admin]}
 //
 // The actions are the API's actions, from Options.Actions. A caller holds the
 // roles of every claim and service account mapping it matches. A caller from
-// an issuer authorization.yaml doesn't list has no tenant and no roles. A
-// caller in the operator tenant is an operator if its issuer sets operators,
-// and is refused as an impostor otherwise.
+// an issuer with no tenant source has no tenant, and reaches only global
+// resources. A caller from an issuer authorization.yaml doesn't list has no
+// tenant and no roles. A caller in the operator tenant is an operator if its
+// issuer sets operators, and is refused as an impostor otherwise.
 package localbundle
 
 import (
@@ -77,6 +86,11 @@ type Options struct {
 	// principal, actions and roles, so a misspelled type can't make a forbid
 	// silently never apply.
 	ResourceTypes []string
+
+	// RoleOnly refuses the tenancy keys in authorization.yaml when set:
+	// operatorTenant, and an issuer's tenant and operators. Set it for an API that decides by
+	// role alone, where a tenant or operator status would change a decision.
+	RoleOnly bool
 }
 
 // LocalBundle is a backend that evaluates the live bundle. Reload replaces the

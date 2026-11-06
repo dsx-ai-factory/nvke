@@ -12,6 +12,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/auth/authn"
 	"github.com/dsx-ai-factory/nvke/auth/authz"
+	"github.com/dsx-ai-factory/nvke/auth/authz/localbundle"
 )
 
 // Each case is an authorization.yaml that New must refuse.
@@ -80,11 +81,10 @@ func TestNewRefusesABadConfig(t *testing.T) {
 		},
 
 		// Tenancy.
-		{name: "no tenant source", config: keycloak(`{}`), wantErr: "authorization.yaml: issuers.keycloak.tenant: set exactly one of claim and fixed"},
 		{
 			name:    "two tenant sources",
 			config:  keycloak(`{tenant: {claim: org, fixed: tenant-a}}`),
-			wantErr: "issuers.keycloak.tenant: set exactly one of claim and fixed",
+			wantErr: "authorization.yaml: issuers.keycloak.tenant: set at most one of claim and fixed",
 		},
 		{name: "an aud tenant claim", config: keycloak(`{tenant: {claim: aud}}`), wantErr: `tenant: claim can't be "aud"`},
 		{name: "a malformed fixed tenant", config: keycloak(`{tenant: {fixed: "a\"b"}}`), wantErr: "issuers.keycloak.tenant: fixed holds U+0022 at byte 1"},
@@ -97,6 +97,11 @@ func TestNewRefusesABadConfig(t *testing.T) {
 			name:    "operators with no operator tenant",
 			config:  keycloak(`{tenant: {claim: org}, operators: true}`),
 			wantErr: "authorization.yaml: issuers.keycloak: operators is set, but operatorTenant isn't",
+		},
+		{
+			name:    "operators with no tenant source",
+			config:  operators(`{operators: true}`),
+			wantErr: "authorization.yaml: issuers.keycloak: operators is set, but tenant isn't, so no caller would be an operator",
 		},
 		{
 			name:    "operators with another fixed tenant",
@@ -202,7 +207,7 @@ func TestNewReportsEveryConfigProblem(t *testing.T) {
 
 	config := configHeader + `issuers:
   keycloak:
-    tenant: {}
+    tenant: {claim: org, fixed: tenant-a}
     claims:
       - {name: aud, value: b, grants: [raeder]}
   cluster-sa:
@@ -224,7 +229,7 @@ func TestNewReportsEveryConfigProblem(t *testing.T) {
 		unknown["dex"],
 		unknown["github"],
 		unknown["gitlab"],
-		"authorization.yaml: issuers.keycloak.tenant: set exactly one of claim and fixed",
+		"authorization.yaml: issuers.keycloak.tenant: set at most one of claim and fixed",
 		`authorization.yaml: issuers.keycloak.claims[0]: name can't be "aud", because the caller chooses its value`,
 		`authorization.yaml: issuers.keycloak.claims[0]: grants[0] "raeder" isn't a role roles.json declares`,
 		unknown["okta"],
@@ -248,6 +253,32 @@ func TestNewJoinsConfigErrorsWithOtherFiles(t *testing.T) {
 	require.ErrorContains(t, err, "parse roles.json")
 	require.ErrorContains(t, err, "authorization.yaml: issuers.github: isn't an issuer in the authN config")
 	assert.NotContains(t, err.Error(), "isn't a role roles.json declares")
+}
+
+// RoleOnly refuses every tenancy key, and loads a config with none.
+func TestNewRoleOnly(t *testing.T) {
+	t.Parallel()
+
+	load := func(config string) error {
+		f := validBundle()
+		f["authorization.yaml"] = config
+		dir := t.TempDir()
+		writeBundle(t, dir, f)
+		opts := testOptions(dir)
+		opts.RoleOnly = true
+		_, err := localbundle.New(opts)
+		return err
+	}
+	claims := `claims: [{name: groups, value: readers, grants: [reader]}]`
+	require.NoError(t, load(configHeader+`issuers: {keycloak: {`+claims+`}}`))
+
+	err := load(configHeader + "operatorTenant: " + operatorTenant + "\n" +
+		`issuers: {keycloak: {tenant: {claim: org}, operators: true, ` + claims + `}}`)
+	assert.EqualError(t, err, strings.Join([]string{
+		"authorization.yaml: operatorTenant is set, but this API authorizes by role only, so remove it",
+		"authorization.yaml: issuers.keycloak.tenant is set, but this API authorizes by role only, so remove it",
+		"authorization.yaml: issuers.keycloak.operators is set, but this API authorizes by role only, so remove it",
+	}, "\n"))
 }
 
 // Each claim and service account mapping grants its roles only to a matching
@@ -362,6 +393,39 @@ when { principal in NVKE::Role::"reader" };`
 				assert.Equal(t, []string{tt.wantReason}, d.Reasons)
 			}
 		})
+	}
+}
+
+// An issuer with no tenant source loads. Its callers have no tenant, and reach
+// only global resources.
+func TestAuthorizeAnIssuerWithNoTenant(t *testing.T) {
+	t.Parallel()
+
+	f := validBundle()
+	f["authorization.yaml"] = configHeader + `issuers:
+  keycloak:
+    claims:
+      - {name: groups, value: readers, grants: [reader]}
+`
+	lb, err := newLocalBundle(t, f)
+	require.NoError(t, err)
+
+	reader := authn.Principal{IssuerName: "keycloak", Subject: "alice", Claims: map[string]any{"groups": "readers"}}
+	for _, tt := range []struct {
+		scope authz.Scope
+		want  authz.Outcome
+	}{
+		{scope: authz.ScopeGlobal, want: authz.OutcomeAllow},
+		{scope: authz.ScopeList, want: authz.OutcomeNoTenant},
+	} {
+		d, err := lb.Authorize(t.Context(), authz.Query{
+			Principal: reader,
+			Action:    "getCluster",
+			Resource:  authz.Resource{Type: "Cluster", ID: "c1", Scope: tt.scope},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, tt.want, d.Outcome, tt.scope)
+		assert.Equal(t, authz.Caller{}, d.Caller)
 	}
 }
 
