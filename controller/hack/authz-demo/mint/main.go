@@ -59,15 +59,15 @@ func run(args []string) error {
 	case "tamper":
 		token, err = tamper(args[1:])
 	case "malformed":
-		token, err = malformed()
+		token = malformed()
 	default:
 		return fmt.Errorf("unknown command %q: want rogue, sign, tamper or malformed", args[0])
 	}
 	if err != nil {
 		return err
 	}
-	fmt.Println(token)
-	return nil
+	_, err = fmt.Fprintln(os.Stdout, token)
+	return err
 }
 
 // claimFlags are the claims rogue and sign put in a token.
@@ -224,10 +224,11 @@ func tamper(args []string) (string, error) {
 	return strings.Join(parts, "."), nil
 }
 
-func malformed() (string, error) {
+// malformed returns a header and a payload with no signature.
+func malformed() string {
 	enc := base64.RawURLEncoding
 	return enc.EncodeToString([]byte(`{"alg":"RS256","typ":"JWT"}`)) + "." +
-		enc.EncodeToString([]byte(`{"sub":"nobody"}`)), nil
+		enc.EncodeToString([]byte(`{"sub":"nobody"}`))
 }
 
 // loadKey reads a PKCS#8, PKCS#1 or SEC 1 PEM private key.

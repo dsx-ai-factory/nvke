@@ -3,7 +3,7 @@
 
 # Teleport binaries built from source by build.sh. AGPL-3.0: the source is
 # github.com/gravitational/teleport at the tag in the image name.
-FROM debian:bookworm-slim
+FROM docker.io/debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 COPY bin/teleport bin/tctl bin/tsh /usr/local/bin/
