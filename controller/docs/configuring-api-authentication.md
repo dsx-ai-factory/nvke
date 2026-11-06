@@ -377,12 +377,37 @@ not one users can edit. `iss`, `aud`, `nonce`, `jti`, `exp`, `nbf`, `iat` and
 admits every token from the issuer or a value the caller chooses.
 
 Teleport application access signs a JWT with the user's Teleport roles in
-`roles`, so admit it by that claim. Teleport sends the JWT in its
-`Teleport-Jwt-Assertion` header, and NVKE reads only `Authorization`, so give
-the Teleport app `rewrite.headers: ["Authorization: Bearer {{internal.jwt}}"]`.
-Its `issuer` is the Teleport cluster name, not a URL, and its audience is the
-app's URI. List `algorithms: [RS256, ES256]`: Teleport signs with RS256 under
-the `legacy` `signature_algorithm_suite` and ES256 under the others.
+`roles`, so admit it by that claim. The token carries `roles` only when the
+app's `rewrite.jwt_claims` is `roles-and-traits`, the default, or `roles`.
+
+Teleport sends the JWT in its `Teleport-Jwt-Assertion` header, and NVKE reads
+only `Authorization`, so rewrite the header in the Teleport app. In
+`teleport.yaml`:
+
+```yaml
+rewrite:
+  headers:
+    - "Authorization: Bearer {{internal.jwt}}"
+```
+
+In a dynamic `app` resource:
+
+```yaml
+spec:
+  rewrite:
+    headers:
+      - name: Authorization
+        value: "Bearer {{internal.jwt}}"
+```
+
+On the NVKE side:
+
+- `issuer` is the Teleport cluster name, not a URL.
+- The audience is the app's URI.
+- `jwks.uri` is `https://<proxy>/.well-known/jwks.json`, the application access
+  keys. Teleport's OIDC discovery keys are a different set.
+- `algorithms` is `[RS256, ES256]`: Teleport signs with RS256 under the
+  `legacy` `signature_algorithm_suite` and ES256 under the others.
 
 When the identity provider's certificate is signed by a private CA, put the
 PEM bundle inline as `jwks.caBundle`, or in `extraFiles` with `jwks.caBundlePath`,
