@@ -82,3 +82,14 @@ func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster)
 	}
 	return discovered, nil
 }
+
+// domainOf returns the node's placement: the Machine's observed or requested
+// domain, else the persisted decision. It returns "" when neither is known.
+func (f *failureDomains) domainOf(node db.Node) string {
+	if f != nil {
+		if domain := f.observedByNodeName[node.Name]; domain != "" {
+			return domain
+		}
+	}
+	return node.FailureDomain
+}

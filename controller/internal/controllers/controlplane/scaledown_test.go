@@ -786,3 +786,115 @@ func TestReconcileControlPlaneScaleDown_ShedsOldNodeAfterRebalanceSurgeJoins(t *
 	assert.Equal(t, old.ID, written.ID, "the least-preferred joined node is shed, not the rebalance replacement")
 	assert.True(t, nodes.IsDeleteRequested(written), "scale-down records intent")
 }
+
+func TestSpreadPreservingCandidates(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	base := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	inDomain := func(name, domain string, age time.Duration) db.Node {
+		node := healthyCPNode(clusterID, name, base.Add(-age))
+		node.FailureDomain = domain
+		return node
+	}
+	names := func(nodes []db.Node) []string {
+		out := make([]string, len(nodes))
+		for i, n := range nodes {
+			out[i] = n.Name
+		}
+		return out
+	}
+	domainOf := (*failureDomains)(nil).domainOf
+
+	tests := []struct {
+		name      string
+		removable []db.Node
+		want      []string
+	}{
+		{
+			name: "oldest node alone in its domain is kept while a doubled domain sheds",
+			removable: []db.Node{
+				inDomain("a1", "A", 5*time.Hour), inDomain("a2", "A", time.Hour),
+				inDomain("b1", "B", 4*time.Hour), inDomain("b2", "B", 2*time.Hour),
+				inDomain("c1", "C", 9*time.Hour),
+			},
+			want: []string{"a1", "a2", "b1", "b2"},
+		},
+		{
+			name: "evenly spread keeps every node a candidate",
+			removable: []db.Node{
+				inDomain("a1", "A", time.Hour), inDomain("b1", "B", time.Hour), inDomain("c1", "C", time.Hour),
+			},
+			want: []string{"a1", "b1", "c1"},
+		},
+		{
+			name: "unknown domains count as singletons and lose to a doubled domain",
+			removable: []db.Node{
+				inDomain("a1", "A", time.Hour), inDomain("a2", "A", time.Hour), inDomain("legacy", "", time.Hour),
+			},
+			want: []string{"a1", "a2"},
+		},
+		{
+			name: "all unknown domains leave every node a candidate",
+			removable: []db.Node{
+				inDomain("x", "", time.Hour), inDomain("y", "", time.Hour),
+			},
+			want: []string{"x", "y"},
+		},
+		{
+			name: "a not-yet-joined node leaves the set unchanged for the selector to shed",
+			removable: func() []db.Node {
+				pending := inDomain("pending", "C", time.Hour)
+				pending.Conditions.Joined = db.NewCondition(false, "Not joined")
+				return []db.Node{inDomain("a1", "A", time.Hour), inDomain("a2", "A", time.Hour), pending}
+			}(),
+			want: []string{"a1", "a2", "pending"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.ElementsMatch(t, tt.want, names(spreadPreservingCandidates(tt.removable, domainOf)))
+		})
+	}
+}
+
+func TestReconcileControlPlaneScaleDown_PreservesFailureDomainSpread(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	base := time.Now()
+	cluster := db.Cluster{ID: clusterID, Name: "test-cluster", ControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3}}
+
+	place := func(name, domain string, age time.Duration) db.Node {
+		node := healthyCPNode(clusterID, name, base.Add(-age))
+		node.FailureDomain = domain
+		return node
+	}
+	// c1 is the oldest, so age alone would shed it and leave the control plane in two domains.
+	c1 := place("cp-c1", "C", 5*time.Hour)
+	a1 := place("cp-a1", "A", 4*time.Hour)
+	a2 := place("cp-a2", "A", 3*time.Hour)
+	b1 := place("cp-b1", "B", 2*time.Hour)
+	b2 := place("cp-b2", "B", time.Hour)
+	all := []db.Node{c1, a1, a2, b1, b2}
+
+	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNode", mock.Anything, a1.ID).Return(a1, nil)
+	mockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(cluster, nil)
+	mockTx.On("GetNodeForUpdate", mock.Anything, a1.ID).Return(a1, nil)
+	var written db.Node
+	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(n *db.Node) bool {
+		written = *n
+		return true
+	})).Return(a1, nil)
+	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(all, nil).Maybe()
+	mockTx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Maybe()
+
+	r := &reconciler{db: mockTx, logger: slog.Default()}
+	cp := &controlPlane{nodes: all, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
+
+	require.NoError(t, r.reconcileControlPlaneScaleDown(context.Background(), cluster, cp))
+
+	assert.Equal(t, a1.ID, written.ID, "the oldest node in a doubled domain is shed, not the sole node in domain C")
+}

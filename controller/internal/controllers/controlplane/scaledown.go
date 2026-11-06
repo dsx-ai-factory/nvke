@@ -58,7 +58,7 @@ func (r *reconciler) reconcileControlPlaneScaleDown(ctx context.Context, cluster
 	// counted, is not an etcd member, and disrupts nothing -- so it is the cheapest
 	// shed and the one that keeps desiredCount converging when the surplus is still
 	// coming up.
-	victim := selectControlPlaneNodeToScaleDown(removable, cluster.ControlPlaneConfig.ScaleDownRanker())
+	victim := selectControlPlaneNodeToScaleDown(spreadPreservingCandidates(removable, cp.failureDomains.domainOf), cluster.ControlPlaneConfig.ScaleDownRanker())
 
 	// Never shrink the joined control plane below the fault-tolerant floor. A
 	// joined node counts toward quorum whether or not it is currently healthy --
@@ -255,11 +255,47 @@ func controlPlaneHasNodeBelowPrimaryRank(eligible []db.Node, ranker db.ControlPl
 	return false
 }
 
+// spreadPreservingCandidates narrows the removable set to the nodes whose removal
+// keeps the joined control plane evenly spread: those in the most-populated
+// failure domain. A not-yet-joined node is not an etcd member, so when one exists
+// the set is returned unchanged. A node with no known domain counts as its own
+// domain of one, so it is shed only when every domain holds a single node.
+func spreadPreservingCandidates(removable []db.Node, domainOf func(db.Node) string) []db.Node {
+	for _, node := range removable {
+		if !isCleanJoinedControlPlaneMember(node) {
+			return removable
+		}
+	}
+
+	counts := make(map[string]int, len(removable))
+	for _, node := range removable {
+		counts[domainOf(node)]++
+	}
+	sizeOf := func(node db.Node) int {
+		if domain := domainOf(node); domain != "" {
+			return counts[domain]
+		}
+		return 1
+	}
+
+	largest := 0
+	for _, node := range removable {
+		largest = max(largest, sizeOf(node))
+	}
+	var candidates []db.Node
+	for _, node := range removable {
+		if sizeOf(node) == largest {
+			candidates = append(candidates, node)
+		}
+	}
+	return candidates
+}
+
 // selectControlPlaneNodeToScaleDown picks the surplus node to remove from the
 // removable set: a not-yet-joined node first (pure surplus, not an etcd member),
 // then the least-preferred node. A nil ranker collapses the rank tie-break to
-// oldest-then-ID. Failure-domain spreading is out of scope; the quorum floor
-// already bounds the shrink.
+// oldest-then-ID. Callers narrow the set with spreadPreservingCandidates first
+// so the shrink keeps the control plane spread across failure domains.
 func selectControlPlaneNodeToScaleDown(removable []db.Node, ranker db.ControlPlaneScaleDownRanker) db.Node {
 	var notJoined []db.Node
 	for _, node := range removable {

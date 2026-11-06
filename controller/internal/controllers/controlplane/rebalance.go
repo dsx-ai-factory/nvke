@@ -452,11 +452,16 @@ func (r *reconciler) abandonRebalanceSurge(ctx context.Context, cp *controlPlane
 // longer than defaultRebalanceSurgeTimeout, anchored on when it entered Pending
 // (falling back to its creation time).
 func rebalanceSurgeExpired(surge db.Node) bool {
-	anchor := surge.Conditions.Pending.LastTransitionTime
+	return pendingLongerThan(surge, defaultRebalanceSurgeTimeout)
+}
+
+// pendingLongerThan reports whether a node has been pending for more than d.
+func pendingLongerThan(node db.Node, d time.Duration) bool {
+	anchor := node.Conditions.Pending.LastTransitionTime
 	if anchor.IsZero() {
-		anchor = surge.CreatedAt
+		anchor = node.CreatedAt
 	}
-	return !anchor.IsZero() && time.Since(anchor) > defaultRebalanceSurgeTimeout
+	return !anchor.IsZero() && time.Since(anchor) > d
 }
 
 // worstControlPlaneRank returns the highest ScaleDownRank among the eligible

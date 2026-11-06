@@ -77,11 +77,7 @@ func newControlPlaneDomainAllocator(nodes []db.Node, failureDomains *failureDoma
 		if isMarkedForDeletion(node) {
 			continue
 		}
-		domain := failureDomains.observedByNodeName[node.Name]
-		if domain == "" {
-			domain = node.FailureDomain
-		}
-		allocator.record(domain)
+		allocator.record(failureDomains.domainOf(node))
 	}
 	return allocator
 }
