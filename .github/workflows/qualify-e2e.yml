@@ -1650,9 +1650,10 @@ jobs:
             go.work.sum
             **/go.sum
 
-      # The lanes' combined result: every stream passed, or at least one did
-      # not. A plan that failed never reached the lanes.
-      - name: Decide the verdict
+      # The lanes' combined result, as the event that carries its colour: every
+      # stream passed, at least one failed, or the run stopped without a verdict.
+      # A plan that failed never reached the lanes, which is a failure.
+      - name: Decide the outcome
         id: verdict
         shell: bash
         env:
@@ -1661,14 +1662,14 @@ jobs:
         run: |
           set -Eeuo pipefail
           case "${PLAN}/${LANES}" in
-            success/success)   verdict=passed;  summary="Every stream passed" ;;
-            success/failure)   verdict=failed;  summary="At least one stream failed" ;;
-            success/cancelled) verdict=stopped; summary="The run was cancelled" ;;
-            success/skipped)   verdict=stopped; summary="No stream ran" ;;
-            *)                 verdict="did not start"; summary="The plan did not resolve (${PLAN})" ;;
+            success/success)   outcome=passed;  summary="Every stream passed" ;;
+            success/failure)   outcome=failed;  summary="At least one stream failed" ;;
+            success/cancelled) outcome=stopped; summary="The run was cancelled" ;;
+            success/skipped)   outcome=stopped; summary="No stream ran" ;;
+            *)                 outcome=failed;  summary="The plan did not resolve (${PLAN})" ;;
           esac
           {
-            echo "verdict=${verdict}"
+            echo "outcome=${outcome}"
             echo "summary=${summary}"
           } >> "${GITHUB_OUTPUT}"
 
@@ -1676,8 +1677,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/notify
         with:
-          event: qualification:completed
+          event: qualification:${{ steps.verdict.outputs.outcome }}
           token: ${{ secrets.NOTIFY_SLACK_BOT_TOKEN }}
           data: |
-            verdict=${{ steps.verdict.outputs.verdict }}
             summary=${{ steps.verdict.outputs.summary }}
