@@ -67,10 +67,6 @@ nvkeOIDCAuth:
 cni:
   installAfterInit: true
 
-# Empty on this path: none of the optional variables the Tiltfile forwards
-# (LOG_LEVEL, NODE_PROVISIONING_TIMEOUT, ...) are set by backend-e2e.sh.
-env: []
-
 # ---------------------------------------------------------------------------
 # Moved here from controller/hack/tilt-controller-chart-values.yaml, which the lane
 # used to read off disk and pass as a second --values file. It is static
@@ -263,9 +259,9 @@ profiles:
   # the node's containerd -- a bare name with no registry, which is why it needs
   # no credential and why pinning it here would not be portable.
   #
-  # Supply repository and tag with --values-for controller=<file>. Without them
-  # the chart refuses to render: profiles.image.tag or .digest is required when
-  # enabled=true.
+  # Name it in the stack config's images.profiles, or render against a release
+  # whose controller item carries a profilesArtifact. Without either, the
+  # render stops before any --values-for file is read.
   image:
     enabled: true
 

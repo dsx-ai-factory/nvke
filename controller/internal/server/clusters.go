@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
@@ -104,6 +105,7 @@ type clusterService struct {
 	// nodeAgentClient reads live node state; nil reports nodes unreachable.
 	nodeAgentClient             agent.Client
 	allowControlPlaneWithoutVIP bool
+	releaseReader               ctrlclient.Reader
 }
 
 func NewClusterService(
@@ -290,7 +292,7 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 }
 
 func (s *clusterService) preflightCheckCreateClusterRequest(
-	_ context.Context,
+	ctx context.Context,
 	req *api.CreateClusterRequest,
 ) (resolvedClusterNetwork, error) {
 	if err := s.ValidateCreateClusterRequestFields(req); err != nil {
@@ -339,6 +341,9 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 		); err != nil {
 			return resolvedClusterNetwork{}, err
 		}
+	}
+	if err := s.validateCreateClusterReleases(ctx, req); err != nil {
+		return resolvedClusterNetwork{}, err
 	}
 
 	return network, nil
@@ -1022,7 +1027,7 @@ func hasNestedNicoControlPlanePatch(n *api.NicoControlPlaneProviderUpdate) bool 
 // match cluster.ProviderType, so this can assume req carries only the provider the
 // cluster actually has.
 func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
-	_ context.Context,
+	ctx context.Context,
 	cluster *db.Cluster,
 	req *api.UpdateClusterControlPlaneConfig,
 	spec *db.ControlPlaneConfigSpec,
@@ -1081,6 +1086,9 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 		}
 		if req.Nico.VpcPrefixIDs != nil {
 			nico.VpcPrefixIDs = uuidSliceDedupe(uuidSliceFromAPI(req.Nico.VpcPrefixIDs))
+		}
+		if err := s.validateControlPlaneReleaseChange(ctx, nico.Release, req.Nico.Release); err != nil {
+			return err
 		}
 		if req.Nico.Release != nil {
 			nico.Release = *req.Nico.Release

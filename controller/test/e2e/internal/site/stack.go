@@ -6,6 +6,7 @@ package site
 import (
 	"context"
 	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -330,7 +331,11 @@ func (d Stack) Deploy(ctx context.Context, s infra.Session, t DeployTarget) erro
 		return err
 	}
 	if d.DatabasePassword == "" {
-		d.DatabasePassword = rand.Text()
+		password, err := randomPassword()
+		if err != nil {
+			return err
+		}
+		d.DatabasePassword = password
 	}
 
 	if err := d.stageAssets(ctx, s); err != nil {
@@ -641,4 +646,12 @@ func oidcDomains(overlay []byte, vip string) ([]string, error) {
 		}
 	}
 	return append(domains, vip), nil
+}
+
+func randomPassword() (string, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate database password: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }

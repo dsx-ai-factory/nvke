@@ -32,6 +32,8 @@ const EnvControllerSPIFFEID = "NVKECTL_E2E_CONTROLLER_SPIFFE_ID"
 
 // The SPIRE server bootstrap site installs.
 const (
+	// SpireNamespace is where the NVKE stack installs SPIRE.
+	SpireNamespace       = "spire-server"
 	spireServerPod       = "spire-server-0"
 	spireServerContainer = "spire-server"
 	spireServerBinary    = "/opt/spire/bin/spire-server"

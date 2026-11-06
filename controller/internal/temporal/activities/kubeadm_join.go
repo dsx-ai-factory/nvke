@@ -6,7 +6,6 @@ package activities
 import (
 	"context"
 	"fmt"
-	"net"
 	"strings"
 	"sync"
 	"time"
@@ -30,11 +29,11 @@ type cachedJoinStrings struct {
 }
 
 // joinStringCache serializes and briefly reuses join-string refreshes per
-// control-plane agent endpoint. The refresh RPC runs
-// `kubeadm init phase upload-certs --upload-certs`, which rewrites the
-// certificate key used by control-plane joins. If parallel joins refresh that
-// key independently, one node can try to decrypt kubeadm-certs with a key that
-// was superseded by another refresh.
+// cluster. The refresh RPC runs `kubeadm init phase upload-certs --upload-certs`,
+// which replaces the certificate key that encrypts the cluster's one
+// kubeadm-certs Secret, whichever control-plane node serves it. Keying the cache
+// by cluster means a refresh through one node cannot leave a superseded key
+// cached for another node, or for a new node that reuses a deleted node's IP.
 var joinStringCache sync.Map //nolint:gochecknoglobals // Process-wide cache shared by activity workers.
 
 type KubeadmJoinInput struct {
@@ -320,8 +319,7 @@ func validateEtcdQuotaValue(nodeName, quota string) error {
 }
 
 func (a *Activities) getKubeadmJoinStrings(ctx context.Context, cpNode db.Node) (*nvkeproto.KubeadmJoinStringResponse, error) {
-	endpoint := net.JoinHostPort(cpNode.IP, a.cfg.NodeAgent.Port)
-	entry, _ := joinStringCache.LoadOrStore(endpoint, &cachedJoinStrings{})
+	entry, _ := joinStringCache.LoadOrStore(cpNode.ClusterID, &cachedJoinStrings{})
 	cached, ok := entry.(*cachedJoinStrings)
 	if !ok {
 		return nil, fmt.Errorf("join string cache contained unexpected type %T", entry)

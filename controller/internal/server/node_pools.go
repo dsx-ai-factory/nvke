@@ -12,6 +12,7 @@ import (
 	"slices"
 
 	"github.com/google/uuid"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
@@ -64,6 +65,7 @@ type nodePoolService struct {
 	// nodeAgentProfile carries the node-agent settings nodes.PinAgentProfile
 	// stamps on every node this deployment creates.
 	nodeAgentProfile db.Node
+	releaseReader    ctrlclient.Reader
 }
 
 func NewNodePoolService(
@@ -130,6 +132,13 @@ func (s *nodePoolService) CreateNodePool(
 
 	if err := s.validateCreateNodePoolRequest(cluster, req.Body); err != nil {
 		return api.CreateNodePool400JSONResponse{Message: err.Error()}, nil
+	}
+	if err := s.validateCreateNodePoolRelease(ctx, req.Body); err != nil {
+		var badRequestErr *badRequestError
+		if errors.As(err, &badRequestErr) {
+			return api.CreateNodePool400JSONResponse{Message: badRequestErr.Error()}, nil
+		}
+		return nil, err
 	}
 
 	var createdNodePool db.NodePool
@@ -500,6 +509,9 @@ func (s *nodePoolService) UpdateNodePool(
 
 		if err := s.validateUpdateNodePoolRequest(cluster, req.Body); err != nil {
 			return &badRequestError{message: err.Error()}
+		}
+		if err := s.validateUpdateNodePoolRelease(ctx, dbNodePool, req.Body); err != nil {
+			return err
 		}
 		if req.Body != nil && req.Body.DesiredNodeCount != nil && *req.Body.DesiredNodeCount > dbNodePool.DesiredCount {
 			if err := validateNodeAgentProfile(s.nodeAgentProfile, cluster, dbNodePool); err != nil {

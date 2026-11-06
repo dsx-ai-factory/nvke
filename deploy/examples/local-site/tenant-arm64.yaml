@@ -8,7 +8,7 @@
 # with `nvkectl create`.
 name: tenant-1
 # Kubernetes version of the tenant, X.Y.Z without a leading v.
-controlPlaneKubernetesVersion: 1.34.2
+controlPlaneKubernetesVersion: 1.36.3
 cniPlugin: ovn-kubernetes
 etcdEncrypted: false
 # The pod CIDR stays clear of 192.168.0.0/16, where a lab's DNS server may

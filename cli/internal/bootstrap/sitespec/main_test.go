@@ -29,5 +29,7 @@ func TestMain(m *testing.M) {
 	} {
 		_ = os.Unsetenv(name)
 	}
+	// The nico provider is feature-flagged; most tests exercise it.
+	_ = os.Setenv("NVKECTL_ENABLE_NICO", "1")
 	os.Exit(m.Run())
 }

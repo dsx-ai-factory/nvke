@@ -46,8 +46,8 @@ items:
       status: Unknown
       type: Available
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: 'resolve pod network: Exactly one IPv4 pod range and one IPv4 service
-        range are required'
+      message: 'resolve controller request: terminal error: resolve pod network: Exactly
+        one IPv4 pod range and one IPv4 service range are required'
       observedGeneration: 1
       reason: ReconcileFailed
       status: "False"
@@ -111,27 +111,18 @@ items:
             * NVKEControllerProvisioning: NotYetReported
             * NVKEControllerDeleting: NotYetReported
         * Synced:
-          * ClusterReconciled: resolve pod network: Exactly one IPv4 pod range and one IPv4 service range are required
-          * ControlPlaneReady:
-            * NVKEControllerProvisioned: NotYetReported
-            * NVKEControllerProvisioning: NotYetReported
-            * NVKEControllerDeleting: NotYetReported
+          * ClusterReconciled: resolve controller request: terminal error: resolve pod network: Exactly one IPv4 pod range and one IPv4 service range are required
+          * NodePoolsReconciled: Condition not yet reported
       observedGeneration: 1
       reason: NotReady
       status: "False"
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: |-
-        * ClusterReconciled: resolve pod network: Exactly one IPv4 pod range and one IPv4 service range are required
-        * ControlPlaneReady:
-          * NVKEControllerProvisioned: NotYetReported
-          * NVKEControllerProvisioning: NotYetReported
-          * NVKEControllerDeleting: NotYetReported
+        * ClusterReconciled: resolve controller request: terminal error: resolve pod network: Exactly one IPv4 pod range and one IPv4 service range are required
+        * NodePoolsReconciled: Condition not yet reported
       observedGeneration: 1
       reason: NotSynced
       status: "False"
       type: Synced
-    resolvedRelease:
-      name: test-release
-      version: 1.36.1
 metadata: {}

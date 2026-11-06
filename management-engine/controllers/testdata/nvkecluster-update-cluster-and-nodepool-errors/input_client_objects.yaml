@@ -1,0 +1,98 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: internal.nvke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: test-image
+spec:
+  operatingSystem: {family: ubuntu, version: "24.04"}
+  architecture: amd64
+  buildDate: "2026-10-01"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      echo test image
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ClusterReleaseChannel
+metadata:
+  name: stable
+spec:
+  releases:
+    "1.34":
+      - {name: pinned-release, minimumUpgradeAge: 0s}
+    "1.35":
+      - {name: latest-release, minimumUpgradeAge: 0s}
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ClusterRelease
+metadata:
+  name: pinned-release
+  annotations:
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.8"
+spec:
+  machineImageRef: {name: test-image}
+  machineInit:
+    userDataTemplate: "#cloud-config\n"
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ClusterRelease
+metadata:
+  name: latest-release
+  annotations:
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.35.2"
+spec:
+  machineImageRef: {name: test-image}
+  machineInit:
+    userDataTemplate: "#cloud-config\n"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: infra-template
+  namespace: default
+data:
+  clusterTmpl: |
+    {"cluster":{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta2","kind":"DockerCluster","spec":{}}}
+  controlplaneTmpl: &machineTemplate |
+    {"machineTemplate":{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta2","kind":"DockerMachineTemplate","spec":{"template":{"spec":{"customImage":"example-node"}}}}}
+  nodepoolTmpl: *machineTemplate
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ControlPlaneClass
+metadata:
+  name: standard
+spec:
+  controlPlane:
+    replicas: 1
+    instanceTypePreferences: [docker]
+    systemReservedMemory: 1Gi
+  rollout:
+    strategy:
+      type: RollingUpdate
+      rollingUpdate: {maxSurge: 1}
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: NVKECluster
+metadata:
+  name: cluster-1
+  namespace: default
+spec:
+  apiServerAccess: {publicAccessEnabled: false}
+  apiServerEndpoint: {address: 10.0.0.10}
+  clusterNetwork:
+    pods: {cidrBlocks: [10.244.0.0/16]}
+    services: {cidrBlocks: [10.96.0.0/12]}
+    serviceDomain: cluster.local
+  release:
+    channel: {name: stable, version: "1.34"}
+  controlPlaneClass: standard
+  network:
+    vpcID: 22222222-2222-4222-8222-222222222222
+  nodePools:
+    - name: workers
+      instanceType: docker
+      replicas: 1
+      vpcSubnetID: 44444444-4444-4444-8444-444444444444
+      nodeProfile: "example:1.34.8"

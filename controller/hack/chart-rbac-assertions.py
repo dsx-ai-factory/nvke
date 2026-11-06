@@ -5,6 +5,7 @@
 
 import argparse
 import copy
+import json
 import subprocess
 import sys
 
@@ -53,6 +54,28 @@ def controller_subjects(rendered, tenant_rbac_name):
                 and binding["metadata"]["name"] == tenant_rbac_name
             }
     return {}
+
+
+def capll_manager(rendered):
+    """Return the nvke:capll-manager ClusterRole rules and binding subjects, or None when absent."""
+    for document in yaml.safe_load_all(rendered):
+        if (
+            document
+            and document.get("kind") == "ConfigMap"
+            and document.get("metadata", {}).get("name") == RBAC_CONFIG_MAP
+        ):
+            objects = {
+                obj["kind"]: obj
+                for obj in yaml.safe_load_all(document["data"]["manifest.yaml"])
+                if obj and obj["metadata"]["name"] == "nvke:capll-manager"
+            }
+            if not objects:
+                return None
+            return (
+                objects["ClusterRole"]["rules"],
+                [subject["name"] for subject in objects["ClusterRoleBinding"]["subjects"]],
+            )
+    return None
 
 
 def main():
@@ -319,9 +342,10 @@ def main():
 
     # spiffe.cweSubject is the older name for spiffe.controllerSubject. Either
     # one satisfies the exchange requirement, and the new one wins when both are set.
-    exchange_command = [*base_command, "--set", "spiffe.jwtExchangeEndpoint=https://exchange.example/v1/exchange"]
+    exchange_settings = ["--set", "spiffe.jwtExchangeEndpoint=https://exchange.example/v1/exchange"]
     for name, value in exchange_subjects.items():
-        exchange_command.extend(["--set", f"{name}={value}"])
+        exchange_settings.extend(["--set", f"{name}={value}"])
+    exchange_command = [*base_command, *exchange_settings]
     controller_subject_cases = [
         ("neither key", [], None),
         ("only spiffe.cweSubject", ["spiffe.cweSubject=spiffe://exchange.example/old"], "spiffe://exchange.example/old"),
@@ -389,6 +413,58 @@ def main():
             file=sys.stderr,
         )
         return 1
+
+    # CAPLL reads and patches Nodes in the tenant cluster. Its binding follows
+    # launchLayer in supportedInfraProviders. With token exchange it needs an
+    # explicit subject, and without one the chart renders nothing rather than
+    # failing: a site that already grants CAPLL through additionalRBAC must keep
+    # rendering on upgrade.
+    launch_layer = ["--set", "supportedInfraProviders=nico\\,launchLayer"]
+    capll_rules = [{"apiGroups": [""], "resources": ["nodes"], "verbs": ["get", "list", "patch"]}]
+    capll_default = (capll_rules, ["spiffe://example.test/nvke-service/capi-provider-launchlayer-controller-manager"])
+    # The grant such a site already carries, under the name it uses.
+    site_capll_rbac = [
+        {
+            "apiVersion": "rbac.authorization.k8s.io/v1",
+            "kind": "ClusterRole",
+            "metadata": {"name": "nvke:capll-nodes"},
+            "rules": capll_rules,
+        },
+    ]
+    capll_cases = [
+        ("nico only", [], None),
+        ("launchLayer", launch_layer, capll_default),
+        (
+            "launchLayer with additionalRBAC nvke:capll-nodes",
+            [*launch_layer, "--set-json", f"tenantAccess.additionalRBAC={json.dumps(site_capll_rbac)}"],
+            capll_default,
+        ),
+        ("launchLayer with token exchange and no subject", [*launch_layer, *exchange_settings], None),
+        (
+            "launchLayer with token exchange and a subject",
+            [
+                *launch_layer,
+                *exchange_settings,
+                "--set",
+                "spiffe.capllManagerSubject=spiffe://exchange.example/capll-manager",
+            ],
+            (capll_rules, ["spiffe://exchange.example/capll-manager"]),
+        ),
+    ]
+    for case, settings, want in capll_cases:
+        result = subprocess.run(
+            [*base_command, "--set", "spiffe.controllerSubject=spiffe://exchange.example/controller", *settings],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            sys.stderr.write(result.stderr)
+            return result.returncode
+        got = capll_manager(result.stdout)
+        if got != want:
+            print(f"ERROR: {case}: nvke:capll-manager is {got}, want {want}", file=sys.stderr)
+            return 1
 
     # API group, resource, verb, optional resource name, and the caller that
     # breaks without it. Keep the signer permission restricted to
@@ -615,6 +691,7 @@ def main():
     print("bootstrap tenant RBAC follows controllers.bootstrap.enabled")
     print("nvke:capi-cluster-admin uses all configured CAPI controller subjects")
     print("token exchange requires explicit subjects for every CAPI controller")
+    print("nvke:capll-manager follows launchLayer and, with token exchange, spiffe.capllManagerSubject")
     print(f"{tenant_rbac_name} bindings take spiffe.controllerSubject over spiffe.cweSubject, render the same for either, and need one with token exchange")
     return 0
 

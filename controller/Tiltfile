@@ -1308,9 +1308,12 @@ _controller_build_script = """
       [ -x bin/controller ] || CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
       tmp_dir="$(mktemp -d)"
       trap 'rm -rf "${tmp_dir}"' EXIT
-      cp hack/Dockerfile.controller.tilt "${tmp_dir}/Dockerfile"
+      # Copy by reading, not with cp: macOS cp clones on APFS, which reports
+      # an event on the source, and this build watches its sources.
+      cat hack/Dockerfile.controller.tilt > "${tmp_dir}/Dockerfile"
       mkdir -p "${tmp_dir}/bin"
-      cp bin/controller "${tmp_dir}/bin/controller"
+      cat bin/controller > "${tmp_dir}/bin/controller"
+      chmod +x "${tmp_dir}/bin/controller"
       retry() { "$@" || { echo "docker build failed, retrying once in 15s" >&2; sleep 15; "$@"; }; }; retry docker build --platform linux/%s --tag "$EXPECTED_REF" "${tmp_dir}"
 """ % (_controller_tilt_goarch, _controller_tilt_goarch)
 
@@ -1328,15 +1331,18 @@ if not _controller_profiles_image_enabled:
       [ -x bin/controller ] || CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
       tmp_dir="$(mktemp -d)"
       trap 'rm -rf "${tmp_dir}"' EXIT
-      cp hack/Dockerfile.controller.tilt "${tmp_dir}/Dockerfile"
+      # Copy by reading, not with cp: macOS cp clones on APFS, which reports
+      # an event on the source, and this build watches its sources.
+      cat hack/Dockerfile.controller.tilt > "${tmp_dir}/Dockerfile"
       # Bake profiles into the image when profiles.image materialize is off.
       awk '1; /^RUN mkdir -p [/]profiles$/ {print "COPY ./profiles /profiles"}' \
         "${tmp_dir}/Dockerfile" > "${tmp_dir}/Dockerfile.new"
       mv "${tmp_dir}/Dockerfile.new" "${tmp_dir}/Dockerfile"
       mkdir -p "${tmp_dir}/bin"
-      cp bin/controller "${tmp_dir}/bin/controller"
+      cat bin/controller > "${tmp_dir}/bin/controller"
+      chmod +x "${tmp_dir}/bin/controller"
       mkdir -p "${tmp_dir}/profiles"
-      cp -a "%s/." "${tmp_dir}/profiles/"
+      tar -C "%s" -cf - . | tar -C "${tmp_dir}/profiles" -xf -
       retry() { "$@" || { echo "docker build failed, retrying once in 15s" >&2; sleep 15; "$@"; }; }; retry docker build --platform linux/%s --tag "$EXPECTED_REF" "${tmp_dir}"
 """ % (_controller_tilt_goarch, _controller_profiles_dir, _controller_tilt_goarch)
 
@@ -1463,7 +1469,7 @@ cmd_button(
       set -euo pipefail
       API_URL="http://localhost:%s/api/clusters" \
       CLUSTER_NAME="${CLUSTER_NAME:-capd}" \
-      KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}" \
+      KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.36.3}" \
       CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-3}" \
       WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}" \
       ETCD_ENCRYPTED="${ETCD_ENCRYPTED:-false}" \
@@ -1474,7 +1480,7 @@ cmd_button(
     text="Create sample CAPD cluster",
     inputs=[
         text_input("CLUSTER_NAME", default="capd"),
-        text_input("KUBERNETES_VERSION", default="1.34.2"),
+        text_input("KUBERNETES_VERSION", default="1.36.3"),
         text_input("CONTROL_PLANE_DESIRED_COUNT", default="3"),
         text_input("WORKER_DESIRED_COUNT", default="1"),
         text_input("ETCD_ENCRYPTED", default="false"),

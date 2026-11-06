@@ -97,6 +97,12 @@ items:
     - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: ""
       observedGeneration: 2
+      reason: ReconcileSucceeded
+      status: "True"
+      type: NodePoolsReconciled
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
       reason: Ready
       status: "True"
       type: Ready

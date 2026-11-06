@@ -276,6 +276,7 @@ func NewServerImpl(
 	nodePoolService.allowlistedLabelKeys = cfg.NodeMetadataAllowlistedLabelKeys
 	nodePoolService.machineAllowlistedLabelKeys = cfg.MachineMetadataAllowlistedLabelKeys
 	nodePoolService.machineAllowlistedAnnotationKeys = cfg.MachineMetadataAllowlistedAnnotationKeys
+	nodePoolService.releaseReader = k8sReader
 
 	clusterService := NewClusterService(
 		logger,
@@ -293,6 +294,7 @@ func NewServerImpl(
 	clusterService.fleetOIDC = o.fleetOIDC
 	clusterService.nodeAgentClient = o.nodeAgentClient
 	clusterService.allowControlPlaneWithoutVIP = cfg.AllowControlPlaneWithoutVIP
+	clusterService.releaseReader = k8sReader
 	nodes.PinAgentProfile(&clusterService.nodeAgentProfile, cfg)
 	nodes.PinAgentProfile(&nodePoolService.nodeAgentProfile, cfg)
 
