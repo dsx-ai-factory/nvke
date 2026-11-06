@@ -1,4 +1,4 @@
-# Authentication set by configuration for NVKE APIs
+# Configuration-driven JWT authentication for NVKE APIs
 
 **Status:** proposed
 **Date:** 2026-11-06
@@ -19,12 +19,12 @@ The controller's HTTP API uses `auth/authn`. The controller chart ships with `ap
 
 ## Decision
 
-We will set who an NVKE API trusts through a versioned configuration document, not code. A deployer can write that document by hand, or a central identity system can write it for them.
+We will authenticate every caller of an NVKE API with a bearer JWT, and set which issuers it trusts through a versioned configuration document, not code. A deployer can write that document by hand, or a central identity system can write it for them.
 
 An NVKE API is one that people, automation or other services call over the network, such as the controller's HTTP API. The node agent's gRPC API is out of scope: only the controller calls it, over mutual TLS. The metrics listener is out of scope too.
 
 - The `AuthenticationConfiguration` schema is the public contract for authentication. A new field is optional. Removing or renaming a field needs a new `apiVersion`.
-- Callers present a bearer JWT. Trusting a new issuer then takes only its key-set URL, with no credential store or certificate authority in NVKE.
+- Trusting a new issuer takes only its key-set URL, with no credential store or certificate authority in NVKE.
 - The document lists any number of issuers. Each issuer's keys, algorithms, admit rules and audience override apply only to its own tokens.
 - An API accepts no other credential: no API keys, basic auth, session cookies or token format of its own.
 - An API reads the caller only from the `Principal`, and passes it to authorization.
