@@ -21,7 +21,7 @@ The controller's HTTP API is the first to use `auth/authn`. Its chart ships with
 
 We will authenticate every caller of an NVKE API with a bearer JWT, and set which issuers it trusts through a versioned configuration document, not code. A deployer can write that document by hand, or a central identity system can write it for them.
 
-An NVKE API is one that NVKE serves over the network to people, automation or other services, other than through the Kubernetes API server, over HTTP or gRPC. A gRPC caller sends the bearer JWT in the `authorization` metadata. The node agent's gRPC API is out of scope: only the controller calls it, over mutual TLS. The metrics listener is out of scope too.
+An NVKE API is one that NVKE serves over HTTP or gRPC to people, automation or other services, other than through the Kubernetes API server. A gRPC caller sends the bearer JWT in the `authorization` metadata. The node agent's gRPC API is out of scope: only the controller calls it, over mutual TLS. The metrics listener is out of scope too.
 
 - The `AuthenticationConfiguration` schema is the public contract for authentication. A new field is optional. Removing or renaming a field needs a new `apiVersion`. A ConfigMap carries the document today, but the schema is the contract, so a custom resource could carry it later.
 - NVKE issues no tokens and runs no login. A caller gets its token from a configured issuer, as `nvkectl` does today through the kubeconfig's `oidc-login` plugin or a service account token request.
