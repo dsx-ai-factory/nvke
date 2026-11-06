@@ -19,7 +19,7 @@ clusters:
     desiredCount: 1
     infra:
       bootstrapFiles:
-      - content: pinned-release
+      - content: preview-release
         path: /etc/nvke-release
       machineTemplate:
         apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
@@ -35,7 +35,7 @@ clusters:
                 chain https://images.example.com/nvke/boot.ipxe
               vpcID: 22222222-2222-4222-8222-222222222222
       preKubeadmCommands:
-      - echo pinned-release
+      - echo preview-release
     maxSurge: 1
     provisioningMonitorDisabled: false
     systemReservedMemory: 1Gi
@@ -142,6 +142,29 @@ requests:
       serviceCIDR: 10.96.0.0/12
   method: POST
   path: /api/clusters
+- method: PATCH
+  path: /api/clusters/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+  update:
+    controlPlaneConfig:
+      infra:
+        bootstrapFiles:
+        - content: preview-release
+          path: /etc/nvke-release
+        machineTemplate:
+          apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+          kind: NicoMachineTemplate
+          spec:
+            template:
+              spec:
+                instanceTypeID: 33333333-3333-4333-8333-333333333333
+                interfaces:
+                - subnetID: 44444444-4444-4444-8444-444444444444
+                ipxeScript: |-
+                  #!ipxe
+                  chain https://images.example.com/nvke/boot.ipxe
+                vpcID: 22222222-2222-4222-8222-222222222222
+        preKubeadmCommands:
+        - echo preview-release
 - createNodePool:
     clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     desiredNodeCount: 1

@@ -47,7 +47,8 @@ items:
       status: Unknown
       type: Available
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: 'validate cluster spec: Public API access configuration is not supported'
+      message: 'resolve controller request: terminal error: validate cluster spec:
+        Public API access configuration is not supported'
       observedGeneration: 1
       reason: ReconcileFailed
       status: "False"
@@ -111,27 +112,18 @@ items:
             * NVKEControllerProvisioning: NotYetReported
             * NVKEControllerDeleting: NotYetReported
         * Synced:
-          * ClusterReconciled: validate cluster spec: Public API access configuration is not supported
-          * ControlPlaneReady:
-            * NVKEControllerProvisioned: NotYetReported
-            * NVKEControllerProvisioning: NotYetReported
-            * NVKEControllerDeleting: NotYetReported
+          * ClusterReconciled: resolve controller request: terminal error: validate cluster spec: Public API access configuration is not supported
+          * NodePoolsReconciled: Condition not yet reported
       observedGeneration: 1
       reason: NotReady
       status: "False"
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: |-
-        * ClusterReconciled: validate cluster spec: Public API access configuration is not supported
-        * ControlPlaneReady:
-          * NVKEControllerProvisioned: NotYetReported
-          * NVKEControllerProvisioning: NotYetReported
-          * NVKEControllerDeleting: NotYetReported
+        * ClusterReconciled: resolve controller request: terminal error: validate cluster spec: Public API access configuration is not supported
+        * NodePoolsReconciled: Condition not yet reported
       observedGeneration: 1
       reason: NotSynced
       status: "False"
       type: Synced
-    resolvedRelease:
-      name: test-release
-      version: 1.36.1
 metadata: {}

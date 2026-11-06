@@ -260,6 +260,27 @@ func TestComputeControlPlaneRolloutChanges(t *testing.T) {
 	}
 }
 
+func TestComputeControlPlaneRolloutChanges_CAPIBootstrapFileChange(t *testing.T) {
+	pinned := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.8"}
+	pinned.SetCapi(db.CAPIControlPlaneProvider{
+		InfraMachineTemplatePreferences: []json.RawMessage{json.RawMessage(`{"kind":"DockerMachineTemplate","spec":{"template":{"spec":{}}}}`)},
+		BootstrapFiles:                  []db.CloudInitFile{{Path: "/etc/nvke-release", Content: "v1"}},
+		PreKubeadmCommands:              []string{"echo ready"},
+	})
+	desiredProvider, err := pinned.CAPIProvider()
+	require.NoError(t, err)
+	desiredProvider.BootstrapFiles[0].Content = "v2"
+	desired := pinned
+	desired.SetCapi(desiredProvider)
+
+	assert.Equal(t, []db.ControlPlaneRolloutChange{{
+		Field: "infra.bootstrap",
+		From:  "previous bootstrap",
+		To:    "updated bootstrap",
+	}}, db.ComputeControlPlaneRolloutChanges(pinned, desired))
+	assert.True(t, db.IsControlPlaneRolloutRequired(pinned, desired))
+}
+
 func newControlPlaneConfigTestCluster() db.Cluster {
 	now := time.Now()
 	cluster := db.Cluster{
