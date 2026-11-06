@@ -11,8 +11,8 @@
 #   dpkg-deb: error: 'Version' field value 'f0578cc8':
 #             version number does not start with digit
 #
-# DEB_VERSION comes from `git describe --match 'agent/v*'`, this repository has
-# no such tag, and `--always` falls back to a bare commit sha. dpkg requires a
+# DEB_VERSION comes from `git describe --match 'v*'`, and with no v* tag
+# reachable `--always` falls back to a bare commit sha. dpkg requires a
 # version starting with a digit. The Makefile now prefixes 0.0.0- in that case,
 # and the assertions below are what stop it regressing.
 #
@@ -180,7 +180,7 @@ jobs:
           # the cause instead of leaving a parser error to be decoded.
           case "$ver" in
             [0-9]*) ;;
-            *) echo "::error::${deb}: Version '${ver}' does not start with a digit; dpkg will reject it. DEB_VERSION derives from 'git describe --match agent/v*'."; exit 1 ;;
+            *) echo "::error::${deb}: Version '${ver}' does not start with a digit; dpkg will reject it. DEB_VERSION derives from 'git describe --match v*'."; exit 1 ;;
           esac
 
           # The package must be for the architecture this runner is. Building on

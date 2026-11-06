@@ -6,7 +6,7 @@ GOTOOLCHAIN ?= go$(shell awk '/^go /{print $$2; exit}' $(CURDIR)/../go.work)
 export GOTOOLCHAIN
 BIN_DIR ?= $(CURDIR)/bin
 MANAGER_ARGS ?=
-VERSION ?= $(shell git describe --always --dirty --match 'management-engine/v[0-9]*' 2>/dev/null || echo dev)
+VERSION ?= $(shell git describe --tags --always --dirty --match 'v*' 2>/dev/null || echo dev)
 RELEASE_LDFLAGS ?= -s -w -buildid=
 MANAGER_LDFLAGS := -X 'main.version=$(VERSION)' $(RELEASE_LDFLAGS)
 GO_TEST_FLAGS ?=
