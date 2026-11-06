@@ -108,6 +108,7 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		return fmt.Errorf("discovering control-plane failure domains: %w", err)
 	}
 	controlPlane.failureDomains = failureDomains
+	failureDomains.eligible = placeableDomains(failureDomains.eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
 	allocator := newControlPlaneDomainAllocator(controlPlane.nodes, failureDomains)
 
 	// Host creation only. A pending or in-flight delete must not stall it: the
@@ -123,6 +124,14 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	// accounting for it. The node write re-enqueues the cluster, and the next
 	// reconcile reads a fresh snapshot where the delete is in flight -- rollout and
 	// scale-down then defer to it and reconcileRequestedDeletes promotes it.
+	replaced, err := r.reconcileStuckPendingNodes(ctx, cluster, controlPlane)
+	if err != nil {
+		return fmt.Errorf("reconciling stuck pending control plane nodes: %w", err)
+	}
+	if replaced {
+		return nil
+	}
+
 	remediated, err := r.remediateMachines(ctx, cluster, controlPlane)
 	if err != nil {
 		return err
