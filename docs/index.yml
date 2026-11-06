@@ -50,6 +50,8 @@ navigation:
             path: operate/provider-nico.md
           - page: Secure the NVKE API
             path: operate/api-authentication.md
+          - page: Authorize API callers by role
+            path: operate/api-authorization.md
 
       - section: Networking
         contents:
