@@ -14,7 +14,7 @@ metadata:
   name: management-engine-operator-api
 rules:
 - apiGroups: [internal.nvke.nvidia.com]
-  resources: [clusterreleases, machineimages]
+  resources: [clusterreleases, machineimages, controlplaneclasses, clusterreleasechannels, nodepoolreleases]
   # Server-side apply also authorizes create when the object does not exist.
   verbs: [create, get, list, patch, delete]
 ---

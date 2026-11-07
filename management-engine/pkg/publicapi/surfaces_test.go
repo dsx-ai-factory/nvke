@@ -22,7 +22,10 @@ import (
 func TestSurfaces(t *testing.T) {
 	responses := map[string]any{}
 	discovery := metav1.APIResourceList{GroupVersion: "internal.nvke.nvidia.com/v1"}
-	for _, name := range []string{"nvkeclusters", "clusterreleases", "machineimages"} {
+	for _, name := range []string{
+		"nvkeclusters", "clusterreleases", "machineimages",
+		"controlplaneclasses", "clusterreleasechannels", "nodepoolreleases",
+	} {
 		data, err := os.ReadFile("../../config/crd/bases/internal.nvke.nvidia.com_" + name + ".yaml")
 		require.NoError(t, err)
 		var crd apiextensionsv1.CustomResourceDefinition
@@ -69,6 +72,22 @@ func TestSurfaces(t *testing.T) {
 				{"POST", "/v1/cluster-releases", surface.writes},
 				{"GET", "/v1/machine-images", surface.images},
 				{"POST", "/v1/machine-images", surface.images},
+				{"GET", "/v1/control-plane-classes", surface.name == "operator"},
+				{"POST", "/v1/control-plane-classes", surface.name == "operator"},
+				{"GET", "/v1/control-plane-classes/{name}", surface.name == "operator"},
+				{"PUT", "/v1/control-plane-classes/{name}", surface.name == "operator"},
+				{"DELETE", "/v1/control-plane-classes/{name}", surface.name == "operator"},
+				{"GET", "/v1/cluster-release-channels", surface.name == "operator"},
+				{"POST", "/v1/cluster-release-channels", surface.name == "operator"},
+				{"GET", "/v1/cluster-release-channels/{name}", surface.name == "operator"},
+				{"PUT", "/v1/cluster-release-channels/{name}", surface.name == "operator"},
+				{"DELETE", "/v1/cluster-release-channels/{name}", surface.name == "operator"},
+				{"GET", "/v1/node-profiles", surface.name == "operator"},
+				{"POST", "/v1/node-profiles", surface.name == "operator"},
+				{"GET", "/v1/node-profiles/{name}", surface.name == "operator"},
+				{"PUT", "/v1/node-profiles/{name}", surface.name == "operator"},
+				{"DELETE", "/v1/node-profiles/{name}", surface.name == "operator"},
+				{"GET", "/v1/node-pool-releases", false},
 			} {
 				_, pattern := mux.Handler(httptest.NewRequest(route.method, route.path, nil))
 				require.Equal(t, route.enabled, pattern == route.method+" "+route.path, "%s %s", route.method, route.path)
