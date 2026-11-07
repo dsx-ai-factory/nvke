@@ -446,7 +446,9 @@ jobs:
       - name: Build nvke-os-image-check
         if: matrix.arch == 'amd64' && matrix.tag_suffix == '' && matrix.variant == 'non-fde'
         working-directory: os-image
-        run: make build CHECK_VERSION=${{ needs.matrix.outputs.version }}
+        env:
+          BUILD_VERSION: ${{ needs.matrix.outputs.version }}
+        run: make build CHECK_VERSION="${BUILD_VERSION}"
 
       # qemu-system-arm provides qemu-system-aarch64; qemu-efi-aarch64
       # provides the AAVMF firmware the arm64 leg needs (arm64's equivalent
