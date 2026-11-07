@@ -70,6 +70,9 @@ type ControlPlaneClassRollingUpdate struct {
 // +kubebuilder:resource:scope=Cluster,path=controlplaneclasses,singular=controlplaneclass
 // +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Replicas",type=integer,JSONPath=".spec.controlPlane.replicas"
+// +nvke:public:name=PublicControlPlaneClass
+// +nvke:public:path=/v1/control-plane-classes
+// +nvke:public:metadata=name,creationTimestamp,deletionTimestamp,uid
 type ControlPlaneClass struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

@@ -28,8 +28,8 @@ NVKE does no authorization. Every admitted caller can call every endpoint.
 
 `issuers` is a list. Add an entry for each identity provider. `name` and `issuer`
 are each unique in the file. An issuer's `audiences` replaces the top-level
-list for that issuer. An issuer carries one of `serviceAccounts`, `spiffe`, or
-`groups`.
+list for that issuer. An issuer carries one of `serviceAccounts`, `spiffe`,
+`groups`, or `claims`.
 
 ## Before you start
 
@@ -167,7 +167,7 @@ create a pod can have Kubernetes mint a token for their own service account
 naming any audience they like. Verifying the signature is not enough on its own;
 the allow-list is what stops every service account in the cluster from being an
 NVKE administrator. Omitting `name` admits every service account in that
-namespace.
+namespace. A `name` with no value is refused.
 
 The two CA and token paths are files Kubernetes puts in every pod, so they work
 as written.
@@ -324,7 +324,7 @@ issuers:
 `pathPrefixes` is required and cannot be `/`. A trust domain on its own would
 admit every workload in it, which is rarely what you want.
 
-An issuer uses one of `serviceAccounts`, `spiffe`, or `groups`.
+An issuer uses one of `serviceAccounts`, `spiffe`, `groups`, or `claims`.
 
 ### 4. Tell callers what to ask for
 
@@ -360,6 +360,54 @@ issuers:
 
 A token is admitted when its `groups` claim contains any listed group. The
 group names are matched exactly.
+
+For a token with no `groups` claim, admit by another top-level claim instead:
+
+```yaml
+    admit:
+      claims:
+        - name: roles
+          value: nvke-admin
+```
+
+A token is admitted when, for any listed rule, its claim `name` is the string
+`value` or a string array holding it. Use a claim the identity provider sets,
+not one users can edit. `iss`, `aud`, `nonce`, `jti`, `exp`, `nbf`, `iat` and
+`typ` can't be used: they describe the token, not the caller, so a rule on one
+admits every token from the issuer or a value the caller chooses.
+
+Teleport application access signs a JWT with the user's Teleport roles in
+`roles`, so admit it by that claim. The token carries `roles` only when the
+app's `rewrite.jwt_claims` is `roles-and-traits`, the default, or `roles`.
+
+Teleport sends the JWT in its `Teleport-Jwt-Assertion` header, and NVKE reads
+only `Authorization`, so rewrite the header in the Teleport app. In
+`teleport.yaml`:
+
+```yaml
+rewrite:
+  headers:
+    - "Authorization: Bearer {{internal.jwt}}"
+```
+
+In a dynamic `app` resource:
+
+```yaml
+spec:
+  rewrite:
+    headers:
+      - name: Authorization
+        value: "Bearer {{internal.jwt}}"
+```
+
+On the NVKE side:
+
+- `issuer` is the Teleport cluster name, not a URL.
+- The audience is the app's URI.
+- `jwks.uri` is `https://<proxy>/.well-known/jwks.json`, the application access
+  keys. Teleport's OIDC discovery keys are a different set.
+- `algorithms` is `[RS256, ES256]`: Teleport signs with RS256 under the
+  `legacy` `signature_algorithm_suite` and ES256 under the others.
 
 When the identity provider's certificate is signed by a private CA, put the
 PEM bundle inline as `jwks.caBundle`, or in `extraFiles` with `jwks.caBundlePath`,
@@ -412,7 +460,7 @@ a warning.
 | `issuers[].jwks.caBundlePath` | no | CA file inside the container, usually one you listed under `apiAuth.configMap.extraFiles`. At most one of `caBundle` and `caBundlePath`. |
 | `issuers[].jwks.bearerTokenPath` | no | Token file, if the keys endpoint needs one. Re-read on every fetch. |
 | `issuers[].algorithms` | yes | `RS256` and `ES256` cover most issuers. Asymmetric only. |
-| `issuers[].admit` | yes | One of `serviceAccounts`, `spiffe`, or `groups`. |
+| `issuers[].admit` | yes | One of `serviceAccounts`, `spiffe`, `groups`, or `claims`. |
 
 The configuration is read once at startup, so restart NVKE after you change it:
 

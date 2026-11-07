@@ -21,9 +21,13 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -199,19 +203,126 @@ func CloudInitDiagnostics(ctx context.Context, conn Conn) string {
 	return b.String()
 }
 
-// NewKey generates the key a run authenticates to its node with. It is made
-// per run and never stored: cloud-init writes the public half into
-// authorized_keys, and the private half does not leave the process.
-func NewKey(provider string) (ssh.Signer, string, error) {
+// Key is the key a run authenticates to its node with. It is made per run:
+// cloud-init writes Authorized into authorized_keys, and the private half
+// does not leave the process unless Save writes it.
+type Key struct {
+	Signer ssh.Signer
+	// Authorized is the public half in authorized_keys form.
+	Authorized string
+	private    ed25519.PrivateKey
+}
+
+// NewKey generates a run's key.
+func NewKey(provider string) (Key, error) {
 	_, private, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		return nil, "", fmt.Errorf("%s: generating the session key: %w", provider, err)
+		return Key{}, fmt.Errorf("%s: generating the session key: %w", provider, err)
 	}
 	signer, err := ssh.NewSignerFromKey(private)
 	if err != nil {
-		return nil, "", fmt.Errorf("%s: generating the session key: %w", provider, err)
+		return Key{}, fmt.Errorf("%s: generating the session key: %w", provider, err)
 	}
-	return signer, strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))), nil
+	return Key{
+		Signer:     signer,
+		Authorized: strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))),
+		private:    private,
+	}, nil
+}
+
+// KeyPath is where Save writes node's key under keyDir.
+func KeyPath(keyDir, node string) string {
+	return filepath.Join(keyDir, node+".key")
+}
+
+// CheckKeyPath reports whether Save could write node's key under keyDir, so
+// a provider can refuse before it creates a machine rather than after.
+func CheckKeyPath(keyDir, node string) error {
+	if node == "" || filepath.Base(node) != node || node == "." || node == ".." {
+		return fmt.Errorf("node name %q cannot name a file", node)
+	}
+	path := KeyPath(keyDir, node)
+	if _, err := os.Lstat(path); err == nil {
+		return fmt.Errorf("%s already exists and may log into a node that is still kept; delete it once that node is gone, or use another --run-dir", path)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+// Save writes the private half to KeyPath(keyDir, node), readable only by
+// the runner's user. It is for a node kept to inspect, which nothing can log
+// into once the run ends without this key. The key is a login to the node,
+// which holds the site's admin kubeconfig, so it is for a runner whose files
+// stay with whoever started it: `qualify local` sets a key directory, the
+// workflow never does.
+func (k Key) Save(keyDir, node string) error {
+	if err := CheckKeyPath(keyDir, node); err != nil {
+		return err
+	}
+	block, err := ssh.MarshalPrivateKey(k.private, node)
+	if err != nil {
+		return err
+	}
+	err = privateDir(keyDir)
+	if err != nil {
+		return err
+	}
+	// O_EXCL: a key already there belongs to another node of the same name,
+	// possibly still kept, and overwriting it locks that node out.
+	path := KeyPath(keyDir, node)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	err = pem.Encode(f, block)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		// A partial key logs into nothing, and left in place it would make
+		// CheckKeyPath refuse the next run as if a kept node still used it.
+		_ = os.Remove(path)
+		return err
+	}
+	return nil
+}
+
+// privateDir makes dir, or restricts an existing one, to its owner alone.
+// MkdirAll leaves an existing directory's mode as it was, and a key in a
+// directory others can list is not readable only by the runner's user.
+func privateDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory, so no key is saved there", dir)
+	}
+	if info.Mode().Perm() != 0o700 {
+		// Fails for a directory the runner does not own, which then holds
+		// no key either.
+		err = os.Chmod(dir, 0o700)
+		if err != nil {
+			return fmt.Errorf("%s must be readable only by its owner to hold a key: %w", dir, err)
+		}
+	}
+	return nil
+}
+
+// RemoveKey deletes a saved key once its node is released, since it logs into
+// nothing after that. An empty path, or one already gone, is not an error.
+func RemoveKey(path string) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("the node was released, but its saved key was not deleted: %w", err)
+	}
+	return nil
 }
 
 // Session is a Conn plus the release of the machine it is connected to.

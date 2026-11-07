@@ -17,6 +17,14 @@ schema-version = "1.11.0"
 # Leaving a package unpinned is not neutral. Re-locking moved kubernetes-helm
 # from 3.19.1 to 4.2.4, a major release.
 [install]
+# Native Mac VM runtime and NoCloud seed ISO tooling.
+qemu = { pkg-path = "qemu", version = "11.1.0", pkg-group = "qemu", systems = ["aarch64-darwin"] }
+cdrtools = { pkg-path = "cdrtools", version = "3.02a09", pkg-group = "cdrtools", systems = ["aarch64-darwin"] }
+cloud-utils = { pkg-path = "cloud-utils", version = "0.33", pkg-group = "cloud-utils", systems = ["aarch64-darwin"] }
+# Optional software TPM 2.0 for the darwin-qemu backend's FDE support. Absent
+# is fine — TPM is skipped silently — but present, it must resolve to a
+# usable swtpm/swtpm_setup/swtpm_localca pin the same way brew does.
+swtpm = { pkg-path = "swtpm", version = "2026-05-21", pkg-group = "swtpm", systems = ["aarch64-darwin"] }
 go = { pkg-path = "go_1_27", pkg-group = "go" }
 # GOLANGCI_LINT_VERSION in make/golangci.mk, and lint.yml:223.
 golangci-lint = { pkg-path = "golangci-lint", version = "2.13.2", pkg-group = "golangci-lint" }

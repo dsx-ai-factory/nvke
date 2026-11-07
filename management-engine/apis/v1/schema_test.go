@@ -721,6 +721,40 @@ func TestMachineImageSpecImmutable(t *testing.T) {
 	}
 }
 
+func TestNodePoolReleaseProfile(t *testing.T) {
+	schema := loadResourceSchema(t, "nodepoolreleases")
+	legacy := baseResource(t, "nodepoolreleases")
+	published := mutate(t, "nodepoolreleases", func(spec map[string]any) {
+		spec["profile"], spec["tag"] = "ubuntu", "24.04"
+	})
+	schema.admit(t, legacy, nil)
+	schema.admit(t, published, nil)
+	schema.admit(t, runtime.DeepCopyJSON(published), published)
+	schema.check(t, true, published, legacy)
+
+	for _, entry := range []fieldCase{
+		{name: "invalid profile", path: []string{"spec", "profile"}, value: "Not A Name", invalid: true},
+		{name: "empty tag", path: []string{"spec", "tag"}, value: "", invalid: true},
+		{name: "invalid tag", path: []string{"spec", "tag"}, value: "repo:tag", invalid: true},
+		{name: "oversized tag", path: []string{"spec", "tag"}, value: strings.Repeat("a", 129), invalid: true},
+	} {
+		t.Run(entry.name, func(t *testing.T) {
+			candidate := runtime.DeepCopyJSON(published)
+			entry.apply(candidate)
+			schema.check(t, entry.invalid, candidate, nil)
+		})
+	}
+	for _, name := range []string{"profile", "tag"} {
+		t.Run(name+" is immutable", func(t *testing.T) {
+			candidate := runtime.DeepCopyJSON(published)
+			specOf(t, candidate)[name] = "other"
+			schema.check(t, true, candidate, published)
+			delete(specOf(t, candidate), name)
+			schema.check(t, true, candidate, published)
+		})
+	}
+}
+
 func TestReleaseAdmission(t *testing.T) {
 	for _, resource := range releaseResources {
 		t.Run(resource, func(t *testing.T) {

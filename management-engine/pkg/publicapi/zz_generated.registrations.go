@@ -31,12 +31,42 @@ func ClusterRelease(verbs ...resource.Operation) resource.Registration {
 	})
 }
 
+// ClusterReleaseChannel returns a registration for PublicClusterReleaseChannel with the caller's selected operations.
+// An empty selection enables no operations.
+func ClusterReleaseChannel(verbs ...resource.Operation) resource.Registration {
+	return resource.NewRegistration[v1.PublicClusterReleaseChannel, v1.ClusterReleaseChannel]("/v1/cluster-release-channels", resource.ResourceInfo{
+		GVK:      schema.GroupVersionKind{Group: "internal.nvke.nvidia.com", Version: "v1", Kind: "ClusterReleaseChannel"},
+		Resource: "clusterreleasechannels", Scope: resource.Scope("Cluster"),
+		HasStatus: false, Verbs: verbs,
+	})
+}
+
+// ControlPlaneClass returns a registration for PublicControlPlaneClass with the caller's selected operations.
+// An empty selection enables no operations.
+func ControlPlaneClass(verbs ...resource.Operation) resource.Registration {
+	return resource.NewRegistration[v1.PublicControlPlaneClass, v1.ControlPlaneClass]("/v1/control-plane-classes", resource.ResourceInfo{
+		GVK:      schema.GroupVersionKind{Group: "internal.nvke.nvidia.com", Version: "v1", Kind: "ControlPlaneClass"},
+		Resource: "controlplaneclasses", Scope: resource.Scope("Cluster"),
+		HasStatus: false, Verbs: verbs,
+	})
+}
+
 // MachineImage returns a registration for PublicMachineImage with the caller's selected operations.
 // An empty selection enables no operations.
 func MachineImage(verbs ...resource.Operation) resource.Registration {
 	return resource.NewRegistration[v1.PublicMachineImage, v1.MachineImage]("/v1/machine-images", resource.ResourceInfo{
 		GVK:      schema.GroupVersionKind{Group: "internal.nvke.nvidia.com", Version: "v1", Kind: "MachineImage"},
 		Resource: "machineimages", Scope: resource.Scope("Cluster"),
+		HasStatus: false, Verbs: verbs,
+	})
+}
+
+// NodePoolRelease returns a registration for PublicNodeProfile with the caller's selected operations.
+// An empty selection enables no operations.
+func NodePoolRelease(verbs ...resource.Operation) resource.Registration {
+	return resource.NewRegistration[v1.PublicNodeProfile, v1.NodePoolRelease]("/v1/node-profiles", resource.ResourceInfo{
+		GVK:      schema.GroupVersionKind{Group: "internal.nvke.nvidia.com", Version: "v1", Kind: "NodePoolRelease"},
+		Resource: "nodepoolreleases", Scope: resource.Scope("Cluster"),
 		HasStatus: false, Verbs: verbs,
 	})
 }

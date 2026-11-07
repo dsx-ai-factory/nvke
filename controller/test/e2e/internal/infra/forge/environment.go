@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -17,7 +18,14 @@ import (
 const (
 	// ProviderName is the provider name environments/forge.yaml declares.
 	ProviderName = "forge"
+
+	// DefaultAPIKeyEnv is the variable the API key is read from when the
+	// environment names none.
+	DefaultAPIKeyEnv = "FORGE_API_KEY" // #nosec G101 -- a variable name
 )
+
+// apiKeyEnvName is what a variable named for the API key may look like.
+var apiKeyEnvName = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 
 // Environment is Forge's dialect of an infrastructure declaration. None of it
 // is generic: an org, a site and a VPC are Forge's own vocabulary, which is
@@ -25,6 +33,19 @@ const (
 type Environment struct {
 	Org   Org             `json:"org"`
 	Sites map[string]Site `json:"sites"`
+
+	// APIKeyEnv names the variable holding the API key for this environment's
+	// org, because a key belongs to an org and an environment in another one
+	// has its own. Empty reads DefaultAPIKeyEnv.
+	APIKeyEnv string `json:"apiKeyEnv,omitempty"`
+}
+
+// APIKeyVariable is the name of the variable the API key is read from.
+func (f *Environment) APIKeyVariable() string {
+	if f.APIKeyEnv == "" {
+		return DefaultAPIKeyEnv
+	}
+	return f.APIKeyEnv
 }
 
 // Org identifies the Forge tenancy the run creates things in.
@@ -129,6 +150,9 @@ func Decode(raw json.RawMessage) (*Environment, error) {
 	}
 	if len(f.Sites) == 0 {
 		return nil, errors.New("no sites declared")
+	}
+	if f.APIKeyEnv != "" && !apiKeyEnvName.MatchString(f.APIKeyEnv) {
+		return nil, fmt.Errorf("apiKeyEnv %q is not the name of an environment variable", f.APIKeyEnv)
 	}
 	return &f, nil
 }

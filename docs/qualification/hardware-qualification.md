@@ -154,9 +154,17 @@ locally, instead of pushing and waiting on CI for each try. `--keep-site` and
 
 Run it only on code you wrote, or have reviewed as you would before approving
 a `forge` deployment. The checkout's script, Makefiles, Dockerfiles and suite
-run with your whole environment, including `FORGE_API_KEY`, `NGC_API_KEY` and
-`GITHUB_TOKEN`, and your Teleport login. In CI the `forge` environment's
-approval is what gates that access for code from a fork; here nothing does.
+run with your whole environment and your Teleport login: `FORGE_API_KEY`, a
+registry credential such as `NGC_API_KEY` or `GITHUB_TOKEN` if you set one,
+and anything else your shell exports, cloud credentials and kubeconfigs
+included. In CI the `forge` environment's approval is what gates that access
+for code from a fork; here nothing does.
+
+Export only what the run needs. [Get the site's values](#1-get-the-sites-values)
+lists it: a `--from-source` run needs `FORGE_API_KEY` and a Teleport login, and
+no registry credential. A credential the run does not use is still in reach of
+everything it runs, so leave `NGC_API_KEY` and `GITHUB_TOKEN` unset unless
+[Registry](#registry) says the run pulls with them.
 
 ### 1. Get the site's values
 
@@ -177,7 +185,8 @@ export FORGE_SSH_KEY_GROUP_ID=<site-1 key group id>
 export FORGE_INSTANCE_TYPE_CPU_ID=<site-1 cpu type id>
 export FORGE_INSTANCE_TYPE_GPU_ID=<site-1 gpu type id>
 
-# Yours: the site-1 jump host, and one of the Logins `tsh status` lists.
+# Yours: the site-1 jump host, and one of the Logins `tsh status` lists:
+# the Unix account, not your Teleport user name.
 export FORGE_JUMP_HOST=<jump host>
 export FORGE_TELEPORT_LOGIN=<login>
 
@@ -296,6 +305,98 @@ at untracked files, which a build can still pick up.
 | Pull published images instead of building | drop `--from-source`, and log in to a registry; see [Registry](#registry) |
 | Keep the machines to debug | `--keep-site` or `--keep-tenant`; delete them in Forge afterwards |
 
+### Examples
+
+Each runs from the repository root with the site's values loaded. Add
+`--dry-run` to any of them to run the checks without taking a machine.
+
+Choose a stream:
+
+```bash
+# L40S on Ubuntu 26.04 (site-1)
+go run ./release/cmd/qualify local --stream forge-l40s-amd64-ubuntu-26.04-kube-1.36 --stage full --from-source
+
+# GB200 with an amd64 site controller (site-2); the tenant is still arm64 GB200
+go run ./release/cmd/qualify local --stream forge-gb200-amd64-ubuntu-24.04-kube-1.36 --stage full --from-source
+```
+
+Stop at an earlier stage; [Stages](#stages) says what each shows:
+
+```bash
+# The node boots the OS image and answers over SSH
+go run ./release/cmd/qualify local --stream forge-l40s-amd64-ubuntu-24.04-kube-1.36 --stage provision --from-source
+
+# The NVKE stack installs and the controller answers; no tenant
+go run ./release/cmd/qualify local --stream forge-l40s-amd64-ubuntu-24.04-kube-1.36 --stage deployment --from-source
+```
+
+Keep the machines to debug. Either way they outlive the run and must be
+deleted in Forge by hand:
+
+```bash
+# The site node, and a tenant whose specs failed
+go run ./release/cmd/qualify local --stream forge-l40s-amd64-ubuntu-24.04-kube-1.36 --stage full --from-source --keep-site
+
+# Every tenant and its site; the tenant-deletion spec is skipped
+go run ./release/cmd/qualify local --stream forge-l40s-amd64-ubuntu-24.04-kube-1.36 --stage full --from-source --keep-tenant
+```
+
+Choose what is built and what is pulled. Anything pulled needs the registry's
+credential; see [Registry](#registry):
+
+```bash
+# Build the controller; pull nvkectl and capi-provisioned from NVCR
+go run ./release/cmd/qualify local --stream forge-l40s-amd64-ubuntu-24.04-kube-1.36 --stage full --build controller
+
+# Build nothing; pull everything the plan names from NVCR
+go run ./release/cmd/qualify local --stream forge-l40s-amd64-ubuntu-24.04-kube-1.36 --stage full
+```
+
+Choose the versions:
+
+```bash
+# A tag other than the highest, with its published images
+go run ./release/cmd/qualify local --stream forge-l40s-amd64-ubuntu-24.04-kube-1.36 --stage full --version v0.24.0-beta.4
+
+# A published OS image in place of the one the plan names
+go run ./release/cmd/qualify local --stream forge-l40s-amd64-ubuntu-24.04-kube-1.36 --stage full --from-source \
+  --overrides os-image-amd64=<published qcow2 url>
+
+# Exactly the plan an earlier run used
+go run ./release/cmd/qualify local --stream forge-l40s-amd64-ubuntu-24.04-kube-1.36 --stage full --from-source \
+  --plan <run directory>/plan.json
+
+# A version whose artifacts are still being published, asked for again every 30 seconds for up to 45 minutes
+go run ./release/cmd/qualify local --stream forge-l40s-amd64-ubuntu-24.04-kube-1.36 --stage full --version <tag> --wait 45m
+```
+
+Change what the plan does not decide:
+
+```bash
+# Install another published controller; the result still records the plan's.
+# The controller is pulled, so this needs NVCR access and cannot be --from-source.
+QUALIFY_E2E_SITE_CONTROLLER_VERSION=<version> go run ./release/cmd/qualify local \
+  --stream forge-l40s-amd64-ubuntu-24.04-kube-1.36 --stage full --build cli,capi-provisioned
+
+# Export the deploy path from another commit than the controller's
+SITE_DEPLOY_PATH_REF=<commit> go run ./release/cmd/qualify local \
+  --stream forge-l40s-amd64-ubuntu-24.04-kube-1.36 --stage full --from-source
+
+# An OS image from another pipeline, which bakes its own account
+go run ./release/cmd/qualify local --stream forge-l40s-amd64-ubuntu-24.04-kube-1.36 --stage full --from-source --node-user <account>
+
+# Keep the run's files somewhere other than the user cache
+go run ./release/cmd/qualify local --stream forge-l40s-amd64-ubuntu-24.04-kube-1.36 --stage full --from-source --run-dir <dir>
+```
+
+Some combinations are refused before anything is built:
+
+- `--overrides` for a component that is built, since its version is the
+  commit: `--from-source` with `--overrides controller=<version>`.
+- `--plan` with `--version` or `--overrides`, since `--plan` skips planning.
+- `QUALIFY_E2E_SITE_CONTROLLER_VERSION` with `--from-source`, since the
+  controller it names is pulled and `--registry local` pulls nothing.
+
 ### Flags
 
 | Flag | Default | What it does |
@@ -318,10 +419,28 @@ at untracked files, which a build can still pick up.
 | `--wait` | `0` | how long to keep asking for an artifact that is not published yet, registry images and CDN files alike, every 30 seconds |
 | `--run-dir DIR` | under the user cache | where the run's files are kept |
 
-Whatever `--keep-site` or `--keep-tenant` keeps must be deleted by hand. Neither
-kept node can be logged into over SSH once the run ends. The site node holds the
-run's public key, but the private half never leaves the suite's process. A
-tenant node holds no key at all, and the image locks the account. Each one's
+Whatever `--keep-site` or `--keep-tenant` keeps must be deleted by hand.
+
+With either flag the site node's SSH key is written to
+`<run-dir>/node-keys/<node>.key`, readable only by you, and where the suite
+keeps the node its log names the key, the node's address and the login to use. That key logs into the node through the same
+jump host the run used, and the node holds the site's admin kubeconfig at
+`/var/lib/nke-e2e/site.kubeconfig`, so treat the key as an admin credential and
+delete it with the node:
+
+```bash
+ssh -i <run-dir>/node-keys/<node>.key \
+  -o ProxyCommand="tsh ssh --proxy ${FORGE_TELEPORT_PROXY} ${FORGE_TELEPORT_LOGIN}@${FORGE_JUMP_HOST} nc %h %p" \
+  <login>@<node address>
+sudo KUBECONFIG=/var/lib/nke-e2e/site.kubeconfig kubectl get nodes
+```
+
+That is site-1's route. For a node kept on site-2, as a GB200 run's is, use
+`FORGE_SITE_2_JUMP_HOST` and `FORGE_SITE_2_TELEPORT_LOGIN` in the
+`ProxyCommand` instead.
+
+`scp` takes the same `-i` and `-o ProxyCommand`. The workflow never writes the
+key. A tenant node holds no key at all, and the image locks the account; its
 serial console, which carries cloud-init's output, is the way in.
 
 ### What it reads from your shell
@@ -365,11 +484,15 @@ ids are set, and a GB200 stream needs it.
 | `FORGE_SITE_ID`, `FORGE_VPC_ID`, `FORGE_SUBNET_ID` | site-1 | The site, and the VPC and subnet its machines attach to |
 | `FORGE_SSH_KEY_GROUP_ID` | site-1 | The key group for serial console access. It grants no shell on a node. |
 | `FORGE_INSTANCE_TYPE_CPU_ID`, `FORGE_INSTANCE_TYPE_GPU_ID` | site-1 | The CPU and GPU (L40S) machine types |
-| `FORGE_JUMP_HOST`, `FORGE_TELEPORT_LOGIN` | site-1 | The jump host in front of the machines, and your Teleport login on it (one of the Logins `tsh status` lists) |
+| `FORGE_JUMP_HOST`, `FORGE_TELEPORT_LOGIN` | site-1 | The jump host in front of the machines, and your Teleport login on it: one of the Logins `tsh status` lists, which is a Unix account. Your Teleport user name, often an email address, is refused with "access denied" |
 | `FORGE_SITE_2_SITE_ID`, `FORGE_SITE_2_VPC_ID`, `FORGE_SITE_2_VPC_PREFIX_ID` | site-2 | The site, and the VPC and VPC prefix its machines attach to |
 | `FORGE_SITE_2_SSH_KEY_GROUP_ID` | site-2 | As for site-1 |
 | `FORGE_SITE_2_INSTANCE_TYPE_CPU_AMD64_ID`, `FORGE_SITE_2_INSTANCE_TYPE_CPU_ARM64_ID`, `FORGE_SITE_2_INSTANCE_TYPE_GPU_GB200_ID` | site-2 | The machine types: a site controller of either architecture, and the arm64 GB200 tenant |
 | `FORGE_SITE_2_JUMP_HOST`, `FORGE_SITE_2_TELEPORT_LOGIN` | site-2 | As for site-1 |
+| `FORGE_PERF_API_KEY` | perf | The Forge API key for the NVKE Scale org. Secret. `environments/forge-perf.yaml` names it as its key variable, so a run against that environment reads it in place of `FORGE_API_KEY`. |
+| `FORGE_PERF_ORG_ID`, `FORGE_PERF_SITE_ID`, `FORGE_PERF_VPC_ID`, `FORGE_PERF_SUBNET_ID` | perf | The NVKE Scale org and site, and the VPC and subnet its machines attach to |
+| `FORGE_PERF_SSH_KEY_GROUP_ID`, `FORGE_PERF_INSTANCE_TYPE_CPU_ID` | perf | The key group, and the high memory CPU machine type the stream uses for every node |
+| `FORGE_PERF_JUMP_HOST`, `FORGE_PERF_TELEPORT_LOGIN` | perf | The jump host in front of the machines, and the login on it. The login defaults to `root`. |
 
 #### Registry
 
@@ -380,6 +503,10 @@ Where the site images come from is set by `--registry`.
 | `nvcr`, the default | `NGC_API_KEY`, `QUALIFY_E2E_NGC_ORG` (or `--ngc-org`), and `docker login nvcr.io` |
 | `ghcr` | `GITHUB_ACTOR`, `GITHUB_TOKEN`, and `docker login ghcr.io`, and the NVCR access above as well: verify checks the plan's locations, which are on NVCR, and an nvkectl that is not built is pulled from NVCR. GHCR carries released tags only, so this suits a release `--version` or a `--plan` resolved by tag, not the default plan, which names unreleased commits |
 | `local`, the default with `--from-source` | Nothing; every image is built |
+
+Create `NGC_API_KEY` in the org `QUALIFY_E2E_NGC_ORG` names. A key from
+another org still passes `docker login nvcr.io`, then gets 401 or `denied` on
+every image the run pulls.
 
 Planning needs `QUALIFY_E2E_NGC_ORG` whatever the registry, because
 `release/registry.yaml` names the artifacts by it. A run given `--plan` and
@@ -608,7 +735,15 @@ job; `qualify local` runs the one stream you name.
 | `golden-path` | Ubuntu 24.04 on GB200, amd64 and arm64 site controllers, at site-2 |
 | `l40s` | Ubuntu 24.04 on L40S, amd64, at site-1 |
 | `dsx` | the DSX datahall |
-| `full` | every Forge stream: GB200 and L40S on Ubuntu 24.04 and 26.04 |
+| `perf` | the performance stream on the NVKE Scale Forge site: CPU machines only, a three worker tenant |
+| `full` | every Forge stream except the perf one: GB200 and L40S on Ubuntu 24.04 and 26.04 |
+
+The perf stream holds the NVKE Scale site for hours, so only a dispatch that
+names `perf` runs it, and `full` leaves it out. A stream can also carry
+`parameters` in `release/policy.yaml`: the environment file it runs against,
+the workers its tenant gets and the suite's timeout. The plan records them, and
+the stream's result says which it ran with. The job's timeout and the timeout of
+`go test` follow from the suite's, so they cannot be set to disagree.
 
 ## Stages
 

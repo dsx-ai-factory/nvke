@@ -29,6 +29,10 @@
 {{- if and (eq $spireAttestationMethod "dsxImds") (not .Values.spiffe.enabled) }}
 {{- fail "spiffe.enabled must be true when nodeAgent.spireAttestationMethod is dsxImds" }}
 {{- end }}
+{{- /* The method is deployment-wide, and a SPIFFE-enabled LaunchLayer node attests only through dsx_imds. */}}
+{{- if and (include "controller.launchLayerEnabled" .) .Values.spiffe.enabled (ne $spireAttestationMethod "dsxImds") }}
+{{- fail (printf "nodeAgent.spireAttestationMethod must be dsxImds when supportedInfraProviders includes launchLayer and spiffe.enabled is true, got %q" $spireAttestationMethod) }}
+{{- end }}
 {{- include "controller.renamedValues.validate" . }}
 {{- include "controller.apiAuth.validate" . }}
 {{- include "controller.controllerConfig.validateEnv" . }}

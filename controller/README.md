@@ -809,7 +809,7 @@ issuers:
       caBundlePath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
       bearerTokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token
     algorithms: [RS256, ES256]     # asymmetric only; "none" and HMAC are refused
-    # One of serviceAccounts, spiffe, or groups.
+    # One of serviceAccounts, spiffe, groups, or claims.
     admit:
       serviceAccounts:
         # Omitting `name` admits every service account in the namespace, present
@@ -841,6 +841,21 @@ issuers:
       groups:
         # Any-of against the token's "groups" claim (a JSON string array).
         - nke-operators
+
+  # Teleport sends its app JWT in Teleport-Jwt-Assertion; NVKE reads only
+  # Authorization. Give the Teleport app
+  # rewrite.headers: ["Authorization: Bearer {{internal.jwt}}"].
+  - name: teleport
+    issuer: "example-cluster"   # Teleport's cluster name, not a URL
+    audiences: ["https://nvke.teleport.example.internal"]   # the app's URI
+    jwks:
+      uri: "https://teleport.example.internal/.well-known/jwks.json"   # on the proxy's public address
+    algorithms: [RS256, ES256]  # RS256 under the legacy signature_algorithm_suite, ES256 under the others
+    admit:
+      claims:
+        # Any-of: the token's "roles" claim is "nvke-admin", or a string array holding it.
+        - name: roles
+          value: nvke-admin
 ```
 
 ### RBAC Prerequisite

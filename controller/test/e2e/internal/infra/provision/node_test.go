@@ -4,10 +4,137 @@
 package provision
 
 import (
+	"bytes"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
+
+// The saved key is readable only by its owner, and is the private half of the
+// public key the node is given.
+func TestKeySave(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "node-keys")
+
+	key, err := NewKey("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		t.Fatalf("nothing was saved, but %s exists (err %v)", dir, statErr)
+	}
+	err = CheckKeyPath(dir, "site-a")
+	if err != nil {
+		t.Fatalf("a free path was refused: %v", err)
+	}
+	err = key.Save(dir, "site-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, authorized := key.Signer, key.Authorized
+	path := KeyPath(dir, "site-a")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Errorf("key mode = %o, want 600", mode)
+	}
+	info, err = os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o700 {
+		t.Errorf("key dir mode = %o, want 700", mode)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := ssh.ParsePrivateKey(b)
+	if err != nil {
+		t.Fatalf("parsing the saved key: %v", err)
+	}
+	if !bytes.Equal(saved.PublicKey().Marshal(), signer.PublicKey().Marshal()) {
+		t.Error("the saved key is not the session's key")
+	}
+	if got := string(bytes.TrimSpace(ssh.MarshalAuthorizedKey(saved.PublicKey()))); got != authorized {
+		t.Errorf("saved key's public half = %q, want the authorized key %q", got, authorized)
+	}
+
+	// Checked before a machine is made, and saying why, since the key there
+	// may still log into a kept node.
+	if err := CheckKeyPath(dir, "site-a"); err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "still kept") {
+		t.Errorf("CheckKeyPath on a taken path = %v, want the path named and why it is kept", err)
+	}
+	if err := key.Save(dir, "site-a"); err == nil {
+		t.Error("a second key for the same node overwrote the first")
+	}
+	for _, name := range []string{"", ".", "..", "../x", "a/b"} {
+		if err := CheckKeyPath(dir, name); err == nil {
+			t.Errorf("node name %q was accepted as a file name", name)
+		}
+		if err := key.Save(dir, name); err == nil {
+			t.Errorf("node name %q was saved as a file name", name)
+		}
+	}
+
+	if err := RemoveKey(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("%s survived RemoveKey (err %v)", path, err)
+	}
+	if err := RemoveKey(path); err != nil {
+		t.Errorf("removing a key already gone: %v", err)
+	}
+	if err := RemoveKey(""); err != nil {
+		t.Errorf("removing no key: %v", err)
+	}
+}
+
+// A key directory that already exists is restricted to its owner before a key
+// goes in, and a key directory that is not a directory holds no key.
+func TestKeySaveExistingDir(t *testing.T) {
+	key, err := NewKey("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := filepath.Join(t.TempDir(), "node-keys")
+	err = os.Mkdir(dir, 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Mkdir is subject to the umask; make the starting mode the open one.
+	err = os.Chmod(dir, 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = key.Save(dir, "site-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o700 {
+		t.Errorf("existing key dir mode = %o after Save, want 700", mode)
+	}
+
+	notDir := filepath.Join(t.TempDir(), "node-keys")
+	if err := os.WriteFile(notDir, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := key.Save(notDir, "site-a"); err == nil {
+		t.Error("a key was saved under a file")
+	}
+}
 
 // WithTimeout raises a timeout that is too short and leaves everything else
 // alone. Zero is the case worth a test: it means "no timeout", so raising it
