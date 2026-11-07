@@ -487,8 +487,6 @@ func renderInfraTemplate(name, body string, variables map[string]any, target any
 	return nil
 }
 
-// infraTemplateVariables starts from the variables of the release the template renders for: the cluster
-// release for the cluster and control plane, the pool's worker release for a pool.
 func infraTemplateVariables(cluster *internalv1.NVKECluster, pool *internalv1.NodePool, releaseVariables map[string]any) map[string]any {
 	variables := maps.Clone(releaseVariables)
 	if cluster.Spec.Network != nil && cluster.Spec.Network.VPCID != "" {
