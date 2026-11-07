@@ -123,7 +123,8 @@ jobs:
         working-directory: agent
         env:
           CGO_ENABLED: "0"
-        run: make build-all VERSION=${{ steps.meta.outputs.version }}
+          BUILD_VERSION: ${{ steps.meta.outputs.version }}
+        run: make build-all VERSION="${BUILD_VERSION}"
 
       - name: Verify binaries
         working-directory: agent

@@ -144,7 +144,10 @@ jobs:
 
       - name: Build the package
         working-directory: agent
-        run: make deb-${{ matrix.arch }} VERSION=${{ steps.version.outputs.version }}
+        env:
+          ARCH: ${{ matrix.arch }}
+          BUILD_VERSION: ${{ steps.version.outputs.version }}
+        run: make "deb-${ARCH}" VERSION="${BUILD_VERSION}"
 
       - name: Inspect what was produced
         id: package

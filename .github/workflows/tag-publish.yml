@@ -89,10 +89,12 @@ jobs:
 
       - name: Build nvkectl
         shell: bash
+        env:
+          BUILD_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           mkdir -p dist
-          make -C cli build-cross DIST="${GITHUB_WORKSPACE}/dist" NVKECTL_VERSION="${{ steps.version.outputs.version }}"
+          make -C cli build-cross DIST="${GITHUB_WORKSPACE}/dist" NVKECTL_VERSION="${BUILD_VERSION}"
           echo "artifacts:"
           find dist -mindepth 1 -maxdepth 1 -printf '  %f\n' | sort
 

@@ -149,6 +149,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
           IMAGE: ${{ steps.meta.outputs.image }}
           PUSH_TAGS: ${{ steps.meta.outputs.push_tags }}
+          BUILD_VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
           make -C controller docker-push-arch \
@@ -156,7 +157,7 @@ jobs:
             IMG_REPO="${IMAGE}" \
             PUSH_TAGS="${PUSH_TAGS}" \
             GIT_VERSION="${GITHUB_SHA}" \
-            BUILD_VERSION="${{ steps.meta.outputs.version }}" \
+            BUILD_VERSION="${BUILD_VERSION}" \
             BUILDX_EXTRA_ARGS="--label org.opencontainers.image.revision=${GITHUB_SHA}"
 
       # The digest of what this leg pushed. Every job after this one used to
