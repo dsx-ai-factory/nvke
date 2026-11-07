@@ -74,6 +74,10 @@ type Stream struct {
 	// runs.
 	Capabilities map[string]string `json:"capabilities"`
 
+	// Parameters are the stream's run settings from the policy, copied for the
+	// same reason as Capabilities.
+	Parameters Parameters `json:"parameters,omitzero"`
+
 	// Dependencies are the ones that depend on this stream.
 	Dependencies []ComponentVersion `json:"dependencies,omitempty"`
 }

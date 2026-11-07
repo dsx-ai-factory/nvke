@@ -29,6 +29,8 @@ spec:
         description: |-
           NodePoolRelease is what an operator publishes to make a worker release
           available to the engine, and how that release is managed once published.
+          Its internal name will become NodeProfile once the NVKE controller REST API
+          no longer depends on it. The public API already uses NodeProfile.
         properties:
           apiVersion:
             description: |-
@@ -161,10 +163,33 @@ spec:
                 x-kubernetes-validations:
                 - message: machineInit is immutable
                   rule: self == oldSelf
+              profile:
+                description: Profile identifies the tenant-facing profile family.
+                maxLength: 253
+                minLength: 1
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                type: string
+                x-kubernetes-validations:
+                - message: profile is immutable
+                  rule: self == oldSelf
+              tag:
+                description: Tag identifies a revision within Profile.
+                maxLength: 128
+                minLength: 1
+                pattern: ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$
+                type: string
+                x-kubernetes-validations:
+                - message: tag is immutable
+                  rule: self == oldSelf
             required:
             - machineImageRef
             - machineInit
             type: object
+            x-kubernetes-validations:
+            - message: profile presence is immutable
+              rule: has(self.profile) == has(oldSelf.profile)
+            - message: tag presence is immutable
+              rule: has(self.tag) == has(oldSelf.tag)
         required:
         - spec
         type: object

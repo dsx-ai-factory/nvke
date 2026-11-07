@@ -94,6 +94,10 @@ type Options struct {
 	// says so, and names the address to reach it at.
 	KeepOnFailure bool
 
+	// KeyDir, when set, is where each node's SSH key is written, so a kept
+	// node can be logged into after the run. See provision.Key.Save.
+	KeyDir string
+
 	// DisableMTLS runs the node agent without SPIFFE. `nvkectl bootstrap site`
 	// must be given --disable-mtls to match, and the stack deployed with
 	// spiffe.enabled=false, or every dial fails as a TLS handshake error.
@@ -212,11 +216,16 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 		return infra.Node{}, nil, fmt.Errorf("dsx: %w", err)
 	}
 
-	signer, authorizedKey, err := provision.NewKey("dsx")
+	if p.opts.KeyDir != "" {
+		if kerr := provision.CheckKeyPath(p.opts.KeyDir, req.Name); kerr != nil {
+			return infra.Node{}, nil, fmt.Errorf("dsx: saving the session key: %w", kerr)
+		}
+	}
+	key, err := provision.NewKey("dsx")
 	if err != nil {
 		return infra.Node{}, nil, err
 	}
-	ipxe, userData, err := p.payloads(req, place, authorizedKey)
+	ipxe, userData, err := p.payloads(req, place, key.Authorized)
 	if err != nil {
 		return infra.Node{}, nil, err
 	}
@@ -267,7 +276,14 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	}
 	id := inst.GetId()
 
-	release := func(ctx context.Context) error { return p.release(ctx, id) }
+	// savedKey is the path of the node's saved key, once there is one.
+	var savedKey string
+	release := func(ctx context.Context) error {
+		if rerr := p.release(ctx, id); rerr != nil {
+			return rerr
+		}
+		return provision.RemoveKey(savedKey)
+	}
 	// reached is the node's address once one is known, so a kept machine can
 	// be named with somewhere to go rather than only an id.
 	var reached string
@@ -277,16 +293,28 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 			if reached != "" {
 				where = "at " + reached
 			}
+			if savedKey != "" {
+				where += fmt.Sprintf(", login %s with key %s", p.nodeUser(), savedKey)
+			}
 			return infra.Node{}, nil, fmt.Errorf("%w\n\tinstance %s (%s) was KEPT for diagnosis, %s -- it outlives this run and must be released by hand", err, req.Name, id, where)
 		}
 		// Detached, because a canceled run is exactly when this matters most
 		// and inheriting the cancellation would abandon the instance.
 		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), provision.ReleaseTimeout)
 		defer cancel()
-		if rerr := release(rctx); rerr != nil {
+		if rerr := p.release(rctx, id); rerr != nil {
 			return infra.Node{}, nil, errors.Join(err, fmt.Errorf("dsx: instance %s (%s) was not deleted and must be removed by hand: %w", req.Name, id, rerr))
 		}
-		return infra.Node{}, nil, err
+		return infra.Node{}, nil, errors.Join(err, provision.RemoveKey(savedKey))
+	}
+
+	// Saved once the instance exists, so a failed create leaves no key, and
+	// before the waits, so a node kept after one of them can be logged into.
+	if p.opts.KeyDir != "" {
+		if kerr := key.Save(p.opts.KeyDir, req.Name); kerr != nil {
+			return fail(fmt.Errorf("dsx: saving the session key: %w", kerr))
+		}
+		savedKey = provision.KeyPath(p.opts.KeyDir, req.Name)
 	}
 
 	address, err := p.waitAddressed(ctx, id)
@@ -294,7 +322,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 		return fail(err)
 	}
 	reached = address
-	target := teleport.Target{JumpHost: p.site.JumpHost, Address: address, User: p.nodeUser(), Signer: signer}
+	target := teleport.Target{JumpHost: p.site.JumpHost, Address: address, User: p.nodeUser(), Signer: key.Signer}
 	conn, err := provision.WaitReachable(ctx, p.opts.Dialer, target, "dsx", p.opts.ReachTimeout, p.opts.PollInterval)
 	if err != nil {
 		// A key this run generated moments ago is not rejected by chance.
@@ -311,7 +339,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 		return fail(err)
 	}
 
-	return infra.Node{Name: req.Name, IP: address, Arch: place.Arch}, &provision.Session{Conn: conn, Release: release}, nil
+	return infra.Node{Name: req.Name, IP: address, User: p.nodeUser(), Arch: place.Arch}, &provision.Session{Conn: conn, Release: release}, nil
 }
 
 // payloads returns the iPXE script and the cloud-init user data, in that order.

@@ -108,14 +108,24 @@ docs/qualification/hardware-qualification.md.`,
 	f.StringVar(&o.nodeUser, "node-user", "", "the account the OS image bakes (default: $QUALIFY_E2E_NODE_USER; empty is the OSS images')")
 	f.StringSliceVar(&o.build, "build", nil, "components to build from the checkout instead of pulling: controller, cli, capi-provisioned")
 	f.BoolVar(&o.fromSource, "from-source", false, "build every image the site stages from the checkout and pull none: --build for all of them, and --registry local")
-	f.BoolVar(&o.keepSite, "keep-site", false, "keep the site node after the run, and a tenant whose specs failed; they must then be deleted by hand")
-	f.BoolVar(&o.keepTenant, "keep-tenant", false, "keep every tenant after the run, passed or not, and the site node they hang off; skips the spec that deletes the tenant, and they must then be deleted by hand")
+	f.BoolVar(&o.keepSite, "keep-site", false, "keep the site node after the run, and a tenant whose specs failed; they must then be deleted by hand. The site node's SSH key is written under --run-dir")
+	f.BoolVar(&o.keepTenant, "keep-tenant", false, "keep every tenant after the run, passed or not, and the site node they hang off; skips the spec that deletes the tenant, and they must then be deleted by hand. The site node's SSH key is written under --run-dir")
 	f.BoolVar(&o.dryRun, "dry-run", false, "plan, verify, resolve and stage, and print the suite's arguments without taking a machine")
 	f.DurationVar(&o.wait, "wait", 0, "how long to keep asking for an artifact that is not published yet, registry images and CDN files alike")
 	f.StringVar(&o.runDir, "run-dir", "", "where the run's files are kept (default: a new directory under the user cache)")
 	_ = cmd.MarkFlagRequired("stream")
 	_ = cmd.MarkFlagRequired("stage")
 	return cmd
+}
+
+// nodeKeyDir is where the suite writes the site node's SSH key: under the run
+// directory when a node is kept, since nothing else can log into it after
+// the run, and nowhere otherwise.
+func nodeKeyDir(o localOptions) string {
+	if !o.keepSite && !o.keepTenant {
+		return ""
+	}
+	return filepath.Join(o.runDir, "node-keys")
 }
 
 func runLocal(ctx context.Context, out io.Writer, o localOptions) error {
@@ -214,6 +224,7 @@ func runLocal(ctx context.Context, out io.Writer, o localOptions) error {
 		"NODE_USER="+o.nodeUser,
 		fmt.Sprintf("KEEP_SITE=%t", o.keepSite),
 		fmt.Sprintf("KEEP_TENANT=%t", o.keepTenant),
+		"NODE_KEY_DIR="+nodeKeyDir(o),
 		fmt.Sprintf("DRY_RUN=%t", o.dryRun),
 	)
 	// The workflow takes these from repository variables and secrets, and

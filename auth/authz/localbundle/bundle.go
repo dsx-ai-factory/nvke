@@ -103,7 +103,7 @@ func load(opts Options) (*bundle, error) {
 		errs = append(errs, b.checkNames()...)
 		declared = b.entities
 	}
-	if b.config, err = loadConfig(raw[configFile], opts.Issuers, declared); err != nil {
+	if b.config, err = loadConfig(raw[configFile], opts, declared); err != nil {
 		errs = append(errs, err)
 	}
 	if len(errs) > 0 {

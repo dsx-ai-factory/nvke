@@ -36,6 +36,9 @@ type ClusterReleaseReference struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster,path=clusterreleasechannels,singular=clusterreleasechannel
 // +kubebuilder:storageversion
+// +nvke:public:name=PublicClusterReleaseChannel
+// +nvke:public:path=/v1/cluster-release-channels
+// +nvke:public:metadata=name,creationTimestamp,deletionTimestamp,uid
 type ClusterReleaseChannel struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

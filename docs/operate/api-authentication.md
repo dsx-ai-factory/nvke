@@ -89,7 +89,7 @@ Authentication has three modes. Off is the default.
    - `audiences`: every `aud` value NVKE accepts. A token is accepted if it names any of them, so list a second value for callers whose tokens carry a different audience. An audience must not equal an issuer URL.
    - `name`: a label of your choice. It appears in logs and in the `issuer` label of the metrics.
    - `algorithms`: the algorithms from step 1 that you accept.
-   - `admit.groups`: a token is admitted if its `groups` claim contains any listed group.
+   - `admit.groups`: a token is admitted if its `groups` claim contains any listed group. For a token without a `groups` claim, use `admit.claims` instead, a list of `{name, value}`: a token is admitted if its top-level claim `name` is `value`, or a string array holding it. Use a claim the IdP sets, not one users can edit. `iss`, `aud`, `nonce`, `jti`, `exp`, `nbf`, `iat` and `typ` describe the token rather than the caller, so NVKE refuses to start with a rule on them.
 
    `issuers` is a list. Add another entry for a second IdP. `name` and `issuer` are unique in the file. Set `audiences` on an issuer to replace the top-level `audiences` for that issuer.
 

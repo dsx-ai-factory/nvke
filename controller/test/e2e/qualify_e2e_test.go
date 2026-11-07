@@ -49,7 +49,7 @@ const (
 // Secrets the site controller run reads from the environment. They are never written to
 // the config file, a values file on the runner, or a command line.
 const (
-	envForgeAPIKey = "FORGE_API_KEY"
+	envForgeAPIKey = forge.DefaultAPIKeyEnv
 	// envJumpHostPassword selects the plain-SSH route to the jump host.
 	// Unset uses Teleport.
 	envJumpHostPassword = "JUMP_HOST_PASSWORD"
@@ -462,6 +462,10 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 			GinkgoLogr.Info("keeping the site controller", "name", node.Name, "ip", node.IP,
 				"kubeconfig", cluster.Kubeconfig,
 				"reason", keepReason(keepSite, cfg.Lifecycle.SkipDelete))
+			if dir := cfg.Lifecycle.NodeKeyDir; dir != "" {
+				GinkgoLogr.Info("the site node can be logged into through its jump host with this run's key",
+					"key", provision.KeyPath(dir, node.Name), "user", node.User, "ip", node.IP)
+			}
 			GinkgoLogr.Info("the instance survives this run and must be released by hand", "name", node.Name)
 			return
 		}
@@ -601,7 +605,6 @@ func fullStageSupported(provider string) error {
 // The other factory. It shares an account and a credential with the provider
 // above and nothing else: this one outlives the run, as a Secret in the
 // cluster the run leaves behind.
-
 func newDeployConfig() (site.CAPIProviderConfig, error) {
 	env, err := runEnvironment()
 	if err != nil {
@@ -609,7 +612,7 @@ func newDeployConfig() (site.CAPIProviderConfig, error) {
 	}
 	switch env.Provider {
 	case forge.ProviderName:
-		return newNicoConfig(env)
+		return newForgeNicoConfig(env)
 	case dsx.ProviderName:
 		return newDSXNicoConfig(env)
 	default:
@@ -617,18 +620,29 @@ func newDeployConfig() (site.CAPIProviderConfig, error) {
 	}
 }
 
-// newNicoConfig is how the site's CAPNICo reaches the same Forge org the
+// newForgeNicoConfig is how the site's CAPNICo reaches the same Forge org the
 // provider created the site node in.
-func newNicoConfig(env *environment.Environment) (site.CAPIProviderConfig, error) {
+func newForgeNicoConfig(env *environment.Environment) (site.CAPIProviderConfig, error) {
 	forgeEnv, err := forge.Decode(env.Infrastructure)
 	if err != nil {
 		return nil, fmt.Errorf("environment %q: %w", env.Name, err)
 	}
-	apiKey := os.Getenv(envForgeAPIKey)
-	if apiKey == "" {
-		return nil, fmt.Errorf("%s is not set", envForgeAPIKey)
+	apiKey, err := forgeAPIKey(env.Name, forgeEnv)
+	if err != nil {
+		return nil, err
 	}
 	return site.NewNico(forge.DefaultEndpoint, forgeEnv.Org.ID, apiKey, forge.APIName), nil
+}
+
+// forgeAPIKey reads the API key from the variable the environment names, which
+// is FORGE_API_KEY unless the environment sits in an org with a key of its own.
+func forgeAPIKey(environmentName string, forgeEnv *forge.Environment) (string, error) {
+	variable := forgeEnv.APIKeyVariable()
+	apiKey := os.Getenv(variable)
+	if apiKey == "" {
+		return "", fmt.Errorf("%s is not set, and environment %q reads its Forge API key from it", variable, environmentName)
+	}
+	return apiKey, nil
 }
 
 // newForgeProvider projects the environment into Forge's dialect and builds a
@@ -652,9 +666,9 @@ func newForgeProvider(cfg config.Config, env *environment.Environment) (infra.Pr
 		return nil, err
 	}
 	forgeSite := selection.Site
-	apiKey := os.Getenv(envForgeAPIKey)
-	if apiKey == "" {
-		return nil, fmt.Errorf("%s is not set", envForgeAPIKey)
+	apiKey, err := forgeAPIKey(env.Name, forgeEnv)
+	if err != nil {
+		return nil, err
 	}
 
 	dialer := &teleport.Dialer{
@@ -703,6 +717,7 @@ func newForgeProvider(cfg config.Config, env *environment.Environment) (infra.Pr
 			ClusterctlVersion: versions[versionClusterctl],
 		},
 		KeepOnFailure: keepFailedNode(cfg),
+		KeyDir:        cfg.Lifecycle.NodeKeyDir,
 		DisableMTLS:   siteDisableMTLS,
 	})
 	if err != nil {
@@ -787,6 +802,7 @@ func newDSXProvider(cfg config.Config, env *environment.Environment) (infra.Prov
 			ClusterctlVersion: versions[versionClusterctl],
 		},
 		KeepOnFailure: keepFailedNode(cfg),
+		KeyDir:        cfg.Lifecycle.NodeKeyDir,
 		DisableMTLS:   siteDisableMTLS,
 	})
 }

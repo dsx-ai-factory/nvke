@@ -229,6 +229,77 @@ func TestMiddlewareEnforcing(t *testing.T) {
 	}
 }
 
+// A Teleport app-access token: ES256, an "iss" that is the cluster name rather
+// than a URL, and the caller's Teleport roles in "roles" instead of "groups".
+func TestMiddlewareAdmitsByClaim(t *testing.T) {
+	t.Parallel()
+
+	const (
+		teleportName   = "teleport"
+		teleportIssuer = "teleport.example.local"
+	)
+	key := ECDSAKey(t, "teleport-1")
+	cfg := &auth.Config{
+		Audiences: []string{deploymentAudience},
+		Issuers: []auth.Issuer{{
+			Name:       teleportName,
+			Issuer:     teleportIssuer,
+			JWKS:       &auth.JWKSKeys{URI: "https://teleport.example.local/.well-known/jwks.json"},
+			Algorithms: []string{"ES256"},
+			Admit:      &auth.Admit{Claims: []auth.ClaimRule{{Name: "roles", Value: "nvke-admin"}}},
+		}},
+	}
+	verifier, err := auth.NewVerifier(cfg, map[string]auth.KeySource{teleportName: NewStaticKeySource(key)})
+	require.NoError(t, err)
+
+	tests := []struct {
+		name       string
+		roles      []any
+		wantStatus int
+		wantReason auth.FailureReason
+	}{
+		{name: "a token holding the role", roles: []any{"nvke-admin", "access"}, wantStatus: http.StatusOK},
+		{
+			name:       "a token without the role",
+			roles:      []any{"access"},
+			wantStatus: http.StatusForbidden,
+			wantReason: auth.ReasonNotAdmitted,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := &callRecorder{}
+			authenticator, err := auth.NewAuthenticator(verifier, auth.ModeEnforcing, slog.New(slog.DiscardHandler), recorder.Record)
+			require.NoError(t, err)
+			h := harness{handler: authenticator.Wrap(&spyHandler{}), recorder: recorder}
+
+			now := time.Now()
+			spec := TokenSpec{
+				Key:       key,
+				Issuer:    teleportIssuer,
+				Subject:   "alice",
+				Audience:  []any{deploymentAudience},
+				IssuedAt:  At(now),
+				NotBefore: At(now),
+				ExpiresAt: At(now.Add(time.Hour)),
+				Extra:     map[string]any{"roles": tt.roles},
+			}
+
+			rr := h.do(t, probePath, MintToken(t, spec))
+			require.Equal(t, tt.wantStatus, rr.Code)
+
+			outcome := auth.OutcomeAuthenticated
+			if tt.wantStatus != http.StatusOK {
+				outcome = auth.OutcomeRejected
+			}
+			assert.Equal(t, []authCall{{Outcome: outcome, Reason: tt.wantReason, Issuer: teleportName}}, recorder.Calls())
+		})
+	}
+}
+
 // Permissive suppresses both the 401 and the 403. Suppressing only the 401 would
 // 403 every caller outside the allow-list, so the unadmitted row is the one that
 // matters.
@@ -582,6 +653,14 @@ func TestNewAuthenticatorTolerates(t *testing.T) {
 	authn.Wrap(next).ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestIssuerNames(t *testing.T) {
+	t.Parallel()
+
+	authn, err := auth.NewAuthenticator(newFixture(t).verifier, auth.ModeEnforcing, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{k8sName, spireName}, authn.IssuerNames())
 }
 
 // The one argument that is not tolerated. Disabling authentication means building

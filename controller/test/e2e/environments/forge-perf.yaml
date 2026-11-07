@@ -11,6 +11,9 @@ infrastructure:
   org:
     id: "${FORGE_PERF_ORG_ID}"
 
+  # The key belongs to this org, so it has its own variable.
+  apiKeyEnv: FORGE_PERF_API_KEY
+
   sites:
     site-1:
       id: "${FORGE_PERF_SITE_ID}"

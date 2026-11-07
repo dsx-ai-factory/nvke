@@ -91,6 +91,8 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 				Spec: NodePoolReleaseSpec{
 					MachineImageRef: MachineImageReference{Name: "nvke-nico-vms-24.04-amd64-fde"},
 					MachineInit:     testMachineInit(),
+					Profile:         "ubuntu",
+					Tag:             "24.04",
 				},
 			},
 		},

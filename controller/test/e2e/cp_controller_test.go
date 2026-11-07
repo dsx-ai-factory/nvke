@@ -514,6 +514,9 @@ func validateControllerManagedControlPlaneRebalance(test *tenantTest) {
 		if test.spec.Backend != nvke.BackendNicoVMS {
 			Skip("control-plane rebalance ranks on the NICo instanceTypePreference, which only the nico-vms control-plane provider carries")
 		}
+		if nicoVMSLargeInstanceID == nicoVMSPreferredInstanceID {
+			Skip("on macOS the large instance type is already the preferred 8 GiB one, so there is no more-preferred type to rebalance onto")
+		}
 
 		desired := controlPlaneControllerUpdateDesiredCount
 

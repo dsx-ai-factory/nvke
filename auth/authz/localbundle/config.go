@@ -4,7 +4,6 @@
 package localbundle
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -54,7 +53,7 @@ type issuerConfig struct {
 	ServiceAccounts []serviceAccountMapping `json:"serviceAccounts"`
 }
 
-// tenantSource says where a caller's tenant comes from. Exactly one of Claim
+// tenantSource says where a caller's tenant comes from. At most one of Claim
 // and Fixed is set.
 type tenantSource struct {
 	// Claim names a top-level claim holding the tenant ID as a string.
@@ -65,41 +64,23 @@ type tenantSource struct {
 	Fixed string `json:"fixed"`
 }
 
-// claimMapping matches a caller whose top-level claim Name equals Value, or
-// is a string array holding it, and grants it Grants.
+// claimMapping grants Grants to a caller its ClaimRule matches.
 type claimMapping struct {
-	Name   string   `json:"name"`
-	Value  string   `json:"value"`
+	authn.ClaimRule
 	Grants []string `json:"grants"`
 }
 
 // serviceAccountMapping matches a Kubernetes service account in Namespace,
 // with Name if it's set, and grants it Grants.
 type serviceAccountMapping struct {
-	Namespace string             `json:"namespace"`
-	Name      serviceAccountName `json:"name"`
-	Grants    []string           `json:"grants"`
-}
-
-// serviceAccountName is a service account mapping's optional name. A *string
-// can't tell an absent name from a null one, and both match every service
-// account in the namespace. Null records a null name, so the load can refuse
-// it: in YAML, `name:` with no value is null.
-type serviceAccountName struct {
-	// Value is nil for both an absent and a null name, so Null is the test.
-	Value *string
-	Null  bool
-}
-
-// UnmarshalJSON records whether the name is null, and decodes it as a string.
-func (n *serviceAccountName) UnmarshalJSON(raw []byte) error {
-	n.Null = string(raw) == "null"
-	return json.Unmarshal(raw, &n.Value)
+	Namespace string                   `json:"namespace"`
+	Name      authn.ServiceAccountName `json:"name,omitzero"`
+	Grants    []string                 `json:"grants"`
 }
 
 // rule returns m's match as the authN library's service account rule.
 func (m serviceAccountMapping) rule() authn.ServiceAccountRule {
-	return authn.ServiceAccountRule{Namespace: m.Namespace, Name: m.Name.Value}
+	return authn.ServiceAccountRule{Namespace: m.Namespace, Name: m.Name}
 }
 
 // compiledConfig is a checked configFile in the form Authorize reads, built
@@ -118,11 +99,9 @@ type compiledIssuer struct {
 	serviceAccounts []serviceAccountMatch
 }
 
-// claimMatch grants its roles to a caller whose claim name equals value, or is
-// a string array holding it.
+// claimMatch grants its roles to a caller that rule matches.
 type claimMatch struct {
-	name   string
-	value  string
+	rule   authn.ClaimRule
 	grants []types.EntityUID
 }
 
@@ -132,11 +111,11 @@ type serviceAccountMatch struct {
 	grants []types.EntityUID
 }
 
-// loadConfig decodes raw strictly, then checks it against the authN config's
-// issuers and, unless declared is nil, the declared roles. It returns the
-// config compiled for Authorize. Unless raw doesn't parse or has the wrong
-// apiVersion or kind, the error joins every problem.
-func loadConfig(raw []byte, issuers []string, declared types.EntityMap) (compiledConfig, error) {
+// loadConfig decodes raw strictly, then checks it against opts and, unless
+// declared is nil, the declared roles. It returns the config compiled for
+// Authorize. Unless raw doesn't parse or has the wrong apiVersion or kind, the
+// error joins every problem.
+func loadConfig(raw []byte, opts Options, declared types.EntityMap) (compiledConfig, error) {
 	var c authorizationConfig
 	if err := strictyaml.Decode(configFile, raw, &c); err != nil {
 		return compiledConfig{}, err
@@ -156,8 +135,11 @@ func loadConfig(raw []byte, issuers []string, declared types.EntityMap) (compile
 			errs = append(errs, fmt.Errorf("operatorTenant %w", err))
 		}
 	}
+	if opts.RoleOnly {
+		errs = append(errs, c.checkRoleOnly()...)
+	}
 	for _, name := range slices.Sorted(maps.Keys(c.Issuers)) {
-		errs = append(errs, c.checkIssuer(name, issuers, declared)...)
+		errs = append(errs, c.checkIssuer(name, opts.Issuers, declared)...)
 	}
 	if len(errs) > 0 {
 		return compiledConfig{}, prefixErrors(errs)
@@ -172,7 +154,7 @@ func (c authorizationConfig) compile() compiledConfig {
 	for name, i := range c.Issuers {
 		issuer := compiledIssuer{tenant: i.Tenant, operators: i.Operators}
 		for _, m := range i.Claims {
-			issuer.claims = append(issuer.claims, claimMatch{name: m.Name, value: m.Value, grants: roleUIDs(m.Grants)})
+			issuer.claims = append(issuer.claims, claimMatch{rule: m.ClaimRule, grants: roleUIDs(m.Grants)})
 		}
 		for _, m := range i.ServiceAccounts {
 			issuer.serviceAccounts = append(issuer.serviceAccounts, serviceAccountMatch{rule: m.rule(), grants: roleUIDs(m.Grants)})
@@ -211,6 +193,27 @@ func (c authorizationConfig) checkTypeMeta() []error {
 	return errs
 }
 
+// checkRoleOnly refuses every tenancy key set to a value that could change a
+// decision, for an API that decides by role alone. An empty operatorTenant,
+// an empty tenant or operators: false reads as unset and is accepted.
+func (c authorizationConfig) checkRoleOnly() []error {
+	const why = "this API authorizes by role only, so remove it"
+	var errs []error
+	if c.OperatorTenant != "" {
+		errs = append(errs, errors.New("operatorTenant is set, but "+why))
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.Issuers)) {
+		i := c.Issuers[name]
+		if i.Tenant != (tenantSource{}) {
+			errs = append(errs, fmt.Errorf("issuers.%s.tenant is set, but %s", name, why))
+		}
+		if i.Operators {
+			errs = append(errs, fmt.Errorf("issuers.%s.operators is set, but %s", name, why))
+		}
+	}
+	return errs
+}
+
 // checkIssuer checks one issuer's settings: the issuer is in the authN config,
 // its tenant source is valid, its operator setting can take effect, and each
 // claim and service account mapping is valid. Each error names its path.
@@ -228,17 +231,14 @@ func (c authorizationConfig) checkIssuer(name string, issuers []string, declared
 	}
 	for j, m := range i.Claims {
 		mapping := fmt.Sprintf("%s.claims[%d]", path, j)
-		if err := checkClaimMapping(m); err != nil {
+		if err := m.Validate(); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", mapping, err))
 		}
 		errs = append(errs, checkGrants(mapping, m.Grants, declared)...)
 	}
 	for j, m := range i.ServiceAccounts {
 		mapping := fmt.Sprintf("%s.serviceAccounts[%d]", path, j)
-		if m.Name.Null {
-			errs = append(errs, fmt.Errorf("%s: name is null; remove the key to match any service account "+
-				"in the namespace, or set a name", mapping))
-		} else if err := m.rule().Validate(); err != nil {
+		if err := m.rule().Validate(); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", mapping, err))
 		}
 		errs = append(errs, checkGrants(mapping, m.Grants, declared)...)
@@ -246,17 +246,17 @@ func (c authorizationConfig) checkIssuer(name string, issuers []string, declared
 	return errs
 }
 
-// checkTenantSource refuses a tenant source that would give no caller a
-// tenant, or that the caller controls.
+// checkTenantSource refuses a tenant source that sets both claim and fixed, or
+// whose tenant the caller controls.
 func checkTenantSource(src tenantSource) error {
 	switch {
-	case (src.Claim == "") == (src.Fixed == ""):
-		return errors.New("set exactly one of claim and fixed")
+	case src.Claim != "" && src.Fixed != "":
+		return errors.New("set at most one of claim and fixed")
 	case src.Claim != "":
 		if err := checkClaimName(src.Claim); err != nil {
 			return fmt.Errorf("claim %w", err)
 		}
-	default:
+	case src.Fixed != "":
 		if err := authz.CheckTenantID(src.Fixed); err != nil {
 			return fmt.Errorf("fixed %w", err)
 		}
@@ -275,6 +275,8 @@ func checkOperators(i issuerConfig, operatorTenant string) error {
 		return nil
 	}
 	switch {
+	case i.Tenant == (tenantSource{}):
+		return errors.New("operators is set, but tenant isn't, so no caller would be an operator")
 	case operatorTenant == "":
 		return errors.New("operators is set, but operatorTenant isn't, so no caller would be an operator")
 	case fixed != "" && fixed != operatorTenant:
@@ -285,24 +287,11 @@ func checkOperators(i issuerConfig, operatorTenant string) error {
 	}
 }
 
-// checkClaimMapping refuses a claim mapping that would match no token, or
-// whose claim the caller controls.
-func checkClaimMapping(m claimMapping) error {
-	if err := checkClaimName(m.Name); err != nil {
-		return fmt.Errorf("name %w", err)
-	}
-	if err := checkTrimmed(m.Value); err != nil {
-		return fmt.Errorf("value %w", err)
-	}
-	return nil
-}
-
-// checkClaimName refuses a claim name that would match no claim, or whose
-// claim the caller chooses. The caller prefixes the error with the field. A
-// caller chooses the audiences it asks for, and a token passes when any one
+// checkClaimName refuses a tenant claim name that would match no claim, or
+// whose claim the caller chooses. The caller prefixes the error with the field.
+// A caller chooses the audiences it asks for, and a token passes when any one
 // matches. An OIDC caller chooses the nonce, and the issuer signs it
-// unchanged. So either claim would let a caller grant itself a role or choose
-// its tenant.
+// unchanged. So either claim would let a caller choose its tenant.
 func checkClaimName(name string) error {
 	switch {
 	case name == "":
@@ -391,7 +380,7 @@ func (c compiledConfig) rolesFor(p authn.Principal) []types.EntityUID {
 	var roles []types.EntityUID
 	i := c.issuers[p.IssuerName]
 	for _, m := range i.claims {
-		if claimMatches(p.Claims, m.name, m.value) {
+		if m.rule.Matches(p.Claims) {
 			roles = append(roles, m.grants...)
 		}
 	}
@@ -404,26 +393,4 @@ func (c compiledConfig) rolesFor(p authn.Principal) []types.EntityUID {
 		}
 	}
 	return roles
-}
-
-// claimMatches reports whether the claim name equals value, or is a string
-// array holding it. Verified claims decode JSON arrays to []any, and an array
-// holding anything but strings doesn't match.
-func claimMatches(claims map[string]any, name, value string) bool {
-	switch v := claims[name].(type) {
-	case string:
-		return v == value
-	case []any:
-		found := false
-		for _, elem := range v {
-			s, ok := elem.(string)
-			if !ok {
-				return false
-			}
-			found = found || s == value
-		}
-		return found
-	default:
-		return false
-	}
 }
