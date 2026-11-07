@@ -85,6 +85,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [design/README.md](design/README.md) | Design records and proposals; status is stated at the top of each |
 | [design/byo-os.md](design/byo-os.md) | Proposal: bringing your own OS image |
 | [design/multi-oidc-provider-support-design.md](design/multi-oidc-provider-support-design.md) | Design: multiple OIDC providers |
+| [design/node-os-build.md](design/node-os-build.md) | Proposal: building the node OS from a locked, single-origin repository |
 
 ## Operating a site
 

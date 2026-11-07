@@ -15,7 +15,7 @@ NVKR builds and publishes the node disks today by running this Packer project.
 
 ## Decision
 
-We will define each node OS release in a hand-written release spec, resolve it into a committed lock, publish exactly the locked package set as a signed single-origin apt repository, build images only from that repository, and verify every image against the lock.
+We will define each node OS release in a hand-written release spec, resolve it into a committed lock, publish exactly the locked package set as a signed single-origin apt repository, build images only from that repository, and verify every image against the lock. The detailed design is in [`docs/design/node-os-build.md`](../../../docs/design/node-os-build.md).
 
 - **Spec, lock and manifest.** Each document has one producer:
   - The spec (`apiVersion: nvke.dev/v1`, `kind: Release`) states intent. It carries no version and no snapshot ID.
