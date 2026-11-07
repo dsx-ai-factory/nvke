@@ -32,12 +32,12 @@ done
 # Consume the complete tar listing. Exiting awk at the first match closes the
 # pipe early, and GNU tar treats the resulting SIGPIPE as a write error under
 # pipefail even though BSD tar does not.
-chart_yaml="$(tar -tzf "${archive}" | awk '/\/Chart.yaml$/ && chart == "" { chart = $0 } END { print chart }')"
+chart_yaml="$(tar -tzf "${archive}" | awk -F/ 'NF == 2 && $2 == "Chart.yaml" { chart = $0 } END { print chart }')"
 [[ -n "${chart_yaml}" ]] || { echo "ERROR: packaged chart has no Chart.yaml" >&2; exit 1; }
 
 metadata="$(tar -xOzf "${archive}" "${chart_yaml}")"
-packaged_version="$(awk '$1 == "version:" { gsub(/"/, "", $2); print $2; exit }' <<<"${metadata}")"
-packaged_app_version="$(awk '$1 == "appVersion:" { gsub(/"/, "", $2); print $2; exit }' <<<"${metadata}")"
+packaged_version="$(awk '/^version:/ { gsub(/"/, "", $2); print $2; exit }' <<<"${metadata}")"
+packaged_app_version="$(awk '/^appVersion:/ { gsub(/"/, "", $2); print $2; exit }' <<<"${metadata}")"
 
 if [[ "${packaged_version}" != "${version}" ]]; then
   echo "ERROR: packaged chart version is ${packaged_version:-missing}; expected ${version}" >&2

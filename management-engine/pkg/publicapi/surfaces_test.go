@@ -26,7 +26,12 @@ func TestSurfaces(t *testing.T) {
 		"nvkeclusters", "clusterreleases", "machineimages",
 		"controlplaneclasses", "clusterreleasechannels", "nodepoolreleases",
 	} {
-		data, err := os.ReadFile("../../config/crd/bases/internal.nvke.nvidia.com_" + name + ".yaml")
+		directory := "../../config/crd/bases/"
+		switch name {
+		case "machineimages", "clusterreleases", "nodepoolreleases":
+			directory = "../../../controller/deploy/charts/nvke-crds/bases/"
+		}
+		data, err := os.ReadFile(directory + "internal.nvke.nvidia.com_" + name + ".yaml")
 		require.NoError(t, err)
 		var crd apiextensionsv1.CustomResourceDefinition
 		require.NoError(t, yaml.Unmarshal(data, &crd))

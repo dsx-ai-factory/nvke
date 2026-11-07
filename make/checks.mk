@@ -88,39 +88,31 @@ next-tag-test: ## Test the release version rules in release/hack/next-tag.sh. (r
 	@$(call require_command,python3)
 	@python3 -B ./release/hack/test_next_tag.py
 
-CHART_CRDS_KUSTOMIZE := controller/deploy/release-crds
-CHART_CRDS_FILE := $(CHART)/files/crds.yaml
+SHARED_CRD_CHART := controller/deploy/charts/nvke-crds
+CHART_CRDS_FILE := dist/release-crds.yaml
 
-.PHONY: chart-crds chart-crds-check
-chart-crds: ## Regenerate the release CRDs the controller chart installs.
-	@# Pinned kubectl: the rendered bytes are compared, so the renderer has to
-	@# be the same one everywhere or the check below fails on version drift.
+.PHONY: chart-deps chart-crds chart-crds-check chart-crds-render-check
+chart-deps: ## Build the controller chart's pinned local dependency.
+	@$(call require_tool,helm,$(HELM_VERSION))
+	helm dependency build $(CHART) --skip-refresh
+
+chart-crds: ## Render the controller's three release schemas into ignored build output.
+	@$(call require_tool,helm,$(HELM_VERSION))
+	@mkdir -p $(dir $(CHART_CRDS_FILE))
+	helm template nvke-crds $(SHARED_CRD_CHART) > $(CHART_CRDS_FILE)
+
+chart-crds-check: ## Verify canonical generated schemas and shared chart rendering.
+	@$(MAKE) --no-print-directory -C management-engine manifests-state
+	git diff --exit-code -- $(SHARED_CRD_CHART)/bases management-engine/config/crd/bases
+	@test -z "$$(git ls-files --others --exclude-standard -- $(SHARED_CRD_CHART)/bases)" || { echo "Commit canonical schemas"; exit 1; }
 	@$(call require_tool,kubectl,$(KUBECTL_VERSION))
-	@mkdir -p "$(dir $(CHART_CRDS_FILE))"
-	@{ \
-		printf '%s\n' \
-			'# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.' \
-			'# SPDX-License-Identifier: Apache-2.0' \
-			'#' \
-			'# GENERATED FILE -- do not edit. Regenerate with `make chart-crds`.' \
-			'#' \
-			'# `kubectl kustomize $(CHART_CRDS_KUSTOMIZE)`: the release CRDs from' \
-			'# management-engine/config/crd/bases plus the annotations only the chart needs.' \
-			'# Edit the Go types and regenerate there, or the overlay, then regenerate this.'; \
-		printf '%s\n' '---'; \
-		kubectl kustomize --load-restrictor=LoadRestrictionsNone $(CHART_CRDS_KUSTOMIZE); \
-	} > "$(CHART_CRDS_FILE)"
-	@echo "  wrote $(CHART_CRDS_FILE)"
+	kubectl kustomize management-engine/config/crd > /dev/null
 
-chart-crds-check: ## Verify the release CRDs in the controller chart are up to date.
-	@# Tracking first: git diff says nothing about an untracked path, so a
-	@# never-committed file would pass silently.
-	@git ls-files --error-unmatch "$(CHART_CRDS_FILE)" > /dev/null 2>&1 \
-		|| { echo "$(CHART_CRDS_FILE) is not tracked by git. Run 'make chart-crds' and commit it."; exit 1; }
-	@$(MAKE) --no-print-directory chart-crds
-	@git diff --exit-code -- "$(CHART_CRDS_FILE)" \
-		|| { echo "ERROR: $(CHART_CRDS_FILE) is stale. Run 'make chart-crds' and commit it."; exit 1; }
-	@echo "  $(CHART_CRDS_FILE) is up to date."
+chart-crds-render-check: chart-deps ## Verify independent and embedded-consumer CRD rendering.
+	helm lint $(SHARED_CRD_CHART)
+	$(MAKE) --no-print-directory -C management-engine test-chart-crds
+
+lint-chart chart-rbac-check chart-package-check chart-identity-check chart-controller-config-check credential-alerts-check: chart-deps
 
 # helm lint and helm template both pass on a manifest Kubernetes would reject, so
 # kubeconform parses what was rendered. A chart that renders nothing also passes
@@ -194,7 +186,7 @@ credential-alerts-check: ## Validate credential alert rules, fixtures and the en
 	@$(call require_tool,kubeconform,$(KUBECONFORM_VERSION))
 	@CHART="$(CHART)" ./controller/hack/chart-credential-alerts-assertions.sh
 
-chart-check: lint-chart chart-rbac-check chart-package-check chart-identity-check chart-controller-config-check credential-alerts-check ## Run every chart check enforced by CI.
+chart-check: chart-crds-render-check lint-chart chart-rbac-check chart-package-check chart-identity-check chart-controller-config-check credential-alerts-check ## Run every chart check enforced by CI.
 
 .PHONY: nktp-chart-deps nktp-chart-lint nktp-chart-check
 
