@@ -39,9 +39,9 @@ name: CLI Artifact NVCR
 # workflow_dispatch still works and still builds: dist_artifact is empty there,
 # so the build step below runs instead of the download.
 #
-# A tag run is versioned and tagged like any other build of that commit: the v*
-# describe version, which on the tagged commit is the tag itself, and
-# sha-<commit>.
+# A bare v* tag run is versioned and tagged like any other build of that commit:
+# the v* describe version, which on the tagged commit is the tag itself, and
+# sha-<commit>. A cli/v* RC tag gets sha-<commit> only.
 on:
   workflow_call:
     inputs:
@@ -149,10 +149,11 @@ jobs:
           aliases=("sha-${GITHUB_SHA}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             aliases+=("edge")
-          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            # Named by its describe version, the one the binary reports,
-            # whichever tag started the run, so qualification can pull it by
-            # version.
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            # Named by its describe version, the one the binary reports, so
+            # qualification can pull it by version. Bare tags only: a cli/v*
+            # RC on a released commit describes to the release, and would move
+            # that release's alias.
             aliases+=("${version}")
           fi
 
