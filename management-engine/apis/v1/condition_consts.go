@@ -12,6 +12,9 @@ const (
 	ReconcileFailedReason        = "ReconcileFailed"
 )
 
+// NodePoolReleaseResolvedCondition reports whether a pool resolved the worker release it is created from.
+const NodePoolReleaseResolvedCondition = "NodePoolReleaseResolved"
+
 const (
 	NVKEControllerProvisionedCondition           = "NVKEControllerProvisioned"
 	NVKEControllerProvisioningCondition          = "NVKEControllerProvisioning"
