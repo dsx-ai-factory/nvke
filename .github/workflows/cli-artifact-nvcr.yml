@@ -39,9 +39,9 @@ name: CLI Artifact NVCR
 # workflow_dispatch still works and still builds: dist_artifact is empty there,
 # so the build step below runs instead of the download.
 #
-# A bare vX.Y.Z-beta.N tag only triggers the run. The artifact is versioned and
-# tagged like any other build of that commit (the cli/v* describe version and
-# sha-<commit>); the beta tag name is not added as an alias.
+# A bare v* tag run is versioned and tagged like any other build of that commit:
+# the v* describe version, which on the tagged commit is the tag itself, and
+# sha-<commit>. A cli/v* RC tag gets sha-<commit> only.
 on:
   workflow_call:
     inputs:
@@ -144,19 +144,17 @@ jobs:
           # exists in the NGC org; the binaries inside it are nvkectl.
           repo="nvcr.io/${NGC_ORG}/nvkectl"
 
-          version="$(git describe --match 'cli/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-          version="${version#cli/}"
+          version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
 
           aliases=("sha-${GITHUB_SHA}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             aliases+=("edge")
-          elif [[ "${GITHUB_REF}" == refs/tags/* && "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
-            # A bare beta tag only triggers the run; it must not become an
-            # alias. The build is named by its describe version instead, the
-            # one the binary reports, so qualification can pull it by version.
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            # Named by its describe version, the one the binary reports, so
+            # qualification can pull it by version. Bare tags only: a cli/v*
+            # RC on a released commit describes to the release, and would move
+            # that release's alias.
             aliases+=("${version}")
-          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            aliases+=("${GITHUB_REF_NAME#cli/}")
           fi
 
           {

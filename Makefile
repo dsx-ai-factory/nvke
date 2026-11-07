@@ -85,27 +85,15 @@ CMD_MODULES := agent \
                controller/hack/capd-reboot-controller \
                os-image
 
-# The version stamped into a CMD_MODULES binary. First hit wins: the module's own
-# tag series, a repo-wide one, the commit, then v0.0.0 outside a git checkout.
-# The hack tools have no tags, so they get the commit.
+# The version stamped into a CMD_MODULES binary. Every module is versioned by the
+# repository's bare vX.Y.Z tags: the nearest one, the commit when none is
+# reachable, then v0.0.0 outside a git checkout. The module argument is kept so
+# callers name what they stamp.
 #
-# --match is required, on EVERY describe including the --always one. This repo
-# has several tag series, and a describe without --match returns the nearest one
+# --match is required. The repository also carries prefixed tags (nktp/v*, and
+# older component tags), and a describe without --match returns the nearest one
 # from any of them.
-#
-# --always only degrades to a bare commit when no tag describes HEAD, and in
-# this repository some tag always does. An unmatched --always therefore returns
-# another component's tag. ${v##*/} (from #216) strips whichever prefix came
-# back, so a hack tool reported v0.2.1-rc.2-6-g… — an agent version, just
-# without the agent/ prefix — and version-check could not catch it. Scoping
-# --always with --match makes that step a commit when the module has no tags
-# of its own.
-cmd_version = $(shell \
-    v=$$(git describe --tags --dirty --match '$(notdir $(1))/v[0-9]*' 2>/dev/null \
-      || git describe --tags --dirty --match 'v[0-9]*' 2>/dev/null \
-      || git describe --always --dirty --match '$(notdir $(1))/v[0-9]*' 2>/dev/null \
-      || echo v0.0.0); \
-    printf '%s' "$${v##*/}")
+cmd_version = $(shell git describe --tags --always --dirty --match 'v*' 2>/dev/null || echo v0.0.0)
 
 # Both spellings: agent declares VERSION, the hack tools declare version. The
 # linker ignores an -X for a symbol the binary lacks, so passing both is safe.

@@ -40,21 +40,14 @@ include ../make/tool-versions.mk
 
 # Version stamping, mirroring controller/Makefile.
 #
-# --match is not optional. This is a monorepo whose tags are per-component
-# (agent/v*, controller/v*), so a bare `git describe --tags` returns whichever
-# family happens to be nearest and would stamp nvkectl with, say, a controller
-# version. That is not hypothetical: hack/capd-kindest-node/build-image.sh
-# derives an agent version with an unmatched `git describe` and already
-# produces the wrong string.
-#
-# nvkectl versions apart from the controller, so it gets its own tag family. Go
-# requires a submodule's tags to carry its directory, so this module is tagged
-# cli/vX.Y.Z. The prefix is stripped, so the binary reports v1.2.3. No cli/v*
-# tag exists yet, hence the fallbacks: a plain v* tag, the commit, then v0.0.0.
-# The commit says which source a build came from, leaving v0.0.0 to mean a build
-# outside a git checkout. --dirty marks a modified tree.
-_NVKECTL_VERSION_RAW := $(shell git describe --tags --dirty --match 'cli/v[0-9]*' 2>/dev/null || git describe --tags --dirty --match 'v[0-9]*' 2>/dev/null || git describe --always --dirty 2>/dev/null || echo "v0.0.0")
-NVKECTL_VERSION  ?= $(patsubst cli/%,%,$(_NVKECTL_VERSION_RAW))
+# Every component is versioned by the repository's bare vX.Y.Z tags. --match
+# is not optional: the repository also carries prefixed tags (nktp/v*, and
+# older component tags), and an unmatched `git describe --tags` returns
+# whichever is nearest. --always falls back to the commit, which says which
+# source a build came from, leaving v0.0.0 to mean a build outside a git
+# checkout. --dirty marks a modified tree.
+_NVKECTL_VERSION := $(shell git describe --tags --always --dirty --match 'v*' 2>/dev/null || echo "v0.0.0")
+NVKECTL_VERSION  ?= $(_NVKECTL_VERSION)
 NVKECTL_COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 NVKECTL_TREE     ?= $(shell test -z "$$(git status --porcelain 2>/dev/null)" && echo clean || echo dirty)
 # The commit timestamp, not the wall clock: building the same commit twice

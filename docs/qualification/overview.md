@@ -99,12 +99,12 @@ deployment tag policy (`v*-beta.*`) rather than a reviewer. There is no
 ungated job and no ungated trigger left in this lane: a label or a dispatch
 alone, dry run included, cannot reach any credential without an approval.
 
-**Qualifying a beta.** A beta tag names a commit and carries no component tags,
-so resolving the components from their own tags would answer with the last
-release rather than with what that commit built. A tag push therefore asks for
-`resolution: commitDescribe`, which describes each component at the commit the
-tag marks, and the commit is derived from the version being qualified rather
-than given.
+**Qualifying a beta.** Every component is versioned by the repository's
+`vX.Y.Z` tags, so a tag push asks for `resolution: commitDescribe`, which
+describes each component at the commit the tag marks. On that commit the
+description is the tag itself, so every component resolves to the version being
+qualified. The commit is derived from the version being qualified rather than
+given.
 
 A tag push also ignores the `QUALIFY_E2E_*` variables that stand in for a
 dispatch input on a labelled run: the scope, the stage, keep-site, the image
@@ -113,12 +113,15 @@ asked for, so a beta qualifies `golden-path` at stage `full` from NVCR and keeps
 no machine, whatever they say. The run's resolved inputs name any of them that
 was set and not applied.
 
-`commitDescribe` is also the default, because a beta is what this lane
-qualifies nightly. A release qualification therefore has to select `gitTag`,
-by the `resolution` input or by the `QUALIFY_E2E_RESOLUTION` repository
-variable. Left on the default, a release resolves its components by describe
-and verifies the describe-named artifacts, which exist, so the run passes while
-qualifying builds other than the release-tagged ones.
+`commitDescribe` is also the default, and it is the right resolution for a
+release as well as a beta. An RC publishes nothing, and sits on the commit of
+the beta it was cut from as a lightweight tag, so `git describe` there names the
+beta: qualifying an RC resolves the beta's artifacts, which are the RC's. A
+signed RC tag would name versions nothing published (see
+[artifact-publication.md](../artifact-publication.md#pre-releases)). Do not
+select `gitTag` for a
+qualification: it takes the highest `v*` tag in the repository, which is not
+necessarily the version being qualified.
 The plan records the commit and, for each component, the strategy that answered,
 so a run says afterwards how every version was arrived at.
 

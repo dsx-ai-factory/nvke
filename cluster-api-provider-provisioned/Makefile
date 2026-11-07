@@ -25,12 +25,8 @@ BUILDX_OUTPUT ?= type=oci,dest=$(OCI_ARCHIVE)
 include ../make/golangci.mk
 include ../make/coverage.mk
 
-BUILD_VERSION ?= $(shell \
-	v=$$(git describe --tags --dirty --match 'cluster-api-provider-provisioned/v[0-9]*' 2>/dev/null \
-		|| git describe --tags --dirty --match 'v[0-9]*' 2>/dev/null \
-		|| git describe --always --dirty --match 'cluster-api-provider-provisioned/v[0-9]*' 2>/dev/null \
-		|| echo v0.0.0); \
-	printf '%s' "$${v##*/}")
+# The repository's bare vX.Y.Z tags version every component.
+BUILD_VERSION ?= $(shell git describe --tags --always --dirty --match 'v*' 2>/dev/null || echo v0.0.0)
 
 .DEFAULT_GOAL := help
 .PHONY: help test lint controller-gen generate manifests generate-check docker-build \

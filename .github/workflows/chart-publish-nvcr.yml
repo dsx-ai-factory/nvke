@@ -28,7 +28,7 @@ name: Chart Publish NVCR
 # does not exist, and the push dies before it reaches the registry:
 
 # A bare vX.Y.Z-beta.N tag only triggers the run. The chart is versioned like any
-# other build of that commit: the controller/v* describe version, with the same
+# other build of that commit: the v* describe version, with the same
 # appVersion as the image tag image-nvcr.yml publishes.
 
 # Through controller/v0.1.1-rc.1 the chart was named cloud-workflow-engine and
@@ -41,8 +41,8 @@ on:
     branches:
       - main
     tags:
-      - "controller/v[0-9]+.[0-9]+.[0-9]+"
       - "controller/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+"
       - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
   workflow_dispatch: {}
 
@@ -131,8 +131,7 @@ jobs:
             exit 1
           fi
 
-          describe="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-          describe="${describe#controller/}"
+          describe="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
           version="${describe#v}"
           repo="nvcr.io/${ORG_TEAM}"
           image="${repo}/nvke-controller"
