@@ -441,6 +441,9 @@ func httpDoWithRetry(ctx context.Context, method, url string) (*http.Response, e
 	return nil, lastErr
 }
 
+// InstallBundle downloads the bundle, extracts it, and runs InstallCmd in that
+// directory. An empty InstallCmd runs the install file, or ./install.sh when
+// the bundle does not name one.
 func InstallBundle(b *Bundle, runner CommandRunner, source *BundleSource) (string, error) {
 	slog.Info("begin install process for bundle", "bundle", b)
 	path, err := DownloadAndExtractArchive(b, source)
