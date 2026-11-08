@@ -95,6 +95,15 @@ untested_packages() {
 		controller/nico-sim/test/integration/libvirt	behind `-tags integration`; needs libvirt and a node image
 		controller/nico-sim/test/integration/qemu	behind `-tags integration`; needs QEMU and a node image
 	EOF
+
+	# Waived only where the filename suffix really excludes the tests. On macOS
+	# `go list` compiles config_darwin_test.go, so check_every_test_package_is_measured
+	# would reject this row as a stale waiver and `make coverage` would fail.
+	if [[ "$(go env GOOS)" != "darwin" ]]; then
+		printf '%s\t%s\n' \
+			'controller/nico-sim/internal/config' \
+			'behind `_darwin_test.go` filename suffix; runs in unit-tests-os.yml on macOS'
+	fi
 }
 
 # ---------------------------------------------------------------------------
