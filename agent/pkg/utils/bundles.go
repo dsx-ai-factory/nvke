@@ -463,6 +463,15 @@ func InstallBundle(b *Bundle, runner CommandRunner, source *BundleSource) (strin
 		// to simplify this, even if install.sh is a wrapper to something else like a python script.
 		b.InstallFile = "install.sh"
 	}
+	// An omitted install command still names the install file. exec looks up a
+	// bare name on PATH, so a file in the bundle directory needs the ./ prefix.
+	if len(b.InstallCmd) == 0 {
+		command := b.InstallFile
+		if !strings.Contains(command, "/") {
+			command = "./" + command
+		}
+		b.InstallCmd = []string{command}
+	}
 
 	// If it's a .sh or .py executable (eg install.sh or install.py) make sure
 	// it's executable, this will cover both syn and async calls

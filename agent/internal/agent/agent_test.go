@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1433,6 +1435,42 @@ func TestInstallBundleRequiresIndex(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
 	assert.Contains(t, err.Error(), "bundle index not configured")
+}
+
+func TestInstallCollectionJoinsBundleURL(t *testing.T) {
+	const bundlePath = "nke_bundles/kubeadm.tgz"
+	index := []byte(`{"kubeadm":{"entries":[{"arch":"amd64","path":"` + bundlePath + `","version":"1.2.3"}]}}`)
+	collection := []byte(`{"bundles":[{"name":"kubeadm","version":"1.2.3","installCmd":["./install.sh"]}]}`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/collection.json":
+			_, _ = w.Write(collection)
+		case "/index.json":
+			_, _ = w.Write(index)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	source, err := nvkeutils.ParseBundleSourceURI(srv.URL)
+	require.NoError(t, err)
+	server := &NodeAgentServer{
+		Runner:          &MockRunner{},
+		Persister:       &MockPersister{},
+		NodeStatus:      &NodeStatus{Architecture: "amd64"},
+		BundleServerURL: srv.URL,
+		BundleIndexFile: srv.URL + "/index.json",
+		BundleSource:    source,
+	}
+
+	resp, err := server.InstallCollection(context.Background(), &pb.InstallCollectionRequest{
+		CollectionURL: srv.URL + "/collection.json",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Len(t, server.NodeStatus.Bundles, 1)
+	assert.Equal(t, srv.URL+"/"+bundlePath, server.NodeStatus.Bundles[0].Source)
 }
 
 func TestInstallCollectionJSONRequiresIndex(t *testing.T) {
