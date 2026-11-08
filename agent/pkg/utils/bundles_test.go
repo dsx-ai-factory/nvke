@@ -6,9 +6,13 @@ package utils
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	semver "github.com/Masterminds/semver/v3"
 	"github.com/stretchr/testify/assert"
@@ -633,6 +637,63 @@ func TestFetchBundleFromIndex(t *testing.T) {
 		_, err := FetchBundleFromIndex(context.Background(), srv.URL+"/", srv.URL+"/missing/index.json", "calico", version, "x86_64")
 		assert.ErrorContains(t, err, "unable to fetch index")
 	})
+}
+
+func TestDownloadAndExtractFromHTTPRemovesTempDirOnError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "missing", http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	version := semver.MustParse("1.2.3")
+	bundle := &Bundle{Name: "demo", Version: version, URL: srv.URL + "/bundle.tgz"}
+	prefix := fmt.Sprintf("%s_%s-", bundle.Name, bundle.Version)
+	t.Cleanup(func() { removeBundleTempDirs(prefix) })
+
+	dir, err := downloadAndExtractFromHTTP(bundle)
+	assert.Error(t, err)
+	assert.Empty(t, dir)
+	assert.Empty(t, bundleTempDirs(prefix))
+}
+
+func TestDownloadAndExtractFromHTTPStopsWhenTheServerStalls(t *testing.T) {
+	oldHeader := httpResponseHeaderTimeout
+	oldDownload := httpDownloadTimeout
+	httpResponseHeaderTimeout = 200 * time.Millisecond
+	httpDownloadTimeout = 800 * time.Millisecond
+	t.Cleanup(func() {
+		httpResponseHeaderTimeout = oldHeader
+		httpDownloadTimeout = oldDownload
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	t.Cleanup(srv.Close)
+
+	version := semver.MustParse("1.2.4")
+	bundle := &Bundle{Name: "stall", Version: version, URL: srv.URL + "/bundle.tgz"}
+	prefix := fmt.Sprintf("%s_%s-", bundle.Name, bundle.Version)
+	t.Cleanup(func() { removeBundleTempDirs(prefix) })
+
+	dir, err := downloadAndExtractFromHTTP(bundle)
+	assert.Error(t, err)
+	assert.Empty(t, dir)
+	assert.Empty(t, bundleTempDirs(prefix))
+}
+
+func bundleTempDirs(prefix string) []string {
+	matches, err := filepath.Glob(filepath.Join(os.TempDir(), prefix+"*"))
+	if err != nil {
+		return nil
+	}
+	return matches
+}
+
+func removeBundleTempDirs(prefix string) {
+	for _, dir := range bundleTempDirs(prefix) {
+		_ = os.RemoveAll(dir)
+	}
 }
 
 func TestVersionString(t *testing.T) {
