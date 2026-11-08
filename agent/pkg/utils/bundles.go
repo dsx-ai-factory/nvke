@@ -369,8 +369,10 @@ func FetchBundleFromIndex(ctx context.Context, bundleServerURL, indexFile, name 
 
 	bundle, found := idx.Find(name, version, architecture)
 	if !found {
-		slog.Error("bundle version not found in index", "bundle", bundle.Name, "version", VersionString(bundle.Version), "arch", architecture)
-		return bundle, fmt.Errorf("%s bundle version %s for arch %s not found in index", bundle.Name, bundle.Version, architecture)
+		// A missing component name makes Find return a nil bundle. The
+		// requested name and version are still in hand, so report those.
+		slog.Error("bundle version not found in index", "bundle", name, "version", VersionString(version), "arch", architecture)
+		return bundle, fmt.Errorf("%s bundle version %s for arch %s not found in index", name, VersionString(version), architecture)
 	}
 
 	// JoinBundleURL, not concatenation: a bundle server URL without a trailing
