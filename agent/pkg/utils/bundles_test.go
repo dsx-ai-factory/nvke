@@ -682,6 +682,7 @@ func TestDownloadAndExtractFromHTTPStopsWhenTheServerStalls(t *testing.T) {
 	assert.Empty(t, bundleTempDirs(prefix))
 }
 
+// bundleTempDirs lists temp directories created for one bundle prefix.
 func bundleTempDirs(prefix string) []string {
 	matches, err := filepath.Glob(filepath.Join(os.TempDir(), prefix+"*"))
 	if err != nil {
@@ -690,6 +691,7 @@ func bundleTempDirs(prefix string) []string {
 	return matches
 }
 
+// removeBundleTempDirs deletes temp directories left when an assertion fails.
 func removeBundleTempDirs(prefix string) {
 	for _, dir := range bundleTempDirs(prefix) {
 		_ = os.RemoveAll(dir)
