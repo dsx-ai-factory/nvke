@@ -2,9 +2,9 @@
 
 Triage is the first maintainer decision on an issue: is it actionable, where
 does it belong, and how urgent is it. The decision is recorded as labels, so
-anyone can see what is waiting and what was decided. Pull requests from outside
-contributors need a different first decision, whether to run CI on them; see
-[Pull requests from outside contributors](#pull-requests-from-outside-contributors).
+anyone can see what is waiting and what was decided. A pull request needs
+different first decisions: who reviews it, and, when its author is not trusted
+by copy-pr-bot, whether to run CI; see [Pull requests](#pull-requests).
 
 ## The labels
 
@@ -82,22 +82,24 @@ issue events and once an hour:
 
 Pull requests carry none of these labels.
 
-## Pull requests from outside contributors
+## Pull requests
 
-A pull request is routed by its paths: [`.github/labeler.yml`](../.github/labeler.yml)
-sets its `area/*` labels, and [`.github/CODEOWNERS`](../.github/CODEOWNERS)
-requests its reviewers.
+Every pull request is routed by its paths, whoever wrote it:
+[`.github/labeler.yml`](../.github/labeler.yml) sets its `area/*` labels, and
+[`.github/CODEOWNERS`](../.github/CODEOWNERS) requests its reviewers. The
+requested reviewers own the review.
 
 CI on NVIDIA runners runs from a mirror branch, `pull-request/<N>`. copy-pr-bot
 mirrors a head at once when its author is listed in
-[`.github/copy-pr-bot.yaml`](../.github/copy-pr-bot.yaml). Any other head waits
-for a vetter. [`test-gate-check.yml`](../.github/workflows/test-gate-check.yml)
+[`.github/copy-pr-bot.yaml`](../.github/copy-pr-bot.yaml). Any other author's
+head waits for a vetter, inside NVIDIA or out, and however many pull requests
+they have merged. [`test-gate-check.yml`](../.github/workflows/test-gate-check.yml)
 labels what is waiting:
 
 | Label | Meaning | Who clears it |
 |---|---|---|
 | `needs-ok-to-test` | copy-pr-bot has not mirrored this head, so the self-hosted checks have not run. | A vetter, by commenting `/ok to test <full SHA>` |
-| `needs-workflow-approval` | GitHub is holding this head's `pull_request` workflows for a first-time contributor. | A maintainer, by clicking **Approve workflows to run** |
+| `needs-workflow-approval` | GitHub is holding this head's `pull_request` workflows for a first-time contributor or outside collaborator. | A maintainer, by clicking **Approve workflows to run** |
 
 `/ok to test` approves one commit. The code at that SHA runs on NVIDIA runners,
 and every later push from the same author needs a new `/ok to test`.
@@ -131,9 +133,9 @@ For each pull request carrying `needs-ok-to-test`:
 
 ### Cadence
 
-Answer a new pull request from an outside contributor within three business
-days: vet it, or say what it needs first. Each area sweeps its pull requests
-with its weekly issue sweep.
+The requested reviewers answer a new pull request within three business days.
+For a head waiting on a vetter, that means vetting it or saying what it needs
+first. Each area sweeps its pull requests with its weekly issue sweep.
 
 - Waiting on a vetter: [`is:open is:pr label:needs-ok-to-test`](https://github.com/dsx-ai-factory/nvke/pulls?q=is%3Aopen+is%3Apr+label%3Aneeds-ok-to-test)
 - One area, for example the node agent: [`is:open is:pr label:needs-ok-to-test label:area/agent`](https://github.com/dsx-ai-factory/nvke/pulls?q=is%3Aopen+is%3Apr+label%3Aneeds-ok-to-test+label%3Aarea%2Fagent)
