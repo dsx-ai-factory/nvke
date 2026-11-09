@@ -255,7 +255,7 @@ func readCRDs(root string) (map[string]apiextensionsv1.CustomResourceDefinition,
 	if err != nil {
 		return nil, err
 	}
-	local, err := filepath.Glob(filepath.Join(root, "config/crd/bases/*.yaml"))
+	local, err := filepath.Glob(filepath.Join(root, "chart/files/crds/*.yaml"))
 	if err != nil {
 		return nil, err
 	}

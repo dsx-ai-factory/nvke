@@ -66,3 +66,22 @@ Otherwise, use the standard resourceName helper with "controller-manager" suffix
 {{- include "management-engine.resourceName" (dict "suffix" "controller-manager" "context" .) }}
 {{- end }}
 {{- end }}
+
+{{/* State namespace is an existing namespace for controller-only installations. */}}
+{{- define "management-engine.stateNamespace" -}}
+{{- $namespace := coalesce .Values.manager.stateNamespace .Values.state.namespace .Release.Namespace -}}
+{{- range .Values.manager.env -}}
+{{- if eq .name "STATE_NAMESPACE" -}}{{- $namespace = .value -}}{{- end -}}
+{{- end -}}
+{{- $namespace -}}
+{{- end -}}
+
+{{/* Select canonical rules from a role or mixed development RBAC bundle. */}}
+{{- define "management-engine.roleRules" -}}
+{{- $rules := list -}}
+{{- range splitList "\n---\n" (.root.Files.Get (printf "files/%s.yaml" .file)) -}}
+{{- $role := fromYaml . -}}
+{{- if eq $role.kind $.kind -}}{{- $rules = $role.rules -}}{{- end -}}
+{{- end -}}
+{{- required (printf "missing %s rules in %s" .kind .file) $rules | toYaml -}}
+{{- end -}}

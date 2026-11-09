@@ -26,7 +26,7 @@ func TestSurfaces(t *testing.T) {
 		"nvkeclusters", "clusterreleases", "machineimages",
 		"controlplaneclasses", "clusterreleasechannels", "nodepoolreleases",
 	} {
-		directory := "../../config/crd/bases/"
+		directory := "../../chart/files/crds/"
 		switch name {
 		case "machineimages", "clusterreleases", "nodepoolreleases":
 			directory = "../../../controller/deploy/charts/nvke-crds/bases/"

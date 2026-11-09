@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+state:
+  enabled: false
+manager:
+  stateNamespace: management-state-system
+  infrastructureTemplateConfigMap: infra-templates
+  nvkeController:
+    endpoint: http://nvke-controller.nvke-controller.svc.cluster.local:8080/api
+  stateAccess:
+    mode: remote
+    kubeconfigSecret:
+      name: management-state-client
+      key: config

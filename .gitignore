@@ -114,3 +114,6 @@ controller/test/e2e/site-bundle*
 # Built Helm dependencies and compatibility render output.
 /controller/deploy/charts/controller/charts/
 /dist/
+
+# Staged Management Engine chart dependencies
+/management-engine/chart/charts/
