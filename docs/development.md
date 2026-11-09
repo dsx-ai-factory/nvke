@@ -61,6 +61,37 @@ OpenAPI client, server and models from `api/openapi.yaml`. **It is the one most
 easily forgotten.** The generated files are committed, so changing the spec
 without regenerating leaves them stale and CI will catch it.
 
+## Choose your test environment
+
+Select tests by the changed behavior and its required dependencies.
+Keep unit and integration tests for logic and failure handling.
+End-to-end (E2E) tests exercise complete operations across NVKE components.
+`nico-sim` provides both `nico-containers` and `nico-vms`.
+
+| Change depends on | Environment and test |
+|---|---|
+| Kubernetes lifecycle behavior | Use `nico-containers` through `nico-sim` when container nodes reproduce the required behavior. |
+| OS image boot, kernel, cloud-init, storage, or first-boot behavior | Build the changed image. Run its [boot tests](../os-image/README.md). Boot that artifact with `nico-vms` for the relevant lifecycle. |
+| NVIDIA hardware behavior | Coordinate with [NVIDIA maintainers](../MAINTAINERS.md) or [code owners](../.github/CODEOWNERS) to arrange suitable simulation or hardware testing. |
+
+For example, test etcd defragmentation near its quota with `nico-containers`
+when the change concerns maintenance logic.
+Make sure that the threshold triggers maintenance and that etcd stays healthy.
+The [container backend](../controller/nico-sim/README.md#nico-containers)
+shares the host kernel and simulates cloud-init.
+
+For NVIDIA hardware testing, agree on the environment and testing owner during
+the issue or design discussion.
+Use real hardware when a simulation cannot reproduce the dependency.
+Use the [qualification guide](qualification/overview.md) for the existing hardware workflow.
+
+Use the existing [E2E suite](../controller/test/e2e/README.md#adding-new-tests)
+and [simulator setup](../controller/nico-sim/README.md#selecting-a-backend).
+Add or extend a scenario that exercises the changed operation.
+The [core PR suites](../controller/test/e2e/README.md#useful-ginkgo-cli-commands)
+cover creation, readiness, deletion, and access cleanup.
+Run the relevant scenario explicitly when the change falls outside that coverage.
+
 ## Before opening a pull request
 
 ```bash
@@ -71,6 +102,9 @@ That works out which modules you changed, then lints and tests those, and adds
 the workspace and licence-header checks when your change touched what they cover.
 It prints what it is about to run, and what it is not covering, before it runs
 anything.
+
+Also run the tests selected in [Choose your test environment](#choose-your-test-environment).
+Record their results in the PR template's Testing section.
 
 When your change touches the workspace, preflight runs `make work-check`. That is
 not read-only: it runs `go work sync` and `go mod tidy` in every module, so it can
