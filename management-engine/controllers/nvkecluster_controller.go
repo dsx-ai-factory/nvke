@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/version"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
@@ -407,14 +408,17 @@ func splitNodeProfile(ref internalv1.NodeProfileReference) (profile, tag string,
 
 func (r *NVKEClusterReconciler) resolveNodePoolRelease(ctx context.Context, pool *internalv1.NodePool, pinned *internalv1.ReleaseReference) (*internalv1.NodePoolRelease, *internalv1.MachineImage, error) {
 	var release *internalv1.NodePoolRelease
-	var err error
 	if pinned != nil {
-		release, err = r.getPinnedNodePoolRelease(ctx, pinned)
-	} else {
-		release, err = r.matchNodePoolRelease(ctx, pool)
+		var err error
+		if release, err = r.getPinnedNodePoolRelease(ctx, pool, pinned); err != nil {
+			return nil, nil, err
+		}
 	}
-	if err != nil {
-		return nil, nil, err
+	if release == nil {
+		var err error
+		if release, err = r.matchNodePoolRelease(ctx, pool); err != nil {
+			return nil, nil, err
+		}
 	}
 	var image internalv1.MachineImage
 	imageName := string(release.Spec.MachineImageRef.Name)
@@ -424,10 +428,21 @@ func (r *NVKEClusterReconciler) resolveNodePoolRelease(ctx context.Context, pool
 	return release, &image, nil
 }
 
-func (r *NVKEClusterReconciler) getPinnedNodePoolRelease(ctx context.Context, pinned *internalv1.ReleaseReference) (*internalv1.NodePoolRelease, error) {
+// getPinnedNodePoolRelease returns nil when the pinned release is gone or no longer matches the pool's node profile.
+func (r *NVKEClusterReconciler) getPinnedNodePoolRelease(ctx context.Context, pool *internalv1.NodePool, pinned *internalv1.ReleaseReference) (*internalv1.NodePoolRelease, error) {
+	profile, tag, err := splitNodeProfile(pool.NodeProfile)
+	if err != nil {
+		return nil, fmt.Errorf("resolve node profile: %w", err)
+	}
 	var release internalv1.NodePoolRelease
 	if err := r.Get(ctx, client.ObjectKey{Name: string(pinned.Name)}, &release); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("get pinned NodePoolRelease %q: %w", pinned.Name, err)
+	}
+	if string(release.Spec.Profile) != profile || release.Spec.Tag != tag {
+		return nil, nil
 	}
 	return &release, nil
 }
