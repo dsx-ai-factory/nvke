@@ -142,8 +142,16 @@ items:
         reason: Reported
         status: "False"
         type: NVKEControllerProvisioning
+      - message: ""
+        observedGeneration: 1
+        reason: ReconcileSucceeded
+        status: "True"
+        type: NodePoolReleaseResolved
       id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
       name: workers-remove
+      resolvedRelease:
+        name: worker-test-release
+        version: 1.34.8
     - conditions:
       - message: ""
         observedGeneration: 2
@@ -165,8 +173,16 @@ items:
         reason: Reported
         status: "False"
         type: NVKEControllerProvisioning
+      - message: ""
+        observedGeneration: 2
+        reason: ReconcileSucceeded
+        status: "True"
+        type: NodePoolReleaseResolved
       id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
       name: workers-keep
+      resolvedRelease:
+        name: worker-test-release
+        version: 1.34.8
     observedGeneration: 1
     resolvedRelease:
       name: pinned-release

@@ -150,7 +150,7 @@ items:
         status: "True"
         type: NVKEControllerProvisioning
       - message: ""
-        observedGeneration: 1
+        observedGeneration: 2
         reason: ReconcileSucceeded
         status: "True"
         type: NodePoolReleaseResolved
