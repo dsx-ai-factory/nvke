@@ -116,16 +116,21 @@ jobs:
 
               const hasLabel = pr.labels.some((l) => l.name === LABEL);
 
-              if (unsigned.length > 0 && !hasLabel) {
-                await github.rest.issues.addLabels({
-                  ...context.repo,
-                  issue_number: pr.number,
-                  labels: [LABEL],
-                });
-                labelled += 1;
+              if (unsigned.length > 0) {
                 const reasons = [...new Set(unsigned.map((c) => c.commit.verification?.reason ?? 'unknown'))];
-                core.info(`#${pr.number}: labelled, ${unsigned.length} unverified (${reasons.join(', ')})`);
-                // Bots get the label only: nobody reads a comment addressed to one.
+                if (!hasLabel) {
+                  await github.rest.issues.addLabels({
+                    ...context.repo,
+                    issue_number: pr.number,
+                    labels: [LABEL],
+                  });
+                  labelled += 1;
+                  core.info(`#${pr.number}: labelled, ${unsigned.length} unverified (${reasons.join(', ')})`);
+                }
+                // Checked on every run, not only when the label goes on, so a
+                // run cancelled or failed between the two calls is made up by
+                // the next. Bots get the label only: nobody reads a comment
+                // addressed to one.
                 if (pr.user?.type !== 'Bot' && !(await alreadyAdvised(pr.number))) {
                   await github.rest.issues.createComment({
                     ...context.repo,
