@@ -1,0 +1,137 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/27.0.9 Chrome/134.0.6998.205 Electron/35.4.0 Safari/537.36" version="27.0.9">
+  <diagram id="nvke-capi-architecture-grid" name="CAPI provider architecture">
+    <mxGraphModel dx="2118" dy="1642" grid="1" gridSize="20" guides="0" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1360" pageHeight="1520" background="none" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="&lt;span style=&quot;font-size: 27px;&quot;&gt;&lt;b&gt;Composable NVKE architecture&lt;/b&gt;&lt;/span&gt;&lt;br&gt;&lt;font style=&quot;font-size: 16px;&quot;&gt;Core manages clusters; the Service Layer defines offerings; the API serves customers.&lt;/font&gt;" style="rounded=0;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=none;strokeColor=none;strokeWidth=1;align=left;verticalAlign=middle;spacing=0;fontFamily=Arial;fontSize=17;fontColor=#18262E;fontStyle=0;text=1;" parent="1" vertex="1">
+          <mxGeometry x="20" y="-60" width="660" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="nvkectl" value="nvkectl&lt;br&gt;&lt;font style=&quot;font-size: 16px; font-weight: normal;&quot;&gt;Tools for operating NVKE&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#F7FAF5;strokeColor=#9AB884;strokeWidth=1;align=center;verticalAlign=middle;spacing=20;fontFamily=Arial;fontSize=17;fontColor=#18262E;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="40" y="40" width="300" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="cluster-service" value="&lt;font&gt;&lt;b style=&quot;color: rgb(0, 0, 0); font-size: 21px;&quot;&gt;NVKE Service Layer (CRDs/controllers)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 16px; color: rgb(53, 71, 55);&quot;&gt;Builds on NVKE Core to let operators curate supported configurations, releases, and add-ons and govern cluster lifecycle as a managed service.&lt;/font&gt;&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#F3F8ED;strokeColor=#AEC69A;strokeWidth=1;align=left;verticalAlign=top;spacing=10;fontFamily=Arial;fontSize=17;fontColor=#18262E;fontStyle=0;container=0;collapsible=0;recursiveResize=0;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="180" y="160" width="1160" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="resource-model" value="&lt;b&gt;&lt;font style=&quot;font-size: 21px;&quot; color=&quot;#18262E&quot;&gt;NVKE Core&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 16px;&quot; color=&quot;#52616C&quot;&gt;CAPI core, NVKE CAPI providers, and NVKE CAPI extension controllers&amp;nbsp;&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#D9E1E7;strokeWidth=1;align=left;verticalAlign=top;spacing=10;fontFamily=Arial;fontSize=17;fontColor=#18262E;fontStyle=0;container=0;collapsible=0;recursiveResize=0;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="20" y="520" width="1320" height="600" as="geometry" />
+        </mxCell>
+        <mxCell id="service-to-resources" value="materializes CAPI resources" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=17;entryX=0.577;entryY=0.002;entryDx=0;entryDy=0;entryPerimeter=0;exitX=0.519;exitY=1.001;exitDx=0;exitDy=0;exitPerimeter=0;" parent="1" source="cluster-service" target="resource-model" edge="1">
+          <mxGeometry x="0.031" relative="1" as="geometry">
+            <mxPoint x="759" y="560" as="sourcePoint" />
+            <Array as="points">
+              <mxPoint x="782" y="481" />
+            </Array>
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="1" source="g6BAtMmcGTGz7mGHK8aQ-13" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="600" y="100" as="sourcePoint" />
+            <mxPoint x="950" y="160" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="950" y="160" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-13" value="NVKE API&lt;br&gt;&lt;span style=&quot;font-weight: 400;&quot;&gt;&lt;font style=&quot;font-size: 16px;&quot;&gt;Tenancy-aware authn/authz&lt;/font&gt;&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#F7FAF5;strokeColor=#9AB884;strokeWidth=1;align=center;verticalAlign=middle;spacing=20;fontFamily=Arial;fontSize=17;fontColor=#18262E;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="800" y="40" width="300" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="nvke-cluster" value="NVKE Cluster&lt;br&gt;&lt;span style=&quot;font-weight: normal;&quot;&gt;(with node pools, add-ons)&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#E2EED5;strokeColor=#C4D8B6;strokeWidth=1;align=center;verticalAlign=middle;spacing=20;fontFamily=Arial;fontSize=17;fontColor=#18262E;fontStyle=1;container=0;" parent="1" vertex="1">
+          <mxGeometry x="660" y="360" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-25" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" parent="1" source="catalog" target="nvke-cluster" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="761" y="360" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="catalog" value="MachineImage" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#E2EED5;strokeColor=#C4D8B6;strokeWidth=1;align=center;verticalAlign=middle;spacing=20;fontFamily=Arial;fontSize=17;fontColor=#18262E;fontStyle=1;container=0;" parent="1" vertex="1">
+          <mxGeometry x="460" y="240" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-24" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0;entryDx=0;entryDy=0;" parent="1" source="g6BAtMmcGTGz7mGHK8aQ-11" target="nvke-cluster" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-11" value="ControlPlaneClass" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#E2EED5;strokeColor=#C4D8B6;strokeWidth=1;align=center;verticalAlign=middle;spacing=20;fontFamily=Arial;fontSize=17;fontColor=#18262E;fontStyle=1;container=0;" parent="1" vertex="1">
+          <mxGeometry x="240" y="240" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-26" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" parent="1" source="g6BAtMmcGTGz7mGHK8aQ-20" target="nvke-cluster" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-20" value="NodePoolRelease&lt;br&gt;&lt;span style=&quot;font-size: 16px; font-weight: 400;&quot;&gt;(and Channel)&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#E2EED5;strokeColor=#C4D8B6;strokeWidth=1;align=center;verticalAlign=middle;spacing=20;fontFamily=Arial;fontSize=17;fontColor=#18262E;fontStyle=1;container=0;" parent="1" vertex="1">
+          <mxGeometry x="900" y="240" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="cluster" value="CAPI Cluster" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#E4EFFA;strokeColor=#9BBBDD;strokeWidth=1;align=center;verticalAlign=middle;spacing=20;fontFamily=Arial;fontSize=17;fontColor=#255582;fontStyle=1;container=0;" parent="1" vertex="1">
+          <mxGeometry x="60" y="620" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="machine-deployment" value="MachineDeployment" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#E4EFFA;strokeColor=#9BBBDD;strokeWidth=1;align=center;verticalAlign=middle;spacing=20;fontFamily=Arial;fontSize=17;fontColor=#255582;fontStyle=1;container=0;" parent="1" vertex="1">
+          <mxGeometry x="260" y="620" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="machine-set" value="MachineSet" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#E4EFFA;strokeColor=#9BBBDD;strokeWidth=1;align=center;verticalAlign=middle;spacing=20;fontFamily=Arial;fontSize=17;fontColor=#255582;fontStyle=1;container=0;" parent="1" vertex="1">
+          <mxGeometry x="540" y="620" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="machine" value="Machine" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#E4EFFA;strokeColor=#9BBBDD;strokeWidth=1;align=center;verticalAlign=middle;spacing=20;fontFamily=Arial;fontSize=17;fontColor=#255582;fontStyle=1;container=0;" parent="1" vertex="1">
+          <mxGeometry x="780" y="620" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="control-plane" value="&lt;b&gt;&lt;font style=&quot;font-size: 21px;&quot; color=&quot;#18262E&quot;&gt;Control plane&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 15px;&quot; color=&quot;#52616C&quot;&gt;Provider contract&lt;/font&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;CAPNVKE&lt;/b&gt;&lt;br&gt;NVKEControlPlane&lt;div&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;Possible variations:&lt;br&gt;&lt;/font&gt;&lt;ul style=&quot;padding-left: 15px;&quot;&gt;&lt;li&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;Nodes joining the workload cluster as control plane nodes&lt;/font&gt;&lt;/span&gt;&lt;/li&gt;&lt;li&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;Privately managed backing infra&lt;/font&gt;&lt;/span&gt;&lt;/li&gt;&lt;li&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;Hosted control planes&lt;/font&gt;&lt;/span&gt;&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#7198B9;strokeWidth=2;align=left;verticalAlign=top;spacing=20;fontFamily=Arial;fontSize=16;fontColor=#18262E;fontStyle=0;container=0;" parent="1" vertex="1">
+          <mxGeometry x="60" y="780" width="280" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="bootstrap" value="&lt;b&gt;&lt;font style=&quot;font-size: 21px;&quot; color=&quot;#18262E&quot;&gt;Bootstrap&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 15px;&quot; color=&quot;#52616C&quot;&gt;Provider contract&lt;/font&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;CAPNVKE&lt;/b&gt;&lt;br&gt;NVKEConfig&lt;br&gt;&lt;br&gt;Produces bootstrap data (cloud init user data) under the CAPI bootstrap contract. Configures identity for join. Allows custom pre-join and post-join command customization." style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#7198B9;strokeWidth=2;align=left;verticalAlign=top;spacing=20;fontFamily=Arial;fontSize=16;fontColor=#18262E;fontStyle=0;container=0;" parent="1" vertex="1">
+          <mxGeometry x="380" y="780" width="280" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="infrastructure" value="&lt;b&gt;&lt;font style=&quot;font-size: 21px;&quot; color=&quot;#18262E&quot;&gt;Infrastructure&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 15px;&quot; color=&quot;#52616C&quot;&gt;Provider contract&lt;/font&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;CAPNICo&lt;/b&gt;&lt;br&gt;NicoMachine&lt;br&gt;&lt;div&gt;&lt;br&gt;&lt;b&gt;CAPD&lt;/b&gt;&lt;br&gt;DevMachine&lt;br&gt;&lt;br&gt;Generic compatibility with other CAPI infra providers.&lt;/div&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#7198B9;strokeWidth=2;align=left;verticalAlign=top;spacing=20;fontFamily=Arial;fontSize=16;fontColor=#18262E;fontStyle=0;container=0;" parent="1" vertex="1">
+          <mxGeometry x="700" y="780" width="280" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="extensions" value="&lt;b&gt;&lt;font style=&quot;font-size: 21px; color: rgb(8, 5, 10);&quot;&gt;NVKE CAPI extensions&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#52616C&quot;&gt;Beyond CAPI core&lt;/font&gt;&lt;br&gt;&lt;br&gt;Machine bootstrap identity&lt;br&gt;&lt;br&gt;Metadata-driven reboot and repair&lt;br&gt;&lt;br&gt;Breakfix-integrated drain/recycle" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#F5F0FA;strokeColor=#C5AFD6;strokeWidth=1;align=left;verticalAlign=top;spacing=10;fontFamily=Arial;fontSize=16;fontColor=#18262E;fontStyle=0;spacingLeft=10;container=0;" parent="1" vertex="1">
+          <mxGeometry x="1020" y="540" width="280" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-to-set" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" parent="1" source="machine-deployment" target="machine-set" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="set-to-machine" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" parent="1" source="machine-set" target="machine" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="control-plane-ref" value="controlPlaneRef" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=15;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="1" source="cluster" target="control-plane" edge="1">
+          <mxGeometry x="0.0389" y="3" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="bootstrap-template-ref" value="bootstrap template reference" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=15;" parent="1" source="machine-deployment" target="bootstrap" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="infrastructure-ref" value="" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=15;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="1" source="machine" target="infrastructure" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="890" y="700" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-72" value="&lt;font&gt;infrastructureRef&lt;/font&gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=15;" parent="infrastructure-ref" vertex="1" connectable="0">
+          <mxGeometry x="-0.0355" y="-1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-18" value="&lt;b&gt;&lt;font style=&quot;font-size: 21px;&quot; color=&quot;#18262E&quot;&gt;Add-On&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 15px;&quot; color=&quot;#52616C&quot;&gt;Provider contract&lt;/font&gt;&lt;div&gt;&lt;b&gt;&lt;br&gt;CAAPH (Helm)&lt;br&gt;&lt;br&gt;Or custom add-on provider (Argo)&lt;/b&gt;&lt;/div&gt;&lt;div&gt;&lt;b&gt;&lt;br&gt;&lt;/b&gt;&lt;/div&gt;&lt;div&gt;Manage add-on software packages through CAPI standard interface.&lt;/div&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#7198B9;strokeWidth=2;align=left;verticalAlign=top;spacing=20;fontFamily=Arial;fontSize=16;fontColor=#18262E;fontStyle=0;container=0;" parent="1" vertex="1">
+          <mxGeometry x="1020" y="780" width="280" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-27" value="ClusterRelease&lt;br&gt;&lt;span style=&quot;font-weight: normal;&quot;&gt;&lt;font style=&quot;font-size: 16px;&quot;&gt;(and Channel)&lt;/font&gt;&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#E2EED5;strokeColor=#C4D8B6;strokeWidth=1;align=center;verticalAlign=middle;spacing=20;fontFamily=Arial;fontSize=17;fontColor=#18262E;fontStyle=1;container=0;" parent="1" vertex="1">
+          <mxGeometry x="680" y="240" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-28" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="g6BAtMmcGTGz7mGHK8aQ-27" target="nvke-cluster" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-30" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0;entryDx=0;entryDy=0;" parent="1" source="g6BAtMmcGTGz7mGHK8aQ-29" target="nvke-cluster" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-29" value="AddOnRelease&lt;br&gt;&lt;span style=&quot;font-size: 16px; font-weight: 400;&quot;&gt;(and Channel)&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#E2EED5;strokeColor=#C4D8B6;strokeWidth=1;align=center;verticalAlign=middle;spacing=20;fontFamily=Arial;fontSize=17;fontColor=#18262E;fontStyle=1;container=0;" parent="1" vertex="1">
+          <mxGeometry x="1120" y="240" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-64" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.074;entryY=0.007;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="nvkectl" target="cluster-service" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-65" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.072;entryY=-0.001;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="nvkectl" target="resource-model" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="101" y="540" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
