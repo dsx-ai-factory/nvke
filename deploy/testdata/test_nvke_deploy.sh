@@ -119,7 +119,8 @@ if [[ "${order}" == "nvke-base-config spire-tpm-pubhashes spire-server-nodeport 
 else
   fail "item order: ${order}"
 fi
-expect "nktp from the checkout" 'helm upgrade --install nktp .*/nktp/deploy/charts/nktp ' "${out}"
+expect "nktp from its index repository" 'helm upgrade --install nktp nktp --repo https://helm.ngc.nvidia.com/nvidia --version 0.2.0 ' "${out}"
+reject "no dependency build for nktp" 'helm dependency build .*nktp' "${out}"
 expect "controller from the checkout" 'helm upgrade --install nvke-controller .*/controller/deploy/charts/controller ' "${out}"
 expect "the controller builds its pinned local chart dependency" 'helm dependency build .*/controller/deploy/charts/controller --skip-refresh' "${out}"
 reject "local dependencies are not Helm repositories" 'helm repo add .*file://' "${out}"
@@ -249,8 +250,8 @@ expect "the rendered Secret is applied as a manifest" "^kubectl apply --server-s
 expect "the namespaces manifest is applied too" "^kubectl apply --server-side -f ${rendered}/nvke-base-config/00-namespaces.yaml" "${out}"
 reject "no python template render for a rendered path" 'render-template' "${out}"
 expect "postgresql still comes from its public repository" 'helm upgrade --install postgres oci://registry-1.docker.io/bitnamicharts/postgresql --version 18.5.15 ' "${out}"
-expect "a committed chart path is absolute in the rendered tree, so it resolves from anywhere" "helm upgrade --install nktp ${REPO}/nktp/deploy/charts/nktp " "${out}"
-expect "the controller chart too" "helm upgrade --install nvke-controller ${REPO}/controller/deploy/charts/controller " "${out}"
+expect "nktp still comes from its public repository" 'helm upgrade --install nktp nktp --repo https://helm.ngc.nvidia.com/nvidia --version 0.2.0 ' "${out}"
+expect "a committed chart path is absolute in the rendered tree, so it resolves from anywhere" "helm upgrade --install nvke-controller ${REPO}/controller/deploy/charts/controller " "${out}"
 # A secret that cannot be written into a quoted YAML value is refused.
 out="$(NVKECTL_NICO_TOKEN='tok"en' "${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --arch linux/arm64 --out "${WORK}/bad-rendered" 2>&1)" && fail "a quote in a token exited 0"
 expect "the unescapable token is refused by variable" 'NVKECTL_NICO_TOKEN: the value holds a character the templates cannot carry' "${out}"
@@ -331,7 +332,7 @@ out="$(bash "${EXECUTOR}" install --deploy-path "${rendered}" --config "${CONFIG
 expect "temporal installed from the archive" "helm upgrade --install temporal ${rendered}/charts/temporal/temporal-${d_temporal#sha256:}\\.tgz " "${out}"
 reject "no dependency build for an archive" 'helm dependency build .*temporal' "${out}"
 expect "postgresql still comes from its public repository" 'helm upgrade --install postgres oci://registry-1.docker.io/bitnamicharts/postgresql --version 18.5.15 ' "${out}"
-expect "nktp still comes from the checkout" 'helm upgrade --install nktp .*/nktp/deploy/charts/nktp ' "${out}"
+expect "nktp still comes from its public repository" 'helm upgrade --install nktp nktp --repo https://helm.ngc.nvidia.com/nvidia --version 0.2.0 ' "${out}"
 expect "the controller takes its images from release-images.yaml" "helm upgrade --install nvke-controller .*/controller/deploy/charts/controller .*--values ${rendered}/controller/release-images.yaml" "${out}"
 grep -q "repository: \"nvkr.local/nvke/cwe\"" "${rendered}/controller/release-images.yaml" && pass "release-images.yaml carries the cwe repository" || fail "release-images.yaml"
 grep -q "digest: \"${d_profiles}\"" "${rendered}/controller/release-images.yaml" && pass "and the profiles digest" || fail "profiles digest"

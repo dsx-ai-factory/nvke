@@ -14,23 +14,18 @@
 #
 # Helm merges maps key by key but replaces lists whole. Every list below is
 # therefore complete: the env lists restate the chart's entries alongside ours.
-# Recheck them whenever the chart changes.
+# Recheck them whenever the chart version in release.yaml changes.
+#
+# The watchdog and the three gateways keep the chart's persistent exporter
+# queues: each is a StatefulSet with a 1Gi PersistentVolumeClaim from the
+# default StorageClass, so telemetry queued during a backend outage survives a
+# restart. Their queues are sized for that volume, not for the container memory
+# limits below, so this file does not override them.
 
 # Nothing else on a management cluster serves metrics.k8s.io, and the Collector
 # autoscalers read it.
 metrics-server:
   enabled: true
-
-# node_exporter's cpufreq collector hangs on arm64 nodes that use the
-# cppc_cpufreq driver. A read of cpuinfo_avg_freq never returns, so scrapes of
-# the exporter hang and time out (prometheus/node_exporter#3791). The fix,
-# prometheus/procfs#879, is in no node_exporter release yet. Remove this once
-# the chart's node_exporter has it. Without the collector there are no
-# node_cpu_frequency_* or node_cpu_scaling_* series, and nothing in nktp reads
-# them.
-node-exporter:
-  extraArgs:
-    - --no-collector.cpufreq
 
 opentelemetry-kube-stack:
   # NVKE binds the scheduler and the controller manager to 127.0.0.1
@@ -102,7 +97,8 @@ watchdog:
         requests: {cpu: 100m, memory: 256Mi}
         limits: {cpu: "1", memory: 1Gi}
     env:
-      - {name: GOMEMLIMIT, value: 448MiB}
+      # Below the memory limiter's soft refusal at 55% of the limit (281.6Mi).
+      - {name: GOMEMLIMIT, value: 192MiB}
       - {name: GOGC, value: "50"}
       - &cluster-name-env
         name: K8S_CLUSTER_NAME
@@ -130,12 +126,6 @@ gateway_logs:
       - {name: GOMEMLIMIT, value: 384MiB}
       - {name: GOGC, value: "50"}
       - *cluster-name-env
-  otelcol:
-    config:
-      exporters:
-        otlp:
-          sending_queue:
-            queue_size: 128849018 # 12% of the 1Gi container limit, in serialized bytes.
 
 gateway_metrics:
   kubernetes:
@@ -148,12 +138,6 @@ gateway_metrics:
       - {name: GOMEMLIMIT, value: 384MiB}
       - {name: GOGC, value: "50"}
       - *cluster-name-env
-  otelcol:
-    config:
-      exporters:
-        otlp:
-          sending_queue:
-            queue_size: 128849018 # 12% of the 1Gi container limit, in serialized bytes.
 
 gateway_traces:
   kubernetes:
@@ -166,20 +150,11 @@ gateway_traces:
       - {name: GOMEMLIMIT, value: 384MiB}
       - {name: GOGC, value: "50"}
       - *cluster-name-env
-  otelcol:
-    config:
-      exporters:
-        otlp:
-          sending_queue:
-            queue_size: 128849018 # 12% of the 1Gi container limit, in serialized bytes.
 
 cluster_events:
   kubernetes:
     # A second replica only stands by; it adds no watch throughput.
     replicas: 1
-    resources:
-      requests: {cpu: 200m, memory: 512Mi}
-      limits: {cpu: "1", memory: 1Gi}
 
 large_target_metrics:
   kubernetes:
@@ -200,7 +175,7 @@ large_target_metrics:
   otelcol:
     config:
       exporters:
-        otlp:
+        otlp_grpc:
           sending_queue:
             queue_size: 67108864 # 64MiB serialized.
       receivers:
@@ -264,7 +239,8 @@ daemonset:
       requests: {cpu: 100m, memory: 256Mi}
       limits: {cpu: 500m, memory: 512Mi}
     env:
-      - {name: GOMEMLIMIT, value: 448MiB}
+      # Below the memory limiter's soft refusal at 55% of the limit (281.6Mi).
+      - {name: GOMEMLIMIT, value: 192MiB}
       - {name: GOGC, value: "50"}
       - name: NODE_NAME
         valueFrom:
@@ -279,12 +255,12 @@ daemonset:
   otelcol:
     config:
       exporters:
-        otlp/metrics:
+        otlp_grpc/metrics:
           sending_queue:
             queue_size: 8388608 # 8MiB serialized.
       receivers:
         # NVKE's kubeadm configuration writes the API server's audit log here
         # (defaultAuditLogPath in controller/internal/kubeadmconfig), not at
         # the chart's /var/log/kubernetes/audit/audit.log.
-        filelog/kube-api-audit:
+        file_log/kube-api-audit:
           include: [/hostfs/var/log/kubernetes_audit/audit.log]
