@@ -133,9 +133,10 @@ For each pull request carrying `needs-ok-to-test`:
 
 ### Cadence
 
-The requested reviewers answer a new pull request within three business days.
-For a head waiting on a vetter, that means vetting it or saying what it needs
-first. Each area sweeps its pull requests with its weekly issue sweep.
+The requested reviewers answer a new pull request within seven calendar days,
+the same window as an issue's priority. For a head waiting on a vetter, that
+means vetting it or saying what it needs first. Each area sweeps its pull
+requests with its weekly issue sweep.
 
 - Waiting on a vetter: [`is:open is:pr label:needs-ok-to-test`](https://github.com/dsx-ai-factory/nvke/pulls?q=is%3Aopen+is%3Apr+label%3Aneeds-ok-to-test)
 - One area, for example the node agent: [`is:open is:pr label:needs-ok-to-test label:area/agent`](https://github.com/dsx-ai-factory/nvke/pulls?q=is%3Aopen+is%3Apr+label%3Aneeds-ok-to-test+label%3Aarea%2Fagent)
