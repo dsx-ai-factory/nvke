@@ -535,37 +535,21 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 		}
 		release, image, err := r.resolveNodePoolRelease(ctx, pool, status.ResolvedRelease)
 		if err != nil {
-			conditions.Set(target, metav1.Condition{
-				Type:    internalv1.NodePoolReleaseResolvedCondition,
-				Status:  metav1.ConditionFalse,
-				Reason:  internalv1.ReconcileFailedReason,
-				Message: err.Error(),
-			})
+			setNodePoolReleaseResolved(target, err)
 			return fail(err)
 		}
 		// Record the release as soon as it resolves so the deferred status patch keeps it on every return.
 		status.ResolvedRelease = &internalv1.ReleaseReference{Name: internalv1.ResourceName(release.Name), Version: release.Spec.Tag}
-		conditions.Set(target, metav1.Condition{
-			Type:   internalv1.NodePoolReleaseResolvedCondition,
-			Status: metav1.ConditionTrue,
-			Reason: internalv1.ReconcileSucceededReason,
-		})
-		workerVariables, err := releaseTemplateVariables(release.Spec.MachineInit, image)
-		if err != nil {
-			return fail(err)
-		}
+		setNodePoolReleaseResolved(target, nil)
 		request, err := resolveNodePoolRequest(observedCluster.ID, pool)
 		if err != nil {
 			return fail(fmt.Errorf("resolve node pool %q request: %w", pool.Name, err))
 		}
-		var infra api.InfraNodePoolProvider
-		if err := renderInfraTemplate(nodePoolTemplateKey, nodePoolTemplate, infraTemplateVariables(cluster, pool, workerVariables), &infra); err != nil {
+		infra, err := renderNodePoolInfra(cluster, pool, nodePoolTemplate, release, image)
+		if err != nil {
 			return fail(err)
 		}
-		if len(infra.MachineTemplate) == 0 {
-			return fail(fmt.Errorf("%s must contain a machineTemplate manifest", nodePoolTemplateKey))
-		}
-		request.Infra = &infra
+		request.Infra = infra
 		observedPool, err := r.NVKEController.CreateNodePool(ctx, request)
 		if err != nil {
 			return fail(fmt.Errorf("create nvke controller node pool %q: %w", pool.Name, err))
@@ -590,15 +574,87 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 		return invalidNVKEControllerRequest("Node pool replicas must be a nonnegative count")
 	}
 	desiredCount := int(*pool.Replicas)
+	var update api.UpdateNodePoolRequest
 	if observedPool.DesiredNodeCount != desiredCount {
-		updatedPool, err := r.NVKEController.UpdateNodePool(ctx, observedPool.ID.String(), api.UpdateNodePoolRequest{DesiredNodeCount: &desiredCount})
+		update.DesiredNodeCount = &desiredCount
+	}
+	resolved, infra, resolveErr := r.resolveExistingNodePoolRelease(ctx, cluster, pool, nodePoolTemplate, status, target)
+	if infra != nil {
+		update.Infra = &api.InfraNodePoolProviderUpdate{
+			BootstrapFiles:     append([]api.CloudInitFile{}, infra.BootstrapFiles...),
+			MachineTemplate:    infra.MachineTemplate,
+			PreKubeadmCommands: append([]string{}, infra.PreKubeadmCommands...),
+		}
+	}
+	if update != (api.UpdateNodePoolRequest{}) {
+		updatedPool, err := r.NVKEController.UpdateNodePool(ctx, observedPool.ID.String(), update)
+		if err != nil && infra != nil {
+			return fmt.Errorf("move nvke controller node pool %q to release %q: %w", pool.Name, resolved.Name, err)
+		}
 		if err != nil {
 			return fmt.Errorf("scale nvke controller node pool %q to %d replicas: %w", pool.Name, desiredCount, err)
 		}
 		observedPool = updatedPool
 	}
+	if resolved != nil {
+		status.ResolvedRelease = resolved
+		setNodePoolReleaseResolved(target, nil)
+	}
 	propagateNodePoolConditions(target, observedPool)
-	return setNodePoolConditions(target)
+	if err := setNodePoolConditions(target); err != nil {
+		return errors.Join(resolveErr, err)
+	}
+	return resolveErr
+}
+
+func (r *NVKEClusterReconciler) resolveExistingNodePoolRelease(ctx context.Context, cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, status *internalv1.NodePoolStatus, target nodePoolConditionTarget) (*internalv1.ReleaseReference, *api.InfraNodePoolProvider, error) {
+	release, image, err := r.resolveNodePoolRelease(ctx, pool, status.ResolvedRelease)
+	if err != nil {
+		setNodePoolReleaseResolved(target, err)
+		return nil, nil, err
+	}
+	resolved := &internalv1.ReleaseReference{Name: internalv1.ResourceName(release.Name), Version: release.Spec.Tag}
+	if status.ResolvedRelease == nil || status.ResolvedRelease.Name == resolved.Name {
+		return resolved, nil, nil
+	}
+	infra, err := renderNodePoolInfra(cluster, pool, nodePoolTemplate, release, image)
+	if err != nil {
+		setNodePoolReleaseResolved(target, err)
+		return nil, nil, err
+	}
+	return resolved, infra, nil
+}
+
+func setNodePoolReleaseResolved(target nodePoolConditionTarget, err error) {
+	if err != nil {
+		conditions.Set(target, metav1.Condition{
+			Type:    internalv1.NodePoolReleaseResolvedCondition,
+			Status:  metav1.ConditionFalse,
+			Reason:  internalv1.ReconcileFailedReason,
+			Message: err.Error(),
+		})
+		return
+	}
+	conditions.Set(target, metav1.Condition{
+		Type:   internalv1.NodePoolReleaseResolvedCondition,
+		Status: metav1.ConditionTrue,
+		Reason: internalv1.ReconcileSucceededReason,
+	})
+}
+
+func renderNodePoolInfra(cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, release *internalv1.NodePoolRelease, image *internalv1.MachineImage) (*api.InfraNodePoolProvider, error) {
+	variables, err := releaseTemplateVariables(release.Spec.MachineInit, image)
+	if err != nil {
+		return nil, err
+	}
+	var infra api.InfraNodePoolProvider
+	if err := renderInfraTemplate(nodePoolTemplateKey, nodePoolTemplate, infraTemplateVariables(cluster, pool, variables), &infra); err != nil {
+		return nil, err
+	}
+	if len(infra.MachineTemplate) == 0 {
+		return nil, fmt.Errorf("%s must contain a machineTemplate manifest", nodePoolTemplateKey)
+	}
+	return &infra, nil
 }
 
 func (r *NVKEClusterReconciler) reconcileNodePoolDelete(ctx context.Context, cluster *internalv1.NVKECluster, pool *internalv1.NodePoolStatus, observedCluster *api.Cluster) (bool, error) {
