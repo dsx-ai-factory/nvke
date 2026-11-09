@@ -35,6 +35,7 @@ func setupCollectorTestEnv(ctx context.Context, t *testing.T) *collectorTestEnv 
 		(*db.NodePool)(nil),
 		(*db.NodeSet)(nil),
 		(*db.Node)(nil),
+		(*db.ControlPlaneConfiguration)(nil),
 	)
 	database := db.NewDB(bunDB)
 
@@ -414,4 +415,109 @@ func TestUnit_Collector_NodeLifecycleElapsed(t *testing.T) {
 		require.NotNil(t, f)
 		assert.Len(t, f.GetMetric(), 3, "one series per row")
 	})
+}
+
+// TestUnit_Collector_NodeInfoIncludesControlPlaneNodes tests that nvke_controller_node_info covers control-plane
+// nodes that have no node pool or node set, and labels every node with control_plane.
+func TestUnit_Collector_NodeInfoIncludesControlPlaneNodes(t *testing.T) {
+	ctx := context.Background()
+	te := setupCollectorTestEnv(ctx, t)
+
+	cluster := te.createCluster(ctx, t, "tenant-a")
+	np := te.createNodePool(ctx, t, cluster, "workers")
+	ns := te.createNodeSet(ctx, t, np)
+
+	cpConfig, err := te.database.CreateControlPlaneConfiguration(ctx, &db.ControlPlaneConfiguration{
+		ClusterID: cluster.ID,
+		Config: db.ControlPlaneConfigSpec{
+			Nico: &db.NicoControlPlaneProvider{Release: "cp-os", ConfigProfile: "cp-config"},
+		},
+	})
+	require.NoError(t, err)
+
+	worker := db.Node{
+		ID:                     uuid.New(),
+		ClusterID:              cluster.ID,
+		NodePoolID:             np.ID,
+		NodeSetID:              ns.ID,
+		Name:                   "tenant-a-w-1",
+		IP:                     "10.0.0.10",
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+	}
+	worker.SetNico(db.NicoNodeProvider{ForgeMachineID: "fm-worker"})
+	_, err = te.database.CreateNode(ctx, &worker)
+	require.NoError(t, err)
+
+	controlPlane := db.Node{
+		ID:                          uuid.New(),
+		ClusterID:                   cluster.ID,
+		ControlPlane:                true,
+		ControlPlaneConfigurationID: cpConfig.ID,
+		Name:                        "tenant-a-cp-1",
+		IP:                          "10.0.0.20",
+		SpireAttestationMethod:      db.SpireAttestationMethodTPM,
+	}
+	controlPlane.SetNico(db.NicoNodeProvider{ForgeMachineID: "fm-cp"})
+	_, err = te.database.CreateNode(ctx, &controlPlane)
+	require.NoError(t, err)
+
+	collector := dbmetrics.NewCollector(testLogger(), te.database)
+	reg := prometheus.NewPedanticRegistry()
+	require.NoError(t, reg.Register(collector))
+	families, err := reg.Gather()
+	require.NoError(t, err)
+
+	nodeInfo := findMetricFamily(families, "nvke_controller_node_info")
+	require.NotNil(t, nodeInfo)
+
+	byNode := map[string]map[string]string{}
+	for _, m := range nodeInfo.GetMetric() {
+		labels := labelsAsMap(m)
+		byNode[labels["node"]] = labels
+	}
+	require.Len(t, byNode, 2)
+
+	tests := []struct {
+		name string
+		node string
+		want map[string]string
+	}{
+		{
+			name: "worker node keeps its node pool and node set labels",
+			node: "tenant-a-w-1",
+			want: map[string]string{
+				"tenant_cluster":   "tenant-a",
+				"node_pool":        "workers",
+				"node_set_id":      ns.ID.String(),
+				"ip":               "10.0.0.10",
+				"control_plane":    "false",
+				"forge_machine_id": "fm-worker",
+				"release":          "test-os",
+				"config_profile":   "test-config",
+			},
+		},
+		{
+			name: "control-plane node without a node pool takes release and profile from its configuration",
+			node: "tenant-a-cp-1",
+			want: map[string]string{
+				"tenant_cluster":   "tenant-a",
+				"node_pool":        "",
+				"node_set_id":      uuid.Nil.String(),
+				"ip":               "10.0.0.20",
+				"control_plane":    "true",
+				"forge_machine_id": "fm-cp",
+				"release":          "cp-os",
+				"config_profile":   "cp-config",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			labels, ok := byNode[tt.node]
+			require.True(t, ok, "node %s missing from nvke_controller_node_info", tt.node)
+			for k, v := range tt.want {
+				assert.Equal(t, v, labels[k], "label %s", k)
+			}
+		})
+	}
 }
