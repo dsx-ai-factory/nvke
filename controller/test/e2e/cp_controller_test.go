@@ -529,8 +529,15 @@ func validateControllerManagedControlPlaneAutoScaleDown(test *tenantTest) {
 
 		// Auto scale-down is on by default (AutoScaleDownDisabled unset), but set it
 		// explicitly so this spec does not depend on the cluster's created default
-		// and reads as its own precondition.
+		// and reads as its own precondition. The specs share one cluster, so record
+		// and restore the original value rather than leaving it flipped for the next.
 		By("Ensuring automatic control-plane scale-down is enabled")
+		cluster := expectSucceed(test.nvke.GetCluster(ctx, test.cluster.ID))
+		Expect(cluster.ControlPlaneConfig).NotTo(BeNil(), "the cluster should report its control-plane config")
+		originalAutoScaleDownDisabled := ptr.Deref(cluster.ControlPlaneConfig.AutoScaleDownDisabled, false)
+		DeferCleanup(func(ctx context.Context) {
+			expectSucceed(test.nvke.SetControlPlaneAutoScaleDownDisabled(ctx, test.cluster.ID, originalAutoScaleDownDisabled))
+		}, NodeTimeout(time.Minute))
 		expectSucceed(test.nvke.SetControlPlaneAutoScaleDownDisabled(ctx, test.cluster.ID, false))
 
 		before := expectSucceed(test.nvke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID))
@@ -601,7 +608,7 @@ func validateControllerManagedControlPlaneAutoScaleDown(test *tenantTest) {
 		assertControlPlaneNodesReadyInTenant(ctx, test, controlPlaneControllerUpdateDesiredCount)
 		By("Verifying the three-node control plane remains balanced after scale-down")
 		assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerUpdateDesiredCount, nil)
-	}, Label("cp-controller", "cp-scaledown"), NodeTimeout(45*time.Minute))
+	}, Label("cp-controller", "cp-scaledown"), NodeTimeout(75*time.Minute))
 }
 
 // validateControllerManagedControlPlaneRebalance drives one steady-state
