@@ -52,10 +52,16 @@ It runs against any NVKE site, for example a DSX OS Simulator site or the [local
 
 ## Clean up
 
+Point `kubectl` and Helm at the workload cluster first: the demo's own kubeconfig is gone once it exits, and an inherited `KUBECONFIG` usually points at the management cluster.
+
 ```bash
+nvkectl get kubeconfig <WORKLOAD_CLUSTER> --output-file workload.kubeconfig
+export KUBECONFIG=$PWD/workload.kubeconfig
 helm uninstall gpu-operator --namespace gpu-operator
-helm uninstall nvml-mock --namespace mokka
+helm uninstall <MOKKA_RELEASE> --namespace mokka
 nvkectl delete nodepool <POOL> --cluster <WORKLOAD_CLUSTER>
 ```
+
+`<MOKKA_RELEASE>` is `nvml-mock` unless you set `MOKKA_RELEASE`.
 
 A node that loses Mokka keeps the `nvidia.com/gpu.product` label GPU Feature Discovery set, while its allocatable GPUs drop to 0.
