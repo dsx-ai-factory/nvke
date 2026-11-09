@@ -1347,6 +1347,14 @@ local_resource(
     allow_parallel=True,
 )
 
+# build_dependencies packages nvke-crds into the chart directory nvke-controller
+# watches. Tilt does not read .gitignore, so without this every deploy's
+# `helm dependency build` triggers the next deploy, and `tilt up` never settles.
+watch_settings(ignore=[
+    "deploy/charts/controller/charts",
+    "deploy/charts/controller/tmpcharts-*",
+])
+
 helm_resource(
     "nvke-controller",
     chart="deploy/charts/controller",
