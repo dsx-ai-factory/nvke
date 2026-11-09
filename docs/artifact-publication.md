@@ -44,14 +44,23 @@ git tag -s v0.2.0 -m "Release v0.2.0"
 git push upstream v0.2.0
 ```
 
-Every artifact is versioned by `git describe --tags --always --match 'v*'`. On
-the tagged commit that is the tag itself, and a build between releases carries
-the nearest tag plus the commits since it, such as `v0.2.0-4-gabcdef`.
+A `v*` tag's artifacts are versioned by that tag. Every other build is
+versioned by `git describe --tags --always --match 'v*'`, which carries the
+nearest tag plus the commits since it, such as `v0.2.0-4-gabcdef`. Both come
+from `release/hack/describe-version.sh`, which every publisher calls before it
+pushes anything. On a commit with one tag the two agree; on a commit with
+several, `git describe` prefers an annotated release over a beta and, of two
+lightweight tags, the first by name, and only the tag run itself is named by
+its own tag. The node agent baked into an OS image, and a qualification with
+`commitDescribe`, still take the describe.
+
 Components are released by that tag, not by a tag of their own: a component
 release tag such as `agent/vX.Y.Z` or `controller/vX.Y.Z` starts nothing. A
 component release candidate tag such as `controller/vX.Y.Z-rc.N` still starts
-that component's publishers, but what they publish is versioned by the describe
-above, not by the component tag.
+that component's publishers, but only on a commit no `v*` tag names, and what
+they publish is versioned by the describe, not by the component tag. On a
+tagged commit it would republish that tag's artifacts, so its run fails before
+it pushes anything.
 
 No workflow creates a GitHub Release. A release tag, and the nightly
 `vX.Y.Z-beta.N` tags described under [pre-releases](#pre-releases), publish
@@ -379,8 +388,8 @@ git push upstream v0.2.0-rc.1
 
 On that commit `git describe` then still names the beta: of two lightweight
 tags it takes the first by name, and `-beta` sorts before `-rc` of the same
-`vX.Y.Z`. So a re-run of the beta's publishers, and a qualification of the RC,
-keep the beta's version. An RC of a lower `vX.Y.Z` would sort first, and a
+`vX.Y.Z`. So a qualification of the RC, which resolves components by describe,
+finds the beta's artifacts. An RC of a lower `vX.Y.Z` would sort first, and a
 signed RC would win outright; either names versions nothing published. If the
 check prints the RC, delete the local tag with `git tag -d` instead of pushing.
 

@@ -132,7 +132,7 @@ jobs:
 
           # Nearest v* tag: v0.1.0 on a release commit, v0.1.0-4-gabcdef
           # between releases.
-          version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
+          version="$(release/hack/describe-version.sh "${GITHUB_SHA}")"
 
           tags=("sha-${GITHUB_SHA}" "${version}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
@@ -225,7 +225,7 @@ jobs:
             exit 1
           fi
 
-          version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
+          version="$(release/hack/describe-version.sh "${GITHUB_SHA}")"
 
           tags=("sha-${GITHUB_SHA}" "${version}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then

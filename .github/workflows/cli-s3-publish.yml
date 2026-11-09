@@ -27,10 +27,10 @@ name: CLI S3 Publish
 # this workflow will fail at the upload step with an access-denied error, not
 # silently do nothing.
 #
-# A bare vX.Y.Z-beta.N tag publishes to nvkectl/releases/<describe>/ from the
+# A bare vX.Y.Z-beta.N tag publishes to nvkectl/releases/<version>/ from the
 # same `s3-publish` environment, so its deployment policy must admit v*-beta.*
-# tags as well as cli/v*. <describe> is the v* describe version that
-# tag-publish.yml stamps into nvkectl.
+# tags as well as cli/v*. <version> is the one tag-publish.yml stamps into
+# nvkectl: the tag on a bare v* tag run, the v* describe otherwise.
 
 # Called by tag-publish.yml after its build, so a cli/v* tag produces one set of
 # binaries rather than four independent ones, and this runs behind the licence
@@ -109,9 +109,9 @@ jobs:
             exit 1
           fi
 
-          # Published under the describe version, the same one tag-publish.yml
-          # stamps into nvkectl, whichever tag started the run.
-          release="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
+          # Published under the version tag-publish.yml stamps into nvkectl,
+          # resolved the same way.
+          release="$(release/hack/describe-version.sh "${GITHUB_SHA}")"
 
           {
             echo "s3_uri=${S3_URI}"

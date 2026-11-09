@@ -124,7 +124,7 @@ jobs:
           # string stamped into the binary and the string in the registry tag
           # cannot disagree. On an untagged commit this is v0.2.0-4-gdeadbee;
           # with no v* tag reachable at all, the short sha.
-          version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
+          version="$(release/hack/describe-version.sh "${GITHUB_SHA}")"
 
           # sha- and edge are the hand-off agent/Makefile reads; the version
           # alias is the GitHub publication.
@@ -132,8 +132,8 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             aliases+=("edge")
           elif [[ "${GITHUB_REF}" == refs/tags/v* && "${GITHUB_PUBLISH}" == "true" ]]; then
-            # Bare tags only: an agent/v* RC on a released commit describes
-            # to the release, and would move that release's alias.
+            # Bare tags only: an agent/v* RC is versioned by a describe such as
+            # vX.Y.Z-beta.N-K-g<commit>, which names no release to alias.
             aliases+=("${version}")
           fi
 

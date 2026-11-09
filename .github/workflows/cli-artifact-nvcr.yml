@@ -39,9 +39,9 @@ name: CLI Artifact NVCR
 # workflow_dispatch still works and still builds: dist_artifact is empty there,
 # so the build step below runs instead of the download.
 #
-# A bare v* tag run is versioned and tagged like any other build of that commit:
-# the v* describe version, which on the tagged commit is the tag itself, and
-# sha-<commit>. A cli/v* RC tag gets sha-<commit> only.
+# A bare v* tag run is versioned and tagged by its tag, and sha-<commit>. A
+# cli/v* RC tag is versioned by the v* describe and tagged sha-<commit> only
+# (see release/hack/describe-version.sh).
 on:
   workflow_call:
     inputs:
@@ -144,16 +144,16 @@ jobs:
           # exists in the NGC org; the binaries inside it are nvkectl.
           repo="nvcr.io/${NGC_ORG}/nvkectl"
 
-          version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
+          version="$(release/hack/describe-version.sh "${GITHUB_SHA}")"
 
           aliases=("sha-${GITHUB_SHA}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             aliases+=("edge")
           elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            # Named by its describe version, the one the binary reports, so
+            # Named by its version, the one the binary reports, so
             # qualification can pull it by version. Bare tags only: a cli/v*
-            # RC on a released commit describes to the release, and would move
-            # that release's alias.
+            # RC is versioned by a describe such as vX.Y.Z-beta.N-K-g<commit>,
+            # which names no release to alias.
             aliases+=("${version}")
           fi
 

@@ -82,7 +82,7 @@ jobs:
           set -euo pipefail
           repo="ghcr.io/${GITHUB_REPOSITORY,,}/cli"
 
-          version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
+          version="$(release/hack/describe-version.sh "${GITHUB_SHA}")"
 
           # sha- and edge stay as the CI hand-off; the version alias is the
           # GitHub publication.
@@ -90,8 +90,8 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             aliases+=("edge")
           elif [[ "${GITHUB_REF}" == refs/tags/v* && "${GITHUB_PUBLISH}" == "true" ]]; then
-            # Bare tags only: a cli/v* RC on a released commit describes to
-            # the release, and would move that release's alias.
+            # Bare tags only: a cli/v* RC is versioned by a describe such as
+            # vX.Y.Z-beta.N-K-g<commit>, which names no release to alias.
             aliases+=("${version}")
           fi
 

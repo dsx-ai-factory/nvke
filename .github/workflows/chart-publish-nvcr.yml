@@ -131,7 +131,7 @@ jobs:
             exit 1
           fi
 
-          describe="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
+          describe="$(release/hack/describe-version.sh "${GITHUB_SHA}")"
           version="${describe#v}"
           repo="nvcr.io/${ORG_TEAM}"
           image="${repo}/nvke-controller"

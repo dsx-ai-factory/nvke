@@ -67,14 +67,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # The describe version, whichever tag started the run, so the binary
-      # reports the version the cli publishers name it by.
+      # The tag on a bare v* tag run, the describe version on a cli/v* one (see
+      # release/hack/describe-version.sh), so the binary reports the version
+      # the cli publishers name it by.
       - name: Resolve the version
         id: version
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
+          VERSION="$(release/hack/describe-version.sh "${GITHUB_SHA}")"
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "Building nvkectl ${VERSION} for ${GITHUB_REF_NAME}"
 

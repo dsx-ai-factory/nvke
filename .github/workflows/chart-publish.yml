@@ -114,7 +114,7 @@ jobs:
           set -euo pipefail
           # Keep "v" for appVersion, drop it for the chart version (OCI chart
           # tags are plain semver without v).
-          describe="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"   # → v0.1.0 or v0.1.0-4-gabcdef
+          describe="$(release/hack/describe-version.sh "${GITHUB_SHA}")"   # → v0.1.0 or v0.1.0-4-gabcdef
           version="${describe#v}"              # → 0.1.0 or 0.1.0-4-gabcdef
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "app_version=${describe}" >> "${GITHUB_OUTPUT}"

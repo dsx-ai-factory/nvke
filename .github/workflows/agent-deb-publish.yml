@@ -123,7 +123,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(git describe --tags --always --match 'v*' HEAD)"
+          version="$(release/hack/describe-version.sh HEAD)"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
       - name: Set up Go

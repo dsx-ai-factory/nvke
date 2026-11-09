@@ -80,12 +80,13 @@ name-check: ## Fail on tokens that carry a banned name outside the allowlist, or
 	@python3 -B ./hack/name-check.py --mode $(NAME_CHECK_MODE)
 	@python3 -B ./hack/removed-settings-check.py
 
-# The version every nightly beta and release candidate is tagged with. A wrong
-# answer is pushed as a tag rather than reported, so the bump rules are tested
-# against fixture repositories.
-next-tag-test: ## Test the release version rules in release/hack/next-tag.sh. (run by the merge gate)
+# The version every nightly beta and release candidate is tagged with, and the
+# version every publisher pushes under. A wrong answer is pushed as a tag or an
+# artifact rather than reported, so both are tested against fixture repositories.
+next-tag-test: ## Test the release version rules in release/hack/next-tag.sh and describe-version.sh. (run by the merge gate)
 	@$(call require_command,python3)
 	@python3 -B ./release/hack/test_next_tag.py
+	@python3 -B ./release/hack/test_describe_version.py
 
 SHARED_CRD_CHART := controller/deploy/charts/nvke-crds
 CHART_CRDS_FILE := dist/release-crds.yaml

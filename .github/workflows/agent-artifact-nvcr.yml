@@ -19,9 +19,9 @@ name: Agent Artifact NVCR
 # below share one resolved value via steps.meta.outputs.repo. An NKE-org path
 # has no team segment; compare cluster-api-provider-nico's NVCR_NKE_IMAGE.
 #
-# A bare v* tag run is versioned and tagged like any other build of that commit:
-# the v* describe version, which on the tagged commit is the tag itself, and
-# sha-<commit>. An agent/v* RC tag gets sha-<commit> only.
+# A bare v* tag run is versioned and tagged by its tag, and sha-<commit>. An
+# agent/v* RC tag is versioned by the v* describe and tagged sha-<commit> only
+# (see release/hack/describe-version.sh).
 #
 on:
   push:
@@ -103,14 +103,14 @@ jobs:
           fi
           repo="nvcr.io/${NVKE_NGC_ORG}/nvke-agent"
 
-          version="$(git describe --tags --always --match 'v*' "${GITHUB_SHA}")"
+          version="$(release/hack/describe-version.sh "${GITHUB_SHA}")"
 
           aliases=("sha-${GITHUB_SHA}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             aliases+=("edge")
           elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            # Bare tags only: an agent/v* RC on a released commit describes
-            # to the release, and would move that release's alias.
+            # Bare tags only: an agent/v* RC is versioned by a describe such as
+            # vX.Y.Z-beta.N-K-g<commit>, which names no release to alias.
             aliases+=("${version}")
           fi
 
