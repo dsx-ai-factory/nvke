@@ -25,7 +25,8 @@ Each step is its own pull request.
 
 1. **Stage the new minor.** Read its [changelog](https://github.com/kubernetes/kubernetes/tree/master/CHANGELOG)
    for removed APIs, removed feature gates and changed defaults. Add the node
-   packages, and list the version as staged in the two docs pages. If the new
+   packages and keep the existing versions; dropping the oldest is step 3. List
+   the version as staged in the two docs pages. If the new
    kubeadm rejects the configuration NVKE renders, change that in its own pull
    request. Test it as described in [Test the new version](#test-the-new-version).
 2. **Make it the supported version.** Move the controller, agent sample, CLI,
@@ -43,8 +44,8 @@ change. Then test on your machine with one or more of these methods:
 | Method | What it checks | How |
 |---|---|---|
 | kubeadm | The new kubeadm accepts the configuration NVKE renders and the samples in `agent/samples/kubeadm-deploy/` | [`kubeadm config validate`](https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-config/) with the new kubeadm binary |
-| Tilt with Cluster API Docker (CAPD) | A workload cluster created on the previous version and upgraded to the new one | "CAPI + Tilt Development (Recommended)" in [`controller/README.md`](../controller/README.md), then `TARGET_VERSION=<NEW_VERSION> ./hack/capd-upgrade.sh` from `controller/`. The script builds the node image from `kindest/node:v<NEW_VERSION>`, so pick a patch that kind publishes; it can differ from the staged one. |
-| CAPD end-to-end suite | The end-to-end tests | `make test-e2e-capd-local` in `controller/`, as described in [`controller/test/e2e/README.md`](../controller/test/e2e/README.md) |
+| Tilt with Cluster API Docker (CAPD) | A workload cluster created on the previous version and upgraded to the new one | "CAPI + Tilt Development (Recommended)" in [`controller/README.md`](../controller/README.md), then `WAIT=true TARGET_VERSION=<NEW_VERSION> ./hack/capd-upgrade.sh` from `controller/`, which returns when the upgrade finishes. The script builds the node image from `kindest/node:v<NEW_VERSION>`, so pick a patch that kind publishes; it can differ from the staged one. |
+| CAPD end-to-end suite | That the change does not break the supported version, which the suite runs on | `make test-e2e-capd-local` in `controller/`, as described in [`controller/test/e2e/README.md`](../controller/test/e2e/README.md) |
 | nico-sim VMs | Nodes as virtual machines, closer to real machines | [`controller/nico-sim/README.md`](../controller/nico-sim/README.md) |
 | Local site | The operator flow, from site bootstrap to a workload cluster | [Run NVKE end to end on one machine](get-started/local-site.md) |
 
