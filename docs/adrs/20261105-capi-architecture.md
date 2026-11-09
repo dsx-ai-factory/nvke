@@ -164,6 +164,13 @@ integrate through the Service Layer's Kubernetes APIs, or use Core providers and
 extensions directly. Those adopting lower layers take responsibility for the
 curation or customer-facing behavior supplied by the layers they omit.
 
+New feature designs should explicitly consider adopters that use NVKE Core
+without the Service Layer. Reusable cluster lifecycle capabilities should live
+in Core where appropriate, with the Service Layer adding operator curation and
+service policy. Feature placement should be an explicit design decision, so
+functionality useful to Core adopters does not acquire an unnecessary dependency
+on the Service Layer.
+
 Publishing finer-grained components makes their interfaces compatibility
 commitments. A monolith can change private interfaces and their callers together;
 independently consumed components must preserve supported contracts or provide
