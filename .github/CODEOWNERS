@@ -20,18 +20,18 @@ go.sum @dsx-ai-factory/nvke-write @TerryHowe @rbever-nvidia
 /go.work.sum @dsx-ai-factory/nvke-write @TerryHowe @rbever-nvidia
 
 # area/controller — Cloud Workflow Engine
-/controller/ @dsx-ai-factory/nvke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris @jedimt
+/controller/ @dsx-ai-factory/nvke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris @jedimt @abhay-krishna
 /auth/ @dsx-ai-factory/nvke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris @jedimt
 /cluster-api-provider-provisioned/ @dsx-ai-factory/nvke-write @jonathanmeier5 @rbever-nvidia @TerryHowe
 
 # area/agent — renamed from node-agent in #36
-/agent/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @chaochn47
+/agent/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @chaochn47 @abhay-krishna
 
 # area/cli
 /cli/ @dsx-ai-factory/nvke-write @lia-campbell @jonathanmeier5 @TerryHowe
 
 # area/os-image
-/os-image/ @dsx-ai-factory/nvke-write @dsx-ai-factory/nvke-team-node-os @j-griffith @jdubs @pdmack
+/os-image/ @dsx-ai-factory/nvke-write @dsx-ai-factory/nvke-team-node-os @j-griffith @jdubs @pdmack @cullenmcdermott
 
 # area/chart
 /controller/deploy/ @dsx-ai-factory/nvke-write @TerryHowe @vwilson-nvidia @danbudris @rbever-nvidia
