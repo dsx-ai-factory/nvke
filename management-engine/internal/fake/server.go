@@ -411,7 +411,8 @@ func (s *Server) updateNodePool(w http.ResponseWriter, r *http.Request) {
 	var request api.UpdateNodePoolRequest
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil || request.DesiredNodeCount == nil || *request.DesiredNodeCount < 0 {
+	if err := decoder.Decode(&request); err != nil || (request.DesiredNodeCount == nil && request.Infra == nil) ||
+		(request.DesiredNodeCount != nil && *request.DesiredNodeCount < 0) {
 		writeError(w, http.StatusBadRequest, "invalid node pool scale request")
 		return
 	}
@@ -424,7 +425,16 @@ func (s *Server) updateNodePool(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "node pool not found")
 		return
 	}
-	pool.DesiredNodeCount = *request.DesiredNodeCount
+	if request.DesiredNodeCount != nil {
+		pool.DesiredNodeCount = *request.DesiredNodeCount
+	}
+	if request.Infra != nil {
+		pool.Infra = &api.InfraNodePoolProvider{
+			BootstrapFiles:     request.Infra.BootstrapFiles,
+			MachineTemplate:    request.Infra.MachineTemplate,
+			PreKubeadmCommands: request.Infra.PreKubeadmCommands,
+		}
+	}
 	s.nodePools.Resources[id] = pool
 	writeJSON(w, http.StatusOK, pool)
 }
