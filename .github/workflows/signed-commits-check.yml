@@ -126,13 +126,19 @@ jobs:
                 const reasons = [...new Set(unsigned.map((c) => c.commit.verification?.reason ?? 'unknown'))];
                 core.info(`#${pr.number}: labelled, ${unsigned.length} unverified (${reasons.join(', ')})`);
                 // Bots get the label only: nobody reads a comment addressed to one.
-                if (pr.user?.type !== 'Bot' && !(await alreadyAdvised(pr.number))) {
-                  await github.rest.issues.createComment({
-                    ...context.repo,
-                    issue_number: pr.number,
-                    body: advice(unsigned.length, reasons),
-                  });
-                  advised += 1;
+                // The comment is advice, so a failure here is reported and the
+                // sweep goes on to label the remaining pull requests.
+                try {
+                  if (pr.user?.type !== 'Bot' && !(await alreadyAdvised(pr.number))) {
+                    await github.rest.issues.createComment({
+                      ...context.repo,
+                      issue_number: pr.number,
+                      body: advice(unsigned.length, reasons),
+                    });
+                    advised += 1;
+                  }
+                } catch (error) {
+                  core.warning(`#${pr.number}: labelled, but the comment failed: ${error.message}`);
                 }
               } else if (unsigned.length === 0 && hasLabel) {
                 try {
