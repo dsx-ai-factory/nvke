@@ -64,7 +64,6 @@ type NVKEControllerClient interface {
 // NVKEClusterReconciler coordinates cluster provisioning from declarative intent.
 type NVKEClusterReconciler struct {
 	client.Client
-	// APIReader reads the NVKECluster uncached so a reconcile never starts from a stale status.
 	APIReader                  client.Reader
 	NVKEController             NVKEControllerClient
 	PollInterval               time.Duration
@@ -428,7 +427,6 @@ func (r *NVKEClusterReconciler) resolveNodePoolRelease(ctx context.Context, pool
 	return release, &image, nil
 }
 
-// getPinnedNodePoolRelease returns nil when the pinned release is gone or no longer matches the pool's node profile.
 func (r *NVKEClusterReconciler) getPinnedNodePoolRelease(ctx context.Context, pool *internalv1.NodePool, pinned *internalv1.ReleaseReference) (*internalv1.NodePoolRelease, error) {
 	profile, tag, err := splitNodeProfile(pool.NodeProfile)
 	if err != nil {
@@ -471,7 +469,6 @@ func (r *NVKEClusterReconciler) matchNodePoolRelease(ctx context.Context, pool *
 		for _, match := range matches {
 			names = append(names, match.Name)
 		}
-		// List order is not stable, and the message must not depend on it.
 		slices.Sort(names)
 		return nil, fmt.Errorf("node profile %q is ambiguous: NodePoolReleases %s all match", pool.NodeProfile, strings.Join(names, ", "))
 	}
@@ -944,7 +941,6 @@ func setNodePoolConditions(pool conditions.Setter) error {
 			internalv1.NVKEControllerDeletingCondition,
 			internalv1.NodePoolReleaseResolvedCondition,
 		},
-		// Pools created before worker release resolution have no such condition and are not backfilled.
 		conditions.IgnoreTypesIfMissing{internalv1.NodePoolReleaseResolvedCondition},
 		conditions.NegativePolarityConditionTypes(nvkeControllerNegativeConditionTypes),
 		conditions.CustomMergeStrategy{
