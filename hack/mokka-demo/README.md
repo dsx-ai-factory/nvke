@@ -6,7 +6,7 @@ The demo:
 
 1. Creates a node pool whose `nodeLabels` select Mokka. It copies the instance type, release and network of an existing worker pool, so it needs no provider-specific input.
 2. Installs Mokka on the nodes with that label, and only on them.
-3. Installs GPU Operator with [`gpu-operator-values.yaml`](gpu-operator-values.yaml): Mokka stands in for the driver and container toolkit.
+3. Installs GPU Operator with [`mokka-gpu-operator-values.yaml`](../../controller/test/e2e/testdata/mokka-gpu-operator-values.yaml): Mokka stands in for the driver and container toolkit.
 4. Runs a pod that requests one GPU on a labeled node.
 
 It prints `PASS` or `FAIL` for each check and exits non-zero if any fails:
@@ -46,7 +46,14 @@ It runs against any NVKE site, for example a DSX OS Simulator site or the [local
 
 ## In CI
 
-[`mokka-demo-e2e.yml`](../../.github/workflows/mokka-demo-e2e.yml) runs the demo on a CPU runner. It brings up the CAPD stack with `controller/hack/local-backend-e2e.sh`, stopping before its suite (`LOCAL_NKE_E2E_DEPLOY_ONLY=true`). Then [`ci.sh`](ci.sh) creates a CAPD workload cluster from `cli/examples/capd-cluster.yaml` and runs `demo.sh` against it.
+The e2e suite's `CAPD Mokka` entry (`controller/test/e2e/tenant_test.go`, labels `capd` and `mokka`) runs the same checks in Go, on a CAPD cluster created with a worker pool that carries the label. CAPD E2E runs it on pull requests, on `main` and on its schedule, on CPU runners. To run only that entry against a local stack:
+
+```bash
+cd controller
+LOCAL_NKE_E2E_LABEL_FILTER=mokka hack/local-backend-e2e.sh
+```
+
+The entry installs the charts with `helm`, so the suite's runner needs it; both E2E entrypoints copy the host's in.
 
 ## What it does not prove
 

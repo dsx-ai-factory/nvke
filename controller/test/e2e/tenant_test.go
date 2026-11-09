@@ -133,8 +133,8 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	//
 	// The "capd" label puts it in the full CAPD run on main, scheduled and manual
 	// runs, on the substrate that run already builds. The bounded
-	// pull-request lane selects only "core-docker" and has no room for a second
-	// cluster. "nvkectl" selects this row alone.
+	// pull-request lane selects only "core-docker" and "mokka". "nvkectl"
+	// selects this row alone.
 	Entry("CAPD via nvkectl", Ordered, ContinueOnFailure, Label("capd", "nvkectl"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
@@ -143,6 +143,26 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 		options:   nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		createVia: clientNvkectl,
 		validate:  validations{provisioningOnly: true},
+	}),
+	// Simulated GPUs on CPU-only nodes: Mokka (nvml-mock) on a labeled worker
+	// pool stands in for the driver, and GPU Operator runs on top of it. It
+	// proves the GPU stack schedules and advertises GPUs on an NVKE cluster,
+	// not GPU execution; see hack/mokka-demo/README.md.
+	//
+	// One control-plane node and one simulated-GPU worker keep it small enough
+	// for the pull-request lane, which selects it by the "mokka" label. The
+	// "capd" label puts it in the full runs too.
+	Entry("CAPD Mokka", Ordered, ContinueOnFailure, Label("capd", "mokka"), testSpec{
+		buildSpec: capdSpec,
+		shape: clusterShape{
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			workerPools: []nvke.NodePoolSpec{{
+				Name: "mokka-gpu", NodeNamePrefix: "mg", DesiredNodeCount: 1,
+				NodeLabels: map[string]string{mokkaLabelKey: "true"},
+			}},
+		},
+		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		validate: validations{provisioningOnly: true, mokkaGPU: true},
 	}),
 	// Mirrors the CAPD row above so the node pool lifecycle is covered on the
 	// NICo substrate too; the CLI creates the worker pool this row cares about.
@@ -680,6 +700,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				validateNvkectlPostCreate(&test)
 				validateNvkectlNodePoolLifecycle(&test)
 			}
+			if spec.validate.mokkaGPU {
+				validateMokkaGPU(&test)
+			}
 			if spec.validate.tenantChecks {
 				validateTenant(laneTenantTarget(&test, func() bool { return failed }), laneTenantSettings)
 			}
@@ -958,6 +981,10 @@ type validations struct {
 	// are on every control-plane node after create and, when the entry runs it,
 	// after the rolling update. The entry must set controlPlaneConfig.NodeLabels.
 	controlPlaneNodeLabels bool
+	// mokkaGPU installs Mokka and GPU Operator on the worker pools labeled
+	// mokkaLabelKey and asserts their nodes advertise and run GPUs. The entry
+	// must label at least one worker pool, and the runner needs helm.
+	mokkaGPU bool
 }
 
 // managementCluster is the cluster the controller runs on, which a tenant test reaches
@@ -1654,6 +1681,7 @@ func capdNodePoolSpec(pool nvke.NodePoolSpec, defaultName, defaultNodeNamePrefix
 		NodeNamePrefix:       cmp.Or(pool.NodeNamePrefix, defaultNodeNamePrefix),
 		DesiredNodeCount:     pool.DesiredNodeCount,
 		SystemReservedMemory: cmp.Or(pool.SystemReservedMemory, "1Gi"),
+		NodeLabels:           pool.NodeLabels,
 	}
 }
 

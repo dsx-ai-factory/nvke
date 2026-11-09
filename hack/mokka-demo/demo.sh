@@ -8,7 +8,9 @@
 # per check and exits non-zero on any failure. README.md has the details.
 set -euo pipefail
 
-demo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Shared with the e2e suite's CAPD Mokka entry, which embeds it.
+values="${repo}/controller/test/e2e/testdata/mokka-gpu-operator-values.yaml"
 
 CLUSTER="${CLUSTER:?set CLUSTER to the NVKE workload cluster name}"
 POOL="${POOL:-mokka-gpu}"
@@ -87,7 +89,7 @@ done
 
 step "GPU Operator ${GPU_OPERATOR_VERSION}"
 helm upgrade --install gpu-operator gpu-operator --repo https://helm.ngc.nvidia.com/nvidia --version "$GPU_OPERATOR_VERSION" \
-  --namespace gpu-operator --create-namespace -f "${demo_dir}/gpu-operator-values.yaml" --wait --timeout "$TIMEOUT" >/dev/null
+  --namespace gpu-operator --create-namespace -f "$values" --wait --timeout "$TIMEOUT" >/dev/null
 if kubectl wait clusterpolicy/cluster-policy --for=jsonpath='{.status.state}'=ready --timeout="$TIMEOUT" >/dev/null; then
   pass "ClusterPolicy is ready"
 else
