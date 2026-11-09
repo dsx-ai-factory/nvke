@@ -341,8 +341,9 @@ mkdir -p "${WORK}/charts"
 for c in "${CHARTS[@]}"; do
   [ "${c}" = controller-chart ] && [ "${CONTROLLER_CHART}" = checkout ] && continue
   helm pull "oci://127.0.0.1:${REGISTRY_PORT}/${PREFIX}/${c}" --plain-http --destination "${WORK}/charts" >/dev/null
-  printf 'VERSION_%s=%s\n' "${c//-/_}" \
-    "$(helm show chart "oci://127.0.0.1:${REGISTRY_PORT}/${PREFIX}/${c}" --plain-http | sed -n 's/^version: //p')" >>"${WORK}/versions.env"
+  chart_version="$(helm show chart "oci://127.0.0.1:${REGISTRY_PORT}/${PREFIX}/${c}" --plain-http | sed -n 's/^version: //p')"
+  [ -n "${chart_version}" ] || die "no chart version for ${c} in the Release registry"
+  printf 'VERSION_%s=%s\n' "${c//-/_}" "${chart_version}" >>"${WORK}/versions.env"
 done
 if [ "${CONTROLLER_CHART}" = checkout ]; then
   chart_dir="${NKE}/controller/deploy/charts/controller"

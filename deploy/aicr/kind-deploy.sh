@@ -92,8 +92,8 @@ case "$(docker info --format '{{.Architecture}}')" in
   x86_64|amd64)  tpm_checksum=46d0caad8c25a027dd11c93e18b58a8bc6fbd9f1fe2e36fa2a0dd440986de4dc ;;
   *) die "unsupported node architecture" ;;
 esac
-sed -i.bak "s#@TPM_CHECKSUM@#${tpm_checksum}#" "${WORK}/pinned/components/spire/values.yaml"
-rm -f "${WORK}/pinned/components/spire/values.yaml.bak"
+sed -i.bak "s#@TPM_CHECKSUM@#${tpm_checksum}#" "${WORK}/pinned/components/spire/kind-values.yaml"
+rm -f "${WORK}/pinned/components/spire/kind-values.yaml.bak"
 sed -i.bak "s#@CLUSTER@#${CLUSTER}#" "${WORK}/pinned/components/nvke-base-config/manifests/nktp-cluster.yaml"
 rm -f "${WORK}/pinned/components/nvke-base-config/manifests/nktp-cluster.yaml.bak"
 # CAPNICo is a manifest, kept in the deploy path rather than copied: drop its Namespace (created below
