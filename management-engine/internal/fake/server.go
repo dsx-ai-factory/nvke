@@ -36,7 +36,8 @@ type requestRecord struct {
 
 type nodePoolSeed struct {
 	resourceCollection[[]api.NodePool]
-	Create json.RawMessage `json:"create,omitempty"`
+	Create           json.RawMessage `json:"create,omitempty"`
+	CreateStatusCode int             `json:"createStatusCode,omitempty"`
 }
 
 type serverSeed struct {
@@ -60,6 +61,7 @@ type Server struct {
 	requests         []requestRecord
 	nodePools        resourceCollection[map[uuid.UUID]api.NodePool]
 	createPool       json.RawMessage
+	createPoolStatus int
 	updateStatusCode int
 }
 
@@ -140,6 +142,9 @@ func (s *Server) SeedFromYAML(input string) error {
 			return fmt.Errorf("node pool create defaults require nonzero id and clusterID")
 		}
 	}
+	if seed.NodePools.CreateStatusCode != 0 && (seed.NodePools.CreateStatusCode < 400 || seed.NodePools.CreateStatusCode > 599) {
+		return fmt.Errorf("nodePools.createStatusCode must be an HTTP error status or zero")
+	}
 	if seed.UpdateStatusCode != 0 && (seed.UpdateStatusCode < 400 || seed.UpdateStatusCode > 599) {
 		return fmt.Errorf("updateStatusCode must be an HTTP error status or zero")
 	}
@@ -155,6 +160,7 @@ func (s *Server) SeedFromYAML(input string) error {
 		s.nodePools.Resources[pool.ID] = pool
 	}
 	s.createPool = seed.NodePools.Create
+	s.createPoolStatus = seed.NodePools.CreateStatusCode
 	s.updateStatusCode = seed.UpdateStatusCode
 	return nil
 }
@@ -361,6 +367,10 @@ func (s *Server) createNodePool(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.requests = append(s.requests, requestRecord{Method: r.Method, Path: r.URL.Path, CreateNodePool: &request})
+	if s.createPoolStatus != 0 {
+		writeError(w, s.createPoolStatus, http.StatusText(s.createPoolStatus))
+		return
+	}
 	if _, exists := s.clusters.Resources[request.ClusterID]; !exists {
 		writeError(w, http.StatusNotFound, "parent cluster not found")
 		return
