@@ -82,6 +82,29 @@ spec:
                         description: CloudInitInjectHostname prepends hostname directives
                           to the bootstrap cloud-config.
                         type: boolean
+                      failureDomainLabelKey:
+                        description: |-
+                          FailureDomainLabelKey is the NICo Machine label key used for placement.
+                          Requires SiteID. When unset, failure domain placement is disabled.
+                        maxLength: 255
+                        minLength: 1
+                        type: string
+                      identityRef:
+                        description: |-
+                          IdentityRef names the Secret in this machine's namespace for NICo access.
+                          Requires SiteID. When unset, the provider-level credentials Secret is used.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
                       infinibandInterfaces:
                         description: |-
                           InfinibandInterfaces requests that one or more InfiniBand Partitions be attached
@@ -186,8 +209,9 @@ spec:
                         minItems: 1
                         type: array
                       ipxeScript:
-                        description: IpxeScript is the iPXE script used to boot this
-                          instance.
+                        description: |-
+                          IpxeScript is the iPXE script used to boot this instance.
+                          Mutually exclusive with OperatingSystemID.
                         type: string
                       labels:
                         additionalProperties:
@@ -232,10 +256,38 @@ spec:
                           Set this instead of NVLinkInterfaces when every device should use the same logical partition.
                         minLength: 1
                         type: string
+                      operatingSystemID:
+                        description: |-
+                          OperatingSystemID is the ID of a registered NICo operating system used to boot this instance.
+                          Mutually exclusive with IpxeScript.
+                        minLength: 1
+                        type: string
+                      powerControlIdentityRef:
+                        description: |-
+                          PowerControlIdentityRef names the Secret in this machine's namespace for NICo power control.
+                          Requires SiteID. When unset, the ordinary NICo identity is used.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
                       providerID:
                         description: ProviderID is set to `nico://<instance-id>` after
                           the NICo instance is created.
                         maxLength: 512
+                        minLength: 1
+                        type: string
+                      siteID:
+                        description: |-
+                          SiteID overrides NicoCluster settings with this machine's site and identity settings.
+                          When set, the controller does not read a NicoCluster.
                         minLength: 1
                         type: string
                       sshKeyGroupIDs:
@@ -254,8 +306,6 @@ spec:
                     - vpcID
                     type: object
                     x-kubernetes-validations:
-                    - message: spec.template.spec is immutable
-                      rule: self == oldSelf
                     - message: exactly one of instanceTypeID or machineID must be
                         set
                       rule: has(self.instanceTypeID) != has(self.machineID)
@@ -269,6 +319,14 @@ spec:
                       rule: '!(has(self.nvLinkLogicalPartitionID) && has(self.nvLinkInterfaces))'
                     - message: nvLinkLogicalPartitionID requires instanceTypeID
                       rule: '!has(self.nvLinkLogicalPartitionID) || has(self.instanceTypeID)'
+                    - message: ipxeScript and operatingSystemID are mutually exclusive
+                      rule: '!(has(self.ipxeScript) && has(self.operatingSystemID))'
+                    - message: identityRef requires siteID
+                      rule: '!has(self.identityRef) || has(self.siteID)'
+                    - message: powerControlIdentityRef requires siteID
+                      rule: '!has(self.powerControlIdentityRef) || has(self.siteID)'
+                    - message: failureDomainLabelKey requires siteID
+                      rule: '!has(self.failureDomainLabelKey) || has(self.siteID)'
                 required:
                 - spec
                 type: object
