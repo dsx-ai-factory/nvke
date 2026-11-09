@@ -120,6 +120,19 @@ func TestUnit_FailureCause(t *testing.T) {
 	require.Equal(t, eof.Error(), cause(matched, formattedAt(now, 50*time.Millisecond, eof), own(unexpectedEOF)),
 		"the actual error, even when a slow Error method or a pause comes between the two")
 
+	// valuesAt is values other than errors, such as the strings of an Equal,
+	// that Gomega formatted ago before now.
+	valuesAt := func(ago time.Duration) []formattedError { return []formattedError{{at: now.Add(-ago)}} }
+	refusedText := errors.New("connection refused")
+	notEqual := "Expected\n    <string>: connection refused\nto equal\n    <string>: ready"
+	require.Empty(t, cause(notEqual, earlier(refusedText), valuesAt(0)),
+		"not an error from an Eventually attempt that later passed, when a value mismatch fails after it")
+	require.Empty(t, cause("Timed out after 600.000s.\nThe function passed to Eventually failed at /e2e/a_test.go:12 with:\n"+notEqual,
+		formattedAt(now, 10*time.Second, refusedText), valuesAt(5*time.Second)),
+		"not an error from an earlier attempt, when the last attempt of an Eventually failed on a value mismatch")
+	require.Equal(t, refused.Error(), cause(unexpected, own(refused), valuesAt(0)),
+		"the error, when values are formatted with it for the same message")
+
 	long := errors.New(strings.Repeat("ノード ", maxCauseBytes))
 	cut := cause(long.Error(), own(long))
 	require.LessOrEqual(t, len(cut), maxCauseBytes)
@@ -184,6 +197,21 @@ func TestUnit_FormatErrorRemembersTheErrorsItFormats(t *testing.T) {
 		want = io.ErrUnexpectedEOF.Error()
 	}
 	require.Equal(t, want, failureCause(message, errs), "message: %q", message)
+
+	// The sequence in #2058: an attempt of an Eventually fails on an error, the
+	// next one passes, and a later assertion in the spec fails on a value
+	// mismatch whose text contains that error's.
+	refused := errors.New("connection refused")
+	attempts := 0
+	g.Eventually(func(g gomega.Gomega) {
+		attempts++
+		if attempts == 1 {
+			g.Expect(refused).NotTo(gomega.HaveOccurred())
+		}
+	}).WithPolling(2 * causeWindow).WithTimeout(time.Minute).Should(gomega.Succeed())
+	g.Expect(refused.Error()).To(gomega.Equal("ready"))
+	require.Contains(t, message, refused.Error())
+	require.Empty(t, failureCause(message, takeFormattedErrors(time.Time{})), "message: %q", message)
 
 	for i := range 2 * maxFormattedErrors {
 		formatError(fmt.Errorf("progress %d", i))

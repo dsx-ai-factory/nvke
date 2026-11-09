@@ -36,16 +36,19 @@ const failureCauseEntry = "failure-cause"
 const maxFormattedErrors = 32
 
 // formattedErrors are the errors Gomega has formatted since the last failure,
-// oldest first, with when each was formatted. Gomega formats an error only to
-// describe a failure, a failed attempt of an Eventually, or a progress
-// report, so the error a failure is about is among them. Progress reports are
-// written from another goroutine, hence the lock.
+// oldest first, with when each was formatted, and between them when it last
+// formatted any other value. Gomega formats an error only to describe a
+// failure, a failed attempt of an Eventually, or a progress report, so the
+// error a failure is about is among them. Progress reports are written from
+// another goroutine, hence the lock.
 var formattedErrors struct {
 	sync.Mutex
 	errs []formattedError
 }
 
-// formattedError is an error Gomega formatted, and when it did.
+// formattedError is an error Gomega formatted, and when it did. With no err,
+// it is when Gomega last formatted a value other than an error, after the
+// error before it.
 type formattedError struct {
 	err error
 	at  time.Time
@@ -72,23 +75,38 @@ func takeFormattedErrors(since time.Time) []formattedError {
 // formatError stands in for the fields Gomega prints after an error's
 // message, which repeat the message once per wrapped layer and bury it. It
 // prints nothing there but, for a request the API server refused on
-// authorization, where to look. It also remembers the error, for
-// failWithCause.
+// authorization, where to look. It also remembers the error, or when it was
+// asked to format another value, for failWithCause.
 func formatError(value any) (string, bool) {
 	err, ok := value.(error)
-	if !ok || err == nil {
+	if !ok {
+		err = nil
+	}
+	rememberFormatted(err)
+	if err == nil {
 		return "", false
 	}
-	formattedErrors.Lock()
-	formattedErrors.errs = append(formattedErrors.errs, formattedError{err: err, at: time.Now()})
-	if n := len(formattedErrors.errs); n > maxFormattedErrors {
-		formattedErrors.errs = formattedErrors.errs[n-maxFormattedErrors:]
-	}
-	formattedErrors.Unlock()
 	if apierrors.IsForbidden(err) {
 		return forbiddenHint, true
 	}
 	return "", true
+}
+
+// rememberFormatted adds err to formattedErrors or, when err is nil, records
+// that Gomega formatted another value. A run of other values, such as the
+// fields of one struct, takes one entry, the time of the last of them.
+func rememberFormatted(err error) {
+	now := time.Now()
+	formattedErrors.Lock()
+	defer formattedErrors.Unlock()
+	if n := len(formattedErrors.errs); err == nil && n > 0 && formattedErrors.errs[n-1].err == nil {
+		formattedErrors.errs[n-1].at = now
+		return
+	}
+	formattedErrors.errs = append(formattedErrors.errs, formattedError{err: err, at: now})
+	if n := len(formattedErrors.errs); n > maxFormattedErrors {
+		formattedErrors.errs = formattedErrors.errs[n-maxFormattedErrors:]
+	}
 }
 
 // failWithCause is the suite's fail handler: Ginkgo's Fail, after recording
@@ -121,7 +139,8 @@ const maxCauseBytes = 4096
 // formatted its errors at least a polling interval before, and this suite
 // polls every 200ms or slower. A faster poll, or a progress report on a
 // different error, could put an error the failure is not about inside the
-// window.
+// window. It is also how long after that error Gomega can have formatted the
+// message's other values.
 const causeWindow = 100 * time.Millisecond
 
 // failureCause is the text of the error the failure message is about, cut at a
@@ -133,15 +152,31 @@ const causeWindow = 100 * time.Millisecond
 // formatted up to causeWindow before that one, since Gomega formats an
 // assertion's actual value before its expected one. Whitespace is not
 // compared, since Gomega indents each line of an error.
+//
+// A message is not about that error when Gomega formatted another value more
+// than causeWindow after it: the failing assertion formatted its values last,
+// and so is about those, as a value mismatch is, while the error is from an
+// earlier attempt of an Eventually whose text the mismatch happens to carry.
 func failureCause(message string, errs []formattedError) string {
 	flat := oneLine(message)
 	// texts holds the text of each error the message contains, "" for the rest.
 	texts := make([]string, len(errs))
 	newest := -1
 	for i, f := range errs {
+		if f.err == nil {
+			continue
+		}
 		text := errorText(f.err)
 		if t := oneLine(text); t != "" && strings.Contains(flat, t) {
 			texts[i], newest = text, i
+		}
+	}
+	if newest < 0 {
+		return ""
+	}
+	for _, f := range errs[newest+1:] {
+		if f.err == nil && f.at.Sub(errs[newest].at) > causeWindow {
+			return ""
 		}
 	}
 	for i := range newest + 1 {
