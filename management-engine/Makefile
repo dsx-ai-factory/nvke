@@ -49,6 +49,9 @@ license: ## Add the repository's license header to source files.
 manifests-state: controller-gen ## Generate internal deepcopy methods, datastore CRDs, and RBAC.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=hack/boilerplate.yaml.txt paths=./apis/... output:crd:artifacts:config=config/crd/bases
+	@for kind in machineimages clusterreleases nodepoolreleases; do \
+		mv "config/crd/bases/internal.nvke.nvidia.com_$$kind.yaml" ../controller/deploy/charts/nvke-crds/bases/; \
+	done
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role,headerFile=hack/boilerplate.yaml.txt paths=./controllers/... output:rbac:artifacts:config=config/rbac
 
 manifests: manifests-state kustomize kubebuilder ## Generate state, the runtime bundle, and Helm chart.
@@ -325,3 +328,8 @@ chart-check: manifests ## Lint and render the Helm chart without a cluster.
 	$(HELM) template management-engine chart --namespace management-engine-system -f config/samples/runtime-values.yaml > dist/chart-rendered.yaml
 	$(HELM) lint chart -f config/samples/runtime-values.yaml -f config/samples/nvke-controller-values.yaml
 	$(HELM) template management-engine chart --namespace management-engine-system -f config/samples/runtime-values.yaml -f config/samples/nvke-controller-values.yaml > dist/chart-nvke-controller-rendered.yaml
+
+.PHONY: test-chart-crds
+test-chart-crds: ## Verify the shared CRD chart and its controller dependency.
+	$(HELM) dependency build ../controller/deploy/charts/controller --skip-refresh
+	HELM="$(HELM)" $(GO) test $(GO_TEST_FLAGS) ./hack -run TestSharedCRDs -count=1

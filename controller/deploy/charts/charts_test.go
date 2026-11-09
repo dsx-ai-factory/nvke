@@ -127,7 +127,7 @@ func TestExtract_SecuresTheDirectoryItWasGiven(t *testing.T) {
 var chartName = regexp.MustCompile(`(?m)^name:[ \t]+\S+`)
 
 func TestNames(t *testing.T) {
-	if got, want := Names(), []string{"controller", "postgresql"}; !reflect.DeepEqual(got, want) {
+	if got, want := Names(), []string{"controller", "nvke-crds", "postgresql"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("Names() = %v, want %v", got, want)
 	}
 	if Has("nope") {
@@ -177,6 +177,9 @@ func TestExtract_MatchesTheSourceTree(t *testing.T) {
 			if err != nil || d.IsDir() {
 				return err
 			}
+			if name == NVKEController && strings.HasPrefix(path, "charts/") {
+				return nil
+			}
 			want, _ := fs.ReadFile(src, path)
 			got, readErr := os.ReadFile(filepath.Join(dir, filepath.FromSlash(path)))
 			if readErr != nil || !bytes.Equal(got, want) {
@@ -192,5 +195,39 @@ func TestExtract_MatchesTheSourceTree(t *testing.T) {
 		if err := Extract(name, dir); err == nil {
 			t.Error("Extract into a non-empty directory must fail")
 		}
+	}
+}
+
+func TestExtract_ControllerContainsCanonicalCRDDependency(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "controller")
+	if err := Extract(NVKEController, dir); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "charts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != NVKECRDs || !entries[0].IsDir() {
+		t.Fatalf("unexpected embedded dependencies: %v", entries)
+	}
+	expected, err := FS(NVKECRDs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.WalkDir(expected, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		want, err := fs.ReadFile(expected, path)
+		if err != nil {
+			return err
+		}
+		got, err := os.ReadFile(filepath.Join(dir, "charts", NVKECRDs, filepath.FromSlash(path)))
+		if err != nil || !bytes.Equal(got, want) {
+			t.Errorf("embedded dependency differs at %s: %v", path, err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }

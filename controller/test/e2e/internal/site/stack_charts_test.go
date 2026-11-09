@@ -214,6 +214,10 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 		if !ok {
 			t.Skip("no controller install")
 		}
+		chart := filepath.Join(assets, "controller", "deploy", "charts", "controller")
+		if output, err := runTool(t, "helm", "dependency", "build", chart, "--skip-refresh"); err != nil {
+			t.Fatalf("prepare controller chart dependencies: %v\n%s", err, output)
+		}
 		manifest, err := helmTemplate(t, install)
 		if err != nil {
 			t.Fatal(err)

@@ -232,10 +232,15 @@ func readPublicMarkers(source string, groups ...*ast.CommentGroup) (resourceMode
 // readCRDs derives storage identity and scope from existing generated CRDs.
 func readCRDs(root string) (map[string]apiextensionsv1.CustomResourceDefinition, error) {
 	result := map[string]apiextensionsv1.CustomResourceDefinition{}
-	files, err := filepath.Glob(filepath.Join(root, "config/crd/bases/*.yaml"))
+	files, err := filepath.Glob(filepath.Join(root, "../controller/deploy/charts/nvke-crds/bases/*.yaml"))
 	if err != nil {
 		return nil, err
 	}
+	local, err := filepath.Glob(filepath.Join(root, "config/crd/bases/*.yaml"))
+	if err != nil {
+		return nil, err
+	}
+	files = append(files, local...)
 	for _, filename := range files {
 		data, err := os.ReadFile(filename)
 		if err != nil {
