@@ -55,7 +55,8 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [coverage-policy.md](coverage-policy.md) | What coverage is collected, what CI does with it, and why no threshold gates a merge |
 | [adrs/20261014-adr-conventions.md](adrs/20261014-adr-conventions.md) | Accepted decision on ADR scope, placement, format, and lifecycle |
 | [adrs/20261106-shared-nvke-crd-chart.md](adrs/20261106-shared-nvke-crd-chart.md) | Proposed shared schema packaging and ownership across NVKE installers |
-| [issue-triage.md](issue-triage.md) | How issues are triaged: the `needs-triage` and `priority/*` labels, who sets them, and what the automation does. How pull requests are routed to reviewers, and vetted before CI runs |
+| [issue-triage.md](issue-triage.md) | How issues are triaged: the `needs-triage` and `priority/*` labels, who sets them, and what the automation does |
+| [pull-request-triage.md](pull-request-triage.md) | How pull requests are triaged: the issue each one needs, how it is routed to reviewers, and how it is vetted before CI runs |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | How to get a change reviewed and merged |
 | [../.github/workflows/README.md](../.github/workflows/README.md) | How CI is wired, and the invariants a new workflow has to hold to |
 

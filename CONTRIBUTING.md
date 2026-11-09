@@ -132,7 +132,9 @@ asks for.
 breaking change, significant refactor). This avoids duplicated effort and lets
 maintainers give early feedback on the approach before you invest time coding.
 
-For small bug fixes and documentation improvements, a PR without a prior issue is fine.
+Every PR links an issue, small bug fixes and documentation improvements included.
+For those, the issue can be opened alongside the PR. See
+[docs/pull-request-triage.md](docs/pull-request-triage.md).
 
 ### Your first issue
 
