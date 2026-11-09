@@ -96,6 +96,15 @@ On macOS the agent suite needs no special handling: `agent/Makefile` points
 `TMPDIR` at `/private/tmp`, because the default sits under `/var`, which is a
 symlink that the agent's own path checks reject.
 
+### Choose your test environment
+
+Choose the test environment before implementation, during the issue or design
+discussion when one exists.
+Use the least expensive environment that reproduces the changed behavior and
+its dependencies.
+Follow the [environment selection guide](docs/development.md#choose-your-test-environment)
+for NVKE changes.
+
 ### Before you open a pull request
 
 ```bash
@@ -140,7 +149,7 @@ For small bug fixes and documentation improvements, a PR without a prior issue i
     to learn how to set up the development environment.
 2. Find an issue to work on. The best way is to look for the [good first issue](https://github.com/dsx-ai-factory/nvke/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
     or [help wanted](https://github.com/dsx-ai-factory/nvke/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) labels.
-3. Comment on the issue saying you are going to work on it.
+3. Comment on the issue with your approach and [test plan](#choose-your-test-environment).
 4. Code! Make sure to update unit tests and documentation.
 5. When done, [create your pull request](https://github.com/dsx-ai-factory/nvke/compare)
     referencing the issue with `Closes #<N>` in the description.
