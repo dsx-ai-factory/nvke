@@ -44,6 +44,10 @@ The demo reads the workload cluster's kubeconfig through `nvkectl get kubeconfig
 
 It runs against any NVKE site, for example a DSX OS Simulator site or the [local site](../../docs/get-started/local-site.md). On the local site, run it from the workspace shell after `source ~/nvke-local-site/env.sh`.
 
+## In CI
+
+[`mokka-demo-e2e.yml`](../../.github/workflows/mokka-demo-e2e.yml) runs the demo on a CPU runner. It brings up the CAPD stack with `controller/hack/local-backend-e2e.sh`, stopping before its suite (`LOCAL_NKE_E2E_DEPLOY_ONLY=true`). Then [`ci.sh`](ci.sh) creates a CAPD workload cluster from `cli/examples/capd-cluster.yaml` and runs `demo.sh` against it.
+
 ## What it does not prove
 
 - **CUDA, NCCL and RDMA.** Mokka simulates the driver's interfaces, not GPU execution. The CUDA validator passes because the values skip its CUDA workload (`WITH_WORKLOAD=false`).

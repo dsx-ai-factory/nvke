@@ -195,6 +195,10 @@ e2e_host_loads_openvswitch "${ovs_probe_image}" ||
 log "ensuring the Kind management cluster exists"
 kind_config_for_mirror "${repo_root}/hack/controller-capi-kind.yaml" "${tmp_dir}/kind-config.yaml"
 [[ "${host_kubeconfig}" == /* ]] || fail "LOCAL_NKE_E2E_KUBECONFIG must be an absolute path"
+# The exit trap removes tmp_dir, so a stack left up needs its kubeconfig elsewhere.
+if [[ "${LOCAL_NKE_E2E_DEPLOY_ONLY:-false}" == true && -z "${LOCAL_NKE_E2E_KUBECONFIG:-}" ]]; then
+  fail "LOCAL_NKE_E2E_DEPLOY_ONLY needs LOCAL_NKE_E2E_KUBECONFIG, which outlives the run"
+fi
 mkdir -p "$(dirname "${host_kubeconfig}")"
 existing_kind_clusters="$(kind get clusters)"
 if grep -Fx "${kind_cluster_name}" <<<"${existing_kind_clusters}" >/dev/null; then
@@ -383,6 +387,14 @@ if [[ "${LOCAL_NKE_E2E_BUILD_TAGS:-}" =~ (^|[[:space:],])oidc_acceptance($|[[:sp
       /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth --help >/dev/null 2>&1 || \
       fail "SPIRE exec-auth plugin is unavailable in ${namespace}/deployment/${deployment}"
   done
+fi
+
+# Stop with the stack up, for a lane that drives it itself
+# (.github/workflows/mokka-demo-e2e.yml). The exit trap stops the bundle mirror,
+# so such a lane sets INSTALL_CNI_AFTER_INIT=true, whose nodes do not need it.
+if [[ "${LOCAL_NKE_E2E_DEPLOY_ONLY:-false}" == true ]]; then
+  log "controller deployed; stopping before the E2E suite (LOCAL_NKE_E2E_DEPLOY_ONLY)"
+  exit 0
 fi
 
 log "compiling the E2E suite for linux/${host_arch}"
