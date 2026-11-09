@@ -22,7 +22,6 @@ scope or come off the list as we learn more. We don't publish dates.
 
 | Item | What it delivers |
 |---|---|
-| Enable integration with NVKE at multiple layers, from Cluster API providers to the REST API | NVKE provides Kubernetes-native CRDs and controllers, built on standard Cluster API contracts. Each layer works without the layers above it. |
 | Issue cluster certificates from your own PKI | Cluster certificates chain to your own root of trust. |
 | Support NVIDIA GB300 worker nodes | Run worker nodes on NVIDIA GB300, validated with NVKE. |
 | Support NVIDIA Vera Rubin worker nodes | Run worker nodes on NVIDIA Vera Rubin, validated with NVKE. |
@@ -37,6 +36,7 @@ scope or come off the list as we learn more. We don't publish dates.
 
 | Item | What it delivers |
 |---|---|
+| Enable integration with NVKE at multiple layers, from Cluster API providers to the REST API | NVKE provides Kubernetes-native CRDs and controllers, built on standard Cluster API contracts. Each layer works without the layers above it. |
 | Delete individual nodes from nvkectl | Describe and delete a single node from nvkectl. The NVKE API already supports this. |
 | Scale down node pools automatically | Pools scale down automatically and respect PodDisruptionBudgets. You can also choose which nodes go on scale-down. |
 | Operate NVKE from AI agents with MCP and agent skills | An NVKE MCP server and published agent skills let AI assistants inspect and operate clusters, under the same per-customer authorization as the API. |
