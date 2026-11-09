@@ -63,8 +63,7 @@ type NVKEControllerClient interface {
 // NVKEClusterReconciler coordinates cluster provisioning from declarative intent.
 type NVKEClusterReconciler struct {
 	client.Client
-	// APIReader reads the NVKECluster without the informer cache, so a reconcile never starts from a status older
-	// than the previous reconcile's write. When nil, the cached client is used.
+	// APIReader reads the NVKECluster uncached so a reconcile never starts from a stale status.
 	APIReader                  client.Reader
 	NVKEController             NVKEControllerClient
 	PollInterval               time.Duration
@@ -306,7 +305,6 @@ func (r *NVKEClusterReconciler) resolveReleaseTemplateVariables(ctx context.Cont
 	return releaseTemplateVariables(release.Spec.MachineInit, &image)
 }
 
-// releaseTemplateVariables builds the infra template variables a release and its image supply.
 func releaseTemplateVariables(machineInit internalv1.MachineInit, image *internalv1.MachineImage) (map[string]any, error) {
 	files := []internalv1.BootstrapFile{}
 	commands := []string{}
@@ -396,7 +394,6 @@ func clusterReleaseKubernetesVersion(release *internalv1.ClusterRelease) (*versi
 	return parsed, nil
 }
 
-// splitNodeProfile splits a pool's <profile>:<tag> node profile into its two halves.
 func splitNodeProfile(ref internalv1.NodeProfileReference) (profile, tag string, err error) {
 	profile, tag, found := strings.Cut(string(ref), ":")
 	if !found {
@@ -408,9 +405,6 @@ func splitNodeProfile(ref internalv1.NodeProfileReference) (profile, tag string,
 	return profile, tag, nil
 }
 
-// resolveNodePoolRelease selects the worker release and image a pool renders from.
-// A pinned release is fetched by name and may be deprecated. Without a pin, the pool's
-// node profile must match exactly one release that is not deprecated.
 func (r *NVKEClusterReconciler) resolveNodePoolRelease(ctx context.Context, pool *internalv1.NodePool, pinned *internalv1.ReleaseReference) (*internalv1.NodePoolRelease, *internalv1.MachineImage, error) {
 	var release *internalv1.NodePoolRelease
 	var err error
