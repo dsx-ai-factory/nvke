@@ -55,9 +55,12 @@ What the node needs, all present on the reference instance type:
 - egress to `registry-1.docker.io` (the Bitnami OCI chart),
   `spiffe.github.io` and `go.temporal.io` (the spire-crds and temporal
   repositories), and GitHub if the spire chart is materialised there
-- for the nktp item, egress to `helm.ngc.nvidia.com`, where the chart and its
-  bundled dependencies come from, and to `docker.io`, `ghcr.io`, `quay.io` and
-  `registry.k8s.io`, where its images come from
+- for the nktp item, egress to `helm.ngc.nvidia.com` and NGC's download hosts
+  `files.ngc.nvidia.com`, `xfiles.ngc.nvidia.com` and `xlfiles.ngc.nvidia.com`
+  ([NGC network protocols](https://docs.nvidia.com/ngc/latest/ngc-user-guide.html#nvidia-ngc-network-protocols)),
+  for the chart and its bundled dependencies. NGC redirects the chart index and
+  archive to a download host, currently `xfiles.ngc.nvidia.com`. Egress to
+  `docker.io`, `ghcr.io`, `quay.io` and `registry.k8s.io` is for its images
 - to install from an NVKR release: add `--release release.json`, the
   `nvkr.dev/release-description/v1` JSON that `nvkr release export
   --reference <repo@digest>` writes. The export describes the release; it

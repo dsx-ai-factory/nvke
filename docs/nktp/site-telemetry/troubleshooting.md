@@ -46,10 +46,14 @@ empty value rather than labeling every signal with nothing.
 ## The nktp item cannot download the chart
 
 **Cause:** The install pulls the chart from `https://helm.ngc.nvidia.com/nvidia`,
-and the node running it has no egress there.
+which redirects the index and the archive to one of NGC's download hosts,
+currently `xfiles.ngc.nvidia.com`, and the node running it has no egress to one
+of them.
 
 **Fix:**
-- **Allow that egress,** or
+- **Allow egress** to `helm.ngc.nvidia.com` and NGC's download hosts
+  `files.ngc.nvidia.com`, `xfiles.ngc.nvidia.com` and `xlfiles.ngc.nvidia.com`
+  ([NGC network protocols](https://docs.nvidia.com/ngc/latest/ngc-user-guide.html#nvidia-ngc-network-protocols)), or
 - **Install from a release.** `nvke-deploy-local.sh install --release …` puts the packaged
   nktp chart the release carries under `charts/`, and installs from that archive.
 
@@ -61,8 +65,16 @@ bound to a node-local volume on a node that is gone.
 
 **Fix:** check `kubectl -n nktp get pvc`. An unbound claim needs a default
 StorageClass. A claim bound to a lost node holds queued telemetry that is
-already unreachable; delete the claim and the Pod, and the StatefulSet
-recreates both on a node that is up.
+already unreachable. Delete the claim without waiting, then the Pod:
+
+```bash
+kubectl -n nktp delete pvc <CLAIM> --wait=false
+kubectl -n nktp delete pod <POD> --grace-period=0 --force
+```
+
+The claim stays until no Pod uses it, and a Pod on a lost node is never
+confirmed stopped, so it has to be deleted with `--force`. Once it is gone, the
+claim is removed and the StatefulSet recreates both on a node that is up.
 
 ## Collectors don't appear, or the Operator's webhook fails
 

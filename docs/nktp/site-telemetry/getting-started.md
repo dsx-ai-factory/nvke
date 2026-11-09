@@ -77,8 +77,11 @@ plus:
   { "ClusterName": "<site-name>", "Nico": { "...": "..." } }
   ```
 - **Egress from the node running the install:**
-  - to `helm.ngc.nvidia.com`, for the chart, which carries its dependency
-    charts
+  - to `helm.ngc.nvidia.com` and NGC's download hosts `files.ngc.nvidia.com`,
+    `xfiles.ngc.nvidia.com` and `xlfiles.ngc.nvidia.com`, for the chart, which
+    carries its dependency charts. NGC redirects the index and the archive to
+    a download host, currently `xfiles.ngc.nvidia.com`; see
+    [NGC network protocols](https://docs.nvidia.com/ngc/latest/ngc-user-guide.html#nvidia-ngc-network-protocols)
   - to `docker.io`, `ghcr.io`, `quay.io` and `registry.k8s.io`, for the images
 - **A default StorageClass.** The watchdog and the three gateways each claim
   a 1Gi PersistentVolume for their exporter queues, so telemetry queued while
