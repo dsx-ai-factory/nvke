@@ -595,6 +595,15 @@ write_files:
 `/etc/spire-agent/agent.conf`, and only then does `spire-agent` start.
 `nvke-agent` starts after the workload API socket exists.
 
+If the node's `ds=nocloud-net;s=<url>` seed was unreachable when cloud-init
+searched for it — the instance landed on `DataSourceNone` —
+`nvke-cloud-init-ds-retry.timer` keeps probing the seed URL and re-runs
+cloud-init once it answers, applying the user-data the first boot missed.
+The re-run only ever fires while `cloud-init status` still reports the
+datasource as `none` — a node that found any real datasource is left alone.
+See [SPEC.md](SPEC.md#cloud-init-datasource-retry) for the exact behavior
+and its bounds.
+
 The site SPIRE server must also register a workload entry for root
 `nvke-agent` (unix attestor, uid 0) and an identity under an accepted caller
 path for whatever will dial the node (controller or `nvke-os-image-check`);

@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[Unit]
+Description=Retry cloud-init datasource discovery once the seed URL answers
+Documentation=https://github.com/dsx-ai-factory/nvke/blob/main/os-image/SPEC.md
+# Ordered after every first-boot cloud-init stage (the network-datasource
+# init unit is cloud-init-main.service on newer images, cloud-init.service
+# before 23.2; both are listed since only one exists) so a tick never runs
+# ahead of them. The script still gates on `cloud-init status` and on no
+# cloud-* stage unit being in flight before it runs `clean`.
+After=cloud-init.service cloud-init-main.service cloud-config.service cloud-final.service
+ConditionPathExists=!/var/lib/nvke/cloud-init-ds-retry.done
+
+[Service]
+Type=oneshot
+# A recovery tick re-runs init and both module stages in process; give it
+# room rather than being killed mid-clean.
+TimeoutStartSec=15min
+ExecStart=/usr/lib/nvke/cloud-init-ds-retry.sh
