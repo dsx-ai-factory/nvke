@@ -46,9 +46,7 @@ EGRESS_URLS=(
   https://github.com/
   https://api.github.com/
   https://objects.githubusercontent.com/
-  https://kubernetes-sigs.github.io/metrics-server/index.yaml
-  https://open-telemetry.github.io/opentelemetry-helm-charts/index.yaml
-  https://prometheus-community.github.io/helm-charts/index.yaml
+  https://helm.ngc.nvidia.com/nvidia/index.yaml
   https://quay.io/v2/
   https://registry.k8s.io/v2/
 )
