@@ -145,8 +145,16 @@ items:
         reason: Reported
         status: "False"
         type: NVKEControllerProvisioning
+      - message: ""
+        observedGeneration: 1
+        reason: ReconcileSucceeded
+        status: "True"
+        type: NodePoolReleaseResolved
       id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
       name: workers-a
+      resolvedRelease:
+        name: worker-test-release
+        version: 1.36.1
     - conditions:
       - message: '* NVKEControllerProvisioned: Provisioning failed for workers-b'
         observedGeneration: 1
@@ -168,8 +176,16 @@ items:
         reason: Reported
         status: "False"
         type: NVKEControllerProvisioning
+      - message: ""
+        observedGeneration: 1
+        reason: ReconcileSucceeded
+        status: "True"
+        type: NodePoolReleaseResolved
       id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
       name: workers-b
+      resolvedRelease:
+        name: worker-test-release
+        version: 1.36.1
     - conditions:
       - message: ""
         observedGeneration: 1
@@ -191,8 +207,16 @@ items:
         reason: Reported
         status: "False"
         type: NVKEControllerProvisioning
+      - message: ""
+        observedGeneration: 1
+        reason: ReconcileSucceeded
+        status: "True"
+        type: NodePoolReleaseResolved
       id: dddddddd-dddd-4ddd-8ddd-dddddddddddd
       name: workers-c
+      resolvedRelease:
+        name: worker-test-release
+        version: 1.36.1
     observedGeneration: 1
     resolvedRelease:
       name: test-release
