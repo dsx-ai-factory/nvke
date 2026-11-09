@@ -1308,13 +1308,14 @@ if not CONTROLLER_IMAGE and not _controller_local_debug_active:
 # The shared chart's release schemas are applied before the controller, which has its dependency turned
 # off with releaseCRDs.install=false: a local resource that waits for the chart to
 # install them holds every unparallelizable build behind it, including the chart's.
+# The chart is rendered with helm here, as `make chart-crds` renders it, rather
+# than through make: the e2e runner runs Tilt with only controller/ and no make.
 local_resource(
     "machine-engine-crds",
     cmd=["bash", "-c", """
       set -euo pipefail
-      make -C .. chart-crds
-      kubectl apply --server-side --field-manager=tilt-release-crds \
-        -f ../dist/release-crds.yaml
+      helm template nvke-crds deploy/charts/nvke-crds |
+        kubectl apply --server-side --field-manager=tilt-release-crds -f -
       for crd in machineimages clusterreleases nodepoolreleases; do
         kubectl wait --for=condition=Established --timeout=120s "crd/${crd}.internal.nvke.nvidia.com"
       done
