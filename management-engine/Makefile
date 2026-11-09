@@ -331,4 +331,5 @@ chart-check: manifests ## Lint and render the Helm chart without a cluster.
 
 .PHONY: test-chart-crds
 test-chart-crds: ## Verify the shared CRD chart and its controller dependency.
+	$(HELM) dependency build ../controller/deploy/charts/controller --skip-refresh
 	HELM="$(HELM)" $(GO) test $(GO_TEST_FLAGS) ./hack -run TestSharedCRDs -count=1
