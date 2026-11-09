@@ -408,6 +408,7 @@ Some combinations are refused before anything is built:
 | `--dry-run` | off | plans, verifies, resolves and stages the site inputs, then prints the suite's arguments without taking a machine |
 | `--keep-site` | off | keeps the site node after the run, pass or fail, and a tenant whose specs failed |
 | `--keep-tenant` | off | keeps every tenant, passed or not, and the site node they hang off. The spec that deletes a tenant is skipped, so tenant deletion is not tested |
+| `--tenant-gpu-runtime` | off | installs the GPU runtime on the tenant with AICR, then runs AICR's deployment checks and the tenant GPU checks. It installs only on GB200 and Ubuntu 24.04 and skips with the reason elsewhere. Every timeout grows by the 65 minutes the two specs may take |
 | `--plan FILE` | plan `--scope` | reads that plan instead of planning |
 | `--scope`, `--subject` | `full`, `nvke` | what to plan when `--plan` is not given |
 | `--version` | the highest version | the version of the subject to plan, as `qualify plan --version` takes it |
@@ -461,6 +462,7 @@ Teleport login on each are your own, plus the Forge API key, which is secret.
 | `docker` | Building the site images, and pulling them unless every one is built. The controller image cross-compiles for the site's architecture, which needs BuildKit (Docker Desktop's default). Building capi-provisioned for an architecture other than the host's also runs that architecture's binaries, which needs QEMU emulation: Docker Desktop has it, and on Linux install it with `docker run --privileged --rm tonistiigi/binfmt --install arm64,amd64` | Yes |
 | `tsh` | Reaching the site's jump host through Teleport | Yes |
 | `oras` | Pulling nvkectl when it is not built | No; only that path needs it |
+| `aicr`, `helm`, `kubectl` | Installing the tenant GPU runtime, with `--tenant-gpu-runtime`. `aicr` is pinned in `make/tool-versions.mk` | Yes, with that flag |
 
 #### Teleport
 

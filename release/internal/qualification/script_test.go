@@ -173,6 +173,7 @@ func TestStreamEnvReadsOneStreamFromThePlan(t *testing.T) {
 			"ARCH":                             "amd64",
 			"PROVIDER":                         "forge",
 			"GPU":                              "l40s",
+			"UBUNTU":                           "24.04",
 			"PLAN_COMMIT":                      git(t, "rev-parse", "HEAD"),
 		})
 	}
@@ -236,7 +237,8 @@ func TestStreamEnvEmitsTheStreamsParameters(t *testing.T) {
 }
 
 // The job's timeout follows from the suite's: the default suite timeout gives
-// the job timeout the workflow always had.
+// the job timeout the workflow always had, and the GPU runtime adds its 65
+// minutes to either.
 func TestMatrixDerivesTheJobTimeout(t *testing.T) {
 	p := plan(t)
 	for _, sh := range shells(t) {
@@ -246,10 +248,11 @@ func TestMatrixDerivesTheJobTimeout(t *testing.T) {
 		}
 		var matrix struct {
 			Include []struct {
-				Stream            string `json:"stream"`
-				Environment       string `json:"environment"`
-				TenantWorkers     string `json:"tenant_workers"`
-				JobTimeoutMinutes int    `json:"job_timeout_minutes"`
+				Stream                      string `json:"stream"`
+				Environment                 string `json:"environment"`
+				TenantWorkers               string `json:"tenant_workers"`
+				JobTimeoutMinutes           int    `json:"job_timeout_minutes"`
+				JobTimeoutMinutesGPURuntime int    `json:"job_timeout_minutes_gpu_runtime"`
 			} `json:"include"`
 		}
 		if err := json.Unmarshal(out, &matrix); err != nil {
@@ -257,15 +260,15 @@ func TestMatrixDerivesTheJobTimeout(t *testing.T) {
 		}
 		type entry struct {
 			environment, workers string
-			timeout              int
+			timeout, gpuRuntime  int
 		}
 		want := map[string]entry{
-			"forge-l40s-amd64":     {"", "", 335},
-			"dsx-cpu-arm64":        {"", "", 335},
-			"forge-cpu-amd64-perf": {"forge-perf", "3", 400},
+			"forge-l40s-amd64":     {"", "", 335, 400},
+			"dsx-cpu-arm64":        {"", "", 335, 400},
+			"forge-cpu-amd64-perf": {"forge-perf", "3", 400, 465},
 		}
 		for _, e := range matrix.Include {
-			got := entry{e.Environment, e.TenantWorkers, e.JobTimeoutMinutes}
+			got := entry{e.Environment, e.TenantWorkers, e.JobTimeoutMinutes, e.JobTimeoutMinutesGPURuntime}
 			if got != want[e.Stream] {
 				t.Errorf("%s: %s matrix entry = %+v, want %+v", sh, e.Stream, got, want[e.Stream])
 			}
@@ -286,7 +289,7 @@ func TestResolveAPublishedStream(t *testing.T) {
 			"SITE_ARCH":                  "amd64",
 			"SITE_ENVIRONMENT":           "forge",
 			"SITE_TENANT_EXCLUDE":        "nico-dsx",
-			"CAPABILITIES":               "arch=amd64,gpu=l40s",
+			"CAPABILITIES":               "arch=amd64,gpu=l40s,ubuntu=24.04",
 			"SITE_CLI_BUILD":             "0",
 			"SITE_CLI_REF":               "registry.example/org/nvkectl:v0.3.0-3-gabcdef12-linux-amd64",
 			"SITE_NVKECTL":               "/w/site-inputs/nvkectl/nvkectl-linux-amd64",
@@ -547,8 +550,8 @@ func copiedScript(t *testing.T) string {
 }
 
 // dryRun runs the run step as a dry run from the copy, with the values a run
-// step reads and the two a stream's parameters set.
-func dryRun(t *testing.T, sh, copied, workers, suite string) (string, error) {
+// step reads, the two a stream's parameters set, and the GPU runtime switch.
+func dryRun(t *testing.T, sh, copied, workers, suite, gpuRuntime string) (string, error) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), sh, copied, "run")
 	cmd.Env = []string{
@@ -560,27 +563,31 @@ func dryRun(t *testing.T, sh, copied, workers, suite string) (string, error) {
 		"OS_IMAGE_VERSIONS=os-image-amd64=https://cdn.example/image-amd64.qcow2", "CAPABILITIES=arch=amd64",
 		"NVKE_CONTROLLER_NAMESPACE=", "NVKE_CONTROLLER_SERVICE=",
 		"E2E_TENANT_WORKERS=" + workers, "SUITE_TIMEOUT_MINUTES=" + suite,
+		"TENANT_GPU_RUNTIME=" + gpuRuntime,
 	}
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 
 // TestRunDerivesTheTimeoutsAndPassesTheWorkers checks the suite arguments of a
-// dry run: the timeouts follow the suite timeout, and the tenant workers flag is
-// passed only when it is set.
+// dry run: the timeouts follow the suite timeout, the GPU runtime moves them out
+// by its 65 minutes, and the tenant workers and GPU runtime flags are passed only
+// when they are set.
 func TestRunDerivesTheTimeoutsAndPassesTheWorkers(t *testing.T) {
 	copied := copiedScript(t)
 	for _, tc := range []struct {
-		name, workers, suite string
-		want                 []string
-		notWant              string
+		name, workers, suite, gpuRuntime string
+		want                             []string
+		notWant                          string
 	}{
-		{"a stream naming nothing", "", "", []string{"-ginkgo.timeout=150m -timeout 220m"}, "-e2e.tenant-workers"},
-		{"a perf stream", "3", "215", []string{"-ginkgo.timeout=215m -timeout 285m", "  -e2e.tenant-workers=3\n"}, ""},
+		{"a stream naming nothing", "", "", "false", []string{"-ginkgo.timeout=150m -timeout 220m"}, "-e2e.tenant"},
+		{"a perf stream", "3", "215", "false", []string{"-ginkgo.timeout=215m -timeout 285m", "  -e2e.tenant-workers=3\n"}, "-e2e.tenant-gpu-runtime"},
+		{"the GPU runtime", "", "", "true", []string{"-ginkgo.timeout=215m -timeout 285m", "  -e2e.tenant-gpu-runtime\n"}, ""},
+		{"the GPU runtime on a perf stream", "", "215", "true", []string{"-ginkgo.timeout=280m -timeout 350m"}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, sh := range shells(t) {
-				out, err := dryRun(t, sh, copied, tc.workers, tc.suite)
+				out, err := dryRun(t, sh, copied, tc.workers, tc.suite, tc.gpuRuntime)
 				if err != nil {
 					t.Fatalf("%s run: %v\n%s", sh, err, out)
 				}
@@ -602,7 +609,7 @@ func TestRunDerivesTheTimeoutsAndPassesTheWorkers(t *testing.T) {
 func TestRunRefusesASuiteTimeoutThatIsNotANumber(t *testing.T) {
 	copied := copiedScript(t)
 	for _, sh := range shells(t) {
-		out, err := dryRun(t, sh, copied, "", "abc")
+		out, err := dryRun(t, sh, copied, "", "abc", "false")
 		if err == nil || !strings.Contains(out, "not a number of minutes") {
 			t.Errorf("%s run: err = %v, output = %q, want it to refuse the timeout", sh, err, out)
 		}

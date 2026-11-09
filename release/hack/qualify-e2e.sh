@@ -42,6 +42,10 @@ cleanup_minutes=70
 # The wait for the plan's artifacts and the build ahead of the suite, which the
 # job's timeout-minutes covers beyond go test's own.
 setup_minutes=115
+# What -e2e.tenant-gpu-runtime adds to the suite: an install of up to 45
+# minutes and AICR's checks of up to 20. Every clock moves out by it, so the
+# gaps between them stay what they are sized as.
+gpu_runtime_minutes=65
 
 say() { echo "$*" >&2; }
 fail() {
@@ -80,7 +84,7 @@ inputs() {
     resolve)
       echo SITE_NVKE_CONTROLLER_VERSION NVKE_CONTROLLER_VERSION_STRATEGY PLAN_COMMIT \
         SITE_STAGE DRY_RUN SITE_IMAGE_REGISTRY QUALIFY_E2E_NGC_ORG NGC_API_KEY \
-        ARCH PROVIDER GPU OS_IMAGE_AMD64 OS_IMAGE_BOOTLOADER_AMD64 OS_IMAGE_ARM64 OS_IMAGE_BOOTLOADER_ARM64 \
+        ARCH PROVIDER GPU UBUNTU OS_IMAGE_AMD64 OS_IMAGE_BOOTLOADER_AMD64 OS_IMAGE_ARM64 OS_IMAGE_BOOTLOADER_ARM64 \
         KUBERNETES_VERSION CNI_OVN_VERSION KIND_VERSION CLUSTERCTL_VERSION NERDCTL_VERSION \
         CLI_VERSION CLI_REF CAPI_PROVISIONED_VERSION SITE_INPUTS E2E_ENVIRONMENT
       ;;
@@ -99,7 +103,8 @@ inputs() {
     run)
       echo KEEP_SITE KEEP_TENANT DRY_RUN SITE_TENANT_EXCLUDE SITE_STAGE SITE_NVKE_CONTROLLER_VERSION CLI_VERSION \
         CAPI_PROVISIONED_VERSION OS_IMAGE_VERSIONS CAPABILITIES SITE_ENVIRONMENT \
-        NVKE_CONTROLLER_NAMESPACE NVKE_CONTROLLER_SERVICE E2E_TENANT_WORKERS SUITE_TIMEOUT_MINUTES
+        NVKE_CONTROLLER_NAMESPACE NVKE_CONTROLLER_SERVICE E2E_TENANT_WORKERS SUITE_TIMEOUT_MINUTES \
+        TENANT_GPU_RUNTIME
       ;;
   esac
 }
@@ -126,7 +131,8 @@ scrubbed=(qualify-e2e.log qualify-e2e.junit.xml qualify-e2e.report.json tenant-d
 # reads, so it is derived here from the suite's timeout with the rest.
 matrix_entries() {
   jq -c --argjson suite "${default_suite_minutes}" \
-    --argjson overhead "$((cleanup_minutes + setup_minutes))" '
+    --argjson overhead "$((cleanup_minutes + setup_minutes))" \
+    --argjson gpu_runtime "${gpu_runtime_minutes}" '
     def entry($all; $name): ([$all[] | select(.name == $name)] | first);
     def value($all; $name): entry($all; $name) as $e | ($e.url // $e.version // "");
     def version($all; $name): entry($all; $name) as $e | ($e.version // "");
@@ -142,6 +148,7 @@ matrix_entries() {
           arch: ($s.capabilities.arch // ""),
           provider: ($s.capabilities.provider // ""),
           gpu: ($s.capabilities.gpu // ""),
+          ubuntu: ($s.capabilities.ubuntu // ""),
           controller: version($all; "controller"),
           cli: version($all; "cli"),
           capi_provisioned: version($all; "capi-provisioned"),
@@ -160,7 +167,8 @@ matrix_entries() {
           environment: ($s.parameters.environment // ""),
           tenant_workers: (($s.parameters.tenantWorkers // 0) | if . == 0 then "" else tostring end),
           suite_timeout_minutes: (($s.parameters.suiteTimeoutMinutes // 0) | if . == 0 then "" else tostring end),
-          job_timeout_minutes: (($s.parameters.suiteTimeoutMinutes // $suite) + $overhead)
+          job_timeout_minutes: (($s.parameters.suiteTimeoutMinutes // $suite) + $overhead),
+          job_timeout_minutes_gpu_runtime: (($s.parameters.suiteTimeoutMinutes // $suite) + $overhead + $gpu_runtime)
         }
     ]' "$1"
 }
@@ -217,6 +225,7 @@ step_stream_env() {
   emit ARCH "$(field arch)"
   emit PROVIDER "$(field provider)"
   emit GPU "$(field gpu)"
+  emit UBUNTU "$(field ubuntu)"
   emit CAPI_PROVISIONED_VERSION "$(field capi_provisioned)"
   # The stream's run settings. Empty leaves the run as it is for a stream that
   # names none: the provider's environment, a one worker tenant and the default
@@ -411,6 +420,11 @@ resolve_capabilities() {
   local capabilities="arch=${arch}"
   if [ -n "${GPU:-}" ]; then
     capabilities="${capabilities},gpu=${GPU}"
+  fi
+  # Software, not infrastructure: it selects no machine. The suite reads it
+  # to install the GPU runtime only where AICR admits the series.
+  if [ -n "${UBUNTU:-}" ]; then
+    capabilities="${capabilities},ubuntu=${UBUNTU}"
   fi
   emit CAPABILITIES "${capabilities}"
   say "capabilities: ${capabilities}"
@@ -675,6 +689,8 @@ log_to() {
 # the stream's suiteTimeoutMinutes names another. go test's is that plus the
 # cleanup minutes and the job's is that plus the setup minutes, which
 # matrix_entries computes, so they cannot be set to disagree.
+# TENANT_GPU_RUNTIME adds gpu_runtime_minutes to the suite's, and so to all
+# three, and the job then reads job_timeout_minutes_gpu_runtime.
 #
 # The 70 minutes between the first two is cleanup's, and it is sized
 # against cleanup rather than picked. A cleanup node entered after the
@@ -706,6 +722,8 @@ step_run() {
   fi
   local workers=()
   [ -z "${E2E_TENANT_WORKERS}" ] || workers=(-e2e.tenant-workers="${E2E_TENANT_WORKERS}")
+  local gpu_runtime=()
+  [ "${TENANT_GPU_RUNTIME}" != "true" ] || gpu_runtime=(-e2e.tenant-gpu-runtime)
   # -v so a green run keeps its output. Without it `go test` buffers a
   # passing package's stdout and throws it away, which is what run
   # 36033032946 did: the first successful bootstrap on hardware, and
@@ -738,6 +756,7 @@ step_run() {
   case "${suite}" in
     '' | *[!0-9]*) fail "SUITE_TIMEOUT_MINUTES is ${suite}, which is not a number of minutes" ;;
   esac
+  [ -z "${gpu_runtime[*]:-}" ] || suite="$((suite + gpu_runtime_minutes))"
   local ginkgo_timeout="${suite}m" go_timeout="$((suite + cleanup_minutes))m"
   local versions="controller=${SITE_NVKE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}"
   if [ "${DRY_RUN:-}" = "true" ]; then
@@ -748,6 +767,7 @@ step_run() {
       echo "  -e2e.versions=${versions}"
       echo "  -e2e.capabilities=${CAPABILITIES}"
       [ -z "${workers[*]:-}" ] || echo "  ${workers[*]}"
+      [ -z "${gpu_runtime[*]:-}" ] || echo "  ${gpu_runtime[*]}"
       echo "  -ginkgo.timeout=${ginkgo_timeout} -timeout ${go_timeout}"
       echo "  keep: ${keep[*]:-no}"
       echo "  keep tenants: ${KEEP_TENANT}"
@@ -768,7 +788,7 @@ step_run() {
     -e2e.site-stage="${SITE_STAGE}" \
     -e2e.versions="${versions}" \
     -e2e.capabilities="${CAPABILITIES}" \
-    ${keep[@]+"${keep[@]}"} ${workers[@]+"${workers[@]}"} 2>&1 | log_to qualify-e2e.log
+    ${keep[@]+"${keep[@]}"} ${workers[@]+"${workers[@]}"} ${gpu_runtime[@]+"${gpu_runtime[@]}"} 2>&1 | log_to qualify-e2e.log
 }
 
 # The suite names the jump host in its own errors ("not reachable
