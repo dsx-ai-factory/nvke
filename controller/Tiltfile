@@ -1312,9 +1312,11 @@ local_resource(
     "machine-engine-crds",
     cmd=["bash", "-c", """
       set -euo pipefail
-      make -C .. chart-crds
-      kubectl apply --server-side --field-manager=tilt-release-crds \
-        -f ../dist/release-crds.yaml
+      # Rendered here rather than through `make -C .. chart-crds`: CI runs this
+      # Tiltfile inside a container that has helm but no make, and whose source
+      # tree is the controller directory alone, with no repository root above it.
+      helm template nvke-crds deploy/charts/nvke-crds |
+        kubectl apply --server-side --field-manager=tilt-release-crds -f -
       for crd in machineimages clusterreleases nodepoolreleases; do
         kubectl wait --for=condition=Established --timeout=120s "crd/${crd}.internal.nvke.nvidia.com"
       done
