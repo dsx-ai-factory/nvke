@@ -209,7 +209,7 @@ You change three cluster settings after creation with `nvkectl patch cluster`, w
 
 `enableOidc` requires Kubernetes 1.30.0 or later and turns on the shared OIDC provider that the `nvkeOIDCAuth` chart values configure. The install in [Run NVKE end to end on one machine](../get-started/local-site.md) configures it for the management cluster's SPIRE server and sets `nvkeOIDCAuth.enabled` to `false`, so new clusters start without it and the `enableOidc` patch is accepted. Try `enableOidc` on one cluster before you rely on it. [Configure OIDC for workload clusters](oidc.md) describes the shared provider, and the fleet-wide providers that a cluster gets only at creation.
 
-The same `PATCH` also takes `controlPlaneKubernetesVersion`, to upgrade the control plane, and `controlPlaneConfig`, to change the control-plane node count or release. An upgrade, a node count above one and a release change each require `controlPlaneVIP` by default.
+The same `PATCH` also takes `controlPlaneKubernetesVersion`, to upgrade the control plane, as described in [Upgrade a workload cluster's Kubernetes version](upgrade.md), and `controlPlaneConfig`, to change the control-plane node count or release. An upgrade, a node count above one and a release change each require `controlPlaneVIP` by default.
 
 A dedicated development NVKE controller can set
 `allowControlPlaneWithoutVIP: true` in its controller configuration file.

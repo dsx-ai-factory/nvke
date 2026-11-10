@@ -66,6 +66,8 @@ navigation:
             path: workload-clusters/oidc.md
           - page: Manage node pools
             path: workload-clusters/node-pools.md
+          - page: Upgrade a workload cluster's Kubernetes version
+            path: workload-clusters/upgrade.md
           - page: Workload cluster Kubernetes certificate renewal
             path: ../controller/docs/certificate-renewal.md
 
