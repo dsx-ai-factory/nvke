@@ -565,43 +565,66 @@ changed.
 
 [`deploy/validate-site.yaml`](deploy/validate-site.yaml) runs the site checks
 as a Job in an `nvke-validate` namespace, with the RBAC above, and keeps the
-results on a claim. Fill in its placeholders from the site, with the kube
-context pointing at it:
+results on a claim.
+
+Early release tags, `controller/v0.3.0` among them, have no
+`controller/test/e2e/deploy/`. Where the site's tag has it, use the manifests
+from the checkout the image was built from; otherwise take them from `main`,
+keeping the image built from the release tag. Run these from the
+directory that holds the checkout, with the kube context pointing at the
+site:
 
 ```bash
+git clone --depth 1 https://github.com/dsx-ai-factory/nvke.git nvke-main   # only for a tag without deploy/
+deploy=nvke-main/controller/test/e2e/deploy   # or nvke/controller/test/e2e/deploy
+
 ver=v0.3.0                                  # the site's controller version
 image=<repository>/nvke-validate:${ver}     # built from controller/${ver}
+k8s=<version>                               # the Kubernetes version the site is meant to run
 ctrl_ns=$(kubectl get deploy -A --field-selector metadata.name=nvke-controller \
   -o jsonpath='{.items[0].metadata.namespace}')
-k8s=$(kubectl version -o json | jq -r .serverVersion.gitVersion)
 token_ns=<namespace> token_sa=<service account>   # see below
 fill() {
   sed -e "s|__IMAGE__|${image}|g" -e "s|__CONTROLLER_VERSION__|${ver}|g" \
     -e "s|__KUBERNETES_VERSION__|${k8s}|g" -e "s|__CONTROLLER_NAMESPACE__|${ctrl_ns}|g" \
-    -e "s|__TOKEN_NAMESPACE__|${token_ns}|g" -e "s|__TOKEN_SERVICE_ACCOUNT__|${token_sa}|g" "$1"
+    -e "s|__TOKEN_NAMESPACE__|${token_ns}|g" -e "s|__TOKEN_SERVICE_ACCOUNT__|${token_sa}|g" \
+    "${deploy}/$1"
 }
-cd nvke/controller/test/e2e/deploy
 fill validate-site-token.yaml | kubectl apply -f -   # only if the controller authenticates
 fill validate-site.yaml | kubectl apply -f -
 ```
 
 The controller's image tag gives `ver`:
 `kubectl -n "${ctrl_ns}" get deploy nvke-controller -o jsonpath='{.spec.template.spec.containers[0].image}'`.
+`k8s` is the version the site was built to run, from its build record rather
+than the cluster: check 9 compares the API server and every kubelet with it,
+so a version read from the API server would pass a site running the wrong one.
+
 `token_ns`/`token_sa` name the identity the suite presents to the controller
 API, one the controller authorizes to list clusters; `validate-site-token.yaml`
-lets the Job mint its token. A controller with no authentication ConfigMap
-takes no token, so skip that file. Where the registry needs credentials, add
-`imagePullSecrets` to the Job and the artifacts pod. Add any
-[variables](#validation-image-variables) the site's expectations need to the
-Job's `env`.
+lets the Job mint its token. The controller authenticates where its settings
+turn `apiAuth` on, or where an `nvke-auth-config` ConfigMap exists; apply the
+file if either holds, and skip it only if neither does:
 
-Follow the run, then read the result. The Job completes when every selected
-spec passed and fails otherwise:
+```bash
+kubectl -n "${ctrl_ns}" get configmap nvke-controller-config -o jsonpath='{.data.config\.yaml}' \
+  | grep -A3 '^apiAuth:'                                  # enabled: true means it authenticates
+kubectl -n "${ctrl_ns}" get configmap nvke-auth-config    # exists means it authenticates
+```
+
+Where the registry needs credentials, add `imagePullSecrets` to the Job and
+the artifacts pod. Add any [variables](#validation-image-variables) the site's
+expectations need to the Job's `env`.
+
+Follow the run, then read the Job's conditions. `Complete` means every
+selected spec passed, `Failed` that one did not; neither means it is still
+running. Recent Kubernetes versions also list `SuccessCriteriaMet` or
+`FailureTarget` alongside.
 
 ```bash
 kubectl -n nvke-validate logs -f job/nvke-validate
-kubectl -n nvke-validate wait --for=condition=Complete job/nvke-validate --timeout=10s \
-  && echo passed || echo failed
+kubectl -n nvke-validate get job nvke-validate \
+  -o jsonpath='{range .status.conditions[?(@.status=="True")]}{.type}{"\n"}{end}'
 ```
 
 Copy the reports out through a pod that mounts the claim:

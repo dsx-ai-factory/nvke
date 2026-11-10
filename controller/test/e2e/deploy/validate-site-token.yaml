@@ -4,7 +4,8 @@
 # Only where the controller authenticates its API: lets validate-site.yaml's
 # service account mint a token for the identity it presents to the controller,
 # __TOKEN_NAMESPACE__/__TOKEN_SERVICE_ACCOUNT__, which the controller must
-# authorize to list clusters. A controller with no authentication ConfigMap
+# authorize to list clusters. The controller authenticates where its settings
+# turn apiAuth on or an nvke-auth-config ConfigMap exists; with neither it
 # takes no token, and the suite sends none.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
