@@ -16,16 +16,16 @@ nvkectl version [flags]
 ### Options
 
 ```
-  -h, --help            help for version
-  -o, --output string   Output format (short|yaml|json)
+  -h, --help[=true|false]   help for version
+  -o, --output string       Output format (short|yaml|json)
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --json-logs     Emit logs as JSON
-      --site string   Override the active site for this invocation
-  -v, --verbose       Enable debug logging
+      --json-logs[=true|false]   Emit logs as JSON
+      --site string              Override the active site for this invocation
+  -v, --verbose[=true|false]     Enable debug logging
 ```
 
 ### SEE ALSO

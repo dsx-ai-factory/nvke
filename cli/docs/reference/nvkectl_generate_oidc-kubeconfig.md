@@ -56,8 +56,8 @@ nvkectl generate oidc-kubeconfig [flags]
 ### Options
 
 ```
-      --headless                       Use the device authorization grant so login works without a local browser
-  -h, --help                           help for oidc-kubeconfig
+      --headless[=true|false]          Use the device authorization grant so login works without a local browser
+  -h, --help[=true|false]              help for oidc-kubeconfig
       --kubeconfig string              Path to the input kubeconfig (required)
       --oidc-client-id string          OIDC client ID (required)
       --oidc-extra-scope stringArray   Extra OIDC scope. Repeatable.
@@ -68,9 +68,9 @@ nvkectl generate oidc-kubeconfig [flags]
 ### Options inherited from parent commands
 
 ```
-      --json-logs     Emit logs as JSON
-      --site string   Override the active site for this invocation
-  -v, --verbose       Enable debug logging
+      --json-logs[=true|false]   Emit logs as JSON
+      --site string              Override the active site for this invocation
+  -v, --verbose[=true|false]     Enable debug logging
 ```
 
 ### SEE ALSO

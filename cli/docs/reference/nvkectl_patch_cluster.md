@@ -47,7 +47,7 @@ nvkectl patch cluster <name> [flags]
 ### Options
 
 ```
-  -h, --help                help for cluster
+  -h, --help[=true|false]   help for cluster
   -p, --patch string        Inline patch document. Accepts YAML or JSON
       --patch-file string   Path to a YAML or JSON patch file, or '-' to read from stdin
 ```
@@ -55,9 +55,9 @@ nvkectl patch cluster <name> [flags]
 ### Options inherited from parent commands
 
 ```
-      --json-logs     Emit logs as JSON
-      --site string   Override the active site for this invocation
-  -v, --verbose       Enable debug logging
+      --json-logs[=true|false]   Emit logs as JSON
+      --site string              Override the active site for this invocation
+  -v, --verbose[=true|false]     Enable debug logging
 ```
 
 ### SEE ALSO

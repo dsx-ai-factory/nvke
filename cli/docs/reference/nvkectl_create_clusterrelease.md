@@ -60,18 +60,18 @@ nvkectl create clusterrelease [flags]
 ### Options
 
 ```
-      --dry-run string    Use "client" to print the complete manifest without contacting the management cluster (default "none")
-  -f, --filename string   Path to the YAML or JSON request, or '-' to read from stdin
-  -h, --help              help for clusterrelease
-  -o, --output string     Output format: json or yaml (default: a one-line message, or yaml with --dry-run)
+      --dry-run string      Use "client" to print the complete manifest without contacting the management cluster (default "none")
+  -f, --filename string     Path to the YAML or JSON request, or '-' to read from stdin
+  -h, --help[=true|false]   help for clusterrelease
+  -o, --output string       Output format: json or yaml (default: a one-line message, or yaml with --dry-run)
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --json-logs     Emit logs as JSON
-      --site string   Override the active site for this invocation
-  -v, --verbose       Enable debug logging
+      --json-logs[=true|false]   Emit logs as JSON
+      --site string              Override the active site for this invocation
+  -v, --verbose[=true|false]     Enable debug logging
 ```
 
 ### SEE ALSO

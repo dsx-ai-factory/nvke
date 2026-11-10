@@ -46,19 +46,19 @@ nvkectl validate sitespec [flags]
 ### Options
 
 ```
-      --allow-control-plane-without-vip   Permit a multi-node control plane without a VIP. Development only; bootstrap site needs the same flag.
-      --bootstrap-only                    Also fail on what only the bootstrap host holds, as "bootstrap site" does
-      --disable-mtls                      Check the file as "bootstrap site --disable-mtls" would: with infra.provider nico, spire.externalAddress is not required
-  -h, --help                              help for sitespec
-  -f, --sitespec string                   Path to the site spec (required)
+      --allow-control-plane-without-vip[=true|false]   Permit a multi-node control plane without a VIP. Development only; bootstrap site needs the same flag.
+      --bootstrap-only[=true|false]                    Also fail on what only the bootstrap host holds, as "bootstrap site" does
+      --disable-mtls[=true|false]                      Check the file as "bootstrap site --disable-mtls" would: with infra.provider nico, spire.externalAddress is not required
+  -h, --help[=true|false]                              help for sitespec
+  -f, --sitespec string                                Path to the site spec (required)
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --json-logs     Emit logs as JSON
-      --site string   Override the active site for this invocation
-  -v, --verbose       Enable debug logging
+      --json-logs[=true|false]   Emit logs as JSON
+      --site string              Override the active site for this invocation
+  -v, --verbose[=true|false]     Enable debug logging
 ```
 
 ### SEE ALSO

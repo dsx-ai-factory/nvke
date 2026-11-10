@@ -43,17 +43,17 @@ nvkectl get nodepools [name ...] [flags]
 ### Options
 
 ```
-  -c, --cluster string   Filter output to node pools of the named cluster
-  -h, --help             help for nodepools
-  -o, --output string    Output format: json or yaml (default: table)
+  -c, --cluster string      Filter output to node pools of the named cluster
+  -h, --help[=true|false]   help for nodepools
+  -o, --output string       Output format: json or yaml (default: table)
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --json-logs     Emit logs as JSON
-      --site string   Override the active site for this invocation
-  -v, --verbose       Enable debug logging
+      --json-logs[=true|false]   Emit logs as JSON
+      --site string              Override the active site for this invocation
+  -v, --verbose[=true|false]     Enable debug logging
 ```
 
 ### SEE ALSO
