@@ -44,7 +44,7 @@ CNI_DOCKERHUB_MIRROR="${NKE_E2E_DOCKERHUB_MIRROR:-}" make -C "${workspace_root}/
   BIN_DIR="${OVN_TOOLS_DIR:-${scratch}/tools}"
 
 # KinD's node image has kubeadm but no Helm. Use the reference OS image pin.
-helm_lock="${workspace_root}/os-image/packages/kubeadm-distro/lock/${BUNDLE_ARCH:-amd64}/v1.34.2.lock"
+helm_lock="${workspace_root}/os-image/packages/kubeadm-distro/lock/${BUNDLE_ARCH:-amd64}/v1.35.3.lock"
 helm_checksum="$(awk '$2 == "helm" {print $3; exit}' "${helm_lock}")"
 helm_url="$(awk '$2 == "helm" {print $4; exit}' "${helm_lock}")"
 curl -fsSL --retry 5 --connect-timeout 10 --max-time 120 "${helm_url}" -o "${scratch}/helm.tgz"

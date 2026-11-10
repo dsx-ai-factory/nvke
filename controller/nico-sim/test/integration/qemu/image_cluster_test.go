@@ -64,7 +64,7 @@ func TestNVKEImageCluster(t *testing.T) {
 	}
 	const install = `sudo bash -eu -c '
 apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/nke-local.list -o Dir::Etc::sourceparts=- update
-DEBIAN_FRONTEND=noninteractive apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/nke-local.list -o Dir::Etc::sourceparts=- install -y nvke-kubeadm-distro-1.34.2 nvke-cni-calico-manifests-3.30.1 nvke-cni-calico-images-3.30.1
+DEBIAN_FRONTEND=noninteractive apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/nke-local.list -o Dir::Etc::sourceparts=- install -y nvke-kubeadm-distro-1.36.3 nvke-cni-calico-manifests-3.30.1 nvke-cni-calico-images-3.30.1
 swapoff -a
 sysctl -w net.ipv4.ip_forward=1
 systemctl is-active containerd
@@ -72,8 +72,8 @@ systemctl is-active containerd
 	for _, ip := range []string{cp, worker} {
 		run(ip, "install staged packages", install)
 	}
-	t.Log("Initializing control plane from staged Kubernetes v1.34.2")
-	run(cp, "kubeadm init", fmt.Sprintf("sudo timeout 300 kubeadm init --kubernetes-version=v1.34.2 --apiserver-advertise-address=%s --control-plane-endpoint=%s:6443 --pod-network-cidr=10.244.0.0/16", cp, cp))
+	t.Log("Initializing control plane from staged Kubernetes v1.36.3")
+	run(cp, "kubeadm init", fmt.Sprintf("sudo timeout 300 kubeadm init --kubernetes-version=v1.36.3 --apiserver-advertise-address=%s --control-plane-endpoint=%s:6443 --pod-network-cidr=10.244.0.0/16", cp, cp))
 	join := strings.TrimSpace(run(cp, "create join token", "sudo kubeadm token create --print-join-command --ttl 10m"))
 	require.True(t, strings.HasPrefix(join, "kubeadm join "), "unexpected kubeadm join response")
 	run(worker, "kubeadm join", "sudo timeout 300 "+join)

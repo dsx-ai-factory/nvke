@@ -137,7 +137,7 @@ func TestBuildDeb(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "out")
 
 	cmd := exec.Command(buildDebScript, debVersion, src, out)
-	cmd.Env = append(os.Environ(), "PEER_VERSIONS=v1.36.3 v1.35.3 v1.34.2", "DEB_REVISION=1", "NFPM_BIN="+nfpm)
+	cmd.Env = append(os.Environ(), "PEER_VERSIONS=v1.37.2 v1.36.3 v1.35.3", "DEB_REVISION=1", "NFPM_BIN="+nfpm)
 	combined, err := cmd.CombinedOutput()
 	require.NoErrorf(t, err, "build-deb.sh failed: %s", combined)
 
@@ -167,8 +167,8 @@ func TestBuildDeb(t *testing.T) {
 	require.NoError(t, err)
 	for _, want := range []string{
 		"kubeadm", "runc", "containerd", "containerd.io",
-		"nvke-kubeadm-distro", "nvke-kubeadm-distro-1.35.3", "nvke-kubeadm-distro-1.34.2",
-		"nke-kubeadm-distro", "nke-kubeadm-distro-1.35.3", "nke-kubeadm-distro-1.34.2",
+		"nvke-kubeadm-distro", "nvke-kubeadm-distro-1.37.2", "nvke-kubeadm-distro-1.35.3",
+		"nke-kubeadm-distro", "nke-kubeadm-distro-1.37.2", "nke-kubeadm-distro-1.35.3",
 	} {
 		assert.Contains(t, string(conflicts), want)
 	}
