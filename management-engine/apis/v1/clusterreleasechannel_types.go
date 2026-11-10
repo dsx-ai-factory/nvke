@@ -18,12 +18,12 @@ type ClusterReleaseChannelSpec struct {
 	// Releases maps Kubernetes version selectors to named ClusterRelease candidates.
 	// A major.minor selector permits patch upgrades within that minor.
 	// A major.minor.patch selector fixes the Kubernetes version and may include an opaque suffix.
-	// Each suffixed selector references one release.
+	// A suffixed selector names an exact published choice. Its spelling does not imply upgrade order.
+	// References under any selector are alternatives in operator preference order.
 	// The selector bound keeps validation within Kubernetes' CEL cost budget.
 	// +kubebuilder:validation:MinProperties=1
 	// +kubebuilder:validation:MaxProperties=65536
 	// +kubebuilder:validation:XValidation:rule="self.all(version, size(version) <= 128 && version.matches('^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)([.](0|[1-9][0-9]*)([-+._][a-zA-Z0-9][a-zA-Z0-9._+-]*)?)?$'))",message="release keys must be major.minor or major.minor.patch with an optional build suffix and at most 128 characters"
-	// +kubebuilder:validation:XValidation:rule="self.all(version, version.matches('^[0-9]+[.][0-9]+([.][0-9]+)?$') || size(self[version]) == 1)",message="suffixed selectors must reference exactly one release"
 	Releases map[string]ClusterReleaseReferences `json:"releases"`
 	// Lifecycle controls catalog discovery and communicates support.
 	// +optional
@@ -32,7 +32,7 @@ type ClusterReleaseChannelSpec struct {
 	Lifecycle ReleaseLifecycle `json:"lifecycle"`
 }
 
-// ClusterReleaseReferences lists the releases available for one Kubernetes version selector.
+// ClusterReleaseReferences lists alternatives for one version selector in operator preference order.
 // +kubebuilder:validation:MinItems=1
 // +listType=map
 // +listMapKey=name

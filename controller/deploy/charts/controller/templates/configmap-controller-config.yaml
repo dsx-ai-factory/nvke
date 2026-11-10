@@ -167,3 +167,10 @@ data:
       issuers: []
       {{- end }}
       permissive: {{ and .Values.apiAuth.enabled .Values.apiAuth.permissive }}
+    {{- /* The chart mounts no authorization bundle, so API authorization is off. */}}
+    apiAuthz:
+      enabled: false
+      permissive: false
+      authorizer:
+        localBundle:
+          dir: ""

@@ -109,7 +109,8 @@ The management plane holds no site-wide NICo settings. Each workload cluster req
 | `instanceTypeID` | Node pool `nico` | One instance type ID. Fixed when the node pool is created. |
 | `vpcPrefixIDs` or `subnetIDs` | Control plane and node pool `nico` | Exactly one of the two: VPC prefixes for a site with native networking, subnets otherwise. |
 | `sshKeyGroupIDs` | Control plane and node pool `nico` | Optional. SSH key groups for node access. |
-| `infinibandPartitionID`, `nvLinkLogicalPartitionID` | Node pool `nico` | Optional. An InfiniBand partition and an NVLink logical partition. Fixed when the node pool is created. |
+| `infinibandPartitionID` | Node pool `nico` | Optional. An InfiniBand partition. Fixed when the node pool is created. |
+| `nvLinkLogicalPartitionID` | Node pool `nico` | Optional. An NVLink logical partition. A node pool update can set or replace it, but not clear it; see [Change a node pool's NVLink partition](change-nvlink-partition.md). |
 
 The `orgID`, `siteID` and `vpcID` of a cluster are fixed when the cluster is created. The control plane and each node pool select one of the releases you created in [Register the image for provisioning](build-node-images.md#create-the-objects-on-the-management-cluster) with `nico.release` and, optionally, a config profile with `nico.configProfile`. [Create a workload cluster](../workload-clusters/create.md) shows a full request.
 

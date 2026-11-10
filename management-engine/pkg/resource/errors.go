@@ -21,6 +21,7 @@ const (
 	pageKeyParameter           = "pageKey"
 	pageSizeParameter          = "pageSize"
 	fieldSelectorParameter     = "fieldSelector"
+	versionParameter           = "version"
 	invalidPageKeyMessage      = "The page key is invalid."
 	propagationPolicyParameter = "propagationPolicy"
 

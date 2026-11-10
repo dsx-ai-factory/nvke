@@ -39,16 +39,16 @@ nvkectl delete nodepool <name> --cluster <cluster> [flags]
 ### Options
 
 ```
-  -c, --cluster string   Name of the cluster that owns the node pool
-  -h, --help             help for nodepool
+  -c, --cluster string      Name of the cluster that owns the node pool
+  -h, --help[=true|false]   help for nodepool
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --json-logs     Emit logs as JSON
-      --site string   Override the active site for this invocation
-  -v, --verbose       Enable debug logging
+      --json-logs[=true|false]   Emit logs as JSON
+      --site string              Override the active site for this invocation
+  -v, --verbose[=true|false]     Enable debug logging
 ```
 
 ### SEE ALSO

@@ -135,3 +135,38 @@
     Date:
     - DATE
   statusCode: 200
+- body:
+    metadata:
+      name: stable
+    spec:
+      defaultVersion: 1.34.6
+      lifecycle:
+        deprecated: false
+      versions:
+      - kubernetesVersion: 1.34.6
+        supportedUntil: "2027-02-28T00:00:00Z"
+        version: 1.34.6
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Length:
+    - "202"
+    Content-Type:
+    - application/json
+    Date:
+    - DATE
+  statusCode: 200
+- body:
+    hasMore: false
+    items: []
+    pageKey: ""
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Length:
+    - "42"
+    Content-Type:
+    - application/json
+    Date:
+    - DATE
+  statusCode: 200

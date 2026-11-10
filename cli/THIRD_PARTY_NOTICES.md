@@ -62,7 +62,7 @@ notices-check` verifies it is up to date.
 | `github.com/spf13/afero` | Apache-2.0 | `github.com/spf13/afero@v1.15.0` | https://github.com/spf13/afero/blob/v1.15.0/LICENSE.txt |
 | `github.com/spf13/cast` | MIT | `github.com/spf13/cast@v1.10.0` | https://github.com/spf13/cast/blob/v1.10.0/LICENSE |
 | `github.com/spf13/cobra` | Apache-2.0 | `github.com/spf13/cobra@v1.10.2` | https://github.com/spf13/cobra/blob/v1.10.2/LICENSE.txt |
-| `github.com/spf13/pflag` | BSD-3-Clause | `github.com/spf13/pflag@v1.0.10` | https://github.com/spf13/pflag/blob/v1.0.10/LICENSE |
+| `github.com/spf13/pflag` | BSD-3-Clause | `github.com/spf13/pflag@v1.1.0` | https://github.com/spf13/pflag/blob/v1.1.0/LICENSE |
 | `github.com/spf13/viper` | MIT | `github.com/spf13/viper@v1.21.0` | https://github.com/spf13/viper/blob/v1.21.0/LICENSE |
 | `github.com/subosito/gotenv` | MIT | `github.com/subosito/gotenv@v1.6.0` | https://github.com/subosito/gotenv/blob/v1.6.0/LICENSE |
 | `github.com/x448/float16` | MIT | `github.com/x448/float16@v0.8.4` | https://github.com/x448/float16/blob/v0.8.4/LICENSE |
@@ -81,24 +81,24 @@ notices-check` verifies it is up to date.
 | `go.opentelemetry.io/proto/otlp` | Apache-2.0 | `go.opentelemetry.io/proto/otlp@v1.11.1` | https://github.com/open-telemetry/opentelemetry-proto-go/blob/otlp/v1.11.1/otlp/LICENSE |
 | `go.yaml.in/yaml/v2` | Apache-2.0 | `go.yaml.in/yaml/v2@v2.4.4` | https://github.com/yaml/go-yaml/blob/v2.4.4/LICENSE |
 | `go.yaml.in/yaml/v3` | MIT | `go.yaml.in/yaml/v3@v3.0.5` | https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE |
-| `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.61.0` | https://cs.opensource.google/go/x/net/+/v0.61.0:LICENSE |
+| `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.62.0` | https://cs.opensource.google/go/x/net/+/v0.62.0:LICENSE |
 | `golang.org/x/oauth2` | BSD-3-Clause | `golang.org/x/oauth2@v0.37.0` | https://cs.opensource.google/go/x/oauth2/+/v0.37.0:LICENSE |
-| `golang.org/x/sync` | BSD-3-Clause | `golang.org/x/sync@v0.24.0` | https://cs.opensource.google/go/x/sync/+/v0.24.0:LICENSE |
+| `golang.org/x/sync` | BSD-3-Clause | `golang.org/x/sync@v0.25.0` | https://cs.opensource.google/go/x/sync/+/v0.25.0:LICENSE |
 | `golang.org/x/sys/unix` | BSD-3-Clause | `golang.org/x/sys@v0.49.0` | https://cs.opensource.google/go/x/sys/+/v0.49.0:LICENSE |
 | `golang.org/x/term` | BSD-3-Clause | `golang.org/x/term@v0.47.0` | https://cs.opensource.google/go/x/term/+/v0.47.0:LICENSE |
 | `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.43.0` | https://cs.opensource.google/go/x/text/+/v0.43.0:LICENSE |
 | `golang.org/x/time/rate` | BSD-3-Clause | `golang.org/x/time@v0.16.0` | https://cs.opensource.google/go/x/time/+/v0.16.0:LICENSE |
 | `google.golang.org/genproto/googleapis/api/httpbody` | Apache-2.0 | `google.golang.org/genproto/googleapis/api@v0.0.0-20261012220534-4341edf3f941` | https://github.com/googleapis/go-genproto/blob/4341edf3f941/googleapis/api/LICENSE |
-| `google.golang.org/genproto/googleapis/rpc` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20261019180522-ce908d29299b` | https://github.com/googleapis/go-genproto/blob/ce908d29299b/googleapis/rpc/LICENSE |
+| `google.golang.org/genproto/googleapis/rpc` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20261026165753-2ffab32bce7e` | https://github.com/googleapis/go-genproto/blob/2ffab32bce7e/googleapis/rpc/LICENSE |
 | `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.85.0` | https://github.com/grpc/grpc-go/blob/v1.85.0/LICENSE |
 | `google.golang.org/protobuf` | BSD-3-Clause | `google.golang.org/protobuf@v1.36.12` | https://github.com/protocolbuffers/protobuf-go/blob/v1.36.12/LICENSE |
 | `gopkg.in/evanphx/json-patch.v4` | BSD-3-Clause | `gopkg.in/evanphx/json-patch.v4@v4.13.0` | https://github.com/evanphx/json-patch/blob/v4.13.0/LICENSE |
 | `gopkg.in/inf.v0` | BSD-3-Clause | `gopkg.in/inf.v0@v0.9.1` | https://github.com/go-inf/inf/blob/v0.9.1/LICENSE |
 | `gopkg.in/yaml.v3` | MIT | `gopkg.in/yaml.v3@v3.0.1` | https://github.com/go-yaml/yaml/blob/v3.0.1/LICENSE |
-| `k8s.io/api` | Apache-2.0 | `k8s.io/api@v0.37.1` | https://github.com/kubernetes/api/blob/v0.37.1/LICENSE |
-| `k8s.io/apimachinery/pkg` | Apache-2.0 | `k8s.io/apimachinery@v0.37.1` | https://github.com/kubernetes/apimachinery/blob/v0.37.1/LICENSE |
-| `k8s.io/apimachinery/third_party/forked/golang` | BSD-3-Clause | `k8s.io/apimachinery@v0.37.1` | https://github.com/kubernetes/apimachinery/blob/v0.37.1/third_party/forked/golang/LICENSE |
-| `k8s.io/client-go` | Apache-2.0 | `k8s.io/client-go@v0.37.1` | https://github.com/kubernetes/client-go/blob/v0.37.1/LICENSE |
+| `k8s.io/api` | Apache-2.0 | `k8s.io/api@v0.37.2` | https://github.com/kubernetes/api/blob/v0.37.2/LICENSE |
+| `k8s.io/apimachinery/pkg` | Apache-2.0 | `k8s.io/apimachinery@v0.37.2` | https://github.com/kubernetes/apimachinery/blob/v0.37.2/LICENSE |
+| `k8s.io/apimachinery/third_party/forked/golang` | BSD-3-Clause | `k8s.io/apimachinery@v0.37.2` | https://github.com/kubernetes/apimachinery/blob/v0.37.2/third_party/forked/golang/LICENSE |
+| `k8s.io/client-go` | Apache-2.0 | `k8s.io/client-go@v0.37.2` | https://github.com/kubernetes/client-go/blob/v0.37.2/LICENSE |
 | `k8s.io/klog/v2` | Apache-2.0 | `k8s.io/klog/v2@v2.140.0` | https://github.com/kubernetes/klog/blob/v2.140.0/LICENSE |
 | `k8s.io/kube-openapi/pkg` | Apache-2.0 | `k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad` | https://github.com/kubernetes/kube-openapi/blob/d427ff9ee9ad/LICENSE |
 | `k8s.io/kube-openapi/pkg/internal/third_party/go-json-experiment/json` | BSD-3-Clause | `k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad` | https://github.com/kubernetes/kube-openapi/blob/d427ff9ee9ad/pkg/internal/third_party/go-json-experiment/json/LICENSE |
@@ -6107,7 +6107,7 @@ _Apache-2.0 — github.com/spf13/cobra@v1.10.2_
 
 ### github.com/spf13/pflag
 
-_BSD-3-Clause — github.com/spf13/pflag@v1.0.10_
+_BSD-3-Clause — github.com/spf13/pflag@v1.1.0_
 
 #### LICENSE
 
@@ -9609,7 +9609,7 @@ limitations under the License.
 
 ### golang.org/x/net
 
-_BSD-3-Clause — golang.org/x/net@v0.61.0_
+_BSD-3-Clause — golang.org/x/net@v0.62.0_
 
 #### LICENSE
 
@@ -9683,7 +9683,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/sync
 
-_BSD-3-Clause — golang.org/x/sync@v0.24.0_
+_BSD-3-Clause — golang.org/x/sync@v0.25.0_
 
 #### LICENSE
 
@@ -10080,7 +10080,7 @@ _Apache-2.0 — google.golang.org/genproto/googleapis/api@v0.0.0-20261012220534-
 
 ### google.golang.org/genproto/googleapis/rpc
 
-_Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20261019180522-ce908d29299b_
+_Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20261026165753-2ffab32bce7e_
 
 #### LICENSE
 
@@ -10712,7 +10712,7 @@ limitations under the License.
 
 ### k8s.io/api
 
-_Apache-2.0 — k8s.io/api@v0.37.1_
+_Apache-2.0 — k8s.io/api@v0.37.2_
 
 #### LICENSE
 
@@ -10924,7 +10924,7 @@ _Apache-2.0 — k8s.io/api@v0.37.1_
 
 ### k8s.io/apimachinery/pkg
 
-_Apache-2.0 — k8s.io/apimachinery@v0.37.1_
+_Apache-2.0 — k8s.io/apimachinery@v0.37.2_
 
 #### LICENSE
 
@@ -11136,7 +11136,7 @@ _Apache-2.0 — k8s.io/apimachinery@v0.37.1_
 
 ### k8s.io/apimachinery/third_party/forked/golang
 
-_BSD-3-Clause — k8s.io/apimachinery@v0.37.1_
+_BSD-3-Clause — k8s.io/apimachinery@v0.37.2_
 
 #### LICENSE
 
@@ -11173,7 +11173,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### k8s.io/client-go
 
-_Apache-2.0 — k8s.io/client-go@v0.37.1_
+_Apache-2.0 — k8s.io/client-go@v0.37.2_
 
 #### LICENSE
 

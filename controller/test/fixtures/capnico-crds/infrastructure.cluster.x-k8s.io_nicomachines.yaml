@@ -74,6 +74,29 @@ spec:
                 description: CloudInitInjectHostname prepends hostname directives
                   to the bootstrap cloud-config.
                 type: boolean
+              failureDomainLabelKey:
+                description: |-
+                  FailureDomainLabelKey is the NICo Machine label key used for placement.
+                  Requires SiteID. When unset, failure domain placement is disabled.
+                maxLength: 255
+                minLength: 1
+                type: string
+              identityRef:
+                description: |-
+                  IdentityRef names the Secret in this machine's namespace for NICo access.
+                  Requires SiteID. When unset, the provider-level credentials Secret is used.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               infinibandInterfaces:
                 description: |-
                   InfinibandInterfaces requests that one or more InfiniBand Partitions be attached
@@ -174,7 +197,9 @@ spec:
                 minItems: 1
                 type: array
               ipxeScript:
-                description: IpxeScript is the iPXE script used to boot this instance.
+                description: |-
+                  IpxeScript is the iPXE script used to boot this instance.
+                  Mutually exclusive with OperatingSystemID.
                 type: string
               labels:
                 additionalProperties:
@@ -218,10 +243,38 @@ spec:
                   Set this instead of NVLinkInterfaces when every device should use the same logical partition.
                 minLength: 1
                 type: string
+              operatingSystemID:
+                description: |-
+                  OperatingSystemID is the ID of a registered NICo operating system used to boot this instance.
+                  Mutually exclusive with IpxeScript.
+                minLength: 1
+                type: string
+              powerControlIdentityRef:
+                description: |-
+                  PowerControlIdentityRef names the Secret in this machine's namespace for NICo power control.
+                  Requires SiteID. When unset, the ordinary NICo identity is used.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               providerID:
                 description: ProviderID is set to `nico://<instance-id>` after the
                   NICo instance is created.
                 maxLength: 512
+                minLength: 1
+                type: string
+              siteID:
+                description: |-
+                  SiteID overrides NicoCluster settings with this machine's site and identity settings.
+                  When set, the controller does not read a NicoCluster.
                 minLength: 1
                 type: string
               sshKeyGroupIDs:
@@ -252,6 +305,14 @@ spec:
               rule: '!(has(self.nvLinkLogicalPartitionID) && has(self.nvLinkInterfaces))'
             - message: nvLinkLogicalPartitionID requires instanceTypeID
               rule: '!has(self.nvLinkLogicalPartitionID) || has(self.instanceTypeID)'
+            - message: ipxeScript and operatingSystemID are mutually exclusive
+              rule: '!(has(self.ipxeScript) && has(self.operatingSystemID))'
+            - message: identityRef requires siteID
+              rule: '!has(self.identityRef) || has(self.siteID)'
+            - message: powerControlIdentityRef requires siteID
+              rule: '!has(self.powerControlIdentityRef) || has(self.siteID)'
+            - message: failureDomainLabelKey requires siteID
+              rule: '!has(self.failureDomainLabelKey) || has(self.siteID)'
           status:
             description: NicoMachineStatus defines the observed state of NicoMachine.
             properties:
@@ -373,6 +434,57 @@ spec:
               ready:
                 description: Ready is true once the backing instance reaches Ready.
                 type: boolean
+              reboot:
+                description: Reboot records the latest annotation-driven reboot request
+                  and its outcome.
+                properties:
+                  annotation:
+                    description: Annotation is the request annotation on the owning
+                      Machine.
+                    type: string
+                  annotationValue:
+                    description: AnnotationValue identifies the accepted request when
+                      the annotation changes.
+                    type: string
+                  bootID:
+                    description: BootID is the workload Node boot ID observed before
+                      the request.
+                    type: string
+                  completedAt:
+                    description: CompletedAt is when CAPNICo finished handling the
+                      request.
+                    format: date-time
+                    type: string
+                  deadline:
+                    description: Deadline is when CAPNICo stops waiting for graceful
+                      reboot recovery.
+                    format: date-time
+                    type: string
+                  message:
+                    description: Message summarizes the most recent outcome without
+                      sensitive API data.
+                    type: string
+                  mode:
+                    description: Mode is graceful-fallback, graceful-only, or hard.
+                    type: string
+                  path:
+                    description: Path is graceful, hard, or none after the request
+                      completes.
+                    type: string
+                  phase:
+                    description: Phase is prepared, graceful-dispatched, hard-dispatched,
+                      or completed.
+                    type: string
+                  startedAt:
+                    description: StartedAt is when CAPNICo observed the request.
+                    format: date-time
+                    type: string
+                required:
+                - annotation
+                - mode
+                - phase
+                - startedAt
+                type: object
               siteID:
                 description: SiteID is the observed Forge/Carbide site ID for this
                   machine.
@@ -394,6 +506,20 @@ spec:
             type: object
         type: object
         x-kubernetes-validations:
+        - message: spec.siteID is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.siteID) == has(oldSelf.spec.siteID)
+            && (!has(self.spec.siteID) || self.spec.siteID == oldSelf.spec.siteID))'
+        - message: spec.identityRef is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.identityRef) == has(oldSelf.spec.identityRef)
+            && (!has(self.spec.identityRef) || self.spec.identityRef == oldSelf.spec.identityRef))'
+        - message: spec.powerControlIdentityRef is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.powerControlIdentityRef)
+            == has(oldSelf.spec.powerControlIdentityRef) && (!has(self.spec.powerControlIdentityRef)
+            || self.spec.powerControlIdentityRef == oldSelf.spec.powerControlIdentityRef))'
+        - message: spec.failureDomainLabelKey is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.failureDomainLabelKey)
+            == has(oldSelf.spec.failureDomainLabelKey) && (!has(self.spec.failureDomainLabelKey)
+            || self.spec.failureDomainLabelKey == oldSelf.spec.failureDomainLabelKey))'
         - message: spec.vpcID is immutable after providerID is set
           rule: '!has(oldSelf.spec.providerID) || self.spec.vpcID == oldSelf.spec.vpcID'
         - message: spec.instanceTypeID is immutable after providerID is set
@@ -426,6 +552,10 @@ spec:
         - message: spec.ipxeScript is immutable after providerID is set
           rule: '!has(oldSelf.spec.providerID) || (has(self.spec.ipxeScript) == has(oldSelf.spec.ipxeScript)
             && (!has(self.spec.ipxeScript) || self.spec.ipxeScript == oldSelf.spec.ipxeScript))'
+        - message: spec.operatingSystemID is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.operatingSystemID)
+            == has(oldSelf.spec.operatingSystemID) && (!has(self.spec.operatingSystemID)
+            || self.spec.operatingSystemID == oldSelf.spec.operatingSystemID))'
         - message: spec.cloudInitInjectHostname is immutable after providerID is set
           rule: '!has(oldSelf.spec.providerID) || (has(self.spec.cloudInitInjectHostname)
             == has(oldSelf.spec.cloudInitInjectHostname) && (!has(self.spec.cloudInitInjectHostname)

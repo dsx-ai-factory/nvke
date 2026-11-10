@@ -211,6 +211,7 @@ type NodeInfo struct {
 	NodeSetID      uuid.UUID `bun:"node_set_id"`
 	NodeName       string    `bun:"node_name"`
 	IP             string    `bun:"ip"`
+	ControlPlane   bool      `bun:"control_plane"`
 	AgentVersion   string    `bun:"agent_version"`
 	SpiffeEnabled  bool      `bun:"spiffe_enabled"`
 	ForgeMachineID string    `bun:"forge_machine_id"`
@@ -444,8 +445,7 @@ func (q *queriesImpl) ListNodeConditions(ctx context.Context) ([]NodeConditionSt
 			value->>'status' as condition_status
 		from
 			nodes n
-			join node_pools np on n.node_pool_id = np.id
-			join clusters c on c.id = np.cluster_id
+			join clusters c on c.id = n.cluster_id
 			cross join jsonb_each(n.conditions)
 	`).Scan(ctx, &results)
 	if err != nil {
@@ -457,23 +457,29 @@ func (q *queriesImpl) ListNodeConditions(ctx context.Context) ([]NodeConditionSt
 
 func (q *queriesImpl) ListNodeInfo(ctx context.Context) ([]NodeInfo, error) {
 	var results []NodeInfo
+	// Control-plane nodes managed by the control-plane controller have no node
+	// set or node pool, so those joins are LEFT JOINs and the cluster comes from
+	// the node itself. Their release and config profile come from the node's
+	// control-plane configuration.
 	err := q.db.NewRaw(`
 		SELECT 
 			c.name as cluster_name,
-			np.name as node_pool_name,
+			COALESCE(np.name, '') as node_pool_name,
 			ns.id as node_set_id,
 			n.name as node_name,
 			n.ip,
+			n.control_plane,
 			n.agent_version,
 			n.spiffe_enabled,
 			COALESCE(n.nico->>'forge_machine_id', '') as forge_machine_id,
-			COALESCE(ns.nico->>'release', '') as release,
-			COALESCE(ns.nico->>'config_profile', '') as config_profile
+			COALESCE(ns.nico->>'release', cpc.config->'nico'->>'release', '') as release,
+			COALESCE(ns.nico->>'config_profile', cpc.config->'nico'->>'config_profile', '') as config_profile
 		FROM nodes n
-		JOIN node_sets ns ON ns.id = n.node_set_id
-		JOIN node_pools np ON np.id = ns.node_pool_id
-		JOIN clusters c ON c.id = np.cluster_id
-		ORDER BY c.name, np.name, n.name
+		JOIN clusters c ON c.id = n.cluster_id
+		LEFT JOIN node_sets ns ON ns.id = n.node_set_id
+		LEFT JOIN node_pools np ON np.id = ns.node_pool_id
+		LEFT JOIN control_plane_configurations cpc ON cpc.id = n.configuration_id
+		ORDER BY c.name, COALESCE(np.name, ''), n.name
 	`).Scan(ctx, &results)
 	if err != nil {
 		return nil, err

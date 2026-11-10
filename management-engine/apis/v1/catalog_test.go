@@ -4,6 +4,7 @@ package v1
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,7 +56,7 @@ func TestClusterReleaseChannelCatalogView(t *testing.T) {
 		Releases: map[string]ClusterReleaseReferences{
 			"1.35": {
 				{Name: "missing"}, {Name: "deprecated"}, {Name: "invalid"}, {Name: "hidden"},
-				{Name: "preview"}, {Name: "later"}, {Name: "exact"},
+				{Name: "exact"}, {Name: "later"}, {Name: "preview"},
 			},
 			"1.35.2": {{Name: "later"}, {Name: "preview"}, {Name: "exact"}},
 			"1.35.9": {{Name: "hidden"}},
@@ -67,7 +68,7 @@ func TestClusterReleaseChannelCatalogView(t *testing.T) {
 	channelView, found, err := channel.CatalogView(releases)
 	require.NoError(t, err)
 	require.True(t, found)
-	// The minor selects the newest eligible release, while the patch stays pinned with its own support date.
+	// Operator order wins over a newer patch, and support dates come from the same advertised release.
 	assertCatalogJSON(t, channelView, `{
 		"metadata": {
 			"name": "stable"
@@ -82,7 +83,8 @@ func TestClusterReleaseChannelCatalogView(t *testing.T) {
 				},
 				{
 					"version": "1.35",
-					"kubernetesVersion": "1.35.8"
+					"kubernetesVersion": "1.35.2+vendor.7",
+					"supportedUntil": "2000-01-01T00:00:00Z"
 				},
 				{
 					"version": "1.34",
@@ -111,7 +113,7 @@ func TestClusterReleaseChannelCatalogBuilds(t *testing.T) {
 	versions := []string{"1.35.2+sha.abc", "1.35.2-nvke.7", "1.35.2.10", "1.35.2.2", "1.35.2.9999999999999999999999", "1.35.2_custom"}
 	channel := ClusterReleaseChannel{Spec: ClusterReleaseChannelSpec{Releases: map[string]ClusterReleaseReferences{}}}
 	for _, selector := range versions {
-		channel.Spec.Releases[selector] = ClusterReleaseReferences{{Name: "stable"}}
+		channel.Spec.Releases[selector] = ClusterReleaseReferences{{Name: "missing"}, {Name: "preview"}, {Name: "stable"}}
 	}
 	// An overflowing patch is unusable, while the large fourth component above remains an opaque suffix.
 	channel.Spec.Releases["1.35.99999999999999999999"] = ClusterReleaseReferences{{Name: "stable"}}
@@ -130,6 +132,38 @@ func TestClusterReleaseChannelCatalogBuilds(t *testing.T) {
 	for index, selector := range versions {
 		require.Equal(t, selector, view.Spec.Versions[index].Version)
 		require.Equal(t, "1.35.2+vendor.7", view.Spec.Versions[index].KubernetesVersion)
+	}
+}
+
+func TestClusterReleaseChannelVersionFilter(t *testing.T) {
+	const largeBuild = "1.34.4.9999999999999999999999999"
+	channel := ClusterReleaseChannel{Spec: ClusterReleaseChannelSpec{Releases: map[string]ClusterReleaseReferences{}}}
+	for _, selector := range []string{"1.34", "1.34.4", "1.34.4-custom.1", "1.34.4-custom.2", largeBuild, "1.34.5", "1.35", "1.340"} {
+		channel.Spec.Releases[selector] = ClusterReleaseReferences{{Name: "release"}}
+	}
+	for _, test := range []struct {
+		selector string
+		want     []string
+	}{
+		{"1.34", []string{"1.34", "1.34.4", "1.34.4-custom.1", "1.34.4-custom.2", largeBuild, "1.34.5"}},
+		{"1.34.4", []string{"1.34.4", "1.34.4-custom.1", "1.34.4-custom.2", largeBuild}},
+		{"1.34.4-custom.1", []string{"1.34.4-custom.1"}},
+		{largeBuild, []string{largeBuild}},
+		{"1.34.40", nil},
+		{"1.34.4-custom", nil},
+	} {
+		t.Run(test.selector, func(t *testing.T) {
+			filtered, err := channel.FilterCatalogVersion(test.selector)
+			require.NoError(t, err)
+			require.ElementsMatch(t, test.want, filtered.ListVersions(), "retain published choices without inventing aliases")
+			clear(filtered.Spec.Releases)
+			require.Len(t, channel.Spec.Releases, 8, "filtering owns its map")
+		})
+	}
+	for _, selector := range []string{"", "1", "01.34", "v1.34", "1.34.4-", "1.34.4/a", "1.34.4 custom",
+		"1.34.9999999999999999999999999", "1.34.4-" + strings.Repeat("a", 122)} {
+		_, err := channel.FilterCatalogVersion(selector)
+		require.Error(t, err, selector)
 	}
 }
 

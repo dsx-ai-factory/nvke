@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+{{- if .Values.enabled }}
+{{- range $path, $_ := .Files.Glob "bases/internal.nvke.nvidia.com_*.yaml" }}
+{{- $crd := fromYaml ($.Files.Get $path) }}
+{{- $_ := set $crd.metadata "annotations" (merge (include "nvke-crds.retention" $ | fromYaml) (default dict $crd.metadata.annotations)) }}
+---
+{{ toYaml $crd }}
+{{- end }}
+{{- end }}

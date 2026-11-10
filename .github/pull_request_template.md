@@ -44,6 +44,15 @@ Related: <!-- #123 or N/A -->
 
 ## Testing
 
+<!-- Follow docs/development.md#choose-your-test-environment.
+     Replace the example below with commands and results from your run.
+     Record:
+     - The tested commit and artifact versions.
+     - The environment or backend, architecture, and relevant OS image or hardware.
+     - The behavior exercised, commands or test filters, outcomes, and links to logs or CI runs.
+     - Any skipped or pending tests, coverage gaps, and the owner of follow-up testing.
+     Report `make preflight` results separately from environment tests. -->
+
 ```bash
 # Commands run. `make preflight` lints and tests the modules you changed;
 # see docs/development.md for what it does not cover.

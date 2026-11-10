@@ -23,10 +23,14 @@ import (
 func releaseCRDPaths(t testing.TB) []string {
 	t.Helper()
 
-	path := filepath.Join(RepoRoot(t), "deploy", "charts", "controller", "files", "crds.yaml")
-	_, err := os.Stat(path)
-	require.NoError(t, err, "expected the chart release CRDs at %s; run `make chart-crds`", path)
-	return []string{path}
+	paths := make([]string, 0, 3)
+	for _, name := range []string{"machineimages", "clusterreleases", "nodepoolreleases"} {
+		path := filepath.Join(RepoRoot(t), "deploy", "charts", "nvke-crds", "bases", "internal.nvke.nvidia.com_"+name+".yaml")
+		_, err := os.Stat(path)
+		require.NoError(t, err, "expected canonical release CRD at %s", path)
+		paths = append(paths, path)
+	}
+	return paths
 }
 
 // installReleases creates every manifest of the committed fixture releases

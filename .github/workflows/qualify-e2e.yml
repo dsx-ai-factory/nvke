@@ -214,6 +214,14 @@ on:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
 
+  # A called run carries the caller's push event and tag, so it resolves like a beta tag push.
+  workflow_call:
+    inputs:
+      scope:
+        description: "How much of the matrix to cover, a scope from release/policy.yaml. One job runs for each stream the scope selects."
+        type: string
+        required: false
+
 permissions: {}
 
 concurrency:
@@ -366,7 +374,7 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          # A tag push carries no inputs, so anything set here came from a
+          # A tag push carries no version inputs, so anything set here came from a
           # QUALIFY_E2E_* repository variable, which dispatch and label runs
           # use. A beta is pushed to be qualified as what its own commit built,
           # and an override beats the description, so one left set would qualify
@@ -534,6 +542,11 @@ jobs:
       max-parallel: 3
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: arc-amd64-cpu16
+    # One real run at a time for each environment file a stream names, which is a shared site such as NVKE Scale.
+    # A dry run takes no machine, so it gets a group of its own.
+    concurrency:
+      group: ${{ needs.plan.outputs.dry-run != 'true' && matrix.environment != '' && format('qualify-e2e environment {0}', matrix.environment) || format('qualify-e2e {0} {1}', github.run_id, matrix.stream) }}
+      cancel-in-progress: false
     # A nightly beta tag qualifies itself unattended, so it cannot wait on a
     # required reviewer the way every other real run does: forge-nightly
     # carries the same secrets, no required reviewers, and a deployment tag
@@ -597,7 +610,8 @@ jobs:
       # variables instead. The guard step checks the result rather than
       # letting an empty value surface twenty minutes into a run.
       #
-      # A tag push has no inputs either, but it does not fall back to the
+      # A tag push has no inputs either, apart from the scope a calling
+      # workflow passes, but it does not fall back to the
       # QUALIFY_E2E_* variables that stand in for one. Those are how a label
       # run asks for what it wants, so they hold whatever the last label run
       # asked for: v0.23.0-beta.6 and beta.9 both took the scope, stage and
@@ -898,7 +912,7 @@ jobs:
       # capi-provisioned images from here, both private. The node needs no
       # credential: CAPNICo's image is public and everything else is staged.
       - name: Log in to GHCR
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -918,7 +932,7 @@ jobs:
       # pulls with it: nothing on the node pulls from NVCR.
       - name: Log in to NVCR
         if: env.SITE_IMAGE_REGISTRY == 'nvcr'
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: nvcr.io
           # `$oauthtoken` is NGC's literal username, not a variable reference.
@@ -1271,7 +1285,10 @@ jobs:
                 value="<set, withheld>"
               fi
               note=""
-              if [ -n "${input}" ] && [ -n "${!input:-}" ]; then
+              if [ -n "${input}" ] && [ -n "${!input:-}" ] && [ "${GITHUB_EVENT_NAME}" = push ]; then
+                # Only a calling workflow passes inputs on a push.
+                source="calling workflow"
+              elif [ -n "${input}" ] && [ -n "${!input:-}" ]; then
                 source="dispatch input"
               elif { [ "${EVENT_LABEL:-}" = qualify-e2e-dsx ] && [ "${resolved}" = SCOPE ]; } ||
                    { [ "${EVENT_LABEL:-}" = qualify-e2e-l40s ] && [ "${resolved}" = SCOPE ]; }; then
@@ -1310,9 +1327,9 @@ jobs:
               if [ "${resolved}" = "DRY_RUN" ] && [ "${DRY_RUN}" = "true" ] && [ -z "${IN_DRY_RUN:-}" ]; then
                 source="label qualify-e2e-dry-run"
               fi
-              # A push carries no inputs, so the tag named itself as the
-              # version and selected commitDescribe, and neither arm above
-              # named either.
+              # A push carries no version or resolution input, so the tag
+              # named itself as the version and selected commitDescribe, and
+              # neither arm above named either.
               if { [ "${resolved}" = "RESOLUTION" ] || [ "${resolved}" = "NVKE_VERSION" ]; } &&
                  [ -z "${!input:-}" ] && [ "${GITHUB_EVENT_NAME}" = push ]; then
                 source="beta tag push"
@@ -1587,9 +1604,10 @@ jobs:
           # of the failed jobs copies every job it does not re-run into the new
           # attempt, under the new attempt's number and the original start time.
           # So it is the earliest attempt holding the stream's latest start.
+          # A called run names its jobs "<caller job> / <job>", so the prefix is dropped first.
           last_runs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=all&per_page=100" \
             --jq '.jobs[] | {name, started_at, run_attempt}' \
-            | jq -rs 'group_by(.name)[]
+            | jq -rs 'map(.name |= sub("^.* / "; "")) | group_by(.name)[]
                 | (map(.started_at) | max) as $last
                 | [.[0].name, (map(select(.started_at == $last) | .run_attempt) | min)] | @tsv')"
           declare -A ran_in=()

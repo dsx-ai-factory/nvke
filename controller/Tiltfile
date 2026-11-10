@@ -1305,21 +1305,24 @@ if not CONTROLLER_IMAGE and not _controller_local_debug_active:
         ],
     )
 
-# The chart's own CRD bundle, applied before the chart, which has its copy turned
+# The shared chart's release schemas are applied before the controller, which has its dependency turned
 # off with releaseCRDs.install=false: a local resource that waits for the chart to
 # install them holds every unparallelizable build behind it, including the chart's.
 local_resource(
     "machine-engine-crds",
     cmd=["bash", "-c", """
       set -euo pipefail
-      kubectl apply --server-side --field-manager=tilt-release-crds \
-        -f deploy/charts/controller/files/crds.yaml
+      # Rendered here rather than through `make -C .. chart-crds`: CI runs this
+      # Tiltfile inside a container that has helm but no make, and whose source
+      # tree is the controller directory alone, with no repository root above it.
+      helm template nvke-crds deploy/charts/nvke-crds |
+        kubectl apply --server-side --field-manager=tilt-release-crds -f -
       for crd in machineimages clusterreleases nodepoolreleases; do
         kubectl wait --for=condition=Established --timeout=120s "crd/${crd}.internal.nvke.nvidia.com"
       done
     """],
     labels=["3-nvke-controller"],
-    deps=["deploy/charts/controller/files/crds.yaml"],
+    deps=["deploy/charts/nvke-crds"],
     resource_deps=["check-management-cluster"],
 )
 
@@ -1346,9 +1349,18 @@ local_resource(
     allow_parallel=True,
 )
 
+# build_dependencies packages nvke-crds into the chart directory nvke-controller
+# watches. Tilt does not read .gitignore, so without this every deploy's
+# `helm dependency build` triggers the next deploy, and `tilt up` never settles.
+watch_settings(ignore=[
+    "deploy/charts/controller/charts",
+    "deploy/charts/controller/tmpcharts-*",
+])
+
 helm_resource(
     "nvke-controller",
     chart="deploy/charts/controller",
+    build_dependencies=True,
     labels=["3-nvke-controller"],
     release_name="nvke-controller",
     namespace=CONTROLLER_NAMESPACE,
@@ -1360,6 +1372,7 @@ helm_resource(
       "hack/tilt-controller-chart-values.yaml",
       "hack/tilt-controller-api-auth-values.yaml",
       "deploy/charts/controller",
+      "deploy/charts/nvke-crds",
     ],
     flags=_controller_chart_flags,
     resource_deps=_controller_resource_deps,

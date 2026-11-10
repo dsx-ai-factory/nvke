@@ -97,8 +97,8 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("CAPD core", Ordered, ContinueOnFailure, Label("core", "core-docker"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
-			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
+			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
 		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{provisioningOnly: true},
@@ -106,8 +106,8 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("CAPD", Ordered, ContinueOnFailure, Label("capd", "happy-path", "kube-vip-route-withdrawal", "cert-renewal"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
-			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3},
+			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
 		options: nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		// The last four were nico-vms-only until nico-containers took them, which
@@ -138,7 +138,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("CAPD via nvkectl", Ordered, ContinueOnFailure, Label("capd", "nvkectl"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
 		},
 		options:   nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		createVia: clientNvkectl,
@@ -149,7 +149,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("nico-containers via nvkectl", Ordered, ContinueOnFailure, Label("nico-containers", "nvkectl"), testSpec{
 		buildSpec: nicoSpec,
 		shape: clusterShape{
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
 		},
 		options:   nvke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
 		createVia: clientNvkectl,
@@ -161,7 +161,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("CAPD with DSX identity exchange", Ordered, ContinueOnFailure, Label("identity-exchange"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
 		},
 		options: nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 	}),
@@ -183,6 +183,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 			controlPlaneControllerUpdate:        true,
 			controlPlaneControllerRollingUpdate: true,
 			controlPlaneControllerDelete:        true,
+			controlPlaneControllerScaleDown:     true,
 			controlPlaneNodeLabels:              true,
 		},
 	}),
@@ -213,9 +214,11 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	// multi-node control plane to keep etcd quorum while it rolls, and because
 	// the delete specs assert the quorum floor refuses a delete at exactly that
 	// size. The delete specs grow the control plane to four and back, which is
-	// cheap here (containers) but is why nico-vms does not run them.
+	// cheap here (containers) but is why nico-vms does not run them. Automatic
+	// scale-down rides the same grow-to-four path, so it runs here too, putting
+	// it in a CI lane rather than nico-vms alone.
 	Entry("nico-containers control-plane controller (no CP node pool)", Ordered, ContinueOnFailure, Label("nico-containers", "cp-controller"), testSpec{
-		buildSpec: nicoControlPlaneControllerSpec,
+		buildSpec: nicoSpec,
 		shape: clusterShape{
 			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3},
 			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
@@ -226,6 +229,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 			controlPlaneControllerUpdate:        true,
 			controlPlaneControllerRollingUpdate: true,
 			controlPlaneControllerDelete:        true,
+			controlPlaneControllerScaleDown:     true,
 		},
 	}),
 	Entry("nico-vms control-plane controller (no CP node pool)", Ordered, ContinueOnFailure, Label("nico-vms", "cp-controller"), testSpec{
@@ -250,6 +254,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 			controlPlaneController:              true,
 			controlPlaneControllerUpdate:        true,
 			controlPlaneControllerRollingUpdate: true,
+			controlPlaneControllerScaleDown:     true,
 			controlPlaneControllerRebalance:     true,
 		},
 	}),
@@ -259,8 +264,8 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("nico-containers core", Ordered, ContinueOnFailure, Label("core", "core-nico"), testSpec{
 		buildSpec: nicoSpec,
 		shape: clusterShape{
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
-			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
+			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
 		options:  nvke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{provisioningOnly: true},
@@ -268,8 +273,8 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("nico-containers", Ordered, ContinueOnFailure, Label("nico-containers", "happy-path"), testSpec{
 		buildSpec: nicoSpec,
 		shape: clusterShape{
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
-			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3},
+			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
 		options: nvke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
 		// Everything CAPD asserts on this shape, plus the node-pool operations
@@ -290,8 +295,8 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("nico-containers with etcd encryption", Ordered, ContinueOnFailure, Label("nico-containers", "extended", "encryption"), testSpec{
 		buildSpec: nicoSpec,
 		shape: clusterShape{
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
-			etcdEncrypted:     true,
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3},
+			etcdEncrypted:      true,
 		},
 		options:  nvke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{etcdEncryption: true},
@@ -299,7 +304,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("nico-containers brownfield etcd encryption", Ordered, ContinueOnFailure, Label("nico-containers", "extended", "encryption", "etcd-encryption-enable"), testSpec{
 		buildSpec: nicoSpec,
 		shape: clusterShape{
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3},
 		},
 		options:  nvke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{brownfieldEtcdEncryption: true},
@@ -307,7 +312,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("nico-containers brownfield OIDC enablement", Ordered, ContinueOnFailure, Label("nico-containers", "extended", "oidc", "oidc-enable"), testSpec{
 		buildSpec: nicoSpec,
 		shape: clusterShape{
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3},
 		},
 		options:  nvke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{brownfieldOIDC: true},
@@ -319,8 +324,8 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 			// OVN-Kubernetes, via the nico-vms default. Open vSwitch is asserted
 			// on the "nico-vms ovn" entry below. Large instances kept:
 			// cpu2-mem2gb was sized against ovnkube-node.
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
-			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3, InstanceTypeID: nicoVMSLargeInstanceID},
+			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
 		options: nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		// This lane installs the branch-built agent on real systemd hosts, so it
@@ -330,9 +335,9 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("nico-vms k8s upgrade", Ordered, ContinueOnFailure, Label("nico-vms", "happy-path", "upgrade"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
-			kubernetesVersion: upgradeStartingKubernetesVersion,
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
-			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			kubernetesVersion:  upgradeStartingKubernetesVersion,
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3, InstanceTypeID: nicoVMSLargeInstanceID},
+			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
 		options:  nvke.Options{Provision: 30 * time.Minute, Upgrade: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{upgrade: true},
@@ -349,8 +354,8 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 			kubernetesVersion: "1.36.3",
 			cniPlugin:         CNIPluginOVN,
 			// Large instances: cpu2-mem2gb was sized against ovnkube-node.
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
-			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1, InstanceTypeID: nicoVMSLargeInstanceID},
+			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
 		options:  nvke.Options{Provision: 45 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{openVSwitch: true, ovnNetworking: true},
@@ -358,8 +363,8 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("CAPD with etcd encryption", Ordered, ContinueOnFailure, Label("capd", "extended", "encryption"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
-			etcdEncrypted:     true,
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3},
+			etcdEncrypted:      true,
 		},
 		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{etcdEncryption: true},
@@ -367,7 +372,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("CAPD brownfield etcd encryption", Ordered, ContinueOnFailure, Label("capd", "extended", "encryption", "etcd-encryption-enable"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3},
 		},
 		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{brownfieldEtcdEncryption: true},
@@ -375,7 +380,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("CAPD brownfield OIDC enablement", Ordered, ContinueOnFailure, Label("capd", "extended", "oidc", "oidc-enable"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3},
 		},
 		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{brownfieldOIDC: true},
@@ -383,7 +388,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("nico-vms releases", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "releases"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
 			workerPools: []nvke.NodePoolSpec{
 				// Old agent image pins the agent version to 0.1.22, which is before the new nvkeproto.CheckCloudInitStatus was introduced in version 0.1.24.
 				// So this release test exists to prove that the controller can still provision nodePools that may still be pointed at older agent versions.
@@ -399,17 +404,17 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("nico-vms multi pod CIDRs", Ordered, ContinueOnFailure, Label("nico-vms", "multi-pod-cidrs"), testSpec{
 		buildSpec: nicoVMSMultiPodCIDRSpec,
 		shape: clusterShape{
-			kubernetesVersion: "1.36.3",
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
-			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			kubernetesVersion:  "1.36.3",
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3, InstanceTypeID: nicoVMSLargeInstanceID},
+			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
 		options: nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 30 * time.Second},
 	}),
 	Entry("nico-vms node pool lifecycle", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "nodepool"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
-			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
-			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1, InstanceTypeID: nicoVMSLargeInstanceID},
+			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
 		options:  nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{clusterConfig: true, nodeReplacement: true, manualScaleDown: true, nodePoolLifecycle: true, nodePoolCascade: true},
@@ -659,6 +664,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				validateControllerManagedControlPlaneSerializedDelete(&test)
 				validateControllerManagedControlPlaneUnreachableDelete(&test)
 			}
+			if spec.validate.controlPlaneControllerScaleDown {
+				validateControllerManagedControlPlaneAutoScaleDown(&test)
+			}
 			if spec.validate.controlPlaneControllerRebalance {
 				validateControllerManagedControlPlaneRebalance(&test)
 			}
@@ -823,21 +831,17 @@ const (
 type clusterShape struct {
 	kubernetesVersion string
 	cniPlugin         string
-	// controlPlanePools describes the control plane as one node pool. The spec
-	// builders send it as a cluster-level controlPlaneConfig (see
-	// applyControlPlaneMode).
-	controlPlanePools []nvke.NodePoolSpec
 	workerPools       []nvke.NodePoolSpec
 	etcdEncrypted     bool
 	controlPlaneVIP   string
 	// withoutControlPlaneVIP suppresses automatic VIP allocation.
 	withoutControlPlaneVIP bool
-	// controlPlaneConfig provisions the control plane through the cluster-level
-	// control-plane controller, with no control-plane node pool. Set it instead
-	// of controlPlanePools, never both: the cp-controller entries use it for
-	// controller-only fields, and the builders leave a spec that already carries
-	// a config unconverted. nicoForgeSpec uses it too, because a site controller runs
-	// with the flag on by default and rejects control-plane pools outright.
+	// controlPlaneConfig describes the control plane. It is the only control-plane
+	// shape new clusters support: every backend provisions it through the
+	// cluster-level control-plane controller, with no control-plane node pool. The
+	// spec builders fill in the backend's seed identifiers and reservation
+	// defaults an entry leaves unset (see capdControlPlaneConfig,
+	// nicoControlPlaneConfig, nicoVMSControlPlaneConfig, forgeControlPlaneConfig).
 	controlPlaneConfig *nvke.ControlPlaneConfigSpec
 }
 
@@ -928,6 +932,17 @@ type validations struct {
 	// controlPlaneControllerRollingUpdate so the control plane is already at three
 	// nodes.
 	controlPlaneControllerDelete bool
+	// controlPlaneControllerScaleDown asserts the controller's automatic
+	// control-plane scale-down: it grows the control plane to four, lowers the
+	// desired count back to three, and asserts the controller sheds exactly one
+	// surplus node on its own -- no explicit delete -- through the serialized
+	// teardown path, one at a time, with no join overlapping it and every survivor
+	// drawn from the original set. The automatic counterpart to
+	// controlPlaneControllerDelete, which disables auto scale-down and drives the
+	// shrink with an explicit delete. Ordered after controlPlaneControllerRollingUpdate
+	// so the control plane is already at three nodes, and before
+	// controlPlaneControllerRebalance so it starts from a settled desired count.
+	controlPlaneControllerScaleDown bool
 	// controlPlaneControllerRebalance drives one steady-state instance-type
 	// rebalance round: it puts a more-preferred instance type at the front of the
 	// control-plane preference and asserts the controller surges a more-preferred
@@ -1319,42 +1334,56 @@ func (t *tenantTest) availableControlPlaneVIP(ctx context.Context, preferred str
 	return "", fmt.Errorf("no unused control-plane VIP at or after %s in %s", preferredAddr, prefix)
 }
 
-// applyControlPlaneMode sends spec's control-plane pool as the equivalent
-// cluster-level controlPlaneConfig, the only shape the controller provisions. A spec that
-// already carries a controlPlaneConfig is left as it is.
-func applyControlPlaneMode(spec nvke.ClusterSpec) nvke.ClusterSpec {
-	if spec.ControlPlane.Config != nil || len(spec.ControlPlane.Pools) == 0 {
-		return spec
+// capdControlPlaneConfig returns cfg with the CAPD control-plane defaults
+// applied. A control plane reserves 1Gi for the system by default, as the
+// node-pool CAPD defaults did. Returns nil for an entry that sets no config.
+func capdControlPlaneConfig(cfg *nvke.ControlPlaneConfigSpec) *nvke.ControlPlaneConfigSpec {
+	if cfg == nil {
+		return nil
 	}
-	spec.ControlPlane.Config = controlPlaneConfigFromPools(spec.ControlPlane.Pools)
-	spec.ControlPlane.Pools = nil
-	return spec
+	out := *cfg
+	out.SystemReservedMemory = cmp.Or(out.SystemReservedMemory, "1Gi")
+	return &out
 }
 
-// controlPlaneConfigFromPools converts a control plane described as one
-// defaulted node pool into the cluster-level config for the same nodes. The
-// pool's kubeReservedMemory is not carried: the create API has no such field,
-// so the controller applies its default (see nicoVMSSpec).
-func controlPlaneConfigFromPools(pools []nvke.NodePoolSpec) *nvke.ControlPlaneConfigSpec {
-	if len(pools) != 1 {
-		panic(fmt.Sprintf("a cluster-level control plane has one shape; got %d control-plane pools", len(pools)))
+// nicoControlPlaneConfig returns cfg with the NICo container seed identifiers
+// and defaults applied, mirroring hack/create-local-nico-cluster.sh. Without
+// them the machine template has no instance type or subnet and the controller
+// rejects the create. Returns nil for an entry that sets no config.
+func nicoControlPlaneConfig(cfg *nvke.ControlPlaneConfigSpec) *nvke.ControlPlaneConfigSpec {
+	if cfg == nil {
+		return nil
 	}
-	pool := pools[0]
-	return &nvke.ControlPlaneConfigSpec{
-		DesiredCount:         pool.DesiredNodeCount,
-		InstanceTypeID:       pool.InstanceTypeID,
-		Release:              pool.Release,
-		ConfigProfile:        pool.ConfigProfile,
-		VpcPrefixIDs:         pool.VpcPrefixIDs,
-		SubnetIDs:            pool.SubnetIDs,
-		SSHKeyGroupIDs:       pool.SSHKeyGroupIDs,
-		SystemReservedMemory: pool.SystemReservedMemory,
+	out := *cfg
+	out.InstanceTypeID = cmp.Or(out.InstanceTypeID, nicoInstanceTypeID)
+	out.SubnetIDs = defaultStrings(out.SubnetIDs, nicoSubnetID)
+	out.SSHKeyGroupIDs = defaultStrings(out.SSHKeyGroupIDs, nicoSSHKeyGroupID)
+	out.SystemReservedMemory = cmp.Or(out.SystemReservedMemory, "1Gi")
+	return &out
+}
+
+// nicoVMSControlPlaneConfig returns cfg with the nico-vms seed identifiers and
+// defaults applied. Control planes default to the large instance: the
+// controller reserves its default 2Gi for the kubelet on a controller-managed
+// control plane, which does not fit the 2Gi default instance. Returns nil for
+// an entry that sets no config.
+func nicoVMSControlPlaneConfig(cfg *nvke.ControlPlaneConfigSpec) *nvke.ControlPlaneConfigSpec {
+	if cfg == nil {
+		return nil
 	}
+	out := *cfg
+	out.InstanceTypeID = cmp.Or(out.InstanceTypeID, nicoVMSLargeInstanceID)
+	out.Release = cmp.Or(out.Release, nicoVMSRelease)
+	out.ConfigProfile = cmp.Or(out.ConfigProfile, nicoVMSCPConfigProfile)
+	out.VpcPrefixIDs = defaultStrings(out.VpcPrefixIDs, nicoVMSVpcPrefixID)
+	out.SSHKeyGroupIDs = defaultStrings(out.SSHKeyGroupIDs, nicoVMSSSHKeyGroupID)
+	out.SystemReservedMemory = cmp.Or(out.SystemReservedMemory, "250Mi")
+	return &out
 }
 
 // capdSpec builds a CAPD topology with the requested cluster shape.
 func capdSpec(cfg config.Config, name string, shape clusterShape) nvke.ClusterSpec {
-	return applyControlPlaneMode(nvke.ClusterSpec{
+	return nvke.ClusterSpec{
 		Name:              name,
 		Backend:           nvke.BackendCAPD,
 		KubernetesVersion: cmp.Or(shape.kubernetesVersion, defaultKubernetesVersion),
@@ -1362,27 +1391,19 @@ func capdSpec(cfg config.Config, name string, shape clusterShape) nvke.ClusterSp
 		CAPDNodeImage:     cfg.Cluster.CAPDNodeImage,
 		SiteID:            uuid.Nil.String(),
 		ControlPlane: nvke.ControlPlane{
-			Pools:           capdNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp"),
 			EtcdEncrypted:   shape.etcdEncrypted,
 			ControlPlaneVIP: shape.controlPlaneVIP,
-			Config:          shape.controlPlaneConfig,
+			Config:          capdControlPlaneConfig(shape.controlPlaneConfig),
 		},
 		Workers: capdNodePoolSpecs(shape.workerPools, "worker", "w"),
-	})
+	}
 }
 
-// capdControlPlaneControllerSpec builds a CAPD topology whose control plane is
-// provisioned by the cluster-level control-plane controller: no control-plane
-// node pool, a cluster-level control plane config instead.
+// capdControlPlaneControllerSpec builds a CAPD control-plane-controller topology
+// that advertises simulated failure domains, so the spread and rolling-update
+// specs have more than one eligible domain to place control-plane nodes across.
 func capdControlPlaneControllerSpec(cfg config.Config, name string, shape clusterShape) nvke.ClusterSpec {
 	spec := capdSpec(cfg, name, shape)
-	spec.ControlPlane.Pools = nil
-	spec.ControlPlane.Config = shape.controlPlaneConfig
-	if shape.controlPlaneConfig != nil {
-		cp := *shape.controlPlaneConfig
-		cp.SystemReservedMemory = cmp.Or(cp.SystemReservedMemory, "1Gi")
-		spec.ControlPlane.Config = &cp
-	}
 	// CAPD copies these simulated domains to CAPI Cluster status. The third
 	// domain proves that controlPlane: false is excluded from placement.
 	spec.CAPDFailureDomains = []nvke.CAPDFailureDomain{
@@ -1398,25 +1419,6 @@ func capdControlPlaneControllerSpec(cfg config.Config, name string, shape cluste
 func capdNoEligibleControlPlaneDomainSpec(cfg config.Config, name string, shape clusterShape) nvke.ClusterSpec {
 	spec := capdControlPlaneControllerSpec(cfg, name, shape)
 	spec.CAPDFailureDomains = []nvke.CAPDFailureDomain{{Name: "fd-worker", ControlPlane: false}}
-	return spec
-}
-
-// nicoControlPlaneControllerSpec builds a NICo container topology whose control
-// plane is shape.controlPlaneConfig, filling in the mock's seed identifiers the
-// entry leaves unset.
-func nicoControlPlaneControllerSpec(cfg config.Config, name string, shape clusterShape) nvke.ClusterSpec {
-	spec := nicoSpec(cfg, name, shape)
-	if spec.ControlPlane.Config != nil {
-		// The same identifiers nicoNodePoolSpecs applies to a pool. Without them
-		// the machine template has no instance type or subnet and the controller rejects the
-		// create.
-		cp := *spec.ControlPlane.Config
-		cp.InstanceTypeID = cmp.Or(cp.InstanceTypeID, nicoInstanceTypeID)
-		cp.SubnetIDs = defaultStrings(cp.SubnetIDs, nicoSubnetID)
-		cp.SSHKeyGroupIDs = defaultStrings(cp.SSHKeyGroupIDs, nicoSSHKeyGroupID)
-		cp.SystemReservedMemory = cmp.Or(cp.SystemReservedMemory, "1Gi")
-		spec.ControlPlane.Config = &cp
-	}
 	return spec
 }
 
@@ -1439,16 +1441,7 @@ func TestUnit_CAPDSpec(t *testing.T) {
 	}
 }
 
-func TestUnit_ApplyControlPlaneMode(t *testing.T) {
-	poolShape := clusterShape{
-		controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
-		workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
-	}
-	configShape := clusterShape{
-		controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
-		workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
-	}
-
+func TestUnit_ControlPlaneConfigDefaults(t *testing.T) {
 	tests := []struct {
 		name       string
 		build      specBuilder
@@ -1456,9 +1449,12 @@ func TestUnit_ApplyControlPlaneMode(t *testing.T) {
 		wantConfig *nvke.ControlPlaneConfigSpec
 	}{
 		{
-			name:  "a nico-vms pool is sent as config",
+			name:  "a nico-vms config gets the seed identifiers and large instance",
 			build: nicoVMSSpec,
-			shape: poolShape,
+			shape: clusterShape{
+				controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3},
+				workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			},
 			wantConfig: &nvke.ControlPlaneConfigSpec{
 				DesiredCount:         3,
 				InstanceTypeID:       nicoVMSLargeInstanceID,
@@ -1470,15 +1466,21 @@ func TestUnit_ApplyControlPlaneMode(t *testing.T) {
 			},
 		},
 		{
-			name:       "a CAPD pool is sent as config",
-			build:      capdSpec,
-			shape:      poolShape,
+			name:  "a CAPD config gets the reservation default",
+			build: capdSpec,
+			shape: clusterShape{
+				controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3},
+				workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			},
 			wantConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3, SystemReservedMemory: "1Gi"},
 		},
 		{
-			name:  "a NICo container pool gets the seed identifiers",
+			name:  "a NICo container config gets the seed identifiers",
 			build: nicoSpec,
-			shape: clusterShape{controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}}},
+			shape: clusterShape{
+				controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
+				workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			},
 			wantConfig: &nvke.ControlPlaneConfigSpec{
 				DesiredCount:         1,
 				InstanceTypeID:       nicoInstanceTypeID,
@@ -1488,10 +1490,29 @@ func TestUnit_ApplyControlPlaneMode(t *testing.T) {
 			},
 		},
 		{
-			name:       "an explicit config is left as it is",
-			build:      capdSpec,
-			shape:      configShape,
-			wantConfig: configShape.controlPlaneConfig,
+			name:  "explicit config values win over the defaults",
+			build: nicoVMSSpec,
+			shape: clusterShape{
+				controlPlaneConfig: &nvke.ControlPlaneConfigSpec{
+					DesiredCount:         1,
+					InstanceTypeID:       nicoVMSPreferredInstanceID,
+					Release:              "custom-release",
+					ConfigProfile:        "custom-profile",
+					VpcPrefixIDs:         []string{"vpc-prefix"},
+					SSHKeyGroupIDs:       []string{"ssh-group"},
+					SystemReservedMemory: "1Gi",
+				},
+				workerPools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			},
+			wantConfig: &nvke.ControlPlaneConfigSpec{
+				DesiredCount:         1,
+				InstanceTypeID:       nicoVMSPreferredInstanceID,
+				Release:              "custom-release",
+				ConfigProfile:        "custom-profile",
+				VpcPrefixIDs:         []string{"vpc-prefix"},
+				SSHKeyGroupIDs:       []string{"ssh-group"},
+				SystemReservedMemory: "1Gi",
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -1525,7 +1546,7 @@ func TestUnit_NicoVMSControlPlaneFitsKubeletReservation(t *testing.T) {
 	}
 
 	shapes := map[string]clusterShape{
-		"control plane with no instance type": {controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}}},
+		"control plane with no instance type": {controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1}},
 		"OS profile matrix row":               nicoVMSReleaseTestSpec(nicoVMSReleaseEntry{name: "unit-profile"}, 0).shape,
 	}
 	for name, shape := range shapes {
@@ -1549,13 +1570,10 @@ func TestUnit_NicoVMSControlPlaneFitsKubeletReservation(t *testing.T) {
 }
 
 // builtControlPlaneInstanceType returns the instance type spec's control plane
-// runs on, in either control-plane shape.
+// runs on.
 func builtControlPlaneInstanceType(spec nvke.ClusterSpec) string {
 	if spec.ControlPlane.Config != nil {
 		return spec.ControlPlane.Config.InstanceTypeID
-	}
-	if len(spec.ControlPlane.Pools) > 0 {
-		return spec.ControlPlane.Pools[0].InstanceTypeID
 	}
 	return ""
 }
@@ -1657,7 +1675,7 @@ const (
 // containers. Like CAPD, it uses the controller's nil-UUID CAPI site; the Nico site and
 // VPC live inside the infrastructure manifests.
 func nicoSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterSpec {
-	return applyControlPlaneMode(nvke.ClusterSpec{
+	return nvke.ClusterSpec{
 		Name:              name,
 		Backend:           nvke.BackendNicoContainers,
 		KubernetesVersion: cmp.Or(shape.kubernetesVersion, defaultKubernetesVersion),
@@ -1665,13 +1683,12 @@ func nicoSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterSpec
 		SiteID:            nicoSiteID,
 		VpcID:             nicoVpcID,
 		ControlPlane: nvke.ControlPlane{
-			Pools:           nicoNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp"),
 			EtcdEncrypted:   shape.etcdEncrypted,
 			ControlPlaneVIP: shape.controlPlaneVIP,
-			Config:          shape.controlPlaneConfig,
+			Config:          nicoControlPlaneConfig(shape.controlPlaneConfig),
 		},
 		Workers: nicoNodePoolSpecs(shape.workerPools, "worker", "w"),
-	})
+	}
 }
 
 // A Forge tenant takes its Kubernetes and CNI versions from -e2e.versions, both
@@ -1744,7 +1761,6 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nvke.Cluste
 		VpcID:        site.VpcID,
 		NodePayloads: payloads,
 		ControlPlane: nvke.ControlPlane{
-			Pools:         forgeNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", site, controlPlaneType),
 			Config:        forgeControlPlaneConfig(shape.controlPlaneConfig, site, controlPlaneType),
 			EtcdEncrypted: shape.etcdEncrypted,
 			// Empty unless an entry asks for one, which the controller reads as "do not
@@ -1762,8 +1778,7 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nvke.Cluste
 // environment, the same defaults forgeNodePoolSpecs applies to a pool: a
 // control-plane node is the same machine as a pool node, so it is chosen by
 // the same capability match and attaches the way the site's fabric does.
-// Returns nil for an entry that asks for a control-plane node pool instead,
-// which the controller reads as "no cluster-level control plane".
+// Returns nil for an entry that sets no control-plane config.
 func forgeControlPlaneConfig(
 	cfg *nvke.ControlPlaneConfigSpec,
 	site forge.Site,
@@ -1926,7 +1941,7 @@ var nicoVMSRelease = "nvke-nico-vms-24.04-" + runtime.GOARCH + "-fde"
 // identifiers. kube-vip is left enabled (the nico-vms BGP speaker advertises
 // the control-plane VIP), unlike the CAPD topology.
 func nicoVMSSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterSpec {
-	return applyControlPlaneMode(nvke.ClusterSpec{
+	return nvke.ClusterSpec{
 		Name:              name,
 		Backend:           nvke.BackendNicoVMS,
 		KubernetesVersion: cmp.Or(shape.kubernetesVersion, defaultKubernetesVersion),
@@ -1937,30 +1952,12 @@ func nicoVMSSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterS
 		VpcID:     nicoVMSVpcID,
 		Network:   &nvke.ClusterNetworkSpec{PodCIDR: nicoVMSPodCIDR},
 		ControlPlane: nvke.ControlPlane{
-			// Control planes default to the large instance. The controller reserves its default
-			// 2Gi for the kubelet on them, since controlPlaneConfig cannot carry
-			// the pool's 250Mi, and that does not fit in 2 GiB.
-			Pools: nicoVMSNodePoolSpecs(
-				withDefaultInstanceType(shape.controlPlanePools, nicoVMSLargeInstanceID),
-				"control-plane", "cp", nicoVMSRelease, nicoVMSCPConfigProfile,
-			),
 			ControlPlaneVIP: shape.controlPlaneVIP,
 			EtcdEncrypted:   shape.etcdEncrypted,
-			Config:          shape.controlPlaneConfig,
+			Config:          nicoVMSControlPlaneConfig(shape.controlPlaneConfig),
 		},
 		Workers: nicoVMSNodePoolSpecs(shape.workerPools, "worker", "w", nicoVMSRelease, nicoVMSWConfigProfile),
-	})
-}
-
-// withDefaultInstanceType returns a copy of pools with instanceTypeID set on
-// each pool that leaves it unset.
-func withDefaultInstanceType(pools []nvke.NodePoolSpec, instanceTypeID string) []nvke.NodePoolSpec {
-	out := make([]nvke.NodePoolSpec, len(pools))
-	for i, pool := range pools {
-		pool.InstanceTypeID = cmp.Or(pool.InstanceTypeID, instanceTypeID)
-		out[i] = pool
 	}
-	return out
 }
 
 func nicoVMSNodePoolSpecs(pools []nvke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultRelease, defaultConfigProfile string) []nvke.NodePoolSpec {
@@ -2045,7 +2042,6 @@ func nicoDSXSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterS
 		VpcID:             site.VpcID,
 		NodePayloads:      payloads,
 		ControlPlane: nvke.ControlPlane{
-			Pools:         dsxNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", site, controlPlaneType),
 			Config:        dsxControlPlaneConfig(shape.controlPlaneConfig, site, controlPlaneType),
 			EtcdEncrypted: shape.etcdEncrypted,
 			// Empty, as on Forge, and here it is also the only option: each

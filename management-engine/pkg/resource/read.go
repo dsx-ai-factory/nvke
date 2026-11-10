@@ -19,6 +19,11 @@ type namedView interface{ GetName() string }
 // visibleSource controls LIST discovery. Named GET bypasses this predicate.
 type visibleSource interface{ CatalogVisible() bool }
 
+// versionFilteredSource validates selectors on its zero value before any datastore read.
+type versionFilteredSource[S any] interface {
+	FilterCatalogVersion(string) (S, error)
+}
+
 // maxSourceItems bounds each complete primary or dependency scan before public filtering.
 const maxSourceItems = 10000
 
@@ -230,6 +235,35 @@ type projectedReader[S visibleSource, E namedView] struct {
 	project  catalogProjector[S, E]
 	fields   []string
 	identity string
+}
+
+// WithVersionFilter isolates a source-owned filter and its continuation identity to one request.
+func (r *projectedReader[S, E]) WithVersionFilter(selector string) (ResourceReader[E], error) {
+	var source S
+	filter, supported := any(source).(versionFilteredSource[S])
+	if !supported {
+		return nil, Invalid(FieldError{
+			Field: versionParameter, Code: invalidQueryCode, Message: "Version filtering is not supported.",
+		})
+	}
+	if _, err := filter.FilterCatalogVersion(selector); err != nil {
+		return nil, Invalid(FieldError{Field: versionParameter, Code: invalidCode,
+			Message: "Use a major.minor or major.minor.patch selector with an optional build suffix of at most 128 characters."})
+	}
+	filtered := *r
+	filtered.identity += "/version=" + selector
+	filtered.project = func(ctx context.Context, sources []S) ([]E, error) {
+		selected := make([]S, len(sources))
+		for index, source := range sources {
+			value, err := any(source).(versionFilteredSource[S]).FilterCatalogVersion(selector)
+			if err != nil {
+				return nil, projectionFailure(err)
+			}
+			selected[index] = value
+		}
+		return r.project(ctx, selected)
+	}
+	return &filtered, nil
 }
 
 // Get bypasses LIST visibility for callers that know a name. Projection eligibility still applies.

@@ -41,14 +41,12 @@ NODE_ARCH=""
 CAPI_INIT=""
 HAVE_NVKECTL=""
 
+NGC_INDEX=https://helm.ngc.nvidia.com/nvidia/index.yaml
 EGRESS_URLS=(
   https://ghcr.io/v2/
   https://github.com/
   https://api.github.com/
   https://objects.githubusercontent.com/
-  https://kubernetes-sigs.github.io/metrics-server/index.yaml
-  https://open-telemetry.github.io/opentelemetry-helm-charts/index.yaml
-  https://prometheus-community.github.io/helm-charts/index.yaml
   https://quay.io/v2/
   https://registry.k8s.io/v2/
 )
@@ -132,11 +130,11 @@ if [[ -z "${pin}" || "${have}" == "${pin}" ]]; then
 else
   check_warn "helm ${have:-unknown}; the repository pins ${pin} in make/tool-versions.mk"
 fi
-for f in "${DEPLOY_PATH}/nvke-deploy.yaml" "${REPO_ROOT}/controller/deploy/charts/controller/Chart.yaml" "${REPO_ROOT}/nktp/deploy/charts/nktp/Chart.yaml"; do
+for f in "${DEPLOY_PATH}/nvke-deploy.yaml" "${REPO_ROOT}/controller/deploy/charts/controller/Chart.yaml"; do
   if [[ -f "${f}" ]]; then
     check_pass "checkout: ${f}"
   else
-    check_fail "checkout: ${f} is missing; the executor installs the controller and NKTP charts from the tree"
+    check_fail "checkout: ${f} is missing; the executor installs the controller chart from the tree"
   fi
 done
 if [[ -n "${CAPI_VERSION}" ]]; then
@@ -326,6 +324,15 @@ for url in "${EGRESS_URLS[@]}"; do
     check_warn "egress: ${url} not reachable within 10s; the charts and images that come from it will not either"
   fi
 done
+# NGC answers a HEAD itself but redirects every download, the chart index and
+# archive Helm fetches, to one of its download hosts (currently
+# xfiles.ngc.nvidia.com). A ranged GET that follows the redirect and fails on an
+# HTTP error reaches whichever host NGC picks.
+if curl -fsSL --max-time 10 -r 0-1023 -o /dev/null "${NGC_INDEX}" 2>/dev/null; then
+  check_pass "egress: ${NGC_INDEX} and its download redirect"
+else
+  check_warn "egress: ${NGC_INDEX} or its download redirect not reachable within 10s; the nktp chart will not install"
+fi
 (umask 077 && mkdir -p "${STATE_DIR}") || true
 avail_kb="$(df -Pk "${STATE_DIR}" 2>/dev/null | awk 'NR == 2 { print $4 }' || true)"
 if [[ -n "${avail_kb}" && $((avail_kb / 1024 / 1024)) -lt 10 ]]; then

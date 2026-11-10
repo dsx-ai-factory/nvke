@@ -82,6 +82,10 @@ type operationHandler[E any] struct {
 	op     Operation
 }
 
+type versionFilteredReader[E any] interface {
+	WithVersionFilter(string) (ResourceReader[E], error)
+}
+
 // ServeHTTP dispatches one operation and writes its public response and ETag.
 func (h operationHandler[E]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	opts := &RequestOptions{}
@@ -104,6 +108,7 @@ func (h operationHandler[E]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // dispatch parses the transport contract and invokes the registered CRUDL operation.
 func (h operationHandler[E]) dispatch(r *http.Request) (any, int, error) {
 	var allowed []string
+	versionReader, supportsVersionFilter := h.reader.(versionFilteredReader[E])
 	switch h.op {
 	case OpList:
 		allowed = []string{pageSizeParameter, pageKeyParameter}
@@ -113,9 +118,18 @@ func (h operationHandler[E]) dispatch(r *http.Request) (any, int, error) {
 	case OpDelete:
 		allowed = []string{propagationPolicyParameter}
 	}
+	if supportsVersionFilter && (h.op == OpGet || h.op == OpList) {
+		allowed = append(allowed, versionParameter)
+	}
 	values, err := query(r, allowed...)
 	if err != nil {
 		return nil, 0, err
+	}
+	if values.Has(versionParameter) {
+		h.reader, err = versionReader.WithVersionFilter(values.Get(versionParameter))
+		if err != nil {
+			return nil, 0, err
+		}
 	}
 	if h.op != OpCreate && h.op != OpUpdate {
 		if err = noBody(r); err != nil {

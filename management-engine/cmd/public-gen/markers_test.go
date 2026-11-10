@@ -66,7 +66,8 @@ func TestPublicMarkerValidation(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			root := t.TempDir()
+			root := filepath.Join(t.TempDir(), "management-engine")
+			require.NoError(t, os.MkdirAll(root, 0o755))
 			writeMarkerFixture(t, root, "apis/v1/widget.go", "package v1\ntype Spec struct{}\n"+
 				tt.markers+"type Widget struct { Spec Spec `json:\"spec\"` }\n")
 			_, err := readModel(root)
@@ -76,7 +77,8 @@ func TestPublicMarkerValidation(t *testing.T) {
 }
 
 func TestPublicResourceDiscovery(t *testing.T) {
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "management-engine")
+	require.NoError(t, os.MkdirAll(root, 0o755))
 	first := "package v1\ntype FirstSpec struct{}\n// Existing documentation.\n" +
 		"// +kubebuilder:object:root=true\n// +nvke:public:name=Alpha\n// +nvke:public:path=/first\n" +
 		"// +nvke:public:metadata=name, uid\ntype First struct { Spec FirstSpec `json:\"spec\"` }\n"
@@ -129,7 +131,8 @@ func TestPublicMarkerAssociation(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			root := t.TempDir()
+			root := filepath.Join(t.TempDir(), "management-engine")
+			require.NoError(t, os.MkdirAll(root, 0o755))
 			writeMarkerFixture(t, root, "apis/v1/widget.go", "package v1\n"+tt.source)
 			_, _, _, _, err := readSource(root)
 			require.ErrorContains(t, err, tt.wantError)
@@ -140,7 +143,8 @@ func TestPublicMarkerAssociation(t *testing.T) {
 func TestPublicResourceCollisions(t *testing.T) {
 	for _, field := range []string{"name", "path"} {
 		t.Run(field, func(t *testing.T) {
-			root := t.TempDir()
+			root := filepath.Join(t.TempDir(), "management-engine")
+			require.NoError(t, os.MkdirAll(root, 0o755))
 			other := strings.ReplaceAll(widgetMarkers, "PublicWidget", "Other")
 			if field == "name" {
 				other = strings.ReplaceAll(widgetMarkers, "/widgets", "/other")
@@ -165,7 +169,7 @@ func writeMarkerFixture(t *testing.T, root, path, body string) {
 
 func writeMarkerCRD(t *testing.T, root, source string) {
 	t.Helper()
-	writeMarkerFixture(t, root, "config/crd/bases/"+source+".yaml", fmt.Sprintf(`spec:
+	writeMarkerFixture(t, root, "../controller/deploy/charts/nvke-crds/bases/"+source+".yaml", fmt.Sprintf(`spec:
   group: example.test
   names: {kind: %s, plural: %ss}
   scope: Namespaced

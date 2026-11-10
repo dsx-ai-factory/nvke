@@ -35,22 +35,22 @@ nvkectl config set-site [flags]
 ### Options
 
 ```
-  -h, --help                       help for set-site
-      --kubeconfig string          Path to the management cluster kubeconfig (required)
-      --name string                Name for this site entry. Must not be empty (default "default")
-      --otlp-endpoint string       OTLP/gRPC endpoint (host:port or an http(s):// URL; http implies --otlp-insecure) that receives the spans and log records of commands that use this site (optional)
-      --otlp-insecure              Send to --otlp-endpoint without TLS. An http:// endpoint is always insecure
-      --proxy-client-cert string   Path to the proxy TLS client certificate
-      --proxy-client-key string    Path to the private key matching --proxy-client-cert
-      --url string                 Controller API base URL, e.g. http://localhost:8080 (required)
+  -h, --help[=true|false]            help for set-site
+      --kubeconfig string            Path to the management cluster kubeconfig (required)
+      --name string                  Name for this site entry. Must not be empty (default "default")
+      --otlp-endpoint string         OTLP/gRPC endpoint (host:port or an http(s):// URL; http implies --otlp-insecure) that receives the spans and log records of commands that use this site (optional)
+      --otlp-insecure[=true|false]   Send to --otlp-endpoint without TLS. An http:// endpoint is always insecure
+      --proxy-client-cert string     Path to the proxy TLS client certificate
+      --proxy-client-key string      Path to the private key matching --proxy-client-cert
+      --url string                   Controller API base URL, e.g. http://localhost:8080 (required)
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --json-logs     Emit logs as JSON
-      --site string   Override the active site for this invocation
-  -v, --verbose       Enable debug logging
+      --json-logs[=true|false]   Emit logs as JSON
+      --site string              Override the active site for this invocation
+  -v, --verbose[=true|false]     Enable debug logging
 ```
 
 ### SEE ALSO

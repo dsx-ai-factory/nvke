@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // public-gen generates public API types and registrations from Go types in apis/v1,
-// CRDs in config/crd/bases, and +nvke:public markers on the selected source types.
+// CRDs in controller/deploy/charts/nvke-crds/bases, and +nvke:public markers on the selected source types.
 // +nvke:catalog:view and +nvke:catalog:include markers generate Catalog<Source> projections.
 // Resource methods own catalog eligibility and derived values outside the generated field shapes.
 // Run from the module root. The -check flag reports generated-file drift without writing files.

@@ -33,6 +33,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [operate/observe.md](operate/observe.md) | Metrics, dashboards, logs and status for NVKE and its clusters |
 | [operate/troubleshoot.md](operate/troubleshoot.md) | Symptoms, causes and fixes for common failures |
 | [operate/debug-nicoidentity-credentials.md](operate/debug-nicoidentity-credentials.md) | Reading CAPNICo's credential check on a `NicoIdentity` with `kubectl`: whether the result is current, what each reason means, and why a result is stale or missing |
+| [operate/change-nvlink-partition.md](operate/change-nvlink-partition.md) | Setting or replacing a NICo node pool's NVLink logical partition, and attaching its existing nodes through the NICo instance API |
 
 ## Start here
 
@@ -43,6 +44,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [first-cluster.md](first-cluster.md) | Three paths to a running cluster, driven by `nvkectl` |
 | [lifecycle.md](lifecycle.md) | Day 0 → Day 1 → Day 2 operational lifecycle |
 | [architecture.md](architecture.md) | The modules, how a cluster request flows through them, and what is deployed where |
+| [adrs/20261105-capi-architecture.md](adrs/20261105-capi-architecture.md) | Proposed composable architecture: reusable CAPI providers, operator curation, and customer APIs |
 
 ## Working on the code
 
@@ -53,6 +55,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [go-workspace.md](go-workspace.md) | The Go workspace, which modules are in it, and how to keep `go.work.sum` current |
 | [coverage-policy.md](coverage-policy.md) | What coverage is collected, what CI does with it, and why no threshold gates a merge |
 | [adrs/20261014-adr-conventions.md](adrs/20261014-adr-conventions.md) | Accepted decision on ADR scope, placement, format, and lifecycle |
+| [adrs/20261106-shared-nvke-crd-chart.md](adrs/20261106-shared-nvke-crd-chart.md) | Proposed shared schema packaging and ownership across NVKE installers |
 | [issue-triage.md](issue-triage.md) | How issues are triaged: the `needs-triage` and `priority/*` labels, who sets them, and what the automation does |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | How to get a change reviewed and merged |
 | [../.github/workflows/README.md](../.github/workflows/README.md) | How CI is wired, and the invariants a new workflow has to hold to |

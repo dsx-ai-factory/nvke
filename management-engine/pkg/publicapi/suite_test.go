@@ -72,7 +72,8 @@ func publicAPICaseSet(
 		},
 		EnvironmentFn: func(*fixture.Case) *envtest.Environment {
 			return &envtest.Environment{
-				CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
+				CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases"),
+					filepath.Join("..", "..", "..", "controller", "deploy", "charts", "nvke-crds", "bases")},
 				ErrorIfCRDPathMissing: true,
 				UseExistingCluster:    new(false),
 			}

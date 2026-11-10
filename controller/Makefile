@@ -74,7 +74,7 @@ lint: ## Lint source files. (run by the merge gate)
 # custom resources. Argo CD applies the fleet's; the manifests under
 # test/fixtures/releases are this repository's own set, maintained by hand.
 
-RELEASE_CRD_DIR		?= $(REPO_ROOT)/management-engine/config/crd/bases
+RELEASE_CRD_DIR		?= $(REPO_ROOT)/controller/deploy/charts/nvke-crds/bases
 RELEASE_CRD_NAMES	?= machineimages clusterreleases nodepoolreleases
 RELEASES_DIR		?= $(CURDIR)/test/fixtures/releases
 

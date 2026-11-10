@@ -40,7 +40,12 @@ type resourceSchema struct {
 // and conversion, so tests can read the markers back off the schema.
 func loadCRD(t *testing.T, resource string) apiextensionsv1.CustomResourceDefinition {
 	t.Helper()
-	data, err := os.ReadFile("../../config/crd/bases/internal.nvke.nvidia.com_" + resource + ".yaml")
+	directory := "../../config/crd/bases/"
+	switch resource {
+	case "machineimages", "clusterreleases", "nodepoolreleases":
+		directory = "../../../controller/deploy/charts/nvke-crds/bases/"
+	}
+	data, err := os.ReadFile(directory + "internal.nvke.nvidia.com_" + resource + ".yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,7 +359,8 @@ func TestClusterReleaseChannelReferences(t *testing.T) {
 	updated[selector] = []any{map[string]any{"name": "other", "minimumUpgradeAge": "0s"}}
 	schema.check(t, false, candidate, previous)
 	updated[selector] = append(updated[selector].([]any), releases[selector].([]any)[0])
-	schema.check(t, true, candidate, nil)
+	// Suffixed selectors allow ordered alternatives for the same published choice.
+	schema.admit(t, candidate, nil)
 	delete(updated, selector)
 	schema.check(t, false, candidate, previous)
 }

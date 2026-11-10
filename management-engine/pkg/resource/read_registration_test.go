@@ -77,6 +77,8 @@ func TestReadRegistrationTransport(t *testing.T) {
 		{"selector without opt-in", "GET", "/unfiltered-classes?fieldSelector=metadata.name=standard", "", 400},
 		{"empty CRUD selector", "GET", "/widgets?fieldSelector=", "", 400},
 		{"named query", "GET", "/classes/standard?fieldSelector=metadata.name=standard", "", 400},
+		{"unsupported version", "GET", "/classes?version=1.34", "", 400},
+		{"CRUD version", "GET", "/widgets?version=1.34", "", 400},
 		{"invalid name", "GET", "/classes/Bad_Name", "", 400},
 		{"named body", "GET", "/classes/standard", " ", 400},
 		{"list body", "GET", "/classes", strings.Repeat("x", 64), 400},
@@ -116,6 +118,82 @@ func TestReadRegistrationTransport(t *testing.T) {
 		}
 	}
 	require.Equal(t, 2, calls)
+}
+
+func TestCatalogVersionFilterTransport(t *testing.T) {
+	channel := v1.ClusterReleaseChannel{Name: "b", Spec: v1.ClusterReleaseChannelSpec{
+		Releases: map[string]v1.ClusterReleaseReferences{
+			"1.34.4-custom.1": {{Name: "release"}},
+		},
+	}}
+	other := channel
+	other.Name = "c"
+	excluded := v1.ClusterReleaseChannel{Name: "a", Spec: v1.ClusterReleaseChannelSpec{
+		Releases: map[string]v1.ClusterReleaseReferences{"1.35": {{Name: "other-release"}}},
+	}}
+	source := &sourceStub[v1.ClusterReleaseChannel]{
+		items: []v1.ClusterReleaseChannel{other, excluded, channel},
+		named: channel,
+		err:   errors.New("unexpected datastore read"),
+	}
+	reader := &projectedReader[v1.ClusterReleaseChannel, v1.CatalogEntry[v1.ChannelCatalogSpec]]{
+		source: source,
+		project: dependentProjector[v1.ClusterReleaseChannel](func(context.Context) (map[string]v1.ClusterRelease, error) {
+			return map[string]v1.ClusterRelease{
+				"release": {ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{v1.MachineInitKubernetesVersionAnnotation: "1.34.4"},
+				}},
+				"other-release": {ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{v1.MachineInitKubernetesVersionAnnotation: "1.35.1"},
+				}},
+			}, nil
+		}),
+	}
+	mux := http.NewServeMux()
+	Register(mux, "/channels", reader, nil, nil, OpGet, OpList)
+	for _, path := range []string{
+		"/channels?version=", "/channels?version=bad", "/channels/b?version=1.34&version=1.35",
+		"/channels/b?version=1.34.99999999999999999999",
+	} {
+		response := requestHTTP(mux, t.Context(), http.MethodGet, path, "", "")
+		require.Equal(t, http.StatusBadRequest, response.Code, response.Body.String())
+	}
+	source.err = nil
+	response := requestHTTP(mux, t.Context(), http.MethodGet, "/channels/b?version=1.34", "", "")
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	var view v1.CatalogEntry[v1.ChannelCatalogSpec]
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &view))
+	require.Len(t, view.Spec.Versions, 1)
+	require.Equal(t, "1.34.4-custom.1", view.Spec.DefaultVersion)
+
+	response = requestHTTP(mux, t.Context(), http.MethodGet, "/channels?version=1.34&pageSize=1", "", "")
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	var page List[v1.CatalogEntry[v1.ChannelCatalogSpec]]
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &page))
+	require.Len(t, page.Items, 1)
+	require.Equal(t, "b", page.Items[0].GetName(), "excluded channels must not consume page slots")
+	require.True(t, page.HasMore)
+	for _, query := range []string{"version=1.34&pageSize=1&", "version=1.34.4&pageSize=1&", "pageSize=1&"} {
+		response = requestHTTP(mux, t.Context(), http.MethodGet, "/channels?"+query+"pageKey="+page.PageKey, "", "")
+		if strings.HasPrefix(query, "version=1.34&") {
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			var next List[v1.CatalogEntry[v1.ChannelCatalogSpec]]
+			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &next))
+			require.Equal(t, "c", next.Items[0].GetName())
+		} else {
+			require.Equal(t, http.StatusBadRequest, response.Code, "identical results cannot authorize switching filters")
+		}
+	}
+	for _, path := range []string{"/channels/b?version=1.36", "/channels?version=1.36"} {
+		response = requestHTTP(mux, t.Context(), http.MethodGet, path, "", "")
+		if strings.Contains(path, "/b?") {
+			require.Equal(t, http.StatusNotFound, response.Code)
+		} else {
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &page))
+			require.Empty(t, page.Items)
+		}
+	}
 }
 
 func TestReadRegistrationCapabilities(t *testing.T) {

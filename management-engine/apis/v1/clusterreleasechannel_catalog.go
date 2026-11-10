@@ -3,11 +3,44 @@
 package v1
 
 import (
+	"fmt"
+	"regexp"
+	"strings"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/version"
 
 	"github.com/dsx-ai-factory/nvke/management-engine/pkg/projection"
 )
+
+var channelVersionSelectorPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)([.](0|[1-9][0-9]*)([-+._][a-zA-Z0-9][a-zA-Z0-9._+-]*)?)?$`)
+
+// FilterCatalogVersion retains published choices in a minor or patch family, or one exact suffixed choice.
+func (in ClusterReleaseChannel) FilterCatalogVersion(selector string) (ClusterReleaseChannel, error) {
+	if len(selector) > 128 || !channelVersionSelectorPattern.MatchString(selector) {
+		return ClusterReleaseChannel{}, fmt.Errorf("invalid channel version filter")
+	}
+	parsed, err := parseChannelVersion(selector)
+	if err != nil {
+		return ClusterReleaseChannel{}, fmt.Errorf("parse channel version filter: %w", err)
+	}
+	selected := make(map[string]ClusterReleaseReferences)
+	for published, references := range in.Spec.Releases {
+		matches := published == selector
+		if selector == parsed.String() {
+			if len(parsed.Components()) == 2 {
+				matches = matches || strings.HasPrefix(published, selector+".")
+			} else if suffix, found := strings.CutPrefix(published, selector); found && suffix != "" {
+				matches = strings.ContainsRune("-+._", rune(suffix[0]))
+			}
+		}
+		if matches {
+			selected[published] = references
+		}
+	}
+	in.Spec.Releases = selected
+	return in, nil
+}
 
 // ChannelCatalogSpec adds resource-owned derived values to the generated source projection.
 // +kubebuilder:object:generate=false
@@ -17,7 +50,7 @@ type ChannelCatalogSpec struct {
 	Versions                         []ChannelCatalogVersion `json:"versions"`
 }
 
-// ChannelCatalogVersion is a published Kubernetes version selector and its resolved version.
+// ChannelCatalogVersion describes the first discoverable release advertised under a published selector.
 // +kubebuilder:object:generate=false
 type ChannelCatalogVersion struct {
 	Version           string       `json:"version"`
@@ -25,7 +58,7 @@ type ChannelCatalogVersion struct {
 	SupportedUntil    *metav1.Time `json:"supportedUntil,omitempty"`
 }
 
-// CatalogView selects the newest visible, nondeprecated matching release per selector.
+// CatalogView preserves the operator's reference preference within each published selector.
 // An empty channel has no catalog entry. ListVersions determines the default and display order.
 func (in ClusterReleaseChannel) CatalogView(releases map[string]ClusterRelease) (CatalogEntry[ChannelCatalogSpec], bool, error) {
 	view := CatalogEntry[ChannelCatalogSpec]{Metadata: CatalogMetadata{Name: in.Name}}
@@ -39,8 +72,6 @@ func (in ClusterReleaseChannel) CatalogView(releases map[string]ClusterRelease) 
 		if err != nil {
 			return view, false, err
 		}
-		var latestVersion *version.Version
-		var latestRelease ClusterRelease
 		for _, reference := range in.Spec.Releases[selector] {
 			release, found := releases[string(reference.Name)]
 			if !found || !release.DeletionTimestamp.IsZero() || release.Spec.Lifecycle.Hidden || release.Spec.Lifecycle.Deprecated {
@@ -53,16 +84,12 @@ func (in ClusterReleaseChannel) CatalogView(releases map[string]ClusterRelease) 
 			if len(selectorVersion.Components()) == 3 && (parsed.Patch() != selectorVersion.Patch() || parsed.PreRelease() != "") {
 				continue
 			}
-			if latestVersion == nil || parsed.GreaterThan(latestVersion) {
-				latestVersion, latestRelease = parsed, release
-			}
-		}
-		if latestVersion != nil {
 			view.Spec.Versions = append(view.Spec.Versions, ChannelCatalogVersion{
 				Version:           selector,
-				KubernetesVersion: latestVersion.String(),
-				SupportedUntil:    latestRelease.Spec.Lifecycle.SupportedUntil.DeepCopy(),
+				KubernetesVersion: parsed.String(),
+				SupportedUntil:    release.Spec.Lifecycle.SupportedUntil.DeepCopy(),
 			})
+			break
 		}
 	}
 	if len(view.Spec.Versions) == 0 {

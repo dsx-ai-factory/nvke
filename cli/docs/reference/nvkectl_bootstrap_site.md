@@ -71,30 +71,30 @@ nvkectl bootstrap site [flags]
 ### Options
 
 ```
-      --allow-control-plane-without-vip     Permit a multi-node control plane without a VIP and enable the override in the temporary NVKE controller. Development only; replacing the initializing node can break API access.
-      --arch string                         Architecture of the release artifact to use, linux/amd64 or linux/arm64; default: the bootstrap host's, since the bootstrap CAPNICo runs in its Kind cluster. Only with --release.
-      --diagnostics-dir string              Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. With --verbose a successful bootstrap writes them too. Overrides NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR. (default "cluster-diagnostics")
-      --disable-mtls                        Stand the site up without SPIFFE: no SPIRE, and the controller dials node agents in plaintext. The agents must be running with --disable-mtls too. Development only.
-      --dry-run                             Load and validate the site spec and print it, but do not dispatch any workflow
-      --encryption-key-out string           Where to write the finished cluster's etcd encryption key, as a Secret manifest (default: <clusterName>-etcd-encryption-key.json in the working directory)
-  -h, --help                                help for site
-      --keep-bootstrap-cluster              Leave the ephemeral bootstrap Kind cluster running after the command exits, for debugging
-      --kubeconfig-out string               Where to write the finished cluster's admin breakglass kubeconfig (default: <clusterName>.kubeconfig in the working directory)
-      --nvke-controller-image string        NVKE controller image to deploy (overrides NVKECTL_NVKE_CONTROLLER_IMAGE and the manifest default)
-      --otlp-endpoint string                OTLP/gRPC endpoint, a host:port or an http(s):// URL (http implies --otlp-insecure), that receives this run's spans and log records. The temporary controller in the bootstrap cluster exports there too, so a loopback address is rejected
-      --otlp-insecure                       Send to --otlp-endpoint without TLS; requires --otlp-endpoint
-      --provisioned-provider-image string   Provisioned-provider image to deploy (overrides NVKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)
-      --release string                      NVKR release description whose capnico-controller artifact replaces the bootstrap CAPNICo image with its pinned digest, as "render deploy-path --release" does for the management cluster's CAPNICo. The release description is not verified: run "nvkr release verify" on the same reference first. Only with infra.provider nico.
-  -f, --sitespec string                     Path to the site spec YAML file (required)
-      --timeout duration                    How long to wait for the cluster to finish provisioning, which includes every control plane node joining. Overrides NVKECTL_BOOTSTRAP_CLUSTER_TIMEOUT. (default 30m0s)
+      --allow-control-plane-without-vip[=true|false]   Permit a multi-node control plane without a VIP and enable the override in the temporary NVKE controller. Development only; replacing the initializing node can break API access.
+      --arch string                                    Architecture of the release artifact to use, linux/amd64 or linux/arm64; default: the bootstrap host's, since the bootstrap CAPNICo runs in its Kind cluster. Only with --release.
+      --diagnostics-dir string                         Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. With --verbose a successful bootstrap writes them too. Overrides NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR. (default "cluster-diagnostics")
+      --disable-mtls[=true|false]                      Stand the site up without SPIFFE: no SPIRE, and the controller dials node agents in plaintext. The agents must be running with --disable-mtls too. Development only.
+      --dry-run[=true|false]                           Load and validate the site spec and print it, but do not dispatch any workflow
+      --encryption-key-out string                      Where to write the finished cluster's etcd encryption key, as a Secret manifest (default: <clusterName>-etcd-encryption-key.json in the working directory)
+  -h, --help[=true|false]                              help for site
+      --keep-bootstrap-cluster[=true|false]            Leave the ephemeral bootstrap Kind cluster running after the command exits, for debugging
+      --kubeconfig-out string                          Where to write the finished cluster's admin breakglass kubeconfig (default: <clusterName>.kubeconfig in the working directory)
+      --nvke-controller-image string                   NVKE controller image to deploy (overrides NVKECTL_NVKE_CONTROLLER_IMAGE and the manifest default)
+      --otlp-endpoint string                           OTLP/gRPC endpoint, a host:port or an http(s):// URL (http implies --otlp-insecure), that receives this run's spans and log records. The temporary controller in the bootstrap cluster exports there too, so a loopback address is rejected
+      --otlp-insecure[=true|false]                     Send to --otlp-endpoint without TLS; requires --otlp-endpoint
+      --provisioned-provider-image string              Provisioned-provider image to deploy (overrides NVKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)
+      --release string                                 NVKR release description whose capnico-controller artifact replaces the bootstrap CAPNICo image with its pinned digest, as "render deploy-path --release" does for the management cluster's CAPNICo. The release description is not verified: run "nvkr release verify" on the same reference first. Only with infra.provider nico.
+  -f, --sitespec string                                Path to the site spec YAML file (required)
+      --timeout duration                               How long to wait for the cluster to finish provisioning, which includes every control plane node joining. Overrides NVKECTL_BOOTSTRAP_CLUSTER_TIMEOUT. (default 30m0s)
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --json-logs     Emit logs as JSON
-      --site string   Override the active site for this invocation
-  -v, --verbose       Enable debug logging
+      --json-logs[=true|false]   Emit logs as JSON
+      --site string              Override the active site for this invocation
+  -v, --verbose[=true|false]     Enable debug logging
 ```
 
 ### SEE ALSO
