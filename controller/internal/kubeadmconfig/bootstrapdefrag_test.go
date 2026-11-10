@@ -71,6 +71,43 @@ func TestMergeBootstrapDefragIntoClusterConfiguration(t *testing.T) {
 		assert.Contains(t, string(merged), "etcd-compaction-interval: 5m")
 	})
 
+	// An operator may pin an etcd that the Kubernetes version does not imply,
+	// to work around a defect. Inferring from kubernetesVersion here would hand
+	// etcd 3.5 a flag it exits on, so the pinned tag has to win.
+	t.Run("a pinned etcd 3.5 suppresses the threshold above the k8s floor", func(t *testing.T) {
+		raw := clusterConfigurationFixture("kubeadm.k8s.io/v1beta3", "v1.34.2", `etcd:
+  local:
+    dataDir: /var/lib/etcd
+    imageTag: 3.5.21-0
+    extraArgs:
+      quota-backend-bytes: "17179869184"
+`)
+
+		merged, changed, err := MergeBootstrapDefragIntoClusterConfiguration(raw)
+		require.NoError(t, err)
+		assert.True(t, changed)
+		assert.NotContains(t, string(merged), "bootstrap-defrag-threshold-megabytes")
+		assert.Contains(t, string(merged), "etcd-compaction-interval: 5m")
+		assert.Contains(t, string(merged), "imageTag: 3.5.21-0", "the pin must survive the merge")
+	})
+
+	// The opposite pin, which the k8s version alone would wrongly refuse.
+	t.Run("a pinned etcd 3.6 earns the threshold below the k8s floor", func(t *testing.T) {
+		raw := clusterConfigurationFixture("kubeadm.k8s.io/v1beta4", "v1.33.6", `etcd:
+  local:
+    dataDir: /var/lib/etcd
+    imageTag: 3.6.5-0
+    extraArgs:
+    - name: quota-backend-bytes
+      value: "17179869184"
+`)
+
+		merged, changed, err := MergeBootstrapDefragIntoClusterConfiguration(raw)
+		require.NoError(t, err)
+		assert.True(t, changed)
+		assert.Contains(t, string(merged), "- name: bootstrap-defrag-threshold-megabytes\n      value: \"200\"")
+	})
+
 	t.Run("external etcd has no local member to configure", func(t *testing.T) {
 		raw := clusterConfigurationFixture("kubeadm.k8s.io/v1beta3", "v1.34.2",
 			"etcd:\n  external:\n    endpoints:\n    - https://10.0.0.1:2379\n")
@@ -80,6 +117,25 @@ func TestMergeBootstrapDefragIntoClusterConfiguration(t *testing.T) {
 		assert.True(t, changed)
 		assert.NotContains(t, string(merged), "bootstrap-defrag-threshold-megabytes")
 		assert.Contains(t, string(merged), "etcd-compaction-interval: 5m")
+	})
+
+	// A threshold already present with a different value is reconciled to ours
+	// rather than left alone. Unlike the etcd image tag, this flag is the
+	// controller's own setting, so converging it is the reconciler's job.
+	t.Run("an existing threshold is reconciled to the controller's value", func(t *testing.T) {
+		raw := clusterConfigurationFixture("kubeadm.k8s.io/v1beta3", "v1.34.2", `etcd:
+  local:
+    dataDir: /var/lib/etcd
+    extraArgs:
+      bootstrap-defrag-threshold-megabytes: "2048"
+      quota-backend-bytes: "17179869184"
+`)
+
+		merged, changed, err := MergeBootstrapDefragIntoClusterConfiguration(raw)
+		require.NoError(t, err)
+		assert.True(t, changed)
+		assert.Contains(t, string(merged), "bootstrap-defrag-threshold-megabytes: \"200\"")
+		assert.NotContains(t, string(merged), "\"2048\"")
 	})
 
 	// Idempotence is what lets the caller skip the ConfigMap write, so a
@@ -102,11 +158,14 @@ func TestSupportsBootstrapDefrag(t *testing.T) {
 	tests := []struct {
 		name              string
 		kubernetesVersion string
+		etcdImageTag      string
 		want              bool
 	}{
+		// No pinned image: the Kubernetes version stands in for the etcd that
+		// kubeadm would default to.
 		{name: "well below the floor", kubernetesVersion: "v1.31.0", want: false},
-		{name: "last release shipping etcd 3.5", kubernetesVersion: "v1.33.6", want: false},
-		{name: "first release shipping etcd 3.6", kubernetesVersion: "v1.34.0", want: true},
+		{name: "last release defaulting to etcd 3.5", kubernetesVersion: "v1.33.6", want: false},
+		{name: "first release defaulting to etcd 3.6", kubernetesVersion: "v1.34.0", want: true},
 		{name: "patch release above the floor", kubernetesVersion: "v1.34.2", want: true},
 		{name: "later minor", kubernetesVersion: "v1.36.0", want: true},
 		{name: "version without the v prefix", kubernetesVersion: "1.34.0", want: true},
@@ -116,11 +175,54 @@ func TestSupportsBootstrapDefrag(t *testing.T) {
 		// on restart; the other direction crashloops it.
 		{name: "empty version", kubernetesVersion: "", want: false},
 		{name: "unparseable version", kubernetesVersion: "not-a-version", want: false},
+
+		// A pinned image tag overrides the inference in both directions. The
+		// Kubernetes-to-etcd mapping is kubeadm's default, not a constraint,
+		// and both pairings below are wire-compatible.
+		{
+			name:              "etcd 3.5 pinned on a release that would default to 3.6",
+			kubernetesVersion: "v1.34.2",
+			etcdImageTag:      "3.5.21-0",
+			want:              false,
+		},
+		{
+			name:              "etcd 3.6 pinned on a release that would default to 3.5",
+			kubernetesVersion: "v1.33.6",
+			etcdImageTag:      "3.6.5-0",
+			want:              true,
+		},
+		{
+			name:              "pinned tag at the etcd floor exactly",
+			kubernetesVersion: "v1.31.0",
+			etcdImageTag:      "3.6.0",
+			want:              true,
+		},
+		{
+			name:              "pinned tag just below the etcd floor",
+			kubernetesVersion: "v1.34.2",
+			etcdImageTag:      "3.5.24-0",
+			want:              false,
+		},
+		{
+			name:              "pinned tag with a v prefix",
+			kubernetesVersion: "v1.33.6",
+			etcdImageTag:      "v3.6.5-0",
+			want:              true,
+		},
+		// A tag we cannot read is the dangerous case: guessing from the
+		// Kubernetes version here would be exactly the override this gate
+		// exists to avoid, so it refuses instead.
+		{
+			name:              "unparseable tag refuses rather than falling back",
+			kubernetesVersion: "v1.34.2",
+			etcdImageTag:      "latest",
+			want:              false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, supportsBootstrapDefrag(tt.kubernetesVersion))
+			assert.Equal(t, tt.want, supportsBootstrapDefrag(tt.kubernetesVersion, tt.etcdImageTag))
 		})
 	}
 }

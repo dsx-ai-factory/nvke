@@ -6,6 +6,7 @@ package kubeadmconfig
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -215,26 +216,47 @@ func needsAuthenticationConfig(kubernetesVersion string, oidc *OIDCAuthenticatio
 	return oidc != nil || supportsAnonymousAuthConfig(kubernetesVersion)
 }
 
-// bootstrapDefragMinVersion is the first release shipping an etcd that accepts
+// bootstrapDefragMinVersion is the first release whose *default* etcd accepts
 // --bootstrap-defrag-threshold-megabytes. Kubernetes 1.34 moves kubeadm's
 // default etcd from 3.5.24 to 3.6.5, and 3.6 is where the flag loses its
 // --experimental- prefix.
+//
+// This is only the fallback for a configuration that does not pin an etcd
+// image; a pinned tag is authoritative. See supportsBootstrapDefrag.
 //
 // It shares a number with anonymousAuthConfigMinVersion and nothing else; the
 // two floors are independent and must not be collapsed.
 func bootstrapDefragMinVersion() *version.Version { return version.MustParseGeneric("1.34.0") }
 
-// supportsBootstrapDefrag reports whether kubernetesVersion ships an etcd that
-// understands the stable bootstrap-defrag flag.
+// etcdBootstrapDefragMinVersion is the first etcd release accepting the stable
+// flag. 3.5 takes only --experimental-bootstrap-defrag-threshold-megabytes.
+func etcdBootstrapDefragMinVersion() *version.Version { return version.MustParseGeneric("3.6.0") }
+
+// supportsBootstrapDefrag reports whether the configured etcd understands the
+// stable bootstrap-defrag flag.
 //
-// An unparseable version yields false, matching the other gates in this file
-// and for a sharper reason than theirs: etcd 3.5 does not ignore the stable
-// spelling, it refuses to start. flagSet.Parse fails on an unknown flag and etcd
-// exits 2 before serving, so a static pod that receives this flag too early
-// crashloops its member. Omitting the flag only means that member defragments
-// on recycle rather than on restart, which is the state every cluster is in
-// today.
-func supportsBootstrapDefrag(kubernetesVersion string) bool {
+// An explicit etcdImageTag settles it, and kubernetesVersion is consulted only
+// when there is none. The Kubernetes-to-etcd mapping is kubeadm's default, not
+// a constraint: etcd 3.5 on Kubernetes 1.34 and etcd 3.6 on 1.33 are both
+// wire-compatible pairings an operator may choose deliberately to work around
+// a defect, and an inference drawn from the Kubernetes version must not
+// override a version they pinned themselves.
+//
+// Either input being unparseable yields false, and the asymmetry is why: etcd
+// 3.5 does not ignore the stable spelling, it refuses to start. flagSet.Parse
+// fails on an unknown flag and etcd exits 2 before serving, so a static pod
+// that receives this flag too early crashloops its member. Withholding it only
+// means that member defragments on recycle rather than on restart.
+func supportsBootstrapDefrag(kubernetesVersion, etcdImageTag string) bool {
+	if etcdImageTag != "" {
+		// Image tags carry a packaging suffix, as in 3.6.5-0.
+		etcdVersion, err := version.ParseGeneric(strings.SplitN(etcdImageTag, "-", 2)[0])
+		if err != nil {
+			return false
+		}
+		return !etcdVersion.LessThan(etcdBootstrapDefragMinVersion())
+	}
+
 	parsed, err := version.ParseGeneric(kubernetesVersion)
 	if err != nil {
 		return false

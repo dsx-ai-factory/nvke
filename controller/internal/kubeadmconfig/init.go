@@ -215,7 +215,11 @@ func etcdExtraArgs(config *InitConfig) map[string]string {
 		"auto-compaction-retention":   defaultAutoCompactionRetention,
 		"listen-metrics-urls":         defaultListenMetricsURLs,
 	}
-	if supportsBootstrapDefrag(config.KubernetesVersion) {
+	// No etcd image tag: this renderer never sets LocalEtcd.ImageTag, so a
+	// greenfield cluster always runs kubeadm's default etcd for its Kubernetes
+	// version and the inference is exact. Only a persisted configuration an
+	// operator has edited can pin one.
+	if supportsBootstrapDefrag(config.KubernetesVersion, "") {
 		args[etcdBootstrapDefragThresholdFlagName] = defaultBootstrapDefragThresholdMegabytes
 	}
 	return args

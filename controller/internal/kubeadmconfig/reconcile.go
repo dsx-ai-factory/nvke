@@ -79,9 +79,10 @@ func EnsureKubernetesVersionInClusterConfiguration(ctx context.Context, c client
 // that the next control-plane node to join comes back carrying them.
 //
 // Run this after EnsureKubernetesVersionInClusterConfiguration, never before.
-// The bootstrap-defrag threshold is gated on the kubernetesVersion recorded in
-// the document, so on an upgrade into 1.34 the two have to land in that order
-// or the threshold waits for the following upgrade to notice it is eligible.
+// A cluster that pins no etcd image has its threshold gated on the
+// kubernetesVersion recorded in the document, so on an upgrade into 1.34 the
+// two have to land in that order or the threshold waits for the following
+// upgrade to notice it is eligible.
 func EnsureBootstrapDefragInClusterConfiguration(ctx context.Context, c client.Client) (bool, error) {
 	return reconcileClusterConfiguration(ctx, c, "merging etcd defragmentation settings", MergeBootstrapDefragIntoClusterConfiguration, false)
 }

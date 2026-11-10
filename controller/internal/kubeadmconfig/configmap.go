@@ -148,11 +148,12 @@ func mergeOIDCV1beta4(clusterConfigYAML []byte) ([]byte, bool, error) {
 // the merge a recycled node on an existing cluster comes back exactly as
 // unmigrated as it left, however many times it is replaced.
 //
-// The threshold is gated on the document's own kubernetesVersion rather than a
-// value passed in, and that is load-bearing rather than incidental: the same
-// field selects the etcd image kubeadm renders, so gating on it means the flag
-// cannot be written for an etcd that would reject it and crashloop. A caller
-// changing both must set the version first; see
+// The threshold is gated on the document's own contents rather than on a value
+// passed in, so the flag cannot be written for an etcd that would reject it and
+// crashloop. The gate reads this document's etcd imageTag when it has one and
+// falls back to its kubernetesVersion when it does not, because an operator may
+// pin an etcd that the Kubernetes version would not imply. A caller changing the
+// version must set it before calling this; see
 // EnsureBootstrapDefragInClusterConfiguration.
 //
 // A cluster with external etcd has no local member to configure and gets the
@@ -174,7 +175,7 @@ func MergeBootstrapDefragIntoClusterConfiguration(clusterConfigYAML []byte) ([]b
 		cc.APIServer.ExtraArgs = args
 
 		thresholdChanged := false
-		if cc.Etcd.Local != nil && supportsBootstrapDefrag(cc.KubernetesVersion) {
+		if cc.Etcd.Local != nil && supportsBootstrapDefrag(cc.KubernetesVersion, cc.Etcd.Local.ImageTag) {
 			etcdArgs, changed := setArgV1beta3(
 				cc.Etcd.Local.ExtraArgs,
 				etcdBootstrapDefragThresholdFlagName,
@@ -195,7 +196,7 @@ func MergeBootstrapDefragIntoClusterConfiguration(clusterConfigYAML []byte) ([]b
 		cc.APIServer.ExtraArgs = args
 
 		thresholdChanged := false
-		if cc.Etcd.Local != nil && supportsBootstrapDefrag(cc.KubernetesVersion) {
+		if cc.Etcd.Local != nil && supportsBootstrapDefrag(cc.KubernetesVersion, cc.Etcd.Local.ImageTag) {
 			etcdArgs, changed := upsertArgV1beta4(
 				cc.Etcd.Local.ExtraArgs,
 				etcdBootstrapDefragThresholdFlagName,
