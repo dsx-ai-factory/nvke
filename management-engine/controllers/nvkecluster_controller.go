@@ -441,12 +441,11 @@ func (r *NVKEClusterReconciler) getPinnedNodePoolRelease(ctx context.Context, po
 }
 
 func (r *NVKEClusterReconciler) matchNodePoolRelease(ctx context.Context, pool *internalv1.NodePool) (*internalv1.NodePoolRelease, error) {
-	profile, tag, err := splitNodeProfile(pool.NodeProfile)
-	if err != nil {
+	if _, _, err := splitNodeProfile(pool.NodeProfile); err != nil {
 		return nil, fmt.Errorf("resolve node profile: %w", err)
 	}
 	var list internalv1.NodePoolReleaseList
-	if err := r.List(ctx, &list, client.MatchingFields{nodePoolReleaseProfileTagField: profile + ":" + tag}); err != nil {
+	if err := r.List(ctx, &list, client.MatchingFields{nodePoolReleaseProfileTagField: string(pool.NodeProfile)}); err != nil {
 		return nil, fmt.Errorf("list NodePoolReleases for node profile %q: %w", pool.NodeProfile, err)
 	}
 	matches := make([]*internalv1.NodePoolRelease, 0, len(list.Items))
