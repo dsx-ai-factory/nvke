@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # GPU Operator values for nodes whose driver is Mokka's nvml-mock, from Mokka's
-# GPU Operator guide (https://nvidia.github.io/k8s-test-infra/guides/gpu-operator/).
-# Mokka is the driver and runtime, so the operator's driver and toolkit are off and
-# CDI carries the devices. The CUDA validator does not launch a kernel: Mokka does
-# not simulate CUDA.
+# GPU Operator guide (https://nvidia.github.io/k8s-test-infra/guides/gpu-operator/),
+# with dcgm-exporter off since nothing reads it. Mokka is the driver and runtime,
+# so the driver and toolkit are off and CDI carries the devices. The CUDA validator
+# launches no kernel: Mokka does not simulate CUDA.
 driver:
   enabled: false
 toolkit:
@@ -35,10 +35,7 @@ gfd:
       value: "/etc/nvml-mock/machine-type"
 
 dcgmExporter:
-  enabled: true
-  env:
-    - name: DCGM_EXPORTER_COLLECT_INTERVAL
-      value: "5000"
+  enabled: false
 
 validator:
   driver:

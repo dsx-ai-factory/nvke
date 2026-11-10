@@ -431,7 +431,7 @@ docker exec "${runner_name}" mkdir -p /state
 docker cp "${e2e_binary}" "${runner_name}:/state/cwe-e2e.test"
 docker cp "${internal_kubeconfig}" "${runner_name}:/state/management.kubeconfig"
 docker cp "${e2e_config}" "${runner_name}:/state/e2e-config.json"
-# The Mokka entry installs charts on its tenant with helm. In CI the helm on PATH
+# The Mokka checks install charts on their tenant with helm. In CI the helm on PATH
 # is hack/ci/helm-dockerhub-mirror.sh, which needs bash, so copy the binary behind it.
 for helm_bin in helm-real helm; do
   if command -v "${helm_bin}" >/dev/null; then

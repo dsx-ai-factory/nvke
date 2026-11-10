@@ -9,7 +9,7 @@
 set -euo pipefail
 
 repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-# Shared with the e2e suite's CAPD Mokka entry, which embeds it.
+# Shared with the e2e suite, which embeds it.
 values="${repo}/controller/test/e2e/testdata/mokka-gpu-operator-values.yaml"
 
 CLUSTER="${CLUSTER:?set CLUSTER to the NVKE workload cluster name}"

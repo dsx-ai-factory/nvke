@@ -46,7 +46,7 @@ It runs against any NVKE site, for example a DSX OS Simulator site or the [local
 
 ## In CI
 
-The e2e suite's `CAPD Mokka` entry (`controller/test/e2e/tenant_test.go`, labels `capd` and `mokka`) runs the same checks in Go, on a CAPD cluster created with a worker pool that carries the label. CAPD E2E runs it on pull requests, on `main` and on its schedule, on CPU runners. To run only that entry against a local stack:
+The e2e suite's `CAPD core` entry (`controller/test/e2e/tenant_test.go`) runs the same checks in Go on its labeled worker, in the pull-request E2E runs on CPU runners. To run only that entry against a local stack:
 
 ```bash
 cd controller
