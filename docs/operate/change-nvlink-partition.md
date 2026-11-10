@@ -17,12 +17,20 @@ A node pool update with `nico.nvLinkLogicalPartitionID` changes the pool's node 
 1. Send the update to the pool.
 
    ```bash
-   curl -X PATCH "<API_URL>/api/nodePools/<NODE_POOL_ID>" \
+   curl -sS --fail-with-body -X PATCH "<API_URL>/api/nodePools/<NODE_POOL_ID>" \
      -H 'Content-Type: application/json' \
      -d '{"nico": {"nvLinkLogicalPartitionID": "<NVLINK_LOGICAL_PARTITION_ID>"}}'
    ```
 
    If API authentication is on, add the `Authorization` header as described in [Manage node pools](../workload-clusters/node-pools.md). The response is the updated pool in JSON, with the new `nvLinkLogicalPartitionID` in `nico`. The all-zero UUID returns 400.
+
+   If `curl` reports an error, do not continue until the pool has the new partition. A timeout or a dropped connection can come after the update is saved, so read the pool first:
+
+   ```bash
+   curl -sS "<API_URL>/api/nodePools/<NODE_POOL_ID>" | jq -r '.nico.nvLinkLogicalPartitionID'
+   ```
+
+   If the output is not the new partition, correct the request and send it again. Otherwise the nodes the pool creates from then on do not get the partition, even after you attach the existing nodes.
 
 2. Decide what happens to the existing nodes. They keep their partition, and the pool's settings decide whether NVKE marks them for replacement:
 
@@ -39,7 +47,7 @@ A node pool update with `nico.nvLinkLogicalPartitionID` changes the pool's node 
 Update the NICo instance of each existing node. NICo:
 
 - accepts the update only while the instance is `Ready`, so a node that is still provisioning returns 400 until it is;
-- replaces all of the instance's NVLink interfaces with the ones you send;
+- replaces all of the instance's NVLink interfaces with the ones you send, and keeps the ones that already match;
 - rejects the update if the VPC has a default NVLink logical partition and the instance already has NVLink interfaces.
 
 While NICo applies the change the instance is `Configuring`, and workloads on the node that use NVLink can be interrupted. Drain the node first if that matters.
@@ -87,10 +95,21 @@ Send one interface per GPU of the instance type, with `deviceInstance` from 0 to
 
    A machine in the second list is still creating its instance, with the partition of the configuration it belongs to. If that is the earlier configuration, repeat this procedure for it once it has a provider ID.
 
-4. Update each instance. The loop prints the status code of each update, and the response body of any update that did not return 200.
+4. Update each instance that is not already on the partition. Nodes that the pool created after the update, such as surge nodes, already are. The loop prints `skip` for those, `read failed` with the response body for an instance it cannot read, the status code of each update, and the response body of any update that did not return 200.
 
    ```bash
    while read -r instance; do
+     rm -f instance.json
+     if ! curl -sS --fail-with-body -o instance.json "${NICO_API}/instance/${instance}" -H @"${NICO_AUTH}"; then
+       echo "read failed ${instance}"; cat instance.json 2>/dev/null; echo; continue
+     fi
+     jq -e --arg p "${PARTITION}" --argjson n "${GPUS}" \
+       '[.nvLinkInterfaces[]?.nvLinkLogicalPartitionId] | length == $n and all(. == $p)' instance.json > /dev/null
+     case $? in
+       0) echo "skip ${instance}"; continue ;;
+       1) ;;
+       *) echo "read failed ${instance}"; cat instance.json; echo; continue ;;
+     esac
      code="$(curl -sS -o response.json -w '%{http_code}' -X PATCH "${NICO_API}/instance/${instance}" \
        -H @"${NICO_AUTH}" -H "Content-Type: application/json" -d "${BODY}")"
      echo "${code} ${instance}"
@@ -98,7 +117,7 @@ Send one interface per GPU of the instance type, with `deviceInstance` from 0 to
    done < instances.txt
    ```
 
-   Read the response body before you run the loop again for an instance. A server error or a timeout can succeed on a retry, and so can a 400 for an instance that was not yet `Ready`. A 400 because the VPC has a default NVLink logical partition fails again on every retry while the VPC keeps that partition. An update with the same partition replaces the interfaces with the same ones, so repeating a successful update is safe.
+   Read the response body before you run the loop again for an instance. A server error or a timeout can succeed on a retry, and so can a 400 for an instance that was not yet `Ready`. A 400 because the VPC has a default NVLink logical partition fails again on every retry while the VPC keeps that partition. Every update moves the instance to `Configuring`, even one that changes no interface, so the loop skips instances that are already on the partition. Run the loop again for an instance it could not read.
 
 ## Verify
 
