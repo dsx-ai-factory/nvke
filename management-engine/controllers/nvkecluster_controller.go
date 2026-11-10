@@ -358,17 +358,21 @@ func (r *NVKEClusterReconciler) resolveClusterRelease(ctx context.Context, clust
 		}
 	}
 
-	// Resolve the matching k8s version to use or upgrade
+	// Resolve the allowed k8s versions we can use in the channel
 	matchingVersions := make(map[string]*version.Version)
 	for key := range channel.Spec.Releases {
-		if versionUpgradeStrategy == upgradePinned {
-			if key != selection.Version {
-				continue
-			}
-		}
 		parsed, err := version.Parse(key)
 		if err != nil {
 			return nil, fmt.Errorf("parse channel %q version %q: %w", channel.Name, key, err)
+		}
+		if versionUpgradeStrategy == upgradePinned {
+			if !parsed.EqualTo(requestedVersion) {
+				continue
+			}
+			// EqualTo ignores build metadata, but an exact pin must match it.
+			if parsed.BuildMetadata() != requestedVersion.BuildMetadata() {
+				continue
+			}
 		}
 		if requestedVersion != nil {
 			if parsed.Major() != requestedVersion.Major() {
@@ -389,6 +393,7 @@ func (r *NVKEClusterReconciler) resolveClusterRelease(ctx context.Context, clust
 		matchingVersions[key] = parsed
 	}
 
+	// Sort the versions
 	channelVersions := slices.SortedFunc(maps.Keys(matchingVersions), func(a, b string) int {
 		if matchingVersions[a].GreaterThan(matchingVersions[b]) {
 			return -1
@@ -399,7 +404,7 @@ func (r *NVKEClusterReconciler) resolveClusterRelease(ctx context.Context, clust
 		return strings.Compare(a, b)
 	})
 
-	// Resolve the latest eligible release in the selected k8s version
+	// Resolve the latest eligible release from the sorted list of k8s versions
 	for _, channelVersion := range channelVersions {
 		for _, candidate := range channel.Spec.Releases[channelVersion] {
 			var release internalv1.ClusterRelease
