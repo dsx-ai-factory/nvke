@@ -61,8 +61,8 @@ docs/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @danbudris @jedimt
 
 # area/nktp — the NKTP telemetry chart and its workflows. After ci-build so
 # the workflow glob wins over /.github/ for nktp-*.yml.
-/nktp/ @dsx-ai-factory/nvke-write @vineeth-bandi
-/.github/workflows/nktp-*.yml @dsx-ai-factory/nvke-write @vineeth-bandi
+/nktp/ @dsx-ai-factory/nvke-write @dsx-ai-factory/nktp-maintainers
+/.github/workflows/nktp-*.yml @dsx-ai-factory/nvke-write @dsx-ai-factory/nktp-maintainers
 
 # area/deps again: dependabot.yml beats /.github/.
 /.github/dependabot.yml @dsx-ai-factory/nvke-write @TerryHowe @rbever-nvidia
