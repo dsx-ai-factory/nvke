@@ -10,7 +10,8 @@
 {{- $roles := list
   (dict "file" "roles/role" "kind" "ClusterRole" "subjects" $subjects "namespace" $namespace "suffix" "manager-role")
   (dict "file" "roles/leader_election_role" "kind" "Role" "subjects" $subjects "namespace" $namespace "suffix" "leader-election-role") }}
-{{- if and .Values.metrics.enabled .Values.metrics.secure }}
+{{- $localMetrics := and .Values.controller.enabled .Values.manager.enabled (eq .Values.manager.stateAccess.mode "inCluster") .Values.metrics.enabled .Values.metrics.secure }}
+{{- if or $localMetrics .Values.state.rbac.metricsAuth }}
 {{- $roles = append $roles (dict "file" "roles/metrics_auth_role" "kind" "ClusterRole" "subjects" $subjects "namespace" $namespace "suffix" "metrics-auth-role") }}
 {{- end }}
 {{- range .Values.state.rbac.tenantAPIBindings }}

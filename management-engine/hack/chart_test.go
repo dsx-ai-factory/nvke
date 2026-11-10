@@ -220,6 +220,53 @@ func TestChartModes(t *testing.T) {
 	}
 }
 
+func TestChartMetricsAuthenticationPermissions(t *testing.T) {
+	for _, tc := range []struct {
+		name, values string
+		wantAuth     bool
+	}{
+		{"combined secure metrics", `{"manager":{"infrastructureTemplateConfigMap":"infra"}}`, true},
+		{"combined metrics disabled", `{
+  "manager":{"infrastructureTemplateConfigMap":"infra"}, "metrics":{"enabled":false}
+}`, false},
+		{"combined insecure metrics", `{
+  "manager":{"infrastructureTemplateConfigMap":"infra"}, "metrics":{"secure":false}
+}`, false},
+		{"state only", `{"controller":{"enabled":false}}`, false},
+		{"manager disabled", `{"manager":{"enabled":false}}`, false},
+		{"state explicit authentication", `{
+  "controller":{"enabled":false},
+  "state":{"rbac":{
+    "metricsAuth":true,
+    "subjects":[{"kind":"User","name":"remote-manager","apiGroup":"rbac.authorization.k8s.io"}]
+  }}
+}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			objects, output, err := renderChart(t, tc.values)
+			if err != nil {
+				t.Fatalf("render: %v\n%s", err, output)
+			}
+			found := false
+			for _, role := range objectsOfKind(objects, "ClusterRole") {
+				rules, _, _ := unstructured.NestedSlice(role.Object, "rules")
+				for _, raw := range rules {
+					rule := raw.(map[string]any)
+					resources, _, _ := unstructured.NestedStringSlice(rule, "resources")
+					for _, resource := range resources {
+						if resource == "tokenreviews" || resource == "subjectaccessreviews" {
+							found = true
+						}
+					}
+				}
+			}
+			if found != tc.wantAuth {
+				t.Fatalf("metrics authentication permissions present=%t, want %t", found, tc.wantAuth)
+			}
+		})
+	}
+}
+
 func TestChartStateConfiguration(t *testing.T) {
 	values := `{
   "controller": {
@@ -533,6 +580,40 @@ func TestChartExamples(t *testing.T) {
 			output, err := exec.Command(helm, args...).CombinedOutput()
 			if err != nil {
 				t.Fatalf("%v\n%s", err, output)
+			}
+			if sample == "state-values.yaml" || sample == "remote-controller-values.yaml" {
+				decoder := yamlutil.NewYAMLOrJSONDecoder(bytes.NewReader(output), 4096)
+				crds := map[string]bool{}
+				for {
+					var object unstructured.Unstructured
+					if err := decoder.Decode(&object); err == io.EOF {
+						break
+					} else if err != nil {
+						t.Fatal(err)
+					}
+					if sample == "state-values.yaml" && object.GetKind() == "CustomResourceDefinition" {
+						crds[object.GetName()] = true
+					}
+					if sample == "remote-controller-values.yaml" {
+						if object.GetKind() == "Service" || object.GetKind() == "ServiceMonitor" {
+							t.Fatalf("remote example unexpectedly enables metrics: %s", object.GetKind())
+						}
+						if object.GetKind() == "Deployment" {
+							containers, _, _ := unstructured.NestedSlice(object.Object, "spec", "template", "spec", "containers")
+							args, _, _ := unstructured.NestedStringSlice(containers[0].(map[string]any), "args")
+							if !strings.Contains(strings.Join(args, " "), "--metrics-bind-address=0") {
+								t.Fatal("remote example must disable the metrics listener")
+							}
+						}
+					}
+				}
+				if sample == "state-values.yaml" {
+					for _, kind := range []string{"machineimages", "clusterreleases", "nodepoolreleases"} {
+						if !crds[kind+".internal.nvke.nvidia.com"] {
+							t.Fatalf("standalone state example missing catalog CRD %s", kind)
+						}
+					}
+				}
 			}
 			if sample == "runtime-values.yaml" {
 				decoder := yamlutil.NewYAMLOrJSONDecoder(bytes.NewReader(output), 4096)

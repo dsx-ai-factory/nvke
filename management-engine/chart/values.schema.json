@@ -47,6 +47,9 @@
         "rbac": {
           "type": "object",
           "properties": {
+            "metricsAuth": {
+              "type": "boolean"
+            },
             "subjects": {
               "$ref": "#/definitions/subjects"
             },

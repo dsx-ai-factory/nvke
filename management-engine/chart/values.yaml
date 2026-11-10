@@ -12,13 +12,16 @@
 # Both components share one chart. Disable state for an existing datastore.
 state:
   enabled: true
-  # Management Engine-specific schemas; catalog ownership is configured separately.
+  # Cluster Service-specific schemas; catalog ownership is configured separately.
   crds:
     install: true
   namespace: ""
   # Empty uses the local manager ServiceAccount in a combined installation.
   # State-only installations can bind existing ServiceAccounts or Kubernetes Users.
   rbac:
+    # Separate state release: explicitly grant TokenReview/SubjectAccessReview.
+    # Combined local installs derive this from enabled secure metrics.
+    metricsAuth: false
     subjects: []
     # Optional state-side permissions for existing API identities.
     tenantAPIBindings: []

@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# DSX combined installation: replace endpoint, registry and tenant inputs for the site.
+# DSX CSC: Cluster Service, its APIs, datastore and NVKE controller share a cluster.
+# Reuse the NVKE controller-owned catalog; replace site image, endpoint and tenant inputs.
 manager:
   image:
     repository: registry.example.invalid/platform/management-engine

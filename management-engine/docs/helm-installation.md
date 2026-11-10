@@ -1,6 +1,6 @@
-# Install Management Engine with Helm
+# Install Cluster Service with Helm
 
-The `management-engine` chart packages the manager and its datastore resources.
+The `management-engine` chart packages Cluster Service and its datastore resources.
 Both are enabled by default in the same Kubernetes cluster. An existing NVKE
 controller provides the provisioning REST API used by the manager.
 
@@ -47,7 +47,11 @@ as `/etc/nvke-controller/auth/token` and sets the corresponding argument. The
 Secret must already exist in the runtime namespace. An example credential overlay
 is in `config/samples/nvke-controller-values.yaml`.
 
-For a DSX CSC render, merge the working template example with site settings:
+For DSX, the intended CSC deployment co-locates Cluster Service and its APIs,
+the datastore and the existing NVKE controller in the same cluster. This uses
+local ServiceAccount access and reuses the catalog CRDs owned by the NVKE
+controller. Split installations remain available for other deployment needs.
+Merge the working template example with site settings:
 
 ```sh
 helm template cluster-service chart --namespace cluster-service-system \
@@ -76,6 +80,10 @@ Render state on its destination cluster:
 helm template management-engine-state chart --namespace management-state-system \
   -f config/samples/state-values.yaml > state.yaml
 ```
+
+The state sample enables the three catalog CRDs as well as the three Cluster
+Service CRDs for a fresh datastore. Set `nvke-crds.enabled=false` when the NVKE
+controller or a dedicated catalog release already owns them on that cluster.
 
 Set `state.rbac.subjects` to the manager's actual identity. Local identities
 use a ServiceAccount name and namespace. An authenticated external SPIFFE
@@ -117,10 +125,34 @@ Any overridden namespace must exist. Rendering validates references and namespac
 agreement; external objects and caller permissions require installation checks.
 
 Secure manager metrics use the datastore API for TokenReview and
-SubjectAccessReview. The state release includes those permissions when
-`metrics.enabled` and `metrics.secure` are true. Configure those settings
-consistently for separate releases. Scraper identity and reachability are
-operator configuration; disable metrics until they are configured.
+SubjectAccessReview. Combined local installations grant these permissions when
+secure metrics are enabled. A separate state release grants them only when
+`state.rbac.metricsAuth=true`; bind the manager identity through
+`state.rbac.subjects`. This grants the manager permission to check requests;
+the scraper separately needs permission to GET `/metrics`.
+
+The remote example disables metrics and its ServiceMonitor. A runtime-cluster
+ServiceAccount token is not automatically valid in the datastore cluster. Before
+enabling remote collection, configure a scraper identity accepted by the
+datastore and its `/metrics` permission, plus TLS trust and network access.
+
+## NKTP integration
+
+The [NVKE telemetry pipeline](../../docs/nktp/components/node-collector.md)
+collects pod stdout/stderr and discovers ServiceMonitors. Cluster Service can
+render a monitor with `prometheus.enabled=true` when metrics are enabled. For a
+co-located deployment, verify the collector identity has GET `/metrics` access
+and that the monitor's bearer-token file is available in the collector. The
+current monitor uses self-signed TLS unless certificate management is enabled.
+Confirm the site's TLS policy and configure the target allocator's access to any
+referenced certificate Secrets before enabling collection.
+
+When the chart's network policy is enabled, it admits scrapers from namespaces
+labeled `metrics: enabled`; the NKTP namespace must match that rule or the site
+must provide equivalent access. Logs need no chart-specific exporter.
+Validate monitor discovery, authentication, TLS and successful scraping with the
+telemetry team before enabling site collection. Remote collection also needs
+the datastore identity configuration described above.
 
 ## CRD ownership, upgrades and retention
 
