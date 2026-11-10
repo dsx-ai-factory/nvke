@@ -499,15 +499,17 @@ docker buildx create --name nvke --driver docker-container --bootstrap --use
 ```
 
 ```bash
-git clone --branch controller/v0.3.0 --depth 1 https://github.com/dsx-ai-factory/nvke.git
-cd nvke
+git clone --branch controller/v0.3.0 --depth 1 https://github.com/dsx-ai-factory/nvke.git nvke-v0.3.0
+cd nvke-v0.3.0
 make -C controller/test/e2e validate-image-oci VALIDATE_VERSION=v0.3.0
 cat controller/test/e2e/bin/validate-image-digest.txt
 ```
 
 `validate-image-push VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS=v0.3.0`
-pushes it to the site's own registry instead. Either target derives the rest
-from the checkout.
+pushes it to the site's own registry instead, as `<repository>:v0.3.0`.
+`<repository>` is the whole repository path, such as
+`registry.example.com/nvke-validate`. Either target derives the rest from the
+checkout.
 
 Without a checkout, BuildKit can take the tag as a remote context. Then the
 arguments make derives must be given by hand, from the tagged commit:
@@ -545,10 +547,14 @@ under that version:
 
 ```bash
 git ls-remote --tags --refs https://github.com/dsx-ai-factory/nvke.git 'controller/v*'
-git clone --branch controller/v0.3.0 --depth 1 https://github.com/dsx-ai-factory/nvke.git
-make -C nvke/controller/test/e2e validate-image-push VALIDATE_VERSION=v0.3.0 \
-  VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS=v0.3.0
+ver=v0.3.0   # a tag the site's registry does not have yet
+git clone --branch "controller/${ver}" --depth 1 https://github.com/dsx-ai-factory/nvke.git "nvke-${ver}"
+make -C "nvke-${ver}/controller/test/e2e" validate-image-push VALIDATE_VERSION="${ver}" \
+  VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS="${ver}"
 ```
+
+Each tag gets its own checkout, so building the next one never meets the last
+one's directory.
 
 A run picks the image whose tag is the site's controller version and sets
 `NVKE_CONTROLLER_EXPECTED_VERSION` to the image's tag. The image requires
@@ -575,18 +581,18 @@ directory that holds the checkout, with the kube context pointing at the
 site:
 
 ```bash
-git clone --depth 1 https://github.com/dsx-ai-factory/nvke.git nvke-main   # only for a tag without deploy/
-deploy=nvke-main/controller/test/e2e/deploy   # or nvke/controller/test/e2e/deploy
-
 ver=v0.3.0                                  # the site's controller version
-image=<repository>/nvke-validate:${ver}     # built from controller/${ver}
+image=<repository>:${ver}                   # pushed from controller/${ver} above
+git clone --depth 1 https://github.com/dsx-ai-factory/nvke.git nvke-main   # only for a tag without deploy/
+deploy=nvke-main/controller/test/e2e/deploy   # or nvke-${ver}/controller/test/e2e/deploy
 k8s=<version>                               # the Kubernetes version the site is meant to run
-ctrl_ns=$(kubectl get deploy -A --field-selector metadata.name=nvke-controller \
-  -o jsonpath='{.items[0].metadata.namespace}')
+read -r ctrl_ns ctrl < <(kubectl get deploy -A -l app.kubernetes.io/name=nvke-controller \
+  -o jsonpath='{.items[0].metadata.namespace} {.items[0].metadata.name}')
 token_ns=<namespace> token_sa=<service account>   # see below
 fill() {
   sed -e "s|__IMAGE__|${image}|g" -e "s|__CONTROLLER_VERSION__|${ver}|g" \
     -e "s|__KUBERNETES_VERSION__|${k8s}|g" -e "s|__CONTROLLER_NAMESPACE__|${ctrl_ns}|g" \
+    -e "s|__CONTROLLER_NAME__|${ctrl}|g" \
     -e "s|__TOKEN_NAMESPACE__|${token_ns}|g" -e "s|__TOKEN_SERVICE_ACCOUNT__|${token_sa}|g" \
     "${deploy}/$1"
 }
@@ -594,27 +600,33 @@ fill validate-site-token.yaml | kubectl apply -f -   # only if the controller au
 fill validate-site.yaml | kubectl apply -f -
 ```
 
-The controller's image tag gives `ver`:
-`kubectl -n "${ctrl_ns}" get deploy nvke-controller -o jsonpath='{.spec.template.spec.containers[0].image}'`.
+The chart names the controller's Deployment after the Helm release, so it is
+found by its `app.kubernetes.io/name` label, and `fill` hands its name to the
+suite; a release that sets `nameOverride` changes that label too. The
+controller's image tag gives `ver`:
+`kubectl -n "${ctrl_ns}" get deploy "${ctrl}" -o jsonpath='{.spec.template.spec.containers[0].image}'`.
 `k8s` is the version the site was built to run, from its build record rather
 than the cluster: check 9 compares the API server and every kubelet with it,
 so a version read from the API server would pass a site running the wrong one.
 
 `token_ns`/`token_sa` name the identity the suite presents to the controller
 API, one the controller authorizes to list clusters; `validate-site-token.yaml`
-lets the Job mint its token. The controller authenticates where its settings
-turn `apiAuth` on, or where an authentication ConfigMap exists; apply the file
-if either holds, and skip it only if neither does. A site may keep either
-ConfigMap under its older `nke-` name, so check both names:
+lets the Job mint its token. The controller authenticates exactly when its
+Deployment mounts an `nvke-auth-config` volume, whatever the ConfigMap behind
+it is called. This prints that ConfigMap's name, and nothing where there is
+none; an error means the check did not run, not that there is no
+authentication:
 
 ```bash
-for cm in nvke-controller-config nke-controller-config; do
-  kubectl -n "${ctrl_ns}" get configmap "${cm}" -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
-    | sed -n '/^apiAuth:/,/^[^[:space:]#]/p'   # enabled: true in this section means it authenticates
-done
-kubectl -n "${ctrl_ns}" get configmap nvke-auth-config nke-auth-config --ignore-not-found
-# either one listed means it authenticates
+kubectl -n "${ctrl_ns}" get deploy "${ctrl}" \
+  -o jsonpath='{.spec.template.spec.volumes[?(@.name=="nvke-auth-config")].configMap.name}'
 ```
+
+Apply `validate-site-token.yaml` if it prints a name. The suite finds the
+audience itself where that name is `nvke-auth-config` or `nke-auth-config`, or
+where the controller's settings ConfigMap holds the `apiAuth` section. For a
+ConfigMap with another name, managed outside the chart, add
+`NKE_E2E_AUDIENCE` to the Job's `env`, set to one of the `audiences` it lists.
 
 Where the registry needs credentials, add `imagePullSecrets` to the Job and
 the artifacts pod. Add any [variables](#validation-image-variables) the site's
@@ -650,9 +662,18 @@ kubectl -n nvke-validate delete pod nvke-validate-artifacts
 
 `artifacts/junit-test-report.xml` lists each selected spec, and why any failed
 or skipped.
-To run again, delete the Job (`kubectl -n nvke-validate delete job nvke-validate`)
-and apply `validate-site.yaml` again; the next run overwrites the reports. To
-remove everything, `fill` each file into `kubectl delete -f -`.
+To run again, delete the Job and the claim, so no report from the last run
+survives, then apply `validate-site.yaml` again:
+
+```bash
+kubectl -n nvke-validate delete job nvke-validate --wait
+kubectl -n nvke-validate delete pvc nvke-validate-artifacts --wait
+fill validate-site.yaml | kubectl apply -f -
+```
+
+A run that finds no reports on the claim never started the suite; the Job's
+events say why. To remove everything, `fill` each file into
+`kubectl delete -f -`.
 
 This validates the site only. Validating a tenant as well needs the runner to
 provision the tenant credential first, as [Tenant checks](#tenant-checks)
@@ -665,7 +686,7 @@ the release tag rather than editing this Dockerfile, so the suite stays the one
 that shipped:
 
 ```dockerfile
-FROM <repository>/nvke-validate:v0.3.0
+FROM <repository>:v0.3.0
 USER 0
 RUN apk add --no-cache curl
 USER 65532:65532

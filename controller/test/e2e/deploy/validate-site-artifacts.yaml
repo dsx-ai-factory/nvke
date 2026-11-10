@@ -19,8 +19,8 @@ spec:
       type: RuntimeDefault
   containers:
     - name: read
-      image: __IMAGE__
-      command: [sleep, "600"]
+      image: "__IMAGE__"
+      command: [sleep, infinity]
       securityContext:
         allowPrivilegeEscalation: false
         capabilities:
