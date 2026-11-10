@@ -46,7 +46,7 @@ nvkectl get kubeconfig <cluster-name> [flags]
 ### Options
 
 ```
-  -h, --help                 help for kubeconfig
+  -h, --help[=true|false]    help for kubeconfig
       --namespace string     Management namespace holding the kubeconfig Secret (default: nvke-system, then nke-system)
       --output-file string   Write kubeconfig to file instead of stdout
 ```
@@ -54,9 +54,9 @@ nvkectl get kubeconfig <cluster-name> [flags]
 ### Options inherited from parent commands
 
 ```
-      --json-logs     Emit logs as JSON
-      --site string   Override the active site for this invocation
-  -v, --verbose       Enable debug logging
+      --json-logs[=true|false]   Emit logs as JSON
+      --site string              Override the active site for this invocation
+  -v, --verbose[=true|false]     Enable debug logging
 ```
 
 ### SEE ALSO

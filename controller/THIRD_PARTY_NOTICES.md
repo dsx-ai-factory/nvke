@@ -23,7 +23,7 @@ notices-check` verifies it is up to date.
 | `github.com/beevik/etree` | BSD-2-Clause | `github.com/beevik/etree@v1.6.0` | https://github.com/beevik/etree/blob/v1.6.0/LICENSE |
 | `github.com/beorn7/perks/quantile` | MIT | `github.com/beorn7/perks@v1.0.1` | https://github.com/beorn7/perks/blob/v1.0.1/LICENSE |
 | `github.com/blang/semver/v4` | MIT | `github.com/blang/semver/v4@v4.0.0` | https://github.com/blang/semver/blob/v4.0.0/LICENSE |
-| `github.com/caarlos0/env/v11` | MIT | `github.com/caarlos0/env/v11@v11.4.1` | https://github.com/caarlos0/env/blob/v11.4.1/LICENSE.md |
+| `github.com/caarlos0/env/v11` | MIT | `github.com/caarlos0/env/v11@v11.4.2` | https://github.com/caarlos0/env/blob/v11.4.2/LICENSE.md |
 | `github.com/cenkalti/backoff/v5` | MIT | `github.com/cenkalti/backoff/v5@v5.0.3` | https://github.com/cenkalti/backoff/blob/v5.0.3/LICENSE |
 | `github.com/cespare/xxhash/v2` | MIT | `github.com/cespare/xxhash/v2@v2.3.0` | https://github.com/cespare/xxhash/blob/v2.3.0/LICENSE.txt |
 | `github.com/charlievieth/strcase` | MIT | `github.com/charlievieth/strcase@v0.0.6` | https://github.com/charlievieth/strcase/blob/v0.0.6/LICENSE |
@@ -36,8 +36,8 @@ notices-check` verifies it is up to date.
 | `github.com/fsnotify/fsnotify` | BSD-3-Clause | `github.com/fsnotify/fsnotify@v1.9.0` | https://github.com/fsnotify/fsnotify/blob/v1.9.0/LICENSE |
 | `github.com/fxamacker/cbor/v2` | MIT | `github.com/fxamacker/cbor/v2@v2.9.1` | https://github.com/fxamacker/cbor/blob/v2.9.1/LICENSE |
 | `github.com/getkin/kin-openapi` | MIT | `github.com/getkin/kin-openapi@v0.152.0` | https://github.com/getkin/kin-openapi/blob/v0.152.0/LICENSE |
-| `github.com/go-jose/go-jose/v4` | Apache-2.0 | `github.com/go-jose/go-jose/v4@v4.1.7` | https://github.com/go-jose/go-jose/blob/v4.1.7/LICENSE |
-| `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | `github.com/go-jose/go-jose/v4@v4.1.7` | https://github.com/go-jose/go-jose/blob/v4.1.7/json/LICENSE |
+| `github.com/go-jose/go-jose/v4` | Apache-2.0 | `github.com/go-jose/go-jose/v4@v4.1.9` | https://github.com/go-jose/go-jose/blob/v4.1.9/LICENSE |
+| `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | `github.com/go-jose/go-jose/v4@v4.1.9` | https://github.com/go-jose/go-jose/blob/v4.1.9/json/LICENSE |
 | `github.com/go-logr/logr` | Apache-2.0 | `github.com/go-logr/logr@v1.4.4` | https://github.com/go-logr/logr/blob/v1.4.4/LICENSE |
 | `github.com/go-logr/stdr` | Apache-2.0 | `github.com/go-logr/stdr@v1.2.2` | https://github.com/go-logr/stdr/blob/v1.2.2/LICENSE |
 | `github.com/go-openapi/jsonpointer` | Apache-2.0 | `github.com/go-openapi/jsonpointer@v1.0.1` | https://github.com/go-openapi/jsonpointer/blob/v1.0.1/LICENSE |
@@ -97,10 +97,10 @@ notices-check` verifies it is up to date.
 | `github.com/russellhaering/goxmldsig` | Apache-2.0 | `github.com/russellhaering/goxmldsig@v1.6.0` | https://github.com/russellhaering/goxmldsig/blob/v1.6.0/LICENSE |
 | `github.com/santhosh-tekuri/jsonschema/v6` | Apache-2.0 | `github.com/santhosh-tekuri/jsonschema/v6@v6.0.3` | https://github.com/santhosh-tekuri/jsonschema/blob/v6.0.3/LICENSE |
 | `github.com/spf13/cobra` | Apache-2.0 | `github.com/spf13/cobra@v1.10.2` | https://github.com/spf13/cobra/blob/v1.10.2/LICENSE.txt |
-| `github.com/spf13/pflag` | BSD-3-Clause | `github.com/spf13/pflag@v1.0.10` | https://github.com/spf13/pflag/blob/v1.0.10/LICENSE |
+| `github.com/spf13/pflag` | BSD-3-Clause | `github.com/spf13/pflag@v1.1.0` | https://github.com/spf13/pflag/blob/v1.1.0/LICENSE |
 | `github.com/spiffe/go-spiffe/v2` | Apache-2.0 | `github.com/spiffe/go-spiffe/v2@v2.9.0` | https://github.com/spiffe/go-spiffe/blob/v2.9.0/LICENSE |
-| `github.com/spiffe/spire-api-sdk/proto/spire/api` | Apache-2.0 | `github.com/spiffe/spire-api-sdk@v1.15.3` | https://github.com/spiffe/spire-api-sdk/blob/v1.15.3/LICENSE |
-| `github.com/spiffe/spire-controller-manager` | Apache-2.0 | `github.com/spiffe/spire-controller-manager@v0.8.0` | https://github.com/spiffe/spire-controller-manager/blob/v0.8.0/LICENSE |
+| `github.com/spiffe/spire-api-sdk/proto/spire/api` | Apache-2.0 | `github.com/spiffe/spire-api-sdk@v1.16.0` | https://github.com/spiffe/spire-api-sdk/blob/v1.16.0/LICENSE |
+| `github.com/spiffe/spire-controller-manager` | Apache-2.0 | `github.com/spiffe/spire-controller-manager@v0.8.1` | https://github.com/spiffe/spire-controller-manager/blob/v0.8.1/LICENSE |
 | `github.com/stretchr/objx` | MIT | `github.com/stretchr/objx@v0.5.3` | https://github.com/stretchr/objx/blob/v0.5.3/LICENSE |
 | `github.com/stretchr/testify` | MIT | `github.com/stretchr/testify@v1.12.1` | https://github.com/stretchr/testify/blob/v1.12.1/LICENSE |
 | `github.com/stretchr/testify/internal/difflib` | BSD-3-Clause | `github.com/stretchr/testify@v1.12.1` | https://github.com/stretchr/testify/blob/v1.12.1/internal/difflib/LICENSE |
@@ -130,8 +130,8 @@ notices-check` verifies it is up to date.
 | `go.opentelemetry.io/otel/sdk` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/sdk@v1.47.0` | https://github.com/open-telemetry/opentelemetry-go/blob/sdk/v1.47.0/sdk/LICENSE |
 | `go.opentelemetry.io/otel/trace` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/trace@v1.47.0` | https://github.com/open-telemetry/opentelemetry-go/blob/trace/v1.47.0/trace/LICENSE |
 | `go.opentelemetry.io/proto/otlp` | Apache-2.0 | `go.opentelemetry.io/proto/otlp@v1.11.1` | https://github.com/open-telemetry/opentelemetry-proto-go/blob/otlp/v1.11.1/otlp/LICENSE |
-| `go.temporal.io/api` | MIT | `go.temporal.io/api@v1.64.1` | https://github.com/temporalio/api-go/blob/v1.64.1/LICENSE |
-| `go.temporal.io/api/internal/protojson` | BSD-3-Clause | `go.temporal.io/api@v1.64.1` | https://github.com/temporalio/api-go/blob/v1.64.1/internal/protojson/LICENSE |
+| `go.temporal.io/api` | MIT | `go.temporal.io/api@v1.64.2` | https://github.com/temporalio/api-go/blob/v1.64.2/LICENSE |
+| `go.temporal.io/api/internal/protojson` | BSD-3-Clause | `go.temporal.io/api@v1.64.2` | https://github.com/temporalio/api-go/blob/v1.64.2/internal/protojson/LICENSE |
 | `go.temporal.io/sdk` | MIT | `go.temporal.io/sdk@v1.50.0` | https://github.com/temporalio/sdk-go/blob/v1.50.0/LICENSE |
 | `go.temporal.io/sdk/contrib/opentelemetry` | MIT | `go.temporal.io/sdk/contrib/opentelemetry@v0.8.1` | https://github.com/temporalio/sdk-go/blob/contrib/opentelemetry/v0.8.1/contrib/opentelemetry/LICENSE |
 | `go.temporal.io/sdk/contrib/tally` | MIT | `go.temporal.io/sdk/contrib/tally@v0.2.0` | https://github.com/temporalio/sdk-go/blob/contrib/tally/v0.2.0/contrib/tally/LICENSE |
@@ -139,18 +139,18 @@ notices-check` verifies it is up to date.
 | `go.uber.org/automaxprocs` | MIT | `go.uber.org/automaxprocs@v1.6.0` | https://github.com/uber-go/automaxprocs/blob/v1.6.0/LICENSE |
 | `go.yaml.in/yaml/v2` | Apache-2.0 | `go.yaml.in/yaml/v2@v2.4.4` | https://github.com/yaml/go-yaml/blob/v2.4.4/LICENSE |
 | `go.yaml.in/yaml/v3` | MIT | `go.yaml.in/yaml/v3@v3.0.5` | https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE |
-| `go.yaml.in/yaml/v4` | Apache-2.0 | `go.yaml.in/yaml/v4@v4.0.0-rc.7` | https://github.com/yaml/go-yaml/blob/v4.0.0-rc.7/LICENSE |
+| `go.yaml.in/yaml/v4` | Apache-2.0 | `go.yaml.in/yaml/v4@v4.0.0` | https://github.com/yaml/go-yaml/blob/v4.0.0/LICENSE |
 | `golang.org/x/crypto` | BSD-3-Clause | `golang.org/x/crypto@v0.58.0` | https://cs.opensource.google/go/x/crypto/+/v0.58.0:LICENSE |
-| `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.61.0` | https://cs.opensource.google/go/x/net/+/v0.61.0:LICENSE |
+| `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.62.0` | https://cs.opensource.google/go/x/net/+/v0.62.0:LICENSE |
 | `golang.org/x/oauth2` | BSD-3-Clause | `golang.org/x/oauth2@v0.37.0` | https://cs.opensource.google/go/x/oauth2/+/v0.37.0:LICENSE |
-| `golang.org/x/sync` | BSD-3-Clause | `golang.org/x/sync@v0.24.0` | https://cs.opensource.google/go/x/sync/+/v0.24.0:LICENSE |
+| `golang.org/x/sync` | BSD-3-Clause | `golang.org/x/sync@v0.25.0` | https://cs.opensource.google/go/x/sync/+/v0.25.0:LICENSE |
 | `golang.org/x/sys` | BSD-3-Clause | `golang.org/x/sys@v0.49.0` | https://cs.opensource.google/go/x/sys/+/v0.49.0:LICENSE |
 | `golang.org/x/term` | BSD-3-Clause | `golang.org/x/term@v0.47.0` | https://cs.opensource.google/go/x/term/+/v0.47.0:LICENSE |
 | `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.43.0` | https://cs.opensource.google/go/x/text/+/v0.43.0:LICENSE |
 | `golang.org/x/time/rate` | BSD-3-Clause | `golang.org/x/time@v0.16.0` | https://cs.opensource.google/go/x/time/+/v0.16.0:LICENSE |
 | `gomodules.xyz/jsonpatch/v2` | Apache-2.0 | `gomodules.xyz/jsonpatch/v2@v2.5.0` | https://github.com/gomodules/jsonpatch/blob/v2.5.0/LICENSE |
 | `google.golang.org/genproto/googleapis/api` | Apache-2.0 | `google.golang.org/genproto/googleapis/api@v0.0.0-20261012220534-4341edf3f941` | https://github.com/googleapis/go-genproto/blob/4341edf3f941/googleapis/api/LICENSE |
-| `google.golang.org/genproto/googleapis/rpc` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20261019180522-ce908d29299b` | https://github.com/googleapis/go-genproto/blob/ce908d29299b/googleapis/rpc/LICENSE |
+| `google.golang.org/genproto/googleapis/rpc` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20261026165753-2ffab32bce7e` | https://github.com/googleapis/go-genproto/blob/2ffab32bce7e/googleapis/rpc/LICENSE |
 | `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.85.0` | https://github.com/grpc/grpc-go/blob/v1.85.0/LICENSE |
 | `google.golang.org/protobuf` | BSD-3-Clause | `google.golang.org/protobuf@v1.36.12` | https://github.com/protocolbuffers/protobuf-go/blob/v1.36.12/LICENSE |
 | `gopkg.in/evanphx/json-patch.v4` | BSD-3-Clause | `gopkg.in/evanphx/json-patch.v4@v4.13.0` | https://github.com/evanphx/json-patch/blob/v4.13.0/LICENSE |
@@ -349,14 +349,14 @@ THE SOFTWARE.
 
 ### github.com/caarlos0/env/v11
 
-_MIT — github.com/caarlos0/env/v11@v11.4.1_
+_MIT — github.com/caarlos0/env/v11@v11.4.2_
 
 #### LICENSE.md
 
 ```text
 The MIT License (MIT)
 
-Copyright (c) 2015-2024 Carlos Alexandro Becker
+Copyright (c) 2015-2026 Carlos Alexandro Becker
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -943,7 +943,7 @@ SOFTWARE.
 
 ### github.com/go-jose/go-jose/v4
 
-_Apache-2.0 — github.com/go-jose/go-jose/v4@v4.1.7_
+_Apache-2.0 — github.com/go-jose/go-jose/v4@v4.1.9_
 
 #### LICENSE
 
@@ -1155,7 +1155,7 @@ _Apache-2.0 — github.com/go-jose/go-jose/v4@v4.1.7_
 
 ### github.com/go-jose/go-jose/v4/json
 
-_BSD-3-Clause — github.com/go-jose/go-jose/v4@v4.1.7_
+_BSD-3-Clause — github.com/go-jose/go-jose/v4@v4.1.9_
 
 #### LICENSE
 
@@ -9684,7 +9684,7 @@ _Apache-2.0 — github.com/spf13/cobra@v1.10.2_
 
 ### github.com/spf13/pflag
 
-_BSD-3-Clause — github.com/spf13/pflag@v1.0.10_
+_BSD-3-Clause — github.com/spf13/pflag@v1.1.0_
 
 #### LICENSE
 
@@ -9933,7 +9933,7 @@ _Apache-2.0 — github.com/spiffe/go-spiffe/v2@v2.9.0_
 
 ### github.com/spiffe/spire-api-sdk/proto/spire/api
 
-_Apache-2.0 — github.com/spiffe/spire-api-sdk@v1.15.3_
+_Apache-2.0 — github.com/spiffe/spire-api-sdk@v1.16.0_
 
 #### LICENSE
 
@@ -10144,7 +10144,7 @@ _Apache-2.0 — github.com/spiffe/spire-api-sdk@v1.15.3_
 
 ### github.com/spiffe/spire-controller-manager
 
-_Apache-2.0 — github.com/spiffe/spire-controller-manager@v0.8.0_
+_Apache-2.0 — github.com/spiffe/spire-controller-manager@v0.8.1_
 
 #### LICENSE
 
@@ -13791,7 +13791,7 @@ _Apache-2.0 — go.opentelemetry.io/proto/otlp@v1.11.1_
 
 ### go.temporal.io/api
 
-_MIT — go.temporal.io/api@v1.64.1_
+_MIT — go.temporal.io/api@v1.64.2_
 
 #### LICENSE
 
@@ -13821,7 +13821,7 @@ THE SOFTWARE.
 
 ### go.temporal.io/api/internal/protojson
 
-_BSD-3-Clause — go.temporal.io/api@v1.64.1_
+_BSD-3-Clause — go.temporal.io/api@v1.64.2_
 
 #### LICENSE
 
@@ -14320,7 +14320,7 @@ limitations under the License.
 
 ### go.yaml.in/yaml/v4
 
-_Apache-2.0 — go.yaml.in/yaml/v4@v4.0.0-rc.7_
+_Apache-2.0 — go.yaml.in/yaml/v4@v4.0.0_
 
 #### LICENSE
 
@@ -14596,7 +14596,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/net
 
-_BSD-3-Clause — golang.org/x/net@v0.61.0_
+_BSD-3-Clause — golang.org/x/net@v0.62.0_
 
 #### LICENSE
 
@@ -14670,7 +14670,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/sync
 
-_BSD-3-Clause — golang.org/x/sync@v0.24.0_
+_BSD-3-Clause — golang.org/x/sync@v0.25.0_
 
 #### LICENSE
 
@@ -15279,7 +15279,7 @@ _Apache-2.0 — google.golang.org/genproto/googleapis/api@v0.0.0-20261012220534-
 
 ### google.golang.org/genproto/googleapis/rpc
 
-_Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20261019180522-ce908d29299b_
+_Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20261026165753-2ffab32bce7e_
 
 #### LICENSE
 
