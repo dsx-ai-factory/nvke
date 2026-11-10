@@ -582,10 +582,10 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 	if update != (api.UpdateNodePoolRequest{}) {
 		updatedPool, err := r.NVKEController.UpdateNodePool(ctx, observedPool.ID.String(), update)
 		if err != nil && infra != nil {
-			return fmt.Errorf("move nvke controller node pool %q to release %q: %w", pool.Name, resolved.Name, err)
+			return errors.Join(fmt.Errorf("move nvke controller node pool %q to release %q: %w", pool.Name, resolved.Name, err), setNodePoolConditions(target))
 		}
 		if err != nil {
-			return fmt.Errorf("scale nvke controller node pool %q to %d replicas: %w", pool.Name, desiredCount, err)
+			return errors.Join(fmt.Errorf("scale nvke controller node pool %q to %d replicas: %w", pool.Name, desiredCount, err), setNodePoolConditions(target))
 		}
 		observedPool = updatedPool
 	}
