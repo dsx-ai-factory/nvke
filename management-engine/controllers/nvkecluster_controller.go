@@ -389,17 +389,6 @@ func clusterReleaseKubernetesVersion(release *internalv1.ClusterRelease) (*versi
 	return parsed, nil
 }
 
-func splitNodeProfile(ref internalv1.NodeProfileReference) (profile, tag string, err error) {
-	profile, tag, found := strings.Cut(string(ref), ":")
-	if !found {
-		return "", "", fmt.Errorf("node profile %q must be <profile>:<tag>", ref)
-	}
-	if profile == "" || tag == "" {
-		return "", "", fmt.Errorf("node profile %q must have a non-empty profile and tag", ref)
-	}
-	return profile, tag, nil
-}
-
 func (r *NVKEClusterReconciler) resolveNodePoolRelease(ctx context.Context, pool *internalv1.NodePool, pinned *internalv1.ReleaseReference) (*internalv1.NodePoolRelease, *internalv1.MachineImage, error) {
 	var release *internalv1.NodePoolRelease
 	if pinned != nil {
@@ -423,10 +412,6 @@ func (r *NVKEClusterReconciler) resolveNodePoolRelease(ctx context.Context, pool
 }
 
 func (r *NVKEClusterReconciler) getPinnedNodePoolRelease(ctx context.Context, pool *internalv1.NodePool, pinned *internalv1.ReleaseReference) (*internalv1.NodePoolRelease, error) {
-	profile, tag, err := splitNodeProfile(pool.NodeProfile)
-	if err != nil {
-		return nil, fmt.Errorf("resolve node profile: %w", err)
-	}
 	var release internalv1.NodePoolRelease
 	if err := r.Get(ctx, client.ObjectKey{Name: string(pinned.Name)}, &release); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -434,16 +419,13 @@ func (r *NVKEClusterReconciler) getPinnedNodePoolRelease(ctx context.Context, po
 		}
 		return nil, fmt.Errorf("get pinned NodePoolRelease %q: %w", pinned.Name, err)
 	}
-	if string(release.Spec.Profile) != profile || release.Spec.Tag != tag {
+	if string(release.Spec.Profile)+":"+release.Spec.Tag != string(pool.NodeProfile) {
 		return nil, nil
 	}
 	return &release, nil
 }
 
 func (r *NVKEClusterReconciler) matchNodePoolRelease(ctx context.Context, pool *internalv1.NodePool) (*internalv1.NodePoolRelease, error) {
-	if _, _, err := splitNodeProfile(pool.NodeProfile); err != nil {
-		return nil, fmt.Errorf("resolve node profile: %w", err)
-	}
 	var list internalv1.NodePoolReleaseList
 	if err := r.List(ctx, &list, client.MatchingFields{nodePoolReleaseProfileTagField: string(pool.NodeProfile)}); err != nil {
 		return nil, fmt.Errorf("list NodePoolReleases for node profile %q: %w", pool.NodeProfile, err)
