@@ -121,6 +121,14 @@ items:
     id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     nodePools:
     - conditions:
+      - message: |-
+          * NVKEControllerProvisioned: Condition not yet reported
+          * NVKEControllerProvisioning: Condition not yet reported
+          * NVKEControllerDeleting: Condition not yet reported
+        observedGeneration: 2
+        reason: ReadyUnknown
+        status: Unknown
+        type: Ready
       - message: ""
         observedGeneration: 2
         reason: ReconcileSucceeded
