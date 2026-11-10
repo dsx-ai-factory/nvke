@@ -28,6 +28,13 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodecontract"
 )
 
+// ErrNoAddress reports that the node has no IP address yet.
+//
+// A node is created before the infrastructure provider allocates a machine, so
+// its address can be empty for a while. An empty host resolves to localhost, so
+// the dial is refused instead of reaching whatever listens there.
+var ErrNoAddress = errors.New("node has no IP address")
+
 // Transport dials node agents using each node's pinned authentication profile.
 //
 // Every caller that reaches an agent goes through it. That is a requirement
@@ -112,6 +119,12 @@ func NewTransport(
 // Dial opens a connection to the node's agent and returns it with the cleanup
 // the caller must invoke.
 func (t *Transport) Dial(ctx context.Context, node db.Node) (*grpc.ClientConn, func(), error) {
+	if node.IP == "" {
+		// The endpoint would be ":<port>", which the resolver reads as
+		// localhost. Refuse the dial instead of reaching the wrong host.
+		return nil, nil, fmt.Errorf("node %s: %w", node.ID, ErrNoAddress)
+	}
+
 	endpoint := net.JoinHostPort(node.IP, t.cfg.NodeAgent.Port)
 
 	var closeFuncs []func() error

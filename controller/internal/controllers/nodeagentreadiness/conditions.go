@@ -7,9 +7,16 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
+// nodeHasNoAddressMessage is the condition message for a node that has no IP
+// address yet. Nothing was dialed, so it is not a probe failure.
+const nodeHasNoAddressMessage = "Node has no IP address"
+
 type nodeAgentProbe struct {
 	agentVersion string
 	err          error
+	// message is the condition message. It is empty for a probe outcome, whose
+	// message is the error text.
+	message string
 }
 
 func applyNodeAgentReadiness(node *db.Node, agentProbe nodeAgentProbe) bool {
@@ -25,6 +32,9 @@ func applyNodeAgentReadiness(node *db.Node, agentProbe nodeAgentProbe) bool {
 }
 
 func nodeAgentCondition(existing db.Condition, agentProbe nodeAgentProbe) db.Condition {
+	if agentProbe.message != "" {
+		return updatedCondition(existing, db.ConditionStatusFalse, agentProbe.message)
+	}
 	if agentProbe.err != nil {
 		return updatedCondition(existing, db.ConditionStatusFalse, agentProbe.err.Error())
 	}
