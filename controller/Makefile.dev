@@ -25,6 +25,8 @@ export SPIRE_SERVER_PORT ?= 9091
 # Starts the local SPIRE agent in dev-start-*. The controller's own switch is
 # spire.spiffeEnabled in its config file.
 export SPIFFE_ENABLED ?= false
+# capi-core-up patches the CAPI Deployments to mount the SPIRE CSI driver; false skips it for runs without SPIRE.
+CAPI_SPIFFE_EXEC_AUTH ?= true
 
 # CAPD / Kind Configuration
 export COLIMA_PROFILE ?= default
@@ -617,7 +619,11 @@ capi-core-up: kind-up clusterctl-install registry-mirror ## Bring up the Kind ma
 	@kubectl rollout status deployment/capi-controller-manager -n capi-system --timeout=180s
 	@kubectl rollout status deployment/capi-kubeadm-bootstrap-controller-manager -n capi-kubeadm-bootstrap-system --timeout=180s
 	@kubectl rollout status deployment/capi-kubeadm-control-plane-controller-manager -n capi-kubeadm-control-plane-system --timeout=180s
-	@$(MAKE) capi-spiffe-exec-auth
+	@if [ "$(CAPI_SPIFFE_EXEC_AUTH)" = "true" ]; then \
+		$(MAKE) capi-spiffe-exec-auth; \
+	else \
+		echo "Skipping the CAPI SPIRE exec-auth patch (CAPI_SPIFFE_EXEC_AUTH=false)"; \
+	fi
 	@echo "✅ CAPI core management cluster is ready (context kind-$(KIND_CLUSTER_NAME))"
 	@echo "Next step: tilt up"
 
