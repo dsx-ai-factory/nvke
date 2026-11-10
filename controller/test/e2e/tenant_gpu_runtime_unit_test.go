@@ -48,7 +48,7 @@ func TestPlanTenantGPURuntime(t *testing.T) {
 func TestTenantGPURuntimePlanSetsTheGPUCountOnlyWhenItInstalls(t *testing.T) {
 	shape := clusterShape{workerPools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}, {DesiredNodeCount: 2}}}
 
-	settings := tenantGPURuntimePlan{accelerator: "gb200"}.tenantSettings(laneTenantSettings, shape)
+	settings := tenantGPURuntimePlan{accelerator: "gb200"}.tenantSettings(laneTenantSettings, shape, 5)
 	if settings.gpuNodes == nil || *settings.gpuNodes != 3 {
 		t.Fatalf("gpuNodes = %v, want every worker, 3", settings.gpuNodes)
 	}
@@ -56,8 +56,15 @@ func TestTenantGPURuntimePlanSetsTheGPUCountOnlyWhenItInstalls(t *testing.T) {
 		t.Fatal("tenantSettings changed the shared lane settings")
 	}
 
+	// The Forge and DSX tenants have no worker pools in their shape; their
+	// builder makes -e2e.tenant-workers workers.
+	hardware := tenantGPURuntimePlan{accelerator: "gb200"}.tenantSettings(laneTenantSettings, nicoForgeTenant().shape, 2)
+	if hardware.gpuNodes == nil || *hardware.gpuNodes != 2 {
+		t.Fatalf("hardware tenant gpuNodes = %v, want -e2e.tenant-workers, 2", hardware.gpuNodes)
+	}
+
 	for _, plan := range []tenantGPURuntimePlan{{}, {skip: "no recipe"}} {
-		if got := plan.tenantSettings(laneTenantSettings, shape); got.gpuNodes != nil {
+		if got := plan.tenantSettings(laneTenantSettings, shape, 5); got.gpuNodes != nil {
 			t.Errorf("plan %+v set gpuNodes = %d; the GPU checks need a runtime to run against", plan, *got.gpuNodes)
 		}
 	}

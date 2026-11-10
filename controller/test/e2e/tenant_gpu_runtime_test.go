@@ -86,13 +86,18 @@ func planTenantGPURuntime(enabled bool, capabilities map[string]string) tenantGP
 
 // tenantSettings is the lane's tenant check settings, with the GPU checks
 // switched on for every worker when the plan installs a runtime for them.
-func (p tenantGPURuntimePlan) tenantSettings(settings tenantValidateSettings, shape clusterShape) tenantValidateSettings {
+// A shape with no worker pools is a hardware tenant, whose builder makes
+// tenantWorkers workers instead.
+func (p tenantGPURuntimePlan) tenantSettings(settings tenantValidateSettings, shape clusterShape, tenantWorkers int) tenantValidateSettings {
 	if !p.installs() {
 		return settings
 	}
-	workers := 0
-	for _, pool := range shape.workerPools {
-		workers += pool.DesiredNodeCount
+	workers := tenantWorkers
+	if len(shape.workerPools) > 0 {
+		workers = 0
+		for _, pool := range shape.workerPools {
+			workers += pool.DesiredNodeCount
+		}
 	}
 	settings.gpuNodes = &workers
 	return settings

@@ -679,7 +679,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				if tenantGPURuntime {
 					validateTenantGPURuntime(&test, gpuRuntime, tenantFailed)
 				}
-				validateTenant(laneTenantTarget(&test, tenantFailed), gpuRuntime.tenantSettings(laneTenantSettings, spec.shape))
+				validateTenant(laneTenantTarget(&test, tenantFailed), gpuRuntime.tenantSettings(laneTenantSettings, spec.shape, tenantWorkers))
 			}
 		})
 
