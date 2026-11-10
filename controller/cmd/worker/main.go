@@ -19,7 +19,12 @@ import (
 	"go.temporal.io/sdk/worker"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/sync/errgroup"
+	rbacv1 "k8s.io/api/rbac/v1"
 	kubeadmv1 "sigs.k8s.io/cluster-api/api/bootstrap/kubeadm/v1beta2"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	"sigs.k8s.io/cluster-api/controllers/clustercache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
@@ -423,6 +428,27 @@ func main() {
 			os.Exit(1)
 		}
 
+		clusterCache, err := clustercache.SetupWithManager(ctx, k8sControllerManager, clustercache.Options{
+			SecretClient: k8sControllerManager.GetClient(),
+			Client: clustercache.ClientOptions{
+				UserAgent: "nvke-controller",
+				// Bindings stay uncached because a cached Get starts an informer that lists every object. NVKE only needs access to specific named bindings.
+				Cache: clustercache.ClientCacheOptions{
+					DisableFor: []client.Object{
+						&rbacv1.ClusterRoleBinding{},
+						&rbacv1.RoleBinding{},
+					},
+				},
+			},
+			ClusterFilter: func(cluster *clusterv1.Cluster) bool {
+				return capi.IsNVKEManagedCluster(cluster, cfg.ManagedByLabelValue)
+			},
+		}, controller.Options{})
+		if err != nil {
+			logger.Error("Failed to set up cluster cache", "error", err)
+			os.Exit(1)
+		}
+
 		if cfg.SpiffeEnabled && cfg.NicoControllersEnabled {
 			spireNicoTPMBootstrapIdentityController := bootstrap.NewSpireNicoTPMBootstrapIdentityController(
 				cfg,
@@ -440,7 +466,7 @@ func main() {
 
 		bootstrapAuthorizationController := bootstrap.NewAuthorizationController(
 			k8sControllerManager.GetClient(),
-			tenantClientProvider,
+			clusterCache,
 			logger.With("logger", "bootstrap-authorization-controller"),
 		)
 		if err := bootstrapAuthorizationController.SetupWithManager(k8sControllerManager); err != nil {

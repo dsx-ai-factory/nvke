@@ -16,15 +16,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	"sigs.k8s.io/cluster-api/controllers/clustercache"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
-	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
 )
 
 const testBootstrapAuthorizationClusterName = "tenant-a"
@@ -147,11 +149,10 @@ func TestUnit_BootstrapAuthorizationControllerReconcileWaitsForTenantAccess(t *t
 	cluster := newClusterForBootstrapAuthorizationTest()
 	machine := newMachineForBootstrapAuthorizationTest("worker-a", "spiffe://example.org/bootstrap/a")
 	controller, _ := newBootstrapAuthorizationControllerForTest(t, []client.Object{cluster, machine})
-	controller.tenantClientProvider = &fakeBootstrapTenantClientProvider{err: kube.ErrTenantClientNotReady}
+	controller.clusterCache = staticBootstrapAuthorizationClusterCache{err: clustercache.ErrClusterNotConnected}
 
-	result, err := controller.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cluster)})
+	_, err := controller.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cluster)})
 	require.NoError(t, err)
-	require.Equal(t, bootstrapAuthorizationRetryAfter, result.RequeueAfter)
 	assertBootstrapAuthorizationCondition(
 		t,
 		controller.k8sClient,
@@ -166,7 +167,7 @@ func TestUnit_BootstrapAuthorizationControllerReconcileSkipsTenantClientErrorWit
 
 	cluster := newClusterForBootstrapAuthorizationTest()
 	controller, tenantClient := newBootstrapAuthorizationControllerForTest(t, []client.Object{cluster})
-	controller.tenantClientProvider = &fakeBootstrapTenantClientProvider{err: errors.New("no tenant client")}
+	controller.clusterCache = staticBootstrapAuthorizationClusterCache{err: errors.New("no tenant client")}
 
 	result, err := controller.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cluster)})
 	require.NoError(t, err)
@@ -363,7 +364,7 @@ func TestUnit_BootstrapAuthorizationControllerReconcileReportsTenantClientFailur
 	machine := newMachineForBootstrapAuthorizationTest("worker-a", "spiffe://example.org/bootstrap/a")
 	controller, _ := newBootstrapAuthorizationControllerForTest(t, []client.Object{cluster, machine})
 	tenantErr := errors.New("tenant client failed")
-	controller.tenantClientProvider = &fakeBootstrapTenantClientProvider{err: tenantErr}
+	controller.clusterCache = staticBootstrapAuthorizationClusterCache{err: tenantErr}
 
 	_, err := controller.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cluster)})
 	require.ErrorIs(t, err, tenantErr)
@@ -400,13 +401,49 @@ func TestUnit_BootstrapAuthorizationControllerMachineWatchMapping(t *testing.T) 
 	}}, request)
 }
 
-type fakeBootstrapTenantClientProvider struct {
-	tenantClient client.Client
-	err          error
+type staticBootstrapAuthorizationClusterCache struct {
+	client client.Client
+	err    error
 }
 
-func (p *fakeBootstrapTenantClientProvider) ClientForCluster(context.Context, *clusterv1.Cluster) (client.Client, error) {
-	return p.tenantClient, p.err
+var _ clustercache.ClusterCache = staticBootstrapAuthorizationClusterCache{}
+
+func (s staticBootstrapAuthorizationClusterCache) GetClient(context.Context, client.ObjectKey) (client.Client, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.client, nil
+}
+
+func (s staticBootstrapAuthorizationClusterCache) GetReader(ctx context.Context, cluster client.ObjectKey) (client.Reader, error) {
+	return s.GetClient(ctx, cluster)
+}
+
+func (s staticBootstrapAuthorizationClusterCache) GetUncachedClient(ctx context.Context, cluster client.ObjectKey) (client.Client, error) {
+	return s.GetClient(ctx, cluster)
+}
+
+func (s staticBootstrapAuthorizationClusterCache) GetRESTConfig(context.Context, client.ObjectKey) (*rest.Config, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &rest.Config{}, nil
+}
+
+func (s staticBootstrapAuthorizationClusterCache) GetHealthCheckingState(context.Context, client.ObjectKey) clustercache.HealthCheckingState {
+	return clustercache.HealthCheckingState{}
+}
+
+func (s staticBootstrapAuthorizationClusterCache) Watch(context.Context, client.ObjectKey, clustercache.Watcher) error {
+	return s.err
+}
+
+func (s staticBootstrapAuthorizationClusterCache) GetClusterSource(
+	string,
+	func(context.Context, client.Object) []ctrl.Request,
+	...clustercache.GetClusterSourceOption,
+) source.Source {
+	return nil
 }
 
 func newClusterForBootstrapAuthorizationTest() *clusterv1.Cluster {
@@ -463,9 +500,9 @@ func newBootstrapAuthorizationControllerForTest(
 	tenantClient := fake.NewClientBuilder().WithScheme(tenantScheme).WithObjects(tenantObjects...).Build()
 
 	return &AuthorizationController{
-		k8sClient:            managementClient,
-		tenantClientProvider: &fakeBootstrapTenantClientProvider{tenantClient: tenantClient},
-		logger:               slog.New(slog.DiscardHandler),
+		k8sClient:    managementClient,
+		clusterCache: staticBootstrapAuthorizationClusterCache{client: tenantClient},
+		logger:       slog.New(slog.DiscardHandler),
 	}, tenantClient
 }
 
