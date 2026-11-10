@@ -107,7 +107,9 @@ for node in $nodes; do
   # The validator's steps run in turn after the GPUs show up; wait for the last.
   deadline=$((SECONDS + 600))
   while :; do
-    validator="$(kubectl -n gpu-operator get pods -l app=nvidia-operator-validator -o name --field-selector "spec.nodeName=${node}" | head -1)"
+    # Skip a validator being deleted: its steps are from before its replacement.
+    validator="$(kubectl -n gpu-operator get pods -l app=nvidia-operator-validator --field-selector "spec.nodeName=${node}" \
+      -o jsonpath='{range .items[*]}{.metadata.name} {.metadata.deletionTimestamp}{"\n"}{end}' | awk 'NF == 1 {print "pod/" $1; exit}')"
     steps="$(kubectl -n gpu-operator get "$validator" -o jsonpath='{range .status.initContainerStatuses[*]}{.name}={.state.terminated.exitCode}{" "}{end}' 2>/dev/null || true)"
     [[ -n "$steps" && "$steps" != *"= "* ]] && break
     ((SECONDS < deadline)) || break
