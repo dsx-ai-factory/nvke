@@ -20,15 +20,15 @@ go.sum @dsx-ai-factory/nvke-write @TerryHowe @rbever-nvidia
 /go.work.sum @dsx-ai-factory/nvke-write @TerryHowe @rbever-nvidia
 
 # area/controller — Cloud Workflow Engine
-/controller/ @dsx-ai-factory/nvke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris @jedimt @abhay-krishna
-/auth/ @dsx-ai-factory/nvke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris @jedimt @vignesh-goutham
+/controller/ @dsx-ai-factory/nvke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris @jedimt @abhay-krishna @mmeha @miancheng7
+/auth/ @dsx-ai-factory/nvke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris @vignesh-goutham
 /cluster-api-provider-provisioned/ @dsx-ai-factory/nvke-write @jonathanmeier5 @rbever-nvidia @TerryHowe
 
 # area/agent — renamed from node-agent in #36
 /agent/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @chaochn47 @abhay-krishna @vwilson-nvidia
 
 # area/cli
-/cli/ @dsx-ai-factory/nvke-write @lia-campbell @jonathanmeier5 @TerryHowe
+/cli/ @dsx-ai-factory/nvke-write @lia-campbell @jonathanmeier5 @TerryHowe @anisha-nv @abhinavmpandey08 @vignesh-goutham
 
 # area/os-image
 /os-image/ @dsx-ai-factory/nvke-write @dsx-ai-factory/nvke-team-node-os @j-griffith @jdubs @pdmack @cullenmcdermott
@@ -41,23 +41,23 @@ go.sum @dsx-ai-factory/nvke-write @TerryHowe @rbever-nvidia
 # area/docs
 # `docs/` has no leading slash, so it matches any depth, like labeler's
 # `**/docs/**`. `/*.md` does not cross a `/`, so a module README stays put.
-docs/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @danbudris @jedimt
-/docs/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @danbudris @jedimt
-/fern/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @danbudris
-/*.md @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @danbudris
-/LICENSE @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @danbudris
-/NOTICE @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @danbudris
+docs/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @danbudris @jedimt @lia-campbell @anisha-nv
+/docs/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @danbudris @jedimt @lia-campbell @anisha-nv
+/fern/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @danbudris @lia-campbell @anisha-nv
+/*.md @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @danbudris @lia-campbell @anisha-nv
+/LICENSE @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @danbudris @lia-campbell @anisha-nv
+/NOTICE @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @danbudris @lia-campbell @anisha-nv
 
 # area/ci-build
-/.github/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun
-/Makefile @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun
-/make/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun
-/hack/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun
-/build/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun
-/.flox/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun
-/.* @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun
-/*.toml @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun
-/*.yaml @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun
+/.github/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun @jedimt
+/Makefile @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun @jedimt
+/make/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun @jedimt
+/hack/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun @jedimt
+/build/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun @jedimt
+/.flox/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun @jedimt
+/.* @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun @jedimt
+/*.toml @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun @jedimt
+/*.yaml @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @junshun @jedimt
 
 # area/nktp — the NKTP telemetry chart and its workflows. After ci-build so
 # the workflow glob wins over /.github/ for nktp-*.yml.
