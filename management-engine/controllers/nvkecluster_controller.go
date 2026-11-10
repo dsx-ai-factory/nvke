@@ -451,14 +451,12 @@ func (r *NVKEClusterReconciler) matchNodePoolRelease(ctx context.Context, pool *
 		return nil, fmt.Errorf("resolve node profile: %w", err)
 	}
 	var list internalv1.NodePoolReleaseList
-	if err := r.List(ctx, &list); err != nil {
+	if err := r.List(ctx, &list, client.MatchingFields{nodePoolReleaseProfileTagField: profile + ":" + tag}); err != nil {
 		return nil, fmt.Errorf("list NodePoolReleases for node profile %q: %w", pool.NodeProfile, err)
 	}
-	var matches []*internalv1.NodePoolRelease
+	matches := make([]*internalv1.NodePoolRelease, 0, len(list.Items))
 	for i := range list.Items {
-		if spec := list.Items[i].Spec; string(spec.Profile) == profile && spec.Tag == tag {
-			matches = append(matches, &list.Items[i])
-		}
+		matches = append(matches, &list.Items[i])
 	}
 	switch len(matches) {
 	case 0:
@@ -1148,6 +1146,9 @@ func (r *NVKEClusterReconciler) resolveNVKEControllerClass(ctx context.Context, 
 	return nil
 }
 
+// nodePoolReleaseProfileTagField indexes NodePoolReleases by "<profile>:<tag>", the form of a node pool's nodeProfile.
+const nodePoolReleaseProfileTagField = "spec.profileTag"
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *NVKEClusterReconciler) SetupWithManager(mgr ctrl.Manager, wrappers ...func(reconcile.Reconciler) reconcile.Reconciler) error {
 	if r.PollInterval <= 0 {
@@ -1155,6 +1156,12 @@ func (r *NVKEClusterReconciler) SetupWithManager(mgr ctrl.Manager, wrappers ...f
 	}
 	if r.APIReader == nil {
 		r.APIReader = mgr.GetAPIReader()
+	}
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &internalv1.NodePoolRelease{}, nodePoolReleaseProfileTagField, func(obj client.Object) []string {
+		release := obj.(*internalv1.NodePoolRelease)
+		return []string{string(release.Spec.Profile) + ":" + release.Spec.Tag}
+	}); err != nil {
+		return fmt.Errorf("index NodePoolReleases by profile and tag: %w", err)
 	}
 	var reconciler reconcile.Reconciler = r
 	for _, wrap := range wrappers {
