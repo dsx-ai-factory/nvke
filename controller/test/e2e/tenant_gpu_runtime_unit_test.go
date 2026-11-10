@@ -4,12 +4,18 @@
 package e2e
 
 import (
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"sigs.k8s.io/yaml"
 
@@ -21,6 +27,7 @@ func TestPlanTenantGPURuntime(t *testing.T) {
 		name         string
 		enabled      bool
 		capabilities map[string]string
+		err          error
 		accelerator  string
 		skip         string
 	}{
@@ -32,9 +39,11 @@ func TestPlanTenantGPURuntime(t *testing.T) {
 		// A run that names no series is not assumed to be on the one AICR takes.
 		{name: "no series", enabled: true, capabilities: map[string]string{"gpu": "gb200"}, skip: `the run is on ""`},
 		{name: "no capabilities", enabled: true, skip: "asks for no GPU"},
+		{name: "capabilities unreadable", enabled: true, err: errors.New("bad -e2e.capabilities"), skip: "could not be read: bad -e2e.capabilities"},
+		{name: "off with capabilities unreadable", err: errors.New("bad -e2e.capabilities")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			plan := planTenantGPURuntime(tc.enabled, tc.capabilities)
+			plan := planTenantGPURuntime(tc.enabled, tc.capabilities, tc.err)
 			if plan.accelerator != tc.accelerator {
 				t.Errorf("accelerator = %q, want %q", plan.accelerator, tc.accelerator)
 			}
@@ -42,6 +51,61 @@ func TestPlanTenantGPURuntime(t *testing.T) {
 				t.Errorf("skip = %q, want it to contain %q", plan.skip, tc.skip)
 			}
 		})
+	}
+}
+
+// TestGPURuntimeMinutesCoverTheSpecs ties the script's allowance, which every
+// clock moves out by, to the two specs' limits.
+func TestGPURuntimeMinutesCoverTheSpecs(t *testing.T) {
+	script, err := os.ReadFile(filepath.Join("..", "..", "..", "release", "hack", "qualify-e2e.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	match := regexp.MustCompile(`(?m)^gpu_runtime_minutes=(\d+)$`).FindSubmatch(script)
+	if match == nil {
+		t.Fatal("qualify-e2e.sh sets no gpu_runtime_minutes")
+	}
+	minutes, err := strconv.Atoi(string(match[1]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := int((aicrInstallTimeout + aicrValidateTimeout) / time.Minute); minutes != want {
+		t.Errorf("qualify-e2e.sh gpu_runtime_minutes = %d, want the specs' %d", minutes, want)
+	}
+}
+
+// TestAICRCommandCancelKillsItsChildren checks that a canceled command takes
+// the processes it started with it, as deploy.sh's helm would be.
+func TestAICRCommandCancelKillsItsChildren(t *testing.T) {
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "child.pid")
+	run := &aicrRun{dir: dir}
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	err := run.try(ctx, dir, "bash", "-c", "sleep 300 & echo $! > "+pidFile+"; wait")
+	if err == nil {
+		t.Fatal("try returned nil for a canceled command")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second+aicrWaitDelay {
+		t.Fatalf("try took %s after cancel; it should not wait on the child", elapsed)
+	}
+	raw, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for syscall.Kill(pid, 0) == nil {
+		if time.Now().After(deadline) {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+			t.Fatalf("child %d outlived the canceled command", pid)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 

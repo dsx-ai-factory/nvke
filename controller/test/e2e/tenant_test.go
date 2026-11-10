@@ -673,8 +673,8 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				validateNvkectlNodePoolLifecycle(&test)
 			}
 			if spec.validate.tenantChecks {
-				capabilities, _ := runCapabilities()
-				gpuRuntime := planTenantGPURuntime(tenantGPURuntime, capabilities)
+				capabilities, capabilitiesErr := runCapabilities()
+				gpuRuntime := planTenantGPURuntime(tenantGPURuntime, capabilities, capabilitiesErr)
 				tenantFailed := func() bool { return failed }
 				if tenantGPURuntime {
 					validateTenantGPURuntime(&test, gpuRuntime, tenantFailed)

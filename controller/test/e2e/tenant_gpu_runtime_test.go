@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -47,6 +48,9 @@ const (
 	// aicrOutputLines is how much of a failed command's output a failure
 	// message carries. The whole of it is in the spec's GinkgoWriter log.
 	aicrOutputLines = 40
+	// aicrWaitDelay bounds the wait for a canceled command's output pipe to
+	// close once its process group has been killed.
+	aicrWaitDelay = 10 * time.Second
 )
 
 // aicrAccelerators maps the run's gpu capability to the AICR accelerator
@@ -66,9 +70,12 @@ type tenantGPURuntimePlan struct {
 
 func (p tenantGPURuntimePlan) installs() bool { return p.accelerator != "" }
 
-func planTenantGPURuntime(enabled bool, capabilities map[string]string) tenantGPURuntimePlan {
+func planTenantGPURuntime(enabled bool, capabilities map[string]string, capabilitiesErr error) tenantGPURuntimePlan {
 	if !enabled {
 		return tenantGPURuntimePlan{}
+	}
+	if capabilitiesErr != nil {
+		return tenantGPURuntimePlan{skip: "the run's capabilities could not be read: " + capabilitiesErr.Error()}
 	}
 	gpu := capabilities[infra.CapabilityGPU]
 	if gpu == "" {
@@ -203,6 +210,12 @@ func (r *aicrRun) try(ctx context.Context, dir, name string, args ...string) err
 	}
 	command.Stdout = io.MultiWriter(GinkgoWriter, &out)
 	command.Stderr = command.Stdout
+	// deploy.sh starts helm and kubectl, which hold the output pipe. Killing
+	// only bash on timeout would leave them installing into a tenant being
+	// torn down, and Run waiting on them; the whole group goes instead.
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	command.Cancel = func() error { return syscall.Kill(-command.Process.Pid, syscall.SIGKILL) }
+	command.WaitDelay = aicrWaitDelay
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("%s %s: %w\n%s", name, strings.Join(args, " "), err, lastLines(out.String(), aicrOutputLines))
 	}
