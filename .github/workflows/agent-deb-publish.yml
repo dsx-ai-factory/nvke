@@ -31,11 +31,13 @@
 # cannot race with itself. The GHCR and NVCR jobs run in parallel with S3
 # publish and do not touch apt intake.
 #
-# A bare vX.Y.Z-beta.N tag only triggers the run. It builds the commit it names
-# and versions the packages like any other build of that commit, by the agent/v*
-# describe. They are published to releases/<describe>/ in the apt intake bucket
-# (index.json is not updated) and as <describe> tags on NVCR. A beta has no
-# GHCR copy.
+# A bare v* tag only triggers the run. It builds the commit it names and
+# versions the packages by that tag; any other run by the v* describe (see
+# release/hack/describe-version.sh). They are published to releases/<version>/
+# in the apt intake bucket and as <version> tags on NVCR. Only a release
+# version, vX.Y.Z, enters index.json or GHCR: a beta, and a component RC
+# described to a beta's descendant, have no GHCR copy and are not installable
+# from apt.
 
 name: Agent Deb Publish
 
@@ -81,6 +83,7 @@ jobs:
     outputs:
       sha: ${{ steps.package.outputs.sha }}
       version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -115,16 +118,24 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # The one place the version is resolved, for the consumers below: the
-      # checked-out commit described, the way `make deb` stamps the package,
-      # whichever tag or ref started the run.
+      # The one place the version is resolved, for the package and the
+      # consumers below. Only a release version enters index.json or GHCR, so
+      # that follows the version rather than the ref: a component RC tag
+      # carries no -beta. and would otherwise publish whatever it describes to.
       - name: Resolve the version
         id: version
         shell: bash
         run: |
           set -euo pipefail
           version="$(release/hack/describe-version.sh HEAD)"
-          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          release=false
+          if [[ "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            release=true
+          fi
+          {
+            echo "version=${version}"
+            echo "release=${release}"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -297,9 +308,9 @@ jobs:
           APT_INTAKE_S3_URI: ${{ steps.meta.outputs.s3_uri }}
           APT_INTAKE_PROJECT: ${{ steps.meta.outputs.project }}
           APT_INTAKE_RELEASE: ${{ steps.meta.outputs.release }}
-          # A beta is uploaded under releases/<describe>/ but never enters the index
-          # that apt-publisher serves.
-          PUBLISH_INDEX_JSON: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.')) && 'false' || 'true' }}
+          # Anything but a release is uploaded under releases/<version>/ but never
+          # enters the index that apt-publisher serves.
+          PUBLISH_INDEX_JSON: ${{ needs.build.outputs.release }}
           ASSETS_DIR: bin
         run: ./scripts/upload-s3-apt-intake.sh
 
@@ -365,7 +376,8 @@ jobs:
     if: >-
       github.repository_id == '1323115536' &&
       (startsWith(inputs.ref || github.ref_name, 'agent/v') ||
-        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-beta.'))) &&
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))) &&
+      needs.build.outputs.release == 'true' &&
       contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned'), ',agent,')
     runs-on: ubuntu-latest
     timeout-minutes: 10
