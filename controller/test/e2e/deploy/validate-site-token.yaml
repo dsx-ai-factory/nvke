@@ -5,8 +5,9 @@
 # service account mint a token for the identity it presents to the controller,
 # __TOKEN_NAMESPACE__/__TOKEN_SERVICE_ACCOUNT__, which the controller must
 # authorize to list clusters. The controller authenticates where its settings
-# turn apiAuth on or an nvke-auth-config ConfigMap exists; with neither it
-# takes no token, and the suite sends none.
+# turn apiAuth on or an authentication ConfigMap, nvke-auth-config or the older
+# nke-auth-config, exists; with neither it takes no token, and the suite sends
+# none.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

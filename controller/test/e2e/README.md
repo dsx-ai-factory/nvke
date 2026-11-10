@@ -603,23 +603,35 @@ so a version read from the API server would pass a site running the wrong one.
 `token_ns`/`token_sa` name the identity the suite presents to the controller
 API, one the controller authorizes to list clusters; `validate-site-token.yaml`
 lets the Job mint its token. The controller authenticates where its settings
-turn `apiAuth` on, or where an `nvke-auth-config` ConfigMap exists; apply the
-file if either holds, and skip it only if neither does:
+turn `apiAuth` on, or where an authentication ConfigMap exists; apply the file
+if either holds, and skip it only if neither does. A site may keep either
+ConfigMap under its older `nke-` name, so check both names:
 
 ```bash
-kubectl -n "${ctrl_ns}" get configmap nvke-controller-config -o jsonpath='{.data.config\.yaml}' \
-  | grep -A3 '^apiAuth:'                                  # enabled: true means it authenticates
-kubectl -n "${ctrl_ns}" get configmap nvke-auth-config    # exists means it authenticates
+for cm in nvke-controller-config nke-controller-config; do
+  kubectl -n "${ctrl_ns}" get configmap "${cm}" -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
+    | sed -n '/^apiAuth:/,/^[^[:space:]#]/p'   # enabled: true in this section means it authenticates
+done
+kubectl -n "${ctrl_ns}" get configmap nvke-auth-config nke-auth-config --ignore-not-found
+# either one listed means it authenticates
 ```
 
 Where the registry needs credentials, add `imagePullSecrets` to the Job and
 the artifacts pod. Add any [variables](#validation-image-variables) the site's
-expectations need to the Job's `env`.
+expectations need to the Job's `env`. Two of them need more RBAC than
+`validate-site.yaml` grants by default: listing `argocd` or `cnpg` in
+`NVKE_SITE_COMPONENTS` needs the commented Application or Cluster rule in its
+ClusterRole uncommented, and setting `NVKE_SITE_PROBE_NAMESPACE` needs the
+`nvke-validate-probe` Role and RoleBinding moved to that namespace.
 
-Follow the run, then read the Job's conditions. `Complete` means every
-selected spec passed, `Failed` that one did not; neither means it is still
-running. Recent Kubernetes versions also list `SuccessCriteriaMet` or
-`FailureTarget` alongside.
+Follow the run, then read the Job's conditions. `Complete` means no selected
+spec failed. Some may still have skipped, saying why, where an input they
+need is unset: the reports list them, so read those before calling the site
+validated. `Failed` means a spec failed, or the Job ended without finishing
+the suite, such as a pod that never started or a run past the Job's deadline;
+the logs and `kubectl -n nvke-validate describe job nvke-validate`
+say which. Neither means it is still running. Recent Kubernetes versions also
+list `SuccessCriteriaMet` or `FailureTarget` alongside.
 
 ```bash
 kubectl -n nvke-validate logs -f job/nvke-validate
@@ -636,7 +648,8 @@ kubectl -n nvke-validate cp nvke-validate-artifacts:/artifacts ./artifacts
 kubectl -n nvke-validate delete pod nvke-validate-artifacts
 ```
 
-`artifacts/junit-test-report.xml` lists each selected spec and why any failed.
+`artifacts/junit-test-report.xml` lists each selected spec, and why any failed
+or skipped.
 To run again, delete the Job (`kubectl -n nvke-validate delete job nvke-validate`)
 and apply `validate-site.yaml` again; the next run overwrites the reports. To
 remove everything, `fill` each file into `kubectl delete -f -`.
