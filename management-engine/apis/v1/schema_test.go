@@ -40,7 +40,7 @@ type resourceSchema struct {
 // and conversion, so tests can read the markers back off the schema.
 func loadCRD(t *testing.T, resource string) apiextensionsv1.CustomResourceDefinition {
 	t.Helper()
-	directory := "../../chart/files/crds/"
+	directory := "../../config/crd/bases/"
 	switch resource {
 	case "machineimages", "clusterreleases", "nodepoolreleases":
 		directory = "../../../controller/deploy/charts/nvke-crds/bases/"

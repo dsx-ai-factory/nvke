@@ -5,7 +5,9 @@
 resources:
 - service_account.yaml
 # Controller permissions generated from RBAC markers.
-- ../../chart/files/roles
+- role.yaml
+- leader_election_role.yaml
+- metrics_auth_role.yaml
 - role_binding.yaml
 # Leases and election Events in the datastore namespace.
 - leader_election_role_binding.yaml

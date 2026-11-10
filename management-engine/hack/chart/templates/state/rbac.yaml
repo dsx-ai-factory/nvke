@@ -1,0 +1,57 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+{{- if .Values.state.enabled }}
+{{- $subjects := .Values.state.rbac.subjects }}
+{{- if and (empty $subjects) .Values.controller.enabled .Values.manager.enabled (eq .Values.manager.stateAccess.mode "inCluster") }}
+{{- $subjects = list (dict "kind" "ServiceAccount" "name" (include "management-engine.serviceAccountName" .) "namespace" .Release.Namespace) }}
+{{- end }}
+{{- $namespace := default .Release.Namespace .Values.state.namespace }}
+{{- $roles := list
+  (dict "file" "roles/role" "kind" "ClusterRole" "subjects" $subjects "namespace" $namespace "suffix" "manager-role")
+  (dict "file" "roles/leader_election_role" "kind" "Role" "subjects" $subjects "namespace" $namespace "suffix" "leader-election-role") }}
+{{- $localMetrics := and .Values.controller.enabled .Values.manager.enabled (eq .Values.manager.stateAccess.mode "inCluster") .Values.metrics.enabled .Values.metrics.secure }}
+{{- if or $localMetrics .Values.state.rbac.metricsAuth }}
+{{- $roles = append $roles (dict "file" "roles/metrics_auth_role" "kind" "ClusterRole" "subjects" $subjects "namespace" $namespace "suffix" "metrics-auth-role") }}
+{{- end }}
+{{- $tenantSubjects := list }}
+{{- range .Values.state.rbac.tenantAPIBindings }}
+{{- range .subjects }}{{- $tenantSubjects = append $tenantSubjects . }}{{- end }}
+{{- $roles = append $roles (dict "file" "api/tenant-api-rbac" "kind" "Role" "subjects" .subjects "namespace" .namespace "suffix" "tenant-api") }}
+{{- end }}
+{{- if $tenantSubjects }}
+{{- $roles = append $roles (dict "file" "api/tenant-api-rbac" "kind" "ClusterRole" "subjects" (uniq $tenantSubjects) "suffix" "tenant-catalog") }}
+{{- end }}
+{{- with .Values.state.rbac.operatorAPISubjects }}
+{{- $roles = append $roles (dict "file" "api/operator-api-rbac" "kind" "ClusterRole" "subjects" . "suffix" "operator-api") }}
+{{- end }}
+{{- range $role := $roles }}
+{{- $name := include "management-engine.resourceName" (dict "suffix" $role.suffix "context" $) }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: {{ $role.kind }}
+metadata:
+  name: {{ $name }}
+  {{- if eq $role.kind "Role" }}
+  namespace: {{ $role.namespace }}
+  {{- end }}
+rules:
+  {{- include "management-engine.roleRules" (dict "root" $ "file" $role.file "kind" $role.kind) | nindent 2 }}
+{{- if $role.subjects }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: {{ $role.kind }}Binding
+metadata:
+  name: {{ $name }}
+  {{- if eq $role.kind "Role" }}
+  namespace: {{ $role.namespace }}
+  {{- end }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: {{ $role.kind }}
+  name: {{ $name }}
+subjects:
+  {{- toYaml $role.subjects | nindent 2 }}
+{{- end }}
+{{- end }}
+{{- end }}

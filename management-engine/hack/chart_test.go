@@ -794,9 +794,10 @@ func TestChartAPIBindings(t *testing.T) {
 			operatorRole = role.GetKind() == "ClusterRole" && strings.Join(resources, ",") == wantResources
 		}
 	}
-	if len(objectsOfKind(objects, "RoleBinding")) != 1 || len(objectsOfKind(objects, "ClusterRoleBinding")) != 1 {
+	if len(objectsOfKind(objects, "RoleBinding")) != 1 || len(objectsOfKind(objects, "ClusterRoleBinding")) != 2 {
 		t.Fatal("missing or excessive API bindings")
 	}
+	assertTenantCatalogPermissions(t, objects)
 	if !tenantRole || !operatorRole {
 		t.Fatal("API permissions do not match existing registrations")
 	}
@@ -942,5 +943,35 @@ func TestChartCatalogOwnership(t *testing.T) {
 		if catalogCount != wantCatalog || localCount != 3 {
 			t.Fatalf("catalog enabled=%t: got %d catalog and %d local CRDs", includeCatalog, catalogCount, localCount)
 		}
+	}
+}
+
+func assertTenantCatalogPermissions(t *testing.T, objects []unstructured.Unstructured) {
+	t.Helper()
+	var catalog bool
+	for _, role := range objectsOfKind(objects, "ClusterRole") {
+		if !strings.HasSuffix(role.GetName(), "tenant-catalog") {
+			continue
+		}
+		rules, _, _ := unstructured.NestedSlice(role.Object, "rules")
+		seen := map[string]bool{}
+		for _, raw := range rules {
+			rule := raw.(map[string]any)
+			verbs, _, _ := unstructured.NestedStringSlice(rule, "verbs")
+			for _, verb := range verbs {
+				if verb != "get" && verb != "list" {
+					t.Fatalf("catalog permission allows writes: %v", rule)
+				}
+			}
+			resources, _, _ := unstructured.NestedStringSlice(rule, "resources")
+			for _, resource := range resources {
+				seen[resource] = true
+			}
+		}
+		catalog = len(seen) == 5 && seen["controlplaneclasses"] && seen["clusterreleasechannels"] &&
+			seen["nodepoolreleases"] && seen["clusterreleases"] && seen["machineimages"]
+	}
+	if !catalog {
+		t.Fatal("tenant catalog read permissions are missing or excessive")
 	}
 }

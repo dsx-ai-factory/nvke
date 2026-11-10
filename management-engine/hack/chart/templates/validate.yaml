@@ -1,0 +1,61 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+{{- if not (or .Values.state.enabled (and .Values.controller.enabled .Values.manager.enabled)) -}}
+{{- fail "enable state.enabled or controller.enabled" -}}
+{{- end -}}
+{{- $tenantNamespaces := dict -}}
+{{- range .Values.state.rbac.tenantAPIBindings -}}
+{{- if hasKey $tenantNamespaces .namespace -}}{{- fail "use one state.rbac.tenantAPIBindings entry per namespace; combine its subjects" -}}{{- end -}}
+{{- $_ := set $tenantNamespaces .namespace true -}}
+{{- end -}}
+{{- if and .Values.controller.enabled .Values.manager.enabled -}}
+{{- $_ := required "manager.image.repository is required" .Values.manager.image.repository -}}
+{{- $_ := required "manager.nvkeController.endpoint is required" .Values.manager.nvkeController.endpoint -}}
+{{- $endpoint := .Values.manager.nvkeController.endpoint -}}
+{{- $backendURL := urlParse $endpoint -}}
+{{- $_ := required "manager.nvkeController.endpoint must include a host" $backendURL.hostname -}}
+{{- if or $backendURL.userinfo (regexMatch "^https?://[^/?#]*@" $endpoint) -}}
+{{- fail "use manager.nvkeController.tokenSecret instead of endpoint userinfo" -}}
+{{- end -}}
+{{- if or (contains "?" $endpoint) (contains "#" $endpoint) -}}
+{{- fail "manager.nvkeController.endpoint must not contain a query or fragment" -}}
+{{- end -}}
+{{- if .Values.manager.nvkeController.tokenSecret.name -}}
+{{- $_ := required "backend credentials require manager.nvkeController.tokenSecret.key" .Values.manager.nvkeController.tokenSecret.key -}}
+{{- end -}}
+{{- $mode := .Values.manager.stateAccess.mode -}}
+{{- if not (has $mode (list "inCluster" "remote")) -}}
+{{- fail "manager.stateAccess.mode must be inCluster or remote" -}}
+{{- end -}}
+{{- if eq $mode "remote" -}}
+{{- if .Values.state.enabled -}}{{- fail "remote state access requires state.enabled=false" -}}{{- end -}}
+{{- $explicitNamespace := coalesce .Values.manager.stateNamespace .Values.state.namespace -}}
+{{- range .Values.manager.env -}}
+{{- if eq .name "STATE_NAMESPACE" -}}{{- $explicitNamespace = .value -}}{{- end -}}
+{{- end -}}
+{{- $_ := required "remote access requires manager.stateNamespace or state.namespace or env STATE_NAMESPACE" $explicitNamespace -}}
+{{- $_ := required "remote access requires manager.stateAccess.kubeconfigSecret.name" .Values.manager.stateAccess.kubeconfigSecret.name -}}
+{{- $_ := required "remote access requires manager.stateAccess.kubeconfigSecret.key" .Values.manager.stateAccess.kubeconfigSecret.key -}}
+{{- end -}}
+{{- $_ := required "manager.infrastructureTemplateConfigMap is required" .Values.manager.infrastructureTemplateConfigMap -}}
+{{- range .Values.manager.args -}}
+{{- $flag := trimAll "-" (first (splitList "=" .)) -}}
+{{- if eq $flag "leader-election-namespace" -}}
+{{- fail "the chart sets --leader-election-namespace from manager.stateNamespace" -}}
+{{- end -}}
+{{- if eq $flag "infra-template-configmap" -}}
+{{- fail "configure infrastructure templates with manager.infrastructureTemplateConfigMap, not manager.args" -}}
+{{- end -}}
+{{- if has $flag (list "nvke-controller-endpoint" "nvke-controller-token-file") -}}
+{{- fail "configure backend access with manager.nvkeController, not manager.args" -}}
+{{- end -}}
+{{- if has $flag (list "kubeconfig" "context") -}}
+{{- fail "configure datastore access with manager.stateAccess, not manager.args" -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.state.enabled (ne (include "management-engine.stateNamespace" .) (default .Release.Namespace .Values.state.namespace)) -}}
+{{- fail "combined installation requires manager and state namespaces to agree" -}}
+{{- end -}}
+{{- if hasKey (default dict .Values.manager.envOverrides) "STATE_NAMESPACE" -}}{{- fail "set manager.stateNamespace instead of envOverrides.STATE_NAMESPACE" -}}{{- end -}}
+{{- end -}}

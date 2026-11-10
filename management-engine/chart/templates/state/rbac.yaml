@@ -14,8 +14,13 @@
 {{- if or $localMetrics .Values.state.rbac.metricsAuth }}
 {{- $roles = append $roles (dict "file" "roles/metrics_auth_role" "kind" "ClusterRole" "subjects" $subjects "namespace" $namespace "suffix" "metrics-auth-role") }}
 {{- end }}
+{{- $tenantSubjects := list }}
 {{- range .Values.state.rbac.tenantAPIBindings }}
+{{- range .subjects }}{{- $tenantSubjects = append $tenantSubjects . }}{{- end }}
 {{- $roles = append $roles (dict "file" "api/tenant-api-rbac" "kind" "Role" "subjects" .subjects "namespace" .namespace "suffix" "tenant-api") }}
+{{- end }}
+{{- if $tenantSubjects }}
+{{- $roles = append $roles (dict "file" "api/tenant-api-rbac" "kind" "ClusterRole" "subjects" (uniq $tenantSubjects) "suffix" "tenant-catalog") }}
 {{- end }}
 {{- with .Values.state.rbac.operatorAPISubjects }}
 {{- $roles = append $roles (dict "file" "api/operator-api-rbac" "kind" "ClusterRole" "subjects" . "suffix" "operator-api") }}

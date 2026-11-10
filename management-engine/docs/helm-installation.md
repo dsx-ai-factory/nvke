@@ -17,9 +17,10 @@ resources. State-only rendering needs no image or credential configuration.
 
 ## Generate manifests
 
-From `management-engine/`, run `make chart-check` to regenerate canonical schemas
-and RBAC, stage the shared dependency, and validate the chart. CI also runs
-`make chart-assets-check` to reject uncommitted asset drift. These checks use Helm
+From `management-engine/`, run `make chart` to regenerate the Helm chart from
+canonical manifests with the pinned Kubebuilder plugin. Then run
+`make chart-check` to stage dependencies and validate every installation mode.
+CI runs generation checks to reject stale chart output. These checks use Helm
 and the module's pinned Go tools without connecting to a Kubernetes cluster.
 
 For a combined installation:
@@ -166,8 +167,9 @@ published image and chart revision for an installation.
 
 The chart owns its three specific schemas: NVKECluster, ControlPlaneClass and
 ClusterReleaseChannel. `state.crds.install=false` delegates those definitions to
-an existing installer. Their canonical files live in `chart/files/crds`; canonical
-manager RBAC lives in `chart/files/roles`. Kustomize uses the same files.
+an existing installer. Their canonical files live in `config/crd/bases`; canonical manager RBAC lives
+in `config/rbac`. `make chart` packages generated copies for Helm. Kustomize
+consumes the canonical files directly.
 
 MachineImage, ClusterRelease and NodePoolRelease are supplied by the shared
 [`nvke-crds` catalog chart](../../controller/deploy/charts/nvke-crds/README.md).
@@ -188,7 +190,8 @@ datastore clusters, provide the required APIs in each cluster.
 Follow the shared chart's explicit migration procedure before changing an
 existing catalog owner. `state.enabled=false` disables this chart's schemas,
 state RBAC/configuration and catalog dependency together. `make manifests`
-regenerates canonical definitions; `make chart-deps` stages the pinned dependency
+regenerates canonical definitions; `make chart` updates Helm output, and
+`make chart-deps` stages the pinned dependency
 before rendering or packaging chart source.
 
 CRDs are rendered as Helm resources with `helm.sh/resource-policy: keep`.

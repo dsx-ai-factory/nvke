@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 {{- if and .Values.controller.enabled .Values.manager.enabled }}
+{{- if or (not (hasKey .Values.manager "enabled")) (.Values.manager.enabled) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -88,34 +89,11 @@ spec:
         - --metrics-bind-address=0
         {{- end }}
         - --health-probe-bind-address=:8081
-        - --leader-election-namespace=$(STATE_NAMESPACE)
-        - {{ printf "--nvke-controller-endpoint=%s" .Values.manager.nvkeController.endpoint | quote }}
-        {{- if .Values.manager.nvkeController.tokenSecret.name }}
-        - --nvke-controller-token-file=/etc/nvke-controller/auth/token
-        {{- end }}
-        {{- if eq .Values.manager.stateAccess.mode "remote" }}
-        - --kubeconfig=/etc/management-api/kubeconfig
-        {{- end }}
-        {{- if .Values.manager.infrastructureTemplateConfigMap }}
-        - {{ printf "--infra-template-configmap=%s" .Values.manager.infrastructureTemplateConfigMap | quote }}
-        {{- end }}
-        {{- range .Values.manager.args }}
-        - {{ . | quote }}
-        {{- end }}
+{{ include "management-engine.managerArgs" . }}
         command:
         - /manager
         env:
-        - name: STATE_NAMESPACE
-          value: {{ include "management-engine.stateNamespace" . | quote }}
-        {{- range .Values.manager.env }}
-        {{- if ne .name "STATE_NAMESPACE" }}
-        - {{ toYaml . | nindent 10 | trim }}
-        {{- end }}
-        {{- end }}
-        {{- range $k, $v := .Values.manager.envOverrides }}
-        - name: {{ $k }}
-          value: {{ $v | quote }}
-        {{- end }}
+{{ include "management-engine.managerEnv" . }}
         image: "{{ .Values.manager.image.repository }}{{- if not (contains "@" .Values.manager.image.repository) }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}{{- end }}"
         {{- with .Values.manager.image.pullPolicy }}
         imagePullPolicy: {{ . }}
@@ -152,22 +130,11 @@ spec:
           {{- else }}
           {}
           {{- end }}
-        {{- if or .Values.manager.extraVolumeMounts (eq .Values.manager.stateAccess.mode "remote") .Values.manager.nvkeController.tokenSecret.name }}
         volumeMounts:
           {{- if .Values.manager.extraVolumeMounts }}
           {{- toYaml .Values.manager.extraVolumeMounts | nindent 8 }}
           {{- end }}
-        {{- if eq .Values.manager.stateAccess.mode "remote" }}
-        - mountPath: /etc/management-api
-          name: management-api
-          readOnly: true
-        {{- end }}
-        {{- if .Values.manager.nvkeController.tokenSecret.name }}
-        - mountPath: /etc/nvke-controller/auth
-          name: nvke-controller-token
-          readOnly: true
-        {{- end }}
-        {{- end }}
+{{ include "management-engine.managedMounts" . }}
       securityContext:
         {{- if .Values.manager.podSecurityContext }}
         {{- toYaml .Values.manager.podSecurityContext | nindent 8 }}
@@ -178,28 +145,11 @@ spec:
       {{- if and (hasKey .Values.manager "terminationGracePeriodSeconds") (ne .Values.manager.terminationGracePeriodSeconds nil) }}
       terminationGracePeriodSeconds: {{ .Values.manager.terminationGracePeriodSeconds }}
       {{- end }}
-      {{- if or .Values.manager.extraVolumes (eq .Values.manager.stateAccess.mode "remote") .Values.manager.nvkeController.tokenSecret.name }}
       volumes:
         {{- if .Values.manager.extraVolumes }}
         {{- toYaml .Values.manager.extraVolumes | nindent 6 }}
         {{- end }}
-      {{- if eq .Values.manager.stateAccess.mode "remote" }}
-      - name: management-api
-        secret:
-          defaultMode: 292
-          secretName: {{ .Values.manager.stateAccess.kubeconfigSecret.name | quote }}
-          items:
-          - key: {{ .Values.manager.stateAccess.kubeconfigSecret.key | quote }}
-            path: kubeconfig
-      {{- end }}
-      {{- if .Values.manager.nvkeController.tokenSecret.name }}
-      - name: nvke-controller-token
-        secret:
-          secretName: {{ .Values.manager.nvkeController.tokenSecret.name | quote }}
-          defaultMode: 292
-          items:
-          - key: {{ .Values.manager.nvkeController.tokenSecret.key | quote }}
-            path: token
-      {{- end }}
-      {{- end }}
+{{ include "management-engine.managedVolumes" . }}
+{{- end }}
+
 {{- end }}

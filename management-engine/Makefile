@@ -50,11 +50,11 @@ license: ## Add the repository's license header to source files.
 .PHONY: manifests-state manifests
 manifests-state: controller-gen ## Generate internal deepcopy methods, datastore CRDs, and RBAC.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
-	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=hack/boilerplate.yaml.txt paths=./apis/... output:crd:artifacts:config=chart/files/crds
+	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=hack/boilerplate.yaml.txt paths=./apis/... output:crd:artifacts:config=config/crd/bases
 	@for kind in machineimages clusterreleases nodepoolreleases; do \
-		mv "chart/files/crds/internal.nvke.nvidia.com_$$kind.yaml" ../controller/deploy/charts/nvke-crds/bases/; \
+		mv "config/crd/bases/internal.nvke.nvidia.com_$$kind.yaml" ../controller/deploy/charts/nvke-crds/bases/; \
 	done
-	"$(CONTROLLER_GEN)" rbac:roleName=manager-role,headerFile=hack/boilerplate.yaml.txt paths=./controllers/... output:rbac:artifacts:config=chart/files/roles
+	"$(CONTROLLER_GEN)" rbac:roleName=manager-role,headerFile=hack/boilerplate.yaml.txt paths=./controllers/... output:rbac:artifacts:config=config/rbac
 
 manifests: manifests-state kustomize ## Generate canonical schemas, RBAC and runtime manifests.
 	mkdir -p dist chart/files
@@ -280,7 +280,8 @@ $(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{
 endef
 
 .PHONY: chart
-chart: manifests ## Refresh generated chart CRDs and RBAC; Helm templates are maintained directly.
+chart: manifests kubebuilder ## Regenerate the Helm chart from canonical manifests and packaging extensions.
+	$(GO) run ./hack/chartgen -kubebuilder "$(KUBEBUILDER)"
 
 ##@ Helm Deployment
 
@@ -320,14 +321,14 @@ chart-deps: ## Stage the pinned shared schema dependency for Helm source operati
 	$(HELM) dependency build chart --skip-refresh
 
 .PHONY: chart-check
-chart-check: manifests chart-deps ## Lint and test combined, state-only, and controller-only Helm installations.
+chart-check: manifests kubebuilder chart-deps ## Check generation, lint and test every installation mode.
+	$(GO) run ./hack/chartgen -kubebuilder "$(KUBEBUILDER)" -check
 	$(HELM) lint chart -f config/samples/runtime-values.yaml
-	HELM="$(HELM)" $(GO) test $(GO_TEST_FLAGS) ./hack -run TestChart -count=1
+	HELM="$(HELM)" KUBEBUILDER="$(KUBEBUILDER)" KUSTOMIZE="$(KUSTOMIZE)" $(GO) test $(GO_TEST_FLAGS) ./hack/... -run 'TestChart|TestGeneration' -count=1
 
 .PHONY: chart-assets-check
-chart-assets-check: manifests ## Fail when canonical generated chart assets are stale.
-	git diff --exit-code -- chart/files
-	@test -z "$$(git ls-files --others --exclude-standard -- chart/files)" || { echo "Commit generated chart assets"; exit 1; }
+chart-assets-check: manifests kubebuilder ## Verify the complete generated chart is current.
+	$(GO) run ./hack/chartgen -kubebuilder "$(KUBEBUILDER)" -check
 
 .PHONY: test-chart-crds
 test-chart-crds: ## Verify the shared CRD chart and its controller dependency.

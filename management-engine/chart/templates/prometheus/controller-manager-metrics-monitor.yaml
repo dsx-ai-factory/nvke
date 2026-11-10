@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-{{- if and .Values.controller.enabled .Values.manager.enabled .Values.prometheus.enabled }}
+{{- if and .Values.controller.enabled .Values.manager.enabled }}
+{{- if .Values.prometheus.enabled }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -44,4 +45,6 @@ spec:
     matchLabels:
       app.kubernetes.io/name: {{ include "management-engine.name" . }}
       control-plane: controller-manager
+{{- end }}
+
 {{- end }}

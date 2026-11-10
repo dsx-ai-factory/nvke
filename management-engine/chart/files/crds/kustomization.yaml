@@ -1,7 +1,0 @@
-# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-
-resources:
-- internal.nvke.nvidia.com_clusterreleasechannels.yaml
-- internal.nvke.nvidia.com_controlplaneclasses.yaml
-- internal.nvke.nvidia.com_nvkeclusters.yaml
