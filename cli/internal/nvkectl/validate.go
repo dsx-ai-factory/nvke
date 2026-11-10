@@ -25,7 +25,6 @@ func newValidateCmd() *cobra.Command {
 type validateSiteSpecOptions struct {
 	siteSpec                    string
 	bootstrapOnly               bool
-	disableMTLS                 bool
 	allowControlPlaneWithoutVIP bool
 }
 
@@ -44,14 +43,12 @@ controller stack install then both use the default.
 With infra.provider nico, the bootstrap also reads what only its host holds:
 the file NVKECTL_NICO_CREDENTIALS names, the files infra.nico names, the node
 login in NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD, spire.externalAddress
-(required unless --disable-mtls is given, as it is for "nvkectl bootstrap
-site") and the https check on infra.nico.remote.endpoint. Those are reported
+(required, as it is for "nvkectl bootstrap site") and the https check on infra.nico.remote.endpoint. Those are reported
 but do not fail the run, because the controller stack install runs this
 command on a host that does not have them. --bootstrap-only fails on them, so
 a file it passes is one "nvkectl bootstrap site" accepts on this host.`,
 		Example: `  nvkectl validate sitespec -f sitespec.yaml
-  nvkectl validate sitespec -f sitespec.yaml --bootstrap-only
-  nvkectl validate sitespec -f sitespec.yaml --bootstrap-only --disable-mtls`,
+  nvkectl validate sitespec -f sitespec.yaml --bootstrap-only`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -64,8 +61,6 @@ a file it passes is one "nvkectl bootstrap site" accepts on this host.`,
 		"Also fail on what only the bootstrap host holds, as \"bootstrap site\" does")
 	cmd.Flags().BoolVar(&opts.allowControlPlaneWithoutVIP, "allow-control-plane-without-vip", false,
 		"Permit a multi-node control plane without a VIP. Development only; bootstrap site needs the same flag.")
-	cmd.Flags().BoolVar(&opts.disableMTLS, "disable-mtls", false,
-		"Check the file as \"bootstrap site --disable-mtls\" would: with infra.provider nico, spire.externalAddress is not required")
 	return cmd
 }
 
@@ -80,7 +75,7 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 	// install runs this command without it, so without --bootstrap-only they
 	// are reported and do not fail the run. Both run, so one pass reports every
 	// problem.
-	modeErr := spec.CheckBootstrapMode(opts.disableMTLS)
+	modeErr := spec.CheckBootstrapMode()
 	if modeErr != nil {
 		modeErr = fmt.Errorf("%w (--disable-mtls lifts this)", modeErr)
 	}

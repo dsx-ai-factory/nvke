@@ -1,0 +1,90 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# NVKE controller stack components for AICR, with their default artifact locations and versions.
+# NVKE owns these defaults. A release description (nvkectl render catalog --release) overrides the
+# location, version and digest of a component whose output it names; nothing else here is release-derived.
+#
+# A location under nvke.invalid is a chart NVKE builds but has no default home for yet. Rendering for a
+# deploy must take it from a release; nvkectl refuses to render a component still pointing at .invalid.
+# The component name is the Helm release name and must not change: Temporal and the controller address
+# Postgres by its service DNS name.
+apiVersion: aicr.run/v1beta1
+kind: ComponentRegistry
+# cert-manager is not listed: AICR's embedded registry already carries it.
+components:
+  - name: postgres
+    displayName: PostgreSQL
+    class: core
+    valueOverrideKeys: [postgres]
+    helm:
+      defaultRepository: oci://registry-1.docker.io/bitnamicharts
+      defaultChart: postgresql
+      defaultVersion: "18.5.15"
+      defaultNamespace: postgres
+  - name: temporal
+    displayName: Temporal
+    class: core
+    valueOverrideKeys: [temporal]
+    helm:
+      defaultRepository: https://go.temporal.io/helm-charts
+      defaultChart: temporal
+      defaultVersion: "0.74.0"
+      defaultNamespace: temporal
+  - name: nke-controller
+    displayName: NKE controller
+    class: core
+    valueOverrideKeys: [nkecontroller]
+    helm:
+      defaultRepository: oci://nvke.invalid/charts
+      defaultChart: nvke-controller
+      defaultVersion: "0.0.0"
+      defaultNamespace: nke-controller
+  - name: nktp
+    displayName: NKTP telemetry pipeline
+    class: core
+    valueOverrideKeys: [nktp]
+    helm:
+      defaultRepository: oci://nvke.invalid/charts
+      defaultChart: nktp
+      defaultVersion: "0.0.0"
+      defaultNamespace: nktp
+  - name: spire-crds
+    displayName: SPIRE CRDs
+    class: core
+    valueOverrideKeys: [spirecrds]
+    helm:
+      defaultRepository: https://spiffe.github.io/helm-charts-hardened/
+      defaultChart: spire-crds
+      defaultVersion: "0.6.1"
+      defaultNamespace: spire-server
+  - name: spire
+    displayName: SPIRE
+    class: core
+    valueOverrideKeys: [spire]
+    helm:
+      defaultRepository: https://spiffe.github.io/helm-charts-hardened/
+      defaultChart: spire
+      defaultVersion: "0.30.1"
+      defaultNamespace: spire-server
+  # Manifest-only: objects that carry no chart. The manifests name their own namespaces.
+  - name: nvke-base-config
+    displayName: NVKE base configuration
+    class: core
+    valueOverrideKeys: [nvkebaseconfig]
+    helm: {defaultRepository: "", defaultNamespace: nke-controller}
+  - name: nvke-seed-config
+    displayName: NVKE seed NodePorts
+    class: core
+    valueOverrideKeys: [nvkeseedconfig]
+    helm: {defaultRepository: "", defaultNamespace: nke-controller}
+  - name: capnico
+    displayName: CAPNICo
+    class: core
+    valueOverrideKeys: [capnico]
+    helm: {defaultRepository: "", defaultNamespace: capnico-system}
+  - name: provisioned-provider
+    displayName: Provisioned infrastructure provider
+    class: core
+    valueOverrideKeys: [provisionedprovider]
+    helm: {defaultRepository: "", defaultNamespace: provisioned-system}

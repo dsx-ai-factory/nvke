@@ -249,3 +249,18 @@ func tpmChecksum(t *testing.T, out string) string {
 	}
 	return values.Server.NodeAttestor.TPMDirect.Checksum
 }
+
+func TestRenderCatalog_RefusesAnUnknownTargetAndAnUnpublishedChart(t *testing.T) {
+	template := filepath.Join("..", "..", "..", "aicr-catalog")
+	for args, want := range map[string]string{
+		"--target other": "is not one of seed, site",
+		"--target site":  "no published chart for nke-controller",
+	} {
+		cmd := newRenderCatalogCmd()
+		cmd.SetArgs(append(strings.Fields(args), "--catalog-template", template, "--out", filepath.Join(t.TempDir(), "out")))
+		cmd.SilenceUsage, cmd.SilenceErrors = true, true
+		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: want %q, got %v", args, want, err)
+		}
+	}
+}

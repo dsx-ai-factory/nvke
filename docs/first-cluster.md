@@ -337,8 +337,8 @@ the listed images into a local or private registry. To change where they come
 from:
 
 - `NVKECTL_BOOTSTRAP_DOCKERHUB_MIRROR=<host>` pulls the Docker Hub images from a mirror.
-- `NVKECTL_NVKE_CONTROLLER_TEMPORAL_CHART`, `NVKECTL_NVKE_CONTROLLER_SPIRE_CHART` and
-  `NVKECTL_NVKE_CONTROLLER_SPIRE_CRDS_CHART` take an OCI reference or a local path.
+- The charts come from the AICR catalog template (`aicr-catalog/`), at the locations and versions its
+  `registry.yaml` names. `--release` replaces them with the outputs of an NVKR release description.
 
 Images from `ghcr.io`, `registry.k8s.io` and `cgr.dev` come from those
 registries. Cluster API and cert-manager come from `github.com` through

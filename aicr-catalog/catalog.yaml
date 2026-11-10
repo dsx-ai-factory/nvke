@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What nvkectl render catalog may take from a release description. A chart entry names the release output that
+# replaces a component's chart location and version: in registry.yaml, or in one overlay's componentRef when
+# overlay is set. An image entry replaces a pinned image reference in a manifest with the output's digest.
+# An output the release does not carry leaves the default in place.
+apiVersion: nvke.dev/aicr-catalog/v1
+version: 0.1.0
+charts:
+  - {component: postgres, output: postgresql}
+  - {component: postgres, overlay: nvke-seed, output: postgresql-dev}
+  - {component: nke-controller, output: controller-chart}
+  - {component: nktp, output: nktp}
+  - {component: temporal, output: temporal}
+  - {component: spire, output: spire}
+  - {component: spire-crds, output: spire-crds}
+images:
+  - {file: components/capnico/manifests/capnico.yaml, ref: ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:v0.0.45@sha256:bca9d77a25e605a5c39faf0a71b45b484d363edc4535f8a37aa811a639738595, output: capnico-controller}

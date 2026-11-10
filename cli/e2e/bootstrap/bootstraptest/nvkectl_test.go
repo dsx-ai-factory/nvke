@@ -87,14 +87,13 @@ func TestBootstrapOptionsArgs(t *testing.T) {
 			},
 		},
 		{
-			name: "disabling mTLS and naming a diagnostics directory",
+			name: "naming a diagnostics directory",
 			opts: BootstrapOptions{
 				Binary:         "nvkectl",
 				SiteSpec:       "site.yaml",
-				DisableMTLS:    true,
 				DiagnosticsDir: "/tmp/diag",
 			},
-			want: []string{"bootstrap", "site", "-f", "site.yaml", "--disable-mtls", "--diagnostics-dir", "/tmp/diag"},
+			want: []string{"bootstrap", "site", "-f", "site.yaml", "--diagnostics-dir", "/tmp/diag"},
 		},
 		{
 			name: "a zero timeout leaves --timeout off",

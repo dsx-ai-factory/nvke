@@ -25,8 +25,7 @@ controller stack install then both use the default.
 With infra.provider nico, the bootstrap also reads what only its host holds:
 the file NVKECTL_NICO_CREDENTIALS names, the files infra.nico names, the node
 login in NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD, spire.externalAddress
-(required unless --disable-mtls is given, as it is for "nvkectl bootstrap
-site") and the https check on infra.nico.remote.endpoint. Those are reported
+(required, as it is for "nvkectl bootstrap site") and the https check on infra.nico.remote.endpoint. Those are reported
 but do not fail the run, because the controller stack install runs this
 command on a host that does not have them. --bootstrap-only fails on them, so
 a file it passes is one "nvkectl bootstrap site" accepts on this host.
@@ -40,7 +39,6 @@ nvkectl validate sitespec [flags]
 ```
   nvkectl validate sitespec -f sitespec.yaml
   nvkectl validate sitespec -f sitespec.yaml --bootstrap-only
-  nvkectl validate sitespec -f sitespec.yaml --bootstrap-only --disable-mtls
 ```
 
 ### Options
@@ -48,7 +46,6 @@ nvkectl validate sitespec [flags]
 ```
       --allow-control-plane-without-vip   Permit a multi-node control plane without a VIP. Development only; bootstrap site needs the same flag.
       --bootstrap-only                    Also fail on what only the bootstrap host holds, as "bootstrap site" does
-      --disable-mtls                      Check the file as "bootstrap site --disable-mtls" would: with infra.provider nico, spire.externalAddress is not required
   -h, --help                              help for sitespec
   -f, --sitespec string                   Path to the site spec (required)
 ```

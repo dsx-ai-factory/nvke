@@ -50,8 +50,6 @@ type BootstrapOptions struct {
 	// KeepBootstrapCluster leaves the ephemeral Kind cluster standing, so the
 	// caller can read it afterwards. The caller then owns deleting it.
 	KeepBootstrapCluster bool
-	// DisableMTLS stands the site up without SPIRE.
-	DisableMTLS bool
 	// Verbose passes -v, which makes a successful run write its diagnostics
 	// bundle too.
 	Verbose bool
@@ -89,9 +87,6 @@ func (o BootstrapOptions) args() []string {
 	args = append(args, "-f", o.SiteSpec)
 	if o.KeepBootstrapCluster {
 		args = append(args, "--keep-bootstrap-cluster")
-	}
-	if o.DisableMTLS {
-		args = append(args, "--disable-mtls")
 	}
 	if o.Timeout > 0 {
 		args = append(args, "--timeout", o.Timeout.String())

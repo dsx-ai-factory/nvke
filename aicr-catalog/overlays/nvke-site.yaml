@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The site controller cluster: the operational layer of a production cluster. The values are deploy/nico's.
+kind: RecipeMetadata
+apiVersion: aicr.run/v1beta1
+metadata:
+  name: nvke-site
+spec:
+  base: nvke-core
+  criteria:
+    service: nvke-site
+  componentRefs:
+    - {name: cert-manager, type: Helm, valuesFile: components/cert-manager/values.yaml}
+    - {name: nvke-base-config, type: Helm, manifestFiles: [components/nvke-base-config/manifests/00-namespaces.yaml, components/nvke-base-config/manifests/40-oidc-upstream-ca.yaml, components/nvke-base-config/manifests/41-oidc-upstream-ca-certificate.yaml, components/nvke-base-config/manifests/nktp-cluster.yaml, components/nvke-base-config/manifests/spire-oidc-provider-nodeport.yaml, components/nvke-base-config/manifests/spire-server-nodeport.yaml, components/nvke-base-config/manifests/spire-tpm-pubhashes.yaml], dependencyRefs: [cert-manager]}
+    - {name: capnico, type: Helm, manifestFiles: [components/capnico/manifests/capnico.yaml], dependencyRefs: [cert-manager]}
+    - {name: nktp, type: Helm, valuesFile: components/nktp/site-values.yaml, dependencyRefs: [nvke-base-config]}
+    - {name: postgres, type: Helm, valuesFile: components/postgres/site-values.yaml, dependencyRefs: [nktp]}
+    - {name: spire-crds, type: Helm, dependencyRefs: [nktp]}
+    - {name: temporal, type: Helm, valuesFile: components/temporal/site-values.yaml, dependencyRefs: [postgres, spire-crds]}
+    - {name: spire, type: Helm, valuesFile: components/spire/site-values.yaml, dependencyRefs: [nvke-base-config, spire-crds]}
+    - {name: nke-controller, type: Helm, valuesFile: components/nke-controller/site-values.yaml, dependencyRefs: [postgres, temporal, spire]}

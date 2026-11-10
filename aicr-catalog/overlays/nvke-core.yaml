@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What every NVKE controller stack has: the controller, its database, Temporal and SPIRE. nvke-seed and
+# nvke-site extend it. Not a target itself. Values and charts that differ per target are set by the target.
+kind: RecipeMetadata
+apiVersion: aicr.run/v1beta1
+metadata:
+  name: nvke-core
+spec:
+  base: base
+  criteria:
+    service: nvke-core
+  componentRefs:
+    - {name: postgres, type: Helm}
+    - {name: spire-crds, type: Helm}
+    - {name: temporal, type: Helm, dependencyRefs: [postgres]}
+    - {name: spire, type: Helm, dependencyRefs: [spire-crds]}
+    - {name: nke-controller, type: Helm, dependencyRefs: [postgres, temporal, spire]}

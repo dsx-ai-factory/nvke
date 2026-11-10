@@ -39,7 +39,7 @@ With nico, infra.nico names the NICo and the MachineImage and ClusterRelease
 manifests the controller needs; the NICo token is read from the file the
 NVKECTL_NICO_CREDENTIALS variable names; the login rendered into every node
 comes from NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD; and
-spire.externalAddress is required unless --disable-mtls is set. The nodes'
+spire.externalAddress is required. The nodes'
 names and addresses are not printed; read them with "kubectl get nodes -o wide"
 on the finished cluster.
 
@@ -68,11 +68,11 @@ nvkectl bootstrap site [flags]
 ### Options
 
 ```
+      --aicr string                         The aicr binary --catalog-template uses. Overrides NVKECTL_AICR. (default "aicr")
       --allow-control-plane-without-vip     Permit a multi-node control plane without a VIP and enable the override in the temporary NVKE controller. Development only; replacing the initializing node can break API access.
-      --arch string                         Architecture of the release artifact to use, linux/amd64 or linux/arm64; default: the bootstrap host's, since the bootstrap CAPNICo runs in its Kind cluster. Only with --release.
-      --deploy-command string               Shell command that deploys Postgres, Temporal, SPIRE, Cluster API and the controller onto the bootstrap Kind cluster instead of the built-in deploy. It runs with KUBECONFIG set to the bootstrap cluster, NVKECTL_BOOTSTRAP_CLUSTER to its name and NVKECTL_SITESPEC to the site spec's path. Nothing else the built-in deploy does is done for it, so it must leave the controller reachable on its published port. Development only. Overrides NVKECTL_BOOTSTRAP_DEPLOY_COMMAND.
+      --arch string                         Architecture of the release's image outputs, linux/amd64 or linux/arm64; default: the bootstrap host's, since the bootstrap stack runs in its Kind cluster. Only with --release.
+      --catalog-template string             The AICR catalog template (aicr-catalog/ in the NVKE repository), required. The controller stack is deployed through AICR: the template is rendered for the seed against --release, aicr bundles it and the bundle's deploy.sh installs it. Overrides NVKECTL_CATALOG_TEMPLATE.
       --diagnostics-dir string              Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. With --verbose a successful bootstrap writes them too. Overrides NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR. (default "cluster-diagnostics")
-      --disable-mtls                        Stand the site up without SPIFFE: no SPIRE, and the controller dials node agents in plaintext. The agents must be running with --disable-mtls too. Development only.
       --dry-run                             Load and validate the site spec and print it, but do not dispatch any workflow
       --encryption-key-out string           Where to write the finished cluster's etcd encryption key, as a Secret manifest (default: <clusterName>-etcd-encryption-key.json in the working directory)
   -h, --help                                help for site
@@ -80,7 +80,7 @@ nvkectl bootstrap site [flags]
       --kubeconfig-out string               Where to write the finished cluster's admin breakglass kubeconfig (default: <clusterName>.kubeconfig in the working directory)
       --nvke-controller-image string        NVKE controller image to deploy (overrides NVKECTL_NVKE_CONTROLLER_IMAGE and the manifest default)
       --provisioned-provider-image string   Provisioned-provider image to deploy (overrides NVKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)
-      --release string                      NVKR release description whose capnico-controller artifact replaces the bootstrap CAPNICo image with its pinned digest, as "render deploy-path --release" does for the management cluster's CAPNICo. The release description is not verified: run "nvkr release verify" on the same reference first. Only with infra.provider nico.
+      --release string                      NVKR release description whose outputs replace the catalog template's chart locations and versions, and pin the CAPNICo image to its digest. Without it the template's defaults stand. The release description is not verified: run "nvkr release verify" on the same reference first.
   -f, --sitespec string                     Path to the site spec YAML file (required)
       --timeout duration                    How long to wait for the cluster to finish provisioning, which includes every control plane node joining. Overrides NVKECTL_BOOTSTRAP_CLUSTER_TIMEOUT. (default 30m0s)
 ```

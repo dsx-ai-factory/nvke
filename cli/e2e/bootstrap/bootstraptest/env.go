@@ -32,8 +32,6 @@ const (
 	// EnvKeepBootstrapCluster leaves the ephemeral Kind cluster standing. The
 	// lane's teardown already owns removing it.
 	EnvKeepBootstrapCluster = "NVKECTL_E2E_KEEP_BOOTSTRAP_CLUSTER"
-	// EnvDisableMTLS stands the site up without SPIRE.
-	EnvDisableMTLS = "NVKECTL_E2E_DISABLE_MTLS"
 	// EnvVerbose passes -v, so a successful run writes its diagnostics bundle.
 	EnvVerbose = "NVKECTL_E2E_VERBOSE"
 )
@@ -64,10 +62,6 @@ func BootstrapOptionsFromEnv(cliDir string) (BootstrapOptions, error) {
 	if err != nil {
 		return opts, err
 	}
-	disableMTLS, err := boolEnv(EnvDisableMTLS)
-	if err != nil {
-		return opts, err
-	}
 	verbose, err := boolEnv(EnvVerbose)
 	if err != nil {
 		return opts, err
@@ -81,7 +75,6 @@ func BootstrapOptionsFromEnv(cliDir string) (BootstrapOptions, error) {
 		DiagnosticsDir:       os.Getenv(EnvDiagnosticsDir),
 		Timeout:              timeout,
 		KeepBootstrapCluster: keep,
-		DisableMTLS:          disableMTLS,
 		Verbose:              verbose,
 		LogFile:              os.Getenv(EnvBootstrapLog),
 	}

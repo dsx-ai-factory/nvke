@@ -1,5 +1,8 @@
 # Using Pre-Provisioned Nodes
 
+> **Out of date.** `nvkectl bootstrap site` no longer has `--disable-mtls`: the controller stack is deployed through AICR and always includes SPIRE, so the plaintext mode this guide describes is gone. Use nodes built from the NVKE OS image (SPIRE agent, mTLS on) instead.
+
+
 > **Which path is this?** This guide covers bootstrap on nodes you bring yourself — no SPIRE workload API, no TPM, `--disable-mtls` on `nvke-agent`. If your nodes are built from the NVKE OS image (SPIRE agent pre-installed, mTLS on by default), see [`os-image/SPEC.md`](../../os-image/SPEC.md) for the image contract and [`docs/first-cluster.md`](../first-cluster.md#real-site), the Real Site path, for the full flow.
 
 If you already have nodes provisioned and running, you can manually prepare them for tier-0 bootstrap.

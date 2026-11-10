@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Merged from deploy/nico/postgresql/values.yaml and overlay.yaml (comments dropped; read those for the reasons).
+auth:
+  username: postgres
+  database: postgres
+primary:
+  persistence:
+    enabled: true
+    size: 40Gi
+    storageClass: ''
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      memory: 256Mi
+  initdb:
+    scripts:
+      init-cwe.sql: 'CREATE DATABASE "nke-controller";
+
+        '
+      init-temporal.sql: 'CREATE DATABASE temporal;
+
+        CREATE DATABASE temporal_visibility;
+
+        '
+image:
+  digest: sha256:b74b23f091dcc87041bcae557d840c36458af46b955279cb13aedec4c32d7f71

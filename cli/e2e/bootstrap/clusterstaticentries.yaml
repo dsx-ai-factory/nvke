@@ -1,0 +1,17 @@
+apiVersion: v1
+items:
+- apiVersion: spire.spiffe.io/v1alpha1
+  kind: ClusterStaticEntry
+  metadata:
+    labels:
+      nvke.nvidia.com/managed-by: machine-spire-entry-controller
+    name: host-cb7cfdc5-0a45-491a-85c3-7b029ec24da1
+  spec:
+    className: spire-mgmt-spire
+    jwtSVIDTTL: 0s
+    parentID: spiffe://nvkectl-e2e.example.test/spire/agent/tpm/6c4b469c2d198ee78e60af01a68af1bbdb54505220fd8e400bfdac3a61abfc0d
+    selectors:
+    - unix:uid:0
+    spiffeID: spiffe://nvkectl-e2e.example.test/host/cb7cfdc5-0a45-491a-85c3-7b029ec24da1
+    x509SVIDTTL: 0s
+kind: List

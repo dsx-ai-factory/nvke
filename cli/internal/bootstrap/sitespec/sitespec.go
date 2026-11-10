@@ -1004,12 +1004,12 @@ func (v *validator) checkSpireExternalAddress(inv *SiteSpec) {
 }
 
 // CheckBootstrapMode applies the rules that depend on how the bootstrap will
-// run, which Validate cannot know. With CAPNICo creating the nodes and mTLS on,
+// run, which Validate cannot know. With CAPNICo creating the nodes,
 // the nodes read the SPIRE server's address from their userdata, so
-// spire.externalAddress is required; with disableMTLS nothing reads it.
-func (inv *SiteSpec) CheckBootstrapMode(disableMTLS bool) error {
-	if inv.IsNico() && !disableMTLS && inv.Spire.ExternalAddress == "" {
-		return fmt.Errorf("%s is required with %s: %q unless mTLS is disabled: nodes created by CAPNICo "+
+// spire.externalAddress is required.
+func (inv *SiteSpec) CheckBootstrapMode() error {
+	if inv.IsNico() && inv.Spire.ExternalAddress == "" {
+		return fmt.Errorf("%s is required with %s: %q: nodes created by CAPNICo "+
 			"need an address that reaches the bootstrap host's SPIRE server", pathSpireExternalAddress, pathInfraProvider, ProviderNico)
 	}
 	return nil

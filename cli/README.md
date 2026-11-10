@@ -8,7 +8,7 @@ NVKE control-plane CLI. Bootstraps management clusters and manages tenant cluste
 
 ## What it does
 
-- **Site bootstrap** — `nvkectl bootstrap site` creates an ephemeral Kind cluster on nerdctl/containerd, deploys Postgres, Temporal, SPIRE (skipped with `--disable-mtls`, which dials the agents in plaintext), Cluster API and CWE onto it, then drives kubeadm init/join across pre-provisioned nodes, or machines CAPNICo allocates with `infra.provider: nico`, via `nvke-agent` gRPC; no SSH required, and Docker is not supported
+- **Site bootstrap** — `nvkectl bootstrap site` creates an ephemeral Kind cluster on nerdctl/containerd, deploys Postgres, Temporal, SPIRE, Cluster API and CWE onto it through AICR (from the catalog template in `aicr-catalog/`; the infrastructure provider is the site spec's), then drives kubeadm init/join across pre-provisioned nodes, or machines CAPNICo allocates with `infra.provider: nico`, via `nvke-agent` gRPC; no SSH required, and Docker is not supported
 - **Cluster lifecycle** — `nvkectl get/create/patch/delete clusters` manages tenant clusters through the CWE API
 - **Site spec** — `nvkectl generate sitespec` writes a site spec from a node CSV; `nvkectl bootstrap site --dry-run` validates one without touching a node
 - **Config** — `nvkectl config set-site` points the CLI at an NVKE management plane.
@@ -53,7 +53,7 @@ nvkectl bootstrap site -f sitespec.yaml --dry-run                 # validate onl
 nvkectl bootstrap site -f sitespec.yaml --keep-bootstrap-cluster  # leave the Kind cluster for debugging
 nvkectl bootstrap site -f sitespec.yaml --timeout 45m \
   --kubeconfig-out ./my-site.kubeconfig                          # longer provisioning wait; pick the output path
-nvkectl bootstrap site -f sitespec.yaml --disable-mtls            # no SPIRE, plaintext agents; development only
+nvkectl bootstrap site -f sitespec.yaml --catalog-template aicr-catalog --release release.json   # deploy the stack from the catalog template, charts and images from an NVKR release
 
 # Point the CLI at a management plane
 nvkectl config set-site --url https://cwe.example.com --name default \
@@ -266,13 +266,12 @@ be a floating VIP the operator points at the bootstrap machine for the duration
 of the run; see [Your First Cluster](../docs/first-cluster.md#real-site). With
 `nico`, the nodes dial `spire.externalAddress`, which the controller passes to
 the user data template of the `ClusterRelease` they boot; that template has to
-write it (see [SPIRE with NICo nodes](docs/sitespec.md#spire-with-nico-nodes)). With `provisioned` and no thumbprints, or with
-`--disable-mtls`, nothing is published.
+write it (see [SPIRE with NICo nodes](docs/sitespec.md#spire-with-nico-nodes)). With `provisioned` and no thumbprints, nothing is published.
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `NVKECTL_SPIFFE_TRUST_DOMAIN` | `<cluster>.nke.local` | Trust domain for the identities issued; the controller stack install defaults to the same value for the default cluster name |
-| `NVKECTL_SPIRE_EXTERNAL_ADDRESS` | unset | Overrides `spire.externalAddress`: the address nodes created by CAPNICo use to reach the bootstrap SPIRE server on NodePort 30081. Required with `infra.provider: nico` unless `--disable-mtls`, and rejected with `provisioned`. |
+| `NVKECTL_SPIRE_EXTERNAL_ADDRESS` | unset | Overrides `spire.externalAddress`: the address nodes created by CAPNICo use to reach the bootstrap SPIRE server on NodePort 30081. Required with `infra.provider: nico`, and rejected with `provisioned`. |
 | `NVKECTL_SPIRE_CA_CERT_FILE` | unset | Certificate of a CA for SPIRE to chain its own to, so a node given that certificate when it was provisioned verifies the server on first contact. Set with `NVKECTL_SPIRE_CA_KEY_FILE` and `spire.upstreamCA: true` in the site spec; without them, SPIRE is self-signed. |
 | `NVKECTL_SPIRE_CA_KEY_FILE` | unset | Private key of that CA. Set with `NVKECTL_SPIRE_CA_CERT_FILE`. |
 
@@ -311,7 +310,8 @@ through `KIND_EXPERIMENTAL_PROVIDER=nerdctl`, which `nvkectl` sets itself.
 | `NVKECTL_NODE_USER`, `NVKECTL_NODE_PASSWORD` | unset | The login rendered into the cloud-init of every node CAPNICo creates. Required with `infra.provider: nico` by `bootstrap site` and `validate sitespec --bootstrap-only`; the stack install reads the same variables. |
 | `NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT` | unset | Set to `1` to let `infra.nico.remote.endpoint` be an http URL. The bootstrap sends the NICo token there, so without it `bootstrap site` and `validate sitespec --bootstrap-only` require https; it is for a local or simulated NICo. |
 | `NVKECTL_BOOTSTRAP_CLUSTER_TIMEOUT` | `30m` | How long to wait for the site cluster to finish provisioning (`--timeout`) |
-| `NVKECTL_BOOTSTRAP_DEPLOY_COMMAND` | unset | Shell command that replaces the built-in Postgres, Temporal, SPIRE, Cluster API and controller deploy (`--deploy-command`). Development only; see `bootstrap site --help` |
+| `NVKECTL_CATALOG_TEMPLATE` | unset | The AICR catalog template (`aicr-catalog/`): deploy the controller stack through AICR instead of the built-in deploy (`--catalog-template`). Development only; see `bootstrap site --help` |
+| `NVKECTL_AICR` | `aicr` | The aicr binary `--catalog-template` runs (`--aicr`) |
 | `NVKECTL_NVKE_CONTROLLER_IMAGE` | `nke-controller:latest` | Controller image to deploy. A reference without a registry is side-loaded from the local image store; `make -C cli images` builds the default with nerdctl. A reference with a registry host is pulled with `nerdctl pull` when it is not already in containerd's image store, then loaded into the ephemeral cluster; log in to the registry first (`nerdctl login`). One pinned by a multi-platform index digest is pulled for every platform the index lists, because kind imports them all. For Docker Hub, write `docker.io/<org>/<name>`. `--nvke-controller-image` overrides it for one run. |
 | `NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE` | unset | OCI content image whose `/profiles` tree is copied into the controller's profiles directory, which is otherwise empty. It needs a tag other than `latest`, or a digest; `bootstrap site` refuses one that does not, including with `--dry-run`. An image with no registry host is side-loaded from the local image store, so it must already be there; one with a registry host is pulled. The image must provide `/profiles` and `/bin/sh`: the chart's init container runs `cp -a /profiles/. /profiles-out/` through the shell. |
 | `NVKECTL_CAPI_PROVISIONED_IMAGE` | `cluster-api-provider-provisioned:latest` | Provisioned-provider image, same semantics; unused with `infra.provider: nico`. `--provisioned-provider-image` overrides it for one run. |

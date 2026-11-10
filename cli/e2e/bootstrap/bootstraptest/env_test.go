@@ -30,7 +30,7 @@ func setLaneEnv(t *testing.T, env map[string]string) {
 	t.Helper()
 	all := []string{
 		"NVKECTL", EnvSiteSpec, EnvBootstrapLog, EnvKubeconfigOut, EnvEncryptionKeyOut,
-		EnvDiagnosticsDir, EnvTimeout, EnvKeepBootstrapCluster, EnvDisableMTLS,
+		EnvDiagnosticsDir, EnvTimeout, EnvKeepBootstrapCluster,
 		EnvVerbose,
 	}
 	for _, name := range all {
@@ -66,7 +66,6 @@ func TestBootstrapOptionsFromEnvReadsTheProvisionedLane(t *testing.T) {
 	assert.Equal(t, 15*time.Minute, opts.Timeout)
 	assert.True(t, opts.KeepBootstrapCluster)
 	assert.True(t, opts.Verbose)
-	assert.False(t, opts.DisableMTLS)
 }
 
 func TestBootstrapOptionsFromEnvDefaults(t *testing.T) {
@@ -113,11 +112,6 @@ func TestBootstrapOptionsFromEnvRejectsBadValues(t *testing.T) {
 		{
 			name:    "a verbose flag that is not a boolean",
 			env:     map[string]string{EnvSiteSpec: "/tmp/site.yaml", EnvVerbose: "loud"},
-			wantErr: "is not a boolean",
-		},
-		{
-			name:    "a disable-mTLS flag that is not a boolean",
-			env:     map[string]string{EnvSiteSpec: "/tmp/site.yaml", EnvDisableMTLS: "maybe"},
 			wantErr: "is not a boolean",
 		},
 	}

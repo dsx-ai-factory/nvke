@@ -17,7 +17,6 @@
 package controllerdeploy
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -32,19 +31,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
-	"text/template"
 	"time"
-
-	"gopkg.in/yaml.v3"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 	"github.com/dsx-ai-factory/nvke/cli/internal/redact"
-	"github.com/dsx-ai-factory/nvke/controller/deploy/charts"
 )
 
 const (
@@ -116,16 +110,6 @@ const (
 	// a site controller already uses.
 	spireControllerManagerClass = "spire-mgmt-spire"
 
-	// spireAgentValuesPrefix is where the hardened chart keeps its agent's
-	// settings, which are a sibling of the server's rather than inside them.
-	spireAgentValuesPrefix = "spire-agent"
-
-	// spireServerValuesPrefix is where the hardened chart keeps its server's
-	// settings. A value set at the wrong depth is silently ignored by helm
-	// rather than rejected, so the values computed below are all addressed
-	// through it.
-	spireServerValuesPrefix = "spire-server"
-
 	// The tpm-direct plugin binary is architecture-specific. Keep both
 	// checksums explicit so that chart defaults cannot select the wrong binary.
 	spireTPMDirectAMD64Checksum = "46d0caad8c25a027dd11c93e18b58a8bc6fbd9f1fe2e36fa2a0dd440986de4dc"
@@ -164,14 +148,6 @@ const (
 	// itself: DB Ping + Temporal CheckHealth both have to succeed.
 	readyzPath = "/readyz"
 	cweSvcPort = "http"
-
-	// profilesPath is where the controller reads OS and config profiles from
-	// (profilesDir). Set explicitly rather than left to the chart's empty
-	// default, so profilesDir names the empty /profiles the controller image
-	// ships rather than resolving somewhere else. nvkectl deploys no profiles
-	// into it unless Config.ProfilesImage is set, which copies that image's
-	// /profiles tree in; a site otherwise gets them from its deploy repository.
-	profilesPath = "/profiles"
 )
 
 // waitReadyPollInterval is the delay between /readyz polls. A var, not a
@@ -193,16 +169,6 @@ var helmFetchRetryInterval = 5 * time.Second
 var chartFetchServerError = regexp.MustCompile(`failed to fetch .*: 5\d\d\b`)
 
 const defaultTenantKubeconfigTimeout = 2 * time.Minute
-
-// oidcValues is the helms values file
-type oidcValues struct {
-	OIDC oidcProviders `yaml:"oidc"`
-}
-
-// oidcProviders is the helm chart's oidc.providers list.
-type oidcProviders struct {
-	Providers []sitespec.OIDCProvider `yaml:"providers"`
-}
 
 // Config describes a controller deployment.
 type Config struct {
@@ -257,15 +223,6 @@ type Config struct {
 	// uses does not. Required with NicoInfrastructure, and always paired with
 	// SPIREServerNodePort.
 	SPIREExternalAddress string
-
-	// DisableMTLS stands the site up without SPIFFE: no SPIRE is installed, and
-	// the controller dials each node agent in plaintext. The agent has to be running with
-	// --disable-mtls for that to connect.
-	//
-	// For bring-up debugging. Everything else about a site is all-or-nothing on
-	// attestation, so a break anywhere -- image, attestor, thumbprint, CA,
-	// routing -- looks the same, and this is the only way to bisect it.
-	DisableMTLS bool
 
 	// ProvisionedProviderImage is the cluster-api-provider-provisioned image to
 	// run as the CAPI infrastructure provider for hosts that already exist.
@@ -327,20 +284,6 @@ type Config struct {
 	// ReadyTimeout bounds how long WaitReady polls /readyz before giving up.
 	ReadyTimeout time.Duration
 
-	// TemporalChartRef is where helm pulls the Temporal chart from, as an OCI
-	// reference or a local path. Empty uses the go.temporal.io chart repo.
-	TemporalChartRef string
-
-	// SPIREChartRef is where helm pulls the SPIRE chart from, as an OCI
-	// reference or a local path. Empty uses the spiffe.github.io hardened
-	// chart repo.
-	SPIREChartRef string
-
-	// SPIRECRDsChartRef is where helm pulls the SPIRE CRDs chart from, as an
-	// OCI reference or a local path. Empty uses the spiffe.github.io hardened
-	// chart repo.
-	SPIRECRDsChartRef string
-
 	// AllowControlPlaneWithoutVIP permits dev control-plane lifecycle operations without a VIP.
 	AllowControlPlaneWithoutVIP bool
 }
@@ -350,7 +293,7 @@ type Config struct {
 // when the site spec listed endorsement-key thumbprints, or when CAPNICo creates
 // the nodes and CWE learns their keys as it allocates them.
 func (c Config) TPMAttestorEnabled() bool {
-	return !c.DisableMTLS && (len(c.TPMEKFingerprints) > 0 || c.NicoInfrastructure)
+	return len(c.TPMEKFingerprints) > 0 || c.NicoInfrastructure
 }
 
 // DefaultConfig reads the package's knobs from the environment, mirroring
@@ -372,10 +315,6 @@ func DefaultConfig() Config {
 
 		HelmTimeout:  envDuration("NVKECTL_NVKE_CONTROLLER_HELM_TIMEOUT", 5*time.Minute),
 		ReadyTimeout: envDuration("NVKECTL_NVKE_CONTROLLER_READY_TIMEOUT", 5*time.Minute),
-
-		TemporalChartRef:  getenv("NVKECTL_NVKE_CONTROLLER_TEMPORAL_CHART"),
-		SPIREChartRef:     getenv("NVKECTL_NVKE_CONTROLLER_SPIRE_CHART"),
-		SPIRECRDsChartRef: getenv("NVKECTL_NVKE_CONTROLLER_SPIRE_CRDS_CHART"),
 	}
 }
 
@@ -389,9 +328,6 @@ var Settings = []string{
 	"NVKECTL_NVKE_CONTROLLER_PORT",
 	"NVKECTL_NVKE_CONTROLLER_HELM_TIMEOUT",
 	"NVKECTL_NVKE_CONTROLLER_READY_TIMEOUT",
-	"NVKECTL_NVKE_CONTROLLER_TEMPORAL_CHART",
-	"NVKECTL_NVKE_CONTROLLER_SPIRE_CHART",
-	"NVKECTL_NVKE_CONTROLLER_SPIRE_CRDS_CHART",
 }
 
 // DeprecatedSettings returns, sorted by old name, every setting in Settings
@@ -447,351 +383,11 @@ func New(runner CommandRunner, log *slog.Logger) *Engine {
 	return &Engine{Runner: runner, log: log.With("component", "controllerdeploy")}
 }
 
-// Deploy installs Postgres, Temporal, SPIRE, Cluster API, and the controller (in that
-// order -- each depends on the one before it) onto the cluster kubeconfigPath
-// points at, waiting for each Helm release to report ready before moving to
-// the next. It does not wait for the controller's own /readyz; call WaitReady for that
-// once Deploy returns, so callers can log "helm release installed" and
-// "controller reports healthy" as distinct, separately-timed steps.
-func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) error {
-	if kubeconfigPath == "" {
-		return errors.New("controllerdeploy: kubeconfigPath is required")
-	}
-	if cfg.CWEImage == "" {
-		return errors.New("controllerdeploy: Config.CWEImage is required " +
-			"(e.g. nvcr.io/<org>/nvke-controller:edge -- see .github/workflows/image-nvcr.yml)")
-	}
-	if cfg.NicoInfrastructure && !cfg.DisableMTLS && cfg.SPIREExternalAddress == "" {
-		return errors.New("controllerdeploy: Config.SPIREExternalAddress is required with NicoInfrastructure; " +
-			"nodes created by CAPNICo read the SPIRE server's address from their userdata, " +
-			"and the in-cluster name does not reach them")
-	}
-	if cfg.NicoInfrastructure && (cfg.DGXCTenant.User == "" || cfg.DGXCTenant.Password == "") {
-		return errors.New("controllerdeploy: Config.DGXCTenant is required with NicoInfrastructure; " +
-			"the controller refuses to render a node's user data without DGXC_TENANT_USER and DGXC_TENANT_PASSWORD")
-	}
-	if cfg.NicoInfrastructure && cfg.ReleasesPath == "" {
-		return errors.New("controllerdeploy: Config.ReleasesPath is required with NicoInfrastructure; " +
-			"the controller cannot resolve the control plane's release without the release manifests")
-	}
-	if cfg.ProvisionedProviderImage == "" && !cfg.NicoInfrastructure {
-		return errors.New("controllerdeploy: Config.ProvisionedProviderImage is required; the CAPI " +
-			"objects the NVKE controller writes for a site cluster go unreconciled without it " +
-			"(see Config.ProvisionedProviderImage)")
-	}
-
-	// The charts this binary was built with. helm takes a directory and this
-	// process runs the helm binary rather than linking its loader, so they are
-	// written out for the length of the deploy.
-	chartPath, err := os.MkdirTemp("", "nvkectl-controller-chart-*")
-	if err != nil {
-		return fmt.Errorf("controllerdeploy: creating a directory for the controller chart: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(chartPath) }()
-	if err := charts.Extract(charts.NVKEController, chartPath); err != nil {
-		return fmt.Errorf("controllerdeploy: writing out the controller chart: %w", err)
-	}
-	postgresChartPath, err := os.MkdirTemp("", "nvkectl-postgres-chart-*")
-	if err != nil {
-		return fmt.Errorf("controllerdeploy: creating a directory for the postgres chart: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(postgresChartPath) }()
-	if err := charts.Extract(charts.Postgresql, postgresChartPath); err != nil {
-		return fmt.Errorf("controllerdeploy: writing out the postgres chart: %w", err)
-	}
-
-	password := cfg.PostgresPassword
-	if password == "" {
-		var err error
-		password, err = randomPassword()
-		if err != nil {
-			return fmt.Errorf("controllerdeploy: generating postgres password: %w", err)
-		}
-	}
-	redact.RegisterSecret(password)
-	// The NICo token and the node password reach the cluster only as Secrets,
-	// but a pod that logged one would otherwise carry it into the diagnostics.
-	redact.RegisterSecret(cfg.CAPNICo.Token)
-	redact.RegisterSecret(cfg.DGXCTenant.Password)
-
-	helmTimeout := cfg.HelmTimeout
-	if helmTimeout <= 0 {
-		helmTimeout = 5 * time.Minute
-	}
-	spireClusterName := cfg.SPIFFEClusterName
-	if spireClusterName == "" {
-		spireClusterName = sitespec.DefaultBootstrapClusterName
-	}
-	spireTrustDomain := cfg.SPIFFETrustDomain
-	if spireTrustDomain == "" {
-		spireTrustDomain = spireClusterName + ".nke.local"
-	}
-	cwePort := effectiveCWEPort(cfg)
-
-	// No version flag: the chart's version is the binary's. The chart carries
-	// its own defaults -- the Temporal databases, the Service name both dial,
-	// and the image pinned by digest -- and the values file renames only the
-	// controller's database. The password is supplied per run.
-	postgresValues, postgresCleanup, err := writeEmbeddedFile(postgresValuesFile)
-	if err != nil {
-		return err
-	}
-	defer postgresCleanup()
-	postgresSecrets, postgresSecretsCleanup, err := writeSecretValues(map[string]any{
-		"auth": map[string]any{"password": password},
-	})
-	if err != nil {
-		return err
-	}
-	defer postgresSecretsCleanup()
-
-	e.log.Info("installing postgres", "namespace", postgresNamespace, "chart", postgresChartPath)
-	if _, err := e.helm(ctx, kubeconfigPath,
-		"upgrade", "--install", postgresReleaseName, postgresChartPath,
-		"--namespace", postgresNamespace, "--create-namespace",
-		"--values", postgresValues,
-		"--values", postgresSecrets,
-		"--wait", "--timeout", helmTimeout.String(),
-	); err != nil {
-		return fmt.Errorf("controllerdeploy: installing postgres: %w", err)
-	}
-
-	temporalValues, cleanup, err := writeEmbeddedFile(temporalValuesFile)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-	persistence := map[string]any{
-		"default": map[string]any{
-			"sql": map[string]any{"password": password},
-		},
-		"visibility": map[string]any{
-			"sql": map[string]any{"password": password},
-		},
-	}
-
-	temporalSecrets, temporalSecretsCleanup, err := writeSecretValues(map[string]any{
-		"server": map[string]any{
-			"config": map[string]any{
-				"persistence": persistence,
-			},
-		},
-	})
-	if err != nil {
-		return err
-	}
-	defer temporalSecretsCleanup()
-
-	// Chart identities come from the embedded bootstrap manifest, so what the
-	// bootstrap installs is pinned in one place. Each chart is passed via
-	// `helm --repo` rather than `helm repo add`, so this package does not
-	// mutate the caller's global Helm repo list; Config.*ChartRef replaces
-	// each repo lookup. The CRDs are their own release because a chart cannot
-	// depend on its own CRDs being applied first.
-	temporalChart, err := manifestChart(manifest.ComponentTemporal)
-	if err != nil {
-		return err
-	}
-	spireCRDsChart, err := manifestChart(manifest.ComponentSPIRECRDs)
-	if err != nil {
-		return err
-	}
-	spireChart, err := manifestChart(manifest.ComponentSPIRE)
-	if err != nil {
-		return err
-	}
-
-	temporalChartArgs := chartArgs(cfg.TemporalChartRef, temporalChart.Name, temporalChart.Repo)
-	e.log.Info("installing temporal", "namespace", temporalNamespace, "version", temporalChart.Version, "chart", temporalChartArgs[0])
-	temporalArgs := append([]string{"upgrade", "--install", temporalReleaseName}, temporalChartArgs...)
-	temporalArgs = append(temporalArgs,
-		"--namespace", temporalNamespace, "--create-namespace",
-		"--values", temporalValues,
-		"--values", temporalSecrets,
-		"--version", temporalChart.Version,
-		"--wait", "--timeout", helmTimeout.String(),
-	)
-	if _, err := e.helm(ctx, kubeconfigPath, temporalArgs...); err != nil {
-		return fmt.Errorf("controllerdeploy: installing temporal: %w", err)
-	}
-
-	// --disable-mtls stands the site up without SPIFFE, so nothing needs SPIRE
-	// and the controller dials each agent in plaintext. Bring-up debugging only.
-	if cfg.DisableMTLS {
-		e.log.Warn("SPIFFE is disabled: skipping SPIRE, and the controller will dial node agents in plaintext")
-	} else {
-		spireCRDsChartArgs := chartArgs(cfg.SPIRECRDsChartRef, spireCRDsChart.Name, spireCRDsChart.Repo)
-		e.log.Info("installing SPIRE CRDs", "namespace", spireNamespace, "version", spireCRDsChart.Version, "chart", spireCRDsChartArgs[0])
-		spireCRDsArgs := append([]string{"upgrade", "--install", spireCRDsReleaseName}, spireCRDsChartArgs...)
-		spireCRDsArgs = append(spireCRDsArgs,
-			"--namespace", spireNamespace, "--create-namespace",
-			"--version", spireCRDsChart.Version,
-			"--wait", "--timeout", helmTimeout.String(),
-		)
-		if _, err := e.helm(ctx, kubeconfigPath, spireCRDsArgs...); err != nil {
-			return fmt.Errorf("controllerdeploy: installing SPIRE CRDs: %w", err)
-		}
-
-		spireValues, cleanup, err := writeEmbeddedFile(spireValuesFile)
-		if err != nil {
-			return err
-		}
-		defer cleanup()
-
-		// The controller uses SPIFFE workload identity even when the site spec contains no
-		// external TPM nodes, so the SPIRE deployment is always required.
-		e.log.Info("installing SPIRE", "namespace", spireNamespace, "version", spireChart.Version,
-			"clusterName", spireClusterName, "trustDomain", spireTrustDomain,
-			"tpmThumbprints", len(cfg.TPMEKFingerprints))
-		if _, err := e.helm(ctx, kubeconfigPath,
-			spireInstallArgs(cfg, spireChart, spireValues, spireClusterName, spireTrustDomain, helmTimeout)...,
-		); err != nil {
-			return fmt.Errorf("controllerdeploy: installing SPIRE: %w", err)
-		}
-
-		// Only external TPM nodes need the NodePort. The controller and the in-cluster agents
-		// use SPIRE's ClusterIP service.
-		if cfg.TPMAttestorEnabled() {
-			if err := e.publishSpireExternally(ctx, kubeconfigPath); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Before the controller, not after: the controller starts writing CAPI objects as soon as a
-	// cluster is created, and an object written before its controller exists
-	// simply sits there.
-	if err := e.installCAPI(ctx, kubeconfigPath, cfg, helmTimeout); err != nil {
-		return err
-	}
-
-	cweValues, cleanup, err := writeEmbeddedFile(cweValuesFile)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-	cweSecrets, cweSecretsCleanup, err := writeSecretValues(map[string]any{
-		"appDb": map[string]any{"postgresPassword": password},
-	})
-	if err != nil {
-		return err
-	}
-	defer cweSecretsCleanup()
-
-	oidcValues := ""
-	if len(cfg.OIDCProviders) > 0 {
-		oidcValues, cleanup, err = writeOIDCValues(cfg.OIDCProviders)
-		if err != nil {
-			return err
-		}
-		defer cleanup()
-	}
-
-	// The Secret has to exist before the controller's pod does: the chart wires
-	// DGXC_TENANT_USER and DGXC_TENANT_PASSWORD from it only when told its name.
-	if cfg.NicoInfrastructure {
-		if err := e.applyTenantCredentials(ctx, kubeconfigPath, cfg.DGXCTenant); err != nil {
-			return err
-		}
-	}
-
-	// tag and digest are always set, empty when unused: the chart reads an
-	// empty tag as "use appVersion" and an empty digest as "pull by tag".
-	imageRepo, imageTag, imageDigest := splitImageRef(cfg.CWEImage)
-	e.log.Info("installing the controller", "namespace", cweNamespace, "image", cfg.CWEImage,
-		"chart", chartPath)
-	cweArgs := []string{
-		"upgrade", "--install", cweReleaseName, chartPath,
-		"--namespace", cweNamespace, "--create-namespace",
-		"--values", cweValues,
-		"--values", cweSecrets,
-		// The chart then builds the database URL into a Secret and the pod reads
-		// it by reference. Without it the password sits in the pod spec, where
-		// `kubectl describe` and the diagnostics dump show it.
-		"--set", "secrets.createDbSecret=true",
-		"--set-string", "image.repository=" + imageRepo,
-		"--set-string", "image.tag=" + imageTag,
-		"--set-string", "image.digest=" + imageDigest,
-		"--set-string", "image.pullPolicy=IfNotPresent",
-		"--set-string", "profiles.path=" + profilesPath,
-		"--set", "cni.installAfterInit=true",
-		"--set", fmt.Sprintf("allowControlPlaneWithoutVIP=%t", cfg.AllowControlPlaneWithoutVIP),
-		"--set", fmt.Sprintf("spiffe.enabled=%t", !cfg.DisableMTLS),
-		"--set-string", "spiffe.trustDomain=" + spireTrustDomain,
-		"--set-string", "spiffe.spire.className=" + spireControllerManagerClass,
-		"--set-string", "spiffe.spire.serverAddress=" + spireNodeAddress(cfg),
-		"--set-string", "spiffe.spire.serverPort=" + spireNodePort(cfg),
-		"--set-string", "supportedInfraProviders=" + supportedInfraProviders(cfg),
-		"--set", fmt.Sprintf("service.port=%d", cwePort),
-	}
-	profilesArgs, err := profilesImageArgs(cfg)
-	if err != nil {
-		return err
-	}
-	cweArgs = append(cweArgs, profilesArgs...)
-	cweArgs = append(cweArgs, cweEnvArgs(cfg)...)
-	if cfg.NicoInfrastructure {
-		cweArgs = append(cweArgs, "--set-string", "secrets.dgxcTenantCredSecretName="+dgxcTenantSecret)
-	}
-	cweArgs = append(cweArgs, "--wait", "--timeout", helmTimeout.String())
-	if oidcValues != "" {
-		cweArgs = append(cweArgs, "--values", oidcValues)
-	}
-	if _, err := e.helm(ctx, kubeconfigPath, cweArgs...); err != nil {
-		return fmt.Errorf("controllerdeploy: installing the controller: %w", err)
-	}
-
-	// The chart installed the release CRDs, so the manifests can be applied now,
-	// before the site cluster is created.
-	if cfg.NicoInfrastructure {
-		if err := e.applyReleases(ctx, kubeconfigPath, cfg.ReleasesPath); err != nil {
-			return err
-		}
-	}
-
-	// The API has to be reachable from the host that ran this command: it is
-	// what creates the cluster next. See Config.CWEPort.
-	return e.publishCWEExternally(ctx, kubeconfigPath, cwePort)
-}
-
 // TenantLogin is the user and password the controller renders into the
 // cloud-init of the nodes it creates.
 type TenantLogin struct {
 	User     string
 	Password string
-}
-
-// applyTenantCredentials applies the Secret secrets.dgxcTenantCredSecretName
-// names, with the keys the chart reads (user and password), in the controller's
-// namespace. It goes through a 0600 file, not the command line, as the NICo
-// credentials do.
-func (e *Engine) applyTenantCredentials(ctx context.Context, kubeconfigPath string, login TenantLogin) error {
-	body, err := json.Marshal(map[string]any{
-		"apiVersion": "v1", "kind": "List",
-		"items": []any{
-			map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": cweNamespace}},
-			map[string]any{
-				"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
-				"metadata":   map[string]any{"name": dgxcTenantSecret, "namespace": cweNamespace},
-				"stringData": map[string]string{"user": login.User, "password": login.Password},
-			},
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("controllerdeploy: encoding the tenant credentials: %w", err)
-	}
-	file, cleanup, err := writeTempFile("nvkectl-tenant-credentials-*.json", body)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	e.log.Info("applying the tenant node credentials", "namespace", cweNamespace, "secret", dgxcTenantSecret)
-	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"apply", "--server-side", "--force-conflicts", "-f", file); err != nil {
-		return fmt.Errorf("controllerdeploy: applying the tenant credentials: %w\n%s", err, out)
-	}
-	return nil
 }
 
 // applyReleases applies the MachineImage and ClusterRelease manifests at path,
@@ -829,69 +425,6 @@ func ValidateProfilesImage(image string) error {
 		return fmt.Errorf("controllerdeploy: the profiles image %q (%s) must carry a tag other than latest, or a digest: "+
 			"the chart sets no pull policy on it, so a latest tag makes the cluster pull it instead of using the "+
 			"side-loaded copy", image, ProfilesImageEnv)
-	}
-	return nil
-}
-
-// profilesImageArgs turns Config.ProfilesImage into the chart values that make
-// its init container copy the profiles into place. Nothing is added when no
-// image is set.
-func profilesImageArgs(cfg Config) ([]string, error) {
-	if cfg.ProfilesImage == "" {
-		return nil, nil
-	}
-	if err := ValidateProfilesImage(cfg.ProfilesImage); err != nil {
-		return nil, err
-	}
-	repo, tag, digest := splitImageRef(cfg.ProfilesImage)
-	return []string{
-		"--set", "profiles.image.enabled=true",
-		"--set-string", "profiles.image.repository=" + repo,
-		"--set-string", "profiles.image.tag=" + tag,
-		"--set-string", "profiles.image.digest=" + digest,
-	}, nil
-}
-
-// cweEnvArgs renders the settings the controller reads from its own environment as helm
-// arguments over the chart's generic `env` list. A setting left at its zero
-// value is omitted, leaving the controller's own default in place.
-func cweEnvArgs(cfg Config) []string {
-	var vars [][2]string
-	if cfg.NodeAgentPort != "" {
-		vars = append(vars, [2]string{"NODE_AGENT_PORT", cfg.NodeAgentPort})
-	}
-
-	// `env` is a list, so the settings share one numbering. Numbering each on its
-	// own would put every one of them at env[0], keeping only the last.
-	args := make([]string, 0, len(vars)*4)
-	for i, v := range vars {
-		args = append(args,
-			"--set-string", fmt.Sprintf("env[%d].name=%s", i, v[0]),
-			"--set-string", fmt.Sprintf("env[%d].value=%s", i, v[1]))
-	}
-	return args
-}
-
-// publishCWEExternally applies the NodePort Service the CLI reaches the controller API
-// through. Same second-Service shape as publishSpireExternally, and applied for
-// the same reason: the chart owns its own Service and this does not touch it.
-func (e *Engine) publishCWEExternally(
-	ctx context.Context,
-	kubeconfigPath string,
-	port int32,
-) error {
-	manifest, cleanup, err := writeEmbeddedTemplate(cweNodePortFile, struct {
-		Port int32
-	}{port})
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	e.log.Info("publishing the controller api for the host", "namespace", cweNamespace, "port", port)
-	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"-n", cweNamespace, "apply", "-f", manifest); err != nil {
-		return fmt.Errorf("controllerdeploy: publishing the controller api with %s: %w\n%s", cweNodePortFile, err, out)
 	}
 	return nil
 }
@@ -968,80 +501,6 @@ func (e *Engine) helm(ctx context.Context, kubeconfigPath string, args ...string
 	}
 }
 
-func writeOIDCValues(providers []sitespec.OIDCProvider) (path string, cleanup func(), err error) {
-	body, err := yaml.Marshal(oidcValues{
-		OIDC: oidcProviders{Providers: providers},
-	})
-	if err != nil {
-		return "", func() {}, fmt.Errorf("controllerdeploy: rendering oidc values: %w", err)
-	}
-	return writeTempFile("nvkectl-cwe-oidc-*.yaml", body)
-}
-
-// writeEmbeddedFile copies an embedded values file to a temporary file on
-// disk (helm's -f/--values flag needs a real path) and returns a cleanup
-// func the caller should defer immediately.
-func writeEmbeddedFile(name string) (path string, cleanup func(), err error) {
-	body, err := manifestsFS.ReadFile(name)
-	if err != nil {
-		return "", func() {}, fmt.Errorf("controllerdeploy: reading embedded %s: %w", name, err)
-	}
-	return writeTempFile("nvkectl-cwedeploy-*.yaml", body)
-}
-
-// writeEmbeddedTemplate renders an embedded YAML template to a temporary file.
-func writeEmbeddedTemplate(name string, data any) (path string, cleanup func(), err error) {
-	body, err := manifestsFS.ReadFile(name)
-	if err != nil {
-		return "", func() {}, fmt.Errorf("controllerdeploy: reading embedded %s: %w", name, err)
-	}
-	tmpl, err := template.New(name).Parse(string(body))
-	if err != nil {
-		return "", func() {}, fmt.Errorf("controllerdeploy: parsing embedded %s: %w", name, err)
-	}
-	var rendered bytes.Buffer
-	if err := tmpl.Execute(&rendered, data); err != nil {
-		return "", func() {}, fmt.Errorf("controllerdeploy: rendering embedded %s: %w", name, err)
-	}
-	return writeTempFile("nvkectl-cwedeploy-*.yaml", rendered.Bytes())
-}
-
-// writeTempFile writes body to a temporary file matching pattern and returns
-// the path plus a cleanup func the caller should defer immediately. Both the
-// embedded values files and the rendered provider manifest need a real path on
-// disk, because helm's --values and kubectl's -f both take one.
-func writeTempFile(pattern string, body []byte) (path string, cleanup func(), err error) {
-	f, err := os.CreateTemp("", pattern)
-	if err != nil {
-		return "", func() {}, fmt.Errorf("controllerdeploy: creating %s: %w", pattern, err)
-	}
-	tmpName := f.Name()
-	cleanup = func() { _ = os.Remove(tmpName) }
-	if _, err := f.Write(body); err != nil {
-		_ = f.Close()
-		cleanup()
-		return "", func() {}, fmt.Errorf("controllerdeploy: writing %s: %w", tmpName, err)
-	}
-	if err := f.Close(); err != nil {
-		cleanup()
-		return "", func() {}, fmt.Errorf("controllerdeploy: closing %s: %w", tmpName, err)
-	}
-	return tmpName, cleanup, nil
-}
-
-// writeSecretValues writes values, which hold credentials, to a values file for
-// helm's --values and returns its path plus a cleanup func the caller should
-// defer immediately. A credential goes in a file, not on the command line,
-// where it would show in `ps` and in the command an error prints. The file is
-// created 0600, and an error from here names the path, never the contents.
-func writeSecretValues(values map[string]any) (path string, cleanup func(), err error) {
-	body, err := yaml.Marshal(values)
-	if err != nil {
-		return "", func() {}, fmt.Errorf("controllerdeploy: rendering a values file: %w", err)
-	}
-	return writeTempFile("nvkectl-secret-values-*.yaml", body)
-}
-
 // splitImageRef splits "repo:tag", "repo@sha256:..." or "repo:tag@sha256:..."
 // into the parts the chart's image.repository/tag/digest values expect. The
 // digest comes off first, or the colon inside "sha256:..." reads as a tag
@@ -1103,27 +562,6 @@ func effectiveCWEPort(cfg Config) int32 {
 	return cfg.CWEPort
 }
 
-// spireNodeAddress and spireNodePort are where CWE tells nodes to find SPIRE.
-// Only the node userdata CWE renders reads them; CWE does not dial them itself.
-//
-// Hosts that already exist were given the address when they were provisioned, so
-// the in-cluster name is only a placeholder for them. Nodes CAPNICo creates have
-// nothing but this userdata, so they get the address and NodePort the bootstrap
-// publishes the server on.
-func spireNodeAddress(cfg Config) string {
-	if cfg.NicoInfrastructure {
-		return cfg.SPIREExternalAddress
-	}
-	return spireServiceHost()
-}
-
-func spireNodePort(cfg Config) string {
-	if cfg.NicoInfrastructure {
-		return strconv.Itoa(int(SPIREServerNodePort))
-	}
-	return spireServerPort
-}
-
 // spireServiceHost is the in-cluster address CWE dials the SPIRE server on.
 // The Service is named after the release.
 func spireServiceHost() string {
@@ -1138,130 +576,6 @@ func envOr(name, fallback string) string {
 	return fallback
 }
 
-// defaultImage returns the image reference the bootstrap manifest carries for
-// one of the images this repository builds. Empty when the manifest has none.
-func defaultImage(component, image string) string {
-	comp, ok := manifest.Load().Components[component]
-	if !ok {
-		return ""
-	}
-	return comp.Images[image].Ref
-}
-
-// manifestChart returns the identity of a chart the bootstrap installs, as
-// the embedded bootstrap manifest pins it. The manifest ships in the binary,
-// so a missing entry is a build defect; TestDeploy_ChartsMatchTheBootstrapManifest
-// guards the pairing.
-func manifestChart(component string) (manifest.Chart, error) {
-	comp, ok := manifest.Load().Components[component]
-	if !ok || comp.Chart == nil {
-		return manifest.Chart{}, fmt.Errorf("controllerdeploy: the embedded bootstrap manifest pins no chart for %q", component)
-	}
-	return *comp.Chart, nil
-}
-
-// supportedInfraProviders is the provider payload CWE accepts on CreateCluster.
-// The site cluster's request carries exactly one of them, and CWE rejects the
-// other, so it has to match what the bootstrap sends.
-func supportedInfraProviders(cfg Config) string {
-	if cfg.NicoInfrastructure {
-		return "nico"
-	}
-	return "infra"
-}
-
-// chartArgs returns the chart half of a `helm upgrade --install`: the override
-// verbatim when set, otherwise the upstream chart name and its --repo. The
-// first element is always the chart. An override carries no --repo because
-// helm resolves whatever it is given as a name in that repo when one is
-// present, so an OCI reference would be looked up in the repo's index rather
-// than pulled.
-func chartArgs(override, name, repo string) []string {
-	if override != "" {
-		return []string{override}
-	}
-	return []string{name, "--repo", repo}
-}
-
-// spireInstallArgs builds the `helm upgrade --install` for the SPIRE chart.
-//
-// Everything static about the deployment is in spire-values.yaml. Only what
-// nvkectl cannot know ahead of time is computed here — the trust domain and
-// cluster name, the controller's admin identity, the CA to chain to, and the thumbprints
-// allowed to attest.
-func spireInstallArgs(cfg Config, chart manifest.Chart, valuesPath, clusterName, trustDomain string, timeout time.Duration) []string {
-	prefix := spireServerValuesPrefix
-	args := append([]string{"upgrade", "--install", spireReleaseName},
-		chartArgs(cfg.SPIREChartRef, chart.Name, chart.Repo)...)
-	args = append(args,
-		"--namespace", spireNamespace, "--create-namespace",
-		"--version", chart.Version,
-		"--values", valuesPath,
-		"--set-string", "global.spire.clusterName="+clusterName,
-		"--set-string", "global.spire.trustDomain="+trustDomain,
-		"--set-string", prefix+".adminIDs[0]=spiffe://"+trustDomain+"/nvke-service/"+cweReleaseName,
-		// Both halves of the two agreements the controller depends on. See the constants.
-		"--set-string", prefix+".controllerManager.className="+spireControllerManagerClass,
-		// --set, not --set-string: the chart's schema types these as integers.
-		"--set", prefix+".service.port="+spireServerPort,
-		// The agent's port is a separate value that does not follow the
-		// Service. Both or neither; see the constant.
-		"--set", spireAgentValuesPrefix+".server.port="+spireServerPort,
-	)
-	args = append(args, upstreamCAArgs(cfg, prefix)...)
-	args = append(args, tpmAttestorArgs(cfg, prefix)...)
-	return append(args, "--wait", "--timeout", timeout.String())
-}
-
-// tpmAttestorArgs turns the EK allowlist into chart values.
-//
-// No fingerprints means no TPM attestor, except with NicoInfrastructure: a
-// bootstrap that has not been told which hardware it is entitled to admit must
-// not admit any, and the hosts on that path run without a SPIRE identity at
-// all. With nico the attestor is on without any, and the allowlist starts
-// empty: CWE adds each node's key as CAPNICo allocates the machine, so the
-// hardware admitted is what NICo handed this site.
-//
-// Reaching the server from outside is a separate concern, handled by
-// spire-server-nodeport.yaml rather than by the chart's own Service.
-func tpmAttestorArgs(cfg Config, prefix string) []string {
-	if !cfg.TPMAttestorEnabled() {
-		return nil
-	}
-	args := []string{"--set", prefix + ".nodeAttestor.tpmDirect.enabled=true"}
-	if checksum := SpireTPMDirectChecksum(runtime.GOARCH); checksum != "" {
-		args = append(args, "--set-string", prefix+".nodeAttestor.tpmDirect.checksum="+checksum)
-	}
-	if len(cfg.TPMEKFingerprints) == 0 {
-		return append(args, tpmDynamicAllowlistArgs(prefix)...)
-	}
-	for i, fingerprint := range cfg.TPMEKFingerprints {
-		args = append(args, "--set-string",
-			fmt.Sprintf("%s.nodeAttestor.tpmDirect.hashes[%d]=%s", prefix, i, fingerprint))
-	}
-	return args
-}
-
-// tpmDynamicAllowlistArgs mounts the ConfigMap CWE keeps the allowlist in on the
-// directory the TPM attestor reads.
-//
-// The chart reads its own static hashes list or this directory, never both, so
-// this is for a bootstrap with no thumbprints to list: CAPNICo reports each
-// machine's key as it allocates the machine, and CWE adds it to the ConfigMap.
-// The attestor looks the key up on every attestation, so an entry takes effect
-// as soon as the kubelet syncs the ConfigMap into the pod. Optional, so the
-// server starts before CWE has written it.
-func tpmDynamicAllowlistArgs(prefix string) []string {
-	return []string{
-		"--set-string", prefix + ".extraVolumes[0].name=" + tpmPubhashesVolume,
-		"--set-string", prefix + ".extraVolumes[0].configMap.name=" + tpmPubhashesConfigMap,
-		"--set", prefix + ".extraVolumes[0].configMap.optional=true",
-		"--set-string", prefix + ".extraVolumeMounts[0].name=" + tpmPubhashesVolume,
-		"--set-string", prefix + ".extraVolumeMounts[0].mountPath=" + tpmHashesMountPath,
-		"--set", prefix + ".extraVolumeMounts[0].readOnly=true",
-	}
-}
-
 // SpireTPMDirectChecksum returns the sha256 of the TPM attestor server plugin
 // for goarch, amd64 or arm64, or "" for any other. A wrong value crash-loops
 // spire-server, so every installer takes it from here.
@@ -1274,48 +588,6 @@ func SpireTPMDirectChecksum(goarch string) string {
 	default:
 		return ""
 	}
-}
-
-// upstreamCAArgs points SPIRE at a CA the operator supplied.
-//
-// The PEM goes in with --set-file rather than --set: it is multi-line, and
-// --set would mangle it. The paths are files rather than inline values so the
-// key never has to be passed around as a string.
-func upstreamCAArgs(cfg Config, prefix string) []string {
-	if cfg.SPIFFEUpstreamCACertPath == "" || cfg.SPIFFEUpstreamCAKeyPath == "" {
-		return nil
-	}
-	return []string{
-		"--set", prefix + ".upstreamAuthority.disk.enabled=true",
-		"--set-file", prefix + ".upstreamAuthority.disk.secret.data.certificate=" + cfg.SPIFFEUpstreamCACertPath,
-		"--set-file", prefix + ".upstreamAuthority.disk.secret.data.key=" + cfg.SPIFFEUpstreamCAKeyPath,
-		// A self-signed root is its own bundle. Without this the chart mounts
-		// no bundle.crt and SPIRE has nothing to publish as the trust anchor
-		// the agents already hold.
-		"--set-file", prefix + ".upstreamAuthority.disk.secret.data.bundle=" + cfg.SPIFFEUpstreamCACertPath,
-	}
-}
-
-// publishSpireExternally applies spire-server-nodeport.yaml.
-//
-// The chart's own Service stays exactly as it installed it. This adds a second
-// one beside it, selecting the same pods on a port decided in advance, because
-// the nodes that attest were configured with an address and a port when they
-// were provisioned — long before this cluster existed. Applying a manifest
-// keeps that a declaration rather than surgery on somebody else's release.
-func (e *Engine) publishSpireExternally(ctx context.Context, kubeconfigPath string) error {
-	manifest, cleanup, err := writeEmbeddedFile(spireNodePortFile)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	e.log.Info("publishing SPIRE for out-of-cluster hosts", "namespace", spireNamespace)
-	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"-n", spireNamespace, "apply", "-f", manifest); err != nil {
-		return fmt.Errorf("controllerdeploy: publishing SPIRE with %s: %w\n%s", spireNodePortFile, err, out)
-	}
-	return nil
 }
 
 // TenantKubeconfig waits up to timeout for the asynchronously published admin
@@ -1595,4 +867,14 @@ func (e *Engine) removeStaging(staging string) {
 		e.log.Error("could not remove the temporary diagnostics, which hold credentials; delete this directory",
 			"path", staging, "err", err)
 	}
+}
+
+// defaultImage returns the image reference the bootstrap manifest carries for
+// one of the images this repository builds. Empty when the manifest has none.
+func defaultImage(component, image string) string {
+	comp, ok := manifest.Load().Components[component]
+	if !ok {
+		return ""
+	}
+	return comp.Images[image].Ref
 }

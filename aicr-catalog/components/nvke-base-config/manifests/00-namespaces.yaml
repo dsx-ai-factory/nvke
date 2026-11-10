@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The one namespace no component creates: the SPIRE bundle is published to it. Every other namespace is created by the
+# Helm release that installs into it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spire-system

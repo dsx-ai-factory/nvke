@@ -32,6 +32,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/spireentrydump"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/untaint"
+	"github.com/dsx-ai-factory/nvke/cli/internal/catalogtemplate"
 	"github.com/dsx-ai-factory/nvke/cli/internal/clients"
 	"github.com/dsx-ai-factory/nvke/cli/internal/config"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
@@ -70,19 +71,17 @@ type bootstrapSiteOptions struct {
 	collectDiagnostics bool
 	keepBootstrapKind  bool
 
-	// deployCommand is the --deploy-command flag: a shell command that stands
-	// the controller stack up on the bootstrap cluster in place of the built-in
-	// deploy.
-	deployCommand string
+	// catalogTemplate is the AICR catalog template (aicr-catalog/). When set,
+	// the controller stack is deployed through AICR from it instead of the
+	// built-in deploy. aicrBin is the aicr binary that does it.
+	catalogTemplate string
+	aicrBin         string
 
 	// release is an NVKR release description. With infra.provider nico its
 	// capnico-controller artifact replaces the CAPNICo image, as the deploy
 	// path's render does. arch selects the artifact's architecture.
 	release string
 	arch    string
-
-	// disableMTLS stands the site up without SPIFFE, for bring-up debugging.
-	disableMTLS bool
 
 	// clusterTimeout bounds the wait for CWE to finish provisioning the
 	// cluster, from the create call to every node having joined.
@@ -173,7 +172,7 @@ With nico, infra.nico names the NICo and the MachineImage and ClusterRelease
 manifests the controller needs; the NICo token is read from the file the
 NVKECTL_NICO_CREDENTIALS variable names; the login rendered into every node
 comes from NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD; and
-spire.externalAddress is required unless --disable-mtls is set. The nodes'
+spire.externalAddress is required. The nodes'
 names and addresses are not printed; read them with "kubectl get nodes -o wide"
 on the finished cluster.
 
@@ -216,32 +215,28 @@ site spec file format.`,
 	cmd.Flags().StringVar(&opts.provisionedProviderImage, "provisioned-provider-image", "",
 		"Provisioned-provider image to deploy (overrides NVKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)")
 	cmd.Flags().StringVar(&opts.release, "release", "",
-		"NVKR release description whose "+controllerdeploy.CAPNICoArtifact+" artifact replaces the bootstrap CAPNICo image "+
-			"with its pinned digest, as \"render deploy-path --release\" does for the management cluster's CAPNICo. "+
-			"The release description is not verified: run \"nvkr release verify\" on the same reference first. "+
-			"Only with infra.provider nico.")
+		"NVKR release description whose outputs replace the catalog template's chart locations and versions, "+
+			"and pin the CAPNICo image to its digest. Without it the template's defaults stand. "+
+			"The release description is not verified: run \"nvkr release verify\" on the same reference first.")
 	cmd.Flags().StringVar(&opts.arch, "arch", "",
-		"Architecture of the release artifact to use, linux/amd64 or linux/arm64; default: the bootstrap host's, "+
-			"since the bootstrap CAPNICo runs in its Kind cluster. Only with --release.")
+		"Architecture of the release's image outputs, linux/amd64 or linux/arm64; default: the bootstrap host's, "+
+			"since the bootstrap stack runs in its Kind cluster. Only with --release.")
 	cmd.Flags().StringVar(&opts.diagnosticsDir, "diagnostics-dir",
 		envOrDefault("NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR", "cluster-diagnostics"),
 		"Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. "+
 			"With --verbose a successful bootstrap writes them too. "+
 			"Overrides NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR.")
-	cmd.Flags().BoolVar(&opts.disableMTLS, "disable-mtls", false,
-		"Stand the site up without SPIFFE: no SPIRE, and the controller dials node agents in plaintext. "+
-			"The agents must be running with --disable-mtls too. Development only.")
 	cmd.Flags().BoolVar(&opts.allowControlPlaneWithoutVIP, "allow-control-plane-without-vip", false,
 		"Permit a multi-node control plane without a VIP and enable the override in the temporary NVKE controller. "+
 			"Development only; replacing the initializing node can break API access.")
 	cmd.Flags().BoolVar(&opts.keepBootstrapKind, "keep-bootstrap-cluster", false,
 		"Leave the ephemeral bootstrap Kind cluster running after the command exits, for debugging")
-	cmd.Flags().StringVar(&opts.deployCommand, "deploy-command", os.Getenv("NVKECTL_BOOTSTRAP_DEPLOY_COMMAND"),
-		"Shell command that deploys Postgres, Temporal, SPIRE, Cluster API and the controller onto the bootstrap "+
-			"Kind cluster instead of the built-in deploy. It runs with KUBECONFIG set to the bootstrap cluster, "+
-			"NVKECTL_BOOTSTRAP_CLUSTER to its name and NVKECTL_SITESPEC to the site spec's path. Nothing else the "+
-			"built-in deploy does is done for it, so it must leave the controller reachable on its published port. "+
-			"Development only. Overrides NVKECTL_BOOTSTRAP_DEPLOY_COMMAND.")
+	cmd.Flags().StringVar(&opts.catalogTemplate, "catalog-template", os.Getenv("NVKECTL_CATALOG_TEMPLATE"),
+		"The AICR catalog template (aicr-catalog/ in the NVKE repository), required. The controller stack is deployed "+
+			"through AICR: the template is rendered for the seed against --release, aicr bundles it and the bundle's "+
+			"deploy.sh installs it. Overrides NVKECTL_CATALOG_TEMPLATE.")
+	cmd.Flags().StringVar(&opts.aicrBin, "aicr", aicrBinDefault(),
+		"The aicr binary --catalog-template uses. Overrides NVKECTL_AICR.")
 	cmd.Flags().DurationVar(&opts.clusterTimeout, "timeout",
 		envDurationOrDefault("NVKECTL_BOOTSTRAP_CLUSTER_TIMEOUT", 30*time.Minute),
 		"How long to wait for the cluster to finish provisioning, which includes "+
@@ -305,16 +300,11 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	logger.Info("loaded site spec", "path", opts.siteSpec, "cluster", inv.ClusterName)
 	// Checked before the dry-run return so --dry-run is the complete pre-flight,
 	// and together so one run reports every problem.
-	if err := errors.Join(inv.CheckBootstrapMode(opts.disableMTLS), inv.ValidateBootstrapReferences()); err != nil {
+	if err := errors.Join(inv.CheckBootstrapMode(), inv.ValidateBootstrapReferences()); err != nil {
 		return fmt.Errorf("site spec file %s: %w", opts.siteSpec, err)
 	}
 	if warning := inv.NicoVIPWarning(); warning != "" {
 		logger.Warn(warning)
-	}
-	// Resolved here too, so a bad --release or --arch fails the dry run.
-	capnicoImage, err := capnicoReleaseImage(inv, opts.release, opts.arch)
-	if err != nil {
-		return err
 	}
 	if inv.Spire.CACertFile != "" {
 		logger.Info("SPIRE upstream CA from the environment", "cert", inv.Spire.CACertFile, "key", inv.Spire.CAKeyFile)
@@ -355,6 +345,10 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		return err
 	}
 
+	if opts.catalogTemplate == "" {
+		return errors.New("--catalog-template is required: the controller stack is deployed through AICR from the catalog template (aicr-catalog/)")
+	}
+
 	// Step 2: stand up the ephemeral bootstrap Kind cluster the controller will run on.
 	// It is normally torn down on exit. After site-cluster creation starts, a
 	// later failure retains it so the operator does not lose the controllers and
@@ -364,12 +358,11 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	// engine collects for itself and honours the same two flags.
 	cfg.DiagnosticsDir = opts.diagnosticsDir
 	cfg.KeepFailedCluster = opts.keepBootstrapKind
-	cweCfg, err := cweDeployConfig(inv, cfg.ClusterName, opts.disableMTLS, opts.controllerImage, opts.provisionedProviderImage)
+	cweCfg, err := cweDeployConfig(inv, cfg.ClusterName, opts.controllerImage, opts.provisionedProviderImage)
 	if err != nil {
 		return err
 	}
 
-	cweCfg.CAPNICoImage = capnicoImage
 	cweCfg.AllowControlPlaneWithoutVIP = opts.allowControlPlaneWithoutVIP
 
 	// The controller API has to be reachable from this host: this command deploys it
@@ -491,7 +484,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	// Step 3: deploy Postgres, Temporal, SPIRE, Cluster API, and the controller onto the bootstrap
 	// cluster and wait for the controller to report healthy on /readyz before going any
 	// further — there is nothing to dispatch a workflow to otherwise.
-	if err := deployAndWaitForCWE(ctx, engine, cluster, cweCfg, opts.cweRunner, opts.deployCommand, opts.siteSpec, logger); err != nil {
+	if err := deployAndWaitForCWE(ctx, engine, cluster, cweCfg, opts.cweRunner, aicrDeploy{template: opts.catalogTemplate, bin: opts.aicrBin, release: opts.release, arch: opts.arch}, logger); err != nil {
 		return err
 	}
 
@@ -503,7 +496,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err != nil && siteClusterCreated {
 		return retainedClusterError(err, inv, cluster, cweCfg.CWEPort)
 	}
-	if err == nil && !cweCfg.DisableMTLS {
+	if err == nil {
 		count, dumpErr := dumpSpireBootstrapEntries(
 			ctx, opts, cluster.KubeconfigPath, filepath.Dir(siteKubeconfigPath(inv.ClusterName, opts)),
 		)
@@ -1062,7 +1055,7 @@ func envOrDefault(key, fallback string) string {
 //
 // clusterName is the ephemeral cluster's name, which is settled before the
 // cluster is created; SPIRE is told it, and it seeds the default trust domain.
-func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS bool, controllerImage, provisionedImage string) (controllerdeploy.Config, error) {
+func cweDeployConfig(inv *sitespec.SiteSpec, clusterName, controllerImage, provisionedImage string) (controllerdeploy.Config, error) {
 	cfg := controllerdeploy.DefaultConfig()
 	// Flag, then variable, then the manifest default.
 	if controllerImage != "" {
@@ -1116,13 +1109,6 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 	// is the whole of it: no node listed, no node admitted.
 	cfg.TPMEKFingerprints = inv.Cluster.TPMEKThumbprints()
 
-	// No SPIFFE means no SPIRE and no attestation, so the thumbprints go
-	// unused; keep them off the config so nothing downstream acts on them.
-	cfg.DisableMTLS = disableMTLS
-	if disableMTLS {
-		cfg.TPMEKFingerprints = nil
-	}
-
 	// How the hosts were configured when they were provisioned, which is why it
 	// is in the site spec and not in the environment.
 	cfg.NodeAgentPort = inv.Cluster.NodeAgentPort
@@ -1151,8 +1137,7 @@ func deployAndWaitForCWE(
 	cluster *bootstrapengine.Cluster,
 	cweCfg controllerdeploy.Config,
 	cweRunner controllerdeploy.CommandRunner,
-	deployCommand string,
-	siteSpecPath string,
+	aicr aicrDeploy,
 	logger *slog.Logger,
 ) error {
 	for _, image := range nvkeImages(cweCfg) {
@@ -1162,15 +1147,8 @@ func deployAndWaitForCWE(
 	}
 
 	cwe := controllerdeploy.New(cweRunner, logger)
-	if deployCommand != "" {
-		if err := runDeployCommand(ctx, cweRunner, deployCommand, siteSpecPath, cluster, logger); err != nil {
-			return fmt.Errorf("running --deploy-command: %w", err)
-		}
-	} else {
-		logger.Info("deploying the controller onto bootstrap kind cluster", "cluster", cluster.Name, "image", cweCfg.CWEImage)
-		if err := cwe.Deploy(ctx, cluster.KubeconfigPath, cweCfg); err != nil {
-			return fmt.Errorf("deploying the controller: %w", err)
-		}
+	if err := aicr.deploy(ctx, cwe, cluster, cweCfg, logger); err != nil {
+		return fmt.Errorf("deploying the controller through AICR: %w", err)
 	}
 
 	logger.Info("waiting for the controller to report healthy", "timeout", cweCfg.ReadyTimeout)
@@ -1185,33 +1163,44 @@ func deployAndWaitForCWE(
 	return nil
 }
 
-// runDeployCommand runs command with sh -c in place of the built-in deploy. The
-// command gets the bootstrap cluster through KUBECONFIG, its name through
-// NVKECTL_BOOTSTRAP_CLUSTER and the site spec's path through NVKECTL_SITESPEC,
-// and must leave the controller stack running: the
-// bootstrap goes on to wait for the controller to report healthy, and nothing
-// more of the built-in deploy is done for it.
-func runDeployCommand(
-	ctx context.Context,
-	runner controllerdeploy.CommandRunner,
-	command string,
-	siteSpecPath string,
-	cluster *bootstrapengine.Cluster,
-	logger *slog.Logger,
-) error {
-	if runner == nil {
-		runner = controllerdeploy.ExecCommandRunner{}
+// aicrDeploy is what deploys the controller stack through AICR.
+type aicrDeploy struct {
+	template string
+	bin      string
+	release  string
+	arch     string
+}
+
+// deploy renders the catalog template for the seed against the release, if any, and has the engine
+// deploy it with aicr.
+func (a aicrDeploy) deploy(ctx context.Context, cwe *controllerdeploy.Engine, cluster *bootstrapengine.Cluster, cfg controllerdeploy.Config, logger *slog.Logger) error {
+	arch := a.arch
+	if arch == "" {
+		arch = "linux/" + runtime.GOARCH
 	}
-	logger.Info("deploying the controller stack with --deploy-command", "cluster", cluster.Name)
-	out, err := runner.Run(ctx, "env",
-		"KUBECONFIG="+cluster.KubeconfigPath,
-		"NVKECTL_BOOTSTRAP_CLUSTER="+cluster.Name,
-		"NVKECTL_SITESPEC="+siteSpecPath,
-		"sh", "-c", command)
+	opts := catalogtemplate.Options{TemplateDir: a.template, Target: controllerdeploy.SeedService, Arch: arch}
+	if a.release != "" {
+		release, err := nvkrrelease.Load(a.release)
+		if err != nil {
+			return err
+		}
+		opts.Release = release
+	}
+	dir, err := os.MkdirTemp("", "nvkectl-catalog-*")
 	if err != nil {
-		return fmt.Errorf("%w\n%s", err, out)
+		return err
 	}
-	return nil
+	defer func() { _ = os.RemoveAll(dir) }()
+	opts.OutDir = filepath.Join(dir, "catalog")
+	res, err := catalogtemplate.Render(opts)
+	if err != nil {
+		return err
+	}
+	for _, line := range res.Replaced {
+		logger.Info("from the release", "replaced", line)
+	}
+	logger.Info("deploying the controller stack through AICR", "cluster", cluster.Name, "image", cfg.CWEImage)
+	return cwe.DeployWithAICR(ctx, cluster.KubeconfigPath, cfg, controllerdeploy.AICRConfig{Catalog: opts.OutDir, Bin: a.bin})
 }
 
 // nvkeImages lists the images this repository builds that the bootstrap loads
@@ -1255,34 +1244,6 @@ func capnicoAccess(inv *sitespec.SiteSpec) (controllerdeploy.CAPNICoAccess, erro
 		APIName:  n.Remote.EffectiveAPIName(),
 		Token:    nicoToken,
 	}, nil
-}
-
-// capnicoReleaseImage returns the image the bootstrap CAPNICo runs when a
-// release is given: the release's capnico-controller artifact as
-// repository@digest, which is how the deploy path's render names it. It returns
-// "" without a release, which leaves the manifest's own image. A release with
-// provider provisioned is refused, since nothing there would read it.
-func capnicoReleaseImage(inv *sitespec.SiteSpec, releasePath, arch string) (string, error) {
-	if releasePath == "" {
-		return "", nil
-	}
-	// The flag's default is empty, not the host's architecture, so the generated
-	// command reference does not change with the machine that generates it.
-	if arch == "" {
-		arch = "linux/" + runtime.GOARCH
-	}
-	if !inv.IsNico() {
-		return "", errors.New("--release only applies with infra.provider nico: it replaces the bootstrap CAPNICo image, and no other provider installs one")
-	}
-	release, err := nvkrrelease.Load(releasePath)
-	if err != nil {
-		return "", err
-	}
-	artifact, err := release.Select(controllerdeploy.CAPNICoArtifact, arch)
-	if err != nil {
-		return "", fmt.Errorf("--release %s: %w", releasePath, err)
-	}
-	return artifact.Repository() + "@" + artifact.Digest, nil
 }
 
 // waitForCWEHostEndpoint verifies the same host path that the create request
@@ -1454,4 +1415,12 @@ func dumpSiteSpec(out io.Writer, inv *sitespec.SiteSpec) error {
 	fmt.Fprintln(out, "Loaded site spec:")
 	fmt.Fprint(out, string(y))
 	return nil
+}
+
+// aicrBinDefault is the aicr binary named by NVKECTL_AICR, or aicr on PATH.
+func aicrBinDefault() string {
+	if v := os.Getenv("NVKECTL_AICR"); v != "" {
+		return v
+	}
+	return "aicr"
 }

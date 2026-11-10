@@ -68,6 +68,7 @@ on:
       - '.github/workflows/nvkectl-bootstrap-e2e.yml'
       # The provisioned legs deploy the management stack with AICR (see "Prepare the AICR deploy").
       - 'deploy/aicr/**'
+      - 'aicr-catalog/**'
       # The scan of the run's output: the action that installs gitleaks. The rules
       # file is under cli/, which is already listed. The pin it reads is in
       # make/tool-versions.mk, which holds every tool's pin and is not a trigger:
@@ -379,18 +380,16 @@ jobs:
       - name: Set up gitleaks
         uses: ./.github/actions/setup-gitleaks
 
-      # EXPERIMENT. The provisioned legs deploy Postgres, Temporal, SPIRE and the controller with AICR
-      # instead of nvkectl's built-in deploy: `bootstrap site --deploy-command` runs deploy/aicr/
-      # bootstrap-e2e.sh, which installs the AICR recipe nvke-bootstrap-ci. The charts are the built-in
-      # deploy's own (upstream SPIRE and Temporal at the bootstrap manifest pins and checksums, Postgres and
-      # the controller from this checkout); no Docker and no NVKR. Cluster API and the provisioned provider
-      # are installed by the same script outside AICR, as the built-in deploy does. The nico legs keep the
-      # built-in deploy. To go back, drop this step and the two env entries below.
+      # Both suites deploy Postgres, Temporal, SPIRE and the controller through AICR:
+      # `bootstrap site --catalog-template` renders aicr-catalog/ for
+      # the seed, aicr bundles it and the bundle installs it. This step prepares what that needs: the
+      # Postgres and controller charts packaged from this checkout and served on 127.0.0.1:8765 (a
+      # background process that lives to the end of the job), aicr at a pinned commit, and a copy of the
+      # template pointing at that chart repository. Temporal and SPIRE come from their upstream
+      # repositories. No Docker and no NVKR. Cluster API and the provisioned provider are installed by
+      # nvkectl outside AICR; the site spec picks which provider the seed installs.
       - name: Prepare the AICR deploy
-        if: matrix.suite == 'provisioned'
-        env:
-          AICR_FLAVOR: ci
-        run: deploy/aicr/bootstrap-e2e.sh prepare-ci
+        run: deploy/aicr/bootstrap-e2e.sh prepare
 
       # sudo -E: kind and nerdctl reach the standalone containerd's socket as
       # root, the same way every other step below that touches them does.
@@ -398,8 +397,8 @@ jobs:
         if: matrix.suite == 'provisioned'
         working-directory: cli
         env:
-          NVKECTL_BOOTSTRAP_DEPLOY_COMMAND: ${{ github.workspace }}/deploy/aicr/bootstrap-e2e.sh deploy
-          AICR_FLAVOR: ci
+          NVKECTL_CATALOG_TEMPLATE: ${{ github.workspace }}/deploy/aicr/.work/catalog-template
+          NVKECTL_AICR: ${{ github.workspace }}/deploy/aicr/.work/aicr
           CAPI_VERSION: ${{ steps.versions.outputs.capi_version }}
           NVKECTL_NVKE_CONTROLLER_IMAGE: ${{ env.NVKE_CONTROLLER_IMAGE }}
           # Docker is removed on this lane; the OVN image builds through nerdctl.
@@ -416,6 +415,8 @@ jobs:
         if: matrix.suite == 'nico'
         working-directory: cli
         env:
+          NVKECTL_CATALOG_TEMPLATE: ${{ github.workspace }}/deploy/aicr/.work/catalog-template
+          NVKECTL_AICR: ${{ github.workspace }}/deploy/aicr/.work/aicr
           NVKECTL_NVKE_CONTROLLER_IMAGE: ${{ env.NVKE_CONTROLLER_IMAGE }}
           OCI_BIN: nerdctl
           NVKECTL_E2E_NICO_NODES: "3"

@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The seed: the reduced controller stack nvkectl bootstrap site stands up on its ephemeral cluster. It carries both
+# infrastructure providers; the site spec's provider selects which one installs (the provider value). Postgres is the checkout chart, a throwaway database, rather than the site's.
+# Cluster API core (clusterctl init) is a prerequisite outside AICR.
+kind: RecipeMetadata
+apiVersion: aicr.run/v1beta1
+metadata:
+  name: nvke-seed
+spec:
+  base: nvke-core
+  criteria:
+    service: nvke-seed
+  componentRefs:
+    - {name: postgres, type: Helm, source: "oci://nvke.invalid/charts", chart: postgresql, version: "0.1.1", valuesFile: components/postgres/seed-values.yaml}
+    - {name: temporal, type: Helm, valuesFile: components/temporal/seed-values.yaml, dependencyRefs: [postgres]}
+    - {name: spire, type: Helm, valuesFile: components/spire/seed-values.yaml, dependencyRefs: [spire-crds]}
+    - {name: provisioned-provider, type: Helm, manifestFiles: [components/provisioned-provider/manifests/provisioned-provider.yaml]}
+    - {name: capnico, type: Helm, manifestFiles: [components/capnico/manifests/capnico.yaml, components/capnico/manifests/nico-credentials.yaml]}
+    - {name: nvke-seed-config, type: Helm, manifestFiles: [components/nvke-seed-config/manifests/spire-server-external.yaml, components/nvke-seed-config/manifests/nke-controller-external.yaml, components/nvke-seed-config/manifests/dgxc-tenant-credentials.yaml], dependencyRefs: [spire]}
+    - {name: nke-controller, type: Helm, valuesFile: components/nke-controller/seed-values.yaml, dependencyRefs: [postgres, temporal, spire, nvke-seed-config, provisioned-provider, capnico]}

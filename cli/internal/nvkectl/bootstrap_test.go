@@ -20,7 +20,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	goruntime "runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -397,7 +396,9 @@ func TestBootstrapSiteImageFlags(t *testing.T) {
 // and dry-run returns no error without dispatching anything.
 func TestRunBootstrapSiteDryRunValid(t *testing.T) {
 	path := writeSiteSpec(t, validSiteSpec)
-	if err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{siteSpec: path, dryRun: true}); err != nil {
+	if err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t), siteSpec: path, dryRun: true,
+	}); err != nil {
 		t.Fatalf("dry-run of valid site spec returned error: %v", err)
 	}
 }
@@ -416,7 +417,9 @@ cluster:
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
 `
-	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{siteSpec: writeSiteSpec(t, bad)})
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t), siteSpec: writeSiteSpec(t, bad),
+	})
 	if err == nil {
 		t.Fatal("invalid site spec did not error")
 	}
@@ -443,6 +446,7 @@ func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	spireEntriesDumped := false
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           newFakeCWERunner(t),
@@ -485,7 +489,7 @@ func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
 }
 
 // cweCallRecorder records every helm/kubectl/env call controllerdeploy and the
-// deploy command make, then answers as the wrapped runner does.
+// deploy make, then answers as the wrapped runner does.
 type cweCallRecorder struct {
 	next  controllerdeploy.CommandRunner
 	calls [][]string
@@ -496,11 +500,28 @@ func (r *cweCallRecorder) Run(ctx context.Context, name string, args ...string) 
 	return r.next.Run(ctx, name, args...)
 }
 
-// TestRunBootstrapSiteDeployCommandReplacesTheBuiltInDeploy is --deploy-command:
-// the command runs with sh -c and the bootstrap cluster in its environment, no
-// built-in chart is installed, and the bootstrap still goes on to build the
-// cluster.
-func TestRunBootstrapSiteDeployCommandReplacesTheBuiltInDeploy(t *testing.T) {
+// catalogRelease writes a release description carrying the charts the catalog template has no default for.
+func catalogRelease(t *testing.T) string {
+	t.Helper()
+	digest := "sha256:" + strings.Repeat("a", 64)
+	out := func(name, version string) string {
+		return `{"name":"` + name + `","kind":"helm-oci","digest":"` + digest + `","reference":"r.example/nvke/` + name + `@` + digest + `","chartVersion":"` + version + `"}`
+	}
+	doc := `{"schemaVersion":"nvkr.dev/release-description/v1","reference":"r.example/nvke/releases@` + digest + `","rootDigest":"` + digest +
+		`","outputs":[` + out("controller-chart", "0.23.0") + "," + out("nktp", "0.23.0") + "," + out("postgresql-dev", "0.1.1") + `]}`
+	path := filepath.Join(t.TempDir(), "release.json")
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+var catalogTemplateDir = filepath.Join("..", "..", "..", "aicr-catalog")
+
+// TestRunBootstrapSiteCatalogTemplateDeploysThroughAICR is --catalog-template: aicr resolves and bundles the
+// seed overlay, the bundle's deploy.sh runs with the bootstrap cluster, no Helm release is installed by
+// nvkectl itself, and the bootstrap still goes on to build the cluster.
+func TestRunBootstrapSiteCatalogTemplateDeploysThroughAICR(t *testing.T) {
 	setBootstrapEnv(t)
 	startFakeCWEAPI(t, true)
 
@@ -509,7 +530,9 @@ func TestRunBootstrapSiteDeployCommandReplacesTheBuiltInDeploy(t *testing.T) {
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     &recordingRunner{next: fakeBootstrapRunner{}},
 		cweRunner:           recorder,
-		deployCommand:       "deploy-the-stack --now",
+		catalogTemplate:     catalogTemplateDir,
+		aicrBin:             "aicr-under-test",
+		release:             catalogRelease(t),
 		kubeconfigOut:       filepath.Join(t.TempDir(), "nvke-site.kubeconfig"),
 		lookPath:            runtimeOnPath,
 		dialContext:         refuseDial,
@@ -523,55 +546,68 @@ func TestRunBootstrapSiteDeployCommandReplacesTheBuiltInDeploy(t *testing.T) {
 		t.Fatalf("runBootstrapSite returned error: %v", err)
 	}
 
-	var ran []string
+	var verbs []string
+	var deploy string
 	for _, call := range recorder.calls {
-		if call[0] == "helm" {
-			t.Errorf("the built-in deploy ran despite --deploy-command: %v", call)
-		}
-		if call[0] == "env" {
-			ran = call
+		switch call[0] {
+		case "helm":
+			t.Errorf("nvkectl installed a Helm release itself: %v", call)
+		case "aicr-under-test":
+			verbs = append(verbs, call[1])
+			if call[1] == "bundle" {
+				joined := strings.Join(call, " ")
+				for _, want := range []string{"--set-file spire:spire-server=", "--set-file nke-controller:appDb=", "--set-file nvke-seed-config:controllerPort="} {
+					if !strings.Contains(joined, want) {
+						t.Errorf("aicr bundle call lacks %q", want)
+					}
+				}
+				if strings.Contains(joined, "postgresPassword") {
+					t.Error("a password reached an aicr argument")
+				}
+			}
+		case "env":
+			deploy = strings.Join(call, " ")
 		}
 	}
-	if ran == nil {
-		t.Fatalf("--deploy-command was not run; calls: %v", recorder.calls)
+	if strings.Join(verbs, " ") != "recipe bundle" {
+		t.Errorf("aicr ran %v, want recipe then bundle", verbs)
 	}
-	joined := strings.Join(ran, " ")
-	for _, want := range []string{"KUBECONFIG=", "NVKECTL_BOOTSTRAP_CLUSTER=", "NVKECTL_SITESPEC=", "sh -c deploy-the-stack --now"} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("deploy command call %q does not contain %q", joined, want)
-		}
+	if !strings.Contains(deploy, "KUBECONFIG=") || !strings.Contains(deploy, "./deploy.sh") {
+		t.Errorf("deploy.sh was not run with the bootstrap cluster: %q", deploy)
 	}
 }
 
-// failingDeployRunner fails the --deploy-command call and answers the rest.
-type failingDeployRunner struct{ fakeCWERunner }
+// failingAICRRunner fails the deploy.sh call and answers the rest.
+type failingAICRRunner struct{ fakeCWERunner }
 
-func (r failingDeployRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+func (r failingAICRRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
 	if name == "env" {
 		return "boom on stderr", errors.New("exit status 3")
 	}
 	return r.fakeCWERunner.Run(ctx, name, args...)
 }
 
-// TestRunBootstrapSiteDeployCommandFailureStopsTheBootstrap: a failing command
-// fails the run with its output, before the controller is waited for.
-func TestRunBootstrapSiteDeployCommandFailureStopsTheBootstrap(t *testing.T) {
+// TestRunBootstrapSiteCatalogTemplateFailureStopsTheBootstrap: a failing deploy.sh fails the run with its output,
+// before the controller is waited for.
+func TestRunBootstrapSiteCatalogTemplateFailureStopsTheBootstrap(t *testing.T) {
 	setBootstrapEnv(t)
 	startFakeCWEAPI(t, true)
 
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:        writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner: &recordingRunner{next: fakeBootstrapRunner{}},
-		cweRunner:       failingDeployRunner{newFakeCWERunner(t)},
-		deployCommand:   "false",
+		cweRunner:       failingAICRRunner{newFakeCWERunner(t)},
+		catalogTemplate: catalogTemplateDir,
+		aicrBin:         "aicr-under-test",
+		release:         catalogRelease(t),
 		kubeconfigOut:   filepath.Join(t.TempDir(), "nvke-site.kubeconfig"),
 		lookPath:        runtimeOnPath,
 		dialContext:     refuseDial,
 	})
 	if err == nil {
-		t.Fatal("runBootstrapSite succeeded although --deploy-command failed")
+		t.Fatal("runBootstrapSite succeeded although deploy.sh failed")
 	}
-	for _, want := range []string{"--deploy-command", "exit status 3", "boom on stderr"} {
+	for _, want := range []string{"through AICR", "exit status 3", "boom on stderr"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
 		}
@@ -584,6 +620,7 @@ func TestRunBootstrapSiteWritesIssuedBreakglassKubeconfig(t *testing.T) {
 
 	kubeconfigOut := filepath.Join(t.TempDir(), "nvke-site.kubeconfig")
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     fakeBootstrapRunner{},
 		cweRunner:           newFakeCWERunner(t),
@@ -626,6 +663,7 @@ func TestRunBootstrapSiteRetainsBootstrapClusterWhenSpireEntryDumpFails(t *testi
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           newFakeCWERunner(t),
@@ -646,34 +684,6 @@ func TestRunBootstrapSiteRetainsBootstrapClusterWhenSpireEntryDumpFails(t *testi
 	}
 }
 
-func TestRunBootstrapSiteSkipsSpireEntryDumpWhenMTLSDisabled(t *testing.T) {
-	setBootstrapEnv(t)
-	startFakeCWEAPI(t, true)
-
-	dumpCalled := false
-	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
-		siteSpec:            writeSiteSpec(t, validSiteSpec),
-		disableMTLS:         true,
-		bootstrapRunner:     fakeBootstrapRunner{},
-		cweRunner:           newFakeCWERunner(t),
-		kubeconfigOut:       filepath.Join(t.TempDir(), "nvke-site.kubeconfig"),
-		lookPath:            runtimeOnPath,
-		dialContext:         refuseDial,
-		untaintControlPlane: skipUntaint,
-		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
-		dumpSpireEntries: func(context.Context, string, string) (int, error) {
-			dumpCalled = true
-			return 0, nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("runBootstrapSite returned error: %v", err)
-	}
-	if dumpCalled {
-		t.Error("SPIRE entries were dumped with mTLS disabled")
-	}
-}
-
 // TestRunBootstrapSiteFailsWhenTheClusterNeverComesUp: the command's promise is
 // a working cluster, so a cluster that never reports provisioned has to be a
 // failure rather than a command that returns 0 and leaves the operator to find
@@ -685,6 +695,7 @@ func TestRunBootstrapSiteFailsWhenTheClusterNeverComesUp(t *testing.T) {
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           newFakeCWERunner(t),
@@ -715,6 +726,7 @@ func TestRunBootstrapSiteRetainsClusterWhenKubeconfigIsNotPublished(t *testing.T
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           missingKubeconfigRunner{},
@@ -759,34 +771,6 @@ func setBootstrapEnv(t *testing.T) {
 	t.Setenv("NVKECTL_CAPI_PROVISIONED_IMAGE", "cluster-api-provider-provisioned:latest")
 }
 
-func TestCWEDeployConfigUsesSiteSpecTrustDomain(t *testing.T) {
-	setBootstrapEnv(t)
-	t.Setenv("NVKECTL_SPIFFE_TRUST_DOMAIN", "stale.example.com")
-
-	cfg, err := cweDeployConfig(&sitespec.SiteSpec{
-		Spire: sitespec.Spire{TrustDomain: "site.example.com"},
-	}, "bootstrap-cluster", false, "", "")
-	if err != nil {
-		t.Fatalf("cweDeployConfig: %v", err)
-	}
-	if cfg.SPIFFETrustDomain != "site.example.com" {
-		t.Errorf("SPIFFETrustDomain = %q, want site-spec value %q", cfg.SPIFFETrustDomain, "site.example.com")
-	}
-}
-
-func TestCWEDeployConfigDefaultsTrustDomain(t *testing.T) {
-	setBootstrapEnv(t)
-	t.Setenv("NVKECTL_SPIFFE_TRUST_DOMAIN", "")
-
-	cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "bootstrap-cluster", false, "", "")
-	if err != nil {
-		t.Fatalf("cweDeployConfig: %v", err)
-	}
-	if cfg.SPIFFETrustDomain != "bootstrap-cluster.nke.local" {
-		t.Errorf("SPIFFETrustDomain = %q, want derived value %q", cfg.SPIFFETrustDomain, "bootstrap-cluster.nke.local")
-	}
-}
-
 // The image lookup must run against the runtime kind loads from, and a
 // stale NVKECTL_BOOTSTRAP_PROVIDER export must not steer it back to a Docker
 // daemon a host is no longer required to have.
@@ -797,6 +781,7 @@ func TestRunBootstrapSiteUsesNerdctl(t *testing.T) {
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	_ = runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           newFakeCWERunner(t),
@@ -825,6 +810,7 @@ func TestRunBootstrapSiteRequiresNerdctlOnPath(t *testing.T) {
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:        writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner: runner,
 		cweRunner:       newFakeCWERunner(t),
@@ -904,6 +890,7 @@ func TestRunBootstrapSiteDefaultsImagesToTheLocalBuild(t *testing.T) {
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           newFakeCWERunner(t),
@@ -933,6 +920,7 @@ func TestRunBootstrapSiteUsesTheImageFlags(t *testing.T) {
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:                 writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:          runner,
 		cweRunner:                newFakeCWERunner(t),
@@ -1003,6 +991,7 @@ func TestRunBootstrapSiteRefusesMissingLocalImageBeforeCreate(t *testing.T) {
 	})
 	runner := &recordingRunner{next: inner}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           newFakeCWERunner(t),
@@ -1039,6 +1028,7 @@ func TestRunBootstrapSiteRefusesAMissingProfilesImageWithItsOwnRemedy(t *testing
 	})
 	runner := &recordingRunner{next: inner}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           newFakeCWERunner(t),
@@ -1079,13 +1069,16 @@ func TestRunBootstrapSiteRefusesAProfilesImageTheDeployWouldRefuse(t *testing.T)
 			t.Setenv(controllerdeploy.ProfilesImageEnv, image)
 			spec := writeSiteSpec(t, validSiteSpec)
 
-			err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{siteSpec: spec, dryRun: true})
+			err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+				catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t), siteSpec: spec, dryRun: true,
+			})
 			if err == nil || !strings.Contains(err.Error(), "other than latest") || !strings.Contains(err.Error(), controllerdeploy.ProfilesImageEnv) {
 				t.Errorf("dry run error = %v, want one naming %s and the latest tag", err, controllerdeploy.ProfilesImageEnv)
 			}
 
 			runner := &recordingRunner{next: fakeBootstrapRunner{}}
 			err = runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+				catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 				siteSpec:         spec,
 				bootstrapRunner:  runner,
 				cweRunner:        newFakeCWERunner(t),
@@ -1104,7 +1097,9 @@ func TestRunBootstrapSiteRefusesAProfilesImageTheDeployWouldRefuse(t *testing.T)
 
 	t.Run("a tagged image passes the dry run", func(t *testing.T) {
 		t.Setenv(controllerdeploy.ProfilesImageEnv, "example-profiles:e2e")
-		if err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{siteSpec: writeSiteSpec(t, validSiteSpec), dryRun: true}); err != nil {
+		if err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+			catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t), siteSpec: writeSiteSpec(t, validSiteSpec), dryRun: true,
+		}); err != nil {
 			t.Errorf("dry run with a tagged profiles image: %v", err)
 		}
 	})
@@ -1253,6 +1248,7 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 		startFakeCWEAPI(t, true)
 		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
 		err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+			catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 			siteSpec:            writeSiteSpec(t, validSiteSpec),
 			diagnosticsDir:      dir,
 			bootstrapRunner:     fakeBootstrapRunner{},
@@ -1278,6 +1274,7 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 		startFakeCWEAPI(t, true)
 		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
 		err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+			catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 			siteSpec:            writeSiteSpec(t, validSiteSpec),
 			diagnosticsDir:      dir,
 			collectDiagnostics:  true,
@@ -1307,6 +1304,7 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
 		// The controller never reports healthy: the failure this exists for.
 		err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+			catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 			siteSpec:            writeSiteSpec(t, validSiteSpec),
 			diagnosticsDir:      dir,
 			bootstrapRunner:     fakeBootstrapRunner{},
@@ -1372,6 +1370,7 @@ func TestRunBootstrapSiteWaitsForEveryControlPlaneNode(t *testing.T) {
 
 			runner := &recordingRunner{next: fakeBootstrapRunner{}}
 			err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+				catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 				siteSpec:        writeSiteSpec(t, threeNodeSiteSpec),
 				bootstrapRunner: runner,
 				cweRunner:       newFakeCWERunner(t),
@@ -1421,6 +1420,7 @@ func TestRunBootstrapSiteTearsDownOnceEveryNodeHasJoined(t *testing.T) {
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            writeSiteSpec(t, threeNodeSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           newFakeCWERunner(t),
@@ -1489,6 +1489,7 @@ func TestRunBootstrapSiteSavesTheEtcdEncryptionKey(t *testing.T) {
 	keyOut := filepath.Join(t.TempDir(), "site-key.json")
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           newFakeCWERunner(t),
@@ -1557,6 +1558,7 @@ func TestRunBootstrapSiteRetainsClusterWhenKeyCaptureFails(t *testing.T) {
 	kubeconfigOut := filepath.Join(t.TempDir(), "site.kubeconfig")
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           missingEtcdKeyRunner{fakeCWERunner: newFakeCWERunner(t)},
@@ -1629,6 +1631,7 @@ func TestRunBootstrapSiteSkipsKeyCaptureWhenEncryptionIsOff(t *testing.T) {
 	keyOut := filepath.Join(t.TempDir(), "key.json")
 	cwe := &recordingCWERunner{next: newFakeCWERunner(t)}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            writeSiteSpec(t, strings.Replace(validSiteSpec, "  k8sVersion:", "  etcdEncryption: false\n  k8sVersion:", 1)),
 		bootstrapRunner:     &recordingRunner{next: fakeBootstrapRunner{}},
 		cweRunner:           cwe,
@@ -1663,6 +1666,7 @@ func TestRunBootstrapSiteRefusesAnExistingKeyFile(t *testing.T) {
 	}
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           newFakeCWERunner(t),
@@ -1702,6 +1706,7 @@ func TestRunBootstrapSiteRefusesHostsServingAControlPlane(t *testing.T) {
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:         writeSiteSpec(t, threeNodeSiteSpec),
 		bootstrapRunner:  runner,
 		cweRunner:        newFakeCWERunner(t),
@@ -1788,7 +1793,9 @@ func TestRunBootstrapSiteDryRunReportsBootstrapProblemsTogether(t *testing.T) {
 	}
 	t.Setenv(sitespec.NicoCredentialsEnv, "")
 
-	err = runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{siteSpec: writeSiteSpec(t, text), dryRun: true})
+	err = runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t), siteSpec: writeSiteSpec(t, text), dryRun: true,
+	})
 	if err == nil {
 		t.Fatal("the dry run passed a spec with no SPIRE address and no NICo token")
 	}
@@ -1807,6 +1814,7 @@ func TestRunBootstrapSiteNicoLeftoverClusterSaysToReleaseInstancesFirst(t *testi
 	setBootstrapEnv(t)
 
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            nicoSiteSpecFile(t),
 		bootstrapRunner:     &recordingRunner{next: leftoverKindRunner{}},
 		cweRunner:           newFakeCWERunner(t),
@@ -1846,6 +1854,7 @@ func TestRunBootstrapSiteNicoSpireDumpFailureIsAdvisedAsAJoinedCluster(t *testin
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            nicoSiteSpecFile(t),
 		bootstrapRunner:     runner,
 		cweRunner:           newFakeCWERunner(t),
@@ -1890,6 +1899,7 @@ func TestRunBootstrapSiteNicoRefusesWhenTheVIPAlreadyAnswers(t *testing.T) {
 	var dialed []string
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:         nicoSiteSpecFile(t),
 		bootstrapRunner:  runner,
 		cweRunner:        newFakeCWERunner(t),
@@ -2062,6 +2072,7 @@ func TestRunBootstrapSiteRefusesWhileAnEarlierBootstrapClusterRuns(t *testing.T)
 
 	runner := &recordingRunner{next: leftoverKindRunner{}}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           newFakeCWERunner(t),
@@ -2102,6 +2113,7 @@ func TestRunBootstrapSiteRemovesTheControlPlaneTaint(t *testing.T) {
 	kubeconfigOut := filepath.Join(t.TempDir(), "nvke-site.kubeconfig")
 	untaintedWith := ""
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:         writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:  &recordingRunner{next: fakeBootstrapRunner{}},
 		cweRunner:        newFakeCWERunner(t),
@@ -2137,6 +2149,7 @@ func TestRunBootstrapSiteReportsAnUntaintFailure(t *testing.T) {
 	cwe := &recordingCWERunner{next: newFakeCWERunner(t)}
 	var out bytes.Buffer
 	err := runBootstrapSite(context.Background(), &out, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:         writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:  runner,
 		cweRunner:        cwe,
@@ -2191,7 +2204,9 @@ func TestMakeControlPlaneSchedulableBuildsTheClientFromTheKubeconfig(t *testing.
 	}
 	missing := filepath.Join(t.TempDir(), "missing.kubeconfig")
 
-	err = makeControlPlaneSchedulable(context.Background(), inv, missing, &bootstrapSiteOptions{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	err = makeControlPlaneSchedulable(context.Background(), inv, missing, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	if err == nil {
 		t.Fatal("makeControlPlaneSchedulable returned nil for a kubeconfig that does not exist")
@@ -2200,61 +2215,6 @@ func TestMakeControlPlaneSchedulableBuildsTheClientFromTheKubeconfig(t *testing.
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
 		}
-	}
-}
-
-// TestCWEDeployConfigImagePrecedence: a flag wins over its variable, and a
-// variable wins over the manifest default.
-func TestCWEDeployConfigImagePrecedence(t *testing.T) {
-	t.Setenv("NVKECTL_NVKE_CONTROLLER_IMAGE", "env.example/nke-controller:env")
-	t.Setenv("NVKECTL_CAPI_PROVISIONED_IMAGE", "env.example/provisioned:env")
-
-	cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "c", false, "flag.example/nke-controller:flag", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CWEImage != "flag.example/nke-controller:flag" {
-		t.Errorf("CWEImage = %q, want the flag", cfg.CWEImage)
-	}
-	if cfg.ProvisionedProviderImage != "env.example/provisioned:env" {
-		t.Errorf("ProvisionedProviderImage = %q, want the variable", cfg.ProvisionedProviderImage)
-	}
-
-	cfg, err = cweDeployConfig(&sitespec.SiteSpec{}, "c", false, "", "flag.example/provisioned:flag")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CWEImage != "env.example/nke-controller:env" {
-		t.Errorf("CWEImage = %q, want the variable", cfg.CWEImage)
-	}
-	if cfg.ProvisionedProviderImage != "flag.example/provisioned:flag" {
-		t.Errorf("ProvisionedProviderImage = %q, want the flag", cfg.ProvisionedProviderImage)
-	}
-}
-
-// TestControllerImageOrder pins the whole order for the
-// controller image: the flag, then NVKECTL_NVKE_CONTROLLER_IMAGE, then the
-// manifest default. The earlier NVKECTL_CONTROLLER_IMAGE is never read.
-func TestControllerImageOrder(t *testing.T) {
-	for _, tc := range []struct {
-		desc, flag, newV, oldV, want string
-	}{
-		{"flag over both settings", "flag.example/c:flag", "new.example/c:new", "old.example/c:old", "flag.example/c:flag"},
-		{"new setting over old", "", "new.example/c:new", "old.example/c:old", "new.example/c:new"},
-		{"old setting alone", "", "", "old.example/c:old", "nke-controller:latest"},
-		{"neither", "", "", "", "nke-controller:latest"},
-	} {
-		t.Run(tc.desc, func(t *testing.T) {
-			t.Setenv("NVKECTL_NVKE_CONTROLLER_IMAGE", tc.newV)
-			t.Setenv("NVKECTL_CONTROLLER_IMAGE", tc.oldV)
-			cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "c", false, tc.flag, "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if cfg.CWEImage != tc.want {
-				t.Errorf("CWEImage = %q, want %q", cfg.CWEImage, tc.want)
-			}
-		})
 	}
 }
 
@@ -2331,64 +2291,6 @@ func TestCapnicoAccess(t *testing.T) {
 	}
 }
 
-// TestCapnicoReleaseImage: a release's capnico-controller artifact becomes the
-// bootstrap CAPNICo image as repository@digest, for the architecture asked, and
-// only with the nico provider.
-func TestCapnicoReleaseImage(t *testing.T) {
-	const release = "../../../deploy/testdata/nvkr-release/valid.json"
-	nico := &sitespec.SiteSpec{Infra: sitespec.Infra{Provider: sitespec.ProviderNico}}
-	provisioned := &sitespec.SiteSpec{Infra: sitespec.Infra{Provider: sitespec.ProviderProvisioned}}
-
-	tests := []struct {
-		name    string
-		inv     *sitespec.SiteSpec
-		release string
-		arch    string
-		want    string
-		wantErr string
-	}{
-		{"no release leaves the manifest's image", nico, "", "linux/amd64", "", ""},
-		{"amd64", nico, release, "linux/amd64", "ghcr.io/example/recipes/capnico-controller@sha256:" + strings.Repeat("d", 64), ""},
-		{"arm64", nico, release, "linux/arm64", "ghcr.io/example/recipes/capnico-controller-arm64@sha256:" + strings.Repeat("e", 64), ""},
-		{"provisioned refuses a release", provisioned, release, "linux/amd64", "", "only applies with infra.provider nico"},
-		{"missing release file", nico, filepath.Join(t.TempDir(), "absent.json"), "linux/amd64", "", "absent.json"},
-		{"unknown architecture", nico, release, "linux/riscv64", "", "arch linux/riscv64"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := capnicoReleaseImage(tt.inv, tt.release, tt.arch)
-			if tt.wantErr != "" {
-				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("error = %v, want it to contain %q", err, tt.wantErr)
-				}
-				return
-			}
-			if err != nil || got != tt.want {
-				t.Fatalf("capnicoReleaseImage = %q, %v; want %q", got, err, tt.want)
-			}
-		})
-	}
-}
-
-// TestCapnicoReleaseImage_DefaultsToTheHostArchitecture: an empty architecture,
-// the flag's default, picks the artifact for the machine the bootstrap runs on.
-func TestCapnicoReleaseImage_DefaultsToTheHostArchitecture(t *testing.T) {
-	const release = "../../../deploy/testdata/nvkr-release/valid.json"
-	nico := &sitespec.SiteSpec{Infra: sitespec.Infra{Provider: sitespec.ProviderNico}}
-
-	got, err := capnicoReleaseImage(nico, release, "")
-	if err != nil {
-		t.Fatalf("capnicoReleaseImage with no architecture: %v", err)
-	}
-	want, err := capnicoReleaseImage(nico, release, "linux/"+goruntime.GOARCH)
-	if err != nil {
-		t.Fatalf("capnicoReleaseImage for the host architecture: %v", err)
-	}
-	if got != want {
-		t.Fatalf("an empty architecture gave %q, want the host's %q", got, want)
-	}
-}
-
 // TestRunBootstrapSiteWarnsAboutOldSettingNames: an old NKECTL_CWE_* name set
 // without its replacement is logged as a warning naming the replacement, before
 // anything else runs; a setting under its new name is not.
@@ -2404,6 +2306,7 @@ func TestRunBootstrapSiteWarnsAboutOldSettingNames(t *testing.T) {
 
 	// A missing site spec stops the command right after the warnings.
 	_ = runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec: filepath.Join(t.TempDir(), "missing.yaml"),
 	})
 
@@ -2433,6 +2336,7 @@ func TestRunBootstrapSiteIgnoresEarlierControllerNames(t *testing.T) {
 
 	// A missing site spec is the first thing that stops the command.
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec: filepath.Join(t.TempDir(), "missing.yaml"),
 	})
 	if err == nil || !strings.Contains(err.Error(), "missing.yaml") {
@@ -2484,54 +2388,6 @@ func TestNvkeImages(t *testing.T) {
 	}
 }
 
-// TestCWEDeployConfig_NicoTenantLoginAndReleases: the controller config carries
-// the tenant login, read from NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD, and the release
-// manifests' path resolved from the site spec, for the nico provider only.
-func TestCWEDeployConfig_NicoTenantLoginAndReleases(t *testing.T) {
-	dir := t.TempDir()
-	for _, name := range []string{"nico.token"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-secret\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	inv, err := sitespec.Load(writeSiteSpec(t, validSiteSpec))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg, err := cweDeployConfig(inv, "c", false, "", ""); err != nil || cfg.DGXCTenant != (controllerdeploy.TenantLogin{}) || cfg.ReleasesPath != "" {
-		t.Fatalf("provisioned: %+v, %v; want no tenant login or releases", cfg, err)
-	}
-
-	t.Setenv(sitespec.NicoCredentialsEnv, filepath.Join(dir, "nico.token"))
-	t.Setenv(stackconfig.EnvNodeUser, "example-user")
-	t.Setenv(stackconfig.EnvNodePassword, "example-secret")
-	nico := &sitespec.SiteSpec{
-		Infra: sitespec.Infra{
-			Provider: sitespec.ProviderNico,
-			Nico: &sitespec.NicoInfra{
-				OrgID:    "o",
-				Remote:   &sitespec.NicoRemote{Endpoint: "https://nico.example"},
-				Releases: filepath.Join(dir, "releases"),
-			},
-		},
-	}
-	cfg, err := cweDeployConfig(nico, "c", true, "", "")
-	if err != nil {
-		t.Fatalf("nico: %v", err)
-	}
-	if want := (controllerdeploy.TenantLogin{User: "example-user", Password: "example-secret"}); cfg.DGXCTenant != want {
-		t.Errorf("DGXCTenant = %+v, want %+v", cfg.DGXCTenant, want)
-	}
-	if cfg.ReleasesPath != filepath.Join(dir, "releases") {
-		t.Errorf("ReleasesPath = %q", cfg.ReleasesPath)
-	}
-
-	t.Setenv(stackconfig.EnvNodePassword, "")
-	if _, err := cweDeployConfig(nico, "c", true, "", ""); err == nil || !strings.Contains(err.Error(), stackconfig.EnvNodePassword) {
-		t.Errorf("unset node password: err = %v, want %s", err, stackconfig.EnvNodePassword)
-	}
-}
-
 // TestDumpSiteSpecNamesTheNicoControlPlaneAsDocumented: the block embeds the
 // API's struct, which has json tags only, so the dump has to write the API's
 // camelCase names and leave out what is unset, not yaml.v3's lower-cased ones.
@@ -2555,27 +2411,6 @@ func TestDumpSiteSpecNamesTheNicoControlPlaneAsDocumented(t *testing.T) {
 		if strings.Contains(out, reject) {
 			t.Errorf("the dump has %q, which is lower-cased or unset:\n%s", reject, out)
 		}
-	}
-}
-
-// TestBootstrapPortMappings_ControllerAPIIsLoopbackOnly: the bootstrap
-// controller serves its API with no authentication, so Kind publishes it on
-// 127.0.0.1 alone; the SPIRE port stays on every address for the nodes.
-func TestBootstrapPortMappings_ControllerAPIIsLoopbackOnly(t *testing.T) {
-	cfg := controllerdeploy.Config{CWEPort: 30080, NicoInfrastructure: true}
-	got := bootstrapPortMappings(cfg)
-	if len(got) != 2 {
-		t.Fatalf("mappings = %+v, want the controller API and SPIRE", got)
-	}
-	if got[0].ContainerPort != 30080 || got[0].ListenAddress != "127.0.0.1" {
-		t.Errorf("controller API mapping = %+v, want port 30080 on 127.0.0.1", got[0])
-	}
-	if got[1].ContainerPort != controllerdeploy.SPIREServerNodePort || got[1].ListenAddress != "" {
-		t.Errorf("SPIRE mapping = %+v, want it on every address", got[1])
-	}
-	cfg.DisableMTLS = true
-	if got := bootstrapPortMappings(cfg); len(got) != 1 {
-		t.Errorf("mappings without the TPM attestor = %+v, want only the controller API", got)
 	}
 }
 
@@ -2619,6 +2454,7 @@ func TestBootstrapControlPlaneVIPOverrideReachesController(t *testing.T) {
 	runner := &recordingCWERunner{next: newFakeCWERunner(t)}
 	body := strings.Replace(threeNodeSiteSpec, "  controlPlaneVIP: 10.0.0.100\n", "", 1)
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		catalogTemplate: catalogTemplateDir, aicrBin: "aicr-under-test", release: catalogRelease(t),
 		siteSpec:                    writeSiteSpec(t, body),
 		bootstrapRunner:             fakeBootstrapRunner{},
 		cweRunner:                   runner,
@@ -2634,7 +2470,159 @@ func TestBootstrapControlPlaneVIPOverrideReachesController(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !runner.saw("--set allowControlPlaneWithoutVIP=true") {
+	if !runner.saw("--set-file nke-controller:allowControlPlaneWithoutVIP=") {
 		t.Fatal("bootstrap did not enable the VIP override in the temporary controller")
+	}
+}
+
+func TestCWEDeployConfigUsesSiteSpecTrustDomain(t *testing.T) {
+	setBootstrapEnv(t)
+	t.Setenv("NVKECTL_SPIFFE_TRUST_DOMAIN", "stale.example.com")
+
+	cfg, err := cweDeployConfig(&sitespec.SiteSpec{
+		Spire: sitespec.Spire{TrustDomain: "site.example.com"},
+	}, "bootstrap-cluster", "", "")
+	if err != nil {
+		t.Fatalf("cweDeployConfig: %v", err)
+	}
+	if cfg.SPIFFETrustDomain != "site.example.com" {
+		t.Errorf("SPIFFETrustDomain = %q, want site-spec value %q", cfg.SPIFFETrustDomain, "site.example.com")
+	}
+}
+
+func TestCWEDeployConfigDefaultsTrustDomain(t *testing.T) {
+	setBootstrapEnv(t)
+	t.Setenv("NVKECTL_SPIFFE_TRUST_DOMAIN", "")
+
+	cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "bootstrap-cluster", "", "")
+	if err != nil {
+		t.Fatalf("cweDeployConfig: %v", err)
+	}
+	if cfg.SPIFFETrustDomain != "bootstrap-cluster.nke.local" {
+		t.Errorf("SPIFFETrustDomain = %q, want derived value %q", cfg.SPIFFETrustDomain, "bootstrap-cluster.nke.local")
+	}
+}
+
+// TestCWEDeployConfigImagePrecedence: a flag wins over its variable, and a
+// variable wins over the manifest default.
+func TestCWEDeployConfigImagePrecedence(t *testing.T) {
+	t.Setenv("NVKECTL_NVKE_CONTROLLER_IMAGE", "env.example/nke-controller:env")
+	t.Setenv("NVKECTL_CAPI_PROVISIONED_IMAGE", "env.example/provisioned:env")
+
+	cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "c", "flag.example/nke-controller:flag", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CWEImage != "flag.example/nke-controller:flag" {
+		t.Errorf("CWEImage = %q, want the flag", cfg.CWEImage)
+	}
+	if cfg.ProvisionedProviderImage != "env.example/provisioned:env" {
+		t.Errorf("ProvisionedProviderImage = %q, want the variable", cfg.ProvisionedProviderImage)
+	}
+
+	cfg, err = cweDeployConfig(&sitespec.SiteSpec{}, "c", "", "flag.example/provisioned:flag")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CWEImage != "env.example/nke-controller:env" {
+		t.Errorf("CWEImage = %q, want the variable", cfg.CWEImage)
+	}
+	if cfg.ProvisionedProviderImage != "flag.example/provisioned:flag" {
+		t.Errorf("ProvisionedProviderImage = %q, want the flag", cfg.ProvisionedProviderImage)
+	}
+}
+
+// TestControllerImageOrder pins the whole order for the
+// controller image: the flag, then NVKECTL_NVKE_CONTROLLER_IMAGE, then the
+// manifest default. The earlier NVKECTL_CONTROLLER_IMAGE is never read.
+func TestControllerImageOrder(t *testing.T) {
+	for _, tc := range []struct {
+		desc, flag, newV, oldV, want string
+	}{
+		{"flag over both settings", "flag.example/c:flag", "new.example/c:new", "old.example/c:old", "flag.example/c:flag"},
+		{"new setting over old", "", "new.example/c:new", "old.example/c:old", "new.example/c:new"},
+		{"old setting alone", "", "", "old.example/c:old", "nke-controller:latest"},
+		{"neither", "", "", "", "nke-controller:latest"},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Setenv("NVKECTL_NVKE_CONTROLLER_IMAGE", tc.newV)
+			t.Setenv("NVKECTL_CONTROLLER_IMAGE", tc.oldV)
+			cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "c", tc.flag, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.CWEImage != tc.want {
+				t.Errorf("CWEImage = %q, want %q", cfg.CWEImage, tc.want)
+			}
+		})
+	}
+}
+
+// TestCWEDeployConfig_NicoTenantLoginAndReleases: the controller config carries
+// the tenant login, read from NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD, and the release
+// manifests' path resolved from the site spec, for the nico provider only.
+func TestCWEDeployConfig_NicoTenantLoginAndReleases(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"nico.token"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-secret\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inv, err := sitespec.Load(writeSiteSpec(t, validSiteSpec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err := cweDeployConfig(inv, "c", "", ""); err != nil || cfg.DGXCTenant != (controllerdeploy.TenantLogin{}) || cfg.ReleasesPath != "" {
+		t.Fatalf("provisioned: %+v, %v; want no tenant login or releases", cfg, err)
+	}
+
+	t.Setenv(sitespec.NicoCredentialsEnv, filepath.Join(dir, "nico.token"))
+	t.Setenv(stackconfig.EnvNodeUser, "example-user")
+	t.Setenv(stackconfig.EnvNodePassword, "example-secret")
+	nico := &sitespec.SiteSpec{
+		Infra: sitespec.Infra{
+			Provider: sitespec.ProviderNico,
+			Nico: &sitespec.NicoInfra{
+				OrgID:    "o",
+				Remote:   &sitespec.NicoRemote{Endpoint: "https://nico.example"},
+				Releases: filepath.Join(dir, "releases"),
+			},
+		},
+	}
+	cfg, err := cweDeployConfig(nico, "c", "", "")
+	if err != nil {
+		t.Fatalf("nico: %v", err)
+	}
+	if want := (controllerdeploy.TenantLogin{User: "example-user", Password: "example-secret"}); cfg.DGXCTenant != want {
+		t.Errorf("DGXCTenant = %+v, want %+v", cfg.DGXCTenant, want)
+	}
+	if cfg.ReleasesPath != filepath.Join(dir, "releases") {
+		t.Errorf("ReleasesPath = %q", cfg.ReleasesPath)
+	}
+
+	t.Setenv(stackconfig.EnvNodePassword, "")
+	if _, err := cweDeployConfig(nico, "c", "", ""); err == nil || !strings.Contains(err.Error(), stackconfig.EnvNodePassword) {
+		t.Errorf("unset node password: err = %v, want %s", err, stackconfig.EnvNodePassword)
+	}
+}
+
+// TestBootstrapPortMappings_ControllerAPIIsLoopbackOnly: the bootstrap
+// controller serves its API with no authentication, so Kind publishes it on
+// 127.0.0.1 alone; the SPIRE port stays on every address for the nodes.
+func TestBootstrapPortMappings_ControllerAPIIsLoopbackOnly(t *testing.T) {
+	cfg := controllerdeploy.Config{CWEPort: 30080, NicoInfrastructure: true}
+	got := bootstrapPortMappings(cfg)
+	if len(got) != 2 {
+		t.Fatalf("mappings = %+v, want the controller API and SPIRE", got)
+	}
+	if got[0].ContainerPort != 30080 || got[0].ListenAddress != "127.0.0.1" {
+		t.Errorf("controller API mapping = %+v, want port 30080 on 127.0.0.1", got[0])
+	}
+	if got[1].ContainerPort != controllerdeploy.SPIREServerNodePort || got[1].ListenAddress != "" {
+		t.Errorf("SPIRE mapping = %+v, want it on every address", got[1])
+	}
+	cfg = controllerdeploy.Config{CWEPort: 30080}
+	if got := bootstrapPortMappings(cfg); len(got) != 1 {
+		t.Errorf("mappings without the TPM attestor = %+v, want only the controller API", got)
 	}
 }

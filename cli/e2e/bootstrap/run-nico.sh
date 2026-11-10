@@ -490,12 +490,9 @@ expect_refusal "infra.nico.tenant in the site spec" "infra.nico.tenant is no lon
 sed "s#^    releases: .*#    releases: ${SIM_STATE_DIR}/no-such-releases#" "${RENDERED_SITESPEC}" >"${SIM_STATE_DIR}/spec-releases.yaml"
 expect_refusal "an infra.nico.releases path that does not exist" "infra.nico.releases" dry_run "${SIM_STATE_DIR}/spec-releases.yaml"
 
-# spire.externalAddress is what nodes dial to reach SPIRE, so it is required
-# unless --disable-mtls, which deploys no SPIRE and reads nothing from it.
+# spire.externalAddress is what nodes dial to reach SPIRE, so it is required.
 grep -v '^  externalAddress:' "${RENDERED_SITESPEC}" >"${SIM_STATE_DIR}/spec-no-address.yaml"
-expect_refusal "no spire.externalAddress with mTLS" "spire.externalAddress" dry_run "${SIM_STATE_DIR}/spec-no-address.yaml"
-"${NVKECTL}" bootstrap site --dry-run --disable-mtls -f "${SIM_STATE_DIR}/spec-no-address.yaml" >/dev/null ||
-  fail "bootstrap site --dry-run --disable-mtls refused a nico spec without spire.externalAddress"
+expect_refusal "no spire.externalAddress" "spire.externalAddress" dry_run "${SIM_STATE_DIR}/spec-no-address.yaml"
 log "PASS: the binary refuses a bad token file, an http endpoint without the opt-in, a spec-borne node login and bad paths"
 
 # ── Stage 3b: the site spec hands off to the stack install ─────────────────
@@ -664,7 +661,6 @@ if [ "${status}" -ne 0 ]; then
   cat "${BOOTSTRAP_GO_TEST_LOG}" || true
   fail "nvkectl bootstrap site failed; see ${BOOTSTRAP_GO_TEST_LOG}"
 fi
-grep -q "installing CAPNICo" <<<"${output}" || fail "the bootstrap never installed CAPNICo"
 grep -q "cluster provisioned" <<<"${output}" || fail "the command exited 0 without reporting the cluster provisioned"
 [ -s "${TENANT_KUBECONFIG}" ] || fail "no kubeconfig was written to ${TENANT_KUBECONFIG}"
 log "PASS: bootstrap site created the site cluster, allocating its machines through CAPNICo"
@@ -676,6 +672,12 @@ KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name "${BOOTSTRAP_KIND_
   >"${bootstrap_kubeconfig}" || fail "could not read the bootstrap cluster's kubeconfig"
 defer rm -f "${bootstrap_kubeconfig}"
 bk() { kubectl --kubeconfig "${bootstrap_kubeconfig}" "$@"; }
+
+# The seed installed CAPNICo (and not the provisioned provider): the site spec's provider picks which one.
+bk -n capnico-system get deployment controller-manager >/dev/null 2>&1 ||
+  fail "the bootstrap never installed CAPNICo"
+[ -z "$(bk -n provisioned-system get deployment -o name 2>/dev/null)" ] ||
+  fail "the bootstrap installed the provisioned provider for a nico site"
 
 # What the node login and infra.nico.releases asked for, which the
 # controller needed to create the first node at all.

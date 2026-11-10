@@ -1523,16 +1523,14 @@ func TestNicoVIPWarning(t *testing.T) {
 // required with mTLS and unused without it.
 func TestCheckBootstrapMode(t *testing.T) {
 	tests := []struct {
-		name        string
-		nico        bool
-		address     string
-		disableMTLS bool
-		wantErr     bool
+		name    string
+		nico    bool
+		address string
+		wantErr bool
 	}{
-		{"nico, mTLS, no address", true, "", false, true},
-		{"nico, mTLS, address", true, "192.0.2.10", false, false},
-		{"nico, mTLS disabled, no address", true, "", true, false},
-		{"provisioned, mTLS, no address", false, "", false, false},
+		{"nico, no address", true, "", true},
+		{"nico, address", true, "192.0.2.10", false},
+		{"provisioned, no address", false, "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1542,7 +1540,7 @@ func TestCheckBootstrapMode(t *testing.T) {
 			}
 			inv.Spire.ExternalAddress = tt.address
 
-			err := inv.CheckBootstrapMode(tt.disableMTLS)
+			err := inv.CheckBootstrapMode()
 			if tt.wantErr {
 				if err == nil || !strings.Contains(err.Error(), "spire.externalAddress is required") {
 					t.Fatalf("CheckBootstrapMode error = %v, want spire.externalAddress is required", err)
