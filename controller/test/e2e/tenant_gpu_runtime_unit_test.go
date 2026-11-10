@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -57,7 +56,13 @@ func TestPlanTenantGPURuntime(t *testing.T) {
 // TestGPURuntimeMinutesCoverTheSpecs ties the script's allowance, which every
 // clock moves out by, to the two specs' limits.
 func TestGPURuntimeMinutesCoverTheSpecs(t *testing.T) {
+	// The backend E2E lanes run this package as a compiled binary away from the
+	// checkout, as TestUnit_SiteNamespacesCoverTheDeployPath notes; only the
+	// checkout-based unit lane has the script to compare.
 	script, err := os.ReadFile(filepath.Join("..", "..", "..", "release", "hack", "qualify-e2e.sh"))
+	if os.IsNotExist(err) {
+		t.Skipf("no qualify-e2e.sh beside the test binary: %v", err)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,37 +80,36 @@ func TestGPURuntimeMinutesCoverTheSpecs(t *testing.T) {
 }
 
 // TestAICRCommandCancelKillsItsChildren checks that a canceled command takes
-// the processes it started with it, as deploy.sh's helm would be.
+// the processes it started with it, as deploy.sh's helm would be. The child
+// beats into a file rather than being probed by pid: in a container nothing
+// may reap it, and a zombie still answers kill -0.
 func TestAICRCommandCancelKillsItsChildren(t *testing.T) {
 	dir := t.TempDir()
-	pidFile := filepath.Join(dir, "child.pid")
+	beat := filepath.Join(dir, "beat")
 	run := &aicrRun{dir: dir}
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 
 	start := time.Now()
-	err := run.try(ctx, dir, "bash", "-c", "sleep 300 & echo $! > "+pidFile+"; wait")
+	err := run.try(ctx, dir, "bash", "-c", `(while :; do echo x >> "$0"; sleep 0.05; done) & wait`, beat)
 	if err == nil {
 		t.Fatal("try returned nil for a canceled command")
 	}
 	if elapsed := time.Since(start); elapsed > 2*time.Second+aicrWaitDelay {
 		t.Fatalf("try took %s after cancel; it should not wait on the child", elapsed)
 	}
-	raw, err := os.ReadFile(pidFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for syscall.Kill(pid, 0) == nil {
-		if time.Now().After(deadline) {
-			_ = syscall.Kill(pid, syscall.SIGKILL)
-			t.Fatalf("child %d outlived the canceled command", pid)
+	size := func() int64 {
+		info, statErr := os.Stat(beat)
+		if statErr != nil {
+			t.Fatal(statErr)
 		}
-		time.Sleep(50 * time.Millisecond)
+		return info.Size()
+	}
+	time.Sleep(200 * time.Millisecond)
+	before := size()
+	time.Sleep(500 * time.Millisecond)
+	if after := size(); after != before {
+		t.Fatalf("the child kept running after its command was canceled: %d bytes, then %d", before, after)
 	}
 }
 
