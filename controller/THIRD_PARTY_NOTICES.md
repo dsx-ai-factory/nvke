@@ -157,25 +157,25 @@ notices-check` verifies it is up to date.
 | `gopkg.in/inf.v0` | BSD-3-Clause | `gopkg.in/inf.v0@v0.9.1` | https://github.com/go-inf/inf/blob/v0.9.1/LICENSE |
 | `gopkg.in/yaml.v2` | Apache-2.0 | `gopkg.in/yaml.v2@v2.4.0` | https://github.com/go-yaml/yaml/blob/v2.4.0/LICENSE |
 | `gopkg.in/yaml.v3` | MIT | `gopkg.in/yaml.v3@v3.0.1` | https://github.com/go-yaml/yaml/blob/v3.0.1/LICENSE |
-| `k8s.io/api` | Apache-2.0 | `k8s.io/api@v0.37.1` | https://github.com/kubernetes/api/blob/v0.37.1/LICENSE |
-| `k8s.io/apiextensions-apiserver/pkg/apis/apiextensions` | Apache-2.0 | `k8s.io/apiextensions-apiserver@v0.37.1` | https://github.com/kubernetes/apiextensions-apiserver/blob/v0.37.1/LICENSE |
-| `k8s.io/apimachinery/pkg` | Apache-2.0 | `k8s.io/apimachinery@v0.37.1` | https://github.com/kubernetes/apimachinery/blob/v0.37.1/LICENSE |
-| `k8s.io/apimachinery/third_party/forked/golang` | BSD-3-Clause | `k8s.io/apimachinery@v0.37.1` | https://github.com/kubernetes/apimachinery/blob/v0.37.1/third_party/forked/golang/LICENSE |
-| `k8s.io/apiserver/pkg` | Apache-2.0 | `k8s.io/apiserver@v0.37.1` | https://github.com/kubernetes/apiserver/blob/v0.37.1/LICENSE |
-| `k8s.io/client-go` | Apache-2.0 | `k8s.io/client-go@v0.37.1` | https://github.com/kubernetes/client-go/blob/v0.37.1/LICENSE |
+| `k8s.io/api` | Apache-2.0 | `k8s.io/api@v0.37.2` | https://github.com/kubernetes/api/blob/v0.37.2/LICENSE |
+| `k8s.io/apiextensions-apiserver/pkg/apis/apiextensions` | Apache-2.0 | `k8s.io/apiextensions-apiserver@v0.37.2` | https://github.com/kubernetes/apiextensions-apiserver/blob/v0.37.2/LICENSE |
+| `k8s.io/apimachinery/pkg` | Apache-2.0 | `k8s.io/apimachinery@v0.37.2` | https://github.com/kubernetes/apimachinery/blob/v0.37.2/LICENSE |
+| `k8s.io/apimachinery/third_party/forked/golang` | BSD-3-Clause | `k8s.io/apimachinery@v0.37.2` | https://github.com/kubernetes/apimachinery/blob/v0.37.2/third_party/forked/golang/LICENSE |
+| `k8s.io/apiserver/pkg` | Apache-2.0 | `k8s.io/apiserver@v0.37.2` | https://github.com/kubernetes/apiserver/blob/v0.37.2/LICENSE |
+| `k8s.io/client-go` | Apache-2.0 | `k8s.io/client-go@v0.37.2` | https://github.com/kubernetes/client-go/blob/v0.37.2/LICENSE |
 | `k8s.io/cluster-bootstrap/token` | Apache-2.0 | `k8s.io/cluster-bootstrap@v0.35.4` | https://github.com/kubernetes/cluster-bootstrap/blob/v0.35.4/LICENSE |
-| `k8s.io/component-base` | Apache-2.0 | `k8s.io/component-base@v0.37.1` | https://github.com/kubernetes/component-base/blob/v0.37.1/LICENSE |
+| `k8s.io/component-base` | Apache-2.0 | `k8s.io/component-base@v0.37.2` | https://github.com/kubernetes/component-base/blob/v0.37.2/LICENSE |
 | `k8s.io/klog/v2` | Apache-2.0 | `k8s.io/klog/v2@v2.140.0` | https://github.com/kubernetes/klog/blob/v2.140.0/LICENSE |
 | `k8s.io/kube-openapi/pkg` | Apache-2.0 | `k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad` | https://github.com/kubernetes/kube-openapi/blob/d427ff9ee9ad/LICENSE |
 | `k8s.io/kube-openapi/pkg/internal/third_party/go-json-experiment/json` | BSD-3-Clause | `k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad` | https://github.com/kubernetes/kube-openapi/blob/d427ff9ee9ad/pkg/internal/third_party/go-json-experiment/json/LICENSE |
 | `k8s.io/kube-openapi/pkg/validation/spec` | Apache-2.0 | `k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad` | https://github.com/kubernetes/kube-openapi/blob/d427ff9ee9ad/pkg/validation/spec/LICENSE |
-| `k8s.io/kube-proxy/config/v1alpha1` | Apache-2.0 | `k8s.io/kube-proxy@v0.37.1` | https://github.com/kubernetes/kube-proxy/blob/v0.37.1/LICENSE |
-| `k8s.io/kubelet/config/v1beta1` | Apache-2.0 | `k8s.io/kubelet@v0.37.1` | https://github.com/kubernetes/kubelet/blob/v0.37.1/LICENSE |
+| `k8s.io/kube-proxy/config/v1alpha1` | Apache-2.0 | `k8s.io/kube-proxy@v0.37.2` | https://github.com/kubernetes/kube-proxy/blob/v0.37.2/LICENSE |
+| `k8s.io/kubelet/config/v1beta1` | Apache-2.0 | `k8s.io/kubelet@v0.37.2` | https://github.com/kubernetes/kubelet/blob/v0.37.2/LICENSE |
 | `k8s.io/utils` | Apache-2.0 | `k8s.io/utils@v0.0.0-20260626114624-be93311217bd` | https://github.com/kubernetes/utils/blob/be93311217bd/LICENSE |
 | `k8s.io/utils/internal/third_party/forked/golang` | BSD-3-Clause | `k8s.io/utils@v0.0.0-20260626114624-be93311217bd` | https://github.com/kubernetes/utils/blob/be93311217bd/internal/third_party/forked/golang/LICENSE |
 | `k8s.io/utils/third_party/forked/golang/btree` | Apache-2.0 | `k8s.io/utils@v0.0.0-20260626114624-be93311217bd` | https://github.com/kubernetes/utils/blob/be93311217bd/third_party/forked/golang/btree/LICENSE |
 | `mellium.im/sasl` | BSD-2-Clause | `mellium.im/sasl@v0.3.2` | https://codeberg.org/mellium/sasl/src/tag/v0.3.2/LICENSE |
-| `sigs.k8s.io/cluster-api` | Apache-2.0 | `sigs.k8s.io/cluster-api@v1.13.7` | https://github.com/kubernetes-sigs/cluster-api/blob/v1.13.7/LICENSE |
+| `sigs.k8s.io/cluster-api` | Apache-2.0 | `sigs.k8s.io/cluster-api@v1.13.8` | https://github.com/kubernetes-sigs/cluster-api/blob/v1.13.8/LICENSE |
 | `sigs.k8s.io/controller-runtime` | Apache-2.0 | `sigs.k8s.io/controller-runtime@v0.25.2` | https://github.com/kubernetes-sigs/controller-runtime/blob/v0.25.2/LICENSE |
 | `sigs.k8s.io/json` | Apache-2.0 / BSD-3-Clause | `sigs.k8s.io/json@v0.0.0-20250730193827-2d320260d730` | https://github.com/kubernetes-sigs/json/blob/2d320260d730/LICENSE |
 | `sigs.k8s.io/randfill` | Apache-2.0 | `sigs.k8s.io/randfill@v1.0.0` | https://github.com/kubernetes-sigs/randfill/blob/v1.0.0/LICENSE |
@@ -16141,7 +16141,7 @@ limitations under the License.
 
 ### k8s.io/api
 
-_Apache-2.0 — k8s.io/api@v0.37.1_
+_Apache-2.0 — k8s.io/api@v0.37.2_
 
 #### LICENSE
 
@@ -16353,7 +16353,7 @@ _Apache-2.0 — k8s.io/api@v0.37.1_
 
 ### k8s.io/apiextensions-apiserver/pkg/apis/apiextensions
 
-_Apache-2.0 — k8s.io/apiextensions-apiserver@v0.37.1_
+_Apache-2.0 — k8s.io/apiextensions-apiserver@v0.37.2_
 
 #### LICENSE
 
@@ -16565,7 +16565,7 @@ _Apache-2.0 — k8s.io/apiextensions-apiserver@v0.37.1_
 
 ### k8s.io/apimachinery/pkg
 
-_Apache-2.0 — k8s.io/apimachinery@v0.37.1_
+_Apache-2.0 — k8s.io/apimachinery@v0.37.2_
 
 #### LICENSE
 
@@ -16777,7 +16777,7 @@ _Apache-2.0 — k8s.io/apimachinery@v0.37.1_
 
 ### k8s.io/apimachinery/third_party/forked/golang
 
-_BSD-3-Clause — k8s.io/apimachinery@v0.37.1_
+_BSD-3-Clause — k8s.io/apimachinery@v0.37.2_
 
 #### LICENSE
 
@@ -16814,7 +16814,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### k8s.io/apiserver/pkg
 
-_Apache-2.0 — k8s.io/apiserver@v0.37.1_
+_Apache-2.0 — k8s.io/apiserver@v0.37.2_
 
 #### LICENSE
 
@@ -17026,7 +17026,7 @@ _Apache-2.0 — k8s.io/apiserver@v0.37.1_
 
 ### k8s.io/client-go
 
-_Apache-2.0 — k8s.io/client-go@v0.37.1_
+_Apache-2.0 — k8s.io/client-go@v0.37.2_
 
 #### LICENSE
 
@@ -17450,7 +17450,7 @@ _Apache-2.0 — k8s.io/cluster-bootstrap@v0.35.4_
 
 ### k8s.io/component-base
 
-_Apache-2.0 — k8s.io/component-base@v0.37.1_
+_Apache-2.0 — k8s.io/component-base@v0.37.2_
 
 #### LICENSE
 
@@ -18324,7 +18324,7 @@ _Apache-2.0 — k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad_
 
 ### k8s.io/kube-proxy/config/v1alpha1
 
-_Apache-2.0 — k8s.io/kube-proxy@v0.37.1_
+_Apache-2.0 — k8s.io/kube-proxy@v0.37.2_
 
 #### LICENSE
 
@@ -18536,7 +18536,7 @@ _Apache-2.0 — k8s.io/kube-proxy@v0.37.1_
 
 ### k8s.io/kubelet/config/v1beta1
 
-_Apache-2.0 — k8s.io/kubelet@v0.37.1_
+_Apache-2.0 — k8s.io/kubelet@v0.37.2_
 
 #### LICENSE
 
@@ -19241,7 +19241,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### sigs.k8s.io/cluster-api
 
-_Apache-2.0 — sigs.k8s.io/cluster-api@v1.13.7_
+_Apache-2.0 — sigs.k8s.io/cluster-api@v1.13.8_
 
 #### LICENSE
 
