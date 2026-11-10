@@ -12,7 +12,6 @@ import (
 type ClusterReleaseChannelSpec struct {
 	// Releases maps Kubernetes major.minor versions to their available releases.
 	// +kubebuilder:validation:MinProperties=1
-	// +kubebuilder:validation:XValidation:rule="self.all(version, version.matches('^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$'))",message="release keys must be Kubernetes major.minor versions"
 	Releases map[string]ClusterReleaseReferences `json:"releases"`
 }
 
