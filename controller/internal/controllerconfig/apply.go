@@ -4,6 +4,7 @@
 package controllerconfig
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 
@@ -30,7 +31,26 @@ func LoadStartupConfig() (config.Config, *Config, error) {
 	if err := file.CheckAuthSource(cfg.AuthConfigPath); err != nil {
 		return config.Config{}, nil, err
 	}
+	if err := file.CheckAuthzNeedsAuthn(cfg.AuthConfigPath); err != nil {
+		return config.Config{}, nil, err
+	}
 	return cfg, file, nil
+}
+
+// CheckAuthzNeedsAuthn refuses API authorization with API authentication off,
+// which leaves no caller to authorize. It also refuses enforcing authorization
+// behind permissive authentication, which refuses with 403 every request
+// authentication would have rejected.
+func (c *Config) CheckAuthzNeedsAuthn(authConfigPath string) error {
+	switch {
+	case !c.APIAuthz.Enabled:
+		return nil
+	case !c.APIAuth.Enabled && authConfigPath == "":
+		return errors.New("apiAuthz.enabled is true but API authentication is off; enable apiAuth, or set apiAuthz.enabled to false")
+	case c.APIAuth.Permissive && !c.APIAuthz.Permissive:
+		return errors.New("apiAuthz.permissive is false but apiAuth.permissive is true; set apiAuthz.permissive to true, or apiAuth.permissive to false")
+	}
+	return nil
 }
 
 // CheckAuthSource refuses a deployment that configures API authentication in

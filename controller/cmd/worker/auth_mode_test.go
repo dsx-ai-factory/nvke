@@ -7,29 +7,27 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/dsx-ai-factory/nvke/auth/authn"
 )
 
 func TestAuthMode(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		authenticator *authn.Authenticator
-		permissive    bool
-		want          string
+		name       string
+		on         bool
+		permissive bool
+		want       string
 	}{
-		{name: "no authenticator is off", want: "off"},
-		{name: "no authenticator is off even when apiAuth.permissive is set", permissive: true, want: "off"},
-		{name: "an authenticator with apiAuth.permissive is permissive", authenticator: &authn.Authenticator{}, permissive: true, want: "permissive"},
-		{name: "an authenticator without apiAuth.permissive is enforcing", authenticator: &authn.Authenticator{}, want: "enforcing"},
+		{name: "off", want: "off"},
+		{name: "off even when permissive is set", permissive: true, want: "off"},
+		{name: "on and permissive", on: true, permissive: true, want: "permissive"},
+		{name: "on and not permissive is enforcing", on: true, want: "enforcing"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tt.want, authMode(tt.authenticator, tt.permissive))
+			assert.Equal(t, tt.want, authMode(tt.on, tt.permissive))
 		})
 	}
 }
