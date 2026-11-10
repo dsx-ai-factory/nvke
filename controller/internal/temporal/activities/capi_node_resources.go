@@ -89,15 +89,26 @@ func (a *Activities) CreateCAPIInfraMachineForNode(ctx context.Context, input Cr
 		NodeAgentBootstrapFiles:      a.nodeAgentBootstrapFiles,
 		CreateSpireJoinToken:         a.createCAPISpireJoinToken,
 		SeedControlPlaneInstanceType: a.seedControlPlaneInstanceType,
+		ImageVerifier:                a.imageVerifier,
 	}
 
 	if err := machineClient.CreateMachine(ctx, deps, node, nodeSet, nodePool, cluster); err != nil {
 		if errors.Is(err, shared.ErrUnsupportedMachineConfig) {
 			return temporal.NewNonRetryableApplicationError("failed to create machine", "UnsupportedMachineConfig", err)
 		}
-		return err
+		return terminalToNonRetryable(err)
 	}
 	return nil
+}
+
+// terminalToNonRetryable converts a shared.Terminal-marked error into a
+// non-retryable application failure typed by the marker's code. Producers
+// declare permanence; new permanent errors need no new classification here.
+func terminalToNonRetryable(err error) error {
+	if t, ok := shared.AsTerminal(err); ok {
+		return temporal.NewNonRetryableApplicationError(err.Error(), t.Code(), err)
+	}
+	return err
 }
 
 func (a *Activities) createCAPISpireJoinToken(ctx context.Context, node db.Node) (string, string, error) {
