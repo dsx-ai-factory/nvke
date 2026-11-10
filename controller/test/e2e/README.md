@@ -832,7 +832,8 @@ Neither spec runs once an earlier check on the tenant failed. In the
 `qualify-e2e` workflow the switch is the `tenant-gpu-runtime` dispatch input or
 the `QUALIFY_E2E_TENANT_GPU_RUNTIME` repository variable. Either one installs the
 three tools and adds 65 minutes to each clock. `qualify local` takes the same
-switch as `--tenant-gpu-runtime`, and checks the three tools are on `PATH`.
+switch as `--tenant-gpu-runtime`, and checks the three tools are on `PATH`,
+along with `timeout` or `gtimeout`, which AICR's nvsentinel install needs.
 
 Both lanes create the same `nico-forge` tenant and both entries carry that
 label, so pick between them with `site-controller`, which only the lane that

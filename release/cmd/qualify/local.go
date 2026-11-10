@@ -168,6 +168,14 @@ func runLocal(ctx context.Context, out io.Writer, o localOptions) error {
 			return fmt.Errorf("%s is not on PATH; the run needs it", tool)
 		}
 	}
+	if o.tenantGPURuntime {
+		// AICR's nvsentinel install refuses to apply its CRDs without a bounded timeout.
+		_, errTimeout := exec.LookPath("timeout")
+		_, errGTimeout := exec.LookPath("gtimeout")
+		if errTimeout != nil && errGTimeout != nil {
+			return fmt.Errorf("neither timeout nor gtimeout is on PATH; --tenant-gpu-runtime needs one (macOS: brew install coreutils)")
+		}
+	}
 	root, err := repoRoot()
 	if err != nil {
 		return err

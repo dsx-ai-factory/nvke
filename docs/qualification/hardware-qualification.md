@@ -463,6 +463,7 @@ Teleport login on each are your own, plus the Forge API key, which is secret.
 | `tsh` | Reaching the site's jump host through Teleport | Yes |
 | `oras` | Pulling nvkectl when it is not built | No; only that path needs it |
 | `aicr`, `helm`, `kubectl` | Installing the tenant GPU runtime, with `--tenant-gpu-runtime`. `aicr` is pinned in `make/tool-versions.mk` | Yes, with that flag |
+| `timeout` or `gtimeout` | AICR's nvsentinel install, with `--tenant-gpu-runtime`. macOS has neither; `brew install coreutils` provides `gtimeout` | Yes, with that flag |
 
 #### Teleport
 
