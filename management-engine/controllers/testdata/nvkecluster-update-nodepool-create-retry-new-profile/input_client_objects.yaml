@@ -17,6 +17,21 @@ spec:
       chain https://images.example.com/nvke/boot.ipxe
 ---
 apiVersion: internal.nvke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: replacement-image
+spec:
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  architecture: amd64
+  buildDate: "2026-10-01"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      chain https://images.example.com/nvke/replacement-boot.ipxe
+---
+apiVersion: internal.nvke.nvidia.com/v1
 kind: ClusterReleaseChannel
 metadata:
   name: stable
@@ -72,7 +87,7 @@ spec:
   profile: example
   tag: "1.34.9"
   machineImageRef:
-    name: test-image
+    name: replacement-image
   machineInit:
     userDataTemplate: |
       #cloud-config
