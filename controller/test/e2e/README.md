@@ -824,16 +824,18 @@ without its InfiniBand fabric: [`aicr/`](aicr/) holds the overlay, passed with
 `rdma-modules`. The tenant has one GPU worker and no RDMA checks, and the
 fabric needs ConnectX-7 firmware and partition setup the lane has not
 qualified. The install needs `aicr`, `helm` and
-`kubectl` on `PATH`, and reaches the tenant as its admin through the lane's
-relay. `aicr` is pinned in `make/tool-versions.mk`. A run with no `gpu`, a
+`kubectl` on `PATH`, plus `timeout` or `gtimeout`: AICR's nvsentinel install
+will not apply its CRDs without one, and macOS has neither (`brew install
+coreutils` provides `gtimeout`). It reaches the tenant as its admin through the
+lane's relay. `aicr` is pinned in `make/tool-versions.mk`. A run with no `gpu`, a
 `gpu` that has no recipe (only `gb200` has one), or an `ubuntu` capability other
 than `24.04` gets one skipped spec saying which, and the GPU checks stay off.
 Neither spec runs once an earlier check on the tenant failed. In the
 `qualify-e2e` workflow the switch is the `tenant-gpu-runtime` dispatch input or
 the `QUALIFY_E2E_TENANT_GPU_RUNTIME` repository variable. Either one installs the
 three tools and adds 65 minutes to each clock. `qualify local` takes the same
-switch as `--tenant-gpu-runtime`, and checks the three tools are on `PATH`,
-along with `timeout` or `gtimeout`, which AICR's nvsentinel install needs.
+switch as `--tenant-gpu-runtime`, and checks the three tools and a `timeout`
+are on `PATH` before it takes a machine.
 
 Both lanes create the same `nico-forge` tenant and both entries carry that
 label, so pick between them with `site-controller`, which only the lane that

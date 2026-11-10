@@ -408,7 +408,7 @@ Some combinations are refused before anything is built:
 | `--dry-run` | off | plans, verifies, resolves and stages the site inputs, then prints the suite's arguments without taking a machine |
 | `--keep-site` | off | keeps the site node after the run, pass or fail, and a tenant whose specs failed |
 | `--keep-tenant` | off | keeps every tenant, passed or not, and the site node they hang off. The spec that deletes a tenant is skipped, so tenant deletion is not tested |
-| `--tenant-gpu-runtime` | off | installs the GPU runtime on the tenant with AICR, then runs AICR's deployment checks and the tenant GPU checks. It installs only on GB200 and Ubuntu 24.04 and skips with the reason elsewhere. Every timeout grows by the 65 minutes the two specs may take |
+| `--tenant-gpu-runtime` | off | installs the GPU runtime on the tenant with AICR, then runs AICR's deployment checks and the tenant GPU checks. It installs only on GB200 and Ubuntu 24.04 and skips with the reason elsewhere. Every timeout grows by the 65 minutes the two specs may take. It needs `aicr`, `helm`, `kubectl`, and `timeout` or `gtimeout` (see [Tools](#tools)) |
 | `--plan FILE` | plan `--scope` | reads that plan instead of planning |
 | `--scope`, `--subject` | `full`, `nvke` | what to plan when `--plan` is not given |
 | `--version` | the highest version | the version of the subject to plan, as `qualify plan --version` takes it |
