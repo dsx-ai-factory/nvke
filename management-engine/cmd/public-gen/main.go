@@ -2,6 +2,8 @@
 
 // public-gen generates public API types and registrations from Go types in apis/v1,
 // CRDs in controller/deploy/charts/nvke-crds/bases, and +nvke:public markers on the selected source types.
+// +nvke:catalog:view and +nvke:catalog:include markers generate Catalog<Source> projections.
+// Resource methods own catalog eligibility and derived values outside the generated field shapes.
 // Run from the module root. The -check flag reports generated-file drift without writing files.
 package main
 
@@ -17,6 +19,7 @@ import (
 const (
 	publicOutput   = "apis/v1/zz_generated.public.go"
 	registryOutput = "pkg/publicapi/zz_generated.registrations.go"
+	catalogOutput  = "apis/v1/zz_generated.catalog.go"
 )
 
 // main selects generation or drift checking from the module working directory.
@@ -29,31 +32,33 @@ func main() {
 	}
 }
 
-// generate validates all input before checking or replacing either generated file.
+// generate validates all input before checking or replacing any generated file.
 func generate(root string, check bool) error {
 	m, err := readModel(root)
 	if err != nil {
 		return err
 	}
 	outputs := map[string][]byte{}
+	// Catalog output must be available when public types are checked together with handwritten code.
+	// Registrations then use the checked package's import path.
 	for _, output := range []struct {
 		path string
 		emit func(model) []byte
 	}{
-		{publicOutput, emitPublic}, {registryOutput, emitRegistrations},
+		{catalogOutput, emitCatalog}, {publicOutput, emitPublic}, {registryOutput, emitRegistrations},
 	} {
 		outputs[output.path], err = format.Source(output.emit(m))
 		if err != nil {
 			return fmt.Errorf("format %s: %w", output.path, err)
 		}
 		if output.path == publicOutput {
-			m.SourceImport, err = checkTypes(root, outputs[publicOutput], m.Resources)
+			m.SourceImport, err = checkTypes(root, outputs[publicOutput], outputs[catalogOutput], m.Resources)
 			if err != nil {
 				return err
 			}
 		}
 	}
-	for _, path := range []string{publicOutput, registryOutput} {
+	for _, path := range []string{publicOutput, registryOutput, catalogOutput} {
 		filename := filepath.Join(root, path)
 		if check {
 			existing, err := os.ReadFile(filename)

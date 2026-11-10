@@ -32,3 +32,28 @@ subjects:
 - kind: ServiceAccount
   name: management-engine-tenant-api
   namespace: management-engine-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: management-engine-tenant-catalog
+rules:
+- apiGroups: [internal.nvke.nvidia.com]
+  resources: [controlplaneclasses, clusterreleasechannels, nodepoolreleases]
+  verbs: [get, list]
+- apiGroups: [internal.nvke.nvidia.com]
+  resources: [clusterreleases, machineimages]
+  verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: management-engine-tenant-catalog
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: management-engine-tenant-catalog
+subjects:
+- kind: ServiceAccount
+  name: management-engine-tenant-api
+  namespace: management-engine-system

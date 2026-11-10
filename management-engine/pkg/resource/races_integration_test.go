@@ -176,7 +176,7 @@ func TestRequestDeadlines(t *testing.T) {
 			start := time.Now()
 			if httpRequest {
 				mux := http.NewServeMux()
-				Register(mux, "/widgets", client, OpUpdate)
+				Register(mux, "/widgets", client, client, nil, OpUpdate)
 				handler := WithLimits(mux, ServerOptions{RequestTimeout: 50 * time.Millisecond})
 				response := requestHTTP(handler, ctx, "PUT", "/widgets/"+name,
 					`{"metadata":{"name":"`+name+`"},"spec":{"value":"new"}}`, strconv.Quote(opts.ETag))

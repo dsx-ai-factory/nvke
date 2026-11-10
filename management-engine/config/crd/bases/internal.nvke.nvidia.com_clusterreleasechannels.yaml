@@ -43,10 +43,32 @@ spec:
             description: ClusterReleaseChannelSpec lists the releases available through
               a channel.
             properties:
+              lifecycle:
+                default: {}
+                description: Lifecycle controls catalog discovery and communicates
+                  support.
+                properties:
+                  deprecated:
+                    default: false
+                    description: |-
+                      Deprecated allows resources already depending on the Release to keep
+                      using it, but rejects new cluster or node pool creation referencing it.
+                    type: boolean
+                  hidden:
+                    default: false
+                    description: Hidden omits an offering from catalog lists and channel
+                      choices. Explicit references remain available.
+                    type: boolean
+                  supportedUntil:
+                    description: SupportedUntil is the time at which support for this
+                      release ends.
+                    format: date-time
+                    type: string
+                type: object
               releases:
                 additionalProperties:
-                  description: ClusterReleaseReferences lists the releases available
-                    for one Kubernetes minor version.
+                  description: ClusterReleaseReferences lists alternatives for one
+                    version selector in operator preference order.
                   items:
                     description: ClusterReleaseReference names a cluster-scoped ClusterRelease.
                     properties:
@@ -75,13 +97,20 @@ spec:
                   x-kubernetes-list-map-keys:
                   - name
                   x-kubernetes-list-type: map
-                description: Releases maps Kubernetes major.minor versions to their
-                  available releases.
+                description: |-
+                  Releases maps Kubernetes version selectors to named ClusterRelease candidates.
+                  A major.minor selector permits patch upgrades within that minor.
+                  A major.minor.patch selector fixes the Kubernetes version and may include an opaque suffix.
+                  A suffixed selector names an exact published choice. Its spelling does not imply upgrade order.
+                  References under any selector are alternatives in operator preference order.
+                  The selector bound keeps validation within Kubernetes' CEL cost budget.
+                maxProperties: 65536
                 minProperties: 1
                 type: object
                 x-kubernetes-validations:
-                - message: release keys must be Kubernetes major.minor versions
-                  rule: self.all(version, version.matches('^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$'))
+                - message: release keys must be major.minor or major.minor.patch with
+                    an optional build suffix and at most 128 characters
+                  rule: self.all(version, size(version) <= 128 && version.matches('^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)([.](0|[1-9][0-9]*)([-+._][a-zA-Z0-9][a-zA-Z0-9._+-]*)?)?$'))
             required:
             - releases
             type: object

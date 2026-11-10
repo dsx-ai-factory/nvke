@@ -1,0 +1,87 @@
+# SPDX-License-Identifier: Apache-2.0
+
+- method: POST
+  path: /v1/machine-images
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: img-ubuntu
+    spec:
+      architecture: amd64
+      buildDate: "2026-11-01"
+      nico:
+        ipxeScript: |
+          #!ipxe
+          exit
+      operatingSystem:
+        family: ubuntu
+        version: "24.04"
+- method: POST
+  path: /v1/node-profiles
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: np-a-hidden
+    spec:
+      lifecycle:
+        hidden: true
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+          {}
+      profile: ubuntu-gpu
+      tag: "2026.09"
+- method: POST
+  path: /v1/node-profiles
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: np-b-other
+    spec:
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+          {}
+      profile: other
+      tag: "2026.11"
+- method: POST
+  path: /v1/node-profiles
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: np-c-old
+    spec:
+      lifecycle:
+        deprecated: true
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+          {}
+      profile: ubuntu-gpu
+      tag: "2026.10"
+- method: POST
+  path: /v1/node-profiles
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: np-d-current
+    spec:
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+          {}
+      profile: ubuntu-gpu
+      tag: "2026.11"

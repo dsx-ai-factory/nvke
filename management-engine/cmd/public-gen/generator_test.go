@@ -12,8 +12,10 @@ import (
 )
 
 func TestGenerate(t *testing.T) {
-	const baseSource = "package v1\ntype WidgetSpec struct { Enabled bool `json:\"enabled,omitempty\"` }\n" +
-		"type Widget struct { Spec WidgetSpec `json:\"spec\"` }\n"
+	const baseSource = "package v1\ntype WidgetSpec struct {\n// +nvke:catalog:include\n" +
+		"Enabled bool `json:\"enabled,omitempty\"` }\n" +
+		"type Widget struct {\n// +nvke:catalog:include\nSpec WidgetSpec `json:\"spec\"` }\n"
+	const catalogMarker = "// +nvke:catalog:view\n"
 	for _, tt := range []struct {
 		name, change, metadata, validation, module, extraMarkers, wantError string
 		stale, deepcopy                                                     bool
@@ -60,6 +62,18 @@ func TestGenerate(t *testing.T) {
 		{
 			name: "duplicate marker rejected", extraMarkers: "// +nvke:public:name=Other\n",
 			wantError: `duplicate public marker "name"`,
+		},
+		{
+			name: "catalog and public coexist with stale output", extraMarkers: catalogMarker,
+			stale: true,
+		},
+		{
+			name: "catalog marker rejects custom names", extraMarkers: "// +nvke:catalog:view=CustomWidget\n",
+			wantError: "invalid or duplicate catalog marker",
+		},
+		{
+			name: "catalog marker duplicate", extraMarkers: catalogMarker + catalogMarker,
+			wantError: "invalid or duplicate catalog marker",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -109,6 +123,7 @@ func TestGenerate(t *testing.T) {
 				} else {
 					write(publicOutput, "package v1\nvar broken =\n")
 				}
+				write(catalogOutput, "package v1\nvar obsolete = MissingCatalog{}\n")
 			}
 			if tt.validation != "" {
 				write("apis/v1/validation.go", "package v1\n"+tt.validation+"\n")
@@ -122,10 +137,10 @@ func TestGenerate(t *testing.T) {
 				write("apis/v1/widget.go", strings.Replace(source, "Spec WidgetSpec", "Spec Missing", 1))
 			case "non-struct":
 				write("apis/v1/widget.go", strings.ReplaceAll(source,
-					"type Widget struct { Spec WidgetSpec `json:\"spec\"` }", "type Widget string"))
+					"type Widget struct {\n// +nvke:catalog:include\nSpec WidgetSpec `json:\"spec\"` }", "type Widget string"))
 			}
 			previous := map[string][]byte{}
-			for _, path := range []string{publicOutput, registryOutput} {
+			for _, path := range []string{publicOutput, registryOutput, catalogOutput} {
 				previous[path], _ = os.ReadFile(filepath.Join(root, path))
 			}
 			err = generate(root, false)
@@ -152,6 +167,25 @@ func TestGenerate(t *testing.T) {
 			require.Contains(t, string(registry), `v1 "`+module+`/apis/v1"`)
 			require.Contains(t, string(registry), `Group: "example.test", Version: "v1", Kind: "Widget"`)
 			require.Contains(t, string(registry), `Scope: resource.Scope("Namespaced")`)
+			catalog, err := os.ReadFile(filepath.Join(root, catalogOutput))
+			require.NoError(t, err)
+			if strings.Contains(tt.extraMarkers, catalogMarker) {
+				require.Contains(t, string(catalog), "type CatalogWidget struct")
+				require.Contains(t, string(catalog), "type CatalogWidgetSpec struct")
+				require.NotContains(t, string(catalog), "CatalogView()")
+				write("apis/v1/widget.go", strings.Replace(source, catalogMarker, "", 1))
+				require.NoError(t, generate(root, false))
+				for path, want := range map[string][]byte{
+					publicOutput: output, registryOutput: registry,
+					catalogOutput: []byte(generatedHeader + "\npackage v1\n"),
+				} {
+					got, err := os.ReadFile(filepath.Join(root, path))
+					require.NoError(t, err)
+					require.Equal(t, want, got, "catalog opt-in must only affect %s", catalogOutput)
+				}
+			} else {
+				require.Equal(t, generatedHeader+"\npackage v1\n", string(catalog))
+			}
 			write(publicOutput, string(output)+"\n// drift\n")
 			require.ErrorContains(t, generate(root, true), "is stale")
 		})

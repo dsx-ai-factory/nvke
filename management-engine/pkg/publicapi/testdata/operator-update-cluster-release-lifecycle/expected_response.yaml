@@ -1,0 +1,27 @@
+body:
+  metadata:
+    creationTimestamp: "1970-01-01T00:00:00Z"
+    name: control-plane-v1
+    uid: UID
+  spec:
+    lifecycle:
+      deprecated: true
+      hidden: false
+    machineImageRef:
+      name: ubuntu-2404-amd64
+    machineInit:
+      userDataTemplate: |
+        #cloud-config
+        hostname: nvke-control-plane
+headers:
+  Cache-Control:
+  - no-store
+  Content-Length:
+  - "315"
+  Content-Type:
+  - application/json
+  Date:
+  - DATE
+  Etag:
+  - '"RESOURCE_VERSION"'
+statusCode: 200

@@ -12,11 +12,18 @@ import (
 
 // ControlPlaneClassSpec configures the control plane of clusters selecting this class.
 // +kubebuilder:validation:XValidation:rule="self.controlPlane.replicas > 1 || self.rollout.strategy.rollingUpdate.maxSurge == 1",message="single-replica control planes require maxSurge 1"
+// +nvke:catalog:view
 type ControlPlaneClassSpec struct {
 	// ControlPlane configures control-plane capacity and machine settings.
+	// +nvke:catalog:include
 	ControlPlane ControlPlaneClassConfig `json:"controlPlane"`
 	// Rollout controls replacement of control-plane nodes.
 	Rollout ControlPlaneClassRollout `json:"rollout"`
+	// Lifecycle controls catalog discovery and communicates support.
+	// +optional
+	// +kubebuilder:default={}
+	// +nvke:catalog:include
+	Lifecycle ReleaseLifecycle `json:"lifecycle"`
 }
 
 // ControlPlaneClassConfig defines control-plane sizing and machine settings.
@@ -24,6 +31,7 @@ type ControlPlaneClassConfig struct {
 	// Replicas is the desired number of control-plane nodes.
 	// +required
 	// +kubebuilder:validation:Minimum=1
+	// +nvke:catalog:include
 	Replicas *int32 `json:"replicas"`
 	// InstanceTypePreferences lists provider-native identifiers in preference order.
 	// NICo uses instance-type UUIDs. Providers who use instance-type strings may also use this field.
