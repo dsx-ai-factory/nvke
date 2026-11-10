@@ -5,7 +5,7 @@ go 1.27.4
 require (
 	k8s.io/apimachinery v0.37.2
 	k8s.io/client-go v0.37.2
-	sigs.k8s.io/cluster-api v1.13.8
+	sigs.k8s.io/cluster-api v1.13.7
 	sigs.k8s.io/cluster-api/test v1.13.7
 	sigs.k8s.io/controller-runtime v0.25.2
 )
