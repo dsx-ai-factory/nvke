@@ -24,7 +24,7 @@ Upgrade an NVIDIA Kubernetes Engine (NVKE) workload cluster's control plane, the
 
    Send one version change. Until `STATUS` shows `Upgrading`, a second one is checked against the new target, not the running version, and replaces it.
 
-3. Wait until `STATUS` in `nvkectl get clusters <WORKLOAD_CLUSTER>` is `Provisioned` again and every control-plane node shows `v<K8S_VERSION>` in `kubectl get nodes`.
+3. Wait until `STATUS` in `nvkectl get clusters <WORKLOAD_CLUSTER>` is `Provisioned` again and every control-plane node shows `v<K8S_VERSION>` in `kubectl --kubeconfig <WORKLOAD_CLUSTER>.kubeconfig get nodes`, with the kubeconfig from [Get the admin kubeconfig](access.md#get-the-admin-kubeconfig).
 
 > **Warning:** On a control plane with one node, the Kubernetes API can be unavailable briefly at the end of the upgrade, while kubeadm upgrades the add-ons.
 
@@ -40,4 +40,4 @@ Upgrade an NVIDIA Kubernetes Engine (NVKE) workload cluster's control plane, the
      -d '{"kubernetesVersion": "<K8S_VERSION>", "maxSurge": 1}'
    ```
 
-2. Replace the old nodes, as described in [Control automatic node replacement](node-pools.md#control-automatic-node-replacement).
+2. Replace the old nodes one at a time, as described in [Control automatic node replacement](node-pools.md#control-automatic-node-replacement). Delete an old node only after the new one is `Ready` on the new version.
