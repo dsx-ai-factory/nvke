@@ -121,7 +121,7 @@ items:
     id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     nodePools:
     - conditions:
-      - message: '* NodePoolReleaseResolved: no NodePoolRelease matches node profile
+      - message: '* NodePoolReleaseResolved: no NodePoolRelease publishes node profile
           "example:1.34.10"'
         observedGeneration: 2
         reason: NotReady
@@ -142,7 +142,7 @@ items:
         reason: Reported
         status: "False"
         type: NVKEControllerProvisioning
-      - message: no NodePoolRelease matches node profile "example:1.34.10"
+      - message: no NodePoolRelease publishes node profile "example:1.34.10"
         observedGeneration: 2
         reason: ReconcileFailed
         status: "False"

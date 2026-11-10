@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"maps"
 	"net/netip"
-	"slices"
 	"strings"
 	"text/template"
 	"time"
@@ -430,26 +429,19 @@ func (r *NVKEClusterReconciler) matchNodePoolRelease(ctx context.Context, pool *
 	if err := r.List(ctx, &list, client.MatchingFields{nodePoolReleaseProfileTagField: string(pool.NodeProfile)}); err != nil {
 		return nil, fmt.Errorf("list NodePoolReleases for node profile %q: %w", pool.NodeProfile, err)
 	}
-	matches := make([]*internalv1.NodePoolRelease, 0, len(list.Items))
-	for i := range list.Items {
-		matches = append(matches, &list.Items[i])
-	}
-	switch len(matches) {
+	switch len(list.Items) {
 	case 0:
-		return nil, fmt.Errorf("no NodePoolRelease matches node profile %q", pool.NodeProfile)
+		return nil, fmt.Errorf("no NodePoolRelease publishes node profile %q", pool.NodeProfile)
 	case 1:
 	default:
-		names := make([]string, 0, len(matches))
-		for _, match := range matches {
-			names = append(names, match.Name)
-		}
-		slices.Sort(names)
-		return nil, fmt.Errorf("node profile %q is ambiguous: NodePoolReleases %s all match", pool.NodeProfile, strings.Join(names, ", "))
+		ctrl.LoggerFrom(ctx).Error(nil, "node profile is published by more than one NodePoolRelease", "nodeProfile", pool.NodeProfile, "count", len(list.Items))
+		return nil, fmt.Errorf("node profile %q is published by more than one NodePoolRelease", pool.NodeProfile)
 	}
-	if matches[0].Spec.Lifecycle.Deprecated {
-		return nil, fmt.Errorf("NodePoolRelease %q for node profile %q is deprecated", matches[0].Name, pool.NodeProfile)
+	release := &list.Items[0]
+	if release.Spec.Lifecycle.Deprecated {
+		return nil, fmt.Errorf("NodePoolRelease %q for node profile %q is deprecated", release.Name, pool.NodeProfile)
 	}
-	return matches[0], nil
+	return release, nil
 }
 
 func renderInfraTemplate(name, body string, variables map[string]any, target any) error {
