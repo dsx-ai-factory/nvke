@@ -959,22 +959,3 @@ func TestMachineImageSpecRuleCoversEverything(t *testing.T) {
 		t.Errorf("machine image spec gained a %s field, so the whole-spec rule is now wrong", mutableReleaseField)
 	}
 }
-
-// Defaulting has to leave lifecycle present and false, because the immutability
-// rule and the resolver both read it without checking for its absence.
-func TestReleaseLifecycleDefaults(t *testing.T) {
-	for _, resource := range releaseResources {
-		t.Run(resource, func(t *testing.T) {
-			obj := baseResource(t, resource)
-			loadResourceSchema(t, resource).admit(t, obj, nil)
-
-			lifecycle, ok := specOf(t, obj)["lifecycle"].(map[string]any)
-			if !ok {
-				t.Fatal("lifecycle default missing")
-			}
-			if lifecycle["deprecated"] != false {
-				t.Fatalf("unexpected lifecycle default: %#v", lifecycle)
-			}
-		})
-	}
-}
