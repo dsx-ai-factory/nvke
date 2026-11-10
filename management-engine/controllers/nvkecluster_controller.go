@@ -64,7 +64,6 @@ type NVKEControllerClient interface {
 // NVKEClusterReconciler coordinates cluster provisioning from declarative intent.
 type NVKEClusterReconciler struct {
 	client.Client
-	APIReader                  client.Reader
 	NVKEController             NVKEControllerClient
 	PollInterval               time.Duration
 	InfraTemplateConfigMapName string
@@ -80,11 +79,7 @@ func (r *NVKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	log.V(1).Info("reconciling NVKECluster")
 
 	var cluster internalv1.NVKECluster
-	var reader client.Reader = r.Client
-	if r.APIReader != nil {
-		reader = r.APIReader
-	}
-	if err := reader.Get(ctx, req.NamespacedName, &cluster); err != nil {
+	if err := r.Get(ctx, req.NamespacedName, &cluster); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -1153,9 +1148,6 @@ const nodePoolReleaseProfileTagField = "spec.profileTag"
 func (r *NVKEClusterReconciler) SetupWithManager(mgr ctrl.Manager, wrappers ...func(reconcile.Reconciler) reconcile.Reconciler) error {
 	if r.PollInterval <= 0 {
 		r.PollInterval = defaultPollInterval
-	}
-	if r.APIReader == nil {
-		r.APIReader = mgr.GetAPIReader()
 	}
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &internalv1.NodePoolRelease{}, nodePoolReleaseProfileTagField, func(obj client.Object) []string {
 		release := obj.(*internalv1.NodePoolRelease)
