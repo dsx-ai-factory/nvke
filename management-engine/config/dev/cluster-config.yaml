@@ -41,9 +41,6 @@ apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: docker-worker-1.36.4
-  annotations:
-    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.36.4"
-    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
 spec:
   profile: docker
   tag: "1.36.4"
