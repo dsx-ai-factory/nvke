@@ -68,11 +68,11 @@ Point `kubectl` and Helm at the workload cluster first: the demo's own kubeconfi
 ```bash
 nvkectl get kubeconfig <WORKLOAD_CLUSTER> --output-file workload.kubeconfig
 export KUBECONFIG=$PWD/workload.kubeconfig
-helm uninstall gpu-operator --namespace gpu-operator
 helm uninstall <MOKKA_RELEASE> --namespace mokka
 nvkectl delete nodepool <POOL> --cluster <WORKLOAD_CLUSTER>
+helm uninstall gpu-operator --namespace gpu-operator
 ```
 
-`<MOKKA_RELEASE>` is `nvml-mock` unless you set `MOKKA_RELEASE`.
+`<MOKKA_RELEASE>` is `nvml-mock` unless you set `MOKKA_RELEASE`. GPU Operator serves every Mokka release on the cluster, so skip the last command while another one is still installed.
 
 A node that loses Mokka keeps the `nvidia.com/gpu.product` label GPU Feature Discovery set, while its allocatable GPUs drop to 0.

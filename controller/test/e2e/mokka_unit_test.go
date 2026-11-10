@@ -30,6 +30,11 @@ func mokkaTestPod(node string, ready bool, steps ...corev1.ContainerStatus) core
 	}
 }
 
+func deletingPod(pod corev1.Pod) corev1.Pod {
+	pod.DeletionTimestamp = &metav1.Time{}
+	return pod
+}
+
 func validatorStep(name string, terminated *corev1.ContainerStateTerminated) corev1.ContainerStatus {
 	return corev1.ContainerStatus{Name: name, State: corev1.ContainerState{Terminated: terminated}}
 }
@@ -90,6 +95,14 @@ func TestValidatorProblems(t *testing.T) {
 		{
 			name:  "no validator on the node",
 			found: []string{"a: no validator pod"},
+		},
+		{
+			name: "a validator being deleted does not count",
+			pods: []corev1.Pod{
+				deletingPod(mokkaTestPod("a", true, validatorStep("cuda-validation", passed))),
+				mokkaTestPod("a", false, validatorStep("cuda-validation", nil)),
+			},
+			found: []string{"a: validator step cuda-validation has not finished"},
 		},
 		{
 			name:  "steps not started",

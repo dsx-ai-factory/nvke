@@ -214,11 +214,11 @@ func mokkaPodProblems(nodes []corev1.Node, pods []corev1.Pod, want int) []string
 }
 
 // validatorProblems requires a GPU Operator validator pod on every node whose
-// steps, its init containers, all exited 0.
+// steps, its init containers, all exited 0. A pod being deleted does not count.
 func validatorProblems(nodes []corev1.Node, pods []corev1.Pod) []string {
 	var problems []string
 	for _, node := range nodes {
-		i := slices.IndexFunc(pods, func(pod corev1.Pod) bool { return pod.Spec.NodeName == node.Name })
+		i := slices.IndexFunc(pods, func(pod corev1.Pod) bool { return pod.Spec.NodeName == node.Name && pod.DeletionTimestamp == nil })
 		if i < 0 {
 			problems = append(problems, node.Name+": no validator pod")
 			continue
