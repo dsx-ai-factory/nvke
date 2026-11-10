@@ -1,7 +1,9 @@
 # Chart packaging extensions
 
 `make chart` runs the pinned Kubebuilder Helm plugin in fresh staging and then
-packages these extensions. The resulting `chart/` is generated output.
+packages these extensions. Workload templates, values and state assets in
+`chart/` are generated output; `chart/Chart.yaml` and `chart/Chart.lock` are
+maintained package metadata.
 
 - Change runtime manifests under `config/manager` and permission rules under
   `config/rbac`, `config/dev` or the Go RBAC markers. Generation carries those
@@ -23,6 +25,8 @@ copy of each definition.
 
 Run `make chart-check chart-assets-check` to verify generation and installation
 modes. The propagation test changes source resources, an environment variable,
-a probe, a volume and a permission, then verifies the final Helm rendering.
+a probe, a volume, `envFrom` and a permission, then verifies the final Helm
+rendering. Source connection flags are replaced by named chart settings, so
+Kustomize-specific endpoints and paths do not become duplicate Helm arguments.
 
 Created with AI assistance

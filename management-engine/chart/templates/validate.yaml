@@ -40,6 +40,7 @@
 {{- end -}}
 {{- $_ := required "manager.infrastructureTemplateConfigMap is required" .Values.manager.infrastructureTemplateConfigMap -}}
 {{- range .Values.manager.args -}}
+{{- if hasPrefix "-" . -}}
 {{- $flag := trimAll "-" (first (splitList "=" .)) -}}
 {{- if eq $flag "leader-election-namespace" -}}
 {{- fail "the chart sets --leader-election-namespace from manager.stateNamespace" -}}
@@ -52,6 +53,7 @@
 {{- end -}}
 {{- if has $flag (list "kubeconfig" "context") -}}
 {{- fail "configure datastore access with manager.stateAccess, not manager.args" -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- if and .Values.state.enabled (ne (include "management-engine.stateNamespace" .) (default .Release.Namespace .Values.state.namespace)) -}}

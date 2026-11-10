@@ -89,7 +89,7 @@ func generate(binary string, check bool) (err error) {
 			return err
 		}
 		if !bytes.Contains(data, []byte("SPDX-License-Identifier:")) {
-			return os.WriteFile(path, append(append([]byte{}, header...), append([]byte("\n"), data...)...), 0o644)
+			return os.WriteFile(path, bytes.Join([][]byte{header, data}, []byte("\n")), 0o644)
 		}
 		return nil
 	}); err != nil {
@@ -127,11 +127,33 @@ func customize(chart string) error {
 		}
 		s = strings.Replace(s, replacement[0], replacement[1], 1)
 	}
-	start, end := strings.Index(s, "        env:\n"), strings.Index(s, "        image:")
-	if start < 0 || end <= start {
-		return fmt.Errorf("kubebuilder manager environment boundary changed")
+	// Match only the pinned environment template, preserving adjacent fields such as envFrom.
+	const pluginEnv = `        env:
+{{- if or .Values.manager.env ` +
+		`(and (kindIs "map" .Values.manager.envOverrides) (not (empty .Values.manager.envOverrides))) }}
+          {{- if .Values.manager.env }}
+          {{- toYaml .Values.manager.env | nindent 10 }}
+          {{- end }}
+          {{- if kindIs "map" .Values.manager.envOverrides }}
+          {{- range $k, $v := .Values.manager.envOverrides }}
+          - name: {{ $k }}
+            value: {{ $v | quote }}
+          {{ end }}
+          {{- end }}
+          {{- else }}
+          []
+          {{- end }}
+`
+	const managerEnv = "        env:\n{{ include \"management-engine.managerEnv\" . }}\n"
+	switch {
+	case strings.Count(s, pluginEnv) == 1:
+		s = strings.Replace(s, pluginEnv, managerEnv, 1)
+	case !strings.Contains(s, "        env:") && strings.Count(s, "        image:") == 1:
+		// Kubebuilder omits this block when the source has no environment variables.
+		s = strings.Replace(s, "        image:", managerEnv+"        image:", 1)
+	default:
+		return fmt.Errorf("kubebuilder manager environment template changed")
 	}
-	s = s[:start] + "        env:\n{{ include \"management-engine.managerEnv\" . }}\n" + s[end:]
 	if err := os.WriteFile(path, []byte(s), 0o644); err != nil {
 		return err
 	}
@@ -175,19 +197,29 @@ func customizeValues(path string) error {
 	if err := yaml.Unmarshal(data, &values); err != nil {
 		return err
 	}
-	manager := values["manager"].(map[string]any)
-	args := []any{}
-	for _, raw := range manager["args"].([]any) {
-		arg := raw.(string)
-		if !strings.HasPrefix(arg, "--kubeconfig=") && !strings.HasPrefix(arg, "--leader-election-namespace=") {
-			args = append(args, arg)
-		}
+	manager, ok := values["manager"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("generated values require a manager mapping")
+	}
+	// Decode owned fields without assuming optional lists exist; keep unrelated defaults in the map.
+	var source struct {
+		Manager struct {
+			Args []string         `json:"args"`
+			Env  []map[string]any `json:"env"`
+		} `json:"manager"`
+	}
+	if err := yaml.Unmarshal(data, &source); err != nil {
+		return err
+	}
+	args, err := filterManagerArgs(source.Manager.Args)
+	if err != nil {
+		return err
 	}
 	manager["args"] = args
 	env := []any{}
-	for _, raw := range manager["env"].([]any) {
-		if raw.(map[string]any)["name"] != "STATE_NAMESPACE" {
-			env = append(env, raw)
+	for _, variable := range source.Manager.Env {
+		if variable["name"] != "STATE_NAMESPACE" {
+			env = append(env, variable)
 		}
 	}
 	manager["env"] = env
@@ -209,6 +241,31 @@ func customizeValues(path string) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0o644)
+}
+
+// filterManagerArgs leaves connection and election settings to named chart inputs.
+func filterManagerArgs(args []string) ([]string, error) {
+	result := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		name, _, inline := strings.Cut(args[i], "=")
+		if !strings.HasPrefix(name, "-") {
+			result = append(result, args[i])
+			continue
+		}
+		switch strings.TrimLeft(name, "-") {
+		case "kubeconfig", "context", "leader-election-namespace",
+			"nvke-controller-endpoint", "nvke-controller-token-file", "infra-template-configmap":
+			if !inline {
+				i++
+				if i == len(args) || strings.HasPrefix(args[i], "-") {
+					return nil, fmt.Errorf("source manager argument %s requires a value", name)
+				}
+			}
+		default:
+			result = append(result, args[i])
+		}
+	}
+	return result, nil
 }
 
 func merge(dst, src map[string]any) {

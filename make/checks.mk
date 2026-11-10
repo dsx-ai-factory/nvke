@@ -90,6 +90,7 @@ next-tag-test: ## Test the release version rules in release/hack/next-tag.sh. (r
 
 SHARED_CRD_CHART := controller/deploy/charts/nvke-crds
 CHART_CRDS_FILE := dist/release-crds.yaml
+STATE_CRDS := management-engine/config/crd/bases
 
 .PHONY: chart-deps chart-crds chart-crds-check chart-crds-render-check
 chart-deps: ## Build the controller chart's pinned local dependency.
@@ -103,8 +104,8 @@ chart-crds: ## Render the controller's three release schemas into ignored build 
 
 chart-crds-check: ## Verify canonical generated schemas and shared chart rendering.
 	@$(MAKE) --no-print-directory -C management-engine manifests-state
-	git diff --exit-code -- $(SHARED_CRD_CHART)/bases management-engine/chart/files/crds
-	@test -z "$$(git ls-files --others --exclude-standard -- $(SHARED_CRD_CHART)/bases)" || { echo "Commit canonical schemas"; exit 1; }
+	git diff --exit-code -- $(SHARED_CRD_CHART)/bases $(STATE_CRDS)
+	@test -z "$$(git ls-files --others --exclude-standard -- $(SHARED_CRD_CHART)/bases $(STATE_CRDS))" || { echo "Commit canonical schemas"; exit 1; }
 	@$(call require_tool,kubectl,$(KUBECTL_VERSION))
 	kubectl kustomize management-engine/config/crd > /dev/null
 

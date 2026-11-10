@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,6 +20,16 @@ import (
 
 // TestGenerationPropagatesSources exercises source edits through plugin generation and Helm rendering.
 func TestGenerationPropagatesSources(t *testing.T) {
+	for _, omitEnv := range []bool{false, true} {
+		name := "environment present"
+		if omitEnv {
+			name = "environment omitted"
+		}
+		t.Run(name, func(t *testing.T) { checkSourcePropagation(t, omitEnv) })
+	}
+}
+
+func checkSourcePropagation(t *testing.T, omitEnv bool) {
 	binary := os.Getenv("KUBEBUILDER")
 	if binary == "" {
 		t.Skip("make chart-check supplies the pinned Kubebuilder executable")
@@ -52,7 +63,7 @@ func TestGenerationPropagatesSources(t *testing.T) {
 		return data
 	}
 	run("git", "init", "-q")
-	changeCanonicalSources(t)
+	changeCanonicalSources(t, omitEnv)
 	if err := os.MkdirAll("dist", 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -78,21 +89,8 @@ func TestGenerationPropagatesSources(t *testing.T) {
 			t.Fatal(err)
 		}
 		if obj.GetKind() == "Deployment" {
-			containers, _, _ := unstructured.NestedSlice(obj.Object, "spec", "template", "spec", "containers")
-			manager := containers[0].(map[string]any)
-			cpu, _, _ := unstructured.NestedString(manager, "resources", "requests", "cpu")
-			delay, _, _ := unstructured.NestedInt64(manager, "readinessProbe", "initialDelaySeconds")
-			data, err := yaml.Marshal(manager["env"])
-			if err != nil {
-				t.Fatal(err)
-			}
-			deployment = cpu == "25m" && delay == 37 && strings.Contains(string(data), "SOURCE_PROPAGATION")
-			pod, err := yaml.Marshal(obj.Object)
-			if err != nil {
-				t.Fatal(err)
-			}
-			deployment = deployment && strings.Count(string(pod), "name: source-config") == 2
-
+			assertSourceDeployment(t, obj, omitEnv)
+			deployment = true
 		}
 		if obj.GetKind() == "ClusterRole" {
 			data, err := yaml.Marshal(obj.Object["rules"])
@@ -113,7 +111,7 @@ func TestGenerationPropagatesSources(t *testing.T) {
 	}
 }
 
-func changeCanonicalSources(t *testing.T) {
+func changeCanonicalSources(t *testing.T, omitEnv bool) {
 	t.Helper()
 	input, err := os.ReadFile("config/manager/manager.yaml")
 	if err != nil {
@@ -130,6 +128,14 @@ func changeCanonicalSources(t *testing.T) {
 	}
 	env, _, _ := unstructured.NestedSlice(manager, "env")
 	manager["env"] = append(env, map[string]any{"name": "SOURCE_PROPAGATION", "value": "present"})
+	if omitEnv {
+		delete(manager, "env")
+	}
+	manager["envFrom"] = []any{map[string]any{"configMapRef": map[string]any{"name": "source-env-settings"}}}
+	args, _, _ := unstructured.NestedSlice(manager, "args")
+	manager["args"] = append(args, "--nvke-controller-endpoint=https://source.invalid/api",
+		"--infra-template-configmap", "source-template")
+
 	if err := unstructured.SetNestedField(manager, int64(37), "readinessProbe", "initialDelaySeconds"); err != nil {
 		t.Fatal(err)
 	}
@@ -161,5 +167,68 @@ func changeCanonicalSources(t *testing.T) {
 	role = append(role, []byte("\n- apiGroups: [example.test]\n  resources: [sourcechecks]\n  verbs: [get]\n")...)
 	if err := os.WriteFile("config/rbac/role.yaml", role, 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func assertSourceDeployment(t *testing.T, obj unstructured.Unstructured, omitEnv bool) {
+	t.Helper()
+	containers, _, _ := unstructured.NestedSlice(obj.Object, "spec", "template", "spec", "containers")
+	manager := containers[0].(map[string]any)
+	cpu, _, _ := unstructured.NestedString(manager, "resources", "requests", "cpu")
+	if cpu != "25m" {
+		t.Errorf("source CPU request did not propagate: %q", cpu)
+	}
+	delay, _, _ := unstructured.NestedInt64(manager, "readinessProbe", "initialDelaySeconds")
+	if delay != 37 {
+		t.Errorf("source readiness delay did not propagate: %d", delay)
+	}
+	data, err := yaml.Marshal(manager["env"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !omitEnv && !strings.Contains(string(data), "SOURCE_PROPAGATION") {
+		t.Error("source environment variable did not propagate")
+	}
+	pod, err := yaml.Marshal(obj.Object)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(pod), "name: source-config") != 2 {
+		t.Error("source volume and mount did not propagate exactly once each")
+	}
+	if !strings.Contains(string(pod), "source-env-settings") {
+		t.Error("source envFrom did not propagate")
+	}
+	if strings.Contains(string(pod), "source.invalid") || strings.Contains(string(pod), "source-template") {
+		t.Error("source connection flags bypassed named chart inputs")
+	}
+}
+
+func TestFilterManagerArgs(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want []string
+		err  bool
+	}{
+		{"empty", nil, []string{}, false},
+		{"ordinary", []string{"--leader-elect", "--zap-log-level=debug"},
+			[]string{"--leader-elect", "--zap-log-level=debug"}, false},
+		{"inline references", []string{"--kubeconfig=/tmp/config", "--context=state",
+			"--leader-election-namespace=state", "--nvke-controller-endpoint=http://source.invalid",
+			"--nvke-controller-token-file=/tmp/token", "--infra-template-configmap=source"}, []string{}, false},
+		{"split reference", []string{"--nvke-controller-endpoint", "http://source.invalid", "--leader-elect"},
+			[]string{"--leader-elect"}, false},
+		{"ordinary value", []string{"--namespace", "context", "--leader-elect"},
+			[]string{"--namespace", "context", "--leader-elect"}, false},
+		{"missing value", []string{"--context"}, nil, true},
+		{"next flag", []string{"--context", "--leader-elect"}, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := filterManagerArgs(tc.args)
+			if (err != nil) != tc.err || !slices.Equal(got, tc.want) {
+				t.Fatalf("filtered=%v error=%v; want %v error=%t", got, err, tc.want, tc.err)
+			}
+		})
 	}
 }

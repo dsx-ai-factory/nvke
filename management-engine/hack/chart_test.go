@@ -975,3 +975,18 @@ func assertTenantCatalogPermissions(t *testing.T, objects []unstructured.Unstruc
 		t.Fatal("tenant catalog read permissions are missing or excessive")
 	}
 }
+
+func TestChartArgumentValues(t *testing.T) {
+	objects, output, err := renderChart(t, `{
+  "manager":{"infrastructureTemplateConfigMap":"infra","args":["--namespace","context"]}
+}`)
+	if err != nil {
+		t.Fatalf("ordinary argument value rejected: %v\n%s", err, output)
+	}
+	containers, _, _ := unstructured.NestedSlice(objectsOfKind(objects, "Deployment")[0].Object,
+		"spec", "template", "spec", "containers")
+	args, _, _ := unstructured.NestedStringSlice(containers[0].(map[string]any), "args")
+	if !strings.Contains(strings.Join(args, " "), "--namespace context") {
+		t.Fatalf("ordinary argument value changed: %v", args)
+	}
+}
