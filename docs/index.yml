@@ -77,6 +77,8 @@ navigation:
             path: operate/troubleshoot.md
           - page: Debug NicoIdentity credential health
             path: operate/debug-nicoidentity-credentials.md
+          - page: Change a node pool's NVLink partition
+            path: operate/change-nvlink-partition.md
           - page: Migrating CRs to the internal.nvke.nvidia.com group
             path: operations/crd-group-migration.md
           - page: The NVKE label and annotation domain
