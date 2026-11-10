@@ -74,6 +74,19 @@ func EnsureKubernetesVersionInClusterConfiguration(ctx context.Context, c client
 	)
 }
 
+// EnsureBootstrapDefragInClusterConfiguration reconciles the persisted kubeadm
+// ClusterConfiguration to the etcd settings emitted for greenfield clusters, so
+// that the next control-plane node to join comes back carrying them.
+//
+// Run this after EnsureKubernetesVersionInClusterConfiguration, never before.
+// A cluster that pins no etcd image has its threshold gated on the
+// kubernetesVersion recorded in the document, so on an upgrade into 1.34 the
+// two have to land in that order or the threshold waits for the following
+// upgrade to notice it is eligible.
+func EnsureBootstrapDefragInClusterConfiguration(ctx context.Context, c client.Client) (bool, error) {
+	return reconcileClusterConfiguration(ctx, c, "merging etcd defragmentation settings", MergeBootstrapDefragIntoClusterConfiguration, false)
+}
+
 type clusterConfigurationMutation func([]byte) ([]byte, bool, error)
 
 func reconcileClusterConfiguration(
