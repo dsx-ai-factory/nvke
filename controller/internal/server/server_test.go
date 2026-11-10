@@ -694,9 +694,9 @@ func TestOpenAPIValidator_UpdateNodePool(t *testing.T) {
 			expectReject: true,
 		},
 		{
-			name:         "nico.nvLinkLogicalPartitionID is rejected",
+			name:         "nico.nvLinkLogicalPartitionID is accepted",
 			body:         `{"nico":{"nvLinkLogicalPartitionID":"550e8400-e29b-41d4-a716-446655440004"}}`,
-			expectReject: true,
+			expectReject: false,
 		},
 		{
 			name:         "nico.sshKeyGroupIDs is rejected",
