@@ -156,6 +156,7 @@ func (a *Activities) UpdateNodeConditionsWithTx(ctx context.Context, tx db.Tx, u
 		return fmt.Errorf("failed to get node: %w", err)
 	}
 
+	previous := node.Conditions
 	updateCondition(&node.Conditions.Pending, update.Conditions.Pending)
 	updateCondition(&node.Conditions.ProvisioningClaimed, update.Conditions.ProvisioningClaimed)
 	updateCondition(&node.Conditions.Provisioning, update.Conditions.Provisioning)
@@ -167,6 +168,12 @@ func (a *Activities) UpdateNodeConditionsWithTx(ctx context.Context, tx db.Tx, u
 	updateCondition(&node.Conditions.KubernetesUnschedulable, update.Conditions.KubernetesUnschedulable)
 	updateCondition(&node.Conditions.NodeAgentReady, update.Conditions.NodeAgentReady)
 	updateCondition(&node.Conditions.Rebooting, update.Conditions.Rebooting)
+
+	// A call that re-asserts the stored conditions leaves the row unchanged.
+	// Skipping the write also skips the enqueue on every node source.
+	if node.Conditions.Equal(previous) {
+		return nil
+	}
 
 	_, err = tx.UpdateNode(ctx, &node)
 	if err != nil {
