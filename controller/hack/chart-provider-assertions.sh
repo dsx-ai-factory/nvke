@@ -80,7 +80,7 @@ clusterrole "grants NICo RBAC by default" nico 1 "${out}"
 clusterrole "grants LaunchLayer RBAC by default" launchlayer 1 "${out}"
 # Provider credentials live in the providers' own namespaces; the controller
 # reads Secrets only through namespaced Roles.
-if [[ -z "$(yq 'select(.kind == "ClusterRole") | .rules[] | select((.resources // []) | (contains(["secrets"]) or contains(["*"])))' <<<"${out}")" ]]; then
+if [[ -z "$(yq 'select(.kind == "ClusterRole") | .rules[] | select((.resources // []) | map(test("^(secrets|[*])$")) | any)' <<<"${out}")" ]]; then
   printf '  ok    %s\n' "no ClusterRole grants Secret access"
 else
   printf '  FAIL  %s\n' "a ClusterRole grants Secret access, which reaches every provider's credentials" >&2
