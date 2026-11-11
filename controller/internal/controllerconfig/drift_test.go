@@ -130,6 +130,8 @@ var configMapOnly = []string{
 	"credentialMonitoring.inspectionInterval",
 	"credentialMonitoring.observationMaxAge",
 	"credentialMonitoring.warningDays",
+	"controlPlaneFailureDomainFallback.enabled",
+	"controlPlaneFailureDomainFallback.gracePeriod",
 }
 
 // chartDeployment is the template whose env block decides what the chart sets.

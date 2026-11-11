@@ -24,6 +24,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
@@ -85,11 +86,11 @@ func TestReadFailureDomains(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, domains)
-		assert.Equal(t, []string{"fd-a"}, domains.eligible)
+		assert.Equal(t, []string{"fd-a"}, domains.Eligible)
 		assert.Equal(t, map[string]string{
 			"cp-status": "fd-status",
 			"cp-spec":   "fd-spec",
-		}, domains.observedByNodeName)
+		}, domains.ObservedByNodeName)
 		assert.Equal(t, 1, k8sClient.listCalls)
 	})
 
@@ -112,7 +113,7 @@ func TestReadFailureDomains(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, domains)
-		assert.Empty(t, domains.eligible)
+		assert.Empty(t, domains.Eligible)
 		assert.Zero(t, k8sClient.listCalls)
 	})
 }
@@ -172,7 +173,7 @@ func TestReadFailureDomainsWithoutAPlacementView(t *testing.T) {
 			if tc.wantErr == "" {
 				require.NoError(t, err)
 				require.NotNil(t, domains)
-				assert.Empty(t, domains.eligible)
+				assert.Empty(t, domains.Eligible)
 			} else {
 				require.ErrorContains(t, err, tc.wantErr)
 				assert.Nil(t, domains)
@@ -376,7 +377,7 @@ func TestReadFailureDomainsErrorClassification(t *testing.T) {
 		r := &reconciler{}
 		_, err := r.readFailureDomains(context.Background(), db.Cluster{Name: "c"})
 		require.Error(t, err)
-		assert.NotErrorIs(t, err, errInfrastructureNotProvisioned)
+		assert.NotErrorIs(t, err, failuredomains.ErrInfrastructureNotProvisioned)
 	})
 
 	t.Run("a CAPI cluster that does not exist yet is", func(t *testing.T) {
@@ -386,6 +387,6 @@ func TestReadFailureDomainsErrorClassification(t *testing.T) {
 		k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 		r := &reconciler{k8sClient: k8sClient, k8sReader: k8sClient}
 		_, err := r.readFailureDomains(context.Background(), db.Cluster{Name: "c"})
-		assert.ErrorIs(t, err, errInfrastructureNotProvisioned)
+		assert.ErrorIs(t, err, failuredomains.ErrInfrastructureNotProvisioned)
 	})
 }

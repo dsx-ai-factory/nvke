@@ -23,6 +23,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
@@ -142,7 +143,7 @@ func TestReconcileStuckPendingNodes_ReplacesAndMarksDomain(t *testing.T) {
 	cp := &controlPlane{
 		nodes:                     []db.Node{stuck, healthyB, healthyC},
 		clusterControlPlaneConfig: cluster.ControlPlaneConfig,
-		failureDomains:            &failureDomains{eligible: []string{"A", "B", "C"}},
+		failureDomains:            &failuredomains.Snapshot{Eligible: []string{"A", "B", "C"}},
 	}
 
 	acted, err := r.reconcileStuckPendingNodes(context.Background(), cluster, cp, placementStub{unavailable: true})
@@ -160,7 +161,7 @@ func TestReconcileStuckPendingNodes_NoOps(t *testing.T) {
 	clusterID := uuid.New()
 	cluster := db.Cluster{ID: clusterID, Name: "test-cluster", ControlPlaneVIP: "10.0.0.1"}
 	unavailable := placementStub{unavailable: true}
-	twoDomains := &failureDomains{eligible: []string{"A", "B"}}
+	twoDomains := &failuredomains.Snapshot{Eligible: []string{"A", "B"}}
 
 	t.Run("nothing stuck", func(t *testing.T) {
 		t.Parallel()
@@ -187,7 +188,7 @@ func TestReconcileStuckPendingNodes_NoOps(t *testing.T) {
 		stuck := stuckPendingNode(clusterID, "cp-stuck", 2*time.Hour)
 		marked := cluster
 		marked.Conditions.UnplaceableFailureDomains = map[string]time.Time{"B": time.Now()}
-		cp := &controlPlane{nodes: []db.Node{stuck}, failureDomains: &failureDomains{eligible: []string{"A", "B"}}}
+		cp := &controlPlane{nodes: []db.Node{stuck}, failureDomains: &failuredomains.Snapshot{Eligible: []string{"A", "B"}}}
 		r := &reconciler{db: &testutil.MockTx{}, logger: slog.Default(), k8sClient: capiMachinesClient(t, stuck.Name)}
 		acted, err := r.reconcileStuckPendingNodes(context.Background(), marked, cp, unavailable)
 		require.NoError(t, err)

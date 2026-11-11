@@ -8,15 +8,22 @@ import (
 
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
+	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
-// TryAdvanceStuckMachine is always a no-op: a template-backed CAPI machine's
-// infrastructure comes from a caller-supplied template, with no controller-pinned
-// candidate list to rotate through.
-func (*Client) TryAdvanceStuckMachine(_ context.Context, _ shared.MachineAdvanceDeps, _ db.Node, _ db.NodeSet, _ db.NodePool, _ *clusterv1.Machine) (bool, error) {
-	return false, nil
+// TryAdvanceStuckMachine moves a NicoMachine-backed control-plane node off a
+// failure domain CAPNICo reports out of capacity, through deps.RotateFailureDomain.
+// Other infrastructure comes from a caller-supplied template, with no
+// controller-pinned candidate list to rotate through.
+func (*Client) TryAdvanceStuckMachine(ctx context.Context, deps shared.MachineAdvanceDeps, node db.Node, _ db.NodeSet, _ db.NodePool, machine *clusterv1.Machine) (bool, error) {
+	if machine.Spec.InfrastructureRef.APIGroup != nicov1.GroupVersion.Group || machine.Spec.InfrastructureRef.Kind != "NicoMachine" {
+		return false, nil
+	}
+	return nico.RotateFailureDomain(ctx, deps, node, machine)
 }
 
 // DescribeStuckMachine always returns "": with nothing to advance, the

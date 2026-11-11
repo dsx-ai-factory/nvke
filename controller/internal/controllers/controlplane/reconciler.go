@@ -16,6 +16,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 )
 
 // reconciler reconciles control planes.
@@ -106,16 +107,16 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	}
 
 	failureDomains, err := r.readFailureDomains(ctx, cluster)
-	if errors.Is(err, errInfrastructureNotProvisioned) {
+	if errors.Is(err, failuredomains.ErrInfrastructureNotProvisioned) {
 		return r.reconcileWithoutFailureDomains(ctx, cluster, controlPlane, err)
 	}
 	if err != nil {
 		return fmt.Errorf("discovering control-plane failure domains: %w", err)
 	}
 	controlPlane.failureDomains = failureDomains
-	failureDomains.eligible = placeableDomains(failureDomains.eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
-	allocator := newControlPlaneDomainAllocator(controlPlane.nodes, failureDomains)
-	if unplaced := nodesWithoutKnownDomain(controlPlane.nodes, failureDomains); len(unplaced) > 0 {
+	failureDomains.Eligible = placeableDomains(failureDomains.Eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
+	allocator := failuredomains.NewControlPlaneAllocator(controlPlane.nodes, failureDomains)
+	if unplaced := failuredomains.NodesWithoutKnownDomain(controlPlane.nodes, failureDomains); len(unplaced) > 0 {
 		r.logger.Warn("Control-plane nodes have no known failure domain and are not counted toward the spread",
 			"clusterID", cluster.ID, "clusterName", cluster.Name, "nodes", unplaced)
 	}
@@ -290,7 +291,7 @@ func (r *reconciler) reconcileControlPlaneScaleUp(
 	ctx context.Context,
 	cluster db.Cluster,
 	controlPlane *controlPlane,
-	allocator domainAllocator,
+	allocator failuredomains.Allocator,
 	newNodeProvider clients.NewNodeProvider,
 ) error {
 	deficit := cluster.ControlPlaneConfig.DesiredCount - controlPlane.size()

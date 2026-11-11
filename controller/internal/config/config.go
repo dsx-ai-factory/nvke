@@ -441,6 +441,14 @@ type Config struct {
 	// AllowControlPlaneWithoutVIP permits control-plane lifecycle operations without a VIP for development.
 	// The API endpoint remains tied to the initializing node's IP.
 	AllowControlPlaneWithoutVIP bool `controllerconfig:"allowControlPlaneWithoutVIP"`
+
+	// ControlPlaneFailureDomainFallbackEnabled moves a pending control-plane node whose failure domain
+	// has no capacity to another eligible failure domain.
+	ControlPlaneFailureDomainFallbackEnabled bool `controllerconfig:"controlPlaneFailureDomainFallback.enabled"`
+
+	// ControlPlaneFailureDomainFallbackGracePeriod is how long a node must keep reporting its failure
+	// domain out of capacity before it is moved.
+	ControlPlaneFailureDomainFallbackGracePeriod time.Duration `controllerconfig:"controlPlaneFailureDomainFallback.gracePeriod"`
 }
 
 // TracingConfig configures OpenTelemetry span export.

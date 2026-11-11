@@ -17,6 +17,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
@@ -136,11 +137,11 @@ func (r *reconciler) failureDomainUnavailable(ctx context.Context, machines clie
 
 // hasAlternativeDomain reports whether an eligible domain other than domain is
 // not marked unplaceable.
-func hasAlternativeDomain(f *failureDomains, domain string, unplaceable map[string]time.Time, now time.Time) bool {
+func hasAlternativeDomain(f *failuredomains.Snapshot, domain string, unplaceable map[string]time.Time, now time.Time) bool {
 	if f == nil {
 		return false
 	}
-	for _, candidate := range f.eligible {
+	for _, candidate := range f.Eligible {
 		if candidate != domain && !isMarkedUnplaceable(unplaceable, candidate, now) {
 			return true
 		}

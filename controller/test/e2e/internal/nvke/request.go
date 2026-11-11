@@ -125,6 +125,10 @@ type ClusterSpec struct {
 
 	// NodePayloads is required by nico-forge and ignored by everything else.
 	NodePayloads *RolePayloads
+
+	// NicoFailureDomainLabelKey is the NicoCluster's failureDomainLabelKey. Empty
+	// leaves it unset, so CAPNICo publishes no failure domains.
+	NicoFailureDomainLabelKey string
 }
 
 // NodePayloads are the two things that turn a bare machine into an NVKE node:
@@ -315,6 +319,10 @@ func buildCAPNicoRequest(spec ClusterSpec, payloads func(controlPlane bool) Node
 		return api.CreateClusterRequest{}, fmt.Errorf("parsing Nico VPC ID %q: %w", spec.VpcID, err)
 	}
 	name := timestampedName(spec.Name)
+	nicoClusterSpec := map[string]any{"siteID": siteID.String()}
+	if spec.NicoFailureDomainLabelKey != "" {
+		nicoClusterSpec["failureDomainLabelKey"] = spec.NicoFailureDomainLabelKey
+	}
 
 	req := api.CreateClusterRequest{
 		Name:                          name,
@@ -330,9 +338,7 @@ func buildCAPNicoRequest(spec ClusterSpec, payloads func(controlPlane bool) Node
 				"metadata": map[string]any{
 					capiNameKey: name,
 				},
-				capiSpecKey: map[string]any{
-					"siteID": siteID.String(),
-				},
+				capiSpecKey: nicoClusterSpec,
 			},
 		},
 	}

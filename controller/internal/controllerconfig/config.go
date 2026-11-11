@@ -67,6 +67,22 @@ type Config struct {
 	AllowControlPlaneWithoutVIP              bool                       `json:"allowControlPlaneWithoutVIP"`
 	APIAuth                                  APIAuthConfig              `json:"apiAuth"`
 	APIAuthz                                 APIAuthzConfig             `json:"apiAuthz"`
+
+	ControlPlaneFailureDomainFallback ControlPlaneFailureDomainFallbackConfig `json:"controlPlaneFailureDomainFallback"`
+}
+
+// ControlPlaneFailureDomainFallbackConfig groups the ControlPlaneFailureDomainFallback* settings in config.Config.
+type ControlPlaneFailureDomainFallbackConfig struct {
+	Enabled     bool            `json:"enabled"`
+	GracePeriod metav1.Duration `json:"gracePeriod"`
+}
+
+// validate requires a positive gracePeriod when enabled is true.
+func (f ControlPlaneFailureDomainFallbackConfig) validate() error {
+	if f.Enabled && f.GracePeriod.Duration <= 0 {
+		return errors.New("gracePeriod must be greater than 0")
+	}
+	return nil
 }
 
 // FieldManagerConfig groups the Server-Side-Apply field manager names, mirroring
@@ -497,6 +513,10 @@ func (c *Config) Validate() error {
 
 	if err := c.AgentReadiness.validate(); err != nil {
 		return fmt.Errorf("agentReadiness: %w", err)
+	}
+
+	if err := c.ControlPlaneFailureDomainFallback.validate(); err != nil {
+		return fmt.Errorf("controlPlaneFailureDomainFallback: %w", err)
 	}
 
 	return nil
