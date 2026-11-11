@@ -222,24 +222,31 @@ func TestNewControlPlaneDomainAllocatorDoesNotBackfillExistingNode(t *testing.T)
 	assert.Equal(t, "fd-b", allocator.take())
 }
 
-func TestDomainAllocatorPreferNext(t *testing.T) {
+func TestDomainAllocatorRelease(t *testing.T) {
 	t.Parallel()
 
-	t.Run("an eligible preferred domain wins once", func(t *testing.T) {
-		t.Parallel()
-		allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"})
-		allocator.record("fd-b")
-		allocator.preferNext("fd-b")
-		assert.Equal(t, "fd-b", allocator.take())
-		assert.Equal(t, "fd-a", allocator.take(), "the preference is consumed by one take")
-	})
-
-	t.Run("an ineligible preferred domain falls back to the least used", func(t *testing.T) {
-		t.Parallel()
-		allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"})
-		allocator.preferNext("fd-gone")
-		assert.Equal(t, "fd-a", allocator.take())
-	})
+	tests := []struct {
+		name     string
+		recorded []string
+		released string
+		want     string
+	}{
+		{name: "an even spread keeps the surge in the outgoing node's domain", recorded: []string{"fd-a", "fd-b", "fd-c"}, released: "fd-b", want: "fd-b"},
+		{name: "a skewed spread heals into the empty domain", recorded: []string{"fd-a", "fd-a", "fd-b"}, released: "fd-a", want: "fd-c"},
+		{name: "an ineligible domain is ignored", recorded: []string{"fd-a", "fd-b"}, released: "fd-gone", want: "fd-c"},
+		{name: "an uncounted domain does not go negative", released: "fd-b", want: "fd-a"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b", "fd-c"})
+			for _, domain := range tt.recorded {
+				allocator.record(domain)
+			}
+			allocator.release(tt.released)
+			assert.Equal(t, tt.want, allocator.take())
+		})
+	}
 }
 
 func TestNewControlPlaneDomainAllocatorSkipsNodesWithDeleteInFlight(t *testing.T) {

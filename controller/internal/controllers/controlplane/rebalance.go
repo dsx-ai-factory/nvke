@@ -156,9 +156,7 @@ func (r *reconciler) reconcileControlPlaneRebalance(
 		return false, fmt.Errorf("resolving capped control-plane config snapshot: %w", err)
 	}
 
-	// The surge lands in the domain of the node it will replace, which keeps the
-	// spread unchanged once that node is shed.
-	allocator.preferNext(cp.failureDomains.domainOf(leastPreferredControlPlaneNode(eligible, ranker)))
+	allocator.release(cp.failureDomains.domainOf(leastPreferredControlPlaneNode(eligible, ranker)))
 	created, err := r.scaleUp(ctx, cluster, 1, "control-plane rebalance surge", allocator, newNodeProvider, withRebalanceReplacement(snapshotID))
 	if err != nil {
 		return false, fmt.Errorf("surging control-plane rebalance replacement: %w", err)

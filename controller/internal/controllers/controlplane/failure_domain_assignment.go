@@ -35,9 +35,6 @@ func leastUsedFailureDomainSelection(counts map[string]int) string {
 type domainAllocator struct {
 	machinesPerDomain map[string]int
 	selection         failureDomainSelectionAlgorithm
-	// preferred is the domain the next take returns when it is eligible. It lets a
-	// surge land in the domain of the node it will replace.
-	preferred string
 }
 
 // newDomainAllocator builds an allocator over the eligible domains. Unnamed
@@ -61,10 +58,12 @@ func (a *domainAllocator) record(domain string) {
 	}
 }
 
-// preferNext makes the next take return domain instead of the least-used one,
-// provided the domain is eligible. It applies to one take.
-func (a *domainAllocator) preferNext(domain string) {
-	a.preferred = domain
+// release uncounts a node that a surge will replace, so the surge is placed as if
+// that node were already gone. Ineligible or uncounted domains are ignored.
+func (a *domainAllocator) release(domain string) {
+	if a.machinesPerDomain[domain] > 0 {
+		a.machinesPerDomain[domain]--
+	}
 }
 
 // take returns the next requested domain and counts it when applicable.
@@ -73,10 +72,6 @@ func (a *domainAllocator) take() string {
 		return ""
 	}
 	selected := a.selection(a.machinesPerDomain)
-	if _, eligible := a.machinesPerDomain[a.preferred]; eligible {
-		selected = a.preferred
-	}
-	a.preferred = ""
 	a.machinesPerDomain[selected]++
 	return selected
 }
