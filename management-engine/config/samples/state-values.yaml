@@ -12,12 +12,12 @@ state:
   rbac:
     subjects:
       - kind: ServiceAccount
-        name: management-engine-controller-manager
-        namespace: management-engine-system
+        name: cluster-service-controller-manager
+        namespace: cluster-service-system
       # External identities are Kubernetes User subjects after authentication.
       - kind: User
         apiGroup: rbac.authorization.k8s.io
-        name: spiffe://example.org/management-engine
+        name: spiffe://example.org/cluster-service
     tenantAPIBindings:
       - namespace: tenant-a
         subjects:

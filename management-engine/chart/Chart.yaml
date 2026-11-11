@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 apiVersion: v2
-name: management-engine
-description: A Helm chart to distribute management-engine
+name: cluster-service
+description: Cluster Service manager and datastore resources
 type: application
 
 version: 0.2.0

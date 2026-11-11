@@ -288,9 +288,9 @@ chart: manifests kubebuilder ## Regenerate the Helm chart from canonical manifes
 ## Helm binary to use for deploying the chart
 HELM ?= helm
 ## Namespace to deploy the Helm release
-HELM_NAMESPACE ?= management-engine-system
+HELM_NAMESPACE ?= cluster-service-system
 ## Name of the Helm release
-HELM_RELEASE ?= management-engine
+HELM_RELEASE ?= cluster-service
 ## Path to the Helm chart directory
 HELM_CHART_DIR ?= ./chart
 ## Additional arguments to pass to helm commands

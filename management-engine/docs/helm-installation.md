@@ -1,6 +1,6 @@
 # Install Cluster Service with Helm
 
-The `management-engine` chart packages Cluster Service and its datastore resources.
+The `cluster-service` chart packages Cluster Service and its datastore resources.
 Both are enabled by default in the same Kubernetes cluster. An existing NVKE
 controller provides the provisioning REST API used by the manager.
 
@@ -26,7 +26,7 @@ and the module's pinned Go tools without connecting to a Kubernetes cluster.
 For a combined installation:
 
 ```sh
-helm template management-engine chart --namespace management-engine-system \
+helm template cluster-service chart --namespace cluster-service-system \
   -f config/samples/runtime-values.yaml > combined.yaml
 ```
 
@@ -78,7 +78,7 @@ The examples demonstrate rendering; live reconciliation is validated separately.
 Render state on its destination cluster:
 
 ```sh
-helm template management-engine-state chart --namespace management-state-system \
+helm template cluster-service-state chart --namespace management-state-system \
   -f config/samples/state-values.yaml > state.yaml
 ```
 
@@ -105,7 +105,7 @@ roles without bindings, so permissions can be supplied independently.
 For a controller on another cluster:
 
 ```sh
-helm template management-engine chart --namespace management-engine-system \
+helm template cluster-service chart --namespace cluster-service-system \
   -f config/samples/remote-controller-values.yaml > controller.yaml
 ```
 

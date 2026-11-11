@@ -45,7 +45,7 @@ func renderChart(t *testing.T, values string) ([]unstructured.Unstructured, stri
 	if helm == "" {
 		helm = "helm"
 	}
-	cmd := exec.Command(helm, "template", "management-engine", "../chart", "--namespace", "runtime", "-f", file)
+	cmd := exec.Command(helm, "template", "cluster-service", "../chart", "--namespace", "runtime", "-f", file)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, string(output), err
@@ -572,7 +572,7 @@ func TestChartExamples(t *testing.T) {
 			if helm == "" {
 				helm = "helm"
 			}
-			args := []string{"template", "management-engine", "../chart", "--namespace", "management-engine-system"}
+			args := []string{"template", "cluster-service", "../chart", "--namespace", "cluster-service-system"}
 			if sample == "nvke-controller-values.yaml" || sample == "dsx-values.yaml" {
 				args = append(args, "-f", "../config/samples/runtime-values.yaml")
 			}
