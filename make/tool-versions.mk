@@ -25,6 +25,18 @@ SHELLCHECK_VERSION ?= 0.11.0
 # Next to the version so a bump cannot change one without the other.
 # linux.x86_64 tarball for the version above.
 SHELLCHECK_SHA256  ?= 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+
+# internal-config-check needs PCRE2-enabled ripgrep. Debian's dynamically linked
+# build lets us pin a current PCRE2 independently of upstream's static bundle.
+# Both packages come from the immutable snapshot below. Their hashes were
+# verified through Debian's signed InRelease -> Packages.xz metadata chain.
+# These are CI tools only; they are extracted without running package scripts.
+RIPGREP_DEBIAN_SNAPSHOT ?= 20261111T000000Z
+RIPGREP_DEB_VERSION ?= 15.2.0-1
+RIPGREP_SHA256_AMD64 ?= d9d86586969e925b8627936ec4387d10cc65baf7d42195258743a49e711b6157
+PCRE2_DEB_VERSION ?= 10.49-1
+PCRE2_SHA256_AMD64 ?= 854da48a72f55b3f6f20389b58a3e94bddd06dc02b2a9fadd006ccd0048d14ab
+
 GITLEAKS_VERSION   ?= 8.30.1
 GITLEAKS_SHA256_AMD64 ?= 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
 GITLEAKS_SHA256_ARM64 ?= e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080
