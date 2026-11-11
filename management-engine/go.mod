@@ -1,6 +1,6 @@
 module github.com/dsx-ai-factory/nvke/management-engine
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/dsx-ai-factory/cluster-api-provider-nico v0.1.0
