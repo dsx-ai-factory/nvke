@@ -133,8 +133,8 @@ type Site struct {
 // Endpoint is the API base for this datahall.
 //
 // TrimRight, not TrimSuffix: a value ending in "//" would otherwise keep one
-// slash, and every path the caller joins would carry it. The duplicate check
-// in Resolve compares endpoints as strings, so the same host written with two
+// slash, and every path the caller joins would carry it. Decode's duplicate
+// check compares endpoints as strings, so the same host written with two
 // slashes would also read as a second datahall.
 func (s Site) Endpoint() string {
 	return strings.TrimRight(strings.TrimSpace(s.API), "/")
@@ -201,7 +201,28 @@ func Decode(raw json.RawMessage) (*Environment, error) {
 	if len(d.Sites) == 0 {
 		return nil, errors.New("no sites declared")
 	}
+	if err := d.rejectSharedEndpoints(); err != nil {
+		return nil, err
+	}
 	return &d, nil
+}
+
+// rejectSharedEndpoints fails when two sites resolve to the same API endpoint.
+// Two site workflows would otherwise run against the same datahall with nothing
+// saying so. A site with no API is skipped: Site reports that by name on lookup.
+func (d *Environment) rejectSharedEndpoints() error {
+	owner := make(map[string]string, len(d.Sites))
+	for _, name := range d.siteNames() {
+		endpoint := d.Sites[name].Endpoint()
+		if endpoint == "" {
+			continue
+		}
+		if first, ok := owner[endpoint]; ok {
+			return fmt.Errorf("sites %q and %q share the api endpoint %q", first, name, endpoint)
+		}
+		owner[endpoint] = name
+	}
+	return nil
 }
 
 // Site returns the named datahall. An empty name resolves to the only one when

@@ -117,6 +117,55 @@ func TestDecodeRejectsAnUnknownField(t *testing.T) {
 	}
 }
 
+func TestDecodeRejectsTwoSitesSharingAnEndpoint(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		wantErr string
+	}{
+		{
+			name:    "identical endpoints",
+			raw:     `{"org":{"id":"ncx"},"sites":{"a":{"api":"https://h"},"b":{"api":"https://h"}}}`,
+			wantErr: `sites "a" and "b" share the api endpoint "https://h"`,
+		},
+		{
+			name:    "a trailing-slash variant of the same host",
+			raw:     `{"org":{"id":"ncx"},"sites":{"a":{"api":"https://h"},"b":{"api":"https://h//"}}}`,
+			wantErr: `sites "a" and "b" share the api endpoint "https://h"`,
+		},
+		{
+			name:    "surrounding whitespace",
+			raw:     `{"org":{"id":"ncx"},"sites":{"a":{"api":" https://h "},"b":{"api":"https://h"}}}`,
+			wantErr: `share the api endpoint`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Decode(json.RawMessage(tt.raw))
+			if err == nil {
+				t.Fatal("decoding two sites with one endpoint should have failed")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestDecodeAcceptsDistinctAndMissingEndpoints(t *testing.T) {
+	// A site with no api is not a collision: Site names the missing field on lookup.
+	for name, raw := range map[string]string{
+		"distinct hosts": `{"org":{"id":"ncx"},"sites":{"a":{"api":"https://h1"},"b":{"api":"https://h2"}}}`,
+		"two empty apis": `{"org":{"id":"ncx"},"sites":{"a":{},"b":{}}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Decode(json.RawMessage(raw)); err != nil {
+				t.Fatalf("Decode() = %v, want no error", err)
+			}
+		})
+	}
+}
+
 // completeSite is a datahall with nothing missing, for tests that vary one
 // thing about it.
 func completeSite() Site {
