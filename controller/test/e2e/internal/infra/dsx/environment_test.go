@@ -117,6 +117,9 @@ func TestDecodeRejectsAnUnknownField(t *testing.T) {
 	}
 }
 
+// TestDecodeRejectsTwoSitesSharingAnEndpoint checks that Decode refuses two
+// sites whose api values normalise to the same endpoint, and that the error
+// names both sites without repeating the endpoint.
 func TestDecodeRejectsTwoSitesSharingAnEndpoint(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -155,6 +158,8 @@ func TestDecodeRejectsTwoSitesSharingAnEndpoint(t *testing.T) {
 	}
 }
 
+// TestDecodeAcceptsDistinctAndMissingEndpoints checks that the duplicate
+// check does not reject distinct hosts, or sites that declare no api at all.
 func TestDecodeAcceptsDistinctAndMissingEndpoints(t *testing.T) {
 	// A site with no api is not a collision: Site names the missing field on lookup.
 	for name, raw := range map[string]string{
