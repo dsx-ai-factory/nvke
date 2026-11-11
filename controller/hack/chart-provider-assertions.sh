@@ -78,6 +78,14 @@ echo "provider RBAC toggles:"
 out="$(render --set capi.rbac.create=true)"
 clusterrole "grants NICo RBAC by default" nico 1 "${out}"
 clusterrole "grants LaunchLayer RBAC by default" launchlayer 1 "${out}"
+# Provider credentials live in the providers' own namespaces; the controller
+# reads Secrets only through namespaced Roles.
+if [[ -z "$(yq 'select(.kind == "ClusterRole") | .rules[] | select((.resources // []) | (contains(["secrets"]) or contains(["*"])))' <<<"${out}")" ]]; then
+  printf '  ok    %s\n' "no ClusterRole grants Secret access"
+else
+  printf '  FAIL  %s\n' "a ClusterRole grants Secret access, which reaches every provider's credentials" >&2
+  failures=$((failures + 1))
+fi
 out="$(render --set capi.rbac.create=true --set capi.rbac.nico=false --set controllers.nico.enabled=false)"
 clusterrole "omits NICo RBAC when capi.rbac.nico is false" nico 0 "${out}"
 out="$(render --set capi.rbac.create=true --set capi.rbac.launchLayer=false)"
