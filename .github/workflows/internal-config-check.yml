@@ -21,9 +21,9 @@
 # deliberately does not flag -- a check that goes red for reasons nobody can
 # act on is ignored within a week.
 #
-# The script needs bash, shasum and a PCRE2-enabled ripgrep. Install pinned
-# packages from a Debian snapshot rather than depending on Ubuntu mirror DNS.
-# The script refuses to run without PCRE2 rather than reporting an unread tree.
+# The script needs bash, shasum and a PCRE2-enabled ripgrep. Only the first two
+# are on the runner image, so ripgrep is installed below. The script refuses to
+# run without it rather than reporting a clean tree it never read.
 #
 # Deliberately NOT path-filtered, for the reason recorded in actionlint.yml: a
 # filtered check does not report on a pull request that misses the filter, and
@@ -63,11 +63,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install pinned ripgrep and PCRE2
-        id: ripgrep
-        uses: ./.github/actions/setup-ripgrep
+      - name: Install ripgrep
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ripgrep
 
       - name: Check the tree for internal identifiers
-        env:
-          LD_LIBRARY_PATH: ${{ steps.ripgrep.outputs.library-path }}
         run: make --no-print-directory internal-config-check
