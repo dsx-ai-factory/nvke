@@ -18,50 +18,74 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 )
 
-func TestFailureDomainUnavailable(t *testing.T) {
+func TestIsFailureDomainUnavailable(t *testing.T) {
 	t.Parallel()
 
-	provisioned := func(status metav1.ConditionStatus, reason string, observedGeneration int64) metav1.Condition {
-		return metav1.Condition{
-			Type:               nicov1.MachineProvisionedCondition,
-			Status:             status,
-			Reason:             reason,
-			ObservedGeneration: observedGeneration,
-		}
-	}
+	const message = `failure domain "fd-a": No Machines are available for specified Instance Type`
 	tests := []struct {
 		name       string
-		conditions []metav1.Condition
+		status     metav1.ConditionStatus
+		reason     string
+		message    string
+		generation int64
+		observed   int64
+		instanceID string
 		want       bool
 	}{
-		{"domain out of capacity", []metav1.Condition{provisioned(metav1.ConditionFalse, nicov1.FailureDomainUnavailableReason, 2)}, true},
-		{"no observed generation", []metav1.Condition{provisioned(metav1.ConditionFalse, nicov1.FailureDomainUnavailableReason, 0)}, true},
-		{"placement refused for a non-capacity reason", []metav1.Condition{provisioned(metav1.ConditionFalse, nicov1.FailureDomainPlacementFailedReason, 2)}, false},
-		{"NICo create failed", []metav1.Condition{provisioned(metav1.ConditionFalse, nicov1.InstanceCreateFailedReason, 2)}, false},
-		{"provisioned", []metav1.Condition{provisioned(metav1.ConditionTrue, nicov1.InstanceReadyReason, 2)}, false},
-		{"condition predates the current spec", []metav1.Condition{provisioned(metav1.ConditionFalse, nicov1.FailureDomainUnavailableReason, 1)}, false},
-		{"no condition yet", nil, false},
+		{name: "out of capacity in the requested domain", status: metav1.ConditionFalse, reason: nicov1.FailureDomainUnavailableReason, message: message, want: true},
+		{name: "current generation", status: metav1.ConditionFalse, reason: nicov1.FailureDomainUnavailableReason, message: message, generation: 2, observed: 2, want: true},
+		{name: "older generation", status: metav1.ConditionFalse, reason: nicov1.FailureDomainUnavailableReason, message: message, generation: 3, observed: 2},
+		{name: "report about the previous domain", status: metav1.ConditionFalse, reason: nicov1.FailureDomainUnavailableReason, message: `failure domain "fd-b": no machines`},
+		{name: "placement failed for another reason", status: metav1.ConditionFalse, reason: nicov1.FailureDomainPlacementFailedReason, message: message},
+		{name: "instance type out everywhere", status: metav1.ConditionFalse, reason: nicov1.InstanceTypeUnavailableReason, message: message},
+		{name: "instance allocated", status: metav1.ConditionFalse, reason: nicov1.FailureDomainUnavailableReason, message: message, instanceID: "i-1"},
+		{name: "provisioned", status: metav1.ConditionTrue, reason: nicov1.FailureDomainUnavailableReason, message: message},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			nicoMachine := &nicov1.NicoMachine{
-				ObjectMeta: metav1.ObjectMeta{Name: "worker-0", Namespace: "capi-cluster-a", Generation: 2},
-				Status:     nicov1.NicoMachineStatus{Conditions: tt.conditions},
-			}
-			deps := shared.MachineAdvanceDeps{K8sClient: newNicoMachineRotationClient(t, nicoMachine)}
-			got, err := New().FailureDomainUnavailable(context.Background(), deps, testCAPINicoMachine())
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
+			nicoMachine := &nicov1.NicoMachine{}
+			nicoMachine.Generation = tt.generation
+			nicoMachine.Status.InstanceID = tt.instanceID
+			nicoMachine.Status.Conditions = []metav1.Condition{{
+				Type:               nicov1.MachineProvisionedCondition,
+				Status:             tt.status,
+				Reason:             tt.reason,
+				Message:            tt.message,
+				ObservedGeneration: tt.observed,
+			}}
+			assert.Equal(t, tt.want, isFailureDomainUnavailable(nicoMachine, "fd-a"))
 		})
 	}
+}
+
+func TestFailureDomainUnavailable(t *testing.T) {
+	t.Parallel()
+
+	machine := testCAPINicoMachine()
+	machine.Spec.FailureDomain = "fd-a"
+
+	t.Run("reads the NicoMachine of the requested domain", func(t *testing.T) {
+		t.Parallel()
+		nicoMachine := &nicov1.NicoMachine{ObjectMeta: metav1.ObjectMeta{Name: "worker-0", Namespace: "capi-cluster-a"}}
+		nicoMachine.Status.Conditions = []metav1.Condition{{
+			Type:    nicov1.MachineProvisionedCondition,
+			Status:  metav1.ConditionFalse,
+			Reason:  nicov1.FailureDomainUnavailableReason,
+			Message: `failure domain "fd-a": No Machines are available for specified Instance Type`,
+		}}
+		deps := shared.MachineAdvanceDeps{K8sClient: newNicoMachineRotationClient(t, nicoMachine)}
+		got, err := New().FailureDomainUnavailable(context.Background(), deps, machine)
+		require.NoError(t, err)
+		assert.True(t, got)
+	})
 
 	t.Run("NicoMachine not created yet", func(t *testing.T) {
 		t.Parallel()
 		scheme := runtime.NewScheme()
 		require.NoError(t, nicov1.AddToScheme(scheme))
 		deps := shared.MachineAdvanceDeps{K8sClient: fake.NewClientBuilder().WithScheme(scheme).Build()}
-		got, err := New().FailureDomainUnavailable(context.Background(), deps, testCAPINicoMachine())
+		got, err := New().FailureDomainUnavailable(context.Background(), deps, machine)
 		require.NoError(t, err)
 		assert.False(t, got)
 	})

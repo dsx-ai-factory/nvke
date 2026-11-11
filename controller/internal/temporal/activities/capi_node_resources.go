@@ -4,6 +4,7 @@
 package activities
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -244,6 +245,9 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 	advanceDeps := shared.MachineAdvanceDeps{
 		K8sClient:                  a.k8sClient,
 		ControlPlaneConfigSnapshot: a.controlPlaneConfigSnapshot,
+		RotateFailureDomain: func(ctx context.Context, node db.Node, machine *clusterv1.Machine, unavailable bool) (bool, error) {
+			return a.rotateFailureDomain(ctx, logger, cluster, node, machine, unavailable)
+		},
 	}
 	stuckMessage := ""
 	if machine.Spec.ProviderID == "" {
@@ -254,6 +258,9 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 				"nodeID", input.NodeID, "machine", machine.Name, "error", describeErr)
 		}
 		stuckMessage = describeMessage
+		if note := failureDomainWaitNote(node); note != "" {
+			stuckMessage = cmp.Or(stuckMessage, capiMachineInfrastructureReadyMessage(machine), input.NodeProvisioningConditionMessage) + "; " + note
+		}
 	}
 	if err := a.updateCAPIMachineWaitNodeCondition(ctx, input.NodeID, machine, input.NodeProvisioningConditionMessage, stuckMessage); err != nil {
 		return "", err

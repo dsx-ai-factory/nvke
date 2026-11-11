@@ -16,6 +16,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
@@ -107,7 +108,7 @@ func TestReconcileControlPlaneRebalance_SurgesMorePreferredReplacement(t *testin
 	r := newRebalanceReconciler(mockTx)
 	cp := &controlPlane{nodes: nodesList, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 
-	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, domainAllocator{}, newNodeProviderFor(t, cluster))
+	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, failuredomains.Allocator{}, newNodeProviderFor(t, cluster))
 	require.NoError(t, err)
 	assert.True(t, acted, "a surge changes membership, so the pass owns the reconcile and scale-down is skipped")
 
@@ -185,7 +186,7 @@ func TestReconcileControlPlaneRebalance_NoOps(t *testing.T) {
 			r := newRebalanceReconciler(mockTx)
 			cp := &controlPlane{nodes: tt.nodes, clusterControlPlaneConfig: tt.cluster.ControlPlaneConfig}
 
-			acted, err := r.reconcileControlPlaneRebalance(context.Background(), tt.cluster, cp, domainAllocator{}, nil)
+			acted, err := r.reconcileControlPlaneRebalance(context.Background(), tt.cluster, cp, failuredomains.Allocator{}, nil)
 			require.NoError(t, err)
 			assert.False(t, acted, "a no-op pass must not short-circuit scale-down")
 
@@ -263,7 +264,7 @@ func TestReconcileControlPlaneRebalance_DefersWhileRolloutOwed(t *testing.T) {
 	}
 	require.Positive(t, cp.countNodesNeedingRollout(), "the scenario must have a rollout owed")
 
-	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, domainAllocator{}, nil)
+	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 	require.NoError(t, err)
 	assert.False(t, acted, "deferring while a rollout is owed is a no-op; scale-down still runs")
 
@@ -298,7 +299,7 @@ func TestReconcileControlPlaneRebalance_WaitsWhileSurgeComingUp(t *testing.T) {
 	r := newRebalanceReconciler(mockTx)
 	cp := &controlPlane{nodes: nodesList, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 
-	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, domainAllocator{}, nil)
+	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 	require.NoError(t, err)
 	assert.False(t, acted, "waiting for a surge to come up is a no-op; scale-down still runs")
 
@@ -353,7 +354,7 @@ func TestReconcileControlPlaneRebalance_FinishesJoinedSurge(t *testing.T) {
 	r := newRebalanceReconciler(mockTx)
 	cp := &controlPlane{nodes: nodesList, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 
-	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, domainAllocator{}, newNodeProviderFor(t, cluster))
+	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, failuredomains.Allocator{}, newNodeProviderFor(t, cluster))
 	require.NoError(t, err)
 	assert.True(t, acted, "shedding the old node changes membership, so the pass owns the reconcile")
 
@@ -409,7 +410,7 @@ func TestReconcileControlPlaneRebalance_KeepsMarkerWhileUnrelatedDeleteInFlight(
 	r := newRebalanceReconciler(mockTx)
 	cp := &controlPlane{nodes: nodesList, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 
-	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, domainAllocator{}, nil)
+	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 	require.NoError(t, err)
 	assert.False(t, acted, "an unrelated delete is not the shed, so this pass changes nothing")
 
@@ -454,7 +455,7 @@ func TestReconcileControlPlaneRebalance_ClearsMarkerWhenShedAlreadyInFlight(t *t
 	r := newRebalanceReconciler(mockTx)
 	cp := &controlPlane{nodes: nodesList, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 
-	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, domainAllocator{}, nil)
+	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 	require.NoError(t, err)
 	assert.True(t, acted, "clearing the marker after the shed was recorded finishes the surge")
 
@@ -503,7 +504,7 @@ func TestReconcileControlPlaneRebalance_RemovesSurgeThatIsNotAnImprovement(t *te
 	r := newRebalanceReconciler(mockTx)
 	cp := &controlPlane{nodes: nodesList, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 
-	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, domainAllocator{}, nil)
+	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 	require.NoError(t, err)
 	assert.True(t, acted, "removing the surge that is not an improvement changes membership")
 
@@ -546,7 +547,7 @@ func TestReconcileControlPlaneRebalance_ClearsMarkerWhenSurgeFillsDesiredCount(t
 	r := newRebalanceReconciler(mockTx)
 	cp := &controlPlane{nodes: nodesList, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 
-	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, domainAllocator{}, nil)
+	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 	require.NoError(t, err)
 	assert.True(t, acted, "the surge has become an ordinary member")
 
@@ -596,7 +597,7 @@ func TestReconcileControlPlaneRebalance_KeepsMarkerWhenFloorRefusesShed(t *testi
 	r := newRebalanceReconciler(mockTx)
 	cp := &controlPlane{nodes: nodesList, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 
-	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, domainAllocator{}, nil)
+	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 	require.NoError(t, err)
 	assert.False(t, acted, "a floor refusal above desiredCount retries the shed and changes nothing this pass")
 
@@ -644,7 +645,7 @@ func TestReconcileControlPlaneRebalance_AbandonsSurgeOnUpgrade(t *testing.T) {
 	r := newRebalanceReconciler(mockTx)
 	cp := &controlPlane{nodes: nodesList, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 
-	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, domainAllocator{}, nil)
+	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 	require.NoError(t, err)
 	assert.True(t, acted, "abandoning the surge changes membership, so the pass owns the reconcile")
 
@@ -700,7 +701,7 @@ func TestReconcileControlPlaneRebalance_RoutesJoinedSurgeThroughGuardedDeleteOnU
 	r := newRebalanceReconciler(mockTx)
 	cp := &controlPlane{nodes: nodesList, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 
-	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, domainAllocator{}, nil)
+	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 	require.NoError(t, err)
 	assert.True(t, acted, "recording the surge delete changes membership, so the pass owns the reconcile")
 
@@ -763,7 +764,7 @@ func TestReconcileControlPlaneRebalance_BacksOffWhenSurgeHasNoCapacity(t *testin
 	r := newRebalanceReconciler(mockTx)
 	cp := &controlPlane{nodes: nodesList, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 
-	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, domainAllocator{}, nil)
+	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 	require.NoError(t, err)
 	assert.True(t, acted, "abandoning the stuck surge changes membership, so the pass owns the reconcile")
 
@@ -812,7 +813,7 @@ func TestReconcileControlPlaneRebalance_KeepsAllocatedSurgePastTimeout(t *testin
 	r := newRebalanceReconciler(mockTx)
 	cp := &controlPlane{nodes: nodesList, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 
-	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, domainAllocator{}, nil)
+	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 	require.NoError(t, err)
 	assert.False(t, acted, "an allocated surge is left to come up, so this pass changes nothing")
 
@@ -928,7 +929,7 @@ func TestReconcileControlPlaneRebalance_ResolvesInFlightSurgeWhenDisabled(t *tes
 	r := newRebalanceReconciler(mockTx)
 	cp := &controlPlane{nodes: nodesList, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 
-	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, domainAllocator{}, newNodeProviderFor(t, cluster))
+	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, failuredomains.Allocator{}, newNodeProviderFor(t, cluster))
 	require.NoError(t, err)
 	assert.True(t, acted, "an in-flight surge is resolved even while rebalancing is disabled")
 
@@ -981,7 +982,7 @@ func TestReconcileControlPlaneRebalance_NoBackoffWhenAbandonDeleteInFlight(t *te
 	r := newRebalanceReconciler(mockTx)
 	cp := &controlPlane{nodes: nodesList, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 
-	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, domainAllocator{}, nil)
+	acted, err := r.reconcileControlPlaneRebalance(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 	require.NoError(t, err)
 	assert.False(t, acted, "a no-op teardown does not own the reconcile, so requested deletes can still be promoted")
 

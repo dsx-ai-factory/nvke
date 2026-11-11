@@ -115,6 +115,11 @@ func (s *Server) handleCreateInstance(w nethttp.ResponseWriter, r *nethttp.Reque
 		s.writeInstanceError(w, r, req.GetName(), err)
 		return
 	}
+	machineLabels, ok := s.failureDomains.admit(req.GetMachineLabelSelector())
+	if !ok {
+		writeForgeError(w, nethttp.StatusBadRequest, noMachinesAvailable)
+		return
+	}
 	// The create, and the response read back from it, outlive the client.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), instanceCreateTimeout)
 	defer cancel()
@@ -123,6 +128,7 @@ func (s *Server) handleCreateInstance(w nethttp.ResponseWriter, r *nethttp.Reque
 		s.writeInstanceError(w, r, req.GetName(), err)
 		return
 	}
+	s.failureDomains.record(record.ID, machineLabels)
 	instance, err := backend.ConvertToAPI(r.WithContext(ctx), record)
 	if err != nil {
 		s.writeInstanceError(w, r, req.GetName(), err)
@@ -176,5 +182,6 @@ func (s *Server) handleDeleteInstance(w nethttp.ResponseWriter, r *nethttp.Reque
 		writeBackendError(w, err)
 		return
 	}
+	s.failureDomains.forget(record.ID)
 	writeJSON(w, nethttp.StatusOK, map[string]string{"status": "accepted"})
 }

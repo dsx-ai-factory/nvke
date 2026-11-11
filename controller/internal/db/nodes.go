@@ -54,6 +54,11 @@ type Node struct {
 	LaunchLayer        *LaunchLayerNodeProvider `bun:"launch_layer,type:jsonb"`
 	// CertificateInspection retains read-only public observations independently of lifecycle conditions.
 	CertificateInspection *CertificateInspection `bun:"type:jsonb,nullzero"`
+	// FailureDomainUnavailableSince is when the infrastructure provider first
+	// reported FailureDomain out of capacity for this pending node; nil otherwise.
+	FailureDomainUnavailableSince *time.Time `bun:"type:timestamptz,nullzero"`
+	// FailureDomainsTried lists the domains this pending node was moved away from.
+	FailureDomainsTried []string `bun:"type:text[],array"`
 }
 
 type NicoNodeProvider struct {

@@ -39,7 +39,7 @@ func NewTeleportCollector(logger *slog.Logger, db db.DB) *TeleportCollector {
 		clusterEnabledDesc: prometheus.NewDesc(
 			"nvke_controller_teleport_cluster_enabled",
 			"Whether Teleport is enabled on the cluster (1=enabled, 0=disabled)",
-			[]string{siteIDLabel, clusterIDLabel, "cluster_name"},
+			[]string{siteIDLabel, clusterIDLabel, clusterNameLabel},
 			nil,
 		),
 		nodePoolEnabledDesc: prometheus.NewDesc(

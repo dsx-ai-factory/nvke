@@ -13,6 +13,7 @@ import (
 const (
 	tenantClusterLabel = "tenant_cluster"
 	clusterIDLabel     = "cluster_id"
+	clusterNameLabel   = "cluster_name"
 	nodePoolIDLabel    = "node_pool_id"
 	nodeTypeLabel      = "node_type"
 	nodeNameLabel      = "node_name"

@@ -42,6 +42,9 @@ credentialMonitoring:
   inspectionInterval: 1h
   observationMaxAge: 3h
   warningDays: 45
+controlPlaneFailureDomainFallback:
+  enabled: false
+  gracePeriod: 10m
 kubeadmImageRepository: registry.k8s.io
 cniImageRegistry: ""
 installCNIAfterInit: false

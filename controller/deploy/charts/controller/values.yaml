@@ -681,6 +681,12 @@ profiles:
 # node can interrupt API access. Quorum and deletion protections still apply.
 allowControlPlaneWithoutVIP: false
 
+controlPlaneFailureDomainFallback:
+  # -- Move a pending control-plane node whose failure domain has no capacity to another eligible failure domain.
+  enabled: false
+  # -- How long a node must keep reporting its failure domain out of capacity before it is moved. Must be positive while enabled; the chart refuses other values.
+  gracePeriod: "10m"
+
 controllerConfig:
   # -- Name of the ConfigMap that carries the controller's settings file, and
   # that the Deployment mounts and Reloader watches. An install that predates

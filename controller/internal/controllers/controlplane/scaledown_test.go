@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
@@ -804,7 +805,7 @@ func TestSpreadPreservingCandidates(t *testing.T) {
 		}
 		return out
 	}
-	domainOf := (*failureDomains)(nil).domainOf
+	domainOf := (*failuredomains.Snapshot)(nil).DomainOf
 
 	tests := []struct {
 		name      string
