@@ -126,17 +126,17 @@ func TestDecodeRejectsTwoSitesSharingAnEndpoint(t *testing.T) {
 		{
 			name:    "identical endpoints",
 			raw:     `{"org":{"id":"ncx"},"sites":{"a":{"api":"https://h"},"b":{"api":"https://h"}}}`,
-			wantErr: `sites "a" and "b" share the api endpoint "https://h"`,
+			wantErr: `sites "a" and "b" share an api endpoint`,
 		},
 		{
 			name:    "a trailing-slash variant of the same host",
 			raw:     `{"org":{"id":"ncx"},"sites":{"a":{"api":"https://h"},"b":{"api":"https://h//"}}}`,
-			wantErr: `sites "a" and "b" share the api endpoint "https://h"`,
+			wantErr: `sites "a" and "b" share an api endpoint`,
 		},
 		{
 			name:    "surrounding whitespace",
 			raw:     `{"org":{"id":"ncx"},"sites":{"a":{"api":" https://h "},"b":{"api":"https://h"}}}`,
-			wantErr: `share the api endpoint`,
+			wantErr: `share an api endpoint`,
 		},
 	}
 	for _, tt := range tests {
@@ -147,6 +147,9 @@ func TestDecodeRejectsTwoSitesSharingAnEndpoint(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tt.wantErr) {
 				t.Errorf("error = %v, want it to contain %q", err, tt.wantErr)
+			}
+			if strings.Contains(err.Error(), "https://h") {
+				t.Errorf("error = %v, should not repeat the endpoint", err)
 			}
 		})
 	}
