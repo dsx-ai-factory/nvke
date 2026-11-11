@@ -139,10 +139,12 @@ subscriptions:
       - name: "qualification:stopped"
         notification: qualification-stopped
 
-  # Failures. Add an on-call group here to page it, as
-  #   additional_mentions: ["<!subteam^S0123456789|@group-name>"]
-  # which pings on these three events only.
+  # Errors only: these page the release engineering on-call. Nothing else
+  # mentions anyone. A re-run of failed jobs sends the events again, so a failure
+  # pages again.
   - subscriber: nvke-qualification-pipeline
+    additional_mentions:
+      - "<!subteam^S09NXLAG58V|@dgxc-hippo-release-engineering-on-call-primary>"
     events:
       - name: "qualification:artifacts-timeout"
         notification: artifacts-timeout
