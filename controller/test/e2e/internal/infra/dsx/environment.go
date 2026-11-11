@@ -208,6 +208,8 @@ func Decode(raw json.RawMessage) (*Environment, error) {
 }
 
 // rejectSharedEndpoints fails when two sites resolve to the same API endpoint.
+// The error names the sites but not the endpoint: the value can come from a
+// secret, and test output is uploaded.
 // Two site workflows would otherwise run against the same datahall with nothing
 // saying so. A site with no API is skipped: Site reports that by name on lookup.
 func (d *Environment) rejectSharedEndpoints() error {
@@ -218,7 +220,7 @@ func (d *Environment) rejectSharedEndpoints() error {
 			continue
 		}
 		if first, ok := owner[endpoint]; ok {
-			return fmt.Errorf("sites %q and %q share the api endpoint %q", first, name, endpoint)
+			return fmt.Errorf("sites %q and %q share an api endpoint", first, name)
 		}
 		owner[endpoint] = name
 	}
