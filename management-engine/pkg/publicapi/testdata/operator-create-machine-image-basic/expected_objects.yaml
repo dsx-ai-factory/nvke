@@ -1,0 +1,22 @@
+---
+items:
+- apiVersion: internal.nvke.nvidia.com/v1
+  kind: MachineImage
+  metadata:
+    creationTimestamp: null
+    generation: 1
+    name: ubuntu-2404-amd64
+  spec:
+    architecture: amd64
+    buildDate: "2026-01-01"
+    nico:
+      ipxeScript: |
+        #!ipxe
+        echo NVKE test image
+    operatingSystem:
+      family: ubuntu
+      version: "24.04"
+metadata: {}
+---
+items: []
+metadata: {}

@@ -30,6 +30,11 @@ const (
 
 // resourceServer enforces projected intent, trusted namespace scope and resourceVersion preconditions.
 type resourceServer[E ResourceHandler[I], I ResourceHandler[E]] struct {
+	*datastore
+}
+
+// datastore shares discovery, client configuration and trusted scope across resource reads and writes.
+type datastore struct {
 	cfg      ClientConfig
 	info     ResourceInfo
 	resource dynamic.NamespaceableResourceInterface
@@ -39,6 +44,15 @@ type resourceServer[E ResourceHandler[I], I ResourceHandler[E]] struct {
 // It contacts discovery to check the resource's identity, scope, status subresource and required verbs.
 // Discovery needs no CRD read access. Each operation resolves its request-specific scope later.
 func New[E ResourceHandler[I], I ResourceHandler[E]](cfg ClientConfig, info ResourceInfo) (ResourceServer[E], error) {
+	store, err := newDatastore(cfg, info)
+	if err != nil {
+		return nil, err
+	}
+	return &resourceServer[E, I]{datastore: store}, nil
+}
+
+// newDatastore establishes the shared Kubernetes access boundary without requiring conversion methods.
+func newDatastore(cfg ClientConfig, info ResourceInfo) (*datastore, error) {
 	if cfg.Datastore == nil || (info.Scope == Namespaced && cfg.Namespace == nil) {
 		return nil, fmt.Errorf("datastore and a namespace resolver for namespaced resources are required")
 	}
@@ -65,7 +79,7 @@ func New[E ResourceHandler[I], I ResourceHandler[E]](cfg ClientConfig, info Reso
 	if err = checkResource(cfg.Datastore, httpClient, info); err != nil {
 		return nil, err
 	}
-	return &resourceServer[E, I]{
+	return &datastore{
 		cfg: cfg, info: info,
 		resource: dyn.Resource(info.GVK.GroupVersion().WithResource(info.Resource)),
 	}, nil
@@ -73,7 +87,7 @@ func New[E ResourceHandler[I], I ResourceHandler[E]](cfg ClientConfig, info Reso
 
 // request checks the registered operation and resolves trusted scope from the request context.
 // The returned datastore handle uses the service's credentials.
-func (c *resourceServer[E, I]) request(ctx context.Context, op Operation) (dynamic.ResourceInterface, string, error) {
+func (c *datastore) request(ctx context.Context, op Operation) (dynamic.ResourceInterface, string, error) {
 	if !slices.Contains(c.info.Verbs, op) {
 		return nil, "", problem(http.StatusMethodNotAllowed, methodNotAllowedCode, "The operation is not supported.")
 	}
@@ -251,16 +265,8 @@ func (c *resourceServer[E, I]) List(ctx context.Context, opts ListOptions) (List
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 	page := List[E]{Items: []E{}}
-	if opts.PageSize == 0 {
-		opts.PageSize = 100
-	}
-	if opts.PageSize < 1 || opts.PageSize > 500 {
-		return page, Invalid(FieldError{
-			Field: pageSizeParameter, Code: invalidCode, Message: "Page size must be between 1 and 500.",
-		})
-	}
-	if len(opts.PageKey) > maxPageKeyBytes {
-		return page, Invalid(FieldError{Field: pageKeyParameter, Code: invalidCode, Message: "The page key is too long."})
+	if _, err := listSelector(&opts, nil); err != nil {
+		return page, err
 	}
 	r, _, err := c.request(ctx, OpList)
 	if err != nil {
@@ -268,7 +274,7 @@ func (c *resourceServer[E, I]) List(ctx context.Context, opts ListOptions) (List
 	}
 	list, err := r.List(ctx, metav1.ListOptions{Limit: int64(opts.PageSize), Continue: opts.PageKey})
 	if opts.PageKey != "" && apierrors.IsBadRequest(err) {
-		return page, Invalid(FieldError{Field: pageKeyParameter, Code: invalidCode, Message: "The page key is invalid."})
+		return page, Invalid(FieldError{Field: pageKeyParameter, Code: invalidCode, Message: invalidPageKeyMessage})
 	}
 	if err != nil {
 		return page, translate[E](err)

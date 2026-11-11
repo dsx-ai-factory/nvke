@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package resource serves stateless CRUDL APIs backed by Kubernetes custom resources.
+// Package resource serves typed read and CRUDL APIs backed by Kubernetes custom resources.
 // ResourceHandler validates and converts resource values. ResourceServer persists them.
 // Registrations mount HTTP routes for the resource pairs selected by the host.
 // The host supplies datastore access, trusted namespace resolution, authentication,
@@ -47,11 +47,17 @@ type ResourceHandler[T any] interface {
 	Convert() (T, error)
 }
 
-// ResourceServer provides HTTP-independent CRUDL over external resources E.
-// New pairs E with its internal datastore type I through ResourceHandler validation and conversion.
-// Create, Get and Update project stored I into E and set RequestOptions.ETag when attached with WithOptions.
-// Direct writes use E's JSON field presence. Use optional pointers and omit zero read-only fields.
-type ResourceServer[E any] interface {
+// ResourceReader provides HTTP-independent named and paginated reads of external resources.
+// A reader owns its pagination contract. Callers pass PageKey unchanged to continue.
+type ResourceReader[E any] interface {
+	// Get returns one public resource within the host-resolved scope.
+	Get(context.Context, string) (E, error)
+	// List returns a page of public resources. The reader defines filtering and continuation validity.
+	List(context.Context, ListOptions) (List[E], error)
+}
+
+// ResourceWriter provides mutations independently of read-only resource views.
+type ResourceWriter[E any] interface {
 	// Create validates and applies writable intent for a new resource. An existing name is rejected.
 	// Datastore admission supplies defaults, and the configured field manager owns the supplied fields.
 	Create(context.Context, E) (E, error)
@@ -59,14 +65,18 @@ type ResourceServer[E any] interface {
 	// It applies the manager's complete writable intent without forcing ownership conflicts.
 	// Omitted fields owned only by this manager are removed or reset to datastore defaults.
 	Update(context.Context, string, E) (E, error)
-	// Get returns one resource projected into E within the host-resolved scope.
-	Get(context.Context, string) (E, error)
-	// List projects one datastore snapshot page into E, with a default size of 100 and a maximum of 500.
-	// Pass PageKey unchanged to continue. The datastore controls continuation validity and expiry.
-	List(context.Context, ListOptions) (List[E], error)
 	// Delete requires RequestOptions.IfMatch from a prior ETag, attached with WithOptions.
 	// Success acknowledges deletion without waiting for finalizers or dependent resources to disappear.
 	Delete(context.Context, string, DeleteOptions) error
+}
+
+// ResourceServer provides HTTP-independent CRUDL over external resources E.
+// New pairs E with its internal datastore type I through ResourceHandler validation and conversion.
+// Create, Get and Update set RequestOptions.ETag when attached with WithOptions.
+// List returns Kubernetes snapshot pages. Direct writes use E's JSON field presence.
+type ResourceServer[E any] interface {
+	ResourceReader[E]
+	ResourceWriter[E]
 }
 
 // ResourceInfo registers datastore identity and enabled operations separately from resource values.
@@ -114,7 +124,7 @@ func requestOptions(ctx context.Context) *RequestOptions {
 	return &RequestOptions{}
 }
 
-// List contains a bounded datastore snapshot page.
+// List contains one bounded public page. Its reader defines continuation consistency.
 type List[E any] struct {
 	Items   []E    `json:"items"`
 	PageKey string `json:"pageKey"`
@@ -125,6 +135,8 @@ type List[E any] struct {
 type ListOptions struct {
 	PageSize int
 	PageKey  string
+	// FieldSelector matches the string fields explicitly enabled by a read registration.
+	FieldSelector string
 }
 
 // DeleteOptions are the only public delete controls.

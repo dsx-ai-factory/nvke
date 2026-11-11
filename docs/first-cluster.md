@@ -27,14 +27,14 @@ cd nvke
 | GNU Make 4.0+ | all | macOS ships 3.81; `brew install make` gives `gmake` |
 | [temporal](https://docs.temporal.io/cli) | API Only | `brew install temporal`, or `curl -sSf https://temporal.download/cli.sh \| sh` |
 | [kind](https://kind.sigs.k8s.io/), `kubectl` | all | Real Site: `nvkectl bootstrap site` runs both |
-| `jq` | Mock NICo | `dev-check` exits 1 without it |
+| `jq` | API Only, Mock NICo | `dev-check` exits 1 without it |
 | [helm](https://helm.sh/) | Mock NICo, Real Site | `nvkectl bootstrap site` runs it for the Postgres, Temporal, SPIRE and CWE releases |
 | [tilt](https://docs.tilt.dev/install.html) | Mock NICo | |
 | [clusterctl](https://cluster-api.sigs.k8s.io/user/quick-start) | Mock NICo, Real Site | `make capd-up` installs it into `controller/.local/bin`; `nvkectl bootstrap site` runs `clusterctl init` |
 | `dpkg-deb` | Mock NICo (macOS) | `brew install dpkg`; the bundle mirror build needs it |
 | [Flox](https://flox.dev/) | optional | Pins the whole toolchain; never required |
 
-macOS or Linux; Windows is not supported.
+macOS or Linux, including Ubuntu under WSL2 (see [WSL2](getting-started.md#wsl2)); native Windows is not supported.
 
 **Prepare the Docker host once, before Kind or Tilt.** On macOS, use Colima
 rather than Docker Desktop. `controller/Makefile.dev` points every `kind`,
@@ -62,10 +62,11 @@ CWE against a local Postgres and Temporal, with a self-signed token instead of
 NGC authentication. No tenant clusters, no hardware.
 
 ```bash
-# Any cluster will do. CWE watches one and exits at startup without a kubeconfig.
-kind create cluster
+# A kind cluster with Cluster API core installed. CWE watches it and exits at startup
+# without the Cluster API Machine CRD. API Only has no SPIRE, so skip the SPIRE patch.
+make -C controller capi-core-up CAPI_SPIFFE_EXEC_AUTH=false
 
-# Postgres, Temporal, then CWE.
+# The release CRDs and fixture releases, Postgres, Temporal, then CWE.
 make -C controller run-local
 ```
 
@@ -89,7 +90,7 @@ retry forever:
 
 ```bash
 make -C controller dev-stop-local
-kind delete cluster            # the plain cluster from API Only
+make -C controller kind-down   # the API Only cluster, controller-capi unless KIND_CLUSTER_NAME is set
 ```
 
 ```bash

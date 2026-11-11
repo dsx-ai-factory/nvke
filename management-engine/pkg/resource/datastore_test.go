@@ -199,7 +199,7 @@ func TestRequiredResourceVersion(t *testing.T) {
 	client, err := New[widget, internalWidget](fixtureConfig(nil), widgetInfo(OpUpdate, OpDelete))
 	require.NoError(t, err)
 	mux := http.NewServeMux()
-	Register(mux, "/widgets", client, OpUpdate, OpDelete)
+	Register(mux, "/widgets", client, client, nil, OpUpdate, OpDelete)
 	for _, tc := range []struct {
 		name, version, header string
 		status                int
@@ -283,7 +283,7 @@ func TestDatastorePageKeys(t *testing.T) {
 			require.NoError(t, err)
 			page, err := client.List(t.Context(), ListOptions{PageSize: 2, PageKey: tc.pageKey})
 			mux := http.NewServeMux()
-			Register(mux, "/widgets", client, OpList)
+			Register(mux, "/widgets", client, client, nil, OpList)
 			path := "/widgets?pageSize=2&pageKey=" + url.QueryEscape(tc.pageKey)
 			response := requestHTTP(mux, t.Context(), http.MethodGet, path, "", "")
 			if tc.want == 0 {

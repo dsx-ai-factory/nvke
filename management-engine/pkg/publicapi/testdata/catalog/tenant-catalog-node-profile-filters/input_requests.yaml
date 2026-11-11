@@ -1,0 +1,4 @@
+- method: GET
+  path: /v1/node-profiles?pageSize=1&fieldSelector=spec.profile%3Dubuntu-gpu
+- method: GET
+  path: /v1/node-profiles?fieldSelector=spec.profile%3Dubuntu-gpu%2Cspec.tag%3D2026.11

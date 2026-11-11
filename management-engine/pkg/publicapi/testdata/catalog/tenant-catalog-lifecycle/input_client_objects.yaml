@@ -1,0 +1,47 @@
+# Release version annotations are not writable through the operator API.
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ClusterRelease
+metadata:
+  annotations:
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: 1.35.2
+  name: cr-active
+spec:
+  machineImageRef:
+    name: img-ubuntu
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      {}
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ClusterRelease
+metadata:
+  annotations:
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: 1.35.2
+  name: cr-deprecated
+spec:
+  lifecycle:
+    deprecated: true
+  machineImageRef:
+    name: img-ubuntu
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      {}
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ClusterRelease
+metadata:
+  annotations:
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: 1.35.2
+  name: cr-hidden
+spec:
+  lifecycle:
+    hidden: true
+  machineImageRef:
+    name: img-ubuntu
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      {}

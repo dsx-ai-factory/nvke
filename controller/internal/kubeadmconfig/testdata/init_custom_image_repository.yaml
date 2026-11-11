@@ -42,6 +42,8 @@ apiServer:
     value: 0.0.0.0
   - name: enable-admission-plugins
     value: NodeRestriction,DenyServiceExternalIPs,OwnerReferencesPermissionEnforcement,PodNodeSelector,PodTolerationRestriction
+  - name: etcd-compaction-interval
+    value: 5m
   - name: feature-gates
     value: ImageVolume=true
   - name: kubelet-certificate-authority
@@ -94,6 +96,8 @@ etcd:
     extraArgs:
     - name: auto-compaction-retention
       value: "1"
+    - name: bootstrap-defrag-threshold-megabytes
+      value: "200"
     - name: listen-metrics-urls
       value: http://0.0.0.0:2381
     - name: quota-backend-bytes

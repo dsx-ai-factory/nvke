@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+
+method: DELETE
+path: /v1/machine-images/ubuntu-2404-amd64?propagationPolicy=background
+headers:
+  If-Match: ['{{ etag }}']

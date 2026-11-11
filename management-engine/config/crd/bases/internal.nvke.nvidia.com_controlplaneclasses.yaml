@@ -83,6 +83,28 @@ spec:
                 - replicas
                 - systemReservedMemory
                 type: object
+              lifecycle:
+                default: {}
+                description: Lifecycle controls catalog discovery and communicates
+                  support.
+                properties:
+                  deprecated:
+                    default: false
+                    description: |-
+                      Deprecated allows resources already depending on the Release to keep
+                      using it, but rejects new cluster or node pool creation referencing it.
+                    type: boolean
+                  hidden:
+                    default: false
+                    description: Hidden omits an offering from catalog lists and channel
+                      choices. Explicit references remain available.
+                    type: boolean
+                  supportedUntil:
+                    description: SupportedUntil is the time at which support for this
+                      release ends.
+                    format: date-time
+                    type: string
+                type: object
               rollout:
                 description: Rollout controls replacement of control-plane nodes.
                 properties:

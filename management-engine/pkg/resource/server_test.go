@@ -36,7 +36,7 @@ func TestSurfaceLimitsAcrossRoutes(t *testing.T) {
 	client, err := New[widget, internalWidget](fixtureConfig(nil), widgetInfo(OpCreate))
 	require.NoError(t, err)
 	for _, path := range []string{"/widgets", "/other-widgets"} {
-		Register(mux, path, client, OpCreate)
+		Register(mux, path, client, client, nil, OpCreate)
 	}
 	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -155,7 +155,7 @@ func TestHTTPWriteBoundary(t *testing.T) {
 	})), widgetInfo(OpCreate))
 	require.NoError(t, err)
 	mux := http.NewServeMux()
-	Register(mux, "/widgets", client, OpCreate)
+	Register(mux, "/widgets", client, client, nil, OpCreate)
 	handler := WithLimits(mux, ServerOptions{})
 	for _, body := range []string{
 		`{"metadata":{"name":"x","namespace":"other"},"spec":{"value":"x"}}`,
@@ -186,7 +186,7 @@ func TestSlowBodyDeadlineAndKeepalive(t *testing.T) {
 	mux := http.NewServeMux()
 	client, err := New[widget, internalWidget](fixtureConfig(nil), widgetInfo(OpCreate))
 	require.NoError(t, err)
-	Register(mux, "/widgets", client, OpCreate)
+	Register(mux, "/widgets", client, client, nil, OpCreate)
 	server := httptest.NewServer(WithLimits(mux, ServerOptions{RequestTimeout: 50 * time.Millisecond}))
 	defer server.Close()
 	// A separate test deadline prevents a broken server-side deadline from hanging this raw TCP probe.
