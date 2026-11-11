@@ -34,7 +34,8 @@ into three categories:
   tables generated per Go release and panics at startup when they do not match
   the standard library's `unicode.Version`. Pinning keeps the two in step on a
   Go release it has no tables for. Set `GOTOOLCHAIN` yourself to override that.
-  Run `go version` from the repository root to check the selected toolchain.
+  `go version` shows the toolchain selected in your shell; `make help` shows
+  the one used by `make`, under "Toolchain in use".
 - GNU Make 4.0+ (`make --version`) — ⚠️ **macOS ships 3.81, which cannot run the
   root `Makefile`.** Run `brew install make`, which installs it as `gmake`, then
   read every `make` below as `gmake`. Setting `alias make=gmake` in your shell is
@@ -61,6 +62,10 @@ into three categories:
   `temporal --version` reports the CLI and its bundled development server.
   The second command reports the connected server's `ServerVersion`; replace
   `localhost:7233` with your Temporal frontend address.
+
+  If `temporal` is not on your `PATH`, replace it in the commands above with
+  `~/.temporalio/bin/temporal` or `flox activate -- temporal`, matching how you
+  started the server.
 
 ### Clone and build
 
