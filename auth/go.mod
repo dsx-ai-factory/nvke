@@ -1,6 +1,6 @@
 module github.com/dsx-ai-factory/nvke/auth
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/cedar-policy/cedar-go v1.9.0

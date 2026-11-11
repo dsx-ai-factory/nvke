@@ -1,7 +1,7 @@
 # NVIDIA Kubernetes Engine (NVKE)
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.27.3-00ADD8.svg)](go.work)
+[![Go](https://img.shields.io/badge/Go-1.27.4-00ADD8.svg)](go.work)
 
 **Run a managed Kubernetes service on your own NVIDIA GPU infrastructure.**
 NVIDIA Kubernetes® Engine (NVKE) provides the management plane that platform teams install to create and
@@ -87,7 +87,7 @@ Read [What is NVKE](docs/overview/what-is-nvke.md) for the operator workflow and
 
 ## Build from source
 
-Use **Go 1.27.3**, the version pinned in [go.work](go.work), and **GNU Make 4 or later**. Public Go modules must be
+Use **Go 1.27.4**, the version pinned in [go.work](go.work), and **GNU Make 4 or later**. Public Go modules must be
 reachable on the first build. [Flox](https://flox.dev/) is optional and supplies
 the repository's development tools; on macOS, it also supplies GNU Make 4.
 See [Development](docs/development.md) for toolchain setup.
