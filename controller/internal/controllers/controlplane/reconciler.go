@@ -16,6 +16,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 )
 
 // reconciler reconciles control planes.
@@ -231,23 +232,23 @@ const (
 // The failure is logged and the cluster requeued rather than returned, because
 // returning an error rolls back the reconcile's transaction and would undo the
 // remediation, join and delete writes the rest of the pass makes without placement.
-func (r *reconciler) discoverPlacement(ctx context.Context, cluster db.Cluster, cp *controlPlane) (domainAllocator, bool) {
+func (r *reconciler) discoverPlacement(ctx context.Context, cluster db.Cluster, cp *controlPlane) (failuredomains.Allocator, bool) {
 	failureDomains, err := r.readFailureDomains(ctx, cluster)
 	if err != nil {
 		r.logger.Warn("Control-plane failure-domain discovery failed; deferring the steps that place or shed nodes",
 			"clusterID", cluster.ID, "clusterName", cluster.Name,
-			"infrastructureNotProvisioned", errors.Is(err, errInfrastructureNotProvisioned), "err", err)
+			"infrastructureNotProvisioned", errors.Is(err, failuredomains.ErrInfrastructureNotProvisioned), "err", err)
 		r.requeueAfter(failureDomainRetryInterval)
-		return domainAllocator{}, false
+		return failuredomains.Allocator{}, false
 	}
 
 	cp.failureDomains = failureDomains
-	failureDomains.eligible = placeableDomains(failureDomains.eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
-	if unplaced := nodesWithoutKnownDomain(cp.nodes, failureDomains); len(unplaced) > 0 {
+	failureDomains.Eligible = placeableDomains(failureDomains.Eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
+	if unplaced := failuredomains.NodesWithoutKnownDomain(cp.nodes, failureDomains); len(unplaced) > 0 {
 		r.logger.Warn("Control-plane nodes have no known failure domain and are not counted toward the spread",
 			"clusterID", cluster.ID, "clusterName", cluster.Name, "nodes", unplaced)
 	}
-	return newControlPlaneDomainAllocator(cp.nodes, failureDomains), true
+	return failuredomains.NewControlPlaneAllocator(cp.nodes, failureDomains), true
 }
 
 // reconcileControlPlaneRolloutRequiredCondition refreshes each
@@ -296,7 +297,7 @@ func (r *reconciler) reconcileControlPlaneScaleUp(
 	ctx context.Context,
 	cluster db.Cluster,
 	controlPlane *controlPlane,
-	allocator domainAllocator,
+	allocator failuredomains.Allocator,
 	newNodeProvider clients.NewNodeProvider,
 ) error {
 	deficit := cluster.ControlPlaneConfig.DesiredCount - controlPlane.size()

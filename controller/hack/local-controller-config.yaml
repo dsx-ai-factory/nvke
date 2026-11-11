@@ -41,6 +41,9 @@ credentialMonitoring:
   inspectionInterval: 1h
   observationMaxAge: 3h
   warningDays: 45
+controlPlaneFailureDomainFallback:
+  enabled: false
+  gracePeriod: 10m
 kubeVip:
   localASN: 65100
   staticPeerASN: 4294967000

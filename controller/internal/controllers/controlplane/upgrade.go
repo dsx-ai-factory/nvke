@@ -12,6 +12,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
@@ -25,7 +26,7 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 	ctx context.Context,
 	cluster db.Cluster,
 	cp *controlPlane,
-	allocator domainAllocator,
+	allocator failuredomains.Allocator,
 	newNodeProvider clients.NewNodeProvider,
 ) (bool, error) {
 	logger := r.logger.With(
@@ -59,7 +60,7 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 					"nodesNeedingRolloutCount", len(nodesNeedingRollout))
 				return false, nil
 			}
-			allocator.release(cp.failureDomains.domainOf(nodesNeedingRollout[0]))
+			allocator.Release(cp.failureDomains.DomainOf(nodesNeedingRollout[0]))
 			created, err := r.scaleUp(ctx, cluster, deficit, "surge nodes during upgrade", allocator, newNodeProvider)
 			if err != nil {
 				return false, fmt.Errorf("failed to scale up control plane before recycling: %w", err)

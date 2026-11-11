@@ -13,6 +13,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
@@ -48,7 +49,7 @@ func (r *reconciler) scaleUp(
 	cluster db.Cluster,
 	count int,
 	reason string,
-	allocator domainAllocator,
+	allocator failuredomains.Allocator,
 	newNodeProvider clients.NewNodeProvider,
 	opts ...pendingNodeOption,
 ) (int, error) {
@@ -63,7 +64,7 @@ func (r *reconciler) scaleUp(
 
 	created := 0
 	for range count {
-		failureDomain := allocator.take()
+		failureDomain := allocator.Take()
 		createdNode, err := r.createPendingNode(ctx, cluster, existingNodeNames, failureDomain, newNodeProvider, opts...)
 		if err != nil {
 			return created, err
