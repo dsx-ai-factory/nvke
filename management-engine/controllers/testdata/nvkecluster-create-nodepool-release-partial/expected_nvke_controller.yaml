@@ -1,0 +1,158 @@
+clusters:
+- cniPlugin: ""
+  cniVersion: ""
+  conditions:
+    deleting:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "False"
+    provisioned:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "True"
+    provisioning:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "False"
+  controlPlaneConfig:
+    configurationId: 00000000-0000-0000-0000-000000000000
+    desiredCount: 1
+    infra:
+      machineTemplate:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+        kind: NicoMachineTemplate
+        spec:
+          template:
+            metadata:
+              annotations:
+                cluster.x-k8s.io/paused: "true"
+              labels:
+                instance-type: 33333333-3333-4333-8333-333333333333
+                vpc-id: 22222222-2222-4222-8222-222222222222
+            spec:
+              instanceTypeID: 33333333-3333-4333-8333-333333333333
+              interfaces:
+              - subnetID: 44444444-4444-4444-8444-444444444444
+              ipxeScript: |-
+                #!ipxe
+                chain https://images.example.com/nvke/boot.ipxe
+              vpcID: 22222222-2222-4222-8222-222222222222
+    maxSurge: 1
+    systemReservedMemory: 1Gi
+  controlPlaneKubernetesVersion: 1.36.1
+  createdAt: "0001-01-01T00:00:00Z"
+  etcdEncrypted: false
+  id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+  name: cluster-1-34bd578c-mgmt-eng
+  network:
+    podCIDR: ""
+    serviceCIDR: ""
+nodePools:
+- autoModeDisabled: false
+  autoProvisionDisabled: false
+  clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+  conditions:
+    deleting:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "False"
+    provisioned:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "True"
+    provisioning:
+      lastTransitionTime: "0001-01-01T00:00:00Z"
+      message: ""
+      status: "False"
+  controlPlane: false
+  currentNodeSetID: null
+  desiredNodeCount: 1
+  id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+  infra:
+    machineTemplate:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+      kind: NicoMachineTemplate
+      spec:
+        template:
+          metadata:
+            annotations:
+              cluster.x-k8s.io/paused: "true"
+            labels:
+              instance-type: 33333333-3333-4333-8333-333333333333
+              vpc-id: 22222222-2222-4222-8222-222222222222
+          spec:
+            instanceTypeID: 33333333-3333-4333-8333-333333333333
+            interfaces:
+            - subnetID: 44444444-4444-4444-8444-444444444444
+            ipxeScript: |-
+              #!ipxe
+              chain https://images.example.com/nvke/boot.ipxe
+            vpcID: 22222222-2222-4222-8222-222222222222
+  kubernetesVersion: ""
+  name: workers-a
+  nodeLabels: null
+  nodeNamePrefix: workers-a
+  nodeTaints: null
+  provisioningMonitorDisabled: true
+  recycleBudget: 0
+  systemReservedMemory: 1Gi
+requests:
+- method: PATCH
+  path: /api/clusters/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+  update:
+    controlPlaneConfig:
+      desiredCount: 1
+      infra:
+        bootstrapFiles: []
+        machineTemplate:
+          apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+          kind: NicoMachineTemplate
+          spec:
+            template:
+              metadata:
+                annotations:
+                  cluster.x-k8s.io/paused: "true"
+                labels:
+                  instance-type: 33333333-3333-4333-8333-333333333333
+                  vpc-id: 22222222-2222-4222-8222-222222222222
+              spec:
+                instanceTypeID: 33333333-3333-4333-8333-333333333333
+                interfaces:
+                - subnetID: 44444444-4444-4444-8444-444444444444
+                ipxeScript: |-
+                  #!ipxe
+                  chain https://images.example.com/nvke/boot.ipxe
+                vpcID: 22222222-2222-4222-8222-222222222222
+        preKubeadmCommands: []
+      maxSurge: 1
+      systemReservedMemory: 1Gi
+    controlPlaneKubernetesVersion: 1.36.1
+- createNodePool:
+    clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    desiredNodeCount: 1
+    infra:
+      machineTemplate:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+        kind: NicoMachineTemplate
+        spec:
+          template:
+            metadata:
+              annotations:
+                cluster.x-k8s.io/paused: "true"
+              labels:
+                instance-type: 33333333-3333-4333-8333-333333333333
+                vpc-id: 22222222-2222-4222-8222-222222222222
+            spec:
+              instanceTypeID: 33333333-3333-4333-8333-333333333333
+              interfaces:
+              - subnetID: 44444444-4444-4444-8444-444444444444
+              ipxeScript: |-
+                #!ipxe
+                chain https://images.example.com/nvke/boot.ipxe
+              vpcID: 22222222-2222-4222-8222-222222222222
+    name: workers-a
+    nodeNamePrefix: workers-a
+    provisioningMonitorDisabled: true
+    systemReservedMemory: 1Gi
+  method: POST
+  path: /api/nodePools
