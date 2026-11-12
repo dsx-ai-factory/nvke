@@ -62,9 +62,8 @@ helm template cluster-service chart --namespace cluster-service-system \
 Replace the example registry, image tag, endpoint and tenant namespace with
 reviewed site inputs. The manager needs network access to the datastore's
 Kubernetes API and the configured NVKE controller endpoint. Scrapers need access
-to the optional metrics Service. Coordinate API Services and gateway exposure with the site integration. Tenant
-routes use `/v1/`, with TLS and DNS managed by the site. Keep operator API access
-internal. The chart owns backend, kubeconfig and election namespace
+to the optional metrics Service. Tenant API integration responsibilities are
+summarized below. The chart owns backend, kubeconfig and election namespace
 arguments. `manager.args` supplies additional options such as `--namespace`;
 if used, that namespace must match the tenant ConfigMaps and requests.
 
@@ -72,6 +71,31 @@ Use Helm's `--create-namespace` during installation, or arrange namespace creati
 through the installer; `helm template` sets namespace references but creates
 nothing. Tenant namespaces and any explicitly separate state namespace must exist.
 The examples demonstrate rendering; live reconciliation is validated separately.
+
+## Tenant API integration responsibilities
+
+The current chart installs the manager and state resources, with an optional
+metrics Service. Tenant and operator API Deployments and Services are the next
+packaging step in [CLI-126](https://linear.app/nvidia/issue/CLI-126).
+The [tenant API registration design](https://docs.google.com/document/d/1sX8NWUMMkxvXnxeamuq0xBt4GnrFiRfueu6maI9d_1I/edit)
+describes the planned exposure integration; the detailed operator contract is
+tracked in [CLI-129](https://linear.app/nvidia/issue/CLI-129).
+
+| Requirement | Chart / API packaging | Site operator or integration |
+| --- | --- | --- |
+| Services | Current chart supplies the optional manager metrics Service. CLI-126 supplies separate tenant and operator API Services. | Choose installation namespaces and supply the existing identities and configuration referenced by the workloads. |
+| Gateway or proxy | Follow-up exposure packaging adds an optional tenant HTTPRoute and Gateway ingress rule. | Supply a Gateway/listener or configure an existing proxy to target the tenant Service. |
+| Request routing | The tenant exposure contract uses `/v1/` paths, forwards the caller's `Authorization` header unchanged, and uses HTTP from the entry point to the tenant Service. | Configure the entry point to honor that contract. |
+| TLS, hostname and DNS | Site-specific public names and certificates are supplied through integration settings. | Terminate external TLS and provide the hostname, certificate and DNS record. |
+| Network access | The current optional NetworkPolicy admits metrics scrapers. Tenant API ingress rules follow in exposure packaging. | Provide connectivity to the datastore Kubernetes API, NVKE controller and, for authenticated APIs, issuer discovery/JWKS endpoints; allow the entry point to reach the tenant Service. |
+| Operator API | API packaging supplies an internal Service; the exposure design publishes no operator route. | Restrict operator access to approved internal callers. |
+
+For DSX OS, the planned site overlay attaches the tenant route to the CSC's
+shared HTTPS Gateway, using a hostname such as `cluster-<site>.<suffix>`. DSX OS
+integration supplies the site's certificate, DNS record and Gateway settings.
+Other operators provide their own Gateway or proxy and the equivalent inputs.
+The current DSX values example configures the co-located manager/state deployment;
+the tenant entry point is delivered by the follow-up API exposure work.
 
 ## Separate installations
 
