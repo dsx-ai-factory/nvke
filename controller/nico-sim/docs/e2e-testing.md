@@ -13,7 +13,8 @@ make test-integration-qemu
 make test-integration-libvirt
 
 # Internal maintainers with access to the private production image
-make test-integration-libvirt RUN_TESTS=TestIPXEProductionImageFlow
+NICO_VMS_TEST_PRODUCTION_IMAGE=true make test-integration-libvirt \
+  RUN_TESTS=TestIPXEProductionImageFlow REAL_VM_TEST_TIMEOUT=20m
 ```
 
 `TestIPXEProductionImageFlow` uses a private internal node image on an
