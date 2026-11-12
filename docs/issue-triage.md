@@ -8,16 +8,16 @@ anyone can see what is waiting and what was decided.
 
 | Label | Meaning | Who sets it |
 |---|---|---|
-| `needs-triage` | No maintainer has set a priority yet. Nothing for the reporter to do. | The issue forms, and automation on any open issue without a priority |
+| `needs-triage` | The triagers' turn: no priority yet, and not waiting on the reporter. | The issue forms, and automation on any open issue without a priority or `needs-info` |
 | `priority/P0` | Data loss, an unusable cluster or node, a security problem, or no workaround. Fix within 30 calendar days. | A triager |
 | `priority/P1` | Significant impact with a workaround. Fix within 183 calendar days. | A triager |
 | `priority/P2` | Everything else. No fix commitment. | A triager |
-| `needs-info` | The reporter's turn: the issue cannot be triaged without more detail. | A triager |
+| `needs-info` | The reporter's turn: the issue cannot be triaged without more detail. | A triager; automation removes it when the reporter comments |
 
 Setting a priority is the act of triage. Automation removes `needs-triage`
-when a `priority/*` label is present and puts it back when the last one is
-removed. Nothing else clears it. A `needs-info` issue keeps `needs-triage`
-until it has a priority.
+while an issue has a `priority/*` or `needs-info` label, and puts it back when
+it has neither. When the reporter comments on a `needs-info` issue, automation
+removes `needs-info`, so the issue returns to the triage queue.
 
 When torn between P0 and P1, pick P1. Feature and documentation requests take
 a priority too; most are P2.
@@ -63,7 +63,9 @@ sweeps its queue once a week; the project lead sweeps the unrouted queue.
 
 ## For reporters
 
-You do not need to do anything about `needs-triage`. To argue for a higher
+You do not need to do anything about `needs-triage`. If your issue gets
+`needs-info`, reply with what was asked for; your comment puts it back in the
+triage queue. To argue for a higher
 priority, comment with the impact: what is broken, how many clusters or nodes
 it affects, and whether a workaround exists. Triage reads the thread before
 changing a priority that is already set.
@@ -71,10 +73,12 @@ changing a priority that is already set.
 ## What the automation does
 
 [`issue-triage-check.yml`](../.github/workflows/issue-triage-check.yml) runs on
-issue events and once an hour:
+issue events, on the reporter's comments, and once an hour:
 
-- adds `needs-triage` to any open issue with no `priority/*` label, and removes
-  it once one is set;
+- adds `needs-triage` to any open issue with no `priority/*` or `needs-info`
+  label, and removes it once either is set;
+- removes `needs-info` when the reporter comments, which returns the issue to
+  `needs-triage`;
 - on a new issue, maps the form's Component field to an `area/*` label, once,
   and never puts back an area a triager removed.
 
