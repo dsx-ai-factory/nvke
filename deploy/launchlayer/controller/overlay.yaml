@@ -24,10 +24,7 @@ apiAuth:
   enabled: false
   permissive: false
 
-# LaunchLayer only: this path installs CAPLL and no CAPNICo, so the controller
-# accepts launchLayer cluster requests and refuses nico ones. capi.rbac.launchLayer
-# defaults to true; the NICo grant and controllers are off, since no NICo CRDs
-# are installed.
+# LaunchLayer only: no CAPNICo or NICo CRDs are installed.
 supportedInfraProviders: launchLayer
 capi:
   rbac:
@@ -227,11 +224,8 @@ secrets:
   # when this names a Secret carrying keys `user` and `password`.
   dgxcTenantCredSecretName: dgxc-tenant-credentials
 
-# dsxImds: a LaunchLayer node attests to SPIRE only through DSX IMDS, and the
-# controller refuses LaunchLayer requests under any other method. The chart also
-# needs nodeAgent.dsxImds.operatorTenant, which is the site's: pass it with
-# --values-for controller=FILE. The SPIRE server's dsx_imds attestor is likewise
-# the site's, passed with --values-for spire=FILE. See README.md.
+# LaunchLayer nodes attest only through DSX IMDS. operatorTenant and the SPIRE
+# dsx_imds attestor are site values; see README.md.
 nodeAgent:
   spireAttestationMethod: dsxImds
 

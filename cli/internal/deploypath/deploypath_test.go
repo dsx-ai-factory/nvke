@@ -419,10 +419,8 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	}
 }
 
-// TestLaunchLayerPathMatchesNico keeps deploy/launchlayer's copies of
-// deploy/nico in step: a file both paths hold is identical, except the ones
-// the LaunchLayer path changes on purpose. A pin bump in deploy/nico that
-// misses deploy/launchlayer fails here.
+// TestLaunchLayerPathMatchesNico requires files shared with deploy/nico to stay
+// identical, except the intended differences.
 func TestLaunchLayerPathMatchesNico(t *testing.T) {
 	differ := map[string]bool{
 		"README.md":                           true,
@@ -469,9 +467,7 @@ func TestLaunchLayerPathMatchesNico(t *testing.T) {
 	}
 }
 
-// TestRender_LaunchLayerPath renders deploy/launchlayer: CAPLL's manager gets
-// the stack config's LaunchLayer API and identity Secret, and nothing of NICo's
-// is required or rendered.
+// TestRender_LaunchLayerPath renders deploy/launchlayer without any NICo values.
 func TestRender_LaunchLayerPath(t *testing.T) {
 	spec, _ := filledInputs(t, false, nil)
 	t.Setenv(stackconfig.EnvNicoToken, "")

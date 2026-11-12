@@ -1,12 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# The SPIFFE JWT exec-auth plugin and the workload API socket, the same as
-# controller/deploy/k8s/capi-spiffe-exec-auth gives the CAPI controllers. With
-# nvkeOIDCAuth on, the <cluster>-kubeconfig Secret CAPLL reads to set each
-# Node's providerID runs the plugin, which reads the socket path from the
-# kubeconfig. The CSI volume needs the csi.spiffe.io driver the spire item
-# installs, so this item follows spire.
+# The SPIFFE exec-auth plugin, as controller/deploy/k8s/capi-spiffe-exec-auth
+# gives the CAPI controllers: with nvkeOIDCAuth on, tenant kubeconfigs need it.
 manager:
   podSecurityContext:
     fsGroup: 65532
@@ -16,8 +12,7 @@ manager:
       csi:
         driver: csi.spiffe.io
         readOnly: true
-    # Containerd only supports directory subpaths for image volumes, so the
-    # init container stages the plugin into an emptyDir.
+    # Image volumes mount only directories; the init container copies the plugin out.
     - name: spiffe-exec-plugin
       image:
         reference: ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:1.0.0@sha256:e30e90774e5951f84eb6dfb36f972fead08b64c3bfdc0912c5b15f988e79de3a

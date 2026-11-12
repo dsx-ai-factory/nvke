@@ -1,13 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Deploy path for an NVKE management cluster whose tenant clusters run on
-# LaunchLayer, through CAPLL. It is deploy/nico with CAPNICo swapped for CAPLL,
-# installed from its chart, and nvke-base-config rendering CAPLL's credentials
-# instead of NICo's. capll follows spire rather than taking capnico's place:
-# its manager mounts the csi.spiffe.io driver the spire item installs. Read
-# deploy/nico/nvke-deploy.yaml for why the rest of the order is what it is, and
-# README.md here for what this path needs that deploy/nico does not.
+# deploy/nico with CAPNICo replaced by CAPLL's chart. See README.md.
+# capll follows spire: its manager mounts the csi.spiffe.io driver spire installs.
 items:
   - {name: nvke-base-config, type: template}
   - {name: spire-tpm-pubhashes, type: manifest}

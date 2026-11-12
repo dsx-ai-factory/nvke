@@ -1,15 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# CAPLL from its published chart, which deploys the image released with it
-# (ghcr.io/dsx-ai-factory/cluster-api-provider-launchlayer/controller:v<version>).
-# Pulling either needs a `helm registry login ghcr.io` and an image pull
-# credential until both packages are public; README.md says how.
-#
-# The release name sets the manager's ServiceAccount,
-# capi-provider-launchlayer-controller-manager, which
-# nvke-base-config/25-capll-secret-reader.yaml binds. The manager args come
-# from the stack config, as site values.
+# The release name sets the ServiceAccount that
+# nvke-base-config/25-capll-secret-reader.yaml binds. Manager args come from the stack config.
 chart:
   name: capi-provider-launchlayer
   version: "0.2.0"

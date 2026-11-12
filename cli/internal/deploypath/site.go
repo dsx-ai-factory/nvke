@@ -106,13 +106,12 @@ func (r *renderer) site() {
 		ctx.Nico.OrgID = check("nico.orgID", cs.Nico.OrgID)
 		ctx.Nico.APIName = check("nico.apiName", cs.Nico.APIName)
 	}
-	// capllArgs replaces the CAPLL chart's manager.args, so it repeats the
-	// chart's --leader-elect.
+	// Replaces the chart's manager.args, so it repeats --leader-elect.
 	var capllArgs []string
 	if r.hasItem(capllItem, TypeHelm) {
 		ll := cs.LaunchLayer
 		capllArgs = []string{"--leader-elect", "--base-url=" + check("launchLayer.baseURL", ll.BaseURL)}
-		// An omitted URL leaves its flag off, and CAPLL calls baseURL instead.
+		// An omitted URL falls back to baseURL in CAPLL.
 		for _, f := range []struct{ flag, url string }{{"--vpc-url", ll.VPCURL}, {"--compute-url", ll.ComputeURL}, {"--sg-url", ll.SGURL}} {
 			if f.url != "" {
 				capllArgs = append(capllArgs, f.flag+"="+f.url)
@@ -511,15 +510,10 @@ const (
 	spireCASecret = "spire-upstream-ca"
 )
 
-// The provider items a deploy path installs. A path's stack config values are
-// required for the provider items it has.
+// Provider items. A path requires the stack config values of the items it has.
 const (
-	// capnicoItem is CAPNICo's manifest item.
-	capnicoItem = "capnico"
-	// capllItem is CAPLL's helm item.
-	capllItem = "capll"
-	// launchLayerSecret is the Secret nvke-base-config renders the OAuth2
-	// client into, in CAPLL's namespace.
+	capnicoItem       = "capnico"
+	capllItem         = "capll"
 	launchLayerSecret = "launchlayer-credentials"
 )
 

@@ -55,9 +55,7 @@ kind: Namespace
 metadata:
   name: temporal
 ---
-# CAPLL's controller. launchlayer-credentials lands here before the capll item
-# installs. CAPLL's chart templates no Namespace, so the release needs no Helm
-# ownership metadata on it.
+# CAPLL's controller. launchlayer-credentials is applied here before the chart installs.
 apiVersion: v1
 kind: Namespace
 metadata:
