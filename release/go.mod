@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/storage v1.70.0
 	github.com/onsi/ginkgo/v2 v2.34.0
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/mod v0.42.0
+	golang.org/x/mod v0.43.0
 	google.golang.org/api v0.311.0
 	sigs.k8s.io/yaml v1.6.0
 )
