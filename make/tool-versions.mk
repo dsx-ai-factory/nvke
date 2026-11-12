@@ -46,6 +46,8 @@ GH_CLI_SHA256_ARM64 ?= 73ea440ecad9c9e284429997ee6f93577bc6f7bc6fba357ef62c53ad8
 # teleport-v<version>-linux-amd64-bin.tar.gz.
 TELEPORT_VERSION   ?= 18.11.0
 TELEPORT_SHA256_AMD64 ?= 8d3dba03ea6b6e0d72c97e190da0595e8f0d70f5573c3a26b1908cf60caf6e3f
+# kaps-bench and its run spec folder, which the Forge lane copies out for a perf stream.
+KAPS_BENCH_IMAGE ?= nvcr.io/j7sbcjl3qgta/kaps-bench:v0.3.1@sha256:05ec7d343b7eb3dc73250f399e5e133cac1cd7a1fb5da9616fdd43337656d928
 
 # aicr installs and validates the GPU runtime on the Forge lane's tenant. It
 # runs on the lane's amd64 runner whatever the tenant's architecture, so amd64
