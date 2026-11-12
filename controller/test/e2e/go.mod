@@ -1,6 +1,6 @@
 module github.com/dsx-ai-factory/nvke/controller/test/e2e
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/NVIDIA/infra-controller/rest-api/sdk/standard v0.0.0-20261015145118-9ff268b2d54c
