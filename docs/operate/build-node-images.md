@@ -146,7 +146,7 @@ Run the file-preparation commands below from the directory containing your `nvke
    | `"true"` | `""` | The template installs `nvke-kubeadm-distro-{{ trimPrefix .KubernetesVersion "v" }}`, so the release serves any Kubernetes version. |
    | `"false"` | The version, such as `"1.36.3"` | The template installs one version, such as `nvke-kubeadm-distro-1.36.3`. |
 
-   Both annotations take the prefix `internal.nvke.nvidia.com/`. When you upgrade a node pool whose release has `"false"`, NVKE selects the newest eligible configuration by its image's `buildDate`. A candidate must either name the target Kubernetes version or enable version injection so its template receives the target version at node creation. Its image must match the current image's architecture, variant and operating system. NVKE skips configurations deprecated with `nvkectl deprecate`.
+   Both annotations take the prefix `internal.nvke.nvidia.com/`. Changing a cluster's or node pool's Kubernetes version does not change its release: new nodes use the release it already has, so a release with `"false"` keeps installing its own version.
 
 6. Confirm that no example host remains.
 
@@ -250,7 +250,7 @@ nvkectl deprecate clusterrelease <RELEASE_NAME>
 nvkectl deprecate nodepoolrelease <RELEASE_NAME>
 ```
 
-Run the command for the release type you want to retire. The CLI updates its lifecycle metadata; do not edit `spec.lifecycle.deprecated` by hand. Existing clusters and node pools can still resolve a deprecated release for provisioning and scaling, but it is not selected as a Kubernetes upgrade target. Choose a current release when creating new clusters or pools. `MachineImage` has no deprecation command.
+Run the command for the release type you want to retire. The CLI updates its lifecycle metadata; do not edit `spec.lifecycle.deprecated` by hand. Existing clusters and node pools can still resolve a deprecated release for provisioning, scaling and Kubernetes version changes. To move one to a current release, change its release in an update request. Choose a current release when creating new clusters or pools. `MachineImage` has no deprecation command.
 
 ## Next steps
 
