@@ -991,6 +991,14 @@ three tools and adds 65 minutes to each clock. `qualify local` takes the same
 switch as `--tenant-gpu-runtime`, and checks the three tools and a `timeout`
 are on `PATH` before it takes a machine.
 
+`-e2e.kaps-bench-run-specs=smoke/smoke.yaml` (a comma separated list) runs those
+kaps-bench run specs, each as its own spec, on the tenant once its checks pass,
+from the kaps-bench folder `-e2e.kaps-bench-dir` names, after installing
+Prometheus from `https://prometheus-community.github.io/helm-charts` with
+`helm`, whose images come from `quay.io` and `registry.k8s.io`. CI sets both
+flags for the perf stream, and the results land in
+`kaps-bench-results.tar.gz` in this directory.
+
 Both lanes create the same `nico-forge` tenant and both entries carry that
 label, so pick between them with `site-controller`, which only the lane that
 builds a site carries. At `full` the site lane also registers one tenant entry
@@ -1007,6 +1015,8 @@ providers by name. Measured against this tree with `-ginkgo.dry-run` and
 
 `-e2e.tenant-gpu-runtime` adds one spec to each lane's tenant, or two with
 `-e2e.capabilities=gpu=gb200,ubuntu=24.04`.
+`-e2e.kaps-bench-run-specs` adds one spec labeled `kaps-bench` for each run spec
+to each lane's tenant.
 
 `-e2e.site-stage`, not the label, is what decides whether a machine is
 provisioned: the site lane's tenant entries are built only when it is set, so

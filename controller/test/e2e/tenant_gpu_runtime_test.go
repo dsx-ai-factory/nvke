@@ -131,7 +131,7 @@ func validateTenantGPURuntime(test *tenantTest, plan tenantGPURuntimePlan, faile
 
 	It("installs the GPU runtime with AICR", func(ctx context.Context) {
 		skipAfterFailure(failed)
-		run := newAICRRun(ctx, test, plan, aicrInstallTimeout)
+		run := newAICRToolRun(ctx, test, plan, aicrInstallTimeout)
 		By("Bundling the recipe")
 		bundle := filepath.Join(run.dir, "bundle")
 		run.aicr(ctx, "bundle", "--recipe", run.recipe, "--data", run.data, "--output", bundle)
@@ -141,7 +141,7 @@ func validateTenantGPURuntime(test *tenantTest, plan tenantGPURuntimePlan, faile
 
 	It("passes AICR's deployment checks", func(ctx context.Context) {
 		skipAfterFailure(failed)
-		run := newAICRRun(ctx, test, plan, aicrValidateTimeout)
+		run := newAICRToolRun(ctx, test, plan, aicrValidateTimeout)
 		report := filepath.Join(run.dir, "aicr-validate.ctrf.json")
 		By("Running aicr validate --phase deployment")
 		runErr := run.try(ctx, run.dir, "aicr", "validate", "--recipe", run.recipe, "--data", run.data,
@@ -170,36 +170,44 @@ func skipAfterFailure(failed func() bool) {
 	}
 }
 
-// aicrRun is one spec's working directory: a relayed admin kubeconfig for the
-// tenant and the recipe rendered for it. Each spec renders its own, so neither
+// tenantToolRun is one spec's working directory for a tool run on the runner
+// against the tenant: a relayed admin kubeconfig and, for aicr, the recipe
+// rendered for it. Each spec renders its own, so neither
 // depends on a file the other left behind; rendering is offline and quick.
-type aicrRun struct {
+type tenantToolRun struct {
 	dir, kubeconfig, data, recipe string
 }
 
-func newAICRRun(ctx context.Context, test *tenantTest, plan tenantGPURuntimePlan, lifetime time.Duration) *aicrRun {
+func newAICRToolRun(ctx context.Context, test *tenantTest, plan tenantGPURuntimePlan, lifetime time.Duration) *tenantToolRun {
 	_, err := exec.LookPath("aicr")
 	Expect(err).NotTo(HaveOccurred(), "aicr should be on PATH; the workflow installs it when the GPU runtime is asked for")
 	data, err := filepath.Abs(aicrDataDir)
 	Expect(err).NotTo(HaveOccurred())
 
-	run := &aicrRun{dir: GinkgoT().TempDir(), data: data}
-	By("Writing a relayed admin kubeconfig for the tenant")
 	// The token outlives the spec, so a long install does not lose its
 	// credential partway through.
-	kubeconfig := expectSucceed(test.tenantClients.RelayedAdminKubeconfig(ctx, test.cluster.Name, lifetime+5*time.Minute))
-	expiresAt, known := kube.KubeconfigTokenExpiry(kubeconfig)
-	deadline, hasDeadline := ctx.Deadline()
-	if warning := aicrTokenWarning(expiresAt, known, deadline, hasDeadline); warning != "" {
-		AddReportEntry("aicr admin token", warning)
-		GinkgoWriter.Println("WARNING: " + warning)
-	}
-	run.kubeconfig = filepath.Join(run.dir, "kubeconfig")
-	Expect(os.WriteFile(run.kubeconfig, kubeconfig, 0o600)).To(Succeed())
+	run := newTenantToolRun(ctx, test, lifetime+5*time.Minute, "aicr admin token")
+	run.data = data
 
 	By("Rendering the AICR recipe for " + plan.accelerator)
 	run.recipe = filepath.Join(run.dir, "recipe.yaml")
 	run.aicr(ctx, aicrRecipeArgs(plan.accelerator, run.data, run.recipe)...)
+	return run
+}
+
+// newTenantToolRun returns a temp dir holding a relayed admin kubeconfig whose token is asked to last lifetime.
+func newTenantToolRun(ctx context.Context, test *tenantTest, lifetime time.Duration, label string) *tenantToolRun {
+	run := &tenantToolRun{dir: GinkgoT().TempDir()}
+	By("Writing a relayed admin kubeconfig for the tenant")
+	kubeconfig := expectSucceed(test.tenantClients.RelayedAdminKubeconfig(ctx, test.cluster.Name, lifetime))
+	expiresAt, known := kube.KubeconfigTokenExpiry(kubeconfig)
+	deadline, hasDeadline := ctx.Deadline()
+	if warning := aicrTokenWarning(expiresAt, known, deadline, hasDeadline); warning != "" {
+		AddReportEntry(label, warning)
+		GinkgoWriter.Println("WARNING: " + warning)
+	}
+	run.kubeconfig = filepath.Join(run.dir, "kubeconfig")
+	Expect(os.WriteFile(run.kubeconfig, kubeconfig, 0o600)).To(Succeed())
 	return run
 }
 
@@ -210,11 +218,11 @@ func aicrRecipeArgs(accelerator, data, output string) []string {
 	}
 }
 
-func (r *aicrRun) aicr(ctx context.Context, args ...string) {
+func (r *tenantToolRun) aicr(ctx context.Context, args ...string) {
 	r.command(ctx, r.dir, "aicr", args...)
 }
 
-func (r *aicrRun) command(ctx context.Context, dir, name string, args ...string) {
+func (r *tenantToolRun) command(ctx context.Context, dir, name string, args ...string) {
 	Expect(r.try(ctx, dir, name, args...)).To(Succeed())
 }
 
@@ -235,7 +243,7 @@ func aicrTokenWarning(expiresAt time.Time, known bool, deadline time.Time, hasDe
 // try runs a command against the tenant and returns an error carrying the
 // end of its output. The environment is built rather than inherited: the
 // runner's carries the lane's secrets, which nothing run here needs.
-func (r *aicrRun) try(ctx context.Context, dir, name string, args ...string) error {
+func (r *tenantToolRun) try(ctx context.Context, dir, name string, args ...string) error {
 	out := &tailBuffer{limit: aicrOutputBytes}
 	command := exec.CommandContext(ctx, name, args...)
 	command.Dir = dir

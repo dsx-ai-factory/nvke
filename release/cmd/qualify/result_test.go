@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -119,7 +120,7 @@ func TestResultCmdSucceeds(t *testing.T) {
 	if stream.Capabilities["gpu"] != "h100" || stream.Capabilities["kube"] != "1.34" {
 		t.Errorf("capabilities = %v, want gpu=h100 kube=1.34 stamped from plan.json", stream.Capabilities)
 	}
-	if want := (qualification.Parameters{TenantWorkers: 3, SuiteTimeoutMinutes: 215}); stream.Parameters != want {
+	if want := (qualification.Parameters{TenantWorkers: 3, SuiteTimeoutMinutes: 215}); !reflect.DeepEqual(stream.Parameters, want) {
 		t.Errorf("parameters = %+v, want %+v stamped from plan.json", stream.Parameters, want)
 	}
 	if len(stream.Dependencies) != 1 || stream.Dependencies[0].Name != "kube" || stream.Dependencies[0].Version != "1.34.2" {

@@ -712,6 +712,8 @@ jobs:
       # Writing the site node's SSH key is for a workstation: on a runner it
       # would sit beside the files the artifacts step uploads.
       NODE_KEY_DIR: ""
+      # No runner carries kaps-bench's files, so only qualify local names a folder.
+      E2E_KAPS_BENCH_DIR: ""
       # ghcr or nvcr. Only the runner pulls from it: every image it names is
       # staged onto the node as an archive. The node's own pull is CAPNICo,
       # which is published to GHCR alone, so the GHCR login below stays either
@@ -1345,6 +1347,7 @@ jobs:
             "stream environment|E2E_ENVIRONMENT|||"
             "tenant workers|E2E_TENANT_WORKERS|||"
             "suite timeout minutes|SUITE_TIMEOUT_MINUTES|||"
+            "kaps-bench run specs|E2E_KAPS_BENCH_RUN_SPECS|||"
           )
 
           # A row nobody remembers to add is the whole failure mode: the

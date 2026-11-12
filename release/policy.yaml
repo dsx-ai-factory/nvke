@@ -104,8 +104,9 @@ spec:
   # stream.
   #
   # `parameters` are the settings of a stream's run: the environment file it
-  # runs against, the workers its tenant gets, the suite's timeout and the
-  # TestGrid group it publishes to in place of the subject's. They
+  # runs against, the workers its tenant gets, the suite's timeout, the
+  # TestGrid group it publishes to in place of the subject's and the kaps-bench
+  # run specs the suite runs on the tenant. They
   # configure the run and nothing selects on them, which is why they are not
   # capabilities. Only the fields declared in Parameters are accepted, and a
   # stream that names none runs as the others do.
@@ -126,11 +127,13 @@ spec:
     # The NVKE Scale Forge site, which sits in another org and offers CPU
     # machines only: the site node, the control plane and the workers all land
     # on its high memory CPU type. The tenant has three workers, and the suite
-    # may run for 215 minutes, which the timeouts around it are derived from.
+    # may run for 260 minutes, which the timeouts around it are derived from.
     # Its results go to their own TestGrid group, nvke-scale.
+    # Once the tenant checks pass, up to 45 of those minutes install Prometheus
+    # and run kaps-bench's smoke run spec.
     - name: forge-cpu-amd64-ubuntu-24.04-kube-1.36-perf
       capabilities: {provider: forge, machineType: cpu, arch: amd64, ubuntu: "24.04", kube: "1.36", profile: perf}
-      parameters: {environment: forge-perf, tenantWorkers: 3, suiteTimeoutMinutes: 215, testGridGroup: nvke-scale}
+      parameters: {environment: forge-perf, tenantWorkers: 3, suiteTimeoutMinutes: 260, testGridGroup: nvke-scale, kapsBenchRunSpecs: [smoke/smoke.yaml]}
 
     # The DSX datahall, which is amd64 throughout, on L40S. The gpu is matched
     # against the model the datahall's instance type provides in dsx.yaml.

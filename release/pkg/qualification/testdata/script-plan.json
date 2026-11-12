@@ -125,7 +125,11 @@
           "parameters": {
             "environment": "forge-perf",
             "tenantWorkers": 3,
-            "suiteTimeoutMinutes": 215
+            "suiteTimeoutMinutes": 215,
+            "kapsBenchRunSpecs": [
+              "smoke/smoke.yaml",
+              "netperf/hostnet-stream.yaml"
+            ]
           },
           "dependencies": [
             {

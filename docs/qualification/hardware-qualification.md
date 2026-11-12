@@ -301,6 +301,7 @@ names another.
 | `steps.env` | What each step resolved |
 | `e2e-config.yaml`, `site-inputs/` | The suite's config, and the archives the site was given |
 | diagnostics | On a failure, what the suite collected |
+| `kaps-bench-results.tar.gz` | kaps-bench's output dir from every run spec it ran, present when kaps-bench ran |
 
 A run that fails once its stream is chosen still writes
 `qualify-result.json`, errored when the suite never wrote a report, as the
@@ -311,8 +312,9 @@ The jump hosts and the token issuer are scrubbed from the text files (the log,
 the JUnit and JSON reports, `tenant-diagnostics.json` and
 `site-cluster-state.txt`) before they are moved there. Nothing else is
 scrubbed: those files still carry node addresses, the Forge ids, the NGC org
-and the Teleport login, and `nvkectl-diagnostics.tar.gz` and the
-`site-bundle*` files are moved as the suite wrote them. Only
+and the Teleport login, and `nvkectl-diagnostics.tar.gz`,
+`kaps-bench-results.tar.gz` and the `site-bundle*` files are moved as the suite
+wrote them. Only
 `qualify-result.json` is fit to attach to a pull request.
 
 When anything was built, the result is written from `plan-as-run.json`, so it
@@ -552,6 +554,7 @@ Planning needs `QUALIFY_E2E_NGC_ORG` whatever the registry, because
 | `QUALIFY_E2E_SITE_CONTROLLER_VERSION` | The plan's controller | The site controller version, in place of the one the plan names |
 | `SITE_DEPLOY_PATH_REF` | The controller's commit | The commit the deploy path is exported from |
 | `NVKE_CONTROLLER_NAMESPACE`, `NVKE_CONTROLLER_SERVICE` | `nvke-controller` | The name the controller is installed under. A release cut before the rename uses `nke-controller`. |
+| `E2E_KAPS_BENCH_DIR` | None | Folder holding kaps-bench, which the stream's `kapsBenchRunSpecs` run from. CI sets it for the perf stream. |
 
 ### How it stays the same run as CI
 
@@ -777,8 +780,11 @@ that takes its scope from the repository variable `QUALIFY_E2E_SCOPE` while it
 is `perf`, such as a `qualify-e2e` label run, runs it, and `full` leaves it
 out. A stream can also carry
 `parameters` in `release/policy.yaml`: the environment file it runs against,
-the workers its tenant gets, the suite's timeout and the TestGrid group it
-publishes to, which is `nvke-scale` for the perf stream. The plan records them,
+the workers its tenant gets, the suite's timeout, the TestGrid group it
+publishes to, which is `nvke-scale` for the perf stream, and the kaps-bench run
+specs (`kapsBenchRunSpecs`, such as `smoke/smoke.yaml`) the suite runs on the
+tenant once its checks pass, after installing Prometheus in `monitoring` with
+`helm`. The plan records them,
 and the stream's result says which it ran with. The job's timeout and the timeout of
 `go test` follow from the suite's, so they cannot be set to disagree.
 

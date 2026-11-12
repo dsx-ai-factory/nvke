@@ -4,6 +4,7 @@
 package qualification
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
@@ -70,7 +71,7 @@ func testPolicy() *Policy {
 				{
 					Name:         "arm64-1.34",
 					Capabilities: map[string]string{"arch": "arm64", "kube": "1.34"},
-					Parameters:   Parameters{TenantWorkers: 3, SuiteTimeoutMinutes: 215, TestGridGroup: "nvke-scale"},
+					Parameters:   Parameters{TenantWorkers: 3, SuiteTimeoutMinutes: 215, TestGridGroup: "nvke-scale", KapsBenchRunSpecs: []string{"smoke/smoke.yaml"}},
 				},
 				{Name: "amd64-1.35", Capabilities: map[string]string{"arch": "amd64", "kube": "1.35"}},
 			},
@@ -277,12 +278,44 @@ func TestPlanCarriesStreamParameters(t *testing.T) {
 
 	want := map[string]Parameters{
 		"amd64-1.34": {},
-		"arm64-1.34": {TenantWorkers: 3, SuiteTimeoutMinutes: 215, TestGridGroup: "nvke-scale"},
+		"arm64-1.34": {TenantWorkers: 3, SuiteTimeoutMinutes: 215, TestGridGroup: "nvke-scale", KapsBenchRunSpecs: []string{"smoke/smoke.yaml"}},
 	}
 	for _, s := range got.Combinations[0].Streams {
-		if s.Parameters != want[s.Name] {
+		if !reflect.DeepEqual(s.Parameters, want[s.Name]) {
 			t.Errorf("%s carries %+v, want %+v", s.Name, s.Parameters, want[s.Name])
 		}
+	}
+}
+
+// TestPlanStreamWithoutKapsBenchRunSpecs checks that a stream setting no
+// kaps-bench run specs renders in plan.json as it did before the key existed.
+func TestPlanStreamWithoutKapsBenchRunSpecs(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		p    Parameters
+		want string
+	}{
+		{"no parameters", Parameters{}, `{"name":"a","capabilities":{"arch":"amd64"}}`},
+		{
+			"other parameters",
+			Parameters{TenantWorkers: 3, SuiteTimeoutMinutes: 215},
+			`{"name":"a","capabilities":{"arch":"amd64"},"parameters":{"tenantWorkers":3,"suiteTimeoutMinutes":215}}`,
+		},
+		{
+			"run specs",
+			Parameters{KapsBenchRunSpecs: []string{"smoke/smoke.yaml"}},
+			`{"name":"a","capabilities":{"arch":"amd64"},"parameters":{"kapsBenchRunSpecs":["smoke/smoke.yaml"]}}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := json.Marshal(Stream{Name: "a", Capabilities: map[string]string{"arch": "amd64"}, Parameters: tc.p})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(b) != tc.want {
+				t.Errorf("plan stream = %s, want %s", b, tc.want)
+			}
+		})
 	}
 }
 

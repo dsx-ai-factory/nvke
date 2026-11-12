@@ -4,6 +4,7 @@
 package qualification
 
 import (
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -143,6 +144,26 @@ func TestLoadPolicyRejects(t *testing.T) {
 			strings.Replace(validPolicy, `      capabilities: {kube: "1.34"}`, "      capabilities: {kube: \"1.34\"}\n      parameters: {testGridGroup: NVKE-perf}", 1),
 			"not a TestGrid group's name",
 		},
+		{
+			"a kaps-bench run spec outside run-specs",
+			strings.Replace(validPolicy, `      capabilities: {kube: "1.34"}`, "      capabilities: {kube: \"1.34\"}\n      parameters: {kapsBenchRunSpecs: [../smoke.yaml]}", 1),
+			`kapsBenchRunSpecs entry "../smoke.yaml"`,
+		},
+		{
+			"a kaps-bench run spec carrying a comma",
+			strings.Replace(validPolicy, `      capabilities: {kube: "1.34"}`, "      capabilities: {kube: \"1.34\"}\n      parameters: {kapsBenchRunSpecs: [\"a,b.yaml\"]}", 1),
+			`kapsBenchRunSpecs entry "a,b.yaml"`,
+		},
+		{
+			"an empty kaps-bench run spec list",
+			strings.Replace(validPolicy, `      capabilities: {kube: "1.34"}`, "      capabilities: {kube: \"1.34\"}\n      parameters: {kapsBenchRunSpecs: []}", 1),
+			"kapsBenchRunSpecs is empty",
+		},
+		{
+			"an empty kaps-bench run spec",
+			strings.Replace(validPolicy, `      capabilities: {kube: "1.34"}`, "      capabilities: {kube: \"1.34\"}\n      parameters: {kapsBenchRunSpecs: [\"\"]}", 1),
+			`kapsBenchRunSpecs entry ""`,
+		},
 		{"no scopes", strings.Replace(validPolicy, "    full: {}\n", "", 1), "spec.scopes is empty"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -197,16 +218,16 @@ spec:
       capabilities: {provider: forge, kube: "1.34"}
     - name: b
       capabilities: {provider: forge, profile: perf, kube: "1.34"}
-      parameters: {environment: forge-perf, tenantWorkers: 3, suiteTimeoutMinutes: 215}
+      parameters: {environment: forge-perf, tenantWorkers: 3, suiteTimeoutMinutes: 215, testGridGroup: nvke-scale, kapsBenchRunSpecs: [smoke/smoke.yaml]}
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := p.Spec.Streams[0].Parameters; got != (Parameters{}) {
+	if got := p.Spec.Streams[0].Parameters; !reflect.DeepEqual(got, Parameters{}) {
 		t.Errorf("a stream naming no parameters has %+v", got)
 	}
-	want := Parameters{Environment: "forge-perf", TenantWorkers: 3, SuiteTimeoutMinutes: 215}
-	if got := p.Spec.Streams[1].Parameters; got != want {
+	want := Parameters{Environment: "forge-perf", TenantWorkers: 3, SuiteTimeoutMinutes: 215, TestGridGroup: "nvke-scale", KapsBenchRunSpecs: []string{"smoke/smoke.yaml"}}
+	if got := p.Spec.Streams[1].Parameters; !reflect.DeepEqual(got, want) {
 		t.Errorf("parameters = %+v, want %+v", got, want)
 	}
 }
@@ -296,6 +317,27 @@ func TestShippedPolicyKeepsEachDSXScopeToItsStreams(t *testing.T) {
 		}
 		if !slices.Equal(selected, want) {
 			t.Errorf("scope %s selects %v, want %v", name, selected, want)
+		}
+	}
+}
+
+// TestShippedPolicyRunsKapsBenchOnThePerfStreamOnly checks that the perf stream
+// runs kaps-bench's smoke spec and that no other stream runs kaps-bench.
+func TestShippedPolicyRunsKapsBenchOnThePerfStreamOnly(t *testing.T) {
+	t.Log("Doing: loading the shipped policy")
+	p, err := LoadPolicy("../../policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("Testing: the perf stream runs smoke/smoke.yaml and no other stream runs a run spec")
+	for _, s := range p.Spec.Streams {
+		var want []string
+		if s.Capabilities["profile"] == "perf" {
+			want = []string{"smoke/smoke.yaml"}
+		}
+		if got := s.Parameters.KapsBenchRunSpecs; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s runs kaps-bench run specs %q, want %q", s.Name, got, want)
 		}
 	}
 }

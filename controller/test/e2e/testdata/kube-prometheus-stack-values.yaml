@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+grafana:
+  enabled: false
+alertmanager:
+  enabled: false
+
+prometheusOperator:
+  # Operator TLS reads the certificate the webhook job makes, so both are off together.
+  admissionWebhooks:
+    enabled: false
+  tls:
+    enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 6h
+    storageSpec: {}
+    # Scrape every ServiceMonitor and PodMonitor, not only this release's.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+
+kubelet:
+  enabled: true
+  serviceMonitor:
+    cAdvisor: true
+
+# A tenant's scheduler and controller manager listen on localhost only, so nothing can scrape them.
+kubeScheduler:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+
+# kube-state-metrics and node-exporter run the versions the NVKE Scale clusters run, so their series compare.
+kube-state-metrics:
+  image:
+    tag: v2.12.0
+prometheus-node-exporter:
+  image:
+    tag: v1.11.0

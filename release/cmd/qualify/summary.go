@@ -231,6 +231,9 @@ func parameters(b *strings.Builder, p qualification.Parameters) {
 	if p.TestGridGroup != "" {
 		parts = append(parts, "TestGrid group "+code(p.TestGridGroup))
 	}
+	if len(p.KapsBenchRunSpecs) > 0 {
+		parts = append(parts, "kaps-bench run specs "+code(strings.Join(p.KapsBenchRunSpecs, ",")))
+	}
 	if len(parts) > 0 {
 		fmt.Fprintf(b, "\n%s\n", strings.Join(parts, " · "))
 	}

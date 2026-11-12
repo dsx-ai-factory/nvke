@@ -45,6 +45,11 @@ var (
 	// artifactsDir is where specs write files for the run to keep, such as
 	// kube-bench scan results. Empty writes none.
 	artifactsDir string
+
+	// kapsBenchRunSpecs are the kaps-bench run specs run on the hardware tenant once its checks pass.
+	kapsBenchRunSpecs []string
+	// kapsBenchDir is the folder kaps-bench runs from, holding its engines, KPIs and run specs.
+	kapsBenchDir string
 )
 
 func init() {
@@ -54,6 +59,13 @@ func init() {
 	flag.StringVar(&capabilitiesFlag, "e2e.capabilities", "", "capabilities the run requires, e.g. gpu=gb200,arch=amd64,kube=1.37")
 	flag.IntVar(&tenantWorkers, "e2e.tenant-workers", 1, "worker nodes in the hardware tenant the nico-forge, nico-dsx and site lanes create")
 	flag.StringVar(&artifactsDir, "e2e.artifacts-dir", "", "directory specs write artifacts to, such as kube-bench scan results; empty writes none")
+	flag.Func("e2e.kaps-bench-run-specs", "comma separated kaps-bench run specs to run on the hardware tenant after its checks, e.g. smoke/smoke.yaml",
+		func(value string) error {
+			specs, err := parseKapsBenchRunSpecs(value)
+			kapsBenchRunSpecs = specs
+			return err
+		})
+	flag.StringVar(&kapsBenchDir, "e2e.kaps-bench-dir", "", "absolute path of the folder holding kaps-bench's bin, kpis, preflight, run-specs and workloads")
 }
 
 // The flags are parsed once and shared. Specs read them through the accessors
