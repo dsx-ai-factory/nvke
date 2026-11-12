@@ -4,7 +4,10 @@
 package e2e
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"slices"
@@ -30,21 +33,14 @@ const validateProfileEnv = "NVKE_VALIDATE_PROFILE"
 // no profile was given.
 var validateProfileSummary string
 
-// validateExclusionSummary names the labels the run left out, for the report.
-// Empty when none were. A filtered-out spec is absent from the JUnit report,
-// not skipped in it, so the report would not otherwise show it was left out.
-var validateExclusionSummary string
-
-// runNotes are the report lines that say how the run was shaped before any
-// spec read its settings.
+// runNotes are the report lines that say what the profile set before any spec
+// read its settings. The labels a run left out need none: the JUnit report
+// records the label filter as a suite property.
 func runNotes() []string {
-	var notes []string
-	for _, note := range []string{validateProfileSummary, validateExclusionSummary} {
-		if note != "" {
-			notes = append(notes, note)
-		}
+	if validateProfileSummary == "" {
+		return nil
 	}
-	return notes
+	return []string{validateProfileSummary}
 }
 
 // siteExpectationEnvs are the inputs siteExpectationsFromEnv reads, each of
@@ -72,6 +68,7 @@ var profileKeys = slices.Concat(
 		controller.EnvPort,
 		"NVKE_CONTROLLER_EXPECTED_VERSION",
 		"NVKE_CONTROLLER_HEALTH_TIMEOUT",
+		authtoken.EnvAudience,
 		authtoken.EnvNamespace,
 		authtoken.EnvServiceAccount,
 		siteKubernetesVersionEnv,
@@ -104,15 +101,21 @@ func tenantTwins(siteEnvs []string) []string {
 // loadValidateProfile reads a profile. A value is a scalar, taken as written so
 // that 1.30 stays 1.30 rather than becoming a number, or a list of scalars,
 // joined with commas. The APISERVER_FLAGS inputs separate with semicolons,
-// because their values hold commas, so they take a scalar.
+// because their values hold commas, so they take a scalar. A blank value or an
+// empty list would set nothing, so it is refused rather than read as unset.
 func loadValidateProfile(path string) (map[string]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", validateProfileEnv, err)
 	}
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
+	if err := decoder.Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("%s: parsing %s: %w", validateProfileEnv, path, err)
+	}
+	var next yaml.Node
+	if err := decoder.Decode(&next); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%s: %s holds more than one YAML document", validateProfileEnv, path)
 	}
 	values := map[string]string{}
 	if len(doc.Content) == 0 {
@@ -134,7 +137,7 @@ func loadValidateProfile(path string) (map[string]string, error) {
 		}
 		switch valueNode.Kind {
 		case yaml.ScalarNode:
-			if valueNode.Tag == "!!null" {
+			if valueNode.Tag == "!!null" || strings.TrimSpace(valueNode.Value) == "" {
 				return nil, fmt.Errorf("%s: %s gives %s no value", validateProfileEnv, path, key)
 			}
 			values[key] = valueNode.Value
@@ -142,9 +145,12 @@ func loadValidateProfile(path string) (map[string]string, error) {
 			if strings.HasSuffix(key, "_APISERVER_FLAGS") {
 				return nil, fmt.Errorf("%s: %s gives %s as a list; it takes a string of name=value separated by semicolons", validateProfileEnv, path, key)
 			}
+			if len(valueNode.Content) == 0 {
+				return nil, fmt.Errorf("%s: %s gives %s an empty list", validateProfileEnv, path, key)
+			}
 			entries := make([]string, 0, len(valueNode.Content))
 			for _, entry := range valueNode.Content {
-				if entry.Kind != yaml.ScalarNode || entry.Tag == "!!null" {
+				if entry.Kind != yaml.ScalarNode || entry.Tag == "!!null" || strings.TrimSpace(entry.Value) == "" {
 					return nil, fmt.Errorf("%s: %s: %s holds an entry that is not a string", validateProfileEnv, path, key)
 				}
 				entries = append(entries, entry.Value)
@@ -158,27 +164,26 @@ func loadValidateProfile(path string) (map[string]string, error) {
 }
 
 // applyValidateProfile sets every profile value whose variable the environment
-// leaves unset or blank, and returns the keys it set and the keys the
-// environment overrode, each sorted. Blank counts as unset because every
-// input reads a blank value as unset.
-func applyValidateProfile(values map[string]string, getenv func(string) string, setenv func(string, string) error) (set, overridden []string, err error) {
+// leaves unset, and returns the keys it set and the keys the environment
+// overrode, each sorted. A variable set blank overrides too: every input reads
+// blank as its built-in default, so blanking one is how a run asks for that.
+func applyValidateProfile(values map[string]string, lookupEnv func(string) (string, bool), setenv func(string, string)) (set, overridden []string) {
 	for _, key := range slices.Sorted(maps.Keys(values)) {
-		if strings.TrimSpace(getenv(key)) != "" {
+		if _, ok := lookupEnv(key); ok {
 			overridden = append(overridden, key)
 			continue
 		}
-		if err := setenv(key, values[key]); err != nil {
-			return nil, nil, fmt.Errorf("%s: setting %s: %w", validateProfileEnv, key, err)
-		}
+		setenv(key, values[key])
 		set = append(set, key)
 	}
-	return set, overridden, nil
+	return set, overridden
 }
 
-// useValidateProfile applies the profile validateProfileEnv names, if any, to the
-// process environment. It runs before the spec tree is built, because specs
-// read their inputs while building it.
-func useValidateProfile() (string, error) {
+// useValidateProfile applies the profile validateProfileEnv names, if any,
+// through setenv, which is the test's so the values end with it. It runs
+// before the spec tree is built, because specs read their inputs while
+// building it.
+func useValidateProfile(setenv func(string, string)) (string, error) {
 	path := strings.TrimSpace(os.Getenv(validateProfileEnv))
 	if path == "" {
 		return "", nil
@@ -187,10 +192,7 @@ func useValidateProfile() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	set, overridden, err := applyValidateProfile(values, os.Getenv, os.Setenv)
-	if err != nil {
-		return "", err
-	}
+	set, overridden := applyValidateProfile(values, os.LookupEnv, setenv)
 	summary := fmt.Sprintf("%s=%s set %s", validateProfileEnv, path, strings.Join(set, ", "))
 	if len(set) == 0 {
 		summary = fmt.Sprintf("%s=%s set nothing", validateProfileEnv, path)

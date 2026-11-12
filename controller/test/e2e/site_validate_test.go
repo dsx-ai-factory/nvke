@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/site"
 )
@@ -64,7 +65,7 @@ func siteValidateFromEnv(getenv func(string) string, namespaceFile string) (site
 		return siteValidateSettings{}, err
 	}
 
-	namespaces := siteNamespaces()
+	namespaces := siteNamespaces(cmp.Or(getenv(controller.EnvNamespace), controller.ServiceNamespace))
 	if raw := strings.TrimSpace(getenv(siteNamespacesEnv)); raw != "" {
 		namespaces = nil
 		for name := range strings.SplitSeq(raw, ",") {

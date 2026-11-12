@@ -234,7 +234,7 @@ func TestE2E(t *testing.T) {
 	klog.SetLogger(GinkgoLogr)
 	slog.SetDefault(slog.New(logr.ToSlogHandler(GinkgoLogr)))
 
-	summary, err := useValidateProfile()
+	summary, err := useValidateProfile(t.Setenv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +263,6 @@ func TestE2E(t *testing.T) {
 		suiteConfig.LabelFilter = withExclusions(suiteConfig.LabelFilter, exclude)
 		// A run whose exclusions leave nothing would otherwise pass.
 		suiteConfig.FailOnEmpty = true
-		validateExclusionSummary = fmt.Sprintf("%s left out %s: label filter %s", validateExcludeLabelsEnv, strings.Join(exclude, ", "), suiteConfig.LabelFilter)
 		fmt.Println("label filter: " + suiteConfig.LabelFilter)
 	}
 	RunSpecs(t, "NVKE E2E Suite", suiteConfig, reporterConfig)

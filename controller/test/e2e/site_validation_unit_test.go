@@ -18,6 +18,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
+
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 )
 
 func TestUnit_SiteNodeProblems(t *testing.T) {
@@ -470,7 +472,7 @@ func TestUnit_SiteNamespacesCoverTheDeployPath(t *testing.T) {
 	}
 
 	listed := map[string]bool{}
-	for _, ns := range siteNamespaces() {
+	for _, ns := range siteNamespaces(controller.ServiceNamespace) {
 		listed[ns.name] = true
 		if strings.HasPrefix(ns.source, "deploy path item") {
 			require.Contains(t, installed, ns.name, "%s is listed as coming from the deploy path, which no longer installs into it", ns.name)

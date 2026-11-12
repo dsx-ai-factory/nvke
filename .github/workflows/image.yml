@@ -483,9 +483,13 @@ jobs:
           if docker run --rm -e NVKE_VALIDATE_PROFILE=/profile.yaml \
             -v "${RUNNER_TEMP}/bad-profile.yaml:/profile.yaml:ro" \
             -v "${RUNNER_TEMP}/profile-artifacts:/artifacts" \
-            nvke/nvke-validate:ci -ginkgo.dry-run; then
+            nvke/nvke-validate:ci -ginkgo.dry-run > "${RUNNER_TEMP}/bad-profile.log" 2>&1; then
+            cat "${RUNNER_TEMP}/bad-profile.log"
             echo "::error::a profile setting NVKE_SITE_VALIDATE did not fail the run"; exit 1
           fi
+          cat "${RUNNER_TEMP}/bad-profile.log"
+          grep -q 'sets NVKE_SITE_VALIDATE, which a profile cannot' "${RUNNER_TEMP}/bad-profile.log" \
+            || { echo "::error::the bad profile failed, but not because it set NVKE_SITE_VALIDATE"; exit 1; }
 
 # Not built here: controller/hack/Dockerfile.controller.tilt — it only copies a
 # prebuilt binary, so it has nothing to verify without a preceding build.

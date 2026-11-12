@@ -368,7 +368,7 @@ Configure it with the [health spec variables](#health-specs) and these:
 | --- | --- | --- |
 | `NVKE_SITE_VALIDATE` | Turns the site checks on. The image sets it; elsewhere they skip. | Unset |
 | `NVKE_VALIDATE_PROFILE` | Path to a [validation profile](#validation-profile): defaults for these variables, for a site not laid out like `deploy/nico`. | Unset |
-| `NVKE_VALIDATE_EXCLUDE_LABELS` | Comma-separated labels whose checks the run leaves out, such as `issues-certificate` where cert-manager approves only what a `CertificateRequestPolicy` allows. Added to whatever else selects the checks, including `-ginkgo.label-filter`; a run it leaves with nothing fails. | Unset |
+| `NVKE_VALIDATE_EXCLUDE_LABELS` | Comma-separated labels whose checks the run leaves out. It takes only labels that mark a check some sites cannot pass, so far `issues-certificate`, for a site whose cert-manager approves only what a `CertificateRequestPolicy` allows; any other label fails the run. Added to whatever else selects the checks, including `-ginkgo.label-filter`; a run it leaves with nothing fails. | Unset |
 | `NVKE_SITE_KUBERNETES_VERSION` | The Kubernetes version the site was built with. Unset fails the version check. | Unset |
 | `NVKE_SITE_NAMESPACES` | Comma-separated namespaces that must each run a ready pod, replacing the default list: `kube-system`, `cert-manager`, `capi-system` and those `deploy/nico` installs into. | The `deploy/nico` list |
 | `NVKE_SITE_PROBE_NAMESPACE` | Where the probe pods and every `creates` object go. | The pod's own namespace, else `default` |
@@ -428,18 +428,21 @@ docker run --rm -v "$PWD/validate-profile.yaml:/profile.yaml:ro" \
 
 The image runs as UID 65532, so the file must be readable by others. In a pod,
 mount it from a ConfigMap, whose files are by default. A variable set in the
-environment wins over the profile, so one run can still change one value. The
-run log and the report's validation inputs say which keys the profile set and
-which the environment overrode, and which labels were left out. An excluded
-check is absent from the JUnit report, not listed as skipped, so those inputs
-are the record that it was left out.
+environment wins over the profile, so one run can still change one value; set
+it blank to get its built-in default back. The run log and the report's
+validation inputs say which keys the profile set and which the environment
+overrode. An excluded check is absent from the JUnit report, not listed as
+skipped; the run log prints the label filter, and the JUnit report records it
+in its `LabelFilter` property.
 
 A profile cannot set the switches that turn a run on (`NVKE_SITE_VALIDATE`,
 `NVKE_TENANT_VALIDATE`, `NVKE_E2E_REQUIRE_EXPECTED_VERSION`, which the image
 sets) or the variables that name one tenant (`NVKE_TENANT_CLUSTER`,
 `NVKE_TENANT_TOKEN_SECRET`, `NVKE_TENANT_KUBERNETES_VERSION`). An unknown key
-fails the run, as does a profile named but missing. It holds no credentials:
-none of the variables it can set is one.
+fails the run, as does a profile named but missing, a key given an empty
+value or list, or a second YAML document. It holds no credentials: none of the
+variables it can set is one, and it cannot turn authentication off
+(`NKE_E2E_AUTH_DISABLE`).
 
 This repository ships no profiles. A site's profile belongs with the rest of
 that site's configuration.
