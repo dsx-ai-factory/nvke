@@ -9,7 +9,12 @@ contract is [SPEC.md](SPEC.md).
 > **Canonical licensing:** For internal/dev use only - contact Canonical
 > before commercial production use.
 
-26.04 LTS is the default. 24.04 LTS is built and published alongside it, for
+The supported way to obtain a node OS image is to
+[build it from source](#build-the-os-image). Prebuilt FDE and non-FDE node
+images in GHCR, NVCR and the release S3/CloudFront CDN are private internal
+artifacts, not public downloads.
+
+26.04 LTS is the default. 24.04 LTS is also available as a build option, for
 consumers whose other software pins that release — see `UBUNTU_RELEASE` under
 [Build the OS image](#build-the-os-image).
 
@@ -513,32 +518,20 @@ make run-vm QCOW=packer/output-non-fde/nvke-node-non-fde-ubuntu-26.04.1-arm64.qc
 
 ## Release
 
-An `os-image/vX.Y.Z` tag (or `os-image/vX.Y.Z-rc.N`) runs
-`.github/workflows/os-image-artifact.yml`, which builds and validates the FDE
-and non-FDE images for both architectures and, only if that succeeds, publishes
-the qcow2s to NVCR, and to S3 with each one's SBOM and checksums beside it
-and `nvke-os-image-check`. GHCR
-gets them as OCI artifacts under arch-suffixed `sha-<commit>` tags
-(`main-sha-<commit>` from a run on `main`) — not one multi-platform manifest
-shared across arches, see the workflow's header comment for why. The version
-tags on GHCR are pushed only when the repository variable `NVKE_GITHUB_PUBLISH`
-names `os-image` (see `docs/artifact-publication.md`).
+For an installation, [build the OS image](#build-the-os-image), then follow
+[Build and host node OS images](../docs/operate/build-node-images.md) to serve
+your image to your machines.
+
+### Internal maintainer publication
+
+The publication pipeline produces private artifacts for internal use. Its
+registries and release CDN are not a supported download path for external
+users. Maintainers can find the tag triggers, destinations and publication
+controls in the [artifact publication reference](../docs/artifact-publication.md).
 
 The workflow selects the source-owned Make collection target for each matrix
 variant. Make copies the final QCOW2 under its existing basename and verifies
-that the publication copy is byte-identical. Existing `oras pull` output
-remains one qcow2.
-
-The pulled file keeps the name Packer gave it, so it carries the Ubuntu point
-release and the architecture and two arches can share a directory:
-
-```bash
-oras pull ghcr.io/dsx-ai-factory/nvke/os-image-fde:vX.Y.Z-amd64 --platform linux/amd64
-oras pull ghcr.io/dsx-ai-factory/nvke/os-image-fde:vX.Y.Z-arm64 --platform linux/arm64
-oras pull ghcr.io/dsx-ai-factory/nvke/os-image-non-fde:vX.Y.Z-amd64 --platform linux/amd64
-oras pull ghcr.io/dsx-ai-factory/nvke/os-image-non-fde:vX.Y.Z-arm64 --platform linux/arm64
-# -> nvke-node-{fde,non-fde}-ubuntu-26.04.1-{amd64,arm64}.qcow2
-```
+that the publication copy is byte-identical.
 
 **FDE security note**: the published image's `LUKS_PASSPHRASE` is the
 shared, documented build-time placeholder (`changeit`), baked into both a

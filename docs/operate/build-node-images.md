@@ -2,6 +2,10 @@
 
 Build a node OS image for NVIDIA Kubernetes Engine (NVKE), make its boot files available over HTTP(S), verify downloads, and register the image for provisioning. Build and host the image before preparing nodes; register it after installing the management plane.
 
+The supported path is to build the node OS image from source and host it for
+your site. The prebuilt node images in GHCR, NVCR and the release CloudFront
+CDN are private internal artifacts; they are not public downloads.
+
 ## Before you begin
 
 - You have read [Plan your installation](plan-installation.md).

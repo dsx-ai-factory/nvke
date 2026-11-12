@@ -12,9 +12,14 @@ make test-integration-qemu
 # Real VM tests — Linux (libvirt)
 make test-integration-libvirt
 
-# Run a specific test
+# Internal maintainers with access to the private production image
 make test-integration-libvirt RUN_TESTS=TestIPXEProductionImageFlow
 ```
+
+`TestIPXEProductionImageFlow` uses a private internal node image on an
+internal CloudFront CDN and requires access to that artifact. For your own node
+image, [build from source](../../../os-image/README.md#build-the-os-image);
+the production-image test is not a public download path.
 
 ## Test backends
 
