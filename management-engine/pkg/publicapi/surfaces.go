@@ -14,10 +14,13 @@ func Tenant() []resource.Registration {
 	}
 }
 
-// Operator exposes create, get, list, update, and delete operations for releases and machine images.
+// Operator exposes create, get, list, update, and delete operations for images, releases, channels, and classes.
 func Operator() []resource.Registration {
 	return []resource.Registration{
 		ClusterRelease(resource.OpCreate, resource.OpGet, resource.OpList, resource.OpUpdate, resource.OpDelete),
 		MachineImage(resource.OpCreate, resource.OpGet, resource.OpList, resource.OpUpdate, resource.OpDelete),
+		ControlPlaneClass(resource.OpCreate, resource.OpGet, resource.OpList, resource.OpUpdate, resource.OpDelete),
+		ClusterReleaseChannel(resource.OpCreate, resource.OpGet, resource.OpList, resource.OpUpdate, resource.OpDelete),
+		NodePoolRelease(resource.OpCreate, resource.OpGet, resource.OpList, resource.OpUpdate, resource.OpDelete),
 	}
 }

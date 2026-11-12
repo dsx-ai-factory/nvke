@@ -55,10 +55,12 @@ What the node needs, all present on the reference instance type:
 - egress to `registry-1.docker.io` (the Bitnami OCI chart),
   `spiffe.github.io` and `go.temporal.io` (the spire-crds and temporal
   repositories), and GitHub if the spire chart is materialised there
-- for the nktp item, egress to `open-telemetry.github.io`,
-  `prometheus-community.github.io` and `kubernetes-sigs.github.io`, where the
-  chart's dependencies come from, and to `docker.io`, `ghcr.io`, `quay.io` and
-  `registry.k8s.io`, where its images come from
+- for the nktp item, egress to `helm.ngc.nvidia.com` and NGC's download hosts
+  `files.ngc.nvidia.com`, `xfiles.ngc.nvidia.com` and `xlfiles.ngc.nvidia.com`
+  ([NGC network protocols](https://docs.nvidia.com/ngc/latest/ngc-user-guide.html#nvidia-ngc-network-protocols)),
+  for the chart and its bundled dependencies. NGC redirects the chart index and
+  archive to a download host, currently `xfiles.ngc.nvidia.com`. Egress to
+  `docker.io`, `ghcr.io`, `quay.io` and `registry.k8s.io` is for its images
 - to install from an NVKR release: add `--release release.json`, the
   `nvkr.dev/release-description/v1` JSON that `nvkr release export
   --reference <repo@digest>` writes. The export describes the release; it
@@ -217,10 +219,12 @@ afterwards.
 
 ## Telemetry
 
-The `nktp` item installs the NKTP chart from this checkout
-(`nktp/deploy/charts/nktp`), or from the archive a render against a release
-that carries the `nktp` chart artifact put under `charts/`, with the values
-in `nktp/values.yaml`. It comes
+The `nktp` item installs the NKTP chart at the version `nktp/release.yaml`
+pins, from NGC's public Helm repository (`https://helm.ngc.nvidia.com/nvidia`),
+or from the archive a render against a release that carries the `nktp` chart
+artifact put under `charts/`, with the values in `nktp/values.yaml`. The
+watchdog and the three gateways each claim a 1Gi PersistentVolume for their
+exporter queues, from the default StorageClass. It comes
 straight after `capnico` because it installs the monitoring CRDs, and three
 later items create monitors that need them:
 

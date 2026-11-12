@@ -78,6 +78,72 @@ func (PublicClusterRelease) Validate() error { return nil }
 // Validate leaves internal schema checks to datastore admission.
 func (ClusterRelease) Validate() error { return nil }
 
+// PublicClusterReleaseChannel reuses the complete approved spec/status of ClusterReleaseChannel.
+// Only metadata is filtered automatically, by its explicit allowlist.
+// +kubebuilder:object:generate=false
+type PublicClusterReleaseChannel struct {
+	Metadata PublicClusterReleaseChannelMetadata `json:"metadata"`
+	Spec     ClusterReleaseChannelSpec           `json:"spec"`
+}
+
+// PublicClusterReleaseChannelMetadata contains only the metadata approved for this public resource.
+// +kubebuilder:object:generate=false
+type PublicClusterReleaseChannelMetadata struct {
+	Name              string       `json:"name,omitempty"`
+	CreationTimestamp metav1.Time  `json:"creationTimestamp,omitempty,omitzero"`
+	DeletionTimestamp *metav1.Time `json:"deletionTimestamp,omitempty"`
+	UID               types.UID    `json:"uid,omitempty"`
+}
+
+// Convert maps PublicClusterReleaseChannel to its datastore representation using matching JSON names.
+func (in PublicClusterReleaseChannel) Convert() (ClusterReleaseChannel, error) {
+	return projection.JSON[ClusterReleaseChannel](in)
+}
+
+// Convert exposes only the public fields of ClusterReleaseChannel.
+func (in ClusterReleaseChannel) Convert() (PublicClusterReleaseChannel, error) {
+	return projection.JSON[PublicClusterReleaseChannel](in)
+}
+
+// Validate leaves schema checks to datastore admission. This resource adds no public rules.
+func (PublicClusterReleaseChannel) Validate() error { return nil }
+
+// Validate leaves internal schema checks to datastore admission.
+func (ClusterReleaseChannel) Validate() error { return nil }
+
+// PublicControlPlaneClass reuses the complete approved spec/status of ControlPlaneClass.
+// Only metadata is filtered automatically, by its explicit allowlist.
+// +kubebuilder:object:generate=false
+type PublicControlPlaneClass struct {
+	Metadata PublicControlPlaneClassMetadata `json:"metadata"`
+	Spec     ControlPlaneClassSpec           `json:"spec"`
+}
+
+// PublicControlPlaneClassMetadata contains only the metadata approved for this public resource.
+// +kubebuilder:object:generate=false
+type PublicControlPlaneClassMetadata struct {
+	Name              string       `json:"name,omitempty"`
+	CreationTimestamp metav1.Time  `json:"creationTimestamp,omitempty,omitzero"`
+	DeletionTimestamp *metav1.Time `json:"deletionTimestamp,omitempty"`
+	UID               types.UID    `json:"uid,omitempty"`
+}
+
+// Convert maps PublicControlPlaneClass to its datastore representation using matching JSON names.
+func (in PublicControlPlaneClass) Convert() (ControlPlaneClass, error) {
+	return projection.JSON[ControlPlaneClass](in)
+}
+
+// Convert exposes only the public fields of ControlPlaneClass.
+func (in ControlPlaneClass) Convert() (PublicControlPlaneClass, error) {
+	return projection.JSON[PublicControlPlaneClass](in)
+}
+
+// Validate leaves schema checks to datastore admission. This resource adds no public rules.
+func (PublicControlPlaneClass) Validate() error { return nil }
+
+// Validate leaves internal schema checks to datastore admission.
+func (ControlPlaneClass) Validate() error { return nil }
+
 // PublicMachineImage reuses the complete approved spec/status of MachineImage.
 // Only metadata is filtered automatically, by its explicit allowlist.
 // +kubebuilder:object:generate=false
@@ -110,3 +176,36 @@ func (PublicMachineImage) Validate() error { return nil }
 
 // Validate leaves internal schema checks to datastore admission.
 func (MachineImage) Validate() error { return nil }
+
+// PublicNodeProfile reuses the complete approved spec/status of NodePoolRelease.
+// Only metadata is filtered automatically, by its explicit allowlist.
+// +kubebuilder:object:generate=false
+type PublicNodeProfile struct {
+	Metadata PublicNodeProfileMetadata `json:"metadata"`
+	Spec     NodePoolReleaseSpec       `json:"spec"`
+}
+
+// PublicNodeProfileMetadata contains only the metadata approved for this public resource.
+// +kubebuilder:object:generate=false
+type PublicNodeProfileMetadata struct {
+	Name              string       `json:"name,omitempty"`
+	CreationTimestamp metav1.Time  `json:"creationTimestamp,omitempty,omitzero"`
+	DeletionTimestamp *metav1.Time `json:"deletionTimestamp,omitempty"`
+	UID               types.UID    `json:"uid,omitempty"`
+}
+
+// Convert maps PublicNodeProfile to its datastore representation using matching JSON names.
+func (in PublicNodeProfile) Convert() (NodePoolRelease, error) {
+	return projection.JSON[NodePoolRelease](in)
+}
+
+// Convert exposes only the public fields of NodePoolRelease.
+func (in NodePoolRelease) Convert() (PublicNodeProfile, error) {
+	return projection.JSON[PublicNodeProfile](in)
+}
+
+// Validate leaves schema checks to datastore admission. This resource adds no public rules.
+func (PublicNodeProfile) Validate() error { return nil }
+
+// Validate leaves internal schema checks to datastore admission.
+func (NodePoolRelease) Validate() error { return nil }

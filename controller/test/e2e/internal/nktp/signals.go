@@ -87,7 +87,7 @@ func (v *Validator) NoMetricWithFallbackClusterName() Check {
 }
 
 // PodLogsArrive holds when the namespace's Pods' logs reach Loki, through the
-// node Collector's filelog receiver.
+// node Collector's file_log receiver.
 func (v *Validator) PodLogsArrive(namespace string) Check {
 	return v.some("pod logs from "+namespace+" reach Loki", datasourceLoki, logLines(v.where(eq(namespaceLabel, namespace)), "", startupLogs))
 }

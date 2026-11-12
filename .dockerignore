@@ -33,6 +33,11 @@ agent/build/deb_arm64/
 # bootstrap credentials and must never enter an image layer or BuildKit cache.
 .local/
 **/.local/
+# nico-sim VM overlays and seed ISOs can contain cloud-init credentials or
+# are host-local output; never part of controller builds.
+controller/nico-sim/.dev/
+controller/nico-sim/var/
+.flox/run/
 *.kubeconfig
 **/*.kubeconfig
 coverage.txt

@@ -91,10 +91,25 @@ func TestNodePoolNeedsNewNodeSet(t *testing.T) {
 		},
 	}
 
+	partitionA, partitionB := uuid.New(), uuid.New()
+	withPartition := func(partitionID uuid.UUID) (db.NodePool, db.NodeSet) {
+		pool, nodeSet := basePool, current
+		poolProvider, nodeSetProvider := *pool.Nico, *nodeSet.Nico
+		poolID, nodeSetID := partitionID, partitionA
+		poolProvider.NvLinkLogicalPartitionID = &poolID
+		nodeSetProvider.NvLinkLogicalPartitionID = &nodeSetID
+		pool.Nico, nodeSet.Nico = &poolProvider, &nodeSetProvider
+		return pool, nodeSet
+	}
+	samePartitionPool, samePartitionNodeSet := withPartition(partitionA)
+	newPartitionPool, newPartitionNodeSet := withPartition(partitionB)
+
 	tests := []struct {
 		name string
 		pool db.NodePool
-		want bool
+		// nodeSet replaces current when set.
+		nodeSet *db.NodeSet
+		want    bool
 	}{
 		{name: "matching configuration", pool: basePool},
 		{name: "max surge alone", pool: func() db.NodePool {
@@ -109,6 +124,16 @@ func TestNodePoolNeedsNewNodeSet(t *testing.T) {
 			pool.Nico = &provider
 			return pool
 		}(), want: true},
+		{name: "nvlink logical partition set", pool: func() db.NodePool {
+			pool := basePool
+			provider := *pool.Nico
+			partitionID := uuid.New()
+			provider.NvLinkLogicalPartitionID = &partitionID
+			pool.Nico = &provider
+			return pool
+		}(), want: true},
+		{name: "nvlink logical partition replaced", pool: newPartitionPool, nodeSet: &newPartitionNodeSet, want: true},
+		{name: "same nvlink logical partition", pool: samePartitionPool, nodeSet: &samePartitionNodeSet},
 		{name: "reserved memory changed", pool: func() db.NodePool {
 			pool := basePool
 			pool.SystemReservedMemory = "2Gi"
@@ -118,7 +143,11 @@ func TestNodePoolNeedsNewNodeSet(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, db.NodePoolNeedsNewNodeSet(tc.pool, current))
+			nodeSet := current
+			if tc.nodeSet != nil {
+				nodeSet = *tc.nodeSet
+			}
+			require.Equal(t, tc.want, db.NodePoolNeedsNewNodeSet(tc.pool, nodeSet))
 		})
 	}
 }

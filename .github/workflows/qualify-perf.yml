@@ -1,0 +1,53 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Qualify perf
+
+# Starts on every beta tag and runs the perf scope of Qualify e2e only on a day named in NVKE_PERF_WEEKDAYS; unset means off.
+# A workflow of its own because RC promotion starts on runs named Qualify e2e.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
+
+permissions: {}
+
+jobs:
+  # Decides here, so a day that is not a perf day starts nothing in Qualify e2e.
+  day:
+    name: Check whether today is a perf day
+    if: github.repository_id == '1323115536' && vars.NVKE_PERF_WEEKDAYS != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      perf-day: ${{ steps.check.outputs.perf-day }}
+    steps:
+      - name: Match today against NVKE_PERF_WEEKDAYS
+        id: check
+        shell: bash
+        env:
+          PERF_WEEKDAYS: ${{ vars.NVKE_PERF_WEEKDAYS }}
+        run: |
+          set -euo pipefail
+
+          today="$(LC_ALL=C date -u +%a)"
+          perf_day=false
+          case " ${PERF_WEEKDAYS} " in
+            *" ${today} "*) perf_day=true ;;
+          esac
+          echo "today is ${today} (UTC), NVKE_PERF_WEEKDAYS is '${PERF_WEEKDAYS}', perf day: ${perf_day}"
+          echo "perf-day=${perf_day}" >> "${GITHUB_OUTPUT}"
+
+  perf:
+    needs: day
+    if: needs.day.outputs.perf-day == 'true'
+    uses: ./.github/workflows/qualify-e2e.yml
+    with:
+      scope: perf
+    secrets: inherit
+    # Grants the union of what the called jobs ask for.
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+      id-token: write

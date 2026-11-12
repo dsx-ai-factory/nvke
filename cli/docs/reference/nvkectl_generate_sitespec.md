@@ -61,17 +61,17 @@ nvkectl generate sitespec <cluster-name> [flags]
 ### Options
 
 ```
-  -h, --help              help for sitespec
-      --nodes string      Path to the node CSV, or '-' to read standard input (required)
-      --set stringArray   Set a field, as path=value. Repeatable. Accepts: cluster.cniName, cluster.cniVersion, cluster.controlPlaneVIP, cluster.etcdEncryption, cluster.k8sVersion, cluster.kubeletConfig.systemReservedMemory, cluster.nodeAgentPort, cluster.podCidr, cluster.serviceCidr, clusterName, spire.trustDomain, spire.upstreamCA
+  -h, --help[=true|false]   help for sitespec
+      --nodes string        Path to the node CSV, or '-' to read standard input (required)
+      --set stringArray     Set a field, as path=value. Repeatable. Accepts: cluster.cniName, cluster.cniVersion, cluster.controlPlaneVIP, cluster.etcdEncryption, cluster.k8sVersion, cluster.kubeletConfig.systemReservedMemory, cluster.nodeAgentPort, cluster.podCidr, cluster.serviceCidr, clusterName, spire.trustDomain, spire.upstreamCA
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --json-logs     Emit logs as JSON
-      --site string   Override the active site for this invocation
-  -v, --verbose       Enable debug logging
+      --json-logs[=true|false]   Emit logs as JSON
+      --site string              Override the active site for this invocation
+  -v, --verbose[=true|false]     Enable debug logging
 ```
 
 ### SEE ALSO

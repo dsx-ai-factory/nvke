@@ -85,11 +85,11 @@ Three implementations of the `vm.Runtime` interface:
 |---|---|---|
 | `mock` | any | No real VMs. Instant state transitions. For API/logic testing. |
 | `libvirt` | Linux | KVM/QEMU via `virsh`. Bridge networking. UEFI support. |
-| `darwinqemu` | macOS | QEMU via `vmnet-client`. Unprivileged vmnet networking. |
+| `darwinqemu` | macOS (Apple Silicon) | QEMU/HVF via `vmnet-run`. Unprivileged vmnet networking. UEFI (pflash) and software TPM 2.0 support. |
 
 Auto-detection: `mock://` URI → mock; macOS → darwin-qemu; otherwise → libvirt.
 
-The libvirt backend auto-provisions a software TPM 2.0 (swtpm) when `swtpm_setup` is available; the EK cert is stored in `InstanceRow.TpmEkCertificate`. Skipped silently if swtpm is not installed.
+Both the libvirt and darwin-qemu backends auto-provision a software TPM 2.0 (swtpm) when `swtpm`/`swtpm_setup` are available; the EK cert is stored in `InstanceRow.TpmEkCertificate`. Skipped silently if swtpm is not installed — set `NICO_VMS_SWTPM_PATH`/`NICO_VMS_SWTPM_SETUP_PATH` to override discovery. On darwin-qemu, TPM state lives at `<instance-dir>/tpm/` and is seeded exactly once: this is the artifact an FDE guest's LUKS unseal depends on for every boot after the first, so nothing but `Delete` may remove it.
 
 nico-vms injects a diagnostic SSH user (`nico-diag`/`nico-diag`) into every VM's cloud-init, controlled by `DiagSSHEnabled` in config. This user powers the diagnostics API and `scripts/get-kubeconfig.sh`.
 
@@ -113,6 +113,11 @@ for Kubernetes control plane VIPs.
 4. When a CP node goes down, kube-vip withdraws its announcement. The speaker removes that nexthop
    from the ECMP route. No ARP cache expiry or leader election needed.
 
+**macOS (darwin-qemu):** the speaker listens on `:179` (all interfaces; no iptables redirect) and
+`internal/bgp/routecmd.go` installs one next hop per VIP (no ECMP) with `sudo -n /sbin/route`, so
+it needs the sudoers rule in the README ("Sudoers rule for VIP routes"); startup fails without it.
+No covering blackhole route is installed there.
+
 **VIP range (off-link, routed via BGP):**
 
 The control-plane VIP range is a *separate* subnet, not carved from the bridge — clients reach the
@@ -135,7 +140,7 @@ VIP. These ranges are deliberately in class B (172.x) to avoid the tenant pod CI
 | Variable | Default | Purpose |
 |---|---|---|
 | `NICO_VMS_BGP_ENABLED` | `true` | Enable/disable the BGP speaker |
-| `NICO_VMS_BGP_LISTEN_PORT` | `10179` | Speaker listen port (179 is redirected here) |
+| `NICO_VMS_BGP_LISTEN_PORT` | `10179` (`179` on macOS) | Speaker listen port (on Linux, 179 is redirected here) |
 | `NICO_VMS_BGP_LOCAL_ASN` | `4294967000` | Host-side ASN |
 | `NICO_VMS_BGP_PEER_ASN` | `65100` | kube-vip ASN |
 | `NICO_VMS_BGP_VIP_CIDRS` | auto from bridge | Allowed VIP CIDRs (auto-derived if empty) |

@@ -2,8 +2,8 @@
 # `require_code_owner_review`. Read it with `gh api
 # repos/dsx-ai-factory/nvke/rules/branches/main --jq '[.[].type]'`.
 #
-# Every rule keeps @dsx-ai-factory/nvke-write, so any team member can still approve and no
-# rule here blocks a pull request. Remove the team from a line to make it a gate.
+# A rule that lists @dsx-ai-factory/nvke-write lets any team member approve.
+# A rule that leaves it out lets only the owners it names approve.
 #
 # Sections mirror the areas in .github/labeler.yml. Order matters: labeler gives
 # a file every area it matches, CODEOWNERS gives it one owner set and has no `!`,
@@ -20,18 +20,18 @@ go.sum @dsx-ai-factory/nvke-write @TerryHowe @rbever-nvidia
 /go.work.sum @dsx-ai-factory/nvke-write @TerryHowe @rbever-nvidia
 
 # area/controller — Cloud Workflow Engine
-/controller/ @dsx-ai-factory/nvke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris @jedimt
-/auth/ @dsx-ai-factory/nvke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris @jedimt
+/controller/ @dsx-ai-factory/nvke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris @jedimt @abhay-krishna
+/auth/ @dsx-ai-factory/nvke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris @jedimt @vignesh-goutham
 /cluster-api-provider-provisioned/ @dsx-ai-factory/nvke-write @jonathanmeier5 @rbever-nvidia @TerryHowe
 
 # area/agent — renamed from node-agent in #36
-/agent/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @chaochn47
+/agent/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @chaochn47 @abhay-krishna @vwilson-nvidia
 
 # area/cli
 /cli/ @dsx-ai-factory/nvke-write @lia-campbell @jonathanmeier5 @TerryHowe
 
 # area/os-image
-/os-image/ @dsx-ai-factory/nvke-write @dsx-ai-factory/nvke-team-node-os @j-griffith @jdubs @pdmack
+/os-image/ @dsx-ai-factory/nvke-write @dsx-ai-factory/nvke-team-node-os @j-griffith @jdubs @pdmack @cullenmcdermott
 
 # area/chart
 /controller/deploy/ @dsx-ai-factory/nvke-write @TerryHowe @vwilson-nvidia @danbudris @rbever-nvidia
@@ -79,3 +79,8 @@ docs/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @danbudris @jedimt
 
 # SECURITY.md, GOVERNANCE.md, MAINTAINERS.md, CODE_OF_CONDUCT.md and LICENSE are
 # area/docs, covered by `/*.md` and `/LICENSE` above.
+
+# Changes to this file need a maintainer's approval, so no one can make
+# themselves an owner of a restricted area without a maintainer agreeing.
+# This rule is last so it overrides /.github/ above.
+/.github/CODEOWNERS @dsx-ai-factory/nvke-maintainer

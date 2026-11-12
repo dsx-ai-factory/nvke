@@ -361,11 +361,13 @@ apiAuth:
   enabled: true
 apiAuthz:
   enabled: true
-  config:
-    issuers:
-      local-kubernetes:
-        serviceAccounts:
-          - {namespace: nvke-ops, name: fleet, grants: [admin]}
+  authorizer:
+    localBundle:
+      config:
+        issuers:
+          local-kubernetes:
+            serviceAccounts:
+              - {namespace: nvke-ops, name: fleet, grants: [admin]}
 YAML
 
 echo "apiAuthz disabled (the default):"
@@ -389,9 +391,9 @@ echo "apiAuthz permissive behind permissive apiAuth:"
 out="$(render -f "${authz_values}" --set apiAuth.permissive=true --set apiAuthz.permissive=true)"
 setting "apiAuthz.permissive is true"         apiAuthz.permissive true                "${out}"
 
-echo "apiAuthz.configMap.create=false mounts a ConfigMap managed elsewhere:"
+echo "apiAuthz.authorizer.localBundle.configMap.create=false mounts a ConfigMap managed elsewhere:"
 out="$(render --set apiAuth.enabled=true --set apiAuthz.enabled=true \
-  --set apiAuthz.configMap.create=false --set apiAuthz.configMap.name=site-authz)"
+  --set apiAuthz.authorizer.localBundle.configMap.create=false --set apiAuthz.authorizer.localBundle.configMap.name=site-authz)"
 absent "renders no ConfigMap of its own"      '^# Source: .*/templates/configmap-authz\.yaml$' "${out}"
 want   "mounts the named one"                 'name: site-authz'                      "${out}"
 setting "which the controller reads"          apiAuthz.authorizer.localBundle.dir /etc/nvke/authz "${out}"
@@ -402,15 +404,21 @@ wantfail "authorization without authentication is refused" 'apiAuthz\.enabled is
 wantfail "enforcing authorization behind permissive authentication is refused" 'apiAuthz\.permissive is false but apiAuth\.permissive is true' \
   -f "${authz_values}" --set apiAuth.permissive=true
 
-echo "apiAuthz.config and apiAuthz.configMap must agree:"
-wantfail "create without config is refused"   'apiAuthz\.configMap\.create is true but apiAuthz\.config is empty' \
+echo "apiAuthz.authorizer.localBundle.config and configMap must agree:"
+wantfail "create without config is refused"   'apiAuthz\.authorizer\.localBundle\.configMap\.create is true but apiAuthz\.authorizer\.localBundle\.config is empty' \
   --set apiAuth.enabled=true --set apiAuthz.enabled=true
-wantfail "config without create is refused"   'apiAuthz\.config is set but would not be rendered' \
-  -f "${authz_values}" --set apiAuthz.configMap.create=false
-wantfail "config while authorization is off is refused" 'apiAuthz\.config is set but would not be rendered' \
+wantfail "config without create is refused"   'apiAuthz\.authorizer\.localBundle\.config is set but would not be rendered' \
+  -f "${authz_values}" --set apiAuthz.authorizer.localBundle.configMap.create=false
+wantfail "config while authorization is off is refused" 'apiAuthz\.authorizer\.localBundle\.config is set but would not be rendered' \
   -f "${authz_values}" --set apiAuthz.enabled=false
-wantfail "apiVersion in config is refused"    'apiAuthz\.config must not carry apiVersion or kind' \
-  -f "${authz_values}" --set-string apiAuthz.config.apiVersion=auth.nvke.nvidia.com/v1alpha1
+wantfail "apiVersion in config is refused"    'apiAuthz\.authorizer\.localBundle\.config must not carry apiVersion or kind' \
+  -f "${authz_values}" --set-string apiAuthz.authorizer.localBundle.config.apiVersion=auth.nvke.nvidia.com/v1alpha1
+
+echo "apiAuthz.authorizer.backend must be a known backend:"
+wantfail "an unknown backend is refused"      'apiAuthz\.authorizer\.backend is "remote"\. The only backend is localBundle\.' \
+  -f "${authz_values}" --set apiAuthz.authorizer.backend=remote
+wantfail "even while authorization is off"    'apiAuthz\.authorizer\.backend is "remote"' \
+  --set apiAuthz.authorizer.backend=remote
 
 if [[ "${failures}" -ne 0 ]]; then
   echo "${failures} chart assertion(s) failed" >&2

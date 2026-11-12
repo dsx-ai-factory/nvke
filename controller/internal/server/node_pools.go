@@ -638,6 +638,9 @@ func applyUpdateNodePoolRequest(cluster db.Cluster, dbNodePool *db.NodePool, req
 		if req.Nico.DiskSelectionStrategy != nil {
 			nico.DiskSelectionStrategy = db.DiskSelectionStrategy(*req.Nico.DiskSelectionStrategy)
 		}
+		if req.Nico.NvLinkLogicalPartitionID != nil {
+			nico.NvLinkLogicalPartitionID = clonePtr(req.Nico.NvLinkLogicalPartitionID)
+		}
 		dbNodePool.SetNico(nico)
 
 	case db.ProviderTypeCAPI:
@@ -831,6 +834,9 @@ func validateUpdateNicoNodePoolRequest(_ db.Cluster, req *api.UpdateNodePoolRequ
 	if req.Nico != nil {
 		if req.Nico.Release != nil && *req.Nico.Release == "" {
 			return fmt.Errorf("nico.release cannot be cleared for a nico node pool")
+		}
+		if req.Nico.NvLinkLogicalPartitionID != nil && *req.Nico.NvLinkLogicalPartitionID == uuid.Nil {
+			return fmt.Errorf("nico.nvLinkLogicalPartitionID cannot be cleared for a nico node pool")
 		}
 	}
 

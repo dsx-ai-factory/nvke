@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+resources:
+- bases/internal.nvke.nvidia.com_clusterreleases.yaml
+- bases/internal.nvke.nvidia.com_machineimages.yaml
+- bases/internal.nvke.nvidia.com_nodepoolreleases.yaml

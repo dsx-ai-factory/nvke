@@ -27,11 +27,13 @@ The chart ships two roles:
 
 A caller with no role is refused every operation. A caller holds every role that any of its grants gives.
 
-To change what a role allows, or to add a role, set `apiAuthz.policies` (Cedar policies) and `apiAuthz.roles` (the role list) in the values. The defaults are in the chart's `values.yaml`. A policy names actions as `NVKE::Action::"<operationId>"`, and NVKE refuses to start with a policy that names an action the API does not have.
+Roles, grants and policies make up the authorization bundle, which the chart's values hold under `apiAuthz.authorizer.localBundle`. LocalBundle is the only authorization backend, so leave `apiAuthz.authorizer.backend` at its default, `localBundle`.
+
+To change what a role allows, or to add a role, set `apiAuthz.authorizer.localBundle.policies` (Cedar policies) and `apiAuthz.authorizer.localBundle.roles` (the role list) in the values. The defaults are in the chart's `values.yaml`. A policy names actions as `NVKE::Action::"<operationId>"`, and NVKE refuses to start with a policy that names an action the API does not have.
 
 ## Grant roles
 
-Grants live under `apiAuthz.config.issuers`, keyed by the `name` of an issuer in `apiAuth.config.issuers`. Each issuer takes two kinds of grant:
+Grants live under `apiAuthz.authorizer.localBundle.config.issuers`, keyed by the `name` of an issuer in `apiAuth.config.issuers`. Each issuer takes two kinds of grant:
 
 - **`claims`**: a token whose top-level claim `name` is the string `value`, or a string array holding it, gets the roles in `grants`. This is the same match as `admit.claims` in authentication. Use a claim the identity provider (IdP) sets, not one users can edit.
 - **`serviceAccounts`**: a Kubernetes service account token from `namespace`, with `name` if it is set, gets the roles in `grants`.
@@ -42,23 +44,25 @@ For the IdP from [Secure the NVKE API](api-authentication.md), which admits by g
 apiAuthz:
   enabled: true
   permissive: true
-  config:
-    issuers:
-      example-idp:
-        claims:
-          - {name: groups, value: <ADMITTED_GROUP>, grants: [admin]}
-          - {name: groups, value: <VIEWER_GROUP>, grants: [viewer]}
+  authorizer:
+    localBundle:
+      config:
+        issuers:
+          example-idp:
+            claims:
+              - {name: groups, value: <ADMITTED_GROUP>, grants: [admin]}
+              - {name: groups, value: <VIEWER_GROUP>, grants: [viewer]}
 ```
 
 Once authorization enforces, every caller that authentication admits needs a role, including automation. If management-engine calls the API, admit its service account in `apiAuth` and grant it `admin`, under the issuer that admits it:
 
 ```yaml
-      local-kubernetes:
-        serviceAccounts:
-          - {namespace: management-engine-system, name: management-engine-controller-manager, grants: [admin]}
+          local-kubernetes:
+            serviceAccounts:
+              - {namespace: management-engine-system, name: management-engine-controller-manager, grants: [admin]}
 ```
 
-NVKE checks the grants at startup and on every reload. It refuses an issuer that `apiAuth` does not configure, a grant of a role that `apiAuthz.roles` does not declare, and a value for the tenancy keys `operatorTenant`, `tenant` and `operators`, which this API does not use.
+NVKE checks the grants at startup and on every reload. It refuses an issuer that `apiAuth` does not configure, a grant of a role that `apiAuthz.authorizer.localBundle.roles` does not declare, and a value for the tenancy keys `operatorTenant`, `tenant` and `operators`, which this API does not use.
 
 ### Teleport application access
 
@@ -79,15 +83,20 @@ apiAuth:
             - {name: roles, value: nvke-admin}
             - {name: roles, value: nvke-viewer}
 apiAuthz:
-  config:
-    issuers:
-      teleport:
-        claims:
-          - {name: roles, value: nvke-admin, grants: [admin]}
-          - {name: roles, value: nvke-viewer, grants: [viewer]}
+  authorizer:
+    localBundle:
+      config:
+        issuers:
+          teleport:
+            claims:
+              - {name: roles, value: nvke-admin, grants: [admin]}
+              - {name: roles, value: nvke-viewer, grants: [viewer]}
 ```
 
-`issuer` is the Teleport cluster name, not a URL, and `<APP_URI>` is the application's URI in Teleport. Give each site's application its own URI: the URI is the token's audience, so two applications that share one accept each other's tokens. Teleport sends the token in its `Teleport-Jwt-Assertion` header, so configure the application to rewrite the `Authorization` header to `Bearer {{internal.jwt}}`.
+`issuer` is the Teleport cluster name, not a URL, and `<APP_URI>` is the application's URI in Teleport. Give each site's application its own URI: the URI is the token's audience, so two applications that share one accept each other's tokens. In the Teleport application:
+
+- Leave `rewrite.jwt_claims` at its default, `roles-and-traits`, or set it to `roles`, so the token carries `roles`.
+- Teleport sends the token in its `Teleport-Jwt-Assertion` header, so rewrite the `Authorization` header to `Bearer {{internal.jwt}}`. In `teleport.yaml` that's `rewrite.headers: ["Authorization: Bearer {{internal.jwt}}"]`; in a dynamic `app` resource it's `spec.rewrite.headers: [{name: Authorization, value: "Bearer {{internal.jwt}}"}]`.
 
 ## Turn on authorization in permissive mode
 
@@ -152,7 +161,7 @@ Authentication must enforce first: with authentication permissive, a request wit
 
 ## Change grants
 
-Change `apiAuthz.config`, `apiAuthz.policies` or `apiAuthz.roles` in `auth-values.yaml` and run the install again. NVKE needs no restart: the kubelet updates the mounted bundle within a minute or two, and NVKE reloads it every 10 seconds. A bundle that fails its checks does not replace the live one: NVKE keeps the last bundle that loaded, logs `Failed to reload the authorization bundle; keeping the live one`, and counts `nvke_authz_bundle_reload_failures_total`.
+Change `config`, `policies` or `roles` under `apiAuthz.authorizer.localBundle` in `auth-values.yaml` and run the install again. NVKE needs no restart: the kubelet updates the mounted bundle within a minute or two, and NVKE reloads it every 10 seconds. A bundle that fails its checks does not replace the live one: NVKE keeps the last bundle that loaded, logs `Failed to reload the authorization bundle; keeping the live one`, and counts `nvke_authz_bundle_reload_failures_total`.
 
 ## Verify
 

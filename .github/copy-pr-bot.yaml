@@ -8,7 +8,8 @@ auto_sync_ready: true
 # Contributors whose pull requests the bot mirrors without a vetter's
 # `/ok to test`: the nvke-admin, nvke-maintainer and nvke-write rosters as of
 # 2026-09-12, including members whose dsx-ai-factory invitation is pending,
-# plus everyone with a commit or pull request here as of 2026-10-11.
+# plus everyone with a commit or pull request here as of 2026-10-11, plus
+# NVIDIA staff added since by pull request.
 additional_trustees:
   - abhay-krishna
   - abhinavmpandey08
@@ -65,6 +66,7 @@ additional_trustees:
   - njhensley
   - nvidiajeff
   - odacremolbap
+  - p0lyn0mial
   - pbikki
   - pdmack
   - rbever-nvidia

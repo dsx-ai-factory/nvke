@@ -141,6 +141,11 @@ func NewHandler(store *state.Store, containers ContainerService, logger *slog.Lo
 	// ── Server-scoped endpoints ─────────────────────────────────────────
 	mux.HandleFunc("GET /server/files-tree", s.handleFilesTree)
 
+	// ── Sim-only endpoints (no NICo equivalent) ─────────────────────────
+	mux.HandleFunc("GET /sim/instances", s.handleSimListVMs)
+	mux.HandleFunc("POST /sim/instances/{instanceId}/stop", s.handleSimStopVM)
+	mux.HandleFunc("POST /sim/instances/{instanceId}/start", s.handleSimStartVM)
+
 	// ── File server ─────────────────────────────────────────────────────
 	// Serves files from the configured files directory. No auth required
 	// because VM boot and cloud-init fetches cannot depend on Bearer tokens.

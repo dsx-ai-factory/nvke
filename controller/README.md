@@ -664,11 +664,13 @@ the `apiAuthz` values:
 apiAuthz:
   enabled: true
   permissive: true      # count and log refusals, serve anyway
-  config:               # rendered as authorization.yaml
-    issuers:
-      local-kubernetes:
-        serviceAccounts:
-          - {namespace: management-engine-system, name: management-engine-controller-manager, grants: [admin]}
+  authorizer:
+    localBundle:        # the only backend
+      config:           # rendered as authorization.yaml
+        issuers:
+          local-kubernetes:
+            serviceAccounts:
+              - {namespace: management-engine-system, name: management-engine-controller-manager, grants: [admin]}
 ```
 
 The chart renders the `apiAuthz` section of `nvke-controller-config` (`enabled`,

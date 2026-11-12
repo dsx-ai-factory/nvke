@@ -65,6 +65,9 @@ these labels is applied to a pull request from this repository, or when a
 `vX.Y.Z-beta.N` tag is pushed. It is deliberately not on a schedule or on every
 push: it costs hardware, and a run nobody is watching is a run nobody acts on.
 A beta tag is cut once a night, so it adds one run rather than a stream of them.
+On the days named in the repository variable `NVKE_PERF_WEEKDAYS`, a beta tag
+push also runs the `perf` scope through the
+[`Qualify perf`](../../.github/workflows/qualify-perf.yml) workflow.
 
 | label | what it runs |
 |---|---|
