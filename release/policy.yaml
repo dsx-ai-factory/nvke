@@ -25,14 +25,13 @@ spec:
       selector: {ubuntu: "24.04", gpu: gb200}
     # Ubuntu 24.04 on L40S. One stream, amd64, and the only GPU shape site-1
     # offers. The qualify-e2e-l40s label selects this instead of golden-path.
+    # Forge is named because the DSX L40S stream carries the same gpu.
     l40s:
-      selector: {ubuntu: "24.04", gpu: l40s}
+      selector: {provider: forge, ubuntu: "24.04", gpu: l40s}
 
-    # The DSX datahall on its own. The dsx stream declares no gpu, so
-    # golden-path does not reach it, even though the hardware is accelerator
-    # hardware: the datahall advertises no GPU model, so a stream asking for
-    # one resolves to nothing. A provider selector is the only one that
-    # separates the two lanes, which is what this scope is for.
+    # The DSX datahall on its own. A provider selector is the only one that
+    # separates the two lanes: the DSX streams carry their GPU model as the
+    # Forge ones do, so a scope selecting on gpu alone would reach both.
     dsx:
       selector: {provider: dsx}
 
@@ -87,12 +86,12 @@ spec:
   # A stream is named <provider>-<gpu>-<arch>-ubuntu-<series>-kube-<minor>, so
   # two streams that differ only in GPU model do not share a name. A stream
   # that declares no gpu omits that segment rather than inventing a value for
-  # it --- the DSX lane below is named dsx-amd64-..., and a `none` there would
-  # read as a capability no stream selects on. A stream that declares a
-  # machineType takes that segment in the gpu's place, because the machine type
-  # is a capability the stream selects machines by: the perf stream below is
-  # named forge-cpu-amd64-... A stream with a profile ends its name with it.
-  # The name is the key of everything recorded for a stream.
+  # it --- a `none` there would read as a capability no stream selects on. A
+  # stream that declares a machineType takes that segment in the gpu's place,
+  # because the machine type is a capability the stream selects machines by:
+  # the perf stream below is named forge-cpu-amd64-... A stream with a profile
+  # ends its name with it. The name is the key of everything recorded for a
+  # stream.
   #
   # `parameters` are the settings of a stream's run: the environment file it
   # runs against, the workers its tenant gets and the suite's timeout. They
@@ -121,9 +120,8 @@ spec:
       capabilities: {provider: forge, machineType: cpu, arch: amd64, ubuntu: "24.04", kube: "1.36", profile: perf}
       parameters: {environment: forge-perf, tenantWorkers: 3, suiteTimeoutMinutes: 215}
 
-    # The DSX datahall, which is amd64 throughout. No gpu: the datahall
-    # declares no GPU model, so a stream asking for an accelerator here
-    # resolves to nothing even though the trays are GPU hardware.
+    # The DSX datahall, which is amd64 throughout, on L40S. The gpu is matched
+    # against the model the datahall's instance type provides in dsx.yaml.
     #
     # amd64 because that is what the hardware is, not a choice --- every
     # machine the datahall owns is a Lenovo SR675 V3 OVX, AMD EPYC carrying
@@ -132,13 +130,11 @@ spec:
     #
     # kube 1.36 matches the Forge streams. The recorded DSX exercise reached
     # CoreDNS on a 1.34.2 tenant, so 1.36 is unproven on this substrate.
-    - name: dsx-amd64-ubuntu-24.04-kube-1.36
-      capabilities: {provider: dsx, arch: amd64, ubuntu: "24.04", kube: "1.36"}
+    - name: dsx-l40s-amd64-ubuntu-24.04-kube-1.36
+      capabilities: {provider: dsx, gpu: l40s, arch: amd64, ubuntu: "24.04", kube: "1.36"}
 
-    # The second DSX datahall, arm64 because every machine it owns is a Vera
-    # Rubin NVL72 tray on an Olympus CPU. No gpu for the same reason as above:
-    # the datahall declares no GPU model, so a stream asking for an accelerator
-    # resolves to nothing here even though the trays are accelerator hardware.
+    # The second DSX datahall, arm64 and vr200 because every machine it owns
+    # is a Vera Rubin NVL72 tray on an Olympus CPU.
     #
     # 26.04 where the datahall above is 24.04, so the two DSX streams differ in
     # series as well as arch. The image is there: os-image-artifact builds and
@@ -146,5 +142,5 @@ spec:
     # nvke-packages/os-image/releases/<version>/<arch>/. Proven on 2026-11-02:
     # run 41481335380 took this stream through stage full --- site controller,
     # stack and a two-node tenant --- at 51 of 51 specs.
-    - name: dsx-arm64-ubuntu-26.04-kube-1.36
-      capabilities: {provider: dsx, arch: arm64, ubuntu: "26.04", kube: "1.36"}
+    - name: dsx-vr200-arm64-ubuntu-26.04-kube-1.36
+      capabilities: {provider: dsx, gpu: vr200, arch: arm64, ubuntu: "26.04", kube: "1.36"}
