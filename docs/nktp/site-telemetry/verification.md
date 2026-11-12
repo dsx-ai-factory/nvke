@@ -29,7 +29,7 @@ The 21 certificates are the Operator's webhook certificate, a CA, server and
 client certificate for each of the three Target Allocators, and the eleven
 internal TLS certificates that the chart's `certManager.internalTLS` default
 adds: one CA, four server and six client certificates.
-[Configure cert-manager](../guides/configure-cert-manager.md) lists them.
+[Configure cert-manager](https://github.com/dsx-ai-factory/nvke-telemetry-pipeline/blob/main/docs/guides/configure_cert_manager.md) lists them.
 
 **The Operator:** it must be running with no restarts, and its finalizer
 grant must be owned by Helm:
@@ -132,7 +132,7 @@ logql 'sum by (k8s_cluster_name) (count_over_time({k8s_cluster_name=~".+"}[15m])
 The log classes can be checked the same way, through the
 `nvidia_telemetry_class` label: `system.auth`, `system.audit`,
 `k8s.control_plane` and `k8s.api.audit`.
-[Log classification](../components/node-collector.md#log-classification)
+[Log classification](https://github.com/dsx-ai-factory/nvke-telemetry-pipeline/blob/main/docs/components/node_collector.md#log-classification)
 lists what each covers. `/var/log/audit/audit.log` exists only where auditd
 runs, so `system.audit` may be empty.
 

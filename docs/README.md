@@ -111,35 +111,10 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 
 ## Running NVKE telemetry pipeline (NKTP)
 
-| Document | Contents |
-|---|---|
-| [nktp/getting-started.md](nktp/getting-started.md) | NKTP on any cluster: installing the chart, a first look, and what commonly needs changing |
-| [nktp/guides/send-telemetry.md](nktp/guides/send-telemetry.md) | For service owners: how a workload's logs, OTLP and Prometheus metrics reach NKTP, and adding a sidecar Collector |
-| [nktp/guides/enable-auto-instrumentation.md](nktp/guides/enable-auto-instrumentation.md) | A shared `Instrumentation` that injects OpenTelemetry agents into Java, Node.js, Python and .NET Pods |
-| [nktp/guides/enable-ebpf-instrumentation.md](nktp/guides/enable-ebpf-instrumentation.md) | Running OpenTelemetry eBPF Instrumentation (OBI) to trace requests in any language and send them to the node Collector |
-| [nktp/architecture/topology.md](nktp/architecture/topology.md) | The Collectors, how each signal flows to the backend, and how scraping is allocated |
-| [nktp/architecture/backpressure.md](nktp/architecture/backpressure.md) | How queues and the memory limiter behave when a Collector is saturated |
-| [nktp/architecture/self-telemetry.md](nktp/architecture/self-telemetry.md) | The sidecar that buffers each Collector's own telemetry, and how it samples traces |
-| [nktp/guides/size-resources.md](nktp/guides/size-resources.md) | Default requests and limits, runtime memory targets, and sizing guidance |
-| [nktp/guides/configure-cert-manager.md](nktp/guides/configure-cert-manager.md) | What NKTP uses cert-manager for, and installing without it |
-| [nktp/guides/secure-gateway-export.md](nktp/guides/secure-gateway-export.md) | TLS and mTLS from the gateways and the watchdog to the backend |
-| [nktp/guides/configure-kubelet-metrics.md](nktp/guides/configure-kubelet-metrics.md) | Changing the kubelet scrapes, verifying kubelet certificates, and running beside kube-prometheus-stack |
-| [nktp/guides/restrict-monitor-file-access.md](nktp/guides/restrict-monitor-file-access.md) | Migrate monitor credentials before enabling file-access restrictions |
-| [nktp/guides/configure-persistent-queue.md](nktp/guides/configure-persistent-queue.md) | Keeping the watchdog and gateway exporter queues on a PersistentVolume across restarts |
-| [nktp/guides/enable-daemonset-log-checkpoints.md](nktp/guides/enable-daemonset-log-checkpoints.md) | Persisting the node Collector's log read positions so a restarted Collector resumes instead of skipping lines |
-| [nktp/guides/enable-host-process-metrics.md](nktp/guides/enable-host-process-metrics.md) | Per-process host metrics, the privileges they need, and their cardinality |
-| [nktp/components/node-collector.md](nktp/components/node-collector.md) | The node Collector (`daemonset`): OTLP endpoint, pod logs, journal, log classification and monitor credentials |
-| [nktp/components/gateways.md](nktp/components/gateways.md) | The logs, metrics and traces gateways (`gateway_*`) and their endpoints |
-| [nktp/components/large-target-metrics.md](nktp/components/large-target-metrics.md) | The large-target pool (`large_target_metrics`), sizing large scrapes, and Kubernetes component metrics |
-| [nktp/components/cluster-events.md](nktp/components/cluster-events.md) | The cluster event reader (`cluster_events`) and its leader election |
-| [nktp/components/watchdog.md](nktp/components/watchdog.md) | The watchdog (`watchdog`), which carries the pipeline's own telemetry |
-| [nktp/components/kube-state-metrics.md](nktp/components/kube-state-metrics.md) | kube-state-metrics (`kube-state-metrics`): collection groups, sharding and opt-in Secret metrics |
-| [nktp/components/otel-lgtm.md](nktp/components/otel-lgtm.md) | The bundled development backend (`otel-lgtm`), its dashboards and settings |
-| [nktp/components/dependencies.md](nktp/components/dependencies.md) | The bundled Operator, CRDs, node-exporter and metrics-server |
-| [nktp/design-principles.md](nktp/design-principles.md) | Why the chart renders each Collector configuration exactly as written |
-| [nktp/designs/monitor-file-access.md](nktp/designs/monitor-file-access.md) | Why monitor file access remains enabled by default and how to restrict it |
-| [nktp/designs/target-allocation.md](nktp/designs/target-allocation.md) | Why every scraping Collector requires a Target Allocator |
-| [nktp/designs/kube-state-metrics.md](nktp/designs/kube-state-metrics.md) | The approaches considered for scaling kube-state-metrics collection |
+NKTP itself, the chart and its documentation, lives in
+[dsx-ai-factory/nvke-telemetry-pipeline](https://github.com/dsx-ai-factory/nvke-telemetry-pipeline).
+The pages under `nktp/site-telemetry/`, listed above, cover how NVKE installs
+and configures it on a management cluster.
 
 ## The modules
 
@@ -166,7 +141,6 @@ Deeper module documentation:
 | [../os-image/SPEC.md](../os-image/SPEC.md) | The contract a node image has to meet |
 | [../controller/profiles/README.md](../controller/profiles/README.md) | External profiles |
 | [../controller/deploy/charts/controller/README.md](../controller/deploy/charts/controller/README.md) | The engine's Helm chart and its values |
-| [../nktp/deploy/charts/nktp/README.md](../nktp/deploy/charts/nktp/README.md) | The NKTP Helm chart, what it deploys and its values |
 | [../build/README.md](../build/README.md) | The per-component build and publish scripts |
 | [../os-image/README.md](../os-image/README.md) | Node image build, FDE/non-FDE variants, release |
 
@@ -202,8 +176,7 @@ Deeper module documentation:
 `AGENTS.md` files carry instructions for AI coding agents, not for people. There
 is one at the repository root, and one in
 [../agent/AGENTS.md](../agent/AGENTS.md),
-[../controller/AGENTS.md](../controller/AGENTS.md),
-[../nktp/AGENTS.md](../nktp/AGENTS.md) and
+[../controller/AGENTS.md](../controller/AGENTS.md) and
 [../os-image/AGENTS.md](../os-image/AGENTS.md).
 
 ## Not indexed here

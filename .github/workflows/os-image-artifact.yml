@@ -422,7 +422,7 @@ jobs:
           VERSION: ${{ needs.matrix.outputs.version }}
           # NVKE_GITHUB_PUBLISH names the components whose releases go to GHCR;
           # see docs/artifact-publication.md. Unset means every component but os-image.
-          GITHUB_PUBLISH: ${{ contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',os-image,') }}
+          GITHUB_PUBLISH: ${{ contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned'), ',os-image,') }}
         run: |
           set -euo pipefail
 

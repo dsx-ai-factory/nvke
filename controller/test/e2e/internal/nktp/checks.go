@@ -3,9 +3,8 @@
 
 package nktp
 
-// Baseline is what NKTP delivers on any cluster: what nktp/hack/e2e-validate.sh
-// checks on Kind, plus a span pushed through the node Collector, one Check per
-// expectation so a failure names it.
+// Baseline is what NKTP delivers on any cluster, plus a span pushed through
+// the node Collector, one Check per expectation so a failure names it.
 func (v *Validator) Baseline() []Check {
 	return []Check{
 		// The installation itself.
