@@ -6,6 +6,8 @@ package e2e
 import (
 	"errors"
 	"flag"
+	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -24,7 +26,53 @@ const (
 	tenantValidateEnv = "NVKE_TENANT_VALIDATE"
 
 	labelFilterFlag = "ginkgo.label-filter"
+
+	// validateExcludeLabelsEnv lists, comma-separated, labels whose specs a
+	// run leaves out, on top of whatever else selects specs. For a site where
+	// a check does not apply, such as issuesCertificateLabel where
+	// cert-manager approves only what a CertificateRequestPolicy allows.
+	validateExcludeLabelsEnv = "NVKE_VALIDATE_EXCLUDE_LABELS"
+
+	// issuesCertificateLabel is the one creates spec that needs cert-manager
+	// to approve a new self-signed Issuer's request, so it can be left out
+	// without the other creates specs.
+	issuesCertificateLabel = "issues-certificate"
 )
+
+// excludableLabel is what a Ginkgo label may be without changing what a
+// filter means: no operator, separator, grouping or space.
+var excludableLabel = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]*$`)
+
+// validationExclusions reads validateExcludeLabelsEnv. It refuses the two
+// labels that select a validation run at all: leaving either out is turning
+// the run off, which is the switches' job.
+func validationExclusions(getenv func(string) string) ([]string, error) {
+	labels := splitList(getenv(validateExcludeLabelsEnv), ",")
+	for _, label := range labels {
+		if !excludableLabel.MatchString(label) {
+			return nil, fmt.Errorf("%s: %q is not a label", validateExcludeLabelsEnv, label)
+		}
+		if label == siteValidateLabel || label == tenantValidateLabel {
+			return nil, fmt.Errorf("%s: %s turns the run off; set %s or %s instead", validateExcludeLabelsEnv, label, siteValidateEnv, tenantValidateEnv)
+		}
+	}
+	return labels, nil
+}
+
+// withExclusions ANDs the exclusions onto filter, which may be empty.
+func withExclusions(filter string, exclude []string) string {
+	if len(exclude) == 0 {
+		return filter
+	}
+	var terms []string
+	if filter != "" {
+		terms = append(terms, "("+filter+")")
+	}
+	for _, label := range exclude {
+		terms = append(terms, "!"+label)
+	}
+	return strings.Join(terms, " && ")
+}
 
 // validationLabelFilter is the label filter the switches choose. It returns
 // "" when neither is present, as in any run outside the image, so the suite

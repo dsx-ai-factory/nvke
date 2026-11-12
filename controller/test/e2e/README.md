@@ -256,7 +256,7 @@ and [tenant](#tenant-checks) variable tables describe each one.
 | 28 | A NetworkPolicy enforced | `creates` | Unless a NetworkPolicy in the probe namespace already selects the check's pods | As on a site, in `NVKE_TENANT_NAMESPACE` |
 | 29 | A StatefulSet pod resolved and reached by its headless Service name | `creates` | Always | Always |
 | 30 | A PersistentVolumeClaim bound and written from a pod | `creates` | From `NVKE_SITE_PVC_STORAGE_CLASS`, else the default StorageClass; skips without either | From `NVKE_TENANT_PVC_STORAGE_CLASS`, else the tenant's default StorageClass; skips without either |
-| 31 | A certificate issued by a new self-signed cert-manager Issuer | `creates` | Always | Where `NVKE_TENANT_COMPONENTS` lists `cert-manager` |
+| 31 | A certificate issued by a new self-signed cert-manager Issuer | `creates`, `issues-certificate` | Always | Where `NVKE_TENANT_COMPONENTS` lists `cert-manager` |
 
 A tenant also runs these, which compare it with the controller's record of it:
 
@@ -367,6 +367,8 @@ Configure it with the [health spec variables](#health-specs) and these:
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `NVKE_SITE_VALIDATE` | Turns the site checks on. The image sets it; elsewhere they skip. | Unset |
+| `NVKE_VALIDATE_PROFILE` | Path to a [validation profile](#validation-profile): defaults for these variables, for a site not laid out like `deploy/nico`. | Unset |
+| `NVKE_VALIDATE_EXCLUDE_LABELS` | Comma-separated labels whose checks the run leaves out, such as `issues-certificate` where cert-manager approves only what a `CertificateRequestPolicy` allows. Added to whatever else selects the checks, including `-ginkgo.label-filter`; a run it leaves with nothing fails. | Unset |
 | `NVKE_SITE_KUBERNETES_VERSION` | The Kubernetes version the site was built with. Unset fails the version check. | Unset |
 | `NVKE_SITE_NAMESPACES` | Comma-separated namespaces that must each run a ready pod, replacing the default list: `kube-system`, `cert-manager`, `capi-system` and those `deploy/nico` installs into. | The `deploy/nico` list |
 | `NVKE_SITE_PROBE_NAMESPACE` | Where the probe pods and every `creates` object go. | The pod's own namespace, else `default` |
@@ -395,6 +397,52 @@ ConfigMap, the suite sends no token.
 named that. Set `NVKE_CONTROLLER_EXPECTED_VERSION` and
 `NVKE_SITE_KUBERNETES_VERSION`: the image sets
 `NVKE_E2E_REQUIRE_EXPECTED_VERSION=true`, so a run without either fails.
+
+### Validation profile
+
+The defaults above describe a site built from `deploy/nico`. A site laid out
+differently can keep its settings in one YAML file and point
+`NVKE_VALIDATE_PROFILE` at it, instead of passing each variable. The keys are
+the variable names. A value is taken exactly as written, so `1.30` stays
+`1.30`, or is a list of strings, which is joined with commas; the
+`APISERVER_FLAGS` variables take a string, because they separate with
+semicolons.
+
+```yaml
+NVKE_CONTROLLER_NAMESPACE: my-controller
+NVKE_CONTROLLER_SERVICE: my-controller
+NVKE_SITE_NAMESPACES: [kube-system, cert-manager, capi-system, capnico-system, my-controller]
+NVKE_SITE_COMPONENTS: [argocd, cnpg]
+NVKE_VALIDATE_EXCLUDE_LABELS: [issues-certificate]
+```
+
+Keep in a profile what changes rarely: where things are installed and what
+the site runs. Pass the versions, which change with every upgrade, per run:
+
+```bash
+docker run --rm -v "$PWD/validate-profile.yaml:/profile.yaml:ro" \
+  -e NVKE_VALIDATE_PROFILE=/profile.yaml \
+  -e NVKE_CONTROLLER_EXPECTED_VERSION="$EXPECTED_VERSION" \
+  -e NVKE_SITE_KUBERNETES_VERSION="$KUBERNETES_VERSION" ... "$VALIDATE_IMAGE"
+```
+
+The image runs as UID 65532, so the file must be readable by others. In a pod,
+mount it from a ConfigMap, whose files are by default. A variable set in the
+environment wins over the profile, so one run can still change one value. The
+run log and the report's validation inputs say which keys the profile set and
+which the environment overrode, and which labels were left out. An excluded
+check is absent from the JUnit report, not listed as skipped, so those inputs
+are the record that it was left out.
+
+A profile cannot set the switches that turn a run on (`NVKE_SITE_VALIDATE`,
+`NVKE_TENANT_VALIDATE`, `NVKE_E2E_REQUIRE_EXPECTED_VERSION`, which the image
+sets) or the variables that name one tenant (`NVKE_TENANT_CLUSTER`,
+`NVKE_TENANT_TOKEN_SECRET`, `NVKE_TENANT_KUBERNETES_VERSION`). An unknown key
+fails the run, as does a profile named but missing. It holds no credentials:
+none of the variables it can set is one.
+
+This repository ships no profiles. A site's profile belongs with the rest of
+that site's configuration.
 
 ### Tenant checks
 

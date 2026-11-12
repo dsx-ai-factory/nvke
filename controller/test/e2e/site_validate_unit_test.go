@@ -19,7 +19,7 @@ func TestUnit_SiteValidateFromEnvDefaults(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, settings.enabled)
 	require.Empty(t, settings.kubernetesVersion)
-	require.Equal(t, siteNamespaces, settings.checks.namespaces)
+	require.Equal(t, siteNamespaces(), settings.checks.namespaces)
 	require.False(t, settings.checks.failFast, "the image reports every check, not just the first failure")
 	require.Equal(t, "default", settings.checks.probeNamespace)
 	require.Equal(t, probeImage{ref: kube.KubectlImage}, settings.checks.probeImage)

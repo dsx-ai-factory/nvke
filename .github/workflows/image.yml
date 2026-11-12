@@ -463,6 +463,30 @@ jobs:
           grep -q '<testcase name="[^"]*tenant validation' "${RUNNER_TEMP}/tenant-artifacts/junit-test-report.xml" \
             || { echo "::error::NVKE_TENANT_VALIDATE=true selected no tenant spec"; exit 1; }
 
+          # A validation profile mounted into the image is read as the image's
+          # own user, its exclusions are applied, and one setting a variable it
+          # cannot fails the run.
+          mkdir -p "${RUNNER_TEMP}/profile-artifacts"
+          chmod 0777 "${RUNNER_TEMP}/profile-artifacts"
+          printf 'NVKE_SITE_NAMESPACES: [kube-system, cert-manager]\nNVKE_SITE_KUBERNETES_VERSION: 1.30\nNVKE_VALIDATE_EXCLUDE_LABELS: [issues-certificate]\n' \
+            > "${RUNNER_TEMP}/profile.yaml"
+          printf 'NVKE_SITE_VALIDATE: "false"\n' > "${RUNNER_TEMP}/bad-profile.yaml"
+          chmod 0644 "${RUNNER_TEMP}/profile.yaml" "${RUNNER_TEMP}/bad-profile.yaml"
+          docker run --rm -e NVKE_VALIDATE_PROFILE=/profile.yaml \
+            -v "${RUNNER_TEMP}/profile.yaml:/profile.yaml:ro" \
+            -v "${RUNNER_TEMP}/profile-artifacts:/artifacts" \
+            nvke/nvke-validate:ci -ginkgo.dry-run | tee "${RUNNER_TEMP}/profile.log"
+          grep -q 'NVKE_VALIDATE_PROFILE=/profile.yaml set NVKE_SITE_KUBERNETES_VERSION, NVKE_SITE_NAMESPACES, NVKE_VALIDATE_EXCLUDE_LABELS' "${RUNNER_TEMP}/profile.log" \
+            || { echo "::error::the image did not apply the validation profile"; exit 1; }
+          grep -qF 'label filter: (site-validate) && !issues-certificate' "${RUNNER_TEMP}/profile.log" \
+            || { echo "::error::the image did not apply the profile's exclusions"; exit 1; }
+          if docker run --rm -e NVKE_VALIDATE_PROFILE=/profile.yaml \
+            -v "${RUNNER_TEMP}/bad-profile.yaml:/profile.yaml:ro" \
+            -v "${RUNNER_TEMP}/profile-artifacts:/artifacts" \
+            nvke/nvke-validate:ci -ginkgo.dry-run; then
+            echo "::error::a profile setting NVKE_SITE_VALIDATE did not fail the run"; exit 1
+          fi
+
 # Not built here: controller/hack/Dockerfile.controller.tilt — it only copies a
 # prebuilt binary, so it has nothing to verify without a preceding build.
 #
