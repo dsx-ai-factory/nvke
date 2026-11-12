@@ -46,6 +46,8 @@ apiServer:
     value: /etc/kubernetes/kube-api-encryption/encryption-config.yaml
   - name: encryption-provider-config-automatic-reload
     value: "true"
+  - name: etcd-compaction-interval
+    value: 5m
   - name: feature-gates
     value: ImageVolume=true
   - name: kubelet-certificate-authority
@@ -103,6 +105,8 @@ etcd:
     extraArgs:
     - name: auto-compaction-retention
       value: "1"
+    - name: bootstrap-defrag-threshold-megabytes
+      value: "200"
     - name: listen-metrics-urls
       value: http://0.0.0.0:2381
     - name: quota-backend-bytes

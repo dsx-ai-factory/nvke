@@ -1,0 +1,108 @@
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ClusterReleaseChannel
+metadata:
+  annotations:
+    private: PRIVATE-CATALOG-CANARY-annotation
+  labels:
+    private: PRIVATE-CATALOG-CANARY-label
+  name: stable
+spec:
+  releases:
+    "1.34":
+    - minimumUpgradeAge: 0s
+      name: cr-old
+    "1.34.6":
+    - minimumUpgradeAge: 0s
+      name: cr-old
+    "1.35":
+    - minimumUpgradeAge: 0s
+      name: cr-new
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ClusterRelease
+metadata:
+  annotations:
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: 1.35.2
+  name: cr-new
+spec:
+  lifecycle:
+    deprecated: false
+    hidden: true
+    supportedUntil: "2027-06-30T00:00:00Z"
+  machineImageRef:
+    name: img-ubuntu
+  machineInit:
+    userDataTemplate: "#cloud-config\n"
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ClusterRelease
+metadata:
+  annotations:
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: 1.34.6
+  name: cr-old
+spec:
+  lifecycle:
+    deprecated: false
+    hidden: false
+    supportedUntil: "2027-02-28T00:00:00Z"
+  machineImageRef:
+    name: img-ubuntu
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # PRIVATE-CATALOG-CANARY-control-plane-init
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ControlPlaneClass
+metadata:
+  annotations:
+    private: PRIVATE-CATALOG-CANARY-annotation
+  labels:
+    private: PRIVATE-CATALOG-CANARY-label
+  name: standard
+spec:
+  controlPlane:
+    instanceTypePreferences:
+    - PRIVATE-CATALOG-CANARY-instance-type
+    replicas: 3
+    systemReservedMemory: 2Gi
+  rollout:
+    strategy:
+      rollingUpdate:
+        maxSurge: 1
+      type: RollingUpdate
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  annotations:
+    private: PRIVATE-CATALOG-CANARY-annotation
+  labels:
+    private: PRIVATE-CATALOG-CANARY-label
+  name: np-b34
+spec:
+  machineImageRef:
+    name: img-ubuntu
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # PRIVATE-CATALOG-CANARY-worker-init
+  profile: ubuntu-gpu
+  tag: "2026.11"
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: img-ubuntu
+spec:
+  architecture: amd64
+  buildDate: "2026-11-01"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      chain https://PRIVATE-CATALOG-CANARY.example/image
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  variant: private-catalog-canary-variant

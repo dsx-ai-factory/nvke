@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+
+method: PUT
+path: /v1/cluster-releases/control-plane-v1
+headers:
+  Content-Type: [application/json]
+  If-Match: ['{{ etag }}']
+body:
+  metadata:
+    name: control-plane-v1
+  spec:
+    machineImageRef:
+      name: ubuntu-2404-amd64
+    machineInit:
+      userDataTemplate: |
+        #cloud-config
+        hostname: nvke-control-plane
+    lifecycle:
+      deprecated: true

@@ -206,6 +206,25 @@ func initConfiguration(config *InitConfig) (kubeadmv1beta3.InitConfiguration, er
 	return cfg, nil
 }
 
+// etcdExtraArgs builds the local etcd flags. The bootstrap-defrag threshold is
+// the only version-dependent one; see supportsBootstrapDefrag for why a cluster
+// below the floor gets no flag at all rather than the --experimental- spelling.
+func etcdExtraArgs(config *InitConfig) map[string]string {
+	args := map[string]string{
+		etcdQuotaBackendBytesFlagName: config.EtcdQuotaBackendBytes,
+		"auto-compaction-retention":   defaultAutoCompactionRetention,
+		"listen-metrics-urls":         defaultListenMetricsURLs,
+	}
+	// No etcd image tag: this renderer never sets LocalEtcd.ImageTag, so a
+	// greenfield cluster always runs kubeadm's default etcd for its Kubernetes
+	// version and the inference is exact. Only a persisted configuration an
+	// operator has edited can pin one.
+	if supportsBootstrapDefrag(config.KubernetesVersion, "") {
+		args[etcdBootstrapDefragThresholdFlagName] = defaultBootstrapDefragThresholdMegabytes
+	}
+	return args
+}
+
 func clusterConfiguration(config *InitConfig) kubeadmv1beta3.ClusterConfiguration {
 	apiServer := kubeadmv1beta3.APIServer{
 		ControlPlaneComponent: kubeadmv1beta3.ControlPlaneComponent{
@@ -217,6 +236,7 @@ func clusterConfiguration(config *InitConfig) kubeadmv1beta3.ClusterConfiguratio
 				"audit-log-maxbackup":                     defaultAuditLogMaxBackup,
 				"audit-log-maxsize":                       defaultAuditLogMaxSize,
 				"kubelet-certificate-authority":           defaultKubeletCertificateAuth,
+				etcdCompactionIntervalFlagName:            defaultEtcdCompactionInterval,
 				"profiling":                               defaultProfilingDisabled,
 				"bind-address":                            defaultBindAddress,
 				"service-account-extend-token-expiration": defaultServiceAccountExtendTokenExpiration,
@@ -284,12 +304,8 @@ func clusterConfiguration(config *InitConfig) kubeadmv1beta3.ClusterConfiguratio
 		ClusterName:          defaultClusterName,
 		Etcd: kubeadmv1beta3.Etcd{
 			Local: &kubeadmv1beta3.LocalEtcd{
-				DataDir: defaultEtcdDataDir,
-				ExtraArgs: map[string]string{
-					"quota-backend-bytes":       config.EtcdQuotaBackendBytes,
-					"auto-compaction-retention": defaultAutoCompactionRetention,
-					"listen-metrics-urls":       defaultListenMetricsURLs,
-				},
+				DataDir:   defaultEtcdDataDir,
+				ExtraArgs: etcdExtraArgs(config),
 			},
 		},
 		ImageRepository:   config.ImageRepository,

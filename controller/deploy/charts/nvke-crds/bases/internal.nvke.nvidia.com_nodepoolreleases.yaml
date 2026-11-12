@@ -68,8 +68,8 @@ spec:
                     type: boolean
                   hidden:
                     default: false
-                    description: Hidden defines if the release is visible in a given
-                      channel
+                    description: Hidden omits an offering from catalog lists and channel
+                      choices. Explicit references remain available.
                     type: boolean
                   supportedUntil:
                     description: SupportedUntil is the time at which support for this

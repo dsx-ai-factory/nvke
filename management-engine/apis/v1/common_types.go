@@ -99,11 +99,13 @@ type ReleaseLifecycle struct {
 	// using it, but rejects new cluster or node pool creation referencing it.
 	// +optional
 	// +kubebuilder:default=false
+	// +nvke:catalog:include
 	Deprecated bool `json:"deprecated"`
 	// SupportedUntil is the time at which support for this release ends.
 	// +optional
+	// +nvke:catalog:include
 	SupportedUntil *metav1.Time `json:"supportedUntil,omitempty"`
-	// Hidden defines if the release is visible in a given channel
+	// Hidden omits an offering from catalog lists and channel choices. Explicit references remain available.
 	// +optional
 	// +kubebuilder:default=false
 	Hidden bool `json:"hidden"`

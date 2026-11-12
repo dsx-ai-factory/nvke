@@ -77,15 +77,52 @@ Never hand-edit `*.gen.go` files — they will be overwritten.
 ### Run locally
 
 ```bash
-kind create cluster                       # the NVKE controller watches a cluster
-make -C controller run-local              # Postgres, Temporal, then the controller
+make -C controller capi-core-up CAPI_SPIFFE_EXEC_AUTH=false   # kind cluster with Cluster API core, which the controller watches
+make -C controller run-local              # release CRDs and fixtures, Postgres, Temporal, then the controller
 ```
+
+On macOS, run `make -C controller host-up` first: `capi-core-up` uses Colima, not Docker Desktop.
 
 Swagger is on [http://localhost:8080/api/docs/](http://localhost:8080/api/docs/). Infrastructure credentials are
 configured on the Cluster API provider rather than the controller.
 
 [first-cluster.md](first-cluster.md#api-only) covers this path in
 full, and goes on to tenant clusters.
+
+## WSL2
+
+Ubuntu under WSL2 runs the same workflow as native Ubuntu: Flox, `make` and
+Docker Engine inside the distribution, with no WSL-specific targets. These
+settings differ from a default WSL2 install.
+
+| Setting | Why |
+|---|---|
+| `[boot] systemd=true` in `/etc/wsl.conf` | Docker Engine and the `modules-load.d` handling in `host-up` expect systemd |
+| Repository under `~`, not `/mnt/c` | The Windows mount drops executable bits and is slow for Go builds and Tilt's file watcher |
+| `memory=12GB` or more, `processors=6` or more in `%UserProfile%\.wslconfig` | The Mock NICo stack needs 6 CPUs and 12 GiB free |
+| `networkingMode=mirrored` in `.wslconfig` | `localhost:8080` and the Tilt UI on `localhost:10350` then open from a Windows browser |
+| `fs.inotify.max_user_instances` of 1024 or more | The default is 128 on many distributions; Tilt restarts in a loop below 1024 |
+
+**API Only** (`capi-core-up`, then `run-local`, as above)
+needs nothing WSL-specific beyond a working Docker daemon; the tools it
+does need are listed in [first-cluster.md](first-cluster.md#before-you-start).
+
+**Mock NICo and the local site** need `/dev/vtpmx`, and the stock WSL2 kernel is
+built without `CONFIG_TCG_VTPM_PROXY`. No Ubuntu package supplies the module for
+a Microsoft kernel, so `make -C controller host-up` builds it. It clones the
+`linux-msft-wsl-<version>` tag that matches `uname -r`, compiles
+`tpm_vtpm_proxy` out of tree against that kernel's `/proc/config.gz`, installs it
+under `/lib/modules/$(uname -r)/extra` and loads it. No custom kernel and no
+`wsl --shutdown` are involved.
+
+The first run installs build dependencies with `apt` and takes about 10 minutes.
+The build is cached in `/var/cache/nvke-wsl-vtpm`, and a WSL kernel update
+(`wsl --update`) triggers one rebuild on the next `host-up`.
+
+WSL recreates `/lib/modules/$(uname -r)` on every restart, which removes the
+installed module and leaves `modules-load.d` nothing to load at boot. After each
+restart, run `make -C controller host-up` again before Tilt; it reinstalls the
+cached module in about a second.
 
 ## agent (nvke-agent)
 

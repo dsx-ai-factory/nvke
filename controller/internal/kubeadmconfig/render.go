@@ -6,6 +6,7 @@ package kubeadmconfig
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -67,19 +68,35 @@ const (
 		"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256," +
 		"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256," +
 		"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
-	defaultProfilingDisabled         = "false"
-	defaultAPIServerShutdownDelay    = "10s"
-	defaultAPIServerShutdownRetry    = "true"
-	defaultAPIServerShutdownWatch    = "20s"
-	defaultAutoCompactionRetention   = "1"
-	defaultEncryptionConfigPath      = "/etc/kubernetes/kube-api-encryption/encryption-config.yaml"
-	defaultEncryptionConfigDirectory = "/etc/kubernetes/kube-api-encryption"
-	defaultOIDCConfigDirectory       = "/etc/kubernetes/oidc"
-	defaultAPIServerPatchFile        = defaultPatchesDirectory + "/kube-apiserver-base-graceful-shutdown+merge.yaml"
-	defaultKubeletPatchFile          = defaultPatchesDirectory + "/kubeletconfiguration0+merge.yaml"
-	defaultSystemReservedMemory      = "16Gi"
-	defaultKubeReservedMemory        = "2Gi"
-	defaultAPIServerTerminationGrace = 45
+	defaultProfilingDisabled       = "false"
+	defaultAPIServerShutdownDelay  = "10s"
+	defaultAPIServerShutdownRetry  = "true"
+	defaultAPIServerShutdownWatch  = "20s"
+	defaultAutoCompactionRetention = "1"
+	// defaultEtcdCompactionInterval pins kube-apiserver's compaction tick instead
+	// of inheriting the upstream default. kube-apiserver performs all effective
+	// MVCC compaction here -- etcd's own hourly auto-compaction trails it by 12x
+	// and measures as a no-op -- so an upstream default change, or an explicit
+	// 0 which disables compaction outright, would leave nothing reclaiming
+	// revisions. That growth is live data rather than free pages, so
+	// defragmentation cannot recover it and the backend fills toward the quota.
+	defaultEtcdCompactionInterval = "5m"
+	// defaultBootstrapDefragThresholdMegabytes is the reclaimable space etcd
+	// requires before it defragments during startup. At 200 MiB this fires on
+	// essentially every restart, which is the intent rather than a side effect:
+	// the cost is 1-2s spent inside a window where the member is already down,
+	// and the sawtooth it produces holds the backend near live-data size. Left
+	// undefragmented the file drifts 15-18 MiB/day with no upper bound short of
+	// the quota, because a BoltDB file never shrinks on its own.
+	defaultBootstrapDefragThresholdMegabytes = "200"
+	defaultEncryptionConfigPath              = "/etc/kubernetes/kube-api-encryption/encryption-config.yaml"
+	defaultEncryptionConfigDirectory         = "/etc/kubernetes/kube-api-encryption"
+	defaultOIDCConfigDirectory               = "/etc/kubernetes/oidc"
+	defaultAPIServerPatchFile                = defaultPatchesDirectory + "/kube-apiserver-base-graceful-shutdown+merge.yaml"
+	defaultKubeletPatchFile                  = defaultPatchesDirectory + "/kubeletconfiguration0+merge.yaml"
+	defaultSystemReservedMemory              = "16Gi"
+	defaultKubeReservedMemory                = "2Gi"
+	defaultAPIServerTerminationGrace         = 45
 	// defaultEnabledAdmissionPlugins overrides kubeadm's own default
 	// enable-admission-plugins value rather than adding to it — kubeadm merges
 	// apiServer.extraArgs into its defaults by flag key, so the value supplied
@@ -197,6 +214,54 @@ func supportsAnonymousAuthConfig(kubernetesVersion string) bool {
 // clusters that get the file and the flag; it never narrows it.
 func needsAuthenticationConfig(kubernetesVersion string, oidc *OIDCAuthenticationConfig) bool {
 	return oidc != nil || supportsAnonymousAuthConfig(kubernetesVersion)
+}
+
+// bootstrapDefragMinVersion is the first release whose *default* etcd accepts
+// --bootstrap-defrag-threshold-megabytes. Kubernetes 1.34 moves kubeadm's
+// default etcd from 3.5.24 to 3.6.5, and 3.6 is where the flag loses its
+// --experimental- prefix.
+//
+// This is only the fallback for a configuration that does not pin an etcd
+// image; a pinned tag is authoritative. See supportsBootstrapDefrag.
+//
+// It shares a number with anonymousAuthConfigMinVersion and nothing else; the
+// two floors are independent and must not be collapsed.
+func bootstrapDefragMinVersion() *version.Version { return version.MustParseGeneric("1.34.0") }
+
+// etcdBootstrapDefragMinVersion is the first etcd release accepting the stable
+// flag. 3.5 takes only --experimental-bootstrap-defrag-threshold-megabytes.
+func etcdBootstrapDefragMinVersion() *version.Version { return version.MustParseGeneric("3.6.0") }
+
+// supportsBootstrapDefrag reports whether the configured etcd understands the
+// stable bootstrap-defrag flag.
+//
+// An explicit etcdImageTag settles it, and kubernetesVersion is consulted only
+// when there is none. The Kubernetes-to-etcd mapping is kubeadm's default, not
+// a constraint: etcd 3.5 on Kubernetes 1.34 and etcd 3.6 on 1.33 are both
+// wire-compatible pairings an operator may choose deliberately to work around
+// a defect, and an inference drawn from the Kubernetes version must not
+// override a version they pinned themselves.
+//
+// Either input being unparseable yields false, and the asymmetry is why: etcd
+// 3.5 does not ignore the stable spelling, it refuses to start. flagSet.Parse
+// fails on an unknown flag and etcd exits 2 before serving, so a static pod
+// that receives this flag too early crashloops its member. Withholding it only
+// means that member defragments on recycle rather than on restart.
+func supportsBootstrapDefrag(kubernetesVersion, etcdImageTag string) bool {
+	if etcdImageTag != "" {
+		// Image tags carry a packaging suffix, as in 3.6.5-0.
+		etcdVersion, err := version.ParseGeneric(strings.SplitN(etcdImageTag, "-", 2)[0])
+		if err != nil {
+			return false
+		}
+		return !etcdVersion.LessThan(etcdBootstrapDefragMinVersion())
+	}
+
+	parsed, err := version.ParseGeneric(kubernetesVersion)
+	if err != nil {
+		return false
+	}
+	return !parsed.LessThan(bootstrapDefragMinVersion())
 }
 
 // imageVolumeKubeletFeatureGates returns the kubelet featureGates map for

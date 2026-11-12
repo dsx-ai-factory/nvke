@@ -37,6 +37,8 @@ type model struct {
 	Resources         []resourceModel
 	SourceImport      string
 	UsesTime, UsesUID bool
+	CatalogTypes      []catalogDeclaration
+	CatalogUsesTime   bool
 }
 
 const (
@@ -46,14 +48,18 @@ const (
 	publicMetadataKey = "metadata"
 )
 
-// readModel limits projection to approved roots and metadata. Nested spec/status types are reused.
+// readModel keeps complete public specs separate from explicitly included catalog fields.
 func readModel(root string) (model, error) {
 	var result model
-	declarations, validations, resources, err := readSource(root)
+	declarations, validations, resources, catalogs, err := readSource(root)
 	if err != nil {
 		return result, err
 	}
 	result.Resources = resources
+	result.CatalogTypes, result.CatalogUsesTime, err = readCatalogTypes(declarations, catalogs)
+	if err != nil {
+		return result, err
+	}
 	crds, err := readCRDs(root)
 	if err != nil {
 		return result, err
@@ -131,21 +137,25 @@ func (r *resourceModel) readFields(structure *ast.StructType) error {
 	return nil
 }
 
-// readSource ignores previous output so removed or renamed input types can regenerate.
-func readSource(root string) (map[string]ast.Expr, map[string]bool, []resourceModel, error) {
+// readSource discovers markers and existing Validate methods while excluding previous public and catalog output.
+// Removed or renamed input types can then regenerate without depending on stale declarations.
+func readSource(root string) (map[string]ast.Expr, map[string]bool, []resourceModel, []string, error) {
 	declarations, validations := map[string]ast.Expr{}, map[string]bool{}
 	var resources []resourceModel
+	var catalogs []string
 	files, err := filepath.Glob(filepath.Join(root, "apis/v1/*.go"))
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	for _, filename := range files {
-		if filepath.Base(filename) == filepath.Base(publicOutput) || strings.HasSuffix(filename, "_test.go") {
+		base := filepath.Base(filename)
+		if base == filepath.Base(publicOutput) || base == filepath.Base(catalogOutput) ||
+			strings.HasSuffix(filename, "_test.go") {
 			continue
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), filename, nil, parser.ParseComments)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		for _, declaration := range file.Decls {
 			switch declaration := declaration.(type) {
@@ -158,18 +168,26 @@ func readSource(root string) (map[string]ast.Expr, map[string]bool, []resourceMo
 						declarations[spec.Name.Name] = spec.Type
 						if len(declaration.Specs) > 1 {
 							for line := range strings.SplitSeq(declaration.Doc.Text(), "\n") {
-								if strings.HasPrefix(strings.TrimSpace(line), "+nvke:public") {
-									return nil, nil, nil, fmt.Errorf(
-										"%s: public markers on grouped declarations must attach to individual types", filename)
+								if strings.HasPrefix(strings.TrimSpace(line), "+nvke:public") ||
+									strings.HasPrefix(strings.TrimSpace(line), "+nvke:catalog") {
+									return nil, nil, nil, nil, fmt.Errorf(
+										"%s: public/catalog markers on grouped declarations must attach to individual types", filename)
 								}
 							}
 						}
 						r, marked, err := readPublicMarkers(spec.Name.Name, declaration.Doc, spec.Doc)
 						if err != nil {
-							return nil, nil, nil, fmt.Errorf("%s: %w", filename, err)
+							return nil, nil, nil, nil, fmt.Errorf("%s: %w", filename, err)
 						}
 						if marked {
 							resources = append(resources, r)
+						}
+						isCatalog, err := readCatalogMarker("view", declaration.Doc, spec.Doc)
+						if err != nil {
+							return nil, nil, nil, nil, fmt.Errorf("%s: %w", filename, err)
+						}
+						if isCatalog {
+							catalogs = append(catalogs, spec.Name.Name)
 						}
 					}
 				}
@@ -177,7 +195,7 @@ func readSource(root string) (map[string]ast.Expr, map[string]bool, []resourceMo
 				if declaration.Name.Name == "Validate" && declaration.Recv != nil {
 					name, ok := declaration.Recv.List[0].Type.(*ast.Ident)
 					if !ok {
-						return nil, nil, nil, fmt.Errorf("%s: Validate must have a value receiver", filename)
+						return nil, nil, nil, nil, fmt.Errorf("%s: Validate must have a value receiver", filename)
 					}
 					validations[name.Name] = true
 				}
@@ -186,7 +204,8 @@ func readSource(root string) (map[string]ast.Expr, map[string]bool, []resourceMo
 	}
 	// Public names give stable output regardless of source filenames or declaration order.
 	slices.SortFunc(resources, func(a, b resourceModel) int { return strings.Compare(a.Public, b.Public) })
-	return declarations, validations, resources, nil
+	slices.Sort(catalogs)
+	return declarations, validations, resources, catalogs, nil
 }
 
 // readPublicMarkers makes a complete set of type-local markers the explicit opt-in.
@@ -255,12 +274,18 @@ func readCRDs(root string) (map[string]apiextensionsv1.CustomResourceDefinition,
 	return result, nil
 }
 
-// checkTypes validates the candidate alongside handwritten methods before replacing output.
-func checkTypes(root string, candidate []byte, resources []resourceModel) (string, error) {
+// checkTypes validates candidate public and catalog types with handwritten methods before replacing output.
+// An overlay substitutes fresh generated types without hiding errors in the rest of the source package.
+func checkTypes(root string, candidate, catalog []byte, resources []resourceModel) (string, error) {
 	filename, err := filepath.Abs(filepath.Join(root, publicOutput))
 	if err != nil {
 		return "", err
 	}
+	catalogFilename, err := filepath.Abs(filepath.Join(root, catalogOutput))
+	if err != nil {
+		return "", err
+	}
+	// These temporary assertions require value methods for validation and conversion in both directions.
 	for _, resource := range resources {
 		for _, pair := range [][2]string{{resource.Public, resource.Source}, {resource.Source, resource.Public}} {
 			candidate = fmt.Appendf(candidate,
@@ -269,7 +294,7 @@ func checkTypes(root string, candidate []byte, resources []resourceModel) (strin
 	}
 	loaded, err := packages.Load(&packages.Config{
 		Dir: root, Mode: packages.NeedName | packages.NeedTypes | packages.NeedImports | packages.NeedDeps,
-		Overlay: map[string][]byte{filename: candidate},
+		Overlay: map[string][]byte{filename: candidate, catalogFilename: catalog},
 	}, "./apis/v1")
 	if err != nil {
 		return "", err

@@ -28,7 +28,7 @@ func NewRegistration[E ResourceHandler[I], I ResourceHandler[E]](path string, in
 		if err != nil {
 			return err
 		}
-		Register(mux, path, server, info.Verbs...)
+		Register(mux, path, server, server, nil, info.Verbs...)
 		return nil
 	}}
 }

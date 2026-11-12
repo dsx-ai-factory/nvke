@@ -1,0 +1,172 @@
+- body:
+    metadata:
+      name: stable
+    spec:
+      defaultVersion: 1.34.6
+      lifecycle:
+        deprecated: false
+      versions:
+      - kubernetesVersion: 1.34.6
+        supportedUntil: "2027-02-28T00:00:00Z"
+        version: 1.34.6
+      - kubernetesVersion: 1.34.6
+        supportedUntil: "2027-02-28T00:00:00Z"
+        version: "1.34"
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Length:
+    - "290"
+    Content-Type:
+    - application/json
+    Date:
+    - DATE
+  statusCode: 200
+- body:
+    hasMore: false
+    items:
+    - metadata:
+        name: stable
+      spec:
+        defaultVersion: 1.34.6
+        lifecycle:
+          deprecated: false
+        versions:
+        - kubernetesVersion: 1.34.6
+          supportedUntil: "2027-02-28T00:00:00Z"
+          version: 1.34.6
+        - kubernetesVersion: 1.34.6
+          supportedUntil: "2027-02-28T00:00:00Z"
+          version: "1.34"
+    pageKey: ""
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Length:
+    - "331"
+    Content-Type:
+    - application/json
+    Date:
+    - DATE
+  statusCode: 200
+- body:
+    metadata:
+      name: standard
+    spec:
+      controlPlane:
+        replicas: 3
+      lifecycle:
+        deprecated: false
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Length:
+    - "105"
+    Content-Type:
+    - application/json
+    Date:
+    - DATE
+  statusCode: 200
+- body:
+    hasMore: false
+    items:
+    - metadata:
+        name: standard
+      spec:
+        controlPlane:
+          replicas: 3
+        lifecycle:
+          deprecated: false
+    pageKey: ""
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Length:
+    - "146"
+    Content-Type:
+    - application/json
+    Date:
+    - DATE
+  statusCode: 200
+- body:
+    metadata:
+      name: np-b34
+    spec:
+      architecture: amd64
+      lifecycle:
+        deprecated: false
+      operatingSystem:
+        family: ubuntu
+        version: "24.04"
+      profile: ubuntu-gpu
+      tag: "2026.11"
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Length:
+    - "191"
+    Content-Type:
+    - application/json
+    Date:
+    - DATE
+  statusCode: 200
+- body:
+    hasMore: false
+    items:
+    - metadata:
+        name: np-b34
+      spec:
+        architecture: amd64
+        lifecycle:
+          deprecated: false
+        operatingSystem:
+          family: ubuntu
+          version: "24.04"
+        profile: ubuntu-gpu
+        tag: "2026.11"
+    pageKey: ""
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Length:
+    - "232"
+    Content-Type:
+    - application/json
+    Date:
+    - DATE
+  statusCode: 200
+- body:
+    metadata:
+      name: stable
+    spec:
+      defaultVersion: 1.34.6
+      lifecycle:
+        deprecated: false
+      versions:
+      - kubernetesVersion: 1.34.6
+        supportedUntil: "2027-02-28T00:00:00Z"
+        version: 1.34.6
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Length:
+    - "202"
+    Content-Type:
+    - application/json
+    Date:
+    - DATE
+  statusCode: 200
+- body:
+    hasMore: false
+    items: []
+    pageKey: ""
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Length:
+    - "42"
+    Content-Type:
+    - application/json
+    Date:
+    - DATE
+  statusCode: 200

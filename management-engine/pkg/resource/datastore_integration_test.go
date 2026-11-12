@@ -198,7 +198,7 @@ func TestPresenceAndOmission(t *testing.T) {
 	_, err = client.Get(WithOptions(ctx, opts), "optional")
 	require.NoError(t, err)
 	mux := http.NewServeMux()
-	Register(mux, "/widgets", client, OpUpdate)
+	Register(mux, "/widgets", client, client, nil, OpUpdate)
 	response := requestHTTP(WithLimits(mux, ServerOptions{}), ctx, "PUT", "/widgets/optional",
 		`{"metadata":{"name":"optional"},"spec":{"value":"public","count":0,"enabled":false,"items":[]}}`,
 		strconv.Quote(opts.ETag))
@@ -317,7 +317,8 @@ func TestScopedPagination(t *testing.T) {
 func TestHTTPAdmissionAndPreconditions(t *testing.T) {
 	f := setup(t, true)
 	mux := http.NewServeMux()
-	Register(mux, "/widgets", f.client(t), OpCreate, OpGet, OpList, OpUpdate, OpDelete)
+	server := f.client(t)
+	Register(mux, "/widgets", server, server, nil, OpCreate, OpGet, OpList, OpUpdate, OpDelete)
 	handler := WithLimits(mux, ServerOptions{})
 	ctx := f.as("org-a")
 	for _, tc := range []struct {

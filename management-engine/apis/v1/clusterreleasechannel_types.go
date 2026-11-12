@@ -4,19 +4,35 @@
 package v1
 
 import (
+	"slices"
+	"strings"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/version"
 )
 
 // ClusterReleaseChannelSpec lists the releases available through a channel.
+// +nvke:catalog:view
 type ClusterReleaseChannelSpec struct {
-	// Releases maps Kubernetes major.minor versions to their available releases.
+	// Releases maps Kubernetes version selectors to named ClusterRelease candidates.
+	// A major.minor selector permits patch upgrades within that minor.
+	// A major.minor.patch selector fixes the Kubernetes version and may include an opaque suffix.
+	// A suffixed selector names an exact published choice. Its spelling does not imply upgrade order.
+	// References under any selector are alternatives in operator preference order.
+	// The selector bound keeps validation within Kubernetes' CEL cost budget.
 	// +kubebuilder:validation:MinProperties=1
-	// +kubebuilder:validation:XValidation:rule="self.all(version, version.matches('^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$'))",message="release keys must be Kubernetes major.minor versions"
+	// +kubebuilder:validation:MaxProperties=65536
+	// +kubebuilder:validation:XValidation:rule="self.all(version, size(version) <= 128 && version.matches('^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)([.](0|[1-9][0-9]*)([-+._][a-zA-Z0-9][a-zA-Z0-9._+-]*)?)?$'))",message="release keys must be major.minor or major.minor.patch with an optional build suffix and at most 128 characters"
 	Releases map[string]ClusterReleaseReferences `json:"releases"`
+	// Lifecycle controls catalog discovery and communicates support.
+	// +optional
+	// +kubebuilder:default={}
+	// +nvke:catalog:include
+	Lifecycle ReleaseLifecycle `json:"lifecycle"`
 }
 
-// ClusterReleaseReferences lists the releases available for one Kubernetes minor version.
+// ClusterReleaseReferences lists alternatives for one version selector in operator preference order.
 // +kubebuilder:validation:MinItems=1
 // +listType=map
 // +listMapKey=name
@@ -51,6 +67,42 @@ type ClusterReleaseChannelList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []ClusterReleaseChannel `json:"items"`
+}
+
+// ListVersions skips unusable selectors so an invalid version cannot block catalog discovery.
+// Valid selectors sort by descending Kubernetes version with lexical ties for opaque suffixes.
+func (in ClusterReleaseChannel) ListVersions() []string {
+	selectors := make([]string, 0, len(in.Spec.Releases))
+	versions := make(map[string]*version.Version, len(in.Spec.Releases))
+	for selector := range in.Spec.Releases {
+		parsed, err := parseChannelVersion(selector)
+		if err != nil {
+			continue
+		}
+		selectors = append(selectors, selector)
+		versions[selector] = parsed
+	}
+	slices.SortFunc(selectors, func(left, right string) int {
+		leftVersion, rightVersion := versions[left], versions[right]
+		if leftVersion.LessThan(rightVersion) {
+			return 1
+		}
+		if rightVersion.LessThan(leftVersion) {
+			return -1
+		}
+		// Prefer the minor selector when it is numerically equal to a .0 patch.
+		if difference := len(leftVersion.Components()) - len(rightVersion.Components()); difference != 0 {
+			return difference
+		}
+		return strings.Compare(left, right)
+	})
+	return selectors
+}
+
+func parseChannelVersion(selector string) (*version.Version, error) {
+	// A numeric build suffix is opaque too, so only parse the first three components.
+	components := strings.SplitN(selector, ".", 4)
+	return version.ParseGeneric(strings.Join(components[:min(len(components), 3)], "."))
 }
 
 func init() {

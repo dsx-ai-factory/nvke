@@ -12,6 +12,7 @@ import (
 // image its nodes boot and the initialization applied to them.
 // +kubebuilder:validation:XValidation:rule="has(self.profile) == has(oldSelf.profile)",message="profile presence is immutable"
 // +kubebuilder:validation:XValidation:rule="has(self.tag) == has(oldSelf.tag)",message="tag presence is immutable"
+// +nvke:catalog:view
 type NodePoolReleaseSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="machineImageRef is immutable"
 	MachineImageRef MachineImageReference `json:"machineImageRef"`
@@ -19,10 +20,12 @@ type NodePoolReleaseSpec struct {
 	MachineInit MachineInit `json:"machineInit"`
 	// +optional
 	// +kubebuilder:default={}
+	// +nvke:catalog:include
 	Lifecycle ReleaseLifecycle `json:"lifecycle"`
 	// Profile identifies the tenant-facing profile family.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="profile is immutable"
 	// +optional
+	// +nvke:catalog:include
 	Profile ResourceName `json:"profile,omitempty"`
 	// Tag identifies a revision within Profile.
 	// +kubebuilder:validation:MinLength=1
@@ -30,6 +33,7 @@ type NodePoolReleaseSpec struct {
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$`
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="tag is immutable"
 	// +optional
+	// +nvke:catalog:include
 	Tag string `json:"tag,omitempty"`
 }
 

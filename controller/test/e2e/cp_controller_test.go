@@ -129,14 +129,19 @@ func validateControllerManagedControlPlaneRollingUpdate(test *tenantTest) {
 		}
 
 		By("Waiting for every old control-plane node to be replaced and KubernetesReady in the controller")
-		Expect(test.nvke.WaitForControlPlaneNodesRolled(ctx, test.cluster.ID, desired, oldNodeIDs)).To(Succeed(),
+		// A config-revision roll replaces the control plane one node at a time to
+		// keep etcd quorum, so it costs one provision window per node, not the
+		// single-create Provision the other waits use. Budget for the serial
+		// replacement; the NodeTimeout below is sized to contain it.
+		rollBudget := time.Duration(desired) * test.timeouts.Provision
+		Expect(test.nvke.WaitForControlPlaneNodesRolled(ctx, test.cluster.ID, desired, oldNodeIDs, rollBudget)).To(Succeed(),
 			"control plane should roll onto new nodes at the same desired count")
 
 		By("Asserting the tenant cluster reports Ready for the rolled control-plane nodes")
 		assertControlPlaneNodesReadyInTenant(ctx, test, desired)
 		By("Verifying replacement CAPI Machines retained balanced failure-domain placement")
 		assertCAPDControlPlaneFailureDomains(ctx, test, desired, nil)
-	}, Label("cp-controller", "rolling-update"), NodeTimeout(90*time.Minute))
+	}, Label("cp-controller", "rolling-update"), NodeTimeout(2*time.Hour+30*time.Minute))
 }
 
 // assertControlPlaneNodesReadyInTenant builds an authenticated tenant client and
@@ -487,6 +492,123 @@ func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 			Expect(replacementDomain).To(Equal(victimDomain), "the replacement should refill the deleted Machine's domain")
 		}
 	}, Label("cp-controller", "cp-delete"), NodeTimeout(60*time.Minute))
+}
+
+// validateControllerManagedControlPlaneAutoScaleDown grows the control plane to
+// four, then lowers the desired count back to three and asserts the controller
+// sheds exactly one surplus node on its own -- with no explicit node delete --
+// through the same serialized teardown path: at most one teardown in flight, no
+// control-plane join while the shed runs, the cluster-level status reporting the
+// shed while it runs, and the surviving three all drawn from the original four
+// (a shed, not a replacement).
+//
+// This is the automatic counterpart to
+// validateControllerManagedControlPlaneSerializedDelete, which turns auto
+// scale-down off and drives the shrink with an explicit delete; here auto
+// scale-down itself is the actor, so the drop in desiredCount is the only input.
+// Growing first is what makes the shrink legal under the quorum floor.
+func validateControllerManagedControlPlaneAutoScaleDown(test *tenantTest) {
+	It("sheds a surplus control-plane node automatically when the desired count drops", func(ctx context.Context) {
+		By(fmt.Sprintf("Growing the control plane to %d so the drop to %d leaves one surplus node to shed",
+			controlPlaneControllerDeleteSurgeCount, controlPlaneControllerUpdateDesiredCount))
+		expectSucceed(test.nvke.UpdateControlPlaneDesiredCount(ctx, test.cluster.ID, controlPlaneControllerDeleteSurgeCount))
+		Eventually(func(ctx context.Context) error {
+			return test.nvke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, controlPlaneControllerDeleteSurgeCount)
+		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(5*time.Second).
+			Should(Succeed(), "control plane should grow before the automatic scale-down")
+
+		// Ready is not enough: the quorum floor counts Joined, which the
+		// ProvisionNode workflow writes after the tenant node-status controller has
+		// already marked the node KubernetesReady. Dropping the desired count before
+		// the surge node is Joined would let the floor refuse the shed.
+		By("Waiting for every grown control-plane node to report Joined, which is what the quorum floor counts")
+		Expect(test.nvke.WaitForJoinedControlPlaneNodes(ctx, test.cluster.ID, controlPlaneControllerDeleteSurgeCount)).To(Succeed(),
+			"the quorum floor counts joined nodes, so the scale-down must not race the Joined write")
+		By("Verifying the four-node control plane is balanced before scale-down")
+		assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerDeleteSurgeCount, nil)
+
+		// Auto scale-down is on by default (AutoScaleDownDisabled unset), but set it
+		// explicitly so this spec does not depend on the cluster's created default
+		// and reads as its own precondition. The specs share one cluster, so record
+		// and restore the original value rather than leaving it flipped for the next.
+		By("Ensuring automatic control-plane scale-down is enabled")
+		cluster := expectSucceed(test.nvke.GetCluster(ctx, test.cluster.ID))
+		Expect(cluster.ControlPlaneConfig).NotTo(BeNil(), "the cluster should report its control-plane config")
+		originalAutoScaleDownDisabled := ptr.Deref(cluster.ControlPlaneConfig.AutoScaleDownDisabled, false)
+		DeferCleanup(func(ctx context.Context) {
+			expectSucceed(test.nvke.SetControlPlaneAutoScaleDownDisabled(ctx, test.cluster.ID, originalAutoScaleDownDisabled))
+		}, NodeTimeout(time.Minute))
+		expectSucceed(test.nvke.SetControlPlaneAutoScaleDownDisabled(ctx, test.cluster.ID, false))
+
+		before := expectSucceed(test.nvke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID))
+		Expect(before.NodeIDs).To(HaveLen(controlPlaneControllerDeleteSurgeCount))
+		Expect(before.InFlight()).To(BeFalse(), "no control-plane delete should be in flight before this spec lowers the count")
+
+		By(fmt.Sprintf("Lowering the desired count to %d so automatic scale-down sheds the surplus node",
+			controlPlaneControllerUpdateDesiredCount))
+		expectSucceed(test.nvke.UpdateControlPlaneDesiredCount(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount))
+
+		By("Watching the controller shed one node on its own: one teardown at a time, no joins while it runs, and visible in the cluster status")
+		observedShedInStatus := false
+		joinedWatermark := before.JoinedNodeIDs
+		Eventually(func(ctx context.Context) error {
+			state, err := test.nvke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID)
+			if err != nil {
+				return err
+			}
+
+			// Serialization: automatic scale-down starts one teardown at a time.
+			Expect(state.Deleting).To(BeNumerically("<=", 1),
+				"at most one control-plane teardown may be in flight at a time")
+
+			if state.InFlight() {
+				// Observability: the shed must be visible at the cluster level.
+				observedShedInStatus = true
+
+				// Join gate: while a delete is in flight the joined set must not grow.
+				for id := range state.JoinedNodeIDs {
+					if _, known := joinedWatermark[id]; !known {
+						return StopTrying(fmt.Sprintf(
+							"control-plane node %s joined while an automatic scale-down was in flight", id,
+						))
+					}
+				}
+				return fmt.Errorf("automatic control-plane scale-down still in flight: %d deleting, %d requested",
+					state.Deleting, state.DeleteRequested)
+			}
+
+			// Once nothing is in flight the joined set may legitimately grow again.
+			joinedWatermark = state.JoinedNodeIDs
+
+			if len(state.NodeIDs) != controlPlaneControllerUpdateDesiredCount {
+				return fmt.Errorf("control plane has %d nodes; want %d",
+					len(state.NodeIDs), controlPlaneControllerUpdateDesiredCount)
+			}
+			// A shed removes a node rather than replacing it: every survivor must be
+			// one of the original four, with no fresh node joined in its place.
+			for id := range state.NodeIDs {
+				if _, original := before.NodeIDs[id]; !original {
+					return StopTrying(fmt.Sprintf(
+						"control-plane node %s is new; automatic scale-down must shed a node, not replace one", id,
+					))
+				}
+			}
+			if state.ReadyNodeCount != controlPlaneControllerUpdateDesiredCount {
+				return fmt.Errorf("control plane has %d nodes KubernetesReady; want %d",
+					state.ReadyNodeCount, controlPlaneControllerUpdateDesiredCount)
+			}
+			return nil
+		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(2*time.Second).
+			Should(Succeed(), "the control plane should settle at three nodes with one original node shed")
+
+		Expect(observedShedInStatus).To(BeTrue(),
+			"the cluster control-plane status should have reported the in-progress scale-down at least once")
+
+		By("Asserting the tenant cluster reports Ready for the surviving control-plane nodes")
+		assertControlPlaneNodesReadyInTenant(ctx, test, controlPlaneControllerUpdateDesiredCount)
+		By("Verifying the three-node control plane remains balanced after scale-down")
+		assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerUpdateDesiredCount, nil)
+	}, Label("cp-controller", "cp-scaledown"), NodeTimeout(75*time.Minute))
 }
 
 // validateControllerManagedControlPlaneRebalance drives one steady-state

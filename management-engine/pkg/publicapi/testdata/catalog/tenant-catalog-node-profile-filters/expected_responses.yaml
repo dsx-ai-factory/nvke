@@ -1,0 +1,48 @@
+- body:
+    hasMore: true
+    items:
+    - metadata:
+        name: np-c-old
+      spec:
+        architecture: amd64
+        lifecycle:
+          deprecated: true
+        operatingSystem:
+          family: ubuntu
+          version: "24.04"
+        profile: ubuntu-gpu
+        tag: "2026.10"
+    pageKey: PAGE_KEY
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Type:
+    - application/json
+    Date:
+    - DATE
+  statusCode: 200
+- body:
+    hasMore: false
+    items:
+    - metadata:
+        name: np-d-current
+      spec:
+        architecture: amd64
+        lifecycle:
+          deprecated: false
+        operatingSystem:
+          family: ubuntu
+          version: "24.04"
+        profile: ubuntu-gpu
+        tag: "2026.11"
+    pageKey: ""
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Length:
+    - "238"
+    Content-Type:
+    - application/json
+    Date:
+    - DATE
+  statusCode: 200

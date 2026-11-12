@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+
+- method: POST
+  path: /v1/machine-images
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: ubuntu-2404-amd64
+    spec:
+      operatingSystem:
+        family: ubuntu
+        version: "24.04"
+      architecture: amd64
+      buildDate: "2026-01-01"
+      nico:
+        ipxeScript: |
+          #!ipxe
+          echo NVKE test image
+- method: POST
+  path: /v1/cluster-releases
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: control-plane-v1
+    spec:
+      machineImageRef:
+        name: ubuntu-2404-amd64
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+          hostname: nvke-control-plane

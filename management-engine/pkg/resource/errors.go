@@ -20,6 +20,9 @@ const (
 	uidPointer                 = "/metadata/uid"
 	pageKeyParameter           = "pageKey"
 	pageSizeParameter          = "pageSize"
+	fieldSelectorParameter     = "fieldSelector"
+	versionParameter           = "version"
+	invalidPageKeyMessage      = "The page key is invalid."
 	propagationPolicyParameter = "propagationPolicy"
 
 	// Problem response codes.
@@ -65,10 +68,38 @@ type Error struct {
 	Code   string       `json:"code"`
 	Title  string       `json:"title"`
 	Errors []FieldError `json:"errors,omitempty"`
+	cause  error
 }
 
 // Error returns the approved diagnostic without datastore details.
 func (e *Error) Error() string { return e.Title }
+
+// Unwrap retains the cause for direct callers without including it in public diagnostics.
+func (e *Error) Unwrap() error { return e.cause }
+
+// readFailure preserves the cause without mutating a shared public error.
+func readFailure[E any](err error) *Error {
+	public := *translate[E](err).(*Error)
+	public.cause = err
+	return &public
+}
+
+// listFailure distinguishes an unavailable backing collection from an absent named offering.
+func listFailure[E any](err error) error {
+	public := readFailure[E](err)
+	if public.Status == http.StatusNotFound {
+		public.Status = http.StatusServiceUnavailable
+		public.Code, public.Title = datastoreUnavailableCode, "The datastore is unavailable."
+	}
+	return public
+}
+
+// projectionFailure keeps conversion details out of public diagnostics.
+func projectionFailure(err error) error {
+	public := problem(http.StatusInternalServerError, projectionFailedCode, "The resource cannot be represented.")
+	public.cause = err
+	return public
+}
 
 // problem constructs an error from diagnostics approved for public responses.
 func problem(status int, code, title string) *Error {
