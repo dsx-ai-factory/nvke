@@ -345,15 +345,21 @@ at fault.
 {{- end }}
 
 {{/*
-Refuse apiAuthz without apiAuth, enforcing apiAuthz behind permissive apiAuth,
-and a config the chart would not render or that carries apiVersion or kind.
-Called from deployment.yaml, like controller.apiAuth.validate. Emits nothing.
+Refuse an unknown backend, apiAuthz without apiAuth, enforcing apiAuthz behind
+permissive apiAuth, and a LocalBundle config the chart would not render or that
+carries apiVersion or kind. Called from deployment.yaml, like
+controller.apiAuth.validate. Emits nothing.
 */}}
 {{- define "controller.apiAuthz.validate" -}}
 {{- $authz := .Values.apiAuthz -}}
-{{- $create := and $authz.enabled $authz.configMap.create -}}
-{{- if and $authz.config (not $create) -}}
-{{- fail "apiAuthz.config is set but would not be rendered: it is only used when apiAuthz.enabled and apiAuthz.configMap.create are both true. Set both, or remove apiAuthz.config and put authorization.yaml in the ConfigMap named by apiAuthz.configMap.name yourself." -}}
+{{- $backend := $authz.authorizer.backend -}}
+{{- if ne (toString $backend) "localBundle" -}}
+{{- fail (printf "apiAuthz.authorizer.backend is %q. The only backend is localBundle." (toString $backend)) -}}
+{{- end -}}
+{{- $lb := $authz.authorizer.localBundle -}}
+{{- $create := and $authz.enabled $lb.configMap.create -}}
+{{- if and $lb.config (not $create) -}}
+{{- fail "apiAuthz.authorizer.localBundle.config is set but would not be rendered: it is only used when apiAuthz.enabled and apiAuthz.authorizer.localBundle.configMap.create are both true. Set both, or remove the config and put authorization.yaml in the ConfigMap named by apiAuthz.authorizer.localBundle.configMap.name yourself." -}}
 {{- end -}}
 {{- if $authz.enabled -}}
 {{- if not .Values.apiAuth.enabled -}}
@@ -363,11 +369,11 @@ Called from deployment.yaml, like controller.apiAuth.validate. Emits nothing.
 {{- fail "apiAuthz.permissive is false but apiAuth.permissive is true. Permissive authentication passes a request it would reject to authorization with no caller, and enforcing authorization refuses it. Set apiAuthz.permissive to true, or apiAuth.permissive to false." -}}
 {{- end -}}
 {{- if $create -}}
-{{- if not $authz.config -}}
-{{- fail "apiAuthz.configMap.create is true but apiAuthz.config is empty, so no caller would have a role. Populate apiAuthz.config, or set create to false and manage the ConfigMap yourself." -}}
+{{- if not $lb.config -}}
+{{- fail "apiAuthz.authorizer.localBundle.configMap.create is true but apiAuthz.authorizer.localBundle.config is empty, so no caller would have a role. Populate the config, or set create to false and manage the ConfigMap yourself." -}}
 {{- end -}}
-{{- if or (hasKey $authz.config "apiVersion") (hasKey $authz.config "kind") -}}
-{{- fail "apiAuthz.config must not carry apiVersion or kind. The chart supplies both, so a copy here is a duplicate key the controller refuses at startup." -}}
+{{- if or (hasKey $lb.config "apiVersion") (hasKey $lb.config "kind") -}}
+{{- fail "apiAuthz.authorizer.localBundle.config must not carry apiVersion or kind. The chart supplies both, so a copy here is a duplicate key the controller refuses at startup." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
