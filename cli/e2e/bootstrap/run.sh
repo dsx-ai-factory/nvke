@@ -21,6 +21,10 @@
 #      Check the API endpoint, BGP next-hops and readiness through the VIP.
 #      Set NVKECTL_E2E_CONTROL_PLANE_VIP="" only with NVKECTL_E2E_NODES=1 to
 #      exercise the supported single-node configuration without kube-vip.
+#   4d. kube-bench scans every node of that cluster against the CIS benchmark
+#      and NVKE's exception register (controller/test/e2e/internal/kubebench).
+#      A failed scan does not stop the run: stage 5 and the teardown still run,
+#      and the suite fails at the end, naming the scan.
 #   5. Traefik serves a whoami Deployment on that cluster: hosts that already
 #      existed now serve traffic like any other cluster.
 #
@@ -1191,6 +1195,38 @@ if [ -n "${tainted_nodes}" ]; then
 fi
 log "PASS: every node is schedulable"
 
+# ── Stage 4d: CIS benchmark scan ────────────────────────────────────────
+#
+# The e2e suite's cis-site spec scans the cluster in KUBECONFIG and judges it
+# as a site cluster. Its results land in ${DIAGNOSTICS_DIR}/kube-bench, which
+# the EXIT trap scans for credentials like the rest of the bundle. A failure is
+# remembered rather than fatal, so a red scan is not reported as a failed
+# bootstrap, and a failed bootstrap later on is not hidden behind it.
+
+log "scanning the cluster with kube-bench"
+cis_scan_rc=0
+cis_scan_result=""
+cis_scan_summary="${DIAGNOSTICS_DIR}/kube-bench/summary.txt"
+rm -rf "${DIAGNOSTICS_DIR}/kube-bench"
+NVKE_CIS_SITE_SCAN=true KUBECONFIG="${TENANT_KUBECONFIG}" \
+  "${GO}" test -C "${REPO_ROOT}/controller/test/e2e" -count=1 -timeout 30m -run '^TestE2E$' . \
+  -args -ginkgo.label-filter=cis-site -ginkgo.fail-on-empty -ginkgo.no-color -ginkgo.v \
+  "-e2e.artifacts-dir=${DIAGNOSTICS_DIR}" || cis_scan_rc=$?
+# The scan writes summary.txt only once it has judged the cluster. Without it
+# the scan never reached a verdict -- the suite did not build, selected or ran
+# no spec, or the scan stopped on an error -- whatever go test exited with.
+if [ ! -s "${cis_scan_summary}" ]; then
+  cis_scan_result="did not complete (go test exit ${cis_scan_rc}); see the go test output above"
+elif [ "${cis_scan_rc}" -ne 0 ]; then
+  cis_scan_result="found violations or stale register entries; see ${cis_scan_summary}"
+fi
+if [ -z "${cis_scan_result}" ]; then
+  log "PASS: the cluster passes the CIS benchmark scan"
+else
+  log "FAIL: the CIS benchmark scan ${cis_scan_result}"
+  log "  continuing with stage 5; the suite fails at the end"
+fi
+
 # ── Stage 5: hello world ────────────────────────────────────────────────
 #
 # Traefik is published on a NodePort because that is a route the host has to
@@ -1245,3 +1281,7 @@ if kind_lists_bootstrap_cluster; then
   fail "kind cluster ${BOOTSTRAP_KIND_CLUSTER} is still registered after this suite deleted it"
 fi
 log "PASS: this suite's teardown left no ${BOOTSTRAP_KIND_CLUSTER} cluster behind"
+
+if [ -n "${cis_scan_result}" ]; then
+  fail "stage 4d: the CIS benchmark scan ${cis_scan_result}"
+fi

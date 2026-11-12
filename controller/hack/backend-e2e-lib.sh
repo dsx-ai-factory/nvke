@@ -176,6 +176,7 @@ e2e_run_ginkgo() {
     -ginkgo.timeout="${suite_minutes}m" \
     "-ginkgo.label-filter=${label_filter}" \
     "-ginkgo.junit-report=/state/junit.xml" \
+    -e2e.artifacts-dir=/state/artifacts \
     "$@" \
     2>&1 | tee "${state_dir}/e2e.log"
   local rc=${PIPESTATUS[0]}
