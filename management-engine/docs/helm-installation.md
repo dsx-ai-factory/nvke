@@ -196,8 +196,16 @@ local installation. Existing remote users must explicitly set `state.enabled=fal
 and configure `manager.stateAccess`, including their Secret and namespace.
 Remove manually supplied kubeconfig, context, election-namespace, backend and
 infrastructure-template arguments and their credential volumes; use the named
-chart inputs instead. The examples use development image tags; pin a compatible
-published image and chart revision for an installation.
+chart inputs instead.
+
+For development integration, pin the NVKE Git commit containing the chart and
+use a manager image built from that same commit, pinned by digest. This pairs
+state schemas, permissions and runtime arguments from one source revision.
+Chart version `0.2.0` pins catalog chart `0.1.0` in `Chart.lock`; those package
+versions alone do not identify a compatible manager image. Record the source
+commit and image digest in the site configuration. Cross-revision compatibility
+needs separate validation; artifact publication is a separate delivery step.
+The example image tags are placeholders for those reviewed installation inputs.
 
 The chart owns its three specific schemas: NVKECluster, ControlPlaneClass and
 ClusterReleaseChannel. `state.crds.install=false` delegates those definitions to
@@ -227,6 +235,10 @@ state RBAC/configuration and catalog dependency together. `make manifests`
 regenerates canonical definitions; `make chart` updates Helm output, and
 `make chart-deps` stages the pinned dependency
 before rendering or packaging chart source.
+
+Reapplying the same pinned chart revision and values to the same Helm release
+name and namespace updates the existing objects rather than creating a second
+installation. The render checks verify that repeated generation is deterministic.
 
 CRDs are rendered as Helm resources with `helm.sh/resource-policy: keep`.
 Helm applies their schemas on upgrades and retains them on uninstall or when
