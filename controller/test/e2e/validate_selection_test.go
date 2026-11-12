@@ -7,7 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -27,10 +27,11 @@ const (
 
 	labelFilterFlag = "ginkgo.label-filter"
 
-	// validateExcludeLabelsEnv lists, comma-separated, labels whose specs a
-	// run leaves out, on top of whatever else selects specs. For a site where
-	// a check does not apply, such as issuesCertificateLabel where
-	// cert-manager approves only what a CertificateRequestPolicy allows.
+	// validateExcludeLabelsEnv lists, comma-separated, labels from
+	// excludableLabels whose specs a run leaves out, on top of whatever else
+	// selects specs. For a site where a check does not apply, such as
+	// issuesCertificateLabel where cert-manager approves only what a
+	// CertificateRequestPolicy allows.
 	validateExcludeLabelsEnv = "NVKE_VALIDATE_EXCLUDE_LABELS"
 
 	// issuesCertificateLabel is the one creates spec that needs cert-manager
@@ -39,24 +40,22 @@ const (
 	issuesCertificateLabel = "issues-certificate"
 )
 
-// excludableLabel is what a Ginkgo label may be without changing what a
-// filter means: no operator, separator, grouping or space.
-var excludableLabel = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]*$`)
+// excludableLabels are the labels validateExcludeLabelsEnv may name: each
+// marks a check that does not apply to some sites, and nothing else. Any other
+// label, such as health or readiness, would leave out checks every site must
+// pass while the run still passed, so it is refused, as is a misspelling.
+var excludableLabels = []string{issuesCertificateLabel}
 
-// validationExclusions reads validateExcludeLabelsEnv. It refuses the two
-// labels that select a validation run at all: leaving either out is turning
-// the run off, which is the switches' job.
+// validationExclusions reads validateExcludeLabelsEnv.
 func validationExclusions(getenv func(string) string) ([]string, error) {
 	labels := splitList(getenv(validateExcludeLabelsEnv), ",")
 	for _, label := range labels {
-		if !excludableLabel.MatchString(label) {
-			return nil, fmt.Errorf("%s: %q is not a label", validateExcludeLabelsEnv, label)
-		}
-		if label == siteValidateLabel || label == tenantValidateLabel {
-			return nil, fmt.Errorf("%s: %s turns the run off; set %s or %s instead", validateExcludeLabelsEnv, label, siteValidateEnv, tenantValidateEnv)
+		if !slices.Contains(excludableLabels, label) {
+			return nil, fmt.Errorf("%s: %q cannot be left out (it takes: %s)", validateExcludeLabelsEnv, label, strings.Join(excludableLabels, ", "))
 		}
 	}
-	return labels, nil
+	slices.Sort(labels)
+	return slices.Compact(labels), nil
 }
 
 // withExclusions ANDs the exclusions onto filter, which may be empty.

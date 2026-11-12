@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 )
 
@@ -19,12 +20,21 @@ func TestUnit_SiteValidateFromEnvDefaults(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, settings.enabled)
 	require.Empty(t, settings.kubernetesVersion)
-	require.Equal(t, siteNamespaces(), settings.checks.namespaces)
+	require.Equal(t, siteNamespaces(controller.ServiceNamespace), settings.checks.namespaces)
+	require.Contains(t, settings.checks.namespaces, siteNamespace{name: controller.ServiceNamespace, source: "deploy path item controller"})
 	require.False(t, settings.checks.failFast, "the image reports every check, not just the first failure")
 	require.Equal(t, "default", settings.checks.probeNamespace)
 	require.Equal(t, probeImage{ref: kube.KubectlImage}, settings.checks.probeImage)
 	require.Empty(t, settings.checks.excusedNamespace, "outside a pod there is no runner namespace to excuse, and default is checked")
 	require.False(t, settings.checkIdentity)
+}
+
+func TestUnit_SiteValidateFromEnvControllerNamespace(t *testing.T) {
+	settings, err := siteValidateFromEnv(envMap(map[string]string{controller.EnvNamespace: "my-controller"}), filepath.Join(t.TempDir(), "absent"))
+	require.NoError(t, err)
+	require.Equal(t, siteNamespaces("my-controller"), settings.checks.namespaces)
+	require.NotContains(t, settings.checks.namespaces, siteNamespace{name: controller.ServiceNamespace, source: "deploy path item controller"},
+		"the default list takes the controller's namespace from the settings it reads, not the process environment")
 }
 
 func TestUnit_SiteValidateFromEnvOverrides(t *testing.T) {

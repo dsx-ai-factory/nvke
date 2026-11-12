@@ -53,9 +53,9 @@ type siteNamespace struct {
 // readiness check: an item that installed nothing would otherwise read as
 // healthy.
 //
-// A function rather than a variable because it reads NVKE_CONTROLLER_NAMESPACE,
-// which a validation profile sets after package initialization.
-func siteNamespaces() []siteNamespace {
+// The controller's namespace is passed in rather than read at package
+// initialization, because a validation profile sets it after that.
+func siteNamespaces(controllerNamespace string) []siteNamespace {
 	return []siteNamespace{
 		{name: kubeSystemNamespace, source: "kubeadm"},
 		{name: "cert-manager", source: "cert-manager's default namespace, installed with CAPI"},
@@ -70,7 +70,7 @@ func siteNamespaces() []siteNamespace {
 		{name: "nktp", source: "deploy path item nktp"},
 		// NVKE_CONTROLLER_NAMESPACE where the controller is not in nvke-controller,
 		// as for every other check that finds it.
-		{name: controller.Namespace(), source: "deploy path item controller"},
+		{name: controllerNamespace, source: "deploy path item controller"},
 	}
 }
 
@@ -129,7 +129,7 @@ type siteChecks struct {
 // so that a broken site cannot spend the minutes teardown needs.
 func siteLaneChecks() siteChecks {
 	return siteChecks{
-		namespaces:     siteNamespaces(),
+		namespaces:     siteNamespaces(controller.Namespace()),
 		failFast:       true,
 		probeNamespace: "default",
 		probeImage:     probeImage{ref: kube.KubectlImage},
