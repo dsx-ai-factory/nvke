@@ -4,7 +4,6 @@
 package v1
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -89,12 +88,8 @@ spec:
 		},
 	}
 
-	const kubernetesVersion = "1.37.0"
 	environment := &envtest.Environment{
-		UseExistingCluster:          new(false),
-		DownloadBinaryAssets:        true,
-		DownloadBinaryAssetsVersion: kubernetesVersion,
-		BinaryAssetsDirectory:       filepath.Join("..", "..", "bin", "envtest"),
+		UseExistingCluster: new(false),
 	}
 	for _, resource := range releaseResources {
 		crd := loadCRD(t, resource)
@@ -102,7 +97,7 @@ spec:
 	}
 	config, err := environment.Start()
 	t.Cleanup(func() { require.NoError(t, environment.Stop(), "stop envtest") })
-	require.NoError(t, err, "start envtest")
+	require.NoError(t, err, "start envtest; if running from an IDE, set KUBEBUILDER_ASSETS")
 	client, err := dynamic.NewForConfig(config)
 	require.NoError(t, err, "create dynamic client")
 
