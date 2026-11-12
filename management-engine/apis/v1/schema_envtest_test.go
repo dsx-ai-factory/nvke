@@ -4,6 +4,8 @@
 package v1
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -19,72 +21,30 @@ import (
 // rule and the resolver both read it without checking for its absence.
 func TestReleaseLifecycleDefaults(t *testing.T) {
 	tests := []struct {
-		name         string
-		inputGVR     schema.GroupVersionResource
-		inputYAML    string
-		expectedYAML string
+		name                   string
+		inputGVR               schema.GroupVersionResource
+		inputResourcePathFn    func(*testing.T) string
+		expectedResourcePathFn func(*testing.T) string
 	}{
 		{
-			name:     "ClusterRelease with lifecycle omitted",
+			name:     "ClusterReleaseWithLifecycleOmitted",
 			inputGVR: GroupVersion.WithResource("clusterreleases"),
-			inputYAML: `
-apiVersion: internal.nvke.nvidia.com/v1
-kind: ClusterRelease
-metadata:
-  name: cluster-release
-spec:
-  machineImageRef:
-    name: example-image
-  machineInit:
-    userDataTemplate: |
-      #cloud-config
-`,
-			expectedYAML: `
-apiVersion: internal.nvke.nvidia.com/v1
-kind: ClusterRelease
-metadata:
-  name: cluster-release
-spec:
-  machineImageRef:
-    name: example-image
-  machineInit:
-    userDataTemplate: |
-      #cloud-config
-  lifecycle:
-    deprecated: false
-    hidden: false
-`,
+			inputResourcePathFn: func(t *testing.T) string {
+				return wellKnownInputResourcePath(t)
+			},
+			expectedResourcePathFn: func(t *testing.T) string {
+				return wellKnownExpectedResourcePath(t)
+			},
 		},
 		{
-			name:     "NodePoolRelease with lifecycle omitted",
+			name:     "NodePoolReleaseWithLifecycleOmitted",
 			inputGVR: GroupVersion.WithResource("nodepoolreleases"),
-			inputYAML: `
-apiVersion: internal.nvke.nvidia.com/v1
-kind: NodePoolRelease
-metadata:
-  name: node-pool-release
-spec:
-  machineImageRef:
-    name: example-image
-  machineInit:
-    userDataTemplate: |
-      #cloud-config
-`,
-			expectedYAML: `
-apiVersion: internal.nvke.nvidia.com/v1
-kind: NodePoolRelease
-metadata:
-  name: node-pool-release
-spec:
-  machineImageRef:
-    name: example-image
-  machineInit:
-    userDataTemplate: |
-      #cloud-config
-  lifecycle:
-    deprecated: false
-    hidden: false
-`,
+			inputResourcePathFn: func(t *testing.T) string {
+				return wellKnownInputResourcePath(t)
+			},
+			expectedResourcePathFn: func(t *testing.T) string {
+				return wellKnownExpectedResourcePath(t)
+			},
 		},
 	}
 
@@ -103,10 +63,8 @@ spec:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			inputResource := &unstructured.Unstructured{}
-			require.NoError(t, k8syaml.UnmarshalStrict([]byte(tt.inputYAML), &inputResource.Object), "decode input YAML")
-			expectedResource := &unstructured.Unstructured{}
-			require.NoError(t, k8syaml.UnmarshalStrict([]byte(tt.expectedYAML), &expectedResource.Object), "decode expected YAML")
+			inputResource := readResource(t, tt.inputResourcePathFn(t))
+			expectedResource := readResource(t, tt.expectedResourcePathFn(t))
 			resourceClient := client.Resource(tt.inputGVR)
 			_, err := resourceClient.Create(t.Context(), inputResource, metav1.CreateOptions{})
 			require.NoError(t, err, "create resource")
@@ -121,4 +79,24 @@ spec:
 			require.Equal(t, expectedResource.Object, actualResource.Object, "persisted resource should match expected YAML")
 		})
 	}
+}
+
+func wellKnownInputResourcePath(t *testing.T) string {
+	t.Helper()
+	return filepath.Join("testdata", filepath.FromSlash(t.Name()), "input.yaml")
+}
+
+func wellKnownExpectedResourcePath(t *testing.T) string {
+	t.Helper()
+	return filepath.Join("testdata", filepath.FromSlash(t.Name()), "expected.yaml")
+}
+
+func readResource(t *testing.T, path string) *unstructured.Unstructured {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err, "read resource YAML %s", path)
+	resource := &unstructured.Unstructured{}
+	require.NoError(t, k8syaml.UnmarshalStrict(data, &resource.Object), "decode resource YAML %s", path)
+	return resource
 }
