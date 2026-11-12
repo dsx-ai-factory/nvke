@@ -59,6 +59,7 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 					"nodesNeedingRolloutCount", len(nodesNeedingRollout))
 				return false, nil
 			}
+			allocator.release(cp.failureDomains.domainOf(nodesNeedingRollout[0]))
 			created, err := r.scaleUp(ctx, cluster, deficit, "surge nodes during upgrade", allocator, newNodeProvider)
 			if err != nil {
 				return false, fmt.Errorf("failed to scale up control plane before recycling: %w", err)

@@ -7,6 +7,7 @@ import (
 	"math"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
 // failureDomainSelectionAlgorithm picks the next failure domain from the
@@ -57,6 +58,14 @@ func (a *domainAllocator) record(domain string) {
 	}
 }
 
+// release uncounts a node that a surge will replace, so the surge is placed as if
+// that node were already gone. Ineligible or uncounted domains are ignored.
+func (a *domainAllocator) release(domain string) {
+	if a.machinesPerDomain[domain] > 0 {
+		a.machinesPerDomain[domain]--
+	}
+}
+
 // take returns the next requested domain and counts it when applicable.
 func (a *domainAllocator) take() string {
 	if len(a.machinesPerDomain) == 0 {
@@ -67,21 +76,34 @@ func (a *domainAllocator) take() string {
 	return selected
 }
 
-// newControlPlaneDomainAllocator counts active control-plane nodes once each.
+// newControlPlaneDomainAllocator counts active control-plane nodes once each,
+// skipping nodes with a delete recorded or in flight.
 // Prefer the Machine's observed or requested domain; a newly created node may
 // not have a Machine yet, so its persisted decision is the fallback. Legacy
 // nodes with neither are omitted until CAPI reports their placement.
-func newControlPlaneDomainAllocator(nodes []db.Node, failureDomains *failureDomains) domainAllocator {
+func newControlPlaneDomainAllocator(cpNodes []db.Node, failureDomains *failureDomains) domainAllocator {
 	allocator := newDomainAllocator(leastUsedFailureDomainSelection, failureDomains.eligible)
-	for _, node := range nodes {
-		if isMarkedForDeletion(node) {
+	for _, node := range cpNodes {
+		if nodes.IsDeleteInFlight(node) {
 			continue
 		}
-		domain := failureDomains.observedByNodeName[node.Name]
-		if domain == "" {
-			domain = node.FailureDomain
-		}
-		allocator.record(domain)
+		allocator.record(failureDomains.domainOf(node))
 	}
 	return allocator
+}
+
+// nodesWithoutKnownDomain returns the names of active nodes whose placement is
+// unknown while the cluster has eligible domains. The allocator leaves them
+// uncounted, so new nodes may land in the domain they occupy.
+func nodesWithoutKnownDomain(cpNodes []db.Node, failureDomains *failureDomains) []string {
+	if len(failureDomains.eligible) == 0 {
+		return nil
+	}
+	var names []string
+	for _, node := range cpNodes {
+		if !nodes.IsDeleteInFlight(node) && failureDomains.domainOf(node) == "" {
+			names = append(names, node.Name)
+		}
+	}
+	return names
 }
