@@ -990,3 +990,31 @@ func TestChartArgumentValues(t *testing.T) {
 		t.Fatalf("ordinary argument value changed: %v", args)
 	}
 }
+
+func TestChartNumericNamespaces(t *testing.T) {
+	objects, output, err := renderChart(t, `{
+  "controller":{"enabled":false},
+  "state":{"namespace":"123","rbac":{
+    "subjects":[{"kind":"User","name":"manager","apiGroup":"rbac.authorization.k8s.io"}],
+    "tenantAPIBindings":[{"namespace":"456","subjects":[
+      {"kind":"User","name":"tenant-api","apiGroup":"rbac.authorization.k8s.io"}
+    ]}]
+  }}
+}`)
+	if err != nil {
+		t.Fatalf("numeric namespaces failed to render: %v\n%s", err, output)
+	}
+	for _, kind := range []string{"Role", "RoleBinding"} {
+		namespaces := map[string]int{}
+		for _, object := range objectsOfKind(objects, kind) {
+			namespace, _, err := unstructured.NestedString(object.Object, "metadata", "namespace")
+			if err != nil {
+				t.Fatalf("%s namespace is not a string: %v", kind, err)
+			}
+			namespaces[namespace]++
+		}
+		if len(namespaces) != 2 || namespaces["123"] != 1 || namespaces["456"] != 1 {
+			t.Fatalf("%s namespaces changed: %v", kind, namespaces)
+		}
+	}
+}

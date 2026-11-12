@@ -33,7 +33,7 @@ kind: {{ $role.kind }}
 metadata:
   name: {{ $name }}
   {{- if eq $role.kind "Role" }}
-  namespace: {{ $role.namespace }}
+  namespace: {{ $role.namespace | quote }}
   {{- end }}
 rules:
   {{- include "management-engine.roleRules" (dict "root" $ "file" $role.file "kind" $role.kind) | nindent 2 }}
@@ -44,7 +44,7 @@ kind: {{ $role.kind }}Binding
 metadata:
   name: {{ $name }}
   {{- if eq $role.kind "Role" }}
-  namespace: {{ $role.namespace }}
+  namespace: {{ $role.namespace | quote }}
   {{- end }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io

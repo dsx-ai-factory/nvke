@@ -157,6 +157,16 @@ the datastore identity configuration described above.
 
 ## CRD ownership, upgrades and retention
 
+Version `0.2.0` renames the development chart to `cluster-service`, with default
+release `cluster-service` in namespace `cluster-service-system`. To upgrade an
+existing development release in place, keep its release name and namespace and
+set `nameOverride: management-engine` to preserve resource names and selectors.
+With `make helm-deploy`, retain `HELM_RELEASE=management-engine` and
+`HELM_NAMESPACE=management-engine-system`, and include
+`--set nameOverride=management-engine` in `HELM_EXTRA_ARGS` alongside the required
+configuration. `fullnameOverride` alone does not preserve selectors. Using the
+new defaults creates a separate release rather than upgrading the old one.
+
 Chart version `0.2.0` changes the default from remote manager-only to combined
 local installation. Existing remote users must explicitly set `state.enabled=false`
 and configure `manager.stateAccess`, including their Secret and namespace.

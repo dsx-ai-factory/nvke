@@ -324,7 +324,7 @@ chart-deps: ## Stage the pinned shared schema dependency for Helm source operati
 chart-check: manifests kubebuilder chart-deps ## Check generation, lint and test every installation mode.
 	$(GO) run ./hack/chartgen -kubebuilder "$(KUBEBUILDER)" -check
 	$(HELM) lint chart -f config/samples/runtime-values.yaml
-	HELM="$(HELM)" KUBEBUILDER="$(KUBEBUILDER)" KUSTOMIZE="$(KUSTOMIZE)" $(GO) test $(GO_TEST_FLAGS) ./hack/... -run 'TestChart|TestGeneration' -count=1
+	HELM="$(HELM)" KUBEBUILDER="$(KUBEBUILDER)" KUSTOMIZE="$(KUSTOMIZE)" $(GO) test $(GO_TEST_FLAGS) ./hack/... -run 'TestChart|TestGeneration|TestFilterManagerArgs' -count=1
 
 .PHONY: chart-assets-check
 chart-assets-check: manifests kubebuilder ## Verify the complete generated chart is current.
