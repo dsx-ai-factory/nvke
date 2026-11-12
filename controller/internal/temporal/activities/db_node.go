@@ -156,6 +156,9 @@ func (a *Activities) UpdateNodeConditionsWithTx(ctx context.Context, tx db.Tx, u
 		return fmt.Errorf("failed to get node: %w", err)
 	}
 
+	// A plain copy is a real snapshot only while NodeConditions and Condition hold
+	// value types. A slice, map or pointer field would alias the live value, and
+	// the Equal check below would then skip every write.
 	previous := node.Conditions
 	updateCondition(&node.Conditions.Pending, update.Conditions.Pending)
 	updateCondition(&node.Conditions.ProvisioningClaimed, update.Conditions.ProvisioningClaimed)
