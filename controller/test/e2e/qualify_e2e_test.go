@@ -355,7 +355,7 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 
 		validateSitePostDeploy(func() (site.Cluster, site.Spec, bool) {
 			return cluster, spec, deployed
-		}, siteLaneChecks)
+		}, siteLaneChecks())
 		// The validation image's behavior checks, on the site this run built.
 		// They skip after any failure, as the checks above do, so a broken
 		// site keeps the minutes its teardown needs.
@@ -366,7 +366,7 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 			if failed {
 				Skip("an earlier site check failed")
 			}
-			checks := siteLaneChecks
+			checks := siteLaneChecks()
 			checks.restConfig = func() (*rest.Config, error) { return kube.RESTConfig(cluster.Kubeconfig, "") }
 			return siteValidateSettings{enabled: true, kubernetesVersion: spec.KubernetesVersion, checks: checks}
 		})

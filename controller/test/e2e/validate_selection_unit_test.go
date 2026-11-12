@@ -50,3 +50,37 @@ func TestUnit_ValidationLabelFilterRejects(t *testing.T) {
 		})
 	}
 }
+
+func TestUnit_ValidationExclusions(t *testing.T) {
+	for name, tc := range map[string]struct {
+		filter, exclude, want string
+	}{
+		"nothing excluded leaves the filter alone": {"site-validate", "", "site-validate"},
+		"one label":                {"site-validate", issuesCertificateLabel, "(site-validate) && !issues-certificate"},
+		"two labels, spaced":       {"site-validate || tenant-validate", " issues-certificate , gpu ", "(site-validate || tenant-validate) && !issues-certificate && !gpu"},
+		"no filter to add them to": {"", "creates", "!creates"},
+		"a caller's own filter":    {"site-software && !site-distro", "creates", "(site-software && !site-distro) && !creates"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			exclude, err := validationExclusions(envMap(map[string]string{validateExcludeLabelsEnv: tc.exclude}))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, withExclusions(tc.filter, exclude))
+		})
+	}
+}
+
+func TestUnit_ValidationExclusionsReject(t *testing.T) {
+	for name, raw := range map[string]string{
+		"the site switch's label":   siteValidateLabel,
+		"the tenant switch's label": tenantValidateLabel,
+		"an expression":             "creates || gpu",
+		"a negation":                "!creates",
+		"a grouping":                "(creates)",
+		"a space inside":            "issues certificate",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := validationExclusions(envMap(map[string]string{validateExcludeLabelsEnv: raw}))
+			require.Error(t, err)
+		})
+	}
+}

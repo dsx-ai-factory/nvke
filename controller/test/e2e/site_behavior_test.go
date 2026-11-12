@@ -753,7 +753,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		var secret corev1.Secret
 		Expect(c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &secret)).To(Succeed())
 		Expect(secret.Data).To(HaveKeyWithValue(corev1.TLSCertKey, Not(BeEmpty())))
-	}, Label("site-software", "creates"), NodeTimeout(siteCheck+time.Minute))
+	}, Label("site-software", "creates", issuesCertificateLabel), NodeTimeout(siteCheck+time.Minute))
 }
 
 // siteBehaviorClient is siteClient with the APIs these specs read.

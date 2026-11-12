@@ -64,7 +64,7 @@ func siteValidateFromEnv(getenv func(string) string, namespaceFile string) (site
 		return siteValidateSettings{}, err
 	}
 
-	namespaces := siteNamespaces
+	namespaces := siteNamespaces()
 	if raw := strings.TrimSpace(getenv(siteNamespacesEnv)); raw != "" {
 		namespaces = nil
 		for name := range strings.SplitSeq(raw, ",") {
@@ -116,7 +116,7 @@ func siteValidateFromEnv(getenv func(string) string, namespaceFile string) (site
 
 // describe lists the settings the run resolved, for the report.
 func (s siteValidateSettings) describe() []string {
-	lines := []string{siteKubernetesVersionEnv + "=" + s.kubernetesVersion}
+	lines := append(runNotes(), siteKubernetesVersionEnv+"="+s.kubernetesVersion)
 	lines = append(lines, s.checks.describe()...)
 	return append(lines, s.expect.describe()...)
 }

@@ -470,7 +470,7 @@ func TestUnit_SiteNamespacesCoverTheDeployPath(t *testing.T) {
 	}
 
 	listed := map[string]bool{}
-	for _, ns := range siteNamespaces {
+	for _, ns := range siteNamespaces() {
 		listed[ns.name] = true
 		if strings.HasPrefix(ns.source, "deploy path item") {
 			require.Contains(t, installed, ns.name, "%s is listed as coming from the deploy path, which no longer installs into it", ns.name)

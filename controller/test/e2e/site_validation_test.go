@@ -52,21 +52,26 @@ type siteNamespace struct {
 // Required by name because a namespace with nothing in it passes every
 // readiness check: an item that installed nothing would otherwise read as
 // healthy.
-var siteNamespaces = []siteNamespace{
-	{name: kubeSystemNamespace, source: "kubeadm"},
-	{name: "cert-manager", source: "cert-manager's default namespace, installed with CAPI"},
-	{name: "capi-system", source: "clusterctl init, before the deploy path"},
-	{name: "capnico-system", source: "deploy path item capnico"},
-	{name: "postgres", source: "deploy path item postgresql"},
-	{name: "temporal", source: "deploy path item temporal"},
-	{name: "spire-server", source: "deploy path item spire"},
-	// Not a release namespace: the spire chart's recommended layout puts its
-	// agent and CSI driver here, so no deploy path file names it as a release.
-	{name: "spire-system", source: "the spire chart's layout for its agent"},
-	{name: "nktp", source: "deploy path item nktp"},
-	// NVKE_CONTROLLER_NAMESPACE where the controller is not in nvke-controller,
-	// as for every other check that finds it.
-	{name: controller.Namespace(), source: "deploy path item controller"},
+//
+// A function rather than a variable because it reads NVKE_CONTROLLER_NAMESPACE,
+// which a validation profile sets after package initialization.
+func siteNamespaces() []siteNamespace {
+	return []siteNamespace{
+		{name: kubeSystemNamespace, source: "kubeadm"},
+		{name: "cert-manager", source: "cert-manager's default namespace, installed with CAPI"},
+		{name: "capi-system", source: "clusterctl init, before the deploy path"},
+		{name: "capnico-system", source: "deploy path item capnico"},
+		{name: "postgres", source: "deploy path item postgresql"},
+		{name: "temporal", source: "deploy path item temporal"},
+		{name: "spire-server", source: "deploy path item spire"},
+		// Not a release namespace: the spire chart's recommended layout puts its
+		// agent and CSI driver here, so no deploy path file names it as a release.
+		{name: "spire-system", source: "the spire chart's layout for its agent"},
+		{name: "nktp", source: "deploy path item nktp"},
+		// NVKE_CONTROLLER_NAMESPACE where the controller is not in nvke-controller,
+		// as for every other check that finds it.
+		{name: controller.Namespace(), source: "deploy path item controller"},
+	}
 }
 
 const (
@@ -122,12 +127,14 @@ type siteChecks struct {
 
 // siteLaneChecks are the site lane's: the stack's namespaces, and fail fast
 // so that a broken site cannot spend the minutes teardown needs.
-var siteLaneChecks = siteChecks{
-	namespaces:     siteNamespaces,
-	failFast:       true,
-	probeNamespace: "default",
-	probeImage:     probeImage{ref: kube.KubectlImage},
-	certManager:    true,
+func siteLaneChecks() siteChecks {
+	return siteChecks{
+		namespaces:     siteNamespaces(),
+		failFast:       true,
+		probeNamespace: "default",
+		probeImage:     probeImage{ref: kube.KubectlImage},
+		certManager:    true,
+	}
 }
 
 // probeImage is what every probe and server pod runs, and the Secrets its

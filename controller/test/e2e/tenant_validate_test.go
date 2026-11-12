@@ -200,10 +200,10 @@ type tenantTarget struct {
 // describe lists the settings the run resolved, for the report. It names the
 // credential's Secret, never its contents.
 func (s tenantValidateSettings) describe() []string {
-	lines := []string{
-		tenantClusterEnv + "=" + s.cluster,
-		"credential Secret: " + s.runnerNamespace + "/" + s.tokenSecret,
-	}
+	lines := append(runNotes(),
+		tenantClusterEnv+"="+s.cluster,
+		"credential Secret: "+s.runnerNamespace+"/"+s.tokenSecret,
+	)
 	if s.kubernetesVersion != "" {
 		lines = append(lines, tenantKubernetesVersionEnv+"="+s.kubernetesVersion)
 	}

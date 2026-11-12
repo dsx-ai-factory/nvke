@@ -234,6 +234,17 @@ func TestE2E(t *testing.T) {
 	klog.SetLogger(GinkgoLogr)
 	slog.SetDefault(slog.New(logr.ToSlogHandler(GinkgoLogr)))
 
+	summary, err := useValidateProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary != "" {
+		// Printed rather than logged: the image runs without -test.v, which
+		// shows a t.Log line only for a failed test.
+		fmt.Println(summary)
+		validateProfileSummary = summary
+	}
+
 	suiteConfig, reporterConfig := GinkgoConfiguration()
 	if !labelFilterGiven() {
 		filter, err := validationLabelFilter(os.LookupEnv)
@@ -243,6 +254,17 @@ func TestE2E(t *testing.T) {
 		if filter != "" {
 			suiteConfig.LabelFilter = filter
 		}
+	}
+	exclude, err := validationExclusions(os.Getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exclude) > 0 {
+		suiteConfig.LabelFilter = withExclusions(suiteConfig.LabelFilter, exclude)
+		// A run whose exclusions leave nothing would otherwise pass.
+		suiteConfig.FailOnEmpty = true
+		validateExclusionSummary = fmt.Sprintf("%s left out %s: label filter %s", validateExcludeLabelsEnv, strings.Join(exclude, ", "), suiteConfig.LabelFilter)
+		fmt.Println("label filter: " + suiteConfig.LabelFilter)
 	}
 	RunSpecs(t, "NVKE E2E Suite", suiteConfig, reporterConfig)
 }
