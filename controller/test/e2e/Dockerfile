@@ -23,7 +23,7 @@
 # compare its digest with the one the release attested. `make
 # validate-image-push` passes the args and flags; "Building the image yourself"
 # in README.md lists them.
-ARG GOLANG_IMAGE=docker.io/golang:1.27.3@sha256:e519d3b0a5b285e5aa53ab9eef02bc6bbb9cb04608389b743a136a9ce75f0d1e
+ARG GOLANG_IMAGE=docker.io/golang:1.27.4@sha256:08bcb99a38f85a265f9a93d1d3323e2440eec333380f3ea26ee0dec9264bb41c
 ARG ALPINE_IMAGE=docker.io/alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 # On the build platform, cross-compiling, so a multi-arch build needs no
