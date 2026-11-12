@@ -1,4 +1,5 @@
-{{- if and .Values.apiAuthz.enabled .Values.apiAuthz.configMap.create }}
+{{- $lb := .Values.apiAuthz.authorizer.localBundle }}
+{{- if and .Values.apiAuthz.enabled $lb.configMap.create }}
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -6,17 +7,17 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ required "apiAuthz.configMap.name is required when apiAuthz.enabled=true" .Values.apiAuthz.configMap.name }}
+  name: {{ required "apiAuthz.authorizer.localBundle.configMap.name is required when apiAuthz.enabled=true" $lb.configMap.name }}
   namespace: {{ include "controller.namespace" . }}
   labels:
     {{- include "controller.labels" . | nindent 4 }}
 data:
   policies.cedar: |
-    {{- .Values.apiAuthz.policies | nindent 4 }}
+    {{- $lb.policies | nindent 4 }}
   roles.json: |
-    {{- .Values.apiAuthz.roles | nindent 4 }}
+    {{- $lb.roles | nindent 4 }}
   authorization.yaml: |
     apiVersion: auth.nvke.nvidia.com/v1alpha1
     kind: AuthorizationConfiguration
-    {{- toYaml .Values.apiAuthz.config | nindent 4 }}
+    {{- toYaml $lb.config | nindent 4 }}
 {{- end }}

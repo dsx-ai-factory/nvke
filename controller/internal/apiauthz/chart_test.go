@@ -47,15 +47,19 @@ func newClient(t *testing.T, mode authn.Mode) *authz.Client {
 	require.NoError(t, err)
 	var values struct {
 		APIAuthz struct {
-			Policies string `json:"policies"`
-			Roles    string `json:"roles"`
+			Authorizer struct {
+				LocalBundle struct {
+					Policies string `json:"policies"`
+					Roles    string `json:"roles"`
+				} `json:"localBundle"`
+			} `json:"authorizer"`
 		} `json:"apiAuthz"`
 	}
 	require.NoError(t, yaml.Unmarshal(raw, &values))
 	dir := t.TempDir()
 	for name, content := range map[string]string{
-		"policies.cedar":     values.APIAuthz.Policies,
-		"roles.json":         values.APIAuthz.Roles,
+		"policies.cedar":     values.APIAuthz.Authorizer.LocalBundle.Policies,
+		"roles.json":         values.APIAuthz.Authorizer.LocalBundle.Roles,
 		"authorization.yaml": chartAuthorization,
 	} {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600))
