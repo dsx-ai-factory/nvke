@@ -1877,12 +1877,11 @@ func nicoNodePoolSpecs(pools []nvke.NodePoolSpec, defaultName, defaultNodeNamePr
 // cloud-workflow-engine/nico-sim/internal/seed/default-seed.yaml. The local
 // nico-vms environment always seeds these deterministic IDs.
 const (
-	nicoVMSOrgID           = "novxwn552ssc"
-	nicoVMSSiteID          = "a1b2c3d4-0001-4000-8000-000000000001"
-	nicoVMSVpcID           = "a1b2c3d4-0002-4000-8000-000000000001"
-	nicoVMSVpcPrefixID     = "a1b2c3d4-0004-4000-8000-000000000001"
-	nicoVMSInstanceTypeID  = "a1b2c3d4-0005-4000-8000-000000000001"
-	nicoVMSLargeInstanceID = "a1b2c3d4-0005-4000-8000-000000000003"
+	nicoVMSOrgID          = "novxwn552ssc"
+	nicoVMSSiteID         = "a1b2c3d4-0001-4000-8000-000000000001"
+	nicoVMSVpcID          = "a1b2c3d4-0002-4000-8000-000000000001"
+	nicoVMSVpcPrefixID    = "a1b2c3d4-0004-4000-8000-000000000001"
+	nicoVMSInstanceTypeID = "a1b2c3d4-0005-4000-8000-000000000001"
 	// nicoVMSPreferredInstanceID is a second control-plane-capable instance type
 	// (cpu4-mem8gb-disk60gb in the seed), used by the rebalance spec as the
 	// more-preferred type a control plane on nicoVMSLargeInstanceID migrates to.
@@ -1893,12 +1892,29 @@ const (
 	nicoVMSControlPlaneVIP     = "172.31.0.10"
 )
 
+// On macOS nico-sim runs the darwin-qemu backend, matching the defaults of
+// hack/create-nico-vms-cluster.sh there. The pod CIDR moves off the API default
+// 192.168.0.0/16, which overlaps vmnet's 192.168.64.0/24 node network. The
+// arm64 generic kernel reserves 512Mi for crashkernel, which leaves a 6 GiB
+// node too little for ovnkube-node, so large nodes get 8 GiB.
+var (
+	nicoVMSLargeInstanceID = onDarwin(nicoVMSPreferredInstanceID, "a1b2c3d4-0005-4000-8000-000000000003")
+	nicoVMSPodCIDR         = onDarwin("10.244.0.0/16", "")
+)
+
+func onDarwin(darwin, other string) string {
+	if runtime.GOOS == "darwin" {
+		return darwin
+	}
+	return other
+}
+
 // nicoVMSInstanceMemory is the memory of the nico-vms instance types the specs
 // use, mirroring memory_gib in the same seed.
 var nicoVMSInstanceMemory = map[string]string{
-	nicoVMSInstanceTypeID:      "2Gi",
-	nicoVMSLargeInstanceID:     "6Gi",
-	nicoVMSPreferredInstanceID: "8Gi",
+	nicoVMSInstanceTypeID:                  "2Gi",
+	"a1b2c3d4-0005-4000-8000-000000000003": "6Gi",
+	nicoVMSPreferredInstanceID:             "8Gi",
 }
 
 // nicoVMSRelease is the profile the nico-vms specs boot. nico-sim takes the
@@ -1919,6 +1935,7 @@ func nicoVMSSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterS
 		OrgID:     nicoVMSOrgID,
 		SiteID:    nicoVMSSiteID,
 		VpcID:     nicoVMSVpcID,
+		Network:   &nvke.ClusterNetworkSpec{PodCIDR: nicoVMSPodCIDR},
 		ControlPlane: nvke.ControlPlane{
 			// Control planes default to the large instance. The controller reserves its default
 			// 2Gi for the kubelet on them, since controlPlaneConfig cannot carry

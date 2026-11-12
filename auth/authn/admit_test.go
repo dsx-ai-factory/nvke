@@ -4,6 +4,7 @@
 package authn_test
 
 import (
+	"encoding/json"
 	"strconv"
 	"testing"
 
@@ -36,10 +37,10 @@ func spiffePrincipal(id string) *authn.Principal {
 func TestAdmitServiceAccounts(t *testing.T) {
 	t.Parallel()
 
-	// Name is a pointer so "any name in the namespace" stays distinct from "this
-	// one name".
 	runner := "runner"
-	runnerRule := authn.ServiceAccountRule{Namespace: "nke-clients", Name: &runner}
+	runnerRule := authn.ServiceAccountRule{Namespace: "nke-clients", Name: authn.ServiceAccountName{Value: &runner}}
+	var nullNameRule authn.ServiceAccountRule
+	require.NoError(t, json.Unmarshal([]byte(`{"namespace": "nke-clients", "name": null}`), &nullNameRule))
 
 	tests := []struct {
 		name      string
@@ -52,6 +53,12 @@ func TestAdmitServiceAccounts(t *testing.T) {
 			admit:     &authn.Admit{ServiceAccounts: []authn.ServiceAccountRule{{Namespace: "nke-clients"}}},
 			principal: serviceAccountPrincipal("nke-clients", "anything-at-all"),
 			want:      true,
+		},
+		{
+			name:      "a rule with a null name admits nobody",
+			admit:     &authn.Admit{ServiceAccounts: []authn.ServiceAccountRule{nullNameRule}},
+			principal: serviceAccountPrincipal("nke-clients", "anything-at-all"),
+			want:      false,
 		},
 		{
 			name:      "a named rule admits the matching service account",
@@ -299,6 +306,95 @@ func TestAdmitGroups(t *testing.T) {
 			name:      "a service-account principal is not admitted by a groups rule",
 			admit:     rule,
 			principal: serviceAccountPrincipal("nke-clients", "nke-client"),
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, tt.admit.Admits(tt.principal))
+		})
+	}
+}
+
+// teleportPrincipal carries the claims of a Teleport app-access token: no
+// "groups", the caller's Teleport roles in "roles".
+func teleportPrincipal(claims map[string]any) *authn.Principal {
+	return &authn.Principal{
+		IssuerName: "teleport",
+		Issuer:     "teleport.example.local",
+		Subject:    "alice",
+		Claims:     claims,
+	}
+}
+
+func TestAdmitClaims(t *testing.T) {
+	t.Parallel()
+
+	rule := &authn.Admit{Claims: []authn.ClaimRule{{Name: "roles", Value: "nvke-admin"}}}
+
+	tests := []struct {
+		name      string
+		admit     *authn.Admit
+		principal *authn.Principal
+		want      bool
+	}{
+		{
+			name:      "a string array holding the value is admitted",
+			admit:     rule,
+			principal: teleportPrincipal(map[string]any{"roles": []any{"nvke-admin", "access"}}),
+			want:      true,
+		},
+		{
+			name:      "a string equal to the value is admitted",
+			admit:     rule,
+			principal: teleportPrincipal(map[string]any{"roles": "nvke-admin"}),
+			want:      true,
+		},
+		{
+			name: "any rule is enough",
+			admit: &authn.Admit{Claims: []authn.ClaimRule{
+				{Name: "repository", Value: "example/nvke-deploy"},
+				{Name: "roles", Value: "nvke-admin"},
+			}},
+			principal: teleportPrincipal(map[string]any{"roles": []any{"nvke-admin"}}),
+			want:      true,
+		},
+		{
+			name:      "an array without the value is not admitted",
+			admit:     rule,
+			principal: teleportPrincipal(map[string]any{"roles": []any{"access"}}),
+			want:      false,
+		},
+		{
+			name:      "the match in an array is case-sensitive",
+			admit:     rule,
+			principal: teleportPrincipal(map[string]any{"roles": []any{"NVKE-Admin"}}),
+			want:      false,
+		},
+		{
+			name:      "the match on a string is case-sensitive",
+			admit:     rule,
+			principal: teleportPrincipal(map[string]any{"roles": "NVKE-Admin"}),
+			want:      false,
+		},
+		{
+			name:      "a missing claim is not admitted",
+			admit:     rule,
+			principal: teleportPrincipal(map[string]any{"sub": "alice"}),
+			want:      false,
+		},
+		{
+			name:      "an array holding a non-string never matches",
+			admit:     rule,
+			principal: teleportPrincipal(map[string]any{"roles": []any{"nvke-admin", 1.0}}),
+			want:      false,
+		},
+		{
+			name:      "an object never matches",
+			admit:     rule,
+			principal: teleportPrincipal(map[string]any{"roles": map[string]any{"nvke-admin": true}}),
 			want:      false,
 		},
 	}

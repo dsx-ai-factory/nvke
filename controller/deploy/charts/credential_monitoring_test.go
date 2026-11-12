@@ -5,6 +5,7 @@ package charts
 
 import (
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -13,6 +14,10 @@ func TestCredentialMonitoringRuleInstallationAndConfig(t *testing.T) {
 	helm, err := exec.LookPath("helm")
 	if err != nil {
 		t.Skip("helm required for render checks")
+	}
+	chart := filepath.Join(t.TempDir(), "controller")
+	if err := Extract(NVKEController, chart); err != nil {
+		t.Fatal(err)
 	}
 	for _, test := range []struct {
 		name     string
@@ -24,7 +29,7 @@ func TestCredentialMonitoringRuleInstallationAndConfig(t *testing.T) {
 		{"umbrella monitoring kill switch", []string{"--set", "credentialMonitoring.alerts.enabled=true", "--set", "global.monitoring.enabled=false"}, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			args := append([]string{"template", "test", "controller"}, test.args...)
+			args := append([]string{"template", "test", chart}, test.args...)
 			output, err := exec.CommandContext(t.Context(), helm, args...).CombinedOutput()
 			if err != nil {
 				t.Fatalf("helm template: %v\n%s", err, output)

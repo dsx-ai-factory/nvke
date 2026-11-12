@@ -3106,7 +3106,7 @@ components:
         nvLinkLogicalPartitionID:
           type: string
           format: uuid
-          description: NVLink logical partition. Fixed at creation.
+          description: NVLink logical partition. An update can set or replace it, which creates a new NodeSet.
         sshKeyGroupIDs:
           type: array
           items:
@@ -3132,7 +3132,7 @@ components:
       type: object
       additionalProperties: false
       description: |
-        Fields fixed at creation (instanceTypeID, partitions, sshKeyGroupIDs) cannot be
+        Fields fixed at creation (instanceTypeID, infinibandPartitionID, sshKeyGroupIDs) cannot be
         sent: a request carrying one is rejected with 400. A body echoed from GET must
         have them stripped.
       properties:
@@ -3164,6 +3164,14 @@ components:
             may have no config profile.
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategy"
+        nvLinkLogicalPartitionID:
+          type: string
+          format: uuid
+          description: |
+            Sets or replaces the NVLink logical partition. Like other node configuration,
+            a change creates a new NodeSet: nodes created after it attach to the new
+            partition, and existing nodes keep theirs until they are replaced. It cannot
+            be cleared.
 
     NicoNodeSetProvider:
       type: object
@@ -3198,6 +3206,10 @@ components:
           x-go-type-skip-optional-pointer: true
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategyCreate"
+        nvLinkLogicalPartitionID:
+          type: string
+          format: uuid
+          description: NVLink logical partition that nodes in this node set attach to.
 
     LaunchLayerSecurityGroupRefs:
       type: object

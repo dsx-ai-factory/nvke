@@ -65,7 +65,7 @@ func ResolveNodeConfig(nodeSet db.NodeSet, nodePool db.NodePool) (NodeConfig, er
 		NodePoolID:               nodePool.ID,
 		IsControlPlaneRole:       nodePool.ControlPlane,
 		InfinibandPartitionID:    nicoNodePoolProvider.InfinibandPartitionID,
-		NVLinkLogicalPartitionID: nicoNodePoolProvider.NvLinkLogicalPartitionID,
+		NVLinkLogicalPartitionID: nicoNodeSetProvider.NvLinkLogicalPartitionID,
 	}, nil
 }
 

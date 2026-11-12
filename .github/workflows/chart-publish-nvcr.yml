@@ -181,6 +181,7 @@ jobs:
           grep -q "^  - name: ${IMAGE_PULL_SECRET}\$" "${CHART}/values.yaml" \
             || { echo "::error::pull-secret rewrite did not apply"; exit 1; }
 
+          helm dependency build "${CHART}" --skip-refresh
           helm package "${CHART}" \
             --version "${CHART_VERSION}" \
             --app-version "${APP_VERSION}" \
@@ -222,7 +223,7 @@ jobs:
       # looks for it. `$oauthtoken` is NGC's literal username.
       - name: Log in to NVCR for crane
         if: env.SKIP_PUBLISH != 'true'
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: nvcr.io
           username: "$oauthtoken"

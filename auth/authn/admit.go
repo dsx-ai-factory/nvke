@@ -44,6 +44,7 @@ type admitRules struct {
 	serviceAccounts []ServiceAccountRule
 	spiffe          *spiffeRules
 	groups          []string
+	claims          []ClaimRule
 }
 
 type spiffeRules struct {
@@ -54,7 +55,7 @@ type spiffeRules struct {
 // resolve builds the rule set admission matches against. Only the trust domain
 // can fail, and SPIFFERule.validate has already refused a config where it does.
 func (a *Admit) resolve() (*admitRules, error) {
-	rules := &admitRules{serviceAccounts: a.ServiceAccounts, groups: a.Groups}
+	rules := &admitRules{serviceAccounts: a.ServiceAccounts, groups: a.Groups, claims: a.Claims}
 	if a.SPIFFE == nil {
 		return rules, nil
 	}
@@ -66,8 +67,8 @@ func (a *Admit) resolve() (*admitRules, error) {
 	return rules, nil
 }
 
-// admits matches either rule kind, which is why Admit.validate refuses a set
-// carrying both.
+// admits matches any rule kind, which is why Admit.validate refuses a set
+// carrying more than one.
 func (r *admitRules) admits(p *Principal) bool {
 	if r.admitsServiceAccount(p) {
 		return true
@@ -75,7 +76,20 @@ func (r *admitRules) admits(p *Principal) bool {
 	if r.admitsGroups(p) {
 		return true
 	}
+	if r.admitsClaims(p) {
+		return true
+	}
 	return r.spiffe.admits(p.Subject)
+}
+
+// admitsClaims reports whether one of the claim rules matches the token.
+func (r *admitRules) admitsClaims(p *Principal) bool {
+	for _, rule := range r.claims {
+		if rule.Matches(p.Claims) {
+			return true
+		}
+	}
+	return false
 }
 
 // admitsGroups reports whether the token's groups claim holds one of the

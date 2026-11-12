@@ -12,10 +12,10 @@ NVKE control-plane CLI
 ### Options
 
 ```
-  -h, --help          help for nvkectl
-      --json-logs     Emit logs as JSON
-      --site string   Override the active site for this invocation
-  -v, --verbose       Enable debug logging
+  -h, --help[=true|false]        help for nvkectl
+      --json-logs[=true|false]   Emit logs as JSON
+      --site string              Override the active site for this invocation
+  -v, --verbose[=true|false]     Enable debug logging
 ```
 
 ### SEE ALSO

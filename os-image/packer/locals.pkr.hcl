@@ -43,8 +43,10 @@ locals {
   # one carrying the Vera platform support Vera Rubin needs to bring up its
   # GPUs. hwe-26.04 is that series' metapackage: same source
   # (linux-meta-nvidia-bos) and version as linux-nvidia-bos-64k. 24.04 has no
-  # BOS series, so it keeps linux-nvidia-64k.
-  nvidia_kernel_package = (local.architecture == "arm64"
+  # BOS series, so it keeps linux-nvidia-64k. var.kernel_package overrides the
+  # kernel, e.g. linux-generic for Apple-silicon HVF guests.
+  nvidia_kernel_package = (var.kernel_package != "" ? var.kernel_package
+    : local.architecture == "arm64"
     ? (var.ubuntu_series == "26.04" ? "linux-nvidia-64k-hwe-26.04" : "linux-nvidia-64k")
     : "linux-nvidia")
   # The INSTALLED system's console only. boot_command below keeps the installer

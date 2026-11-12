@@ -14,7 +14,7 @@
 #   docker build --build-arg GOLANG_IMAGE=dockerhub.nvidia.com/golang:1.27.3@sha256:... .
 # A digest is content-addressed, so a mirror serving the same content answers
 # to the same digest.
-ARG GOLANG_IMAGE=docker.io/golang:1.27.3@sha256:2920bb124f1a2e12a1d39f0cab756ae0068441ee1da7655dec7f5e374944095b
+ARG GOLANG_IMAGE=docker.io/golang:1.27.3@sha256:e519d3b0a5b285e5aa53ab9eef02bc6bbb9cb04608389b743a136a9ce75f0d1e
 ARG ALPINE_IMAGE=docker.io/alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 FROM --platform=${BUILDPLATFORM} ${GOLANG_IMAGE} AS builder

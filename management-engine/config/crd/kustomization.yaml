@@ -1,15 +1,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Included by config/state for installation on the datastore cluster.
+# Kustomize and Helm consume the same generated schemas.
 resources:
-- bases/internal.nvke.nvidia.com_clusterreleases.yaml
-- bases/internal.nvke.nvidia.com_machineimages.yaml
+- ../../../controller/deploy/charts/nvke-crds
 - bases/internal.nvke.nvidia.com_nvkeclusters.yaml
-- bases/internal.nvke.nvidia.com_nodepoolreleases.yaml
-- bases/internal.nvke.nvidia.com_clusterreleasechannels.yaml
 - bases/internal.nvke.nvidia.com_controlplaneclasses.yaml
-# +kubebuilder:scaffold:crdkustomizeresource
-
-patches:
-# +kubebuilder:scaffold:crdkustomizewebhookpatch
+- bases/internal.nvke.nvidia.com_clusterreleasechannels.yaml

@@ -6,7 +6,8 @@
 # Advisory, not a gate: the `required_signatures` rule on `main` already blocks
 # the merge. But the rule speaks only in the merge box, as "Commits must have
 # verified signatures.", and only to the person merging. This puts the same
-# verdict on the pull request as `needs-signed-commits`, for the author.
+# verdict on the pull request as `needs-signed-commits`, for the author, and
+# posts one comment per pull request telling them how to fix it.
 #
 # WHY A PUSH EVENT AND A SWEEP
 #
@@ -54,6 +55,23 @@ jobs:
             // Label exists already; recreate as #e11d21 if it is ever deleted,
             // since addLabels would otherwise invent a colour.
             const LABEL = 'needs-signed-commits';
+            // Finds this workflow's own comment again, so an author is told
+            // once per pull request, however often the label comes and goes.
+            const MARKER = '<!-- signed-commits-check -->';
+            const advice = (count, reasons) => [
+              MARKER,
+              `Thanks for the pull request. \`main\` requires a verified signature on every commit, and ${count} commit(s) here have none, so the merge is blocked. GitHub gives the reason as: ${reasons.map((r) => `\`${r}\``).join(', ')}. This is separate from the DCO sign-off.`,
+              '',
+              'To sign them, follow [CONTRIBUTING.md, "Verified signatures"](https://github.com/dsx-ai-factory/nvke/blob/main/CONTRIBUTING.md#verified-signatures). The `needs-signed-commits` label clears itself once every commit on the branch is verified.',
+            ].join('\n');
+            const alreadyAdvised = async (number) => {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...context.repo,
+                issue_number: number,
+                per_page: 100,
+              });
+              return comments.some((c) => c.body?.includes(MARKER));
+            };
 
             // One pull request on its own event, every open one on a sweep.
             const open = context.payload.pull_request
@@ -79,6 +97,7 @@ jobs:
             };
 
             let labelled = 0;
+            let advised = 0;
             let cleared = 0;
 
             for (const pr of open) {
@@ -106,6 +125,21 @@ jobs:
                 labelled += 1;
                 const reasons = [...new Set(unsigned.map((c) => c.commit.verification?.reason ?? 'unknown'))];
                 core.info(`#${pr.number}: labelled, ${unsigned.length} unverified (${reasons.join(', ')})`);
+                // Bots get the label only: nobody reads a comment addressed to one.
+                // The comment is advice, so a failure here is reported and the
+                // sweep goes on to label the remaining pull requests.
+                try {
+                  if (pr.user?.type !== 'Bot' && !(await alreadyAdvised(pr.number))) {
+                    await github.rest.issues.createComment({
+                      ...context.repo,
+                      issue_number: pr.number,
+                      body: advice(unsigned.length, reasons),
+                    });
+                    advised += 1;
+                  }
+                } catch (error) {
+                  core.warning(`#${pr.number}: labelled, but the comment failed: ${error.message}`);
+                }
               } else if (unsigned.length === 0 && hasLabel) {
                 try {
                   await github.rest.issues.removeLabel({
@@ -124,4 +158,4 @@ jobs:
               }
             }
 
-            core.info(`${open.length} checked: ${labelled} labelled, ${cleared} cleared`);
+            core.info(`${open.length} checked: ${labelled} labelled, ${advised} advised, ${cleared} cleared`);

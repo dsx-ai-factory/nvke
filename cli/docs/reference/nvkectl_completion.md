@@ -18,15 +18,15 @@ See each sub-command's help for details on how to use the generated script.
 ### Options
 
 ```
-  -h, --help   help for completion
+  -h, --help[=true|false]   help for completion
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --json-logs     Emit logs as JSON
-      --site string   Override the active site for this invocation
-  -v, --verbose       Enable debug logging
+      --json-logs[=true|false]   Emit logs as JSON
+      --site string              Override the active site for this invocation
+  -v, --verbose[=true|false]     Enable debug logging
 ```
 
 ### SEE ALSO

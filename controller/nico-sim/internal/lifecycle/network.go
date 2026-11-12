@@ -67,6 +67,9 @@ type NetworkManager interface {
 // newNetworkManager resolves the mode once from cfg and returns the appropriate
 // implementation. Called from Engine.New() so no subsequent code re-checks cfg.
 func newNetworkManager(cfg config.Config, rt vmruntime.Runtime) NetworkManager {
+	if cfg.EffectiveVMBackend() == config.VMBackendDarwinQEMU {
+		return darwinNetwork{runtime: rt, bridgeName: cfg.BridgeName, bridgeCIDR: cfg.BridgeCIDR}
+	}
 	if cfg.UseLibvirtNetwork() {
 		return &libvirtNetwork{
 			runtime:     rt,

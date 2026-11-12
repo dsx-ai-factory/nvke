@@ -12,8 +12,9 @@ cover [configuration](configuration.md), [verification](verification.md) and
 ## What you get
 
 The `nktp` item in [`deploy/nico`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/README.md)
-installs the [NKTP chart](https://github.com/dsx-ai-factory/nvke/blob/main/nktp/deploy/charts/nktp/README.md) from the
-same checkout, into namespace `nktp`:
+installs the [NKTP chart](https://github.com/dsx-ai-factory/nvke-telemetry-pipeline), at the version
+`deploy/nico/nktp/release.yaml` pins, from NGC's public Helm repository
+`https://helm.ngc.nvidia.com/nvidia`, into namespace `nktp`:
 
 - **The OpenTelemetry Operator** and its CRDs, plus the Prometheus monitoring
   CRDs (`ServiceMonitor`, `PodMonitor` and the rest).
@@ -76,12 +77,18 @@ plus:
   { "ClusterName": "<site-name>", "Nico": { "...": "..." } }
   ```
 - **Egress from the node running the install:**
-  - to `open-telemetry.github.io`, `prometheus-community.github.io` and
-    `kubernetes-sigs.github.io`, because the install builds the
-    chart's dependencies from its `Chart.lock` before installing
+  - to `helm.ngc.nvidia.com` and NGC's download hosts `files.ngc.nvidia.com`,
+    `xfiles.ngc.nvidia.com` and `xlfiles.ngc.nvidia.com`, for the chart, which
+    carries its dependency charts. NGC redirects the index and the archive to
+    a download host, currently `xfiles.ngc.nvidia.com`; see
+    [NGC network protocols](https://docs.nvidia.com/ngc/latest/ngc-user-guide.html#nvidia-ngc-network-protocols)
   - to `docker.io`, `ghcr.io`, `quay.io` and `registry.k8s.io`, for the images
+- **A default StorageClass.** The watchdog and the three gateways each claim
+  a 1Gi PersistentVolume for their exporter queues, so telemetry queued while
+  the backend is unreachable survives a Collector restart. Without a default
+  StorageClass the claims stay `Pending`, and so do those Pods.
 - **Room on the nodes.** The site values size NKTP for a small management
-  cluster. Its Pods request about 1.6 CPU and 3.9Gi of memory
+  cluster. Its Pods request about 1.7 CPU and 3.6Gi of memory
   in total, plus about 125m and 320Mi for each node beyond the first: the node
   Collector and kube-state-metrics' node Pod run on every node. The development
   backend sets no requests but used about 1.2Gi at idle.

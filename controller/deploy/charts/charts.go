@@ -26,13 +26,16 @@ import (
 const (
 	NVKEController = "controller"
 	Postgresql     = "postgresql"
+	NVKECRDs       = "nvke-crds"
 )
 
 // all: so that templates/_helpers.tpl is included; plain go:embed skips files
 // whose names start with "_" or ".", and a chart without its helpers renders
 // nothing useful.
 //
-//go:embed all:controller all:postgresql
+//go:embed all:controller/Chart.yaml all:controller/Chart.lock all:controller/values.yaml
+//go:embed all:controller/LICENSE all:controller/NOTICE all:controller/README.md
+//go:embed all:controller/files all:controller/templates all:postgresql all:nvke-crds
 var files embed.FS
 
 // Names returns every embedded chart, sorted. These are directory names, which
@@ -63,7 +66,7 @@ func Has(name string) bool {
 	return err == nil && info.IsDir()
 }
 
-// FS returns the embedded chart directory for name, or an error naming the
+// FS returns the embedded source chart directory for name, or an error naming the
 // charts that exist.
 func FS(name string) (fs.FS, error) {
 	if !Has(name) {
@@ -74,6 +77,7 @@ func FS(name string) (fs.FS, error) {
 
 // Extract writes the embedded chart name into dir, which must not exist or
 // must be empty, so the result is exactly the chart and nothing else. The
+// controller dependency is assembled from its canonical embedded chart. The
 // directory can then be handed to helm as a chart path. Files are 0600 and
 // directories 0700: only the process that extracted the chart reads it.
 //
@@ -104,6 +108,17 @@ func Extract(name, dir string) error {
 	if err := writeChart(chart, dir); err != nil {
 		clearDir(dir)
 		return err
+	}
+	if name == NVKEController {
+		dependency, depErr := FS(NVKECRDs)
+		if depErr != nil {
+			clearDir(dir)
+			return depErr
+		}
+		if depErr := writeChart(dependency, filepath.Join(dir, "charts", NVKECRDs)); depErr != nil {
+			clearDir(dir)
+			return depErr
+		}
 	}
 	// After the walk, not before: MkdirAll leaves an existing directory's mode
 	// alone, so this is what makes the 0700 above true of dir itself.

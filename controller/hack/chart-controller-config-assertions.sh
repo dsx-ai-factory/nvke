@@ -118,9 +118,13 @@ refuse "credentialMonitoring.warningDays must exceed scheduledMaintenance.certRe
   --set scheduledMaintenance.certRenewal.thresholdDays=60
 printf '  credential settings the controller would refuse are refused at render\n'
 
+refuse "nodeAgent.spireAttestationMethod must be dsxImds when supportedInfraProviders includes launchLayer and spiffe.enabled is true" \
+  --set spiffe.enabled=true --set-string 'supportedInfraProviders=nico\, launchLayer'
+
 # Padded on purpose: the template must trim these.
 render dsx-imds \
   --set spiffe.enabled=true \
+  --set-string 'supportedInfraProviders=nico\, launchLayer' \
   --set-string nodeAgent.spireAttestationMethod=dsxImds \
   --set-string 'nodeAgent.dsxImds.operatorTenant= operator-1 ' \
   --set-string 'nodeAgent.dsxImds.endpoint= https://metadata.example.test ' \
@@ -223,11 +227,13 @@ render api-auth-inline -f "${values}/api-auth-inline.yaml"
 cat > "${values}/api-authz.yaml" <<'YAML'
 apiAuthz:
   enabled: true
-  config:
-    issuers:
-      local-kubernetes:
-        serviceAccounts:
-          - {namespace: nke-clients, grants: [admin]}
+  authorizer:
+    localBundle:
+      config:
+        issuers:
+          local-kubernetes:
+            serviceAccounts:
+              - {namespace: nke-clients, grants: [admin]}
 YAML
 render api-authz -f "${values}/api-auth-inline.yaml" -f "${values}/api-authz.yaml"
 # apiAuthz permissive with a bundle and an authentication ConfigMap managed elsewhere.
@@ -236,7 +242,7 @@ render api-authz-external \
   --set apiAuth.permissive=true \
   --set apiAuthz.enabled=true \
   --set apiAuthz.permissive=true \
-  --set apiAuthz.configMap.create=false
+  --set apiAuthz.authorizer.localBundle.configMap.create=false
 
 # Empty strings fall back to Go defaults, which the template must render.
 render empty-strings \

@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -131,9 +132,19 @@ func Setup(ctx context.Context, cfg config.Config, seedDoc seed.Document, logger
 			store.Close()
 			return nil, fmt.Errorf("derive gateway IP for BGP: %w", gwErr)
 		}
+		listenAddr := gw
+		if runtime.GOOS == "darwin" {
+			// The vmnet gateway address only exists while a VM holds vmnet up,
+			// so bind every interface rather than the gateway.
+			listenAddr = ""
+			if err := bgp.CheckRouteSudo(); err != nil {
+				store.Close()
+				return nil, err
+			}
+		}
 		bgpSpeaker = bgp.New(bgp.Config{
 			Enabled:           true,
-			ListenAddr:        gw,
+			ListenAddr:        listenAddr,
 			ListenPort:        cfg.BGPListenPort,
 			LocalASN:          cfg.BGPLocalASN,
 			PeerASN:           cfg.BGPPeerASN,
@@ -166,8 +177,18 @@ func Setup(ctx context.Context, cfg config.Config, seedDoc seed.Document, logger
 			store,
 			filepath.Join(filepath.Dir(cfg.DBPath), "instances"),
 		)
+		handler := metadataServer.Handler()
+		if cfg.EffectiveVMBackend() == config.VMBackendDarwinQEMU {
+			// darwin binds every interface, and /nocloud/{instanceID} serves
+			// user-data by ID rather than by source address.
+			_, subnet, err := net.ParseCIDR(cfg.BridgeCIDR)
+			if err != nil {
+				return nil, fmt.Errorf("parse bridge CIDR for metadata server: %w", err)
+			}
+			handler = allowSourceSubnet(handler, subnet)
+		}
 		var metaErr error
-		metadataCancel, metadataWg, metaErr = startMetadataServers(ctx, engine.MetadataAddrs(), metadataServer.Handler(), logger)
+		metadataCancel, metadataWg, metaErr = startMetadataServers(ctx, engine.MetadataAddrs(), handler, logger)
 		if metaErr != nil {
 			return nil, fmt.Errorf("start metadata servers: %w", metaErr)
 		}
@@ -235,6 +256,18 @@ func (a *App) Close() {
 	_ = a.Store.Close()
 }
 
+// allowSourceSubnet rejects requests whose source address is outside subnet.
+func allowSourceSubnet(next http.Handler, subnet *net.IPNet) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if ip := net.ParseIP(host); err != nil || ip == nil || !subnet.Contains(ip) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // startMetadataServers starts the cloud-init metadata HTTP listeners on the
 // addresses the active NetworkManager reports via MetadataAddrs() (e.g.
 // 169.254.169.254:7777 + {bridge_gw}:7777 in bridge mode, or {libvirt_gw}:80 in
@@ -261,7 +294,9 @@ func startMetadataServers(ctx context.Context, addrs []string, handler http.Hand
 			continue
 		}
 		bound++
-		server := &http.Server{Handler: handler}
+		// darwin binds every interface, so a LAN peer could otherwise hold
+		// connections open without ever sending headers.
+		server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 		logger.Info("Cloud-init metadata server started", "listenAddr", addr)
 		wg.Add(1)
 		go func() {
