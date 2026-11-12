@@ -98,6 +98,9 @@ func TestClusterStateSurvivesANewlineEatingTransport(t *testing.T) {
 		"workloads, all namespaces", "events, all namespaces",
 		"cni pod detail", "cni logs", "cni logs, previous",
 		"cert-manager pod detail", "cert-manager logs", "cert-manager logs, previous",
+		"spire server pod detail", "spire server logs", "spire server logs, previous",
+		"spire agent pod detail", "spire agent logs", "spire agent logs, previous",
+		"temporal pod detail", "temporal logs", "temporal logs, previous",
 	}
 	for _, section := range sections {
 		if !strings.Contains(string(out), sectionMarker+section+"\n") {
@@ -122,6 +125,12 @@ func TestClusterStateReadsTheInfrastructureTheDeployWaitsOn(t *testing.T) {
 		"-n 'ovn-kubernetes' logs -l 'component=network' --all-containers --tail=200 --prefix --ignore-errors --previous",
 		"-n 'cert-manager' describe pods",
 		"-n 'cert-manager' logs -l 'app.kubernetes.io/instance=cert-manager' --all-containers --tail=200 --prefix --ignore-errors --previous",
+		"-n 'spire-server' describe pods",
+		"-n 'spire-server' logs -l 'app.kubernetes.io/instance=spire' --all-containers --tail=200 --prefix --ignore-errors --previous",
+		"-n 'spire-system' describe pods",
+		"-n 'spire-system' logs -l 'app.kubernetes.io/instance=spire' --all-containers --tail=200 --prefix --ignore-errors --previous",
+		"-n 'temporal' describe pods",
+		"-n 'temporal' logs -l 'app.kubernetes.io/instance=temporal' --all-containers --tail=200 --prefix --ignore-errors --previous",
 	} {
 		if !strings.Contains(script, want) {
 			t.Errorf("the script does not run %q:\n%s", want, script)
