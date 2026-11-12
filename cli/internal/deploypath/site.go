@@ -56,6 +56,9 @@ type TemplateContext struct {
 	// them is a separate question from whether the template can name them.
 	Nico   struct{ Endpoint, OrgID, Token, APIName, TokenURL, ClientID, ClientSecret, Scope string }
 	Tenant struct{ User, Password string }
+	// LaunchLayer is the OAuth2 client CAPLL calls LaunchLayer as. Scopes stays
+	// empty when the stack config omits it.
+	LaunchLayer struct{ IssuerURL, ClientID, ClientSecret, Scopes string }
 }
 
 // site writes the site values and renders the template items.
@@ -65,7 +68,7 @@ func (r *renderer) site() {
 	external := r.opts.Credentials == CredentialsExternal
 	var creds stackconfig.Credentials
 	if !external {
-		loaded, err := stackconfig.CredentialsFromEnv()
+		loaded, err := cs.CredentialsFromEnv()
 		if err != nil {
 			for _, line := range strings.Split(err.Error(), "\n") {
 				r.problem("environment: %s", line)
@@ -97,9 +100,28 @@ func (r *renderer) site() {
 	}
 	var ctx TemplateContext
 	ctx.ClusterName = spec.ClusterName
-	ctx.Nico.Endpoint = check("nico.endpoint", cs.Nico.Endpoint)
-	ctx.Nico.OrgID = check("nico.orgID", cs.Nico.OrgID)
-	ctx.Nico.APIName = check("nico.apiName", cs.Nico.APIName)
+	// Each provider's values are required by the deploy path that installs it.
+	if r.hasItem(capnicoItem, TypeManifest) {
+		ctx.Nico.Endpoint = check("nico.endpoint", cs.Nico.Endpoint)
+		ctx.Nico.OrgID = check("nico.orgID", cs.Nico.OrgID)
+		ctx.Nico.APIName = check("nico.apiName", cs.Nico.APIName)
+	}
+	// Replaces the chart's manager.args, so it repeats --leader-elect.
+	var capllArgs []string
+	if r.hasItem(capllItem, TypeHelm) {
+		ll := cs.LaunchLayer
+		capllArgs = []string{"--leader-elect", "--base-url=" + check("launchLayer.baseURL", ll.BaseURL)}
+		// An omitted URL falls back to baseURL in CAPLL.
+		for _, f := range []struct{ flag, url string }{{"--vpc-url", ll.VPCURL}, {"--compute-url", ll.ComputeURL}, {"--sg-url", ll.SGURL}} {
+			if f.url != "" {
+				capllArgs = append(capllArgs, f.flag+"="+f.url)
+			}
+		}
+		capllArgs = append(capllArgs, "--identity-secret="+launchLayerSecret)
+		ctx.LaunchLayer.IssuerURL = check("launchLayer.issuerURL", ll.IssuerURL)
+		ctx.LaunchLayer.ClientID = check("launchLayer.clientID", ll.ClientID)
+		ctx.LaunchLayer.Scopes, ctx.LaunchLayer.ClientSecret = ll.Scopes, creds.LaunchLayerClientSecret
+	}
 	// CredentialsFromEnv applies the same rule to the credentials.
 	ctx.Nico.Token, ctx.Tenant.User, ctx.Tenant.Password = creds.NicoToken, creds.NodeUser, creds.NodePassword
 	if len(r.problems) > 0 {
@@ -145,6 +167,9 @@ func (r *renderer) site() {
 		r.problem("stack config: images.profiles is required: the deploy path enables profiles.image and nothing else names the image")
 	}
 	r.siteValues("controller", controller)
+	if capllArgs != nil {
+		r.siteValues(capllItem, map[string]any{"manager": map[string]any{"args": capllArgs}})
+	}
 
 	// spire: site identity, the controller's admin ID, the TPM attestor
 	// checksum for the architecture, the bootstrap CA when the environment
@@ -483,6 +508,13 @@ const (
 	databaseSecret = "nvke-database"
 	// spireCASecret is the upstream CA Secret the spire item mounts.
 	spireCASecret = "spire-upstream-ca"
+)
+
+// Provider items. A path requires the stack config values of the items it has.
+const (
+	capnicoItem       = "capnico"
+	capllItem         = "capll"
+	launchLayerSecret = "launchlayer-credentials"
 )
 
 // connectionStringKey is the key the controller reads its database URL from.

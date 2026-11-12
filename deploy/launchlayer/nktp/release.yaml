@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# NKTP, the telemetry pipeline, with its bundled Operator, monitoring CRDs,
+# node-exporter, kube-state-metrics and metrics-server.
+#
+# The chart is published to NGC's public Helm repository, which needs no login.
+# Its archive carries its dependency charts, so nothing is built before the
+# install. values.yaml restates some of the chart's lists in full; recheck it
+# whenever this version changes.
+#
+# Early, straight after capnico: it installs the monitoring CRDs, and the
+# temporal, spire and controller items each create a monitor that needs them.
+# Installing it first also means the rest of the install is observed.
+chart:
+  name: nktp
+  version: "0.2.0"
+  repository: https://helm.ngc.nvidia.com/nvidia
+release:
+  name: nktp
+  namespace: nktp
+values:
+  - values.yaml

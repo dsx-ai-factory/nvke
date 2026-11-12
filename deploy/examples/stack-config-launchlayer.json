@@ -1,0 +1,16 @@
+{
+  "launchLayer": {
+    "baseURL": "REPLACE_LAUNCHLAYER_BASE_URL",
+    "vpcURL": "",
+    "computeURL": "",
+    "sgURL": "",
+    "issuerURL": "REPLACE_LAUNCHLAYER_ISSUER_URL",
+    "clientID": "REPLACE_LAUNCHLAYER_CLIENT_ID",
+    "scopes": ""
+  },
+  "images": {
+    "controller": "",
+    "profiles": ""
+  },
+  "mirror": ""
+}

@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The allowlist SPIRE's tpmDirect node attestor reads, and it is EMPTY on
+# purpose.
+#
+# A site cluster enrols nodes by TPM EK thumbprint and mints no join tokens
+# (os-image/SPEC.md: omitting SPIRE_JOIN_TOKEN is what selects the TPM
+# attestor). The thumbprint of a node cannot be known before the node exists,
+# and on this path the controller creates tenant nodes long after the management plane is
+# installed -- so there is nothing to put here at install time.
+#
+# And it STAYS empty here: the controller fills it, nobody edits it. The chain is
+#
+#   CAPNICo sets NicoMachine.Status.TpmEkPubHash
+#     -> the controller's nico-tpm-spiffe controller writes a ClusterStaticEntry whose
+#        SPIFFE ID path is TPMSpireAgentPath + that hash
+#     -> the controller's tpm-pubhashes controller derives this ConfigMap from those
+#        entries, and watches it only to repair drift -- the
+#        ClusterStaticEntries are the source of truth
+#     -> SPIRE server's tpmDirect attestor reads it
+#
+# So this item is a seed, not a record. It exists because spire/values.yaml
+# mounts it (optional: true, so an absent ConfigMap would also work) and
+# because a resource the controller rewrites should be one the deploy path declares.
+---
+apiVersion: v1
+data: {}
+kind: ConfigMap
+metadata:
+    name: tpm-pubhashes
+    namespace: spire-server

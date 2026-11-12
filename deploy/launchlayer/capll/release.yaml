@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The release name sets the ServiceAccount that
+# nvke-base-config/25-capll-secret-reader.yaml binds. Manager args come from the stack config.
+chart:
+  name: capi-provider-launchlayer
+  version: "0.2.0"
+  repository: oci://ghcr.io/dsx-ai-factory/cluster-api-provider-launchlayer/charts
+release:
+  name: capi-provider-launchlayer
+  namespace: capll-system
+values:
+  - values.yaml

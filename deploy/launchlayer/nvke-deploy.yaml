@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# deploy/nico with CAPNICo replaced by CAPLL's chart. See README.md.
+# capll follows spire: its manager mounts the csi.spiffe.io driver spire installs.
+items:
+  - {name: nvke-base-config, type: template}
+  - {name: spire-tpm-pubhashes, type: manifest}
+  - {name: spire-server-nodeport, type: manifest}
+  - {name: spire-oidc-provider-nodeport, type: manifest}
+  - {name: nktp, type: helm}
+  - {name: postgresql, type: helm}
+  - {name: spire-crds, type: helm}
+  - {name: temporal, type: helm}
+  - {name: spire, type: helm}
+  - {name: capll, type: helm}
+  - {name: controller, type: helm}

@@ -248,7 +248,7 @@ func TestCredentialsFromEnv(t *testing.T) {
 	t.Setenv(EnvNodeUser, "nke")
 	t.Setenv(EnvNodePassword, "")
 	t.Setenv(EnvDatabasePassword, "db")
-	creds, err := CredentialsFromEnv()
+	creds, err := (&Config{}).CredentialsFromEnv()
 	if err == nil || !strings.Contains(err.Error(), EnvNodePassword+" is not set") {
 		t.Errorf("unset password: %v", err)
 	}
@@ -256,19 +256,19 @@ func TestCredentialsFromEnv(t *testing.T) {
 		t.Errorf("secrets not read and trimmed: %+v", creds)
 	}
 	t.Setenv(EnvNodePassword, "pw")
-	if _, err := CredentialsFromEnv(); err != nil {
+	if _, err := (&Config{}).CredentialsFromEnv(); err != nil {
 		t.Errorf("all set: %v", err)
 	}
 	// The templated credentials refuse what the templates cannot carry; the
 	// database password, written through YAML, does not.
 	t.Setenv(EnvDatabasePassword, `d"b\`)
-	if _, err := CredentialsFromEnv(); err != nil {
+	if _, err := (&Config{}).CredentialsFromEnv(); err != nil {
 		t.Errorf("database password with a quote: %v", err)
 	}
 	for _, name := range []string{EnvNicoToken, EnvNodeUser, EnvNodePassword} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv(name, `a"b`)
-			_, err := CredentialsFromEnv()
+			_, err := (&Config{}).CredentialsFromEnv()
 			if err == nil || !strings.Contains(err.Error(), name+": the value holds a character") || strings.Contains(err.Error(), `a"b`) {
 				t.Errorf("quote in %s: %v", name, err)
 			}
@@ -278,8 +278,83 @@ func TestCredentialsFromEnv(t *testing.T) {
 	for _, name := range []string{EnvNicoToken, EnvNodeUser, EnvNodePassword, EnvDatabasePassword} {
 		t.Setenv(name, "")
 	}
-	_, err = CredentialsFromEnv()
+	_, err = (&Config{}).CredentialsFromEnv()
 	if err == nil || strings.Count(err.Error(), " is not set") != 4 {
 		t.Errorf("four unset variables: %v", err)
+	}
+}
+
+// launchLayerExample is the LaunchLayer path's starting point.
+var launchLayerExample = filepath.Join("..", "..", "..", "..", "deploy", "examples", "stack-config-launchlayer.json")
+
+// filledLaunchLayer returns the LaunchLayer example with every placeholder replaced.
+func filledLaunchLayer(t *testing.T) string {
+	t.Helper()
+	text, err := os.ReadFile(launchLayerExample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.NewReplacer(
+		"REPLACE_LAUNCHLAYER_BASE_URL", "https://launchlayer.example.com",
+		"REPLACE_LAUNCHLAYER_ISSUER_URL", "https://issuer.example.com",
+		"REPLACE_LAUNCHLAYER_CLIENT_ID", "capll",
+	).Replace(string(text))
+}
+
+func TestLoad_LaunchLayer(t *testing.T) {
+	c, err := Load(write(t, filledLaunchLayer(t)))
+	if err != nil {
+		t.Fatalf("filled LaunchLayer example: %v", err)
+	}
+	if c.usesNico() || !c.usesLaunchLayer() || c.LaunchLayer.BaseURL != "https://launchlayer.example.com" || c.LaunchLayer.ClientID != "capll" {
+		t.Errorf("loaded: %+v", c)
+	}
+	if _, err := Load(launchLayerExample); err == nil || !strings.Contains(err.Error(), "launchLayer.baseURL: still a REPLACE_* placeholder") {
+		t.Errorf("unfilled example: %v", err)
+	}
+	cases := map[string]string{
+		strings.Replace(filledLaunchLayer(t), `"https://launchlayer.example.com"`, `""`, 1):                      "launchLayer.baseURL: must be set",
+		strings.Replace(filledLaunchLayer(t), `"computeURL": ""`, `"computeURL": "compute.example.com"`, 1):      `launchLayer.computeURL: "compute.example.com" must be an http or https URL`,
+		strings.Replace(filledLaunchLayer(t), "https://issuer.example.com", "https://u:p@issuer.example.com", 1): "launchLayer.issuerURL: must carry no user or password; the client secret comes from " + EnvLaunchLayerClientSecret,
+		// Malformed userinfo fails the parse; the value, which may hold a password, is not printed.
+		strings.Replace(filledLaunchLayer(t), "https://issuer.example.com", "https://u:s3cret%ZZ@issuer.example.com", 1): "launchLayer.issuerURL: must be an http or https URL",
+	}
+	for body, want := range cases {
+		_, err := Load(write(t, body))
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("want %q, got %v", want, err)
+		}
+		if err != nil && strings.Contains(err.Error(), "s3cret") {
+			t.Errorf("the error prints the password: %v", err)
+		}
+	}
+}
+
+func TestConfig_CredentialsFromEnv(t *testing.T) {
+	t.Setenv(EnvNodeUser, "nke")
+	t.Setenv(EnvNodePassword, "pw")
+	t.Setenv(EnvDatabasePassword, "db")
+	t.Setenv(EnvNicoToken, "")
+	t.Setenv(EnvLaunchLayerClientSecret, "")
+	launchLayer, err := Load(write(t, filledLaunchLayer(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A LaunchLayer config needs its client secret and not the NICo token.
+	if _, err := launchLayer.CredentialsFromEnv(); err == nil || err.Error() != EnvLaunchLayerClientSecret+" is not set" {
+		t.Errorf("LaunchLayer config, no secret: %v", err)
+	}
+	t.Setenv(EnvLaunchLayerClientSecret, " secret\n")
+	creds, err := launchLayer.CredentialsFromEnv()
+	if err != nil || creds.LaunchLayerClientSecret != "secret" || creds.NicoToken != "" {
+		t.Errorf("LaunchLayer config: %+v %v", creds, err)
+	}
+	// A NICo config is checked as before: the token, not the LaunchLayer secret.
+	nico, err := Load(write(t, filled(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := nico.CredentialsFromEnv(); err == nil || err.Error() != EnvNicoToken+" is not set" {
+		t.Errorf("NICo config, no token: %v", err)
 	}
 }

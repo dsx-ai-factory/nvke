@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The SPIFFE exec-auth plugin, as controller/deploy/k8s/capi-spiffe-exec-auth
+# gives the CAPI controllers: with nvkeOIDCAuth on, tenant kubeconfigs need it.
+manager:
+  podSecurityContext:
+    fsGroup: 65532
+    fsGroupChangePolicy: OnRootMismatch
+  volumes:
+    - name: spiffe-workload-api
+      csi:
+        driver: csi.spiffe.io
+        readOnly: true
+    # Image volumes mount only directories; the init container copies the plugin out.
+    - name: spiffe-exec-plugin
+      image:
+        reference: ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:1.0.0@sha256:e30e90774e5951f84eb6dfb36f972fead08b64c3bfdc0912c5b15f988e79de3a
+        pullPolicy: IfNotPresent
+    - name: spiffe-exec-bin
+      emptyDir: {}
+  initContainers:
+    - name: install-spiffe-exec-plugin
+      image: alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+      imagePullPolicy: IfNotPresent
+      command:
+        - /bin/cp
+        - /plugin/cmd
+        - /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+      volumeMounts:
+        - name: spiffe-exec-plugin
+          mountPath: /plugin
+          subPath: ko-app
+          readOnly: true
+        - name: spiffe-exec-bin
+          mountPath: /opt/spiffe/bin
+  volumeMounts:
+    - name: spiffe-workload-api
+      mountPath: /spiffe-workload-api
+      readOnly: true
+    - name: spiffe-exec-bin
+      mountPath: /opt/spiffe/bin
+      readOnly: true
