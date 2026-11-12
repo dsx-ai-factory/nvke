@@ -36,7 +36,7 @@ notices-check` verifies it is up to date.
 | `github.com/felixge/httpsnoop` | MIT | `github.com/felixge/httpsnoop@v1.1.0` | https://github.com/felixge/httpsnoop/blob/v1.1.0/LICENSE.txt |
 | `github.com/fsnotify/fsnotify` | BSD-3-Clause | `github.com/fsnotify/fsnotify@v1.9.0` | https://github.com/fsnotify/fsnotify/blob/v1.9.0/LICENSE |
 | `github.com/fxamacker/cbor/v2` | MIT | `github.com/fxamacker/cbor/v2@v2.9.1` | https://github.com/fxamacker/cbor/blob/v2.9.1/LICENSE |
-| `github.com/getkin/kin-openapi` | MIT | `github.com/getkin/kin-openapi@v0.152.0` | https://github.com/getkin/kin-openapi/blob/v0.152.0/LICENSE |
+| `github.com/getkin/kin-openapi` | MIT | `github.com/getkin/kin-openapi@v0.153.0` | https://github.com/getkin/kin-openapi/blob/v0.153.0/LICENSE |
 | `github.com/go-jose/go-jose/v4` | Apache-2.0 | `github.com/go-jose/go-jose/v4@v4.1.9` | https://github.com/go-jose/go-jose/blob/v4.1.9/LICENSE |
 | `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | `github.com/go-jose/go-jose/v4@v4.1.9` | https://github.com/go-jose/go-jose/blob/v4.1.9/json/LICENSE |
 | `github.com/go-json-experiment/json` | BSD-3-Clause | `github.com/go-json-experiment/json@v0.0.0-20260820222146-c27c302e5fc3` | https://github.com/go-json-experiment/json/blob/c27c302e5fc3/LICENSE |
@@ -82,8 +82,6 @@ notices-check` verifies it is up to date.
 | `github.com/nexus-rpc/sdk-go/nexus` | MIT | `github.com/nexus-rpc/sdk-go@v0.7.0` | https://github.com/nexus-rpc/sdk-go/blob/v0.7.0/LICENSE |
 | `github.com/oapi-codegen/nethttp-middleware` | Apache-2.0 | `github.com/oapi-codegen/nethttp-middleware@v1.3.1` | https://github.com/oapi-codegen/nethttp-middleware/blob/v1.3.1/LICENSE |
 | `github.com/oapi-codegen/runtime` | Apache-2.0 | `github.com/oapi-codegen/runtime@v1.8.0` | https://github.com/oapi-codegen/runtime/blob/v1.8.0/LICENSE |
-| `github.com/oasdiff/yaml` | BSD-3-Clause / MIT | `github.com/oasdiff/yaml@v0.1.1` | https://github.com/oasdiff/yaml/blob/v0.1.1/LICENSE |
-| `github.com/oasdiff/yaml3` | MIT | `github.com/oasdiff/yaml3@v0.0.14` | https://github.com/oasdiff/yaml3/blob/v0.0.14/LICENSE |
 | `github.com/onsi/gomega` | MIT | `github.com/onsi/gomega@v1.44.0` | https://github.com/onsi/gomega/blob/v1.44.0/LICENSE |
 | `github.com/pandatix/go-abnf` | MIT | `github.com/pandatix/go-abnf@v0.5.3` | https://github.com/pandatix/go-abnf/blob/v0.5.3/LICENSE |
 | `github.com/pkg/errors` | BSD-2-Clause | `github.com/pkg/errors@v0.9.1` | https://github.com/pkg/errors/blob/v0.9.1/LICENSE |
@@ -1107,7 +1105,7 @@ SOFTWARE.
 
 ### github.com/getkin/kin-openapi
 
-_MIT — github.com/getkin/kin-openapi@v0.152.0_
+_MIT — github.com/getkin/kin-openapi@v0.153.0_
 
 #### LICENSE
 
@@ -7721,145 +7719,6 @@ _Apache-2.0 — github.com/oapi-codegen/runtime@v1.8.0_
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
-
-```
-
-### github.com/oasdiff/yaml
-
-_BSD-3-Clause / MIT — github.com/oasdiff/yaml@v0.1.1_
-
-#### LICENSE
-
-```text
-The MIT License (MIT)
-
-Copyright (c) 2014 Sam Ghods
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-
-Copyright (c) 2012 The Go Authors. All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-
-   * Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-   * Redistributions in binary form must reproduce the above
-copyright notice, this list of conditions and the following disclaimer
-in the documentation and/or other materials provided with the
-distribution.
-   * Neither the name of Google Inc. nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-```
-
-### github.com/oasdiff/yaml3
-
-_MIT — github.com/oasdiff/yaml3@v0.0.14_
-
-#### LICENSE
-
-```text
-
-This project is covered by two different licenses: MIT and Apache.
-
-#### MIT License ####
-
-The following files were ported to Go from C files of libyaml, and thus
-are still covered by their original MIT license, with the additional
-copyright staring in 2011 when the project was ported over:
-
-    apic.go emitterc.go parserc.go readerc.go scannerc.go
-    writerc.go yamlh.go yamlprivateh.go
-
-Copyright (c) 2006-2010 Kirill Simonov
-Copyright (c) 2006-2011 Kirill Simonov
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-of the Software, and to permit persons to whom the Software is furnished to do
-so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-### Apache License ###
-
-All the remaining project files are covered by the Apache license:
-
-Copyright (c) 2011-2019 Canonical Ltd
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
-```
-
-#### NOTICE
-
-```text
-Copyright 2011-2016 Canonical Ltd.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
 
 ```
 
