@@ -493,34 +493,25 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 
 	observedPool, err := r.NVKEController.FindNodePool(ctx, observedCluster.Name, string(pool.Name))
 	if errors.Is(err, nvkecontroller.ErrNotFound) {
-		fail := func(err error) error {
-			if summaryErr := setNodePoolConditions(target); summaryErr != nil {
-				return errors.Join(err, summaryErr)
-			}
-			return err
-		}
 		release, image, err := r.resolveNodePoolRelease(ctx, pool, status.ResolvedRelease)
 		if err != nil {
-			setNodePoolReleaseResolved(target, err)
-			return fail(err)
+			return err
 		}
-		// Record the release as soon as it resolves so the deferred status patch keeps it on every return.
-		status.ResolvedRelease = &internalv1.ReleaseReference{Name: internalv1.ResourceName(release.Name), Version: release.Spec.Tag}
-		setNodePoolReleaseResolved(target, nil)
 		request, err := resolveNodePoolRequest(observedCluster.ID, pool)
 		if err != nil {
-			return fail(fmt.Errorf("resolve node pool %q request: %w", pool.Name, err))
+			return fmt.Errorf("resolve node pool %q request: %w", pool.Name, err)
 		}
 		infra, err := renderNodePoolInfra(cluster, pool, nodePoolTemplate, release, image)
 		if err != nil {
-			return fail(err)
+			return err
 		}
 		request.Infra = infra
 		observedPool, err := r.NVKEController.CreateNodePool(ctx, request)
 		if err != nil {
-			return fail(fmt.Errorf("create nvke controller node pool %q: %w", pool.Name, err))
+			return fmt.Errorf("create nvke controller node pool %q: %w", pool.Name, err)
 		}
 		status.ID = observedPool.ID.String()
+		status.ResolvedRelease = &internalv1.ReleaseReference{Name: internalv1.ResourceName(release.Name), Version: release.Spec.Tag}
 		propagateNodePoolConditions(target, observedPool)
 		return setNodePoolConditions(target)
 	}
@@ -544,7 +535,7 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 	if observedPool.DesiredNodeCount != desiredCount {
 		update.DesiredNodeCount = &desiredCount
 	}
-	resolved, infra, resolveErr := r.resolveExistingNodePoolRelease(ctx, cluster, pool, nodePoolTemplate, status, target)
+	resolved, infra, resolveErr := r.resolveExistingNodePoolRelease(ctx, cluster, pool, nodePoolTemplate, status)
 	if infra != nil {
 		update.Infra = &api.InfraNodePoolProviderUpdate{
 			BootstrapFiles:     append([]api.CloudInitFile{}, infra.BootstrapFiles...),
@@ -555,28 +546,23 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 	if update != (api.UpdateNodePoolRequest{}) {
 		updatedPool, err := r.NVKEController.UpdateNodePool(ctx, observedPool.ID.String(), update)
 		if err != nil && infra != nil {
-			return errors.Join(fmt.Errorf("move nvke controller node pool %q to release %q: %w", pool.Name, resolved.Name, err), setNodePoolConditions(target))
+			return errors.Join(fmt.Errorf("move nvke controller node pool %q to release %q: %w", pool.Name, resolved.Name, err), resolveErr)
 		}
 		if err != nil {
-			return errors.Join(fmt.Errorf("scale nvke controller node pool %q to %d replicas: %w", pool.Name, desiredCount, err), setNodePoolConditions(target))
+			return errors.Join(fmt.Errorf("scale nvke controller node pool %q to %d replicas: %w", pool.Name, desiredCount, err), resolveErr)
 		}
 		observedPool = updatedPool
 	}
 	if resolved != nil {
 		status.ResolvedRelease = resolved
-		setNodePoolReleaseResolved(target, nil)
 	}
 	propagateNodePoolConditions(target, observedPool)
-	if err := setNodePoolConditions(target); err != nil {
-		return errors.Join(resolveErr, err)
-	}
-	return resolveErr
+	return errors.Join(resolveErr, setNodePoolConditions(target))
 }
 
-func (r *NVKEClusterReconciler) resolveExistingNodePoolRelease(ctx context.Context, cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, status *internalv1.NodePoolStatus, target nodePoolConditionTarget) (*internalv1.ReleaseReference, *api.InfraNodePoolProvider, error) {
+func (r *NVKEClusterReconciler) resolveExistingNodePoolRelease(ctx context.Context, cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, status *internalv1.NodePoolStatus) (*internalv1.ReleaseReference, *api.InfraNodePoolProvider, error) {
 	release, image, err := r.resolveNodePoolRelease(ctx, pool, status.ResolvedRelease)
 	if err != nil {
-		setNodePoolReleaseResolved(target, err)
 		return nil, nil, err
 	}
 	resolved := &internalv1.ReleaseReference{Name: internalv1.ResourceName(release.Name), Version: release.Spec.Tag}
@@ -585,27 +571,9 @@ func (r *NVKEClusterReconciler) resolveExistingNodePoolRelease(ctx context.Conte
 	}
 	infra, err := renderNodePoolInfra(cluster, pool, nodePoolTemplate, release, image)
 	if err != nil {
-		setNodePoolReleaseResolved(target, err)
 		return nil, nil, err
 	}
 	return resolved, infra, nil
-}
-
-func setNodePoolReleaseResolved(target nodePoolConditionTarget, err error) {
-	if err != nil {
-		conditions.Set(target, metav1.Condition{
-			Type:    internalv1.NodePoolReleaseResolvedCondition,
-			Status:  metav1.ConditionFalse,
-			Reason:  internalv1.ReconcileFailedReason,
-			Message: err.Error(),
-		})
-		return
-	}
-	conditions.Set(target, metav1.Condition{
-		Type:   internalv1.NodePoolReleaseResolvedCondition,
-		Status: metav1.ConditionTrue,
-		Reason: internalv1.ReconcileSucceededReason,
-	})
 }
 
 func renderNodePoolInfra(cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, release *internalv1.NodePoolRelease, image *internalv1.MachineImage) (*api.InfraNodePoolProvider, error) {
@@ -964,9 +932,7 @@ func setNodePoolConditions(pool conditions.Setter) error {
 			internalv1.NVKEControllerProvisionedCondition,
 			internalv1.NVKEControllerProvisioningCondition,
 			internalv1.NVKEControllerDeletingCondition,
-			internalv1.NodePoolReleaseResolvedCondition,
 		},
-		conditions.IgnoreTypesIfMissing{internalv1.NodePoolReleaseResolvedCondition},
 		conditions.NegativePolarityConditionTypes(nvkeControllerNegativeConditionTypes),
 		conditions.CustomMergeStrategy{
 			MergeStrategy: conditions.DefaultMergeStrategy(

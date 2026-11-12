@@ -145,11 +145,6 @@ items:
         reason: Reported
         status: "False"
         type: NVKEControllerProvisioning
-      - message: ""
-        observedGeneration: 1
-        reason: ReconcileSucceeded
-        status: "True"
-        type: NodePoolReleaseResolved
       id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
       name: workers-a
       resolvedRelease:
@@ -176,11 +171,6 @@ items:
         reason: Reported
         status: "False"
         type: NVKEControllerProvisioning
-      - message: ""
-        observedGeneration: 1
-        reason: ReconcileSucceeded
-        status: "True"
-        type: NodePoolReleaseResolved
       id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
       name: workers-b
       resolvedRelease:
@@ -207,11 +197,6 @@ items:
         reason: Reported
         status: "False"
         type: NVKEControllerProvisioning
-      - message: ""
-        observedGeneration: 1
-        reason: ReconcileSucceeded
-        status: "True"
-        type: NodePoolReleaseResolved
       id: dddddddd-dddd-4ddd-8ddd-dddddddddddd
       name: workers-c
       resolvedRelease:

@@ -10,8 +10,6 @@ const (
 	NodePoolsReconciledCondition = "NodePoolsReconciled"
 	ReconcileSucceededReason     = "ReconcileSucceeded"
 	ReconcileFailedReason        = "ReconcileFailed"
-	// NodePoolReleaseResolvedCondition reports whether a pool resolved the worker release it is created from.
-	NodePoolReleaseResolvedCondition = "NodePoolReleaseResolved"
 )
 
 const (

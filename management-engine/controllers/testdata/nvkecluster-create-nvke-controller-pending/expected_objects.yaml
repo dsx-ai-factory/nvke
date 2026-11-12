@@ -146,11 +146,6 @@ items:
         reason: Reported
         status: "True"
         type: NVKEControllerProvisioning
-      - message: ""
-        observedGeneration: 1
-        reason: ReconcileSucceeded
-        status: "True"
-        type: NodePoolReleaseResolved
       id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
       name: workers
       resolvedRelease:
