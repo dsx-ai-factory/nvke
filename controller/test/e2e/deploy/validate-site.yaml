@@ -1,0 +1,236 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Runs the validation image against the site it is applied to, as a Job in
+# its own namespace, with the RBAC "Running the image" in ../README.md lists
+# and nothing more. "Running it on a site" there fills in the placeholders:
+#
+#   __IMAGE__                 the image built from the controller's release tag
+#   __CONTROLLER_VERSION__    that tag's version, such as v0.3.0
+#   __KUBERNETES_VERSION__    the site's Kubernetes version, such as v1.34.2
+#   __CONTROLLER_NAMESPACE__  the namespace the controller runs in
+#   __CONTROLLER_NAME__       its Deployment, which names its Service too
+#   __TOKEN_NAMESPACE__       the identity the suite presents to the controller
+#   __TOKEN_SERVICE_ACCOUNT__ API; validate-site-token.yaml lets it mint a token
+#
+# Results land on the nvke-validate-artifacts claim.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nvke-validate
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nvke-validate
+  namespace: nvke-validate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nvke-validate
+rules:
+  - apiGroups: [""]
+    resources: [nodes, pods]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets]
+    verbs: [get, list]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    verbs: [get, list]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list]
+  - apiGroups: [admissionregistration.k8s.io]
+    resources: [validatingwebhookconfigurations, mutatingwebhookconfigurations]
+    verbs: [get, list]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [rolebindings, clusterrolebindings]
+    verbs: [get, list]
+  - apiGroups: [cert-manager.io]
+    resources: [certificates]
+    verbs: [get, list]
+  # Only where NVKE_SITE_COMPONENTS lists argocd or cnpg:
+  # - apiGroups: [argoproj.io]
+  #   resources: [applications]
+  #   verbs: [get, list]
+  # - apiGroups: [postgresql.cnpg.io]
+  #   resources: [clusters]
+  #   verbs: [get, list]
+  - nonResourceURLs: [/readyz, /livez, /version]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nvke-validate
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nvke-validate
+subjects:
+  - kind: ServiceAccount
+    name: nvke-validate
+    namespace: nvke-validate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nvke-validate
+  namespace: kube-system
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nvke-validate
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nvke-validate
+subjects:
+  - kind: ServiceAccount
+    name: nvke-validate
+    namespace: nvke-validate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nvke-validate
+  namespace: "__CONTROLLER_NAMESPACE__"
+rules:
+  - apiGroups: [""]
+    resources: [services, configmaps]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [pods/portforward]
+    verbs: [get, create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nvke-validate
+  namespace: "__CONTROLLER_NAMESPACE__"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nvke-validate
+subjects:
+  - kind: ServiceAccount
+    name: nvke-validate
+    namespace: nvke-validate
+---
+# The probe namespace, which by default is the pod's own.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nvke-validate-probe
+  namespace: nvke-validate
+rules:
+  - apiGroups: [""]
+    resources: [pods, services, persistentvolumeclaims]
+    verbs: [create, get, delete]
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    verbs: [create, get, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [create, get, delete, list]
+  - apiGroups: [cert-manager.io]
+    resources: [issuers, certificates]
+    verbs: [create, get, delete]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nvke-validate-probe
+  namespace: nvke-validate
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nvke-validate-probe
+subjects:
+  - kind: ServiceAccount
+    name: nvke-validate
+    namespace: nvke-validate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nvke-validate-artifacts
+  namespace: nvke-validate
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nvke-validate
+  namespace: nvke-validate
+spec:
+  backoffLimit: 0
+  # Longer than the entrypoint's -ginkgo.timeout=3h.
+  activeDeadlineSeconds: 12600
+  template:
+    spec:
+      serviceAccountName: nvke-validate
+      restartPolicy: Never
+      # Where the registry needs credentials:
+      # imagePullSecrets:
+      #   - name: <secret in nvke-validate>
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: validate
+          image: "__IMAGE__"
+          env:
+            - name: NVKE_CONTROLLER_EXPECTED_VERSION
+              value: "__CONTROLLER_VERSION__"
+            - name: NVKE_SITE_KUBERNETES_VERSION
+              value: "__KUBERNETES_VERSION__"
+            - name: NVKE_CONTROLLER_NAMESPACE
+              value: "__CONTROLLER_NAMESPACE__"
+            - name: NVKE_CONTROLLER_SERVICE
+              value: "__CONTROLLER_NAME__"
+            - name: NKE_E2E_TOKEN_NAMESPACE
+              value: "__TOKEN_NAMESPACE__"
+            - name: NKE_E2E_TOKEN_SERVICE_ACCOUNT
+              value: "__TOKEN_SERVICE_ACCOUNT__"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: artifacts
+              mountPath: /artifacts
+      volumes:
+        - name: artifacts
+          persistentVolumeClaim:
+            claimName: nvke-validate-artifacts
