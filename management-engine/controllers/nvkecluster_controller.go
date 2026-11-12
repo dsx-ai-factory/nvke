@@ -426,18 +426,24 @@ func (r *NVKEClusterReconciler) getPinnedNodePoolRelease(ctx context.Context, po
 
 func (r *NVKEClusterReconciler) matchNodePoolRelease(ctx context.Context, pool *internalv1.NodePool) (*internalv1.NodePoolRelease, error) {
 	var list internalv1.NodePoolReleaseList
-	if err := r.List(ctx, &list, client.MatchingFields{nodePoolReleaseProfileTagField: string(pool.NodeProfile)}); err != nil {
+	if err := r.List(ctx, &list); err != nil {
 		return nil, fmt.Errorf("list NodePoolReleases for node profile %q: %w", pool.NodeProfile, err)
 	}
-	switch len(list.Items) {
+	var matches []*internalv1.NodePoolRelease
+	for i := range list.Items {
+		if string(list.Items[i].Spec.Profile)+":"+list.Items[i].Spec.Tag == string(pool.NodeProfile) {
+			matches = append(matches, &list.Items[i])
+		}
+	}
+	switch len(matches) {
 	case 0:
 		return nil, fmt.Errorf("no NodePoolRelease publishes node profile %q", pool.NodeProfile)
 	case 1:
 	default:
-		ctrl.LoggerFrom(ctx).Error(nil, "node profile is published by more than one NodePoolRelease", "nodeProfile", pool.NodeProfile, "count", len(list.Items))
+		ctrl.LoggerFrom(ctx).Error(nil, "node profile is published by more than one NodePoolRelease", "nodeProfile", pool.NodeProfile, "count", len(matches))
 		return nil, fmt.Errorf("node profile %q is published by more than one NodePoolRelease", pool.NodeProfile)
 	}
-	release := &list.Items[0]
+	release := matches[0]
 	if release.Spec.Lifecycle.Deprecated {
 		return nil, fmt.Errorf("NodePoolRelease %q for node profile %q is deprecated", release.Name, pool.NodeProfile)
 	}
@@ -1080,19 +1086,10 @@ func (r *NVKEClusterReconciler) resolveNVKEControllerClass(ctx context.Context, 
 	return nil
 }
 
-// nodePoolReleaseProfileTagField indexes NodePoolReleases by "<profile>:<tag>", the form of a node pool's nodeProfile.
-const nodePoolReleaseProfileTagField = "spec.profileTag"
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *NVKEClusterReconciler) SetupWithManager(mgr ctrl.Manager, wrappers ...func(reconcile.Reconciler) reconcile.Reconciler) error {
 	if r.PollInterval <= 0 {
 		r.PollInterval = defaultPollInterval
-	}
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &internalv1.NodePoolRelease{}, nodePoolReleaseProfileTagField, func(obj client.Object) []string {
-		release := obj.(*internalv1.NodePoolRelease)
-		return []string{string(release.Spec.Profile) + ":" + release.Spec.Tag}
-	}); err != nil {
-		return fmt.Errorf("index NodePoolReleases by profile and tag: %w", err)
 	}
 	var reconciler reconcile.Reconciler = r
 	for _, wrap := range wrappers {
