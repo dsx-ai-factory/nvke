@@ -335,15 +335,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	machineSpireEntryController := capi.NewMachineSpireEntryController(
-		cfg,
-		k8sControllerManager.GetClient(),
-		logger.With("logger", "machine-spire-entry-controller"),
-		trustDomain,
-	)
-	if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
-		logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
-		os.Exit(1)
+	if cfg.SpiffeEnabled {
+		machineSpireEntryController := capi.NewMachineSpireEntryController(
+			cfg,
+			k8sControllerManager.GetClient(),
+			logger.With("logger", "machine-spire-entry-controller"),
+			trustDomain,
+		)
+		if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	// Sets agent-connection on Machines created before the controller wrote it,
