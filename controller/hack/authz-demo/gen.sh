@@ -145,16 +145,18 @@ $2
 apiAuthz:
   enabled: true
   permissive: false
-  config:
-    issuers:
-      keycloak:
-        claims:
-          - {name: groups, value: nvke-admins, grants: [admin]}
-          - {name: groups, value: nvke-viewers, grants: [viewer]}
-      local-kubernetes:
-        serviceAccounts:
-          - {namespace: nke-clients, name: nke-client, grants: [admin]}
-          - {namespace: management-engine-system, name: management-engine-controller-manager, grants: [admin]}
+  authorizer:
+    localBundle:
+      config:
+        issuers:
+          keycloak:
+            claims:
+              - {name: groups, value: nvke-admins, grants: [admin]}
+              - {name: groups, value: nvke-viewers, grants: [viewer]}
+          local-kubernetes:
+            serviceAccounts:
+              - {namespace: nke-clients, name: nke-client, grants: [admin]}
+              - {namespace: management-engine-system, name: management-engine-controller-manager, grants: [admin]}
 $3
 EOF
 }
@@ -162,10 +164,10 @@ EOF
 write_values "${out}/values.yaml" "${keycloak_issuer}" ""
 write_values "${out}/values-teleport.yaml" "${keycloak_issuer}
 ${teleport_issuer}" "$(cat <<'EOF'
-      teleport:
-        claims:
-          - {name: roles, value: nvke-admin, grants: [admin]}
-          - {name: roles, value: nvke-viewer, grants: [viewer]}
+          teleport:
+            claims:
+              - {name: roles, value: nvke-admin, grants: [admin]}
+              - {name: roles, value: nvke-viewer, grants: [viewer]}
 EOF
 )"
 
