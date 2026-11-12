@@ -2,16 +2,19 @@
 # SPDX-License-Identifier: Apache-2.0
 
 apiVersion: v2
-name: management-engine
-description: A Helm chart to distribute management-engine
+name: cluster-service
+description: Cluster Service manager and datastore resources
 type: application
 
-version: 0.1.2
+version: 0.2.0
 appVersion: "dev"
 
 keywords:
   - kubernetes
   - operator
 
-annotations:
-  kubebuilder.io/generated-by: kubebuilder
+dependencies:
+  - name: nvke-crds
+    version: 0.1.0
+    repository: file://../../controller/deploy/charts/nvke-crds
+    condition: state.enabled

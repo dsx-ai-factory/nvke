@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Remote metrics authentication uses the datastore API, not the runtime cluster.
+# Leave collection disabled until scraper authentication is configured.
+metrics:
+  enabled: false
+prometheus:
+  enabled: false
+
+state:
+  enabled: false
+manager:
+  stateNamespace: management-state-system
+  infrastructureTemplateConfigMap: infra-templates
+  nvkeController:
+    endpoint: http://nvke-controller.nvke-controller.svc.cluster.local:8080/api
+  stateAccess:
+    mode: remote
+    kubeconfigSecret:
+      name: management-state-client
+      key: config

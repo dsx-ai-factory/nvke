@@ -1,68 +1,35 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-## String to partially override chart.fullname template (will maintain the release name)
-##
-# nameOverride: ""
-
-## String to fully override chart.fullname template
-##
-# fullnameOverride: ""
-
-## Configure the controller manager deployment
-##
-manager:
-  ## Set to false to skip manager installation
-  ##
+certManager:
+  enabled: false
+controller:
   enabled: true
-
-  replicas: 1
-
-  image:
-    repository: management-engine
-    ## Image tag (defaults to Chart.appVersion if not set)
-    ##
-    tag: "dev"
-    pullPolicy: IfNotPresent
-
-  ## Arguments
-  ##
+manager:
+  affinity: {}
   args:
-    - --leader-elect
-    - --leader-election-namespace=$(STATE_NAMESPACE)
-    - --kubeconfig=/etc/management-api/kubeconfig
-
-  # Required: the election namespace in the datastore cluster, not the Pod namespace.
-  env:
-    - name: STATE_NAMESPACE
-      value: management-state-system
-
+  - --leader-elect
+  enabled: true
+  env: []
+  envOverrides: {}
   extraVolumeMounts: []
   extraVolumes: []
-
-  ## Image pull secrets
-  ##
-  # imagePullSecrets:
-  #   - name: myregistrykey
-
-  ## Pod-level security settings
-  ##
+  image:
+    pullPolicy: IfNotPresent
+    repository: management-engine
+    tag: dev
+  infrastructureTemplateConfigMap: ""
+  nodeSelector: {}
+  nvkeController:
+    endpoint: ""
+    tokenSecret:
+      key: token
+      name: ""
   podSecurityContext:
     runAsNonRoot: true
     seccompProfile:
       type: RuntimeDefault
-
-  ## Container-level security settings
-  ##
-  securityContext:
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop:
-      - ALL
-    readOnlyRootFilesystem: true
-
-  ## Resource limits and requests
-  ##
+  replicas: 1
   resources:
     limits:
       cpu: 500m
@@ -70,83 +37,44 @@ manager:
     requests:
       cpu: 10m
       memory: 64Mi
-
-  ## Manager pod's affinity
-  ##
-  affinity: {}
-
-  ## Manager pod's node selector
-  ##
-  nodeSelector: {}
-
-  ## Manager pod's tolerations
-  ##
-  tolerations: []
-
-  ## Deployment strategy
-  ##
-  # strategy:
-  #   type: RollingUpdate
-  #   rollingUpdate:
-  #     maxSurge: 25%
-  #     maxUnavailable: 25%
-
-  ## Priority class name
-  ##
-  # priorityClassName: ""
-
-  ## Topology spread constraints
-  ##
-  # topologySpreadConstraints: []
-
-  ## Termination grace period seconds
-  ##
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: true
+  stateAccess:
+    kubeconfigSecret:
+      key: kubeconfig
+      name: ""
+    mode: inCluster
+  stateNamespace: ""
   terminationGracePeriodSeconds: 35
-
-  ## Custom Deployment labels
-  ##
-  # labels: {}
-
-  ## Custom Deployment annotations
-  ##
-  # annotations: {}
-
-  ## Custom Pod labels and annotations
-  ##
-  # pod:
-  #   labels: {}
-  #   annotations: {}
-
-## ServiceAccount configuration
-##
-serviceAccount:
-  # Install default ServiceAccount provided
-  enabled: true
-
-  ## Existing ServiceAccount name (only when enabled=false)
-  ## Note: When enabled=true, respects nameOverride/fullnameOverride
-  ##
-  # name: ""
-
-  ## Custom ServiceAccount annotations
-  ##
-  # annotations: {}
-
-  ## Custom ServiceAccount labels
-  ##
-  # labels: {}
-
-## Kubebuilder metrics defaults.
+  tolerations: []
 metrics:
   enabled: true
   port: 8443
   secure: true
-
 networkPolicy:
   enabled: false
-
+nvke-crds:
+  enabled: false
 prometheus:
   enabled: false
-
-certManager:
-  enabled: false
+rbac:
+  helpers:
+    enabled: false
+  namespaced: false
+serviceAccount:
+  enabled: true
+state:
+  configMaps: []
+  crds:
+    install: true
+  enabled: true
+  namespace: ""
+  rbac:
+    metricsAuth: false
+    operatorAPISubjects: []
+    subjects: []
+    tenantAPIBindings: []

@@ -115,6 +115,7 @@ checkout, and do not stub a dependency to make the build pass.
 | `management-engine/config/crd/bases/*.yaml`, `controller/deploy/charts/nvke-crds/bases/*.yaml` | `management-engine` controller-gen output | **No — regenerate** |
 | `agent/pkg/agent/proto/*.pb.go` | buf/protoc output | **No — regenerate** |
 | `agent/THIRD_PARTY_NOTICES.md` | go-licenses output | **No — regenerate** |
+| `management-engine/chart/` | Generated workloads, values and state; edit `config/` or `hack/chart/`, run `make chart` | Only `Chart.yaml` and `Chart.lock` are maintained metadata |
 | `controller/deploy/charts/` | Helm charts | Yes. Preserve the version placeholders; see below. |
 | `nktp/deploy/charts/` | NKTP telemetry Helm chart | Yes, but bump the chart version. Read `nktp/AGENTS.md` |
 | `controller/deploy/dashboards/` | Grafana reference dashboards (JSON import) | Yes — read that directory's `AGENTS.md`. Do not bump the Helm chart for dashboard-only edits |
