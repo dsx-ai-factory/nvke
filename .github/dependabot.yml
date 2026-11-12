@@ -70,8 +70,14 @@ updates:
       # controller, cluster-api-provider-provisioned and
       # controller/hack/capd-reboot-controller, moving the parent and the new
       # api module together. Drop these two entries when that happens. See #88.
+      #
+      # v1.13.8 is ignored for a separate reason (#2277). Its ClusterCache
+      # rejects an exec kubeconfig, and OIDC clusters publish a SPIFFE exec
+      # kubeconfig in the Secret Cluster API reads. A later v1.13 patch has to
+      # be taken by hand, after checking that createRESTConfig accepts that
+      # kubeconfig again.
       - dependency-name: "sigs.k8s.io/cluster-api"
-        versions: [">=1.14.0"]
+        versions: [">=1.13.8"]
       - dependency-name: "sigs.k8s.io/cluster-api/test"
         versions: [">=1.14.0"]
 
