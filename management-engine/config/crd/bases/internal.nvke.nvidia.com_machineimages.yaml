@@ -1,0 +1,137 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: machineimages.internal.nvke.nvidia.com
+spec:
+  group: internal.nvke.nvidia.com
+  names:
+    kind: MachineImage
+    listKind: MachineImageList
+    plural: machineimages
+    singular: machineimage
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.operatingSystem.family
+      name: OS
+      type: string
+    - jsonPath: .spec.operatingSystem.version
+      name: Version
+      type: string
+    - jsonPath: .spec.architecture
+      name: Arch
+      type: string
+    - jsonPath: .spec.variant
+      name: Variant
+      type: string
+    - jsonPath: .spec.buildDate
+      name: Built
+      type: string
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: MachineImage is an immutable node image published as engine configuration.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              MachineImageSpec is the immutable identity of a bootable machine image and
+              the boot contract a provider needs to launch it. The whole spec is immutable.
+            properties:
+              architecture:
+                description: Architecture is a Go/OCI architecture name such as "amd64"
+                  or "arm64".
+                maxLength: 32
+                minLength: 1
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
+              buildDate:
+                description: BuildDate is the date the image was built, as YYYY-MM-DD.
+                format: date
+                type: string
+              nico:
+                description: NICo holds the boot contract of the NICo infrastructure
+                  provider.
+                properties:
+                  ipxeScript:
+                    description: |-
+                      IPXEScript is a Go template rendered with machine-specific values, such as
+                      the disk selection strategy, and the result becomes the iPXE script of the
+                      NICo machine resource.
+                    maxLength: 16384
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: 'ipxeScript must begin with a #!ipxe line of its own'
+                      rule: self.startsWith('#!ipxe\n') || self.startsWith('#!ipxe\r\n')
+                    - message: 'ipxeScript must contain a command after the #!ipxe
+                        line'
+                      rule: self.replace('#!ipxe', '').trim() != ''
+                    - message: ipxeScript has unbalanced Go template delimiters
+                      rule: self.split('{{').size() == self.split('}}').size()
+                required:
+                - ipxeScript
+                type: object
+              operatingSystem:
+                description: OperatingSystem identifies the distribution an image
+                  was built from.
+                properties:
+                  family:
+                    description: Family is the distribution name, such as "ubuntu".
+                    maxLength: 63
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                  version:
+                    description: Version is the distribution version, such as "24.04".
+                    maxLength: 32
+                    minLength: 1
+                    pattern: ^[0-9]+(\.[0-9]+)*$
+                    type: string
+                required:
+                - family
+                - version
+                type: object
+              variant:
+                description: |-
+                  Variant distinguishes images built from the same operating system for a
+                  different purpose, such as "fde" for full disk encryption.
+                maxLength: 63
+                pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                type: string
+            required:
+            - architecture
+            - buildDate
+            - nico
+            - operatingSystem
+            type: object
+            x-kubernetes-validations:
+            - message: machine image spec is immutable; publish a new name instead
+              rule: self == oldSelf
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources: {}

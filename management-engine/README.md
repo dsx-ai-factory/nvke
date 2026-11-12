@@ -9,8 +9,7 @@ types, generated CRDs, and controller-manager runtime.
 | Path | Purpose |
 | --- | --- |
 | `apis/v1` | Resource types and scheme registration |
-| [Shared catalog chart](../controller/deploy/charts/nvke-crds/README.md) | Canonical MachineImage, ClusterRelease and NodePoolRelease CRDs |
-| `config/crd/bases` | Canonical Cluster Service-specific CRDs |
+| `config/crd/bases` | Generated CRDs for every kind, including MachineImage, ClusterRelease and NodePoolRelease |
 | `cmd` | Connection configuration and manager startup |
 | `controllers` | Reconcilers |
 
@@ -24,10 +23,8 @@ Run commands below from `management-engine/`.
 ```sh
 make build test lint
 make generate manifests # after API or RBAC changes
-git diff --exit-code -- apis/v1 ../controller/deploy/charts/nvke-crds/bases chart # check generated-file drift
+git diff --exit-code -- apis/v1 config/crd/bases chart # check generated-file drift
 make test-controller # controller integration tests (envtest)
-make -C .. chart-crds # render the controller release schemas into ignored build output
-make -C .. chart-crds-check # verify canonical generated CRDs
 make chart # regenerate the Helm chart with the pinned Kubebuilder plugin
 make chart-check # verify generation and test all Helm installation modes
 make chart-assets-check # verify the complete generated chart is current
