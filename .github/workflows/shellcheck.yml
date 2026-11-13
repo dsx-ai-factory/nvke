@@ -105,10 +105,11 @@ jobs:
         run: make lint-shell
 
       # release/hack/next-tag.sh decides the version every nightly beta and
-      # release candidate is tagged with, and a wrong one is pushed rather than
-      # reported. Tested here rather than in a gate member of its own: it is a
-      # shell script, and this job already gates every pull request.
-      - name: Test release/hack/next-tag.sh
+      # release candidate is tagged with, and describe-version.sh the version
+      # every publisher pushes under; a wrong one is pushed rather than
+      # reported. Tested here rather than in a gate member of its own: they are
+      # shell scripts, and this job already gates every pull request.
+      - name: Test release/hack/next-tag.sh and describe-version.sh
         run: make next-tag-test
 
       # Reported, not enforced, so the size of the backlog is visible without

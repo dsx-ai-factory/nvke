@@ -24,9 +24,9 @@ name: Image NVCR
 # to be passed explicitly and have no default, so this workflow can only ever
 # push to the destination resolved here.
 #
-# A bare vX.Y.Z-beta.N tag only triggers the build. It publishes like any other
-# build of that commit: sha-<commit> and the controller/v* describe version. The
-# beta tag name is not published, and a beta is not promoted to GHCR or DSX.
+# A bare vX.Y.Z-beta.N tag publishes like any other build of that commit:
+# sha-<commit> and the v* describe version, which on the tagged commit is the
+# tag itself. A beta is not promoted to GHCR or DSX.
 #
 # A workflow_dispatch from a non-main branch publishes only `sha-*` tags — a
 # safe smoke-test mode that never moves `edge`.
@@ -41,8 +41,8 @@ on:
     branches:
       - main
     tags:
-      - "controller/v[0-9]+.[0-9]+.[0-9]+"
       - "controller/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+"
       - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
   workflow_dispatch: {}
 
@@ -130,10 +130,9 @@ jobs:
           fi
           IMAGE="nvcr.io/${NVKE_NGC_ORG}/nvke-controller"
 
-          # Nearest controller/v* tag, prefix stripped: v0.1.0 on a release
-          # commit, v0.1.0-4-gabcdef between releases.
-          version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-          version="${version#controller/}"
+          # Nearest v* tag: v0.1.0 on a release commit, v0.1.0-4-gabcdef
+          # between releases.
+          version="$(release/hack/describe-version.sh "${GITHUB_SHA}")"
 
           tags=("sha-${GITHUB_SHA}" "${version}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
@@ -141,7 +140,7 @@ jobs:
           fi
 
           echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
-          echo "push_tags=${tags[*]}" >> "${GITHUB_OUTPUT}"
+          printf 'push_tags=%s\nversion=%s\n' "${tags[*]}" "${version}" >> "${GITHUB_OUTPUT}"
           echo "Publishing to ${IMAGE} as: ${tags[*]}"
 
       - name: Build and push (${{ matrix.arch }})
@@ -150,6 +149,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
           IMAGE: ${{ steps.meta.outputs.image }}
           PUSH_TAGS: ${{ steps.meta.outputs.push_tags }}
+          BUILD_VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
           make -C controller docker-push-arch \
@@ -157,6 +157,7 @@ jobs:
             IMG_REPO="${IMAGE}" \
             PUSH_TAGS="${PUSH_TAGS}" \
             GIT_VERSION="${GITHUB_SHA}" \
+            BUILD_VERSION="${BUILD_VERSION}" \
             BUILDX_EXTRA_ARGS="--label org.opencontainers.image.revision=${GITHUB_SHA}"
 
       # The digest of what this leg pushed. Every job after this one used to
@@ -183,6 +184,7 @@ jobs:
     outputs:
       image: ${{ steps.meta.outputs.image }}
       index_digest: ${{ steps.create.outputs.index_digest }}
+      version: ${{ steps.meta.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -223,8 +225,7 @@ jobs:
             exit 1
           fi
 
-          version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-          version="${version#controller/}"
+          version="$(release/hack/describe-version.sh "${GITHUB_SHA}")"
 
           tags=("sha-${GITHUB_SHA}" "${version}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
@@ -322,7 +323,8 @@ jobs:
     # NVKE_GITHUB_PUBLISH names the components whose releases go to GHCR;
     # see docs/artifact-publication.md. Unset means every component but os-image.
     if: >-
-      startsWith(github.ref, 'refs/tags/controller/v') &&
+      (startsWith(github.ref, 'refs/tags/controller/v') ||
+        (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-beta.'))) &&
       contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned'), ',controller,')
     runs-on: linux-amd64-cpu8
     needs: [manifest]
@@ -386,6 +388,7 @@ jobs:
         env:
           NVKE_NGC_ORG: ${{ vars.NVKE_NGC_ORG }}
           INDEX_DIGEST: ${{ needs.manifest.outputs.index_digest }}
+          VERSION: ${{ needs.manifest.outputs.version }}
         run: |
           set -euo pipefail
 
@@ -399,7 +402,7 @@ jobs:
             exit 1
           fi
 
-          version="${GITHUB_REF_NAME#controller/}"
+          version="${VERSION}"
           # By digest, so this copies the index the manifest job just created
           # rather than whatever the version tag resolves to now.
           digest="${INDEX_DIGEST}"
@@ -531,6 +534,7 @@ jobs:
           NKE_NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE }}
           DSX_NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_DSX }}
           INDEX_DIGEST: ${{ needs.manifest.outputs.index_digest }}
+          VERSION: ${{ needs.manifest.outputs.version }}
         run: |
           set -euo pipefail
 
@@ -556,8 +560,9 @@ jobs:
             exit 1
           fi
 
-          image_version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-          image_version="${image_version#controller/}"
+          # The version the manifest job published to NVCR, not a second
+          # describe: a tag added between the jobs would change that.
+          image_version="${VERSION}"
           # By digest, so this promotes the index the manifest job just created
           # rather than whatever the version tag resolves to now.
           source_digest="${INDEX_DIGEST}"
