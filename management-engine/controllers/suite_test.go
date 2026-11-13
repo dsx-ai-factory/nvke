@@ -61,8 +61,7 @@ func newScheme() *runtime.Scheme {
 
 func newEnvironment(*fixture.Case) *envtest.Environment {
 	return &envtest.Environment{
-		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases"),
-			filepath.Join("..", "..", "controller", "deploy", "charts", "nvke-crds", "bases")},
+		CRDDirectoryPaths:     []string{filepath.Join("..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
 	}
 }

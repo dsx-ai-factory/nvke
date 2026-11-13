@@ -19,7 +19,7 @@ import (
 	"k8s.io/client-go/dynamic"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/mgmtcluster"
-	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+	internalv1 "github.com/dsx-ai-factory/nvke/controller/k8s-apis/v1"
 )
 
 const (
@@ -77,7 +77,7 @@ func (d *Dynamic) resource(kind Kind) (dynamic.ResourceInterface, error) {
 	default:
 		return nil, fmt.Errorf("unknown kind %q", kind)
 	}
-	return d.client.Resource(enginev1.SchemeGroupVersion.WithResource(plural)), nil
+	return d.client.Resource(internalv1.SchemeGroupVersion.WithResource(plural)), nil
 }
 
 // Create implements Client.

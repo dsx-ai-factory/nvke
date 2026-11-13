@@ -40,7 +40,7 @@ import (
 )
 
 const (
-	nvkeClusterFinalizer    = "internal.nvke.nvidia.com/cluster-cleanup"
+	nvkeClusterFinalizer    = "service.nvke.nvidia.com/cluster-cleanup"
 	defaultPollInterval     = 10 * time.Second
 	clusterNameSuffix       = "-mgmt-eng"
 	clusterNameMaxLength    = 55
@@ -69,9 +69,9 @@ type NVKEClusterReconciler struct {
 	InfraTemplateConfigMapName string
 }
 
-// +kubebuilder:rbac:groups=internal.nvke.nvidia.com,resources=nvkeclusters,verbs=get;list;watch;patch
-// +kubebuilder:rbac:groups=internal.nvke.nvidia.com,resources=nvkeclusters/status,verbs=update;patch
-// +kubebuilder:rbac:groups=internal.nvke.nvidia.com,resources=controlplaneclasses;clusterreleases;clusterreleasechannels;machineimages;nodepoolreleases,verbs=get;list;watch
+// +kubebuilder:rbac:groups=service.nvke.nvidia.com,resources=nvkeclusters,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=service.nvke.nvidia.com,resources=nvkeclusters/status,verbs=update;patch
+// +kubebuilder:rbac:groups=service.nvke.nvidia.com,resources=controlplaneclasses;clusterreleases;clusterreleasechannels;machineimages;nodepoolreleases,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
 func (r *NVKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, retErr error) {

@@ -145,9 +145,9 @@ jobs:
       - name: Verify the embedded provisioned provider manifest is up to date
         run: make -C cli provider-manifest-check
 
-      # API generation writes directly to the shared CRD chart used by Helm
-      # and Kustomize. Verify its canonical schemas after regeneration.
-      - name: Verify the shared chart CRDs are up to date
+      # Regenerates the CRDs of the NVKE controller (the nvke-crds chart) and of
+      # management-engine (config/crd/bases). Verify both sets of committed CRDs.
+      - name: Verify the generated CRDs are up to date
         run: make chart-crds-check
 
   # The third generated artifact. buf downloads its two remote plugins, both

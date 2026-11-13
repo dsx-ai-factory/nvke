@@ -27,7 +27,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
-	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+
+	internalv1 "github.com/dsx-ai-factory/nvke/controller/k8s-apis/v1"
 
 	"github.com/dsx-ai-factory/nvke/auth/authn"
 
@@ -213,7 +214,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	managementK8sClient, err := kube.NewRuntimeClient(spirev1alpha1.AddToScheme, nicov1.AddToScheme, enginev1.AddToScheme)
+	managementK8sClient, err := kube.NewRuntimeClient(spirev1alpha1.AddToScheme, nicov1.AddToScheme, internalv1.AddToScheme)
 	if err != nil {
 		logger.Error("Failed to create management-cluster Kubernetes client", "error", err)
 		os.Exit(1)
@@ -234,7 +235,7 @@ func main() {
 		spirev1alpha1.AddToScheme,
 		kubeadmv1.AddToScheme,
 		nicov1.AddToScheme,
-		enginev1.AddToScheme,
+		internalv1.AddToScheme,
 	)
 	if err != nil {
 		logger.Error("Failed to create Kubernetes controller manager", "error", err)

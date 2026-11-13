@@ -1,4 +1,4 @@
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: NVKECluster
 metadata:
   name: cluster-1

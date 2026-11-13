@@ -51,9 +51,6 @@ license: ## Add the repository's license header to source files.
 manifests-state: controller-gen ## Generate internal deepcopy methods, datastore CRDs, and RBAC.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=hack/boilerplate.yaml.txt paths=./apis/... output:crd:artifacts:config=config/crd/bases
-	@for kind in machineimages clusterreleases nodepoolreleases; do \
-		mv "config/crd/bases/internal.nvke.nvidia.com_$$kind.yaml" ../controller/deploy/charts/nvke-crds/bases/; \
-	done
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role,headerFile=hack/boilerplate.yaml.txt paths=./controllers/... output:rbac:artifacts:config=config/rbac
 
 manifests: manifests-state kustomize ## Generate canonical schemas, RBAC and runtime manifests.
@@ -85,7 +82,7 @@ test: test-api test-integration test-controller ## Run API, unit, resource integ
 .PHONY: test-unit
 test-unit: fmt vet ## Run unit tests without a Kubernetes API server.
 	@$(COVERAGE_MKDIR)
-	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,unit) -covermode=$(GO_COVER_MODE) ./internal/... ./cmd/... ./pkg/...
+	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,unit) -covermode=$(GO_COVER_MODE) ./internal/... ./cmd/... ./pkg/... ./hack/chartgen
 
 .PHONY: test-integration
 test-integration: ENVTEST_K8S_VERSION=1.37.0
@@ -304,7 +301,6 @@ helm-deploy: require-host-context ## Deploy manager to the K8s cluster via Helm.
 	fi; \
 	$(HELM) --kube-context "$(HOST_CONTEXT)" upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
 		--namespace $(HELM_NAMESPACE) \
-		--dependency-update \
 		--create-namespace \
 		--set-string manager.image.repository="$$repository" \
 		--set-string manager.image.tag="$$tag" \
@@ -316,12 +312,8 @@ helm-deploy: require-host-context ## Deploy manager to the K8s cluster via Helm.
 helm-uninstall: require-host-context ## Uninstall the Helm release from the K8s cluster.
 	$(HELM) --kube-context "$(HOST_CONTEXT)" uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
 
-.PHONY: chart-deps
-chart-deps: ## Stage the pinned shared schema dependency for Helm source operations.
-	$(HELM) dependency build chart --skip-refresh
-
 .PHONY: chart-check
-chart-check: manifests kubebuilder chart-deps ## Check generation, lint and test every installation mode.
+chart-check: manifests kubebuilder ## Check generation, lint and test every installation mode.
 	$(GO) run ./hack/chartgen -kubebuilder "$(KUBEBUILDER)" -check
 	$(HELM) lint chart -f config/samples/runtime-values.yaml
 	HELM="$(HELM)" KUBEBUILDER="$(KUBEBUILDER)" KUSTOMIZE="$(KUSTOMIZE)" $(GO) test $(GO_TEST_FLAGS) ./hack/... -run 'TestChart|TestGeneration|TestFilterManagerArgs' -count=1
@@ -329,8 +321,3 @@ chart-check: manifests kubebuilder chart-deps ## Check generation, lint and test
 .PHONY: chart-assets-check
 chart-assets-check: manifests kubebuilder ## Verify the complete generated chart is current.
 	$(GO) run ./hack/chartgen -kubebuilder "$(KUBEBUILDER)" -check
-
-.PHONY: test-chart-crds
-test-chart-crds: ## Verify the shared CRD chart and its controller dependency.
-	$(HELM) dependency build ../controller/deploy/charts/controller --skip-refresh
-	HELM="$(HELM)" $(GO) test $(GO_TEST_FLAGS) ./hack -run TestSharedCRDs -count=1

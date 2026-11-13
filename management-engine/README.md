@@ -9,8 +9,7 @@ types, generated CRDs, and controller-manager runtime.
 | Path | Purpose |
 | --- | --- |
 | `apis/v1` | Resource types and scheme registration |
-| [Shared catalog chart](../controller/deploy/charts/nvke-crds/README.md) | Canonical MachineImage, ClusterRelease and NodePoolRelease CRDs |
-| `config/crd/bases` | Canonical Cluster Service-specific CRDs |
+| `config/crd/bases` | Generated CRDs for every kind, including MachineImage, ClusterRelease and NodePoolRelease |
 | `cmd` | Connection configuration and manager startup |
 | `controllers` | Reconcilers |
 
@@ -24,10 +23,8 @@ Run commands below from `management-engine/`.
 ```sh
 make build test lint
 make generate manifests # after API or RBAC changes
-git diff --exit-code -- apis/v1 ../controller/deploy/charts/nvke-crds/bases chart # check generated-file drift
+git diff --exit-code -- apis/v1 config/crd/bases chart # check generated-file drift
 make test-controller # controller integration tests (envtest)
-make -C .. chart-crds # render the controller release schemas into ignored build output
-make -C .. chart-crds-check # verify canonical generated CRDs
 make chart # regenerate the Helm chart with the pinned Kubebuilder plugin
 make chart-check # verify generation and test all Helm installation modes
 make chart-assets-check # verify the complete generated chart is current
@@ -59,16 +56,16 @@ make tilt-up
 
 ## API conventions
 
-All types use `internal.nvke.nvidia.com/v1`. Future public tenant and operator
+All types use `service.nvke.nvidia.com/v1`. Future public tenant and operator
 APIs should use separately versioned contracts. Do not expose internal structs
 directly.
 
 | Resource | Scope | Definition and example |
 | --- | --- | --- |
-| NVKECluster | Org namespace | [Cluster configuration](apis/v1/nvkecluster_types.go), [sample](config/samples/internal_v1_nvkecluster.yaml) |
+| NVKECluster | Org namespace | [Cluster configuration](apis/v1/nvkecluster_types.go), [sample](config/samples/service_v1_nvkecluster.yaml) |
 | MachineImage | Cluster | [Immutable image identity and NICo boot contract](apis/v1/machineimage_types.go) |
 | ClusterRelease | Cluster | [Control-plane image and initialization](apis/v1/clusterrelease_types.go) |
-| ClusterReleaseChannel | Cluster | [Release catalog](apis/v1/clusterreleasechannel_types.go), [sample](config/samples/internal_v1_clusterreleasechannel.yaml) |
+| ClusterReleaseChannel | Cluster | [Release catalog](apis/v1/clusterreleasechannel_types.go), [sample](config/samples/service_v1_clusterreleasechannel.yaml) |
 | NodePoolRelease | Cluster | [Worker image and initialization](apis/v1/nodepoolrelease_types.go) |
 
 | Concern | Contract |
@@ -78,7 +75,7 @@ directly.
 | Concurrency | Preserve opaque `resourceVersion` and field ownership. Spec expresses desired state; controllers report progress through status. |
 | Conditions | Use `metav1.Condition` with per-condition `observedGeneration` matching the NVKECluster's generation. There is no aggregate `status.observedGeneration`. Missing or stale conditions do not establish readiness. Unknown counts are absent; observed zero counts are explicit. |
 | References | Resolve tenant references within the org namespace and pin lifecycle ownership by UID. Release references select operator-published configuration. |
-| Node pools | `spec.nodePools` embeds [worker configuration](apis/v1/nodepool_types.go) within NVKECluster; see the [cluster sample](config/samples/internal_v1_nvkecluster.yaml). |
+| Node pools | `spec.nodePools` embeds [worker configuration](apis/v1/nodepool_types.go) within NVKECluster; see the [cluster sample](config/samples/service_v1_nvkecluster.yaml). |
 | Replicas | `spec.nodePools[].replicas` expresses desired worker count; zero requests zero workers. Rollout policy controls replacement. |
 | Deletion | Use deletion timestamps and controller-owned finalizers. |
 
