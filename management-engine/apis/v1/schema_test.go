@@ -313,14 +313,6 @@ func deleteField(obj map[string]any, path []string) {
 	delete(parent, key)
 }
 
-func TestGeneratedResourceSchemas(t *testing.T) {
-	for _, resource := range []string{"nvkeclusters", "machineimages", "clusterreleases", "nodepoolreleases", "controlplaneclasses"} {
-		t.Run(resource, func(t *testing.T) {
-			loadResourceSchema(t, resource).admit(t, baseResource(t, resource), nil)
-		})
-	}
-}
-
 func TestClusterReleaseChannelSelectors(t *testing.T) {
 	schema := loadResourceSchema(t, "clusterreleasechannels")
 	for _, test := range []struct {

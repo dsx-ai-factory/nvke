@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: "internal.nvke.nvidia.com/v1"
+kind: "ClusterRelease"
+metadata:
+  name: "nvke-nico-vms-24.04-amd64-fde"
+spec:
+  machineImageRef:
+    name: "nvke-nico-vms-24.04-amd64-fde"
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      hostname: {{ .Hostname }}
+  lifecycle:
+    deprecated: false
+    hidden: false

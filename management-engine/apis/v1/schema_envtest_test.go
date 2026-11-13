@@ -68,6 +68,74 @@ func TestReleaseLifecycleDefaults(t *testing.T) {
 	}
 }
 
+func TestResourceCreationWithRequiredFields(t *testing.T) {
+	tests := []struct {
+		name                   string
+		inputGVR               schema.GroupVersionResource
+		inputResourcePathFn    func(*testing.T) string
+		expectedResourcePathFn func(*testing.T) string
+	}{
+		{
+			name:     "NVKEClusterWithRequiredFields",
+			inputGVR: GroupVersion.WithResource("nvkeclusters"),
+			inputResourcePathFn: func(t *testing.T) string {
+				return wellKnownInputResourcePath(t)
+			},
+			expectedResourcePathFn: func(t *testing.T) string {
+				return wellKnownExpectedResourcePath(t)
+			},
+		},
+		{
+			name:     "MachineImageWithRequiredFields",
+			inputGVR: GroupVersion.WithResource("machineimages"),
+			inputResourcePathFn: func(t *testing.T) string {
+				return wellKnownInputResourcePath(t)
+			},
+			expectedResourcePathFn: func(t *testing.T) string {
+				return wellKnownExpectedResourcePath(t)
+			},
+		},
+		{
+			name:     "ClusterReleaseWithRequiredFields",
+			inputGVR: GroupVersion.WithResource("clusterreleases"),
+			inputResourcePathFn: func(t *testing.T) string {
+				return wellKnownInputResourcePath(t)
+			},
+			expectedResourcePathFn: func(t *testing.T) string {
+				return wellKnownExpectedResourcePath(t)
+			},
+		},
+		{
+			name:     "NodePoolReleaseWithRequiredFields",
+			inputGVR: GroupVersion.WithResource("nodepoolreleases"),
+			inputResourcePathFn: func(t *testing.T) string {
+				return wellKnownInputResourcePath(t)
+			},
+			expectedResourcePathFn: func(t *testing.T) string {
+				return wellKnownExpectedResourcePath(t)
+			},
+		},
+		{
+			name:     "ControlPlaneClassWithRequiredFields",
+			inputGVR: GroupVersion.WithResource("controlplaneclasses"),
+			inputResourcePathFn: func(t *testing.T) string {
+				return wellKnownInputResourcePath(t)
+			},
+			expectedResourcePathFn: func(t *testing.T) string {
+				return wellKnownExpectedResourcePath(t)
+			},
+		},
+	}
+
+	testClient := startTestAPIServerWithCRDsAndCleanup(t)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkResourceCreation(t, testClient, tt.inputGVR, tt.inputResourcePathFn, tt.expectedResourcePathFn)
+		})
+	}
+}
+
 func startTestAPIServerWithCRDsAndCleanup(t *testing.T) dynamic.Interface {
 	t.Helper()
 
