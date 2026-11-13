@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# AICR's NVKE GB200 leaf without its InfiniBand east-west fabric. Selected
+# with --service nvke --accelerator gb200 --os ubuntu --intent training and
+# --data pointing at this directory, as a child of the embedded leaf, so
+# everything else the leaf carries for NVKE still applies: the toolkit's
+# RUNTIME_CONFIG_SOURCE=file for NVKE's containerd 2.3 config, the device
+# plugin and toolkit settings, and DRA driver 0.5.1. The deployment checks
+# still come from the embedded gb200-any overlay.
+#
+# The fabric is off because nothing this lane checks uses it: the tenant has
+# one GPU worker and no RDMA checks. It also needs host state the lane has
+# not qualified: ConnectX-7 firmware with SR-IOV on and NUM_OF_VFS at least
+# 16, and a fabric that gives every VF full P_Key membership. Without those,
+# AICR's deployment checks fail on the fabric and rdma-modules leaves the GPU
+# nodes tainted. Disabled in the recipe rather than with a bundle-time --set,
+# so aicr validate does not expect what was not installed.
+kind: RecipeMetadata
+apiVersion: aicr.run/v1beta1
+metadata:
+  name: gb200-nvke-ubuntu-training-no-fabric
+
+spec:
+  base: gb200-nvke-ubuntu-training
+
+  criteria:
+    service: nvke
+    accelerator: gb200
+    os: ubuntu
+    intent: training
+
+  componentRefs:
+    - name: network-operator
+      overrides:
+        enabled: false
+    - name: sriov-ib-networks
+      overrides:
+        enabled: false
+    - name: rdma-modules
+      overrides:
+        enabled: false
