@@ -51,7 +51,7 @@
   description: Authentication and authorization, auth/
 - name: area/chart
   color: "ededed"
-  description: Helm charts and deployment paths, controller/deploy/, deploy/, nktp/deploy/
+  description: Helm charts and deployment paths, controller/deploy/, deploy/
 - name: area/ci-build
   color: "ededed"
   description: CI workflows and the build system, .github/, Makefile, make/, hack/, build/
@@ -75,7 +75,7 @@
   description: The Management Engine, management-engine/
 - name: area/nktp
   color: "ededed"
-  description: The NVKE telemetry pipeline (NKTP), nktp/
+  description: The NVKE telemetry pipeline (NKTP) deployment, docs and e2e tests
 - name: area/os-image
   color: "ededed"
   description: The node OS image and image checker, os-image/
