@@ -149,7 +149,7 @@ bin/nvkectl get providers      # wait for nico: CONFIGURED
 bin/nvkectl create cluster -f cli/examples/nico-mock-cluster.yaml
 bin/nvkectl get clusters
 bin/nvkectl get clusters <name>
-bin/nvkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: "1.31.0"'
+bin/nvkectl patch cluster my-cluster --patch '{enableCPNodeRecycling: true, controlPlaneConfig: {maxSurge: 1}}'
 bin/nvkectl patch cluster my-cluster --patch-file patch.yaml
 bin/nvkectl delete cluster <name>
 ```
