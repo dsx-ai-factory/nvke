@@ -85,7 +85,7 @@ test: test-api test-integration test-controller ## Run API, unit, resource integ
 .PHONY: test-unit
 test-unit: fmt vet ## Run unit tests without a Kubernetes API server.
 	@$(COVERAGE_MKDIR)
-	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,unit) -covermode=$(GO_COVER_MODE) ./internal/... ./cmd/... ./pkg/...
+	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,unit) -covermode=$(GO_COVER_MODE) ./internal/... ./cmd/... ./pkg/... ./hack/chartgen
 
 .PHONY: test-integration
 test-integration: ENVTEST_K8S_VERSION=1.37.0
