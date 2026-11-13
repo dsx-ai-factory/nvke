@@ -480,6 +480,7 @@ func (f *TenantClientFactory) adminKubeconfig(ctx context.Context, clusterName s
 // file is handed to: helm's --wait can outlast the SPIRE default by a long way,
 // and nothing refreshes a token written into a file. A token from the DSX
 // exchange lasts whatever the exchange issues, which this cannot change.
+// KubeconfigTokenExpiry reads what either actually issued.
 func (f *TenantClientFactory) RelayedAdminKubeconfig(ctx context.Context, clusterName string, lifetime time.Duration) ([]byte, error) {
 	kubeconfig, err := f.adminKubeconfig(ctx, clusterName, lifetime)
 	if err != nil {
@@ -595,6 +596,29 @@ func (f *TenantClientFactory) mintTenantJWTAs(
 		return sourceToken, nil
 	}
 	return f.exchangeJWT(ctx, exchangeEndpoint, sourceToken)
+}
+
+// KubeconfigTokenExpiry is when the bearer token in kubeconfig expires, and
+// false when it carries no token whose expiry can be read: a client
+// certificate, an exec plugin, or a token that is not a JWT.
+//
+// SPIRE caps a requested -ttl at its JWT signing key's remaining lifetime and
+// says so only on stderr, and the DSX exchange issues what it issues, so the
+// token's own exp is the one reliable answer.
+func KubeconfigTokenExpiry(kubeconfig []byte) (time.Time, bool) {
+	parsed, err := clientcmd.Load(kubeconfig)
+	if err != nil {
+		return time.Time{}, false
+	}
+	for _, authInfo := range parsed.AuthInfos {
+		if authInfo == nil || authInfo.Token == "" {
+			continue
+		}
+		if expiresAt, expErr := jwtExpiration(authInfo.Token); expErr == nil {
+			return expiresAt, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func exchangeSourceSPIFFEPath(spiffePath string) (string, error) {

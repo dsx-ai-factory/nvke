@@ -6,6 +6,7 @@ package e2e
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,33 +84,116 @@ func TestGPURuntimeMinutesCoverTheSpecs(t *testing.T) {
 // the processes it started with it, as deploy.sh's helm would be. The child
 // beats into a file rather than being probed by pid: in a container nothing
 // may reap it, and a zombie still answers kill -0.
+//
+// The timeout case is AICR's CRD installer: GNU timeout without --foreground
+// moves its child into a group of its own, out of reach of a kill sent to the
+// command's group alone.
 func TestAICRCommandCancelKillsItsChildren(t *testing.T) {
-	dir := t.TempDir()
-	beat := filepath.Join(dir, "beat")
-	run := &aicrRun{dir: dir}
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-	defer cancel()
+	const loop = `while :; do echo x >> "$0"; sleep 0.05; done`
+	for _, tc := range []struct {
+		name    string
+		timeout bool
+		script  string
+	}{
+		{name: "a background child", script: `(` + loop + `) & wait`},
+		// The trailing command keeps bash from exec'ing timeout, which as the
+		// group's leader could not leave it.
+		{name: "a child under GNU timeout", timeout: true, script: `"$1" 300 bash -c '` + loop + `' "$0"; exit $?`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := []string{"-c", tc.script}
+			dir := t.TempDir()
+			beat := filepath.Join(dir, "beat")
+			args = append(args, beat)
+			if tc.timeout {
+				timeout := gnuTimeout(t)
+				// Reaching timeout's group takes the process list; a
+				// sandbox that hides it would fail this for its own reason.
+				if _, err := listProcesses(t.Context()); err != nil {
+					t.Skipf("cannot list processes here: %v", err)
+				}
+				args = append(args, timeout)
+			}
+			run := &aicrRun{dir: dir}
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			defer cancel()
 
-	start := time.Now()
-	err := run.try(ctx, dir, "bash", "-c", `(while :; do echo x >> "$0"; sleep 0.05; done) & wait`, beat)
-	if err == nil {
-		t.Fatal("try returned nil for a canceled command")
+			start := time.Now()
+			if err := run.try(ctx, dir, "bash", args...); err == nil {
+				t.Fatal("try returned nil for a canceled command")
+			}
+			if elapsed := time.Since(start); elapsed > 2*time.Second+aicrWaitDelay {
+				t.Fatalf("try took %s after cancel; it should not wait on the child", elapsed)
+			}
+			size := func() int64 {
+				info, statErr := os.Stat(beat)
+				if statErr != nil {
+					t.Fatal(statErr)
+				}
+				return info.Size()
+			}
+			time.Sleep(200 * time.Millisecond)
+			before := size()
+			time.Sleep(500 * time.Millisecond)
+			if after := size(); after != before {
+				t.Fatalf("the child kept running after its command was canceled: %d bytes, then %d", before, after)
+			}
+		})
 	}
-	if elapsed := time.Since(start); elapsed > 2*time.Second+aicrWaitDelay {
-		t.Fatalf("try took %s after cancel; it should not wait on the child", elapsed)
-	}
-	size := func() int64 {
-		info, statErr := os.Stat(beat)
-		if statErr != nil {
-			t.Fatal(statErr)
+}
+
+// gnuTimeout is GNU timeout's path, as timeout or as Homebrew's gtimeout.
+func gnuTimeout(t *testing.T) string {
+	t.Helper()
+	for _, name := range []string{"timeout", "gtimeout"} {
+		if path, err := exec.LookPath(name); err == nil {
+			return path
 		}
-		return info.Size()
 	}
-	time.Sleep(200 * time.Millisecond)
-	before := size()
-	time.Sleep(500 * time.Millisecond)
-	if after := size(); after != before {
-		t.Fatalf("the child kept running after its command was canceled: %d bytes, then %d", before, after)
+	t.Skip("neither timeout nor gtimeout is on PATH")
+	return ""
+}
+
+func TestAICRValidateResult(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	checks := write("checks.json", `{"results":{"tool":{"version":"1.2.0"},"tests":[{"name":"operator-health","status":"passed"}]}}`)
+	empty := write("empty.json", `{"results":{"tests":[]}}`)
+	missing := filepath.Join(dir, "missing.json")
+	exitErr := errors.New("aicr validate: exit status 1")
+
+	for _, tc := range []struct {
+		name    string
+		runErr  error
+		report  string
+		wantErr string
+		summary string
+	}{
+		{name: "exit 0 with checks", report: checks, summary: "passed  operator-health"},
+		// aicr exits 0 for a phase with no checks; that must not pass.
+		{name: "exit 0 with an empty report", report: empty, wantErr: "lists no checks", summary: "no report"},
+		{name: "exit 0 with no report", report: missing, wantErr: "at least one deployment check", summary: "no report"},
+		{name: "a failed exit with checks", runErr: exitErr, report: checks, wantErr: "exit status 1", summary: "passed  operator-health"},
+		{name: "a failed exit with no report", runErr: exitErr, report: missing, wantErr: "exit status 1", summary: "no report"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			summary, err := aicrValidateResult(tc.runErr, tc.report)
+			if !strings.Contains(summary, tc.summary) {
+				t.Errorf("summary = %q, want it to contain %q", summary, tc.summary)
+			}
+			switch {
+			case tc.wantErr == "" && err != nil:
+				t.Errorf("err = %v, want nil", err)
+			case tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)):
+				t.Errorf("err = %v, want one containing %q", err, tc.wantErr)
+			}
+		})
 	}
 }
 
@@ -209,6 +293,56 @@ func TestSummarizeCTRFRejectsAReportWithNoChecks(t *testing.T) {
 	// An empty report would otherwise read as a run where nothing failed.
 	if _, err := summarizeCTRF(path); err == nil || !strings.Contains(err.Error(), "lists no checks") {
 		t.Fatalf("summarizeCTRF() error = %v, want one saying the report lists no checks", err)
+	}
+}
+
+func TestAICRTokenWarning(t *testing.T) {
+	deadline := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name        string
+		expiresAt   time.Time
+		known       bool
+		hasDeadline bool
+		want        string
+	}{
+		{name: "outlasts the spec", expiresAt: deadline.Add(5 * time.Minute), known: true, hasDeadline: true},
+		{name: "expires at the deadline", expiresAt: deadline, known: true, hasDeadline: true},
+		{
+			name: "capped short", expiresAt: deadline.Add(-20 * time.Minute), known: true, hasDeadline: true,
+			want: "expires at 2026-11-13T11:40:00Z, 20m0s before this spec's deadline",
+		},
+		{name: "expiry unknown", expiresAt: deadline.Add(-20 * time.Minute), hasDeadline: true},
+		{name: "no deadline", expiresAt: deadline.Add(-20 * time.Minute), known: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := aicrTokenWarning(tc.expiresAt, tc.known, deadline, tc.hasDeadline)
+			switch {
+			case tc.want == "" && got != "":
+				t.Errorf("aicrTokenWarning() = %q, want none", got)
+			case tc.want != "" && !strings.Contains(got, tc.want):
+				t.Errorf("aicrTokenWarning() = %q, want it to contain %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTailBufferKeepsTheEndOfItsOutput(t *testing.T) {
+	short := &tailBuffer{limit: 64}
+	fmt.Fprint(short, "one\ntwo\n")
+	if got := short.String(); got != "one\ntwo\n" {
+		t.Errorf("under the limit: String() = %q, want everything written", got)
+	}
+
+	long := &tailBuffer{limit: 16}
+	for i := range 10 {
+		fmt.Fprintf(long, "line %d\n", i)
+	}
+	// The limit lands inside "line 7"; a cut first line is left out.
+	if got := long.String(); got != "line 8\nline 9\n" {
+		t.Errorf("over the limit: String() = %q, want the whole lines at the end", got)
+	}
+	if len(long.buf) > long.limit {
+		t.Errorf("kept %d bytes, want at most %d", len(long.buf), long.limit)
 	}
 }
 

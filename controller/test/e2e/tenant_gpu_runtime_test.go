@@ -4,15 +4,16 @@
 package e2e
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -21,6 +22,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 )
 
 var tenantGPURuntime bool
@@ -48,9 +50,15 @@ const (
 	// aicrOutputLines is how much of a failed command's output a failure
 	// message carries. The whole of it is in the spec's GinkgoWriter log.
 	aicrOutputLines = 40
+	// aicrOutputBytes bounds what a command keeps of its output for that
+	// message: room for aicrOutputLines lines of any sensible length.
+	aicrOutputBytes = 64 << 10
+	// aicrKillGrace is how long a canceled command's process group has
+	// between SIGTERM and SIGKILL.
+	aicrKillGrace = 5 * time.Second
 	// aicrWaitDelay bounds the wait for a canceled command's output pipe to
-	// close once its process group has been killed.
-	aicrWaitDelay = 10 * time.Second
+	// close once its process group has been signaled.
+	aicrWaitDelay = aicrKillGrace + 5*time.Second
 )
 
 // aicrAccelerators maps the run's gpu capability to the AICR accelerator
@@ -136,15 +144,24 @@ func validateTenantGPURuntime(test *tenantTest, plan tenantGPURuntimePlan, faile
 		run := newAICRRun(ctx, test, plan, aicrValidateTimeout)
 		report := filepath.Join(run.dir, "aicr-validate.ctrf.json")
 		By("Running aicr validate --phase deployment")
-		err := run.try(ctx, run.dir, "aicr", "validate", "--recipe", run.recipe, "--data", run.data,
+		runErr := run.try(ctx, run.dir, "aicr", "validate", "--recipe", run.recipe, "--data", run.data,
 			"--phase", "deployment", "--fail-on-error", "--output", report)
-		if summary, readErr := summarizeCTRF(report); readErr == nil {
-			AddReportEntry("aicr deployment checks", summary)
-		} else {
-			AddReportEntry("aicr deployment checks", "no report: "+readErr.Error())
-		}
+		summary, err := aicrValidateResult(runErr, report)
+		AddReportEntry("aicr deployment checks", summary)
 		Expect(err).NotTo(HaveOccurred(), "aicr's deployment checks should pass")
 	}, labels, NodeTimeout(aicrValidateTimeout))
+}
+
+// aicrValidateResult is the deployment checks' outcome: the command's exit
+// and a report that lists at least one check. aicr exits 0 for a phase with
+// no checks, so a recipe that lost them would otherwise pass.
+func aicrValidateResult(runErr error, report string) (string, error) {
+	summary, readErr := summarizeCTRF(report)
+	if readErr != nil {
+		summary = "no report: " + readErr.Error()
+		readErr = fmt.Errorf("aicr validate should report at least one deployment check: %w", readErr)
+	}
+	return summary, errors.Join(runErr, readErr)
 }
 
 func skipAfterFailure(failed func() bool) {
@@ -171,6 +188,12 @@ func newAICRRun(ctx context.Context, test *tenantTest, plan tenantGPURuntimePlan
 	// The token outlives the spec, so a long install does not lose its
 	// credential partway through.
 	kubeconfig := expectSucceed(test.tenantClients.RelayedAdminKubeconfig(ctx, test.cluster.Name, lifetime+5*time.Minute))
+	expiresAt, known := kube.KubeconfigTokenExpiry(kubeconfig)
+	deadline, hasDeadline := ctx.Deadline()
+	if warning := aicrTokenWarning(expiresAt, known, deadline, hasDeadline); warning != "" {
+		AddReportEntry("aicr admin token", warning)
+		GinkgoWriter.Println("WARNING: " + warning)
+	}
 	run.kubeconfig = filepath.Join(run.dir, "kubeconfig")
 	Expect(os.WriteFile(run.kubeconfig, kubeconfig, 0o600)).To(Succeed())
 
@@ -195,11 +218,25 @@ func (r *aicrRun) command(ctx context.Context, dir, name string, args ...string)
 	Expect(r.try(ctx, dir, name, args...)).To(Succeed())
 }
 
+// aicrTokenWarning says when the admin token a run wrote expires before the
+// spec's deadline, and is empty when it does not or there is no telling. It
+// warns rather than fails: the cap may be on one run and not the next, and an
+// install usually finishes well inside its limit.
+func aicrTokenWarning(expiresAt time.Time, known bool, deadline time.Time, hasDeadline bool) string {
+	if !known || !hasDeadline || !expiresAt.Before(deadline) {
+		return ""
+	}
+	return fmt.Sprintf("the tenant admin token expires at %s, %s before this spec's deadline; "+
+		"a command still running then gets 401s from the tenant. SPIRE caps a token at its JWT "+
+		"signing key's remaining lifetime, and the DSX exchange sets its own.",
+		expiresAt.UTC().Format(time.RFC3339), deadline.Sub(expiresAt).Round(time.Second))
+}
+
 // try runs a command against the tenant and returns an error carrying the
 // end of its output. The environment is built rather than inherited: the
 // runner's carries the lane's secrets, which nothing run here needs.
 func (r *aicrRun) try(ctx context.Context, dir, name string, args ...string) error {
-	var out bytes.Buffer
+	out := &tailBuffer{limit: aicrOutputBytes}
 	command := exec.CommandContext(ctx, name, args...)
 	command.Dir = dir
 	command.Env = []string{
@@ -208,18 +245,140 @@ func (r *aicrRun) try(ctx context.Context, dir, name string, args ...string) err
 		"TMPDIR=" + r.dir,
 		"KUBECONFIG=" + r.kubeconfig,
 	}
-	command.Stdout = io.MultiWriter(GinkgoWriter, &out)
+	command.Stdout = io.MultiWriter(GinkgoWriter, out)
 	command.Stderr = command.Stdout
 	// deploy.sh starts helm and kubectl, which hold the output pipe. Killing
 	// only bash on timeout would leave them installing into a tenant being
-	// torn down, and Run waiting on them; the whole group goes instead.
+	// torn down, and Run waiting on them; every group in its tree goes
+	// instead. AICR's CRD installer runs its step under GNU timeout, which
+	// moves into a group of its own, out of reach of the command's.
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	command.Cancel = func() error { return syscall.Kill(-command.Process.Pid, syscall.SIGKILL) }
+	command.Cancel = func() error {
+		// ctx is done by now; the listing needs one that is not.
+		groups := processGroups(context.WithoutCancel(ctx), command.Process.Pid)
+		signal := func(sig syscall.Signal) {
+			for _, group := range groups {
+				_ = syscall.Kill(-group, sig)
+			}
+		}
+		signal(syscall.SIGTERM)
+		time.AfterFunc(aicrKillGrace, func() { signal(syscall.SIGKILL) })
+		return nil
+	}
 	command.WaitDelay = aicrWaitDelay
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("%s %s: %w\n%s", name, strings.Join(args, " "), err, lastLines(out.String(), aicrOutputLines))
 	}
 	return nil
+}
+
+// processGroups lists the process groups in root's tree, root's own first.
+// It is read once, before anything is signaled: a process whose parent dies
+// is reparented and drops out of the tree. The suite's own group is never
+// listed, so a descendant that joined it cannot take the suite down too.
+func processGroups(ctx context.Context, root int) []int {
+	groups := []int{root}
+	procs, err := listProcesses(ctx)
+	if err != nil {
+		return groups
+	}
+	children := map[int][]process{}
+	for _, p := range procs {
+		children[p.ppid] = append(children[p.ppid], p)
+	}
+	seen := map[int]bool{root: true, syscall.Getpgrp(): true}
+	for queue := []int{root}; len(queue) > 0; queue = queue[1:] {
+		for _, child := range children[queue[0]] {
+			if !seen[child.pgid] && child.pgid > 1 {
+				seen[child.pgid] = true
+				groups = append(groups, child.pgid)
+			}
+			queue = append(queue, child.pid)
+		}
+	}
+	return groups
+}
+
+type process struct{ pid, ppid, pgid int }
+
+// listProcesses reads /proc where there is one, since minimal Linux images
+// ship without ps, and asks ps elsewhere.
+func listProcesses(ctx context.Context) ([]process, error) {
+	if entries, err := os.ReadDir("/proc"); err == nil {
+		var procs []process
+		for _, entry := range entries {
+			stat, readErr := os.ReadFile("/proc/" + entry.Name() + "/stat")
+			if readErr != nil {
+				continue
+			}
+			// The command name is parenthesized and may itself hold spaces
+			// or parentheses; the fields after it do not.
+			s := string(stat)
+			fields := strings.Fields(s[strings.LastIndexByte(s, ')')+1:])
+			if len(fields) < 3 {
+				continue
+			}
+			if p, ok := parseProcess(entry.Name(), fields[1], fields[2]); ok {
+				procs = append(procs, p)
+			}
+		}
+		if len(procs) > 0 {
+			return procs, nil
+		}
+	}
+	ctx, cancel := context.WithTimeout(ctx, aicrKillGrace)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ps", "-A", "-o", "pid=", "-o", "ppid=", "-o", "pgid=").Output()
+	if err != nil {
+		return nil, err
+	}
+	var procs []process
+	for line := range strings.Lines(string(out)) {
+		if fields := strings.Fields(line); len(fields) == 3 {
+			if p, ok := parseProcess(fields[0], fields[1], fields[2]); ok {
+				procs = append(procs, p)
+			}
+		}
+	}
+	return procs, nil
+}
+
+func parseProcess(pid, ppid, pgid string) (process, bool) {
+	var p process
+	var err1, err2, err3 error
+	p.pid, err1 = strconv.Atoi(pid)
+	p.ppid, err2 = strconv.Atoi(ppid)
+	p.pgid, err3 = strconv.Atoi(pgid)
+	return p, errors.Join(err1, err2, err3) == nil
+}
+
+// tailBuffer keeps the last limit bytes written to it. A 45 minute install
+// writes far more than a failure message carries, and GinkgoWriter already
+// has the whole of it.
+type tailBuffer struct {
+	buf     []byte
+	limit   int
+	dropped bool
+}
+
+func (b *tailBuffer) Write(p []byte) (int, error) {
+	b.buf = append(b.buf, p...)
+	if over := len(b.buf) - b.limit; over > 0 {
+		b.buf = append(b.buf[:0], b.buf[over:]...)
+		b.dropped = true
+	}
+	return len(p), nil
+}
+
+// String is what the buffer kept, less a first line cut by the limit.
+func (b *tailBuffer) String() string {
+	s := string(b.buf)
+	if b.dropped {
+		if _, rest, ok := strings.Cut(s, "\n"); ok {
+			return rest
+		}
+	}
+	return s
 }
 
 func lastLines(s string, n int) string {

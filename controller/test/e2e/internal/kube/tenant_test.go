@@ -492,6 +492,70 @@ func TestRelayedAdminKubeconfigKeepsASPIREKubeconfigsServerNameAndAsksForItsLife
 	}
 }
 
+func TestRelayedAdminKubeconfigReturnsNothingWhenTheRelayFails(t *testing.T) {
+	// The bytes carry an admin credential, so a failure must not hand back a
+	// half-rewritten file pointing at the unroutable published address.
+	factory := newTestTenantClientFactory(t, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
+		Data:       map[string][]byte{tenantKubeconfigKey: testAdminKubeconfig(t)},
+	})
+	factory.relay = func(context.Context, string) (string, error) {
+		return "", errors.New("the tunnel is shut")
+	}
+
+	rendered, err := factory.RelayedAdminKubeconfig(context.Background(), "tenant-a", time.Hour)
+	if err == nil || !strings.Contains(err.Error(), "tenant-a") || !strings.Contains(err.Error(), "the tunnel is shut") {
+		t.Fatalf("error = %v, want one naming the cluster and the cause", err)
+	}
+	if rendered != nil {
+		t.Errorf("RelayedAdminKubeconfig() returned %d bytes with its error, want none", len(rendered))
+	}
+}
+
+func TestKubeconfigTokenExpiryReadsAMintedToken(t *testing.T) {
+	// SPIRE caps -ttl at its signing key's lifetime and still exits 0, so a
+	// short token is not an error: it comes back, and its exp says how short.
+	factory := newTestTenantClientFactory(t,
+		spireServerConfigMapObject(`{"server":{"trust_domain":"test.nke.local"}}`),
+		spireServerPod("spire-server-1", true, spireServerSelector()),
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
+			Data:       map[string][]byte{tenantKubeconfigKey: testSPIREKubeconfig(t, "tenant-a")},
+		},
+	)
+	capped := time.Now().Add(10 * time.Minute).Truncate(time.Second)
+	factory.newExecutor = func(string, *url.URL) (remotecommand.Executor, error) {
+		return &fakeExecutor{stdout: testJWT(capped, "minted") + "\n"}, nil
+	}
+
+	rendered, err := factory.RelayedAdminKubeconfig(context.Background(), "tenant-a", 25*time.Minute)
+	if err != nil {
+		t.Fatalf("RelayedAdminKubeconfig() error = %v; a token shorter than asked for should still be returned", err)
+	}
+	expiresAt, ok := KubeconfigTokenExpiry(rendered)
+	if !ok || !expiresAt.Equal(capped) {
+		t.Errorf("KubeconfigTokenExpiry() = %s, %t; want %s, true", expiresAt, ok, capped)
+	}
+}
+
+func TestKubeconfigTokenExpiryWithoutAJWT(t *testing.T) {
+	// A published kubeconfig that is not SPIRE's carries its own credential,
+	// a certificate or a static token, with no expiry to read.
+	config := clientcmdapi.NewConfig()
+	config.AuthInfos["cert"] = &clientcmdapi.AuthInfo{ClientCertificateData: []byte("cert"), ClientKeyData: []byte("key")}
+	config.AuthInfos["static"] = &clientcmdapi.AuthInfo{Token: "not-a-jwt"}
+	kubeconfig, err := clientcmd.Write(*config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expiresAt, ok := KubeconfigTokenExpiry(kubeconfig); ok {
+		t.Errorf("KubeconfigTokenExpiry() = %s, true; want false", expiresAt)
+	}
+	if _, ok := KubeconfigTokenExpiry([]byte("not yaml: [")); ok {
+		t.Error("KubeconfigTokenExpiry(unparseable) = true, want false")
+	}
+}
+
 func requireLoad(t *testing.T, kubeconfig []byte) *clientcmdapi.Config {
 	t.Helper()
 	config, err := clientcmd.Load(kubeconfig)
