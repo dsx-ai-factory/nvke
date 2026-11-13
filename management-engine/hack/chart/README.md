@@ -2,8 +2,8 @@
 
 `make chart` runs the pinned Kubebuilder Helm plugin in fresh staging and then
 packages these extensions. Workload templates, values and state assets in
-`chart/` are generated output; `chart/Chart.yaml` and `chart/Chart.lock` are
-maintained package metadata.
+`chart/` are generated output; `chart/Chart.yaml` is maintained
+package metadata.
 
 - Change runtime manifests under `config/manager` and permission rules under
   `config/rbac`, `config/dev` or the Go RBAC markers. Generation carries those

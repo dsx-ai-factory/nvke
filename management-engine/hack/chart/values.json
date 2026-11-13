@@ -2,7 +2,10 @@
   "state": {
     "enabled": true,
     "crds": {
-      "install": true
+      "install": true,
+      "releases": {
+        "install": false
+      }
     },
     "namespace": "",
     "rbac": {
@@ -12,9 +15,6 @@
       "operatorAPISubjects": []
     },
     "configMaps": []
-  },
-  "nvke-crds": {
-    "enabled": false
   },
   "controller": {
     "enabled": true

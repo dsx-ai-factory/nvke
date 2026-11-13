@@ -12,9 +12,3 @@ appVersion: "dev"
 keywords:
   - kubernetes
   - operator
-
-dependencies:
-  - name: nvke-crds
-    version: 0.1.0
-    repository: file://../../controller/deploy/charts/nvke-crds
-    condition: state.enabled

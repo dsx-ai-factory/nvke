@@ -1,14 +1,15 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Standalone datastore: install the catalog APIs here. Set false when the NVKE
-# controller or a dedicated catalog release already owns them on this cluster.
-nvke-crds:
-  enabled: true
-
 controller:
   enabled: false
 state:
+  # Standalone datastore: install MachineImage, ClusterRelease and NodePoolRelease
+  # here. Leave this false when the NVKE controller chart already owns them on
+  # this cluster.
+  crds:
+    releases:
+      install: true
   rbac:
     subjects:
       - kind: ServiceAccount

@@ -326,10 +326,7 @@ func TestChartStateConfiguration(t *testing.T) {
   "controller": {
     "enabled": false
   },
-  "nvke-crds": {
-    "enabled": false
-  },
-  "state": {"crds":{"install":false}}
+  "state": {"crds":{"install":false,"releases":{"install":true}}}
 }`)
 	if err != nil || len(objectsOfKind(objects, "CustomResourceDefinition")) != 0 {
 		t.Fatalf("external CRD owner ignored: %v %s", err, output)
@@ -910,14 +907,14 @@ func TestChartEndpointValidation(t *testing.T) {
 	}
 }
 
-func TestChartCatalogOwnership(t *testing.T) {
+func TestChartReleaseCRDOwnership(t *testing.T) {
 	catalog := map[string]bool{
 		"machineimages.internal.nvke.nvidia.com":    true,
 		"clusterreleases.internal.nvke.nvidia.com":  true,
 		"nodepoolreleases.internal.nvke.nvidia.com": true,
 	}
 	for _, includeCatalog := range []bool{false, true} {
-		values := fmt.Sprintf(`{"controller":{"enabled":false},"nvke-crds":{"enabled":%t}}`, includeCatalog)
+		values := fmt.Sprintf(`{"controller":{"enabled":false},"state":{"crds":{"releases":{"install":%t}}}}`, includeCatalog)
 		objects, output, err := renderChart(t, values)
 		if err != nil {
 			t.Fatalf("%v\n%s", err, output)

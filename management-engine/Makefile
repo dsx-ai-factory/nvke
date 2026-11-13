@@ -301,7 +301,6 @@ helm-deploy: require-host-context ## Deploy manager to the K8s cluster via Helm.
 	fi; \
 	$(HELM) --kube-context "$(HOST_CONTEXT)" upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
 		--namespace $(HELM_NAMESPACE) \
-		--dependency-update \
 		--create-namespace \
 		--set-string manager.image.repository="$$repository" \
 		--set-string manager.image.tag="$$tag" \
@@ -313,12 +312,8 @@ helm-deploy: require-host-context ## Deploy manager to the K8s cluster via Helm.
 helm-uninstall: require-host-context ## Uninstall the Helm release from the K8s cluster.
 	$(HELM) --kube-context "$(HOST_CONTEXT)" uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
 
-.PHONY: chart-deps
-chart-deps: ## Stage the pinned shared schema dependency for Helm source operations.
-	$(HELM) dependency build chart --skip-refresh
-
 .PHONY: chart-check
-chart-check: manifests kubebuilder chart-deps ## Check generation, lint and test every installation mode.
+chart-check: manifests kubebuilder ## Check generation, lint and test every installation mode.
 	$(GO) run ./hack/chartgen -kubebuilder "$(KUBEBUILDER)" -check
 	$(HELM) lint chart -f config/samples/runtime-values.yaml
 	HELM="$(HELM)" KUBEBUILDER="$(KUBEBUILDER)" KUSTOMIZE="$(KUSTOMIZE)" $(GO) test $(GO_TEST_FLAGS) ./hack/... -run 'TestChart|TestGeneration|TestFilterManagerArgs' -count=1
