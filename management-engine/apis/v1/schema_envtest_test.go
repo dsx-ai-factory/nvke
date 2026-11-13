@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -91,7 +92,11 @@ func checkResourceCreation(t *testing.T, testClient dynamic.Interface, gvr schem
 
 	inputResource := readResource(t, inputResourcePathFn(t))
 	expectedResource := readResource(t, expectedResourcePathFn(t))
-	resourceClient := testClient.Resource(gvr)
+	var resourceClient dynamic.ResourceInterface = testClient.Resource(gvr)
+	if namespace := inputResource.GetNamespace(); namespace != "" {
+		ensureTestNamespace(t, testClient, namespace)
+		resourceClient = testClient.Resource(gvr).Namespace(namespace)
+	}
 	_, err := resourceClient.Create(t.Context(), inputResource, metav1.CreateOptions{})
 	require.NoError(t, err, "create resource")
 
@@ -103,6 +108,20 @@ func checkResourceCreation(t *testing.T, testClient dynamic.Interface, gvr schem
 		unstructured.RemoveNestedField(actualResource.Object, "metadata", field)
 	}
 	require.Equal(t, expectedResource.Object, actualResource.Object, "persisted resource should match expected YAML")
+}
+
+func ensureTestNamespace(t *testing.T, testClient dynamic.Interface, namespace string) {
+	t.Helper()
+
+	resource := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Namespace",
+		"metadata":   map[string]any{"name": namespace},
+	}}
+	_, err := testClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}).Create(t.Context(), resource, metav1.CreateOptions{})
+	if !apierrors.IsAlreadyExists(err) {
+		require.NoError(t, err, "create namespace")
+	}
 }
 
 func wellKnownInputResourcePath(t *testing.T) string {
