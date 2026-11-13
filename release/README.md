@@ -342,9 +342,10 @@ it is whichever minors have streams, so adding one means adding streams and
 nothing else.
 
 A stream can also carry **parameters**: the settings of its run, which are the
-environment file it runs against, the workers its tenant gets and the suite's
-timeout in minutes. They configure the run and nothing selects on them, which is
-why they are not capabilities. Only those fields are accepted, so a misspelled
+environment file it runs against, the workers its tenant gets, the suite's
+timeout in minutes and the TestGrid group it publishes to in place of the
+subject's (`testGridGroup`). They configure the run and nothing selects on
+them, which is why they are not capabilities. Only those fields are accepted, so a misspelled
 one is an error. The plan copies them for each stream and the stream's result
 records them.
 

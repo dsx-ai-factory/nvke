@@ -94,7 +94,8 @@ spec:
   # stream.
   #
   # `parameters` are the settings of a stream's run: the environment file it
-  # runs against, the workers its tenant gets and the suite's timeout. They
+  # runs against, the workers its tenant gets, the suite's timeout and the
+  # TestGrid group it publishes to in place of the subject's. They
   # configure the run and nothing selects on them, which is why they are not
   # capabilities. Only the fields declared in Parameters are accepted, and a
   # stream that names none runs as the others do.
@@ -116,9 +117,10 @@ spec:
     # machines only: the site node, the control plane and the workers all land
     # on its high memory CPU type. The tenant has three workers, and the suite
     # may run for 215 minutes, which the timeouts around it are derived from.
+    # Its results go to their own TestGrid group, nvke-scale.
     - name: forge-cpu-amd64-ubuntu-24.04-kube-1.36-perf
       capabilities: {provider: forge, machineType: cpu, arch: amd64, ubuntu: "24.04", kube: "1.36", profile: perf}
-      parameters: {environment: forge-perf, tenantWorkers: 3, suiteTimeoutMinutes: 215}
+      parameters: {environment: forge-perf, tenantWorkers: 3, suiteTimeoutMinutes: 215, testGridGroup: nvke-scale}
 
     # The DSX datahall, which is amd64 throughout, on L40S. The gpu is matched
     # against the model the datahall's instance type provides in dsx.yaml.
