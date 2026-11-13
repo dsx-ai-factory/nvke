@@ -27,13 +27,15 @@ into three categories:
 
 ### Prerequisites
 
-- Go — the floor is the `go` directive in `go.work`, not any single module's
-  `go.mod`, and this page deliberately does not repeat the number. Read it off
-  the workspace: `awk '/^go /{print $2; exit}' go.work`. A newer Go is fine:
-  `make` pins `GOTOOLCHAIN` to that same value, because `strcase` ships Unicode
+- Go 1.27.3 — the floor is the `go` directive in [go.work](go.work), not any
+  single module's `go.mod`. Read it off the workspace:
+  `awk '/^go /{print $2; exit}' go.work`. A newer Go is fine:
+  [`make`](Makefile) pins `GOTOOLCHAIN` to that same value, because `strcase` ships Unicode
   tables generated per Go release and panics at startup when they do not match
   the standard library's `unicode.Version`. Pinning keeps the two in step on a
   Go release it has no tables for. Set `GOTOOLCHAIN` yourself to override that.
+  `go version` shows the toolchain selected in your shell; `make help` shows
+  the one used by `make`, under "Toolchain in use".
 - GNU Make 4.0+ (`make --version`) — ⚠️ **macOS ships 3.81, which cannot run the
   root `Makefile`.** Run `brew install make`, which installs it as `gmake`, then
   read every `make` below as `gmake`. Setting `alias make=gmake` in your shell is
@@ -42,7 +44,28 @@ into three categories:
 - [Flox](https://flox.dev/), optional, for the pinned toolchain. The environment
   is at the repository root and covers every module, GNU Make included.
 - Docker (for local integration tests)
-- A running Temporal server (for controller development)
+- A running Temporal server (for NVKE controller development):
+  - **Local development:** the [Flox lockfile](.flox/env/manifest.lock) pins
+    Temporal CLI **1.8.2**, which bundles Server **1.31.2**.
+    [dev-env.sh](controller/scripts/dev-env.sh) starts the local server with
+    `temporal server start-dev`.
+  - **Kubernetes deployment:** Server **1.30.3** with Helm chart **0.74.0**,
+    recorded in the [bootstrap manifest](cli/internal/bootstrap/manifest/bootstrap-manifest.yaml).
+
+  Check the local CLI and the running server separately:
+
+  ```bash
+  temporal --version
+  temporal operator cluster system --address localhost:7233
+  ```
+
+  `temporal --version` reports the CLI and its bundled development server.
+  The second command reports the connected server's `ServerVersion`; replace
+  `localhost:7233` with your Temporal frontend address.
+
+  If `temporal` is not on your `PATH`, replace it in the commands above with
+  `~/.temporalio/bin/temporal` or `flox activate -- temporal`, matching how you
+  started the server.
 
 ### Clone and build
 
