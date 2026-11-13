@@ -24,7 +24,7 @@ REPO_ROOT ?= $(shell git rev-parse --show-toplevel)
 # Every dependency here is public, so these targets can run with GOWORK=off.
 
 GO ?= go
-BINARY := bin/nvke-os-image-check
+BINARIES := nvke-os-image-check nvke-os nvke-os-node
 
 # Go tool install location (GOPATH/bin, unless GOBIN is set); matches the
 # sibling modules.
@@ -61,18 +61,20 @@ GO_TEST_FLAGS ?=
 
 .PHONY: build compile test fmt lint license file-license-check clean boot-smoke run-vm
 
-build: ## Build nvke-os-image-check into bin/.
-	$(GO) build -ldflags "$(CHECK_LDFLAGS)" -o $(BINARY) ./cmd/nvke-os-image-check
+build: ## Build nvke-os-image-check, nvke-os and nvke-os-node into bin/.
 	@# A wrong -X symbol is silently ignored by the linker, so the only way to
-	@# know the stamping worked is to ask the binary. Cheap, and it fails loudly.
-	@out="$$($(BINARY) --version)"; \
-	case "$$out" in \
-	  *dev*|*unknown*|*v0.0.0*) \
-	    echo "ERROR: nvke-os-image-check was built without version information: $$out"; \
-	    echo "       The -X symbol in CHECK_LDFLAGS no longer matches the variable in cmd/nvke-os-image-check."; \
-	    exit 1;; \
-	  *) echo "  $$out";; \
-	esac
+	@# know the stamping worked is to ask each binary. Cheap, and it fails loudly.
+	@for b in $(BINARIES); do \
+	  $(GO) build -ldflags "$(CHECK_LDFLAGS)" -o bin/$$b ./cmd/$$b || exit 1; \
+	  out="$$(bin/$$b --version)"; \
+	  case "$$out" in \
+	    *dev*|*unknown*|*v0.0.0*) \
+	      echo "ERROR: $$b was built without version information: $$out"; \
+	      echo "       The -X symbol in CHECK_LDFLAGS no longer matches the variable in cmd/$$b."; \
+	      exit 1;; \
+	    *) echo "  $$out";; \
+	  esac; \
+	done
 
 compile: ## Type-check every package, including the ones with no binary.
 	$(GO) build ./...
@@ -108,7 +110,7 @@ clean:
 	rm -rf bin
 
 .PHONY: notices
-notices: ## Regenerate THIRD_PARTY_NOTICES.md for the nvke-os-image-check binary.
+notices: ## Regenerate THIRD_PARTY_NOTICES.md for the os-image binaries.
 	@# The tool and the script both live in controller/, a sibling of this
 	@# module. `go-licenses`, not `bin/go-licenses`: the real rule's target is an
 	@# absolute path, so a relative name does not match it.
@@ -120,7 +122,7 @@ notices: ## Regenerate THIRD_PARTY_NOTICES.md for the nvke-os-image-check binary
 	@$(MAKE) --no-print-directory -C ../controller go-licenses
 	@MODULE_ROOT="$(CURDIR)" \
 		OUTPUT="$(CURDIR)/THIRD_PARTY_NOTICES.md" \
-		PACKAGES="./cmd/nvke-os-image-check" \
+		PACKAGES="./cmd/..." \
 		GO_LICENSES="$(CURDIR)/../controller/bin/go-licenses" \
 		bash ../controller/hack/generate-notices
 
