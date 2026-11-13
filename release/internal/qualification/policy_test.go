@@ -132,6 +132,16 @@ func TestLoadPolicyRejects(t *testing.T) {
 			strings.Replace(validPolicy, `      capabilities: {kube: "1.34"}`, "      capabilities: {kube: \"1.34\"}\n      parameters: {environment: ../forge}", 1),
 			"not an environment file's name",
 		},
+		{
+			"a TestGrid group that is a path",
+			strings.Replace(validPolicy, `      capabilities: {kube: "1.34"}`, "      capabilities: {kube: \"1.34\"}\n      parameters: {testGridGroup: nvke/perf}", 1),
+			"not a TestGrid group's name",
+		},
+		{
+			"a TestGrid group with uppercase letters",
+			strings.Replace(validPolicy, `      capabilities: {kube: "1.34"}`, "      capabilities: {kube: \"1.34\"}\n      parameters: {testGridGroup: NVKE-perf}", 1),
+			"not a TestGrid group's name",
+		},
 		{"no scopes", strings.Replace(validPolicy, "    full: {}\n", "", 1), "spec.scopes is empty"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -230,5 +240,26 @@ func TestShippedPolicyKeepsThePerfStreamToItsScope(t *testing.T) {
 	}
 	if _, ok := p.Spec.Scopes["perf"]; !ok {
 		t.Error("the policy has no perf scope")
+	}
+}
+
+// TestShippedPolicyGivesOnlyThePerfStreamItsOwnTestGridGroup checks that the
+// perf stream publishes to nvke-scale and every other stream to the subject's group.
+func TestShippedPolicyGivesOnlyThePerfStreamItsOwnTestGridGroup(t *testing.T) {
+	t.Log("Doing: loading the shipped policy")
+	p, err := LoadPolicy("../../policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("Testing: the perf stream names nvke-scale and no other stream names a group")
+	for _, s := range p.Spec.Streams {
+		want := ""
+		if s.Capabilities["profile"] == "perf" {
+			want = "nvke-scale"
+		}
+		if got := s.Parameters.TestGridGroup; got != want {
+			t.Errorf("%s names TestGrid group %q, want %q", s.Name, got, want)
+		}
 	}
 }

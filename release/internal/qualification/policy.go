@@ -65,17 +65,23 @@ type Parameters struct {
 	// and tears the machines down. The timeouts around it are derived from
 	// this one, so they cannot be set to disagree.
 	SuiteTimeoutMinutes int `json:"suiteTimeoutMinutes,omitempty"`
+
+	// TestGridGroup names the TestGrid group the stream publishes to, in place of the subject.
+	TestGridGroup string `json:"testGridGroup,omitempty"`
 }
 
-// environmentName is what an environment file's name may be: the name of a
-// file beside the others, never a path.
-var environmentName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+// segmentName is what an environment file's or TestGrid group's name may be:
+// one path segment, never a path.
+var segmentName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
-// validate rejects an environment that is not a file name and a count that is
-// negative.
+// validate rejects an environment or TestGrid group that is not one path
+// segment, and a count that is negative.
 func (p Parameters) validate() error {
-	if p.Environment != "" && !environmentName.MatchString(p.Environment) {
+	if p.Environment != "" && !segmentName.MatchString(p.Environment) {
 		return fmt.Errorf("environment %q is not an environment file's name", p.Environment)
+	}
+	if p.TestGridGroup != "" && !segmentName.MatchString(p.TestGridGroup) {
+		return fmt.Errorf("testGridGroup %q is not a TestGrid group's name", p.TestGridGroup)
 	}
 	if p.TenantWorkers < 0 {
 		return fmt.Errorf("tenantWorkers is %d, and a tenant needs at least one worker", p.TenantWorkers)

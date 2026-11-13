@@ -768,8 +768,9 @@ that takes its scope from the repository variable `QUALIFY_E2E_SCOPE` while it
 is `perf`, such as a `qualify-e2e` label run, runs it, and `full` leaves it
 out. A stream can also carry
 `parameters` in `release/policy.yaml`: the environment file it runs against,
-the workers its tenant gets and the suite's timeout. The plan records them, and
-the stream's result says which it ran with. The job's timeout and the timeout of
+the workers its tenant gets, the suite's timeout and the TestGrid group it
+publishes to, which is `nvke-scale` for the perf stream. The plan records them,
+and the stream's result says which it ran with. The job's timeout and the timeout of
 `go test` follow from the suite's, so they cannot be set to disagree.
 
 ## Stages
