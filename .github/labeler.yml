@@ -86,3 +86,10 @@ area/nktp:
           - "deploy/nico/nktp/**"
           - "docs/nktp/**"
           - "controller/test/e2e/internal/nktp/**"
+
+area/management-engine:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "management-engine/**"
+          - ".github/workflows/management-engine/**"
+          - ".github/workflows/management-engine-*.yml"
