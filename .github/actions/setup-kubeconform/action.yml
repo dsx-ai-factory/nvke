@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Installs kubeconform at the version pinned in make/tool-versions.mk and
-# verifies its sha256. chart.yml and nktp-chart.yml both need it before their
-# fail-closed chart targets.
+# verifies its sha256. chart.yml needs it before its fail-closed chart targets.
 
 name: Set up kubeconform
 description: Download kubeconform at the pinned version, verify sha256, add it to PATH

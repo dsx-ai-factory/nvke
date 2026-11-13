@@ -242,11 +242,6 @@ jobs:
               echo "  - check  → nvke-os-image-check on S3"
               ;;
 
-            nktp/v*)
-              echo "NKTP tag ${GITHUB_REF_NAME}:"
-              echo "  - chart → NKTP Chart Publish"
-              ;;
-
             cluster-api-provider-provisioned/v*)
               echo "Provisioned-provider tag ${GITHUB_REF_NAME}:"
               echo "  - image → Image Provisioned NVCR (promote-ghcr → ghcr.io/dsx-ai-factory/nvke/cluster-api-provider-provisioned)"

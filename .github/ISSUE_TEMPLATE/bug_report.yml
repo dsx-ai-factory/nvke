@@ -98,13 +98,22 @@ body:
       required: true
 
   - type: textarea
+    id: nvkectl-version
+    attributes:
+      label: nvkectl version
+      description: Paste the output of `nvkectl version -o yaml`. If you did not use nvkectl, write "not used".
+      render: yaml
+    validations:
+      required: true
+
+  - type: textarea
     id: environment
     attributes:
       label: Environment
       description: Include only the fields that apply. Redact kubeconfigs, kubeadm join commands and bootstrap tokens, SPIFFE certificates and keys, BMC/Redfish/NICo credentials, database connection strings, and sensitive internal hostnames or IPs. Rotate credentials if exposed.
       placeholder: |
         - NVKE version, tag, or commit:
-        - Component version (for example `nvkectl version`):
+        - Controller version (from the NVKE API's `/api/version`), if known:
         - Kubernetes version:
         - Deployment environment (bare metal, CAPD, or other):
         - OS and architecture:

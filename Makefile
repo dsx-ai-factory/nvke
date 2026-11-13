@@ -132,11 +132,7 @@ PRIVATE_MODULES :=
 #
 # The chart copies existed before this and nothing maintained them -- they were
 # committed by hand and happened to match. `licenses-check` now enforces it.
-LICENSE_DESTS := controller/deploy/charts/controller controller/deploy/charts/nvke-crds
-
-# Chart directories that ship the root LICENSE but keep a NOTICE of their own,
-# which `make licenses` must not overwrite.
-LICENSE_ONLY_DESTS := nktp/deploy/charts/nktp
+LICENSE_DESTS := controller/deploy/charts/controller controller/deploy/charts/nvke-crds management-engine/chart
 
 # Redistributed binaries with generated third-party attribution.
 NOTICE_MODULES := agent controller cli os-image
@@ -405,11 +401,10 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 	              git diff --cached --name-only; \
 	              git diff --name-only; \
 	              git ls-files --others --exclude-standard; } | sort -u ); \
-	build_system=no; workflows=no; shell=no; chart=no; nktp=no; workspace=no; licences=no; provider_manifest=no; cli_docs=no; \
+	build_system=no; workflows=no; shell=no; chart=no; workspace=no; licences=no; provider_manifest=no; cli_docs=no; \
 	printf '%s\n' "$$changed" | grep -qE '^Makefile$$|^make/[^/]+\.mk$$' && build_system=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^\.github/workflows/.*\.ya?ml$$' && workflows=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^controller/deploy/charts/|^controller/deploy/monitoring/|^controller/hack/chart-.*-assertions\.(py|sh)$$|^controller/internal/(config|controllerconfig)/|^\.github/workflows/chart\.yml$$' && chart=yes || true; \
-	printf '%s\n' "$$changed" | grep -qE '^nktp/deploy/charts/|^nktp/hack/chart-.*\.sh$$|^\.github/workflows/nktp-chart\.yml$$' && nktp=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^cluster-api-provider-provisioned/config/|^cli/internal/bootstrap/controllerdeploy/manifests/(provisioned-provider|capnico)\.yaml$$|^deploy/nico/capnico/capnico\.yaml$$' && provider_manifest=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^cli/' && cli_docs=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '(^|/)(go\.mod|go\.sum)$$|^go\.work|^vendor/' && workspace=yes || true; \
@@ -421,7 +416,7 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 		esac; \
 	done; \
 	if [ "$$build_system" = yes ]; then \
-		workflows=yes; shell=yes; chart=yes; nktp=yes; workspace=yes; licences=yes; provider_manifest=yes; cli_docs=yes; \
+		workflows=yes; shell=yes; chart=yes; workspace=yes; licences=yes; provider_manifest=yes; cli_docs=yes; \
 	fi; \
 	if [ -n "$(MODULES)" ]; then \
 		mods="$(MODULES)"; \
@@ -455,7 +450,6 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 	[ "$$workflows" = yes ] && echo "  lint-workflows       (workflow or build-system changes)" || true; \
 	[ "$$shell" = yes ] && echo "  lint-shell           (shell or build-system changes)" || true; \
 	[ "$$chart" = yes ] && echo "  chart-check          (chart or build-system changes)" || true; \
-	[ "$$nktp" = yes ] && echo "  nktp-chart-check     (NKTP chart or build-system changes)" || true; \
 	[ "$$provider_manifest" = yes ] && echo "  provider-manifest-check (the provisioned provider's or CAPNICo's manifests changed)" || true; \
 	[ "$$cli_docs" = yes ] && echo "  cli docs-check       (the CLI changed, so its reference may be stale)" || true; \
 	echo; \
@@ -501,10 +495,6 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 	if [ "$$chart" = yes ]; then \
 		echo "==> chart-check"; \
 		$(MAKE) --no-print-directory chart-check || failed="$$failed chart"; \
-	fi; \
-	if [ "$$nktp" = yes ]; then \
-		echo "==> nktp-chart-check"; \
-		$(MAKE) --no-print-directory nktp-chart-check || failed="$$failed nktp"; \
 	fi; \
 	if [ "$$provider_manifest" = yes ]; then \
 		echo "==> provider-manifest-check"; \
@@ -643,21 +633,17 @@ licenses: ## Copy LICENSE and NOTICE everywhere an artefact ships them from.
 	@for d in $(LICENSE_DESTS); do \
 		mkdir -p $$d && cp LICENSE NOTICE $$d/ || exit 1; \
 	done
-	@for d in $(LICENSE_ONLY_DESTS); do \
-		mkdir -p $$d && cp LICENSE $$d/ || exit 1; \
-	done
 	@echo "LICENSE and NOTICE copied to: $(LICENSE_DESTS)"
-	@echo "LICENSE copied to: $(LICENSE_ONLY_DESTS)"
 
 licenses-check: licenses ## Verify the shipped LICENSE and NOTICE copies match the root files. (run by the merge gate)
 	@# The image and the chart redistribute this work, so they carry its terms.
 	@# Both read from a copy inside their own build context, and a copy is a
 	@# thing that goes stale -- this is the assertion that it has not.
-	@git diff --exit-code -- $(LICENSE_DESTS) $(addsuffix /LICENSE,$(LICENSE_ONLY_DESTS)) \
+	@git diff --exit-code -- $(LICENSE_DESTS) \
 		|| { echo "ERROR: a shipped LICENSE/NOTICE copy is stale. Run 'make licenses' and commit the change."; exit 1; }
 	@# git diff says nothing about a path git is not tracking, so a newly added
 	@# destination would otherwise pass while shipping nothing.
-	@untracked=$$(git ls-files --others --exclude-standard -- $(LICENSE_DESTS) $(addsuffix /LICENSE,$(LICENSE_ONLY_DESTS))); \
+	@untracked=$$(git ls-files --others --exclude-standard -- $(LICENSE_DESTS)); \
 	 [ -z "$$untracked" ] \
 		|| { echo "ERROR: these shipped licence files are not tracked:"; printf '%s\n' "$$untracked" | sed 's/^/    /'; exit 1; }
 	@echo "Shipped LICENSE and NOTICE copies are current."

@@ -60,7 +60,6 @@ workflows below:
 |---|---|---|
 | `agent/vX.Y.Z` | `agent-deb-publish.yml` (+ `agent-artifact.yml`) | `.deb`s to the apt intake, GHCR binary and `.deb`, NVCR binary + `.deb`, S3/CloudFront `.deb` |
 | `os-image/vX.Y.Z` | `os-image-artifact.yml` | qcow2s on NVCR; qcow2s with their SBOMs and checksums, and `nvke-os-image-check`, on S3/CloudFront; version-tagged qcow2s on GHCR only when `NVKE_GITHUB_PUBLISH` names `os-image` |
-| `nktp/vX.Y.Z` | `nktp-chart-publish.yml` | Helm chart on GHCR |
 | `cli/vX.Y.Z` | `tag-publish.yml` (+ `cli-artifact.yml`, `cli-artifact-nvcr.yml`, `cli-s3-publish.yml`) | binaries on GHCR, NVCR, S3/CloudFront |
 | `controller/vX.Y.Z` | `image-nvcr.yml`, `chart-publish.yml`, `chart-publish-nvcr.yml` | image and chart; see below |
 
@@ -71,7 +70,7 @@ checks for it.
 
 The Actions variable `NVKE_GITHUB_PUBLISH` lists the components whose
 release-tagged artifacts go to GHCR. Unset, it means
-`root,controller,cli,agent,cluster-api-provider-provisioned,nktp`, so every
+`root,controller,cli,agent,cluster-api-provider-provisioned`, so every
 component but `os-image`, whose qcow2s go to NVCR and S3 only. Set it to `none`
 to stop every GHCR release publication, or list the components you want. NVCR, S3 and
 CloudFront are not affected, and neither is the CI hand-off on GHCR: the `sha-`
@@ -93,18 +92,15 @@ names, comma-separated with no spaces:
 | `cli` | `cli/v*` | the `cli` binaries |
 | `agent` | `agent/v*` | `agent` and `agent-deb` |
 | `cluster-api-provider-provisioned` | `cluster-api-provider-provisioned/v*` | the provider image |
-| `nktp` | `nktp/v*` | the chart |
+| `nktp` | none | nothing; accepted so existing values keep working |
 | `os-image` | `os-image/v*` | the version-tagged qcow2s |
 
 An `os-image/` tag that fails Packer or the boot-smoke test never publishes the
 OCI artifact.
 
-An `nktp/` tag releases the NVKE telemetry pipeline (NKTP) Helm chart. The chart version is the tag's:
-`nktp/vX.Y.Z` packages the chart as `X.Y.Z` and `nktp/vX.Y.Z-rc.1` as
-`X.Y.Z-rc.1`, the way the NVKE controller chart takes its version from
-`controller/v*`. `version:` in `nktp/deploy/charts/nktp/Chart.yaml` is a
-placeholder, so nothing needs editing before tagging. The workflow pushes
-`oci://ghcr.io/dsx-ai-factory/nvke/charts/nktp:<version>`.
+The NVKE telemetry pipeline (NKTP) Helm chart is released from
+[dsx-ai-factory/nvke-telemetry-pipeline](https://github.com/dsx-ai-factory/nvke-telemetry-pipeline),
+not from this repository.
 
 A `controller/vX.Y.Z` tag publishes the controller image and Helm chart:
 
@@ -113,7 +109,6 @@ A `controller/vX.Y.Z` tag publishes the controller image and Helm chart:
 | `image-nvcr.yml` | multi-arch image to `nvcr.io/<org>/nvke-controller`, promotes that released image to DSX as `nvcr.io/<dsx-org-team>/nvke-controller`, and promotes release tags to `ghcr.io/dsx-ai-factory/nvke/nvke-controller` |
 | `chart-publish.yml` | chart to `ghcr.io/dsx-ai-factory/nvke/charts/nvke-controller` |
 | `chart-publish-nvcr.yml` | chart to `nvcr.io/<org>/nvke-controller-chart` and `nvcr.io/<dsx-org-team>/nvke-controller-chart` |
-| `image-validate-nvcr.yml` | multi-arch site validation image (`controller/test/e2e/Dockerfile`) pushed straight to DSX as `nvcr.io/<dsx-org-team>/nvke-validate`, under the controller image's version |
 
 Every `main` commit already publishes the image and chart to NVCR. GHCR receives
 released versions only, which is why a chart built from a tag can safely point at
@@ -142,11 +137,11 @@ A new GHCR package is created `internal`. Make it public in the package settings
 first release that publishes it.
 
 DSX receives the controller image from `image-nvcr.yml`, after the NVKE multi-arch
-manifest exists. It receives the controller chart from `chart-publish-nvcr.yml`,
-and the validation image that tests that controller from
-`image-validate-nvcr.yml`, tagged with the same version so a site that pins a
-controller can run the tests built from the same commit. All three use separate
-credentials from the same protected GitHub environment:
+manifest exists, and the controller chart from `chart-publish-nvcr.yml`. It
+does not receive the site validation image (`controller/test/e2e/Dockerfile`),
+which is published nowhere: a site builds it from its controller's release tag
+(see "Building the image yourself" in `controller/test/e2e/README.md`). Both
+workflows use separate credentials from the same protected GitHub environment:
 
 | Name | Type | Purpose |
 |---|---|---|
@@ -183,8 +178,7 @@ the **OS Image Artifact** check: Packer, boot-smoke, then the NVCR and S3
 publishers (GHCR only when `NVKE_GITHUB_PUBLISH` names `os-image`). For `controller/v*`, confirm the **Image
 NVCR** check, and, when `NVKE_GITHUB_PUBLISH` names `controller`, the **Chart
 Publish** check and the promoted image at
-`ghcr.io/dsx-ai-factory/nvke/nvke-controller:<version>`. For `nktp/v*`, confirm the
-**NKTP Chart Publish** check.
+`ghcr.io/dsx-ai-factory/nvke/nvke-controller:<version>`.
 
 ## Verifying a published image
 
@@ -219,7 +213,7 @@ build of this commit ought to select.
 | `nvke-controller` image | `controller-sbom-linux-<arch>.spdx.json` | image contents, scanned from the pushed image | workflow artifact on the **Image NVCR** run |
 | `cluster-api-provider-provisioned` image | `cluster-api-provider-provisioned-sbom-linux-<arch>.spdx.json` | image contents, scanned from the pushed image | workflow artifact on the **Image Provisioned NVCR** run |
 
-The Helm charts — `nvke-controller` and `nktp` — have no SBOM of their own. A
+The `nvke-controller` Helm chart has no SBOM of its own. A
 chart carries no components; it carries a reference to an image that does, and
 that image's SBOM is the row above. An SBOM of the chart archive would list the
 archive.

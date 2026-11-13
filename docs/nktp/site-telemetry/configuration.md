@@ -37,7 +37,7 @@ By default every exporter points at the development backend, `lgtm`, in the
 backend and turn `lgtm` off:
 
 1. **Write a values file for the site.** The keys are listed in
-   [Set a backend](../getting-started.md#set-a-backend):
+   [Set a backend](https://github.com/dsx-ai-factory/nvke-telemetry-pipeline/blob/main/docs/getting-started.md#set-a-backend):
    the `otlp_grpc` exporter of the watchdog, the watchdog's sidecar and each
    gateway, plus `otel-lgtm.enabled: false`.
 2. **Pass it to the deploy path** with `--values-for nktp=<file>`. It is
@@ -95,7 +95,7 @@ For a node that keeps its journal only in memory, add a `/run/log/journal`
 host volume mounted at `/hostfs/run/log/journal`, and set
 `daemonset.otelcol.config.receivers.journald.directory: /run/log/journal`. The
 volume lists replace the site values' lists, so restate them in full, as
-[`nktp/hack/e2e-values.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/nktp/hack/e2e-values.yaml) does for
+[`controller/hack/ci/nktp-kind-values.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/controller/hack/ci/nktp-kind-values.yaml) does for
 Kind.
 
 ## Sizing up

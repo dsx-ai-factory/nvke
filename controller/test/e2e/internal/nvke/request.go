@@ -58,6 +58,9 @@ type NodePoolSpec struct {
 	Release               string
 	ConfigProfile         string
 	DiskSelectionStrategy string // "smallest" | "largest"
+	// NodeLabels are applied to the pool's nodes at creation. Only the CAPD
+	// builder sends them.
+	NodeLabels map[string]string
 }
 
 // ControlPlane describes the control-plane pools plus cluster-wide knobs.
@@ -570,6 +573,9 @@ func buildCAPDNodePool(spec NodePoolSpec, nodeImage string) (api.NodePoolCreateC
 	}
 	if spec.KubeReservedMemory != "" {
 		pool.KubeReservedMemory = spec.KubeReservedMemory
+	}
+	if len(spec.NodeLabels) > 0 {
+		pool.NodeLabels = spec.NodeLabels
 	}
 	if pool.Infra == nil {
 		return api.NodePoolCreateConfig{}, fmt.Errorf("CAPD node pool skeleton is missing infra.machineTemplate")

@@ -143,6 +143,6 @@ items:
         version: 1.34.8
     observedGeneration: 2
     resolvedRelease:
-      name: pinned-release
+      name: latest-release
       version: 1.34.8
 metadata: {}

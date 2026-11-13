@@ -22,13 +22,16 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [operate/prepare-nodes.md](operate/prepare-nodes.md) | Bringing the management cluster's nodes from first boot to what `nvkectl bootstrap site` requires |
 | [operate/bootstrap-management-cluster.md](operate/bootstrap-management-cluster.md) | Writing the site spec and running `nvkectl bootstrap site` |
 | [operate/install-management-plane.md](operate/install-management-plane.md) | Installing Cluster API and the `deploy/nico` deploy path on the management cluster, and admitting networks to the NVKE API |
+| [operate/infrastructure-providers.md](operate/infrastructure-providers.md) | How NVKE uses an infrastructure provider, how a deployment selects one, how a provider is added, and how to see which provider a cluster uses |
 | [operate/provider-nico.md](operate/provider-nico.md) | Confirming the management plane can request machines from NICo, its credentials, and the NICo IDs a cluster request needs |
+| [operate/provider-launchlayer.md](operate/provider-launchlayer.md) | Confirming the management plane can request machines from LaunchLayer, its credentials, and the LaunchLayer IDs a cluster request needs |
 | [operate/api-authentication.md](operate/api-authentication.md) | Turning on OIDC authentication for the NVKE API |
 | [workload-clusters/ovn-kubernetes.md](workload-clusters/ovn-kubernetes.md) | Building, self-hosting and deploying OVN-Kubernetes artifacts |
 | [workload-clusters/create.md](workload-clusters/create.md) | Creating a workload cluster |
 | [workload-clusters/access.md](workload-clusters/access.md) | Getting a workload cluster's admin kubeconfig, giving the customer access, and connecting with `kubectl` |
 | [workload-clusters/oidc.md](workload-clusters/oidc.md) | Making workload clusters accept tokens from the management plane and from your own OpenID Connect (OIDC) identity providers, and the identities they may not claim |
 | [workload-clusters/node-pools.md](workload-clusters/node-pools.md) | Adding, scaling and removing node pools |
+| [workload-clusters/upgrade.md](workload-clusters/upgrade.md) | Upgrading a workload cluster's Kubernetes version: control plane, then node pools |
 | [Workload cluster Kubernetes certificate renewal](../controller/docs/certificate-renewal.md) | Scheduled and forced leaf certificate renewal, failure diagnostics and ownership-checked recovery |
 | [operate/observe.md](operate/observe.md) | Metrics, dashboards, logs and status for NVKE and its clusters |
 | [operate/troubleshoot.md](operate/troubleshoot.md) | Symptoms, causes and fixes for common failures |
@@ -54,6 +57,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [development.md](development.md) | The checks to run before opening a pull request, and which ones a laptop cannot reproduce |
 | [go-workspace.md](go-workspace.md) | The Go workspace, which modules are in it, and how to keep `go.work.sum` current |
 | [coverage-policy.md](coverage-policy.md) | What coverage is collected, what CI does with it, and why no threshold gates a merge |
+| [kubernetes-minor-versions.md](kubernetes-minor-versions.md) | What to change when NVKE adds, supports or drops a Kubernetes minor version |
 | [adrs/20261014-adr-conventions.md](adrs/20261014-adr-conventions.md) | Accepted decision on ADR scope, placement, format, and lifecycle |
 | [adrs/20261106-shared-nvke-crd-chart.md](adrs/20261106-shared-nvke-crd-chart.md) | Proposed shared schema packaging and ownership across NVKE installers |
 | [issue-triage.md](issue-triage.md) | How issues are triaged: the `needs-triage` and `priority/*` labels, who sets them, and what the automation does |
@@ -93,7 +97,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 
 | Document | Contents |
 |---|---|
-| [operations/upgrade.md](operations/upgrade.md) | Pointer to the upgrade limitations in preview status |
+| [operations/upgrade.md](operations/upgrade.md) | Pointer to the workload cluster upgrade page and to the upgrade limitations in preview status |
 | [operations/crd-group-migration.md](operations/crd-group-migration.md) | Copying existing CRs to the `internal.nvke.nvidia.com` group on an existing site |
 | [operations/label-domain-migration.md](operations/label-domain-migration.md) | What the move to the `nvke.nvidia.com` label and annotation domain means for an existing site |
 | [site-operations/certificate-renewal.md](site-operations/certificate-renewal.md) | Site-management certificate renewal for NVKE fleet operators |
@@ -111,35 +115,10 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 
 ## Running NVKE telemetry pipeline (NKTP)
 
-| Document | Contents |
-|---|---|
-| [nktp/getting-started.md](nktp/getting-started.md) | NKTP on any cluster: installing the chart, a first look, and what commonly needs changing |
-| [nktp/guides/send-telemetry.md](nktp/guides/send-telemetry.md) | For service owners: how a workload's logs, OTLP and Prometheus metrics reach NKTP, and adding a sidecar Collector |
-| [nktp/guides/enable-auto-instrumentation.md](nktp/guides/enable-auto-instrumentation.md) | A shared `Instrumentation` that injects OpenTelemetry agents into Java, Node.js, Python and .NET Pods |
-| [nktp/guides/enable-ebpf-instrumentation.md](nktp/guides/enable-ebpf-instrumentation.md) | Running OpenTelemetry eBPF Instrumentation (OBI) to trace requests in any language and send them to the node Collector |
-| [nktp/architecture/topology.md](nktp/architecture/topology.md) | The Collectors, how each signal flows to the backend, and how scraping is allocated |
-| [nktp/architecture/backpressure.md](nktp/architecture/backpressure.md) | How queues and the memory limiter behave when a Collector is saturated |
-| [nktp/architecture/self-telemetry.md](nktp/architecture/self-telemetry.md) | The sidecar that buffers each Collector's own telemetry, and how it samples traces |
-| [nktp/guides/size-resources.md](nktp/guides/size-resources.md) | Default requests and limits, runtime memory targets, and sizing guidance |
-| [nktp/guides/configure-cert-manager.md](nktp/guides/configure-cert-manager.md) | What NKTP uses cert-manager for, and installing without it |
-| [nktp/guides/secure-gateway-export.md](nktp/guides/secure-gateway-export.md) | TLS and mTLS from the gateways and the watchdog to the backend |
-| [nktp/guides/configure-kubelet-metrics.md](nktp/guides/configure-kubelet-metrics.md) | Changing the kubelet scrapes, verifying kubelet certificates, and running beside kube-prometheus-stack |
-| [nktp/guides/restrict-monitor-file-access.md](nktp/guides/restrict-monitor-file-access.md) | Migrate monitor credentials before enabling file-access restrictions |
-| [nktp/guides/configure-persistent-queue.md](nktp/guides/configure-persistent-queue.md) | Keeping the watchdog and gateway exporter queues on a PersistentVolume across restarts |
-| [nktp/guides/enable-daemonset-log-checkpoints.md](nktp/guides/enable-daemonset-log-checkpoints.md) | Persisting the node Collector's log read positions so a restarted Collector resumes instead of skipping lines |
-| [nktp/guides/enable-host-process-metrics.md](nktp/guides/enable-host-process-metrics.md) | Per-process host metrics, the privileges they need, and their cardinality |
-| [nktp/components/node-collector.md](nktp/components/node-collector.md) | The node Collector (`daemonset`): OTLP endpoint, pod logs, journal, log classification and monitor credentials |
-| [nktp/components/gateways.md](nktp/components/gateways.md) | The logs, metrics and traces gateways (`gateway_*`) and their endpoints |
-| [nktp/components/large-target-metrics.md](nktp/components/large-target-metrics.md) | The large-target pool (`large_target_metrics`), sizing large scrapes, and Kubernetes component metrics |
-| [nktp/components/cluster-events.md](nktp/components/cluster-events.md) | The cluster event reader (`cluster_events`) and its leader election |
-| [nktp/components/watchdog.md](nktp/components/watchdog.md) | The watchdog (`watchdog`), which carries the pipeline's own telemetry |
-| [nktp/components/kube-state-metrics.md](nktp/components/kube-state-metrics.md) | kube-state-metrics (`kube-state-metrics`): collection groups, sharding and opt-in Secret metrics |
-| [nktp/components/otel-lgtm.md](nktp/components/otel-lgtm.md) | The bundled development backend (`otel-lgtm`), its dashboards and settings |
-| [nktp/components/dependencies.md](nktp/components/dependencies.md) | The bundled Operator, CRDs, node-exporter and metrics-server |
-| [nktp/design-principles.md](nktp/design-principles.md) | Why the chart renders each Collector configuration exactly as written |
-| [nktp/designs/monitor-file-access.md](nktp/designs/monitor-file-access.md) | Why monitor file access remains enabled by default and how to restrict it |
-| [nktp/designs/target-allocation.md](nktp/designs/target-allocation.md) | Why every scraping Collector requires a Target Allocator |
-| [nktp/designs/kube-state-metrics.md](nktp/designs/kube-state-metrics.md) | The approaches considered for scaling kube-state-metrics collection |
+NKTP itself, the chart and its documentation, lives in
+[dsx-ai-factory/nvke-telemetry-pipeline](https://github.com/dsx-ai-factory/nvke-telemetry-pipeline).
+The pages under `nktp/site-telemetry/`, listed above, cover how NVKE installs
+and configures it on a management cluster.
 
 ## The modules
 
@@ -166,7 +145,6 @@ Deeper module documentation:
 | [../os-image/SPEC.md](../os-image/SPEC.md) | The contract a node image has to meet |
 | [../controller/profiles/README.md](../controller/profiles/README.md) | External profiles |
 | [../controller/deploy/charts/controller/README.md](../controller/deploy/charts/controller/README.md) | The engine's Helm chart and its values |
-| [../nktp/deploy/charts/nktp/README.md](../nktp/deploy/charts/nktp/README.md) | The NKTP Helm chart, what it deploys and its values |
 | [../build/README.md](../build/README.md) | The per-component build and publish scripts |
 | [../os-image/README.md](../os-image/README.md) | Node image build, FDE/non-FDE variants, release |
 
@@ -176,6 +154,7 @@ Deeper module documentation:
 |---|---|
 | [../controller/test/e2e/README.md](../controller/test/e2e/README.md) | The end to end suite |
 | [../hack/rotation-demo/README.md](../hack/rotation-demo/README.md) | Credential renewal/key-rotation evidence collector (no live evidence included) |
+| [../hack/mokka-demo/README.md](../hack/mokka-demo/README.md) | Simulated GPU nodes with Mokka: a node pool, GPU Operator and a GPU pod, without GPUs |
 | [qualification/overview.md](qualification/overview.md) | Release qualification: what it is, what a run proves, and what is not covered yet |
 | [qualification/hardware-qualification.md](qualification/hardware-qualification.md) | Running the hardware lane, in CI or from a workstation with `qualify local`: starting a run, following it, and reading its results |
 | [qualification/hardware-qualification-design.md](qualification/hardware-qualification-design.md) | How a candidate is qualified on real hardware, layer by layer, and why |
@@ -202,8 +181,7 @@ Deeper module documentation:
 `AGENTS.md` files carry instructions for AI coding agents, not for people. There
 is one at the repository root, and one in
 [../agent/AGENTS.md](../agent/AGENTS.md),
-[../controller/AGENTS.md](../controller/AGENTS.md),
-[../nktp/AGENTS.md](../nktp/AGENTS.md) and
+[../controller/AGENTS.md](../controller/AGENTS.md) and
 [../os-image/AGENTS.md](../os-image/AGENTS.md).
 
 ## Not indexed here

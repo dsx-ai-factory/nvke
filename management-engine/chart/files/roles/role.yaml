@@ -1,0 +1,43 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - internal.nvke.nvidia.com
+  resources:
+  - clusterreleasechannels
+  - clusterreleases
+  - controlplaneclasses
+  - machineimages
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - internal.nvke.nvidia.com
+  resources:
+  - nvkeclusters
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - internal.nvke.nvidia.com
+  resources:
+  - nvkeclusters/status
+  verbs:
+  - patch
+  - update

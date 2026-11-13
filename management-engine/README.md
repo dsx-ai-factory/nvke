@@ -9,7 +9,8 @@ types, generated CRDs, and controller-manager runtime.
 | Path | Purpose |
 | --- | --- |
 | `apis/v1` | Resource types and scheme registration |
-| [Shared CRD chart](../controller/deploy/charts/nvke-crds/README.md) | Canonical generated CRDs |
+| [Shared catalog chart](../controller/deploy/charts/nvke-crds/README.md) | Canonical MachineImage, ClusterRelease and NodePoolRelease CRDs |
+| `config/crd/bases` | Canonical Cluster Service-specific CRDs |
 | `cmd` | Connection configuration and manager startup |
 | `controllers` | Reconcilers |
 
@@ -23,14 +24,20 @@ Run commands below from `management-engine/`.
 ```sh
 make build test lint
 make generate manifests # after API or RBAC changes
-git diff --exit-code -- apis/v1 ../controller/deploy/charts/nvke-crds/bases config/crd/bases config/rbac/role.yaml chart # check generated-file drift
+git diff --exit-code -- apis/v1 ../controller/deploy/charts/nvke-crds/bases chart # check generated-file drift
 make test-controller # controller integration tests (envtest)
 make -C .. chart-crds # render the controller release schemas into ignored build output
 make -C .. chart-crds-check # verify canonical generated CRDs
-make chart-check # generate, lint, and render the management-engine chart
+make chart # regenerate the Helm chart with the pinned Kubebuilder plugin
+make chart-check # verify generation and test all Helm installation modes
+make chart-assets-check # verify the complete generated chart is current
 ```
 
 For a drift check, start with a clean working tree before regeneration.
+Kustomize manifests and Go markers are the canonical sources. `make manifests`
+refreshes state definitions; `make chart` uses Kubebuilder and the packaging
+extensions in `hack/chart/` to regenerate the chart.
+See [Helm installation](docs/helm-installation.md) for chart values and topology examples.
 `make test` includes `test-controller`; the separate command runs that suite alone.
 
 ### Tilt provider
