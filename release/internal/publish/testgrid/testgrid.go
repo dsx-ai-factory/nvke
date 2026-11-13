@@ -4,12 +4,13 @@
 // Package testgrid is the TestGrid Destination: it writes started.json, the
 // JUnit report, then finished.json to the shape TestGrid's
 // updater reads (groups/{group}/{dashboard}/{tab}/{build}/), with group as
-// the subject, dashboard as the full stream name (e.g.
-// forge-gb200-amd64-ubuntu-24.04-kube-1.36), and tab as the Ginkgo suite
-// that ran, slugged.
+// the stream's testGridGroup or else the subject, dashboard as the full
+// stream name (e.g. forge-gb200-amd64-ubuntu-24.04-kube-1.36), and tab as
+// the Ginkgo suite that ran, slugged.
 package testgrid
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -207,8 +208,9 @@ func (d *Destination) Publish(ctx context.Context, result *qualification.Result,
 
 // buildPrefix is the group/dashboard/tab/build GCS path for this leg.
 //
-// group is the subject (e.g. "nvke"), the same derivation releaseStream
-// uses: a fixed value would stamp a second, per-component subject's results
+// group is the stream's testGridGroup parameter when it names one. Without
+// it, group is the subject (e.g. "nvke"), as releaseStream derives from the
+// subject: a fixed value would stamp a second, per-component subject's results
 // under the first subject's group, indistinguishable from the one it
 // actually belongs to.
 //
@@ -254,8 +256,9 @@ func (d *Destination) buildPrefix(result *qualification.Result) (string, error) 
 	capabilities := stream.Capabilities
 
 	// gpu is deliberately not required here: neither it nor any other
-	// capability builds the path below (group/dashboard/tab come from
-	// Subject/stream.Name/stream.Suite, not Capabilities), and a CPU-only
+	// capability builds the path below (group comes from the stream's
+	// testGridGroup parameter or the subject, dashboard/tab from
+	// stream.Name/stream.Suite, not Capabilities), and a CPU-only
 	// stream -- a DSX leg, confirmed live in run 38962892184 -- genuinely
 	// has no gpu value. GPU in meta is already omitempty for the same
 	// reason. provider and kube still gate: unlike gpu they have no
@@ -274,7 +277,7 @@ func (d *Destination) buildPrefix(result *qualification.Result) (string, error) 
 		return "", fmt.Errorf("result has no spec.identity.runID, so this leg's build name has nothing distinguishing it from another run of the same combination/stream -- Upload's create-only write would then silently drop a second, corrected publish instead of erroring or overwriting")
 	}
 
-	group := result.Spec.Subject
+	group := cmp.Or(stream.Parameters.TestGridGroup, result.Spec.Subject)
 	dashboard := stream.Name
 	tab := slug(stream.Suite)
 
