@@ -44,7 +44,10 @@ and month the organization started using NVKE, in `YYYY-MM` form.
   confirms it before merging. Without approval, list the organization
   anonymously.
 - To stay anonymous, give an industry in place of a name, such as
-  "Financial services company", and keep the description general.
+  "Financial services company", and keep the description general. The pull
+  request shows its author's account and commit email, so check that your
+  GitHub profile and commits do not name the organization, or ask a
+  maintainer to open the pull request for you.
 - Do not include confidential or identifying details: customer names, site
   locations, cluster sizes or internal project names. Git history keeps every
   published version, so removing an entry later does not remove it from the
