@@ -15,14 +15,14 @@ sequenceDiagram
     participant Node as Workload<br/>cluster node
 
     Op->>MP: 1. nvkectl create cluster
-    MP->>Prov: 2. Cluster and provider cluster objects
-    Prov->>API: 3. Prepare cluster (LaunchLayer: VPC, security groups)
+    MP->>Prov: 2. Cluster objects
+    Prov->>API: 3. Prepare cluster
     loop Nodes
-        MP->>Prov: 4. Machine objects and bootstrap Secret
-        Prov->>API: 5. Request machine with bootstrap Secret as user data
-        API->>Node: 6. Boot OS image with nvke-agent and SPIRE agent
+        MP->>Prov: 4. Machine and bootstrap Secret
+        Prov->>API: 5. Request machine
+        API->>Node: 6. Boot OS image
         Note over Node: Attest to SPIRE (TPM or DSX IMDS)
-        MP->>Node: 7. Run kubeadm init or join over mTLS
+        MP->>Node: 7. kubeadm init or join over mTLS
     end
     MP-->>Op: 8. Cluster is Ready
     Op->>MP: 9. nvkectl get kubeconfig
