@@ -5,7 +5,8 @@
 # apt-publisher S3 intake, and publishes the same packages to GHCR as an OCI
 # artifact (ghcr.io/dsx-ai-factory/nvke/agent-deb) for oras pull. Apt intake is
 # tag-only: workflow_dispatch is kept so a failed tag publish can be re-run,
-# but branch dispatches never upload. deb.yml exercises the same packaging
+# but branch dispatches never upload. To recover a release, dispatch from its
+# vX.Y.Z tag with ref set to the same tag; a beta is not recovered this way. deb.yml exercises the same packaging
 # path on every agent change and throws the packages away; this workflow is
 # the release side.
 #
@@ -50,7 +51,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Agent tag or full commit SHA to build
+        description: Release tag (vX.Y.Z, or a legacy agent/v* tag) or full commit SHA to build
         type: string
         required: true
 
@@ -100,11 +101,12 @@ jobs:
     steps:
       - name: Validate source ref
         run: |
-          if [[ ! "${SOURCE_REF}" =~ ^(agent/v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?|[0-9a-f]{40})$ ]]; then
-            echo "::error::ref must be an agent release tag or a full lowercase commit SHA"
+          if [[ ! "${SOURCE_REF}" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+|agent/v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?|[0-9a-f]{40})$ ]]; then
+            echo "::error::ref must be a release tag or a full lowercase commit SHA"
             exit 1
           fi
-          if [[ "${SOURCE_REF}" == agent/v* && "${GITHUB_REF}" != "refs/tags/${SOURCE_REF}" ]]; then
+          if [[ "${SOURCE_REF}" == agent/v* || "${SOURCE_REF}" == v* ]] &&
+            [[ "${GITHUB_REF}" != "refs/tags/${SOURCE_REF}" ]]; then
             echo "::error::Release builds must run from their source tag; select it with --ref"
             exit 1
           fi
@@ -237,7 +239,7 @@ jobs:
     needs: [build]
     if: >-
       github.repository_id == '1323115536' &&
-      (startsWith(inputs.ref || github.ref_name, 'agent/v') ||
+      (startsWith(inputs.ref || github.ref_name, 'agent/v') || startsWith(inputs.ref, 'v') ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')))
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -375,7 +377,7 @@ jobs:
     needs: [build]
     if: >-
       github.repository_id == '1323115536' &&
-      (startsWith(inputs.ref || github.ref_name, 'agent/v') ||
+      (startsWith(inputs.ref || github.ref_name, 'agent/v') || startsWith(inputs.ref, 'v') ||
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))) &&
       needs.build.outputs.release == 'true' &&
       contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned'), ',agent,')
@@ -482,7 +484,7 @@ jobs:
     needs: [build]
     if: >-
       github.repository_id == '1323115536' &&
-      (startsWith(inputs.ref || github.ref_name, 'agent/v') ||
+      (startsWith(inputs.ref || github.ref_name, 'agent/v') || startsWith(inputs.ref, 'v') ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')))
     runs-on: ubuntu-latest
     env:
