@@ -96,6 +96,14 @@ class DescribeVersionTest(unittest.TestCase):
         self.assert_version("v0.2.0-beta.4", "refs/heads/main")
         self.assert_version("v0.2.0-beta.5", "refs/tags/v0.2.0-beta.5")
 
+    def test_rc_run_is_its_tag(self):
+        # The helper names a bare RC by its tag; the publishers' tag filters,
+        # not the helper, keep an RC from publishing.
+        self.commit()
+        self.git("tag", "v0.2.0-beta.1")
+        self.git("tag", "v0.2.0-rc.1")
+        self.assert_version("v0.2.0-rc.1", "refs/tags/v0.2.0-rc.1")
+
     def test_tag_naming_another_commit_is_refused(self):
         self.commit()
         self.git("tag", "v0.2.0-beta.1")
@@ -133,6 +141,18 @@ class DescribeVersionTest(unittest.TestCase):
                 self.release(name)
                 self.assert_refused("not a version this repository publishes", "refs/heads/main")
                 self.assert_refused("not a version this repository publishes", f"refs/tags/{name}")
+
+    def test_triggering_tag_that_is_not_a_version_is_refused(self):
+        # The annotated release wins the describe, so only the check on the
+        # triggering tag itself can refuse these.
+        for name in ("v0$(id)", "v0.2.0`id`", "v0.2.0;id", "v0.2.0-beta.1${IFS}x", "v0.2.0-alpha.1"):
+            with self.subTest(name=name):
+                self.new_repository()
+                self.commit()
+                self.release("v0.2.0")
+                self.git("tag", name)
+                self.assert_version("v0.2.0", "refs/heads/main")
+                self.assert_refused(f"{name} is not a version", f"refs/tags/{name}")
 
     def test_bad_describe_is_refused_on_any_tag_run(self):
         # The Makefiles describe the commit themselves, so a v* run is refused
