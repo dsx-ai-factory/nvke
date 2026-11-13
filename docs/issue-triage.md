@@ -17,7 +17,9 @@ anyone can see what is waiting and what was decided.
 Setting a priority is the act of triage. Automation removes `needs-triage`
 while an issue has a `priority/*` or `needs-info` label, and puts it back when
 it has neither. When the reporter comments on a `needs-info` issue, automation
-removes `needs-info`, so the issue returns to the triage queue.
+removes `needs-info`, so the issue returns to the triage queue. A `needs-info`
+issue with no reply gets a reminder after 14 days and is closed after 30; the
+reporter's next comment reopens it.
 
 When torn between P0 and P1, pick P1. Feature and documentation requests take
 a priority too; most are P2.
@@ -65,7 +67,8 @@ sweeps its queue once a week; the project lead sweeps the unrouted queue.
 
 You do not need to do anything about `needs-triage`. If your issue gets
 `needs-info`, reply with what was asked for; your comment puts it back in the
-triage queue. To argue for a higher
+triage queue. Without a reply it closes after 30 days, and a comment with the
+details reopens it. To argue for a higher
 priority, comment with the impact: what is broken, how many clusters or nodes
 it affects, and whether a workaround exists. Triage reads the thread before
 changing a priority that is already set.
@@ -79,6 +82,8 @@ issue events, on the reporter's comments, and once an hour:
   label, and removes it once either is set;
 - removes `needs-info` when the reporter comments, which returns the issue to
   `needs-triage`;
+- reminds the reporter 14 days after `needs-info` was added, closes the issue
+  as not planned at 30 days, and reopens it if the reporter then comments;
 - on a new issue, maps the form's Component field to an `area/*` label, once,
   and never puts back an area a triager removed.
 

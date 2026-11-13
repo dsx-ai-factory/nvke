@@ -5,7 +5,9 @@
 # is not waiting on its reporter (`needs-info`), and routes a new issue to its
 # area from the form's Component field. When the reporter comments on a
 # `needs-info` issue, it removes `needs-info`, which returns the issue to
-# triage. The process is docs/issue-triage.md.
+# triage. A `needs-info` issue with no reply is reminded at 14 days and closed
+# at 30; the reporter's next comment reopens it. The process is
+# docs/issue-triage.md.
 #
 # Advisory, like the other needs-* labels, and the same shape as
 # test-gate-check.yml: events clear, the hourly sweep reconciles. The forms add
@@ -73,6 +75,17 @@ jobs:
             const NEEDS_INFO = 'needs-info';
             const PRIORITY_PREFIX = 'priority/';
 
+            // A needs-info issue gets one reminder, then closes. The reporter
+            // reopens it by commenting with the details.
+            const REMIND_DAYS = 14;
+            const CLOSE_DAYS = 30;
+            const DAY_MS = 24 * 60 * 60 * 1000;
+            const BOT = 'github-actions[bot]';
+            const REMINDER_MARK = '<!-- needs-info-reminder -->';
+            const reminderText = (issue) => `${REMINDER_MARK}
+            @${issue.user.login}, this issue is waiting on the details asked for above. If they don't arrive within ${CLOSE_DAYS - REMIND_DAYS} more days, this issue will be closed. You can still add them after that: commenting reopens it.`;
+            const closeText = `Closing because the details asked for above haven't arrived in ${CLOSE_DAYS} days. Comment here with them and this issue reopens and goes back to triage.`;
+
             // The Component options in .github/ISSUE_TEMPLATE/*.yml, lower
             // case, to the area labels in .github/labeler.yml. An option that
             // is missing here routes nowhere and the triager picks the area.
@@ -127,6 +140,55 @@ jobs:
               }
             }
 
+            // When needs-info was last added, from the issue's events.
+            async function needsInfoSince(issue) {
+              const events = await github.paginate(github.rest.issues.listEvents, {
+                ...context.repo,
+                issue_number: issue.number,
+                per_page: 100,
+              });
+              const added = events
+                .filter((e) => e.event === 'labeled' && e.label?.name === NEEDS_INFO)
+                .map((e) => e.created_at)
+                .sort()
+                .pop();
+              return added ? new Date(added) : null;
+            }
+
+            // Reminds once at REMIND_DAYS and closes at CLOSE_DAYS. Returns
+            // true when it closed the issue. needs-info stays on a closed
+            // issue so the reporter's comment can reopen it.
+            async function followUp(issue) {
+              const since = await needsInfoSince(issue);
+              if (!since) {
+                return false;
+              }
+              const days = (Date.now() - since.getTime()) / DAY_MS;
+              if (days >= CLOSE_DAYS) {
+                await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: closeText });
+                await github.rest.issues.update({
+                  ...context.repo,
+                  issue_number: issue.number,
+                  state: 'closed',
+                  state_reason: 'not_planned',
+                });
+                return true;
+              }
+              if (days >= REMIND_DAYS) {
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  ...context.repo,
+                  issue_number: issue.number,
+                  since: since.toISOString(),
+                  per_page: 100,
+                });
+                if (!comments.some((c) => (c.body ?? '').includes(REMINDER_MARK))) {
+                  await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: reminderText(issue) });
+                  tally.reminded += 1;
+                }
+              }
+              return false;
+            }
+
             // One event names one issue, read live rather than from the
             // payload so a label that moved since the event is seen. A sweep
             // reads every open issue; the list endpoint returns pull requests
@@ -140,12 +202,28 @@ jobs:
                   per_page: 100,
                 })).filter((issue) => !issue.pull_request);
 
-            const tally = { added: 0, cleared: 0, routed: 0, answered: 0, unchanged: 0 };
+            const tally = { added: 0, cleared: 0, routed: 0, answered: 0, reminded: 0, timedOut: 0, reopened: 0, unchanged: 0 };
             for (const issue of issues) {
-              if (issue.pull_request || issue.state !== 'open') {
+              if (issue.pull_request) {
                 continue;
               }
               let labels = names(issue);
+
+              // The reporter answered an issue this workflow closed for lack
+              // of detail: reopen it, and the code below returns it to triage.
+              if (issue.state === 'closed' &&
+                  context.eventName === 'issue_comment' &&
+                  labels.includes(NEEDS_INFO) &&
+                  issue.closed_by?.login === BOT &&
+                  context.payload.comment.user.login === issue.user.login) {
+                await github.rest.issues.update({ ...context.repo, issue_number: issue.number, state: 'open' });
+                issue.state = 'open';
+                tally.reopened += 1;
+                core.info(`#${issue.number}: reporter answered after time-out, reopened`);
+              }
+              if (issue.state !== 'open') {
+                continue;
+              }
 
               // The reporter answered a request for more detail, so the issue
               // is the triagers' turn again.
@@ -156,6 +234,12 @@ jobs:
                 labels = labels.filter((l) => l !== NEEDS_INFO);
                 tally.answered += 1;
                 core.info(`#${issue.number}: reporter answered, ${NEEDS_INFO} removed`);
+              }
+
+              if (labels.includes(NEEDS_INFO) && await followUp(issue)) {
+                tally.timedOut += 1;
+                core.info(`#${issue.number}: closed after ${CLOSE_DAYS} days in ${NEEDS_INFO}`);
+                continue;
               }
 
               // Routing happens once, on open. A later sweep must not put back
@@ -184,4 +268,4 @@ jobs:
               }
             }
 
-            core.info(`${issues.length} checked: ${tally.added} added, ${tally.cleared} cleared, ${tally.routed} routed, ${tally.answered} answered, ${tally.unchanged} unchanged`);
+            core.info(`${issues.length} checked: ${tally.added} added, ${tally.cleared} cleared, ${tally.routed} routed, ${tally.answered} answered, ${tally.reminded} reminded, ${tally.timedOut} timed out, ${tally.reopened} reopened, ${tally.unchanged} unchanged`);
