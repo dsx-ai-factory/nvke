@@ -230,6 +230,9 @@ func TestRenewK8sCertsStopsAfterNodeFailure(t *testing.T) {
 // TestRenewK8sCertsPostflightFailureStopsBeforeNextNode ensures a successful node
 // result alone cannot advance rollout. Since that work is terminal, a failed
 // health gate records failure without retaining uncertain-operation ownership.
+// The gate retries past the three attempts a preflight gets, then gives up. The
+// test environment stops unbounded retries at ten attempts; a real server stops
+// them at certificateRenewalPostflightTimeout.
 func TestRenewK8sCertsPostflightFailureStopsBeforeNextNode(t *testing.T) {
 	clusterID := uuid.New()
 	nodeA := certificateRenewalWorkflowNode(clusterID, "cp-a")
@@ -241,8 +244,12 @@ func TestRenewK8sCertsPostflightFailureStopsBeforeNextNode(t *testing.T) {
 	env.OnActivity(a.RenewKubernetesCertificates, mock.Anything, mock.MatchedBy(func(input activities.KubernetesCertificateRenewalInput) bool {
 		return input.NodeID == nodeA.ID
 	})).Return(activities.KubernetesCertificateRenewalResult{Outcome: db.CertificateRenewalOutcomeRenewed}, nil).Once()
+	attempts := 0
 	expectCertificateRenewalHealth(t, env, a, clusterID, []uuid.UUID{nodeA.ID, nodeB.ID}, &nodeA.ID).
-		Return(errors.New("etcd unhealthy")).Times(3)
+		Return(func(context.Context, activities.ValidateCertificateRenewalHealthInput) error {
+			attempts++
+			return errors.New("etcd unhealthy")
+		})
 	env.OnActivity(a.FailCertificateRenewal, mock.Anything, mock.MatchedBy(func(input activities.FailCertificateRenewalInput) bool {
 		return input.FailedNodeID != nil && *input.FailedNodeID == nodeA.ID && input.Phase == "postflight" && !input.RetainMutationLock
 	})).Return(activities.FailCertificateRenewalResult{}, nil).Once()
@@ -250,6 +257,7 @@ func TestRenewK8sCertsPostflightFailureStopsBeforeNextNode(t *testing.T) {
 	env.ExecuteWorkflow(RenewK8sCertsV2, RenewK8sCertsInput{ClusterID: clusterID, ThresholdDays: 14})
 
 	require.ErrorContains(t, env.GetWorkflowError(), "etcd unhealthy")
+	require.Greater(t, attempts, 3, "the postflight retries past the three attempts a preflight gets")
 	env.AssertNotCalled(t, "RenewKubernetesCertificates", mock.Anything, mock.MatchedBy(func(input activities.KubernetesCertificateRenewalInput) bool {
 		return input.NodeID == nodeB.ID
 	}))

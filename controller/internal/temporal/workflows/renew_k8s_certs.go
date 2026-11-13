@@ -43,6 +43,10 @@ const (
 	// when a pre-V2 agent rejects required typed work. Histories recorded before it
 	// resolved the never-accepted operation and retained the lock.
 	certificateRenewalTypedUnsupportedChangeID = "certificate-renewal-typed-unsupported-release"
+
+	// certificateRenewalPostflightTimeout bounds the postflight that gates the
+	// next node; see certificateRenewalPostflightOptions.
+	certificateRenewalPostflightTimeout = 10 * time.Minute
 )
 
 // RenewK8sCertsInput selects a threshold-based or forced cycle. V2 requires a
@@ -265,7 +269,7 @@ func renewK8sCerts(
 	for _, node := range controlPlaneNodes {
 		expectedNodeIDs = append(expectedNodeIDs, node.ID)
 	}
-	if err := validateCertificateRenewalHealth(ctx, input.ClusterID, expectedNodeIDs, nil); err != nil {
+	if err := validateCertificateRenewalHealth(certificateRenewalHealthOptions(ctx), input.ClusterID, expectedNodeIDs, nil); err != nil {
 		return RenewK8sCertsResult{}, certificateRenewalFailureDetails{phase: certificateRenewalPreflight}, fmt.Errorf("certificate-renewal preflight failed: %w", err)
 	}
 
@@ -293,7 +297,7 @@ func renewK8sCerts(
 		if err != nil {
 			renewErr := fmt.Errorf("failed to renew certificates on node %s: %w", node.ID, err)
 			diagnosticCtx, _ := workflow.NewDisconnectedContext(ctx)
-			if healthErr := validateCertificateRenewalHealth(diagnosticCtx, input.ClusterID, expectedNodeIDs, &nodeID); healthErr != nil {
+			if healthErr := validateCertificateRenewalHealth(certificateRenewalHealthOptions(diagnosticCtx), input.ClusterID, expectedNodeIDs, &nodeID); healthErr != nil {
 				workflow.GetLogger(ctx).Error(
 					"Certificate-renewal diagnostic postflight failed",
 					"nodeID", node.ID,
@@ -304,7 +308,7 @@ func renewK8sCerts(
 			return result, certificateRenewalFailureDetails{nodeID: &nodeID, phase: certificateRenewalRenewNode, unresolvedOperation: unresolved}, renewErr
 		}
 
-		if err := validateCertificateRenewalHealth(ctx, input.ClusterID, expectedNodeIDs, &nodeID); err != nil {
+		if err := validateCertificateRenewalHealth(certificateRenewalPostflightOptions(ctx), input.ClusterID, expectedNodeIDs, &nodeID); err != nil {
 			return result, certificateRenewalFailureDetails{nodeID: &nodeID, phase: "postflight"}, fmt.Errorf("certificate-renewal postflight failed for node %s: %w", node.ID, err)
 		}
 		outcome := renewalResult.Outcome
@@ -500,6 +504,20 @@ func certificateRenewalHealthOptions(ctx workflow.Context) workflow.Context {
 	})
 }
 
+func certificateRenewalPostflightOptions(ctx workflow.Context) workflow.Context {
+	return workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout:    5 * time.Minute,
+		ScheduleToCloseTimeout: certificateRenewalPostflightTimeout,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval: 10 * time.Second,
+			MaximumInterval: 30 * time.Second,
+		},
+	})
+}
+
+// validateCertificateRenewalHealth runs the health check with the activity
+// options ctx carries: certificateRenewalHealthOptions, or
+// certificateRenewalPostflightOptions for the gate before the next node.
 func validateCertificateRenewalHealth(
 	ctx workflow.Context,
 	clusterID uuid.UUID,
@@ -508,7 +526,7 @@ func validateCertificateRenewalHealth(
 ) error {
 	var a *activities.Activities
 	return workflow.ExecuteActivity(
-		certificateRenewalHealthOptions(ctx),
+		ctx,
 		a.ValidateCertificateRenewalHealth,
 		activities.ValidateCertificateRenewalHealthInput{
 			ClusterID:        clusterID,
