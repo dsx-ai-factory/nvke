@@ -89,14 +89,6 @@
           "properties": {
             "install": {
               "type": "boolean"
-            },
-            "releases": {
-              "type": "object",
-              "properties": {
-                "install": {
-                  "type": "boolean"
-                }
-              }
             }
           }
         }

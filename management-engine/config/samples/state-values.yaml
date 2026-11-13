@@ -4,12 +4,6 @@
 controller:
   enabled: false
 state:
-  # Standalone datastore: install MachineImage, ClusterRelease and NodePoolRelease
-  # here. Leave this false when the NVKE controller chart already owns them on
-  # this cluster.
-  crds:
-    releases:
-      install: true
   rbac:
     subjects:
       - kind: ServiceAccount

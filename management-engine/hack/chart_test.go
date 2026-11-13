@@ -152,7 +152,7 @@ func TestChartModes(t *testing.T) {
 			crds := objectsOfKind(objects, "CustomResourceDefinition")
 			wantCRDs := 0
 			if tc.state {
-				wantCRDs = 3
+				wantCRDs = 6
 			}
 			if len(crds) != wantCRDs {
 				t.Fatalf("unexpected CRDs: %d", len(crds))
@@ -326,7 +326,7 @@ func TestChartStateConfiguration(t *testing.T) {
   "controller": {
     "enabled": false
   },
-  "state": {"crds":{"install":false,"releases":{"install":true}}}
+  "state": {"crds":{"install":false}}
 }`)
 	if err != nil || len(objectsOfKind(objects, "CustomResourceDefinition")) != 0 {
 		t.Fatalf("external CRD owner ignored: %v %s", err, output)
@@ -605,9 +605,12 @@ func TestChartExamples(t *testing.T) {
 					}
 				}
 				if sample == "state-values.yaml" {
-					for _, kind := range []string{"machineimages", "clusterreleases", "nodepoolreleases"} {
+					for _, kind := range []string{
+						"nvkeclusters", "controlplaneclasses", "clusterreleasechannels",
+						"machineimages", "clusterreleases", "nodepoolreleases",
+					} {
 						if !crds[kind+".service.nvke.nvidia.com"] {
-							t.Fatalf("standalone state example missing catalog CRD %s", kind)
+							t.Fatalf("standalone state example missing CRD %s", kind)
 						}
 					}
 				}
@@ -907,38 +910,39 @@ func TestChartEndpointValidation(t *testing.T) {
 	}
 }
 
-func TestChartReleaseCRDOwnership(t *testing.T) {
-	catalog := map[string]bool{
-		"machineimages.service.nvke.nvidia.com":    true,
-		"clusterreleases.service.nvke.nvidia.com":  true,
-		"nodepoolreleases.service.nvke.nvidia.com": true,
+func TestChartCRDInstall(t *testing.T) {
+	want := map[string]bool{
+		"nvkeclusters.service.nvke.nvidia.com":           true,
+		"controlplaneclasses.service.nvke.nvidia.com":    true,
+		"clusterreleasechannels.service.nvke.nvidia.com": true,
+		"machineimages.service.nvke.nvidia.com":          true,
+		"clusterreleases.service.nvke.nvidia.com":        true,
+		"nodepoolreleases.service.nvke.nvidia.com":       true,
 	}
-	for _, includeCatalog := range []bool{false, true} {
-		values := fmt.Sprintf(`{"controller":{"enabled":false},"state":{"crds":{"releases":{"install":%t}}}}`, includeCatalog)
+	for _, install := range []bool{false, true} {
+		values := fmt.Sprintf(`{"controller":{"enabled":false},"state":{"crds":{"install":%t}}}`, install)
 		objects, output, err := renderChart(t, values)
 		if err != nil {
 			t.Fatalf("%v\n%s", err, output)
 		}
-		seen := map[string]bool{}
-		catalogCount, localCount := 0, 0
+		got := map[string]bool{}
 		for _, crd := range objectsOfKind(objects, "CustomResourceDefinition") {
-			name := crd.GetName()
-			if seen[name] {
-				t.Fatalf("duplicate CRD %s", name)
+			if got[crd.GetName()] {
+				t.Fatalf("duplicate CRD %s", crd.GetName())
 			}
-			seen[name] = true
-			if catalog[name] {
-				catalogCount++
-			} else {
-				localCount++
+			got[crd.GetName()] = true
+		}
+		wantCount := 0
+		if install {
+			wantCount = len(want)
+		}
+		if len(got) != wantCount {
+			t.Fatalf("state.crds.install=%t: got %d CRDs, want %d", install, len(got), wantCount)
+		}
+		for name := range got {
+			if !want[name] {
+				t.Fatalf("state.crds.install=%t: unexpected CRD %s", install, name)
 			}
-		}
-		wantCatalog := 0
-		if includeCatalog {
-			wantCatalog = 3
-		}
-		if catalogCount != wantCatalog || localCount != 3 {
-			t.Fatalf("catalog enabled=%t: got %d catalog and %d local CRDs", includeCatalog, catalogCount, localCount)
 		}
 	}
 }

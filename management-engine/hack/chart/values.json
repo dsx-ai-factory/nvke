@@ -2,10 +2,7 @@
   "state": {
     "enabled": true,
     "crds": {
-      "install": true,
-      "releases": {
-        "install": false
-      }
+      "install": true
     },
     "namespace": "",
     "rbac": {

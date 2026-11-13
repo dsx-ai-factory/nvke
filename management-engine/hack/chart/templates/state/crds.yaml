@@ -2,15 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 {{- if and .Values.state.enabled .Values.state.crds.install }}
-{{- /* MachineImage, ClusterRelease and NodePoolRelease are installed only on request: the NVKE controller chart normally owns them on its cluster. */ -}}
-{{- $releaseKinds := list "MachineImage" "ClusterRelease" "NodePoolRelease" }}
 {{- range $path, $_ := .Files.Glob "files/crds/service.nvke.nvidia.com_*.yaml" }}
 {{- $crd := fromYaml ($.Files.Get $path) }}
-{{- if or $.Values.state.crds.releases.install (not (has $crd.spec.names.kind $releaseKinds)) }}
 {{- $retention := dict "helm.sh/resource-policy" "keep" "argocd.argoproj.io/sync-wave" "-2" "argocd.argoproj.io/sync-options" "Prune=false" }}
 {{- $_ := set $crd.metadata "annotations" (merge $retention (default dict $crd.metadata.annotations)) }}
 ---
 {{ toYaml $crd }}
-{{- end }}
 {{- end }}
 {{- end }}

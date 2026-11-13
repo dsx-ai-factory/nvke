@@ -69,8 +69,6 @@ state:
   configMaps: []
   crds:
     install: true
-    releases:
-      install: false
   enabled: true
   namespace: ""
   rbac:

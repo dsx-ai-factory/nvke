@@ -50,8 +50,8 @@ is in `config/samples/nvke-controller-values.yaml`.
 
 For DSX, the intended CSC deployment co-locates Cluster Service and its APIs,
 the datastore and the existing NVKE controller in the same cluster. This uses
-local ServiceAccount access and reuses the catalog CRDs owned by the NVKE
-controller. Split installations remain available for other deployment needs.
+local ServiceAccount access. Split installations remain available for other
+deployment needs.
 Merge the working template example with site settings:
 
 ```sh
@@ -106,10 +106,7 @@ helm template cluster-service-state chart --namespace management-state-system \
   -f config/samples/state-values.yaml > state.yaml
 ```
 
-The state sample installs MachineImage, ClusterRelease and NodePoolRelease as
-well as the three Cluster Service CRDs for a fresh datastore. Set
-`state.crds.releases.install=false` when the NVKE controller chart already owns
-the release CRDs on that cluster.
+The state sample installs all six CRDs for a fresh datastore.
 
 Set `state.rbac.subjects` to the manager's actual identity. Local identities
 use a ServiceAccount name and namespace. An authenticated external SPIFFE
@@ -212,19 +209,8 @@ and ClusterReleaseChannel, and also MachineImage, ClusterRelease and
 NodePoolRelease. `state.crds.install=false` delegates all of them to an existing
 installer. Their canonical files live in `config/crd/bases`; canonical manager
 RBAC lives in `config/rbac`. `make chart` packages generated copies for Helm.
-Kustomize consumes the canonical files directly.
-
-The three release CRDs are shipped but not installed by default
-(`state.crds.releases.install=false`): the NVKE controller chart normally already
-owns these APIs on its cluster, and its copy of the definitions is independent of
-this chart's. Installing both charts with their defaults therefore gives each
-cluster one owner for every CRD. Until the two components use different API
-groups, a cluster can have only one owner for each of the three release CRDs. On
-a datastore cluster that has no NVKE controller chart, set
-`state.crds.releases.install=true` in this release. If the controller chart owns
-them there, leave it false. Wait for CRD establishment before creating release
-records. On separate datastore clusters, provide the required APIs in each
-cluster.
+Kustomize consumes the canonical files directly. Wait for CRD establishment
+before creating release records.
 
 `state.enabled=false` disables this chart's schemas and state RBAC/configuration
 together. `make manifests` regenerates canonical definitions, and `make chart`
