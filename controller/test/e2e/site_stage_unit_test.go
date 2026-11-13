@@ -78,9 +78,11 @@ func TestWithheldFromEnvironment(t *testing.T) {
 	}
 }
 
-// A FLAT datahall's tenant needs CAPNICo's NicoMachine autoNetwork, which the
-// stack's CAPNICo does not have yet, so a full run there is refused up front.
+// A FLAT datahall's tenant needs NicoMachine autoNetwork, which the tenant
+// spec does not send yet, so a full run there is refused up front.
 func TestDSXTenantSupportedRefusesAFlatDatahall(t *testing.T) {
+	// The lane runs this with the datahall's CA in its environment.
+	t.Setenv(dsx.CACertEnvName("datahall-3"), "")
 	flat := dsx.Site{
 		API: "https://hall.example.test", TenantID: "t", VpcID: "v", SSHKeyGroupID: "k", AutoNetwork: true,
 		InstanceTypes: []dsx.InstanceType{{
@@ -104,5 +106,36 @@ func TestDSXTenantSupportedRefusesAFlatDatahall(t *testing.T) {
 	env.Sites["datahall-3"] = flat
 	if err := dsxTenantSupported(env, map[string]string{"arch": "arm64", "gpu": "gb300"}); err != nil {
 		t.Errorf("a datahall with a prefix should be allowed, got %v", err)
+	}
+}
+
+// A datahall with a prefix but a private CA is refused too: CAPNICo is not
+// handed the CA, so its tenant would fail TLS against the datahall's API.
+func TestDSXTenantSupportedRefusesADatahallWithAPrivateCA(t *testing.T) {
+	hall := dsx.Site{
+		API: "https://hall.example.test", TenantID: "t", VpcID: "v", SSHKeyGroupID: "k", VpcPrefixID: "p",
+		InstanceTypes: []dsx.InstanceType{{
+			Name: "tray", ID: "tray-type",
+			Provides: map[string]string{"machineType": "gpu", "arch": "arm64", "gpu": "gb300"},
+		}},
+	}
+	env := &dsx.Environment{Org: dsx.Org{ID: "ncx"}, Sites: map[string]dsx.Site{"datahall-3": hall}}
+	capabilities := map[string]string{"arch": "arm64", "gpu": "gb300"}
+	caEnv := dsx.CACertEnvName("datahall-3")
+
+	t.Setenv(caEnv, " ")
+	if err := dsxTenantSupported(env, capabilities); err != nil {
+		t.Fatalf("a datahall on the system roots should be allowed, got %v", err)
+	}
+
+	t.Setenv(caEnv, "-----BEGIN CERTIFICATE-----")
+	err := dsxTenantSupported(env, capabilities)
+	if err == nil {
+		t.Fatal("a full run on a datahall with a private CA should be refused before a machine is taken")
+	}
+	for _, want := range []string{"datahall-3", caEnv, siteStageDeployment} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error does not name %q: %v", want, err)
+		}
 	}
 }

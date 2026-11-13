@@ -613,20 +613,25 @@ func fullStageSupported(provider string) error {
 		provider, provider)
 }
 
-// dsxTenantSupported refuses a full run whose datahall is FLAT, before a
-// machine is taken. Its tenant's NicoMachines would need autoNetwork, and the
-// CAPNICo the stack deploys does not have it yet.
+// dsxTenantSupported refuses a full run, before a machine is taken, on a
+// datahall whose tenant cannot be provisioned yet: a FLAT one, or one with a
+// private CA, which the deploy path does not hand CAPNICo.
 func dsxTenantSupported(env *dsx.Environment, capabilities map[string]string) error {
 	selection, err := env.Resolve(capabilities)
 	if err != nil {
 		return err
 	}
-	if selection.Site.AutoNetwork {
-		return fmt.Errorf("-e2e.site-stage full needs a tenant on datahall %s, which is FLAT (autoNetwork), and the "+
-			"CAPNICo the stack deploys has no NicoMachine autoNetwork yet. Run this datahall at stage provision, "+
-			"bootstrap or deployment until it does", selection.Site.Key)
+	var reason string
+	switch caEnv := dsx.CACertEnvName(selection.Site.Key); {
+	case selection.Site.AutoNetwork:
+		reason = "is FLAT (autoNetwork), and the tenant spec does not give its NicoMachines autoNetwork yet"
+	case strings.TrimSpace(os.Getenv(caEnv)) != "":
+		reason = "serves its API under a private CA (" + caEnv + "), and the deploy path does not hand CAPNICo that CA yet"
+	default:
+		return nil
 	}
-	return nil
+	return fmt.Errorf("-e2e.site-stage full needs a tenant on datahall %s, which %s. Run this datahall at stage "+
+		"provision, bootstrap or deployment instead", selection.Site.Key, reason)
 }
 
 // newDeployConfig builds what the Cluster API provider the stack installs
