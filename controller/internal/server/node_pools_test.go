@@ -1211,15 +1211,19 @@ func TestNodePoolService_UpdateNodePool_KubernetesVersion(t *testing.T) {
 	nodePoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
 	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
 	siteID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")
+	controlPlaneConfigID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440003")
 	now := time.Now()
 
 	tests := []struct {
 		name                  string
 		controlPlaneVersion   string
 		controlPlaneUpgrading bool
-		poolVersion           string
-		requestedVersion      string
-		wantErrContains       string // empty means the update is accepted
+		// pinnedControlPlaneVersion is the version a control-plane node is pinned to;
+		// empty means the control plane already runs controlPlaneVersion.
+		pinnedControlPlaneVersion string
+		poolVersion               string
+		requestedVersion          string
+		wantErrContains           string // empty means the update is accepted
 	}{
 		{
 			name:                "newer minor than the control plane is rejected",
@@ -1276,6 +1280,29 @@ func TestNodePoolService_UpdateNodePool_KubernetesVersion(t *testing.T) {
 			wantErrContains:       "already in progress",
 		},
 		{
+			name:                      "a version change after the control-plane target is stored, before the upgrade starts, is rejected",
+			controlPlaneVersion:       "1.37.2",
+			pinnedControlPlaneVersion: "1.36.3",
+			poolVersion:               "1.36.3",
+			requestedVersion:          "1.37.2",
+			wantErrContains:           "already in progress: wait for the control plane upgrade to 1.37.2 to finish",
+		},
+		{
+			name:                      "a rollback before the control-plane upgrade starts is rejected",
+			controlPlaneVersion:       "1.37.2",
+			pinnedControlPlaneVersion: "1.36.3",
+			poolVersion:               "1.36.3",
+			requestedVersion:          "1.35.3",
+			wantErrContains:           "already in progress",
+		},
+		{
+			name:                      "the pool's current version before the control-plane upgrade starts is accepted",
+			controlPlaneVersion:       "1.37.2",
+			pinnedControlPlaneVersion: "1.36.3",
+			poolVersion:               "1.36.3",
+			requestedVersion:          "1.36.3",
+		},
+		{
 			name:                  "the pool's current version while the control plane upgrades is accepted",
 			controlPlaneVersion:   "1.37.2",
 			controlPlaneUpgrading: true,
@@ -1312,6 +1339,19 @@ func TestNodePoolService_UpdateNodePool_KubernetesVersion(t *testing.T) {
 				Conditions:        mockDBNodePoolConditions(now),
 				Nico:              &db.NicoNodePoolProvider{},
 			}, nil)
+			pinnedVersion := tt.pinnedControlPlaneVersion
+			if pinnedVersion == "" {
+				pinnedVersion = tt.controlPlaneVersion
+			}
+			// Read only when the requested version differs from the pool's.
+			mockDB.MockTx.On("ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
+				return f.ClusterID != nil && *f.ClusterID == clusterID && f.ControlPlane != nil && *f.ControlPlane
+			})).Return([]db.Node{
+				{ClusterID: clusterID, ControlPlane: true, ControlPlaneConfigurationID: controlPlaneConfigID},
+			}, nil).Maybe()
+			mockDB.MockTx.On("ListControlPlaneConfigurationsByIDs", mock.Anything, []uuid.UUID{controlPlaneConfigID}).Return([]db.ControlPlaneConfiguration{
+				{ID: controlPlaneConfigID, Config: db.ControlPlaneConfigSpec{KubernetesVersion: pinnedVersion}},
+			}, nil).Maybe()
 			if tt.wantErrContains == "" {
 				mockDB.MockTx.On("UpdateNodePool", mock.Anything, mock.AnythingOfType("*db.NodePool")).Return(db.NodePool{
 					ID:                nodePoolID,

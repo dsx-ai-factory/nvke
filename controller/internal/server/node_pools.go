@@ -513,8 +513,12 @@ func (s *nodePoolService) UpdateNodePool(
 		if err := s.validateUpdateNodePoolRelease(ctx, dbNodePool, req.Body); err != nil {
 			return err
 		}
-		if req.Body != nil && req.Body.KubernetesVersion != nil {
-			if err := validateNodePoolKubernetesVersion(cluster, dbNodePool.KubernetesVersion, *req.Body.KubernetesVersion); err != nil {
+		if req.Body != nil && req.Body.KubernetesVersion != nil && *req.Body.KubernetesVersion != dbNodePool.KubernetesVersion {
+			upgradePending, err := controlPlaneUpgradePending(ctx, tx, cluster)
+			if err != nil {
+				return err
+			}
+			if err := validateNodePoolKubernetesVersion(cluster, dbNodePool.KubernetesVersion, *req.Body.KubernetesVersion, upgradePending); err != nil {
 				return newBadRequestErrorf("%s", err)
 			}
 		}
@@ -687,13 +691,14 @@ func applyUpdateNodePoolRequest(cluster db.Cluster, dbNodePool *db.NodePool, req
 // kube-apiserver it talks to (https://kubernetes.io/releases/version-skew-policy/#kubelet).
 // Versions are compared by major and minor, as kubeadm's kubelet check does, so a newer patch is allowed.
 // kubeadm join on a worker does not check this, so the API is the only place it is caught.
-// While the control plane upgrades, its nodes run two versions, so the pool waits.
+// While the control plane upgrades, its nodes run two versions, so the pool waits. That
+// starts when the target is stored (upgradePending), before ControlPlaneUpgrading is set.
 // An older version is allowed, so a pool can be rolled back.
-func validateNodePoolKubernetesVersion(cluster db.Cluster, currentVersion, requestedVersion string) error {
+func validateNodePoolKubernetesVersion(cluster db.Cluster, currentVersion, requestedVersion string, upgradePending bool) error {
 	if requestedVersion == currentVersion {
 		return nil
 	}
-	if cluster.Conditions.ControlPlaneUpgrading.Status == db.ConditionStatusTrue {
+	if upgradePending || cluster.Conditions.ControlPlaneUpgrading.Status == db.ConditionStatusTrue {
 		return fmt.Errorf("%w: wait for the control plane upgrade to %s to finish", errUpgradeInProgress, cluster.KubernetesVersion)
 	}
 	cpMajor, cpMinor, _, err := parseKubernetesVersion(cluster.KubernetesVersion)
@@ -709,6 +714,38 @@ func validateNodePoolKubernetesVersion(cluster db.Cluster, currentVersion, reque
 			errVersionSkewViolation, cluster.KubernetesVersion, requestedVersion)
 	}
 	return nil
+}
+
+// controlPlaneUpgradePending reports whether a control-plane node is still pinned to a
+// Kubernetes version other than the cluster's target. A control-plane version update stores
+// the target before the reconciler sets ControlPlaneUpgrading, so the condition alone misses
+// that interval. This is the reconciler's own test for a needed upgrade
+// (controlPlaneControllerNeedsK8sUpgrade).
+func controlPlaneUpgradePending(ctx context.Context, tx db.Tx, cluster db.Cluster) (bool, error) {
+	controlPlane := true
+	nodes, err := tx.ListNodes(ctx, db.NodeFilters{ClusterID: &cluster.ID, ControlPlane: &controlPlane})
+	if err != nil {
+		return false, fmt.Errorf("failed to list control plane nodes: %w", err)
+	}
+	var configIDs []uuid.UUID
+	for _, node := range nodes {
+		if node.IsManagedByControlPlaneController() && node.ControlPlaneConfigurationID != uuid.Nil {
+			configIDs = append(configIDs, node.ControlPlaneConfigurationID)
+		}
+	}
+	if len(configIDs) == 0 {
+		return false, nil
+	}
+	rows, err := tx.ListControlPlaneConfigurationsByIDs(ctx, configIDs)
+	if err != nil {
+		return false, fmt.Errorf("failed to list control plane configurations: %w", err)
+	}
+	for _, row := range rows {
+		if row.Config.KubernetesVersion != cluster.KubernetesVersion {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func validateUpdatedNodePool(cluster db.Cluster, dbNodePool *db.NodePool) error {
