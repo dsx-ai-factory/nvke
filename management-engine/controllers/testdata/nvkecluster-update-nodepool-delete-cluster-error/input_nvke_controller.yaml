@@ -26,6 +26,14 @@ clusters:
 nodePools:
   resources:
     - id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+      infra:
+        machineTemplate:
+          apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+          kind: DockerMachineTemplate
+          spec:
+            template:
+              spec:
+                customImage: example-node
       clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
       name: workers-remove
       desiredNodeCount: 1
@@ -34,6 +42,14 @@ nodePools:
         provisioning: {status: "False"}
         deleting: {status: "False"}
     - id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+      infra:
+        machineTemplate:
+          apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+          kind: DockerMachineTemplate
+          spec:
+            template:
+              spec:
+                customImage: example-node
       clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
       name: workers-keep
       desiredNodeCount: 1

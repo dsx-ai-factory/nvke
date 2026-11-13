@@ -541,7 +541,7 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 	if observedPool.DesiredNodeCount != desiredCount {
 		update.DesiredNodeCount = &desiredCount
 	}
-	resolved, infra, resolveErr := r.resolveExistingNodePoolRelease(ctx, cluster, pool, nodePoolTemplate, status)
+	resolved, infra, resolveErr := r.resolveExistingNodePoolRelease(ctx, cluster, pool, nodePoolTemplate, status, observedPool)
 	if infra != nil {
 		update.Infra = &api.InfraNodePoolProviderUpdate{
 			BootstrapFiles:     append([]api.CloudInitFile{}, infra.BootstrapFiles...),
@@ -552,7 +552,7 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 	if update != (api.UpdateNodePoolRequest{}) {
 		updatedPool, err := r.NVKEController.UpdateNodePool(ctx, observedPool.ID.String(), update)
 		if err != nil && infra != nil {
-			return errors.Join(fmt.Errorf("move nvke controller node pool %q to release %q: %w", pool.Name, resolved.Name, err), resolveErr)
+			return errors.Join(fmt.Errorf("update infra of nvke controller node pool %q for release %q: %w", pool.Name, resolved.Name, err), resolveErr)
 		}
 		if err != nil {
 			return errors.Join(fmt.Errorf("scale nvke controller node pool %q to %d replicas: %w", pool.Name, desiredCount, err), resolveErr)
@@ -566,18 +566,18 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 	return errors.Join(resolveErr, setNodePoolConditions(target))
 }
 
-func (r *NVKEClusterReconciler) resolveExistingNodePoolRelease(ctx context.Context, cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, status *internalv1.NodePoolStatus) (*internalv1.ReleaseReference, *api.InfraNodePoolProvider, error) {
+func (r *NVKEClusterReconciler) resolveExistingNodePoolRelease(ctx context.Context, cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, status *internalv1.NodePoolStatus, observedPool *api.NodePool) (*internalv1.ReleaseReference, *api.InfraNodePoolProvider, error) {
 	release, image, err := r.resolveNodePoolRelease(ctx, pool, status.ResolvedRelease)
 	if err != nil {
 		return nil, nil, err
 	}
 	resolved := &internalv1.ReleaseReference{Name: internalv1.ResourceName(release.Name), Version: release.Spec.Tag}
-	if status.ResolvedRelease == nil || status.ResolvedRelease.Name == resolved.Name {
-		return resolved, nil, nil
-	}
 	infra, err := renderNodePoolInfra(cluster, pool, nodePoolTemplate, release, image)
 	if err != nil {
 		return nil, nil, err
+	}
+	if apiequality.Semantic.DeepEqual(observedPool.Infra, infra) {
+		return resolved, nil, nil
 	}
 	return resolved, infra, nil
 }

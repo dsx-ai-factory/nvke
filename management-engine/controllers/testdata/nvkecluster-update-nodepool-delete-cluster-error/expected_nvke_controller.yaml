@@ -58,6 +58,14 @@ nodePools:
   currentNodeSetID: null
   desiredNodeCount: 1
   id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+  infra:
+    machineTemplate:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+      kind: DockerMachineTemplate
+      spec:
+        template:
+          spec:
+            customImage: example-node
   kubernetesVersion: ""
   name: workers-remove
   nodeLabels: null
@@ -85,6 +93,14 @@ nodePools:
   currentNodeSetID: null
   desiredNodeCount: 1
   id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+  infra:
+    machineTemplate:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+      kind: DockerMachineTemplate
+      spec:
+        template:
+          spec:
+            customImage: example-node
   kubernetesVersion: ""
   name: workers-keep
   nodeLabels: null
