@@ -137,6 +137,17 @@ func siteLaneChecks() siteChecks {
 	}
 }
 
+// siteLaneExpectations are what the site lane installs beyond what every
+// site has: cert-manager, which comes with CAPI, and the stack's default
+// StorageClass. It installs no other optional component.
+func siteLaneExpectations(storageClass string) siteExpectations {
+	return siteExpectations{
+		prefix:         sitePrefix,
+		components:     map[string]string{componentCertManager: siteComponentNamespaces[componentCertManager]},
+		storageClasses: []string{storageClass},
+	}
+}
+
 // probeImage is what every probe and server pod runs, and the Secrets its
 // pods pull it with. The pods run as their namespace's default service
 // account, which holds no pull Secret of its own on most sites.
