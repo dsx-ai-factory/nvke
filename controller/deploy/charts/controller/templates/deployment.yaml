@@ -35,6 +35,7 @@
 {{- end }}
 {{- include "controller.renamedValues.validate" . }}
 {{- include "controller.apiAuth.validate" . }}
+{{- include "controller.apiAuthz.validate" . }}
 {{- include "controller.controllerConfig.validateEnv" . }}
 apiVersion: apps/v1
 kind: Deployment
@@ -209,6 +210,11 @@ spec:
               mountPath: {{ include "controller.apiAuth.mountPath" . | quote }}
               readOnly: true
             {{- end }}
+            {{- if .Values.apiAuthz.enabled }}
+            - name: nvke-authz-bundle
+              mountPath: {{ include "controller.apiAuthz.mountPath" . | quote }}
+              readOnly: true
+            {{- end }}
             {{- if .Values.profiles.image.enabled }}
             - name: profiles
               mountPath: {{ .Values.profiles.path | quote }}
@@ -361,6 +367,12 @@ spec:
         - name: nvke-auth-config
           configMap:
             name: {{ required "apiAuth.configMap.name is required when apiAuth.enabled=true" .Values.apiAuth.configMap.name }}
+        {{- end }}
+        {{- if .Values.apiAuthz.enabled }}
+        # Reloader does not watch it: the controller reloads the bundle itself.
+        - name: nvke-authz-bundle
+          configMap:
+            name: {{ required "apiAuthz.authorizer.localBundle.configMap.name is required when apiAuthz.enabled=true" .Values.apiAuthz.authorizer.localBundle.configMap.name }}
         {{- end }}
         {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
