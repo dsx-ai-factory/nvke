@@ -26,6 +26,8 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 
+	"github.com/dsx-ai-factory/nvke/auth/authn"
+
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 )
@@ -95,6 +97,12 @@ func TestRenderedChart(t *testing.T) {
 			if filepath.Base(render) == "api-auth-inline.yaml" {
 				require.True(t, fromFile.APIAuth.Enabled, "the controller reads the chart's apiAuth.config from config.yaml")
 				require.NotContains(t, environment, "AUTH_CONFIG_PATH")
+
+				// Helm cannot read the Go constant, so this keeps the chart's
+				// literal in step with it.
+				authFile, err := authn.Load(writeConfig(t, renderedAuthFile(t, raw)))
+				require.NoError(t, err, "the rendered auth.yaml does not load")
+				require.Equal(t, authn.ConfigAPIVersion, authFile.APIVersion)
 			}
 			if filepath.Base(render) == "api-auth-permissive.yaml" {
 				require.False(t, fromFile.APIAuth.Enabled, "a ConfigMap managed elsewhere stays on AUTH_CONFIG_PATH")
@@ -170,6 +178,36 @@ func splitRender(t *testing.T, raw []byte) (string, map[string]string, *appsv1.D
 	require.NotEmpty(t, document, "the render has no nvke-controller-config")
 	require.NotNil(t, environment, "the render has no controller Deployment")
 	return document, environment, controller
+}
+
+// renderedAuthFile returns the auth.yaml key of the one ConfigMap in a `helm
+// template` output that carries it.
+func renderedAuthFile(t *testing.T, raw []byte) string {
+	t.Helper()
+
+	var file string
+	reader := utilyaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(raw)))
+	for {
+		manifest, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+
+		var meta metav1.TypeMeta
+		require.NoError(t, yaml.Unmarshal(manifest, &meta))
+		if meta.Kind != "ConfigMap" {
+			continue
+		}
+		var configMap corev1.ConfigMap
+		require.NoError(t, yaml.Unmarshal(manifest, &configMap))
+		if content, ok := configMap.Data["auth.yaml"]; ok {
+			require.Empty(t, file, "the render has more than one ConfigMap carrying auth.yaml")
+			file = content
+		}
+	}
+	require.NotEmpty(t, file, "the render has no ConfigMap carrying auth.yaml")
+	return file
 }
 
 // checkMounted requires the Deployment to mount nvke-controller-config, read-only
