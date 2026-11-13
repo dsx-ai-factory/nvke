@@ -1010,9 +1010,11 @@ At `full` the lane runs the [validation image](#validation-image)'s site checks,
 1–31 in [What it checks](#what-it-checks), against the site it built. The
 `nico-forge` tenant, in either lane, runs checks 1–37 before it is deleted,
 reached as the tenant's admin rather than a provisioned ServiceAccount. The
-lane takes the Kubernetes version from the spec it built, and sets no
-component list, workload, flag, memory, storage or GPU input, so the checks
-that wait on one of those skip there. The tenant's expectations from its
+lane takes the Kubernetes version from the spec it built. For the site it
+lists what it installed: `cert-manager` as a component (check 15) and the
+stack's default StorageClass (check 23). It sets no other component,
+workload, flag, memory, storage or GPU input, for the site or the tenant, so
+the checks that wait on one of those skip there. The tenant's expectations from its
 controller record still apply: kube-vip (check 16) where the record has a
 control-plane VIP, and encryption (check 20) where it records encryption at
 rest. Each set stops at its first failure, so

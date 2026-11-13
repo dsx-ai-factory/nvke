@@ -368,7 +368,7 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 			}
 			checks := siteLaneChecks()
 			checks.restConfig = func() (*rest.Config, error) { return kube.RESTConfig(cluster.Kubeconfig, "") }
-			return siteValidateSettings{enabled: true, kubernetesVersion: spec.KubernetesVersion, checks: checks}
+			return siteValidateSettings{enabled: true, kubernetesVersion: spec.KubernetesVersion, checks: checks, expect: siteLaneExpectations(stack.StorageClass())}
 		})
 
 		It("delivers the site's telemetry through NKTP", func(ctx SpecContext) {

@@ -99,8 +99,9 @@ const (
 	componentCNPG     = "cnpg"
 	componentTeleport = "teleport"
 	componentKubeVIP  = "kube-vip"
-	// componentCertManager is listed only for a tenant: every site runs
-	// cert-manager, and the site checks require it.
+	// componentCertManager need not be listed for a site: every site runs
+	// cert-manager, and the site checks require it. Listing it adds the
+	// check that its workloads run.
 	componentCertManager = "cert-manager"
 )
 
