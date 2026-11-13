@@ -22,13 +22,24 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 )
 
 const fdTestNamespace = "nke-system"
 
 type failureDomainStore struct {
 	db.DB
-	nodes map[uuid.UUID]db.Node
+	nodes   map[uuid.UUID]db.Node
+	cluster db.Cluster
+}
+
+func (s *failureDomainStore) GetClusterForUpdate(_ context.Context, _ uuid.UUID) (db.Cluster, error) {
+	return s.cluster, nil
+}
+
+func (s *failureDomainStore) UpdateCluster(_ context.Context, cluster *db.Cluster) (db.Cluster, error) {
+	s.cluster = *cluster
+	return *cluster, nil
 }
 
 func (s *failureDomainStore) RunInTx(ctx context.Context, fn func(context.Context, db.Tx) error) error {
@@ -70,6 +81,7 @@ func TestRotateFailureDomain(t *testing.T) {
 		machineFD   string
 		others      map[string]string
 		unavailable bool
+		marked      map[string]time.Time
 		wantMoved   bool
 		wantDomain  string
 		wantTried   []string
@@ -131,6 +143,36 @@ func TestRotateFailureDomain(t *testing.T) {
 			wantTried:   []string{"fd-a"},
 		},
 		{
+			name:        "a domain marked unplaceable is skipped even when least used",
+			node:        db.Node{FailureDomain: "fd-a", FailureDomainUnavailableSince: &pastGrace},
+			others:      map[string]string{"cp-1": "fd-b"},
+			marked:      map[string]time.Time{"fd-c": time.Now().Add(-time.Hour)},
+			unavailable: true,
+			wantMoved:   true,
+			wantDomain:  "fd-b",
+			wantTried:   []string{"fd-a"},
+		},
+		{
+			name:        "every other domain marked unplaceable still moves the node",
+			node:        db.Node{FailureDomain: "fd-a", FailureDomainUnavailableSince: &pastGrace},
+			others:      map[string]string{"cp-1": "fd-b"},
+			marked:      map[string]time.Time{"fd-b": time.Now(), "fd-c": time.Now()},
+			unavailable: true,
+			wantMoved:   true,
+			wantDomain:  "fd-c",
+			wantTried:   []string{"fd-a"},
+		},
+		{
+			name: "a rebalance surge is left in its domain",
+			node: db.Node{FailureDomain: "fd-a", FailureDomainUnavailableSince: &pastGrace, Conditions: db.NodeConditions{
+				ControlPlanePreferredReplacement: db.NewCondition(true, "Rebalance surge"),
+			}},
+			others:      map[string]string{"cp-1": "fd-b"},
+			unavailable: true,
+			wantDomain:  "fd-a",
+			wantSince:   true,
+		},
+		{
 			name:        "a single domain leaves the node waiting",
 			domains:     []string{"fd-a"},
 			node:        db.Node{FailureDomain: "fd-a", FailureDomainUnavailableSince: &pastGrace},
@@ -162,7 +204,9 @@ func TestRotateFailureDomain(t *testing.T) {
 			node := tt.node
 			node.ID, node.ClusterID, node.Name = uuid.New(), clusterID, "cp-0"
 			node.ControlPlane = !tt.worker
-			store := &failureDomainStore{nodes: map[uuid.UUID]db.Node{node.ID: node}}
+			cluster := db.Cluster{ID: clusterID, Name: "cluster-a"}
+			cluster.Conditions.UnplaceableFailureDomains = tt.marked
+			store := &failureDomainStore{nodes: map[uuid.UUID]db.Node{node.ID: node}, cluster: cluster}
 			for name, domain := range tt.others {
 				other := db.Node{ID: uuid.New(), ClusterID: clusterID, ControlPlane: true, Name: name, FailureDomain: domain}
 				store.nodes[other.ID] = other
@@ -191,9 +235,16 @@ func TestRotateFailureDomain(t *testing.T) {
 			}}
 			logger := log.NewStructuredLogger(slog.New(slog.DiscardHandler))
 
-			moved, err := a.rotateFailureDomain(context.Background(), logger, db.Cluster{ID: clusterID, Name: "cluster-a"}, node, machine, tt.unavailable)
+			moved, err := a.rotateFailureDomain(context.Background(), logger, cluster, node, machine, tt.unavailable)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantMoved, moved)
+
+			// Regression: a domain left without being marked is chosen again by the next placement.
+			if tt.wantMoved {
+				assert.True(t, failuredomains.IsMarkedUnplaceable(store.cluster.Conditions.UnplaceableFailureDomains, node.FailureDomain, time.Now()))
+			} else {
+				assert.Equal(t, tt.marked, store.cluster.Conditions.UnplaceableFailureDomains)
+			}
 
 			got := store.nodes[node.ID]
 			assert.Equal(t, tt.wantDomain, got.FailureDomain)

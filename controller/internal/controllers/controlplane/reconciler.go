@@ -114,7 +114,7 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		return fmt.Errorf("discovering control-plane failure domains: %w", err)
 	}
 	controlPlane.failureDomains = failureDomains
-	failureDomains.Eligible = placeableDomains(failureDomains.Eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
+	failureDomains.Eligible = failuredomains.Placeable(failureDomains.Eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
 	allocator := failuredomains.NewControlPlaneAllocator(controlPlane.nodes, failureDomains)
 	if unplaced := failuredomains.NodesWithoutKnownDomain(controlPlane.nodes, failureDomains); len(unplaced) > 0 {
 		r.logger.Warn("Control-plane nodes have no known failure domain and are not counted toward the spread",

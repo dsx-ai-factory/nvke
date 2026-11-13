@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"go.temporal.io/sdk/log"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -20,9 +21,10 @@ import (
 )
 
 // rotateFailureDomain moves a pending control-plane node off a failure domain the
-// provider has reported out of capacity for the configured grace period. It
-// patches the Machine first and the node row second; a poll that finds them
-// disagreeing finishes the row update. It returns whether it moved the node.
+// provider has reported out of capacity for the configured grace period, and marks
+// that domain unplaceable for the cluster. It patches the Machine first and the
+// node row second; a poll that finds them disagreeing finishes the row update.
+// Rebalance surges are left alone. It returns whether it moved the node.
 func (a *Activities) rotateFailureDomain(
 	ctx context.Context,
 	logger log.Logger,
@@ -33,6 +35,11 @@ func (a *Activities) rotateFailureDomain(
 ) (bool, error) {
 	current := machine.Spec.FailureDomain
 	if !a.cfg.ControlPlaneFailureDomainFallbackEnabled || !node.ControlPlane || current == "" {
+		return false, nil
+	}
+	// A surge is placed in the domain of the node it replaces; moving it can leave
+	// two members in one domain. The rebalance step abandons it on its own timeout.
+	if node.Conditions.ControlPlanePreferredReplacement.Status == db.ConditionStatusTrue {
 		return false, nil
 	}
 
@@ -67,6 +74,11 @@ func (a *Activities) rotateFailureDomain(
 		return false, err
 	}
 
+	if err := a.markFailureDomainUnplaceable(ctx, cluster.ID, current); err != nil {
+		logger.Warn("Could not mark the failure domain unplaceable; later placements may choose it",
+			"clusterID", cluster.ID, "failureDomain", current, "error", err)
+	}
+
 	metrics.RecordControlPlaneFailureDomainRotation(cluster.ID.String(), cluster.Name)
 	logger.Info("Moved pending control-plane node to another failure domain",
 		"clusterID", cluster.ID, "nodeID", node.ID, "nodeName", node.Name,
@@ -77,7 +89,8 @@ func (a *Activities) rotateFailureDomain(
 
 // nextFailureDomain returns the least-used eligible domain the node has not
 // tried, and the tried list to persist with the move. When every other domain
-// has been tried the walk starts over. It returns "" when no other domain exists.
+// has been tried the walk starts over. Domains the cluster marked unplaceable are
+// chosen only when no other remains. It returns "" when no other domain exists.
 func (a *Activities) nextFailureDomain(ctx context.Context, cluster db.Cluster, node db.Node, current string) (string, []string, error) {
 	snapshot, err := failuredomains.Discover(ctx, a.k8sClient, a.cfg.ManagementNamespaceOrDefault(), cluster.Name)
 	if err != nil {
@@ -90,14 +103,29 @@ func (a *Activities) nextFailureDomain(ctx context.Context, cluster db.Cluster, 
 	}
 	others := slices.DeleteFunc(cpNodes, func(n db.Node) bool { return n.ID == node.ID })
 
-	tried := appendTried(node.FailureDomainsTried, current)
-	for _, exclude := range [][]string{tried, {current}} {
-		allocator := failuredomains.NewControlPlaneAllocator(others, snapshot)
-		allocator.Exclude(exclude...)
-		if next := allocator.Take(); next != "" {
-			return next, tried, nil
+	var marked []string
+	now := time.Now()
+	for _, domain := range snapshot.Eligible {
+		if domain != current && failuredomains.IsMarkedUnplaceable(cluster.Conditions.UnplaceableFailureDomains, domain, now) {
+			marked = append(marked, domain)
 		}
-		tried = []string{current}
+	}
+
+	tried := appendTried(node.FailureDomainsTried, current)
+	restart := []string{current}
+	// Marked domains come last: probing one each grace period beats waiting out the mark.
+	passes := []struct{ tried, exclude []string }{
+		{tried, append(slices.Clone(tried), marked...)},
+		{restart, append(slices.Clone(restart), marked...)},
+		{tried, tried},
+		{restart, restart},
+	}
+	for _, pass := range passes {
+		allocator := failuredomains.NewControlPlaneAllocator(others, snapshot)
+		allocator.Exclude(pass.exclude...)
+		if next := allocator.Take(); next != "" {
+			return next, pass.tried, nil
+		}
 	}
 	return "", nil, nil
 }
@@ -111,6 +139,23 @@ func (a *Activities) setFailureDomainUnavailableSince(ctx context.Context, node 
 		n.FailureDomainUnavailableSince = since
 		if _, err := tx.UpdateNode(ctx, &n); err != nil {
 			return fmt.Errorf("updating failure-domain unavailable time of node %s: %w", node.ID, err)
+		}
+		return nil
+	})
+}
+
+// markFailureDomainUnplaceable stamps domain in the cluster's unplaceable failure
+// domains under the cluster row lock, so every placement path avoids it for
+// failuredomains.UnplaceableTTL.
+func (a *Activities) markFailureDomainUnplaceable(ctx context.Context, clusterID uuid.UUID, domain string) error {
+	return a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		cluster, err := tx.GetClusterForUpdate(ctx, clusterID)
+		if err != nil {
+			return fmt.Errorf("loading cluster %s: %w", clusterID, err)
+		}
+		cluster.Conditions.UnplaceableFailureDomains = failuredomains.MarkUnplaceable(cluster.Conditions.UnplaceableFailureDomains, domain, time.Now())
+		if _, err := tx.UpdateCluster(ctx, &cluster); err != nil {
+			return fmt.Errorf("marking failure domain %q unplaceable for cluster %s: %w", domain, clusterID, err)
 		}
 		return nil
 	})

@@ -443,7 +443,8 @@ type Config struct {
 	AllowControlPlaneWithoutVIP bool `controllerconfig:"allowControlPlaneWithoutVIP"`
 
 	// ControlPlaneFailureDomainFallbackEnabled moves a pending control-plane node whose failure domain
-	// has no capacity to another eligible failure domain.
+	// has no capacity to another eligible failure domain. Disabled, the control-plane reconciler
+	// deletes such a node and recreates it in another failure domain instead.
 	ControlPlaneFailureDomainFallbackEnabled bool `controllerconfig:"controlPlaneFailureDomainFallback.enabled"`
 
 	// ControlPlaneFailureDomainFallbackGracePeriod is how long a node must keep reporting its failure
