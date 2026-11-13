@@ -8,12 +8,23 @@ import (
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 )
 
 func mokkaTestNode(name string) corev1.Node {
-	return corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{mokkaLabelKey: "true"}}}
+	return corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{mokkaLabelKey: "gb300"}}}
+}
+
+// mokkaGPUNode is a node labeled for profile that advertises product x gpus.
+func mokkaGPUNode(name, profile, product string, gpus int64) corev1.Node {
+	node := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{mokkaLabelKey: profile}}}
+	if product != "" {
+		node.Labels[gpuProductLabel] = product
+	}
+	node.Status.Allocatable = corev1.ResourceList{gpuResource: *resource.NewQuantity(gpus, resource.DecimalSI)}
+	return node
 }
 
 func mokkaTestPod(node string, ready bool, steps ...corev1.ContainerStatus) corev1.Pod {
@@ -77,6 +88,38 @@ func TestMokkaPodProblems(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.found, mokkaPodProblems(tc.nodes, tc.pods, tc.want))
+		})
+	}
+}
+
+func TestMokkaModelProblems(t *testing.T) {
+	unlabeled := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "cp"}}
+	for _, tc := range []struct {
+		name  string
+		nodes []corev1.Node
+		found []string
+	}{
+		{
+			name: "each node advertises its profile's model and count",
+			nodes: []corev1.Node{
+				mokkaGPUNode("a", "gb300", "NVIDIA-GB300-NVL", 4),
+				mokkaGPUNode("b", "h100", "NVIDIA-H100-80GB-HBM3", 8),
+				unlabeled,
+			},
+		},
+		{
+			name:  "a node advertising another profile's model",
+			nodes: []corev1.Node{mokkaGPUNode("b", "h100", "NVIDIA-GB300-NVL", 4)},
+			found: []string{`b (h100): "NVIDIA-GB300-NVL" x4, want "NVIDIA-H100-80GB-HBM3" x8`},
+		},
+		{
+			name:  "a node GPU Feature Discovery has not labeled yet",
+			nodes: []corev1.Node{mokkaGPUNode("a", "gb300", "", 0)},
+			found: []string{`a (gb300): "" x0, want "NVIDIA-GB300-NVL" x4`},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.found, mokkaModelProblems(tc.nodes))
 		})
 	}
 }

@@ -11,7 +11,7 @@ It prints `PASS` or `FAIL` for each check and exits non-zero if any fails:
 
 ## Run it
 
-Prerequisites are those of [`demo.sh`](../README.md#before-you-begin).
+Prerequisites are those of [`demo.sh`](../README.md#before-you-begin). No other node in the cluster may present these models, or a workload selecting one can land outside its pool.
 
 ```bash
 CLUSTER=<WORKLOAD_CLUSTER> hack/mokka-demo/mixed-gpus/run.sh
@@ -25,6 +25,8 @@ CLUSTER=<WORKLOAD_CLUSTER> hack/mokka-demo/mixed-gpus/run.sh
 | `TIMEOUT` | `20m` | Helm and readiness timeout, per `demo.sh` run |
 
 For each profile `<P>`, the run creates node pool `mokka-<P>` with node name prefix `m<P>`, node label `mokka.example/gpu-<P>=true`, and Mokka release `nvml-mock-<P>` in namespace `mokka`. GPU Operator is shared.
+
+CI runs the same checks with profiles `gb300` and `h100`; see [In CI](../README.md#in-ci).
 
 ## What it does not prove
 

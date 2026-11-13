@@ -46,7 +46,7 @@ It runs against any NVKE site, for example a DSX OS Simulator site or the [local
 
 ## In CI
 
-The e2e suite's `CAPD core` entry (`controller/test/e2e/tenant_test.go`) runs the same checks in Go on its labeled worker, in the pull-request E2E runs on CPU runners. To run only that entry against a local stack:
+The e2e suite's `CAPD core` entry (`controller/test/e2e/tenant_test.go`) runs the same checks in Go, plus those of [`mixed-gpus/`](mixed-gpus/README.md), on two workers labeled with different Mokka profiles, in the pull-request E2E runs on CPU runners. To run only that entry against a local stack:
 
 ```bash
 cd controller

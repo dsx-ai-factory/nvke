@@ -25,13 +25,14 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 )
 
-// Mokka (nvml-mock) simulates an NVIDIA driver on a node. The versions and
-// profile match hack/mokka-demo/demo.sh's defaults; change them together.
+// Mokka (nvml-mock) simulates an NVIDIA driver on a node. The versions match
+// hack/mokka-demo/demo.sh's defaults; change them together.
 const (
+	// mokkaLabelKey's value on a worker pool is the Mokka profile its nodes present.
 	mokkaLabelKey        = "mokka.example/simulated-gpu"
+	gpuProductLabel      = "nvidia.com/gpu.product"
 	mokkaChart           = "oci://ghcr.io/nvidia/k8s-test-infra/chart/nvml-mock"
 	mokkaChartVersion    = "0.6.0"
-	mokkaGPUProfile      = "gb300"
 	mokkaNamespace       = "mokka"
 	gpuOperatorRepo      = "https://helm.ngc.nvidia.com/nvidia"
 	gpuOperatorVersion   = "v26.3.3"
@@ -47,14 +48,28 @@ var mokkaGPUOperatorValues []byte
 
 var clusterPolicyGVK = schema.GroupVersionKind{Group: "nvidia.com", Version: "v1", Kind: "ClusterPolicy"}
 
+// mokkaProfile is what a node running one Mokka profile advertises.
+type mokkaProfile struct {
+	product string // GPU Feature Discovery's nvidia.com/gpu.product
+	gpus    int64
+}
+
+// mokkaProfiles are the profiles an entry may label a pool with.
+var mokkaProfiles = map[string]mokkaProfile{
+	"gb300": {product: "NVIDIA-GB300-NVL", gpus: 4},
+	"h100":  {product: "NVIDIA-H100-80GB-HBM3", gpus: 8},
+}
+
 // validateMokkaGPU installs Mokka and GPU Operator on the labeled worker pools
-// and asserts those nodes advertise GPUs, pass the validator and run a GPU pod.
+// and asserts each node advertises its profile's GPU model, passes the validator,
+// and that a pod selecting each model lands on that model's nodes.
 // The releases go with the cluster.
 func validateMokkaGPU(test *tenantTest) {
 	var (
 		c         client.Client
 		clientset kubernetes.Interface
 		want      int
+		profiles  []string
 	)
 	connect := func(ctx context.Context) {
 		GinkgoHelper()
@@ -63,11 +78,17 @@ func validateMokkaGPU(test *tenantTest) {
 		}
 		labeled := 0
 		for _, pool := range test.spec.Workers {
-			if pool.NodeLabels[mokkaLabelKey] == "true" {
-				labeled += pool.DesiredNodeCount
+			profile, ok := pool.NodeLabels[mokkaLabelKey]
+			if !ok {
+				continue
+			}
+			Expect(mokkaProfiles).To(HaveKey(profile), "pool %s: unknown Mokka profile %q", pool.Name, profile)
+			labeled += pool.DesiredNodeCount
+			if !slices.Contains(profiles, profile) {
+				profiles = append(profiles, profile)
 			}
 		}
-		Expect(labeled).To(BeNumerically(">", 0), "the entry must label a worker pool %s=true", mokkaLabelKey)
+		Expect(labeled).To(BeNumerically(">", 0), "the entry must label a worker pool %s=<profile>", mokkaLabelKey)
 		want = labeled
 		clientset = expectSucceed(kubernetes.NewForConfig(expectSucceed(test.tenantClients.AdminRESTConfig(ctx, test.cluster.Name))))
 		c = expectSucceed(test.tenantClients.GetAdminClient(ctx, test.cluster.Name))
@@ -75,11 +96,13 @@ func validateMokkaGPU(test *tenantTest) {
 
 	It("installs Mokka on the labeled nodes", func(ctx SpecContext) {
 		connect(ctx)
-		Expect(helmOnTenant(ctx, test, "upgrade", "--install", "nvml-mock", mokkaChart,
-			"--version", mokkaChartVersion, "--namespace", mokkaNamespace, "--create-namespace",
-			"--set", "gpu.profile="+mokkaGPUProfile,
-			"--set-string", "nodeSelector."+strings.ReplaceAll(mokkaLabelKey, ".", `\.`)+"=true",
-		)).To(Succeed())
+		for _, profile := range profiles {
+			Expect(helmOnTenant(ctx, test, "upgrade", "--install", "nvml-mock-"+profile, mokkaChart,
+				"--version", mokkaChartVersion, "--namespace", mokkaNamespace, "--create-namespace",
+				"--set", "gpu.profile="+profile,
+				"--set-string", "nodeSelector."+strings.ReplaceAll(mokkaLabelKey, ".", `\.`)+"="+profile,
+			)).To(Succeed())
+		}
 
 		Eventually(func(ctx context.Context) error {
 			nodes, err := mokkaNodes(ctx, c)
@@ -92,7 +115,7 @@ func validateMokkaGPU(test *tenantTest) {
 			}
 			return joinProblems("Mokka", mokkaPodProblems(nodes, pods.Items, want))
 		}).WithContext(ctx).WithTimeout(mokkaWait).WithPolling(sitePoll).Should(Succeed())
-	}, NodeTimeout(helmRun+mokkaWait+time.Minute))
+	}, NodeTimeout(time.Duration(len(mokkaProfiles))*helmRun+mokkaWait+time.Minute))
 
 	It("installs GPU Operator and its ClusterPolicy becomes ready", func(ctx SpecContext) {
 		connect(ctx)
@@ -117,14 +140,14 @@ func validateMokkaGPU(test *tenantTest) {
 		}).WithContext(ctx).WithTimeout(mokkaWait).WithPolling(sitePoll).Should(Succeed())
 	}, NodeTimeout(helmRun+mokkaWait+time.Minute))
 
-	It("advertises GPUs on the labeled nodes", func(ctx SpecContext) {
+	It("advertises each profile's GPU model and count on the labeled nodes", func(ctx SpecContext) {
 		connect(ctx)
 		Eventually(func(ctx context.Context) error {
 			var nodes corev1.NodeList
 			if err := c.List(ctx, &nodes); err != nil {
 				return err
 			}
-			return joinProblems("GPU nodes", gpuNodeProblems(nodes.Items, want))
+			return joinProblems("GPU nodes", append(gpuNodeProblems(nodes.Items, want), mokkaModelProblems(nodes.Items)...))
 		}).WithContext(ctx).WithTimeout(mokkaWait).WithPolling(sitePoll).Should(Succeed())
 	}, NodeTimeout(mokkaWait+time.Minute))
 
@@ -143,22 +166,30 @@ func validateMokkaGPU(test *tenantTest) {
 		}).WithContext(ctx).WithTimeout(mokkaWait).WithPolling(sitePoll).Should(Succeed())
 	}, NodeTimeout(mokkaWait+time.Minute))
 
-	It("runs a pod that sees exactly the one GPU it requests", func(ctx SpecContext) {
+	It("runs a pod per GPU model on that model's nodes, seeing the one GPU it requests", func(ctx SpecContext) {
 		connect(ctx)
-		pod := gpuPod(corev1.NamespaceDefault, probeImage{ref: defaultTenantGPUImage}, nil)
-		pod.Spec.NodeSelector = map[string]string{mokkaLabelKey: "true"}
-		finished, message, err := kube.RunPodWithLogs(ctx, c, clientset, pod, gpuContainer, siteCreateTimeout)
-		deleteOnExit(ctx, c, pod)
-		Expect(err).NotTo(HaveOccurred())
-		var gpus []string
-		for _, line := range strings.Split(strings.TrimSpace(message), "\n") {
-			if strings.HasPrefix(line, "GPU ") {
-				gpus = append(gpus, line)
+		for _, profile := range profiles {
+			model := mokkaProfiles[profile].product
+			pod := gpuPod(corev1.NamespaceDefault, probeImage{ref: defaultTenantGPUImage}, nil)
+			pod.Spec.NodeSelector = map[string]string{gpuProductLabel: model}
+			finished, message, err := kube.RunPodWithLogs(ctx, c, clientset, pod, gpuContainer, siteCreateTimeout)
+			deleteOnExit(ctx, c, pod)
+			Expect(err).NotTo(HaveOccurred())
+			var node corev1.Node
+			Expect(c.Get(ctx, client.ObjectKey{Name: finished.Spec.NodeName}, &node)).To(Succeed())
+			Expect(node.Labels).To(HaveKeyWithValue(mokkaLabelKey, profile), "a pod selecting %s ran on %s", model, node.Name)
+			var gpus []string
+			for _, line := range strings.Split(strings.TrimSpace(message), "\n") {
+				if strings.HasPrefix(line, "GPU ") {
+					gpus = append(gpus, line)
+				}
 			}
+			Expect(gpus).To(HaveLen(1), "nvidia-smi -L in a pod limited to one GPU listed:\n%s", message)
+			// GPU Feature Discovery writes the model nvidia-smi reports with dashes for spaces.
+			Expect(gpus[0]).To(ContainSubstring(strings.ReplaceAll(model, "-", " ")))
+			GinkgoLogr.Info("Mokka GPU workload", "node", node.Name, "result", gpus[0])
 		}
-		Expect(gpus).To(HaveLen(1), "nvidia-smi -L in a pod limited to one GPU listed:\n%s", message)
-		GinkgoLogr.Info("Mokka GPU workload", "node", finished.Spec.NodeName, "result", gpus[0])
-	}, NodeTimeout(siteCreateTimeout+time.Minute))
+	}, NodeTimeout(time.Duration(len(mokkaProfiles))*siteCreateTimeout+time.Minute))
 }
 
 // helmOnTenant runs helm against the test's tenant as its admin, with a freshly
@@ -190,10 +221,10 @@ func helmOnTenant(ctx context.Context, test *tenantTest, args ...string) error {
 	return nil
 }
 
-// mokkaNodes lists the nodes labeled for Mokka.
+// mokkaNodes lists the nodes labeled for Mokka, with any profile.
 func mokkaNodes(ctx context.Context, c client.Client) ([]corev1.Node, error) {
 	var nodes corev1.NodeList
-	if err := c.List(ctx, &nodes, client.MatchingLabels{mokkaLabelKey: "true"}); err != nil {
+	if err := c.List(ctx, &nodes, client.HasLabels{mokkaLabelKey}); err != nil {
 		return nil, fmt.Errorf("listing nodes labeled %s: %w", mokkaLabelKey, err)
 	}
 	return nodes.Items, nil
@@ -208,6 +239,25 @@ func mokkaPodProblems(nodes []corev1.Node, pods []corev1.Pod, want int) []string
 	for _, node := range nodes {
 		if !slices.ContainsFunc(pods, func(pod corev1.Pod) bool { return pod.Spec.NodeName == node.Name && podReady(&pod) }) {
 			problems = append(problems, node.Name+": no Ready Mokka pod")
+		}
+	}
+	return problems
+}
+
+// mokkaModelProblems requires every node labeled for Mokka to advertise its
+// profile's GPU model and count.
+func mokkaModelProblems(nodes []corev1.Node) []string {
+	var problems []string
+	for _, node := range nodes {
+		profile, ok := node.Labels[mokkaLabelKey]
+		if !ok {
+			continue
+		}
+		want := mokkaProfiles[profile]
+		count := node.Status.Allocatable[gpuResource]
+		if node.Labels[gpuProductLabel] != want.product || count.Value() != want.gpus {
+			problems = append(problems, fmt.Sprintf("%s (%s): %q x%d, want %q x%d",
+				node.Name, profile, node.Labels[gpuProductLabel], count.Value(), want.product, want.gpus))
 		}
 	}
 	return problems
