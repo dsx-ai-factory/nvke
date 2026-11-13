@@ -19,13 +19,18 @@ metadata:
   name: stable
 spec:
   releases:
-    "1.9":
-      - name: unused-minor-release
-        minimumUpgradeAge: 0s
     "1.36":
       - name: test-release
         minimumUpgradeAge: 0s
-      - name: unused-older-release
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ClusterReleaseChannel
+metadata:
+  name: preview
+spec:
+  releases:
+    "1.36":
+      - name: preview-release
         minimumUpgradeAge: 0s
 ---
 apiVersion: internal.nvke.nvidia.com/v1
@@ -42,15 +47,26 @@ spec:
       #cloud-config
     infra:
       bootstrapFiles:
-        - path: /etc/nvke-bootstrap-example.conf
-          owner: root:root
-          permissions: "0644"
-          content: |
-            message="quoted value"
-            literal={{ leave_this_untouched }}
+        - path: /etc/nvke-release
+          content: control-plane-release
       preKubeadmCommands:
-        - "mkdir -p /run/cluster-api"
-        - "echo success > /run/cluster-api/bootstrap-success.complete"
+        - echo control-plane-release
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: ClusterRelease
+metadata:
+  name: preview-release
+  annotations:
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.36.2"
+spec:
+  machineImageRef:
+    name: test-image
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+    infra:
+      bootstrapFiles: []
+      preKubeadmCommands: []
 ---
 apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
@@ -70,7 +86,7 @@ spec:
 apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
-  name: worker-test-release
+  name: worker-new-release
 spec:
   profile: example
   tag: "1.36.1"
@@ -81,15 +97,29 @@ spec:
       #cloud-config
     infra:
       bootstrapFiles:
-        - path: /etc/nvke-worker.conf
-          owner: root:root
-          permissions: "0644"
-          content: |
-            message="worker release"
-            literal=worker
+        - path: /etc/nvke-release
+          content: worker-new-release
       preKubeadmCommands:
-        - "echo worker-release"
-        - "systemctl enable worker-only.service"
+        - echo worker-new-release
+---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: worker-existing-release
+spec:
+  profile: example
+  tag: "1.36.2"
+  machineImageRef:
+    name: worker-image
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+    infra:
+      bootstrapFiles:
+        - path: /etc/nvke-release
+          content: worker-existing-release
+      preKubeadmCommands:
+        - echo worker-existing-release
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -138,7 +168,7 @@ data:
         }
       }
     }
-  nodepoolTmpl: "not json"
+  nodepoolTmpl: "{}"
 ---
 apiVersion: internal.nvke.nvidia.com/v1
 kind: ControlPlaneClass
@@ -146,14 +176,15 @@ metadata:
   name: standard
 spec:
   controlPlane:
-    replicas: 3
-    instanceTypePreferences: [33333333-3333-4333-8333-333333333333]
-    systemReservedMemory: 4Gi
+    replicas: 1
+    instanceTypePreferences:
+      - 33333333-3333-4333-8333-333333333333
+    systemReservedMemory: 1Gi
   rollout:
     strategy:
       type: RollingUpdate
       rollingUpdate:
-        maxSurge: 0
+        maxSurge: 1
 ---
 apiVersion: internal.nvke.nvidia.com/v1
 kind: NVKECluster
@@ -176,8 +207,13 @@ spec:
   network:
     vpcID: 22222222-2222-4222-8222-222222222222
   nodePools:
-    - name: workers
+    - name: workers-new
       instanceType: 33333333-3333-4333-8333-333333333333
       replicas: 1
       vpcSubnetID: 44444444-4444-4444-8444-444444444444
       nodeProfile: "example:1.36.1"
+    - name: workers-existing
+      instanceType: 33333333-3333-4333-8333-333333333333
+      replicas: 1
+      vpcSubnetID: 44444444-4444-4444-8444-444444444444
+      nodeProfile: "example:1.36.2"

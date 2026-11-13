@@ -25,8 +25,13 @@ items:
       vpcID: 22222222-2222-4222-8222-222222222222
     nodePools:
     - instanceType: 33333333-3333-4333-8333-333333333333
-      name: workers
+      name: workers-new
       nodeProfile: example:1.36.1
+      replicas: 1
+      vpcSubnetID: 44444444-4444-4444-8444-444444444444
+    - instanceType: 33333333-3333-4333-8333-333333333333
+      name: workers-existing
+      nodeProfile: example:1.36.2
       replicas: 1
       vpcSubnetID: 44444444-4444-4444-8444-444444444444
     release:
@@ -100,8 +105,9 @@ items:
       status: Unknown
       type: NVKEControllerUpdateFailed
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: 'reconcile node pool "workers": decode nodepoolTmpl: invalid character
-        ''o'' in literal null (expecting ''u'')'
+      message: |-
+        reconcile node pool "workers-new": nodepoolTmpl must contain a machineTemplate manifest
+        reconcile node pool "workers-existing": nodepoolTmpl must contain a machineTemplate manifest
       observedGeneration: 1
       reason: ReconcileFailed
       status: "False"
@@ -113,21 +119,51 @@ items:
             * NVKEControllerProvisioned: Reported
             * NVKEControllerProvisioning: Reported
         * Synced:
-          * NodePoolsReconciled: reconcile node pool "workers": decode nodepoolTmpl: invalid character 'o' in literal null (expecting 'u')
+          * NodePoolsReconciled:
+            * reconcile node pool "workers-new": nodepoolTmpl must contain a machineTemplate manifest
+            * reconcile node pool "workers-existing": nodepoolTmpl must contain a machineTemplate manifest
       observedGeneration: 1
       reason: NotReady
       status: "False"
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: '* NodePoolsReconciled: reconcile node pool "workers": decode nodepoolTmpl:
-        invalid character ''o'' in literal null (expecting ''u'')'
+      message: |-
+        * NodePoolsReconciled:
+          * reconcile node pool "workers-new": nodepoolTmpl must contain a machineTemplate manifest
+          * reconcile node pool "workers-existing": nodepoolTmpl must contain a machineTemplate manifest
       observedGeneration: 1
       reason: NotSynced
       status: "False"
       type: Synced
     id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     nodePools:
-    - name: workers
+    - conditions:
+      - message: ""
+        observedGeneration: 1
+        reason: Ready
+        status: "True"
+        type: Ready
+      - message: ""
+        observedGeneration: 1
+        reason: Reported
+        status: "False"
+        type: NVKEControllerDeleting
+      - message: ""
+        observedGeneration: 1
+        reason: Reported
+        status: "True"
+        type: NVKEControllerProvisioned
+      - message: ""
+        observedGeneration: 1
+        reason: Reported
+        status: "False"
+        type: NVKEControllerProvisioning
+      id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+      name: workers-existing
+      resolvedRelease:
+        name: worker-existing-release
+        version: 1.36.2
+    - name: workers-new
     resolvedRelease:
       name: test-release
       version: 1.36.1
