@@ -14,12 +14,30 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 )
+
+func TestUnit_EnsureNamespace(t *testing.T) {
+	clientset := fake.NewClientset(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "theirs"}})
+	made, err := ensureNamespace(t.Context(), clientset, "theirs")
+	require.NoError(t, err)
+	require.False(t, made, "a namespace that was there is not this run's to remove")
+	made, err = ensureNamespace(t.Context(), clientset, defaultTenantNamespace)
+	require.NoError(t, err)
+	require.True(t, made)
+	_, err = clientset.CoreV1().Namespaces().Get(t.Context(), defaultTenantNamespace, metav1.GetOptions{})
+	require.NoError(t, err)
+}
+
+func TestUnit_LaneTenantProbesKeepOutOfDefault(t *testing.T) {
+	require.Equal(t, defaultTenantNamespace, laneTenantSettings.checks.probeNamespace)
+	require.Equal(t, defaultTenantNamespace, laneTenantSettings.checks.excusedNamespace)
+}
 
 func TestUnit_TenantValidateFromEnvDefaults(t *testing.T) {
 	settings, err := tenantValidateFromEnv(envMap(map[string]string{tenantClusterEnv: " blue "}), filepath.Join(t.TempDir(), "absent"))

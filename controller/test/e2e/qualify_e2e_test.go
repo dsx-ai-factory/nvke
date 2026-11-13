@@ -215,6 +215,9 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 		}
 		removeStaleBundles()
 		cfg = expectSucceed(config.Load(cfgPath))
+		if cfg.Lifecycle.ReuseCluster != "" {
+			Fail(fmt.Sprintf("lifecycle.reuseCluster names tenant %q, but this lane builds a new site, which has no tenant to reuse", cfg.Lifecycle.ReuseCluster))
+		}
 		provider = expectSucceed(newInfraProvider(cfg))
 		capabilities = siteCapabilities(expectSucceed(runCapabilities()))
 		name := expectSucceed(newSiteName())
