@@ -56,19 +56,9 @@ manifests-state: controller-gen ## Generate internal deepcopy methods, datastore
 	done
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role,headerFile=hack/boilerplate.yaml.txt paths=./controllers/... output:rbac:artifacts:config=config/rbac
 
-manifests: manifests-state kustomize kubebuilder ## Generate state, the runtime bundle, and Helm chart.
-	mkdir -p dist
+manifests: manifests-state kustomize ## Generate canonical schemas, RBAC and runtime manifests.
+	mkdir -p dist chart/files
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
-	"$(KUBEBUILDER)" edit --plugins=helm/v2-alpha --manifests=./dist/install.yaml --output-dir=.
-	# Kubebuilder v4.15.0 over-indents extra volumes beside existing Kustomize lists.
-	# Keep this correction in generation until the Helm plugin fixes list indentation.
-	sed -e '/toYaml .Values.manager.extraVolumeMounts/s/nindent 10/nindent 8/' \
-		-e '/toYaml .Values.manager.extraVolumes/s/nindent 8/nindent 6/' \
-		chart/templates/manager/manager.yaml > dist/manager-chart.yaml
-	mv dist/manager-chart.yaml chart/templates/manager/manager.yaml
-	rm -f .github/workflows/test-chart.yml
-	@rmdir .github/workflows .github 2>/dev/null || true
-	$(GO) run github.com/google/addlicense@v1.1.1 -f ../hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" chart
 
 .PHONY: generate generate-public generate-public-check
 generate: generate-public ## Generate internal schemas, public projections, and registration wiring.
@@ -290,16 +280,17 @@ $(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{
 endef
 
 .PHONY: chart
-chart: manifests ## Generate the Helm chart from the Kustomize source manifests.
+chart: manifests kubebuilder ## Regenerate the Helm chart from canonical manifests and packaging extensions.
+	$(GO) run ./hack/chartgen -kubebuilder "$(KUBEBUILDER)"
 
 ##@ Helm Deployment
 
 ## Helm binary to use for deploying the chart
 HELM ?= helm
 ## Namespace to deploy the Helm release
-HELM_NAMESPACE ?= management-engine-system
+HELM_NAMESPACE ?= cluster-service-system
 ## Name of the Helm release
-HELM_RELEASE ?= management-engine
+HELM_RELEASE ?= cluster-service
 ## Path to the Helm chart directory
 HELM_CHART_DIR ?= ./chart
 ## Additional arguments to pass to helm commands
@@ -313,6 +304,7 @@ helm-deploy: require-host-context ## Deploy manager to the K8s cluster via Helm.
 	fi; \
 	$(HELM) --kube-context "$(HOST_CONTEXT)" upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
 		--namespace $(HELM_NAMESPACE) \
+		--dependency-update \
 		--create-namespace \
 		--set-string manager.image.repository="$$repository" \
 		--set-string manager.image.tag="$$tag" \
@@ -324,12 +316,19 @@ helm-deploy: require-host-context ## Deploy manager to the K8s cluster via Helm.
 helm-uninstall: require-host-context ## Uninstall the Helm release from the K8s cluster.
 	$(HELM) --kube-context "$(HOST_CONTEXT)" uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
 
+.PHONY: chart-deps
+chart-deps: ## Stage the pinned shared schema dependency for Helm source operations.
+	$(HELM) dependency build chart --skip-refresh
+
 .PHONY: chart-check
-chart-check: manifests ## Lint and render the Helm chart without a cluster.
+chart-check: manifests kubebuilder chart-deps ## Check generation, lint and test every installation mode.
+	$(GO) run ./hack/chartgen -kubebuilder "$(KUBEBUILDER)" -check
 	$(HELM) lint chart -f config/samples/runtime-values.yaml
-	$(HELM) template management-engine chart --namespace management-engine-system -f config/samples/runtime-values.yaml > dist/chart-rendered.yaml
-	$(HELM) lint chart -f config/samples/runtime-values.yaml -f config/samples/nvke-controller-values.yaml
-	$(HELM) template management-engine chart --namespace management-engine-system -f config/samples/runtime-values.yaml -f config/samples/nvke-controller-values.yaml > dist/chart-nvke-controller-rendered.yaml
+	HELM="$(HELM)" KUBEBUILDER="$(KUBEBUILDER)" KUSTOMIZE="$(KUSTOMIZE)" $(GO) test $(GO_TEST_FLAGS) ./hack/... -run 'TestChart|TestGeneration|TestFilterManagerArgs' -count=1
+
+.PHONY: chart-assets-check
+chart-assets-check: manifests kubebuilder ## Verify the complete generated chart is current.
+	$(GO) run ./hack/chartgen -kubebuilder "$(KUBEBUILDER)" -check
 
 .PHONY: test-chart-crds
 test-chart-crds: ## Verify the shared CRD chart and its controller dependency.

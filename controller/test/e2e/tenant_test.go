@@ -87,21 +87,22 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	// filtering the full CAPD row below. The full row needs three control-plane
 	// nodes for its scale, rotation, and certificate checks; the core lane only
 	// proves that the deployed controller's control-plane path can create a usable
-	// cluster and delete it again.
+	// cluster and delete it again, and that GPU Operator runs on its worker with
+	// Mokka's simulated GPUs.
 	Entry("CAPD node-agent convergence", Ordered, ContinueOnFailure, Label("node-agent-upgrade"), testSpec{
 		buildSpec: capdSpec,
 		shape:     clusterShape{controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3, NodeAgentVersion: "v0.1.991", SystemReservedMemory: "1Gi"}, workerPools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}}},
 		options:   nvke.Options{Provision: 15 * time.Minute, Delete: 5 * time.Minute, Poll: 2 * time.Second},
 		validate:  validations{provisioningOnly: true, nodeAgentUpgrade: true},
 	}),
-	Entry("CAPD core", Ordered, ContinueOnFailure, Label("core", "core-docker"), testSpec{
+	Entry("CAPD core", Ordered, ContinueOnFailure, Label("core", "core-docker", "mokka"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
 			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
-			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1, NodeLabels: map[string]string{mokkaLabelKey: "true"}}},
 		},
 		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
-		validate: validations{provisioningOnly: true},
+		validate: validations{provisioningOnly: true, mokkaGPU: true},
 	}),
 	Entry("CAPD", Ordered, ContinueOnFailure, Label("capd", "happy-path", "kube-vip-route-withdrawal", "cert-renewal"), testSpec{
 		buildSpec: capdSpec,
@@ -680,6 +681,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				validateNvkectlPostCreate(&test)
 				validateNvkectlNodePoolLifecycle(&test)
 			}
+			if spec.validate.mokkaGPU {
+				validateMokkaGPU(&test)
+			}
 			if spec.validate.tenantChecks {
 				validateTenant(laneTenantTarget(&test, func() bool { return failed }), laneTenantSettings)
 			}
@@ -958,6 +962,9 @@ type validations struct {
 	// are on every control-plane node after create and, when the entry runs it,
 	// after the rolling update. The entry must set controlPlaneConfig.NodeLabels.
 	controlPlaneNodeLabels bool
+	// mokkaGPU runs GPU Operator on Mokka's simulated GPUs, on the worker pools
+	// labeled mokkaLabelKey. The runner needs helm.
+	mokkaGPU bool
 }
 
 // managementCluster is the cluster the controller runs on, which a tenant test reaches
@@ -1654,6 +1661,7 @@ func capdNodePoolSpec(pool nvke.NodePoolSpec, defaultName, defaultNodeNamePrefix
 		NodeNamePrefix:       cmp.Or(pool.NodeNamePrefix, defaultNodeNamePrefix),
 		DesiredNodeCount:     pool.DesiredNodeCount,
 		SystemReservedMemory: cmp.Or(pool.SystemReservedMemory, "1Gi"),
+		NodeLabels:           pool.NodeLabels,
 	}
 }
 

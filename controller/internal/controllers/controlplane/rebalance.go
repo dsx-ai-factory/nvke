@@ -156,6 +156,7 @@ func (r *reconciler) reconcileControlPlaneRebalance(
 		return false, fmt.Errorf("resolving capped control-plane config snapshot: %w", err)
 	}
 
+	allocator.release(cp.failureDomains.domainOf(leastPreferredControlPlaneNode(eligible, ranker)))
 	created, err := r.scaleUp(ctx, cluster, 1, "control-plane rebalance surge", allocator, newNodeProvider, withRebalanceReplacement(snapshotID))
 	if err != nil {
 		return false, fmt.Errorf("surging control-plane rebalance replacement: %w", err)
@@ -412,6 +413,18 @@ func leastPreferredControlPlaneNodeToShed(cp *controlPlane, surge db.Node, ranke
 	if len(candidates) == 0 {
 		return db.Node{}, false
 	}
+	// Prefer a worse node in the surge's own domain so the shed keeps the spread.
+	if domain := cp.failureDomains.domainOf(surge); domain != "" {
+		var sameDomain []db.Node
+		for _, node := range candidates {
+			if cp.failureDomains.domainOf(node) == domain && ranker.ScaleDownRank(node) > ranker.ScaleDownRank(surge) {
+				sameDomain = append(sameDomain, node)
+			}
+		}
+		if len(sameDomain) > 0 {
+			candidates = sameDomain
+		}
+	}
 	victim := leastPreferredControlPlaneNode(candidates, ranker)
 	if ranker.ScaleDownRank(victim) <= ranker.ScaleDownRank(surge) {
 		return db.Node{}, false
@@ -452,11 +465,16 @@ func (r *reconciler) abandonRebalanceSurge(ctx context.Context, cp *controlPlane
 // longer than defaultRebalanceSurgeTimeout, anchored on when it entered Pending
 // (falling back to its creation time).
 func rebalanceSurgeExpired(surge db.Node) bool {
-	anchor := surge.Conditions.Pending.LastTransitionTime
+	return pendingLongerThan(surge, defaultRebalanceSurgeTimeout)
+}
+
+// pendingLongerThan reports whether a node has been pending for more than d.
+func pendingLongerThan(node db.Node, d time.Duration) bool {
+	anchor := node.Conditions.Pending.LastTransitionTime
 	if anchor.IsZero() {
-		anchor = surge.CreatedAt
+		anchor = node.CreatedAt
 	}
-	return !anchor.IsZero() && time.Since(anchor) > defaultRebalanceSurgeTimeout
+	return !anchor.IsZero() && time.Since(anchor) > d
 }
 
 // worstControlPlaneRank returns the highest ScaleDownRank among the eligible

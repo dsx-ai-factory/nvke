@@ -195,7 +195,7 @@ Schedule the delete when the customer's disruption policy allows it.
 
 ## Control automatic node replacement
 
-Auto mode marks a pool's outdated nodes for replacement, a few at a time. It does not replace them. A node becomes outdated when you change the pool's node configuration, such as its release or Kubernetes version, after the node was built. Only nodes created after the change use the new configuration: NVKE does not replace a running node because its configuration is outdated. Upgrading a pool's Kubernetes version is not covered on this page.
+Auto mode marks a pool's outdated nodes for replacement, a few at a time. It does not replace them. A node becomes outdated when you change the pool's node configuration, such as its release or Kubernetes version, after the node was built. Only nodes created after the change use the new configuration: NVKE does not replace a running node because its configuration is outdated. To upgrade a pool's Kubernetes version, see [Upgrade a workload cluster's Kubernetes version](upgrade.md#upgrade-a-worker-node-pool).
 
 Auto mode works as follows:
 

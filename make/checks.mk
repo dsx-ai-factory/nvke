@@ -5,7 +5,6 @@
 # target explicitly installs its pinned tool (credential-alerts-check).
 
 CHART ?= controller/deploy/charts/controller
-NKTP_CHART ?= nktp/deploy/charts/nktp
 
 define require_command
 command -v $(1) >/dev/null 2>&1 || { \
@@ -90,6 +89,7 @@ next-tag-test: ## Test the release version rules in release/hack/next-tag.sh. (r
 
 SHARED_CRD_CHART := controller/deploy/charts/nvke-crds
 CHART_CRDS_FILE := dist/release-crds.yaml
+STATE_CRDS := management-engine/config/crd/bases
 
 .PHONY: chart-deps chart-crds chart-crds-check chart-crds-render-check
 chart-deps: ## Build the controller chart's pinned local dependency.
@@ -103,8 +103,8 @@ chart-crds: ## Render the controller's three release schemas into ignored build 
 
 chart-crds-check: ## Verify canonical generated schemas and shared chart rendering.
 	@$(MAKE) --no-print-directory -C management-engine manifests-state
-	git diff --exit-code -- $(SHARED_CRD_CHART)/bases management-engine/config/crd/bases
-	@test -z "$$(git ls-files --others --exclude-standard -- $(SHARED_CRD_CHART)/bases)" || { echo "Commit canonical schemas"; exit 1; }
+	git diff --exit-code -- $(SHARED_CRD_CHART)/bases $(STATE_CRDS)
+	@test -z "$$(git ls-files --others --exclude-standard -- $(SHARED_CRD_CHART)/bases $(STATE_CRDS))" || { echo "Commit canonical schemas"; exit 1; }
 	@$(call require_tool,kubectl,$(KUBECTL_VERSION))
 	kubectl kustomize management-engine/config/crd > /dev/null
 
@@ -187,37 +187,6 @@ credential-alerts-check: ## Validate credential alert rules, fixtures and the en
 	@CHART="$(CHART)" ./controller/hack/chart-credential-alerts-assertions.sh
 
 chart-check: chart-crds-render-check lint-chart chart-rbac-check chart-package-check chart-identity-check chart-controller-config-check credential-alerts-check ## Run every chart check enforced by CI.
-
-.PHONY: nktp-chart-deps nktp-chart-lint nktp-chart-check
-
-# The dependency archives are downloaded, never committed; the chart's own
-# .gitignore keeps them out. `helm dependency build` refuses to run until every
-# repository in Chart.yaml has been added, so they are added here, read from
-# Chart.yaml rather than listed a second time. They go into a throwaway Helm
-# config, so your `helm repo list` is left alone. The build also fails when
-# Chart.lock no longer matches Chart.yaml.
-nktp-chart-deps: ## Download the NKTP chart's dependencies into its charts/ directory.
-	@$(call require_tool,helm,$(HELM_VERSION))
-	@set -eu; \
-	 dir=$$(mktemp -d); \
-	 trap 'rm -rf "$$dir"' EXIT HUP INT TERM; \
-	 export HELM_REPOSITORY_CONFIG="$$dir/repositories.yaml" HELM_REPOSITORY_CACHE="$$dir/cache"; \
-	 n=0; \
-	 for url in $$(awk '$$1 == "repository:" { print $$2 }' $(NKTP_CHART)/Chart.yaml | sort -u); do \
-		n=$$((n + 1)); \
-		helm repo add "nktp-dep-$$n" "$$url" >/dev/null; \
-	 done; \
-	 helm dependency build $(NKTP_CHART) --skip-refresh
-
-# Custom resources are validated against the CRDs this chart installs; see
-# nktp/hack/chart-validate.sh.
-nktp-chart-lint: nktp-chart-deps ## Lint and render the NKTP chart, then validate it.
-	@$(call require_tool,kubeconform,$(KUBECONFORM_VERSION))
-	@$(call require_command,yq)
-	@helm lint --strict $(NKTP_CHART)
-	@NKTP_CHART="$(NKTP_CHART)" CERT_MANAGER_VERSION="$(CERT_MANAGER_VERSION)" ./nktp/hack/chart-validate.sh
-
-nktp-chart-check: nktp-chart-lint ## Run every NKTP chart check enforced by CI. (run by the merge gate)
 
 # Use the same tool, Go version, waiver, and stale-waiver guard as
 # CI. The helper returns 3 for an unwaived finding and preserves tool failures.
@@ -348,7 +317,6 @@ gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory name-check
 	@$(MAKE) --no-print-directory -C deploy test
 	@$(MAKE) --no-print-directory chart-check
-	@$(MAKE) --no-print-directory nktp-chart-check
 	@$(MAKE) --no-print-directory -C controller generate-check
 	@$(MAKE) --no-print-directory -C cli provider-manifest-check
 	@$(MAKE) --no-print-directory -C cli docs-check

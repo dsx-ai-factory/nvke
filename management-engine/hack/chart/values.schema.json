@@ -1,0 +1,377 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "state": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "namespace": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+        },
+        "configMaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "namespace",
+              "data"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 253,
+                "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$",
+                "minLength": 1
+              },
+              "namespace": {
+                "type": "string",
+                "maxLength": 63,
+                "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "minLength": 1
+              },
+              "data": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "rbac": {
+          "type": "object",
+          "properties": {
+            "metricsAuth": {
+              "type": "boolean"
+            },
+            "subjects": {
+              "$ref": "#/definitions/subjects"
+            },
+            "operatorAPISubjects": {
+              "$ref": "#/definitions/subjects"
+            },
+            "tenantAPIBindings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "namespace",
+                  "subjects"
+                ],
+                "properties": {
+                  "namespace": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                    "minLength": 1
+                  },
+                  "subjects": {
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/subjects"
+                      }
+                    ],
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "crds": {
+          "type": "object",
+          "properties": {
+            "install": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "controller": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "manager": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "stateAccess": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "enum": [
+                "inCluster",
+                "remote"
+              ]
+            },
+            "kubeconfigSecret": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 253,
+                  "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+                },
+                "key": {
+                  "type": "string",
+                  "maxLength": 253,
+                  "pattern": "^[a-zA-Z0-9._-]*$"
+                }
+              }
+            }
+          }
+        },
+        "stateNamespace": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "name": {
+                      "const": "STATE_NAMESPACE"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "value"
+                  ],
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "maxLength": 63,
+                      "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "envOverrides": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "nvkeController": {
+          "type": "object",
+          "properties": {
+            "endpoint": {
+              "type": "string",
+              "pattern": "^$|^https?://[^\\s]+$"
+            },
+            "tokenSecret": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 253,
+                  "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+                },
+                "key": {
+                  "type": "string",
+                  "maxLength": 253,
+                  "pattern": "^[a-zA-Z0-9._-]*$"
+                }
+              }
+            }
+          }
+        },
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "pullPolicy": {
+              "enum": [
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ]
+            }
+          }
+        },
+        "infrastructureTemplateConfigMap": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+        }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "prometheus": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "nvke-crds": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "subjects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "name"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "ServiceAccount",
+              "User",
+              "Group"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "apiGroup": {
+            "type": "string"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "ServiceAccount"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "namespace"
+              ],
+              "properties": {
+                "namespace": {
+                  "type": "string",
+                  "maxLength": 63,
+                  "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 253,
+                  "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$",
+                  "minLength": 1
+                },
+                "apiGroup": {
+                  "const": ""
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "User",
+                    "Group"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "apiGroup"
+              ],
+              "properties": {
+                "apiGroup": {
+                  "const": "rbac.authorization.k8s.io"
+                }
+              },
+              "not": {
+                "required": [
+                  "namespace"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

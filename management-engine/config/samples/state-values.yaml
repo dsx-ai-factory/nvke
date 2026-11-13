@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Standalone datastore: install the catalog APIs here. Set false when the NVKE
+# controller or a dedicated catalog release already owns them on this cluster.
+nvke-crds:
+  enabled: true
+
+controller:
+  enabled: false
+state:
+  rbac:
+    subjects:
+      - kind: ServiceAccount
+        name: cluster-service-controller-manager
+        namespace: cluster-service-system
+      # External identities are Kubernetes User subjects after authentication.
+      - kind: User
+        apiGroup: rbac.authorization.k8s.io
+        name: spiffe://example.org/cluster-service
+    tenantAPIBindings:
+      - namespace: tenant-a
+        subjects:
+          - kind: User
+            apiGroup: rbac.authorization.k8s.io
+            name: spiffe://example.org/tenant-api
+    operatorAPISubjects:
+      - kind: User
+        apiGroup: rbac.authorization.k8s.io
+        name: spiffe://example.org/operator-api

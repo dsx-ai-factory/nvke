@@ -181,7 +181,7 @@ func TestReadFailureDomainsWithoutAPlacementView(t *testing.T) {
 	}
 }
 
-func TestControllerReturnsErrorWhileClusterInfrastructureIsNotReady(t *testing.T) {
+func TestControllerRequeuesWithoutPlacingWhileClusterInfrastructureIsNotReady(t *testing.T) {
 	t.Parallel()
 
 	clusterID := uuid.New()
@@ -240,8 +240,8 @@ func TestControllerReturnsErrorWhileClusterInfrastructureIsNotReady(t *testing.T
 
 	result, err := controller.Reconcile(context.Background(), dbreconcile.ClusterKey(clusterID))
 
-	require.ErrorContains(t, err, "discovering control-plane failure domains: capi cluster infrastructure is not yet provisioned")
-	assert.Zero(t, result)
+	require.NoError(t, err, "a discovery failure must not roll back the reconcile's remediation and delete writes")
+	assert.Equal(t, failureDomainRetryInterval, result.RequeueAfter)
 	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 	mockDB.AssertExpectations(t)
 	mockTx.AssertExpectations(t)
@@ -366,4 +366,26 @@ func TestReconcilePlacesTheNodesItCreatedInTheSamePass(t *testing.T) {
 	}
 	assert.ElementsMatch(t, []string{"fd-a", "fd-b", "fd-c"}, placed,
 		"scale-up in the same pass should spread across the eligible domains")
+}
+
+func TestReadFailureDomainsErrorClassification(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a missing client is not the not-yet-provisioned case", func(t *testing.T) {
+		t.Parallel()
+		r := &reconciler{}
+		_, err := r.readFailureDomains(context.Background(), db.Cluster{Name: "c"})
+		require.Error(t, err)
+		assert.NotErrorIs(t, err, errInfrastructureNotProvisioned)
+	})
+
+	t.Run("a CAPI cluster that does not exist yet is", func(t *testing.T) {
+		t.Parallel()
+		scheme := runtime.NewScheme()
+		require.NoError(t, clusterv1.AddToScheme(scheme))
+		k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		r := &reconciler{k8sClient: k8sClient, k8sReader: k8sClient}
+		_, err := r.readFailureDomains(context.Background(), db.Cluster{Name: "c"})
+		assert.ErrorIs(t, err, errInfrastructureNotProvisioned)
+	})
 }

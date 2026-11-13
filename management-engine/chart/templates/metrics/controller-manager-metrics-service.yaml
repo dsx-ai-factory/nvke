@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+{{- if and .Values.controller.enabled .Values.manager.enabled }}
 {{- if .Values.metrics.enabled }}
 apiVersion: v1
 kind: Service
@@ -22,4 +23,6 @@ spec:
   selector:
     app.kubernetes.io/name: {{ include "management-engine.name" . }}
     control-plane: controller-manager
+{{- end }}
+
 {{- end }}

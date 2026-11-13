@@ -2,7 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """Parse a generated deploy path into tab-separated lines a shell can read.
 
-  items   <nvke-deploy.yaml>  -> "<name>\t<type>" per item, in listed order
+  items   <nvke-deploy.yaml>  -> "<name>\t<type>" per item, in listed order.
+                                An item is inline, "  - {name: x, type: helm}",
+                                or block, "  - name: x" then "    type: helm";
+                                the two may be mixed.
   release <release.yaml>     -> "single\x1f<chart>\x1f<version>\x1f<repository>
                                 \x1f<path>\x1f<release>\x1f<namespace>
                                 \x1f<values>\x1f<requires>\x1f<artifact>
@@ -35,6 +38,8 @@ import re
 import sys
 
 ITEM = re.compile(r'^  - \{name: ([\w.-]+), type: (template|manifest|helm)\}$')
+BLOCK_NAME = re.compile(r'^  - name: ([\w.-]+)$')
+BLOCK_TYPE = re.compile(r'^    type: (template|manifest|helm)$')
 TOP = re.compile(r'^([\w]+):$')
 KV = re.compile(r'^  ([\w]+): (\S+)$')
 SEQ = re.compile(r'^  - (\S+)$')
@@ -76,14 +81,29 @@ def significant(path):
 def items(path):
     header = False
     out = []
+    pending = None  # (lineno, name) of a block item whose type line is next
     for num, line in significant(path):
+        if pending:
+            match = BLOCK_TYPE.match(line)
+            if match:
+                out.append("%s\t%s" % (pending[1], match.group(1)))
+                pending = None
+                continue
+            if line.startswith("    "):
+                die("%s:%d: unrecognised: %s" % (path, num, line))
+            die("%s:%d: item %s has no type" % (path, pending[0], pending[1]))
         if line == "items:":
             header = True
             continue
-        match = ITEM.match(line)
-        if not match or not header:
+        inline, block = ITEM.match(line), BLOCK_NAME.match(line)
+        if not (inline or block) or not header:
             die("%s:%d: unrecognised: %s" % (path, num, line))
-        out.append("%s\t%s" % match.groups())
+        if inline:
+            out.append("%s\t%s" % inline.groups())
+        else:
+            pending = (num, block.group(1))
+    if pending:
+        die("%s:%d: item %s has no type" % (path, pending[0], pending[1]))
     if not header:
         die("%s: no items: key" % path)
     return out

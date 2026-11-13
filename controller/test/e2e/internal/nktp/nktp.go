@@ -5,10 +5,10 @@
 // collects, by querying its backend through Grafana's datasource proxy rather
 // than by reading Pod status: a Collector can be Ready and export nothing.
 //
-// Baseline is what NKTP delivers on any cluster, mirroring
-// nktp/hack/e2e-validate.sh; the other constructors are for what a particular
-// installation wires up. Each returns one Check, so a spec's list reads as an
-// inventory, and the spec polls Missing and Unwanted over it under Gomega.
+// Baseline is what NKTP delivers on any cluster; the other constructors are
+// for what a particular installation wires up. Each returns one Check, so a
+// spec's list reads as an inventory, and the spec polls Missing and Unwanted
+// over it under Gomega.
 package nktp
 
 import (

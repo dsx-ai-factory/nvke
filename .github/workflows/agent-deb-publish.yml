@@ -367,7 +367,7 @@ jobs:
     if: >-
       github.repository_id == '1323115536' &&
       startsWith(inputs.ref || github.ref_name, 'agent/v') &&
-      contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',agent,')
+      contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned'), ',agent,')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
