@@ -11,3 +11,11 @@ initdb:
   scripts:
     init-cwe.sql: |
       CREATE DATABASE "nvke-controller";
+
+# The site cluster runs this Postgres for as long as it manages itself, so its
+# data must survive a pod restart. The claim uses the default StorageClass:
+# local-path on the seed, and on the site whichever EnsureDefaultStorageClass
+# guarantees.
+persistence:
+  enabled: true
+  size: 10Gi
