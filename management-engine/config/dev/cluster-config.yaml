@@ -38,6 +38,25 @@ spec:
         - echo success > /run/cluster-api/bootstrap-success.complete
 ---
 apiVersion: internal.nvke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: docker-worker-1.36.4
+spec:
+  profile: docker
+  tag: "1.36.4"
+  machineImageRef:
+    name: management-engine-docker-node
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+    infra:
+      bootstrapFiles: []
+      preKubeadmCommands:
+        - mkdir -p /run/cluster-api
+        - echo success > /run/cluster-api/bootstrap-success.complete
+        - echo docker-worker-1.36.4 > /run/cluster-api/worker-release
+---
+apiVersion: internal.nvke.nvidia.com/v1
 kind: ClusterReleaseChannel
 metadata:
   name: stable

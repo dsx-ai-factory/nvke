@@ -39,6 +39,22 @@ spec:
       bootstrapFiles: []
       preKubeadmCommands: []
 ---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: worker-test-release
+spec:
+  profile: example
+  tag: "1.36.1"
+  machineImageRef:
+    name: test-image
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+    infra:
+      bootstrapFiles: []
+      preKubeadmCommands: []
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:

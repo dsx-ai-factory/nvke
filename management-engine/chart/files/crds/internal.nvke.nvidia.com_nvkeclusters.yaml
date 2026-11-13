@@ -708,6 +708,25 @@ spec:
                       format: int32
                       minimum: 0
                       type: integer
+                    resolvedRelease:
+                      description: ResolvedRelease identifies the worker release selected
+                        for this pool when it was created.
+                      properties:
+                        name:
+                          description: ResourceName is a Kubernetes DNS subdomain
+                            name, not a provider identifier.
+                          maxLength: 253
+                          minLength: 1
+                          pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                          type: string
+                        version:
+                          maxLength: 128
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      - version
+                      type: object
                     updatedReplicas:
                       description: |-
                         UpdatedReplicas is the number of nodes matching the requested pool configuration.

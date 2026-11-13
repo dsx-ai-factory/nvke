@@ -74,6 +74,25 @@ spec:
       preKubeadmCommands:
         - echo preview-release
 ---
+apiVersion: internal.nvke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: worker-preview-release
+spec:
+  profile: example
+  tag: "1.34.8"
+  machineImageRef:
+    name: test-image
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+    infra:
+      bootstrapFiles:
+        - path: /etc/nvke-release
+          content: preview-release
+      preKubeadmCommands:
+        - echo preview-release
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
