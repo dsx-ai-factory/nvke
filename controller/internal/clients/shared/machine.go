@@ -138,6 +138,12 @@ type MachineAdvanceDeps struct {
 	// caller's job too; this is just the DB-backed fetch only Activities can
 	// perform.
 	ControlPlaneConfigSnapshot func(ctx context.Context, node db.Node) (db.ControlPlaneConfigSpec, error)
+
+	// RotateFailureDomain moves a pending control-plane node to another failure
+	// domain once the provider has reported its domain out of capacity for the
+	// grace period; unavailable is whether the provider reports that now. It
+	// returns whether it moved the node. Nil disables failure-domain rotation.
+	RotateFailureDomain func(ctx context.Context, node db.Node, machine *clusterv1.Machine, unavailable bool) (bool, error)
 }
 
 // BuildBootstrapSecret builds the bootstrap data Secret for a node. Identical

@@ -17,6 +17,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
@@ -136,7 +137,7 @@ func TestReconcileNodesNeedingRolloutWithoutControlPlaneVIP(t *testing.T) {
 			}
 			r := &reconciler{cfg: config.Config{AllowControlPlaneWithoutVIP: allow}, db: mockTx, logger: slog.Default()}
 
-			_, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
+			_, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 
 			if allow {
 				require.ErrorIs(t, err, surgeError)
@@ -212,7 +213,7 @@ func TestReconcileNodesNeedingRolloutRecordsIntentAfterSurgeExists(t *testing.T)
 	}).Return(oldNode, nil)
 	r := &reconciler{cfg: config.Config{}, db: mockTx, logger: slog.Default()}
 
-	recorded, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
+	recorded, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 
 	require.NoError(t, err)
 	assert.True(t, recorded, "reconcileNodesNeedingRollout should report that it recorded a delete")
@@ -280,7 +281,7 @@ func TestReconcileNodesNeedingRolloutSkipsWhenReplacementNotJoined(t *testing.T)
 	}).Return([]db.Node{oldNode, newNode}, nil)
 	r := &reconciler{cfg: config.Config{}, db: mockTx, logger: slog.Default()}
 
-	recorded, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
+	recorded, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 
 	require.NoError(t, err)
 	assert.False(t, recorded, "reconcileNodesNeedingRollout must not report a recorded delete when the replacement has not joined")
@@ -350,7 +351,7 @@ func TestReconcileNodesNeedingRolloutSkipsWhenDeleteInFlight(t *testing.T) {
 				nodePinnedControlPlaneConfigs: configs,
 			}
 
-			recorded, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
+			recorded, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 
 			require.NoError(t, err)
 			assert.False(t, recorded, "reconcileNodesNeedingRollout must not report a recorded delete when a delete is already in flight")

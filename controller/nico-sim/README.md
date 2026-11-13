@@ -471,6 +471,25 @@ The local variant searches `./var/instances/`, `/tmp/nico-vms-integration/*/inst
 | `--org`      | `novxwn552ssc`           | Organization ID |
 | `--token`    | `nico-simctl-token`     | Bearer token    |
 
+## Failure domains
+
+By default nico-sim publishes no machine inventory, so CAPNICo discovers no
+failure domains and machine label selectors on instance creates are ignored.
+`PUT /sim/failure-domains` sets a layout at runtime; it is held in memory and
+lost on restart:
+
+```bash
+curl -X PUT -H 'Authorization: Bearer any' -H 'Content-Type: application/json' \
+  -d '{"labelKey":"failure_domain","domains":["fd-a","fd-b","fd-c"],"unavailable":["fd-a"]}' \
+  http://localhost:18080/sim/failure-domains
+```
+
+`GET .../machine` then lists one machine per domain, labelled `labelKey=<domain>`.
+A create whose `machineLabelSelector` names an unavailable or unknown domain
+gets NICo's `400` `No Machines are available for specified Instance Type`,
+which CAPNICo reports as `FailureDomainUnavailable`. A pinned create that
+succeeds puts the domain label on the instance's machine. Send `{}` to clear
+the layout. `GET /sim/failure-domains` returns the current one.
 
 ## Test Server Mode
 

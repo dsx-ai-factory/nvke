@@ -112,6 +112,15 @@ func SetPermissiveMode(ctx context.Context, c client.Client, permissive bool) (b
 // replaced and whether it wrote the ConfigMap, including when the restart that
 // follows the write fails.
 func setControllerSetting(ctx context.Context, c client.Client, key string, value any) (any, bool, error) {
+	previous, written, err := SetControllerSettings(ctx, c, map[string]any{key: value})
+	return previous[key], written, err
+}
+
+// SetControllerSettings sets each dotted key of nvke-controller-config to its
+// value and restarts the controller once. It returns the values it replaced and
+// whether it wrote the ConfigMap, including when the restart that follows the
+// write fails. Every key must already exist in the ConfigMap.
+func SetControllerSettings(ctx context.Context, c client.Client, values map[string]any) (map[string]any, bool, error) {
 	var cm corev1.ConfigMap
 	if err := c.Get(ctx, client.ObjectKey{Namespace: controller.Namespace(), Name: ControllerConfigMap}, &cm); err != nil {
 		return nil, false, fmt.Errorf("getting ConfigMap %s/%s: %w", controller.Namespace(), ControllerConfigMap, err)
@@ -120,11 +129,15 @@ func setControllerSetting(ctx context.Context, c client.Client, key string, valu
 	if err != nil {
 		return nil, false, err
 	}
-	previous, parent, err := lookup(settings, key)
-	if err != nil {
-		return nil, false, err
+	previous := make(map[string]any, len(values))
+	for key, value := range values {
+		old, parent, lookupErr := lookup(settings, key)
+		if lookupErr != nil {
+			return nil, false, lookupErr
+		}
+		previous[key] = old
+		parent[key[strings.LastIndex(key, ".")+1:]] = value
 	}
-	parent[key[strings.LastIndex(key, ".")+1:]] = value
 
 	updated, err := yaml.Marshal(settings)
 	if err != nil {
@@ -132,7 +145,7 @@ func setControllerSetting(ctx context.Context, c client.Client, key string, valu
 	}
 	cm.Data[controllerConfigKey] = string(updated)
 	if err := c.Update(ctx, &cm); err != nil {
-		return nil, false, fmt.Errorf("setting %s=%v in %s: %w", key, value, ControllerConfigMap, err)
+		return nil, false, fmt.Errorf("setting %v in %s: %w", values, ControllerConfigMap, err)
 	}
 	if err := restartController(ctx, c); err != nil {
 		return previous, true, err

@@ -514,3 +514,28 @@ func assertBootstrapSuccessCommands(t *testing.T, got []string) {
 		}
 	}
 }
+
+func TestUnit_BuildNicoRequestFailureDomainLabelKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		labelKey string
+		want     any
+	}{
+		{name: "unset by default", want: nil},
+		{name: "set when the spec names one", labelKey: "failure_domain", want: "failure_domain"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := buildNicoRequest(ClusterSpec{
+				Name:                      "nico-test",
+				SiteID:                    uuid.NewString(),
+				VpcID:                     uuid.NewString(),
+				NicoFailureDomainLabelKey: tt.labelKey,
+			})
+			require.NoError(t, err)
+			spec, ok := req.Infra.Cluster[capiSpecKey].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, tt.want, spec["failureDomainLabelKey"])
+		})
+	}
+}

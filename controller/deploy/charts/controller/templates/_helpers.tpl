@@ -210,6 +210,17 @@ render if it does not parse, as the controller would refuse it at startup.
 {{- end }}
 
 {{/*
+Refuse a non-positive gracePeriod while the fallback is enabled, as the controller does at startup.
+*/}}
+{{- define "controller.validateControlPlaneFailureDomainFallback" -}}
+{{- $fallback := .Values.controlPlaneFailureDomainFallback -}}
+{{- $gracePeriod := include "controller.durationNanoseconds" ($fallback.gracePeriod | default "10m") | int64 -}}
+{{- if and $fallback.enabled (le $gracePeriod 0) -}}
+{{- fail "controlPlaneFailureDomainFallback.gracePeriod must be greater than 0 while the fallback is enabled" -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Refuse the credential settings the controller would refuse at startup
 (internal/config/credential_monitoring.go), so a bad value fails helm upgrade
 instead of crash-looping the new pod. The collector inputs are always checked;

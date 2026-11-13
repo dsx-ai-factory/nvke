@@ -24,7 +24,7 @@ import (
 
 // TryAdvanceStuckMachine advances a templateless NicoMachine in place: it
 // tries the network-candidate rotation first, then the instance-type
-// rotation. The instance-type walk is cyclic (rotateNicoMachineInstanceType),
+// rotation, then deps.RotateFailureDomain. The instance-type walk is cyclic (rotateNicoMachineInstanceType),
 // so a node whose preferred types are all unavailable keeps probing them in
 // preference order and converges on the highest-preference type once
 // capacity returns.
@@ -52,7 +52,7 @@ func (*Client) TryAdvanceStuckMachine(ctx context.Context, deps shared.MachineAd
 		return advanced, nil
 	}
 
-	return false, nil
+	return RotateFailureDomain(ctx, deps, node, machine)
 }
 
 func shouldRotateNicoMachineNetworkCandidate(ctx context.Context, k8sClient client.Client, machine *clusterv1.Machine) (bool, error) {

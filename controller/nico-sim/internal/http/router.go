@@ -39,6 +39,7 @@ type Server struct {
 	sshConfig        sshexec.Config
 	vmBackend        vmBackend
 	containerBackend containerBackend
+	failureDomains   failureDomains
 }
 
 // NewHandler wires every route into an http.NewServeMux and wraps it with
@@ -91,10 +92,9 @@ func NewHandler(store *state.Store, containers ContainerService, logger *slog.Lo
 	registerV2(mux, "POST", "instance", s.handleCreateInstance)
 	registerV2(mux, "PATCH", "instance/{instanceId}", s.handlePatchInstance)
 	registerV2(mux, "DELETE", "instance/{instanceId}", s.handleDeleteInstance)
-	// CAPNICo lists machines to discover failure-domain labels before creating
-	// instances. nico-sim does not model physical inventory or failure domains,
-	// so publish an empty inventory rather than leaving the API unsupported.
-	registerV2(mux, "GET", "machine", s.handleEmptyList)
+	// CAPNICo lists machines to discover failure-domain labels. The inventory is
+	// empty unless /sim/failure-domains configures one.
+	registerV2(mux, "GET", "machine", s.handleListMachines)
 	// CAPNICo resolves the DPU attached to an instance's primary machine
 	// interface after the instance is provisioned.
 	registerV2(mux, "GET", "machine/{machineId}", s.handleGetMachine)
@@ -145,6 +145,8 @@ func NewHandler(store *state.Store, containers ContainerService, logger *slog.Lo
 	mux.HandleFunc("GET /sim/instances", s.handleSimListVMs)
 	mux.HandleFunc("POST /sim/instances/{instanceId}/stop", s.handleSimStopVM)
 	mux.HandleFunc("POST /sim/instances/{instanceId}/start", s.handleSimStartVM)
+	mux.HandleFunc("GET /sim/failure-domains", s.handleSimGetFailureDomains)
+	mux.HandleFunc("PUT /sim/failure-domains", s.handleSimPutFailureDomains)
 
 	// ── File server ─────────────────────────────────────────────────────
 	// Serves files from the configured files directory. No auth required
