@@ -25,6 +25,7 @@ type WaitForControlPlaneNodeReadyToJoinResult struct {
 }
 
 // WaitForControlPlaneNodeReadyToJoin polls the database until at least one control plane node is ready to join.
+// It returns the node kubeadm init already ran on, if any, so a new run of ProvisionCluster continues on it.
 func (a *Activities) WaitForControlPlaneNodeReadyToJoin(
 	ctx context.Context,
 	input WaitForControlPlaneNodeReadyToJoinInput,
@@ -62,6 +63,12 @@ func (a *Activities) waitForControlPlaneNodeReadyToJoin(
 		})
 		if err != nil {
 			return WaitForControlPlaneNodeReadyToJoinResult{}, fmt.Errorf("failed to list control plane nodes: %w", err)
+		}
+
+		// The choice is made again whenever ProvisionCluster runs anew, for
+		// example after a reset, so keep the node kubeadm init already ran on.
+		if node, ok := a.controlPlaneNodeWithKubeadmInit(ctx, nodes); ok {
+			return WaitForControlPlaneNodeReadyToJoinResult{NodeID: node.ID}, nil
 		}
 
 		for _, node := range nodes {

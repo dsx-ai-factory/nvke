@@ -101,6 +101,10 @@ func (a *Activities) kubeadmInit(ctx context.Context, input KubeadmInitInput) er
 		return a.waitForKubeadmInitReady(ctx, node, input.InstallCNIAfterInit)
 	}
 
+	if err := a.requireNoOtherInitializedControlPlaneNode(ctx, cluster.ID, node); err != nil {
+		return err
+	}
+
 	initConfig := &kubeadmconfig.InitConfig{
 		NodeIP:                node.IP,
 		APIServerEndpoint:     controlPlaneEndpoint,
