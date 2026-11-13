@@ -441,6 +441,9 @@ func httpDoWithRetry(ctx context.Context, method, url string) (*http.Response, e
 	return nil, lastErr
 }
 
+// InstallBundle downloads the bundle, extracts it, and runs InstallCmd in that
+// directory. An empty InstallCmd runs the install file, or ./install.sh when
+// the bundle does not name one.
 func InstallBundle(b *Bundle, runner CommandRunner, source *BundleSource) (string, error) {
 	slog.Info("begin install process for bundle", "bundle", b)
 	path, err := DownloadAndExtractArchive(b, source)
@@ -462,6 +465,15 @@ func InstallBundle(b *Bundle, runner CommandRunner, source *BundleSource) (strin
 		// Default to install.sh if nothing else provided; eventually we should always use install.sh for all bundles
 		// to simplify this, even if install.sh is a wrapper to something else like a python script.
 		b.InstallFile = "install.sh"
+	}
+	// An omitted install command still names the install file. exec looks up a
+	// bare name on PATH, so a file in the bundle directory needs the ./ prefix.
+	if len(b.InstallCmd) == 0 {
+		command := b.InstallFile
+		if !strings.Contains(command, "/") {
+			command = "./" + command
+		}
+		b.InstallCmd = []string{command}
 	}
 
 	// If it's a .sh or .py executable (eg install.sh or install.py) make sure
