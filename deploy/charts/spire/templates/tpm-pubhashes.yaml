@@ -1,0 +1,17 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+
+Created empty on purpose. The NVKE controller derives the contents from the
+ClusterStaticEntries it writes for each node's TPM EK thumbprint, and watches
+this ConfigMap to repair drift — including the drift a `helm upgrade` causes by
+resetting it here.
+*/ -}}
+{{- if .Values.tpmPubhashes.create }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.tpmPubhashes.name }}
+  namespace: {{ .Values.namespaces.server }}
+data: {}
+{{- end }}
