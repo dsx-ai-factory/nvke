@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# CAPNICo v0.1.0, the PUBLIC infrastructure-components.yaml release asset:
+# CAPNICo v0.3.0-rc.1, the PUBLIC infrastructure-components.yaml release asset:
 #
-#   gh release download v0.1.0 \
+#   gh release download v0.3.0-rc.1 \
 #     --repo dsx-ai-factory/cluster-api-provider-nico \
 #     -p infrastructure-components.yaml
 #
@@ -466,6 +466,11 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
+    - description: When the controller next checks this Identity on its own schedule
+      jsonPath: .status.nextCheckTime
+      name: NextCheck
+      priority: 1
+      type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:
@@ -590,6 +595,15 @@ spec:
                   a condition's lastTransitionTime does not establish observation freshness.
                 format: date-time
                 type: string
+              nextCheckTime:
+                description: |-
+                  NextCheckTime is when the controller next checks this Identity on its own
+                  schedule. A change to the Identity or its Secret can start a check sooner.
+                  It is absent before the first completed attempt. When it is later than
+                  lastCheckedTime, readers treat the reported result as overdue once the
+                  current time is more than five minutes past it.
+                format: date-time
+                type: string
             type: object
         required:
         - spec
@@ -671,6 +685,13 @@ spec:
               allowUnhealthyMachine:
                 description: AllowUnhealthyMachine allows targeted instance creation
                   on a machine in Error status.
+                type: boolean
+              autoNetwork:
+                description: |-
+                  AutoNetwork lets NICo attach the instance to its VPC instead of through explicit interfaces.
+                  NICo requires it for hosts without a managed DPU, which only a Flat VPC can hold.
+                  The machine's address then comes from the NICo machine rather than the instance.
+                  Exactly one of Interfaces or AutoNetwork must be set.
                 type: boolean
               cloudInitInjectHostname:
                 description: CloudInitInjectHostname prepends hostname directives
@@ -755,6 +776,7 @@ spec:
                 description: |-
                   Interfaces are the interface attachment requests for the instance.
                   Use subnet-based attachments for Ethernet network virtualization and VPC prefix-based attachments for next-generation networking.
+                  Exactly one of Interfaces or AutoNetwork must be set.
                 items:
                   description: NicoMachineInterface defines one NICo interface attachment
                     request.
@@ -851,6 +873,11 @@ spec:
                   Mutually exclusive with IpxeScript.
                 minLength: 1
                 type: string
+              phoneHomeEnabled:
+                description: |-
+                  PhoneHomeEnabled requests that NICo wait for the cloud-init phone-home callback before reporting the instance Ready.
+                  When unset, NICo uses the operating system's setting, and iPXE machines use the --default-phone-home-enabled manager flag.
+                type: boolean
               powerControlIdentityRef:
                 description: |-
                   PowerControlIdentityRef names the Secret in this machine's namespace for NICo power control.
@@ -891,12 +918,13 @@ spec:
                 minLength: 1
                 type: string
             required:
-            - interfaces
             - vpcID
             type: object
             x-kubernetes-validations:
             - message: exactly one of instanceTypeID or machineID must be set
               rule: has(self.instanceTypeID) != has(self.machineID)
+            - message: exactly one of autoNetwork or interfaces must be set
+              rule: (has(self.autoNetwork) && self.autoNetwork) != has(self.interfaces)
             - message: infinibandPartitionID and infinibandInterfaces are mutually
                 exclusive
               rule: '!(has(self.infinibandPartitionID) && has(self.infinibandInterfaces))'
@@ -1129,7 +1157,11 @@ spec:
             has(oldSelf.spec.instanceTypeID) && (!has(self.spec.instanceTypeID) ||
             self.spec.instanceTypeID == oldSelf.spec.instanceTypeID))'
         - message: spec.interfaces is immutable after providerID is set
-          rule: '!has(oldSelf.spec.providerID) || self.spec.interfaces == oldSelf.spec.interfaces'
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.interfaces) == has(oldSelf.spec.interfaces)
+            && (!has(self.spec.interfaces) || self.spec.interfaces == oldSelf.spec.interfaces))'
+        - message: spec.autoNetwork is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || ((has(self.spec.autoNetwork) &&
+            self.spec.autoNetwork) == (has(oldSelf.spec.autoNetwork) && oldSelf.spec.autoNetwork))'
         - message: spec.infinibandInterfaces is immutable after providerID is set
           rule: '!has(oldSelf.spec.providerID) || (has(self.spec.infinibandInterfaces)
             == has(oldSelf.spec.infinibandInterfaces) && (!has(self.spec.infinibandInterfaces)
@@ -1158,6 +1190,10 @@ spec:
           rule: '!has(oldSelf.spec.providerID) || (has(self.spec.operatingSystemID)
             == has(oldSelf.spec.operatingSystemID) && (!has(self.spec.operatingSystemID)
             || self.spec.operatingSystemID == oldSelf.spec.operatingSystemID))'
+        - message: spec.phoneHomeEnabled is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.phoneHomeEnabled)
+            == has(oldSelf.spec.phoneHomeEnabled) && (!has(self.spec.phoneHomeEnabled)
+            || self.spec.phoneHomeEnabled == oldSelf.spec.phoneHomeEnabled))'
         - message: spec.cloudInitInjectHostname is immutable after providerID is set
           rule: '!has(oldSelf.spec.providerID) || (has(self.spec.cloudInitInjectHostname)
             == has(oldSelf.spec.cloudInitInjectHostname) && (!has(self.spec.cloudInitInjectHostname)
@@ -1261,6 +1297,13 @@ spec:
                         description: AllowUnhealthyMachine allows targeted instance
                           creation on a machine in Error status.
                         type: boolean
+                      autoNetwork:
+                        description: |-
+                          AutoNetwork lets NICo attach the instance to its VPC instead of through explicit interfaces.
+                          NICo requires it for hosts without a managed DPU, which only a Flat VPC can hold.
+                          The machine's address then comes from the NICo machine rather than the instance.
+                          Exactly one of Interfaces or AutoNetwork must be set.
+                        type: boolean
                       cloudInitInjectHostname:
                         description: CloudInitInjectHostname prepends hostname directives
                           to the bootstrap cloud-config.
@@ -1345,6 +1388,7 @@ spec:
                         description: |-
                           Interfaces are the interface attachment requests for the instance.
                           Use subnet-based attachments for Ethernet network virtualization and VPC prefix-based attachments for next-generation networking.
+                          Exactly one of Interfaces or AutoNetwork must be set.
                         items:
                           description: NicoMachineInterface defines one NICo interface
                             attachment request.
@@ -1445,6 +1489,11 @@ spec:
                           Mutually exclusive with IpxeScript.
                         minLength: 1
                         type: string
+                      phoneHomeEnabled:
+                        description: |-
+                          PhoneHomeEnabled requests that NICo wait for the cloud-init phone-home callback before reporting the instance Ready.
+                          When unset, NICo uses the operating system's setting, and iPXE machines use the --default-phone-home-enabled manager flag.
+                        type: boolean
                       powerControlIdentityRef:
                         description: |-
                           PowerControlIdentityRef names the Secret in this machine's namespace for NICo power control.
@@ -1485,13 +1534,14 @@ spec:
                         minLength: 1
                         type: string
                     required:
-                    - interfaces
                     - vpcID
                     type: object
                     x-kubernetes-validations:
                     - message: exactly one of instanceTypeID or machineID must be
                         set
                       rule: has(self.instanceTypeID) != has(self.machineID)
+                    - message: exactly one of autoNetwork or interfaces must be set
+                      rule: (has(self.autoNetwork) && self.autoNetwork) != has(self.interfaces)
                     - message: infinibandPartitionID and infinibandInterfaces are
                         mutually exclusive
                       rule: '!(has(self.infinibandPartitionID) && has(self.infinibandInterfaces))'
@@ -2122,7 +2172,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
-        image: ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:v0.1.0
+        image: ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:v0.3.0-rc.1
         imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
