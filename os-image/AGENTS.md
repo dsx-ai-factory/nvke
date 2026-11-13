@@ -1,7 +1,7 @@
 # AGENTS.md — `os-image/`
 
-Reference node OS image (spec + Packer recipe) and the `nvke-os-image-check`
-connectivity binary.
+Reference node OS image (spec + Packer recipe), the `nvke-os-image-check`
+connectivity binary, and the `nvke-os` / `nvke-os-node` CLIs.
 
 **Module path:** `github.com/dsx-ai-factory/nvke/os-image`
 
@@ -20,7 +20,11 @@ SPEC.md                   # contract
 packer/                   # QEMU golden-image build
 files/                    # units + SPIRE template + first-boot script
 cmd/nvke-os-image-check/   # checker entrypoint
+cmd/nvke-os/              # image CLI: every verb, including build-only ones
+cmd/nvke-os-node/         # node CLI: manifest and verify only
 internal/check/           # dial + gRPC reflection / GetKubeadmStatus
+internal/oscli/           # shared command layer: flags, -o json envelope, logging
+internal/errors/          # coded errors and their banded exit statuses
 ```
 
 ## Versioning
@@ -37,7 +41,7 @@ qcow2, `make boot-smoke` must pass, then the disk is published to NVCR and S3
 (and under its version tag to `ghcr.io/dsx-ai-factory/nvke/os-image-*` only
 when the repository variable `NVKE_GITHUB_PUBLISH` names `os-image`). A failed bake or smoke test does not publish.
 
-`make` stamps `nvke-os-image-check` from:
+`make` stamps `nvke-os-image-check`, `nvke-os` and `nvke-os-node` from:
 
 ```bash
 git describe --match 'os-image/v[0-9]*' --tags
@@ -48,14 +52,14 @@ The `os-image/` prefix is stripped for the binary ldflag.
 ## Commands
 
 ```bash
-make build              # stamped bin/nvke-os-image-check, and asserts the stamp took
+make build              # stamped bin/{nvke-os-image-check,nvke-os,nvke-os-node}, and asserts each stamp took
 make compile            # type-check every package, no binary
 make test
 make lint
 ```
 
-From the repository root, `make build` links the same binary into the
-repository's `bin/`, and `make version-check` runs it with `--version`.
+From the repository root, `make build` links the same binaries into the
+repository's `bin/`, and `make version-check` runs each with `--version`.
 
 ## Constraints
 

@@ -24,6 +24,7 @@ consumers whose other software pins that release — see `UBUNTU_RELEASE` under
 | `docs/full-disk-encryption.md` | FDE variant: build, verify, failure modes |
 | `demo-fde.sh` | Runs the host-FDE acceptance scenarios against a built image |
 | `cmd/nvke-os-image-check` | Connectivity checker (Go) |
+| `cmd/nvke-os`, `cmd/nvke-os-node` | Image CLI and its node-side subset (Go, skeleton) |
 
 ## Build the OS image
 

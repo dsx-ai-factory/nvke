@@ -554,7 +554,9 @@ VERSION_CMDS := agent:--version \
                 capd-reboot-controller:--version \
                 controller:--version \
                 management-engine:--version \
+                nvke-os:--version \
                 nvke-os-image-check:--version \
+                nvke-os-node:--version \
                 nvkectl:version \
                 operator-api:--version \
                 tenant-api:--version \
