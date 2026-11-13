@@ -36,7 +36,9 @@ type requestRecord struct {
 
 type nodePoolSeed struct {
 	resourceCollection[[]api.NodePool]
-	Create json.RawMessage `json:"create,omitempty"`
+	Create           json.RawMessage `json:"create,omitempty"`
+	CreateStatusCode int             `json:"createStatusCode,omitempty"`
+	UpdateStatusCode int             `json:"updateStatusCode,omitempty"`
 }
 
 type serverSeed struct {
@@ -60,6 +62,8 @@ type Server struct {
 	requests         []requestRecord
 	nodePools        resourceCollection[map[uuid.UUID]api.NodePool]
 	createPool       json.RawMessage
+	createPoolStatus int
+	updatePoolStatus int
 	updateStatusCode int
 }
 
@@ -101,21 +105,33 @@ func handle[T any](s *Server, collection *resourceCollection[T], handler http.Ha
 }
 
 // SeedFromYAML loads existing records and the declared defaults for newly created records.
+func (seed *serverSeed) validateStatusCodes() error {
+	for name, code := range map[string]int{
+		"clusters.statusCode":        seed.Clusters.StatusCode,
+		"nodePools.statusCode":       seed.NodePools.StatusCode,
+		"nodePools.createStatusCode": seed.NodePools.CreateStatusCode,
+		"nodePools.updateStatusCode": seed.NodePools.UpdateStatusCode,
+		"updateStatusCode":           seed.UpdateStatusCode,
+	} {
+		if code != 0 && (code < 400 || code > 599) {
+			return fmt.Errorf("%s must be an HTTP error status or zero", name)
+		}
+	}
+	return nil
+}
+
 func (s *Server) SeedFromYAML(input string) error {
 	var seed serverSeed
 	if err := yaml.UnmarshalStrict([]byte(input), &seed); err != nil {
 		return fmt.Errorf("decode fake NVKE controller resources: %w", err)
 	}
-	if seed.Clusters.StatusCode != 0 && (seed.Clusters.StatusCode < 400 || seed.Clusters.StatusCode > 599) {
-		return fmt.Errorf("clusters.statusCode must be an HTTP error status or zero")
+	if err := seed.validateStatusCodes(); err != nil {
+		return err
 	}
 	for _, cluster := range seed.Clusters.Resources {
 		if cluster.ID == uuid.Nil || cluster.Name == "" {
 			return fmt.Errorf("seeded cluster requires a nonzero id and name")
 		}
-	}
-	if seed.NodePools.StatusCode != 0 && (seed.NodePools.StatusCode < 400 || seed.NodePools.StatusCode > 599) {
-		return fmt.Errorf("nodePools.statusCode must be an HTTP error status or zero")
 	}
 	for _, pool := range seed.NodePools.Resources {
 		if pool.ID == uuid.Nil || pool.ClusterID == uuid.Nil || pool.Name == "" {
@@ -140,9 +156,6 @@ func (s *Server) SeedFromYAML(input string) error {
 			return fmt.Errorf("node pool create defaults require nonzero id and clusterID")
 		}
 	}
-	if seed.UpdateStatusCode != 0 && (seed.UpdateStatusCode < 400 || seed.UpdateStatusCode > 599) {
-		return fmt.Errorf("updateStatusCode must be an HTTP error status or zero")
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.clusters.StatusCode = seed.Clusters.StatusCode
@@ -155,6 +168,8 @@ func (s *Server) SeedFromYAML(input string) error {
 		s.nodePools.Resources[pool.ID] = pool
 	}
 	s.createPool = seed.NodePools.Create
+	s.createPoolStatus = seed.NodePools.CreateStatusCode
+	s.updatePoolStatus = seed.NodePools.UpdateStatusCode
 	s.updateStatusCode = seed.UpdateStatusCode
 	return nil
 }
@@ -361,6 +376,10 @@ func (s *Server) createNodePool(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.requests = append(s.requests, requestRecord{Method: r.Method, Path: r.URL.Path, CreateNodePool: &request})
+	if s.createPoolStatus != 0 {
+		writeError(w, s.createPoolStatus, http.StatusText(s.createPoolStatus))
+		return
+	}
 	if _, exists := s.clusters.Resources[request.ClusterID]; !exists {
 		writeError(w, http.StatusNotFound, "parent cluster not found")
 		return
@@ -401,7 +420,8 @@ func (s *Server) updateNodePool(w http.ResponseWriter, r *http.Request) {
 	var request api.UpdateNodePoolRequest
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil || request.DesiredNodeCount == nil || *request.DesiredNodeCount < 0 {
+	if err := decoder.Decode(&request); err != nil || (request.DesiredNodeCount == nil && request.Infra == nil) ||
+		(request.DesiredNodeCount != nil && *request.DesiredNodeCount < 0) {
 		writeError(w, http.StatusBadRequest, "invalid node pool scale request")
 		return
 	}
@@ -414,7 +434,20 @@ func (s *Server) updateNodePool(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "node pool not found")
 		return
 	}
-	pool.DesiredNodeCount = *request.DesiredNodeCount
+	if s.updatePoolStatus != 0 {
+		writeError(w, s.updatePoolStatus, http.StatusText(s.updatePoolStatus))
+		return
+	}
+	if request.DesiredNodeCount != nil {
+		pool.DesiredNodeCount = *request.DesiredNodeCount
+	}
+	if request.Infra != nil {
+		pool.Infra = &api.InfraNodePoolProvider{
+			BootstrapFiles:     request.Infra.BootstrapFiles,
+			MachineTemplate:    request.Infra.MachineTemplate,
+			PreKubeadmCommands: request.Infra.PreKubeadmCommands,
+		}
+	}
 	s.nodePools.Resources[id] = pool
 	writeJSON(w, http.StatusOK, pool)
 }
