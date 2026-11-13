@@ -1291,14 +1291,15 @@ jobs:
               [ -n "${value}" ] || value="<unset>"
               # The rows whose values are withheld. This file is an artifact
               # and outlives the run; what an operator needs from it is that
-              # the jump host and join token resolved and where they came
-              # from, both of which survive. Whether each was set is the part
-              # that is diagnostic.
+              # the jump host, the API host and the join token resolved and
+              # where they came from, all of which survive. Whether each was
+              # set is the part that is diagnostic. A DSX API host is a secret
+              # because it names its datahall, which an artifact must not.
               # Matched by shape, not by name: a site added later is withheld
               # by having named its secret the way the convention requires,
               # and a list is one entry out of date the day someone forgets.
               case "${resolved}" in
-                *_JUMP_HOST|*_TELEPORT_JOIN_TOKEN) withhold=1 ;;
+                *_JUMP_HOST|*_TELEPORT_JOIN_TOKEN|DSX_*_API) withhold=1 ;;
                 *) withhold=0 ;;
               esac
               if [ "${withhold}" = 1 ] && [ "${value}" != "<unset>" ]; then
