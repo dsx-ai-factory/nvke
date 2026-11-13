@@ -93,7 +93,6 @@ func TestMokkaPodProblems(t *testing.T) {
 }
 
 func TestMokkaModelProblems(t *testing.T) {
-	unlabeled := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "cp"}}
 	for _, tc := range []struct {
 		name  string
 		nodes []corev1.Node
@@ -104,7 +103,6 @@ func TestMokkaModelProblems(t *testing.T) {
 			nodes: []corev1.Node{
 				mokkaGPUNode("a", "gb300", "NVIDIA-GB300-NVL", 4),
 				mokkaGPUNode("b", "h100", "NVIDIA-H100-80GB-HBM3", 8),
-				unlabeled,
 			},
 		},
 		{

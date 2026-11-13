@@ -78,14 +78,12 @@ func validateMokkaGPU(test *tenantTest) {
 		}
 		labeled := 0
 		for _, pool := range test.spec.Workers {
-			profile, ok := pool.NodeLabels[mokkaLabelKey]
-			if !ok {
-				continue
-			}
-			Expect(mokkaProfiles).To(HaveKey(profile), "pool %s: unknown Mokka profile %q", pool.Name, profile)
-			labeled += pool.DesiredNodeCount
-			if !slices.Contains(profiles, profile) {
-				profiles = append(profiles, profile)
+			if profile, ok := pool.NodeLabels[mokkaLabelKey]; ok {
+				Expect(mokkaProfiles).To(HaveKey(profile), "pool %s: unknown Mokka profile %q", pool.Name, profile)
+				labeled += pool.DesiredNodeCount
+				if !slices.Contains(profiles, profile) {
+					profiles = append(profiles, profile)
+				}
 			}
 		}
 		Expect(labeled).To(BeNumerically(">", 0), "the entry must label a worker pool %s=<profile>", mokkaLabelKey)
@@ -147,7 +145,11 @@ func validateMokkaGPU(test *tenantTest) {
 			if err := c.List(ctx, &nodes); err != nil {
 				return err
 			}
-			return joinProblems("GPU nodes", append(gpuNodeProblems(nodes.Items, want), mokkaModelProblems(nodes.Items)...))
+			labeled, err := mokkaNodes(ctx, c)
+			if err != nil {
+				return err
+			}
+			return joinProblems("GPU nodes", append(gpuNodeProblems(nodes.Items, want), mokkaModelProblems(labeled)...))
 		}).WithContext(ctx).WithTimeout(mokkaWait).WithPolling(sitePoll).Should(Succeed())
 	}, NodeTimeout(mokkaWait+time.Minute))
 
@@ -244,15 +246,12 @@ func mokkaPodProblems(nodes []corev1.Node, pods []corev1.Pod, want int) []string
 	return problems
 }
 
-// mokkaModelProblems requires every node labeled for Mokka to advertise its
-// profile's GPU model and count.
+// mokkaModelProblems requires each of the nodes labeled for Mokka to advertise
+// its profile's GPU model and count.
 func mokkaModelProblems(nodes []corev1.Node) []string {
 	var problems []string
 	for _, node := range nodes {
-		profile, ok := node.Labels[mokkaLabelKey]
-		if !ok {
-			continue
-		}
+		profile := node.Labels[mokkaLabelKey]
 		want := mokkaProfiles[profile]
 		count := node.Status.Allocatable[gpuResource]
 		if node.Labels[gpuProductLabel] != want.product || count.Value() != want.gpus {
