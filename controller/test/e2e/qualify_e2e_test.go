@@ -476,6 +476,14 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 			if dir := cfg.Lifecycle.NodeKeyDir; dir != "" {
 				GinkgoLogr.Info("the site node can be logged into through its jump host with this run's key",
 					"key", provision.KeyPath(dir, node.Name), "user", node.User, "ip", node.IP)
+				if cluster.Kubeconfig != "" {
+					if path, err := site.KeepKubeconfig(cluster, dir, node.Name); err != nil {
+						GinkgoLogr.Error(err, "writing the kept site's kubeconfig")
+					} else {
+						GinkgoLogr.Info("the site's admin kubeconfig reaches it once the node's API server port is forwarded through the jump host",
+							"kubeconfig", path, "forward", fmt.Sprintf("127.0.0.1:%d to %s:127.0.0.1:%d", cluster.APIServerPort, node.IP, cluster.APIServerPort))
+					}
+				}
 			}
 			GinkgoLogr.Info("the instance survives this run and must be released by hand", "name", node.Name)
 			return

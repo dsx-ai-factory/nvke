@@ -682,6 +682,31 @@ func TestTenantRESTConfigPreservesAdminCredentials(t *testing.T) {
 	}
 }
 
+func TestPublishedKubeconfigIsTheSecretAsIs(t *testing.T) {
+	kubeconfig := testAdminKubeconfig(t)
+	factory := newTestTenantClientFactory(t, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
+		Data:       map[string][]byte{tenantKubeconfigKey: kubeconfig},
+	}, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-b-kubeconfig"},
+		Data:       map[string][]byte{"other": kubeconfig},
+	})
+
+	got, err := factory.PublishedKubeconfig(context.Background(), "tenant-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, kubeconfig) {
+		t.Error("the published kubeconfig was changed")
+	}
+	if _, err := factory.PublishedKubeconfig(context.Background(), "tenant-b"); err == nil || !strings.Contains(err.Error(), "has no non-empty") {
+		t.Errorf("a Secret without the kubeconfig key gave error %v", err)
+	}
+	if _, err := factory.PublishedKubeconfig(context.Background(), "tenant-c"); err == nil || !strings.Contains(err.Error(), "getting tenant kubeconfig secret nvke-system/tenant-c-kubeconfig") {
+		t.Errorf("a missing Secret gave error %v", err)
+	}
+}
+
 func TestGetAdminClientReadsPublishedKubeconfigAndRegistersVerifierSchemes(t *testing.T) {
 	factory := newTestTenantClientFactory(t, &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
