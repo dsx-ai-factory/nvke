@@ -7,8 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -70,9 +70,10 @@ type Options struct {
 	// under. Empty resolves to the only one declared.
 	SiteName string
 
-	// Issuer is the SSA issuer base url, which the exchange appends "/token"
-	// to --- not the token endpoint itself. Empty takes SSA_ISSUER from the
-	// environment, and a run with neither fails before anything is created.
+	// Issuer is the issuer base url, which the exchange appends "/token"
+	// to --- not the token endpoint itself. Empty takes the datahall's own
+	// (its API host plus issuerPath), else SSA_ISSUER, and a run with none
+	// fails before anything is created.
 	Issuer string
 
 	Images provision.Images
@@ -166,8 +167,14 @@ func New(opts Options) (*Provider, error) {
 		opts.CreateTimeout = defaultCreateTimeout
 	}
 	if strings.TrimSpace(opts.Issuer) == "" {
-		opts.Issuer = os.Getenv(EnvIssuer)
+		opts.Issuer = issuerFor(site)
 	}
+	// Before createHTTP is taken from it, so both clients trust the CA.
+	httpClient, caErr := withDatahallCA(opts.HTTPClient, site.Key)
+	if caErr != nil {
+		return nil, fmt.Errorf("dsx: %w", caErr)
+	}
+	opts.HTTPClient = httpClient
 
 	// The datahall addresses itself: the key it is filed under is in the host.
 	endpoint := site.Endpoint()
@@ -239,7 +246,13 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	// GET /tenant/current; here it belongs to the datahall and is in the file
 	// with the rest of its identifiers.
 	create := standard.NewInstanceCreateRequest(req.Name, p.site.TenantID, p.site.VpcID)
-	create.SetInterfaces(p.interfaces())
+	if p.site.AutoNetwork {
+		create.SetAutoNetwork(true)
+		// Empty rather than absent, as the creates proven on such hosts send.
+		create.SetInterfaces([]standard.InterfaceCreateRequest{})
+	} else {
+		create.SetInterfaces(p.interfaces())
+	}
 	// One or the other, never both: machineId names a host and needs the
 	// tenant's targetedInstanceCreation capability, instanceTypeId leaves the
 	// choice to the site.
@@ -381,9 +394,10 @@ func (p *Provider) payloads(req infra.NodeRequest, place Placement, authorizedKe
 	return node.IPXEScript, userData, nil
 }
 
-// interfaces attaches the instance to the datahall's network. Always a prefix:
-// a DSX fabric is FNN, which exposes prefixes rather than subnets, so there is
-// nothing to choose between the way Forge has to.
+// interfaces attaches the instance to the datahall's network. A prefix: a DSX
+// fabric is FNN, which exposes prefixes rather than subnets, so there is
+// nothing to choose between the way Forge has to. A FLAT datahall sends
+// autoNetwork instead, with an empty interface list.
 func (p *Provider) interfaces() []standard.InterfaceCreateRequest {
 	iface := standard.NewInterfaceCreateRequest()
 	iface.SetVpcPrefixId(p.site.VpcPrefixID)
@@ -523,6 +537,15 @@ func (p *Provider) waitAddressed(ctx context.Context, id string) (string, error)
 				if address := instanceAddress(inst); address != "" {
 					return address, nil
 				}
+				// An autoNetwork instance reports no interfaces; its
+				// machine carries the address.
+				if p.site.AutoNetwork && inst.GetMachineId() != "" {
+					address, merr := p.machineAddress(actx, inst.GetMachineId())
+					if address != "" {
+						return address, nil
+					}
+					err = merr
+				}
 			}
 		}
 		select {
@@ -635,6 +658,29 @@ func instanceAddress(inst *standard.Instance) string {
 		}
 	}
 	return ""
+}
+
+// machineAddress is the first IPv4 address on the primary interface of a
+// machine, which is where a FLAT datahall reports a host's address.
+func (p *Provider) machineAddress(ctx context.Context, machineID string) (string, error) {
+	machine, resp, err := p.client.MachineAPI.GetMachine(ctx, p.opts.Env.Org.ID, machineID).Execute()
+	closeBody(resp)
+	if err != nil {
+		// Not apiError: the caller's timeout message applies it once.
+		return "", fmt.Errorf("reading machine %s: %w", machineID, err)
+	}
+	for _, iface := range machine.GetMachineInterfaces() {
+		if !iface.GetIsPrimary() {
+			continue
+		}
+		for _, address := range iface.GetIpAddresses() {
+			host, _, _ := strings.Cut(address, "/")
+			if ip := net.ParseIP(host); ip != nil && ip.To4() != nil {
+				return host, nil
+			}
+		}
+	}
+	return "", nil
 }
 
 // nodeUser is the login for this datahall's machines, defaulted once so the

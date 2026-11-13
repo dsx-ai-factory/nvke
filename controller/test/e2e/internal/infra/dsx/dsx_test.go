@@ -6,6 +6,7 @@ package dsx
 import (
 	"context"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -47,6 +48,12 @@ type fakeNico struct {
 	// tenantAsked records a GET of the current tenant, which this provider
 	// must never make: the tenant is declared.
 	tenantAsked bool
+	// flat serves an instance the way a FLAT datahall does: no interfaces,
+	// and the address on its machine's primary interface.
+	flat bool
+	// tokenPath is where tokens are minted; empty is "/token".
+	tokenPath string
+	minted    int
 }
 
 func (f *fakeNico) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -54,7 +61,12 @@ func (f *fakeNico) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	if r.URL.Path == "/token" {
+	tokenPath := f.tokenPath
+	if tokenPath == "" {
+		tokenPath = "/token"
+	}
+	if r.URL.Path == tokenPath {
+		f.minted++
 		_, _ = w.Write([]byte(`{"access_token":"minted"}`))
 		return
 	}
@@ -83,10 +95,17 @@ func (f *fakeNico) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		status := f.statuses[min(f.polls, len(f.statuses)-1)]
 		f.polls++
 		body := `{"id":"` + testInstance + `","status":"` + status + `"`
-		if f.polls > f.addressAfter {
+		switch {
+		case f.flat:
+			body += `,"machineId":"` + testMachine + `","interfaces":[]`
+		case f.polls > f.addressAfter:
 			body += `,"interfaces":[{"ipAddresses":["10.91.179.99/31"]}]`
 		}
 		_, _ = w.Write([]byte(body + "}"))
+	case r.Method == http.MethodGet && r.URL.Path == base+"/machine/"+testMachine:
+		_, _ = w.Write([]byte(`{"id":"` + testMachine + `","machineInterfaces":[` +
+			`{"isPrimary":false,"ipAddresses":["192.0.2.9"]},` +
+			`{"isPrimary":true,"ipAddresses":["fe80::1","198.51.100.7"]}]}`))
 	case r.Method == http.MethodDelete && r.URL.Path == base+"/instance/"+testInstance:
 		f.deleted++
 		// Plain text, as Forge answers, which the SDK cannot decode as the
@@ -169,6 +188,12 @@ func testEnv(api string) *Environment {
 
 func newTestProvider(t *testing.T, nico *fakeNico, dialer provision.Dialer) *Provider {
 	t.Helper()
+	return newTestProviderWith(t, nico, dialer, nil)
+}
+
+// newTestProviderWith is newTestProvider with the datahall changed first.
+func newTestProviderWith(t *testing.T, nico *fakeNico, dialer provision.Dialer, change func(*Site)) *Provider {
+	t.Helper()
 	srv := httptest.NewServer(nico)
 	t.Cleanup(srv.Close)
 
@@ -176,8 +201,14 @@ func newTestProvider(t *testing.T, nico *fakeNico, dialer provision.Dialer) *Pro
 	t.Setenv(testClientIDVar, "nvssa-prd-test")
 	t.Setenv(testClientSecretVar, "ssap-test")
 
+	env := testEnv(srv.URL)
+	if change != nil {
+		site := env.Sites[testDatahall]
+		change(&site)
+		env.Sites[testDatahall] = site
+	}
 	provider, err := New(Options{
-		Env:      testEnv(srv.URL),
+		Env:      env,
 		SiteName: testDatahall,
 		Issuer:   srv.URL,
 		Images: func(_, arch string) (string, string, error) {
@@ -565,5 +596,88 @@ func TestWaitTerminating(t *testing.T) {
 	nico.set("cp-uuid", "")
 	if err := provider.WaitTerminating(context.Background(), ids); err != nil {
 		t.Fatalf("one Terminating and one gone: %v", err)
+	}
+}
+
+func TestProvisionNodeAutoNetworksAFlatDatahall(t *testing.T) {
+	nico := &fakeNico{t: t, statuses: []string{"Provisioning"}, flat: true}
+	provider := newTestProviderWith(t, nico, &fakeDialer{conn: &fakeConn{}}, func(site *Site) {
+		site.VpcPrefixID = ""
+		site.AutoNetwork = true
+	})
+
+	node, session, err := provider.ProvisionNode(context.Background(), request(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Teardown(context.Background()) })
+
+	if got := nico.created["autoNetwork"]; got != true {
+		t.Errorf("autoNetwork = %v, want true", got)
+	}
+	// NiCO refuses explicit interfaces for a host with no managed DPU, and
+	// the creates proven there send an empty list rather than none.
+	if interfaces, ok := nico.created["interfaces"].([]any); !ok || len(interfaces) != 0 {
+		t.Errorf("interfaces = %v, want an empty list on a FLAT datahall", nico.created["interfaces"])
+	}
+	// The instance reports no address; its machine's primary interface does.
+	if node.IP != "198.51.100.7" {
+		t.Errorf("node.IP = %q, want the primary interface's IPv4 on the machine", node.IP)
+	}
+}
+
+// The way datahall-3 is reached: no issuer passed in, so the datahall's own
+// issuerPath is minted from, over an API whose certificate only its CA_CERT
+// verifies. Any client the CA did not reach fails the handshake.
+func TestProvisionNodeMintsAtTheIssuerPathOverThePrivateCA(t *testing.T) {
+	const issuerPath = "/realms/r/protocol/openid-connect"
+	nico := &fakeNico{t: t, statuses: []string{"Provisioning"}, tokenPath: issuerPath + "/token"}
+	srv := httptest.NewTLSServer(nico)
+	t.Cleanup(srv.Close)
+	t.Setenv(testClientIDVar, "nvssa-prd-test")
+	t.Setenv(testClientSecretVar, "ssap-test")
+	t.Setenv(CACertEnvName(testDatahall), string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})))
+
+	env := testEnv(srv.URL)
+	site := env.Sites[testDatahall]
+	site.IssuerPath = issuerPath
+	env.Sites[testDatahall] = site
+	provider, err := New(Options{
+		Env:      env,
+		SiteName: testDatahall,
+		Images: func(_, arch string) (string, string, error) {
+			return "https://cdn.example/imager-" + arch + ".efi", "https://cdn.example/node-ubuntu-24.04.5-" + arch + ".qcow2", nil
+		},
+		Dialer:       &fakeDialer{conn: &fakeConn{}},
+		Node:         nvke.NodeInputs{KubernetesVersion: "1.36.3", CNIVersion: "1.4.0"},
+		Tools:        provision.HostTools{NerdctlVersion: "2.3.5", KindVersion: "v0.32.0", ClusterctlVersion: "v1.12.3"},
+		PollInterval: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, session, err := provider.ProvisionNode(context.Background(), request(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Teardown(context.Background()) })
+	nico.mu.Lock()
+	minted := nico.minted
+	nico.mu.Unlock()
+	if minted == 0 {
+		t.Errorf("no token was minted at %s", issuerPath+"/token")
+	}
+
+	// CAPNICo is handed the same token URL.
+	declared, err := env.Site(testDatahall)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := SSAClientFor(declared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := srv.URL + issuerPath + "/token"; client.TokenURL != want {
+		t.Errorf("TokenURL = %q, want %q", client.TokenURL, want)
 	}
 }

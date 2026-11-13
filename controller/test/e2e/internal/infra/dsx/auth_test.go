@@ -5,10 +5,12 @@ package dsx
 
 import (
 	"context"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The datahall these tests mint for, and the variables its client is supplied
@@ -167,5 +169,138 @@ func TestTokenRejectionNamesTheIssuerAndTheClient(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "ssap-launchlayer") {
 		t.Error("the client secret reached the error")
+	}
+}
+
+func TestCACertEnvNameFollowsTheKey(t *testing.T) {
+	if got := CACertEnvName("datahall-3"); got != "DSX_DATAHALL_3_CA_CERT" {
+		t.Errorf("CACertEnvName = %q", got)
+	}
+}
+
+func TestIssuerIsTheDatahallsOwnWhenItDeclaresAPath(t *testing.T) {
+	t.Setenv(EnvIssuer, "https://ssa.example")
+
+	own := Site{Key: "datahall-3", API: "https://hall3.example/", IssuerPath: "/realms/r/protocol/openid-connect/"}
+	if got := issuerFor(own); got != "https://hall3.example/realms/r/protocol/openid-connect" {
+		t.Errorf("issuer = %q, want the API host plus the declared path", got)
+	}
+	// A datahall that declares none keeps minting from SSA_ISSUER.
+	if got := issuerFor(Site{Key: testSite, API: "https://hall1.example"}); got != "https://ssa.example" {
+		t.Errorf("issuer = %q, want SSA_ISSUER", got)
+	}
+}
+
+func TestReuseFollowsTheTokensLifetime(t *testing.T) {
+	for expiresIn, want := range map[int]time.Duration{
+		0:   tokenReuse,       // not reported: the old fixed window
+		900: tokenReuse,       // SSA's fifteen minutes: unchanged
+		300: 4 * time.Minute,  // Keycloak's five: a minute short of it
+		30:  15 * time.Second, // shorter than the margin: half of it
+	} {
+		if got := reuseFor(expiresIn); got != want {
+			t.Errorf("reuseFor(%d) = %s, want %s", expiresIn, got, want)
+		}
+	}
+}
+
+func TestExpiresInIsReadLeniently(t *testing.T) {
+	for raw, want := range map[string]int{
+		``:       0,
+		`300`:    300,
+		`"300"`:  300,
+		`299.9`:  299,
+		`"soon"`: 0,
+		`null`:   0,
+		`-5`:     0,
+	} {
+		if got := expiresSeconds([]byte(raw)); got != want {
+			t.Errorf("expiresSeconds(%s) = %d, want %d", raw, got, want)
+		}
+	}
+}
+
+func TestTokenSurvivesAnOddExpiresIn(t *testing.T) {
+	t.Setenv(testClientIDVar, "client")
+	t.Setenv(testClientSecretVar, "supplied")
+
+	stub := &issuerStub{status: http.StatusOK, body: `{"access_token":"minted","expires_in":{"odd":true}}`}
+	srv := stub.server(t)
+	source := newTokenSource(srv.Client(), srv.URL, testSite)
+	if _, err := source.Token(context.Background()); err != nil {
+		t.Fatalf("an unreadable expires_in should fall back to the default reuse, not fail the mint: %v", err)
+	}
+	if left := time.Until(source.expires); left > tokenReuse || left < tokenReuse-time.Minute {
+		t.Errorf("reused for %s, want about %s", left, tokenReuse)
+	}
+}
+
+func TestTokenHonoursExpiresIn(t *testing.T) {
+	t.Setenv(testClientIDVar, "gb300-client")
+	t.Setenv(testClientSecretVar, "supplied")
+
+	stub := &issuerStub{status: http.StatusOK, body: `{"access_token":"minted","expires_in":300}`}
+	srv := stub.server(t)
+	source := newTokenSource(srv.Client(), srv.URL, testSite)
+	if _, err := source.Token(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if left := time.Until(source.expires); left > 4*time.Minute || left < 3*time.Minute {
+		t.Errorf("a 300s token is reused for %s, want about four minutes", left)
+	}
+}
+
+// caPEM is the certificate a TLS test server presents, as a datahall's
+// private CA would be supplied.
+func caPEM(srv *httptest.Server) string {
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}))
+}
+
+func TestDatahallCAIsTrusted(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	t.Cleanup(srv.Close)
+
+	get := func(client *http.Client) error {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, http.NoBody)
+		if err != nil {
+			return err
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		return resp.Body.Close()
+	}
+
+	// Without the CA the private certificate does not verify, which is what
+	// this datahall's API looks like to a client on the system roots alone.
+	plain := &http.Client{Timeout: 5 * time.Second}
+	if err := get(plain); err == nil {
+		t.Fatal("a private CA verified without being supplied")
+	}
+
+	t.Setenv("DSX_DATAHALL_3_CA_CERT", caPEM(srv))
+	client, err := withDatahallCA(plain, "datahall-3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := get(client); err != nil {
+		t.Fatalf("the supplied CA was not trusted: %v", err)
+	}
+	if client.Timeout != plain.Timeout {
+		t.Error("adding the CA dropped the client's timeout")
+	}
+}
+
+func TestDatahallCAIsOptionalAndValidated(t *testing.T) {
+	plain := &http.Client{}
+	got, err := withDatahallCA(plain, "datahall-9")
+	if err != nil || got != plain {
+		t.Errorf("no CA supplied should return the client unchanged, got %v, %v", got, err)
+	}
+
+	t.Setenv("DSX_DATAHALL_9_CA_CERT", "not a certificate")
+	if _, err := withDatahallCA(plain, "datahall-9"); err == nil || !strings.Contains(err.Error(), "DSX_DATAHALL_9_CA_CERT") {
+		t.Errorf("a value holding no PEM should fail naming the variable, got %v", err)
 	}
 }

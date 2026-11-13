@@ -57,10 +57,11 @@ const (
 
 // withheldFromEnvironment is every value in the run's environment that must
 // not reach an artifact: the jump hosts and the SSA issuer, which the
-// workflow's own step seds out of the text files it uploads, and the jump host
-// password when a run uses one. The archives the suite writes cannot be
-// sed-ed, so the suite carries the same list into its redaction. Each value
-// raw and without a trailing slash, as the workflow matches it.
+// workflow's own step seds out of the text files it uploads, a datahall's CA
+// certificate, and the jump host password when a run uses one. The archives
+// the suite writes cannot be sed-ed, so the suite carries the same list into
+// its redaction. Each value raw and without a trailing slash, as the workflow
+// matches it.
 func withheldFromEnvironment() []string {
 	var values []string
 	for _, kv := range os.Environ() {
@@ -68,7 +69,8 @@ func withheldFromEnvironment() []string {
 		if !ok || value == "" {
 			continue
 		}
-		if !strings.HasSuffix(name, "_JUMP_HOST") && name != "SSA_ISSUER" && name != envJumpHostPassword {
+		if !strings.HasSuffix(name, "_JUMP_HOST") && !strings.HasSuffix(name, "_CA_CERT") &&
+			name != "SSA_ISSUER" && name != envJumpHostPassword {
 			continue
 		}
 		values = append(values, value)
@@ -195,8 +197,15 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 			Skip("-e2e.site-stage is not set")
 		case siteStageProvision, siteStageBootstrap, siteStageDeployment:
 		case siteStageFull:
-			if err := fullStageSupported(expectSucceed(runEnvironment()).Provider); err != nil {
+			env := expectSucceed(runEnvironment())
+			if err := fullStageSupported(env.Provider); err != nil {
 				Fail(err.Error())
+			}
+			if env.Provider == dsx.ProviderName {
+				dsxEnv := expectSucceed(dsx.Decode(env.Infrastructure))
+				if err := dsxTenantSupported(dsxEnv, expectSucceed(runCapabilities())); err != nil {
+					Fail(err.Error())
+				}
 			}
 		default:
 			Fail(fmt.Sprintf("-e2e.site-stage %q is not provision, bootstrap, deployment or full", siteStage))
@@ -597,6 +606,22 @@ func fullStageSupported(provider string) error {
 		"Forge's and DSX's: the tenant half decodes the environment as one of those declarations, which a %s "+
 		"environment is not. Run this provider at stage provision, bootstrap or deployment until a tenant spec for it exists",
 		provider, provider)
+}
+
+// dsxTenantSupported refuses a full run whose datahall is FLAT, before a
+// machine is taken. Its tenant's NicoMachines would need autoNetwork, and the
+// CAPNICo the stack deploys does not have it yet.
+func dsxTenantSupported(env *dsx.Environment, capabilities map[string]string) error {
+	selection, err := env.Resolve(capabilities)
+	if err != nil {
+		return err
+	}
+	if selection.Site.AutoNetwork {
+		return fmt.Errorf("-e2e.site-stage full needs a tenant on datahall %s, which is FLAT (autoNetwork), and the "+
+			"CAPNICo the stack deploys has no NicoMachine autoNetwork yet. Run this datahall at stage provision, "+
+			"bootstrap or deployment until it does", selection.Site.Key)
+	}
+	return nil
 }
 
 // newDeployConfig builds what the Cluster API provider the stack installs

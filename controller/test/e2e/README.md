@@ -1046,10 +1046,15 @@ export DSX_DATAHALL_1_SSH_KEY_GROUP_ID=… DSX_DATAHALL_1_INSTANCE_TYPE_ID=…
 
 There is no cluster fallback: an unset client fails the run naming both
 variables. The names derive from the datahall key, so a credential scoped to
-one datahall cannot be picked up by a run against another.
+one datahall cannot be picked up by a run against another. A datahall that
+declares `issuerPath` mints on its own API host and needs no `SSA_ISSUER`, and
+one served under a private CA takes the PEM in `DSX_<DATAHALL>_CA_CERT`.
 
 Every stage runs, `full` included: the datahall has its own tenant spec, so a
 `full` run builds the site and then a control plane and a worker on it. The
+exception is a FLAT (`autoNetwork`) datahall, where `full` is refused before
+any machine is taken until the stack's CAPNICo can create autoNetwork
+machines. The
 site lane registers one tenant entry per dialect and each decodes the
 environment strictly, so a hand-run selects its own with
 `-ginkgo.label-filter="site-controller && !nico-forge"`; the workflow does the

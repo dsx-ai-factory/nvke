@@ -49,16 +49,46 @@ func TestWithheldFromEnvironment(t *testing.T) {
 	t.Setenv("FORGE_JUMP_HOST", "jump.example.test/")
 	t.Setenv("DSX_DATAHALL_1_JUMP_HOST", "10.1.2.3")
 	t.Setenv("SSA_ISSUER", "https://issuer.example.test/")
+	t.Setenv("DSX_DATAHALL_3_CA_CERT", "-----BEGIN CERTIFICATE-----\nhall3\n-----END CERTIFICATE-----\n")
 	t.Setenv("JUMP_HOST_PASSWORD", "hunter2hunter2")
 	t.Setenv("FORGE_API_KEY", "not-withheld-by-this-list")
 
 	got := strings.Join(withheldFromEnvironment(), "\n")
-	for _, want := range []string{"jump.example.test/", "jump.example.test", "10.1.2.3", "https://issuer.example.test/", "https://issuer.example.test", "hunter2hunter2"} {
+	for _, want := range []string{"jump.example.test/", "jump.example.test", "10.1.2.3", "https://issuer.example.test/", "https://issuer.example.test", "hall3\n-----END CERTIFICATE-----", "hunter2hunter2"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("withheldFromEnvironment lacks %q:\n%s", want, got)
 		}
 	}
 	if strings.Contains(got, "not-withheld-by-this-list") {
 		t.Errorf("withheldFromEnvironment carries the API key, which newStack names instead:\n%s", got)
+	}
+}
+
+// A FLAT datahall's tenant needs CAPNICo's NicoMachine autoNetwork, which the
+// stack's CAPNICo does not have yet, so a full run there is refused up front.
+func TestDSXTenantSupportedRefusesAFlatDatahall(t *testing.T) {
+	flat := dsx.Site{
+		API: "https://hall.example.test", TenantID: "t", VpcID: "v", SSHKeyGroupID: "k", AutoNetwork: true,
+		InstanceTypes: []dsx.InstanceType{{
+			Name: "tray", ID: "tray-type",
+			Provides: map[string]string{"machineType": "gpu", "arch": "arm64", "gpu": "gb300"},
+		}},
+	}
+	env := &dsx.Environment{Org: dsx.Org{ID: "ncx"}, Sites: map[string]dsx.Site{"datahall-3": flat}}
+	err := dsxTenantSupported(env, map[string]string{"arch": "arm64", "gpu": "gb300"})
+	if err == nil {
+		t.Fatal("a full run on a FLAT datahall should be refused before a machine is taken")
+	}
+	for _, want := range []string{"datahall-3", siteStageDeployment} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error does not name %q: %v", want, err)
+		}
+	}
+
+	flat.AutoNetwork = false
+	flat.VpcPrefixID = "p"
+	env.Sites["datahall-3"] = flat
+	if err := dsxTenantSupported(env, map[string]string{"arch": "arm64", "gpu": "gb300"}); err != nil {
+		t.Errorf("a datahall with a prefix should be allowed, got %v", err)
 	}
 }
