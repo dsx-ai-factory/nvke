@@ -73,7 +73,8 @@ push also runs the `perf` scope through the
 |---|---|
 | `qualify-e2e` | `QUALIFY_E2E_SCOPE`, or `golden-path` when that is unset: Ubuntu 24.04 on GB200, both arches |
 | `qualify-e2e-l40s` | the `l40s` scope: Ubuntu 24.04 on L40S at site-1, amd64 |
-| `qualify-e2e-dsx` | the `dsx` scope: the DSX datahall, at stage `full` |
+| `qualify-e2e-dsx` | the `dsx` scope: the DSX datahalls except GB300, at stage `full` |
+| `qualify-e2e-dsx-gb300` | the `dsx-gb300` scope: the GB300 datahall, at stage `deployment` |
 | `qualify-e2e-dry-run` | everything except joining Teleport and running the suite |
 
 The DSX label names its scope outright, where `qualify-e2e` takes whatever
@@ -81,7 +82,8 @@ The DSX label names its scope outright, where `qualify-e2e` takes whatever
 machines and the suite has a DSX tenant spec, so a `full` run places its three
 --- a site controller, a tenant control plane and a worker --- the same as any
 other lane. A lane that wants a shorter stage sets `QUALIFY_E2E_STAGE` in its
-own environment.
+own environment. The GB300 label pins `deployment` instead: that datahall
+refuses `full` until the stack's CAPNICo can create autoNetwork machines.
 
 A run starts with a `plan` job that runs `qualify plan` and uploads
 `plan.json`, and then a single `qualify-run` job runs once for each stream of

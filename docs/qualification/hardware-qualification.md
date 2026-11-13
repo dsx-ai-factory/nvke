@@ -107,6 +107,7 @@ Add a label to a pull request from a branch of this repository:
 | `qualify-e2e` | the scope in `QUALIFY_E2E_SCOPE`, or `golden-path` when that is unset |
 | `qualify-e2e-l40s` | the `l40s` scope |
 | `qualify-e2e-dsx` | the `dsx` scope |
+| `qualify-e2e-dsx-gb300` | the `dsx-gb300` scope, at stage `deployment` |
 | `qualify-e2e-dry-run` | a dry run |
 
 A pull request has no dispatch inputs, so a labelled run takes them from the
@@ -758,7 +759,8 @@ job; `qualify local` runs the one stream you name.
 |---|---|
 | `golden-path` | Ubuntu 24.04 on GB200, amd64 and arm64 site controllers, at site-2 |
 | `l40s` | Ubuntu 24.04 on L40S, amd64, at site-1 |
-| `dsx` | the DSX datahall |
+| `dsx` | the DSX datahalls, except GB300 |
+| `dsx-gb300` | GB300 on the third DSX datahall, below stage `full` for now |
 | `perf` | the performance stream on the NVKE Scale Forge site: CPU machines only, a three worker tenant |
 | `full` | every Forge stream except the perf one: GB200 and L40S on Ubuntu 24.04 and 26.04 |
 
