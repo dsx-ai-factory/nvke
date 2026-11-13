@@ -513,6 +513,11 @@ func (s *nodePoolService) UpdateNodePool(
 		if err := s.validateUpdateNodePoolRelease(ctx, dbNodePool, req.Body); err != nil {
 			return err
 		}
+		if req.Body != nil && req.Body.KubernetesVersion != nil {
+			if err := validateNodePoolKubernetesVersion(cluster, dbNodePool.KubernetesVersion, *req.Body.KubernetesVersion); err != nil {
+				return newBadRequestErrorf("%s", err)
+			}
+		}
 		if req.Body != nil && req.Body.DesiredNodeCount != nil && *req.Body.DesiredNodeCount > dbNodePool.DesiredCount {
 			if err := validateNodeAgentProfile(s.nodeAgentProfile, cluster, dbNodePool); err != nil {
 				return newBadRequestErrorf("%s", err)
@@ -674,6 +679,35 @@ func applyUpdateNodePoolRequest(cluster db.Cluster, dbNodePool *db.NodePool, req
 		// launchLayer object, which changes nothing.
 	}
 
+	return nil
+}
+
+// validateNodePoolKubernetesVersion rejects a node pool version that the Kubernetes
+// version skew policy does not allow: a kubelet must not be newer than any
+// kube-apiserver it talks to (https://kubernetes.io/releases/version-skew-policy/#kubelet).
+// Versions are compared by major and minor, as kubeadm's kubelet check does, so a newer patch is allowed.
+// kubeadm join on a worker does not check this, so the API is the only place it is caught.
+// While the control plane upgrades, its nodes run two versions, so the pool waits.
+// An older version is allowed, so a pool can be rolled back.
+func validateNodePoolKubernetesVersion(cluster db.Cluster, currentVersion, requestedVersion string) error {
+	if requestedVersion == currentVersion {
+		return nil
+	}
+	if cluster.Conditions.ControlPlaneUpgrading.Status == db.ConditionStatusTrue {
+		return fmt.Errorf("%w: wait for the control plane upgrade to %s to finish", errUpgradeInProgress, cluster.KubernetesVersion)
+	}
+	cpMajor, cpMinor, _, err := parseKubernetesVersion(cluster.KubernetesVersion)
+	if err != nil {
+		return fmt.Errorf("%w: control plane version: %w", errVersionSkewViolation, err)
+	}
+	major, minor, _, err := parseKubernetesVersion(requestedVersion)
+	if err != nil {
+		return fmt.Errorf("%w: requested version: %w", errVersionSkewViolation, err)
+	}
+	if major > cpMajor || (major == cpMajor && minor > cpMinor) {
+		return fmt.Errorf("%w: node pool kubernetes version must not be newer than the control plane version (control plane: %s, requested: %s)",
+			errVersionSkewViolation, cluster.KubernetesVersion, requestedVersion)
+	}
 	return nil
 }
 

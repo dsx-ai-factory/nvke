@@ -1,6 +1,6 @@
 # Upgrade a workload cluster's Kubernetes version
 
-Upgrade an NVIDIA Kubernetes Engine (NVKE) workload cluster's control plane, then each worker node pool, within the [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/). The API does not stop a pool from moving to a newer minor version than the control plane.
+Upgrade an NVIDIA Kubernetes Engine (NVKE) workload cluster's control plane, then each worker node pool, within the [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/). The API rejects a pool version with a newer minor or major version than the control plane, and any pool version change while the control plane upgrades.
 
 ## Before you begin
 
@@ -30,7 +30,7 @@ Upgrade an NVIDIA Kubernetes Engine (NVKE) workload cluster's control plane, the
 
 ## Upgrade a worker node pool
 
-`<API_URL>` and the API token are described in [Manage node pools](node-pools.md).
+`<API_URL>` and the API token are described in [Manage node pools](node-pools.md). Upgrade the control plane first: the API rejects a pool version with a newer minor or major version than the control plane. An older version is accepted, so the same request rolls a pool back.
 
 1. Set the pool's version, and let NVKE add one new node. With `maxSurge: 0`, the default, the change adds no node.
 

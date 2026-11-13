@@ -1204,6 +1204,154 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 	}
 }
 
+// A node pool's Kubernetes version must not be newer than the control plane's,
+// and must not change while the control plane upgrades. An older version, to
+// roll a pool back, is allowed.
+func TestNodePoolService_UpdateNodePool_KubernetesVersion(t *testing.T) {
+	nodePoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
+	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
+	siteID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")
+	now := time.Now()
+
+	tests := []struct {
+		name                  string
+		controlPlaneVersion   string
+		controlPlaneUpgrading bool
+		poolVersion           string
+		requestedVersion      string
+		wantErrContains       string // empty means the update is accepted
+	}{
+		{
+			name:                "newer minor than the control plane is rejected",
+			controlPlaneVersion: "1.36.3",
+			poolVersion:         "1.36.3",
+			requestedVersion:    "1.37.2",
+			wantErrContains:     "must not be newer than the control plane version (control plane: 1.36.3, requested: 1.37.2)",
+		},
+		{
+			name:                "newer major than the control plane is rejected",
+			controlPlaneVersion: "1.36.3",
+			poolVersion:         "1.36.3",
+			requestedVersion:    "2.0.0",
+			wantErrContains:     "version skew policy violation",
+		},
+		{
+			name:                "newer patch of the control plane's minor is accepted",
+			controlPlaneVersion: "1.36.3",
+			poolVersion:         "1.36.3",
+			requestedVersion:    "1.36.4",
+		},
+		{
+			name:                "the control plane's version is accepted",
+			controlPlaneVersion: "1.37.2",
+			poolVersion:         "1.36.3",
+			requestedVersion:    "1.37.2",
+		},
+		{
+			name:                "an older version is accepted, to roll the pool back",
+			controlPlaneVersion: "1.37.2",
+			poolVersion:         "1.37.2",
+			requestedVersion:    "1.36.3",
+		},
+		{
+			name:                "an older version more than three minor versions back is accepted",
+			controlPlaneVersion: "1.37.2",
+			poolVersion:         "1.37.2",
+			requestedVersion:    "1.33.0",
+		},
+		{
+			name:                  "a version change while the control plane upgrades is rejected",
+			controlPlaneVersion:   "1.37.2",
+			controlPlaneUpgrading: true,
+			poolVersion:           "1.36.3",
+			requestedVersion:      "1.37.2",
+			wantErrContains:       "cannot update Kubernetes version while an upgrade is already in progress: wait for the control plane upgrade to 1.37.2 to finish",
+		},
+		{
+			name:                  "a rollback while the control plane upgrades is rejected",
+			controlPlaneVersion:   "1.37.2",
+			controlPlaneUpgrading: true,
+			poolVersion:           "1.36.3",
+			requestedVersion:      "1.35.3",
+			wantErrContains:       "already in progress",
+		},
+		{
+			name:                  "the pool's current version while the control plane upgrades is accepted",
+			controlPlaneVersion:   "1.37.2",
+			controlPlaneUpgrading: true,
+			poolVersion:           "1.36.3",
+			requestedVersion:      "1.36.3",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockDB := &mockDB{}
+			mockDB.MockTx = &mockTx{}
+			conditions := db.ClusterConditions{
+				ControlPlaneUpgrading: db.NewCondition(tt.controlPlaneUpgrading, "upgrading"),
+			}
+			mockDB.MockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{
+				ID:        nodePoolID,
+				ClusterID: clusterID,
+			}, nil)
+			mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+				ID:                clusterID,
+				ProviderType:      db.ProviderTypeNico,
+				KubernetesVersion: tt.controlPlaneVersion,
+				Conditions:        conditions,
+				Nico: &db.NicoClusterProvider{
+					OrgID:  testOrgID,
+					SiteID: siteID,
+				},
+			}, nil)
+			mockDB.MockTx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				ID:                nodePoolID,
+				ClusterID:         clusterID,
+				KubernetesVersion: tt.poolVersion,
+				Conditions:        mockDBNodePoolConditions(now),
+				Nico:              &db.NicoNodePoolProvider{},
+			}, nil)
+			if tt.wantErrContains == "" {
+				mockDB.MockTx.On("UpdateNodePool", mock.Anything, mock.AnythingOfType("*db.NodePool")).Return(db.NodePool{
+					ID:                nodePoolID,
+					KubernetesVersion: tt.requestedVersion,
+				}, nil)
+			}
+			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil)
+
+			requested := tt.requestedVersion
+			resp, err := service.UpdateNodePool(context.Background(), api.UpdateNodePoolRequestObject{
+				NodePoolID: nodePoolID,
+				Body:       &api.UpdateNodePoolRequest{KubernetesVersion: &requested},
+			})
+			require.NoError(t, err)
+
+			if tt.wantErrContains != "" {
+				badRequest, ok := resp.(api.UpdateNodePool400JSONResponse)
+				require.True(t, ok, "want 400, got %T", resp)
+				assert.Contains(t, badRequest.Message, tt.wantErrContains)
+				mockDB.MockTx.AssertNotCalled(t, "UpdateNodePool", mock.Anything, mock.Anything)
+			} else {
+				require.IsType(t, api.UpdateNodePool200JSONResponse{}, resp)
+				var stored *db.NodePool
+				for _, call := range mockDB.MockTx.Calls {
+					if call.Method == "UpdateNodePool" {
+						stored = call.Arguments[1].(*db.NodePool)
+					}
+				}
+				require.NotNil(t, stored, "UpdateNodePool was not called")
+				assert.Equal(t, tt.requestedVersion, stored.KubernetesVersion)
+			}
+
+			mockDB.AssertExpectations(t)
+			mockDB.MockTx.AssertExpectations(t)
+		})
+	}
+}
+
 // A node pool's NVLink logical partition can be set or replaced, but not cleared.
 func TestNodePoolService_UpdateNodePool_NVLinkLogicalPartition(t *testing.T) {
 	nodePoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")

@@ -1975,7 +1975,9 @@ components:
           pattern: '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$'
           description: |
             Desired Kubernetes version for the pool's nodes, as X.Y.Z with no leading "v".
-            Must be newer than the current version.
+            Must not be a newer minor or major version than the cluster's control plane,
+            and cannot change while the control plane upgrades. An older version is
+            accepted, to roll the pool back.
         nico:
           $ref: "#/components/schemas/NicoNodePoolProviderUpdate"
         launchLayer:
