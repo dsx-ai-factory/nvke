@@ -243,7 +243,7 @@ func (r *reconciler) discoverPlacement(ctx context.Context, cluster db.Cluster, 
 	}
 
 	cp.failureDomains = failureDomains
-	failureDomains.Eligible = placeableDomains(failureDomains.Eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
+	failureDomains.Eligible = failuredomains.Placeable(failureDomains.Eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
 	if unplaced := failuredomains.NodesWithoutKnownDomain(cp.nodes, failureDomains); len(unplaced) > 0 {
 		r.logger.Warn("Control-plane nodes have no known failure domain and are not counted toward the spread",
 			"clusterID", cluster.ID, "clusterName", cluster.Name, "nodes", unplaced)

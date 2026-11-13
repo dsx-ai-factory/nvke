@@ -88,30 +88,6 @@ func TestIsStuckPendingInDomain(t *testing.T) {
 	}
 }
 
-func TestPlaceableDomains(t *testing.T) {
-	t.Parallel()
-
-	now := time.Now()
-	eligible := []string{"A", "B", "C"}
-
-	tests := []struct {
-		name        string
-		unplaceable map[string]time.Time
-		want        []string
-	}{
-		{"none marked", nil, []string{"A", "B", "C"}},
-		{"recent mark drops the domain", map[string]time.Time{"A": now.Add(-time.Hour)}, []string{"B", "C"}},
-		{"expired mark is ignored", map[string]time.Time{"A": now.Add(-unplaceableDomainTTL - time.Minute)}, []string{"A", "B", "C"}},
-		{"every domain marked falls back to all", map[string]time.Time{"A": now, "B": now, "C": now}, []string{"A", "B", "C"}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, tt.want, placeableDomains(eligible, tt.unplaceable, now))
-		})
-	}
-}
-
 func TestReconcileStuckPendingNodes_ReplacesAndMarksDomain(t *testing.T) {
 	t.Parallel()
 
@@ -193,6 +169,22 @@ func TestReconcileStuckPendingNodes_NoOps(t *testing.T) {
 		acted, err := r.reconcileStuckPendingNodes(context.Background(), marked, cp, unavailable)
 		require.NoError(t, err)
 		assert.False(t, acted, "re-placing would land in the same domain again")
+	})
+
+	// Regression: with the fallback on, the provisioning activity moves the node; a delete here would race it.
+	t.Run("failure-domain fallback is enabled", func(t *testing.T) {
+		t.Parallel()
+		stuck := stuckPendingNode(clusterID, "cp-stuck", 2*time.Hour)
+		r := &reconciler{
+			db:        &testutil.MockTx{},
+			logger:    slog.Default(),
+			k8sClient: capiMachinesClient(t, stuck.Name),
+			cfg:       config.Config{ControlPlaneFailureDomainFallbackEnabled: true},
+		}
+		cp := &controlPlane{nodes: []db.Node{stuck}, failureDomains: twoDomains}
+		acted, err := r.reconcileStuckPendingNodes(context.Background(), cluster, cp, unavailable)
+		require.NoError(t, err)
+		assert.False(t, acted)
 	})
 
 	t.Run("controlPlaneVIP is not configured", func(t *testing.T) {
