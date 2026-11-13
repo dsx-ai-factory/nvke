@@ -1,0 +1,118 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+{{- if or (not (hasKey .Values.tenantAPI "enabled")) (.Values.tenantAPI.enabled) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "management-engine.resourceName" (dict "suffix" "tenant-api" "context" $) }}
+  namespace: {{ .Release.Namespace | quote }}
+  {{- if .Values.tenantAPI.annotations }}
+  annotations:
+    {{- toYaml .Values.tenantAPI.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.tenantAPI.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name | quote }}
+      app.kubernetes.io/component: tenant-api
+      app.kubernetes.io/name: {{ include "management-engine.name" . | quote }}
+  {{- with .Values.tenantAPI.strategy }}
+  strategy: {{ toYaml . | nindent 6 }}
+  {{- end }}
+  template:
+    metadata:
+      {{- if .Values.tenantAPI.pod.annotations }}
+      annotations:
+        {{- with .Values.tenantAPI.pod }}
+        {{- with .annotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      {{- end }}
+      labels:
+        app.kubernetes.io/component: tenant-api
+        app.kubernetes.io/name: {{ include "management-engine.name" . | quote }}
+        helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+        app.kubernetes.io/instance: {{ .Release.Name | quote }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        {{- with .Values.tenantAPI.pod }}
+        {{- with .labels }}
+        {{- with omit . "app.kubernetes.io/component" "app.kubernetes.io/name" "helm.sh/chart" "app.kubernetes.io/instance" "app.kubernetes.io/managed-by" }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
+    spec:
+      {{- with .Values.tenantAPI.topologySpreadConstraints }}
+      topologySpreadConstraints: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.tenantAPI.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.tenantAPI.tolerations }}
+      tolerations: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.tenantAPI.affinity }}
+      affinity: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.tenantAPI.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.tenantAPI.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: {{ eq .Values.tenantAPI.stateAccess.mode "inCluster" }}
+      containers:
+      - args:
+{{ include "management-engine.apiArgs" (dict "api" .Values.tenantAPI "surface" "tenant") | indent 8 }}
+        command:
+        - /tenant-api
+        image: "{{ .Values.tenantAPI.image.repository }}{{- if not (contains "@" .Values.tenantAPI.image.repository) }}:{{ .Values.tenantAPI.image.tag | default .Chart.AppVersion }}{{- end }}"
+        {{- with .Values.tenantAPI.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        livenessProbe:
+{{ toYaml .Values.tenantAPI.livenessProbe | indent 10 }}
+{{ if or (eq .Values.tenantAPI.stateAccess.mode "remote") .Values.tenantAPI.extraVolumeMounts }}
+        volumeMounts:
+{{ include "management-engine.apiMount" .Values.tenantAPI | indent 8 }}
+{{ with .Values.tenantAPI.extraVolumeMounts }}{{ toYaml . | indent 8 }}{{ end }}
+{{ end }}
+        name: api
+        ports:
+        - containerPort: 8080
+          name: http
+        readinessProbe:
+{{ toYaml .Values.tenantAPI.readinessProbe | indent 10 }}
+        resources:
+          {{- if .Values.tenantAPI.resources }}
+          {{- toYaml .Values.tenantAPI.resources | nindent 10 }}
+          {{- else }}
+          {}
+          {{- end }}
+        securityContext:
+          {{- if .Values.tenantAPI.securityContext }}
+          {{- toYaml .Values.tenantAPI.securityContext | nindent 10 }}
+          {{- else }}
+          {}
+          {{- end }}
+      securityContext:
+        {{- if .Values.tenantAPI.podSecurityContext }}
+        {{- toYaml .Values.tenantAPI.podSecurityContext | nindent 8 }}
+        {{- else }}
+        {}
+        {{- end }}
+{{ if or (eq .Values.tenantAPI.stateAccess.mode "remote") .Values.tenantAPI.extraVolumes }}
+      volumes:
+{{ include "management-engine.apiVolume" .Values.tenantAPI | indent 6 }}
+{{ with .Values.tenantAPI.extraVolumes }}{{ toYaml . | indent 6 }}{{ end }}
+{{ end }}
+      serviceAccountName: {{ include "management-engine.apiServiceAccount" (dict "root" $ "api" .Values.tenantAPI "surface" "tenant") }}
+      {{- if and (hasKey .Values.tenantAPI "terminationGracePeriodSeconds") (ne .Values.tenantAPI.terminationGracePeriodSeconds nil) }}
+      terminationGracePeriodSeconds: {{ .Values.tenantAPI.terminationGracePeriodSeconds }}
+      {{- end }}
+status: {}
+{{- end }}

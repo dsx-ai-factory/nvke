@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Runtime cluster only. Install state and bind the credential identities on its cluster first.
+controller:
+  enabled: false
+state:
+  enabled: false
+tenantAPI:
+  enabled: true
+  namespace: tenant-a
+  stateAccess:
+    mode: remote
+    kubeconfigSecret:
+      name: tenant-api-state-client
+      key: kubeconfig
+operatorAPI:
+  enabled: true
+  stateAccess:
+    mode: remote
+    kubeconfigSecret:
+      name: operator-api-state-client
+      key: kubeconfig
