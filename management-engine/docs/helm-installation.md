@@ -163,7 +163,7 @@ datastore and its `/metrics` permission, plus TLS trust and network access.
 
 ## NKTP integration
 
-The [NVKE telemetry pipeline](../../docs/nktp/components/node-collector.md)
+The [NVKE telemetry pipeline](https://github.com/dsx-ai-factory/nvke-telemetry-pipeline/blob/main/docs/components/node_collector.md)
 collects pod stdout/stderr and discovers ServiceMonitors. Cluster Service can
 render a monitor with `prometheus.enabled=true` when metrics are enabled. For a
 co-located deployment, verify the collector identity has GET `/metrics` access

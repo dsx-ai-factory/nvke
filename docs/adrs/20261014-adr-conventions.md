@@ -21,7 +21,7 @@ Routine bugfixes and refactors that preserve architectural boundaries do not nee
 
 ### Relationship to design documents
 
-[`docs/design/`](../design/README.md) holds feature and system proposals and detailed design records, including API behavior, data flows, and implementation approaches. Existing component design directories, such as `docs/nktp/designs/`, continue to serve that purpose.
+[`docs/design/`](../design/README.md) holds feature and system proposals and detailed design records, including API behavior, data flows, and implementation approaches.
 
 When a design introduces a significant architectural choice described above, record that choice and its rationale in an ADR in the [owning directory](#where-it-goes). Link the design for detail instead of duplicating it. Proposed architectural decisions belong in ADRs with status `proposed`. A design without such a choice does not need a separate ADR.
 
