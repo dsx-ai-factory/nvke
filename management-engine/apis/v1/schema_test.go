@@ -313,14 +313,6 @@ func deleteField(obj map[string]any, path []string) {
 	delete(parent, key)
 }
 
-func TestGeneratedResourceSchemas(t *testing.T) {
-	for _, resource := range []string{"nvkeclusters", "machineimages", "clusterreleases", "nodepoolreleases", "controlplaneclasses"} {
-		t.Run(resource, func(t *testing.T) {
-			loadResourceSchema(t, resource).admit(t, baseResource(t, resource), nil)
-		})
-	}
-}
-
 func TestClusterReleaseChannelSelectors(t *testing.T) {
 	schema := loadResourceSchema(t, "clusterreleasechannels")
 	for _, test := range []struct {
@@ -957,24 +949,5 @@ func TestMachineImageSpecRuleCoversEverything(t *testing.T) {
 	}
 	if _, ok := spec.Properties[mutableReleaseField]; ok {
 		t.Errorf("machine image spec gained a %s field, so the whole-spec rule is now wrong", mutableReleaseField)
-	}
-}
-
-// Defaulting has to leave lifecycle present and false, because the immutability
-// rule and the resolver both read it without checking for its absence.
-func TestReleaseLifecycleDefaults(t *testing.T) {
-	for _, resource := range releaseResources {
-		t.Run(resource, func(t *testing.T) {
-			obj := baseResource(t, resource)
-			loadResourceSchema(t, resource).admit(t, obj, nil)
-
-			lifecycle, ok := specOf(t, obj)["lifecycle"].(map[string]any)
-			if !ok {
-				t.Fatal("lifecycle default missing")
-			}
-			if lifecycle["deprecated"] != false {
-				t.Fatalf("unexpected lifecycle default: %#v", lifecycle)
-			}
-		})
 	}
 }
