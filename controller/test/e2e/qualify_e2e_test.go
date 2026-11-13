@@ -471,7 +471,6 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 		// release them. Whatever keeps a tenant has to keep its site.
 		if keepSite || cfg.Lifecycle.SkipDelete || (cfg.Lifecycle.PreserveOnFailure && failed) {
 			GinkgoLogr.Info("keeping the site controller", "name", node.Name, "ip", node.IP,
-				"kubeconfig", cluster.Kubeconfig,
 				"reason", keepReason(keepSite, cfg.Lifecycle.SkipDelete))
 			if dir := cfg.Lifecycle.NodeKeyDir; dir != "" {
 				GinkgoLogr.Info("the site node can be logged into through its jump host with this run's key",
