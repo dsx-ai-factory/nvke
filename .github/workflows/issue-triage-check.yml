@@ -1,9 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Keeps `needs-triage` on every open issue that has no `priority/*` label, and
-# routes a new issue to its area from the form's Component field. Setting a
-# priority is the act of triage; nothing else clears the label. The process is
+# Keeps `needs-triage` on every open issue that has no `priority/*` label and
+# is not waiting on its reporter (`needs-info`), and routes a new issue to its
+# area from the form's Component field, telling an outside reporter what
+# happens next. A reporter's reply to a `needs-info`
+# issue removes `needs-info`; with no reply, the issue is reminded at 14 days
+# and closed at 30, and a later reply reopens it. The process is
 # docs/issue-triage.md.
 #
 # Advisory, like the other needs-* labels, and the same shape as
@@ -17,6 +20,8 @@ name: Issue Triage Check
 on:
   issues:
     types: [opened, reopened, labeled, unlabeled]
+  issue_comment:
+    types: [created]
   schedule:
     # Twenty-five to, clear of the :10/:40 test-gate sweep, the :15/:45
     # CI-failure sweep and the e2e queue sweeper's ten-minute marks.
@@ -28,19 +33,27 @@ permissions: {}
 jobs:
   triage:
     name: Reconcile needs-triage
-    # A labeled or unlabeled event matters only for a priority label; the form
-    # labels and this workflow's own area label would otherwise run it again
-    # for nothing.
+    # A labeled or unlabeled event matters only for a priority or needs-info
+    # label; the form labels and this workflow's own area label would otherwise
+    # run it again for nothing. A comment matters only when it is the
+    # reporter's, on an issue waiting on them.
     if: >-
       github.repository_id == '1323115536' &&
-      (github.event_name != 'issues' ||
-       !contains(fromJSON('["labeled","unlabeled"]'), github.event.action) ||
-       startsWith(github.event.label.name, 'priority/'))
+      (contains(fromJSON('["schedule","workflow_dispatch"]'), github.event_name) ||
+       (github.event_name == 'issues' &&
+        (!contains(fromJSON('["labeled","unlabeled"]'), github.event.action) ||
+         startsWith(github.event.label.name, 'priority/') ||
+         github.event.label.name == 'needs-info')) ||
+       (github.event_name == 'issue_comment' &&
+        !github.event.issue.pull_request &&
+        github.event.comment.user.login == github.event.issue.user.login &&
+        contains(github.event.issue.labels.*.name, 'needs-info')))
     # On the job, not the workflow: a form-created issue fires `opened` plus one
     # `labeled` per initial label, and a workflow-level group would let a label
     # run cancel the `opened` run that does the routing even though its own
     # job skips. The `opened` run is alone in its group; priority label runs
-    # on one issue supersede each other; sweeps queue behind one another.
+    # on one issue supersede each other; a reporter's replies queue in their
+    # own group; sweeps queue behind one another.
     concurrency:
       group: ${{ github.event.issue.number && format('Issue Triage Check-{0}-{1}', github.event.issue.number, (contains(fromJSON('["labeled","unlabeled"]'), github.event.action) && 'label') || github.event.action) || 'Issue Triage Check-sweep' }}
       cancel-in-progress: ${{ github.event_name == 'issues' }}
@@ -59,7 +72,27 @@ jobs:
             // the priorities as #ad4c00, #663f0b and #ddac19 if one is ever
             // deleted, since addLabels would otherwise invent a colour.
             const NEEDS_TRIAGE = 'needs-triage';
+            const NEEDS_INFO = 'needs-info';
             const PRIORITY_PREFIX = 'priority/';
+
+            // A needs-info issue with no reply gets one reminder, then closes.
+            // The reporter's next comment reopens it.
+            const REMIND_DAYS = 14;
+            const CLOSE_DAYS = 30;
+            const DAY_MS = 24 * 60 * 60 * 1000;
+            const BOT = 'github-actions[bot]';
+            const REMINDER_MARK = '<!-- needs-info-reminder -->';
+            const reminderText = (issue, closeOn) => `${REMINDER_MARK}
+            @${issue.user.login}, this issue is waiting on the details asked for above. If they don't arrive by ${closeOn}, this issue will be closed. You can still add them after that: commenting reopens it.`;
+            const closeText = `Closing because the details asked for above haven't arrived in ${CLOSE_DAYS} days. Comment here with them and this issue reopens and goes back to triage.`;
+
+            // Posted once on a new issue from someone outside the project.
+            const WELCOME_MARK = '<!-- triage-welcome -->';
+            const welcomeText = `${WELCOME_MARK}
+            Thanks for opening this issue. A maintainer will look at it within 7 days, and either set its priority or ask here for more detail. Until then it carries \`needs-triage\`, and there is nothing you need to do.
+
+            If we ask for more detail, the issue gets \`needs-info\`; your reply puts it back in the queue. The whole process is in [docs/issue-triage.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/issue-triage.md).`;
+            const MEMBER_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
 
             // The Component options in .github/ISSUE_TEMPLATE/*.yml, lower
             // case, to the area labels in .github/labeler.yml. An option that
@@ -115,6 +148,59 @@ jobs:
               }
             }
 
+            // When needs-info was last added, from the issue's events.
+            async function needsInfoSince(issue) {
+              const events = await github.paginate(github.rest.issues.listEvents, {
+                ...context.repo,
+                issue_number: issue.number,
+                per_page: 100,
+              });
+              const added = events
+                .filter((e) => e.event === 'labeled' && e.label?.name === NEEDS_INFO)
+                .map((e) => e.created_at)
+                .sort()
+                .pop();
+              return added ? new Date(added) : null;
+            }
+
+            // For an open issue with needs-info: removes the label if the
+            // reporter has replied, else reminds at REMIND_DAYS and closes at
+            // CLOSE_DAYS. Returns 'answered', 'closed' or null. The reply
+            // run and the hourly sweep both use it, so a reply whose own run
+            // failed is picked up an hour later.
+            async function followUp(issue) {
+              const since = await needsInfoSince(issue);
+              if (!since) {
+                return null;
+              }
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...context.repo,
+                issue_number: issue.number,
+                since: since.toISOString(),
+                per_page: 100,
+              });
+              // A reply is a reporter comment created after needs-info was
+              // added. `since` filters on the last edit, so check creation.
+              if (comments.some((c) => c.user?.login === issue.user.login && new Date(c.created_at) >= since)) {
+                await removeLabel(issue, NEEDS_INFO);
+                return 'answered';
+              }
+              const days = (Date.now() - since.getTime()) / DAY_MS;
+              if (days >= CLOSE_DAYS) {
+                // needs-info stays on, so the reporter's comment can reopen it.
+                await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: closeText });
+                await github.rest.issues.update({ ...context.repo, issue_number: issue.number, state: 'closed', state_reason: 'not_planned' });
+                return 'closed';
+              }
+              const reminded = comments.some((c) => c.user?.login === BOT && (c.body ?? '').includes(REMINDER_MARK));
+              if (days >= REMIND_DAYS && !reminded) {
+                const closeOn = new Date(since.getTime() + CLOSE_DAYS * DAY_MS).toISOString().slice(0, 10);
+                await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: reminderText(issue, closeOn) });
+                tally.reminded += 1;
+              }
+              return null;
+            }
+
             // One event names one issue, read live rather than from the
             // payload so a label that moved since the event is seen. A sweep
             // reads every open issue; the list endpoint returns pull requests
@@ -128,12 +214,47 @@ jobs:
                   per_page: 100,
                 })).filter((issue) => !issue.pull_request);
 
-            const tally = { added: 0, cleared: 0, routed: 0, unchanged: 0 };
-            for (const issue of issues) {
-              if (issue.pull_request || issue.state !== 'open') {
-                continue;
+            const tally = { added: 0, cleared: 0, routed: 0, answered: 0, reminded: 0, timedOut: 0, reopened: 0, welcomed: 0, unchanged: 0 };
+            // Everything for one issue. A sweep catches its errors, so one
+            // issue that keeps failing does not stop the rest; the run
+            // still fails at the end.
+            async function reconcile(issue) {
+              if (issue.pull_request) {
+                return;
               }
-              const labels = names(issue);
+              let labels = names(issue);
+
+              // The reporter answered an issue this workflow closed for lack
+              // of detail: reopen it, and the code below returns it to triage.
+              if (issue.state === 'closed' &&
+                  context.eventName === 'issue_comment' &&
+                  labels.includes(NEEDS_INFO) &&
+                  issue.closed_by?.login === BOT &&
+                  context.payload.comment.user.login === issue.user.login) {
+                await github.rest.issues.update({ ...context.repo, issue_number: issue.number, state: 'open' });
+                issue.state = 'open';
+                tally.reopened += 1;
+                core.info(`#${issue.number}: reporter answered after time-out, reopened`);
+              }
+              if (issue.state !== 'open') {
+                return;
+              }
+
+              if (labels.includes(NEEDS_INFO)) {
+                const outcome = await followUp(issue);
+                if (outcome === 'closed') {
+                  tally.timedOut += 1;
+                  core.info(`#${issue.number}: closed after ${CLOSE_DAYS} days in ${NEEDS_INFO}`);
+                  return;
+                }
+                if (outcome === 'answered') {
+                  // Back to the triagers: the code below adds needs-triage
+                  // unless the issue has a priority.
+                  labels = labels.filter((l) => l !== NEEDS_INFO);
+                  tally.answered += 1;
+                  core.info(`#${issue.number}: reporter replied, ${NEEDS_INFO} removed`);
+                }
+              }
 
               // Routing happens once, on open. A later sweep must not put back
               // an area a triager took off.
@@ -144,9 +265,26 @@ jobs:
                   tally.routed += 1;
                   core.info(`#${issue.number}: routed to ${area}`);
                 }
+                // Members, bots, and issues filed with a priority by
+                // automation get no welcome; a re-run must not post it twice.
+                if (!MEMBER_ASSOCIATIONS.includes(issue.author_association) &&
+                    issue.user.type !== 'Bot' &&
+                    !labels.some((l) => l.startsWith(PRIORITY_PREFIX))) {
+                  const comments = await github.paginate(github.rest.issues.listComments, {
+                    ...context.repo,
+                    issue_number: issue.number,
+                    per_page: 100,
+                  });
+                  if (!comments.some((c) => c.user?.login === BOT && (c.body ?? '').includes(WELCOME_MARK))) {
+                    await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: welcomeText });
+                    tally.welcomed += 1;
+                  }
+                }
               }
 
-              const wanted = !labels.some((l) => l.startsWith(PRIORITY_PREFIX));
+              // An issue waiting on its reporter is not waiting on triage.
+              const wanted = !labels.some((l) => l.startsWith(PRIORITY_PREFIX)) &&
+                !labels.includes(NEEDS_INFO);
               const has = labels.includes(NEEDS_TRIAGE);
               if (wanted && !has) {
                 await addLabel(issue, NEEDS_TRIAGE);
@@ -159,4 +297,17 @@ jobs:
               }
             }
 
-            core.info(`${issues.length} checked: ${tally.added} added, ${tally.cleared} cleared, ${tally.routed} routed, ${tally.unchanged} unchanged`);
+            const failures = [];
+            for (const issue of issues) {
+              try {
+                await reconcile(issue);
+              } catch (error) {
+                failures.push(`#${issue.number}: ${error.message}`);
+                core.warning(`#${issue.number}: ${error.message}`);
+              }
+            }
+
+            core.info(`${issues.length} checked: ${tally.added} added, ${tally.cleared} cleared, ${tally.routed} routed, ${tally.answered} answered, ${tally.reminded} reminded, ${tally.timedOut} timed out, ${tally.reopened} reopened, ${tally.welcomed} welcomed, ${tally.unchanged} unchanged`);
+            if (failures.length > 0) {
+              core.setFailed(`${failures.length} issue(s) failed: ${failures.join('; ')}`);
+            }
