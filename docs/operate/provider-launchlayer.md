@@ -42,7 +42,7 @@ export KUBECONFIG=$PWD/<CLUSTER_NAME>.kubeconfig
    kubectl -n nvke-controller get deploy nvke-controller
    ```
 
-   The Deployment is ready. The controller does not start with a LaunchLayer configuration it rejects, such as SPIFFE on with a node attestation method other than `dsxImds`; the pod log names the setting.
+   The Deployment is ready. A node attestation method other than `dsxImds` with SPIFFE on never gets this far: the chart refuses to render, so the install fails and its output names `nodeAgent.spireAttestationMethod`.
 
 `CONFIGURED` does not mean the credentials work. CAPLL first uses them when it reconciles a workload cluster's `LaunchLayerCluster`.
 
