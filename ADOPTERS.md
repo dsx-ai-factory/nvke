@@ -1,17 +1,16 @@
 # Adopters
 
-This file lists organizations that use NVKE. Listing is voluntary. An entry
-records that an organization uses NVKE. It does not imply endorsement by NVIDIA
-or by the listed organization.
+This file lists organizations that use NVKE today, in production or in
+development and test. Listing is voluntary. An entry records that an
+organization uses NVKE. It does not imply endorsement by NVIDIA or by the
+listed organization.
 
 ## Adopters list
 
 | Organization | Type | Adoption level | Description of use | Since |
 |---|---|---|---|---|
-| _Example Corp (example only, not a real adopter)_ | _End-User Organization_ | _Dev/Test_ | _Runs NVKE to create GPU tenant clusters for internal model training._ | _2026-01_ |
 
-Write `Since` as the year and month the organization started using NVKE, in
-`YYYY-MM` form. Type and adoption level are optional.
+The list is empty. See [Add your organization](#add-your-organization).
 
 ## Adopter types
 
@@ -31,20 +30,35 @@ row.
 |---|---|
 | Production | Runs NVKE for production workloads. |
 | Dev/Test | Runs NVKE for development or test environments. |
-| Trialing | Runs a time-boxed trial of NVKE before a decision. |
-| Evaluating | Assessing NVKE and has not yet deployed it. |
+
+An organization that is evaluating or trialing NVKE, and has not deployed it,
+is not listed yet.
 
 ## Add your organization
 
-Open a pull request that adds one row to the table.
+Open a pull request that adds one row to the table. Write `Since` as the year
+and month the organization started using NVKE, in `YYYY-MM` form.
 
-- You must be authorized to represent the organization you add.
+- To list the organization by name, the organization must approve being named,
+  and the pull request must say how that approval was given. A maintainer
+  confirms it before merging. Without approval, list the organization
+  anonymously.
 - To stay anonymous, give an industry in place of a name, such as
-  "Financial services company".
+  "Financial services company", and keep the description general.
+- Do not include confidential or identifying details: customer names, site
+  locations, cluster sizes or internal project names. Git history keeps every
+  published version, so removing an entry later does not remove it from the
+  history.
 - A service provider lists itself only. Do not list your customers; they adopt
   NVKE through your service.
 - Do not put contact emails or personal handles in the table.
 - Do not add logos.
+
+A row looks like this. It is an example, not an adopter:
+
+```markdown
+| Financial services company | End-User Organization | Dev/Test | GPU clusters for internal model training. | 2026-01 |
+```
 
 ## Update or remove an entry
 
