@@ -1753,7 +1753,9 @@ type UpdateNodePoolRequest struct {
 	KubeReservedMemory *string `json:"kubeReservedMemory,omitempty"`
 
 	// KubernetesVersion Desired Kubernetes version for the pool's nodes, as X.Y.Z with no leading "v".
-	// Must be newer than the current version.
+	// Must not be a newer minor or major version than the cluster's control plane,
+	// and cannot change while the control plane upgrades. An older version is
+	// accepted, to roll the pool back.
 	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
 
 	// LaunchLayer All LaunchLayer node-pool fields (instanceType, hostOSProfile, vmProfile,
