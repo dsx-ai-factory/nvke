@@ -1,0 +1,5 @@
+nodePools:
+- name: workers-b
+  resolvedRelease:
+    name: worker-other-release
+    version: "1.36.2"
