@@ -741,7 +741,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		Expect(c.List(ctx, &classes)).To(Succeed())
 		class := pvcStorageClass(settings.expect.pvcStorageClass, classes.Items)
 		if class == "" {
-			Skip(settings.expect.env(sitePVCStorageClassEnv) + " is unset and the site has no default StorageClass")
+			Skip(settings.expect.env(sitePVCStorageClassEnv) + " is unset and the cluster has no default StorageClass")
 		}
 		By("creating a PersistentVolumeClaim of StorageClass " + class)
 		claim := sitePVC(namespace, labels, class)
