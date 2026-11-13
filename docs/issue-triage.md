@@ -80,8 +80,8 @@ issue events, on the reporter's comments, and once an hour:
 
 - adds `needs-triage` to any open issue with no `priority/*` or `needs-info`
   label, and removes it once either is set;
-- removes `needs-info` when the reporter comments, which returns the issue to
-  `needs-triage`;
+- removes `needs-info` when the reporter comments, or on the next hourly sweep
+  if that run failed, which returns the issue to `needs-triage`;
 - reminds the reporter 14 days after `needs-info` was added, closes the issue
   as not planned at 30 days, and reopens it if the reporter then comments;
 - on a new issue, maps the form's Component field to an `area/*` label, once,

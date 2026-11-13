@@ -85,8 +85,10 @@ jobs:
             // commenter cannot suppress a reminder or close by quoting one.
             const REMINDER_MARK = '<!-- needs-info-reminder -->';
             const CLOSE_MARK = '<!-- needs-info-timeout -->';
-            const reminderText = (issue) => `${REMINDER_MARK}
-            @${issue.user.login}, this issue is waiting on the details asked for above. If they don't arrive within ${CLOSE_DAYS - REMIND_DAYS} more days, this issue will be closed. You can still add them after that: commenting reopens it.`;
+            // The close date comes from when needs-info was added, so a late
+            // first reminder still states the real date.
+            const reminderText = (issue, closeOn) => `${REMINDER_MARK}
+            @${issue.user.login}, this issue is waiting on the details asked for above. If they don't arrive by ${closeOn}, this issue will be closed. You can still add them after that: commenting reopens it.`;
             const closeText = `${CLOSE_MARK}
             Closing because the details asked for above haven't arrived in ${CLOSE_DAYS} days. Comment here with them and this issue reopens and goes back to triage.`;
             const botPosted = (comments, mark) =>
@@ -162,24 +164,22 @@ jobs:
             }
 
             // Reminds once at REMIND_DAYS and closes at CLOSE_DAYS. Returns
-            // true when it closed the issue. needs-info stays on a closed
-            // issue so the reporter's comment can reopen it.
+            // 'answered' when it found a reply and removed needs-info,
+            // 'closed' when it closed the issue, and null otherwise.
+            // needs-info stays on a closed issue so the reporter's comment
+            // can reopen it.
             async function followUp(issue) {
-              const since = await needsInfoSince(issue);
-              if (!since) {
-                return false;
-              }
-              const days = (Date.now() - since.getTime()) / DAY_MS;
-              if (days < REMIND_DAYS) {
-                return false;
-              }
-              // A sweep can run alongside the run for a reporter's reply.
-              // Re-read the issue and its comments just before acting, and
-              // leave it alone if the reporter has answered; their reply's
-              // own run returns it to triage.
+              // A sweep can run alongside the run for a reporter's reply, or
+              // a maintainer can re-add needs-info. Read the issue, then the
+              // date of its current needs-info, then the comments since,
+              // before acting on any of them.
               const fresh = (await github.rest.issues.get({ ...context.repo, issue_number: issue.number })).data;
               if (fresh.state !== 'open' || !names(fresh).includes(NEEDS_INFO)) {
-                return false;
+                return null;
+              }
+              const since = await needsInfoSince(issue);
+              if (!since) {
+                return null;
               }
               const comments = await github.paginate(github.rest.issues.listComments, {
                 ...context.repo,
@@ -187,8 +187,15 @@ jobs:
                 since: since.toISOString(),
                 per_page: 100,
               });
+              // The reporter has replied, but the run for that reply failed
+              // or predates this workflow. Do what it would have done.
               if (comments.some((c) => c.user?.login === issue.user.login)) {
-                return false;
+                await removeLabel(issue, NEEDS_INFO);
+                return 'answered';
+              }
+              const days = (Date.now() - since.getTime()) / DAY_MS;
+              if (days < REMIND_DAYS) {
+                return null;
               }
               if (days >= CLOSE_DAYS) {
                 // The marker keeps a retry after a failed close from posting
@@ -202,13 +209,14 @@ jobs:
                   state: 'closed',
                   state_reason: 'not_planned',
                 });
-                return true;
+                return 'closed';
               }
               if (!botPosted(comments, REMINDER_MARK)) {
-                await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: reminderText(issue) });
+                const closeOn = new Date(since.getTime() + CLOSE_DAYS * DAY_MS).toISOString().slice(0, 10);
+                await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: reminderText(issue, closeOn) });
                 tally.reminded += 1;
               }
-              return false;
+              return null;
             }
 
             // One event names one issue, read live rather than from the
@@ -262,17 +270,22 @@ jobs:
               if (labels.includes(NEEDS_INFO)) {
                 // One issue's API failure must not stop the sweep; the job
                 // still fails at the end so the error is seen.
-                let closed = false;
+                let outcome = null;
                 try {
-                  closed = await followUp(issue);
+                  outcome = await followUp(issue);
                 } catch (error) {
                   failures.push(`#${issue.number}: ${error.message}`);
                   core.warning(`#${issue.number}: needs-info follow-up failed: ${error.message}`);
                 }
-                if (closed) {
+                if (outcome === 'closed') {
                   tally.timedOut += 1;
                   core.info(`#${issue.number}: closed after ${CLOSE_DAYS} days in ${NEEDS_INFO}`);
                   continue;
+                }
+                if (outcome === 'answered') {
+                  labels = labels.filter((l) => l !== NEEDS_INFO);
+                  tally.answered += 1;
+                  core.info(`#${issue.number}: reporter had replied, ${NEEDS_INFO} removed`);
                 }
               }
 
