@@ -3,10 +3,9 @@
 #
 # Keeps `needs-triage` on every open issue that has no `priority/*` label and
 # is not waiting on its reporter (`needs-info`), and routes a new issue to its
-# area from the form's Component field. When the reporter comments on a
-# `needs-info` issue, it removes `needs-info`, which returns the issue to
-# triage. A `needs-info` issue with no reply is reminded at 14 days and closed
-# at 30; the reporter's next comment reopens it. The process is
+# area from the form's Component field. A reporter's reply to a `needs-info`
+# issue removes `needs-info`; with no reply, the issue is reminded at 14 days
+# and closed at 30, and a later reply reopens it. The process is
 # docs/issue-triage.md.
 #
 # Advisory, like the other needs-* labels, and the same shape as
@@ -75,29 +74,16 @@ jobs:
             const NEEDS_INFO = 'needs-info';
             const PRIORITY_PREFIX = 'priority/';
 
-            // A needs-info issue gets one reminder, then closes. The reporter
-            // reopens it by commenting with the details.
+            // A needs-info issue with no reply gets one reminder, then closes.
+            // The reporter's next comment reopens it.
             const REMIND_DAYS = 14;
             const CLOSE_DAYS = 30;
             const DAY_MS = 24 * 60 * 60 * 1000;
             const BOT = 'github-actions[bot]';
-            // Markers count only on this workflow's own comments, so a
-            // commenter cannot suppress a reminder or close by quoting one.
             const REMINDER_MARK = '<!-- needs-info-reminder -->';
-            const CLOSE_MARK = '<!-- needs-info-timeout -->';
-            // The close date comes from when needs-info was added, so a late
-            // first reminder still states the real date.
             const reminderText = (issue, closeOn) => `${REMINDER_MARK}
             @${issue.user.login}, this issue is waiting on the details asked for above. If they don't arrive by ${closeOn}, this issue will be closed. You can still add them after that: commenting reopens it.`;
-            const closeText = `${CLOSE_MARK}
-            Closing because the details asked for above haven't arrived in ${CLOSE_DAYS} days. Comment here with them and this issue reopens and goes back to triage.`;
-            const botPosted = (comments, mark) =>
-              comments.some((c) => c.user?.login === BOT && (c.body ?? '').includes(mark));
-            // listComments filters `since` on the last update, so an old
-            // comment edited later is returned too. Count only a reporter
-            // comment created after needs-info was added.
-            const repliedSince = (comments, issue, since) =>
-              comments.some((c) => c.user?.login === issue.user.login && new Date(c.created_at) >= since);
+            const closeText = `Closing because the details asked for above haven't arrived in ${CLOSE_DAYS} days. Comment here with them and this issue reopens and goes back to triage.`;
 
             // The Component options in .github/ISSUE_TEMPLATE/*.yml, lower
             // case, to the area labels in .github/labeler.yml. An option that
@@ -168,20 +154,12 @@ jobs:
               return added ? new Date(added) : null;
             }
 
-            // Reminds once at REMIND_DAYS and closes at CLOSE_DAYS. Returns
-            // 'answered' when it found a reply and removed needs-info,
-            // 'closed' when it closed the issue, and null otherwise.
-            // needs-info stays on a closed issue so the reporter's comment
-            // can reopen it.
+            // For an open issue with needs-info: removes the label if the
+            // reporter has replied, else reminds at REMIND_DAYS and closes at
+            // CLOSE_DAYS. Returns 'answered', 'closed' or null. The reply
+            // run and the hourly sweep both use it, so a reply whose own run
+            // failed is picked up an hour later.
             async function followUp(issue) {
-              // A sweep can run alongside the run for a reporter's reply, or
-              // a maintainer can re-add needs-info. Read the issue, then the
-              // date of its current needs-info, then the comments since,
-              // before acting on any of them.
-              const fresh = (await github.rest.issues.get({ ...context.repo, issue_number: issue.number })).data;
-              if (fresh.state !== 'open' || !names(fresh).includes(NEEDS_INFO)) {
-                return null;
-              }
               const since = await needsInfoSince(issue);
               if (!since) {
                 return null;
@@ -192,47 +170,21 @@ jobs:
                 since: since.toISOString(),
                 per_page: 100,
               });
-              // The reporter has replied, but the run for that reply failed
-              // or predates this workflow. Do what it would have done.
-              if (repliedSince(comments, issue, since)) {
+              // A reply is a reporter comment created after needs-info was
+              // added. `since` filters on the last edit, so check creation.
+              if (comments.some((c) => c.user?.login === issue.user.login && new Date(c.created_at) >= since)) {
                 await removeLabel(issue, NEEDS_INFO);
                 return 'answered';
               }
               const days = (Date.now() - since.getTime()) / DAY_MS;
-              if (days < REMIND_DAYS) {
-                return null;
-              }
               if (days >= CLOSE_DAYS) {
-                // The marker keeps a retry after a failed close from posting
-                // a second comment.
-                if (!botPosted(comments, CLOSE_MARK)) {
-                  await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: closeText });
-                }
-                await github.rest.issues.update({
-                  ...context.repo,
-                  issue_number: issue.number,
-                  state: 'closed',
-                  state_reason: 'not_planned',
-                });
-                // A reply can land between the read above and the close, and
-                // its own run may already have removed needs-info, which a
-                // later comment needs to reopen the issue. Check once more,
-                // and undo the close if the reporter got in first.
-                const after = (await github.rest.issues.get({ ...context.repo, issue_number: issue.number })).data;
-                const latest = await github.paginate(github.rest.issues.listComments, {
-                  ...context.repo,
-                  issue_number: issue.number,
-                  since: since.toISOString(),
-                  per_page: 100,
-                });
-                if (!names(after).includes(NEEDS_INFO) || repliedSince(latest, issue, since)) {
-                  await github.rest.issues.update({ ...context.repo, issue_number: issue.number, state: 'open' });
-                  await removeLabel(issue, NEEDS_INFO);
-                  return 'answered';
-                }
+                // needs-info stays on, so the reporter's comment can reopen it.
+                await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: closeText });
+                await github.rest.issues.update({ ...context.repo, issue_number: issue.number, state: 'closed', state_reason: 'not_planned' });
                 return 'closed';
               }
-              if (!botPosted(comments, REMINDER_MARK)) {
+              const reminded = comments.some((c) => c.user?.login === BOT && (c.body ?? '').includes(REMINDER_MARK));
+              if (days >= REMIND_DAYS && !reminded) {
                 const closeOn = new Date(since.getTime() + CLOSE_DAYS * DAY_MS).toISOString().slice(0, 10);
                 await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: reminderText(issue, closeOn) });
                 tally.reminded += 1;
@@ -253,7 +205,6 @@ jobs:
                   per_page: 100,
                 })).filter((issue) => !issue.pull_request);
 
-            const failures = [];
             const tally = { added: 0, cleared: 0, routed: 0, answered: 0, reminded: 0, timedOut: 0, reopened: 0, unchanged: 0 };
             for (const issue of issues) {
               if (issue.pull_request) {
@@ -277,41 +228,19 @@ jobs:
                 continue;
               }
 
-              // The reporter answered a request for more detail, so the issue
-              // is the triagers' turn again. A run that waited in the queue
-              // while a maintainer re-added needs-info must not clear the new
-              // request, so the comment has to postdate the current label.
-              if (context.eventName === 'issue_comment' &&
-                  labels.includes(NEEDS_INFO) &&
-                  context.payload.comment.user.login === issue.user.login) {
-                const since = await needsInfoSince(issue);
-                if (!since || new Date(context.payload.comment.created_at) >= since) {
-                  await removeLabel(issue, NEEDS_INFO);
-                  labels = labels.filter((l) => l !== NEEDS_INFO);
-                  tally.answered += 1;
-                  core.info(`#${issue.number}: reporter answered, ${NEEDS_INFO} removed`);
-                }
-              }
-
               if (labels.includes(NEEDS_INFO)) {
-                // One issue's API failure must not stop the sweep; the job
-                // still fails at the end so the error is seen.
-                let outcome = null;
-                try {
-                  outcome = await followUp(issue);
-                } catch (error) {
-                  failures.push(`#${issue.number}: ${error.message}`);
-                  core.warning(`#${issue.number}: needs-info follow-up failed: ${error.message}`);
-                }
+                const outcome = await followUp(issue);
                 if (outcome === 'closed') {
                   tally.timedOut += 1;
                   core.info(`#${issue.number}: closed after ${CLOSE_DAYS} days in ${NEEDS_INFO}`);
                   continue;
                 }
                 if (outcome === 'answered') {
+                  // Back to the triagers: the code below adds needs-triage
+                  // unless the issue has a priority.
                   labels = labels.filter((l) => l !== NEEDS_INFO);
                   tally.answered += 1;
-                  core.info(`#${issue.number}: reporter had replied, ${NEEDS_INFO} removed`);
+                  core.info(`#${issue.number}: reporter replied, ${NEEDS_INFO} removed`);
                 }
               }
 
@@ -342,6 +271,3 @@ jobs:
             }
 
             core.info(`${issues.length} checked: ${tally.added} added, ${tally.cleared} cleared, ${tally.routed} routed, ${tally.answered} answered, ${tally.reminded} reminded, ${tally.timedOut} timed out, ${tally.reopened} reopened, ${tally.unchanged} unchanged`);
-            if (failures.length > 0) {
-              core.setFailed(`${failures.length} needs-info follow-up(s) failed: ${failures.join('; ')}`);
-            }
