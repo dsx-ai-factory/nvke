@@ -22,7 +22,9 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [operate/prepare-nodes.md](operate/prepare-nodes.md) | Bringing the management cluster's nodes from first boot to what `nvkectl bootstrap site` requires |
 | [operate/bootstrap-management-cluster.md](operate/bootstrap-management-cluster.md) | Writing the site spec and running `nvkectl bootstrap site` |
 | [operate/install-management-plane.md](operate/install-management-plane.md) | Installing Cluster API and the `deploy/nico` deploy path on the management cluster, and admitting networks to the NVKE API |
+| [operate/infrastructure-providers.md](operate/infrastructure-providers.md) | How NVKE uses an infrastructure provider, how a deployment selects one, how a provider is added, and how to see which provider a cluster uses |
 | [operate/provider-nico.md](operate/provider-nico.md) | Confirming the management plane can request machines from NICo, its credentials, and the NICo IDs a cluster request needs |
+| [operate/provider-launchlayer.md](operate/provider-launchlayer.md) | Confirming the management plane can request machines from LaunchLayer, its credentials, and the LaunchLayer IDs a cluster request needs |
 | [operate/api-authentication.md](operate/api-authentication.md) | Turning on OIDC authentication for the NVKE API |
 | [workload-clusters/ovn-kubernetes.md](workload-clusters/ovn-kubernetes.md) | Building, self-hosting and deploying OVN-Kubernetes artifacts |
 | [workload-clusters/create.md](workload-clusters/create.md) | Creating a workload cluster |
