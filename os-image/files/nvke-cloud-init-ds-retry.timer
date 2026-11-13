@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[Unit]
+Description=Retry cloud-init datasource discovery until the seed URL answers
+Documentation=https://github.com/dsx-ai-factory/nvke/blob/main/os-image/SPEC.md
+
+[Timer]
+# The first tick lands after cloud-init would have settled on a healthy
+# node. OnUnitInactiveSec re-arms relative to the service finishing -- a
+# tick skipped by ConditionPathExists never activates the service, so
+# OnUnitActiveSec alone could stall; both are kept so the cadence holds
+# whether or not the last run actually executed. Later ticks keep probing
+# until the datasource is real, the seed was never configured, or the probe
+# or recovery budget is spent -- the script disables this timer in each of
+# those terminal states.
+OnBootSec=3min
+OnUnitActiveSec=2min
+OnUnitInactiveSec=2min
+Unit=nvke-cloud-init-ds-retry.service
+
+[Install]
+WantedBy=timers.target
