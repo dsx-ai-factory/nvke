@@ -19,7 +19,7 @@ clusters:
     desiredCount: 1
     infra:
       bootstrapFiles:
-      - content: build-b-release
+      - content: build-a-release
         path: /etc/nvke-release
       machineTemplate:
         apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
@@ -35,11 +35,11 @@ clusters:
                 chain https://images.example.com/nvke/boot.ipxe
               vpcID: 22222222-2222-4222-8222-222222222222
       preKubeadmCommands:
-      - echo build-b-release
+      - echo build-a-release
     maxSurge: 1
     provisioningMonitorDisabled: false
     systemReservedMemory: 1Gi
-  controlPlaneKubernetesVersion: 1.34.9
+  controlPlaneKubernetesVersion: 1.34.0
   createdAt: "0001-01-01T00:00:00Z"
   etcdEncrypted: true
   id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
@@ -61,7 +61,7 @@ requests:
       desiredCount: 1
       infra:
         bootstrapFiles:
-        - content: build-b-release
+        - content: build-a-release
           path: /etc/nvke-release
         machineTemplate:
           apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
@@ -77,11 +77,11 @@ requests:
                   chain https://images.example.com/nvke/boot.ipxe
                 vpcID: 22222222-2222-4222-8222-222222222222
         preKubeadmCommands:
-        - echo build-b-release
+        - echo build-a-release
       maxSurge: 1
       provisioningMonitorDisabled: false
       systemReservedMemory: 1Gi
-    controlPlaneKubernetesVersion: 1.34.9
+    controlPlaneKubernetesVersion: 1.34.0
     etcdEncrypted: true
     infra:
       cluster:

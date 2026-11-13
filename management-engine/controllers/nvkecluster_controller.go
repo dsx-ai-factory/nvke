@@ -322,6 +322,38 @@ func (r *NVKEClusterReconciler) resolveReleaseTemplateVariables(ctx context.Cont
 	}, nil
 }
 
+type releaseUpgradeStrategy int
+
+const (
+	upgradeChannelDefault releaseUpgradeStrategy = iota
+	upgradePatch
+	upgradeBuild
+	upgradePinned
+)
+
+func releaseUpgradeStrategyFor(requestedVersion *version.Version) releaseUpgradeStrategy {
+	strategy := upgradeChannelDefault
+	if requestedVersion != nil {
+		switch len(requestedVersion.Components()) {
+		case 2:
+			strategy = upgradePatch
+		case 3:
+			strategy = upgradeBuild
+		default:
+			strategy = upgradePinned
+		}
+		// Pin prerelease selectors such as 1.34.4-custom.1.
+		if requestedVersion.PreRelease() != "" {
+			strategy = upgradePinned
+		}
+		// Pin build-metadata selectors such as 1.34.4+custom.1.
+		if requestedVersion.BuildMetadata() != "" {
+			strategy = upgradePinned
+		}
+	}
+	return strategy
+}
+
 func (r *NVKEClusterReconciler) resolveClusterRelease(ctx context.Context, cluster *internalv1.NVKECluster) (*internalv1.ClusterRelease, error) {
 	selection := cluster.Spec.Release.Channel
 	var requestedVersion *version.Version
@@ -337,31 +369,7 @@ func (r *NVKEClusterReconciler) resolveClusterRelease(ctx context.Context, clust
 		return nil, fmt.Errorf("get ClusterReleaseChannel %q: %w", selection.Name, err)
 	}
 
-	const (
-		upgradeChannelDefault = iota
-		upgradePatch
-		upgradeBuild
-		upgradePinned
-	)
-	versionUpgradeStrategy := upgradeChannelDefault
-	if requestedVersion != nil {
-		switch len(requestedVersion.Components()) {
-		case 2:
-			versionUpgradeStrategy = upgradePatch
-		case 3:
-			versionUpgradeStrategy = upgradeBuild
-		default:
-			versionUpgradeStrategy = upgradePinned
-		}
-		// Pin prerelease selectors such as 1.34.4-custom.1.
-		if requestedVersion.PreRelease() != "" {
-			versionUpgradeStrategy = upgradePinned
-		}
-		// Pin build-metadata selectors such as 1.34.4+custom.1.
-		if requestedVersion.BuildMetadata() != "" {
-			versionUpgradeStrategy = upgradePinned
-		}
-	}
+	versionUpgradeStrategy := releaseUpgradeStrategyFor(requestedVersion)
 
 	// Resolve the allowed k8s versions we can use in the channel
 	matchingVersions := make(map[string]*version.Version)
@@ -372,6 +380,9 @@ func (r *NVKEClusterReconciler) resolveClusterRelease(ctx context.Context, clust
 		}
 		if versionUpgradeStrategy == upgradePinned {
 			if !parsed.EqualTo(requestedVersion) {
+				continue
+			}
+			if parsed.PreRelease() != requestedVersion.PreRelease() {
 				continue
 			}
 			// EqualTo ignores build metadata, but an exact pin must match it.
