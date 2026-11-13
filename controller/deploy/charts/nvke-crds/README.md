@@ -1,44 +1,30 @@
-# Shared NVKE catalog CRDs
+# NVKE controller release CRDs
 
-This chart installs MachineImage, ClusterRelease and NodePoolRelease, the catalog
-APIs shared by NVKE components. It contains their canonical generated definitions
-and runs no workloads.
+This chart installs MachineImage, ClusterRelease and NodePoolRelease, the release
+APIs the NVKE controller reads to resolve releases. The NVKE controller owns these APIs. The definitions are generated from the Go
+types in [`controller/k8s-apis/v1`](../../../k8s-apis/v1)
 
-## Installation and ownership
 
-Install this chart once per cluster, either as a dedicated release or through one
-application's chart dependency. Other consumers should reuse those definitions.
-Helm dependencies are part of their parent's release; Helm does not deduplicate
-them across separately installed releases.
+## Installation
 
-To install a dedicated release from a repository checkout:
+The [NVKE controller chart](../controller/README.md#release-crds) installs this
+chart as a dependency by default (`releaseCRDs.install=true`), so a standard
+controller install needs nothing else.
+
+To manage the definitions in their own Helm release, disable the dependency in
+the controller chart and install this chart directly:
 
 ```sh
-helm upgrade --install nvke-catalog controller/deploy/charts/nvke-crds \
+helm upgrade --install nvke-crds controller/deploy/charts/nvke-crds \
   --namespace nvke-system --create-namespace
 ```
 
 The definitions are cluster-scoped. Wait for all three CRDs to reach the
-`Established` condition before creating catalog resources. Consumers must use
+`Established` condition before creating release resources. Consumers must use
 compatible schema versions. See each application's installation guide for how
-to enable its dependency or use an existing owner; the [NVKE controller chart](../controller/README.md#catalog-crds)
+to enable its dependency or use an existing owner; the [NVKE controller chart](../controller/README.md#release-crds)
 documents its configuration. This chart's `enabled=false` suppresses all three
 definitions when used as a dependency.
-
-## Transferring ownership
-
-To move existing definitions to a dedicated release:
-
-1. Identify their current Helm release metadata and every installer that manages
-   them. Back up catalog records and select compatible chart and workload versions.
-2. Verify the definitions have `helm.sh/resource-policy: keep`. Disable catalog
-   installation in the current owner's configuration and upgrade that release,
-   preserving its other values. Verify the CRDs and records remain available.
-3. After the former installers are disabled, install this chart with Helm's
-   `--take-ownership` option. Inspect its rendered resources first: the option
-   deliberately adopts existing objects into the new release.
-4. Verify the new owner and existing records. Keep catalog installation disabled
-   in former owners on subsequent upgrades and rollbacks.
 
 ## Versions, upgrades and retention
 
@@ -57,15 +43,15 @@ can be managed by the owning release.
 
 ## Development
 
-Generate from `management-engine/apis` using its pinned controller-gen:
+Generate from [`controller/k8s-apis`](../../../k8s-apis) using its pinned controller-gen:
 
 ```sh
-make -C management-engine manifests-state
+make -C controller/k8s-apis generate manifests
 make chart-crds-check
 make chart-check
 ```
 
-`make chart-crds` renders the catalog definitions into ignored
+`make chart-crds` renders the release definitions into ignored
 `dist/release-crds.yaml` for tools such as Tilt. Helm and Kustomize read the
 canonical files under `bases/`; generated bundles and dependency archives are
 not tracked. The CLI embeds the same chart sources.

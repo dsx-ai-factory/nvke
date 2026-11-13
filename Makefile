@@ -60,6 +60,7 @@ WORK_MODULES := agent \
                 controller \
                 controller/api \
                 controller/deploy/charts \
+                controller/k8s-apis \
                 controller/nico-sim \
                 controller/hack/capd-reboot-controller \
                 cli \
@@ -332,6 +333,7 @@ PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
                      controller/nico-sim \
                      controller/api \
                      controller/deploy/charts \
+                     controller/k8s-apis \
                      agent \
                      auth \
                      cli \
@@ -344,6 +346,10 @@ PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
 # compiles nothing that uses it. These are the modules that import it, and a
 # change to the API has to build them to mean anything.
 API_DEPENDENTS := controller cli controller/test/e2e
+
+# The modules that import controller/k8s-apis, so a change to the release types
+# builds what reads them.
+K8S_APIS_DEPENDENTS := controller cli
 
 # The modules that import auth, so an authentication change builds what uses it.
 AUTH_DEPENDENTS := controller
@@ -367,6 +373,7 @@ RACE_MODULES := agent \
                 cli \
                 cluster-api-provider-provisioned \
                 controller \
+                controller/k8s-apis \
                 controller/nico-sim \
                 controller/test/e2e \
                 os-image
@@ -440,6 +447,7 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 				(controller/api) printf '%s\n' $(API_DEPENDENTS) ;; \
 				(auth) printf '%s\n' $(AUTH_DEPENDENTS) ;; \
 				(controller/deploy/charts) printf '%s\n' $(CHARTS_DEPENDENTS) ;; \
+				(controller/k8s-apis) printf '%s\n' $(K8S_APIS_DEPENDENTS) ;; \
 			esac; \
 		done | sort -u); \
 	fi; \

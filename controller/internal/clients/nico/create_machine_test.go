@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
-	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,6 +17,8 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	internalv1 "github.com/dsx-ai-factory/nvke/controller/k8s-apis/v1"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
@@ -197,7 +198,7 @@ func newMachineCreateClient(t *testing.T, objects ...ctrlclient.Object) ctrlclie
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, clusterv1.AddToScheme(scheme))
 	require.NoError(t, nicov1.AddToScheme(scheme))
-	require.NoError(t, enginev1.AddToScheme(scheme))
+	require.NoError(t, internalv1.AddToScheme(scheme))
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
 }
 
@@ -231,11 +232,11 @@ func testMachineCreateDeps(k8sClient ctrlclient.Client) shared.MachineCreateDeps
 func testNodePoolRelease(name, ipxe, userData string) []ctrlclient.Object {
 	return []ctrlclient.Object{
 		testMachineImage(name+"-image", ipxe),
-		&enginev1.NodePoolRelease{
+		&internalv1.NodePoolRelease{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Annotations: injectedVersionAnnotations()},
-			Spec: enginev1.NodePoolReleaseSpec{
-				MachineImageRef: enginev1.MachineImageReference{Name: enginev1.ResourceName(name + "-image")},
-				MachineInit:     enginev1.MachineInit{UserDataTemplate: userData},
+			Spec: internalv1.NodePoolReleaseSpec{
+				MachineImageRef: internalv1.MachineImageReference{Name: internalv1.ResourceName(name + "-image")},
+				MachineInit:     internalv1.MachineInit{UserDataTemplate: userData},
 			},
 		},
 	}
@@ -246,32 +247,32 @@ func testNodePoolRelease(name, ipxe, userData string) []ctrlclient.Object {
 func testClusterRelease(name, ipxe, userData string, deprecated bool) []ctrlclient.Object {
 	return []ctrlclient.Object{
 		testMachineImage(name+"-control-plane-image", ipxe),
-		&enginev1.ClusterRelease{
+		&internalv1.ClusterRelease{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Annotations: injectedVersionAnnotations()},
-			Spec: enginev1.ClusterReleaseSpec{
-				MachineImageRef: enginev1.MachineImageReference{Name: enginev1.ResourceName(name + "-control-plane-image")},
-				MachineInit:     enginev1.MachineInit{UserDataTemplate: userData},
-				Lifecycle:       enginev1.ReleaseLifecycle{Deprecated: deprecated},
+			Spec: internalv1.ClusterReleaseSpec{
+				MachineImageRef: internalv1.MachineImageReference{Name: internalv1.ResourceName(name + "-control-plane-image")},
+				MachineInit:     internalv1.MachineInit{UserDataTemplate: userData},
+				Lifecycle:       internalv1.ReleaseLifecycle{Deprecated: deprecated},
 			},
 		},
 	}
 }
 
-func testMachineImage(name, ipxe string) *enginev1.MachineImage {
-	return &enginev1.MachineImage{
+func testMachineImage(name, ipxe string) *internalv1.MachineImage {
+	return &internalv1.MachineImage{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec: enginev1.MachineImageSpec{
-			OperatingSystem: enginev1.OperatingSystem{Family: "ubuntu", Version: "24.04"},
+		Spec: internalv1.MachineImageSpec{
+			OperatingSystem: internalv1.OperatingSystem{Family: "ubuntu", Version: "24.04"},
 			Architecture:    "amd64",
 			BuildDate:       "2026-01-01",
-			NICo:            enginev1.NICoBoot{IPXEScript: ipxe},
+			NICo:            internalv1.NICoBoot{IPXEScript: ipxe},
 		},
 	}
 }
 
 func injectedVersionAnnotations() map[string]string {
 	return map[string]string{
-		enginev1.MachineInitKubernetesVersionAnnotation:         "",
-		enginev1.MachineInitKubernetesVersionInjectedAnnotation: "true",
+		internalv1.MachineInitKubernetesVersionAnnotation:         "",
+		internalv1.MachineInitKubernetesVersionInjectedAnnotation: "true",
 	}
 }
