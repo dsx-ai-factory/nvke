@@ -93,6 +93,11 @@ jobs:
             Closing because the details asked for above haven't arrived in ${CLOSE_DAYS} days. Comment here with them and this issue reopens and goes back to triage.`;
             const botPosted = (comments, mark) =>
               comments.some((c) => c.user?.login === BOT && (c.body ?? '').includes(mark));
+            // listComments filters `since` on the last update, so an old
+            // comment edited later is returned too. Count only a reporter
+            // comment created after needs-info was added.
+            const repliedSince = (comments, issue, since) =>
+              comments.some((c) => c.user?.login === issue.user.login && new Date(c.created_at) >= since);
 
             // The Component options in .github/ISSUE_TEMPLATE/*.yml, lower
             // case, to the area labels in .github/labeler.yml. An option that
@@ -189,7 +194,7 @@ jobs:
               });
               // The reporter has replied, but the run for that reply failed
               // or predates this workflow. Do what it would have done.
-              if (comments.some((c) => c.user?.login === issue.user.login)) {
+              if (repliedSince(comments, issue, since)) {
                 await removeLabel(issue, NEEDS_INFO);
                 return 'answered';
               }
@@ -209,6 +214,22 @@ jobs:
                   state: 'closed',
                   state_reason: 'not_planned',
                 });
+                // A reply can land between the read above and the close, and
+                // its own run may already have removed needs-info, which a
+                // later comment needs to reopen the issue. Check once more,
+                // and undo the close if the reporter got in first.
+                const after = (await github.rest.issues.get({ ...context.repo, issue_number: issue.number })).data;
+                const latest = await github.paginate(github.rest.issues.listComments, {
+                  ...context.repo,
+                  issue_number: issue.number,
+                  since: since.toISOString(),
+                  per_page: 100,
+                });
+                if (!names(after).includes(NEEDS_INFO) || repliedSince(latest, issue, since)) {
+                  await github.rest.issues.update({ ...context.repo, issue_number: issue.number, state: 'open' });
+                  await removeLabel(issue, NEEDS_INFO);
+                  return 'answered';
+                }
                 return 'closed';
               }
               if (!botPosted(comments, REMINDER_MARK)) {
@@ -257,14 +278,19 @@ jobs:
               }
 
               // The reporter answered a request for more detail, so the issue
-              // is the triagers' turn again.
+              // is the triagers' turn again. A run that waited in the queue
+              // while a maintainer re-added needs-info must not clear the new
+              // request, so the comment has to postdate the current label.
               if (context.eventName === 'issue_comment' &&
                   labels.includes(NEEDS_INFO) &&
                   context.payload.comment.user.login === issue.user.login) {
-                await removeLabel(issue, NEEDS_INFO);
-                labels = labels.filter((l) => l !== NEEDS_INFO);
-                tally.answered += 1;
-                core.info(`#${issue.number}: reporter answered, ${NEEDS_INFO} removed`);
+                const since = await needsInfoSince(issue);
+                if (!since || new Date(context.payload.comment.created_at) >= since) {
+                  await removeLabel(issue, NEEDS_INFO);
+                  labels = labels.filter((l) => l !== NEEDS_INFO);
+                  tally.answered += 1;
+                  core.info(`#${issue.number}: reporter answered, ${NEEDS_INFO} removed`);
+                }
               }
 
               if (labels.includes(NEEDS_INFO)) {
