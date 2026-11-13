@@ -71,7 +71,7 @@ func issuerFor(site Site) string {
 }
 
 // withDatahallCA returns client trusting the datahall's private CA as well as
-// the system roots, or client itself when the datahall supplies none.
+// the roots it already trusts, or client itself when the datahall supplies none.
 func withDatahallCA(client *http.Client, siteKey string) (*http.Client, error) {
 	name := CACertEnvName(siteKey)
 	pemData := os.Getenv(name)
@@ -100,6 +100,11 @@ func withDatahallCA(client *http.Client, siteKey string) (*http.Client, error) {
 	}
 	if transport.TLSClientConfig == nil {
 		transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	// Extend a supplied pool, on a copy: the cloned config still shares it.
+	if supplied := transport.TLSClientConfig.RootCAs; supplied != nil {
+		pool = supplied.Clone()
+		pool.AppendCertsFromPEM([]byte(pemData))
 	}
 	transport.TLSClientConfig.RootCAs = pool
 	withCA := *client

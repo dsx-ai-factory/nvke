@@ -5,7 +5,14 @@ package dsx
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -331,4 +338,61 @@ func TestDatahallCAIsOptionalAndValidated(t *testing.T) {
 	if _, err := withDatahallCA(plain, "datahall-9"); err == nil || !strings.Contains(err.Error(), "DSX_DATAHALL_9_CA_CERT") {
 		t.Errorf("a value holding no PEM should fail naming the variable, got %v", err)
 	}
+}
+
+// A client that already names its roots keeps them: the datahall CA is added
+// to a copy of that pool, and the caller's own pool is left as it was.
+func TestDatahallCAExtendsASuppliedRootPool(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	t.Cleanup(srv.Close)
+
+	supplied := x509.NewCertPool()
+	supplied.AddCert(srv.Certificate())
+	before := supplied.Clone()
+	caller := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{RootCAs: supplied, MinVersion: tls.VersionTLS12},
+	}}
+
+	hallCA := selfSignedPEM(t)
+	t.Setenv("DSX_DATAHALL_3_CA_CERT", hallCA)
+	client, err := withDatahallCA(caller, "datahall-3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport is %T", client.Transport)
+	}
+
+	want := before.Clone()
+	want.AppendCertsFromPEM([]byte(hallCA))
+	if !transport.TLSClientConfig.RootCAs.Equal(want) {
+		t.Error("the roots are not the supplied pool plus the datahall CA")
+	}
+	if !supplied.Equal(before) {
+		t.Error("adding the datahall CA changed the caller's own pool")
+	}
+}
+
+// selfSignedPEM is a CA certificate that no test server presents.
+func selfSignedPEM(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "datahall test CA"},
+		NotBefore:             time.Now().Add(-time.Minute),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
 }
