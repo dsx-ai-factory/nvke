@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -95,7 +96,35 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 		Name:      "node-local-dns",
 	}, &configMap))
 	require.Contains(t, configMap.Data["Corefile"], "health :8080")
-	require.NotContains(t, configMap.Data["Corefile"], "bind ")
+	// node-cache adds an explicit wildcard bind to generated stub-domain
+	// blocks. All base zones must share that listener, including the default
+	// and reverse zones, or queries can randomly reach the wrong upstream.
+	bindings := map[string][]string{}
+	var zone string
+	depth := 0
+	for _, line := range strings.Split(configMap.Data["Corefile"], "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || strings.HasPrefix(fields[0], "#") {
+			continue
+		}
+		if depth == 0 {
+			require.Len(t, fields, 2)
+			require.Equal(t, "{", fields[1])
+			zone = fields[0]
+			bindings[zone] = nil
+		}
+		if depth == 1 && fields[0] == "bind" {
+			bindings[zone] = append(bindings[zone], fields[1:]...)
+		}
+		depth += strings.Count(line, "{") - strings.Count(line, "}")
+	}
+	require.Zero(t, depth)
+	require.Equal(t, map[string][]string{
+		"cluster.local:53": {"0.0.0.0"},
+		"in-addr.arpa:53":  {"0.0.0.0"},
+		"ip6.arpa:53":      {"0.0.0.0"},
+		".:53":             {"0.0.0.0"},
+	}, bindings)
 	require.NotContains(t, configMap.Data["Corefile"], "169.254.20.10")
 
 	var daemonSet appsv1.DaemonSet
