@@ -225,6 +225,21 @@ func (f *TenantClientFactory) AdminRESTConfig(ctx context.Context, clusterName s
 	return f.tenantRESTConfigAs(ctx, clusterName, adminSPIFFEPath)
 }
 
+// PublishedKubeconfig is the kubeconfig the controller publishes for the
+// tenant, as it is: its server is the tenant's own address, not the relay's.
+func (f *TenantClientFactory) PublishedKubeconfig(ctx context.Context, clusterName string) ([]byte, error) {
+	secretName := clusterName + "-kubeconfig"
+	secret, err := f.coreClient.Secrets(mgmtns.Namespace()).Get(ctx, secretName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("getting tenant kubeconfig secret %s/%s: %w", mgmtns.Namespace(), secretName, err)
+	}
+	kubeconfig, ok := secret.Data[tenantKubeconfigKey]
+	if !ok || len(kubeconfig) == 0 {
+		return nil, fmt.Errorf("tenant kubeconfig secret %s/%s has no non-empty %q key", mgmtns.Namespace(), secretName, tenantKubeconfigKey)
+	}
+	return kubeconfig, nil
+}
+
 func newTenantClient(restConfig *rest.Config, clusterName string) (client.Client, error) {
 	scheme := runtime.NewScheme()
 	for name, addToScheme := range map[string]func(*runtime.Scheme) error{
@@ -310,15 +325,9 @@ func (f *TenantClientFactory) tenantRESTConfigAs(ctx context.Context, clusterNam
 		return nil, errors.New("cluster name is required")
 	}
 
-	secretName := clusterName + "-kubeconfig"
-	secret, err := f.coreClient.Secrets(mgmtns.Namespace()).Get(ctx, secretName, metav1.GetOptions{})
+	kubeconfig, err := f.PublishedKubeconfig(ctx, clusterName)
 	if err != nil {
-		return nil, fmt.Errorf("getting tenant kubeconfig secret %s/%s: %w", mgmtns.Namespace(), secretName, err)
-	}
-
-	kubeconfig, ok := secret.Data[tenantKubeconfigKey]
-	if !ok || len(kubeconfig) == 0 {
-		return nil, fmt.Errorf("tenant kubeconfig secret %s/%s has no non-empty %q key", mgmtns.Namespace(), secretName, tenantKubeconfigKey)
+		return nil, err
 	}
 
 	publishedConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)

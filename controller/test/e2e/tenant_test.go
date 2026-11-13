@@ -10,6 +10,7 @@ import (
 	"maps"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"testing"
@@ -851,6 +852,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			default:
 				deleted = test.deleteClusterAndWait(ctx, &deleteAccepted)
 			}
+			if dir := test.cfg.Lifecycle.NodeKeyDir; keepCluster && dir != "" && test.cluster != nil && test.tenantClients != nil {
+				keepTenantKubeconfig(ctx, &test, dir)
+			}
 			if removeProbeNamespace != nil && !deleted && !deleteAccepted {
 				if err := removeProbeNamespace(ctx); err != nil && !apierrors.IsNotFound(err) {
 					GinkgoLogr.Error(err, "removing the probe namespace from the tenant", "namespace", laneTenantSettings.checks.probeNamespace)
@@ -871,6 +875,22 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			// release/hack/qualify-e2e.sh.
 		}, NodeTimeout(15*time.Minute))
 	}
+}
+
+// keepTenantKubeconfig writes the kubeconfig the controller publishes for a
+// tenant that outlives the run into dir, beside the site node's key. Best
+// effort: the tenant is kept either way.
+func keepTenantKubeconfig(ctx context.Context, test *tenantTest, dir string) {
+	kubeconfig, err := test.tenantClients.PublishedKubeconfig(ctx, test.cluster.Name)
+	if err == nil {
+		path := filepath.Join(dir, test.cluster.Name+".kubeconfig")
+		if err = os.WriteFile(path, kubeconfig, 0o600); err == nil {
+			GinkgoLogr.Info("the kept tenant's kubeconfig, as the controller publishes it; its server is the tenant's own address, reached through the jump host",
+				"kubeconfig", path)
+			return
+		}
+	}
+	GinkgoLogr.Error(err, "writing the kept tenant's kubeconfig", "cluster", test.cluster.Name)
 }
 
 func withNicoVMSReleaseEntries(args ...any) []any {

@@ -1105,6 +1105,11 @@ keeps every tenant as well, passed or not, and skips the spec that deletes one;
 `qualify local --keep-tenant` sets it, and the workflow never does.
 `lifecycle.nodeKeyDir` writes the site node's SSH key there, so a kept node can
 be logged into after the run; `qualify local` sets it with either keep flag.
+A kept site's admin kubeconfig goes there too, as `<node>.kubeconfig`, aimed at
+`127.0.0.1` on the node's API server port, so it works once that port is
+forwarded to the node's loopback through the jump host. A kept tenant's
+kubeconfig, as the controller publishes it, goes there as `<cluster>.kubeconfig`.
+Both are mode 0600.
 
 Prerequisites, all read from the shell that runs the suite. Neither the proxy
 nor the jump host nor any identifier is checked in, and secrets are read only

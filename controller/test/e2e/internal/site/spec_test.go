@@ -394,6 +394,44 @@ func TestArchiveAssets(t *testing.T) {
 	}
 }
 
+func TestKeepKubeconfig(t *testing.T) {
+	forwarded, err := rewriteServer([]byte(nodeKubeconfig), "127.0.0.1:40123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "run.kubeconfig")
+	if err := os.WriteFile(path, forwarded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	keepDir := t.TempDir()
+	out, err := KeepKubeconfig(Cluster{Kubeconfig: path, APIServerPort: 6443}, keepDir, "site-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != filepath.Join(keepDir, "site-a.kubeconfig") {
+		t.Errorf("wrote %s", out)
+	}
+	info, err := os.Stat(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("mode %v, want 0600: it is an admin credential", info.Mode().Perm())
+	}
+	cfg, err := clientcmd.LoadFromFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cl := cfg.Clusters["site"]; cl.Server != "https://127.0.0.1:6443" || cl.TLSServerName != "10.0.0.5" {
+		t.Errorf("cluster = %+v, want the API server's port on loopback and the node's name pinned", cl)
+	}
+
+	if _, err := KeepKubeconfig(Cluster{}, keepDir, "site-b"); err == nil {
+		t.Error("a site with no kubeconfig was kept without an error")
+	}
+}
+
 func TestRewriteServerKeepsExplicitServerName(t *testing.T) {
 	raw := strings.Replace(nodeKubeconfig, "    certificate-authority-data: Zm9v\n",
 		"    certificate-authority-data: Zm9v\n    tls-server-name: kubernetes\n", 1)
