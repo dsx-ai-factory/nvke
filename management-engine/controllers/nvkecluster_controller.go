@@ -353,6 +353,11 @@ func (r *NVKEClusterReconciler) resolveClusterRelease(ctx context.Context, clust
 		default:
 			versionUpgradeStrategy = upgradePinned
 		}
+		// Pin prerelease selectors such as 1.34.4-custom.1.
+		if requestedVersion.PreRelease() != "" {
+			versionUpgradeStrategy = upgradePinned
+		}
+		// Pin build-metadata selectors such as 1.34.4+custom.1.
 		if requestedVersion.BuildMetadata() != "" {
 			versionUpgradeStrategy = upgradePinned
 		}
@@ -415,17 +420,15 @@ func (r *NVKEClusterReconciler) resolveClusterRelease(ctx context.Context, clust
 				if candidate.Name == resolved.Name {
 					return &release, nil
 				}
+				if time.Since(release.CreationTimestamp.Time) < candidate.MinimumUpgradeAge.Duration {
+					continue
+				}
 			}
 			if release.Spec.Lifecycle.Deprecated {
 				continue
 			}
 			if release.Spec.Lifecycle.Hidden {
 				continue
-			}
-			if cluster.Status.ResolvedRelease != nil {
-				if time.Since(release.CreationTimestamp.Time) < candidate.MinimumUpgradeAge.Duration {
-					continue
-				}
 			}
 			return &release, nil
 		}
