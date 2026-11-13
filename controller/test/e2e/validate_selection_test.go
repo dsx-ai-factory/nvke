@@ -6,8 +6,6 @@ package e2e
 import (
 	"errors"
 	"flag"
-	"fmt"
-	"slices"
 	"strings"
 )
 
@@ -26,52 +24,7 @@ const (
 	tenantValidateEnv = "NVKE_TENANT_VALIDATE"
 
 	labelFilterFlag = "ginkgo.label-filter"
-
-	// validateExcludeLabelsEnv lists, comma-separated, labels from
-	// excludableLabels whose specs a run leaves out, on top of whatever else
-	// selects specs. For a site where a check does not apply, such as
-	// issuesCertificateLabel where cert-manager approves only what a
-	// CertificateRequestPolicy allows.
-	validateExcludeLabelsEnv = "NVKE_VALIDATE_EXCLUDE_LABELS"
-
-	// issuesCertificateLabel is the one creates spec that needs cert-manager
-	// to approve a new self-signed Issuer's request, so it can be left out
-	// without the other creates specs.
-	issuesCertificateLabel = "issues-certificate"
 )
-
-// excludableLabels are the labels validateExcludeLabelsEnv may name: each
-// marks a check that does not apply to some sites, and nothing else. Any other
-// label, such as health or readiness, would leave out checks every site must
-// pass while the run still passed, so it is refused, as is a misspelling.
-var excludableLabels = []string{issuesCertificateLabel}
-
-// validationExclusions reads validateExcludeLabelsEnv.
-func validationExclusions(getenv func(string) string) ([]string, error) {
-	labels := splitList(getenv(validateExcludeLabelsEnv), ",")
-	for _, label := range labels {
-		if !slices.Contains(excludableLabels, label) {
-			return nil, fmt.Errorf("%s: %q cannot be left out (it takes: %s)", validateExcludeLabelsEnv, label, strings.Join(excludableLabels, ", "))
-		}
-	}
-	slices.Sort(labels)
-	return slices.Compact(labels), nil
-}
-
-// withExclusions ANDs the exclusions onto filter, which may be empty.
-func withExclusions(filter string, exclude []string) string {
-	if len(exclude) == 0 {
-		return filter
-	}
-	var terms []string
-	if filter != "" {
-		terms = append(terms, "("+filter+")")
-	}
-	for _, label := range exclude {
-		terms = append(terms, "!"+label)
-	}
-	return strings.Join(terms, " && ")
-}
 
 // validationLabelFilter is the label filter the switches choose. It returns
 // "" when neither is present, as in any run outside the image, so the suite

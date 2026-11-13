@@ -255,15 +255,5 @@ func TestE2E(t *testing.T) {
 			suiteConfig.LabelFilter = filter
 		}
 	}
-	exclude, err := validationExclusions(os.Getenv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(exclude) > 0 {
-		suiteConfig.LabelFilter = withExclusions(suiteConfig.LabelFilter, exclude)
-		// A run whose exclusions leave nothing would otherwise pass.
-		suiteConfig.FailOnEmpty = true
-		fmt.Println("label filter: " + suiteConfig.LabelFilter)
-	}
 	RunSpecs(t, "NVKE E2E Suite", suiteConfig, reporterConfig)
 }

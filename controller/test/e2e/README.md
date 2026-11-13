@@ -256,7 +256,7 @@ and [tenant](#tenant-checks) variable tables describe each one.
 | 28 | A NetworkPolicy enforced | `creates` | Unless a NetworkPolicy in the probe namespace already selects the check's pods | As on a site, in `NVKE_TENANT_NAMESPACE` |
 | 29 | A StatefulSet pod resolved and reached by its headless Service name | `creates` | Always | Always |
 | 30 | A PersistentVolumeClaim bound and written from a pod | `creates` | From `NVKE_SITE_PVC_STORAGE_CLASS`, else the default StorageClass; skips without either | From `NVKE_TENANT_PVC_STORAGE_CLASS`, else the tenant's default StorageClass; skips without either |
-| 31 | A certificate issued by a new self-signed cert-manager Issuer | `creates`, `issues-certificate` | Always | Where `NVKE_TENANT_COMPONENTS` lists `cert-manager` |
+| 31 | A certificate issued by a new self-signed cert-manager Issuer | `creates` | Always. With `NVKE_SITE_CERT_MANAGER_APPROVAL=policy`, the request must be approved or denied instead; a denial passes, and the report says so | Where `NVKE_TENANT_COMPONENTS` lists `cert-manager`, and as on a site with `NVKE_TENANT_CERT_MANAGER_APPROVAL` |
 
 A tenant also runs these, which compare it with the controller's record of it:
 
@@ -353,7 +353,9 @@ account. That account needs:
   `delete` on Pods; and for the `creates` specs, the same on Services,
   StatefulSets, PersistentVolumeClaims, NetworkPolicies and `cert-manager.io`
   Issuers and Certificates, `list` on NetworkPolicies, `get` on `pods/log` and
-  `get` and `delete` on Secrets (the issued certificate's)
+  `get` and `delete` on Secrets (the issued certificate's); and, with
+  `NVKE_SITE_CERT_MANAGER_APPROVAL=policy`, `list` on `cert-manager.io`
+  CertificateRequests
 
 It needs nothing more, and should be given nothing more: the RBAC check fails
 an identity that can read Secrets across the cluster or bind roles.
@@ -368,7 +370,6 @@ Configure it with the [health spec variables](#health-specs) and these:
 | --- | --- | --- |
 | `NVKE_SITE_VALIDATE` | Turns the site checks on. The image sets it; elsewhere they skip. | Unset |
 | `NVKE_VALIDATE_PROFILE` | Path to a [validation profile](#validation-profile): defaults for these variables, for a site not laid out like `deploy/nico`. | Unset |
-| `NVKE_VALIDATE_EXCLUDE_LABELS` | Comma-separated labels whose checks the run leaves out. It takes only labels that mark a check some sites cannot pass, so far `issues-certificate`, for a site whose cert-manager approves only what a `CertificateRequestPolicy` allows; any other label fails the run. Added to whatever else selects the checks, including `-ginkgo.label-filter`; a run it leaves with nothing fails. | Unset |
 | `NVKE_SITE_KUBERNETES_VERSION` | The Kubernetes version the site was built with. Unset fails the version check. | Unset |
 | `NVKE_SITE_NAMESPACES` | Comma-separated namespaces that must each run a ready pod, replacing the default list: `kube-system`, `cert-manager`, `capi-system` and those `deploy/nico` installs into. | The `deploy/nico` list |
 | `NVKE_SITE_PROBE_NAMESPACE` | Where the probe pods and every `creates` object go. | The pod's own namespace, else `default` |
@@ -380,6 +381,7 @@ Configure it with the [health spec variables](#health-specs) and these:
 | `NVKE_SITE_APISERVER_FLAGS` | Flags every API server runs, `name=value` separated by semicolons, because values hold commas. Added to those kubeadm-config sets; a conflict between the two fails. | Unset |
 | `NVKE_SITE_ETCD_ENCRYPTED` | `true` requires `--encryption-provider-config` on every API server. It does not show which provider the config uses. | Unset |
 | `NVKE_SITE_RESERVED_MEMORY` | The least memory every node holds back from pods (capacity less allocatable), such as `2Gi`. That counts the kubelet's hard eviction threshold, 100Mi by default, with its kube and system reservations: set it to their sum. | Unset |
+| `NVKE_SITE_CERT_MANAGER_APPROVAL` | How cert-manager approves a request: `any`, where its own approver approves every one, or `policy`, where approver-policy approves only what a `CertificateRequestPolicy` allows. With `policy`, check 31 requires the approver to decide on its request, and passes on a denial, reporting it. | `any` |
 | `NVKE_SITE_STORAGE_CLASSES` | Comma-separated StorageClasses that must exist. | Unset |
 | `NVKE_SITE_PVC_STORAGE_CLASS` | The class the PVC check binds from. | The default class |
 | `NVKE_E2E_KEEP_ON_FAILURE` | `true` leaves a failed `creates` spec's objects in the probe namespace to be inspected, site or tenant, and logs each one kept. The pod check leaves that namespace out, but checks 2 and 4 read the whole cluster, so a kept StatefulSet or Certificate fails the next run: delete every kept object by its `e2e.nvidia.com/site-run` label first. | Unset: deleted |
@@ -413,7 +415,7 @@ NVKE_CONTROLLER_NAMESPACE: my-controller
 NVKE_CONTROLLER_SERVICE: my-controller
 NVKE_SITE_NAMESPACES: [kube-system, cert-manager, capi-system, capnico-system, my-controller]
 NVKE_SITE_COMPONENTS: [argocd, cnpg]
-NVKE_VALIDATE_EXCLUDE_LABELS: [issues-certificate]
+NVKE_SITE_CERT_MANAGER_APPROVAL: policy
 ```
 
 Keep in a profile what changes rarely: where things are installed and what
@@ -431,9 +433,11 @@ mount it from a ConfigMap, whose files are by default. A variable set in the
 environment wins over the profile, so one run can still change one value; set
 it blank to get its built-in default back. The run log and the report's
 validation inputs say which keys the profile set and which the environment
-overrode. An excluded check is absent from the JUnit report, not listed as
-skipped; the run log prints the label filter, and the JUnit report records it
-in its `LabelFilter` property.
+overrode.
+
+A profile describes the site, and the checks decide what that means for them:
+it names no checks to leave out. A check that does not apply skips with its
+reason, which the JUnit report keeps.
 
 A profile cannot set the switches that turn a run on (`NVKE_SITE_VALIDATE`,
 `NVKE_TENANT_VALIDATE`, `NVKE_E2E_REQUIRE_EXPECTED_VERSION`, which the image

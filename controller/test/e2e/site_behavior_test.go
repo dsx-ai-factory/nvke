@@ -81,6 +81,17 @@ const (
 	// from pods, as a quantity such as 2Gi: capacity less allocatable, which
 	// counts the kubelet's hard eviction threshold with its reservations.
 	siteReservedMemoryEnv = "NVKE_SITE_RESERVED_MEMORY"
+	// siteCertManagerApprovalEnv says how cert-manager approves a request:
+	// certManagerApprovalAny, the default, where its own approver approves
+	// every one, or certManagerApprovalPolicy, where approver-policy approves
+	// only what a CertificateRequestPolicy allows. It decides what the
+	// certificate check requires.
+	siteCertManagerApprovalEnv = "NVKE_SITE_CERT_MANAGER_APPROVAL"
+)
+
+const (
+	certManagerApprovalAny    = "any"
+	certManagerApprovalPolicy = "policy"
 )
 
 const (
@@ -150,6 +161,9 @@ type siteExpectations struct {
 	apiServerFlags   map[string]string
 	etcdEncrypted    bool
 	reservedMemory   *resource.Quantity
+	// certManagerPolicy is siteCertManagerApprovalEnv set to
+	// certManagerApprovalPolicy.
+	certManagerPolicy bool
 }
 
 func siteExpectationsFromEnv(getenv func(string) string, prefix string) (siteExpectations, error) {
@@ -219,6 +233,14 @@ func siteExpectationsFromEnv(getenv func(string) string, prefix string) (siteExp
 		}
 		expect.reservedMemory = &quantity
 	}
+
+	switch approval := strings.TrimSpace(getenv(env(siteCertManagerApprovalEnv))); approval {
+	case "", certManagerApprovalAny:
+	case certManagerApprovalPolicy:
+		expect.certManagerPolicy = true
+	default:
+		return siteExpectations{}, fmt.Errorf("%s=%q: it takes %s or %s", env(siteCertManagerApprovalEnv), approval, certManagerApprovalAny, certManagerApprovalPolicy)
+	}
 	return expect, nil
 }
 
@@ -265,6 +287,9 @@ func (e siteExpectations) describe() []string {
 	}
 	if e.reservedMemory != nil {
 		add(siteReservedMemoryEnv, e.reservedMemory.String())
+	}
+	if e.certManagerPolicy {
+		add(siteCertManagerApprovalEnv, certManagerApprovalPolicy)
 	}
 	add(siteStorageClassesEnv, strings.Join(e.storageClasses, ","))
 	add(sitePVCStorageClassEnv, e.pvcStorageClass)
@@ -743,6 +768,28 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		deleteOnExit(ctx, c, issuer)
 		Expect(c.Create(ctx, certificate)).To(Succeed())
 		deleteOnExit(ctx, c, certificate, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}})
+		if settings.expect.certManagerPolicy {
+			// Under approver-policy the request may be denied by design, so
+			// what must hold is that the approver decides at all.
+			By("waiting for the approver to decide on the CertificateRequest")
+			var decision certificateDecision
+			Eventually(func(ctx context.Context) error {
+				requests := &unstructured.UnstructuredList{}
+				requests.SetAPIVersion("cert-manager.io/v1")
+				requests.SetKind("CertificateRequestList")
+				if err := c.List(ctx, requests, client.InNamespace(namespace)); err != nil {
+					return err
+				}
+				var err error
+				decision, err = certificateRequestDecision(requests.Items, name)
+				return err
+			}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(2 * time.Second).Should(Succeed())
+			GinkgoLogr.Info("certificate request", "request", decision.request, "approved", decision.approved, "reason", decision.reason)
+			if !decision.approved {
+				AddReportEntry("certificate request denied", fmt.Sprintf("%s/%s denied (%s): approver-policy decided, as %s=%s declares", namespace, decision.request, decision.reason, settings.expect.env(siteCertManagerApprovalEnv), certManagerApprovalPolicy))
+				return
+			}
+		}
 		By("waiting for the Certificate to be issued")
 		Eventually(func(ctx context.Context) error {
 			if err := c.Get(ctx, client.ObjectKeyFromObject(certificate), certificate); err != nil {
@@ -753,7 +800,45 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		var secret corev1.Secret
 		Expect(c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &secret)).To(Succeed())
 		Expect(secret.Data).To(HaveKeyWithValue(corev1.TLSCertKey, Not(BeEmpty())))
-	}, Label("site-software", "creates", issuesCertificateLabel), NodeTimeout(siteCheck+time.Minute))
+	}, Label("site-software", "creates"), NodeTimeout(2*siteCheck+time.Minute))
+}
+
+// certificateDecision is the approver's decision on a CertificateRequest.
+type certificateDecision struct {
+	request  string
+	approved bool
+	reason   string
+}
+
+// certificateRequestDecision finds the CertificateRequest cert-manager made
+// for the Certificate named certificate and returns the approver's decision,
+// or an error while there is none.
+func certificateRequestDecision(requests []unstructured.Unstructured, certificate string) (certificateDecision, error) {
+	found := false
+	for _, request := range requests {
+		if request.GetAnnotations()["cert-manager.io/certificate-name"] != certificate {
+			continue
+		}
+		found = true
+		conditions, _, _ := unstructured.NestedSlice(request.Object, "status", "conditions")
+		for _, raw := range conditions {
+			condition, _ := raw.(map[string]any)
+			if condition["status"] != "True" {
+				continue
+			}
+			reason, _ := condition["reason"].(string)
+			switch condition["type"] {
+			case "Approved":
+				return certificateDecision{request: request.GetName(), approved: true, reason: reason}, nil
+			case "Denied":
+				return certificateDecision{request: request.GetName(), reason: reason}, nil
+			}
+		}
+	}
+	if !found {
+		return certificateDecision{}, fmt.Errorf("cert-manager has made no CertificateRequest for Certificate %s", certificate)
+	}
+	return certificateDecision{}, fmt.Errorf("the approver has neither approved nor denied the CertificateRequest for Certificate %s", certificate)
 }
 
 // siteBehaviorClient is siteClient with the APIs these specs read.
