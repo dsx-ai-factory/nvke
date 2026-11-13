@@ -1,7 +1,8 @@
 # Install Cluster Service with Helm
 
 The `cluster-service` chart packages Cluster Service and its datastore resources.
-Both are enabled by default in the same Kubernetes cluster. An existing NVKE
+The manager and state are enabled by default in the same Kubernetes cluster; tenant
+and operator APIs are independently opt-in. An existing NVKE
 controller provides the provisioning REST API used by the manager.
 
 | Installation | `state.enabled` | `controller.enabled` | State access |
@@ -26,8 +27,7 @@ and the module's pinned Go tools without connecting to a Kubernetes cluster.
 For a combined installation:
 
 ```sh
-helm template cluster-service chart --namespace cluster-service-system \
-  -f config/samples/runtime-values.yaml > combined.yaml
+helm template cluster-service chart --namespace cluster-service-system -f config/samples/runtime-values.yaml > combined.yaml
 ```
 
 The sample delivers a development infrastructure template ConfigMap through
@@ -55,8 +55,7 @@ controller. Split installations remain available for other deployment needs.
 Merge the working template example with site settings:
 
 ```sh
-helm template cluster-service chart --namespace cluster-service-system \
-  -f config/samples/runtime-values.yaml -f config/samples/dsx-values.yaml > dsx.yaml
+helm template cluster-service chart --namespace cluster-service-system -f config/samples/runtime-values.yaml -f config/samples/dsx-values.yaml > dsx.yaml
 ```
 
 Replace the example registry, image tag, endpoint and tenant namespace with
@@ -72,11 +71,73 @@ through the installer; `helm template` sets namespace references but creates
 nothing. Tenant namespaces and any explicitly separate state namespace must exist.
 The examples demonstrate rendering; live reconciliation is validated separately.
 
+## Tenant and operator APIs
+
+Render all components from one values file:
+
+```sh
+helm template cluster-service chart --namespace cluster-service-system -f config/samples/all-components-values.yaml
+```
+
+Create `tenant-a` before installation. The sample includes the development
+infrastructure templates from the manager example; replace those and all image
+inputs with compatible site artifacts. Both APIs are disabled by default, so
+existing manager/state values retain their behavior. To install only APIs, set
+`controller.enabled=false` and `state.enabled=false`, with existing datastore
+schemas and permissions already installed.
+
+Each `tenantAPI` and `operatorAPI` section accepts these settings:
+
+| Values | Purpose |
+| --- | --- |
+| `enabled` | Install that API's Deployment and Service. |
+| `image.repository`, `image.tag`, `image.pullPolicy` | Workload image; a repository containing `@sha256:` uses that digest directly. |
+| `replicas`, `resources` | Replica count and container resource requests/limits. |
+| `nodeSelector`, `affinity`, `tolerations`, `topologySpreadConstraints` | Pod placement. |
+| `livenessProbe`, `readinessProbe` | Probe overrides; defaults come from canonical API manifests. |
+| `securityContext`, `podSecurityContext`, `pod.labels`, `pod.annotations` | Container and pod settings. |
+| `serviceAccount.create`, `serviceAccount.name` | Create an identity or reference an existing ServiceAccount in the release namespace. |
+| `service.port` | Internal Service port, default `8080`, named `http`; targets the container's named `http` port on `8080`. |
+| `stateAccess.mode`, `stateAccess.kubeconfigSecret.name`, `.key`, `stateAccess.context` | Local ServiceAccount access or an existing remote kubeconfig reference. |
+
+Set `tenantAPI.namespace` explicitly. The current tenant server uses this one
+namespace for every request through its temporary `--namespace` option; caller
+identity-to-tenant routing and caller authentication are not implemented here.
+The default probes are `/healthz` and `/readyz`; readiness checks datastore API
+discovery, rather than proving every RBAC operation succeeds. Additional `args`
+cannot override namespace, listen address or datastore connection settings.
+
+With local state enabled, the chart automatically binds the tenant ServiceAccount
+to its namespace-scoped cluster permissions and read-only catalog role. It binds
+the separate operator ServiceAccount to the operator catalog role. Existing
+subjects in `state.rbac.tenantAPIBindings` and `operatorAPISubjects` are preserved.
+With `state.enabled=false`, configure those bindings in the state release instead.
+`state`-only installations can bind existing API identities without installing API
+workloads. Tenant and operator APIs must use distinct ServiceAccounts.
+
+For remote APIs, render `config/samples/remote-apis-values.yaml`. Create each
+referenced Secret in the runtime namespace and bind its authenticated identity on
+the datastore cluster. The Secret key is mounted read-only at
+`/etc/cluster-service/kubeconfig`; `stateAccess.context` optionally selects its
+context. The pods disable local ServiceAccount token mounting in remote mode.
+Credential issuance, delivery and rotation are external installation inputs.
+
+For release `cluster-service` with default naming, the Services are
+`cluster-service-tenant-api` and `cluster-service-operator-api` in the release
+namespace. Names follow the chart's fullname settings with `-tenant-api` and
+`-operator-api` suffixes. Selectors include both the API component and Helm release;
+each Service targets only its corresponding Deployment. The tenant Service's
+named `http` port is the interface for subsequent route integration. Both APIs
+currently serve HTTP without caller authentication. Restrict access to trusted
+internal callers while the authentication and exposure integration is completed;
+the operator API remains internal. The chart's optional metrics NetworkPolicy
+selects the manager, so site policy must separately control API ingress and egress.
+
 ## Tenant API integration responsibilities
 
-The current chart installs the manager and state resources, with an optional
-metrics Service. Tenant and operator API Deployments and Services are the next
-packaging step in [CLI-126](https://linear.app/nvidia/issue/CLI-126).
+The chart packages the manager, state and independently enabled tenant and operator
+APIs. Each API has a separate Deployment, ServiceAccount and internal ClusterIP
+Service. The manager also has an optional metrics Service.
 The [tenant API registration design](https://docs.google.com/document/d/1sX8NWUMMkxvXnxeamuq0xBt4GnrFiRfueu6maI9d_1I/edit)
 describes the planned exposure integration; the detailed operator contract is
 tracked in [CLI-129](https://linear.app/nvidia/issue/CLI-129).
@@ -102,8 +163,7 @@ the tenant entry point is delivered by the follow-up API exposure work.
 Render state on its destination cluster:
 
 ```sh
-helm template cluster-service-state chart --namespace management-state-system \
-  -f config/samples/state-values.yaml > state.yaml
+helm template cluster-service-state chart --namespace management-state-system -f config/samples/state-values.yaml > state.yaml
 ```
 
 The state sample enables the three catalog CRDs as well as the three Cluster
@@ -117,8 +177,9 @@ authentication mapping. A SPIFFE URI in a binding does not itself establish trus
 Bindings grant the generated manager permissions and namespace-scoped leader
 election permissions. `state.rbac.tenantAPIBindings` accepts a namespace and
 subjects per tenant; `state.rbac.operatorAPISubjects` binds existing operator API
-identities. These optional bindings reuse the current API roles, independently
-of API workload packaging. Empty lists grant no API permissions. Use one tenant
+identities. These bindings reuse the canonical API roles; enabled local API
+workloads add their own subjects. With APIs disabled, empty lists grant no API
+permissions. Use one tenant
 binding entry per namespace and list all its identities together.
 
 For a controller in the same cluster, disable state, set
@@ -129,8 +190,7 @@ roles without bindings, so permissions can be supplied independently.
 For a controller on another cluster:
 
 ```sh
-helm template cluster-service chart --namespace cluster-service-system \
-  -f config/samples/remote-controller-values.yaml > controller.yaml
+helm template cluster-service chart --namespace cluster-service-system -f config/samples/remote-controller-values.yaml > controller.yaml
 ```
 
 Create the referenced Secret in the controller's namespace before installation.
@@ -198,8 +258,9 @@ Remove manually supplied kubeconfig, context, election-namespace, backend and
 infrastructure-template arguments and their credential volumes; use the named
 chart inputs instead.
 
-For development integration, pin the NVKE Git commit containing the chart and
-use a manager image built from that same commit, pinned by digest. This pairs
+Version `0.3.0` adds opt-in API workloads, with no change to the default component
+selection. For development integration, pin the NVKE Git commit containing the
+chart and use manager and API images built from that same commit, pinned by digest. This pairs
 state schemas, permissions and runtime arguments from one source revision.
 Chart version `0.2.0` pins catalog chart `0.1.0` in `Chart.lock`; those package
 versions alone do not identify a compatible manager image. Record the source
@@ -253,3 +314,5 @@ resources therefore remain but cannot be managed until access and configuration
 are restored. Do not delete a state namespace or CRD as routine cleanup: that
 can delete tenant resources. Moving state between clusters requires a separate
 data migration; changing chart switches does not move it.
+
+Created with AI assistance

@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+{{- range $key, $api := dict "tenantAPI" .Values.tenantAPI "operatorAPI" .Values.operatorAPI -}}
+{{- if $api.enabled -}}
+{{- $_ := required (printf "%s.image.repository is required" $key) $api.image.repository -}}
+{{- if eq $key "tenantAPI" -}}
+{{- $_ := required "tenantAPI.namespace is required while caller authentication is deferred" $api.namespace -}}
+{{- end -}}
+{{- if and (not $api.serviceAccount.create) (empty $api.serviceAccount.name) -}}
+{{- fail (printf "%s.serviceAccount.name is required when create=false" $key) -}}
+{{- end -}}
+{{- if eq $api.stateAccess.mode "remote" -}}
+{{- $_ := required (printf "%s remote access requires stateAccess.kubeconfigSecret.name" $key) $api.stateAccess.kubeconfigSecret.name -}}
+{{- $_ := required (printf "%s remote access requires stateAccess.kubeconfigSecret.key" $key) $api.stateAccess.kubeconfigSecret.key -}}
+{{- else if or $api.stateAccess.kubeconfigSecret.name $api.stateAccess.context -}}
+{{- fail (printf "%s inCluster access must not set remote credentials or context" $key) -}}
+{{- end -}}
+{{- range $api.args -}}
+{{- if hasPrefix "-" . -}}
+{{- $flag := trimAll "-" (first (splitList "=" .)) -}}
+{{- if has $flag (list "namespace" "kubeconfig" "context" "listen") -}}
+{{- fail (printf "%s: configure %s through named chart values, not args" $key $flag) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- if and .Values.tenantAPI.enabled .Values.operatorAPI.enabled -}}
+{{- $tenant := include "management-engine.apiServiceAccount" (dict "root" . "api" .Values.tenantAPI "surface" "tenant") -}}
+{{- $operator := include "management-engine.apiServiceAccount" (dict "root" . "api" .Values.operatorAPI "surface" "operator") -}}
+{{- if eq $tenant $operator -}}{{- fail "tenantAPI and operatorAPI must use distinct ServiceAccounts" -}}{{- end -}}
+{{- end -}}

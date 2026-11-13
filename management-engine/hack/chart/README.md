@@ -5,16 +5,17 @@ packages these extensions. Workload templates, values and state assets in
 `chart/` are generated output; `chart/Chart.yaml` and `chart/Chart.lock` are
 maintained package metadata.
 
-- Change runtime manifests under `config/manager` and permission rules under
-  `config/rbac`, `config/dev` or the Go RBAC markers. Generation carries those
+- Change runtime manifests under `config/manager` or `config/dev/*-api.yaml`,
+  and permission rules under `config/rbac`, `config/dev` or the Go RBAC markers. Generation carries those
   changes into Helm; do not edit the generated Deployment or repeat its defaults.
 - Change chart-only installation behavior in `templates/`, `values.json` and
   `values.schema.json` here. These define component switches, target namespaces,
   connection references and the identities that state RBAC binds.
 - `../chartgen` applies checked hooks to the plugin output for those choices.
-  It leaves probes, resources, security settings and other workload content
-  generated from the source manifests. An unexpected hook shape fails generation
-  so a plugin upgrade requires review instead of silently dropping behavior.
+  The manager and each API are generated in separate fresh plugin staging runs.
+  API adapters scope native manager values to each API and add connection,
+  identity and probe-value hooks. Defaults remain generated from source manifests.
+  An unexpected hook shape fails generation, so a plugin upgrade requires review instead of silently dropping behavior.
 
 The plugin preserves existing values by default. Fresh staging regenerates
 runtime defaults before adding `values.json`, so source changes remain visible.
@@ -26,7 +27,7 @@ copy of each definition.
 Run `make chart-check chart-assets-check` to verify generation and installation
 modes. The propagation test changes source resources, an environment variable,
 a probe, a volume, `envFrom` and a permission, then verifies the final Helm
-rendering. Source connection flags are replaced by named chart settings, so
-Kustomize-specific endpoints and paths do not become duplicate Helm arguments.
+rendering for the manager and both APIs. Source connection flags are replaced by
+named chart settings, so Kustomize-specific endpoints and paths do not become duplicate Helm arguments.
 
 Created with AI assistance

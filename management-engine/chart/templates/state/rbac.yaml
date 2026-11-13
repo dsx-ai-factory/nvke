@@ -14,15 +14,34 @@
 {{- if or $localMetrics .Values.state.rbac.metricsAuth }}
 {{- $roles = append $roles (dict "file" "roles/metrics_auth_role" "kind" "ClusterRole" "subjects" $subjects "namespace" $namespace "suffix" "metrics-auth-role") }}
 {{- end }}
+{{- $tenantBindings := deepCopy .Values.state.rbac.tenantAPIBindings }}
+{{- $operatorSubjects := deepCopy .Values.state.rbac.operatorAPISubjects }}
+{{- if and .Values.tenantAPI.enabled (eq .Values.tenantAPI.stateAccess.mode "inCluster") }}
+{{- $subject := dict "kind" "ServiceAccount" "name" (include "management-engine.apiServiceAccount" (dict "root" $ "api" .Values.tenantAPI "surface" "tenant")) "namespace" .Release.Namespace }}
+{{- $found := false }}
+{{- range $tenantBindings }}
+{{- if eq .namespace $.Values.tenantAPI.namespace }}
+{{- $_ := set . "subjects" (uniq (append .subjects $subject)) }}
+{{- $found = true }}
+{{- end }}
+{{- end }}
+{{- if not $found }}
+{{- $tenantBindings = append $tenantBindings (dict "namespace" .Values.tenantAPI.namespace "subjects" (list $subject)) }}
+{{- end }}
+{{- end }}
+{{- if and .Values.operatorAPI.enabled (eq .Values.operatorAPI.stateAccess.mode "inCluster") }}
+{{- $subject := dict "kind" "ServiceAccount" "name" (include "management-engine.apiServiceAccount" (dict "root" $ "api" .Values.operatorAPI "surface" "operator")) "namespace" .Release.Namespace }}
+{{- $operatorSubjects = uniq (append $operatorSubjects $subject) }}
+{{- end }}
 {{- $tenantSubjects := list }}
-{{- range .Values.state.rbac.tenantAPIBindings }}
+{{- range $tenantBindings }}
 {{- range .subjects }}{{- $tenantSubjects = append $tenantSubjects . }}{{- end }}
 {{- $roles = append $roles (dict "file" "api/tenant-api-rbac" "kind" "Role" "subjects" .subjects "namespace" .namespace "suffix" "tenant-api") }}
 {{- end }}
 {{- if $tenantSubjects }}
 {{- $roles = append $roles (dict "file" "api/tenant-api-rbac" "kind" "ClusterRole" "subjects" (uniq $tenantSubjects) "suffix" "tenant-catalog") }}
 {{- end }}
-{{- with .Values.state.rbac.operatorAPISubjects }}
+{{- with $operatorSubjects }}
 {{- $roles = append $roles (dict "file" "api/operator-api-rbac" "kind" "ClusterRole" "subjects" . "suffix" "operator-api") }}
 {{- end }}
 {{- range $role := $roles }}

@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-{{- if not (or .Values.state.enabled (and .Values.controller.enabled .Values.manager.enabled)) -}}
-{{- fail "enable state.enabled or controller.enabled" -}}
+{{- if not (or .Values.state.enabled (and .Values.controller.enabled .Values.manager.enabled) .Values.tenantAPI.enabled .Values.operatorAPI.enabled) -}}
+{{- fail "enable state.enabled or controller.enabled or an API component" -}}
 {{- end -}}
 {{- $tenantNamespaces := dict -}}
 {{- range .Values.state.rbac.tenantAPIBindings -}}
