@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"maps"
 	"net/netip"
+	"slices"
 	"strings"
 	"text/template"
 	"time"
@@ -180,13 +181,13 @@ func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *i
 	}
 
 	release, err := r.resolveClusterRelease(ctx, cluster)
-	var variables map[string]any
-	if err == nil {
-		variables, err = r.resolveReleaseTemplateVariables(ctx, release)
-	}
 	var kubernetesVersion *version.Version
 	if err == nil {
 		kubernetesVersion, err = clusterReleaseKubernetesVersion(release)
+	}
+	var variables map[string]any
+	if err == nil {
+		variables, err = r.resolveReleaseTemplateVariables(ctx, release)
 	}
 	if err != nil {
 		conditions.Set(cluster, metav1.Condition{
@@ -321,57 +322,129 @@ func (r *NVKEClusterReconciler) resolveReleaseTemplateVariables(ctx context.Cont
 	}, nil
 }
 
+type releaseUpgradeStrategy int
+
+const (
+	upgradeChannelDefault releaseUpgradeStrategy = iota
+	upgradePatch
+	upgradeBuild
+	upgradePinned
+)
+
+func releaseUpgradeStrategyFor(requestedVersion *version.Version) releaseUpgradeStrategy {
+	strategy := upgradeChannelDefault
+	if requestedVersion != nil {
+		switch len(requestedVersion.Components()) {
+		case 2:
+			strategy = upgradePatch
+		case 3:
+			strategy = upgradeBuild
+		default:
+			strategy = upgradePinned
+		}
+		// Pin prerelease selectors such as 1.34.4-custom.1.
+		if requestedVersion.PreRelease() != "" {
+			strategy = upgradePinned
+		}
+		// Pin build-metadata selectors such as 1.34.4+custom.1.
+		if requestedVersion.BuildMetadata() != "" {
+			strategy = upgradePinned
+		}
+	}
+	return strategy
+}
+
 func (r *NVKEClusterReconciler) resolveClusterRelease(ctx context.Context, cluster *internalv1.NVKECluster) (*internalv1.ClusterRelease, error) {
 	selection := cluster.Spec.Release.Channel
+	var requestedVersion *version.Version
+	if selection.Version != "" {
+		var err error
+		requestedVersion, err = version.Parse(selection.Version)
+		if err != nil {
+			return nil, fmt.Errorf("parse requested channel version %q: %w", selection.Version, err)
+		}
+	}
 	var channel internalv1.ClusterReleaseChannel
 	if err := r.Get(ctx, client.ObjectKey{Name: string(selection.Name)}, &channel); err != nil {
 		return nil, fmt.Errorf("get ClusterReleaseChannel %q: %w", selection.Name, err)
 	}
-	if pinned := cluster.Status.ResolvedRelease; pinned != nil {
-		pinnedVersion, err := version.ParseSemantic(pinned.Version)
+
+	versionUpgradeStrategy := releaseUpgradeStrategyFor(requestedVersion)
+
+	// Resolve the allowed k8s versions we can use in the channel
+	matchingVersions := make(map[string]*version.Version)
+	for key := range channel.Spec.Releases {
+		parsed, err := version.Parse(key)
 		if err != nil {
-			return nil, fmt.Errorf("parse pinned release version %q: %w", pinned.Version, err)
+			return nil, fmt.Errorf("parse channel %q version %q: %w", channel.Name, key, err)
 		}
-		pinnedMinorVersion := fmt.Sprintf("%d.%d", pinnedVersion.Major(), pinnedVersion.Minor())
-		inChannel := false
-		for _, candidate := range channel.Spec.Releases[pinnedMinorVersion] {
-			if candidate.Name == pinned.Name {
-				inChannel = true
-				break
+		if versionUpgradeStrategy == upgradePinned {
+			if !parsed.EqualTo(requestedVersion) {
+				continue
+			}
+			if parsed.PreRelease() != requestedVersion.PreRelease() {
+				continue
+			}
+			// EqualTo ignores build metadata, but an exact pin must match it.
+			if parsed.BuildMetadata() != requestedVersion.BuildMetadata() {
+				continue
 			}
 		}
-		if inChannel && (selection.Version == "" || selection.Version == pinnedMinorVersion) {
+		if requestedVersion != nil {
+			if parsed.Major() != requestedVersion.Major() {
+				continue
+			}
+			if parsed.Minor() != requestedVersion.Minor() {
+				continue
+			}
+		}
+		if versionUpgradeStrategy == upgradeBuild {
+			if len(parsed.Components()) < 3 {
+				continue
+			}
+			if parsed.Patch() != requestedVersion.Patch() {
+				continue
+			}
+		}
+		matchingVersions[key] = parsed
+	}
+
+	// Sort the versions
+	channelVersions := slices.SortedFunc(maps.Keys(matchingVersions), func(a, b string) int {
+		if matchingVersions[a].GreaterThan(matchingVersions[b]) {
+			return -1
+		}
+		if matchingVersions[a].LessThan(matchingVersions[b]) {
+			return 1
+		}
+		return strings.Compare(a, b)
+	})
+
+	// Resolve the latest eligible release from the sorted list of k8s versions
+	for _, channelVersion := range channelVersions {
+		for _, candidate := range channel.Spec.Releases[channelVersion] {
 			var release internalv1.ClusterRelease
-			if err := r.Get(ctx, client.ObjectKey{Name: string(pinned.Name)}, &release); err != nil {
-				return nil, fmt.Errorf("get pinned ClusterRelease %q: %w", pinned.Name, err)
+			if err := r.Get(ctx, client.ObjectKey{Name: string(candidate.Name)}, &release); err != nil {
+				return nil, fmt.Errorf("get ClusterRelease %q from channel %q: %w", candidate.Name, channel.Name, err)
+			}
+			if resolved := cluster.Status.ResolvedRelease; resolved != nil {
+				if candidate.Name == resolved.Name {
+					return &release, nil
+				}
+				if time.Since(release.CreationTimestamp.Time) < candidate.MinimumUpgradeAge.Duration {
+					continue
+				}
+			}
+			if release.Spec.Lifecycle.Deprecated {
+				continue
+			}
+			if release.Spec.Lifecycle.Hidden {
+				continue
 			}
 			return &release, nil
 		}
 	}
-	channelVersion := selection.Version
-	if channelVersion == "" {
-		var latest *version.Version
-		for key := range channel.Spec.Releases {
-			parsed, err := version.ParseGeneric(key)
-			if err != nil {
-				return nil, fmt.Errorf("parse channel %q version %q: %w", channel.Name, key, err)
-			}
-			if latest == nil || parsed.GreaterThan(latest) {
-				latest, channelVersion = parsed, key
-			}
-		}
-	}
-	candidates := channel.Spec.Releases[channelVersion]
-	if len(candidates) == 0 {
-		return nil, fmt.Errorf("channel %q has no releases for version %q", channel.Name, channelVersion)
-	}
-
-	var release internalv1.ClusterRelease
-	name := candidates[0].Name
-	if err := r.Get(ctx, client.ObjectKey{Name: string(name)}, &release); err != nil {
-		return nil, fmt.Errorf("get ClusterRelease %q from channel %q: %w", name, channel.Name, err)
-	}
-	return &release, nil
+	return nil, fmt.Errorf("channel %q has no valid releases for version %q", channel.Name, selection.Version)
 }
 
 func clusterReleaseKubernetesVersion(release *internalv1.ClusterRelease) (*version.Version, error) {
