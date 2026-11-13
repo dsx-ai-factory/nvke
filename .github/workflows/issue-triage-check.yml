@@ -81,10 +81,16 @@ jobs:
             const CLOSE_DAYS = 30;
             const DAY_MS = 24 * 60 * 60 * 1000;
             const BOT = 'github-actions[bot]';
+            // Markers count only on this workflow's own comments, so a
+            // commenter cannot suppress a reminder or close by quoting one.
             const REMINDER_MARK = '<!-- needs-info-reminder -->';
+            const CLOSE_MARK = '<!-- needs-info-timeout -->';
             const reminderText = (issue) => `${REMINDER_MARK}
             @${issue.user.login}, this issue is waiting on the details asked for above. If they don't arrive within ${CLOSE_DAYS - REMIND_DAYS} more days, this issue will be closed. You can still add them after that: commenting reopens it.`;
-            const closeText = `Closing because the details asked for above haven't arrived in ${CLOSE_DAYS} days. Comment here with them and this issue reopens and goes back to triage.`;
+            const closeText = `${CLOSE_MARK}
+            Closing because the details asked for above haven't arrived in ${CLOSE_DAYS} days. Comment here with them and this issue reopens and goes back to triage.`;
+            const botPosted = (comments, mark) =>
+              comments.some((c) => c.user?.login === BOT && (c.body ?? '').includes(mark));
 
             // The Component options in .github/ISSUE_TEMPLATE/*.yml, lower
             // case, to the area labels in .github/labeler.yml. An option that
@@ -164,8 +170,32 @@ jobs:
                 return false;
               }
               const days = (Date.now() - since.getTime()) / DAY_MS;
+              if (days < REMIND_DAYS) {
+                return false;
+              }
+              // A sweep can run alongside the run for a reporter's reply.
+              // Re-read the issue and its comments just before acting, and
+              // leave it alone if the reporter has answered; their reply's
+              // own run returns it to triage.
+              const fresh = (await github.rest.issues.get({ ...context.repo, issue_number: issue.number })).data;
+              if (fresh.state !== 'open' || !names(fresh).includes(NEEDS_INFO)) {
+                return false;
+              }
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...context.repo,
+                issue_number: issue.number,
+                since: since.toISOString(),
+                per_page: 100,
+              });
+              if (comments.some((c) => c.user?.login === issue.user.login)) {
+                return false;
+              }
               if (days >= CLOSE_DAYS) {
-                await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: closeText });
+                // The marker keeps a retry after a failed close from posting
+                // a second comment.
+                if (!botPosted(comments, CLOSE_MARK)) {
+                  await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: closeText });
+                }
                 await github.rest.issues.update({
                   ...context.repo,
                   issue_number: issue.number,
@@ -174,17 +204,9 @@ jobs:
                 });
                 return true;
               }
-              if (days >= REMIND_DAYS) {
-                const comments = await github.paginate(github.rest.issues.listComments, {
-                  ...context.repo,
-                  issue_number: issue.number,
-                  since: since.toISOString(),
-                  per_page: 100,
-                });
-                if (!comments.some((c) => (c.body ?? '').includes(REMINDER_MARK))) {
-                  await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: reminderText(issue) });
-                  tally.reminded += 1;
-                }
+              if (!botPosted(comments, REMINDER_MARK)) {
+                await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: reminderText(issue) });
+                tally.reminded += 1;
               }
               return false;
             }
@@ -202,6 +224,7 @@ jobs:
                   per_page: 100,
                 })).filter((issue) => !issue.pull_request);
 
+            const failures = [];
             const tally = { added: 0, cleared: 0, routed: 0, answered: 0, reminded: 0, timedOut: 0, reopened: 0, unchanged: 0 };
             for (const issue of issues) {
               if (issue.pull_request) {
@@ -236,10 +259,21 @@ jobs:
                 core.info(`#${issue.number}: reporter answered, ${NEEDS_INFO} removed`);
               }
 
-              if (labels.includes(NEEDS_INFO) && await followUp(issue)) {
-                tally.timedOut += 1;
-                core.info(`#${issue.number}: closed after ${CLOSE_DAYS} days in ${NEEDS_INFO}`);
-                continue;
+              if (labels.includes(NEEDS_INFO)) {
+                // One issue's API failure must not stop the sweep; the job
+                // still fails at the end so the error is seen.
+                let closed = false;
+                try {
+                  closed = await followUp(issue);
+                } catch (error) {
+                  failures.push(`#${issue.number}: ${error.message}`);
+                  core.warning(`#${issue.number}: needs-info follow-up failed: ${error.message}`);
+                }
+                if (closed) {
+                  tally.timedOut += 1;
+                  core.info(`#${issue.number}: closed after ${CLOSE_DAYS} days in ${NEEDS_INFO}`);
+                  continue;
+                }
               }
 
               // Routing happens once, on open. A later sweep must not put back
@@ -269,3 +303,6 @@ jobs:
             }
 
             core.info(`${issues.length} checked: ${tally.added} added, ${tally.cleared} cleared, ${tally.routed} routed, ${tally.answered} answered, ${tally.reminded} reminded, ${tally.timedOut} timed out, ${tally.reopened} reopened, ${tally.unchanged} unchanged`);
+            if (failures.length > 0) {
+              core.setFailed(`${failures.length} needs-info follow-up(s) failed: ${failures.join('; ')}`);
+            }
