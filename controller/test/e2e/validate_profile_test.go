@@ -34,8 +34,7 @@ const validateProfileEnv = "NVKE_VALIDATE_PROFILE"
 var validateProfileSummary string
 
 // runNotes are the report lines that say what the profile set before any spec
-// read its settings. The labels a run left out need none: the JUnit report
-// records the label filter as a suite property.
+// read its settings.
 func runNotes() []string {
 	if validateProfileSummary == "" {
 		return nil
@@ -54,6 +53,7 @@ var siteExpectationEnvs = []string{
 	siteAPIServerFlagsEnv,
 	siteEtcdEncryptedEnv,
 	siteReservedMemoryEnv,
+	siteCertManagerApprovalEnv,
 }
 
 // profileKeys are the inputs a profile may set: what describes a site and
@@ -76,7 +76,6 @@ var profileKeys = slices.Concat(
 		siteProbeNamespaceEnv,
 		siteProbeImageEnv,
 		siteProbePullSecretsEnv,
-		validateExcludeLabelsEnv,
 	},
 	siteExpectationEnvs,
 	tenantTwins(siteExpectationEnvs),

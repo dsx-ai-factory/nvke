@@ -83,6 +83,58 @@ func TestUnit_SiteExpectationsFromEnvUnset(t *testing.T) {
 	require.Equal(t, siteExpectations{prefix: sitePrefix}, expect, "nothing is expected unless the run says so")
 }
 
+func TestUnit_SiteExpectationsCertManagerApproval(t *testing.T) {
+	expect, err := siteExpectationsFromEnv(envMap(map[string]string{siteCertManagerApprovalEnv: certManagerApprovalAny}), sitePrefix)
+	require.NoError(t, err)
+	require.False(t, expect.certManagerPolicy, "any is the default, named")
+
+	expect, err = siteExpectationsFromEnv(envMap(map[string]string{
+		siteCertManagerApprovalEnv:          certManagerApprovalPolicy,
+		"NVKE_TENANT_CERT_MANAGER_APPROVAL": "any",
+	}), tenantPrefix)
+	require.NoError(t, err)
+	require.False(t, expect.certManagerPolicy, "a tenant reads its own variable, not the site's")
+}
+
+func TestUnit_CertificateRequestDecision(t *testing.T) {
+	request := func(name, certificate string, conditions ...map[string]any) unstructured.Unstructured {
+		r := unstructured.Unstructured{Object: map[string]any{}}
+		r.SetName(name)
+		r.SetAnnotations(map[string]string{"cert-manager.io/certificate-name": certificate})
+		raw := make([]any, 0, len(conditions))
+		for _, c := range conditions {
+			raw = append(raw, c)
+		}
+		require.NoError(t, unstructured.SetNestedSlice(r.Object, raw, "status", "conditions"))
+		return r
+	}
+	approved := map[string]any{"type": "Approved", "status": "True", "reason": "policy.cert-manager.io"}
+	denied := map[string]any{"type": "Denied", "status": "True", "reason": "policy.cert-manager.io"}
+	notReady := map[string]any{"type": "Ready", "status": "False", "reason": "Pending"}
+
+	decision, err := certificateRequestDecision([]unstructured.Unstructured{
+		request("other-1", "other", approved),
+		request("mine-1", "mine", notReady, approved),
+	}, "mine")
+	require.NoError(t, err)
+	require.Equal(t, certificateDecision{request: "mine-1", approved: true, reason: "policy.cert-manager.io"}, decision)
+
+	decision, err = certificateRequestDecision([]unstructured.Unstructured{request("mine-1", "mine", denied)}, "mine")
+	require.NoError(t, err)
+	require.False(t, decision.approved, "a denial is a decision")
+
+	_, err = certificateRequestDecision([]unstructured.Unstructured{request("mine-1", "mine", notReady)}, "mine")
+	require.ErrorContains(t, err, "neither approved nor denied")
+
+	_, err = certificateRequestDecision([]unstructured.Unstructured{request("other-1", "other", approved)}, "mine")
+	require.ErrorContains(t, err, "no CertificateRequest", "another Certificate's decision is not this one's")
+
+	_, err = certificateRequestDecision([]unstructured.Unstructured{
+		request("mine-1", "mine", map[string]any{"type": "Approved", "status": "False"}),
+	}, "mine")
+	require.Error(t, err, "a condition that is not True decides nothing")
+}
+
 func TestUnit_SiteExpectationsFromEnvTenantPrefix(t *testing.T) {
 	expect, err := siteExpectationsFromEnv(envMap(map[string]string{
 		siteComponentsEnv:           "argocd",
@@ -101,16 +153,19 @@ func TestUnit_SiteExpectationsFromEnvTenantPrefix(t *testing.T) {
 
 func TestUnit_SiteExpectationsFromEnv(t *testing.T) {
 	expect, err := siteExpectationsFromEnv(envMap(map[string]string{
-		siteComponentsEnv:        "argocd, cnpg=databases ,,kube-vip",
-		siteStorageClassesEnv:    "local-path, fast",
-		sitePVCStorageClassEnv:   " fast ",
-		siteWorkloadVersionsEnv:  "kube-system/calico-node=v3.29.1, ovn-kubernetes/ovnkube-node=1.1.0",
-		siteRequiredWorkloadsEnv: "spire-server/spire-server, spire-system/spire-agent",
-		siteAPIServerFlagsEnv:    "--profiling=false; enable-admission-plugins=NodeRestriction,PodSecurity;",
-		siteEtcdEncryptedEnv:     "true",
-		siteReservedMemoryEnv:    "2Gi",
+		siteComponentsEnv:          "argocd, cnpg=databases ,,kube-vip",
+		siteStorageClassesEnv:      "local-path, fast",
+		sitePVCStorageClassEnv:     " fast ",
+		siteWorkloadVersionsEnv:    "kube-system/calico-node=v3.29.1, ovn-kubernetes/ovnkube-node=1.1.0",
+		siteRequiredWorkloadsEnv:   "spire-server/spire-server, spire-system/spire-agent",
+		siteAPIServerFlagsEnv:      "--profiling=false; enable-admission-plugins=NodeRestriction,PodSecurity;",
+		siteEtcdEncryptedEnv:       "true",
+		siteReservedMemoryEnv:      "2Gi",
+		siteCertManagerApprovalEnv: " policy ",
 	}), sitePrefix)
 	require.NoError(t, err)
+	require.True(t, expect.certManagerPolicy)
+	require.Contains(t, expect.describe(), "NVKE_SITE_CERT_MANAGER_APPROVAL=policy")
 	require.Equal(t, map[string]string{componentArgoCD: "argocd", componentCNPG: "databases", componentKubeVIP: kubeSystemNamespace}, expect.components)
 	require.Equal(t, []string{"local-path", "fast"}, expect.storageClasses)
 	require.Equal(t, "fast", expect.pvcStorageClass)
@@ -135,6 +190,7 @@ func TestUnit_SiteExpectationsFromEnvRejects(t *testing.T) {
 		"workload with two parts": {siteRequiredWorkloadsEnv: "a/b/c"},
 		"encrypted not boolean":   {siteEtcdEncryptedEnv: "sometimes"},
 		"memory not a quantity":   {siteReservedMemoryEnv: "two gigs"},
+		"approval unknown":        {siteCertManagerApprovalEnv: "restricted"},
 		"error reaches settings":  {siteComponentsEnv: "nope"},
 	} {
 		t.Run(name, func(t *testing.T) {
