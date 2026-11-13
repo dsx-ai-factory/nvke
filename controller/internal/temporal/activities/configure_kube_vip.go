@@ -92,14 +92,14 @@ func (a *Activities) configureKubeVip(ctx context.Context, input ConfigureKubeVi
 		return ConfigureKubeVipResult{}, nil
 	}
 
-	const kubeVipASN = 65100
+	kubeVipConfig := a.cfg.KubeVip.WithDefaults()
+	kubeVipASN := kubeVipConfig.LocalASN
 
 	// Native-networking sites learn the per-node DPU ASN from FMDS. The
 	// site-scoped endpoint supports every infrastructure provider; VPC prefixes
 	// remain a compatibility signal for existing NICo deployments.
-	const defaultBGPPeerASN uint32 = 4294967000
-	bgpPeerAS := "4294967000"
-	bgpPeerASN := defaultBGPPeerASN
+	bgpPeerAS := fmt.Sprintf("%d", kubeVipConfig.StaticPeerASN)
+	bgpPeerASN := kubeVipConfig.StaticPeerASN
 	bgpPeerASNSource := nvkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_STATIC
 	fmdsEndpoint := a.cfg.KubeVipFMDSEndpoint
 	if fmdsEndpoint != "" {

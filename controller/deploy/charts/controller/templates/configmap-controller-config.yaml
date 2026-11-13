@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # The controller's non-secret settings, in the shape internal/controllerconfig
-# loads at startup. controllerconfig has no defaults and refuses padding, so
+# loads at startup. controllerconfig refuses padding, so
 # every key is rendered, with a default wherever a value is unset or empty, and
 # values are trimmed.
 {{- $tracing := .Values.tracing }}
@@ -79,6 +79,9 @@ data:
       inspectionInterval: {{ .Values.credentialMonitoring.inspectionInterval | default "1h" | quote }}
       observationMaxAge: {{ .Values.credentialMonitoring.observationMaxAge | default "3h" | quote }}
       warningDays: {{ include "controller.controllerConfig.orGoDefault" (list .Values.credentialMonitoring.warningDays 45) | int }}
+    kubeVip:
+      localASN: {{ include "controller.kubeVipASN" (list .Values.kubeVip.localASN 65100 "localASN") }}
+      staticPeerASN: {{ include "controller.kubeVipASN" (list .Values.kubeVip.staticPeerASN 4294967000 "staticPeerASN") }}
     kubeadmImageRepository: {{ .Values.kubeadm.imageRepository | default "registry.k8s.io" | quote }}
     cniImageRegistry: {{ .Values.cni.imageRegistry | quote }}
     installCNIAfterInit: {{ .Values.cni.installAfterInit }}
