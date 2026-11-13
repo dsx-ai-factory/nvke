@@ -131,9 +131,13 @@ jobs:
           name: ${{ inputs.dist_artifact }}
           path: dist
 
+      # Stamp the version this run publishes under: on a commit with several v*
+      # tags, the Makefile's own describe can name another one.
       - name: Build binaries
         if: inputs.dist_artifact == ''
-        run: make -C cli build-cross DIST="${GITHUB_WORKSPACE}/dist"
+        env:
+          BUILD_VERSION: ${{ steps.meta.outputs.release }}
+        run: make -C cli build-cross DIST="${GITHUB_WORKSPACE}/dist" NVKECTL_VERSION="${BUILD_VERSION}"
 
       - name: Malware scan
         uses: ./.github/actions/malware-scan
