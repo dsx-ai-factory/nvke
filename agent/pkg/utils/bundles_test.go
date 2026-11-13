@@ -629,6 +629,12 @@ func TestFetchBundleFromIndex(t *testing.T) {
 		assert.Error(t, err)
 	})
 
+	t.Run("a name the index does not carry is an error", func(t *testing.T) {
+		_, err := FetchBundleFromIndex(context.Background(), srv.URL+"/", indexURL, "missing", version, "x86_64")
+		assert.ErrorContains(t, err, "not found in index")
+		assert.ErrorContains(t, err, "missing")
+	})
+
 	t.Run("an unreachable index reports the fetch failure", func(t *testing.T) {
 		_, err := FetchBundleFromIndex(context.Background(), srv.URL+"/", srv.URL+"/missing/index.json", "calico", version, "x86_64")
 		assert.ErrorContains(t, err, "unable to fetch index")
