@@ -73,6 +73,7 @@ jobs:
               ['nico-sim (development simulator)', 'area/controller'],
               ['os image or image checker', 'area/os-image'],
               ['nvke telemetry pipeline (nktp)', 'area/nktp'],
+              ['management engine', 'area/management-engine'],
               ['build, packaging, or release automation', 'area/ci-build'],
               ['documentation', 'area/docs'],
             ]);

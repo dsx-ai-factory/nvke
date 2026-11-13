@@ -72,6 +72,7 @@ body:
         - nico-sim (development simulator)
         - OS image or image checker
         - NVKE telemetry pipeline (NKTP)
+        - Management Engine
         - Build, packaging, or release automation
         - Documentation
         - Cross-component / Other
