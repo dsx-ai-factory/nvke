@@ -87,8 +87,8 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	// filtering the full CAPD row below. The full row needs three control-plane
 	// nodes for its scale, rotation, and certificate checks; the core lane only
 	// proves that the deployed controller's control-plane path can create a usable
-	// cluster and delete it again, and that GPU Operator runs on its worker with
-	// Mokka's simulated GPUs.
+	// cluster and delete it again, and that GPU Operator runs on its two workers,
+	// each presenting a different Mokka-simulated GPU model.
 	Entry("CAPD node-agent convergence", Ordered, ContinueOnFailure, Label("node-agent-upgrade"), testSpec{
 		buildSpec: capdSpec,
 		shape:     clusterShape{controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3, NodeAgentVersion: "v0.1.991", SystemReservedMemory: "1Gi"}, workerPools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}}},
@@ -99,7 +99,10 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 		buildSpec: capdSpec,
 		shape: clusterShape{
 			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
-			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1, NodeLabels: map[string]string{mokkaLabelKey: "true"}}},
+			workerPools: []nvke.NodePoolSpec{
+				{Name: "mokka-gb300", NodeNamePrefix: "mg", DesiredNodeCount: 1, NodeLabels: map[string]string{mokkaLabelKey: "gb300"}},
+				{Name: "mokka-h100", NodeNamePrefix: "mh", DesiredNodeCount: 1, NodeLabels: map[string]string{mokkaLabelKey: "h100"}},
+			},
 		},
 		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{provisioningOnly: true, mokkaGPU: true},
@@ -963,7 +966,7 @@ type validations struct {
 	// after the rolling update. The entry must set controlPlaneConfig.NodeLabels.
 	controlPlaneNodeLabels bool
 	// mokkaGPU runs GPU Operator on Mokka's simulated GPUs, on the worker pools
-	// labeled mokkaLabelKey. The runner needs helm.
+	// labeled mokkaLabelKey with a profile in mokkaProfiles. The runner needs helm.
 	mokkaGPU bool
 }
 
