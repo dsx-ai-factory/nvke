@@ -8,25 +8,24 @@ The diagram shows what happens when you create a workload cluster. The NVKE mana
 
 ```mermaid
 sequenceDiagram
-    autonumber
     participant Op as Operator
     participant MP as NVKE<br/>management plane
     participant Prov as CAPNICo<br/>or CAPLL
     participant API as NICo or<br/>LaunchLayer
     participant Node as Workload<br/>cluster node
 
-    Op->>MP: nvkectl create cluster
-    MP->>Prov: Cluster and provider cluster objects
-    Prov->>API: Prepare cluster (LaunchLayer: VPC, security groups)
+    Op->>MP: 1. nvkectl create cluster
+    MP->>Prov: 2. Cluster and provider cluster objects
+    Prov->>API: 3. Prepare cluster (LaunchLayer: VPC, security groups)
     loop Nodes
-        MP->>Prov: Machine objects and bootstrap Secret
-        Prov->>API: Request machine with bootstrap Secret as user data
-        API->>Node: Boot OS image with nvke-agent and SPIRE agent
+        MP->>Prov: 4. Machine objects and bootstrap Secret
+        Prov->>API: 5. Request machine with bootstrap Secret as user data
+        API->>Node: 6. Boot OS image with nvke-agent and SPIRE agent
         Note over Node: Attest to SPIRE (TPM or DSX IMDS)
-        MP->>Node: Run kubeadm init or join over mTLS
+        MP->>Node: 7. Run kubeadm init or join over mTLS
     end
-    MP-->>Op: Cluster is Ready
-    Op->>MP: nvkectl get kubeconfig
+    MP-->>Op: 8. Cluster is Ready
+    Op->>MP: 9. nvkectl get kubeconfig
 ```
 
 | Step | What happens |
