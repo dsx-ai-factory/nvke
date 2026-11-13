@@ -1111,6 +1111,19 @@ forwarded to the node's loopback through the jump host. A kept tenant's
 kubeconfig, as the controller publishes it, goes there as `<cluster>.kubeconfig`.
 Both are mode 0600.
 
+To run the [validation image](#running-the-image) against a kept site, forward
+the node's API server port through the jump host with the run's key, and give
+the container a copy of `<node>.kubeconfig` whose server is
+`host.docker.internal` on the forwarded port: the copy keeps the
+`tls-server-name` pin, so the certificate still matches. The run's
+`steps.env` holds the two versions the image requires: the last
+`SITE_NVKE_CONTROLLER_VERSION` is what the controller reports, and
+`KUBERNETES_VERSION` is what the site was built with. A lane site is laid out
+like `deploy/nico`, so its profile needs only what the lane declares,
+`NVKE_SITE_COMPONENTS: [cert-manager]` and its StorageClass in
+`NVKE_SITE_STORAGE_CLASSES`. Add
+`-ginkgo.label-filter='site-validate && !creates'` to create nothing on it.
+
 Prerequisites, all read from the shell that runs the suite. Neither the proxy
 nor the jump host nor any identifier is checked in, and secrets are read only
 from the environment; the lane's maintainers can give you the values.
