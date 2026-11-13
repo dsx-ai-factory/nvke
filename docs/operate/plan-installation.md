@@ -93,7 +93,7 @@ API authentication is off by default: any caller that reaches port 30080 can cal
 
 - Publishes an OIDC discovery document over HTTPS, with a signing-key endpoint the management cluster can reach.
 - Signs tokens with an asymmetric algorithm, such as `RS256` or `ES256`.
-- Puts group membership in a token claim named `groups`.
+- Puts group membership in a top-level token claim, named `groups` by default or set by `admit.groupsClaim` in [Secure the NVKE API](api-authentication.md).
 - Has an OIDC client for `nvkectl` that needs no client secret.
 
 NVKE admits callers by group but does no authorization: every admitted caller can call every endpoint.
