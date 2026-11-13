@@ -24,6 +24,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [operate/install-management-plane.md](operate/install-management-plane.md) | Installing Cluster API and the `deploy/nico` deploy path on the management cluster, and admitting networks to the NVKE API |
 | [operate/provider-nico.md](operate/provider-nico.md) | Confirming the management plane can request machines from NICo, its credentials, and the NICo IDs a cluster request needs |
 | [operate/api-authentication.md](operate/api-authentication.md) | Turning on OIDC authentication for the NVKE API |
+| [operate/api-authorization.md](operate/api-authorization.md) | Giving NVKE API callers the `admin` or `viewer` role, and enforcing it |
 | [workload-clusters/ovn-kubernetes.md](workload-clusters/ovn-kubernetes.md) | Building, self-hosting and deploying OVN-Kubernetes artifacts |
 | [workload-clusters/create.md](workload-clusters/create.md) | Creating a workload cluster |
 | [workload-clusters/access.md](workload-clusters/access.md) | Getting a workload cluster's admin kubeconfig, giving the customer access, and connecting with `kubectl` |

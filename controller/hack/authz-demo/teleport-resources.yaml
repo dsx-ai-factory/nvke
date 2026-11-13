@@ -1,0 +1,56 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The demo's Teleport roles and users. demo.sh --setup applies them with
+#   tctl create -f /etc/teleport/resources/resources.yaml
+# Each role only grants access to the nvke app. Teleport puts the caller's
+# roles in the JWT's roles claim, and the controller maps that claim: nvke-admin
+# to admin, nvke-viewer to viewer, and nvke-none to nothing, so admission
+# refuses it.
+kind: role
+version: v8
+metadata:
+  name: nvke-admin
+spec:
+  allow:
+    app_labels:
+      app: nvke
+---
+kind: role
+version: v8
+metadata:
+  name: nvke-viewer
+spec:
+  allow:
+    app_labels:
+      app: nvke
+---
+kind: role
+version: v8
+metadata:
+  name: nvke-none
+spec:
+  allow:
+    app_labels:
+      app: nvke
+---
+kind: user
+version: v2
+metadata:
+  name: ops-admin
+spec:
+  roles: [nvke-admin]
+---
+kind: user
+version: v2
+metadata:
+  name: ops-viewer
+spec:
+  roles: [nvke-viewer]
+---
+kind: user
+version: v2
+metadata:
+  name: ops-nobody
+spec:
+  roles: [nvke-none]
