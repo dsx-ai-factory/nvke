@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/google/uuid"
@@ -267,6 +268,7 @@ func TestUnit_Collector_ClusterNodePoolNodeSetInfo(t *testing.T) {
 		mdb.On("ListNodePoolMetrics", mock.Anything).Return([]db.NodePoolMetrics{}, nil).Once()
 		mdb.On("ListNodeInfo", mock.Anything).Return([]db.NodeInfo{}, nil).Once()
 		mdb.On("ListNodeLifecycleElapsed", mock.Anything).Return([]db.NodeLifecycleElapsed{}, nil).Once()
+		mdb.On("ListNodeConditionElapsed", mock.Anything).Return([]db.NodeConditionElapsed{}, nil).Once()
 
 		collector := dbmetrics.NewCollector(testLogger(), mdb)
 		reg := prometheus.NewPedanticRegistry()
@@ -295,6 +297,7 @@ func newMockCollector(t *testing.T, rows []db.NodeLifecycleElapsed, queryErr err
 	mdb.On("ListNodeConditions", mock.Anything).Return([]db.NodeConditionStatus{}, nil)
 	mdb.On("ListNodePoolMetrics", mock.Anything).Return([]db.NodePoolMetrics{}, nil)
 	mdb.On("ListNodeInfo", mock.Anything).Return([]db.NodeInfo{}, nil)
+	mdb.On("ListNodeConditionElapsed", mock.Anything).Return([]db.NodeConditionElapsed{}, nil)
 
 	if queryErr != nil {
 		mdb.On("ListNodeLifecycleElapsed", mock.Anything).Return([]db.NodeLifecycleElapsed(nil), queryErr)
@@ -415,6 +418,59 @@ func TestUnit_Collector_NodeLifecycleElapsed(t *testing.T) {
 		require.NotNil(t, f)
 		assert.Len(t, f.GetMetric(), 3, "one series per row")
 	})
+}
+
+// TestUnit_Collector_NodeConditionElapsed tests nvke_controller_node_condition_elapsed_seconds.
+// The SQL filters are covered against Postgres by TestListNodeConditionElapsed in internal/db.
+func TestUnit_Collector_NodeConditionElapsed(t *testing.T) {
+	const name = "nvke_controller_node_condition_elapsed_seconds"
+	tests := []struct {
+		name     string
+		rows     []db.NodeConditionElapsed
+		queryErr error
+		want     []map[string]string // labels of each expected series, value in "value"
+	}{
+		{name: "no unhealthy nodes emits no series", rows: []db.NodeConditionElapsed{}},
+		{name: "query error emits no series", queryErr: errors.New("db unavailable")},
+		{
+			name: "one series per node and condition",
+			rows: []db.NodeConditionElapsed{
+				{ClusterName: "c1", NodeName: "w1", NodeType: "worker", Condition: "nodeAgentReady", ElapsedSecs: 3600},
+				{ClusterName: "c1", NodeName: "w1", NodeType: "worker", Condition: "kubernetesReady", ElapsedSecs: 1800},
+				{ClusterName: "c2", NodeName: "cp1", NodeType: "cp", Condition: "rebooting", ElapsedSecs: 4000},
+			},
+			want: []map[string]string{
+				{"tenant_cluster": "c1", "node": "w1", "node_type": "worker", "condition": "nodeAgentReady", "value": "3600"},
+				{"tenant_cluster": "c1", "node": "w1", "node_type": "worker", "condition": "kubernetesReady", "value": "1800"},
+				{"tenant_cluster": "c2", "node": "cp1", "node_type": "cp", "condition": "rebooting", "value": "4000"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mdb := &testutil.MockDB{}
+			mdb.On("ListClusters", mock.Anything, mock.Anything).Return([]db.Cluster{}, nil)
+			mdb.On("ListNodeConditions", mock.Anything).Return([]db.NodeConditionStatus{}, nil)
+			mdb.On("ListNodePoolMetrics", mock.Anything).Return([]db.NodePoolMetrics{}, nil)
+			mdb.On("ListNodeInfo", mock.Anything).Return([]db.NodeInfo{}, nil)
+			mdb.On("ListNodeLifecycleElapsed", mock.Anything).Return([]db.NodeLifecycleElapsed{}, nil)
+			mdb.On("ListNodeConditionElapsed", mock.Anything).Return(tt.rows, tt.queryErr)
+
+			reg := prometheus.NewPedanticRegistry()
+			require.NoError(t, reg.Register(dbmetrics.NewCollector(testLogger(), mdb)))
+			families, err := reg.Gather()
+			require.NoError(t, err) // Collect errors are logged, not propagated
+
+			metrics := findMetricFamily(families, name).GetMetric()
+			got := make([]map[string]string, 0, len(metrics))
+			for _, m := range metrics {
+				labels := labelsAsMap(m)
+				labels["value"] = strconv.FormatFloat(m.GetGauge().GetValue(), 'f', -1, 64)
+				got = append(got, labels)
+			}
+			assert.ElementsMatch(t, tt.want, got)
+		})
+	}
 }
 
 // TestUnit_Collector_NodeInfoIncludesControlPlaneNodes tests that nvke_controller_node_info covers control-plane

@@ -588,6 +588,15 @@ func (m *MockDB) ListNodeLifecycleElapsed(ctx context.Context) ([]db.NodeLifecyc
 	return v, args.Error(1)
 }
 
+func (m *MockDB) ListNodeConditionElapsed(ctx context.Context) ([]db.NodeConditionElapsed, error) {
+	args := m.Called(ctx)
+	v, ok := args.Get(0).([]db.NodeConditionElapsed)
+	if !ok {
+		return nil, args.Error(1)
+	}
+	return v, args.Error(1)
+}
+
 func (m *MockTx) CreateWorkflowOutboxEntry(
 	ctx context.Context,
 	workflowType string,

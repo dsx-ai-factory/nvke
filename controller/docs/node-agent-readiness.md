@@ -58,3 +58,39 @@ Labels have no node identity, keeping cardinality bounded. Use histogram counts
 for probe outcomes and the active gauge to see worker occupancy. Controller-runtime
 queue metrics use a separate registry; exposing these probe metrics does not also
 expose that queue registry.
+
+To see how long a node has been agent-unready, use the DB metric
+`nvke_controller_node_condition_elapsed_seconds{condition="nodeAgentReady"}`. It
+holds the seconds since the condition last changed, and exists only for
+provisioned nodes that are not deleting, since the condition is not `True`
+before a node joins. For a node whose agent was never ready, the value counts
+from node creation, so a node that took long to provision can exceed 900 as
+soon as it is provisioned. For example, nodes agent-unready for more than 15
+minutes:
+
+```promql
+nvke_controller_node_condition_elapsed_seconds{condition="nodeAgentReady"} > 900
+```
+
+Nodes being rebooted also report `nodeAgentReady` and `kubernetesReady`, so this
+alert fires during reboots. To exclude them:
+
+```promql
+nvke_controller_node_condition_elapsed_seconds{condition="nodeAgentReady"} > 900
+  unless on(tenant_cluster, node) nvke_controller_node_condition_elapsed_seconds{condition="rebooting"}
+```
+
+With `NODE_HEALTH_CHECK_DISABLED` set, this controller does not run, so
+`nodeAgentReady` never becomes `True` and every provisioned node has a series.
+
+The same metric reports `kubernetesReady` under the same filter, and `rebooting`
+while it is `True`. The value spans the whole reboot workflow, which retries
+without limit, while `NODE_REBOOT_MAX_TIMEOUT` (default 1h) caps each hard-reboot
+wait. The soft-reboot wait uses `NODE_REBOOT_INITIAL_TIMEOUT` capped at 30m.
+The clock starts when `rebooting` is set, before the wait, so a value above
+3600 marks a long-running reboot. With the default 30m
+`NODE_REBOOT_INITIAL_TIMEOUT` it usually means at least one wait timed out:
+
+```promql
+nvke_controller_node_condition_elapsed_seconds{condition="rebooting"} > 3600
+```
