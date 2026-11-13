@@ -12,14 +12,12 @@
 # once means a failure could be either.
 #
 # It also cannot simply be flipped true here. Enabling it needs a real
-# apiAuth.config with apiAuth.configMap.create=true: the e2e lanes admit the
-# ServiceAccounts their nke-auth-dev item creates, and that item is test
-# scaffolding (nke-client, nke-outsider and nke-e2e) that a site has no
-# business installing. Enabled without a configuration, the chart mounts a
-# ConfigMap nothing creates, and the controller does not start.
+# apiAuth.config: the e2e lanes admit the ServiceAccounts their nke-auth-dev
+# item creates, and that item is test scaffolding (nke-client, nke-outsider and
+# nke-e2e) that a site has no business installing. Enabled without a
+# configuration, the chart refuses to render.
 #
-# To turn it on later: set apiAuth.configMap.create=true and supply real
-# apiAuth.config.
+# To turn it on later: supply a real apiAuth.config.
 apiAuth:
   enabled: false
   permissive: false

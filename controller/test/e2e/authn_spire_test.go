@@ -27,6 +27,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/authtoken"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
 // The SPIRE half of NVKE API authentication. The Workload API issues a JWT-SVID
@@ -55,8 +56,8 @@ var _ = Describe("NVKE API authentication with a SPIRE JWT-SVID", Label("authn",
 		Expect(err).NotTo(HaveOccurred(), "read the NVKE deployment's enforcement mode")
 		if mode == authnModeDisabled {
 			authnAbsentf(
-				"authentication is OFF on Deployment %s/%s: neither %s nor apiAuth.enabled in nvke-controller-config is set, so the middleware is not in the request chain and no SVID could be rejected",
-				controller.Namespace(), controller.Deployment(), authnConfigPathEnv,
+				"authentication is OFF: apiAuth.enabled in %s/%s is false, so the middleware is not in the request chain and no SVID could be rejected",
+				controller.Namespace(), nvke.ControllerConfigMap,
 			)
 		}
 		if mode != authnModeEnforcing {
