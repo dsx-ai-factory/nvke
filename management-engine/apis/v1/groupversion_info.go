@@ -4,7 +4,7 @@
 // Package v1 defines the persisted internal management-engine API.
 // Future public APIs must version their contracts independently.
 // +kubebuilder:object:generate=true
-// +groupName=internal.nvke.nvidia.com
+// +groupName=service.nvke.nvidia.com
 package v1
 
 import (
@@ -14,7 +14,7 @@ import (
 )
 
 // GroupName identifies the persisted internal API.
-const GroupName = "internal.nvke.nvidia.com"
+const GroupName = "service.nvke.nvidia.com"
 
 var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1"}
 

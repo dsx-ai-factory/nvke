@@ -40,7 +40,7 @@ type resourceSchema struct {
 // and conversion, so tests can read the markers back off the schema.
 func loadCRD(t *testing.T, resource string) apiextensionsv1.CustomResourceDefinition {
 	t.Helper()
-	data, err := os.ReadFile("../../config/crd/bases/internal.nvke.nvidia.com_" + resource + ".yaml")
+	data, err := os.ReadFile("../../config/crd/bases/service.nvke.nvidia.com_" + resource + ".yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func (s resourceSchema) runCreate(t *testing.T, resource string, cases []fieldCa
 // Minimal resources that pass admission: every required field and nothing else.
 var baseResources = map[string]string{
 	"nvkeclusters": `{
-		"apiVersion": "internal.nvke.nvidia.com/v1",
+		"apiVersion": "service.nvke.nvidia.com/v1",
 		"kind": "NVKECluster",
 		"metadata": {"name": "demo", "namespace": "org-demo"},
 		"spec": {
@@ -179,7 +179,7 @@ var baseResources = map[string]string{
 		}
 	}`,
 	"machineimages": `{
-		"apiVersion": "internal.nvke.nvidia.com/v1",
+		"apiVersion": "service.nvke.nvidia.com/v1",
 		"kind": "MachineImage",
 		"metadata": {"name": "nvke-nico-vms-24.04-amd64-fde"},
 		"spec": {
@@ -191,7 +191,7 @@ var baseResources = map[string]string{
 		}
 	}`,
 	"clusterreleases": `{
-		"apiVersion": "internal.nvke.nvidia.com/v1",
+		"apiVersion": "service.nvke.nvidia.com/v1",
 		"kind": "ClusterRelease",
 		"metadata": {"name": "nvke-nico-vms-24.04-amd64-fde"},
 		"spec": {
@@ -200,7 +200,7 @@ var baseResources = map[string]string{
 		}
 	}`,
 	"nodepoolreleases": `{
-		"apiVersion": "internal.nvke.nvidia.com/v1",
+		"apiVersion": "service.nvke.nvidia.com/v1",
 		"kind": "NodePoolRelease",
 		"metadata": {"name": "nvke-nico-vms-24.04-amd64-fde"},
 		"spec": {
@@ -209,7 +209,7 @@ var baseResources = map[string]string{
 		}
 	}`,
 	"controlplaneclasses": `{
-		"apiVersion": "internal.nvke.nvidia.com/v1",
+		"apiVersion": "service.nvke.nvidia.com/v1",
 		"kind": "ControlPlaneClass",
 		"metadata": {"name": "standard"},
 		"spec": {
@@ -222,7 +222,7 @@ var baseResources = map[string]string{
 		}
 	}`,
 	"clusterreleasechannels": `{
-		"apiVersion": "internal.nvke.nvidia.com/v1", "kind": "ClusterReleaseChannel",
+		"apiVersion": "service.nvke.nvidia.com/v1", "kind": "ClusterReleaseChannel",
 		"metadata": {"name": "stable"},
 		"spec": {"releases": {"1.35": [{"name": "release", "minimumUpgradeAge": "0s"}]}}
 	}`,

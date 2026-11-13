@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterReleaseChannel
 metadata:
   name: stable
@@ -11,12 +11,12 @@ spec:
       - name: test-release
         minimumUpgradeAge: 0s
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: test-release
   annotations:
-    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.36.1"
+    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.36.1"
 spec:
   machineImageRef:
     name: missing-image
@@ -66,7 +66,7 @@ data:
     }
   nodepoolTmpl: *machineTemplate
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: ControlPlaneClass
 metadata:
   name: standard
@@ -82,7 +82,7 @@ spec:
       rollingUpdate:
         maxSurge: 1
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: NVKECluster
 metadata:
   name: cluster-1

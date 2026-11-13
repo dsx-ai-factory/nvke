@@ -606,7 +606,7 @@ func TestChartExamples(t *testing.T) {
 				}
 				if sample == "state-values.yaml" {
 					for _, kind := range []string{"machineimages", "clusterreleases", "nodepoolreleases"} {
-						if !crds[kind+".internal.nvke.nvidia.com"] {
+						if !crds[kind+".service.nvke.nvidia.com"] {
 							t.Fatalf("standalone state example missing catalog CRD %s", kind)
 						}
 					}
@@ -909,9 +909,9 @@ func TestChartEndpointValidation(t *testing.T) {
 
 func TestChartReleaseCRDOwnership(t *testing.T) {
 	catalog := map[string]bool{
-		"machineimages.internal.nvke.nvidia.com":    true,
-		"clusterreleases.internal.nvke.nvidia.com":  true,
-		"nodepoolreleases.internal.nvke.nvidia.com": true,
+		"machineimages.service.nvke.nvidia.com":    true,
+		"clusterreleases.service.nvke.nvidia.com":  true,
+		"nodepoolreleases.service.nvke.nvidia.com": true,
 	}
 	for _, includeCatalog := range []bool{false, true} {
 		values := fmt.Sprintf(`{"controller":{"enabled":false},"state":{"crds":{"releases":{"install":%t}}}}`, includeCatalog)

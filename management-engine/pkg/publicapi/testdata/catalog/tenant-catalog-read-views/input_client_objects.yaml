@@ -1,5 +1,5 @@
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterReleaseChannel
 metadata:
   annotations:
@@ -19,11 +19,11 @@ spec:
     - minimumUpgradeAge: 0s
       name: cr-new
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   annotations:
-    internal.nvke.nvidia.com/machine-init-kubernetes-version: 1.35.2
+    service.nvke.nvidia.com/machine-init-kubernetes-version: 1.35.2
   name: cr-new
 spec:
   lifecycle:
@@ -35,11 +35,11 @@ spec:
   machineInit:
     userDataTemplate: "#cloud-config\n"
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   annotations:
-    internal.nvke.nvidia.com/machine-init-kubernetes-version: 1.34.6
+    service.nvke.nvidia.com/machine-init-kubernetes-version: 1.34.6
   name: cr-old
 spec:
   lifecycle:
@@ -53,7 +53,7 @@ spec:
       #cloud-config
       # PRIVATE-CATALOG-CANARY-control-plane-init
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: ControlPlaneClass
 metadata:
   annotations:
@@ -73,7 +73,7 @@ spec:
         maxSurge: 1
       type: RollingUpdate
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   annotations:
@@ -91,7 +91,7 @@ spec:
   profile: ubuntu-gpu
   tag: "2026.11"
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: img-ubuntu

@@ -15,7 +15,7 @@ import (
 // An empty selection enables no operations.
 func NVKECluster(verbs ...resource.Operation) resource.Registration {
 	return resource.NewRegistration[v1.Cluster, v1.NVKECluster]("/v1/clusters", resource.ResourceInfo{
-		GVK:      schema.GroupVersionKind{Group: "internal.nvke.nvidia.com", Version: "v1", Kind: "NVKECluster"},
+		GVK:      schema.GroupVersionKind{Group: "service.nvke.nvidia.com", Version: "v1", Kind: "NVKECluster"},
 		Resource: "nvkeclusters", Scope: resource.Scope("Namespaced"),
 		HasStatus: true, Verbs: verbs,
 	})
@@ -25,7 +25,7 @@ func NVKECluster(verbs ...resource.Operation) resource.Registration {
 // An empty selection enables no operations.
 func ClusterRelease(verbs ...resource.Operation) resource.Registration {
 	return resource.NewRegistration[v1.PublicClusterRelease, v1.ClusterRelease]("/v1/cluster-releases", resource.ResourceInfo{
-		GVK:      schema.GroupVersionKind{Group: "internal.nvke.nvidia.com", Version: "v1", Kind: "ClusterRelease"},
+		GVK:      schema.GroupVersionKind{Group: "service.nvke.nvidia.com", Version: "v1", Kind: "ClusterRelease"},
 		Resource: "clusterreleases", Scope: resource.Scope("Cluster"),
 		HasStatus: false, Verbs: verbs,
 	})
@@ -35,7 +35,7 @@ func ClusterRelease(verbs ...resource.Operation) resource.Registration {
 // An empty selection enables no operations.
 func ClusterReleaseChannel(verbs ...resource.Operation) resource.Registration {
 	return resource.NewRegistration[v1.PublicClusterReleaseChannel, v1.ClusterReleaseChannel]("/v1/cluster-release-channels", resource.ResourceInfo{
-		GVK:      schema.GroupVersionKind{Group: "internal.nvke.nvidia.com", Version: "v1", Kind: "ClusterReleaseChannel"},
+		GVK:      schema.GroupVersionKind{Group: "service.nvke.nvidia.com", Version: "v1", Kind: "ClusterReleaseChannel"},
 		Resource: "clusterreleasechannels", Scope: resource.Scope("Cluster"),
 		HasStatus: false, Verbs: verbs,
 	})
@@ -45,7 +45,7 @@ func ClusterReleaseChannel(verbs ...resource.Operation) resource.Registration {
 // An empty selection enables no operations.
 func ControlPlaneClass(verbs ...resource.Operation) resource.Registration {
 	return resource.NewRegistration[v1.PublicControlPlaneClass, v1.ControlPlaneClass]("/v1/control-plane-classes", resource.ResourceInfo{
-		GVK:      schema.GroupVersionKind{Group: "internal.nvke.nvidia.com", Version: "v1", Kind: "ControlPlaneClass"},
+		GVK:      schema.GroupVersionKind{Group: "service.nvke.nvidia.com", Version: "v1", Kind: "ControlPlaneClass"},
 		Resource: "controlplaneclasses", Scope: resource.Scope("Cluster"),
 		HasStatus: false, Verbs: verbs,
 	})
@@ -55,7 +55,7 @@ func ControlPlaneClass(verbs ...resource.Operation) resource.Registration {
 // An empty selection enables no operations.
 func MachineImage(verbs ...resource.Operation) resource.Registration {
 	return resource.NewRegistration[v1.PublicMachineImage, v1.MachineImage]("/v1/machine-images", resource.ResourceInfo{
-		GVK:      schema.GroupVersionKind{Group: "internal.nvke.nvidia.com", Version: "v1", Kind: "MachineImage"},
+		GVK:      schema.GroupVersionKind{Group: "service.nvke.nvidia.com", Version: "v1", Kind: "MachineImage"},
 		Resource: "machineimages", Scope: resource.Scope("Cluster"),
 		HasStatus: false, Verbs: verbs,
 	})
@@ -65,7 +65,7 @@ func MachineImage(verbs ...resource.Operation) resource.Registration {
 // An empty selection enables no operations.
 func NodePoolRelease(verbs ...resource.Operation) resource.Registration {
 	return resource.NewRegistration[v1.PublicNodeProfile, v1.NodePoolRelease]("/v1/node-profiles", resource.ResourceInfo{
-		GVK:      schema.GroupVersionKind{Group: "internal.nvke.nvidia.com", Version: "v1", Kind: "NodePoolRelease"},
+		GVK:      schema.GroupVersionKind{Group: "service.nvke.nvidia.com", Version: "v1", Kind: "NodePoolRelease"},
 		Resource: "nodepoolreleases", Scope: resource.Scope("Cluster"),
 		HasStatus: false, Verbs: verbs,
 	})

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: test-image
@@ -14,7 +14,7 @@ spec:
       #!ipxe
       echo test image
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterReleaseChannel
 metadata:
   name: stable
@@ -25,29 +25,29 @@ spec:
     "1.35":
       - {name: latest-release, minimumUpgradeAge: 0s}
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: pinned-release
   annotations:
-    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.8"
+    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.8"
 spec:
   machineImageRef: {name: test-image}
   machineInit:
     userDataTemplate: "#cloud-config\n"
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: latest-release
   annotations:
-    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.35.2"
+    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.35.2"
 spec:
   machineImageRef: {name: test-image}
   machineInit:
     userDataTemplate: "#cloud-config\n"
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: worker-test-release
@@ -75,7 +75,7 @@ data:
     {"machineTemplate":{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta2","kind":"DockerMachineTemplate","spec":{"template":{"spec":{"customImage":"example-node"}}}}}
   nodepoolTmpl: *machineTemplate
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: ControlPlaneClass
 metadata:
   name: standard
@@ -89,7 +89,7 @@ spec:
       type: RollingUpdate
       rollingUpdate: {maxSurge: 1}
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: NVKECluster
 metadata:
   name: cluster-1
