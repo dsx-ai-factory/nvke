@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+	internalv1 "github.com/dsx-ai-factory/nvke/controller/k8s-apis/v1"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/machinerelease"
 )
@@ -105,7 +105,7 @@ func TestParseKubernetesVersionAnnotationsRejectsBadInjectionAnnotation(t *testi
 	t.Parallel()
 
 	release := clusterRelease("nvke-old", "ubuntu-24", false)
-	release.Annotations[enginev1.MachineInitKubernetesVersionInjectedAnnotation] = "maybe"
+	release.Annotations[internalv1.MachineInitKubernetesVersionInjectedAnnotation] = "maybe"
 
 	_, _, err := machinerelease.ParseKubernetesVersionAnnotations(release)
 	require.ErrorIs(t, err, machinerelease.ErrInvalidRelease)
@@ -133,7 +133,7 @@ func TestCheckCRDsFailsWhenKindsAreNotInScheme(t *testing.T) {
 func TestCheckCRDsNamesTheKindThatIsNotInstalled(t *testing.T) {
 	t.Parallel()
 
-	notInstalled := &meta.NoKindMatchError{GroupKind: schema.GroupKind{Group: enginev1.GroupVersion.Group, Kind: "MachineImage"}}
+	notInstalled := &meta.NoKindMatchError{GroupKind: schema.GroupKind{Group: internalv1.GroupVersion.Group, Kind: "MachineImage"}}
 
 	err := machinerelease.CheckCRDs(t.Context(), failingClient(t, notInstalled))
 	require.ErrorContains(t, err, "MachineImage CRD is not installed")
@@ -236,7 +236,7 @@ func TestSelectUpgradeTargetWithoutCurrentMatchesOnlyBareImages(t *testing.T) {
 func fakeClient(t *testing.T, objects ...client.Object) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	require.NoError(t, enginev1.AddToScheme(scheme))
+	require.NoError(t, internalv1.AddToScheme(scheme))
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
 }
 
@@ -244,7 +244,7 @@ func fakeClient(t *testing.T, objects ...client.Object) client.Client {
 func failingClient(t *testing.T, err error) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	require.NoError(t, enginev1.AddToScheme(scheme))
+	require.NoError(t, internalv1.AddToScheme(scheme))
 	return fake.NewClientBuilder().WithScheme(scheme).WithInterceptorFuncs(interceptor.Funcs{
 		Get: func(_ context.Context, _ client.WithWatch, _ client.ObjectKey, _ client.Object, _ ...client.GetOption) error {
 			return err
@@ -255,31 +255,31 @@ func failingClient(t *testing.T, err error) client.Client {
 	}).Build()
 }
 
-func image(name, arch, variant, ubuntu, buildDate, ipxe string) *enginev1.MachineImage {
-	return &enginev1.MachineImage{
+func image(name, arch, variant, ubuntu, buildDate, ipxe string) *internalv1.MachineImage {
+	return &internalv1.MachineImage{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec: enginev1.MachineImageSpec{
-			OperatingSystem: enginev1.OperatingSystem{Family: "ubuntu", Version: ubuntu},
+		Spec: internalv1.MachineImageSpec{
+			OperatingSystem: internalv1.OperatingSystem{Family: "ubuntu", Version: ubuntu},
 			Architecture:    arch,
 			Variant:         variant,
 			BuildDate:       buildDate,
-			NICo:            enginev1.NICoBoot{IPXEScript: ipxe},
+			NICo:            internalv1.NICoBoot{IPXEScript: ipxe},
 		},
 	}
 }
 
 // clusterRelease builds a ClusterRelease that boots Kubernetes 1.31.12, or
 // injects the version when annotations are given.
-func clusterRelease(name, imageName string, deprecated bool, annotations ...map[string]string) *enginev1.ClusterRelease {
-	release := &enginev1.ClusterRelease{
+func clusterRelease(name, imageName string, deprecated bool, annotations ...map[string]string) *internalv1.ClusterRelease {
+	release := &internalv1.ClusterRelease{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
 			Annotations: versionAnnotations("1.31.12", false),
 		},
-		Spec: enginev1.ClusterReleaseSpec{
-			MachineImageRef: enginev1.MachineImageReference{Name: enginev1.ResourceName(imageName)},
-			MachineInit:     enginev1.MachineInit{UserDataTemplate: "#cloud-config\n"},
-			Lifecycle:       enginev1.ReleaseLifecycle{Deprecated: deprecated},
+		Spec: internalv1.ClusterReleaseSpec{
+			MachineImageRef: internalv1.MachineImageReference{Name: internalv1.ResourceName(imageName)},
+			MachineInit:     internalv1.MachineInit{UserDataTemplate: "#cloud-config\n"},
+			Lifecycle:       internalv1.ReleaseLifecycle{Deprecated: deprecated},
 		},
 	}
 	if len(annotations) > 0 {
@@ -288,16 +288,16 @@ func clusterRelease(name, imageName string, deprecated bool, annotations ...map[
 	return release
 }
 
-func nodePoolRelease(name, imageName, version string, injected, deprecated bool, userData string) *enginev1.NodePoolRelease {
-	return &enginev1.NodePoolRelease{
+func nodePoolRelease(name, imageName, version string, injected, deprecated bool, userData string) *internalv1.NodePoolRelease {
+	return &internalv1.NodePoolRelease{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
 			Annotations: versionAnnotations(version, injected),
 		},
-		Spec: enginev1.NodePoolReleaseSpec{
-			MachineImageRef: enginev1.MachineImageReference{Name: enginev1.ResourceName(imageName)},
-			MachineInit:     enginev1.MachineInit{UserDataTemplate: userData},
-			Lifecycle:       enginev1.ReleaseLifecycle{Deprecated: deprecated},
+		Spec: internalv1.NodePoolReleaseSpec{
+			MachineImageRef: internalv1.MachineImageReference{Name: internalv1.ResourceName(imageName)},
+			MachineInit:     internalv1.MachineInit{UserDataTemplate: userData},
+			Lifecycle:       internalv1.ReleaseLifecycle{Deprecated: deprecated},
 		},
 	}
 }
@@ -313,7 +313,7 @@ func versionAnnotations(version string, injected bool) map[string]string {
 		version = ""
 	}
 	return map[string]string{
-		enginev1.MachineInitKubernetesVersionAnnotation:         version,
-		enginev1.MachineInitKubernetesVersionInjectedAnnotation: injectedValue,
+		internalv1.MachineInitKubernetesVersionAnnotation:         version,
+		internalv1.MachineInitKubernetesVersionInjectedAnnotation: injectedValue,
 	}
 }

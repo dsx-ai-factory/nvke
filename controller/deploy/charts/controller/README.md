@@ -4,14 +4,13 @@
 
 A Helm chart to deploy the NVKE controller service
 
-## Catalog CRDs
+## Release CRDs
 
 The chart includes MachineImage, ClusterRelease and NodePoolRelease through the
-[shared catalog CRD chart](../nvke-crds/README.md). `releaseCRDs.install=true` is
-the default: this controller release owns and upgrades those definitions. Existing
-controller releases keep their ownership and the same three catalog APIs.
+[nvke-crds chart](../nvke-crds/README.md). `releaseCRDs.install=true` is the
+default: this controller release owns and upgrades those definitions.
 
-When another release already owns the catalog definitions, disable this chart's
+When another release already owns the definitions, disable this chart's
 dependency in your site values:
 
 ```yaml
@@ -20,11 +19,8 @@ releaseCRDs:
 ```
 
 The controller then uses the installed APIs. Use compatible schema versions and
-wait for CRD establishment before applying catalog records. Exactly one release
-should own the definitions, even when several applications use them. For an
-existing controller installation, changing the flag does not transfer ownership;
-follow the shared chart's [ownership-transfer procedure](../nvke-crds/README.md#transferring-ownership)
-before adopting the definitions into another release.
+wait for CRD establishment before applying release resources. Exactly one release
+should own the definitions.
 
 For Helm operations on source checkouts, first run `make chart-deps` from the
 repository root. This stages the pinned local dependency even when its

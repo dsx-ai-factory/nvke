@@ -1,7 +1,7 @@
 # Architecture overview
 
 NVKE (NVIDIA Kubernetes Engine) orchestrates the lifecycle of Kubernetes clusters
-on NVIDIA infrastructure. The repository is a Go workspace of thirteen modules. Three
+on NVIDIA infrastructure. The repository is a Go workspace of fourteen modules. Three
 of them run in production: the NVKE controller, deployed as a Helm chart,
 the node agent, installed on each node as a Debian package and run by systemd,
 and the Cluster API infrastructure provider, deployed into the same cluster as
@@ -34,7 +34,7 @@ CRD types, and test and development tooling.
               └──────────────────────┘  └─────────────┘
 ```
 
-## The thirteen modules
+## The fourteen modules
 
 | Module | Binary | What it is |
 |---|---|---|
@@ -44,6 +44,7 @@ CRD types, and test and development tooling.
 | `cli/` | `nvkectl` | The command line client |
 | `controller/api/` | none | The OpenAPI spec and the generated server and client types |
 | `controller/deploy/charts/` | none | The controller and postgresql Helm charts, embedded so `nvkectl` installs the charts of its own commit |
+| `controller/k8s-apis/` | none | The Kubernetes API types of the MachineImage, ClusterRelease and NodePoolRelease CRDs, which the controller and `nvkectl` import and from which the `nvke-crds` chart's CRDs are generated |
 | `auth/` | none | The NVKE API authentication library, `auth/authn`, used by the controller |
 | `controller/nico-sim/` | `nico-sim`, `nico-simctl` | Forge-compatible VM and Docker-container simulator used by tests and development |
 | `controller/test/e2e/` | none | The end to end suite |

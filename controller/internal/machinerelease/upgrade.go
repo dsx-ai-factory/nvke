@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+	internalv1 "github.com/dsx-ai-factory/nvke/controller/k8s-apis/v1"
 )
 
 // SelectUpgradeTarget returns the name and image of the newest non-deprecated
@@ -22,19 +22,19 @@ func SelectUpgradeTarget(
 	reader client.Reader,
 	controlPlane bool,
 	kubernetesVersion string,
-	current *enginev1.MachineImage,
-) (string, *enginev1.MachineImage, error) {
-	var want enginev1.MachineImageSpec
+	current *internalv1.MachineImage,
+) (string, *internalv1.MachineImage, error) {
+	var want internalv1.MachineImageSpec
 	if current != nil {
 		want = current.Spec
 	}
 
 	var (
 		bestName  string
-		bestImage *enginev1.MachineImage
-		images    = map[enginev1.ResourceName]*enginev1.MachineImage{}
+		bestImage *internalv1.MachineImage
+		images    = map[internalv1.ResourceName]*internalv1.MachineImage{}
 	)
-	consider := func(kind string, release metav1.Object, deprecated bool, ref enginev1.ResourceName) error {
+	consider := func(kind string, release metav1.Object, deprecated bool, ref internalv1.ResourceName) error {
 		if deprecated {
 			return nil
 		}
@@ -53,7 +53,7 @@ func SelectUpgradeTarget(
 	}
 
 	if controlPlane {
-		var list enginev1.ClusterReleaseList
+		var list internalv1.ClusterReleaseList
 		if err := reader.List(ctx, &list); err != nil {
 			return "", nil, listErr(kindClusterRelease, err)
 		}
@@ -65,7 +65,7 @@ func SelectUpgradeTarget(
 			}
 		}
 	} else {
-		var list enginev1.NodePoolReleaseList
+		var list internalv1.NodePoolReleaseList
 		if err := reader.List(ctx, &list); err != nil {
 			return "", nil, listErr(kindNodePoolRelease, err)
 		}
@@ -90,12 +90,12 @@ func SelectUpgradeTarget(
 func upgradeCandidate(
 	ctx context.Context,
 	reader client.Reader,
-	images map[enginev1.ResourceName]*enginev1.MachineImage,
+	images map[internalv1.ResourceName]*internalv1.MachineImage,
 	release metav1.Object,
-	ref enginev1.ResourceName,
+	ref internalv1.ResourceName,
 	kubernetesVersion string,
-	want enginev1.MachineImageSpec,
-) (*enginev1.MachineImage, bool, error) {
+	want internalv1.MachineImageSpec,
+) (*internalv1.MachineImage, bool, error) {
 	version, injected, err := ParseKubernetesVersionAnnotations(release)
 	if err != nil {
 		return nil, false, err
@@ -120,7 +120,7 @@ func upgradeCandidate(
 
 // newer reports whether the candidate was built after the current best, with the
 // release name as the tie-break.
-func newer(name string, image *enginev1.MachineImage, bestName string, bestImage *enginev1.MachineImage) bool {
+func newer(name string, image *internalv1.MachineImage, bestName string, bestImage *internalv1.MachineImage) bool {
 	if image.Spec.BuildDate != bestImage.Spec.BuildDate {
 		return image.Spec.BuildDate > bestImage.Spec.BuildDate
 	}

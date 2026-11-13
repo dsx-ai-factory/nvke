@@ -1305,7 +1305,7 @@ if not CONTROLLER_IMAGE and not _controller_local_debug_active:
         ],
     )
 
-# The shared chart's release schemas are applied before the controller, which has its dependency turned
+# The nvke-crds chart's release schemas are applied before the controller, which has its dependency turned
 # off with releaseCRDs.install=false: a local resource that waits for the chart to
 # install them holds every unparallelizable build behind it, including the chart's.
 local_resource(

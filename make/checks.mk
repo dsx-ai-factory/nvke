@@ -87,7 +87,7 @@ next-tag-test: ## Test the release version rules in release/hack/next-tag.sh. (r
 	@$(call require_command,python3)
 	@python3 -B ./release/hack/test_next_tag.py
 
-SHARED_CRD_CHART := controller/deploy/charts/nvke-crds
+RELEASE_CRD_CHART := controller/deploy/charts/nvke-crds
 CHART_CRDS_FILE := dist/release-crds.yaml
 STATE_CRDS := management-engine/config/crd/bases
 
@@ -99,18 +99,21 @@ chart-deps: ## Build the controller chart's pinned local dependency.
 chart-crds: ## Render the controller's three release schemas into ignored build output.
 	@$(call require_tool,helm,$(HELM_VERSION))
 	@mkdir -p $(dir $(CHART_CRDS_FILE))
-	helm template nvke-crds $(SHARED_CRD_CHART) > $(CHART_CRDS_FILE)
+	helm template nvke-crds $(RELEASE_CRD_CHART) > $(CHART_CRDS_FILE)
 
-chart-crds-check: ## Verify canonical generated schemas and shared chart rendering.
+chart-crds-check: ## Verify the committed CRDs match their generators.
+	@$(MAKE) --no-print-directory -C controller/k8s-apis generate manifests
+	git diff --exit-code -- $(RELEASE_CRD_CHART)/bases controller/k8s-apis/v1/zz_generated.deepcopy.go
 	@$(MAKE) --no-print-directory -C management-engine manifests-state
-	git diff --exit-code -- $(SHARED_CRD_CHART)/bases $(STATE_CRDS)
-	@test -z "$$(git ls-files --others --exclude-standard -- $(SHARED_CRD_CHART)/bases $(STATE_CRDS))" || { echo "Commit canonical schemas"; exit 1; }
+	git diff --exit-code -- $(RELEASE_CRD_CHART)/bases $(STATE_CRDS)
+	@test -z "$$(git ls-files --others --exclude-standard -- $(RELEASE_CRD_CHART)/bases $(STATE_CRDS))" || { echo "Commit canonical schemas"; exit 1; }
 	@$(call require_tool,kubectl,$(KUBECTL_VERSION))
 	kubectl kustomize management-engine/config/crd > /dev/null
 
-chart-crds-render-check: chart-deps ## Verify independent and embedded-consumer CRD rendering.
-	helm lint $(SHARED_CRD_CHART)
-	$(MAKE) --no-print-directory -C management-engine test-chart-crds
+chart-crds-render-check: ## Verify independent and embedded-consumer CRD rendering.
+	@$(call require_tool,helm,$(HELM_VERSION))
+	helm lint $(RELEASE_CRD_CHART)
+	$(MAKE) --no-print-directory -C controller/k8s-apis test-chart-crds
 
 lint-chart chart-rbac-check chart-package-check chart-identity-check chart-controller-config-check credential-alerts-check: chart-deps
 
