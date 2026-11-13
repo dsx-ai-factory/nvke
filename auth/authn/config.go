@@ -123,6 +123,15 @@ type Admit struct {
 	SPIFFE          *SPIFFERule          `json:"spiffe,omitempty"`
 	Groups          []string             `json:"groups,omitempty"`
 	Claims          []ClaimRule          `json:"claims,omitempty"`
+
+	// GroupsClaim is the top-level claim the groups rule reads. Absent means
+	// "groups".
+	GroupsClaim string `json:"groupsClaim,omitempty"`
+
+	// GroupsTrimPrefix is stripped from each claim value before the exact
+	// comparison, for an IdP that sends a group as a path: with "/", the rule
+	// "nvke-admins" matches "/nvke-admins" and not "/platform/nvke-admins".
+	GroupsTrimPrefix string `json:"groupsTrimPrefix,omitempty"`
 }
 
 // ClaimRule matches a token whose top-level claim Name is the string Value, or
@@ -463,12 +472,30 @@ func (a *Admit) validate() error {
 		)
 	}
 
+	if len(a.Groups) == 0 && (a.GroupsClaim != "" || a.GroupsTrimPrefix != "") {
+		return errors.New("groupsClaim and groupsTrimPrefix apply only to groups, which is not set")
+	}
+	if a.GroupsClaim != "" {
+		if err := requireUnpadded("groupsClaim", a.GroupsClaim); err != nil {
+			return err
+		}
+		if describesToken(a.GroupsClaim) {
+			return fmt.Errorf("groupsClaim %q describes the token, not the caller", a.GroupsClaim)
+		}
+	}
+	if err := requireUnpadded("groupsTrimPrefix", a.GroupsTrimPrefix); err != nil {
+		return err
+	}
+
 	for i, g := range a.Groups {
 		if strings.TrimSpace(g) == "" {
 			return fmt.Errorf("groups[%d] is required and must not be empty", i)
 		}
 		if err := requireUnpadded(fmt.Sprintf("groups[%d]", i), g); err != nil {
 			return err
+		}
+		if a.GroupsTrimPrefix != "" && strings.HasPrefix(g, a.GroupsTrimPrefix) {
+			return fmt.Errorf("groups[%d] %q starts with groupsTrimPrefix %q, which is stripped from the claim first, so it would match only a value carrying the prefix twice", i, g, a.GroupsTrimPrefix)
 		}
 	}
 
@@ -532,14 +559,23 @@ func (r ClaimRule) Validate() error {
 	if err := requireUnpadded("name", r.Name); err != nil {
 		return err
 	}
-	switch r.Name {
-	case "iss", "aud", "nonce", "jti", "exp", "nbf", "iat", "typ":
+	if describesToken(r.Name) {
 		return fmt.Errorf("name %q describes the token, not the caller", r.Name)
 	}
 	if strings.TrimSpace(r.Value) == "" {
 		return errors.New("value is required and must not be empty")
 	}
 	return requireUnpadded("value", r.Value)
+}
+
+// describesToken reports whether a claim describes the token rather than the
+// caller, so an admission rule on it would admit by accident.
+func describesToken(name string) bool {
+	switch name {
+	case "iss", "aud", "nonce", "jti", "exp", "nbf", "iat", "typ":
+		return true
+	}
+	return false
 }
 
 func (s *SPIFFERule) validate() error {

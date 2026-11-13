@@ -26,7 +26,7 @@ Authentication has three modes. Off is the default.
   The install created the Helm release `nvke-controller` and the Deployment `nvke-controller`, both in the `nvke-controller` namespace.
 - The shell you run the install from has the `NVKECTL_*` variables from [Set the install inputs](install-management-plane.md#set-the-install-inputs) exported.
 - Your IdP publishes an OIDC discovery document over HTTPS, and the management cluster can reach its signing-key endpoint.
-- Your IdP has a group for the people and automation allowed to call the NVKE API, and puts it in a token claim named `groups`, a list of strings. NVKE reads group membership only from that claim.
+- Your IdP has a group for the people and automation allowed to call the NVKE API, and puts it in a token claim that is a list of strings, `groups` by default.
 - Your IdP has an OIDC client for `nvkectl` that needs no client secret.
 - The `kubectl oidc-login` plugin, `jq` and `python3` are installed on the workstation you call the API from.
 
@@ -61,7 +61,7 @@ Authentication has three modes. Off is the default.
    Record two claims:
 
    - `aud` is `<AUDIENCE>`, the value callers must present. For a token from `kubectl oidc-login` it is usually `<CLIENT_ID>`.
-   - `groups` must contain the group you will admit, `<ADMITTED_GROUP>`. If it is missing, configure the IdP to release it. Some IdPs release it only when the client asks for a scope such as `groups`; pass that with `--oidc-extra-scope`. Use the value exactly as the claim shows it.
+   - `groups`, or the claim your IdP puts groups in, must contain the group you will admit, `<ADMITTED_GROUP>`. If it is missing, configure the IdP to release it. Some IdPs release it only when the client asks for a scope such as `groups`; pass that with `--oidc-extra-scope`. Use the value exactly as the claim shows it.
 
 ## Turn on authentication in permissive mode
 
@@ -89,7 +89,7 @@ Authentication has three modes. Off is the default.
    - `audiences`: every `aud` value NVKE accepts. A token is accepted if it names any of them, so list a second value for callers whose tokens carry a different audience. An audience must not equal an issuer URL.
    - `name`: a label of your choice. It appears in logs and in the `issuer` label of the metrics.
    - `algorithms`: the algorithms from step 1 that you accept.
-   - `admit.groups`: a token is admitted if its `groups` claim contains any listed group. For a token without a `groups` claim, use `admit.claims` instead, a list of `{name, value}`: a token is admitted if its top-level claim `name` is `value`, or a string array holding it. Use a claim the IdP sets, not one users can edit. `iss`, `aud`, `nonce`, `jti`, `exp`, `nbf`, `iat` and `typ` describe the token rather than the caller, so NVKE refuses to start with a rule on them.
+   - `admit.groups`: a token is admitted if its `groups` claim contains any listed group. Groups match exactly: a rule for a group does not admit groups nested beneath it. Set `admit.groupsClaim` to read another top-level claim, such as `roles`. Set `admit.groupsTrimPrefix` to strip a prefix from each claim value before comparing. Keycloak's group mapper has **Full group path** on by default and sends `/nvke-admins`; either turn it off, or set `groupsTrimPrefix: "/"` and list `nvke-admins`. With that prefix, `/platform/nvke-admins` stays `platform/nvke-admins` and does not match. A listed group that starts with the prefix stops NVKE from starting, because it would match only a claim value carrying the prefix twice. For a token without a `groups` claim, use `admit.claims` instead, a list of `{name, value}`: a token is admitted if its top-level claim `name` is `value`, or a string array holding it. Use a claim the IdP sets, not one users can edit. `iss`, `aud`, `nonce`, `jti`, `exp`, `nbf`, `iat` and `typ` describe the token rather than the caller, so NVKE refuses to start with a rule on them.
 
    `issuers` is a list. Add another entry for a second IdP. `name` and `issuer` are unique in the file. Set `audiences` on an issuer to replace the top-level `audiences` for that issuer.
 
@@ -215,7 +215,7 @@ Leave NVKE in permissive mode while your existing callers keep working, and watc
    | `expired`, `not_yet_valid` | `401` | The token is outside its validity period. Get a new one, or check the caller's clock. |
    | `bad_signature`, `algorithm_not_allowed` | `401` | The token does not verify against the issuer's keys and `algorithms`. |
    | `jwks_stale` | `401` | NVKE cannot refresh the issuer's keys. Fix the key endpoint, not the caller. |
-   | `not_admitted` | `403` | The token is valid, but its `groups` claim contains no admitted group. Add the caller to the group. |
+   | `not_admitted` | `403` | The token is valid, but its groups claim contains no admitted group. Add the caller to the group. |
 
 3. Find the caller behind each rejection in the log.
 

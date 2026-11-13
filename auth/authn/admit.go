@@ -4,6 +4,7 @@
 package authn
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
@@ -44,6 +45,8 @@ type admitRules struct {
 	serviceAccounts []ServiceAccountRule
 	spiffe          *spiffeRules
 	groups          []string
+	groupsClaim     string
+	groupsTrim      string
 	claims          []ClaimRule
 }
 
@@ -55,7 +58,13 @@ type spiffeRules struct {
 // resolve builds the rule set admission matches against. Only the trust domain
 // can fail, and SPIFFERule.validate has already refused a config where it does.
 func (a *Admit) resolve() (*admitRules, error) {
-	rules := &admitRules{serviceAccounts: a.ServiceAccounts, groups: a.Groups, claims: a.Claims}
+	rules := &admitRules{
+		serviceAccounts: a.ServiceAccounts,
+		groups:          a.Groups,
+		groupsClaim:     cmp.Or(a.GroupsClaim, "groups"),
+		groupsTrim:      a.GroupsTrimPrefix,
+		claims:          a.Claims,
+	}
 	if a.SPIFFE == nil {
 		return rules, nil
 	}
@@ -93,12 +102,16 @@ func (r *admitRules) admitsClaims(p *Principal) bool {
 }
 
 // admitsGroups reports whether the token's groups claim holds one of the
-// rule's groups.
+// rule's groups, compared exactly once the optional prefix is stripped.
 func (r *admitRules) admitsGroups(p *Principal) bool {
-	items, _ := p.Claims["groups"].([]any)
+	items, _ := p.Claims[r.groupsClaim].([]any)
 	for _, item := range items {
 		g, ok := item.(string)
-		if !ok || g == "" {
+		if !ok {
+			continue
+		}
+		g = strings.TrimPrefix(g, r.groupsTrim)
+		if g == "" {
 			continue
 		}
 		for _, want := range r.groups {

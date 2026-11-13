@@ -340,7 +340,7 @@ spire-server jwt mint \
 ## Recipe: an external identity provider
 
 Use this when callers get tokens from an identity provider you already run.
-NVKE reads group membership only from the token's `groups` claim.
+NVKE reads group membership from the token's `groups` claim, or the claim set in `groupsClaim`.
 
 ### 1. Write the issuer
 
@@ -359,7 +359,24 @@ issuers:
 ```
 
 A token is admitted when its `groups` claim contains any listed group. The
-group names are matched exactly.
+group names are matched exactly, so a rule for a group does not admit groups
+nested beneath it.
+
+Two optional fields change where and how groups are read:
+
+```yaml
+    admit:
+      groups:
+        - nke-operators
+      groupsClaim: roles      # read this claim instead of groups
+      groupsTrimPrefix: "/"   # strip this from each value before comparing
+```
+
+Keycloak's group mapper sends the full group path, such as `/nke-operators`,
+unless **Full group path** is off. With `groupsTrimPrefix: "/"`, the rule
+`nke-operators` matches `/nke-operators` and not `/platform/nke-operators`. A
+listed group that starts with the prefix is refused at startup, because it
+would match only a claim value carrying the prefix twice.
 
 For a token with no `groups` claim, admit by another top-level claim instead:
 

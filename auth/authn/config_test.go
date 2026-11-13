@@ -1123,6 +1123,59 @@ func TestLoadValidationAdmit(t *testing.T) {
 			wantErr: "groups[0] is required and must not be empty",
 		},
 		{
+			name: "admit.groups with groupsClaim and groupsTrimPrefix",
+			yaml: issuerConfig(`name: keycloak
+    issuer: "http://keycloak.nke.test:8180/realms/nke"
+    jwks: {uri: "https://keycloak.nke.test:8180/realms/nke/protocol/openid-connect/certs"}
+    algorithms: [RS256]
+    admit: {groups: [nke-operators], groupsClaim: roles, groupsTrimPrefix: "/"}`),
+		},
+		{
+			name: "admit.groupsClaim without groups",
+			yaml: issuerConfig(`name: keycloak
+    issuer: "http://keycloak.nke.test:8180/realms/nke"
+    jwks: {uri: "https://keycloak.nke.test:8180/realms/nke/protocol/openid-connect/certs"}
+    algorithms: [RS256]
+    admit: {claims: [{name: roles, value: x}], groupsClaim: roles}`),
+			wantErr: `groupsClaim and groupsTrimPrefix apply only to groups`,
+		},
+		{
+			name: "admit.groupsTrimPrefix without groups",
+			yaml: issuerConfig(`name: keycloak
+    issuer: "http://keycloak.nke.test:8180/realms/nke"
+    jwks: {uri: "https://keycloak.nke.test:8180/realms/nke/protocol/openid-connect/certs"}
+    algorithms: [RS256]
+    admit: {claims: [{name: roles, value: x}], groupsTrimPrefix: "/"}`),
+			wantErr: `groupsClaim and groupsTrimPrefix apply only to groups`,
+		},
+		{
+			name: "admit.groupsClaim on a token claim",
+			yaml: issuerConfig(`name: keycloak
+    issuer: "http://keycloak.nke.test:8180/realms/nke"
+    jwks: {uri: "https://keycloak.nke.test:8180/realms/nke/protocol/openid-connect/certs"}
+    algorithms: [RS256]
+    admit: {groups: [nke-operators], groupsClaim: aud}`),
+			wantErr: `groupsClaim "aud" describes the token`,
+		},
+		{
+			name: "admit.groupsClaim with padding",
+			yaml: issuerConfig(`name: keycloak
+    issuer: "http://keycloak.nke.test:8180/realms/nke"
+    jwks: {uri: "https://keycloak.nke.test:8180/realms/nke/protocol/openid-connect/certs"}
+    algorithms: [RS256]
+    admit: {groups: [nke-operators], groupsClaim: " roles"}`),
+			wantErr: `groupsClaim " roles" has leading or trailing whitespace`,
+		},
+		{
+			name: "admit.groups entry starting with groupsTrimPrefix",
+			yaml: issuerConfig(`name: keycloak
+    issuer: "http://keycloak.nke.test:8180/realms/nke"
+    jwks: {uri: "https://keycloak.nke.test:8180/realms/nke/protocol/openid-connect/certs"}
+    algorithms: [RS256]
+    admit: {groups: [/nke-operators], groupsTrimPrefix: "/"}`),
+			wantErr: `groups[0] "/nke-operators" starts with groupsTrimPrefix`,
+		},
+		{
 			name: "admit with both groups and serviceAccounts is a startup failure",
 			yaml: issuerConfig(`name: keycloak
     issuer: "http://keycloak.nke.test:8180/realms/nke"
