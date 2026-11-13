@@ -64,6 +64,7 @@ func checkSourcePropagation(t *testing.T, omitEnv bool) {
 	}
 	run("git", "init", "-q")
 	changeCanonicalSources(t, omitEnv)
+	changeAPISources(t, omitEnv)
 	if err := os.MkdirAll("dist", 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -103,6 +104,7 @@ func checkSourcePropagation(t *testing.T, omitEnv bool) {
 	if !deployment || !permission {
 		t.Fatalf("canonical edits did not propagate: deployment=%t permission=%t", deployment, permission)
 	}
+	checkGeneratedAPIs(t, run, omitEnv)
 	if err := os.WriteFile("chart/templates/manager/manager.yaml", []byte("manual edit"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -230,5 +232,106 @@ func TestFilterManagerArgs(t *testing.T) {
 				t.Fatalf("filtered=%v error=%v; want %v error=%t", got, err, tc.want, tc.err)
 			}
 		})
+	}
+}
+
+// changeAPISources verifies that the API adapters retain workload and RBAC inputs.
+func changeAPISources(t *testing.T, omitEnv bool) {
+	t.Helper()
+	for _, surface := range []string{"tenant", "operator"} {
+		path := "config/dev/" + surface + "-api.yaml"
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		object := map[string]any{}
+		if err := yaml.Unmarshal(data, &object); err != nil {
+			t.Fatal(err)
+		}
+		containers, _, _ := unstructured.NestedSlice(object, "spec", "template", "spec", "containers")
+		c := containers[0].(map[string]any)
+		c["image"] = "example.invalid/" + surface + ":source"
+		if err := unstructured.SetNestedField(c, "25m", "resources", "requests", "cpu"); err != nil {
+			t.Fatal(err)
+		}
+		if err := unstructured.SetNestedField(c, int64(37), "readinessProbe", "initialDelaySeconds"); err != nil {
+			t.Fatal(err)
+		}
+		if !omitEnv {
+			c["env"] = []any{map[string]any{"name": "SOURCE_PROPAGATION", "value": "present"}}
+		}
+		c["envFrom"] = []any{map[string]any{"configMapRef": map[string]any{"name": "source-env-settings"}}}
+		c["volumeMounts"] = []any{map[string]any{"name": "source-config", "mountPath": "/etc/source-settings"}}
+		if err := unstructured.SetNestedSlice(object, containers, "spec", "template", "spec", "containers"); err != nil {
+			t.Fatal(err)
+		}
+		volumes := []any{map[string]any{"name": "source-config", "configMap": map[string]any{"name": "source-settings"}}}
+		if err := unstructured.SetNestedSlice(object, volumes, "spec", "template", "spec", "volumes"); err != nil {
+			t.Fatal(err)
+		}
+		data, err = yaml.Marshal(object)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		rolePath := "config/dev/" + surface + "-api-rbac.yaml"
+		data, err = os.ReadFile(rolePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data = []byte(strings.Replace(string(data), "resources: [", "resources: ["+surface+"sourcechecks, ", 1))
+		if err := os.WriteFile(rolePath, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func checkGeneratedAPIs(t *testing.T, run func(string, ...string) []byte, omitEnv bool) {
+	t.Helper()
+	values := []byte(`{
+  "controller": {
+    "enabled": false
+  },
+  "tenantAPI": {
+    "enabled": true,
+    "namespace": "tenant-one"
+  },
+  "operatorAPI": {
+    "enabled": true
+  }
+}`)
+	if err := os.WriteFile("api-values.json", values, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output := run(os.Getenv("HELM"), "template", "source-check", "chart", "-f", "api-values.json")
+	decoder := yamlutil.NewYAMLOrJSONDecoder(bytes.NewReader(output), 4096)
+	deployments := 0
+	for {
+		var obj unstructured.Unstructured
+		if err := decoder.Decode(&obj); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		if obj.GetKind() != "Deployment" {
+			continue
+		}
+		deployments++
+		assertSourceDeployment(t, obj, omitEnv)
+		containers, _, _ := unstructured.NestedSlice(obj.Object, "spec", "template", "spec", "containers")
+		image := containers[0].(map[string]any)["image"].(string)
+		if !strings.HasPrefix(image, "example.invalid/") || !strings.HasSuffix(image, ":source") {
+			t.Fatal(image)
+		}
+	}
+	if deployments != 2 {
+		t.Fatalf("API Deployments: %d", deployments)
+	}
+	for _, surface := range []string{"tenant", "operator"} {
+		if !strings.Contains(string(output), surface+"sourcechecks") {
+			t.Errorf("%s API source RBAC did not propagate", surface)
+		}
 	}
 }

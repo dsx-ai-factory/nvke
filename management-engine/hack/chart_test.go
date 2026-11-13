@@ -20,6 +20,11 @@ import (
 
 func renderChart(t *testing.T, values string) ([]unstructured.Unstructured, string, error) {
 	t.Helper()
+	return renderChartRelease(t, "cluster-service", values)
+}
+
+func renderChartRelease(t *testing.T, release, values string) ([]unstructured.Unstructured, string, error) {
+	t.Helper()
 	var input map[string]any
 	if err := json.Unmarshal([]byte(values), &input); err != nil {
 		t.Fatal(err)
@@ -45,7 +50,7 @@ func renderChart(t *testing.T, values string) ([]unstructured.Unstructured, stri
 	if helm == "" {
 		helm = "helm"
 	}
-	cmd := exec.Command(helm, "template", "cluster-service", "../chart", "--namespace", "runtime", "-f", file)
+	cmd := exec.Command(helm, "template", release, "../chart", "--namespace", "runtime", "-f", file)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, string(output), err
@@ -345,7 +350,7 @@ func TestChartValidation(t *testing.T) {
   "state": {
     "enabled": false
   }
-}`, "enable state.enabled or controller.enabled"},
+}`, "enable state.enabled or controller.enabled or an API component"},
 		{`{
   "manager": {
     "infrastructureTemplateConfigMap": "infra",

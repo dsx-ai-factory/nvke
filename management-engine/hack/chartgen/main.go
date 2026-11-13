@@ -73,6 +73,9 @@ func generate(binary string, check bool) (err error) {
 			return err
 		}
 	}
+	if err := generateAPIs(binary, stage, chart); err != nil {
+		return err
+	}
 	header, err := os.ReadFile("hack/boilerplate.yaml.txt")
 	if err != nil {
 		return err
@@ -245,24 +248,23 @@ func customizeValues(path string) error {
 
 // filterManagerArgs leaves connection and election settings to named chart inputs.
 func filterManagerArgs(args []string) ([]string, error) {
+	return filterNamedArgs(args, "kubeconfig", "context", "leader-election-namespace",
+		"nvke-controller-endpoint", "nvke-controller-token-file", "infra-template-configmap")
+}
+
+func filterNamedArgs(args []string, owned ...string) ([]string, error) {
 	result := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		name, _, inline := strings.Cut(args[i], "=")
-		if !strings.HasPrefix(name, "-") {
+		if !strings.HasPrefix(name, "-") || !slices.Contains(owned, strings.TrimLeft(name, "-")) {
 			result = append(result, args[i])
 			continue
 		}
-		switch strings.TrimLeft(name, "-") {
-		case "kubeconfig", "context", "leader-election-namespace",
-			"nvke-controller-endpoint", "nvke-controller-token-file", "infra-template-configmap":
-			if !inline {
-				i++
-				if i == len(args) || strings.HasPrefix(args[i], "-") {
-					return nil, fmt.Errorf("source manager argument %s requires a value", name)
-				}
+		if !inline {
+			i++
+			if i == len(args) || strings.HasPrefix(args[i], "-") {
+				return nil, fmt.Errorf("source argument %s requires a value", name)
 			}
-		default:
-			result = append(result, args[i])
 		}
 	}
 	return result, nil

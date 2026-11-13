@@ -1,0 +1,118 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+{{- if or (not (hasKey .Values.operatorAPI "enabled")) (.Values.operatorAPI.enabled) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "management-engine.resourceName" (dict "suffix" "operator-api" "context" $) }}
+  namespace: {{ .Release.Namespace | quote }}
+  {{- if .Values.operatorAPI.annotations }}
+  annotations:
+    {{- toYaml .Values.operatorAPI.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.operatorAPI.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name | quote }}
+      app.kubernetes.io/component: operator-api
+      app.kubernetes.io/name: {{ include "management-engine.name" . | quote }}
+  {{- with .Values.operatorAPI.strategy }}
+  strategy: {{ toYaml . | nindent 6 }}
+  {{- end }}
+  template:
+    metadata:
+      {{- if .Values.operatorAPI.pod.annotations }}
+      annotations:
+        {{- with .Values.operatorAPI.pod }}
+        {{- with .annotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      {{- end }}
+      labels:
+        app.kubernetes.io/component: operator-api
+        app.kubernetes.io/name: {{ include "management-engine.name" . | quote }}
+        helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+        app.kubernetes.io/instance: {{ .Release.Name | quote }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        {{- with .Values.operatorAPI.pod }}
+        {{- with .labels }}
+        {{- with omit . "app.kubernetes.io/component" "app.kubernetes.io/name" "helm.sh/chart" "app.kubernetes.io/instance" "app.kubernetes.io/managed-by" }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
+    spec:
+      {{- with .Values.operatorAPI.topologySpreadConstraints }}
+      topologySpreadConstraints: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.operatorAPI.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.operatorAPI.tolerations }}
+      tolerations: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.operatorAPI.affinity }}
+      affinity: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.operatorAPI.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.operatorAPI.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: {{ eq .Values.operatorAPI.stateAccess.mode "inCluster" }}
+      containers:
+      - args:
+{{ include "management-engine.apiArgs" (dict "api" .Values.operatorAPI "surface" "operator") | indent 8 }}
+        command:
+        - /operator-api
+        image: "{{ .Values.operatorAPI.image.repository }}{{- if not (contains "@" .Values.operatorAPI.image.repository) }}:{{ .Values.operatorAPI.image.tag | default .Chart.AppVersion }}{{- end }}"
+        {{- with .Values.operatorAPI.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        livenessProbe:
+{{ toYaml .Values.operatorAPI.livenessProbe | indent 10 }}
+{{ if or (eq .Values.operatorAPI.stateAccess.mode "remote") .Values.operatorAPI.extraVolumeMounts }}
+        volumeMounts:
+{{ include "management-engine.apiMount" .Values.operatorAPI | indent 8 }}
+{{ with .Values.operatorAPI.extraVolumeMounts }}{{ toYaml . | indent 8 }}{{ end }}
+{{ end }}
+        name: api
+        ports:
+        - containerPort: 8080
+          name: http
+        readinessProbe:
+{{ toYaml .Values.operatorAPI.readinessProbe | indent 10 }}
+        resources:
+          {{- if .Values.operatorAPI.resources }}
+          {{- toYaml .Values.operatorAPI.resources | nindent 10 }}
+          {{- else }}
+          {}
+          {{- end }}
+        securityContext:
+          {{- if .Values.operatorAPI.securityContext }}
+          {{- toYaml .Values.operatorAPI.securityContext | nindent 10 }}
+          {{- else }}
+          {}
+          {{- end }}
+      securityContext:
+        {{- if .Values.operatorAPI.podSecurityContext }}
+        {{- toYaml .Values.operatorAPI.podSecurityContext | nindent 8 }}
+        {{- else }}
+        {}
+        {{- end }}
+{{ if or (eq .Values.operatorAPI.stateAccess.mode "remote") .Values.operatorAPI.extraVolumes }}
+      volumes:
+{{ include "management-engine.apiVolume" .Values.operatorAPI | indent 6 }}
+{{ with .Values.operatorAPI.extraVolumes }}{{ toYaml . | indent 6 }}{{ end }}
+{{ end }}
+      serviceAccountName: {{ include "management-engine.apiServiceAccount" (dict "root" $ "api" .Values.operatorAPI "surface" "operator") }}
+      {{- if and (hasKey .Values.operatorAPI "terminationGracePeriodSeconds") (ne .Values.operatorAPI.terminationGracePeriodSeconds nil) }}
+      terminationGracePeriodSeconds: {{ .Values.operatorAPI.terminationGracePeriodSeconds }}
+      {{- end }}
+status: {}
+{{- end }}

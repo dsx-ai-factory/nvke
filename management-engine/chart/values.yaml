@@ -59,6 +59,59 @@ networkPolicy:
   enabled: false
 nvke-crds:
   enabled: false
+operatorAPI:
+  affinity: {}
+  args: []
+  enabled: false
+  extraVolumeMounts: []
+  extraVolumes: []
+  image:
+    pullPolicy: IfNotPresent
+    repository: management-engine-operator-api
+    tag: dev
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+  nodeSelector: {}
+  pod:
+    annotations: {}
+    labels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+    timeoutSeconds: 5
+  replicas: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: true
+  service:
+    port: 8080
+  serviceAccount:
+    create: true
+    name: ""
+  stateAccess:
+    context: ""
+    kubeconfigSecret:
+      key: kubeconfig
+      name: ""
+    mode: inCluster
+  tolerations: []
 prometheus:
   enabled: false
 rbac:
@@ -78,3 +131,57 @@ state:
     operatorAPISubjects: []
     subjects: []
     tenantAPIBindings: []
+tenantAPI:
+  affinity: {}
+  args: []
+  enabled: false
+  extraVolumeMounts: []
+  extraVolumes: []
+  image:
+    pullPolicy: IfNotPresent
+    repository: management-engine-tenant-api
+    tag: dev
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+  namespace: ""
+  nodeSelector: {}
+  pod:
+    annotations: {}
+    labels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+    timeoutSeconds: 5
+  replicas: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: true
+  service:
+    port: 8080
+  serviceAccount:
+    create: true
+    name: ""
+  stateAccess:
+    context: ""
+    kubeconfigSecret:
+      key: kubeconfig
+      name: ""
+    mode: inCluster
+  tolerations: []
