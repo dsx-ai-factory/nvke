@@ -3,7 +3,8 @@
 #
 # Keeps `needs-triage` on every open issue that has no `priority/*` label and
 # is not waiting on its reporter (`needs-info`), and routes a new issue to its
-# area from the form's Component field. A reporter's reply to a `needs-info`
+# area from the form's Component field, telling an outside reporter what
+# happens next. A reporter's reply to a `needs-info`
 # issue removes `needs-info`; with no reply, the issue is reminded at 14 days
 # and closed at 30, and a later reply reopens it. The process is
 # docs/issue-triage.md.
@@ -84,6 +85,14 @@ jobs:
             const reminderText = (issue, closeOn) => `${REMINDER_MARK}
             @${issue.user.login}, this issue is waiting on the details asked for above. If they don't arrive by ${closeOn}, this issue will be closed. You can still add them after that: commenting reopens it.`;
             const closeText = `Closing because the details asked for above haven't arrived in ${CLOSE_DAYS} days. Comment here with them and this issue reopens and goes back to triage.`;
+
+            // Posted once on a new issue from someone outside the project.
+            const WELCOME_MARK = '<!-- triage-welcome -->';
+            const welcomeText = `${WELCOME_MARK}
+            Thanks for opening this issue. A maintainer will look at it within 7 days, and either set its priority or ask here for more detail. Until then it carries \`needs-triage\`, and there is nothing you need to do.
+
+            If we ask for more detail, the issue gets \`needs-info\`; your reply puts it back in the queue. The whole process is in [docs/issue-triage.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/issue-triage.md).`;
+            const MEMBER_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
 
             // The Component options in .github/ISSUE_TEMPLATE/*.yml, lower
             // case, to the area labels in .github/labeler.yml. An option that
@@ -205,7 +214,7 @@ jobs:
                   per_page: 100,
                 })).filter((issue) => !issue.pull_request);
 
-            const tally = { added: 0, cleared: 0, routed: 0, answered: 0, reminded: 0, timedOut: 0, reopened: 0, unchanged: 0 };
+            const tally = { added: 0, cleared: 0, routed: 0, answered: 0, reminded: 0, timedOut: 0, reopened: 0, welcomed: 0, unchanged: 0 };
             // Everything for one issue. A sweep catches its errors, so one
             // issue that keeps failing does not stop the rest; the run
             // still fails at the end.
@@ -256,6 +265,21 @@ jobs:
                   tally.routed += 1;
                   core.info(`#${issue.number}: routed to ${area}`);
                 }
+                // Members, bots, and issues filed with a priority by
+                // automation get no welcome; a re-run must not post it twice.
+                if (!MEMBER_ASSOCIATIONS.includes(issue.author_association) &&
+                    issue.user.type !== 'Bot' &&
+                    !labels.some((l) => l.startsWith(PRIORITY_PREFIX))) {
+                  const comments = await github.paginate(github.rest.issues.listComments, {
+                    ...context.repo,
+                    issue_number: issue.number,
+                    per_page: 100,
+                  });
+                  if (!comments.some((c) => c.user?.login === BOT && (c.body ?? '').includes(WELCOME_MARK))) {
+                    await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: welcomeText });
+                    tally.welcomed += 1;
+                  }
+                }
               }
 
               // An issue waiting on its reporter is not waiting on triage.
@@ -283,7 +307,7 @@ jobs:
               }
             }
 
-            core.info(`${issues.length} checked: ${tally.added} added, ${tally.cleared} cleared, ${tally.routed} routed, ${tally.answered} answered, ${tally.reminded} reminded, ${tally.timedOut} timed out, ${tally.reopened} reopened, ${tally.unchanged} unchanged`);
+            core.info(`${issues.length} checked: ${tally.added} added, ${tally.cleared} cleared, ${tally.routed} routed, ${tally.answered} answered, ${tally.reminded} reminded, ${tally.timedOut} timed out, ${tally.reopened} reopened, ${tally.welcomed} welcomed, ${tally.unchanged} unchanged`);
             if (failures.length > 0) {
               core.setFailed(`${failures.length} issue(s) failed: ${failures.join('; ')}`);
             }

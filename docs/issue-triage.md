@@ -55,8 +55,9 @@ For each issue carrying `needs-triage`:
 
 ## Cadence
 
-Every new issue should have a priority within seven calendar days. Each area
-sweeps its queue once a week; the project lead sweeps the unrouted queue.
+Every new issue should have a priority, or a request for more detail, within
+seven calendar days. Each area sweeps its queue once a week; the project lead
+sweeps the unrouted queue.
 
 - Everything waiting: [`is:open is:issue label:needs-triage`](https://github.com/dsx-ai-factory/nvke/issues?q=is%3Aopen+is%3Aissue+label%3Aneeds-triage)
 - One area, for example the NVKE controller: [`is:open is:issue label:needs-triage label:area/controller`](https://github.com/dsx-ai-factory/nvke/issues?q=is%3Aopen+is%3Aissue+label%3Aneeds-triage+label%3Aarea%2Fcontroller)
@@ -85,7 +86,9 @@ issue events, on the reporter's comments, and once an hour:
 - reminds the reporter 14 days after `needs-info` was added, closes the issue
   as not planned at 30 days, and reopens it if the reporter then comments;
 - on a new issue, maps the form's Component field to an `area/*` label, once,
-  and never puts back an area a triager removed.
+  and never puts back an area a triager removed;
+- on a new issue from someone outside the project, with no priority yet, posts
+  one comment saying what happens next and linking this page.
 
 Pull requests carry none of these labels. They are routed by the path-based
 labeler and reviewed through CODEOWNERS.
