@@ -70,6 +70,9 @@
 - name: area/generated
   color: "ededed"
   description: Generated code and assets, generated/
+- name: area/management-engine
+  color: "ededed"
+  description: The Management Engine, management-engine/
 - name: area/nktp
   color: "ededed"
   description: The NVKE telemetry pipeline (NKTP), nktp/
