@@ -17,6 +17,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
@@ -407,28 +408,33 @@ func tenantBehaviorSettings(settings tenantValidateSettings, checks siteChecks, 
 	}
 }
 
-// laneTenantSettings are the tenant checks a lane runs on the tenant it built:
-// kube-system's workloads, probe pods in default, and fail fast, since every
-// minute a failed check spends is one the delete needs. Nothing on a lane
-// installs a GPU driver or device plugin, so the GPU checks skip.
+// laneTenantSettings are the tenant checks a lane runs on its tenant:
+// kube-system's workloads, probe pods in the image's namespace, and fail
+// fast, since every minute a failed check spends is one the delete needs.
+// The tenant may be one lifecycle.reuseCluster names, so the probes keep out
+// of its own namespaces. Nothing on a lane installs a GPU driver or device
+// plugin, so the GPU checks skip.
 var laneTenantSettings = tenantValidateSettings{
 	enabled:         true,
 	adminCredential: true,
 	gpuImage:        defaultTenantGPUImage,
 	checks: siteChecks{
-		namespaces:     []siteNamespace{{name: kubeSystemNamespace, source: "kubeadm"}},
-		failFast:       true,
-		probeNamespace: "default",
-		probeImage:     probeImage{ref: kube.KubectlImage},
-		tenant:         true,
+		namespaces:       []siteNamespace{{name: kubeSystemNamespace, source: "kubeadm"}},
+		failFast:         true,
+		probeNamespace:   defaultTenantNamespace,
+		probeImage:       probeImage{ref: kube.KubectlImage},
+		excusedNamespace: defaultTenantNamespace,
+		tenant:           true,
 	},
 	expect: siteExpectations{prefix: tenantPrefix},
 }
 
-// laneTenantTarget is the tenant test built, reached as its admin through
-// the lane's own controller client and relay. It skips once failed reports
-// an earlier failure, for the same reason the settings fail fast.
-func laneTenantTarget(test *tenantTest, failed func() bool) func() *tenantTarget {
+// laneTenantTarget is the tenant test built or reused, reached as its admin
+// through the lane's own controller client and relay, with the probe
+// namespace in place. When it creates that namespace it hands created the
+// way to delete it. It skips once failed reports an earlier failure, for the
+// same reason the settings fail fast.
+func laneTenantTarget(test *tenantTest, failed func() bool, created func(remove func(context.Context) error)) func() *tenantTarget {
 	var target *tenantTarget
 	return func() *tenantTarget {
 		if failed() {
@@ -438,10 +444,33 @@ func laneTenantTarget(test *tenantTest, failed func() bool) func() *tenantTarget
 			ctx, cancel := context.WithTimeout(context.Background(), tenantConnect)
 			defer cancel()
 			restConfig := expectSucceed(test.tenantClients.AdminRESTConfig(ctx, test.cluster.Name))
+			clientset := expectSucceed(kubernetes.NewForConfig(restConfig))
+			namespace := laneTenantSettings.checks.probeNamespace
+			made, err := ensureNamespace(ctx, clientset, namespace)
+			Expect(err).NotTo(HaveOccurred(), "creating the probe namespace %s on the tenant", namespace)
+			if made {
+				created(func(ctx context.Context) error {
+					return clientset.CoreV1().Namespaces().Delete(ctx, namespace, metav1.DeleteOptions{})
+				})
+			}
 			target = &tenantTarget{record: *test.cluster, controller: test.nvke, restConfig: restConfig}
 			AddReportEntry("tenant validation target", strings.Join(target.describe(), "\n"))
 		}
 		return target
+	}
+}
+
+// ensureNamespace creates the namespace unless it exists, and says whether
+// it did.
+func ensureNamespace(ctx context.Context, clientset kubernetes.Interface, name string) (bool, error) {
+	_, err := clientset.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}, metav1.CreateOptions{})
+	switch {
+	case err == nil:
+		return true, nil
+	case apierrors.IsAlreadyExists(err):
+		return false, nil
+	default:
+		return false, err
 	}
 }
 

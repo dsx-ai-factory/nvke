@@ -1009,7 +1009,12 @@ without it the lane is skipped:
 At `full` the lane runs the [validation image](#validation-image)'s site checks,
 1–31 in [What it checks](#what-it-checks), against the site it built. The
 `nico-forge` tenant, in either lane, runs checks 1–37 before it is deleted,
-reached as the tenant's admin rather than a provisioned ServiceAccount. The
+reached as the tenant's admin rather than a provisioned ServiceAccount. Its
+probe pods run in `nvke-validate`, which the lane creates if it is missing
+and, on a tenant that outlives the run, removes again. To validate an
+existing tenant instead of creating one, run `nico-forge && !site-controller`
+against its site controller with `lifecycle.reuseCluster` naming it; the
+site lane builds a new site, so it refuses `lifecycle.reuseCluster`. The
 lane takes the Kubernetes version from the spec it built. For the site it
 lists what it installed: `cert-manager` as a component (check 15) and the
 stack's default StorageClass (check 23). It sets no other component,
