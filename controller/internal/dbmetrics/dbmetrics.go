@@ -54,6 +54,7 @@ type Collector struct {
 	nodePoolInfoDesc             *prometheus.Desc
 	nodeSetInfoDesc              *prometheus.Desc
 	nodeLifecycleElapsedSecsDesc *prometheus.Desc
+	nodeConditionElapsedSecsDesc *prometheus.Desc
 }
 
 // Prometheus label names, shared across the metric descriptors below.
@@ -244,6 +245,17 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			},
 			nil,
 		),
+		nodeConditionElapsedSecsDesc: prometheus.NewDesc(
+			"nvke_controller_node_condition_elapsed_seconds",
+			"Seconds since the last transition of an unhealthy node condition: nodeAgentReady or kubernetesReady not True on a provisioned, non-deleting node, or rebooting True",
+			[]string{
+				labelTenantCluster,
+				labelNode,
+				"node_type",
+				"condition",
+			},
+			nil,
+		),
 	}
 }
 
@@ -258,6 +270,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.nodePoolInfoDesc
 	ch <- c.nodeSetInfoDesc
 	ch <- c.nodeLifecycleElapsedSecsDesc
+	ch <- c.nodeConditionElapsedSecsDesc
 }
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
@@ -276,6 +289,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	c.collectNodeInfo(ctx, ch)
 	c.collectClusterNodePoolAndNodeSetInfo(ctx, ch)
 	c.collectNodeLifecycleElapsed(ctx, ch)
+	c.collectNodeConditionElapsed(ctx, ch)
 }
 
 func (c *Collector) collectNodeConditions(ctx context.Context, ch chan<- prometheus.Metric) {
@@ -649,6 +663,26 @@ func (c *Collector) collectNodeLifecycleElapsed(ctx context.Context, ch chan<- p
 			row.NodeName,
 			row.NodeType,
 			row.State,
+		)
+	}
+}
+
+func (c *Collector) collectNodeConditionElapsed(ctx context.Context, ch chan<- prometheus.Metric) {
+	rows, err := c.db.ListNodeConditionElapsed(ctx)
+	if err != nil {
+		c.logger.Error("failed to get node condition elapsed", "error", err)
+		return
+	}
+
+	for _, row := range rows {
+		ch <- prometheus.MustNewConstMetric(
+			c.nodeConditionElapsedSecsDesc,
+			prometheus.GaugeValue,
+			row.ElapsedSecs,
+			row.ClusterName,
+			row.NodeName,
+			row.NodeType,
+			row.Condition,
 		)
 	}
 }

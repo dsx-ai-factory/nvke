@@ -58,3 +58,22 @@ Labels have no node identity, keeping cardinality bounded. Use histogram counts
 for probe outcomes and the active gauge to see worker occupancy. Controller-runtime
 queue metrics use a separate registry; exposing these probe metrics does not also
 expose that queue registry.
+
+To see how long a node has been agent-unready, use the DB metric
+`nvke_controller_node_condition_elapsed_seconds{condition="nodeAgentReady"}`. It
+holds the seconds since `nodeAgentReady` left `True`, and exists only for
+provisioned nodes that are not deleting, since the condition is not `True`
+before a node joins. For example, nodes agent-unready for more than 15 minutes:
+
+```promql
+nvke_controller_node_condition_elapsed_seconds{condition="nodeAgentReady"} > 900
+```
+
+The same metric reports `kubernetesReady` under the same filter, and `rebooting`
+while it is `True`. The value spans the whole reboot workflow, which retries
+without limit, while `NODE_REBOOT_MAX_TIMEOUT` (default 1h) caps each attempt's
+wait. A reboot past it has had at least one wait time out:
+
+```promql
+nvke_controller_node_condition_elapsed_seconds{condition="rebooting"} > 3600
+```
