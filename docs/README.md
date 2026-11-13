@@ -48,6 +48,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [lifecycle.md](lifecycle.md) | Day 0 → Day 1 → Day 2 operational lifecycle |
 | [architecture.md](architecture.md) | The modules, how a cluster request flows through them, and what is deployed where |
 | [adrs/20261105-capi-architecture.md](adrs/20261105-capi-architecture.md) | Proposed composable architecture: reusable CAPI providers, operator curation, and customer APIs |
+| [adrs/20261106-configuration-driven-jwt-authentication.md](adrs/20261106-configuration-driven-jwt-authentication.md) | Proposed bearer JWT authentication for NVKE APIs, with trusted issuers set by a versioned configuration document |
 
 ## Working on the code
 
