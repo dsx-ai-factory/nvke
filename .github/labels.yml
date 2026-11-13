@@ -1,0 +1,169 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# The repository's issue and pull request labels. workflows/label-sync.yml
+# creates a label listed here that is missing, and updates the colour and
+# description of one that differs. It never deletes or renames a label, so a
+# label created in the GitHub UI and not listed here is left as it is.
+#
+# Change a label by changing this file. A description is at most 100
+# characters; GitHub shows it when a reader hovers over the label.
+
+# Kind
+- name: bug
+  color: "d73a4a"
+  description: Something isn't working
+- name: feature
+  color: "a2eeef"
+  description: New feature or request
+- name: documentation
+  color: "0075ca"
+  description: Improvements or additions to documentation
+- name: question
+  color: "d876e3"
+  description: Further information is requested
+
+# Triage state (docs/issue-triage.md)
+- name: needs-triage
+  color: "e11d21"
+  description: Indicates an issue no maintainer has set a priority on yet. Nothing for the reporter to do.
+- name: needs-info
+  color: "e11d21"
+  description: Indicates an issue that cannot be triaged until the reporter adds the detail asked for.
+
+# Priority (docs/issue-triage.md)
+- name: priority/P0
+  color: "ad4c00"
+  description: Data loss, an unusable cluster or node, a security problem, or no workaround. Fix within 30 days.
+- name: priority/P1
+  color: "663f0b"
+  description: Significant impact with a workaround. Fix within 183 days.
+- name: priority/P2
+  color: "ddac19"
+  description: Everything else. No fix commitment.
+
+# Area (paths in .github/labeler.yml)
+- name: area/agent
+  color: "ededed"
+  description: The NVKE node agent and updater, agent/
+- name: area/auth
+  color: "62fb4e"
+  description: Authentication and authorization, auth/
+- name: area/chart
+  color: "ededed"
+  description: Helm charts and deployment paths, controller/deploy/, deploy/
+- name: area/ci-build
+  color: "ededed"
+  description: CI workflows and the build system, .github/, Makefile, make/, hack/, build/
+- name: area/cli
+  color: "ededed"
+  description: The nvkectl CLI, cli/
+- name: area/controller
+  color: "ededed"
+  description: The NVKE controller, its API and the provisioned Cluster API provider
+- name: area/deps
+  color: "ededed"
+  description: Go module and Dependabot changes, go.mod, go.sum, go.work
+- name: area/docs
+  color: "ededed"
+  description: User and contributor documentation, docs/, fern/, root Markdown files
+- name: area/generated
+  color: "ededed"
+  description: Generated code and assets, generated/
+- name: area/management-engine
+  color: "ededed"
+  description: The Management Engine, management-engine/
+- name: area/nktp
+  color: "ededed"
+  description: The NVKE telemetry pipeline (NKTP) deployment, docs and e2e tests
+- name: area/os-image
+  color: "ededed"
+  description: The node OS image and image checker, os-image/
+- name: area/security
+  color: "1d05c5"
+  description: ""  # Purpose not documented yet.
+
+# Roadmap (ROADMAP.md)
+- name: roadmap/exploring
+  color: "C2E07F"
+  description: On our list, but not yet scheduled. See ROADMAP.md.
+- name: roadmap/working-on-it
+  color: "8BC34A"
+  description: Funded and in design or early development. See ROADMAP.md.
+- name: roadmap/coming-soon
+  color: "4C8C00"
+  description: Being built now. Expect it in an upcoming release. See ROADMAP.md.
+
+# Contributors and resolution
+- name: good first issue
+  color: "7057ff"
+  description: Good for newcomers
+- name: help wanted
+  color: "008672"
+  description: Extra attention is needed
+- name: duplicate
+  color: "cfd3d7"
+  description: This issue or pull request already exists
+- name: invalid
+  color: "e4e669"
+  description: This doesn't seem right
+- name: wontfix
+  color: "ffffff"
+  description: This will not be worked on
+
+# Pull request state (set by workflows)
+- name: needs-ci-fix
+  color: "e11d21"
+  description: Indicates a PR with a failed check on its head commit; fix the red check and push a new head.
+- name: needs-dco
+  color: "e11d21"
+  description: Indicates a PR with commits lacking a DCO sign-off; fix with git commit -s or a remediation commit.
+- name: needs-ok-to-test
+  color: "e11d21"
+  description: Indicates a PR head that copy-pr-bot has not mirrored; a vetter must comment /ok to test <SHA>.
+- name: needs-rebase
+  color: "e11d21"
+  description: Indicates a PR that no longer merges cleanly into main; rebase onto main and force-push.
+- name: needs-signed-commits
+  color: "e11d21"
+  description: Indicates a PR with commits lacking a verified signature; sign them and force-push.
+- name: needs-workflow-approval
+  color: "e11d21"
+  description: Indicates a PR whose workflows GitHub holds for approval; a maintainer clicks Approve and run.
+
+# Dependabot
+- name: dependencies
+  color: "0366d6"
+  description: Pull requests that update a dependency file
+- name: docker
+  color: "21ceff"
+  description: Pull requests that update docker code
+- name: github_actions
+  color: "000000"
+  description: Pull requests that update GitHub Actions code
+- name: go
+  color: "16e2e2"
+  description: Pull requests that update go code
+
+# Qualification e2e
+- name: qualify-e2e
+  color: "5319e7"
+  description: Plan and run the qualification e2e on real hardware, one job per stream
+- name: qualify-e2e-dry-run
+  color: "5319e7"
+  description: "Run the qualification e2e as a dry run: no Teleport join, no suite"
+- name: qualify-e2e-dsx
+  color: "1D76DB"
+  description: Run the DSX qualification stream (scope=dsx, stage=provision)
+- name: qualify-e2e-dsx-gb300
+  color: "1D76DB"
+  description: Run the DSX GB300 qualification stream (scope=dsx-gb300, stage=deployment)
+- name: qualify-e2e-l40s
+  color: "5319e7"
+  description: Run the Ubuntu 24.04 L40S qualify lane on az61
+- name: qualify-e2e-smoke
+  color: "5319e7"
+  description: "One L40S stream at the provision stage: proves the Forge path still works"
+- name: nvidia-runners
+  color: "ededed"
+  description: ""  # Purpose not documented yet.
