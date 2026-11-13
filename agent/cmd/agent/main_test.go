@@ -26,6 +26,8 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
+
+	"github.com/dsx-ai-factory/nvke/agent/internal/tlsjwt"
 )
 
 type writerFunc func([]byte) (int, error)
@@ -319,6 +321,24 @@ func TestControllerAudienceCompatibility(t *testing.T) {
 	}
 	if err := validateAuthConfig(AgentConfig{ControllerAudience: "other-service", GRPCAuthMode: authModeSPIFFEMTLS}); err == nil {
 		t.Fatal("unsupported audience accepted")
+	}
+}
+
+// The agent requests the renamed audience without being told to. Nothing
+// passes --controller-audience: the controller cannot, because AGENT_ARGS is
+// rendered before the node has booted an agent and it has no signal for what
+// the image-installed binary accepts (#2039). So the default is the only thing
+// that moves this audience, and an empty value must resolve the same way the
+// flag default does rather than silently reverting.
+func TestControllerAudienceDefaultsToTheRenamedAudience(t *testing.T) {
+	if got := controllerAudience(AgentConfig{}); got != tlsjwt.ControllerAudience {
+		t.Fatalf("empty audience resolved to %q, want %q", got, tlsjwt.ControllerAudience)
+	}
+	// A node provisioned before the rename names the legacy audience in its
+	// frozen AGENT_ARGS, and nothing rewrites that file, so the override has to
+	// keep working for the life of the node.
+	if got := controllerAudience(AgentConfig{ControllerAudience: tlsjwt.LegacyControllerAudience}); got != tlsjwt.LegacyControllerAudience {
+		t.Fatalf("explicit legacy audience resolved to %q, want %q", got, tlsjwt.LegacyControllerAudience)
 	}
 }
 
