@@ -13,8 +13,8 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func mokkaTestNode(name string) corev1.Node {
-	return corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{mokkaLabelKey: "gb300"}}}
+func mokkaTestNode(name, profile string) corev1.Node {
+	return corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{mokkaLabelKey: profile}}}
 }
 
 // mokkaGPUNode is a node labeled for profile that advertises product x gpus.
@@ -60,27 +60,27 @@ func TestMokkaPodProblems(t *testing.T) {
 	}{
 		{
 			name:  "every labeled node runs a Ready pod",
-			nodes: []corev1.Node{mokkaTestNode("a"), mokkaTestNode("b")},
+			nodes: []corev1.Node{mokkaTestNode("a", "gb300"), mokkaTestNode("b", "h100")},
 			pods:  []corev1.Pod{mokkaTestPod("a", true), mokkaTestPod("b", true)},
 			want:  2,
 		},
 		{
 			name:  "a pod that is not Ready",
-			nodes: []corev1.Node{mokkaTestNode("a")},
+			nodes: []corev1.Node{mokkaTestNode("a", "gb300")},
 			pods:  []corev1.Pod{mokkaTestPod("a", false)},
 			want:  1,
 			found: []string{"a: no Ready Mokka pod"},
 		},
 		{
 			name:  "a pod on another node does not count",
-			nodes: []corev1.Node{mokkaTestNode("a")},
+			nodes: []corev1.Node{mokkaTestNode("a", "gb300")},
 			pods:  []corev1.Pod{mokkaTestPod("b", true)},
 			want:  1,
 			found: []string{"a: no Ready Mokka pod"},
 		},
 		{
 			name:  "fewer labeled nodes than the pools ask for",
-			nodes: []corev1.Node{mokkaTestNode("a")},
+			nodes: []corev1.Node{mokkaTestNode("a", "gb300")},
 			pods:  []corev1.Pod{mokkaTestPod("a", true)},
 			want:  2,
 			found: []string{"1 nodes are labeled " + mokkaLabelKey + ", want 2"},
@@ -163,7 +163,7 @@ func TestValidatorProblems(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.found, validatorProblems([]corev1.Node{mokkaTestNode("a")}, tc.pods))
+			require.Equal(t, tc.found, validatorProblems([]corev1.Node{mokkaTestNode("a", "h100")}, tc.pods))
 		})
 	}
 }

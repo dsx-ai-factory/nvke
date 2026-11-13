@@ -100,7 +100,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 		shape: clusterShape{
 			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
 			workerPools: []nvke.NodePoolSpec{
-				{DesiredNodeCount: 1, NodeLabels: map[string]string{mokkaLabelKey: "gb300"}},
+				{Name: "mokka-gb300", NodeNamePrefix: "mg", DesiredNodeCount: 1, NodeLabels: map[string]string{mokkaLabelKey: "gb300"}},
 				{Name: "mokka-h100", NodeNamePrefix: "mh", DesiredNodeCount: 1, NodeLabels: map[string]string{mokkaLabelKey: "h100"}},
 			},
 		},
