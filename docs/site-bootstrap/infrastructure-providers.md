@@ -176,7 +176,7 @@ The management plane then has to accept LaunchLayer requests. Until it does, it 
 | `capi.rbac.create` | `true`. It defaults to `false`, and the chart renders no CAPI or LaunchLayer RBAC without it |
 | `capi.rbac.launchLayer` | `true`, the default. Grants the controller access to LaunchLayer's CRDs when `capi.rbac.create` is `true`. Keep it `true` for as long as CAPLL's CRDs are installed, even after removing `launchLayer` from `supportedInfraProviders`: the NVKE controller runs the LaunchLayer SPIFFE controller whenever the `LaunchLayerMachine` CRD exists, so existing clusters' new machines still join, and without the grant its watch is refused and the controller exits |
 | `tenantAccess.enabled` | `true`, the default. The controller reaches a LaunchLayer cluster's API only through the kubeconfig Secret this publishes; with it off, LaunchLayer clusters stay `Provisioning` |
-| `nodeAgent.spireAttestationMethod` | `dsxImds`, when `spiffe.enabled` is `true`. A LaunchLayer node attests to SPIRE only through DSX IMDS, so a SPIFFE-enabled deployment using any other method rejects LaunchLayer requests with 400 |
+| `nodeAgent.spireAttestationMethod` | `dsxImds`, when `spiffe.enabled` is `true`. A LaunchLayer node attests to SPIRE only through DSX IMDS, so with any other method the chart refuses to render and the controller refuses to start |
 | `nodeAgent.dsxImds.operatorTenant` | Required with `dsxImds`; the chart refuses to render without it. Must match DSX Identity's `global.operatorTenant` |
 | `nodeAgent.dsxImds.endpoint` | Required with `dsxImds`. The metadata endpoint the node attestor queries; the default, `http://169.254.169.254`, is the standard link-local address |
 
