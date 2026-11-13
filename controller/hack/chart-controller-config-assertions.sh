@@ -35,6 +35,12 @@ render() {
 checksum="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 render defaults
+render kube-vip-custom \
+  --set kubeVip.localASN=64512 \
+  --set kubeVip.staticPeerASN=4200000000
+render kube-vip-empty \
+  --set-string kubeVip.localASN= --set-string kubeVip.staticPeerASN=
+render kube-vip-null --set kubeVip.localASN=null --set kubeVip.staticPeerASN=null
 render dev-without-vip --set allowControlPlaneWithoutVIP=true
 render readiness-custom \
   --set nodeAgent.readiness.workers=4 \
@@ -80,6 +86,12 @@ refuse() {
   fi
   [[ "${refusal}" == *"${want}"* ]] || { echo "$* failed for another reason: ${refusal}" >&2; exit 1; }
 }
+for field in localASN staticPeerASN; do
+  for invalid in 0 -1 4294967296 1.5 invalid true; do
+    refuse "kubeVip.${field} must be an integer between 1 and 4294967295" \
+      --set "kubeVip.${field}=${invalid}"
+  done
+done
 refuse "credentialMonitoring.warningDays must be positive" --set credentialMonitoring.warningDays=0
 refuse "credentialMonitoring.warningDays must be positive" \
   --set credentialMonitoring.enabled=false --set scheduledMaintenance.certRenewal.enabled=false \

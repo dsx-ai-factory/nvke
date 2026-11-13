@@ -441,6 +441,26 @@ type Config struct {
 	// AllowControlPlaneWithoutVIP permits control-plane lifecycle operations without a VIP for development.
 	// The API endpoint remains tied to the initializing node's IP.
 	AllowControlPlaneWithoutVIP bool `controllerconfig:"allowControlPlaneWithoutVIP"`
+
+	// KubeVip configures kube-vip BGP ASNs.
+	KubeVip KubeVipConfig
+}
+
+// KubeVipConfig configures kube-vip on workload control-plane nodes.
+type KubeVipConfig struct {
+	LocalASN      uint32 `controllerconfig:"kubeVip.localASN"`
+	StaticPeerASN uint32 `controllerconfig:"kubeVip.staticPeerASN"`
+}
+
+// WithDefaults preserves existing ASNs when settings are omitted.
+func (c KubeVipConfig) WithDefaults() KubeVipConfig {
+	if c.LocalASN == 0 {
+		c.LocalASN = 65100
+	}
+	if c.StaticPeerASN == 0 {
+		c.StaticPeerASN = 4294967000
+	}
+	return c
 }
 
 // TracingConfig configures OpenTelemetry span export.

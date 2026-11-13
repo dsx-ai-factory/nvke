@@ -152,4 +152,6 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 
 	cfg.PermissiveMode = c.APIAuth.Permissive
 	cfg.AllowControlPlaneWithoutVIP = c.AllowControlPlaneWithoutVIP
+	cfg.KubeVip.LocalASN = c.KubeVip.LocalASN
+	cfg.KubeVip.StaticPeerASN = c.KubeVip.StaticPeerASN
 }
