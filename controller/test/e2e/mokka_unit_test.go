@@ -122,6 +122,21 @@ func TestMokkaModelProblems(t *testing.T) {
 	}
 }
 
+func TestSMIProduct(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		line string
+		want string
+	}{
+		{name: "spaces become dashes", line: "GPU 0: NVIDIA GB300 NVL (UUID: GPU-b300b300-0000-0000-0000-000000000003)", want: "NVIDIA-GB300-NVL"},
+		{name: "a name with dashes keeps them", line: "GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-a100a100-0000-0000-0000-000000000000)", want: "NVIDIA-A100-SXM4-40GB"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, smiProduct(tc.line))
+		})
+	}
+}
+
 func TestValidatorProblems(t *testing.T) {
 	passed := &corev1.ContainerStateTerminated{ExitCode: 0, Reason: "Completed"}
 	for _, tc := range []struct {

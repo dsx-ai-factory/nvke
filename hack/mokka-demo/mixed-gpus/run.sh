@@ -25,6 +25,8 @@ read -r -a profiles <<<"$PROFILES"
 # One pool, node label and Mokka release per profile.
 pool() { printf 'mokka-%s' "$1"; }
 label() { printf 'mokka.example/gpu-%s' "$1"; }
+# The GPU name in nvidia-smi -L output, as GPU Feature Discovery labels it: spaces as dashes.
+gpu_product() { sed -E 's/^GPU [0-9]+: (.*) \(UUID.*/\1/' | head -1 | tr ' ' '-'; }
 
 if [[ -z "${TENANT_KUBECONFIG:-}" ]]; then
   TENANT_KUBECONFIG="$(mktemp)"
@@ -47,8 +49,7 @@ for profile in "${profiles[@]}"; do
     pod="$(kubectl -n mokka get pods -o name --field-selector "spec.nodeName=${node}" | head -1)"
     smi="$(kubectl -n mokka exec "$pod" -- nvidia-smi -L 2>/dev/null | grep '^GPU ' || true)"
     want_count="$(grep -c . <<<"$smi" || true)"
-    # GPU Feature Discovery writes the NVML name with spaces as dashes.
-    want_product="$(sed -E 's/^GPU [0-9]+: (.*) \(UUID.*/\1/' <<<"$smi" | head -1 | tr ' ' '-')"
+    want_product="$(gpu_product <<<"$smi")"
     product="$(kubectl get node "$node" -o jsonpath='{.metadata.labels.nvidia\.com/gpu\.product}')"
     count="$(kubectl get node "$node" -o jsonpath='{.status.allocatable.nvidia\.com/gpu}')"
     if [[ -n "$product" && "$product" == "$want_product" && "$count" == "$want_count" ]]; then
@@ -74,7 +75,7 @@ for profile in "${profiles[@]}"; do
   kubectl apply -f - >/dev/null <<POD
 apiVersion: v1
 kind: Pod
-metadata: {name: ${name}, namespace: default}
+metadata: {name: ${name}}
 spec:
   restartPolicy: Never
   nodeSelector: {nvidia.com/gpu.product: "${product}"}
@@ -89,7 +90,7 @@ POD
     key="$(label "$profile")"
     on_pool="$(kubectl get node "$node" -o jsonpath="{.metadata.labels.${key//./\\.}}" 2>/dev/null || true)"
     seen="$(kubectl logs "$name")"
-    if [[ "$on_pool" == true && "$seen" == *"${product//-/ }"* ]]; then
+    if [[ "$on_pool" == true && "$(gpu_product <<<"$seen")" == "$product" ]]; then
       pass "${product} pod ran on ${node} in pool $(pool "$profile") and saw: ${seen}"
     else
       fail "${product} pod ran on ${node}, outside pool $(pool "$profile"), and saw: ${seen}"

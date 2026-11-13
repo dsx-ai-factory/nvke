@@ -187,8 +187,7 @@ func validateMokkaGPU(test *tenantTest) {
 				}
 			}
 			Expect(gpus).To(HaveLen(1), "nvidia-smi -L in a pod limited to one GPU listed:\n%s", message)
-			// GPU Feature Discovery writes the model nvidia-smi reports with dashes for spaces.
-			Expect(gpus[0]).To(ContainSubstring(strings.ReplaceAll(model, "-", " ")))
+			Expect(smiProduct(gpus[0])).To(Equal(model), "a pod selecting %s saw %s", model, gpus[0])
 			GinkgoLogr.Info("Mokka GPU workload", "node", node.Name, "result", gpus[0])
 		}
 	}, NodeTimeout(time.Duration(len(mokkaProfiles))*siteCreateTimeout+time.Minute))
@@ -244,6 +243,15 @@ func mokkaPodProblems(nodes []corev1.Node, pods []corev1.Pod, want int) []string
 		}
 	}
 	return problems
+}
+
+// smiProduct is the GPU name in an nvidia-smi -L line, such as
+// "GPU 0: NVIDIA A100-SXM4-40GB (UUID: ...)", as GPU Feature Discovery labels it:
+// spaces as dashes. Converting that way keeps the dashes a name already has.
+func smiProduct(line string) string {
+	_, name, _ := strings.Cut(line, ": ")
+	name, _, _ = strings.Cut(name, " (UUID")
+	return strings.ReplaceAll(name, " ", "-")
 }
 
 // mokkaModelProblems requires each of the nodes labeled for Mokka to advertise
