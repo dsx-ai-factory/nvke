@@ -57,8 +57,6 @@ metrics:
   secure: true
 networkPolicy:
   enabled: false
-nvke-crds:
-  enabled: false
 prometheus:
   enabled: false
 rbac:

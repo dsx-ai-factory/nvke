@@ -43,7 +43,6 @@ func generate(binary string, check bool) (err error) {
 	for _, pair := range [][2]string{
 		{"PROJECT", "PROJECT"}, {"dist/install.yaml", "input.yaml"},
 		{"chart/Chart.yaml", "generated/chart/Chart.yaml"},
-		{"chart/Chart.lock", "generated/chart/Chart.lock"},
 	} {
 		if err := copyFile(pair[0], filepath.Join(stage, pair[1])); err != nil {
 			return err

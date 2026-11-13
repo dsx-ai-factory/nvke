@@ -89,7 +89,6 @@ next-tag-test: ## Test the release version rules in release/hack/next-tag.sh. (r
 
 RELEASE_CRD_CHART := controller/deploy/charts/nvke-crds
 CHART_CRDS_FILE := dist/release-crds.yaml
-STATE_CRDS := management-engine/config/crd/bases
 
 .PHONY: chart-deps chart-crds chart-crds-check chart-crds-render-check
 chart-deps: ## Build the controller chart's pinned local dependency.
@@ -101,12 +100,14 @@ chart-crds: ## Render the controller's three release schemas into ignored build 
 	@mkdir -p $(dir $(CHART_CRDS_FILE))
 	helm template nvke-crds $(RELEASE_CRD_CHART) > $(CHART_CRDS_FILE)
 
-chart-crds-check: ## Verify the committed CRDs match their generators.
+chart-crds-check: ## Verify each component's committed CRDs against its own generator.
+	@# The NVKE controller (controller/k8s-apis) and management-engine each generate
+	@# and install their own CRDs, and the two sets may differ, so each generator
+	@# is checked against its own committed files.
 	@$(MAKE) --no-print-directory -C controller/k8s-apis generate manifests
-	git diff --exit-code -- $(RELEASE_CRD_CHART)/bases controller/k8s-apis/v1/zz_generated.deepcopy.go
 	@$(MAKE) --no-print-directory -C management-engine manifests-state
-	git diff --exit-code -- $(RELEASE_CRD_CHART)/bases $(STATE_CRDS)
-	@test -z "$$(git ls-files --others --exclude-standard -- $(RELEASE_CRD_CHART)/bases $(STATE_CRDS))" || { echo "Commit canonical schemas"; exit 1; }
+	git diff --exit-code -- $(RELEASE_CRD_CHART)/bases controller/k8s-apis/v1/zz_generated.deepcopy.go management-engine/config/crd/bases management-engine/apis/v1/zz_generated.deepcopy.go
+	@test -z "$$(git ls-files --others --exclude-standard -- $(RELEASE_CRD_CHART)/bases management-engine/config/crd/bases)" || { echo "Commit generated schemas"; exit 1; }
 	@$(call require_tool,kubectl,$(KUBECTL_VERSION))
 	kubectl kustomize management-engine/config/crd > /dev/null
 

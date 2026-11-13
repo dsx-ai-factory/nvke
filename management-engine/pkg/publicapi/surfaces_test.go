@@ -21,17 +21,12 @@ import (
 
 func TestSurfaces(t *testing.T) {
 	responses := map[string]any{}
-	discovery := metav1.APIResourceList{GroupVersion: "internal.nvke.nvidia.com/v1"}
+	discovery := metav1.APIResourceList{GroupVersion: "service.nvke.nvidia.com/v1"}
 	for _, name := range []string{
 		"nvkeclusters", "clusterreleases", "machineimages",
 		"controlplaneclasses", "clusterreleasechannels", "nodepoolreleases",
 	} {
-		directory := "../../config/crd/bases/"
-		switch name {
-		case "machineimages", "clusterreleases", "nodepoolreleases":
-			directory = "../../../controller/deploy/charts/nvke-crds/bases/"
-		}
-		data, err := os.ReadFile(directory + "internal.nvke.nvidia.com_" + name + ".yaml")
+		data, err := os.ReadFile("../../config/crd/bases/service.nvke.nvidia.com_" + name + ".yaml")
 		require.NoError(t, err)
 		var crd apiextensionsv1.CustomResourceDefinition
 		require.NoError(t, yaml.Unmarshal(data, &crd))
@@ -45,7 +40,7 @@ func TestSurfaces(t *testing.T) {
 			}
 		}
 	}
-	responses["/apis/internal.nvke.nvidia.com/v1"] = discovery
+	responses["/apis/service.nvke.nvidia.com/v1"] = discovery
 	for _, surface := range []struct {
 		name                               string
 		registrations                      []resource.Registration

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: docker-node
@@ -18,13 +18,13 @@ spec:
       echo CAPD does not use iPXE
       exit 1
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: docker-1.36.4
   annotations:
-    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.36.4"
-    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.36.4"
+    service.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
 spec:
   machineImageRef:
     name: management-engine-docker-node
@@ -37,7 +37,7 @@ spec:
         - mkdir -p /run/cluster-api
         - echo success > /run/cluster-api/bootstrap-success.complete
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: docker-worker-1.36.4
@@ -56,7 +56,7 @@ spec:
         - echo success > /run/cluster-api/bootstrap-success.complete
         - echo docker-worker-1.36.4 > /run/cluster-api/worker-release
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterReleaseChannel
 metadata:
   name: stable
@@ -66,7 +66,7 @@ spec:
       - name: management-engine-docker-1.36.4
         minimumUpgradeAge: 0s
 ---
-apiVersion: internal.nvke.nvidia.com/v1
+apiVersion: service.nvke.nvidia.com/v1
 kind: ControlPlaneClass
 metadata:
   name: standard

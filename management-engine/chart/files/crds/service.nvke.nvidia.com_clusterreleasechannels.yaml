@@ -6,9 +6,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: clusterreleasechannels.internal.nvke.nvidia.com
+  name: clusterreleasechannels.service.nvke.nvidia.com
 spec:
-  group: internal.nvke.nvidia.com
+  group: service.nvke.nvidia.com
   names:
     kind: ClusterReleaseChannel
     listKind: ClusterReleaseChannelList

@@ -13,9 +13,6 @@
     },
     "configMaps": []
   },
-  "nvke-crds": {
-    "enabled": false
-  },
   "controller": {
     "enabled": true
   },

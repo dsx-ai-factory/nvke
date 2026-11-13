@@ -273,14 +273,6 @@
           "type": "boolean"
         }
       }
-    },
-    "nvke-crds": {
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        }
-      }
     }
   },
   "definitions": {

@@ -1,11 +1,11 @@
 ---
 items:
-- apiVersion: internal.nvke.nvidia.com/v1
+- apiVersion: service.nvke.nvidia.com/v1
   kind: NVKECluster
   metadata:
     creationTimestamp: null
     finalizers:
-    - internal.nvke.nvidia.com/cluster-cleanup
+    - service.nvke.nvidia.com/cluster-cleanup
     generation: 1
     name: cluster-1
     namespace: default
@@ -46,7 +46,7 @@ items:
       type: Available
     - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: 'get MachineImage "missing-image" for ClusterRelease "test-release":
-        MachineImage.internal.nvke.nvidia.com "missing-image" not found'
+        MachineImage.service.nvke.nvidia.com "missing-image" not found'
       observedGeneration: 1
       reason: ReconcileFailed
       status: "False"
@@ -74,7 +74,7 @@ items:
             * NVKEControllerProvisioning: Condition not yet reported
             * NVKEControllerDeleting: Condition not yet reported
         * Synced:
-          * ClusterReconciled: get MachineImage "missing-image" for ClusterRelease "test-release": MachineImage.internal.nvke.nvidia.com "missing-image" not found
+          * ClusterReconciled: get MachineImage "missing-image" for ClusterRelease "test-release": MachineImage.service.nvke.nvidia.com "missing-image" not found
           * NodePoolsReconciled: Condition not yet reported
       observedGeneration: 1
       reason: NotReady
@@ -82,7 +82,7 @@ items:
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: |-
-        * ClusterReconciled: get MachineImage "missing-image" for ClusterRelease "test-release": MachineImage.internal.nvke.nvidia.com "missing-image" not found
+        * ClusterReconciled: get MachineImage "missing-image" for ClusterRelease "test-release": MachineImage.service.nvke.nvidia.com "missing-image" not found
         * NodePoolsReconciled: Condition not yet reported
       observedGeneration: 1
       reason: NotSynced

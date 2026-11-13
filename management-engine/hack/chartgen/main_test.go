@@ -39,12 +39,12 @@ func checkSourcePropagation(t *testing.T, omitEnv bool) {
 		t.Fatal(err)
 	}
 	fixture := filepath.Join(t.TempDir(), "management-engine")
-	for _, path := range []string{"PROJECT", "config", "hack/chart", "chart/Chart.yaml", "chart/Chart.lock"} {
+	for _, path := range []string{"PROJECT", "config", "hack/chart", "chart/Chart.yaml"} {
 		if err := copyPath(filepath.Join(root, path), filepath.Join(fixture, path)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, path := range []string{"LICENSE", "NOTICE", "controller/deploy/charts/nvke-crds"} {
+	for _, path := range []string{"LICENSE", "NOTICE"} {
 		if err := copyPath(filepath.Join(root, "..", path), filepath.Join(fixture, "..", path)); err != nil {
 			t.Fatal(err)
 		}

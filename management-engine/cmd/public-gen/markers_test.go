@@ -169,7 +169,7 @@ func writeMarkerFixture(t *testing.T, root, path, body string) {
 
 func writeMarkerCRD(t *testing.T, root, source string) {
 	t.Helper()
-	writeMarkerFixture(t, root, "../controller/deploy/charts/nvke-crds/bases/"+source+".yaml", fmt.Sprintf(`spec:
+	writeMarkerFixture(t, root, "config/crd/bases/"+source+".yaml", fmt.Sprintf(`spec:
   group: example.test
   names: {kind: %s, plural: %ss}
   scope: Namespaced

@@ -50,7 +50,7 @@ func Run(version string, registrations []resource.Registration, cfg resource.Cli
 		w.WriteHeader(http.StatusOK)
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		if _, err := disco.ServerResourcesForGroupVersionWithContext(r.Context(), "internal.nvke.nvidia.com/v1"); err != nil {
+		if _, err := disco.ServerResourcesForGroupVersionWithContext(r.Context(), "service.nvke.nvidia.com/v1"); err != nil {
 			http.Error(w, "datastore unavailable", http.StatusServiceUnavailable)
 			return
 		}
