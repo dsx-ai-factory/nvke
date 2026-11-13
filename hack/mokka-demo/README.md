@@ -1,0 +1,78 @@
+# Simulated GPU nodes with Mokka
+
+`demo.sh` gives an NVKE workload cluster GPU nodes without GPUs, and checks that the GPU stack works on them. It uses [Mokka](https://github.com/NVIDIA/k8s-test-infra) (`nvml-mock`), which simulates what an NVIDIA driver exposes on a node, so software that reads GPU state behaves as it would on hardware.
+
+The demo:
+
+1. Creates a node pool whose `nodeLabels` select Mokka. It copies the instance type, release and network of an existing worker pool, so it needs no provider-specific input.
+2. Installs Mokka on the nodes with that label, and only on them.
+3. Installs GPU Operator with [`mokka-gpu-operator-values.yaml`](../../controller/test/e2e/testdata/mokka-gpu-operator-values.yaml): Mokka stands in for the driver and container toolkit.
+4. Runs a pod that requests one GPU on a labeled node.
+
+It prints `PASS` or `FAIL` for each check and exits non-zero if any fails:
+
+- the pool's nodes are Ready and carry the label,
+- `nvidia-smi -L` on each node lists the simulated GPUs,
+- the ClusterPolicy is ready, each node advertises `nvidia.com/gpu`, and the GPU Operator validator completes,
+- the pod sees exactly one GPU.
+
+## Before you begin
+
+- `nvkectl` pointed at the NVKE site (`nvkectl config set-site`), and a Provisioned workload cluster with at least one worker pool.
+- `kubectl`, Helm 3.8 or later and `jq` on `PATH`.
+- The workload cluster's nodes can pull from `ghcr.io`, `nvcr.io`, `registry.k8s.io` and Docker Hub. Mokka and GPU Operator publish amd64 and arm64 images.
+
+## Run the demo
+
+```bash
+CLUSTER=<WORKLOAD_CLUSTER> hack/mokka-demo/demo.sh
+```
+
+The demo reads the workload cluster's kubeconfig through `nvkectl get kubeconfig`. Set `TENANT_KUBECONFIG` to use a file you already have; it does not use an inherited `KUBECONFIG`, which usually points at the management cluster.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CLUSTER` | required | Workload cluster name |
+| `POOL` / `POOL_PREFIX` | `mokka-gpu` / `mg` | Name and node name prefix of the pool the demo creates. An existing pool of that name is reused. |
+| `NODE_COUNT` | `1` | Nodes in the pool |
+| `BASE_POOL` | the first worker pool | Pool whose infrastructure settings the new pool copies |
+| `LABEL_KEY` | `mokka.example/simulated-gpu` | Node label that selects Mokka |
+| `GPU_PROFILE` | `gb300` | Mokka GPU profile: `a100`, `b200`, `gb200`, `gb300`, `h100`, `l40s` or `t4` |
+| `MOKKA_RELEASE` | `nvml-mock` | Helm release name for Mokka. Give each GPU profile its own release to mix profiles in one cluster. |
+| `MOKKA_VERSION` / `GPU_OPERATOR_VERSION` | `0.6.0` / `v26.3.3` | Chart versions |
+| `TIMEOUT` | `20m` | Helm and readiness timeout |
+
+It runs against any NVKE site, for example a DSX OS Simulator site or the [local site](../../docs/get-started/local-site.md). On the local site, run it from the workspace shell after `source ~/nvke-local-site/env.sh`.
+
+## In CI
+
+The e2e suite's `CAPD core` entry (`controller/test/e2e/tenant_test.go`) runs the same checks in Go on its labeled worker, in the pull-request E2E runs on CPU runners. To run only that entry against a local stack:
+
+```bash
+cd controller
+LOCAL_NKE_E2E_LABEL_FILTER=mokka hack/local-backend-e2e.sh
+```
+
+The entry installs the charts with `helm`, so the suite's runner needs it; both E2E entrypoints copy the host's in.
+
+## What it does not prove
+
+- **CUDA, NCCL and RDMA.** Mokka simulates the driver's interfaces, not GPU execution. The CUDA validator passes because the values skip its CUDA workload (`WITH_WORKLOAD=false`).
+- **Distinct GPU identities across nodes.** Every Mokka node with the same profile reports the same GPU UUIDs, which matters for consumers that track GPUs across a cluster.
+- **Performance and thermals.** Telemetry values come from the profile, not from load.
+
+## Clean up
+
+Point `kubectl` and Helm at the workload cluster first: the demo's own kubeconfig is gone once it exits, and an inherited `KUBECONFIG` usually points at the management cluster.
+
+```bash
+nvkectl get kubeconfig <WORKLOAD_CLUSTER> --output-file workload.kubeconfig
+export KUBECONFIG=$PWD/workload.kubeconfig
+helm uninstall <MOKKA_RELEASE> --namespace mokka
+nvkectl delete nodepool <POOL> --cluster <WORKLOAD_CLUSTER>
+helm uninstall gpu-operator --namespace gpu-operator
+```
+
+`<MOKKA_RELEASE>` is `nvml-mock` unless you set `MOKKA_RELEASE`. GPU Operator serves every Mokka release on the cluster, so skip the last command while another one is still installed.
+
+A node that loses Mokka keeps the `nvidia.com/gpu.product` label GPU Feature Discovery set, while its allocatable GPUs drop to 0.
