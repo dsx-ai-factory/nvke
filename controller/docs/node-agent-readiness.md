@@ -71,8 +71,8 @@ nvke_controller_node_condition_elapsed_seconds{condition="nodeAgentReady"} > 900
 
 The same metric reports `kubernetesReady` under the same filter, and `rebooting`
 while it is `True`. The value spans the whole reboot workflow, which retries
-without limit, while `NODE_REBOOT_MAX_TIMEOUT` (default 1h) caps each attempt's
-wait. The clock starts when `rebooting` is set, before the wait, so a value above
+without limit, while `NODE_REBOOT_MAX_TIMEOUT` (default 1h) caps each hard-reboot
+wait. The soft-reboot wait uses `NODE_REBOOT_INITIAL_TIMEOUT` capped at 30m. The clock starts when `rebooting` is set, before the wait, so a value above
 3600 marks a long-running reboot. With the default 30m
 `NODE_REBOOT_INITIAL_TIMEOUT` it usually means at least one wait timed out:
 
