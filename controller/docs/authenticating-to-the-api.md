@@ -204,7 +204,8 @@ Steps 1–4 are **authentication**: is this token real. Step 5 is **admission**:
 is this caller allowed in. They fail differently, which is why the status codes
 differ. See the table below.
 
-NVKE does no authorization beyond that. Every admitted caller can do everything.
+With [authorization](../../docs/operate/api-authorization.md) off, every admitted caller
+can do everything.
 
 ## When it doesn't work
 
@@ -214,6 +215,7 @@ NVKE does no authorization beyond that. Every admitted caller can do everything.
 | `401` and your token looks fine | Almost always the audience. | Re-read it with `hack/nvke-token.sh --audience` and mint again. A wrong audience and no token at all are the same 401. |
 | `401` after it worked a minute ago | The token expired. | Mint another. They're short-lived by design. |
 | `403` | The token is valid; the subject isn't admitted. | You're minting for the wrong service account, or the `admit` rules don't list yours. A different token won't help. |
+| `403` `{"message":"Not authorized"}` | You're admitted, but no role you hold allows the operation. | Grant your service account a role in `apiAuthz.authorizer.localBundle.config`. The `"logger":"authz"` log line names your subject and the action. |
 | `200` for everything, even garbage tokens | Authentication is off, or NVKE is permissive. | Check `AUTH_CONFIG_PATH` on the deployment, and `apiAuth.enabled` and `apiAuth.permissive` in its `nvke-controller-config`. |
 | `error: failed to create token` | Your kubeconfig identity can't mint for that service account. | You need `create` on `serviceaccounts/token` for it. `deploy/k8s/nvke-auth-dev.yaml` grants this locally; apply it, or run `tilt up`. |
 
