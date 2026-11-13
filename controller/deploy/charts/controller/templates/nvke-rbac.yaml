@@ -217,6 +217,10 @@ data:
       - nonResourceURLs: ["/"]
         verbs: ["get"]
     {{- if .Values.controllers.bootstrap.enabled }}
+      - apiGroups: ["certificates.k8s.io"]
+        resources: ["signers"]
+        resourceNames: ["kubernetes.io/kube-apiserver-client-kubelet"]
+        verbs: ["approve"]
       - apiGroups: ["rbac.authorization.k8s.io"]
         resources: ["clusterrolebindings"]
         verbs: ["create"]
