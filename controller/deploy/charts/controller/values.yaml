@@ -86,6 +86,14 @@ controllers:
     # -- Run controllers that watch NICo infrastructure resources.
     enabled: true
 
+kubeVip:
+  # -- Optional local kube-vip ASN. Override to match the site's tenant-host ASN policy.
+  localASN: 65100
+  # -- Optional static peer ASN when metadata lookup is not selected. This RFC 6996
+  # private-use default matches NICo's base configuration; override it to
+  # match the site's BGP peer ASN.
+  staticPeerASN: 4294967000
+
 nodeAgent:
   readiness:
     # -- Maximum simultaneous node-agent readiness reconciles.

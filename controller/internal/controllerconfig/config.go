@@ -28,6 +28,8 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nvke/auth/authn"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 )
 
 // Config is the top-level shape of nvke-controller-config's config.yaml key. It
@@ -67,6 +69,13 @@ type Config struct {
 	AllowControlPlaneWithoutVIP              bool                       `json:"allowControlPlaneWithoutVIP"`
 	APIAuth                                  APIAuthConfig              `json:"apiAuth"`
 	APIAuthz                                 APIAuthzConfig             `json:"apiAuthz"`
+	KubeVip                                  KubeVipConfig              `json:"kubeVip"`
+}
+
+// KubeVipConfig configures kube-vip BGP ASNs.
+type KubeVipConfig struct {
+	LocalASN      uint32 `json:"localASN"`
+	StaticPeerASN uint32 `json:"staticPeerASN"`
 }
 
 // FieldManagerConfig groups the Server-Side-Apply field manager names, mirroring
@@ -350,7 +359,15 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("invalid controller config %q: %w", path, err)
 	}
 
-	var cfg Config
+	// Default optional ASNs before decoding so omitted keys preserve existing
+	// behavior, while explicit zero values are still rejected by Validate.
+	kubeVipDefaults := (config.KubeVipConfig{}).WithDefaults()
+	cfg := Config{
+		KubeVip: KubeVipConfig{
+			LocalASN:      kubeVipDefaults.LocalASN,
+			StaticPeerASN: kubeVipDefaults.StaticPeerASN,
+		},
+	}
 	strictErrs, err := kjson.UnmarshalStrict(jsonBytes, &cfg)
 	if err != nil {
 		return nil, fmt.Errorf("parse controller config %q: %w", path, err)
@@ -497,6 +514,9 @@ func (c *Config) Validate() error {
 
 	if err := c.AgentReadiness.validate(); err != nil {
 		return fmt.Errorf("agentReadiness: %w", err)
+	}
+	if c.KubeVip.LocalASN == 0 || c.KubeVip.StaticPeerASN == 0 {
+		return errors.New("kubeVip.localASN and kubeVip.staticPeerASN must be greater than 0")
 	}
 
 	return nil

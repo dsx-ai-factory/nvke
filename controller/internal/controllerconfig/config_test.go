@@ -1441,3 +1441,52 @@ func TestCheckAuthSource(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadKubeVipASNs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		settings      string
+		localASN      uint32
+		staticPeerASN uint32
+	}{
+		{name: "omitted", localASN: 65100, staticPeerASN: 4294967000},
+		{name: "empty", settings: "kubeVip: {}\n", localASN: 65100, staticPeerASN: 4294967000},
+		{name: "null", settings: "kubeVip: null\n", localASN: 65100, staticPeerASN: 4294967000},
+		{name: "local override", settings: "kubeVip:\n  localASN: 64512\n", localASN: 64512, staticPeerASN: 4294967000},
+		{name: "peer override", settings: "kubeVip:\n  staticPeerASN: 4200000000\n", localASN: 65100, staticPeerASN: 4200000000},
+		{
+			name:          "both overrides",
+			settings:      "kubeVip:\n  localASN: 64512\n  staticPeerASN: 4200000000\n",
+			localASN:      64512,
+			staticPeerASN: 4200000000,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			file, err := controllerconfig.Load(writeConfig(t, minimalConfig+tt.settings))
+			require.NoError(t, err)
+			var cfg config.Config
+			file.ApplyTo(&cfg)
+			require.Equal(t, tt.localASN, cfg.KubeVip.LocalASN)
+			require.Equal(t, tt.staticPeerASN, cfg.KubeVip.StaticPeerASN)
+		})
+	}
+}
+
+func TestValidateKubeVipASNs(t *testing.T) {
+	t.Parallel()
+
+	for _, key := range []string{"localASN", "staticPeerASN"} {
+		for _, value := range []string{"0", "-1", "4294967296", "1.5", "invalid", "true"} {
+			t.Run(key+"/"+value, func(t *testing.T) {
+				t.Parallel()
+				_, err := controllerconfig.Load(writeConfig(t, minimalConfig+"kubeVip:\n  "+key+": "+value+"\n"))
+				require.Error(t, err)
+			})
+		}
+	}
+}

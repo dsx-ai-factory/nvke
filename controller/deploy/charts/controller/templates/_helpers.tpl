@@ -187,6 +187,19 @@ controller its own default of profilesDir/runbooks.
 {{- end -}}
 {{- end }}
 
+{{/* Render uint32 ASNs as decimal integers, including Helm's float64 values. */}}
+{{- define "controller.kubeVipASN" -}}
+{{- $value := index . 0 -}}
+{{- if or (kindIs "invalid" $value) (eq (toString $value) "") -}}
+{{- $value = index . 1 -}}
+{{- end -}}
+{{- $asn := int64 $value -}}
+{{- if or (kindIs "bool" $value) (le $asn 0) (gt $asn 4294967295) (ne (float64 $value) (float64 $asn)) -}}
+{{- fail (printf "kubeVip.%s must be an integer between 1 and 4294967295" (index . 2)) -}}
+{{- end -}}
+{{- $asn -}}
+{{- end }}
+
 {{/*
 (list value goDefault): the value, or goDefault when it is null or empty, as the
 controller treats an empty variable. sprig's default would also replace false and 0.
