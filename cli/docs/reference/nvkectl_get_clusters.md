@@ -19,9 +19,17 @@ List tenant clusters on the management plane.
 
 Naming clusters narrows the listing to them, in the order given.
 
+With -o json or -o yaml, one name prints that cluster as a single object. No
+name, or several, prints a list of clusters.
+
 Example — every cluster:
 ```
 nvkectl get clusters
+```
+
+Example — one cluster, as JSON:
+```
+nvkectl get clusters prod -o json
 ```
 
 Example — two clusters, as YAML:

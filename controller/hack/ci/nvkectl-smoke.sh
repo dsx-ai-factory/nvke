@@ -693,12 +693,12 @@ nvkectl_smoke_write_assertions() {
     return 1
   fi
 
-  # Exactly one element, ours.
+  # One name prints one object, ours, not a list.
   if ! out="$(nvkectl_exec get clusters "${name}" -o json 2>&1)"; then
     log "nvkectl smoke: 'get clusters ${name} -o json' failed: ${out}" >&2
     return 1
   fi
-  if ! jq -e --arg n "${name}" 'length == 1 and .[0].name == $n' <<<"${out}" >/dev/null; then
+  if ! jq -e --arg n "${name}" 'type == "object" and .name == $n' <<<"${out}" >/dev/null; then
     log "nvkectl smoke: 'get clusters ${name} -o json' did not return exactly our cluster: ${out}" >&2
     return 1
   fi
@@ -719,7 +719,7 @@ nvkectl_smoke_write_assertions() {
     log "nvkectl smoke: 'get clusters ${name} -o json' failed after patch: ${out}" >&2
     return 1
   fi
-  if ! jq -e '.[0].teleportEnabled == true' <<<"${out}" >/dev/null; then
+  if ! jq -e '.teleportEnabled == true' <<<"${out}" >/dev/null; then
     log "nvkectl smoke: 'patch cluster' did not apply teleportEnabled=true: ${out}" >&2
     return 1
   fi
@@ -738,7 +738,7 @@ EOF
     log "nvkectl smoke: 'get clusters ${name} -o json' failed after --patch-file: ${out}" >&2
     return 1
   fi
-  if ! jq -e '.[0].teleportEnabled == false' <<<"${out}" >/dev/null; then
+  if ! jq -e '.teleportEnabled == false' <<<"${out}" >/dev/null; then
     log "nvkectl smoke: '--patch-file' did not apply teleportEnabled=false: ${out}" >&2
     return 1
   fi
@@ -820,7 +820,7 @@ nvkectl_smoke_nodepool_round_trip() {
     log "nvkectl smoke: 'get clusters ${cluster} -o json' failed before the node pool round trip: ${out}" >&2
     return 1
   fi
-  cluster_id="$(jq -r '.[0].id // empty' <<<"${out}")"
+  cluster_id="$(jq -r '.id // empty' <<<"${out}")"
   if [[ -z "${cluster_id}" ]]; then
     log "nvkectl smoke: no cluster id for ${cluster}: ${out}" >&2
     return 1

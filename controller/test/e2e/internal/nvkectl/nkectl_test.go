@@ -154,6 +154,34 @@ func TestClusterNotFoundIn(t *testing.T) {
 	}
 }
 
+func TestDecodeNamedCluster(t *testing.T) {
+	tests := []struct {
+		name    string
+		out     string
+		wantErr string
+	}{
+		{name: "one object", out: `{"name":"alpha","id":"0f8f5e0c-8a4e-4b8e-9c55-1a2b3c4d5e6f"}` + "\n"},
+		{name: "one-element list from an older nvkectl", out: `[{"name":"alpha","id":"0f8f5e0c-8a4e-4b8e-9c55-1a2b3c4d5e6f"}]`},
+		{name: "empty list", out: `[]`, wantErr: "returned 0 clusters, want exactly 1"},
+		{name: "two-element list", out: `[{"name":"alpha"},{"name":"alpha"}]`, wantErr: "returned 2 clusters, want exactly 1"},
+		{name: "another cluster", out: `{"name":"beta"}`, wantErr: `returned cluster "beta"`},
+		{name: "not JSON", out: `Error: boom`, wantErr: "parsing `get clusters alpha -o json`"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cluster, err := decodeNamedCluster(tt.out, "alpha")
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				require.Nil(t, cluster)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "alpha", cluster.Name)
+			require.Equal(t, "0f8f5e0c-8a4e-4b8e-9c55-1a2b3c4d5e6f", cluster.ID.String())
+		})
+	}
+}
+
 // CleanupCreated sweeps what trackCreated recorded, so a name missing from it
 // is a cluster nothing will remove.
 func TestTrackCreated(t *testing.T) {

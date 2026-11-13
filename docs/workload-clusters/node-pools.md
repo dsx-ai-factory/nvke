@@ -35,7 +35,7 @@ A node pool is a group of worker nodes that share an NVIDIA Infra Controller (NI
 1. Find the values the pool needs.
 
    ```bash
-   nvkectl get clusters <WORKLOAD_CLUSTER> -o json | jq -r '.[0].id'
+   nvkectl get clusters <WORKLOAD_CLUSTER> -o json | jq -r '.id'
    ```
 
    The output is the cluster ID. You also need:
