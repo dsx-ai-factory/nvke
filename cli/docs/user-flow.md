@@ -284,8 +284,8 @@ kubeconfig from step 6.
 ### 11. Patch the tenant cluster
 
 ```bash
-# Bump the Kubernetes version
-nvkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: 1.31.0'
+# Turn on control-plane node recycling with one surge node
+nvkectl patch cluster my-cluster --patch '{enableCPNodeRecycling: true, controlPlaneConfig: {maxSurge: 1}}'
 
 # From a patch file
 nvkectl patch cluster my-cluster --patch-file patch.yaml
