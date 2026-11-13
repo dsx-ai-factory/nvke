@@ -144,7 +144,7 @@ subscriptions:
   # pages again.
   - subscriber: nvke-qualification-pipeline
     additional_mentions:
-      - "<!subteam^S09NXLAG58V|@dgxc-hippo-release-engineering-on-call-primary>"
+      - "<!subteam^S09NXLAG58V>"
     events:
       - name: "qualification:artifacts-timeout"
         notification: artifacts-timeout
