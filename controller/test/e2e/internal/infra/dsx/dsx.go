@@ -200,7 +200,7 @@ func New(opts Options) (*Provider, error) {
 		site:         site,
 		client:       standard.NewAPIClient(cfg),
 		createClient: standard.NewAPIClient(createCfg),
-		token:        newTokenSource(opts.HTTPClient, opts.Issuer, site.Key),
+		token:        newSiteTokenSource(opts.HTTPClient, opts.Issuer, site),
 	}, nil
 }
 

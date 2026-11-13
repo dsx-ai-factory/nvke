@@ -66,6 +66,12 @@ func (f *fakeNico) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		tokenPath = "/token"
 	}
 	if r.URL.Path == tokenPath {
+		// A realm issuer, like Keycloak, has no carbide scope.
+		if f.tokenPath != "" && r.FormValue("scope") != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"invalid_scope"}`))
+			return
+		}
 		f.minted++
 		_, _ = w.Write([]byte(`{"access_token":"minted"}`))
 		return
@@ -679,5 +685,8 @@ func TestProvisionNodeMintsAtTheIssuerPathOverThePrivateCA(t *testing.T) {
 	}
 	if want := srv.URL + issuerPath + "/token"; client.TokenURL != want {
 		t.Errorf("TokenURL = %q, want %q", client.TokenURL, want)
+	}
+	if client.Scope != "" {
+		t.Errorf("CAPNICo is handed scope %q, which the realm rejects", client.Scope)
 	}
 }

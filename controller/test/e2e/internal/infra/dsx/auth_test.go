@@ -30,6 +30,7 @@ type issuerStub struct {
 	gotID     string
 	gotSecret string
 	gotScope  string
+	hasScope  bool
 	calls     int
 }
 
@@ -40,6 +41,7 @@ func (s *issuerStub) server(t *testing.T) *httptest.Server {
 		s.gotID, s.gotSecret, _ = r.BasicAuth()
 		_ = r.ParseForm()
 		s.gotScope = r.Form.Get("scope")
+		s.hasScope = r.Form.Has("scope")
 		w.WriteHeader(s.status)
 		_, _ = w.Write([]byte(s.body))
 	}))
@@ -124,6 +126,32 @@ func TestTokenPresentsTheDatahallsClient(t *testing.T) {
 	}
 	if stub.gotScope != tokenScope {
 		t.Errorf("scope = %q, want %q", stub.gotScope, tokenScope)
+	}
+}
+
+// A datahall minting from its own Keycloak realm is asked for no scope: the
+// realm has no tokenScope and rejects a request for it with 400 invalid_scope.
+func TestTokenAsksADatahallsOwnRealmForNoScope(t *testing.T) {
+	t.Setenv(testClientIDVar, "realm-client")
+	t.Setenv(testClientSecretVar, "realm-secret")
+
+	stub := &issuerStub{status: http.StatusOK, body: `{"access_token":"minted"}`}
+	srv := stub.server(t)
+	realm := Site{Key: testSite, API: srv.URL, IssuerPath: "/realms/r/protocol/openid-connect"}
+	if _, err := newSiteTokenSource(srv.Client(), srv.URL, realm).Token(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if stub.hasScope {
+		t.Errorf("asked a realm for scope %q, want none", stub.gotScope)
+	}
+
+	// SSA still gets tokenScope.
+	ssa := Site{Key: testSite, API: srv.URL}
+	if _, err := newSiteTokenSource(srv.Client(), srv.URL, ssa).Token(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if stub.gotScope != tokenScope {
+		t.Errorf("asked SSA for scope %q, want %q", stub.gotScope, tokenScope)
 	}
 }
 

@@ -162,6 +162,8 @@ type tokenSource struct {
 	client  *http.Client
 	issuer  string
 	siteKey string
+	// scope is asked for only when set.
+	scope string
 
 	mu      sync.Mutex
 	token   string
@@ -173,7 +175,25 @@ func newTokenSource(client *http.Client, issuer, siteKey string) *tokenSource {
 		client:  client,
 		issuer:  strings.TrimRight(strings.TrimSpace(issuer), "/"),
 		siteKey: siteKey,
+		scope:   tokenScope,
 	}
+}
+
+// newSiteTokenSource is newTokenSource asking for the scope site's issuer knows.
+func newSiteTokenSource(client *http.Client, issuer string, site Site) *tokenSource {
+	source := newTokenSource(client, issuer, site.Key)
+	source.scope = scopeFor(site)
+	return source
+}
+
+// scopeFor is the scope a datahall's tokens are asked for: tokenScope from SSA,
+// none from a datahall's own realm, which has no such scope and answers a
+// request for it with 400 invalid_scope.
+func scopeFor(site Site) string {
+	if strings.Trim(strings.TrimSpace(site.IssuerPath), "/") != "" {
+		return ""
+	}
+	return tokenScope
 }
 
 // credentials are the datahall's client, or an error naming the two variables
@@ -213,7 +233,10 @@ func (s *tokenSource) Token(ctx context.Context) (string, error) {
 
 // exchange trades a client for a bearer token, and says how long to reuse it.
 func (s *tokenSource) exchange(ctx context.Context, credentials clientCredentials) (string, time.Duration, error) {
-	form := url.Values{"grant_type": {"client_credentials"}, "scope": {tokenScope}}
+	form := url.Values{"grant_type": {"client_credentials"}}
+	if s.scope != "" {
+		form.Set("scope", s.scope)
+	}
 	// #nosec G704 -- the issuer is declared configuration for this run, which is
 	// what makes it overridable per deployment; it is not reached from a request
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.issuer+"/token", strings.NewReader(form.Encode()))
@@ -284,7 +307,7 @@ func MintToken(ctx context.Context, site Site) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("dsx: %w", err)
 	}
-	source := newTokenSource(client, issuerFor(site), site.Key)
+	source := newSiteTokenSource(client, issuerFor(site), site)
 	token, err := source.Token(ctx)
 	if err != nil {
 		return "", fmt.Errorf("dsx: %w", err)
@@ -324,6 +347,6 @@ func SSAClientFor(site Site) (SSAClient, error) {
 		TokenURL:     issuer + "/token",
 		ClientID:     credentials.ID,
 		ClientSecret: credentials.Secret,
-		Scope:        tokenScope,
+		Scope:        scopeFor(site),
 	}, nil
 }
