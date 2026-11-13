@@ -150,12 +150,19 @@ type NodeAgentServer struct {
 	NodeStatus *NodeStatus
 	mu         sync.Mutex // protects NodeStatus
 
+	// ValidateArgs reports whether a candidate node-agent argument list would
+	// parse as this binary's command line. Left nil, ReconfigureNodeAgentArgs
+	// skips the check; main wires it to the real flag set.
+	ValidateArgs func(args []string) error
+
 	encryptionMu                   sync.Mutex          // encryptionMu serializes all encryption-config mutations on this node.
 	rewriteActive                  bool                // protected by mu; true when a rewrite goroutine is active in this process.
 	activeOperations               map[string]struct{} // protected by mu; in-process liveness for generic async operations.
 	operationStartMu               sync.Mutex          // serializes generic operation start persistence and publish.
 	agentUpgradeMu                 sync.Mutex          // serializes durable self-upgrade admission on this node.
 	nodeAgentCfgMu                 sync.Mutex          // serializes NodeSpec/config.yaml writes
+	nodeAgentArgsMu                sync.Mutex          // serializes AGENT_ARGS environment-file rewrites
+	runningArgs                    []string            // overrides the running process arguments in tests
 	openVSwitchMu                  sync.Mutex          // serializes host network configuration changes
 	openVSwitchSettleDelay         time.Duration       // overrides the post-netplan settle delay in tests
 	openVSwitchConvergenceDelay    time.Duration       // overrides the asynchronous convergence poll delay in tests
