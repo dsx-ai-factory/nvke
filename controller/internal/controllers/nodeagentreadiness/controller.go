@@ -76,6 +76,17 @@ func (c *AgentReadinessController) Reconcile(ctx context.Context, key dbreconcil
 		return reconcile.Result{}, nil
 	}
 
+	// A node is created before the infrastructure provider allocates a machine,
+	// so its address can be empty for a while. Dialling an empty address
+	// resolves it to localhost, so the node is reported as not ready instead of
+	// being probed.
+	if node.IP == "" {
+		return c.recordReadiness(ctx, &node, nodeAgentProbe{
+			err:     agent.ErrNoAddress,
+			message: nodeHasNoAddressMessage,
+		})
+	}
+
 	probeCtx, cancel := context.WithTimeout(ctx, c.cfg.AgentReadiness.WithDefaults().Timeout)
 	defer cancel()
 
@@ -87,8 +98,17 @@ func (c *AgentReadinessController) Reconcile(ctx context.Context, key dbreconcil
 	if ctx.Err() != nil {
 		return reconcile.Result{}, ctx.Err()
 	}
-	probe := nodeAgentProbe{agentVersion: agentVersion, err: probeErr}
-	if !applyNodeAgentReadiness(&node, probe) {
+	return c.recordReadiness(ctx, &node, nodeAgentProbe{agentVersion: agentVersion, err: probeErr})
+}
+
+// recordReadiness stores the probe outcome on the node when it differs from
+// what is stored, and asks for the next probe.
+func (c *AgentReadinessController) recordReadiness(
+	ctx context.Context,
+	node *db.Node,
+	probe nodeAgentProbe,
+) (reconcile.Result, error) {
+	if !applyNodeAgentReadiness(node, probe) {
 		return reconcile.Result{RequeueAfter: c.requeueAfter()}, nil
 	}
 

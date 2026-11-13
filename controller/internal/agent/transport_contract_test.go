@@ -7,10 +7,25 @@ import (
 	"crypto/tls"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
+
+// A node without an IP address must not be dialed. The endpoint would be
+// ":<port>", which the resolver reads as localhost, so the dial would reach
+// whatever listens on the controller's own machine.
+func TestDialRefusesANodeWithoutAnAddress(t *testing.T) {
+	t.Parallel()
+
+	transport := &Transport{}
+	conn, cleanup, err := transport.Dial(t.Context(), db.Node{ID: uuid.New()})
+	require.ErrorIs(t, err, ErrNoAddress)
+	require.Nil(t, conn)
+	require.Nil(t, cleanup)
+}
 
 // The client identity follows the node's agent version, and only when the
 // new-URN identity is deployed.
