@@ -177,12 +177,12 @@ func (PublicMachineImage) Validate() error { return nil }
 // Validate leaves internal schema checks to datastore admission.
 func (MachineImage) Validate() error { return nil }
 
-// PublicNodeProfile reuses the complete approved spec/status of NodePoolRelease.
+// PublicNodeProfile reuses the complete approved spec/status of NodeProfile.
 // Only metadata is filtered automatically, by its explicit allowlist.
 // +kubebuilder:object:generate=false
 type PublicNodeProfile struct {
 	Metadata PublicNodeProfileMetadata `json:"metadata"`
-	Spec     NodePoolReleaseSpec       `json:"spec"`
+	Spec     NodeProfileSpec           `json:"spec"`
 }
 
 // PublicNodeProfileMetadata contains only the metadata approved for this public resource.
@@ -195,12 +195,12 @@ type PublicNodeProfileMetadata struct {
 }
 
 // Convert maps PublicNodeProfile to its datastore representation using matching JSON names.
-func (in PublicNodeProfile) Convert() (NodePoolRelease, error) {
-	return projection.JSON[NodePoolRelease](in)
+func (in PublicNodeProfile) Convert() (NodeProfile, error) {
+	return projection.JSON[NodeProfile](in)
 }
 
-// Convert exposes only the public fields of NodePoolRelease.
-func (in NodePoolRelease) Convert() (PublicNodeProfile, error) {
+// Convert exposes only the public fields of NodeProfile.
+func (in NodeProfile) Convert() (PublicNodeProfile, error) {
 	return projection.JSON[PublicNodeProfile](in)
 }
 
@@ -208,4 +208,4 @@ func (in NodePoolRelease) Convert() (PublicNodeProfile, error) {
 func (PublicNodeProfile) Validate() error { return nil }
 
 // Validate leaves internal schema checks to datastore admission.
-func (NodePoolRelease) Validate() error { return nil }
+func (NodeProfile) Validate() error { return nil }

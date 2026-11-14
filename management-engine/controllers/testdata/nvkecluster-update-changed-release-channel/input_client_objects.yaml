@@ -40,9 +40,9 @@ apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: pinned-release
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.8"
 spec:
+  kubernetes:
+    version: "1.34.8"
   machineImageRef:
     name: test-image
   machineInit:
@@ -59,9 +59,9 @@ apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: preview-release
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.8"
 spec:
+  kubernetes:
+    version: "1.34.8"
   machineImageRef:
     name: test-image
   machineInit:
@@ -75,7 +75,7 @@ spec:
         - echo preview-release
 ---
 apiVersion: service.nvke.nvidia.com/v1
-kind: NodePoolRelease
+kind: NodeProfile
 metadata:
   name: worker-preview-release
 spec:

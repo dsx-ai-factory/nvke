@@ -4,6 +4,8 @@ body:
     name: control-plane-v1
     uid: UID
   spec:
+    kubernetes:
+      version: 1.36.3
     lifecycle:
       deprecated: true
       hidden: false
@@ -17,7 +19,7 @@ headers:
   Cache-Control:
   - no-store
   Content-Length:
-  - "315"
+  - "349"
   Content-Type:
   - application/json
   Date:

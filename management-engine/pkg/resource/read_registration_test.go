@@ -140,12 +140,8 @@ func TestCatalogVersionFilterTransport(t *testing.T) {
 		source: source,
 		project: dependentProjector[v1.ClusterReleaseChannel](func(context.Context) (map[string]v1.ClusterRelease, error) {
 			return map[string]v1.ClusterRelease{
-				"release": {ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{v1.MachineInitKubernetesVersionAnnotation: "1.34.4"},
-				}},
-				"other-release": {ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{v1.MachineInitKubernetesVersionAnnotation: "1.35.1"},
-				}},
+				"release":       {Spec: v1.ClusterReleaseSpec{Kubernetes: v1.ClusterReleaseKubernetes{Version: "1.34.4"}}},
+				"other-release": {Spec: v1.ClusterReleaseSpec{Kubernetes: v1.ClusterReleaseKubernetes{Version: "1.35.1"}}},
 			}, nil
 		}),
 	}
@@ -232,7 +228,7 @@ func TestDependentReadRegistrationConstruction(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mux := http.NewServeMux()
-			registration := NewDependentReadRegistration[v1.NodePoolRelease, map[string]v1.MachineImage,
+			registration := NewDependentReadRegistration[v1.NodeProfile, map[string]v1.MachineImage,
 				v1.CatalogEntry[v1.NodeProfileCatalogSpec]]("/profiles", widgetInfo(OpGet, OpList), tc.prepare)
 			err := registration.Mount(mux, ClientConfig{})
 			require.Error(t, err)
@@ -249,15 +245,15 @@ func TestDependentReadRegistrationConstruction(t *testing.T) {
 
 func TestDependentReadRegistration(t *testing.T) {
 	nodes := ResourceInfo{
-		GVK: v1.SchemeGroupVersion.WithKind("NodePoolRelease"), Resource: "nodepoolreleases",
+		GVK: v1.SchemeGroupVersion.WithKind("NodeProfile"), Resource: "nodeprofiles",
 		Scope: ClusterScoped, Verbs: []Operation{OpGet},
 	}
 	images := ResourceInfo{
 		GVK: v1.SchemeGroupVersion.WithKind("MachineImage"), Resource: "machineimages", Scope: ClusterScoped,
 	}
-	source := v1.NodePoolRelease{
+	source := v1.NodeProfile{
 		Name: "hidden", ResourceVersion: "42",
-		Spec: v1.NodePoolReleaseSpec{Profile: "ubuntu-gpu", Tag: "2026.11",
+		Spec: v1.NodeProfileSpec{Profile: "ubuntu-gpu", Tag: "2026.11",
 			MachineImageRef: v1.MachineImageReference{Name: "image"}, Lifecycle: v1.ReleaseLifecycle{Hidden: true}},
 	}
 	image := v1.MachineImage{Name: "image", Spec: v1.MachineImageSpec{
@@ -277,7 +273,7 @@ func TestDependentReadRegistration(t *testing.T) {
 					{Name: images.Resource, Kind: images.GVK.Kind, Verbs: metav1.Verbs{"list"}},
 				},
 			})
-		case api + "/nodepoolreleases/hidden":
+		case api + "/nodeprofiles/hidden":
 			gets++
 			return jsonResponse(r, http.StatusOK, source)
 		default:
@@ -308,7 +304,7 @@ func TestDependentReadRegistration(t *testing.T) {
 			return byName, nil
 		}, nil
 	}
-	registration := NewDependentReadRegistration[v1.NodePoolRelease]("/profiles", nodes, prepare)
+	registration := NewDependentReadRegistration[v1.NodeProfile]("/profiles", nodes, prepare)
 	mux := http.NewServeMux()
 	require.NoError(t, registration.Mount(mux, cfg))
 	require.Equal(t, 1, prepares)

@@ -7,19 +7,19 @@ import "github.com/dsx-ai-factory/nvke/management-engine/pkg/projection"
 // NodeProfileCatalogSpec composes the included release and joined image fields.
 // +kubebuilder:object:generate=false
 type NodeProfileCatalogSpec struct {
-	CatalogNodePoolReleaseSpec `json:",inline"`
-	CatalogMachineImageSpec    `json:",inline"`
+	CatalogNodeProfileSpec  `json:",inline"`
+	CatalogMachineImageSpec `json:",inline"`
 }
 
 // CatalogView joins only the referenced image, preserving the release's Kubernetes handle.
 // Releases without a profile, tag, or referenced image have no catalog entry.
-func (in NodePoolRelease) CatalogView(images map[string]MachineImage) (CatalogEntry[NodeProfileCatalogSpec], bool, error) {
+func (in NodeProfile) CatalogView(images map[string]MachineImage) (CatalogEntry[NodeProfileCatalogSpec], bool, error) {
 	view := CatalogEntry[NodeProfileCatalogSpec]{Metadata: CatalogMetadata{Name: in.Name}}
 	if in.Spec.Profile == "" || in.Spec.Tag == "" {
 		return view, false, nil
 	}
-	release, err := projection.JSON[CatalogNodePoolReleaseSpec](in.Spec)
-	view.Spec.CatalogNodePoolReleaseSpec = release
+	release, err := projection.JSON[CatalogNodeProfileSpec](in.Spec)
+	view.Spec.CatalogNodeProfileSpec = release
 	if err != nil {
 		return view, false, err
 	}
@@ -32,4 +32,4 @@ func (in NodePoolRelease) CatalogView(images map[string]MachineImage) (CatalogEn
 }
 
 // CatalogVisible reports list discoverability. Named reads can still return hidden offerings.
-func (in NodePoolRelease) CatalogVisible() bool { return !in.Spec.Lifecycle.Hidden }
+func (in NodeProfile) CatalogVisible() bool { return !in.Spec.Lifecycle.Hidden }
