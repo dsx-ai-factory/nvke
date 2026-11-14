@@ -139,6 +139,11 @@ type Nico struct {
 	ClientID     string `json:"ClientID"`
 	ClientSecret string `json:"ClientSecret"`
 	Scope        string `json:"Scope"`
+
+	// CACertBase64 is the private CA the API is served under, base64 so the
+	// template can write it into the Secret's data on one line. Empty when the
+	// system roots verify the API.
+	CACertBase64 string `json:"CACertBase64"`
 }
 
 // NewNico is the CAPNICo configuration.
