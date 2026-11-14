@@ -32,12 +32,12 @@ type CatalogMachineImageSpec struct {
 	Architecture    string                 `json:"architecture"`
 }
 
-// CatalogNodePoolReleaseSpec contains only explicitly included source fields.
+// CatalogNodeProfileSpec contains only explicitly included source fields.
 // +kubebuilder:object:generate=false
-type CatalogNodePoolReleaseSpec struct {
+type CatalogNodeProfileSpec struct {
 	Lifecycle CatalogReleaseLifecycle `json:"lifecycle"`
-	Profile   ResourceName            `json:"profile,omitempty"`
-	Tag       string                  `json:"tag,omitempty"`
+	Profile   ResourceName            `json:"profile"`
+	Tag       string                  `json:"tag"`
 }
 
 // CatalogOperatingSystem contains only explicitly included source fields.

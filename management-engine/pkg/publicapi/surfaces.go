@@ -23,8 +23,8 @@ func Tenant() []resource.Registration {
 			Scope: resource.ClusterScoped, Verbs: []resource.Operation{resource.OpGet, resource.OpList},
 		}, prepareCatalogDependencies(
 			"ClusterRelease", "clusterreleases", (*v1.ClusterRelease).GetName)),
-		resource.NewDependentReadRegistration[v1.NodePoolRelease]("/v1/node-profiles", resource.ResourceInfo{
-			GVK: v1.SchemeGroupVersion.WithKind("NodePoolRelease"), Resource: "nodepoolreleases",
+		resource.NewDependentReadRegistration[v1.NodeProfile]("/v1/node-profiles", resource.ResourceInfo{
+			GVK: v1.SchemeGroupVersion.WithKind("NodeProfile"), Resource: "nodeprofiles",
 			Scope: resource.ClusterScoped, Verbs: []resource.Operation{resource.OpGet, resource.OpList},
 		}, prepareCatalogDependencies("MachineImage", "machineimages", (*v1.MachineImage).GetName),
 			"spec.profile", "spec.tag"),
@@ -38,6 +38,6 @@ func Operator() []resource.Registration {
 		MachineImage(resource.OpCreate, resource.OpGet, resource.OpList, resource.OpUpdate, resource.OpDelete),
 		ControlPlaneClass(resource.OpCreate, resource.OpGet, resource.OpList, resource.OpUpdate, resource.OpDelete),
 		ClusterReleaseChannel(resource.OpCreate, resource.OpGet, resource.OpList, resource.OpUpdate, resource.OpDelete),
-		NodePoolRelease(resource.OpCreate, resource.OpGet, resource.OpList, resource.OpUpdate, resource.OpDelete),
+		NodeProfile(resource.OpCreate, resource.OpGet, resource.OpList, resource.OpUpdate, resource.OpDelete),
 	}
 }

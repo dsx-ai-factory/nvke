@@ -3,10 +3,10 @@
 apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: 1.35.2
   name: cr-active
 spec:
+  kubernetes:
+    version: "1.35.2"
   machineImageRef:
     name: img-ubuntu
   machineInit:
@@ -17,10 +17,10 @@ spec:
 apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: 1.35.2
   name: cr-deprecated
 spec:
+  kubernetes:
+    version: "1.35.2"
   lifecycle:
     deprecated: true
   machineImageRef:
@@ -33,10 +33,10 @@ spec:
 apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: 1.35.2
   name: cr-hidden
 spec:
+  kubernetes:
+    version: "1.35.2"
   lifecycle:
     hidden: true
   machineImageRef:

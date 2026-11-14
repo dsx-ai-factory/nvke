@@ -77,7 +77,7 @@ func (in ClusterReleaseChannel) CatalogView(releases map[string]ClusterRelease) 
 			if !found || !release.DeletionTimestamp.IsZero() || release.Spec.Lifecycle.Hidden || release.Spec.Lifecycle.Deprecated {
 				continue
 			}
-			parsed, err := version.ParseSemantic(release.Annotations[MachineInitKubernetesVersionAnnotation])
+			parsed, err := version.ParseSemantic(release.Spec.Kubernetes.Version)
 			if err != nil || parsed.Major() != selectorVersion.Major() || parsed.Minor() != selectorVersion.Minor() {
 				continue
 			}

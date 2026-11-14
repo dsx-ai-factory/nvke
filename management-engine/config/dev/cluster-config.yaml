@@ -22,10 +22,9 @@ apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: docker-1.36.4
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.36.4"
-    service.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
 spec:
+  kubernetes:
+    version: "1.36.4"
   machineImageRef:
     name: management-engine-docker-node
   machineInit:
@@ -38,7 +37,7 @@ spec:
         - echo success > /run/cluster-api/bootstrap-success.complete
 ---
 apiVersion: service.nvke.nvidia.com/v1
-kind: NodePoolRelease
+kind: NodeProfile
 metadata:
   name: docker-worker-1.36.4
 spec:

@@ -36,9 +36,9 @@ apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: current-release
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.4"
 spec:
+  kubernetes:
+    version: "1.34.4"
   machineImageRef:
     name: test-image
   machineInit:
@@ -55,9 +55,9 @@ apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: eligible-release
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.4"
 spec:
+  kubernetes:
+    version: "1.34.4"
   machineImageRef:
     name: test-image
   machineInit:
@@ -74,9 +74,9 @@ apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: young-release
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.4"
 spec:
+  kubernetes:
+    version: "1.34.4"
   machineImageRef:
     name: test-image
   machineInit:

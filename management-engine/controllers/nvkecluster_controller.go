@@ -71,7 +71,7 @@ type NVKEClusterReconciler struct {
 
 // +kubebuilder:rbac:groups=service.nvke.nvidia.com,resources=nvkeclusters,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=service.nvke.nvidia.com,resources=nvkeclusters/status,verbs=update;patch
-// +kubebuilder:rbac:groups=service.nvke.nvidia.com,resources=controlplaneclasses;clusterreleases;clusterreleasechannels;machineimages;nodepoolreleases,verbs=get;list;watch
+// +kubebuilder:rbac:groups=service.nvke.nvidia.com,resources=controlplaneclasses;clusterreleases;clusterreleasechannels;machineimages;nodeprofiles,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
 func (r *NVKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, retErr error) {
@@ -453,43 +453,42 @@ func (r *NVKEClusterReconciler) resolveClusterRelease(ctx context.Context, clust
 }
 
 func clusterReleaseKubernetesVersion(release *internalv1.ClusterRelease) (*version.Version, error) {
-	raw := release.Annotations[internalv1.MachineInitKubernetesVersionAnnotation]
-	parsed, err := version.ParseSemantic(raw)
+	parsed, err := version.ParseSemantic(release.Spec.Kubernetes.Version)
 	if err != nil {
-		return nil, fmt.Errorf("ClusterRelease %q must declare an exact Kubernetes version in annotation %s: %w", release.Name, internalv1.MachineInitKubernetesVersionAnnotation, err)
+		return nil, fmt.Errorf("ClusterRelease %q must declare an exact Kubernetes version in spec.kubernetes.version: %w", release.Name, err)
 	}
 	return parsed, nil
 }
 
-func (r *NVKEClusterReconciler) resolveNodePoolRelease(ctx context.Context, pool *internalv1.NodePool, pinned *internalv1.ReleaseReference) (*internalv1.NodePoolRelease, *internalv1.MachineImage, error) {
-	var release *internalv1.NodePoolRelease
+func (r *NVKEClusterReconciler) resolveNodeProfile(ctx context.Context, pool *internalv1.NodePool, pinned *internalv1.ReleaseReference) (*internalv1.NodeProfile, *internalv1.MachineImage, error) {
+	var release *internalv1.NodeProfile
 	if pinned != nil {
 		var err error
-		if release, err = r.getPinnedNodePoolRelease(ctx, pool, pinned); err != nil {
+		if release, err = r.getPinnedNodeProfile(ctx, pool, pinned); err != nil {
 			return nil, nil, err
 		}
 	}
 	if release == nil {
 		var err error
-		if release, err = r.matchNodePoolRelease(ctx, pool); err != nil {
+		if release, err = r.matchNodeProfile(ctx, pool); err != nil {
 			return nil, nil, err
 		}
 	}
 	var image internalv1.MachineImage
 	imageName := string(release.Spec.MachineImageRef.Name)
 	if err := r.Get(ctx, client.ObjectKey{Name: imageName}, &image); err != nil {
-		return nil, nil, fmt.Errorf("get MachineImage %q for NodePoolRelease %q: %w", imageName, release.Name, err)
+		return nil, nil, fmt.Errorf("get MachineImage %q for NodeProfile %q: %w", imageName, release.Name, err)
 	}
 	return release, &image, nil
 }
 
-func (r *NVKEClusterReconciler) getPinnedNodePoolRelease(ctx context.Context, pool *internalv1.NodePool, pinned *internalv1.ReleaseReference) (*internalv1.NodePoolRelease, error) {
-	var release internalv1.NodePoolRelease
+func (r *NVKEClusterReconciler) getPinnedNodeProfile(ctx context.Context, pool *internalv1.NodePool, pinned *internalv1.ReleaseReference) (*internalv1.NodeProfile, error) {
+	var release internalv1.NodeProfile
 	if err := r.Get(ctx, client.ObjectKey{Name: string(pinned.Name)}, &release); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get pinned NodePoolRelease %q: %w", pinned.Name, err)
+		return nil, fmt.Errorf("get pinned NodeProfile %q: %w", pinned.Name, err)
 	}
 	if string(release.Spec.Profile)+":"+release.Spec.Tag != string(pool.NodeProfile) {
 		return nil, nil
@@ -497,12 +496,12 @@ func (r *NVKEClusterReconciler) getPinnedNodePoolRelease(ctx context.Context, po
 	return &release, nil
 }
 
-func (r *NVKEClusterReconciler) matchNodePoolRelease(ctx context.Context, pool *internalv1.NodePool) (*internalv1.NodePoolRelease, error) {
-	var list internalv1.NodePoolReleaseList
+func (r *NVKEClusterReconciler) matchNodeProfile(ctx context.Context, pool *internalv1.NodePool) (*internalv1.NodeProfile, error) {
+	var list internalv1.NodeProfileList
 	if err := r.List(ctx, &list); err != nil {
-		return nil, fmt.Errorf("list NodePoolReleases for node profile %q: %w", pool.NodeProfile, err)
+		return nil, fmt.Errorf("list NodeProfiles for node profile %q: %w", pool.NodeProfile, err)
 	}
-	var matches []*internalv1.NodePoolRelease
+	var matches []*internalv1.NodeProfile
 	for i := range list.Items {
 		if string(list.Items[i].Spec.Profile)+":"+list.Items[i].Spec.Tag == string(pool.NodeProfile) {
 			matches = append(matches, &list.Items[i])
@@ -510,15 +509,15 @@ func (r *NVKEClusterReconciler) matchNodePoolRelease(ctx context.Context, pool *
 	}
 	switch len(matches) {
 	case 0:
-		return nil, fmt.Errorf("no NodePoolRelease publishes node profile %q", pool.NodeProfile)
+		return nil, fmt.Errorf("no NodeProfile publishes node profile %q", pool.NodeProfile)
 	case 1:
 	default:
-		ctrl.LoggerFrom(ctx).Error(nil, "node profile is published by more than one NodePoolRelease", "nodeProfile", pool.NodeProfile, "count", len(matches))
-		return nil, fmt.Errorf("node profile %q is published by more than one NodePoolRelease", pool.NodeProfile)
+		ctrl.LoggerFrom(ctx).Error(nil, "node profile is published by more than one NodeProfile", "nodeProfile", pool.NodeProfile, "count", len(matches))
+		return nil, fmt.Errorf("node profile %q is published by more than one NodeProfile", pool.NodeProfile)
 	}
 	release := matches[0]
 	if release.Spec.Lifecycle.Deprecated {
-		return nil, fmt.Errorf("NodePoolRelease %q for node profile %q is deprecated", release.Name, pool.NodeProfile)
+		return nil, fmt.Errorf("NodeProfile %q for node profile %q is deprecated", release.Name, pool.NodeProfile)
 	}
 	return release, nil
 }
@@ -572,7 +571,7 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 
 	observedPool, err := r.NVKEController.FindNodePool(ctx, observedCluster.Name, string(pool.Name))
 	if errors.Is(err, nvkecontroller.ErrNotFound) {
-		release, image, err := r.resolveNodePoolRelease(ctx, pool, status.ResolvedRelease)
+		release, image, err := r.resolveNodeProfile(ctx, pool, status.ResolvedRelease)
 		if err != nil {
 			return err
 		}
@@ -614,7 +613,7 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 	if observedPool.DesiredNodeCount != desiredCount {
 		update.DesiredNodeCount = &desiredCount
 	}
-	resolved, infra, resolveErr := r.resolveExistingNodePoolRelease(ctx, cluster, pool, nodePoolTemplate, status, observedPool)
+	resolved, infra, resolveErr := r.resolveExistingNodeProfile(ctx, cluster, pool, nodePoolTemplate, status, observedPool)
 	if infra != nil {
 		update.Infra = &api.InfraNodePoolProviderUpdate{
 			BootstrapFiles:     append([]api.CloudInitFile{}, infra.BootstrapFiles...),
@@ -639,8 +638,8 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 	return errors.Join(resolveErr, setNodePoolConditions(target))
 }
 
-func (r *NVKEClusterReconciler) resolveExistingNodePoolRelease(ctx context.Context, cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, status *internalv1.NodePoolStatus, observedPool *api.NodePool) (*internalv1.ReleaseReference, *api.InfraNodePoolProvider, error) {
-	release, image, err := r.resolveNodePoolRelease(ctx, pool, status.ResolvedRelease)
+func (r *NVKEClusterReconciler) resolveExistingNodeProfile(ctx context.Context, cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, status *internalv1.NodePoolStatus, observedPool *api.NodePool) (*internalv1.ReleaseReference, *api.InfraNodePoolProvider, error) {
+	release, image, err := r.resolveNodeProfile(ctx, pool, status.ResolvedRelease)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -655,7 +654,7 @@ func (r *NVKEClusterReconciler) resolveExistingNodePoolRelease(ctx context.Conte
 	return resolved, infra, nil
 }
 
-func renderNodePoolInfra(cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, release *internalv1.NodePoolRelease, image *internalv1.MachineImage) (*api.InfraNodePoolProvider, error) {
+func renderNodePoolInfra(cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, release *internalv1.NodeProfile, image *internalv1.MachineImage) (*api.InfraNodePoolProvider, error) {
 	variables, err := releaseTemplateVariables(release.Spec.MachineInit, image)
 	if err != nil {
 		return nil, err
