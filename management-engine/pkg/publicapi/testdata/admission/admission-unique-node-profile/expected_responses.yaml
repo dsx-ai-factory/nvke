@@ -1,0 +1,112 @@
+- body:
+    metadata:
+      creationTimestamp: "1970-01-01T00:00:00Z"
+      name: ubuntu-gpu-2026-11
+      uid: UID
+    spec:
+      lifecycle:
+        deprecated: false
+        hidden: false
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+      profile: ubuntu-gpu
+      tag: "2026.11"
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Length:
+    - "320"
+    Content-Type:
+    - application/json
+    Date:
+    - DATE
+    Etag:
+    - '"RESOURCE_VERSION"'
+  statusCode: 201
+- body:
+    code: invalidResource
+    status: 422
+    title: The desired state is invalid.
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Length:
+    - "80"
+    Content-Type:
+    - application/problem+json
+    Date:
+    - DATE
+  statusCode: 422
+- body:
+    metadata:
+      creationTimestamp: "1970-01-01T00:00:00Z"
+      name: ubuntu-cpu-2026-11
+      uid: UID
+    spec:
+      lifecycle:
+        deprecated: false
+        hidden: false
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+      profile: ubuntu-cpu
+      tag: "2026.11"
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Length:
+    - "320"
+    Content-Type:
+    - application/json
+    Date:
+    - DATE
+    Etag:
+    - '"RESOURCE_VERSION"'
+  statusCode: 201
+- body:
+    metadata:
+      creationTimestamp: "1970-01-01T00:00:00Z"
+      name: ubuntu-gpu-2026-12
+      uid: UID
+    spec:
+      lifecycle:
+        deprecated: false
+        hidden: false
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+      profile: ubuntu-gpu
+      tag: "2026.12"
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Length:
+    - "320"
+    Content-Type:
+    - application/json
+    Date:
+    - DATE
+    Etag:
+    - '"RESOURCE_VERSION"'
+  statusCode: 201
+- body:
+    code: alreadyExists
+    status: 409
+    title: The resource already exists.
+  headers:
+    Cache-Control:
+    - no-store
+    Content-Length:
+    - "77"
+    Content-Type:
+    - application/problem+json
+    Date:
+    - DATE
+  statusCode: 409

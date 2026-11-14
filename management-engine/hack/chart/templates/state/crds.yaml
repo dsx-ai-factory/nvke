@@ -9,4 +9,12 @@
 ---
 {{ toYaml $crd }}
 {{- end }}
+{{- /* Admission policies enforce rules the CRD schemas cannot express, so they share the CRDs' lifecycle. */}}
+{{- range $path, $_ := .Files.Glob "files/admission/validatingadmissionpolicy*.yaml" }}
+{{- $policy := fromYaml ($.Files.Get $path) }}
+{{- $retention := dict "helm.sh/resource-policy" "keep" "argocd.argoproj.io/sync-wave" "-1" "argocd.argoproj.io/sync-options" "Prune=false" }}
+{{- $_ := set $policy.metadata "annotations" (merge $retention (default dict $policy.metadata.annotations)) }}
+---
+{{ toYaml $policy }}
+{{- end }}
 {{- end }}

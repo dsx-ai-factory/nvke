@@ -10,6 +10,7 @@ types, generated CRDs, and controller-manager runtime.
 | --- | --- |
 | `apis/v1` | Resource types and scheme registration |
 | `config/crd/bases` | Generated CRDs for every kind, including MachineImage, ClusterRelease and NodePoolRelease |
+| `config/admission` | Admission policies for rules a CRD schema cannot express, such as one NodePoolRelease per profile and tag |
 | `cmd` | Connection configuration and manager startup |
 | `controllers` | Reconcilers |
 

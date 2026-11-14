@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# A node pool selects its NodePoolRelease by profile and tag, so no two releases
+# may publish the same pair. A CRD schema cannot compare objects, so this policy
+# checks every other NodePoolRelease. Profile and tag are immutable, so only
+# creates need checking. A release with the same name is left to the API
+# server's own already-exists check.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: unique-node-profile.service.nvke.nvidia.com
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: service.nvke.nvidia.com/v1
+    kind: NodePoolRelease
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [service.nvke.nvidia.com]
+      apiVersions: [v1]
+      resources: [nodepoolreleases]
+      operations: [CREATE]
+  validations:
+  - expression: >-
+      !has(object.spec.profile) || !has(object.spec.tag) ||
+      !has(params.spec.profile) || !has(params.spec.tag) ||
+      params.metadata.name == object.metadata.name ||
+      params.spec.profile != object.spec.profile || params.spec.tag != object.spec.tag
+    messageExpression: >-
+      'node profile ' + object.spec.profile + ':' + object.spec.tag +
+      ' is already published by NodePoolRelease ' + params.metadata.name
+    reason: Invalid

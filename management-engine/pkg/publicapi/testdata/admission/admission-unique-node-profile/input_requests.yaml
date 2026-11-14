@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# Releases may share a profile or a tag, but not both. A second release with the
+# same profile and tag is denied by the unique node profile admission policy,
+# and a release with the same name still gets the API server's already-exists response.
+- method: POST
+  path: /v1/node-profiles
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: ubuntu-gpu-2026-11
+    spec:
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+      profile: ubuntu-gpu
+      tag: "2026.11"
+- method: POST
+  path: /v1/node-profiles
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: ubuntu-gpu-2026-11-copy
+    spec:
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+      profile: ubuntu-gpu
+      tag: "2026.11"
+- method: POST
+  path: /v1/node-profiles
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: ubuntu-cpu-2026-11
+    spec:
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+      profile: ubuntu-cpu
+      tag: "2026.11"
+- method: POST
+  path: /v1/node-profiles
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: ubuntu-gpu-2026-12
+    spec:
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+      profile: ubuntu-gpu
+      tag: "2026.12"
+- method: POST
+  path: /v1/node-profiles
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: ubuntu-gpu-2026-11
+    spec:
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+      profile: ubuntu-gpu
+      tag: "2026.11"

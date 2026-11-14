@@ -1,0 +1,54 @@
+---
+items:
+- apiVersion: service.nvke.nvidia.com/v1
+  kind: NodePoolRelease
+  metadata:
+    creationTimestamp: null
+    generation: 1
+    name: ubuntu-cpu-2026-11
+  spec:
+    lifecycle:
+      deprecated: false
+      hidden: false
+    machineImageRef:
+      name: img-ubuntu
+    machineInit:
+      userDataTemplate: |
+        #cloud-config
+    profile: ubuntu-cpu
+    tag: "2026.11"
+- apiVersion: service.nvke.nvidia.com/v1
+  kind: NodePoolRelease
+  metadata:
+    creationTimestamp: null
+    generation: 1
+    name: ubuntu-gpu-2026-11
+  spec:
+    lifecycle:
+      deprecated: false
+      hidden: false
+    machineImageRef:
+      name: img-ubuntu
+    machineInit:
+      userDataTemplate: |
+        #cloud-config
+    profile: ubuntu-gpu
+    tag: "2026.11"
+- apiVersion: service.nvke.nvidia.com/v1
+  kind: NodePoolRelease
+  metadata:
+    creationTimestamp: null
+    generation: 1
+    name: ubuntu-gpu-2026-12
+  spec:
+    lifecycle:
+      deprecated: false
+      hidden: false
+    machineImageRef:
+      name: img-ubuntu
+    machineInit:
+      userDataTemplate: |
+        #cloud-config
+    profile: ubuntu-gpu
+    tag: "2026.12"
+metadata: {}

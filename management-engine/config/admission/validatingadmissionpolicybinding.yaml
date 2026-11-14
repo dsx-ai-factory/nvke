@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Evaluates the policy once against each existing NodePoolRelease. With no
+# existing release there is nothing to compare, so the create is allowed.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: unique-node-profile.service.nvke.nvidia.com
+spec:
+  policyName: unique-node-profile.service.nvke.nvidia.com
+  validationActions: [Deny]
+  paramRef:
+    selector: {}
+    parameterNotFoundAction: Allow
