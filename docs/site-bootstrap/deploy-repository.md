@@ -106,7 +106,7 @@ A manifest item holds `.yaml` files. Each one is applied with `kubectl apply --s
 A manifest item may carry a `release.yaml` that binds the image its YAML runs to an NVKR artifact. `deploy/nico/capnico/release.yaml`:
 
 ```yaml
-image: ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:v0.1.0
+image: ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:v0.3.0-rc.1
 artifact: capnico-controller
 ```
 
