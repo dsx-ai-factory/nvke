@@ -696,6 +696,16 @@ step_run() {
   # A run that was interrupted, or the suite run by hand, leaves its outputs
   # here, and the artifacts step would collect them as this run's.
   rm -f "${artifacts[@]}" site-bundle*
+  # GitHub masks a secret as it is stored, so a withheld URL's host, named
+  # alone in an error, would reach the job log, which this public
+  # repository publishes. withhold covers the artifacts.
+  if [ -n "${GITHUB_ACTIONS:-}" ]; then
+    local var host
+    while IFS= read -r var; do
+      host="$(host_of "${!var:-}")"
+      [ -z "${host}" ] || echo "::add-mask::${host}"
+    done < <(withheld_vars)
+  fi
   local keep=()
   if [ "${KEEP_SITE:-}" = "true" ]; then
     keep=(-e2e.keep-site)
@@ -771,17 +781,31 @@ step_run() {
     ${keep[@]+"${keep[@]}"} ${workers[@]+"${workers[@]}"} 2>&1 | log_to qualify-e2e.log
 }
 
+# The variables withhold scrubs and run masks.
+withheld_vars() {
+  compgen -v | grep -E '_JUMP_HOST$|^SSA_ISSUER$|^DSX_.*_API$' || true
+}
+
+# The host a URL names, which an error can carry without the rest of the
+# URL: a DNS lookup, a certificate that does not match.
+host_of() {
+  printf '%s' "$1" | sed -E 's|^[[:space:]]*[A-Za-z][A-Za-z0-9+.-]*://||; s|[/?#].*$||; s|:[0-9]*$||; s|[[:space:]]*$||'
+}
+
 # The suite names the jump host in its own errors ("not reachable
 # through ..."), and the SSA token exchange names its issuer in the
 # errors it returns. Both land in the log and the JUnit report, and
 # GitHub masks a secret in the job log but not in an uploaded artifact.
+# A DSX API host names its datahall and reaches the same places, in the
+# provider's errors and in any issuer built on it.
 #
 # Every declared host: a run reaches one of them, and which one is not
 # worth branching on here. Discovered by suffix rather than listed, so a
 # datahall added to environments/dsx.yaml is withheld by having named its
-# secret *_JUMP_HOST, with nothing to update here. A hand-written list
-# fails the other way: the value it omits is the one the suite names in
-# its errors and the artifact then publishes, with no error to notice.
+# secrets *_JUMP_HOST and DSX_*_API, with nothing to update here. A
+# hand-written list fails the other way: the value it omits is the one the
+# suite names in its errors and the artifact then publishes, with no error
+# to notice.
 step_withhold() {
   cd "${1:-${e2e}}"
   local var raw trimmed form value f
@@ -791,9 +815,9 @@ step_withhold() {
     # Both spellings. auth.go trims whitespace and a trailing slash
     # from the issuer before it uses one, so an issuer stored with a
     # slash reaches an error without it and a single literal match
-    # would leave that form in the artifact.
+    # would leave that form in the artifact. Then the host alone.
     trimmed="$(printf '%s' "${raw}" | sed 's#^[[:space:]]*##; s#[[:space:]]*$##; s#/*$##')"
-    for form in "${raw}" "${trimmed}"; do
+    for form in "${raw}" "${trimmed}" "$(host_of "${raw}")"; do
       [ -n "${form}" ] || continue
       value="$(printf '%s' "${form}" | sed 's/[][\.*^$/]/\\&/g')"
       for f in "${scrubbed[@]}"; do
@@ -805,7 +829,7 @@ step_withhold() {
         mv "${f}.withheld" "${f}"
       done
     done
-  done < <(compgen -v | grep -E '_JUMP_HOST$|^SSA_ISSUER$' || true)
+  done < <(withheld_vars)
 }
 
 # What the suite wrote, for a caller to collect after withhold.
