@@ -548,7 +548,7 @@ func copiedScript(t *testing.T) string {
 
 // dryRun runs the run step as a dry run from the copy, with the values a run
 // step reads and the two a stream's parameters set.
-func dryRun(t *testing.T, sh, copied, workers, suite string) (string, error) {
+func dryRun(t *testing.T, sh, copied, workers, suite string, extra ...string) (string, error) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), sh, copied, "run")
 	cmd.Env = []string{
@@ -561,6 +561,7 @@ func dryRun(t *testing.T, sh, copied, workers, suite string) (string, error) {
 		"NVKE_CONTROLLER_NAMESPACE=", "NVKE_CONTROLLER_SERVICE=",
 		"E2E_TENANT_WORKERS=" + workers, "SUITE_TIMEOUT_MINUTES=" + suite,
 	}
+	cmd.Env = append(cmd.Env, extra...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -594,6 +595,21 @@ func TestRunDerivesTheTimeoutsAndPassesTheWorkers(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestRunMasksTheHostOfAWithheldURL checks that on Actions the run step masks
+// a DSX API host alone, which GitHub's masking of the secret does not cover.
+func TestRunMasksTheHostOfAWithheldURL(t *testing.T) {
+	copied := copiedScript(t)
+	for _, sh := range shells(t) {
+		out, err := dryRun(t, sh, copied, "", "", "GITHUB_ACTIONS=true", "DSX_DATAHALL_3_API=https://api.hall3.example:443/")
+		if err != nil {
+			t.Fatalf("%s run: %v\n%s", sh, err, out)
+		}
+		if !strings.Contains(out, "::add-mask::api.hall3.example\n") {
+			t.Errorf("%s run: output = %q, want the API host masked", sh, out)
+		}
 	}
 }
 
@@ -657,6 +673,29 @@ func TestWithholdScrubsJumpHostsAndTheIssuer(t *testing.T) {
 			if string(got) != want {
 				t.Errorf("%s: %s scrubbed to %q, want %q", sh, f, got, want)
 			}
+		}
+	}
+}
+
+func TestWithholdScrubsTheDSXAPIHosts(t *testing.T) {
+	for _, sh := range shells(t) {
+		dir := t.TempDir()
+		text := "Post \"https://api.hall3.example/realms/r/token\": dial tcp: lookup api.hall3.example: no such host\nsite hall3-site kept\n"
+		if err := os.WriteFile(filepath.Join(dir, "qualify-e2e.log"), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		l := newSteps(t, sh, map[string]string{
+			"DSX_DATAHALL_3_API":     "https://api.hall3.example",
+			"DSX_DATAHALL_3_SITE_ID": "hall3-site",
+		})
+		l.step(true, "withhold", dir)
+		want := "Post \"[withheld]/realms/r/token\": dial tcp: lookup [withheld]: no such host\nsite hall3-site kept\n"
+		got, err := os.ReadFile(filepath.Join(dir, "qualify-e2e.log"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != want {
+			t.Errorf("%s: scrubbed to %q, want %q", sh, got, want)
 		}
 	}
 }

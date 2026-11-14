@@ -61,6 +61,13 @@ type Site struct {
 	// would dial a name that does not resolve.
 	API string `json:"api"`
 
+	// IssuerPath, when set, is where on the API host this datahall mints
+	// tokens, as an issuer base: the exchange posts to it plus "/token". A
+	// Keycloak datahall's is /realms/<realm>/protocol/openid-connect. Empty
+	// mints from SSA_ISSUER. A path rather than a URL, so the host stays in
+	// the api secret alone.
+	IssuerPath string `json:"issuerPath"`
+
 	// ID is the site id. Recorded, not sent: the declared API host already
 	// names the datahall, and no request this package builds carries it. Kept
 	// because it is what the datahall is called in the DSX APIs and in a
@@ -86,7 +93,15 @@ type Site struct {
 	// Each instance consumes a /31 out of the prefix and lands on the odd
 	// address, so a /29 holds four nodes. A /31 leaves no spare address, which
 	// is why a site controller here takes no control-plane VIP.
+	//
+	// Not set on a FLAT datahall: see AutoNetwork.
 	VpcPrefixID string `json:"vpcPrefixID"`
+
+	// AutoNetwork marks a FLAT VPC, which a datahall of hosts with no managed
+	// DPU is limited to. It has no prefix: NiCO attaches each instance to the
+	// host's in-band network itself, refuses explicit interfaces for those
+	// hosts, and reports the address on the machine rather than the instance.
+	AutoNetwork bool `json:"autoNetwork"`
 
 	// SSHKeyGroupID is attached to the instances created here. It governs
 	// Serial-over-LAN console access rather than the OS account's
@@ -237,12 +252,15 @@ func (s Site) validate() error {
 		{"api", s.API},
 		{"tenantID", s.TenantID},
 		{"vpcID", s.VpcID},
-		{"vpcPrefixID", s.VpcPrefixID},
 		{"sshKeyGroupID", s.SSHKeyGroupID},
 	} {
 		if strings.TrimSpace(field.value) == "" {
 			missing = append(missing, field.name)
 		}
+	}
+	hasPrefix := strings.TrimSpace(s.VpcPrefixID) != ""
+	if !s.AutoNetwork && !hasPrefix {
+		missing = append(missing, "vpcPrefixID")
 	}
 	// Instance types are required: they place the tenant nodes, which no
 	// other field can, and they are also where the site controller goes
@@ -280,6 +298,9 @@ func (s Site) validate() error {
 		if strings.TrimSpace(instanceType.ID) == "" {
 			missing = append(missing, where+".id")
 		}
+	}
+	if s.AutoNetwork && hasPrefix {
+		return fmt.Errorf("site %q declares both autoNetwork and vpcPrefixID, and a FLAT VPC has no prefix", s.Key)
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("site %q is missing %s", s.Key, strings.Join(missing, ", "))

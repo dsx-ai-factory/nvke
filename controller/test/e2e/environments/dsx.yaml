@@ -13,7 +13,9 @@
 # Credentials are not here. A datahall's SSA client comes from
 # DSX_<DATAHALL>_SSA_CLIENT_ID and _SECRET, whose names are derived from the
 # key the site is filed under --- so a credential scoped to one datahall cannot
-# be picked up by a run against another, and none of it belongs in a file.
+# be picked up by a run against another, and none of it belongs in a file. A
+# datahall that serves its API under a private CA supplies the certificate the
+# same way, as DSX_<DATAHALL>_CA_CERT.
 #
 # This file changes when the hardware does. A run needing a different Kubernetes
 # or a different OS image touches nothing here: neither is an infrastructure
@@ -141,3 +143,32 @@ infrastructure:
         - name: datahall-2-nvke-tenant
           id: "${DSX_DATAHALL_2_INSTANCE_TYPE_ID:-}"
           provides: {machineType: gpu, arch: arm64, gpu: vr200}
+
+    # arm64 GB300 NVL72 trays with no DPU on any of them, which limits this
+    # datahall to a FLAT VPC. Its ids, API host and CA are its own; nothing
+    # above is reused here.
+    datahall-3:
+      api: "${DSX_DATAHALL_3_API:-}"
+      id: "${DSX_DATAHALL_3_SITE_ID:-}"
+      tenantID: "${DSX_DATAHALL_3_TENANT_ID:-}"
+      vpcID: "${DSX_DATAHALL_3_VPC_ID:-}"
+
+      # Tokens come from a Keycloak realm on the API host rather than from
+      # SSA, and the API is served under a private CA: DSX_DATAHALL_3_CA_CERT.
+      issuerPath: /realms/nico/protocol/openid-connect
+
+      # FLAT, so no prefix: NiCO attaches each instance to the host's network
+      # itself, the tenant's machines included.
+      autoNetwork: true
+
+      sshKeyGroupID: "${DSX_DATAHALL_3_SSH_KEY_GROUP_ID:-}"
+      nodeUser: "${DSX_DATAHALL_3_NODE_USER:-}"
+      jumpHost: "${DSX_DATAHALL_3_JUMP_HOST:-}"
+      teleportLogin: "${DSX_DATAHALL_3_TELEPORT_LOGIN:-}"
+
+      # No machines declared, for the reason given above. No CPU-only machine
+      # either, so the site controller runs on a GPU tray.
+      instanceTypes:
+        - name: datahall-3-nvke-tenant
+          id: "${DSX_DATAHALL_3_INSTANCE_TYPE_ID:-}"
+          provides: {machineType: gpu, arch: arm64, gpu: gb300}

@@ -2063,7 +2063,8 @@ func nicoDSXSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterS
 
 // dsxNodePoolSpecs fills each pool from the datahall. forgeNodePoolSpecs with
 // the subnet half removed: a DSX site declares a prefix and nothing else, so
-// there is no choice to make between the two.
+// there is no choice to make between the two. A FLAT datahall declares no
+// prefix at all, and its pools attach by autoNetwork instead.
 func dsxNodePoolSpecs(
 	pools []nvke.NodePoolSpec,
 	defaultName, defaultNodeNamePrefix string,
@@ -2078,7 +2079,8 @@ func dsxNodePoolSpecs(
 			DesiredNodeCount:     pool.DesiredNodeCount,
 			SystemReservedMemory: cmp.Or(pool.SystemReservedMemory, "16Gi"),
 			InstanceTypeID:       cmp.Or(pool.InstanceTypeID, instanceType.ID),
-			VpcPrefixIDs:         defaultStrings(pool.VpcPrefixIDs, site.VpcPrefixID),
+			VpcPrefixIDs:         optionalStrings(pool.VpcPrefixIDs, site.VpcPrefixID),
+			AutoNetwork:          site.AutoNetwork,
 			SSHKeyGroupIDs:       defaultStrings(pool.SSHKeyGroupIDs, site.SSHKeyGroupID),
 		})
 	}
@@ -2098,7 +2100,8 @@ func dsxControlPlaneConfig(
 	out := *cfg
 	out.SystemReservedMemory = cmp.Or(out.SystemReservedMemory, "16Gi")
 	out.InstanceTypeID = cmp.Or(out.InstanceTypeID, instanceType.ID)
-	out.VpcPrefixIDs = defaultStrings(out.VpcPrefixIDs, site.VpcPrefixID)
+	out.VpcPrefixIDs = optionalStrings(out.VpcPrefixIDs, site.VpcPrefixID)
+	out.AutoNetwork = site.AutoNetwork
 	out.SSHKeyGroupIDs = defaultStrings(out.SSHKeyGroupIDs, site.SSHKeyGroupID)
 	return &out
 }

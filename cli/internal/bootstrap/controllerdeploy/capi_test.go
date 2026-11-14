@@ -657,8 +657,8 @@ func TestBootstrapManifest_NamesTheEmbeddedCAPNICoImage(t *testing.T) {
 //	crane digest <ref>
 func TestBootstrapManifest_CAPNICoDigestIsTheTagsDigest(t *testing.T) {
 	const (
-		ref    = "ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:v0.1.0"
-		digest = "sha256:4b6db5ce0b7f9e29f9c5257c4dc4831d23d6ff130790580d820dffb08b26d24c"
+		ref    = "ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:v0.3.0-rc.1"
+		digest = "sha256:167b85fac27ceceb041b3a7378dddca95c5c0286a34a8537b7c16415f6453db7"
 	)
 	listed := manifest.Load().Components[manifest.ComponentCAPNICo].Images[manifest.ImageCAPNICo]
 	if listed.Ref != ref || listed.Digest != digest {
