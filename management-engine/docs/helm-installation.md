@@ -212,6 +212,12 @@ RBAC lives in `config/rbac`. `make chart` packages generated copies for Helm.
 Kustomize consumes the canonical files directly. Wait for CRD establishment
 before creating release records.
 
+The chart also installs the admission policies in `config/admission`, under the
+same `state.crds.install` setting and with the same retention. One of them rejects
+a NodePoolRelease whose `profile` and `tag` are already published by another
+release. After a new install, the API server can take up to a minute to start
+enforcing it, and until then it rejects every NodePoolRelease create.
+
 `state.enabled=false` disables this chart's schemas and state RBAC/configuration
 together. `make manifests` regenerates canonical definitions, and `make chart`
 updates Helm output.

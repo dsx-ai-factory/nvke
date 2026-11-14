@@ -7,4 +7,5 @@ namePrefix: management-engine-
 resources:
 - namespace.yaml
 - ../crd
+- ../admission
 - ../rbac

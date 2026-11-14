@@ -944,6 +944,21 @@ func TestChartCRDInstall(t *testing.T) {
 				t.Fatalf("state.crds.install=%t: unexpected CRD %s", install, name)
 			}
 		}
+		for _, kind := range []string{"ValidatingAdmissionPolicy", "ValidatingAdmissionPolicyBinding"} {
+			policies := objectsOfKind(objects, kind)
+			if !install {
+				if len(policies) != 0 {
+					t.Fatalf("state.crds.install=false: unexpected %s", kind)
+				}
+				continue
+			}
+			if len(policies) != 1 || policies[0].GetName() != "unique-node-profile.service.nvke.nvidia.com" {
+				t.Fatalf("state.crds.install=true: want the unique node profile %s, got %d", kind, len(policies))
+			}
+			if policies[0].GetAnnotations()["helm.sh/resource-policy"] != "keep" {
+				t.Fatalf("%s must be retained with the CRDs", kind)
+			}
+		}
 	}
 }
 

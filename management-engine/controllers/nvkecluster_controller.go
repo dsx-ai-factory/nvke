@@ -502,25 +502,18 @@ func (r *NVKEClusterReconciler) matchNodePoolRelease(ctx context.Context, pool *
 	if err := r.List(ctx, &list); err != nil {
 		return nil, fmt.Errorf("list NodePoolReleases for node profile %q: %w", pool.NodeProfile, err)
 	}
-	var matches []*internalv1.NodePoolRelease
+	// The unique node profile admission policy allows at most one release per node profile.
 	for i := range list.Items {
-		if string(list.Items[i].Spec.Profile)+":"+list.Items[i].Spec.Tag == string(pool.NodeProfile) {
-			matches = append(matches, &list.Items[i])
+		release := &list.Items[i]
+		if string(release.Spec.Profile)+":"+release.Spec.Tag != string(pool.NodeProfile) {
+			continue
 		}
+		if release.Spec.Lifecycle.Deprecated {
+			return nil, fmt.Errorf("NodePoolRelease %q for node profile %q is deprecated", release.Name, pool.NodeProfile)
+		}
+		return release, nil
 	}
-	switch len(matches) {
-	case 0:
-		return nil, fmt.Errorf("no NodePoolRelease publishes node profile %q", pool.NodeProfile)
-	case 1:
-	default:
-		ctrl.LoggerFrom(ctx).Error(nil, "node profile is published by more than one NodePoolRelease", "nodeProfile", pool.NodeProfile, "count", len(matches))
-		return nil, fmt.Errorf("node profile %q is published by more than one NodePoolRelease", pool.NodeProfile)
-	}
-	release := matches[0]
-	if release.Spec.Lifecycle.Deprecated {
-		return nil, fmt.Errorf("NodePoolRelease %q for node profile %q is deprecated", release.Name, pool.NodeProfile)
-	}
-	return release, nil
+	return nil, fmt.Errorf("no NodePoolRelease publishes node profile %q", pool.NodeProfile)
 }
 
 func renderInfraTemplate(name, body string, variables map[string]any, target any) error {
