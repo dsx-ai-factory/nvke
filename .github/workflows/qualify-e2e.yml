@@ -30,7 +30,8 @@
 #
 # ASKED FOR, OR A BETA TAG. A run takes a bare-metal machine for up to an hour,
 # so it starts only when a person asks, by workflow_dispatch or one of the
-# `qualify-e2e`, `qualify-e2e-l40s` or `qualify-e2e-dsx` labels on a pull
+# `qualify-e2e`, `qualify-e2e-l40s`, `qualify-e2e-dsx` or
+# `qualify-e2e-dsx-gb300` labels on a pull
 # request from this repository (docs/qualification/overview.md), or when a
 # `vX.Y.Z-beta.N` tag is pushed. It is still not on a schedule and not on every
 # push, for three reasons, and the beta tag answers each of them:
@@ -196,6 +197,7 @@ on:
   # `labeled` and nothing else. Adding `qualify-e2e` is the request to run, and adding
   # `qualify-e2e-dry-run` is the request for a dry run. `qualify-e2e-l40s` runs
   # the l40s scope (Ubuntu 24.04 on site-1) instead of golden-path.
+  # `qualify-e2e-dsx-gb300` runs the dsx-gb300 scope.
   # `synchronize` is deliberately absent so that pushing to a labelled PR
   # does not quietly take another machine. To run again, remove the label and
   # add it back, or use the re-run button.
@@ -268,7 +270,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' ||
        github.event_name == 'push' ||
        (github.event.pull_request.head.repo.full_name == github.repository &&
-        contains(fromJSON('["qualify-e2e","qualify-e2e-dry-run","qualify-e2e-l40s","qualify-e2e-dsx"]'), github.event.label.name)))
+        contains(fromJSON('["qualify-e2e","qualify-e2e-dry-run","qualify-e2e-l40s","qualify-e2e-dsx","qualify-e2e-dsx-gb300"]'), github.event.label.name)))
     # The plan's own 15 minutes, plus the notification steps (two on a normal run)
     # at up to 3 minutes each. A job timeout cancels the job whatever continue-on-error says,
     # and a cancelled plan starts no lane, so a stalled notification must not be
@@ -325,12 +327,13 @@ jobs:
       # because a workflow_dispatch from a branch cannot reach Teleport at all:
       # the join token allows only refs/heads/main and refs/pull/*/merge. Until
       # this lands on main a label is the only way to run the DSX stream.
-      # qualify-e2e-l40s is the same for the site-1 L40S stream.
+      # qualify-e2e-l40s is the same for the site-1 L40S stream, and
+      # qualify-e2e-dsx-gb300 for the GB300 datahall, which dsx leaves out.
       #
       # A tag push does not read QUALIFY_E2E_SCOPE, so a beta qualifies
       # golden-path whatever a label run left there. qualify-run's env says
       # why none of the label runs' variables reach a tag push.
-      SCOPE: ${{ inputs.scope || (github.event.label.name == 'qualify-e2e-dsx' && 'dsx') || (github.event.label.name == 'qualify-e2e-l40s' && 'l40s') || (github.event_name != 'push' && vars.QUALIFY_E2E_SCOPE) || 'golden-path' }}
+      SCOPE: ${{ inputs.scope || (github.event.label.name == 'qualify-e2e-dsx' && 'dsx') || (github.event.label.name == 'qualify-e2e-l40s' && 'l40s') || (github.event.label.name == 'qualify-e2e-dsx-gb300' && 'dsx-gb300') || (github.event_name != 'push' && vars.QUALIFY_E2E_SCOPE) || 'golden-path' }}
       # The registry.yaml base names this, so the plan fails here when it is
       # unset rather than naming an artifact under no org. The same variable
       # the lanes build SITE_IMAGES from.
@@ -803,6 +806,16 @@ jobs:
       DSX_DATAHALL_2_NODE_USER: ${{ vars.DSX_DATAHALL_2_NODE_USER }}
       DSX_DATAHALL_2_TELEPORT_LOGIN: ${{ vars.DSX_DATAHALL_2_TELEPORT_LOGIN }}
       DSX_DATAHALL_2_JUMP_HOST: ${{ secrets.DSX_DATAHALL_2_JUMP_HOST }}
+      # datahall-3 is FLAT, so it has no VPC prefix.
+      DSX_DATAHALL_3_API: ${{ secrets.DSX_DATAHALL_3_API }}
+      DSX_DATAHALL_3_SITE_ID: ${{ vars.DSX_DATAHALL_3_SITE_ID }}
+      DSX_DATAHALL_3_TENANT_ID: ${{ vars.DSX_DATAHALL_3_TENANT_ID }}
+      DSX_DATAHALL_3_VPC_ID: ${{ vars.DSX_DATAHALL_3_VPC_ID }}
+      DSX_DATAHALL_3_SSH_KEY_GROUP_ID: ${{ vars.DSX_DATAHALL_3_SSH_KEY_GROUP_ID }}
+      DSX_DATAHALL_3_INSTANCE_TYPE_ID: ${{ vars.DSX_DATAHALL_3_INSTANCE_TYPE_ID }}
+      DSX_DATAHALL_3_NODE_USER: ${{ vars.DSX_DATAHALL_3_NODE_USER }}
+      DSX_DATAHALL_3_TELEPORT_LOGIN: ${{ vars.DSX_DATAHALL_3_TELEPORT_LOGIN }}
+      DSX_DATAHALL_3_JUMP_HOST: ${{ secrets.DSX_DATAHALL_3_JUMP_HOST }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1224,6 +1237,15 @@ jobs:
             "datahall-2 instance type|DSX_DATAHALL_2_INSTANCE_TYPE_ID||DSX_DATAHALL_2_INSTANCE_TYPE_ID|DSX_DATAHALL_2_INSTANCE_TYPE_ID"
             "datahall-2 Teleport login|DSX_DATAHALL_2_TELEPORT_LOGIN||DSX_DATAHALL_2_TELEPORT_LOGIN|DSX_DATAHALL_2_TELEPORT_LOGIN"
             "datahall-2 node user|DSX_DATAHALL_2_NODE_USER||DSX_DATAHALL_2_NODE_USER|DSX_DATAHALL_2_NODE_USER"
+            "datahall-3 jump host|DSX_DATAHALL_3_JUMP_HOST|||"
+            "datahall-3 api|DSX_DATAHALL_3_API|||"
+            "datahall-3 site|DSX_DATAHALL_3_SITE_ID||DSX_DATAHALL_3_SITE_ID|DSX_DATAHALL_3_SITE_ID"
+            "datahall-3 tenant|DSX_DATAHALL_3_TENANT_ID||DSX_DATAHALL_3_TENANT_ID|DSX_DATAHALL_3_TENANT_ID"
+            "datahall-3 VPC|DSX_DATAHALL_3_VPC_ID||DSX_DATAHALL_3_VPC_ID|DSX_DATAHALL_3_VPC_ID"
+            "datahall-3 SSH key group|DSX_DATAHALL_3_SSH_KEY_GROUP_ID||DSX_DATAHALL_3_SSH_KEY_GROUP_ID|DSX_DATAHALL_3_SSH_KEY_GROUP_ID"
+            "datahall-3 instance type|DSX_DATAHALL_3_INSTANCE_TYPE_ID||DSX_DATAHALL_3_INSTANCE_TYPE_ID|DSX_DATAHALL_3_INSTANCE_TYPE_ID"
+            "datahall-3 Teleport login|DSX_DATAHALL_3_TELEPORT_LOGIN||DSX_DATAHALL_3_TELEPORT_LOGIN|DSX_DATAHALL_3_TELEPORT_LOGIN"
+            "datahall-3 node user|DSX_DATAHALL_3_NODE_USER||DSX_DATAHALL_3_NODE_USER|DSX_DATAHALL_3_NODE_USER"
             "site-2 site|FORGE_SITE_2_SITE_ID||FORGE_SITE_2_SITE_ID|FORGE_SITE_2_SITE_ID"
             "site-2 VPC|FORGE_SITE_2_VPC_ID||FORGE_SITE_2_VPC_ID|FORGE_SITE_2_VPC_ID"
             "site-2 VPC prefix|FORGE_SITE_2_VPC_PREFIX_ID||FORGE_SITE_2_VPC_PREFIX_ID|FORGE_SITE_2_VPC_PREFIX_ID"
@@ -1311,7 +1333,8 @@ jobs:
               elif [ -n "${input}" ] && [ -n "${!input:-}" ]; then
                 source="dispatch input"
               elif { [ "${EVENT_LABEL:-}" = qualify-e2e-dsx ] && [ "${resolved}" = SCOPE ]; } ||
-                   { [ "${EVENT_LABEL:-}" = qualify-e2e-l40s ] && [ "${resolved}" = SCOPE ]; }; then
+                   { [ "${EVENT_LABEL:-}" = qualify-e2e-l40s ] && [ "${resolved}" = SCOPE ]; } ||
+                   { [ "${EVENT_LABEL:-}" = qualify-e2e-dsx-gb300 ] && [ "${resolved}" = SCOPE ]; }; then
                 # The label names these outright, ahead of the variables, so it
                 # is what produced the value whenever it is the trigger.
                 source="label ${EVENT_LABEL}"
@@ -1397,6 +1420,11 @@ jobs:
           DSX_DATAHALL_1_SSA_CLIENT_SECRET: ${{ secrets.DSX_DATAHALL_1_SSA_CLIENT_SECRET }}
           DSX_DATAHALL_2_SSA_CLIENT_ID: ${{ secrets.DSX_DATAHALL_2_SSA_CLIENT_ID }}
           DSX_DATAHALL_2_SSA_CLIENT_SECRET: ${{ secrets.DSX_DATAHALL_2_SSA_CLIENT_SECRET }}
+          # datahall-3's API is served under a private CA, which is passed
+          # here with its client.
+          DSX_DATAHALL_3_SSA_CLIENT_ID: ${{ secrets.DSX_DATAHALL_3_SSA_CLIENT_ID }}
+          DSX_DATAHALL_3_SSA_CLIENT_SECRET: ${{ secrets.DSX_DATAHALL_3_SSA_CLIENT_SECRET }}
+          DSX_DATAHALL_3_CA_CERT: ${{ secrets.DSX_DATAHALL_3_CA_CERT }}
           # JUMP_HOST_PASSWORD is deliberately absent: its presence is what
           # switches the suite off the Teleport relay and onto plain SSH.
         run: release/hack/qualify-e2e.sh run

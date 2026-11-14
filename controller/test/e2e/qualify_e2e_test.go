@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"flag"
@@ -57,10 +58,11 @@ const (
 
 // withheldFromEnvironment is every value in the run's environment that must
 // not reach an artifact: the jump hosts and the SSA issuer, which the
-// workflow's own step seds out of the text files it uploads, and the jump host
-// password when a run uses one. The archives the suite writes cannot be
-// sed-ed, so the suite carries the same list into its redaction. Each value
-// raw and without a trailing slash, as the workflow matches it.
+// workflow's own step seds out of the text files it uploads, a datahall's CA
+// certificate, and the jump host password when a run uses one. The archives
+// the suite writes cannot be sed-ed, so the suite carries the same list into
+// its redaction. Each value raw and without a trailing slash, as the workflow
+// matches it.
 func withheldFromEnvironment() []string {
 	var values []string
 	for _, kv := range os.Environ() {
@@ -68,7 +70,8 @@ func withheldFromEnvironment() []string {
 		if !ok || value == "" {
 			continue
 		}
-		if !strings.HasSuffix(name, "_JUMP_HOST") && name != "SSA_ISSUER" && name != envJumpHostPassword {
+		if !strings.HasSuffix(name, "_JUMP_HOST") && !strings.HasSuffix(name, "_CA_CERT") &&
+			name != "SSA_ISSUER" && name != envJumpHostPassword {
 			continue
 		}
 		values = append(values, value)
@@ -195,7 +198,8 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 			Skip("-e2e.site-stage is not set")
 		case siteStageProvision, siteStageBootstrap, siteStageDeployment:
 		case siteStageFull:
-			if err := fullStageSupported(expectSucceed(runEnvironment()).Provider); err != nil {
+			env := expectSucceed(runEnvironment())
+			if err := fullStageSupported(env.Provider); err != nil {
 				Fail(err.Error())
 			}
 		default:
@@ -835,7 +839,11 @@ func newDSXNicoConfig(env *environment.Environment) (site.CAPIProviderConfig, er
 	if err != nil {
 		return nil, err
 	}
-	return site.NewNicoClient(
+	ca, err := dsx.DatahallCA(dsxSite.Key)
+	if err != nil {
+		return nil, err
+	}
+	nico := site.NewNicoClient(
 		dsxSite.Endpoint(),
 		dsxEnv.Org.ID,
 		dsx.APIName,
@@ -843,7 +851,11 @@ func newDSXNicoConfig(env *environment.Environment) (site.CAPIProviderConfig, er
 		client.ClientID,
 		client.ClientSecret,
 		client.Scope,
-	), nil
+	)
+	if ca != "" {
+		nico.CACertBase64 = base64.StdEncoding.EncodeToString([]byte(ca))
+	}
+	return nico, nil
 }
 
 // keepReason names which setting held the node, so the log says what to

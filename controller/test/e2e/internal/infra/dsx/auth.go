@@ -5,6 +5,8 @@ package dsx
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,9 +43,103 @@ const (
 	// request, and a token that expires mid-run is how a tenant create fails
 	// twenty minutes into a bare-metal run.
 	tokenReuse = 5 * time.Minute
+
+	// tokenMargin is how long before the issuer's own expires_in a token
+	// stops being reused. A Keycloak datahall issues five-minute tokens, which
+	// tokenReuse alone would present to the last second.
+	tokenMargin = time.Minute
 )
 
 var nonAlphanumeric = regexp.MustCompile(`[^A-Z0-9]+`)
+
+// datahallEnvName is the variable a datahall-scoped setting is supplied under.
+func datahallEnvName(siteKey, suffix string) string {
+	return envPrefix + nonAlphanumeric.ReplaceAllString(strings.ToUpper(siteKey), "_") + suffix
+}
+
+// CACertEnvName names the PEM certificate of the private CA a datahall serves
+// its API under. Unset means the system roots verify it.
+func CACertEnvName(siteKey string) string { return datahallEnvName(siteKey, "_CA_CERT") }
+
+// issuerFor is the issuer base a datahall mints from: its own API host plus
+// its issuerPath when it declares one, else SSA_ISSUER.
+func issuerFor(site Site) string {
+	if path := strings.Trim(strings.TrimSpace(site.IssuerPath), "/"); path != "" {
+		return site.Endpoint() + "/" + path
+	}
+	return os.Getenv(EnvIssuer)
+}
+
+// withDatahallCA returns client trusting the datahall's private CA as well as
+// the roots it already trusts, or client itself when the datahall supplies none.
+func withDatahallCA(client *http.Client, siteKey string) (*http.Client, error) {
+	name := CACertEnvName(siteKey)
+	pemData := os.Getenv(name)
+	if strings.TrimSpace(pemData) == "" {
+		return client, nil
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM([]byte(pemData)) {
+		return nil, fmt.Errorf("%s holds no PEM certificate", name)
+	}
+	var transport *http.Transport
+	switch base := client.Transport.(type) {
+	case nil:
+		defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+		if !ok {
+			return nil, errors.New("the default HTTP transport is not an *http.Transport")
+		}
+		transport = defaultTransport.Clone()
+	case *http.Transport:
+		transport = base.Clone()
+	default:
+		return nil, fmt.Errorf("%s cannot be added to a client with a custom transport", name)
+	}
+	if transport.TLSClientConfig == nil {
+		transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	// Extend a supplied pool, on a copy: the cloned config still shares it.
+	if supplied := transport.TLSClientConfig.RootCAs; supplied != nil {
+		pool = supplied.Clone()
+		pool.AppendCertsFromPEM([]byte(pemData))
+	}
+	transport.TLSClientConfig.RootCAs = pool
+	withCA := *client
+	withCA.Transport = transport
+	return &withCA, nil
+}
+
+// DatahallCA is the PEM of the private CA the datahall serves its API under,
+// for a client this package does not build, such as CAPNICo's. Empty when the
+// system roots verify the API.
+func DatahallCA(siteKey string) (string, error) {
+	name := CACertEnvName(siteKey)
+	pemData := os.Getenv(name)
+	if strings.TrimSpace(pemData) == "" {
+		return "", nil
+	}
+	if !x509.NewCertPool().AppendCertsFromPEM([]byte(pemData)) {
+		return "", fmt.Errorf("%s holds no PEM certificate", name)
+	}
+	return pemData, nil
+}
+
+// reuseFor is how long a token the issuer says lives expiresIn seconds is
+// reused: tokenReuse, or less when the token lives shorter.
+func reuseFor(expiresIn int) time.Duration {
+	if expiresIn <= 0 {
+		return tokenReuse
+	}
+	lifetime := time.Duration(expiresIn) * time.Second
+	window := lifetime - tokenMargin
+	if window <= 0 {
+		window = lifetime / 2
+	}
+	return min(tokenReuse, window)
+}
 
 // ClientEnvNames are the variables a datahall's SSA client is supplied under,
 // derived from the datahall's own name.
@@ -58,8 +154,7 @@ var nonAlphanumeric = regexp.MustCompile(`[^A-Z0-9]+`)
 // indistinguishable from this one by its value, since both are nvssa-prd-* from
 // the same issuer. A name no one else uses cannot be picked up by accident.
 func ClientEnvNames(siteKey string) (string, string) {
-	name := envPrefix + nonAlphanumeric.ReplaceAllString(strings.ToUpper(siteKey), "_")
-	return name + "_SSA_CLIENT_ID", name + "_SSA_CLIENT_SECRET"
+	return datahallEnvName(siteKey, "_SSA_CLIENT_ID"), datahallEnvName(siteKey, "_SSA_CLIENT_SECRET")
 }
 
 // clientCredentials is an SSA client id and the secret paired with it.
@@ -87,6 +182,8 @@ type tokenSource struct {
 	client  *http.Client
 	issuer  string
 	siteKey string
+	// scope is asked for only when set.
+	scope string
 
 	mu      sync.Mutex
 	token   string
@@ -98,7 +195,25 @@ func newTokenSource(client *http.Client, issuer, siteKey string) *tokenSource {
 		client:  client,
 		issuer:  strings.TrimRight(strings.TrimSpace(issuer), "/"),
 		siteKey: siteKey,
+		scope:   tokenScope,
 	}
+}
+
+// newSiteTokenSource is newTokenSource asking for the scope site's issuer knows.
+func newSiteTokenSource(client *http.Client, issuer string, site Site) *tokenSource {
+	source := newTokenSource(client, issuer, site.Key)
+	source.scope = scopeFor(site)
+	return source
+}
+
+// scopeFor is the scope a datahall's tokens are asked for: tokenScope from SSA,
+// none from a datahall's own realm, which has no such scope and answers a
+// request for it with 400 invalid_scope.
+func scopeFor(site Site) string {
+	if strings.Trim(strings.TrimSpace(site.IssuerPath), "/") != "" {
+		return ""
+	}
+	return tokenScope
 }
 
 // credentials are the datahall's client, or an error naming the two variables
@@ -120,28 +235,33 @@ func (s *tokenSource) Token(ctx context.Context) (string, error) {
 		return s.token, nil
 	}
 	if s.issuer == "" {
-		return "", fmt.Errorf("%s is not set, so no token can be minted", EnvIssuer)
+		return "", fmt.Errorf("%s is not set and datahall %s declares no issuerPath, so no token can be minted", EnvIssuer, s.siteKey)
 	}
 	credentials, err := s.credentials()
 	if err != nil {
 		return "", err
 	}
-	token, err := s.exchange(ctx, credentials)
+	// From before the request: the token's lifetime starts when it is minted.
+	start := time.Now()
+	token, reuse, err := s.exchange(ctx, credentials)
 	if err != nil {
 		return "", err
 	}
-	s.token, s.expires = token, time.Now().Add(tokenReuse)
+	s.token, s.expires = token, start.Add(reuse)
 	return s.token, nil
 }
 
-// exchange trades a client for a bearer token.
-func (s *tokenSource) exchange(ctx context.Context, credentials clientCredentials) (string, error) {
-	form := url.Values{"grant_type": {"client_credentials"}, "scope": {tokenScope}}
+// exchange trades a client for a bearer token, and says how long to reuse it.
+func (s *tokenSource) exchange(ctx context.Context, credentials clientCredentials) (string, time.Duration, error) {
+	form := url.Values{"grant_type": {"client_credentials"}}
+	if s.scope != "" {
+		form.Set("scope", s.scope)
+	}
 	// #nosec G704 -- the issuer is declared configuration for this run, which is
 	// what makes it overridable per deployment; it is not reached from a request
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.issuer+"/token", strings.NewReader(form.Encode()))
 	if err != nil {
-		return "", fmt.Errorf("building the token request: %w", err)
+		return "", 0, fmt.Errorf("building the token request: %w", err)
 	}
 	req.SetBasicAuth(credentials.ID, credentials.Secret)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -153,12 +273,12 @@ func (s *tokenSource) exchange(ctx context.Context, credentials clientCredential
 	// #nosec G704 -- same request, same declared issuer
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("exchanging the client for a token: %w", err)
+		return "", 0, fmt.Errorf("exchanging the client for a token: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return "", fmt.Errorf("reading the token response: %w", err)
+		return "", 0, fmt.Errorf("reading the token response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		// The body is not echoed: it is an auth service's reply to a
@@ -167,15 +287,33 @@ func (s *tokenSource) exchange(ctx context.Context, credentials clientCredential
 		// there would be nothing to echo -- which is why the issuer and the
 		// client id are what a reader gets. A client issued for a different
 		// API looks exactly like a wrong one here, so both are named.
-		return "", fmt.Errorf("client %s was rejected by %s: %s", credentials.ID, s.issuer, resp.Status)
+		return "", 0, fmt.Errorf("client %s was rejected by %s: %s", credentials.ID, s.issuer, resp.Status)
 	}
 	var out struct {
-		AccessToken string `json:"access_token"`
+		AccessToken string          `json:"access_token"`
+		ExpiresIn   json.RawMessage `json:"expires_in"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil || out.AccessToken == "" {
-		return "", errors.New("the token response carried no access_token")
+		return "", 0, errors.New("the token response carried no access_token")
 	}
-	return out.AccessToken, nil
+	return out.AccessToken, reuseFor(expiresSeconds(out.ExpiresIn)), nil
+}
+
+// expiresSeconds reads expires_in leniently: a number, or a number in a
+// string. Anything else is 0, which reuseFor treats as not reported, so an
+// odd issuer cannot fail a mint that otherwise succeeded.
+func expiresSeconds(raw json.RawMessage) int {
+	var n json.Number
+	if len(raw) == 0 || json.Unmarshal(raw, &n) != nil {
+		return 0
+	}
+	if v, err := n.Int64(); err == nil && v > 0 {
+		return int(v)
+	}
+	if v, err := n.Float64(); err == nil && v >= 1 {
+		return int(v)
+	}
+	return 0
 }
 
 // MintToken returns a bearer token for a datahall, for a caller that needs the
@@ -185,7 +323,11 @@ func (s *tokenSource) exchange(ctx context.Context, credentials clientCredential
 // instead -- see SSAClient -- because a token lives fifteen minutes and a site
 // controller outlives the run that built it.
 func MintToken(ctx context.Context, site Site) (string, error) {
-	source := newTokenSource(&http.Client{Timeout: time.Minute}, os.Getenv(EnvIssuer), site.Key)
+	client, err := withDatahallCA(&http.Client{Timeout: time.Minute}, site.Key)
+	if err != nil {
+		return "", fmt.Errorf("dsx: %w", err)
+	}
+	source := newSiteTokenSource(client, issuerFor(site), site)
 	token, err := source.Token(ctx)
 	if err != nil {
 		return "", fmt.Errorf("dsx: %w", err)
@@ -213,9 +355,9 @@ type SSAClient struct {
 // a second time posts to .../token/token, which answers as a rejected client
 // and so reads as a bad secret rather than a bad URL.
 func SSAClientFor(site Site) (SSAClient, error) {
-	issuer := strings.TrimRight(strings.TrimSpace(os.Getenv(EnvIssuer)), "/")
+	issuer := strings.TrimRight(strings.TrimSpace(issuerFor(site)), "/")
 	if issuer == "" {
-		return SSAClient{}, fmt.Errorf("dsx: %s is not set, so CAPNICo has nothing to mint tokens with", EnvIssuer)
+		return SSAClient{}, fmt.Errorf("dsx: %s is not set and datahall %s declares no issuerPath, so CAPNICo has nothing to mint tokens with", EnvIssuer, site.Key)
 	}
 	credentials, err := newTokenSource(nil, issuer, site.Key).credentials()
 	if err != nil {
@@ -225,6 +367,6 @@ func SSAClientFor(site Site) (SSAClient, error) {
 		TokenURL:     issuer + "/token",
 		ClientID:     credentials.ID,
 		ClientSecret: credentials.Secret,
-		Scope:        tokenScope,
+		Scope:        scopeFor(site),
 	}, nil
 }

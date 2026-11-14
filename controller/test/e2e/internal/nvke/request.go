@@ -54,6 +54,7 @@ type NodePoolSpec struct {
 	InstanceTypeID        string
 	SubnetIDs             []string
 	VpcPrefixIDs          []string
+	AutoNetwork           bool // a FLAT VPC: NICo attaches the machine, and no subnet or prefix is named
 	SSHKeyGroupIDs        []string
 	Release               string
 	ConfigProfile         string
@@ -86,6 +87,7 @@ type ControlPlaneConfigSpec struct {
 	ConfigProfile        string
 	VpcPrefixIDs         []string
 	SubnetIDs            []string
+	AutoNetwork          bool
 	SSHKeyGroupIDs       []string
 	SystemReservedMemory string
 	NodeLabels           map[string]string
@@ -372,6 +374,7 @@ func buildNicoControlPlaneConfig(clusterName string, vpcID uuid.UUID, spec Clust
 		InstanceTypeID:       cp.InstanceTypeID,
 		SubnetIDs:            cp.SubnetIDs,
 		VpcPrefixIDs:         cp.VpcPrefixIDs,
+		AutoNetwork:          cp.AutoNetwork,
 		SSHKeyGroupIDs:       cp.SSHKeyGroupIDs,
 	}, payloads)
 	if err != nil {
@@ -395,10 +398,6 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec, p
 	if err != nil {
 		return api.NodePoolCreateConfig{}, fmt.Errorf("parsing instance type ID %q: %w", spec.InstanceTypeID, err)
 	}
-	interfaces, err := nicoMachineInterfaces(spec.SubnetIDs, spec.VpcPrefixIDs)
-	if err != nil {
-		return api.NodePoolCreateConfig{}, err
-	}
 	sshKeyGroupIDs, err := parseUUIDs(spec.SSHKeyGroupIDs)
 	if err != nil {
 		return api.NodePoolCreateConfig{}, fmt.Errorf("parsing SSH key group IDs: %w", err)
@@ -407,6 +406,26 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec, p
 	sshKeyGroups := make([]string, 0, len(sshKeyGroupIDs))
 	for _, sshKeyGroupID := range sshKeyGroupIDs {
 		sshKeyGroups = append(sshKeyGroups, sshKeyGroupID.String())
+	}
+	machine := map[string]any{
+		"vpcID":                   vpcID.String(),
+		"instanceTypeID":          instanceTypeID.String(),
+		"cloudInitInjectHostname": true,
+		"ipxeScript":              payloads.IPXEScript,
+		"sshKeyGroupIDs":          sshKeyGroups,
+	}
+	// CAPNICo takes exactly one of the two.
+	if spec.AutoNetwork {
+		if len(spec.SubnetIDs) > 0 || len(spec.VpcPrefixIDs) > 0 {
+			return api.NodePoolCreateConfig{}, fmt.Errorf("an autoNetwork pool names no subnet or VPC prefix: NICo attaches the machine itself")
+		}
+		machine["autoNetwork"] = true
+	} else {
+		var interfaces []map[string]any
+		if interfaces, err = nicoMachineInterfaces(spec.SubnetIDs, spec.VpcPrefixIDs); err != nil {
+			return api.NodePoolCreateConfig{}, err
+		}
+		machine["interfaces"] = interfaces
 	}
 	pool := api.NodePoolCreateConfig{
 		Name:                 spec.Name,
@@ -424,14 +443,7 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec, p
 				},
 				capiSpecKey: map[string]any{
 					"template": map[string]any{
-						capiSpecKey: map[string]any{
-							"vpcID":                   vpcID.String(),
-							"instanceTypeID":          instanceTypeID.String(),
-							"cloudInitInjectHostname": true,
-							"ipxeScript":              payloads.IPXEScript,
-							"sshKeyGroupIDs":          sshKeyGroups,
-							"interfaces":              interfaces,
-						},
+						capiSpecKey: machine,
 					},
 				},
 			},

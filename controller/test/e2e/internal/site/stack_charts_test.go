@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -393,4 +394,113 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 			}
 		}
 	})
+}
+
+// A datahall minting from its own realm hands CAPNICo no scope, and the
+// renderer refuses an empty field, so the credential template leaves the key
+// out. Rendered from the working tree, not DeployPathRef, the way the lane
+// renders it.
+func TestNicoCredentialsLeaveOutAnEmptyScope(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 is not installed")
+	}
+	top, err := exec.CommandContext(context.Background(), "git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		t.Skipf("not in a git clone: %v", err)
+	}
+	repo := strings.TrimSpace(string(top))
+	src, err := os.ReadFile(filepath.Join(repo, "deploy", "nico", "nvke-base-config", "20-nico-credentials.yaml.tmpl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, scope := range []string{"", "carbide"} {
+		templates, out := t.TempDir(), t.TempDir()
+		if err := os.WriteFile(filepath.Join(templates, "20-nico-credentials.yaml.tmpl"), src, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		nico := NewNicoClient("https://nico.example", "org", "nico", "https://nico.example/token", "client", "secret", scope)
+		config, err := json.Marshal(map[string]any{nico.ConfigKey(): nico})
+		if err != nil {
+			t.Fatal(err)
+		}
+		configPath := filepath.Join(t.TempDir(), "bootstrap-config.json")
+		if err = os.WriteFile(configPath, config, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = runTool(t, "python3", filepath.Join(repo, "deploy", "lib", "render-template.py"), configPath, templates, out); err != nil {
+			t.Fatalf("scope %q: %v", scope, err)
+		}
+		rendered, err := os.ReadFile(filepath.Join(out, "20-nico-credentials.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch {
+		case scope == "" && strings.Contains(string(rendered), "scope:"):
+			t.Errorf("an empty scope is rendered:\n%s", rendered)
+		case scope != "" && !strings.Contains(string(rendered), `scope: "`+scope+`"`):
+			t.Errorf("scope %q is not rendered:\n%s", scope, rendered)
+		case !strings.Contains(string(rendered), `tokenURL: "https://nico.example/token"`):
+			t.Errorf("scope %q: the client form is not rendered:\n%s", scope, rendered)
+		}
+	}
+}
+
+// A datahall's private CA reaches CAPNICo as ca.crt, base64 in the Secret's
+// data so the PEM renders on one line, and a site on the system roots gets no
+// key at all. The result has to stay one valid Secret either way.
+func TestNicoCredentialsCarryTheDatahallCA(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 is not installed")
+	}
+	top, err := exec.CommandContext(context.Background(), "git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		t.Skipf("not in a git clone: %v", err)
+	}
+	repo := strings.TrimSpace(string(top))
+	src, err := os.ReadFile(filepath.Join(repo, "deploy", "nico", "nvke-base-config", "20-nico-credentials.yaml.tmpl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pem := "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+	for _, ca := range []string{"", base64.StdEncoding.EncodeToString([]byte(pem))} {
+		templates, out := t.TempDir(), t.TempDir()
+		if err = os.WriteFile(filepath.Join(templates, "20-nico-credentials.yaml.tmpl"), src, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		nico := NewNicoClient("https://nico.example", "org", "nico", "https://nico.example/token", "client", "secret", "")
+		nico.CACertBase64 = ca
+		config, err := json.Marshal(map[string]any{nico.ConfigKey(): nico})
+		if err != nil {
+			t.Fatal(err)
+		}
+		configPath := filepath.Join(t.TempDir(), "bootstrap-config.json")
+		if err = os.WriteFile(configPath, config, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = runTool(t, "python3", filepath.Join(repo, "deploy", "lib", "render-template.py"), configPath, templates, out); err != nil {
+			t.Fatalf("CA %q: %v", ca, err)
+		}
+		rendered, err := os.ReadFile(filepath.Join(out, "20-nico-credentials.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var secret struct {
+			StringData map[string]string `json:"stringData"`
+			Data       map[string]string `json:"data"`
+		}
+		if err = yaml.Unmarshal(rendered, &secret); err != nil {
+			t.Fatalf("CA %q: the rendered Secret is not YAML: %v\n%s", ca, err, rendered)
+		}
+		switch {
+		case secret.StringData["clientSecret"] != "secret":
+			t.Errorf("CA %q: the client form is not rendered:\n%s", ca, rendered)
+		case ca == "" && secret.Data != nil:
+			t.Errorf("a site on the system roots gets data:\n%s", rendered)
+		case ca != "":
+			decoded, decodeErr := base64.StdEncoding.DecodeString(secret.Data["ca.crt"])
+			if decodeErr != nil || string(decoded) != pem {
+				t.Errorf("ca.crt does not decode to the PEM (%v):\n%s", decodeErr, rendered)
+			}
+		}
+	}
 }

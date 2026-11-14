@@ -32,17 +32,27 @@ spec:
     # The DSX datahall on its own. A provider selector is the only one that
     # separates the two lanes: the DSX streams carry their GPU model as the
     # Forge ones do, so a scope selecting on gpu alone would reach both.
+    #
+    # GB300 is left out: this is what the qualify-e2e-dsx label runs, and
+    # that datahall has its own label and scope. dsx-gb300 names it.
     dsx:
       selector: {provider: dsx}
+      exclude: {gpu: gb300}
 
-    # One datahall each. `dsx` selects on provider alone, so it now fans out to
-    # both DSX streams; these name one, which is what a run against a single
-    # datahall wants -- bringing a new one up, or keeping a known-good lane off
-    # hardware that is still being proven.
+    # One datahall each. `dsx` selects on provider, so it fans out to every DSX
+    # stream it does not exclude; these name one, which is what a run against a
+    # single datahall wants -- bringing a new one up, or keeping a known-good
+    # lane off hardware that is still being proven.
+    #
+    # Two datahalls are arm64, so dsx-arm64 leaves GB300's out to keep naming
+    # one, and dsx-gb300 names that one.
     dsx-amd64:
       selector: {provider: dsx, arch: amd64}
     dsx-arm64:
       selector: {provider: dsx, arch: arm64}
+      exclude: {gpu: gb300}
+    dsx-gb300:
+      selector: {provider: dsx, gpu: gb300}
 
     # The performance stream on the NVKE Scale Forge site, on its own. Its
     # tenant has more workers than a qualification's and a run holds the site
@@ -144,3 +154,8 @@ spec:
     # stack and a two-node tenant --- at 51 of 51 specs.
     - name: dsx-vr200-arm64-ubuntu-26.04-kube-1.36
       capabilities: {provider: dsx, gpu: vr200, arch: arm64, ubuntu: "26.04", kube: "1.36"}
+
+    # The third DSX datahall: arm64 GB300 NVL72 trays with no DPU, so a FLAT
+    # VPC whose instances attach by autoNetwork. 26.04 as above.
+    - name: dsx-gb300-arm64-ubuntu-26.04-kube-1.36
+      capabilities: {provider: dsx, gpu: gb300, arch: arm64, ubuntu: "26.04", kube: "1.36"}
