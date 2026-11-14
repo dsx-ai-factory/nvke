@@ -206,7 +206,7 @@ The example image tags are placeholders for those reviewed installation inputs.
 
 The chart owns every schema in `config/crd/bases`: NVKECluster, ControlPlaneClass
 and ClusterReleaseChannel, and also MachineImage, ClusterRelease and
-NodePoolRelease. `state.crds.install=false` delegates all of them to an existing
+NodeProfile. `state.crds.install=false` delegates all of them to an existing
 installer. Their canonical files live in `config/crd/bases`; canonical manager
 RBAC lives in `config/rbac`. `make chart` packages generated copies for Helm.
 Kustomize consumes the canonical files directly. Wait for CRD establishment

@@ -607,7 +607,7 @@ func TestChartExamples(t *testing.T) {
 				if sample == "state-values.yaml" {
 					for _, kind := range []string{
 						"nvkeclusters", "controlplaneclasses", "clusterreleasechannels",
-						"machineimages", "clusterreleases", "nodepoolreleases",
+						"machineimages", "clusterreleases", "nodeprofiles",
 					} {
 						if !crds[kind+".service.nvke.nvidia.com"] {
 							t.Fatalf("standalone state example missing CRD %s", kind)
@@ -790,7 +790,7 @@ func TestChartAPIBindings(t *testing.T) {
 		if strings.HasSuffix(role.GetName(), "tenant-api") {
 			tenantRole = role.GetNamespace() == "tenant-a" && len(resources) == 1 && resources[0] == "nvkeclusters"
 		} else {
-			wantResources := "clusterreleases,machineimages,controlplaneclasses,clusterreleasechannels,nodepoolreleases"
+			wantResources := "clusterreleases,machineimages,controlplaneclasses,clusterreleasechannels,nodeprofiles"
 			operatorRole = role.GetKind() == "ClusterRole" && strings.Join(resources, ",") == wantResources
 		}
 	}
@@ -917,7 +917,7 @@ func TestChartCRDInstall(t *testing.T) {
 		"clusterreleasechannels.service.nvke.nvidia.com": true,
 		"machineimages.service.nvke.nvidia.com":          true,
 		"clusterreleases.service.nvke.nvidia.com":        true,
-		"nodepoolreleases.service.nvke.nvidia.com":       true,
+		"nodeprofiles.service.nvke.nvidia.com":           true,
 	}
 	for _, install := range []bool{false, true} {
 		values := fmt.Sprintf(`{"controller":{"enabled":false},"state":{"crds":{"install":%t}}}`, install)
@@ -970,7 +970,7 @@ func assertTenantCatalogPermissions(t *testing.T, objects []unstructured.Unstruc
 			}
 		}
 		catalog = len(seen) == 5 && seen["controlplaneclasses"] && seen["clusterreleasechannels"] &&
-			seen["nodepoolreleases"] && seen["clusterreleases"] && seen["machineimages"]
+			seen["nodeprofiles"] && seen["clusterreleases"] && seen["machineimages"]
 	}
 	if !catalog {
 		t.Fatal("tenant catalog read permissions are missing or excessive")

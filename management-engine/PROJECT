@@ -40,7 +40,7 @@ resources:
     crdVersion: v1
   domain: nvke.nvidia.com
   group: service
-  kind: NodePoolRelease
+  kind: NodeProfile
   path: github.com/dsx-ai-factory/nvke/management-engine/apis/v1
   version: v1
 - api:

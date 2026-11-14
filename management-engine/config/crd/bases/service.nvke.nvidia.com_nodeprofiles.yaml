@@ -6,14 +6,14 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: nodepoolreleases.service.nvke.nvidia.com
+  name: nodeprofiles.service.nvke.nvidia.com
 spec:
   group: service.nvke.nvidia.com
   names:
-    kind: NodePoolRelease
-    listKind: NodePoolReleaseList
-    plural: nodepoolreleases
-    singular: nodepoolrelease
+    kind: NodeProfile
+    listKind: NodeProfileList
+    plural: nodeprofiles
+    singular: nodeprofile
   scope: Cluster
   versions:
   - additionalPrinterColumns:
@@ -27,10 +27,8 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          NodePoolRelease is what an operator publishes to make a worker release
+          NodeProfile is what an operator publishes to make a worker release
           available to the engine, and how that release is managed once published.
-          Its internal name will become NodeProfile once the NVKE controller REST API
-          no longer depends on it. The public API already uses NodeProfile.
         properties:
           apiVersion:
             description: |-
@@ -51,7 +49,7 @@ spec:
             type: object
           spec:
             description: |-
-              NodePoolReleaseSpec is the published content of a worker release: the machine
+              NodeProfileSpec is the published content of a worker release: the machine
               image its nodes boot and the initialization applied to them.
             properties:
               lifecycle:
@@ -184,12 +182,9 @@ spec:
             required:
             - machineImageRef
             - machineInit
+            - profile
+            - tag
             type: object
-            x-kubernetes-validations:
-            - message: profile presence is immutable
-              rule: has(self.profile) == has(oldSelf.profile)
-            - message: tag presence is immutable
-              rule: has(self.tag) == has(oldSelf.tag)
         required:
         - spec
         type: object

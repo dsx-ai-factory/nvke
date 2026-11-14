@@ -38,9 +38,8 @@ func TestControlPlaneClassCatalogView(t *testing.T) {
 func TestClusterReleaseChannelCatalogView(t *testing.T) {
 	past := metav1.NewTime(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
 	release := func(name, full string, life ReleaseLifecycle) ClusterRelease {
-		value := ClusterRelease{Spec: ClusterReleaseSpec{Lifecycle: life}}
+		value := ClusterRelease{Spec: ClusterReleaseSpec{Kubernetes: ClusterReleaseKubernetes{Version: full}, Lifecycle: life}}
 		value.SetName(name)
-		value.SetAnnotations(map[string]string{MachineInitKubernetesVersionAnnotation: full})
 		return value
 	}
 	releases := map[string]ClusterRelease{
@@ -120,8 +119,8 @@ func TestClusterReleaseChannelCatalogBuilds(t *testing.T) {
 	channel.Spec.Releases["1.35.3_wrong"] = ClusterReleaseReferences{{Name: "stable"}}
 	channel.Spec.Releases["1.35.2_preview"] = ClusterReleaseReferences{{Name: "preview"}}
 	releases := map[string]ClusterRelease{
-		"stable":  {ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{MachineInitKubernetesVersionAnnotation: "v1.35.2+vendor.7"}}},
-		"preview": {ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{MachineInitKubernetesVersionAnnotation: "1.35.2-rc.1"}}},
+		"stable":  {Spec: ClusterReleaseSpec{Kubernetes: ClusterReleaseKubernetes{Version: "v1.35.2+vendor.7"}}},
+		"preview": {Spec: ClusterReleaseSpec{Kubernetes: ClusterReleaseKubernetes{Version: "1.35.2-rc.1"}}},
 	}
 	view, found, err := channel.CatalogView(releases)
 	require.NoError(t, err)
@@ -167,9 +166,9 @@ func TestClusterReleaseChannelVersionFilter(t *testing.T) {
 	}
 }
 
-func TestNodePoolReleaseCatalogView(t *testing.T) {
+func TestNodeProfileCatalogView(t *testing.T) {
 	past := metav1.NewTime(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
-	node := NodePoolRelease{Spec: NodePoolReleaseSpec{
+	node := NodeProfile{Spec: NodeProfileSpec{
 		Profile: "ubuntu-gpu", Tag: "2026.11", MachineImageRef: MachineImageReference{Name: "image"},
 		Lifecycle: ReleaseLifecycle{Hidden: true, Deprecated: true, SupportedUntil: &past}}}
 	images := map[string]MachineImage{"image": {}}

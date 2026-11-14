@@ -195,15 +195,18 @@ var baseResources = map[string]string{
 		"kind": "ClusterRelease",
 		"metadata": {"name": "nvke-nico-vms-24.04-amd64-fde"},
 		"spec": {
+			"kubernetes": {"version": "1.36.3"},
 			"machineImageRef": {"name": "nvke-nico-vms-24.04-amd64-fde"},
 			"machineInit": {"userDataTemplate": "#cloud-config\nhostname: {{ .Hostname }}\n"}
 		}
 	}`,
-	"nodepoolreleases": `{
+	"nodeprofiles": `{
 		"apiVersion": "service.nvke.nvidia.com/v1",
-		"kind": "NodePoolRelease",
+		"kind": "NodeProfile",
 		"metadata": {"name": "nvke-nico-vms-24.04-amd64-fde"},
 		"spec": {
+			"profile": "ubuntu",
+			"tag": "24.04",
 			"machineImageRef": {"name": "nvke-nico-vms-24.04-amd64-fde"},
 			"machineInit": {"userDataTemplate": "#cloud-config\nhostname: {{ .Hostname }}\n"}
 		}
@@ -230,7 +233,7 @@ var baseResources = map[string]string{
 
 // releaseResources are the two kinds that share the release shape. Every rule
 // below is asserted on both, so neither drifts from the other unnoticed.
-var releaseResources = []string{"clusterreleases", "nodepoolreleases"}
+var releaseResources = []string{"clusterreleases", "nodeprofiles"}
 
 func baseResource(t *testing.T, resource string) map[string]any {
 	t.Helper()
@@ -309,7 +312,7 @@ func deleteField(obj map[string]any, path []string) {
 }
 
 func TestGeneratedResourceSchemas(t *testing.T) {
-	for _, resource := range []string{"nvkeclusters", "machineimages", "clusterreleases", "nodepoolreleases", "controlplaneclasses"} {
+	for _, resource := range []string{"nvkeclusters", "machineimages", "clusterreleases", "nodeprofiles", "controlplaneclasses"} {
 		t.Run(resource, func(t *testing.T) {
 			loadResourceSchema(t, resource).admit(t, baseResource(t, resource), nil)
 		})
@@ -765,16 +768,19 @@ func TestMachineImageSpecImmutable(t *testing.T) {
 	}
 }
 
-func TestNodePoolReleaseProfile(t *testing.T) {
-	schema := loadResourceSchema(t, "nodepoolreleases")
-	legacy := baseResource(t, "nodepoolreleases")
-	published := mutate(t, "nodepoolreleases", func(spec map[string]any) {
-		spec["profile"], spec["tag"] = "ubuntu", "24.04"
-	})
-	schema.admit(t, legacy, nil)
+func TestNodeProfileProfile(t *testing.T) {
+	schema := loadResourceSchema(t, "nodeprofiles")
+	published := baseResource(t, "nodeprofiles")
 	schema.admit(t, published, nil)
 	schema.admit(t, runtime.DeepCopyJSON(published), published)
-	schema.check(t, true, published, legacy)
+
+	for _, name := range []string{"profile", "tag"} {
+		t.Run(name+" is required", func(t *testing.T) {
+			candidate := runtime.DeepCopyJSON(published)
+			delete(specOf(t, candidate), name)
+			schema.check(t, true, candidate, nil)
+		})
+	}
 
 	for _, entry := range []fieldCase{
 		{name: "invalid profile", path: []string{"spec", "profile"}, value: "Not A Name", invalid: true},

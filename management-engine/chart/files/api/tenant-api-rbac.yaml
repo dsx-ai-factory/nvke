@@ -39,7 +39,7 @@ metadata:
   name: management-engine-tenant-catalog
 rules:
 - apiGroups: [service.nvke.nvidia.com]
-  resources: [controlplaneclasses, clusterreleasechannels, nodepoolreleases]
+  resources: [controlplaneclasses, clusterreleasechannels, nodeprofiles]
   verbs: [get, list]
 - apiGroups: [service.nvke.nvidia.com]
   resources: [clusterreleases, machineimages]

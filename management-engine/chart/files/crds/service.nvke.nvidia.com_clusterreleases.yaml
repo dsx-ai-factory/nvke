@@ -52,6 +52,21 @@ spec:
               ClusterReleaseSpec is the published content of a control-plane release: the
               machine image its nodes boot and the initialization applied to them.
             properties:
+              kubernetes:
+                description: ClusterReleaseKubernetes describes the Kubernetes the
+                  release boots.
+                properties:
+                  version:
+                    description: Version is the exact Kubernetes version the release
+                      boots, such as 1.36.3.
+                    minLength: 1
+                    type: string
+                required:
+                - version
+                type: object
+                x-kubernetes-validations:
+                - message: kubernetes is immutable
+                  rule: self == oldSelf
               lifecycle:
                 default: {}
                 description: |-
@@ -162,6 +177,7 @@ spec:
                 - message: machineInit is immutable
                   rule: self == oldSelf
             required:
+            - kubernetes
             - machineImageRef
             - machineInit
             type: object

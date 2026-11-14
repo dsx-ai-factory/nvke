@@ -67,9 +67,9 @@ func TestDirectCatalogReads(t *testing.T) {
 }
 
 func TestDependentCatalogReads(t *testing.T) {
-	node := func(name, profile, tag, image string) v1.NodePoolRelease {
-		return v1.NodePoolRelease{
-			Spec: v1.NodePoolReleaseSpec{
+	node := func(name, profile, tag, image string) v1.NodeProfile {
+		return v1.NodeProfile{
+			Spec: v1.NodeProfileSpec{
 				Profile: v1.ResourceName(profile), Tag: tag,
 				MachineImageRef: v1.MachineImageReference{Name: v1.ResourceName(image)},
 			},
@@ -80,18 +80,18 @@ func TestDependentCatalogReads(t *testing.T) {
 	deprecated.Spec.Lifecycle.Deprecated = true
 	hidden := node("hidden", "gpu", "2026.11", "image")
 	hidden.Spec.Lifecycle.Hidden = true
-	source := &sourceStub[v1.NodePoolRelease]{items: []v1.NodePoolRelease{
+	source := &sourceStub[v1.NodeProfile]{items: []v1.NodeProfile{
 		node("legacy", "gpu", "", "image"), node("unresolved", "gpu", "2026.12", "missing"),
 		node("latest", "gpu", "2026.11", "image"), hidden, deprecated,
 	}, named: hidden}
 	var loads int
-	project := dependentProjector[v1.NodePoolRelease](func(context.Context) (map[string]v1.MachineImage, error) {
+	project := dependentProjector[v1.NodeProfile](func(context.Context) (map[string]v1.MachineImage, error) {
 		loads++
 		return map[string]v1.MachineImage{"image": {Spec: v1.MachineImageSpec{
 			OperatingSystem: v1.OperatingSystem{Family: "ubuntu", Version: "24.04"}, Architecture: "amd64",
 		}}}, nil
 	})
-	reader := &projectedReader[v1.NodePoolRelease, v1.CatalogEntry[v1.NodeProfileCatalogSpec]]{
+	reader := &projectedReader[v1.NodeProfile, v1.CatalogEntry[v1.NodeProfileCatalogSpec]]{
 		source: source, project: project,
 	}
 	page, err := reader.List(t.Context(), ListOptions{})
@@ -110,7 +110,7 @@ func TestDependentCatalogReads(t *testing.T) {
 	_, err = reader.Get(t.Context(), "legacy")
 	statusCode(t, err, 404)
 	require.Equal(t, 3, loads)
-	for _, items := range [][]v1.NodePoolRelease{nil, {hidden}} {
+	for _, items := range [][]v1.NodeProfile{nil, {hidden}} {
 		source.items = items
 		page, err = reader.List(t.Context(), ListOptions{})
 		require.NoError(t, err)
@@ -130,16 +130,16 @@ func TestCatalogReadErrors(t *testing.T) {
 	failure := errors.New("read failed")
 	for _, phase := range []string{"source", "dependencies"} {
 		t.Run(phase, func(t *testing.T) {
-			source := &sourceStub[v1.NodePoolRelease]{items: []v1.NodePoolRelease{{}}}
+			source := &sourceStub[v1.NodeProfile]{items: []v1.NodeProfile{{}}}
 			if phase == "source" {
 				source.err = failure
 			}
 			loads := 0
-			project := dependentProjector[v1.NodePoolRelease](func(context.Context) (map[string]v1.MachineImage, error) {
+			project := dependentProjector[v1.NodeProfile](func(context.Context) (map[string]v1.MachineImage, error) {
 				loads++
 				return nil, failure
 			})
-			reader := &projectedReader[v1.NodePoolRelease, v1.CatalogEntry[v1.NodeProfileCatalogSpec]]{
+			reader := &projectedReader[v1.NodeProfile, v1.CatalogEntry[v1.NodeProfileCatalogSpec]]{
 				source: source, project: project,
 			}
 			page, err := reader.List(t.Context(), ListOptions{})
@@ -174,9 +174,9 @@ func TestCatalogReadErrors(t *testing.T) {
 		apierrors.NewInvalid(schema.GroupKind{Kind: "Private"}, "private-name",
 			field.ErrorList{field.Invalid(field.NewPath("spec", "privateField"), "private-value", "private-message")}),
 	} {
-		reader := &projectedReader[v1.NodePoolRelease, v1.CatalogEntry[v1.NodeProfileCatalogSpec]]{
-			source: &sourceStub[v1.NodePoolRelease]{},
-			project: dependentProjector[v1.NodePoolRelease](func(context.Context) (map[string]v1.MachineImage, error) {
+		reader := &projectedReader[v1.NodeProfile, v1.CatalogEntry[v1.NodeProfileCatalogSpec]]{
+			source: &sourceStub[v1.NodeProfile]{},
+			project: dependentProjector[v1.NodeProfile](func(context.Context) (map[string]v1.MachineImage, error) {
 				return nil, failure
 			}),
 		}
@@ -201,18 +201,18 @@ func directReader(
 }
 
 func TestProjectedContinuation(t *testing.T) {
-	source := &sourceStub[v1.NodePoolRelease]{}
+	source := &sourceStub[v1.NodeProfile]{}
 	for _, name := range []string{"z", "a", "hidden", "declined", "other"} {
-		source.items = append(source.items, v1.NodePoolRelease{Name: name, Spec: v1.NodePoolReleaseSpec{
+		source.items = append(source.items, v1.NodeProfile{Name: name, Spec: v1.NodeProfileSpec{
 			Profile: "gpu", Tag: "current", MachineImageRef: v1.MachineImageReference{Name: "image"},
 		}})
 	}
 	source.items[2].Spec.Lifecycle.Hidden = true
 	source.items[3].Spec.Tag = ""
 	source.items[4].Spec.Profile = "cpu"
-	reader := &projectedReader[v1.NodePoolRelease, v1.CatalogEntry[v1.NodeProfileCatalogSpec]]{
+	reader := &projectedReader[v1.NodeProfile, v1.CatalogEntry[v1.NodeProfileCatalogSpec]]{
 		source: source, fields: []string{"spec.profile", "spec.tag"}, identity: "node-profiles",
-		project: dependentProjector[v1.NodePoolRelease](func(context.Context) (map[string]v1.MachineImage, error) {
+		project: dependentProjector[v1.NodeProfile](func(context.Context) (map[string]v1.MachineImage, error) {
 			return map[string]v1.MachineImage{"image": {}}, nil
 		}),
 	}
@@ -238,11 +238,11 @@ func TestProjectedContinuation(t *testing.T) {
 			case "identity":
 				copy.identity = "another-surface"
 			case "namespace":
-				copy.source = &sourceStub[v1.NodePoolRelease]{items: source.items, namespace: "org-b"}
+				copy.source = &sourceStub[v1.NodeProfile]{items: source.items, namespace: "org-b"}
 			case "public result":
 				items := slices.Clone(source.items)
 				items[0].Spec.Lifecycle.Deprecated = true
-				copy.source = &sourceStub[v1.NodePoolRelease]{items: items}
+				copy.source = &sourceStub[v1.NodeProfile]{items: items}
 				status = 410
 			case "malformed":
 				query.PageKey = "not-a-cursor"
