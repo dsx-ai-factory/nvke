@@ -47,6 +47,10 @@ func (a *probeTestAgent) GetKubeadmStatus(context.Context, *nvkeproto.KubeadmSta
 	return &nvkeproto.KubeadmStatusResponse{AgentVersion: "probe-test"}, nil
 }
 
+func (a *probeTestAgent) StreamExecuteScript(*nvkeproto.ExecuteScriptRequest, nvkeproto.NodeAgent_StreamExecuteScriptServer) error {
+	return a.err
+}
+
 // serveProbeTestAgent starts a gRPC server on a loopback port and returns its address.
 func serveProbeTestAgent(t *testing.T, service nvkeproto.NodeAgentServer, opts ...grpc.ServerOption) (string, string) {
 	t.Helper()
@@ -411,6 +415,33 @@ func TestProbeCauseWhenTheDeadlineRacesTheAgentAnswer(t *testing.T) {
 			err := recorder.unaryInterceptor(ctx, "/nvke.agent.v1.NodeAgent/GetAgentVersion", nil, nil, nil, invoker)
 
 			assert.Equal(t, params.want, CauseOf(err), "error: %v", err)
+		})
+	}
+}
+
+// A status the agent returns on a stream is the agent's answer, even though
+// gRPC has already canceled the stream's own context when RecvMsg returns it.
+func TestProbeCauseOfAStatusTheAgentReturnsOnAStream(t *testing.T) {
+	t.Parallel()
+
+	for _, code := range []codes.Code{codes.Unavailable, codes.DeadlineExceeded, codes.Canceled} {
+		t.Run(code.String(), func(t *testing.T) {
+			t.Parallel()
+
+			host, port := serveProbeTestAgent(t, &probeTestAgent{err: status.Error(code, "from the agent")})
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			conn, closeConn, err := insecureTransport(port).Dial(ctx, db.Node{IP: host})
+			require.NoError(t, err)
+			defer closeConn()
+
+			stream, err := nvkeproto.NewNodeAgentClient(conn).StreamExecuteScript(ctx, &nvkeproto.ExecuteScriptRequest{})
+			require.NoError(t, err)
+			_, err = stream.Recv()
+
+			require.Error(t, err)
+			assert.Equal(t, code, status.Code(err))
+			assert.Equal(t, ProbeCauseAgentError, CauseOf(err), "error: %v", err)
 		})
 	}
 }
