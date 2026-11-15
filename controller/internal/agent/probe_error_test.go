@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"net"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
@@ -61,6 +62,21 @@ func serveProbeTestAgent(t *testing.T, service nvkeproto.NodeAgentServer, opts .
 	host, port, err := net.SplitHostPort(listener.Addr().String())
 	require.NoError(t, err)
 	return host, port
+}
+
+// skipIfAnswered skips a test that needs address to stay silent on a network
+// that answers for it instead, such as one whose firewall rejects outbound
+// connections.
+func skipIfAnswered(t *testing.T, address string) {
+	t.Helper()
+	conn, err := (&net.Dialer{Timeout: 200 * time.Millisecond}).DialContext(t.Context(), "tcp", address)
+	if err == nil {
+		_ = conn.Close()
+		t.Skipf("%s accepted a connection on this network", address)
+	}
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		t.Skipf("this network refuses connections to %s: %v", address, err)
+	}
 }
 
 // closedPort returns a loopback port with nothing listening on it.
@@ -172,8 +188,10 @@ func TestProbeCauseFromRealTransport(t *testing.T) {
 			want: ProbeCauseConnectionRefused,
 		},
 		"unroutable address": {
-			setup: func(*testing.T) (*Transport, db.Node) {
+			setup: func(t *testing.T) (*Transport, db.Node) {
+				t.Helper()
 				// TEST-NET-1 (RFC 5737) is never routed.
+				skipIfAnswered(t, "192.0.2.1:15005")
 				return insecureTransport("15005"), db.Node{IP: "192.0.2.1"}
 			},
 			timeout: 500 * time.Millisecond,
@@ -227,6 +245,30 @@ func TestProbeCauseFromRealTransport(t *testing.T) {
 			setup: func(t *testing.T) (*Transport, db.Node) {
 				t.Helper()
 				host, port := serveProbeTestAgent(t, nil)
+				return insecureTransport(port), db.Node{IP: host}
+			},
+			want: ProbeCauseAgentError,
+		},
+		"agent answers Unavailable": {
+			setup: func(t *testing.T) (*Transport, db.Node) {
+				t.Helper()
+				host, port := serveProbeTestAgent(t, &probeTestAgent{err: status.Error(codes.Unavailable, "draining")})
+				return insecureTransport(port), db.Node{IP: host}
+			},
+			want: ProbeCauseAgentError,
+		},
+		"agent answers DeadlineExceeded": {
+			setup: func(t *testing.T) (*Transport, db.Node) {
+				t.Helper()
+				host, port := serveProbeTestAgent(t, &probeTestAgent{err: status.Error(codes.DeadlineExceeded, "kubeadm timed out")})
+				return insecureTransport(port), db.Node{IP: host}
+			},
+			want: ProbeCauseAgentError,
+		},
+		"agent answers Canceled": {
+			setup: func(t *testing.T) (*Transport, db.Node) {
+				t.Helper()
+				host, port := serveProbeTestAgent(t, &probeTestAgent{err: status.Error(codes.Canceled, "shutting down")})
 				return insecureTransport(port), db.Node{IP: host}
 			},
 			want: ProbeCauseAgentError,

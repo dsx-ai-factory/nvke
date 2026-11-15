@@ -10,11 +10,13 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
@@ -137,8 +139,36 @@ func (r *connRecorder) dialOptions(creds credentials.TransportCredentials) []grp
 		grpc.WithContextDialer(r.dial),
 		grpc.WithChainUnaryInterceptor(r.unaryInterceptor),
 		grpc.WithChainStreamInterceptor(r.streamInterceptor),
+		grpc.WithStatsHandler(answerWatcher{}),
 	}
 }
+
+// agentAnswer marks a call whose final status came from the agent, as
+// opposed to one that gRPC produced because the connection failed.
+type agentAnswer struct {
+	received atomic.Bool
+}
+
+type agentAnswerKey struct{}
+
+// answerWatcher marks a call's agentAnswer when the agent's trailers, which
+// carry its status, arrive. A failed connection delivers no trailers.
+type answerWatcher struct{}
+
+func (answerWatcher) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context { return ctx }
+
+func (answerWatcher) HandleRPC(ctx context.Context, rpcStats stats.RPCStats) {
+	if _, ok := rpcStats.(*stats.InTrailer); !ok {
+		return
+	}
+	if answer, ok := ctx.Value(agentAnswerKey{}).(*agentAnswer); ok {
+		answer.received.Store(true)
+	}
+}
+
+func (answerWatcher) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context { return ctx }
+
+func (answerWatcher) HandleConn(context.Context, stats.ConnStats) {}
 
 func (r *connRecorder) unaryInterceptor(
 	ctx context.Context,
@@ -148,7 +178,9 @@ func (r *connRecorder) unaryInterceptor(
 	invoker grpc.UnaryInvoker,
 	opts ...grpc.CallOption,
 ) error {
-	return r.classify(invoker(ctx, method, req, reply, cc, opts...))
+	answer := &agentAnswer{}
+	err := invoker(context.WithValue(ctx, agentAnswerKey{}, answer), method, req, reply, cc, opts...)
+	return r.classify(err, answer.received.Load())
 }
 
 func (r *connRecorder) streamInterceptor(
@@ -159,15 +191,17 @@ func (r *connRecorder) streamInterceptor(
 	streamer grpc.Streamer,
 	opts ...grpc.CallOption,
 ) (grpc.ClientStream, error) {
-	stream, err := streamer(ctx, desc, cc, method, opts...)
+	answer := &agentAnswer{}
+	stream, err := streamer(context.WithValue(ctx, agentAnswerKey{}, answer), desc, cc, method, opts...)
 	if err != nil {
-		return nil, r.classify(err)
+		return nil, r.classify(err, answer.received.Load())
 	}
-	return &recordingStream{ClientStream: stream, recorder: r}, nil
+	return &recordingStream{ClientStream: stream, recorder: r, answer: answer}, nil
 }
 
 // classify wraps a failed call's error in a ProbeError with its cause.
-func (r *connRecorder) classify(err error) error {
+// answered tells whether the agent itself returned the status.
+func (r *connRecorder) classify(err error, answered bool) error {
 	if err == nil {
 		return nil
 	}
@@ -175,15 +209,18 @@ func (r *connRecorder) classify(err error) error {
 	if errors.As(err, &probeErr) {
 		return err
 	}
-	return &ProbeError{Cause: r.cause(err), Err: err}
+	return &ProbeError{Cause: r.cause(err, answered), Err: err}
 }
 
-func (r *connRecorder) cause(err error) ProbeCause {
+func (r *connRecorder) cause(err error, answered bool) ProbeCause {
 	code := status.Code(err)
 	switch code { //nolint:exhaustive // the default covers every code the agent returns itself
 	case codes.Unauthenticated, codes.PermissionDenied:
 		return ProbeCauseAuthFailed
 	case codes.Unavailable, codes.DeadlineExceeded, codes.Canceled:
+		if answered {
+			return ProbeCauseAgentError
+		}
 		// gRPC itself reports a failed connection with these codes, so the
 		// recorded connection outcome says which it was.
 	default:
@@ -321,6 +358,7 @@ func (c *recordingConn) Read(b []byte) (int, error) {
 type recordingStream struct {
 	grpc.ClientStream
 	recorder *connRecorder
+	answer   *agentAnswer
 }
 
 func (s *recordingStream) RecvMsg(m any) error {
@@ -328,5 +366,5 @@ func (s *recordingStream) RecvMsg(m any) error {
 	if err == nil || errors.Is(err, io.EOF) {
 		return err
 	}
-	return s.recorder.classify(err)
+	return s.recorder.classify(err, s.answer.received.Load())
 }
