@@ -204,7 +204,7 @@ func (r *connRecorder) streamInterceptor(
 	if err != nil {
 		return nil, r.classify(err, answer.from(ctx))
 	}
-	return &recordingStream{ClientStream: stream, recorder: r, answer: answer}, nil
+	return &recordingStream{ClientStream: stream, recorder: r, answer: answer, ctx: ctx}, nil
 }
 
 // classify wraps a failed call's error in a ProbeError with its cause.
@@ -367,6 +367,10 @@ type recordingStream struct {
 	grpc.ClientStream
 	recorder *connRecorder
 	answer   *agentAnswer
+	// ctx is the caller's context. The stream's own context is canceled by
+	// gRPC before RecvMsg returns the final status, so it cannot tell whether
+	// the call was still live.
+	ctx context.Context //nolint:containedctx // checked once the stream has ended, not used for calls
 }
 
 func (s *recordingStream) RecvMsg(m any) error {
@@ -374,5 +378,5 @@ func (s *recordingStream) RecvMsg(m any) error {
 	if err == nil || errors.Is(err, io.EOF) {
 		return err
 	}
-	return s.recorder.classify(err, s.answer.from(s.Context()))
+	return s.recorder.classify(err, s.answer.from(s.ctx))
 }
