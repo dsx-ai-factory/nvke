@@ -4,7 +4,11 @@
 
 package v1
 
-import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+import (
+	"reflect"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
 // CatalogClusterReleaseChannelSpec contains only explicitly included source fields.
 // +kubebuilder:object:generate=false
@@ -52,4 +56,17 @@ type CatalogOperatingSystem struct {
 type CatalogReleaseLifecycle struct {
 	Deprecated     bool         `json:"deprecated"`
 	SupportedUntil *metav1.Time `json:"supportedUntil,omitempty"`
+}
+
+// CatalogSchemaSources maps projections to their source types for OpenAPI generation.
+func CatalogSchemaSources() map[reflect.Type]reflect.Type {
+	return map[reflect.Type]reflect.Type{
+		reflect.TypeFor[CatalogClusterReleaseChannelSpec](): reflect.TypeFor[ClusterReleaseChannelSpec](),
+		reflect.TypeFor[CatalogControlPlaneClassConfig]():   reflect.TypeFor[ControlPlaneClassConfig](),
+		reflect.TypeFor[CatalogControlPlaneClassSpec]():     reflect.TypeFor[ControlPlaneClassSpec](),
+		reflect.TypeFor[CatalogMachineImageSpec]():          reflect.TypeFor[MachineImageSpec](),
+		reflect.TypeFor[CatalogNodeProfileSpec]():           reflect.TypeFor[NodeProfileSpec](),
+		reflect.TypeFor[CatalogOperatingSystem]():           reflect.TypeFor[OperatingSystem](),
+		reflect.TypeFor[CatalogReleaseLifecycle]():          reflect.TypeFor[ReleaseLifecycle](),
+	}
 }

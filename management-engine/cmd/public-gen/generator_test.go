@@ -177,17 +177,30 @@ func TestGenerate(t *testing.T) {
 				require.NoError(t, generate(root, false))
 				for path, want := range map[string][]byte{
 					publicOutput: output, registryOutput: registry,
-					catalogOutput: []byte(generatedHeader + "\npackage v1\n"),
+					catalogOutput: []byte(emptyCatalogOutput),
 				} {
 					got, err := os.ReadFile(filepath.Join(root, path))
 					require.NoError(t, err)
 					require.Equal(t, want, got, "catalog opt-in must only affect %s", catalogOutput)
 				}
 			} else {
-				require.Equal(t, generatedHeader+"\npackage v1\n", string(catalog))
+				require.Equal(t, emptyCatalogOutput, string(catalog))
 			}
 			write(publicOutput, string(output)+"\n// drift\n")
 			require.ErrorContains(t, generate(root, true), "is stale")
 		})
 	}
 }
+
+const emptyCatalogOutput = generatedHeader + `
+package v1
+
+import (
+	"reflect"
+)
+
+// CatalogSchemaSources maps projections to their source types for OpenAPI generation.
+func CatalogSchemaSources() map[reflect.Type]reflect.Type {
+	return map[reflect.Type]reflect.Type{}
+}
+`

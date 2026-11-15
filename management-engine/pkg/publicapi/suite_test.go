@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -44,9 +43,10 @@ type fixtureRequest struct {
 }
 
 type fixtureResponse struct {
-	StatusCode int         `json:"statusCode"`
-	Headers    http.Header `json:"headers"`
-	Body       any         `json:"body"`
+	StatusCode   int         `json:"statusCode"`
+	Headers      http.Header `json:"headers"`
+	Body         any         `json:"body"`
+	requestError error
 }
 
 var _ = fixture.DescribeCaseSet(publicAPICaseSet("Operator API", "operator-", "operator", Operator,
@@ -85,17 +85,17 @@ func publicAPICaseSet(
 		},
 		DefineSteps: func(tc *fixture.Case, _ fixture.CaseSet) {
 			ginkgo.It("serves the fixture request", func(ctx ginkgo.SpecContext) {
-				server := newPublicAPIFixtureServer(ctx, tc, registrations, surface)
+				api := newAPIConformance(tc.Config, surface, registrations())
 
 				if data, exists := tc.Input("input_setup.yaml"); exists {
-					setupServer := server
+					setupAPI := api
 					if surface == "tenant" {
-						setupServer = newPublicAPIFixtureServer(ctx, tc, Operator, "operator")
+						setupAPI = newAPIConformance(tc.Config, "operator", Operator())
 					}
 					var setup []fixtureRequest
 					gomega.Expect(yaml.UnmarshalStrict([]byte(data), &setup)).To(gomega.Succeed())
 					for _, input := range setup {
-						response, err := sendRequest(ctx, setupServer, input)
+						response, err := setupAPI.sendRequest(ctx, input)
 						gomega.Expect(err).NotTo(gomega.HaveOccurred())
 						gomega.Expect(response.StatusCode).To(gomega.BeNumerically(">=", http.StatusOK),
 							"setup %s %s", input.Method, input.Path)
@@ -111,7 +111,7 @@ func publicAPICaseSet(
 					gomega.Expect(inputs).NotTo(gomega.BeEmpty())
 					snapshots := make([]fixtureResponse, 0, len(inputs))
 					for _, input := range inputs {
-						snapshot, err := sendRequest(ctx, server, input)
+						snapshot, err := api.sendRequest(ctx, input)
 						gomega.Expect(err).NotTo(gomega.HaveOccurred())
 						normalizeFixtureResponse(&snapshot)
 						snapshots = append(snapshots, snapshot)
@@ -127,7 +127,7 @@ func publicAPICaseSet(
 				gomega.Expect(exists).To(gomega.BeTrue())
 				var input fixtureRequest
 				gomega.Expect(yaml.UnmarshalStrict([]byte(data), &input)).To(gomega.Succeed())
-				snapshot, err := sendRequest(ctx, server, input)
+				snapshot, err := api.sendRequest(ctx, input)
 				gomega.Expect(err).NotTo(gomega.HaveOccurred())
 
 				tc.AddGolden("expected_response.yaml", func(context.Context) (string, error) {
@@ -138,28 +138,6 @@ func publicAPICaseSet(
 			})
 		},
 	}
-}
-
-// newPublicAPIFixtureServer mounts the selected API routes with request limits.
-// It registers cleanup and leaves redirects visible to test assertions.
-func newPublicAPIFixtureServer(
-	_ context.Context,
-	tc *fixture.Case,
-	registrations func() []resource.Registration,
-	surface string,
-) *httptest.Server {
-	mux := http.NewServeMux()
-	config := resource.ClientConfig{Datastore: tc.Config, Surface: surface}
-	if surface == "tenant" {
-		config.Namespace = func(context.Context) (string, error) { return "org-a", nil }
-	}
-	for _, registration := range registrations() {
-		gomega.Expect(registration.Mount(mux, config)).To(gomega.Succeed())
-	}
-	server := httptest.NewServer(resource.WithLimits(mux, resource.ServerOptions{}))
-	ginkgo.DeferCleanup(server.Close)
-	server.Client().CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return server
 }
 
 // normalizeFixtureResponse replaces volatile values in place for stable goldens.
@@ -198,18 +176,18 @@ func normalizeFixtureResponse(snapshot *fixtureResponse) {
 	}
 }
 
-// sendRequest sends a fixture request and captures its response for golden comparison.
+// sendRequest validates a live exchange and captures its response for golden comparison.
 // Header templates can resolve the target resource's current ETag.
-func sendRequest(ctx context.Context, server *httptest.Server, input fixtureRequest) (fixtureResponse, error) {
+func (api *apiConformance) sendRequest(ctx context.Context, input fixtureRequest) (fixtureResponse, error) {
 	var snapshot fixtureResponse
-	request, err := http.NewRequestWithContext(ctx, input.Method, server.URL+input.Path, bytes.NewReader(input.Body))
+	request, err := http.NewRequestWithContext(ctx, input.Method, api.server.URL+input.Path, bytes.NewReader(input.Body))
 	if err != nil {
 		return snapshot, fmt.Errorf("create request: %w", err)
 	}
 	functions := template.FuncMap{
 		"etag": func() (string, error) {
 			path, _, _ := strings.Cut(input.Path, "?")
-			current, err := sendRequest(ctx, server, fixtureRequest{Method: http.MethodGet, Path: path})
+			current, err := api.sendRequest(ctx, fixtureRequest{Method: http.MethodGet, Path: path})
 			if err != nil {
 				return "", fmt.Errorf("resolve ETag: %w", err)
 			}
@@ -229,7 +207,7 @@ func sendRequest(ctx context.Context, server *httptest.Server, input fixtureRequ
 			request.Header.Add(name, rendered.String())
 		}
 	}
-	response, err := server.Client().Do(request)
+	response, err := api.server.Client().Do(request)
 	if err != nil {
 		return snapshot, fmt.Errorf("send request: %w", err)
 	}
@@ -241,6 +219,7 @@ func sendRequest(ctx context.Context, server *httptest.Server, input fixtureRequ
 	if closeErr != nil {
 		return snapshot, fmt.Errorf("close response: %w", closeErr)
 	}
+	snapshot.requestError = api.validateExchange(request, response, data)
 	snapshot.StatusCode, snapshot.Headers = response.StatusCode, response.Header.Clone()
 	if len(data) != 0 {
 		if err := json.Unmarshal(data, &snapshot.Body); err != nil {

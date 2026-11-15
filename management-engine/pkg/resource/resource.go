@@ -131,6 +131,23 @@ type List[E any] struct {
 	HasMore bool   `json:"hasMore"`
 }
 
+const (
+	// DefaultMaxBodyBytes is the default limit on a public JSON request body.
+	DefaultMaxBodyBytes = 1 << 20
+	// MaxRequestTimeout is the default and maximum public request deadline.
+	MaxRequestTimeout = 30 * time.Second
+	// DefaultPageSize is the number of results returned when no page size is supplied.
+	DefaultPageSize = 100
+	// MaxPageSize is the largest permitted public page size.
+	MaxPageSize = 500
+	// MaxPageKeyBytes bounds an opaque continuation supplied by a caller.
+	MaxPageKeyBytes = 16384
+	// MaxFieldSelectorBytes bounds a public field selector before parsing it.
+	MaxFieldSelectorBytes = 4096
+	// MaxCatalogSourceItems bounds each catalog source or dependency scan before public filtering.
+	MaxCatalogSourceItems = 10000
+)
+
 // ListOptions are the only public list controls.
 type ListOptions struct {
 	PageSize int
@@ -144,6 +161,7 @@ type DeleteOptions struct{ PropagationPolicy string }
 
 // ServerOptions configures WithLimits. Zero values use its default body size and deadline.
 type ServerOptions struct {
-	MaxBodyBytes   int64
+	MaxBodyBytes int64
+	// RequestTimeout bounds handler work, so hosts still need HTTP transport timeouts.
 	RequestTimeout time.Duration
 }

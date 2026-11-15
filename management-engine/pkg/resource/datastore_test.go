@@ -257,7 +257,7 @@ func TestDatastorePageKeys(t *testing.T) {
 			code: "pageExpired",
 		},
 		{
-			name: "too long", pageKey: strings.Repeat("x", maxPageKeyBytes+1), want: 400,
+			name: "too long", pageKey: strings.Repeat("x", MaxPageKeyBytes+1), want: 400,
 			code: "invalidRequest", field: "pageKey",
 		},
 	} {

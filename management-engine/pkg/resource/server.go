@@ -37,6 +37,24 @@ var resourceRoutes = [...]route{
 	{OpDelete, http.MethodDelete, itemPathSuffix},
 }
 
+// queryParameters is shared by HTTP dispatch and registration descriptions.
+func queryParameters(op Operation, selectable, versionFilter bool) []string {
+	var allowed []string
+	switch op {
+	case OpList:
+		allowed = []string{pageSizeParameter, pageKeyParameter}
+		if selectable {
+			allowed = append(allowed, fieldSelectorParameter)
+		}
+	case OpDelete:
+		allowed = []string{propagationPolicyParameter}
+	}
+	if versionFilter && (op == OpGet || op == OpList) {
+		allowed = append(allowed, versionParameter)
+	}
+	return allowed
+}
+
 // Register installs supported operations and JSON 405 fallbacks. Wrap the completed mux with WithLimits.
 // Omitting verbs or the corresponding reader/writer disables those operations.
 // Fields are public JSON paths supported by the reader's equality filters.
@@ -107,21 +125,8 @@ func (h operationHandler[E]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // dispatch parses the transport contract and invokes the registered CRUDL operation.
 func (h operationHandler[E]) dispatch(r *http.Request) (any, int, error) {
-	var allowed []string
 	versionReader, supportsVersionFilter := h.reader.(versionFilteredReader[E])
-	switch h.op {
-	case OpList:
-		allowed = []string{pageSizeParameter, pageKeyParameter}
-		if len(h.fields) != 0 {
-			allowed = append(allowed, fieldSelectorParameter)
-		}
-	case OpDelete:
-		allowed = []string{propagationPolicyParameter}
-	}
-	if supportsVersionFilter && (h.op == OpGet || h.op == OpList) {
-		allowed = append(allowed, versionParameter)
-	}
-	values, err := query(r, allowed...)
+	values, err := query(r, queryParameters(h.op, len(h.fields) != 0, supportsVersionFilter)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -180,17 +185,15 @@ func (h operationHandler[E]) dispatch(r *http.Request) (any, int, error) {
 	}
 }
 
-// WithLimits applies request deadlines, a body size limit, and no-store responses to a complete surface.
-// Zero options use a 1 MiB body limit and a 30-second deadline. Longer deadlines are capped at 30 seconds.
-// Writers must support read deadlines directly or expose their underlying writer through Unwrap.
-// Cancellation is cooperative and does not emit a timeout response.
-// The hosting http.Server still needs transport timeouts for work outside this handler, such as reading headers.
+// WithLimits applies body limits, cooperative deadlines and no-store responses.
+// Zero options use DefaultMaxBodyBytes and MaxRequestTimeout. Longer deadlines are capped.
+// Writers must support read deadlines or expose their underlying writer through Unwrap.
 func WithLimits(next http.Handler, opts ServerOptions) http.Handler {
 	if opts.MaxBodyBytes <= 0 {
-		opts.MaxBodyBytes = 1 << 20
+		opts.MaxBodyBytes = DefaultMaxBodyBytes
 	}
-	if opts.RequestTimeout <= 0 || opts.RequestTimeout > requestTimeout {
-		opts.RequestTimeout = requestTimeout
+	if opts.RequestTimeout <= 0 || opts.RequestTimeout > MaxRequestTimeout {
+		opts.RequestTimeout = MaxRequestTimeout
 	}
 	return limitsHandler{next: next, opts: opts}
 }

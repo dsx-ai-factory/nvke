@@ -24,9 +24,6 @@ type versionFilteredSource[S any] interface {
 	FilterCatalogVersion(string) (S, error)
 }
 
-// maxSourceItems bounds each complete primary or dependency scan before public filtering.
-const maxSourceItems = 10000
-
 type directView[E any] interface {
 	visibleSource
 	CatalogView() (E, error)
@@ -85,7 +82,7 @@ func NewDependentReadRegistration[S dependentView[D, E], D any, E namedView](
 // NewSourceLister constructs a typed, complete Kubernetes list loader for dependencies.
 // It checks list capability at construction, resolves trusted scope once per call and retains
 // hidden backing resources. A read registration's loader can assemble these values into its typed dependencies.
-// Collections exceeding 10,000 items fail without returning partial values.
+// Collections exceeding MaxCatalogSourceItems items fail without returning partial values.
 func NewSourceLister[S any](cfg ClientConfig, info ResourceInfo) (func(context.Context) ([]S, error), error) {
 	info.Verbs = []Operation{OpList}
 	store, err := newDatastore(cfg, info)
@@ -94,7 +91,7 @@ func NewSourceLister[S any](cfg ClientConfig, info ResourceInfo) (func(context.C
 	}
 	source := &datastoreSource[S]{store}
 	return func(ctx context.Context) ([]S, error) {
-		ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+		ctx, cancel := context.WithTimeout(ctx, MaxRequestTimeout)
 		defer cancel()
 		items, _, err := source.List(ctx)
 		return items, err
@@ -109,7 +106,8 @@ func readRegistration[S visibleSource, E namedView](
 ) Registration {
 	info.Verbs = slices.Clone(info.Verbs)
 	fields = slices.Clone(fields)
-	return Registration{Mount: func(mux *http.ServeMux, cfg ClientConfig) error {
+	registration := Registration{description: describe[E, S](path, info, true, fields)}
+	registration.Mount = func(mux *http.ServeMux, cfg ClientConfig) error {
 		for _, op := range info.Verbs {
 			if op != OpGet && op != OpList {
 				return fmt.Errorf("read registrations support only get and list")
@@ -131,7 +129,8 @@ func readRegistration[S visibleSource, E namedView](
 				info.GVK.String() + "/" + info.Resource + "/" + string(info.Scope)}
 		Register(mux, path, reader, nil, fields, info.Verbs...)
 		return nil
-	}}
+	}
+	return registration
 }
 
 // readSource returns complete source lists and their trusted namespace for continuation binding.
@@ -180,7 +179,7 @@ func (s *datastoreSource[S]) List(ctx context.Context) ([]S, string, error) {
 		if err != nil {
 			return nil, "", err
 		}
-		if len(items)+len(page.Items) > maxSourceItems {
+		if len(items)+len(page.Items) > MaxCatalogSourceItems {
 			return nil, "", problem(
 				http.StatusServiceUnavailable, datastoreUnavailableCode, "The resource collection exceeds the read limit.",
 			)
@@ -268,7 +267,7 @@ func (r *projectedReader[S, E]) WithVersionFilter(selector string) (ResourceRead
 
 // Get bypasses LIST visibility for callers that know a name. Projection eligibility still applies.
 func (r *projectedReader[S, E]) Get(ctx context.Context, name string) (E, error) {
-	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, MaxRequestTimeout)
 	defer cancel()
 	var zero E
 	if err := validName(name); err != nil {
@@ -291,7 +290,7 @@ func (r *projectedReader[S, E]) Get(ctx context.Context, name string) (E, error)
 // List filters and sorts complete visible projections so excluded sources cannot consume page slots.
 // Continuations expire when the projected result changes. Independent resource reads are not a transactional snapshot.
 func (r *projectedReader[S, E]) List(ctx context.Context, opts ListOptions) (List[E], error) {
-	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, MaxRequestTimeout)
 	defer cancel()
 	var zero List[E]
 	selector, err := listSelector(&opts, r.fields)

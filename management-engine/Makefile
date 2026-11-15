@@ -58,13 +58,20 @@ manifests: manifests-state kustomize ## Generate canonical schemas, RBAC and run
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
 
 .PHONY: generate generate-public generate-public-check
-generate: generate-public ## Generate internal schemas, public projections, and registration wiring.
+generate: generate-openapi ## Generate internal schemas, public projections, registrations, and OpenAPI specs.
 
 generate-public: manifests-state ## Generate the explicitly selected public resources and registrations.
 	$(GO) run ./cmd/public-gen
 
 generate-public-check: ## Verify public projections match their source types and configuration.
 	$(GO) run ./cmd/public-gen -check
+
+.PHONY: generate-openapi generate-openapi-check
+generate-openapi: generate-public ## Generate tenant and operator OpenAPI specs without a datastore.
+	$(GO) run ./cmd/openapi-gen
+
+generate-openapi-check: generate-public-check ## Verify public projections and OpenAPI specs are current.
+	$(GO) run ./cmd/openapi-gen -check
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -126,6 +133,11 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 .PHONY: lint-config
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	"$(GOLANGCI_LINT)" config verify
+
+# Reuse the NVKE controller API rules and the repository's pinned vacuum version.
+.PHONY: lint-openapi
+lint-openapi: ## Lint the OpenAPI specs against the NVKE controller API's rules.
+	$(GO) run github.com/daveshanley/vacuum@$(VACUUM_VERSION) lint --ruleset ../controller/api/openapi-lint.yaml --details --no-banner --no-style --no-clip --min-score 0 api/tenant.openapi.yaml api/operator.openapi.yaml
 
 ##@ Build
 

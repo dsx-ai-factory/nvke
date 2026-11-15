@@ -13,11 +13,18 @@ import (
 	"github.com/dsx-ai-factory/nvke/management-engine/pkg/projection"
 )
 
-var channelVersionSelectorPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)([.](0|[1-9][0-9]*)([-+._][a-zA-Z0-9][a-zA-Z0-9._+-]*)?)?$`)
+const (
+	// CatalogVersionPattern is the syntax accepted by the catalog's version query parameter.
+	CatalogVersionPattern = `^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)([.](0|[1-9][0-9]*)([-+._][a-zA-Z0-9][a-zA-Z0-9._+-]*)?)?$`
+	// MaxCatalogVersionLength bounds the ASCII version selector, including any build suffix.
+	MaxCatalogVersionLength = 128
+)
+
+var channelVersionSelectorPattern = regexp.MustCompile(CatalogVersionPattern)
 
 // FilterCatalogVersion retains published choices in a minor or patch family, or one exact suffixed choice.
 func (in ClusterReleaseChannel) FilterCatalogVersion(selector string) (ClusterReleaseChannel, error) {
-	if len(selector) > 128 || !channelVersionSelectorPattern.MatchString(selector) {
+	if len(selector) > MaxCatalogVersionLength || !channelVersionSelectorPattern.MatchString(selector) {
 		return ClusterReleaseChannel{}, fmt.Errorf("invalid channel version filter")
 	}
 	parsed, err := parseChannelVersion(selector)
@@ -46,16 +53,16 @@ func (in ClusterReleaseChannel) FilterCatalogVersion(selector string) (ClusterRe
 // +kubebuilder:object:generate=false
 type ChannelCatalogSpec struct {
 	CatalogClusterReleaseChannelSpec `json:",inline"`
-	DefaultVersion                   string                  `json:"defaultVersion"`
-	Versions                         []ChannelCatalogVersion `json:"versions"`
+	DefaultVersion                   string                  `json:"defaultVersion" description:"The newest version this channel offers: the first entry of versions."`
+	Versions                         []ChannelCatalogVersion `json:"versions" description:"The versions this channel offers, newest first."`
 }
 
 // ChannelCatalogVersion describes the first discoverable release advertised under a published selector.
 // +kubebuilder:object:generate=false
 type ChannelCatalogVersion struct {
-	Version           string       `json:"version"`
-	KubernetesVersion string       `json:"kubernetesVersion"`
-	SupportedUntil    *metav1.Time `json:"supportedUntil,omitempty"`
+	Version           string       `json:"version" description:"The version to name when a cluster selects this channel."`
+	KubernetesVersion string       `json:"kubernetesVersion" description:"The Kubernetes version of the release this version currently resolves to."`
+	SupportedUntil    *metav1.Time `json:"supportedUntil,omitempty" description:"When support for that release ends."`
 }
 
 // CatalogView preserves the operator's reference preference within each published selector.

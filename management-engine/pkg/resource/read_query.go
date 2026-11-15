@@ -76,17 +76,18 @@ func stringField(t reflect.Type, path []string) bool {
 // listSelector validates bounded public controls for direct callers as well as HTTP callers.
 func listSelector(opts *ListOptions, supported []string) (fields.Selector, error) {
 	if opts.PageSize == 0 {
-		opts.PageSize = 100
+		opts.PageSize = DefaultPageSize
 	}
-	if opts.PageSize < 1 || opts.PageSize > 500 {
+	if opts.PageSize < 1 || opts.PageSize > MaxPageSize {
 		return nil, Invalid(FieldError{
-			Field: pageSizeParameter, Code: invalidCode, Message: "Page size must be between 1 and 500.",
+			Field: pageSizeParameter, Code: invalidCode,
+			Message: fmt.Sprintf("Page size must be between 1 and %d.", MaxPageSize),
 		})
 	}
-	if len(opts.PageKey) > maxPageKeyBytes {
+	if len(opts.PageKey) > MaxPageKeyBytes {
 		return nil, Invalid(FieldError{Field: pageKeyParameter, Code: invalidCode, Message: "The page key is too long."})
 	}
-	if len(opts.FieldSelector) > 4096 {
+	if len(opts.FieldSelector) > MaxFieldSelectorBytes {
 		return nil, invalidSelector()
 	}
 	selector, err := fields.ParseSelector(opts.FieldSelector)

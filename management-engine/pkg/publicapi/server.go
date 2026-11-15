@@ -19,6 +19,27 @@ import (
 	"github.com/dsx-ai-factory/nvke/management-engine/pkg/resource"
 )
 
+const (
+	// LivenessPath identifies the process liveness endpoint.
+	LivenessPath = "/healthz"
+	// ReadinessPath identifies the datastore readiness endpoint.
+	ReadinessPath = "/readyz"
+)
+
+// MountHealth installs liveness and readiness probes using the supplied datastore check.
+func MountHealth(mux *http.ServeMux, checkReadiness func(context.Context) error) {
+	mux.HandleFunc("GET "+LivenessPath, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("GET "+ReadinessPath, func(w http.ResponseWriter, r *http.Request) {
+		if err := checkReadiness(r.Context()); err != nil {
+			http.Error(w, "datastore unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+}
+
 // Run parses common flags, mounts the command's public surface, and serves it until shutdown.
 func Run(version string, registrations []resource.Registration, cfg resource.ClientConfig) error {
 	address := flag.String("listen", ":8080", "HTTP listen address")
@@ -60,15 +81,9 @@ func Run(version string, registrations []resource.Registration, cfg resource.Cli
 			return fmt.Errorf("mount %s surface: %w", cfg.Surface, err)
 		}
 	}
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		if _, err := disco.ServerResourcesForGroupVersionWithContext(r.Context(), "service.nvke.nvidia.com/v1"); err != nil {
-			http.Error(w, "datastore unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
+	MountHealth(mux, func(ctx context.Context) error {
+		_, err := disco.ServerResourcesForGroupVersionWithContext(ctx, "service.nvke.nvidia.com/v1")
+		return err
 	})
 	handler := resource.WithLimits(mux, resource.ServerOptions{})
 	if authenticator != nil {

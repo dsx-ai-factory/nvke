@@ -16,21 +16,24 @@ import (
 type Registration struct {
 	// Mount checks datastore capabilities and installs the registered routes.
 	// Wrap the completed surface with WithLimits.
-	Mount func(*http.ServeMux, ClientConfig) error
+	Mount       func(*http.ServeMux, ClientConfig) error
+	description Description
 }
 
 // NewRegistration binds a public collection path to its datastore identity and enabled operations.
 // Empty Verbs enables no operations. Datastore requests begin only when Mount is called.
 func NewRegistration[E ResourceHandler[I], I ResourceHandler[E]](path string, info ResourceInfo) Registration {
 	info.Verbs = slices.Clone(info.Verbs)
-	return Registration{Mount: func(mux *http.ServeMux, cfg ClientConfig) error {
+	registration := Registration{description: describe[E, I](path, info, false, nil)}
+	registration.Mount = func(mux *http.ServeMux, cfg ClientConfig) error {
 		server, err := New[E, I](cfg, info)
 		if err != nil {
 			return err
 		}
 		Register(mux, path, server, server, nil, info.Verbs...)
 		return nil
-	}}
+	}
+	return registration
 }
 
 // checkResource verifies served identity, scope, status and the verbs actually used by CRUDL.
@@ -40,7 +43,7 @@ func checkResource(cfg *rest.Config, client *http.Client, info ResourceInfo) err
 	if err != nil {
 		return fmt.Errorf("creating discovery client: %w", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), MaxRequestTimeout)
 	defer cancel()
 	resources, err := disco.ServerResourcesForGroupVersionWithContext(ctx, info.GVK.GroupVersion().String())
 	if err != nil {

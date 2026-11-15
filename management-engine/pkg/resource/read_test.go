@@ -291,7 +291,7 @@ func TestSourceListerCompleteness(t *testing.T) {
 		}
 	}
 	t.Run("total limit", func(t *testing.T) {
-		items := make([]map[string]any, maxSourceItems, maxSourceItems+1)
+		items := make([]map[string]any, MaxCatalogSourceItems, MaxCatalogSourceItems+1)
 		for i := range items {
 			items[i] = map[string]any{"metadata": map[string]any{"name": "backing"}}
 		}
@@ -314,7 +314,7 @@ func TestSourceListerCompleteness(t *testing.T) {
 		require.NoError(t, err)
 		values, err := list(t.Context())
 		require.NoError(t, err)
-		require.Len(t, values, maxSourceItems)
+		require.Len(t, values, MaxCatalogSourceItems)
 		items = append(items, items[0])
 		values, err = list(t.Context())
 		statusCode(t, err, 503)

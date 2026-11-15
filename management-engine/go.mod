@@ -6,6 +6,7 @@ require (
 	github.com/dsx-ai-factory/cluster-api-provider-nico v0.1.0
 	github.com/dsx-ai-factory/nvke/auth v0.0.0-00010101000000-000000000000
 	github.com/dsx-ai-factory/nvke/controller/api v0.0.0-00010101000000-000000000000
+	github.com/getkin/kin-openapi v0.152.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golangci/plugin-module-register v0.1.2
 	github.com/google/uuid v1.6.0
@@ -39,7 +40,6 @@ require (
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
-	github.com/getkin/kin-openapi v0.152.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.9 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -65,6 +65,7 @@ require (
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
+	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.32.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect

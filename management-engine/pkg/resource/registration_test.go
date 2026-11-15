@@ -62,6 +62,32 @@ func TestRegistration(t *testing.T) {
 	require.Equal(t, 2, calls)
 }
 
+func TestRegistrationDescription(t *testing.T) {
+	registration := NewRegistration[widget, internalWidget]("/widgets", widgetInfo(OpCreate, OpGet, OpList))
+	description := registration.Describe()
+	mux := http.NewServeMux()
+	require.NoError(t, registration.Mount(mux, fixtureConfig(nil)))
+	for _, route := range description.Routes {
+		_, mounted := mux.Handler(httptest.NewRequest(route.Method, route.Path, nil))
+		require.Equal(t, route.Method+" "+route.Path, mounted)
+		if route.Operation == OpList {
+			require.Equal(t, []string{"pageSize", "pageKey"}, route.Query)
+		} else {
+			require.Empty(t, route.Query)
+		}
+	}
+
+	// Callers may annotate a description without changing future descriptions or mounted behavior.
+	changed := registration.Describe()
+	changed.Info.Verbs[0] = OpDelete
+	for i := range changed.Routes {
+		if changed.Routes[i].Operation == OpList {
+			changed.Routes[i].Query[0] = "other"
+		}
+	}
+	require.Equal(t, description, registration.Describe())
+}
+
 func TestEmptyOperations(t *testing.T) {
 	for name, verbs := range map[string][]Operation{"nil": nil, "empty": {}} {
 		t.Run(name, func(t *testing.T) {

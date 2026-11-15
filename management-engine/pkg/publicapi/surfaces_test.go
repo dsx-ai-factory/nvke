@@ -10,6 +10,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/require"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -63,6 +64,10 @@ func TestSurfaces(t *testing.T) {
 					Namespace: func(context.Context) (string, error) { return "org", nil },
 				}))
 			}
+			if surface.name == "tenant" || surface.name == "operator" {
+				MountHealth(mux, func(context.Context) error { return nil })
+				checkOpenAPIRoutes(t, mux, surface.name, surface.registrations)
+			}
 			for _, route := range []struct {
 				method, path string
 				enabled      bool
@@ -95,6 +100,33 @@ func TestSurfaces(t *testing.T) {
 			}
 		})
 	}
+}
+
+func checkOpenAPIRoutes(t *testing.T, mux *http.ServeMux, surface string, registrations []resource.Registration) {
+	t.Helper()
+	doc, err := openapi3.NewLoader().LoadFromFile("../../api/" + surface + ".openapi.yaml")
+	require.NoError(t, err)
+	expected := map[string][]string{"GET " + LivenessPath: nil, "GET " + ReadinessPath: nil}
+	for _, registration := range registrations {
+		for _, route := range registration.Describe().Routes {
+			expected[route.Method+" "+route.Path] = route.Query
+		}
+	}
+	published := map[string][]string{}
+	for path, item := range doc.Paths.Map() {
+		for method, operation := range item.Operations() {
+			pattern := method + " " + path
+			_, mounted := mux.Handler(httptest.NewRequest(method, path, nil))
+			require.Equal(t, pattern, mounted)
+			published[pattern] = nil
+			for _, parameter := range operation.Parameters {
+				if parameter.Value.In == "query" {
+					published[pattern] = append(published[pattern], parameter.Value.Name)
+				}
+			}
+		}
+	}
+	require.Equal(t, expected, published, "published routes and queries must match the selected server registrations")
 }
 
 // discoveryTransport serves CRD-derived discovery through the real client's HTTP boundary.
