@@ -4,12 +4,14 @@
 package nodeagentreadiness
 
 import (
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 type nodeAgentProbe struct {
 	agentVersion string
 	err          error
+	cause        agent.ProbeCause
 }
 
 func applyNodeAgentReadiness(node *db.Node, agentProbe nodeAgentProbe) bool {

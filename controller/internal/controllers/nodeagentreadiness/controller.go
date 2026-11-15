@@ -30,6 +30,7 @@ type AgentReadinessController struct {
 	db              *dbwrapper.DB
 	nodeAgentClient agent.Client
 	logger          *slog.Logger
+	causes          causeTracker
 }
 
 // NewAgentReadinessController constructs the node-agent reachability reconciler.
@@ -67,12 +68,14 @@ func (c *AgentReadinessController) SetupWithManager(mgr manager.Manager) error {
 func (c *AgentReadinessController) Reconcile(ctx context.Context, key dbreconcile.Key) (reconcile.Result, error) {
 	node, err := c.db.GetNode(ctx, key.ID)
 	if errors.Is(err, db.ErrNotFound) {
+		c.causes.forget(key.ID)
 		return reconcile.Result{}, nil
 	}
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting node %s: %w", key.ID, err)
 	}
 	if node.Conditions.Deleting.Status == db.ConditionStatusTrue {
+		c.causes.forget(node.ID)
 		return reconcile.Result{}, nil
 	}
 
@@ -87,12 +90,18 @@ func (c *AgentReadinessController) Reconcile(ctx context.Context, key dbreconcil
 	if ctx.Err() != nil {
 		return reconcile.Result{}, ctx.Err()
 	}
-	probe := nodeAgentProbe{agentVersion: agentVersion, err: probeErr}
+	probe := nodeAgentProbe{agentVersion: agentVersion, err: probeErr, cause: probeCause(node, probeErr)}
+	previous := node.Conditions.NodeAgentReady
 	if !applyNodeAgentReadiness(&node, probe) {
+		c.logTransition(node, previous, probe)
 		return reconcile.Result{RequeueAfter: c.requeueAfter()}, nil
 	}
 
+	// The transition is logged once the transaction commits, from the row
+	// it was applied to.
+	var applied *db.Node
 	if err := c.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		applied = nil
 		lockedNode, err := tx.GetNodeForUpdate(ctx, node.ID)
 		if err != nil {
 			return err
@@ -101,7 +110,10 @@ func (c *AgentReadinessController) Reconcile(ctx context.Context, key dbreconcil
 			return nil
 		}
 
-		if !applyNodeAgentReadiness(&lockedNode, probe) {
+		previous = lockedNode.Conditions.NodeAgentReady
+		changed := applyNodeAgentReadiness(&lockedNode, probe)
+		applied = &lockedNode
+		if !changed {
 			return nil
 		}
 
@@ -109,10 +121,16 @@ func (c *AgentReadinessController) Reconcile(ctx context.Context, key dbreconcil
 		return err
 	}); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
+			c.causes.forget(node.ID)
 			return reconcile.Result{}, nil
 		}
 		return reconcile.Result{}, fmt.Errorf("updating node agent health for node %s: %w", node.ID, err)
 	}
+	if applied == nil {
+		c.causes.forget(node.ID)
+		return reconcile.Result{}, nil
+	}
+	c.logTransition(*applied, previous, probe)
 
 	return reconcile.Result{RequeueAfter: c.requeueAfter()}, nil
 }
