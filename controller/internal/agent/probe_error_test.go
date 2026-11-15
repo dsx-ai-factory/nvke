@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
 
 	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
@@ -377,6 +378,41 @@ func TestProbeCauseWhenTheControllerRejectsTheAgentIdentity(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Equal(t, ProbeCauseAuthFailed, CauseOf(err), "error: %v", err)
+}
+
+// The agent's trailers can arrive just before the probe deadline closes the
+// call with gRPC's own status. That status did not come from the agent.
+func TestProbeCauseWhenTheDeadlineRacesTheAgentAnswer(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		endCall bool
+		want    ProbeCause
+	}{
+		"the agent's status reaches the caller":                {endCall: false, want: ProbeCauseAgentError},
+		"the deadline ends the call after the trailers arrive": {endCall: true, want: ProbeCauseUnknown},
+	}
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := &connRecorder{}
+			recorder.record(connEventSecured, nil)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			invoker := func(ctx context.Context, _ string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
+				answerWatcher{}.HandleRPC(ctx, &stats.InTrailer{})
+				if params.endCall {
+					cancel()
+				}
+				return status.Error(codes.Canceled, "the call ended")
+			}
+
+			err := recorder.unaryInterceptor(ctx, "/nvke.agent.v1.NodeAgent/GetAgentVersion", nil, nil, nil, invoker)
+
+			assert.Equal(t, params.want, CauseOf(err), "error: %v", err)
+		})
+	}
 }
 
 func TestCauseOfAnErrorWithoutARecordedCause(t *testing.T) {

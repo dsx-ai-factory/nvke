@@ -149,6 +149,14 @@ type agentAnswer struct {
 	received atomic.Bool
 }
 
+// from tells whether the status of a call made with ctx came from the agent.
+// Once ctx has ended, gRPC can close the call with its own DeadlineExceeded or
+// Canceled after the agent's trailers arrived, so the mark counts only while
+// ctx is live.
+func (a *agentAnswer) from(ctx context.Context) bool {
+	return a.received.Load() && ctx.Err() == nil
+}
+
 type agentAnswerKey struct{}
 
 // answerWatcher marks a call's agentAnswer when the agent's trailers, which
@@ -180,7 +188,7 @@ func (r *connRecorder) unaryInterceptor(
 ) error {
 	answer := &agentAnswer{}
 	err := invoker(context.WithValue(ctx, agentAnswerKey{}, answer), method, req, reply, cc, opts...)
-	return r.classify(err, answer.received.Load())
+	return r.classify(err, answer.from(ctx))
 }
 
 func (r *connRecorder) streamInterceptor(
@@ -194,7 +202,7 @@ func (r *connRecorder) streamInterceptor(
 	answer := &agentAnswer{}
 	stream, err := streamer(context.WithValue(ctx, agentAnswerKey{}, answer), desc, cc, method, opts...)
 	if err != nil {
-		return nil, r.classify(err, answer.received.Load())
+		return nil, r.classify(err, answer.from(ctx))
 	}
 	return &recordingStream{ClientStream: stream, recorder: r, answer: answer}, nil
 }
@@ -366,5 +374,5 @@ func (s *recordingStream) RecvMsg(m any) error {
 	if err == nil || errors.Is(err, io.EOF) {
 		return err
 	}
-	return s.recorder.classify(err, s.answer.received.Load())
+	return s.recorder.classify(err, s.answer.from(s.Context()))
 }
