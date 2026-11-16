@@ -979,7 +979,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/GenericError"
               example:
-                message: 'cannot delete control-plane node "tenant-a-prod-cp-0002": only 2 joined control-plane node(s) would remain, below the minimum of 3 needed for etcd to survive another failure. Raise the control-plane desired count first so a replacement joins before this node is removed, or delete the cluster instead'
+                message: 'cannot delete control-plane node "tenant-a-prod-cp-0002": only 2 joined control-plane node(s) would remain, below the minimum of 3 needed for etcd to survive another failure. Raise the control-plane desired count first so a replacement joins before this node is removed. To replace control-plane nodes for an upgrade, set enableCPNodeRecycling: true on the cluster and the controller replaces them one at a time'
         "404":
           description: Node not found. No body is returned.
         "409":
