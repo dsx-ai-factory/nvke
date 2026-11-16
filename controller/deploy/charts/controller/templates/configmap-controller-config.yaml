@@ -80,8 +80,8 @@ data:
       observationMaxAge: {{ .Values.credentialMonitoring.observationMaxAge | default "3h" | quote }}
       warningDays: {{ include "controller.controllerConfig.orGoDefault" (list .Values.credentialMonitoring.warningDays 45) | int }}
     kubeVip:
-      localASN: {{ include "controller.kubeVipASN" (list .Values.kubeVip.localASN 65100 "localASN") }}
-      staticPeerASN: {{ include "controller.kubeVipASN" (list .Values.kubeVip.staticPeerASN 4294967000 "staticPeerASN") }}
+      localASN: {{ include "controller.kubeVipASN" (list (.Values.kubeVip | default dict).localASN 65100 "localASN") }}
+      staticPeerASN: {{ include "controller.kubeVipASN" (list (.Values.kubeVip | default dict).staticPeerASN 4294967000 "staticPeerASN") }}
     kubeadmImageRepository: {{ .Values.kubeadm.imageRepository | default "registry.k8s.io" | quote }}
     cniImageRegistry: {{ .Values.cni.imageRegistry | quote }}
     installCNIAfterInit: {{ .Values.cni.installAfterInit }}

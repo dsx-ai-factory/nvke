@@ -132,7 +132,7 @@ func TestRenderedChart(t *testing.T) {
 			case "kube-vip-custom.yaml":
 				require.Equal(t, uint32(64512), cfg.KubeVip.LocalASN)
 				require.Equal(t, uint32(4200000000), cfg.KubeVip.StaticPeerASN)
-			case "defaults.yaml", "kube-vip-empty.yaml", "kube-vip-null.yaml":
+			case "defaults.yaml", "kube-vip-empty.yaml", "kube-vip-null.yaml", "kube-vip-null-section.yaml":
 				require.Equal(t, uint32(65100), cfg.KubeVip.LocalASN)
 				require.Equal(t, uint32(4294967000), cfg.KubeVip.StaticPeerASN)
 			}

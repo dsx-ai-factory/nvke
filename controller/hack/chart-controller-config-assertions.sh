@@ -41,6 +41,7 @@ render kube-vip-custom \
 render kube-vip-empty \
   --set-string kubeVip.localASN= --set-string kubeVip.staticPeerASN=
 render kube-vip-null --set kubeVip.localASN=null --set kubeVip.staticPeerASN=null
+render kube-vip-null-section --set kubeVip=null
 render dev-without-vip --set allowControlPlaneWithoutVIP=true
 render readiness-custom \
   --set nodeAgent.readiness.workers=4 \
