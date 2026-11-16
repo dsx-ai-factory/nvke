@@ -21,6 +21,9 @@ on:
   workflow_dispatch: {}
 
 permissions: {}
+env:
+  ARTIFACT_DIR: dist/cluster-service-artifacts
+
 concurrency:
   group: Cluster Service Publish-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
@@ -33,8 +36,6 @@ jobs:
     environment: nvcr
     env:
       RUNTIME: ${{ matrix.runtime }}
-      NVKE_NGC_ORG: ${{ vars.NVKE_NGC_ORG }}
-      ARTIFACT_DIR: ${{ github.workspace }}/dist/cluster-service-artifacts
     timeout-minutes: 30
     permissions:
       contents: read
@@ -71,6 +72,7 @@ jobs:
           password: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE }}
       - name: Build and push by digest
         env:
+          NVKE_NGC_ORG: ${{ vars.NVKE_NGC_ORG }}
           ARCH: ${{ matrix.arch }}
         run: make -C management-engine release-build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -87,8 +89,6 @@ jobs:
     environment: nvcr
     env:
       RUNTIME: ${{ matrix.runtime }}
-      NVKE_NGC_ORG: ${{ vars.NVKE_NGC_ORG }}
-      ARTIFACT_DIR: ${{ github.workspace }}/dist/cluster-service-artifacts
     timeout-minutes: 15
     permissions:
       contents: read
@@ -125,6 +125,8 @@ jobs:
           path: ${{ env.ARTIFACT_DIR }}
       - name: Assemble both architectures
         id: index
+        env:
+          NVKE_NGC_ORG: ${{ vars.NVKE_NGC_ORG }}
         run: management-engine/hack/publish.sh index
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -132,6 +134,8 @@ jobs:
           subject-digest: ${{ steps.index.outputs.digest }}
           push-to-registry: false
       - name: Publish the version only after attestation
+        env:
+          NVKE_NGC_ORG: ${{ vars.NVKE_NGC_ORG }}
         run: management-engine/hack/publish.sh tag
       - uses: ./.github/actions/record-digest
         with:
@@ -151,8 +155,6 @@ jobs:
     environment: nvcr
     env:
       RUNTIME: ${{ matrix.runtime }}
-      NVKE_NGC_ORG: ${{ vars.NVKE_NGC_ORG }}
-      ARTIFACT_DIR: ${{ github.workspace }}/dist/cluster-service-artifacts
     timeout-minutes: 15
     permissions:
       contents: read
@@ -177,6 +179,7 @@ jobs:
       - name: Resolve scan inputs
         id: scan
         env:
+          NVKE_NGC_ORG: ${{ vars.NVKE_NGC_ORG }}
           ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
@@ -199,8 +202,6 @@ jobs:
     environment: nvcr
     env:
       RUNTIME: ${{ matrix.runtime }}
-      NVKE_NGC_ORG: ${{ vars.NVKE_NGC_ORG }}
-      ARTIFACT_DIR: ${{ github.workspace }}/dist/cluster-service-artifacts
     timeout-minutes: 20
     permissions:
       contents: read
@@ -228,12 +229,13 @@ jobs:
         run: echo "digest=$(jq -er '.digest' "${ARTIFACT_DIR}/${RUNTIME}.json")" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/verify-attestation
         with:
-          image: nvcr.io/${{ env.NVKE_NGC_ORG }}/cluster-service-${{ matrix.runtime }}
+          image: nvcr.io/${{ vars.NVKE_NGC_ORG }}/cluster-service-${{ matrix.runtime }}
           digest: ${{ steps.candidate.outputs.digest }}
           signer-workflow: ${{ github.repository }}/.github/workflows/cluster-service-publish.yml
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Copy the verified index without rebuilding
         env:
+          NVKE_NGC_ORG: ${{ vars.NVKE_NGC_ORG }}
           DSX_NGC_ORG_TEAM: ${{ vars.DSX_NGC_ORG_TEAM }}
           DSX_NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_DSX }}
         run: management-engine/hack/publish.sh promote
@@ -253,9 +255,6 @@ jobs:
     needs: [index, promote-dsx]
     runs-on: ubuntu-latest
     environment: nvcr
-    env:
-      NVKE_NGC_ORG: ${{ vars.NVKE_NGC_ORG }}
-      ARTIFACT_DIR: ${{ github.workspace }}/dist/cluster-service-artifacts
     timeout-minutes: 15
     permissions:
       contents: read
@@ -305,7 +304,7 @@ jobs:
           VERSION: ${{ steps.package.outputs.version }}
           IMAGE_REPOSITORY: ${{ steps.package.outputs.repository }}
           IMAGE_PULL_SECRET: ${{ matrix.pull-secret }}
-          RECEIPTS: ${{ env.ARTIFACT_DIR }}
+          RECEIPTS: ${{ github.workspace }}/${{ env.ARTIFACT_DIR }}
           OUTPUT: ${{ runner.temp }}/cluster-service-chart
           REVISION: ${{ github.sha }}
         run: make -C management-engine release-package
