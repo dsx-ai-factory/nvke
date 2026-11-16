@@ -12,12 +12,14 @@ WORKDIR /workspace/management-engine
 # Copy the Go Modules manifests
 COPY management-engine/go.mod management-engine/go.sum ./
 COPY controller/api/go.mod controller/api/go.sum /workspace/controller/api/
+COPY auth/go.mod auth/go.sum /workspace/auth/
 # Cache dependencies separately so source edits do not download them again.
 RUN go mod download
 
 # Copy the Go source from the repository root (filtered by Dockerfile.dockerignore).
 COPY management-engine/ ./
 COPY controller/api/ /workspace/controller/api/
+COPY auth/ /workspace/auth/
 
 # Build for the requested platform; an unset TARGETARCH uses the builder architecture.
 FROM builder AS manager-builder
