@@ -264,6 +264,8 @@ Chart version `0.2.0` alone does not identify a compatible manager image. Record
 the source commit and image digest in the site configuration. Cross-revision compatibility
 needs separate validation; artifact publication is a separate delivery step.
 The example image tags are placeholders for those reviewed installation inputs.
+For published packages and their matching image references, see the
+[publication guide](artifact-publication.md).
 
 The chart owns every schema in `config/crd/bases`: NVKECluster, ControlPlaneClass
 and ClusterReleaseChannel, and also MachineImage, ClusterRelease and
