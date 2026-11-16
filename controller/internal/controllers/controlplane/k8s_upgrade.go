@@ -50,9 +50,22 @@ func (r *reconciler) reconcileK8sUpgrade(
 		"kubernetesVersion", cluster.KubernetesVersion,
 	)
 
-	// If K8s upgrade is in progress, check if it's complete
+	// If K8s upgrade is in progress, check if it's complete. The API raises the
+	// condition in the same write that stores the target, before the kubeadm
+	// ConfigMap carries it, so that step has to finish first. updateKubeadmConfigMap
+	// is safe to repeat: its workflow ID is fixed per cluster and version.
 	isK8sVersionUpgradeInProgress := cluster.Conditions.ControlPlaneUpgrading.Status == db.ConditionStatusTrue
 	if isK8sVersionUpgradeInProgress {
+		configMapComplete, err := r.updateKubeadmConfigMap(ctx, cluster)
+		if err != nil {
+			logger.Error("Failed to update kubeadm ConfigMap", "error", err)
+			return err
+		}
+		if !configMapComplete {
+			logger.Info("K8s upgrade workflow in progress - will check status on next reconcile")
+			r.requeueAfter(upgradeWaitRequeueInterval)
+			return nil
+		}
 		return r.reconcileUpgradeInProgress(ctx, cluster, cp, logger)
 	}
 
