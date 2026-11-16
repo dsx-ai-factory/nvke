@@ -1,5 +1,5 @@
 - body:
-    hasMore: true
+    has_more: true
     items:
     - metadata:
         name: np-c-old
@@ -7,12 +7,12 @@
         architecture: amd64
         lifecycle:
           deprecated: true
-        operatingSystem:
+        operating_system:
           family: ubuntu
           version: "24.04"
         profile: ubuntu-gpu
         tag: "2026.10"
-    pageKey: PAGE_KEY
+    page_key: PAGE_KEY
   headers:
     Cache-Control:
     - no-store
@@ -22,7 +22,7 @@
     - DATE
   statusCode: 200
 - body:
-    hasMore: false
+    has_more: false
     items:
     - metadata:
         name: np-d-current
@@ -30,17 +30,17 @@
         architecture: amd64
         lifecycle:
           deprecated: false
-        operatingSystem:
+        operating_system:
           family: ubuntu
           version: "24.04"
         profile: ubuntu-gpu
         tag: "2026.11"
-    pageKey: ""
+    page_key: ""
   headers:
     Cache-Control:
     - no-store
     Content-Length:
-    - "238"
+    - "241"
     Content-Type:
     - application/json
     Date:

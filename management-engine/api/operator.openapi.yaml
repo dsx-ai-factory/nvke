@@ -87,22 +87,22 @@ paths:
   /v1/cluster-release-channels:
     get:
       description: Returns one page of resources. Read the next page with the returned
-        pageKey while hasMore is true.
+        page_key while has_more is true.
       operationId: listClusterReleaseChannel
       parameters:
       - description: Number of results (default 100, maximum 500).
         in: query
-        name: pageSize
+        name: page_size
         schema:
           default: 100
           maximum: 500
           minimum: 1
           type: integer
       - allowEmptyValue: true
-        description: Use the pageKey returned by the previous list response. Keep
+        description: Use the page_key returned by the previous list response. Keep
           the same filters. At most 16384 UTF-8 bytes.
         in: query
-        name: pageKey
+        name: page_key
         schema:
           maxLength: 16384
           type: string
@@ -196,7 +196,7 @@ paths:
         description: Delete dependent resources after the resource (background) or
           before it (foreground). An omitted or empty value selects background.
         in: query
-        name: propagationPolicy
+        name: propagation_policy
         schema:
           default: background
           enum:
@@ -352,22 +352,22 @@ paths:
   /v1/cluster-releases:
     get:
       description: Returns one page of resources. Read the next page with the returned
-        pageKey while hasMore is true.
+        page_key while has_more is true.
       operationId: listClusterRelease
       parameters:
       - description: Number of results (default 100, maximum 500).
         in: query
-        name: pageSize
+        name: page_size
         schema:
           default: 100
           maximum: 500
           minimum: 1
           type: integer
       - allowEmptyValue: true
-        description: Use the pageKey returned by the previous list response. Keep
+        description: Use the page_key returned by the previous list response. Keep
           the same filters. At most 16384 UTF-8 bytes.
         in: query
-        name: pageKey
+        name: page_key
         schema:
           maxLength: 16384
           type: string
@@ -461,7 +461,7 @@ paths:
         description: Delete dependent resources after the resource (background) or
           before it (foreground). An omitted or empty value selects background.
         in: query
-        name: propagationPolicy
+        name: propagation_policy
         schema:
           default: background
           enum:
@@ -617,22 +617,22 @@ paths:
   /v1/control-plane-classes:
     get:
       description: Returns one page of resources. Read the next page with the returned
-        pageKey while hasMore is true.
+        page_key while has_more is true.
       operationId: listControlPlaneClass
       parameters:
       - description: Number of results (default 100, maximum 500).
         in: query
-        name: pageSize
+        name: page_size
         schema:
           default: 100
           maximum: 500
           minimum: 1
           type: integer
       - allowEmptyValue: true
-        description: Use the pageKey returned by the previous list response. Keep
+        description: Use the page_key returned by the previous list response. Keep
           the same filters. At most 16384 UTF-8 bytes.
         in: query
-        name: pageKey
+        name: page_key
         schema:
           maxLength: 16384
           type: string
@@ -726,7 +726,7 @@ paths:
         description: Delete dependent resources after the resource (background) or
           before it (foreground). An omitted or empty value selects background.
         in: query
-        name: propagationPolicy
+        name: propagation_policy
         schema:
           default: background
           enum:
@@ -882,22 +882,22 @@ paths:
   /v1/machine-images:
     get:
       description: Returns one page of resources. Read the next page with the returned
-        pageKey while hasMore is true.
+        page_key while has_more is true.
       operationId: listMachineImage
       parameters:
       - description: Number of results (default 100, maximum 500).
         in: query
-        name: pageSize
+        name: page_size
         schema:
           default: 100
           maximum: 500
           minimum: 1
           type: integer
       - allowEmptyValue: true
-        description: Use the pageKey returned by the previous list response. Keep
+        description: Use the page_key returned by the previous list response. Keep
           the same filters. At most 16384 UTF-8 bytes.
         in: query
-        name: pageKey
+        name: page_key
         schema:
           maxLength: 16384
           type: string
@@ -991,7 +991,7 @@ paths:
         description: Delete dependent resources after the resource (background) or
           before it (foreground). An omitted or empty value selects background.
         in: query
-        name: propagationPolicy
+        name: propagation_policy
         schema:
           default: background
           enum:
@@ -1147,22 +1147,22 @@ paths:
   /v1/node-profiles:
     get:
       description: Returns one page of resources. Read the next page with the returned
-        pageKey while hasMore is true.
+        page_key while has_more is true.
       operationId: listNodeProfile
       parameters:
       - description: Number of results (default 100, maximum 500).
         in: query
-        name: pageSize
+        name: page_size
         schema:
           default: 100
           maximum: 500
           minimum: 1
           type: integer
       - allowEmptyValue: true
-        description: Use the pageKey returned by the previous list response. Keep
+        description: Use the page_key returned by the previous list response. Keep
           the same filters. At most 16384 UTF-8 bytes.
         in: query
-        name: pageKey
+        name: page_key
         schema:
           maxLength: 16384
           type: string
@@ -1256,7 +1256,7 @@ paths:
         description: Delete dependent resources after the resource (background) or
           before it (foreground). An omitted or empty value selects background.
         in: query
-        name: propagationPolicy
+        name: propagation_policy
         schema:
           default: background
           enum:
@@ -1515,12 +1515,12 @@ components:
           additionalProperties: false
           description: The resource's identity and server-assigned metadata.
           properties:
-            creationTimestamp:
+            creation_timestamp:
               description: When the resource was created.
               format: date-time
               readOnly: true
               type: string
-            deletionTimestamp:
+            deletion_timestamp:
               description: When deletion was requested. Present until cleanup finishes.
               format: date-time
               readOnly: true
@@ -1549,12 +1549,12 @@ components:
           additionalProperties: false
           description: The resource's identity and server-assigned metadata.
           properties:
-            creationTimestamp:
+            creation_timestamp:
               description: When the resource was created.
               format: date-time
               readOnly: true
               type: string
-            deletionTimestamp:
+            deletion_timestamp:
               description: When deletion was requested. Present until cleanup finishes.
               format: date-time
               readOnly: true
@@ -1603,7 +1603,7 @@ components:
       additionalProperties: false
       description: One page of ClusterReleaseChannel resources.
       properties:
-        hasMore:
+        has_more:
           description: Whether another page follows.
           type: boolean
         items:
@@ -1611,13 +1611,13 @@ components:
           items:
             $ref: '#/components/schemas/ClusterReleaseChannel'
           type: array
-        pageKey:
+        page_key:
           description: Continuation for the next page. Empty on the last page.
           type: string
       required:
-      - hasMore
+      - has_more
       - items
-      - pageKey
+      - page_key
       type: object
     ClusterReleaseChannelSpec:
       additionalProperties: false
@@ -1643,7 +1643,7 @@ components:
                 choices. Explicit references remain available.
               nullable: true
               type: boolean
-            supportedUntil:
+            supported_until:
               description: SupportedUntil is the time at which support for this release
                 ends.
               format: date-time
@@ -1660,11 +1660,11 @@ components:
               additionalProperties: false
               description: ClusterReleaseReference names a cluster-scoped ClusterRelease.
               properties:
-                minimumUpgradeAge:
+                minimum_upgrade_age:
                   description: |-
                     MinimumUpgradeAge is the minimum time since this release was created before it is eligible for automatic adoption.
 
-                    - minimumUpgradeAge must be a nonnegative duration
+                    - minimum_upgrade_age must be a nonnegative duration
                   maxLength: 32
                   type: string
                 name:
@@ -1675,7 +1675,7 @@ components:
                   pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                   type: string
               required:
-              - minimumUpgradeAge
+              - minimum_upgrade_age
               - name
               type: object
             minItems: 1
@@ -1751,7 +1751,7 @@ components:
       additionalProperties: false
       description: One page of ClusterRelease resources.
       properties:
-        hasMore:
+        has_more:
           description: Whether another page follows.
           type: boolean
         items:
@@ -1759,13 +1759,13 @@ components:
           items:
             $ref: '#/components/schemas/ClusterRelease'
           type: array
-        pageKey:
+        page_key:
           description: Continuation for the next page. Empty on the last page.
           type: string
       required:
-      - hasMore
+      - has_more
       - items
-      - pageKey
+      - page_key
       type: object
     ClusterReleaseSpec:
       additionalProperties: false
@@ -1809,20 +1809,20 @@ components:
                 choices. Explicit references remain available.
               nullable: true
               type: boolean
-            supportedUntil:
+            supported_until:
               description: SupportedUntil is the time at which support for this release
                 ends.
               format: date-time
               nullable: true
               type: string
           type: object
-        machineImageRef:
+        machine_image_ref:
           additionalProperties: false
           description: |-
             MachineImageReference names a cluster-scoped MachineImage. Only the name is
             selectable
 
-            - machineImageRef is immutable
+            - machine_image_ref is immutable
           properties:
             name:
               description: ResourceName is a Kubernetes DNS subdomain name, not a
@@ -1834,14 +1834,14 @@ components:
           required:
           - name
           type: object
-        machineInit:
+        machine_init:
           additionalProperties: false
           description: |-
             MachineInit is the first-boot configuration a Release pairs with its image.
             It lives on the Release rather than the MachineImage so one image can back
             several Releases whose initialization differs.
 
-            - machineInit is immutable
+            - machine_init is immutable
           properties:
             infra:
               additionalProperties: false
@@ -1849,7 +1849,7 @@ components:
                 infra provider.
               nullable: true
               properties:
-                bootstrapFiles:
+                bootstrap_files:
                   items:
                     additionalProperties: false
                     description: BootstrapFile describes a cloud-init write_files
@@ -1880,33 +1880,33 @@ components:
                   nullable: true
                   type: array
                   x-kubernetes-list-type: atomic
-                preKubeadmCommands:
+                pre_kubeadm_commands:
                   items:
                     type: string
                   nullable: true
                   type: array
                   x-kubernetes-list-type: atomic
               type: object
-            userDataTemplate:
+            user_data_template:
               description: |-
                 UserDataTemplate is rendered with machine-specific values, such as the
                 hostname and the selected Kubernetes version, and the result is stored in
                 the machine's CAPI bootstrap Secret. It must begin with a cloud-init
                 header.
 
-                - userDataTemplate must not be blank
-                - userDataTemplate must begin with a cloud-init header
-                - userDataTemplate has unbalanced Go template delimiters
+                - user_data_template must not be blank
+                - user_data_template must begin with a cloud-init header
+                - user_data_template has unbalanced Go template delimiters
               maxLength: 65536
               minLength: 1
               type: string
           required:
-          - userDataTemplate
+          - user_data_template
           type: object
       required:
       - kubernetes
-      - machineImageRef
-      - machineInit
+      - machine_image_ref
+      - machine_init
       type: object
     ClusterReleaseUpdate:
       additionalProperties: false
@@ -1940,12 +1940,12 @@ components:
           additionalProperties: false
           description: The resource's identity and server-assigned metadata.
           properties:
-            creationTimestamp:
+            creation_timestamp:
               description: When the resource was created.
               format: date-time
               readOnly: true
               type: string
-            deletionTimestamp:
+            deletion_timestamp:
               description: When deletion was requested. Present until cleanup finishes.
               format: date-time
               readOnly: true
@@ -1994,7 +1994,7 @@ components:
       additionalProperties: false
       description: One page of ControlPlaneClass resources.
       properties:
-        hasMore:
+        has_more:
           description: Whether another page follows.
           type: boolean
         items:
@@ -2002,27 +2002,27 @@ components:
           items:
             $ref: '#/components/schemas/ControlPlaneClass'
           type: array
-        pageKey:
+        page_key:
           description: Continuation for the next page. Empty on the last page.
           type: string
       required:
-      - hasMore
+      - has_more
       - items
-      - pageKey
+      - page_key
       type: object
     ControlPlaneClassSpec:
       additionalProperties: false
       description: |-
         ControlPlaneClassSpec configures the control plane of clusters selecting this class.
 
-        - single-replica control planes require maxSurge 1
+        - single-replica control planes require max_surge 1
       properties:
-        controlPlane:
+        control_plane:
           additionalProperties: false
           description: ControlPlane configures control-plane capacity and machine
             settings.
           properties:
-            instanceTypePreferences:
+            instance_type_preferences:
               description: |-
                 InstanceTypePreferences lists provider-native identifiers in preference order.
                 NICo uses instance-type UUIDs. Providers who use instance-type strings may also use this field.
@@ -2038,18 +2038,18 @@ components:
               format: int32
               minimum: 1
               type: integer
-            systemReservedMemory:
+            system_reserved_memory:
               description: |-
                 SystemReservedMemory reserves memory for system daemons on each control-plane node.
                 Zero requests no reservation.
 
-                - systemReservedMemory must be a nonnegative Kubernetes quantity
+                - system_reserved_memory must be a nonnegative Kubernetes quantity
               minLength: 1
               type: string
           required:
-          - instanceTypePreferences
+          - instance_type_preferences
           - replicas
-          - systemReservedMemory
+          - system_reserved_memory
           type: object
         lifecycle:
           additionalProperties: false
@@ -2070,7 +2070,7 @@ components:
                 choices. Explicit references remain available.
               nullable: true
               type: boolean
-            supportedUntil:
+            supported_until:
               description: SupportedUntil is the time at which support for this release
                 ends.
               format: date-time
@@ -2085,11 +2085,11 @@ components:
               additionalProperties: false
               description: Strategy controls replacement order and capacity.
               properties:
-                rollingUpdate:
+                rolling_update:
                   additionalProperties: false
                   description: RollingUpdate bounds additional capacity during replacement.
                   properties:
-                    maxSurge:
+                    max_surge:
                       description: |-
                         MaxSurge is the number of extra nodes allowed during replacement.
                         Zero removes first. One waits for healthy replacement capacity before removal.
@@ -2098,7 +2098,7 @@ components:
                       minimum: 0
                       type: integer
                   required:
-                  - maxSurge
+                  - max_surge
                   type: object
                 type:
                   description: Type selects the replacement strategy. Only RollingUpdate
@@ -2107,14 +2107,14 @@ components:
                   - RollingUpdate
                   type: string
               required:
-              - rollingUpdate
+              - rolling_update
               - type
               type: object
           required:
           - strategy
           type: object
       required:
-      - controlPlane
+      - control_plane
       - rollout
       type: object
     ControlPlaneClassUpdate:
@@ -2149,12 +2149,12 @@ components:
           additionalProperties: false
           description: The resource's identity and server-assigned metadata.
           properties:
-            creationTimestamp:
+            creation_timestamp:
               description: When the resource was created.
               format: date-time
               readOnly: true
               type: string
-            deletionTimestamp:
+            deletion_timestamp:
               description: When deletion was requested. Present until cleanup finishes.
               format: date-time
               readOnly: true
@@ -2203,7 +2203,7 @@ components:
       additionalProperties: false
       description: One page of MachineImage resources.
       properties:
-        hasMore:
+        has_more:
           description: Whether another page follows.
           type: boolean
         items:
@@ -2211,13 +2211,13 @@ components:
           items:
             $ref: '#/components/schemas/MachineImage'
           type: array
-        pageKey:
+        page_key:
           description: Continuation for the next page. Empty on the last page.
           type: string
       required:
-      - hasMore
+      - has_more
       - items
-      - pageKey
+      - page_key
       type: object
     MachineImageSpec:
       additionalProperties: false
@@ -2234,7 +2234,7 @@ components:
           minLength: 1
           pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
           type: string
-        buildDate:
+        build_date:
           description: BuildDate is the date the image was built, as YYYY-MM-DD.
           format: date
           type: string
@@ -2242,22 +2242,22 @@ components:
           additionalProperties: false
           description: NICo holds the boot contract of the NICo infrastructure provider.
           properties:
-            ipxeScript:
+            ipxe_script:
               description: |-
                 IPXEScript is a Go template rendered with machine-specific values, such as
                 the disk selection strategy, and the result becomes the iPXE script of the
                 NICo machine resource.
 
-                - ipxeScript must begin with a #!ipxe line of its own
-                - ipxeScript must contain a command after the #!ipxe line
-                - ipxeScript has unbalanced Go template delimiters
+                - ipxe_script must begin with a #!ipxe line of its own
+                - ipxe_script must contain a command after the #!ipxe line
+                - ipxe_script has unbalanced Go template delimiters
               maxLength: 16384
               minLength: 1
               type: string
           required:
-          - ipxeScript
+          - ipxe_script
           type: object
-        operatingSystem:
+        operating_system:
           additionalProperties: false
           description: OperatingSystem identifies the distribution an image was built
             from.
@@ -2288,9 +2288,9 @@ components:
           type: string
       required:
       - architecture
-      - buildDate
+      - build_date
       - nico
-      - operatingSystem
+      - operating_system
       type: object
     MachineImageUpdate:
       additionalProperties: false
@@ -2324,12 +2324,12 @@ components:
           additionalProperties: false
           description: The resource's identity and server-assigned metadata.
           properties:
-            creationTimestamp:
+            creation_timestamp:
               description: When the resource was created.
               format: date-time
               readOnly: true
               type: string
-            deletionTimestamp:
+            deletion_timestamp:
               description: When deletion was requested. Present until cleanup finishes.
               format: date-time
               readOnly: true
@@ -2378,7 +2378,7 @@ components:
       additionalProperties: false
       description: One page of NodeProfile resources.
       properties:
-        hasMore:
+        has_more:
           description: Whether another page follows.
           type: boolean
         items:
@@ -2386,13 +2386,13 @@ components:
           items:
             $ref: '#/components/schemas/NodeProfile'
           type: array
-        pageKey:
+        page_key:
           description: Continuation for the next page. Empty on the last page.
           type: string
       required:
-      - hasMore
+      - has_more
       - items
-      - pageKey
+      - page_key
       type: object
     NodeProfileSpec:
       additionalProperties: false
@@ -2421,20 +2421,20 @@ components:
                 choices. Explicit references remain available.
               nullable: true
               type: boolean
-            supportedUntil:
+            supported_until:
               description: SupportedUntil is the time at which support for this release
                 ends.
               format: date-time
               nullable: true
               type: string
           type: object
-        machineImageRef:
+        machine_image_ref:
           additionalProperties: false
           description: |-
             MachineImageReference names a cluster-scoped MachineImage. Only the name is
             selectable
 
-            - machineImageRef is immutable
+            - machine_image_ref is immutable
           properties:
             name:
               description: ResourceName is a Kubernetes DNS subdomain name, not a
@@ -2446,14 +2446,14 @@ components:
           required:
           - name
           type: object
-        machineInit:
+        machine_init:
           additionalProperties: false
           description: |-
             MachineInit is the first-boot configuration a Release pairs with its image.
             It lives on the Release rather than the MachineImage so one image can back
             several Releases whose initialization differs.
 
-            - machineInit is immutable
+            - machine_init is immutable
           properties:
             infra:
               additionalProperties: false
@@ -2461,7 +2461,7 @@ components:
                 infra provider.
               nullable: true
               properties:
-                bootstrapFiles:
+                bootstrap_files:
                   items:
                     additionalProperties: false
                     description: BootstrapFile describes a cloud-init write_files
@@ -2492,28 +2492,28 @@ components:
                   nullable: true
                   type: array
                   x-kubernetes-list-type: atomic
-                preKubeadmCommands:
+                pre_kubeadm_commands:
                   items:
                     type: string
                   nullable: true
                   type: array
                   x-kubernetes-list-type: atomic
               type: object
-            userDataTemplate:
+            user_data_template:
               description: |-
                 UserDataTemplate is rendered with machine-specific values, such as the
                 hostname and the selected Kubernetes version, and the result is stored in
                 the machine's CAPI bootstrap Secret. It must begin with a cloud-init
                 header.
 
-                - userDataTemplate must not be blank
-                - userDataTemplate must begin with a cloud-init header
-                - userDataTemplate has unbalanced Go template delimiters
+                - user_data_template must not be blank
+                - user_data_template must begin with a cloud-init header
+                - user_data_template has unbalanced Go template delimiters
               maxLength: 65536
               minLength: 1
               type: string
           required:
-          - userDataTemplate
+          - user_data_template
           type: object
         profile:
           description: |-
@@ -2534,8 +2534,8 @@ components:
           pattern: ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$
           type: string
       required:
-      - machineImageRef
-      - machineInit
+      - machine_image_ref
+      - machine_init
       - profile
       - tag
       type: object
@@ -2570,6 +2570,25 @@ components:
       properties:
         code:
           description: A stable identifier for the kind of problem.
+          enum:
+          - already_exists
+          - body_too_large
+          - conflict
+          - datastore_unavailable
+          - deadline_failed
+          - forbidden
+          - internal_error
+          - invalid_request
+          - invalid_resource
+          - method_not_allowed
+          - not_found
+          - page_expired
+          - precondition_failed
+          - precondition_required
+          - projection_failed
+          - request_timeout
+          - unauthorized
+          - unsupported_media_type
           type: string
         errors:
           description: The fields or query parameters that caused the problem.
@@ -2578,6 +2597,14 @@ components:
             properties:
               code:
                 description: A stable identifier for the kind of failure.
+                enum:
+                - identity_mismatch
+                - invalid
+                - invalid_json
+                - invalid_precondition
+                - invalid_query
+                - read_only
+                - unexpected_body
                 type: string
               field:
                 description: A JSON pointer into the body, or a query parameter name.

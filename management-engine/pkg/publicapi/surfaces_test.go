@@ -20,6 +20,17 @@ import (
 	"github.com/dsx-ai-factory/nvke/management-engine/pkg/resource"
 )
 
+func TestSurfacesHaveIndependentRegistrations(t *testing.T) {
+	for _, newSurface := range []func() Surface{Tenant, Operator} {
+		first, second := newSurface(), newSurface()
+		t.Run(first.Name, func(t *testing.T) {
+			first.Registrations[0] = resource.Registration{}
+			require.NotEmpty(t, second.Registrations[0].Describe().Routes)
+			require.NotEmpty(t, newSurface().Registrations[0].Describe().Routes)
+		})
+	}
+}
+
 func TestSurfaces(t *testing.T) {
 	responses := map[string]any{}
 	discovery := metav1.APIResourceList{GroupVersion: "service.nvke.nvidia.com/v1"}
@@ -43,30 +54,30 @@ func TestSurfaces(t *testing.T) {
 	}
 	responses["/apis/service.nvke.nvidia.com/v1"] = discovery
 	for _, surface := range []struct {
-		name                               string
-		registrations                      []resource.Registration
+		Surface
 		clusters, releases, writes, images bool
 		catalog                            bool
 	}{
-		{name: "tenant", registrations: Tenant(), clusters: true, catalog: true},
-		{name: "operator", registrations: Operator(), releases: true, writes: true, images: true},
-		{name: "custom read-only selection", registrations: []resource.Registration{
+		{Surface: Tenant(), clusters: true, catalog: true},
+		{Surface: Operator(), releases: true, writes: true, images: true},
+		{Name: "custom read-only selection", Registrations: []resource.Registration{
 			ClusterRelease(resource.OpGet, resource.OpList),
 		}, releases: true},
-		{name: "empty selection", registrations: []resource.Registration{ClusterRelease()}},
+		{Name: "empty selection", Registrations: []resource.Registration{ClusterRelease()}},
 	} {
-		t.Run(surface.name, func(t *testing.T) {
+		t.Run(surface.Name, func(t *testing.T) {
 			mux := http.NewServeMux()
-			for _, registration := range surface.registrations {
+			for _, registration := range surface.Registrations {
 				require.NoError(t, registration.Mount(mux, resource.ClientConfig{
 					Datastore: &rest.Config{Host: "https://datastore.invalid", Transport: discoveryTransport(responses)},
-					Surface:   surface.name,
+					Surface:   surface.Name,
+					Naming:    surface.Naming,
 					Namespace: func(context.Context) (string, error) { return "org", nil },
 				}))
 			}
-			if surface.name == "tenant" || surface.name == "operator" {
+			if surface.Name == "tenant" || surface.Name == "operator" {
 				MountHealth(mux, func(context.Context) error { return nil })
-				checkOpenAPIRoutes(t, mux, surface.name, surface.registrations)
+				checkOpenAPIRoutes(t, mux, surface.Surface)
 			}
 			for _, route := range []struct {
 				method, path string
@@ -78,21 +89,21 @@ func TestSurfaces(t *testing.T) {
 				{"POST", "/v1/cluster-releases", surface.writes},
 				{"GET", "/v1/machine-images", surface.images},
 				{"POST", "/v1/machine-images", surface.images},
-				{"GET", "/v1/control-plane-classes", surface.catalog || surface.name == "operator"},
-				{"POST", "/v1/control-plane-classes", surface.name == "operator"},
-				{"GET", "/v1/control-plane-classes/{name}", surface.catalog || surface.name == "operator"},
-				{"PUT", "/v1/control-plane-classes/{name}", surface.name == "operator"},
-				{"DELETE", "/v1/control-plane-classes/{name}", surface.name == "operator"},
-				{"GET", "/v1/cluster-release-channels", surface.catalog || surface.name == "operator"},
-				{"POST", "/v1/cluster-release-channels", surface.name == "operator"},
-				{"GET", "/v1/cluster-release-channels/{name}", surface.catalog || surface.name == "operator"},
-				{"PUT", "/v1/cluster-release-channels/{name}", surface.name == "operator"},
-				{"DELETE", "/v1/cluster-release-channels/{name}", surface.name == "operator"},
-				{"GET", "/v1/node-profiles", surface.catalog || surface.name == "operator"},
-				{"POST", "/v1/node-profiles", surface.name == "operator"},
-				{"GET", "/v1/node-profiles/{name}", surface.catalog || surface.name == "operator"},
-				{"PUT", "/v1/node-profiles/{name}", surface.name == "operator"},
-				{"DELETE", "/v1/node-profiles/{name}", surface.name == "operator"},
+				{"GET", "/v1/control-plane-classes", surface.catalog || surface.Name == "operator"},
+				{"POST", "/v1/control-plane-classes", surface.Name == "operator"},
+				{"GET", "/v1/control-plane-classes/{name}", surface.catalog || surface.Name == "operator"},
+				{"PUT", "/v1/control-plane-classes/{name}", surface.Name == "operator"},
+				{"DELETE", "/v1/control-plane-classes/{name}", surface.Name == "operator"},
+				{"GET", "/v1/cluster-release-channels", surface.catalog || surface.Name == "operator"},
+				{"POST", "/v1/cluster-release-channels", surface.Name == "operator"},
+				{"GET", "/v1/cluster-release-channels/{name}", surface.catalog || surface.Name == "operator"},
+				{"PUT", "/v1/cluster-release-channels/{name}", surface.Name == "operator"},
+				{"DELETE", "/v1/cluster-release-channels/{name}", surface.Name == "operator"},
+				{"GET", "/v1/node-profiles", surface.catalog || surface.Name == "operator"},
+				{"POST", "/v1/node-profiles", surface.Name == "operator"},
+				{"GET", "/v1/node-profiles/{name}", surface.catalog || surface.Name == "operator"},
+				{"PUT", "/v1/node-profiles/{name}", surface.Name == "operator"},
+				{"DELETE", "/v1/node-profiles/{name}", surface.Name == "operator"},
 				{"GET", "/v1/node-pool-releases", false},
 			} {
 				_, pattern := mux.Handler(httptest.NewRequest(route.method, route.path, nil))
@@ -102,14 +113,18 @@ func TestSurfaces(t *testing.T) {
 	}
 }
 
-func checkOpenAPIRoutes(t *testing.T, mux *http.ServeMux, surface string, registrations []resource.Registration) {
+func checkOpenAPIRoutes(t *testing.T, mux *http.ServeMux, surface Surface) {
 	t.Helper()
-	doc, err := openapi3.NewLoader().LoadFromFile("../../api/" + surface + ".openapi.yaml")
+	doc, err := openapi3.NewLoader().LoadFromFile("../../api/" + surface.Name + ".openapi.yaml")
 	require.NoError(t, err)
 	expected := map[string][]string{"GET " + LivenessPath: nil, "GET " + ReadinessPath: nil}
-	for _, registration := range registrations {
+	for _, registration := range surface.Registrations {
 		for _, route := range registration.Describe().Routes {
-			expected[route.Method+" "+route.Path] = route.Query
+			expected[route.Method+" "+route.Path] = nil
+			for _, name := range route.Query {
+				expected[route.Method+" "+route.Path] = append(expected[route.Method+" "+route.Path],
+					surface.Naming.FieldName(name))
+			}
 		}
 	}
 	published := map[string][]string{}

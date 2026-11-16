@@ -62,18 +62,16 @@ var errorDescriptions = map[int]string{
 	503: "The datastore could not complete the request, or a catalog source collection exceeds its read limit.",
 }
 
-func document(surface string, registrations []resource.Registration, builder *schemaBuilder) (*openapi3.T, error) {
-	overview := map[string]string{
-		tenantSurface: "Manage workload clusters in the server-configured namespace and read the global catalog.\n" +
-			"Callers cannot select a namespace through the API.",
-		operatorSurface: "Publish the machine images, releases, release channels, " +
-			"control-plane classes,\nand node profiles used by tenants. These resources are global.",
-	}[surface]
+func document(surface publicapi.Surface, builder *schemaBuilder, published *strings.Replacer) (*openapi3.T, error) {
+	naming := surface.Naming
+	if err := naming.Validate(); err != nil {
+		return nil, err
+	}
 	spec := &openapi3.T{
 		OpenAPI: "3.0.3",
 		Info: &openapi3.Info{
-			Title: "NVKE Cluster Service " + surface + " API", Version: "v1",
-			Description: overview + "\n\n" + conventions + fmt.Sprintf(
+			Title: "NVKE Cluster Service " + surface.Name + " API", Version: "v1",
+			Description: surface.Overview + "\n\n" + conventions + fmt.Sprintf(
 				"\n\nRequest bodies are limited to %d bytes and requests have a %s deadline.\n"+
 					"Cancellation is cooperative. A deadline does not guarantee a timeout response.\n"+
 					"Responses use Cache-Control: no-store.",
@@ -92,10 +90,13 @@ func document(surface string, registrations []resource.Registration, builder *sc
 		return nil, err
 	}
 	problem.Value.Description = "A request failure: its HTTP status, a stable code and the fields at fault."
+	problem.Value.Properties["code"].Value.Enum = codeEnum(resource.ProblemCodes(), naming)
+	details := problem.Value.Properties["errors"].Value.Items.Value
+	details.Properties["code"].Value.Enum = codeEnum(resource.FieldErrorCodes(), naming)
 	spec.Components.Schemas["Problem"] = problem
 	spec.Components.Responses["Problem"] = problemResponse(
 		"Request failure with HTTP status, stable error code and public field diagnostics.")
-	for _, registration := range registrations {
+	for _, registration := range surface.Registrations {
 		description := registration.Describe()
 		if len(description.Routes) == 0 {
 			continue
@@ -117,7 +118,7 @@ func document(surface string, registrations []resource.Registration, builder *sc
 			if path.GetOperation(route.Method) != nil {
 				return nil, fmt.Errorf("duplicate route %s %s", route.Method, route.Path)
 			}
-			operationSpec, err := operation(description, route, name)
+			operationSpec, err := operation(description, route, name, naming)
 			if err != nil {
 				return nil, fmt.Errorf("%s %s: %w", route.Method, route.Path, err)
 			}
@@ -128,7 +129,15 @@ func document(surface string, registrations []resource.Registration, builder *sc
 		}
 	}
 	healthOperations(spec)
-	return spec, spec.WalkSchemas(describeConstraints)
+	return spec, nameSchemas(spec, naming, published)
+}
+
+func codeEnum(codes []string, naming resource.Naming) []any {
+	values := make([]any, len(codes))
+	for i, code := range codes {
+		values[i] = naming.FieldName(code)
+	}
+	return values
 }
 
 // healthOperations describes the probes publicapi.MountHealth installs beside every surface's resources.
@@ -160,12 +169,14 @@ func healthOperations(spec *openapi3.T) {
 
 // resourceSchemas shares the spec between response and write envelopes, keeping read-only fields out of requests.
 func resourceSchemas(spec *openapi3.T, builder *schemaBuilder, description resource.Description, name string) error {
-	nameSchema, err := builder.schema(reflect.TypeFor[v1.ResourceName]())
-	if err != nil {
-		return err
+	if spec.Components.Schemas["ResourceName"] == nil {
+		nameSchema, err := builder.schema(reflect.TypeFor[v1.ResourceName]())
+		if err != nil {
+			return err
+		}
+		nameSchema.Value.Description = "Immutable client-selected DNS-subdomain name."
+		spec.Components.Schemas["ResourceName"] = nameSchema
 	}
-	nameSchema.Value.Description = "Immutable client-selected DNS-subdomain name."
-	spec.Components.Schemas["ResourceName"] = nameSchema
 	responseSchema, err := builder.schema(description.PublicType)
 	if err != nil {
 		return err
@@ -175,14 +186,15 @@ func resourceSchemas(spec *openapi3.T, builder *schemaBuilder, description resou
 	responseMetadata.Description = "The resource's identity and server-assigned metadata."
 	responseMetadata.Properties[nameProperty] = schemaRef("ResourceName")
 	responseMetadata.Required = []string{nameProperty}
+	metadataDescriptions := map[string]string{
+		"creationTimestamp": "When the resource was created.",
+		"deletionTimestamp": "When deletion was requested. Present until cleanup finishes.",
+		"uid":               "Distinguishes this resource from an earlier resource with the same name.",
+	}
 	for field, schema := range responseMetadata.Properties {
 		if field != nameProperty {
 			schema.Value.ReadOnly = true
-			schema.Value.Description = map[string]string{
-				"creationTimestamp": "When the resource was created.",
-				"deletionTimestamp": "When deletion was requested. Present until cleanup finishes.",
-				"uid":               "Distinguishes this resource from an earlier resource with the same name.",
-			}[field]
+			schema.Value.Description = metadataDescriptions[field]
 		}
 	}
 	for _, field := range []string{"spec", "status"} {
@@ -208,12 +220,6 @@ func resourceSchemas(spec *openapi3.T, builder *schemaBuilder, description resou
 	}
 	listSchema.Value.Properties["items"].Value.Items = schemaRef(name)
 	listSchema.Value.Description = "One page of " + name + " resources."
-	for field, description := range map[string]string{
-		"items": "The resources on this page.", "pageKey": "Continuation for the next page. Empty on the last page.",
-		"hasMore": "Whether another page follows.",
-	} {
-		listSchema.Value.Properties[field].Value.Description = description
-	}
 	spec.Components.Schemas[name+"List"] = listSchema
 	if !description.ReadOnly {
 		for _, action := range []string{"Create", "Update"} {
@@ -240,7 +246,12 @@ func resourceSchemas(spec *openapi3.T, builder *schemaBuilder, description resou
 	return nil
 }
 
-func operation(description resource.Description, route resource.Route, name string) (*openapi3.Operation, error) {
+func operation(
+	description resource.Description,
+	route resource.Route,
+	name string,
+	naming resource.Naming,
+) (*openapi3.Operation, error) {
 	verb := string(route.Operation)
 	operationSpec := &openapi3.Operation{
 		OperationID: verb + name, Summary: strings.ToUpper(verb[:1]) + verb[1:] + " " + name,
@@ -257,8 +268,16 @@ func operation(description resource.Description, route resource.Route, name stri
 		parameter.Description = "The name of the resource."
 		operationSpec.Parameters = append(operationSpec.Parameters, &openapi3.ParameterRef{Value: parameter})
 	}
+	selectableFields := make([]string, len(description.Fields))
+	for i, field := range description.Fields {
+		var err error
+		selectableFields[i], err = naming.FieldPath(description.PublicType, field)
+		if err != nil {
+			return nil, err
+		}
+	}
 	for _, name := range route.Query {
-		parameter, err := queryParameter(name, description.Fields)
+		parameter, err := queryParameter(name, selectableFields, naming)
 		if err != nil {
 			return nil, err
 		}
@@ -289,8 +308,9 @@ func operation(description resource.Description, route resource.Route, name stri
 	case resource.OpList:
 		body = schemaRef(name + "List")
 		operationSpec.Summary += " resources"
-		operationSpec.Description = "Returns one page of resources. " +
-			"Read the next page with the returned pageKey while hasMore is true."
+		operationSpec.Description = fmt.Sprintf("Returns one page of resources. "+
+			"Read the next page with the returned %s while %s is true.",
+			naming.FieldName("pageKey"), naming.FieldName("hasMore"))
 		if description.ReadOnly {
 			operationSpec.Description += " Hidden entries are excluded. " +
 				"Eligible views are filtered and sorted by name before pagination. " +
@@ -369,8 +389,8 @@ func problemResponse(description string) *openapi3.ResponseRef {
 		WithContent(content("application/problem+json", schemaRef("Problem")))}
 }
 
-func queryParameter(name string, selectableFields []string) (*openapi3.ParameterRef, error) {
-	parameter := openapi3.NewQueryParameter(name)
+func queryParameter(name string, selectableFields []string, naming resource.Naming) (*openapi3.ParameterRef, error) {
+	parameter := openapi3.NewQueryParameter(naming.FieldName(name))
 	switch name {
 	case "pageSize":
 		parameter.Description = fmt.Sprintf("Number of results (default %d, maximum %d).",
@@ -378,9 +398,9 @@ func queryParameter(name string, selectableFields []string) (*openapi3.Parameter
 		parameter.WithSchema(openapi3.NewIntegerSchema().WithMin(1).WithMax(resource.MaxPageSize).
 			WithDefault(resource.DefaultPageSize))
 	case "pageKey":
-		parameter.Description = fmt.Sprintf("Use the pageKey returned by the previous list response. Keep the same filters. "+
+		parameter.Description = fmt.Sprintf("Use the %s returned by the previous list response. Keep the same filters. "+
 			"At most %d UTF-8 bytes.",
-			resource.MaxPageKeyBytes)
+			naming.FieldName("pageKey"), resource.MaxPageKeyBytes)
 		parameter.WithSchema(openapi3.NewStringSchema().WithMaxLength(resource.MaxPageKeyBytes))
 		parameter.Schema.Value.Extensions = map[string]any{"x-max-utf8-bytes": resource.MaxPageKeyBytes}
 		parameter.AllowEmptyValue = true

@@ -55,6 +55,24 @@ const (
 	unexpectedBodyCode      = "unexpectedBody"
 )
 
+// ProblemCodes returns canonical problem identifiers for contract generation.
+func ProblemCodes() []string {
+	return []string{
+		alreadyExistsCode, bodyTooLargeCode, conflictCode, datastoreUnavailableCode, deadlineFailedCode,
+		forbiddenCode, internalErrorCode, invalidRequestCode, invalidResourceCode, methodNotAllowedCode,
+		notFoundCode, pageExpiredCode, preconditionFailedCode, preconditionRequiredCode, projectionFailedCode,
+		requestTimeoutCode, unauthorizedCode, unsupportedMediaTypeCode,
+	}
+}
+
+// FieldErrorCodes returns canonical field diagnostic identifiers for contract generation.
+func FieldErrorCodes() []string {
+	return []string{
+		identityMismatchCode, invalidCode, invalidJSONCode, invalidPreconditionCode,
+		invalidQueryCode, readOnlyCode, unexpectedBodyCode,
+	}
+}
+
 // FieldError identifies a public JSON field or query parameter with an approved diagnostic.
 type FieldError struct {
 	Field   string `json:"field,omitempty" description:"A JSON pointer into the body, or a query parameter name."`

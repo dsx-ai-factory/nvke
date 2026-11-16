@@ -25,7 +25,6 @@ import (
 
 	"github.com/dsx-ai-factory/cluster-api-provider-nico/pkg/test/fixture"
 	v1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
-	"github.com/dsx-ai-factory/nvke/management-engine/pkg/resource"
 )
 
 // TestPublicAPI runs the operator and tenant API fixture suites against envtest.
@@ -49,7 +48,7 @@ type fixtureResponse struct {
 	requestError error
 }
 
-var _ = fixture.DescribeCaseSet(publicAPICaseSet("Operator API", "operator-", "operator", Operator,
+var _ = fixture.DescribeCaseSet(publicAPICaseSet("Operator API", "operator-", Operator(),
 	func() []client.ObjectList {
 		return []client.ObjectList{&v1.MachineImageList{}, &v1.ClusterReleaseList{}}
 	}))
@@ -57,8 +56,8 @@ var _ = fixture.DescribeCaseSet(publicAPICaseSet("Operator API", "operator-", "o
 // publicAPICaseSet configures isolated API fixtures with optional operator setup requests
 // and golden comparisons for a single request or a request batch.
 func publicAPICaseSet(
-	description, prefix, surface string,
-	registrations func() []resource.Registration,
+	description, prefix string,
+	surface Surface,
 	compareObjects func() []client.ObjectList,
 ) fixture.CaseSet {
 	return fixture.CaseSet{
@@ -85,12 +84,12 @@ func publicAPICaseSet(
 		},
 		DefineSteps: func(tc *fixture.Case, _ fixture.CaseSet) {
 			ginkgo.It("serves the fixture request", func(ctx ginkgo.SpecContext) {
-				api := newAPIConformance(tc.Config, surface, registrations())
+				api := newAPIConformance(tc.Config, surface)
 
 				if data, exists := tc.Input("input_setup.yaml"); exists {
 					setupAPI := api
-					if surface == "tenant" {
-						setupAPI = newAPIConformance(tc.Config, "operator", Operator())
+					if surface.Name == "tenant" {
+						setupAPI = newAPIConformance(tc.Config, Operator())
 					}
 					var setup []fixtureRequest
 					gomega.Expect(yaml.UnmarshalStrict([]byte(data), &setup)).To(gomega.Succeed())
@@ -140,7 +139,7 @@ func publicAPICaseSet(
 	}
 }
 
-// normalizeFixtureResponse replaces volatile values in place for stable goldens.
+// normalizeFixtureResponse replaces volatile values in place for stable snake_case goldens.
 // It omits Content-Length when masking a nonempty pagination token.
 func normalizeFixtureResponse(snapshot *fixtureResponse) {
 	for name, value := range map[string]string{"ETag": `"RESOURCE_VERSION"`, "Date": "DATE"} {
@@ -150,8 +149,8 @@ func normalizeFixtureResponse(snapshot *fixtureResponse) {
 		}
 	}
 	body, _ := snapshot.Body.(map[string]any)
-	if pageKey, ok := body["pageKey"].(string); ok && pageKey != "" {
-		body["pageKey"] = "PAGE_KEY"
+	if pageKey, ok := body["page_key"].(string); ok && pageKey != "" {
+		body["page_key"] = "PAGE_KEY"
 		snapshot.Headers.Del("Content-Length")
 	}
 	items, _ := body["items"].([]any)
@@ -167,11 +166,11 @@ func normalizeFixtureResponse(snapshot *fixtureResponse) {
 		if metadata["uid"] != nil {
 			metadata["uid"] = "UID"
 		}
-		if metadata["creationTimestamp"] != nil {
-			metadata["creationTimestamp"] = "1970-01-01T00:00:00Z"
+		if metadata["creation_timestamp"] != nil {
+			metadata["creation_timestamp"] = "1970-01-01T00:00:00Z"
 		}
-		if metadata["deletionTimestamp"] != nil {
-			metadata["deletionTimestamp"] = "1970-01-01T00:00:00Z"
+		if metadata["deletion_timestamp"] != nil {
+			metadata["deletion_timestamp"] = "1970-01-01T00:00:00Z"
 		}
 	}
 }

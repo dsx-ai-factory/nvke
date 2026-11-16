@@ -94,7 +94,7 @@ func TestEmptyOperations(t *testing.T) {
 			server, err := New[widget, internalWidget](fixtureConfig(nil), widgetInfo(verbs...))
 			require.NoError(t, err)
 			mux := http.NewServeMux()
-			Register(mux, "/widgets", server, server, nil, verbs...)
+			require.NoError(t, Register(mux, "/widgets", server, server, nil, CamelCase, verbs...))
 			ctx := t.Context()
 			for _, operation := range []struct {
 				method, path string

@@ -30,11 +30,26 @@ type widgetMetadata struct {
 	UID  string `json:"uid,omitempty"`
 }
 type widgetSpec struct {
-	Value   string    `json:"value"`
-	Note    *string   `json:"note,omitempty"`
-	Count   *int64    `json:"count,omitempty"`
-	Enabled *bool     `json:"enabled,omitempty"`
-	Items   *[]string `json:"items,omitempty"`
+	Value        string                    `json:"value"`
+	Note         *string                   `json:"note,omitempty"`
+	Count        *int64                    `json:"count,omitempty"`
+	Enabled      *bool                     `json:"enabled,omitempty"`
+	Items        *[]string                 `json:"items,omitempty"`
+	DisplayName  *string                   `json:"displayName,omitempty"`
+	VPCID        *string                   `json:"vpcID,omitempty"`
+	NodeIDs      []string                  `json:"nodeIDs,omitempty"`
+	NodePools    []widgetNodePool          `json:"nodePools,omitempty"`
+	NamedPools   map[string]widgetNodePool `json:"namedPools,omitempty"`
+	widgetInline `json:",inline"`
+}
+
+type widgetInline struct {
+	NodeCount *int64 `json:"nodeCount,omitempty"`
+}
+
+type widgetNodePool struct {
+	PoolName string   `json:"poolName"`
+	NodeIDs  []string `json:"nodeIDs,omitempty"`
 }
 type widgetStatus struct {
 	Counter int64 `json:"counter,omitempty"`
@@ -119,6 +134,7 @@ func widgetResources() *metav1.APIResourceList {
 // fixtureConfig retains the production client-go transport and serialization path, without an API server.
 func fixtureConfig(transport http.RoundTripper) ClientConfig {
 	return ClientConfig{
+		Naming: CamelCase,
 		Datastore: &rest.Config{
 			Host: "https://datastore.invalid", BearerToken: "example-token",
 			WrapTransport: func(http.RoundTripper) http.RoundTripper {
@@ -199,7 +215,7 @@ func TestRequiredResourceVersion(t *testing.T) {
 	client, err := New[widget, internalWidget](fixtureConfig(nil), widgetInfo(OpUpdate, OpDelete))
 	require.NoError(t, err)
 	mux := http.NewServeMux()
-	Register(mux, "/widgets", client, client, nil, OpUpdate, OpDelete)
+	require.NoError(t, Register(mux, "/widgets", client, client, nil, CamelCase, OpUpdate, OpDelete))
 	for _, tc := range []struct {
 		name, version, header string
 		status                int
@@ -283,7 +299,7 @@ func TestDatastorePageKeys(t *testing.T) {
 			require.NoError(t, err)
 			page, err := client.List(t.Context(), ListOptions{PageSize: 2, PageKey: tc.pageKey})
 			mux := http.NewServeMux()
-			Register(mux, "/widgets", client, client, nil, OpList)
+			require.NoError(t, Register(mux, "/widgets", client, client, nil, CamelCase, OpList))
 			path := "/widgets?pageSize=2&pageKey=" + url.QueryEscape(tc.pageKey)
 			response := requestHTTP(mux, t.Context(), http.MethodGet, path, "", "")
 			if tc.want == 0 {

@@ -1,23 +1,23 @@
 body:
   metadata:
-    creationTimestamp: "1970-01-01T00:00:00Z"
+    creation_timestamp: "1970-01-01T00:00:00Z"
     name: ubuntu-2404-amd64
     uid: UID
   spec:
     architecture: amd64
-    buildDate: "2026-01-01"
+    build_date: "2026-01-01"
     nico:
-      ipxeScript: |
+      ipxe_script: |
         #!ipxe
         echo NVKE test image
-    operatingSystem:
+    operating_system:
       family: ubuntu
       version: "24.04"
 headers:
   Cache-Control:
   - no-store
   Content-Length:
-  - "298"
+  - "302"
   Content-Type:
   - application/json
   Date:

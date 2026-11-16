@@ -82,7 +82,7 @@ func NewDependentReadRegistration[S dependentView[D, E], D any, E namedView](
 // NewSourceLister constructs a typed, complete Kubernetes list loader for dependencies.
 // It checks list capability at construction, resolves trusted scope once per call and retains
 // hidden backing resources. A read registration's loader can assemble these values into its typed dependencies.
-// Collections exceeding MaxCatalogSourceItems items fail without returning partial values.
+// Collections exceeding MaxCatalogSourceItems fail without returning partial values.
 func NewSourceLister[S any](cfg ClientConfig, info ResourceInfo) (func(context.Context) ([]S, error), error) {
 	info.Verbs = []Operation{OpList}
 	store, err := newDatastore(cfg, info)
@@ -127,8 +127,7 @@ func readRegistration[S visibleSource, E namedView](
 		reader := &projectedReader[S, E]{source: &datastoreSource[S]{store}, project: projectCatalog, fields: fields,
 			identity: store.cfg.Datastore.Host + "/" + cfg.Surface + "/" + path + "/" +
 				info.GVK.String() + "/" + info.Resource + "/" + string(info.Scope)}
-		Register(mux, path, reader, nil, fields, info.Verbs...)
-		return nil
+		return Register(mux, path, reader, nil, fields, cfg.Naming, info.Verbs...)
 	}
 	return registration
 }

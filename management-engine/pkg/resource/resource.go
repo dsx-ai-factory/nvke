@@ -98,6 +98,8 @@ type ClientConfig struct {
 	// Namespace is required only for namespaced resources and resolves scope once per operation.
 	// The trusted host supplies it. The namespace must not come from untrusted resource input.
 	Namespace func(context.Context) (string, error)
+	// Naming selects the HTTP contract; its zero value uses snake_case.
+	Naming Naming
 }
 
 // RequestOptions carries concurrency information for one operation.
@@ -126,9 +128,9 @@ func requestOptions(ctx context.Context) *RequestOptions {
 
 // List contains one bounded public page. Its reader defines continuation consistency.
 type List[E any] struct {
-	Items   []E    `json:"items"`
-	PageKey string `json:"pageKey"`
-	HasMore bool   `json:"hasMore"`
+	Items   []E    `json:"items" description:"The resources on this page."`
+	PageKey string `json:"pageKey" description:"Continuation for the next page. Empty on the last page."`
+	HasMore bool   `json:"hasMore" description:"Whether another page follows."`
 }
 
 const (
@@ -164,4 +166,6 @@ type ServerOptions struct {
 	MaxBodyBytes int64
 	// RequestTimeout bounds handler work, so hosts still need HTTP transport timeouts.
 	RequestTimeout time.Duration
+	// Naming formats errors produced before resource dispatch.
+	Naming Naming
 }

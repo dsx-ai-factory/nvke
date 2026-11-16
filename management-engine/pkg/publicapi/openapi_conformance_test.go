@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync/atomic"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -41,38 +42,35 @@ const jsonMedia = "application/json"
 // apiConformance checks live requests and responses against a generated OpenAPI document.
 type apiConformance struct {
 	document             *openapi3.T
+	naming               resource.Naming
 	server               *httptest.Server
 	successfulOperations map[string]bool
 	datastoreUnavailable atomic.Bool
 	router               routers.Router
 }
 
-func newAPIConformance(
-	datastoreConfig *rest.Config,
-	surface string,
-	registrations []resource.Registration,
-) *apiConformance {
-	document, err := openapi3.NewLoader().LoadFromFile(filepath.Join("..", "..", "api", surface+".openapi.yaml"))
+func newAPIConformance(datastoreConfig *rest.Config, surface Surface) *apiConformance {
+	document, err := openapi3.NewLoader().LoadFromFile(filepath.Join("..", "..", "api", surface.Name+".openapi.yaml"))
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	gomega.Expect(document.Validate(context.Background())).To(gomega.Succeed())
 	router, err := gorillamux.NewRouter(document)
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	mux := http.NewServeMux()
-	clientConfig := resource.ClientConfig{Datastore: datastoreConfig, Surface: surface}
-	if surface == "tenant" {
+	clientConfig := resource.ClientConfig{Datastore: datastoreConfig, Surface: surface.Name, Naming: surface.Naming}
+	if surface.Name == "tenant" {
 		clientConfig.Namespace = func(context.Context) (string, error) { return "org-a", nil }
 	}
-	for _, registration := range registrations {
+	for _, registration := range surface.Registrations {
 		gomega.Expect(registration.Mount(mux, clientConfig)).To(gomega.Succeed())
 	}
-	api := &apiConformance{document: document, successfulOperations: map[string]bool{}, router: router}
+	api := &apiConformance{document: document, naming: surface.Naming, successfulOperations: map[string]bool{}, router: router}
 	MountHealth(mux, func(context.Context) error {
 		if api.datastoreUnavailable.Load() {
 			return fmt.Errorf("datastore unavailable")
 		}
 		return nil
 	})
-	api.server = httptest.NewServer(resource.WithLimits(mux, resource.ServerOptions{}))
+	api.server = httptest.NewServer(resource.WithLimits(mux, resource.ServerOptions{Naming: surface.Naming}))
 	ginkgo.DeferCleanup(api.server.Close)
 	api.server.Client().CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return api
@@ -209,10 +207,10 @@ func (api *apiConformance) exerciseResource(ctx context.Context, collection stri
 	api.checkExchange(ctx, 400, http.MethodGet, item("Not_A_Name"), nil, nil, schemaInvalid)
 	api.checkExchange(ctx, 200, http.MethodGet, collection, nil, nil, schemaValid)
 	api.checkExchange(ctx, 400, http.MethodGet, collection+"?unknown=1", nil, nil, schemaValid)
-	api.checkExchange(ctx, 400, http.MethodGet, collection+"?pageSize=501", nil, nil, schemaInvalid)
-	_, page := api.checkExchange(ctx, 200, http.MethodGet, collection+"?pageSize=1", nil, nil, schemaValid)
-	gomega.Expect(page["hasMore"]).To(gomega.BeTrue())
-	next := collection + "?pageSize=1&pageKey=" + url.QueryEscape(page["pageKey"].(string))
+	api.checkExchange(ctx, 400, http.MethodGet, collection+"?page_size=501", nil, nil, schemaInvalid)
+	_, page := api.checkExchange(ctx, 200, http.MethodGet, collection+"?page_size=1", nil, nil, schemaValid)
+	gomega.Expect(page["has_more"]).To(gomega.BeTrue())
+	next := collection + "?page_size=1&page_key=" + url.QueryEscape(page["page_key"].(string))
 	api.checkExchange(ctx, 200, http.MethodGet, next, nil, nil, schemaValid)
 
 	staleHeaders := http.Header{"If-Match": {`"1"`}}
@@ -231,10 +229,10 @@ func (api *apiConformance) exerciseResource(ctx context.Context, collection stri
 
 	api.checkExchange(ctx, 428, http.MethodDelete, item("first"), nil, nil, schemaInvalid)
 	api.checkExchange(ctx, 412, http.MethodDelete, item("first"), staleHeaders, nil, schemaValid)
-	api.checkExchange(ctx, 400, http.MethodDelete, item("first")+"?propagationPolicy=orphan",
+	api.checkExchange(ctx, 400, http.MethodDelete, item("first")+"?propagation_policy=orphan",
 		currentHeaders, nil, schemaInvalid)
 	api.checkExchange(ctx, 404, http.MethodDelete, item("missing"), staleHeaders, nil, schemaValid)
-	api.checkExchange(ctx, 202, http.MethodDelete, item("first")+"?propagationPolicy=background",
+	api.checkExchange(ctx, 202, http.MethodDelete, item("first")+"?propagation_policy=background",
 		currentHeaders, nil, schemaValid)
 	second, _ := api.checkExchange(ctx, 200, http.MethodGet, item("second"), nil, nil, schemaValid)
 	api.checkExchange(ctx, 202, http.MethodDelete, item("second"),
@@ -266,12 +264,20 @@ var _ = ginkgo.Describe("OpenAPI documents", func() {
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
 		namespace := &corev1.Namespace{Name: "org-a"}
 		gomega.Expect(datastore.Create(ctx, namespace)).To(gomega.Succeed())
-		operator := newAPIConformance(datastoreConfig, "operator", Operator())
-		tenant := newAPIConformance(datastoreConfig, "tenant", Tenant())
+		operator := newAPIConformance(datastoreConfig, Operator())
+		tenant := newAPIConformance(datastoreConfig, Tenant())
 
 		// The catalog fixture and the cluster sample are valid by their own tests, so their specs are reused,
 		// keyed by the name each object has there.
+		canonicalSpecs := map[string]map[string]any{}
 		specs := map[string]map[string]any{}
+		specTypes := map[string]reflect.Type{}
+		for _, registration := range append(Operator().Registrations, Tenant().Registrations...) {
+			description := registration.Describe()
+			field, found := description.SourceType.FieldByName("Spec")
+			gomega.Expect(found).To(gomega.BeTrue())
+			specTypes[description.Info.GVK.Kind] = field.Type
+		}
 		for _, file := range []string{
 			filepath.Join("testdata", "catalog", "tenant-catalog-read-views", "input_client_objects.yaml"),
 			filepath.Join("..", "..", "config", "samples", "service_v1_nvkecluster.yaml"),
@@ -290,7 +296,12 @@ var _ = ginkgo.Describe("OpenAPI documents", func() {
 					spec, found, err := unstructured.NestedMap(object.Object, "spec")
 					gomega.Expect(err).NotTo(gomega.HaveOccurred())
 					gomega.Expect(found).To(gomega.BeTrue(), "%s has no spec", object.GetName())
-					specs[object.GetName()] = spec
+					canonicalSpecs[object.GetName()] = spec
+					naming := operator.naming
+					if object.GetKind() == "NVKECluster" {
+						naming = tenant.naming
+					}
+					specs[object.GetName()] = fixtureWireValue(specTypes[object.GetKind()], spec, naming).(map[string]any)
 				}
 			}
 		}
@@ -310,6 +321,7 @@ var _ = ginkgo.Describe("OpenAPI documents", func() {
 		}
 		ginkgo.By("tenant /v1/clusters")
 		tenant.exerciseResource(ctx, "/v1/clusters", specs["prod-us-west"])
+		tenant.exerciseNaming(ctx, datastore, canonicalSpecs["prod-us-west"])
 
 		ginkgo.By("JWT audience uniqueness")
 		for _, test := range []struct {
@@ -324,8 +336,8 @@ var _ = ginkgo.Describe("OpenAPI documents", func() {
 		} {
 			cluster := runtime.DeepCopyJSON(specs["prod-us-west"])
 			cluster["authentication"] = map[string]any{"jwt": []any{map[string]any{
-				"issuer":        map[string]any{"url": "https://issuer.example.invalid", "audiences": test.audiences},
-				"claimMappings": map[string]any{"username": map[string]any{"claim": "sub"}},
+				"issuer":         map[string]any{"url": "https://issuer.example.invalid", "audiences": test.audiences},
+				"claim_mappings": map[string]any{"username": map[string]any{"claim": "sub"}},
 			}}}
 			tenant.checkExchange(ctx, test.status, http.MethodPost, "/v1/clusters", nil,
 				resourceBody(test.name, cluster), test.schemaValid)
@@ -338,7 +350,7 @@ var _ = ginkgo.Describe("OpenAPI documents", func() {
 
 		ginkgo.By("an update that changes a field another writer owns")
 		otherWriterIntent := &unstructured.Unstructured{
-			Object: map[string]any{"spec": runtime.DeepCopyJSON(specs["standard"])},
+			Object: map[string]any{"spec": runtime.DeepCopyJSON(canonicalSpecs["standard"])},
 		}
 		otherWriterIntent.SetGroupVersionKind(v1.SchemeGroupVersion.WithKind("ControlPlaneClass"))
 		otherWriterIntent.SetName("standard")
@@ -371,22 +383,22 @@ var _ = ginkgo.Describe("OpenAPI documents", func() {
 			tenant.checkExchange(ctx, 404, http.MethodGet, view+"/missing", nil, nil, true)
 			tenant.checkExchange(ctx, 400, http.MethodGet, view+"/Not_A_Name", nil, nil, false)
 			tenant.checkExchange(ctx, 400, http.MethodGet, view+"?unknown=1", nil, nil, true)
-			tenant.checkExchange(ctx, 400, http.MethodGet, view+"?pageSize=501", nil, nil, false)
+			tenant.checkExchange(ctx, 400, http.MethodGet, view+"?page_size=501", nil, nil, false)
 		}
 		tenant.checkExchange(ctx, 200, http.MethodGet, channels+"?version=1.34", nil, nil, true)
 		tenant.checkExchange(ctx, 200, http.MethodGet, channels+"/stable?version=1.34", nil, nil, true)
 		tenant.checkExchange(ctx, 400, http.MethodGet, channels+"?version=not-a-version", nil, nil, false)
 		tenant.checkExchange(ctx, 400, http.MethodGet, channels+"/stable?version=not-a-version", nil, nil, false)
-		tenant.checkExchange(ctx, 200, http.MethodGet, profiles+"?fieldSelector=spec.profile%3Dubuntu-gpu", nil, nil, true)
-		tenant.checkExchange(ctx, 400, http.MethodGet, profiles+"?fieldSelector=spec.unknown%3Dx", nil, nil, true)
+		tenant.checkExchange(ctx, 200, http.MethodGet, profiles+"?field_selector=spec.profile%3Dubuntu-gpu", nil, nil, true)
+		tenant.checkExchange(ctx, 400, http.MethodGet, profiles+"?field_selector=spec.unknown%3Dx", nil, nil, true)
 
 		ginkgo.By("a page key that outlives the catalog it was issued for")
 		for _, view := range views {
 			operator.checkExchange(ctx, 201, http.MethodPost, view, nil, resourceBody("extra", specs[catalog[view]]), true)
-			_, page := tenant.checkExchange(ctx, 200, http.MethodGet, view+"?pageSize=1", nil, nil, true)
-			gomega.Expect(page["hasMore"]).To(gomega.BeTrue(), view)
+			_, page := tenant.checkExchange(ctx, 200, http.MethodGet, view+"?page_size=1", nil, nil, true)
+			gomega.Expect(page["has_more"]).To(gomega.BeTrue(), view)
 			operator.checkExchange(ctx, 201, http.MethodPost, view, nil, resourceBody("newer", specs[catalog[view]]), true)
-			next := view + "?pageSize=1&pageKey=" + url.QueryEscape(page["pageKey"].(string))
+			next := view + "?page_size=1&page_key=" + url.QueryEscape(page["page_key"].(string))
 			tenant.checkExchange(ctx, 410, http.MethodGet, next, nil, nil, true)
 		}
 

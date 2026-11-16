@@ -10,10 +10,10 @@
     metadata:
       name: ubuntu-gpu-2026-11-copy
     spec:
-      machineImageRef:
+      machine_image_ref:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
+      machine_init:
+        user_data_template: |
           #cloud-config
       profile: ubuntu-gpu
       tag: "2026.11"
@@ -25,10 +25,10 @@
     metadata:
       name: ubuntu-cpu-2026-11
     spec:
-      machineImageRef:
+      machine_image_ref:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
+      machine_init:
+        user_data_template: |
           #cloud-config
       profile: ubuntu-cpu
       tag: "2026.11"
@@ -40,10 +40,10 @@
     metadata:
       name: ubuntu-gpu-2026-12
     spec:
-      machineImageRef:
+      machine_image_ref:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
+      machine_init:
+        user_data_template: |
           #cloud-config
       profile: ubuntu-gpu
       tag: "2026.12"
@@ -55,10 +55,10 @@
     metadata:
       name: ubuntu-gpu-2026-11
     spec:
-      machineImageRef:
+      machine_image_ref:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
+      machine_init:
+        user_data_template: |
           #cloud-config
       profile: ubuntu-gpu
       tag: "2026.11"

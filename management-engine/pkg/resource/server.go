@@ -13,10 +13,12 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/fields"
 	strictjson "sigs.k8s.io/json"
 )
 
@@ -63,15 +65,39 @@ func Register[E any](
 	path string,
 	reader ResourceReader[E],
 	writer ResourceWriter[E],
-	fields []string,
+	selectorFields []string,
+	naming Naming,
 	verbs ...Operation,
-) {
+) error {
+	if err := naming.Validate(); err != nil {
+		return err
+	}
+	seen := map[reflect.Type]*jsonShape{}
+	shape, err := buildJSONShape(reflect.TypeFor[E](), naming, seen)
+	if err != nil {
+		return err
+	}
+	listShape, err := buildJSONShape(reflect.TypeFor[List[E]](), naming, seen)
+	if err != nil {
+		return err
+	}
+	selectors := make(map[string]string, len(selectorFields))
+	for _, field := range selectorFields {
+		wire, ok := shape.path(strings.Split(field, "."))
+		if !ok {
+			return fmt.Errorf("selectable field %q is not a declared public field", field)
+		}
+		selectors[strings.Join(wire, ".")] = field
+	}
 	var collection, item []string
 	for _, route := range resourceRoutes {
 		if slices.Contains(verbs, route.op) && ((route.op == OpGet || route.op == OpList) && reader != nil ||
 			(route.op == OpCreate || route.op == OpUpdate || route.op == OpDelete) && writer != nil) {
 			pattern := route.method + " " + path + route.suffix
-			mux.Handle(pattern, operationHandler[E]{reader: reader, writer: writer, fields: fields, op: route.op})
+			mux.Handle(pattern, operationHandler[E]{
+				reader: reader, writer: writer, op: route.op,
+				naming: naming, shape: shape, listShape: listShape, selectors: selectors,
+			})
 			if route.op == OpCreate || route.op == OpList {
 				collection = append(collection, route.method)
 			} else {
@@ -79,25 +105,30 @@ func Register[E any](
 			}
 		}
 	}
-	mux.Handle(path, methodNotAllowedHandler{allow: strings.Join(collection, ", ")})
-	mux.Handle(path+itemPathSuffix, methodNotAllowedHandler{allow: strings.Join(item, ", ")})
+	mux.Handle(path, methodNotAllowedHandler{allow: strings.Join(collection, ", "), naming: naming})
+	mux.Handle(path+itemPathSuffix, methodNotAllowedHandler{allow: strings.Join(item, ", "), naming: naming})
+	return nil
 }
 
 type methodNotAllowedHandler struct {
-	allow string
+	allow  string
+	naming Naming
 }
 
 // ServeHTTP returns a JSON 405 response with the allowed methods.
 func (h methodNotAllowedHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Allow", h.allow)
-	WriteError(w, problem(http.StatusMethodNotAllowed, methodNotAllowedCode, "The operation is not supported."))
+	WriteError(w, problem(http.StatusMethodNotAllowed, methodNotAllowedCode, "The operation is not supported."), h.naming)
 }
 
 type operationHandler[E any] struct {
-	reader ResourceReader[E]
-	writer ResourceWriter[E]
-	fields []string
-	op     Operation
+	reader    ResourceReader[E]
+	writer    ResourceWriter[E]
+	op        Operation
+	naming    Naming
+	shape     *jsonShape
+	listShape *jsonShape
+	selectors map[string]string
 }
 
 type versionFilteredReader[E any] interface {
@@ -108,9 +139,13 @@ type versionFilteredReader[E any] interface {
 func (h operationHandler[E]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	opts := &RequestOptions{}
 	value, status, err := h.dispatch(r.WithContext(WithOptions(r.Context(), opts)))
+	var body []byte
+	if err == nil && value != nil {
+		body, err = h.responseJSON(value)
+	}
 	switch {
 	case err != nil:
-		WriteError(w, err)
+		writeError(w, err, h.naming, h.shape)
 	case value == nil:
 		w.WriteHeader(status)
 	default:
@@ -119,14 +154,31 @@ func (h operationHandler[E]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(value)
+		_, _ = w.Write(append(body, '\n'))
 	}
+}
+
+func (h operationHandler[E]) responseJSON(value any) ([]byte, error) {
+	shape := h.shape
+	if h.op == OpList {
+		shape = h.listShape
+	}
+	return responseJSON(value, h.naming, shape)
+}
+
+// responseJSON applies the selected field naming to any declared response envelope.
+func responseJSON(value any, naming Naming, shape *jsonShape) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil || naming == CamelCase {
+		return data, err
+	}
+	return shape.translate(data, false)
 }
 
 // dispatch parses the transport contract and invokes the registered CRUDL operation.
 func (h operationHandler[E]) dispatch(r *http.Request) (any, int, error) {
 	versionReader, supportsVersionFilter := h.reader.(versionFilteredReader[E])
-	values, err := query(r, queryParameters(h.op, len(h.fields) != 0, supportsVersionFilter)...)
+	values, err := query(r, h.naming, queryParameters(h.op, len(h.selectors) != 0, supportsVersionFilter)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -149,7 +201,7 @@ func (h operationHandler[E]) dispatch(r *http.Request) (any, int, error) {
 	}
 	switch h.op {
 	case OpCreate, OpUpdate:
-		in, err := decode[E](r)
+		in, err := decode[E](r, h.shape)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -167,6 +219,12 @@ func (h operationHandler[E]) dispatch(r *http.Request) (any, int, error) {
 		if values.Has(fieldSelectorParameter) && opts.FieldSelector == "" {
 			return nil, 0, invalidSelector()
 		}
+		if opts.FieldSelector != "" {
+			opts.FieldSelector, err = h.canonicalSelector(opts.FieldSelector)
+			if err != nil {
+				return nil, 0, err
+			}
+		}
 		if values.Has(pageSizeParameter) {
 			opts.PageSize, err = strconv.Atoi(values.Get(pageSizeParameter))
 			if err != nil || opts.PageSize == 0 {
@@ -183,6 +241,27 @@ func (h operationHandler[E]) dispatch(r *http.Request) (any, int, error) {
 	default:
 		return nil, 0, problem(http.StatusInternalServerError, internalErrorCode, "The request could not be completed.")
 	}
+}
+
+func (h operationHandler[E]) canonicalSelector(value string) (string, error) {
+	if len(value) > MaxFieldSelectorBytes {
+		return "", invalidSelector()
+	}
+	selector, err := fields.ParseSelector(value)
+	if err != nil || selector.Empty() {
+		return "", invalidSelector()
+	}
+	selector, err = selector.Transform(func(name, value string) (string, string, error) {
+		canonical, ok := h.selectors[name]
+		if !ok {
+			return "", "", invalidSelector()
+		}
+		return canonical, value, nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return selector.String(), nil
 }
 
 // WithLimits applies body limits, cooperative deadlines and no-store responses.
@@ -212,7 +291,7 @@ func (h limitsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		WriteError(w, problem(
 			http.StatusInternalServerError, deadlineFailedCode, "The request deadline could not be established.",
-		))
+		), h.opts.Naming)
 		return
 	}
 	// net/http resets this for the next request. Do not unbound an unread
@@ -223,25 +302,66 @@ func (h limitsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // WriteError writes public Error diagnostics and replaces unrecognized errors with a generic 500 response.
-func WriteError(w http.ResponseWriter, err error) {
+// Without a resource shape, snake_case body pointers are omitted.
+func WriteError(w http.ResponseWriter, err error, naming Naming) {
+	writeError(w, err, naming, nil)
+}
+
+func writeError(w http.ResponseWriter, err error, naming Naming, shape *jsonShape) {
 	var public *Error
 	if !errors.As(err, &public) {
 		public = problem(http.StatusInternalServerError, internalErrorCode, "The request could not be completed.")
 	}
+	formatted := *public
+	formatted.Code = naming.FieldName(public.Code)
+	formatted.Errors = slices.Clone(public.Errors)
+	for index := range formatted.Errors {
+		field := &formatted.Errors[index]
+		field.Code = naming.FieldName(field.Code)
+		if strings.HasPrefix(field.Field, "/") {
+			if naming != CamelCase || shape != nil {
+				field.Field = shape.pointer(field.Field)
+			}
+		} else {
+			field.Field = naming.FieldName(field.Field)
+		}
+	}
+	encodeErr := naming.Validate()
+	var body []byte
+	if encodeErr == nil {
+		body, encodeErr = responseJSON(formatted, naming, errorShape)
+	}
+	if encodeErr != nil {
+		// Do not recursively encode an error when the declared error shape itself failed.
+		public = problem(http.StatusInternalServerError, internalErrorCode, "The request could not be completed.")
+		public.Code = naming.FieldName(public.Code)
+		body, _ = json.Marshal(map[string]any{
+			"status": public.Status, "code": public.Code, "title": public.Title,
+		})
+	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(public.Status)
-	_ = json.NewEncoder(w).Encode(public)
+	_, _ = w.Write(append(body, '\n'))
 }
 
+// errorShape is fixed by the public Error type; an unsupported change must fail at startup.
+var errorShape = func() *jsonShape {
+	shape, err := newJSONShape(reflect.TypeFor[Error](), SnakeCase)
+	if err != nil {
+		panic(fmt.Sprintf("building public error shape: %v", err))
+	}
+	return shape
+}()
+
 // decode checks the media type and maps strict JSON, size, and read failures to public errors.
-func decode[E any](r *http.Request) (E, error) {
+func decode[E any](r *http.Request, shape *jsonShape) (E, error) {
 	var value E
 	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || media != "application/json" {
 		return value, problem(http.StatusUnsupportedMediaType, unsupportedMediaTypeCode, "Use application/json.")
 	}
-	body, err := decodeStrict(r.Body, &value)
+	body, err := decodeNamedStrict(r.Body, &value, shape)
 	if err != nil {
 		if timeout, ok := errors.AsType[net.Error](err); ok && timeout.Timeout() {
 			r.Close = true
@@ -261,6 +381,10 @@ func decode[E any](r *http.Request) (E, error) {
 // decodeStrict accepts one object with known fields and unique keys, preserving original field presence.
 // The caller must bound the reader before this function buffers its contents.
 func decodeStrict(reader io.Reader, dest any) (map[string]any, error) {
+	return decodeNamedStrict(reader, dest, nil)
+}
+
+func decodeNamedStrict(reader io.Reader, dest any, shape *jsonShape) (map[string]any, error) {
 	data, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("reading JSON: %w", err)
@@ -269,29 +393,52 @@ func decodeStrict(reader io.Reader, dest any) (map[string]any, error) {
 		return nil, fmt.Errorf("JSON object required")
 	}
 	var body map[string]any
-	for _, target := range []any{&body, dest} {
-		strictErrors, decodeErr := strictjson.UnmarshalStrict(data, target)
-		if decodeErr != nil || len(strictErrors) != 0 {
-			return nil, fmt.Errorf("invalid, unknown or duplicate JSON fields")
+	strictErrors, decodeErr := strictjson.UnmarshalStrict(data, &body)
+	if decodeErr != nil || len(strictErrors) != 0 {
+		return nil, fmt.Errorf("invalid or duplicate JSON fields")
+	}
+	if shape != nil {
+		data, err = shape.translate(data, true)
+		if err != nil {
+			return nil, err
+		}
+	}
+	strictErrors, decodeErr = strictjson.UnmarshalStrict(data, dest)
+	if decodeErr != nil || len(strictErrors) != 0 {
+		return nil, fmt.Errorf("invalid or unknown JSON fields")
+	}
+	if shape != nil {
+		// Intent needs canonical int64 values after typed validation has checked the original numeric spellings.
+		// Replace the wire keys instead of merging them with canonical names.
+		body = nil
+		if err := strictjson.UnmarshalCaseSensitivePreserveInts(data, &body); err != nil {
+			return nil, err
 		}
 	}
 	return body, nil
 }
 
 // query permits only the named parameters, each appearing once.
-func query(r *http.Request, allowed ...string) (url.Values, error) {
+func query(r *http.Request, naming Naming, allowed ...string) (url.Values, error) {
 	values, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
 		return nil, Invalid()
 	}
+	canonical := make(url.Values, len(values))
+	names := make(map[string]string, len(allowed))
+	for _, name := range allowed {
+		names[naming.FieldName(name)] = name
+	}
 	for key, entries := range values {
-		if !slices.Contains(allowed, key) || len(entries) != 1 {
+		name, ok := names[key]
+		if !ok || len(entries) != 1 {
 			return nil, Invalid(FieldError{
 				Code: invalidQueryCode, Message: "The query contains an unsupported or repeated parameter.",
 			})
 		}
+		canonical[name] = entries
 	}
-	return values, nil
+	return canonical, nil
 }
 
 // versionHeader extracts one quoted If-Match resourceVersion. The ResourceServer enforces its presence and validity.

@@ -11,10 +11,10 @@ body:
   spec:
     kubernetes:
       version: "1.36.3"
-    machineImageRef:
+    machine_image_ref:
       name: ubuntu-2404-amd64
-    machineInit:
-      userDataTemplate: |
+    machine_init:
+      user_data_template: |
         #cloud-config
         hostname: nvke-control-plane
     lifecycle:

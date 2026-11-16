@@ -14,6 +14,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"sigs.k8s.io/yaml"
 
+	"github.com/dsx-ai-factory/nvke/management-engine/pkg/publicapi"
 	"github.com/dsx-ai-factory/nvke/management-engine/pkg/resource"
 )
 
@@ -26,10 +27,10 @@ func publicName(description resource.Description) string {
 }
 
 // kindNames includes every surface because descriptions can mention resources published elsewhere.
-func kindNames(surfaces []surface) (*strings.Replacer, error) {
+func kindNames(surfaces []publicapi.Surface) (*strings.Replacer, error) {
 	published := map[string]string{}
 	for _, surface := range surfaces {
-		for _, registration := range surface.registrations {
+		for _, registration := range surface.Registrations {
 			description := registration.Describe()
 			if len(description.Routes) == 0 {
 				continue
@@ -52,8 +53,8 @@ func kindNames(surfaces []surface) (*strings.Replacer, error) {
 	return strings.NewReplacer(pairs...), nil
 }
 
-// encode rewrites descriptions in the serialized document before emitting YAML.
-func encode(spec *openapi3.T, published *strings.Replacer) ([]byte, error) {
+// encode emits YAML with stable section order without changing the document.
+func encode(spec *openapi3.T) ([]byte, error) {
 	data, err := json.Marshal(spec)
 	if err != nil {
 		return nil, err
@@ -65,7 +66,6 @@ func encode(spec *openapi3.T, published *strings.Replacer) ([]byte, error) {
 	if err := decoder.Decode(&document); err != nil {
 		return nil, err
 	}
-	renameDescriptions(document, published)
 	// Lead with the overview and routes, then definitions and any remaining OpenAPI fields.
 	sections := append([]string{"openapi", "info", "servers", "tags", "paths", "components"},
 		slices.Sorted(maps.Keys(document))...)
@@ -83,40 +83,4 @@ func encode(spec *openapi3.T, published *strings.Replacer) ([]byte, error) {
 		delete(document, section)
 	}
 	return output, nil
-}
-
-// renameDescriptions rewrites OpenAPI prose while preserving literal data and extensions.
-func renameDescriptions(node any, published *strings.Replacer) {
-	switch value := node.(type) {
-	case map[string]any:
-		for key, child := range value {
-			if strings.HasPrefix(key, "x-") {
-				continue
-			}
-			switch key {
-			case "description":
-				if description, ok := child.(string); ok {
-					value[key] = published.Replace(description)
-				}
-			case "default", "enum", "example", "value":
-				// These values are caller data, even when they contain description keys.
-			case "properties", "schemas", "parameters", "headers", "responses", "requestBodies",
-				"securitySchemes", "examples", "callbacks", "encoding", "variables":
-				// Names can match keywords, so visit each named object without interpreting its name.
-				if entries, ok := child.(map[string]any); ok {
-					for _, entry := range entries {
-						renameDescriptions(entry, published)
-					}
-				} else if key == "parameters" {
-					renameDescriptions(child, published)
-				}
-			default:
-				renameDescriptions(child, published)
-			}
-		}
-	case []any:
-		for _, child := range value {
-			renameDescriptions(child, published)
-		}
-	}
 }

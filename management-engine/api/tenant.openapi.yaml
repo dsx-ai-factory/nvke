@@ -85,7 +85,7 @@ paths:
   /v1/cluster-release-channels:
     get:
       description: Returns one page of resources. Read the next page with the returned
-        pageKey while hasMore is true. Hidden entries are excluded. Eligible views
+        page_key while has_more is true. Hidden entries are excluded. Eligible views
         are filtered and sorted by name before pagination. Changes to these results
         invalidate the page key. Any source or dependency collection scanned to build
         this view is limited to 10000 items before filtering. Exceeding the limit
@@ -94,17 +94,17 @@ paths:
       parameters:
       - description: Number of results (default 100, maximum 500).
         in: query
-        name: pageSize
+        name: page_size
         schema:
           default: 100
           maximum: 500
           minimum: 1
           type: integer
       - allowEmptyValue: true
-        description: Use the pageKey returned by the previous list response. Keep
+        description: Use the page_key returned by the previous list response. Keep
           the same filters. At most 16384 UTF-8 bytes.
         in: query
-        name: pageKey
+        name: page_key
         schema:
           maxLength: 16384
           type: string
@@ -197,22 +197,22 @@ paths:
   /v1/clusters:
     get:
       description: Returns one page of resources. Read the next page with the returned
-        pageKey while hasMore is true.
+        page_key while has_more is true.
       operationId: listCluster
       parameters:
       - description: Number of results (default 100, maximum 500).
         in: query
-        name: pageSize
+        name: page_size
         schema:
           default: 100
           maximum: 500
           minimum: 1
           type: integer
       - allowEmptyValue: true
-        description: Use the pageKey returned by the previous list response. Keep
+        description: Use the page_key returned by the previous list response. Keep
           the same filters. At most 16384 UTF-8 bytes.
         in: query
-        name: pageKey
+        name: page_key
         schema:
           maxLength: 16384
           type: string
@@ -306,7 +306,7 @@ paths:
         description: Delete dependent resources after the resource (background) or
           before it (foreground). An omitted or empty value selects background.
         in: query
-        name: propagationPolicy
+        name: propagation_policy
         schema:
           default: background
           enum:
@@ -462,7 +462,7 @@ paths:
   /v1/control-plane-classes:
     get:
       description: Returns one page of resources. Read the next page with the returned
-        pageKey while hasMore is true. Hidden entries are excluded. Eligible views
+        page_key while has_more is true. Hidden entries are excluded. Eligible views
         are filtered and sorted by name before pagination. Changes to these results
         invalidate the page key. Any source or dependency collection scanned to build
         this view is limited to 10000 items before filtering. Exceeding the limit
@@ -471,17 +471,17 @@ paths:
       parameters:
       - description: Number of results (default 100, maximum 500).
         in: query
-        name: pageSize
+        name: page_size
         schema:
           default: 100
           maximum: 500
           minimum: 1
           type: integer
       - allowEmptyValue: true
-        description: Use the pageKey returned by the previous list response. Keep
+        description: Use the page_key returned by the previous list response. Keep
           the same filters. At most 16384 UTF-8 bytes.
         in: query
-        name: pageKey
+        name: page_key
         schema:
           maxLength: 16384
           type: string
@@ -554,7 +554,7 @@ paths:
   /v1/node-profiles:
     get:
       description: Returns one page of resources. Read the next page with the returned
-        pageKey while hasMore is true. Hidden entries are excluded. Eligible views
+        page_key while has_more is true. Hidden entries are excluded. Eligible views
         are filtered and sorted by name before pagination. Changes to these results
         invalidate the page key. Any source or dependency collection scanned to build
         this view is limited to 10000 items before filtering. Exceeding the limit
@@ -563,17 +563,17 @@ paths:
       parameters:
       - description: Number of results (default 100, maximum 500).
         in: query
-        name: pageSize
+        name: page_size
         schema:
           default: 100
           maximum: 500
           minimum: 1
           type: integer
       - allowEmptyValue: true
-        description: Use the pageKey returned by the previous list response. Keep
+        description: Use the page_key returned by the previous list response. Keep
           the same filters. At most 16384 UTF-8 bytes.
         in: query
-        name: pageKey
+        name: page_key
         schema:
           maxLength: 16384
           type: string
@@ -581,7 +581,7 @@ paths:
       - description: 'Comma-separated equality filters on: spec.profile, spec.tag.
           Each field may appear once. At most 4096 UTF-8 bytes.'
         in: query
-        name: fieldSelector
+        name: field_selector
         schema:
           maxLength: 4096
           minLength: 1
@@ -758,12 +758,12 @@ components:
           additionalProperties: false
           description: The resource's identity and server-assigned metadata.
           properties:
-            creationTimestamp:
+            creation_timestamp:
               description: When the resource was created.
               format: date-time
               readOnly: true
               type: string
-            deletionTimestamp:
+            deletion_timestamp:
               description: When deletion was requested. Present until cleanup finishes.
               format: date-time
               readOnly: true
@@ -814,7 +814,7 @@ components:
       additionalProperties: false
       description: One page of Cluster resources.
       properties:
-        hasMore:
+        has_more:
           description: Whether another page follows.
           type: boolean
         items:
@@ -822,13 +822,13 @@ components:
           items:
             $ref: '#/components/schemas/Cluster'
           type: array
-        pageKey:
+        page_key:
           description: Continuation for the next page. Empty on the last page.
           type: string
       required:
-      - hasMore
+      - has_more
       - items
-      - pageKey
+      - page_key
       type: object
     ClusterReleaseChannel:
       additionalProperties: false
@@ -853,7 +853,7 @@ components:
       additionalProperties: false
       description: One page of ClusterReleaseChannel resources.
       properties:
-        hasMore:
+        has_more:
           description: Whether another page follows.
           type: boolean
         items:
@@ -861,19 +861,19 @@ components:
           items:
             $ref: '#/components/schemas/ClusterReleaseChannel'
           type: array
-        pageKey:
+        page_key:
           description: Continuation for the next page. Empty on the last page.
           type: string
       required:
-      - hasMore
+      - has_more
       - items
-      - pageKey
+      - page_key
       type: object
     ClusterReleaseChannelSpec:
       additionalProperties: false
       description: The fields of a ClusterReleaseChannel that the catalog publishes.
       properties:
-        defaultVersion:
+        default_version:
           description: 'The newest version this channel offers: the first entry of
             versions.'
           type: string
@@ -886,7 +886,7 @@ components:
                 Deprecated allows resources already depending on the Release to keep
                 using it, but rejects new cluster or node pool creation referencing it.
               type: boolean
-            supportedUntil:
+            supported_until:
               description: SupportedUntil is the time at which support for this release
                 ends.
               format: date-time
@@ -899,11 +899,11 @@ components:
           items:
             additionalProperties: false
             properties:
-              kubernetesVersion:
+              kubernetes_version:
                 description: The Kubernetes version of the release this version currently
                   resolves to.
                 type: string
-              supportedUntil:
+              supported_until:
                 description: When support for that release ends.
                 format: date-time
                 type: string
@@ -911,12 +911,12 @@ components:
                 description: The version to name when a cluster selects this channel.
                 type: string
             required:
-            - kubernetesVersion
+            - kubernetes_version
             - version
             type: object
           type: array
       required:
-      - defaultVersion
+      - default_version
       - lifecycle
       - versions
       type: object
@@ -926,11 +926,11 @@ components:
         ClusterSpec configures a cluster's control plane and node pools.
 
         - authentication is only configurable at cluster creation
-        - network is required when nodePools are configured
-        - apiServerEndpoint is only configurable at cluster creation
-        - apiServerEndpoint.address must not be inside the pod or service networks
+        - network is required when node_pools are configured
+        - api_server_endpoint is only configurable at cluster creation
+        - api_server_endpoint.address must not be inside the pod or service networks
       properties:
-        acceleratedRuntime:
+        accelerated_runtime:
           additionalProperties: false
           description: |-
             AcceleratedRuntime selects an accelerated runtime bundle. Use name "none" to opt out.
@@ -955,12 +955,12 @@ components:
           required:
           - name
           type: object
-        apiServerAccess:
+        api_server_access:
           additionalProperties: false
           description: APIServerAccess controls access to the cluster's Kubernetes
             API server from outside the VPC.
           properties:
-            publicAccessCidrs:
+            public_access_cidrs:
               description: |-
                 PublicAccessCIDRs lists the source networks allowed to use public API server access.
 
@@ -991,14 +991,14 @@ components:
               x-kubernetes-list-map-keys:
               - cidr
               x-kubernetes-list-type: map
-            publicAccessEnabled:
+            public_access_enabled:
               description: PublicAccessEnabled enables public access to the Kubernetes
                 API server.
               type: boolean
           required:
-          - publicAccessEnabled
+          - public_access_enabled
           type: object
-        apiServerEndpoint:
+        api_server_endpoint:
           additionalProperties: false
           description: |-
             APIServerEndpoint gives the API server a stable address that survives control-plane node changes.
@@ -1030,7 +1030,7 @@ components:
                 description: JWTAuthenticator maps a trusted issuer's claims to Kubernetes
                   identities.
                 properties:
-                  claimMappings:
+                  claim_mappings:
                     additionalProperties: false
                     description: JWTClaimMappings maps the token's username and optional
                       groups claims.
@@ -1073,7 +1073,7 @@ components:
                     required:
                     - username
                     type: object
-                  claimValidationRules:
+                  claim_validation_rules:
                     items:
                       additionalProperties: false
                       description: ClaimValidationRule requires a claim to equal a
@@ -1083,12 +1083,12 @@ components:
                           maxLength: 256
                           minLength: 1
                           type: string
-                        requiredValue:
+                        required_value:
                           maxLength: 256
                           type: string
                       required:
                       - claim
-                      - requiredValue
+                      - required_value
                       type: object
                     maxItems: 32
                     minItems: 1
@@ -1120,7 +1120,7 @@ components:
                     - url
                     type: object
                 required:
-                - claimMappings
+                - claim_mappings
                 - issuer
                 type: object
               maxItems: 60
@@ -1129,7 +1129,7 @@ components:
               type: array
               x-kubernetes-list-type: atomic
           type: object
-        clusterNetwork:
+        cluster_network:
           additionalProperties: false
           description: ClusterNetwork describes the pod/service networks and cluster
             DNS domain.
@@ -1138,7 +1138,7 @@ components:
               additionalProperties: false
               description: Pods specifies the address ranges used by pods.
               properties:
-                cidrBlocks:
+                cidr_blocks:
                   description: |-
                     CIDRBlocks contains one address range, or one IPv4 and one IPv6 range for dual-stack.
                     The first range selects the default IP family.
@@ -1157,9 +1157,9 @@ components:
                   type: array
                   x-kubernetes-list-type: atomic
               required:
-              - cidrBlocks
+              - cidr_blocks
               type: object
-            serviceDomain:
+            service_domain:
               description: ServiceDomain is the DNS domain used by cluster services.
               maxLength: 253
               minLength: 1
@@ -1169,7 +1169,7 @@ components:
               additionalProperties: false
               description: Services specifies the address ranges used by cluster services.
               properties:
-                cidrBlocks:
+                cidr_blocks:
                   description: |-
                     CIDRBlocks contains one address range, or one IPv4 and one IPv6 range for dual-stack.
                     The first range selects the default IP family.
@@ -1188,14 +1188,14 @@ components:
                   type: array
                   x-kubernetes-list-type: atomic
               required:
-              - cidrBlocks
+              - cidr_blocks
               type: object
           required:
           - pods
-          - serviceDomain
+          - service_domain
           - services
           type: object
-        controlPlaneClass:
+        control_plane_class:
           description: ControlPlaneClass names the class that determines control-plane
             sizing and configuration.
           maxLength: 253
@@ -1207,16 +1207,16 @@ components:
           description: Network selects the existing VPC shared by the node pools.
           nullable: true
           properties:
-            vpcID:
+            vpc_id:
               description: VPCID is the ID of the VPC in which node pools are provisioned.
                 The VPC must already exist.
               format: uuid
               maxLength: 36
               type: string
           required:
-          - vpcID
+          - vpc_id
           type: object
-        nodePools:
+        node_pools:
           description: |-
             NodePools configures groups of nodes in the cluster. Omission requests
             a control plane without worker nodes. Names identify pools across updates.
@@ -1227,11 +1227,11 @@ components:
             description: NodePool configures a named group of machines that join the
               cluster as worker nodes.
             properties:
-              instanceType:
+              instance_type:
                 description: |-
                   InstanceType selects the machine type used by the pool and cannot change after creation.
 
-                  - instanceType is immutable
+                  - instance_type is immutable
                 maxLength: 253
                 minLength: 1
                 pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
@@ -1243,7 +1243,7 @@ components:
                 minLength: 1
                 pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                 type: string
-              nodeProfile:
+              node_profile:
                 description: |-
                   NodeProfile selects the machine image and startup configuration as <profile>:<tag>.
 
@@ -1331,7 +1331,7 @@ components:
                 required:
                 - strategy
                 type: object
-              userParams:
+              user_params:
                 additionalProperties: false
                 description: UserParams configures labels and taints for the pool's
                   nodes.
@@ -1396,18 +1396,18 @@ components:
                     - effect
                     x-kubernetes-list-type: map
                 type: object
-              vpcSubnetID:
-                description: VPCSubnetID identifies an existing subnet within spec.network.vpcID
+              vpc_subnet_id:
+                description: VPCSubnetID identifies an existing subnet within spec.network.vpc_id
                   for this pool's nodes.
                 format: uuid
                 maxLength: 36
                 type: string
             required:
-            - instanceType
+            - instance_type
             - name
-            - nodeProfile
+            - node_profile
             - replicas
-            - vpcSubnetID
+            - vpc_subnet_id
             type: object
           maxItems: 64
           nullable: true
@@ -1445,9 +1445,9 @@ components:
           - channel
           type: object
       required:
-      - apiServerAccess
-      - clusterNetwork
-      - controlPlaneClass
+      - api_server_access
+      - cluster_network
+      - control_plane_class
       - release
       type: object
     ClusterStatus:
@@ -1466,9 +1466,9 @@ components:
             description: Condition contains details for one aspect of the current
               state of this API Resource.
             properties:
-              lastTransitionTime:
+              last_transition_time:
                 description: |-
-                  lastTransitionTime is the last time the condition transitioned from one status to another.
+                  last_transition_time is the last time the condition transitioned from one status to another.
                   This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
                 format: date-time
                 type: string
@@ -1478,10 +1478,10 @@ components:
                   This may be an empty string.
                 maxLength: 32768
                 type: string
-              observedGeneration:
+              observed_generation:
                 description: |-
-                  observedGeneration represents the .metadata.generation that the condition was set based upon.
-                  For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                  observed_generation represents the .metadata.generation that the condition was set based upon.
+                  For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observed_generation is 9, the condition is out of date
                   with respect to the current state of the instance.
                 format: int64
                 minimum: 0
@@ -1510,7 +1510,7 @@ components:
                 pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                 type: string
             required:
-            - lastTransitionTime
+            - last_transition_time
             - message
             - reason
             - status
@@ -1521,13 +1521,33 @@ components:
           x-kubernetes-list-map-keys:
           - type
           x-kubernetes-list-type: map
+        current_release:
+          additionalProperties: false
+          description: CurrentRelease identifies the control-plane release currently
+            configured in the NVKE controller.
+          properties:
+            name:
+              description: ResourceName is a Kubernetes DNS subdomain name, not a
+                provider identifier.
+              maxLength: 253
+              minLength: 1
+              pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+              type: string
+            version:
+              maxLength: 128
+              minLength: 1
+              type: string
+          required:
+          - name
+          - version
+          type: object
         id:
           description: ID is the NVKE controller's cluster UID.
           format: uuid
           type: string
-        nodePools:
+        node_pools:
           description: |-
-            NodePools reports the observed state of each pool, identified by its name in spec.nodePools.
+            NodePools reports the observed state of each pool, identified by its name in spec.node_pools.
 
             - Entries must have unique combinations of these keys: name.
           items:
@@ -1538,7 +1558,7 @@ components:
               conditions:
                 description: |-
                   Conditions report pool readiness and progress, with details in reason and message.
-                  Each condition's observedGeneration refers to the enclosing Cluster's generation.
+                  Each condition's observed_generation refers to the enclosing Cluster's generation.
 
                   - Entries must have unique combinations of these keys: type.
                 items:
@@ -1549,7 +1569,7 @@ components:
                     message:
                       maxLength: 32768
                       type: string
-                    observedGeneration:
+                    observed_generation:
                       format: int64
                       minimum: 0
                       type: integer
@@ -1579,32 +1599,10 @@ components:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
-              id:
-                description: ID is the NVKE controller's node pool UUID.
-                format: uuid
-                type: string
-              name:
-                description: Name identifies the corresponding pool in spec.nodePools.
-                maxLength: 253
-                minLength: 1
-                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                type: string
-              readyReplicas:
-                description: ReadyReplicas is the number of nodes that are ready.
-                  Omitted means unknown.
-                format: int32
-                minimum: 0
-                type: integer
-              replicas:
-                description: Replicas is the observed number of nodes in the pool.
-                  Omitted means unknown.
-                format: int32
-                minimum: 0
-                type: integer
-              resolvedRelease:
+              current_release:
                 additionalProperties: false
-                description: ResolvedRelease identifies the worker release selected
-                  for this pool when it was created.
+                description: CurrentRelease identifies the worker release currently
+                  configured in the NVKE controller.
                 properties:
                   name:
                     description: ResourceName is a Kubernetes DNS subdomain name,
@@ -1621,7 +1619,29 @@ components:
                 - name
                 - version
                 type: object
-              updatedReplicas:
+              id:
+                description: ID is the NVKE controller's node pool UUID.
+                format: uuid
+                type: string
+              name:
+                description: Name identifies the corresponding pool in spec.node_pools.
+                maxLength: 253
+                minLength: 1
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                type: string
+              ready_replicas:
+                description: ReadyReplicas is the number of nodes that are ready.
+                  Omitted means unknown.
+                format: int32
+                minimum: 0
+                type: integer
+              replicas:
+                description: Replicas is the observed number of nodes in the pool.
+                  Omitted means unknown.
+                format: int32
+                minimum: 0
+                type: integer
+              updated_replicas:
                 description: |-
                   UpdatedReplicas is the number of nodes matching the requested pool configuration.
                   Omitted means unknown.
@@ -1636,32 +1656,12 @@ components:
           x-kubernetes-list-map-keys:
           - name
           x-kubernetes-list-type: map
-        observedGeneration:
+        observed_generation:
           description: ObservedGeneration is the latest generation observed by the
             controller.
           format: int64
           minimum: 1
           type: integer
-        resolvedRelease:
-          additionalProperties: false
-          description: ResolvedRelease identifies the control-plane release selected
-            for this cluster.
-          properties:
-            name:
-              description: ResourceName is a Kubernetes DNS subdomain name, not a
-                provider identifier.
-              maxLength: 253
-              minLength: 1
-              pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-              type: string
-            version:
-              maxLength: 128
-              minLength: 1
-              type: string
-          required:
-          - name
-          - version
-          type: object
       readOnly: true
       type: object
     ClusterUpdate:
@@ -1711,7 +1711,7 @@ components:
       additionalProperties: false
       description: One page of ControlPlaneClass resources.
       properties:
-        hasMore:
+        has_more:
           description: Whether another page follows.
           type: boolean
         items:
@@ -1719,20 +1719,20 @@ components:
           items:
             $ref: '#/components/schemas/ControlPlaneClass'
           type: array
-        pageKey:
+        page_key:
           description: Continuation for the next page. Empty on the last page.
           type: string
       required:
-      - hasMore
+      - has_more
       - items
-      - pageKey
+      - page_key
       type: object
     ControlPlaneClassSpec:
       additionalProperties: false
       description: ControlPlaneClassSpec configures the control plane of clusters
         selecting this class.
       properties:
-        controlPlane:
+        control_plane:
           additionalProperties: false
           description: ControlPlane configures control-plane capacity and machine
             settings.
@@ -1754,7 +1754,7 @@ components:
                 Deprecated allows resources already depending on the Release to keep
                 using it, but rejects new cluster or node pool creation referencing it.
               type: boolean
-            supportedUntil:
+            supported_until:
               description: SupportedUntil is the time at which support for this release
                 ends.
               format: date-time
@@ -1763,7 +1763,7 @@ components:
           - deprecated
           type: object
       required:
-      - controlPlane
+      - control_plane
       - lifecycle
       type: object
     NodeProfile:
@@ -1789,7 +1789,7 @@ components:
       additionalProperties: false
       description: One page of NodeProfile resources.
       properties:
-        hasMore:
+        has_more:
           description: Whether another page follows.
           type: boolean
         items:
@@ -1797,13 +1797,13 @@ components:
           items:
             $ref: '#/components/schemas/NodeProfile'
           type: array
-        pageKey:
+        page_key:
           description: Continuation for the next page. Empty on the last page.
           type: string
       required:
-      - hasMore
+      - has_more
       - items
-      - pageKey
+      - page_key
       type: object
     NodeProfileSpec:
       additionalProperties: false
@@ -1827,7 +1827,7 @@ components:
                 Deprecated allows resources already depending on the Release to keep
                 using it, but rejects new cluster or node pool creation referencing it.
               type: boolean
-            supportedUntil:
+            supported_until:
               description: SupportedUntil is the time at which support for this release
                 ends.
               format: date-time
@@ -1835,7 +1835,7 @@ components:
           required:
           - deprecated
           type: object
-        operatingSystem:
+        operating_system:
           additionalProperties: false
           description: OperatingSystem identifies the distribution an image was built
             from.
@@ -1871,7 +1871,7 @@ components:
       required:
       - architecture
       - lifecycle
-      - operatingSystem
+      - operating_system
       - profile
       - tag
       type: object
@@ -1882,6 +1882,25 @@ components:
       properties:
         code:
           description: A stable identifier for the kind of problem.
+          enum:
+          - already_exists
+          - body_too_large
+          - conflict
+          - datastore_unavailable
+          - deadline_failed
+          - forbidden
+          - internal_error
+          - invalid_request
+          - invalid_resource
+          - method_not_allowed
+          - not_found
+          - page_expired
+          - precondition_failed
+          - precondition_required
+          - projection_failed
+          - request_timeout
+          - unauthorized
+          - unsupported_media_type
           type: string
         errors:
           description: The fields or query parameters that caused the problem.
@@ -1890,6 +1909,14 @@ components:
             properties:
               code:
                 description: A stable identifier for the kind of failure.
+                enum:
+                - identity_mismatch
+                - invalid
+                - invalid_json
+                - invalid_precondition
+                - invalid_query
+                - read_only
+                - unexpected_body
                 type: string
               field:
                 description: A JSON pointer into the body, or a query parameter name.

@@ -16,21 +16,6 @@ import (
 	"github.com/dsx-ai-factory/nvke/management-engine/pkg/resource"
 )
 
-const (
-	tenantSurface   = "tenant"
-	operatorSurface = "operator"
-)
-
-type surface struct {
-	name          string
-	registrations []resource.Registration
-}
-
-var surfaces = []surface{
-	{tenantSurface, publicapi.Tenant()},
-	{operatorSurface, publicapi.Operator()},
-}
-
 func main() {
 	checkOnly := flag.Bool("check", false, "check generated specs without writing them")
 	flag.Parse()
@@ -40,10 +25,14 @@ func main() {
 	}
 }
 
-func documents(root string) (map[string]*openapi3.T, error) {
+func documents(root string, surfaces []publicapi.Surface) (map[string]*openapi3.T, error) {
+	published, err := kindNames(surfaces)
+	if err != nil {
+		return nil, err
+	}
 	var registrations []resource.Registration
 	for _, surface := range surfaces {
-		registrations = append(registrations, surface.registrations...)
+		registrations = append(registrations, surface.Registrations...)
 	}
 	builder, err := newSchemaBuilder(root, registrations)
 	if err != nil {
@@ -51,27 +40,24 @@ func documents(root string) (map[string]*openapi3.T, error) {
 	}
 	specs := map[string]*openapi3.T{}
 	for _, surface := range surfaces {
-		spec, err := document(surface.name, surface.registrations, builder)
+		spec, err := document(surface, builder, published)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", surface.name, err)
+			return nil, fmt.Errorf("%s: %w", surface.Name, err)
 		}
-		specs[surface.name] = spec
+		specs[surface.Name] = spec
 	}
 	return specs, nil
 }
 
 func generate(root string, checkOnly bool) error {
-	published, err := kindNames(surfaces)
-	if err != nil {
-		return err
-	}
-	specs, err := documents(root)
+	surfaces := []publicapi.Surface{publicapi.Tenant(), publicapi.Operator()}
+	specs, err := documents(root, surfaces)
 	if err != nil {
 		return err
 	}
 	for _, surface := range surfaces {
-		name := surface.name
-		data, err := encode(specs[name], published)
+		name := surface.Name
+		data, err := encode(specs[name])
 		if err != nil {
 			return err
 		}

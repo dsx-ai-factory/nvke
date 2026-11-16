@@ -146,7 +146,7 @@ func TestCatalogVersionFilterTransport(t *testing.T) {
 		}),
 	}
 	mux := http.NewServeMux()
-	Register(mux, "/channels", reader, nil, nil, OpGet, OpList)
+	require.NoError(t, Register(mux, "/channels", reader, nil, nil, CamelCase, OpGet, OpList))
 	for _, path := range []string{
 		"/channels?version=", "/channels?version=bad", "/channels/b?version=1.34&version=1.35",
 		"/channels/b?version=1.34.99999999999999999999",
@@ -203,7 +203,8 @@ func TestReadRegistrationCapabilities(t *testing.T) {
 		})
 	}
 	mux := http.NewServeMux()
-	Register(mux, "/classes", directReader(nil), nil, nil, OpGet, OpList, OpCreate, OpUpdate, OpDelete)
+	require.NoError(t, Register(mux, "/classes", directReader(nil), nil, nil, CamelCase,
+		OpGet, OpList, OpCreate, OpUpdate, OpDelete))
 	for _, tc := range []struct{ method, path string }{
 		{"POST", "/classes"}, {"PUT", "/classes/standard"}, {"DELETE", "/classes/standard"},
 	} {
