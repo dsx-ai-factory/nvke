@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-{{- if or (not (hasKey .Values.operatorAPI "enabled")) (.Values.operatorAPI.enabled) }}
+{{- if .Values.operatorAPI.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -110,7 +110,7 @@ spec:
 {{ include "management-engine.apiVolume" .Values.operatorAPI | indent 6 }}
 {{ with .Values.operatorAPI.extraVolumes }}{{ toYaml . | indent 6 }}{{ end }}
 {{ end }}
-      serviceAccountName: {{ include "management-engine.apiServiceAccount" (dict "root" $ "api" .Values.operatorAPI "surface" "operator") }}
+      serviceAccountName: {{ include "management-engine.apiServiceAccount" (dict "root" $ "api" .Values.operatorAPI "surface" "operator") | quote }}
       {{- if and (hasKey .Values.operatorAPI "terminationGracePeriodSeconds") (ne .Values.operatorAPI.terminationGracePeriodSeconds nil) }}
       terminationGracePeriodSeconds: {{ .Values.operatorAPI.terminationGracePeriodSeconds }}
       {{- end }}

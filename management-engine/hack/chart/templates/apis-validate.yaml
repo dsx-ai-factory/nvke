@@ -10,7 +10,12 @@
 {{- if and (not $api.serviceAccount.create) (empty $api.serviceAccount.name) -}}
 {{- fail (printf "%s.serviceAccount.name is required when create=false" $key) -}}
 {{- end -}}
-{{- if eq $api.stateAccess.mode "remote" -}}
+{{- $access := default dict $api.stateAccess -}}
+{{- $mode := required (printf "%s.stateAccess.mode is required" $key) $access.mode -}}
+{{- if not (has $mode (list "inCluster" "remote")) -}}
+{{- fail (printf "%s.stateAccess.mode must be inCluster or remote" $key) -}}
+{{- end -}}
+{{- if eq $mode "remote" -}}
 {{- $_ := required (printf "%s remote access requires stateAccess.kubeconfigSecret.name" $key) $api.stateAccess.kubeconfigSecret.name -}}
 {{- $_ := required (printf "%s remote access requires stateAccess.kubeconfigSecret.key" $key) $api.stateAccess.kubeconfigSecret.key -}}
 {{- else if or $api.stateAccess.kubeconfigSecret.name $api.stateAccess.context -}}

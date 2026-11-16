@@ -9,7 +9,7 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "management-engine.apiServiceAccount" (dict "root" $ "api" $api "surface" $surface) }}
+  name: {{ include "management-engine.apiServiceAccount" (dict "root" $ "api" $api "surface" $surface) | quote }}
   namespace: {{ $.Release.Namespace | quote }}
 automountServiceAccountToken: false
 {{- end }}

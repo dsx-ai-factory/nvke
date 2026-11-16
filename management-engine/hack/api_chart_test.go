@@ -152,6 +152,9 @@ func TestChartAPIValidation(t *testing.T) {
 			`{"operatorAPI":{"enabled":true,"stateAccess":{"kubeconfigSecret":{"name":"client"}}}}`,
 			"inCluster access"},
 		{"local context", `{"operatorAPI":{"enabled":true,"stateAccess":{"context":"elsewhere"}}}`, "inCluster access"},
+		{"missing mode", `{"operatorAPI":{"enabled":true,"stateAccess":{"mode":null}}}`, "missing property 'mode'"},
+		{"missing access", `{"tenantAPI":{"enabled":true,"namespace":"tenant-one","stateAccess":null}}`,
+			"missing property 'stateAccess'"},
 		{"invalid mode", `{"operatorAPI":{"enabled":true,"stateAccess":{"mode":"other"}}}`, "mode"},
 		{"existing identity", `{"operatorAPI":{"enabled":true,"serviceAccount":{"create":false}}}`, "serviceAccount.name"},
 		{"invalid port", `{"operatorAPI":{"enabled":true,"service":{"port":0}}}`, "port"},
@@ -472,5 +475,60 @@ func TestChartAPILongNamesAndDistinctIdentities(t *testing.T) {
 	_, out, err = renderChart(t, string(data))
 	if err == nil || !strings.Contains(out, "distinct ServiceAccounts") {
 		t.Fatalf("%v: %s", err, out)
+	}
+}
+
+func TestChartAPIIdentityStrings(t *testing.T) {
+	for _, key := range []string{"tenantAPI", "operatorAPI"} {
+		for _, name := range []string{"123", "true"} {
+			for _, create := range []bool{true, false} {
+				t.Run(fmt.Sprintf("%s/%s/create=%t", key, name, create), func(t *testing.T) {
+					values := map[string]any{
+						"controller": map[string]any{"enabled": false},
+						key: map[string]any{"enabled": true, "namespace": "tenant-one",
+							"serviceAccount": map[string]any{"create": create, "name": name}},
+					}
+					data, err := json.Marshal(values)
+					if err != nil {
+						t.Fatal(err)
+					}
+					objects, out, err := renderChart(t, string(data))
+					if err != nil {
+						t.Fatalf("render: %v\n%s", err, out)
+					}
+					deployments := objectsOfKind(objects, "Deployment")
+					if len(deployments) != 1 {
+						t.Fatal("expected one API Deployment")
+					}
+					account, _, err := unstructured.NestedString(deployments[0].Object,
+						"spec", "template", "spec", "serviceAccountName")
+					if err != nil || account != name {
+						t.Fatalf("account=%q error=%v", account, err)
+					}
+					accounts := objectsOfKind(objects, "ServiceAccount")
+					if create {
+						if len(accounts) != 1 || accounts[0].GetName() != name {
+							t.Fatal("created identity lost its string name")
+						}
+					} else if len(accounts) != 0 {
+						t.Fatal("created an existing identity")
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestChartAPINullEnabledDoesNotInstallPartialWorkloads(t *testing.T) {
+	objects, out, err := renderChart(t, `{
+ "controller":{"enabled":false},"tenantAPI":{"enabled":null},"operatorAPI":{"enabled":null}
+ }`)
+	if err != nil {
+		t.Fatalf("render: %v\n%s", err, out)
+	}
+	for _, kind := range []string{"Deployment", "Service", "ServiceAccount"} {
+		if len(objectsOfKind(objects, kind)) != 0 {
+			t.Fatalf("null API switches rendered %s", kind)
+		}
 	}
 }

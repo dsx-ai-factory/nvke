@@ -556,7 +556,33 @@
             "type": "object"
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "enabled"
+            ],
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stateAccess"
+            ],
+            "properties": {
+              "stateAccess": {
+                "required": [
+                  "mode"
+                ]
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

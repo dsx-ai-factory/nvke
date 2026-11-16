@@ -28,6 +28,9 @@ func generateAPIs(binary, stage, chart string) error {
 		if err != nil {
 			return fmt.Errorf("generate %s API: %w", component.surface, err)
 		}
+		if overlay, ok := values[component.key].(map[string]any); ok {
+			merge(defaults, overlay)
+		}
 		values[component.key] = defaults
 	}
 	data, err = yaml.Marshal(values)
@@ -142,8 +145,10 @@ func customizeAPI(template, surface, key string) (string, error) {
 	oldAccount := `      serviceAccountName: {{ include "management-engine.resourceName" ` +
 		`(dict "suffix" "` + surface + `-api" "context" $) }}`
 	newAccount := `      serviceAccountName: {{ include "management-engine.apiServiceAccount" ` +
-		`(dict "root" $ "api" .Values.manager "surface" "` + surface + `") }}`
+		`(dict "root" $ "api" .Values.manager "surface" "` + surface + `") | quote }}`
 	replacements := [][2]string{
+		{`{{- if or (not (hasKey .Values.manager "enabled")) (.Values.manager.enabled) }}`,
+			`{{- if .Values.manager.enabled }}`},
 		{`"suffix" "controller-manager"`, `"suffix" "` + surface + `-api"`},
 		{"        name: manager", "        name: api"},
 		{"      automountServiceAccountToken: true",

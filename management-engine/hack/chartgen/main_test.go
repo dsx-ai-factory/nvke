@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -65,6 +66,7 @@ func checkSourcePropagation(t *testing.T, omitEnv bool) {
 	run("git", "init", "-q")
 	changeCanonicalSources(t, omitEnv)
 	changeAPISources(t, omitEnv)
+	changeAPIDefaults(t)
 	if err := os.MkdirAll("dist", 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -287,6 +289,27 @@ func changeAPISources(t *testing.T, omitEnv bool) {
 	}
 }
 
+func changeAPIDefaults(t *testing.T) {
+	t.Helper()
+	data, err := os.ReadFile("hack/chart/values.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaults := map[string]any{}
+	if err := json.Unmarshal(data, &defaults); err != nil {
+		t.Fatal(err)
+	}
+	defaults["tenantAPI"] = map[string]any{"service": map[string]any{"port": 8181}}
+	defaults["operatorAPI"] = map[string]any{"service": map[string]any{"port": 8282}}
+	data, err = json.Marshal(defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("hack/chart/values.json", data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func checkGeneratedAPIs(t *testing.T, run func(string, ...string) []byte, omitEnv bool) {
 	t.Helper()
 	values := []byte(`{
@@ -313,6 +336,16 @@ func checkGeneratedAPIs(t *testing.T, run func(string, ...string) []byte, omitEn
 			break
 		} else if err != nil {
 			t.Fatal(err)
+		}
+		if obj.GetKind() == "Service" {
+			port, _, _ := unstructured.NestedSlice(obj.Object, "spec", "ports")
+			expected := int64(8181)
+			if strings.HasSuffix(obj.GetName(), "operator-api") {
+				expected = 8282
+			}
+			if port[0].(map[string]any)["port"] != expected {
+				t.Fatalf("chart-only API defaults did not propagate: %v", port)
+			}
 		}
 		if obj.GetKind() != "Deployment" {
 			continue
