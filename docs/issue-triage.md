@@ -78,5 +78,5 @@ issue events and once an hour:
 - on a new issue, maps the form's Component field to an `area/*` label, once,
   and never puts back an area a triager removed.
 
-Pull requests carry none of these labels. They are routed by the path-based
-labeler and reviewed through CODEOWNERS.
+Pull requests carry none of these labels. See
+[pull-request-triage.md](pull-request-triage.md).
