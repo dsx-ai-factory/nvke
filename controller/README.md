@@ -676,8 +676,8 @@ The chart renders the `apiAuthz` section of `nvke-controller-config` (`enabled`,
 `/etc/nvke/authz`. Without the chart, set that section and mount a directory
 holding `policies.cedar`, `roles.json` and `authorization.yaml`. NVKE refuses to
 start with authorization on and authentication off, or with authorization
-enforcing behind permissive authentication. The default `admin` and `viewer`
-roles, grants, rollout, logs and metrics are in
+enforcing behind permissive authentication. Once enforcing, human callers need
+grants too, by a claim such as `groups`. For roles, grants and rollout, see
 [Authorize API callers by role](../docs/operate/api-authorization.md).
 
 ### Authentication Configuration
