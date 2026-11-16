@@ -39,10 +39,10 @@ After bootstrap completes:
 - SSH access to all nodes with sudo privileges
 - Nodes can reach the internet for downloading packages and artifacts
 - Network connectivity between all nodes
-- containerd 2.1.1 or later on every node. 2.1.0 added the image-volume support the CAPI SPIFFE exec-auth overlay ([Install the management plane](../operate/install-management-plane.md)) mounts its plugin with, but is excluded because CVE-2025-47290 affects exactly that release; older containerd cannot run image volumes at all
+- containerd 2.2.0 or later on every node. The CAPI SPIFFE exec-auth overlay ([Install the management plane](../operate/install-management-plane.md)) mounts its plugin from an image volume with a `subPath`. containerd 2.1 added image volumes but not their `subPath`, and older containerd cannot run image volumes at all
 - If self-managed, a storage provisioner for the cluster's default StorageClass before you install the management plane. The bootstrap installs none, and the management plane's database claims a 40 GiB volume
 - Registry credentials only if you pull the two images below from a private registry, logged in with `nerdctl login` on the init node; an NGC API key only if that registry is a private `nvcr.io` repository. Images you build on the init node need none
-- On the **init node**: `kind` binary and `nerdctl` with containerd installed — `nvkectl` uses these to create the ephemeral bootstrap Kind cluster. Docker is not supported. kind states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the version CI exercises
+- On the **init node**: `kind` binary and `nerdctl` with containerd installed — `nvkectl` uses these to create the ephemeral bootstrap Kind cluster. Docker is not supported. kind states nerdctl 1.7.0 as the minimum for its nerdctl provider; CI exercises nerdctl 2.3.5
 - The two images `nvkectl` side-loads: `make -C cli images` builds them on the init node. To use images from a registry instead, pass `--nvke-controller-image` and `--provisioned-provider-image`, or set `NVKECTL_NVKE_CONTROLLER_IMAGE` (e.g. `nvcr.io/<org>/nvke-controller:edge`) and `NVKECTL_CAPI_PROVISIONED_IMAGE` (e.g. `nvcr.io/<org>/cluster-api-provider-provisioned:edge`)
 - On the **init node**, also on `PATH`: `helm`, `kubectl`, and `clusterctl`. `nvkectl`
   shells out to all three during bootstrap — Helm for the Postgres, Temporal, SPIRE
@@ -95,17 +95,17 @@ echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.
   sudo tee /etc/apt/sources.list.d/kubernetes.list
 
 # Check for an existing containerd (e.g. installed via DOCA or a
-# pre-baked OS image). Keep it only if it reports 2.1.1 or later: the
-# CAPI SPIFFE exec-auth overlay mounts an image volume, and older
-# containerd fails those pods with 'failed to mkdir ""'. 2.1.0 exactly is
-# affected by CVE-2025-47290; 2.1.1 fixes it. The NVKE reference
-# packages pin containerd 2.3.0 for Kubernetes 1.36.3
+# pre-baked OS image). Keep it only if it reports 2.2.0 or later: the
+# CAPI SPIFFE exec-auth overlay mounts an image volume with a subPath,
+# which containerd supports from 2.2.0. On containerd 1.7 those pods
+# fail with 'failed to mkdir ""'. The NVKE reference packages pin
+# containerd 2.3.0 for Kubernetes 1.36.3
 # (os-image/packages/kubeadm-distro/lock/amd64/v1.36.3.lock).
 containerd --version
 
 # Add Docker repository (for containerd.io).
 # Skip the Docker repository and drop containerd.io from the
-# apt-get install line only if the check above reports 2.1.1 or later.
+# apt-get install line only if the check above reports 2.2.0 or later.
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
   sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 
@@ -117,7 +117,7 @@ sudo apt-get update
 sudo apt-get install -y kubelet kubeadm kubectl containerd.io conntrack cri-tools
 sudo apt-mark hold kubelet kubeadm kubectl
 
-# Confirm the installed containerd is 2.1.1 or later.
+# Confirm the installed containerd is 2.2.0 or later.
 containerd --version
 ```
 
