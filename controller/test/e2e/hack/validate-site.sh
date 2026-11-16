@@ -32,7 +32,8 @@
 # The container gets a flattened copy of the kubeconfig. Under Docker Desktop
 # it reaches a local listener as host.docker.internal, so a loopback server is
 # rewritten to that name, with tls-server-name pinned to the original host so
-# the certificate still matches; on Linux it shares the host's network
+# the certificate still matches, and a loopback proxy-url, which tsh's local
+# proxy uses, is rewritten the same way; on Linux it shares the host's network
 # instead. Reports, the run log and the inputs used (no credentials) go to
 # RUNS_DIR/<site>-<time>/.
 set -euo pipefail
@@ -230,7 +231,8 @@ fi
 [[ -n $ONLY ]] && filter="($filter) && ($ONLY)"
 
 passed=$(compgen -e | grep -E '^(NVKE|NKE_E2E)_' | grep -vE '^NVKE_(VALIDATE_PROFILE|CONTROLLER_EXPECTED_VERSION|SITE_KUBERNETES_VERSION)$' || true)
-docker_args=(--rm --user "$(id -u):$(id -g)")
+docker_args=(--rm --user "$(id -u):$(id -g)"
+  --platform "$(docker image inspect "$IMAGE" --format '{{.Os}}/{{.Architecture}}')")
 for name in $passed; do
   docker_args+=(-e "$name")
 done
@@ -284,6 +286,8 @@ cases = ET.parse(sys.argv[1]).getroot().iter("testcase")
 passed, failed, skipped = [], [], []
 for case in cases:
     name = case.get("name", "")
+    if not name.startswith("[It]"):
+        continue
     if case.find("failure") is not None or case.find("error") is not None:
         node = case.find("failure") if case.find("failure") is not None else case.find("error")
         failed.append((name, (node.get("message") or "").splitlines()[0:1]))

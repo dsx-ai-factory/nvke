@@ -730,11 +730,24 @@ ConfigMap with another name, managed outside the chart, add
 
 Where the registry needs credentials, add `imagePullSecrets` to the Job and
 the artifacts pod. Add any [variables](#validation-image-variables) the site's
-expectations need to the Job's `env`. Two of them need more RBAC than
-`validate-site.yaml` grants by default: listing `argocd` or `cnpg` in
-`NVKE_SITE_COMPONENTS` needs the commented Application or Cluster rule in its
-ClusterRole uncommented, and setting `NVKE_SITE_PROBE_NAMESPACE` needs the
-`nvke-validate-probe` Role and RoleBinding moved to that namespace.
+expectations need to the Job's `env`, or keep them in a
+[validation profile](#validation-profile): put it in a ConfigMap before
+applying the Job, and uncomment the Job's profile volume, mount and
+`NVKE_VALIDATE_PROFILE`:
+
+```bash
+kubectl create namespace nvke-validate --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n nvke-validate create configmap nvke-validate-profile \
+  --from-file=profile.yaml=<site profile>
+```
+
+Three of the variables need more RBAC than `validate-site.yaml` grants by
+default: listing `argocd` or `cnpg` in `NVKE_SITE_COMPONENTS` needs the
+commented Application or Cluster rule in its ClusterRole uncommented,
+`NVKE_SITE_CERT_MANAGER_APPROVAL=policy` needs the commented
+CertificateRequest rule in `nvke-validate-probe` uncommented, and setting
+`NVKE_SITE_PROBE_NAMESPACE` needs the `nvke-validate-probe` Role and
+RoleBinding moved to that namespace. A profile that sets them needs the same.
 
 Follow the run, then read the Job's conditions. `Complete` means no selected
 spec failed. Some may still have skipped, saying why, where an input they

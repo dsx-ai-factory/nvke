@@ -158,6 +158,10 @@ rules:
   - apiGroups: [""]
     resources: [secrets]
     verbs: [get, delete]
+  # Only where NVKE_SITE_CERT_MANAGER_APPROVAL is policy:
+  # - apiGroups: [cert-manager.io]
+  #   resources: [certificaterequests]
+  #   verbs: [list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -223,6 +227,9 @@ spec:
               value: "__TOKEN_NAMESPACE__"
             - name: NKE_E2E_TOKEN_SERVICE_ACCOUNT
               value: "__TOKEN_SERVICE_ACCOUNT__"
+            # With a validation profile in the nvke-validate-profile ConfigMap:
+            # - name: NVKE_VALIDATE_PROFILE
+            #   value: /profile/profile.yaml
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -230,7 +237,13 @@ spec:
           volumeMounts:
             - name: artifacts
               mountPath: /artifacts
+            # - name: profile
+            #   mountPath: /profile
+            #   readOnly: true
       volumes:
         - name: artifacts
           persistentVolumeClaim:
             claimName: nvke-validate-artifacts
+        # - name: profile
+        #   configMap:
+        #     name: nvke-validate-profile
