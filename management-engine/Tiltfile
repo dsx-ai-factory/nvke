@@ -92,13 +92,15 @@ def register(ctx):
           jq --arg name "$CLUSTER_NAME" --arg ip "$API_SERVER_IP" '
             .metadata.name = $name | .spec.apiServerEndpoint.address = $ip
           ' <<< "$NVKECLUSTER_TEMPLATE" |
-            kubectl --context "$K8S_CONTEXT" apply -f -
+            curl --fail-with-body --silent --show-error --request POST \
+              --header 'Content-Type: application/json' \
+              --data-binary @- "$CLUSTER_API_URL"
         """],
         env={
-            "K8S_CONTEXT": k8s_context(),
+            "CLUSTER_API_URL": "http://127.0.0.1:8082/v1/clusters",
             "NVKECLUSTER_TEMPLATE": encode_json(read_yaml(os.path.join(ctx.provider_dir, "config/dev/nvkecluster.yaml"))),
         },
-        resource="management-engine",
+        resource="management-engine-tenant-api",
         icon_name="add_box",
         text="Create NVKECluster",
         inputs=[
