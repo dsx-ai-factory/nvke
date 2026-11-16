@@ -113,7 +113,7 @@ items:
       status: "False"
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: ""
+      message: Selected ClusterRelease "latest-release" is supported
       observedGeneration: 2
       reason: ReleaseSupported
       status: "True"
@@ -125,6 +125,9 @@ items:
       reason: NotSynced
       status: "False"
       type: Synced
+    currentRelease:
+      name: pinned-release
+      version: 1.34.8
     id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     nodePools:
     - conditions:
@@ -148,11 +151,11 @@ items:
         reason: Reported
         status: "False"
         type: NVKEControllerProvisioning
-      id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
-      name: workers-remove
-      resolvedRelease:
+      currentRelease:
         name: worker-test-release
         version: 1.34.8
+      id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+      name: workers-remove
     - conditions:
       - message: ""
         observedGeneration: 2
@@ -174,13 +177,10 @@ items:
         reason: Reported
         status: "False"
         type: NVKEControllerProvisioning
-      id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
-      name: workers-keep
-      resolvedRelease:
+      currentRelease:
         name: worker-test-release
         version: 1.34.8
+      id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+      name: workers-keep
     observedGeneration: 1
-    resolvedRelease:
-      name: pinned-release
-      version: 1.34.8
 metadata: {}

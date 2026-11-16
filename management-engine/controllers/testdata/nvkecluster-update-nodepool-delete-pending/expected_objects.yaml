@@ -107,7 +107,7 @@ items:
       status: "True"
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: ""
+      message: Selected ClusterRelease "test-release" is supported
       observedGeneration: 2
       reason: ReleaseSupported
       status: "True"
@@ -118,6 +118,9 @@ items:
       reason: Synced
       status: "True"
       type: Synced
+    currentRelease:
+      name: test-release
+      version: 1.36.1
     id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     nodePools:
     - conditions:
@@ -141,11 +144,11 @@ items:
         reason: Reported
         status: "False"
         type: NVKEControllerProvisioning
-      id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
-      name: workers-remove
-      resolvedRelease:
+      currentRelease:
         name: worker-test-release
         version: 1.36.1
+      id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+      name: workers-remove
     - conditions:
       - message: ""
         observedGeneration: 2
@@ -167,13 +170,10 @@ items:
         reason: Reported
         status: "False"
         type: NVKEControllerProvisioning
-      id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
-      name: workers-keep
-      resolvedRelease:
+      currentRelease:
         name: worker-test-release
         version: 1.36.1
+      id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+      name: workers-keep
     observedGeneration: 2
-    resolvedRelease:
-      name: test-release
-      version: 1.36.1
 metadata: {}

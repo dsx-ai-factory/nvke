@@ -127,9 +127,9 @@ type NodePoolStatus struct {
 	// +optional
 	// +kubebuilder:validation:Format=uuid
 	ID string `json:"id,omitempty"`
-	// ResolvedRelease identifies the worker release selected for this pool when it was created.
+	// CurrentRelease identifies the worker release currently configured in the NVKE controller.
 	// +optional
-	ResolvedRelease *ReleaseReference `json:"resolvedRelease,omitempty"`
+	CurrentRelease *ReleaseReference `json:"currentRelease,omitempty"`
 }
 
 // NodePoolCondition reports pool state without a transition timestamp.

@@ -102,7 +102,7 @@ items:
       status: "True"
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: ClusterRelease "first-release" support expired at 2000-01-01T00:00:00Z;
+      message: Selected ClusterRelease "first-release" support expired at 2000-01-01T00:00:00Z;
         select a supported release
       observedGeneration: 1
       reason: SupportExpired
@@ -114,9 +114,9 @@ items:
       reason: Synced
       status: "True"
       type: Synced
-    id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
-    observedGeneration: 1
-    resolvedRelease:
+    currentRelease:
       name: first-release
       version: 1.34.4
+    id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    observedGeneration: 1
 metadata: {}

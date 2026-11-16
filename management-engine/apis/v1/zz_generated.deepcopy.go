@@ -877,8 +877,8 @@ func (in *NVKEClusterStatus) DeepCopyInto(out *NVKEClusterStatus) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
-	if in.ResolvedRelease != nil {
-		in, out := &in.ResolvedRelease, &out.ResolvedRelease
+	if in.CurrentRelease != nil {
+		in, out := &in.CurrentRelease, &out.CurrentRelease
 		*out = new(ReleaseReference)
 		**out = **in
 	}
@@ -1080,8 +1080,8 @@ func (in *NodePoolStatus) DeepCopyInto(out *NodePoolStatus) {
 		*out = new(int32)
 		**out = **in
 	}
-	if in.ResolvedRelease != nil {
-		in, out := &in.ResolvedRelease, &out.ResolvedRelease
+	if in.CurrentRelease != nil {
+		in, out := &in.CurrentRelease, &out.CurrentRelease
 		*out = new(ReleaseReference)
 		**out = **in
 	}
