@@ -3,10 +3,10 @@
 
 apiVersion: v2
 name: cluster-service
-description: Cluster Service manager and datastore resources
+description: Cluster Service manager, APIs and datastore resources
 type: application
 
-version: 0.2.0
+version: 0.3.0
 appVersion: "dev"
 
 keywords:

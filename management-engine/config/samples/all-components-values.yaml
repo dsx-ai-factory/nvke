@@ -1,0 +1,73 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# All components on one cluster. Replace infrastructure templates and image inputs for your site.
+manager:
+  infrastructureTemplateConfigMap: infra-templates
+  nvkeController:
+    endpoint: http://nvke-controller.nvke-controller.svc.cluster.local:8080/api
+state:
+  configMaps:
+    - name: infra-templates
+      namespace: tenant-a
+      data:
+        clusterTmpl: |
+          {
+            "cluster": {
+              "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
+              "kind": "DockerCluster",
+              "spec": {}
+            }
+          }
+        controlplaneTmpl: |
+          {
+            "bootstrapFiles": {{ .BootstrapFilesJSON }},
+            "preKubeadmCommands": {{ .PreKubeadmCommandsJSON }},
+            "machineTemplate": {
+              "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
+              "kind": "DockerMachineTemplate",
+              "spec": {
+                "template": {
+                  "metadata": {},
+                  "spec": {
+                    "customImage": "cwe-capd-kindest-node:local",
+                    "extraMounts": [
+                      {
+                        "containerPath": "/var/run/docker.sock",
+                        "hostPath": "/var/run/docker.sock"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        nodepoolTmpl: |
+          {
+            "bootstrapFiles": {{ .BootstrapFilesJSON }},
+            "preKubeadmCommands": {{ .PreKubeadmCommandsJSON }},
+            "machineTemplate": {
+              "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
+              "kind": "DockerMachineTemplate",
+              "spec": {
+                "template": {
+                  "spec": {
+                    "customImage": "cwe-capd-kindest-node:local",
+                    "extraMounts": [
+                      {
+                        "containerPath": "/var/run/docker.sock",
+                        "hostPath": "/var/run/docker.sock"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+
+# Internal APIs; caller authentication is supplied by follow-up integration work.
+tenantAPI:
+  enabled: true
+  namespace: tenant-a
+operatorAPI:
+  enabled: true
