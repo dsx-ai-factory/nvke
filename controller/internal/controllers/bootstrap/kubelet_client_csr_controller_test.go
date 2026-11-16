@@ -325,6 +325,27 @@ func TestUnit_KubeletClientCSRControllerReportsIssuedCertificate(t *testing.T) {
 	assertKubeletClientCSRCondition(t, controller.k8sClient, machine, metav1.ConditionTrue, KubeletClientCertificateIssuedReason)
 }
 
+func TestUnit_KubeletClientCSRControllerApprovesPendingAfterIssuedCertificate(t *testing.T) {
+	t.Parallel()
+
+	machine := newMachineForKubeletClientCSRTest("worker-a", testKubeletClientIdentity)
+	issued := newKubeletClientCSR(t, "worker-a-issued", testKubeletClientIdentity, testKubeletClientNodeName)
+	issued.Status.Certificate = []byte("issued")
+	issued.Status.Conditions = []certificatesv1.CertificateSigningRequestCondition{{
+		Type:   certificatesv1.CertificateApproved,
+		Status: corev1.ConditionTrue,
+		Reason: KubeletClientCSRApprovalReason,
+	}}
+	retry := newKubeletClientCSR(t, "worker-a-retry", testKubeletClientIdentity, testKubeletClientNodeName)
+	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, issued, retry)
+
+	result, err := controller.Reconcile(t.Context(), machineRequest(machine))
+	require.NoError(t, err)
+	require.Equal(t, ctrl.Result{}, result)
+	requireCSRApproved(t, tenantClient, retry.Name, true)
+	assertKubeletClientCSRCondition(t, controller.k8sClient, machine, metav1.ConditionFalse, KubeletClientCSRWaitingForSigningReason)
+}
+
 func TestUnit_KubeletClientCSRControllerDoesNotApproveAfterJoin(t *testing.T) {
 	t.Parallel()
 

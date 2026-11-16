@@ -329,17 +329,6 @@ func (c *KubeletClientCSRController) Reconcile(ctx context.Context, request ctrl
 
 	csrDecisions := decideKubeletClientCSRs(machine, csrs)
 
-	// One issued certificate completes bootstrap. Kubelet stores a single client key and waits on the CSR
-	// named from that key, so leftover pending requests are not approved.
-	if len(csrDecisions.issued) > 0 {
-		return ctrl.Result{}, setKubeletClientCertificateCondition(
-			ctx, c.k8sClient, machine,
-			metav1.ConditionTrue,
-			KubeletClientCertificateIssuedReason,
-			"Initial kubelet client certificate issued",
-		)
-	}
-
 	if len(csrDecisions.pending) > 0 {
 		// Do not approve a client certificate for a node name that already exists.
 		nodeName := expectedKubeletNodeName(machine)
@@ -369,6 +358,16 @@ func (c *KubeletClientCSRController) Reconcile(ctx context.Context, request ctrl
 			metav1.ConditionFalse,
 			KubeletClientCSRWaitingForSigningReason,
 			fmt.Sprintf("Approved %d kubelet client CSRs", len(csrDecisions.pending)),
+		)
+	}
+
+	// An issued certificate completes bootstrap. Pending is handled first so a kubelet retry is still approved.
+	if len(csrDecisions.issued) > 0 {
+		return ctrl.Result{}, setKubeletClientCertificateCondition(
+			ctx, c.k8sClient, machine,
+			metav1.ConditionTrue,
+			KubeletClientCertificateIssuedReason,
+			"Initial kubelet client certificate issued",
 		)
 	}
 
