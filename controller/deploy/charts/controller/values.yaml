@@ -583,9 +583,8 @@ apiAuth:
 
 # NVKE API authorization. `authorizer.backend` picks the backend, and the block
 # named after it configures it. LocalBundle is the only backend: the chart
-# mounts its bundle ConfigMap at /etc/nvke/authz, and creates it too when
-# apiAuthz.authorizer.localBundle.configMap.create is set. A bundle change needs
-# no restart. The kubelet updates the mounted ConfigMap within a minute or two,
+# renders its bundle into the nvke-authz-bundle ConfigMap and mounts it at
+# /etc/nvke/authz. A bundle change needs no restart. The kubelet updates the mounted ConfigMap within a minute or two,
 # and the controller reloads the bundle every 10 seconds. A failed reload keeps
 # the last bundle and counts nvke_authz_bundle_reload_failures_total.
 apiAuthz:
@@ -593,8 +592,9 @@ apiAuthz:
   # `apiAuth.enabled` is true too.
   enabled: false
   # -- Count what enforcement would have refused but serve the request anyway.
-  # Watch nvke_authz_decisions_total{outcome!="allow"} before enforcing. The
-  # render fails if this is false while `apiAuth.permissive` is true.
+  # Watch nvke_authz_decisions_total{outcome!="allow"} before enforcing.
+  # Requires `enabled`. The render fails if this is false while
+  # `apiAuth.permissive` is true.
   permissive: false
   authorizer:
     # -- The authorization backend. `localBundle` is the only one; the render
@@ -603,15 +603,6 @@ apiAuthz:
     # LocalBundle evaluates Cedar policy from three files: `policies.cedar`,
     # `roles.json` and `authorization.yaml`.
     localBundle:
-      configMap:
-        # -- When `apiAuthz.enabled` is true, render `policies`, `roles` and
-        # `config` into the ConfigMap named below. False mounts a ConfigMap
-        # managed elsewhere, keyed `policies.cedar`, `roles.json` and
-        # `authorization.yaml`.
-        create: true
-        # -- ConfigMap holding the bundle. Created by the chart when
-        # configMap.create=true, mounted either way.
-        name: nvke-authz-bundle
       # Example:
       #
       # config:
@@ -628,13 +619,12 @@ apiAuthz:
       # -- The AuthorizationConfiguration, rendered as `authorization.yaml`: which
       # roles each `apiAuth` issuer's callers hold. Once enforcing, every caller
       # `apiAuth` admits needs a role, management-engine included, or it gets 403.
-      # The chart supplies apiVersion and kind. Required when
-      # configMap.create=true. The controller checks the rest at startup. See the
-      # example above this key in values.yaml.
+      # The chart supplies apiVersion and kind. Required when `apiAuthz.enabled`
+      # is true, and refused when it is false. The controller checks the rest at
+      # startup. See the example above this key in values.yaml.
       config: {}
       # -- The Cedar policies, rendered as `policies.cedar`. `admin` may call every
-      # API operation, and `viewer` every get and list. Only used when
-      # configMap.create=true.
+      # API operation, and `viewer` every get and list.
       # @default -- see values.yaml
       policies: |
         @id("admins-may-do-anything")
@@ -660,8 +650,7 @@ apiAuthz:
           ],
           resource
         );
-      # -- The roles the policies name, rendered as `roles.json`. Only used when
-      # configMap.create=true.
+      # -- The roles the policies name, rendered as `roles.json`.
       # @default -- see values.yaml
       roles: |
         [

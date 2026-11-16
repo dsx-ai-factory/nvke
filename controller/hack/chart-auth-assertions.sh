@@ -391,26 +391,19 @@ echo "apiAuthz permissive behind permissive apiAuth:"
 out="$(render -f "${authz_values}" --set apiAuth.permissive=true --set apiAuthz.permissive=true)"
 setting "apiAuthz.permissive is true"         apiAuthz.permissive true                "${out}"
 
-echo "apiAuthz.authorizer.localBundle.configMap.create=false mounts a ConfigMap managed elsewhere:"
-out="$(render --set apiAuth.enabled=true --set apiAuthz.enabled=true \
-  --set apiAuthz.authorizer.localBundle.configMap.create=false --set apiAuthz.authorizer.localBundle.configMap.name=site-authz)"
-absent "renders no ConfigMap of its own"      '^# Source: .*/templates/configmap-authz\.yaml$' "${out}"
-want   "mounts the named one"                 'name: site-authz'                      "${out}"
-setting "which the controller reads"          apiAuthz.authorizer.localBundle.dir /etc/nvke/authz "${out}"
-
 echo "apiAuthz must match apiAuth:"
 wantfail "authorization without authentication is refused" 'apiAuthz\.enabled is true but apiAuth\.enabled is false' \
   -f "${authz_values}" --set apiAuth.enabled=false
 wantfail "enforcing authorization behind permissive authentication is refused" 'apiAuthz\.permissive is false but apiAuth\.permissive is true' \
   -f "${authz_values}" --set apiAuth.permissive=true
 
-echo "apiAuthz.authorizer.localBundle.config and configMap must agree:"
-wantfail "create without config is refused"   'apiAuthz\.authorizer\.localBundle\.configMap\.create is true but apiAuthz\.authorizer\.localBundle\.config is empty' \
+echo "apiAuthz.authorizer.localBundle.config and apiAuthz.enabled must agree:"
+wantfail "authorization without config is refused" 'apiAuthz\.enabled is true but apiAuthz\.authorizer\.localBundle\.config is empty' \
   --set apiAuth.enabled=true --set apiAuthz.enabled=true
-wantfail "config without create is refused"   'apiAuthz\.authorizer\.localBundle\.config is set but would not be rendered' \
-  -f "${authz_values}" --set apiAuthz.authorizer.localBundle.configMap.create=false
-wantfail "config while authorization is off is refused" 'apiAuthz\.authorizer\.localBundle\.config is set but would not be rendered' \
+wantfail "config while authorization is off is refused" 'apiAuthz\.authorizer\.localBundle\.config is set but apiAuthz\.enabled is false' \
   -f "${authz_values}" --set apiAuthz.enabled=false
+wantfail "permissive while authorization is off is refused" 'apiAuthz\.permissive is true but apiAuthz\.enabled is false' \
+  --set apiAuthz.permissive=true
 wantfail "apiVersion in config is refused"    'apiAuthz\.authorizer\.localBundle\.config must not carry apiVersion or kind' \
   -f "${authz_values}" --set-string apiAuthz.authorizer.localBundle.config.apiVersion=auth.nvke.nvidia.com/v1alpha1
 

@@ -171,7 +171,7 @@ data:
     {{- $authz := .Values.apiAuthz }}
     apiAuthz:
       enabled: {{ $authz.enabled }}
-      permissive: {{ and $authz.enabled $authz.permissive }}
+      permissive: {{ $authz.permissive }}
       authorizer:
         localBundle:
           dir: {{ if $authz.enabled }}{{ include "controller.apiAuthz.mountPath" . | quote }}{{ else }}""{{ end }}
