@@ -228,6 +228,9 @@ func parameters(b *strings.Builder, p qualification.Parameters) {
 	if p.SuiteTimeoutMinutes != 0 {
 		parts = append(parts, "suite timeout "+code(strconv.Itoa(p.SuiteTimeoutMinutes)+"m"))
 	}
+	if p.TestGridGroup != "" {
+		parts = append(parts, "TestGrid group "+code(p.TestGridGroup))
+	}
 	if len(parts) > 0 {
 		fmt.Fprintf(b, "\n%s\n", strings.Join(parts, " · "))
 	}
