@@ -1,0 +1,9 @@
+nodePools:
+- name: workers-gone
+  resolvedRelease:
+    name: worker-removed-release
+    version: "1.36.1"
+- name: workers-deprecated
+  resolvedRelease:
+    name: worker-deprecated-release
+    version: "1.36.2"
