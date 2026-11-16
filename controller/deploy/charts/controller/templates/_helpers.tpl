@@ -115,6 +115,21 @@ auth.yaml
 {{- end }}
 
 {{/*
+Where the authorization bundle is mounted. Not a value, for the same reason:
+authorizer.localBundle.dir in nvke-controller-config is this path.
+*/}}
+{{- define "controller.apiAuthz.mountPath" -}}
+/etc/nvke/authz
+{{- end }}
+
+{{/*
+The authorization bundle ConfigMap. Not a value: the chart always renders it.
+*/}}
+{{- define "controller.apiAuthz.configMapName" -}}
+nvke-authz-bundle
+{{- end }}
+
+{{/*
 The nvke-controller-config ConfigMap, its file key, and where it is mounted.
 CONTROLLER_CONFIG_PATH is the mount and the file joined, so none are values.
 */}}
@@ -332,6 +347,42 @@ at fault.
 {{- fail (printf "issuer %s sets jwks.caBundlePath to %s, but nothing puts %s there. The chart mounts only the ConfigMap it renders at that path, and that ConfigMap carries %s plus whatever apiAuth.configMap.extraFiles lists. Put the PEM inline as jwks.caBundle instead, add the bundle under extraFiles (key %s), or point caBundlePath somewhere you mount yourself through .Values.volumes." (quote (default "<unnamed>" .name)) $ca $file $configFile $file) -}}
 {{- end -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Refuse an unknown backend, permissive apiAuthz while it is off, apiAuthz without
+apiAuth, enforcing apiAuthz behind permissive apiAuth, and a LocalBundle config
+that is missing while apiAuthz is on, set while it is off, or carries apiVersion
+or kind. Called from deployment.yaml, like
+controller.apiAuth.validate. Emits nothing.
+*/}}
+{{- define "controller.apiAuthz.validate" -}}
+{{- $authz := .Values.apiAuthz -}}
+{{- $backend := $authz.authorizer.backend -}}
+{{- if ne (toString $backend) "localBundle" -}}
+{{- fail (printf "apiAuthz.authorizer.backend is %q. The only backend is localBundle." (toString $backend)) -}}
+{{- end -}}
+{{- $lb := $authz.authorizer.localBundle -}}
+{{- if and $authz.permissive (not $authz.enabled) -}}
+{{- fail "apiAuthz.permissive is true but apiAuthz.enabled is false. Permissive mode applies only while authorization is on. Set apiAuthz.enabled, or drop apiAuthz.permissive." -}}
+{{- end -}}
+{{- if and $lb.config (not $authz.enabled) -}}
+{{- fail "apiAuthz.authorizer.localBundle.config is set but apiAuthz.enabled is false, so it would not be rendered. Set apiAuthz.enabled, or remove the config." -}}
+{{- end -}}
+{{- if $authz.enabled -}}
+{{- if not .Values.apiAuth.enabled -}}
+{{- fail "apiAuthz.enabled is true but apiAuth.enabled is false. Authorization needs an authenticated caller: enable apiAuth, or set apiAuthz.enabled to false." -}}
+{{- end -}}
+{{- if and .Values.apiAuth.permissive (not $authz.permissive) -}}
+{{- fail "apiAuthz.permissive is false but apiAuth.permissive is true. Permissive authentication passes a request it would reject to authorization with no caller, and enforcing authorization refuses it. Set apiAuthz.permissive to true, or apiAuth.permissive to false." -}}
+{{- end -}}
+{{- if not $lb.config -}}
+{{- fail "apiAuthz.enabled is true but apiAuthz.authorizer.localBundle.config is empty, so no caller would have a role. Populate the config, or set apiAuthz.enabled to false." -}}
+{{- end -}}
+{{- if or (hasKey $lb.config "apiVersion") (hasKey $lb.config "kind") -}}
+{{- fail "apiAuthz.authorizer.localBundle.config must not carry apiVersion or kind. The chart supplies both, so a copy here is a duplicate key the controller refuses at startup." -}}
 {{- end -}}
 {{- end -}}
 {{- end }}
