@@ -57,6 +57,7 @@ type localOptions struct {
 	build                []string
 	fromSource           bool
 	keepSite, keepTenant bool
+	tenantGPURuntime     bool
 	dryRun               bool
 	wait                 time.Duration
 }
@@ -110,6 +111,7 @@ docs/qualification/hardware-qualification.md.`,
 	f.BoolVar(&o.fromSource, "from-source", false, "build every image the site stages from the checkout and pull none: --build for all of them, and --registry local")
 	f.BoolVar(&o.keepSite, "keep-site", false, "keep the site node after the run, and a tenant whose specs failed; they must then be deleted by hand. The site node's SSH key is written under --run-dir")
 	f.BoolVar(&o.keepTenant, "keep-tenant", false, "keep every tenant after the run, passed or not, and the site node they hang off; skips the spec that deletes the tenant, and they must then be deleted by hand. The site node's SSH key is written under --run-dir")
+	f.BoolVar(&o.tenantGPURuntime, "tenant-gpu-runtime", false, "install the GPU runtime on the tenant with AICR and run AICR's checks and the tenant GPU checks; installs only on GB200 and Ubuntu 24.04, holds the tenant up to 65 minutes longer, and needs aicr, helm and kubectl")
 	f.BoolVar(&o.dryRun, "dry-run", false, "plan, verify, resolve and stage, and print the suite's arguments without taking a machine")
 	f.DurationVar(&o.wait, "wait", 0, "how long to keep asking for an artifact that is not published yet, registry images and CDN files alike")
 	f.StringVar(&o.runDir, "run-dir", "", "where the run's files are kept (default: a new directory under the user cache)")
@@ -157,9 +159,21 @@ func runLocal(ctx context.Context, out io.Writer, o localOptions) error {
 	if err := o.checkPlanInputs(); err != nil {
 		return err
 	}
-	for _, tool := range []string{"bash", "jq", "git", "make", "docker", "tsh"} {
+	tools := []string{"bash", "jq", "git", "make", "docker", "tsh"}
+	if o.tenantGPURuntime {
+		tools = append(tools, "aicr", "helm", "kubectl")
+	}
+	for _, tool := range tools {
 		if _, err := exec.LookPath(tool); err != nil {
 			return fmt.Errorf("%s is not on PATH; the run needs it", tool)
+		}
+	}
+	if o.tenantGPURuntime {
+		// AICR's nvsentinel install refuses to apply its CRDs without a bounded timeout.
+		_, errTimeout := exec.LookPath("timeout")
+		_, errGTimeout := exec.LookPath("gtimeout")
+		if errTimeout != nil && errGTimeout != nil {
+			return fmt.Errorf("neither timeout nor gtimeout is on PATH; --tenant-gpu-runtime needs one (macOS: brew install coreutils)")
 		}
 	}
 	root, err := repoRoot()
@@ -224,6 +238,7 @@ func runLocal(ctx context.Context, out io.Writer, o localOptions) error {
 		"NODE_USER="+o.nodeUser,
 		fmt.Sprintf("KEEP_SITE=%t", o.keepSite),
 		fmt.Sprintf("KEEP_TENANT=%t", o.keepTenant),
+		fmt.Sprintf("TENANT_GPU_RUNTIME=%t", o.tenantGPURuntime),
 		"NODE_KEY_DIR="+nodeKeyDir(o),
 		fmt.Sprintf("DRY_RUN=%t", o.dryRun),
 	)

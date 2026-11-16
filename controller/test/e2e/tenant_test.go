@@ -685,7 +685,13 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				validateMokkaGPU(&test)
 			}
 			if spec.validate.tenantChecks {
-				validateTenant(laneTenantTarget(&test, func() bool { return failed }), laneTenantSettings)
+				capabilities, capabilitiesErr := runCapabilities()
+				gpuRuntime := planTenantGPURuntime(tenantGPURuntime, capabilities, capabilitiesErr)
+				tenantFailed := func() bool { return failed }
+				if tenantGPURuntime {
+					validateTenantGPURuntime(&test, gpuRuntime, tenantFailed)
+				}
+				validateTenant(laneTenantTarget(&test, tenantFailed), gpuRuntime.tenantSettings(laneTenantSettings, spec.shape, tenantWorkers))
 			}
 		})
 
