@@ -125,24 +125,6 @@ func (s resourceSchema) admit(t *testing.T, obj, old map[string]any) {
 	s.check(t, false, obj, old)
 }
 
-// fieldCase replaces or removes one field of a resource and says whether
-// admission should then fail.
-type fieldCase struct {
-	name    string
-	path    []string
-	value   any
-	remove  bool
-	invalid bool
-}
-
-func (c fieldCase) apply(obj map[string]any) {
-	if c.remove {
-		deleteField(obj, c.path)
-		return
-	}
-	setField(obj, c.path, c.value)
-}
-
 // Minimal resources that pass admission: every required field and nothing else.
 var baseResources = map[string]string{
 	"machineimages": `{
@@ -225,30 +207,6 @@ func encodeJSON(t *testing.T, value any) []byte {
 	return data
 }
 
-// parentOf walks to the object holding the last path element, creating the
-// intermediate objects a test needs to set a field the base resource omits.
-func parentOf(obj map[string]any, path []string) (map[string]any, string) {
-	for _, key := range path[:len(path)-1] {
-		nested, ok := obj[key].(map[string]any)
-		if !ok {
-			nested = map[string]any{}
-			obj[key] = nested
-		}
-		obj = nested
-	}
-	return obj, path[len(path)-1]
-}
-
-func setField(obj map[string]any, path []string, value any) {
-	parent, key := parentOf(obj, path)
-	parent[key] = value
-}
-
-func deleteField(obj map[string]any, path []string) {
-	parent, key := parentOf(obj, path)
-	delete(parent, key)
-}
-
 func TestGeneratedResourceSchemas(t *testing.T) {
 	for _, resource := range []string{"machineimages", "clusterreleases", "nodepoolreleases"} {
 		t.Run(resource, func(t *testing.T) {
@@ -296,7 +254,7 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 			resource: "nodepoolreleases", kind: "NodePoolRelease",
 			object: &NodePoolRelease{
 				ObjectMeta: name,
-				Spec:       NodePoolReleaseSpec{MachineImageRef: imageRef, MachineInit: machineInit, Profile: "ubuntu", Tag: "24.04"},
+				Spec:       NodePoolReleaseSpec{MachineImageRef: imageRef, MachineInit: machineInit},
 			},
 		},
 	} {
@@ -385,40 +343,6 @@ func TestMachineImageSpecImmutable(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			schema.check(t, tt.invalid, mutate(t, "machineimages", tt.change), runtime.DeepCopyJSON(published))
-		})
-	}
-}
-
-func TestNodePoolReleaseProfile(t *testing.T) {
-	schema := loadResourceSchema(t, "nodepoolreleases")
-	legacy := baseResource(t, "nodepoolreleases")
-	published := mutate(t, "nodepoolreleases", func(spec map[string]any) {
-		spec["profile"], spec["tag"] = "ubuntu", "24.04"
-	})
-	schema.admit(t, legacy, nil)
-	schema.admit(t, published, nil)
-	schema.admit(t, runtime.DeepCopyJSON(published), published)
-	schema.check(t, true, published, legacy)
-
-	for _, entry := range []fieldCase{
-		{name: "invalid profile", path: []string{"spec", "profile"}, value: "Not A Name", invalid: true},
-		{name: "empty tag", path: []string{"spec", "tag"}, value: "", invalid: true},
-		{name: "invalid tag", path: []string{"spec", "tag"}, value: "repo:tag", invalid: true},
-		{name: "oversized tag", path: []string{"spec", "tag"}, value: strings.Repeat("a", 129), invalid: true},
-	} {
-		t.Run(entry.name, func(t *testing.T) {
-			candidate := runtime.DeepCopyJSON(published)
-			entry.apply(candidate)
-			schema.check(t, entry.invalid, candidate, nil)
-		})
-	}
-	for _, name := range []string{"profile", "tag"} {
-		t.Run(name+" is immutable", func(t *testing.T) {
-			candidate := runtime.DeepCopyJSON(published)
-			specOf(t, candidate)[name] = "other"
-			schema.check(t, true, candidate, published)
-			delete(specOf(t, candidate), name)
-			schema.check(t, true, candidate, published)
 		})
 	}
 }

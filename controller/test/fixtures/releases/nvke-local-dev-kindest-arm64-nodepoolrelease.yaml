@@ -77,4 +77,3 @@ spec:
         - sh -c 'nohup sh -c "for i in \$(seq 1 90); do [ -S /tmp/spire-agent/public/api.sock ] && systemctl restart nvke-agent.service && exit 0; sleep 1; done; exit 1" >/var/log/nvke-agent-spire-wait.log 2>&1 &'
   lifecycle:
     deprecated: false
-    hidden: false
