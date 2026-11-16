@@ -139,11 +139,17 @@ func requireKapsBenchTools(specs []string, dir string, lookPath func(file string
 	var errs []error
 	if dir == "" {
 		errs = append(errs, errors.New("-e2e.kaps-bench-dir names no kaps-bench folder, so set E2E_KAPS_BENCH_DIR"))
+	} else if !filepath.IsAbs(dir) {
+		// A run resolves a relative kaps-bench against this folder, not the process directory Stat uses.
+		errs = append(errs, fmt.Errorf("-e2e.kaps-bench-dir %s is not an absolute path", dir))
 	} else if info, err := os.Stat(dir); err != nil {
 		errs = append(errs, fmt.Errorf("-e2e.kaps-bench-dir: %w", err))
 	} else if !info.IsDir() {
 		errs = append(errs, fmt.Errorf("-e2e.kaps-bench-dir %s is not a folder", dir))
 	} else {
+		if _, err := exec.LookPath(filepath.Join(dir, "kaps-bench")); err != nil {
+			errs = append(errs, fmt.Errorf("kaps-bench folder %s has no kaps-bench to run: %w", dir, err))
+		}
 		for _, spec := range specs {
 			if _, err := os.Stat(filepath.Join(dir, "run-specs", spec)); err != nil {
 				errs = append(errs, fmt.Errorf("kaps-bench has no run spec %s: %w", spec, err))

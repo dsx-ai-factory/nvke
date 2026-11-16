@@ -48,7 +48,7 @@ var (
 
 	// kapsBenchRunSpecs are the kaps-bench run specs run on the hardware tenant once its checks pass.
 	kapsBenchRunSpecs []string
-	// kapsBenchDir is the folder kaps-bench runs from, holding its engines, KPIs and run specs.
+	// kapsBenchDir is the folder kaps-bench runs from, holding the binary, its engines, KPIs and run specs.
 	kapsBenchDir string
 )
 
@@ -65,7 +65,7 @@ func init() {
 			kapsBenchRunSpecs = specs
 			return err
 		})
-	flag.StringVar(&kapsBenchDir, "e2e.kaps-bench-dir", "", "absolute path of the folder holding kaps-bench's bin, kpis, preflight, run-specs and workloads")
+	flag.StringVar(&kapsBenchDir, "e2e.kaps-bench-dir", "", "absolute path of the folder holding the kaps-bench binary and its bin, kpis, preflight, run-specs and workloads")
 }
 
 // The flags are parsed once and shared. Specs read them through the accessors

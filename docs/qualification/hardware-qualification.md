@@ -301,7 +301,7 @@ names another.
 | `steps.env` | What each step resolved |
 | `e2e-config.yaml`, `site-inputs/` | The suite's config, and the archives the site was given |
 | diagnostics | On a failure, what the suite collected |
-| `kaps-bench-results.tar.gz` | kaps-bench's output dir from every run spec it ran, present when kaps-bench ran |
+| `kaps-bench-results.tar.gz` | kaps-bench's output dir from every run spec it ran, absent when no run spec got far enough for kaps-bench to write one |
 
 A run that fails once its stream is chosen still writes
 `qualify-result.json`, errored when the suite never wrote a report, as the
@@ -494,6 +494,7 @@ Teleport login on each are your own, plus the Forge API key, which is secret.
 | `tsh` | Reaching the site's jump host through Teleport | Yes |
 | `oras` | Pulling nvkectl when it is not built | No; only that path needs it |
 | `aicr`, `helm`, `kubectl` | Installing the tenant GPU runtime, with `--tenant-gpu-runtime`. `aicr` is pinned in `make/tool-versions.mk` | Yes, with that flag |
+| `helm` | Installing Prometheus on the tenant for a stream that lists `kapsBenchRunSpecs`, such as perf | Yes, by the suite at stage `full` |
 | `timeout` or `gtimeout` | AICR's nvsentinel install, with `--tenant-gpu-runtime`. macOS has neither; `brew install coreutils` provides `gtimeout` | Yes, with that flag |
 
 #### Teleport
@@ -554,7 +555,7 @@ Planning needs `QUALIFY_E2E_NGC_ORG` whatever the registry, because
 | `QUALIFY_E2E_SITE_CONTROLLER_VERSION` | The plan's controller | The site controller version, in place of the one the plan names |
 | `SITE_DEPLOY_PATH_REF` | The controller's commit | The commit the deploy path is exported from |
 | `NVKE_CONTROLLER_NAMESPACE`, `NVKE_CONTROLLER_SERVICE` | `nvke-controller` | The name the controller is installed under. A release cut before the rename uses `nke-controller`. |
-| `E2E_KAPS_BENCH_DIR` | None | Folder holding kaps-bench, which the stream's `kapsBenchRunSpecs` run from. CI sets it for the perf stream. |
+| `E2E_KAPS_BENCH_DIR` | None | Absolute path of a kaps-bench folder holding the `kaps-bench` binary beside `run-specs`. A stream that lists `kapsBenchRunSpecs`, such as perf, needs it and `helm` on `PATH`; at stage `full`, the only stage that runs them, the suite checks both before a machine is taken. CI stages it for the perf stream. |
 
 ### How it stays the same run as CI
 

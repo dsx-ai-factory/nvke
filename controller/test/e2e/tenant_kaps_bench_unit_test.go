@@ -45,11 +45,23 @@ func TestParseKapsBenchRunSpecs(t *testing.T) {
 }
 
 func TestRequireKapsBenchTools(t *testing.T) {
-	dir := t.TempDir()
+	t.Log("Doing: kaps-bench folders holding the smoke run spec, each with or without a kaps-bench file")
+	folder := func(binary bool, mode os.FileMode) string {
+		dir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "run-specs", "smoke"), 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "run-specs", "smoke", "smoke.yaml"), nil, 0o600))
+		if binary {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "kaps-bench"), nil, mode))
+		}
+		return dir
+	}
+	dir := folder(true, 0o700)
 	file := filepath.Join(dir, "kaps-bench.yaml")
 	require.NoError(t, os.WriteFile(file, nil, 0o600))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "run-specs", "smoke"), 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "run-specs", "smoke", "smoke.yaml"), nil, 0o600))
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	relative, err := filepath.Rel(wd, dir)
+	require.NoError(t, err)
 	specs := []string{"smoke/smoke.yaml"}
 	found := func(file string) (string, error) { return "/usr/local/bin/" + file, nil }
 	missing := func(string) (string, error) { return "", exec.ErrNotFound }
@@ -65,6 +77,9 @@ func TestRequireKapsBenchTools(t *testing.T) {
 		{name: "no folder named", specs: specs, dir: "", lookPath: found, expected: []string{"E2E_KAPS_BENCH_DIR"}},
 		{name: "a folder that does not exist", specs: specs, dir: filepath.Join(dir, "absent"), lookPath: found, expected: []string{"-e2e.kaps-bench-dir"}},
 		{name: "a file in place of the folder", specs: specs, dir: file, lookPath: found, expected: []string{"is not a folder"}},
+		{name: "a relative folder path", specs: specs, dir: relative, lookPath: found, expected: []string{"is not an absolute path"}},
+		{name: "no kaps-bench in the folder", specs: specs, dir: folder(false, 0), lookPath: found, expected: []string{"has no kaps-bench to run"}},
+		{name: "a kaps-bench without the execute bit", specs: specs, dir: folder(true, 0o600), lookPath: found, expected: []string{"has no kaps-bench to run", "permission denied"}},
 		{name: "a run spec the folder lacks", specs: []string{"smoke/smoke.yaml", "smoke/smok.yaml"}, dir: dir, lookPath: found, expected: []string{"kaps-bench has no run spec smoke/smok.yaml"}},
 		{name: "helm not on PATH", specs: specs, dir: dir, lookPath: missing, expected: []string{"helm is not on PATH"}},
 	}
