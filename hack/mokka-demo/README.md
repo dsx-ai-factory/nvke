@@ -16,13 +16,10 @@ It prints `PASS` or `FAIL` for each check and exits non-zero if any fails:
 - the ClusterPolicy is ready, each node advertises `nvidia.com/gpu`, and the GPU Operator validator completes,
 - the pod sees exactly one GPU.
 
-## Replay from a fresh local setup
+## Local CAPD replay
 
-The [pinned replay package](replay/README.md) creates a dedicated local CAPD
-management cluster, runs the focused lifecycle cases, and exercises GB300 and
-H100 pools with one shared GPU Operator. It includes prerequisites, setup/run/
-cleanup commands, required patches and a [validation record](replay/VALIDATION.md).
-It is a reference experiment for runtime integration work.
+See the [local replay recipe](local-replay.md) for a disposable CAPD setup using
+the existing E2E runner, including the pending mixed-model case from #2109.
 
 ## Before you begin
 
