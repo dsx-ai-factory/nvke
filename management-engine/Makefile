@@ -79,10 +79,17 @@ TEST_PROCS ?= 5
 .PHONY: test
 test: test-api test-integration test-controller ## Run API, unit, resource integration, and controller tests.
 
+# Every package in the module except the ones another target owns, so a new test
+# package is run by default instead of being missed until the post-merge Coverage
+# lane reports it. Excluded: apis (test-api), controllers (envtest, test-controller)
+# and the test-only ./hack package (chart-check). Recursively expanded, so `go list`
+# runs only when a recipe uses it.
+UNIT_PACKAGES = $(shell $(GO) list ./... | grep -v -E '/(apis|controllers)(/|$$)|/hack$$')
+
 .PHONY: test-unit
 test-unit: fmt vet ## Run unit tests without a Kubernetes API server.
 	@$(COVERAGE_MKDIR)
-	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,unit) -covermode=$(GO_COVER_MODE) ./internal/... ./cmd/... ./pkg/... ./hack/chartgen
+	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,unit) -covermode=$(GO_COVER_MODE) $(UNIT_PACKAGES)
 
 .PHONY: test-integration
 test-integration: ENVTEST_K8S_VERSION=1.37.0
