@@ -331,8 +331,9 @@ Activities are in `internal/temporal/activities/`.
 
 ## Release & Deployment
 
-Controller releases use signed `controller/vX.Y.Z` tags. GitHub Actions builds
-the release and publishes the controller image and Helm chart. Follow the root
+The controller is released with the rest of the repository by one signed
+`vX.Y.Z` tag. GitHub Actions builds the release and publishes the controller
+image and Helm chart. Follow the root
 [`RELEASE.md`](../RELEASE.md); do not create releases by hand.
 
 ## Reference Grafana dashboards

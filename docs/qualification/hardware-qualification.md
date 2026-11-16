@@ -80,7 +80,7 @@ The inputs you usually set:
 | `stage` | `full` | How far to go. See [Stages](#stages). |
 | `dry-run` | `false` | Plan and check without taking a machine. |
 | `nvke-version` | empty | The `nvke` tag to qualify, such as `v0.22.0-beta.1`. Empty takes `QUALIFY_E2E_NVKE_VERSION`, then the highest tag. |
-| `resolution` | `commitDescribe` | `commitDescribe` describes each component at the commit `nvke-version` points at, which is how a beta is qualified. A release qualification sets `gitTag`. |
+| `resolution` | `commitDescribe` | `commitDescribe` describes each component at the commit `nvke-version` points at, which on a tagged commit is that tag, so it qualifies a release or a beta, and an RC through the beta it was cut from. `gitTag` takes the highest `v*` tag in the repository instead. |
 | `keep-site` | `false` | Keep the site node, and a failed tenant's nodes, to debug. Delete them by hand afterwards. |
 | `image-registry` | `nvcr` | Where the controller and capi-provisioned images are pulled from: `nvcr` or `ghcr`. |
 

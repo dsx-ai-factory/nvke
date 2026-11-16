@@ -30,7 +30,7 @@ $ go run ./release/cmd/qualify plan --subject nvke
 $ go run ./release/cmd/qualify plan --subject nvke --version v0.22.0-beta.1 --scope golden-path
 
 # Use a version you choose in place of what resolves
-$ go run ./release/cmd/qualify plan --subject nvke --version v0.22.0-beta.1 --overrides controller=v0.1.1-rc.11,kube=1.36.3
+$ go run ./release/cmd/qualify plan --subject nvke --version v0.22.0-beta.1 --overrides controller=v0.21.0,kube=1.36.3
 
 # Write the plan to a file instead of stdout
 $ go run ./release/cmd/qualify plan --subject nvke --output plan.json
@@ -59,7 +59,7 @@ With `--wait` it then retries each one for the whole budget before failing.
 | `--overrides` | none | Values to use in place of what resolves, as `name=value` pairs separated by commas |
 | `--scope` | `full` | How much of the matrix to cover, a scope from `policy.yaml` |
 | `--output` | `-` | Where to write the plan. `-` is stdout |
-| `--resolution` | `commitDescribe` | How to resolve the components, named for the strategy that answers. `commitDescribe` describes each at the commit the subject's version points at, which is how a beta is qualified. `gitTag` takes each from its own release tags, and a release qualification has to select it: left on the default a release verifies the describe-named artifacts, which exist, so it passes while qualifying builds other than the release-tagged ones |
+| `--resolution` | `commitDescribe` | How to resolve the components, named for the strategy that answers. `commitDescribe` describes each at the commit the subject's version points at, which on a tagged commit is that tag, so every component resolves to the version being qualified. It is how a release, an RC and a beta are all qualified; an RC resolves to the beta it was cut from, whose artifacts it ships. Once the commit also carries a release tag, describe names the release, so a later qualification of its beta or RC resolves the release's artifacts, built from the same commit; check the resolved versions in the plan. `gitTag` takes the highest `v*` tag in the repository, which is not necessarily the version being qualified |
 | `--check-exists` | off | Ask for each location this resolves and require it to be published. Off leaves the question to `qualify verify` |
 | `--root`, `--policy`, `--registry` | the enclosing checkout and the files under `release/` | Where to read the repository and the two files from |
 
@@ -86,11 +86,14 @@ during resolution instead, which needs a network that can reach the bucket: it i
 private, so a missing artifact and a network that is not allowed both answer 403,
 and the check can confirm that an artifact exists but not that it does not.
 
-A release is qualified with `--resolution gitTag`, which takes each component from
-its own release tags. A beta is qualified with `--resolution commitDescribe`: a
-beta tag names a commit and carries no component tags, so the tags would answer
-with the last release rather than what was built there. The commit is derived from
-the version being qualified rather than given. The plan looks like this:
+Every component is versioned by the repository's `vX.Y.Z` tags, so a
+qualification uses `--resolution commitDescribe`: it describes each component
+at the commit the version being qualified marks, which on that commit is the
+version itself. That holds for a release and a beta. An RC publishes nothing and
+is a lightweight tag on its beta's commit, so there describe names the beta and
+an RC resolves to the beta's artifacts, which are the RC's. The commit is
+derived from the version being qualified rather than given. The plan looks like
+this:
 
 ```console
 $ go run ./release/cmd/qualify plan --subject nvke --version v0.21.0 --scope full
@@ -100,19 +103,19 @@ $ go run ./release/cmd/qualify plan --subject nvke --version v0.21.0 --scope ful
   "scope": "full",
   "combinations": [
     {
-      "id": "capi-provisioned-v0.1.0_cli-v0.1.0_controller-v0.1.1_os-image-v0.1.0",
+      "id": "capi-provisioned-v0.21.0_cli-v0.21.0_controller-v0.21.0_os-image-v0.21.0",
       "components": [
-        { "name": "controller",       "version": "v0.1.1", "url": "oci://nvcr.io/<org>/nvke-controller:v0.1.1", "versionStrategy": "gitTag", "locationStrategy": "ociArtifact" },
-        { "name": "cli",              "version": "v0.1.0", "versionStrategy": "gitTag" },
-        { "name": "os-image",         "version": "v0.1.0", "versionStrategy": "gitTag" },
-        { "name": "capi-provisioned", "version": "v0.1.0", "url": "oci://nvcr.io/<org>/cluster-api-provider-provisioned:v0.1.0", "versionStrategy": "gitTag", "locationStrategy": "ociArtifact" }
+        { "name": "controller",       "version": "v0.21.0", "url": "oci://nvcr.io/<org>/nvke-controller:v0.21.0", "versionStrategy": "commitDescribe", "locationStrategy": "ociArtifact" },
+        { "name": "cli",              "version": "v0.21.0", "versionStrategy": "commitDescribe" },
+        { "name": "os-image",         "version": "v0.21.0", "versionStrategy": "commitDescribe" },
+        { "name": "capi-provisioned", "version": "v0.21.0", "url": "oci://nvcr.io/<org>/cluster-api-provider-provisioned:v0.21.0", "versionStrategy": "commitDescribe", "locationStrategy": "ociArtifact" }
       ],
       "dependencies": [
         { "name": "cni-ovn",               "version": "2.4.2", "versionStrategy": "lockedPackage" },
         { "name": "os-image-bootloader-amd64", "url": "https://cdn.example/nke-isos/qcow/efi/x86_64/qcow-imager.efi", "locationStrategy": "url" },
         { "name": "os-image-bootloader-arm64", "url": "https://cdn.example/nke-isos/qcow/efi/aarch64/qcow-imager.efi", "locationStrategy": "url" },
-        { "name": "cli-amd64",                 "version": "v0.1.0", "url": "oci://nvcr.io/<org>/nvkectl:v0.1.0-linux-amd64", "locationStrategy": "ociArtifact" },
-        { "name": "cli-arm64",                 "version": "v0.1.0", "url": "oci://nvcr.io/<org>/nvkectl:v0.1.0-linux-arm64", "locationStrategy": "ociArtifact" },
+        { "name": "cli-amd64",                 "version": "v0.21.0", "url": "oci://nvcr.io/<org>/nvkectl:v0.21.0-linux-amd64", "locationStrategy": "ociArtifact" },
+        { "name": "cli-arm64",                 "version": "v0.21.0", "url": "oci://nvcr.io/<org>/nvkectl:v0.21.0-linux-arm64", "locationStrategy": "ociArtifact" },
         { "name": "kind",                      "version": "v0.32.0", "versionStrategy": "makeVar" },
         { "name": "clusterctl",                "version": "v1.12.3", "versionStrategy": "makeVar" },
         { "name": "nerdctl",                   "version": "2.3.5", "versionStrategy": "makeVar" }
@@ -207,10 +210,10 @@ separation is what makes the qualification meaningful: a release promotes the
 exact bytes that were tested, and tooling that can rebuild is tooling that can
 substitute.
 
-Per-component publication stays where it is. `agent/v*`, `os-image/v*`,
-`controller/v*` and `cli/v*` tags continue to drive their own workflows exactly
-as [`RELEASE.md`](../RELEASE.md) describes. `release/` orchestrates *over* those
-publications; it does not replace them.
+Publication stays in the workflows. A `vX.Y.Z` or `vX.Y.Z-beta.N` tag drives
+them as [`docs/artifact-publication.md`](../docs/artifact-publication.md)
+describes. `release/` orchestrates *over* those publications; it does not
+replace them.
 
 ## Layout
 
@@ -287,7 +290,7 @@ version is and where it is published are separate questions.
 ```yaml
 - name: controller
   resolve:
-    version:  {strategy: gitTagOrCommitDescribe, with: {tagPrefix: "controller/"}}
+    version:  {strategy: gitTagOrCommitDescribe, with: {tagPrefix: ""}}
     location: {strategy: ociArtifact, with: {source: artifact-registry, repository: nvke-controller}}
 ```
 
@@ -302,7 +305,7 @@ each is offered to every dependency, which a dependency's own result is not.
 
 An override names what a strategy would have produced, so it goes to the half
 that has one, and to the version half when both do. `--overrides
-controller=v0.1.1` names a version and `--overrides os-image-amd64=<url>` names
+controller=v0.21.0` names a version and `--overrides os-image-amd64=<url>` names
 a location, without either declaring which it is.
 
 | Component | Version | Location |

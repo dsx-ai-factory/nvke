@@ -22,14 +22,12 @@ and container registry knobs. Runtime still accepts the same values as CLI flags
 
 ## Versioning
 
-Agent releases use **component-scoped git tags** (Kubernetes/Go multi-module monorepo style):
+The agent is released with the rest of the repository by one `vX.Y.Z` tag. An
+`agent/vX.Y.Z` tag publishes nothing; an `agent/vX.Y.Z-rc.N` tag still starts
+the agent's publishers, but they version the agent by the nearest `v*` tag. See [RELEASE.md](../RELEASE.md) and
+[docs/artifact-publication.md](../docs/artifact-publication.md).
 
-```bash
-git tag -a agent/v0.1.30 -m "agent v0.1.30"
-git push origin agent/v0.1.30
-```
-
-Pushing the tag publishes:
+A release tag publishes:
 
 - OCI binaries to GHCR / NVCR (`.github/workflows/agent-artifact*.yml`)
 - `.deb`s to the apt-publisher S3 intake, and to GHCR as
@@ -39,17 +37,11 @@ Pushing the tag publishes:
 `make` / `./build/agent.sh` derive `VERSION` from:
 
 ```bash
-git describe --match 'agent/v*' --tags --always --dirty
+git describe --tags --always --dirty --match 'v*'
 ```
 
-The `agent/` prefix is stripped for the binary ldflag and `.deb` version
+The binary ldflag carries it as is; the `.deb` version drops the leading `v`
 (`nvke-agent_0.1.30_amd64.deb`). Override with `VERSION=v0.1.30` when needed.
-
-Go module consumers pin the same tag shape:
-
-```bash
-go get github.com/dsx-ai-factory/nvke/agent@agent/v0.1.30
-```
 
 ## Build Commands
 

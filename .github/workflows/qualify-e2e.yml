@@ -104,7 +104,7 @@ on:
         type: string
         required: false
       resolution:
-        description: "How to resolve the components, named for the strategy that answers. commitDescribe describes each at the commit the nvke-version points at, which is how a beta is qualified, because a beta tag carries no component tags. gitTag takes each from its own release tags, and a release qualification has to select it: left on the default a release resolves by describe and verifies the describe-named artifacts, which exist, so it passes while qualifying builds other than the release-tagged ones."
+        description: "How to resolve the components, named for the strategy that answers. commitDescribe describes each at the commit the nvke-version points at, which on a tagged commit is that tag, so it qualifies a release or a beta, and an RC through the beta it was cut from. gitTag takes the highest v* tag in the repository instead, which is not necessarily the nvke-version."
         type: choice
         required: false
         default: commitDescribe
@@ -117,11 +117,11 @@ on:
         required: false
         default: golden-path
       controller-version:
-        description: "Overrides the published controller tag the plan resolves, e.g. v0.1.1. QUALIFY_E2E_CONTROLLER_VERSION supplies it when this is empty."
+        description: "Overrides the published controller tag the plan resolves, e.g. v0.21.0. QUALIFY_E2E_CONTROLLER_VERSION supplies it when this is empty."
         type: string
         required: false
       cli-version:
-        description: Overrides the nvkectl release the plan resolves, e.g. v0.1.0-rc.7 (the cli/<version> tag).
+        description: Overrides the nvkectl release the plan resolves, e.g. v0.21.0.
         type: string
         required: false
       deploy-path-ref:
@@ -129,7 +129,7 @@ on:
         type: string
         required: false
       capi-provisioned-version:
-        description: "Overrides the cluster-api-provider-provisioned version the plan resolves, e.g. v0.1.0-rc.1. One value for the image archive staged onto the node and the reference the bootstrap uses."
+        description: "Overrides the cluster-api-provider-provisioned version the plan resolves, e.g. v0.21.0. One value for the image archive staged onto the node and the reference the bootstrap uses."
         type: string
         required: false
       kubernetes-version:
@@ -145,7 +145,7 @@ on:
         type: string
         required: false
       os-image-version:
-        description: "Overrides the os-image release the plan resolves, e.g. v0.1.1-rc.1. The node images are built from it, unless an image URL is overridden too."
+        description: "Overrides the os-image release the plan resolves, e.g. v0.21.0. The node images are built from it, unless an image URL is overridden too."
         type: string
         required: false
       os-image-bootloader-amd64:
@@ -306,9 +306,10 @@ jobs:
         ${{ inputs.nvke-version
             || (github.event_name == 'push' && github.ref_name)
             || vars.QUALIFY_E2E_NVKE_VERSION }}
-      # commitDescribe is the default because a beta is what this lane
-      # qualifies nightly, and a beta tag carries no component tags. A release
-      # qualification selects gitTag, by input or by the variable.
+      # commitDescribe is the default: every component is versioned by the
+      # repository's v* tags, so describing the commit the nvke-version marks
+      # resolves each to that version, for a release or a beta. A lightweight
+      # RC on a beta's commit resolves to that beta, whose artifacts it ships.
       #
       # The push arm sits ahead of the variable so a beta tag push resolves as
       # what that commit built whatever the variable says. A variable left on

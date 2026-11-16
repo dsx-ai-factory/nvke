@@ -482,8 +482,9 @@ the same digest. CI checks this on every change by building it twice on one
 runner, the second time with no cache and every file's mtime changed. It does
 not compare builds across machines or BuildKit versions.
 
-Build from the release tag of the controller the site runs,
-`controller/v<version>`, the same version the site pins. Never build from
+Build from the release tag of the controller the site runs, the same version
+the site pins: `v<version>`, or `controller/v<version>` for a controller
+released before one `vX.Y.Z` tag released every component. Never build from
 `main`: its suite tests the next controller, not the one installed. The
 Dockerfile first shipped in `controller/v0.3.0`; earlier tags have no image to
 build.

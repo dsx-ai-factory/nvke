@@ -16,24 +16,21 @@ endif
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
-# Component versioning follows the Kubernetes/Go multi-module monorepo pattern:
-# release tags are namespaced as agent/vX.Y.Z (not a bare vX.Y.Z).
+# Every component is versioned by the repository's bare vX.Y.Z tags.
 # Override with VERSION=... when building outside of a tagged checkout.
-VERSION_RAW ?= $(shell git describe --match 'agent/v*' --tags --always --dirty 2>/dev/null || git rev-parse --short HEAD)
-VERSION ?= $(shell echo '$(VERSION_RAW)' | sed 's|^agent/||')
+VERSION ?= $(shell git describe --tags --always --dirty --match 'v*' 2>/dev/null || git rev-parse --short HEAD)
 # dpkg refuses a version that does not start with a digit:
 #
 #   dpkg-deb: error: 'Version' field value 'f0578cc8':
 #             version number does not start with digit
 #
-# `git describe --always` falls back to a bare commit sha when no agent/v* tag
-# is reachable, and this repository has none -- so `make deb-all` cannot build
-# at all on main today. Prefixing 0.0.0- keeps an untagged build working and
+# `git describe --always` falls back to a bare commit sha when no v* tag is
+# reachable, such as in a fork without tags. Prefixing 0.0.0- keeps an untagged build working and
 # sorts below every real release, so a development package can never be
 # mistaken for, or upgrade over, a tagged one.
 # The test is "did this come from a tag", NOT "does it start with a digit".
-# Tags are agent/vX.Y.Z, so VERSION starts with `v` exactly when describe found
-# one; anything else is the --always sha fallback.
+# Tags are vX.Y.Z, so VERSION starts with `v` exactly when describe found one;
+# anything else is the --always sha fallback.
 #
 # Testing the first character instead is wrong and looks right: roughly ten of
 # the sixteen possible leading hex digits ARE digits, so a sha like 587f4bbd

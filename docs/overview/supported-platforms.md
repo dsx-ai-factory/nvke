@@ -81,4 +81,4 @@ For NVKR's separate build route, see its [node image Definition](https://github.
 
 ## nvkectl compatibility
 
-`nvkectl` is versioned on its own `cli/vX.Y.Z` tags, separately from the management plane. The [nvkectl compatibility policy](../../cli/docs/compatibility.md) defines which commands, flags, exit codes and output formats are stable across releases. Build `nvkectl` from the same release as the management plane.
+`nvkectl` is versioned with the management plane on the repository's `vX.Y.Z` tags. The [nvkectl compatibility policy](../../cli/docs/compatibility.md) defines which commands, flags, exit codes and output formats are stable across releases. Build `nvkectl` from the same release as the management plane.

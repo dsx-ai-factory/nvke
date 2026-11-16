@@ -173,7 +173,7 @@ VALIDATE_PUSH_TAGS ?=
 VALIDATE_PLATFORMS ?= linux/amd64,linux/arm64
 VALIDATE_EPOCH ?= $(shell git -C "$(REPO_ROOT)" log -1 --format=%ct HEAD)
 VALIDATE_REVISION ?= $(shell git -C "$(REPO_ROOT)" rev-parse HEAD)
-VALIDATE_VERSION ?= $(patsubst controller/%,%,$(shell git -C "$(REPO_ROOT)" describe --match 'controller/v*' --tags --always))
+VALIDATE_VERSION ?= $(shell git -C "$(REPO_ROOT)" describe --tags --always --match 'v*')
 # A Go module mirror. Unset uses the Dockerfile's default; either way go.sum
 # decides the modules, so it does not change the digest.
 VALIDATE_GOPROXY ?=

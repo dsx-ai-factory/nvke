@@ -9,7 +9,7 @@
 ```bash
 git clone https://github.com/dsx-ai-factory/nvke.git
 cd nvke
-git checkout cli/vX.Y.Z   # the cli/ tag to build; the build stamps nvkectl with its version
+git checkout vX.Y.Z   # the release to build; the build stamps nvkectl with its version
 make -C cli build   # → cli/bin/nvkectl; not `go build`, which leaves the Cluster API version unset
 ```
 

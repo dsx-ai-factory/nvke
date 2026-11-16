@@ -758,10 +758,9 @@ if [[ "${DSX_IDENTITY_EXCHANGE_ENABLED}" == "true" ]]; then
 fi
 
 NODE_AGENT_VERSION="${NODE_AGENT_VERSION:-$(
-  git -C "${WORKSPACE_ROOT}" describe --match 'agent/v*' --tags --always --dirty 2>/dev/null \
+  git -C "${WORKSPACE_ROOT}" describe --tags --always --dirty --match 'v*' 2>/dev/null \
     || git -C "${WORKSPACE_ROOT}" rev-parse --short HEAD
 )}"
-NODE_AGENT_VERSION="${NODE_AGENT_VERSION#agent/}"
 printf '%s\n' "${NODE_AGENT_VERSION}" >"${STATE_DIR}/agent-version.txt"
 log "using agent source version ${NODE_AGENT_VERSION}"
 

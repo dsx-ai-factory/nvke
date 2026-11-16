@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Build / package the NVKE agent from the monorepo.
 #
-# Versioning (Kubernetes/Go monorepo style):
-#   Release tags are namespaced: agent/vX.Y.Z
-#   make derives VERSION via: git describe --match 'agent/v*'
+# Versioning:
+#   Every component is versioned by the repository's bare vX.Y.Z tags
+#   make derives VERSION via: git describe --tags --always --dirty --match 'v*'
 #   Override with VERSION=vX.Y.Z when needed.
 #
 # Consumer config:

@@ -20,9 +20,8 @@
 # A component's name is also its key in the e2e suite's -e2e.versions flag, so
 # the plan can hand the suite what it resolved without a mapping in between.
 #
-# tagPrefix is explicit because a name and its tag genuinely disagree:
-# capi-provisioned is tagged cluster-api-provider-provisioned/v*, and nvke
-# carries no prefix because its directory is the repository root.
+# tagPrefix is "" throughout: every artifact is versioned by the bare v* tags,
+# `git describe --tags --always --match 'v*'`, with no component prefix.
 
 apiVersion: nvke.nvidia.com/v1alpha1
 kind: QualificationRegistry
@@ -62,12 +61,12 @@ spec:
 
     - name: controller
       resolve:
-        version:  {strategy: gitTagOrCommitDescribe, with: {tagPrefix: "controller/"}}
+        version:  {strategy: gitTagOrCommitDescribe, with: {tagPrefix: ""}}
         location: {strategy: ociArtifact, with: {source: artifact-registry, repository: nvke-controller}}
 
     - name: capi-provisioned
       resolve:
-        version:  {strategy: gitTagOrCommitDescribe, with: {tagPrefix: "cluster-api-provider-provisioned/"}}
+        version:  {strategy: gitTagOrCommitDescribe, with: {tagPrefix: ""}}
         location: {strategy: ociArtifact, with: {source: artifact-registry, repository: cluster-api-provider-provisioned}}
 
     # No location, although nvkectl is published to the artifact-registry. Its
@@ -75,13 +74,13 @@ spec:
     # location names it. cli-amd64 and cli-arm64 below name one each.
     - name: cli
       resolve:
-        version: {strategy: gitTagOrCommitDescribe, with: {tagPrefix: "cli/"}}
+        version: {strategy: gitTagOrCommitDescribe, with: {tagPrefix: ""}}
 
     # No location either. The image is reached through os-image-amd64 and
     # os-image-arm64 below, which build CDN URLs from this version.
     - name: os-image
       resolve:
-        version: {strategy: gitTagOrCommitDescribe, with: {tagPrefix: "os-image/"}}
+        version: {strategy: gitTagOrCommitDescribe, with: {tagPrefix: ""}}
 
     # A run needs the image and its bootloader for every architecture, whatever
     # the stream's own. Each is named by the key the e2e suite reads. The image
