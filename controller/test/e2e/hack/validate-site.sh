@@ -95,8 +95,17 @@ fi
 : "${CONTROLLER_VERSION:?the site file sets no CONTROLLER_VERSION}"
 : "${KUBERNETES_VERSION:?the site file sets no KUBERNETES_VERSION}"
 
-docker image inspect "$IMAGE" >/dev/null 2>&1 || docker pull -q "$IMAGE" >/dev/null ||
-  die "no image $IMAGE; build one with: make -C controller/test/e2e validate-image VALIDATE_IMAGE=$IMAGE"
+# A Docker daemon waking from idle fails its first requests.
+for _ in $(seq 1 30); do
+  docker info >/dev/null 2>&1 && break
+  sleep 2
+done
+docker info >/dev/null 2>&1 || die "the Docker daemon does not answer: $(docker info 2>&1 | tail -1)"
+if ! inspect_err=$(docker image inspect "$IMAGE" 2>&1 >/dev/null); then
+  grep -qi 'no such image' <<<"$inspect_err" || die "docker image inspect $IMAGE: $inspect_err"
+  docker pull -q "$IMAGE" >/dev/null ||
+    die "no image $IMAGE; build one with: make -C controller/test/e2e validate-image VALIDATE_IMAGE=$IMAGE"
+fi
 
 OUT=$RUNS_DIR/$SITE-$(date +%Y%m%d-%H%M%S)
 mkdir -p "$OUT/artifacts"
@@ -130,7 +139,7 @@ server_port() {
 # container_kubeconfig flattens the current context of $1 into $2, so file
 # references are inlined, and points a loopback server at host.docker.internal.
 container_kubeconfig() {
-  local in=$1 out=$2 cluster server host rest
+  local in=$1 out=$2 cluster server host rest proxy
   kubectl --kubeconfig "$in" config view --raw --minify --flatten >"$out"
   chmod 0600 "$out"
   if kubectl --kubeconfig "$out" config view --raw -o jsonpath='{.users[0].user.exec.command}' | grep -q .; then
@@ -141,6 +150,13 @@ container_kubeconfig() {
   host=$(sed -nE 's#^https://([^/:]+).*#\1#p' <<<"$server")
   rest=${server#https://"$host"}
   [[ $(uname -s) == Linux ]] && return 0
+  # A local proxy, such as tsh's, keeps the server and listens as proxy-url.
+  proxy=$(kubectl --kubeconfig "$out" config view -o jsonpath='{.clusters[0].cluster.proxy-url}')
+  if [[ $proxy =~ ^([a-z]+://)(127\.0\.0\.1|localhost)(:.*)?$ ]]; then
+    kubectl --kubeconfig "$out" config set-cluster "$cluster" \
+      --proxy-url="${BASH_REMATCH[1]}host.docker.internal${BASH_REMATCH[3]}" >/dev/null
+    return 0
+  fi
   case $host in
     127.0.0.1 | localhost | *.localhost)
       local pinned
@@ -166,11 +182,16 @@ case $CONNECT in
     : "${TELEPORT_KUBE_CLUSTER:?CONNECT=teleport needs TELEPORT_KUBE_CLUSTER}"
     command -v tsh >/dev/null || die "tsh is not on PATH"
     port=${TELEPORT_PROXY_PORT:-$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')}
+    # tsh prints the kubeconfig to stderr, and removes it when the proxy exits.
     tsh proxy kube "$TELEPORT_KUBE_CLUSTER" --port "$port" --format=unix \
-      >"$WORK/proxy.env" 2>"$OUT/connect.log" &
+      >"$OUT/connect.log" 2>&1 &
     BACKGROUND=$!
     wait_for_port "$port" "$BACKGROUND"
-    proxy_kubeconfig=$(sed -nE 's/^export KUBECONFIG=(.*)$/\1/p' "$WORK/proxy.env" | tr -d '"')
+    for _ in $(seq 1 10); do
+      grep -q '^export KUBECONFIG=' "$OUT/connect.log" && break
+      sleep 1
+    done
+    proxy_kubeconfig=$(sed -nE 's/^export KUBECONFIG=(.*)$/\1/p' "$OUT/connect.log" | tail -1 | tr -d '"')
     [[ -r $proxy_kubeconfig ]] || die "tsh proxy kube printed no kubeconfig; see $OUT/connect.log"
     cp "$proxy_kubeconfig" "$KUBE_IN"
     chmod 0600 "$KUBE_IN"
