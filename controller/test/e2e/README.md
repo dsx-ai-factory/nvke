@@ -451,6 +451,49 @@ variables it can set is one, and it cannot turn authentication off
 This repository ships no profiles. A site's profile belongs with the rest of
 that site's configuration.
 
+### From a workstation
+
+[`hack/validate-site.sh`](hack/validate-site.sh) runs the image with Docker
+against a site the workstation can reach, given a site file: a shell file,
+kept outside the repository, that says how to reach the site, which profile
+and image to use, and the two versions.
+
+```bash
+# my-site.env
+CONNECT=kubeconfig              # or teleport, or ssh
+KUBECONFIG_FILE=$HOME/.kube/my-site
+PROFILE=$HOME/sites/my-site-profile.yaml
+CONTROLLER_VERSION=v0.3.0
+KUBERNETES_VERSION=v1.34.2
+IMAGE=<registry>/nvke-validate:v0.3.0
+```
+
+```bash
+controller/test/e2e/hack/validate-site.sh my-site.env --dry-run   # list the checks
+controller/test/e2e/hack/validate-site.sh my-site.env             # read-only
+controller/test/e2e/hack/validate-site.sh my-site.env --full      # with creates
+```
+
+How it reaches the site:
+
+- `kubeconfig` uses `KUBECONFIG_FILE` (and `KUBE_CONTEXT`). The image has no
+  exec credential plugins, so the kubeconfig must carry certificates or a
+  token.
+- `teleport` runs `tsh proxy kube` for `TELEPORT_KUBE_CLUSTER` after a
+  `tsh login`, and gives the container the local proxy's kubeconfig.
+- `ssh` forwards the API server port of `KUBECONFIG_FILE`'s `127.0.0.1` server
+  from `SSH_TARGET`, with `SSH_KEY` and an optional `SSH_PROXY_COMMAND`.
+  `QUALIFY_RUN=<run dir>` fills these and both versions from a run kept with
+  [`qualify local --keep-site`](#hardware-qualification).
+
+Read-only runs `site-validate && !creates`: the checks that create nothing
+but a short-lived probe pod. `--full` runs `site-validate`, and `--only=<labels>`
+narrows either. Any `NVKE_*` or `NKE_E2E_*` variable the site file exports
+reaches the image, which is how a run adds a tenant. Each run writes its
+reports, its log and the inputs it used, without credentials, to
+`RUNS_DIR/<site file>-<time>/` (default `~/nvke-validate-runs`), and prints the
+failures and the reasons for each skip.
+
 ### Tenant checks
 
 With `NVKE_TENANT_VALIDATE=true`, the image also validates the tenant
@@ -1122,7 +1165,9 @@ the container a copy of `<node>.kubeconfig` whose server is
 like `deploy/nico`, so its profile needs only what the lane declares,
 `NVKE_SITE_COMPONENTS: [cert-manager]` and its StorageClass in
 `NVKE_SITE_STORAGE_CLASSES`. Add
-`-ginkgo.label-filter='site-validate && !creates'` to create nothing on it.
+`-ginkgo.label-filter='site-validate && !creates'` to create nothing on it but
+a short-lived probe pod. [From a workstation](#from-a-workstation) does all of
+this with `CONNECT=ssh` and `QUALIFY_RUN`.
 
 Prerequisites, all read from the shell that runs the suite. Neither the proxy
 nor the jump host nor any identifier is checked in, and secrets are read only
