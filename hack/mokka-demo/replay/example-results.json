@@ -1,0 +1,61 @@
+{
+  "sourceCommit": "6f2ff82bc5df2f39eb0ed0ac0fc82394940012c0",
+  "focusedPassed": 9,
+  "mixedPassed": 19,
+  "workers": [
+    {
+      "node": "mokka-replay-20261116-113250-mgb300-5035",
+      "product": "NVIDIA-GB300-NVL",
+      "gpu": 4,
+      "kubelet": "v1.36.4"
+    },
+    {
+      "node": "mokka-replay-20261116-113250-mh100-9182",
+      "product": "NVIDIA-H100-80GB-HBM3",
+      "gpu": 8,
+      "kubelet": "v1.36.4"
+    }
+  ],
+  "validators": [
+    {
+      "node": "mokka-replay-20261116-113250-mgb300-5035",
+      "stages": {
+        "driver-validation": 0,
+        "toolkit-validation": 0,
+        "cuda-validation": 0,
+        "plugin-validation": 0
+      }
+    },
+    {
+      "node": "mokka-replay-20261116-113250-mh100-9182",
+      "stages": {
+        "driver-validation": 0,
+        "toolkit-validation": 0,
+        "cuda-validation": 0,
+        "plugin-validation": 0
+      }
+    }
+  ],
+  "passedChecks": [
+    "PASS  cluster mokka-replay-20261116-113250 (c60c1587-119d-4583-9545-acc453f75b3e) is reachable",
+    "PASS  1 Ready node(s) carry mokka.example/gpu-gb300=true from the pool: mokka-replay-20261116-113250-mgb300-5035",
+    "PASS  mokka-replay-20261116-113250-mgb300-5035: nvidia-smi lists 4 GPU(s)",
+    "PASS  ClusterPolicy is ready",
+    "PASS  mokka-replay-20261116-113250-mgb300-5035: allocatable nvidia.com/gpu=4 (NVIDIA-GB300-NVL)",
+    "PASS  mokka-replay-20261116-113250-mgb300-5035: validator steps exited 0: driver-validation toolkit-validation cuda-validation plugin-validation ",
+    "PASS  pod on mokka-replay-20261116-113250-mgb300-5035 saw exactly one GPU: GPU 0: NVIDIA GB300 NVL (UUID: GPU-b300b300-0000-0000-0000-000000000002)",
+    "PASS  cluster mokka-replay-20261116-113250 (c60c1587-119d-4583-9545-acc453f75b3e) is reachable",
+    "PASS  1 Ready node(s) carry mokka.example/gpu-h100=true from the pool: mokka-replay-20261116-113250-mh100-9182",
+    "PASS  mokka-replay-20261116-113250-mh100-9182: nvidia-smi lists 8 GPU(s)",
+    "PASS  ClusterPolicy is ready",
+    "PASS  mokka-replay-20261116-113250-mh100-9182: allocatable nvidia.com/gpu=8 (NVIDIA-H100-80GB-HBM3)",
+    "PASS  mokka-replay-20261116-113250-mh100-9182: validator steps exited 0: driver-validation toolkit-validation cuda-validation plugin-validation ",
+    "PASS  pod on mokka-replay-20261116-113250-mh100-9182 saw exactly one GPU: GPU 0: NVIDIA H100 80GB HBM3 (UUID: GPU-01000100-0000-0000-0000-000000000001)",
+    "PASS  mokka-replay-20261116-113250-mgb300-5035 (gb300): NVIDIA-GB300-NVL x4",
+    "PASS  mokka-replay-20261116-113250-mh100-9182 (h100): NVIDIA-H100-80GB-HBM3 x8",
+    "PASS  the 2 pools advertise 2 different models",
+    "PASS  NVIDIA-GB300-NVL pod ran on mokka-replay-20261116-113250-mgb300-5035 in pool mokka-gb300 and saw: GPU 0: NVIDIA GB300 NVL (UUID: GPU-b300b300-0000-0000-0000-000000000001)",
+    "PASS  NVIDIA-H100-80GB-HBM3 pod ran on mokka-replay-20261116-113250-mh100-9182 in pool mokka-h100 and saw: GPU 0: NVIDIA H100 80GB HBM3 (UUID: GPU-01000100-0000-0000-0000-000000000004)"
+  ],
+  "tenantDeleted": true
+}

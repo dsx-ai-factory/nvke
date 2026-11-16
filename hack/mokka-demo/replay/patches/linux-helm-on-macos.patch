@@ -1,0 +1,30 @@
+diff --git a/controller/hack/local-backend-e2e.sh b/controller/hack/local-backend-e2e.sh
+index 34199c27..86bb1014 100755
+--- a/controller/hack/local-backend-e2e.sh
++++ b/controller/hack/local-backend-e2e.sh
+@@ -433,12 +433,19 @@ docker cp "${internal_kubeconfig}" "${runner_name}:/state/management.kubeconfig"
+ docker cp "${e2e_config}" "${runner_name}:/state/e2e-config.json"
+ # The Mokka checks install charts on their tenant with helm. In CI the helm on PATH
+ # is hack/ci/helm-dockerhub-mirror.sh, which needs bash, so copy the binary behind it.
+-for helm_bin in helm-real helm; do
+-  if command -v "${helm_bin}" >/dev/null; then
+-    docker cp "$(command -v "${helm_bin}")" "${runner_name}:/usr/local/bin/helm"
+-    break
+-  fi
+-done
++if [[ "${host_os}" == darwin ]]; then
++  # The host Helm is Mach-O; the client container needs the fixture's Linux binary.
++  mkdir -p "${tmp_dir}/linux-helm"
++  dpkg-deb -x "${CAPD_HELM_DEB_PATH}" "${tmp_dir}/linux-helm"
++  docker cp "${tmp_dir}/linux-helm/usr/bin/helm" "${runner_name}:/usr/local/bin/helm"
++else
++  for helm_bin in helm-real helm; do
++    if command -v "${helm_bin}" >/dev/null; then
++      docker cp "$(command -v "${helm_bin}")" "${runner_name}:/usr/local/bin/helm"
++      break
++    fi
++  done
++fi
+ oidc_issuer_host=""
+ if [[ "${LOCAL_NKE_E2E_BUILD_TAGS:-}" =~ (^|[[:space:],])oidc_acceptance($|[[:space:],]) ]]; then
+   oidc_issuer_host="$(docker inspect --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}' "${runner_name}")"

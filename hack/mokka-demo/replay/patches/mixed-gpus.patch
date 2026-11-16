@@ -1,0 +1,183 @@
+From 289c0ff693da240202061b5c54dfa41ff47b102d Mon Sep 17 00:00:00 2001
+From: Benjamin Kero <bkero@nvidia.com>
+Date: Tue, 3 Nov 2026 16:41:25 -0800
+Subject: [PATCH] test(mokka-demo): add a mixed simulated GPU model scenario
+
+hack/mokka-demo/mixed-gpus/run.sh runs demo.sh once per Mokka GPU
+profile, each with its own node pool, node label and Mokka release, then
+checks that each pool's nodes advertise their own GPU model and count and
+that a pod selecting a model through nvidia.com/gpu.product lands on that
+model's pool.
+
+Signed-off-by: Benjamin Kero <bkero@nvidia.com>
+---
+ hack/mokka-demo/mixed-gpus/README.md |  44 +++++++++++
+ hack/mokka-demo/mixed-gpus/run.sh    | 108 +++++++++++++++++++++++++++
+ 2 files changed, 152 insertions(+)
+ create mode 100644 hack/mokka-demo/mixed-gpus/README.md
+ create mode 100755 hack/mokka-demo/mixed-gpus/run.sh
+
+diff --git a/hack/mokka-demo/mixed-gpus/README.md b/hack/mokka-demo/mixed-gpus/README.md
+new file mode 100644
+index 000000000..7358d0540
+--- /dev/null
++++ b/hack/mokka-demo/mixed-gpus/README.md
+@@ -0,0 +1,44 @@
++# Mixed simulated GPU models in one cluster
++
++`run.sh` gives one NVKE workload cluster node pools that present different GPU models, and checks that workloads can tell them apart. It runs [`../demo.sh`](../README.md) once per Mokka GPU profile, each time with its own node pool, node label and Mokka release, so each pool's nodes report a different GPU.
++
++It prints `PASS` or `FAIL` for each check and exits non-zero if any fails:
++
++- everything `demo.sh` checks, for each pool,
++- each node's `nvidia.com/gpu.product` label is the GPU name `nvidia-smi` reports on it, and its allocatable `nvidia.com/gpu` is the number of GPUs `nvidia-smi` lists,
++- the pools advertise as many different models as there are profiles,
++- a pod with a `nodeSelector` on one model's `nvidia.com/gpu.product` runs on that model's pool and sees that model.
++
++## Run it
++
++Prerequisites are those of [`demo.sh`](../README.md#before-you-begin).
++
++```bash
++CLUSTER=<WORKLOAD_CLUSTER> hack/mokka-demo/mixed-gpus/run.sh
++```
++
++| Variable | Default | Meaning |
++|---|---|---|
++| `CLUSTER` | required | Workload cluster name |
++| `PROFILES` | `gb300 h100` | Two or more Mokka GPU profiles; see `GPU_PROFILE` in [`demo.sh`](../README.md#run-the-demo) |
++| `TENANT_KUBECONFIG` | from `nvkectl get kubeconfig` | The workload cluster's kubeconfig |
++| `TIMEOUT` | `20m` | Helm and readiness timeout, per `demo.sh` run |
++
++For each profile `<P>`, the run creates node pool `mokka-<P>` with node name prefix `m<P>`, node label `mokka.example/gpu-<P>=true`, and Mokka release `nvml-mock-<P>` in namespace `mokka`. GPU Operator is shared.
++
++## What it does not prove
++
++- **Mixed models on one node.** Each node presents one profile, as each Mokka release serves one.
++- **Scheduling by GPU memory or compute capability.** The workloads select on `nvidia.com/gpu.product` alone, though GPU Feature Discovery publishes the other labels as well.
++- Everything `demo.sh` does not prove: see [What it does not prove](../README.md#what-it-does-not-prove).
++
++## Clean up
++
++For each profile `<P>`:
++
++```bash
++helm uninstall nvml-mock-<P> --namespace mokka
++nvkectl delete nodepool mokka-<P> --cluster <WORKLOAD_CLUSTER>
++```
++
++Then GPU Operator, as in [`demo.sh`'s clean-up](../README.md#clean-up).
+diff --git a/hack/mokka-demo/mixed-gpus/run.sh b/hack/mokka-demo/mixed-gpus/run.sh
+new file mode 100755
+index 000000000..eca54aa1f
+--- /dev/null
++++ b/hack/mokka-demo/mixed-gpus/run.sh
+@@ -0,0 +1,108 @@
++#!/usr/bin/env bash
++# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++# SPDX-License-Identifier: Apache-2.0
++#
++# Give one NVKE workload cluster two node pools that present different simulated
++# GPU models, and check that each pool advertises its own model and count and that
++# a workload selecting a model lands only on that model's pool. Runs ../demo.sh
++# once per profile, then checks across both. README.md has the details.
++set -euo pipefail
++
++demo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
++
++CLUSTER="${CLUSTER:?set CLUSTER to the NVKE workload cluster name}"
++PROFILES="${PROFILES:-gb300 h100}"
++TIMEOUT="${TIMEOUT:-20m}"
++
++failures=0
++pass() { printf 'PASS  %s\n' "$*"; }
++fail() { printf 'FAIL  %s\n' "$*"; failures=$((failures + 1)); }
++step() { printf '\n== %s\n' "$*"; }
++
++read -r -a profiles <<<"$PROFILES"
++((${#profiles[@]} >= 2)) || { echo "mixed-gpus: set PROFILES to two or more Mokka GPU profiles" >&2; exit 1; }
++
++# One pool, node label and Mokka release per profile.
++pool() { printf 'mokka-%s' "$1"; }
++label() { printf 'mokka.example/gpu-%s' "$1"; }
++
++if [[ -z "${TENANT_KUBECONFIG:-}" ]]; then
++  TENANT_KUBECONFIG="$(mktemp)"
++  trap 'rm -f "$TENANT_KUBECONFIG"' EXIT
++  nvkectl get kubeconfig "$CLUSTER" --output-file "$TENANT_KUBECONFIG" >/dev/null
++fi
++export TENANT_KUBECONFIG KUBECONFIG="$TENANT_KUBECONFIG"
++
++for profile in "${profiles[@]}"; do
++  step "pool $(pool "$profile"): Mokka profile ${profile}"
++  CLUSTER="$CLUSTER" POOL="$(pool "$profile")" POOL_PREFIX="m${profile}" LABEL_KEY="$(label "$profile")" \
++    GPU_PROFILE="$profile" MOKKA_RELEASE="nvml-mock-${profile}" TIMEOUT="$TIMEOUT" "${demo_dir}/demo.sh" ||
++    fail "demo.sh for profile ${profile}"
++done
++
++step "each pool advertises its own GPU model and count"
++declare -A product_of
++for profile in "${profiles[@]}"; do
++  for node in $(kubectl get nodes -l "$(label "$profile")=true" -o jsonpath='{.items[*].metadata.name}'); do
++    pod="$(kubectl -n mokka get pods -o name --field-selector "spec.nodeName=${node}" | head -1)"
++    smi="$(kubectl -n mokka exec "$pod" -- nvidia-smi -L 2>/dev/null | grep '^GPU ' || true)"
++    want_count="$(grep -c . <<<"$smi" || true)"
++    # GPU Feature Discovery writes the NVML name with spaces as dashes.
++    want_product="$(sed -E 's/^GPU [0-9]+: (.*) \(UUID.*/\1/' <<<"$smi" | head -1 | tr ' ' '-')"
++    product="$(kubectl get node "$node" -o jsonpath='{.metadata.labels.nvidia\.com/gpu\.product}')"
++    count="$(kubectl get node "$node" -o jsonpath='{.status.allocatable.nvidia\.com/gpu}')"
++    if [[ -n "$product" && "$product" == "$want_product" && "$count" == "$want_count" ]]; then
++      pass "${node} (${profile}): ${product} x${count}"
++    else
++      fail "${node} (${profile}): ${product:-no product} x${count:-0}, want ${want_product:-?} x${want_count}"
++    fi
++    product_of[$profile]="$product"
++  done
++done
++if [[ "$(printf '%s\n' "${product_of[@]}" | sort -u | grep -c .)" -eq "${#profiles[@]}" ]]; then
++  pass "the ${#profiles[@]} pools advertise ${#profiles[@]} different models"
++else
++  fail "the pools do not advertise distinct models: ${product_of[*]}"
++fi
++
++step "a workload that selects a model lands on that model's pool"
++for profile in "${profiles[@]}"; do
++  product="${product_of[$profile]:-}"
++  [[ -n "$product" ]] || { fail "no product label for ${profile}"; continue; }
++  name="mixed-gpus-${profile}"
++  kubectl delete pod "$name" --ignore-not-found >/dev/null
++  kubectl apply -f - >/dev/null <<POD
++apiVersion: v1
++kind: Pod
++metadata: {name: ${name}, namespace: default}
++spec:
++  restartPolicy: Never
++  nodeSelector: {nvidia.com/gpu.product: "${product}"}
++  containers:
++    - name: smi
++      image: ubuntu:24.04
++      command: ["nvidia-smi", "-L"]
++      resources: {limits: {nvidia.com/gpu: 1}}
++POD
++  if kubectl wait "pod/${name}" --for=jsonpath='{.status.phase}'=Succeeded --timeout=5m >/dev/null; then
++    node="$(kubectl get pod "$name" -o jsonpath='{.spec.nodeName}')"
++    key="$(label "$profile")"
++    on_pool="$(kubectl get node "$node" -o jsonpath="{.metadata.labels.${key//./\\.}}" 2>/dev/null || true)"
++    seen="$(kubectl logs "$name")"
++    if [[ "$on_pool" == true && "$seen" == *"${product//-/ }"* ]]; then
++      pass "${product} pod ran on ${node} in pool $(pool "$profile") and saw: ${seen}"
++    else
++      fail "${product} pod ran on ${node}, outside pool $(pool "$profile"), and saw: ${seen}"
++    fi
++  else
++    fail "${product} pod did not complete"
++  fi
++  kubectl delete pod "$name" --ignore-not-found >/dev/null
++done
++
++printf '\n'
++if ((failures)); then
++  printf 'mixed-gpus: %d check(s) failed\n' "$failures"
++  exit 1
++fi
++printf 'mixed-gpus: all checks passed\n'

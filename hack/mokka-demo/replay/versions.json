@@ -1,0 +1,18 @@
+{
+  "nvkeCommit": "6f2ff82bc5df2f39eb0ed0ac0fc82394940012c0",
+  "mixedScenarioCommit": "289c0ff693da240202061b5c54dfa41ff47b102d",
+  "mokka": "0.6.0",
+  "gpuOperator": "v26.3.3",
+  "go": "1.27.3",
+  "patches": {
+    "patches/linux-helm-on-macos.patch": "3e7f7905b076e69cd8747cdc975ef25544238c32c544b313d20eeeaf88556374",
+    "patches/mixed-gpus.patch": "6669d364877f48fa645aebd12fad4a444598131b08bb734a1e6c72d08b854008",
+    "patches/public-download-timeout.patch": "cc4b33fe43ed509e26f0677022290eb1ddf2b77e1396a3d9cfb436d47a5d7f3b"
+  },
+  "patchedFiles": [
+    "controller/hack/local-backend-e2e.sh",
+    "hack/mokka-demo/mixed-gpus/run.sh",
+    "hack/mokka-demo/mixed-gpus/README.md",
+    "controller/hack/ci/prepare-capd-bundles.sh"
+  ]
+}

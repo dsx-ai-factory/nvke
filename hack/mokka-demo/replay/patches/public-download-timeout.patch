@@ -1,0 +1,15 @@
+--- a/controller/hack/ci/prepare-capd-bundles.sh
++++ b/controller/hack/ci/prepare-capd-bundles.sh
+@@ -52,10 +52,10 @@
+     --show-error \
+     --location \
+     --connect-timeout 10 \
+-    --max-time 30 \
++    --max-time 600 \
+     --retry 8 \
+     --retry-all-errors \
+-    --retry-max-time 240 \
++    --retry-max-time 1200 \
+     --retry-connrefused \
+     "${url}" \
+     -o "${destination}"
