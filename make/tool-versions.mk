@@ -168,7 +168,7 @@ GINKGO_VERSION           ?= v2.27.2
 GOFAIL_VERSION           ?= v0.2.0
 GOFUMPT_VERSION          ?= v0.11.0
 GOIMPORTS_VERSION        ?= v0.48.0
-SETUP_ENVTEST_VERSION    ?= release-0.24
+SETUP_ENVTEST_VERSION    ?= v0.25.3
 # Kubernetes version for the envtest kube-apiserver and etcd binaries.
 ENVTEST_K8S_VERSION      ?= 1.34.1
 
