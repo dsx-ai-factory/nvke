@@ -109,7 +109,7 @@ apiAuthz:
      --values-for controller=../auth-values.yaml
    ```
 
-   The chart refuses to render if `apiAuthz.enabled` is true while `apiAuth.enabled` is false, or if `apiAuthz.permissive` is false while `apiAuth.permissive` is true.
+   The chart refuses to render if `apiAuthz.enabled` is true while `apiAuth.enabled` is false, if `apiAuthz.permissive` is false while `apiAuth.permissive` is true, or if `apiAuthz.permissive` is true while `apiAuthz.enabled` is false.
 
 3. Wait for the rollout and check the startup log.
 
