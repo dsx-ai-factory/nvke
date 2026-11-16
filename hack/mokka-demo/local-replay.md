@@ -7,7 +7,7 @@ disabled. It does not qualify physical GPUs, AICR, recycling or performance.
 
 ## Prepare a separate checkout
 
-Start from this PR's branch in a clean checkout. Until [#2109](https://github.com/dsx-ai-factory/nvke/pull/2109)
+Start from a clean checkout containing the local runner fixes. Until [#2109](https://github.com/dsx-ai-factory/nvke/pull/2109)
 is merged, include its mixed-model E2E case in a disposable worktree. The pinned
 revision below contains that case and its shared request/cleanup helpers; this
 recipe does not copy them or implement another API client.
@@ -76,9 +76,9 @@ management cluster if tenant CAPI objects remain or its API cannot be read:
 ```sh
 set -o pipefail
 if kubectl --kubeconfig "$LOCAL_NKE_E2E_KUBECONFIG" --context "kind-$KIND_CLUSTER_NAME" get clusters,machines -A -o json | jq -e '.items | length == 0' >/dev/null; then
-  kind delete cluster --name "$KIND_CLUSTER_NAME"
-  docker rm -f "$BGP_CONTAINER_NAME" "$BUNDLE_MIRROR_NAME"
-  docker volume rm "$BUNDLE_MIRROR_VOLUME"
+  KUBECONFIG="$LOCAL_NKE_E2E_KUBECONFIG" kind delete cluster --name "$KIND_CLUSTER_NAME" &&
+    docker rm -f "$BGP_CONTAINER_NAME" "$BUNDLE_MIRROR_NAME" &&
+    docker volume rm "$BUNDLE_MIRROR_VOLUME"
 else
   printf '%s\n' 'Management kept: tenant resources remain or the API is unavailable.' >&2
 fi
@@ -88,5 +88,15 @@ Images, caches and private diagnostics are retained. This recipe introduces no
 separate provisioning client, patch series or version-lock file. To add AICR,
 extend the shared experiment before its tenant-deletion phase rather than
 creating another provisioning path.
+
+## Verified baseline
+
+On 2026-11-16, runtime changes at `3e1402fc` combined with scenario revision
+`4f4e2527f05050f50306ed23985eb568b8f0bccc` passed all nine selected lifecycle and
+mixed-model specs on macOS arm64 / Colima (8 CPUs, 16 GiB RAM) in about 22 minutes.
+The checks covered GB300 x4, H100 x8, both validators, model-selected one-GPU pods,
+tenant deletion and tenant-access secret cleanup.
+Management/BGP/bundle cleanup was verified separately with the private kubeconfig;
+the global kubeconfig and an older management cluster were preserved.
 
 Created with AI assistance
