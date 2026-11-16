@@ -209,6 +209,17 @@ func TestControlPlaneQuorumFloor(t *testing.T) {
 	}
 }
 
+// TestControlPlaneQuorumFloorErrorPointsAtRecycling checks the refusal tells an
+// operator how to finish an upgrade, not to delete the cluster.
+func TestControlPlaneQuorumFloorErrorPointsAtRecycling(t *testing.T) {
+	t.Parallel()
+
+	msg := (&nodes.ControlPlaneQuorumFloorError{NodeName: "cp-0", Surviving: 2, Minimum: 3}).Error()
+	require.Contains(t, msg, "below the minimum of 3")
+	require.Contains(t, msg, "enableCPNodeRecycling: true")
+	require.NotContains(t, msg, "delete the cluster")
+}
+
 // TestControlPlaneDeleteRecordsIntentWithoutStartingTeardown covers the routing
 // half of the story: an accepted control-plane delete leaves the node marked
 // DeleteRequested with its teardown input recorded, and queues no workflow.
