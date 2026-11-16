@@ -21,7 +21,7 @@ func (c *ControllerClient) ListClusters(ctx context.Context, params *api.ListClu
 		return nil, fmt.Errorf("listing clusters: %w", err)
 	}
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("listing clusters: %w", apiError(resp.Status(), resp.Body))
+		return nil, fmt.Errorf("listing clusters: %w", apiError(resp.StatusCode(), resp.Status(), resp.Body))
 	}
 	if resp.JSON200 == nil {
 		return nil, fmt.Errorf("listing clusters: empty response body")
@@ -37,7 +37,7 @@ func (c *ControllerClient) CreateCluster(ctx context.Context, req api.CreateClus
 		return nil, fmt.Errorf("creating cluster: %w", err)
 	}
 	if resp.StatusCode() != 201 {
-		return nil, fmt.Errorf("creating cluster: %w", &StatusError{StatusCode: resp.StatusCode(), err: apiError(resp.Status(), resp.Body)})
+		return nil, fmt.Errorf("creating cluster: %w", apiError(resp.StatusCode(), resp.Status(), resp.Body))
 	}
 	if resp.JSON201 == nil {
 		return nil, fmt.Errorf("creating cluster: empty response body")
@@ -52,7 +52,7 @@ func (c *ControllerClient) GetCluster(ctx context.Context, id openapi_types.UUID
 		return nil, fmt.Errorf("getting cluster: %w", err)
 	}
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("getting cluster: %w", apiError(resp.Status(), resp.Body))
+		return nil, fmt.Errorf("getting cluster: %w", apiError(resp.StatusCode(), resp.Status(), resp.Body))
 	}
 	if resp.JSON200 == nil {
 		return nil, fmt.Errorf("getting cluster: empty response body")
@@ -69,7 +69,7 @@ func (c *ControllerClient) PatchCluster(ctx context.Context, id openapi_types.UU
 		return nil, fmt.Errorf("patching cluster: %w", err)
 	}
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("patching cluster: %w", apiError(resp.Status(), resp.Body))
+		return nil, fmt.Errorf("patching cluster: %w", apiError(resp.StatusCode(), resp.Status(), resp.Body))
 	}
 	if resp.JSON200 == nil {
 		return nil, fmt.Errorf("patching cluster: empty response body")
@@ -84,7 +84,7 @@ func (c *ControllerClient) DeleteCluster(ctx context.Context, id openapi_types.U
 		return fmt.Errorf("deleting cluster: %w", err)
 	}
 	if resp.StatusCode() != 202 {
-		return fmt.Errorf("deleting cluster: unexpected status %s: %s", resp.Status(), resp.Body)
+		return fmt.Errorf("deleting cluster: %w", apiError(resp.StatusCode(), resp.Status(), resp.Body))
 	}
 	return nil
 }
@@ -118,7 +118,7 @@ func (c *ControllerClient) UpdateClusterSpireServer(ctx context.Context, id open
 		return fmt.Errorf("updating cluster SPIRE server: %w", err)
 	}
 	if resp.StatusCode() != 202 {
-		return fmt.Errorf("updating cluster SPIRE server: %w", &StatusError{StatusCode: resp.StatusCode(), err: apiError(resp.Status(), resp.Body)})
+		return fmt.Errorf("updating cluster SPIRE server: %w", apiError(resp.StatusCode(), resp.Status(), resp.Body))
 	}
 	return nil
 }
@@ -131,7 +131,7 @@ func (c *ControllerClient) GetClusterSpireServer(ctx context.Context, id openapi
 		return nil, fmt.Errorf("getting cluster SPIRE server: %w", err)
 	}
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("getting cluster SPIRE server: %w", apiError(resp.Status(), resp.Body))
+		return nil, fmt.Errorf("getting cluster SPIRE server: %w", apiError(resp.StatusCode(), resp.Status(), resp.Body))
 	}
 	if resp.JSON200 == nil {
 		return nil, fmt.Errorf("getting cluster SPIRE server: empty response body")

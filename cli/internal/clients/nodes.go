@@ -30,7 +30,7 @@ func (c *ControllerClient) ListControlPlaneNodes(
 		return nil, fmt.Errorf("listing control-plane nodes: %w", err)
 	}
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("listing control-plane nodes: %w", apiError(resp.Status(), resp.Body))
+		return nil, fmt.Errorf("listing control-plane nodes: %w", apiError(resp.StatusCode(), resp.Status(), resp.Body))
 	}
 	if resp.JSON200 == nil {
 		return nil, fmt.Errorf("listing control-plane nodes: empty response body")
