@@ -10,7 +10,7 @@ require (
 	github.com/dsx-ai-factory/nvke/agent v0.0.0-00010101000000-000000000000
 	github.com/dsx-ai-factory/nvke/auth v0.0.0-00010101000000-000000000000
 	github.com/dsx-ai-factory/nvke/controller/api v0.0.0-00010101000000-000000000000
-	github.com/dsx-ai-factory/nvke/management-engine v0.0.0-00010101000000-000000000000
+	github.com/dsx-ai-factory/nvke/controller/k8s-apis v0.0.0-00010101000000-000000000000
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/getkin/kin-openapi v0.152.0
 	github.com/go-jose/go-jose/v4 v4.1.9
@@ -130,6 +130,7 @@ require (
 	github.com/nexus-rpc/sdk-go v0.7.0 // indirect
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
+	github.com/onsi/ginkgo/v2 v2.34.0 // indirect
 	github.com/onsi/gomega v1.44.0 // indirect
 	github.com/pandatix/go-abnf v0.5.3 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -187,7 +188,7 @@ replace (
 	github.com/dsx-ai-factory/nvke/agent => ../agent
 	github.com/dsx-ai-factory/nvke/auth => ../auth
 	github.com/dsx-ai-factory/nvke/controller/api => ./api
-	github.com/dsx-ai-factory/nvke/management-engine => ../management-engine
+	github.com/dsx-ai-factory/nvke/controller/k8s-apis => ./k8s-apis
 )
 
 // go.temporal.io/sdk/contrib/tally (latest release) still requires an ancient

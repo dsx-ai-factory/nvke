@@ -4,12 +4,9 @@
 package apiauthz_test
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dsx-ai-factory/nvke/auth/authn"
-	"github.com/dsx-ai-factory/nvke/auth/authz"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/apiauthz"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
@@ -25,38 +21,6 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/server"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
-
-// newClient loads a bundle in which viewer may list clusters and a
-// role=viewer caller from idp holds viewer, into a Client in mode.
-func newClient(t *testing.T, mode authn.Mode) *authz.Client {
-	t.Helper()
-
-	dir := t.TempDir()
-	for name, content := range map[string]string{
-		"policies.cedar": `permit(principal in NVKE::Role::"viewer", action == NVKE::Action::"listClusters", resource);`,
-		"roles.json":     `[{"uid": {"type": "NVKE::Role", "id": "viewer"}}]`,
-		"authorization.yaml": "apiVersion: auth.nvke.nvidia.com/v1alpha1\nkind: AuthorizationConfiguration\n" +
-			"issuers:\n  idp:\n    claims:\n      - {name: role, value: viewer, grants: [viewer]}\n",
-	} {
-		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600))
-	}
-
-	lb, err := apiauthz.NewLocalBundle(dir, []string{"idp"})
-	require.NoError(t, err)
-	client, err := authz.NewClient(lb, mode, slog.New(slog.DiscardHandler), nil)
-	require.NoError(t, err)
-	return client
-}
-
-// caller returns a context carrying a principal from idp with role, or with
-// no role claim if role is empty.
-func caller(role string) context.Context {
-	claims := map[string]any{}
-	if role != "" {
-		claims["role"] = role
-	}
-	return authn.ContextWithPrincipal(context.Background(), &authn.Principal{IssuerName: "idp", Subject: "user", Claims: claims})
-}
 
 // listClusters serves GET /api/clusters through the real server, as role,
 // with authorization in mode, or off if mode is empty. It returns the

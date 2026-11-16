@@ -1,11 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-apiVersion: internal.nvke.nvidia.com/v1
-kind: NVKECluster
 metadata:
   name: test-docker
-  namespace: management-engine-system
 spec:
   apiServerAccess:
     publicAccessEnabled: false

@@ -1,0 +1,32 @@
+create:
+  id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+  conditions:
+    provisioned:
+      status: "False"
+    provisioning:
+      status: "True"
+    deleting:
+      status: "False"
+nodePools:
+  create:
+    id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+    clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    conditions:
+      provisioned:
+        status: "False"
+      provisioning:
+        status: "True"
+      deleting:
+        status: "False"
+  resources:
+  - id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+    clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    name: workers-existing
+    desiredNodeCount: 3
+    conditions:
+      provisioned:
+        status: "True"
+      provisioning:
+        status: "False"
+      deleting:
+        status: "False"

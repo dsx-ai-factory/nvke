@@ -1,0 +1,5 @@
+nodePools:
+- name: workers-existing
+  resolvedRelease:
+    name: worker-existing-release
+    version: "1.36.2"

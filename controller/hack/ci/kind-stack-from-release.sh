@@ -111,16 +111,16 @@ vip="$(docker inspect -f '{{with index .NetworkSettings.Networks "kind"}}{{.IPAd
 export NVKECTL_NICO_TOKEN=smoke-nico-token NVKECTL_NODE_USER=nvke NVKECTL_NODE_PASSWORD=smoke-tenant-password
 NVKECTL_DATABASE_PASSWORD="$(openssl rand -hex 16)"
 export NVKECTL_DATABASE_PASSWORD
-# nktp sized for one kind node: nktp's own kind values, plus a ceiling of one
+# nktp sized for one kind node: its kind values, plus a ceiling of one
 # replica on the autoscaled collectors. The whole stack shares this node, so a
 # scale-up on a startup CPU burst would leave a replica Pending.
-if grep -qE '^ *maxReplicas: 1$' "${REPO}/nktp/hack/e2e-values.yaml"; then
-  cp "${REPO}/nktp/hack/e2e-values.yaml" "${WORK}/site/nktp-values.yaml"
+if grep -qE '^ *maxReplicas: 1$' "${REPO}/controller/hack/ci/nktp-kind-values.yaml"; then
+  cp "${REPO}/controller/hack/ci/nktp-kind-values.yaml" "${WORK}/site/nktp-values.yaml"
 else
   sed '/^      minReplicas: 1$/a\
-      maxReplicas: 1' "${REPO}/nktp/hack/e2e-values.yaml" >"${WORK}/site/nktp-values.yaml"
+      maxReplicas: 1' "${REPO}/controller/hack/ci/nktp-kind-values.yaml" >"${WORK}/site/nktp-values.yaml"
 fi
-grep -qE '^ *maxReplicas: 1$' "${WORK}/site/nktp-values.yaml" || die "the nktp kind values changed shape; check nktp/hack/e2e-values.yaml"
+grep -qE '^ *maxReplicas: 1$' "${WORK}/site/nktp-values.yaml" || die "the nktp kind values changed shape; check controller/hack/ci/nktp-kind-values.yaml"
 sed -e "s|@CLUSTER@|${CLUSTER}|g" -e "s|@VIP@|${vip}|g" \
   "${HERE}/sitespec.yaml.tmpl" >"${WORK}/site/sitespec.yaml"
 cp "${HERE}/stack-config.json.tmpl" "${WORK}/site/stack-config.json"

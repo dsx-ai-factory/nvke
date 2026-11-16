@@ -41,11 +41,11 @@ include ../make/coverage.mk
 IMG_NAME ?= nvcr.io/j7sbcjl3qgta/nvke-controller
 IMG_TAG ?= latest
 IMG ?= ${IMG_NAME}:${IMG_TAG}
-# Falls back to the commit before v0.0.0. A CI checkout is shallow and carries
-# no tags, so both describes find nothing there and every binary CI built
-# reported v0.0.0. Same steps as cmd_version in the root Makefile.
-_BUILD_VERSION_RAW := $(shell git describe --tags --dirty --match 'controller/v[0-9]*' 2>/dev/null || git describe --tags --dirty --match 'v[0-9]*' 2>/dev/null || git describe --always --dirty 2>/dev/null || echo "v0.0.0")
-BUILD_VERSION ?= $(patsubst controller/%,%,$(_BUILD_VERSION_RAW))
+# The repository's bare vX.Y.Z tags version every component. Falls back to the
+# commit before v0.0.0: a CI checkout is shallow and carries no tags, and
+# without --always every binary CI built reported v0.0.0.
+_BUILD_VERSION := $(shell git describe --tags --always --dirty --match 'v*' 2>/dev/null || echo "v0.0.0")
+BUILD_VERSION ?= $(_BUILD_VERSION)
 
 # Get the last git commit hash. If we are on CI depend on what it provides
 # else use git describe.
@@ -550,7 +550,7 @@ license-policy-check: $(GO_LICENSES) ## Verify every third-party dependency uses
 	@# that genuinely need ignoring are named explicitly.
 	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO_LICENSES) check ./cmd/worker ../cluster-api-provider-provisioned/cmd/manager \
 		--allowed_licenses=$(ALLOWED_LICENSES) \
-		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nvke/agent,github.com/dsx-ai-factory/nvke/auth,github.com/dsx-ai-factory/nvke/management-engine,github.com/dsx-ai-factory/nvke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
+		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nvke/agent,github.com/dsx-ai-factory/nvke/auth,github.com/dsx-ai-factory/nvke/controller/k8s-apis,github.com/dsx-ai-factory/nvke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
 
 .PHONY: notices
 notices: $(GO_LICENSES) ## Regenerate THIRD_PARTY_NOTICES.md for the released worker and provider manager binaries.

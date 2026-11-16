@@ -18,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/workqueue"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	"sigs.k8s.io/cluster-api/controllers/clustercache"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -28,12 +29,11 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
-	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
 )
 
 const (
-	bootstrapAuthorizationRetryAfter = 30 * time.Second
-	bootstrapAuthorizationBatchDelay = 5 * time.Second
+	bootstrapAuthorizationClusterSource = "bootstrap-authorization"
+	bootstrapAuthorizationBatchDelay    = 5 * time.Second
 
 	// bootstrapAuthorizationMaxSubjects limits concurrent joining subjects on
 	// tenant bindings, well below Kubernetes object size limits (measured
@@ -77,25 +77,26 @@ func desiredBootstrapClusterRoleBindings() []bootstrapRoleBinding {
 
 // AuthorizationController grants each joining Machine's resolved identity the tenant RBAC needed by kubeadm.
 type AuthorizationController struct {
-	k8sClient            client.Client
-	tenantClientProvider kube.TenantClientProvider
-	logger               *slog.Logger
+	k8sClient    client.Client
+	clusterCache clustercache.ClusterCache
+	logger       *slog.Logger
 }
 
 // NewAuthorizationController returns a controller that synchronizes per-Machine bootstrap authorization.
 func NewAuthorizationController(
 	k8sClient client.Client,
-	tenantClientProvider kube.TenantClientProvider,
+	clusterCache clustercache.ClusterCache,
 	logger *slog.Logger,
 ) *AuthorizationController {
 	return &AuthorizationController{
-		k8sClient:            k8sClient,
-		tenantClientProvider: tenantClientProvider,
-		logger:               logger,
+		k8sClient:    k8sClient,
+		clusterCache: clusterCache,
+		logger:       logger,
 	}
 }
 
-// SetupWithManager wires the controller to reconcile a Cluster whenever it or one of its Machines changes.
+// SetupWithManager wires the controller to reconcile a Cluster when it changes,
+// when one of its Machines changes, or when the workload connection opens or closes.
 func (c *AuthorizationController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&clusterv1.Cluster{}).
@@ -104,8 +105,17 @@ func (c *AuthorizationController) SetupWithManager(mgr ctrl.Manager) error {
 			delayedClusterRequestsForMachine(bootstrapAuthorizationBatchDelay),
 			builder.WithPredicates(bootstrapAuthorizationMachinePredicate()),
 		).
+		WatchesRawSource(c.clusterCache.GetClusterSource(bootstrapAuthorizationClusterSource, bootstrapAuthorizationClusterRequests)).
 		Named(constants.FieldManagerBootstrapAuthorization).
 		Complete(c)
+}
+
+func bootstrapAuthorizationClusterRequests(_ context.Context, obj client.Object) []reconcile.Request {
+	cluster, ok := obj.(*clusterv1.Cluster)
+	if !ok {
+		return nil
+	}
+	return []reconcile.Request{{NamespacedName: client.ObjectKeyFromObject(cluster)}}
 }
 
 // delayedClusterRequestsForMachine turns a Machine event into one delayed reconcile of that Machine's Cluster.
@@ -213,21 +223,21 @@ func (c *AuthorizationController) Reconcile(ctx context.Context, req ctrl.Reques
 
 	selected := selectedBootstrapAuthorizationMachines(machines.Items, cluster.Name)
 
-	tenantClient, err := c.tenantClientProvider.ClientForCluster(ctx, cluster)
+	tenantClient, err := c.clusterCache.GetClient(ctx, client.ObjectKeyFromObject(cluster))
 	if err != nil {
 		if len(selected) == 0 {
 			// Nothing is opted in, so there is no authorization to grant and no binding cleanup to attempt.
-			// This includes Clusters the provider cannot reach, such as ones outside the management namespace.
+			// This includes Clusters the cache will not connect, such as ones IsNVKEManagedCluster rejects.
 			return ctrl.Result{}, nil
 		}
-		if apierrors.IsNotFound(err) || errors.Is(err, kube.ErrTenantClientNotReady) {
-			logger.Info("Waiting for tenant access before synchronizing bootstrap authorization")
-			return ctrl.Result{RequeueAfter: bootstrapAuthorizationRetryAfter}, c.setConditions(
+		if errors.Is(err, clustercache.ErrClusterNotConnected) {
+			logger.Info("Waiting for the workload cluster connection before synchronizing bootstrap authorization")
+			return ctrl.Result{}, c.setConditions(
 				ctx, selected, metav1.ConditionFalse, BootstrapAuthorizationWaitingForTenantAccessReason, "Waiting for access to the tenant Kubernetes API",
 			)
 		}
 		conditionErr := c.setConditions(ctx, selected, metav1.ConditionFalse, BootstrapAuthorizationSyncFailedReason, err.Error())
-		return ctrl.Result{}, errors.Join(fmt.Errorf("failed to create tenant cluster client: %w", err), conditionErr)
+		return ctrl.Result{}, errors.Join(fmt.Errorf("failed to get workload cluster client: %w", err), conditionErr)
 	}
 
 	// With no selected Machines, synchronize (remove any stale subjects) only if managed bindings still exist.

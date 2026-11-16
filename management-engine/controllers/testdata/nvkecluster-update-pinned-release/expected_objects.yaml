@@ -1,11 +1,11 @@
 ---
 items:
-- apiVersion: internal.nvke.nvidia.com/v1
+- apiVersion: service.nvke.nvidia.com/v1
   kind: NVKECluster
   metadata:
     creationTimestamp: null
     finalizers:
-    - internal.nvke.nvidia.com/cluster-cleanup
+    - service.nvke.nvidia.com/cluster-cleanup
     generation: 2
     name: cluster-1
     namespace: default
@@ -138,8 +138,11 @@ items:
         type: NVKEControllerProvisioning
       id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
       name: workers
+      resolvedRelease:
+        name: worker-pinned-release
+        version: 1.34.8
     observedGeneration: 2
     resolvedRelease:
-      name: pinned-release
+      name: latest-release
       version: 1.34.8
 metadata: {}

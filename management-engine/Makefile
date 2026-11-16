@@ -6,7 +6,7 @@ GOTOOLCHAIN ?= go$(shell awk '/^go /{print $$2; exit}' $(CURDIR)/../go.work)
 export GOTOOLCHAIN
 BIN_DIR ?= $(CURDIR)/bin
 MANAGER_ARGS ?=
-VERSION ?= $(shell git describe --always --dirty --match 'management-engine/v[0-9]*' 2>/dev/null || echo dev)
+VERSION ?= $(shell git describe --tags --always --dirty --match 'v*' 2>/dev/null || echo dev)
 RELEASE_LDFLAGS ?= -s -w -buildid=
 MANAGER_LDFLAGS := -X 'main.version=$(VERSION)' $(RELEASE_LDFLAGS)
 GO_TEST_FLAGS ?=
@@ -51,24 +51,11 @@ license: ## Add the repository's license header to source files.
 manifests-state: controller-gen ## Generate internal deepcopy methods, datastore CRDs, and RBAC.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=hack/boilerplate.yaml.txt paths=./apis/... output:crd:artifacts:config=config/crd/bases
-	@for kind in machineimages clusterreleases nodepoolreleases; do \
-		mv "config/crd/bases/internal.nvke.nvidia.com_$$kind.yaml" ../controller/deploy/charts/nvke-crds/bases/; \
-	done
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role,headerFile=hack/boilerplate.yaml.txt paths=./controllers/... output:rbac:artifacts:config=config/rbac
 
-manifests: manifests-state kustomize kubebuilder ## Generate state, the runtime bundle, and Helm chart.
-	mkdir -p dist
+manifests: manifests-state kustomize ## Generate canonical schemas, RBAC and runtime manifests.
+	mkdir -p dist chart/files
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
-	"$(KUBEBUILDER)" edit --plugins=helm/v2-alpha --manifests=./dist/install.yaml --output-dir=.
-	# Kubebuilder v4.15.0 over-indents extra volumes beside existing Kustomize lists.
-	# Keep this correction in generation until the Helm plugin fixes list indentation.
-	sed -e '/toYaml .Values.manager.extraVolumeMounts/s/nindent 10/nindent 8/' \
-		-e '/toYaml .Values.manager.extraVolumes/s/nindent 8/nindent 6/' \
-		chart/templates/manager/manager.yaml > dist/manager-chart.yaml
-	mv dist/manager-chart.yaml chart/templates/manager/manager.yaml
-	rm -f .github/workflows/test-chart.yml
-	@rmdir .github/workflows .github 2>/dev/null || true
-	$(GO) run github.com/google/addlicense@v1.1.1 -f ../hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" chart
 
 .PHONY: generate generate-public generate-public-check
 generate: generate-public ## Generate internal schemas, public projections, and registration wiring.
@@ -92,10 +79,18 @@ TEST_PROCS ?= 5
 .PHONY: test
 test: test-api test-integration test-controller ## Run API, unit, resource integration, and controller tests.
 
+# Every package in the module except the ones another target owns, so a new test
+# package is run by default instead of being missed until the post-merge Coverage
+# lane reports it. Excluded: apis (test-api), controllers (envtest, test-controller)
+# and the test-only ./hack package (chart-check). Recursively expanded, so `go list`
+# runs only when a recipe uses it.
+UNIT_PACKAGES = $(shell $(GO) list ./... | grep -v -E '/(apis|controllers)(/|$$)|/hack$$')
+
 .PHONY: test-unit
 test-unit: fmt vet ## Run unit tests without a Kubernetes API server.
 	@$(COVERAGE_MKDIR)
-	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,unit) -covermode=$(GO_COVER_MODE) ./internal/... ./cmd/... ./pkg/...
+	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,unit) -covermode=$(GO_COVER_MODE) $(UNIT_PACKAGES)
+	python3 -B ./hack/test_publish.py
 
 .PHONY: test-integration
 test-integration: ENVTEST_K8S_VERSION=1.37.0
@@ -107,9 +102,9 @@ test-integration: fmt vet setup-envtest ginkgo ## Run resource and public API in
 # Separate test invocations need distinct profiles to avoid overwriting coverage.
 # hack/coverage.sh treats every coverage/management-engine*.out as this
 # module's, and the suffixes come from make/coverage.mk.
-test-api: manifests generate fmt vet ## Run API tests.
+test-api: manifests generate fmt vet setup-envtest ## Run API tests.
 	@$(COVERAGE_MKDIR)
-	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,apis) -covermode=$(GO_COVER_MODE) ./apis/...
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" $(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,apis) -covermode=$(GO_COVER_MODE) ./apis/...
 
 .PHONY: test-controller
 test-controller: test-unit manifests generate fmt vet setup-envtest ginkgo ## Run controller envtest fixtures.
@@ -290,16 +285,17 @@ $(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{
 endef
 
 .PHONY: chart
-chart: manifests ## Generate the Helm chart from the Kustomize source manifests.
+chart: manifests kubebuilder ## Regenerate the Helm chart from canonical manifests and packaging extensions.
+	$(GO) run ./hack/chartgen -kubebuilder "$(KUBEBUILDER)"
 
 ##@ Helm Deployment
 
 ## Helm binary to use for deploying the chart
 HELM ?= helm
 ## Namespace to deploy the Helm release
-HELM_NAMESPACE ?= management-engine-system
+HELM_NAMESPACE ?= cluster-service-system
 ## Name of the Helm release
-HELM_RELEASE ?= management-engine
+HELM_RELEASE ?= cluster-service
 ## Path to the Helm chart directory
 HELM_CHART_DIR ?= ./chart
 ## Additional arguments to pass to helm commands
@@ -325,13 +321,17 @@ helm-uninstall: require-host-context ## Uninstall the Helm release from the K8s 
 	$(HELM) --kube-context "$(HOST_CONTEXT)" uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
 
 .PHONY: chart-check
-chart-check: manifests ## Lint and render the Helm chart without a cluster.
+chart-check: manifests kubebuilder ## Check generation, lint and test every installation mode.
+	$(GO) run ./hack/chartgen -kubebuilder "$(KUBEBUILDER)" -check
 	$(HELM) lint chart -f config/samples/runtime-values.yaml
-	$(HELM) template management-engine chart --namespace management-engine-system -f config/samples/runtime-values.yaml > dist/chart-rendered.yaml
-	$(HELM) lint chart -f config/samples/runtime-values.yaml -f config/samples/nvke-controller-values.yaml
-	$(HELM) template management-engine chart --namespace management-engine-system -f config/samples/runtime-values.yaml -f config/samples/nvke-controller-values.yaml > dist/chart-nvke-controller-rendered.yaml
+	HELM="$(HELM)" KUBEBUILDER="$(KUBEBUILDER)" KUSTOMIZE="$(KUSTOMIZE)" $(GO) test $(GO_TEST_FLAGS) ./hack/... -run 'TestChart|TestGeneration|TestFilterManagerArgs' -count=1
 
-.PHONY: test-chart-crds
-test-chart-crds: ## Verify the shared CRD chart and its controller dependency.
-	$(HELM) dependency build ../controller/deploy/charts/controller --skip-refresh
-	HELM="$(HELM)" $(GO) test $(GO_TEST_FLAGS) ./hack -run TestSharedCRDs -count=1
+.PHONY: chart-assets-check
+chart-assets-check: manifests kubebuilder ## Verify the complete generated chart is current.
+	$(GO) run ./hack/chartgen -kubebuilder "$(KUBEBUILDER)" -check
+
+##@ Image publication
+
+.PHONY: release-build
+release-build: ## Build/push one runtime by digest (protected publisher inputs required).
+	./hack/publish.sh build

@@ -5,7 +5,7 @@ go 1.27.4
 require (
 	github.com/dsx-ai-factory/nvke/controller/api v0.0.0-00010101000000-000000000000
 	github.com/dsx-ai-factory/nvke/controller/deploy/charts v0.0.0-00010101000000-000000000000
-	github.com/dsx-ai-factory/nvke/management-engine v0.0.0-00010101000000-000000000000
+	github.com/dsx-ai-factory/nvke/controller/k8s-apis v0.0.0-00010101000000-000000000000
 	github.com/go-logr/logr v1.4.4
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/google/uuid v1.6.0
@@ -111,4 +111,4 @@ replace github.com/dsx-ai-factory/nvke/controller/api => ../controller/api
 
 replace github.com/dsx-ai-factory/nvke/controller/deploy/charts => ../controller/deploy/charts
 
-replace github.com/dsx-ai-factory/nvke/management-engine => ../management-engine
+replace github.com/dsx-ai-factory/nvke/controller/k8s-apis => ../controller/k8s-apis

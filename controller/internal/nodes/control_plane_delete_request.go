@@ -59,8 +59,9 @@ func (e *ControlPlaneQuorumFloorError) Error() string {
 	return fmt.Sprintf(
 		"cannot delete control-plane node %q: only %d joined control-plane node(s) would remain, "+
 			"below the minimum of %d needed for etcd to survive another failure. "+
-			"Raise the control-plane desired count first so a replacement joins before this node is removed, "+
-			"or delete the cluster instead",
+			"Raise the control-plane desired count first so a replacement joins before this node is removed. "+
+			"To replace control-plane nodes for an upgrade, set enableCPNodeRecycling: true on the cluster "+
+			"and the controller replaces them one at a time",
 		e.NodeName, e.Surviving, e.Minimum,
 	)
 }

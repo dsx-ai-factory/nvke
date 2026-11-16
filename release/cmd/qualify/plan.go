@@ -50,14 +50,15 @@ bootloader such as os-image-amd64 is a dependency, and its override is a URL.
 
 --resolution chooses how the components are resolved, and names the strategy that
 will answer. "commitDescribe" is the default and describes each at the commit the
-subject's version points at, which is how a beta is qualified: a beta tag carries
-no component tags, so the tags would name the newest release rather than what was
-built there.
+subject's version points at. On a tagged commit that is the tag, so every
+component resolves to the version being qualified. It is how a release, an RC and
+a beta are all qualified; an RC resolves to the beta it was cut from, whose
+artifacts it ships. Once the commit also carries a release tag, describe names
+the release, so a later qualification of its beta or RC resolves the release's
+artifacts, built from the same commit; check the resolved versions in the plan.
 
-"gitTag" takes each from its own release tags, and a release qualification has to
-select it. Left on the default, a release resolves its components by describe and
-verifies the describe-named artifacts, which exist, so the run passes while
-qualifying builds other than the release-tagged ones.
+"gitTag" takes the highest v* tag in the repository, which is not necessarily
+the version being qualified.
 
 The commit is derived from the version being qualified rather than given. Either
 way, the components that are not built here, such as the Kubernetes and OVN

@@ -22,6 +22,8 @@ type controlPlane struct {
 	// to its spec, preloaded once per reconcile.
 	nodePinnedControlPlaneConfigs map[uuid.UUID]db.ControlPlaneConfigSpec
 	clusterControlPlaneConfig     db.ControlPlaneConfig
+	// failureDomains is nil until the reconciler discovers placement.
+	failureDomains *failureDomains
 }
 
 func (r *reconciler) controlPlaneReplacementBlocked(cluster db.Cluster) bool {

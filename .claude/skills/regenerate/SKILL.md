@@ -14,7 +14,8 @@ source + output together.
 | `controller/api/openapi.yaml` | `make generate` in `controller/` | spec + `api/*.gen.go` |
 | `agent/pkg/agent/proto/node_agent.proto` | `make protos` in `agent/` | `.proto` + `*.pb.go` |
 | CAPI types/markers in `cluster-api-provider-provisioned/` | `make generate manifests` there | types + deepcopy, CRDs, `config/rbac/role.yaml` |
-| `MachineImage`, `ClusterRelease` or `NodePoolRelease` types/markers in `management-engine/apis/v1/` | `make -C management-engine manifests`, then `make chart-crds` at the root | types + `config/crd/bases` + the chart's `files/crds.yaml` |
+| `MachineImage`, `ClusterRelease` or `NodePoolRelease` types/markers in `controller/k8s-apis/v1/` | `make -C controller/k8s-apis generate manifests`, then `make chart-crds-check` at the root | types + `zz_generated.deepcopy.go` + the `nvke-crds` chart's `bases/*.yaml` |
+| `NVKECluster`, `ControlPlaneClass`, `ClusterReleaseChannel`, `MachineImage`, `ClusterRelease` or `NodePoolRelease` types/markers in `management-engine/apis/v1/` | `make -C management-engine manifests-state` | types + `zz_generated.deepcopy.go` + `config/crd/bases` |
 | `controller/deploy/release-crds/kustomization.yaml` | `make chart-crds` at the root | overlay + `files/crds.yaml` |
 | any module `go.mod`/`go.sum` | `make work-sync`, then `make notices`, at the root | `go.work` + `go.work.sum` + every changed `THIRD_PARTY_NOTICES.md` |
 

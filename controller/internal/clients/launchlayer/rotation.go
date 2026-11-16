@@ -24,3 +24,9 @@ func (*Client) TryAdvanceStuckMachine(_ context.Context, _ shared.MachineAdvance
 func (*Client) DescribeStuckMachine(_ context.Context, _ shared.MachineAdvanceDeps, _ db.NodePool, _ *clusterv1.Machine) (string, error) {
 	return "", nil
 }
+
+// FailureDomainUnavailable always returns false: CAPLL reports no per-domain
+// placement failure.
+func (*Client) FailureDomainUnavailable(_ context.Context, _ shared.MachineAdvanceDeps, _ *clusterv1.Machine) (bool, error) {
+	return false, nil
+}

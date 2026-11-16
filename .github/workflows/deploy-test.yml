@@ -27,7 +27,6 @@ on:
     paths:
       - 'deploy/**'
       - 'cli/**'
-      - 'nktp/**'
       - 'controller/deploy/charts/**'
       - 'controller/api/**'
       - 'management-engine/**'

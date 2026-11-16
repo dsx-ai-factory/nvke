@@ -159,13 +159,13 @@ VALIDATE_PLATFORM ?= linux/amd64
 validate-image: ## Build the site validation image into the local docker image store.
 	docker buildx build --platform $(VALIDATE_PLATFORM) --load -t $(VALIDATE_IMAGE) -f Dockerfile "$(REPO_ROOT)"
 
-# What image-validate-nvcr.yml publishes. Both architectures come from one
-# build: the binary is cross-compiled and the final stage runs nothing, so
-# neither needs emulation or its own runner.
+# The multi-arch image a site builds from its controller's release tag. Both
+# architectures come from one build: the binary is cross-compiled and the final
+# stage runs nothing, so neither needs emulation or its own runner.
 #
-# The build is reproducible, so a site can build this itself and get the digest
-# the release published. Everything that reaches the image's bytes is derived
-# from the commit here: the timestamps (SOURCE_DATE_EPOCH, applied to layer
+# The build is meant to be reproducible. Everything that reaches the image's
+# bytes is derived from the commit here: the timestamps (SOURCE_DATE_EPOCH,
+# applied to layer
 # contents by rewrite-timestamp), the version and revision labels, and the
 # platforms. Overriding any of them gives a different digest.
 VALIDATE_REPO ?=
@@ -173,7 +173,7 @@ VALIDATE_PUSH_TAGS ?=
 VALIDATE_PLATFORMS ?= linux/amd64,linux/arm64
 VALIDATE_EPOCH ?= $(shell git -C "$(REPO_ROOT)" log -1 --format=%ct HEAD)
 VALIDATE_REVISION ?= $(shell git -C "$(REPO_ROOT)" rev-parse HEAD)
-VALIDATE_VERSION ?= $(patsubst controller/%,%,$(shell git -C "$(REPO_ROOT)" describe --match 'controller/v*' --tags --always))
+VALIDATE_VERSION ?= $(shell git -C "$(REPO_ROOT)" describe --tags --always --match 'v*')
 # A Go module mirror. Unset uses the Dockerfile's default; either way go.sum
 # decides the modules, so it does not change the digest.
 VALIDATE_GOPROXY ?=
@@ -183,9 +183,9 @@ VALIDATE_DIGEST_FILE ?= bin/validate-image-digest.txt
 VALIDATE_OCI ?= bin/validate-image.oci.tar
 
 # --provenance=false and --sbom=false: an attestation adds an unknown/unknown
-# entry to the index, which the publish job's architecture check and the NGC
-# UI do not expect, and it records the build's time and builder, which would
-# make every build's digest different.
+# entry to the index, which registry UIs such as NGC's do not expect, and it
+# records the build's time and builder, which would make every build's digest
+# different.
 VALIDATE_BUILD_FLAGS = -f Dockerfile \
 	--platform $(VALIDATE_PLATFORMS) --provenance=false --sbom=false --progress=plain \
 	--build-arg SOURCE_DATE_EPOCH=$(VALIDATE_EPOCH) \
@@ -215,7 +215,7 @@ validate-image-push: ## Build the validation image for VALIDATE_PLATFORMS and pu
 	@echo "pushed $(VALIDATE_REPO)@$$(cat $(VALIDATE_DIGEST_FILE))"
 
 .PHONY: validate-image-oci
-validate-image-oci: ## Build the validation image as an OCI archive at VALIDATE_OCI, pushing nothing. Writes the index digest to VALIDATE_DIGEST_FILE, to compare with a published one.
+validate-image-oci: ## Build the validation image as an OCI archive at VALIDATE_OCI, pushing nothing. Writes the index digest to VALIDATE_DIGEST_FILE, to compare with another build.
 	@mkdir -p $(dir $(VALIDATE_DIGEST_FILE)) $(dir $(VALIDATE_OCI))
 	docker buildx build $(VALIDATE_BUILD_FLAGS) \
 	  --output type=oci,dest=$(VALIDATE_OCI),rewrite-timestamp=true \

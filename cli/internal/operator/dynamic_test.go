@@ -20,14 +20,14 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	clienttesting "k8s.io/client-go/testing"
 
-	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+	internalv1 "github.com/dsx-ai-factory/nvke/controller/k8s-apis/v1"
 )
 
 // gvrs maps each plural resource to the list kind the fake client needs.
 var gvrs = map[schema.GroupVersionResource]string{
-	enginev1.SchemeGroupVersion.WithResource("machineimages"):    "MachineImageList",
-	enginev1.SchemeGroupVersion.WithResource("clusterreleases"):  "ClusterReleaseList",
-	enginev1.SchemeGroupVersion.WithResource("nodepoolreleases"): "NodePoolReleaseList",
+	internalv1.SchemeGroupVersion.WithResource("machineimages"):    "MachineImageList",
+	internalv1.SchemeGroupVersion.WithResource("clusterreleases"):  "ClusterReleaseList",
+	internalv1.SchemeGroupVersion.WithResource("nodepoolreleases"): "NodePoolReleaseList",
 }
 
 // newFake returns a Dynamic over a fake cluster holding objs.
@@ -40,7 +40,7 @@ func newFake(objs ...runtime.Object) (*Dynamic, *dynamicfake.FakeDynamicClient) 
 // transport fields a portable resource must not expose.
 func stored(kind Kind, name string, spec map[string]any) *unstructured.Unstructured {
 	u := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": enginev1.SchemeGroupVersion.String(),
+		"apiVersion": internalv1.SchemeGroupVersion.String(),
 		"kind":       string(kind),
 		"metadata": map[string]any{
 			"name":              name,
@@ -185,7 +185,7 @@ func TestDynamicDelete(t *testing.T) {
 func TestDynamicErrors(t *testing.T) {
 	t.Parallel()
 
-	gr := schema.GroupResource{Group: enginev1.GroupName, Resource: "clusterreleases"}
+	gr := schema.GroupResource{Group: internalv1.GroupName, Resource: "clusterreleases"}
 	missingType := &apierrors.StatusError{ErrStatus: metav1.Status{
 		Status: metav1.StatusFailure, Code: 404, Reason: metav1.StatusReasonNotFound,
 		Message: "the server could not find the requested resource",
@@ -250,7 +250,7 @@ func TestDynamicErrors(t *testing.T) {
 		{
 			name:    "an admission rejection keeps the server's message",
 			verb:    "create",
-			apiErr:  apierrors.NewInvalid(schema.GroupKind{Group: enginev1.GroupName, Kind: "ClusterRelease"}, "rel-1", nil),
+			apiErr:  apierrors.NewInvalid(schema.GroupKind{Group: internalv1.GroupName, Kind: "ClusterRelease"}, "rel-1", nil),
 			wantMsg: "ClusterRelease.internal.nvke.nvidia.com",
 			call: func(c *Dynamic) error {
 				_, err := c.Create(context.Background(), KindClusterRelease, Resource{Metadata: Metadata{Name: "rel-1"}, Spec: map[string]any{}})

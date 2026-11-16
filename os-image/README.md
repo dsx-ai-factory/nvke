@@ -180,7 +180,7 @@ and both systemd units. Startup is deferred during the bake with
 `NKE_AGENT_SKIP_START=1`; a systemd drop-in preserves the image's SPIRE ordering
 and socket wait across package upgrades.
 The baked agent is whatever your checkout says — no prebuilt artifact is
-pulled. To bake a released agent, check out its `agent/vX.Y.Z` tag first.
+pulled. To bake a released agent, check out its `vX.Y.Z` tag first.
 The SPIRE agent and TPM tools come from
 the `spire-agent` .deb built at bake time out of
 [`packages/spire-agent/`](packages/spire-agent/), pinned by version and
@@ -528,6 +528,9 @@ The publication pipeline produces private artifacts for internal use. Its
 registries and release CDN are not a supported download path for external
 users. Maintainers can find the tag triggers, destinations and publication
 controls in the [artifact publication reference](../docs/artifact-publication.md).
+
+A `vX.Y.Z` release tag runs `.github/workflows/os-image-artifact.yml` to
+build, validate and publish the private node images.
 
 The workflow selects the source-owned Make collection target for each matrix
 variant. Make copies the final QCOW2 under its existing basename and verifies

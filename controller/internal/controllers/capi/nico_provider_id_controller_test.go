@@ -427,7 +427,7 @@ func TestIsNVKEManagedCluster(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cluster := newCAPIClusterForProviderIDTest()
 			cluster.Labels = tt.clusterLabels
-			require.Equal(t, tt.want, isNVKEManagedCluster(cluster, tt.configuredValue))
+			require.Equal(t, tt.want, IsNVKEManagedCluster(cluster, tt.configuredValue))
 		})
 	}
 }

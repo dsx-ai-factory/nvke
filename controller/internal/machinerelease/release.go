@@ -15,7 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+	internalv1 "github.com/dsx-ai-factory/nvke/controller/k8s-apis/v1"
 )
 
 // ErrInvalidRelease marks a release, or the image it references, that is
@@ -32,8 +32,8 @@ const (
 )
 
 // GetClusterRelease reads the ClusterRelease with the given name.
-func GetClusterRelease(ctx context.Context, reader client.Reader, name string) (*enginev1.ClusterRelease, error) {
-	var release enginev1.ClusterRelease
+func GetClusterRelease(ctx context.Context, reader client.Reader, name string) (*internalv1.ClusterRelease, error) {
+	var release internalv1.ClusterRelease
 	if err := get(ctx, reader, name, &release, kindClusterRelease); err != nil {
 		return nil, err
 	}
@@ -41,8 +41,8 @@ func GetClusterRelease(ctx context.Context, reader client.Reader, name string) (
 }
 
 // GetNodePoolRelease reads the NodePoolRelease with the given name.
-func GetNodePoolRelease(ctx context.Context, reader client.Reader, name string) (*enginev1.NodePoolRelease, error) {
-	var release enginev1.NodePoolRelease
+func GetNodePoolRelease(ctx context.Context, reader client.Reader, name string) (*internalv1.NodePoolRelease, error) {
+	var release internalv1.NodePoolRelease
 	if err := get(ctx, reader, name, &release, kindNodePoolRelease); err != nil {
 		return nil, err
 	}
@@ -50,11 +50,11 @@ func GetNodePoolRelease(ctx context.Context, reader client.Reader, name string) 
 }
 
 // GetMachineImage reads the MachineImage a release references.
-func GetMachineImage(ctx context.Context, reader client.Reader, ref enginev1.ResourceName) (*enginev1.MachineImage, error) {
+func GetMachineImage(ctx context.Context, reader client.Reader, ref internalv1.ResourceName) (*internalv1.MachineImage, error) {
 	if ref == "" {
 		return nil, fmt.Errorf("%w: MachineImage reference is empty", ErrInvalidRelease)
 	}
-	var image enginev1.MachineImage
+	var image internalv1.MachineImage
 	if err := get(ctx, reader, string(ref), &image, kindMachineImage); err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func GetMachineImage(ctx context.Context, reader client.Reader, ref enginev1.Res
 
 // ResolveClusterRelease reads a ClusterRelease and the MachineImage it
 // references.
-func ResolveClusterRelease(ctx context.Context, reader client.Reader, name string) (*enginev1.ClusterRelease, *enginev1.MachineImage, error) {
+func ResolveClusterRelease(ctx context.Context, reader client.Reader, name string) (*internalv1.ClusterRelease, *internalv1.MachineImage, error) {
 	release, err := GetClusterRelease(ctx, reader, name)
 	if err != nil {
 		return nil, nil, err
@@ -76,7 +76,7 @@ func ResolveClusterRelease(ctx context.Context, reader client.Reader, name strin
 }
 
 // ResolveNodePoolRelease is ResolveClusterRelease for a NodePoolRelease.
-func ResolveNodePoolRelease(ctx context.Context, reader client.Reader, name string) (*enginev1.NodePoolRelease, *enginev1.MachineImage, error) {
+func ResolveNodePoolRelease(ctx context.Context, reader client.Reader, name string) (*internalv1.NodePoolRelease, *internalv1.MachineImage, error) {
 	release, err := GetNodePoolRelease(ctx, reader, name)
 	if err != nil {
 		return nil, nil, err
@@ -92,9 +92,9 @@ func ResolveNodePoolRelease(ctx context.Context, reader client.Reader, name stri
 // a release.
 func ParseKubernetesVersionAnnotations(release metav1.Object) (string, bool, error) {
 	name, annotations := release.GetName(), release.GetAnnotations()
-	raw, ok := annotations[enginev1.MachineInitKubernetesVersionInjectedAnnotation]
+	raw, ok := annotations[internalv1.MachineInitKubernetesVersionInjectedAnnotation]
 	if !ok {
-		return "", false, fmt.Errorf("%w: release %q is missing annotation %s", ErrInvalidRelease, name, enginev1.MachineInitKubernetesVersionInjectedAnnotation)
+		return "", false, fmt.Errorf("%w: release %q is missing annotation %s", ErrInvalidRelease, name, internalv1.MachineInitKubernetesVersionInjectedAnnotation)
 	}
 	var injected bool
 	switch raw {
@@ -103,11 +103,11 @@ func ParseKubernetesVersionAnnotations(release metav1.Object) (string, bool, err
 	case "false":
 		injected = false
 	default:
-		return "", false, fmt.Errorf("%w: release %q annotation %s is %q", ErrInvalidRelease, name, enginev1.MachineInitKubernetesVersionInjectedAnnotation, raw)
+		return "", false, fmt.Errorf("%w: release %q annotation %s is %q", ErrInvalidRelease, name, internalv1.MachineInitKubernetesVersionInjectedAnnotation, raw)
 	}
-	version := annotations[enginev1.MachineInitKubernetesVersionAnnotation]
+	version := annotations[internalv1.MachineInitKubernetesVersionAnnotation]
 	if !injected && version == "" {
-		return "", false, fmt.Errorf("%w: release %q is missing annotation %s", ErrInvalidRelease, name, enginev1.MachineInitKubernetesVersionAnnotation)
+		return "", false, fmt.Errorf("%w: release %q is missing annotation %s", ErrInvalidRelease, name, internalv1.MachineInitKubernetesVersionAnnotation)
 	}
 	return version, injected, nil
 }
@@ -119,9 +119,9 @@ func CheckCRDs(ctx context.Context, reader client.Reader) error {
 		obj  client.Object
 		kind string
 	}{
-		{&enginev1.MachineImage{}, kindMachineImage},
-		{&enginev1.ClusterRelease{}, kindClusterRelease},
-		{&enginev1.NodePoolRelease{}, kindNodePoolRelease},
+		{&internalv1.MachineImage{}, kindMachineImage},
+		{&internalv1.ClusterRelease{}, kindClusterRelease},
+		{&internalv1.NodePoolRelease{}, kindNodePoolRelease},
 	}
 	for _, probe := range probes {
 		err := reader.Get(ctx, client.ObjectKey{Name: crdProbeName}, probe.obj)

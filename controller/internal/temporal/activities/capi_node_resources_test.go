@@ -24,7 +24,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
-	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+
+	internalv1 "github.com/dsx-ai-factory/nvke/controller/k8s-apis/v1"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
@@ -700,7 +701,7 @@ func newCAPIMachineCreateClient(t *testing.T, objects ...client.Object) client.C
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, clusterv1.AddToScheme(scheme))
 	require.NoError(t, nicov1.AddToScheme(scheme))
-	require.NoError(t, enginev1.AddToScheme(scheme))
+	require.NoError(t, internalv1.AddToScheme(scheme))
 	return fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(objects...).
@@ -711,26 +712,26 @@ func newCAPIMachineCreateClient(t *testing.T, objects ...client.Object) client.C
 // NodePoolRelease and the MachineImage it boots.
 func testNicoWorkerRelease(name, ipxe, userData string) []client.Object {
 	return []client.Object{
-		&enginev1.MachineImage{
+		&internalv1.MachineImage{
 			ObjectMeta: metav1.ObjectMeta{Name: name + "-image"},
-			Spec: enginev1.MachineImageSpec{
-				OperatingSystem: enginev1.OperatingSystem{Family: "ubuntu", Version: "24.04"},
+			Spec: internalv1.MachineImageSpec{
+				OperatingSystem: internalv1.OperatingSystem{Family: "ubuntu", Version: "24.04"},
 				Architecture:    "amd64",
 				BuildDate:       "2026-01-01",
-				NICo:            enginev1.NICoBoot{IPXEScript: ipxe},
+				NICo:            internalv1.NICoBoot{IPXEScript: ipxe},
 			},
 		},
-		&enginev1.NodePoolRelease{
+		&internalv1.NodePoolRelease{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: name,
 				Annotations: map[string]string{
-					enginev1.MachineInitKubernetesVersionAnnotation:         "",
-					enginev1.MachineInitKubernetesVersionInjectedAnnotation: "true",
+					internalv1.MachineInitKubernetesVersionAnnotation:         "",
+					internalv1.MachineInitKubernetesVersionInjectedAnnotation: "true",
 				},
 			},
-			Spec: enginev1.NodePoolReleaseSpec{
-				MachineImageRef: enginev1.MachineImageReference{Name: enginev1.ResourceName(name + "-image")},
-				MachineInit:     enginev1.MachineInit{UserDataTemplate: userData},
+			Spec: internalv1.NodePoolReleaseSpec{
+				MachineImageRef: internalv1.MachineImageReference{Name: internalv1.ResourceName(name + "-image")},
+				MachineInit:     internalv1.MachineInit{UserDataTemplate: userData},
 			},
 		},
 	}

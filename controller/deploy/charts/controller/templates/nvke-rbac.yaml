@@ -213,6 +213,9 @@ data:
         resources: ["signers"]
         resourceNames: ["kubernetes.io/kubelet-serving"]
         verbs: ["approve"]
+      # ClusterCache's connect probe is GET /.
+      - nonResourceURLs: ["/"]
+        verbs: ["get"]
     {{- if .Values.controllers.bootstrap.enabled }}
       - apiGroups: ["rbac.authorization.k8s.io"]
         resources: ["clusterrolebindings"]

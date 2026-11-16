@@ -1,6 +1,6 @@
 // Go workspace for every module in the repository.
 //
-// All thirteen modules resolve from public dependencies. Go downloads modules
+// All fourteen modules resolve from public dependencies. Go downloads modules
 // into its cache on first use; no committed vendor tree or NVIDIA credentials
 // are required. See docs/go-workspace.md.
 go 1.27.4
@@ -14,6 +14,7 @@ use (
 	./controller/api
 	./controller/deploy/charts
 	./controller/hack/capd-reboot-controller
+	./controller/k8s-apis
 	./controller/nico-sim
 	./controller/test/e2e
 	./management-engine

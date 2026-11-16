@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+{{- if and .Values.controller.enabled .Values.manager.enabled }}
 {{- if ne .Values.serviceAccount.enabled false }}
 apiVersion: v1
 automountServiceAccountToken: false
@@ -22,4 +23,6 @@ metadata:
   {{- end }}
   name: {{ include "management-engine.serviceAccountName" . }}
   namespace: {{ .Release.Namespace }}
+{{- end }}
+
 {{- end }}

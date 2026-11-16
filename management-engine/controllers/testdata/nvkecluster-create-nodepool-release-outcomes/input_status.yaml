@@ -1,0 +1,5 @@
+nodePools:
+- name: workers-sibling
+  resolvedRelease:
+    name: worker-sibling-release
+    version: "1.36.2"

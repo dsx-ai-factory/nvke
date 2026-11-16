@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+	internalv1 "github.com/dsx-ai-factory/nvke/controller/k8s-apis/v1"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/machinerelease"
 )
@@ -22,7 +22,7 @@ import (
 type resolvedRelease struct {
 	release          metav1.Object
 	userDataTemplate string
-	image            *enginev1.MachineImage
+	image            *internalv1.MachineImage
 }
 
 // resolveRelease reads the release a node pool or node set stores by name, and

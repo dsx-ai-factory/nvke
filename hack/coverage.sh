@@ -55,6 +55,7 @@ COVERAGE_MODULES=(
 	controller
 	controller/api
 	controller/deploy/charts
+	controller/k8s-apis
 	controller/nico-sim
 	controller/test/e2e
 	management-engine

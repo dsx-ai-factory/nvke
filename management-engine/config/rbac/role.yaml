@@ -15,18 +15,19 @@ rules:
   - list
   - watch
 - apiGroups:
-  - internal.nvke.nvidia.com
+  - service.nvke.nvidia.com
   resources:
   - clusterreleasechannels
   - clusterreleases
   - controlplaneclasses
   - machineimages
+  - nodepoolreleases
   verbs:
   - get
   - list
   - watch
 - apiGroups:
-  - internal.nvke.nvidia.com
+  - service.nvke.nvidia.com
   resources:
   - nvkeclusters
   verbs:
@@ -35,7 +36,7 @@ rules:
   - patch
   - watch
 - apiGroups:
-  - internal.nvke.nvidia.com
+  - service.nvke.nvidia.com
   resources:
   - nvkeclusters/status
   verbs:

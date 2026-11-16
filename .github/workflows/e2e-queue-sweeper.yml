@@ -19,8 +19,7 @@
 # the PR is merged or closed its result changes nothing, yet the two-hour legs
 # still wait in line ahead of main. The sweeper cancels those too.
 #
-# Gofail and NKTP are left out: they run on hosted and cpu8 runners and finish
-# in minutes.
+# Gofail is left out: it runs on hosted runners and finishes in minutes.
 name: E2E queue sweeper
 
 on:

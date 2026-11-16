@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# DSX CSC: Cluster Service, its APIs, datastore and NVKE controller share a cluster.
+# Reuse the NVKE controller-owned catalog; replace site image, endpoint and tenant inputs.
+manager:
+  image:
+    repository: registry.example.invalid/platform/management-engine
+    tag: REVIEWED_IMAGE_TAG
+  infrastructureTemplateConfigMap: infra-templates
+  nvkeController:
+    endpoint: https://nvke-controller.example.invalid/api
+    tokenSecret:
+      name: cluster-service-nvke-controller
+      key: bearer-token
+metrics:
+  enabled: false
+prometheus:
+  enabled: false

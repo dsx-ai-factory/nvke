@@ -84,7 +84,7 @@ The inputs you usually set:
 | `stage` | `full` | How far to go. See [Stages](#stages). |
 | `dry-run` | `false` | Plan and check without taking a machine. |
 | `nvke-version` | empty | The `nvke` tag to qualify, such as `v0.22.0-beta.1`. Empty takes `QUALIFY_E2E_NVKE_VERSION`, then the highest tag. |
-| `resolution` | `commitDescribe` | `commitDescribe` describes each component at the commit `nvke-version` points at, which is how a beta is qualified. A release qualification sets `gitTag`. |
+| `resolution` | `commitDescribe` | `commitDescribe` describes each component at the commit `nvke-version` points at, which on a tagged commit is that tag, so it qualifies a release or a beta, and an RC through the beta it was cut from. `gitTag` takes the highest `v*` tag in the repository instead. |
 | `keep-site` | `false` | Keep the site node, and a failed tenant's nodes, to debug. Delete them by hand afterwards. |
 | `image-registry` | `nvcr` | Where the controller and capi-provisioned images are pulled from: `nvcr` or `ghcr`. |
 
@@ -436,6 +436,7 @@ Some combinations are refused before anything is built:
 | `--dry-run` | off | plans, verifies, resolves and stages the site inputs, then prints the suite's arguments without taking a machine |
 | `--keep-site` | off | keeps the site node after the run, pass or fail, and a tenant whose specs failed |
 | `--keep-tenant` | off | keeps every tenant, passed or not, and the site node they hang off. The spec that deletes a tenant is skipped, so tenant deletion is not tested |
+| `--tenant-gpu-runtime` | off | installs the GPU runtime on the tenant with AICR, then runs AICR's deployment checks and the tenant GPU checks. It installs only on GB200 and Ubuntu 24.04 and skips with the reason elsewhere. Every timeout grows by the 65 minutes the two specs may take. It needs `aicr`, `helm`, `kubectl`, and `timeout` or `gtimeout` (see [Tools](#tools)) |
 | `--plan FILE` | plan `--scope` | reads that plan instead of planning |
 | `--scope`, `--subject` | `full`, `nvke` | what to plan when `--plan` is not given |
 | `--version` | the highest version | the version of the subject to plan, as `qualify plan --version` takes it |
@@ -489,6 +490,8 @@ Teleport login on each are your own, plus the Forge API key, which is secret.
 | `docker` | Building the site images, and pulling them unless every one is built. The controller image cross-compiles for the site's architecture, which needs BuildKit (Docker Desktop's default). Building capi-provisioned for an architecture other than the host's also runs that architecture's binaries, which needs QEMU emulation: Docker Desktop has it, and on Linux install it with `docker run --privileged --rm tonistiigi/binfmt --install arm64,amd64` | Yes |
 | `tsh` | Reaching the site's jump host through Teleport | Yes |
 | `oras` | Pulling nvkectl when it is not built | No; only that path needs it |
+| `aicr`, `helm`, `kubectl` | Installing the tenant GPU runtime, with `--tenant-gpu-runtime`. `aicr` is pinned in `make/tool-versions.mk` | Yes, with that flag |
+| `timeout` or `gtimeout` | AICR's nvsentinel install, with `--tenant-gpu-runtime`. macOS has neither; `brew install coreutils` provides `gtimeout` | Yes, with that flag |
 
 #### Teleport
 
@@ -772,8 +775,9 @@ that takes its scope from the repository variable `QUALIFY_E2E_SCOPE` while it
 is `perf`, such as a `qualify-e2e` label run, runs it, and `full` leaves it
 out. A stream can also carry
 `parameters` in `release/policy.yaml`: the environment file it runs against,
-the workers its tenant gets and the suite's timeout. The plan records them, and
-the stream's result says which it ran with. The job's timeout and the timeout of
+the workers its tenant gets, the suite's timeout and the TestGrid group it
+publishes to, which is `nvke-scale` for the perf stream. The plan records them,
+and the stream's result says which it ran with. The job's timeout and the timeout of
 `go test` follow from the suite's, so they cannot be set to disagree.
 
 ## Stages

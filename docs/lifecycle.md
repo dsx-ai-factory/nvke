@@ -59,7 +59,7 @@ Once the site is ingested, day-2 operations go through NVKE:
 | Get a tenant kubeconfig | `nvkectl get kubeconfig <name>` |
 | Add a node pool | `nvkectl create nodepool -f spec.yaml` |
 | Scale a node pool | `nvkectl patch nodepool <name> --cluster <cluster> --patch 'desiredNodeCount: N'` |
-| Upgrade a cluster's Kubernetes version | `nvkectl patch cluster <name> --patch 'controlPlaneKubernetesVersion: "1.34.0"'` |
+| Upgrade a cluster's Kubernetes version | `nvkectl patch cluster <name> --patch 'controlPlaneKubernetesVersion: "<X.Y.Z>"'`, then each node pool; see [Upgrade a workload cluster's Kubernetes version](workload-clusters/upgrade.md) |
 | Delete a tenant cluster | `nvkectl delete cluster <name>` |
 | Check infrastructure provider status | `nvkectl get providers` |
 

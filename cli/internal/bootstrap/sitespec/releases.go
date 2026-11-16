@@ -15,12 +15,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 
-	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+	internalv1 "github.com/dsx-ai-factory/nvke/controller/k8s-apis/v1"
 )
 
 // releaseAPIVersion is the apiVersion of the MachineImage and ClusterRelease
 // CRDs the controller chart installs.
-var releaseAPIVersion = enginev1.SchemeGroupVersion.String()
+var releaseAPIVersion = internalv1.SchemeGroupVersion.String()
 
 // releaseFiles lists the manifest files infra.nico.releases names: the file
 // itself, or the .yaml, .yml and .json files directly inside the directory, as
@@ -112,7 +112,7 @@ func (v *validator) checkBootstrapReleases(inv *SiteSpec) {
 			}
 			switch meta.Kind {
 			case "ClusterRelease":
-				var release enginev1.ClusterRelease
+				var release internalv1.ClusterRelease
 				if err := json.Unmarshal(raw, &release); err != nil {
 					v.addf("%s %q holds an invalid ClusterRelease: %v", pathNicoReleases, file, err)
 					return
@@ -121,7 +121,7 @@ func (v *validator) checkBootstrapReleases(inv *SiteSpec) {
 					foundRelease, releaseImage = true, string(release.Spec.MachineImageRef.Name)
 				}
 			case "MachineImage":
-				var image enginev1.MachineImage
+				var image internalv1.MachineImage
 				if err := json.Unmarshal(raw, &image); err != nil {
 					v.addf("%s %q holds an invalid MachineImage: %v", pathNicoReleases, file, err)
 					return

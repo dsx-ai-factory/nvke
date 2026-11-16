@@ -5,7 +5,6 @@
 # target explicitly installs its pinned tool (credential-alerts-check).
 
 CHART ?= controller/deploy/charts/controller
-NKTP_CHART ?= nktp/deploy/charts/nktp
 
 define require_command
 command -v $(1) >/dev/null 2>&1 || { \
@@ -81,14 +80,15 @@ name-check: ## Fail on tokens that carry a banned name outside the allowlist, or
 	@python3 -B ./hack/name-check.py --mode $(NAME_CHECK_MODE)
 	@python3 -B ./hack/removed-settings-check.py
 
-# The version every nightly beta and release candidate is tagged with. A wrong
-# answer is pushed as a tag rather than reported, so the bump rules are tested
-# against fixture repositories.
-next-tag-test: ## Test the release version rules in release/hack/next-tag.sh. (run by the merge gate)
+# The version every nightly beta and release candidate is tagged with, and the
+# version every publisher pushes under. A wrong answer is pushed as a tag or an
+# artifact rather than reported, so both are tested against fixture repositories.
+next-tag-test: ## Test the release version rules in release/hack/next-tag.sh and describe-version.sh. (run by the merge gate)
 	@$(call require_command,python3)
 	@python3 -B ./release/hack/test_next_tag.py
+	@python3 -B ./release/hack/test_describe_version.py
 
-SHARED_CRD_CHART := controller/deploy/charts/nvke-crds
+RELEASE_CRD_CHART := controller/deploy/charts/nvke-crds
 CHART_CRDS_FILE := dist/release-crds.yaml
 
 .PHONY: chart-deps chart-crds chart-crds-check chart-crds-render-check
@@ -99,18 +99,23 @@ chart-deps: ## Build the controller chart's pinned local dependency.
 chart-crds: ## Render the controller's three release schemas into ignored build output.
 	@$(call require_tool,helm,$(HELM_VERSION))
 	@mkdir -p $(dir $(CHART_CRDS_FILE))
-	helm template nvke-crds $(SHARED_CRD_CHART) > $(CHART_CRDS_FILE)
+	helm template nvke-crds $(RELEASE_CRD_CHART) > $(CHART_CRDS_FILE)
 
-chart-crds-check: ## Verify canonical generated schemas and shared chart rendering.
+chart-crds-check: ## Verify each component's committed CRDs against its own generator.
+	@# The NVKE controller (controller/k8s-apis) and management-engine each generate
+	@# and install their own CRDs, and the two sets may differ, so each generator
+	@# is checked against its own committed files.
+	@$(MAKE) --no-print-directory -C controller/k8s-apis generate manifests
 	@$(MAKE) --no-print-directory -C management-engine manifests-state
-	git diff --exit-code -- $(SHARED_CRD_CHART)/bases management-engine/config/crd/bases
-	@test -z "$$(git ls-files --others --exclude-standard -- $(SHARED_CRD_CHART)/bases)" || { echo "Commit canonical schemas"; exit 1; }
+	git diff --exit-code -- $(RELEASE_CRD_CHART)/bases controller/k8s-apis/v1/zz_generated.deepcopy.go management-engine/config/crd/bases management-engine/apis/v1/zz_generated.deepcopy.go
+	@test -z "$$(git ls-files --others --exclude-standard -- $(RELEASE_CRD_CHART)/bases management-engine/config/crd/bases)" || { echo "Commit generated schemas"; exit 1; }
 	@$(call require_tool,kubectl,$(KUBECTL_VERSION))
 	kubectl kustomize management-engine/config/crd > /dev/null
 
-chart-crds-render-check: chart-deps ## Verify independent and embedded-consumer CRD rendering.
-	helm lint $(SHARED_CRD_CHART)
-	$(MAKE) --no-print-directory -C management-engine test-chart-crds
+chart-crds-render-check: ## Verify independent and embedded-consumer CRD rendering.
+	@$(call require_tool,helm,$(HELM_VERSION))
+	helm lint $(RELEASE_CRD_CHART)
+	$(MAKE) --no-print-directory -C controller/k8s-apis test-chart-crds
 
 lint-chart chart-rbac-check chart-package-check chart-identity-check chart-controller-config-check credential-alerts-check: chart-deps
 
@@ -187,37 +192,6 @@ credential-alerts-check: ## Validate credential alert rules, fixtures and the en
 	@CHART="$(CHART)" ./controller/hack/chart-credential-alerts-assertions.sh
 
 chart-check: chart-crds-render-check lint-chart chart-rbac-check chart-package-check chart-identity-check chart-controller-config-check credential-alerts-check ## Run every chart check enforced by CI.
-
-.PHONY: nktp-chart-deps nktp-chart-lint nktp-chart-check
-
-# The dependency archives are downloaded, never committed; the chart's own
-# .gitignore keeps them out. `helm dependency build` refuses to run until every
-# repository in Chart.yaml has been added, so they are added here, read from
-# Chart.yaml rather than listed a second time. They go into a throwaway Helm
-# config, so your `helm repo list` is left alone. The build also fails when
-# Chart.lock no longer matches Chart.yaml.
-nktp-chart-deps: ## Download the NKTP chart's dependencies into its charts/ directory.
-	@$(call require_tool,helm,$(HELM_VERSION))
-	@set -eu; \
-	 dir=$$(mktemp -d); \
-	 trap 'rm -rf "$$dir"' EXIT HUP INT TERM; \
-	 export HELM_REPOSITORY_CONFIG="$$dir/repositories.yaml" HELM_REPOSITORY_CACHE="$$dir/cache"; \
-	 n=0; \
-	 for url in $$(awk '$$1 == "repository:" { print $$2 }' $(NKTP_CHART)/Chart.yaml | sort -u); do \
-		n=$$((n + 1)); \
-		helm repo add "nktp-dep-$$n" "$$url" >/dev/null; \
-	 done; \
-	 helm dependency build $(NKTP_CHART) --skip-refresh
-
-# Custom resources are validated against the CRDs this chart installs; see
-# nktp/hack/chart-validate.sh.
-nktp-chart-lint: nktp-chart-deps ## Lint and render the NKTP chart, then validate it.
-	@$(call require_tool,kubeconform,$(KUBECONFORM_VERSION))
-	@$(call require_command,yq)
-	@helm lint --strict $(NKTP_CHART)
-	@NKTP_CHART="$(NKTP_CHART)" CERT_MANAGER_VERSION="$(CERT_MANAGER_VERSION)" ./nktp/hack/chart-validate.sh
-
-nktp-chart-check: nktp-chart-lint ## Run every NKTP chart check enforced by CI. (run by the merge gate)
 
 # Use the same tool, Go version, waiver, and stale-waiver guard as
 # CI. The helper returns 3 for an unwaived finding and preserves tool failures.
@@ -348,7 +322,6 @@ gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory name-check
 	@$(MAKE) --no-print-directory -C deploy test
 	@$(MAKE) --no-print-directory chart-check
-	@$(MAKE) --no-print-directory nktp-chart-check
 	@$(MAKE) --no-print-directory -C controller generate-check
 	@$(MAKE) --no-print-directory -C cli provider-manifest-check
 	@$(MAKE) --no-print-directory -C cli docs-check

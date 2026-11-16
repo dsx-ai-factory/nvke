@@ -115,7 +115,7 @@ func (c *NicoProviderIDController) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to get CAPI cluster: %w", err)
 	}
-	if !isNVKEManagedCluster(cluster, c.managedByLabelValue) {
+	if !IsNVKEManagedCluster(cluster, c.managedByLabelValue) {
 		logger.Debug("CAPI Cluster is not managed by NVKE, skipping provider ID reconciliation", "clusterName", cluster.Name)
 		return ctrl.Result{}, nil
 	}
@@ -163,11 +163,11 @@ func (c *NicoProviderIDController) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{}, nil
 }
 
-// isNVKEManagedCluster reports whether NVKE created the CAPI Cluster, which it
+// IsNVKEManagedCluster reports whether NVKE created the CAPI Cluster, which it
 // marks with the managed-by label in either label domain. An empty configured
 // value matches nothing, so a misconfiguration cannot make an unlabeled Cluster
 // look NVKE-managed.
-func isNVKEManagedCluster(cluster *clusterv1.Cluster, managedByLabelValue string) bool {
+func IsNVKEManagedCluster(cluster *clusterv1.Cluster, managedByLabelValue string) bool {
 	if managedByLabelValue == "" {
 		return false
 	}

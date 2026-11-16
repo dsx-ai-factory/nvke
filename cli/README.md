@@ -4,7 +4,7 @@ NVKE control-plane CLI. Bootstraps management clusters and manages tenant cluste
 
 **Module:** `github.com/dsx-ai-factory/nvke/cli`  
 **Binary:** `nvkectl`  
-**Releases:** `cli/v*` tags
+**Releases:** the repository's `vX.Y.Z` tags
 
 ## What it does
 
@@ -372,7 +372,7 @@ make build
 
 ## Compatibility
 
-`nvkectl` releases on its own `cli/vX.Y.Z` tags and follows
+`nvkectl` releases with the rest of the repository on its `vX.Y.Z` tags and follows
 [the compatibility policy](docs/compatibility.md): what is contract and what is
 not, the exit codes, signal and non-interactive behaviour, and how something
 gets deprecated before it is removed.

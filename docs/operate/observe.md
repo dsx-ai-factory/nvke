@@ -197,9 +197,9 @@ By default NKTP exports to a bundled development backend, with Grafana, Promethe
 kubectl -n nktp port-forward svc/lgtm 3000:3000 --address 127.0.0.1
 ```
 
-To keep the data, send it to your own backend: write a values file as described under "Set a backend" in [Getting started with NKTP](../nktp/getting-started.md), and run the install again, as described in [Run the install again](install-management-plane.md#run-the-install-again), with `--values-for nktp=<FILE>` added. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
+To keep the data, send it to your own backend: write a values file as described under "Set a backend" in [Getting started with NKTP](https://github.com/dsx-ai-factory/nvke-telemetry-pipeline/blob/main/docs/getting-started.md), and run the install again, as described in [Run the install again](install-management-plane.md#run-the-install-again), with `--values-for nktp=<FILE>` added. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
 
-NVKE installs neither NKTP nor cert-manager in workload clusters. NKTP collects only from the management cluster, where the install deploys it; for workload clusters you have the management plane's metrics, which describe each cluster, node pool and node as NVKE tracks them. [Getting started with NKTP](../nktp/getting-started.md) describes NKTP itself.
+NVKE installs neither NKTP nor cert-manager in workload clusters. NKTP collects only from the management cluster, where the install deploys it; for workload clusters you have the management plane's metrics, which describe each cluster, node pool and node as NVKE tracks them. [Getting started with NKTP](https://github.com/dsx-ai-factory/nvke-telemetry-pipeline/blob/main/docs/getting-started.md) describes NKTP itself.
 
 ## Import the reference dashboards
 
@@ -234,4 +234,4 @@ The `$cluster` variable lists the values of the `k8s_cluster_name` label, which 
 
 - [Troubleshoot](troubleshoot.md) a failure that these checks find.
 - [Manage node pools](../workload-clusters/node-pools.md) to replace or scale nodes.
-- [Getting started with NKTP](../nktp/getting-started.md) to tune NKTP and scrape your own services.
+- [Getting started with NKTP](https://github.com/dsx-ai-factory/nvke-telemetry-pipeline/blob/main/docs/getting-started.md) to tune NKTP and scrape your own services.

@@ -1,6 +1,6 @@
 ---
 items:
-- apiVersion: internal.nvke.nvidia.com/v1
+- apiVersion: service.nvke.nvidia.com/v1
   kind: MachineImage
   metadata:
     creationTimestamp: null

@@ -42,42 +42,55 @@ patch requires an immediate out-of-band release.
 
 ### 1. Tag the release
 
-A bare tag releases the whole repository:
+One tag releases the whole repository, and every component is released at that
+version:
 
 ```bash
 git tag -s v0.2.0 -m "Release v0.2.0"
 git push upstream v0.2.0
 ```
 
-A single component is tagged with its own directory in front:
+A `v*` tag's artifacts are versioned by that tag. Every other build is
+versioned by `git describe --tags --always --match 'v*'`, which carries the
+nearest tag plus the commits since it, such as `v0.2.0-4-gabcdef`. Both come
+from `release/hack/describe-version.sh`, which every publisher calls before it
+pushes anything. On a commit with one tag the two agree; on a commit with
+several, `git describe` prefers an annotated release over a beta and, of two
+lightweight tags, the first by name, and only the tag run itself is named by
+its own tag. The node agent baked into an OS image, and a qualification with
+`commitDescribe`, still take the describe.
 
-```bash
-git tag -s cli/v0.2.0 -m "Release cli/v0.2.0"
-git push upstream cli/v0.2.0
-```
+Components are released by that tag, not by a tag of their own: a component
+release tag such as `agent/vX.Y.Z` or `controller/vX.Y.Z` starts nothing. A
+component release candidate tag such as `controller/vX.Y.Z-rc.N` still starts
+that component's publishers, but only on a commit no `v*` tag names, and what
+they publish is versioned by the describe, not by the component tag. On a
+tagged commit it would republish that tag's artifacts, so its run fails before
+it pushes anything.
 
-The prefix is the module's directory because Go requires it: the module
-`github.com/dsx-ai-factory/nvke/cli` can only be resolved by a tag named `cli/vX.Y.Z`.
+No workflow creates a GitHub Release. A release tag, and the nightly
+`vX.Y.Z-beta.N` tags described under [pre-releases](#pre-releases), publish
+artifacts through the workflows below:
 
-No workflow creates a GitHub Release. A tag publishes artifacts through the
-workflows below:
-
-| Tag | Workflow | What ships |
+| Workflow | `vX.Y.Z` | `vX.Y.Z-beta.N` |
 |---|---|---|
-| `agent/vX.Y.Z` | `agent-deb-publish.yml` (+ `agent-artifact.yml`) | `.deb`s to the apt intake, GHCR binary and `.deb`, NVCR binary + `.deb`, S3/CloudFront `.deb` |
-| `os-image/vX.Y.Z` | `os-image-artifact.yml` | qcow2s on NVCR; qcow2s with their SBOMs and checksums, and `nvke-os-image-check`, on S3/CloudFront; version-tagged qcow2s on GHCR only when `NVKE_GITHUB_PUBLISH` names `os-image` |
-| `nktp/vX.Y.Z` | `nktp-chart-publish.yml` | Helm chart on GHCR |
-| `cli/vX.Y.Z` | `tag-publish.yml` (+ `cli-artifact.yml`, `cli-artifact-nvcr.yml`, `cli-s3-publish.yml`) | binaries on GHCR, NVCR, S3/CloudFront |
-| `controller/vX.Y.Z` | `image-nvcr.yml`, `chart-publish.yml`, `chart-publish-nvcr.yml` | image and chart; see below |
+| `agent-deb-publish.yml` | `.deb`s to the apt intake, NVCR and GHCR | `.deb`s to the apt intake without updating its `index.json`, and NVCR |
+| `agent-artifact-nvcr.yml` | binaries on NVCR | binaries on NVCR |
+| `agent-artifact.yml` | binaries on GHCR | nothing |
+| `tag-publish.yml` (+ `cli-artifact.yml`, `cli-artifact-nvcr.yml`, `cli-s3-publish.yml`) | `nvkectl` on GHCR, NVCR, DSX and S3/CloudFront | `nvkectl` on GHCR, NVCR and S3/CloudFront |
+| `image-nvcr.yml`, `chart-publish-nvcr.yml`, `chart-publish.yml` | controller image and chart; see below | controller image and chart on NVCR |
+| `image-provisioned-nvcr.yml` | provider image on NVCR, promoted to GHCR and DSX | provider image on NVCR |
+| `os-image-artifact.yml` | every qcow2 on NVCR; the qcow2s with their SBOMs and checksums, and `nvke-os-image-check`, on S3/CloudFront; version-tagged qcow2s on GHCR only when `NVKE_GITHUB_PUBLISH` names `os-image` | the same for the non-FDE qcow2s only |
 
-A bare `vX.Y.Z` tag publishes nothing; `tag-publish.yml` runs only the license
-checks for it.
+A `vX.Y.Z-rc.N` tag publishes nothing; `tag-publish.yml` runs only the license
+checks for it. Every publisher can also be dispatched by hand, which builds the
+commit it runs on; its header says what a dispatch publishes.
 
 ### Switching GHCR publishing off
 
 The Actions variable `NVKE_GITHUB_PUBLISH` lists the components whose
 release-tagged artifacts go to GHCR. Unset, it means
-`root,controller,cli,agent,cluster-api-provider-provisioned,nktp`, so every
+`root,controller,cli,agent,cluster-api-provider-provisioned`, so every
 component but `os-image`, whose qcow2s go to NVCR and S3 only. Set it to `none`
 to stop every GHCR release publication, or list the components you want. NVCR, S3 and
 CloudFront are not affected, and neither is the CI hand-off on GHCR: the `sha-`
@@ -92,34 +105,31 @@ Set it under the repository's Settings, Actions, Variables, or with
 counts as unset and gives the default list; only `none` means nothing. The
 names, comma-separated with no spaces:
 
-| Name | Tag | What GHCR gets when the name is listed |
-|---|---|---|
-| `root` | bare `vX.Y.Z` | nothing; accepted so existing values keep working |
-| `controller` | `controller/v*` | the `nvke-controller` image and the `charts/nvke-controller` chart |
-| `cli` | `cli/v*` | the `cli` binaries |
-| `agent` | `agent/v*` | `agent` and `agent-deb` |
-| `cluster-api-provider-provisioned` | `cluster-api-provider-provisioned/v*` | the provider image |
-| `nktp` | `nktp/v*` | the chart |
-| `os-image` | `os-image/v*` | the version-tagged qcow2s |
+| Name | What GHCR gets when the name is listed |
+|---|---|
+| `root` | nothing; accepted so existing values keep working |
+| `controller` | the `nvke-controller` image and the `charts/nvke-controller` chart |
+| `cli` | the `cli` binaries, on a `vX.Y.Z-beta.N` tag as well as a release |
+| `agent` | `agent` and `agent-deb` |
+| `cluster-api-provider-provisioned` | the provider image |
+| `nktp` | nothing; accepted so existing values keep working |
+| `os-image` | the version-tagged qcow2s |
 
-An `os-image/` tag that fails Packer or the boot-smoke test never publishes the
-OCI artifact.
+Every name is published from a `vX.Y.Z` tag.
 
-An `nktp/` tag releases the NVKE telemetry pipeline (NKTP) Helm chart. The chart version is the tag's:
-`nktp/vX.Y.Z` packages the chart as `X.Y.Z` and `nktp/vX.Y.Z-rc.1` as
-`X.Y.Z-rc.1`, the way the NVKE controller chart takes its version from
-`controller/v*`. `version:` in `nktp/deploy/charts/nktp/Chart.yaml` is a
-placeholder, so nothing needs editing before tagging. The workflow pushes
-`oci://ghcr.io/dsx-ai-factory/nvke/charts/nktp:<version>`.
+An OS image that fails Packer or the boot-smoke test is never published.
 
-A `controller/vX.Y.Z` tag publishes the controller image and Helm chart:
+The NVKE telemetry pipeline (NKTP) Helm chart is released from
+[dsx-ai-factory/nvke-telemetry-pipeline](https://github.com/dsx-ai-factory/nvke-telemetry-pipeline),
+not from this repository.
+
+A `vX.Y.Z` tag publishes the controller image and Helm chart:
 
 | Workflow | What it publishes |
 |---|---|
 | `image-nvcr.yml` | multi-arch image to `nvcr.io/<org>/nvke-controller`, promotes that released image to DSX as `nvcr.io/<dsx-org-team>/nvke-controller`, and promotes release tags to `ghcr.io/dsx-ai-factory/nvke/nvke-controller` |
 | `chart-publish.yml` | chart to `ghcr.io/dsx-ai-factory/nvke/charts/nvke-controller` |
 | `chart-publish-nvcr.yml` | chart to `nvcr.io/<org>/nvke-controller-chart` and `nvcr.io/<dsx-org-team>/nvke-controller-chart` |
-| `image-validate-nvcr.yml` | multi-arch site validation image (`controller/test/e2e/Dockerfile`) pushed straight to DSX as `nvcr.io/<dsx-org-team>/nvke-validate`, under the controller image's version |
 
 Every `main` commit already publishes the image and chart to NVCR. GHCR receives
 released versions only, which is why a chart built from a tag can safely point at
@@ -148,11 +158,11 @@ A new GHCR package is created `internal`. Make it public in the package settings
 first release that publishes it.
 
 DSX receives the controller image from `image-nvcr.yml`, after the NVKE multi-arch
-manifest exists. It receives the controller chart from `chart-publish-nvcr.yml`,
-and the validation image that tests that controller from
-`image-validate-nvcr.yml`, tagged with the same version so a site that pins a
-controller can run the tests built from the same commit. All three use separate
-credentials from the same protected GitHub environment:
+manifest exists, and the controller chart from `chart-publish-nvcr.yml`. It
+does not receive the site validation image (`controller/test/e2e/Dockerfile`),
+which is published nowhere: a site builds it from its controller's release tag
+(see "Building the image yourself" in `controller/test/e2e/README.md`). Both
+workflows use separate credentials from the same protected GitHub environment:
 
 | Name | Type | Purpose |
 |---|---|---|
@@ -172,25 +182,26 @@ the run. The `edge` tag is mutable and moves only on `main`.
 
 The DSX chart is packaged from the controller chart as `nvke-controller-chart`,
 the same chart artifact name used for the NVKE NVCR chart, and pushed to
-`oci://nvcr.io/<dsx-org-team>`. Its chart version is the controller git describe
-string without the leading `v`, while `appVersion` keeps the leading `v` so the
+`oci://nvcr.io/<dsx-org-team>`. Its chart version is the git describe string
+without the leading `v`, while `appVersion` keeps the leading `v` so the
 rendered Deployment pulls the same image tag promoted by `image-nvcr.yml`.
 
 Push tags to `upstream`. A tag pushed to a fork still starts `tag-publish.yml`
-there, which runs the license checks (and, for a `cli/` tag, builds nvkectl),
-but publishes nothing: every publisher guards its publish jobs on this
-repository's ID.
+there, which runs the license checks and builds nvkectl, but publishes nothing:
+every publisher guards its publish jobs on this repository's ID.
 
 ### 2. Verify artifacts
 
-After the tag push, confirm that any CI release pipelines complete
-successfully (node OS-image bake, chart publish, etc.). For `os-image/v*`, that is
-the **OS Image Artifact** check: Packer, boot-smoke, then the NVCR and S3
-publishers (GHCR only when `NVKE_GITHUB_PUBLISH` names `os-image`). For `controller/v*`, confirm the **Image
-NVCR** check, and, when `NVKE_GITHUB_PUBLISH` names `controller`, the **Chart
-Publish** check and the promoted image at
-`ghcr.io/dsx-ai-factory/nvke/nvke-controller:<version>`. For `nktp/v*`, confirm the
-**NKTP Chart Publish** check.
+After the tag push, confirm that every release pipeline completes successfully:
+
+- **OS Image Artifact**: Packer, boot-smoke, then the NVCR and S3 publishers
+  (GHCR only when `NVKE_GITHUB_PUBLISH` names `os-image`).
+- **Image NVCR** and **Chart Publish NVCR**, and, when
+  `NVKE_GITHUB_PUBLISH` names `controller`, **Chart Publish** and the promoted
+  image at `ghcr.io/dsx-ai-factory/nvke/nvke-controller:<version>`.
+- **Image Provisioned NVCR**.
+- **Agent Deb Publish**, **Agent Artifact NVCR** and **Agent Artifact**.
+- **Tag publish**, which builds nvkectl and publishes it to every channel.
 
 ## Verifying a published image
 
@@ -225,7 +236,7 @@ build of this commit ought to select.
 | `nvke-controller` image | `controller-sbom-linux-<arch>.spdx.json` | image contents, scanned from the pushed image | workflow artifact on the **Image NVCR** run |
 | `cluster-api-provider-provisioned` image | `cluster-api-provider-provisioned-sbom-linux-<arch>.spdx.json` | image contents, scanned from the pushed image | workflow artifact on the **Image Provisioned NVCR** run |
 
-The Helm charts — `nvke-controller` and `nktp` — have no SBOM of their own. A
+The `nvke-controller` Helm chart has no SBOM of its own. A
 chart carries no components; it carries a reference to an image that does, and
 that image's SBOM is the row above. An SBOM of the chart archive would list the
 archive.
@@ -351,6 +362,14 @@ The other artifacts NVKE publishes — the Helm charts, the `agent` and `cli`
 OCI artifacts, `agent-deb`, the `os-image` disks and their S3 copies — are not
 attested. That is follow-up work along the pattern in `image-nvcr.yml`.
 
+## Cluster Service
+
+The manager, tenant API, operator API and state-containing chart use the
+[Cluster Service publication workflow](../management-engine/docs/artifact-publication.md).
+They use the shared repository version and source revision, with digest-pinned
+images in each destination's chart. Images and charts publish only to NVCR;
+betas stay in the NVKE destination, while main and release builds also go to DSX.
+
 ## Hotfix releases
 
 For security patches that cannot wait for the next regular release:
@@ -362,10 +381,33 @@ For security patches that cannot wait for the next regular release:
 
 ## Pre-releases
 
-For release candidates, append `-rc.N` to the version: `v0.2.0-rc.1`, or
-`cli/v0.2.0-rc.1` for one component. Tag and push the same way.
+`.github/workflows/nightly-beta-tag.yml` tags a commit on `main` as the next
+`vX.Y.Z-beta.N` each night. A beta tag publishes every component
+under that version, as the table under [Tag the release](#1-tag-the-release)
+shows, and starts Qualify e2e against the artifacts it published. It bakes the
+non-FDE OS images only, so an RC cut from a beta carries no FDE image: FDE
+images are first published, and first qualified, by the release tag.
 
-A root release candidate can also be cut without anyone pushing it. When the
+For release candidates, append `-rc.N` to the version: `v0.2.0-rc.1`. An RC
+tag publishes nothing of its own, so cut it on a commit a beta tag already
+published and qualified; the RC's artifacts are that beta's. Give it the
+beta's `vX.Y.Z`, and push it as a lightweight tag, not a signed one:
+
+```bash
+git fetch upstream --tags
+git tag v0.2.0-rc.1 <beta-commit>
+git describe --tags --always --match 'v*' <beta-commit>   # must print the beta, e.g. v0.2.0-beta.3
+git push upstream v0.2.0-rc.1
+```
+
+On that commit `git describe` then still names the beta: of two lightweight
+tags it takes the first by name, and `-beta` sorts before `-rc` of the same
+`vX.Y.Z`. So a qualification of the RC, which resolves components by describe,
+finds the beta's artifacts. An RC of a lower `vX.Y.Z` would sort first, and a
+signed RC would win outright; either names versions nothing published. If the
+check prints the RC, delete the local tag with `git tag -d` instead of pushing.
+
+A release candidate can also be cut without anyone pushing it. When the
 Qualify e2e run a nightly beta tag started passes every stream at scope
 `golden-path` and stage `full`, `.github/workflows/rc-promotion.yml` tags
 the beta's commit as the next `vX.Y.Z-rc.N` of the beta's version. A dispatched
@@ -374,14 +416,13 @@ beta that an RC already names. It pushes only while the `NVKE_AUTO_RC`
 repository variable is `true`; otherwise the run summary says what it would
 have tagged.
 
-Unlike an RC a person pushes with `git tag -s`, the automatic RC is an unsigned
-lightweight tag, as the nightly betas are: the workflow has no key to sign
-with. It marks a candidate that qualified, not a release, so `git verify-tag`
+The automatic RC is an unsigned lightweight tag, like an RC a person pushes and
+the nightly betas; the workflow has no key to sign with in any case. It marks a candidate that qualified, not a release, so `git verify-tag`
 does not apply to it. The signed annotated tag
 [RELEASE.md](../RELEASE.md#publish-and-verify) requires is for the approved
 release, which the release owner creates.
 
-**The dot in `-rc.N` is load-bearing.** The publishing workflows reject
-`v0.2.0-rc1`. The dot also gives the right ordering: `rc.2` sorts before
+**The dot in `-rc.N` is load-bearing.** The tag patterns do not match
+`v0.2.0-rc1`, so no workflow runs for it. The dot also gives the right ordering: `rc.2` sorts before
 `rc.10`, while `rc2` sorts after `rc10`, because SemVer compares an all-digit
 identifier as a number and anything else as text.

@@ -5,8 +5,8 @@ declared it one. This document declares it: what nvkectl promises not to break,
 what it reserves the right to change, and how something that has to change gets
 removed.
 
-`nvkectl` versions and releases on its own `cli/vX.Y.Z` tags, separately from the
-controller. The [release process](https://github.com/dsx-ai-factory/nvke/blob/main/RELEASE.md) defines what each increment
+`nvkectl` versions and releases with the rest of the repository on its
+`vX.Y.Z` tags. The [release process](https://github.com/dsx-ai-factory/nvke/blob/main/RELEASE.md) defines what each increment
 means. This document says which parts of the CLI those increments apply to.
 
 `cmd/nvkectl/contract_test.go` enforces the promises below at the command

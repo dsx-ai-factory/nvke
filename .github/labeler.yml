@@ -34,7 +34,6 @@ area/chart:
           - "controller/deploy/**"
           - "controller/hack/chart-*-assertions.*"
           - "deploy/**"
-          - "nktp/deploy/**"
 
 area/os-image:
   - changed-files:
@@ -84,5 +83,6 @@ area/generated:
 area/nktp:
   - changed-files:
       - any-glob-to-any-file:
-          - "nktp/**"
-          - ".github/workflows/nktp-*.yml"
+          - "deploy/nico/nktp/**"
+          - "docs/nktp/**"
+          - "controller/test/e2e/internal/nktp/**"

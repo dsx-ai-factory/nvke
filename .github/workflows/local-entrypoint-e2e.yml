@@ -127,7 +127,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # The node agent version comes from `git describe --match 'agent/v*'`.
+          # The node agent version comes from `git describe --match 'v*'`.
           # Without the tags it falls back to the short SHA, and the etcd
           # encryption workflow rejects that as older than its required version.
           fetch-depth: 0

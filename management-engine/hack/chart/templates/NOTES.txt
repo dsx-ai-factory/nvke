@@ -1,0 +1,6 @@
+Cluster Service chart installed in {{ .Release.Namespace }}.
+State resources: {{ .Values.state.enabled }}; controller: {{ and .Values.controller.enabled .Values.manager.enabled }}.
+{{- if and .Values.controller.enabled .Values.manager.enabled }}
+Datastore access: {{ .Values.manager.stateAccess.mode }}; namespace: {{ include "management-engine.stateNamespace" . }}.
+{{- end }}
+CRDs are retained on uninstall. See the installation guide before changing modes or CRD ownership.

@@ -543,6 +543,10 @@ type ClusterConditions struct {
 	// progress, not a failure, and records nothing here, so successful rounds are
 	// never throttled. Timestamp marker: status is always true once recorded.
 	ControlPlaneRebalanceBackoff Condition `json:"controlPlaneRebalanceBackoff,omitempty"`
+	// UnplaceableFailureDomains maps a failure domain to when the controller gave
+	// up on a control-plane node pinned there. Placement avoids a domain until its
+	// entry expires, so the replacement does not land in the same domain.
+	UnplaceableFailureDomains map[string]time.Time `json:"unplaceableFailureDomains,omitempty"`
 }
 
 type ClusterFilters struct {

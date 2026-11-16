@@ -124,6 +124,32 @@ func TestResolveLayout(t *testing.T) {
 		}
 	})
 
+	t.Run("a release without the in-tree NKTP chart does not export it", func(t *testing.T) {
+		got, err := ResolveLayout(context.Background(), commit(t, CurrentLayout().Executor), "HEAD")
+		if err != nil {
+			t.Fatalf("resolving: %v", err)
+		}
+		if slices.Contains(got.Export, legacyNKTPChartDir) {
+			t.Errorf("Export = %v, want no %s", got.Export, legacyNKTPChartDir)
+		}
+	})
+
+	t.Run("a release with the in-tree NKTP chart exports it", func(t *testing.T) {
+		repo := t.TempDir()
+		git(t, repo, "init", "-q")
+		writeFile(t, filepath.Join(repo, CurrentLayout().Executor), "script")
+		writeFile(t, filepath.Join(repo, legacyNKTPChartDir, "Chart.yaml"), "name: nktp")
+		git(t, repo, "add", "-A")
+		git(t, repo, "commit", "-qm", "layout")
+		got, err := ResolveLayout(context.Background(), repo, "HEAD")
+		if err != nil {
+			t.Fatalf("resolving: %v", err)
+		}
+		if !slices.Contains(got.Export, legacyNKTPChartDir) {
+			t.Errorf("Export = %v, want %s", got.Export, legacyNKTPChartDir)
+		}
+	})
+
 	t.Run("an older release says it is not qualified", func(t *testing.T) {
 		_, err := ResolveLayout(context.Background(), commit(t, "somewhere/else.sh"), "HEAD")
 		if err == nil {

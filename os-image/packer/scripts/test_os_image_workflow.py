@@ -258,8 +258,9 @@ class OSImageWorkflowTest(unittest.TestCase):
                     )
 
     def test_pushed_beta_tag_publishes_to_the_prod_bucket(self):
-        # Qualification reads a beta from the prod CDN. Losing the beta clause
-        # sends it to non-prod, which qualification sees only as a 403.
+        # Qualification reads a beta from the prod CDN, and a release is
+        # published there too. Losing the v* clause sends them to non-prod,
+        # which qualification sees only as a 403.
         publish_s3 = self.step("\n  publish-s3:", "\n  release:")
         environment = re.search(r"^    environment: (.+)$", publish_s3, re.M)
         self.assertIsNotNone(environment)
@@ -267,7 +268,7 @@ class OSImageWorkflowTest(unittest.TestCase):
             environment.group(1),
             "${{ github.event_name == 'push' && "
             "(startsWith(github.ref, 'refs/tags/os-image/') || "
-            "(startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.'))) "
+            "startsWith(github.ref, 'refs/tags/v')) "
             "&& 's3-publish' || 's3-publish-non-prod' }}",
         )
 

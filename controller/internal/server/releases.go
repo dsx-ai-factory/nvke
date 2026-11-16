@@ -12,7 +12,7 @@ import (
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+	internalv1 "github.com/dsx-ai-factory/nvke/controller/k8s-apis/v1"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
@@ -42,7 +42,7 @@ func (s *releaseService) ListReleases(
 		return nil, errors.New("release reader is not configured")
 	}
 
-	var releases enginev1.ClusterReleaseList
+	var releases internalv1.ClusterReleaseList
 	if err := s.k8sReader.List(ctx, &releases); err != nil {
 		return nil, fmt.Errorf("failed to list ClusterReleases: %w", err)
 	}

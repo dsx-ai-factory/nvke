@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Mounts validate-site.yaml's results claim read-only, so that
+# `kubectl cp` can copy /artifacts out once the Job has finished.
+# __IMAGE__ is the validation image, which has the tar that `kubectl cp` needs.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nvke-validate-artifacts
+  namespace: nvke-validate
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: read
+      image: "__IMAGE__"
+      command: [sleep, infinity]
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+      volumeMounts:
+        - name: artifacts
+          mountPath: /artifacts
+          readOnly: true
+  volumes:
+    - name: artifacts
+      persistentVolumeClaim:
+        claimName: nvke-validate-artifacts

@@ -153,6 +153,32 @@ func TestBuildPrefixGroupUsesSubject(t *testing.T) {
 	}
 }
 
+// TestBuildPrefixGroupUsesTheStreamsTestGridGroup checks that a stream naming
+// its own TestGrid group publishes there, with the dashboard, tab and build it
+// would have had under the subject's group.
+func TestBuildPrefixGroupUsesTheStreamsTestGridGroup(t *testing.T) {
+	d := &Destination{}
+	capabilities := map[string]string{"provider": "forge", "kube": "1.36"}
+
+	t.Log("Doing: building the prefix for a stream that names no group, then for the same stream naming nvke-scale")
+	result := testResult("nvke", "cli-v1.0.0", "forge-cpu-amd64-ubuntu-24.04-kube-1.36-perf", "12345", "1", capabilities)
+	subjectPrefix, err := d.buildPrefix(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.Status.Combination.Stream.Parameters.TestGridGroup = "nvke-scale"
+	got, err := d.buildPrefix(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("Testing: only the group segment moves from nvke to nvke-scale")
+	want := "groups/nvke-scale/" + strings.TrimPrefix(subjectPrefix, "groups/nvke/")
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestBuildPrefixDashboardIsStreamNameVerbatim(t *testing.T) {
 	result := testResult("nvke", "cli-v1.0.0", "forge-gb200-amd64-ubuntu-24.04-kube-1.36", "12345", "", map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"})
 	d := &Destination{}

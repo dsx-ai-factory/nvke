@@ -1,6 +1,6 @@
 ---
 items:
-- apiVersion: internal.nvke.nvidia.com/v1
+- apiVersion: service.nvke.nvidia.com/v1
   kind: MachineImage
   metadata:
     creationTimestamp: null
@@ -19,7 +19,7 @@ items:
 metadata: {}
 ---
 items:
-- apiVersion: internal.nvke.nvidia.com/v1
+- apiVersion: service.nvke.nvidia.com/v1
   kind: ClusterRelease
   metadata:
     creationTimestamp: null

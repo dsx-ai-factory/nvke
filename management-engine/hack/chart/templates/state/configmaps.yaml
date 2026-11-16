@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+{{- if .Values.state.enabled }}
+{{- range .Values.state.configMaps }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .name | quote }}
+  namespace: {{ .namespace | quote }}
+data:
+  {{- toYaml .data | nindent 2 }}
+{{- end }}
+{{- end }}

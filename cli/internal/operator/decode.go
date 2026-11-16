@@ -14,7 +14,7 @@ import (
 	kjson "sigs.k8s.io/json"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/util"
-	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+	internalv1 "github.com/dsx-ai-factory/nvke/controller/k8s-apis/v1"
 )
 
 // Decode reads a portable request document for the kind from YAML or JSON and
@@ -63,7 +63,7 @@ func Manifest(kind Kind, r Resource) map[string]any {
 		metadata["annotations"] = annotations
 	}
 	return map[string]any{
-		"apiVersion": enginev1.SchemeGroupVersion.String(),
+		"apiVersion": internalv1.SchemeGroupVersion.String(),
 		"kind":       string(kind),
 		"metadata":   metadata,
 		"spec":       r.Spec,
@@ -138,11 +138,11 @@ func decodeSpec(kind Kind, raw any) (map[string]any, error) {
 func newSpec(kind Kind) (any, error) {
 	switch kind {
 	case KindMachineImage:
-		return &enginev1.MachineImageSpec{}, nil
+		return &internalv1.MachineImageSpec{}, nil
 	case KindClusterRelease:
-		return &enginev1.ClusterReleaseSpec{}, nil
+		return &internalv1.ClusterReleaseSpec{}, nil
 	case KindNodePoolRelease:
-		return &enginev1.NodePoolReleaseSpec{}, nil
+		return &internalv1.NodePoolReleaseSpec{}, nil
 	default:
 		return nil, fmt.Errorf("unknown kind %q", kind)
 	}

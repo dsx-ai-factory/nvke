@@ -103,4 +103,41 @@ infrastructure:
       instanceTypes:
         - name: datahall-1-nvke-tenant
           id: "${DSX_DATAHALL_1_INSTANCE_TYPE_ID:-}"
-          provides: {machineType: gpu, arch: amd64}
+          provides: {machineType: gpu, arch: amd64, gpu: l40s}
+
+    # arm64 throughout --- every machine it owns is a Vera Rubin NVL72 tray on
+    # an Olympus CPU --- so this datahall answers the arm64 stream where
+    # datahall-1 answers amd64. Its ids are disjoint from that
+    # one's; nothing above is reused here, including the API host.
+    datahall-2:
+      api: "${DSX_DATAHALL_2_API:-}"
+      id: "${DSX_DATAHALL_2_SITE_ID:-}"
+      tenantID: "${DSX_DATAHALL_2_TENANT_ID:-}"
+      vpcID: "${DSX_DATAHALL_2_VPC_ID:-}"
+
+      # A /27, so sixteen nodes at a /31 each, where datahall-1's /29 holds
+      # four. A full run places three, and the VIP has room here.
+      vpcPrefixID: "${DSX_DATAHALL_2_VPC_PREFIX_ID:-}"
+
+      # SOL console only, as at every datahall. Created with the jump host and
+      # already associated with the site.
+      sshKeyGroupID: "${DSX_DATAHALL_2_SSH_KEY_GROUP_ID:-}"
+
+      # Empty for the same reason as datahall-1: the account falls through to
+      # the os-image default, which bakes `ubuntu`.
+      nodeUser: "${DSX_DATAHALL_2_NODE_USER:-}"
+
+      # Enrolled in Teleport 2026-10-31. Named by the variable rather than
+      # here, so the workflow can scrub it from uploaded artifacts.
+      jumpHost: "${DSX_DATAHALL_2_JUMP_HOST:-}"
+      teleportLogin: "${DSX_DATAHALL_2_TELEPORT_LOGIN:-}"
+
+      # No machines declared, for the reason given above.
+      #
+      # `provides` says gpu because that is what the hardware is: this datahall
+      # has no CPU-only machine either, so the site controller runs on an
+      # accelerator tray here too.
+      instanceTypes:
+        - name: datahall-2-nvke-tenant
+          id: "${DSX_DATAHALL_2_INSTANCE_TYPE_ID:-}"
+          provides: {machineType: gpu, arch: arm64, gpu: vr200}

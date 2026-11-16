@@ -12,7 +12,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+	internalv1 "github.com/dsx-ai-factory/nvke/controller/k8s-apis/v1"
 )
 
 const testImageName = "test-image"
@@ -21,7 +21,7 @@ const testImageName = "test-image"
 func releaseScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	require.NoError(t, enginev1.AddToScheme(scheme))
+	require.NoError(t, internalv1.AddToScheme(scheme))
 	return scheme
 }
 
@@ -33,42 +33,42 @@ func releaseClient(t *testing.T, objects ...ctrlclient.Object) ctrlclient.Client
 	return fake.NewClientBuilder().WithScheme(releaseScheme(t)).WithObjects(all...).Build()
 }
 
-func testImage() *enginev1.MachineImage {
-	return &enginev1.MachineImage{
+func testImage() *internalv1.MachineImage {
+	return &internalv1.MachineImage{
 		ObjectMeta: metav1.ObjectMeta{Name: testImageName},
-		Spec: enginev1.MachineImageSpec{
-			OperatingSystem: enginev1.OperatingSystem{Family: "ubuntu", Version: "22.04"},
+		Spec: internalv1.MachineImageSpec{
+			OperatingSystem: internalv1.OperatingSystem{Family: "ubuntu", Version: "22.04"},
 			Architecture:    "amd64",
-			NICo:            enginev1.NICoBoot{IPXEScript: "#!ipxe\n"},
+			NICo:            internalv1.NICoBoot{IPXEScript: "#!ipxe\n"},
 		},
 	}
 }
 
 func releaseAnnotations() map[string]string {
 	return map[string]string{
-		enginev1.MachineInitKubernetesVersionAnnotation:         "1.31.12",
-		enginev1.MachineInitKubernetesVersionInjectedAnnotation: "false",
+		internalv1.MachineInitKubernetesVersionAnnotation:         "1.31.12",
+		internalv1.MachineInitKubernetesVersionInjectedAnnotation: "false",
 	}
 }
 
-func testClusterRelease(name string, deprecated bool) *enginev1.ClusterRelease {
-	return &enginev1.ClusterRelease{
+func testClusterRelease(name string, deprecated bool) *internalv1.ClusterRelease {
+	return &internalv1.ClusterRelease{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Annotations: releaseAnnotations()},
-		Spec: enginev1.ClusterReleaseSpec{
-			MachineImageRef: enginev1.MachineImageReference{Name: testImageName},
-			MachineInit:     enginev1.MachineInit{UserDataTemplate: "#cloud-config\n"},
-			Lifecycle:       enginev1.ReleaseLifecycle{Deprecated: deprecated},
+		Spec: internalv1.ClusterReleaseSpec{
+			MachineImageRef: internalv1.MachineImageReference{Name: testImageName},
+			MachineInit:     internalv1.MachineInit{UserDataTemplate: "#cloud-config\n"},
+			Lifecycle:       internalv1.ReleaseLifecycle{Deprecated: deprecated},
 		},
 	}
 }
 
-func testNodePoolRelease(name string, deprecated bool) *enginev1.NodePoolRelease {
-	return &enginev1.NodePoolRelease{
+func testNodePoolRelease(name string, deprecated bool) *internalv1.NodePoolRelease {
+	return &internalv1.NodePoolRelease{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Annotations: releaseAnnotations()},
-		Spec: enginev1.NodePoolReleaseSpec{
-			MachineImageRef: enginev1.MachineImageReference{Name: testImageName},
-			MachineInit:     enginev1.MachineInit{UserDataTemplate: "#cloud-config\n"},
-			Lifecycle:       enginev1.ReleaseLifecycle{Deprecated: deprecated},
+		Spec: internalv1.NodePoolReleaseSpec{
+			MachineImageRef: internalv1.MachineImageReference{Name: testImageName},
+			MachineInit:     internalv1.MachineInit{UserDataTemplate: "#cloud-config\n"},
+			Lifecycle:       internalv1.ReleaseLifecycle{Deprecated: deprecated},
 		},
 	}
 }

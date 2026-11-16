@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Only where the controller authenticates its API: lets validate-site.yaml's
+# service account mint a token for the identity it presents to the controller,
+# __TOKEN_NAMESPACE__/__TOKEN_SERVICE_ACCOUNT__, which the controller must
+# authorize to list clusters. The controller authenticates where its settings
+# turn apiAuth on or an authentication ConfigMap, nvke-auth-config or the older
+# nke-auth-config, exists; with neither it takes no token, and the suite sends
+# none.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nvke-validate-token
+  namespace: "__TOKEN_NAMESPACE__"
+rules:
+  - apiGroups: [""]
+    resources: [serviceaccounts/token]
+    resourceNames: ["__TOKEN_SERVICE_ACCOUNT__"]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nvke-validate-token
+  namespace: "__TOKEN_NAMESPACE__"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nvke-validate-token
+subjects:
+  - kind: ServiceAccount
+    name: nvke-validate
+    namespace: nvke-validate

@@ -1,0 +1,37 @@
+{
+  "state": {
+    "enabled": true,
+    "crds": {
+      "install": true
+    },
+    "namespace": "",
+    "rbac": {
+      "metricsAuth": false,
+      "subjects": [],
+      "tenantAPIBindings": [],
+      "operatorAPISubjects": []
+    },
+    "configMaps": []
+  },
+  "controller": {
+    "enabled": true
+  },
+  "manager": {
+    "stateNamespace": "",
+    "stateAccess": {
+      "mode": "inCluster",
+      "kubeconfigSecret": {
+        "name": "",
+        "key": "kubeconfig"
+      }
+    },
+    "infrastructureTemplateConfigMap": "",
+    "nvkeController": {
+      "endpoint": "",
+      "tokenSecret": {
+        "name": "",
+        "key": "token"
+      }
+    }
+  }
+}

@@ -28,12 +28,12 @@ const (
 	DeployPathRef = "HEAD"
 
 	// deployDir holds the e2e deploy paths and the charts every path installs
-	// by relative path; hackDir the post-install script; and nktpChartDir the
-	// NKTP chart, which the nktp item installs by relative path from outside
-	// both.
-	deployDir    = "controller/deploy"
-	hackDir      = "controller/hack"
-	nktpChartDir = "nktp/deploy/charts/nktp"
+	// by relative path; hackDir the post-install script; and legacyNKTPChartDir
+	// the NKTP chart that releases before the published chart installed by
+	// relative path. ResolveLayout exports it only from a ref that has it.
+	deployDir          = "controller/deploy"
+	hackDir            = "controller/hack"
+	legacyNKTPChartDir = "nktp/deploy/charts/nktp"
 )
 
 // DeployLayout is where a ref keeps the deploy assets, and how the executor it
@@ -67,7 +67,7 @@ func CurrentLayout() DeployLayout {
 		Name:       "deploy",
 		Executor:   "deploy/nvke-deploy.sh",
 		DeployPath: "deploy/nico",
-		Export:     []string{"deploy", deployDir, hackDir, nktpChartDir},
+		Export:     []string{"deploy", deployDir, hackDir},
 	}
 }
 
@@ -99,6 +99,12 @@ func ResolveLayout(ctx context.Context, repo, ref string) (DeployLayout, error) 
 				"so qualify a newer controller, or update CurrentLayout if the executor moved",
 			ref, repo, layout.Executor,
 		)
+	}
+	// Releases before the deploy path pulled NKTP from its repository install
+	// the chart from the tree, so their export needs it. git archive refuses a
+	// path the ref lacks, so it is added only where it exists.
+	if exec.CommandContext(ctx, "git", "-C", repo, "cat-file", "-e", ref+":"+legacyNKTPChartDir).Run() == nil {
+		layout.Export = append(layout.Export, legacyNKTPChartDir)
 	}
 	return layout, nil
 }

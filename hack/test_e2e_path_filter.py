@@ -119,7 +119,6 @@ class DecideTest(unittest.TestCase):
             ("os-image-efi.yml", ["os-image/efi/mkosi.conf"], ["os-image/packer/ubuntu.pkr.hcl"]),
             ("nvkectl-bootstrap-e2e.yml", ["cli/internal/bootstrap/plan.go"], ["cli/docs/sitespec.md", "os-image/packer/ubuntu.pkr.hcl"]),
             ("kubeadm-bringup-e2e.yml", ["controller/test/kubeadm/scripts/setup-ci-host.sh"], ["controller/internal/server/server.go"]),
-            ("nktp-e2e.yml", ["nktp/deploy/charts/nktp/values.yaml"], ["controller/main.go"]),
         ]
         for lane, run, skip in cases:
             with self.subTest(lane=lane):
@@ -136,7 +135,7 @@ class DecideTest(unittest.TestCase):
 
     def test_shared_kind_action_runs_every_lane_that_uses_it(self):
         lanes = ["nico-e2e.yml", "nico-vms-e2e.yml", "capd-e2e.yml", "capd-dsx-identity-exchange-e2e.yml",
-                 "local-entrypoint-e2e.yml", "nvkectl-bootstrap-e2e.yml", "nktp-e2e.yml"]
+                 "local-entrypoint-e2e.yml", "nvkectl-bootstrap-e2e.yml"]
         for lane in lanes:
             with self.subTest(lane=lane):
                 self.assertEqual(decide(WORKFLOWS / lane, [".github/actions/setup-kind/action.yml"]), "true")

@@ -41,6 +41,11 @@ type MachineMaterialization interface {
 	// place of the infrastructure provider's raw error. Returns "" when the
 	// provider has nothing to add; the caller then keeps the raw message.
 	DescribeStuckMachine(ctx context.Context, deps shared.MachineAdvanceDeps, nodePool db.NodePool, machine *clusterv1.Machine) (string, error)
+
+	// FailureDomainUnavailable reports whether the infrastructure provider
+	// reports that machine's requested failure domain has no capacity for it.
+	// Providers that do not report placement failures return false.
+	FailureDomainUnavailable(ctx context.Context, deps shared.MachineAdvanceDeps, machine *clusterv1.Machine) (bool, error)
 }
 
 // GetMachineMaterialization selects the MachineMaterialization

@@ -3,6 +3,6 @@
 
 apiVersion: v2
 name: nvke-crds
-description: Shared Kubernetes API definitions for NVKE components
+description: Release CRDs (MachineImage, ClusterRelease, NodePoolRelease) owned by the NVKE controller
 type: application
 version: 0.1.0

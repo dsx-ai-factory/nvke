@@ -19,10 +19,16 @@ import (
 	"go.temporal.io/sdk/worker"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/sync/errgroup"
+	rbacv1 "k8s.io/api/rbac/v1"
 	kubeadmv1 "sigs.k8s.io/cluster-api/api/bootstrap/kubeadm/v1beta2"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	"sigs.k8s.io/cluster-api/controllers/clustercache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
-	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+
+	internalv1 "github.com/dsx-ai-factory/nvke/controller/k8s-apis/v1"
 
 	"github.com/dsx-ai-factory/nvke/auth/authn"
 
@@ -208,7 +214,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	managementK8sClient, err := kube.NewRuntimeClient(spirev1alpha1.AddToScheme, nicov1.AddToScheme, enginev1.AddToScheme)
+	managementK8sClient, err := kube.NewRuntimeClient(spirev1alpha1.AddToScheme, nicov1.AddToScheme, internalv1.AddToScheme)
 	if err != nil {
 		logger.Error("Failed to create management-cluster Kubernetes client", "error", err)
 		os.Exit(1)
@@ -229,7 +235,7 @@ func main() {
 		spirev1alpha1.AddToScheme,
 		kubeadmv1.AddToScheme,
 		nicov1.AddToScheme,
-		enginev1.AddToScheme,
+		internalv1.AddToScheme,
 	)
 	if err != nil {
 		logger.Error("Failed to create Kubernetes controller manager", "error", err)
@@ -330,15 +336,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	machineSpireEntryController := capi.NewMachineSpireEntryController(
-		cfg,
-		k8sControllerManager.GetClient(),
-		logger.With("logger", "machine-spire-entry-controller"),
-		trustDomain,
-	)
-	if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
-		logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
-		os.Exit(1)
+	if cfg.SpiffeEnabled {
+		machineSpireEntryController := capi.NewMachineSpireEntryController(
+			cfg,
+			k8sControllerManager.GetClient(),
+			logger.With("logger", "machine-spire-entry-controller"),
+			trustDomain,
+		)
+		if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	// Sets agent-connection on Machines created before the controller wrote it,
@@ -423,6 +431,27 @@ func main() {
 			os.Exit(1)
 		}
 
+		clusterCache, err := clustercache.SetupWithManager(ctx, k8sControllerManager, clustercache.Options{
+			SecretClient: k8sControllerManager.GetClient(),
+			Client: clustercache.ClientOptions{
+				UserAgent: "nvke-controller",
+				// Bindings stay uncached because a cached Get starts an informer that lists every object. NVKE only needs access to specific named bindings.
+				Cache: clustercache.ClientCacheOptions{
+					DisableFor: []client.Object{
+						&rbacv1.ClusterRoleBinding{},
+						&rbacv1.RoleBinding{},
+					},
+				},
+			},
+			ClusterFilter: func(cluster *clusterv1.Cluster) bool {
+				return capi.IsNVKEManagedCluster(cluster, cfg.ManagedByLabelValue)
+			},
+		}, controller.Options{})
+		if err != nil {
+			logger.Error("Failed to set up cluster cache", "error", err)
+			os.Exit(1)
+		}
+
 		if cfg.SpiffeEnabled && cfg.NicoControllersEnabled {
 			spireNicoTPMBootstrapIdentityController := bootstrap.NewSpireNicoTPMBootstrapIdentityController(
 				cfg,
@@ -440,7 +469,7 @@ func main() {
 
 		bootstrapAuthorizationController := bootstrap.NewAuthorizationController(
 			k8sControllerManager.GetClient(),
-			tenantClientProvider,
+			clusterCache,
 			logger.With("logger", "bootstrap-authorization-controller"),
 		)
 		if err := bootstrapAuthorizationController.SetupWithManager(k8sControllerManager); err != nil {

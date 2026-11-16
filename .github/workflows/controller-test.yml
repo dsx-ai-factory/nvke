@@ -105,6 +105,8 @@ jobs:
             run: make test
           - module: controller/deploy/charts
             run: make test
+          - module: controller/k8s-apis
+            run: make test
           - module: auth
             run: make test
           # Every module here has a Makefile with a `test` target, so all of

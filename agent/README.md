@@ -149,14 +149,15 @@ make protos         # regenerate *.pb.go via buf
 make setup-hooks    # monorepo-aware proto pre-commit hook
 ```
 
-Version comes from `git describe --match 'agent/v*'` (component-scoped tags;
-see [AGENTS.md](AGENTS.md)). Override with `VERSION=...` when needed.
+Version comes from `git describe --tags --always --dirty --match 'v*'`, the
+repository's release tags (see [AGENTS.md](AGENTS.md)). Override with
+`VERSION=...` when needed.
 
 ## Published artifacts
 
 ### Binaries (GHCR)
 
-Every commit on `main` and every `agent/vX.Y.Z` tag publishes the binaries to
+Every commit on `main` and every `vX.Y.Z` release tag publishes the binaries to
 `ghcr.io/dsx-ai-factory/nvke/agent` as OCI artifacts, joined by a multi-arch index
 (`.github/workflows/agent-artifact.yml`). Pull one by platform:
 
@@ -179,11 +180,13 @@ single-platform variants underneath. These are artifacts, not container images
 
 ### Debian packages (apt intake)
 
-Every `agent/vX.Y.Z` tag also builds native amd64 and arm64 `.deb`s and uploads
-them to the apt-publisher S3 intake (`.github/workflows/agent-deb-publish.yml`,
-via `scripts/upload-s3-apt-intake.sh`). Main merges and branch workflow runs do
-not ingest — only `refs/tags/agent/v*`. The same packages are published to GHCR
-as an OCI artifact:
+Every `vX.Y.Z` and `vX.Y.Z-beta.N` tag also builds native amd64 and arm64
+`.deb`s and uploads them to the apt-publisher S3 intake
+(`.github/workflows/agent-deb-publish.yml`, via
+`scripts/upload-s3-apt-intake.sh`); a beta does not enter the intake's
+`index.json`. Main merges and branch workflow runs do not ingest — only
+`refs/tags/v*`. A release's packages are also published to GHCR as an OCI
+artifact:
 
 ```bash
 oras pull ghcr.io/dsx-ai-factory/nvke/agent-deb:v0.3.0 --platform linux/amd64

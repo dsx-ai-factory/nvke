@@ -60,6 +60,7 @@ WORK_MODULES := agent \
                 controller \
                 controller/api \
                 controller/deploy/charts \
+                controller/k8s-apis \
                 controller/nico-sim \
                 controller/hack/capd-reboot-controller \
                 cli \
@@ -85,27 +86,15 @@ CMD_MODULES := agent \
                controller/hack/capd-reboot-controller \
                os-image
 
-# The version stamped into a CMD_MODULES binary. First hit wins: the module's own
-# tag series, a repo-wide one, the commit, then v0.0.0 outside a git checkout.
-# The hack tools have no tags, so they get the commit.
+# The version stamped into a CMD_MODULES binary. Every module is versioned by the
+# repository's bare vX.Y.Z tags: the nearest one, the commit when none is
+# reachable, then v0.0.0 outside a git checkout. The module argument is kept so
+# callers name what they stamp.
 #
-# --match is required, on EVERY describe including the --always one. This repo
-# has several tag series, and a describe without --match returns the nearest one
+# --match is required. The repository also carries prefixed component tags
+# (agent/v* and the like), and a describe without --match returns the nearest one
 # from any of them.
-#
-# --always only degrades to a bare commit when no tag describes HEAD, and in
-# this repository some tag always does. An unmatched --always therefore returns
-# another component's tag. ${v##*/} (from #216) strips whichever prefix came
-# back, so a hack tool reported v0.2.1-rc.2-6-g… — an agent version, just
-# without the agent/ prefix — and version-check could not catch it. Scoping
-# --always with --match makes that step a commit when the module has no tags
-# of its own.
-cmd_version = $(shell \
-    v=$$(git describe --tags --dirty --match '$(notdir $(1))/v[0-9]*' 2>/dev/null \
-      || git describe --tags --dirty --match 'v[0-9]*' 2>/dev/null \
-      || git describe --always --dirty --match '$(notdir $(1))/v[0-9]*' 2>/dev/null \
-      || echo v0.0.0); \
-    printf '%s' "$${v##*/}")
+cmd_version = $(shell git describe --tags --always --dirty --match 'v*' 2>/dev/null || echo v0.0.0)
 
 # Both spellings: agent declares VERSION, the hack tools declare version. The
 # linker ignores an -X for a symbol the binary lacks, so passing both is safe.
@@ -132,11 +121,7 @@ PRIVATE_MODULES :=
 #
 # The chart copies existed before this and nothing maintained them -- they were
 # committed by hand and happened to match. `licenses-check` now enforces it.
-LICENSE_DESTS := controller/deploy/charts/controller controller/deploy/charts/nvke-crds
-
-# Chart directories that ship the root LICENSE but keep a NOTICE of their own,
-# which `make licenses` must not overwrite.
-LICENSE_ONLY_DESTS := nktp/deploy/charts/nktp
+LICENSE_DESTS := controller/deploy/charts/controller controller/deploy/charts/nvke-crds management-engine/chart
 
 # Redistributed binaries with generated third-party attribution.
 NOTICE_MODULES := agent controller cli os-image
@@ -332,6 +317,7 @@ PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
                      controller/nico-sim \
                      controller/api \
                      controller/deploy/charts \
+                     controller/k8s-apis \
                      agent \
                      auth \
                      cli \
@@ -344,6 +330,10 @@ PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
 # compiles nothing that uses it. These are the modules that import it, and a
 # change to the API has to build them to mean anything.
 API_DEPENDENTS := controller cli controller/test/e2e
+
+# The modules that import controller/k8s-apis, so a change to the release types
+# builds what reads them.
+K8S_APIS_DEPENDENTS := controller cli
 
 # The modules that import auth, so an authentication change builds what uses it.
 AUTH_DEPENDENTS := controller
@@ -367,6 +357,7 @@ RACE_MODULES := agent \
                 cli \
                 cluster-api-provider-provisioned \
                 controller \
+                controller/k8s-apis \
                 controller/nico-sim \
                 controller/test/e2e \
                 os-image
@@ -405,11 +396,10 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 	              git diff --cached --name-only; \
 	              git diff --name-only; \
 	              git ls-files --others --exclude-standard; } | sort -u ); \
-	build_system=no; workflows=no; shell=no; chart=no; nktp=no; workspace=no; licences=no; provider_manifest=no; cli_docs=no; \
+	build_system=no; workflows=no; shell=no; chart=no; workspace=no; licences=no; provider_manifest=no; cli_docs=no; \
 	printf '%s\n' "$$changed" | grep -qE '^Makefile$$|^make/[^/]+\.mk$$' && build_system=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^\.github/workflows/.*\.ya?ml$$' && workflows=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^controller/deploy/charts/|^controller/deploy/monitoring/|^controller/hack/chart-.*-assertions\.(py|sh)$$|^controller/internal/(config|controllerconfig)/|^\.github/workflows/chart\.yml$$' && chart=yes || true; \
-	printf '%s\n' "$$changed" | grep -qE '^nktp/deploy/charts/|^nktp/hack/chart-.*\.sh$$|^\.github/workflows/nktp-chart\.yml$$' && nktp=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^cluster-api-provider-provisioned/config/|^cli/internal/bootstrap/controllerdeploy/manifests/(provisioned-provider|capnico)\.yaml$$|^deploy/nico/capnico/capnico\.yaml$$' && provider_manifest=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^cli/' && cli_docs=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '(^|/)(go\.mod|go\.sum)$$|^go\.work|^vendor/' && workspace=yes || true; \
@@ -421,7 +411,7 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 		esac; \
 	done; \
 	if [ "$$build_system" = yes ]; then \
-		workflows=yes; shell=yes; chart=yes; nktp=yes; workspace=yes; licences=yes; provider_manifest=yes; cli_docs=yes; \
+		workflows=yes; shell=yes; chart=yes; workspace=yes; licences=yes; provider_manifest=yes; cli_docs=yes; \
 	fi; \
 	if [ -n "$(MODULES)" ]; then \
 		mods="$(MODULES)"; \
@@ -440,6 +430,7 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 				(controller/api) printf '%s\n' $(API_DEPENDENTS) ;; \
 				(auth) printf '%s\n' $(AUTH_DEPENDENTS) ;; \
 				(controller/deploy/charts) printf '%s\n' $(CHARTS_DEPENDENTS) ;; \
+				(controller/k8s-apis) printf '%s\n' $(K8S_APIS_DEPENDENTS) ;; \
 			esac; \
 		done | sort -u); \
 	fi; \
@@ -455,7 +446,6 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 	[ "$$workflows" = yes ] && echo "  lint-workflows       (workflow or build-system changes)" || true; \
 	[ "$$shell" = yes ] && echo "  lint-shell           (shell or build-system changes)" || true; \
 	[ "$$chart" = yes ] && echo "  chart-check          (chart or build-system changes)" || true; \
-	[ "$$nktp" = yes ] && echo "  nktp-chart-check     (NKTP chart or build-system changes)" || true; \
 	[ "$$provider_manifest" = yes ] && echo "  provider-manifest-check (the provisioned provider's or CAPNICo's manifests changed)" || true; \
 	[ "$$cli_docs" = yes ] && echo "  cli docs-check       (the CLI changed, so its reference may be stale)" || true; \
 	echo; \
@@ -501,10 +491,6 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 	if [ "$$chart" = yes ]; then \
 		echo "==> chart-check"; \
 		$(MAKE) --no-print-directory chart-check || failed="$$failed chart"; \
-	fi; \
-	if [ "$$nktp" = yes ]; then \
-		echo "==> nktp-chart-check"; \
-		$(MAKE) --no-print-directory nktp-chart-check || failed="$$failed nktp"; \
 	fi; \
 	if [ "$$provider_manifest" = yes ]; then \
 		echo "==> provider-manifest-check"; \
@@ -643,21 +629,17 @@ licenses: ## Copy LICENSE and NOTICE everywhere an artefact ships them from.
 	@for d in $(LICENSE_DESTS); do \
 		mkdir -p $$d && cp LICENSE NOTICE $$d/ || exit 1; \
 	done
-	@for d in $(LICENSE_ONLY_DESTS); do \
-		mkdir -p $$d && cp LICENSE $$d/ || exit 1; \
-	done
 	@echo "LICENSE and NOTICE copied to: $(LICENSE_DESTS)"
-	@echo "LICENSE copied to: $(LICENSE_ONLY_DESTS)"
 
 licenses-check: licenses ## Verify the shipped LICENSE and NOTICE copies match the root files. (run by the merge gate)
 	@# The image and the chart redistribute this work, so they carry its terms.
 	@# Both read from a copy inside their own build context, and a copy is a
 	@# thing that goes stale -- this is the assertion that it has not.
-	@git diff --exit-code -- $(LICENSE_DESTS) $(addsuffix /LICENSE,$(LICENSE_ONLY_DESTS)) \
+	@git diff --exit-code -- $(LICENSE_DESTS) \
 		|| { echo "ERROR: a shipped LICENSE/NOTICE copy is stale. Run 'make licenses' and commit the change."; exit 1; }
 	@# git diff says nothing about a path git is not tracking, so a newly added
 	@# destination would otherwise pass while shipping nothing.
-	@untracked=$$(git ls-files --others --exclude-standard -- $(LICENSE_DESTS) $(addsuffix /LICENSE,$(LICENSE_ONLY_DESTS))); \
+	@untracked=$$(git ls-files --others --exclude-standard -- $(LICENSE_DESTS)); \
 	 [ -z "$$untracked" ] \
 		|| { echo "ERROR: these shipped licence files are not tracked:"; printf '%s\n' "$$untracked" | sed 's/^/    /'; exit 1; }
 	@echo "Shipped LICENSE and NOTICE copies are current."

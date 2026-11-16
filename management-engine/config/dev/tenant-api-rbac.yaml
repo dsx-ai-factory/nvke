@@ -14,7 +14,7 @@ metadata:
   name: management-engine-tenant-api
   namespace: tenant-test
 rules:
-- apiGroups: [internal.nvke.nvidia.com]
+- apiGroups: [service.nvke.nvidia.com]
   resources: [nvkeclusters]
   # Server-side apply also authorizes create when the object does not exist.
   verbs: [create, get, list, patch, delete]
@@ -38,10 +38,10 @@ kind: ClusterRole
 metadata:
   name: management-engine-tenant-catalog
 rules:
-- apiGroups: [internal.nvke.nvidia.com]
+- apiGroups: [service.nvke.nvidia.com]
   resources: [controlplaneclasses, clusterreleasechannels, nodepoolreleases]
   verbs: [get, list]
-- apiGroups: [internal.nvke.nvidia.com]
+- apiGroups: [service.nvke.nvidia.com]
   resources: [clusterreleases, machineimages]
   verbs: [list]
 ---

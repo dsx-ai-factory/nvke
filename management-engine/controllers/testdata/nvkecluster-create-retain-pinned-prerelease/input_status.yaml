@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The unchanged cluster is already running the exact requested suffix.
+id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+resolvedRelease:
+  name: release-a
+  version: 1.34.4

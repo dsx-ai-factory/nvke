@@ -26,7 +26,7 @@ var (
 )
 
 func TestClusterProjection(t *testing.T) {
-	data, err := os.ReadFile("../../config/samples/internal_v1_nvkecluster.yaml")
+	data, err := os.ReadFile("../../config/samples/service_v1_nvkecluster.yaml")
 	require.NoError(t, err)
 	var internal v1.NVKECluster
 	require.NoError(t, yaml.Unmarshal(data, &internal))

@@ -47,9 +47,16 @@ GH_CLI_SHA256_ARM64 ?= 73ea440ecad9c9e284429997ee6f93577bc6f7bc6fba357ef62c53ad8
 TELEPORT_VERSION   ?= 18.11.0
 TELEPORT_SHA256_AMD64 ?= 8d3dba03ea6b6e0d72c97e190da0595e8f0d70f5573c3a26b1908cf60caf6e3f
 
+# aicr installs and validates the GPU runtime on the Forge lane's tenant. It
+# runs on the lane's amd64 runner whatever the tenant's architecture, so amd64
+# is the only platform needed. aicr_<version>_linux_amd64.tar.gz.
+# 1.2.0 is the first release with the NVKE recipe (gb200-nvke-ubuntu-training).
+AICR_VERSION ?= 1.2.0
+AICR_SHA256_AMD64 ?= 3ff6935fd7988373903a2a30f1c24a74a5f8a9052a310615db19fcfec4cfe9a2
+
 KUBECONFORM_VERSION ?= v0.7.0
-# .github/actions/setup-kubeconform installs it for chart.yml and nktp-chart.yml,
-# both on ubuntu-latest, so amd64 is the only platform needed.
+# .github/actions/setup-kubeconform installs it for chart.yml, on ubuntu-latest,
+# so amd64 is the only platform needed.
 KUBECONFORM_SHA256_AMD64 ?= c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3
 HELM_VERSION         ?= v4.2.4
 
@@ -109,9 +116,8 @@ CAPI_VERSION    ?= v1.13.6
 # clusterctl-linux-{amd64,arm64} from the CAPI release above.
 CLUSTERCTL_SHA256_AMD64 ?= 1e4019b8ef30fa13993716d28b9fec4072fee1e17ea2cc69cb7c8f232d9b8c2f
 CLUSTERCTL_SHA256_ARM64 ?= c3fe61fd44fa63d2efcee2a93432619527909b210a84cda7ee86eea1425de8c2
-# The cert-manager `clusterctl init` installs at CAPI_VERSION. The NKTP chart's
-# Kind e2e installs it, and its kubeconform check validates against its CRDs.
-# Move it with CAPI_VERSION.
+# The cert-manager `clusterctl init` installs at CAPI_VERSION. Move it with
+# CAPI_VERSION.
 CERT_MANAGER_VERSION ?= v1.21.1
 # Rancher's local-path-provisioner, the lab StorageClass of the local site
 # (deploy/nvke-deploy-local.sh); a real site brings its own CSI driver.
@@ -169,7 +175,7 @@ GINKGO_VERSION           ?= v2.27.2
 GOFAIL_VERSION           ?= v0.2.0
 GOFUMPT_VERSION          ?= v0.11.0
 GOIMPORTS_VERSION        ?= v0.48.0
-SETUP_ENVTEST_VERSION    ?= release-0.24
+SETUP_ENVTEST_VERSION    ?= v0.25.3
 # Kubernetes version for the envtest kube-apiserver and etcd binaries.
 ENVTEST_K8S_VERSION      ?= 1.34.1
 

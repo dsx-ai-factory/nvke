@@ -1,6 +1,6 @@
 # The Go workspace
 
-This repository holds thirteen Go modules. The root `go.work` ties them together,
+This repository holds fourteen Go modules. The root `go.work` ties them together,
 so one `make build` covers the whole tree and one Go toolchain version applies.
 `go.work`, `go.work.sum`, and the module manifests are committed; the generated
 `vendor/` tree is not. All dependencies, including
@@ -17,6 +17,7 @@ but no NVIDIA credentials.
 | `controller` | yes | cloud workflow engine |
 | `controller/api` | yes | generated API module |
 | `controller/deploy/charts` | yes | embedded Helm charts |
+| `controller/k8s-apis` | yes | Kubernetes API types for the release CRDs |
 | `controller/hack/capd-reboot-controller` | yes | CAPD test helper |
 | `controller/nico-sim` | yes | local NICo simulator |
 | `controller/test/e2e` | yes | end-to-end tests |

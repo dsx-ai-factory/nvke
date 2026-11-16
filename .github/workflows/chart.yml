@@ -28,6 +28,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'management-engine/**'
       - 'controller/deploy/charts/**'
       - 'controller/deploy/monitoring/**'
       - 'controller/hack/chart-*-assertions.*'
@@ -109,3 +110,6 @@ jobs:
       # tenant RBAC, and package-version assertions locally and in CI.
       - name: Check the chart
         run: make chart-check
+
+      - name: Check the Management Engine chart
+        run: make -C management-engine chart-check chart-assets-check

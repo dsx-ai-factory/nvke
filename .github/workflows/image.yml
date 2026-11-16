@@ -326,11 +326,12 @@ jobs:
         if: always() && steps.ignore.outputs.count != '0'
         run: ./hack/grype-ignore-check.sh --applied image "${{ steps.suppressed.outputs.json }}"
 
-  # The site validation image, built the way image-validate-nvcr.yml publishes
-  # it but not pushed. Its own job, so it neither waits on nor adds to the
-  # controller build above. A real build because its context is an allowlist
-  # (controller/test/e2e/Dockerfile.dockerignore): a file the suite embeds that
-  # the list misses fails only when the image is built.
+  # The site validation image, built the way a site builds it from a release
+  # tag, and pushed only to a registry that lives for the job. Its own job, so
+  # it neither waits on nor adds to the controller build above. A real build
+  # because its context is an allowlist (controller/test/e2e/Dockerfile.dockerignore):
+  # a file the suite embeds that the list misses fails only when the image is
+  # built.
   validate-image:
     name: build validation image
     runs-on: linux-amd64-cpu16
@@ -352,17 +353,20 @@ jobs:
             echo "config=/etc/buildkit/buildkitd.toml" >> "$GITHUB_OUTPUT"
           fi
 
+      # Host networking, so that BuildKit can push to the job's registry on
+      # the runner's loopback.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           buildkitd-config: ${{ steps.buildkit.outputs.config }}
+          driver-opts: network=host
 
       # No QEMU: the binary is cross-compiled and the final stage runs nothing.
       #
       # Built twice, the second time with no cache and every file's mtime
       # changed, as a fresh checkout elsewhere would have it. The two index
-      # digests must match: that is what lets a site build this itself and
-      # check the result against the digest the release attested.
+      # digests must match, which shows the build depends on neither file
+      # times nor the cache.
       - name: Build validation image (amd64 and arm64), twice
         shell: bash
         run: |
@@ -380,6 +384,49 @@ jobs:
           echo "first ${first}, second ${second}"
           [[ "${first}" == "${second}" ]] \
             || { echo "::error::the validation image did not rebuild to the same digest"; exit 1; }
+
+      # The push a site makes with validate-image-push, to a registry on a
+      # random loopback port, so that concurrent jobs on one host cannot meet.
+      - name: Start a registry for the push
+        id: registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          id="$(docker run -d -p 127.0.0.1::5000 \
+            docker.io/library/registry:3@sha256:38907510915c3f1604c7e83d6ab602ab3020d092f73bdaed8696773693ff768c)"
+          echo "id=${id}" >> "$GITHUB_OUTPUT"
+          addr="$(docker port "${id}" 5000/tcp | head -1)"
+          for _ in $(seq 30); do
+            curl -fsS "http://${addr}/v2/" >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS "http://${addr}/v2/" >/dev/null
+          echo "repo=${addr}/nvke-validate" >> "$GITHUB_OUTPUT"
+
+      # The pushed index must be the one the OCI builds gave, and its tag must
+      # resolve to it.
+      - name: Push validation image
+        shell: bash
+        env:
+          REPO: ${{ steps.registry.outputs.repo }}
+        run: |
+          set -euo pipefail
+          make -C controller/test/e2e validate-image-push \
+            VALIDATE_REPO="${REPO}" VALIDATE_PUSH_TAGS=ci \
+            VALIDATE_DIGEST_FILE="${RUNNER_TEMP}/pushed.txt"
+          first="$(cat "${RUNNER_TEMP}/first.txt")"
+          pushed="$(cat "${RUNNER_TEMP}/pushed.txt")"
+          echo "built ${first}, pushed ${pushed}"
+          [[ "${pushed}" == "${first}" ]] \
+            || { echo "::error::the pushed validation image is not the one the OCI build gave"; exit 1; }
+          resolved="$(docker buildx imagetools inspect "${REPO}:ci" | sed -n 's/^Digest: *//p')"
+          [[ "${resolved}" == "${first}" ]] \
+            || { echo "::error::${REPO}:ci resolves to ${resolved}, not ${first}"; exit 1; }
+
+      - name: Remove the registry
+        if: always() && steps.registry.outputs.id != ''
+        shell: bash
+        run: docker rm -f "${{ steps.registry.outputs.id }}"
 
       # Selection and report paths are what a test runner depends on, so they are
       # checked in the built image rather than assumed from the Dockerfile.
@@ -419,7 +466,7 @@ jobs:
 # Not built here: controller/hack/Dockerfile.controller.tilt — it only copies a
 # prebuilt binary, so it has nothing to verify without a preceding build.
 #
-# Nothing is pushed here. Publishing to nvcr.io lives in the per-component
+# Nothing is published here. Publishing to nvcr.io lives in the per-component
 # workflows: image-nvcr.yml for the controller, image-provisioned-nvcr.yml for
-# cluster-api-provider-provisioned, image-validate-nvcr.yml for the validation
-# image.
+# cluster-api-provider-provisioned. The validation image is published nowhere;
+# validate-image pushes it only to the registry it starts and removes.

@@ -223,6 +223,24 @@ apiAuth:
 YAML
 render api-auth-inline -f "${values}/api-auth-inline.yaml"
 
+# apiAuthz with the chart's bundle, which TestRenderedChart loads.
+cat > "${values}/api-authz.yaml" <<'YAML'
+apiAuthz:
+  enabled: true
+  authorizer:
+    localBundle:
+      config:
+        issuers:
+          local-kubernetes:
+            serviceAccounts:
+              - {namespace: nke-clients, grants: [admin]}
+YAML
+render api-authz -f "${values}/api-auth-inline.yaml" -f "${values}/api-authz.yaml"
+# apiAuthz permissive behind permissive apiAuth.
+render api-authz-permissive -f "${values}/api-auth-inline.yaml" -f "${values}/api-authz.yaml" \
+  --set apiAuth.permissive=true \
+  --set apiAuthz.permissive=true
+
 # Empty strings fall back to Go defaults, which the template must render.
 render empty-strings \
   --set-string identity.fieldManagerName= \
