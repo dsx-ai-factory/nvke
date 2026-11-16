@@ -83,7 +83,8 @@ func TestGPURuntimeMinutesCoverTheSpecs(t *testing.T) {
 // TestAICRCommandCancelKillsItsChildren checks that a canceled command takes
 // the processes it started with it, as deploy.sh's helm would be. The child
 // beats into a file rather than being probed by pid: in a container nothing
-// may reap it, and a zombie still answers kill -0.
+// may reap it, and a zombie still answers kill -0. The scripts are sh, not
+// bash: the local E2E lane runs this binary in an Alpine image with no bash.
 //
 // The timeout case is AICR's CRD installer: GNU timeout without --foreground
 // moves its child into a group of its own, out of reach of a kill sent to the
@@ -96,9 +97,9 @@ func TestAICRCommandCancelKillsItsChildren(t *testing.T) {
 		script  string
 	}{
 		{name: "a background child", script: `(` + loop + `) & wait`},
-		// The trailing command keeps bash from exec'ing timeout, which as the
+		// The trailing command keeps sh from exec'ing timeout, which as the
 		// group's leader could not leave it.
-		{name: "a child under GNU timeout", timeout: true, script: `"$1" 300 bash -c '` + loop + `' "$0"; exit $?`},
+		{name: "a child under GNU timeout", timeout: true, script: `"$1" 300 sh -c '` + loop + `' "$0"; exit $?`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			args := []string{"-c", tc.script}
@@ -119,7 +120,7 @@ func TestAICRCommandCancelKillsItsChildren(t *testing.T) {
 			defer cancel()
 
 			start := time.Now()
-			if err := run.try(ctx, dir, "bash", args...); err == nil {
+			if err := run.try(ctx, dir, "sh", args...); err == nil {
 				t.Fatal("try returned nil for a canceled command")
 			}
 			if elapsed := time.Since(start); elapsed > 2*time.Second+aicrWaitDelay {
@@ -143,14 +144,20 @@ func TestAICRCommandCancelKillsItsChildren(t *testing.T) {
 }
 
 // gnuTimeout is GNU timeout's path, as timeout or as Homebrew's gtimeout.
+// BusyBox's timeout, Alpine's, is passed over: it leaves the command in the
+// caller's group, so the case would pass without the escape it exists for.
 func gnuTimeout(t *testing.T) string {
 	t.Helper()
 	for _, name := range []string{"timeout", "gtimeout"} {
-		if path, err := exec.LookPath(name); err == nil {
+		path, err := exec.LookPath(name)
+		if err != nil {
+			continue
+		}
+		if version, err := exec.CommandContext(t.Context(), path, "--version").Output(); err == nil && strings.Contains(string(version), "GNU coreutils") {
 			return path
 		}
 	}
-	t.Skip("neither timeout nor gtimeout is on PATH")
+	t.Skip("no GNU timeout on PATH, as timeout or gtimeout")
 	return ""
 }
 
