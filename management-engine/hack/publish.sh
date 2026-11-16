@@ -11,13 +11,8 @@ version() {
   local revision=${GITHUB_SHA:?source commit is required}
   [[ "${revision}" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid source commit" >&2; return 1; }
   case "${GITHUB_REF:?source ref is required}" in
-    refs/tags/management-engine/*)
-      local value=${GITHUB_REF#refs/tags/management-engine/}
-      local number='(0|[1-9][0-9]*)'
-      [[ "${value}" =~ ^v${number}\.${number}\.${number}(-rc\.${number})?$ ]] || { echo "expected management-engine/vX.Y.Z or management-engine/vX.Y.Z-rc.N" >&2; return 1; }
-      printf '%s\n' "${value}" ;;
-    refs/heads/main) printf 'v0.0.0-sha.g%s\n' "${revision}" ;;
-    *) echo "publication requires main or a management-engine release tag" >&2; return 1 ;;
+    refs/heads/main|refs/tags/v*) release/hack/describe-version.sh "${revision}" ;;
+    *) echo "publication requires main or a repository version tag" >&2; return 1 ;;
   esac
 }
 if [[ "${operation}" == version ]]; then version; exit; fi

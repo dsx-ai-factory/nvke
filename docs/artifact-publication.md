@@ -360,9 +360,9 @@ attested. That is follow-up work along the pattern in `image-nvcr.yml`.
 
 The manager, tenant API, operator API and state-containing chart use the
 [Cluster Service publication workflow](../management-engine/docs/artifact-publication.md).
-They share one component version and source revision, with digest-pinned images
-in each destination's chart. Its `management-engine/v*` tags follow the existing
-module path; published repositories use `cluster-service` names.
+They use the shared repository version and source revision, with digest-pinned
+images in each destination's chart. Images and charts publish only to NVCR;
+betas stay in the NVKE destination, while main and release builds also go to DSX.
 
 ## Hotfix releases
 

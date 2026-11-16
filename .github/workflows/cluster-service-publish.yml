@@ -13,11 +13,13 @@ on:
       - 'management-engine/**'
       - 'controller/api/**'
       - 'make/tool-versions.mk'
+      - 'release/hack/describe-version.sh'
       - '.github/actions/record-digest/**'
       - '.github/actions/verify-attestation/**'
       - '.github/workflows/cluster-service-publish.yml'
     tags:
-      - 'management-engine/v[0-9]*'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+'
   workflow_dispatch: {}
 
 permissions: {}
@@ -30,7 +32,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.repository_id == '1323115536' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/management-engine/'))
+    if: github.repository_id == '1323115536' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     name: Build (${{ matrix.runtime }}, ${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     environment: nvcr
@@ -53,6 +55,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Validate publication ref
         run: management-engine/hack/publish.sh version
       - name: Detect runner BuildKit config
@@ -102,6 +105,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: nvcr.io
@@ -167,6 +171,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: nvcr.io
@@ -197,6 +202,7 @@ jobs:
 
   promote-dsx:
     name: Promote to DSX (${{ matrix.runtime }})
+    if: github.repository_id == '1323115536' && !(startsWith(github.ref, 'refs/tags/v') && contains(github.ref, '-beta.'))
     needs: [index, sbom]
     runs-on: linux-amd64-cpu8
     environment: nvcr
@@ -214,6 +220,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: nvcr.io
@@ -252,7 +259,9 @@ jobs:
 
   chart:
     name: Publish chart (${{ matrix.destination }})
-    needs: [index, promote-dsx]
+    needs: [index, sbom, promote-dsx]
+    # Betas publish only to NVKE, matching the existing NVCR publishers.
+    if: ${{ !cancelled() && needs.index.result == 'success' && needs.sbom.result == 'success' && (needs.promote-dsx.result == 'success' || (needs.promote-dsx.result == 'skipped' && startsWith(github.ref, 'refs/tags/v') && contains(github.ref, '-beta.'))) }}
     runs-on: ubuntu-latest
     environment: nvcr
     timeout-minutes: 15
@@ -261,26 +270,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - destination: nvke
-            org: NVKE_NGC_ORG
-            token: NGC_REGISTRY_TOKEN_NVKE
-            pull-secret: svc-nke-ngc-imagepull
-          - destination: dsx
-            org: DSX_NGC_ORG_TEAM
-            token: NGC_REGISTRY_TOKEN_DSX
-            pull-secret: ngc-dsx-registry-creds
+        destination: ${{ fromJSON(startsWith(github.ref, 'refs/tags/v') && contains(github.ref, '-beta.') && '["nvke"]' || '["nvke","dsx"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.work
+          fetch-depth: 0
       - name: Resolve package inputs
         id: package
         env:
-          ORG_TEAM: ${{ vars[matrix.org] }}
+          ORG_TEAM: ${{ vars[matrix.destination == 'dsx' && 'DSX_NGC_ORG_TEAM' || 'NVKE_NGC_ORG'] }}
         run: |
           set -euo pipefail
           test -n "$ORG_TEAM"
@@ -299,51 +298,57 @@ jobs:
           pattern: cluster-service-${{ matrix.destination }}-receipt-*
           merge-multiple: true
           path: ${{ env.ARTIFACT_DIR }}
-      - name: Stage the chart with matching digest-pinned images
+      - name: Package chart for NVCR
+        id: chart
+        shell: bash
         env:
-          VERSION: ${{ steps.package.outputs.version }}
-          IMAGE_REPOSITORY: ${{ steps.package.outputs.repository }}
-          IMAGE_PULL_SECRET: ${{ matrix.pull-secret }}
-          RECEIPTS: ${{ github.workspace }}/${{ env.ARTIFACT_DIR }}
-          OUTPUT: ${{ runner.temp }}/cluster-service-chart
-          REVISION: ${{ github.sha }}
-        run: make -C management-engine release-package
-      - name: Lint, render and package
-        env:
-          CHART: ${{ runner.temp }}/cluster-service-chart
+          CHART: management-engine/chart
+          APP_VERSION: ${{ steps.package.outputs.version }}
+          CHART_VERSION: ${{ steps.package.outputs.chart_version }}
+          REPOSITORY: ${{ steps.package.outputs.repository }}
+          IMAGE_PULL_SECRET: ${{ matrix.destination == 'dsx' && 'ngc-dsx-registry-creds' || 'svc-nke-ngc-imagepull' }}
         run: |
           set -euo pipefail
-          inputs=(--set manager.nvkeController.endpoint=https://backend.example.invalid --set manager.infrastructureTemplateConfigMap=templates)
+          for pair in manager:manager tenantAPI:tenant-api operatorAPI:operator-api; do
+            key=${pair%:*}
+            runtime=${pair#*:}
+            image="${REPOSITORY}/cluster-service-${runtime}"
+            receipt="${ARTIFACT_DIR}/${runtime}.json"
+            jq -e --arg revision "$GITHUB_SHA" --arg version "$APP_VERSION" --arg image "$image" '
+              .revision == $revision and .version == $version and .image == $image and
+              (.digest | test("^sha256:[0-9a-f]{64}$")) and
+              (.architectures | sort) == ["amd64", "arm64"]' "$receipt" >/dev/null
+            digest=$(jq -er '.digest' "$receipt")
+            sed -i "/^${key}:/,/^[^ ]/ { s#^    repository: .*#    repository: ${image}@${digest}#; s#^    tag: .*#    tag: \"\"#; }" "$CHART/values.yaml"
+            sed -i "/^${key}:/a\\  imagePullSecrets:\\n  - name: ${IMAGE_PULL_SECRET}" "$CHART/values.yaml"
+          done
+          helm dependency build "$CHART" --skip-refresh
+          inputs=(--set manager.nvkeController.endpoint=https://backend.example.invalid --set manager.infrastructureTemplateConfigMap=templates --set metrics.enabled=false)
           helm lint "$CHART" "${inputs[@]}"
-          helm template cluster-service "$CHART" "${inputs[@]}" --namespace cluster-service-system --set metrics.enabled=false > "$RUNNER_TEMP/default.yaml"
-          helm template cluster-service "$CHART" "${inputs[@]}" --namespace cluster-service-system --set metrics.enabled=false --set tenantAPI.enabled=true --set tenantAPI.namespace=tenant-example --set operatorAPI.enabled=true > "$RUNNER_TEMP/apis.yaml"
-          helm package "$CHART" --destination "$RUNNER_TEMP"
+          helm package "$CHART" --version "$CHART_VERSION" --app-version "$APP_VERSION" --destination "$RUNNER_TEMP"
+          package="$RUNNER_TEMP/cluster-service-${CHART_VERSION}.tgz"
+          helm template cluster-service "$package" "${inputs[@]}" --namespace cluster-service-system --set tenantAPI.enabled=true --set tenantAPI.namespace=tenant-example --set operatorAPI.enabled=true > "$RUNNER_TEMP/rendered.yaml"
+          for runtime in manager tenant-api operator-api; do
+            image=$(jq -er '.image + "@" + .digest' "${ARTIFACT_DIR}/${runtime}.json")
+            grep -Fq "image: \"${image}\"" "$RUNNER_TEMP/rendered.yaml" || { echo "::error::chart does not reference $image"; exit 1; }
+          done
+          echo "chart_package=$package" >> "$GITHUB_OUTPUT"
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: nvcr.io
           username: "$oauthtoken"
-          password: ${{ secrets[matrix.token] }}
+          password: ${{ secrets[matrix.destination == 'dsx' && 'NGC_REGISTRY_TOKEN_DSX' || 'NGC_REGISTRY_TOKEN_NVKE'] }}
       - name: Log Helm into the same destination
         env:
-          NGC_TOKEN: ${{ secrets[matrix.token] }}
+          NGC_TOKEN: ${{ secrets[matrix.destination == 'dsx' && 'NGC_REGISTRY_TOKEN_DSX' || 'NGC_REGISTRY_TOKEN_NVKE'] }}
         run: |
           # shellcheck disable=SC2016
           printf '%s' "$NGC_TOKEN" | helm registry login nvcr.io --username '$oauthtoken' --password-stdin
-      - uses: ./.github/actions/setup-crane
-      - name: Push the chart without replacing an existing version
+      - name: Push chart
         env:
           REPOSITORY: ${{ steps.package.outputs.repository }}
-          VERSION: ${{ steps.package.outputs.chart_version }}
-        run: |
-          set -euo pipefail
-          tags=$(crane ls "${REPOSITORY}/cluster-service")
-          if grep -Fxq "$VERSION" <<< "$tags"; then
-            mkdir -p "$RUNNER_TEMP/published"
-            helm pull "oci://${REPOSITORY}/cluster-service" --version "$VERSION" --destination "$RUNNER_TEMP/published"
-            go -C management-engine run ./hack/releasepackage -compare "$RUNNER_TEMP/cluster-service-${VERSION}.tgz" -other "$RUNNER_TEMP/published/cluster-service-${VERSION}.tgz"
-          else
-            helm push "$RUNNER_TEMP/cluster-service-${VERSION}.tgz" "oci://${REPOSITORY}"
-          fi
+          CHART_PACKAGE: ${{ steps.chart.outputs.chart_package }}
+        run: helm push "$CHART_PACKAGE" "oci://${REPOSITORY}"
       - uses: ./.github/actions/record-digest
         with:
           references: ${{ steps.package.outputs.repository }}/cluster-service:${{ steps.package.outputs.chart_version }}

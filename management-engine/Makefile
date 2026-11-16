@@ -330,11 +330,8 @@ chart-check: manifests kubebuilder ## Check generation, lint and test every inst
 chart-assets-check: manifests kubebuilder ## Verify the complete generated chart is current.
 	$(GO) run ./hack/chartgen -kubebuilder "$(KUBEBUILDER)" -check
 
-##@ Release packaging
+##@ Image publication
 
-.PHONY: release-build release-package
+.PHONY: release-build
 release-build: ## Build/push one runtime by digest (protected publisher inputs required).
 	./hack/publish.sh build
-
-release-package: ## Stage a versioned chart from validated image receipts; never publish.
-	$(GO) run ./hack/releasepackage -receipts "$(RECEIPTS)" -repository "$(IMAGE_REPOSITORY)" -version "$(VERSION)" -revision "$(REVISION)" -output "$(OUTPUT)" -pull-secret "$(IMAGE_PULL_SECRET)"
