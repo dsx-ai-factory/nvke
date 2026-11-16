@@ -113,6 +113,12 @@ items:
       status: "False"
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
+      reason: ReleaseSupported
+      status: "True"
+      type: ReleaseSupported
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: '* NodePoolsReconciled: reconcile node pool "workers": find nvke controller
         node pool "workers": NVKE controller request returned HTTP 503: Service Unavailable'
       observedGeneration: 2

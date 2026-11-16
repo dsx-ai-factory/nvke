@@ -182,6 +182,9 @@ func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *i
 	}
 
 	release, err := r.resolveClusterRelease(ctx, cluster)
+	if err == nil {
+		setReleaseSupportedCondition(cluster, release, time.Now())
+	}
 	var kubernetesVersion *version.Version
 	if err == nil {
 		kubernetesVersion, err = clusterReleaseKubernetesVersion(release)
@@ -450,6 +453,21 @@ func (r *NVKEClusterReconciler) resolveClusterRelease(ctx context.Context, clust
 		}
 	}
 	return nil, fmt.Errorf("channel %q has no valid releases for version %q", channel.Name, selection.Version)
+}
+
+func setReleaseSupportedCondition(cluster *internalv1.NVKECluster, release *internalv1.ClusterRelease, now time.Time) {
+	condition := metav1.Condition{
+		Type:   internalv1.ReleaseSupportedCondition,
+		Status: metav1.ConditionTrue,
+		Reason: internalv1.ReleaseSupportedReason,
+	}
+	deadline := release.Spec.Lifecycle.SupportedUntil
+	if deadline != nil && !now.Before(deadline.Time) {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = internalv1.SupportExpiredReason
+		condition.Message = fmt.Sprintf("ClusterRelease %q support expired at %s; select a supported release", release.Name, deadline.UTC().Format(time.RFC3339))
+	}
+	conditions.Set(cluster, condition)
 }
 
 func clusterReleaseKubernetesVersion(release *internalv1.ClusterRelease) (*version.Version, error) {
@@ -936,6 +954,7 @@ var nvkeClusterOwnedConditions = []string{
 	internalv1.NVKEControllerUpdateFailedCondition,
 	internalv1.ClusterReconciledCondition,
 	internalv1.NodePoolsReconciledCondition,
+	internalv1.ReleaseSupportedCondition,
 }
 
 var nvkeControllerNegativeConditionTypes = []string{

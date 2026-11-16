@@ -110,6 +110,12 @@ items:
     - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: ""
       observedGeneration: 2
+      reason: ReleaseSupported
+      status: "True"
+      type: ReleaseSupported
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
       reason: Synced
       status: "True"
       type: Synced
