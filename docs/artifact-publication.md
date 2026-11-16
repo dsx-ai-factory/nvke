@@ -356,6 +356,14 @@ The other artifacts NVKE publishes — the Helm charts, the `agent` and `cli`
 OCI artifacts, `agent-deb`, the `os-image` disks and their S3 copies — are not
 attested. That is follow-up work along the pattern in `image-nvcr.yml`.
 
+## Cluster Service
+
+The manager, tenant API, operator API and state-containing chart use the
+[Cluster Service publication workflow](../management-engine/docs/artifact-publication.md).
+They share one component version and source revision, with digest-pinned images
+in each destination's chart. Its `management-engine/v*` tags follow the existing
+module path; published repositories use `cluster-service` names.
+
 ## Hotfix releases
 
 For security patches that cannot wait for the next regular release:

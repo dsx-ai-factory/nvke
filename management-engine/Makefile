@@ -90,6 +90,7 @@ UNIT_PACKAGES = $(shell $(GO) list ./... | grep -v -E '/(apis|controllers)(/|$$)
 test-unit: fmt vet ## Run unit tests without a Kubernetes API server.
 	@$(COVERAGE_MKDIR)
 	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,unit) -covermode=$(GO_COVER_MODE) $(UNIT_PACKAGES)
+	python3 -B ./hack/test_publish.py
 
 .PHONY: test-integration
 test-integration: ENVTEST_K8S_VERSION=1.37.0
@@ -328,3 +329,12 @@ chart-check: manifests kubebuilder ## Check generation, lint and test every inst
 .PHONY: chart-assets-check
 chart-assets-check: manifests kubebuilder ## Verify the complete generated chart is current.
 	$(GO) run ./hack/chartgen -kubebuilder "$(KUBEBUILDER)" -check
+
+##@ Release packaging
+
+.PHONY: release-build release-package
+release-build: ## Build/push one runtime by digest (protected publisher inputs required).
+	./hack/publish.sh build
+
+release-package: ## Stage a versioned chart from validated image receipts; never publish.
+	$(GO) run ./hack/releasepackage -receipts "$(RECEIPTS)" -repository "$(IMAGE_REPOSITORY)" -version "$(VERSION)" -revision "$(REVISION)" -output "$(OUTPUT)" -pull-secret "$(IMAGE_PULL_SECRET)"

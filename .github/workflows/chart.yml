@@ -112,4 +112,6 @@ jobs:
         run: make chart-check
 
       - name: Check the Management Engine chart
-        run: make -C management-engine chart-check chart-assets-check
+        run: |
+          make -C management-engine chart-check chart-assets-check
+          go -C management-engine test ./hack/releasepackage
