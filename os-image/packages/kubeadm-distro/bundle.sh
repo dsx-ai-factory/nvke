@@ -46,9 +46,9 @@ die() { echo "bundle.sh: $*" >&2; exit 1; }
 # because the published skew table has not caught up.
 pins_for() {
   case "$1" in
-    37) CONTAINERD=v2.3.7;  RUNC=v1.5.2; HELM=v4.3.1  ;;
-    36) CONTAINERD=v2.3.0;  RUNC=v1.4.2; HELM=v4.1.4  ;;
-    35) CONTAINERD=v2.2.3;  RUNC=v1.3.5; HELM=v3.20.2 ;;
+    37) CONTAINERD=v2.3.7;  RUNC=v1.5.3; HELM=v4.3.1  ;;
+    36) CONTAINERD=v2.3.7;  RUNC=v1.5.3; HELM=v4.1.4  ;;
+    35) CONTAINERD=v2.2.10; RUNC=v1.3.7; HELM=v3.20.2 ;;
     34) CONTAINERD=v2.1.7;  RUNC=v1.3.5; HELM=v3.20.2 ;;
     33) CONTAINERD=v2.1.7;  RUNC=v1.2.9; HELM=v3.20.2 ;;
     32) CONTAINERD=v2.1.7;  RUNC=v1.2.9; HELM=v3.20.2 ;;
