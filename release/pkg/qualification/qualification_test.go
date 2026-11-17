@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dsx-ai-factory/nvke/release/internal/resolve"
+	"github.com/dsx-ai-factory/nvke/release/pkg/resolve"
 )
 
 // repoRoot is where the real files live, relative to this package.

@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/dsx-ai-factory/nvke/release/internal/resolve"
+	"github.com/dsx-ai-factory/nvke/release/pkg/resolve"
 )
 
 // SelectorLatest is the only selector that exists. Anything else in a
@@ -32,7 +32,9 @@ type Planner struct {
 	VersionResolvers  map[string]resolve.Resolver
 	LocationResolvers map[string]resolve.Resolver
 
-	// Root is the repository root, where subject files are found.
+	// Root is the repository root: the tree the resolvers that read git history
+	// or files resolve against, and where subject files are found unless
+	// SubjectFile names one.
 	Root string
 
 	// Overrides are versions a person chose for components and dependencies,
@@ -54,6 +56,12 @@ type Planner struct {
 	// means the same thing either way.
 	ResolveAtCommit bool
 
+	// SubjectFile is the subject's qualification.yaml. Empty means the file
+	// SubjectPath names under Root, which is right when the subject lives in
+	// the tree being qualified. A subject kept apart from that tree names its
+	// file here.
+	SubjectFile string
+
 	// commit is what ResolveAtCommit resolved to, kept for the plan to record.
 	commit string
 }
@@ -63,12 +71,16 @@ type Planner struct {
 // An empty version means the subject's own highest version, which resolves the
 // way every other component does.
 func (p *Planner) Plan(subject, version, scope string) (*Plan, error) {
-	s, err := LoadSubject(SubjectPath(p.Root, subject))
+	subjectFile := p.SubjectFile
+	if subjectFile == "" {
+		subjectFile = SubjectPath(p.Root, subject)
+	}
+	s, err := LoadSubject(subjectFile)
 	if err != nil {
 		return nil, err
 	}
 	if s.Spec.Subject != subject {
-		return nil, fmt.Errorf("%s describes %q, not %q", SubjectPath(p.Root, subject), s.Spec.Subject, subject)
+		return nil, fmt.Errorf("%s describes %q, not %q", subjectFile, s.Spec.Subject, subject)
 	}
 	if err := Check(p.Policy, p.Registry, s, p.VersionResolvers, p.LocationResolvers); err != nil {
 		return nil, err

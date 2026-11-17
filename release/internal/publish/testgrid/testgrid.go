@@ -21,7 +21,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
+	"github.com/dsx-ai-factory/nvke/release/pkg/qualification"
 )
 
 // Uploader writes one object's bytes to a destination-defined location.

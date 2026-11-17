@@ -13,8 +13,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
-	"github.com/dsx-ai-factory/nvke/release/internal/resolve"
+	"github.com/dsx-ai-factory/nvke/release/pkg/qualification"
+	"github.com/dsx-ai-factory/nvke/release/pkg/resolve"
 )
 
 func planCmd() *cobra.Command {
@@ -27,6 +27,7 @@ func planCmd() *cobra.Command {
 		root        string
 		policyAt    string
 		registryAt  string
+		subjectAt   string
 		resolution  string
 		checkExists bool
 	)
@@ -65,6 +66,11 @@ way, the components that are not built here, such as the Kubernetes and OVN
 packages an image carries, are read from that commit's files, and an override
 still names a tag.
 
+--root is the tree the version resolvers read: git tags and history, and
+files such as make/tool-versions.mk. The subject's qualification spec is found
+under it unless --subject-spec names the file, which is how a subject kept
+apart from that tree is planned.
+
 --check-exists requires the CDN locations this resolves to be published
 already, which is the images and the bootloaders. It does not reach the
 registry, because asking there needs credentials and planning is meant to
@@ -102,7 +108,12 @@ check can confirm that something exists but not that it does not.`,
 			if err != nil {
 				return err
 			}
-			versionResolvers, locationResolvers, err := buildResolvers(reg, root, resolve.Options{CheckExists: checkExists})
+			versionResolvers, locationResolvers, err := qualification.BuildResolvers(
+				reg,
+				root,
+				resolve.Options{CheckExists: checkExists},
+				qualification.Strategies{},
+			)
 			if err != nil {
 				return err
 			}
@@ -117,6 +128,7 @@ check can confirm that something exists but not that it does not.`,
 				VersionResolvers:  versionResolvers,
 				LocationResolvers: locationResolvers,
 				Root:              root,
+				SubjectFile:       subjectAt,
 				Overrides:         chosen,
 				ResolveAtCommit:   resolution == resolve.VersionStrategyCommitDescribe,
 			}
@@ -138,7 +150,8 @@ check can confirm that something exists but not that it does not.`,
 	// person running it believed.
 	f.StringVar(&scope, "scope", "full", "how much of the matrix to cover")
 	f.StringVar(&output, "output", "-", "where to write the plan, - is stdout")
-	f.StringVar(&root, "root", "", "repository root (default: the enclosing git checkout)")
+	f.StringVar(&root, "root", "", "the tree the version resolvers read (default: the enclosing git checkout)")
+	f.StringVar(&subjectAt, "subject-spec", "", "the subject's qualification spec (default: <root>/release/qualification.yaml for nvke, <root>/<subject>/qualification.yaml otherwise)")
 	f.StringVar(&policyAt, "policy", "", "release policy file (default: <root>/release/policy.yaml)")
 	f.StringVar(&registryAt, "registry", "", "release registry file (default: <root>/release/registry.yaml)")
 	// The values are the strategies the plan records under each component, so
@@ -152,36 +165,6 @@ check can confirm that something exists but not that it does not.`,
 		return []string{resolve.VersionStrategyGitTag, resolve.VersionStrategyCommitDescribe}, cobra.ShellCompDirectiveNoFileComp
 	})
 	return cmd
-}
-
-// buildResolvers makes a resolver for each half each registry component
-// declares. This is the one place that names a strategy, which is what lets the
-// planner be tested with fakes.
-//
-// A half a component does not declare has no entry, which is how the planner
-// tells "this entry has no location" from "its location failed to build".
-func buildResolvers(reg *qualification.Registry, root string, opts resolve.Options) (version, location map[string]resolve.Resolver, err error) {
-	version = make(map[string]resolve.Resolver, len(reg.Spec.Components))
-	location = make(map[string]resolve.Resolver, len(reg.Spec.Components))
-	for _, c := range reg.Spec.Components {
-		// A version taken from another entry names no strategy, so there is
-		// nothing to build and the planner reads it from the inputs.
-		if v := c.Resolve.Version; v != nil && v.Strategy != "" {
-			r, err := resolve.NewVersion(v.Strategy, reg.StrategyConfig(v), root)
-			if err != nil {
-				return nil, nil, fmt.Errorf("component %s, version: %w", c.Name, err)
-			}
-			version[c.Name] = r
-		}
-		if l := c.Resolve.Location; l != nil {
-			r, err := resolve.NewLocation(l.Strategy, reg.StrategyConfig(l), opts)
-			if err != nil {
-				return nil, nil, fmt.Errorf("component %s, location: %w", c.Name, err)
-			}
-			location[c.Name] = r
-		}
-	}
-	return version, location, nil
 }
 
 // write emits a plan or a result as indented JSON, to stdout or to a file.

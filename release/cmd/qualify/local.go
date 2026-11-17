@@ -23,8 +23,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dsx-ai-factory/nvke/release/internal/artifact"
-	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
-	"github.com/dsx-ai-factory/nvke/release/internal/resolve"
+	"github.com/dsx-ai-factory/nvke/release/pkg/qualification"
+	"github.com/dsx-ai-factory/nvke/release/pkg/resolve"
 )
 
 // e2eScript holds every step of one stream's run. The workflow calls the
