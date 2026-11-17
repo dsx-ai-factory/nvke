@@ -225,8 +225,8 @@ replace them.
 | [`policy.yaml`](policy.yaml) | The streams that exist and the scopes over them |
 | [`qualification.yaml`](qualification.yaml) | What is qualified when NVKE is qualified as a whole: the components tested together, and the other versions a run needs |
 | [`cmd/qualify/`](cmd/qualify/) | The binary. `plan` resolves what to qualify, `verify` checks that it is published |
-| [`internal/qualification/`](internal/qualification/) | Reading and checking the three files, and turning them into a plan |
-| [`internal/resolve/`](internal/resolve/) | The resolution strategies. Of this repository it takes only `internal/artifact` |
+| [`pkg/qualification/`](pkg/qualification/) | Reading and checking the three files, and turning them into a plan. Importable from other modules |
+| [`pkg/resolve/`](pkg/resolve/) | The resolution strategies, which a caller can add to. Of this repository it takes only `internal/artifact` |
 | [`internal/artifact/`](internal/artifact/) | Asking whether a location holds something, over HTTPS or a registry, and waiting for one that is still publishing |
 | [`hack/next-tag.sh`](hack/next-tag.sh) | The version the next beta or release candidate tag gets, from the commits since the latest GA tag. [`test_next_tag.py`](hack/test_next_tag.py) tests it against fixture repositories |
 
