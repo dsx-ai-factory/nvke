@@ -991,11 +991,13 @@ three tools and adds 65 minutes to each clock. `qualify local` takes the same
 switch as `--tenant-gpu-runtime`, and checks the three tools and a `timeout`
 are on `PATH` before it takes a machine.
 
-`-e2e.kaps-bench-run-specs=smoke/smoke.yaml` (a comma separated list) runs those
+`-e2e.kaps-bench-run-specs=smoke/smoke-prometheus.yaml` (a comma separated list) runs those
 kaps-bench run specs, each as its own spec, on the tenant once its checks pass,
-from the kaps-bench folder `-e2e.kaps-bench-dir` names, after installing
-Prometheus from `https://prometheus-community.github.io/helm-charts` with
-`helm`, whose images come from `quay.io` and `registry.k8s.io`. CI sets both
+from the kaps-bench folder `-e2e.kaps-bench-dir` names. kaps-bench installs
+Prometheus, whose images come from `quay.io` and `registry.k8s.io`, from
+`https://prometheus-community.github.io/helm-charts` with the folder's
+`bin/helm`, and Prometheus stays for the following runs.
+Besides the `kaps-bench` binary and `run-specs`, the folder holds `bin/helm`. CI sets both
 flags for the perf stream, and the results land in
 `kaps-bench-results.tar.gz` in this directory.
 

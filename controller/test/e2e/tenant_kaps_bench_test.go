@@ -7,7 +7,6 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
-	_ "embed"
 	"errors"
 	"fmt"
 	"os"
@@ -27,21 +26,16 @@ import (
 const (
 	// kapsBenchTimeout bounds one run spec, and the token it is given outlasts it.
 	kapsBenchTimeout = 30 * time.Minute
-	// prometheusInstallTimeout is how long helm waits for kube-prometheus-stack to become ready.
-	prometheusInstallTimeout = 10 * time.Minute
-	// prometheusSetupTimeout is the install's share of the first run spec, leaving helm time to fail itself.
-	prometheusSetupTimeout = prometheusInstallTimeout + 5*time.Minute
+	// kapsBenchPrepareTimeout is the first run spec's extra time, in which kaps-bench installs Prometheus.
+	kapsBenchPrepareTimeout = 15 * time.Minute
+	// kapsBenchStopGrace is kaps-bench's time after SIGTERM to remove an unfinished install.
+	kapsBenchStopGrace = 5 * time.Minute
 	// kapsBenchResults is written next to qualify-e2e.log, so qualify local collects it with the run.
 	kapsBenchResults = "kaps-bench-results.tar.gz"
 )
 
-// kubePrometheusStackValues is embedded so the compiled suite needs no checkout beside it.
-//
-//go:embed testdata/kube-prometheus-stack-values.yaml
-var kubePrometheusStackValues []byte
-
-// prometheusInstall is the one Prometheus install a tenant's run specs share.
-type prometheusInstall struct {
+// kapsBenchSetup is the one setup a tenant's run specs share.
+type kapsBenchSetup struct {
 	attempted bool
 	// work holds the cluster context and kaps-bench's output dir, shared by every run spec.
 	work string
@@ -51,66 +45,62 @@ type prometheusInstall struct {
 // validateTenantKapsBench runs each kaps-bench run spec on the tenant as its own spec.
 func validateTenantKapsBench(test *tenantTest, failed func() bool) {
 	labels := Label("kaps-bench")
-	var install prometheusInstall
+	var setup kapsBenchSetup
 	for i, spec := range kapsBenchRunSpecs {
 		It("runs kaps-bench run spec "+spec, func(ctx context.Context) {
 			if i == len(kapsBenchRunSpecs)-1 {
 				// Only the last run spec removes the work dir every run spec shares, so it goes at most once.
-				DeferCleanup(func() { _ = os.RemoveAll(install.work) })
+				DeferCleanup(func() { _ = os.RemoveAll(setup.work) })
 			}
-			if reason := install.skipReason(failed()); reason != "" {
+			if reason := setup.skipReason(failed()); reason != "" {
 				Skip(reason)
 			}
-			work, err := install.ensure(func() (string, error) {
+			work, err := setup.ensure(func() (string, error) {
 				var dir string
-				err := InterceptGomegaFailure(func() { dir = installPrometheus(ctx, test, i) })
+				err := InterceptGomegaFailure(func() { dir = setUpKapsBench(ctx, test) })
 				return dir, err
 			})
-			Expect(err).NotTo(HaveOccurred(), "Prometheus should be installed on the tenant")
+			Expect(err).NotTo(HaveOccurred(), "kaps-bench should be set up for the tenant")
 			// Rewrites the archive after every run spec, so an interrupted run keeps what finished.
 			DeferCleanup(func() {
 				Expect(keepKapsBenchResults(work, kapsBenchResults, CurrentSpecReport().Failed())).To(Succeed(),
 					"kaps-bench's results should be archived")
 			})
 			tools := newKapsBenchToolRun(ctx, test, i)
+			runCtx, cancel := context.WithDeadline(ctx, CurrentSpecReport().StartTime.Add(kapsBenchRunTimeout(i)))
+			defer cancel()
 			args := kapsBenchRunArgs(spec, tools.kubeconfig, filepath.Join(work, "cluster-context.yaml"), filepath.Join(work, "output"))
 			binary := filepath.Join(kapsBenchDir, "kaps-bench")
-			Expect(tools.try(ctx, kapsBenchDir, binary, args...)).To(Succeed(), "kaps-bench run spec %s should pass", spec)
+			Expect(tools.try(runCtx, kapsBenchDir, binary, args...)).To(Succeed(), "kaps-bench run spec %s should pass", spec)
 		}, labels, NodeTimeout(kapsBenchSpecTimeout(i)))
 	}
 }
 
 // ensure runs step on the first call only and returns its work dir and error on every call.
-func (p *prometheusInstall) ensure(step func() (string, error)) (string, error) {
+func (p *kapsBenchSetup) ensure(step func() (string, error)) (string, error) {
 	if !p.attempted {
 		p.attempted = true
 		// Stays set if step panics, so no run spec reads a half-written work dir.
-		p.err = errors.New("the Prometheus install did not finish")
+		p.err = errors.New("the kaps-bench setup did not finish")
 		p.work, p.err = step()
 	}
 	return p.work, p.err
 }
 
 // skipReason returns why a run spec skips, or nothing when it runs.
-func (p *prometheusInstall) skipReason(earlierFailure bool) string {
+func (p *kapsBenchSetup) skipReason(earlierFailure bool) string {
 	switch {
 	case !p.attempted && earlierFailure:
 		return "an earlier check on this tenant failed"
 	case p.attempted && p.err != nil:
-		return "Prometheus did not install on the tenant: " + p.err.Error()
+		return "kaps-bench was not set up for the tenant: " + p.err.Error()
 	}
 	return ""
 }
 
-// installPrometheus installs kube-prometheus-stack on the tenant and returns the dir holding the cluster context.
-func installPrometheus(ctx context.Context, test *tenantTest, index int) string {
-	Expect(requireKapsBenchTools(kapsBenchRunSpecs, kapsBenchDir, exec.LookPath)).To(Succeed())
-	tools := newKapsBenchToolRun(ctx, test, index)
-
-	By("Installing kube-prometheus-stack into namespace monitoring with helm")
-	values := filepath.Join(tools.dir, "kube-prometheus-stack-values.yaml")
-	Expect(os.WriteFile(values, kubePrometheusStackValues, 0o600)).To(Succeed())
-	tools.command(ctx, tools.dir, "helm", prometheusInstallArgs(values)...)
+// setUpKapsBench returns a new work dir holding the cluster context kaps-bench records each run under.
+func setUpKapsBench(ctx context.Context, test *tenantTest) string {
+	Expect(requireKapsBenchTools(kapsBenchRunSpecs, kapsBenchDir)).To(Succeed())
 
 	By("Writing the cluster context kaps-bench records each run under")
 	admin := expectSucceed(test.tenantClients.GetAdminClient(ctx, test.cluster.Name))
@@ -132,7 +122,7 @@ func parseKapsBenchRunSpecs(value string) ([]string, error) {
 }
 
 // requireKapsBenchTools returns an error naming each tool or folder the run specs need but lack.
-func requireKapsBenchTools(specs []string, dir string, lookPath func(file string) (string, error)) error {
+func requireKapsBenchTools(specs []string, dir string) error {
 	if len(specs) == 0 {
 		return nil
 	}
@@ -150,27 +140,16 @@ func requireKapsBenchTools(specs []string, dir string, lookPath func(file string
 		if _, err := exec.LookPath(filepath.Join(dir, "kaps-bench")); err != nil {
 			errs = append(errs, fmt.Errorf("kaps-bench folder %s has no kaps-bench to run: %w", dir, err))
 		}
+		if _, err := exec.LookPath(filepath.Join(dir, "bin", "helm")); err != nil {
+			errs = append(errs, fmt.Errorf("kaps-bench folder %s has no bin/helm to run: %w", dir, err))
+		}
 		for _, spec := range specs {
 			if _, err := os.Stat(filepath.Join(dir, "run-specs", spec)); err != nil {
 				errs = append(errs, fmt.Errorf("kaps-bench has no run spec %s: %w", spec, err))
 			}
 		}
 	}
-	if _, err := lookPath("helm"); err != nil {
-		errs = append(errs, fmt.Errorf("helm is not on PATH: %w", err))
-	}
 	return errors.Join(errs...)
-}
-
-// prometheusInstallArgs returns helm's arguments for Prometheus in the namespace the run specs name.
-func prometheusInstallArgs(values string) []string {
-	return []string{
-		"upgrade", "--install", "prometheus", "kube-prometheus-stack",
-		"--repo", "https://prometheus-community.github.io/helm-charts", "--version", "76.5.0",
-		"--namespace", "monitoring", "--create-namespace",
-		"--values", values,
-		"--wait", "--timeout", prometheusInstallTimeout.String(),
-	}
 }
 
 // kapsBenchRunArgs returns the arguments that run one run spec and keep its results in outputDir.
@@ -194,13 +173,15 @@ func newKapsBenchToolRun(ctx context.Context, test *tenantTest, index int) *tena
 	// Ginkgo's spec context carries no deadline, so this one lets a capped token be reported.
 	ctx, cancel := context.WithTimeout(ctx, kapsBenchSpecTimeout(index))
 	defer cancel()
-	return newTenantToolRun(ctx, test, kapsBenchTokenLifetime(index), "kaps-bench admin token")
+	run := newTenantToolRun(ctx, test, kapsBenchTokenLifetime(index), "kaps-bench admin token")
+	run.stopGrace = kapsBenchStopGrace
+	return run
 }
 
 // kapsBenchSpecTimeout returns run spec index's time limit; the first one also installs Prometheus.
 func kapsBenchSpecTimeout(index int) time.Duration {
 	if index == 0 {
-		return kapsBenchTimeout + prometheusSetupTimeout
+		return kapsBenchTimeout + kapsBenchPrepareTimeout
 	}
 	return kapsBenchTimeout
 }
@@ -208,6 +189,13 @@ func kapsBenchSpecTimeout(index int) time.Duration {
 // kapsBenchTokenLifetime returns how long run spec index's token is asked to last: five minutes past its limit.
 func kapsBenchTokenLifetime(index int) time.Duration {
 	return kapsBenchSpecTimeout(index) + 5*time.Minute
+}
+
+// kapsBenchRunTimeout returns how long spec index runs kaps-bench so its stop ends by the limit.
+func kapsBenchRunTimeout(index int) time.Duration {
+	stopping := tenantToolRun{stopGrace: kapsBenchStopGrace}
+	// aicrKillGrace also bounds the process listing that comes before SIGTERM.
+	return kapsBenchSpecTimeout(index) - aicrKillGrace - stopping.waitDelay()
 }
 
 // keepKapsBenchResults archives work's output dir into dest, returning the error only when the spec passed.

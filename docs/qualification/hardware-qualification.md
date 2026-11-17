@@ -494,7 +494,6 @@ Teleport login on each are your own, plus the Forge API key, which is secret.
 | `tsh` | Reaching the site's jump host through Teleport | Yes |
 | `oras` | Pulling nvkectl when it is not built | No; only that path needs it |
 | `aicr`, `helm`, `kubectl` | Installing the tenant GPU runtime, with `--tenant-gpu-runtime`. `aicr` is pinned in `make/tool-versions.mk` | Yes, with that flag |
-| `helm` | Installing Prometheus on the tenant for a stream that lists `kapsBenchRunSpecs`, such as perf | Yes, by the suite at stage `full` |
 | `timeout` or `gtimeout` | AICR's nvsentinel install, with `--tenant-gpu-runtime`. macOS has neither; `brew install coreutils` provides `gtimeout` | Yes, with that flag |
 
 #### Teleport
@@ -555,7 +554,7 @@ Planning needs `QUALIFY_E2E_NGC_ORG` whatever the registry, because
 | `QUALIFY_E2E_SITE_CONTROLLER_VERSION` | The plan's controller | The site controller version, in place of the one the plan names |
 | `SITE_DEPLOY_PATH_REF` | The controller's commit | The commit the deploy path is exported from |
 | `NVKE_CONTROLLER_NAMESPACE`, `NVKE_CONTROLLER_SERVICE` | `nvke-controller` | The name the controller is installed under. A release cut before the rename uses `nke-controller`. |
-| `E2E_KAPS_BENCH_DIR` | None | Absolute path of a kaps-bench folder holding the `kaps-bench` binary beside `run-specs`. A stream that lists `kapsBenchRunSpecs`, such as perf, needs it and `helm` on `PATH`; at stage `full`, the only stage that runs them, the suite checks both before a machine is taken. CI stages it for the perf stream. |
+| `E2E_KAPS_BENCH_DIR` | None | Absolute path of a kaps-bench folder holding the `kaps-bench` binary, `bin/helm` and `run-specs`. kaps-bench installs the Prometheus its run specs need, which stays for the following runs. A stream that lists `kapsBenchRunSpecs`, such as perf, needs it; at stage `full`, the only stage that runs them, the suite checks it before a machine is taken. CI stages it for the perf stream. |
 
 ### How it stays the same run as CI
 
@@ -783,9 +782,9 @@ out. A stream can also carry
 `parameters` in `release/policy.yaml`: the environment file it runs against,
 the workers its tenant gets, the suite's timeout, the TestGrid group it
 publishes to, which is `nvke-scale` for the perf stream, and the kaps-bench run
-specs (`kapsBenchRunSpecs`, such as `smoke/smoke.yaml`) the suite runs on the
-tenant once its checks pass, after installing Prometheus in `monitoring` with
-`helm`. The plan records them,
+specs (`kapsBenchRunSpecs`, such as `smoke/smoke-prometheus.yaml`) the suite runs on the
+tenant once its checks pass, where kaps-bench installs Prometheus in
+`monitoring` itself. The plan records them,
 and the stream's result says which it ran with. The job's timeout and the timeout of
 `go test` follow from the suite's, so they cannot be set to disagree.
 

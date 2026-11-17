@@ -236,7 +236,7 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 			Expect(requireRunCapacity(context.Background(), provider, siteStage, tenantWorkers)).To(Succeed())
 		}
 		if siteStage == siteStageFull {
-			Expect(requireKapsBenchTools(kapsBenchRunSpecs, kapsBenchDir, exec.LookPath)).To(Succeed())
+			Expect(requireKapsBenchTools(kapsBenchRunSpecs, kapsBenchDir)).To(Succeed())
 		}
 	})
 

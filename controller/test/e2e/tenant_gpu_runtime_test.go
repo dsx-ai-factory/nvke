@@ -4,6 +4,7 @@
 package e2e
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -56,9 +58,6 @@ const (
 	// aicrKillGrace is how long a canceled command's process group has
 	// between SIGTERM and SIGKILL.
 	aicrKillGrace = 5 * time.Second
-	// aicrWaitDelay bounds the wait for a canceled command's output pipe to
-	// close once its process group has been signaled.
-	aicrWaitDelay = aicrKillGrace + 5*time.Second
 )
 
 // aicrAccelerators maps the run's gpu capability to the AICR accelerator
@@ -170,12 +169,11 @@ func skipAfterFailure(failed func() bool) {
 	}
 }
 
-// tenantToolRun is one spec's working directory for a tool run on the runner
-// against the tenant: a relayed admin kubeconfig and, for aicr, the recipe
-// rendered for it. Each spec renders its own, so neither
-// depends on a file the other left behind; rendering is offline and quick.
+// tenantToolRun is one spec's own working directory, so no spec reads a file another left behind.
 type tenantToolRun struct {
 	dir, kubeconfig, data, recipe string
+	// stopGrace is how long a canceled command has from SIGTERM to SIGKILL, aicrKillGrace when zero.
+	stopGrace time.Duration
 }
 
 func newAICRToolRun(ctx context.Context, test *tenantTest, plan tenantGPURuntimePlan, lifetime time.Duration) *tenantToolRun {
@@ -261,6 +259,8 @@ func (r *tenantToolRun) try(ctx context.Context, dir, name string, args ...strin
 	// instead. AICR's CRD installer runs its step under GNU timeout, which
 	// moves into a group of its own, out of reach of the command's.
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	var kill *time.Timer
+	var hardKill func()
 	command.Cancel = func() error {
 		// ctx is done by now; the listing needs one that is not.
 		groups := processGroups(context.WithoutCancel(ctx), command.Process.Pid)
@@ -270,14 +270,31 @@ func (r *tenantToolRun) try(ctx context.Context, dir, name string, args ...strin
 			}
 		}
 		signal(syscall.SIGTERM)
-		time.AfterFunc(aicrKillGrace, func() { signal(syscall.SIGKILL) })
+		hardKill = sync.OnceFunc(func() { signal(syscall.SIGKILL) })
+		kill = time.AfterFunc(r.killGrace(), hardKill)
 		return nil
 	}
-	command.WaitDelay = aicrWaitDelay
-	if err := command.Run(); err != nil {
+	command.WaitDelay = r.waitDelay()
+	err := command.Run()
+	if kill != nil {
+		// Every listed group is hard-killed once the command returns, whether or not its grace ran out.
+		kill.Stop()
+		hardKill()
+	}
+	if err != nil {
 		return fmt.Errorf("%s %s: %w\n%s", name, strings.Join(args, " "), err, lastLines(out.String(), aicrOutputLines))
 	}
 	return nil
+}
+
+// killGrace returns how long a canceled command's process groups have between SIGTERM and SIGKILL.
+func (r *tenantToolRun) killGrace() time.Duration {
+	return cmp.Or(r.stopGrace, aicrKillGrace)
+}
+
+// waitDelay bounds the wait for a canceled command's output pipe after its groups are signaled.
+func (r *tenantToolRun) waitDelay() time.Duration {
+	return r.killGrace() + 5*time.Second
 }
 
 // processGroups lists the process groups in root's tree, root's own first.

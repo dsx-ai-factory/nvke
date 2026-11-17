@@ -1098,7 +1098,7 @@ jobs:
           "${HOME}/.local/bin/aicr" --version
 
       - name: Read the helm and kubectl versions
-        if: env.DRY_RUN != 'true' && (env.TENANT_GPU_RUNTIME == 'true' || env.E2E_KAPS_BENCH_RUN_SPECS != '')
+        if: env.DRY_RUN != 'true' && env.TENANT_GPU_RUNTIME == 'true'
         id: gpu-runtime-tools
         shell: bash
         run: |
@@ -1109,9 +1109,8 @@ jobs:
             echo "kind=$(make --no-print-directory print-KIND_VERSION)"
           } >> "${GITHUB_OUTPUT}"
 
-      # helm also installs Prometheus on the tenant for a stream with kaps-bench run specs.
       - name: Set up Helm
-        if: env.DRY_RUN != 'true' && (env.TENANT_GPU_RUNTIME == 'true' || env.E2E_KAPS_BENCH_RUN_SPECS != '')
+        if: env.DRY_RUN != 'true' && env.TENANT_GPU_RUNTIME == 'true'
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: ${{ steps.gpu-runtime-tools.outputs.helm }}

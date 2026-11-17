@@ -6,14 +6,17 @@ package e2e
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -123,7 +126,7 @@ func TestAICRCommandCancelKillsItsChildren(t *testing.T) {
 			if err := run.try(ctx, dir, "sh", args...); err == nil {
 				t.Fatal("try returned nil for a canceled command")
 			}
-			if elapsed := time.Since(start); elapsed > 2*time.Second+aicrWaitDelay {
+			if elapsed := time.Since(start); elapsed > 2*time.Second+run.waitDelay() {
 				t.Fatalf("try took %s after cancel; it should not wait on the child", elapsed)
 			}
 			size := func() int64 {
@@ -140,6 +143,210 @@ func TestAICRCommandCancelKillsItsChildren(t *testing.T) {
 				t.Fatalf("the child kept running after its command was canceled: %d bytes, then %d", before, after)
 			}
 		})
+	}
+}
+
+// TestToolRunStopGrace checks that a canceled command may finish within its stop grace.
+func TestToolRunStopGrace(t *testing.T) {
+	t.Parallel()
+	const loop = `while :; do sleep 0.05; done`
+	for _, tc := range []struct {
+		name      string
+		stopGrace time.Duration
+		script    string
+		// stop is how long after the cancel try should return.
+		stop   time.Duration
+		output string
+		killed bool
+	}{
+		{
+			name:      "a command that finishes inside a grace longer than the default",
+			stopGrace: 10 * time.Second,
+			script:    `trap 'sleep 6; echo removed; exit 0' TERM; ` + loop,
+			stop:      6 * time.Second,
+			output:    "removed",
+		},
+		{
+			name:      "a command that finishes after the default wait delay but inside its grace",
+			stopGrace: 15 * time.Second,
+			script:    `trap 'sleep 11; echo removed; exit 0' TERM; ` + loop,
+			stop:      11 * time.Second,
+			output:    "removed",
+		},
+		{
+			name:      "a command still running at the end of its grace",
+			stopGrace: time.Second,
+			script:    `trap 'echo stopping' TERM; ` + loop,
+			stop:      time.Second,
+			output:    "stopping",
+			killed:    true,
+		},
+		{
+			name:   "no grace set keeps the default",
+			script: `trap 'echo stopping' TERM; ` + loop,
+			stop:   aicrKillGrace,
+			output: "stopping",
+			killed: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			t.Log("Doing: a command that traps SIGTERM, canceled after 200ms")
+			dir := t.TempDir()
+			run := &tenantToolRun{dir: dir, stopGrace: tc.stopGrace}
+			const cancelAfter = 200 * time.Millisecond
+			ctx, cancel := context.WithTimeout(t.Context(), cancelAfter)
+			defer cancel()
+
+			start := time.Now()
+			err := run.try(ctx, dir, "sh", "-c", tc.script)
+			elapsed := time.Since(start) - cancelAfter
+
+			t.Log("Testing: try returns when the command ends or its grace runs out, not before")
+			if elapsed < tc.stop || elapsed > tc.stop+2*time.Second {
+				t.Errorf("try returned %s after the cancel, want about %s", elapsed, tc.stop)
+			}
+			if err == nil {
+				t.Fatal("try returned nil for a canceled command")
+			}
+			t.Log("Testing: the output the command wrote after SIGTERM is kept")
+			if !strings.Contains(err.Error(), tc.output) {
+				t.Errorf("try error = %q, want the command's %q in it", err, tc.output)
+			}
+			if killed := strings.Contains(err.Error(), "signal: killed"); killed != tc.killed {
+				t.Errorf("try error = %q, killed = %t, want %t", err, killed, tc.killed)
+			}
+		})
+	}
+}
+
+// TestToolRunStopGraceKillsWhatOutlivesTheCommand checks that no listed group outlives a canceled command.
+func TestToolRunStopGraceKillsWhatOutlivesTheCommand(t *testing.T) {
+	t.Parallel()
+	helper, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// script starts TestToolRunStopGraceHelper as the child, off the output pipe so try never waits on it.
+	const script = `trap 'exit 0' TERM; "$0" -test.run='^TestToolRunStopGraceHelper$' -- "$1" "$2" >/dev/null 2>&1 & ` +
+		`while :; do sleep 0.05; done`
+	for _, tc := range []struct {
+		name      string
+		stopGrace time.Duration
+		ownGroup  bool
+	}{
+		{name: "a child in the command's group under the default grace"},
+		{name: "a child in the command's group under a long grace", stopGrace: time.Minute},
+		{name: "a child in a group of its own under the default grace", ownGroup: true},
+		{name: "a child in a group of its own under a long grace", stopGrace: time.Minute, ownGroup: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			group := "same"
+			if tc.ownGroup {
+				if _, err := listProcesses(t.Context()); err != nil {
+					t.Skipf("cannot list processes here: %v", err)
+				}
+				group = "own"
+			}
+			t.Log("Doing: a command that exits on SIGTERM and leaves a SIGTERM-ignoring child, canceled once it runs")
+			dir := t.TempDir()
+			beat := filepath.Join(dir, "beat")
+			var pid, pgid, commandPgid int
+			readRecord := func() error {
+				record, err := os.ReadFile(beat + ".pid")
+				if err != nil {
+					return err
+				}
+				_, err = fmt.Sscan(string(record), &pid, &pgid, &commandPgid)
+				return err
+			}
+			t.Cleanup(func() {
+				if readRecord() == nil {
+					_ = syscall.Kill(pid, syscall.SIGKILL)
+				}
+			})
+			run := &tenantToolRun{dir: dir, stopGrace: tc.stopGrace}
+			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			defer cancel()
+			go func() {
+				for ctx.Err() == nil {
+					if _, err := os.Stat(beat + ".pid"); err == nil {
+						cancel()
+						return
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+			}()
+
+			err := run.try(ctx, dir, "sh", "-c", script, helper, beat, group)
+			if err != nil && strings.Contains(err.Error(), "signal: killed") {
+				t.Fatalf("try error = %q, want the command to exit on its own", err)
+			}
+
+			if err := readRecord(); err != nil {
+				t.Fatalf("the child wrote no record: %v", err)
+			}
+			t.Logf("Testing: the child's group is the command's only when asked: child pgid %d, command pgid %d", pgid, commandPgid)
+			if (pgid != commandPgid) != tc.ownGroup {
+				t.Fatalf("child pgid %d, command pgid %d, want them to differ only for a group of its own", pgid, commandPgid)
+			}
+
+			t.Log("Testing: the child is dead right after try returns, whatever is left of the grace")
+			size := func() int64 {
+				info, statErr := os.Stat(beat)
+				if statErr != nil {
+					t.Fatal(statErr)
+				}
+				return info.Size()
+			}
+			time.Sleep(200 * time.Millisecond)
+			before := size()
+			time.Sleep(500 * time.Millisecond)
+			if after := size(); after != before {
+				t.Errorf("the child kept running after try returned: %d bytes, then %d", before, after)
+			}
+		})
+	}
+}
+
+// TestToolRunStopGraceHelper is the child the test above starts, and skips unless run as that child.
+func TestToolRunStopGraceHelper(t *testing.T) {
+	args := flag.Args()
+	if len(args) != 2 || (args[1] != "own" && args[1] != "same") {
+		t.Skip("runs only as the child of TestToolRunStopGraceKillsWhatOutlivesTheCommand")
+	}
+	beat, group := args[0], args[1]
+	commandPgid, err := syscall.Getpgid(os.Getppid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if group == "own" {
+		if err := syscall.Setpgid(0, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	signal.Ignore(syscall.SIGTERM)
+	record := fmt.Sprintf("%d %d %d\n", os.Getpid(), syscall.Getpgrp(), commandPgid)
+	if err := os.WriteFile(beat+".tmp", []byte(record), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(beat, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(beat+".tmp", beat+".pid"); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		f, err := os.OpenFile(beat, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = f.WriteString("x\n")
+		if err = errors.Join(err, f.Close()); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
