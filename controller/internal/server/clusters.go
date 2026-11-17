@@ -704,6 +704,10 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 			}
 
 			dbCluster.KubernetesVersion = *req.Body.ControlPlaneKubernetesVersion
+			// Raised in the same write as the target, so nothing reads the new version
+			// as running before the control plane runs it. The control-plane reconciler
+			// updates the kubeadm ConfigMap and clears the condition once the rollout completes.
+			dbCluster.Conditions.ControlPlaneUpgrading = db.NewCondition(true, "upgrading control plane to "+dbCluster.KubernetesVersion)
 		}
 
 		if req.Body.EnableEtcdEncryption != nil && *req.Body.EnableEtcdEncryption {

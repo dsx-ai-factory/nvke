@@ -1823,10 +1823,13 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig_CreatesSnapshotOnVersio
 			KubernetesVersion: newVersion,
 		},
 	}, nil).Once()
+	// The upgrading condition is raised in the same write that stores the target.
 	mockDB.MockTx.On("UpdateCluster", mock.Anything, mock.MatchedBy(func(c *db.Cluster) bool {
 		return c.ID == clusterID &&
 			c.KubernetesVersion == newVersion &&
-			c.ControlPlaneConfig.ConfigurationID == newCfgID
+			c.ControlPlaneConfig.ConfigurationID == newCfgID &&
+			c.Conditions.ControlPlaneUpgrading.Status == db.ConditionStatusTrue &&
+			c.Conditions.ControlPlaneUpgrading.Message == "upgrading control plane to "+newVersion
 	})).Return(db.Cluster{
 		ID:                clusterID,
 		KubernetesVersion: newVersion,
@@ -1854,6 +1857,45 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig_CreatesSnapshotOnVersio
 	require.True(t, ok, "expected UpdateCluster200JSONResponse, got %T", resp)
 	assert.Equal(t, newVersion, body.ControlPlaneKubernetesVersion)
 	mockDB.AssertExpectations(t)
+}
+
+// A version update raises ControlPlaneUpgrading in the same write, so a second
+// version update before the upgrade finishes is rejected rather than compared with
+// the stored target (which would accept 1.36 -> 1.37 -> 1.38).
+func TestClusterService_UpdateCluster_RejectsVersionChangeWhileUpgrading(t *testing.T) {
+	clusterID := uuid.New()
+	newVersion := "1.38.0"
+
+	mockDB := &mockDB{MockTx: &mockTx{}}
+	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
+	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+		ID:                clusterID,
+		KubernetesVersion: "1.37.2",
+		ControlPlaneVIP:   "172.31.0.10",
+		ProviderType:      db.ProviderTypeCAPI,
+		Conditions: db.ClusterConditions{
+			ControlPlaneUpgrading: db.NewCondition(true, "upgrading control plane to 1.37.2"),
+		},
+	}, nil).Once()
+	controlPlaneFalse := false
+	mockDB.MockTx.On("ListNodePools", mock.Anything, db.NodePoolFilters{
+		ClusterID:    &clusterID,
+		ControlPlane: &controlPlaneFalse,
+	}).Return([]db.NodePool{}, nil).Once()
+
+	svc := newTestClusterService(discardLogger(), mockDB)
+	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
+		ClusterID: clusterID,
+		Body:      &api.UpdateClusterRequest{ControlPlaneKubernetesVersion: &newVersion},
+	})
+	require.NoError(t, err)
+
+	badRequest, ok := resp.(api.UpdateCluster400JSONResponse)
+	require.True(t, ok, "expected UpdateCluster400JSONResponse, got %T", resp)
+	assert.Contains(t, badRequest.Message, "cannot update Kubernetes version while an upgrade is already in progress")
+	mockDB.MockTx.AssertNotCalled(t, "UpdateCluster", mock.Anything, mock.Anything)
+	mockDB.AssertExpectations(t)
+	mockDB.MockTx.AssertExpectations(t)
 }
 
 func TestClusterService_UpdateCluster_ControlPlaneConfig_RejectsPodCIDRCapacityExceeded(t *testing.T) {

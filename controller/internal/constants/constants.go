@@ -96,6 +96,7 @@ const (
 	FieldManagerMachineSpireEntry             = "machine-spire-entry-controller"
 	FieldManagerSpireNicoTPMBootstrapIdentity = "spire-nico-tpm-bootstrap-identity-controller"
 	FieldManagerBootstrapAuthorization        = "bootstrap-authorization-controller"
+	FieldManagerKubeletClientCSR              = "kubelet-client-csr-controller"
 
 	LabelValueTerminateStatusInProgress = "InProgress"
 	LabelValueTerminateStatusNotAllowed = "NotAllowed"
