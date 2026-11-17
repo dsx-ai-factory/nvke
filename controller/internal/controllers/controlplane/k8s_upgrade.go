@@ -245,7 +245,7 @@ func (r *reconciler) updateKubeadmConfigMap(ctx context.Context, cluster db.Clus
 	workflowID := fmt.Sprintf("%s%s-%s", constants.UpdateKubeadmCMWorkflowPrefix, cluster.ID, cluster.KubernetesVersion)
 
 	// Check if workflow is already running or completed
-	desc, err := r.controllerTemporalClient.DescribeWorkflowExecution(ctx, workflowID, "")
+	desc, err := r.controllerTemporalClient.DescribeWorkflow(ctx, workflowID, "")
 
 	if isWorkflowNotFoundError(err) {
 		if err := r.startUpdateKubeadmConfigMapWorkflow(ctx, cluster, workflowID, logger); err != nil {
@@ -260,7 +260,7 @@ func (r *reconciler) updateKubeadmConfigMap(ctx context.Context, cluster db.Clus
 	}
 
 	// No error - workflow exists, check its status
-	if desc.GetWorkflowExecutionInfo().GetCloseTime() == nil {
+	if desc.RawResponse.GetWorkflowExecutionInfo().GetCloseTime() == nil {
 		// Workflow is still running
 		logger.Info("UpdateKubeadmConfigMap workflow is still running - waiting for completion",
 			"workflowID", workflowID)
@@ -268,16 +268,16 @@ func (r *reconciler) updateKubeadmConfigMap(ctx context.Context, cluster db.Clus
 	}
 
 	// Workflow completed - check if it succeeded
-	if desc.GetWorkflowExecutionInfo().GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_COMPLETED {
+	if desc.RawResponse.GetWorkflowExecutionInfo().GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_COMPLETED {
 		logger.Info("UpdateKubeadmConfigMap workflow completed successfully",
 			"workflowID", workflowID)
 		return true, nil
 	}
 
-	// Workflow failed or timed out - start a new run to retry. DescribeWorkflowExecution
+	// Workflow failed or timed out - start a new run to retry. DescribeWorkflow
 	// keeps returning the closed execution, so without this the ConfigMap update would
 	// stay wedged after a transient failure instead of reaching the not-found branch.
-	logger.Warn("UpdateKubeadmConfigMap workflow failed - restarting", "workflowID", workflowID, "status", desc.GetWorkflowExecutionInfo().GetStatus().String())
+	logger.Warn("UpdateKubeadmConfigMap workflow failed - restarting", "workflowID", workflowID, "status", desc.RawResponse.GetWorkflowExecutionInfo().GetStatus().String())
 	if err := r.startUpdateKubeadmConfigMapWorkflow(ctx, cluster, workflowID, logger); err != nil {
 		return false, err
 	}
@@ -310,13 +310,13 @@ func (r *reconciler) upgradeAddons(
 	}
 
 	// Note: Temporal allows multiple runs with the same workflow ID.
-	// DescribeWorkflowExecution without a runID returns the most recent execution.
+	// DescribeWorkflow without a runID returns the most recent execution.
 	// When a workflow fails, we start a new execution with the same workflow ID but different runID.
 	workflowID := fmt.Sprintf("%s%s-%s", constants.UpgradeControlPlaneAddonsWorkflowPrefix, cluster.ID, cluster.KubernetesVersion)
 
 	// Check if workflow is already running or completed
 	// This returns the most recent execution for this workflow ID
-	desc, err := r.controllerTemporalClient.DescribeWorkflowExecution(ctx, workflowID, "")
+	desc, err := r.controllerTemporalClient.DescribeWorkflow(ctx, workflowID, "")
 
 	if isWorkflowNotFoundError(err) {
 		if err := r.startKubeadmAddOnUpgradeWorkflow(ctx, cluster, workflowID, logger); err != nil {
@@ -331,7 +331,7 @@ func (r *reconciler) upgradeAddons(
 	}
 
 	// No error - workflow exists, check its status
-	if desc.GetWorkflowExecutionInfo().GetCloseTime() == nil {
+	if desc.RawResponse.GetWorkflowExecutionInfo().GetCloseTime() == nil {
 		// Workflow is still running
 		logger.Info("Kubeadm upgrade workflow is still running - waiting for completion",
 			"workflowID", workflowID)
@@ -339,7 +339,7 @@ func (r *reconciler) upgradeAddons(
 	}
 
 	// Workflow completed - check if it succeeded
-	if desc.GetWorkflowExecutionInfo().GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_COMPLETED {
+	if desc.RawResponse.GetWorkflowExecutionInfo().GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_COMPLETED {
 		logger.Info("Kubeadm upgrade workflow completed successfully",
 			"workflowID", workflowID)
 		return true, nil
@@ -350,7 +350,7 @@ func (r *reconciler) upgradeAddons(
 	// fresh run under the same workflow ID. Without this, a transient failure (e.g. a control
 	// plane VIP blip during kubeadm's health preflight) would wedge the upgrade indefinitely,
 	// since the not-found branch above never fires for a closed-but-failed workflow.
-	logger.Warn("Kubeadm upgrade workflow failed - restarting", "workflowID", workflowID, "status", desc.GetWorkflowExecutionInfo().GetStatus().String())
+	logger.Warn("Kubeadm upgrade workflow failed - restarting", "workflowID", workflowID, "status", desc.RawResponse.GetWorkflowExecutionInfo().GetStatus().String())
 	if err := r.startKubeadmAddOnUpgradeWorkflow(ctx, cluster, workflowID, logger); err != nil {
 		return false, err
 	}
