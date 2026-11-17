@@ -202,6 +202,8 @@ func TestBuildResolversRejectsABadAddition(t *testing.T) {
 		{"shadows a built-in version strategy", Strategies{Version: map[string]VersionFactory{"gitTag": version}}, `version strategy "gitTag" is built in`},
 		{"shadows a built-in location strategy", Strategies{Location: map[string]LocationFactory{"url": location}}, `location strategy "url" is built in`},
 		{"takes a name the other half's built-ins use", Strategies{Version: map[string]VersionFactory{"ociArtifact": version}}, `version strategy "ociArtifact" is built in`},
+		{"has an empty version name", Strategies{Version: map[string]VersionFactory{"": version}}, "a version strategy is added with an empty name"},
+		{"has an empty location name", Strategies{Location: map[string]LocationFactory{"": location}}, "a location strategy is added with an empty name"},
 		{"has no version factory", Strategies{Version: map[string]VersionFactory{"releaseVersion": nil}}, `version strategy "releaseVersion" has no factory`},
 		{"has no location factory", Strategies{Location: map[string]LocationFactory{"releaseLocation": nil}}, `location strategy "releaseLocation" has no factory`},
 		{

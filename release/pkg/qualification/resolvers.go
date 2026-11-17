@@ -22,6 +22,11 @@ type LocationFactory func(with map[string]string, opts resolve.Options) (resolve
 // Strategies are the strategies a caller adds to the built-in ones, keyed by
 // the name a registry uses for them. A name belongs to one half, and cannot be
 // a name the built-in strategies already use.
+//
+// A version strategy that resolves the subject must also return
+// resolve.ResultRefKey when the Planner has ResolveAtCommit set. The ref has to
+// name a commit in the tree at Planner.Root, because the plan describes every
+// component at that commit. The input and result keys are in package resolve.
 type Strategies struct {
 	Version  map[string]VersionFactory
 	Location map[string]LocationFactory
@@ -31,6 +36,9 @@ type Strategies struct {
 // in both halves, or have no factory.
 func (s Strategies) validate() error {
 	for name, f := range s.Version {
+		if name == "" {
+			return fmt.Errorf("a version strategy is added with an empty name")
+		}
 		if f == nil {
 			return fmt.Errorf("version strategy %q has no factory", name)
 		}
@@ -42,6 +50,9 @@ func (s Strategies) validate() error {
 		}
 	}
 	for name, f := range s.Location {
+		if name == "" {
+			return fmt.Errorf("a location strategy is added with an empty name")
+		}
 		if f == nil {
 			return fmt.Errorf("location strategy %q has no factory", name)
 		}
