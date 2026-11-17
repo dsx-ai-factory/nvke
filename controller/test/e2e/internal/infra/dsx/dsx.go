@@ -354,7 +354,10 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 		return fail(err)
 	}
 
-	return infra.Node{Name: req.Name, IP: address, User: p.nodeUser(), Arch: place.Arch}, &provision.Session{Conn: conn, Release: release}, nil
+	return infra.Node{
+		Name: req.Name, IP: address, User: p.nodeUser(), Arch: place.Arch,
+		JumpHost: p.site.JumpHost, JumpLogin: p.site.TeleportLogin,
+	}, &provision.Session{Conn: conn, Release: release}, nil
 }
 
 // payloads returns the iPXE script and the cloud-init user data, in that order.

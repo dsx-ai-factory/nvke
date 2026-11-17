@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go/storage v1.70.0
 	github.com/onsi/ginkgo/v2 v2.34.0
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/crypto v0.59.0
 	golang.org/x/mod v0.43.0
 	google.golang.org/api v0.315.0
 	sigs.k8s.io/yaml v1.6.0
@@ -52,7 +53,6 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.47.0 // indirect
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.5 // indirect
-	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/oauth2 v0.38.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect

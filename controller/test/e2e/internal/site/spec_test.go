@@ -401,7 +401,7 @@ func TestKeepKubeconfig(t *testing.T) {
 	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "run.kubeconfig")
-	if err := os.WriteFile(path, forwarded, 0o600); err != nil {
+	if err = os.WriteFile(path, forwarded, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	keepDir := t.TempDir()

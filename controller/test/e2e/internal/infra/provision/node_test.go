@@ -5,6 +5,7 @@ package provision
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,6 +15,36 @@ import (
 
 	"golang.org/x/crypto/ssh"
 )
+
+// A kept node's record round-trips, readable only by its owner.
+func TestSaveRecord(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "node-keys")
+	want := Record{Name: "site-a", Address: "10.0.0.7", User: "ubuntu", JumpHost: "jump", JumpLogin: "root", Key: KeyPath(dir, "site-a")}
+	if err := SaveRecord(dir, want); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(RecordPath(dir, "site-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("record mode %v, want 0600", info.Mode().Perm())
+	}
+	data, err := os.ReadFile(RecordPath(dir, "site-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Record
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Errorf("read back %+v, want %+v", got, want)
+	}
+	if err := SaveRecord(dir, Record{Name: "../escape"}); err == nil {
+		t.Error("a name that climbs out of the directory was accepted")
+	}
+}
 
 // The saved key is readable only by its owner, and is the private half of the
 // public key the node is given.

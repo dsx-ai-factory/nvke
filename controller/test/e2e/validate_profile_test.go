@@ -76,6 +76,7 @@ var profileKeys = slices.Concat(
 		siteProbeNamespaceEnv,
 		siteProbeImageEnv,
 		siteProbePullSecretsEnv,
+		siteScopeEnv,
 	},
 	siteExpectationEnvs,
 	tenantTwins(siteExpectationEnvs),
@@ -155,7 +156,7 @@ func loadValidateProfile(path string) (map[string]string, error) {
 				entries = append(entries, entry.Value)
 			}
 			values[key] = strings.Join(entries, ",")
-		default:
+		case yaml.DocumentNode, yaml.MappingNode, yaml.AliasNode:
 			return nil, fmt.Errorf("%s: %s: %s is not a string or a list of strings", validateProfileEnv, path, key)
 		}
 	}
@@ -166,7 +167,8 @@ func loadValidateProfile(path string) (map[string]string, error) {
 // leaves unset, and returns the keys it set and the keys the environment
 // overrode, each sorted. A variable set blank overrides too: every input reads
 // blank as its built-in default, so blanking one is how a run asks for that.
-func applyValidateProfile(values map[string]string, lookupEnv func(string) (string, bool), setenv func(string, string)) (set, overridden []string) {
+func applyValidateProfile(values map[string]string, lookupEnv func(string) (string, bool), setenv func(string, string)) ([]string, []string) {
+	var set, overridden []string
 	for _, key := range slices.Sorted(maps.Keys(values)) {
 		if _, ok := lookupEnv(key); ok {
 			overridden = append(overridden, key)

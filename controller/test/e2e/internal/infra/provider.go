@@ -82,6 +82,12 @@ type Node struct {
 	// TPMEkThumbprint is optional, and gates TPM attestation: an empty one
 	// deploys no TPM attestor for this node.
 	TPMEkThumbprint string
+
+	// JumpHost and JumpLogin are the Teleport node the node is reached
+	// through and the login for it, empty where it is reached directly. A
+	// kept node's record names them, so it can be reached after the run.
+	JumpHost  string
+	JumpLogin string
 }
 
 // Session is a command, copy and forward channel to the node. It is what

@@ -36,6 +36,15 @@ const (
 	// namespace that the probe pods pull their image with: they run as the
 	// namespace's default service account, not the runner's.
 	siteProbePullSecretsEnv = "NVKE_SITE_PROBE_PULL_SECRETS"
+	// siteScopeEnv is how much of the cluster the health checks hold to:
+	// cluster, the default, or namespaces, for a site shared with workloads
+	// nvke neither installs nor depends on. See siteScopeFromEnv.
+	siteScopeEnv = "NVKE_SITE_SCOPE"
+)
+
+const (
+	siteScopeCluster    = "cluster"
+	siteScopeNamespaces = "namespaces"
 )
 
 // serviceAccountNamespaceFile names the namespace a pod runs in.
@@ -96,6 +105,14 @@ func siteValidateFromEnv(getenv func(string) string, namespaceFile string) (site
 	if err != nil {
 		return siteValidateSettings{}, err
 	}
+	scoped, err := scopedToNamespaces(getenv(siteScopeEnv))
+	if err != nil {
+		return siteValidateSettings{}, err
+	}
+	var scope siteScope
+	if scoped {
+		scope = newSiteScope(namespaces, expect)
+	}
 	if _, err := parseRequireEnv(keepOnFailureEnv, getenv(keepOnFailureEnv)); err != nil {
 		return siteValidateSettings{}, err
 	}
@@ -110,9 +127,37 @@ func siteValidateFromEnv(getenv func(string) string, namespaceFile string) (site
 			probeImage:       image,
 			excusedNamespace: ownNamespace,
 			certManager:      true,
+			scope:            scope,
 		},
 		expect: expect,
 	}, nil
+}
+
+// scopedToNamespaces reads siteScopeEnv: whether the checks hold to the
+// site's namespaces rather than the whole cluster.
+func scopedToNamespaces(raw string) (bool, error) {
+	switch strings.TrimSpace(raw) {
+	case "", siteScopeCluster:
+		return false, nil
+	case siteScopeNamespaces:
+		return true, nil
+	}
+	return false, fmt.Errorf("%s=%q: want %s or %s", siteScopeEnv, raw, siteScopeCluster, siteScopeNamespaces)
+}
+
+// newSiteScope is the required namespaces and the declared components' own,
+// reusing the lists a site already gives rather than a second one to keep in
+// step. The checks a broken neighbor can still break nvke through, nodes,
+// the API server and admission webhooks among them, stay cluster-wide.
+func newSiteScope(namespaces []siteNamespace, expect siteExpectations) siteScope {
+	scope := siteScope{}
+	for _, ns := range namespaces {
+		scope[ns.name] = true
+	}
+	for _, ns := range expect.components {
+		scope[ns] = true
+	}
+	return scope
 }
 
 // describe lists the settings the run resolved, for the report.
