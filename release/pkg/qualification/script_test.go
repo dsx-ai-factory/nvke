@@ -551,7 +551,7 @@ func copiedScript(t *testing.T) string {
 
 // dryRun runs the run step as a dry run from the copy, with the values a run
 // step reads, the two a stream's parameters set, and the GPU runtime switch.
-func dryRun(t *testing.T, sh, copied, workers, suite, gpuRuntime string) (string, error) {
+func dryRun(t *testing.T, sh, copied, workers, suite, gpuRuntime string, extra ...string) (string, error) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), sh, copied, "run")
 	cmd.Env = []string{
@@ -565,6 +565,7 @@ func dryRun(t *testing.T, sh, copied, workers, suite, gpuRuntime string) (string
 		"E2E_TENANT_WORKERS=" + workers, "SUITE_TIMEOUT_MINUTES=" + suite,
 		"TENANT_GPU_RUNTIME=" + gpuRuntime,
 	}
+	cmd.Env = append(cmd.Env, extra...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -601,6 +602,28 @@ func TestRunDerivesTheTimeoutsAndPassesTheWorkers(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestRunMasksTheHostOfAWithheldURL checks that on Actions the run step masks
+// a DSX API host alone, which GitHub's masking of the secret does not cover.
+func TestRunMasksTheHostOfAWithheldURL(t *testing.T) {
+	copied := copiedScript(t)
+	for _, tc := range []struct{ api, host string }{
+		{"https://api.hall3.example:443/", "api.hall3.example"},
+		{" https://api.hall3.example:443 ", "api.hall3.example"},
+		{"\nhttps://api.hall3.example:443\n", "api.hall3.example"},
+		{"https://[fd00::3]:443/", "fd00::3"},
+	} {
+		for _, sh := range shells(t) {
+			out, err := dryRun(t, sh, copied, "", "", "false", "GITHUB_ACTIONS=true", "DSX_DATAHALL_3_API="+tc.api)
+			if err != nil {
+				t.Fatalf("%s run: %v\n%s", sh, err, out)
+			}
+			if !strings.Contains(out, "::add-mask::"+tc.host+"\n") {
+				t.Errorf("%s run with %q: output = %q, want %s masked", sh, tc.api, out, tc.host)
+			}
+		}
 	}
 }
 
@@ -663,6 +686,62 @@ func TestWithholdScrubsJumpHostsAndTheIssuer(t *testing.T) {
 			}
 			if string(got) != want {
 				t.Errorf("%s: %s scrubbed to %q, want %q", sh, f, got, want)
+			}
+		}
+	}
+}
+
+func TestWithholdScrubsTheDSXAPIHosts(t *testing.T) {
+	for _, sh := range shells(t) {
+		dir := t.TempDir()
+		text := "Post \"https://api.hall3.example/realms/r/token\": dial tcp: lookup api.hall3.example: no such host\nsite hall3-site kept\n"
+		if err := os.WriteFile(filepath.Join(dir, "qualify-e2e.log"), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		l := newSteps(t, sh, map[string]string{
+			"DSX_DATAHALL_3_API":     "https://api.hall3.example",
+			"DSX_DATAHALL_3_SITE_ID": "hall3-site",
+		})
+		l.step(true, "withhold", dir)
+		want := "Post \"[withheld]/realms/r/token\": dial tcp: lookup [withheld]: no such host\nsite hall3-site kept\n"
+		got, err := os.ReadFile(filepath.Join(dir, "qualify-e2e.log"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != want {
+			t.Errorf("%s: scrubbed to %q, want %q", sh, got, want)
+		}
+	}
+}
+
+// The host alone is taken from the URL as the provider reads it: trimmed, and
+// without an IPv6 address's brackets.
+func TestWithholdScrubsThePaddedOrBracketedAPIHost(t *testing.T) {
+	for _, tc := range []struct{ api, text, want string }{
+		{
+			" https://api.hall3.example:443 ",
+			"Post \"https://api.hall3.example:443/realms/r/token\": dial tcp: lookup api.hall3.example: no such host\n",
+			"Post \"[withheld]/realms/r/token\": dial tcp: lookup [withheld]: no such host\n",
+		},
+		{
+			"https://[fd00::3]:443",
+			"Post \"https://[fd00::3]:443/realms/r/token\": x509: certificate is valid for other.example, not fd00::3\n",
+			"Post \"[withheld]/realms/r/token\": x509: certificate is valid for other.example, not [withheld]\n",
+		},
+	} {
+		for _, sh := range shells(t) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "qualify-e2e.log"), []byte(tc.text), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			l := newSteps(t, sh, map[string]string{"DSX_DATAHALL_3_API": tc.api})
+			l.step(true, "withhold", dir)
+			got, err := os.ReadFile(filepath.Join(dir, "qualify-e2e.log"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tc.want {
+				t.Errorf("%s with %q: scrubbed to %q, want %q", sh, tc.api, got, tc.want)
 			}
 		}
 	}

@@ -202,7 +202,9 @@ One thing will stop you, and it is worth knowing before you start.
 subnet or by **VPC prefix**, never both, and which one is a property of the
 fabric rather than a choice. A site declares `subnetID` or `vpcPrefixID`
 accordingly, and declaring both is rejected on lookup. site-1 attaches by
-subnet, site-2 by prefix.
+subnet, site-2 by prefix. A DSX datahall whose hosts have no managed DPU has
+neither: its VPC is FLAT, so it declares `autoNetwork: true` and NiCO attaches
+each instance itself, the tenant's machines included.
 
 **Enumerating instance types is awkward.** A Forge instance-type list caps at
 twenty rows and ignores every filter, so discovering the rest means reading
@@ -250,7 +252,10 @@ never a reused one.
 **Credentials are per datahall.** The names are derived from the key:
 `DSX_<DATAHALL>_SSA_CLIENT_ID` and `_SECRET`, exchanged for a bearer token at
 the issuer in `SSA_ISSUER`. A client scoped to one datahall cannot be picked up
-by a run against another, and a second datahall needs no code.
+by a run against another, and a second datahall needs no code. A datahall that
+mints elsewhere names the path on its own API host with `issuerPath`, such as
+a Keycloak realm's `/realms/<realm>/protocol/openid-connect`, and one whose API
+is served under a private CA supplies the PEM as `DSX_<DATAHALL>_CA_CERT`.
 
 **`full` runs, and picks its own tenant.** Every stage runs on DSX: the
 datahall has its own tenant spec, so a `full` run builds the site and then a
