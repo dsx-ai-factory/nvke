@@ -136,6 +136,40 @@ func TestResourceCreationWithRequiredFields(t *testing.T) {
 	}
 }
 
+// TestControlPlaneClassSpecMutable permits operators to revise every policy choice.
+// Resolving those choices for existing clusters belongs to their reconciler.
+func TestControlPlaneClassSpecMutable(t *testing.T) {
+	tests := []struct {
+		name                   string
+		inputGVR               schema.GroupVersionResource
+		inputResourcePathFn    func(*testing.T) string
+		updatedResourcePathFn  func(*testing.T) string
+		expectedResourcePathFn func(*testing.T) string
+	}{
+		{
+			name:     "ControlPlaneClassWithUpdatedPolicyChoices",
+			inputGVR: GroupVersion.WithResource("controlplaneclasses"),
+			inputResourcePathFn: func(t *testing.T) string {
+				return wellKnownInputResourcePath(t)
+			},
+			updatedResourcePathFn: func(t *testing.T) string {
+				return wellKnownUpdatedResourcePath(t)
+			},
+			expectedResourcePathFn: func(t *testing.T) string {
+				return wellKnownExpectedResourcePath(t)
+			},
+		},
+	}
+
+	testClient := startTestAPIServerWithCRDsAndCleanup(t)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkResourceUpdate(t, testClient, tt.inputGVR, tt.inputResourcePathFn, tt.updatedResourcePathFn, tt.expectedResourcePathFn)
+		})
+	}
+}
+
 func startTestAPIServerWithCRDsAndCleanup(t *testing.T) dynamic.Interface {
 	t.Helper()
 
@@ -178,6 +212,21 @@ func createResource(t *testing.T, testClient dynamic.Interface, gvr schema.Group
 	return resourceClient, createdResource
 }
 
+func checkResourceUpdate(t *testing.T, testClient dynamic.Interface, gvr schema.GroupVersionResource, inputResourcePathFn func(*testing.T) string, updatedResourcePathFn func(*testing.T) string, expectedResourcePathFn func(*testing.T) string) {
+	t.Helper()
+
+	inputResource := readResource(t, inputResourcePathFn(t))
+	updatedResource := readResource(t, updatedResourcePathFn(t))
+	expectedResource := readResource(t, expectedResourcePathFn(t))
+	resourceClient, createdResource := createResource(t, testClient, gvr, inputResource)
+
+	updatedResource.SetResourceVersion(createdResource.GetResourceVersion())
+	_, err := resourceClient.Update(t.Context(), updatedResource, metav1.UpdateOptions{})
+	require.NoError(t, err, "update resource")
+
+	checkPersistedResource(t, resourceClient, expectedResource)
+}
+
 func checkPersistedResource(t *testing.T, resourceClient dynamic.ResourceInterface, expectedResource *unstructured.Unstructured) {
 	t.Helper()
 
@@ -208,6 +257,11 @@ func ensureTestNamespace(t *testing.T, testClient dynamic.Interface, namespace s
 func wellKnownInputResourcePath(t *testing.T) string {
 	t.Helper()
 	return filepath.Join("testdata", filepath.FromSlash(t.Name()), "input.yaml")
+}
+
+func wellKnownUpdatedResourcePath(t *testing.T) string {
+	t.Helper()
+	return filepath.Join("testdata", filepath.FromSlash(t.Name()), "update.yaml")
 }
 
 func wellKnownExpectedResourcePath(t *testing.T) string {

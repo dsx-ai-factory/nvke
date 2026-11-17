@@ -401,23 +401,6 @@ func TestControlPlaneClassAdmission(t *testing.T) {
 	})
 }
 
-// TestControlPlaneClassSpecMutable permits operators to revise every policy choice.
-// Resolving those choices for existing clusters belongs to their reconciler.
-func TestControlPlaneClassSpecMutable(t *testing.T) {
-	schema := loadResourceSchema(t, "controlplaneclasses")
-	previous := baseResource(t, "controlplaneclasses")
-	schema.admit(t, previous, nil)
-	updated := mutate(t, "controlplaneclasses", func(spec map[string]any) {
-		spec["controlPlane"] = map[string]any{
-			"replicas":                int64(5),
-			"instanceTypePreferences": []any{"provider.example/instance-types/CP_Large"},
-			"systemReservedMemory":    "32Gi",
-		}
-	})
-	setField(updated, []string{"spec", "rollout", "strategy", "rollingUpdate", "maxSurge"}, int64(1))
-	schema.admit(t, updated, previous)
-}
-
 func TestNVKEClusterSchemaAdmission(t *testing.T) {
 	channelVersion := []string{"spec", "release", "channel", "version"}
 
