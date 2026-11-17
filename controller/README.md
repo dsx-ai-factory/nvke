@@ -608,39 +608,37 @@ With the Helm chart, set the `apiAuth` values:
 apiAuth:
   enabled: true
   permissive: false
-  configMap:
-    create: false               # true to render apiAuth.config into both
-                                # nvke-controller-config and nvke-auth-config
-    name: nvke-auth-config      # mounted either way
+  config: {}                    # audiences and issuers; see below
   clusterIssuerDiscovery: true  # see RBAC Prerequisite below
 ```
 
-When the chart renders the configuration (`configMap.create: true`), it puts it
-in the `apiAuth` section of `nvke-controller-config`, with `enabled: true`, and
-sets no `AUTH_CONFIG_PATH`. For a ConfigMap managed elsewhere it sets
-`AUTH_CONFIG_PATH` to the mounted file instead. The chart renders
-`apiAuth.permissive` into the `apiAuth` section of `nvke-controller-config`, and
-it applies either way. Without the chart, set the `apiAuth` section of
-`nvke-controller-config` or `AUTH_CONFIG_PATH` (not both), and
-`apiAuth.permissive`, directly. `permissive` may be `true` while `enabled` is
-`false`, for a file at `AUTH_CONFIG_PATH`. A top-level `permissiveMode`, where
-the setting used to live, is refused at startup with a message naming
+The chart renders `apiAuth.config` into the `apiAuth` section of
+`nvke-controller-config`, with `enabled` and `permissive` beside it. That
+section is the only place the controller reads authentication from. Without the
+chart, set the `apiAuth` section of `nvke-controller-config` directly.
+`permissive: true` requires `enabled: true`; the chart refuses it otherwise and
+so does the controller at startup. A top-level `permissiveMode`, where the
+setting used to live, is refused at startup with a message naming
 `apiAuth.permissive`. The `apiAuth` section must be present in
-`nvke-controller-config` whichever you use: `enabled: false` with both lists
-empty runs without authentication, and a file with no section does not start.
-All of it is read at startup, so changing any of it needs a pod restart. The
-chart arranges that restart itself; see
-[Authentication Configuration](#authentication-configuration) below.
+`nvke-controller-config`: `enabled: false` with both lists empty runs without
+authentication, and a file with no section does not start. All of it is read at
+startup, so changing any of it needs a pod restart. The chart arranges that
+restart itself; see [Authentication Configuration](#authentication-configuration)
+below.
 
-| State | Configuration | `apiAuth.permissive` | Result |
+| State | `apiAuth.enabled` | `apiAuth.permissive` | Result |
 | --- | --- | --- | --- |
-| **Disabled** | `apiAuth.enabled` false and `AUTH_CONFIG_PATH` unset | — | Middleware is not in the chain. Every request served. The default. |
-| **Permissive** | `apiAuth.enabled` true, or `AUTH_CONFIG_PATH` set | `true` | Every request evaluated, logged and counted, then served anyway. |
-| **Enforcing** | `apiAuth.enabled` true, or `AUTH_CONFIG_PATH` set | `false` | Failures answered 401 or 403. |
+| **Disabled** | `false` | `false` | Middleware is not in the chain. Every request served. The default. |
+| **Permissive** | `true` | `true` | Every request evaluated, logged and counted, then served anyway. |
+| **Enforcing** | `true` | `false` | Failures answered 401 or 403. |
 
-`apiAuth.enabled: true` together with `AUTH_CONFIG_PATH` is a startup failure,
-and so is an `apiAuth` section with audiences or issuers while `enabled` is
-`false`.
+An `apiAuth` section with audiences or issuers while `enabled` is `false` is a
+startup failure.
+
+`AUTH_CONFIG_PATH`, which used to name a separate authentication file, is
+retired: the controller refuses to start while it is set to anything non-empty,
+and the chart refuses it in `env`. See
+[Upgrading from an external ConfigMap](#upgrading-from-an-external-configmap).
 
 A deployment that never sets `apiAuth.enabled` in its values stays disabled
 across upgrades.
@@ -651,40 +649,21 @@ be rejected before anyone actually is: watch
 turn it off. The `reason` and `issuer` labels say what was wrong and whose token
 it was. It suppresses the 403 as well as the 401, so no caller is rejected.
 
-If the configuration is set but unreadable or invalid, from either source, NVKE
-will not start, rather than starting with authentication disabled.
+If the configuration is set but invalid, NVKE will not start, rather than
+starting with authentication disabled.
 
 ### Authentication Configuration
 
-Populate the configuration one of two ways: let the chart render it from
-`apiAuth.config` (`configMap.create: true`), in which case NVKE reads it from
-`nvke-controller-config` and the chart also renders the same values into
-`nvke-auth-config`, or supply your own ConfigMap named by
-`apiAuth.configMap.name` and leave `create` false, in which case NVKE reads it
-from the file mounted at `AUTH_CONFIG_PATH`. Either way the chart mounts
-`apiAuth.configMap.name` at `/etc/nke/auth`. `nvkectl` reads the audience from
-`apiAuth` in `nvke-controller-config` when that section is enabled, and from
-`nvke-auth-config` otherwise. A private CA bundle is simplest inline, as
-`jwks.caBundle`. Files a `jwks.caBundlePath` names land in `/etc/nke/auth` too:
-through `apiAuth.configMap.extraFiles` when the chart renders the ConfigMap, or
-as keys you add to your own ConfigMap, since the chart refuses `extraFiles`
-without `create`. Setting `apiAuth.config` without `create`, or `create` without
-`apiAuth.config`, fails the render rather than quietly ignoring one of them.
-
-**The chart renders it** when `apiAuth.configMap.create` is true. Put the
-document under `apiAuth.config`, carrying `audiences` and `issuers` only --
-`apiVersion` and `kind` are supplied by the chart, which ships in lockstep with
-the build that accepts them:
+Put the configuration under `apiAuth.config`, carrying `audiences` and
+`issuers` only. `enabled` and `permissive` are `apiAuth.enabled` and
+`apiAuth.permissive`, and there is no `apiVersion` or `kind`. `apiAuth.config`
+is required when `apiAuth.enabled` is true, and refused when it is false, so
+neither is silently ignored:
 
 ```yaml
 apiAuth:
   enabled: true
-  configMap:
-    create: true
-    name: nvke-auth-config
   config:
-    # No apiVersion or kind: the chart supplies both, and repeating them here
-    # renders duplicate keys that authn.Load refuses. The render fails if you do.
     audiences: ["https://nke.example.internal"]
     issuers:
       - name: local-kubernetes
@@ -700,12 +679,8 @@ apiAuth:
               name: forge-console
 ```
 
-So the document below is the shape of the *file*, and `apiAuth.config` takes it
-from its third line on.
-
-This is the option for a GitOps deployment, where the configuration belongs in
-the same values file as everything else and there is nowhere to put a loose
-manifest.
+The configuration lives in the same values file as everything else, which suits
+a GitOps deployment.
 
 The chart checks that `audiences` and `issuers` are present and refuses
 `apiVersion`, `kind`, `enabled` and `permissive` inside `apiAuth.config`. Everything else is
@@ -718,8 +693,6 @@ PEM inline as `jwks.caBundle`, which needs no file:
 
 ```yaml
 apiAuth:
-  configMap:
-    create: true
   config:
     issuers:
       - name: spire
@@ -732,68 +705,51 @@ apiAuth:
 ```
 
 `caBundle` and `caBundlePath` are alternatives; set at most one, and a
-`caBundle` with no PEM certificate in it is refused at startup. To keep the
-bundle as a file instead, `extraFiles` puts it in the same directory. The whole
-ConfigMap is mounted, so every key in it is a file at `/etc/nke/auth`:
+`caBundle` with no PEM certificate in it is refused at startup. A CA bundle is a
+public certificate, not a secret. `caBundlePath` names a file the pod already
+has, such as the projected ServiceAccount CA above, or one you mount through
+`volumes` and `volumeMounts`. A `caBundlePath` under `/etc/nke/auth/`, where the
+retired authentication ConfigMap used to be mounted, fails the render and names
+`jwks.caBundle`, rather than leaving the pod to crash-loop on a missing file.
 
-```yaml
-apiAuth:
-  configMap:
-    create: true
-    extraFiles:
-      spire-ca.crt: |
-        -----BEGIN CERTIFICATE-----
-        ...
-        -----END CERTIFICATE-----
-  config:
-    issuers:
-      - name: spire
-        jwks:
-          uri: "https://spire.example.internal:30443/keys"
-          caBundlePath: /etc/nke/auth/spire-ca.crt
-```
-
-A CA bundle is a public certificate, not a secret. A `caBundlePath` under
-`/etc/nke/auth` that names a file nothing supplies fails the render, rather than
-leaving the pod to crash-loop on a missing file; a path anywhere else is taken
-to be a volume you mount yourself and is left alone.
-
-**Or create it yourself** and leave `create` false, which is the default. The key
-must be `auth.yaml`:
-
-```bash
-# In the release namespace. The chart mounts the ConfigMap at /etc/nke/auth and
-# points AUTH_CONFIG_PATH at auth.yaml within it.
-kubectl create configmap nvke-auth-config -n "${RELEASE_NAMESPACE}" \
-  --from-file=auth.yaml=./auth.yaml
-```
-
-Either way, editing the configuration only takes effect when the pods restart:
-it is read once at startup and Kubernetes does not restart anything when a
-mounted ConfigMap changes. So whenever `apiAuth.enabled` is true the chart
-annotates the Deployment for [Reloader](https://github.com/stakater/Reloader),
-which watches both `apiAuth.configMap.name` and `nvke-controller-config` and
-rolls the Deployment when either changes, from any source, `kubectl edit`
-included. Set
+Editing the configuration only takes effect when the pods restart: it is read
+once at startup and Kubernetes does not restart anything when a mounted
+ConfigMap changes. So the chart annotates the Deployment for
+[Reloader](https://github.com/stakater/Reloader), which watches
+`nvke-controller-config` and rolls the Deployment when it changes, from any
+source, `kubectl edit` included. Set
 `deploymentAnnotations."configmap.reloader.stakater.com/reload"` to take that
 over; the chart leaves an annotation you set alone. Without Reloader running,
 restart the pods yourself.
 
-With `create: true`, though, the copy the controller reads is `apiAuth` in
-`nvke-controller-config`: change the chart values, or edit that ConfigMap.
-`nvke-auth-config` is a copy for `nvkectl` releases that read only it, and for
-the files beside it, so editing it alone restarts the pods but changes nothing
-the controller enforces; current `nvkectl` reads `apiAuth` in
-`nvke-controller-config` first and does not see the edit either.
+`nvkectl` reads the audience from `apiAuth` in `nvke-controller-config` when
+that section is enabled. It falls back to `nvke-auth-config` only for a
+controller from before that ConfigMap was retired.
+
+#### Upgrading from an external ConfigMap
+
+Earlier charts could mount an authentication ConfigMap managed outside the chart
+(`apiAuth.configMap.create: false`), which the controller read through
+`AUTH_CONFIG_PATH`. The chart now refuses `apiAuth.configMap` by name, and no
+longer renders or mounts `nvke-auth-config`. Before upgrading such a site:
+
+1. Move the configuration into `apiAuth.config`. Drop `apiVersion` and `kind`;
+   keep `audiences` and `issuers` only.
+2. Move any CA bundle that was in `extraFiles` or in the ConfigMap into the
+   issuer as `jwks.caBundle`.
+3. Set `apiAuth.enabled: true` and remove `apiAuth.configMap`.
+
+A site with `apiAuth.permissive: true` and `enabled: false` must drop
+`permissive`. Deploy the chart and the image together. Helm deletes the
+chart-owned `nvke-auth-config` on the upgrade. `nvkectl` older than the release
+that reads `nvke-controller-config` sends no token to the upgraded controller and
+gets 401; upgrade it.
 
 `hack/tilt-controller-api-auth-values.yaml` is a working example, as chart
 values; the full schema and every validation rule live in
-`auth/authn/config.go`. The shape:
+`auth/authn/config.go`. The shape of `apiAuth.config`:
 
 ```yaml
-apiVersion: auth.nke.nvidia.com/v1alpha1
-kind: AuthenticationConfiguration
-
 # Accepted "aud" claims. Any-of, so list two to rotate without downtime. No entry
 # may equal an issuer below: kubeadm defaults --api-audiences to the service
 # account issuer, so that would accept every pod's automounted token.

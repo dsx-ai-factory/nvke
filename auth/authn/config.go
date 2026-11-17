@@ -58,8 +58,8 @@ func allowedAlgorithms() []string {
 	return algs
 }
 
-// Config is the issuer registry, read once at startup from the file at
-// AUTH_CONFIG_PATH or from apiAuth in nvke-controller-config.
+// Config is the issuer registry, read once at startup from apiAuth in
+// nvke-controller-config or, through Load, from a file of its own.
 type Config struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -223,10 +223,8 @@ func (i Issuer) EffectiveAudiences(deploymentAudiences []string) []string {
 }
 
 // Load reads and validates the configuration at path. An unreadable file is an
-// error, never "authentication is disabled", or a typo'd mountPath would produce
-// a controller that starts cleanly and authenticates nobody. Authentication is
-// disabled only when AUTH_CONFIG_PATH is unset and apiAuth is not enabled in
-// nvke-controller-config.
+// error, never "authentication is disabled", or a typo'd path would produce a
+// server that starts cleanly and authenticates nobody.
 func Load(path string) (*Config, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, ErrEmptyPath
@@ -345,7 +343,7 @@ func (c *Config) Validate() error {
 }
 
 // validateTypeMeta names the accepted value in both messages; "wrong" is usually
-// the wrong ConfigMap key mounted at AUTH_CONFIG_PATH.
+// the wrong file, or the wrong ConfigMap key mounted as it.
 func (c *Config) validateTypeMeta() error {
 	switch apiVersion := strings.TrimSpace(c.APIVersion); apiVersion {
 	case ConfigAPIVersion, ConfigAPIVersionLegacy:
